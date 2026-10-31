@@ -2,8 +2,24 @@ import SolaraCore
 import Foundation
 internal import SolaraModel
 internal import SolaraStore
+#if DEBUG
+internal import SolaraUI
+#endif
 
 final class SolaraCoreStripEngine: StripEngine {
+  #if DEBUG
+  @MainActor static var sentCount = 0
+  @MainActor static var sentWhileHeld = 0
+
+  @MainActor static var commandProbe: [String: Any] {
+    let drag = TabDragSession.current
+    let point = drag.flatMap { $0.point(in: $0.sourceWindow) }
+    return ["sent": sentCount, "held": sentWhileHeld,
+      "sourceWindow": drag?.sourceWindow as Any? ?? NSNull(), "tabIds": drag?.tabIds ?? [],
+      "x": point.map { $0.x as Any } ?? NSNull(), "y": point.map { $0.y as Any } ?? NSNull()]
+  }
+  #endif
+
   func observe(_ receive: @escaping (JSONValue) -> Void) -> Int {
     SolaraCoreTabStrip.claimCommands()
     return SolaraCoreTabStrip.addObserver { tx in receive(Self.json(tx)) }
@@ -15,6 +31,12 @@ final class SolaraCoreStripEngine: StripEngine {
 
   func send(id: Int, command: JSONValue) {
     guard let command = Self.foundation(command) as? [String: Any] else { return }
+    #if DEBUG
+    MainActor.assumeIsolated {
+      Self.sentCount += 1
+      if TabDragSession.current != nil { Self.sentWhileHeld += 1 }
+    }
+    #endif
     SolaraCoreTabStrip.command(id, command: command)
   }
 

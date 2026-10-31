@@ -131,37 +131,48 @@ try {
     const before = await order("w1");
     const at = (i) => Math.round((now[i][0] + now[i][1]) / 2);
     const live = before.slice(2, 4);
-    await run(`${JSON.stringify(live)}.forEach((id, i) => st().navigate(id, "data:text/html,<h1>" + i));
-      const ready = () => globalThis.acChromeTabs.strips().some((s) => ${JSON.stringify(live)}.every((id) => s.tabs.some((t) => t.key === id)));
-      const wait = (n) => (ready() || !n ? Promise.resolve(ready()) : settle(100).then(() => wait(n - 1)));
-      return wait(100);`);
-    const path = [[at(2), 21], [at(2) + 20, 21], [at(3), 21], [at(3) + 75, 21]];
-    const seen = await run(`
-      const cef = globalThis.expo.modules.SolaraCEF;
-      const send = cef.tabStripCommand;
-      const t0 = performance.now();
-      const log = { commands: [], windows: [], drag: [], picture: [] };
-      cef.tabStripCommand = (...a) => { log.commands.push(performance.now() - t0); return send.apply(cef, a); };
-      const unsubscribe = ac.store.subscribe((s, p) => { if (s.windows !== p.windows) log.windows.push(performance.now() - t0); });
-      const begin = ac.shell.dragPreview.begin;
-      ac.shell.dragPreview.begin = (...a) => { log.picture.push(performance.now() - t0); return begin(...a); };
-      // The drag's own store says when it starts and ends (the drop's store update comes right after, in the same task).
-      const stop = globalThis.acTabDrag.subscribe((d, was) => { if (!d.tabIds.length !== !was.tabIds.length) log.drag.push([d.tabIds.length > 0, performance.now() - t0]); });
-      return act("w1", "drag:${path.map((p) => p.join(",")).join(";")}").then(() => settle(${path.length * 12 * 16 + 1200})).then(() => {
-        stop(); unsubscribe(); cef.tabStripCommand = send; ac.shell.dragPreview.begin = begin;
-        return log;
-      });`);
-    const start = seen.drag.find(([on]) => on)?.[1];
-    const drop = seen.drag.find(([on]) => !on)?.[1];
-    assert.ok(start !== undefined && drop !== undefined, JSON.stringify(seen.drag));
-    assert.deepEqual(seen.commands.filter((t) => t < drop), [], "no strip command while dragging");
-    assert.deepEqual(seen.windows.filter((t) => t < drop), [], "no store update while dragging");
-    assert.equal(seen.windows.length, 1, `one store update on drop: ${JSON.stringify(seen.windows)}`);
-    assert.equal(seen.commands.length, 1, `one strip command on drop: ${JSON.stringify(seen.commands)}`);
-    assert.deepEqual(seen.picture, [], "no drag picture for a reorder");
-    const after = await order("w1");
-    assert.notDeepEqual(after, before, "it moved");
-    await run(`const id = ${JSON.stringify(before[2])}; const ids = ${JSON.stringify(before)}.filter((t) => !st().tabs[t].pinned); st().moveTab(id, ids.indexOf(id)); return settle(300);`);
+    try {
+      assert.equal(await run(`${JSON.stringify(live)}.forEach((id, i) => st().navigate(id, "data:text/html,<h1>" + i));
+        const ready = () => C.tabStrips().then((snapshot) => snapshot.strips.some((s) => ${JSON.stringify(live)}.every((id) => s.tabs.some((t) => t.key === id))));
+        const wait = (n) => ready().then((ok) => ok || !n ? ok : settle(100).then(() => wait(n - 1)));
+        return wait(100);`), true, "both tabs have live Chrome strips");
+      const path = [[at(2), 21], [at(2) + 20, 21], [at(3), 21], [at(3) + 75, 21]];
+      const seen = await run(`
+        const cef = globalThis.expo.modules.SolaraCEF;
+        const adapter = globalThis.expo.modules.SolaraStoreAdapter;
+        const native = adapter.status().scope === "everything";
+        const send = cef.tabStripCommand;
+        const t0 = performance.now();
+        const log = { commands: [], windows: [], drag: [], picture: [] };
+        const probe = () => native ? adapter.devStripCommandProbe().then(JSON.parse) : Promise.resolve({ sent: log.commands.length, held: 0 });
+        cef.tabStripCommand = (...a) => { log.commands.push(performance.now() - t0); return send.apply(cef, a); };
+        const unsubscribe = ac.store.subscribe((s, p) => { if (s.windows !== p.windows) log.windows.push(performance.now() - t0); });
+        const begin = ac.shell.dragPreview.begin;
+        ac.shell.dragPreview.begin = (...a) => { log.picture.push(performance.now() - t0); return begin(...a); };
+        const stop = globalThis.acTabDrag.subscribe((d, was) => { if (!d.tabIds.length !== !was.tabIds.length) log.drag.push([d.tabIds.length > 0, performance.now() - t0]); });
+        let initial;
+        return Promise.resolve().then(probe).then((n) => {
+          initial = n;
+          return act("w1", "drag:${path.map((p) => p.join(",")).join(";")}").then(() => settle(${path.length * 12 * 16 + 1200}));
+        }).then(probe).then((n) => {
+          log.sentCommands = n.sent - initial.sent;
+          log.sentWhileHeld = n.held - initial.held;
+          log.native = native;
+          return log;
+        }).finally(() => { stop(); unsubscribe(); cef.tabStripCommand = send; ac.shell.dragPreview.begin = begin; });`);
+      const start = seen.drag.find(([on]) => on)?.[1];
+      const drop = seen.drag.find(([on]) => !on)?.[1];
+      assert.ok(start !== undefined && drop !== undefined, JSON.stringify(seen.drag));
+      assert.equal(seen.sentWhileHeld, 0, "no native strip command before the actual drop");
+      if (!seen.native) assert.deepEqual(seen.commands.filter((t) => t < drop), [], "no JS strip command before drop");
+      assert.deepEqual(seen.windows.filter((t) => t < drop), [], "no store update before drop");
+      assert.equal(seen.windows.length, 1, `one store update on drop: ${JSON.stringify(seen.windows)}`);
+      assert.equal(seen.sentCommands, 1, `one strip command on drop: ${seen.sentCommands}`);
+      assert.deepEqual(seen.picture, [], "no drag picture for a reorder");
+      assert.notDeepEqual(await order("w1"), before, "it moved");
+    } finally {
+      await run(`const id = ${JSON.stringify(before[2])}; const ids = ${JSON.stringify(before)}.filter((t) => !st().tabs[t].pinned); st().moveTab(id, ids.indexOf(id)); return settle(300);`);
+    }
     assert.deepEqual(await order("w1"), before);
   });
 

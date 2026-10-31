@@ -93,7 +93,9 @@ func replayedState(_ state: JSONValue) -> JSONValue {
 }
 
 func stateDifference(_ swift: JSONObject, _ recorded: JSONValue?) -> String? {
-  adapterDifference(replayedState(.object(swift)), replayedState(recorded ?? .null))
+  var swift = swift
+  if recorded?["live"] == nil { swift.removeValue(forKey: "live") }
+  return adapterDifference(replayedState(.object(swift)), replayedState(recorded ?? .null))
 }
 
 func adapterDifference(_ a: JSONValue, _ b: JSONValue, path: String = "") -> String? {

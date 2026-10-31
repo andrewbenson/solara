@@ -15,6 +15,7 @@
     "test": "turbo run test && node --no-warnings --test extras/raycast-solara/src/scripts.test.ts"
   },
   "devDependencies": {
+    "esbuild": "0.28.2",
     "turbo": "^2.11.3",
     "typescript": "~5.9.2"
   },

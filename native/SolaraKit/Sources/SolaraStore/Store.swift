@@ -56,6 +56,17 @@ public final class Store: Sendable {
     var sequencedCommands: [(command: Command, origin: Origin)] = []
     var sequencedHead = 0
 
+    func suffix(since requested: Int) -> [Patch]? {
+      if requested >= rev { return [] }
+      guard !ring.isEmpty else { return nil }
+      let oldest = ring[ringStart].rev
+      guard requested >= oldest - 1 else { return nil }
+      let count = rev - requested
+      guard count <= ring.count else { return nil }
+      let offset = ring.count - count
+      return (offset..<ring.count).map { ring[(ringStart + $0) % ring.count] }
+    }
+
     mutating func record(_ patch: Patch, state next: BrowserState) {
       state = next
       rev = patch.rev
@@ -102,6 +113,7 @@ public final class Store: Sendable {
   private let sequencedFailures = Mutex<[(id: Int, listener: @Sendable (Command, Error) -> Void)]>([])
   private let syncOriginsOn: Atomic<Bool>
   private let clock: @Sendable () -> Double
+  private let launchThemeTimers = Mutex<LaunchPageThemeTimers?>(nil)
   public let env: WebAddressing
   public let config: StoreConfig
   public let checksInvariants: Bool
@@ -406,17 +418,15 @@ public final class Store: Sendable {
     memory.pages.compactMapValues(\.generation)
   }
 
-  public func patches(since rev: Int) -> [Patch]? {
+  public func catchUp(sinceRev: Int) -> StoreCatchUp {
     sequence { core.withLock { core in
-      if rev >= core.rev { return [] }
-      guard !core.ring.isEmpty else { return nil }
-      let oldest = core.ring[core.ringStart].rev
-      guard rev >= oldest - 1 else { return nil }
-      let count = core.rev - rev
-      guard count <= core.ring.count else { return nil }
-      let offset = core.ring.count - count
-      return (offset..<core.ring.count).map { core.ring[(core.ringStart + $0) % core.ring.count] }
+      if let patches = core.suffix(since: sinceRev) { return .patches(rev: core.rev, patches: patches) }
+      return .snapshot(rev: core.rev, state: core.state)
     } }
+  }
+
+  public func patches(since rev: Int) -> [Patch]? {
+    sequence { core.withLock { $0.suffix(since: rev) } }
   }
 
   private var ownsSequence: Bool {
@@ -435,6 +445,25 @@ public final class Store: Sendable {
   public func deliveryCursor() -> (committed: Int, delivered: Int) {
     let capture = { (self.core.withLock { $0.rev }, self.delivery.withLock { $0.deliveredRev }) }
     return ownsSequence ? capture() : sequence(capture)
+  }
+
+  public func startLaunchPageThemeTimers(after: @escaping LaunchPageTheme.Schedule = { delay, work in
+    DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + delay, execute: work)
+  }) {
+    launchThemeTimers.withLock { $0 = LaunchPageThemeTimers(after: after) }
+    sequence {}
+  }
+
+  private func refreshLaunchPageThemeTimers() {
+    guard let timers = launchThemeTimers.withLock({ $0 }) else { return }
+    timers.refresh(now: clock(), store: self) {
+      core.withLock { core in
+        core.memory.pages.compactMapValues { page -> LaunchPageThemeDeadline? in
+          guard let generation = page.generation, let at = page.live.settleAt else { return nil }
+          return LaunchPageThemeDeadline(generation: generation, at: at)
+        }
+      }
+    }
   }
 
   public func enqueuePageReport(id: String, report: JSONValue) {
@@ -501,6 +530,20 @@ public final class Store: Sendable {
     }
   }
 
+  public func drainForQuit(until deadline: ContinuousClock.Instant) -> Bool {
+    while ContinuousClock.now < deadline {
+      if ingress.try() {
+        guard ContinuousClock.now < deadline else { ingress.unlock(); return false }
+        let drained = withAcquiredIngress { drainSequenced(until: deadline) }
+        return drained && ContinuousClock.now < deadline
+      }
+      let remaining = ContinuousClock.now.duration(to: deadline).components
+      let seconds = Double(remaining.seconds) + Double(remaining.attoseconds) / 1_000_000_000_000_000_000
+      if seconds > 0 { Thread.sleep(forTimeInterval: min(seconds, 0.001)) }
+    }
+    return false
+  }
+
   private func withIngress<T>(_ operation: () throws -> T) rethrows -> T {
     ingress.lock()
     return try withAcquiredIngress(operation)
@@ -533,6 +576,7 @@ public final class Store: Sendable {
       if !completion.outermost && completion.replay { runQueuedFromSync(sequenced: false) }
       ingress.unlock()
       if completion.outermost {
+        refreshLaunchPageThemeTimers()
         for report in completion.invariants { invariantHandler(report.found, report.commands) }
         for message in completion.failures { FileHandle.standardError.write(Data(message.utf8)) }
         for reason in completion.refusals { onPersistenceRefusal(reason) }
@@ -543,17 +587,22 @@ public final class Store: Sendable {
     return try operation()
   }
 
-  private func drainSequenced() {
-    while let next = core.withLock({ core -> (command: Command, origin: Origin)? in
-      guard core.sequencedHead < core.sequencedCommands.count else {
-        core.sequencedCommands.removeAll(keepingCapacity: true)
-        core.sequencedHead = 0
-        return nil
+  @discardableResult
+  private func drainSequenced(until deadline: ContinuousClock.Instant? = nil) -> Bool {
+    while true {
+      if let deadline, ContinuousClock.now >= deadline { return false }
+      let next = core.withLock { core -> (command: Command, origin: Origin)? in
+        if let deadline, ContinuousClock.now >= deadline { return nil }
+        guard core.sequencedHead < core.sequencedCommands.count else {
+          core.sequencedCommands.removeAll(keepingCapacity: true)
+          core.sequencedHead = 0
+          return nil
+        }
+        let next = core.sequencedCommands[core.sequencedHead]
+        core.sequencedHead += 1
+        return next
       }
-      let next = core.sequencedCommands[core.sequencedHead]
-      core.sequencedHead += 1
-      return next
-    }) {
+      guard let next else { return deadline.map { ContinuousClock.now < $0 } ?? true }
       do {
         _ = try dispatchUnsequenced([next.command], origin: next.origin, fromSync: false)
       } catch {

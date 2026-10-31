@@ -15,11 +15,13 @@ import Testing
     #expect(store.rev == 0)
   }
 
-  @Test func audioStillComesFromTheBridge() throws {
+  @Test func legacyAudioCacheCommandDoesNotForgeAuthoritativeLive() throws {
     let store = Store(checksInvariants: false)
     let bridge = StoreBridge(store: store)
     let response = try JSONValue.parse(bridge.dispatch(#"{"name":"setPlayingAudio","args":[["tab"]]}"#, sinceRev: 0))
     #expect(response["error"] == nil)
     #expect(store.state.caches.playingAudio == ["tab"])
+    #expect(store.state.live.isEmpty)
+    #expect(response["patches"]?.array?.allSatisfy { $0["live"] == nil } == true)
   }
 }

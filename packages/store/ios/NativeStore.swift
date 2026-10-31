@@ -35,16 +35,17 @@ public final class NativeStore: Sendable {
   nonisolated(unsafe) public private(set) static var handedOff = false
   nonisolated(unsafe) static var folderLock: FolderLock?
 
-  let bridge: StoreBridge
-  let writer: PersistenceWriter?
+  let host: StoreHost
+  var bridge: StoreBridge { host.bridge }
+  var writer: PersistenceWriter? { host.writer }
   let launch: SafeLaunch
   let caches: NativeCacheFeeds
   let strips: StripTransport
 
   @MainActor
-  init(bridge: StoreBridge, writer: PersistenceWriter?, launch: SafeLaunch, folder: URL) {
-    self.bridge = bridge
-    self.writer = writer
+  init(host: StoreHost, launch: SafeLaunch, folder: URL) {
+    self.host = host
+    let bridge = host.bridge
     self.launch = launch
     caches = NativeCacheFeeds(store: bridge.store, folder: folder)
     strips = StripTransport(store: bridge.store, engine: SolaraCoreStripEngine(), trouble: { NSLog("[store] %@", $0) })
@@ -136,13 +137,16 @@ public final class NativeStore: Sendable {
         state: state, memory: launch.memory, env: addressing, config: storeConfig,
         onPersistenceRefusal: { message in DispatchQueue.main.async { showPersistenceRefusal(message) } }, clock: clock)
       ownsWorkspace = activeScope == .everything
-      let writer = launch.database.map { database in
-        PersistenceWriter(
-          store: store, database: database, folder: DataFolder(url: folder), persisted: launch.persisted,
-          scope: safeMode ? .settingsAndDownloads : activeScope,
-          trouble: { message in NSLog("[store] %@", message) })
-      }
-      shared = NativeStore(bridge: StoreBridge(store: store), writer: writer, launch: launch, folder: folder)
+      let host = StoreHost(
+        store: store, ownsWorkspace: ownsWorkspace, folder: folder,
+        restoreTrouble: { NSLog("[store] couldn't restore launch themes: %@", $0) },
+        makeWriter: { store in launch.database.map { database in
+          PersistenceWriter(
+            store: store, database: database, folder: DataFolder(url: folder), persisted: launch.persisted,
+            scope: safeMode ? .settingsAndDownloads : activeScope,
+            trouble: { message in NSLog("[store] %@", message) })
+        } })
+      shared = NativeStore(host: host, launch: launch, folder: folder)
       NativeSettingsHandle.active = true
       NativeStoreHandle.ownsWorkspace = ownsWorkspace
       NativeStoreHandle.ownedWorkspaceAtLaunch = ownsWorkspace
@@ -157,7 +161,7 @@ public final class NativeStore: Sendable {
       }
       NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: nil) { _ in
         guard let store = NativeStore.shared else { return }
-        let result = store.flush(timeout: 0.5)
+        let result = store.host.termination()
         if result != .saved { NSLog("[store] quit flush: %@", result.description) }
       }
       return true
@@ -189,6 +193,10 @@ public final class NativeStore: Sendable {
   }
 
   func flush(timeout: TimeInterval) -> FlushResult { FlushResult.flushing(writer, timeout: timeout) }
+
+  public func flushForQuit(barrierTimeout: TimeInterval = 0.5, writerTimeout: TimeInterval = 0.5) -> FlushResult {
+    host.flushForQuit(barrierTimeout: barrierTimeout, writerTimeout: writerTimeout)
+  }
 
   public func freeze() { writer?.freeze() }
 }

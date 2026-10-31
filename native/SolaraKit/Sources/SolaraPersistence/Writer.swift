@@ -120,7 +120,9 @@ public final class PersistenceWriter: Sendable {
   }
 
   func note(_ commit: Commit) {
-    guard !commit.changes.isEmpty else { return }
+    var persistent = commit.changes
+    persistent.live = TableChange()
+    guard !persistent.isEmpty else { return }
     let (scheduleRows, scheduleShadow) = pending.withLock { p -> (Bool, Bool) in
       p.rows = true
       if commit.durable { p.durable = true }
@@ -258,13 +260,16 @@ public final class PersistenceWriter: Sendable {
   public func flush(timeout: TimeInterval = 0.5) -> FlushResult {
     let done = DispatchSemaphore(value: 0)
     let result = Mutex<FlushResult>(.timedOut)
-    queue.async {
-      let saved = self.writeEverythingDurably()
+    enqueueDurableFlush { saved in
       result.withLock { $0 = saved }
       done.signal()
     }
     guard done.wait(timeout: .now() + timeout) == .success else { return .timedOut }
     return result.withLock { $0 }
+  }
+
+  func enqueueDurableFlush(_ complete: @escaping @Sendable (FlushResult) -> Void) {
+    queue.async { complete(self.writeEverythingDurably()) }
   }
 
   @discardableResult

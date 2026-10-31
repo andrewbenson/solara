@@ -3,10 +3,14 @@ import SolaraModel
 import SolaraStore
 
 public final class StoreBridge: Sendable {
-  public let store: Store
+  public typealias CatchUpEncoder = @Sendable (StoreCatchUp, JSONObject) -> JSONObject
 
-  public init(store: Store) {
+  public let store: Store
+  private let encoder: CatchUpEncoder
+
+  public init(store: Store, encodeCatchUp: @escaping CatchUpEncoder = { StoreBridge.encode($0, into: $1) }) {
     self.store = store
+    encoder = encodeCatchUp
   }
 
   public static func data(_ state: BrowserState) -> JSONValue {
@@ -15,7 +19,8 @@ public final class StoreBridge: Sendable {
 
   public func snapshot() -> JSONValue {
     let (rev, state) = store.snapshot
-    return ["rev": JSONValue(rev), "data": Self.data(state)]
+    let encoded = encoder(.snapshot(rev: rev, state: state), [:])
+    return ["rev": encoded["rev"] ?? JSONValue(rev), "data": encoded["snapshot"] ?? .null]
   }
 
   public func snapshotJSON() -> String { snapshot().text() }
@@ -43,14 +48,19 @@ public final class StoreBridge: Sendable {
   }
 
   public func catchUp(sinceRev: Int, into response: JSONObject = JSONObject()) -> JSONObject {
+    let captured = store.catchUp(sinceRev: sinceRev)
+    return encoder(captured, response)
+  }
+
+  public static func encode(_ captured: StoreCatchUp, into response: JSONObject) -> JSONObject {
     var response = response
-    if let patches = store.patches(since: sinceRev) {
-      response["rev"] = JSONValue(patches.last?.rev ?? max(sinceRev, 0))
+    switch captured {
+    case .patches(let rev, let patches):
+      response["rev"] = JSONValue(rev)
       response["patches"] = .array(patches.map(\.json))
-    } else {
-      let snap = snapshot()
-      response["rev"] = snap["rev"]
-      response["snapshot"] = snap["data"]
+    case .snapshot(let rev, let state):
+      response["rev"] = JSONValue(rev)
+      response["snapshot"] = data(state)
     }
     return response
   }

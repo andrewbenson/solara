@@ -1,5 +1,4 @@
 import ExpoModulesCore
-import Foundation
 internal import SolaraBridgeCore
 internal import SolaraModel
 
@@ -23,15 +22,6 @@ public class StoreModule: Module {
       if NativeStore.safeMode { status["safeMode"] = NativeStore.safeModeAfterFailedLaunches ? "failedLaunches" : "option" }
       return status
     }
-
-    #if DEBUG
-    AsyncFunction("devStripCommandProbe") { () -> String in
-      MainActor.assumeIsolated {
-        guard let data = try? JSONSerialization.data(withJSONObject: SolaraCoreStripEngine.commandProbe) else { return "null" }
-        return String(data: data, encoding: .utf8) ?? "null"
-      }
-    }.runOnQueue(.main)
-    #endif
 
     Function("snapshot") { () -> String? in
       NativeStore.shared?.bridge.snapshotJSON()
@@ -68,7 +58,7 @@ public class StoreModule: Module {
     }
 
     Function("flush") { (timeout: Double) -> String in
-      NativeStore.shared?.flush(timeout: timeout).description ?? "failed: the native store is unavailable"
+      NativeStore.shared?.host.flush(timeout: timeout).description ?? "failed: the native store is unavailable"
     }
 
     OnStartObserving {

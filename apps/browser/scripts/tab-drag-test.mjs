@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { isDeepStrictEqual } from "node:util";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { deflateSync, inflateSync } from "node:zlib";
@@ -50,10 +52,164 @@ const settle = (ms) => new Promise((r) => setTimeout(r, ms));
 const loose = (id) => st().windows[id].tabIds.filter((t) => !st().tabs[t].pinned);
 const tabItems = (id) => items(id).then((xs) => xs.slice(st().windows[id].tabIds.length - loose(id).length));
 `;
-const run = (body) => app.eval(`${HELPERS}\n${body}`);
-const order = (w) => run(`return st().windows.${w}.tabIds;`);
-const tabsOf = (w) => run(`return loose("${w}");`);
-const drag = (w, points) => run(`return act("${w}", "windowDrags").then(() => act("${w}", "drag:${points.map((p) => p.join(",")).join(";")}")).then(() => settle(${points.length * 12 * 16 + 700})).then(() => act("${w}", "windowDrags")).then((t) => Number(t.split("\\n")[0]));`);
+const DRAG_FIELDS = ["focusedWindowId", "windowDragCount", "groups", "splits", "dragPreview", "tabDrag", "fileDropSequence", "haptics"].map((key) => "root." + key).concat(
+  ...["profileId", "tabIds", "activeTabIds", "savedFrame", "screenFrame", "sidebarOpen"].map((key) => "windows." + key),
+  ...["windowId", "pinned", "tileFolderId"].map((key) => "tabs." + key));
+const nativeSnapshot = (args = {}) => app.snapshot({ tabDrag: true, fields: DRAG_FIELDS, ...args });
+const untilSnapshot = async (what, accept, ms = 5000, args = {}) => {
+  const end = Date.now() + ms;
+  let last;
+  while (Date.now() < end) {
+    last = await nativeSnapshot(args);
+    if (last.consistent && accept(last)) return last;
+    await sleep(40);
+  }
+  throw new Error(`${what}: ${JSON.stringify(last)}`);
+};
+const nativeWindow = (s, id) => s.windows.find((w) => w.id === id);
+const normalizeURL = (raw) => {
+  try {
+    const u = new URL(raw);
+    if (!["http:", "https:", "about:", "chrome:", "file:", "solara:", "solara:"].includes(u.protocol)) return u.protocol;
+    if (u.protocol === "file:") {
+      let path;
+      try { path = realpathSync(fileURLToPath(u)); } catch { return null; }
+      const root = realpathSync(data);
+      if (path !== root && !path.startsWith(root + "/")) return null;
+    }
+    u.username = "";
+    u.password = "";
+    return u.href.slice(0, 2048);
+  } catch { return null; }
+};
+const nativeProjection = (s) => ({
+  focused: s.focusedWindowId,
+  windows: s.windows.map((w) => ({ id: w.id, profileId: w.profileId, tabIds: w.tabIds, activeTabIds: w.activeTabIds, frame: w.savedFrame, sidebarOpen: w.sidebarOpen })).sort((a, b) => a.id.localeCompare(b.id)),
+  tabs: s.tabs.map((t) => ({ id: t.id, windowId: t.windowId, pinned: t.pinned, tileFolderId: t.tileFolderId })).sort((a, b) => a.id.localeCompare(b.id)),
+  groups: s.groups,
+  splits: s.splits,
+});
+const mirrorStore = async () => {
+  const state = await app.eval(`${HELPERS}
+    const s = st();
+    return { focused: s.ui.focusedWindowId ?? null,
+      windows: Object.values(s.windows).map((w) => ({ id: w.id, profileId: w.profileId, tabIds: w.tabIds, activeTabIds: w.activeTabIds, frame: w.frame ?? null, sidebarOpen: w.sidebarOpen })).sort((a, b) => a.id.localeCompare(b.id)),
+      tabs: Object.values(s.tabs).map((t) => ({ id: t.id, windowId: t.windowId, pinned: !!t.pinned, tileFolderId: t.tileFolder?.id ?? null, url: t.url })).sort((a, b) => a.id.localeCompare(b.id)),
+      groups: Object.values(s.groups).map((g) => ({ id: g.id, windowId: g.windowId, tabIds: g.tabIds, pinned: !!g.pinned })).sort((a, b) => a.id.localeCompare(b.id)),
+      splits: Object.values(s.splits).map((v) => ({ id: v.id, windowId: v.windowId, tabIds: v.tabIds })).sort((a, b) => a.id.localeCompare(b.id)) };
+  `);
+  const urls = state.tabs.map((t) => ({ id: t.id, url: normalizeURL(t.url) }));
+  state.tabs = state.tabs.map(({ url, ...tab }) => tab);
+  const native = await untilSnapshot("native drag workspace mirrors JS", (s) => isDeepStrictEqual(nativeProjection(s), state));
+  assert.deepEqual(nativeProjection(native), state);
+  const nativeURLs = await untilSnapshot("native drag tab URLs mirror JS", (s) => isDeepStrictEqual(s.tabs.map(({ id, url }) => ({ id, url })).sort((a, b) => a.id.localeCompare(b.id)), urls), 5000, { fields: ["tabs.url"] });
+  assert.deepEqual(nativeURLs.tabs.map(({ id, url }) => ({ id, url })).sort((a, b) => a.id.localeCompare(b.id)), urls);
+  return native;
+};
+const run = async (body) => {
+  const observesPreview = body.includes("devDragPreviewState");
+  const observesWindow = body.includes("windowDrags") && body.includes("const frame =");
+  const observesDrops = body.includes("FD.drag");
+  const initial = observesWindow || observesDrops || observesPreview ? await nativeSnapshot() : null;
+  const snapshots = [];
+  const samples = [];
+  let settled = false, value, error;
+  const evaluation = app.eval(`${HELPERS}\n${body}`).then((result) => { value = result; settled = true; }, (failure) => { error = failure; settled = true; });
+  const end = Date.now() + 60000;
+  while ((observesPreview || observesWindow) && !settled && Date.now() < end) {
+    const sample = await nativeSnapshot();
+    if (sample.consistent) { samples.push(sample.dragPreview); snapshots.push(sample); }
+    await sleep(40);
+  }
+  await evaluation;
+  if (error) throw error;
+  const dropped = observesPreview ? await nativeSnapshot({ fields: ["root.dragPreview"] }) : null;
+  const native = await mirrorStore();
+  snapshots.push(native);
+  if (observesWindow) {
+    const matchFrame = (sample, text) => {
+      const frame = text.match(/[-\d.]+/g).map(Number);
+      return sample.windows.some((w) => w.screenFrame?.every((v, i) => Math.abs(v - frame[i]) <= 0.5));
+    };
+    for (const key of ["before", "zoomed", "back", "after"]) if (typeof value?.[key] === "string") {
+      assert.ok(snapshots.some((sample) => matchFrame(sample, value[key])), `native ${key} physical window frame`);
+    }
+    if (typeof value?.drags === "number") assert.ok(snapshots.some((sample) => sample.windowDragCount - initial.windowDragCount === value.drags && matchFrame(sample, value.before)), "native titlebar/sidebar window drag count beside JS");
+  }
+  if (observesDrops) {
+    const sequence = initial.fileDropSequence;
+    const drops = await nativeSnapshot({ fileDropAfter: sequence, fields: ["root.fileDropResults"] });
+    const records = drops.fileDropResults.map((record) => record.result);
+    if (Array.isArray(value?.log)) assert.deepEqual(records.slice(0, value.log.length), value.log, "native file-drop result log beside JS");
+    if (typeof value?.r === "string") assert.ok(records.includes(value.r), `native file-drop result ${value.r}`);
+  }
+  if (observesPreview) {
+    samples.push(native.dragPreview);
+    const observed = [];
+    const collect = (item) => {
+      if (!item || typeof item !== "object") return;
+      if (typeof item.shape === "string") observed.push(item);
+      else for (const child of Object.values(item)) collect(child);
+    };
+    collect(value);
+    if (Array.isArray(value) && Array.isArray(value.at(-1)?.shapes)) {
+      const before = await app.eval(`return globalThis.expo.modules.SolaraShell.devDragPreviewState();`);
+      const current = await nativeSnapshot({ fields: ["root.dragPreview"] });
+      const after = await app.eval(`return globalThis.expo.modules.SolaraShell.devDragPreviewState();`);
+      assert.ok(current.consistent, "native preview comparison snapshot is consistent");
+      assert.ok(current.dragPreview.visible === before.visible || current.dragPreview.visible === after.visible,
+        `native final preview visibility beside bracketed JS: ${JSON.stringify({ before: before.visible, native: current.dragPreview.visible, after: after.visible, watchFinal: value.at(-1).visible })}`);
+      assert.deepEqual(native.dragPreview.shapes.slice(0, value.at(-1).shapes.length), value.at(-1).shapes, "native ordered preview shape history beside JS");
+    }
+    for (const item of observed) {
+      assert.ok(native.dragPreview.shapes.includes(item.shape) || item.shape === "hidden", `native preview shape ${item.shape}`);
+      if (item.shape === "card" && item.frame?.[2] === 209 && item.frame[3] === 110) {
+        assert.ok(samples.some((p) => p.shape === "card" && Math.abs(p.frame[2] - item.frame[2]) <= 0.5 && Math.abs(p.frame[3] - item.frame[3]) <= 0.5), "native card dimensions beside JS");
+        if (!Array.isArray(value)) assert.ok(samples.some((p) => p.shape === "card" && Math.abs(p.frame[2] - item.frame[2]) <= 0.5 && Math.abs(p.frame[3] - item.frame[3]) <= 0.5 && p.page === item.page && p.placeholder === item.placeholder), "native card page and placeholder beside JS");
+      }
+    }
+    if (observed.length) {
+      const source = initial.windows.find((w) => w.id === "w1")?.savedFrame;
+      if (source && observed.some((p) => p.shape === "card" && p.frame?.[1] + p.frame?.[3] / 2 > source[1] + source[3])) {
+        assert.ok(samples.some((p) => p.shape === "card" && p.frame?.[1] + p.frame?.[3] / 2 > source[1] + source[3]), "native card centre leaves the source window beside JS");
+      }
+      if (source && observed.some((p) => p.visible && p.frame?.[2] === source[2] && p.frame?.[3] === source[3])) {
+        const start = snapshots.find((s) => s.consistent && s.dragPreview.sequence > initial.dragPreview.sequence && s.tabDrag.sourceWindow === "w1" && s.tabDrag.tabIds.length > 0);
+        assert.ok(start, "native active drag session sequence observed after begin");
+        assert.ok(dropped.consistent, "native growth completion snapshot is consistent");
+        const growth = dropped.dragPreview.growth;
+        assert.ok(growth, "native preview records growth completion");
+        assert.equal(dropped.dragPreview.sequence, start.dragPreview.sequence, "native post-drop session matches the observed drag");
+        assert.equal(growth.sequence, start.dragPreview.sequence, "native growth completion belongs to this drag");
+        assert.equal(growth.visible, true, "native preview is visible at growth completion");
+        for (const [size, target, expected] of [[growth.width, growth.targetWidth, source[2]], [growth.height, growth.targetHeight, source[3]]]) {
+          assert.ok(Number.isFinite(size) && Number.isFinite(target) && Math.abs(size - target) <= 0.5 && Math.abs(target - expected) <= 0.5, "native preview grows to the new window dimensions beside JS");
+        }
+      }
+      assert.ok(samples.every((p) => !p.key && !p.activeApp && (p.shape === "hidden" || p.ignoresMouse)), "native drag picture never takes focus or mouse input");
+    }
+  }
+  return value;
+};
+const order = async (w) => {
+  const ids = await run(`return st().windows.${w}.tabIds;`);
+  const native = await untilSnapshot("native tab order", (s) => isDeepStrictEqual(nativeWindow(s, w)?.tabIds, ids));
+  assert.deepEqual(nativeWindow(native, w).tabIds, ids);
+  return ids;
+};
+const tabsOf = async (w) => {
+  const ids = await run(`return loose("${w}");`);
+  const native = await untilSnapshot("native loose tab order", (s) => isDeepStrictEqual(nativeWindow(s, w)?.tabIds.filter((id) => !s.tabs.find((t) => t.id === id)?.pinned), ids));
+  assert.deepEqual(nativeWindow(native, w).tabIds.filter((id) => !native.tabs.find((t) => t.id === id).pinned), ids);
+  return ids;
+};
+const drag = async (w, points) => {
+  const before = await nativeSnapshot();
+  const count = await run(`return act("${w}", "windowDrags").then(() => act("${w}", "drag:${points.map((p) => p.join(",")).join(";")}")).then(() => settle(${points.length * 12 * 16 + 700})).then(() => act("${w}", "windowDrags")).then((t) => Number(t.split("\\n")[0]));`);
+  const after = await nativeSnapshot();
+  assert.equal(after.windowDragCount - before.windowDragCount, count, "native window drag count beside JS");
+  return count;
+};
 
 function readPng(path) {
   const buf = readFileSync(path);
@@ -103,6 +259,8 @@ const check = (name, fn) => rep.check(name, fn);
 try {
   app = await launch(appPath, { data, port, session: fixture() });
   rep.log(`instance: pid ${app.pid}, DevTools port ${app.port}, data ${data}`);
+  const initialNative = await untilSnapshot("native drag workspace", (s) => s.windows.length === 5);
+  for (const field of ["windows.sidebarDrag", "windows.savedFrame", "windows.screenFrame", "tabs.tileFolderId", "groups", "splits", "dragPreview", "tabDrag", "fileDragURLs", "fileDropResults", "windows.dragPoints", "haptics"]) assert.ok(initialNative.capabilities.available.includes(field), field);
   await sleep(1500);
   if (!(await run(`return !!globalThis.acTabDrag;`))) throw new Error("tab-drag-test runs on Debug builds only: acTabDrag and the ac.shell hooks are __DEV__-only");
   await run(`return act("w1", "windowDrags");`);
@@ -186,14 +344,28 @@ try {
     const end = a[1] + (x1 - x0);
     const icon = [end - 24, 12, end - 6, 30];
     const shots = [join(data, "z-alone.png"), join(data, "z-over.png")];
-    await run(`return ac.shell.devSnapshotWindow("w1", ${JSON.stringify(shots[0])}).then(() => {
-      act("w1", "drag:${x0},21;${x0 + 10},21;${x1},21;${x1},21;${x1},21;${x1},21");
-      return settle(150 + 12 * 16 * 2 + 200).then(() => ac.shell.devSnapshotWindow("w1", ${JSON.stringify(shots[1])}));
-    }).then(() => settle(1500));`);
+    await run(`return ac.shell.devSnapshotWindow("w1", ${JSON.stringify(shots[0])});`);
+    const nativeAlone = await app.probe("view.capture", { windowId: "w1" });
+    const jsOver = app.eval(`${HELPERS}\nreturn act("w1", "drag:${x0},21;${x0 + 10},21;${x1},21;${x1},21;${x1},21;${x1},21")
+      .then(() => settle(150 + 12 * 16 * 2 + 200)).then(() => ac.shell.devSnapshotWindow("w1", ${JSON.stringify(shots[1])}));`);
+    const [nativeOver] = await Promise.all([
+      sleep(150 + 12 * 16 * 2 + 200).then(() => app.probe("view.capture", { windowId: "w1" })).then((capture) => {
+        assert.ok(capture.consistent, "native held capture session is consistent");
+        assert.equal(capture.tabDrag.sourceWindow, "w1", "tab drag is held by w1 at capture time");
+        assert.deepEqual(capture.tabDrag.tabIds, [before[2]], "the dragged tab is held at capture time");
+        return capture;
+      }),
+      jsOver,
+    ]);
+    await sleep(1500);
+    await mirrorStore();
     const windowWidth = await run(`return st().windows.w1.frame[2];`);
     const [alone, over] = shots.map((path) => contrast(readPng(path), windowWidth, icon));
     assert.ok(alone > 12, `the box holds the icon: ${alone}`);
     assert.ok(over < 3, `the neighbour's icon shows through the dragged tab: contrast alone ${alone.toFixed(1)}, held over ${over.toFixed(1)}`);
+    const nativeContrast = [nativeAlone, nativeOver].map((capture) => contrast(readPng(join(data, capture.artifact)), windowWidth, icon));
+    assert.ok(nativeContrast[0] > 12, `native icon contrast ${nativeContrast[0]}`);
+    assert.ok(nativeContrast[1] < 3, `native held icon contrast ${nativeContrast[1]}`);
     rep.log(`the neighbour's icon: contrast ${alone.toFixed(1)} alone, ${over.toFixed(1)} under the dragged tab`);
     assert.deepEqual(await order("w1"), before, "it went back");
   });
@@ -434,13 +606,38 @@ try {
       const ib = st().newTab(wb, { url: page("yb2"), background: true });
       st().newTab(wb, { url: page("yb3"), background: true });
       return settle(2000).then(() => [wa, wb, ia, ib]);`);
-  const nativeProbe = (w) => run(`return globalThis.expo.modules.SolaraSidebarDrag?.startProbe(${JSON.stringify(w)}).then((t) => JSON.parse(t)) ?? null;`);
+  const nativeProbe = async (w) => {
+    const value = await run(`return globalThis.expo.modules.SolaraSidebarDrag?.startProbe(${JSON.stringify(w)}).then((t) => JSON.parse(t)) ?? null;`);
+    const native = await untilSnapshot("native sidebar drag state", (s) => {
+      const current = nativeWindow(s, w)?.sidebarDrag;
+      return value === null ? current === null : current && ["active", "external", "gapKey", "pitch", "escaping", "landed", "folderPanel", "lastDrop"].every((key) => isDeepStrictEqual(current[key], value[key]));
+    }, 5000, { windowId: w, fields: ["windows.sidebarDrag"] });
+    const current = nativeWindow(native, w).sidebarDrag;
+    if (value) {
+      for (const key of ["active", "external", "gapKey", "pitch", "escaping", "landed", "folderPanel", "lastDrop"]) assert.deepEqual(current[key], value[key], key);
+      for (const item of value.items) {
+        const found = current.items.find((i) => i.key === item.key);
+        assert.ok(found, item.key);
+        for (const key of ["tabIds", "kind", "section", "parentGroup", "groupId", "folderId"]) assert.deepEqual(found[key], item[key], `${item.key}.${key}`);
+        for (const key of ["x", "y", "w", "h"]) assert.ok(Math.abs(found[key] - item[key]) <= 0.5, `${item.key}.${key}`);
+      }
+    }
+    return value;
+  };
   const rowIn = (w, id) => nativeSidebar
     ? nativeProbe(w).then((p) => p.items.filter((i) => i.kind === "row").map((i) => ({ id: i.tabIds[0], x: i.x, y: i.y, w: i.w, h: i.h })).find((r) => r.id === id))
     : run(`const c = globalThis.sidebarDrags?.[${JSON.stringify(w)}];
       return Promise.all([...c.items.values()].filter((i) => i.kind === "row" && i.view).map((i) => new Promise((r) => i.view.measureInWindow((x, y, w, h) => r({ id: i.tabIds[0], x, y, w, h })))));`)
       .then((rows) => rows.find((r) => r.id === id));
-  const live = () => run(`const s = st(); return { focused: s.ui.focusedWindowId, windows: Object.keys(s.windows), tabs: Object.fromEntries(Object.entries(s.tabs).map(([id, t]) => [id, t.windowId])), dragging: globalThis.acTabDrag.getState().tabIds.length };`);
+  const live = async () => {
+    const value = await run(`const s = st(); return { focused: s.ui.focusedWindowId, windows: Object.keys(s.windows), tabs: Object.fromEntries(Object.entries(s.tabs).map(([id, t]) => [id, t.windowId])), dragging: globalThis.acTabDrag.getState().tabIds.length };`);
+    const native = await untilSnapshot("native drag ownership and focus", (s) => s.focusedWindowId === value.focused && s.tabDrag.tabIds.length === value.dragging);
+    assert.equal(native.focusedWindowId, value.focused);
+    assert.deepEqual(native.windows.map((w) => w.id).sort(), value.windows.slice().sort());
+    assert.deepEqual(Object.fromEntries(native.tabs.map((t) => [t.id, t.windowId])), value.tabs);
+    assert.equal(native.tabDrag.tabIds.length, value.dragging);
+    return value;
+  };
   const closeAll = () => run(`for (const id of Object.keys(st().windows)) if (id !== "w1") st().closeWindow(id); return settle(900);`);
 
   if (nativeSidebar)
@@ -491,6 +688,8 @@ try {
       assert.equal(after.dragging, 0, "no drag left");
       const preview = await run(`return globalThis.expo.modules.SolaraShell.devDragPreviewState();`);
       assert.equal(preview.visible, false, "no drag picture left");
+      const nativePreview = await untilSnapshot("native drag picture gone", (s) => s.dragPreview.visible === preview.visible);
+      assert.equal(nativePreview.dragPreview.visible, preview.visible);
       if (nativeSidebar) assert.equal((await nativeProbe("w1"))?.escaping, false, "Esc is no longer captured");
     } finally {
       await closeAll();
@@ -714,6 +913,7 @@ try {
 
   await check("sidebar: the empty room under the rows moves the window, and a double-click there still opens a tab", async () => {
     const x = 120, y = (await run(`return st().windows.w1.frame[3];`)) - 140;
+    const nativeHit = await nativeSnapshot({ windowId: "w1", dragPoints: [{ x, y }], fields: ["windows.dragPoints"] });
     const result = await run(`
       return win("w1").then((n) => {
         const frame = () => C.chromeWindows().then((ws) => ws.find((w) => w.window === n).frame);
@@ -726,6 +926,7 @@ try {
           .then((f) => { out.after = f; out.opened = st().windows.w1.tabIds.length - out.tabs; return out; });
       });`);
     assert.match(result.hit, /WindowDragRegion|SidebarDocumentView/, "the empty sidebar is the drag region's");
+    assert.equal(nativeWindow(nativeHit, "w1").dragPoints[0].hit, result.hit, "native empty sidebar hit chain beside JS");
     assert.equal(result.drags, 1, "a press there drags the window");
     assert.equal(result.opened, 1, "a double-click opens a tab");
     assert.equal(result.after, result.before, "and doesn't zoom the window");
@@ -998,6 +1199,8 @@ try {
       const [sx, sy] = spot[Math.floor(spot.length / 2)];
       dragged = await run(`return act("w1", "drag:${sx},${sy};${sx + 8},${sy + 6};${sx + 60},${sy + 160}").then(() => settle(900)).then(() => Promise.all([ac.shell.devFileDrag.lastFileDrag(), globalThis.expo.modules.SolaraDownloads?.devLastFileDrag?.() ?? []])).then(([rn, native]) => [...rn, ...native]);`);
       assert.deepEqual(dragged, [download], "the row starts a file drag");
+      const nativeFiles = await untilSnapshot("native download file drag", (s) => isDeepStrictEqual(s.fileDragURLs, dragged.map((path) => normalizeURL(fileUrl(path)))), 5000, { fields: ["root.fileDragURLs"] });
+      assert.deepEqual(nativeFiles.fileDragURLs, dragged.map((path) => normalizeURL(fileUrl(path))));
     } finally {
       await run(`st().setDownloadsOpen("w1", false); return settle(600);`);
     }
@@ -1038,10 +1241,15 @@ try {
       return settle(2500).then(() => { const before = st().windows[id].tabIds.length;
         return FD.drag(id, "move", 330, 20, { files: [${JSON.stringify(pdf)}] }).then(() => settle(400)).then(() => FD.drag(id, "drop", 330, 20))
           .then((r) => settle(900).then(() => { const w = st().windows[id]; const added = w.tabIds.slice(before);
-            const out = { r, added: w.tabIds.filter((t) => st().tabs[t].url === ${JSON.stringify(fileUrl(pdf))}).length, total: w.tabIds.length - before, profile: w.profileId };
-            st().closeWindow(id); return settle(600).then(() => out); })); });`);
+            const out = { r, windowId: id, added: w.tabIds.filter((t) => st().tabs[t].url === ${JSON.stringify(fileUrl(pdf))}).length, total: w.tabIds.length - before, profile: w.profileId };
+            return out; })); });`);
     assert.match(out.r, /FileDropView performed/, JSON.stringify(out));
     assert.equal(out.added, 1, JSON.stringify(out));
+    await run(`st().closeWindow(${JSON.stringify(out.windowId)}); return settle(600);`);
+  });
+  await check("hidden tab drags never perform a haptic", async () => {
+    const native = await app.snapshot({ fields: ["root.haptics"] });
+    assert.equal(native.haptics.performed, 0);
   });
 } finally {
   await app?.quit();

@@ -285,3 +285,29 @@ private final class EndReply {
     return !taken
   }
 }
+
+#if SOLARA_PROBES
+extension NativeTabDrag {
+  fileprivate var probeSnapshot: [String: Any] {
+    let session = TabDragSession.current
+    var target: Any = NSNull()
+    if let aim = session?.aim {
+      switch aim {
+      case .split(let tabId, let side): target = ["tabId": tabId, "side": side.rawValue]
+      case .insert(let beforeId): target = ["beforeId": beforeId as Any? ?? NSNull()]
+      case .page: target = ["kind": "page"]
+      case .newWindow: target = ["kind": "newWindow"]
+      }
+    }
+    return ["tabIds": session?.tabIds ?? [], "sourceWindow": session?.sourceWindow as Any? ?? NSNull(),
+      "x": pointer.x, "y": pointer.y, "outside": outside, "overWindow": overWindow as Any? ?? NSNull(),
+      "lifted": lifted as Any? ?? NSNull(), "onPage": onPage, "insert": insert, "target": target,
+      "lastDrop": lastDrop]
+  }
+}
+
+@MainActor
+public enum TabDragRead {
+  public static var snapshot: [String: Any] { NativeTabDrag.shared.probeSnapshot }
+}
+#endif

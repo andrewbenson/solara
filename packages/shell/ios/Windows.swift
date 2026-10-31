@@ -1401,8 +1401,17 @@ final class DragPreview {
   private var animation: Timer?
   private var desired = NSRect.zero
 
+  #if SOLARA_PROBES
+  fileprivate var probeSequence = 0
+  fileprivate var probeGrowth: [String: Any]?
+  #endif
+
   func begin(windowId: String, chip: NSRect, grab: NSPoint) {
     cancel()
+    #if SOLARA_PROBES
+    probeSequence += 1
+    probeGrowth = nil
+    #endif
     shapes = []
     guard let window = WindowManager.shared.windows[windowId] else { return }
     source = window
@@ -1519,6 +1528,13 @@ final class DragPreview {
       }
       if background { panel.order(.above, relativeTo: window.windowNumber) }
       animate(panel, to: window.frame, alpha: 1, duration: Self.grow) {
+        #if SOLARA_PROBES
+        if self.generation == gen, self.probeGrowth == nil {
+          self.probeGrowth = ["sequence": self.probeSequence, "visible": panel.isVisible,
+            "width": panel.frame.width, "height": panel.frame.height,
+            "targetWidth": window.frame.width, "targetHeight": window.frame.height]
+        }
+        #endif
         WindowManager.shared.whenRevealed(windowId, fade)
       }
     }
@@ -1717,3 +1733,16 @@ final class DragPreview {
     return ctx.makeImage()
   }
 }
+
+#if SOLARA_PROBES
+@MainActor
+public enum DragPreviewRead {
+  public static var snapshot: [String: Any] {
+    let preview = DragPreview.shared
+    var result = preview.debugState
+    result["sequence"] = preview.probeSequence
+    result["growth"] = preview.probeGrowth as Any? ?? NSNull()
+    return result
+  }
+}
+#endif

@@ -187,3 +187,10 @@ extension DownloadsHoverShifts {
   }
 }
 #endif
+
+#if SOLARA_PROBES
+@MainActor
+public enum DownloadDragRead {
+  public static var urls: [String] { DownloadsDrags.lastPaths.prefix(16).map { URL(fileURLWithPath: $0).absoluteString } }
+}
+#endif

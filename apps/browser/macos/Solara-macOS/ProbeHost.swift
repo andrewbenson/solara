@@ -110,13 +110,19 @@ final class ProbeHost {
           let artifact = ".solara-probe-window-\(UUID().uuidString.lowercased()).png"
           try files.checkArtifactBudget()
           try checkAction(request, window: window)
+          let dragBefore = Self.tabDrag(TabDragRead.snapshot)
+          let sequenceBefore = DragPreviewRead.snapshot["sequence"] as? Int
           guard let png = WindowCaptureRead.png(windowId: windowId) else { throw ProbeFailure.notReady }
+          let dragAfter = Self.tabDrag(TabDragRead.snapshot)
+          let consistent = NSDictionary(dictionary: dragBefore).isEqual(to: dragAfter)
+            && sequenceBefore == DragPreviewRead.snapshot["sequence"] as? Int
           try files.writeArtifact(name: artifact, data: png, beforePublication: {
             try self.checkAction(request, window: window)
           })
           let scale = window.backingScaleFactor
           response = ["id": id, "protocol": 1, "result": ["artifact": artifact,
-            "width": Int(content.bounds.width * scale), "height": Int(content.bounds.height * scale), "scale": scale]]
+            "width": Int(content.bounds.width * scale), "height": Int(content.bounds.height * scale), "scale": scale,
+            "tabDrag": dragBefore, "consistent": consistent]]
         case "input.hover":
           guard Set(request.args.keys) == ["windowId", "area", "target", "on"],
             let windowId = request.args["windowId"] as? String, !windowId.isEmpty, windowId.utf8.count <= 128,
@@ -269,8 +275,16 @@ final class ProbeHost {
 
   private func validateSnapshot(_ request: ProbeRequest) throws -> (origin: String, username: String)? {
     try checkSnapshot(request)
-    guard Set(request.args.keys).isSubset(of: ["windowId", "dropTargets", "viewFrames", "hitPoint", "reactBlockerStep", "savedLogin", "hoverPresentation", "hoverArea", "textFields", "shortcuts", "shortcutTable", "shortcutTrace", "fields"]),
+    guard Set(request.args.keys).isSubset(of: ["windowId", "dropTargets", "viewFrames", "hitPoint", "reactBlockerStep", "savedLogin", "hoverPresentation", "hoverArea", "textFields", "shortcuts", "shortcutTable", "shortcutTrace", "fields", "dragPoints", "tabDrag", "fileDropAfter"]),
       request.args["windowId"] == nil || request.args["windowId"] is String else { throw ProbeFailure.invalidArgument }
+    if let raw = request.args["dragPoints"] {
+      guard let points = raw as? [[String: Any]], points.count <= 16,
+        request.args["windowId"] is String else { throw ProbeFailure.invalidArgument }
+      for point in points {
+        guard Set(point.keys) == Set(["x", "y"]), let x = Self.number(point["x"]), let y = Self.number(point["y"]),
+          x >= 0, y >= 0, x <= 32768, y <= 32768 else { throw ProbeFailure.invalidArgument }
+      }
+    }
     if let fields = request.args["fields"] {
       guard let fields = fields as? [String], fields.count <= 128,
         fields.allSatisfy({ field in
@@ -289,6 +303,13 @@ final class ProbeHost {
     }
     if let shortcuts = request.args["shortcuts"] {
       guard let shortcuts = shortcuts as? NSNumber, CFGetTypeID(shortcuts) == CFBooleanGetTypeID() else { throw ProbeFailure.invalidArgument }
+    }
+    if let value = request.args["tabDrag"] {
+      guard let flag = value as? NSNumber, CFGetTypeID(flag) == CFBooleanGetTypeID() else { throw ProbeFailure.invalidArgument }
+    }
+    if let value = request.args["fileDropAfter"] {
+      guard let after = Self.number(value), after >= 0, after <= 9007199254740991,
+        after.rounded(.down) == after, request.args["tabDrag"] as? Bool == true else { throw ProbeFailure.invalidArgument }
     }
     if let textFields = request.args["textFields"] {
       guard let textFields = textFields as? NSNumber, CFGetTypeID(textFields) == CFBooleanGetTypeID() else { throw ProbeFailure.invalidArgument }
@@ -335,9 +356,12 @@ final class ProbeHost {
   }
 
   private func snapshot(_ request: ProbeRequest, savedLogin: [String: Any]?) throws -> [String: Any] {
+    let dragPoints = request.args["dragPoints"] as? [[String: Any]] ?? []
     let shortcuts = request.args["shortcuts"] as? Bool ?? false
     let shortcutTitles = request.args["shortcutTable"] as? [String]
     let shortcutTrace = request.args["shortcutTrace"] as? Bool ?? false
+    let tabDrag = request.args["tabDrag"] as? Bool ?? false
+    let fileDropAfter = Self.number(request.args["fileDropAfter"])
     let textFields = request.args["textFields"] as? Bool ?? false
     let dropTargets = request.args["dropTargets"] as? [[String: Any]] ?? []
     let viewFrames = request.args["viewFrames"] as? [String] ?? []
@@ -424,6 +448,13 @@ final class ProbeHost {
         }
         let hitSlot = hitPoint.flatMap { WindowShellRead.hitSlot(windowId: id, x: $0[0], y: $0[1]) }
         let hitView = hitPoint.flatMap { WindowShellRead.hitView(windowId: id, x: $0[0], y: $0[1]) }
+        var dragPointSamples: [[String: Any]] = []
+        if let chromeNumber {
+          for point in dragPoints {
+            let x = point["x"] as! Double, y = point["y"] as! Double
+            dragPointSamples.append(["x": x, "y": y, "hit": Self.dragString(DragPointRead.hit(windowNumber: chromeNumber, x: x, y: y), limit: 4096)])
+          }
+        }
         var shortcutFields: [[String: Any]] = []
         if shortcuts, let chromeNumber {
           for field in WindowAccessibilityRead.shortcutFields(windowNumber: chromeNumber) {
@@ -457,6 +488,9 @@ final class ProbeHost {
           "firstResponder": Self.value(responder),
           "shortcuts": shortcuts || shortcutTrace ? ShortcutRead.snapshot(windowId: id, focusTrace: shortcutTrace) as Any : NSNull(),
           "shortcutTable": shortcutTitles.map { ShortcutRead.table(titles: $0) } ?? [], "shortcutFields": shortcutFields,
+          "sidebarDrag": tabDrag ? Self.value(SidebarDragRead.snapshot(windowId: id).map(Self.sidebarDrag)) : NSNull(), "dragPoints": dragPointSamples,
+          "savedFrame": Self.dragNumbers(model.frame, count: 4),
+          "screenFrame": Self.dragNumbers((chromeWindow ?? window).map { [$0.frame.minX, $0.frame.minY, $0.frame.width, $0.frame.height] }, count: 4),
           "panelOpen": state.windowUi[id]?.panelOpen ?? false, "sidebarOpen": model.sidebarOpen,
           "activeTabIds": Dictionary(uniqueKeysWithValues: model.activeTabIds.map { ($0.key, $0.value) }),
           "textFieldCount": Self.value(textFieldCount),
@@ -484,10 +518,36 @@ final class ProbeHost {
           "url": safeURL(tab.url), "title": String(tab.title.prefix(512)),
           "customTitle": Self.value(tab.customTitle.map { String($0.prefix(512)) }),
           "customIcon": Self.value(tab.customIcon),
-          "pinned": tab.pinned, "pinnedAsRow": tab.pinnedAsRow ?? false, "loading": NSNull(), "live": Self.value(TabPoolRead.live(id)),
+          "pinned": tab.pinned, "tileFolderId": Self.dragString(tab.tileFolder?.id), "pinnedAsRow": tab.pinnedAsRow ?? false, "loading": NSNull(), "live": Self.value(TabPoolRead.live(id)),
           "visible": NSNull(), "zoom": tab.zoom,
           "find": ["open": state.find[id]?.json["open"]?.truthy ?? false,
             "query": String((state.find[id]?.json["query"]?.string ?? "").prefix(512))]]
+      }
+      var groups: [[String: Any]] = []
+      for id in tabDrag ? state.groups.keys.sorted() : [] {
+        guard let group = state.groups[id], allowedIds.contains(group.windowId) else { continue }
+        groups.append(["id": Self.dragString(id), "windowId": Self.dragString(group.windowId),
+          "tabIds": Self.dragStrings(group.tabIds), "pinned": group.pinned])
+        if groups.count == 60 { break }
+      }
+      var splits: [[String: Any]] = []
+      for id in tabDrag ? state.splits.keys.sorted() : [] {
+        guard let split = state.splits[id], allowedIds.contains(split.windowId) else { continue }
+        splits.append(["id": Self.dragString(id), "windowId": Self.dragString(split.windowId),
+          "tabIds": Self.dragStrings(split.tabIds)])
+        if splits.count == 60 { break }
+      }
+      var fileDragURLs: [Any] = []
+      for url in tabDrag ? Array(FileDragRead.urls.prefix(16)) : [] { fileDragURLs.append(safeURL(url)) }
+      for url in tabDrag ? Array(DownloadDragRead.urls.prefix(16)) : [] { fileDragURLs.append(safeURL(url)) }
+      var fileDropResults: [[String: Any]] = []
+      if tabDrag, let fileDropAfter {
+        for row in FileDragRead.results.suffix(32) {
+          guard let sequence = Self.dragSequence(row["sequence"]), sequence > fileDropAfter,
+            let windowId = row["windowId"] as? String, allowedIds.contains(windowId) else { continue }
+          fileDropResults.append(["sequence": sequence, "windowId": String(windowId.prefix(128)),
+            "phase": Self.dragString(row["phase"], limit: 32), "result": Self.dragString(row["result"], limit: 512)])
+        }
       }
       let upscaling = VideoUpscalingRead.snapshot()
       let upscalingTabs: [[String: Any]] = (upscaling["tabs"] as? [[String: Any]] ?? []).map { entry in
@@ -524,15 +584,119 @@ final class ProbeHost {
           "hostedKinds": HostedRead.kinds,
           "windowDragCount": windowDragCount, "onboarding": OnboardingRead.snapshot(), "newTabAvailable": NewTabRead.available, "swipeSimulation": SwipeRead.snapshot, "haptics": haptics,
           "videoUpscaling": videoUpscaling, "savedLogin": Self.value(savedLogin),
+          "groups": groups, "splits": splits, "dragPreview": tabDrag ? Self.dragPreview(DragPreviewRead.snapshot) : [:], "tabDrag": tabDrag ? Self.tabDrag(TabDragRead.snapshot) : [:],
+          "fileDragURLs": fileDragURLs, "fileDropResults": fileDropResults,
+          "fileDropSequence": Self.dragSequence(FileDragRead.results.last?["sequence"]) ?? 0,
           "hoverStats": HoverStatsRead.snapshot(), "hoverStatsLive": HoverStatsRead.current(),
           "windows": windows, "tabs": tabs, "downloads": ["count": state.downloads.count, "finished": state.downloads.filter { $0.state == "finished" }.count], "profiles": NSNull(),
-          "capabilities": ["available": ["windows.frame", "windows.chromeWindowNumber", "windows.accessibilityLayers", "windows.focusedURL", "windows.omnibox", "windows.split", "windows.tour", "windows.folderPanel", "windows.iconPicker", "windows.shell", "windows.sidebarShell", "windows.sidebarChromeMetrics", "windows.sidebarAddressBar", "windows.hoverCard", "windows.reactBlockers", "windows.dropTargets", "windows.viewFrames", "windows.hitSlot", "windows.hitView", "windows.firstResponder", "windows.textFieldCount", "windows.media", "windows.media.labels", "windows.mediaKinds", "windows.paneOverlays", "poolAvailable", "onboarding", "newTabAvailable", "windowDragCount", "swipeSimulation", "haptics", "videoUpscaling", "savedLogin", "tabs.url", "tabs.title", "tabs.customTitle", "tabs.customIcon", "tabs.zoom", "windows.overlays.selection", "windows.overlays.zoom", "windows.overlays.history", "windows.overlays.downloads", "windows.overlays.sadTab", "downloads.count", "downloads.finished", "windows.settings.layout", "windows.settings.search", "windows.toolbarStates", "hostedKinds", "windows.hoverPresentation", "windows.hoverPresentationTrace", "windows.hoverLayout", "tabs.pinned", "tabs.pinnedAsRow", "windows.shellHover", "hoverStats", "hoverStatsLive", "windows.toolbarHosts", "windows.shortcuts", "windows.shortcutTable", "windows.shortcuts.focusTrace", "snapshot.fields", "windows.shortcutFields", "windows.omnibox.value", "windows.panelOpen", "windows.sidebarOpen", "windows.activeTabIds", "tabs.find"],
+          "capabilities": ["available": ["windows.frame", "windows.chromeWindowNumber", "windows.accessibilityLayers", "windows.focusedURL", "windows.omnibox", "windows.split", "windows.tour", "windows.folderPanel", "windows.iconPicker", "windows.shell", "windows.sidebarShell", "windows.sidebarChromeMetrics", "windows.sidebarAddressBar", "windows.hoverCard", "windows.reactBlockers", "windows.dropTargets", "windows.viewFrames", "windows.hitSlot", "windows.hitView", "windows.firstResponder", "windows.textFieldCount", "windows.media", "windows.media.labels", "windows.mediaKinds", "windows.paneOverlays", "poolAvailable", "onboarding", "newTabAvailable", "windowDragCount", "swipeSimulation", "haptics", "videoUpscaling", "savedLogin", "tabs.url", "tabs.title", "tabs.customTitle", "tabs.customIcon", "tabs.zoom", "windows.overlays.selection", "windows.overlays.zoom", "windows.overlays.history", "windows.overlays.downloads", "windows.overlays.sadTab", "downloads.count", "downloads.finished", "windows.settings.layout", "windows.settings.search", "windows.toolbarStates", "hostedKinds", "windows.hoverPresentation", "windows.hoverPresentationTrace", "windows.hoverLayout", "tabs.pinned", "tabs.pinnedAsRow", "windows.shellHover", "hoverStats", "hoverStatsLive", "windows.toolbarHosts", "windows.shortcuts", "windows.shortcutTable", "windows.shortcuts.focusTrace", "snapshot.fields", "windows.shortcutFields", "windows.omnibox.value", "windows.panelOpen", "windows.sidebarOpen", "windows.activeTabIds", "tabs.find", "windows.sidebarDrag", "windows.savedFrame", "windows.screenFrame", "tabs.tileFolderId", "groups", "splits", "dragPreview", "tabDrag", "fileDragURLs", "fileDropResults", "windows.dragPoints", "fileDropSequence"],
             "partial": ["tabs.live"], "unavailable": ["windows.occluded", "windows.selectedTabIds", "windows.spaces", "windows.panes", "windows.focus", "windows.views", "tabs.loading", "tabs.visible", "profiles"]]]
         return ["id": request.id, "protocol": 1, "result": Self.project(result, fields: request.args["fields"] as? [String])]
       }
       initial = final
     }
     throw ProbeFailure.timeout
+  }
+
+  private static func dragString(_ source: Any?, limit: Int = 128) -> Any {
+    guard let source = source as? String else { return NSNull() }
+    return String(source.prefix(limit))
+  }
+
+  private static func dragStrings(_ source: Any?, limit: Int = 60) -> [String] {
+    Array((source as? [String] ?? []).prefix(limit)).map { String($0.prefix(128)) }
+  }
+
+  private static func dragNumber(_ source: Any?) -> Double? {
+    guard let value = number(source), abs(value) <= 9_007_199_254_740_991 else { return nil }
+    return value
+  }
+
+  private static func dragInteger(_ source: Any?) -> Double? {
+    guard let value = dragNumber(source), value.rounded(.towardZero) == value else { return nil }
+    return value
+  }
+
+  private static func dragSequence(_ source: Any?) -> Double? {
+    guard let value = dragInteger(source), value >= 0 else { return nil }
+    return value
+  }
+
+  private static func dragNumbers(_ source: Any?, count: Int) -> Any {
+    guard let source = source as? [Any], source.count == count else { return NSNull() }
+    let values = source.compactMap(dragNumber)
+    return values.count == count ? values : NSNull()
+  }
+
+  private static func dragFields(_ source: [String: Any], strings: [String] = [], numbers: [String] = [], integers: [String] = [], counts: [String] = [], flags: [String] = []) -> [String: Any] {
+    var result: [String: Any] = [:]
+    for key in strings { result[key] = dragString(source[key]) }
+    for key in numbers { result[key] = value(dragNumber(source[key])) }
+    for key in integers { result[key] = value(dragInteger(source[key])) }
+    for key in counts { result[key] = value(dragSequence(source[key])) }
+    for key in flags { result[key] = value(source[key] as? Bool) }
+    return result
+  }
+
+  private static func dragDrop(_ source: Any?) -> [String: Any] {
+    guard let source = source as? [String: Any], !source.isEmpty else { return [:] }
+    var result = dragFields(source, strings: ["over"], flags: ["outside", "zonePage", "jsOnPage", "timedOut", "owned"])
+    result["screen"] = dragNumbers(source["screen"], count: 2)
+    result["source"] = dragNumbers(source["source"], count: 4)
+    result["jsPointer"] = dragNumbers(source["jsPointer"], count: 2)
+    return result
+  }
+
+  private static func tabDrag(_ source: [String: Any]) -> [String: Any] {
+    var result = dragFields(source, strings: ["sourceWindow", "overWindow"], numbers: ["x", "y"], flags: ["outside", "onPage", "insert", "lifted"])
+    result["tabIds"] = dragStrings(source["tabIds"])
+    if let target = source["target"] as? [String: Any] {
+      var clean: [String: Any] = [:]
+      for key in ["tabId", "side", "beforeId", "kind"] where target[key] != nil { clean[key] = dragString(target[key]) }
+      result["target"] = clean
+    } else { result["target"] = NSNull() }
+    result["lastDrop"] = dragDrop(source["lastDrop"])
+    return result
+  }
+
+  private static func dragPreview(_ source: [String: Any]) -> [String: Any] {
+    var result = dragFields(source, strings: ["shape"], numbers: ["alpha"], integers: ["level"], flags: ["visible", "page", "placeholder", "key", "ignoresMouse", "activeApp"])
+    result["frame"] = dragNumbers(source["frame"], count: 4)
+    result["shapes"] = dragStrings(source["shapes"], limit: 128)
+    result["sequence"] = value(dragSequence(source["sequence"]))
+    if let growth = source["growth"] as? [String: Any] {
+      result["growth"] = dragFields(growth, numbers: ["width", "height", "targetWidth", "targetHeight"], counts: ["sequence"], flags: ["visible"])
+    } else { result["growth"] = NSNull() }
+    return result
+  }
+
+  private static func sidebarDrag(_ source: [String: Any]) -> [String: Any] {
+    var result = dragFields(source, strings: ["gapKey"], numbers: ["scrollY", "pitch"], counts: ["external"], flags: ["active", "escaping"])
+    for key in ["viewport", "folderPanel"] {
+      if let frame = source[key] as? [String: Any] { result[key] = dragFields(frame, numbers: ["x", "y", "w", "h"]) }
+      else { result[key] = NSNull() }
+    }
+    if let landed = source["landed"] as? [String: Any] { result["landed"] = dragFields(landed, strings: ["key"], numbers: ["x", "y"]) }
+    else { result["landed"] = NSNull() }
+    let marks = source["marks"] as? [String: Any] ?? [:]
+    var cleanMarks = dragFields(marks, strings: ["dropInto", "onto", "landing", "pinBefore", "folded", "folderTarget"], counts: ["pinCount"], flags: ["pins", "folderAway"])
+    cleanMarks["sources"] = dragStrings(marks["sources"])
+    result["marks"] = cleanMarks
+    var items: [[String: Any]] = []
+    for item in (source["items"] as? [[String: Any]] ?? []).prefix(60) {
+      var clean = dragFields(item, strings: ["key", "kind", "section", "parentGroup", "groupId", "folderId"], numbers: ["x", "y", "w", "h"])
+      clean["tabIds"] = dragStrings(item["tabIds"])
+      items.append(clean)
+    }
+    result["items"] = items
+    let regions = source["regions"] as? [String: Any] ?? [:]
+    var cleanRegions: [String: Any] = [:]
+    for key in regions.keys.sorted().prefix(16) {
+      if let frame = regions[key] as? [String: Any] { cleanRegions[String(key.prefix(128))] = dragFields(frame, numbers: ["x", "y", "w", "h"]) }
+    }
+    result["regions"] = cleanRegions
+    result["lastDrop"] = dragDrop(source["lastDrop"])
+    return result
   }
 
   private static func project(_ source: [String: Any], fields: [String]?) -> [String: Any] {

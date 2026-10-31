@@ -356,7 +356,11 @@ public class FileDropModule: Module {
 
     AsyncFunction("devDrag") { (windowId: String, action: String, x: Double, y: Double, payload: [String: Any]?) -> String in
       #if DEBUG
-      return DevDragSession.act(windowId: windowId, action: action, x: x, y: y, payload: payload ?? [:])
+      let result = DevDragSession.act(windowId: windowId, action: action, x: x, y: y, payload: payload ?? [:])
+      #if SOLARA_PROBES
+      MainActor.assumeIsolated { FileDragProbe.append(windowId: windowId, phase: action, result: result) }
+      #endif
+      return result
       #else
       return "debug builds only"
       #endif
@@ -608,6 +612,29 @@ enum DevDragSession {
     view.concludeDragOperation(info)
     view.draggingEnded(info)
     return "\(name(view)) \(performed ? "performed" : "declined")"
+  }
+}
+#endif
+
+#if SOLARA_PROBES
+@MainActor
+public enum FileDragRead {
+  public static var results: [[String: Any]] { FileDragProbe.results }
+  public static var urls: [String] { FileDropView.lastFileDrag.prefix(16).map(\.absoluteString) }
+}
+#endif
+
+#if SOLARA_PROBES
+@MainActor
+private enum FileDragProbe {
+  static var sequence = 0
+  static var results: [[String: Any]] = []
+
+  static func append(windowId: String, phase: String, result: String) {
+    sequence += 1
+    results.append(["sequence": sequence, "windowId": String(windowId.prefix(128)),
+      "phase": String(phase.prefix(32)), "result": String(result.prefix(512))])
+    if results.count > 128 { results.removeFirst(results.count - 128) }
   }
 }
 #endif

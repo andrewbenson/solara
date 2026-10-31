@@ -202,3 +202,17 @@ final class NativeSidebarDrag: SidebarDragBridge {
     controller.setFolderPanel(frameJSON.flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) })
   }
 }
+
+#if SOLARA_PROBES
+@MainActor
+public enum SidebarDragRead {
+  public static func snapshot(windowId: String) -> [String: Any]? {
+    guard let page = NativeSidebarDrag.page(windowId), let controller = SidebarDragController.existing(page) else { return nil }
+    var result = controller.probe()
+    result["folderPanel"] = controller.foreignFolder
+    result["escaping"] = NativeSidebarDrag.shared.escaping
+    result["lastDrop"] = NativeTabDrag.shared.lastDrop
+    return result
+  }
+}
+#endif

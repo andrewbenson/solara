@@ -593,3 +593,13 @@ public enum WindowDragRead {
   public static var count: Int { WindowDragCounter.snapshot() }
 }
 #endif
+
+#if SOLARA_PROBES
+@MainActor
+public enum DragPointRead {
+  public static func hit(windowNumber: Int, x: Double, y: Double) -> String? {
+    guard let window = NSApp.window(withWindowNumber: windowNumber) else { return nil }
+    return ACChromeWindowHost.devAction("hit:\(x),\(y)", window: window).map { String($0.prefix(4096)) }
+  }
+}
+#endif

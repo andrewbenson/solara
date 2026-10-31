@@ -5,8 +5,7 @@ Solara is a derivative of Ardia (https://github.com/mantrakp04/ardia), licensed 
 Ardia's notice follows unchanged, and its terms hold for Solara the same way: Solara as distributed is GPL-3.0, and
 its own source files, Ardia's and Solara's changes alike, are Apache-2.0. Corresponding Source for Solara's releases:
 every release's notes on GitHub (https://github.com/andrewbenson/solara/releases) link the repository at that
-release's tag and the engine's source tarball: upstream Ardia's release when the build uses upstream's prebuilt engine,
-Solara's own release when Solara built the engine.
+release's tag and the engine's source tarball, from the Solara release that built the engine.
 
 ----
 

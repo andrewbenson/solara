@@ -55,7 +55,7 @@ public enum Effect: Sendable, Hashable {
   case cancelDownload(id: String)
   case endPrivateSession(session: String)
   case pinHandoff(tabId: String)
-  case stripCommand(strip: Int, command: JSONValue)
+  case stripCommand(strip: Int, id: Int, command: JSONValue)
 
   public var json: JSONValue {
     switch self {
@@ -66,7 +66,7 @@ public enum Effect: Sendable, Hashable {
     case .cancelDownload(let id): ["type": "cancelDownload", "id": .string(id)]
     case .endPrivateSession(let session): ["type": "endPrivateSession", "session": .string(session)]
     case .pinHandoff(let tabId): ["type": "pinHandoff", "tabId": .string(tabId)]
-    case .stripCommand(let strip, let command): ["type": "stripCommand", "strip": JSONValue(strip), "command": command]
+    case .stripCommand(let strip, let id, let command): ["type": "stripCommand", "strip": JSONValue(strip), "id": JSONValue(id), "command": command]
     }
   }
 }

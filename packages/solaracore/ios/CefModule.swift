@@ -67,7 +67,10 @@ public class CefModule: Module {
     Function("dropTabReveals") { (key: String) in SolaraCoreWebView.dropTabReveals(key) }
     Function("revealOffered") { (adoptId: String, key: String) in SolaraCoreWebView.revealOffered(adoptId, over: key) }
     AsyncFunction("routeLinkTabs") { (urls: [String]) -> [String: Any] in SolaraCoreWebView.routeLinkTabs(urls) }.runOnQueue(.main)
-    AsyncFunction("tabStripCommand") { (id: Int, command: [String: Any]) in SolaraCoreTabStrip.command(id, command: command) }
+    AsyncFunction("tabStripCommand") { (id: Int, command: [String: Any]) in
+      if SolaraCoreTabStrip.commandsClaimed { return NSLog("[tabs] a script sent a strip command after Swift took over the strip; dropped") }
+      SolaraCoreTabStrip.command(id, command: command)
+    }
       .runOnQueue(.main)
     AsyncFunction("tabStrips") { SolaraCoreTabStrip.allStrips }.runOnQueue(.main)
     AsyncFunction("components") { (promise: Promise) in SolaraCoreServices.components { promise.resolve($0) } }.runOnQueue(.main)

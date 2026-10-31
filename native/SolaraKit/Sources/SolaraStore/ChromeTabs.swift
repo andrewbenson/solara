@@ -143,6 +143,7 @@ public struct ChromeTabsMemory: Sendable, Equatable {
   public var tried = OrderedDict<String, Tried>()
   public var changedAt = OrderedDict<Int, Int>()
   public var madeInFront = OrderedDict<Int, MadeInFront>()
+  public var lastCommand = 0
 
   public struct Tried: Sendable, Equatable {
     public var sig: String
@@ -170,6 +171,7 @@ public struct ChromeTabsMemory: Sendable, Equatable {
     for (k, v) in json?["madeInFront"]?.object ?? [:] {
       if let strip = Int(k) { madeInFront[strip] = MadeInFront(browser: v["browser"]?.int ?? 0, over: v["over"]?.string) }
     }
+    lastCommand = json?["lastCommand"]?.int ?? 0
   }
 
   public var json: JSONValue {
@@ -186,6 +188,7 @@ public struct ChromeTabsMemory: Sendable, Equatable {
     return [
       "strips": .array(mirror.values.map(\.json)), "lastRev": JSONValue(lastRev), "seen": JSONValue(seen.elements), "inflight": .object(inflightJSON),
       "groups": .object(groupsJSON), "tried": .object(triedJSON), "changedAt": .object(changedJSON), "madeInFront": .object(madeJSON),
+      "lastCommand": JSONValue(lastCommand),
     ]
   }
 }
@@ -507,11 +510,16 @@ extension Session {
 
   public func stripSnapshot(_ json: JSONValue) {
     var memo = memory.chromeTabs
+    memo.inflight = OrderedDict()
+    memo.tried = OrderedDict()
+    memo.mirror = OrderedDict()
     for s in json["strips"]?.array ?? [] {
       let strip = StripState(json: s)
       memo.mirror[strip.strip] = strip
       for t in strip.tabs { if let key = t.key, !key.isEmpty { memo.seen.insert(key) } }
     }
+    for strip in memo.changedAt.keys where memo.mirror[strip] == nil { memo.changedAt[strip] = nil }
+    for strip in memo.madeInFront.keys where memo.mirror[strip] == nil { memo.madeInFront[strip] = nil }
     memo.lastRev = json["rev"]?.int ?? memo.lastRev
     memory.chromeTabs = memo
   }
@@ -578,8 +586,9 @@ extension Session {
     if sentAlready(memo, strip, kind, sig) { return }
     memo.tried["\(strip):\(kind)"] = ChromeTabsMemory.Tried(sig: sig, since: memo.changedAt[strip] ?? 0)
     let keys = command["op"] != "activate" ? command["keys"]?.array?.compactMap(\.string) : nil
-    memo.inflight[strip] = Inflight(kind: kind, cmd: nil, keys: keys, makes: makes, successor: successor, moves: moves)
-    emit(.stripCommand(strip: strip, command: .object(command)))
+    memo.lastCommand += 1
+    memo.inflight[strip] = Inflight(kind: kind, cmd: memo.lastCommand, keys: keys, makes: makes, successor: successor, moves: moves)
+    emit(.stripCommand(strip: strip, id: memo.lastCommand, command: .object(command)))
   }
 
   public func projectStrips() {

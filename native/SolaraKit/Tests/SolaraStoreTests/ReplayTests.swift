@@ -124,6 +124,20 @@ func firstDifference(_ a: JSONValue, _ b: JSONValue, path: String = "") -> Strin
   }
 }
 
+func withoutCommandIds(_ chromeTabs: JSONValue) -> JSONValue {
+  guard var o = chromeTabs.object else { return chromeTabs }
+  o["lastCommand"] = nil
+  if var inflight = o["inflight"]?.object {
+    for (strip, record) in inflight {
+      guard var r = record.object else { continue }
+      r["cmd"] = nil
+      inflight[strip] = .object(r)
+    }
+    o["inflight"] = .object(inflight)
+  }
+  return .object(o)
+}
+
 func replayConfig(_ json: JSONValue?) -> StoreConfig {
   var config = StoreConfig()
   config.handOffPinsImmediately = json?["handOffPinsImmediately"]?.bool ?? true
@@ -143,7 +157,7 @@ func replayOnce(_ json: JSONValue) throws -> (JSONValue, JSONValue?, [String]) {
   var problems = web.missed.withLock { $0 }
   if let sent = json["sent"]?.array {
     let emitted = commit.effects.compactMap { effect -> (Int, JSONValue)? in
-      if case .stripCommand(let strip, let command) = effect { return (strip, command) }
+      if case .stripCommand(let strip, _, let command) = effect { return (strip, command) }
       return nil
     }
     if emitted.count != sent.count {
@@ -156,7 +170,7 @@ func replayOnce(_ json: JSONValue) throws -> (JSONValue, JSONValue?, [String]) {
     }
   }
   if let expected = json["memoryAfter"]?["chromeTabs"], !expected.isNull {
-    if let d = firstDifference(store.memory.chromeTabs.json, expected, path: "memory.chromeTabs") { problems.append(d) }
+    if let d = firstDifference(withoutCommandIds(store.memory.chromeTabs.json), withoutCommandIds(expected), path: "memory.chromeTabs") { problems.append(d) }
   }
   return (.object(store.state.stateJSON), commit.result, problems)
 }

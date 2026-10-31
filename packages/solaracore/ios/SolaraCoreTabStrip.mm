@@ -4,11 +4,20 @@
 #import "SolaraCoreWebView.h"
 #import "SolaraCoreEngineBridge.h"
 #import "SolaraCoreServices.h"
+#import "SolaraCoreTabStripObservers.h"
 
 namespace {
 
-void (^gHandler)(NSDictionary *);
 int64_t gRev = 0;
+
+solaracore_tab_strip::Observers &Observers() {
+  static auto *observers = new solaracore_tab_strip::Observers();
+  return *observers;
+}
+
+bool Observed() { return !Observers().Empty(); }
+
+void StartWatching();
 
 NSMapTable<SolaraCoreWindowController *, NSMutableDictionary<NSNumber *, NSString *> *> *KnownStrips() {
   static NSMapTable *known = [NSMapTable weakToStrongObjectsMapTable];
@@ -38,7 +47,7 @@ void Send(NSDictionary *tx) {
     if ([strip[@"closed"] boolValue]) [Sent() removeObjectForKey:strip[@"strip"]];
     else Sent()[strip[@"strip"]] = strip;
   }
-  gHandler(tx);
+  Observers().Deliver(tx);
 }
 
 NSMutableDictionary<NSNumber *, NSDictionary *> *Groups() {
@@ -132,32 +141,26 @@ NSArray<SolaraCoreProfile *> *ProfilesWithTabs(SolaraCoreWindowController *contr
 @implementation SolaraCoreTabStrip
 
 + (void)setHandler:(void (^)(NSDictionary<NSString *, id> *))handler {
-  gHandler = [handler copy];
-  static bool watching = false;
-  if (watching || !ReportsGroups()) return;
-  watching = true;
-  [SolaraCoreEngineBridge observe:@"tabs.strip"
-                      handler:^(NSDictionary *strip) {
-                        NSNumber *window = [strip[@"window"] isKindOfClass:NSNumber.class] ? strip[@"window"] : nil;
-                        if (!window) return;
-                        if ([strip[@"closed"] boolValue]) return (void)[Groups() removeObjectForKey:window];
-                        NSMutableDictionary *byTab = [NSMutableDictionary dictionary];
-                        for (NSDictionary *tab in strip[@"tabs"])
-                          if ([tab isKindOfClass:NSDictionary.class] && tab[@"tab"]) byTab[tab[@"tab"]] = tab[@"group"] ?: NSNull.null;
-                        NSDictionary *before = Groups()[window];
-                        NSDictionary *now = @{
-                          @"groups" : strip[@"groups"] ?: @[],
-                          @"tabs" : byTab,
-                          @"activePickedOnClose" : @([strip[@"activePickedOnClose"] boolValue]),
-                        };
-                        Groups()[window] = now;
-                        if ([before isEqualToDictionary:now] || gCommand) return;
-                        for (SolaraCoreWindowController *c in SolaraCoreWindowController.all)
-                          for (SolaraCoreProfile *p in solaracore_host::LoadedProfiles())
-                            if ([c.coreWindow chromeWindowIdForProfile:p] == window.intValue)
-                              [SolaraCoreTabStrip changedInWindow:c profile:p cause:c.hostChanges > 0 ? @(-1) : NSNull.null];
-                      }];
-  [SolaraCoreServices call:@"ac_tabs_watch" profile:@"" args:nil completion:^(NSDictionary *) {}];
+  Observers().SetHandler(handler);
+  StartWatching();
+}
+
++ (NSInteger)addObserver:(void (^)(NSDictionary<NSString *, id> *))observer {
+  const NSInteger token = Observers().Add(observer);
+  StartWatching();
+  return token;
+}
+
++ (void)removeObserver:(NSInteger)token {
+  Observers().Remove(token);
+}
+
++ (void)claimCommands {
+  Observers().ClaimCommands();
+}
+
++ (BOOL)commandsClaimed {
+  return Observers().CommandsClaimed();
 }
 
 + (void)changedInWindow:(SolaraCoreWindowController *)controller profile:(SolaraCoreProfile *)profile {
@@ -165,7 +168,8 @@ NSArray<SolaraCoreProfile *> *ProfilesWithTabs(SolaraCoreWindowController *contr
 }
 
 + (void)changedInWindow:(SolaraCoreWindowController *)controller profile:(SolaraCoreProfile *)profile cause:(id)cause {
-  if (!gHandler || !controller || !profile || controller.standalone) return;
+  if (!Observed() || !controller || !profile || controller.standalone) return;
+  StartWatching();
   if (gCommand && controller == gCommandWindow && profile == gCommandProfile) return;
   cause = cause ?: (gCommand ?: (controller.hostChanges > 0 ? @(-1) : NSNull.null));
   NSDictionary *strip = Strip(controller, profile);
@@ -176,7 +180,7 @@ NSArray<SolaraCoreProfile *> *ProfilesWithTabs(SolaraCoreWindowController *contr
 + (void)windowClosed:(SolaraCoreWindowController *)controller {
   NSDictionary<NSNumber *, NSString *> *strips = [KnownStrips() objectForKey:controller];
   [KnownStrips() removeObjectForKey:controller];
-  if (!gHandler || !strips.count) return;
+  if (!Observed() || !strips.count) return;
   NSMutableArray *closed = [NSMutableArray array];
   const NSInteger window = controller.coreWindow.window.windowNumber;
   for (NSNumber *strip in strips)
@@ -269,7 +273,7 @@ NSArray<SolaraCoreProfile *> *ProfilesWithTabs(SolaraCoreWindowController *contr
       [SolaraCoreServices call:@"ac_tabs_group" profile:solaracore_host::ProfileName(profile) args:args completion:^(NSDictionary *result) {
         NSMutableDictionary *tx = [@{@"rev" : @(++gRev), @"cmd" : @(commandId), @"strips" : @[ Strip(controller, p) ]} mutableCopy];
         if (result[@"error"]) tx[@"rejected"] = @YES;
-        if (gHandler) Send(tx);
+        if (Observed()) Send(tx);
       }];
       return;
     }
@@ -277,7 +281,48 @@ NSArray<SolaraCoreProfile *> *ProfilesWithTabs(SolaraCoreWindowController *contr
   gCommand = nil;
   NSMutableDictionary *tx = [@{@"rev" : @(++gRev), @"cmd" : @(commandId), @"strips" : found ? @[ Strip(found, profile) ] : @[]} mutableCopy];
   if (rejected) tx[@"rejected"] = @YES;
-  if (gHandler) Send(tx);
+  if (Observed()) Send(tx);
 }
 
 @end
+
+namespace {
+
+enum class Watch { Idle, Pending, On };
+Watch gWatch = Watch::Idle;
+bool gObservingStrips = false;
+
+void StartWatching() {
+  if (gWatch != Watch::Idle || !ReportsGroups()) return;
+  gWatch = Watch::Pending;
+  if (!gObservingStrips) {
+    gObservingStrips = true;
+    [SolaraCoreEngineBridge observe:@"tabs.strip"
+                        handler:^(NSDictionary *strip) {
+                          NSNumber *window = [strip[@"window"] isKindOfClass:NSNumber.class] ? strip[@"window"] : nil;
+                          if (!window) return;
+                          if ([strip[@"closed"] boolValue]) return (void)[Groups() removeObjectForKey:window];
+                          NSMutableDictionary *byTab = [NSMutableDictionary dictionary];
+                          for (NSDictionary *tab in strip[@"tabs"])
+                            if ([tab isKindOfClass:NSDictionary.class] && tab[@"tab"]) byTab[tab[@"tab"]] = tab[@"group"] ?: NSNull.null;
+                          NSDictionary *before = Groups()[window];
+                          NSDictionary *now = @{
+                            @"groups" : strip[@"groups"] ?: @[],
+                            @"tabs" : byTab,
+                            @"activePickedOnClose" : @([strip[@"activePickedOnClose"] boolValue]),
+                          };
+                          Groups()[window] = now;
+                          if ([before isEqualToDictionary:now] || gCommand) return;
+                          for (SolaraCoreWindowController *c in SolaraCoreWindowController.all)
+                            for (SolaraCoreProfile *p in solaracore_host::LoadedProfiles())
+                              if ([c.coreWindow chromeWindowIdForProfile:p] == window.intValue)
+                                [SolaraCoreTabStrip changedInWindow:c profile:p cause:c.hostChanges > 0 ? @(-1) : NSNull.null];
+                        }];
+  }
+  [SolaraCoreServices call:@"ac_tabs_watch"
+                  profile:@""
+                     args:nil
+               completion:^(NSDictionary *result) { gWatch = result[@"error"] ? Watch::Idle : Watch::On; }];
+}
+
+}

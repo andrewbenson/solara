@@ -39,6 +39,7 @@ public final class NativeStore: Sendable {
   let writer: PersistenceWriter?
   let launch: SafeLaunch
   let caches: NativeCacheFeeds
+  let strips: StripTransport
 
   @MainActor
   init(bridge: StoreBridge, writer: PersistenceWriter?, launch: SafeLaunch, folder: URL) {
@@ -46,6 +47,7 @@ public final class NativeStore: Sendable {
     self.writer = writer
     self.launch = launch
     caches = NativeCacheFeeds(store: bridge.store, folder: folder)
+    strips = StripTransport(store: bridge.store, engine: SolaraCoreStripEngine(), trouble: { NSLog("[store] %@", $0) })
   }
 
   public static func productName() -> String {
@@ -150,6 +152,7 @@ public final class NativeStore: Sendable {
           StoreAppearanceWatch.start()
           NativeSettingsHandle.resolve = { NativeStore.settingsModel }
           NativeStoreHandle.resolve = { NativeStore.shared?.bridge.store }
+          if NativeStore.ownsWorkspace { NativeStore.shared?.strips.start() }
         }
       }
       NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: nil) { _ in

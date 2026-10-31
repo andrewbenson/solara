@@ -161,6 +161,7 @@ extension Session {
     next.privateCleanedTabs = JSMap()
     next.privateSiteMutes = JSMap()
     next.downloads = data.downloads ?? []
+    next.live = [:]
     next.peeks = Table()
     next.find = JSMap()
     next.selection = JSMap()
@@ -177,6 +178,11 @@ extension Session {
   }
 
   public func hydrate(_ data: HydrateData) {
-    set(hydrated(data, base: state))
+    let next = hydrated(data, base: state)
+    memory.pages = [:]
+    memory.feedWatermark = memory.feedWatermark.filter { next.tabs[$0.key] != nil }
+    memory.pageProducerFence = memory.pageProducerFence.filter { next.tabs[$0.key] != nil }
+    memory.closingWindowUndos = [:]
+    set(next)
   }
 }

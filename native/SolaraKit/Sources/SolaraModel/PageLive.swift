@@ -1,11 +1,13 @@
-public struct PageLiveFacts: Equatable, Sendable {
+public struct PageLiveFacts: JSONConvertible {
+  public var discarded: Bool
   public var isLoading: Bool
   public var canGoBack: Bool
   public var canGoForward: Bool
   public var playingAudio: Bool
   public var themeColor: String?
 
-  public init(isLoading: Bool = false, canGoBack: Bool = false, canGoForward: Bool = false, playingAudio: Bool = false, themeColor: String? = nil) {
+  public init(isLoading: Bool = false, canGoBack: Bool = false, canGoForward: Bool = false, playingAudio: Bool = false, themeColor: String? = nil, discarded: Bool = false) {
+    self.discarded = discarded
     self.isLoading = isLoading
     self.canGoBack = canGoBack
     self.canGoForward = canGoForward
@@ -48,7 +50,8 @@ public struct PageLive: Equatable, Sendable {
 
   public init(facts: PageLiveFacts? = PageLiveFacts(), discarded: Bool = false) {
     self.facts = facts
-    self.discarded = discarded
+    self.discarded = discarded || facts?.discarded == true
+    self.facts?.discarded = self.discarded
   }
 
   @discardableResult
@@ -93,11 +96,13 @@ public struct PageLive: Equatable, Sendable {
     let patch = PageLivePatch(isLoading: false, canGoBack: false, canGoForward: false, playingAudio: false)
     apply(patch)
     discarded = true
+    facts?.discarded = true
     return patch
   }
 
   public mutating func ready() {
     discarded = false
+    facts?.discarded = false
   }
 
   public mutating func restore(tabURL: String?, page: String, color: String) -> PageLivePatch? {
@@ -134,5 +139,18 @@ public struct PageLive: Equatable, Sendable {
     }
     if !isLoading && !blank && settleAt == nil { settleAt = now + 1500 }
     return held.color
+  }
+}
+
+public extension PageLiveFacts {
+  init(json: JSONObject) throws {
+    self.init(isLoading: json["isLoading"]?.bool ?? false, canGoBack: json["canGoBack"]?.bool ?? false,
+      canGoForward: json["canGoForward"]?.bool ?? false, playingAudio: json["playingAudio"]?.bool ?? false,
+      themeColor: json["themeColor"]?.string, discarded: json["discarded"]?.bool ?? false)
+  }
+
+  var json: JSONObject {
+    ["discarded": .bool(discarded), "isLoading": .bool(isLoading), "canGoBack": .bool(canGoBack), "canGoForward": .bool(canGoForward),
+      "playingAudio": .bool(playingAudio), "themeColor": JSONValue(themeColor)]
   }
 }

@@ -20,7 +20,7 @@ extension BrowserState {
   public static let sliceKeys = [
     "profiles", "profileOrder", "orphanedProfileData", "windows", "windowOrder", "tabs", "groups", "splits", "peeks", "closedTabs", "closedWindows",
     "closedGroups", "deletedGroups", "cleanedTabs", "privateCleanedTabs", "privateSiteMutes", "parkedPins", "pinChoices", "pinSync", "downloads",
-    "settings", "ui", "find", "selection", "selectionAnchors", "windowUi",
+    "settings", "ui", "live", "find", "selection", "selectionAnchors", "windowUi",
   ]
 
   public mutating func applySlice(_ key: String, _ value: JSONValue?) throws {
@@ -31,6 +31,10 @@ extension BrowserState {
     case "windows": windows = try Self.table(value)
     case "windowOrder": windowOrder = value?.array?.compactMap(\.string) ?? []
     case "tabs": tabs = try Self.table(value)
+    case "live":
+      var live: [String: PageLiveFacts] = [:]
+      for (id, value) in value?.object ?? [:] { live[id] = try PageLiveFacts(value: value) }
+      self.live = live
     case "groups": groups = try Self.table(value)
     case "splits": splits = try Self.table(value)
     case "peeks": peeks = try Self.table(value)
@@ -114,6 +118,7 @@ extension BrowserState {
       "privateSiteMutes": .object(privateSiteMutes.mapValues { .object($0.mapValues(JSONValue.bool)) }), "parkedPins": table(parkedPins),
       "pinChoices": .object(pinChoices.map.mapValues { .object($0.mapValues(JSONValue.number)) }), "pinSync": .object(pinSync.map.mapValues { .object($0) }),
       "downloads": .array(downloads.map { .object($0.json) }), "settings": settings.json,
+      "live": .object(JSONObject(live.keys.sorted().map { ($0, live[$0]!.jsonValue) })),
       "find": .object(find.mapValues(\.jsonValue)),
       "selection": .object(selection.mapValues { JSONValue($0.ids) }), "selectionAnchors": .object(selectionAnchors.mapValues { .string($0.tabId) }),
       "windowUi": .object(windowUi.mapValues(\.jsonValue)),

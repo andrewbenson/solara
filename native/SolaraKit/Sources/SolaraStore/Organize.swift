@@ -131,7 +131,7 @@ extension Session {
   func clearedTabIds(_ s: BrowserState, _ windowId: String) -> [String] {
     let ids = unpinnedTabIds(s, windowId)
     let active = s.activeTabId(windowId)
-    var kept = OrderedSet(ids.filter { $0 == active || s.caches.playingAudio.contains($0) })
+    var kept = OrderedSet(ids.filter { $0 == active || s.live[$0]?.playingAudio == true })
     for id in kept.elements { for pane in Splits.splitOf(s, id)?.tabIds ?? [] { kept.insert(pane) } }
     return ids.filter { !kept.contains($0) }
   }
@@ -477,7 +477,7 @@ extension Session {
     let active = s.activeTabId(windowId)
     let grouped = Set(s.groups.values.flatMap(\.tabIds))
     let inSplit = Set(s.splits.values.flatMap(\.tabIds))
-    func keep(_ t: Tab) -> Bool { t.id == active || s.inPinnedContainer(t.id) || s.caches.playingAudio.contains(t.id) }
+    func keep(_ t: Tab) -> Bool { t.id == active || s.inPinnedContainer(t.id) || s.live[t.id]?.playingAudio == true }
     let used = sharedLastUsed(s)
     let duplicateIdleFor = min(inactiveForMs, duplicateIdleForMs)
     var out = Set<String>()

@@ -77,6 +77,8 @@ public final class Session {
   var heard: BrowserState? = nil
   var mirroring = 0
   var itemSerial = 0
+  var liveEffectsAppliedThrough = 0
+  var liveEffectSources: [Int: PageLiveFacts] = [:]
 
   public init(state: BrowserState, memory: StoreMemory, env: WebAddressing, config: StoreConfig, now: Double) {
     self.state = state
@@ -91,6 +93,8 @@ public final class Session {
     self.memory = memory
     self.now = now
     effects = []
+    liveEffectsAppliedThrough = 0
+    liveEffectSources = [:]
     result = nil
   }
 
@@ -122,13 +126,22 @@ public final class Session {
     return memory.lastPinChoice
   }
 
-  public func emit(_ effect: Effect) { effects.append(effect) }
+  public func emit(_ effect: Effect) {
+    if case .swapTabs(let a, _) = effect { liveEffectSources[effects.count] = state.live[a] }
+    effects.append(effect)
+  }
+
+  func emitLiveSwap(a: String, b: String, from source: BrowserState) {
+    liveEffectSources[effects.count] = source.live[a]
+    effects.append(.swapTabs(a: a, b: b))
+  }
 
   public func set(_ next: BrowserState) {
     let prev = state
     var next = next
     next.pruneWindowLocalState(tabsChanged: next.tabs.changed(from: prev.tabs), windowsChanged: next.windows.changed(from: prev.windows))
     state = next
+    settleLive()
     if depth == 0 {
       notify(prev)
     } else {
@@ -163,12 +176,15 @@ public final class Session {
   }
 
   func pageMoved(_ s: BrowserState, _ prev: BrowserState) -> Bool {
-    guard s.tabs.changed(from: prev.tabs) else { return false }
-    for id in s.tabs.changedIds(from: prev.tabs) where s.tabs[id]?.url != prev.tabs[id]?.url { return true }
+    if s.tabs.changed(from: prev.tabs) {
+      for id in s.tabs.changedIds(from: prev.tabs) where s.tabs[id]?.url != prev.tabs[id]?.url { return true }
+    }
+    for id in Set(s.live.keys).union(prev.live.keys) where s.live[id]?.isLoading != prev.live[id]?.isLoading { return true }
     return false
   }
 
   func notify(_ prev: BrowserState) {
+    settleLive()
     for listener in config.listeners { run(listener, prev: prev) }
   }
 }

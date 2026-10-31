@@ -37,7 +37,7 @@ struct PageLiveTests {
     var live = PageLive(facts: PageLiveFacts(isLoading: true, canGoBack: true, canGoForward: true, playingAudio: true, themeColor: "#abc"))
     #expect(live.discard() == PageLivePatch(isLoading: false, canGoBack: false, canGoForward: false, playingAudio: false))
     #expect(live.discarded)
-    #expect(live.facts == PageLiveFacts(themeColor: "#abc"))
+    #expect(live.facts == PageLiveFacts(themeColor: "#abc", discarded: true))
     live.ready()
     #expect(!live.discarded)
     #expect(live.facts == PageLiveFacts(themeColor: "#abc"))

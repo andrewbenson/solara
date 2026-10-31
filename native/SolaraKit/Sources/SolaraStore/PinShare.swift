@@ -96,7 +96,8 @@ extension Session {
       next.groups[g.id] = changed
     }
     next.swapSelection(a, b)
-    emit(.swapTabs(a: a, b: b))
+    next.live[b] = s.live[a]
+    emitLiveSwap(a: a, b: b, from: s)
     return (next, a)
   }
 

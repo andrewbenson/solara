@@ -3,9 +3,36 @@ import SolaraModel
 import SolaraStore
 import Testing
 
+func liveObservationStore(_ ids: [String] = ["tab"]) -> Store {
+  var state = BrowserState(settings: Settings.hydrated(from: nil))
+  var window = BrowserWindow(id: "w", profileId: "default", incognito: false, frame: nil, createdAt: 0)
+  window.tabIds = ids
+  window.activeTabIds["default"] = ids.first
+  state.windows["w"] = window
+  state.windowOrder = ["w"]
+  for id in ids { state.tabs[id] = Tab(id: id, windowId: "w", profileId: "default", url: "https://observed.example/", now: 0) }
+  var config = StoreConfig()
+  config.listeners = []
+  return Store(state: state, config: config, checksInvariants: true, clock: { 1_000 })
+}
+
+func insertObservationTab(_ id: String, into state: inout BrowserState) {
+  state.tabs[id] = Tab(id: id, windowId: "w", profileId: "default", url: "https://observed.example/", now: 0)
+  state.windows["w"]!.tabIds.append(id)
+  state.windows["w"]!.activeTabIds["default"] = id
+}
+
+func removeObservationTab(_ id: String, from state: inout BrowserState) {
+  state.tabs[id] = nil
+  state.windows["w"]!.tabIds.removeAll { $0 == id }
+  if state.windows["w"]!.activeTabIds["default"] == id {
+    state.windows["w"]!.activeTabIds["default"] = state.windows["w"]!.tabIds.first
+  }
+}
+
 @Suite struct LiveObservationTests {
   @Test func baselineAndRegistrationShareTheBarrierWithReentrantDelivery() throws {
-    let store = makeStore()
+    let store = liveObservationStore()
     let changes = SequencerValues<LiveChange>()
     let registrations = SequencerValues<PageLiveFacts?>()
     let tokens = SequencerValues<Int>()
@@ -29,7 +56,7 @@ import Testing
   }
 
   @Test func concurrentRegistrationCapturesAContiguousBaselineAndSubsequentEdges() throws {
-    let store = makeStore()
+    let store = liveObservationStore()
     try store.transact { $0.update { $0.live["tab"] = PageLiveFacts(themeColor: "0") } }
     let entered = DispatchSemaphore(value: 0)
     let release = DispatchSemaphore(value: 0)
@@ -87,14 +114,15 @@ import Testing
   }
 
   @Test func allTabsBaselineDiffsAndUnsubscribe() throws {
-    let store = makeStore()
+    let store = liveObservationStore(["a"])
     try store.transact { $0.update { $0.live["a"] = PageLiveFacts(isLoading: true) } }
     let changes = SequencerValues<LiveChange>()
     let registration = store.observeLive { changes.append($0) }
     #expect(registration.baseline == ["a": PageLiveFacts(isLoading: true)])
     #expect(changes.all.isEmpty)
     try store.transact { session in session.update {
-      $0.live["a"] = nil
+      removeObservationTab("a", from: &$0)
+      insertObservationTab("b", into: &$0)
       $0.live["b"] = PageLiveFacts(playingAudio: true)
     } }
     #expect(changes.all.map(\.tabId) == ["a", "b"])
@@ -104,7 +132,7 @@ import Testing
     #expect(changes.all[1].previous == nil)
     #expect(changes.all[1].current == PageLiveFacts(playingAudio: true))
     store.unsubscribe(registration.token)
-    try store.transact { $0.update { $0.live["b"] = nil } }
+    try store.transact { $0.update { removeObservationTab("b", from: &$0) } }
     #expect(changes.all.count == 2)
   }
 
@@ -118,7 +146,7 @@ import Testing
       changes.append($0)
       threads.append(Thread.current.threadDictionary["liveObservationCommit"] as? Bool == true)
     }
-    #expect(registration.baseline == nil)
+    #expect(registration.baseline == PageLiveFacts())
     Thread.current.threadDictionary["liveObservationCommit"] = true
     defer { Thread.current.threadDictionary.removeObject(forKey: "liveObservationCommit") }
     let commit = try store.transact { session in session.update {
@@ -135,13 +163,19 @@ import Testing
   }
 
   @Test func aTabIdCanDisappearAndReturnWithoutLosingTheNewValue() throws {
-    let store = makeStore()
+    let store = liveObservationStore([])
     let changes = SequencerValues<LiveChange>()
     let registration = store.observeLive(tabId: "reused") { changes.append($0) }
     #expect(registration.baseline == nil)
-    try store.transact { $0.update { $0.live["reused"] = PageLiveFacts(isLoading: true) } }
-    try store.transact { $0.update { $0.live["reused"] = nil } }
-    try store.transact { $0.update { $0.live["reused"] = PageLiveFacts(playingAudio: true) } }
+    try store.transact { $0.update {
+      insertObservationTab("reused", into: &$0)
+      $0.live["reused"] = PageLiveFacts(isLoading: true)
+    } }
+    try store.transact { $0.update { removeObservationTab("reused", from: &$0) } }
+    try store.transact { $0.update {
+      insertObservationTab("reused", into: &$0)
+      $0.live["reused"] = PageLiveFacts(playingAudio: true)
+    } }
     #expect(changes.all.map(\.rev) == [1, 2, 3])
     #expect(changes.all[1].current == nil)
     #expect(changes.all[2].previous == nil)

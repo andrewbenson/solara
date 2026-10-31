@@ -457,6 +457,10 @@ extension Session {
   }
 
   public func updateTab(_ id: String, _ patch: TabUpdate) {
+    updateTab(id, patch, live: nil)
+  }
+
+  func updateTab(_ id: String, _ patch: TabUpdate, live: PageLiveFacts?) {
     let s = state
     guard let tab = s.tabs[id] else { return }
     let url = patch.value("url")?.string
@@ -475,9 +479,10 @@ extension Session {
     if supersedes { json.removeValue(forKey: "wakeAdoptId") }
     guard var next = try? Tab(json: json) else { return }
     next.id = tab.id
-    if next == tab { return }
+    if next == tab && (live == nil || live == s.live[id]) { return }
     var state = s
-    state.tabs[id] = next
+    if next != tab { state.tabs[id] = next }
+    if let live { state.live[id] = live }
     set(state)
   }
 

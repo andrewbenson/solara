@@ -29,10 +29,15 @@ import Testing
       }
     }
     #expect(prototype.changed == control.changed)
-    #expect(prototype.changed > Store.ringSize)
-    #expect(prototype.store.patches(since: prototype.startRev) == nil)
-    #expect(prototype.store.patches(since: prototype.store.rev - Store.ringSize)?.count == Store.ringSize)
-    #expect(prototype.liveRing.count == Store.ringSize)
+    #expect(prototype.changed > 0)
+    let retained = min(prototype.changed, Store.ringSize)
+    #expect(prototype.store.patches(since: prototype.store.rev - retained)?.count == retained)
+    if prototype.changed > Store.ringSize {
+      #expect(prototype.store.patches(since: prototype.startRev) == nil)
+    } else {
+      #expect(prototype.store.patches(since: prototype.startRev)?.count == prototype.changed)
+    }
+    #expect(prototype.liveRing.count == min(prototype.store.rev, Store.ringSize))
     #expect(prototype.store.rev - prototype.startRev == prototype.changed)
     #expect(prototype.live.count == 200)
     prototype.printResults(label: "table-plus-dispatch")
@@ -41,7 +46,7 @@ import Testing
     for reportsPerSecond in [200, 1_000, 5_000] {
       let patchesPerReport = Double(prototype.changed) / Double(reports.count)
       let seconds = Double(Store.ringSize) / (Double(reportsPerSecond) * patchesPerReport)
-      print("PAGE_LIVE_COST paced_reports_per_second=\(reportsPerSecond) ring_1024_seconds=\(seconds)")
+      print("PAGE_LIVE_COST paced_reports_per_second=\(reportsPerSecond) ring_\(Store.ringSize)_seconds=\(seconds)")
     }
   }
 }
@@ -172,9 +177,9 @@ private final class PageLiveCostRunner {
 
   func printResults(label: String) {
     let turnovers = turnoverSamples.sorted()
-    let p50Turnover = turnovers[turnovers.count / 2]
-    let p99Turnover = turnovers[min(turnovers.count - 1, turnovers.count * 99 / 100)]
+    let p50Turnover = turnovers.isEmpty ? "unmeasured" : String(turnovers[turnovers.count / 2])
+    let p99Turnover = turnovers.isEmpty ? "unmeasured" : String(turnovers[min(turnovers.count - 1, turnovers.count * 99 / 100)])
     let changedSorted = changedSamples.sorted()
-    print("PAGE_LIVE_COST label=\(label) tabs=\(live.count) reports=\(samples.count) changed=\(changed) p50_ms=\(percentile(0.50)) p99_ms=\(percentile(0.99)) changed_p50_ms=\(changedSorted[changedSorted.count / 2]) changed_p99_ms=\(changedSorted[changedSorted.count * 99 / 100]) service_ms=\(accumulatedMilliseconds) service_reports_per_second=\(Double(samples.count) * 1_000 / accumulatedMilliseconds) service_patches_per_second=\(Double(changed) * 1_000 / accumulatedMilliseconds) ring_1024_p50_ms=\(p50Turnover) ring_1024_p99_ms=\(p99Turnover) ring_windows=\(turnovers.count)")
+    print("PAGE_LIVE_COST label=\(label) tabs=\(live.count) reports=\(samples.count) changed=\(changed) p50_ms=\(percentile(0.50)) p99_ms=\(percentile(0.99)) changed_p50_ms=\(changedSorted[changedSorted.count / 2]) changed_p99_ms=\(changedSorted[changedSorted.count * 99 / 100]) service_ms=\(accumulatedMilliseconds) service_reports_per_second=\(Double(samples.count) * 1_000 / accumulatedMilliseconds) service_patches_per_second=\(Double(changed) * 1_000 / accumulatedMilliseconds) ring_\(Store.ringSize)_p50_ms=\(p50Turnover) ring_\(Store.ringSize)_p99_ms=\(p99Turnover) ring_windows=\(turnovers.count)")
   }
 }

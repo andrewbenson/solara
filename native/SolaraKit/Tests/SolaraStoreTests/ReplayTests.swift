@@ -148,8 +148,12 @@ func replayConfig(_ json: JSONValue?) -> StoreConfig {
 func replayOnce(_ json: JSONValue) throws -> (JSONValue, JSONValue?, [String]) {
   let web = RecordedWeb(json["web"])
   let now = json["now"]?.number ?? 0
+  var replayState = try BrowserState(stateJSON: json["before"]?.object ?? [:])
+  for id in replayState.caches.playingAudio where replayState.tabs[id] != nil {
+    replayState.live[id] = PageLiveFacts(playingAudio: true)
+  }
   let store = Store(
-    state: try BrowserState(stateJSON: json["before"]?.object ?? [:]), memory: StoreMemory(replayJSON: json["memory"]?.object ?? [:]), env: web,
+    state: replayState, memory: StoreMemory(replayJSON: json["memory"]?.object ?? [:]), env: web,
     config: replayConfig(json["config"]), checksInvariants: true, clock: { now })
   let command = json["command"]!
   let commands = command["name"] == "$batch" ? try (command["commands"]?.array ?? []).map(Command.init(json:)) : [try Command(json: command)]
@@ -172,7 +176,9 @@ func replayOnce(_ json: JSONValue) throws -> (JSONValue, JSONValue?, [String]) {
   if let expected = json["memoryAfter"]?["chromeTabs"], !expected.isNull {
     if let d = firstDifference(withoutCommandIds(store.memory.chromeTabs.json), withoutCommandIds(expected), path: "memory.chromeTabs") { problems.append(d) }
   }
-  return (.object(store.state.stateJSON), commit.result, problems)
+  var workspace = store.state.stateJSON
+  if json["after"]?["live"] == nil { workspace.removeValue(forKey: "live") }
+  return (.object(workspace), commit.result, problems)
 }
 
 @Suite struct Phase1bReplay {

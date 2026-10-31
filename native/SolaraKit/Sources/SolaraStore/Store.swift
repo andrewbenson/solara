@@ -21,6 +21,8 @@ public struct Commit: Sendable {
   public let result: JSONValue?
   public let durable: Bool
   public let state: BrowserState
+  let previousPageGenerations: [String: String]
+  let currentPageGenerations: [String: String]
 }
 
 public struct StoreBusy: Error, CustomStringConvertible {
@@ -31,10 +33,14 @@ public struct StorePersistenceRefused: Error, CustomStringConvertible {
   public let description: String
 }
 
+public struct StoreSequenceRequired: Error, Sendable {
+  public init() {}
+}
+
 typealias QueuedSyncApply = @Sendable (Session) throws -> Void
 
 public final class Store: Sendable {
-  public static let ringSize = 1024
+  public static let ringSize = 65_536
 
   struct Core: ~Copyable {
     var state: BrowserState
@@ -72,10 +78,12 @@ public final class Store: Sendable {
   struct Delivery {
     var queue: [DeliveryEvent] = []
     var draining = false
+    var deliveredRev = 0
   }
 
   struct Sequencing {
     var depth = 0
+    var owner: ObjectIdentifier?
     var replaySync = false
     var persistenceRefusals: [String] = []
     var invariantReports: [(found: [String], commands: [Command])] = []
@@ -121,8 +129,11 @@ public final class Store: Sendable {
     self.config = config
     syncOriginsOn = Atomic(config.syncOrigins)
     self.checksInvariants = checksInvariants
-    let memory = memory ?? StoreMemory(ids: IdSource.random(now: clock()))
+    var memory = memory ?? StoreMemory(ids: IdSource.random(now: clock()))
+    var state = state
+    normalizePageState(&state, memory: &memory)
     core = Mutex(Core(state: state, memory: memory, rev: rev))
+    delivery.withLock { $0.deliveredRev = rev }
   }
 
   public static let logInvariants: @Sendable ([String], [Command]) -> Void = { found, commands in
@@ -172,6 +183,22 @@ public final class Store: Sendable {
       }!
     }
     if let command = commands.first, command.name == "syncPinsApply" { _ = try SyncPinsApplyRequest(command.args) }
+    if commands.count > 1 && commands.contains(where: { $0.name == "pageReport" }) {
+      var last: Commit?
+      var effects: [Effect] = []
+      var result: JSONValue?
+      for command in commands {
+        let commit = try dispatchUnsequenced([command], origin: origin, fromSync: fromSync)
+        effects.append(contentsOf: commit.effects)
+        if let value = commit.result { result = value }
+        last = commit
+      }
+      let commit = last!
+      return Commit(rev: commit.rev, origin: commit.origin, fromSync: commit.fromSync, commands: commands,
+        changes: commit.changes, patch: commit.patch, effects: effects, result: result,
+        durable: commands.contains(where: \.isDurable), state: commit.state,
+        previousPageGenerations: commit.previousPageGenerations, currentPageGenerations: commit.currentPageGenerations)
+    }
     return try transactUnsequenced(commands: commands, origin: origin, durable: commands.contains(where: \.isDurable), fromSync: fromSync, waiting: nil, replaying: false) { session in
       if commands.count == 1 {
         try session.apply(commands[0])
@@ -284,7 +311,7 @@ public final class Store: Sendable {
         held.closeTransactions()
         core.held = nil
         let (_, patch) = try settle(
-          from: core.state, rev: core.rev, settled: true, held, origin: heldFromSync ? .sync : .native, fromSync: tags && heldFromSync, tags: tags, commands: [], durable: false)
+          from: core.state, generations: pageGenerations(core.memory), rev: core.rev, settled: true, held, origin: heldFromSync ? .sync : .native, fromSync: tags && heldFromSync, tags: tags, commands: [], durable: false)
         if let patch { core.record(patch, state: held.state) }
         core.memory = held.memory
       }
@@ -299,7 +326,7 @@ public final class Store: Sendable {
         return Commit(
           rev: core.rev, origin: origin, fromSync: fromSync, commands: commands, changes: ChangeSet(), patch: patch, effects: [],
           result: commands.first?.name == "settlePinChoices" ? .bool(true) : nil, durable: false,
-          state: core.state)
+          state: core.state, previousPageGenerations: pageGenerations(core.memory), currentPageGenerations: pageGenerations(core.memory))
       }
       let session: Session
       if let held = core.held {
@@ -311,7 +338,8 @@ public final class Store: Sendable {
       }
       let checkpoint = config.persistenceRefusal == nil ? nil : (
         state: session.state, memory: session.memory, depth: session.depth, heard: session.heard,
-        effects: session.effects, result: session.result, mirroring: session.mirroring, itemSerial: session.itemSerial)
+        effects: session.effects, result: session.result, mirroring: session.mirroring, itemSerial: session.itemSerial,
+        liveEffectsAppliedThrough: session.liveEffectsAppliedThrough, liveEffectSources: session.liveEffectSources)
       if replaying {
         session.memory.fromSyncDepth += 1
         defer { session.memory.fromSyncDepth -= 1 }
@@ -330,6 +358,8 @@ public final class Store: Sendable {
           session.result = checkpoint.result
           session.mirroring = checkpoint.mirroring
           session.itemSerial = checkpoint.itemSerial
+          session.liveEffectsAppliedThrough = checkpoint.liveEffectsAppliedThrough
+          session.liveEffectSources = checkpoint.liveEffectSources
           throw StorePersistenceRefused(description: reason)
         }
       }
@@ -339,7 +369,7 @@ public final class Store: Sendable {
       }
       core.held = session.depth > 0 ? session : nil
       let (commit, patch) = try settle(
-        from: core.state, rev: core.rev, settled: core.held == nil, session, origin: origin, fromSync: fromSync, tags: tags, commands: commands, durable: durable)
+        from: core.state, generations: pageGenerations(core.memory), rev: core.rev, settled: core.held == nil, session, origin: origin, fromSync: fromSync, tags: tags, commands: commands, durable: durable)
       if let patch { core.record(patch, state: session.state) }
       core.memory = session.memory
       return commit
@@ -348,15 +378,16 @@ public final class Store: Sendable {
   }
 
   private func settle(
-    from before: BrowserState, rev current: Int, settled: Bool, _ session: Session, origin: Origin, fromSync: Bool, tags: Bool, commands: [Command], durable: Bool
+    from before: BrowserState, generations: [String: String], rev current: Int, settled: Bool, _ session: Session, origin: Origin, fromSync: Bool, tags: Bool, commands: [Command], durable: Bool
   ) throws -> (Commit, Patch?) {
+    session.settleLive()
     if checksInvariants && settled {
       try Invariants.check(session.state)
       let found = Invariants.violations(session.state)
       if !found.isEmpty { sequencing.withLock { $0.invariantReports.append((found, commands)) } }
     }
     let changes = ChangeSet(from: before, to: session.state)
-    let changed = !changes.isEmpty || before.live != session.state.live
+    let changed = !changes.isEmpty
     let rev = changed ? current + 1 : current
     var patch = Patch(rev: rev, changes: changes, state: session.state)
     patch.fromBridge = tags && origin == .bridge
@@ -365,18 +396,96 @@ public final class Store: Sendable {
     let effects = session.effects.filter { seen.insert($0).inserted }
     let commit = Commit(
       rev: rev, origin: origin, fromSync: fromSync, commands: commands, changes: changes, patch: patch, effects: effects,
-      result: session.result, durable: durable, state: changed ? session.state : before)
+      result: session.result, durable: durable, state: changed ? session.state : before,
+      previousPageGenerations: generations, currentPageGenerations: pageGenerations(session.memory))
     if changed || !effects.isEmpty { delivery.withLock { $0.queue.append(.commit(commit)) } }
     return (commit, changed ? patch : nil)
+  }
+
+  private func pageGenerations(_ memory: StoreMemory) -> [String: String] {
+    memory.pages.compactMapValues(\.generation)
   }
 
   public func patches(since rev: Int) -> [Patch]? {
     sequence { core.withLock { core in
       if rev >= core.rev { return [] }
-      let ordered = Array(core.ring[core.ringStart...] + core.ring[..<core.ringStart])
-      guard let first = ordered.first, first.rev <= rev + 1 else { return nil }
-      return ordered.filter { $0.rev > rev }
+      guard !core.ring.isEmpty else { return nil }
+      let oldest = core.ring[core.ringStart].rev
+      guard rev >= oldest - 1 else { return nil }
+      let count = core.rev - rev
+      guard count <= core.ring.count else { return nil }
+      let offset = core.ring.count - count
+      return (offset..<core.ring.count).map { core.ring[(core.ringStart + $0) % core.ring.count] }
     } }
+  }
+
+  private var ownsSequence: Bool {
+    sequencing.withLock { $0.depth > 0 && $0.owner == ObjectIdentifier(Thread.current) }
+  }
+
+  public func withinSequence<T>(_ body: () throws -> T) throws -> T {
+    let owns = ownsSequence
+    #if DEBUG
+      precondition(owns, "withinSequence requires an outer sequence on the calling thread")
+    #endif
+    guard owns else { throw StoreSequenceRequired() }
+    return try body()
+  }
+
+  public func deliveryCursor() -> (committed: Int, delivered: Int) {
+    let capture = { (self.core.withLock { $0.rev }, self.delivery.withLock { $0.deliveredRev }) }
+    return ownsSequence ? capture() : sequence(capture)
+  }
+
+  public func enqueuePageReport(id: String, report: JSONValue) {
+    enqueueSequenced(Command("pageReport", [.string(id), report]), origin: .engine)
+  }
+
+  public func pageFacts(_ tabId: String) -> PageFacts? {
+    sequence { core.withLock { core in
+      guard let tab = core.state.tabs[tabId], tab.unloaded != true, !truthy(tab.pageIn) else { return nil }
+      return core.memory.pages[tabId]?.facts
+    } }
+  }
+
+  public func livePages() -> [String: PageFacts] {
+    sequence { core.withLock { core in
+      var pages: [String: PageFacts] = [:]
+      for (id, page) in core.memory.pages {
+        guard let tab = core.state.tabs[id], tab.unloaded != true, !truthy(tab.pageIn), let facts = page.facts else { continue }
+        pages[id] = facts
+      }
+      return pages
+    } }
+  }
+
+  public func registerKeepAliveRuntime() -> Int {
+    do {
+      let result = try dispatch(Command("registerKeepAliveRuntime")).result?.number
+      guard let result, result > 0, result <= 9_007_199_254_740_991, result.rounded(.towardZero) == result else {
+        preconditionFailure("keepalive runtime registration returned an invalid epoch")
+      }
+      return Int(result)
+    } catch { preconditionFailure("keepalive runtime epoch exhausted: \(error)") }
+  }
+
+  public func preparePooledIssue(id: String, report: JSONValue) throws -> PreparedPageIssue? {
+    var prepared: PreparedPageIssue?
+    try transact { prepared = try $0.preparePageIssue(id: id, report: report) }
+    return prepared
+  }
+
+  public func consumePooledIssue(id: String, prepared: PreparedPageIssue) -> Bool {
+    var accepted = false
+    do {
+      let consume = {
+        _ = try self.transactUnsequenced(commands: [], origin: .engine, durable: false, fromSync: false,
+          waiting: nil, replaying: false) { accepted = try $0.consumePageIssue(id: id, prepared: prepared) }
+      }
+      if ownsSequence { try withinSequence(consume) }
+      else { try sequence(consume) }
+    } catch { return false }
+    return accepted
   }
 
   public func enqueueSequenced(_ command: Command, origin: Origin = .engine) {
@@ -398,7 +507,10 @@ public final class Store: Sendable {
   }
 
   private func withAcquiredIngress<T>(_ operation: () throws -> T) rethrows -> T {
-    sequencing.withLock { $0.depth += 1 }
+    sequencing.withLock {
+      if $0.depth == 0 { $0.owner = ObjectIdentifier(Thread.current) }
+      $0.depth += 1
+    }
     defer {
       let completion = sequencing.withLock { sequencing in
         sequencing.depth -= 1
@@ -409,6 +521,7 @@ public final class Store: Sendable {
         let invariants = outermost ? sequencing.invariantReports : []
         let delivers = replay || sequencing.failedSequenced
         if outermost {
+          sequencing.owner = nil
           sequencing.replaySync = false
           sequencing.failedSequenced = false
           sequencing.persistenceRefusals.removeAll(keepingCapacity: true)
@@ -476,7 +589,8 @@ public final class Store: Sendable {
           return before
         }
         if before != current {
-          listener(LiveChange(tabId: tabId, rev: commit.rev, previous: before, current: current, url: commit.state.tabs[tabId]?.url, profileId: commit.state.tabs[tabId]?.profileId))
+          listener(LiveChange(tabId: tabId, rev: commit.rev, previous: before, current: current, url: commit.state.tabs[tabId]?.url, profileId: commit.state.tabs[tabId]?.profileId,
+            previousGeneration: commit.previousPageGenerations[tabId], currentGeneration: commit.currentPageGenerations[tabId]))
         }
       }
       return (token, baseline.facts)
@@ -497,7 +611,8 @@ public final class Store: Sendable {
           return before
         }
         for id in Set(before.keys).union(current.keys).sorted() where before[id] != current[id] {
-          listener(LiveChange(tabId: id, rev: commit.rev, previous: before[id], current: current[id], url: commit.state.tabs[id]?.url, profileId: commit.state.tabs[id]?.profileId))
+          listener(LiveChange(tabId: id, rev: commit.rev, previous: before[id], current: current[id], url: commit.state.tabs[id]?.url, profileId: commit.state.tabs[id]?.profileId,
+            previousGeneration: commit.previousPageGenerations[id], currentGeneration: commit.currentPageGenerations[id]))
         }
       }
       return (token, baseline.facts)
@@ -533,6 +648,7 @@ public final class Store: Sendable {
       switch event {
       case .commit(let commit):
         for (_, listener) in listeners.withLock({ $0 }) { listener(commit) }
+        delivery.withLock { $0.deliveredRev = max($0.deliveredRev, commit.rev) }
       case .sequencedFailure(let command, let error, let observers):
         sequencedFailure(command, error)
         for listener in observers { listener(command, error) }

@@ -54,11 +54,11 @@ func liveInfrastructureBytes() throws -> JSONValue {
 }
 
 @Suite struct LiveInfrastructureCompatibilityTests {
-  @Test func headWorkloadBytes() throws {
+  @Test func workspacePersistenceMatches5aBytes() throws {
     let path = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appending(path: "Cases/step5a-head-bytes.json")
     let expected = try JSONValue.parse(Data(contentsOf: path))
     let actual = try liveInfrastructureBytes()
-    for key in ["patches", "state", "session", "rows"] {
+    for key in ["session", "rows"] {
       #expect(actual[key] == expected[key])
     }
   }
@@ -84,10 +84,37 @@ func liveInfrastructureBytes() throws -> JSONValue {
     #expect(try Data(contentsOf: folder.session) == Data(try #require(expected["session"]?.string).utf8))
     let rows = try #require(database.load().workspace)
     #expect(liveInfrastructureRowBytes(rows) == expected["rows"]?.string)
-    #expect(store.state.live.isEmpty)
+    #expect(Set(store.state.live.keys) == Set(store.state.tabs.keys))
+    #expect(store.state.live.values.allSatisfy { $0 == PageLiveFacts() })
   }
 
-  @Test func productionDefaultsNeverPopulateLiveOrNotifyObservers() throws {
+  @Test func wireAddsOnlyAuthoritativeLive() throws {
+    let folder = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appending(path: "Cases")
+    let expected = try JSONValue.parse(Data(contentsOf: folder.appending(path: "step5b-wire-bytes.json")))
+    let baseline = try JSONValue.parse(Data(contentsOf: folder.appending(path: "step5a-head-bytes.json")))
+    let actual = try liveInfrastructureBytes()
+    let patches = try #require(actual["patches"]?.array)
+    let expectedPatches = try #require(expected["patches"]?.array)
+    let baselinePatches = try #require(baseline["patches"]?.array)
+    #expect(patches.count == expectedPatches.count)
+    #expect(patches.count == baselinePatches.count)
+    for index in patches.indices {
+      let patch = try JSONValue.parse(Data(try #require(patches[index].string).utf8))
+      #expect(patch.canonical == expectedPatches[index].canonical)
+      var workspace = try #require(patch.object)
+      workspace.removeValue(forKey: "live")
+      let previous = try JSONValue.parse(Data(try #require(baselinePatches[index].string).utf8))
+      #expect(JSONValue.object(workspace).canonical == previous.canonical)
+    }
+    let state = try JSONValue.parse(Data(try #require(actual["state"]?.string).utf8))
+    #expect(state.canonical == expected["state"]?.canonical)
+    var workspace = try #require(state.object)
+    workspace.removeValue(forKey: "live")
+    let previous = try JSONValue.parse(Data(try #require(baseline["state"]?.string).utf8))
+    #expect(JSONValue.object(workspace).canonical == previous.canonical)
+  }
+
+  @Test func productionDefaultsNormalizeIdleWithoutInventingEngineFacts() throws {
     let store = Store()
     let window = try #require(store.dispatch(Command("createWindow")).result?.string)
     let tab = try #require(store.state.windows[window]?.tabIds.first)
@@ -98,14 +125,22 @@ func liveInfrastructureBytes() throws -> JSONValue {
       store.unsubscribe(one.token)
       store.unsubscribe(all.token)
     }
-    #expect(one.baseline == nil)
-    #expect(all.baseline.isEmpty)
-    let listener = store.subscribe { commit in #expect(commit.state.live.isEmpty) }
+    #expect(one.baseline == PageLiveFacts())
+    #expect(all.baseline == [tab: PageLiveFacts()])
+    let listener = store.subscribe { commit in
+      #expect(Set(commit.state.live.keys) == Set(commit.state.tabs.keys))
+      #expect(commit.state.live.values.allSatisfy { $0 == PageLiveFacts() })
+    }
     defer { store.unsubscribe(listener) }
     try store.dispatch(Command("navigate", [.string(tab), "https://observed.example/"]))
     try store.dispatch(Command("navigated", [.string(tab), ["url": "https://observed.example/", "title": "Observed"]]))
-    _ = try liveInfrastructureWorkload(store)
-    #expect(store.state.live.isEmpty)
     #expect(seen.withLock { $0.isEmpty })
+    _ = try liveInfrastructureWorkload(store)
+    #expect(Set(store.state.live.keys) == Set(store.state.tabs.keys))
+    #expect(store.state.live.values.allSatisfy { $0 == PageLiveFacts() })
+    #expect(seen.withLock { !$0.isEmpty })
+    #expect(seen.withLock { $0.allSatisfy { $0.previous == nil || $0.current == nil } })
+    #expect(seen.withLock { $0.allSatisfy { $0.previous.map { $0 == PageLiveFacts() } ?? true } })
+    #expect(seen.withLock { $0.allSatisfy { $0.current.map { $0 == PageLiveFacts() } ?? true } })
   }
 }

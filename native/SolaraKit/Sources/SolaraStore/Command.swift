@@ -30,7 +30,7 @@ public struct Command: Sendable, Equatable {
   public var isDurable: Bool { Command.durable.contains(name) }
 
   public static let known: Set<String> = [
-    "importWorkspace", "setWindowLayout", "newTab", "closeTab", "closeTabs", "activate", "handOffPin", "activateIndex", "cycle", "navigate", "updateTab", "navigated", "faviconChanged",
+    "pageReport", "registerKeepAliveRuntime", "importWorkspace", "setWindowLayout", "newTab", "closeTab", "closeTabs", "activate", "handOffPin", "activateIndex", "cycle", "navigate", "updateTab", "navigated", "faviconChanged",
     "duplicateTab", "togglePin", "moveTab", "moveTabBy", "createWindow", "closeWindow", "restoreClosingWindow", "forgetClosedWindow", "setWindowFrame", "setWindowFullScreen", "toggleSidebar",
     "switchProfile", "moveTabsToWindow", "moveTabToProfile", "mergeAllWindows", "reopenClosed", "reopenClosedTab", "reopenClosedWindow",
     "restoreClosed", "createProfile", "updateProfile", "deleteProfile", "reorderProfiles", "setDefaultProfile", "profileDataDeleted",
@@ -148,6 +148,8 @@ extension Session {
   public func apply(_ command: Command) throws {
     let a = Args(name: command.name, values: command.args)
     switch command.name {
+    case "pageReport": try pageReport(try a.requireString(0), a[1] ?? .null)
+    case "registerKeepAliveRuntime": result = JSONValue(try registerKeepAliveRuntime())
     case "importWorkspace": result = try importWorkspace(a[0] ?? .null)
     case "setWindowLayout":
       let id = try a.requireString(0)
@@ -318,6 +320,7 @@ extension Session {
     case "syncPinsApply": result = try SyncPinsApplyRequest(command.args).apply(self)
     case "settlePinChoices": try SettledPinChoices(command.args).apply(self)
     case "applyState":
+      guard !a.object(0).contains("live") else { throw CommandError("live facts require pageReport") }
       var next = state
       for (key, value) in a.object(0) where !Session.commandOnlySlices.contains(key) { try next.applySlice(key, value) }
       next.ui.appDark = state.ui.appDark

@@ -25,6 +25,7 @@ public struct ChangeSet: Sendable, Equatable {
   public var profiles = TableChange()
   public var windows = TableChange()
   public var tabs = TableChange()
+  public var live = TableChange()
   public var groups = TableChange()
   public var splits = TableChange()
   public var peeks = TableChange()
@@ -45,6 +46,12 @@ public struct ChangeSet: Sendable, Equatable {
     profiles = TableChange(after.profiles, before.profiles)
     windows = TableChange(after.windows, before.windows)
     tabs = TableChange(after.tabs, before.tabs)
+    if after.live != before.live {
+      let current = Table(JSMap(after.live.keys.sorted().map { ($0, after.live[$0]!) }))
+      let previous = Table(JSMap(before.live.keys.sorted().map { ($0, before.live[$0]!) }))
+      live = TableChange(current, previous)
+      live.reordered = false
+    }
     groups = TableChange(after.groups, before.groups)
     splits = TableChange(after.splits, before.splits)
     peeks = TableChange(after.peeks, before.peeks)
@@ -75,7 +82,7 @@ public struct ChangeSet: Sendable, Equatable {
   }
 
   public var isEmpty: Bool {
-    profiles.isEmpty && windows.isEmpty && tabs.isEmpty && groups.isEmpty && splits.isEmpty && peeks.isEmpty && parkedPins.isEmpty
+    profiles.isEmpty && windows.isEmpty && tabs.isEmpty && live.isEmpty && groups.isEmpty && splits.isEmpty && peeks.isEmpty && parkedPins.isEmpty
       && pinChoices.isEmpty && pinSync.isEmpty && find.isEmpty && selection.isEmpty && selectionAnchors.isEmpty && windowUi.isEmpty
       && lists.isEmpty && settingsChanged.isEmpty && settingsRemoved.isEmpty
   }
@@ -151,6 +158,13 @@ public struct Patch: @unchecked Sendable {
     add("profiles", changes.profiles, s.profiles) { _, v in v.jsonValue }
     add("windows", changes.windows, s.windows) { _, v in v.jsonValue }
     add("tabs", changes.tabs, s.tabs) { _, v in v.jsonValue }
+    if !changes.live.isEmpty {
+      add("live", changes.live, Table(JSMap(s.live.keys.sorted().map { ($0, s.live[$0]!) }))) { id, value in
+        var object = value.json
+        object["id"] = .string(id)
+        return .object(object)
+      }
+    }
     add("groups", changes.groups, s.groups) { _, v in v.jsonValue }
     add("splits", changes.splits, s.splits) { _, v in v.jsonValue }
     add("peeks", changes.peeks, s.peeks) { id, v in

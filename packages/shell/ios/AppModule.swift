@@ -9,7 +9,7 @@ extension Bundle {
 public class AppModule: Module {
   public func definition() -> ModuleDefinition {
     Name("SolaraApp")
-    Constant("apiVersion") { () -> Int in 31 }
+    Constant("apiVersion") { () -> Int in 32 }
     Events("onNotificationResponse")
 
     OnCreate {

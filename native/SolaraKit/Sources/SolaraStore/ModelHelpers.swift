@@ -11,6 +11,11 @@ public struct StoreMemory: Sendable, Equatable {
   public var lastTabKeepsWindow = false
   public var fromSyncDepth = 0
   public var chromeTabs = ChromeTabsMemory()
+  var pages: [String: PageReportMemory] = [:]
+  var currentEpoch = 0
+  var feedWatermark: [String: FeedWatermark] = [:]
+  var pageProducerFence: [String: PageProducerFence] = [:]
+  var nextPageModelSerial = 0
 
   public init(ids: IdSource = IdSource(launch: "x")) {
     self.ids = ids

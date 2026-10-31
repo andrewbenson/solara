@@ -62,7 +62,10 @@ public final class FaviconLibrary {
         order.removeAll { $0 == key }
       }
     }
-    if let task = pending[key]?.task { return await task.value }
+    if let pending = pending[key] {
+      let result = await pending.task.value
+      return generations[engineProfile, default: 0] == pending.generation ? result : nil
+    }
     let generation = generations[engineProfile, default: 0]
     let client = client
     let task = Task<FaviconLookup?, Never> { @MainActor in

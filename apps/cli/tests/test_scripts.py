@@ -10,7 +10,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from solara_cli import browsing, cli, endpoint, scripts_store, scripts_test, urlmatch, userscript
+from solara_cli import browsing, cli, endpoint, identity, scripts_store, scripts_test, urlmatch, userscript
 from solara_cli.scripts_store import Store, StoreError
 from solara_cli.userscript import Meta, ScriptError, build, parse_meta, url_runs
 
@@ -263,12 +263,12 @@ class Confinement(unittest.TestCase):
 
     def test_data_dir_by_identity_not_spelling(self):
         support = self.tree / "support"
-        data = support / "com.solara.browser"
+        data = support / identity.BUNDLE_ID
         (data / "Chromium").mkdir(parents=True)
         (data / "Chromium" / "secret.js").write_text("export default 1;\n")
         path = support / "s.user.ts"
-        path.write_text("// ==UserScript==\n// @match https://example.com/*\n// ==/UserScript==\nimport s from \"./COM.SOLARA.BROWSER/Chromium/secret.js\";\nconsole.log(s);\n")
-        if not (support / "COM.SOLARA.BROWSER").exists():
+        path.write_text(f"// ==UserScript==\n// @match https://example.com/*\n// ==/UserScript==\nimport s from \"./{identity.BUNDLE_ID.upper()}/Chromium/secret.js\";\nconsole.log(s);\n")
+        if not (support / identity.BUNDLE_ID.upper()).exists():
             self.skipTest("case-sensitive file system")
         with self.assertRaisesRegex(ScriptError, "data folder"):
             build(path, data_dirs=[data])
@@ -446,7 +446,7 @@ class Stores(unittest.TestCase):
 class ReadOnlyDefaults(unittest.TestCase):
     def setUp(self):
         self.root = Path(tempfile.mkdtemp(prefix="solara-cli-default-")).resolve()
-        self.default = self.root / "com.solara.browser"
+        self.default = self.root / identity.BUNDLE_ID
         self.default.mkdir()
         self.work = self.root / "work"
         self.work.mkdir()

@@ -4,7 +4,7 @@ set -euo pipefail
 old="${1:?usage: update-test.sh <previous app> <new app> <appcast.xml> <version>}"
 new="${2:?}" appcast="${3:?}" version="${4:?}"
 here="$(cd "$(dirname "$0")" && pwd)"
-test_id="com.solara.browser.updatetest"
+test_id="com.hill.solara.updatetest"
 [ "$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$old/Contents/Info.plist")" = \
   "$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$new/Contents/Info.plist")" ] || { echo "error: update test requires the same bundle id" >&2; exit 1; }
 port="${UPDATE_TEST_PORT:-8796}"

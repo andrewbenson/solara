@@ -77,7 +77,7 @@ NSString *DirectoryName(NSString *name) {
 
 NSString *InstalledDataDirectory() {
   NSString *support = NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES).firstObject;
-  NSString *bundleId = NSBundle.mainBundle.bundleIdentifier ?: @"com.solara.browser";
+  NSString *bundleId = NSBundle.mainBundle.bundleIdentifier ?: @"com.hill.solara.unbundled";
   return [[support stringByAppendingPathComponent:bundleId] stringByAppendingPathComponent:@"Chromium"];
 }
 

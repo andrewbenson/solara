@@ -149,6 +149,12 @@
 //   ⌘T → …, keystroke → suggestions         journeyRun  newtabkey: posted keys → in-memory perf marks
 //   Enter → engine asked / started / committed / first contentful paint
 //                                           journeyRun  navigate: posted Enter, in-memory marks and page FCP over CDP
+//                                                        The rows that wait on a display frame or a paint (J2 keystroke →
+//                                                        its suggestions on screen, and J4's three first contentful paint
+//                                                        rows) pool only journey runs whose display was awake and
+//                                                        unlocked, and read "pending: the screen was locked ..." with none;
+//                                                        the Core Animation commit rows (J2's committed, on screen and
+//                                                        typeable) don't wait on a frame and pool every run
 // Also printed: "Hidden tabs" (throttleRun), the browser process after each churn round, main-thread sample summaries.
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -1018,7 +1024,7 @@ async function journeyRun(side, i, parts) {
   const n = +opt["journey-n"];
   const app = new Instance(side, dir);
   app.env.push("AC_BENCH_KEYLOG=1");
-  const r = { j2: [], j4new: [], j4page: [], lost: { j2: [], j4new: [], j4page: [] }, load: [Math.round(loadavg()[0])] };
+  const r = { j2: [], j4new: [], j4page: [], lost: { j2: [], j4new: [], j4page: [] }, load: [Math.round(loadavg()[0])], display: { before: displayState() } };
   const note = async (kind, x, k) => {
     if (!x.lost) return void r[kind].push(x);
     r.lost[kind].push(x.lost);
@@ -1064,6 +1070,7 @@ async function journeyRun(side, i, parts) {
     side.results.journeys.push(r);
   } finally {
     await app.done();
+    r.display.after = displayState();
   }
 }
 
@@ -1336,17 +1343,23 @@ function summary(res) {
   rows.push(framedRow("new window → first paint (median per run)", windowed, (r) => median(r.newWindow.map((w) => w.firstPaint)), "ms"));
   rows.push(framedRow("new window → its page's first frame (median per run)", windowed, (r) => median(r.newWindow.map((w) => w.firstFrame)), "ms"));
   const J = res.journeys ?? [];
-  const pooled = (name, get) => {
-    const v = J.flatMap((r) => get(r)).filter(Number.isFinite).sort((a, b) => a - b);
+  const pooledFrom = (runs, name, get, leftOut = 0) => {
+    const v = runs.flatMap((r) => get(r)).filter(Number.isFinite).sort((a, b) => a - b);
     if (!v.length) return;
-    rows.push({ name, median: median(v), p75: v[Math.min(v.length - 1, Math.ceil(v.length * 0.75) - 1)], p95: v[Math.min(v.length - 1, Math.floor(v.length * 0.95))], p99: v[Math.min(v.length - 1, Math.floor(v.length * 0.99))], min: v[0], max: v.at(-1), n: v.length, unit: "ms", digits: 0 });
+    rows.push({ name, median: median(v), p75: v[Math.min(v.length - 1, Math.ceil(v.length * 0.75) - 1)], p95: v[Math.min(v.length - 1, Math.floor(v.length * 0.95))], p99: v[Math.min(v.length - 1, Math.floor(v.length * 0.99))], min: v[0], max: v.at(-1), n: v.length, unit: "ms", digits: 0, ...(leftOut ? { leftOut } : {}) });
+  };
+  const pooled = (name, get) => pooledFrom(J, name, get);
+  const pooledFramed = (name, get) => {
+    const lit = J.filter((r) => !darkRun(r));
+    if (lit.length) return pooledFrom(lit, name, get, J.length - lit.length);
+    if (J.some((r) => get(r).some(Number.isFinite))) rows.push({ name, median: NaN, min: NaN, max: NaN, n: 0, unit: "ms", digits: 0, pending: SCREEN_LOCKED_PENDING });
   };
   const of = (kind, field) => (r) => r[kind].map((x) => x[field]);
   pooled("J2 ⌘T key → JS has the new tab", of("j2", "js"));
   pooled("J2 ⌘T key → its command bar committed", of("j2", "commit"));
   pooled("J2 ⌘T key → that commit on screen", of("j2", "shown"));
   pooled("J2 ⌘T key → bar focused and on screen (typeable)", of("j2", "typeable"));
-  pooled("J2 keystroke → its suggestions on screen", of("j2", "suggest"));
+  pooledFramed("J2 keystroke → its suggestions on screen", of("j2", "suggest"));
   pooled("J2 the app's own ⌘T → typeable (its t0 is the event's timestamp)", of("j2", "appTypeable"));
   pooled("J2 the app's t0 minus the key's timestamp (should be 0)", of("j2", "t0Skew"));
   pooled("J2 acperf hands ⌘T over → the event's timestamp (not in the rows)", of("j2", "postGap"));
@@ -1356,9 +1369,9 @@ function summary(res) {
     pooled(`J4 ${from}: Enter → engine asked to load (our side)`, of(kind, "request"));
     pooled(`J4 ${from}: Enter → Chrome started the navigation`, of(kind, "start"));
     pooled(`J4 ${from}: Enter → document committed`, of(kind, "commit"));
-    pooled(`J4 ${from}: Enter → first contentful paint (the app's mark)`, of(kind, "fcp"));
-    pooled(`J4 ${from}: Enter → first contentful paint (the page's own, CDP)`, of(kind, "pageFcp"));
-    pooled(`J4 ${from}: request → first contentful paint (engine and network)`, of(kind, "engine"));
+    pooledFramed(`J4 ${from}: Enter → first contentful paint (the app's mark)`, of(kind, "fcp"));
+    pooledFramed(`J4 ${from}: Enter → first contentful paint (the page's own, CDP)`, of(kind, "pageFcp"));
+    pooledFramed(`J4 ${from}: request → first contentful paint (engine and network)`, of(kind, "engine"));
     pooled(`J4 ${from}: Enter made → the app's event loop saw it`, of(kind, "delivery"));
   }
   if (J.length) {

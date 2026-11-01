@@ -102,3 +102,49 @@ test("the new window rows pool session and windows runs and leave out only the l
   assert.equal(paint.n, 1);
   assert.equal(paint.leftOut, 1);
 });
+
+const j2 = { js: 5, commit: 20, shown: 30, typeable: 40, suggest: 70, appTypeable: 38, t0Skew: 0, postGap: 1, delivery: 2, suggestDelivery: 2 };
+const j4 = (fcp) => ({ request: 10, start: 15, commit: 60, fcp, pageFcp: fcp + 2, engine: fcp - 10, delivery: 2 });
+const journey = (display, fcp = 200) => ({ j2: [j2, j2], j4new: [j4(fcp)], j4page: [j4(fcp + 50)], lost: { j2: [], j4new: [], j4page: [] }, load: [3, 3], display });
+const journeys = (...runs) => context.summary({ launch: [], session: [], windows: [], journeys: runs });
+
+const J2_FRAMED = ["J2 keystroke → its suggestions on screen"];
+const J4_FRAMED = ["new tab's bar (⌘T)", "page's panel (⌘L)"].flatMap((from) => [
+  `J4 ${from}: Enter → first contentful paint (the app's mark)`,
+  `J4 ${from}: Enter → first contentful paint (the page's own, CDP)`,
+  `J4 ${from}: request → first contentful paint (engine and network)`,
+]);
+const JOURNEY_FRAME_FREE = ["J2 ⌘T key → its command bar committed", "J2 ⌘T key → that commit on screen", "J2 ⌘T key → bar focused and on screen (typeable)",
+  "J4 new tab's bar (⌘T): Enter → document committed", "J4 page's panel (⌘L): Enter → engine asked to load (our side)"];
+
+for (const [family, names] of [["J2", J2_FRAMED], ["J4", J4_FRAMED]]) {
+  test(`the ${family} frame and paint rows read pending when every journey run was locked`, () => {
+    const rows = journeys(journey(locked), journey(locked));
+    for (const name of names) assert.match(row(rows, name)?.pending ?? "", /^pending: the screen was locked/, name);
+  });
+
+  test(`the ${family} frame and paint rows pool only the awake journey runs and count the locked ones`, () => {
+    const rows = journeys(journey(awake, 200), journey(lockedAfter, 900));
+    for (const name of names) {
+      const r = row(rows, name);
+      assert.equal(r?.pending, undefined, name);
+      assert.equal(r.leftOut, 1, name);
+    }
+    assert.equal(row(rows, "J4 new tab's bar (⌘T): Enter → first contentful paint (the app's mark)").median, 200);
+  });
+}
+
+test("the journey commit rows stay numbers on a locked screen and pool every run", () => {
+  const rows = journeys(journey(locked), journey(locked));
+  for (const name of JOURNEY_FRAME_FREE) {
+    assert.equal(row(rows, name)?.pending, undefined, name);
+    assert.equal(row(rows, name).leftOut, undefined, name);
+    assert.ok(Number.isFinite(row(rows, name).median), name);
+  }
+});
+
+test("a journey family that wasn't run adds no pending row", () => {
+  const rows = journeys({ ...journey(locked), j4new: [], j4page: [] });
+  for (const name of J4_FRAMED) assert.equal(row(rows, name), undefined, name);
+  assert.match(row(rows, J2_FRAMED[0]).pending, /^pending/);
+});

@@ -85,6 +85,9 @@ before the rename hold `Solara.app` instead, so the commands below find the cont
      times, and says how many runs it left out. With none, they read "pending: the screen was locked …" and gate nothing; rerun them on an
      unlocked screen. Forcing frames with a Chromium switch such as `--disable-gpu-vsync` isn't a substitute: it drops
      the wait for the display, so its numbers aren't the ones users see.
+   - The journey rows follow the same rule per journey run: J2 keystroke → its suggestions on screen (a display-link
+     frame) and J4's three first contentful paint rows pool only awake, unlocked runs. J2's committed, on screen and
+     typeable rows are Core Animation commits, which don't wait on a frame, so they pool every run.
    - Two rows don't wait on a frame and stand on a locked screen: tab switch → visible (the page's visibilitychange)
      and new tab → DOM ready (its DOMContentLoaded). They are informational: they gate no release until an unlocked
      run gives them a baseline.

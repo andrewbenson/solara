@@ -29,6 +29,10 @@ End-to-end checks need a built app and are run by hand. Each runs hidden instanc
 and prints one line per check (PASS/FAIL, ms), a failure's first lines, then a summary with the path of the log that
 holds the rest.
 
+Compare drivers and bisect only on fresh builds of the trees being compared, each with its own tree's JS. A Debug app
+built incrementally over several other trees can fail checks that a fresh build of the same tree passes: one such app
+failed three pane-prompts legs (2026-11-01) that every fresh build, before and after, passed.
+
 A URL handed to a hidden instance (`SOLARA_BACKGROUND=1`) is forwarded to the owner's running app, or the default
 browser, unless the instance runs with `SOLARA_ACCEPT_EXTERNAL_URLS=1`. `launch({ urls })` sets it and refuses to
 hand URLs to an instance whose env turns it off; any other way of handing an instance a URL must set it too.

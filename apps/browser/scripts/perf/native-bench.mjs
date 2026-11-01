@@ -132,6 +132,13 @@
 //   tab switch → shown                      sessionRun  switch: ac.actions.switchToTab → the page's visibilitychange to
 //                                                        visible + 2 rAFs (16 per run, among 20 tabs)
 //   new tab → first paint / first frame     sessionRun  newtab: store newTab → the new page's FCP / first rAF (5 per run)
+//                                                        These three use only runs whose display (acperf display, before
+//                                                        and after the run) was awake and unlocked; with none, they read
+//                                                        "pending: the screen was locked ..." and gate nothing
+//   tab switch → visible (informational)    sessionRun  switch: the same switch → the page's visibilitychange to visible
+//   new tab → DOM ready (informational)     sessionRun  newtab: the same newTab → the page's DOMContentLoaded
+//                                                        Neither waits on a frame, so both stand on a locked screen; they
+//                                                        gate nothing until an unlocked run gives them a baseline
 //   new window → on screen                  newWindow   ac.actions.openWindow → acperf newwindow (2 ms polls; ≥ 300×200,
 //                                                        alpha > 0). 3 per session run (newwindow), 8 per windows run
 //   new window → on screen with its content newWindow   the later of that and acmark's commit for that window
@@ -209,6 +216,17 @@ const median = (xs) => {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 };
 
+const darkRun = (r) => [r.display?.before, r.display?.after].some((d) => d?.locked || d?.asleep);
+
+const SCREEN_LOCKED_PENDING = "pending: the screen was locked or the display asleep in every run (no display-link frames)";
+
+function framedRow(name, runs, get, unit) {
+  const lit = runs.filter((r) => !darkRun(r));
+  const v = lit.map(get).filter(Number.isFinite);
+  if (runs.length && !lit.length) return { name, median: NaN, min: NaN, max: NaN, n: 0, unit, digits: 0, pending: SCREEN_LOCKED_PENDING };
+  return { name, median: median(v), min: Math.min(...v), max: Math.max(...v), n: v.length, unit, digits: 0, ...(lit.length < runs.length ? { leftOut: runs.length - lit.length } : {}) };
+}
+
 const toolDir = join(opt.out, ".tools");
 function acperf(...args) {
   const bin = join(toolDir, "acperf");
@@ -220,6 +238,14 @@ function acperf(...args) {
   }
   const r = spawnSync(bin, args, { encoding: "utf8", timeout: 120_000 });
   return { code: r.status, out: r.stdout.trim(), err: r.stderr.trim() };
+}
+
+function displayState() {
+  try {
+    return JSON.parse(acperf("display").out || "{}");
+  } catch {
+    return {};
+  }
 }
 
 function markerLibrary() {
@@ -297,7 +323,8 @@ const footprint = (snap) => {
 };
 
 const PAGE_SCRIPT = `
-window.__ac = { vis: [[Date.now(), document.visibilityState]], shown: [], fcp: null, frame: null, ticks: 0, raf: 0, fast: 0 };
+window.__ac = { vis: [[Date.now(), document.visibilityState]], shown: [], fcp: null, frame: null, dom: null, ticks: 0, raf: 0, fast: 0 };
+document.addEventListener("DOMContentLoaded", () => (__ac.dom = Date.now()));
 // The page's first frame (its first animation frame starts): the same event in every build. First contentful paint
 // isn't: CEF (0.2.21) stamps it with that frame's start, Chrome (SolaraCore) with the frame on screen, ~a frame later.
 requestAnimationFrame(() => (__ac.frame = Date.now()));
@@ -1073,8 +1100,9 @@ async function sessionRun(side, i, parts) {
   const has = (part) => parts.has(part);
   const secs = +opt.idle;
   const app = new Instance(side, freshDir(side, `session-${i}`));
-  const r = { memory: {}, idle: {}, tabSwitch: [], newTab: [], newTabFrame: [], newWindow: [], processes: {}, throttled: { tabSwitch: 0, newTab: 0 } };
+  const r = { memory: {}, idle: {}, tabSwitch: [], tabVisible: [], newTab: [], newTabFrame: [], newTabDom: [], newWindow: [], processes: {}, throttled: { tabSwitch: 0, newTab: 0 } };
   if (parts.size < SESSION_PARTS.length) r.parts = [...parts];
+  r.display = { before: displayState() };
   try {
     await app.launch();
     await app.pageState("id=seed", 30_000, (s) => s.fcp);
@@ -1103,6 +1131,8 @@ async function sessionRun(side, i, parts) {
       const shown = s?.shown.at(-1);
       if (hidden) r.throttled.tabSwitch++;
       r.tabSwitch.push(shown && !hidden ? shown[1] - at : NaN);
+      const visible = (s ?? (await app.cdp.state(target)))?.vis?.findLast(([t, state]) => state === "visible" && t >= at);
+      r.tabVisible.push(visible ? visible[0] - at : NaN);
       if (process.env.BENCH_DEBUG) log("switch", marker, "before", before, "at", at - Date.now(), "state", JSON.stringify((await app.cdp.state(target)) ?? null)?.slice(0, 300));
       await sleep(400);
     }
@@ -1114,6 +1144,8 @@ async function sessionRun(side, i, parts) {
       if (hidden) r.throttled.newTab++;
       r.newTab.push(s && !hidden ? s.fcp - at : NaN);
       r.newTabFrame.push(s?.frame && !hidden ? s.frame - at : NaN);
+      const loaded = s ?? (await app.pageState(`id=n${k}`, 2000, (st) => st.dom));
+      r.newTabDom.push(loaded?.dom ? loaded.dom - at : NaN);
       await sleep(800);
     }
     if (has("newtab"))
@@ -1131,6 +1163,7 @@ async function sessionRun(side, i, parts) {
     }
   } finally {
     await app.done();
+    r.display.after = displayState();
   }
   log(`${side.tag}session ${i}:`, JSON.stringify({ idle: r.idle, mem: Object.fromEntries(Object.entries(r.memory).map(([k, v]) => [k, Math.round(v.totalMB)])), sw: r.tabSwitch, nt: r.newTab, nw: r.newWindow }));
   side.results.session.push(r);
@@ -1282,9 +1315,13 @@ function summary(res) {
   add("after an idle minute: command answered (App Nap check)", S.map((r) => r.idle.tabs1?.afterIdle?.commandMs), "ms");
   const timedSwitches = (r) => !r.parts || r.parts.includes("switch") || r.parts.includes("newtab");
   add("samples left out: page couldn't paint (switch + new tab, per run)", S.map((r) => r.throttled && timedSwitches(r) ? r.throttled.tabSwitch + r.throttled.newTab : NaN), "");
-  add("tab switch → shown (median of 16 per run)", S.map((r) => median(r.tabSwitch)), "ms");
-  add("new tab → first paint (median of 5 per run)", S.map((r) => median(r.newTab)), "ms");
-  add("new tab → its page's first frame (median of 5 per run)", S.map((r) => median(r.newTabFrame ?? [])), "ms");
+  const switched = S.filter((r) => r.tabSwitch.length);
+  const opened = S.filter((r) => r.newTab.length);
+  rows.push(framedRow("tab switch → shown (median of 16 per run)", switched, (r) => median(r.tabSwitch), "ms"));
+  rows.push(framedRow("new tab → first paint (median of 5 per run)", opened, (r) => median(r.newTab), "ms"));
+  rows.push(framedRow("new tab → its page's first frame (median of 5 per run)", opened, (r) => median(r.newTabFrame ?? []), "ms"));
+  add("tab switch → visible, no frame needed (informational; median of 16 per run)", switched.map((r) => median(r.tabVisible ?? [])), "ms");
+  add("new tab → DOM ready, no frame needed (informational; median of 5 per run)", opened.map((r) => median(r.newTabDom ?? [])), "ms");
   const W = [...S, ...(res.windows ?? [])];
   add("new window → on screen (median per run)", W.map((r) => median(r.newWindow.map((w) => w.window))), "ms");
   add("new window → on screen with its content (median per run)", W.map((r) => median(r.newWindow.map((w) => w.withContent))), "ms");
@@ -1331,7 +1368,7 @@ function summary(res) {
 
 function printTable(rows, other, names = ["Before", "After"]) {
   const fmt = (r) =>
-    Number.isFinite(r?.median) ? `${r.median.toFixed(r.digits)} ${r.unit}${r.p75 === undefined ? "" : `, p75 ${r.p75.toFixed(r.digits)}, p95 ${r.p95.toFixed(r.digits)}, p99 ${r.p99.toFixed(r.digits)}`} (${r.min.toFixed(r.digits)}–${r.max.toFixed(r.digits)}, n=${r.n})` : "—";
+    r?.pending ? r.pending : Number.isFinite(r?.median) ? `${r.median.toFixed(r.digits)} ${r.unit}${r.p75 === undefined ? "" : `, p75 ${r.p75.toFixed(r.digits)}, p95 ${r.p95.toFixed(r.digits)}, p99 ${r.p99.toFixed(r.digits)}`} (${r.min.toFixed(r.digits)}–${r.max.toFixed(r.digits)}, n=${r.n}${r.leftOut ? `; ${r.leftOut} locked run(s) left out` : ""})` : "—";
   const lines = other
     ? [`| Metric | ${names[0]} | ${names[1]} |`, "|---|---|---|", ...rows.map((r) => `| ${r.name} | ${fmt(other.find((o) => o.name === r.name))} | ${fmt(r)} |`)]
     : ["| Metric | Median (min–max, runs) |", "|---|---|", ...rows.map((r) => `| ${r.name} | ${fmt(r)} |`)];

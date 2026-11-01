@@ -78,6 +78,15 @@ before the rename hold `Solara.app` instead, so the commands below find the cont
    - If the screen locks or the display sleeps, macOS stops giving windows display-link frames. Pages then paint
      about once a second. native-bench leaves those switches and new tabs out and counts them in the "samples
      left out" row. A nonzero count there means rerun with the screen awake.
+   - That count can stay at zero on a locked screen, so native-bench also reads `acperf display` before and after
+     each session run. The three rows that wait on a page's frame (tab switch → shown, new tab → first paint, new
+     tab → its page's first frame) use only runs whose display was awake and unlocked both times, and say how many
+     runs they left out. With none, they read "pending: the screen was locked …" and gate nothing; rerun them on an
+     unlocked screen. Forcing frames with a Chromium switch such as `--disable-gpu-vsync` isn't a substitute: it drops
+     the wait for the display, so its numbers aren't the ones users see.
+   - Two rows don't wait on a frame and stand on a locked screen: tab switch → visible (the page's visibilitychange)
+     and new tab → DOM ready (its DOMContentLoaded). They are informational: they gate no release until an unlocked
+     run gives them a baseline.
    - WindowServer captures fail while the screen is locked, but the bench doesn't need any.
    - The instances' windows are on screen, usually in front of everything: when the owner is using the Mac, their
      pointer moving over one wakes that app (hover, cursor updates), whichever version it is. The "idle windows:

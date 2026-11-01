@@ -447,7 +447,7 @@ if [ "$unsigned" = 1 ]; then
   [[ "$app_ents" != *keychain-access-groups* && "$app_ents" != *com.apple.developer.* && "$app_ents" != *com.apple.application-identifier* ]] || die "the ad hoc app has profile-restricted entitlements"
 else
   designated="$(codesign -d -r- "$app" 2>&1 | sed -n 's/^designated => //p')"
-  [[ "$designated" == *"identifier \"$bundle_id\""* && "$designated" == *"subject.OU] = $team_id"* ]] \
+  [[ "$designated" == *"identifier \"$bundle_id\""* && ( "$designated" == *"subject.OU] = $team_id"* || "$designated" == *"subject.OU] = \"$team_id\""* ) ]] \
     || die "designated requirement: $designated"
   for group in webauthn unexportable-keys secure-payment-confirmation; do
     [[ "$app_ents" == *"$team_id.$bundle_id.$group"* ]] || die "the app lacks the keychain group …$group"

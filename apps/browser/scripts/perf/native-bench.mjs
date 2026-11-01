@@ -132,9 +132,12 @@
 //   tab switch → shown                      sessionRun  switch: ac.actions.switchToTab → the page's visibilitychange to
 //                                                        visible + 2 rAFs (16 per run, among 20 tabs)
 //   new tab → first paint / first frame     sessionRun  newtab: store newTab → the new page's FCP / first rAF (5 per run)
-//                                                        These three use only runs whose display (acperf display, before
-//                                                        and after the run) was awake and unlocked; with none, they read
-//                                                        "pending: the screen was locked ..." and gate nothing
+//                                                        Every row that waits on a page's paint or frame (these three, the
+//                                                        two launch → first page rows and the two new window → first
+//                                                        paint / first frame rows) uses only runs whose display (acperf
+//                                                        display, before and after the run) was awake and unlocked; with
+//                                                        none, it reads "pending: the screen was locked ..." and gates
+//                                                        nothing
 //   tab switch → visible (informational)    sessionRun  switch: the same switch → the page's visibilitychange to visible
 //   new tab → DOM ready (informational)     sessionRun  newtab: the same newTab → the page's DOMContentLoaded
 //                                                        Neither waits on a frame, so both stand on a locked screen; they
@@ -730,6 +733,7 @@ async function launchRun(side, i) {
   }
   const app = new Instance(copy ? { ...side, app: join(copy, "Solara.app") } : side, freshDir(side, `launch-${i}`));
   const traceFile = join(app.dataDir, "startup-trace.json");
+  const display = { before: displayState() };
   if (opt["trace-startup"]) {
     app.env.push(`SOLARA_CHROMIUM_SWITCHES=--trace-startup=${opt["trace-startup"]} --trace-startup-file=${traceFile} --trace-startup-duration=4 --trace-startup-format=json`);
   }
@@ -750,6 +754,7 @@ async function launchRun(side, i) {
       firstPaint: (page?.fcp ?? NaN) - app.t0,
       firstFrame: (page?.frame ?? NaN) - app.t0,
       load: Math.round(loadavg()[0] * 10) / 10,
+      display,
     };
     if (opt.seed) r.pageTargets = (await app.cdp.targets()).length;
     if (opt["trace-startup"]) {
@@ -764,6 +769,7 @@ async function launchRun(side, i) {
     side.results.launch.push(r);
   } finally {
     await app.done();
+    display.after = displayState();
     if (copy) rmSync(copy, { recursive: true, force: true });
   }
   await sleep(3000);
@@ -840,7 +846,7 @@ async function newWindow(app, id) {
 
 async function windowsRun(side, i) {
   const app = new Instance(side, freshDir(side, `windows-${i}`));
-  const r = { newWindow: [] };
+  const r = { newWindow: [], display: { before: displayState() } };
   try {
     await app.launch();
     await app.pageState("id=seed", 30_000, (s) => s.fcp);
@@ -850,6 +856,7 @@ async function windowsRun(side, i) {
     side.results.windows.push(r);
   } finally {
     await app.done();
+    r.display.after = displayState();
   }
 }
 
@@ -1283,8 +1290,8 @@ function summary(res) {
   add("launch → window shown", res.launch.map((r) => r.window), "ms");
   add("launch → window shown with its content", res.launch.map((r) => r.withContent), "ms");
   add("launch → JS running", res.launch.map((r) => r.js), "ms");
-  add("launch → first page painted", res.launch.map((r) => r.firstPaint), "ms");
-  add("launch → first page's first frame", res.launch.map((r) => r.firstFrame), "ms");
+  rows.push(framedRow("launch → first page painted", res.launch, (r) => r.firstPaint, "ms"));
+  rows.push(framedRow("launch → first page's first frame", res.launch, (r) => r.firstFrame, "ms"));
   const S = res.session;
   for (const t of ["tabs1", "tabs20"]) {
     add(`idle CPU, ${t.slice(4)} tab(s) (all processes)`, S.map((r) => r.idle[t]?.total.cpu), "%", 2);
@@ -1325,8 +1332,9 @@ function summary(res) {
   const W = [...S, ...(res.windows ?? [])];
   add("new window → on screen (median per run)", W.map((r) => median(r.newWindow.map((w) => w.window))), "ms");
   add("new window → on screen with its content (median per run)", W.map((r) => median(r.newWindow.map((w) => w.withContent))), "ms");
-  add("new window → first paint (median per run)", W.map((r) => median(r.newWindow.map((w) => w.firstPaint))), "ms");
-  add("new window → its page's first frame (median per run)", W.map((r) => median(r.newWindow.map((w) => w.firstFrame))), "ms");
+  const windowed = W.filter((r) => r.newWindow.length);
+  rows.push(framedRow("new window → first paint (median per run)", windowed, (r) => median(r.newWindow.map((w) => w.firstPaint)), "ms"));
+  rows.push(framedRow("new window → its page's first frame (median per run)", windowed, (r) => median(r.newWindow.map((w) => w.firstFrame)), "ms"));
   const J = res.journeys ?? [];
   const pooled = (name, get) => {
     const v = J.flatMap((r) => get(r)).filter(Number.isFinite).sort((a, b) => a - b);

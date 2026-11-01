@@ -79,9 +79,10 @@ before the rename hold `Solara.app` instead, so the commands below find the cont
      about once a second. native-bench leaves those switches and new tabs out and counts them in the "samples
      left out" row. A nonzero count there means rerun with the screen awake.
    - That count can stay at zero on a locked screen, so native-bench also reads `acperf display` before and after
-     each session run. The three rows that wait on a page's frame (tab switch → shown, new tab → first paint, new
-     tab → its page's first frame) use only runs whose display was awake and unlocked both times, and say how many
-     runs they left out. With none, they read "pending: the screen was locked …" and gate nothing; rerun them on an
+     each launch, session and windows run. Every row that waits on a page's paint or frame (launch → first page
+     painted and → its first frame, tab switch → shown, new tab → first paint and → its page's first frame, new
+     window → first paint and → its page's first frame) uses only runs whose display was awake and unlocked both
+     times, and says how many runs it left out. With none, they read "pending: the screen was locked …" and gate nothing; rerun them on an
      unlocked screen. Forcing frames with a Chromium switch such as `--disable-gpu-vsync` isn't a substitute: it drops
      the wait for the display, so its numbers aren't the ones users see.
    - Two rows don't wait on a frame and stand on a locked screen: tab switch → visible (the page's visibilitychange)

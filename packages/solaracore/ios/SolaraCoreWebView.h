@@ -57,6 +57,7 @@ NS_ASSUME_NONNULL_BEGIN
 + (NSDictionary<NSString *, id> *)videoUpscalingState;
 + (NSArray<NSDictionary<NSString *, id> *> *)devEventsForBrowser:(int)browserId NS_SWIFT_NAME(devEvents(browserId:));
 + (NSInteger)devWindowNumberForBrowser:(int)browserId NS_SWIFT_NAME(devWindowNumber(browserId:));
++ (NSDictionary<NSString *, id> *)devCloseBrowserKeepingWindowOfBrowser:(int)browserId NS_SWIFT_NAME(devCloseBrowserKeepingWindow(browserId:));
 + (NSInteger)devLiveExtensionViews:(NSString *)host NS_SWIFT_NAME(devLiveExtensionViews(_:));
 + (NSArray<NSDictionary<NSString *, id> *> *)devPictureInPicture NS_SWIFT_NAME(devPictureInPicture());
 + (NSString *)devPictureInPictureAction:(NSString *)action NS_SWIFT_NAME(devPictureInPictureAction(_:));

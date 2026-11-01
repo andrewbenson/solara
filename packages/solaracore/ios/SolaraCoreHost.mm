@@ -798,6 +798,11 @@ static void StartEarlyWindow() {
     return getenv("SOLARA_BACKGROUND") && (!strncmp(sw, "--use-fake-ui-for-media-stream", 30) ||
                                               !strncmp(sw, "--auto-accept-camera-and-microphone-capture", 43));
   };
+  auto refusedTestHook = [](const char *sw) {
+    while (*sw == ' ' || (*sw >= '\t' && *sw <= '\r')) sw++;
+    while (*sw == '-') sw++;
+    return !strncmp(sw, "solara-test-browser-lifetime", 28) && !solaracore_host::TestHooksAllowed();
+  };
   if (const char *port = getenv("SOLARA_REMOTE_DEBUGGING_PORT"); port && TestBuild()) {
     extra.push_back(std::string("--remote-debugging-port=") + port);
     extra.push_back("--remote-allow-origins=*");
@@ -807,7 +812,7 @@ static void StartEarlyWindow() {
     for (NSString *item in [all componentsSeparatedByString:@" --"]) {
       NSString *sw = [item stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
       std::string full = std::string("--") + sw.UTF8String;
-      if (sw.length && !autoAccepts(full.c_str())) extra.push_back(full);
+      if (sw.length && !autoAccepts(full.c_str()) && !refusedTestHook(full.c_str())) extra.push_back(full);
     }
   }
   std::vector<const char *> args = {argc > 0 && argv[0] ? argv[0] : "Solara"};
@@ -821,7 +826,7 @@ static void StartEarlyWindow() {
       i++;
       continue;
     }
-    if (autoAccepts(arg)) continue;
+    if (autoAccepts(arg) || refusedTestHook(arg)) continue;
     args.push_back(arg);
   }
   static std::vector<std::string> merged;

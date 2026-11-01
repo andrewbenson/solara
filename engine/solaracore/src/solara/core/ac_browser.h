@@ -141,6 +141,7 @@ class WindowHost : public TabStripModelObserver,
 
  private:
   enum class CloseState { kOpen, kAsking, kClosing };
+  void ForgetBrowserScheduledForDeletion(Profile* profile, Browser* browser);
   void ContinueClose();
   void ContinueCloseAttempt(int attempt);
   void OnBeforeUnloadAnswered(bool proceed);

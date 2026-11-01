@@ -45,6 +45,7 @@ public class CefModule: Module {
     AsyncFunction("devExternalLaunches") { SolaraCoreHost.testExternalLaunches() }.runOnQueue(.main)
     AsyncFunction("devEvents") { (browserId: Int) in SolaraCoreWebView.devEvents(browserId: Int32(browserId)) }.runOnQueue(.main)
     AsyncFunction("devWindowNumber") { (browserId: Int) in SolaraCoreWebView.devWindowNumber(browserId: Int32(browserId)) }.runOnQueue(.main)
+    AsyncFunction("devCloseBrowserKeepingWindow") { (browserId: Int) in SolaraCoreWebView.devCloseBrowserKeepingWindow(browserId: Int32(browserId)) }.runOnQueue(.main)
     AsyncFunction("devLiveExtensionViews") { (host: String) in SolaraCoreWebView.devLiveExtensionViews(host) }.runOnQueue(.main)
     AsyncFunction("devPictureInPicture") { SolaraCoreWebView.devPictureInPicture() }.runOnQueue(.main)
     AsyncFunction("devPictureInPictureAction") { (action: String) in SolaraCoreWebView.devPictureInPictureAction(action) }.runOnQueue(.main)

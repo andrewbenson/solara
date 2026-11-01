@@ -2204,6 +2204,20 @@ void SolaraCoreWebViewsSetFieldTiming(BOOL on) {
   return view.window.windowNumber;
 }
 
++ (NSDictionary<NSString *, id> *)devCloseBrowserKeepingWindowOfBrowser:(int)browserId {
+#if DEBUG
+  if (!solaracore_host::TestHooksAllowed()) return @{@"error" : @"test instances only"};
+  SolaraCoreTab *tab = solaracore_host::TabWithBrowserId(browserId);
+  SolaraCoreWindowController *controller = tab ? [SolaraCoreWindowController holding:tab] : nil;
+  SolaraCoreWindow *window = controller.coreWindow;
+  if (!window || !tab.profile) return @{@"error" : @"no window for that browser"};
+  if (![window respondsToSelector:@selector(devCloseBrowserKeepingWindow:)]) return @{@"error" : @"the engine needs a rebuild"};
+  return [window devCloseBrowserKeepingWindow:tab.profile];
+#else
+  return @{@"error" : @"needs a Debug build"};
+#endif
+}
+
 + (NSInteger)devLiveExtensionViews:(NSString *)host {
   NSInteger count = 0;
   for (SolaraCoreWebView *view in LiveViews().allObjects)

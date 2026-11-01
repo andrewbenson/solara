@@ -54,6 +54,7 @@
 #include "base/scoped_observation.h"
 #include "base/supports_user_data.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "base/command_line.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -1405,7 +1406,7 @@ void WatchTracingStart(std::shared_ptr<TracingStart> start, int checks_left) {
 
 - (BOOL)executeChromeCommand:(int)commandId profile:(SolaraCoreProfile*)profile {
   Browser* browser = _host->ExistingBrowserFor(profile.chromeProfile);
-  return browser && chrome::ExecuteCommand(browser, commandId);
+  return browser && !browser->IsDeleteScheduled() && chrome::ExecuteCommand(browser, commandId);
 }
 
 - (BOOL)internal {
@@ -1574,6 +1575,30 @@ void WatchTracingStart(std::shared_ptr<TracingStart> start, int checks_left) {
   if (profile.chromeProfile) {
     _host->BrowserFor(profile.chromeProfile);
   }
+}
+
+- (NSDictionary<NSString*, id>*)devCloseBrowserKeepingWindow:(SolaraCoreProfile*)profile {
+  Profile* chrome_profile = profile.chromeProfile;
+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch("solara-test-browser-lifetime")) {
+    return @{@"error" : @"needs --solara-test-browser-lifetime"};
+  }
+  Browser* closed = chrome_profile ? _host->ExistingBrowserFor(chrome_profile) : nullptr;
+  if (!closed || closed->IsDeleteScheduled() || _host->closing()) {
+    return @{@"error" : @"no live Browser for this profile in an open window"};
+  }
+  const int tabs = closed->GetTabStripModel()->count();
+  closed->GetWindow()->Close();
+  const bool scheduled = closed->IsDeleteScheduled();
+  Browser* cached = _host->ExistingBrowserFor(chrome_profile);
+  Browser* acquired = scheduled ? _host->BrowserFor(chrome_profile) : nullptr;
+  return @{
+    @"tabsBefore" : @(tabs),
+    @"scheduled" : @(scheduled),
+    @"cachedIsScheduled" : @(cached == closed),
+    @"acquired" : @(acquired != nullptr),
+    @"acquiredIsScheduled" : @(acquired && (acquired == closed || acquired->IsDeleteScheduled())),
+    @"windowOpen" : @(!_host->closing()),
+  };
 }
 
 - (void)close {

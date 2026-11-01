@@ -190,6 +190,7 @@ SOLARACORE_EXPORT
 - (void)close;
 
 - (void)prepareProfile:(SolaraCoreProfile*)profile;
+- (NSDictionary<NSString*, id>*)devCloseBrowserKeepingWindow:(SolaraCoreProfile*)profile;
 - (void)adoptTab:(SolaraCoreTab*)tab;
 - (nullable SolaraCoreTab*)restoreTab:(nullable NSString*)state
                           profile:(SolaraCoreProfile*)profile

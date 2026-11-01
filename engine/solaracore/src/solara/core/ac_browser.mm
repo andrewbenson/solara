@@ -330,7 +330,10 @@ Browser* WindowHost::BrowserFor(Profile* profile) {
     return nullptr;
   }
   if (Browser* browser = ExistingBrowserFor(profile)) {
-    return browser;
+    if (!browser->IsDeleteScheduled()) {
+      return browser;
+    }
+    ForgetBrowserScheduledForDeletion(profile, browser);
   }
   if (IsProfileDeleting(profile)) {
     return nullptr;
@@ -351,6 +354,29 @@ Browser* WindowHost::BrowserFor(Profile* profile) {
   window->AttachBrowser(browser);
   AddBrowser(browser);
   return browser;
+}
+
+void WindowHost::ForgetBrowserScheduledForDeletion(Profile* profile, Browser* browser) {
+  browser->GetTabStripModel()->RemoveObserver(this);
+  if (auto* elements = BrowserElementsViews::From(browser)) {
+    elements->TearDown();
+  }
+  kept_on_close_.erase(browser);
+  std::erase(asked_by_close_, browser);
+  const bool was_asking = asking_ == browser;
+  if (was_asking) {
+    asking_ = nullptr;
+  }
+  if (active_profile_ == profile) {
+    active_profile_ = nullptr;
+  }
+  browsers_.erase(profile);
+  if (was_asking && close_state_ == CloseState::kAsking &&
+      !browser_shutdown::IsTryingToQuit()) {
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, base::BindOnce(&WindowHost::ContinueCloseAttempt, GetWeakPtr(),
+                                  close_attempt_));
+  }
 }
 
 BrowserWindow* WindowHost::HostChromeBrowser(Browser* browser) {

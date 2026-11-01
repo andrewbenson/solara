@@ -416,7 +416,7 @@ const tlsSpki = createHash("sha256").update(new X509Certificate(tlsCert).publicK
 
 let exe, stdout, pid, child, launchedAt, exited = null;
 let instance = null;
-process.env.SOLARA_CHROMIUM_SWITCHES = `--force-color-profile=srgb --solara-test-media-route-provider --disable-media-route-providers-for-test --solara-test-bluetooth-chooser ${process.env.SOLARA_CHROMIUM_SWITCHES ?? ""}`.trim();
+process.env.SOLARA_CHROMIUM_SWITCHES = `--force-color-profile=srgb --solara-test-media-route-provider --disable-media-route-providers-for-test --solara-test-bluetooth-chooser --solara-test-browser-lifetime ${process.env.SOLARA_CHROMIUM_SWITCHES ?? ""}`.trim();
 process.env.SOLARA_CHROMIUM_SWITCHES += ` --host-resolver-rules=${["ib.adnxs.com", "securepubads.g.doubleclick.net", "pagead2.googlesyndication.com", "adpage.test"]
   .map((host) => `MAP ${host} 127.0.0.1:${server.address().port}`).concat([`one.${siteDataDomain}`, `two.${siteDataDomain}`, ...siteDataSecureHosts].map((host) => `MAP ${host} 127.0.0.1:${tlsServer.address().port}`)).join(", ")}`;
 process.env.SOLARA_CHROMIUM_SWITCHES += ` --apps-gallery-update-url=${base}/webstore/crx`;
@@ -5311,6 +5311,23 @@ try {
     const afterReady = adsServedFor(again);
     if (afterReady.length) throw new Error(`ads went out once uBlock Origin was ready: ${JSON.stringify(afterReady)}`);
     return { restored: tab.url, loadedAfterMs, racedAtLaunch, nextDocuments: documents };
+  });
+
+  await check("doomed-browser-not-reused", async () => {
+    const mainId = await appUp("app-doomed-browser.out.log");
+    const s = (expr) => evalApp(`const s = ac.store.getState(); return ${expr}`);
+    const windowId = await evalApp(`return ac.store.getState().createWindow({ url: "${base}/a?doomed", background: true })`);
+    const id = await until("the window's tab", async () => s(`s.windows["${windowId}"]?.tabIds.length === 1 && s.tabs[s.windows["${windowId}"].tabIds[0]]?.title === "Page A" && !s.live[s.windows["${windowId}"].tabIds[0]]?.isLoading ? s.windows["${windowId}"].tabIds[0] : null`), 15000);
+    const browser = await until("its browser", () => browserOf(id), 10000);
+    const out = await cef(`devCloseBrowserKeepingWindow(${browser})`);
+    if (out?.error) throw new Error(out.error);
+    if (!out.scheduled || !out.cachedIsScheduled) throw new Error(`the close left no Browser scheduled for deletion in the cache: ${JSON.stringify(out)}`);
+    if (out.acquiredIsScheduled || (out.windowOpen && !out.acquired)) throw new Error(`BrowserFor answered with a Browser scheduled for deletion: ${JSON.stringify(out)}`);
+    await sleep(1500);
+    if (!(await s(`!!s.windows["${mainId}"]?.tabIds.length`))) throw new Error("the run's own window lost its tabs");
+    if (appLog.join().includes("Check failed: !IsDeleteScheduled()")) throw new Error("a tab went into a Browser scheduled for deletion");
+    await evalApp(`const s = ac.store.getState(); if (s.windows["${windowId}"]) s.closeWindow("${windowId}"); return true`);
+    return out;
   });
 
   await check("closed-tabs-own-lists", async () => {

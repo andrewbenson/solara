@@ -7,10 +7,11 @@ import Testing
 
 @MainActor
 @Suite struct SidebarRowRelayoutTests {
-  private func state(active: String, groupName: String = "Work", splits: Bool = false) throws -> BrowserState {
-    let ids = ["t1", "t2", "t3", "t4", "t5"]
+  private func state(active: String, groupName: String = "Work", splits: Bool = false, pinnedRow: Bool = false) throws -> BrowserState {
+    let ids = (pinnedRow ? ["p1"] : []) + ["t1", "t2", "t3", "t4", "t5"]
     var tabs: [String: Any] = [:]
     for id in ids { tabs[id] = ["id": id, "windowId": "w", "profileId": "p", "url": "https://\(id).example/", "title": id] }
+    if pinnedRow { tabs["p1"] = ["id": "p1", "windowId": "w", "profileId": "p", "url": "https://p1.example/", "title": "p1", "pinned": true, "pinnedAsRow": true, "pinnedUrl": "https://p1.example/"] }
     var root: [String: Any] = [
       "profileOrder": ["p"], "windowOrder": ["w"], "tabs": tabs,
       "windows": ["w": ["id": "w", "profileId": "p", "tabIds": ids, "activeTabIds": ["p": active]]],
@@ -63,11 +64,11 @@ import Testing
   @Test func theDividerPlacesTidyWhenItAppearsBesideClear() throws {
     var host = SidebarHostState(profileId: "p")
     host.clear = true
-    let (window, sidebar) = mounted(try state(active: "t1"), host)
+    let (window, sidebar) = mounted(try state(active: "t1", pinnedRow: true), host)
     _ = window
     let row = try #require(sidebar.views["divider"])
     host.tidy = true
-    sidebar.update(state: try state(active: "t1"), host: host)
+    sidebar.update(state: try state(active: "t1", pinnedRow: true), host: host)
     sidebar.layoutSubtreeIfNeeded()
     let buttons = all(DividerButton.self, in: row)
     #expect(buttons.count == 2)

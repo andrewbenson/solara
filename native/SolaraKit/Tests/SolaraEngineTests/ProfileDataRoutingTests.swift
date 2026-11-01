@@ -5,26 +5,33 @@ import SolaraModel
 import Testing
 import Synchronization
 
+private enum RoutingWake: Equatable, Sendable {
+  case signalled, finished, producerEnded, producerCancelled, waiterCancelled, timedOut
+}
+
 private final class ProfileRoutingSignal: Sendable {
   private struct State {
     var result: Bool?
+    var wake: RoutingWake?
     var continuation: CheckedContinuation<Bool, Never>?
   }
 
   private let state = Mutex(State())
 
-  func signal() { resolve(true) }
+  var wake: RoutingWake? { state.withLock { $0.wake } }
 
-  func finish() { resolve(false) }
+  func signal() { resolve(true, .signalled) }
+
+  func finish() { resolve(false, .finished) }
 
   func wait<Success: Sendable, Failure: Error>(producer: Task<Success, Failure>) async -> Bool {
     let completion = Task<Void, Never> {
       _ = await producer.result
-      self.resolve(false)
+      self.resolve(false, .producerEnded)
     }
     let cancellation = Task<Void, Never> {
       while !Task.isCancelled {
-        if producer.isCancelled { self.resolve(false); return }
+        if producer.isCancelled { self.resolve(false, .producerCancelled); return }
         do { try await Task.sleep(for: .milliseconds(10)) } catch { return }
       }
     }
@@ -44,18 +51,19 @@ private final class ProfileRoutingSignal: Sendable {
         if let result {
           continuation.resume(returning: result)
         } else {
-          DispatchQueue.global().asyncAfter(deadline: .now() + 30) { self.resolve(false) }
+          DispatchQueue.global().asyncAfter(deadline: .now() + 30) { self.resolve(false, .timedOut) }
         }
       }
     } onCancel: {
-      self.resolve(false)
+      self.resolve(false, .waiterCancelled)
     }
   }
 
-  private func resolve(_ result: Bool) {
+  private func resolve(_ result: Bool, _ wake: RoutingWake) {
     let continuation = state.withLock { state -> CheckedContinuation<Bool, Never>? in
       guard state.result == nil else { return nil }
       state.result = result
+      state.wake = wake
       let continuation = state.continuation
       state.continuation = nil
       return continuation
@@ -64,23 +72,32 @@ private final class ProfileRoutingSignal: Sendable {
   }
 }
 
+private func routingWake<Success: Sendable, Failure: Error>(_ producer: Task<Success, Failure>) async -> (opened: Bool, wake: RoutingWake?) {
+  let signal = ProfileRoutingSignal()
+  let opened = await signal.wait(producer: producer)
+  return (opened, signal.wake)
+}
+
 @Suite(.serialized, .timeLimit(.minutes(1))) @MainActor struct ProfileDataRoutingTests {
   @Test func barriersFailImmediatelyWhenTheirProducerEndsOrTheirWaiterIsCancelled() async {
-    let start = ContinuousClock.now
-    let completed = Task<Void, Never> {}
-    #expect(!(await ProfileRoutingSignal().wait(producer: completed)))
-    let failed = Task<Void, any Error> { throw CancellationError() }
-    #expect(!(await ProfileRoutingSignal().wait(producer: failed)))
-    let cancelled = Task<Void, any Error> { try await Task.sleep(for: .seconds(30)) }
-    cancelled.cancel()
-    #expect(!(await ProfileRoutingSignal().wait(producer: cancelled)))
+    let completed = await routingWake(Task<Void, Never> {})
+    #expect(!completed.opened)
+    #expect(completed.wake == .producerEnded)
+    let failed = await routingWake(Task<Void, any Error> { throw CancellationError() })
+    #expect(!failed.opened)
+    #expect(failed.wake == .producerEnded)
+    let cancelledProducer = Task<Void, any Error> { try await Task.sleep(for: .seconds(30)) }
+    cancelledProducer.cancel()
+    let cancelled = await routingWake(cancelledProducer)
+    #expect(!cancelled.opened)
+    #expect(cancelled.wake == .producerEnded || cancelled.wake == .producerCancelled)
     let producer = Task<Void, any Error> { try await Task.sleep(for: .seconds(30)) }
     defer { producer.cancel() }
     let signal = ProfileRoutingSignal()
     let waiter = Task { await signal.wait(producer: producer) }
     waiter.cancel()
     #expect(!(await waiter.value))
-    #expect(start.duration(to: .now) < .seconds(30))
+    #expect(signal.wake == .waiterCancelled)
   }
 
   @Test func aCancelledProducerHeldOnAContinuationFailsItsBarrierImmediately() async throws {
@@ -95,9 +112,9 @@ private final class ProfileRoutingSignal: Sendable {
     defer { continuation.withLock { let held = $0; $0 = nil; held?.resume() } }
     try #require(await entered.wait(producer: producer))
     producer.cancel()
-    let start = ContinuousClock.now
-    #expect(!(await ProfileRoutingSignal().wait(producer: producer)))
-    #expect(start.duration(to: .now) < .seconds(30))
+    let cancelled = await routingWake(producer)
+    #expect(!cancelled.opened)
+    #expect(cancelled.wake == .producerCancelled)
     continuation.withLock { let held = $0; $0 = nil; held?.resume() }
     await producer.value
   }

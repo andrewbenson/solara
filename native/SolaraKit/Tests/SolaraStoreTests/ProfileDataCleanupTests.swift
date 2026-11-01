@@ -5,26 +5,33 @@ import Testing
 import SolaraPersistence
 import Synchronization
 
+enum BarrierWake: Equatable, Sendable {
+  case signalled, finished, producerEnded, producerCancelled, waiterCancelled, timedOut
+}
+
 final class ProfileCleanupSignal: Sendable {
   private struct State {
     var result: Bool?
+    var wake: BarrierWake?
     var continuation: CheckedContinuation<Bool, Never>?
   }
 
   private let state = Mutex(State())
 
-  func signal() { resolve(true) }
+  var wake: BarrierWake? { state.withLock { $0.wake } }
 
-  func finish() { resolve(false) }
+  func signal() { resolve(true, .signalled) }
+
+  func finish() { resolve(false, .finished) }
 
   func wait<Success: Sendable, Failure: Error>(producer: Task<Success, Failure>) async -> Bool {
     let completion = Task<Void, Never> {
       _ = await producer.result
-      self.resolve(false)
+      self.resolve(false, .producerEnded)
     }
     let cancellation = Task<Void, Never> {
       while !Task.isCancelled {
-        if producer.isCancelled { self.resolve(false); return }
+        if producer.isCancelled { self.resolve(false, .producerCancelled); return }
         do { try await Task.sleep(for: .milliseconds(10)) } catch { return }
       }
     }
@@ -44,24 +51,31 @@ final class ProfileCleanupSignal: Sendable {
         if let result {
           continuation.resume(returning: result)
         } else {
-          DispatchQueue.global().asyncAfter(deadline: .now() + 30) { self.resolve(false) }
+          DispatchQueue.global().asyncAfter(deadline: .now() + 30) { self.resolve(false, .timedOut) }
         }
       }
     } onCancel: {
-      self.resolve(false)
+      self.resolve(false, .waiterCancelled)
     }
   }
 
-  private func resolve(_ result: Bool) {
+  private func resolve(_ result: Bool, _ wake: BarrierWake) {
     let continuation = state.withLock { state -> CheckedContinuation<Bool, Never>? in
       guard state.result == nil else { return nil }
       state.result = result
+      state.wake = wake
       let continuation = state.continuation
       state.continuation = nil
       return continuation
     }
     continuation?.resume(returning: result)
   }
+}
+
+private func barrierWake<Success: Sendable, Failure: Error>(_ producer: Task<Success, Failure>) async -> (opened: Bool, wake: BarrierWake?) {
+  let signal = ProfileCleanupSignal()
+  let opened = await signal.wait(producer: producer)
+  return (opened, signal.wake)
 }
 
 private final class ProfileCleanupThreadGate: @unchecked Sendable {
@@ -124,20 +138,24 @@ private func cleanupStore(_ state: BrowserState = BrowserState(settings: Setting
 
 @Suite(.serialized, .timeLimit(.minutes(1))) @MainActor struct ProfileDataCleanupTests {
   @Test func barriersFailImmediatelyWhenTheirProducerEndsOrTheirWaiterIsCancelled() async {
-    let start = ContinuousClock.now
-    let completed = Task<Void, Never> {}
-    #expect(!(await ProfileCleanupSignal().wait(producer: completed)))
-    let failed = Task<Void, any Error> { throw CancellationError() }
-    #expect(!(await ProfileCleanupSignal().wait(producer: failed)))
-    let cancelled = Task<Void, any Error> { try await Task.sleep(for: .seconds(30)) }
-    cancelled.cancel()
-    #expect(!(await ProfileCleanupSignal().wait(producer: cancelled)))
+    let completed = await barrierWake(Task<Void, Never> {})
+    #expect(!completed.opened)
+    #expect(completed.wake == .producerEnded)
+    let failed = await barrierWake(Task<Void, any Error> { throw CancellationError() })
+    #expect(!failed.opened)
+    #expect(failed.wake == .producerEnded)
+    let cancelledProducer = Task<Void, any Error> { try await Task.sleep(for: .seconds(30)) }
+    cancelledProducer.cancel()
+    let cancelled = await barrierWake(cancelledProducer)
+    #expect(!cancelled.opened)
+    #expect(cancelled.wake == .producerEnded || cancelled.wake == .producerCancelled)
     let producer = Task<Void, any Error> { try await Task.sleep(for: .seconds(30)) }
     defer { producer.cancel() }
     let signal = ProfileCleanupSignal()
     let waiter = Task { await signal.wait(producer: producer) }
     waiter.cancel()
     #expect(!(await waiter.value))
+    #expect(signal.wake == .waiterCancelled)
     let held = Mutex<CheckedContinuation<Void, Never>?>(nil)
     let entered = ProfileCleanupSignal()
     let heldProducer = Task<Void, Never> {
@@ -148,11 +166,13 @@ private func cleanupStore(_ state: BrowserState = BrowserState(settings: Setting
     }
     defer { held.withLock { $0?.resume(); $0 = nil } }
     #expect(await entered.wait(producer: heldProducer))
+    #expect(entered.wake == .signalled)
     heldProducer.cancel()
-    #expect(!(await ProfileCleanupSignal().wait(producer: heldProducer)))
+    let heldCancelled = await barrierWake(heldProducer)
+    #expect(!heldCancelled.opened)
+    #expect(heldCancelled.wake == .producerCancelled)
     held.withLock { $0?.resume(); $0 = nil }
     await heldProducer.value
-    #expect(start.duration(to: .now) < .seconds(30))
   }
 
   @Test func graceArrivalFailsWhenDrainEndsAndGraceWaitResumesOnCancellation() async {

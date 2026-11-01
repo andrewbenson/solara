@@ -287,7 +287,7 @@ framework.
   repo copy only; `apply.sh` replaces the tree's.
 - **Chromium's files we replace.** A file under `engine/chromium/src` outside `chrome/browser/solara` replaces
   Chromium's at the same path (`apply.sh --paths` lists them; `series.py` counts each as the layer's). Only Chromium's
-  logo, by Solara's (`docs/brand/artwork/build.py` writes them): binary files a patch can't carry.
+  logo, by Solara's (`docs/brand/solara/build.sh` writes them): binary files a patch can't carry.
 - **How it links.** One `source_set("solara")` in `chrome/browser/solara/BUILD.gn`: add your
   `ac_<domain>.{h,cc}` to its sources (sorted) and its deps.
   `chromium-solara-layer.patch` links it into the macOS `//chrome:chrome_dll` (SolaraCore's framework), through the

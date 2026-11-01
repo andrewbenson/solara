@@ -12,6 +12,8 @@ if [ -z "$chrome" ]; then
       | sort -V -r | sed 's|$|/Contents/MacOS/Google Chrome for Testing|')
 fi
 [ -n "$chrome" ] && [ -x "$chrome" ] || { echo "error: no Chrome found (set CHROME)" >&2; exit 1; }
+command -v rsvg-convert >/dev/null || { echo "error: rsvg-convert not found (brew install librsvg)" >&2; exit 1; }
+rsvg-convert -w 256 -h 256 -o "$here/app-icon.png" "$here/../../docs/brand/solara/classic.svg"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 flags=(--user-data-dir="$tmp/profile" --no-first-run --disable-gpu --hide-scrollbars --allow-file-access-from-files

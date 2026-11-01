@@ -6,7 +6,6 @@ import { Image, StyleSheet, type ViewStyle } from "react-native";
 import { useShallow } from "zustand/react/shallow";
 import { toggleMute } from "../../lib/actions";
 import { shortcutHint, useShortcutHint, withShortcut } from "../../lib/commandShortcuts";
-import { PRODUCT } from "../../lib/productName";
 import { nativeOwnsWorkspace } from "../../store/nativeStore";
 import { stripHostProps } from "../nativeHostProps";
 import { useLifecycle } from "../../lib/tabLifecycle";
@@ -57,7 +56,7 @@ addNativeSettingsHandlers({
   },
 });
 
-const NEW_TAB_MARK: number = PRODUCT === "Solara" ? require("../../../assets/solara/new-tab-mark.png") : require("../../../assets/new-tab-mark.png");
+const NEW_TAB_MARK: number = require("../../../assets/solara/new-tab-mark.png");
 const THEME_KEYS = [
   "textTab",
   "tabSelectedText",

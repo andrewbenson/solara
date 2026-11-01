@@ -1,7 +1,6 @@
 import { PowerUp } from "@solara/shaders";
 import { useEffect, useState } from "react";
 import { AccessibilityInfo, Image, StyleSheet, View } from "react-native";
-import { PRODUCT } from "../lib/productName";
 import { layout, useTheme } from "../lib/theme";
 import { useBrowser } from "../store/browser";
 import { useWindowId, useWindowProfileId } from "../store/hooks";
@@ -12,17 +11,6 @@ import { useOnboarding } from "./onboarding/state";
 
 const BAR_HEIGHT = 112;
 const MARKS = {
-  green: { back: require("../../assets/ntp-mark-back.png"), front: require("../../assets/ntp-mark-front.png"), sun: require("../../assets/ntp-mark-sun.png") },
-  plum: { back: require("../../assets/ntp-mark-plum-back.png"), front: require("../../assets/ntp-mark-plum-front.png"), sun: require("../../assets/ntp-mark-plum-sun.png") },
-  blue: { back: require("../../assets/ntp-mark-blue-back.png"), front: require("../../assets/ntp-mark-blue-front.png"), sun: require("../../assets/ntp-mark-blue-sun.png") },
-  purple: { back: require("../../assets/ntp-mark-purple-back.png"), front: require("../../assets/ntp-mark-purple-front.png"), sun: require("../../assets/ntp-mark-purple-sun.png") },
-  pink: { back: require("../../assets/ntp-mark-pink-back.png"), front: require("../../assets/ntp-mark-pink-front.png"), sun: require("../../assets/ntp-mark-pink-sun.png") },
-  red: { back: require("../../assets/ntp-mark-red-back.png"), front: require("../../assets/ntp-mark-red-front.png"), sun: require("../../assets/ntp-mark-red-sun.png") },
-  orange: { back: require("../../assets/ntp-mark-orange-back.png"), front: require("../../assets/ntp-mark-orange-front.png"), sun: require("../../assets/ntp-mark-orange-sun.png") },
-  yellow: { back: require("../../assets/ntp-mark-yellow-back.png"), front: require("../../assets/ntp-mark-yellow-front.png"), sun: require("../../assets/ntp-mark-yellow-sun.png") },
-  neutral: { back: require("../../assets/ntp-mark-neutral-back.png"), front: require("../../assets/ntp-mark-neutral-front.png"), sun: require("../../assets/ntp-mark-neutral-sun.png") },
-};
-const SOLARA_MARKS = {
   green: { back: require("../../assets/solara/ntp-mark-back.png"), front: require("../../assets/solara/ntp-mark-front.png"), sun: require("../../assets/solara/ntp-mark-sun.png") },
   plum: { back: require("../../assets/solara/ntp-mark-plum-back.png"), front: require("../../assets/solara/ntp-mark-plum-front.png"), sun: require("../../assets/solara/ntp-mark-plum-sun.png") },
   blue: { back: require("../../assets/solara/ntp-mark-blue-back.png"), front: require("../../assets/solara/ntp-mark-blue-front.png"), sun: require("../../assets/solara/ntp-mark-blue-sun.png") },
@@ -33,8 +21,6 @@ const SOLARA_MARKS = {
   yellow: { back: require("../../assets/solara/ntp-mark-yellow-back.png"), front: require("../../assets/solara/ntp-mark-yellow-front.png"), sun: require("../../assets/solara/ntp-mark-yellow-sun.png") },
   neutral: { back: require("../../assets/solara/ntp-mark-neutral-back.png"), front: require("../../assets/solara/ntp-mark-neutral-front.png"), sun: require("../../assets/solara/ntp-mark-neutral-sun.png") },
 };
-const FORK_MARKS: Record<string, typeof MARKS> = { Solara: SOLARA_MARKS };
-const PRODUCT_MARKS = FORK_MARKS[PRODUCT] ?? MARKS;
 type Size = { width: number; height: number };
 const introPlayed = new Set<string>();
 
@@ -56,7 +42,7 @@ const markUris = new Map<string, { sun: string; back: string; front: string }>()
 function marksFor(color: string) {
   let uris = markUris.get(color);
   if (!uris) {
-    const set = (PRODUCT_MARKS as Record<string, (typeof PRODUCT_MARKS)["green"]>)[color] ?? PRODUCT_MARKS.green;
+    const set = (MARKS as Record<string, (typeof MARKS)["green"]>)[color] ?? MARKS.green;
     const uri = (source: number) => Image.resolveAssetSource(source)?.uri ?? "";
     markUris.set(color, (uris = { sun: uri(set.sun), back: uri(set.back), front: uri(set.front) }));
   }

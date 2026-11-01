@@ -8,7 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		2FF0A6F31D6FB76878E63C5F /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 3E0CAE61008516DE07A12694 /* PrivacyInfo.xcprivacy */; };
-		32CC817DBABC4088BF1F2895 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 42108ADD054F481A9B60EC2B /* AppIcon.icon */; };
 		3FF132665BBAFDDFE46449C0 /* DisableFusebox.mm in Sources */ = {isa = PBXBuildFile; fileRef = E9A15241E979C9B4F4BB79D8 /* DisableFusebox.mm */; };
 		514201522437B4B40078DB4F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 514201512437B4B40078DB4F /* Assets.xcassets */; };
 		6AFA04B3BADCFAB2D5E0529A /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5B616A5F60952076D0F8358 /* AppDelegate.swift */; };
@@ -22,7 +21,6 @@
 
 /* Begin PBXFileReference section */
 		3E0CAE61008516DE07A12694 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = ../PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		42108ADD054F481A9B60EC2B /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		4F6F34DACD396890604E4F3F /* Solara.sdef */ = {isa = PBXFileReference; includeInIndex = 1; path = Solara.sdef; sourceTree = "<group>"; };
 		514201492437B4B30078DB4F /* Solara.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Solara.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		514201512437B4B40078DB4F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -82,7 +80,6 @@
 			isa = PBXGroup;
 			children = (
 				514201512437B4B40078DB4F /* Assets.xcassets */,
-				42108ADD054F481A9B60EC2B /* AppIcon.icon */,
 				514201562437B4B40078DB4F /* Info.plist */,
 				514201592437B4B40078DB4F /* Solara.entitlements */,
 				DE21821D6B4527B7E023B602 /* main.swift */,
@@ -193,7 +190,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				514201522437B4B40078DB4F /* Assets.xcassets in Resources */,
-				32CC817DBABC4088BF1F2895 /* AppIcon.icon in Resources */,
 				2FF0A6F31D6FB76878E63C5F /* PrivacyInfo.xcprivacy in Resources */,
 				EB6C4E3A222E6D1BF85AB612 /* Solara.sdef in Resources */,
 			);

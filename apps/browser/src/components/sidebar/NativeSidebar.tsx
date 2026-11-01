@@ -151,7 +151,7 @@ function ShellColumnState({ windowId, state, chrome, addressWidth, top, header, 
   return addressWidth === null ? null : <SidebarAddressBarState width={addressWidth} />;
 }
 
-const NEW_TAB_MARK: number = PRODUCT === "Solara" ? require("../../../assets/solara/new-tab-mark.png") : require("../../../assets/new-tab-mark.png");
+const NEW_TAB_MARK: number = require("../../../assets/solara/new-tab-mark.png");
 const THEME_KEYS = [
   "textTab",
   "tabSelectedText",

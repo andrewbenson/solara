@@ -4,7 +4,6 @@ import { memo, useState } from "react";
 import { Image, Pressable, Text, View, type ViewStyle } from "react-native";
 import { markHoverProps } from "../lib/hoverShift";
 import { faviconFailed, useAppearanceDark, useFavicon, useFaviconTheme } from "../lib/favicons";
-import { PRODUCT } from "../lib/productName";
 import { bundledSiteIcon } from "../lib/siteIcons";
 import { useTheme } from "../lib/theme";
 
@@ -137,8 +136,7 @@ function hostInitial(url: string): string {
   return Array.from(shown)[0]?.toLocaleUpperCase() ?? "";
 }
 
-const FORK_NEW_TAB_MARKS: Record<string, number> = { Solara: require("../../assets/solara/new-tab-mark.png") };
-export const NEW_TAB_MARK: number = FORK_NEW_TAB_MARKS[PRODUCT] ?? require("../../assets/new-tab-mark.png");
+export const NEW_TAB_MARK: number = require("../../assets/solara/new-tab-mark.png");
 
 export function NewTabIcon({ size = 16 }: { size?: number }) {
   const theme = useTheme();

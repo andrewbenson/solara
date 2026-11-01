@@ -40,7 +40,7 @@ public func assignPositions(_ existing: [String?]) throws -> [String] {
   var previous = [Int](repeating: -1, count: units.count)
   let zero = UInt16(UInt8(ascii: "0"))
   for (i, p) in units.enumerated() {
-    guard let p, !p.isEmpty, p.last != zero else { continue }
+    guard let p, !p.isEmpty, p.last != zero, p.allSatisfy(orderDigits.contains) else { continue }
     var lo = 0
     var hi = tails.count
     while lo < hi {

@@ -1,6 +1,6 @@
 {
   "Adapters": {
-    "apps/browser/src/sync/adapters.ts": "805ac45ae0c8fc2c9cca356163815a60fbd20e37160b24762a6f78da0b177f66",
+    "apps/browser/src/sync/adapters.ts": "dfe05dfd1d3f8599f9a772ce1d6aaa9203b629af09795565b24e333adbb066d8",
     "apps/browser/src/sync/pinned.ts": "2d2979d89fbc5bf46a8b7ccadaf38f8b989f15f953862d5c2878326fbec8498c",
     "apps/browser/src/sync/extensions.ts": "cacdd4a017e4abd5ada02e0b9e26a4fd7ccc11aff4c61dcd88231f8e48fbf688"
   },
@@ -33,13 +33,13 @@
     "packages/sync/src/scope.ts": "936c554ebe42e45d4a732a46380875eb81fc572f8f4aff6355b02e02c881505c",
     "packages/sync/src/hlc.ts": "ecb926f03ea07f95e35d26b1bafafc2c79b9fddcf2f87c09dfb346b06f3ed751",
     "packages/sync/src/canon.ts": "8f5059064d488bdca755b53fef5a3220b06a7cd24327022d7abe420e310fab20",
-    "packages/sync/src/order.ts": "f3ae5d5a3ee10adc89a30dcd35c6ca8353c704638bb6109977c411be3de4d537"
+    "packages/sync/src/order.ts": "ea8f6b6eb0aba00682ccd04961fc73430499f1806250a606dac1faafb2f17471"
   },
   "Scenarios/scope.json.deflate": {
     "packages/sync/src/scope.ts": "936c554ebe42e45d4a732a46380875eb81fc572f8f4aff6355b02e02c881505c",
     "packages/sync/src/hlc.ts": "ecb926f03ea07f95e35d26b1bafafc2c79b9fddcf2f87c09dfb346b06f3ed751",
     "packages/sync/src/canon.ts": "8f5059064d488bdca755b53fef5a3220b06a7cd24327022d7abe420e310fab20",
-    "packages/sync/src/order.ts": "f3ae5d5a3ee10adc89a30dcd35c6ca8353c704638bb6109977c411be3de4d537"
+    "packages/sync/src/order.ts": "ea8f6b6eb0aba00682ccd04961fc73430499f1806250a606dac1faafb2f17471"
   },
   "seal-cases": {
     "packages/sync/src/canon.ts": "8f5059064d488bdca755b53fef5a3220b06a7cd24327022d7abe420e310fab20",

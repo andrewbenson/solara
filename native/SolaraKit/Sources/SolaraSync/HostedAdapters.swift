@@ -204,11 +204,18 @@ public final class BookmarksAdapter: SyncAdapter {
     children[other] = []
     for id in values.keys { children[parentOf[id]!, default: []].append(id) }
     func byPosition(_ a: String, _ z: String) -> Double {
-      let pa = values[a]?["pos"]
-      let pz = values[z]?["pos"]
-      if jsLess(pa, pz) { return -1 }
-      if jsLess(pz, pa) { return 1 }
-      return jsKeyPrecedes(keys[a]!, keys[z]!) ? -1 : 1
+      let pa = values[a]?["pos"]?.string
+      let pz = values[z]?["pos"]?.string
+      if (pa != nil) != (pz != nil) { return pa != nil ? -1 : 1 }
+      if let pa, let pz {
+        if jsKeyPrecedes(pa, pz) { return -1 }
+        if jsKeyPrecedes(pz, pa) { return 1 }
+      }
+      let ka = keys[a]!
+      let kz = keys[z]!
+      if jsKeyPrecedes(ka, kz) { return -1 }
+      if jsKeyPrecedes(kz, ka) { return 1 }
+      return 0
     }
     let oldNodes = b["nodes"]?.object ?? [:]
     var nodes = jsSpread(b["nodes"])

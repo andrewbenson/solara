@@ -468,9 +468,7 @@ function bookmarksRun(run) {
   const keyed = ["bar", "other", ...BOOKMARK_KEYS, ...ids];
   const base = new Map(keyed.filter(() => k.chance(0.4)).map((key) => [`bm:${key}`, { p: k.pick(["bar", "other", ...BOOKMARK_KEYS]), pos: k.pick(["a", "b", "m", "z", "c0"]) }]));
   const adapter = adapters.bookmarksAdapter("default");
-  try {
-    adapter.extract((key) => base.get(key));
-  } catch {}
+  adapter.extract((key) => base.get(key));
   const visible = new Map(
     k.some(keyed, 0.5).map((key) => [
       `bm:${key}`,
@@ -481,9 +479,10 @@ function bookmarksRun(run) {
       ]),
     ]),
   );
-  try {
-    adapter.apply(visible, new Set(visible.keys()), (key) => base.get(key), { known: () => true, now: 0, horizon: 0, joined: true });
-  } catch {}
+  adapter.apply(visible, new Set(visible.keys()), (key) => base.get(key), { known: () => true, now: 0, horizon: 0, joined: true });
+  const again = adapter.extract((key) => visible.get(key) ?? base.get(key));
+  if (!again) return;
+  adapter.apply(again.values, new Set(again.values.keys()), (key) => again.values.get(key), { known: () => true, now: 0, horizon: 0, joined: true });
 }
 
 const HISTORY_URLS = ["https://a.com/", "http://b.org/x", "file:///tmp/f", "HTTPS://C.com/", "chrome://settings", "about:blank", "https://ü.de/"];

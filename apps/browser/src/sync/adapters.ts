@@ -314,7 +314,7 @@ export function bookmarksAdapter(profileId: string): Adapter {
         const positions = assignPositions(
           children.map((id) => {
             const known = base(`bm:${keyOf(id)}`) as BookmarkValue | undefined;
-            return known?.p === parent ? known.pos : undefined;
+            return known?.p === parent && typeof known.pos === "string" ? known.pos : undefined;
           }),
         );
         children.forEach((id, i) => {
@@ -360,11 +360,15 @@ export function bookmarksAdapter(profileId: string): Adapter {
       const children = new Map<string, string[]>([[roots.bar, []], [roots.other, []]]);
       for (const id of values.keys()) children.set(parentOf.get(id)!, [...(children.get(parentOf.get(id)!) ?? []), id]);
       const byPosition = (a: string, z: string) => {
-        const pa = values.get(a)!.pos;
-        const pz = values.get(z)!.pos;
+        const pa: unknown = values.get(a)!.pos;
+        const pz: unknown = values.get(z)!.pos;
+        const placedA = typeof pa === "string";
+        const placedZ = typeof pz === "string";
+        if (placedA !== placedZ) return placedA ? -1 : 1;
+        if (placedA && placedZ && pa !== pz) return (pa as string) < (pz as string) ? -1 : 1;
         const ka = keys.get(a)!;
         const kz = keys.get(z)!;
-        return pa < pz ? -1 : pa > pz ? 1 : ka < kz ? -1 : 1;
+        return ka < kz ? -1 : ka > kz ? 1 : 0;
       };
       const nodes: Record<string, BookmarkNode> = { ...b.nodes };
       const drop = (id: string) => {

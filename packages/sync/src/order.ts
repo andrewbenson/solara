@@ -1,6 +1,8 @@
 const DIGITS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 const BASE = DIGITS.length;
 const digit = (c: string | undefined) => (c === undefined ? 0 : DIGITS.indexOf(c));
+const ANCHOR = /^[0-9A-Za-z]*[1-9A-Za-z]$/;
+const usableAnchor = (p: unknown): p is string => typeof p === "string" && ANCHOR.test(p);
 
 function positionBetween(a: string, b: string | null): string {
   if (b !== null && a >= b) throw new Error(`positionBetween: ${a} >= ${b}`);
@@ -20,7 +22,7 @@ export function assignPositions(existing: (string | undefined)[]): string[] {
   const tails: number[] = [];
   const previous = new Array<number>(existing.length).fill(-1);
   existing.forEach((p, i) => {
-    if (p === undefined || !p || p.endsWith("0")) return;
+    if (!usableAnchor(p)) return;
     let lo = 0;
     let hi = tails.length;
     while (lo < hi) {

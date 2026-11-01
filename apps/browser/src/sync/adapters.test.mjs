@@ -1915,3 +1915,94 @@ test("settings received while this Mac ran a version that didn't sync them take 
   assert.equal(a.with(() => S().settings.pageScrollBars), "system", "and goes out as the newer edit");
   assert.equal((await b.sync()).published, 0, "settled");
 });
+
+async function otherChildrenAfterApply(records) {
+  const { bookmarkUuidFor } = await import("../store/bookmarks.ts");
+  useBrowser.setState({ bookmarks: { nodes: {}, roots: {} } });
+  S().hydrate({});
+  useBrowser.setState({ bookmarksReady: { default: true } });
+  const visible = new Map(Object.entries(records).map(([key, value]) => [`bm:${key}`, value]));
+  const adapter = adapters.bookmarksAdapter("default");
+  adapter.apply(visible, new Set(visible.keys()), (key) => visible.get(key), { known: () => true, now: 0, horizon: 0, joined: true });
+  const keyOf = new Map(Object.keys(records).map((key) => [bookmarkUuidFor(key), key]));
+  const other = S().bookmarks.roots.default.other;
+  return { adapter, visible, order: S().bookmarks.nodes[other].children.map((id) => keyOf.get(id)) };
+}
+
+const child = (pos, title = "B") => ({ k: "u", p: "other", t: title, u: "https://b.example/", a: 1, ...(pos === undefined ? {} : { pos }) });
+
+test("bookmarks: malformed child positions sort after every string position, by key (adapterFuzz run 29, capture case 2510)", async () => {
+  const { order } = await otherChildrenAfterApply({ bar: child("z"), k1: child("\u{1F600}"), k3: child(null), "Ünï": child("a0"), U: child(null), folderB: { k: "f", p: "other", t: "F", a: 1, pos: "b" } });
+  assert.deepEqual(order, ["Ünï", "folderB", "bar", "k1", "U", "k3"]);
+});
+
+test("bookmarks: one order for every kind of position, whatever order the records arrive in", async () => {
+  const kinds = { s1: "a0", s2: "b", s3: "z", s4: "", s5: "b", s6: "10", s7: "\u{1F600}", n1: null, n2: 5, n3: 0, n4: true, n5: false, n6: {}, n7: [], n8: undefined };
+  const expected = ["s4", "s6", "s1", "s2", "s5", "s3", "s7", "n1", "n2", "n3", "n4", "n5", "n6", "n7", "n8"];
+  const keys = Object.keys(kinds);
+  for (let shift = 0; shift < keys.length; shift++) {
+    const rotated = [...keys.slice(shift), ...keys.slice(0, shift)];
+    for (const arrival of [rotated, [...rotated].reverse()]) {
+      const { order } = await otherChildrenAfterApply(Object.fromEntries(arrival.map((key) => [key, child(kinds[key])])));
+      assert.deepEqual(order, expected, `arrival ${arrival.join(",")}`);
+    }
+  }
+});
+
+test("bookmarks: the order holds for folders around the 64-child switch in native's sort", async () => {
+  for (const size of [63, 64, 65]) {
+    const records = Object.fromEntries(Array.from({ length: size }, (_, i) => [`c${String(i).padStart(3, "0")}`, child(i % 3 === 0 ? null : i % 3 === 1 ? `p${String(size - i).padStart(3, "0")}` : 7)]));
+    const { order } = await otherChildrenAfterApply(records);
+    const placed = Object.keys(records).filter((key) => typeof records[key].pos === "string").sort((a, z) => (records[a].pos < records[z].pos ? -1 : 1));
+    const malformed = Object.keys(records).filter((key) => typeof records[key].pos !== "string").sort();
+    assert.deepEqual(order, [...placed, ...malformed], `size ${size}`);
+  }
+});
+
+test("bookmarks: reading back children whose stored positions are malformed doesn't throw, and gives them string positions", async () => {
+  const records = { a: child(5), b: child(true), c: child({}), d: child([]), e: child(null), f: child("m") };
+  const { adapter, visible } = await otherChildrenAfterApply(records);
+  const { values } = adapter.extract((key) => visible.get(key));
+  for (const key of Object.keys(records)) assert.equal(typeof values.get(`bm:${key}`)?.pos, "string", key);
+  const again = await otherChildrenAfterApply(Object.fromEntries(Object.keys(records).map((key) => [key, values.get(`bm:${key}`)])));
+  const settled = again.adapter.extract((key) => again.visible.get(key)).values;
+  for (const key of Object.keys(records)) assert.deepEqual(settled.get(`bm:${key}`), values.get(`bm:${key}`), key);
+});
+
+test("bookmarks: Macs that receive malformed child positions repair them, agree on the order, and then sync nothing", async () => {
+  useBrowser.setState({ bookmarks: { nodes: {}, roots: {} } });
+  const folder = new Folder();
+  const writer = new Device("devW", folder);
+  const a = new Device("devA", folder);
+  const b = new Device("devB", folder);
+  const titles = ["One", "Two", "Three", "Four", "Five"];
+  writer.with(() => {
+    const other = S().bookmarks.roots.default.other;
+    for (const title of titles) S().addBookmark({ profileId: "default", url: `https://${title.toLowerCase()}.example/`, title, parentId: other });
+  });
+  const malformed = { One: null, Two: 5, Three: true };
+  const writingMalformed = (adapter) => ({
+    ...adapter,
+    extract: (base) => {
+      const out = adapter.extract(base);
+      for (const [key, value] of out?.values ?? []) if (value?.t in malformed) out.values.set(key, { ...value, pos: malformed[value.t] });
+      return out;
+    },
+  });
+  stub.current.device = writer.id;
+  useBrowser.setState(writer.browser, true);
+  await syncScope({ scope: "p", state: writer.scopes.p, transport: folder.transport(), adapters: [writingMalformed(adapters.bookmarksAdapter("default"))], clock: writer.clock, device: writer.id });
+
+  await syncAll([a, b], 3);
+  assert.deepEqual(tree(a), tree(b));
+  const other = tree(a).other["Other Bookmarks"];
+  assert.deepEqual(other.slice(0, 2), ["Four=https://four.example/", "Five=https://five.example/"]);
+  assert.deepEqual(other.slice(2).sort(), ["One=https://one.example/", "Three=https://three.example/", "Two=https://two.example/"]);
+  for (const d of [a, b])
+    d.with(() => {
+      for (const [key, value] of adapters.bookmarksAdapter("default").extract(() => undefined).values) assert.equal(typeof value.pos, "string", `${d.id} ${key}`);
+    });
+  assert.equal((await a.sync()).published, 0, "settled on A");
+  assert.equal((await b.sync()).published, 0, "settled on B");
+  assert.deepEqual(tree(a), tree(b));
+});

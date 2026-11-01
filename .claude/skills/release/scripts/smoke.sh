@@ -141,6 +141,16 @@ swiftc -O "$here/quit.swift" -o "$work/quit" 2>/dev/null
 swiftc -O "$here/keys.swift" -o "$work/keys" 2>/dev/null
 swiftc -O "$here/gurl.swift" -o "$work/gurl" 2>/dev/null
 
+run_app="$app"
+if [ "${SOLARA_RELEASE_UNSIGNED:-0}" != 1 ]; then
+  run_app="$work/test-copy/$(basename "$app")"
+  "$root/scripts/lib/export-unsigned.sh" "$app" "$run_app" "$root/apps/browser/macos/Solara-macOS/Solara.entitlements" >/dev/null 2>&1 \
+    || { echo "error: couldn't make the ad hoc test copy of $app" >&2; exit 1; }
+  run_app="$(cd "$run_app" && pwd -P)"
+  fw="$run_app/Contents/Frameworks"
+  echo "note: a Developer ID build refuses test facilities, so the checks from here on drive an ad hoc copy of it"
+fi
+
 if [ "${SOLARA_RELEASE_UNSIGNED:-0}" = 1 ]; then
   python3 - "$app" "$work/quit" "$work" <<'PY' || status=1
 import os, pathlib, plistlib, socket, subprocess, sys, time
@@ -272,8 +282,8 @@ JSON
 mkdir -p "$work/data/Chromium"
 printf '{"profile":{"last_used":"Profile p-work"}}' > "$work/data/Chromium/Local State"
 
-codesign --verify --deep --strict "$app"
-launched="$("$root/scripts/agent/ac" launch "$app" --data "$work/data" --port "$port" --js none --no-wait \
+codesign --verify --deep --strict "$run_app"
+launched="$("$root/scripts/agent/ac" launch "$run_app" --data "$work/data" --port "$port" --js none --no-wait \
   --env SOLARA_RELEASE_NOTES=1 --env SOLARA_DRAW_WINDOWS=1 --env SOLARA_PIP_SELFTEST=close --env SOLARA_ACCEPT_EXTERNAL_URLS=1 --switch --disable-backgrounding-occluded-windows)" \
   || { echo "error: the app didn't start" >&2; exit 1; }
 pid="$(sed -n 's/^pid \([0-9]*\) .*/\1/p' <<<"$launched")"
@@ -323,8 +333,8 @@ fi
 logger=""
 kill -KILL "$pid" 2>/dev/null || true
 pid=""
-node "$root/packages/solaracore/scripts/popup-check.mjs" "$app" "$work/popup-check" || status=1
-codesign --verify --deep --strict "$app" && echo "PASS  bundle still sealed after running" || { echo "FAIL  running the app changed its bundle"; status=1; }
+node "$root/packages/solaracore/scripts/popup-check.mjs" "$run_app" "$work/popup-check" || status=1
+codesign --verify --deep --strict "$run_app" && echo "PASS  bundle still sealed after running" || { echo "FAIL  running the app changed its bundle"; status=1; }
 if [ "${SOLARA_RELEASE_UNSIGNED:-0}" = 1 ] && [ "$previous" = none ]; then
   . "$root/scripts/identity.sh"
   bootstrap_url="$(info "$app" SUFeedURL)"

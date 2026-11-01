@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { binaryPids, binaryOf, commandIsBinary, isAlive, launch, realPath } from "./instance.mjs";
+import { binaryPids, binaryOf, commandIsBinary, isAlive, keepCrashReports, launch, realPath } from "./instance.mjs";
 
 const lowerHome = (path) => path.replace(/^\/Users\/([^/]+)\/Developer\/Personal\//, "/Users/$1/Developer/personal/");
 
@@ -40,5 +40,26 @@ test("an instance launched by a differently cased path is recorded and quits", {
     const left = [...binaryPids(binary)].filter((pid) => !before.has(pid));
     rmSync(data, { recursive: true, force: true });
     assert.deepEqual(left, [], "no instance left running");
+  }
+});
+
+test("crash reports outlive the instance's data dir, and folders without one keep nothing", () => {
+  const root = mkdtempSync(join(tmpdir(), "instance-crash-"));
+  try {
+    const data = join(root, "data");
+    mkdirSync(join(data, "Crashpad", "pending"), { recursive: true });
+    mkdirSync(join(data, "crashes"), { recursive: true });
+    writeFileSync(join(data, "Crashpad", "settings.dat"), "");
+    assert.equal(keepCrashReports(data, 7, root), null);
+    writeFileSync(join(data, "Crashpad", "pending", "a.dmp"), "dump");
+    writeFileSync(join(data, "crashes", "crash-7.txt"), "signal 11 (segv)\n");
+    const kept = keepCrashReports(data, 7, root);
+    assert.ok(kept?.startsWith(join(root, "solara-crash-7-")));
+    rmSync(data, { recursive: true, force: true });
+    assert.deepEqual(readdirSync(join(kept, "Crashpad", "pending")), ["a.dmp"]);
+    assert.deepEqual(readdirSync(join(kept, "crashes")), ["crash-7.txt"]);
+    assert.equal(keepCrashReports(join(root, "missing"), 8, root), null);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });

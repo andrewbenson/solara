@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer, request as httpRequest } from "node:http";
 import { createServer as createNetServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
@@ -79,6 +79,19 @@ export function removeTemporaryData(data) {
     process.stderr.write(`warning: couldn't remove ${real}: ${e.message}\n`);
     return false;
   }
+}
+const crashReports = [["crashes", (name) => /^crash-\d+\.txt$/.test(basename(name))], ["Crashpad", (name) => name.endsWith(".dmp")]];
+export function keepCrashReports(data, pid, root = tmpdir()) {
+  const found = crashReports.filter(([folder, isReport]) => {
+    try { return readdirSync(join(data, folder), { recursive: true }).map(String).some(isReport); } catch { return false; }
+  });
+  if (!found.length) return null;
+  const kept = mkdtempSync(join(root, `solara-crash-${pid}-`));
+  for (const [folder] of found) cpSync(join(data, folder), join(kept, folder), { recursive: true });
+  for (const [folder] of found) for (const name of readdirSync(join(kept, folder), { recursive: true }).map(String))
+    if (/^crash-\d+\.txt$/.test(basename(name))) process.stderr.write(`${readFileSync(join(kept, folder, name), "utf8")}\n`);
+  process.stderr.write(`the app (pid ${pid}) left crash reports; kept them in ${kept}\n`);
+  return kept;
 }
 export function wipeRefusal(data) {
   const real = realPath(resolve(data));
@@ -240,7 +253,11 @@ export function reportSuppressedSecureInput(data, when) {
 process.on("exit", (code) => {
   try { rmSync(ownWaiter, { force: true }); } catch {}
   for (const [pid, data] of launched) if (isAlive(pid)) reportSuppressedSecureInput(data, "as the test run exits");
-  if (code !== 0) return;
+  if (code !== 0) {
+    for (const [pid, data] of launched) if (!isAlive(pid)) keepCrashReports(data, pid);
+    for (const data of quitData) keepCrashReports(data, "quit");
+    return;
+  }
   for (const data of quitData) removeTemporaryData(data);
   for (const [dir, report] of reportDirs) if (!report.failed.length) removeTemporaryData(dir);
 });
@@ -502,6 +519,7 @@ class Instance {
     const gateLog = join(this.data, "ui-gate-violation.log");
     if (existsSync(gateLog)) process.stderr.write(readFileSync(gateLog, "utf8"));
     const how = await this.#quit(opts);
+    if (how.how === "gone") keepCrashReports(this.data, this.pid);
     if (!isAlive(this.pid) && state && existsSync(state)) gateNote(state, { unwatch: this.pid });
     launched.delete(this.pid);
     if (this.exited && quitEnded(how) && !this.keepData) quitData.add(this.data);

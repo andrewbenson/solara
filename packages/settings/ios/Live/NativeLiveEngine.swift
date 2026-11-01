@@ -247,3 +247,19 @@ final class NativeLiveEngine: @unchecked Sendable {
   }
   #endif
 }
+
+#if SOLARA_PROBES
+public enum PageCalendarRead {
+  public static func snapshot() -> [String: Any] {
+    let replica = NativeLiveEngine.shared.initialReplica()
+    guard let text = replica["calendarJSON"] as? String, let data = text.data(using: .utf8),
+      let calendar = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+      let events = calendar["events"] as? [[String: Any]] else { return ["count": 0, "eventIds": []] }
+    var ids: [String] = []
+    for event in events.prefix(128) {
+      if let id = event["id"] as? String { ids.append(String(id.prefix(256))) }
+    }
+    return ["count": events.count, "eventIds": ids]
+  }
+}
+#endif

@@ -22,10 +22,11 @@
 //
 //   node apps/browser/scripts/pages-test.mjs <Debug Solara.app under apps/browser/build-*> [--keep-data]
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { devtools, launch, reporter, sleep } from "../../../scripts/lib/instance.mjs";
 
 const args = process.argv.slice(2);
@@ -47,7 +48,6 @@ const server = createServer((req, res) => {
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const base = `http://127.0.0.1:${server.address().port}`;
-mkdirSync(data, { recursive: true });
 const midnight = new Date();
 midnight.setHours(24, 0, 0, 0);
 const minutesLeftToday = Math.floor((midnight.getTime() - Date.now()) / 60_000);
@@ -59,7 +59,6 @@ const calendarFixture = JSON.stringify({
     { id: "review", calendarId: "work", color: "#34C759", title: "Design review", startInMinutes: startToday(90), durationMinutes: 30, allDay: false, location: "", notes: "", url: "", cancelled: false, declined: false, organizer: null, attendees: [] },
   ],
 });
-writeFileSync(join(data, "calendar-fixture.json"), calendarFixture);
 const rep = reporter(join(scratch, "pages-test.log"), { name: "pages-test" });
 const download = (id, filename, state, extra = {}) => ({
   id, url: `https://example.com/${filename}`, filename, path: join(files, filename), state, paused: false,
@@ -70,7 +69,94 @@ let app = null;
 let nativePrompts = null;
 const dev = (action) =>
   app.eval(`const C = globalThis.expo.modules.SolaraCEF; return C.chromeWindows().then((ws) => C.devWindow(ws.find((w) => w.hasRoot).window, ${JSON.stringify(action)}))`);
-const page = async () => JSON.parse(await app.eval(`return globalThis.expo.modules.SolaraPages.devPages()`)).pages[0];
+const untilSnapshot = async (instance, what, accept, ms = 3000, args = {}) => {
+  const end = Date.now() + ms;
+  let last;
+  while (Date.now() < end) {
+    last = await instance.snapshot({ pages: true, fields: ["root.calendar", "root.profiles", "root.downloads", "root.hostedKinds", "windows.bookmarks", "windows.chromeWindowNumber", "windows.viewFrames", "windows.paneOverlays", "windows.hoverCard", "windows.selectedTabId", "windows.frame", "tabs.url"], ...args });
+    if (last.consistent && await accept(last)) return last;
+    await sleep(50);
+  }
+  throw new Error(`${what}: native snapshot did not match (${JSON.stringify(last)})`);
+};
+const freshMeetingTab = (snapshot, before, current) => snapshot.tabs.some((tab) => !before.includes(tab.id) && tab.url?.includes("zoom.us") && current.some((row) => row.id === tab.id && row.url === tab.url));
+const same = (a, b) => { try { assert.deepEqual(a, b); return true; } catch { return false; } };
+const nearFrame = (a, b) => !!a && !!b && ["x", "y", "width", "height"].every((key) => Math.abs(a[key] - b[key]) <= 0.5);
+const safePageURL = (value, dataPath = "") => {
+  if (typeof value !== "string" || !value) return null;
+  try {
+    const url = new URL(value);
+    const scheme = url.protocol.slice(0, -1).toLowerCase();
+    if (!["http", "https", "about", "chrome", "file", "solara", "solara"].includes(scheme)) return `${scheme}:`;
+    if (scheme === "file") {
+      if (!dataPath) return null;
+      const path = realpathSync(fileURLToPath(url)), root = realpathSync(dataPath);
+      if (path !== root && !path.startsWith(`${root}/`)) return null;
+    }
+    return value.replace(/^(\w+:\/\/)[^/@]*@/, "$1").slice(0, 2048);
+  } catch { return null; }
+};
+const pageValues = (page, sanitize = true, dataPath = "") => Object.fromEntries(Object.entries(page).filter(([key]) => key !== "ax" && key !== "frames")
+  .map(([key, value]) => [key, !sanitize ? value : key === "url" ? safePageURL(value, dataPath)
+    : page.kind === "history" && ["shown", "selected"].includes(key) ? value.map((url) => safePageURL(url, dataPath)) : value]));
+const matchesRows = (native, js, match) => {
+  if (!Array.isArray(native) || !Array.isArray(js) || native.length !== js.length) return false;
+  const assigned = new Map();
+  const assign = (index, seen) => {
+    for (let i = 0; i < native.length; i++) {
+      if (seen.has(i) || !match(native[i], js[index])) continue;
+      seen.add(i);
+      if (!assigned.has(i) || assign(assigned.get(i), seen)) {
+        assigned.set(i, index);
+        return true;
+      }
+    }
+    return false;
+  };
+  return js.every((_, index) => assign(index, new Set()));
+};
+const pagesMatch = (native, js, dataPath = "") => matchesRows(native, js, (row, page) =>
+  same(pageValues(row, false), pageValues(page, true, dataPath)) && matchesRows(row.frames, page.frames, (other, frame) =>
+    other.label === (frame.label.startsWith("row:") ? `row:${safePageURL(frame.label.slice(4), dataPath) ?? ""}` : frame.label.slice(0, 512)) && nearFrame(other, frame)));
+const readPages = async (instance) => {
+  let js;
+  await untilSnapshot(instance, "native page models and frames", async (snapshot) => {
+    js = JSON.parse(await instance.eval(`return globalThis.expo.modules.SolaraPages.devPages()`)).pages;
+    return pagesMatch(snapshot.pages.map((page) => ({ ...page, frames: snapshot.pageFrames })), js, instance.data);
+  }, 3000, { fields: ["root.pages", "root.pageFrames"] });
+  return js;
+};
+const page = async () => (await readPages(app))[0];
+const readFrame = async (instance, windowNumber, needle) => {
+  let js;
+  await untilSnapshot(instance, `${needle} frame`, async (snapshot) => {
+    js = JSON.parse(await instance.eval(`return globalThis.expo.modules.SolaraPages.devViewFrame(${windowNumber}, ${JSON.stringify(needle)})`));
+    const row = snapshot.windows.find((window) => window.chromeWindowNumber === windowNumber)?.viewFrames?.[needle];
+    return row?.found === js.found && (!js.found || row.class === js.class && row.alpha === js.alpha && row.transformed === js.transformed && nearFrame(row, js));
+  }, 3000, { viewFrames: [needle], fields: ["windows.chromeWindowNumber", "windows.viewFrames"] });
+  return js;
+};
+const canonicalURL = (url) => (typeof url === "string" ? new URL(url).href : url);
+const crossValue = async (instance, what, read, value, args = {}) => {
+  const snapshot = await untilSnapshot(instance, what, (snapshot) => same(read(snapshot), value), 3000, args);
+  assert.deepEqual(read(snapshot), value, what);
+};
+const crossRead = async (instance, what, read, current, args = {}) => {
+  let value;
+  await untilSnapshot(instance, what, async (snapshot) => {
+    value = await current();
+    return same(read(snapshot), value);
+  }, 3000, args);
+  return value;
+};
+const crossPane = async (instance, tabId, key, js) => {
+  await untilSnapshot(instance, `${key} pane`, (snapshot) => {
+    const entry = snapshot.windows.flatMap((window) => [window.paneOverlays?.tabs?.[tabId]?.[key]]).find(Boolean);
+    if (!js) return !entry || entry.hidden || !entry.card;
+    return !!entry && entry.hidden === js.hidden && entry.opacity === js.opacity &&
+      same(entry.card, js.card) && same(entry.controls, js.controls);
+  }, 3000, { fields: ["windows.paneOverlays"] });
+};
 const until = async (test, ms = 3000) => {
   const end = Date.now() + ms;
   let last;
@@ -94,11 +180,17 @@ const CHOOSER = `{ id: 991, browserId: 0, open: true, title: "example.com wants 
 const PROMPT_NAMES = [...Object.keys(PROMPT_FIELDS), "engine", "chooser", "popups"];
 const PAGE_EVENTS = { password: ["onPasswordPrompt", "{}"], autofill: ["onAutofillPrompt", "{ id: 7, closed: true }"], externalApp: ["onExternalApp", "{}"] };
 const PANE_KEYS = { permission: "permission", password: "password", autofill: "autofill", externalApp: "externalApp", engine: "engineOffer", chooser: "deviceChooser", popups: "popups" };
-const panePromptsHosted = (instance) => instance.eval(`return Promise.resolve(globalThis.expo.modules.SolaraHosted?.kinds?.() ?? []).then((k) => k.includes("panePrompts"))`);
+const panePromptsHosted = async (instance) => {
+  const js = await instance.eval(`return Promise.resolve(globalThis.expo.modules.SolaraHosted?.kinds?.() ?? []).then((k) => k.includes("panePrompts"))`);
+  await crossValue(instance, "pane prompts hosting", (snapshot) => snapshot.hostedKinds.includes("panePrompts"), js);
+  return js;
+};
 const paneEntry = async (instance, tabId, key) => {
   const described = JSON.parse(await instance.eval(`const M = globalThis.expo.modules.SolaraMedia; const w = Object.keys(ac.store.getState().windows)[0]; return M?.describePaneOverlays ? M.describePaneOverlays(w) : "null"`));
   const entry = described?.tabs?.[tabId]?.[key] ?? null;
-  return entry && !entry.hidden && entry.card ? entry : null;
+  const visible = entry && !entry.hidden && entry.card ? entry : null;
+  await crossPane(instance, tabId, key, visible);
+  return visible;
 };
 const askFromPage = async (instance, url, expression) => {
   let target = null;
@@ -171,7 +263,29 @@ async function promptOutcomes(instance) {
     if (panePrompts && PAGE_EVENTS[name]) await pageEvent(PAGE_EVENTS[name][0], PAGE_EVENTS[name][1]);
     return unplant(name);
   };
-  const viewFrame = async (needle) => JSON.parse(await instance.eval(`return globalThis.expo.modules.SolaraPages.devViewFrame(${ids.win}, ${JSON.stringify(needle)})`));
+  const crossPresent = async (name, value) => {
+    const snapshot = await untilSnapshot(instance, `${name} prompt visibility`, (snapshot) => {
+      if (panePrompts) {
+        const entry = snapshot.windows.flatMap((window) => [window.paneOverlays?.tabs?.[ids.tab]?.[PANE_KEYS[name]]]).find(Boolean);
+        if (!!value !== (!!entry && !entry.hidden && !!entry.card)) return false;
+        if (name === "popups" && value) {
+          const ids = Object.keys(entry.controls ?? {}).filter((label) => /\/pop[123]$/.test(label)).map((label) => label.split("/").at(-1)).sort().join(",");
+          return ids === value;
+        }
+        return true;
+      }
+      const frames = snapshot.windows.find((window) => window.chromeWindowNumber === ids.win)?.viewFrames;
+      const visible = !!frames?.PopoverView?.found || name === "popups" && (frames?.["NativePromptView^3"]?.class === "Surface" || !!frames?.NativePromptView?.found);
+      return !!value === visible;
+    }, 3000, panePrompts ? {} : { viewFrames: ["PopoverView", "NativePromptView^3", "NativePromptView"] });
+    assert.equal(!!value, panePrompts
+      ? snapshot.windows.some((window) => { const entry = window.paneOverlays?.tabs?.[ids.tab]?.[PANE_KEYS[name]]; return !!entry && !entry.hidden && !!entry.card; })
+      : (() => {
+        const frames = snapshot.windows.find((window) => window.chromeWindowNumber === ids.win)?.viewFrames;
+        return !!frames?.PopoverView?.found || name === "popups" && (frames?.["NativePromptView^3"]?.class === "Surface" || !!frames?.NativePromptView?.found);
+      })());
+  };
+  const viewFrame = (needle) => readFrame(instance, ids.win, needle);
   const out = {};
   for (const name of PROMPT_NAMES) {
     if (panePrompts && name === "chooser") {
@@ -189,11 +303,13 @@ async function promptOutcomes(instance) {
     await run("keys:0:\u001b:53");
     await sleep(400);
     const afterEsc = await present(name);
+    await crossPresent(name, afterEsc);
     await show(name);
     await sleep(400);
     await run("click:700,560");
     await sleep(400);
     const afterOutside = await present(name);
+    await crossPresent(name, afterOutside);
     let afterRow = null;
     if (name === "popups" && card) {
       await clear(name);
@@ -204,6 +320,7 @@ async function promptOutcomes(instance) {
       await run(`click:${rx},${ry}`);
       await sleep(400);
       afterRow = await present(name);
+      await crossPresent(name, afterRow);
     }
     await clear(name);
     await sleep(300);
@@ -213,7 +330,7 @@ async function promptOutcomes(instance) {
 }
 
 try {
-  app = await launch(resolve(appArg), { data, onboarded: true, env: { SOLARA_CALENDAR_FIXTURE: "1" } });
+  app = await launch(resolve(appArg), { data, onboarded: true, files: { "calendar-fixture.json": calendarFixture }, env: { SOLARA_CALENDAR_FIXTURE: "1" } });
   await app.ready({ test: "return !!globalThis.expo?.modules?.SolaraPages?.devPages" });
   await sleep(5000);
   await app.eval(`const s = ac.store.getState(); const w = Object.keys(s.windows)[0]; for (const d of ${JSON.stringify(downloads)}) s.upsertDownload(d); s.setDownloadsOpen(w, false); ac.pages.openInternalPage("downloads", w); return true`);
@@ -254,6 +371,7 @@ try {
       return { ok: ids === "d3,d1", ids };
     });
     assert.equal(after.ids, "d3,d1");
+    await crossValue(app, "removed download ids", (snapshot) => snapshot.downloads.ids.join(","), after.ids);
   });
 
   await rep.check("Clear All keeps only the running download", async () => {
@@ -264,6 +382,7 @@ try {
       return { ok: ids === "d3", ids };
     });
     assert.equal(after.ids, "d3");
+    await crossValue(app, "remaining download ids", (snapshot) => snapshot.downloads.ids.join(","), after.ids);
   });
   const now = Date.now();
   const sites = ["https://news.example.com/", "https://github.com/solara", "https://en.wikipedia.org/wiki/Sun", "https://apple.example.net/mac"];
@@ -362,7 +481,8 @@ try {
     ac.pages.openInternalPage("bookmarks", w);
     return JSON.stringify({ bar, work, ids, inner })`);
   const marks = JSON.parse(seeded);
-  const barIds = () => app.eval(`const s = ac.store.getState(); return s.bookmarks.nodes[${JSON.stringify(marks.bar)}].children.join(",")`);
+  const barIds = () => crossRead(app, "bookmark bar order", (snapshot) => snapshot.windows.flatMap((window) => window.bookmarks).find((node) => node.id === marks.bar)?.children.join(","),
+    () => app.eval(`const s = ac.store.getState(); return s.bookmarks.nodes[${JSON.stringify(marks.bar)}].children.join(",")`));
 
   await rep.check("Bookmarks lists the bar's bookmarks and folders", async () => {
     const shown = await until(async () => {
@@ -454,9 +574,11 @@ try {
     const moved = await until(async () => ({ ok: (await barIds()) === [marks.work, marks.ids[1], marks.ids[2], marks.ids[0], marks.ids[3]].join(",") }), 4000);
     assert.ok(moved.ok, `bar after drag: ${await barIds()}`);
   });
-  const formPage = async () => JSON.parse(await app.eval(`return globalThis.expo.modules.SolaraPages.devPages()`)).pages.find((p) => p.kind === "bookmarkForm") ?? null;
-  const bookmarkTitle = (id) => app.eval(`return ac.store.getState().bookmarks.nodes[${JSON.stringify(id)}]?.title ?? null`);
-  const bookmarkParent = (id) => app.eval(`return ac.store.getState().bookmarks.nodes[${JSON.stringify(id)}]?.parentId ?? null`);
+  const formPage = async () => (await readPages(app)).find((p) => p.kind === "bookmarkForm") ?? null;
+  const bookmarkTitle = (id) => crossRead(app, "bookmark title", (snapshot) => snapshot.windows.flatMap((window) => window.bookmarks).find((node) => node.id === id)?.title ?? null,
+    () => app.eval(`return ac.store.getState().bookmarks.nodes[${JSON.stringify(id)}]?.title ?? null`));
+  const bookmarkParent = (id) => crossRead(app, "bookmark parent", (snapshot) => snapshot.windows.flatMap((window) => window.bookmarks).find((node) => node.id === id)?.parentId ?? null,
+    () => app.eval(`return ac.store.getState().bookmarks.nodes[${JSON.stringify(id)}]?.parentId ?? null`));
   const openPopover = async (id) => {
     await app.eval(`const s = ac.store.getState(); ac.pages.bookmarkDialog.getState().set({ kind: "page", windowId: Object.keys(s.windows)[0], bookmarkId: ${JSON.stringify(id)} }); return true`);
     return until(async () => {
@@ -464,7 +586,8 @@ try {
       return { ok: !!now && !!frameOf(now, "Done"), now };
     });
   };
-  const dialogOpen = () => app.eval(`return !!ac.pages.bookmarkDialog.getState().open || !!ac.pages.bookmarkEditor.getState().open`);
+  const dialogOpen = () => crossRead(app, "bookmark form visibility", (snapshot) => snapshot.pages.some((page) => page.kind === "bookmarkForm"),
+    () => app.eval(`return !!ac.pages.bookmarkDialog.getState().open || !!ac.pages.bookmarkEditor.getState().open`), { fields: ["root.pages"] });
   const closed = () => until(async () => ({ ok: !(await dialogOpen()) }));
 
   await rep.check("the ⌘D popover renames with Return and moves to the picked folder with Done", async () => {
@@ -525,6 +648,8 @@ try {
     await dev("keys:0:\r:36");
     assert.ok((await closed()).ok, "closed after Return");
     assert.equal(await app.eval(`return ac.store.getState().bookmarks.nodes[${JSON.stringify(id)}]?.url`), "https://delta.example.net");
+    const savedURL = await app.eval(`return ac.store.getState().bookmarks.nodes[${JSON.stringify(id)}]?.url`);
+    await crossValue(app, "saved bookmark URL", (snapshot) => canonicalURL(snapshot.windows.flatMap((window) => window.bookmarks).find((node) => node.id === id)?.url), canonicalURL(savedURL));
     shown = await openEditor();
     await dev("type:Delta Esc");
     await dev("keys:0:\u001b:53");
@@ -537,12 +662,12 @@ try {
     assert.notEqual(await bookmarkTitle(id), "Delta Outside");
   });
   await rep.check("Create a Profile: Return creates it, a preset shares data, Esc and a click outside create nothing", async () => {
-    const count = () => app.eval(`return ac.store.getState().profileOrder.length`);
+    const count = () => crossRead(app, "profile count", (snapshot) => snapshot.profiles.length, () => app.eval(`return ac.store.getState().profileOrder.length`));
     const open = async (preset) => {
       const pending = app.eval(`const s = ac.store.getState(); globalThis.__created = undefined; ac.actions.createProfile(Object.keys(s.windows)[0], ${JSON.stringify(preset ?? {})}).then((id) => { globalThis.__created = id; }); return true`);
       await pending;
       return until(async () => {
-        const all = JSON.parse(await app.eval(`return globalThis.expo.modules.SolaraPages.devPages()`)).pages;
+        const all = (await readPages(app));
         return { ok: all.some((p) => p.kind === "createProfile") };
       });
     };
@@ -555,6 +680,7 @@ try {
     assert.ok((await created()).ok, "resolved after Return");
     const travel = await app.eval(`const s = ac.store.getState(); return JSON.stringify(s.profiles[globalThis.__created] ?? null)`);
     assert.equal(JSON.parse(travel)?.name, "Travel");
+    await crossValue(app, "created profile name", (snapshot) => snapshot.profiles.find((profile) => profile.id === JSON.parse(travel)?.id)?.name, JSON.parse(travel)?.name);
     assert.equal(await count(), before + 1);
     await open();
     await sleep(300);
@@ -575,18 +701,25 @@ try {
     const shared = JSON.parse(await app.eval(`const s = ac.store.getState(); const p = s.profiles[globalThis.__created]; return JSON.stringify({ name: p?.name, data: p?.dataId ?? p?.id, head: s.profiles[${JSON.stringify(head)}]?.dataId ?? ${JSON.stringify(head)} })`));
     assert.equal(shared.name, "Shared");
     assert.equal(shared.data, shared.head, "shares the preset's data");
+    await crossValue(app, "shared profile", (snapshot) => {
+      const profile = snapshot.profiles.find((profile) => profile.name === shared.name);
+      return { name: profile?.name, data: profile?.dataId, head: snapshot.profiles.find((profile) => profile.id === head)?.dataId };
+    }, shared);
   });
-  const kindPage = async (kind) => JSON.parse(await app.eval(`return globalThis.expo.modules.SolaraPages.devPages()`)).pages.find((p) => p.kind === kind) ?? null;
+  const kindPage = async (kind) => (await readPages(app)).find((p) => p.kind === kind) ?? null;
   const calendarRows = async (windowId) => {
     const card = JSON.parse(await app.eval(`return globalThis.expo.modules.SolaraHosted?.sidebarHoverCard?.(${JSON.stringify(windowId)}) ?? "null"`));
-    if (card?.kind === "calendar") return Object.entries(card.events ?? {}).map(([label, [x, y, width, height]]) => ({ label, x, y, width, height }));
+    if (card?.kind === "calendar") {
+      await crossValue(app, "calendar hover rows", (snapshot) => snapshot.windows.find((window) => window.id === windowId)?.hoverCard?.events, card.events);
+      return Object.entries(card.events ?? {}).map(([label, [x, y, width, height]]) => ({ label, x, y, width, height }));
+    }
     return (await kindPage("calendarPreview"))?.frames ?? null;
   };
   const alertButtons = async () => {
     const page = await kindPage("meetingAlert");
     if (page) return { join: frameOf(page, "Join"), ignore: frameOf(page, "Ignore") };
     const win = await app.eval(`return globalThis.expo.modules.SolaraCEF.chromeWindows().then((ws) => ws.find((w) => w.hasRoot).window)`);
-    const f = JSON.parse(await app.eval(`return globalThis.expo.modules.SolaraPages.devViewFrame(${win}, "MeetingAlertFrameView")`));
+    const f = await readFrame(app, win, "MeetingAlertFrameView");
     if (!f.found || f.height <= 100) return null;
     return { join: { x: f.x + 150 - 50, y: f.y + f.height - 27 - 10, width: 100, height: 20 }, ignore: { x: f.x + 283 - 6, y: f.y + 19 - 6, width: 12, height: 12 } };
   };
@@ -597,6 +730,8 @@ try {
       const tab = s.newTab(w, { url: "https://calendar.google.com/calendar/u/0/r", pinned: true, background: true });
       return JSON.stringify({ w, tab, before })`));
     await until(async () => ({ ok: (await app.eval(`return ac.pages.calendar.getState().events.length`)) >= 2 }), 5000);
+    const calendarCount = await app.eval(`return ac.pages.calendar.getState().events.length`);
+    await crossValue(app, "native calendar event count", (snapshot) => snapshot.calendar.count, calendarCount);
     await app.eval(`ac.pages.setSidebarUi({ hover: { windowId: ${JSON.stringify(ids.w)}, kind: "tab", id: ${JSON.stringify(ids.tab)}, anchor: { x: 10, y: 120, width: 240, height: 32 } } }); return true`);
     const shown = await until(async () => {
       const now = await calendarRows(ids.w);
@@ -608,12 +743,14 @@ try {
     const hit = await click(row);
     const active = await until(async () => ({ ok: (await app.eval(`const s = ac.store.getState(); const w = s.windows[${JSON.stringify(ids.w)}]; return w.activeTabIds[w.profileId]`)) === ids.tab }));
     assert.ok(active.ok, `the calendar tab is shown (clicked ${JSON.stringify(row)} on ${hit})`);
+    await crossValue(app, "calendar tab selection", (snapshot) => snapshot.windows.find((window) => window.id === ids.w)?.selectedTabId, ids.tab);
     await app.eval(`ac.pages.setSidebarUi({ hover: null }); return true`);
   });
 
   await rep.check("the meeting alert's Join opens the meeting and Ignore dismisses it", async () => {
     const show = () => app.eval(`const e = ac.pages.calendar.getState().events.find((x) => x.id === "standup"); ac.store.getState().setFocusedWindow?.(Object.keys(ac.store.getState().windows)[0]); ac.pages.meetingAlert.setState({ event: e }); return !!e`);
     assert.equal(await show(), true, "fixture event");
+    await crossValue(app, "native standup fixture event", (snapshot) => snapshot.calendar.eventIds.includes("standup"), true);
     let shown = await until(async () => {
       const now = await alertButtons();
       return { ok: !!now?.join, now };
@@ -621,9 +758,12 @@ try {
     assert.ok(shown.ok, `alert with Join (focused: ${await app.eval("return ac.store.getState().ui.focusedWindowId")})`);
     const tabsBefore = await app.eval(`return Object.keys(ac.store.getState().tabs).length`);
     await sleep(800);
+    const beforeJoin = await app.eval(`return Object.keys(ac.store.getState().tabs)`);
+    await untilSnapshot(app, "meeting tabs before Join", (snapshot) => same(snapshot.tabs.map((tab) => tab.id).sort(), [...beforeJoin].sort()), 3000, { fields: ["tabs.url"] });
     await click(shown.now.join);
     const opened = await until(async () => ({ ok: (await app.eval(`return Object.values(ac.store.getState().tabs).some((t) => (t.url || "").includes("zoom.us"))`)) }), 4000);
     assert.ok(opened.ok, `a zoom tab (tabs ${tabsBefore} → ${await app.eval("return Object.keys(ac.store.getState().tabs).length")})`);
+    await untilSnapshot(app, "fresh meeting tab URL", async (snapshot) => freshMeetingTab(snapshot, beforeJoin, await app.eval(`return Object.values(ac.store.getState().tabs).map(({ id, url }) => ({ id, url }))`)), 3000, { fields: ["tabs.url"] });
     await show();
     shown = await until(async () => {
       const now = await alertButtons();
@@ -633,6 +773,7 @@ try {
     await click(shown.now.ignore);
     const gone = await until(async () => ({ ok: (await app.eval(`return ac.pages.meetingAlert.getState().event === null`)) }));
     assert.ok(gone.ok, "dismissed");
+    await untilSnapshot(app, "meeting alert dismissed", (snapshot) => !snapshot.pages.some((page) => page.kind === "meetingAlert"), 3000, { fields: ["root.pages"] });
   });
 
   await rep.check("the page prompts open in a native frame; the six stay up on Esc and a click on the page, blocked pop-ups close on it and open a row's pop-up", async () => {
@@ -662,17 +803,17 @@ try {
     const panePrompts = await panePromptsHosted(app);
     const tab = JSON.stringify(ids.tab);
     const asked = () => app.eval(`return !!ac.pageState.getState().pages[${tab}]?.permission`);
+    const shownPermission = (snapshot) => snapshot.windows.map((window) => window.paneOverlays?.tabs?.[ids.tab]?.permission)
+      .find((entry) => entry && !entry.hidden && entry.card) ?? null;
+    const choices = (entry) => Object.entries(entry?.controls ?? {}).filter(([label]) => label === "Allow" || label === "Don't Allow")
+      .map(([, [x, y, width, height]]) => ({ x, y, width, height, key: entry.key })).sort((a, b) => a.x - b.x);
     const buttons = async () => {
-      const found = [];
-      for (let i = 0; i < 6; i++) {
-        const f = JSON.parse(await app.eval(`return globalThis.expo.modules.SolaraPages.devViewFrame(${ids.win}, "PromptPressable#${i}")`));
-        if (f.found) found.push(f);
+      if (panePrompts) {
+        const snapshot = await app.snapshot({ fields: ["windows.paneOverlays"] });
+        return snapshot.consistent ? choices(shownPermission(snapshot)) : [];
       }
-      const framed = found.filter((f) => Math.round(f.height) === 28).sort((a, b) => a.x - b.x);
-      if (!panePrompts) return framed;
-      const pane = await paneEntry(app, ids.tab, "permission");
-      return Object.entries(pane?.controls ?? {}).filter(([label]) => label === "Allow" || label === "Don't Allow")
-        .map(([, [x, y, width, height]]) => ({ x, y, width, height })).sort((a, b) => a.x - b.x);
+      const found = JSON.parse(await app.eval(`return Promise.all(Array.from({ length: 6 }, (_, i) => globalThis.expo.modules.SolaraPages.devViewFrame(${ids.win}, "PromptPressable#" + i).then((text) => ({ ...JSON.parse(text), needle: "PromptPressable#" + i })))).then(JSON.stringify)`));
+      return found.filter((f) => f.found && Math.round(f.height) === 28).sort((a, b) => a.x - b.x);
     };
     if (panePrompts) await askFromPage(app, `${base}/guard`, "Notification.requestPermission(); true");
     else await app.eval(`ac.pageState.setState((s) => ({ pages: { ...s.pages, [${tab}]: { ...(s.pages[${tab}] || {}), permission: { id: "guard-perm", browserId: 0, origin: ${JSON.stringify(base)}, permissions: ["notifications"] } } } })); return true`);
@@ -685,10 +826,26 @@ try {
     await click(allow);
     await sleep(300);
     assert.equal(await asked(), true, "the early click is ignored");
+    if (!panePrompts) assert.ok(nearFrame(await readFrame(app, ids.win, allow.needle), allow), "native Allow frame matches the early click target");
+    if (panePrompts) await untilSnapshot(app, "early permission remains visible", (snapshot) => !!shownPermission(snapshot), 2000, { fields: ["windows.paneOverlays"] });
     await sleep(800);
-    await click(allow);
+    let later = allow;
+    if (panePrompts) {
+      const current = choices(shownPermission(await untilSnapshot(app, "the permission prompt's Allow before the later click",
+        (snapshot) => choices(shownPermission(snapshot)).length >= 2, 2000, { fields: ["windows.paneOverlays"] })));
+      later = current[current.length - 1];
+      assert.equal(later.key, allow.key, "the later click meets the prompt the early click met, not a rebuilt one whose guard restarted");
+    }
+    await click(later);
     const answered = await until(async () => ({ ok: !(await asked()) }), 2000);
-    assert.ok(answered.ok, "the later click answers it");
+    assert.ok(answered.ok, `the later click answers it (early Allow ${JSON.stringify(allow)}, later Allow ${JSON.stringify(later)})`);
+    if (panePrompts) await crossPane(app, ids.tab, "permission", null);
+    return { early: allow, later, moved: !nearFrame(allow, later) };
+  });
+  await rep.check("bookmark drags perform no haptics in a hidden instance", async () => {
+    const snapshot = await app.snapshot({ fields: ["root.haptics"] });
+    assert.equal(snapshot.haptics.performed, 0, "hidden bookmark drags perform no haptics");
+    return snapshot.haptics;
   });
 } finally {
   await app?.quit();
@@ -697,11 +854,9 @@ try {
 }
 
 const shellData = join(scratch, "shell-data");
-mkdirSync(shellData, { recursive: true });
-writeFileSync(join(shellData, "calendar-fixture.json"), calendarFixture);
 let shell = null;
 try {
-  shell = await launch(resolve(appArg), { data: shellData, onboarded: true, env: { SOLARA_NATIVE_SHELL: "1", SOLARA_CALENDAR_FIXTURE: "1" } });
+  shell = await launch(resolve(appArg), { data: shellData, onboarded: true, files: { "calendar-fixture.json": calendarFixture }, env: { SOLARA_NATIVE_SHELL: "1", SOLARA_CALENDAR_FIXTURE: "1" } });
   await shell.ready({ test: "return !!globalThis.expo?.modules?.SolaraPages?.devViewFrame" });
   await sleep(4000);
   await rep.check("under the native shell the meeting alert is in a native frame at RN's spot; Join opens the meeting, ✕ dismisses it", async () => {
@@ -715,8 +870,11 @@ try {
     await run("fakeActiveClicks");
     const show = () => shell.eval(`const e = ac.pages.calendar.getState().events.find((x) => x.id === "standup"); ac.store.getState().setFocusedWindow?.(Object.keys(ac.store.getState().windows)[0]); ac.pages.meetingAlert.setState({ event: e }); return !!e`);
     await until(async () => ({ ok: (await shell.eval(`return ac.pages.calendar.getState().events.length`)) > 0 }), 5000);
+    const calendarCount = await shell.eval(`return ac.pages.calendar.getState().events.length`);
+    await crossValue(shell, "shell native calendar event count", (snapshot) => snapshot.calendar.count, calendarCount);
     assert.equal(await show(), true, "fixture event");
-    const frameNow = async () => JSON.parse(await shell.eval(`return globalThis.expo.modules.SolaraPages.devViewFrame(${win}, "MeetingAlertFrameView")`));
+    await crossValue(shell, "shell native standup fixture event", (snapshot) => snapshot.calendar.eventIds.includes("standup"), true);
+    const frameNow = async () => await readFrame(shell, win, "MeetingAlertFrameView");
     const shown = await until(async () => {
       const f = await frameNow();
       return { ok: f.found && f.height > 100, f };
@@ -724,15 +882,19 @@ try {
     assert.ok(shown.ok, `a native frame: ${JSON.stringify(shown.f)}`);
     const width = await shell.eval(`return globalThis.expo.modules.SolaraCEF.devWindow(${win}, "winfo").then((s) => JSON.parse(s).frame)`);
     const windowWidth = Number(String(width).replace(/[{}]/g, "").split(",")[2]);
+    await crossValue(shell, "meeting window width", (snapshot) => snapshot.windows.find((window) => window.chromeWindowNumber === win)?.frame.width, windowWidth);
     assert.equal(shown.f.width, 300);
     assert.equal(shown.f.y, 52, "52 from the top, as RN");
     assert.ok(Math.abs(shown.f.x - Math.max(8, windowWidth - 300 - 14)) <= 1, `x ${shown.f.x} for a ${windowWidth} wide window`);
-    const pages = JSON.parse(await shell.eval(`return globalThis.expo.modules.SolaraPages.devPages()`)).pages;
+    const pages = (await readPages(shell));
     assert.ok(!pages.some((p) => p.kind === "meetingAlert"), "no RN-hosted card as well");
     await sleep(800);
+    const beforeJoin = await shell.eval(`return Object.keys(ac.store.getState().tabs)`);
+    await untilSnapshot(shell, "shell meeting tabs before Join", (snapshot) => same(snapshot.tabs.map((tab) => tab.id).sort(), [...beforeJoin].sort()), 3000, { fields: ["tabs.url"] });
     await press(shown.f.x + 150, shown.f.y + shown.f.height - 27);
     const opened = await until(async () => ({ ok: (await shell.eval(`return Object.values(ac.store.getState().tabs).some((t) => (t.url || "").includes("zoom.us"))`)) }), 4000);
     assert.ok(opened.ok, "Join opened the meeting");
+    await untilSnapshot(shell, "fresh shell meeting tab URL", async (snapshot) => freshMeetingTab(snapshot, beforeJoin, await shell.eval(`return Object.values(ac.store.getState().tabs).map(({ id, url }) => ({ id, url }))`)), 3000, { fields: ["tabs.url"] });
     await show();
     const again = await until(async () => {
       const f = await frameNow();

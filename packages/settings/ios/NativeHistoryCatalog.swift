@@ -235,3 +235,20 @@ enum NativeHistoryCatalog {
     ]
   }
 }
+
+#if SOLARA_PROBES
+@MainActor
+public enum PageLibraryRead {
+  public static func bookmarks(windowId: String) -> [[String: Any]] {
+    guard let state = NativeStoreHandle.store?.state, let window = state.windows[windowId] else { return [] }
+    let snapshot = NativeHistoryCatalog.catalog.bookmarks(engineProfile: state.engineProfile(window.profileId))
+    var result: [[String: Any]] = []
+    for id in snapshot.nodes.keys.sorted().prefix(128) {
+      guard let node = snapshot.nodes[id] else { continue }
+      result.append(["id": node.id, "title": String(node.title.prefix(512)), "url": node.url ?? NSNull(),
+        "parentId": node.parentId ?? NSNull(), "children": node.children ?? []])
+    }
+    return result
+  }
+}
+#endif

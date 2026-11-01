@@ -275,7 +275,7 @@ final class ProbeHost {
 
   private func validateSnapshot(_ request: ProbeRequest) throws -> (origin: String, username: String)? {
     try checkSnapshot(request)
-    guard Set(request.args.keys).isSubset(of: ["windowId", "dropTargets", "viewFrames", "hitPoint", "reactBlockerStep", "savedLogin", "hoverPresentation", "hoverArea", "textFields", "shortcuts", "shortcutTable", "shortcutTrace", "fields", "stripPoints", "topStrip", "stripTrace", "stripLabels", "dragPoints", "tabDrag", "fileDropAfter"]),
+    guard Set(request.args.keys).isSubset(of: ["windowId", "dropTargets", "viewFrames", "hitPoint", "reactBlockerStep", "savedLogin", "hoverPresentation", "hoverArea", "textFields", "shortcuts", "shortcutTable", "shortcutTrace", "fields", "pages", "stripPoints", "topStrip", "stripTrace", "stripLabels", "dragPoints", "tabDrag", "fileDropAfter"]),
       request.args["windowId"] == nil || request.args["windowId"] is String else { throw ProbeFailure.invalidArgument }
     if let raw = request.args["dragPoints"] {
       guard let points = raw as? [[String: Any]], points.count <= 16,
@@ -325,6 +325,9 @@ final class ProbeHost {
       guard let points = value as? [[NSNumber]], points.count <= 4, request.args["windowId"] is String,
         points.allSatisfy({ $0.count == 2 && $0.allSatisfy({ CFGetTypeID($0) != CFBooleanGetTypeID() && $0.doubleValue.isFinite && $0.doubleValue >= 0 && $0.doubleValue <= 32768 }) }) else { throw ProbeFailure.invalidArgument }
     }
+    if let value = request.args["pages"] {
+      guard let flag = value as? NSNumber, CFGetTypeID(flag) == CFBooleanGetTypeID() else { throw ProbeFailure.invalidArgument }
+    }
     if let textFields = request.args["textFields"] {
       guard let textFields = textFields as? NSNumber, CFGetTypeID(textFields) == CFBooleanGetTypeID() else { throw ProbeFailure.invalidArgument }
     }
@@ -342,7 +345,7 @@ final class ProbeHost {
       request.args["hoverPresentation"] == nil || ((request.args["hoverPresentation"] as? [NSNumber])?.allSatisfy({ CFGetTypeID($0) != CFBooleanGetTypeID() }) == true && hoverPresentation?.count == 6 && hoverPresentation!.allSatisfy({ $0.isFinite && abs($0) <= 10000 }) && hoverPresentation![2] > 0 && hoverPresentation![2] <= hoverPresentation![3] && hoverPresentation![4] > 0 && hoverPresentation![4] <= hoverPresentation![5]),
       request.args["hoverArea"] == nil || hoverArea.map({ ["sidebar", "topStrip", "downloads"].contains($0) }) == true,
       dropTargets.count <= 12, viewFrames.count <= 4,
-      viewFrames.allSatisfy({ ["PopoverView", "SidebarTabCardView", "SplitChromeView"].contains($0) }),
+      viewFrames.allSatisfy({ ["PopoverView", "SidebarTabCardView", "SplitChromeView", "MeetingAlertFrameView", "NativeDeviceChooserView", "NativePromptView", "NativePromptView^3", "PromptPressable#0", "PromptPressable#1", "PromptPressable#2", "PromptPressable#3", "PromptPressable#4", "PromptPressable#5"].contains($0) }),
       dropTargets.allSatisfy({ sample in
         sample.count == 3 && (sample["x"] as? Double)?.isFinite == true &&
           (sample["y"] as? Double)?.isFinite == true &&
@@ -379,6 +382,7 @@ final class ProbeHost {
     let topStrip = request.args["topStrip"] as? Bool ?? false
     let stripTrace = request.args["stripTrace"] as? String
     let stripLabels = request.args["stripLabels"] as? Bool ?? false
+    let readPages = request.args["pages"] as? Bool ?? false
     let textFields = request.args["textFields"] as? Bool ?? false
     let dropTargets = request.args["dropTargets"] as? [[String: Any]] ?? []
     let viewFrames = request.args["viewFrames"] as? [String] ?? []
@@ -526,7 +530,7 @@ final class ProbeHost {
           "textFieldCount": Self.value(textFieldCount),
           "media": media, "mediaKinds": MediaRead.kinds,
           "paneOverlays": Self.value(PaneOverlayRead.snapshot(windowId: id)),
-          "toolbarStates": toolbarStates,
+          "toolbarStates": toolbarStates, "bookmarks": readPages ? pageBookmarks(windowId: id) as Any : NSNull(),
           "contentFrame": Self.value(window?.contentView.map { Self.rectFromWindow($0.bounds) }),
           "chromeWindowNumber": Self.value(chromeNumber),
           "selectedTabId": Self.value(model.activeTabIds[model.profileId]),
@@ -579,6 +583,12 @@ final class ProbeHost {
             "phase": Self.dragString(row["phase"], limit: 32), "result": Self.dragString(row["result"], limit: 512)])
         }
       }
+      var profiles: [[String: Any]] = []
+      for id in state.profileOrder {
+        guard let profile = state.profiles[id] else { continue }
+        profiles.append(["id": id, "name": String(profile.name.prefix(512)), "dataId": profile.dataId ?? id])
+      }
+      let pages = readPages ? pageSnapshots() : [:]
       let upscaling = VideoUpscalingRead.snapshot()
       let upscalingTabs: [[String: Any]] = (upscaling["tabs"] as? [[String: Any]] ?? []).map { entry in
         ["tabId": entry["tabId"] ?? NSNull(), "url": safeURL(entry["url"] as? String ?? ""),
@@ -617,10 +627,10 @@ final class ProbeHost {
           "groups": groups, "splits": splits, "dragPreview": tabDrag ? Self.dragPreview(DragPreviewRead.snapshot) : [:], "tabDrag": tabDrag ? Self.tabDrag(TabDragRead.snapshot) : [:],
           "fileDragURLs": fileDragURLs, "fileDropResults": fileDropResults,
           "fileDropSequence": Self.dragSequence(FileDragRead.results.last?["sequence"]) ?? 0,
-          "hoverStats": HoverStatsRead.snapshot(), "hoverStatsLive": HoverStatsRead.current(),
-          "windows": windows, "tabs": tabs, "downloads": ["count": state.downloads.count, "finished": state.downloads.filter { $0.state == "finished" }.count], "profiles": NSNull(),
-          "capabilities": ["available": ["windows.frame", "windows.chromeWindowNumber", "windows.accessibilityLayers", "windows.focusedURL", "windows.omnibox", "windows.split", "windows.tour", "windows.folderPanel", "windows.iconPicker", "windows.shell", "windows.sidebarShell", "windows.sidebarChromeMetrics", "windows.sidebarAddressBar", "windows.hoverCard", "windows.reactBlockers", "windows.dropTargets", "windows.viewFrames", "windows.hitSlot", "windows.hitView", "windows.firstResponder", "windows.textFieldCount", "windows.media", "windows.media.labels", "windows.mediaKinds", "windows.paneOverlays", "poolAvailable", "onboarding", "newTabAvailable", "windowDragCount", "swipeSimulation", "haptics", "videoUpscaling", "savedLogin", "tabs.url", "tabs.title", "tabs.customTitle", "tabs.customIcon", "tabs.zoom", "windows.overlays.selection", "windows.overlays.zoom", "windows.overlays.history", "windows.overlays.downloads", "windows.overlays.sadTab", "downloads.count", "downloads.finished", "windows.settings.layout", "windows.settings.search", "windows.toolbarStates", "hostedKinds", "windows.hoverPresentation", "windows.hoverPresentationTrace", "windows.hoverLayout", "tabs.pinned", "tabs.pinnedAsRow", "windows.shellHover", "hoverStats", "hoverStatsLive", "windows.toolbarHosts", "windows.shortcuts", "windows.shortcutTable", "windows.shortcuts.focusTrace", "snapshot.fields", "windows.shortcutFields", "windows.omnibox.value", "windows.panelOpen", "windows.sidebarOpen", "windows.activeTabIds", "tabs.find", "windows.topStrip", "windows.stripPoints", "windows.sidebarDrag", "windows.savedFrame", "windows.screenFrame", "tabs.tileFolderId", "groups", "splits", "dragPreview", "tabDrag", "fileDragURLs", "fileDropResults", "windows.dragPoints", "fileDropSequence"],
-            "partial": ["tabs.live"], "unavailable": ["windows.occluded", "windows.selectedTabIds", "windows.spaces", "windows.panes", "windows.focus", "windows.views", "tabs.loading", "tabs.visible", "profiles"]]]
+          "calendar": readPages ? PageCalendarRead.snapshot() as Any : NSNull(), "hoverStats": HoverStatsRead.snapshot(), "hoverStatsLive": HoverStatsRead.current(),
+          "windows": windows, "tabs": tabs, "downloads": ["count": state.downloads.count, "finished": state.downloads.filter { $0.state == "finished" }.count, "ids": state.downloads.map(\.id)], "profiles": profiles, "profileOrder": state.profileOrder, "pages": pages["pages"] ?? NSNull(), "pageFrames": pages["frames"] ?? NSNull(),
+          "capabilities": ["available": ["windows.frame", "windows.chromeWindowNumber", "windows.accessibilityLayers", "windows.focusedURL", "windows.omnibox", "windows.split", "windows.tour", "windows.folderPanel", "windows.iconPicker", "windows.shell", "windows.sidebarShell", "windows.sidebarChromeMetrics", "windows.sidebarAddressBar", "windows.hoverCard", "windows.reactBlockers", "windows.dropTargets", "windows.viewFrames", "windows.hitSlot", "windows.hitView", "windows.firstResponder", "windows.textFieldCount", "windows.media", "windows.media.labels", "windows.mediaKinds", "windows.paneOverlays", "poolAvailable", "onboarding", "newTabAvailable", "windowDragCount", "swipeSimulation", "haptics", "videoUpscaling", "savedLogin", "tabs.url", "tabs.title", "tabs.customTitle", "tabs.customIcon", "tabs.zoom", "windows.overlays.selection", "windows.overlays.zoom", "windows.overlays.history", "windows.overlays.downloads", "windows.overlays.sadTab", "downloads.count", "downloads.finished", "windows.settings.layout", "windows.settings.search", "windows.toolbarStates", "hostedKinds", "windows.hoverPresentation", "windows.hoverPresentationTrace", "windows.hoverLayout", "tabs.pinned", "tabs.pinnedAsRow", "windows.shellHover", "hoverStats", "hoverStatsLive", "windows.toolbarHosts", "windows.shortcuts", "windows.shortcutTable", "windows.shortcuts.focusTrace", "snapshot.fields", "windows.shortcutFields", "windows.omnibox.value", "windows.panelOpen", "windows.sidebarOpen", "windows.activeTabIds", "tabs.find", "pages", "calendar", "windows.bookmarks", "downloads.ids", "profiles", "profileOrder", "pageFrames", "windows.topStrip", "windows.stripPoints", "windows.sidebarDrag", "windows.savedFrame", "windows.screenFrame", "tabs.tileFolderId", "groups", "splits", "dragPreview", "tabDrag", "fileDragURLs", "fileDropResults", "windows.dragPoints", "fileDropSequence"],
+            "partial": ["tabs.live"], "unavailable": ["windows.occluded", "windows.selectedTabIds", "windows.spaces", "windows.panes", "windows.focus", "windows.views", "tabs.loading", "tabs.visible"]]]
         return ["id": request.id, "protocol": 1, "result": Self.project(result, fields: request.args["fields"] as? [String])]
       }
       initial = final
@@ -789,6 +799,45 @@ final class ProbeHost {
       }.joined(separator: "\n")
     }
     return String(ancestors.joined(separator: " < ").prefix(512))
+  }
+
+  private func pageBookmarks(windowId: String) -> [[String: Any]] {
+    var result: [[String: Any]] = []
+    for var node in PageLibraryRead.bookmarks(windowId: windowId) {
+      node["url"] = safeURL(node["url"] as? String ?? "")
+      result.append(node)
+    }
+    return result
+  }
+
+  private func pageSnapshots() -> [String: Any] {
+    var result: [[String: Any]] = []
+    var sharedFrames: [[String: Any]] = []
+    for var page in PagesRead.snapshot() {
+      if page["url"] != nil { page["url"] = safeURL(page["url"] as? String ?? "") }
+      if page["kind"] as? String == "history" {
+        for key in ["shown", "selected"] {
+          if let urls = page[key] as? [String] { page[key] = urls.map { safeURL($0) } }
+        }
+      }
+      if sharedFrames.isEmpty, let frames = page["frames"] as? [[String: Any]] {
+        var rows: [[String: Any]] = []
+        for var frame in frames.prefix(256) {
+          if let label = frame["label"] as? String {
+            if label.hasPrefix("row:") {
+              frame["label"] = "row:" + (safeURL(String(label.dropFirst(4))) as? String ?? "")
+            } else {
+              frame["label"] = String(label.prefix(512))
+            }
+          }
+          rows.append(frame)
+        }
+        sharedFrames = rows
+      }
+      page.removeValue(forKey: "frames")
+      result.append(page)
+    }
+    return ["pages": result, "frames": sharedFrames]
   }
 
   private func omniboxText(_ raw: String?) -> Any {

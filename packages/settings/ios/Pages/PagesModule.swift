@@ -275,3 +275,23 @@ private final class PagesEventSink: @unchecked Sendable {
   weak var module: PagesModule?
   init(_ module: PagesModule) { self.module = module }
 }
+
+#if SOLARA_PROBES
+@MainActor
+public extension PagesRead {
+  static func snapshot() -> [[String: Any]] {
+    guard let data = NativePageView.devState().data(using: .utf8),
+      let state = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+      let pages = state["pages"] as? [[String: Any]] else { return [] }
+    var result: [[String: Any]] = []
+    for page in pages.prefix(16) {
+      var row: [String: Any] = [:]
+      for key in ["kind", "query", "shown", "selected", "clearOpen", "folder", "undo", "name", "url", "valid", "frames"] {
+        if let value = page[key] { row[key] = value }
+      }
+      result.append(row)
+    }
+    return result
+  }
+}
+#endif

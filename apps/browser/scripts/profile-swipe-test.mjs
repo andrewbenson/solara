@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { appendFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { inflateSync } from "node:zlib";
 import { launch, listenerPids, parsePort, reporter, session, sleep } from "../../../scripts/lib/instance.mjs";
 
 const args = process.argv.slice(2);
@@ -55,8 +56,145 @@ const server = createServer((req, res) => {
 const tab = (id, profileId) => ({ id, profileId, url: "solara://newtab", title: "New Tab" });
 const fixture = session({ profiles: ["Personal", "Work"], tabs: [tab("t1", "default"), tab("t2", "work")] });
 
-const ac = (body, timeout = 15000) => owned.eval(body, { timeout });
+const ac = async (body, timeout = 15000) => {
+  const result = await owned.eval(`return Promise.resolve((function(ac) {${body}\n})(ac)).then(value => {
+    const negativeZeroPaths = [];
+    const visit = (current, path) => {
+      if (Object.is(current, -0)) negativeZeroPaths.push(path);
+      else if (current && typeof current === "object") {
+        for (const key of Object.keys(current)) visit(current[key], [...path, key]);
+      }
+    };
+    visit(value, []);
+    return { value: value ?? null, negativeZeroPaths };
+  });`, { timeout });
+  let value = result.value;
+  for (const path of result.negativeZeroPaths) {
+    if (!path.length) value = -0;
+    else {
+      const parent = path.slice(0, -1).reduce((current, key) => current[key], value);
+      parent[path.at(-1)] = -0;
+    }
+  }
+  return value;
+};
+const snapshotFields = ["windows.profileId", "windows.pager", "windows.profilePager", "windows.selectedTabId",
+  "root.chromeWindows", "root.profileOrder", "tabs.url", "root.haptics"];
+const untilSnapshot = async (what, accept, ms = 2500, options = {}) => {
+  const end = Date.now() + Math.min(ms, 2500);
+  let last;
+  const remaining = () => {
+    const timeout = end - Date.now();
+    assert.ok(timeout > 0, `${what}: cross-check deadline`);
+    return timeout;
+  };
+  while (Date.now() < end) {
+    assertOwnedAlive();
+    last = await owned.snapshot({ fields: snapshotFields, ...options }, { timeout: remaining() });
+    if (Date.now() >= end) break;
+    if (last.consistent && await accept(last, remaining) && Date.now() < end) return last;
+    if (Date.now() < end) await sleep(Math.min(25, remaining()));
+  }
+  throw new Error(`${what}: native snapshot did not match (${JSON.stringify(last)})`);
+};
+const same = (a, b) => { try { assert.deepEqual(a, b); return true; } catch { return false; } };
+const crossValue = async (what, read, value, options = {}, ms = 2500) => {
+  const snapshot = await untilSnapshot(what, (snapshot) => same(read(snapshot), value), ms, options);
+  assert.deepEqual(read(snapshot), value, what);
+};
+const crossRead = async (what, read, current, options = {}, ms = 2500) => {
+  let js;
+  await untilSnapshot(what, async (snapshot, remaining) => {
+    js = await current(remaining());
+    return same(read(snapshot), js);
+  }, ms, options);
+  return js;
+};
 const profile = () => ac('return ac.store.getState().windows.w1.profileId;');
+const crossProfile = () => crossRead("selected profile", (snapshot) => snapshot.windows.find((window) => window.id === "w1")?.profileId,
+  (timeout) => ac('return ac.store.getState().windows.w1.profileId;', timeout));
+const crossAck = () => crossRead("native selection acknowledgment", (snapshot) => snapshot.windows.find((window) => window.id === "w1")?.profilePager?.ack,
+  (timeout) => ac('return globalThis.expo.modules.SolaraProfilePager.describe("w1").then(value => JSON.parse(value).ack);', timeout));
+const crossOrder = () => crossRead("native profile order", (snapshot) => snapshot.profileOrder,
+  (timeout) => ac('return ac.store.getState().profileOrder;', timeout));
+const crossFixture = () => crossRead("native scroll fixture selection", (snapshot) => {
+  const window = snapshot.windows.find((window) => window.id === "w1");
+  return { profileId: window?.profileId, activeTabId: window?.selectedTabId };
+}, (timeout) => ac('const window=ac.store.getState().windows.w1; return {profileId:window.profileId,activeTabId:window.activeTabIds.default};', timeout));
+let pendingSimulations = [];
+let parityChecked = false;
+const saveSimulation = (result) => {
+  pendingSimulations.push(result);
+  assert.ok(pendingSimulations.length <= 8, "deferred swipe traces fit native history");
+  return result;
+};
+const pagerFields = ["profileId", "count", "selected", "position", "phase", "selectionSequence", "areas", "propAck"];
+const pagerValues = (value) => Object.fromEntries(pagerFields.filter((key) => value?.[key] !== undefined).map((key) => [key, value[key]]));
+const crossPager = async () => {
+  let js;
+  const snapshot = await untilSnapshot("native pager state", async (snapshot, remaining) => {
+    js = await ac('return globalThis.expo.modules.SolaraSwipe.devPagerState("w1");', remaining());
+    assert.ok(js, "retained JS pager state");
+    const native = snapshot.windows.find((window) => window.id === "w1")?.pager;
+    return !!native && pagerFields.every((key) => js[key] === undefined || (key === "position" ? Math.abs(native[key] - js[key]) <= 0.003 : native[key] === js[key]));
+  });
+  const native = snapshot.windows.find((window) => window.id === "w1").pager;
+  for (const [key, value] of Object.entries(pagerValues(js))) {
+    if (key === "position") assert.ok(Math.abs(native.position - value) <= 0.003, "native pager position");
+    else assert.deepEqual(native[key], value, `native pager ${key}`);
+  }
+  return js;
+};
+const traceValues = (result) => ({ startNs: result.startNs ?? null, where: result.where,
+  events: (result.events ?? []).slice(0, 128).map((event) => ({
+    ...Object.fromEntries(["phase", "time", "atMs", "lateMs", "swallowed", "monitorSwallowed", "state"].filter((key) => event[key] !== undefined).map((key) => [key, event[key]])),
+    ...(event.error !== undefined ? { error: String(event.error).slice(0, 512) } : {}),
+  })),
+  acks: (result.acks ?? []).filter((ack) => ["begin", "emit", "hitRouting", "reject"].includes(ack.diag)).slice(0, 256).map((ack) => ({
+    ...Object.fromEntries(["diag", "phase", "velocity", "window", "fallback", "reason"].filter((key) => ack[key] !== undefined).map((key) => [key, ack[key]])),
+    ...Object.fromEntries(["raw", "hit"].filter((key) => Array.isArray(ack[key])).map((key) => [key, ack[key].slice(0, 16).map((entry) => ({ class: entry.class ?? null }))])),
+    ...(Array.isArray(ack.targets) ? { targets: ack.targets.slice(0, 16).map((entry) => ({ miss: typeof entry.miss === "string" ? entry.miss.slice(0, 512) : null })) } : {}),
+  })) });
+const crossSimulation = async (result) => {
+  const end = Date.now() + 9000;
+  const snapshot = async (options = {}) => {
+    assertOwnedAlive();
+    assert.ok(end - Date.now() >= 1000, "swipe event trace cross-check deadline");
+    const value = await owned.snapshot({ fields: ["root.swipeSimulation"], ...options }, { timeout: 1000 });
+    assert.ok(Date.now() < end, "swipe event trace cross-check deadline");
+    assert.ok(value.consistent, "consistent swipe event trace snapshot");
+    return value.swipeSimulation;
+  };
+  const expected = traceValues(result);
+  assert.match(expected.startNs, /^[0-9]{1,32}$/, "saved swipe startNs");
+  const completed = (await snapshot()).completedTraces;
+  assert.ok(Array.isArray(completed) && completed.length <= 8, "bounded completed swipe metadata");
+  const matches = completed.filter((trace) => trace.startNs === expected.startNs);
+  assert.equal(matches.length, 1, "saved swipe trace must be retained and unambiguous");
+  const identity = matches[0];
+  assert.ok(Number.isSafeInteger(identity.sequence) && identity.sequence > 0, "completed swipe sequence");
+  assert.match(identity.completedNs, /^[0-9]{1,32}$/, "completed swipe timestamp");
+  const pageCount = Math.max(1, Math.ceil(Math.max(expected.events.length, expected.acks.length) / 8));
+  for (let page = 0; page < pageCount; page++) {
+    const simulation = await snapshot({ swipeTracePage: page,
+      swipeTraceStartNs: identity.startNs, swipeTraceSequence: identity.sequence });
+    assert.equal(simulation.traceAbsent, false, "pinned swipe trace is retained");
+    const matches = simulation.completedTraces.filter((trace) => trace.startNs === identity.startNs);
+    assert.equal(matches.length, 1, "pinned swipe trace remains unambiguous");
+    assert.deepEqual(matches[0], identity, "pinned swipe metadata is immutable");
+    const trace = simulation.trace;
+    assert.ok(trace, "pinned swipe trace page exists");
+    assert.equal(trace.startNs, identity.startNs, "pinned swipe startNs");
+    assert.equal(trace.sequence, identity.sequence, "pinned swipe sequence");
+    assert.equal(trace.completedNs, identity.completedNs, "pinned swipe completion");
+    assert.deepEqual(trace, {
+      ...expected, sequence: identity.sequence, completedNs: identity.completedNs,
+      page, pageCount, eventCount: expected.events.length, ackCount: expected.acks.length,
+      events: expected.events.slice(page * 8, page * 8 + 8), acks: expected.acks.slice(page * 8, page * 8 + 8),
+    }, `native swipe event trace page ${page}`);
+  }
+  return result;
+};
 async function waitProfile(expected) {
   for (let start = Date.now(); Date.now() - start < 1800;) {
     if (await profile() === expected) return;
@@ -70,6 +208,15 @@ async function reset() {
   await sleep(250);
 }
 const windows = () => ac('return globalThis.expo.modules.SolaraCEF.chromeWindows();');
+const crossWindows = async () => {
+  let js;
+  await crossRead("native Chrome windows", (snapshot) => snapshot.chromeWindows, async (timeout) => {
+    js = await ac('return globalThis.expo.modules.SolaraCEF.chromeWindows();', timeout);
+    const fields = ["window", "hasRoot", "profile", "group", "visible"];
+    return js.map((window) => Object.fromEntries(fields.filter((key) => window[key] !== undefined).map((key) => [key, window[key]])));
+  });
+  return js;
+};
 async function nativeWindow() {
   const all = await windows();
   return all.find((w) => w.hasRoot && w.profile === "" && w.group) ?? all.find((w) => w.hasRoot);
@@ -106,9 +253,9 @@ function fixtureFidelity(steps, result) {
   return { intendedMs, decodedMs, endedVelocity: ended?.velocity ?? null,
     maxLateMs: Math.max(0, ...events.map((e) => e.lateMs ?? 0)), errors };
 }
-const simulate = (steps, source) => ac(source
+const simulate = async (steps, source) => saveSimulation(await ac(source
   ? `return globalThis.expo.modules.SolaraSwipe.devSimulate(120, 400, ${source}, ${JSON.stringify(steps)}, true);`
-  : `return globalThis.acSwipe.sidebar("w1").devSimulate(${JSON.stringify(steps)}, {ignorePreference:true});`);
+  : `return globalThis.acSwipe.sidebar("w1").devSimulate(${JSON.stringify(steps)}, {ignorePreference:true});`));
 function alternatingGestures(count, gapMs = 112) {
   return Array.from({ length: count }, (_, n) => gesture(n % 2 ? 1 : -1).map((step) => ({
     ...step, atMs: step.atMs + n * gapMs, timestampMs: step.timestampMs + n * gapMs,
@@ -118,7 +265,7 @@ const PAGER_DEBUG = nativePager
   ? 'globalThis.expo.modules.SolaraProfilePager.describe("w1").then(JSON.parse)'
   : 'Promise.resolve(globalThis.acPager("w1").debug())';
 async function nativeBatch(steps, blockedMs = 0) {
-  return ac(`
+  const js = await ac(`
     const simulation=globalThis.acSwipe.sidebar("w1").devSimulate(${JSON.stringify(steps)}, {ignorePreference:true});
     if (${blockedMs}) setTimeout(()=>{
       const until=performance.now()+${blockedMs}; while(performance.now()<until){}
@@ -128,13 +275,27 @@ async function nativeBatch(steps, blockedMs = 0) {
         profile:ac.store.getState().windows.w1.profileId,pager})));
     },650)));
   `, 15000);
+  saveSimulation(js.result);
+  return js;
+}
+async function crossCase() {
+  for (const simulation of pendingSimulations.splice(0)) await crossSimulation(simulation);
+  await crossPager();
+  await crossProfile();
+  await crossWindows();
+  if (nativePager) await crossAck();
+  await crossOrder();
+  parityChecked = true;
 }
 async function test(name, fn) {
   if (only && !name.toLowerCase().includes(only)) return;
   matched++;
+  pendingSimulations = [];
+  parityChecked = false;
   let fatal = null;
   await rep.check(name, async () => {
     const result = await fn();
+    if (!parityChecked) await crossCase();
     evidence.cases.push({ name, passed: true, result });
   }, {
     async onFail(error) {
@@ -148,6 +309,52 @@ async function test(name, fn) {
     },
   });
   if (fatal) throw Object.assign(fatal, { reported: true });
+}
+
+function readPng(path) {
+  const input = readFileSync(path);
+  assert.deepEqual(input.subarray(0, 8), Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  let width = 0, height = 0, channels = 0;
+  const chunks = [];
+  for (let offset = 8; offset + 12 <= input.length;) {
+    const length = input.readUInt32BE(offset);
+    assert.ok(length <= input.length - offset - 12);
+    const type = input.toString("ascii", offset + 4, offset + 8);
+    if (type === "IHDR") {
+      assert.equal(length, 13);
+      width = input.readUInt32BE(offset + 8);
+      height = input.readUInt32BE(offset + 12);
+      channels = { 2: 3, 6: 4 }[input[offset + 17]];
+      assert.equal(input[offset + 16], 8);
+      assert.ok(channels);
+      assert.deepEqual([...input.subarray(offset + 18, offset + 21)], [0, 0, 0]);
+      assert.ok(width > 0 && height > 0 && width * height <= 16_777_216);
+    } else if (type === "IDAT") chunks.push(input.subarray(offset + 8, offset + 8 + length));
+    offset += 12 + length;
+  }
+  assert.ok(channels);
+  const stride = width * channels;
+  const raw = inflateSync(Buffer.concat(chunks), { maxOutputLength: (stride + 1) * height });
+  assert.equal(raw.length, (stride + 1) * height);
+  const pixels = Buffer.alloc(stride * height);
+  for (let y = 0; y < height; y++) {
+    const filter = raw[y * (stride + 1)];
+    assert.ok(filter <= 4);
+    for (let x = 0; x < stride; x++) {
+      const a = x >= channels ? pixels[y * stride + x - channels] : 0;
+      const b = y ? pixels[(y - 1) * stride + x] : 0;
+      const c = x >= channels && y ? pixels[(y - 1) * stride + x - channels] : 0;
+      const predictor = a + b - c;
+      const pa = Math.abs(predictor - a), pb = Math.abs(predictor - b), pc = Math.abs(predictor - c);
+      const predicted = [0, a, b, (a + b) >> 1, pa <= pb && pa <= pc ? a : pb <= pc ? b : c][filter];
+      pixels[y * stride + x] = (raw[y * (stride + 1) + x + 1] + predicted) & 255;
+    }
+  }
+  const rgba = Buffer.alloc(width * height * 4, 255);
+  for (let pixel = 0; pixel < width * height; pixel++) {
+    for (let channel = 0; channel < channels; channel++) rgba[pixel * 4 + channel] = pixels[pixel * channels + channel];
+  }
+  return { width, height, rgba };
 }
 
 async function pageEval(expression) {
@@ -294,6 +501,7 @@ try {
           profile:ac.store.getState().windows.w1.profileId}));
       },650)));
     `);
+    saveSimulation(result.native);
     assert.equal(result.profile,"default");
     assert.equal(result.state.profileId,"default");
     assert.equal(result.state.phase,"idle");
@@ -328,6 +536,7 @@ try {
         const results = [];
         for (const [sign, expected] of [[-1, "work"], [1, "default"], [-1, "work"]]) {
           const result = await ac(`return globalThis.acSwipe.${surface}("w1").devSimulate(${JSON.stringify(flick(sign))}, {ignorePreference:true});`, 15000);
+          saveSimulation(result);
           results.push(result);
           const leaked = (result.events ?? []).filter((e) => e.phase.startsWith("momentum") && e.monitorSwallowed !== true);
           try {
@@ -339,6 +548,7 @@ try {
             throw error;
           }
         }
+        await crossCase();
         return results.map((r) => r.events.map((e) => [e.phase, e.monitorSwallowed]));
       } finally {
         if (surface === "strip") await ac('ac.store.getState().updateSettings({ tabLayout: "sidebar" }); return true;');
@@ -366,6 +576,9 @@ try {
         assert.equal(reverse.acks.find((a) => a.diag === "begin")?.window, source, "recognition should run in the source window");
         await waitProfile("default");
         assert.equal(await ac(`return ac.store.getState().windows[${JSON.stringify(otherId)}].profileId;`), "default");
+        await crossRead("other logical window profile", (snapshot) => snapshot.windows.find((window) => window.id === otherId)?.profileId,
+          (timeout) => ac(`return ac.store.getState().windows[${JSON.stringify(otherId)}].profileId;`, timeout));
+        await crossCase();
         return { source, first, reverse, other: other.window };
       } finally {
         await ac(`ac.store.getState().closeWindow(${JSON.stringify(otherId)}); return true;`);
@@ -382,6 +595,7 @@ try {
         assert.equal(during.visible, true, "old full-screen host must remain visible for this regression");
         const reverse = await simulate(gesture(1), source);
         await waitProfile("default");
+        await crossCase();
         return { source, during, first, reverse };
       } finally {
         await action(source, "fakeFullScreen:0");
@@ -430,6 +644,9 @@ try {
     const afterVertical = await pageEval("({x:scrollX,y:scrollY,url:location.href})");
     assert.ok(afterVertical.y > afterHorizontal.y, "vertical page scroll must still move web content");
     assert.equal(await profile(), "default");
+    saveSimulation(horizontal);
+    saveSimulation(vertical);
+    await crossFixture();
     return { before, afterHorizontal, afterVertical, horizontal, vertical };
   });
   const routing = (result) => result.acks.find((a) => a.diag === "hitRouting");
@@ -457,6 +674,7 @@ try {
     const source = (await nativeWindow()).window;
     const result = await ac(`return globalThis.expo.modules.SolaraSwipe.devSimulate(700, 400, ${source}, ${JSON.stringify(gesture(-1))}, true);`);
     await sleep(600);
+    saveSimulation(result);
     assert.equal(routing(result)?.raw?.[0]?.class, "RenderWidgetHostViewCocoa", "the point should hit the page renderer");
     assert.equal(routing(result)?.fallback, false, "a hit inside the renderer must not fall back");
     assert.equal(await profile(), "default", "a web-page swipe must not switch profiles");
@@ -474,6 +692,8 @@ try {
     await reset();
     const base = `http://127.0.0.1:${server.address().port}/history`;
     const url = () => ac('return ac.store.getState().tabs.t1.url;');
+    const crossUrl = () => crossRead("native fixture navigation", (snapshot) => snapshot.tabs.find((tab) => tab.id === "t1")?.url,
+      (timeout) => ac('return ac.store.getState().tabs.t1.url;', timeout));
     async function waitUrl(expected, ms) {
       for (let start = Date.now(); Date.now() - start < ms && (await url()) !== expected;) await sleep(50);
       return url();
@@ -482,6 +702,8 @@ try {
     for (const n of [1, 2, 3]) {
       await ac(`ac.store.getState().navigate("t1", ${JSON.stringify(base + n)}); return true;`);
       assert.equal(await waitUrl(base + n, 5000), base + n);
+      await crossValue("native fixture navigation", (snapshot) => snapshot.tabs.find((tab) => tab.id === "t1")?.url, base + n);
+      await crossUrl();
     }
     await sleep(500);
     const steps = [{ phase: "swipe", dx: 3, atMs: 0 }, { phase: "began", dx: 0, dy: 0, atMs: 50, timestampMs: 50 }];
@@ -489,6 +711,9 @@ try {
     steps.push({ phase: "ended", dx: 0, dy: 0, atMs: 274, timestampMs: 274 });
     const result = await ac(`return globalThis.acSwipe.pane("t1").devSimulate(${JSON.stringify(steps)}, {ignorePreference:true});`);
     assert.equal(await waitUrl(base + 1, 3000), base + 1, "both swipes should go back");
+    saveSimulation(result);
+    await crossValue("native back-navigation URL", (snapshot) => snapshot.tabs.find((tab) => tab.id === "t1")?.url, base + 1);
+    await crossUrl();
     return { events: result.events?.map((e) => [e.phase, e.swallowed ?? e.state]) };
   });
   await test("reordering profiles preserves a native selection queued behind blocked JS", async () => {
@@ -505,10 +730,12 @@ try {
             profile:ac.store.getState().windows.w1.profileId,order:ac.store.getState().profileOrder}));
         },650)));
       `);
+      saveSimulation(result.native);
       assert.equal(result.profile, "work");
       assert.equal(result.state.profileId, "work");
       assert.equal(result.state.selected, 0);
       assert.ok(Math.abs(result.state.position) < 0.003);
+      await crossCase();
       return result;
     } finally {
       await ac('ac.store.getState().reorderProfiles(["default","work"]); return true;');
@@ -529,9 +756,43 @@ try {
     assert.ok(result.areas >= 1);
     return result;
   });
+  await rep.check("hidden profile gestures perform no haptics", async () => {
+    const snapshot = await owned.snapshot({ fields: ["root.haptics"] }, { timeout: 2500 });
+    assert.equal(snapshot.consistent, true);
+    evidence.haptics = snapshot.haptics;
+    assert.equal(snapshot.haptics.performed, 0);
+    return snapshot.haptics;
+  });
   stage = "the snapshot";
-  evidence.snapshot = { path: join(data, "profile-swipe.png"),
-    saved: await ac(`return ac.shell.devSnapshotWindow("w1", ${JSON.stringify(join(data, "profile-swipe.png"))});`) };
+  const captureEnd = Date.now() + 2500;
+  const captureRemaining = () => {
+    const remaining = captureEnd - Date.now();
+    assert.ok(remaining > 0, "window capture cross-check deadline");
+    return remaining;
+  };
+  let nativeImage, jsImage;
+  do {
+    assertOwnedAlive();
+    if (evidence.nativeSnapshot) rmSync(join(data, evidence.nativeSnapshot.artifact), { force: true });
+    const nativeCapture = await owned.probe("view.capture", { windowId: "w1" }, { timeout: captureRemaining() });
+    assert.equal(nativeCapture.consistent, true);
+    assert.ok(nativeCapture.width > 0 && nativeCapture.height > 0 && nativeCapture.scale > 0);
+    evidence.nativeSnapshot = nativeCapture;
+    assert.match(nativeCapture.artifact, /^\.solara-probe-window-[0-9a-f-]{36}\.png$/);
+    const path = join(data, "profile-swipe.png");
+    rmSync(path, { force: true });
+    evidence.snapshot = { path,
+      saved: await ac(`return ac.shell.devSnapshotWindow("w1", ${JSON.stringify(join(data, "profile-swipe.png"))});`, captureRemaining()) };
+    assert.equal(evidence.snapshot.saved, true, "retained JS window capture saved");
+    nativeImage = readPng(join(data, nativeCapture.artifact));
+    jsImage = readPng(evidence.snapshot.path);
+    assert.equal(nativeImage.width, nativeCapture.width);
+    assert.equal(nativeImage.height, nativeCapture.height);
+    if (same(nativeImage, jsImage) || Date.now() >= captureEnd) break;
+    await sleep(Math.min(25, captureRemaining()));
+  } while (Date.now() < captureEnd);
+  assert.ok(Date.now() < captureEnd, "window capture cross-check deadline");
+  assert.deepEqual(nativeImage, jsImage, "native and retained JS window capture dimensions and RGBA pixels");
 } catch (error) {
   evidence.error = String(error);
   if (!error.reported) rep.record(`stopped at ${stage}`, { error });
@@ -545,7 +806,7 @@ try {
   }
   writeFileSync(join(scratch, "profile-swipe-results.json"), JSON.stringify(evidence, null, 2));
   server.close();
-  const failed = evidence.error || evidence.cases.some((c) => !c.passed);
+  const failed = evidence.error || evidence.cases.some((c) => !c.passed) || rep.failed.length > 0;
   if (!keep && !failed) {
     rmSync(data, { recursive: true, force: true });
     rmSync(join(scratch, "profile-swipe-results.json"), { force: true });

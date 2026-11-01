@@ -1,3 +1,4 @@
+import Darwin
 import ExpoModulesCore
 import QuartzCore
 
@@ -40,8 +41,8 @@ public class SwipeModule: Module {
       ACSwipe.simulate(in: window, point: NSPoint(x: x, y: y), steps: steps, ignoreSystemPreference: ignorePreference) {
         #if SOLARA_PROBES
         let result = $0
-        MainActor.assumeIsolated { SwipeRead.record(result) }
-        promise.resolve(result)
+        let recorded = MainActor.assumeIsolated { SwipeRead.record(result) ?? result }
+        promise.resolve(recorded)
         #else
         promise.resolve($0)
         #endif
@@ -653,14 +654,91 @@ public enum SwipeInput {
 public enum SwipeRead {
   private static var count = 0
   private static var whereHit: [String: Any] = [:]
+  private struct CompletedTrace {
+    let sequence: Int
+    let startNs: String
+    let completedNs: String
+    let whereHit: [String: Any]
+    let events: [[String: Any]]
+    let acks: [[String: Any]]
 
-  public static var snapshot: [String: Any] { ["count": count, "where": whereHit] }
+    var metadata: [String: Any] {
+      ["startNs": startNs, "sequence": sequence, "completedNs": completedNs]
+    }
+  }
+  private static var completedTraces: [CompletedTrace] = []
+
+  public static func snapshot(tracePage: Int? = nil, traceStartNs: String? = nil, traceSequence: Int? = nil) -> [String: Any] {
+    let selected: CompletedTrace?
+    if let traceStartNs {
+      selected = completedTraces.last { $0.startNs == traceStartNs && (traceSequence == nil || $0.sequence == traceSequence) }
+    } else if traceSequence != nil {
+      selected = nil
+    } else {
+      selected = completedTraces.last
+    }
+    var result: [String: Any] = ["count": count, "where": whereHit, "trace": NSNull(),
+      "completedTraces": completedTraces.map(\.metadata),
+      "traceAbsent": (traceStartNs != nil || traceSequence != nil) && selected == nil]
+    guard let page = tracePage, (0..<32).contains(page), let trace = selected else { return result }
+    let pages = max(1, (max(trace.events.count, trace.acks.count) + 7) / 8)
+    result["trace"] = ["page": page, "pageCount": pages, "eventCount": trace.events.count, "ackCount": trace.acks.count,
+      "startNs": trace.startNs, "sequence": trace.sequence, "completedNs": trace.completedNs, "where": trace.whereHit,
+      "events": Array(trace.events.dropFirst(page * 8).prefix(8)), "acks": Array(trace.acks.dropFirst(page * 8).prefix(8))]
+    return result
+  }
+
+  public static func pager(windowId: String) -> [String: Any]? {
+    guard let state = ACPager.existing(windowId)?.debug() else { return nil }
+    var result: [String: Any] = [:]
+    for key in ["profileId", "count", "selected", "position", "phase", "selectionSequence", "areas", "propAck"] {
+      if let value = state[key] { result[key] = value }
+    }
+    return result
+  }
   public static var haptics: [String: Any] { ACSwipe.hapticSnapshot }
 
-  static func record(_ result: Any) {
-    guard let result = result as? [String: Any], let whereValue = result["where"] as? [String: Any] else { return }
+  @discardableResult
+  static func record(_ value: Any) -> [String: Any]? {
+    guard var result = value as? [String: Any], let whereValue = result["where"] as? [String: Any],
+      let startNs = (result["startNs"] as? NSNumber)?.stringValue,
+      !startNs.isEmpty, startNs.utf8.count <= 32, startNs.utf8.allSatisfy({ (48...57).contains($0) }),
+      count < 9007199254740991 else { return nil }
+    let completedNs = String(clock_gettime_nsec_np(CLOCK_UPTIME_RAW))
+    result["startNs"] = startNs
     count += 1
     whereHit = whereValue
+    var events: [[String: Any]] = []
+    for event in (result["events"] as? [[String: Any]] ?? []).prefix(128) {
+      var row: [String: Any] = [:]
+      for key in ["phase", "time", "atMs", "lateMs", "swallowed", "monitorSwallowed", "state"] {
+        if let value = event[key] { row[key] = value }
+      }
+      if let error = event["error"] as? String { row["error"] = String(error.prefix(512)) }
+      events.append(row)
+    }
+    var acks: [[String: Any]] = []
+    for ack in result["acks"] as? [[String: Any]] ?? [] {
+      guard let diag = ack["diag"] as? String, ["begin", "emit", "hitRouting", "reject"].contains(diag), acks.count < 256 else { continue }
+      var row: [String: Any] = ["diag": diag]
+      for key in ["phase", "velocity", "window", "fallback", "reason"] {
+        if let value = ack[key] { row[key] = value }
+      }
+      for key in ["raw", "hit"] {
+        if let chain = ack[key] as? [[String: Any]] { row[key] = chain.prefix(16).map { ["class": $0["class"] ?? NSNull()] } }
+      }
+      if let targets = ack["targets"] as? [[String: Any]] {
+        row["targets"] = targets.prefix(16).map { target -> [String: Any] in
+          if let miss = target["miss"] as? String { return ["miss": String(miss.prefix(512))] }
+          return ["miss": NSNull()]
+        }
+      }
+      acks.append(row)
+    }
+    completedTraces.append(CompletedTrace(sequence: count, startNs: startNs, completedNs: completedNs,
+      whereHit: whereValue, events: events, acks: acks))
+    if completedTraces.count > 8 { completedTraces.removeFirst(completedTraces.count - 8) }
+    return result
   }
 }
 #endif

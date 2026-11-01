@@ -275,7 +275,7 @@ final class ProbeHost {
 
   private func validateSnapshot(_ request: ProbeRequest) throws -> (origin: String, username: String)? {
     try checkSnapshot(request)
-    guard Set(request.args.keys).isSubset(of: ["windowId", "dropTargets", "viewFrames", "hitPoint", "reactBlockerStep", "savedLogin", "hoverPresentation", "hoverArea", "textFields", "shortcuts", "shortcutTable", "shortcutTrace", "fields", "pages", "stripPoints", "topStrip", "stripTrace", "stripLabels", "dragPoints", "tabDrag", "fileDropAfter"]),
+    guard Set(request.args.keys).isSubset(of: ["windowId", "dropTargets", "viewFrames", "hitPoint", "reactBlockerStep", "savedLogin", "hoverPresentation", "hoverArea", "textFields", "shortcuts", "shortcutTable", "shortcutTrace", "fields", "swipeTracePage", "swipeTraceStartNs", "swipeTraceSequence", "pages", "stripPoints", "topStrip", "stripTrace", "stripLabels", "dragPoints", "tabDrag", "fileDropAfter"]),
       request.args["windowId"] == nil || request.args["windowId"] is String else { throw ProbeFailure.invalidArgument }
     if let raw = request.args["dragPoints"] {
       guard let points = raw as? [[String: Any]], points.count <= 16,
@@ -327,6 +327,17 @@ final class ProbeHost {
     }
     if let value = request.args["pages"] {
       guard let flag = value as? NSNumber, CFGetTypeID(flag) == CFBooleanGetTypeID() else { throw ProbeFailure.invalidArgument }
+    }
+    if let value = request.args["swipeTracePage"] {
+      guard let page = Self.number(value), page.rounded(.down) == page, page >= 0, page < 32 else { throw ProbeFailure.invalidArgument }
+    }
+    if let value = request.args["swipeTraceStartNs"] {
+      guard let startNs = value as? String, !startNs.isEmpty, startNs.utf8.count <= 32,
+        startNs.utf8.allSatisfy({ (48...57).contains($0) }) else { throw ProbeFailure.invalidArgument }
+    }
+    if let value = request.args["swipeTraceSequence"] {
+      guard request.args["swipeTraceStartNs"] is String, let sequence = Self.number(value),
+        sequence >= 1, sequence <= 9007199254740991, sequence.rounded(.down) == sequence else { throw ProbeFailure.invalidArgument }
     }
     if let textFields = request.args["textFields"] {
       guard let textFields = textFields as? NSNumber, CFGetTypeID(textFields) == CFBooleanGetTypeID() else { throw ProbeFailure.invalidArgument }
@@ -383,6 +394,9 @@ final class ProbeHost {
     let stripTrace = request.args["stripTrace"] as? String
     let stripLabels = request.args["stripLabels"] as? Bool ?? false
     let readPages = request.args["pages"] as? Bool ?? false
+    let swipeTracePage = Self.number(request.args["swipeTracePage"]).map { Int($0) }
+    let swipeTraceStartNs = request.args["swipeTraceStartNs"] as? String
+    let swipeTraceSequence = Self.number(request.args["swipeTraceSequence"]).map { Int($0) }
     let textFields = request.args["textFields"] as? Bool ?? false
     let dropTargets = request.args["dropTargets"] as? [[String: Any]] ?? []
     let viewFrames = request.args["viewFrames"] as? [String] ?? []
@@ -531,6 +545,7 @@ final class ProbeHost {
           "media": media, "mediaKinds": MediaRead.kinds,
           "paneOverlays": Self.value(PaneOverlayRead.snapshot(windowId: id)),
           "toolbarStates": toolbarStates, "bookmarks": readPages ? pageBookmarks(windowId: id) as Any : NSNull(),
+          "pager": Self.value(SwipeRead.pager(windowId: id)), "profilePager": Self.value(ProfilePagerRead.snapshot(windowId: id)),
           "contentFrame": Self.value(window?.contentView.map { Self.rectFromWindow($0.bounds) }),
           "chromeWindowNumber": Self.value(chromeNumber),
           "selectedTabId": Self.value(model.activeTabIds[model.profileId]),
@@ -589,6 +604,14 @@ final class ProbeHost {
         profiles.append(["id": id, "name": String(profile.name.prefix(512)), "dataId": profile.dataId ?? id])
       }
       let pages = readPages ? pageSnapshots() : [:]
+      var chromeWindows: [[String: Any]] = []
+      for source in SolaraCoreHost.chromeWindows {
+        var row: [String: Any] = [:]
+        for key in ["window", "hasRoot", "profile", "group", "visible"] {
+          if let value = source[key] { row[key] = value }
+        }
+        chromeWindows.append(row)
+      }
       let upscaling = VideoUpscalingRead.snapshot()
       let upscalingTabs: [[String: Any]] = (upscaling["tabs"] as? [[String: Any]] ?? []).map { entry in
         ["tabId": entry["tabId"] ?? NSNull(), "url": safeURL(entry["url"] as? String ?? ""),
@@ -622,14 +645,14 @@ final class ProbeHost {
           "coordinateSpace": ["origin": "windowContentTopLeft", "unit": "point", "displayScale": windowScale(ids)],
           "focusedWindowId": Self.value(state.ui.focusedWindowId), "poolAvailable": TabPoolRead.available,
           "hostedKinds": HostedRead.kinds,
-          "windowDragCount": windowDragCount, "onboarding": OnboardingRead.snapshot(), "newTabAvailable": NewTabRead.available, "swipeSimulation": SwipeRead.snapshot, "haptics": haptics,
+          "windowDragCount": windowDragCount, "onboarding": OnboardingRead.snapshot(), "newTabAvailable": NewTabRead.available, "swipeSimulation": SwipeRead.snapshot(tracePage: swipeTracePage, traceStartNs: swipeTraceStartNs, traceSequence: swipeTraceSequence), "haptics": haptics,
           "videoUpscaling": videoUpscaling, "savedLogin": Self.value(savedLogin),
           "groups": groups, "splits": splits, "dragPreview": tabDrag ? Self.dragPreview(DragPreviewRead.snapshot) : [:], "tabDrag": tabDrag ? Self.tabDrag(TabDragRead.snapshot) : [:],
           "fileDragURLs": fileDragURLs, "fileDropResults": fileDropResults,
           "fileDropSequence": Self.dragSequence(FileDragRead.results.last?["sequence"]) ?? 0,
           "calendar": readPages ? PageCalendarRead.snapshot() as Any : NSNull(), "hoverStats": HoverStatsRead.snapshot(), "hoverStatsLive": HoverStatsRead.current(),
-          "windows": windows, "tabs": tabs, "downloads": ["count": state.downloads.count, "finished": state.downloads.filter { $0.state == "finished" }.count, "ids": state.downloads.map(\.id)], "profiles": profiles, "profileOrder": state.profileOrder, "pages": pages["pages"] ?? NSNull(), "pageFrames": pages["frames"] ?? NSNull(),
-          "capabilities": ["available": ["windows.frame", "windows.chromeWindowNumber", "windows.accessibilityLayers", "windows.focusedURL", "windows.omnibox", "windows.split", "windows.tour", "windows.folderPanel", "windows.iconPicker", "windows.shell", "windows.sidebarShell", "windows.sidebarChromeMetrics", "windows.sidebarAddressBar", "windows.hoverCard", "windows.reactBlockers", "windows.dropTargets", "windows.viewFrames", "windows.hitSlot", "windows.hitView", "windows.firstResponder", "windows.textFieldCount", "windows.media", "windows.media.labels", "windows.mediaKinds", "windows.paneOverlays", "poolAvailable", "onboarding", "newTabAvailable", "windowDragCount", "swipeSimulation", "haptics", "videoUpscaling", "savedLogin", "tabs.url", "tabs.title", "tabs.customTitle", "tabs.customIcon", "tabs.zoom", "windows.overlays.selection", "windows.overlays.zoom", "windows.overlays.history", "windows.overlays.downloads", "windows.overlays.sadTab", "downloads.count", "downloads.finished", "windows.settings.layout", "windows.settings.search", "windows.toolbarStates", "hostedKinds", "windows.hoverPresentation", "windows.hoverPresentationTrace", "windows.hoverLayout", "tabs.pinned", "tabs.pinnedAsRow", "windows.shellHover", "hoverStats", "hoverStatsLive", "windows.toolbarHosts", "windows.shortcuts", "windows.shortcutTable", "windows.shortcuts.focusTrace", "snapshot.fields", "windows.shortcutFields", "windows.omnibox.value", "windows.panelOpen", "windows.sidebarOpen", "windows.activeTabIds", "tabs.find", "pages", "calendar", "windows.bookmarks", "downloads.ids", "profiles", "profileOrder", "pageFrames", "windows.topStrip", "windows.stripPoints", "windows.sidebarDrag", "windows.savedFrame", "windows.screenFrame", "tabs.tileFolderId", "groups", "splits", "dragPreview", "tabDrag", "fileDragURLs", "fileDropResults", "windows.dragPoints", "fileDropSequence"],
+          "windows": windows, "tabs": tabs, "downloads": ["count": state.downloads.count, "finished": state.downloads.filter { $0.state == "finished" }.count, "ids": state.downloads.map(\.id)], "profiles": profiles, "profileOrder": state.profileOrder, "pages": pages["pages"] ?? NSNull(), "pageFrames": pages["frames"] ?? NSNull(), "chromeWindows": chromeWindows,
+          "capabilities": ["available": ["windows.frame", "windows.chromeWindowNumber", "windows.accessibilityLayers", "windows.focusedURL", "windows.omnibox", "windows.split", "windows.tour", "windows.folderPanel", "windows.iconPicker", "windows.shell", "windows.sidebarShell", "windows.sidebarChromeMetrics", "windows.sidebarAddressBar", "windows.hoverCard", "windows.reactBlockers", "windows.dropTargets", "windows.viewFrames", "windows.hitSlot", "windows.hitView", "windows.firstResponder", "windows.textFieldCount", "windows.media", "windows.media.labels", "windows.mediaKinds", "windows.paneOverlays", "poolAvailable", "onboarding", "newTabAvailable", "windowDragCount", "swipeSimulation", "haptics", "videoUpscaling", "savedLogin", "tabs.url", "tabs.title", "tabs.customTitle", "tabs.customIcon", "tabs.zoom", "windows.overlays.selection", "windows.overlays.zoom", "windows.overlays.history", "windows.overlays.downloads", "windows.overlays.sadTab", "downloads.count", "downloads.finished", "windows.settings.layout", "windows.settings.search", "windows.toolbarStates", "hostedKinds", "windows.hoverPresentation", "windows.hoverPresentationTrace", "windows.hoverLayout", "tabs.pinned", "tabs.pinnedAsRow", "windows.shellHover", "hoverStats", "hoverStatsLive", "windows.toolbarHosts", "windows.shortcuts", "windows.shortcutTable", "windows.shortcuts.focusTrace", "snapshot.fields", "windows.shortcutFields", "windows.omnibox.value", "windows.panelOpen", "windows.sidebarOpen", "windows.activeTabIds", "tabs.find", "profileOrder", "chromeWindows", "windows.pager", "windows.profilePager", "swipeSimulation.trace", "swipeSimulation.completedTraces", "pages", "calendar", "windows.bookmarks", "downloads.ids", "profiles", "pageFrames", "windows.topStrip", "windows.stripPoints", "windows.sidebarDrag", "windows.savedFrame", "windows.screenFrame", "tabs.tileFolderId", "groups", "splits", "dragPreview", "tabDrag", "fileDragURLs", "fileDropResults", "windows.dragPoints", "fileDropSequence"],
             "partial": ["tabs.live"], "unavailable": ["windows.occluded", "windows.selectedTabIds", "windows.spaces", "windows.panes", "windows.focus", "windows.views", "tabs.loading", "tabs.visible"]]]
         return ["id": request.id, "protocol": 1, "result": Self.project(result, fields: request.args["fields"] as? [String])]
       }

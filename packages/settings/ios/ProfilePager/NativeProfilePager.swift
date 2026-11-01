@@ -450,3 +450,13 @@ private final class ProfilePagerSink: @unchecked Sendable {
   weak var module: ProfilePagerModule?
   init(_ module: ProfilePagerModule) { self.module = module }
 }
+
+#if SOLARA_PROBES
+@MainActor
+public enum ProfilePagerRead {
+  public static func snapshot(windowId: String) -> [String: Any]? {
+    guard let host = NativeProfilePager.hosts[windowId] else { return nil }
+    return ["ack": host.describe()["ack"] ?? NSNull()]
+  }
+}
+#endif

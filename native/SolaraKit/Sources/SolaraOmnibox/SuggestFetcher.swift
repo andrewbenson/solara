@@ -13,6 +13,7 @@ public struct FetchResponse: Sendable {
 
 public final class SuggestFetcher: Sendable {
   public typealias Fetch = @Sendable (String) async throws -> FetchResponse
+  public typealias Sleep = @Sendable (Duration) async throws -> Void
 
   private struct State {
     var generation = 0
@@ -23,17 +24,22 @@ public final class SuggestFetcher: Sendable {
 
   private let fetch: Fetch
   private let delay: Duration
+  private let sleep: Sleep
   private let cacheSize: Int
   private let state = Mutex(State())
 
-  public init(fetch: @escaping Fetch, delay: Duration = .milliseconds(120), cacheSize: Int = 64) {
+  public init(
+    fetch: @escaping Fetch, delay: Duration = .milliseconds(120), cacheSize: Int = 64,
+    sleep: @escaping Sleep = { try await Task.sleep(for: $0) }
+  ) {
     self.fetch = fetch
     self.delay = delay
+    self.sleep = sleep
     self.cacheSize = cacheSize
   }
 
   public func makeContext() -> SuggestFetcher {
-    SuggestFetcher(fetch: fetch, delay: delay, cacheSize: cacheSize)
+    SuggestFetcher(fetch: fetch, delay: delay, cacheSize: cacheSize, sleep: sleep)
   }
 
   public static func urlSession(_ session: URLSession = .shared) -> Fetch {
@@ -77,9 +83,10 @@ public final class SuggestFetcher: Sendable {
     }
     let fetch = self.fetch
     let delay = self.delay
+    let sleep = self.sleep
     let task = Task { [weak self] in
       do {
-        try await Task.sleep(for: delay)
+        try await sleep(delay)
       } catch {
         return
       }

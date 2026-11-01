@@ -47,6 +47,72 @@ private final class HeldSuggestions: Sendable {
   }
 }
 
+private final class ManualDebounceClock: Sendable {
+  private struct Sleeper {
+    var deadline: Duration
+    var continuation: CheckedContinuation<Void, Error>
+  }
+
+  private struct State {
+    var now: Duration = .zero
+    var nextID = 0
+    var sleeps: [Duration] = []
+    var cancelled: Set<Int> = []
+    var pending: [Int: Sleeper] = [:]
+    var closed = false
+  }
+
+  private let state = Mutex(State())
+
+  var sleeps: [Duration] { state.withLock { $0.sleeps } }
+  var cancelled: Set<Int> { state.withLock { $0.cancelled } }
+
+  func sleep(_ duration: Duration) async throws {
+    let id = state.withLock {
+      let id = $0.nextID
+      $0.nextID += 1
+      return id
+    }
+    try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+        let cancelled = state.withLock {
+          $0.sleeps.append(duration)
+          if $0.closed || Task.isCancelled { return true }
+          $0.pending[id] = Sleeper(deadline: $0.now + duration, continuation: continuation)
+          return false
+        }
+        if cancelled { continuation.resume(throwing: CancellationError()) }
+      }
+    } onCancel: {
+      let sleeper = self.state.withLock {
+        $0.cancelled.insert(id)
+        return $0.pending.removeValue(forKey: id)
+      }
+      sleeper?.continuation.resume(throwing: CancellationError())
+    }
+  }
+
+  func advance(by duration: Duration) {
+    let ready = state.withLock { s in
+      s.now += duration
+      let ready = s.pending.filter { $0.value.deadline <= s.now }
+      for id in ready.keys { s.pending.removeValue(forKey: id) }
+      return Array(ready.values)
+    }
+    for sleeper in ready { sleeper.continuation.resume() }
+  }
+
+  func cancelAll() {
+    let pending = state.withLock {
+      $0.closed = true
+      let pending = Array($0.pending.values)
+      $0.pending = [:]
+      return pending
+    }
+    for sleeper in pending { sleeper.continuation.resume(throwing: CancellationError()) }
+  }
+}
+
 @MainActor
 struct OmniboxRemoteIsolationTests {
   private func make(_ fetcher: SuggestFetcher?, window: String, variant: BarVariant = .hero) -> HeroBarModel {
@@ -141,9 +207,17 @@ struct OmniboxRemoteIsolationTests {
   @Test func newerInputStillDebouncesTheSameBar() async throws {
     let transport = HeldSuggestions()
     defer { transport.releaseAll() }
-    let model = make(SuggestFetcher(fetch: transport.fetch, delay: .milliseconds(30)), window: "a")
+    let clock = ManualDebounceClock()
+    defer { clock.cancelAll() }
+    let model = make(SuggestFetcher(fetch: transport.fetch, delay: .milliseconds(30), sleep: clock.sleep), window: "a")
     model.driverType("alpha")
+    try #require(try await waitUntil { clock.sleeps == [.milliseconds(30)] })
+    #expect(transport.started.isEmpty)
     model.driverType("alphabet")
+    try #require(try await waitUntil { clock.sleeps == [.milliseconds(30), .milliseconds(30)] })
+    #expect(clock.cancelled == [0])
+    #expect(transport.started.isEmpty)
+    clock.advance(by: .milliseconds(30))
     try #require(try await waitUntil { transport.started == ["alphabet"] })
     transport.release("alphabet")
     #expect(try await waitUntil { remoteRows(model) == ["alphabet remote"] })

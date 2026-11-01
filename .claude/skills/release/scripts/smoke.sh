@@ -5,6 +5,7 @@ version="${1:?usage: smoke.sh <version> <previous-version|none> [--rc]}"
 previous="${2:?usage: smoke.sh <version> <previous-version|none> [--rc]}"
 root="$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
 here="$(cd "$(dirname "$0")" && pwd)"
+. "$here/verify-release.sh"
 if [ "${3:-}" = --rc ]; then dist="$root/dist/$version-rc"; else dist="$root/dist/$version"; fi
 app="${SMOKE_APP:-$(ls -d "$dist/export"/*.app 2>/dev/null | head -1 || true)}"
 app="${app:-$dist/export/Solara.app}"
@@ -52,9 +53,16 @@ if [ -d "$old" ]; then
     [ "$(info "$app" $key)" = "$(info "$old" $key)" ] || { same=0; echo "      $key: $(info "$old" $key) → $(info "$app" $key)"; }
   done
   check "$what" $same
-  old_dr="$(codesign -d -r- "$old" 2>&1 | sed -n 's/^designated => //p')"
-  codesign --verify -R="$old_dr" "$app" 2>"$work/dr.log" && ok=1 || ok=0
-  check "satisfies $previous's designated requirement (Sparkle, the keychain and TCC trust it)" $ok "$(head -c 160 "$work/dr.log")"
+  if release_is_unsigned_predecessor "$old"; then
+    codesign --verify --deep --strict "$old" && codesign --verify --deep --strict "$app" \
+      && [ "$(info "$old" SUPublicEDKey)" = "$(release_public_ed_key)" ] \
+      && [ "$(info "$app" SUPublicEDKey)" = "$(release_public_ed_key)" ] && ok=1 || ok=0
+    check "the ad hoc predecessor and update are sealed and keep AC_PUBLIC_ED_KEY (Sparkle's EdDSA trust path)" $ok
+  else
+    old_dr="$(codesign -d -r- "$old" 2>&1 | sed -n 's/^designated => //p')"
+    codesign --verify -R="$old_dr" "$app" 2>"$work/dr.log" && ok=1 || ok=0
+    check "satisfies $previous's designated requirement (Sparkle, the keychain and TCC trust it)" $ok "$(head -c 160 "$work/dr.log")"
+  fi
   [ "$(info "$app" CFBundleVersion)" -gt "$(info "$old" CFBundleVersion)" ] && ok=1 || ok=0
   check "build number above $previous's" $ok "$(info "$old" CFBundleVersion) → $(info "$app" CFBundleVersion)"
 elif [ "$previous" = none ]; then
@@ -64,31 +72,62 @@ else
 fi
 zip="$dist/$product-$version.zip"
 dmg="$dist/$product-$version.dmg"
+if [ "${SOLARA_RELEASE_UNSIGNED:-0}" = 1 ]; then
+  [ "$(info "$app" CFBundleShortVersionString)" = "$version" ] && [ "$(info "$app" CFBundleVersion)" -gt 81 ] \
+    || { echo "error: unsigned smoke requires the requested version and build above 81" >&2; exit 1; }
+  if [ -z "${SMOKE_APP:-}" ]; then
+    for file in "$zip" "$dmg" "$dmg.edSignature" "$dist/appcast.xml"; do
+      [ -s "$file" ] || { echo "error: unsigned smoke requires $file" >&2; exit 1; }
+    done
+  fi
+fi
 if [ -z "${SMOKE_APP:-}" ]; then
   for f in "$zip" "$dmg" "$dist/appcast.xml"; do [ -f "$f" ] || check "the release has $(basename "$f")" 0; done
   if [ -f "$zip" ] && [ -f "$dist/appcast.xml" ]; then
     swiftc -O "$here/ed25519.swift" -o "$work/ed25519" 2>/dev/null
     item="$(awk -v v="$version" '/<item>/ { buf = "" } { buf = buf $0 "\n" } /<\/item>/ && buf ~ ("shortVersionString>" v "<") { print buf; exit }' "$dist/appcast.xml")"
-    signature="$(printf '%s' "$item" | grep -o 'sparkle:edSignature="[^"]*"' | head -1 | sed 's/^sparkle:edSignature="//; s/"$//')"
     length="$(printf '%s' "$item" | grep -o 'length="[0-9]*"' | head -1 | tr -dc 0-9)"
     ok=0
-    [ -n "$signature" ] && "$work/ed25519" verify "$zip" "$signature" "$(info "$app" SUPublicEDKey)" && [ "$length" = "$(stat -f %z "$zip")" ] && ok=1
+    [ "$(info "$app" SUPublicEDKey)" = "$(release_public_ed_key)" ] \
+      && release_verify_archive "$zip" "$dist/appcast.xml" "$version" "$(release_public_ed_key)" "$work/ed25519" "$(info "$app" CFBundleVersion)" && ok=1
     check "the appcast's EdDSA signature of the zip verifies with the app's SUPublicEDKey" $ok "length ${length:-none}"
     mkdir -p "$work/zip" && ditto -x -k "$zip" "$work/zip"
     zapp="$(ls -d "$work/zip"/*.app 2>/dev/null | head -1)"
     [ -n "$zapp" ] && [ -n "$(cdhash "$app")" ] && [ "$(cdhash "$zapp")" = "$(cdhash "$app")" ] \
-      && codesign --verify --deep --strict "$zapp" 2>/dev/null && xcrun stapler validate "$zapp" >/dev/null 2>&1 && ok=1 || ok=0
-    check "the zip holds this app, sealed and stapled" $ok
+      && codesign --verify --deep --strict "$zapp" 2>/dev/null && ok=1 || ok=0
+    if [ "${SOLARA_RELEASE_UNSIGNED:-0}" = 1 ]; then
+      release_verify_ad_hoc "$zapp" || ok=0
+      check "the zip holds this app with a valid ad hoc signature" $ok
+    else
+      xcrun stapler validate "$zapp" >/dev/null 2>&1 || ok=0
+      check "the zip holds this app, sealed and stapled" $ok
+    fi
     rm -rf "$work/zip"
   fi
 fi
-spctl -a -vv -t exec "$app" > "$work/spctl.log" 2>&1 && grep -q "source=Notarized Developer ID" "$work/spctl.log" && ok=1 || ok=0
-check "Gatekeeper: the app is notarized Developer ID" $ok "$(tr '\n' ' ' < "$work/spctl.log" | head -c 160)"
-xcrun stapler validate "$app" >/dev/null 2>&1 && ok=1 || ok=0
-check "the app has its notarization ticket stapled" $ok
-if [ -z "${SMOKE_APP:-}" ] && [ -f "$dmg" ]; then
-  xcrun stapler validate "$dmg" >/dev/null 2>&1 && spctl -a -t open --context context:primary-signature "$dmg" 2>/dev/null && ok=1 || ok=0
-  check "the DMG is signed, notarized and stapled" $ok
+if [ "${SOLARA_RELEASE_UNSIGNED:-0}" = 1 ]; then
+  release_verify_ad_hoc "$app" && [ "$(info "$app" SUPublicEDKey)" = "$(release_public_ed_key)" ] && ok=1 || ok=0
+  check "the app has a valid strict ad hoc signature and trusts AC_PUBLIC_ED_KEY" $ok
+  if [ -n "${SMOKE_APP:-}" ]; then
+    swiftc -O "$here/ed25519.swift" -o "$work/ed25519" 2>/dev/null
+    release_verify_archive "${SMOKE_ARCHIVE:?unsigned SMOKE_APP requires SMOKE_ARCHIVE}" \
+      "${SMOKE_APPCAST:?unsigned SMOKE_APP requires SMOKE_APPCAST}" "$version" "$(release_public_ed_key)" "$work/ed25519" "$(info "$app" CFBundleVersion)" && ok=1 || ok=0
+    check "the supplied archive EdDSA signature verifies against AC_PUBLIC_ED_KEY" $ok
+  fi
+  if [ -z "${SMOKE_APP:-}" ] && [ -f "$dmg" ]; then
+    release_verify_ad_hoc "$dmg" && [ -s "$dmg.edSignature" ] \
+      && "$work/ed25519" verify "$dmg" "$(cat "$dmg.edSignature")" "$(release_public_ed_key)" && ok=1 || ok=0
+    check "the DMG has a valid ad hoc signature and EdDSA signature against AC_PUBLIC_ED_KEY" $ok
+  fi
+else
+  spctl -a -vv -t exec "$app" > "$work/spctl.log" 2>&1 && grep -q "source=Notarized Developer ID" "$work/spctl.log" && ok=1 || ok=0
+  check "Gatekeeper: the app is notarized Developer ID" $ok "$(tr '\n' ' ' < "$work/spctl.log" | head -c 160)"
+  xcrun stapler validate "$app" >/dev/null 2>&1 && ok=1 || ok=0
+  check "the app has its notarization ticket stapled" $ok
+  if [ -z "${SMOKE_APP:-}" ] && [ -f "$dmg" ]; then
+    xcrun stapler validate "$dmg" >/dev/null 2>&1 && spctl -a -t open --context context:primary-signature "$dmg" 2>/dev/null && ok=1 || ok=0
+    check "the DMG is signed, notarized and stapled" $ok
+  fi
 fi
 if [ -d "$old" ]; then
   if [ -z "${SMOKE_APP:-}" ] && [ -f "$dist/appcast.xml" ]; then
@@ -183,5 +222,20 @@ kill -KILL "$pid" 2>/dev/null || true
 pid=""
 node "$root/packages/solaracore/scripts/popup-check.mjs" "$app" "$work/popup-check" || status=1
 codesign --verify --deep --strict "$app" && echo "PASS  bundle still sealed after running" || { echo "FAIL  running the app changed its bundle"; status=1; }
-"$here/feed.sh" "$version" --before-publish "$app" || status=1
+if [ "${SOLARA_RELEASE_UNSIGNED:-0}" = 1 ] && [ "$previous" = none ]; then
+  . "$root/scripts/identity.sh"
+  bootstrap_url="$(info "$app" SUFeedURL)"
+  bootstrap_ok=0
+  case "$bootstrap_url" in
+    https://*)
+      [ "$bootstrap_url" = "$(ac_identity AC_FEED_URL)" ] \
+        && release_verify_archive "${SMOKE_ARCHIVE:-$zip}" "${SMOKE_APPCAST:-$dist/appcast.xml}" \
+          "$version" "$(release_public_ed_key)" "$work/ed25519" "$(info "$app" CFBundleVersion)" && bootstrap_ok=1
+      ;;
+  esac
+  check "the bootstrap feed URL matches AC_FEED_URL over HTTPS and its local archive is EdDSA authenticated" "$bootstrap_ok"
+  [ "$bootstrap_ok" != 1 ] || echo "note: the first release's hosted feed check runs after publish"
+else
+  "$here/feed.sh" "$version" --before-publish "$app" || status=1
+fi
 exit $status

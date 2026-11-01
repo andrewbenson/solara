@@ -15,6 +15,7 @@ for arg in "$@"; do
 done
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(git -C "$here" rev-parse --show-toplevel)"
+. "$here/verify-release.sh"
 . "$root/scripts/identity.sh"
 repo="$(ac_identity AC_RELEASE_REPO)"
 [ -n "$repo" ] || { echo "error: the app's identity has no AC_RELEASE_REPO" >&2; exit 1; }
@@ -37,6 +38,11 @@ elif [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 else
   die "$version is neither a stable (<major>.<minor>.<patch>) nor a nightly (<next stable>-nightly.<n>) version"
 fi
+if [ "${SOLARA_RELEASE_UNSIGNED:-0}" = 1 ]; then
+  [[ "$version" =~ ^0\.0\.[1-9][0-9]*(-nightly\.[0-9]+)?$ ]] || die "unsigned releases must be 0.0.x"
+else
+  [[ ! "$version" =~ ^0\.0\.[0-9]+(-nightly\.[0-9]+)?$ ]] || die "0.0.x releases require SOLARA_RELEASE_UNSIGNED=1"
+fi
 dmg="$dist/$product-$version.dmg"
 zip="$dist/$product-$version.zip"
 nightly_dmg="$product-Nightly.dmg"
@@ -57,15 +63,29 @@ else
 fi
 [ -f "$dist/release-notes.md" ] || die "no $dist/release-notes.md"
 for archive in "$dist"/SolaraCore-*.tar.xz; do [ -f "$archive" ] && assets+=("$archive"); done
-if ! git -C "$root" ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null 2>&1; then
-  [ "$dry" = 1 ] && echo "note: v$version isn't on origin yet (git tag v$version && git push origin main v$version)" \
-    || die "push the tag first: git tag v$version && git push origin main v$version"
-fi
 . "$here/publish-lock.sh"
 
 work="$(mktemp -d "${TMPDIR:-/tmp}/ac-publish.XXXXXX")"
 trap 'release_lock; rm -rf "$work"' EXIT
 trap 'exit 130' INT TERM HUP
+if [ "${SOLARA_RELEASE_UNSIGNED:-0}" = 1 ]; then
+  app="$dist/export/$product.app"
+  release_verify_ad_hoc "$app" && release_verify_ad_hoc "$dmg" || die "unsigned app and DMG must have valid strict ad hoc signatures"
+  [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = "$version" ] || die "unsigned exported app version differs from $version"
+  [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist")" -gt 81 ] || die "unsigned build number must be above 81"
+  swiftc -O "$here/ed25519.swift" -o "$work/ed25519" 2>/dev/null
+  trusted_key="$(release_public_ed_key)"
+  [ "$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$app/Contents/Info.plist")" = "$trusted_key" ] \
+    && release_verify_archive "$zip" "$feed" "$version" "$trusted_key" "$work/ed25519" "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist")" \
+    || die "archive EdDSA signature does not match AC_PUBLIC_ED_KEY"
+  [ -s "$dmg.edSignature" ] && "$work/ed25519" verify "$dmg" "$(cat "$dmg.edSignature")" "$trusted_key" \
+    || die "DMG EdDSA signature does not match AC_PUBLIC_ED_KEY"
+fi
+[ ! -s "$dmg.edSignature" ] || assets+=("$dmg.edSignature")
+if ! git -C "$root" ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null 2>&1; then
+  [ "$dry" = 1 ] && echo "note: v$version isn't on origin yet (git tag v$version && git push origin main v$version)" \
+    || die "push the tag first: git tag v$version && git push origin main v$version"
+fi
 take_lock "$version"
 stable_tag="$(gh release view -R "$repo" --json tagName -q .tagName 2>/dev/null || true)"
 if [ -z "$stable_tag" ]; then

@@ -4,6 +4,8 @@ set -euo pipefail
 old="${1:?usage: update-test.sh <previous app> <new app> <appcast.xml> <version>}"
 new="${2:?}" appcast="${3:?}" version="${4:?}"
 here="$(cd "$(dirname "$0")" && pwd)"
+root="$(git -C "$here" rev-parse --show-toplevel)"
+. "$here/verify-release.sh"
 test_id="com.hill.solara.updatetest"
 [ "$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$old/Contents/Info.plist")" = \
   "$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$new/Contents/Info.plist")" ] || { echo "error: update test requires the same bundle id" >&2; exit 1; }
@@ -22,14 +24,37 @@ plist() { /usr/libexec/PlistBuddy "$@"; }
 
 swiftc -O "$here/ed25519.swift" -o "$work/ed25519" 2>/dev/null
 public_key="$("$work/ed25519" generate "$work/key")"
-identity="$(security find-identity -v -p codesigning | awk '/"Apple Development/ { print $2; exit }')"
-[ -n "$identity" ] || { echo "error: no Apple Development identity to sign the test copies with" >&2; exit 1; }
+migration=0
+release_is_unsigned_predecessor "$old" && migration=1
+if [ "${SOLARA_RELEASE_UNSIGNED:-0}" = 1 ]; then
+  release_verify_ad_hoc "$old" && release_verify_ad_hoc "$new" || fail "unsigned inputs must have valid ad hoc signatures"
+  identity=-
+else
+  if [ "$migration" = 1 ]; then
+    codesign --verify --deep --strict "$new" \
+      && grep -q '^Authority=Developer ID Application:' <<<"$(codesign -dvv "$new" 2>&1)" \
+      || fail "the 0.0.x migration target must have a valid Developer ID signature"
+  fi
+  identity="$(security find-identity -v -p codesigning | awk '/"Apple Development/ { print $2; exit }')"
+  [ -n "$identity" ] || fail "no Apple Development identity to sign the test copies with"
+fi
+if [ "${SOLARA_RELEASE_UNSIGNED:-0}" = 1 ] || [ "$migration" = 1 ]; then
+  archive="$(dirname "$appcast")/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$new/Contents/Info.plist")-$version.zip"
+  trusted_key="$(release_public_ed_key)"
+  [ "$(plist -c 'Print :SUPublicEDKey' "$new/Contents/Info.plist")" = "$trusted_key" ] \
+    && [ "$(plist -c 'Print :SUPublicEDKey' "$old/Contents/Info.plist")" = "$trusted_key" ] \
+    && release_verify_archive "$archive" "$appcast" "$version" "$trusted_key" "$work/ed25519" "$(plist -c 'Print :CFBundleVersion' "$new/Contents/Info.plist")" \
+    || fail "release archive EdDSA signature does not match AC_PUBLIC_ED_KEY"
+fi
 retag() {
   plist -c "Set :CFBundleIdentifier $2" -c "Set :SUPublicEDKey $public_key" "$1/Contents/Info.plist"
-  codesign --force --deep --timestamp=none --sign "$identity" "$1" 2>/dev/null
+  if [ "$migration" = 1 ] && [ "$1" = "$work/installed/$installed_name" ]; then
+    SOLARA_RELEASE_UNSIGNED=1 release_sign_test_copy "$1"
+  else
+    release_sign_test_copy "$1"
+  fi
 }
 installed_name="$(basename "$old")"
-root="$(git -C "$here" rev-parse --show-toplevel)"
 zip_name="$(basename "$new")"
 mkdir -p "$work/installed" "$work/new" "$work/feed" "$work/home"
 ditto "$old" "$work/installed/$installed_name"
@@ -45,6 +70,7 @@ codesign --force --timestamp=none --sign "$identity" "$work/sparkle-host" 2>/dev
 zip="$work/feed/Solara-$version.zip"
 ditto -c -k --keepParent "$work/new/$zip_name" "$zip"
 signature="$("$work/ed25519" sign "$zip" "$work/key")"
+"$work/ed25519" verify "$zip" "$signature" "$public_key" || fail "test archive EdDSA signature is invalid"
 python3 - "$appcast" "$version" "http://127.0.0.1:$port/$(basename "$zip")" "$(stat -f %z "$zip")" "$signature" > "$work/feed/appcast.xml" <<'PY'
 import re, sys
 source, version, url, length, signature = sys.argv[1:]
@@ -80,6 +106,7 @@ HOME="$work/home" CFFIXED_USER_HOME="$work/home" timeout 300 "$work/sparkle-host
   || { sed 's/^/      /' "$work/sparkle.log"; fail "Sparkle didn't install it"; }
 sed 's/^/      /' "$work/sparkle.log"
 codesign --verify --deep --strict "$installed" 2>/dev/null || fail "the installed bundle isn't sealed"
+[ "${SOLARA_RELEASE_UNSIGNED:-0}" != 1 ] || release_verify_ad_hoc "$installed" || fail "the installed bundle is not valid ad hoc code"
 mtree -c -k type,mode,link,size,sha256digest -p "$work/new/$zip_name" > "$work/new.mtree"
 differences="$(mtree -p "$installed" -f "$work/new.mtree" 2>&1 | head -5 || true)"
 [ -z "$differences" ] || fail "the installed bundle differs from the new build: $differences"

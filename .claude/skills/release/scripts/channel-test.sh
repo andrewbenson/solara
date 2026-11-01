@@ -5,6 +5,7 @@ old="${1:?usage: channel-test.sh <installed app> [new app]}"
 new="${2:-$old}"
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(git -C "$here" rev-parse --show-toplevel)"
+. "$here/verify-release.sh"
 test_id="com.hill.solara.channeltest"
 port="${CHANNEL_TEST_PORT:-8797}"
 work="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/ac-channel-test.XXXXXX")" && pwd -P)"
@@ -30,8 +31,22 @@ fi
 pods="$root/apps/browser/macos/Pods/Sparkle"
 swiftc -O "$here/ed25519.swift" -o "$work/ed25519" 2>/dev/null
 public_key="$("$work/ed25519" generate "$work/key")"
-identity="$(security find-identity -v -p codesigning | awk '/"Apple Development/ { print $2; exit }')"
-[ -n "$identity" ] || { echo "error: no Apple Development identity to sign the test copies with" >&2; exit 1; }
+if [ "${SOLARA_RELEASE_UNSIGNED:-0}" = 1 ]; then
+  release_verify_ad_hoc "$old" && release_verify_ad_hoc "$new" || { echo "error: unsigned inputs must have valid ad hoc signatures" >&2; exit 1; }
+  trusted_key="$(release_public_ed_key)"
+  [ "$(info "$old" SUPublicEDKey)" = "$trusted_key" ] && [ "$(info "$new" SUPublicEDKey)" = "$trusted_key" ] \
+    || { echo "error: unsigned inputs must trust AC_PUBLIC_ED_KEY" >&2; exit 1; }
+  source_version="$(info "$new" CFBundleShortVersionString)"
+  source_dist="$(dirname "$(dirname "$new")")"
+  source_archive="${CHANNEL_TEST_ARCHIVE:-$source_dist/$(info "$new" CFBundleName)-$source_version.zip}"
+  source_appcast="${CHANNEL_TEST_APPCAST:-$source_dist/appcast.xml}"
+  release_verify_archive "$source_archive" "$source_appcast" "$source_version" "$trusted_key" "$work/ed25519" "$(info "$new" CFBundleVersion)" \
+    || { echo "error: input archive EdDSA signature does not match AC_PUBLIC_ED_KEY (CHANNEL_TEST_ARCHIVE, CHANNEL_TEST_APPCAST)" >&2; exit 1; }
+  identity=-
+else
+  identity="$(security find-identity -v -p codesigning | awk '/"Apple Development/ { print $2; exit }')"
+  [ -n "$identity" ] || { echo "error: no Apple Development identity to sign the test copies with" >&2; exit 1; }
+fi
 ditto "$old/Contents/Frameworks/Sparkle.framework" "$work/fw/Sparkle.framework"
 swiftc -O "$here/sparkle-host.swift" -F "$pods" -framework Sparkle -Xlinker -rpath -Xlinker "$work/fw" \
   -o "$work/sparkle-host" 2>"$work/swiftc.log" || { cat "$work/swiftc.log" >&2; exit 1; }
@@ -57,7 +72,7 @@ installed_name="$(basename "$old")"
 mkdir -p "$work/installed" "$work/home"
 ditto "$old" "$work/installed/$installed_name"
 plist -c "Set :CFBundleIdentifier $test_id" -c "Set :SUPublicEDKey $public_key" "$work/installed/$installed_name/Contents/Info.plist"
-codesign --force --deep --timestamp=none --sign "$identity" "$work/installed/$installed_name" 2>/dev/null
+release_sign_test_copy "$work/installed/$installed_name"
 
 candidate() {
   local short="$1" number="$2" channel="$3" dir="$work/candidates/$1"
@@ -68,7 +83,7 @@ candidate() {
     -c "Set :CFBundleShortVersionString $short" -c "Set :CFBundleVersion $number" "$info_plist"
   plist -c "Delete :ACUpdateChannel" "$info_plist" >/dev/null 2>&1 || true
   [ "$channel" = stable ] || plist -c "Add :ACUpdateChannel string $channel" "$info_plist"
-  codesign --force --deep --timestamp=none --sign "$identity" "$dir/$zip_name" 2>/dev/null
+  release_sign_test_copy "$dir/$zip_name"
   (cd "$dir" && ditto -c -k --keepParent "$zip_name" "$work/candidates/Solara-$short.zip")
   rm -rf "$dir"
 }
@@ -91,6 +106,10 @@ publish() {
     rm -rf "$feed/archives/old_updates"
   done
   mv "$feed/archives/appcast.xml" "$feed/appcast.xml"
+  for short in "$@"; do
+    release_verify_archive "$feed/Solara-$short.zip" "$feed/appcast.xml" "$short" "$public_key" "$work/ed25519" \
+      || { echo "error: channel fixture archive EdDSA signature is invalid" >&2; exit 1; }
+  done
   rm -rf "$feed/archives"
 }
 publish nightly-only "$nightly1"
@@ -110,7 +129,10 @@ scenario() {
   defaults delete "$test_id" >/dev/null 2>&1 || true
   if HOME="$work/home" CFFIXED_USER_HOME="$work/home" timeout 300 "$work/sparkle-host" "$copy/$installed_name" \
     "http://127.0.0.1:$port/$feed/appcast.xml" "$expected" $channels > "$copy.log" 2>&1; then
-    if [ "$expected" = none ] || [ "$(info "$copy/$installed_name" CFBundleShortVersionString)" = "$expected" ]; then ok=1; else ok=0; fi
+    if [ "$expected" = none ] || [ "$(info "$copy/$installed_name" CFBundleShortVersionString)" = "$expected" ]; then
+      codesign --verify --deep --strict "$copy/$installed_name" && ok=1 || ok=0
+      if [ "${SOLARA_RELEASE_UNSIGNED:-0}" = 1 ]; then release_verify_ad_hoc "$copy/$installed_name" || ok=0; fi
+    else ok=0; fi
   else
     ok=0
   fi

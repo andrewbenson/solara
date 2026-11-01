@@ -13,10 +13,33 @@ release's notes must be on its GitHub release.
 Solara releases from this Mac: `scripts/release.sh`, then `publish.sh`, to `andrewbenson/solara` (the
 `AC_RELEASE_REPO` in `apps/browser/macos/Identity.xcconfig`). It has no site, no Homebrew tap and no telemetry.
 
-Versions start at 0.1.0 and each stable bumps the patch (0.1.0, 0.1.1, 0.1.2…); a nightly is a prerelease of the next
-patch (`0.1.1-nightly.1`). The build number (`CURRENT_PROJECT_VERSION`) goes up by one every release and is never reset:
-it starts at 81, above every build from before Solara's first release (the last was 80). The 0.1.x and 0.2.x versions
-named below (regressions the smoke test guards) are from those earlier builds, not Solara releases.
+Versions start at **0.0.1**, then add **0.0.1** each owner-only release. All 0.0.x releases are unsigned
+(ad hoc code signing, no Developer ID/notarization). **0.1.0 is the first Developer ID signed and notarized release**.
+Build numbers continue above 81: 0.0.1 is **82 or higher**, each later build strictly higher, never reset. Historical
+0.1.x and 0.2.x regressions named below are from the earlier app, not Solara releases.
+
+## Cutting an unsigned 0.0.x
+
+Export `SOLARA_RELEASE_UNSIGNED=1` before the whole workflow (including smoke/update/channel tests and publish).
+`release.sh --unsigned` affects only release.sh. Bump both project configurations to the intended 0.0.x and a build
+above 81 and every published build, write notes, commit, then follow the stable steps below. The script rejects a
+stable unsigned version outside 0.0.x and any signed 0.0.x. Keep the existing bundle id and `AC_PUBLIC_ED_KEY`.
+
+```bash
+export SOLARA_RELEASE_UNSIGNED=1
+APPCAST_BASE=none scripts/release.sh 0.0.1
+.claude/skills/release/scripts/smoke.sh 0.0.1 none
+.claude/skills/release/scripts/publish.sh 0.0.1 --dry-run
+```
+
+Only the first release uses `APPCAST_BASE=none`; later builds read the published feed and smoke against the previous
+export. Unsigned mode checks ad hoc signatures, deep strict validity and EdDSA archive signatures in place of Apple
+identity, Gatekeeper and stapler checks. It still signs the update ZIP with the real Sparkle key and verifies against
+`AC_PUBLIC_ED_KEY`; a missing or different key fails. Use `SPARKLE_KEY_FILE` only on the signing Mac and never log it.
+`docs/releasing.md` has the split Hill Studio build / owner's Mac light sign / Hill Studio self-update proof. Run that
+proof before shipping 0.0.1; the existing external-host update test does not prove a running app's relaunch. Owner-only
+is an audience rule; GitHub public releases do not restrict downloads. For 0.1.0, unset `SOLARA_RELEASE_UNSIGNED`,
+configure Developer ID + notarization, retain the bundle id and EdDSA key, and repeat the transition proof.
 
 There are two channels (`docs/releasing.md` › Channels):
 
@@ -43,7 +66,7 @@ For each fix:
    ```
    - Version: `<next stable>-nightly.<n>`, where the next stable is `$stable` with the patch bumped and `<n>` counts up
      from 1 since `$stable` (`git tag -l "v<next stable>-nightly.*"`). The build number goes up by one, as always.
-     With no stable yet (`$stable` empty), there's no nightly: cut the first release, 0.1.0 (step 0).
+     With no stable yet (`$stable` empty), there's no nightly: cut the first release, unsigned 0.0.1 (step 0).
    - Notes: `docs/release-notes/<version>.md` with `channel: nightly` in the frontmatter, the headline and one to three
      bullets (`docs/release-notes/README.md` › Nightlies). Source: `git log $prev..HEAD -- apps/browser packages engine`.
    - Bump and build: step 3 below, with `scripts/release.sh <version> --channel nightly`.
@@ -80,17 +103,17 @@ everything since the previous stable, nightlies included.
 
 ## 0. The first release
 
-With no `v*` tag (`git describe --tags --match 'v*'` finds nothing), the release is Solara's first: stable 0.1.0
-(`MARKETING_VERSION` is already 0.1.0; still bump the build number). Follow the steps below with these differences
+With no `v*` tag (`git describe --tags --match 'v*'` finds nothing), the release is Solara's first: stable unsigned 0.0.1
+(set `MARKETING_VERSION=0.0.1` and `CURRENT_PROJECT_VERSION` to at least 82 in both configurations). Follow the steps below with these differences
 (`docs/releasing.md` › The first release):
 
 - Notes: from every commit since the code Solara began from, `git log --no-merges --format='%h %s%n%b' main --not c508a9f33566
   -- apps/browser packages engine` (c508a9f33566 is the last commit Solara took from the code it began from), written for people meeting Solara for the first time.
-- Build: `APPCAST_BASE=none scripts/release.sh 0.1.0` (there's no published feed to build on).
-- Smoke test: `smoke.sh 0.1.0 none` (no earlier export: the update, carryover and same-identity checks are skipped).
+- Build: `SOLARA_RELEASE_UNSIGNED=1 APPCAST_BASE=none scripts/release.sh 0.0.1` (there's no published feed to build on).
+- Smoke test: `SOLARA_RELEASE_UNSIGNED=1 .claude/skills/release/scripts/smoke.sh 0.0.1 none` (no earlier export: the update, carryover and same-identity checks are skipped).
 - Perf: run the ratchet as usual. There's no previous stable to gate against, so run native-bench and js-bench on
-  0.1.0 alone and record them in `docs/perf/0.1.0-baseline.md`; keep `dist/0.1.0/export` as the next stable's control.
-- Publish: `publish.sh` sees no release in the repo and publishes 0.1.0's appcast as the feed.
+  0.0.1 alone and record them in `docs/perf/0.0.1-baseline.md`; keep `dist/0.0.1/export` as the next stable's control.
+- Publish: `publish.sh` sees no release in the repo and publishes 0.0.1's appcast as the feed. First run the real self-update proof in `docs/releasing.md`.
 
 ## 1. Check the tree
 
@@ -176,9 +199,11 @@ First it checks the update from `<previous>` (its export in `dist/<previous>/exp
 
 - the engine is SolaraCore (Chrome's framework, no CEF);
 - the identity Sparkle, the keychain and TCC compare: same bundle id, executable, feed and EdDSA key, the build
-  satisfies `<previous>`'s designated requirement, and its build number is higher;
+  satisfies `<previous>`'s designated requirement for signed predecessors; an ad hoc 0.0.x predecessor instead
+  requires valid seals and EdDSA key continuity. The build number is higher;
 - the appcast's EdDSA signature of the zip verifies with the app's key, and the zip holds this very app, sealed and
-  stapled; Gatekeeper accepts the app and the DMG as notarized;
+  stapled in signed mode; Gatekeeper accepts signed app/DMG as notarized. Unsigned mode checks ad hoc signatures
+  and strict seals instead, plus the DMG EdDSA sidecar;
 - `update-test.sh`: `<previous>`'s own Sparkle updates a scratch copy of it to this build, through a local feed made of
   the appcast's item (test bundle id and key; no relaunch, no UI);
 - `carryover.sh`: `<previous>`'s data, made where an installed copy keeps it (two profiles: tabs, cookies including

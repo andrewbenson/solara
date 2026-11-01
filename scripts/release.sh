@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-usage="usage: scripts/release.sh <version> [--channel stable|nightly] [--rc] [--phased <seconds>] [--phase build|sign|check]"
+usage="usage: scripts/release.sh <version> [--channel stable|nightly] [--unsigned] [--rc] [--phased <seconds>] [--phase build|sign|check]"
 version="${1:?$usage}"
 shift
 rc=0
 phased=""
 channel=stable
 phase=all
+unsigned="${SOLARA_RELEASE_UNSIGNED:-0}"
 while [ $# -gt 0 ]; do
   case "$1" in
+    --unsigned) unsigned=1 ;;
     --rc) rc=1 ;;
     --channel)
       channel="${2:-}"
@@ -30,6 +32,8 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+case "$unsigned" in 0 | 1) ;; *) echo "error: SOLARA_RELEASE_UNSIGNED is 0 or 1" >&2; exit 1 ;; esac
+export SOLARA_RELEASE_UNSIGNED="$unsigned"
 [ "$rc" = 1 ] && [ -n "$phased" ] && { echo "error: a candidate is never published, so --phased doesn't apply to --rc" >&2; exit 1; }
 if [ "$channel" = nightly ]; then
   [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-nightly\.[0-9]+$ ]] \
@@ -37,6 +41,13 @@ if [ "$channel" = nightly ]; then
 else
   [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
     || { echo "error: a stable version is <major>.<minor>.<patch> (got $version; nightlies take --channel nightly)" >&2; exit 1; }
+fi
+if [ "$unsigned" = 1 ]; then
+  [[ "$version" =~ ^0\.0\.[1-9][0-9]*(-nightly\.[0-9]+)?$ ]] \
+    || { echo "error: unsigned releases are owner-only 0.0.x (got $version)" >&2; exit 1; }
+else
+  [[ ! "$version" =~ ^0\.0\. ]] \
+    || { echo "error: 0.0.x must use SOLARA_RELEASE_UNSIGNED=1" >&2; exit 1; }
 fi
 root="$(cd "$(dirname "$0")/.." && pwd -P)"
 app_dir="$root/apps/browser"
@@ -60,11 +71,14 @@ case "$public_ed_key" in
     exit 1 ;;
 esac
 notary_profile="${NOTARY_PROFILE:-solara}"
-[ -f "$root/scripts/.notary.env" ] && . "$root/scripts/.notary.env"
-if [ -n "${NOTARY_KEY:-}" ]; then
-  notary_auth=(--key "$NOTARY_KEY" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER")
-else
-  notary_auth=(--keychain-profile "$notary_profile")
+[ "$unsigned" = 1 ] || { [ ! -f "$root/scripts/.notary.env" ] || . "$root/scripts/.notary.env"; }
+notary_auth=()
+if [ "$unsigned" = 0 ]; then
+  if [ -n "${NOTARY_KEY:-}" ]; then
+    notary_auth=(--key "$NOTARY_KEY" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER")
+  else
+    notary_auth=(--keychain-profile "$notary_profile")
+  fi
 fi
 "$root/scripts/verify-pods.sh"
 sparkle="${SPARKLE_BIN:-$macos/Pods/Sparkle/bin}"
@@ -116,6 +130,20 @@ if [ "$phase" = sign ] || [ "$phase" = check ]; then
   [ "$phase" = check ] || [ -d "$archive" ] || die "no $archive: run --phase build first"
 fi
 
+verify_mode() {
+  local details version_build
+  codesign --verify --deep --strict "$app" || die "invalid app signature"
+  details="$(codesign -dvv "$app" 2>&1)"
+  version_build="$(plutil -extract CFBundleVersion raw "$app/Contents/Info.plist")"
+  [[ "$version_build" =~ ^[0-9]+$ ]] && [ "$version_build" -gt 81 ] || die "CFBundleVersion must be strictly above 81"
+  [ "$(plutil -extract CFBundleShortVersionString raw "$app/Contents/Info.plist")" = "$version" ] || die "the exported version differs from $version"
+  if [ "$unsigned" = 1 ]; then
+    [[ "$details" == *"Signature=adhoc"* && "$details" != *"Authority="* && "$details" == *"runtime"* ]] || die "unsigned release must be ad hoc signed with hardened runtime"
+  else
+    [[ "$details" == *"TeamIdentifier=$team_id"* && "$details" == *"Authority=Developer ID Application"* ]] || die "signed release must use Developer ID for $team_id"
+  fi
+}
+
 launch_check() {
   echo "==> Launch check"
   check_data="$(mktemp -d "${TMPDIR:-/tmp}/ac-release.XXXXXX")"
@@ -141,7 +169,9 @@ launch_check() {
 if [ "$phase" = check ]; then
   [ -d "$app" ] || die "no $app: run --phase sign first"
   "$root/scripts/agent/probe-scan" "$app"
+  verify_mode
   launch_check
+  verify_mode
   echo "Launch check passed: $app"
   exit 0
 fi
@@ -150,11 +180,19 @@ pbx="$macos/Solara.xcodeproj/project.pbxproj"
 project_version="$(sed -n 's/.*MARKETING_VERSION = "\{0,1\}\([^";]*\)"\{0,1\};/\1/p' "$pbx" | sort -u)"
 project_build="$(sed -n 's/.*CURRENT_PROJECT_VERSION = \(.*\);/\1/p' "$pbx" | sort -u)"
 version_settings=()
+[[ "$project_build" =~ ^[0-9]+$ ]] || die "CURRENT_PROJECT_VERSION must be one consistent integer"
 release_build="$project_build"
 if [ "$rc" = 1 ]; then
   [ "$project_version" = "$version" ] || { release_build="$((project_build + 1))"; version_settings=(MARKETING_VERSION="$version" CURRENT_PROJECT_VERSION="$release_build"); }
 elif [ "$project_version" != "$version" ]; then
   die "MARKETING_VERSION is '$project_version'. Set it to $version (and bump CURRENT_PROJECT_VERSION) first."
+fi
+
+[ "$release_build" -gt 81 ] || die "CURRENT_PROJECT_VERSION ($release_build) must be strictly above 81; 0.0.1 starts at 82 or higher"
+if [ "$phase" = sign ]; then
+  archived_info="$archive/Products/Applications/$app_name/Contents/Info.plist"
+  [ "$(plutil -extract CFBundleShortVersionString raw "$archived_info")" = "$version" ] || die "the archive has the wrong version"
+  [ "$(plutil -extract CFBundleVersion raw "$archived_info")" = "$release_build" ] || die "the archive has the wrong build number"
 fi
 
 notes="$root/docs/release-notes/$version.md"
@@ -187,7 +225,7 @@ fi
 [ "$phase" = sign ] || [[ " $(lipo -archs "$framework_src/Versions/Current/Chromium Framework" 2>/dev/null) " == *" arm64 "* ]] \
   || die "the SolaraCore framework at $framework_src has no arm64 slice"
 if [ "$phase" = sign ]; then
-  [ -n "$provisioning_profile" ] || die "--phase sign exports the ad hoc archive --phase build made: set RELEASE_PROVISIONING_PROFILE"
+  [ "$unsigned" = 1 ] || [ -n "$provisioning_profile" ] || die "--phase sign exports the ad hoc archive --phase build made: set RELEASE_PROVISIONING_PROFILE"
 elif [ -n "$framework_engine" ]; then
   [ -n "${SOLARACORE_FRAMEWORK:-}" ] || die "SOLARACORE_FRAMEWORK_ENGINE names the engine tree a prebuilt SOLARACORE_FRAMEWORK was built from; set both or neither"
   [ "$framework_engine" = "$(git -C "$root" rev-parse HEAD:engine)" ] \
@@ -199,7 +237,7 @@ fi
 
 identity_name="Developer ID Application"
 notarize=0
-if [ "$phase" != build ]; then
+if [ "$phase" != build ] && [ "$unsigned" = 0 ]; then
   identity="$(security find-identity -v -p codesigning | awk -v n="$identity_name" -v t="($team_id)" 'index($0, n) && index($0, t) { print $2; exit }')"
   [ -n "$identity" ] || die "no $identity_name identity for team $team_id"
   if xcrun notarytool history "${notary_auth[@]}" >/dev/null 2>&1; then
@@ -249,7 +287,7 @@ if [ "$phase" != sign ]; then
   "$solaracore/scripts/ubo.sh"
   [ -f "$solaracore/vendor/ubo/ext/manifest.json" ] || die "uBlock Origin isn't installed ($solaracore/scripts/ubo.sh)"
 
-  if [ -n "$provisioning_profile" ] || [ "$phase" = build ]; then
+  if [ "$unsigned" = 1 ] || [ -n "$provisioning_profile" ] || [ "$phase" = build ]; then
     archive_signing=(-xcconfig macos/AdHoc.xcconfig)
   else
     archive_signing=(-allowProvisioningUpdates)
@@ -279,6 +317,13 @@ if [ "$phase" = build ]; then
 fi
 
 sign() {
+  if [ "$unsigned" = 1 ]; then
+    case "${*: -1}" in
+      *.dmg) codesign --force --timestamp=none --sign - "$@" || die "ad hoc DMG signing failed" ;;
+      *) "$root/scripts/lib/sign-unsigned.sh" "$@" || die "ad hoc signing failed" ;;
+    esac
+    return
+  fi
   local attempt
   for attempt in 1 2 3 4 5; do
     codesign --force --timestamp --sign "$identity" "$@" && return 0
@@ -291,7 +336,11 @@ grants_browser_passkeys() {
   security cms -D -i "$1" 2>/dev/null \
     | plutil -extract 'Entitlements.com\.apple\.developer\.web-browser\.public-key-credential' raw -o - - 2>/dev/null | grep -qx true
 }
-if [ -n "$provisioning_profile" ]; then
+if [ "$unsigned" = 1 ]; then
+  echo "==> Export (ad hoc, owner only)"
+  "$root/scripts/lib/export-unsigned.sh" "$archive/Products/Applications/$app_name" "$app" \
+    "$macos/Solara-macOS/Solara.entitlements"
+elif [ -n "$provisioning_profile" ]; then
   app_entitlements="$macos/Solara-macOS/Solara.entitlements"
   grants_browser_passkeys "$provisioning_profile" && app_entitlements="$macos/Solara-macOS/Solara-ICloudPasskeys.entitlements"
   echo "==> Export (Developer ID, $(basename "$provisioning_profile"), $(basename "$app_entitlements"))"
@@ -356,7 +405,11 @@ sign --options restrict,library,kill,runtime "$fwv/Helpers/app_mode_loader"
 sign "$fw"
 [ -d "$app/Contents/Frameworks/hermes.framework" ] \
   && sign --preserve-metadata=identifier,entitlements,flags,runtime "$app/Contents/Frameworks/hermes.framework"
-sign --preserve-metadata=entitlements,requirements,flags,runtime "$app"
+if [ "$unsigned" = 1 ]; then
+  sign --preserve-metadata=entitlements,flags,runtime "$app"
+else
+  sign --preserve-metadata=entitlements,requirements,flags,runtime "$app"
+fi
 
 echo "==> Verify"
 codesign --verify --deep --strict "$app"
@@ -383,33 +436,46 @@ for helper in "$fwv"/Helpers/*.app; do
   esac
 done
 [ -d "$app/Contents/PlugIns/$(info NSDockTilePlugIn)" ] || die "no dock tile plug-in"
-[ -f "$app/Contents/embedded.provisionprofile" ] || die "no Developer ID provisioning profile (keychain groups need it)"
+[ "$unsigned" = 1 ] || [ -f "$app/Contents/embedded.provisionprofile" ] || die "no Developer ID provisioning profile (keychain groups need it)"
 [ -f "$app/Contents/Resources/Extensions/ublock/manifest.json" ] || die "no uBlock Origin in the app"
 for file in "$root"/LICENSE* "$root/NOTICE"; do
   cmp -s "$file" "$app/Contents/Resources/Licenses/$(basename "$file")" || die "the app lacks $(basename "$file") in Contents/Resources/Licenses"
 done
-designated="$(codesign -d -r- "$app" 2>&1 | sed -n 's/^designated => //p')"
-[[ "$designated" == *"identifier \"$bundle_id\""* && "$designated" == *"subject.OU] = $team_id"* ]] \
-  || die "designated requirement: $designated"
 app_ents="$(entitlements "$app")"
-for group in webauthn unexportable-keys secure-payment-confirmation; do
-  [[ "$app_ents" == *"$team_id.$bundle_id.$group"* ]] || die "the app lacks the keychain group …$group"
-done
-if grants_browser_passkeys "$app/Contents/embedded.provisionprofile"; then
-  [[ "$app_ents" == *web-browser.public-key-credential* ]] || die "the profile grants browser passkeys but the app isn't signed with them"
+if [ "$unsigned" = 1 ]; then
+  [[ "$app_ents" == *com.apple.security.cs.disable-library-validation* ]] || die "the ad hoc app lacks the library-validation exception"
+  [[ "$app_ents" != *keychain-access-groups* && "$app_ents" != *com.apple.developer.* && "$app_ents" != *com.apple.application-identifier* ]] || die "the ad hoc app has profile-restricted entitlements"
 else
-  [[ "$app_ents" != *web-browser.public-key-credential* ]] || die "the app is signed with com.apple.developer.web-browser.public-key-credential, which its profile doesn't grant"
+  designated="$(codesign -d -r- "$app" 2>&1 | sed -n 's/^designated => //p')"
+  [[ "$designated" == *"identifier \"$bundle_id\""* && "$designated" == *"subject.OU] = $team_id"* ]] \
+    || die "designated requirement: $designated"
+  for group in webauthn unexportable-keys secure-payment-confirmation; do
+    [[ "$app_ents" == *"$team_id.$bundle_id.$group"* ]] || die "the app lacks the keychain group …$group"
+  done
+  if grants_browser_passkeys "$app/Contents/embedded.provisionprofile"; then
+    [[ "$app_ents" == *web-browser.public-key-credential* ]] || die "the profile grants browser passkeys but the app isn't signed with them"
+  else
+    [[ "$app_ents" != *web-browser.public-key-credential* ]] || die "the app is signed with com.apple.developer.web-browser.public-key-credential, which its profile doesn't grant"
+  fi
 fi
 for helper in "$fwv"/Helpers/*"Renderer).app" "$fwv"/Helpers/*"GPU).app"; do
   [[ "$(entitlements "$helper")" == *cs.allow-jit* ]] || die "$(basename "$helper") lost allow-jit"
 done
 while IFS= read -r -d '' code; do
   details="$(codesign -dvv "$code" 2>&1)"
-  [[ "$details" == *"TeamIdentifier=$team_id"* && "$details" == *"Authority=Developer ID Application"* \
-    && "$details" == *"Timestamp="* ]] || die "$code isn't Developer ID-signed with a timestamp"
+  if [ "$unsigned" = 1 ]; then
+    [[ "$details" == *"Signature=adhoc"* && "$details" != *"Authority="* ]] || die "$code is not ad hoc signed"
+    code_ents="$(entitlements "$code")"
+    [[ "$code_ents" != *keychain-access-groups* && "$code_ents" != *com.apple.developer.* && "$code_ents" != *com.apple.application-identifier* ]] || die "$code has profile-restricted entitlements"
+  else
+    [[ "$details" == *"TeamIdentifier=$team_id"* && "$details" == *"Authority=Developer ID Application"* \
+      && "$details" == *"Timestamp="* ]] || die "$code isn't Developer ID-signed with a timestamp"
+  fi
   [[ "$(entitlements "$code")" != *get-task-allow* ]] || die "$code has get-task-allow"
 done < <(find "$app" \( -name "*.app" -o -name "*.framework" -o -name "*.dylib" -o -name "*.xpc" -o -name "*.plugin" \
   -o -path "*/Helpers/*" -type f -perm -u+x -o -path "*/MacOS/*" -type f \) -print0)
+
+verify_mode
 
 engine_tree="$(git -C "$root" rev-parse HEAD:engine)"
 engine_archive="$dist/SolaraCore-${engine_tree:0:12}.tar.xz"
@@ -441,6 +507,7 @@ fi
   || die "no published release carries this engine ($engine_tree) and its source: build it from the Chromium tree, without SOLARACORE_FRAMEWORK, or name the engine tree it was built from in SOLARACORE_FRAMEWORK_ENGINE"
 
 [ "$phase" = sign ] || launch_check
+verify_mode
 
 notarize_file() {
   echo "Notarizing $(basename "$1")"
@@ -498,7 +565,9 @@ if [ "$channel" = nightly ]; then
 else
   updates_line="Earlier versions update automatically ($product_name › Check for Updates…). Every release's notes: $notes_page"
 fi
-if [ "$notarize" = 1 ]; then
+if [ "$unsigned" = 1 ]; then
+  install_line="Apple Silicon, macOS 26 or later. Owner-only 0.0.x: ad hoc signed, without Developer ID or notarization. Sparkle updates are authenticated by the Solara EdDSA key. macOS may require Privacy & Security › Open Anyway for the first launch."
+elif [ "$notarize" = 1 ]; then
   install_line="Apple Silicon, macOS 14 or later. Signed with Developer ID and notarized by Apple: download, drag it to Applications, open it."
 else
   install_line="Apple Silicon, macOS 14 or later. Signed with Developer ID but not notarized: on first launch macOS refuses to open it. Click Done, then System Settings › Privacy & Security › Open Anyway. Or run \`xattr -dr com.apple.quarantine /Applications/$product_name.app\`."
@@ -536,16 +605,34 @@ else
   "$root/scripts/verify-pods.sh"
   key="$(mktemp -d)/sparkle-key"
   trap 'rm -rf "$(dirname "$key")" "$base_feed"' EXIT
-  "$sparkle/generate_keys" --account "$sparkle_account" -x "$key" >/dev/null
+  "$sparkle/generate_keys" --account "$sparkle_account" -x "$key" >/dev/null 2>&1 || die "could not export the Sparkle EdDSA key"
 fi
+swiftc -O "$root/.claude/skills/release/scripts/ed25519.swift" -o "$dist/ed25519-check" 2>/dev/null
+dmg_signature="$("$sparkle/sign_update" --ed-key-file "$key" "$dmg" 2>/dev/null \
+  | sed -n 's/^sparkle:edSignature="\([A-Za-z0-9+/=]*\)".*/\1/p')" || die "Sparkle could not sign the DMG (key unreadable or invalid)"
+[ -n "$dmg_signature" ] && "$dist/ed25519-check" verify "$dmg" "$dmg_signature" "$public_ed_key" || die "DMG EdDSA signature does not match AC_PUBLIC_ED_KEY"
+printf '%s\n' "$dmg_signature" > "$dmg.edSignature"
 phased_args=()
 [ -n "$phased" ] && phased_args=(--phased-rollout-interval "$phased")
 [ "$channel" = nightly ] && phased_args+=(--channel nightly)
 "$sparkle/generate_appcast" --ed-key-file "$key" ${phased_args[@]+"${phased_args[@]}"} \
   --download-url-prefix "https://github.com/$repo/releases/download/v$version/" \
   --embed-release-notes --full-release-notes-url "$notes_page" \
-  --link "https://github.com/$repo" -o "$updates/appcast.xml" "$updates"
+  --link "https://github.com/$repo" -o "$updates/appcast.xml" "$updates" >/dev/null 2>&1 \
+  || die "Sparkle appcast generation failed (key unreadable or invalid)"
 mv "$updates/appcast.xml" "$dist/appcast.xml"
+zip_signature="$(python3 - "$dist/appcast.xml" "$release_build" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+namespace = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
+items = [item for item in ET.parse(sys.argv[1]).findall("./channel/item") if item.findtext(namespace + "version") == sys.argv[2]]
+if len(items) != 1:
+    raise SystemExit("appcast must contain exactly one matching build")
+print(items[0].find("enclosure").get(namespace + "edSignature", ""))
+PY
+)"
+[ -n "$zip_signature" ] && "$dist/ed25519-check" verify "$zip" "$zip_signature" "$public_ed_key" || die "ZIP EdDSA signature does not match AC_PUBLIC_ED_KEY"
+rm "$dist/ed25519-check"
 grep -q "<sparkle:shortVersionString>$version<" "$dist/appcast.xml" || die "appcast.xml has no item for $version"
 minimum_system="$(info LSMinimumSystemVersion)"
 [ "$minimum_system" = 26.0 ] || die "the app's LSMinimumSystemVersion is $minimum_system; Solara requires macOS 26.0"

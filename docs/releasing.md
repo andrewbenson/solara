@@ -38,14 +38,31 @@ every copy on Stable sees only stable items. A copy on Nightly allows `nightly` 
   `Info.plist`, which `release.sh --channel nightly` sets to `nightly` (the build setting `AC_UPDATE_CHANNEL`). It's
   written at the first launch, so a nightly copy stays on Nightly after it updates to a stable build. Switching to
   Stable never downgrades: Sparkle only offers a higher build number, so the copy waits for the next stable.
-- **Versions.** Solara's versions start at 0.1.0 and each stable bumps the patch: 0.1.0, 0.1.1, 0.1.2. Sparkle
-  compares `sparkle:version`, the build number (`CURRENT_PROJECT_VERSION`), which goes up by one every release on either
-  channel and is never reset. Solara's start at 81, above every build from before its first release (the last was
-  80; the owner's own copy is build 78), so every copy already installed sees the first release as newer. The version string is only shown. A nightly is
-  `<next stable>-nightly.<n>`, so 0.1.0 (81) < 0.1.1-nightly.1 (82) < 0.1.1-nightly.2 (83) < 0.1.1 (84). Sparkle's comparator can't order the
-  strings themselves (it reads `0.2.37-nightly.1` and `0.2.37-nightly.2` as equal), which is why it never sees them.
-  `release.sh` refuses a build number that isn't above every build already in the feed, nightly or stable. About Solara
-  and Settings show a nightly as "0.1.1 Nightly 1".
+- **Versions.** Owner-only releases start at **0.0.1**, then 0.0.2, 0.0.3: add 0.0.1 per release.
+  All 0.0.x builds use unsigned mode (ad hoc code signing, no Developer ID or notarization).
+  **0.1.0 is the first Developer ID signed and notarized release**, once the owner has a personal Apple account.
+  `CURRENT_PROJECT_VERSION` never resets: the previous floor is 81, so 0.0.1 must be **82 or higher**, and every
+  subsequent release must exceed all previously shipped builds, including nightlies. Sparkle compares this integer,
+  not the displayed version. For example: 0.0.1 (82), 0.0.2 (83), then 0.1.0 (84 or higher).
+  `release.sh` refuses builds at or below 81 and at or below the newest build in the feed. A nightly still uses
+  `<next stable>-nightly.<n>`; build numbers order its iterations. Owner-only 0.0.x releases normally use stable.
+- **What an unsigned 0.0.x build gives up.** An ad hoc signature's designated requirement is its cdhash, so it
+  changes with every build:
+  - Chrome runs on the mock keychain (`ChromeUsesRealKeychain()` in `SolaraCoreHost.mm` is true only for a
+    team-signed build), so "Solara Safe Storage" is never read or written and saved passwords, cookies and cards
+    are mock-keyed. A later Developer ID build moves them with the Safe Storage re-key (`docs/testing.md` › Safe Storage re-key).
+  - Three things still use the real login keychain: Connected Accounts secrets (`packages/shell/ios/Keychain.swift`),
+    the sync key store (`packages/sync/ios/SyncModule.swift`, `KeychainKeyStore`) and the import of another browser's
+    Safe Storage key. Their items are tied to the build that made them, so after each 0.0.x update macOS will likely
+    ask once per item before the new build can read it.
+  - TCC grants (camera, microphone, screen recording, Accessibility) are per signature and reset with each update.
+  - The provisioning-only entitlements are left out: `com.apple.developer.web-browser.public-key-credential` (so no
+    passkeys as a browser) and `keychain-access-groups` (Chrome's unexportable keys fall back). The app launches
+    cleanly without them.
+  - Test switches are honoured: `TestBuild()` means "not team-signed", so a 0.0.x build accepts the env-var test
+    switches, including `SOLARA_TEST_REAUTH=granted`, which skips the password re-auth. Low risk, since whoever can
+    set the app's environment already controls the account and 0.0.x is owner-only; it goes away at 0.1.0
+    (backlog: key test switches off a build setting).
 - **The feed.** Every build reads it at `AC_FEED_URL`, `releases/latest/download/appcast.xml`, and GitHub's "latest" skips prereleases, so it's always the newest stable
   release's `appcast.xml`. A stable release publishes the merged feed as its own asset and becomes latest; a nightly
   re-uploads the merged feed onto that same latest stable release (`gh release upload … --clobber`). The URL never
@@ -77,7 +94,38 @@ stays up. That's GPL-3.0 §6(d) for the GPL parts (uBlock Origin today), and it'
 - About Solara and Settings › Advanced › "Source and licenses" link the running version's tag. The app carries
   `LICENSE*` and `NOTICE` in `Contents/Resources/Licenses`.
 
+## Unsigned owner releases
+
+The primary switch is `SOLARA_RELEASE_UNSIGNED=1`, used consistently by `release.sh`, `smoke.sh`, `update-test.sh`,
+`channel-test.sh` and `publish.sh`. `release.sh --unsigned` is a convenience for that invocation only: export the
+variable when running the whole workflow. A stable unsigned version must be 0.0.x (starting at 0.0.1); signed mode
+refuses all 0.0.x, including nightlies. Neither mode can silently ship the other kind.
+
+```bash
+export SOLARA_RELEASE_UNSIGNED=1
+APPCAST_BASE=none scripts/release.sh 0.0.1
+.claude/skills/release/scripts/smoke.sh 0.0.1 none
+.claude/skills/release/scripts/publish.sh 0.0.1 --dry-run
+```
+
+Bump the project version/build and commit release notes first, as below. For later releases omit `APPCAST_BASE=none`
+and pass the previous version to smoke. The export uses ad hoc signatures throughout, including Sparkle's helpers;
+retains hardened runtime and supported app/helper entitlements, adds the library-validation exception needed to load
+ad hoc embedded libraries, and omits provisioning-only entitlements (keychain
+access groups, application/team identifiers and iCloud passkeys). It verifies the sealed app strictly before and after
+its check run. Gatekeeper/notary expectations become ad hoc + strict verification and archive EdDSA verification,
+not a waived signature gate. The DMG has an EdDSA signature sidecar; the appcast's ZIP enclosure has `edSignature`.
+The XML feed itself has no detached signature in Sparkle's current format.
+
+Keep `AC_PUBLIC_ED_KEY` and its private key unchanged. Missing or mismatched EdDSA credentials must fail. Use
+`SPARKLE_KEY_FILE` on the signing Mac; do not paste keys into commands or logs. Hill Studio can run `--phase build`
+without that key. The separate, light signing step for the local proof is below; it does not rebuild the app or DMG.
+Owner-only describes the audience, not access control: a public GitHub release remains publicly downloadable.
+
 ## Once per machine
+
+Developer ID and notarization setup below applies to signed 0.1.0 and later. Unsigned 0.0.x needs the engine,
+Pods and Sparkle signing key (on the signing Mac), with no Apple identity or notary credentials.
 
 - The identity's **Developer ID Application** certificate (team `AC_TEAM_ID`: `33W8BDN775`) in the login keychain, and Xcode signed in to the team: the export fetches the Developer ID provisioning profile
   (`-allowProvisioningUpdates`) that the keychain-group entitlements need.
@@ -92,8 +140,8 @@ stays up. That's GPL-3.0 §6(d) for the GPL parts (uBlock Origin today), and it'
   keychain profile below, which notarytool keeps in the data-protection keychain: that reads as
   missing while the screen is locked. Otherwise, a notarytool profile named `solara`:
   `xcrun notarytool store-credentials solara --apple-id <id> --team-id 33W8BDN775` (it asks for an
-  app-specific password). Without it, the script still builds and signs, but the release is unnotarized and
-  Gatekeeper blocks the first launch.
+  app-specific password). Signed mode refuses missing credentials unless `ALLOW_UNNOTARIZED=1` is explicitly set for an experiment;
+  that override is not a notarized release.
 - The engine: SolaraCore's `Chromium Framework.framework` built in `~/chromium-build` (`scripts/agent/engine-build`;
   `docs/engine-build.md`), and `pod install` in `apps/browser/macos`. A framework built elsewhere goes in through
   `SOLARACORE_FRAMEWORK`. That skips the tree checks and ships no engine archive, unless `SOLARACORE_FRAMEWORK_ENGINE`
@@ -103,7 +151,7 @@ stays up. That's GPL-3.0 §6(d) for the GPL parts (uBlock Origin today), and it'
 ## Cutting a release
 
 1. Bump `MARKETING_VERSION` (the version) and `CURRENT_PROJECT_VERSION` (the build number, which Sparkle
-   compares: it must go up every release) in both configurations of the `Solara-macOS` target in
+   compares: it must exceed 81 and go up every release) in both configurations of the `Solara-macOS` target in
    `apps/browser/macos/Solara.xcodeproj`. The helpers and the Dock tile plug-in take the same values.
 2. Write `docs/release-notes/<version>.md` from `git log v<previous>..HEAD` (`docs/release-notes/README.md`; for the
    first release, "The first release" below).
@@ -114,7 +162,7 @@ stays up. That's GPL-3.0 §6(d) for the GPL parts (uBlock Origin today), and it'
    (`apply.sh --check`), if the version doesn't fit the channel or the notes' `channel`, if it can't read the published
    appcast, or if the build number isn't above every build in it. It writes `dist/<version>/`:
    - archives the Release configuration of `apps/browser/macos` for arm64, staging the engine into its own derived
-     data so a development build restaging can't change it mid-build, and exports it with Developer ID. Here the export is Xcode's
+     data so a development build restaging can't change it mid-build, and exports it ad hoc in unsigned mode or with Developer ID in signed mode. The signed export is Xcode's
      (`-allowProvisioningUpdates`, which needs Xcode signed in to the team); with `RELEASE_PROVISIONING_PROFILE` set
      the archive is signed ad hoc (`AdHoc.xcconfig`) and `scripts/lib/export-developer-id.sh` does the export: it embeds
      that profile and re-signs inside out with Developer ID, the same identifiers, entitlements, flags and designated
@@ -146,9 +194,9 @@ stays up. That's GPL-3.0 §6(d) for the GPL parts (uBlock Origin today), and it'
      `CODE_SIGN_ENTITLEMENTS` switched to that file),
    - launches the app once in the background (throwaway data dir), waits for uBlock's rulesets to be indexed,
      quits it and checks the signature again: the app must never write into its own bundle,
-   - notarizes and staples the app and the DMG,
+   - in signed mode, notarizes and staples the app and the DMG,
    - packages the DMG (lzma in 4 MB chunks, `udif-chunk-size=8192`, hdiutil's largest; `SOLARA_DMG_CHUNK=off` goes back
-     to its 1 MB default) and the zip, and signs `appcast.xml` (`generate_appcast` names the feed after the app's
+     to its 1 MB default) and the zip, and EdDSA-signs the archives (`generate_appcast` names the feed after the app's
      `SUFeedURL`, so release.sh passes it `-o`) with the Sparkle key. It starts from the
      published appcast, so earlier versions and the other channel's items stay listed; a nightly's item gets
      `<sparkle:channel>nightly</sparkle:channel>`. The new item embeds the notes' headline and body
@@ -237,20 +285,87 @@ bundle and team id and the "Solara Safe Storage" item. Prebuilt engines come onl
 
 ## The first release
 
-Solara's first release is a stable one, 0.1.0: the feed lives on the latest stable release
+Solara's first release is a stable unsigned one, **0.0.1 (build 82 or higher)**: the feed lives on the latest stable release
 (`releases/latest/download/appcast.xml`), so there's nothing for a nightly to join until it exists, and `publish.sh`
 refuses a nightly while the repo has no stable release. With no `v*` tag yet:
 
 - **Notes** come from every commit since the code Solara began from, not from a tag:
   `git log --no-merges main --not c508a9f33566 -- apps/browser packages engine` (c508a9f33566 is the last commit
   Solara took from the code it began from; those commits aren't listed).
-- **The feed** has nothing to build on: `APPCAST_BASE=none scripts/release.sh 0.1.0` starts a new one, and `publish.sh`
+- **The feed** has nothing to build on: `SOLARA_RELEASE_UNSIGNED=1 APPCAST_BASE=none scripts/release.sh 0.0.1` starts a new one, and `publish.sh`
   sees no release yet and publishes this one's appcast as the feed.
-- **The smoke test** has no earlier export: `smoke.sh 0.1.0 none` skips the update test, carryover and the
-  same-identity checks, and runs every launch check.
+- **The smoke test** has no earlier export: `SOLARA_RELEASE_UNSIGNED=1 .claude/skills/release/scripts/smoke.sh 0.0.1 none` skips the update test, carryover and the
+  same-identity checks, and runs every launch check. For this unsigned bootstrap it authenticates the local
+  appcast/ZIP and configured HTTPS feed URL; publish checks the hosted feed once it exists.
 - **The perf gate** has no earlier stable to time against. The perf ratchet runs as always (its ceilings are absolute);
-  native-bench and js-bench run once on 0.1.0 alone and their numbers go in `docs/perf/0.1.0-baseline.md`, which the
-  next stable is gated against together with 0.1.0's own export.
+  native-bench and js-bench run once on 0.0.1 alone and their numbers go in `docs/perf/0.0.1-baseline.md`, which the
+  next stable is gated against together with 0.0.1's own export. Run the local self-update proof below before shipping
+  0.0.1: smoke with `none` alone cannot establish that it can update.
+
+## Local self-update proof (Hill Studio and the signing Mac)
+
+Run this on Hill Studio before publishing 0.0.1, from a disposable patched checkout with dependencies, Pods and the
+engine already available. These commands intentionally change that checkout's project versions. Nothing installs in
+`/Applications`. The terminal running the proof must already have Accessibility permission: the driver presses only
+English Sparkle install/relaunch buttons belonging to the exact scratch app PID, without activating it.
+
+### Hill Studio: build
+
+```bash
+export SOLARA_RELEASE_UNSIGNED=1 APPCAST_BASE=none
+python3 - <<'PYBUILD'
+from pathlib import Path
+import re, subprocess
+p = Path('apps/browser/macos/Solara.xcodeproj/project.pbxproj')
+for version, build in [('0.0.1', 82), ('0.0.2', 83)]:
+    s = re.sub(r'MARKETING_VERSION = [^;]+;', f'MARKETING_VERSION = {version};', p.read_text())
+    s = re.sub(r'CURRENT_PROJECT_VERSION = [^;]+;', f'CURRENT_PROJECT_VERSION = {build};', s)
+    p.write_text(s)
+    subprocess.run(['scripts/release.sh', version, '--unsigned', '--rc', '--phase', 'build'], check=True)
+PYBUILD
+proof="$PWD/.hill/unsigned-self-update-proof"
+.claude/skills/release/scripts/self-update-proof.sh prepare \
+  "$PWD/dist/0.0.1-rc/Solara.xcarchive/Products/Applications/Solara.app" \
+  "$PWD/dist/0.0.2-rc/Solara.xcarchive/Products/Applications/Solara.app" "$proof"
+rsync -a "$proof/feed/" "${OWNER_MAC:?set the signing Mac SSH target}:solara-unsigned-proof-feed/"
+```
+
+The two archives are separate Release builds. `prepare` exports them ad hoc with the normal unsigned signing helper,
+then changes only scratch fixture plists: a shared test bundle id, loopback feed, scratch home/data and hidden relaunch
+environment. The candidate is labeled **0.0.2-test**, build **83**; it is not a publishable stable version. Both retain
+`AC_PUBLIC_ED_KEY`. Use a fresh `proof` directory for every attempt. If 82/83 are already in use, choose a higher pair.
+
+### Owner's Mac: sign (light)
+
+Use the same patched checkout and Sparkle 2.9.6 `bin` tools. Set `SPARKLE_KEY_FILE` to the existing exported release key
+and `SPARKLE_BIN` to that distribution's `bin` directory. No app build, Developer ID, notary or keychain is needed.
+
+```bash
+SPARKLE_KEY_FILE="${SPARKLE_KEY_FILE:?set the existing release key file}" \
+SPARKLE_BIN="${SPARKLE_BIN:?set the Sparkle 2.9.6 bin directory}" \
+  .claude/skills/release/scripts/self-update-proof.sh sign "$HOME/solara-unsigned-proof-feed"
+```
+
+This signs the exact ZIP and verifies it against `AC_PUBLIC_ED_KEY`, then writes `appcast.xml` with its `edSignature`.
+The feed is not signed as a whole. Return only that XML; do not repack or modify the ZIP. The `run` step also accepts
+an already-signed appcast/ZIP pair at these paths and never needs the private key.
+
+### Hill Studio: serve + install + update + verify
+
+```bash
+proof="$PWD/.hill/unsigned-self-update-proof"
+rsync -a "${OWNER_MAC:?set the signing Mac SSH target}:solara-unsigned-proof-feed/appcast.xml" "$proof/feed/appcast.xml"
+SOLARA_RELEASE_UNSIGNED=1 .claude/skills/release/scripts/self-update-proof.sh run "$proof"
+```
+
+`run` verifies the production-key archive signature, serves loopback only, launches scratch 0.0.1 hidden with
+`perf-probe` and its own data/home, explicitly calls `checkForUpdates`, accepts Sparkle's install/relaunch choices,
+and fails after 300 seconds if replacement/relaunch does not complete. It requires successful appcast and ZIP HTTP
+requests, a new running PID at the same scratch app/executable path, preserved hidden/data environment, and the
+running app's native `CFBundleVersion`/version/configuration: **83 / 0.0.2-test / Release**. It then strict-verifies the
+installed ad hoc signature and compares the entire bundle to the candidate. It quits only that scratch app and stops
+its server, retaining `proof.log`, `http.log`, `trigger.json`, `running.json` and `data/relaunched.json` as evidence.
+No PASS means no proof: AX/button-label, LaunchServices environment, runtime/JIT or updater errors need investigation.
 
 ## Engines
 
@@ -275,10 +390,35 @@ snapshot. A second publish meanwhile stops, naming the holder; a lock older than
 only with `--break-lock`, and only when its holder and time can be read. Dry runs take it too, and write nothing else;
 `PUBLISH_LOCK` renames it for dry runs only.
 
+## Sparkle 2.9.6: unsigned updates and 0.1.0
+
+Both **ad hoc 0.0.1 → ad hoc 0.0.2** and **ad hoc 0.0.x → Developer ID 0.1.0** are supported with the same
+EdDSA key: validation accepts EdDSA or a matching code signature, and independently validates the new app's code
+signature when only EdDSA passes. Removing code signing or the public key is rejected.
+[SUUpdateValidator.m, lines 252–346](https://github.com/sparkle-project/Sparkle/blob/2.9.6/Sparkle/SUUpdateValidator.m#L252)
+implements this policy.
+
+The code comparison copies the old designated requirement and checks the new bundle against it; it does not require
+that comparison to pass when EdDSA passes. Ad hoc helpers have no team; Sparkle's XPC validator omits the team
+requirement in that case, so the unsigned export re-signs Sparkle's tools too.
+[SUCodeSigningVerifier.m, lines 23–156 and 417–431](https://github.com/sparkle-project/Sparkle/blob/2.9.6/Autoupdate/SUCodeSigningVerifier.m#L23).
+
+For our full ZIP app updates, **no intermediate release or `SUVerifyUpdateBeforeExtraction` key is required**.
+`AppInstaller` chooses pre-extraction validation when that key or the archive type requires it, and otherwise validates
+after extraction. Setting the key to YES would also work with the unchanged EdDSA key; it is not a migration fix.
+[AppInstaller.m, lines 252–294](https://github.com/sparkle-project/Sparkle/blob/2.9.6/Autoupdate/AppInstaller.m#L252).
+
+Keep `com.hill.solara`, the executable name, `SUPublicEDKey`/`AC_PUBLIC_ED_KEY`, the feed and monotonically increasing
+builds. Release 0.1.0 uses Developer ID + notarization, and its ZIP is still signed with that EdDSA key. Before shipping
+it, repeat an in-place test from the final 0.0.x to the final signed export. Check macOS permission and data behavior
+separately: passing Sparkle validation does not preserve an ad hoc app's macOS identity or mock-keychain secrets.
+
 ## Update checks
 
-A copy updates in place only while it's the same app to macOS and Sparkle: bundle id, executable, Developer ID team,
-designated requirement, feed and key. Then macOS keeps its permissions, keychain items and passkeys, and the new build
+Keep the bundle id, executable, feed and EdDSA key stable. Within Developer ID releases also keep the team and
+designated requirement stable to preserve macOS identity. The transition from ad hoc to Developer ID is supported
+by Sparkle as described below, but macOS permissions may need approval again, and mock-keychain data from an ad hoc
+build is not a promise of production keychain/passkey continuity. The new build
 opens the old one's data where it is (`InstalledDataDirectory` in `packages/solaracore/ios/SolaraCoreHost.mm`:
 Chrome's user data dir `~/Library/Application Support/<bundle id>/Chromium`, profiles `Default` and `Profile <id>`,
 with the app's own documents, session and settings, in the folder above). Only Developer ID builds use the login
@@ -306,7 +446,7 @@ every notification): `engine/chromium` replaces Chromium's logo.
 
 ## Unnotarized builds
 
-Releases are notarized, with the App Store Connect API key in `scripts/.notary.env` or the notarytool profile `solara`
+Owner-only 0.0.x releases are ad hoc and unnotarized. Signed 0.1.0 and later releases are notarized, with the App Store Connect API key in `scripts/.notary.env` or the notarytool profile `solara`
 ("Once per machine"). An Apple ID with `--apple-id … --team-id …` and an app-specific password also works, but locks
 the Apple ID after repeated failures. If a build ever ships unnotarized, Gatekeeper refuses to open the download. Either open it once from System Settings › Privacy &
 Security › Open Anyway, or run `xattr -dr com.apple.quarantine /Applications/Solara.app`.

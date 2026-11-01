@@ -262,19 +262,70 @@ import Testing
   @Test func aQuitAfterACompletedOneRunsItsOwnOperation() throws {
     let store = Store()
     let calls = Mutex(0)
+    let held = Mutex<Int?>(nil)
+    let release = DispatchSemaphore(value: 0)
+    let returned = Mutex<Set<Int>>([])
     let stages = QuitFlush.Stages(
       drain: { _ in true },
       flush: { complete in
         let call = calls.withLock { value in value += 1; return value }
-        let thread = Thread { complete(.failed("call \(call)")) }
+        let holds = held.withLock { $0 == call }
+        let thread = Thread {
+          if holds { _ = release.wait(timeout: .now() + 30) }
+          complete(.failed("call \(call)"))
+          returned.withLock { _ = $0.insert(call) }
+        }
         thread.qualityOfService = .background
         thread.start()
       })
-    var mismatches = 0
-    for call in 1...2000 where QuitFlush.run(store: store, writer: nil, barrierTimeout: 5, writerTimeout: 5, stages: stages) != .failed("call \(call)") {
-      mismatches += 1
+    func quit(barrierTimeout: TimeInterval = 5, writerTimeout: TimeInterval = 5) -> (before: Int, after: Int, result: FlushResult) {
+      let before = calls.withLock { $0 }
+      let result = QuitFlush.run(store: store, writer: nil, barrierTimeout: barrierTimeout, writerTimeout: writerTimeout, stages: stages)
+      return (before, calls.withLock { $0 }, result)
     }
-    #expect(mismatches == 0)
+    var mismatches: [String] = []
+    var unfinished: Int?
+    for run in 1...2000 {
+      let settled = unfinished.map { call in returned.withLock { $0.contains(call) } } ?? true
+      let (before, after, result) = quit()
+      let ownOperation = after == before + 1 && (result == .failed("call \(after)") || result == .timedOut)
+        || after == before && result == .timedOut
+      let joined = after == before && (result == .failed("call \(unfinished ?? 0)") || result == .timedOut)
+      if settled ? !ownOperation : !(ownOperation || joined) {
+        mismatches.append("run \(run): flush calls \(before) to \(after), result \(result), unfinished \(unfinished.map(String.init) ?? "none")")
+      }
+      if result != .timedOut { unfinished = nil } else if after == before + 1 { unfinished = after }
+    }
+    #expect(mismatches.isEmpty, "\(mismatches.prefix(5))")
+
+    let call = calls.withLock { $0 } + 1
+    held.withLock { $0 = call }
+    let timedOut = quit(writerTimeout: 0.3)
+    #expect(timedOut.result == .timedOut && timedOut.after == call)
+    let joinedWhileHeld = quit(barrierTimeout: 0.2, writerTimeout: 0.1)
+    #expect(joinedWhileHeld.result == .timedOut && joinedWhileHeld.after == call)
+    let released = Mutex(false)
+    DispatchQueue.global().asyncAfter(deadline: .now() + 1) {
+      released.withLock { $0 = true }
+      release.signal()
+    }
+    let joinerStartedLate = released.withLock { $0 }
+    let joined = quit(barrierTimeout: 15, writerTimeout: 15)
+    if joinerStartedLate {
+      Issue.record("joiner started after release: harness timing, not QuitFlush")
+    } else if joined.result == .timedOut, joined.after == call {
+      Issue.record("joiner starved: background QoS flush not scheduled in 30 s")
+    } else {
+      #expect(joined.result == .failed("call \(call)") && joined.after == call, "joiner got \(joined.result), flush calls \(joined.before) to \(joined.after)")
+    }
+    let settledBy = ContinuousClock.now.advanced(by: .seconds(30))
+    while !returned.withLock({ $0.contains(call) }), ContinuousClock.now < settledBy { Thread.sleep(forTimeInterval: 0.01) }
+    let next = quit(barrierTimeout: 15, writerTimeout: 15)
+    if next.result == .timedOut, next.after == call + 1 {
+      Issue.record("next run starved: background QoS flush not scheduled in 30 s")
+      return
+    }
+    #expect(next.after == call + 1 && next.result == .failed("call \(call + 1)"), "next got \(next.result), flush calls \(next.before) to \(next.after)")
   }
 
   @Test func oversizedBudgetCannotJoinARunningQuit() throws {

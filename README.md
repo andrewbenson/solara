@@ -1,54 +1,102 @@
 <p align="center">
-  <img src="apps/browser/assets/app-icon-solara.png" width="128" height="128" alt="Solara's app icon: a striped synthwave sun setting over a neon grid">
+  <img src="apps/browser/assets/app-icon-solara.png" width="128" height="128" alt="Solara's striped sun app icon">
 </p>
 
 <h1 align="center">Solara</h1>
 
-<p align="center">A Mac browser with Arc's sidebar and Dia's polish, on Chromium built from source.</p>
+<p align="center">
+  A browser for macOS, with Arc's sidebar and Dia's polish.<br>
+  Chromium built from source. No account, no AI features, no telemetry.
+</p>
 
-Solara is a macOS browser by Andrew Benson. Every window and tab is Chrome's own, from an engine we build
-ourselves, so sites, extensions and DevTools behave the way they do in Chrome. Around it sits a native shell that
-copies Dia's look and behavior, measured against Dia, with Arc's sidebar for tabs.
+<h3 align="center">
+  <a href="https://github.com/andrewbenson/solara/releases/latest">Download Solara for Mac</a>
+</h3>
 
-- **No account.** Nothing to sign up for. Sync, if you turn it on, goes through a folder in your own iCloud Drive,
-  end-to-end encrypted.
-- **No AI features.** On purpose.
-- **No telemetry.** Solara sends no usage data and no crash reports. Google's background services are compiled out
-  of the engine, and uBlock Origin is built in.
+<p align="center">
+  macOS 26 or later · Apple Silicon<br>
+  Signed with a Developer ID and notarized by Apple.<br>
+  <a href="https://github.com/andrewbenson/solara/releases">Releases and release notes</a>
+</p>
+
+## Tabs in the sidebar
+
+Keep pinned sites as tiles. Put related tabs in folders. Use the dots at the bottom to switch profiles.
+
+![Solara's sidebar with pinned tiles, folders, tabs, and profile dots beside a Wikipedia article.](docs/readme/sidebar.png)
+
+## Pages side by side
+
+Split a window to keep pages together. A split can hold up to three tabs.
+
+![Wikipedia and MDN open side by side in Solara.](docs/readme/split.png)
+
+## A sun on New Tab
+
+Open a new tab to start a search beneath Solara's sun.
+
+![Solara's New Tab page with its sun and search field.](docs/readme/new-tab.png)
+
+## Light and dark
+
+Choose a profile color and a light or dark appearance.
+
+| Light | Dark |
+| --- | --- |
+| ![Solara in light appearance.](docs/readme/sidebar.png) | ![The same window in dark appearance.](docs/readme/dark.png) |
+
+## Also in Solara
+
+- **Command bar.** Command-L finds tabs, bookmarks and history, or searches the web.
+- **Peek.** Open a link over the page, then close it or keep it as a tab.
+- **No account.** Sync, if you turn it on, goes through a folder in your own iCloud Drive, end-to-end encrypted.
+- **No telemetry.** No usage data and no crash reports. Google's background services are compiled out of the engine,
+  and uBlock Origin is built in.
 - **Chrome extensions** install from the Chrome Web Store.
 - **Moves in for you:** bookmarks, history, passwords, cookies and tabs from Chrome, Safari, Firefox, Arc, Dia and
   more.
 
-It needs macOS 26 or later on Apple Silicon.
-
 ## Getting it
 
-No release is published yet. Once there is one, the DMG will be on
-[this repo's releases](https://github.com/andrewbenson/solara/releases), and Solara will update itself from there with
-[Sparkle](https://sparkle-project.org): it checks the appcast on the latest release, installs updates quietly, and
-shows what changed. Settings › General picks the channel: Stable, or Nightly for prereleases with fixes as soon as
-they land.
+Download the DMG from [the latest release](https://github.com/andrewbenson/solara/releases/latest). Open it and drag
+Solara to Applications.
 
-## Building from source
+If you used 0.0.1, install 0.1.0 from the DMG over it. 0.1.0 has a new app identity and starts with a fresh profile;
+0.0.1's tabs and data aren't brought over. From 0.1.0 on, updates install themselves.
 
-You need an Apple Silicon Mac with Xcode, CocoaPods, Node 22 and pnpm 11.
+Solara uses [Sparkle](https://sparkle-project.org) to install updates from GitHub Releases. Choose Stable or Nightly
+in Settings › General › Update channel. Stable receives stable releases. Nightly receives newer prereleases and
+stable releases. Switching back to Stable waits for a newer stable build; it does not downgrade.
+
+## Build from source
+
+You need an Apple Silicon Mac, Xcode, CocoaPods, Node 22.13 or later, and pnpm 11. Use the Node version in `.nvmrc`.
 
 ```sh
 pnpm install
 pnpm pods
-pnpm dev      # Metro, leave it running
-pnpm macos    # builds the Debug app and opens it on its own data folder
 ```
 
-The app links a Chromium framework. With a Chromium tree at `~/chromium-build`, the build uses the framework you built
-there; [docs/engine-build.md](docs/engine-build.md) covers building it (a first build takes about five hours).
-Without one, it falls back to a prebuilt engine from this repo's releases
-(`packages/solaracore/scripts/fetch-engine.sh`) when one matches `engine/`'s tree. None is published yet, so plan on
-building the engine yourself. Releases are built, signed and notarized by `scripts/release.sh`
-([docs/releasing.md](docs/releasing.md)).
+Start Metro in one terminal. Reuse it if it is already running.
 
-[CONTRIBUTING.md](CONTRIBUTING.md) explains how changes are made, and [docs/agent-brief.md](docs/agent-brief.md) how
-the pieces fit together.
+```sh
+pnpm dev
+```
+
+In another terminal, build and run the Debug app. It uses its own data folder, `Solara Dev`, unless you set
+`SOLARA_DATA_DIR`.
+
+```sh
+pnpm macos
+```
+
+The app links a Chromium framework. If you have a local engine build in `~/chromium-build`, the app build uses it.
+Otherwise, it downloads a prebuilt engine that matches your checkout's `engine/` tree and verifies its SHA-256.
+If no matching engine is available, build it from source or use the release tag named by the error.
+[docs/engine-build.md](docs/engine-build.md) covers the engine build.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contributing, [docs/agent-brief.md](docs/agent-brief.md) for the architecture
+and hidden development instances, and [docs/releasing.md](docs/releasing.md) for signed releases.
 
 ## License
 

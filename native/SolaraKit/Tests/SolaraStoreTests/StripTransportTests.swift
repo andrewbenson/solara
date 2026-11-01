@@ -316,6 +316,28 @@ final class LaterQueue {
     transport.stop()
   }
 
+  @Test func aCommandPlannedWhileTheStoreIsBusySendsOnceWhenItFrees() throws {
+    let f0 = try fixture()
+    let held = HeldSequence()
+    let transport = StripTransport(
+      store: f0.store, engine: f0.engine, sequence: { work in held.holding ? held.work.append(work) : work() },
+      later: { f0.later.work.append($0) })
+    transport.start()
+    held.holding = true
+    f0.later.flush()
+    #expect(f0.engine.sent.isEmpty, "nothing reaches the engine while the store is busy")
+    #expect(held.work.count == 1, "the projection waits its turn instead of being dropped")
+    held.holding = false
+    for work in held.work { work() }
+    held.work = []
+    #expect(arranges(f0.engine).count == 1, "the command goes out once the store is free")
+    #expect(f0.store.memory.chromeTabs.inflight[7]?.cmd == f0.engine.sent.last?.id)
+    f0.later.flush()
+    for work in held.work { work() }
+    #expect(arranges(f0.engine).count == 1, "the command in flight isn't sent again")
+    transport.stop()
+  }
+
   @Test func aStripClosedWhileStoppedIsForgottenOnRestart() throws {
     let f = try fixture()
     f.transport.start()

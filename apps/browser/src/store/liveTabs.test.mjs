@@ -4,19 +4,25 @@ import { spawnSync } from "node:child_process";
 
 globalThis.__DEV__ = false;
 
-test("a busy native strip acknowledgement retries without sending the engine command again", () => {
+test("while Swift owns the workspace, JS leaves the Chrome strip alone: a stripCommand effect sends and acknowledges nothing", () => {
   const script = `
     import assert from "node:assert/strict";
     import { mock } from "node:test";
     globalThis.__DEV__ = false;
     const commands = [];
-    const acknowledgements = [];
-    const origins = [];
+    const stripWrites = [];
+    let stripListens = 0;
+    let stripSnapshots = 0;
     let listener;
-    let busy = 2;
     globalThis.acTestTabStrip = {
-      listen: () => ({ remove() {} }),
-      snapshot: () => Promise.resolve({ rev: 0, cmd: null, strips: [] }),
+      listen: () => {
+        stripListens += 1;
+        return { remove() {} };
+      },
+      snapshot: () => {
+        stripSnapshots += 1;
+        return Promise.resolve({ rev: 0, cmd: null, strips: [] });
+      },
       command: (command, id) => commands.push({ command, id }),
     };
     globalThis.acTestNativeModules = {
@@ -26,11 +32,7 @@ test("a busy native strip acknowledgement retries without sending the engine com
         dispatch(json) {
           const message = JSON.parse(json);
           const command = message.commands ?? message;
-          if (command.name === "stripCommandSent") {
-            acknowledgements.push(command.args);
-            origins.push(message.fromSync === true);
-            if (busy-- > 0) return JSON.stringify({ rev: 0, busy: true });
-          }
+          if (["stripCommandSent", "stripTransaction", "stripSnapshot", "projectStrips"].includes(command.name)) stripWrites.push(command.name);
           return JSON.stringify({ rev: 0, patches: [] });
         },
         catchUp: () => JSON.stringify({ rev: 0, patches: [] }),
@@ -41,10 +43,11 @@ test("a busy native strip acknowledgement retries without sending the engine com
       },
     };
     const { useBrowser } = await import("./src/store/browser.ts");
-    const { startNativeStore, attachReplica } = await import("./src/store/nativeStore.ts");
+    const { startNativeStore, attachReplica, nativeOwnsWorkspace } = await import("./src/store/nativeStore.ts");
     const { startChromeTabs } = await import("./src/lib/chromeTabs.ts");
     startNativeStore();
     attachReplica(useBrowser);
+    assert.equal(nativeOwnsWorkspace(), true, "the fixture is a Swift-owned workspace");
     startChromeTabs();
     await new Promise((resolve) => setImmediate(resolve));
     mock.timers.enable({ apis: ["setTimeout"] });
@@ -54,13 +57,13 @@ test("a busy native strip acknowledgement retries without sending the engine com
         patch: { rev: 0, sync: true },
         effects: [{ type: "stripCommand", strip: 7, command: { op: "activate", strip: 7, key: "t1" } }],
       }) });
-      assert.equal(commands.length, 1);
       mock.timers.tick(50);
       mock.timers.tick(50);
-      assert.equal(acknowledgements.length, 3);
-      assert.equal(commands.length, 1, "only the acknowledgement retries");
-      assert.deepEqual(origins, [true, true, true]);
-      assert.deepEqual(acknowledgements, [[7, commands[0].id], [7, commands[0].id], [7, commands[0].id]]);
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(commands.length, 0, "the engine command is Swift's to send");
+      assert.deepEqual(stripWrites, [], "JS writes no strip command, acknowledgement, transaction or projection");
+      assert.equal(stripListens, 0, "JS doesn't observe the strip");
+      assert.equal(stripSnapshots, 0, "JS doesn't take a strip snapshot");
     } finally {
       mock.timers.reset();
     }

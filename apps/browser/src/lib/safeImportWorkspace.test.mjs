@@ -66,7 +66,7 @@ for (const safe of [true, false]) {
     const h = harness(safe);
     await h.handlers["import.readDia"]();
     const out = await h.handlers["import.runDia"]({ profileIds: ["dia"], target: "existing", pinned: false, open: true });
-    assert.equal(out.tabs, safe ? 0 : 1);
+    assert.equal(out.counts.tabs, safe ? 0 : 1);
     assert.equal(h.effects.filter(([op]) => op === "dia").length, safe ? 0 : 1);
     assert.equal(h.messages.length, safe ? 1 : 0);
   });

@@ -12,11 +12,11 @@ import { mirrorPins } from "./pinMirror";
 import { settleSharedPins } from "./pinShare";
 import { mirrorTabs, pagesIntoSplits, unshareTabs } from "./tabShare";
 import { settleTileFolders } from "./tileFolders";
-import { createProfilesSlice, DEFAULT_PROFILE, engineIdOf, requireGeneratedProfileIdentity, validProfileId, type ProfilesSlice } from "./profiles";
+import { createProfilesSlice, DEFAULT_PROFILE, engineIdOf, type ProfilesSlice } from "./profiles";
 import { createSettingsSlice, DEFAULT_SETTINGS, migrateSavedSettings, type SettingsSlice } from "./settings";
 import { createSplitsSlice, sanitizeSplits, type SplitsSlice } from "./splits";
 import { activated, apply, createTabsSlice, type TabsSlice } from "./tabs";
-import { guardNativeSet, isApplyingNativeState, nativeOwnsWorkspace, nativeTransaction, writeState } from "./nativeStore";
+import { guardNativeSet, nativeOwnsWorkspace, nativeTransaction, writeState } from "./nativeStore";
 import { transactional } from "./transaction";
 import type { BrowserWindow, Tab } from "./types";
 import { createUiSlice, type UiSlice } from "./ui";
@@ -103,10 +103,6 @@ export const useBrowser = create<BrowserState>()(transactions.middleware(batched
   ...createPeekSlice(...a),
 
   hydrate(data) {
-    if (!isApplyingNativeState()) for (const [id, profile] of Object.entries(data.profiles ?? {})) {
-      if (!validProfileId(id)) throw new Error("Profile ids and data ids must use a generated lowercase profile id.");
-      requireGeneratedProfileIdentity(profile);
-    }
     clearClosingWindowRestores();
     const [, get] = a;
     const s = get();

@@ -103,7 +103,6 @@ export function hydrateFromNative(store: Replica): boolean {
   return true;
 }
 
-export const isApplyingNativeState = () => applying > 0;
 
 export function withApplier<T>(run: () => T): T {
   applying++;

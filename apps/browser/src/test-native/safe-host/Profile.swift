@@ -2,7 +2,7 @@ import Foundation
 
 enum SolaraCoreHost {
   static var safeMode = false
-  static func dataDirectory() -> String { ProcessInfo.processInfo.environment["TMPDIR"]! }
+  static var dataDirectory: String { ProcessInfo.processInfo.environment["TMPDIR"]! }
   static func deleteProfileData(_ profile: String, deletionAllowed: () -> Bool, completion: ([String]) -> Void) { completion([]) }
 }
 enum SolaraCoreServices {

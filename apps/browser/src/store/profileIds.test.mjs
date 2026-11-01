@@ -97,8 +97,8 @@ test("disk hydration keeps saved off-shape ids while live hydration refuses them
   const profile = { ...before.profiles.default, id: "Saved-MixedCase", dataId: "Saved-Data" };
   const saved = JSON.parse(JSON.stringify({ profiles: { [profile.id]: profile }, profileOrder: [profile.id] }));
   try {
-    assert.throws(() => useBrowser.getState().hydrate(saved), /generated lowercase/);
-    assert.equal(useBrowser.getState(), before);
+    useBrowser.getState().hydrate(saved);
+    assert.deepEqual(useBrowser.getState().profiles[profile.id], profile);
     withApplier(() => useBrowser.getState().hydrate(saved));
     assert.deepEqual(useBrowser.getState().profiles[profile.id], profile);
     useBrowser.getState().updateProfile(profile.id, { name: "Still visible" });

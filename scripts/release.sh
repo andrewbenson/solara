@@ -144,27 +144,70 @@ verify_mode() {
   fi
 }
 
+free_port() {
+  python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'
+}
+
+launch_hidden() {
+  local target="$1" data="$2" port="$3" before p
+  before="$(pgrep -f "^$target/Contents/MacOS/$executable" | sort || true)"
+  open -g -n --env SOLARA_BACKGROUND=1 --env SOLARA_DATA_DIR="$data" --env SOLARA_REMOTE_DEBUGGING_PORT="$port" "$target"
+  launched_pid=""
+  for _ in $(seq 1 20); do
+    for p in $(pgrep -f "^$target/Contents/MacOS/$executable\$" || true); do
+      ps -E -ww -o command= -p "$p" 2>/dev/null | grep -qF "SOLARA_DATA_DIR=$data" && { launched_pid="$p"; break; }
+    done
+    [ -n "$launched_pid" ] || launched_pid="$(comm -13 <(echo "$before") <(pgrep -f "^$target/Contents/MacOS/$executable" | sort || true) | head -1)"
+    [ -n "$launched_pid" ] && return 0
+    sleep 1
+  done
+  die "$target didn't start"
+}
+
+stop_launched() {
+  kill -TERM "$launched_pid"
+  for _ in $(seq 1 30); do kill -0 "$launched_pid" 2>/dev/null || break; sleep 1; done
+  kill -KILL "$launched_pid" 2>/dev/null || true
+}
+
+signed_launch_check() {
+  local data port helpers
+  data="$check_root/signed-data"
+  mkdir -p "$data"
+  port="$(free_port)"
+  launch_hidden "$app" "$data" "$port"
+  sleep 20
+  kill -0 "$launched_pid" 2>/dev/null || die "the signed app quit within 20 s of launch"
+  helpers="$(pgrep -f "^$app/Contents/Frameworks/Chromium Framework.framework/Versions/.*/Helpers/" | wc -l | tr -d ' ')"
+  [ "$helpers" -ge 2 ] || { stop_launched; die "the signed app started $helpers engine helpers (expected at least 2)"; }
+  if nc -z -G 2 127.0.0.1 "$port" 2>/dev/null; then stop_launched; die "the signed app opened the injected debugging port $port"; fi
+  stop_launched
+  codesign --verify --deep --strict "$app" || die "running the signed app changed its bundle"
+  echo "    signed app: ran 20 s hidden with $helpers engine helpers, injected debugging port stayed closed"
+}
+
 launch_check() {
   echo "==> Launch check"
-  check_data="$(mktemp -d "${TMPDIR:-/tmp}/ac-release.XXXXXX")"
-  before="$(pgrep -f "^$app/Contents/MacOS/$executable" | sort || true)"
-  check_port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
-  open -g -n --env SOLARA_BACKGROUND=1 --env SOLARA_DATA_DIR="$check_data" --env SOLARA_REMOTE_DEBUGGING_PORT="$check_port" "$app"
+  check_root="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/ac-release.XXXXXX")" && pwd -P)"
+  check_data="$check_root/data"
+  mkdir -p "$check_data"
+  run_app="$app"
+  if [ "$unsigned" = 0 ]; then
+    signed_launch_check
+    run_app="$check_root/test-copy/$app_name"
+    "$root/scripts/lib/export-unsigned.sh" "$app" "$run_app" "$macos/Solara-macOS/Solara.entitlements" >/dev/null \
+      || die "couldn't make the ad hoc test copy"
+  fi
+  check_port="$(free_port)"
+  launch_hidden "$run_app" "$check_data" "$check_port"
   ubo_ok=0
   node "$root/scripts/lib/ubo-ready.mjs" "$check_port" 90 && ubo_ok=1
   sleep 5
-  pid=""
-  for p in $(pgrep -f "^$app/Contents/MacOS/$executable\$" || true); do
-    ps -E -ww -o command= -p "$p" 2>/dev/null | grep -qF "SOLARA_DATA_DIR=$check_data" && { pid="$p"; break; }
-  done
-  [ -n "$pid" ] || pid="$(comm -13 <(echo "$before") <(pgrep -f "^$app/Contents/MacOS/$executable" | sort || true) | head -1)"
-  [ -n "$pid" ] || die "the app didn't start (or quit)"
-  kill -TERM "$pid"
-  for _ in $(seq 1 30); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
-  kill -KILL "$pid" 2>/dev/null || true
-  codesign --verify --deep --strict "$app" || die "running the app changed its bundle"
+  kill -0 "$launched_pid" 2>/dev/null || die "the app quit during the launch check"
+  stop_launched
+  codesign --verify --deep --strict "$run_app" || die "running the app changed its bundle"
   [ "$ubo_ok" = 1 ] || die "uBlock Origin wasn't ready and blocking in the exported app (90 s)"
-  rm -rf "$check_data"
+  rm -rf "$check_root"
 }
 if [ "$phase" = check ]; then
   [ -d "$app" ] || die "no $app: run --phase sign first"

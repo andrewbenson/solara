@@ -19,6 +19,7 @@ import { useBrowser } from "../../store/browser";
 import { isIncognitoProfile } from "../../store/model";
 import { activateExtension, openWebStore, showExtensionMenu, useWindowExtensions } from "../extensions/state";
 import { useThemeTokens } from "../omnibox/nativeBar";
+import { siteControlsMounted } from "../overlayGates";
 import { addExtensionMenu } from "./SiteExtensions";
 import { chooseLanguage } from "./TranslateControls";
 import { defaultTarget, isNeverTranslated, languageName, setNeverTranslate, toggleTranslation, useTranslateState } from "./translate";
@@ -50,16 +51,15 @@ const anchorOf = ([x, y, width, height]: Rect) => ({ x, y, width, height });
 
 type SiteControlsProps = { tabId: string; open: boolean; right?: number; left?: number; top: number };
 
-export function NativeSiteControls(props: SiteControlsProps) {
-  const [shown, setShown] = useState(props.open);
-  const open = useRef(props.open);
-  open.current = props.open;
-  useEffect(() => { if (props.open) setShown(true); }, [props.open]);
-  if (!props.open && !shown) return null;
-  return <NativeSiteRequest {...props} onClosed={() => { if (!open.current) setShown(false); }} />;
+export function useNativeSiteControlsShown(open: boolean) {
+  const [latched, setLatched] = useState(open);
+  const current = useRef(open);
+  current.current = open;
+  useEffect(() => { if (open) setLatched(true); }, [open]);
+  return { shown: siteControlsMounted(open, latched), onClosed: () => { if (!current.current) setLatched(false); } };
 }
 
-function NativeSiteRequest({ tabId, open, right, left, top, onClosed }: SiteControlsProps & { onClosed: () => void }) {
+export function NativeSiteControls({ tabId, open, right, left, top, onClosed }: SiteControlsProps & { onClosed: () => void }) {
   const theme = useTheme();
   const tokens = useThemeTokens(theme);
   const windowId = useBrowser((s) => s.tabs[tabId]?.windowId ?? "");

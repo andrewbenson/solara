@@ -409,6 +409,10 @@ Bench revision 4 drives the shipped native sidebar; scenario names and result sh
 | `profileSwipe` | `nextProfile` and `previousProfile` still go through `ac.runCommand` to the native pager's `stepPager`; each command settles for 1500 ms. This measures command-driven profile changes, rather than synthetic trackpad gestures. |
 | `storeUpdate` | A loaded background page alternates `isLoading` 60 times, 5 ms apart. Under native live ownership, `ac.nativePages.report` sends generation-bound navigation facts through the native store and its JS replica; the JS-owned fallback still uses `updateLive`. Page preparation is outside the sample. |
 
+The bench serves its pages from 127.0.0.1, which Developer Mode treats as a developer host, so every tab's toolbar
+draws its developer stripes: `DeveloperStripes` and its `Image` are counted once per tab in `switchTabs`, `openClose`
+and `launch`, where a census on public sites would count none.
+
 bench-app.js runs through the dev harness's eval in Hermes, which rejects async arrow functions (`async () => {}`) with "async functions are unsupported"; write an `async function` declaration or method instead.
 
 `P.reset()` / `P.read()` still count React, store, callback, timer and write work caused by these interactions.

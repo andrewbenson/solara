@@ -35,7 +35,7 @@ import { copyPageUrl } from "./selection";
 import { canShare, shareTab } from "./share";
 import { canToggleDeveloperModeFor, setDeveloperModeFor, useDeveloperMode } from "./developerMode";
 import { ActionTile, FooterChip, gridColumns, MoreButton, SectionTitle, SettingRow, SITE_PANEL, TileRow } from "./SiteControlsParts";
-import { NativeSiteControls } from "./NativeSiteControls";
+import { NativeSiteControls, useNativeSiteControlsShown } from "./NativeSiteControls";
 import { SiteExtensions } from "./SiteExtensions";
 import { TranslateRows } from "./TranslateControls";
 import { ZoomStepper } from "./ZoomControls";
@@ -67,7 +67,9 @@ function originOf(url: string): string | null {
 }
 
 export function SiteControls({ tabId, open, right, left, top }: { tabId: string; open: boolean; right?: number; left?: number; top: number }) {
-  if (nativeToolbarAvailable()) return <NativeSiteControls tabId={tabId} open={open} right={right} left={left} top={top} />;
+  const native = nativeToolbarAvailable();
+  const nativeShown = useNativeSiteControlsShown(native && open);
+  if (native) return nativeShown.shown ? <NativeSiteControls tabId={tabId} open={open} right={right} left={left} top={top} onClosed={nativeShown.onClosed} /> : null;
   return <ReactNativeSiteControls tabId={tabId} open={open} right={right} left={left} top={top} />;
 }
 

@@ -40,6 +40,7 @@ import { SplitEmptyState } from "./layout/SplitEmptyState";
 import { useWindowShell } from "./layout/ShellBackdrop";
 import { dropPaneStatusStyle, dropPopoversOverCard, markPaneRootDrawn, publishPaneStatusStyle, publishPopoversOverCard, usePaneRootDrawn, usePaneStatusStyle, usePopoversOverCard } from "./layout/paneFeed";
 import { nativeSplitPanes, useNativePageTops, useNativeSplitChrome } from "./layout/nativeSplitChrome";
+import { engineOfferMounted } from "./overlayGates";
 import { SplitToolbarFeed } from "./layout/NativeSplitToolbars";
 import { pagerFor } from "./layout/profilePager";
 import { dockMoving, useDockMotion, usePeekEdge } from "./layout/dockMotion";
@@ -557,7 +558,7 @@ function PageOverlays({
       {!nativePrompts && <PasswordPrompt tabId={tabId} right={POPOVER_MARGIN} top={POPOVER_MARGIN} />}
       {!nativePrompts && <AutofillPrompt tabId={tabId} right={POPOVER_MARGIN} top={POPOVER_MARGIN} />}
       {!newTabShown && !nativePrompts && <ExternalAppPrompt tabId={tabId} left={Math.max(POPOVER_MARGIN, Math.min(geometry.urlLeft, width - 348))} top={POPOVER_MARGIN} />}
-      {!newTabShown && !nativePrompts && <EngineOfferPrompt tabId={tabId} left={Math.max(POPOVER_MARGIN, Math.min(geometry.urlLeft, width - 348))} top={POPOVER_MARGIN} />}
+      {engineOfferMounted(engineOffer, newTabShown, nativePrompts) && <EngineOfferPrompt tabId={tabId} left={Math.max(POPOVER_MARGIN, Math.min(geometry.urlLeft, width - 348))} top={POPOVER_MARGIN} />}
       {popovers && <SiteControls tabId={tabId} open={popover === "siteControls"} {...popoverSide} top={POPOVER_MARGIN} />}
       {popovers && popover === "popups" && !nativePrompts && <BlockedPopupsPrompt tabId={tabId} {...popoverSide} top={POPOVER_MARGIN} />}
       {popovers && popover === "zoom" && <ZoomPopover tabId={tabId} {...popoverSide} top={POPOVER_MARGIN} nativeAllowed={!peek} />}

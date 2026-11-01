@@ -6,6 +6,7 @@ import { windowShellActive } from "@solara/settings";
 import { useWindowId } from "../store/hooks";
 import { useNativePaneOverlay } from "./layout/nativePaneOverlays";
 import { mediaTheme, NativeMediaView } from "./media/nativeMedia";
+import { pillPresence } from "./overlayGates";
 
 const NATIVE_HIDE_MS = 250;
 
@@ -14,9 +15,15 @@ type FollowStyle = Animated.WithAnimatedValue<ViewStyle>;
 export function CliControlPill({ tabId, style, nativeAllowed = true }: { tabId: string; style?: FollowStyle; nativeAllowed?: boolean }) {
   const windowId = useWindowId();
   const [inShell] = useState(() => nativeAllowed && windowShellActive(windowId));
-  if (inShell) return <PaneCliControlPill windowId={windowId} tabId={tabId} />;
-  return <NativeCliControlPill windowId={windowId} style={style} />;
+  const state = useCliPillState();
+  const presence = useNativePillPresence(state.shown);
+  if (!presence.mounted) return null;
+  const pill = { ...state, shown: presence.shown };
+  if (inShell) return <PaneCliControlPill windowId={windowId} tabId={tabId} state={pill} />;
+  return <NativeCliControlPill windowId={windowId} style={style} state={pill} />;
 }
+
+type CliPillState = ReturnType<typeof useCliPillState>;
 
 function useCliPillState() {
   const shown = useCliIndicator((s) => s.shown);
@@ -37,23 +44,18 @@ function useNativePillPresence(shown: boolean) {
     const timer = setTimeout(() => setMounted(false), NATIVE_HIDE_MS);
     return () => clearTimeout(timer);
   }, [shown]);
-  return { mounted: mounted || shown, shown: shown && revealed };
+  return pillPresence(mounted, revealed, shown);
 }
 
-function PaneCliControlPill({ windowId, tabId }: { windowId: string; tabId: string }) {
-  const state = useCliPillState();
-  const presence = useNativePillPresence(state.shown);
-  useNativePaneOverlay(presence.mounted, windowId, tabId, "cliPill", { ...state, shown: presence.shown });
+function PaneCliControlPill({ windowId, tabId, state }: { windowId: string; tabId: string; state: CliPillState }) {
+  useNativePaneOverlay(true, windowId, tabId, "cliPill", state);
   return null;
 }
 
-function NativeCliControlPill({ windowId, style }: { windowId: string; style?: FollowStyle }) {
-  const state = useCliPillState();
-  const presence = useNativePillPresence(state.shown);
-  if (!presence.mounted) return null;
+function NativeCliControlPill({ windowId, style, state }: { windowId: string; style?: FollowStyle; state: CliPillState }) {
   return (
     <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, style]}>
-      <NativeMediaView kind="media.cliPill" windowId={windowId} state={{ ...state, shown: presence.shown }} />
+      <NativeMediaView kind="media.cliPill" windowId={windowId} state={state} />
     </Animated.View>
   );
 }

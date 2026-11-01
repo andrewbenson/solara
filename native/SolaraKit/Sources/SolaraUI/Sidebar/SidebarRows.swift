@@ -60,15 +60,12 @@ final class SidebarContext {
 
   let paletteGeneration: Int
 
-  init(state: BrowserState, host: SidebarHostState, windowId: String, favicons: SidebarFavicons, previous: SidebarContext? = nil) {
+  init(state: BrowserState, host: SidebarHostState, windowId: String, favicons: SidebarFavicons, previous: SidebarContext? = nil,
+    ownsWorkspace: Bool = NativeStoreHandle.ownsWorkspace) {
     self.state = state
     query = SidebarQuery(state)
     self.host = host
-    if let previous, previous.host == host {
-      flags = previous.flags
-    } else {
-      flags = SidebarFlags(host)
-    }
+    flags = SidebarFlags(host, live: ownsWorkspace ? state.live : nil)
     if let previous, previous.host.dark == host.dark, previous.host.theme == host.theme, previous.host.border == host.border, previous.host.glow == host.glow {
       palette = previous.palette
       paletteGeneration = previous.paletteGeneration

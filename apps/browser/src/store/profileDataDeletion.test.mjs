@@ -37,6 +37,7 @@ function bridge(dispatch, redesign) {
       nativeStoreModulePresent: () => true,
       useNativeSyncOrigins: () => true,
       nativeDispatch: dispatch,
+      installPageReportWriter: () => {},
     },
     "./closingWindowRestore": {},
     "../sync/redesignSwitch": { syncRedesign: { on: redesign } },

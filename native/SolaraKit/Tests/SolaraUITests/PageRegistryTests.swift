@@ -401,6 +401,26 @@ private final class ControlledPageTimeouts {
     #expect(results == [.failure(.timedOut(token))])
   }
 
+  @Test func commandsThatCanWaitOnAPrintSheetOrDialogHaveNoDeadlineButStillRetire() throws {
+    let timeouts = ControlledPageTimeouts()
+    let injectedTestDeadline = Duration.seconds(9)
+    let registry = PageRegistry(timeout: injectedTestDeadline, scheduleTimeout: { timeouts.schedule($0, $1) })
+    var replies: [PageRegistry.Completion] = []
+    let token = registry.register(tabID: "tab", engine: .chromium, host: .pooled) { _, finish in replies.append(finish) }
+    let commands: [PageCommand] = [.print, .runPageCommand("systemPrint"), .evaluate("confirm('?')"), .executeJavaScript("alert(1)"), .reload]
+    var results = Array(repeating: [Result<PageValue, PageRegistryError>](), count: commands.count)
+    for (index, command) in commands.enumerated() {
+      registry.call(token, command: command) { results[index].append($0) }
+      #expect(timeouts.deadlines.count == (command == .reload ? 1 : 0))
+    }
+    #expect(commands.map(\.waitsForTheUser) == [true, true, true, true, false])
+    #expect(timeouts.deadlines.map(\.duration) == [injectedTestDeadline])
+    replies[0](.success(.null))
+    #expect(results[0] == [.success(.null)])
+    registry.retire(token)
+    for index in 1..<commands.count { #expect(results[index] == [.failure(.retired(token))]) }
+  }
+
   @Test func cancellationCompletesOnceAndCancelsItsDeadline() throws {
     let timeouts = ControlledPageTimeouts()
     let registry = PageRegistry(scheduleTimeout: { timeouts.schedule($0, $1) })
@@ -582,5 +602,15 @@ private final class ControlledPageTimeouts {
     #expect(throws: PageRegistryError.invalidValue) { try PageValue(any: Double.nan) }
     #expect(try PageValue(any: true) == .bool(true))
     #expect(try PageValue(any: 1) == .number(1))
+  }
+
+  @Test func boxedNilArgumentsFromExpoAreNull() throws {
+    let missing: String? = nil
+    let args: [Any] = ["save", "ada", missing as Any]
+    let values = try args.map { try PageValue(any: $0) }
+    #expect(values == [.string("save"), .string("ada"), .null])
+    #expect(try PageCommand.decode(method: "resolvePasswordPrompt", args: values) == .resolvePasswordPrompt("save", "ada", nil))
+    let nested: [String: Any] = ["source": Optional<Any>.none as Any, "inner": [Optional(Optional<Int>.none) as Any]]
+    #expect(try PageValue(any: nested) == .object(["source": .null, "inner": .array([.null])]))
   }
 }

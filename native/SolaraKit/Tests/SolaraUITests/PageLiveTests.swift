@@ -38,8 +38,10 @@ struct PageLiveTests {
     #expect(live.discard() == PageLivePatch(isLoading: false, canGoBack: false, canGoForward: false, playingAudio: false))
     #expect(live.discarded)
     #expect(live.facts == PageLiveFacts(themeColor: "#abc", discarded: true))
+    #expect(live.facts?.discarded == live.discarded)
     live.ready()
     #expect(!live.discarded)
+    #expect(live.facts?.discarded == live.discarded)
     #expect(live.facts == PageLiveFacts(themeColor: "#abc"))
   }
 

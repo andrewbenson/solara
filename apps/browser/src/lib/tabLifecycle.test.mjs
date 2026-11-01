@@ -3,15 +3,18 @@ import { registerHooks } from "node:module";
 import { test } from "node:test";
 
 globalThis.__DEV__ = false;
+globalThis.lifecycleOwned = false;
 
 const solaracore = import.meta.resolve("@solara/solaracore");
 const stubs = {
   "@solara/solaracore": `export * from ${JSON.stringify(solaracore)};
     export const listTasks = async () => [];
     export const onSystemState = () => ({ remove() {} });
-    export const systemState = async () => null;
+    export const systemState = async () => { throw new Error("unavailable"); };
     export const releaseProfile = async () => {};
     export const setBatterySaver = (mode) => globalThis.batterySaverReply(mode);`,
+  "../store/nativeStore": "export const nativeOwnsWorkspace = () => globalThis.lifecycleOwned;",
+  "./slowTimers": "export const everySlowly = () => {}; export const reschedule = () => {};",
   "../components/layout/splitActions": "export const showToast = () => {};",
   "../components/settings/windows": "export const openSettings = () => {};",
   "../components/pages": "export const isInternalTab = (t) => !/^https?:/.test(t.url ?? '');",
@@ -176,4 +179,51 @@ test("a recent pin queued for warming at launch stays closed when the user close
   assert.equal(S().tabs[pin].navigation, null);
   assert.ok(S().tabs[warm].navigation, "a pin left alone still warms up");
   assert.equal(!!S().tabs[warm].unloaded, false);
+});
+
+function sleepingPage(t) {
+  S().hydrate({});
+  const w = S().createWindow({ url: "https://a.com" });
+  const id = S().newTab(w, { url: "https://b.com", background: true });
+  const page = fakePage();
+  webviews.set(id, page.handle);
+  useBrowser.setState({ live: { ...S().live, [id]: { ...S().live[id], discarded: true } } });
+  lifecycle.useLifecycle.setState({ discarded: {} });
+  globalThis.lifecycleOwned = true;
+  t.after(() => {
+    webviews.delete(id);
+    globalThis.lifecycleOwned = false;
+    lifecycle.useLifecycle.setState({ discarded: {} });
+  });
+  return { id, page };
+}
+
+test("native sleeping pages stay out of lifecycle sweeps", async (t) => {
+  const { page } = sleepingPage(t);
+  assert.deepEqual(await lifecycle.sweep({ protectedRecent: 0, idleMs: 0 }), []);
+  assert.equal(page.evaluated, 0);
+  assert.equal(page.discarded, 0);
+});
+
+test("manual sleep does not evaluate a native sleeping page", async (t) => {
+  const { id, page } = sleepingPage(t);
+  assert.equal(await lifecycle.sleepTab(id), false);
+  assert.equal(page.evaluated, 0);
+  assert.equal(page.discarded, 0);
+});
+
+test("loaded lifecycle enumeration follows native discarded facts and JS fallback", (t) => {
+  const { id } = sleepingPage(t);
+  globalThis.__DEV__ = true;
+  lifecycle.startTabLifecycle();
+  globalThis.__DEV__ = false;
+  const loaded = () => globalThis.acLifecycle.state().loaded;
+  assert.equal(loaded().includes(id), false);
+  globalThis.lifecycleOwned = false;
+  assert.equal(loaded().includes(id), true);
+  lifecycle.noteDiscarded(id);
+  assert.equal(loaded().includes(id), false);
+  globalThis.lifecycleOwned = true;
+  useBrowser.setState({ live: { ...S().live, [id]: { ...S().live[id], discarded: false } } });
+  assert.equal(loaded().includes(id), true);
 });

@@ -89,6 +89,10 @@ export function startDevHarness() {
     get live(): { store: typeof import("../live/store"); engine: typeof import("../live/engine") } {
       return { store: require("../live/store"), engine: require("../live/engine") };
     },
+    get nativePages(): { ownsLive: () => boolean; facts: typeof import("@solara/store").nativePageFacts; report: typeof import("@solara/store").pageReport } {
+      const native: typeof import("@solara/store") = require("@solara/store");
+      return { ownsLive: require("../store/nativeStore").nativeOwnsWorkspace, facts: native.nativePageFacts, report: native.pageReport };
+    },
   };
   (globalThis as { ac?: typeof ac }).ac = ac;
   const scriptId = (source: string | null) => source?.match(/^\/\/ *(\S+)/)?.[1];

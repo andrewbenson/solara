@@ -76,6 +76,56 @@ test("while Swift owns the workspace, JS leaves the Chrome strip alone: a stripC
   assert.equal(result.status, 0, result.stderr || result.error?.message);
 });
 
+test("native replica movement holder and swap keep live identity without JS strip writes", () => {
+  const script = `
+    import assert from "node:assert/strict";
+    globalThis.__DEV__ = true;
+    let listener;
+    let rev = 0;
+    const engine = [];
+    globalThis.acTestTabStrip = {
+      listen: () => { throw new Error("JS must not follow native-owned strips"); },
+      snapshot: () => { throw new Error("JS must not snapshot native-owned strips"); },
+      command: (command, id) => engine.push({ command, id }),
+    };
+    globalThis.acTestNativeModules = {
+      SolaraStoreAdapter: {
+        status: () => ({ active: true, scope: "everything" }),
+        dispatch: () => JSON.stringify({ rev, patches: [] }),
+        addListener: (_name, receive) => { listener = receive; return { remove() {} }; },
+      },
+    };
+    const { useBrowser } = await import("./src/store/browser.ts");
+    const { startNativeStore, attachReplica } = await import("./src/store/nativeStore.ts");
+    const { startChromeTabs } = await import("./src/lib/chromeTabs.ts");
+    const { IDLE_LIVE } = await import("./src/store/model.ts");
+    startNativeStore();
+    attachReplica(useBrowser);
+    startChromeTabs();
+    const tab = (id, patch = {}) => ({ id, windowId: "one", profileId: "default", url: "https://native.test/", title: "Native", favicon: null, pinned: false, muted: false, zoom: 1, customTitle: null, customIcon: null, pinnedUrl: null, openerId: null, createdAt: 1, lastActiveAt: 1, ...patch });
+    const emit = (patch, effects = []) => listener({ event: JSON.stringify({ rev: ++rev, patch: { ...patch, rev }, effects }) });
+    const facts = { ...IDLE_LIVE, isLoading: true, playingAudio: true, discarded: true };
+    emit({ tabs: { upsert: [tab("holder"), tab("borrower", { pageIn: "holder" })], remove: [] }, live: { upsert: [{ id: "holder", ...facts }, { id: "borrower", ...IDLE_LIVE }], remove: [] } });
+    const original = useBrowser.getState().live;
+    assert.deepEqual(original.borrower, IDLE_LIVE, "JS never derives holder facts");
+    emit({ tabs: { upsert: [tab("holder", { windowId: "two" })], remove: [] } });
+    assert.equal(useBrowser.getState().live, original, "native movement never rewrites live");
+    emit({}, [{ type: "swapTabs", a: "holder", b: "borrower" }]);
+    assert.equal(useBrowser.getState().live, original, "swap effect cannot forge a live transfer");
+    emit({ live: { upsert: [{ id: "borrower", ...facts }], remove: [] } }, [{ type: "stripCommand", strip: 7, command: { op: "activate", strip: 7, key: "borrower" } }]);
+    assert.equal(engine.length, 0, "native live patches and strip effects do not start a JS strip writer");
+    assert.deepEqual(useBrowser.getState().live.borrower, facts);
+    assert.equal(useBrowser.getState().live.holder, original.holder);
+    emit({ tabs: { upsert: [], remove: ["holder"] }, live: { upsert: [], remove: ["holder"] } });
+    assert.equal(useBrowser.getState().live.holder, undefined);
+    assert.deepEqual(useBrowser.getState().live.borrower, facts);
+  `;
+  const result = spawnSync(process.execPath, ["--no-warnings", "--import", "./src/test-loader.mjs", "--input-type=module", "-e", script], {
+    cwd: new URL("../..", import.meta.url), encoding: "utf8", timeout: 10000,
+  });
+  assert.equal(result.status, 0, result.stderr || result.error?.message);
+});
+
 class FakeChrome {
   rev = 0;
   strips = new Map();

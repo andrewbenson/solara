@@ -1,4 +1,6 @@
-import type { OpenWindowRequest, PageEngine, WebViewProps } from "@solara/solaracore";
+import { unwrapPageEvent, type OpenWindowRequest, type PageEngine, type PageCreated, type PageIssue, type StoreReportDisposition, type ViewEventName, type WebViewProps } from "@solara/solaracore";
+import { finishRNPageIssue, isPageCurrent, pageReport, updatePageContext, type PageContext, type PageIdentity, type PageIssuePreview } from "@solara/store";
+import { nativeOwnsWorkspace } from "../store/nativeStore";
 import { focus, switchToTab } from "../lib/actions";
 import { adoptIconPage, dropOutlivedFavicon, noteFavicon, noteIconPage } from "../lib/favicons";
 import { restoredThemeColor } from "../lib/launchLook";
@@ -28,6 +30,11 @@ import { closePeekOnEscape } from "./peek/actions";
 
 export type PageSession = {
   tabId: string;
+  factsOwner: "js" | "native";
+  navigationOwner: "js" | "native";
+  identity: PageIdentity | null;
+  following: boolean;
+  followAgain: boolean;
   engine: PageEngine;
   peekOf: string | undefined;
   profileId: string;
@@ -41,6 +48,8 @@ export type PageSession = {
 };
 
 export type PageEventName =
+  | "onPageCreated"
+  | "onPageIssue"
   | "onReady"
   | "onNavigationChange"
   | "onLoadError"
@@ -88,6 +97,11 @@ export function newPageSession(tabId: string, engine: PageEngine, peekOf: string
   const adoptId = t?.adoptId;
   return {
     tabId,
+    factsOwner: nativeOwnsWorkspace() ? "native" : "js",
+    navigationOwner: "js",
+    identity: null,
+    following: false,
+    followAgain: false,
     engine,
     peekOf,
     profileId: t?.profileId ?? "",
@@ -101,8 +115,89 @@ export function newPageSession(tabId: string, engine: PageEngine, peekOf: string
   };
 }
 
-export function followNavigation(session: PageSession, navigation: Tab["navigation"] | undefined) {
+const sessions = new Map<string, PageSession>();
+const contexts = new Map<string, PageContext>();
+
+export function currentPageContext(tabId: string): PageContext {
+  const page = pageOf(tabId);
+  const previous = contexts.get(tabId);
+  const value = { navigationSeq: useBrowser.getState().tabs[tabId]?.navigation?.seq ?? null, wasNewTab: !!page.wasNewTab, newTabShownUrl: page.newTabShown?.url ?? null };
+  if (previous && previous.navigationSeq === value.navigationSeq && previous.wasNewTab === value.wasNewTab && previous.newTabShownUrl === value.newTabShownUrl) return previous;
+  const contextRevision = (previous?.contextRevision ?? 0) + 1;
+  if (!Number.isSafeInteger(contextRevision)) throw new Error("page context revision exhausted");
+  const context = { ...value, contextRevision };
+  contexts.set(tabId, context);
+  return context;
+}
+
+export function publishPageContext(tabId: string): PageContext {
+  const context = currentPageContext(tabId);
+  const session = sessions.get(tabId);
+  if (session?.identity) updatePageContext(session.identity, context);
+  return context;
+}
+
+export function releasePageSession(session: PageSession) {
+  if (sessions.get(session.tabId) === session) sessions.delete(session.tabId);
+}
+
+export function observePageIdentity(session: PageSession, identity: PageIdentity, navigationOwner: "js" | "native" = "js", nativeContextRevision?: number): boolean {
+  if (identity.tabId !== session.tabId || !isPageCurrent(identity)) return false;
+  if (!session.identity || session.identity.sessionGeneration !== identity.sessionGeneration || session.identity.registrationGeneration !== identity.registrationGeneration) session.identity = identity;
+  session.factsOwner = "native";
+  session.navigationOwner = navigationOwner;
+  sessions.set(session.tabId, session);
+  if (nativeContextRevision !== undefined && Number.isSafeInteger(nativeContextRevision) && nativeContextRevision >= 0) {
+    const context = currentPageContext(session.tabId);
+    const contextRevision = Math.max(context.contextRevision, nativeContextRevision + 1);
+    if (!Number.isSafeInteger(contextRevision)) throw new Error("page context revision exhausted");
+    contexts.set(session.tabId, { ...context, contextRevision });
+  }
+  return true;
+}
+
+export function acceptPageReport(session: PageSession, report: StoreReportDisposition): boolean {
+  if (report.kind === "rejected") return false;
+  if (report.kind === "fallback") return session.factsOwner === "js";
+  return observePageIdentity(session, { tabId: session.tabId, sessionGeneration: report.sessionGeneration, registrationGeneration: report.registrationGeneration }, session.navigationOwner);
+}
+
+export function deliverPageEvent(session: PageSession, name: ViewEventName, payload: unknown, identity: PageIdentity): boolean {
+  if (!isPageCurrent(identity) || session.identity?.sessionGeneration !== identity.sessionGeneration || session.identity.registrationGeneration !== identity.registrationGeneration) return false;
+  const handler = pageEventHandlers(session)[name as PageEventName] as ((...args: unknown[]) => void) | undefined;
+  if (!handler) return false;
+  const eventPayload = name === "onPageCreated" || name === "onPageIssue" ? { ...(payload as object), ...identity } : payload;
+  handler(...unwrapPageEvent(name, eventPayload as never));
+  return true;
+}
+
+export function followNavigation(session: PageSession, navigation: Tab["navigation"] | undefined, allowRetry = true) {
   const { tabId } = session;
+  if (session.navigationOwner === "native") return;
+  if (session.factsOwner === "native") {
+    if (!session.identity || !isPageCurrent(session.identity)) return;
+    if (session.following) { session.followAgain = true; return; }
+    const context = publishPageContext(tabId);
+    const response = pageReport(tabId, { type: "issued", generation: session.identity.sessionGeneration, navigation: navigation ?? null, startedEarly: false, ...context });
+    const preview = response?.result as PageIssuePreview | undefined;
+    if (!preview?.guard) return;
+    session.following = true;
+    const identity = session.identity;
+    let retryRejected = false;
+    void finishRNPageIssue(tabId, preview.guard).then(({ accepted }) => {
+      retryRejected = !accepted && allowRetry;
+    }).catch(() => {
+      retryRejected = allowRetry;
+    }).finally(() => {
+      session.following = false;
+      const requestedAgain = session.followAgain;
+      session.followAgain = false;
+      if ((requestedAgain || retryRejected) && session.identity === identity && isPageCurrent(identity)) {
+        queueMicrotask(() => followNavigation(session, useBrowser.getState().tabs[tabId]?.navigation, requestedAgain));
+      }
+    });
+    return;
+  }
   if (!navigation) return;
   noteIssued(tabId, navigation.seq);
   if (session.arrived) {
@@ -133,10 +228,26 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
     if (t && splitOf(store(), tabId) && store().windows[t.windowId]?.activeTabIds[t.profileId] !== tabId) store().activate(tabId);
   };
 
-  return {
+  const handlers: PageEventHandlers = {
+    onPageCreated: (created: PageCreated) => {
+      if (!observePageIdentity(session, created, session.navigationOwner)) return;
+      publishPageContext(tabId);
+      followNavigation(session, tab()?.navigation);
+    },
+    onPageIssue: (issue: PageIssue) => {
+      if (!session.identity || issue.sessionGeneration !== session.identity.sessionGeneration || issue.registrationGeneration !== session.identity.registrationGeneration || !isPageCurrent(issue)) return;
+      if (issue.clearNewTabShown) {
+        const context = currentPageContext(tabId);
+        const navigation = tab()?.navigation ?? null;
+        const consumed = issue.navigation;
+        const matchesNavigation = consumed === null ? navigation === null : !!consumed && !!navigation && consumed.seq === navigation.seq && consumed.url === navigation.url && !!consumed.userInitiated === !!navigation.userInitiated;
+        if (issue.contextRevision === context.contextRevision && matchesNavigation) patchPage(tabId, { newTabShown: null });
+      }
+      if (issue.retry) queueMicrotask(() => followNavigation(session, tab()?.navigation));
+    },
     onReady: (browserId) => {
       setBrowserId(tabId, browserId);
-      noteReady(tabId);
+      noteReady(tabId, session.factsOwner);
       if (tab()?.muted) void webviews.get(tabId)?.setMuted(true);
     },
     onNavigationChange: ({ url: reported, title, canGoBack, canGoForward, isLoading, themeColor, themeColorSource, initialDocumentAccessed, committedInitial, committedUrl }) => {
@@ -147,25 +258,25 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
       if (target === null && prewarmOnly()) {
         if (isBlank(url)) return;
         session.adopted = url;
-        store().updateTab(tabId, { navigation: navigationTo(url) });
+        if (session.factsOwner === "js") store().updateTab(tabId, { navigation: navigationTo(url) });
       }
       if (target !== null && isBlank(url) && !target.startsWith("about:") && untouched) {
-        store().updateLive(tabId, { isLoading: true });
+        if (session.factsOwner === "js") store().updateLive(tabId, { isLoading: true });
         return;
       }
-      const shownTheme = restoredThemeColor(tabId, url, themeColor, isLoading);
+      const shownTheme = session.factsOwner === "js" ? restoredThemeColor(tabId, url, themeColor, isLoading) : themeColor;
       session.pending = null;
       const kept = pageOf(tabId).newTabShown;
       if (kept) {
         if (url === kept.url) {
           patchPage(tabId, { newTabShown: { ...kept, title } });
-          store().updateLive(tabId, { isLoading, canGoBack, canGoForward, themeColor: shownTheme });
+          if (session.factsOwner === "js") store().updateLive(tabId, { isLoading, canGoBack, canGoForward, themeColor: shownTheme });
           return;
         }
         patchPage(tabId, { newTabShown: null });
       }
       if (session.fromNewTab && url && !isBlank(url)) patchPage(tabId, { backToNewTab: true });
-      store().navigated(tabId, { url, title }, { isLoading, canGoBack, canGoForward, themeColor: shownTheme });
+      if (session.factsOwner === "js") store().navigated(tabId, { url, title }, { isLoading, canGoBack, canGoForward, themeColor: shownTheme });
       dropOutlivedFavicon(tabId, url, isLoading);
       if (engine === "webkit") noteWebKitPage(tabId, { url, title, isLoading, committedUrl: committedUrl ?? "" });
       const lastPage = session.lastPage;
@@ -190,16 +301,16 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
       const t = tab();
       if (!t) return;
       const s = store();
-      store().updateLive(tabId, { isLoading: false });
+      if (session.factsOwner === "js") store().updateLive(tabId, { isLoading: false });
       if (committedUrl) {
-        if (t.url !== committedUrl) store().updateTab(tabId, { url: committedUrl });
+        if (session.factsOwner === "js" && t.url !== committedUrl) store().updateTab(tabId, { url: committedUrl });
         return;
       }
       const others = s.windows[t.windowId]?.tabIds.some((id) => id !== tabId && s.tabs[id]?.profileId === t.profileId);
       const opened = !!(t.openerId || t.adoptId) && !pageOf(tabId).wasNewTab;
-      if (!skipped && opened && !s.live[tabId]?.canGoBack && others) return store().closeTab(tabId);
+      if (session.factsOwner === "js" && !skipped && opened && !s.live[tabId]?.canGoBack && others) return store().closeTab(tabId);
       patchPage(tabId, { backToNewTab: false, newTabShown: null });
-      store().updateTab(tabId, { url: "", title: "", favicon: null });
+      if (session.factsOwner === "js") store().updateTab(tabId, { url: "", title: "", favicon: null });
     },
     onProgress: (progress) => {
       if (!prewarmOnly()) setPageProgress(tabId, progress);
@@ -213,7 +324,7 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
       noteFavicon(tabId, favicon);
     },
     onMedia: ({ playing, muted }) => {
-      store().updateLive(tabId, { playingAudio: playing });
+      if (session.factsOwner === "js") store().updateLive(tabId, { playingAudio: playing });
       if (tab()?.muted && !muted) void webviews.get(tabId)?.setMuted(true);
     },
     onNowPlaying: (state) => setNowPlaying(tabId, state),
@@ -265,9 +376,9 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
       session.pending = url;
       session.fromNewTab = false;
       patchPage(tabId, { backToNewTab: false, status: "" });
-      store().updateLive(tabId, { isLoading: false, canGoBack: false, canGoForward: false, playingAudio: false });
+      if (session.factsOwner === "js") store().updateLive(tabId, { isLoading: false, canGoBack: false, canGoForward: false, playingAudio: false });
       setPageProgress(tabId, 0);
-      noteDiscarded(tabId);
+      if (session.factsOwner === "js") noteDiscarded(tabId);
     },
     onActivateRequest: () => {
       const t = tab();
@@ -276,4 +387,8 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
       focus(t.windowId);
     },
   };
+  return Object.fromEntries(Object.entries(handlers).map(([name, handler]) => [name, (...args: unknown[]) => {
+    if (name !== "onPageCreated" && session.identity && !isPageCurrent(session.identity)) return;
+    (handler as (...values: unknown[]) => void)(...args);
+  }])) as PageEventHandlers;
 }

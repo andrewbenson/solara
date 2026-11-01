@@ -8,6 +8,7 @@ public struct StoreMemory: Sendable, Equatable {
   public var endedPrivateDownloads: Set<String> = []
   public var closingWindows: Set<String> = []
   var closingWindowUndos: [String: ClosingWindowUndo] = [:]
+  var hydrating = false
   public var lastTabKeepsWindow = false
   public var fromSyncDepth = 0
   var replicaProfilesAttached = false

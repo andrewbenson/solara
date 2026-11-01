@@ -49,6 +49,34 @@ const runs = (id, y) => win(id).then((n) => { const xs = []; for (let x = 60; x 
       if (on && !cur) cur = [xs[i], xs[i], kind]; else if (on) cur[1] = xs[i]; else if (cur) { out.push(cur); cur = null; } });
     if (cur) out.push(cur); return out; }); });
 const settle = (ms) => new Promise((r) => setTimeout(r, ms));
+const pageSettled = (id) => !!ac.nativePages.facts(id)?.ready && st().live[id]?.isLoading === false;
+const pageReady = (id, deadline = Date.now() + 15000, settledSince = null) => {
+  if (pageSettled(id) && settledSince !== null && Date.now() - settledSince >= 500) return Promise.resolve();
+  if (Date.now() > deadline) return Promise.reject(new Error(id + "'s native page didn't finish its first navigation after showing it"));
+  return settle(100).then(() => pageReady(id, deadline, pageSettled(id) ? settledSince ?? Date.now() : null));
+};
+const themesHold = (themes) => {
+  for (const [id, themeColor] of Object.entries(themes))
+    if ((st().live[id]?.themeColor ?? null) !== themeColor) throw new Error(id + "'s live theme is " + st().live[id]?.themeColor + " around the capture, expected " + themeColor);
+};
+const withPages = (ids, then) => {
+  if (!ac.nativePages.ownsLive()) return Promise.resolve().then(then);
+  const front = st().windows.w1.activeTabIds.default;
+  return ids.filter((id) => !pageSettled(id)).reduce((shown, id) => shown.then(() => { st().activate(id); return pageReady(id); }), Promise.resolve())
+    .then(() => { st().activate(front); return pageReady(front); }).then(then);
+};
+const pageTheme = (id, themeColor) => {
+  const pages = ac.nativePages;
+  if (!pages.ownsLive()) return st().updateLive(id, { themeColor });
+  const facts = pages.facts(id);
+  if (!facts) throw new Error("no native page for " + id);
+  const live = st().live[id];
+  const tab = st().tabs[id];
+  const out = pages.report(id, { type: "navigation", generation: facts.generation, url: tab.url, title: tab.title, isLoading: !!live?.isLoading,
+    canGoBack: !!live?.canGoBack, canGoForward: !!live?.canGoForward, themeColor });
+  if (!out || out.error) throw new Error("the native store refused " + id + "'s theme: " + (out?.error ?? "no response"));
+  if (st().live[id]?.themeColor !== themeColor) throw new Error(id + "'s live theme is " + st().live[id]?.themeColor + ", expected " + themeColor);
+};
 `;
 
 const STRIP_FIELDS = ["root.hostedKinds", "root.swipeSimulation", "root.haptics",
@@ -171,8 +199,10 @@ const LOOKS = [
   ["flipped", `st().updateSettings({ appearance: st().ui.appDark ? "light" : "dark" });`, `st().updateSettings({ appearance: "auto" });`],
   [
     "bands",
-    `st().updateSettings({ extendWebsiteColor: true }); st().updateLive("t1", { themeColor: "#2b6cb0" }); st().updateLive("g1a", { themeColor: "#f6e05e" }); st().updateLive("t2", { themeColor: "#1a202c" });`,
-    `st().updateSettings({ extendWebsiteColor: false }); for (const id of ["t1", "g1a", "t2"]) st().updateLive(id, { themeColor: null });`,
+    `globalThis.acBands = { t1: "#2b6cb0", g1a: "#f6e05e", t2: "#1a202c" };
+      return withPages(Object.keys(globalThis.acBands), () => { st().updateSettings({ extendWebsiteColor: true }); for (const [id, color] of Object.entries(globalThis.acBands)) pageTheme(id, color); })
+        .then(() => settle(900)).then(() => themesHold(globalThis.acBands));`,
+    `themesHold(globalThis.acBands); st().updateSettings({ extendWebsiteColor: false }); for (const id of Object.keys(globalThis.acBands)) pageTheme(id, null);`,
   ],
   [
     "capture",
@@ -224,7 +254,7 @@ async function measure(native) {
     out.looks = {};
     for (const [look, setup, undo] of LOOKS) {
       const shot = join(scratch, `${native ? "native" : "rn"}-${look}.png`);
-      await run(`${setup} return settle(900);`);
+      await run(`return Promise.resolve((() => { ${setup} })()).then(() => settle(900));`);
       out.looks[look] = (await run(`return ac.shell.devSnapshotWindow("w1", ${JSON.stringify(shot)});`)) ? shot : null;
       await nativeCapture(app, out.looks[look], look === "peek" ? 56 : 42);
       if (look === "peek") {

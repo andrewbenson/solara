@@ -17,6 +17,31 @@ func phaseAIssued(_ store: Store, _ id: String, generation: String = "G", revisi
 }
 
 @Suite struct PageReportTests {
+  @Test func queuedWebKitReadyRetainsSignedBrowserIdentity() throws {
+    for browserId in [-1001, -9_007_199_254_740_991, 0, 12, 9_007_199_254_740_991] {
+      let (store, id) = try phaseAPageFixture(engine: "webkit")
+      try store.dispatch(phaseAReport(id, phaseACreated(store, id, engine: "webkit")))
+      try store.dispatch(phaseAReport(id, ["type": "discarded", "generation": "G", "url": "https://page.example/"]))
+      #expect(store.state.live[id]?.discarded == true)
+      store.enqueuePageReport(id: id, report: ["type": "ready", "generation": "G", "browserId": JSONValue(browserId), "tabId": 0])
+      store.sequence {}
+      #expect(store.pageFacts(id)?.ready == PageReadyFacts(browserId: browserId, tabId: 0))
+      #expect(store.state.live[id]?.discarded == false)
+    }
+  }
+
+  @Test func readyRejectsBrowserIdentityOutsideSignedSafeIntegers() throws {
+    let (store, id) = try phaseAPageFixture(engine: "webkit")
+    try store.dispatch(phaseAReport(id, phaseACreated(store, id, engine: "webkit")))
+    let invalid: [JSONValue] = [.null, "-1001", .number(-1001.5), .number(-9_007_199_254_740_992), .number(9_007_199_254_740_992)]
+    for browserId in invalid {
+      #expect(throws: CommandError.self) {
+        try store.dispatch(phaseAReport(id, ["type": "ready", "generation": "G", "browserId": browserId, "tabId": 0]))
+      }
+      #expect(store.pageFacts(id)?.ready == nil)
+    }
+  }
+
   @Test func drainsReportsBeforeNavigateActivationAndStrip() throws {
     for command in ["navigate", "activate", "stripSnapshot"] {
       let (store, id) = try phaseAPageFixture()
@@ -352,4 +377,43 @@ func phaseAIssued(_ store: Store, _ id: String, generation: String = "G", revisi
     #expect(!store.consumePooledIssue(id: id, prepared: candidate))
     #expect(store.memory.pages[id]!.modelSerial > candidate.guardValue.modelSerial)
   }
+
+  @Test func followedNavigationKeepsBackOverlayUntilANewSameURLRequestIsConsumed() throws {
+    let (store, tab) = try phaseAPageFixture()
+    try store.dispatch(phaseAReport(tab, phaseACreated(store, tab)))
+    let first = try #require(try store.preparePooledIssue(id: tab, report: phaseAIssued(store, tab)))
+    #expect(store.consumePooledIssue(id: tab, prepared: first))
+    let url = store.state.tabs[tab]!.navigation!.url
+    var context = phaseAContext(store, tab, revision: 2, shown: url)
+    context["type"] = "context"
+    context["generation"] = "G"
+    try store.dispatch(phaseAReport(tab, .object(context)))
+    let shown = try #require(try store.preparePooledIssue(id: tab, report: phaseAIssued(store, tab, revision: 2, shown: url)))
+    #expect(shown.actions == [])
+    #expect(store.consumePooledIssue(id: tab, prepared: shown))
+    #expect(store.memory.pages[tab]?.newTabShownUrl == url)
+    try store.dispatch(Command("navigate", [.string(tab), .string(url)]))
+    let next = try #require(try store.preparePooledIssue(id: tab, report: phaseAIssued(store, tab, revision: 3, shown: url)))
+    #expect(next.actions.array?.first == ["type": "clearNewTabShown"])
+    #expect(next.actions.array?.last?["type"] == "load")
+    #expect(store.memory.pages[tab]?.newTabShownUrl == url)
+    #expect(store.consumePooledIssue(id: tab, prepared: next))
+    #expect(store.memory.pages[tab]?.newTabShownUrl == nil)
+  }
+
+  @Test func firstNoLoadIssuanceStillClearsCurrentOverlayAtConsumption() throws {
+    let (store, tab) = try phaseAPageFixture()
+    var created = phaseACreated(store, tab).object!
+    created["handoffSeq"] = JSONValue(store.state.tabs[tab]!.navigation!.seq)
+    try store.dispatch(phaseAReport(tab, .object(created)))
+    let url = store.state.tabs[tab]!.navigation!.url
+    let report = phaseAIssued(store, tab, revision: 2, shown: url)
+    let prepared = try #require(try store.preparePooledIssue(id: tab, report: report))
+    #expect(prepared.actions == [["type": "clearNewTabShown"]])
+    #expect(store.memory.pages[tab]?.model.issuedSeq == nil)
+    #expect(store.consumePooledIssue(id: tab, prepared: prepared))
+    #expect(store.memory.pages[tab]?.newTabShownUrl == nil)
+    #expect(store.memory.pages[tab]?.model.issuedSeq == Int(store.state.tabs[tab]!.navigation!.seq))
+  }
+
 }

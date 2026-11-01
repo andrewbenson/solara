@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { test, beforeEach } from "node:test";
+import { spawnSync } from "node:child_process";
 
 const tab = { id: "t1", windowId: "w1", profileId: "default", url: "https://a.example/", title: "A", favicon: null, pinned: false, muted: false, zoom: 1, customTitle: null, customIcon: null, pinnedUrl: null, openerId: null, createdAt: 1, lastActiveAt: 1 };
 const win = { id: "w1", profileId: "default", incognito: false, tabIds: ["t1"], activeTabIds: { default: "t1" }, sidebarOpen: true, frame: null, createdAt: 1 };
-const data = (rev) => ({ rev, data: { profiles: { default: { id: "default", name: "Personal", color: "plum", icon: null, createdAt: 0 } }, profileOrder: ["default"], windows: { w1: win }, windowOrder: ["w1"], tabs: { t1: { ...tab, title: `A${rev}` } }, groups: {}, splits: {}, peeks: {}, closedTabs: [], closedWindows: [], closedGroups: [], deletedGroups: [], cleanedTabs: [], parkedPins: {}, pinChoices: {}, pinSync: {}, downloads: [], settings: { chosen: [], inferred: [] }, ui: { focusedWindowId: "w1", focusOrder: ["w1"], lastProfileId: null } } });
+const liveFacts = (patch = {}) => ({ isLoading: false, canGoBack: false, canGoForward: false, playingAudio: false, themeColor: null, discarded: false, ...patch });
+const data = (rev) => ({ rev, data: { live: { t1: liveFacts() }, profiles: { default: { id: "default", name: "Personal", color: "plum", icon: null, createdAt: 0 } }, profileOrder: ["default"], windows: { w1: win }, windowOrder: ["w1"], tabs: { t1: { ...tab, title: `A${rev}` } }, groups: {}, splits: {}, peeks: {}, closedTabs: [], closedWindows: [], closedGroups: [], deletedGroups: [], cleanedTabs: [], parkedPins: {}, pinChoices: {}, pinSync: {}, downloads: [], settings: { chosen: [], inferred: [] }, ui: { focusedWindowId: "w1", focusOrder: ["w1"], lastProfileId: null } } });
 const listeners = new Set();
 let rev = 1;
 let dispatchReply;
@@ -40,8 +42,8 @@ test("attaching closes any transaction a previous JS runtime left open", () => {
   assert.ok(sent.includes("closeTransactions"));
 });
 
-test("attaching sends only the audio cache Swift cannot derive yet", () => {
-  assert.deepEqual(sent.filter((name) => name.startsWith("set")), ["setPlayingAudio"]);
+test("attaching sends no native-owned audio cache", () => {
+  assert.deepEqual(sent.filter((name) => name.startsWith("set")), []);
 });
 
 test("history and appearance changes do not send native-owned caches", () => {
@@ -59,14 +61,14 @@ test("the fallback last-tab policy does not write Swift-owned memory", async () 
   assert.deepEqual(sent.slice(before), []);
 });
 
-test("a catch-up snapshot after a gap keeps the live state of what still exists and takes window UI from Swift", () => {
-  S().updateLive("t1", { playingAudio: true, isLoading: true });
+test("snapshot replaces stale live despite keepLocal and takes window UI from Swift", () => {
+  withApplier(() => useBrowser.setState({ live: { t1: liveFacts({ playingAudio: true, isLoading: true }) } }));
   rev = 5;
   catchUpReply = { rev, snapshot: { ...data(rev).data, windowUi: { w1: { panel: { open: false, initialText: "" }, downloadsOpen: true } }, selection: { w1: ["t1"] } } };
   for (const listener of listeners) listener({ event: JSON.stringify({ rev, patch: { rev } }) });
   catchUpReply = undefined;
   assert.equal(S().tabs.t1.title, "A5");
-  assert.equal(S().live.t1.playingAudio, true);
+  assert.equal(S().live.t1.playingAudio, false);
   assert.equal(S().windowUi.w1.downloadsOpen, true);
   assert.deepEqual(S().selection.w1, ["t1"]);
 });
@@ -74,7 +76,6 @@ test("a catch-up snapshot after a gap keeps the live state of what still exists 
 const { nativeWrite, attachReplica, NativeStoreBusy, nativeStoreRev, withApplier } = await import("../store/nativeStore.ts");
 const { workspaceFromSnapshot } = await import("../store/nativeWorkspace.ts");
 const { asSyncOrigin, applyingFromSync } = await import("../store/syncOrigin.ts");
-const { IDLE_LIVE } = await import("../store/model.ts");
 beforeEach(() => {
   dispatchReply = undefined;
   catchUpReply = undefined;
@@ -115,8 +116,8 @@ test("a snapshot reuses every unchanged entity and list entry", () => {
   assert.equal(next.privateCleanedTabs.w[0], s.privateCleanedTabs.w[0]);
 });
 
-test("native hydrate installs supplied views and resets transient state only after acceptance", () => {
-  S().updateLive("t1", { isLoading: true });
+test("hydrate keeps native live response and installs local views only after acceptance", () => {
+  withApplier(() => useBrowser.setState({ live: { t1: liveFacts({ isLoading: true }) } }));
   withApplier(() => useBrowser.setState({ find: { t1: { query: "stale" } }, selection: { w1: ["t1"] } }));
   const input = { ...data(rev).data, history: { default: [{ url: "https://history.example/", title: "History", visitedAt: 1 }] }, bookmarks: { nodes: {}, roots: { default: { bar: "bar", other: "other" } } } };
   const beforeForwards = globalThis.__nativeStoreForwards?.length ?? 0;
@@ -134,7 +135,7 @@ test("native hydrate installs supplied views and resets transient state only aft
   assert.equal(S().historyReady.default, true);
   assert.equal(S().bookmarksReady.default, true);
   assert.deepEqual(S().bookmarks.roots.default, input.bookmarks.roots.default);
-  assert.equal(S().live.t1, IDLE_LIVE);
+  assert.deepEqual(S().live.t1, liveFacts());
   assert.deepEqual(S().find, {});
   assert.deepEqual(S().selection, {});
   assert.equal(globalThis.__nativeStoreForwards?.length ?? 0, beforeForwards);
@@ -350,4 +351,97 @@ test("Release forwards with a monotonically counted warning", async () => {
     globalThis.__DEV__ = held;
     console.warn = warn;
   }
+});
+
+
+test("live upsert/remove/snapshot match native exactly", () => {
+  const first = liveFacts({ isLoading: true, discarded: true });
+  emit({ rev: ++rev, patch: { rev, live: { upsert: [{ id: "t1", ...first }, { id: "orphan", ...liveFacts() }], remove: [] } } });
+  assert.deepEqual(S().live, { t1: first, orphan: liveFacts() });
+  const retained = S().live.t1;
+  emit({ rev: ++rev, patch: { rev, live: { upsert: [{ id: "t1", ...first }], remove: ["orphan"] } } });
+  assert.equal(S().live.t1, retained);
+  assert.deepEqual(Object.keys(S().live), ["t1"]);
+  emit({ rev: ++rev, patch: { rev, tabs: { upsert: [{ ...tab, id: "new" }], remove: ["t1"] } } });
+  assert.equal(S().live.t1, retained);
+  assert.equal(S().live.new, undefined);
+  const next = workspaceFromSnapshot(S(), { ...data(rev).data, live: {} }, { keepLocal: true });
+  assert.deepEqual(next.live, {});
+});
+
+test("swapTabs does not write live in JS", async () => {
+  const { runEffects } = await import("../store/nativeWorkspace.ts");
+  const before = S().live;
+  const writes = [];
+  runEffects([{ type: "swapTabs", a: "t1", b: "destination" }], S, (partial) => writes.push(partial));
+  assert.deepEqual(writes, []);
+  assert.equal(S().live, before);
+});
+
+test("live writes are refused before subscriber exposure in Debug Release and sync", async () => {
+  const { writeState, guardNativeSet } = await import("../store/nativeStore.ts");
+  const held = globalThis.__DEV__;
+  const before = S();
+  const beforeSent = sent.length;
+  let seen = 0;
+  const stop = useBrowser.subscribe(() => seen++);
+  try {
+    for (const dev of [true, false]) {
+      globalThis.__DEV__ = dev;
+      const proposed = { live: { forged: liveFacts({ discarded: true }) }, history: { forged: [] } };
+      assert.throws(() => writeState(useBrowser, proposed), /live.*native/);
+      assert.throws(() => asSyncOrigin(() => writeState(useBrowser, proposed)), /live.*native/);
+      assert.throws(() => useBrowser.setState(proposed), /live.*native/);
+      assert.throws(() => guardNativeSet(proposed, false, S, () => assert.fail("published")), /live.*native/);
+    }
+    assert.equal(S(), before);
+    assert.equal(sent.length, beforeSent);
+    assert.equal(seen, 0);
+  } finally {
+    stop();
+    globalThis.__DEV__ = held;
+  }
+});
+
+
+test("native startNavigation effects cannot issue an unguarded JS load", async () => {
+  const { runEffects } = await import("../store/nativeWorkspace.ts");
+  const { webviewRef } = await import("./webviews.ts");
+  const loads = [];
+  const mount = webviewRef("t1");
+  mount({ loadUrl: (...args) => { loads.push(args); return Promise.resolve(); } });
+  try {
+    runEffects([{ type: "startNavigation", tabId: "t1", navigation: { url: "https://stale.test/", seq: 1 } }], S, () => assert.fail("write"));
+    assert.deepEqual(loads, []);
+  } finally { mount(null); }
+});
+
+test("discarded follows native patches and clears with the next native lifetime", () => {
+  emit({ rev: ++rev, patch: { rev, live: { upsert: [{ id: "t1", ...liveFacts({ discarded: true }) }], remove: [] } } });
+  assert.equal(S().live.t1.discarded, true);
+  emit({ rev: ++rev, patch: { rev, live: { upsert: [{ id: "t1", ...liveFacts() }], remove: [] } } });
+  assert.equal(S().live.t1.discarded, false);
+});
+
+
+test("native live refusal begins before replica attachment", () => {
+  const script = `
+    import assert from "node:assert/strict";
+    globalThis.__DEV__ = false;
+    globalThis.acTestNativeModules = { SolaraStoreAdapter: { status: () => ({ active: true, scope: "everything" }) } };
+    const { useBrowser } = await import("./src/store/browser.ts");
+    const { startNativeStore } = await import("./src/store/nativeStore.ts");
+    startNativeStore();
+    const before = useBrowser.getState();
+    let seen = 0;
+    const stop = useBrowser.subscribe(() => seen++);
+    assert.throws(() => useBrowser.setState({ live: {} }), /live.*native/);
+    assert.equal(useBrowser.getState(), before);
+    assert.equal(seen, 0);
+    stop();
+  `;
+  const result = spawnSync(process.execPath, ["--no-warnings", "--import", "./src/test-loader.mjs", "--input-type=module", "-e", script], {
+    cwd: new URL("../..", import.meta.url), encoding: "utf8", timeout: 10000,
+  });
+  assert.equal(result.status, 0, result.stderr || result.error?.message);
 });

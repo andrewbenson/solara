@@ -75,7 +75,7 @@ extension OmniboxWorkspaceFeedTests {
     let store = Store(state: initial, checksInvariants: false)
     let sources = NewTabSources()
     var resolutions = 0
-    let feed = OmniboxWorkspaceFeed(sources: sources, ownsWorkspace: { true }, resolve: { resolutions += 1; return store })
+    let feed = OmniboxWorkspaceFeed(sources: sources, ownsWorkspace: { true }, ownershipGeneration: { 0 }, resolve: { resolutions += 1; return store })
     feed.reconcile()
     defer { feed.stop() }
     let revision = sources.revision
@@ -84,12 +84,14 @@ extension OmniboxWorkspaceFeedTests {
     #expect(commit.rev > 0)
     #expect(Array(commit.state.tabs["tab"]!.url.utf16) == Array(changedURL.utf16))
     for _ in 0..<1000 {
-      if resolutions > initialResolutions { break }
+      if resolutions > initialResolutions,
+        sources.tabs("default").map({ Array($0.url.utf16) }) == [Array(changedURL.utf16)] { break }
       await Task.yield()
     }
     #expect(resolutions > initialResolutions)
     #expect(Array(sources.tabs("default")[0].url.utf16) == Array(changedURL.utf16))
     #expect(sources.revision > revision)
+    feed.reconcile()
     let changedRevision = sources.revision
     feed.receive(state: commit.state, revision: commit.rev + 1, generation: feed.generation)
     #expect(sources.revision == changedRevision)

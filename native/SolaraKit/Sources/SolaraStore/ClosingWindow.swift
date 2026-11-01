@@ -4,6 +4,14 @@ struct ClosingWindowUndo: Sendable, Equatable {
   var before: BrowserState
   var after: BrowserState
   var closedAt: Double
+  var liveBefore: [String: PageLiveFacts]
+  var liveAfter: [String: PageLiveFacts] = [:]
+  var affectedLiveIds: Set<String> = []
+  var pendingLiveFinalization = true
+  var liveChangesCaptured = false
+  var heldPages: [String: HeldPageSeed]
+  var heldProducers: [String: PageProducerFence]
+  var endedHeldPages: Set<String> = []
 }
 
 private func undoClosingMap<T: Equatable>(_ current: JSMap<T>, _ before: JSMap<T>, _ after: JSMap<T>) -> JSMap<T>? {
@@ -28,22 +36,125 @@ private func renamedClosingKey<T>(_ current: JSMap<T>, _ old: String, _ new: Str
 }
 
 extension Session {
-  func rememberClosingWindow(_ id: String, before: BrowserState) {
+  func pruneClosingWindows() {
     memory.closingWindowUndos = memory.closingWindowUndos.filter { now - $0.value.closedAt <= 30_000 }
-    var before = before
-    before.live = [:]
-    var after = state
-    after.live = [:]
-    memory.closingWindowUndos[id] = ClosingWindowUndo(before: before, after: after, closedAt: now)
     while memory.closingWindowUndos.count > 10 {
       guard let oldest = memory.closingWindowUndos.min(by: { $0.value.closedAt < $1.value.closedAt })?.key else { break }
       memory.closingWindowUndos.removeValue(forKey: oldest)
     }
   }
 
+  func captureClosingWindows(before: BrowserState, after: BrowserState) {
+    guard !memory.hydrating else { return }
+    pruneClosingWindows()
+    for window in before.windows.values where after.windows[window.id] == nil {
+      var pages: [String: HeldPageSeed] = [:]
+      var producers: [String: PageProducerFence] = [:]
+      for id in window.tabIds {
+        if let producer = memory.pageProducerFence[id], !producer.retired { producers[id] = producer }
+        guard let tab = before.tabs[id], var page = memory.pages[id], let generation = page.generation,
+          producers[id]?.generation == generation else { continue }
+        page.keepAlive = nil
+        page.latchedThrough = 0
+        pages[id] = HeldPageSeed(tab: tab, page: page, generation: generation)
+      }
+      var structuralBefore = before
+      structuralBefore.live = [:]
+      var structuralAfter = after
+      structuralAfter.live = [:]
+      memory.closingWindowUndos[window.id] = ClosingWindowUndo(before: structuralBefore, after: structuralAfter,
+        closedAt: now, liveBefore: before.live, heldPages: pages, heldProducers: producers)
+    }
+    pruneClosingWindows()
+  }
+
+  func captureClosingWindowLiveChanges() {
+    for id in memory.closingWindowUndos.keys {
+      guard var undo = memory.closingWindowUndos[id], !undo.liveChangesCaptured else { continue }
+      let affected = Set(undo.liveBefore.keys).union(state.live.keys).filter { undo.liveBefore[$0] != state.live[$0] }
+      undo.affectedLiveIds = Set(affected)
+      undo.liveBefore = undo.liveBefore.filter { undo.affectedLiveIds.contains($0.key) }
+      undo.liveChangesCaptured = true
+      memory.closingWindowUndos[id] = undo
+    }
+  }
+
+  func finalizeClosingWindowLive() {
+    for id in memory.closingWindowUndos.keys {
+      guard var undo = memory.closingWindowUndos[id], undo.pendingLiveFinalization else { continue }
+      undo.liveAfter = state.live.filter { undo.affectedLiveIds.contains($0.key) }
+      undo.pendingLiveFinalization = false
+      memory.closingWindowUndos[id] = undo
+    }
+  }
+
+  func updateHeldPageURL(_ url: String, seed: inout HeldPageSeed, before: BrowserState) {
+    guard seed.tab.url != url else { return }
+    var context = before
+    context.settings = state.settings
+    let change = onUrlChange(context, seed.tab, url)
+    if let muted = change.muted { seed.tab.muted = muted }
+    if let pinned = change.pinnedUrl { seed.tab.pinnedUrl = pinned }
+    if truthy(seed.tab.wakeAdoptId) { seed.tab.wakeAdoptId = nil }
+    seed.tab.url = url
+  }
+
+  func reportHeldPage(_ id: String, report: JSONValue, type: String, generation: String?) throws {
+    guard type != "keepAlive", type != "latch", let generation else { return }
+    pruneClosingWindows()
+    for windowId in memory.closingWindowUndos.keys {
+      guard var undo = memory.closingWindowUndos[windowId],
+        let producer = undo.heldProducers[id], producer.generation == generation, !producer.retired else { continue }
+      if type == "gone" {
+        undo.heldPages[id] = nil
+        undo.heldProducers[id] = nil
+        undo.endedHeldPages.insert(id)
+        memory.closingWindowUndos[windowId] = undo
+        return
+      }
+      let allowed: Set<String> = ["navigation", "media", "download", "discarded", "ready", "failed", "loadError", "moved", "advance"]
+      guard allowed.contains(type), var seed = undo.heldPages[id], seed.generation == generation else { return }
+      let others = undo.before.windows[windowId]?.tabIds.contains { $0 != id && undo.before.tabs[$0]?.profileId == seed.tab.profileId } ?? false
+      let effects = try interpretPageReport(report, type: type, tab: seed.tab, page: &seed.page, hasOtherProfileTab: others, heldNavigationURL: seed.adoptNavigationURL)
+      for effect in effects {
+        applyPageLiveEffect(effect, report: report, page: &seed.page)
+        switch effect {
+        case .navigated(let url, let title, _, _, _):
+          updateHeldPageURL(url, seed: &seed, before: undo.before)
+          seed.tab.title = title
+        case .adoptNavigation(let url):
+          seed.adoptNavigationURL = url
+          if truthy(seed.tab.wakeAdoptId) { seed.tab.wakeAdoptId = nil }
+        case .updateURL(let url): updateHeldPageURL(url, seed: &seed, before: undo.before)
+        case .resetToNewTab:
+          updateHeldPageURL("", seed: &seed, before: undo.before)
+          seed.tab.title = ""
+          seed.tab.favicon = nil
+        case .closeTab: seed.restorable = false
+        default: break
+        }
+      }
+      undo.heldPages[id] = seed
+      memory.closingWindowUndos[windowId] = undo
+      return
+    }
+  }
+
+  func rememberClosingWindow(_ id: String, before: BrowserState) {
+    pruneClosingWindows()
+    guard var undo = memory.closingWindowUndos[id] else { return }
+    var structuralBefore = before
+    structuralBefore.live = [:]
+    var structuralAfter = state
+    structuralAfter.live = [:]
+    undo.before = structuralBefore
+    undo.after = structuralAfter
+    memory.closingWindowUndos[id] = undo
+  }
+
   public func restoreClosingWindow(_ window: BrowserWindow, _ tabs: [Tab], _ groups: [TabGroup], _ splits: [SplitView], chromeWindow: String, liveTabIds: [String]) -> String? {
     let s = state
-    memory.closingWindowUndos = memory.closingWindowUndos.filter { now - $0.value.closedAt <= 30_000 }
+    pruneClosingWindows()
     guard let undo = memory.closingWindowUndos[window.id], now - undo.closedAt <= 30_000,
           let original = undo.before.windows[window.id], original.profileId == window.profileId, original.kind == window.kind,
           original.incognito == window.incognito, original.tabIds == window.tabIds,
@@ -53,7 +164,9 @@ extension Session {
           Set(splits.map(\.id)) == Set(undo.before.splits.values.filter { $0.windowId == window.id }.map(\.id)) else { return nil }
     let profileId = original.incognito ? (original.originalProfileId ?? Ids.incognitoOriginal(original.profileId)) : original.profileId
     let wanted = Set(original.tabIds)
-    let live = Set(liveTabIds).intersection(wanted)
+    let live = Set(liveTabIds).intersection(wanted).filter {
+      !undo.endedHeldPages.contains($0) && undo.heldPages[$0]?.restorable != false
+    }
     guard !live.isEmpty else { return nil }
     let wantedGroups = Set(groups.map(\.id))
     let wantedSplits = Set(splits.map(\.id))
@@ -68,6 +181,11 @@ extension Session {
           !s.splits.values.contains(where: { !$0.tabIds.allSatisfy { !wanted.contains($0) } }) else { return nil }
     let before = undo.before
     let after = undo.after
+    guard undo.affectedLiveIds.allSatisfy({ id in
+      s.live[id] == undo.liveAfter[id] || undo.liveAfter[id] == nil && s.live[id] == PageLiveFacts()
+    }) else { return nil }
+    let seedCount = live.filter { undo.heldPages[$0] != nil }.count
+    guard memory.nextPageModelSerial <= pageMaximumSafeInteger - seedCount else { return nil }
     guard let windows = undoClosingTable(s.windows, before.windows, after.windows),
           let restoredTabs = undoClosingTable(s.tabs, before.tabs, after.tabs),
           let restoredGroups = undoClosingTable(s.groups, before.groups, after.groups),
@@ -157,6 +275,37 @@ extension Session {
       next.selectionAnchors[id] = nil
     }
     next.windowUi = renamedClosingKey(windowUi, window.id, id)
+    for tabId in undo.affectedLiveIds where next.tabs[tabId] != nil && !wanted.contains(tabId) {
+      next.live[tabId] = undo.liveBefore[tabId]
+    }
+    for tabId in original.tabIds {
+      guard var tab = next.tabs[tabId], live.contains(tabId), tab.unloaded != true else { continue }
+      if var seed = undo.heldPages[tabId], let producer = undo.heldProducers[tabId],
+        producer.generation == seed.generation, !producer.retired {
+        if let url = seed.adoptNavigationURL { seed.tab.navigation = navigationTo(url) }
+        tab.url = seed.tab.url
+        tab.title = seed.tab.title
+        tab.takeFavicon(from: seed.tab)
+        tab.muted = seed.tab.muted
+        tab.pinnedUrl = seed.tab.pinnedUrl
+        tab.wakeAdoptId = seed.tab.wakeAdoptId
+        tab.navigation = seed.tab.navigation
+        tab.markAbsent(seed.tab.absent.intersection(["pinnedUrl", "navigation"]))
+        memory.nextPageModelSerial += 1
+        seed.page.modelSerial = memory.nextPageModelSerial
+        seed.page.keepAlive = nil
+        seed.page.latchedThrough = 0
+        memory.pages[tabId] = seed.page
+        memory.pageProducerFence[tabId] = producer
+        next.live[tabId] = seed.page.live.facts
+      } else {
+        next.live[tabId] = undo.liveBefore[tabId] ?? PageLiveFacts()
+        memory.pages[tabId] = nil
+        if let producer = undo.heldProducers[tabId], !producer.retired { memory.pageProducerFence[tabId] = producer }
+      }
+      memory.feedWatermark[tabId] = nil
+      next.tabs[tabId] = tab
+    }
     memory.closingWindowUndos.removeValue(forKey: window.id)
     set(next)
     return id

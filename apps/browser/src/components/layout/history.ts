@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { publishPageContext } from "../pageEvents";
 import { goBackAcrossEngines } from "../../lib/engines";
 import { livePageId, withLivePage } from "../../lib/livePage";
 import { webviews } from "../../lib/webviews";
@@ -47,6 +48,7 @@ function showNewTab(tabId: string, keep?: { url: string; title: string }) {
   const tab = store().tabs[tabId];
   if (!tab?.url) return;
   patchPage(tabId, { newTabShown: { url: keep?.url ?? tab.url, title: keep?.title ?? tab.title, favicon: tab.favicon }, status: "" });
+  publishPageContext(tabId);
   const internal = internalPageOf(tabDestination(tab)) !== null;
   store().updateTab(tabId, { url: "", title: "", favicon: null, ...(internal ? { navigation: null } : {}) });
 }
@@ -61,6 +63,7 @@ function hideNewTab(tabId: string) {
   const kept = pageOf(tabId).newTabShown;
   if (!kept) return;
   patchPage(tabId, { newTabShown: null });
+  publishPageContext(tabId);
   store().updateTab(tabId, { url: kept.url, title: kept.title, favicon: kept.favicon });
 }
 

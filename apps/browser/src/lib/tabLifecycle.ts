@@ -13,6 +13,7 @@ import { restoredLazily } from "../store/pageSession";
 import { peekTabId } from "../store/peek";
 import { holderOf } from "../store/pinShare";
 import { splitOf } from "../store/splits";
+import { nativeOwnsWorkspace } from "../store/nativeStore";
 import { switchOn } from "./killSwitches";
 import { applyHeldReports } from "./nativeEvents";
 import { everySlowly, reschedule } from "./slowTimers";
@@ -38,9 +39,14 @@ type Lifecycle = {
 
 export const useLifecycle = create<Lifecycle>()(() => ({ discarded: {}, batterySaver: false }));
 
-export const useIsSleeping = (tabId: string) => useLifecycle((l) => !!l.discarded[tabId]);
+export const useIsSleeping = (tabId: string) => {
+  const native = useBrowser((s) => !!s.live[tabId]?.discarded);
+  const fallback = useLifecycle((l) => !!l.discarded[tabId]);
+  return nativeOwnsWorkspace() ? native : fallback;
+};
 
 const store = () => useBrowser.getState();
+const isDiscarded = (tabId: string) => nativeOwnsWorkspace() ? !!store().live[tabId]?.discarded : !!useLifecycle.getState().discarded[tabId];
 
 let appActive = true;
 let activeSince = Date.now();
@@ -77,7 +83,7 @@ function shownTabIds(s: BrowserState): Set<string> {
   return shown;
 }
 
-const loadedTabIds = () => [...webviews.keys()].filter((id) => !useLifecycle.getState().discarded[id]);
+const loadedTabIds = () => [...webviews.keys()].filter((id) => !isDiscarded(id));
 
 function keepAliveReason(s: BrowserState, id: string): string | null {
   const tab = s.tabs[id];
@@ -128,7 +134,7 @@ async function hasUnsavedInput(handle: WebViewHandle): Promise<boolean | null> {
 
 export async function sleepTab(id: string): Promise<boolean> {
   const handle = webviews.get(id);
-  if (!handle || useLifecycle.getState().discarded[id]) return false;
+  if (!handle || isDiscarded(id)) return false;
   if ((await hasUnsavedInput(handle)) !== false) return false;
   applyHeldReports();
   const s = store();
@@ -136,10 +142,11 @@ export async function sleepTab(id: string): Promise<boolean> {
   return (await handle.discard()) === "discarded";
 }
 
-export function noteReady(tabId: string) {
+export function noteReady(tabId: string, factsOwner: "js" | "native" = "js") {
   const tab = store().tabs[tabId];
   if (tab) loadedProfiles.add(engineProfile(tab.profileId));
-  forget(tabId, false);
+  if (factsOwner === "js") forget(tabId, false);
+  else busyStreak.delete(tabId);
 }
 
 export function noteDiscarded(tabId: string) {
@@ -186,7 +193,7 @@ export async function sweep(overrides: Partial<typeof POLICY> = {}): Promise<str
     const unused = unusedProfiles(s, now, policy.profileIdleMs);
     const candidates = [...webviews.keys()].filter((id) => {
       const tab = s.tabs[id];
-      if (!tab || shown.has(id) || useLifecycle.getState().discarded[id]) return false;
+      if (!tab || shown.has(id) || isDiscarded(id)) return false;
       const idle = now - (hiddenAt.get(id) ?? now);
       if (!unused.has(tab.profileId) && (recent.has(id) || (pressure === "normal" && idle < policy.idleMs))) return false;
       return !keepAliveReason(s, id);

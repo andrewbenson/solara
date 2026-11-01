@@ -2,10 +2,10 @@ import type { StorePatch, StoreEffect } from "@solara/store";
 import { cancelDownload, endWebKitPrivateSession } from "@solara/solaracore";
 import type { BrowserState, HydrateData } from "./browser";
 import { bookmarkRoots, ensureRoots, removeBookmarkTree } from "./bookmarks";
-import { IDLE_LIVE, without } from "./model";
-import { rememberNativeClosingLocals } from "./closingWindowRestore";
+import { without } from "./model";
 import { runPinHandoff } from "./tabs";
 import { startNavigation } from "../lib/earlyNavigate";
+import { nativeOwnsWorkspace } from "./nativeStore";
 import { commandBarFocus, expectFocus } from "../lib/focusClaims";
 
 export const WORKSPACE_COMMANDS: ReadonlySet<string> = new Set([
@@ -26,8 +26,6 @@ export const WORKSPACE_COMMANDS: ReadonlySet<string> = new Set([
 export const COMMAND_PRELUDES: ReadonlyMap<string, (...args: unknown[]) => void> = new Map([
   ["openPanel", (windowId: unknown) => expectFocus(windowId as string, commandBarFocus)],
 ]);
-
-export const LIVE_PATCH_COMMANDS: ReadonlySet<string> = new Set(["updateTab", "navigated"]);
 
 const TABLES = ["profiles", "windows", "tabs", "groups", "splits"] as const;
 const LISTS = ["profileOrder", "orphanedProfileData", "windowOrder", "closedTabs", "closedWindows", "closedGroups", "deletedGroups", "cleanedTabs", "downloads"] as const;
@@ -60,6 +58,7 @@ export function workspaceFromPatch(s: BrowserState, patch: StorePatch): Partial<
   const p = patch as Record<string, unknown>;
   const state = s as unknown as Record<string, Record<string, unknown>>;
   for (const name of TABLES) if (p[name]) next[name] = applyTable(state[name]!, p[name] as TablePatch, byId);
+  if (p.live) next.live = retainingJSON(s.live, applyTable(state.live!, p.live as TablePatch, keyedBy("id")));
   if (p.peeks) next.peeks = applyTable(state.peeks!, p.peeks as TablePatch, keyedBy("windowId"));
   if (p.parkedPins) next.parkedPins = applyTable(state.parkedPins!, p.parkedPins as TablePatch, keyedBy("profileId"));
   for (const name of ["pinChoices", "pinSync"] as const) if (p[name]) next[name] = applyTable(state[name]!, p[name] as TablePatch, tableOf);
@@ -74,43 +73,17 @@ export function workspaceFromPatch(s: BrowserState, patch: StorePatch): Partial<
     for (const key of patch.settings.remove ?? []) delete settings[key];
     next.settings = settings;
   }
-  return withDerived(s, { ...s, ...next } as BrowserState, next);
-}
-
-function withDerived(prev: BrowserState, s: BrowserState, next: Record<string, unknown>): Partial<BrowserState> {
-  const out = next as Partial<BrowserState>;
-  if (s.tabs !== prev.tabs) {
-    const gone = new Set(Object.keys(prev.tabs).filter((id) => !s.tabs[id]));
-    let live = gone.size ? without(prev.live, gone) : prev.live;
-    for (const id of Object.keys(s.tabs)) {
-      if (live[id]) continue;
-      if (live === prev.live) live = { ...prev.live };
-      live[id] = IDLE_LIVE;
-    }
-    for (const t of Object.values(s.tabs)) {
-      const holder = t.pageIn ? live[t.pageIn] : undefined;
-      if (!holder || live[t.id] === holder) continue;
-      if (live === prev.live) live = { ...prev.live };
-      live[t.id] = { ...holder };
-    }
-    if (live !== prev.live) out.live = live;
-  }
-  rememberNativeClosingLocals(prev, { ...s, ...out });
-  return out;
+  return next as Partial<BrowserState>;
 }
 
 export function runEffects(effects: StoreEffect[] | undefined, get: () => BrowserState, set: (partial: Partial<BrowserState>) => void) {
   for (const effect of effects ?? []) {
     const s = get();
     switch (effect.type) {
-      case "swapTabs": {
-        const a = effect.a as string;
-        const b = effect.b as string;
-        set({ live: { ...s.live, [b]: { ...(s.live[a] ?? s.live[b] ?? IDLE_LIVE) } } });
+      case "swapTabs":
         break;
-      }
       case "startNavigation":
-        startNavigation(effect.tabId as string, effect.navigation as Parameters<typeof startNavigation>[1]);
+        if (!nativeOwnsWorkspace()) startNavigation(effect.tabId as string, effect.navigation as Parameters<typeof startNavigation>[1]);
         break;
       case "pinHandoff": {
         const id = effect.tabId as string;
@@ -177,21 +150,18 @@ export function workspaceHydration(s: BrowserState, data: HydrateData): Partial<
     historyReady: Object.fromEntries(Object.keys(data.history ?? {}).filter((id) => s.profiles[id]).map((id) => [id, true as const])),
     bookmarks,
     bookmarksReady: Object.fromEntries(Object.keys(data.bookmarks?.roots ?? {}).filter((id) => s.profiles[id]).map((id) => [id, true as const])),
-    live: Object.fromEntries(Object.keys(s.tabs).map((id) => [id, IDLE_LIVE])),
   };
 }
 
-export function workspaceFromSnapshot(s: BrowserState, data: Record<string, unknown>, { keepLocal = false } = {}): Partial<BrowserState> {
+export function workspaceFromSnapshot(s: BrowserState, data: Record<string, unknown>, _options: { keepLocal?: boolean } = {}): Partial<BrowserState> {
   const next: Record<string, unknown> = {};
   for (const name of [...TABLES, "peeks", "parkedPins", "pinChoices", "pinSync", ...LISTS, ...KEYED]) if (name in data) next[name] = retainingJSON((s as unknown as Record<string, unknown>)[name], data[name]);
   if (data.settings) next.settings = retainingJSON(s.settings, data.settings);
   if (data.ui) next.ui = retainingJSON(s.ui, { ...s.ui, ...(data.ui as object) });
-  const tabs = (next.tabs ?? {}) as BrowserState["tabs"];
-  next.live = Object.fromEntries(Object.keys(tabs).map((id) => [id, (keepLocal && s.live[id]) || IDLE_LIVE]));
+  next.live = retainingJSON(s.live, data.live ?? {});
   for (const name of ["find", "selection", "selectionAnchors", "windowUi"] as const) next[name] = retainingJSON(s[name], data[name] ?? {});
   let bookmarks = s.bookmarks;
   for (const id of (next.profileOrder ?? []) as string[]) bookmarks = ensureRoots(bookmarks, id)[0];
   next.bookmarks = bookmarks;
-  rememberNativeClosingLocals(s, { ...s, ...next } as BrowserState);
   return next as Partial<BrowserState>;
 }

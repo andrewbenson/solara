@@ -84,6 +84,7 @@ export type Tab = {
 export type TileFolder = { id: string; name: string; renamedAt?: number };
 
 export type TabLive = {
+  discarded: boolean;
   isLoading: boolean;
   canGoBack: boolean;
   canGoForward: boolean;

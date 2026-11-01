@@ -19,7 +19,8 @@ public final class OmniboxWorkspaceFeed {
   private let ownsWorkspace: () -> Bool
   private let resolve: () -> Store?
   private let clock: () -> TimeInterval
-  private var ownershipGeneration = NativeStoreHandle.ownershipGeneration
+  private let currentOwnershipGeneration: () -> Int
+  private var ownershipGeneration: Int
   private var store: Store?
   private var listener: Int?
   private(set) var generation = 0
@@ -33,9 +34,13 @@ public final class OmniboxWorkspaceFeed {
   private var deadline: Task<Void, Never>?
   var didSubscribe: ((Store) -> Void)?
 
-  public init(sources: NewTabSources, ownsWorkspace: @escaping () -> Bool, resolve: @escaping () -> Store?, clock: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
+  public init(sources: NewTabSources, ownsWorkspace: @escaping () -> Bool,
+    ownershipGeneration: @escaping () -> Int = { NativeStoreHandle.ownershipGeneration },
+    resolve: @escaping () -> Store?, clock: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
     self.sources = sources
     self.ownsWorkspace = ownsWorkspace
+    currentOwnershipGeneration = ownershipGeneration
+    self.ownershipGeneration = ownershipGeneration()
     self.resolve = resolve
     self.clock = clock
   }
@@ -72,7 +77,7 @@ public final class OmniboxWorkspaceFeed {
 
   public func reconcile(now suppliedNow: TimeInterval? = nil) {
     let now = suppliedNow ?? clock()
-    let nextOwnershipGeneration = NativeStoreHandle.ownershipGeneration
+    let nextOwnershipGeneration = currentOwnershipGeneration()
     if ownershipGeneration != nextOwnershipGeneration {
       ownershipGeneration = nextOwnershipGeneration
       if store != nil { detach() }
@@ -123,7 +128,7 @@ public final class OmniboxWorkspaceFeed {
 
   func receive(state: BrowserState, revision nextRevision: Int, generation ticket: Int) {
     guard ticket == generation, let store else { return }
-    guard ownershipGeneration == NativeStoreHandle.ownershipGeneration, ownsWorkspace(), resolve() === store else {
+    guard ownershipGeneration == currentOwnershipGeneration(), ownsWorkspace(), resolve() === store else {
       reconcile()
       return
     }

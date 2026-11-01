@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { StyleSheet, View } from "react-native";
+import { nativeOwnsWorkspace } from "../../store/nativeStore";
 import { useBrowser } from "../../store/browser";
 import { bookmarkProfileId } from "../../store/model";
 import { setPageProgress } from "../../store/pageProgress";
@@ -22,7 +23,7 @@ export function InternalPage({ tabId }: { tabId: string }) {
     const t = useBrowser.getState().tabs[tabId];
     const title = INTERNAL_PAGES[page].title;
     if (t && (t.url !== url || t.title !== title)) useBrowser.getState().updateTab(tabId, { url, title, favicon: null });
-    useBrowser.getState().updateLive(tabId, { isLoading: false, canGoBack: false, canGoForward: false });
+    if (!nativeOwnsWorkspace()) useBrowser.getState().updateLive(tabId, { isLoading: false, canGoBack: false, canGoForward: false });
     setPageProgress(tabId, 0);
   }, [page, url]);
 

@@ -2,6 +2,12 @@ import AppKit
 
 public enum PageEvents {
   public static let props: [String: String] = [
+    "constructorCaptured": "onPageConstructorCaptured",
+    "requestAccepted": "onPageRequestAccepted",
+    "physicalPage": "onPagePhysical",
+    "execution": "onPageExecution",
+    "created": "onPageCreated",
+    "pageIssue": "onPageIssue",
     "navigation": "onNavigationChange",
     "progress": "onProgress",
     "favicon": "onFavicon",
@@ -40,7 +46,7 @@ public enum PageEvents {
     "preferredSize": "onPreferredSize",
   ]
 
-  public static let names: [String] = props.values.sorted()
+  public static let names: [String] = props.values.filter { $0 != "onPagePhysical" && $0 != "onPageExecution" && $0 != "onPageRequestAccepted" && $0 != "onPageConstructorCaptured" }.sorted()
 
   static func dispatchers<Dispatcher>(of view: Any, as _: Dispatcher.Type) -> [String: Dispatcher] {
     var out: [String: Dispatcher] = [:]

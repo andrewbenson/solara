@@ -58,11 +58,11 @@ function record(spec: any) {
   const external = new Proxy({}, { get: () => noop });
   const mocks: Record<string, any> = {
     "store/browser": { useBrowser: browser },
+    "store/nativeStore": { nativeOwnsWorkspace: () => false },
     "store/settings": { DEFAULT_PROFILE_ID: "default" },
     "store/organize": { onUrlChange: () => ({}) },
     "store/splits": { splitOf: () => initial.split ? {} : undefined },
     "lib/earlyNavigate": { takeStartedNavigation: (_: string, seq: number) => started.delete(seq) },
-    "lib/tabLifecycle": { noteDiscarded: () => push("lifecycle", { value: "discarded" }), noteReady: () => push("lifecycle", { value: "ready" }), noteGone: noop },
     "components/layout/pageState": { pageOf: (id: string) => pages[id] ?? {}, patchPage: (id: string, patch: any) => { pages[id] = { ...pages[id], ...patch }; }, setBrowserId: noop, setPopover: noop, usePages: { getState: () => ({ popover: {} }) } },
     "lib/favicons": { pageKey: (url: string) => url.replace(/#.*$/, ""), seedFavicons: noop, adoptIconPage: noop, dropOutlivedFavicon: noop },
     "@solara/shell": { readDocument: () => JSON.stringify({ version: 2, themes: spec.themes ?? [], favicons: {} }) },

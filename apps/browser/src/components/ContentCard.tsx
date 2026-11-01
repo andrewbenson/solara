@@ -46,7 +46,7 @@ import { dockMoving, useDockMotion, usePeekEdge } from "./layout/dockMotion";
 import { FrozenPage } from "./layout/frozenPage";
 import { holderOf } from "../store/pinShare";
 import { setCardAnchor, setUrlAnchor, useAddressBarInSidebar, useTabLayout, useToolbarExtensionsWidths } from "./layout/windowLayout";
-import { followNavigation, newPageSession, pageEventHandlers } from "./pageEvents";
+import { acceptPageReport, currentPageContext, followNavigation, newPageSession, pageEventHandlers, releasePageSession } from "./pageEvents";
 import { NewTabPage } from "./NewTabPage";
 import { EmptyCard } from "./EmptyCard";
 import { InternalPage } from "./pages";
@@ -674,13 +674,21 @@ function EngineWebView({ tabId, visible, warm, peekOf, engine }: TabWebViewProps
   session.peekOf = peekOf;
   const handlers = useMemo(() => pageEventHandlers(session), [session]);
 
+  const contextKey = usePages((s) => {
+    const page = s.pages[tabId];
+    return `${!!page?.wasNewTab}|${page?.newTabShown?.url ?? ""}`;
+  });
+  const pageContext = useMemo(() => currentPageContext(tabId), [navigation?.seq, contextKey]);
   const seq = navigation?.seq;
   useEffect(() => {
     followNavigation(session, navigation);
   }, [seq]);
   useEffect(() => {
     persistEngine(tabId, engine);
-    return () => noteGone(tabId);
+    return () => {
+      releasePageSession(session);
+      if (session.factsOwner === "js") noteGone(tabId);
+    };
   }, []);
   const mountedProfile = useRef(profileId);
   useLayoutEffect(
@@ -702,6 +710,7 @@ function EngineWebView({ tabId, visible, warm, peekOf, engine }: TabWebViewProps
       profile={engineProfile(profileId)}
       adoptId={adoptId}
       transferKey={tabId}
+      pageContext={pageContext}
       temporary={peekOf !== undefined}
       temporarySource={peekOf}
       visible={visible}
@@ -711,6 +720,7 @@ function EngineWebView({ tabId, visible, warm, peekOf, engine }: TabWebViewProps
       pageColor={pageColor}
       contentsBackgroundColor={backdrop}
       shownUrl={shownUrl}
+      acceptStoreReport={(report) => acceptPageReport(session, report)}
       {...handlers}
     />
   );

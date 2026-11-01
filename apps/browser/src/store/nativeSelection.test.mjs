@@ -34,6 +34,7 @@ const { useBrowser } = await import("./browser.ts");
 const { startPersistence } = await import("../lib/persist.ts");
 const { writeState } = await import("./nativeStore.ts");
 const { workspaceFromPatch, workspaceFromSnapshot } = await import("./nativeWorkspace.ts");
+const { IDLE_LIVE } = await import("./model.ts");
 const { runFocusMove } = await import("../lib/focusClaims.ts");
 const S = () => useBrowser.getState();
 startPersistence();
@@ -93,14 +94,14 @@ test("patches install Swift's selection, anchors and window UI and keep untouche
   assert.equal(S().windowUi.w1.downloadsOpen, true);
 });
 
-test("Swift effects no longer drive window UI or selection; a swap only copies the page's live state", () => {
-  foreign({ selection: { upsert: [{ windowId: "w1", ids: ["t1", "t3"] }], remove: [] }, windowUi: { upsert: [{ windowId: "w1", state: panelOpen }], remove: [] } });
-  S().updateLive("t1", { isLoading: true });
+test("Swift effects no longer drive window UI, selection or live state", () => {
+  foreign({ selection: { upsert: [{ windowId: "w1", ids: ["t1", "t3"] }], remove: [] }, windowUi: { upsert: [{ windowId: "w1", state: panelOpen }], remove: [] }, live: { upsert: [{ id: "t1", ...IDLE_LIVE, isLoading: true, discarded: true }, { id: "t2", ...IDLE_LIVE }], remove: [] } });
   const before = S();
   foreign({}, [{ type: "closePanel", windowId: "w1" }, { type: "clearSelection", windowId: "w1" }, { type: "openDownloads", windowId: "w1" }, { type: "swapTabs", a: "t1", b: "t2" }]);
   assert.equal(S().windowUi, before.windowUi);
   assert.equal(S().selection, before.selection);
-  assert.equal(S().live.t2.isLoading, true);
+  assert.equal(S().live, before.live);
+  assert.deepEqual(S().live.t2, IDLE_LIVE);
 });
 
 test("closing tabs or windows leaves selection and window UI pruning to Swift's patch", () => {

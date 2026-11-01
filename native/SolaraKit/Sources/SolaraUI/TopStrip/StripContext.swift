@@ -30,15 +30,20 @@ final class StripContext {
   let playing: Set<String>
   var send: (StripAction) -> Void = { _ in }
 
-  init(state: BrowserState, host: StripHostState, windowId: String, favicons: SidebarFavicons, previous: StripContext?) {
+  init(state: BrowserState, host: StripHostState, windowId: String, favicons: SidebarFavicons, previous: StripContext?,
+    ownsWorkspace: Bool = NativeStoreHandle.ownsWorkspace) {
     self.state = state
     query = StripQuery(state)
-    sidebar = SidebarContext(state: state, host: host.sidebarLook, windowId: windowId, favicons: favicons, previous: previous?.sidebar)
+    var sidebarHost = host.sidebarLook
+    sidebarHost.playing = host.playing
+    let sidebar = SidebarContext(state: state, host: sidebarHost, windowId: windowId, favicons: favicons, previous: previous?.sidebar,
+      ownsWorkspace: ownsWorkspace)
+    self.sidebar = sidebar
     self.host = host
     palette = previous.flatMap { $0.host.dark == host.dark && $0.host.theme == host.theme && $0.host.border == host.border ? $0.palette : nil } ?? StripPalette(host)
     self.windowId = windowId
     activeId = state.windows[windowId]?.activeTabIds[host.profileId] ?? ""
-    playing = Set(host.playing)
+    playing = sidebar.flags.playing
   }
 
   var base: SidebarPalette { palette.base }

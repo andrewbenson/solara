@@ -144,8 +144,10 @@ public final class Session {
     let prev = state
     var next = next
     next.pruneWindowLocalState(tabsChanged: next.tabs.changed(from: prev.tabs), windowsChanged: next.windows.changed(from: prev.windows))
+    captureClosingWindows(before: prev, after: next)
     state = next
     settleLive()
+    captureClosingWindowLiveChanges()
     if depth == 0 {
       notify(prev)
     } else {

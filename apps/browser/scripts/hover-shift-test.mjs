@@ -75,7 +75,7 @@ try {
   const nativeDownloadShifts = async () => {
     const r = JSON.parse(await ac(`return globalThis.expo.modules.SolaraDownloads.devHoverShifts();`));
     if (!r.hosts) throw new Error("the native downloads list isn't shown");
-    return { hovered: r.hovered, shifts: r.shifts };
+    return { hovered: r.hovered, shifts: r.shifts, forced: r.forced ?? null };
   };
 
   await ac(`
@@ -118,7 +118,7 @@ try {
       const capabilitySnapshot = await untilSnapshot("hosted hover capabilities", (s) => Array.isArray(s.hostedKinds));
       if (name === "sidebar") assert.equal(capabilitySnapshot.hostedKinds.includes("sidebar"), native);
       if (name === "tab strip") assert.equal(capabilitySnapshot.hostedKinds.includes("topStrip"), nativeStrip);
-      const { hovered, shifts } = nativeDownloads
+      const { hovered, shifts, forced = null } = nativeDownloads
         ? await nativeDownloadShifts()
         : native
         ? await ac(`return globalThis.expo.modules.SolaraHosted.sidebarHoverShifts("w1").then((json) => JSON.parse(json)).then((r) => ({ hovered: r.hovered, shifts: r.shifts.map((s) => ({ hovered: s, view: "native row", before: [], after: [] })) }));`)
@@ -135,7 +135,8 @@ try {
         throw new Error([`${shifts.length} views moved or resized (${hovered} hovered)`,
           ...shifts.slice(0, 20).flatMap((s) => [`hovering ${s.hovered}`, `  ${s.view}: ${s.before.join(", ")} -> ${s.after.join(", ")}`])].join("\n"));
       }
-      return `${hovered} hovered views, nothing moved`;
+      if (forced) rep.say(`${name}: hover tracking areas installed by the check (forced: ${forced})`);
+      return `${hovered} hovered views, nothing moved${forced ? ` (forced: ${forced})` : ""}`;
     });
   }
 } catch (error) {

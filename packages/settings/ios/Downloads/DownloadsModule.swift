@@ -76,9 +76,11 @@ enum DownloadsHoverShifts {
     var hosts = 0
     var hovered = 0
     var shifts: [[String: Any]] = []
+    let locked = (CGSessionCopyCurrentDictionary() as? [String: Any])?["CGSSessionScreenIsLocked"] as? Bool ?? false
     for root in shown.allObjects where root.window != nil {
       hosts += 1
       root.layoutSubtreeIfNeeded()
+      if locked { for view in descendants(of: root) { view.updateTrackingAreas() } }
       for target in descendants(of: root) where target.trackingAreas.contains(where: { $0.owner === target }) {
         guard let enter = event(.mouseEntered, in: target), let exit = event(.mouseExited, in: target) else { continue }
         hovered += 1
@@ -94,7 +96,7 @@ enum DownloadsHoverShifts {
         }
       }
     }
-    let json = try? JSONSerialization.data(withJSONObject: ["hosts": hosts, "hovered": hovered, "shifts": shifts])
+    let json = try? JSONSerialization.data(withJSONObject: ["hosts": hosts, "hovered": hovered, "shifts": shifts, "forced": locked ? "locked" as Any : NSNull()])
     return json.flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
     #else
     return "{}"

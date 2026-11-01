@@ -186,3 +186,39 @@ enum SidePanelFocus {
     return nil
   }
 }
+
+#if SOLARA_PROBES
+@MainActor
+public enum SidePanelRead {
+  public static var liveViews: Int { SolaraCoreWebView.devLiveExtensionViews("sidePanel") }
+
+  public static func snapshot(windowId: String) -> [String: Any]? {
+    guard let window = ShellDrag.window(windowId), let root = window.contentView else { return nil }
+    var queue: [NSView] = [root]
+    var pages: [[String: Any]] = []
+    var focusedTabIds: [String] = []
+    var card: [String: Any]?
+    let responder = window.firstResponder as? NSView
+    func frame(_ view: NSView) -> [Double] {
+      let f = view.convert(view.bounds, to: nil)
+      let y = root.bounds.height - f.maxY
+      return [Double(f.minX), Double(y), Double(f.width), Double(f.height)]
+    }
+    while !queue.isEmpty {
+      let view = queue.removeFirst()
+      queue.append(contentsOf: view.subviews)
+      if let panel = view as? ExtensionSidePanelView, let surface = panel.content.superview {
+        card = ["frame": frame(surface), "width": Double(panel.width), "visible": !panel.isHiddenOrHasHiddenAncestor]
+      }
+      guard let web = view as? SolaraCoreWebView else { continue }
+      let focused = responder.map { $0 === web || $0.isDescendant(of: web) } ?? false
+      if focused, let tabId = web.transferKey { focusedTabIds.append(tabId) }
+      guard web.extensionHost == "sidePanel" else { continue }
+      let extensionId = web.initialURL.flatMap { URLComponents(string: $0)?.host }
+      pages.append(["extensionId": extensionId ?? NSNull(), "frame": frame(web),
+        "focused": focused, "visible": !web.isHiddenOrHasHiddenAncestor])
+    }
+    return ["card": card ?? NSNull(), "pages": pages, "focusedTabIds": focusedTabIds.sorted()]
+  }
+}
+#endif

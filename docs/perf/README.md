@@ -243,10 +243,11 @@ again shows up here at once: `switchTabs.subNotified` grows by the row count per
   writes. They stay in the js-bench report.
 - A new component, task or timer that has no ceiling shows up in the group total's ceiling, not on its own: `check`
   lists the biggest counts without one.
-- The ceilings are for probe revision 2 and bench revision 4 (`perfProbe.ts` `PERF_PROBE_REVISION`, js-bench
+- The ceilings are for probe revision 2 and bench revision 5 (`perfProbe.ts` `PERF_PROBE_REVISION`, js-bench
   `BENCH_REVISION`). `check` warns when a report has another; rebuild with `baseline` after a change that redefines a
   counter. Revision 4 redefined `scroll` and `hover` for the native sidebar, and only their `timers` totals were
-  re-baselined: 868 and 110, the largest of five Release runs (789 and 100) plus 10%.
+  re-baselined: 868 and 110, the largest of five Release runs (789 and 100) plus 10%. Revision 5 changed only when
+  `idle`, `switchTabs`, `scroll` and `idleFor` start (see the settle wait under js-bench); no ceiling moved.
 
 ### In the release gate
 
@@ -416,7 +417,7 @@ Bench revision 4 drives the shipped native sidebar; scenario names and result sh
 
 | Scenario | Interaction and measured JS work |
 |---|---|
-| `scroll` | `SolaraSidebarDrag.scrollTo(windowId, y)` steps from 0 to 2400 px and back in 60 steps each way, with a 16 ms wait after each native completion. It first waits for 3 s without a file write, as `idle` does, so launch work (the launch's `bookmarks-cache.json` write, history and page loads) stays out of the sample when it runs first. The probe covers the whole scroll and its 300 ms tail. |
+| `scroll` | `SolaraSidebarDrag.scrollTo(windowId, y)` steps from 0 to 2400 px and back in 60 steps each way, with a 16 ms wait after each native completion. It first waits for the launch to settle, as `idle` does, so launch work (the recent-tab wake, the history import, the launch's `bookmarks-cache.json` write) stays out of the sample when it runs first. The probe covers the whole scroll and its 300 ms tail. |
 | `hover` | Native row rectangles from `SolaraHosted.sidebarRowFrame` locate 24 rows, starting at row 8. `ac.shell.devSetPointer` moves across them with a 60 ms wait per row, then off the sidebar. Moving away to reveal clipped rows and measuring their rectangles happen outside each probe sample. Samples are combined into the usual `{ steps, stats }`. |
 | `cenHover` | The census variant uses the same native row/pointer path, with 14 rows from row 0 and a 150 ms wait per action; it keeps `{ per, stats }`. |
 | `profileSwipe` | `nextProfile` and `previousProfile` still go through `ac.runCommand` to the native pager's `stepPager`; each command settles for 1500 ms. This measures command-driven profile changes, rather than synthetic trackpad gestures. |
@@ -435,6 +436,13 @@ Revision 3 reports used React fiber handlers, so compare native runs on revision
 real run. `ratchet.json` is now marked bench revision 4: `scroll.timers` and `hover.timers` were re-baselined from the first native runs, and every other ceiling is still 0.2.40's census.
 The ratchet's journey list and flattened stat keys are unchanged (`storeUpdate` is supported by its flattener but
 is not in the fixed `JOURNEYS` list).
+
+Bench revision 5's settle wait (`settled` in bench-app.js) starts `idle`, `switchTabs`, `scroll` and `idleFor`: it waits until
+every non-incognito profile's history is ready, then for a quiet window with no probe write, no store update and no
+commit. A file write used to be enough, but the session and history saves moved to Swift and no longer count as probe
+writes, so `idle` began inside the launch tail: the recent-tab wake (`reloadRecentTabs`, up to 4 tabs 2 s apart, by
+RAM) and the seed's `history.json` import into Chrome, which ends about 22 s after process start. `idle` returns
+`settled: false` when the app never goes quiet within 30 s, which is a real background loop.
 
 The dev harness and perf probe work in Debug and Release test instances. Release requires test facilities:
 `ACDevBuild=YES`, or an app without a team signature and a nonempty scratch `SOLARA_DATA_DIR`. A team-signed

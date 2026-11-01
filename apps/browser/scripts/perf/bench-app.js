@@ -30,12 +30,20 @@ async function quiet(ms = 400) {
   await sleep(ms);
 }
 
-async function writesSettled(quietMs = 3000, timeoutMs = 30000) {
+const total = (counter) => Object.values(counter ?? {}).reduce((a, b) => a + (typeof b === "number" ? b : 0), 0);
+const historyLoaded = () => {
+  const s = S();
+  return s.profileOrder.filter((id) => !id.startsWith("incognito:")).every((id) => s.historyReady[id]);
+};
+
+async function settled(quietMs = 3000, timeoutMs = 30000) {
   const end = Date.now() + timeoutMs;
+  if (!(await until(historyLoaded, timeoutMs))) return false;
   while (Date.now() < end) {
     P.reset();
     await sleep(quietMs);
-    if (!Object.keys(P.read().writes).length) return true;
+    const read = P.read();
+    if (!Object.keys(read.writes).length && !total(read.storeUpdates) && !read.commits) return true;
   }
   return false;
 }
@@ -103,10 +111,10 @@ const scenarios = {
 
   async idle({ seconds = 10 } = {}) {
     await quiet(1000);
-    await writesSettled();
+    const calm = await settled();
     P.reset();
     await sleep(seconds * 1000);
-    return { stats: P.read() };
+    return { settled: calm, stats: P.read() };
   },
 
   async typing({ query = "github.com/facebook/react/pull", gapMs = 60 } = {}) {
@@ -146,7 +154,7 @@ const scenarios = {
       await sleep(250);
     }
     await quiet();
-    await writesSettled(1200, 10000);
+    await settled(1200, 10000);
     P.reset();
     const steps = [];
     for (const id of ids) {
@@ -200,7 +208,7 @@ const scenarios = {
     await drag.scrollTo(w, 0);
     if (!JSON.parse(drag.probe(w))?.viewport) throw new Error("no native sidebar viewport");
     await sleep(300);
-    await writesSettled();
+    await settled();
     P.reset();
     for (let i = 1; i <= steps; i++) {
       await drag.scrollTo(w, (distance * i) / steps);
@@ -513,7 +521,7 @@ function renderScenarios() {
     },
     async idleFor({ seconds = 60 } = {}) {
       await quiet(1500);
-      await writesSettled();
+      await settled();
       P.reset();
       await sleep(seconds * 1000);
       return { stats: P.read() };

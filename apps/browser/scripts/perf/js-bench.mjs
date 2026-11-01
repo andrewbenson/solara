@@ -54,7 +54,7 @@
 //     benchRevision   BENCH_REVISION below: this script's seed and scenarios
 //     results: [{ run, launchedAt (epoch ms before `open`), probeRevision, <scenario>: what acBench.run returned }]
 //       startup      { marks: { bundleStart, bundleEnd, firstCommit, firstWindow, processStart }, stats }
-//       idle, scroll, idleLate               { stats }
+//       idle, idleLate   { settled, stats }               scroll   { stats }
 //       typing       { keys: [ms per key], items, stats }       switchTabs, hover, storeUpdate   { steps: [ms], stats }
 //       openClose    { open: [ms], close: [ms], openStats, closeStats }
 //       pageLoad     { runs: [{ loadMs, stats }] }              profileSwipe   { runs: [{ ms, stats }] }
@@ -75,7 +75,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const appDir = resolve(here, "../..");
 const repo = resolve(appDir, "../..");
 const defaultOut = process.env.AC_PERF_OUT ?? "/tmp/ac-perf-js";
-const BENCH_REVISION = 4;
+const BENCH_REVISION = 5;
 
 const [command, ...rest] = process.argv.slice(2);
 const flags = {};

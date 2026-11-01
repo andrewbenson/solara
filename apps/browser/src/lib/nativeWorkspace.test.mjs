@@ -148,7 +148,7 @@ test("busy and refused hydrate leave every local slice untouched", () => {
       const before = S();
       dispatchReply = response;
       if (response.busy) assert.throws(() => S().hydrate({ history: {}, tabs: {} }), NativeStoreBusy);
-      else S().hydrate({ history: {}, tabs: {} });
+      else assert.throws(() => S().hydrate({ history: {}, tabs: {} }), /refused/);
       assert.equal(S(), before);
     }
   } finally {

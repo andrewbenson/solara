@@ -43,7 +43,7 @@ final class WebKitHub: NSObject, WKScriptMessageHandler {
   }
 
   private var lastBrowserId: Int32 = -1000
-  private var persistentStores: [String: WKWebsiteDataStore] = [:]
+  private var persistentStores: [Data: WKWebsiteDataStore] = [:]
   private var privateSessions: [String: PrivateSession] = [:]
   private var owners: [ObjectIdentifier: WeakTab] = [:]
   private var liveByKey: [String: WeakTab] = [:]
@@ -59,10 +59,10 @@ final class WebKitHub: NSObject, WKScriptMessageHandler {
   private var pendingExternal: [String: PendingExternal] = [:]
   private var externalAllowances: [String: ExternalGrant] = [:]
   private var lastExternal = 0
-  private var resumeHosts: [String: WKWebView] = [:]
-  private var deletedProfileStores: [String: WKWebsiteDataStore] = [:]
+  private var resumeHosts: [Data: WKWebView] = [:]
+  private var deletedProfileStores: [Data: WKWebsiteDataStore] = [:]
   #if DEBUG
-  private var storesHeldForTest: [String: WKWebsiteDataStore] = [:]
+  private var storesHeldForTest: [Data: WKWebsiteDataStore] = [:]
   #endif
 
   func nextBrowserId() -> Int32 {
@@ -100,18 +100,41 @@ final class WebKitHub: NSObject, WKScriptMessageHandler {
     return bytes.withUnsafeBufferPointer { NSUUID(uuidBytes: $0.baseAddress!) as UUID }
   }
 
+  static func profileDirectories(_ profile: String) -> [URL] {
+    let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
+    let webkit = library.appendingPathComponent("WebKit", isDirectory: true)
+    let application = Bundle.main.bundleIdentifier ?? ProcessInfo.processInfo.processName
+    return [webkit, webkit.appendingPathComponent(application, isDirectory: true)].map {
+      $0.appendingPathComponent("WebsiteDataStore", isDirectory: true).appendingPathComponent(storeIdentifier(profile).uuidString.lowercased(), isDirectory: true)
+    }
+  }
+
+  static func establishedProfileDirectory(_ profile: String) -> Bool {
+    do {
+      guard try profileDirectories(profile).contains(where: { try ChromiumProfileData.directoryIdentity($0) != nil }) else {
+        NSLog("[webkit] REFUSING profile data deletion: existing store has no established directory: %@", storeIdentifier(profile).uuidString)
+        return false
+      }
+      return true
+    } catch {
+      NSLog("[webkit] REFUSING profile data deletion: directory resolution failed: %@", String(describing: error))
+      return false
+    }
+  }
+
   static let profileDataRemovalDeadline: TimeInterval = 10
 
   func dataStore(for profile: String) -> WKWebsiteDataStore {
     if Self.isPrivate(profile) { return session(Self.privateSession(profile)).store }
-    if let store = persistentStores[profile] ?? deletedProfileStores[profile] { return store }
+    let key = Data(profile.utf8)
+    if let store = persistentStores[key] ?? deletedProfileStores[key] { return store }
     let store = WKWebsiteDataStore(forIdentifier: Self.storeIdentifier(profile))
-    persistentStores[profile] = store
+    persistentStores[key] = store
     return store
   }
 
   func liveDataStore(for profile: String, storeKey key: String) -> WKWebsiteDataStore? {
-    guard Self.isPrivate(profile) else { return key == profile ? dataStore(for: profile) : nil }
+    guard Self.isPrivate(profile) else { return key.utf16.elementsEqual(profile.utf16) ? dataStore(for: profile) : nil }
     let name = Self.privateSession(profile)
     guard let live = privateSessions[name], key == "private@\(name)#\(live.token)" else { return nil }
     return live.store
@@ -298,7 +321,7 @@ final class WebKitHub: NSObject, WKScriptMessageHandler {
   }
 
   func resumeHost(for profile: String) -> WKWebView {
-    let key = storeKey(profile)
+    let key = Data(storeKey(profile).utf8)
     if let host = resumeHosts[key] { return host }
     let host = WKWebView(frame: .zero, configuration: configuration(profile: profile))
     resumeHosts[key] = host
@@ -489,22 +512,24 @@ final class WebKitHub: NSObject, WKScriptMessageHandler {
     }
   }
 
-  func deleteProfileData(_ profile: String, completion: @escaping (Bool) -> Void) {
+  func deleteProfileData(_ profile: String, deletionAllowed: @escaping () -> Bool = { true }, completion: @escaping (Bool) -> Void) {
     guard !SolaraCoreHost.safeMode else { return completion(false) }
     guard !Self.isPrivate(profile) else { return completion(true) }
+    guard deletionAllowed() else { return completion(false) }
     let identifier = Self.storeIdentifier(profile)
-    deletedProfileStores[profile] = .nonPersistent()
+    let key = Data(profile.utf8)
+    deletedProfileStores[key] = .nonPersistent()
     downloads.cancelAll(profile: profile)
-    if let host = resumeHosts.removeValue(forKey: profile) { Self.close(host) }
+    if let host = resumeHosts.removeValue(forKey: key) { Self.close(host) }
     let prefix = profile + "|"
-    rememberedPermissions = rememberedPermissions.filter { !$0.key.hasPrefix(prefix) }
-    zoomByHost = zoomByHost.filter { !$0.key.hasPrefix(prefix) }
-    externalAllowances = externalAllowances.filter { !$0.key.hasPrefix(prefix) }
+    rememberedPermissions = rememberedPermissions.filter { !$0.key.utf16.starts(with: prefix.utf16) }
+    zoomByHost = zoomByHost.filter { !$0.key.utf16.starts(with: prefix.utf16) }
+    externalAllowances = externalAllowances.filter { !$0.key.utf16.starts(with: prefix.utf16) }
     var answered = false
     let answer = { [weak self] (removed: Bool) in
       guard !answered else { return }
       answered = true
-      if removed { self?.deletedProfileStores.removeValue(forKey: profile) }
+      if removed { self?.deletedProfileStores.removeValue(forKey: key) }
       completion(removed)
     }
     DispatchQueue.main.asyncAfter(deadline: .now() + Self.profileDataRemovalDeadline) {
@@ -512,15 +537,16 @@ final class WebKitHub: NSObject, WKScriptMessageHandler {
       NSLog("[webkit] removing the data store %@ didn't finish in %.0f s", identifier.uuidString, Self.profileDataRemovalDeadline)
       answer(false)
     }
-    let removeStore = {
-      WebKitStoreRemovals.exists(identifier) { exists in
-        guard exists else { return answer(true) }
-        WebKitStoreRemovals.remove(identifier, tries: 12, done: answer)
+    WebKitStoreRemovals.exists(identifier) { exists in
+      guard exists else { return answer(true) }
+      guard Self.establishedProfileDirectory(profile), deletionAllowed() else { return answer(false) }
+      let removeStore = {
+        WebKitStoreRemovals.remove(identifier, tries: 12, deletionAllowed: deletionAllowed, done: answer)
       }
+      guard let store = self.persistentStores.removeValue(forKey: key) else { return removeStore() }
+      self.closeViews(using: store)
+      store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) { DispatchQueue.main.async(execute: removeStore) }
     }
-    guard let store = persistentStores.removeValue(forKey: profile) else { return removeStore() }
-    closeViews(using: store)
-    store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) { DispatchQueue.main.async(execute: removeStore) }
   }
 
   #if DEBUG
@@ -528,7 +554,7 @@ final class WebKitHub: NSObject, WKScriptMessageHandler {
     WebKitStoreRemovals.exists(Self.storeIdentifier(profile), done: done)
   }
 
-  func holdStoreForTest(_ profile: String) { storesHeldForTest[profile] = dataStore(for: profile) }
+  func holdStoreForTest(_ profile: String) { storesHeldForTest[Data(profile.utf8)] = dataStore(for: profile) }
 
   func touchStore(_ profile: String, done: @escaping (Bool) -> Void) {
     let cookies = dataStore(for: profile).httpCookieStore
@@ -552,8 +578,9 @@ enum WebKitStoreRemovals {
     }
   }
 
-  static func remove(_ identifier: UUID, tries: Int, done: @escaping (Bool) -> Void) {
+  static func remove(_ identifier: UUID, tries: Int, deletionAllowed: @escaping () -> Bool = { true }, done: @escaping (Bool) -> Void) {
     webKitStarted
+    guard deletionAllowed() else { return done(false) }
     WKWebsiteDataStore.remove(forIdentifier: identifier) { error in
       DispatchQueue.main.async {
         if error == nil { return done(true) }
@@ -561,7 +588,7 @@ enum WebKitStoreRemovals {
           NSLog("[webkit] the data store %@ is still in use: %@", identifier.uuidString, error.map { "\($0)" } ?? "")
           return done(false)
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { remove(identifier, tries: tries - 1, done: done) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { remove(identifier, tries: tries - 1, deletionAllowed: deletionAllowed, done: done) }
       }
     }
   }
@@ -834,7 +861,7 @@ final class WebKitDownloads: NSObject, WKDownloadDelegate {
   func handles(_ id: String) -> Bool { id.hasPrefix("wk-download-") }
 
   func cancelAll(profile: String) {
-    for item in items.values where item.profile == profile && item.phase != .done { command("cancel", id: item.id) }
+    for item in items.values where item.profile.utf16.elementsEqual(profile.utf16) && item.phase != .done { command("cancel", id: item.id) }
   }
 
   func command(_ action: String, id: String) {

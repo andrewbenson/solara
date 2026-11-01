@@ -174,6 +174,14 @@ public struct ApplyRecords {
   }
 }
 
+public struct ApplyRefusal: Error, Sendable {
+  public let refused: [String]
+
+  public init(_ refused: [String]) {
+    self.refused = refused
+  }
+}
+
 public enum ApplyOutcome: Sendable, Equatable {
   case failed
   case applied
@@ -506,8 +514,12 @@ func applyAdapter(
   let records = ApplyRecords(known: { state.records.contains($0) }, now: now, horizon: horizon, joined: state.applyAs![adapter.prefix] == "joined")
   beforeApply?(mine)
   let outcome: ApplyOutcome
+  var refused = Set<JSKey>()
   do {
     outcome = try await adapter.applyKeys(view, mine, { parseBase(state.base[$0]) }, records)
+  } catch let error as ApplyRefusal {
+    refused = Set<JSKey>(error.refused.map(JSKey.init))
+    outcome = .applied
   } catch {
     outcome = .failed
   }
@@ -518,7 +530,7 @@ func applyAdapter(
   let written: Set<JSKey>? = if writtenKeysOnly, case .written(let keys) = outcome { Set(keys.map(JSKey.init)) } else { nil }
   var left: [String] = []
   for key in mine {
-    if let written, !written.contains(JSKey(key)) {
+    if refused.contains(JSKey(key)) || (written.map { !$0.contains(JSKey(key)) } ?? false) {
       left.append(key)
     } else if let value = shown[key] {
       state.base[key] = syncCanonical(value)

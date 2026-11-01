@@ -49,7 +49,17 @@ final class ImportAdapter: ImportServices {
       "target": request.target,
       "withoutKey": request.withoutKey,
     ]
-    guard let result = await SettingsAdapters.js("import.run", arg) as? [String: Any] else { return .cancelledRun }
+    return Self.runOutcome(await SettingsAdapters.js("import.run", arg), kinds: request.kinds)
+  }
+
+  static func runOutcome(_ value: Any?, kinds: [ImportKind]) -> ImportRunOutcome {
+    guard let result = value as? [String: Any] else {
+      return ImportRunOutcome(
+        status: Dictionary(uniqueKeysWithValues: kinds.map { ($0, ImportStatus.failed) }),
+        failures: kinds.map { ImportFailure(kind: $0) },
+        notes: ["Import couldn't finish. Try again."]
+      )
+    }
     if result.bool("cancelled") == true { return .cancelledRun }
     let extensions = result.dict("extensions") ?? [:]
     return ImportRunOutcome(
@@ -91,8 +101,9 @@ final class ImportAdapter: ImportServices {
     return .read(profiles: profiles, windowCount: result.int("windowCount") ?? 0)
   }
 
-  func runDia(profileIds: [String], target: String, pinned: Bool, open: Bool) async -> ImportCounts {
-    Self.counts(await SettingsAdapters.js("import.runDia", ["profileIds": profileIds, "target": target, "pinned": pinned, "open": open]) as? [String: Any])
+  func runDia(profileIds: [String], target: String, pinned: Bool, open: Bool) async -> ImportRunOutcome {
+    let kinds: [ImportKind] = (open ? [.tabs] : []) + (pinned ? [.pinnedTabs] : [])
+    return Self.runOutcome(await SettingsAdapters.js("import.runDia", ["profileIds": profileIds, "target": target, "pinned": pinned, "open": open]), kinds: kinds)
   }
 
   func importSafariExport(path: String, target: String) async -> ImportFileOutcome {

@@ -20,7 +20,7 @@ final class FakeImportServices: ImportServices {
   var holdRun = false
   var diaStatuses: [DiaStatus] = [.granted]
   var diaRead: DiaRead = .read(profiles: ImportFixtures.diaProfiles, windowCount: 2)
-  var diaCounts = ImportCounts(tabs: 9)
+  var diaOutcome = ImportRunOutcome(status: [.tabs: .done, .pinnedTabs: .done], counts: ImportCounts(tabs: 9))
   var fileOutcome: ImportFileOutcome = .imported(ImportCounts(bookmarks: 4), failed: [])
   var openDiaSucceeds = true
   var chosenFile: String? = "/Users/owner/Downloads/Safari Export.zip"
@@ -94,9 +94,9 @@ final class FakeImportServices: ImportServices {
     return diaRead
   }
 
-  func runDia(profileIds: [String], target: String, pinned: Bool, open: Bool) async -> ImportCounts {
+  func runDia(profileIds: [String], target: String, pinned: Bool, open: Bool) async -> ImportRunOutcome {
     calls.append("runDia \(profileIds.joined(separator: ",")) \(target) pinned=\(pinned) open=\(open)")
-    return diaCounts
+    return diaOutcome
   }
 
   func importSafariExport(path: String, target: String) async -> ImportFileOutcome {

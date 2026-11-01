@@ -52,10 +52,11 @@ final class FakeProfilesServices: ProfilesServices {
     calls.append("update \(id)")
   }
 
-  func deleteProfile(_ id: String) {
+  func deleteProfile(_ id: String, completion: @escaping @MainActor (Bool) -> Void) {
     profiles.removeAll { $0.id == id }
     if store.string("defaultProfileId") == id, let first = profiles.first { store.values["defaultProfileId"] = .string(first.id) }
     calls.append("delete \(id)")
+    completion(true)
   }
 
   func reorderProfiles(_ ids: [String]) {

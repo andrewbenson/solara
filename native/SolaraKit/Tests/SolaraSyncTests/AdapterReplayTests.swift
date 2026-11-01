@@ -203,7 +203,8 @@ func replayAdapterCase(_ json: JSONObject) async throws -> String?? {
   if json["call"] == "extract" {
     let context = ExtractContext(
       base: { lookups.value("base", $0) }, queued: { lookups.flag("queued", $0) }, now: json["at"]?.number ?? 0, known: { lookups.flag("known", $0) },
-      remote: { lookups.value("remote", $0) }, stamp: { lookups.value("stamp", $0)?.string })
+      remote: { lookups.value("remote", $0) }, stamp: { lookups.value("stamp", $0)?.string },
+      unapplied: { json["unappliedGiven"]?.bool == true ? lookups.flag("unapplied", $0) : false })
     let extraction = try await adapter.extract(context)
     let expected = json["values"]
     if let extraction {

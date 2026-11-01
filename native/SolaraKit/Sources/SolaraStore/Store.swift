@@ -352,6 +352,9 @@ public final class Store: Sendable {
         state: session.state, memory: session.memory, depth: session.depth, heard: session.heard,
         effects: session.effects, result: session.result, mirroring: session.mirroring, itemSerial: session.itemSerial,
         liveEffectsAppliedThrough: session.liveEffectsAppliedThrough, liveEffectSources: session.liveEffectSources)
+      let previousSyncOrigin = session.fromSyncOrigin
+      session.fromSyncOrigin = syncRequest || replaying
+      defer { session.fromSyncOrigin = previousSyncOrigin }
       if replaying {
         session.memory.fromSyncDepth += 1
         defer { session.memory.fromSyncDepth -= 1 }

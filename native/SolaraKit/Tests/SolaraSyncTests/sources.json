@@ -1,6 +1,6 @@
 {
   "Adapters": {
-    "apps/browser/src/sync/adapters.ts": "56f9d4d72ecc7f285b44e7baf261c55a5810b020fc561d2aca37849fe9f0e3bd",
+    "apps/browser/src/sync/adapters.ts": "c9e8e040626b6de122ae7217c7926724b6727beacb86c5a044d10a4413c0bb02",
     "apps/browser/src/sync/pinned.ts": "2d2979d89fbc5bf46a8b7ccadaf38f8b989f15f953862d5c2878326fbec8498c",
     "apps/browser/src/sync/extensions.ts": "cacdd4a017e4abd5ada02e0b9e26a4fd7ccc11aff4c61dcd88231f8e48fbf688"
   },
@@ -30,13 +30,13 @@
     "packages/sync/src/extensions.ts": "45fc934056f519406ed37a984b7cd290326830ea2fd9808b401d772063063058"
   },
   "Scenarios/scope-redesign.json.deflate": {
-    "packages/sync/src/scope.ts": "3877f8d36514a368941ef9480db6fe9e5af8c1b38cd7f216baff1c8fe9c82205",
+    "packages/sync/src/scope.ts": "936c554ebe42e45d4a732a46380875eb81fc572f8f4aff6355b02e02c881505c",
     "packages/sync/src/hlc.ts": "ecb926f03ea07f95e35d26b1bafafc2c79b9fddcf2f87c09dfb346b06f3ed751",
     "packages/sync/src/canon.ts": "8f5059064d488bdca755b53fef5a3220b06a7cd24327022d7abe420e310fab20",
     "packages/sync/src/order.ts": "f3ae5d5a3ee10adc89a30dcd35c6ca8353c704638bb6109977c411be3de4d537"
   },
   "Scenarios/scope.json.deflate": {
-    "packages/sync/src/scope.ts": "3877f8d36514a368941ef9480db6fe9e5af8c1b38cd7f216baff1c8fe9c82205",
+    "packages/sync/src/scope.ts": "936c554ebe42e45d4a732a46380875eb81fc572f8f4aff6355b02e02c881505c",
     "packages/sync/src/hlc.ts": "ecb926f03ea07f95e35d26b1bafafc2c79b9fddcf2f87c09dfb346b06f3ed751",
     "packages/sync/src/canon.ts": "8f5059064d488bdca755b53fef5a3220b06a7cd24327022d7abe420e310fab20",
     "packages/sync/src/order.ts": "f3ae5d5a3ee10adc89a30dcd35c6ca8353c704638bb6109977c411be3de4d537"

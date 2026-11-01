@@ -206,6 +206,31 @@ struct ImportModelTests {
     #expect(services.calls.suffix(2) == ["cancel", "close"])
   }
 
+  @Test func refusedDestinationFinishesWithPartialCountsAndFailures() async {
+    let (model, services) = await started { $0.unlocked = ["chrome"] }
+    services.outcome = ImportRunOutcome(status: [.bookmarks: .failed], failures: [ImportFailure(kind: .bookmarks, profiles: ["Second"])], counts: ImportCounts(bookmarks: 3))
+    model.sourceProfiles = ["Default", "Profile 1"]
+    model.goBack(to: .profiles)
+    await model.next()
+    #expect(model.step == .done)
+    #expect(model.counts.bookmarks == 3)
+    #expect(model.status[.bookmarks] == .failed)
+    #expect(model.failures == [ImportFailure(kind: .bookmarks, profiles: ["Second"])])
+  }
+
+  @Test func diaRefusedDestinationFinishesWithPartialCountsAndFailures() async {
+    let (model, services) = await started()
+    services.diaOutcome = ImportRunOutcome(status: [.tabs: .failed, .pinnedTabs: .failed], failures: [ImportFailure(kind: .tabs, profiles: ["Second"])], counts: ImportCounts(tabs: 4))
+    model.choose(ImportFixtures.dia)
+    await model.next()
+    model.sourceProfiles = ["p1", "p2"]
+    await model.next()
+    #expect(model.step == .done)
+    #expect(model.counts.tabs == 4)
+    #expect(model.status[.tabs] == .failed)
+    #expect(model.failures == [ImportFailure(kind: .tabs, profiles: ["Second"])])
+  }
+
   @Test func summaryWording() async {
     let (model, services) = await started { $0.unlocked = ["brave"] }
     services.outcome = ImportRunOutcome(counts: ImportCounts(bookmarks: 1, history: 1, tabs: 2, passwords: 1, cookies: 30, addresses: 1, cards: 2))

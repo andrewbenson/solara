@@ -139,11 +139,11 @@ extension Session {
     let finalTabs = Table(tabs)
     let splits = Splits.sanitizeSplits(Table(data.splits ?? JSMap()), finalTabs)
     let focused = data.focusedWindowId.flatMap { windows[$0] != nil ? $0 : nil } ?? windowOrder.last
-    let engines = Set(profilesData.values.map(engineIdOf))
+    let engines = Set(profilesData.values.map { JSKey(engineIdOf($0)) })
     var next = base
     next.profiles = Table(profilesData)
     next.profileOrder = profileOrder
-    next.orphanedProfileData = (data.orphanedProfileData ?? []).filter { !engines.contains($0) }
+    next.orphanedProfileData = (data.orphanedProfileData ?? []).filter { !engines.contains(JSKey($0)) }
     next.settings = settings
     next.windows = Table(windows)
     next.windowOrder = windowOrder

@@ -60,8 +60,13 @@ function NativeCreateProfile({ windowId, preset, onDone }: { windowId: string; p
       onPageEvent={(e) => {
         const ev = e.nativeEvent;
         if (ev.kind === "create") {
-          const id = useBrowser.getState().createProfile({ name: String(ev.name ?? ""), color: ev.color as ProfileColor, shareWith: (ev.shareWith as string | null) ?? null });
-          onDone(id);
+          try {
+            const id = useBrowser.getState().createProfile({ name: String(ev.name ?? ""), color: ev.color as ProfileColor, shareWith: (ev.shareWith as string | null) ?? null });
+            onDone(id);
+          } catch (error) {
+            console.warn("[profiles] Creation refused", error);
+            onDone(null);
+          }
         } else if (ev.kind === "cancel") onDone(null);
       }}
     />

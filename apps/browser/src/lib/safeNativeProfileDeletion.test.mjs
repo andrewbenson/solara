@@ -29,10 +29,17 @@ test("native workspace action wrapping keeps the safe profile-deletion explanati
 });
 
 test("SolaraCoreHost refuses loaded and unloaded profile deletion with a reason before engine or disk access", () => {
-  const method = declaration(source("packages/solaracore/ios/SolaraCoreHost.mm"), "+ (void)deleteProfileData:");
-  const results = runNative("Profile.mm", method);
-  assert.equal(results.length, 4);
-  for (const result of results) {
+  const host = source("packages/solaracore/ios/SolaraCoreHost.mm");
+  const helpers = ["NSMutableSet<NSString *> *ScheduledProfileDeletions()", "NSDictionary *DeletionLocation(NSString *profile)"].map((signature) => declaration(host, signature));
+  const method = declaration(host, "+ (void)deleteProfileData:");
+  const results = runNative("Profile.mm", [...helpers, "@implementation SolaraCoreHost", method, "@end"].join("\n"));
+  assert.equal(results.length, 6);
+  for (const result of results.slice(4)) {
+    assert.equal(result.callbacks, 1);
+    assert.deepEqual(result.remaining, ["live profile filesystem identity"]);
+    assert.equal(result.sentinelKept, true);
+  }
+  for (const result of results.slice(0, 4)) {
     assert.equal(result.callbacks, 1);
     if (result.safe) {
       assert.deepEqual(result.remaining, ["safe mode"]);
@@ -44,11 +51,11 @@ test("SolaraCoreHost refuses loaded and unloaded profile deletion with a reason 
       assert.equal(result.bookmarksKept, true);
       assert.equal(result.historyKept, true);
     } else {
-      assert.deepEqual(result.remaining, []);
+      assert.deepEqual(result.remaining, result.loaded ? ["Chromium deletion pending restart"] : []);
       assert.equal(result.engineLookups, 1);
       assert.equal(result.profileLookups, 1);
       assert.equal(result.engineCalls, result.loaded ? 1 : 0);
-      assert.equal(result.deletedProfiles, 1);
+      assert.equal(result.deletedProfiles, result.loaded ? 1 : 0);
       assert.equal(result.directoryExists, result.loaded);
       assert.equal(result.bookmarksKept, result.loaded);
       assert.equal(result.historyKept, result.loaded);
@@ -57,7 +64,7 @@ test("SolaraCoreHost refuses loaded and unloaded profile deletion with a reason 
 });
 
 test("SolaraCoreProfileData refuses default-profile deletion with a reason before calling services", () => {
-  const results = runNative("Profile.swift", source("packages/solaracore/ios/SolaraCoreProfileData.swift"), [], true);
+  const results = runNative("Profile.swift", [source("packages/solaracore/ios/ChromiumProfileData.swift"), declaration(source("packages/solaracore/ios/SolaraCoreProfileData.swift"), "enum SolaraCoreProfileData")].join("\n"), [], true);
   assert.deepEqual(results[0], { safe: true, remaining: ["safe mode"], callbacks: 1, calls: [] });
   assert.equal(results[1].safe, false);
   assert.deepEqual(results[1].remaining, []);
@@ -66,4 +73,46 @@ test("SolaraCoreProfileData refuses default-profile deletion with a reason befor
     "clearBrowsingData", "ac_browsing_data_clear", "listPasswords", "listPasswords", "neverSaveOrigins", "neverSaveOrigins",
     "addresses", "addresses", "cards", "cards", "listExtensions", "listExtensions", "siteSettingsOrigins", "siteSettingsOrigins", "zoomLevels", "zoomLevels",
   ]);
+});
+
+test("WebKit deletion preserves exact live identities beside Unicode and case aliases", () => {
+  const webkit = source("packages/solaracore/ios/WebKitHub.swift");
+  const fields = ["persistentStores", "deletedProfileStores", "resumeHosts", "rememberedPermissions", "zoomByHost", "externalAllowances"].map((name) => {
+    const line = webkit.split("\n").find((line) => line.includes(`private var ${name}:`));
+    assert.ok(line, name);
+    return line.replace("ExternalGrant", "Bool");
+  });
+  const hubMethods = ["static func isPrivate(", "static func privateSession(", "static func storeIdentifier(", "static func establishedProfileDirectory(", "func dataStore(for", "func resumeHost(for", "func deleteProfileData("].map((signature) => declaration(webkit.replace("= { true }, completion:", "= alwaysAllowDeletion, completion:"), signature));
+  const program = [
+    source("packages/solaracore/ios/ChromiumProfileData.swift"), "final class WebKitHub {", ...fields, "let downloads = WebKitDownloads()", "static let profileDataRemovalDeadline: TimeInterval = 0.5", ...hubMethods, "}",
+    "final class WebKitDownloads { var items: [String: Item] = [:]", declaration(webkit, "func cancelAll(profile:"), "}",
+  ].join("\n");
+  const results = runNative("WebKitProfile.swift", program, [], true);
+  assert.equal(results.length, 12);
+  for (const result of results.slice(10)) {
+    assert.equal(result.unknownLayoutRefused, true);
+    assert.equal(result.storeKept, true);
+    assert.equal(result.dataKept, true);
+    assert.equal(result.removalNotCalled, true);
+  }
+  for (const result of results.slice(8, 10)) {
+    assert.equal(result.refused, true);
+    assert.equal(result.storeKept, true);
+    assert.equal(result.initialClearRefused, true);
+  }
+  for (const result of results.slice(0, 8)) {
+    assert.equal(result.completed, true, JSON.stringify(result));
+    assert.equal(result.liveKept, true, JSON.stringify(result));
+    assert.equal(result.deleted, true, JSON.stringify(result));
+    assert.equal(result.downloadsExact, true, JSON.stringify(result));
+    assert.equal(result.metadataExact, true, JSON.stringify(result));
+  }
+});
+
+test("filesystem identity refuses case aliases and cross-engine live directories", () => {
+  const results = runNative("DirectoryIdentity.swift", source("packages/solaracore/ios/ChromiumProfileData.swift"), [], true);
+  assert.equal(results.length, 7);
+  for (const result of results) {
+    for (const [name, passed] of Object.entries(result)) assert.equal(passed, true, name);
+  }
 });

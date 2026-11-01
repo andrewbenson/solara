@@ -171,6 +171,15 @@ func legacyThemeOf(_ record: JSONValue) -> JSONValue? {
   return sanitizedTheme(th)
 }
 
+func applySyncedProfilePatch(_ store: SyncStore, _ id: String, _ patch: JSONObject) throws {
+  guard let profile = store.state.profiles[id] else { return }
+  guard ProfileDataCleanup.validProfileId(id), ProfileDataCleanup.validProfileId(profile.id),
+    ProfileDataCleanup.validProfileId(profile.dataId ?? profile.id) else {
+    throw CommandError("Profile ids and data ids must use a generated lowercase profile id.")
+  }
+  try store.run(Command("updateProfile", [.string(id), .object(patch)]))
+}
+
 public final class ProfilesAdapter: SyncAdapter {
   public let prefix = "prof:"
   public var adoptRemoteOnJoin: Bool { true }
@@ -194,7 +203,12 @@ public final class ProfilesAdapter: SyncAdapter {
       var record: JSONObject = ["n": .string(p.name), "c": .string(p.color)]
       if let icon = p.json["icon"] { record["i"] = icon }
       if id == Settings.defaultProfileID { record["d"] = true }
-      values["prof:\(syncId)"] = .object(record)
+      let key = "prof:\(syncId)"
+      let pending = link["themeAdopting"]?.truthy == true || context.unapplied(key)
+      if pending && syncCanonical(context.base(key) ?? .null) != syncCanonical(.object(record)) {
+        if let remoteTheme = context.remote(key)?["th"] { record["th"] = remoteTheme }
+      }
+      values[key] = .object(record)
     }
     return extraction(values)
   }
@@ -202,17 +216,24 @@ public final class ProfilesAdapter: SyncAdapter {
   public func apply(_ visible: [(key: String, value: JSONValue)], _ changed: [String], _ base: (String) -> JSONValue?, _ records: ApplyRecords) async throws -> Bool? {
     let shown = shown(visible)
     let changedSet = OrderedSet(changed)
+    var refused = OrderedSet<String>()
     for (id, link) in linkedProfiles(store, links()) {
       let syncId = syncIdOf(link)
-      guard let record = shown["prof:\(syncId)"], record.truthy, changedSet.contains("prof:\(syncId)") else { continue }
+      let key = "prof:\(syncId)"
+      guard let record = shown[key], record.truthy, changedSet.contains(key) else { continue }
       guard let profile = store.state.profiles[id] else { continue }
       var patch = JSONObject()
       if let n = record["n"] { patch["name"] = n }
       if let c = record["c"] { patch["color"] = c }
       if let i = record["i"] { patch["icon"] = i }
       if profile.theme == nil && !records.known("pth:\(syncId)"), let legacy = legacyThemeOf(record) { patch["theme"] = legacy }
-      try store.run(Command("updateProfile", [.string(id), .object(patch)]))
+      do {
+        try applySyncedProfilePatch(store, id, patch)
+      } catch {
+        refused.insert(key)
+      }
     }
+    if !refused.isEmpty { throw ApplyRefusal(refused.elements) }
     return nil
   }
 }
@@ -257,15 +278,21 @@ public final class ProfileThemesAdapter: SyncAdapter {
   public func apply(_ visible: [(key: String, value: JSONValue)], _ changed: [String], _ base: (String) -> JSONValue?, _ records: ApplyRecords) async throws -> Bool? {
     let shown = shown(visible)
     let changedSet = OrderedSet(changed)
+    var refused = OrderedSet<String>()
     for (id, link) in linkedProfiles(store, links()) {
       let syncId = syncIdOf(link)
       let key = "pth:\(syncId)"
       let angleKey = Self.angleKey(syncId)
       if !changedSet.contains(key) && !changedSet.contains(angleKey) { continue }
       guard let theme = themeFromRecord(shown[key], shown[angleKey]) else { continue }
-      try store.run(Command("updateProfile", [.string(id), ["theme": theme ?? .null]]))
-      adopted(id)
+      do {
+        try applySyncedProfilePatch(store, id, ["theme": theme ?? .null])
+        adopted(id)
+      } catch {
+        for pending in [key, angleKey] where changedSet.contains(pending) { refused.insert(pending) }
+      }
     }
+    if !refused.isEmpty { throw ApplyRefusal(refused.elements) }
     return nil
   }
 }

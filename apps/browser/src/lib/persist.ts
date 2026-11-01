@@ -402,7 +402,7 @@ function startDerivedServices({ forgetsIncognito }: { forgetsIncognito: boolean 
   const stopFavicons = startFavicons();
   const stopHistory = startHistory();
   const stopBookmarks = startBookmarks();
-  const stopProfileData = startProfileDataCleanup();
+  const stopProfileData = nativeOwnsWorkspace() ? () => {} : startProfileDataCleanup();
   const stopIncognito = forgetsIncognito
     ? useBrowser.subscribe((s, prev) => {
         if (s.windows !== prev.windows) forgetClosedIncognito(s, prev);

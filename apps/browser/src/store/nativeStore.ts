@@ -103,6 +103,8 @@ export function hydrateFromNative(store: Replica): boolean {
   return true;
 }
 
+export const isApplyingNativeState = () => applying > 0;
+
 export function withApplier<T>(run: () => T): T {
   applying++;
   try {
@@ -187,7 +189,11 @@ function dispatchCommands(commands: StoreCommand | StoreCommand[], acceptedOnly 
     throw new NativeStoreBusy();
   }
   if (!acceptedOnly || !response.error) afterApplied(response.effects, response.rev);
-  if (response.error) console.warn("The native store refused", commands, response.error);
+  if (response.error) {
+    const listed = Array.isArray(commands) ? commands : [commands];
+    if (listed.some(({ name }) => name === "createProfile" || name === "updateProfile" || name === "deleteProfile" || name === "hydrate" || name === "applyState" || name === "attachReplicaProfiles")) throw new Error(response.error);
+    console.warn("The native store refused", commands, response.error);
+  }
   return response;
 }
 
@@ -300,7 +306,7 @@ export function attachReplica(store: Replica, caches: (s: BrowserState) => Store
     inPatchOrigin(commit.patch, () => afterApplied(commit.effects, commit.rev));
   });
   const sendProfiles = (s: BrowserState) => nativeWrite({ name: "applyState", args: [{ profiles: s.profiles, profileOrder: s.profileOrder }] });
-  if (!ownsWorkspace) sendProfiles(store.getState());
+  if (!ownsWorkspace) nativeWrite({ name: "attachReplicaProfiles", args: [{ profiles: store.getState().profiles, profileOrder: store.getState().profileOrder }] });
   let lastCaches = new Map<string, unknown>();
   let pushingCaches = false;
   const pushCaches = (s: BrowserState) => {

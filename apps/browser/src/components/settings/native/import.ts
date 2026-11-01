@@ -101,6 +101,7 @@ async function run(req: RunRequest) {
   const failed = new Map<ImportKind, string[]>(refused.map((k) => [k, selected.map((p) => p.name)]));
   const add = (c: ImportCounts) => (Object.keys(total) as (keyof ImportCounts)[]).forEach((k) => (total[k] += c[k]));
   let destinationIndex = 0;
+  let activeProfileIndex = 0;
   const found = new Map<string, ImportedExtension>();
   const left: string[] = [];
   let extensionsProfile = "";
@@ -108,69 +109,86 @@ async function run(req: RunRequest) {
     await api.unlockBrowser(source.id).catch(() => {});
   }
 
-  for (const profile of selected) {
-    let result: ImportResult;
-    const profileKinds = tabsLocked(profile) ? order.filter((k) => k !== "tabs") : order;
-    try {
-      result = await api.importData(source.id, profile.id, profileKinds, {
-        spaceIds: bySpaces ? req.spaceIds : undefined,
-        signal: abort.signal,
-        onProgress: (p) => {
-          if (p.phase === "start") setStatus(p.kind, () => "active");
-          if (p.phase === "end") setStatus(p.kind, (current) => (current === "failed" ? current : "done"));
-        },
-      });
-    } catch (e) {
-      if (codeOf(e) === "cancelled") return { cancelled: true };
-      for (const k of profileKinds) failed.set(k, [...(failed.get(k) ?? []), profile.name]);
-      continue;
-    }
-    for (const k of result.failed) failed.set(k, [...(failed.get(k) ?? []), profile.name]);
-    for (const w of result.warnings) {
-      if (["undecryptable", "skipped", "locked"].includes(w.code) && !result.failed.includes(w.kind!)) left.push(`${w.message}.`);
-    }
-    const refused = (k: ImportKind) => {
-      const names = failed.get(k) ?? [];
-      if (!names.includes(profile.name)) failed.set(k, [...names, profile.name]);
-    };
-
-    if (bySpaces) {
-      let first: string | null = null;
-      for (const space of result.spaces) {
-        const name = space.name || "Space";
-        const dest = await destination(req.target, destinationIndex++, name, space.color, space.emoji, first);
-        first ??= dest;
-        const r = importArcSpace(dest, space, result.favicons);
-        add({ ...emptyCounts(), tabs: r.tabs, bookmarks: r.bookmarks });
-        if (r.skipped) left.push(`${plural(r.skipped, "link")} in ${name}'s folders weren't imported: each folder brings up to ${MAX_DRAFT_LINKS.toLocaleString("en-US")} links.`);
+  try {
+    for (const [profileIndex, profile] of selected.entries()) {
+      activeProfileIndex = profileIndex;
+      let result: ImportResult;
+      const profileKinds = tabsLocked(profile) ? order.filter((k) => k !== "tabs") : order;
+      try {
+        result = await api.importData(source.id, profile.id, profileKinds, {
+          spaceIds: bySpaces ? req.spaceIds : undefined,
+          signal: abort.signal,
+          onProgress: (p) => {
+            if (p.phase === "start") setStatus(p.kind, () => "active");
+            if (p.phase === "end") setStatus(p.kind, (current) => (current === "failed" ? current : "done"));
+          },
+        });
+      } catch (e) {
+        if (codeOf(e) === "cancelled") return { cancelled: true };
+        for (const k of profileKinds) failed.set(k, [...(failed.get(k) ?? []), profile.name]);
+        continue;
       }
-      const dest = first ?? (await destination(req.target, destinationIndex++, result.profile?.name ?? profile.name, result.profile?.color));
-      add(await applyResult(dest, result, source.name, profileKinds, refused));
-      extensionsProfile ||= dest;
-    } else {
-      const dest = await destination(req.target, destinationIndex++, result.profile?.name ?? profile.name, result.profile?.color ?? profile.color);
-      add(await applyResult(dest, result, source.name, profileKinds, refused));
-      extensionsProfile ||= dest;
+      for (const k of result.failed) failed.set(k, [...(failed.get(k) ?? []), profile.name]);
+      for (const w of result.warnings) {
+        if (["undecryptable", "skipped", "locked"].includes(w.code) && !result.failed.includes(w.kind!)) left.push(`${w.message}.`);
+      }
+      const refused = (k: ImportKind) => {
+        const names = failed.get(k) ?? [];
+        if (!names.includes(profile.name)) failed.set(k, [...names, profile.name]);
+      };
+
+      if (bySpaces) {
+        let first: string | null = null;
+        for (const space of result.spaces) {
+          const name = space.name || "Space";
+          const dest = await destination(req.target, destinationIndex++, name, space.color, space.emoji, first);
+          first ??= dest;
+          const r = importArcSpace(dest, space, result.favicons);
+          add({ ...emptyCounts(), tabs: r.tabs, bookmarks: r.bookmarks });
+          if (r.skipped) left.push(`${plural(r.skipped, "link")} in ${name}'s folders weren't imported: each folder brings up to ${MAX_DRAFT_LINKS.toLocaleString("en-US")} links.`);
+        }
+        const dest = first ?? (await destination(req.target, destinationIndex++, result.profile?.name ?? profile.name, result.profile?.color));
+        add(await applyResult(dest, result, source.name, profileKinds, refused));
+        extensionsProfile ||= dest;
+      } else {
+        const dest = await destination(req.target, destinationIndex++, result.profile?.name ?? profile.name, result.profile?.color ?? profile.color);
+        add(await applyResult(dest, result, source.name, profileKinds, refused));
+        extensionsProfile ||= dest;
+      }
+      if (source.family === "chromium" || source.family === "arc") {
+        for (const e of await api.listExtensions(source.id, profile.id).catch(() => [])) found.set(e.id, e);
+      }
     }
-    if (source.family === "chromium" || source.family === "arc") {
-      for (const e of await api.listExtensions(source.id, profile.id).catch(() => [])) found.set(e.id, e);
-    }
+    const status = Object.fromEntries(
+      Object.entries(progress.status).map(([k, v]) => [k, failed.has(k as ImportKind) ? "failed" : v === "failed" ? v : "done"]),
+    );
+    return {
+      status,
+      failures: [...failed].map(([kind, names]) => ({ kind, profiles: selected.length > 1 ? names : [] })),
+      counts: total,
+      notes: left,
+      extensions: {
+        profileId: extensionsProfile,
+        list: [...found.values()].map((e) => ({ id: e.id, name: e.name, webStoreUrl: e.webStoreUrl })),
+      },
+    };
+  } catch (error) {
+    const remaining = selected.slice(activeProfileIndex).map((p) => p.name);
+    for (const kind of order) failed.set(kind, [...new Set([...(failed.get(kind) ?? []), ...remaining])]);
+    return {
+      status: Object.fromEntries(Object.keys(progress.status).map((kind) => [kind, "failed"])),
+      failures: [...failed].map(([kind, profiles]) => ({ kind, profiles })),
+      counts: total,
+      notes: [...left, error instanceof Error ? error.message : String(error)],
+      extensions: {
+        profileId: extensionsProfile,
+        list: [...found.values()].map((e) => ({ id: e.id, name: e.name, webStoreUrl: e.webStoreUrl })),
+      },
+    };
+  } finally {
+    if (session.abort === abort) session.abort = null;
+    api.forgetUnlockedKeys();
   }
-  if (session.abort === abort) session.abort = null;
-  const status = Object.fromEntries(
-    Object.entries(progress.status).map(([k, v]) => [k, failed.has(k as ImportKind) ? "failed" : v === "failed" ? v : "done"]),
-  );
-  api.forgetUnlockedKeys();
-  return {
-    status,
-    failures: [...failed].map(([kind, names]) => ({ kind, profiles: selected.length > 1 ? names : [] })),
-    counts: total,
-    notes: left,
-    extensions: {
-      profileId: extensionsProfile,
-      list: [...found.values()].map((e) => ({ id: e.id, name: e.name, webStoreUrl: e.webStoreUrl })),
-    },
-  };
 }
 
 async function readDia() {
@@ -195,15 +213,27 @@ async function readDia() {
 
 async function runDia(req: { profileIds: string[]; target: string; pinned: boolean; open: boolean }) {
   const total = emptyCounts();
-  if (transientImportRefused()) return total;
+  const kinds: ImportKind[] = [...(req.open ? ["tabs" as const] : []), ...(req.pinned ? ["pinnedTabs" as const] : [])];
   const result = session.dia;
-  if (!result) return total;
-  const selected = result.profiles.filter((p) => req.profileIds.includes(p.id));
-  for (const [i, p] of selected.entries()) {
-    const dest = await destination(req.target, i, p.name);
-    total.tabs += importDiaProfile(dest, p, { pinned: req.pinned, open: req.open }, result.favicons);
+  const selected = result?.profiles.filter((p) => req.profileIds.includes(p.id)) ?? [];
+  let activeProfileIndex = 0;
+  try {
+    if (transientImportRefused()) throw new Error("Tab import is unavailable in safe mode.");
+    if (!result) throw new Error("Read Dia's tabs again before importing.");
+    for (const [i, p] of selected.entries()) {
+      activeProfileIndex = i;
+      const dest = await destination(req.target, i, p.name);
+      total.tabs += importDiaProfile(dest, p, { pinned: req.pinned, open: req.open }, result.favicons);
+    }
+    return { counts: total, status: Object.fromEntries(kinds.map((kind) => [kind, "done"])), failures: [], notes: [] };
+  } catch (error) {
+    return {
+      counts: total,
+      status: Object.fromEntries(kinds.map((kind) => [kind, "failed"])),
+      failures: kinds.map((kind) => ({ kind, profiles: selected.slice(activeProfileIndex).map((p) => p.name) })),
+      notes: [error instanceof Error ? error.message : String(error)],
+    };
   }
-  return total;
 }
 
 async function safariExport(path: string, target: string) {

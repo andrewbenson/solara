@@ -10,6 +10,7 @@ public struct StoreMemory: Sendable, Equatable {
   var closingWindowUndos: [String: ClosingWindowUndo] = [:]
   public var lastTabKeepsWindow = false
   public var fromSyncDepth = 0
+  var replicaProfilesAttached = false
   public var chromeTabs = ChromeTabsMemory()
   var pages: [String: PageReportMemory] = [:]
   var currentEpoch = 0

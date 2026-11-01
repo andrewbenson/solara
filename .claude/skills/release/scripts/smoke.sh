@@ -176,6 +176,11 @@ env = {
     "SOLARA_BACKGROUND": "1",
     "SOLARA_REMOTE_DEBUGGING_PORT": str(ports[0]),
     "SOLARA_TEST_REAUTH": "granted",
+    "SOLARA_TEST_REKEY": "1",
+    "SOLARA_TEST_KEYCHAIN": "file",
+    "SOLARA_TEST_REKEY_CRASH": "after-key-write",
+    "SOLARA_TEST_PROFILE_DELETE_CRASH": "after-ledger",
+    "SOLARA_TEST_PROFILE_DELETE_UNLOADED": "p-smoke-1",
     "SOLARA_CHROMIUM_SWITCHES": "--remote-debugging-port=" + str(ports[1]),
 }
 process = None
@@ -228,6 +233,8 @@ if not (profile / "Default").is_dir() or not (profile / "Local State").is_file()
     failed = failed or "scratch HOME does not contain the Chromium profile"
 if "[solaracore] ignored test environment overrides\n" not in log_text:
     failed = failed or "host did not report successful test environment clearing"
+if "[profile-delete]" in log_text or "[rekey] point" in log_text:
+    failed = failed or "a test hook ran on the shipped profile"
 if failed:
     raise SystemExit("FAIL  test facilities refused on the shipped profile (" + failed + ")")
 print("PASS  test facilities refused on the shipped profile (host cleared test environment; three ports closed while alive; scratch-HOME profile; clean quit)")

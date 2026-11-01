@@ -347,11 +347,12 @@ public final class ImportModel {
     status = Dictionary(uniqueKeysWithValues: order.map { ($0, ImportStatus.active) })
     preparing = (dia ?? []).filter { ids.contains($0.id) }.count
     step = .progress
-    let total = await services.runDia(profileIds: ids, target: target, pinned: wanted.contains(.pinnedTabs), open: wanted.contains(.tabs))
+    let outcome = await services.runDia(profileIds: ids, target: target, pinned: wanted.contains(.pinnedTabs), open: wanted.contains(.tabs))
     guard runId == id else { return }
-    status = Dictionary(uniqueKeysWithValues: order.map { ($0, ImportStatus.done) })
-    failures = []
-    counts = total
+    status = outcome.status
+    failures = outcome.failures
+    counts = outcome.counts
+    notes = outcome.notes
     await finish(id, delayed: true)
   }
 

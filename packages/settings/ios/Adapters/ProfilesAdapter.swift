@@ -66,10 +66,17 @@ final class ProfilesAdapter: ProfilesServices {
     SettingsJS.shared.fire("profiles.update", id, arg)
   }
 
-  func deleteProfile(_ id: String) {
-    guard profiles.count > 1, profiles.contains(where: { $0.id == id }) else { return }
-    profiles.removeAll { $0.id == id }
-    Task { _ = await SettingsAdapters.js("profiles.delete", id) }
+  func deleteProfile(_ id: String, completion: @escaping @MainActor (Bool) -> Void) {
+    guard profiles.count > 1, profiles.contains(where: { $0.id == id }) else { completion(false); return }
+    Task {
+      do {
+        _ = try await SettingsAdapters.jsThrowing("profiles.delete", id)
+        completion(true)
+      } catch {
+        NSLog("[settings] %@ failed: %@", "profiles.delete", String(describing: error))
+        completion(false)
+      }
+    }
   }
 
   func reorderProfiles(_ ids: [String]) {

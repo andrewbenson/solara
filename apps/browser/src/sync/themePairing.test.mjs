@@ -315,3 +315,77 @@ test("a leftover adoption flag on a theme that's already applied is cleared at s
     assert.deepEqual(S().profiles.default.theme, edited);
   });
 });
+
+for (const lane of [false, true]) {
+  for (const legacy of [false, true]) {
+    test(`join theme admission retains refused saved profiles and pending keys (${lane ? "redesign" : "legacy"} lane, ${legacy ? "prof" : "pth"} theme)`, async () => {
+      const { withApplier } = await import("../store/nativeStore.ts");
+      const { syncRedesign } = await import("./redesignSwitch.ts");
+      const { canonical } = await import("@solara/sync");
+      const originalLane = syncRedesign.on;
+      const before = S();
+      folder.clear();
+      downloading.clear();
+      damaged.clear();
+      shell.docs.clear();
+      const id = "Saved-MixedCase";
+      const goodId = "p-launch-2";
+      const keys = legacy ? ["prof:refused"] : ["pth:refused", "pth:refused:angle"];
+      const records = {
+        "prof:refused": { n: "Saved", c: "blue", i: null, ...(legacy ? { th: THEME_B } : {}) },
+        "prof:accepted": { n: "Accepted", c: "green", i: null, ...(legacy ? { th: THEME_B } : {}) },
+        ...(!legacy ? { "pth:refused": { t: THEME_B }, "pth:refused:angle": { a: 37 }, "pth:accepted": { t: THEME_B } } : {}),
+      };
+      const at = Date.now();
+      folder.set("remote", { scope: "app", payload: JSON.stringify({ v: 1, kind: "snapshot", device: "remote", at, vv: {}, seen: { remote: at }, records: Object.fromEntries(Object.entries(records).map(([key, v]) => [key, { v, h: `${at.toString(36).padStart(9, "0")}.0000.remote`, o: ["remote", 1] }])) }) });
+      try {
+        syncRedesign.on = lane;
+        withApplier(() => S().hydrate({ profiles: {
+          [id]: { ...before.profiles.default, id, name: "Saved", theme: THEME_A },
+          [goodId]: { ...before.profiles.default, id: goodId, name: "Accepted", theme: THEME_A },
+        }, profileOrder: [id, goodId] }));
+        const engine = await import(`./engine.ts?refusedJoin${lane}${legacy}`);
+        globalThis.__DEV__ = true;
+        engine.startSync();
+        globalThis.__DEV__ = false;
+        const state = globalThis.acSync.doc;
+        assert.ok("ok" in (await engine.enterRecoveryPhrase("/sync", "words")));
+        await engine.syncNow();
+        assert.deepEqual(S().profiles[id].theme, THEME_A, "refused join keeps the local saved theme");
+        assert.deepEqual(S().profiles[goodId].theme, THEME_B, "the later valid match still adopts");
+        assert.equal(state().profiles[id].themeAdopting, true);
+        const base = legacy ? canonical({ n: "Saved", c: before.profiles.default.color, i: before.profiles.default.icon }) : undefined;
+        for (const key of keys) {
+          assert.ok(state().scopes.app.unapplied.includes(key), `${key} remains pending`);
+          assert.equal(state().scopes.app.base[key], base, `${key} retains its local baseline`);
+        }
+        for (let cycle = 0; cycle < 2; cycle++) {
+          await engine.syncNow();
+          assert.deepEqual(S().profiles[id].theme, THEME_A);
+          assert.equal(state().profiles[id].themeAdopting, true);
+          for (const key of keys) {
+            assert.ok(state().scopes.app.unapplied.includes(key), `${key} is retried without settling`);
+            assert.equal(state().scopes.app.base[key], base);
+            assert.deepEqual(state().scopes.app.records[key].v, records[key], "the refused remote value remains available for retry");
+          }
+        }
+        if (legacy) {
+          S().updateProfile(id, { name: "Renamed locally" });
+          assert.equal(S().profiles[id].name, "Renamed locally");
+          await engine.syncNow();
+          await engine.syncNow();
+          const metadata = published("prof:").filter((op) => op.k === "prof:refused").at(-1);
+          assert.equal(metadata.v.n, "Renamed locally", "the metadata edit publishes");
+          assert.deepEqual(metadata.v.th, THEME_B, "publishing metadata preserves the refused remote theme");
+          assert.deepEqual(state().scopes.app.records["prof:refused"].v.th, THEME_B);
+          assert.deepEqual(S().profiles[id].theme, THEME_A);
+          assert.equal(state().profiles[id].themeAdopting, true);
+        }
+      } finally {
+        globalThis.__DEV__ = false;
+        syncRedesign.on = originalLane;
+        withApplier(() => useBrowser.setState(before, true));
+      }
+    });
+  }
+}

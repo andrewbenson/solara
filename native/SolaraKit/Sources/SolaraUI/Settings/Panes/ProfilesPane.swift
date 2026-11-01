@@ -90,7 +90,7 @@ public protocol ProfilesServices: AnyObject {
   func stats(profileId: String) -> ProfileStats
   func createProfile(name: String, color: ProfileColorValue, shareWith: String?) -> String
   func updateProfile(_ id: String, _ patch: ProfilePatch)
-  func deleteProfile(_ id: String)
+  func deleteProfile(_ id: String, completion: @escaping @MainActor (Bool) -> Void)
   func reorderProfiles(_ ids: [String])
   func setDefaultProfile(_ id: String)
   func clearHistory(profileId: String, since: Date?)
@@ -204,8 +204,9 @@ public final class ProfilesPaneModel: SettingsPaneProvider {
   func confirmDelete(_ prompt: ProfileDeletePrompt, navigation: SettingsNavigation?) {
     deletePrompt = nil
     guard !safeMode, prompt.canDelete, profiles.count > 1, profile(prompt.profileId) != nil else { return }
-    services.deleteProfile(prompt.profileId)
-    if prompt.fromDetails, profile(prompt.profileId) == nil { navigation?.go(.profiles) }
+    services.deleteProfile(prompt.profileId) { deleted in
+      if deleted, prompt.fromDetails, navigation?.profileId?.utf16.elementsEqual(prompt.profileId.utf16) == true { navigation?.go(.profiles) }
+    }
   }
 
   func refuseProfileEdit(_ id: String) -> Bool {

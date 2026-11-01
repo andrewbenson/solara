@@ -1,3 +1,4 @@
+import Foundation
 import SolaraModel
 
 let profileColors = ["blue", "green", "orange", "purple", "red", "yellow", "pink"]
@@ -11,7 +12,7 @@ func unusedProfileColor(_ profiles: Table<Profile>) -> String {
 
 func sharingProfiles(_ s: BrowserState, _ id: String) -> [String] {
   guard let p = s.profiles[id] else { return [] }
-  return s.profileOrder.filter { other in other != id && s.profiles[other].map { dataIdOf($0) == dataIdOf(p) } ?? false }
+  return s.profileOrder.filter { other in !other.jsEquals(id) && s.profiles[other].map { dataIdOf($0).jsEquals(dataIdOf(p)) } ?? false }
 }
 
 extension Session {
@@ -21,11 +22,21 @@ extension Session {
     }
     let s = state
     let source = shareWith.flatMap { $0.isEmpty ? nil : s.profiles[$0] }
+    if let source {
+      try requireGeneratedProfileIdentity(source, key: shareWith)
+      try refusePendingProfileData(engineIdOf(source))
+    }
     let trimmed = name.jsTrim()
+    let deleted = try ProfileDataTombstones.read(config.profileDataTombstones, pending: s.orphanedProfileData, live: s.profiles.values.map(engineIdOf))
+    func candidate() -> String { config.profileDataTombstones == nil ? newId("p") : "p-\(UUID().uuidString.lowercased())-1" }
+    var id = candidate()
+    while s.profiles[id] != nil || s.profiles.values.contains(where: { engineIdOf($0).jsEquals(id) })
+      || profileDataPending(s, id, launch: memory.ids.launch) || deleted.contains(where: { $0.jsEquals(id) }) { id = candidate() }
     var profile = Profile(
-      id: newId("p"), name: trimmed.isEmpty ? "Profile \(s.profileOrder.count + 1)" : trimmed, color: color ?? unusedProfileColor(s.profiles),
+      id: id, name: trimmed.isEmpty ? "Profile \(s.profileOrder.count + 1)" : trimmed, color: color ?? unusedProfileColor(s.profiles),
       icon: icon, createdAt: now)
     if let source { profile.dataId = dataIdOf(source) }
+    try requireGeneratedProfileIdentity(profile)
     var next = s
     next.profiles[profile.id] = profile
     next.profileOrder.append(profile.id)
@@ -46,7 +57,14 @@ extension Session {
     var json = p.json
     for (key, value) in patch.set { json[key] = value }
     for key in patch.unset { json.removeValue(forKey: key) }
-    if let updated = try? Profile(json: json) { next.profiles[id] = updated }
+    if let updated = try? Profile(json: json) {
+      if memory.fromSyncDepth > 0 || fromSyncOrigin { try requireGeneratedProfileIdentity(updated, key: id) }
+      if !updated.id.jsEquals(p.id) || !dataIdOf(updated).jsEquals(dataIdOf(p)) {
+        try requireGeneratedProfileIdentity(updated, key: id)
+        try refusePendingProfileData(engineIdOf(updated))
+      }
+      next.profiles[id] = updated
+    }
     set(next)
   }
 
@@ -55,10 +73,14 @@ extension Session {
       throw CommandError("Profiles can't be deleted in safe mode. Quit and open Solara normally to delete one.")
     }
     guard state.profiles[id] != nil, state.profileOrder.count > 1 else { return }
-    for w in state.windows.values where w.incognito && w.originalProfileId == id { closeWindow(w.id) }
+    let deleting = engineIdOf(state.profiles[id]!)
+    if !state.profiles.values.contains(where: { !$0.id.jsEquals(id) && engineIdOf($0).jsEquals(deleting) }) {
+      try ProfileDataTombstones.insert(deleting, at: config.profileDataTombstones, pending: state.orphanedProfileData, live: state.profiles.values.map(engineIdOf))
+    }
+    for w in state.windows.values where w.incognito && w.originalProfileId?.jsEquals(id) == true { closeWindow(w.id) }
     var s = state
-    let profileOrder = s.profileOrder.filter { $0 != id }
-    let fallback = s.settings.defaultProfileId == id ? profileOrder[0] : s.settings.defaultProfileId
+    let profileOrder = s.profileOrder.filter { !$0.jsEquals(id) }
+    let fallback = s.settings.defaultProfileId.jsEquals(id) ? profileOrder[0] : s.settings.defaultProfileId
     var neverTranslate = s.settings["neverTranslateSites"]?.object ?? [:]
     neverTranslate.removeValue(forKey: id)
     var developerMode = s.settings["developerMode"]?.object ?? [:]
@@ -69,10 +91,10 @@ extension Session {
     let shared = !sharingProfiles(s, id).isEmpty
     let engine = engineIdOf(s.profiles[id]!)
     let orphaned =
-      profileOrder.contains(where: { engineIdOf(s.profiles[$0]!) == engine }) || s.orphanedProfileData.contains(engine)
+      profileOrder.contains(where: { engineIdOf(s.profiles[$0]!).jsEquals(engine) }) || s.orphanedProfileData.contains(where: { $0.jsEquals(engine) })
       ? s.orphanedProfileData : s.orphanedProfileData + [engine]
-    for w in s.windows.values where w.profileId == id {
-      if let other = w.tabIds.first(where: { s.tabs[$0]?.profileId != id }) {
+    for w in s.windows.values where w.profileId.jsEquals(id) {
+      if let other = w.tabIds.first(where: { s.tabs[$0]?.profileId.jsEquals(id) != true }) {
         s = activated(s, w.activeTabIds[s.tabs[other]!.profileId] ?? other)
       } else {
         var o = NewTabOptions()
@@ -82,7 +104,7 @@ extension Session {
         s = activated(next, tab)
       }
     }
-    s = removeTabs(s, s.tabs.values.filter { $0.profileId == id }.map(\.id), record: false)
+    s = removeTabs(s, s.tabs.values.filter { $0.profileId.jsEquals(id) }.map(\.id), record: false)
     var windows = s.windows
     windows.touch()
     for w in windows.values where w.activeTabIds[id] != nil {
@@ -96,14 +118,14 @@ extension Session {
     next.profileOrder = profileOrder
     next.orphanedProfileData = orphaned
     next.settings = settings
-    next.groups = s.groups.filtered { $0.profileId != id }
-    next.closedTabs = s.closedTabs.filter { $0.tab.profileId != id }
-    next.cleanedTabs = s.cleanedTabs.filter { $0.tab.profileId != id }
-    next.closedGroups = s.closedGroups.filter { $0.tabs.allSatisfy { $0.profileId != id } }
-    next.deletedGroups = s.deletedGroups.filter { $0.tabs.allSatisfy { $0.profileId != id } }
+    next.groups = s.groups.filtered { !$0.profileId.jsEquals(id) }
+    next.closedTabs = s.closedTabs.filter { !$0.tab.profileId.jsEquals(id) }
+    next.cleanedTabs = s.cleanedTabs.filter { !$0.tab.profileId.jsEquals(id) }
+    next.closedGroups = s.closedGroups.filter { $0.tabs.allSatisfy { !$0.profileId.jsEquals(id) } }
+    next.deletedGroups = s.deletedGroups.filter { $0.tabs.allSatisfy { !$0.profileId.jsEquals(id) } }
     next.closedWindows = s.closedWindows.map { c in
       var kept = c
-      kept.tabs = c.tabs.filter { $0.snapshot.profileId != id }
+      kept.tabs = c.tabs.filter { !$0.snapshot.profileId.jsEquals(id) }
       return kept
     }.filter { !$0.tabs.isEmpty }
     next.parkedPins.remove([id])

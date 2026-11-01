@@ -28,8 +28,15 @@ const COLORS: ProfileColor[] = ["blue", "green", "orange", "purple", "red", "yel
 export const unusedProfileColor = (profiles: Record<string, Profile>): ProfileColor =>
   COLORS.find((c) => !Object.values(profiles).some((p) => p.color === c)) ?? "blue";
 
-const dataIdOf = (profile: Profile) => profile.dataId ?? profile.id;
+const dataIdOf = (profile: Pick<Profile, "id" | "dataId">) => profile.dataId ?? profile.id;
 export const engineIdOf = (profile: Profile) => (dataIdOf(profile) === DEFAULT_PROFILE_ID ? "" : dataIdOf(profile));
+
+export const validProfileId = (id: string): boolean =>
+  id === DEFAULT_PROFILE_ID || id.match(/^p-(?:[0-9a-z]+-[1-9a-z][0-9a-z]*|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-1)$/)?.[0] === id;
+
+export function requireGeneratedProfileIdentity(profile: Pick<Profile, "id" | "dataId">, key?: string): void {
+  if (!validProfileId(profile.id) || !validProfileId(dataIdOf(profile)) || (key !== undefined && !validProfileId(key))) throw new Error("Profile ids and data ids must use a generated lowercase profile id.");
+}
 
 export function dataGroups(s: Pick<BrowserState, "profiles" | "profileOrder">): { dataId: string; profileIds: string[] }[] {
   const groups = new Map<string, string[]>();
@@ -99,6 +106,7 @@ export const createProfilesSlice: StateCreator<BrowserState, [], [], ProfilesSli
       }
       const s = get();
       const source = shareWith ? s.profiles[shareWith] : undefined;
+      if (source) requireGeneratedProfileIdentity(source, shareWith ?? undefined);
       const profile: Profile = {
         id: newId("p"),
         name: name.trim() || `Profile ${s.profileOrder.length + 1}`,
@@ -107,6 +115,7 @@ export const createProfilesSlice: StateCreator<BrowserState, [], [], ProfilesSli
         createdAt: Date.now(),
         ...(source ? { dataId: dataIdOf(source) } : {}),
       };
+      requireGeneratedProfileIdentity(profile);
       let bookmarks = s.bookmarks;
       let history = s.history;
       if (source) {
@@ -122,7 +131,13 @@ export const createProfilesSlice: StateCreator<BrowserState, [], [], ProfilesSli
 
     updateProfile(id, patch) {
       if (refuseSafeProfileEdit()) return;
-      set((s) => (s.profiles[id] ? { profiles: { ...s.profiles, [id]: { ...s.profiles[id]!, ...patch } } } : {}));
+      set((s) => {
+        const previous = s.profiles[id];
+        if (!previous) return {};
+        const updated = { ...previous, ...patch };
+        if (updated.id !== previous.id || dataIdOf(updated) !== dataIdOf(previous)) requireGeneratedProfileIdentity(updated);
+        return { profiles: { ...s.profiles, [id]: updated } };
+      });
     },
 
     deleteProfile(id) {

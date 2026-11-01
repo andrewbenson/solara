@@ -61,6 +61,11 @@ NSMutableSet<NSString *> *DeletedProfiles() {
   return deleted;
 }
 
+NSMutableSet<NSString *> *ScheduledProfileDeletions() {
+  static NSMutableSet *scheduled = [NSMutableSet set];
+  return scheduled;
+}
+
 NSMutableSet<NSString *> *ReleasedPrivateNames() {
   static NSMutableSet *released = [NSMutableSet set];
   return released;
@@ -75,6 +80,33 @@ NSString *DirectoryName(NSString *name) {
   if (!name.length) return @"Default";
   if ([name isEqualToString:@"Default"] || [name hasPrefix:@"Profile "]) return nil;
   return [@"Profile " stringByAppendingString:name];
+}
+
+NSDictionary *DeletionLocation(NSString *profile) {
+  if (!gDataDirectory.length || !profile || [profile isEqualToString:@"."] || [profile isEqualToString:@".."] ||
+      [profile containsString:@"/"] || [profile containsString:@"\\"] ||
+      [profile rangeOfString:[NSString stringWithFormat:@"%C", (unichar)0]].location != NSNotFound ||
+      [profile hasPrefix:@"incognito:"]) return nil;
+  NSFileManager *files = NSFileManager.defaultManager;
+  NSDictionary *initial = [files attributesOfItemAtPath:gDataDirectory error:nil];
+  if (![initial[NSFileType] isEqual:NSFileTypeDirectory]) return nil;
+  NSString *root = gDataDirectory.stringByStandardizingPath.stringByResolvingSymlinksInPath;
+  NSDictionary *rootAttributes = [files attributesOfItemAtPath:root error:nil];
+  if (![rootAttributes[NSFileType] isEqual:NSFileTypeDirectory] || !rootAttributes[NSFileSystemNumber] || !rootAttributes[NSFileSystemFileNumber] ||
+      ![initial[NSFileSystemNumber] isEqual:rootAttributes[NSFileSystemNumber]] ||
+      ![initial[NSFileSystemFileNumber] isEqual:rootAttributes[NSFileSystemFileNumber]]) return nil;
+  NSString *name = profile.length ? [@"Profile " stringByAppendingString:profile] : @"Default";
+  NSString *path = [root stringByAppendingPathComponent:name];
+  NSError *error = nil;
+  NSDictionary *attributes = [files attributesOfItemAtPath:path error:&error];
+  if (attributes && (![attributes[NSFileType] isEqual:NSFileTypeDirectory] || ![[files contentsOfDirectoryAtPath:root error:nil] containsObject:name])) return nil;
+  if (!attributes && (![error.domain isEqual:NSCocoaErrorDomain] || (error.code != NSFileNoSuchFileError && error.code != NSFileReadNoSuchFileError))) return nil;
+  NSString *resolved = path.stringByResolvingSymlinksInPath.stringByStandardizingPath;
+  if (![resolved.stringByDeletingLastPathComponent isEqualToString:root] || ![resolved.lastPathComponent isEqualToString:name]) return nil;
+  return @{
+    @"root": root, @"path": resolved, @"rootDevice": rootAttributes[NSFileSystemNumber], @"rootInode": rootAttributes[NSFileSystemFileNumber],
+    @"targetDevice": attributes[NSFileSystemNumber] ?: NSNull.null, @"targetInode": attributes[NSFileSystemFileNumber] ?: NSNull.null,
+  };
 }
 
 NSString *InstalledDataDirectory() {
@@ -838,23 +870,54 @@ static void StartEarlyWindow() {
   return [SolaraCoreEngine respondsToSelector:@selector(isTracing)] && SolaraCoreEngine.isTracing;
 }
 
-+ (void)deleteProfileData:(NSString *)profile completion:(void (^)(NSArray<NSString *> *))completion {
++ (void)deleteProfileData:(NSString *)profile deletionAllowed:(BOOL (^)(void))deletionAllowed completion:(void (^)(NSArray<NSString *> *))completion {
   if (gSafeMode) return completion(@[ @"safe mode" ]);
-  if (solaracore_host::IsIncognito(profile)) return completion(@[]);
+  if ([ScheduledProfileDeletions() containsObject:profile]) return completion(@[ @"Chromium deletion pending restart" ]);
+  NSDictionary *location = DeletionLocation(profile);
+  if (!location) {
+    NSLog(@"[solaracore] refusing profile data deletion for invalid path: %@", profile);
+    return completion(@[ @"refused profile path" ]);
+  }
   SolaraCoreEngine *engine = SolaraCoreEngine.sharedEngine;
   SolaraCoreProfile *p = solaracore_host::LoadedProfile(profile);
   if (!profile.length || ![engine respondsToSelector:@selector(deleteProfile:completion:)]) return completion(@[ @"data" ]);
   [DeletedProfiles() addObject:profile];
   void (^remove)(SolaraCoreProfile *) = ^(SolaraCoreProfile *loaded) {
-    if (!loaded) {
-      NSString *path = [gDataDirectory stringByAppendingPathComponent:[@"Profile " stringByAppendingString:profile]];
-      [NSFileManager.defaultManager removeItemAtPath:path error:nil];
-      return completion([NSFileManager.defaultManager fileExistsAtPath:path] ? @[ @"files" ] : @[]);
+    NSDictionary *current = DeletionLocation(profile);
+    if (![current isEqualToDictionary:location]) {
+      [DeletedProfiles() removeObject:profile];
+      NSLog(@"[solaracore] refusing profile data deletion for invalid path: %@", profile);
+      return completion(@[ @"refused profile path" ]);
     }
+    if (!deletionAllowed()) {
+      [DeletedProfiles() removeObject:profile];
+      return completion(@[ @"live profile filesystem identity" ]);
+    }
+    NSString *path = location[@"path"];
+    if (!loaded) {
+      [NSFileManager.defaultManager removeItemAtPath:path error:nil];
+      NSError *inspectionError = nil;
+      NSDictionary *remaining = [NSFileManager.defaultManager attributesOfItemAtPath:path error:&inspectionError];
+      BOOL removed = !remaining && [inspectionError.domain isEqual:NSCocoaErrorDomain] &&
+          (inspectionError.code == NSFileNoSuchFileError || inspectionError.code == NSFileReadNoSuchFileError);
+      if (removed) [DeletedProfiles() removeObject:profile];
+      return completion(removed ? @[] : @[ @"files" ]);
+    }
+    if (![loaded.path.stringByStandardizingPath.stringByResolvingSymlinksInPath isEqualToString:path]) {
+      [DeletedProfiles() removeObject:profile];
+      NSLog(@"[solaracore] refusing profile deletion for unexpected loaded path: %@", loaded.path);
+      return completion(@[ @"refused profile path" ]);
+    }
+    [ScheduledProfileDeletions() addObject:profile];
     [engine deleteProfile:loaded completion:^(BOOL deleted) {
-      if (deleted) [Profiles() removeObjectForKey:profile];
-      else [DeletedProfiles() removeObject:profile];
-      completion(deleted ? @[] : @[ @"data" ]);
+      if (deleted) {
+        [Profiles() removeObjectForKey:profile];
+        completion(@[ @"Chromium deletion pending restart" ]);
+      } else {
+        [ScheduledProfileDeletions() removeObject:profile];
+        [DeletedProfiles() removeObject:profile];
+        completion(@[ @"data" ]);
+      }
     }];
   };
   if (!p && ProfileWaiters()[profile]) {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Clock } from "./hlc.ts";
-import { compact, emptyScope, restoreJournal, syncScope, type Adapter, type Listing, type LogFile, type ScopeOptions, type ScopeState, type Transport } from "./scope.ts";
+import { ApplyRefusal, compact, emptyScope, restoreJournal, syncScope, type Adapter, type Listing, type LogFile, type ScopeOptions, type ScopeState, type Transport } from "./scope.ts";
 
 type Entry = { payload: string; hiddenFrom: Set<string>; partialFor: Set<string>; at: number };
 class Folder {
@@ -484,3 +484,73 @@ test("an item chosen again with the same value while its deletion is pulled is k
   assert.equal(b.store.get("x:pin"), "same", "B keeps what it chose");
   assert.equal(a.store.get("x:pin"), "same", "and A takes it back");
 });
+
+for (const writtenKeysOnly of [false, true]) {
+  test(`explicit refusals preserve only their keys with writtenKeysOnly=${writtenKeysOnly}`, async () => {
+    const state = emptyScope();
+    const clock = new Clock("local", null, () => 1);
+    const folder = new Folder();
+    for (const key of ["x:refused", "x:accepted"]) {
+      state.records[key] = { h: clock.tick(), v: "remote", o: ["remote", 1] };
+      state.base[key] = '"local"';
+      state.unapplied.push(key);
+    }
+    const applied = new Map<string, unknown>();
+    const attempts: string[][] = [];
+    const adapter: Adapter = {
+      prefix: "x:",
+      extract: () => null,
+      apply: (visible, changed) => {
+        attempts.push([...changed]);
+        for (const key of changed) if (key !== "x:refused") applied.set(key, visible.get(key));
+        throw new ApplyRefusal(new Set(["x:refused"]));
+      },
+    };
+    for (let cycle = 0; cycle < 2; cycle++) {
+      await syncScope({ scope: "s", state, transport: folder.transport("local"), adapters: [adapter], clock, device: "local", now: () => 1, options: { writtenKeysOnly } });
+      assert.deepEqual(state.unapplied, ["x:refused"]);
+      assert.equal(state.base["x:refused"], '"local"');
+      assert.equal(state.base["x:accepted"], '"remote"');
+      assert.equal(applied.get("x:accepted"), "remote");
+      assert.equal(attempts.length, cycle + 1);
+    }
+    assert.deepEqual(attempts[1], ["x:refused"]);
+  });
+
+  test(`ordinary adapter errors leave the whole prefix pending with writtenKeysOnly=${writtenKeysOnly}`, async () => {
+    const state = emptyScope();
+    const clock = new Clock("local", null, () => 1);
+    const folder = new Folder();
+    for (const key of ["x:first", "x:second"]) {
+      state.records[key] = { h: clock.tick(), v: "remote", o: ["remote", 1] };
+      state.base[key] = '"local"';
+      state.unapplied.push(key);
+    }
+    await syncScope({
+      scope: "s", state, transport: folder.transport("local"), clock, device: "local", now: () => 1,
+      options: { writtenKeysOnly },
+      adapters: [{ prefix: "x:", extract: () => null, apply: () => { throw new Error("unavailable"); } }],
+    });
+    assert.deepEqual(state.unapplied, ["x:first", "x:second"]);
+    assert.deepEqual(state.base, { "x:first": '"local"', "x:second": '"local"' });
+  });
+
+  test(`existing written-key results keep their meaning with writtenKeysOnly=${writtenKeysOnly}`, async () => {
+    const state = emptyScope();
+    const clock = new Clock("local", null, () => 1);
+    const folder = new Folder();
+    for (const key of ["x:unwritten", "x:written"]) {
+      state.records[key] = { h: clock.tick(), v: "remote", o: ["remote", 1] };
+      state.base[key] = '"local"';
+      state.unapplied.push(key);
+    }
+    await syncScope({
+      scope: "s", state, transport: folder.transport("local"), clock, device: "local", now: () => 1,
+      options: { writtenKeysOnly },
+      adapters: [{ prefix: "x:", extract: () => null, apply: () => new Set(["x:written"]) }],
+    });
+    assert.equal(state.base["x:written"], '"remote"');
+    assert.equal(state.base["x:unwritten"], writtenKeysOnly ? '"local"' : '"remote"');
+    assert.deepEqual(state.unapplied, writtenKeysOnly ? ["x:unwritten"] : []);
+  });
+}

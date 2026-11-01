@@ -1,3 +1,4 @@
+import Foundation
 import SolaraModel
 
 public struct CommandError: Error, CustomStringConvertible {
@@ -42,7 +43,7 @@ public struct Command: Sendable, Equatable {
     "setFocusedWindow", "upsertDownload", "removeDownload", "clearDownloads", "forgetDownloads", "hydrate", "tidyPins", "untidyPins",
     "renameTileFolder", "newTileFolder", "leaveTileFolder", "dissolveTileFolder", "openDraftGroups", "forgetClosedTab", "setWindowClosing",
     "setLastTabKeepsWindow", "noteRemotePinDeletion", "setHistoryHints", "setPlayingAudio", "setLaunchBackdrop", "setEarlyLaunchTab", "nextId", "nextNavigation",
-    "syncPinsApply", "settlePinChoices", "beginFromSync", "endFromSync", "beginTransaction", "endTransaction", "closeTransactions", "stripSnapshot", "stripTransaction", "projectStrips", "stripCommandSent", "applyState",
+    "syncPinsApply", "settlePinChoices", "beginFromSync", "endFromSync", "beginTransaction", "endTransaction", "closeTransactions", "stripSnapshot", "stripTransaction", "projectStrips", "stripCommandSent", "applyState", "attachReplicaProfiles",
     "setAppDark", "setFind", "setSelection", "setSelectionAnchor", "clickTab", "openPanel", "closePanel", "setDownloadsOpen",
   ]
 }
@@ -289,8 +290,11 @@ extension Session {
     case "clearDownloads": clearDownloads(a.string(0))
     case "forgetDownloads": forgetDownloads(try a.requireString(0))
     case "hydrate":
+      let data = try HydrateData(json: a.object(0))
+      try requireGeneratedProfileIdentities(data.profiles)
+      try refuseInFlightProfileData(data)
       memory.closingWindowUndos.removeAll()
-      hydrate(try HydrateData(json: a.object(0)))
+      hydrate(data)
     case "tidyPins": result = tidyPins(try a.requireString(0), a.string(1))
     case "untidyPins": untidyPins(try TidiedPins(json: a[0] ?? .null))
     case "renameTileFolder": set(renameTileFolder(state, try a.requireString(0), try a.requireString(1), a.string(2) ?? ""))
@@ -319,10 +323,39 @@ extension Session {
     case "stripCommandSent": stripCommandSent(a.int(0), a.int(1))
     case "syncPinsApply": result = try SyncPinsApplyRequest(command.args).apply(self)
     case "settlePinChoices": try SettledPinChoices(command.args).apply(self)
+    case "attachReplicaProfiles":
+      guard config.replicaProfilesFromDisk && !fromSyncOrigin && memory.fromSyncDepth == 0 && !(a[1]?["fromSync"]?.truthy ?? false) else {
+        throw CommandError("disk replica profiles can only attach outside sync in fallback scope")
+      }
+      let data = a.object(0)
+      guard let profiles = data["profiles"], let order = data["profileOrder"] else { throw CommandError("disk replica profiles require profiles and profileOrder") }
+      var next = state
+      try next.applySlice("profiles", profiles)
+      try next.applySlice("profileOrder", order)
+      if memory.replicaProfilesAttached {
+        for (id, profile) in next.profiles {
+          let generated = ProfileDataCleanup.validProfileId(id) && ProfileDataCleanup.validProfileId(profile.id) && ProfileDataCleanup.validProfileId(dataIdOf(profile))
+          let existing = state.profiles[id].map { previous in
+            guard previous.id.jsEquals(profile.id) else { return false }
+            if let dataId = previous.dataId { return profile.dataId.map { dataId.jsEquals($0) } ?? false }
+            return profile.dataId == nil
+          } ?? false
+          if !generated && !existing {
+            next.profiles[id] = nil
+            next.profileOrder.removeAll { $0.jsEquals(id) }
+            FileHandle.standardError.write(Data("SolaraStore: REFUSED disk replica reload profile \(id) with data id \(dataIdOf(profile)); its identity was not previously attached.\n".utf8))
+          }
+        }
+      }
+      try refusePendingProfileData(next)
+      memory.replicaProfilesAttached = true
+      set(next)
     case "applyState":
       guard !a.object(0).contains("live") else { throw CommandError("live facts require pageReport") }
       var next = state
       for (key, value) in a.object(0) where !Session.commandOnlySlices.contains(key) { try next.applySlice(key, value) }
+      if a.object(0).contains("profiles") { try requireGeneratedProfileIdentities(next.profiles.map) }
+      try refusePendingProfileData(next)
       next.ui.appDark = state.ui.appDark
       let remote = a[1]?["fromSync"]?.truthy ?? false
       if remote { memory.fromSyncDepth += 1 }

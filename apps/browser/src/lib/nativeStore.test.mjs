@@ -33,7 +33,7 @@ globalThis.acTestNativeModules = {
         if (name === "updateSettings") {
           native.settings = { ...native.settings, ...args[0], chosen: [...new Set([...native.settings.chosen, ...Object.keys(args[0])])] };
           native.commit({ settings: { set: { ...args[0], chosen: native.settings.chosen } } });
-        } else if (name === "applyState") {
+        } else if (name === "applyState" || name === "attachReplicaProfiles") {
           const patch = {};
           if (args[0].downloads) patch.downloads = native.downloads = args[0].downloads;
           if (args[0].profiles) native.profiles = args[0].profiles;

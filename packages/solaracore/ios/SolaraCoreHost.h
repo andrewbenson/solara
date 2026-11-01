@@ -44,8 +44,8 @@ NS_ASSUME_NONNULL_BEGIN
 + (void)beginTracing:(void (^)(BOOL started))completion;
 + (void)endTracing:(BOOL)keep completion:(void (^)(NSString *_Nullable path))completion NS_SWIFT_NAME(endTracing(keep:completion:));
 @property(class, readonly) BOOL isTracing;
-+ (void)deleteProfileData:(NSString *)profile completion:(void (^)(NSArray<NSString *> *remaining))completion
-    NS_SWIFT_NAME(deleteProfileData(_:completion:));
++ (void)deleteProfileData:(NSString *)profile deletionAllowed:(BOOL (^)(void))deletionAllowed completion:(void (^)(NSArray<NSString *> *remaining))completion
+    NS_SWIFT_NAME(deleteProfileData(_:deletionAllowed:completion:));
 + (void)releaseProfile:(NSString *)profile;
 + (int)chromeTabId:(int)browserId NS_SWIFT_NAME(chromeTabId(browserId:));
 + (BOOL)stopCapture:(int)browserId NS_SWIFT_NAME(stopCapture(browserId:));

@@ -1,12 +1,13 @@
 import { deletePassword, savePassword } from "@solara/solaracore";
 import { nativeAddHistoryVisits, nativeDeleteHistoryUrls } from "@solara/settings";
-import { assignPositions, canonical, SyncNative, type Adapter, type SavedLogin, type SyncRecord } from "@solara/sync";
+import { ApplyRefusal, assignPositions, canonical, SyncNative, type Adapter, type SavedLogin, type SyncRecord } from "@solara/sync";
 import { bookmarkUuidFor, ensureRoots, isBookmarkUuid } from "../store/bookmarks";
 import { MAX_HISTORY, MAX_VISIT_TIMES } from "../store/history";
 import { useBrowser } from "../store/browser";
 import { engineProfile } from "../store/model";
 import { isPeekTab } from "../store/peek";
 import { fromSync } from "../store/pinOrderChoices";
+import { requireGeneratedProfileIdentity } from "../store/profiles";
 import { DEFAULT_PROFILE_ID, DEFAULT_SETTINGS, type Settings } from "../store/settings";
 import { sanitizeTheme } from "../lib/profileTheme";
 import { developerModeOf } from "../lib/developerMode";
@@ -16,6 +17,11 @@ import { syncRedesign } from "./redesignSwitch";
 
 const store = () => useBrowser.getState();
 const asSyncApply = <T>(apply: () => T): T => (syncRedesign.on ? fromSync(apply) : apply());
+
+export function applySyncedProfilePatch(id: string, patch: Partial<Pick<Profile, "name" | "color" | "icon" | "theme">>): void {
+  requireGeneratedProfileIdentity(store().profiles[id]!, id);
+  asSyncApply(() => store().updateProfile(id, patch));
+}
 
 export const inTodaysNames = (adapter: Adapter): Adapter => ({
   ...adapter,
@@ -147,35 +153,48 @@ export function legacyThemeOf(record: ProfileRecord): Pick<Profile, "theme"> | n
   return theme ? { theme } : null;
 }
 
-export function profilesAdapter(links: () => Record<string, { syncId: string }>): Adapter {
+export function profilesAdapter(links: () => Record<string, { syncId: string; themeAdopting?: true }>): Adapter {
   const linked = () => Object.entries(links()).filter(([id]) => store().profiles[id]);
   return {
     prefix: "prof:",
     adoptRemoteOnJoin: true,
-    extract: (_base, _queued, _now, known) => {
+    extract: (base, _queued, _now, known, remote, _stamp, _downloading, _agreedKeys, unapplied) => {
       const values = new Map<string, unknown>();
       const all = links();
-      for (const [id, { syncId }] of linked()) {
+      for (const [id, { syncId, themeAdopting }] of linked()) {
         const p = store().profiles[id]!;
         const sharesSyncedData = !!p.dataId && p.dataId !== id && !!all[p.dataId] && !!store().profiles[p.dataId];
         if (sharesSyncedData && !known(`share:${syncId}`)) continue;
-        values.set(`prof:${syncId}`, {
+        const key = `prof:${syncId}`;
+        const metadata: ProfileRecord = {
           n: p.name,
           c: p.color,
           i: p.icon,
           ...(id === DEFAULT_PROFILE_ID ? { d: true } : {}),
-        } satisfies ProfileRecord);
+        };
+        const pending = themeAdopting || unapplied?.(key);
+        const previous = pending && canonical(base(key)) !== canonical(metadata) ? remote?.(key) as ProfileRecord | null | undefined : undefined;
+        values.set(key, { ...metadata, ...(previous?.th !== undefined ? { th: previous.th } : {}) } satisfies ProfileRecord);
       }
       const mine = new Set(values.keys());
       return { values, ignore: (key) => !mine.has(key) };
     },
     apply: (visible, changed, _base, records) => {
+      const refused = new Set<string>();
+      let cause: unknown;
       for (const [id, { syncId }] of linked()) {
-        const record = visible.get(`prof:${syncId}`) as ProfileRecord | undefined;
-        if (!record || !changed.has(`prof:${syncId}`)) continue;
-        const legacy = store().profiles[id]!.theme === undefined && !records.known(`pth:${syncId}`) ? legacyThemeOf(record) : null;
-        asSyncApply(() => store().updateProfile(id, { name: record.n, color: record.c, icon: record.i, ...legacy }));
+        const key = `prof:${syncId}`;
+        const record = visible.get(key) as ProfileRecord | undefined;
+        if (!record || !changed.has(key)) continue;
+        try {
+          const legacy = store().profiles[id]!.theme === undefined && !records.known(`pth:${syncId}`) ? legacyThemeOf(record) : null;
+          applySyncedProfilePatch(id, { name: record.n, color: record.c, icon: record.i, ...legacy });
+        } catch (error) {
+          refused.add(key);
+          cause ??= error;
+        }
       }
+      if (refused.size) throw new ApplyRefusal(refused, cause);
     },
   };
 }
@@ -208,14 +227,23 @@ export function profileThemesAdapter(
       return { values, ignore: (key) => !mine.has(key) };
     },
     apply: (visible, changed) => {
+      const refused = new Set<string>();
+      let cause: unknown;
       for (const [id, { syncId }] of linked()) {
+        const key = `pth:${syncId}`;
         const angleKey = themeAngleKey(syncId);
-        if (!changed.has(`pth:${syncId}`) && !changed.has(angleKey)) continue;
-        const patch = themeFromRecord(visible.get(`pth:${syncId}`), visible.get(angleKey));
+        if (!changed.has(key) && !changed.has(angleKey)) continue;
+        const patch = themeFromRecord(visible.get(key), visible.get(angleKey));
         if (!patch) continue;
-        asSyncApply(() => store().updateProfile(id, patch));
-        adopted(id);
+        try {
+          applySyncedProfilePatch(id, patch);
+          adopted(id);
+        } catch (error) {
+          for (const pending of [key, angleKey]) if (changed.has(pending)) refused.add(pending);
+          cause ??= error;
+        }
       }
+      if (refused.size) throw new ApplyRefusal(refused, cause);
     },
   };
 }

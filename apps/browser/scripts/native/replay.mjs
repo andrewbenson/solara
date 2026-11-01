@@ -728,12 +728,13 @@ async function record(file) {
               },
             }
           : {}),
-        extract: (base, queued, at, known, remote, stamp) => {
+        extract: (base, queued, at, known, remote, stamp, downloading, agreedKeys, unapplied) => {
           const c = begin("extract");
           c.at = at ?? null;
+          if (typeof unapplied === "function") c.unappliedGiven = true;
           let result;
           try {
-            result = adapter.extract(logged(c, "base", base), logged(c, "queued", queued), at, logged(c, "known", known), logged(c, "remote", remote), logged(c, "stamp", stamp));
+            result = adapter.extract(logged(c, "base", base), logged(c, "queued", queued), at, logged(c, "known", known), logged(c, "remote", remote ?? (() => undefined)), logged(c, "stamp", stamp), downloading, agreedKeys, logged(c, "unapplied", unapplied));
           } catch (error) {
             end(c, false);
             throw error;

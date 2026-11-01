@@ -18,6 +18,7 @@ public final class NativeStore: Sendable {
   static func config(_ folder: URL) -> StoreConfig {
     var config = StoreConfig()
     config.safeMode = safeMode
+    config.replicaProfilesFromDisk = scope == .settingsAndDownloads
     config.handOffPinsImmediately = false
     config.earlyLaunchTab = earlyLaunchTabSwitch(folder)
     return config
@@ -35,6 +36,7 @@ public final class NativeStore: Sendable {
   nonisolated(unsafe) public private(set) static var handedOff = false
   nonisolated(unsafe) static var folderLock: FolderLock?
 
+  let profileDataCleanup: NativeProfileDataCleanup
   let host: StoreHost
   var bridge: StoreBridge { host.bridge }
   var writer: PersistenceWriter? { host.writer }
@@ -44,6 +46,7 @@ public final class NativeStore: Sendable {
 
   @MainActor
   init(host: StoreHost, launch: SafeLaunch, folder: URL) {
+    profileDataCleanup = NativeProfileDataCleanup(store: host.bridge.store)
     self.host = host
     let bridge = host.bridge
     self.launch = launch
@@ -127,6 +130,8 @@ public final class NativeStore: Sendable {
       let launch = try safeMode
         ? Launcher.openSafe(DataFolder(url: folder), appVersion: version, now: now, context: context)
         : SafeLaunch(Launcher.open(DataFolder(url: folder), appVersion: version, now: now, context: context, scope: activeScope))
+      let profileDataTombstones = folder.appending(path: "profile-data-tombstones.json")
+      storeConfig.profileDataTombstones = profileDataTombstones
       for note in launch.report.notes { NSLog("[store] %@", note) }
       var state = launch.state
       state.caches.systemDark = UserDefaults.standard.string(forKey: "AppleInterfaceStyle") == "Dark"
@@ -161,6 +166,7 @@ public final class NativeStore: Sendable {
       }
       NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: nil) { _ in
         guard let store = NativeStore.shared else { return }
+        store.profileDataCleanup.stop()
         let result = store.host.termination()
         if result != .saved { NSLog("[store] quit flush: %@", result.description) }
       }
@@ -195,10 +201,14 @@ public final class NativeStore: Sendable {
   func flush(timeout: TimeInterval) -> FlushResult { FlushResult.flushing(writer, timeout: timeout) }
 
   public func flushForQuit(barrierTimeout: TimeInterval = 0.5, writerTimeout: TimeInterval = 0.5) -> FlushResult {
-    host.flushForQuit(barrierTimeout: barrierTimeout, writerTimeout: writerTimeout)
+    profileDataCleanup.stop()
+    return host.flushForQuit(barrierTimeout: barrierTimeout, writerTimeout: writerTimeout)
   }
 
-  public func freeze() { writer?.freeze() }
+  public func freeze() {
+    profileDataCleanup.stop()
+    writer?.freeze()
+  }
 }
 
 @MainActor

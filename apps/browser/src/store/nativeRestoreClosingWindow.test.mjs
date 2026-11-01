@@ -123,7 +123,8 @@ test("accepted native hydrate clears closing locals while refused hydrate preser
     console.warn = () => {};
     try {
       reply = accepted ? { rev, patches: [] } : { rev, error: "refused" };
-      S().hydrate({});
+      if (accepted) S().hydrate({});
+      else assert.throws(() => S().hydrate({}), /refused/);
     } finally {
       console.warn = warn;
     }

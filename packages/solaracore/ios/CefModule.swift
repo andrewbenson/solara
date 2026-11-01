@@ -122,8 +122,7 @@ public class CefModule: Module {
     }.runOnQueue(.main)
     AsyncFunction("releaseProfile") { (profile: String) in SolaraCoreHost.releaseProfile(profile) }.runOnQueue(.main)
     AsyncFunction("deleteProfileData") { (profile: String, promise: Promise) in
-      if profile.isEmpty { return SolaraCoreProfileData.deleteDefault { promise.resolve(["remaining": $0]) } }
-      SolaraCoreHost.deleteProfileData(profile) { promise.resolve(["remaining": $0]) }
+      SolaraCoreProfileData.delete(profile) { promise.resolve(["remaining": $0]) }
     }.runOnQueue(.main)
 
     AsyncFunction("fetchFavicon") { (url: String, profile: String, promise: Promise) in

@@ -1,4 +1,7 @@
 import { test } from "node:test";
+import assert from "node:assert/strict";
+import { ApplyRefusal } from "@solara/sync";
+import { validProfileId } from "../../src/store/profiles.ts";
 const { useBrowser } = await import("../../src/store/browser.ts");
 const adapters = await import("../../src/sync/adapters.ts");
 const { DEFAULT_SETTINGS } = await import("../../src/store/settings.ts");
@@ -131,8 +134,28 @@ test("profiles, themes and shared data over random profiles, links and records",
       ]),
     );
     const applyRecords = { known: (key) => known.has(key), now: 0, horizon: 0, joined: k.chance(0.5) };
-    profiles.apply(visible, changed, (key) => bases.get(key), applyRecords);
-    themes.apply(visible, changed, (key) => bases.get(key), applyRecords);
+    for (const [kind, adapter] of [["profiles", profiles], ["themes", themes]]) {
+      const refused = new Set();
+      for (const [id, { syncId }] of Object.entries(links)) {
+        const profile = S().profiles[id];
+        if (!profile || (validProfileId(id) && validProfileId(profile.id) && validProfileId(profile.dataId ?? profile.id))) continue;
+        const key = `${kind === "profiles" ? "prof" : "pth"}:${syncId}`;
+        if (kind === "profiles") {
+          if (changed.has(key) && visible.get(key)) refused.add(key);
+        } else if ((changed.has(key) || changed.has(`${key}:angle`)) && adapters.themeFromRecord(visible.get(key), visible.get(`${key}:angle`))) {
+          for (const pending of [key, `${key}:angle`]) if (changed.has(pending)) refused.add(pending);
+        }
+      }
+      if (refused.size) {
+        assert.throws(() => adapter.apply(visible, changed, (key) => bases.get(key), applyRecords), (error) => {
+          assert.ok(error instanceof ApplyRefusal);
+          assert.deepEqual(error.refused, refused);
+          return true;
+        });
+      } else {
+        adapter.apply(visible, changed, (key) => bases.get(key), applyRecords);
+      }
+    }
     shared.apply(visible, changed, (key) => bases.get(key), applyRecords);
   }
 });

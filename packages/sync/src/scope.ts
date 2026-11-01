@@ -85,6 +85,16 @@ export type ApplyRecords = {
   joined: boolean;
 };
 
+export class ApplyRefusal extends Error {
+  readonly refused: Set<string>;
+
+  constructor(refused: Set<string>, cause?: unknown) {
+    super(`Sync records refused: ${[...refused].join(", ")}`, { cause });
+    this.name = "ApplyRefusal";
+    this.refused = refused;
+  }
+}
+
 export type ApplyResult = boolean | void | Set<string>;
 
 export interface Adapter {
@@ -374,10 +384,15 @@ async function applyAdapter(state: ScopeState, adapter: Adapter, keys: Set<strin
   const applyAs = (state.applyAs ??= {});
   applyAs[adapter.prefix] ??= state.joined ? "joined" : "joining";
   let ok: ApplyResult = false;
+  let refused: Set<string> | undefined;
   beforeApply?.(mine);
   try {
     ok = await adapter.apply(view, mine, (key) => parseBase(state.base[key]), { known: (key) => key in state.records, now, horizon, joined: applyAs[adapter.prefix] === "joined" });
   } catch (error) {
+    if (error instanceof ApplyRefusal) {
+      refused = error.refused;
+      ok = true;
+    }
     console.warn(`[sync] applying ${adapter.prefix} failed`, error);
   }
   if (ok === false) return mine;
@@ -385,7 +400,7 @@ async function applyAdapter(state: ScopeState, adapter: Adapter, keys: Set<strin
   const written = writtenKeysOnly && ok instanceof Set ? ok : mine;
   const left = new Set<string>();
   for (const key of mine) {
-    if (!written.has(key)) left.add(key);
+    if (refused?.has(key) || !written.has(key)) left.add(key);
     else if (view.has(key)) state.base[key] = canonical(view.get(key));
     else delete state.base[key];
   }

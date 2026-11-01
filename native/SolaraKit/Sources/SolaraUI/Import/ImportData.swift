@@ -325,7 +325,7 @@ public protocol ImportServices: AnyObject {
   func requestDiaAutomation() async -> DiaStatus
   func openDia() async -> Bool
   func readDiaTabs() async -> DiaRead
-  func runDia(profileIds: [String], target: String, pinned: Bool, open: Bool) async -> ImportCounts
+  func runDia(profileIds: [String], target: String, pinned: Bool, open: Bool) async -> ImportRunOutcome
   func importSafariExport(path: String, target: String) async -> ImportFileOutcome
   func importSafariDirect(target: String, cookies: Bool) async -> ImportFileOutcome
   func importBookmarksHTML(target: String) async -> ImportFileOutcome

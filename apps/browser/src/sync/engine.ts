@@ -1,6 +1,7 @@
 import { listDocuments, readDocument, removeDocument, saveDocument, writeDocument } from "@solara/shell";
 import {
   canonical,
+  ApplyRefusal,
   Clock,
   emptyScope,
   folderTransport,
@@ -30,6 +31,7 @@ import { DEFAULT_PROFILE_ID } from "../store/settings";
 import type { Profile } from "../store/types";
 import {
   bookmarksAdapter,
+  applySyncedProfilePatch,
   deviceAdapter,
   deviceTabsAdapter,
   historyAdapter,
@@ -872,10 +874,21 @@ function guard(scope: string, state: Guarded, device: string, adapters: Adapter[
         if (waiting() || (rebuilding(adapter.prefix) && stillDownloading(state))) return false;
         const before = baselineOf(scope, adapter.prefix);
         const standIn = (key: string) => rebuilding(adapter.prefix) || heldBack.has(key);
-        const ok = await adapter.apply(visible, changed, before ? (key) => base(key) ?? (standIn(key) ? parseKept(before.get(key)) : undefined) : base, records);
-        if (!before || ok === false) return ok;
+        let refusal: ApplyRefusal | undefined;
+        let ok: Awaited<ReturnType<Adapter["apply"]>>;
+        try {
+          ok = await adapter.apply(visible, changed, before ? (key) => base(key) ?? (standIn(key) ? parseKept(before.get(key)) : undefined) : base, records);
+        } catch (error) {
+          if (!(error instanceof ApplyRefusal)) throw error;
+          refusal = error;
+          ok = new Set([...changed].filter((key) => !error.refused.has(key)));
+        }
+        if (!before || ok === false) {
+          if (refusal) throw refusal;
+          return ok;
+        }
         const noted = rebuilding(adapter.prefix) ? notedFor(state, adapter.prefix, before) : null;
-        const written = usesWrittenKeys(adapter.prefix) && ok instanceof Set ? [...changed].filter((key) => ok.has(key)) : changed;
+        const written = (refusal || usesWrittenKeys(adapter.prefix)) && ok instanceof Set ? [...changed].filter((key) => ok.has(key)) : changed;
         for (const key of written) {
           if (visible.has(key)) before.set(key, choice(visible.get(key)));
           else before.delete(key);
@@ -883,6 +896,7 @@ function guard(scope: string, state: Guarded, device: string, adapters: Adapter[
           if (visible.has(key)) noted[key] = digest(choice(visible.get(key)));
           else delete noted[key];
         }
+        if (refusal) throw refusal;
         return ok;
       },
     }),
@@ -1112,7 +1126,23 @@ function settledTheme(app: ScopeState, syncId: string): boolean {
 
 function pairTheme(app: ScopeState, profileId: string, link: ProfileLink) {
   const theme = pairedTheme(app, link.syncId);
-  if (theme) useBrowser.getState().updateProfile(profileId, theme);
+  link.themeAdopting = true;
+  if (theme) {
+    try {
+      applySyncedProfilePatch(profileId, theme);
+    } catch (error) {
+      const keys = app.records[`pth:${link.syncId}`]?.v ? [`pth:${link.syncId}`, themeAngleKey(link.syncId)] : [`prof:${link.syncId}`];
+      for (const key of keys) {
+        if (!app.records[key] || app.base[key] !== canonical(app.records[key]!.v)) continue;
+        if (key.startsWith("prof:")) {
+          const profile = useBrowser.getState().profiles[profileId]!;
+          app.base[key] = canonical({ n: profile.name, c: profile.color, i: profile.icon, ...(profileId === DEFAULT_PROFILE_ID ? { d: true } : {}) });
+        } else delete app.base[key];
+      }
+      app.unapplied = [...new Set([...app.unapplied, ...keys.filter((key) => !!app.records[key])])];
+      throw error;
+    }
+  }
   if (settledTheme(app, link.syncId)) delete link.themeAdopting;
   else link.themeAdopting = true;
 }
@@ -1133,6 +1163,7 @@ function confirmThemes(app: ScopeState) {
   if (Object.values(app.files).some((f) => f.k === "bad")) return;
   for (const link of Object.values(doc.profiles)) {
     if (!link.themeAdopting) continue;
+    if ([`prof:${link.syncId}`, `pth:${link.syncId}`, themeAngleKey(link.syncId)].some((key) => app.unapplied.includes(key))) continue;
     const record = app.records[`pth:${link.syncId}`];
     if (!record || record.v === null) delete link.themeAdopting;
   }
@@ -1155,6 +1186,7 @@ function linkProfiles(app: ScopeState) {
   const s = useBrowser.getState();
   const remote = [...visible(app, "prof:")].map(([k, v]) => [k.slice(5), v as ProfileRecord] as const);
   const taken = new Set(Object.values(doc.profiles).map((l) => l.syncId));
+  const refused: unknown[] = [];
   for (const id of s.profileOrder) {
     const profile = s.profiles[id];
     if (!profile || isIncognitoProfile(id) || doc.profiles[id]) continue;
@@ -1166,10 +1198,15 @@ function linkProfiles(app: ScopeState) {
     taken.add(syncId);
     if (match) {
       doc.scopes[`p:${syncId}`] = freshScope(`p:${syncId}`, { awaitRemote: true });
-      pairTheme(app, id, doc.profiles[id]!);
+      try {
+        pairTheme(app, id, doc.profiles[id]!);
+      } catch (error) {
+        refused.push(error);
+      }
     }
   }
   for (const [id, link] of Object.entries(doc.profiles)) if (!s.profiles[id] && !link.retire) link.retire = true;
+  if (refused.length) throw refused[0];
 }
 
 async function resetFromElsewhere() {
@@ -1445,7 +1482,7 @@ function addLinkedProfile(syncId: string, record: ProfileRecord, shareWith: stri
   if (app) pairTheme(app, id, doc.profiles[id]!);
   else {
     const theme = legacyThemeOf(record);
-    if (theme) useBrowser.getState().updateProfile(id, theme);
+    if (theme) applySyncedProfilePatch(id, theme);
     doc.profiles[id]!.themeAdopting = true;
   }
   doc.scopes[`p:${syncId}`] = freshScope(`p:${syncId}`, { awaitRemote: true });

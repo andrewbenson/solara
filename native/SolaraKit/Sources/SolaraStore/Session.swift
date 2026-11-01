@@ -1,3 +1,4 @@
+import Foundation
 import SolaraModel
 
 public struct ParsedURL: Sendable, Equatable {
@@ -47,6 +48,8 @@ public struct StoreConfig: Sendable, Equatable {
   public var earlyLaunchTab = true
   public var listeners: [SettleListener] = SettleListener.app
   public var syncOrigins = false
+  public var replicaProfilesFromDisk = false
+  public var profileDataTombstones: URL?
 
   public init() {}
 }
@@ -73,6 +76,7 @@ public final class Session {
   public var now: Double
   public var effects: [Effect] = []
   public var result: JSONValue? = nil
+  var fromSyncOrigin = false
   var depth = 0
   var heard: BrowserState? = nil
   var mirroring = 0

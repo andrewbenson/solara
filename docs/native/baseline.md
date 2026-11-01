@@ -44,7 +44,7 @@ native surface that polls.
 | `AC_BENCH_STALLS=1` in `acframes.m` | `apps/browser/scripts/perf/acframes.m` | A `CFRunLoopObserver` (before-waiting / after-waiting) on main and on the JS thread's run loop. It records each iteration's busy time into the buckets and writes `bench-stalls.json` per scenario window. |
 | `acsample.c` scenario mode | `apps/browser/scripts/perf/acsample.c` | It arms on the bench's scenario markers instead of only at launch, and keeps the samples that fall in iterations of 50 ms or more. `launch-samples.mjs` already symbolizes them; a new `stall-samples.mjs` groups them by image. |
 | `acperf postdrag <pid> <window id> <from x,y> <dx,dy> <steps> <gap ms>` | `apps/browser/scripts/perf/acperf.swift` | Real HID mouse-down, drags and mouse-up at the HID tap. It reads the window's frame from `CGWindowListCopyWindowInfo` after each step and writes per-step pointer and window positions. This matches the method in 746664cf. |
-| `SolaraSignposts` | `os_signpost` log `com.hill.solara.perf`, emitted from RN-era code now (`perfProbe` sites) and from native code later | The fixed endpoints "selection shown", "suggestions shown", "core ready" and "New Tab painted". `acmark.m` reads them, so a metric keeps the same endpoint before and after its surface moves. |
+| `SolaraSignposts` | `os_signpost` log `network.benson.solara.perf`, emitted from RN-era code now (`perfProbe` sites) and from native code later | The fixed endpoints "selection shown", "suggestions shown", "core ready" and "New Tab painted". `acmark.m` reads them, so a metric keeps the same endpoint before and after its surface moves. |
 
 ## The script
 

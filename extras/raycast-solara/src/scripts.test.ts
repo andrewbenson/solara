@@ -21,14 +21,14 @@ test("quotes ids and targets the app by bundle id", () => {
   assert.equal(quote('a"b\\c'), '"a\\"b\\\\c"');
   assert.equal(
     focusTabScript({ windowId: "w-1", tabId: "tab-2" }),
-    'tell application id "com.hill.solara" to focus (tab id "tab-2" of window id "w-1")',
+    'tell application id "network.benson.solara" to focus (tab id "tab-2" of window id "w-1")',
   );
   assert.equal(
     closeTabScript({ windowId: "w-1", tabId: "tab-2" }, "current application"),
     'tell current application to close (tab id "tab-2" of window id "w-1")',
   );
-  assert.match(listTabsScript(), /tell application id "com\.hill\.solara"/);
-  assert.match(listProfilesScript(), /tell application id "com\.hill\.solara"/);
+  assert.match(listTabsScript(), /tell application id "network\.benson\.solara"/);
+  assert.match(listProfilesScript(), /tell application id "network\.benson\.solara"/);
 });
 
 test("reads tabs and profiles from the separated answer", () => {
@@ -71,7 +71,7 @@ end tell`,
 });
 
 test("makes windows in a profile or incognito", () => {
-  assert.equal(newWindowScript(), 'tell application id "com.hill.solara" to make new window');
+  assert.equal(newWindowScript(), 'tell application id "network.benson.solara" to make new window');
   assert.equal(
     newWindowScript({ incognito: true }, "current application"),
     "tell current application to make new window with properties {incognito:true}",
@@ -83,7 +83,7 @@ test("makes windows in a profile or incognito", () => {
 });
 
 test("makes a tab with what was typed, or an empty one", () => {
-  assert.equal(newTabScript("  "), 'tell application id "com.hill.solara" to make new tab');
+  assert.equal(newTabScript("  "), 'tell application id "network.benson.solara" to make new tab');
   assert.equal(
     newTabScript(" example.com ", "current application"),
     'tell current application to make new tab with properties {URL:"example.com"}',

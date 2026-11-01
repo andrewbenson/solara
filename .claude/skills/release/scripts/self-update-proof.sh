@@ -40,7 +40,7 @@ case "$mode" in
 import plistlib, sys
 path, work, feed, role, cdp_port = sys.argv[1:]
 with open(path, 'rb') as f: p = plistlib.load(f)
-p['CFBundleIdentifier'] = 'com.hill.solara.selfupdatetest'
+p['CFBundleIdentifier'] = 'network.benson.solara.selfupdatetest'
 p['ACUpdateChannel'] = 'stable'
 p['SUFeedURL'] = feed
 p['SUEnableAutomaticChecks'] = False
@@ -56,7 +56,7 @@ PY
     python3 - "$work" "$port" "$new_build" "$public_key" "$cdp_port" <<'PY'
 import datetime, json, plistlib, sys
 work, port, build, key, cdp_port = sys.argv[1:]
-with open(work + '/home/Library/Preferences/com.hill.solara.selfupdatetest.plist', 'wb') as f:
+with open(work + '/home/Library/Preferences/network.benson.solara.selfupdatetest.plist', 'wb') as f:
     plistlib.dump({'SUHasLaunchedBefore': True, 'SULastCheckTime': datetime.datetime(2001,1,1), 'SUEnableAutomaticChecks': False, 'SUAutomaticallyUpdate': True, 'SUSendProfileInfo': False}, f)
 with open(work + '/proof.json', 'w') as f:
     json.dump({'work': work, 'port': int(port), 'version': '0.0.2-test', 'build': build, 'publicKey': key, 'cdpPort': int(cdp_port)}, f)

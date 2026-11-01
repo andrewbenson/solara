@@ -67,7 +67,7 @@ and how it reads the answer.
 - New Window runs `make new window`, with `{active profile:(profile id "…")}` for a profile or
   `{incognito:true}`, then `activate`.
 
-The scripts address the app by bundle id (`com.hill.solara`, the `AC_BUNDLE_ID` in `apps/browser/macos/Identity.xcconfig`). Search Tabs' scripts were checked
+The scripts address the app by bundle id (`network.benson.solara`, the `AC_BUNDLE_ID` in `apps/browser/macos/Identity.xcconfig`). Search Tabs' scripts were checked
 against a running build with the app's DEV AppleScript runner (`ac.shell.devRunAppleScript`, the
 same text with `tell current application`), which avoids macOS's Automation prompt.
 

@@ -3,7 +3,7 @@ set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
 name="DockTile"
-bundle_id="${PRODUCT_BUNDLE_IDENTIFIER:-com.hill.solara}.DockTilePlugIn"
+bundle_id="${PRODUCT_BUNDLE_IDENTIFIER:-network.benson.solara}.DockTilePlugIn"
 plugin="$TARGET_BUILD_DIR/${PLUGINS_FOLDER_PATH:-$CONTENTS_FOLDER_PATH/PlugIns}/$name.plugin"
 work="${DERIVED_FILE_DIR:-$here/build}/docktile"
 identity="${EXPANDED_CODE_SIGN_IDENTITY:--}"

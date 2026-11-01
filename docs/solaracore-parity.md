@@ -113,10 +113,10 @@ scripts/agent/build-app --as <you>     # into apps/browser/build-<you>; --help
 METRO_PORT=8081 node packages/solaracore/scripts/acceptance.mjs apps/browser/build-<you>/Build/Products/Debug/Solara.app <scratch dir> [check…]
 ```
 
-The app (bundle id `com.hill.solara.dev` in Debug, Apple Development signing with the hardened runtime in
+The app (bundle id `network.benson.solara.dev` in Debug, Apple Development signing with the hardened runtime in
 Debug; `scripts/release.sh` signs releases with Developer ID). A Debug build refuses to start without
 `SOLARA_DATA_DIR` (it never falls back to a real profile). A test run hands it its Metro in `SOLARA_JS_LOCATION`
-(that launch's argument domain, never written); never `defaults write com.hill.solara`, the installed app's. Its build stages a copy of the engine framework
+(that launch's argument domain, never written); never `defaults write network.benson.solara`, the installed app's. Its build stages a copy of the engine framework
 (`packages/solaracore/scripts/stage-framework.sh`, under the chromium lock, into `SOLARACORE_STAGE_DIR`), links that, and
 `embed.sh` signs the embedded copy with the build's identity.
 

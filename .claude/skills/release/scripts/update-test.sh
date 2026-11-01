@@ -6,7 +6,7 @@ new="${2:?}" appcast="${3:?}" version="${4:?}"
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(git -C "$here" rev-parse --show-toplevel)"
 . "$here/verify-release.sh"
-test_id="com.hill.solara.updatetest"
+test_id="network.benson.solara.updatetest"
 [ "$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$old/Contents/Info.plist")" = \
   "$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$new/Contents/Info.plist")" ] || { echo "error: update test requires the same bundle id" >&2; exit 1; }
 port="${UPDATE_TEST_PORT:-8796}"

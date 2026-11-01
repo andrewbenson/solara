@@ -31,7 +31,7 @@ import Testing
   private var app: AppFacts {
     AppFacts([
       "appName": "Solara", "appVersion": "0.1.0", "appBuild": "42", "configuration": "Debug", "osVersion": "27.0.0", "osBuild": "27A1",
-      "arch": "arm64", "model": "Mac16,1", "memoryGB": 15.5, "bundleId": "com.hill.solara", "locale": "en_US",
+      "arch": "arm64", "model": "Mac16,1", "memoryGB": 15.5, "bundleId": "network.benson.solara", "locale": "en_US",
       "feedbackURL": "https://github.com/andrewbenson/solara/issues/new?body=%s",
     ])
   }
@@ -44,7 +44,7 @@ import Testing
       Solara 0.1.0 (42) — Debug
       Engine: SolaraCore, Chromium 156.0.1
       macOS 27.0.0 (27A1), arm64, Mac16,1, 16 GB
-      Bundle: com.hill.solara, locale en_US
+      Bundle: network.benson.solara, locale en_US
       Windows: 2 (+1 incognito), tabs: 3, profiles: 2
       Updates: automatic checks on, feed none
       """)
@@ -136,7 +136,7 @@ import Testing
       #expect(report.contains("Solara 0.1.0 (42) — Debug"))
       #expect(report.contains("Engine: SolaraCore, Chromium 156"))
       #expect(report.contains("macOS 27.0.0 (27A1), arm64, Mac16,1, 16 GB"))
-      #expect(report.contains("Bundle: com.hill.solara, locale en_US"))
+      #expect(report.contains("Bundle: network.benson.solara, locale en_US"))
       #expect(report.contains("Updates: not set up for this build"))
       #expect(!report.contains("Windows:"))
     }

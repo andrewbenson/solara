@@ -44,8 +44,8 @@ expect() {
 
 timeout 300 swiftc -O "$here/aclcheck.swift" -o "$work/aclcheck-team" 2>/dev/null || { echo "FAIL  swiftc"; failed=1; exit; }
 cp "$work/aclcheck-team" "$work/aclcheck-adhoc"
-timeout 30 codesign --force -s "$identity" -i com.hill.solara.aclcheck "$work/aclcheck-team" 2>/dev/null || { echo "FAIL  signing with $identity (a prompt or no identity)"; failed=1; exit; }
-codesign --force -s - -i com.hill.solara.aclcheck "$work/aclcheck-adhoc" 2>/dev/null
+timeout 30 codesign --force -s "$identity" -i network.benson.solara.aclcheck "$work/aclcheck-team" 2>/dev/null || { echo "FAIL  signing with $identity (a prompt or no identity)"; failed=1; exit; }
+codesign --force -s - -i network.benson.solara.aclcheck "$work/aclcheck-adhoc" 2>/dev/null
 team="$work/aclcheck-team"
 adhoc="$work/aclcheck-adhoc"
 
@@ -65,7 +65,7 @@ expect "D: the ad hoc binary can't read it" "read -25293 " "$adhoc" read "$keych
 for partition in yes no; do
   a="Solara ACL Check A $partition Safe Storage"
   timeout 20 security add-generic-password -s "$a" -a "$account" -w mock_password -T "$team" "$keychain" || failed=1
-  [ "$partition" = yes ] && { timeout 20 security set-generic-password-partition-list -S "apple-tool:,apple:,teamid:33W8BDN775" -s "$a" -a "$account" -k "$password" "$keychain" >/dev/null || failed=1; }
+  [ "$partition" = yes ] && { timeout 20 security set-generic-password-partition-list -S "apple-tool:,apple:,teamid:555T74U353" -s "$a" -a "$account" -k "$password" "$keychain" >/dev/null || failed=1; }
   expect "A ($partition partition list): the team binary reads it, no prompt" "read 0 mock_password" "$team" read "$keychain" "$a" "$account"
   expect "A ($partition partition list): the team binary updates it, no prompt" "update 0" "$team" update "$keychain" "$a" "$account" new
   expect "A ($partition partition list): the update reads back" "read 0 new" "$team" read "$keychain" "$a" "$account"

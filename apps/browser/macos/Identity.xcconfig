@@ -1,6 +1,6 @@
 AC_PRODUCT_NAME = Solara
-AC_TEAM_ID = 33W8BDN775
-AC_BUNDLE_ID = com.hill.solara
+AC_TEAM_ID = 555T74U353
+AC_BUNDLE_ID = network.benson.solara
 AC_FEED_URL = https:/$()/github.com/andrewbenson/solara/releases/latest/download/appcast.xml
 AC_PUBLIC_ED_KEY = hzKidH98MRGTWByMi7iIVQfsNWaCWaEq0ZMNWWgmNH8=
 AC_SPARKLE_ACCOUNT = solara

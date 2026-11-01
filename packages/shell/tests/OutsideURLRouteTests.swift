@@ -3,7 +3,7 @@ import XCTest
 
 final class OutsideURLRouteTests: XCTestCase {
   let own = "/build/test/Solara.app"
-  let id = "com.hill.solara"
+  let id = "network.benson.solara"
   let background = ["SOLARA_BACKGROUND": "1"]
 
   func route(

@@ -111,7 +111,7 @@ NSDictionary *DeletionLocation(NSString *profile) {
 
 NSString *InstalledDataDirectory() {
   NSString *support = NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES).firstObject;
-  NSString *bundleId = NSBundle.mainBundle.bundleIdentifier ?: @"com.hill.solara.unbundled";
+  NSString *bundleId = NSBundle.mainBundle.bundleIdentifier ?: @"network.benson.solara.unbundled";
   return [[support stringByAppendingPathComponent:bundleId] stringByAppendingPathComponent:@"Chromium"];
 }
 

@@ -151,12 +151,12 @@ Engine files are in `engine/solaracore/src/solara/core`, app files in `packages/
     new derived data compiles everything (a few minutes), and a copy of someone else's does too (its paths differ).
     A JS-only change needs no build: it says so and stops (`--force` builds). A new engine framework is staged
     under the chromium lock: `--release` your chromium take first, or it uses your take (`--as`).
-    It builds the dev identity (`macos/Dev.xcconfig`): bundle id `com.hill.solara.dev`, so its data dir,
+    It builds the dev identity (`macos/Dev.xcconfig`): bundle id `network.benson.solara.dev`, so its data dir,
     preferences, links and macOS permissions are never the owner's, and the app treats it as unsigned (Chrome's mock
     keychain, test switches). It signs it with this Mac's Apple Development certificate for the team, so a permission
     macOS asked about once stays answered across rebuilds; no entitlements, no hardened runtime, so no iCloud passkeys
     or keychain groups; its own keychain items are "Solara Dev …". Sync's default iCloud Drive folder isn't per bundle
-    id, so never turn sync on in a dev build without a scratch dir. `--owner` builds the owner's `com.hill.solara`
+    id, so never turn sync on in a dev build without a scratch dir. `--owner` builds the owner's `network.benson.solara`
     instead (a preview for the owner), signed with the team when this Mac has a macOS development profile for it, else
     ad hoc (`macos/AdHoc.xcconfig`). It says which in one line; switching rebuilds.
     `/tmp/ac-<name>.holder` says who holds a lock. Every `scripts/agent` script takes `--help`.

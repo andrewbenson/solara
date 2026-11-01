@@ -71,7 +71,7 @@ static BOOL ShouldIsolatePasteboard(void) {
   if (ShouldIsolatePasteboard())
     IsolatePasteboard(gDataDirectory ?: [NSString stringWithFormat:@"pid-%d", getpid()]);
   if (!gDataDirectory) return;
-  NSString *domain = NSBundle.mainBundle.bundleIdentifier ?: @"com.hill.solara.unbundled";
+  NSString *domain = NSBundle.mainBundle.bundleIdentifier ?: @"network.benson.solara.unbundled";
   gDefaults = [[NSUserDefaults alloc]
       initWithSuiteName:[[gDataDirectory stringByAppendingPathComponent:@"Preferences"] stringByAppendingPathComponent:domain]];
   if (!gDefaults) return;

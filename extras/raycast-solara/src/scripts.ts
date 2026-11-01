@@ -1,4 +1,4 @@
-export const BUNDLE_ID = "com.hill.solara";
+export const BUNDLE_ID = "network.benson.solara";
 
 export const APP_TARGET = `application id "${BUNDLE_ID}"`;
 

@@ -356,33 +356,33 @@ final class SafeStorageRekeyRunTests: XCTestCase {
     var path = [CChar](repeating: 0, count: Int(MAXPATHLEN) * 4)
     XCTAssertGreaterThan(proc_pidpath(getpid(), &path, UInt32(path.count)), 0)
     let ours = SafeStorageRekeyRun.enclosingBundleIdentifiers(of: String(cString: path)).first
-    XCTAssertFalse(SafeStorageRekeyRun.singletonHeld(dir, bundleIdentifier: "com.hill.solara"))
+    XCTAssertFalse(SafeStorageRekeyRun.singletonHeld(dir, bundleIdentifier: "network.benson.solara"))
     symlink("elsewhere.local-\(getpid())", lock)
-    XCTAssertFalse(SafeStorageRekeyRun.singletonHeld(dir, bundleIdentifier: "com.hill.solara"))
+    XCTAssertFalse(SafeStorageRekeyRun.singletonHeld(dir, bundleIdentifier: "network.benson.solara"))
     if let ours {
       XCTAssertTrue(SafeStorageRekeyRun.singletonHeld(dir, bundleIdentifier: ours))
     }
     unlink(lock)
     symlink("elsewhere.local-999999", lock)
-    XCTAssertFalse(SafeStorageRekeyRun.singletonHeld(dir, bundleIdentifier: ours ?? "com.hill.solara"))
+    XCTAssertFalse(SafeStorageRekeyRun.singletonHeld(dir, bundleIdentifier: ours ?? "network.benson.solara"))
     unlink(lock)
     symlink("elsewhere.local-1", lock)
-    XCTAssertFalse(SafeStorageRekeyRun.singletonHeld(dir, bundleIdentifier: "com.hill.solara"))
+    XCTAssertFalse(SafeStorageRekeyRun.singletonHeld(dir, bundleIdentifier: "network.benson.solara"))
     unlink(lock)
     try Data("not a link".utf8).write(to: URL(fileURLWithPath: lock))
-    XCTAssertFalse(SafeStorageRekeyRun.singletonHeld(dir, bundleIdentifier: ours ?? "com.hill.solara"))
+    XCTAssertFalse(SafeStorageRekeyRun.singletonHeld(dir, bundleIdentifier: ours ?? "network.benson.solara"))
   }
 
   func testEnclosingBundlesIncludeTheOuterAppOfAHelper() throws {
     let outer = root.appendingPathComponent("Solara.app")
     let helper = outer.appendingPathComponent("Contents/Frameworks/Helper.app")
-    for (bundle, id) in [(outer, "com.hill.solara"), (helper, "com.hill.solara.helper")] {
+    for (bundle, id) in [(outer, "network.benson.solara"), (helper, "network.benson.solara.helper")] {
       try FileManager.default.createDirectory(at: bundle.appendingPathComponent("Contents/MacOS"), withIntermediateDirectories: true)
       (["CFBundleIdentifier": id] as NSDictionary).write(to: bundle.appendingPathComponent("Contents/Info.plist"), atomically: true)
     }
     XCTAssertEqual(
       SafeStorageRekeyRun.enclosingBundleIdentifiers(of: helper.appendingPathComponent("Contents/MacOS/Helper").path),
-      ["com.hill.solara.helper", "com.hill.solara"])
+      ["network.benson.solara.helper", "network.benson.solara"])
   }
 
   func testAStrayWalNextToTheStagedFileNeverLands() throws {
@@ -516,7 +516,7 @@ final class RekeyCoreCrashFlag: @unchecked Sendable {
 }
 
 final class SafeStorageRekeyGateTests: XCTestCase {
-  let installed = URL(fileURLWithPath: "/Users/x/Library/Application Support/com.hill.solara/Chromium")
+  let installed = URL(fileURLWithPath: "/Users/x/Library/Application Support/network.benson.solara/Chromium")
   let testEnv = ["SOLARA_TEST_REKEY": "1", "SOLARA_DATA_DIR": "/tmp/scratch/./a", "SOLARA_TEST_KEYCHAIN": "file"]
 
   func gate(_ env: [String: String], real: Bool = false, distribution: Bool = false) -> SafeStorageRekeyGate {

@@ -751,7 +751,7 @@ if (process.argv[1] === here) {
       assert.equal(temporaryData(join(link, "..", basename(made))), realPath(made));
       assert.equal(wipeRefusal(join(made, "data")), null);
       assert.match(wipeRefusal(link), /isn't an instance data dir/);
-      for (const denied of [homedir(), "/", join(homedir(), "Library", "Application Support", "com.hill.solara"), join(dirname(here), "..", "..")])
+      for (const denied of [homedir(), "/", join(homedir(), "Library", "Application Support", "com.hill.solara"), join(homedir(), "Library", "Application Support", "network.benson.solara"), join(dirname(here), "..", "..")])
         assert.ok(wipeRefusal(denied), denied);
     } finally {
       rmSync(made, { recursive: true, force: true });

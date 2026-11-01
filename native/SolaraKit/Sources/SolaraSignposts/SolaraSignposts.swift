@@ -19,7 +19,7 @@ public enum SolaraSignposts {
 
   public typealias Observer = @convention(c) (UnsafePointer<CChar>, Int, Double) -> Void
 
-  public static let subsystem = "com.hill.solara.perf"
+  public static let subsystem = "network.benson.solara.perf"
   static let points = OSSignposter(subsystem: subsystem, category: .pointsOfInterest)
   static let counts = OSSignposter(subsystem: subsystem, category: "counts")
   static let observer = Mutex<Observer?>(nil)

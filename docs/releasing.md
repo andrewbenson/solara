@@ -129,7 +129,7 @@ Owner-only describes the audience, not access control: a public GitHub release r
 Developer ID and notarization setup below applies to signed 0.1.0 and later. Unsigned 0.0.x needs the engine,
 Pods and Sparkle signing key (on the signing Mac), with no Apple identity or notary credentials.
 
-- The identity's **Developer ID Application** certificate (team `AC_TEAM_ID`: `33W8BDN775`) in the login keychain, and Xcode signed in to the team: the export fetches the Developer ID provisioning profile
+- The identity's **Developer ID Application** certificate (team `AC_TEAM_ID`: `555T74U353`) in the login keychain, and Xcode signed in to the team: the export fetches the Developer ID provisioning profile
   (`-allowProvisioningUpdates`) that the keychain-group entitlements need.
 - The **Sparkle EdDSA key**, a login keychain item (service `https://sparkle-project.org`, account
   `AC_SPARKLE_ACCOUNT`: `solara`; `SPARKLE_ACCOUNT` overrides). Its public half is `SUPublicEDKey` in
@@ -141,7 +141,7 @@ Pods and Sparkle signing key (on the signing Mac), with no Apple identity or not
   `NOTARY_KEY=<path>`, `NOTARY_KEY_ID=<id>`, `NOTARY_ISSUER=<issuer id>`. release.sh prefers it to the
   keychain profile below, which notarytool keeps in the data-protection keychain: that reads as
   missing while the screen is locked. Otherwise, a notarytool profile named `solara`:
-  `xcrun notarytool store-credentials solara --apple-id <id> --team-id 33W8BDN775` (it asks for an
+  `xcrun notarytool store-credentials solara --apple-id <id> --team-id 555T74U353` (it asks for an
   app-specific password). Signed mode refuses missing credentials unless `ALLOW_UNNOTARIZED=1` is explicitly set for an experiment;
   that override is not a notarized release.
 - The engine: SolaraCore's `Chromium Framework.framework` built in `~/chromium-build` (`scripts/agent/engine-build`;
@@ -187,7 +187,7 @@ Pods and Sparkle signing key (on the signing Mac), with no Apple identity or not
      helpers under the hardened runtime with library validation, except the renderer and GPU ones (Aperitif's too),
      which get `allow-jit` (`packages/solaracore/scripts/signing`) instead; then the framework, then the app again with
      the entitlements the export gave it,
-   - checks what an in-place update depends on: the identity's bundle id (`com.hill.solara`), executable `Solara`, the
+   - checks what an in-place update depends on: the identity's bundle id (`network.benson.solara`), executable `Solara`, the
      designated requirement (the identity's team), the keychain groups, Sparkle's feed and key and the usage strings in
      `Info.plist`; that every piece of code is Developer ID with a timestamp and no `get-task-allow`; and that the app
      is signed with `com.apple.developer.web-browser.public-key-credential` exactly when its provisioning profile
@@ -242,8 +242,8 @@ configuration of the project (not the target's, so `pod install` never touches i
 | Setting | Read by | Value |
 |---|---|---|
 | `AC_PRODUCT_NAME` | `CFBundleName`, `CFBundleDisplayName`, the DMG's app and volume, the update zip, keychain items and the iCloud sync folder the app itself names, the CLI's command (lowercased) and install home | `Solara` |
-| `AC_TEAM_ID` | `DEVELOPMENT_TEAM`, the export, release.sh's signing identity and checks | `33W8BDN775` |
-| `AC_BUNDLE_ID` | `PRODUCT_BUNDLE_IDENTIFIER` (so the data folders, the defaults and the keychain groups), release.sh's checks, the data dir the CLI connects to | `com.hill.solara` |
+| `AC_TEAM_ID` | `DEVELOPMENT_TEAM`, the export, release.sh's signing identity and checks | `555T74U353` |
+| `AC_BUNDLE_ID` | `PRODUCT_BUNDLE_IDENTIFIER` (so the data folders, the defaults and the keychain groups), release.sh's checks, the data dir the CLI connects to | `network.benson.solara` |
 | `AC_FEED_URL` | `SUFeedURL` | `https://github.com/andrewbenson/solara/releases/latest/download/appcast.xml` |
 | `AC_PUBLIC_ED_KEY` | `SUPublicEDKey`, checked against the Sparkle key release.sh signs with | Solara's key |
 | `AC_SPARKLE_ACCOUNT` | the keychain account release.sh finds the Sparkle key under | `solara` |
@@ -260,7 +260,7 @@ or from a bundle's `CFBundleExecutable`. The release assets are named for the pr
 release.sh bakes the product, bundle id and repo into the CLI tarball (`solara-cli-<version>-macos-arm64.tar.gz`, same
 name in every build) and pins its digest into the app; the app's installer passes its own product and repo. So the
 app installs `~/.local/bin/solara` into `~/Library/Application Support/Solara/CLI`, downloads from
-`andrewbenson/solara`'s releases and drives `~/Library/Application Support/com.hill.solara`. The tarball must be
+`andrewbenson/solara`'s releases and drives `~/Library/Application Support/network.benson.solara`. The tarball must be
 uploaded to the same release as the app: `publish.sh` reads the repo from the identity.
 
 The Sparkle key was generated on 2026-10-24 (account `solara` in the login keychain, public half in
@@ -410,10 +410,12 @@ For our full ZIP app updates, **no intermediate release or `SUVerifyUpdateBefore
 after extraction. Setting the key to YES would also work with the unchanged EdDSA key; it is not a migration fix.
 [AppInstaller.m, lines 252–294](https://github.com/sparkle-project/Sparkle/blob/2.9.6/Autoupdate/AppInstaller.m#L252).
 
-Keep `com.hill.solara`, the executable name, `SUPublicEDKey`/`AC_PUBLIC_ED_KEY`, the feed and monotonically increasing
-builds. Release 0.1.0 uses Developer ID + notarization, and its ZIP is still signed with that EdDSA key. Before shipping
-it, repeat an in-place test from the final 0.0.x to the final signed export. Check macOS permission and data behavior
-separately: passing Sparkle validation does not preserve an ad hoc app's macOS identity or mock-keychain secrets.
+0.1.0 is not an in-place update from 0.0.x: it changes the bundle id from `com.hill.solara` to `network.benson.solara`
+and the team to `555T74U353` (the owner's own developer account), so the owner installs it by hand and it starts with a
+fresh data folder, with no migration (the owner's decision, 2026-11-01). The appcast and feed URL stay the same, so 0.1.0
+and later update normally. From 0.1.0 on keep `network.benson.solara`, the executable name,
+`SUPublicEDKey`/`AC_PUBLIC_ED_KEY`, the feed and monotonically increasing builds. Release 0.1.0 uses Developer ID +
+notarization, and its ZIP is still signed with that EdDSA key.
 
 ## Update checks
 

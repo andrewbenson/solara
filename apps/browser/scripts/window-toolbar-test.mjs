@@ -57,7 +57,7 @@ if (process.env.SOLARA_SWITCHES) {
   files["switches-cache.json"] = { version: 1, switches };
 }
 const instance = await launch(app, { data, port: Number(flags.port ?? 9796), session: fixture,
-  onboarded: true, files, js: "none", ready: false,
+  onboarded: true, files, js: "live", ready: false,
   env: { SOLARA_DRAW_WINDOWS: "1", ...(process.env.SOLARA_SWITCHES ? { SOLARA_SWITCHES: process.env.SOLARA_SWITCHES } : {}) } });
 const { pid } = instance;
 const ac = (body, ms) => evaluate(data, pid, body, ms);

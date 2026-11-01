@@ -66,7 +66,7 @@ for (const part of (process.env.SOLARA_SWITCHES ?? "").split(",")) {
   if (name && value) switches[name] = !["off", "0", "false"].includes(value);
 }
 const instance = await launch(app, {
-  data, port, session: fixture, onboarded: true, ready: false, js: "none",
+  data, port, session: fixture, onboarded: true, ready: false, js: "live",
   env: { SOLARA_DRAW_WINDOWS: "1", ...(process.env.SOLARA_SWITCHES ? { SOLARA_SWITCHES: process.env.SOLARA_SWITCHES } : {}) },
   files: { "perf-probe": "", ...(process.env.SOLARA_SWITCHES ? { "switches-cache.json": { version: 1, switches } } : {}) },
 });

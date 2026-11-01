@@ -176,19 +176,7 @@ public enum DocumentStore {
     guard let host = NSClassFromString("SolaraCoreHost") as? NSObject.Type else { return false }
     return (host as AnyObject).value(forKey: "safeMode") as? Bool ?? false
   }
-  private struct Staged {
-    let url: URL
-    let generation: UInt64
-    let contents: String
-    var waiters: [Done]
-  }
-
-  private static let queue = DispatchQueue(label: "solara.documents", qos: .utility)
-  private static let lock = NSLock()
-  private static var staged: [String: Staged] = [:]
-  private static var removing: [String: Int] = [:]
-  private static var generation: UInt64 = 0
-  private static var closed = false
+  private static let writes = DocumentWriteStore()
   private static var beforeQuitFlush: (() -> Void)?
   private static let flushOnQuit = NotificationCenter.default.addObserver(
     forName: NSApplication.willTerminateNotification, object: nil, queue: nil
@@ -204,9 +192,7 @@ public enum DocumentStore {
 
   public static func read(_ name: String) -> String? {
     guard let url = try? ShellModule.documentURL(name) else { return nil }
-    lock.lock()
-    let pending = staged[url.lastPathComponent]?.contents
-    lock.unlock()
+    let pending = writes.pendingContents(for: url)
     return pending ?? (try? String(contentsOf: url, encoding: .utf8))
   }
 
@@ -214,19 +200,13 @@ public enum DocumentStore {
     guard let dir = try? ShellModule.documentURL(prefix).deletingLastPathComponent() else { return [] }
     return DocumentListing.names(
       prefix: prefix,
-      pending: {
-        lock.lock()
-        defer { lock.unlock() }
-        return DocumentListing.Pending(staged: Set(staged.keys), removing: Set(removing.keys))
-      },
+      pending: { writes.pendingNames() },
       onDisk: { (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? [] })
   }
 
   public static func readResult(_ name: String) -> [String: String] {
     guard let url = try? ShellModule.documentURL(name) else { return [:] }
-    lock.lock()
-    let pending = staged[url.lastPathComponent]?.contents
-    lock.unlock()
+    let pending = writes.pendingContents(for: url)
     if let pending { return ["contents": pending] }
     do {
       return ["contents": try String(contentsOf: url, encoding: .utf8)]
@@ -243,87 +223,23 @@ public enum DocumentStore {
     }
     _ = flushOnQuit
     let url = try ShellModule.documentURL(name)
-    let key = url.lastPathComponent
-    lock.lock()
-    if closed {
-      lock.unlock()
-      done?(CocoaError(.fileWriteNoPermission))
-      return
-    }
-    generation += 1
-    let mine = generation
-    staged[key] = Staged(url: url, generation: mine, contents: contents, waiters: (staged[key]?.waiters ?? []) + (done.map { [$0] } ?? []))
-    lock.unlock()
-    queue.async { land(key, mine, attempt: 0) }
+    writes.write(url, contents: contents, done: done)
   }
 
   static func remove(_ name: String) throws {
     guard SafeLaunchDocuments.mayRemove(name, safeMode: safeMode) else {
       throw NSError(domain: "SolaraSafeMode", code: 1, userInfo: [NSLocalizedDescriptionKey: "Automatic document removal is disabled in safe mode: \(name)"])
     }
-    let url = try ShellModule.documentURL(name)
-    lock.lock()
-    if closed { return lock.unlock() }
-    generation += 1
-    let key = url.lastPathComponent
-    let waiters = staged.removeValue(forKey: key)?.waiters ?? []
-    removing[key, default: 0] += 1
-    lock.unlock()
-    queue.async {
-      try? FileManager.default.removeItem(at: url)
-      lock.lock()
-      removing[key] = removing[key].flatMap { $0 > 1 ? $0 - 1 : nil }
-      lock.unlock()
-      for waiter in waiters { waiter(nil) }
-    }
-  }
-
-  private static func land(_ key: String, _ generation: UInt64, attempt: Int) {
-    lock.lock()
-    guard let save = staged[key], save.generation == generation else { return lock.unlock() }
-    lock.unlock()
-    var failure: Error?
-    do {
-      try save.contents.write(to: save.url, atomically: true, encoding: .utf8)
-    } catch {
-      failure = error
-    }
-    lock.lock()
-    var waiters: [Done] = []
-    if staged[key]?.generation == generation {
-      waiters = staged[key]!.waiters
-      if failure == nil { staged[key] = nil } else { staged[key]!.waiters = [] }
-    }
-    lock.unlock()
-    for waiter in waiters { waiter(failure) }
-    guard let failure else { return }
-    NSLog("\(Bundle.main.productName): saving \(key) failed (try \(attempt + 1)): \(failure.localizedDescription)")
-    let delay = min(60.0, 2.0 * pow(2.0, Double(min(attempt, 5))))
-    queue.asyncAfter(deadline: .now() + delay) { land(key, generation, attempt: attempt + 1) }
+    writes.remove(try ShellModule.documentURL(name))
   }
 
   static func close() {
-    lock.lock()
-    closed = true
-    lock.unlock()
+    writes.close()
   }
 
   @discardableResult
   public static func flush() -> Bool {
-    queue.sync {
-      lock.lock()
-      let keys = Array(staged.keys)
-      lock.unlock()
-      for key in keys {
-        lock.lock()
-        let generation = staged[key]?.generation
-        lock.unlock()
-        if let generation { land(key, generation, attempt: 99) }
-      }
-    }
-    lock.lock()
-    defer { lock.unlock() }
-    return staged.isEmpty
+    writes.flush()
   }
 }
 

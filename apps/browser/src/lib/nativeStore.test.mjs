@@ -28,11 +28,27 @@ globalThis.acTestNativeModules = {
     },
     dispatch(json, sinceRev) {
       const commands = [JSON.parse(json)].flat();
+      const effects = [];
       sent.push(...commands);
       for (const { name, args } of commands) {
         if (name === "updateSettings") {
           native.settings = { ...native.settings, ...args[0], chosen: [...new Set([...native.settings.chosen, ...Object.keys(args[0])])] };
           native.commit({ settings: { set: { ...args[0], chosen: native.settings.chosen } } });
+        } else if (name === "deleteProfile") {
+          const id = args[0];
+          const profile = native.profiles?.[id];
+          if (!profile || Object.keys(native.profiles).length <= 1) continue;
+          const engine = profile.dataId ?? id;
+          const shared = Object.values(native.profiles).some((other) => other.id !== id && (other.dataId ?? other.id) === engine);
+          delete native.profiles[id];
+          native.settings = {
+            ...native.settings,
+            defaultProfileId: native.settings.defaultProfileId === id ? Object.keys(native.profiles)[0] : native.settings.defaultProfileId,
+            neverTranslateSites: Object.fromEntries(Object.entries(native.settings.neverTranslateSites ?? {}).filter(([key]) => key !== id)),
+            developerMode: Object.fromEntries(Object.entries(native.settings.developerMode ?? {}).filter(([key]) => key !== id)),
+          };
+          native.commit({ settings: { set: native.settings } });
+          effects.push({ type: "profileDeleted", profileId: id, shared });
         } else if (name === "applyState" || name === "attachReplicaProfiles") {
           const patch = {};
           if (args[0].downloads) patch.downloads = native.downloads = args[0].downloads;
@@ -44,7 +60,7 @@ globalThis.acTestNativeModules = {
           native.commit(patch);
         }
       }
-      return JSON.stringify(native.since(sinceRev));
+      return JSON.stringify({ ...native.since(sinceRev), effects });
     },
     catchUp: (sinceRev) => {
       native.beforeCatchUp?.();
@@ -167,6 +183,8 @@ test("deleting a profile sends its settings repair to the native store, not past
   }
   assert.notEqual(native.settings.defaultProfileId, id);
   assert.equal(S().settings.defaultProfileId, native.settings.defaultProfileId);
+  assert.ok(sent.some((command) => command.name === "deleteProfile" && command.args[0] === id));
+  assert.ok(sent.some((command) => command.name === "applyState" && command.args[0].settings?.defaultProfileId === S().settings.defaultProfileId));
   assert.ok(!warnings.some((w) => w.includes("outside the native store's applier")));
 });
 

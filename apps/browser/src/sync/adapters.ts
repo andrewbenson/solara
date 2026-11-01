@@ -7,7 +7,7 @@ import { useBrowser } from "../store/browser";
 import { engineProfile } from "../store/model";
 import { isPeekTab } from "../store/peek";
 import { fromSync } from "../store/pinOrderChoices";
-import { requireGeneratedProfileIdentity } from "../store/profiles";
+import { engineIdOf, requireGeneratedProfileIdentity } from "../store/profiles";
 import { DEFAULT_PROFILE_ID, DEFAULT_SETTINGS, type Settings } from "../store/settings";
 import { sanitizeTheme } from "../lib/profileTheme";
 import { developerModeOf } from "../lib/developerMode";
@@ -402,8 +402,25 @@ const SAME_VISIT_MS = 1;
 export const historyExpired = (key: string, value: unknown, now: number) =>
   key.startsWith("h:") && lastVisitOf(value as HistoryValue) < now - HISTORY_WINDOW_MS;
 
+const historyLifetimes = new Map(Object.keys(store().profiles).map((id) => [id, Symbol()]));
+
+useBrowser.subscribe((s, previous) => {
+  if (s.profiles === previous.profiles && s.orphanedProfileData === previous.orphanedProfileData) return;
+  for (const id of historyLifetimes.keys()) if (!s.profiles[id]) historyLifetimes.delete(id);
+  for (const [id, profile] of Object.entries(s.profiles)) {
+    const before = previous.profiles[id];
+    const engine = engineIdOf(profile);
+    const retired = s.orphanedProfileData.includes(engine) && !previous.orphanedProfileData.includes(engine);
+    if (!before || before.id !== profile.id || before.createdAt !== profile.createdAt || engineIdOf(before) !== engine || retired) historyLifetimes.set(id, Symbol());
+  }
+});
+
 export function historyAdapter(profileId: string): Adapter {
-  const ready = () => !!store().historyReady[profileId];
+  const ready = () => {
+    const s = store();
+    const profile = s.profiles[profileId];
+    return !!profile && profile.id === profileId && !!s.historyReady[profileId] && !s.orphanedProfileData.includes(engineIdOf(profile));
+  };
   return {
     prefix: "h:",
     extract: (base) => {
@@ -435,6 +452,15 @@ export function historyAdapter(profileId: string): Adapter {
     editedAt: (v) => lastVisitOf(v as HistoryValue),
     apply: async (visible, changed) => {
       if (!ready()) return false;
+      const profile = store().profiles[profileId]!;
+      const lifetime = historyLifetimes.get(profileId);
+      const createdAt = profile.createdAt;
+      const engine = engineIdOf(profile);
+      const alive = () => {
+        const current = store().profiles[profileId];
+        return ready() && !!current && current.id === profile.id && current.createdAt === createdAt && engineIdOf(current) === engine && historyLifetimes.get(profileId) === lifetime;
+      };
+      const refused = () => new ApplyRefusal(new Set(changed), new Error("Profile history lifetime retired"));
       const since = Date.now() - HISTORY_WINDOW_MS;
       const byUrl = new Map((store().history[profileId] ?? []).map((e) => [e.url, e]));
       const add: { url: string; title: string; visitTimes: number[] }[] = [];
@@ -465,10 +491,11 @@ export function historyAdapter(profileId: string): Adapter {
         }
       }
       if (!updates.size) return;
-      const engine = engineProfile(profileId);
       await Promise.all([nativeAddHistoryVisits(engine, add, SAME_VISIT_MS), nativeDeleteHistoryUrls(engine, remove)]);
+      if (!alive()) throw refused();
       asSyncApply(() =>
         useBrowser.setState((s) => {
+          if (!alive()) throw refused();
           const current = new Map((s.history[profileId] ?? []).map((e) => [e.url, e]));
           for (const [url, update] of updates) {
             const now = current.get(url);

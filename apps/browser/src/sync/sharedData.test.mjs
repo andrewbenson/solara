@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { startProfileConfirmation } from "../test-native/profileConfirmation.mjs";
 
 globalThis.setTimeout = () => 0;
 globalThis.clearTimeout = () => {};
@@ -37,6 +38,7 @@ globalThis.acTestNativeModules = {
 const shell = await import("../test-native/index.ts");
 const { useBrowser } = await import("../store/browser.ts");
 const { sharingProfiles } = await import("../store/profiles.ts");
+await startProfileConfirmation();
 const S = () => useBrowser.getState();
 
 class Mac {
@@ -288,6 +290,64 @@ test("a profile deleted and added back from sync shares its owner's data again",
     assert.deepEqual(offered?.sharesWith, { name: "Personal", added: false }, "its share: record wasn't deleted with it");
     const again = engineA.addRemoteProfile(offered.syncId);
     assert.equal(S().profiles[again].dataId, "default");
+  });
+});
+
+test("remote history survives local deletion and explicit re-add uses a fresh local profile and engine across a rejoin", { timeout: 5000 }, async () => {
+  folder.clear();
+  const a = new Mac("History source");
+  const b = new Mac("History target");
+  const engineA = await import("./engine.ts?historyReaddA");
+  const engineB = await import("./engine.ts?historyReaddB");
+  const { engineIdOf } = await import("../store/profiles.ts");
+  const time = Date.now() - 1000;
+  const row = (at) => ({ url: "https://survives.example/", title: "Retained remotely", favicon: null, visits: 1, lastVisit: at, visitTimes: [at] });
+  const source = await a.with(() => {
+    const id = S().createProfile({ name: "History profile" });
+    useBrowser.setState({ historyReady: { [id]: true }, history: { [id]: [row(time)] } });
+    return id;
+  });
+  await turnOn(a, engineA);
+  await join(b, engineB);
+  const removed = await b.with(async () => {
+    const remote = engineB.useSync.getState().remoteProfiles.find((p) => p.name === "History profile");
+    const id = engineB.addRemoteProfile(remote.syncId);
+    useBrowser.setState({ historyReady: { [id]: true } });
+    await engineB.syncNow();
+    await engineB.syncNow();
+    assert.equal(S().history[id]?.[0].url, row(time).url);
+    const engine = engineIdOf(S().profiles[id]);
+    S().deleteProfile(id);
+    await engineB.syncNow();
+    await engineB.syncNow();
+    return { id, engine, syncId: remote.syncId };
+  });
+  await a.with(async () => {
+    useBrowser.setState({ history: { [source]: [row(time + 10)] } });
+    await engineA.syncNow();
+  });
+  await b.with(async () => {
+    await engineB.syncNow();
+    assert.equal(S().profiles[removed.id], undefined);
+    assert.equal(S().history[removed.id], undefined);
+    assert.ok(engineB.useSync.getState().remoteProfiles.some((p) => p.syncId === removed.syncId));
+    await engineB.stopSync();
+    assert.ok("ok" in (await engineB.enterRecoveryPhrase("/sync", "words")));
+    await engineB.syncNow();
+    await engineB.syncNow();
+    assert.equal(S().profiles[removed.id], undefined);
+    assert.equal(S().history[removed.id], undefined);
+    const fresh = engineB.addRemoteProfile(removed.syncId);
+    assert.ok(fresh);
+    assert.notEqual(fresh, removed.id);
+    assert.notEqual(engineIdOf(S().profiles[fresh]), removed.engine);
+    useBrowser.setState({ historyReady: { [fresh]: true } });
+    await engineB.syncNow();
+    await engineB.syncNow();
+    assert.equal(S().history[fresh]?.[0].url, row(time).url);
+    assert.ok(S().history[fresh]?.[0].visitTimes.includes(time + 10));
+    assert.equal(S().profiles[removed.id], undefined);
+    assert.equal(S().history[removed.id], undefined);
   });
 });
 

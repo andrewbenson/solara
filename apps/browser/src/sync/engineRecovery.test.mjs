@@ -1,3 +1,4 @@
+import { startProfileConfirmation } from "../test-native/profileConfirmation.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { sealedState } from "./sealedState.mjs";
@@ -76,6 +77,7 @@ globalThis.acTestNativeModules = {
 const shell = await import("../test-native/index.ts");
 const sync = await import("@solara/sync");
 const { useBrowser } = await import("../store/browser.ts");
+await startProfileConfirmation();
 const S = () => useBrowser.getState();
 const emptyBookmarks = S().bookmarks;
 const settle = async (n = 30) => {

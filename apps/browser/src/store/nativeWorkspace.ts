@@ -107,6 +107,8 @@ export function runEffects(effects: StoreEffect[] | undefined, get: () => Browse
         const roots = bookmarkRoots(s.bookmarks, id);
         set({
           history: without(s.history, [id]),
+          historyReady: without(s.historyReady, [id]),
+          historyFloor: without(s.historyFloor, [id]),
           bookmarks: roots && !effect.shared ? removeBookmarkTree(s.bookmarks, [roots.bar, roots.other], id) : { ...s.bookmarks, roots: without(s.bookmarks.roots, [id]) },
         });
         break;

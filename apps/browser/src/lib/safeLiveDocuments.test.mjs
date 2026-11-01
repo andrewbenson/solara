@@ -16,7 +16,8 @@ function live() {
   const native = declaration(nativeSource, "func command(name: String, payloadJSON: String)");
   const box = declaration(nativeSource, "final class NativeLiveReplicaBox:");
   return results = runNative("LiveDocuments.swift", [production, source("packages/shell/ios/Core/SafeLaunchDocuments.swift"),
-    source("packages/shell/ios/Core/DocumentListing.swift"), store, box,
+    source("packages/shell/ios/Core/DocumentListing.swift"), source("packages/shell/ios/Core/DurableDocument.swift"),
+    source("packages/shell/ios/Core/DocumentWriteStore.swift"), store, box,
     `final class FixtureHost { let engine: LiveEngine; let box = NativeLiveReplicaBox(text: nil, failure: nil); init(_ engine: LiveEngine) { self.engine = engine }\n${native} }`,
   ].join("\n"), [], true);
 }

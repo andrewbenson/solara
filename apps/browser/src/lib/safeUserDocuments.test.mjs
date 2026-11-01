@@ -9,7 +9,8 @@ function documents() {
   const store = declaration(module, "public enum DocumentStore {")
     .replace(declaration(module, "public static var safeMode: Bool"), "public static var safeMode = false");
   results = runNative("Documents.swift", [source("packages/shell/ios/Core/SafeLaunchDocuments.swift"),
-    source("packages/shell/ios/Core/DocumentListing.swift"), store].join("\n"), [], true);
+    source("packages/shell/ios/Core/DocumentListing.swift"), source("packages/shell/ios/Core/DurableDocument.swift"),
+    source("packages/shell/ios/Core/DocumentWriteStore.swift"), store].join("\n"), [], true);
   return results;
 }
 

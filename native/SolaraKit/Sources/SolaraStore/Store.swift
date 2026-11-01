@@ -101,6 +101,9 @@ public final class Store: Sendable {
     var queue: [DeliveryEvent] = []
     var draining = false
     var deliveredRev = 0
+    #if DEBUG
+      var pausedForTesting = false
+    #endif
   }
 
   struct Sequencing {
@@ -507,6 +510,21 @@ public final class Store: Sendable {
     return ownsSequence ? capture() : sequence(capture)
   }
 
+  #if DEBUG
+    func pauseDeliveryForTesting() -> Bool {
+      delivery.withLock { delivery in
+        guard !delivery.draining, !delivery.pausedForTesting else { return false }
+        delivery.pausedForTesting = true
+        return true
+      }
+    }
+
+    func resumeDeliveryForTesting() {
+      delivery.withLock { $0.pausedForTesting = false }
+      drain()
+    }
+  #endif
+
   public func startLaunchPageThemeTimers(after: @escaping LaunchPageTheme.Schedule = { delay, work in
     DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + delay, execute: work)
   }) {
@@ -755,6 +773,9 @@ public final class Store: Sendable {
 
   private func drain() {
     let owner = delivery.withLock { delivery -> Bool in
+      #if DEBUG
+        if delivery.pausedForTesting { return false }
+      #endif
       if delivery.draining || delivery.queue.isEmpty { return false }
       delivery.draining = true
       return true

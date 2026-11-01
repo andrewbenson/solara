@@ -1,6 +1,8 @@
+import { startProfileConfirmation } from "../test-native/profileConfirmation.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 const { useBrowser } = await import("./browser.ts");
+await startProfileConfirmation();
 const model = await import("./model.ts");
 const organize = await import("./organize.ts");
 const { sidebarEntries, numberedTabs } = await import("../components/sidebar/entries.ts");

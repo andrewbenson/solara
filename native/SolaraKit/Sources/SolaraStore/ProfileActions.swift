@@ -28,6 +28,7 @@ extension Session {
     }
     let trimmed = name.jsTrim()
     let deleted = try ProfileDataTombstones.read(config.profileDataTombstones, pending: s.orphanedProfileData, live: s.profiles.values.map(engineIdOf))
+      + ProfileDataTombstones.aliases(at: config.profileDataTombstones, pending: s.orphanedProfileData, live: s.profiles.values.map(engineIdOf))
     func candidate() -> String { config.profileDataTombstones == nil ? newId("p") : "p-\(UUID().uuidString.lowercased())-1" }
     var id = candidate()
     while s.profiles[id] != nil || s.profiles.values.contains(where: { engineIdOf($0).jsEquals(id) })
@@ -74,9 +75,9 @@ extension Session {
     }
     guard state.profiles[id] != nil, state.profileOrder.count > 1 else { return }
     let deleting = engineIdOf(state.profiles[id]!)
-    if !state.profiles.values.contains(where: { !$0.id.jsEquals(id) && engineIdOf($0).jsEquals(deleting) }) {
-      try ProfileDataTombstones.insert(deleting, at: config.profileDataTombstones, pending: state.orphanedProfileData, live: state.profiles.values.map(engineIdOf))
-    }
+    let sharedEngine = state.profiles.values.contains { !$0.id.jsEquals(id) && engineIdOf($0).jsEquals(deleting) }
+    try ProfileDataTombstones.confirm(profile: id, engine: sharedEngine ? nil : deleting, at: config.profileDataTombstones,
+      pending: state.orphanedProfileData, live: state.profiles.values.map(engineIdOf))
     for w in state.windows.values where w.incognito && w.originalProfileId?.jsEquals(id) == true { closeWindow(w.id) }
     var s = state
     let profileOrder = s.profileOrder.filter { !$0.jsEquals(id) }
@@ -129,7 +130,7 @@ extension Session {
       return kept
     }.filter { !$0.tabs.isEmpty }
     next.parkedPins.remove([id])
-    emit(.profileDeleted(profileId: id, shared: shared))
+    emit(.profileDeleted(profileId: id, shared: shared, engineProfile: engine))
     set(next)
     for w in state.windows.values where state.viewTabIds(w.id).isEmpty { _ = newTab(w.id) }
   }

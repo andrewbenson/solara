@@ -43,6 +43,16 @@ private func adoption(_ dataId: String, profileId: String = Settings.defaultProf
   Command("updateProfile", [.string(profileId), ["dataId": .string(dataId)]])
 }
 
+private struct ShippedDeletionHistory: Codable {
+  var deleted: [String] = []
+  var reserved: [String] = []
+}
+
+private func shippedDeletionHistory(_ data: Data) throws -> ShippedDeletionHistory {
+  if let legacy = try? JSONDecoder().decode([String].self, from: data) { return ShippedDeletionHistory(deleted: legacy) }
+  return try JSONDecoder().decode(ShippedDeletionHistory.self, from: data)
+}
+
 @Suite(.serialized, .timeLimit(.minutes(1))) @MainActor struct ProfileDataDeletionTests {
   @Test(arguments: ["default", "p-mgg8w000-1", "p-mgg8w000abcd-z", "p-01234567-89ab-cdef-0123-456789abcdef-1"])
   func historicalGeneratedIdentitiesAreAccepted(id: String) throws {
@@ -411,6 +421,44 @@ private func adoption(_ dataId: String, profileId: String = Settings.defaultProf
     #expect(store.state.profiles[Settings.defaultProfileID]?.dataId == "p-retired-1")
   }
 
+  @Test func theShippedLedgerDecoderReadsTheAliasFormatWithoutDroppingEntries() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("profile-data-tombstones.json")
+    try ProfileDataTombstones.confirm(profile: "p-alias-1", engine: "p-gone-1", at: file, pending: [], live: [])
+    try ProfileDataTombstones.confirm(profile: "p-sharer-1", engine: nil, at: file, pending: [], live: [])
+    try ProfileDataTombstones.reserve("p-held-1", at: file, pending: ["p-held-1"], live: [])
+    try ProfileDataTombstones.insert("p-gone-2", at: file)
+    let data = try Data(contentsOf: file)
+    let written = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+    #expect((written["aliases"] as? [String]) == ["p-alias-1", "p-sharer-1"])
+    let shipped = try shippedDeletionHistory(data)
+    #expect(shipped.deleted == ["p-gone-1", "p-gone-2"])
+    #expect(shipped.reserved == ["p-held-1"])
+    #expect(Set(try ProfileDataTombstones.read(file)) == Set(shipped.deleted + shipped.reserved))
+  }
+
+  @Test func theCheckedInAliasLedgerDecodesWithTheShippedTypeAndTheNewReader() throws {
+    let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appending(path: "Cases/profile-data-tombstones-aliases.json")
+    let data = try Data(contentsOf: fixture)
+    let shipped = try shippedDeletionHistory(data)
+    #expect(shipped.deleted == ["p-gone-1", "p-gone-2", ""])
+    #expect(shipped.reserved == ["p-held-1"])
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("profile-data-tombstones.json")
+    try data.write(to: file)
+    #expect(Set(try ProfileDataTombstones.read(file)) == Set(shipped.deleted + shipped.reserved))
+    #expect(ProfileDataTombstones.aliases(at: file) == ["p-alias-1", "p-sharer-1", "default"])
+    let written = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let produced = root.appendingPathComponent("produced.json")
+    try ProfileDataTombstones.confirm(profile: "p-alias-1", engine: "p-gone-1", at: produced, pending: [], live: [])
+    let encoded = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: produced)) as? [String: Any])
+    #expect(Set(encoded.keys) == Set(written.keys))
+  }
+
   @Test func deletionHistoryIsWrittenOncePerDeletionAndNeverByReadsOrItsOwnCleanup() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -677,4 +725,122 @@ private func adoption(_ dataId: String, profileId: String = Settings.defaultProf
     #expect(deletions == 0)
     #expect(try Data(contentsOf: sentinel) == Data("live data".utf8))
   }
+
+  @Test func confirmedSharedAliasIsRecordedWithoutRetiringItsEngine() throws {
+    let store = deletionStore([])
+    defer { if let file = store.config.profileDataTombstones { try? FileManager.default.removeItem(at: file) } }
+    let alias = try #require(try store.dispatch(Command("createProfile", [["name": "Shared", "shareWith": "default"]])).result?.string)
+    try store.dispatch(Command("deleteProfile", [.string(alias)]))
+    let file = try #require(store.config.profileDataTombstones)
+    let ledger = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+    #expect((ledger["aliases"] as? [String]) == [alias])
+    #expect((ledger["deleted"] as? [String]) == [])
+    #expect(store.state.profiles["default"]?.dataId == "p-active-1")
+    #expect(store.state.orphanedProfileData.isEmpty)
+    let before = store.state
+    let restored = Profile(id: alias, name: "Remote", color: "blue", icon: nil, createdAt: 0, dataId: "p-active-1")
+    var profiles = before.profiles.map.mapValues(\.jsonValue)
+    profiles[alias] = restored.jsonValue
+    #expect(throws: CommandError.self) { try store.dispatch(Command("applyState", [["profiles": .object(profiles)]])) }
+    #expect(store.state == before)
+  }
+
+  @Test func finalAliasAndEngineAreRecordedTogetherWithExactSpelling() throws {
+    let store = deletionStore([])
+    defer { if let file = store.config.profileDataTombstones { try? FileManager.default.removeItem(at: file) } }
+    let id = try #require(try store.dispatch(Command("createProfile", [["name": "Final"]])).result?.string)
+    let file = try #require(store.config.profileDataTombstones)
+    try Data(#"{"deleted":["CaseEngine"],"reserved":["reserved-only"]}"#.utf8).write(to: file)
+    try store.dispatch(Command("deleteProfile", [.string(id)]))
+    let ledger = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+    #expect((ledger["aliases"] as? [String]) == [id])
+    #expect((ledger["deleted"] as? [String]) == ["CaseEngine", id])
+    #expect((ledger["reserved"] as? [String]) == ["reserved-only"])
+    #expect(try !ProfileDataTombstones.contains("caseengine", at: file))
+  }
+
+  @Test func theLedgerNamesDefaultOrItsEngineOnlyOnceThatProfileOrItsLastReferenceIsDeleted() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent("profile-tombstones-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: file) }
+    var config = StoreConfig()
+    config.profileDataTombstones = file
+    let store = Store(state: BrowserState(settings: Settings.hydrated(from: nil)), memory: StoreMemory(ids: IdSource(launch: UUID().uuidString)), config: config, clock: { 1_000 })
+    func ledger() throws -> [String: [String]] {
+      guard FileManager.default.fileExists(atPath: file.path) else { return [:] }
+      let object = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+      return object.compactMapValues { $0 as? [String] }
+    }
+    func namesDefault() throws -> Bool { try ledger().values.contains { $0.contains("") || $0.contains("default") } }
+    #expect(engineIdOf(store.state.profiles["default"]!) == "")
+    let sharer = try #require(try store.dispatch(Command("createProfile", [["name": "Sharer", "shareWith": "default"]])).result?.string)
+    let own = try #require(try store.dispatch(Command("createProfile", [["name": "Own"]])).result?.string)
+    try store.dispatch(Command("deleteProfile", [.string(sharer)]))
+    try store.dispatch(Command("deleteProfile", [.string(own)]))
+    #expect(try !namesDefault())
+    try store.dispatch(Command("deleteProfile", [.string("default")]))
+    #expect(store.state.profiles["default"] != nil)
+    #expect(try !namesDefault())
+    let survivor = try #require(try store.dispatch(Command("createProfile", [["name": "Survivor", "shareWith": "default"]])).result?.string)
+    try store.dispatch(Command("deleteProfile", [.string("default")]))
+    #expect(try ledger()["aliases"]?.contains("default") == true)
+    #expect(try ledger()["deleted"]?.contains("") != true)
+    #expect(engineIdOf(store.state.profiles[survivor]!) == "")
+    let last = try #require(try store.dispatch(Command("createProfile", [["name": "Last"]])).result?.string)
+    try store.dispatch(Command("deleteProfile", [.string(survivor)]))
+    #expect(try ledger()["deleted"]?.contains("") == true)
+    #expect(store.state.profiles[last] != nil)
+  }
+
+  @Test func sharedAliasLedgerFailurePrecedesEveryRemoval() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let file = root.appendingPathComponent("profile-data-tombstones.json")
+    try FileManager.default.createDirectory(at: file, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = deletionStore([], tombstones: file)
+    let alias = try #require(try store.dispatch(Command("createProfile", [["name": "Shared", "shareWith": "default"]])).result?.string)
+    let before = store.state
+    #expect(throws: (any Error).self) { try store.dispatch(Command("deleteProfile", [.string(alias)])) }
+    #expect(store.state == before)
+  }
+
+
+  @Test func initialDiskReplicaHydrationDoesNotRefuseRecordedSharedAliases() throws {
+    let store = deletionStore([])
+    defer { if let file = store.config.profileDataTombstones { try? FileManager.default.removeItem(at: file) } }
+    let alias = try #require(try store.dispatch(Command("createProfile", [["name": "Shared", "shareWith": "default"]])).result?.string)
+    let saved = store.state
+    let savedProfile = try #require(saved.profiles[alias])
+    try store.dispatch(Command("deleteProfile", [.string(alias)]))
+    var config = store.config
+    config.replicaProfilesFromDisk = true
+    let restarted = Store(state: store.state, config: config)
+    let disk: JSONValue = ["profiles": .object(saved.profiles.map.mapValues(\.jsonValue)), "profileOrder": JSONValue(saved.profileOrder)]
+    try restarted.dispatch(Command("attachReplicaProfiles", [disk]))
+    #expect(sameProfile(restarted.state.profiles[alias], savedProfile))
+    #expect(restarted.state.orphanedProfileData.isEmpty)
+  }
+
+  @Test func diskReplicaReloadDoesNotRefuseRecordedSharedAliases() throws {
+    let original = deletionStore([])
+    defer { if let file = original.config.profileDataTombstones { try? FileManager.default.removeItem(at: file) } }
+    let alias = try #require(try original.dispatch(Command("createProfile", [["name": "Shared", "shareWith": "default"]])).result?.string)
+    let saved = original.state
+    let savedProfile = try #require(saved.profiles[alias])
+    var config = original.config
+    config.replicaProfilesFromDisk = true
+    let store = Store(state: saved, config: config)
+    let disk: JSONValue = ["profiles": .object(saved.profiles.map.mapValues(\.jsonValue)), "profileOrder": JSONValue(saved.profileOrder)]
+    try store.dispatch(Command("attachReplicaProfiles", [disk]))
+    try store.dispatch(Command("deleteProfile", [.string(alias)]))
+    #expect(store.state.profiles[alias] == nil)
+    #expect(store.state.orphanedProfileData.isEmpty)
+    #expect(throws: CommandError.self) { try store.dispatch(Command("applyState", [disk])) }
+    for _ in 0..<2 {
+      try store.dispatch(Command("attachReplicaProfiles", [disk]))
+      #expect(sameProfile(store.state.profiles[alias], savedProfile))
+      #expect(store.state.orphanedProfileData.isEmpty)
+      try store.dispatch(Command("deleteProfile", [.string(alias)]))
+    }
+  }
+
 }

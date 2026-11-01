@@ -272,8 +272,13 @@ extension Session {
     }
   }
 
-  func refusePendingProfileData(_ next: BrowserState) throws {
+  func refusePendingProfileData(_ next: BrowserState, allowRecordedAliases: Bool = false) throws {
+    let admitting = !allowRecordedAliases && next.profiles.keys.contains { state.profiles[$0] == nil }
+    let aliases = admitting ? ProfileDataTombstones.aliases(at: config.profileDataTombstones, pending: state.orphanedProfileData, live: state.profiles.values.map(engineIdOf)) : []
     for (id, profile) in next.profiles {
+      if state.profiles[id] == nil && aliases.contains(where: { $0.jsEquals(id) || $0.jsEquals(profile.id) }) {
+        throw CommandError("This profile was deleted and cannot be reused. Choose a new profile.")
+      }
       let engine = engineIdOf(profile)
       if let previous = state.profiles[id], engineIdOf(previous).jsEquals(engine) { continue }
       try refusePendingProfileData(engine)

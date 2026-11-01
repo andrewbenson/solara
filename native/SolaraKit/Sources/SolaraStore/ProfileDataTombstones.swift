@@ -10,6 +10,20 @@ public enum ProfileDataTombstones {
   private struct History: Codable {
     var deleted: [String] = []
     var reserved: [String] = []
+    var aliases: [String] = []
+
+    enum CodingKeys: String, CodingKey { case deleted, reserved, aliases }
+
+    init() {}
+
+    init(deleted: [String]) { self.deleted = deleted }
+
+    init(from decoder: any Decoder) throws {
+      let values = try decoder.container(keyedBy: CodingKeys.self)
+      deleted = try values.decodeIfPresent([String].self, forKey: .deleted) ?? []
+      reserved = try values.decodeIfPresent([String].self, forKey: .reserved) ?? []
+      aliases = try values.decodeIfPresent([String].self, forKey: .aliases) ?? []
+    }
   }
 
   private struct Loaded {
@@ -87,6 +101,22 @@ public enum ProfileDataTombstones {
     try read(file, pending: pending, live: live).contains { $0.jsEquals(engine) }
   }
 
+  static func aliases(at file: URL?, pending: [String] = [], live: [String] = []) -> [String] {
+    guard let file else { return [] }
+    return load(file, pending: pending, live: live).aliases
+  }
+
+  static func confirm(profile: String, engine: String?, at file: URL?, pending: [String], live: [String]) throws {
+    guard let file else { return }
+    var current = loaded(file, pending: pending, live: live, keepRebuilt: false)
+    let knownAlias = current.history.aliases.contains { $0.jsEquals(profile) }
+    let knownEngine = engine.map { engine in current.history.deleted.contains { $0.jsEquals(engine) } } ?? true
+    if !knownAlias { current.history.aliases.append(profile) }
+    if let engine, !knownEngine { current.history.deleted.append(engine) }
+    if knownAlias && knownEngine && !current.rebuilt { return try synchronizeIfNeeded(file) }
+    try write(current.history, at: file)
+  }
+
   static func insert(_ engine: String, at file: URL?, pending: [String] = [], live: [String] = []) throws {
     guard let file else { return }
     var current = loaded(file, pending: pending, live: live, keepRebuilt: false)
@@ -110,7 +140,24 @@ public enum ProfileDataTombstones {
   }
 
   private static func write(_ history: History, at file: URL) throws {
-    try JSONEncoder().encode(history).write(to: file, options: .atomic)
+    let temporary = file.deletingLastPathComponent().appendingPathComponent(".profile-data-\(UUID().uuidString).tmp")
+    let descriptor = open(temporary.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, S_IRUSR | S_IWUSR)
+    guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+    defer { close(descriptor); try? FileManager.default.removeItem(at: temporary) }
+    let data = try JSONEncoder().encode(history)
+    try data.withUnsafeBytes { bytes in
+      var offset = 0
+      while offset < bytes.count {
+        let count = Darwin.write(descriptor, bytes.baseAddress!.advanced(by: offset), bytes.count - offset)
+        if count < 0 && errno == EINTR { continue }
+        guard count > 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        offset += count
+      }
+    }
+    guard fcntl(descriptor, F_FULLFSYNC) == 0 || fsync(descriptor) == 0 else {
+      throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+    }
+    guard rename(temporary.path, file.path) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
     try synchronize(file)
   }
 

@@ -4,7 +4,7 @@ import type { BrowserState } from "./browser";
 import { bookmarkRoots, ensureRoots, removeBookmarkTree } from "./bookmarks";
 import { newId, setSharedDataIds, viewTabIds, without } from "./model";
 import { DEFAULT_PROFILE_ID } from "./settings";
-import { nativeSafeMode } from "./nativeStore";
+import { confirmNativeProfileDeletion, nativeSafeMode } from "./nativeStore";
 import { activated, apply, removeTabs, withNewTab } from "./tabs";
 import type { Profile, ProfileColor } from "./types";
 
@@ -150,6 +150,7 @@ export const createProfilesSlice: StateCreator<BrowserState, [], [], ProfilesSli
         return;
       }
       if (!get().profiles[id] || get().profileOrder.length <= 1) return;
+      confirmNativeProfileDeletion(id);
       for (const w of Object.values(get().windows)) if (w.incognito && w.originalProfileId === id) get().closeWindow(w.id);
       let s = get();
       const profileOrder = s.profileOrder.filter((p) => p !== id);
@@ -193,6 +194,8 @@ export const createProfilesSlice: StateCreator<BrowserState, [], [], ProfilesSli
         orphanedProfileData: orphaned,
         settings,
         history: without(s.history, [id]),
+        historyReady: without(s.historyReady, [id]),
+        historyFloor: without(s.historyFloor, [id]),
         bookmarks: roots && !shared ? removeBookmarkTree(s.bookmarks, [roots.bar, roots.other], id) : { ...s.bookmarks, roots: without(s.bookmarks.roots, [id]) },
         groups: Object.fromEntries(Object.entries(s.groups).filter(([, g]) => g.profileId !== id)),
         closedTabs: s.closedTabs.filter((c) => c.tab.profileId !== id),

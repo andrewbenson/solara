@@ -168,7 +168,7 @@ func makeAdapter(
   case "pinnedHomesAdapter": return PinnedHomesAdapter(store: store, profileId: args[0].string ?? "")
   case "tileFoldersAdapter": return TileFoldersAdapter(store: store, profileId: args[0].string ?? "", folders: folders)
   case "bookmarksAdapter": return host.map { BookmarksAdapter(host: $0, profileId: args[0].string ?? "") }
-  case "historyAdapter": return host.map { HistoryAdapter(host: $0, profileId: args[0].string ?? "", now: { now }) }
+  case "historyAdapter": return host.map { HistoryAdapter(store: store, host: $0, profileId: args[0].string ?? "", now: { now }) }
   case "passwordsAdapter":
     let forced = readArgument(args, 1)?.truthy ?? false
     return host.map { PasswordsAdapter(host: $0, profileId: args[0].string ?? "", forced: { forced }, now: { now }, redesign: { redesign }, memory: passwordsMemory(memory)) }

@@ -1,5 +1,6 @@
 import SolaraModel
 import SolaraStore
+import Synchronization
 
 public protocol BookmarksHost: AnyObject {
   func bookmarksReady(_ profileId: String) -> Bool
@@ -276,22 +277,53 @@ func sameValueZero(_ a: JSONValue, _ b: JSONValue) -> Bool {
   return jsStrict(a, b)
 }
 
+private func historyEngine(_ profile: Profile) -> String {
+  let data = profile.dataId ?? profile.id
+  return data.jsEquals(Settings.defaultProfileID) ? "" : data
+}
+
+private final class HistoryApplyLifetime: Sendable {
+  let profileId: String
+  let createdAt: Double
+  let engine: String
+  let retired = Atomic(false)
+
+  init(_ profile: Profile) {
+    profileId = profile.id
+    createdAt = profile.createdAt
+    engine = historyEngine(profile)
+  }
+
+  func matches(_ state: BrowserState) -> Bool {
+    guard let profile = state.profiles[profileId] else { return false }
+    return profile.id.jsEquals(profileId) && profile.createdAt == createdAt && historyEngine(profile).jsEquals(engine)
+      && !state.orphanedProfileData.contains { $0.jsEquals(engine) }
+  }
+}
+
 public final class HistoryAdapter: SyncAdapter {
   public let prefix = "h:"
+  let store: Store
   let host: HistoryHost
   let profileId: String
   let now: () -> Double
 
-  public init(host: HistoryHost, profileId: String, now: @escaping () -> Double) {
+  public init(store: Store, host: HistoryHost, profileId: String, now: @escaping () -> Double) {
+    self.store = store
     self.host = host
     self.profileId = profileId
     self.now = now
   }
 
+  private func ready(_ state: BrowserState) -> Bool {
+    guard let profile = state.profiles[profileId], profile.id.jsEquals(profileId) else { return false }
+    return host.historyReady(profileId) && !state.orphanedProfileData.contains { $0.jsEquals(historyEngine(profile)) }
+  }
+
   public func editedAt(_ value: JSONValue) -> Double? { lastVisitOf(value) }
 
   public func extract(_ context: ExtractContext) async throws -> Extraction? {
-    guard host.historyReady(profileId) else { return nil }
+    guard ready(store.state) else { return nil }
     let since = now() - historyWindowMs
     var values = OrderedDict<String, JSONValue>()
     var older = Set<JSKey>()
@@ -324,7 +356,18 @@ public final class HistoryAdapter: SyncAdapter {
   }
 
   public func apply(_ visible: [(key: String, value: JSONValue)], _ changed: [String], _ base: (String) -> JSONValue?, _ records: ApplyRecords) async throws -> Bool? {
-    guard host.historyReady(profileId) else { return false }
+    let started = store.sequence { () -> (lifetime: HistoryApplyLifetime, subscription: Int, deliveryCaughtUp: Bool)? in
+      let cursor = store.deliveryCursor()
+      let snapshot = store.snapshot
+      guard ready(snapshot.state), let profile = snapshot.state.profiles[profileId] else { return nil }
+      let lifetime = HistoryApplyLifetime(profile)
+      let subscription = store.subscribe { commit in
+        if commit.rev > snapshot.rev && !lifetime.matches(commit.state) { lifetime.retired.store(true, ordering: .releasing) }
+      }
+      return (lifetime, subscription, cursor.delivered == cursor.committed)
+    }
+    guard let started else { return false }
+    defer { store.unsubscribe(started.subscription) }
     let since = now() - historyWindowMs
     let shown = shown(visible)
     var byUrl = OrderedDict<String, JSONValue>()
@@ -358,31 +401,37 @@ public final class HistoryAdapter: SyncAdapter {
       }
     }
     if updates.isEmpty { return nil }
-    let engine = host.engineProfile(profileId)
+    let engine = started.lifetime.engine
     _ = try await host.addHistoryVisits(engine, add, sameVisitMs)
     _ = try await host.deleteHistoryUrls(engine, remove)
-    var current = OrderedDict<String, JSONValue>()
-    for e in host.history(profileId) ?? [] { current[jsText(e["url"])] = e }
-    for (url, update) in updates {
-      if update.isNull {
-        current[url] = nil
-      } else if let present = current[url] {
-        var merged: [JSONValue] = []
-        for t in (present["visitTimes"]?.array ?? []) + (update["visitTimes"]?.array ?? []) where !merged.contains(where: { sameValueZero($0, t) }) {
-          merged.append(t)
-        }
-        let times = Array(jsSort(merged, numericOrder).suffix(maxVisitTimes))
-        var next = update.object ?? [:]
-        next["visits"] = .number(jsMaxNumber([present["visits"], update["visits"]]))
-        if let last = times.last { next["lastVisit"] = last } else { next.removeValue(forKey: "lastVisit") }
-        next["visitTimes"] = .array(times)
-        current[url] = .object(next)
-      } else {
-        current[url] = update
+    try store.sequence {
+      let cursor = store.deliveryCursor()
+      guard started.deliveryCaughtUp, !started.lifetime.retired.load(ordering: .acquiring), ready(store.state), started.lifetime.matches(store.state), cursor.delivered == cursor.committed else {
+        throw ApplyRefusal(changed)
       }
+      var current = OrderedDict<String, JSONValue>()
+      for e in host.history(profileId) ?? [] { current[jsText(e["url"])] = e }
+      for (url, update) in updates {
+        if update.isNull {
+          current[url] = nil
+        } else if let present = current[url] {
+          var merged: [JSONValue] = []
+          for t in (present["visitTimes"]?.array ?? []) + (update["visitTimes"]?.array ?? []) where !merged.contains(where: { sameValueZero($0, t) }) {
+            merged.append(t)
+          }
+          let times = Array(jsSort(merged, numericOrder).suffix(maxVisitTimes))
+          var next = update.object ?? [:]
+          next["visits"] = .number(jsMaxNumber([present["visits"], update["visits"]]))
+          if let last = times.last { next["lastVisit"] = last } else { next.removeValue(forKey: "lastVisit") }
+          next["visitTimes"] = .array(times)
+          current[url] = .object(next)
+        } else {
+          current[url] = update
+        }
+      }
+      let list = jsSort(current.values) { a, z in jsNumber(jsPrimitive(z["lastVisit"])) - jsNumber(jsPrimitive(a["lastVisit"])) }
+      host.setHistory(profileId, list.prefix(maxHistory).map(jsonFinite))
     }
-    let list = jsSort(current.values) { a, z in jsNumber(jsPrimitive(z["lastVisit"])) - jsNumber(jsPrimitive(a["lastVisit"])) }
-    host.setHistory(profileId, list.prefix(maxHistory).map(jsonFinite))
     return nil
   }
 }

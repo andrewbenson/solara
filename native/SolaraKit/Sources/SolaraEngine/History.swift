@@ -1,5 +1,8 @@
 import Foundation
 import Observation
+import SolaraModel
+import SolaraStore
+import Synchronization
 
 public struct EngineHistoryRow: Sendable, Equatable {
   public var url: String
@@ -100,6 +103,7 @@ final class HistoryLibrary {
   private var loading = false
   private var again = false
   private var queued: [HistoryChange] = []
+  private var retired = false
 
   init(engineProfile: String, client: any EngineClient, publish: @escaping @MainActor (HistorySnapshot) -> Void) {
     self.engineProfile = engineProfile
@@ -107,7 +111,15 @@ final class HistoryLibrary {
     self.publish = publish
   }
 
+  func retire() {
+    retired = true
+    again = false
+    queued = []
+    snapshot = HistorySnapshot()
+  }
+
   func reload() async {
+    guard !retired else { return }
     if loading {
       again = true
       return
@@ -119,7 +131,9 @@ final class HistoryLibrary {
       queued = []
       do {
         try await client.watchHistory(engineProfile: engineProfile)
+        guard !retired else { return }
         let rows = try await client.queryHistory(engineProfile: engineProfile, maxUrls: Self.maxURLs, maxVisits: Self.maxVisitTimes)
+        guard !retired else { return }
         let read = Array(rows.prefix(Self.maxURLs))
         let floor = read.count >= Self.maxURLs ? read.map { $0.visitTimes.last ?? 0 }.min() ?? -.infinity : -.infinity
         var entries = read.filter { Self.shown($0.url) }.map {
@@ -138,12 +152,13 @@ final class HistoryLibrary {
   }
 
   func receiveDuringLoad(_ change: HistoryChange) -> Bool {
-    guard loading else { return false }
+    guard !retired, loading else { return false }
     queued.append(change)
     return true
   }
 
   func apply(_ changes: [HistoryChange]) -> Bool {
+    guard !retired else { return false }
     var entries = snapshot.entries
     var reload = false
     for change in changes {
@@ -156,6 +171,7 @@ final class HistoryLibrary {
   }
 
   private func update(entries: [HistoryEntry], floor: Double?, ready: Bool) {
+    guard !retired else { return }
     let nextFloor = max(snapshot.floor, floor ?? -.infinity, entries.count >= Self.maxURLs ? entries.last?.lastVisit ?? -.infinity : -.infinity)
     guard entries != snapshot.entries || nextFloor != snapshot.floor || ready != snapshot.ready else { return }
     snapshot = HistorySnapshot(entries: entries, floor: nextFloor, ready: ready, revision: snapshot.revision + 1)
@@ -206,11 +222,12 @@ final class HistoryLibrary {
 @MainActor
 @Observable
 public final class LibraryCatalog {
-  public private(set) var histories: [String: HistorySnapshot] = [:]
+  public private(set) var histories = JSMap<HistorySnapshot>()
   public private(set) var bookmarkSnapshots: [String: BookmarkSnapshot] = [:]
   @ObservationIgnored let client: any EngineClient
   @ObservationIgnored public private(set) var favicons: FaviconLibrary?
-  @ObservationIgnored private var libraries: [String: HistoryLibrary] = [:]
+  @ObservationIgnored private var libraries = JSMap<HistoryLibrary>()
+  @ObservationIgnored private var retiredHistoryEngines: Set<JSKey> = []
   @ObservationIgnored var bookmarkClaim: BookmarkCatalogClaim?
   @ObservationIgnored var admittedRawBookmarkCommand = false
   @ObservationIgnored private var bookmarkTasks: [String: Task<Void, Never>] = [:]
@@ -219,7 +236,7 @@ public final class LibraryCatalog {
   @ObservationIgnored private var pending: [HistoryChange] = []
   @ObservationIgnored private var flushScheduled = false
   @ObservationIgnored private var observing = false
-  @ObservationIgnored private var observers: [String: [UUID: AsyncStream<HistorySnapshot>.Continuation]] = [:]
+  @ObservationIgnored private var observers = JSMap<[UUID: AsyncStream<HistorySnapshot>.Continuation]>()
 
   public init(client: any EngineClient) {
     self.client = client
@@ -292,12 +309,33 @@ public final class LibraryCatalog {
   public func observe(engineProfile: String) -> AsyncStream<HistorySnapshot> {
     let id = UUID()
     let (stream, continuation) = AsyncStream<HistorySnapshot>.makeStream(bufferingPolicy: .bufferingNewest(1))
-    observers[engineProfile, default: [:]][id] = continuation
+    if retiredHistoryEngines.contains(JSKey(engineProfile)) {
+      continuation.yield(HistorySnapshot())
+      continuation.finish()
+      return stream
+    }
+    var continuations = observers[engineProfile] ?? [:]
+    continuations[id] = continuation
+    observers[engineProfile] = continuations
     continuation.yield(history(engineProfile: engineProfile))
     continuation.onTermination = { [weak self] _ in
       Task { @MainActor in self?.observers[engineProfile]?[id] = nil }
     }
     return stream
+  }
+
+  public func retireHistory(engineProfile: String, remainingEngineProfiles: [String]) {
+    guard !remainingEngineProfiles.contains(where: { $0.jsEquals(engineProfile) }) else { return }
+    retiredHistoryEngines.insert(JSKey(engineProfile))
+    libraries.removeValue(forKey: engineProfile)?.retire()
+    histories.removeValue(forKey: engineProfile)
+    pending.removeAll { $0.profile.jsEquals(engineProfile) }
+    if let continuations = observers.removeValue(forKey: engineProfile)?.values {
+      for continuation in continuations {
+        continuation.yield(HistorySnapshot())
+        continuation.finish()
+      }
+    }
   }
 
   public func start(engineProfiles: [String]) async {
@@ -306,16 +344,18 @@ public final class LibraryCatalog {
       client.observeHistory { [weak self] change in self?.receive(change) }
       client.observeBookmarks { [weak self] profile in self?.bookmarkChanged(engineProfile: profile) }
     }
-    for profile in Set(engineProfiles).sorted() where !profile.hasPrefix("incognito:") {
+    for profile in Set(engineProfiles.map(JSKey.init)).map(\.text).sorted() where !profile.hasPrefix("incognito:") && !retiredHistoryEngines.contains(JSKey(profile)) {
       if libraries[profile] == nil {
         libraries[profile] = HistoryLibrary(engineProfile: profile, client: client) { [weak self] snapshot in
-          self?.histories[profile] = snapshot
-          if let continuations = self?.observers[profile]?.values {
+          guard let self, !self.retiredHistoryEngines.contains(JSKey(profile)) else { return }
+          self.histories[profile] = snapshot
+          if let continuations = self.observers[profile]?.values {
             for continuation in continuations { continuation.yield(snapshot) }
           }
         }
       }
       if libraries[profile]?.snapshot.ready != true { await libraries[profile]?.reload() }
+      guard !retiredHistoryEngines.contains(JSKey(profile)) else { continue }
       if let claim = bookmarkClaim {
         if (try? claim.validate(engine: profile)) != nil {
           observeDesired(engine: profile, claim: claim)
@@ -361,12 +401,12 @@ public final class LibraryCatalog {
   }
 
   private func receive(_ change: HistoryChange) {
+    guard !retiredHistoryEngines.contains(JSKey(change.profile)), let library = libraries[change.profile] else { return }
     switch change {
     case .deleted(_, let all, let urls): favicons?.invalidate(engineProfile: change.profile, pages: all ? nil : urls)
     case .visit(_, let url, _, _, _): favicons?.forgetMisses(engineProfile: change.profile, pages: [url])
     case .modified(_, let rows): favicons?.forgetMisses(engineProfile: change.profile, pages: rows.map(\.url))
     }
-    guard let library = libraries[change.profile] else { return }
     if library.receiveDuringLoad(change) { return }
     pending.append(change)
     if !flushScheduled {
@@ -379,12 +419,61 @@ public final class LibraryCatalog {
     let changes = pending
     pending = []
     flushScheduled = false
-    var byProfile: [String: [HistoryChange]] = [:]
-    for change in changes { byProfile[change.profile, default: []].append(change) }
+    var byProfile = JSMap<[HistoryChange]>()
+    for change in changes { byProfile[change.profile] = (byProfile[change.profile] ?? []) + [change] }
     for (profile, batch) in byProfile {
       guard let library = libraries[profile] else { continue }
       if library.apply(batch) { await library.reload() }
     }
   }
 
+}
+
+@MainActor
+public final class HistoryProfileLifetimes {
+  private let catalog: LibraryCatalog
+  private let store: Store
+  private var subscription: Int?
+  private nonisolated let observedRevision = Mutex(0)
+
+  public init(catalog: LibraryCatalog, store: Store) {
+    self.catalog = catalog
+    self.store = store
+    subscription = store.sequence {
+      observedRevision.withLock { $0 = store.rev }
+      return store.subscribe { [weak self] commit in
+        guard let self else { return }
+        let engines = self.retirements(commit)
+        guard !engines.isEmpty else { return }
+        let deliver: @MainActor @Sendable () -> Void = { [weak self] in
+          guard let self, self.subscription != nil else { return }
+          for engine in engines { self.catalog.retireHistory(engineProfile: engine, remainingEngineProfiles: []) }
+        }
+        if Thread.isMainThread { MainActor.assumeIsolated { deliver() } }
+        else { DispatchQueue.main.async(execute: deliver) }
+      }
+    }
+  }
+
+  isolated deinit { if let subscription { store.unsubscribe(subscription) } }
+
+  public func stop() {
+    if let subscription { store.unsubscribe(subscription) }
+    subscription = nil
+  }
+
+  nonisolated private func retirements(_ commit: Commit) -> [String] {
+    observedRevision.withLock { previous in
+      guard commit.rev > previous else { return [] }
+      let live = commit.state.profiles.keys.map { commit.state.engineProfile($0) }
+      var retired: Set<JSKey> = []
+      for effect in commit.effects {
+        guard case .profileDeleted(_, false, let engine) = effect,
+          !live.contains(where: { $0.jsEquals(engine) }) else { continue }
+        retired.insert(JSKey(engine))
+      }
+      previous = commit.rev
+      return retired.map(\.text).sorted()
+    }
+  }
 }

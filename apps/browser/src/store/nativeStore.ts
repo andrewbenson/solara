@@ -200,6 +200,14 @@ export function nativeWrite(commands: StoreCommand | StoreCommand[]): DispatchRe
   return dispatchCommands(commands);
 }
 
+export function confirmNativeProfileDeletion(id: string) {
+  if (!nativeStoreModulePresent()) throw new Error("Profile deletion requires the native confirmation ledger. This build cannot safely delete a profile.");
+  const response = nativeWrite({ name: "deleteProfile", args: [id] });
+  if (!response?.effects?.some((effect) => effect.type === "profileDeleted" && effect.profileId === id)) {
+    throw new Error("The native store could not confirm profile deletion. Retry when it is available.");
+  }
+}
+
 export function nativeWriteWhenFree(command: StoreCommand) {
   try {
     nativeWrite(command);

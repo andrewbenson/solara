@@ -169,6 +169,21 @@ final class SolaraHistoryClient: EngineClient {
 @MainActor
 enum NativeHistoryCatalog {
   static let catalog = LibraryCatalog(client: SolaraHistoryClient())
+  private static var lifecycle: Int?
+  private static weak var boundStore: Store?
+  private static var profileLifetimes: HistoryProfileLifetimes?
+
+  private static func bindProfileLifetimes() {
+    guard lifecycle == nil else { return }
+    lifecycle = NativeStoreHandle.subscribeLifecycle {
+      let store = NativeStoreHandle.store
+      guard boundStore !== store else { return }
+      profileLifetimes?.stop()
+      profileLifetimes = nil
+      boundStore = store
+      if let store { profileLifetimes = HistoryProfileLifetimes(catalog: catalog, store: store) }
+    }
+  }
 
   static func favicon(page: String, source: String? = nil, profileId: String, dark: Bool) async -> NSImage? {
     let profile = NativeStoreHandle.store?.state.engineProfile(profileId) ?? (profileId == "default" ? "" : profileId)
@@ -182,10 +197,16 @@ enum NativeHistoryCatalog {
   }
 
   static func start(engineProfiles: [String]) async {
+    bindProfileLifetimes()
     NativeHistoryHints.start(catalog: catalog)
     NewTabSources.shared.useHistoryCatalog(catalog)
     NewTabSources.shared.useBookmarkCatalog(catalog)
-    await catalog.start(engineProfiles: engineProfiles)
+    let admitted: [String]
+    if let state = NativeStoreHandle.store?.state {
+      let live = state.profiles.keys.map { state.engineProfile($0) }
+      admitted = engineProfiles.filter { engine in live.contains { $0.utf16.elementsEqual(engine.utf16) } }
+    } else { admitted = engineProfiles }
+    await catalog.start(engineProfiles: admitted)
   }
 
   static func command(kind: String, engineProfile: String, payload: [String: Any]) async throws -> Any {

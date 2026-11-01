@@ -1,12 +1,13 @@
 import { nativeSafeMode } from "../store/nativeStore";
 import { onHistoryChanged, queryHistory, watchHistory, type EngineHistoryEntry, type HistoryChange } from "@solara/solaracore";
-import { readDocument, removeDocument } from "@solara/shell";
+import { readDocument, readDocumentResult, removeDocument, saveDocument } from "@solara/shell";
 import { nativeAddHistoryVisits, startNativeHistoryCatalog } from "@solara/settings";
 import { useBrowser, type BrowserState } from "../store/browser";
 import { afterFirstWindow } from "./afterFirstWindow";
 import { MAX_HISTORY, MAX_VISIT_TIMES } from "../store/history";
 import { engineProfile, isIncognitoProfile } from "../store/model";
 import type { HistoryEntry } from "../store/types";
+import { engineIdOf } from "../store/profiles";
 
 const LEGACY_FILE = "history.json";
 const LEGACY_TOLERANCE_MS = 60_000;
@@ -176,47 +177,154 @@ function applyPending() {
 }
 
 type LegacyFile = { history?: Record<string, HistoryEntry[]> };
+type LegacyRetirement = { aliases: Set<string>; engines: Set<string> };
+type LegacyRead = { file: LegacyFile; json: string; retired: LegacyRetirement };
+let legacyWork: Promise<unknown> = Promise.resolve();
+let legacyRewritePending = false;
+let legacyRetry: ReturnType<typeof setTimeout> | null = null;
 
-export async function migrateHistoryFile(now = Date.now(), { keepMs = LEGACY_KEPT_MS } = {}): Promise<"none" | "moved" | "kept"> {
+function queueLegacy<T>(work: () => Promise<T>): Promise<T> {
+  const next = legacyWork.then(work, work);
+  legacyWork = next.catch(() => {});
+  return next;
+}
+
+function retryLegacyRedaction() {
+  if (legacyRetry) return;
+  legacyRetry = setTimeout(() => {
+    legacyRetry = null;
+    void redactLegacyHistoryFile();
+  }, 2000);
+}
+
+function retiredLegacyIds(): LegacyRetirement {
+  const read = readDocumentResult("profile-data-tombstones.json");
+  if ("failure" in read) throw new Error(read.failure);
+  if ("missing" in read) return { aliases: new Set(), engines: new Set() };
+  const value: unknown = JSON.parse(read.contents);
+  const ledger = value as { deleted?: unknown; aliases?: unknown };
+  const deleted = Array.isArray(value) ? value : ledger.deleted ?? [];
+  const aliases = Array.isArray(value) ? [] : ledger.aliases ?? [];
+  if (!Array.isArray(deleted) || !Array.isArray(aliases) || ![...deleted, ...aliases].every((id) => typeof id === "string")) throw new Error("Profile deletion history is malformed.");
+  return { aliases: new Set(aliases), engines: new Set(deleted) };
+}
+
+function redactedLegacyFile(file: LegacyFile, retired: LegacyRetirement): LegacyFile {
+  const live = store().profiles;
+  const retiredRow = (id: string) => retired.aliases.has(id) || (!live[id] && (retired.engines.has(id) || (id === "default" && retired.engines.has(""))));
+  const history = Object.fromEntries(Object.entries(file.history ?? {}).filter(([id]) => !retiredRow(id)));
+  return Object.keys(history).length === Object.keys(file.history ?? {}).length ? file : { ...file, history };
+}
+
+async function readRedactedLegacy(): Promise<LegacyRead | null> {
+  const read = readDocumentResult(LEGACY_FILE);
+  if ("failure" in read) throw new Error(read.failure);
+  if ("missing" in read) return null;
+  const file = JSON.parse(read.contents) as LegacyFile;
+  const retired = retiredLegacyIds();
+  const next = redactedLegacyFile(file, retired);
+  const json = next !== file ? JSON.stringify(next) : read.contents;
+  if (next !== file || legacyRewritePending) {
+    legacyRewritePending = true;
+    try {
+      await saveDocument(LEGACY_FILE, json);
+      legacyRewritePending = false;
+      if (legacyRetry) clearTimeout(legacyRetry);
+      legacyRetry = null;
+    } catch (error) {
+      retryLegacyRedaction();
+      throw error;
+    }
+  }
+  return { file: next, json, retired };
+}
+
+function redactLegacyHistoryFile(): Promise<void> {
+  return queueLegacy(async () => {
+    if (nativeSafeMode()) return;
+    try {
+      await readRedactedLegacy();
+    } catch (error) {
+      console.warn(`[history] redacting ${LEGACY_FILE} failed; keeping it queued`, error);
+      retryLegacyRedaction();
+    }
+  });
+}
+
+async function moveLegacyHistory(now: number, keepMs: number): Promise<"none" | "moved" | "kept"> {
   if (nativeSafeMode()) return "kept";
-  let file: LegacyFile | null = null;
+  let legacy: LegacyRead | null;
   try {
-    const json = readDocument(LEGACY_FILE);
-    file = json ? (JSON.parse(json) as LegacyFile) : null;
+    legacy = await readRedactedLegacy();
   } catch (error) {
-    console.warn(`[history] ${LEGACY_FILE} is unreadable; leaving it`, error);
+    console.warn(`[history] ${LEGACY_FILE} cannot be safely migrated; leaving it`, error);
     return "kept";
   }
-  if (!file) return "none";
+  if (!legacy) return "none";
+  const source = legacy;
   const s = store();
-  const perEngine = new Map<string, HistoryEntry[]>();
-  for (const [profileId, list] of Object.entries(file.history ?? {})) {
-    if (!s.profiles[profileId] || isIncognitoProfile(profileId) || !Array.isArray(list)) continue;
-    const engine = engineProfile(profileId);
-    if (!perEngine.has(engine)) perEngine.set(engine, list);
+  const perEngine = new Map<string, { profileId: string; list: HistoryEntry[] }[]>();
+  for (const [profileId, list] of Object.entries(legacy.file.history ?? {})) {
+    const profile = s.profiles[profileId];
+    if (!profile || isIncognitoProfile(profileId) || !Array.isArray(list)) continue;
+    const engine = engineIdOf(profile);
+    if (legacy.retired.aliases.has(profileId) || legacy.retired.engines.has(engine)) continue;
+    perEngine.set(engine, [...(perEngine.get(engine) ?? []), { profileId, list }]);
   }
   for (const engine of perEngine.keys()) migrating.add(engine);
   try {
-    for (const [engine, list] of perEngine) {
-      const pages = list
-        .filter((e) => e && typeof e.url === "string")
-        .map((e) => ({
-          url: e.url,
-          title: e.title ?? "",
-          visitTimes: (e.visitTimes?.length ? e.visitTimes : [e.lastVisit]).filter((t) => typeof t === "number" && t > now - CHROME_KEEPS_MS),
-        }))
-        .filter((p) => p.visitTimes.length);
-      for (let i = 0; i < pages.length; i += CHUNK) await nativeAddHistoryVisits(engine, pages.slice(i, i + CHUNK), LEGACY_TOLERANCE_MS);
+    for (const [engine, sources] of perEngine) {
+      for (const { profileId, list } of sources) {
+        const admitted = () => {
+          const retired = retiredLegacyIds();
+          const profile = store().profiles[profileId];
+          return profile && engineIdOf(profile) === engine && !retired.aliases.has(profileId) && !retired.engines.has(engine);
+        };
+        if (!admitted()) continue;
+        const pages = list
+          .filter((e) => e && typeof e.url === "string")
+          .map((e) => ({
+            url: e.url,
+            title: e.title ?? "",
+            visitTimes: (e.visitTimes?.length ? e.visitTimes : [e.lastVisit]).filter((t) => typeof t === "number" && t > now - CHROME_KEEPS_MS),
+          }))
+          .filter((p) => p.visitTimes.length);
+        for (let i = 0; i < pages.length; i += CHUNK) {
+          if (!admitted()) break;
+          await nativeAddHistoryVisits(engine, pages.slice(i, i + CHUNK), LEGACY_TOLERANCE_MS);
+        }
+        if (admitted()) break;
+      }
     }
+    legacy = await readRedactedLegacy();
   } catch (error) {
     console.warn(`[history] moving ${LEGACY_FILE} into Chrome failed; trying again next launch`, error);
     return "kept";
   } finally {
-    migrating.clear();
+    for (const engine of perEngine.keys()) migrating.delete(engine);
   }
-  if (keepMs) setTimeout(() => removeDocument(LEGACY_FILE), keepMs);
-  else removeDocument(LEGACY_FILE);
+  if (!legacy) return "none";
+  const completed = redactedLegacyFile(source.file, legacy.retired);
+  const migrated = completed === source.file ? source.json : JSON.stringify(completed);
+  if (legacy.json !== migrated) return "kept";
+  const removeMoved = () => queueLegacy(async () => {
+    if (nativeSafeMode()) return;
+    try {
+      const current = await readRedactedLegacy();
+      if (current?.json === migrated && !legacyRewritePending) removeDocument(LEGACY_FILE);
+    } catch (error) {
+      console.warn(`[history] keeping ${LEGACY_FILE} after its migration`, error);
+    }
+  });
+  if (keepMs) setTimeout(() => void removeMoved(), keepMs);
+  else {
+    if (readDocument(LEGACY_FILE) === migrated && !legacyRewritePending) removeDocument(LEGACY_FILE);
+  }
   return "moved";
+}
+
+export function migrateHistoryFile(now = Date.now(), { keepMs = LEGACY_KEPT_MS } = {}): Promise<"none" | "moved" | "kept"> {
+  return queueLegacy(() => moveLegacyHistory(now, keepMs));
 }
 
 export function startHistory() {
@@ -244,6 +352,7 @@ export function startHistory() {
   else migrate();
   const stop = useBrowser.subscribe((s, prev) => {
     if (s.profiles === prev.profiles) return;
+    void redactLegacyHistoryFile();
     if (!moving) loadAll(s);
     for (const id of Object.keys(s.profiles)) {
       if (prev.profiles[id] || isIncognitoProfile(id) || s.history[id]) continue;
@@ -258,6 +367,8 @@ export function startHistory() {
     pending = [];
     loaded.clear();
     legacyMoved = false;
+    if (legacyRetry) clearTimeout(legacyRetry);
+    legacyRetry = null;
   };
 }
 

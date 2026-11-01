@@ -4,7 +4,7 @@ import { test } from "node:test";
 const saved = { id: "Saved-MixedCase", dataId: "Saved-Data", name: "Saved", color: "blue", icon: null, createdAt: 0 };
 const sent = [];
 const refused = [];
-const native = { profiles: {}, profileOrder: [], attached: false, rev: 0 };
+const native = { profiles: {}, profileOrder: [], attached: false, rev: 0, recordedAliases: new Set() };
 const generated = (id) => id === "default" || /^p-[a-z0-9]+-[1-9a-z][a-z0-9]*$/.test(id);
 const response = () => ({ rev: native.rev, patches: [] });
 globalThis.acTestNativeModules = {
@@ -26,6 +26,9 @@ globalThis.acTestNativeModules = {
           native.profiles = accepted;
           native.profileOrder = data.profileOrder.filter((id) => accepted[id]);
         } else if (command.name === "applyState" && data.profiles) {
+          if (Object.keys(data.profiles).some((id) => !native.profiles[id] && native.recordedAliases.has(id))) {
+            return JSON.stringify({ ...response(), error: "This profile was deleted and cannot be reused. Choose a new profile." });
+          }
           if (Object.entries(data.profiles).some(([key, profile]) => !generated(key) || !generated(profile.id) || !generated(profile.dataId ?? profile.id))) {
             return JSON.stringify({ ...response(), error: "Profile ids and data ids must use a generated lowercase profile id." });
           }
@@ -82,6 +85,35 @@ test("fallback startup reloads saved off-shape profiles while later live writes 
   }
 });
 
+test("fallback persistence reloads a stale saved session after a shared alias was deleted", () => {
+  const owner = { ...saved, id: "p-owner-1", dataId: "p-engine-1" };
+  const alias = { ...saved, id: "p-alias-1", dataId: "p-engine-1" };
+  docs.set("session.json", JSON.stringify({ version: 2, profiles: { [owner.id]: owner, [alias.id]: alias }, profileOrder: [owner.id, alias.id], windows: [], tabs: [] }));
+  let stop;
+  try {
+    stop = startPersistence();
+    stop();
+    stop = undefined;
+    standDown();
+    for (let reload = 0; reload < 2; reload++) {
+      delete native.profiles[alias.id];
+      native.profileOrder = [owner.id];
+      native.recordedAliases.add(alias.id);
+      docs.set("profile-data-tombstones.json", JSON.stringify({ aliases: [alias.id], deleted: [], reserved: [] }));
+      assert.doesNotThrow(() => { stop = startPersistence(); });
+      assert.deepEqual(native.profiles[alias.id], alias);
+      assert.deepEqual(useBrowser.getState().profiles[alias.id], alias);
+      assert.deepEqual(native.profileOrder, [owner.id, alias.id]);
+      stop();
+      stop = undefined;
+      standDown();
+    }
+  } finally {
+    stop?.();
+    standDown();
+  }
+});
+
 test("native disk attach command admits exact reload identities and refuses new off-shape profiles per key", async () => {
   const { runNative, source } = await import("../test-native/safe-host/run.mjs");
   const command = source("native/SolaraKit/Sources/SolaraStore/Command.swift");
@@ -107,5 +139,5 @@ ${command.slice(start, end)}
     let body: (Fixture) throws -> Void = { try $0.apply(name, data) }
 ${store.slice(originStart, originEnd)}
   }`;
-  assert.deepEqual(runNative("ReplicaProfiles.swift", production, [], true), Array(21).fill(true));
+  assert.deepEqual(runNative("ReplicaProfiles.swift", production, [], true), Array(25).fill(true));
 });

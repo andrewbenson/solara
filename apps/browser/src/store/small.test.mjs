@@ -1,6 +1,8 @@
+import { startProfileConfirmation } from "../test-native/profileConfirmation.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 const { useBrowser } = await import("./browser.ts");
+await startProfileConfirmation();
 const { lastActiveProfile, mainWindowFor } = await import("./small.ts");
 const { flushPersistence, loadSession, startPersistence } = await import("../lib/persist.ts");
 const stub = await import("../test-native/index.ts");

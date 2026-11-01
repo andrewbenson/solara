@@ -53,7 +53,9 @@ final class Fixture {
   var memory = Memory()
   var fromSyncOrigin = false
   var state = State()
-  func refusePendingProfileData(_ next: State) throws {
+  var recordedAliases: [String] = []
+  func refusePendingProfileData(_ next: State, allowRecordedAliases: Bool = false) throws {
+    if !allowRecordedAliases && next.profiles.keys.contains(where: { state.profiles[$0] == nil && recordedAliases.contains($0) }) { throw CommandError("recorded alias") }
     if next.profiles["pending"] != nil { throw CommandError("pending deletion") }
   }
   func set(_ next: State) { state = next }
@@ -123,6 +125,18 @@ results.append(refused { try malformed.apply("attachReplicaProfiles", ["profiles
 let validReload = Fixture()
 try validReload.apply("attachReplicaProfiles", payload([generated]))
 results.append(!refused { try validReload.apply("attachReplicaProfiles", payload([generated])) })
+let sharedReload = Fixture()
+let owner = Profile(id: "p-owner-1", dataId: "p-engine-1")
+let alias = Profile(id: "p-alias-1", dataId: "p-engine-1")
+let stale = payload([owner, alias])
+try sharedReload.apply("attachReplicaProfiles", stale)
+for _ in 0..<2 {
+  sharedReload.state.profiles[alias.id] = nil
+  sharedReload.state.profileOrder.removeAll { $0 == alias.id }
+  sharedReload.recordedAliases = [alias.id]
+  results.append(!refused { try sharedReload.apply("attachReplicaProfiles", stale) })
+  results.append(sharedReload.state.profiles[alias.id] == alias && sharedReload.state.profiles[owner.id] == owner)
+}
 dup2(originalStderr, STDERR_FILENO)
 close(originalStderr)
 try stderr.fileHandleForWriting.close()

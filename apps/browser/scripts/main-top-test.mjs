@@ -185,7 +185,7 @@ try {
 } finally {
   await app?.quit().catch(() => {});
   server.close();
-  if (!keep && rep.results.every((r) => r.ok)) rmSync(scratch, { recursive: true, force: true });
+  if (!keep && rep.disposable) rmSync(scratch, { recursive: true, force: true });
 }
 const failed = rep.results.filter((r) => !r.ok);
 const pending = rep.results.filter((r) => r.skipped).length;

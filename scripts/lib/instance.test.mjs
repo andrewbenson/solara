@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { binaryPids, binaryOf, commandIsBinary, isAlive, keepCrashReports, launch, realPath } from "./instance.mjs";
+import { binaryPids, binaryOf, commandIsBinary, isAlive, keepCrashReports, launch, realPath, reporter } from "./instance.mjs";
 
 const lowerHome = (path) => path.replace(/^\/Users\/([^/]+)\/Developer\/Personal\//, "/Users/$1/Developer/personal/");
 
@@ -61,5 +61,19 @@ test("crash reports outlive the instance's data dir, and folders without one kee
     assert.equal(keepCrashReports(join(root, "missing"), 8, root), null);
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a run's scratch is disposable only once a check has run and every check passed", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "instance-report-"));
+  try {
+    const rep = reporter(join(dir, "run.log"));
+    assert.equal(rep.disposable, false);
+    await rep.check("passes", () => {});
+    assert.equal(rep.disposable, true);
+    await rep.check("fails", () => { throw new Error("no"); });
+    assert.equal(rep.disposable, false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });

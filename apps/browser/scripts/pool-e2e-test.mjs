@@ -289,7 +289,7 @@ try {
 } finally {
   await app?.quit().catch(() => {});
   server.close();
-  if (!keep && rep.results.every((r) => r.ok)) rmSync(scratch, { recursive: true, force: true });
+  if (!keep && rep.disposable) rmSync(scratch, { recursive: true, force: true });
 }
 const failed = rep.results.filter((r) => !r.ok);
 console.log(`${rep.results.length - failed.length}/${rep.results.length} passed${failed.length ? `; log ${rep.logFile}` : ""}`);

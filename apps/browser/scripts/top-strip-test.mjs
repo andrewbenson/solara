@@ -898,7 +898,7 @@ try {
     try { assert.equal((await untilSnapshot(native.app, "native haptics before quit", () => true, 8000, { fields: ["root.haptics"] })).haptics.performed, 0); }
     finally { await native.app.quit(); }
   }
-  if (!keep && rep.results.every((r) => r.ok)) for (const name of ["rn", "native", "rn.png", "native.png", ...LOOKS.flatMap(([look]) => [`rn-${look}.png`, `native-${look}.png`]), ...[0.25, 0.5, 0.75].flatMap((v) => [`rn-peek-${v}.png`, `native-peek-${v}.png`])]) rmSync(join(scratch, name), { recursive: true, force: true });
+  if (!keep && rep.disposable) for (const name of ["rn", "native", "rn.png", "native.png", ...LOOKS.flatMap(([look]) => [`rn-${look}.png`, `native-${look}.png`]), ...[0.25, 0.5, 0.75].flatMap((v) => [`rn-peek-${v}.png`, `native-peek-${v}.png`])]) rmSync(join(scratch, name), { recursive: true, force: true });
   else rep.say(`kept ${scratch}`);
 }
 process.exit(rep.summary() ? 0 : 1);

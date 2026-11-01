@@ -108,6 +108,7 @@ export function wipeRefusal(data) {
 }
 export const quitEnded = ({ how }) => how === "quit" || how === "SIGTERM" || how === "SIGKILL";
 const quitData = new Set();
+const diedInstances = new Set();
 const reportDirs = new Map();
 const launched = new Map();
 const uiGuardScript = join(dirname(here), "ui-guard.mjs");
@@ -259,7 +260,7 @@ process.on("exit", (code) => {
     return;
   }
   for (const data of quitData) removeTemporaryData(data);
-  for (const [dir, report] of reportDirs) if (!report.failed.length) removeTemporaryData(dir);
+  for (const [dir, report] of reportDirs) if (report.disposable) removeTemporaryData(dir);
 });
 export function spawnedPids(binary, before, port, dataDirs) {
   const r = spawnSync("ps", ["-ww", "-ax", "-o", "pid=", "-o", "ppid=", "-o", "command="], { encoding: "utf8", timeout: 5000, maxBuffer: 64 << 20 });
@@ -519,7 +520,10 @@ class Instance {
     const gateLog = join(this.data, "ui-gate-violation.log");
     if (existsSync(gateLog)) process.stderr.write(readFileSync(gateLog, "utf8"));
     const how = await this.#quit(opts);
-    if (how.how === "gone") keepCrashReports(this.data, this.pid);
+    if (how.how === "gone") {
+      diedInstances.add(this.pid);
+      keepCrashReports(this.data, this.pid);
+    }
     if (!isAlive(this.pid) && state && existsSync(state)) gateNote(state, { unwatch: this.pid });
     launched.delete(this.pid);
     if (this.exited && quitEnded(how) && !this.keepData) quitData.add(this.data);
@@ -706,6 +710,7 @@ export function reporter(logFile, { name = "run" } = {}) {
       }
     },
     get failed() { return results.filter((x) => !x.ok); },
+    get disposable() { return results.length > 0 && results.every((x) => x.ok) && !diedInstances.size; },
     summary() {
       const ran = results.filter((x) => !x.skipped);
       const failed = ran.filter((x) => !x.ok);

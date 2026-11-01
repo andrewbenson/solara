@@ -6,9 +6,9 @@ import Testing
 @Suite struct LaunchSwitchesTests {
   static let defaultOn: Set<LaunchSwitch> = [
     .nativeShell, .nativeTopStrip, .nativeSidePanel,
-    .nativeSidebar, .nativeProfilePager, .shellPanes, .nativePagesPool, .nativePanePrompts, .shellMainTop,
+    .nativeSidebar, .nativeProfilePager, .shellPanes, .nativePagesPool, .shellMainTop,
   ]
-  static let shippedSurfaces = defaultOn.filter { !$0.storable(distribution: false) && !$0.storable(distribution: true) }
+  static let shippedSurfaces = defaultOn.filter { !$0.storable(distribution: true) }
 
   func scratchDefaults() -> UserDefaults {
     let name = "LaunchSwitchesTests.\(UUID().uuidString)"
@@ -104,14 +104,14 @@ import Testing
     }
   }
 
-  @Test func theKillSwitchTheShippedSurfacesAndTheScopeAreNeverReadFromDefaults() {
+  @Test func theShippedSurfacesInDistributionAndTheScopeAreNeverReadFromDefaults() {
     let defaults = scratchDefaults()
-    #expect(Self.shippedSurfaces.contains(.nativePanePrompts) && !Self.shippedSurfaces.contains(.nativeShell))
+    #expect(Self.shippedSurfaces.contains(.shellMainTop))
     for name in Self.shippedSurfaces { defaults.set("0", forKey: name.rawValue) }
     defaults.set("settingsAndDownloads", forKey: LaunchSwitches.scopeVariable)
     for distribution in [false, true] {
       let switches = LaunchSwitches(environment: [:], defaults: defaults, distribution: distribution, skipStored: false)
-      for name in Self.shippedSurfaces { #expect(switches.isOn(name, defaultOn: true), "\(name.rawValue)") }
+      for name in Self.shippedSurfaces { #expect(switches.isOn(name, defaultOn: true) == distribution, "\(name.rawValue)") }
       #expect(switches.scope == nil)
     }
   }
@@ -148,10 +148,10 @@ import Testing
     defaults.set("1", forKey: "SOLARA_SHELL_MAIN_TOP")
     let stored = StoredLaunchSwitches(defaults: defaults, distribution: true)
     stored.set(.nativeShell, true)
-    stored.set(.nativePanePrompts, false)
+    stored.set(.shellPanes, false)
     stored.set(.nativePagesPool, true)
     #expect(defaults.object(forKey: "SOLARA_NATIVE_SHELL") == nil)
-    #expect(defaults.object(forKey: "SOLARA_NATIVE_PANE_PROMPTS") == nil)
+    #expect(defaults.object(forKey: "SOLARA_SHELL_PANES") == nil)
     #expect(defaults.object(forKey: "SOLARA_NATIVE_PAGES_POOL") == nil)
     #expect(defaults.string(forKey: "SOLARA_NATIVE_GONE") == "1")
     #expect(defaults.string(forKey: "SOLARA_TEST_REAUTH") == "1")
@@ -171,7 +171,6 @@ import Testing
     #expect(LaunchSwitch.shellMainTop.needs == [.shellPanes, .nativePagesPool])
     #expect(LaunchSwitch.nativeSidebar.needs.isEmpty)
     #expect(LaunchSwitch.nativeProfilePager.needs == [.nativeShell, .nativeSidebar, .nativeTopStrip])
-    #expect(LaunchSwitch.nativePanePrompts.needs == [.nativeShell, .nativePagesPool])
     #expect(LaunchSwitch.onByDefault == Self.defaultOn)
   }
 
@@ -188,20 +187,19 @@ import Testing
     #expect(met.isOn(.nativeProfilePager, defaultOn: false))
     #expect(met.refusals.isEmpty)
 
-    let prompts = LaunchSwitches(environment: ["SOLARA_NATIVE_PANE_PROMPTS": "1", "SOLARA_NATIVE_SHELL": "1", "SOLARA_NATIVE_PAGES_POOL": "0"], defaults: nil, distribution: false, skipStored: false)
-    #expect(!prompts.isOn(.nativePanePrompts, defaultOn: false))
-    #expect(prompts.refusals == [
+    let top = LaunchSwitches(environment: ["SOLARA_SHELL_MAIN_TOP": "1", "SOLARA_NATIVE_SHELL": "1", "SOLARA_NATIVE_PAGES_POOL": "0"], defaults: nil, distribution: false, skipStored: false)
+    #expect(!top.isOn(.shellMainTop, defaultOn: false))
+    #expect(top.refusals == [
       "SOLARA_SHELL_MAIN_TOP is on but stays off: it needs SOLARA_NATIVE_PAGES_POOL=1",
-      "SOLARA_NATIVE_PANE_PROMPTS is on but stays off: it needs SOLARA_NATIVE_PAGES_POOL=1",
     ])
 
     let noShell = LaunchSwitches(
       environment: ["SOLARA_NATIVE_SHELL": "0", "SOLARA_SHELL_MAIN_TOP": "1", "SOLARA_SHELL_PANES": "1", "SOLARA_NATIVE_PAGES_POOL": "1"], defaults: nil, distribution: false, skipStored: false)
     #expect(!noShell.isOn(.shellMainTop, defaultOn: false))
     #expect(noShell.unmetNeeds(.shellMainTop) == [.shellPanes, .nativePagesPool])
-    #expect(noShell.refusals.count == 5)
+    #expect(noShell.refusals.count == 4)
     #expect(LaunchSwitches(environment: [:], defaults: nil, distribution: false, skipStored: false).refusals.isEmpty)
-    #expect(LaunchSwitches(environment: ["SOLARA_NATIVE_SHELL": "0", "SOLARA_SHELL_PANES": "0", "SOLARA_NATIVE_PROFILE_PAGER": "0", "SOLARA_NATIVE_PAGES_POOL": "0", "SOLARA_NATIVE_PANE_PROMPTS": "0", "SOLARA_SHELL_MAIN_TOP": "0"], defaults: nil, distribution: false, skipStored: false).refusals.isEmpty)
+    #expect(LaunchSwitches(environment: ["SOLARA_NATIVE_SHELL": "0", "SOLARA_SHELL_PANES": "0", "SOLARA_NATIVE_PROFILE_PAGER": "0", "SOLARA_NATIVE_PAGES_POOL": "0", "SOLARA_SHELL_MAIN_TOP": "0"], defaults: nil, distribution: false, skipStored: false).refusals.isEmpty)
   }
 
   @Test func theOneArgumentReadUsesTheSwitchsOwnDefault() {
@@ -228,7 +226,7 @@ import Testing
     defaults.set("1", forKey: "SOLARA_SHELL_PANES")
     let switches = LaunchSwitches(environment: [:], defaults: defaults, distribution: false, skipStored: false)
     #expect(!switches.isOn(.shellPanes, defaultOn: false))
-    #expect(switches.refusals.count == 5)
+    #expect(switches.refusals.count == 4)
     defaults.set("1", forKey: "SOLARA_NATIVE_SHELL")
     let withShell = LaunchSwitches(environment: [:], defaults: defaults, distribution: false, skipStored: false)
     #expect(withShell.isOn(.shellPanes, defaultOn: false))

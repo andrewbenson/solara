@@ -9,7 +9,7 @@ public class HostedModule: Module {
 
     OnCreate {
       if NativeExtensionSidePanel.enabled { HostedViews.declare(NativeExtensionSidePanel.kind) }
-      if PanePrompts.enabled { HostedViews.declare(PanePrompts.kind) }
+      HostedViews.declare(PanePrompts.kind)
       if NativeSidebarShell.enabled { HostedViews.declare(NativeSidebarShell.topic) }
       HostedViews.declare(NativeToolTour.kind)
       let sink = HostedSink(self)

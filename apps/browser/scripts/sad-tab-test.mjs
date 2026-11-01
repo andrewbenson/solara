@@ -17,10 +17,8 @@ crash and a click on Wait clears the hang, and once both are gone the native con
 serves the page from the pool (SOLARA_NATIVE_PAGES_POOL=1 SOLARA_SHELL_PANES=1): the renderer really crashes
 (chrome://crash through the pooled handle) and really hangs (a 40 second busy loop and a key press), both reach the
 store as page events, the native sad tab sits where RN's does, Reload reloads the pooled page back to A and Wait clears
-the hang. A fourth adds SOLARA_NATIVE_PANE_PROMPTS=1: RN no longer mounts
-its SadTab wrapper for the pooled pane at all, the native sad tab comes from the pool's page events alone (a real
-renderer crash, then a real hang: a 40 second busy loop and a key press, so onUnresponsive comes from the engine), it
-stays up while JS publishes an unrelated pane overlay (the zoom popover), and Reload and Wait clear it.`);
+the hang. RN mounts no SadTab wrapper for the pooled pane: the native sad tab comes from the pool's page events
+alone, stays up while JS publishes an unrelated pane overlay (the zoom popover), and Reload and Wait clear it.`);
   process.exit(2);
 }
 const keep = args.includes("--keep-data");
@@ -71,8 +69,10 @@ const untilSnapshot = async (what, accept, ms = 5000) => {
   const end = Date.now() + ms;
   let last;
   while (Date.now() < end) {
-    last = await app.snapshot().catch((error) => ({ error: error.message }));
-    if (!last.error && accept(last)) return last;
+    if (!app?.alive) throw new Error(`${what}: the owned app exited`);
+    if (end - Date.now() < 1000) break;
+    last = await app.snapshot({}, { timeout: 1000 });
+    if (Date.now() < end && last.consistent && await accept(last) && Date.now() < end) return last;
     await sleep(100);
   }
   throw new Error(`${what}: native snapshot never matched (${JSON.stringify(last)})`);
@@ -87,12 +87,11 @@ const modes = [
   { unresponsive: true },
 ];
 const labels = { 0: ["Reload"], 1: ["Exit Page", "Wait"] };
-const measured = { rn: [], native: [], pool: [], prompts: [] };
+const measured = { rn: [], native: [], pool: [] };
 const LEGS = [
-  { tag: "rn", env: { SOLARA_NATIVE_SHELL: "0", SOLARA_NATIVE_PAGES_POOL: "0", SOLARA_SHELL_PANES: "0", SOLARA_NATIVE_PANE_PROMPTS: "0" } },
+  { tag: "rn", env: { SOLARA_NATIVE_SHELL: "0", SOLARA_NATIVE_PAGES_POOL: "0", SOLARA_SHELL_PANES: "0" } },
   { tag: "native", env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_PAGES_POOL: "0", SOLARA_SHELL_PANES: "0" } },
   { tag: "pool", env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_PAGES_POOL: "1", SOLARA_SHELL_PANES: "1", SOLARA_TAB_POOL: "1" } },
-  { tag: "prompts", env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_PAGES_POOL: "1", SOLARA_SHELL_PANES: "1", SOLARA_TAB_POOL: "1", SOLARA_NATIVE_PANE_PROMPTS: "1" } },
 ];
 
 async function frames(nativeShell, i) {
@@ -102,7 +101,14 @@ async function frames(nativeShell, i) {
     for (const title of labels[i]) controls[title] = await until(`RN's ${title}`, `return button(${JSON.stringify(title)});`);
     return { overlay, controls };
   }
-  const info = await until("the native sad tab", `return native().then((d) => d && d.tabs.a && d.tabs.a.sadTab && !d.tabs.a.sadTab.hidden ? d : null);`);
+  let info;
+  await untilSnapshot("the native sad tab and controls", async (state) => {
+    info = await run(`return native().then((d) => d && d.tabs.a && d.tabs.a.sadTab && !d.tabs.a.sadTab.hidden ? d : null);`);
+    if (!info) return false;
+    const sad = nativeSad(state);
+    return sad?.visible && sad.mode === info.tabs.a.sadTab.mode && near(nativeFrame(sad.frame), info.tabs.a.sadTab.frame) &&
+      labels[i].every((title) => near(nativeFrame(sad.controls.find((item) => item.id === title)?.frame), info.tabs.a.sadTab.controls[title]));
+  });
   if (!info.top || !info.inCard) throw new Error(`the overlay container is not the card's top child: ${JSON.stringify(info)}`);
   const drawn = await run(`return fibers("PromptButton").length + fibers("Symbol").filter((f) => f.memoizedProps.name === "exclamationmark.triangle").length;`);
   if (drawn) throw new Error("RN still draws the sad tab's icon or buttons with the native one on");
@@ -112,8 +118,7 @@ async function frames(nativeShell, i) {
 try {
   for (const { tag, env } of LEGS) {
     const nativeShell = tag !== "rn";
-    const prompts = tag === "prompts";
-    const pooled = tag === "pool" || prompts;
+    const pooled = tag === "pool";
     app = await launch(resolve(appArg), {
       data: join(scratch, `data-${tag}`), fresh: true, session: fixture, onboarded: true, probe: true, env,
       ready: "return !!ac.store.getState().windows.w1",
@@ -124,7 +129,7 @@ try {
       const served = await run(`return !!globalThis.expo.modules.SolaraTabPool?.available?.() && !!ac.webviews.get("a") && !acPerf.findFibers("TabWebView", 5).length;`);
       if (!served) throw new Error("the pool doesn't serve page A");
     }
-    if (prompts) {
+    if (pooled) {
       const kinds = await run(`return globalThis.expo.modules.SolaraHosted.kinds();`);
       if (!kinds.includes("panePrompts")) throw new Error(`panePrompts not declared: ${JSON.stringify(kinds)}`);
     }
@@ -144,11 +149,11 @@ try {
           await run(`return ac.shell.devKeyEquivalent("w1", { key: "a", keyCode: 0, modifiers: [], focus: "page" }).then(() => true);`);
         } else await run(`patch(${JSON.stringify(state)}); return true;`);
         await sleep(400);
-        if (pooled && !prompts) await until(`the ${name} page reaches the store`, `const p = page(); return (${i === 0} ? p.crashed : p.unresponsive) || null;`, 35000);
-        if (prompts) {
+        if (pooled) {
+          await until(`the ${name} page reaches the store`, `const p = page(); return (${i === 0} ? p.crashed : p.unresponsive) || null;`, 35000);
           await until("the native sad tab", `return native().then((d) => d && d.tabs.a && d.tabs.a.sadTab && !d.tabs.a.sadTab.hidden && d.tabs.a.sadTab.mode === ${JSON.stringify(name)} || null);`, 35000);
           const wrappers = await run(`return acPerf.findFibers("SadTab", 5).length;`);
-          if (wrappers) throw new Error(`RN still mounts ${wrappers} SadTab wrapper(s) with the pane prompts switch on`);
+          if (wrappers) throw new Error(`RN still mounts ${wrappers} SadTab wrapper(s) for the pooled pane`);
           await run(`ac.pageState.setState((s) => ({ popover: { ...s.popover, a: "zoom" } })); return true;`);
           await sleep(600);
           const kept = await run(`return native().then((d) => !!(d && d.tabs.a && d.tabs.a.sadTab && !d.tabs.a.sadTab.hidden));`);
@@ -159,14 +164,6 @@ try {
         }
         const got = await frames(nativeShell, i);
         if (nativeShell && got.mode !== name) throw new Error(`native mode ${got.mode}`);
-        if (nativeShell) {
-          const sad = nativeSad(await untilSnapshot(`native ${name} sad tab`, (state) => nativeSad(state)?.visible && nativeSad(state)?.mode === name));
-          if (!near(nativeFrame(sad.frame), got.overlay)) throw new Error(`native sad tab ${JSON.stringify(sad.frame)}, JS ${got.overlay}`);
-          for (const title of labels[i]) {
-            const control = sad.controls.find((item) => item.id === title);
-            if (!control || !near(nativeFrame(control.frame), got.controls[title])) throw new Error(`native ${title} ${JSON.stringify(control)}, JS ${got.controls[title]}`);
-          }
-        }
         measured[tag][i] = got;
         const action = i === 0 ? "Reload" : "Wait";
         await run(`return click(${number}, ${JSON.stringify(centre(got.controls[action]))}).then(() => true);`);
@@ -180,7 +177,7 @@ try {
         return got;
       });
     }
-    if (prompts) {
+    if (pooled) {
       await rep.check(`${tag}-moves-with-its-tab`, async () => {
         await run(`ac.webviews.get("a").loadUrl("chrome://crash"); return true;`);
         await until("the crash reaches the store, once the hang's busy loop ends", `return page().crashed || null;`, 45000);

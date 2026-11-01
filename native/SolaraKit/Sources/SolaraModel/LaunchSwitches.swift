@@ -15,7 +15,6 @@ public enum LaunchSwitch: String, CaseIterable, Sendable {
   case nativeSidebar = "SOLARA_NATIVE_SIDEBAR"
   case nativeTopStrip = "SOLARA_NATIVE_TOP_STRIP"
   case nativeSidePanel = "SOLARA_NATIVE_SIDE_PANEL"
-  case nativePanePrompts = "SOLARA_NATIVE_PANE_PROMPTS"
   case nativeProfilePager = "SOLARA_NATIVE_PROFILE_PAGER"
   case syncRedesign = "SOLARA_SYNC_REDESIGN"
   case nativeServices = "SOLARA_NATIVE_SERVICES"
@@ -30,7 +29,7 @@ public enum LaunchSwitch: String, CaseIterable, Sendable {
   static let developmentOnly: Set<LaunchSwitch> = [.syncRedesign]
   public static let onByDefault: Set<LaunchSwitch> = [
     .nativeShell, .nativeTopStrip, .nativeSidePanel,
-    .nativeSidebar, .nativeProfilePager, .shellPanes, .nativePagesPool, .nativePanePrompts, .shellMainTop,
+    .nativeSidebar, .nativeProfilePager, .shellPanes, .nativePagesPool, .shellMainTop,
   ]
 
   public var needs: [LaunchSwitch] {
@@ -38,7 +37,6 @@ public enum LaunchSwitch: String, CaseIterable, Sendable {
     case .shellPanes, .nativePagesPool: [.nativeShell]
     case .shellMainTop: [.shellPanes, .nativePagesPool]
     case .nativeProfilePager: [.nativeShell, .nativeSidebar, .nativeTopStrip]
-    case .nativePanePrompts: [.nativeShell, .nativePagesPool]
     default: []
     }
   }

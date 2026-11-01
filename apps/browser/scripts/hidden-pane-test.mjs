@@ -75,9 +75,11 @@ const untilSnapshot = async (what, accept, ms = 8000) => {
   const end = Date.now() + ms;
   let last;
   do {
-    last = await instance.snapshot({ windowId: "w1" });
+    if (!instance.alive) throw new Error(`${what}: the owned app exited`);
+    if (end - Date.now() < 1000) break;
+    last = await instance.snapshot({ windowId: "w1" }, { timeout: 1000 });
     assert.equal(last.schema, 1);
-    if (last.consistent && accept(last)) return last;
+    if (Date.now() < end && last.consistent && await accept(last) && Date.now() < end) return last;
     await sleep(80);
   } while (Date.now() < end);
   throw new Error(`${what}: native snapshot never matched (${JSON.stringify(last)})`);
@@ -117,9 +119,11 @@ try {
     };
     return true;`);
   const S = "const S = () => ac.store.getState();";
-  const nativePrompts = await ac(`return Promise.resolve(globalThis.expo.modules.SolaraHosted?.kinds?.() ?? []).then((k) => k.includes("panePrompts"));`);
-  const initialSnapshot = await untilSnapshot("hosted capabilities", (s) => Array.isArray(s.hostedKinds));
-  assert.equal(initialSnapshot.hostedKinds.includes("panePrompts"), nativePrompts);
+  const initialSnapshot = await untilSnapshot("hosted capabilities", async (s) => {
+    const nativePrompts = await ac(`return Promise.resolve(globalThis.expo.modules.SolaraHosted?.kinds?.() ?? []).then((k) => k.includes("panePrompts"));`);
+    return Array.isArray(s.hostedKinds) && s.hostedKinds.includes("panePrompts") === nativePrompts && nativePrompts;
+  });
+  assert.ok(initialSnapshot.hostedKinds.includes("panePrompts"));
 
   const loaded = await ac(`${S}
     S().activate("b");
@@ -158,22 +162,21 @@ try {
     const M = globalThis.expo.modules.SolaraMedia;
     const inPane = () => M.describePaneOverlays("w1").then((d) => { const p = JSON.parse(d)?.tabs?.b?.permission; return !!p && !p.hidden; });
     const paneWithin = (ms) => { const end = Date.now() + ms; const poll = () => inPane().then((on) => (on || Date.now() > end ? on : new Promise((r) => setTimeout(r, 100)).then(poll))); return poll(); };
-    const rnDrawn = () => audit.until(() => audit.props("PermissionPrompt", "b").some((p) => p.rendered), 8000);
-    const drawn = () => (${nativePrompts} ? paneWithin(8000) : rnDrawn());
+    const drawn = () => paneWithin(8000);
     return audit.frames(3).then(drawn).then((paneShown) => ({
       nativeToolbarCount: audit.native("b").length,
       url: t(() => audit.props("UrlField", "b")[0]?.props.tab.url ?? audit.native("b").map((n) => n.url && n.url.host + n.url.hoverTrail)[0]),
       zoom: t(() => audit.props("ZoomIndicator", "b")[0]?.props.zoom ?? audit.native("b").map((n) => { const z = (n.url?.trailing ?? []).find((t) => t.id === "zoom"); return z ? Number(z.tooltip.match(/([0-9]+)%/)[1]) / 100 : 1; })[0]),
       loading: t(() => audit.props("ReloadButton", "b")[0]?.props.loading ?? audit.native("b").map((n) => (n.left ?? []).find((b) => b.id === "reload")?.icon === "xmark")[0]),
       find: t(() => audit.props("FindBar", "b")[0]?.rendered),
-      prompt: t(() => (${nativePrompts} ? paneShown && !audit.props("PermissionPrompt", "b").some((p) => p.rendered) : paneShown)),
+      prompt: t(() => paneShown && !audit.props("PermissionPrompt", "b").some((p) => p.rendered)),
     }));`);
   check("shown: the URL it loaded while hidden", typeof shown.url === "string" && shown.url.includes("HiddenLoad"), shown.url);
   check("shown: its zoom", shown.zoom === 1.5, String(shown.zoom));
   check("shown: loading", shown.loading === true, String(shown.loading));
   check("shown: the find bar opened while hidden", shown.find === true);
   check("shown: the permission prompt that came while hidden", shown.prompt === true);
-  const shownSnapshot = await untilSnapshot("B shown with its native permission prompt", (s) => s.windows[0]?.selectedTabId === "b" && (!shown.nativeToolbarCount || !!s.windows[0]?.toolbarStates?.b) && (!nativePrompts || s.windows[0]?.paneOverlays?.tabs?.b?.permission?.hidden === false));
+  const shownSnapshot = await untilSnapshot("B shown with its native permission prompt", (s) => s.windows[0]?.selectedTabId === "b" && (!shown.nativeToolbarCount || !!s.windows[0]?.toolbarStates?.b) && s.windows[0]?.paneOverlays?.tabs?.b?.permission?.hidden === false);
   const shownTab = shownSnapshot.tabs.find((t) => t.id === "b");
   assert.ok(shownTab.url.includes("HiddenLoad"));
   assert.equal(shownTab.zoom, shown.zoom);
@@ -184,7 +187,7 @@ try {
     assert.equal(toolbar.reloadIcon === "xmark", shown.loading);
     assert.equal(Number(toolbar.zoomLabel.match(/([0-9]+)%/)[1]) / 100, shown.zoom);
   }
-  if (nativePrompts) assert.equal(!shownSnapshot.windows[0].paneOverlays.tabs.b.permission.hidden, shown.prompt);
+  assert.equal(!shownSnapshot.windows[0].paneOverlays.tabs.b.permission.hidden, shown.prompt);
 
   const panes = await ac(`${S}
     const want = () => S().windows.w1.tabIds.filter((id) => S().tabs[id]?.navigation || S().tabs[id]?.adoptId).sort().join(",");

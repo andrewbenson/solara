@@ -30,12 +30,8 @@ enum PanePrompts {
   static let cliHideDelay: TimeInterval = 0.25
   private(set) static var activatedAt: TimeInterval = 0
 
-  nonisolated static var enabled: Bool {
-    LaunchSwitches.shared.isOn(.nativePanePrompts)
-  }
-
   static func start() {
-    guard enabled, NativeWindowShell.enabled, !started else { return }
+    guard NativeWindowShell.enabled, !started else { return }
     started = true
     TabPoolHost.shared.pageEventObservers.append { tabId, name, payload in pageEvent(tabId, name, payload) }
     TabPoolHost.shared.stateObservers.append { tabsMoved() }

@@ -7,10 +7,13 @@
 //       Builds the production JS bundle of the current tree (metro, --dev false) and compiles it with
 //       hermesc, as the Release build does. Prints sizes and the biggest packages. --profiling 1 bundles
 //       React's profiling renderer, which times each component's render (render-bench.mjs uses it).
-//   node js-bench.mjs run --app <Release Solara.app> --bundle <main.jsbundle> --label <name> [flags]
+//   node js-bench.mjs run --app <Debug or Release Solara.app> --bundle <main.jsbundle> --label <name> [flags]
 //       Clones the app (APFS clone), swaps in the bundle, and for each run seeds a fresh data folder
 //       (seed.mjs: 200 tabs, 5000 history entries, 1000 bookmarks), launches a hidden instance, runs
 //       the scenarios of bench-app.js through the dev harness and quits it. Writes <out>/<label>.json.
+//       Native sidebar scenarios require native sidebar/pager ownership and test facilities with a scratch data dir.
+//       Release hover needs the native devSetPointer notification path (older Release apps return false).
+//       Debug apps use Metro; use Release with its matching production bundle for comparable JS costs.
 //       The bundle must match the app's NATIVE_API_VERSION; a release's own is <app>/Contents/Resources/main.jsbundle.
 //         --runs <n>           launches, one per run (default 5)
 //         --scenarios <a,b>    of: startup, persistence, idle, typing, switchTabs, openClose, scroll, pageLoad, hover,
@@ -34,6 +37,15 @@
 //
 // The app side is the opt-in probe in src/lib/perfProbe.ts, on only when the data folder holds a
 // `perf-probe` file (the seed writes one).
+//
+// Scenarios on the native sidebar (bench revision 4):
+//   scroll        native scrollTo, 60 steps to 2400 px and back, with 16 ms waits
+//   hover         native row rects and devSetPointer, 24 rows with 60 ms waits, then off the sidebar
+//   profileSwipe  nextProfile/previousProfile commands through the native pager, 1500 ms to settle each
+//   storeUpdate   60 background loading-fact changes, 5 ms apart, through native page reports when live is owned
+//   cenHover      the census variant of native row hover (14 rows, 150 ms per action)
+// Native work can leave zero React counts; P.reset/read still record each interaction's JS work.
+// The ratchet re-baselined only scroll.timers and hover.timers for revision 4; its other ceilings are 0.2.40's.
 //
 // Report (<out>/<label>.json):
 //   { label, version (the app's CFBundleShortVersionString), bundle, bundleSize (bytes), when,
@@ -63,7 +75,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const appDir = resolve(here, "../..");
 const repo = resolve(appDir, "../..");
 const defaultOut = process.env.AC_PERF_OUT ?? "/tmp/ac-perf-js";
-const BENCH_REVISION = 3;
+const BENCH_REVISION = 4;
 
 const [command, ...rest] = process.argv.slice(2);
 const flags = {};
@@ -333,7 +345,7 @@ async function run() {
   mkdirSync(dirname(clone), { recursive: true });
   execFileSync("cp", ["-cR", app, clone]);
   const swapped = join(clone, "Contents/Resources/main.jsbundle");
-  const same = readFileSync(jsbundle).equals(readFileSync(swapped));
+  const same = existsSync(swapped) && readFileSync(jsbundle).equals(readFileSync(swapped));
   cpSync(jsbundle, swapped);
   if (!same) resign(app, clone);
   const version = execFileSync("/usr/libexec/PlistBuddy", ["-c", "Print CFBundleShortVersionString", join(clone, "Contents/Info.plist")], { encoding: "utf8" }).trim();

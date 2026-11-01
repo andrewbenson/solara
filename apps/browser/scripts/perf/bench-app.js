@@ -40,9 +40,57 @@ async function writesSettled(quietMs = 3000, timeoutMs = 30000) {
   return false;
 }
 
-function hostOf(fiber) {
-  for (let f = fiber.child; f; f = f.child) if (f.tag === 5) return f;
-  return null;
+function mergeStats(into, from) {
+  for (const [key, value] of Object.entries(from)) {
+    if (key === "since") into[key] ??= value;
+    else if (typeof value === "number") into[key] = (into[key] ?? 0) + value;
+    else if (Array.isArray(value)) (into[key] ??= []).push(...value);
+    else if (value && typeof value === "object") mergeStats((into[key] ??= {}), value);
+  }
+  return into;
+}
+
+async function movePointer(w, point) {
+  let pending;
+  const ms = timed(() => (pending = ac.shell.devSetPointer(w, point)));
+  if (!(await pending)) throw new Error("native pointer driver unavailable");
+  return ms;
+}
+
+async function nativeHoverRows(rows, from) {
+  const w = windowId();
+  const drag = globalThis.expo.modules.SolaraSidebarDrag;
+  const hosted = globalThis.expo.modules.SolaraHosted;
+  const off = { x: S().windows[w].frame[2] - 20, y: 20 };
+  await movePointer(w, off);
+  await drag.scrollTo(w, 0);
+  await sleep(300);
+  const probe = () => JSON.parse(drag.probe(w));
+  const initial = probe();
+  if (!initial?.viewport) throw new Error("no native sidebar viewport");
+  const list = initial.items.filter((item) => item.kind === "row" && item.key.startsWith("t:") && item.h > 0).slice(from, from + rows);
+  const notTabRow = list.find((item) => item.kind !== "row" || !item.key.startsWith("t:"));
+  if (notTabRow) throw new Error(`hover would cross ${notTabRow.kind} ${notTabRow.key}, not a tab row`);
+  if (list.length < 2) throw new Error(`only ${list.length} hoverable native rows`);
+  return {
+    w, list,
+    async point(item) {
+      let rect = await hosted.sidebarRowFrame(w, item.key);
+      const state = probe();
+      const viewport = state.viewport;
+      if (!rect) throw new Error(`no native row rect for ${item.key}`);
+      if (rect.y < viewport.y + 4 || rect.y + rect.height > viewport.y + viewport.h - 4) {
+        await movePointer(w, off);
+        await drag.scrollTo(w, state.scrollY + rect.y - viewport.y - 8);
+        await sleep(100);
+        rect = await hosted.sidebarRowFrame(w, item.key);
+      }
+      if (!rect || rect.y < viewport.y || rect.y + rect.height > viewport.y + viewport.h)
+        throw new Error(`native row ${item.key} is outside the sidebar viewport`);
+      return { x: rect.x + Math.min(60, rect.width / 2), y: rect.y + rect.height / 2 };
+    },
+    off,
+  };
 }
 
 const scenarios = {
@@ -147,26 +195,19 @@ const scenarios = {
 
   async scroll({ distance = 2400, steps = 60 } = {}) {
     await quiet();
-    const page = P.findFibers("SidebarPage").find((f) => f.memoizedProps?.current);
-    if (!page) throw new Error("no current SidebarPage");
-    let scroller = null;
-    const visit = (f) => {
-      for (let c = f; c && !scroller; c = c.sibling) {
-        if (c.stateNode && typeof c.stateNode.scrollTo === "function") scroller = c.stateNode;
-        else visit(c.child);
-      }
-    };
-    visit(page.child);
-    if (!scroller) throw new Error("no ScrollView");
-    scroller.scrollTo({ y: 0, animated: false });
+    const w = windowId();
+    const drag = globalThis.expo.modules.SolaraSidebarDrag;
+    await drag.scrollTo(w, 0);
+    if (!JSON.parse(drag.probe(w))?.viewport) throw new Error("no native sidebar viewport");
     await sleep(300);
+    await writesSettled();
     P.reset();
     for (let i = 1; i <= steps; i++) {
-      scroller.scrollTo({ y: (distance * i) / steps, animated: false });
+      await drag.scrollTo(w, (distance * i) / steps);
       await sleep(16);
     }
     for (let i = steps - 1; i >= 0; i--) {
-      scroller.scrollTo({ y: (distance * i) / steps, animated: false });
+      await drag.scrollTo(w, (distance * i) / steps);
       await sleep(16);
     }
     await sleep(300);
@@ -192,26 +233,26 @@ const scenarios = {
 
   async hover({ rows = 24, gapMs = 60, from = 8 } = {}) {
     await quiet();
-    const fibers = P.findFibers("TabRow", 400).filter((f) => f.alternate || true);
-    const hosts = fibers.map(hostOf).filter((h) => h && typeof h.memoizedProps?.onMouseEnter === "function");
-    const list = hosts.slice(from, from + rows);
-    if (list.length < 2) throw new Error(`only ${list.length} hoverable rows`);
-    P.reset();
+    const native = await nativeHoverRows(rows, from);
     const steps = [];
-    let prev = null;
-    for (const h of list) {
-      steps.push(
-        timed(() => {
-          prev?.memoizedProps.onMouseLeave?.({ nativeEvent: {} });
-          h.memoizedProps.onMouseEnter({ nativeEvent: {} });
-        }),
-      );
-      prev = h;
-      await sleep(gapMs);
+    const stats = {};
+    try {
+      for (const item of native.list) {
+        const point = await native.point(item);
+        P.reset();
+        steps.push(await movePointer(native.w, point));
+        await sleep(gapMs);
+        mergeStats(stats, P.read());
+      }
+      P.reset();
+      steps.push(await movePointer(native.w, native.off));
+      await sleep(800);
+      mergeStats(stats, P.read());
+      return { steps, stats };
+    } finally {
+      await movePointer(native.w, native.off);
+      await ac.shell.devSetPointer(native.w, null);
     }
-    steps.push(timed(() => prev.memoizedProps.onMouseLeave?.({ nativeEvent: {} })));
-    await sleep(800);
-    return { steps, stats: P.read() };
   },
 
   async profileSwipe({ settleMs = 1500 } = {}) {
@@ -231,15 +272,46 @@ const scenarios = {
     await quiet();
     const s = S();
     const w = windowId();
-    const bg = s.windows[w].tabIds.find((id) => id !== activeId() && s.live[id] && !s.tabs[id].pinned);
+    const front = activeId();
+    const pages = ac.nativePages;
+    const native = pages.ownsLive();
+    const candidates = s.windows[w].tabIds.filter((id) => id !== front && s.tabs[id]?.profileId === s.windows[w].profileId && !s.tabs[id].pinned);
+    const bg = candidates.find((id) => s.live[id] && (!native || pages.facts(id)?.ready)) ?? candidates[0];
+    if (!bg || (!native && !s.live[bg])) throw new Error("no loaded background tab for live-fact churn");
+    if (native && (!pages.facts(bg)?.ready || S().live[bg]?.isLoading !== false)) {
+      S().activate(bg);
+      try {
+        if (!(await until(() => pages.facts(bg)?.ready && S().live[bg]?.isLoading === false, 15000)))
+          throw new Error(`native background page ${bg} did not settle`);
+        await sleep(500);
+      } finally {
+        S().activate(front);
+      }
+      await quiet(800);
+    }
+    const update = (isLoading) => {
+      if (!native) return S().updateLive(bg, { isLoading });
+      const facts = pages.facts(bg);
+      const live = S().live[bg];
+      const tab = S().tabs[bg];
+      if (!facts || !live || !tab) throw new Error(`native background page ${bg} disappeared`);
+      const out = pages.report(bg, { type: "navigation", generation: facts.generation, url: tab.url, title: tab.title,
+        isLoading, canGoBack: !!live.canGoBack, canGoForward: !!live.canGoForward, themeColor: live.themeColor ?? null });
+      if (!out || out.error) throw new Error(`native page report refused: ${out?.error ?? "no response"}`);
+      if (S().live[bg]?.isLoading !== isLoading) throw new Error(`native loading report for ${bg} was not applied`);
+    };
     P.reset();
     const steps = [];
-    for (let i = 0; i < count; i++) {
-      steps.push(timed(() => S().updateLive(bg, { isLoading: i % 2 === 0 })));
-      await sleep(5);
+    try {
+      for (let i = 0; i < count; i++) {
+        steps.push(timed(() => update(i % 2 === 0)));
+        await sleep(5);
+      }
+      timed(() => update(false));
+      return { steps, stats: P.read() };
+    } finally {
+      if (S().live[bg]?.isLoading) update(false);
     }
-    timed(() => S().updateLive(bg, { isLoading: false }));
-    return { steps, stats: P.read() };
   },
 
   async idleLate({ waitSeconds = 20, seconds = 10 } = {}) {
@@ -652,20 +724,25 @@ function censusScenarios() {
     },
     async cenHover({ rows = 14, from = 0, gapMs = 150 } = {}) {
       await quiet(800);
-      const hosts = P.findFibers("TabRow", 400).map(hostOf).filter((h) => h && typeof h.memoizedProps?.onMouseEnter === "function").slice(from, from + rows);
-      if (hosts.length < 2) throw new Error(`only ${hosts.length} hoverable rows`);
+      const native = await nativeHoverRows(rows, from);
       const out = sink();
-      let prev = null;
-      for (const h of hosts) {
-        const before = prev;
-        await action(() => {
-          before?.memoizedProps.onMouseLeave?.({ nativeEvent: {} });
-          h.memoizedProps.onMouseEnter({ nativeEvent: {} });
-        }, gapMs, out);
-        prev = h;
+      async function sample(point) {
+        P.reset();
+        const ms = await movePointer(native.w, point);
+        await sleep(gapMs);
+        const read = P.read();
+        for (const key of SKIP) delete read[key];
+        out.per.push(summary(read, ms));
+        merge(out.stats, read);
       }
-      await action(() => prev.memoizedProps.onMouseLeave?.({ nativeEvent: {} }), gapMs, out);
-      return out;
+      try {
+        for (const item of native.list) await sample(await native.point(item));
+        await sample(native.off);
+        return out;
+      } finally {
+        await movePointer(native.w, native.off);
+        await ac.shell.devSetPointer(native.w, null);
+      }
     },
     async cenBgLoad({ origin, repeats = 2 } = {}) {
       const out = sink();

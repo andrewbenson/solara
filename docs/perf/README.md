@@ -163,6 +163,8 @@ prefixed `small.`). `launch.firstCommitMounts` (and `small.launch.firstCommitMou
 commit mounted (`acPerf.firstCommitMounts`): the first frame waits for all of it. The census behind `ratchet.json` is 8 launches of 0.2.27's Release app with the tree's
 bundle.
 
+The table below records the historical React-sidebar baseline, not expected native-sidebar counts.
+
 Group totals per scenario over the 16 baseline runs (two batches of 8): a bare number repeated in every run is gated
 exact, `a–b~` moved and is gated as noisy (ceiling: the largest plus 10%), `a–b x` moved too much to gate. Each
 scenario also has named exact counts (one component's renders, one store key, one task): 471 exact counts in all, 54
@@ -228,9 +230,10 @@ again shows up here at once: `switchTabs.subNotified` grows by the row count per
   writes. They stay in the js-bench report.
 - A new component, task or timer that has no ceiling shows up in the group total's ceiling, not on its own: `check`
   lists the biggest counts without one.
-- The ceilings are for probe revision 2 and bench revision 3 (`perfProbe.ts` `PERF_PROBE_REVISION`, js-bench
+- The ceilings are for probe revision 2 and bench revision 4 (`perfProbe.ts` `PERF_PROBE_REVISION`, js-bench
   `BENCH_REVISION`). `check` warns when a report has another; rebuild with `baseline` after a change that redefines a
-  counter.
+  counter. Revision 4 redefined `scroll` and `hover` for the native sidebar, and only their `timers` totals were
+  re-baselined: 868 and 110, the largest of five Release runs (789 and 100) plus 10%.
 
 ### In the release gate
 
@@ -395,6 +398,49 @@ conditions and lean on the counts.
 
 js-bench reports `<scenario>.<metric>` lines (medians across runs). The header of `js-bench.mjs` lists the report's
 shape.
+
+Bench revision 4 drives the shipped native sidebar; scenario names and result shapes stay the same:
+
+| Scenario | Interaction and measured JS work |
+|---|---|
+| `scroll` | `SolaraSidebarDrag.scrollTo(windowId, y)` steps from 0 to 2400 px and back in 60 steps each way, with a 16 ms wait after each native completion. It first waits for 3 s without a file write, as `idle` does, so launch work (the launch's `bookmarks-cache.json` write, history and page loads) stays out of the sample when it runs first. The probe covers the whole scroll and its 300 ms tail. |
+| `hover` | Native row rectangles from `SolaraHosted.sidebarRowFrame` locate 24 rows, starting at row 8. `ac.shell.devSetPointer` moves across them with a 60 ms wait per row, then off the sidebar. Moving away to reveal clipped rows and measuring their rectangles happen outside each probe sample. Samples are combined into the usual `{ steps, stats }`. |
+| `cenHover` | The census variant uses the same native row/pointer path, with 14 rows from row 0 and a 150 ms wait per action; it keeps `{ per, stats }`. |
+| `profileSwipe` | `nextProfile` and `previousProfile` still go through `ac.runCommand` to the native pager's `stepPager`; each command settles for 1500 ms. This measures command-driven profile changes, rather than synthetic trackpad gestures. |
+| `storeUpdate` | A loaded background page alternates `isLoading` 60 times, 5 ms apart. Under native live ownership, `ac.nativePages.report` sends generation-bound navigation facts through the native store and its JS replica; the JS-owned fallback still uses `updateLive`. Page preparation is outside the sample. |
+
+bench-app.js runs through the dev harness's eval in Hermes, which rejects async arrow functions (`async () => {}`) with "async functions are unsupported"; write an `async function` declaration or method instead.
+
+`P.reset()` / `P.read()` still count React, store, callback, timer and write work caused by these interactions.
+A native interaction may cause no React renders. Hover step times measure JS enqueue work; the awaited native
+promise and callback work remain in the probe window. Native layout and drawing time are not JS step time.
+Revision 3 reports used React fiber handlers, so compare native runs on revision 4 and collect new ceilings from a
+real run. `ratchet.json` is now marked bench revision 4: `scroll.timers` and `hover.timers` were re-baselined from the first native runs, and every other ceiling is still 0.2.40's census.
+The ratchet's journey list and flattened stat keys are unchanged (`storeUpdate` is supported by its flattener but
+is not in the fixed `JOURNEYS` list).
+
+The dev harness and perf probe work in Debug and Release test instances. Release requires test facilities:
+`ACDevBuild=YES`, or an app without a team signature and a nonempty scratch `SOLARA_DATA_DIR`. A team-signed
+production app remains gated off even with a scratch directory. The native pointer notification path must include
+this port; older Release builds return `false` from `devSetPointer`. A JS bundle swap alone cannot add that path.
+Use a matching Release app and production bundle for comparable costs. Debug apps use Metro and are useful for
+checking that scenarios complete. Keep the native sidebar, pager and native store launch switches enabled.
+
+Timed runs need a quiet machine and the run token:
+
+```sh
+APP="$PWD/apps/browser/build-<you>/Build/Products/Release/Solara.app"
+OUT="$(mktemp -d /tmp/solara-native-sidebar-bench.XXXXXX)"
+node apps/browser/scripts/perf/js-bench.mjs run --app "$APP" \
+  --bundle "$APP/Contents/Resources/main.jsbundle" --label native-sidebar --runs 1 \
+  --out "$OUT/js" --port 47847 --scenarios scroll,hover,profileSwipe,storeUpdate
+node apps/browser/scripts/perf/ratchet.mjs run --own --app "$APP" --out "$OUT/ratchet" --port 47848
+```
+
+For Debug, set `APP` to the matching `Build/Products/Debug/Solara.app` and pass a matching production bundle with
+`--bundle`; the Debug app itself loads the existing Metro server. js-bench seeds and launches its own hidden scratch
+instance, and the ratchet also runs its one-tab launch. `ratchet.mjs run --app "$APP"` instead bundles the tree first;
+`--own` uses the app's embedded bundle. No ceiling should be raised just to make this first native run pass.
 
 - `*.commits`, `renders`, `hostUpdates`: React's work.
 - `storeUpdates`, `listenerMs`: the store and its subscribers.

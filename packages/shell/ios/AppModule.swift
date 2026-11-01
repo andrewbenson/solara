@@ -246,23 +246,23 @@ public class AppModule: Module {
     }.runOnQueue(.main)
 
     AsyncFunction("devSetPointer") { (windowId: String, x: Double, y: Double, on: Bool) -> Bool in
+      guard Self.testFacilities else { return false }
+      let pointer: NSValue?
+      if on {
+        guard x.isFinite, y.isFinite, let window = WindowManager.shared.windows[windowId], let content = window.contentView else { return false }
+        let local = NSPoint(x: x, y: content.isFlipped ? y : content.bounds.height - y)
+        pointer = NSValue(point: window.convertPoint(toScreen: content.convert(local, to: nil)))
+      } else {
+        pointer = nil
+      }
       #if DEBUG
       let select = NSSelectorFromString("solara_setPointerOverride:")
-      guard let view = NSClassFromString("RCTView"), (view as AnyObject).responds(to: select) else { return false }
-      guard on else {
-        _ = (view as AnyObject).perform(select, with: nil)
-        NotificationCenter.default.post(name: Notification.Name("SolaraDevPointerChanged"), object: nil)
-        return true
+      if let view = NSClassFromString("RCTView"), (view as AnyObject).responds(to: select) {
+        _ = (view as AnyObject).perform(select, with: pointer)
       }
-      guard let window = WindowManager.shared.windows[windowId], let content = window.contentView else { return false }
-      let local = NSPoint(x: x, y: content.isFlipped ? y : content.bounds.height - y)
-      let screen = window.convertPoint(toScreen: content.convert(local, to: nil))
-      _ = (view as AnyObject).perform(select, with: NSValue(point: screen))
-      NotificationCenter.default.post(name: Notification.Name("SolaraDevPointerChanged"), object: NSValue(point: screen))
-      return true
-      #else
-      return false
       #endif
+      NotificationCenter.default.post(name: Notification.Name("SolaraDevPointerChanged"), object: pointer)
+      return true
     }.runOnQueue(.main)
 
     AsyncFunction("devLeftEdgePointer") { (windowId: String, x: Double, y: Double, on: Bool) -> Bool in
@@ -422,6 +422,8 @@ public class AppModule: Module {
     }
   }
 
+  private static var testFacilities: Bool { ProcessInfo.processInfo.environment["SOLARA_RELEASE_LAUNCH"] != "1" }
+
   private static func infoString(_ key: String) -> String? {
     let value = (Bundle.main.object(forInfoDictionaryKey: key) as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
     return value?.isEmpty == false ? value : nil
@@ -556,7 +558,7 @@ public class AppModule: Module {
       "releaseRepo": Self.infoString("ACReleaseRepo") as Any,
       "switchesURL": Self.infoString("ACSwitchesURL") as Any,
       "isolatedInstance": env["SOLARA_BACKGROUND"] == "1" || env["SOLARA_DATA_DIR"] != nil,
-      "testFacilities": env["SOLARA_RELEASE_LAUNCH"] != "1",
+      "testFacilities": Self.testFacilities,
       "forceReleaseNotes": env["SOLARA_RELEASE_NOTES"] == "1",
       "processStart": Self.processStart as Any,
       "bootTime": Self.bootTime as Any,

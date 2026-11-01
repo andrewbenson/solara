@@ -34,8 +34,8 @@ const shell = modules?.SolaraShell;
 
 const probeOptions = (() => {
   try {
-    const info = modules?.SolaraApp?.systemInfo?.() as { isolatedInstance?: boolean } | undefined;
-    if (!info?.isolatedInstance || typeof shell?.readDocument !== "function") return null;
+    const info = modules?.SolaraApp?.systemInfo?.() as { isolatedInstance?: boolean; testFacilities?: boolean } | undefined;
+    if (!info?.isolatedInstance || !info.testFacilities || typeof shell?.readDocument !== "function") return null;
     const file = shell.readDocument("perf-probe");
     return typeof file === "string" ? file : null;
   } catch {

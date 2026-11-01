@@ -20,7 +20,7 @@ if (previousBuild && !fs.existsSync(path.join(docs, "onboarding.json")))
 try {
   instance = await launch(app, {
     data: docs, port, js: "none", ready: false, probe: true, log: path.join(path.dirname(path.resolve(out)), `${phase}.app.log`),
-    env: { HOME: home, CFFIXED_USER_HOME: home, SOLARA_TEST_REAUTH: "granted", ...(previousBuild ? {} : { SOLARA_DATA_DIR: null }) },
+    env: { HOME: home, CFFIXED_USER_HOME: home, SOLARA_TEST_REAUTH: "granted" },
     switches: "--disable-backgrounding-occluded-windows", args: previousBuild ? ["--mute-audio"] : [],
   });
 } catch (e) {
@@ -195,7 +195,7 @@ const stable = (v) => JSON.stringify(v, (k, x) => (x && typeof x === "object" &&
 const sessionless = (v) => (typeof v === "string" ? v.replace(/\w+_session=yes; /g, "") : v);
 const line = (ok, name, detail) => { console.log(`${ok ? "PASS" : "FAIL"}  carried over: ${name}${detail ? `  (${detail})` : ""}`); if (!ok) failed = true; };
 const expected = path.join(docs, "Chromium");
-if (phase !== "back") line(report.read?.dataDirectory?.replace(/^\/private/, "") === expected.replace(/^\/private/, ""), "the installed copy's folder, found without SOLARA_DATA_DIR", report.read?.dataDirectory);
+if (phase !== "back") line(report.read?.dataDirectory?.replace(/^\/private/, "") === expected.replace(/^\/private/, ""), "the same isolated profile folder across builds", report.read?.dataDirectory);
 for (const [key, was] of Object.entries(created)) {
   if (key === "dataDirectory") continue;
   const now = report.read?.[key];

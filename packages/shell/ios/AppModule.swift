@@ -556,6 +556,7 @@ public class AppModule: Module {
       "releaseRepo": Self.infoString("ACReleaseRepo") as Any,
       "switchesURL": Self.infoString("ACSwitchesURL") as Any,
       "isolatedInstance": env["SOLARA_BACKGROUND"] == "1" || env["SOLARA_DATA_DIR"] != nil,
+      "testFacilities": env["SOLARA_RELEASE_LAUNCH"] != "1",
       "forceReleaseNotes": env["SOLARA_RELEASE_NOTES"] == "1",
       "processStart": Self.processStart as Any,
       "bootTime": Self.bootTime as Any,

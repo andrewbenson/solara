@@ -6,11 +6,14 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface SolaraCoreHost : NSObject
 
++ (void)prepareEnvironment;
+
 + (int)runWithArgc:(int)argc
               argv:(char *_Nullable *_Nonnull)argv
           delegate:(id<NSApplicationDelegate> (^)(void))makeDelegate NS_SWIFT_NAME(run(argc:argv:delegate:));
 
 @property(class, nonatomic) BOOL safeMode;
+@property(class, readonly) BOOL testBuild;
 @property(class, readonly) BOOL isStarted;
 @property(class, readonly) BOOL chromeUsesRealKeychain;
 @property(class, readonly) NSString *installedDataDirectory;

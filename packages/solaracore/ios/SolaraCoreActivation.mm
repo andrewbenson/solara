@@ -267,7 +267,7 @@ bool SignedForDistribution() {
 }
 
 bool TestHooksAllowed() {
-  return Background() && !SignedForDistribution();
+  return Background() && SolaraCoreHost.testBuild && !SignedForDistribution();
 }
 
 bool ShowAlertSheetsInTests(bool show) {

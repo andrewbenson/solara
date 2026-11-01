@@ -59,10 +59,12 @@ every copy on Stable sees only stable items. A copy on Nightly allows `nightly` 
   - The provisioning-only entitlements are left out: `com.apple.developer.web-browser.public-key-credential` (so no
     passkeys as a browser) and `keychain-access-groups` (Chrome's unexportable keys fall back). The app launches
     cleanly without them.
-  - Test switches are honoured: `TestBuild()` means "not team-signed", so a 0.0.x build accepts the env-var test
-    switches, including `SOLARA_TEST_REAUTH=granted`, which skips the password re-auth. Low risk, since whoever can
-    set the app's environment already controls the account and 0.0.x is owner-only; it goes away at 0.1.0
-    (backlog: key test switches off a build setting).
+  - Test facilities require `ACDevBuild=YES`, or a non-empty `SOLARA_DATA_DIR` on a build without a team signature.
+    A shipped 0.0.x app without that explicit scratch directory clears test/debug environment overrides before
+    startup and refuses CDP, extra Chromium switches and argv switch pass-through. This also removes the engine's
+    `SOLARA_TEST_REAUTH` grant. Background mode and the updater's prewarm handoff remain available; the real/mock
+    keychain decision is unchanged. Release smoke checks the exported ad hoc app with a fresh scratch HOME and no
+    `SOLARA_DATA_DIR`, and verifies that all three injected debugging ports stay closed while its profile opens.
 - **The feed.** Every build reads it at `AC_FEED_URL`, `releases/latest/download/appcast.xml`, and GitHub's "latest" skips prereleases, so it's always the newest stable
   release's `appcast.xml`. A stable release publishes the merged feed as its own asset and becomes latest; a nightly
   re-uploads the merged feed onto that same latest stable release (`gh release upload … --clobber`). The URL never

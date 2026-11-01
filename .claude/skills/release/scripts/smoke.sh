@@ -140,6 +140,102 @@ swiftc -O "$here/windows.swift" -o "$work/windows" 2>/dev/null
 swiftc -O "$here/quit.swift" -o "$work/quit" 2>/dev/null
 swiftc -O "$here/keys.swift" -o "$work/keys" 2>/dev/null
 swiftc -O "$here/gurl.swift" -o "$work/gurl" 2>/dev/null
+
+if [ "${SOLARA_RELEASE_UNSIGNED:-0}" = 1 ]; then
+  python3 - "$app" "$work/quit" "$work" <<'PY' || status=1
+import os, pathlib, plistlib, socket, subprocess, sys, time
+app, quit_helper, work = map(pathlib.Path, sys.argv[1:])
+with (app / "Contents/Info.plist").open("rb") as f:
+    info = plistlib.load(f)
+signature = subprocess.run(["/usr/bin/codesign", "-dv", str(app)], check=True,
+                           capture_output=True, text=True, timeout=5).stderr.splitlines()
+if "Signature=adhoc" not in signature or info.get("ACDevBuild") == "YES":
+    raise SystemExit("FAIL  test gate check requires an ad hoc export with ACDevBuild off")
+home = work / "gate-home"
+home.mkdir(mode=0o700)
+profile = home / "Library/Application Support" / info["CFBundleIdentifier"] / "Chromium"
+reservations = []
+try:
+    for _ in range(3):
+        reservation = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        reservation.bind(("127.0.0.1", 0))
+        reservations.append(reservation)
+        reservation6 = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+        reservations.append(reservation6)
+        reservation6.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+        reservation6.bind(("::1", reservation.getsockname()[1]))
+    ports = [reservation.getsockname()[1] for reservation in reservations[::2]]
+finally:
+    for reservation in reservations:
+        reservation.close()
+env = {
+    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+    "TMPDIR": str(work),
+    "HOME": str(home),
+    "CFFIXED_USER_HOME": str(home),
+    "SOLARA_BACKGROUND": "1",
+    "SOLARA_REMOTE_DEBUGGING_PORT": str(ports[0]),
+    "SOLARA_TEST_REAUTH": "granted",
+    "SOLARA_CHROMIUM_SWITCHES": "--remote-debugging-port=" + str(ports[1]),
+}
+process = None
+failed = None
+exit_code = None
+try:
+    with (work / "test-gate.app.log").open("wb") as log:
+        process = subprocess.Popen([str(app / "Contents/MacOS" / info["CFBundleExecutable"]),
+                                    "--remote-debugging-port=" + str(ports[2])],
+                                   env=env, stdout=log, stderr=log)
+        deadline = time.monotonic() + 30
+        ready_at = None
+        while True:
+            if process.poll() is not None:
+                raise RuntimeError("app exited before the port observation finished")
+            for port in ports:
+                for family, address in [(socket.AF_INET, "127.0.0.1"), (socket.AF_INET6, "::1")]:
+                    with socket.socket(family, socket.SOCK_STREAM) as probe:
+                        probe.settimeout(0.1)
+                        if probe.connect_ex((address, port)) == 0:
+                            raise RuntimeError("debugging port opened: " + str(port))
+            now = time.monotonic()
+            if ready_at is None and (profile / "Default").is_dir():
+                ready_at = now
+            if ready_at is not None and now - ready_at >= 10:
+                break
+            if now >= deadline:
+                raise RuntimeError("scratch-HOME profile was not ready for a 10 s observation within 30 s")
+            time.sleep(0.1)
+except Exception as error:
+    failed = str(error)
+finally:
+    if process is not None:
+        if process.poll() is None:
+            try:
+                subprocess.run([str(quit_helper), str(process.pid)], check=True, timeout=5,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                exit_code = process.wait(timeout=15)
+            except (subprocess.SubprocessError, OSError) as error:
+                failed = failed or "quit Apple event failed: " + str(error)
+                process.kill()
+                process.wait(timeout=5)
+        else:
+            failed = failed or "app exited before the quit Apple event"
+log_text = (work / "test-gate.app.log").read_text(errors="replace")
+watchdog = exit_code == 2 and "Teardown watchdog expired" in log_text
+if exit_code not in (None, 0) and not watchdog:
+    failed = failed or "app did not exit cleanly (exit " + str(exit_code) + ")"
+if not (profile / "Default").is_dir() or not (profile / "Local State").is_file():
+    failed = failed or "scratch HOME does not contain the Chromium profile"
+if "[solaracore] ignored test environment overrides\n" not in log_text:
+    failed = failed or "host did not report successful test environment clearing"
+if failed:
+    raise SystemExit("FAIL  test facilities refused on the shipped profile (" + failed + ")")
+print("PASS  test facilities refused on the shipped profile (host cleared test environment; three ports closed while alive; scratch-HOME profile; clean quit)")
+if watchdog:
+    print("note: the quit ended in Chrome's 10 s teardown watchdog (exit 2), a known engine flake on a fresh export's first quit; the gate itself held")
+print("note: reauth has no non-CDP observer; the host clearing receipt confirms SOLARA_TEST_REAUTH was removed before the engine starts")
+PY
+fi
 python3 -m http.server "$pages_port" --bind 127.0.0.1 --directory "$here/pages" >/dev/null 2>&1 &
 server=$!
 

@@ -3,6 +3,8 @@ import SolaraCore
 import SolaraStoreAdapter
 import SolaraSyncAdapter
 
+SolaraCoreHost.prepareEnvironment()
+
 if getenv("SOLARA_PREWARM") != nil { exit(0) }
 
 if let code = SafeStorageRekeyRun.runAtLaunch(

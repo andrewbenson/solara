@@ -534,14 +534,17 @@ void ActWindowFullScreen(SolaraCoreWindow *coreWindow, BOOL enter, NSTimeInterva
   else finish();
 }
 
-NSTimeInterval gActedTransition = NSProcessInfo.processInfo.environment[@"SOLARA_FAKE_FULLSCREEN_MS"].doubleValue / 1000;
+NSTimeInterval &ActedTransition() {
+  static NSTimeInterval seconds = NSProcessInfo.processInfo.environment[@"SOLARA_FAKE_FULLSCREEN_MS"].doubleValue / 1000;
+  return seconds;
+}
 
 void ToggleWindowFullScreen(SolaraCoreWindow *coreWindow) {
   NSWindow *window = coreWindow.window;
   if (!solaracore_host::Background()) return [window toggleFullScreen:nil];
   const BOOL enter = !IsWindowFullScreen(window);
   solaracore_host::LogActivation(enter ? @"toggleFullScreen: (page full screen; acted out)" : @"toggleFullScreen: (page left full screen; acted out)");
-  ActWindowFullScreen(coreWindow, enter, gActedTransition);
+  ActWindowFullScreen(coreWindow, enter, ActedTransition());
 }
 
 }
@@ -2295,7 +2298,7 @@ SolaraCoreTab *PasswordPromptTab(SolaraCoreWebView *view, SolaraCoreTab *own) {
 void ActToggleFullScreen(NSWindow *window) {
   LogActivation(@"toggleFullScreen: (acted out)");
   if (SolaraCoreWindow *coreWindow = [SolaraCoreWindowController forNSWindow:window].coreWindow)
-    ActWindowFullScreen(coreWindow, !IsWindowFullScreen(window), gActedTransition);
+    ActWindowFullScreen(coreWindow, !IsWindowFullScreen(window), ActedTransition());
 }
 
 }
@@ -2594,8 +2597,8 @@ NSDictionary *ProbeFrame(NSWindow *window, ACWindowFullScreen *state, CFTimeInte
   }
   if ([action hasPrefix:@"fakeFullScreenMs:"]) {
     if (!solaracore_host::TestHooksAllowed()) return @"test instances only";
-    gActedTransition = MAX(0, [action substringFromIndex:17].doubleValue / 1000);
-    return [NSString stringWithFormat:@"%.0f", gActedTransition * 1000];
+    ActedTransition() = MAX(0, [action substringFromIndex:17].doubleValue / 1000);
+    return [NSString stringWithFormat:@"%.0f", ActedTransition() * 1000];
   }
   if ([action hasPrefix:@"pageCover:"]) {
     if (!solaracore_host::TestHooksAllowed()) return @"test instances only";

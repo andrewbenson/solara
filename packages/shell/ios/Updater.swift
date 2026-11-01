@@ -13,7 +13,8 @@ public final class AppUpdater: NSObject {
 
   static var feedOverride: String? {
     let env = ProcessInfo.processInfo.environment
-    if let feed = env["SOLARA_UPDATE_FEED_URL"] ?? UserDefaults.standard.string(forKey: "ACUpdateFeedURL") { return feed }
+    if let feed = env["SOLARA_UPDATE_FEED_URL"] { return feed }
+    if env["SOLARA_RELEASE_LAUNCH"] != "1", let feed = UserDefaults.standard.string(forKey: "ACUpdateFeedURL") { return feed }
     guard env["SOLARA_BACKGROUND"] == "1", let repository = releaseRepository else { return nil }
     return "\(repository)/releases/latest/download/appcast.xml"
   }
@@ -276,7 +277,7 @@ public final class AppUpdater: NSObject {
 
 #if canImport(Sparkle)
 extension AppUpdater: SPUUpdaterDelegate {
-  public func feedURLString(for updater: SPUUpdater) -> String? { Self.feedOverride }
+  public func feedURLString(for updater: SPUUpdater) -> String? { Self.feedOverride ?? Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String }
 
   public func allowedChannels(for updater: SPUUpdater) -> Set<String> {
     allowedChannels

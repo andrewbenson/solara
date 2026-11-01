@@ -203,7 +203,7 @@ public struct LaunchSwitches: Sendable {
 
   struct Launch {
     let env = ProcessInfo.processInfo.environment
-    let distribution = signedForDistribution()
+    let distribution = signedForDistribution() || ProcessInfo.processInfo.environment["SOLARA_RELEASE_LAUNCH"] == "1"
     var probe: LaunchSwitches { LaunchSwitches(environment: env, defaults: nil, distribution: distribution, skipStored: false) }
     var defaults: UserDefaults { probe.defaultsSuite.flatMap { UserDefaults(suiteName: $0) } ?? .standard }
   }

@@ -10,6 +10,8 @@
 #import "SolaraCoreWebView.h"
 #import "SolaraCoreWebViewInternal.h"
 
+#include <crt_externs.h>
+
 #include <cctype>
 #include <cstring>
 #include <set>
@@ -260,7 +262,10 @@ static void ReportLoweredWindowOcclusion() {
 }
 
 static bool TestBuild() {
-  static const bool testBuild = !ChromeUsesRealKeychain();
+  static const bool testBuild = [] {
+    const char *scratch = getenv("SOLARA_DATA_DIR");
+    return IsDevBuild() || (scratch && *scratch && !IsTeamSigned());
+  }();
   return testBuild;
 }
 
@@ -591,6 +596,41 @@ static void StartEarlyWindow() {
 + (BOOL)safeMode { return gSafeMode; }
 + (void)setSafeMode:(BOOL)safeMode { gSafeMode = safeMode; }
 
++ (void)prepareEnvironment {
+  static dispatch_once_t once;
+  dispatch_once(&once, ^{
+    if (TestBuild()) {
+      unsetenv("SOLARA_RELEASE_LAUNCH");
+      return;
+    }
+    const std::set<std::string> runtime = {
+        "SOLARA_ACCEPT_EXTERNAL_URLS", "SOLARA_BACKGROUND", "SOLARA_CLI_BIN_DIR",
+        "SOLARA_CLI_HOME", "SOLARA_DATA_DIR", "SOLARA_PREWARM",
+    };
+    std::vector<std::string> remove;
+    for (char **entry = *_NSGetEnviron(); entry && *entry; ++entry) {
+      std::string name(*entry, strcspn(*entry, "="));
+      if ((name.compare(0, 7, "SOLARA_") == 0 && !runtime.count(name)) || name == "AC_BENCH_OMNIBOX" || name == "SSLKEYLOGFILE" || name == "IS_TESTING")
+        remove.push_back(name);
+    }
+    for (const std::string &name : remove) {
+      if (unsetenv(name.c_str()) != 0) {
+        fprintf(stderr, "[solaracore] could not clear test environment override\n");
+        exit(1);
+      }
+    }
+    if (setenv("SOLARA_RELEASE_LAUNCH", "1", 1) != 0) {
+      fprintf(stderr, "[solaracore] could not mark a release launch\n");
+      exit(1);
+    }
+    if (!remove.empty()) fprintf(stderr, "[solaracore] ignored test environment overrides\n");
+  });
+}
+
++ (BOOL)testBuild {
+  return TestBuild();
+}
+
 + (BOOL)chromeUsesRealKeychain {
   return ChromeUsesRealKeychain();
 }
@@ -600,6 +640,7 @@ static void StartEarlyWindow() {
 }
 
 + (int)runWithArgc:(int)argc argv:(char **)argv delegate:(id<NSApplicationDelegate> (^)(void))makeDelegate {
+  [self prepareEnvironment];
   const char *dataDir = getenv("SOLARA_DATA_DIR");
   gScratchDataDir = dataDir && *dataDir;
 #if DEBUG
@@ -706,6 +747,7 @@ static void StartEarlyWindow() {
   if (gSafeMode) extra.push_back("--disable-extensions");
   const bool mockKeychain = !ChromeUsesRealKeychain();
   if (mockKeychain) extra.push_back("--use-mock-keychain");
+  if (!TestBuild()) extra.push_back("--solara-apply-profile-gate");
   solaracore_host::PrepareStartup(gDataDirectory, extra);
   @autoreleasepool {
     [SolaraCoreEarlyWindow setDataDirectory:AppDataDirectory()];
@@ -724,11 +766,11 @@ static void StartEarlyWindow() {
     return getenv("SOLARA_BACKGROUND") && (!strncmp(sw, "--use-fake-ui-for-media-stream", 30) ||
                                               !strncmp(sw, "--auto-accept-camera-and-microphone-capture", 43));
   };
-  if (const char *port = getenv("SOLARA_REMOTE_DEBUGGING_PORT"); port && mockKeychain) {
+  if (const char *port = getenv("SOLARA_REMOTE_DEBUGGING_PORT"); port && TestBuild()) {
     extra.push_back(std::string("--remote-debugging-port=") + port);
     extra.push_back("--remote-allow-origins=*");
   }
-  if (const char *switches = getenv("SOLARA_CHROMIUM_SWITCHES"); switches && mockKeychain) {
+  if (const char *switches = getenv("SOLARA_CHROMIUM_SWITCHES"); switches && TestBuild()) {
     NSString *all = [@" " stringByAppendingString:@(switches)];
     for (NSString *item in [all componentsSeparatedByString:@" --"]) {
       NSString *sw = [item stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
@@ -738,7 +780,7 @@ static void StartEarlyWindow() {
   }
   std::vector<const char *> args = {argc > 0 && argv[0] ? argv[0] : "Solara"};
   for (const std::string &s : extra) args.push_back(s.c_str());
-  for (int i = 1; mockKeychain && i < argc; i++) {
+  for (int i = 1; TestBuild() && i < argc; i++) {
     const char *arg = argv[i];
     if (!arg) break;
     const bool cocoaDefault = arg[0] == '-' && arg[1] != '-' && isalpha((unsigned char)arg[1]) &&

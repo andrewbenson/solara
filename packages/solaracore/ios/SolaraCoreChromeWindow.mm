@@ -5,6 +5,7 @@
 #import "SolaraCoreWebViewInternal.h"
 #import "SolaraCoreServices.h"
 #import "SolaraCoreTabParking.h"
+#include "SolaraCoreFullScreenLights.h"
 
 #import <QuartzCore/QuartzCore.h>
 #import <objc/message.h>
@@ -831,9 +832,35 @@ namespace {
 
 const void *kTitlebarRevealWatchKey = &kTitlebarRevealWatchKey;
 
-BOOL FullScreenTitlebarRevealed(NSWindow *window) {
+const void *kRevealedMenuBarHeightKey = &kRevealedMenuBarHeightKey;
+
+void NoteRevealedMenuBarHeight(NSWindow *window) {
+  const CGFloat height = NSApp.mainMenu.menuBarHeight;
+  NSNumber *noted = objc_getAssociatedObject(window, kRevealedMenuBarHeightKey);
+  if (height > noted.doubleValue) objc_setAssociatedObject(window, kRevealedMenuBarHeightKey, @(height), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+CGFloat FullScreenRevealOffset(NSWindow *window) {
   ACTitlebarRevealWatch *watch = window ? objc_getAssociatedObject(window, kTitlebarRevealWatchKey) : nil;
-  return watch && (window.styleMask & NSWindowStyleMaskFullScreen) && watch.revealAmount > 0;
+  if (!watch || !(window.styleMask & NSWindowStyleMaskFullScreen)) return 0;
+  NoteRevealedMenuBarHeight(window);
+  NSNumber *height = objc_getAssociatedObject(window, kRevealedMenuBarHeightKey);
+  return solaracore_full_screen_lights::RevealOffset(watch.revealAmount, height.doubleValue);
+}
+
+NSWindow *FullScreenTitlebarWindow(NSWindow *window) {
+  NSWindow *bar = [window standardWindowButton:NSWindowCloseButton].window;
+  if (bar && bar != window) return bar;
+  for (NSWindow *child in window.childWindows)
+    if ([NSStringFromClass(child.class) containsString:@"NSToolbarFullScreenWindow"]) return child;
+  return nil;
+}
+
+void ClearFullScreenTitlebar(NSWindow *window, BOOL clear) {
+  NSWindow *bar = FullScreenTitlebarWindow(window);
+  if (!bar) return;
+  bar.alphaValue = clear ? 0 : 1;
+  bar.ignoresMouseEvents = clear;
 }
 
 void PlaceFullScreenLights(NSWindow *window) {
@@ -842,10 +869,10 @@ void PlaceFullScreenLights(NSWindow *window) {
   NSView *close = lights.subviews.firstObject;
   if (!lights || !frameView || !close) return;
   ACWindowFullScreen *state = objc_getAssociatedObject(window, kWindowFullScreenKey);
-  lights.hidden = state.pageFullScreen || FullScreenTitlebarRevealed(window);
+  lights.hidden = state.pageFullScreen;
   const NSSize size = close.frame.size;
   const NSPoint center = LightsCenter(objc_getAssociatedObject(window, kLightsCenterKey), size);
-  const CGFloat top = center.y - size.height / 2;
+  const CGFloat top = center.y - size.height / 2 + FullScreenRevealOffset(window);
   [lights setFrameOrigin:NSMakePoint(center.x - size.width / 2,
                                      frameView.isFlipped ? top : NSHeight(frameView.bounds) - top - NSHeight(lights.frame))];
 }
@@ -870,7 +897,8 @@ void HideStandardLights(NSWindow *window, BOOL hide) {
 
 void ShowLightsForReveal(NSWindow *window) {
   if (!objc_getAssociatedObject(window, kFullScreenLightsKey)) return;
-  HideStandardLights(window, !FullScreenTitlebarRevealed(window));
+  HideStandardLights(window, YES);
+  if (window.styleMask & NSWindowStyleMaskFullScreen) ClearFullScreenTitlebar(window, YES);
   PlaceFullScreenLights(window);
 }
 
@@ -940,7 +968,10 @@ void UnwatchTitlebarReveal(NSWindow *window) {
 
 - (void)willEnter {
   NSWindow *window = _window;
-  if (window) WatchTitlebarReveal(window);
+  if (!window) return;
+  objc_setAssociatedObject(window, kRevealedMenuBarHeightKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+  NoteRevealedMenuBarHeight(window);
+  WatchTitlebarReveal(window);
 }
 
 - (void)didEnter {
@@ -957,6 +988,7 @@ void UnwatchTitlebarReveal(NSWindow *window) {
 - (void)didExit {
   NSWindow *window = _window;
   if (!window) return;
+  ClearFullScreenTitlebar(window, NO);
   UnwatchTitlebarReveal(window);
   HideStandardLights(window, NO);
   ShowFullScreenLights(window, NO);

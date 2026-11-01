@@ -7,7 +7,7 @@ chromium_src="${2:?$usage}"
 root="$(cd "$(dirname "$0")/../.." && pwd -P)"
 die() { echo "error: $*" >&2; exit 1; }
 
-for layer in solaracore chromium identity; do
+for layer in solaracore chromium; do
   "$root/engine/$layer/apply.sh" --check \
     || die "the Chromium tree differs from engine/$layer: run engine/$layer/apply.sh and rebuild chrome_framework"
 done

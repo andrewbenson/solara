@@ -112,7 +112,8 @@ final class ProbeHost {
           try checkAction(request, window: window)
           let dragBefore = Self.tabDrag(TabDragRead.snapshot)
           let sequenceBefore = DragPreviewRead.snapshot["sequence"] as? Int
-          guard let png = WindowCaptureRead.png(windowId: windowId) else { throw ProbeFailure.notReady }
+          guard let png = try ProbeCapture.shared.withPreparedWindow(window, render: { WindowCaptureRead.png(windowId: windowId) })
+          else { throw ProbeFailure.notReady }
           let dragAfter = Self.tabDrag(TabDragRead.snapshot)
           let consistent = NSDictionary(dictionary: dragBefore).isEqual(to: dragAfter)
             && sequenceBefore == DragPreviewRead.snapshot["sequence"] as? Int

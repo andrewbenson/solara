@@ -3,6 +3,9 @@ import Observation
 import SolaraModel
 import SolaraOmnibox
 import SwiftUI
+#if SOLARA_PROBES
+import SolaraProbes
+#endif
 
 public struct NewTabIdentity: Equatable, Sendable {
   public var windowId: String
@@ -89,6 +92,9 @@ public final class NewTabHeroView: NSView {
     addSubview(mark, positioned: .below, relativeTo: shadowNear)
     surface.borderWidth = NewTabLayout.barBorder
     applyTheme()
+    #if SOLARA_PROBES
+    ProbeCapture.shared.register(self) { $0.prepareForCapture() }
+    #endif
   }
 
   required init?(coder: NSCoder) { fatalError() }
@@ -252,6 +258,18 @@ public final class NewTabHeroView: NSView {
       }
     }
   }
+
+  #if SOLARA_PROBES
+  private func prepareForCapture() -> ProbeCapture.Restore {
+    let offsets = mark.offsets
+    let transforms = (mark.layer?.sublayers ?? []).map { ($0, $0.transform) }
+    mark.apply(.rest)
+    return { [mark] in
+      mark.apply(offsets)
+      for (layer, transform) in transforms { layer.transform = transform }
+    }
+  }
+  #endif
 
   private func decideIntro() {
     guard !introDecided else { return }

@@ -1,5 +1,8 @@
 import AppKit
 import QuartzCore
+#if SOLARA_PROBES
+import SolaraProbes
+#endif
 
 final class SidebarIconButton: NSView {
   private let plate = CALayer()
@@ -112,6 +115,9 @@ final class SidebarGlassTile: NSView {
     layer?.addSublayer(selection)
     layer?.addSublayer(outline)
     apply()
+    #if SOLARA_PROBES
+    ProbeCapture.shared.register(self) { $0.prepareForCapture() }
+    #endif
   }
 
   required init?(coder: NSCoder) { fatalError() }
@@ -122,6 +128,25 @@ final class SidebarGlassTile: NSView {
     super.layout()
     apply()
   }
+
+  #if SOLARA_PROBES
+  private func prepareForCapture() -> ProbeCapture.Restore {
+    guard let layer else { return {} }
+    let hidden = glass.isHidden
+    let fill = CALayer()
+    fill.frame = bounds
+    fill.cornerRadius = radius
+    fill.cornerCurve = .continuous
+    fill.backgroundColor = tint?.cgColor
+    fill.isHidden = hidden
+    layer.insertSublayer(fill, at: 0)
+    glass.isHidden = true
+    return { [glass] in
+      fill.removeFromSuperlayer()
+      glass.isHidden = hidden
+    }
+  }
+  #endif
 
   private func apply() {
     if glass.frame != bounds { glass.frame = bounds }

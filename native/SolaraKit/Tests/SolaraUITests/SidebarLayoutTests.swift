@@ -18,10 +18,11 @@ private func sidebarState(tabs: [(id: String, extra: String)], groups: String = 
   return try BrowserState(stateJSON: try JSONValue.parse(text).object ?? [:])
 }
 
-private func layout(_ state: BrowserState, height: CGFloat = 600, addressBar: Bool = false) -> SidebarPageLayout {
+private func layout(_ state: BrowserState, height: CGFloat = 600, addressBar: Bool = false, divided: Bool = false) -> SidebarPageLayout {
   let query = SidebarQuery(state)
   var input = SidebarLayoutInput(windowId: "w1", profileId: "p", width: 190, height: height)
   input.addressBar = addressBar
+  input.divided = divided
   return SidebarLayout(query: query, input: input).layout(query.entries(windowId: "w1", profileId: "p"))
 }
 
@@ -74,6 +75,27 @@ private func layout(_ state: BrowserState, height: CGFloat = 600, addressBar: Bo
     #expect(out.item("newTab")?.frame == CGRect(x: 6, y: 360, width: 178, height: 34))
     #expect(out.item("newTab")?.region == .dock)
     #expect(out.scrollBottom == 357)
+  }
+
+  @Test func withoutPinnedRowsTheListHasNoDividerAndKeepsItsTop() throws {
+    let tabs = [(id: "t1", extra: ""), (id: "t2", extra: "")]
+    let plain = layout(try sidebarState(tabs: tabs))
+    let divided = layout(try sidebarState(tabs: tabs), divided: true)
+    #expect(!divided.items.contains { $0.kind == .divider })
+    #expect(divided.item("t:t1")?.frame == plain.item("t:t1")?.frame)
+    #expect(divided.item("newTab")?.frame == plain.item("newTab")?.frame)
+  }
+
+  @Test func pinnedRowsAreDividedFromTheList() throws {
+    let tabs = [(id: "p1", extra: #", "pinned": true, "pinnedAsRow": true"#), (id: "t1", extra: "")]
+    let plain = layout(try sidebarState(tabs: tabs, active: "t1"))
+    let divided = layout(try sidebarState(tabs: tabs, active: "t1"), divided: true)
+    let divider = try #require(divided.items.first { $0.kind == .divider })
+    #expect(!plain.items.contains { $0.kind == .divider })
+    let pinned = try #require(divided.item("t:p1"))
+    let first = try #require(divided.item("t:t1"))
+    #expect(divider.frame.minY > pinned.frame.maxY)
+    #expect(first.frame.minY >= divider.frame.maxY)
   }
 
   @MainActor @Test func rowTitlesFallBackToTheUrlWithoutSchemeOrWww() throws {

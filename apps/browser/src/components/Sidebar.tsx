@@ -383,9 +383,9 @@ function PageRows({ windowId, profileId, current, rows, lazy, offScreen, tiles, 
   const showClear = useSettings((s) => s.showClearButton);
   const clearable = showClear && !offScreen && all.length > 0;
   const tidy = useBrowser((s) => !offScreen && canTidyPins(s, windowId, profileId));
-  const divided = clearable || tidy;
   const pinned = usePinnedSequence(windowId, profileId, offScreen);
   const pinnedSection = pinned.length > 0;
+  const divided = pinnedSection && (clearable || tidy);
   const newTabButtonAtTop = useSettings((s) => s.newTabButtonPosition === "top");
   const animated = current && !offScreen;
   const motion = useListMotion(windowId, profileId, all, captured, animated);

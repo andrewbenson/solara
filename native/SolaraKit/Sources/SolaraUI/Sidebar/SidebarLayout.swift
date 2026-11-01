@@ -214,7 +214,7 @@ public struct SidebarLayout {
     let pinnedSection = !entries.pinned.isEmpty
     y += scrolledTiles ? M.tilesToPinnedGap : 0
     if pinnedSection { y = place(entries.pinned, top: y, x: 0, width: innerWidth, groups: [], section: .pinned, into: &rows) }
-    if input.divided {
+    if input.divided && (pinnedSection || scrolledTiles) {
       y += pinnedSection ? M.sectionGap : 0
       rows.append(SidebarItem(kind: .divider, frame: CGRect(x: 0, y: y, width: innerWidth, height: M.dividerHeight), region: .scroll, groups: [], section: .chrome))
       y += M.dividerHeight

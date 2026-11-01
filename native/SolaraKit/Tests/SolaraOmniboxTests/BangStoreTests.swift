@@ -126,6 +126,7 @@ private func bangFixture(_ name: String) throws -> String {
     #expect(saved.hasPrefix("solara-bangs 1\t\"http-v1\"\n"))
     #expect(readBangDocument(saved)?.table.get("gh")?.name == "Stored gh")
     #expect(store.revision == 2)
+    try #require(!server.requests.isEmpty)
     #expect(server.requests[0].lowercased().contains("accept: application/json"))
     #expect(server.requests[0].contains(BundledBangs.etag))
     clock += 86_400_000
@@ -134,7 +135,7 @@ private func bangFixture(_ name: String) throws -> String {
     #expect(second.status == .http(304))
     #expect(store.source == .fetched)
     #expect(store.revision == 2)
-    #expect(server.requests.count == 2)
+    try #require(server.requests.count == 2)
     #expect(server.requests[1].lowercased().contains("if-none-match: \"http-v1\""))
     #expect(store.refreshes.count == 2)
     #expect(store.checkedAt == clock)

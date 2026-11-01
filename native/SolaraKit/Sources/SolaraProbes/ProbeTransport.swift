@@ -176,7 +176,7 @@ public final class ProbeFiles {
     defer { closedir(directory) }
     var result: [String] = []
     while let entry = readdir(directory) {
-      let name = withUnsafePointer(to: entry.pointee.d_name) { String(cString: UnsafeRawPointer($0).assumingMemoryBound(to: CChar.self)) }
+      let name = Self.entryName(entry)
       if name != "." && name != ".." { result.append(name) }
       if result.count >= 4096 { break }
     }
@@ -231,6 +231,13 @@ public final class ProbeFiles {
     return Double(start.tv_sec) + Double(start.tv_usec) / 1_000_000
   }()
 
+  static func entryName(_ entry: UnsafePointer<dirent>) -> String {
+    let record = UnsafeRawPointer(entry)
+    let length = Int(record.load(fromByteOffset: MemoryLayout<dirent>.offset(of: \dirent.d_namlen)!, as: UInt16.self))
+    let start = record + MemoryLayout<dirent>.offset(of: \dirent.d_name)!
+    return String(decoding: UnsafeRawBufferPointer(start: start, count: length), as: UTF8.self)
+  }
+
   private static func isArtifact(_ name: String) -> Bool {
     let name = name.hasSuffix(".png.tmp") ? String(name.dropLast(4)) : name
     let prefix = ".solara-probe-window-"
@@ -250,7 +257,7 @@ public final class ProbeFiles {
         guard errno == 0 else { throw ProbeFailure.testHooksDenied }
         break
       }
-      let name = withUnsafePointer(to: entry.pointee.d_name) { String(cString: UnsafeRawPointer($0).assumingMemoryBound(to: CChar.self)) }
+      let name = Self.entryName(entry)
       guard Self.isArtifact(name) else { continue }
       var info = stat()
       guard fstatat(dataFD, name, &info, AT_SYMLINK_NOFOLLOW) == 0 else { throw ProbeFailure.testHooksDenied }

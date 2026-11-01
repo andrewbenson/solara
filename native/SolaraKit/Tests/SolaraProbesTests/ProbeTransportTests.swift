@@ -5,6 +5,23 @@ import Testing
 @testable import SolaraProbes
 
 struct ProbeTransportTests {
+  @Test func aDirectoryEntryIsReadOnlyAsFarAsItsRecordGoes() throws {
+    let page = Int(getpagesize())
+    let region = try #require(mmap(nil, page * 2, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0).flatMap { $0 == MAP_FAILED ? nil : $0 })
+    defer { munmap(region, page * 2) }
+    #expect(mprotect(region + page, page, PROT_NONE) == 0)
+    let name = Array(".solara-probe-window-\(UUID().uuidString.lowercased()).png".utf8)
+    let nameOffset = MemoryLayout<dirent>.offset(of: \dirent.d_name)!
+    let record = (nameOffset + name.count + 1 + 7) & ~7
+    #expect(record < MemoryLayout<dirent>.size)
+    let entry = (region + page - record).bindMemory(to: dirent.self, capacity: 1)
+    memset(UnsafeMutableRawPointer(entry), 0, record)
+    UnsafeMutableRawPointer(entry).storeBytes(of: UInt16(record), toByteOffset: MemoryLayout<dirent>.offset(of: \dirent.d_reclen)!, as: UInt16.self)
+    UnsafeMutableRawPointer(entry).storeBytes(of: UInt16(name.count), toByteOffset: MemoryLayout<dirent>.offset(of: \dirent.d_namlen)!, as: UInt16.self)
+    name.withUnsafeBytes { UnsafeMutableRawPointer(entry).advanced(by: nameOffset).copyMemory(from: $0.baseAddress!, byteCount: name.count) }
+    #expect(ProbeFiles.entryName(entry) == String(decoding: name, as: UTF8.self))
+  }
+
   private let id = UUID().uuidString
 
   private func request(_ changes: [String: Any] = [:]) -> Data {

@@ -354,55 +354,221 @@ private func bar(_ typed: String, _ completion: String = "", _ scope: SearchScop
 }
 
 private final class FakeFetch: Sendable {
+  private struct State {
+    var pending: [String: CheckedContinuation<FetchResponse, Error>] = [:]
+    var cancelled: Set<String> = []
+    var closed = false
+  }
+
   let calls = Mutex<[String]>([])
+  private let state = Mutex(State())
 
   func fetch(_ url: String) async throws -> FetchResponse {
-    calls.withLock { $0.append(url) }
-    try await Task.sleep(for: .milliseconds(30))
-    let query = JS.decodeURIComponent(String(url.split(separator: "q=").last ?? "")) ?? ""
-    return FetchResponse(ok: true, body: Data("[\"\(query)\", [\"a\", \"b\"]]".utf8))
+    let query = URLComponents(string: url)?.queryItems?.first { $0.name == "q" }?.value ?? ""
+    return try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<FetchResponse, Error>) in
+        let cancelled = state.withLock {
+          if $0.closed || Task.isCancelled { return true }
+          $0.pending[query] = continuation
+          return false
+        }
+        calls.withLock { $0.append(url) }
+        if cancelled { continuation.resume(throwing: CancellationError()) }
+      }
+    } onCancel: {
+      let continuation = self.state.withLock {
+        $0.cancelled.insert(query)
+        return $0.pending.removeValue(forKey: query)
+      }
+      continuation?.resume(throwing: CancellationError())
+    }
+  }
+
+  func cancelled(_ query: String) -> Bool { state.withLock { $0.cancelled.contains(query) } }
+
+  func release(_ query: String) {
+    let continuation = state.withLock { $0.pending.removeValue(forKey: query) }
+    let data = try! JSONSerialization.data(withJSONObject: [query, ["a", "b"]])
+    continuation?.resume(returning: FetchResponse(ok: true, body: data))
+  }
+
+  func cancelAll() {
+    let pending = state.withLock {
+      $0.closed = true
+      let pending = Array($0.pending.values)
+      $0.pending = [:]
+      return pending
+    }
+    for continuation in pending { continuation.resume(throwing: CancellationError()) }
   }
 }
 
-private func waitUntil(_ condition: () -> Bool) async throws {
+private final class ManualDebounceClock: Sendable {
+  private struct Sleeper {
+    var deadline: Duration
+    var continuation: CheckedContinuation<Void, Error>
+  }
+
+  private struct State {
+    var now: Duration = .zero
+    var nextID = 0
+    var sleeps: [Duration] = []
+    var cancelled: Set<Int> = []
+    var pending: [Int: Sleeper] = [:]
+    var closed = false
+  }
+
+  private let state = Mutex(State())
+
+  var sleeps: [Duration] { state.withLock { $0.sleeps } }
+  var cancelled: Set<Int> { state.withLock { $0.cancelled } }
+
+  func sleep(_ duration: Duration) async throws {
+    let id = state.withLock {
+      let id = $0.nextID
+      $0.nextID += 1
+      return id
+    }
+    try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+        let cancelled = state.withLock {
+          $0.sleeps.append(duration)
+          if $0.closed || Task.isCancelled { return true }
+          $0.pending[id] = Sleeper(deadline: $0.now + duration, continuation: continuation)
+          return false
+        }
+        if cancelled { continuation.resume(throwing: CancellationError()) }
+      }
+    } onCancel: {
+      let sleeper = self.state.withLock {
+        $0.cancelled.insert(id)
+        return $0.pending.removeValue(forKey: id)
+      }
+      sleeper?.continuation.resume(throwing: CancellationError())
+    }
+  }
+
+  func advance(by duration: Duration) {
+    let ready = state.withLock { s in
+      s.now += duration
+      let ready = s.pending.filter { $0.value.deadline <= s.now }
+      for id in ready.keys { s.pending.removeValue(forKey: id) }
+      return Array(ready.values)
+    }
+    for sleeper in ready { sleeper.continuation.resume() }
+  }
+
+  func cancelAll() {
+    let pending = state.withLock {
+      $0.closed = true
+      let pending = Array($0.pending.values)
+      $0.pending = [:]
+      return pending
+    }
+    for sleeper in pending { sleeper.continuation.resume(throwing: CancellationError()) }
+  }
+}
+
+private func waitUntil(_ condition: () -> Bool) async throws -> Bool {
   let deadline = ContinuousClock.now + .seconds(30)
   while !condition() && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(5)) }
+  return condition()
 }
 
 @Suite struct SuggestFetcherTests {
   @Test func aNewerRequestAbortsTheOneInFlightWhichNeverAnswers() async throws {
     let fake = FakeFetch()
-    let fetcher = SuggestFetcher(fetch: { try await fake.fetch($0) }, delay: .milliseconds(10))
+    defer { fake.cancelAll() }
+    let clock = ManualDebounceClock()
+    defer { clock.cancelAll() }
+    let fetcher = SuggestFetcher(fetch: { try await fake.fetch($0) }, delay: .milliseconds(10), sleep: clock.sleep)
+    defer { fetcher.cancel() }
     let results = Mutex<[String]>([])
     let google = engineById(builtInEngines, "google")
     fetcher.request(google, "old") { _ in results.withLock { $0.append("old") } }
-    try await waitUntil { fake.calls.withLock { $0.count } == 1 }
+    try #require(try await waitUntil { clock.sleeps == [.milliseconds(10)] })
+    clock.advance(by: .milliseconds(10))
+    try #require(try await waitUntil { fake.calls.withLock { $0.count } == 1 })
     #expect(fake.calls.withLock { $0.count } == 1)
     fetcher.request(google, "new") { _ in results.withLock { $0.append("new") } }
-    try await waitUntil { !results.withLock { $0.isEmpty } }
-    try await Task.sleep(for: .milliseconds(100))
+    #expect(fake.cancelled("old"))
+    try #require(try await waitUntil { clock.sleeps == [.milliseconds(10), .milliseconds(10)] })
+    clock.advance(by: .milliseconds(10))
+    try #require(try await waitUntil { fake.calls.withLock { $0.count } == 2 })
+    fake.release("new")
+    try #require(try await waitUntil { !results.withLock { $0.isEmpty } })
     #expect(results.withLock { $0 } == ["new"])
   }
 
   @Test func aCachedAnswerComesBackWithoutAFetch() async throws {
     let fake = FakeFetch()
-    let fetcher = SuggestFetcher(fetch: { try await fake.fetch($0) }, delay: .milliseconds(1))
+    defer { fake.cancelAll() }
+    let clock = ManualDebounceClock()
+    defer { clock.cancelAll() }
+    let fetcher = SuggestFetcher(fetch: { try await fake.fetch($0) }, delay: .milliseconds(1), sleep: clock.sleep)
+    defer { fetcher.cancel() }
     let google = engineById(builtInEngines, "google")
     let got = Mutex<[[String]]>([])
     fetcher.request(google, "react") { s in got.withLock { $0.append(s) } }
-    try await waitUntil { got.withLock { $0.count } == 1 }
+    try #require(try await waitUntil { clock.sleeps == [.milliseconds(1)] })
+    clock.advance(by: .milliseconds(1))
+    try #require(try await waitUntil { fake.calls.withLock { $0.count } == 1 })
+    fake.release("react")
+    try #require(try await waitUntil { got.withLock { $0.count } == 1 })
     fetcher.request(google, "react") { s in got.withLock { $0.append(s) } }
-    try await waitUntil { got.withLock { $0.count } == 2 }
+    try #require(try await waitUntil { got.withLock { $0.count } == 2 })
     #expect(fake.calls.withLock { $0.count } == 1)
     #expect(got.withLock { $0 } == [["a", "b"], ["a", "b"]])
   }
 
   @Test func anEngineWithoutSuggestionsOrAnEmptyQueryNeverFetches() async throws {
     let fake = FakeFetch()
+    defer { fake.cancelAll() }
     let fetcher = SuggestFetcher(fetch: { try await fake.fetch($0) }, delay: .milliseconds(1))
+    defer { fetcher.cancel() }
     fetcher.request(engineById(builtInEngines, "kagi"), "react") { _ in Issue.record("answered") }
     fetcher.request(engineById(builtInEngines, "google"), "   ") { _ in Issue.record("answered") }
     try await Task.sleep(for: .milliseconds(50))
     #expect(fake.calls.withLock { $0.isEmpty })
   }
+
+  @Test func aLateSuccessfulResponseNeverAnswersAfterTheNewerResult() async throws {
+    let fake = FakeFetch()
+    defer { fake.cancelAll() }
+    let clock = ManualDebounceClock()
+    defer { clock.cancelAll() }
+    let returned = Mutex(0)
+    let finished = Mutex(false)
+    let fetcher = SuggestFetcher(fetch: { url in
+      let response = try await Task.detached { try await fake.fetch(url) }.value
+      returned.withLock { $0 += 1 }
+      return response
+    }, delay: .milliseconds(10), sleep: clock.sleep)
+    defer { fetcher.cancel() }
+    let results = Mutex<[String]>([])
+    let google = engineById(builtInEngines, "google")
+    fetcher.request(google, "old") { [completion = RequestCompletion { finished.withLock { $0 = true } }] _ in
+      withExtendedLifetime(completion) { results.withLock { $0.append("old") } }
+    }
+    try #require(try await waitUntil { clock.sleeps == [.milliseconds(10)] })
+    clock.advance(by: .milliseconds(10))
+    try #require(try await waitUntil { fake.calls.withLock { $0.count } == 1 })
+    fetcher.request(google, "new") { _ in results.withLock { $0.append("new") } }
+    try #require(try await waitUntil { clock.sleeps == [.milliseconds(10), .milliseconds(10)] })
+    clock.advance(by: .milliseconds(10))
+    try #require(try await waitUntil { fake.calls.withLock { $0.count } == 2 })
+    fake.release("new")
+    try #require(try await waitUntil { results.withLock { $0 } == ["new"] })
+    fake.release("old")
+    try #require(try await waitUntil { returned.withLock { $0 } == 2 && finished.withLock { $0 } })
+    #expect(results.withLock { $0 } == ["new"])
+  }
+}
+
+private final class RequestCompletion: Sendable {
+  private let onFinish: @Sendable () -> Void
+
+  init(_ onFinish: @escaping @Sendable () -> Void) { self.onFinish = onFinish }
+
+  deinit { onFinish() }
 }

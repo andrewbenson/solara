@@ -484,7 +484,7 @@ engine_release="$(awk -v t="$engine_tree" '$1 == t { print $2; exit }' "$solarac
 helium_engine=""
 LC_ALL=C grep -q -a -F helium.services.enabled "$framework_src/Versions/Current/Chromium Framework" && helium_engine=1
 engine_pack=""
-if [ "$phase" = all ] && [ "$rc" = 0 ] && { [ -z "${SOLARACORE_FRAMEWORK:-}" ] || [ -n "$framework_engine" ]; } && [ -z "$engine_release" ]; then
+if { [ "$phase" = all ] || [ "$phase" = sign ]; } && [ "$rc" = 0 ] && { [ -z "${SOLARACORE_FRAMEWORK:-}" ] || [ -n "$framework_engine" ]; } && [ -z "$engine_release" ]; then
   engine_release="$version"
   echo "==> Pack the engine (background)"
   (

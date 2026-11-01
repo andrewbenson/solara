@@ -102,6 +102,7 @@ public final class PageRegistry {
   private struct Pending {
     let registration: PageRegistration
     let resultKind: PageResultKind
+    let carriesPageData: Bool
     let completion: Completion
     var cancelDeadline: (@MainActor () -> Void)?
   }
@@ -277,7 +278,7 @@ public final class PageRegistry {
       return complete(.success(.bool(true)), completion: completion)
     }
     let id = UUID()
-    pending[id] = Pending(registration: registration, resultKind: command.resultKind, completion: completion)
+    pending[id] = Pending(registration: registration, resultKind: command.resultKind, carriesPageData: command.carriesPageData, completion: completion)
     pendingOrder.append(id)
     let cancelDeadline: @MainActor () -> Void
     if command.waitsForTheUser {
@@ -339,7 +340,8 @@ public final class PageRegistry {
     } else {
       output = result
     }
-    enqueue(output, completion: item.completion)
+    if item.carriesPageData { enqueue(output, registration: item.registration, completion: item.completion) }
+    else { enqueue(output, completion: item.completion) }
     scheduleDelivery()
   }
 
@@ -352,6 +354,16 @@ public final class PageRegistry {
 
   private func enqueue(_ result: Result<PageValue, PageRegistryError>, completion: @escaping Completion) {
     deliveries.append { completion(result) }
+  }
+
+  private func enqueue(_ result: Result<PageValue, PageRegistryError>, registration: PageRegistration, completion: @escaping Completion) {
+    deliveries.append { [weak self] in
+      if case .success = result, self.map({ $0.rawDescriptor(registration) == nil }) ?? true {
+        completion(.failure(.retired(registration)))
+      } else {
+        completion(result)
+      }
+    }
   }
 
   private func enqueue(_ event: PageRegistryEvent) {

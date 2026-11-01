@@ -54,7 +54,151 @@ private struct IssuerFixture {
 }
 
 @MainActor
+private final class HeldDeliveries {
+  var work: [@MainActor () -> Void] = []
+
+  func runOnce() {
+    let queued = work
+    work.removeAll()
+    for item in queued { item() }
+  }
+
+  func runAll() {
+    var rounds = 0
+    while !work.isEmpty && rounds < 10 {
+      let queued = work
+      work.removeAll()
+      for item in queued { item() }
+      rounds += 1
+    }
+  }
+}
+
+@MainActor
+private func heldPageAnswer(_ command: PageCommand = .livePage, incognito: Bool, closing: Bool, throughRegistry: Bool = false) throws -> [Result<PageValue, PageRegistryError>] {
+  let store = Store(state: BrowserState(settings: Settings.hydrated(from: nil)), checksInvariants: false)
+  let window = try #require(try store.dispatch(Command("createWindow", [["url": "https://private.example/secret", "incognito": .bool(incognito)]])).result?.string)
+  let id = try #require(store.state.windows[window]?.tabIds.first)
+  let held = HeldDeliveries()
+  let issuer = PageIssuer(store: store, registry: PageRegistry(), deliver: { held.work.append($0) })
+  let producer = IssuerProducer()
+  producer.invoke = { command, finish in finish(.success(command.resultKind == .array ? .array([]) : .null)) }
+  let binding = try #require(issuer.attach(tabId: id, engine: .chromium, host: .pooled, owner: producer,
+    context: PageHostContext(navigationSeq: store.state.tabs[id]?.navigation.flatMap { Int(exactly: $0.seq) },
+      contextRevision: 1, wasNewTab: false, newTabShownUrl: nil),
+    perform: producer.perform))
+  held.runAll()
+  var results: [Result<PageValue, PageRegistryError>] = []
+  if throughRegistry {
+    _ = issuer.registry.call(try #require(binding.registration), command: command) { results.append($0) }
+  } else {
+    store.sequence { issuer.issueInScope(tabId: id, identity: binding.identity, command: command) { results.append($0) } }
+  }
+  #expect(results.isEmpty)
+  if throughRegistry {
+    held.runOnce()
+    #expect(results.isEmpty)
+    #expect(!held.work.isEmpty)
+  }
+  if closing {
+    try store.dispatch(Command("closeWindow", [.string(window)]))
+    #expect(!issuer.isCurrent(binding))
+    if throughRegistry {
+      issuer.retire(binding)
+      #expect(issuer.registry.descriptors.isEmpty)
+    }
+  }
+  held.runAll()
+  return results
+}
+
+@MainActor
 @Suite struct PageIssuerTests {
+  @Test func aLivePageResultIsDeliveredWhileItsPageIsLive() throws {
+    let results = try heldPageAnswer(incognito: true, closing: false)
+    #expect(results.count == 1)
+    guard case .success(let value)? = results.first else {
+      Issue.record("live page result was not delivered: \(results)")
+      return
+    }
+    guard case .object(let fields) = value else {
+      Issue.record("live page result is not an object: \(value)")
+      return
+    }
+    #expect(fields["tabId"] != nil)
+  }
+
+  @Test(arguments: [false, true])
+  func aLivePageResultThroughTheRegistryIsDeliveredWhileItsPageIsLive(throughRegistry: Bool) throws {
+    let results = try heldPageAnswer(incognito: true, closing: false, throughRegistry: throughRegistry)
+    #expect(results.count == 1)
+    if case .failure(let error)? = results.first { Issue.record("live page result failed: \(error)") }
+  }
+
+  @Test func aQueuedNativeTagIsNeverDeliveredAfterItsWindowCloses() throws {
+    let open = try heldPageAnswer(.nativeTag, incognito: true, closing: false)
+    #expect(open.count == 1)
+    if case .failure(let error)? = open.first { Issue.record("live native tag failed: \(error)") }
+    let results = try heldPageAnswer(.nativeTag, incognito: true, closing: true)
+    #expect(results.count == 1)
+    if case .success(let value)? = results.first { Issue.record("closed page delivered its native tag \(value)") }
+  }
+
+  @Test(arguments: [true, false], [false, true])
+  func aQueuedLivePageResultIsNeverDeliveredAfterItsWindowCloses(incognito: Bool, throughRegistry: Bool) throws {
+    let results = try heldPageAnswer(incognito: incognito, closing: true, throughRegistry: throughRegistry)
+    #expect(results.count == 1)
+    if case .success(let value)? = results.first { Issue.record("closed page delivered \(value)") }
+    if case .failure(let error)? = results.first { #expect(error.code == "ERR_PAGE_RETIRED") }
+  }
+
+  @Test(arguments: [true, false])
+  func anAppliedIssueStaysSettledWhenItsPageRetiresBeforeDelivery(incognito: Bool) throws {
+    let store = Store(state: BrowserState(settings: Settings.hydrated(from: nil)), checksInvariants: false)
+    let window = try #require(try store.dispatch(Command("createWindow", [["url": "https://private.example/secret", "incognito": .bool(incognito)]])).result?.string)
+    let id = try #require(store.state.windows[window]?.tabIds.first)
+    let held = HeldDeliveries()
+    let issuer = PageIssuer(store: store, registry: PageRegistry(), deliver: { held.work.append($0) })
+    let producer = IssuerProducer()
+    let binding = try #require(issuer.attach(tabId: id, engine: .chromium, host: .reactNative, owner: producer,
+      context: PageHostContext(navigationSeq: store.state.tabs[id]?.navigation.flatMap { Int(exactly: $0.seq) },
+        contextRevision: 1, wasNewTab: false, newTabShownUrl: nil),
+      perform: producer.perform))
+    held.runAll()
+    issuer.noteExecuted(binding, navigationSeq: binding.context.navigationSeq)
+    let preview = try #require(issuer.preview(binding))
+    var results: [Result<PageValue, PageRegistryError>] = []
+    issuer.issue(tabId: id, identity: binding.identity, command: .finishPageIssue(preview.guardValue)) { results.append($0) }
+    held.runOnce()
+    #expect(results.isEmpty)
+    #expect(!held.work.isEmpty)
+    try store.dispatch(Command("closeWindow", [.string(window)]))
+    issuer.retire(binding)
+    #expect(issuer.registry.descriptors.isEmpty)
+    held.runAll()
+    #expect(results == [.success(.object(["accepted": .bool(true)]))])
+    #expect(!PageCommand.finishPageIssue(preview.guardValue).carriesPageData)
+  }
+
+  @Test(arguments: [PageCommand.evaluate("document.title"), .navigationEntries, .pageCookies(["https://private.example/"])], [true, false])
+  func aQueuedPageDataResultThroughTheRegistryIsNeverDeliveredAfterItsPageRetires(command: PageCommand, incognito: Bool) throws {
+    #expect(command.carriesPageData)
+    let open = try heldPageAnswer(command, incognito: incognito, closing: false, throughRegistry: true)
+    #expect(open.count == 1)
+    if case .failure(let error)? = open.first { Issue.record("live \(command.method) failed: \(error)") }
+    let results = try heldPageAnswer(command, incognito: incognito, closing: true, throughRegistry: true)
+    #expect(results.count == 1)
+    if case .success(let value)? = results.first { Issue.record("retired page delivered \(command.method) result \(value)") }
+    if case .failure(let error)? = results.first { #expect(error.code == "ERR_PAGE_RETIRED") }
+  }
+
+  @Test(arguments: [true, false])
+  func aSettledAckThroughTheRegistrySurvivesItsPageRetiring(incognito: Bool) throws {
+    #expect(!PageCommand.reload.carriesPageData)
+    let results = try heldPageAnswer(.reload, incognito: incognito, closing: true, throughRegistry: true)
+    #expect(results == [.success(.null)])
+  }
+
   @Test func inScopeIssueAdmitsNothingBetweenRecheckAndInvoke() throws {
     let fixture = try IssuerFixture()
     let attempting = DispatchSemaphore(value: 0)

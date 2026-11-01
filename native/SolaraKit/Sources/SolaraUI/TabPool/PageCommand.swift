@@ -254,6 +254,18 @@ public enum PageCommand: Equatable, Sendable {
     }
   }
 
+  public var carriesPageData: Bool {
+    switch self {
+    case .evaluate, .navigationEntries, .capturePicture, .downloadFavicon, .downloadImage, .getSecurityInfo, .pageCookies,
+      .executeExtensionAction, .mediaCaptureSourceId, .livePage: true
+    case .loadUrl, .goBack, .goForward, .goToOffset, .reload, .forceReload, .stopLoading, .focus, .setMuted, .zoomStep,
+      .find, .stopFinding, .print, .runPageCommand, .showDevTools, .executeJavaScript, .mediaCommand,
+      .requestPictureInPicture, .takeControlPress, .exitPictureInPicture, .openBlockedPopup, .clearSiteData,
+      .resolvePasswordPrompt, .resolveAutofillPrompt, .resolveDisplayMedia, .notificationAction, .resolveUnresponsive,
+      .discard, .setFrozen, .nativeTag, .finishPageIssue: false
+    }
+  }
+
   public func supports(engine: PageEngine) -> Bool {
     guard engine == .webKit else { return true }
     return switch self {

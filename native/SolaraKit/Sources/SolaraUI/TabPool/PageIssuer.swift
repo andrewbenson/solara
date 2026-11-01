@@ -377,7 +377,13 @@ public final class PageIssuer {
         }
         if command == .nativeTag {
           let value = binding.nativeTag.map { PageValue.number(Double($0)) } ?? .null
-          afterSequence { completion(.success(value)) }
+          afterSequence { [weak self, weak binding] in
+            guard let self, let binding, self.isCurrent(binding) else {
+              completion(.failure(.retired(PageRegistration(tabID: identity.tabId, registrationGeneration: identity.registrationGeneration))))
+              return
+            }
+            completion(.success(value))
+          }
           return
         }
         if command == .livePage {
@@ -387,7 +393,13 @@ public final class PageIssuer {
             "host": .string(binding.host.rawValue), "registrationGeneration": .number(Double(binding.registrationGeneration)),
             "sessionGeneration": .string(binding.sessionGeneration), "ready": ready,
             "navigation": PageValue(json: binding.navigation ?? .null)])
-          afterSequence { completion(.success(value)) }
+          afterSequence { [weak self, weak binding] in
+            guard let self, let binding, self.isCurrent(binding) else {
+              completion(.failure(.retired(PageRegistration(tabID: identity.tabId, registrationGeneration: identity.registrationGeneration))))
+              return
+            }
+            completion(.success(value))
+          }
           return
         }
         if case .finishPageIssue(let guardValue) = command {

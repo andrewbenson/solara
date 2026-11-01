@@ -349,3 +349,35 @@ final class TopStripDrag: StripDragBridge {
     return !commit.changes.isEmpty
   }
 }
+
+#if SOLARA_PROBES
+@MainActor
+public enum TopStripRead {
+  public static func snapshot(windowId: String, trace: String?) -> [String: Any]? {
+    guard let store = NativeStoreHandle.store, let model = store.state.windows[windowId] else { return nil }
+    let page = NativeTopStrip.hosts[windowId]?.view.current
+    var sizes: [String: Double] = [:]
+    var groups: [[String: Any]] = []
+    for (id, group) in store.state.groups where group.windowId == windowId {
+      if let size = page?.groupSize(id) { sizes[id] = size }
+      groups.append(["id": id, "collapsed": group.collapsed])
+    }
+    var items: Any = NSNull()
+    if let json = NativeTopStrip.items(windowId: windowId), let data = json.data(using: .utf8),
+      let value = try? JSONSerialization.jsonObject(with: data) { items = value }
+    return ["items": items, "keys": StripQuery(store.state).keys(windowId: windowId, profileId: model.profileId),
+      "panelOpen": store.state.windowUi[windowId]?.panelOpen ?? false,
+      "downloadsOpen": store.state.windowUi[windowId]?.downloadsOpen ?? false,
+      "groupSizes": sizes, "groups": groups.sorted { ($0["id"] as? String ?? "") < ($1["id"] as? String ?? "") },
+      "groupTrace": trace == "group" ? samples(page?.groupTrace) : [], "slotTrace": trace == "slot" ? samples(page?.slotTrace) : [],
+      "glowTrace": trace == "glow" ? samples(TopStripGlowHost.hosts[windowId]?.view.trace) : [],
+      "peekTrace": trace == "peek" ? samples(TopStripPeekHost.hosts[windowId]?.view.slideTrace) : [],
+      "peek": TopStripPeekHost.hosts[windowId]?.describe() ?? [:], "peekMonitors": StripPeekView.monitors]
+  }
+
+  private static func samples(_ source: [[Double]]?) -> [[Double]] {
+    guard let source else { return [] }
+    return Array(source.suffix(128))
+  }
+}
+#endif

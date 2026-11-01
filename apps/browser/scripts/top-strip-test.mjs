@@ -51,6 +51,60 @@ const runs = (id, y) => win(id).then((n) => { const xs = []; for (let x = 60; x 
 const settle = (ms) => new Promise((r) => setTimeout(r, ms));
 `;
 
+const STRIP_FIELDS = ["root.hostedKinds", "root.swipeSimulation", "root.haptics",
+  ...["profileId", "selectedTabId", "tabIds", "topStrip", "stripPoints", "overlays", "dropTargets", "hoverLayout"].map((key) => "windows." + key)];
+const nativeSnapshot = (app, args = {}) => app.snapshot({ windowId: "w1", topStrip: true, fields: STRIP_FIELDS, ...args });
+
+async function untilSnapshot(app, what, accept, ms = 8000, args = {}) {
+  const end = Date.now() + ms;
+  let state;
+  do {
+    state = await nativeSnapshot(app, args);
+    if (state.consistent && accept(state.windows?.find((w) => w.id === "w1"), state)) return state;
+    await sleep(50);
+  } while (Date.now() < end);
+  throw new Error(`${what}: ${JSON.stringify(state)}`);
+}
+
+async function pointSamples(app, points, labels = false) {
+  const rows = [];
+  for (let at = 0; at < points.length; at += 4) {
+    const chunk = points.slice(at, at + 4);
+    const state = await untilSnapshot(app, "native point samples", (w) => w?.stripPoints?.length === chunk.length, 8000, { stripPoints: chunk, stripLabels: labels, topStrip: false, fields: ["windows.stripPoints"] });
+    rows.push(...state.windows.find((w) => w.id === "w1").stripPoints);
+  }
+  return rows;
+}
+
+function nativeWindow(state) { return state.windows.find((w) => w.id === "w1"); }
+
+function compareItems(a, b) {
+  assert.deepEqual(a.keys, b.keys);
+  assert.ok(Math.abs(a.chip - b.chip) <= 0.5);
+  assert.ok(Math.abs(a.scrolled - b.scrolled) <= 0.5);
+  assert.equal(a.items.length, b.items.length);
+  for (let i = 0; i < a.items.length; i++) {
+    const ours = a.items[i], theirs = b.items[i];
+    assert.deepEqual([ours.id, ours.kind], [theirs.id, theirs.kind]);
+    for (const key of ["x", "y", "width", "height", "windowX", "windowY"]) assert.ok(Math.abs(ours[key] - theirs[key]) <= 0.5, `${ours.kind}/${ours.id} ${key}`);
+    assert.equal(ours.alpha, theirs.alpha);
+  }
+}
+
+async function nativeCapture(app, legacy, band = 42) {
+  if (!legacy) return null;
+  const capture = await app.probe("view.capture", { windowId: "w1" });
+  assert.equal(capture.consistent, true, "native capture is consistent around the PNG");
+  assert.match(capture.artifact, /^\.solara-probe-window-[a-f0-9-]+\.png$/);
+  const path = join(app.data, capture.artifact);
+  const ours = readPng(path), theirs = readPng(legacy);
+  assert.deepEqual([ours.width, ours.height], [capture.width, capture.height]);
+  assert.deepEqual([ours.width, ours.height], [theirs.width, theirs.height]);
+  assert.equal(capture.scale, 2);
+  assert.ok(stripDiff(ours, theirs, 0, band).share < 0.01, "native capture matches the JS window capture");
+  return path;
+}
+
 function readPng(path) {
   const buf = readFileSync(path);
   let width = 0, height = 0, channels = 4;
@@ -141,54 +195,95 @@ async function measure(native) {
     await sleep(2500);
     const kinds = await run(`return globalThis.expo.modules.SolaraHosted.kinds();`);
     assert.equal(kinds.includes("topStrip"), native, `topStrip kind registered: ${kinds}`);
+    await untilSnapshot(app, "registered top strip", (_, state) => state.hostedKinds.includes("topStrip") === native);
+    const hello = await app.probe("probe.hello");
+    assert.ok(hello.capabilities.includes("state.snapshot"));
     const out = { spans: await run(`return runs("w1", 21);`) };
+    const nativeSpans = [];
+    let span = null;
+    for (const row of await pointSamples(app, Array.from({ length: (1600 - 150) * 2 }, (_, i) => [60 + i / 2, 21]))) {
+      const on = /ContextMenuArea|ImageView|Symbol|FadeLabel|Strip(TabChip|PinnedCell|GroupHeader|FolderChip|SplitPart|IconButton|NewTabButton)/.test(row.hit);
+      const kind = /^SolaraUI.StripIconButton < NSView < SolaraUI.StripGroupView/.test(row.hit) ? "groupClose" : row.hit.split(/[ :<(]/)[0];
+      if (on && !span) span = [row.x, row.x, kind];
+      else if (on) span[1] = row.x;
+      else if (span) { nativeSpans.push(span); span = null; }
+    }
+    if (span) nativeSpans.push(span);
+    assert.deepEqual(nativeSpans, out.spans, "the native snapshot sees the same hit spans");
     if (native) {
       out.items = JSON.parse(await run(`return globalThis.expo.modules.SolaraTopStrip.items("w1");`));
       out.keys = await run(`return globalThis.expo.modules.SolaraTopStrip.keys("w1", "default");`);
+      const state = await untilSnapshot(app, "native strip items", (w) => !!w?.topStrip?.items);
+      const strip = nativeWindow(state).topStrip;
+      compareItems(strip.items, out.items);
+      assert.deepEqual(strip.keys, out.keys);
     }
     const png = join(scratch, native ? "native.png" : "rn.png");
     out.snapshot = (await run(`return ac.shell.devSnapshotWindow("w1", ${JSON.stringify(png)});`)) ? png : null;
+    await nativeCapture(app, out.snapshot);
     out.looks = {};
     for (const [look, setup, undo] of LOOKS) {
       const shot = join(scratch, `${native ? "native" : "rn"}-${look}.png`);
       await run(`${setup} return settle(900);`);
       out.looks[look] = (await run(`return ac.shell.devSnapshotWindow("w1", ${JSON.stringify(shot)});`)) ? shot : null;
-      if (look === "peek") out.peekHit = await run(`return act("w1", "hit:200,22");`);
+      await nativeCapture(app, out.looks[look], look === "peek" ? 56 : 42);
+      if (look === "peek") {
+        out.peekHit = await run(`return act("w1", "hit:200,22");`);
+        assert.equal((await pointSamples(app, [[200, 22]]))[0].hit, out.peekHit);
+      }
       await run(`${undo} return settle(600);`);
     }
-    out.peekMotion = await run(`
+    const peekShown = await run(`
       const peek = () => globalThis.acLayout.peek["strip:w1"];
       st().toggleSidebar("w1");
-      return settle(600).then(() => peek().trace()).then(() => settle(50)).then(() => peek().show()).then(() => settle(500))
-        .then(() => peek().hide()).then(() => settle(600)).then(() => peek().samples())
-        .then((samples) => { st().toggleSidebar("w1"); return settle(600).then(() => samples); });`);
+      return settle(600).then(() => peek().trace()).then(() => settle(50)).then(() => peek().show()).then(() => settle(500)).then(() => peek().live);`);
+    if (native) await untilSnapshot(app, "peek shown", (w) => w?.topStrip?.peek?.live === true && w.topStrip.peek.live === peekShown);
+    out.peekMotion = await run(`
+      const peek = () => globalThis.acLayout.peek["strip:w1"];
+      peek().hide(); return settle(600).then(() => peek().samples());`);
+    if (native) {
+      const state = await untilSnapshot(app, "native peek trace and hidden state", (w) => w?.topStrip?.peek?.live === false && w.topStrip.peekTrace?.length > 3, 8000, { stripTrace: "peek", fields: ["windows.topStrip"] });
+      assert.deepEqual(nativeWindow(state).topStrip.peekTrace, out.peekMotion.slice(-128));
+    }
+    await run(`st().toggleSidebar("w1"); return settle(600);`);
     out.peekHeld = await run(`
       const peek = () => globalThis.acLayout.peek["strip:w1"];
       const seen = {};
       st().toggleSidebar("w1");
       return settle(600).then(() => peek().show()).then(() => settle(400))
-        .then(() => act("w1", "hit:1569,27")).then((hit) => (seen.hit = hit))
-        .then(() => act("w1", "click:1569,27")).then(() => settle(400)).then(() => { seen.open = !!st().windowUi.w1?.downloadsOpen; seen.panel = !!st().windowUi.w1?.panel.open; st().closePanel("w1"); })
-        .then(() => peek().hide()).then(() => settle(500)).then(() => (seen.heldLive = peek().live))
-        .then(() => { st().setDownloadsOpen("w1", false); return settle(800); }).then(() => (seen.afterClose = peek().live))
-        .then(() => { st().toggleSidebar("w1"); return settle(600); }).then(() => seen);`);
-    out.peekPress = await run(`
-      const peek = () => globalThis.acLayout.peek["strip:w1"];
-      const press = (x, y) => act("w1", "mouse:down:" + x + "," + y).then(() => settle(100)).then(() => act("w1", "mouse:up:" + x + "," + y)).then(() => settle(500));
-      const seen = { presses: [] };
-      st().toggleSidebar("w1");
-      return settle(600).then(() => peek().show()).then(() => settle(400))
-        .then(() => [[420, 22, "tab"], [1569, 27, "downloads"]].reduce((chain, [x, y, what]) => chain
-          .then(() => act("w1", "hit:" + x + "," + y)).then((hit) => press(x, y).then(() => {
-            seen.presses.push({ what, hit, panel: !!st().windowUi.w1?.panel.open, active: st().windows.w1.activeTabIds.default, downloads: !!st().windowUi.w1?.downloadsOpen });
-            st().closePanel("w1");
-            st().setDownloadsOpen("w1", false);
-            return settle(500).then(() => peek().show()).then(() => settle(400));
-          })), Promise.resolve()))
-        .then(() => { st().activate("t1"); peek().hide(); return settle(700); })
-        .then(() => act("w1", "hit:600,24")).then((hit) => (seen.fieldHit = hit))
-        .then(() => press(600, 24)).then(() => { seen.field = !!st().windowUi.w1?.panel.open; st().closePanel("w1"); return settle(400); })
-        .then(() => { st().toggleSidebar("w1"); return settle(600); }).then(() => seen);`);
+        .then(() => act("w1", "hit:1569,27")).then((hit) => (seen.hit = hit)).then(() => seen);`);
+    await untilSnapshot(app, "native hit before the click", (w) => !w.topStrip.downloadsOpen &&
+      w.stripPoints.some((p) => p.x === 1569 && p.y === 27 && p.hit === out.peekHeld.hit), 8000, { stripPoints: [[1569, 27]] });
+    Object.assign(out.peekHeld, await run(`return act("w1", "click:1569,27").then(() => settle(400)).then(() => ({ open: !!st().windowUi.w1?.downloadsOpen, panel: !!st().windowUi.w1?.panel.open }));`));
+    await untilSnapshot(app, "native downloads open", (w) => w.topStrip.downloadsOpen === out.peekHeld.open && w.topStrip.panelOpen === out.peekHeld.panel, 8000);
+    out.peekHeld.heldLive = await run(`st().closePanel("w1"); globalThis.acLayout.peek["strip:w1"].hide(); return settle(500).then(() => globalThis.acLayout.peek["strip:w1"].live);`);
+    if (native) {
+      await untilSnapshot(app, "downloads hold peek after hide", (w) => w?.topStrip?.peek?.live === out.peekHeld.heldLive && w.overlays.some((o) => o.kind === "downloads" && o.visible));
+    }
+    out.peekHeld.afterClose = await run(`st().setDownloadsOpen("w1", false); return settle(800).then(() => globalThis.acLayout.peek["strip:w1"].live);`);
+    if (native) await untilSnapshot(app, "closed downloads release peek before strip restore", (w) => w?.topStrip?.peek?.live === out.peekHeld.afterClose && !w.overlays.some((o) => o.kind === "downloads" && o.visible));
+    await run(`st().toggleSidebar("w1"); return settle(600);`);
+    await run(`st().toggleSidebar("w1"); return settle(600).then(() => globalThis.acLayout.peek["strip:w1"].show()).then(() => settle(400));`);
+    out.peekPress = { presses: [] };
+    const press = (x, y) => run(`return act("w1", "mouse:down:${x},${y}").then(() => settle(100)).then(() => act("w1", "mouse:up:${x},${y}")).then(() => settle(500))
+      .then(() => ({ panel: !!st().windowUi.w1?.panel.open, active: st().windows.w1.activeTabIds.default, downloads: !!st().windowUi.w1?.downloadsOpen }));`);
+    for (const [x, y, what] of [[420, 22, "tab"], [1569, 27, "downloads"]]) {
+      const hit = await run(`return act("w1", "hit:${x},${y}");`);
+      await untilSnapshot(app, `${what} native hit before press`, (w) => (!native || w?.topStrip?.peek?.live === true) &&
+        w.stripPoints.some((p) => p.x === x && p.y === y && p.hit === hit), 8000, { stripPoints: [[x, y]] });
+      const seen = { what, hit, ...await press(x, y) };
+      out.peekPress.presses.push(seen);
+      await untilSnapshot(app, `${what} native state after press`, (w) => w?.selectedTabId === seen.active && w.topStrip.panelOpen === seen.panel && w.topStrip.downloadsOpen === seen.downloads);
+      await run(`st().closePanel("w1"); st().setDownloadsOpen("w1", false); return settle(500).then(() => globalThis.acLayout.peek["strip:w1"].show()).then(() => settle(400));`);
+    }
+    await run(`st().activate("t1"); globalThis.acLayout.peek["strip:w1"].hide(); return settle(700);`);
+    out.peekPress.fieldHit = await run(`return act("w1", "hit:600,24");`);
+    await untilSnapshot(app, "native address field hit before press", (w) => (!native || w?.topStrip?.peek?.live === false) &&
+      w.stripPoints.some((p) => p.x === 600 && p.y === 24 && p.hit === out.peekPress.fieldHit), 8000, { stripPoints: [[600, 24]] });
+    out.peekPress.field = (await press(600, 24)).panel;
+    await untilSnapshot(app, "native address panel opens after press", (w) => w.topStrip.panelOpen === out.peekPress.field);
+    await run(`st().closePanel("w1"); return settle(400).then(() => { st().toggleSidebar("w1"); return settle(600); });`);
+    const peekSwipeBefore = await untilSnapshot(app, "before peek swipe", () => true);
     out.peekSwipe = await run(`
       const peek = () => globalThis.acLayout.peek["strip:w1"];
       const flick = [["began", 0], ["changed", -18], ["changed", -22], ["changed", -22], ["ended", 0]].map(([phase, dx], i) => ({ phase, dx, dy: 0, atMs: i * 16, timestampMs: i * 16, dispatch: "app" }));
@@ -196,8 +291,11 @@ async function measure(native) {
       st().toggleSidebar("w1");
       return settle(600).then(() => peek().show()).then(() => settle(400)).then(() => win("w1"))
         .then((n) => globalThis.expo.modules.SolaraSwipe.devSimulate(700, 22, n, flick, true)).then((r) => (seen.where = r.where))
-        .then(() => settle(700)).then(() => { seen.profile = st().windows.w1.profileId; seen.live = peek().live; st().switchProfile("w1", "default"); return settle(600); })
-        .then(() => { peek().hide(); return settle(600); }).then(() => { st().toggleSidebar("w1"); return settle(600); }).then(() => seen);`);
+        .then(() => settle(700)).then(() => { seen.profile = st().windows.w1.profileId; seen.live = peek().live; return seen; });`);
+    await untilSnapshot(app, "peek swipe native profile, route and visibility", (w, state) => state.swipeSimulation.count === peekSwipeBefore.swipeSimulation.count + 1 &&
+      w?.profileId === out.peekSwipe.profile && state.swipeSimulation.where?.hit === out.peekSwipe.where.hit && state.swipeSimulation.where?.target === out.peekSwipe.where.target &&
+      (!native || w?.topStrip?.peek?.live === out.peekSwipe.live));
+    await run(`st().switchProfile("w1", "default"); return settle(600).then(() => { globalThis.acLayout.peek["strip:w1"].hide(); return settle(600); }).then(() => { st().toggleSidebar("w1"); return settle(600); });`);
     out.peekFile = await run(`
       const peek = () => globalThis.acLayout.peek["strip:w1"];
       const drag = (action, x, payload) => globalThis.expo.modules.SolaraFileDrop.devDrag("w1", action, x, 27, payload);
@@ -212,16 +310,21 @@ async function measure(native) {
           const ids = st().windows.w1.tabIds;
           const added = ids.find((id) => !before.includes(id));
           seen.after = added ? ids[ids.indexOf(added) - 1] ?? null : "none";
-          if (added) st().closeTab(added);
-          st().activate("t1");
-          st().toggleSidebar("w1");
-          return settle(600);
-        }).then(() => seen);`);
+          seen.added = added ?? null;
+          return seen;
+        });`);
+    assert.ok(out.peekFile.added, "peek drop added a tab");
+    await untilSnapshot(app, "peek drop native order", (w, state) => {
+      const added = state.tabs.find((t) => t.id === out.peekFile.added && t.url === "https://dropped.example/");
+      return added && w.tabIds.includes(added.id) && (w.tabIds[w.tabIds.indexOf(added.id) - 1] ?? null) === out.peekFile.after;
+    }, 8000, { fields: [...STRIP_FIELDS, "tabs.url"] });
+    await run(`st().closeTab(${JSON.stringify(out.peekFile.added)}); st().activate("t1"); st().toggleSidebar("w1"); return settle(600);`);
     out.peekFrames = {};
     for (const value of [0.25, 0.5, 0.75]) {
       const shot = join(scratch, `${native ? "native" : "rn"}-peek-${value}.png`);
       await run(`st().toggleSidebar("w1"); return settle(600).then(() => globalThis.acLayout.peek["strip:w1"].show()).then(() => settle(400)).then(() => globalThis.acLayout.peek["strip:w1"].pin(${value})).then(() => settle(200));`);
       out.peekFrames[value] = (await run(`return ac.shell.devSnapshotWindow("w1", ${JSON.stringify(shot)});`)) ? shot : null;
+      await nativeCapture(app, out.peekFrames[value], 80);
       await run(`globalThis.acLayout.peek["strip:w1"].pin(1); globalThis.acLayout.peek["strip:w1"].hide(); return settle(600).then(() => { st().toggleSidebar("w1"); return settle(600); });`);
     }
     out.downloadsAt = await run(`
@@ -239,10 +342,14 @@ async function measure(native) {
             return edges;
           });
         })
-        .then((edges) => { st().setDownloadsOpen("w1", false); return settle(600).then(() => { st().toggleSidebar("w1"); return settle(600); }).then(() => edges); });`);
+        .then((edges) => edges);`);
+    const downloadsPoints = [...Array.from({ length: 160 }, (_, i) => [1500, 60 + i * 4]), ...Array.from({ length: 125 }, (_, i) => [1100 + i * 4, 140])];
+    const downloadEdges = (rows) => rows.flatMap((row, i) => i === 0 || i === 160 || row.hit !== rows[i - 1].hit ? [`${row.x},${row.y} ${row.hit}`] : []);
+    assert.deepEqual(downloadEdges(await pointSamples(app, downloadsPoints)), out.downloadsAt);
+    await run(`st().setDownloadsOpen("w1", false); return settle(600).then(() => { st().toggleSidebar("w1"); return settle(600); });`);
+    const dockedBefore = await untilSnapshot(app, "before docked swipe", () => true);
     out.docked = await run(`
       const W = st().windows.w1.frame[2];
-      const flick = [["began", 0], ["changed", -18], ["changed", -22], ["changed", -22], ["ended", 0]].map(([phase, dx], i) => ({ phase, dx, dy: 0, atMs: i * 16, timestampMs: i * 16, dispatch: "app" }));
       const seen = {};
       return win("w1").then((n) => {
         const xs = [];
@@ -252,21 +359,38 @@ async function measure(native) {
           hits.forEach((h, i) => { const k = /WindowDragRegion/.test(h) ? "drag" : /SwipeArea/.test(h) ? "swipe" : "item"; if (k !== prev) edges.push(xs[i] + " " + k); prev = k; });
           seen.edges = edges;
           seen.downloadsHit = hits[xs.indexOf(W - 25)];
-          return globalThis.expo.modules.SolaraSwipe.devSimulate(W - 25, 21, n, flick, true);
+          return seen;
         });
-      }).then((r) => settle(600).then(() => { seen.swipe = r.where; seen.swipedTo = st().windows.w1.profileId; st().switchProfile("w1", "default"); return settle(600); }))
-        .then(() => {
-          const before = st().windows.w1.tabIds.slice();
-          const drag = (action, payload) => globalThis.expo.modules.SolaraFileDrop.devDrag("w1", action, W - 25, 21, payload);
-          return drag("move", { urls: ["https://dropped.example/"] }).then((r) => (seen.over = r)).then(() => settle(200)).then(() => drag("drop")).then(() => settle(800)).then(() => {
-            const ids = st().windows.w1.tabIds;
-            const added = ids.find((id) => !before.includes(id));
-            seen.dropped = added ? ids[ids.indexOf(added) - 1] ?? null : "none";
-            if (added) st().closeTab(added);
-            st().activate("t1");
-            return settle(500);
-          });
-        }).then(() => seen);`);
+      });`);
+    const dockedEdges = [];
+    const dockedPoints = await pointSamples(app, Array.from({ length: 236 }, (_, i) => [1482 + i / 2, 21]));
+    for (const point of dockedPoints) {
+      const kind = /WindowDragRegion/.test(point.hit) ? "drag" : /SwipeArea/.test(point.hit) ? "swipe" : "item";
+      if (!dockedEdges.length || !dockedEdges.at(-1).endsWith(` ${kind}`)) dockedEdges.push(`${point.x} ${kind}`);
+    }
+    assert.deepEqual(dockedEdges, out.docked.edges);
+    assert.equal(dockedPoints.find((p) => p.x === 1575).hit, out.docked.downloadsHit);
+    Object.assign(out.docked, await run(`
+      const flick = [["began", 0], ["changed", -18], ["changed", -22], ["changed", -22], ["ended", 0]].map(([phase, dx], i) => ({ phase, dx, dy: 0, atMs: i * 16, timestampMs: i * 16, dispatch: "app" }));
+      return win("w1").then((n) => globalThis.expo.modules.SolaraSwipe.devSimulate(st().windows.w1.frame[2] - 25, 21, n, flick, true))
+        .then((r) => settle(600).then(() => ({ swipe: r.where, swipedTo: st().windows.w1.profileId })));`));
+    await untilSnapshot(app, "docked swipe native profile and route", (w, state) => state.swipeSimulation.count === dockedBefore.swipeSimulation.count + 1 &&
+      w?.profileId === out.docked.swipedTo && state.swipeSimulation.where?.hit === out.docked.swipe.hit && state.swipeSimulation.where?.target === out.docked.swipe.target);
+    await run(`st().switchProfile("w1", "default"); return settle(600);`);
+    Object.assign(out.docked, await run(`
+      const before = st().windows.w1.tabIds.slice();
+      const drag = (action, payload) => globalThis.expo.modules.SolaraFileDrop.devDrag("w1", action, st().windows.w1.frame[2] - 25, 21, payload);
+      return drag("move", { urls: ["https://dropped.example/"] }).then((over) => settle(200).then(() => drag("drop")).then(() => settle(800)).then(() => {
+        const ids = st().windows.w1.tabIds;
+        const added = ids.find((id) => !before.includes(id));
+        return { over, added: added ?? null, dropped: added ? ids[ids.indexOf(added) - 1] ?? null : "none" };
+      }));`));
+    assert.ok(out.docked.added, "docked drop added a tab");
+    await untilSnapshot(app, "docked drop native order", (w, state) => {
+      const added = state.tabs.find((t) => t.id === out.docked.added && t.url === "https://dropped.example/");
+      return added && w.tabIds.includes(added.id) && (w.tabIds[w.tabIds.indexOf(added.id) - 1] ?? null) === out.docked.dropped;
+    }, 8000, { fields: [...STRIP_FIELDS, "tabs.url"] });
+    await run(`st().closeTab(${JSON.stringify(out.docked.added)}); st().activate("t1"); return settle(500);`);
     out.labels = await run(`
       const W = st().windows.w1.frame[2];
       return win("w1").then((n) => {
@@ -279,6 +403,11 @@ async function measure(native) {
         });
         return runsOf("tip:").then((tips) => runsOf("ax:").then((ax) => ({ tips, ax })));
       });`);
+    const nativeLabels = { tips: [], ax: [] };
+    for (const row of await pointSamples(app, Array.from({ length: 1540 }, (_, i) => [60 + i, 21]), true)) {
+      for (const [key, value] of [["tips", row.tip], ["ax", row.ax]]) if (!nativeLabels[key].length || nativeLabels[key].at(-1)[1] !== value) nativeLabels[key].push([row.x, value]);
+    }
+    assert.deepEqual(nativeLabels, out.labels, "native tooltip spans and AX labels match the JS read");
     out.dockedShots = {};
     const W = 1600;
     const dockedLooks = [
@@ -293,6 +422,7 @@ async function measure(native) {
       const shot = join(scratch, `${native ? "native" : "rn"}-docked-${look}.png`);
       await run(`${setup} return settle(500);`);
       out.dockedShots[look] = (await run(`return ac.shell.devSnapshotWindow("w1", ${JSON.stringify(shot)});`)) ? shot : null;
+      if (look !== "pressDownloads") await nativeCapture(app, out.dockedShots[look]);
       await run(`${undo} return settle(600);`);
     }
     const glowArm = native ? `globalThis.expo.modules.SolaraTopStrip.traceGlow("w1")` : `Promise.resolve(globalThis.acStrip.traceGlow("w1"))`;
@@ -302,6 +432,10 @@ async function measure(native) {
       out.glowMotion[name] = await run(`
         return ${glowArm}.then(() => settle(50)).then(() => { globalThis.acTabDrag.setState({ overWindow: "w1" }); return settle(${hold}); })
           .then(() => { globalThis.acTabDrag.setState({ overWindow: null }); return settle(400); }).then(() => ${glowRead});`);
+      if (native) {
+        const state = await untilSnapshot(app, "native drop glow trace", (w) => w?.topStrip?.glowTrace?.length > 3, 8000, { stripTrace: "glow", fields: ["windows.topStrip"] });
+        assert.deepEqual(nativeWindow(state).topStrip.glowTrace.map(([t, x]) => [t * 1000, x]), out.glowMotion[name].slice(-128));
+      }
     }
     out.dockedDownloadsAt = await run(`
       return act("w1", "click:${W - 25},21").then(() => settle(100)).then(() => st().closePanel("w1")).then(() => settle(600)).then(() => win("w1"))
@@ -315,51 +449,97 @@ async function measure(native) {
             return edges;
           });
         })
-        .then((edges) => { st().setDownloadsOpen("w1", false); return settle(600).then(() => edges); });`);
+        .then((edges) => edges);`);
+    assert.deepEqual(downloadEdges(await pointSamples(app, downloadsPoints)), out.dockedDownloadsAt);
+    await run(`st().setDownloadsOpen("w1", false); return settle(600);`);
     if (native) {
-      out.hiddenTop = await run(`
-        const flick = [["began", 0], ["changed", -18], ["changed", -22], ["changed", -22], ["ended", 0]].map(([phase, dx], i) => ({ phase, dx, dy: 0, atMs: i * 16, timestampMs: i * 16, dispatch: "app" }));
-        const points = [[600, 2], [600, 24], [1569, 27]];
-        const seen = { points: [] };
-        st().toggleSidebar("w1");
-        return settle(800).then(() => win("w1")).then((n) => points.reduce((chain, [x, y]) => chain.then(() => {
-            const at = { x, y };
-            return act("w1", "hit:" + x + "," + y).then((hit) => (at.hit = hit))
-              .then(() => globalThis.expo.modules.SolaraFileDrop.devDrag("w1", "move", x, y, { urls: ["https://dropped.example/"] })).then((r) => (at.drag = r))
-              .then(() => globalThis.expo.modules.SolaraFileDrop.devDrag("w1", "cancel", x, y, {}))
-              .then(() => globalThis.expo.modules.SolaraSwipe.devSimulate(x, y, n, flick, true)).then((r) => (at.swipe = r.where))
-              .then(() => settle(500)).then(() => { at.profile = st().windows.w1.profileId; at.live = globalThis.acLayout.peek["strip:w1"]?.live ?? null; st().switchProfile("w1", "default"); seen.points.push(at); return settle(300); });
-          }), Promise.resolve()))
-          .then(() => { st().toggleSidebar("w1"); return settle(600); }).then(() => seen);`);
+      out.hiddenTop = { points: [] };
+      await run(`st().toggleSidebar("w1"); return settle(800);`);
+      for (const [x, y] of [[600, 2], [600, 24], [1569, 27]]) {
+        const point = { x, y, hit: await run(`return act("w1", "hit:${x},${y}");`) };
+        const beforeDrag = await untilSnapshot(app, "hidden top hit before drag", (w) => w?.topStrip?.peek?.live === false &&
+          w.stripPoints.some((p) => p.x === x && p.y === y && p.hit === point.hit), 8000, { stripPoints: [[x, y]], fields: [...STRIP_FIELDS, "root.fileDropSequence"] });
+        assert.doesNotMatch(point.hit, /StripPeek|SolaraHostedView|FileDropView|SwipeArea/, `the click at ${x},${y} reaches ${point.hit}`);
+        point.drag = await run(`return globalThis.expo.modules.SolaraFileDrop.devDrag("w1", "move", ${x}, ${y}, { urls: ["https://dropped.example/"] });`);
+        const destination = /^(\S+) ([0-9]+)$/.exec(point.drag);
+        assert.ok(destination, `drag move result: ${point.drag}`);
+        assert.doesNotMatch(point.drag, /FileDropView/, `the drop at ${x},${y} goes to ${point.drag}`);
+        const target = JSON.parse(await run(`return win("w1").then((n) => globalThis.expo.modules.SolaraPages.devDropTarget(n, ${x}, ${y}, "public.url"));`));
+        assert.ok(Object.hasOwn(target, "view") && Array.isArray(target.chain), `drop target result: ${JSON.stringify(target)}`);
+        const duringDrag = await untilSnapshot(app, "hidden top drop during move", (w, state) => w?.topStrip?.peek?.live === false &&
+          state.fileDropSequence === beforeDrag.fileDropSequence + 1 && state.fileDropResults.some((r) =>
+            r.sequence === beforeDrag.fileDropSequence + 1 && r.windowId === "w1" && r.phase === "move" && r.result === point.drag) &&
+          w.dropTargets.length === 1,
+          8000, { dropTargets: [{ x, y, type: "public.url" }], tabDrag: true, fileDropAfter: beforeDrag.fileDropSequence,
+            fields: [...STRIP_FIELDS, "root.fileDropSequence", "root.fileDropResults"] });
+        assert.deepEqual(nativeWindow(duringDrag).dropTargets, [{ x, y, type: "public.url", view: target.view, chain: target.chain }]);
+        await run(`return globalThis.expo.modules.SolaraFileDrop.devDrag("w1", "cancel", ${x}, ${y}, {});`);
+        const before = await untilSnapshot(app, "before hidden top swipe", () => true);
+        Object.assign(point, await run(`
+          const flick = [["began", 0], ["changed", -18], ["changed", -22], ["changed", -22], ["ended", 0]].map(([phase, dx], i) => ({ phase, dx, dy: 0, atMs: i * 16, timestampMs: i * 16, dispatch: "app" }));
+          return win("w1").then((n) => globalThis.expo.modules.SolaraSwipe.devSimulate(${x}, ${y}, n, flick, true)).then((r) => settle(500)
+            .then(() => ({ swipe: r.where, profile: st().windows.w1.profileId, live: globalThis.acLayout.peek["strip:w1"]?.live ?? null })));`));
+        await untilSnapshot(app, "hidden top swipe and peek visibility", (w, state) => state.swipeSimulation.count === before.swipeSimulation.count + 1 &&
+          w?.profileId === point.profile && state.swipeSimulation.where?.hit === point.swipe.hit && state.swipeSimulation.where?.target === point.swipe.target &&
+          w?.topStrip?.peek?.live === point.live);
+        assert.doesNotMatch(String(point.swipe?.hit), /StripPeek|SolaraHostedView|FileDropView|SwipeArea/, `the swipe at ${x},${y} hits ${point.swipe?.hit}`);
+        assert.equal(point.profile, "default", `the swipe at ${x},${y} paged the strip's profiles`);
+        assert.equal(point.live, false, "the peek stayed hidden");
+        out.hiddenTop.points.push(point);
+        await run(`st().switchProfile("w1", "default"); return settle(300);`);
+      }
+      await run(`st().toggleSidebar("w1"); return settle(600);`);
       const live = `globalThis.acLayout.peek["strip:w1"]?.live ?? null`;
-      out.peekHover = await run(`
-        const seen = {};
+      out.peekHover = {};
+      out.peekHover.shown = await run(`
         st().toggleSidebar("w1");
         return settle(500)
-          .then(() => globalThis.acLayout.peek["strip:w1"].show()).then(() => settle(500)).then(() => (seen.shown = ${live}))
-          .then(() => act("w1", "mouse:moved:300,24")).then(() => settle(150)).then(() => act("w1", "mouse:moved:520,30")).then(() => settle(500))
-          .then(() => { seen.overStrip = ${live}; seen.hit = null; return act("w1", "hit:520,30"); }).then((hit) => (seen.hit = hit))
-          .then(() => act("w1", "mouse:moved:520,160")).then(() => settle(600)).then(() => (seen.away = ${live}))
-          .then(() => globalThis.expo.modules.SolaraTopStrip.peekMonitors()).then((n) => (seen.afterHide = n))
-          .then(() => globalThis.acLayout.peek["strip:w1"].show()).then(() => settle(500)).then(() => globalThis.expo.modules.SolaraTopStrip.peekMonitors()).then((n) => (seen.whileOut = n))
-          .then(() => { st().toggleSidebar("w1"); return settle(700); }).then(() => globalThis.expo.modules.SolaraTopStrip.peekMonitors()).then((n) => (seen.afterStripBack = n))
-          .then(() => { seen.w2 = st().createWindow({ frame: [200, 160, 1200, 700] }); return settle(2500); })
-          .then(() => { st().toggleSidebar(seen.w2); return settle(600); }).then(() => globalThis.acLayout.peek["strip:" + seen.w2]?.show()).then(() => settle(500))
-          .then(() => globalThis.expo.modules.SolaraTopStrip.peekMonitors()).then((n) => (seen.secondOut = n))
-          .then(() => { st().closeWindow(seen.w2); return settle(1500); }).then(() => globalThis.expo.modules.SolaraTopStrip.peekMonitors()).then((n) => (seen.afterClose = n))
-          .then(() => seen);`);
+          .then(() => globalThis.acLayout.peek["strip:w1"].show()).then(() => settle(500)).then(() => ${live});`);
+      await untilSnapshot(app, "native peek shown", (w) => w?.topStrip?.peek?.live === out.peekHover.shown);
+      Object.assign(out.peekHover, await run(`return act("w1", "mouse:moved:300,24").then(() => settle(150)).then(() => act("w1", "mouse:moved:520,30")).then(() => settle(500))
+        .then(() => act("w1", "hit:520,30")).then((hit) => ({ overStrip: ${live}, hit }));`));
+      await untilSnapshot(app, "native peek stays under hover", (w) => w?.topStrip?.peek?.live === out.peekHover.overStrip &&
+        w.stripPoints.some((p) => p.x === 520 && p.y === 30 && p.hit === out.peekHover.hit), 8000, { stripPoints: [[520, 30]] });
+      Object.assign(out.peekHover, await run(`return act("w1", "mouse:moved:520,160").then(() => settle(600))
+        .then(() => globalThis.expo.modules.SolaraTopStrip.peekMonitors()).then((afterHide) => ({ away: ${live}, afterHide }));`));
+      await untilSnapshot(app, "native peek hidden after hover", (w) => w?.topStrip?.peek?.live === out.peekHover.away && w.topStrip.peekMonitors === out.peekHover.afterHide);
+      out.peekHover.whileOut = await run(`globalThis.acLayout.peek["strip:w1"].show(); return settle(500).then(() => globalThis.expo.modules.SolaraTopStrip.peekMonitors());`);
+      await untilSnapshot(app, "native peek monitors while out", (w) => w?.topStrip?.peek?.live === true && w.topStrip.peekMonitors === out.peekHover.whileOut);
+      out.peekHover.afterStripBack = await run(`st().toggleSidebar("w1"); return settle(700).then(() => globalThis.expo.modules.SolaraTopStrip.peekMonitors());`);
+      const stripRestored = await untilSnapshot(app, "native peek monitors after strip restore", (w) => w?.topStrip?.peekMonitors === out.peekHover.afterStripBack);
+      out.peekHover.w2 = await run(`const id = st().createWindow({ frame: [200, 160, 1200, 700] }); return settle(2500).then(() => id);`);
+      const w2 = JSON.stringify(out.peekHover.w2);
+      out.peekHover.secondOut = await run(`st().toggleSidebar(${w2}); return settle(600).then(() => globalThis.acLayout.peek["strip:" + ${w2}]?.show()).then(() => settle(500))
+        .then(() => globalThis.expo.modules.SolaraTopStrip.peekMonitors());`);
+      await untilSnapshot(app, "native second window peek monitors", (_, state) => state.windows.some((w) => w.id === out.peekHover.w2 && w.topStrip?.peek?.live === true &&
+        w.topStrip.peekMonitors === out.peekHover.secondOut), 8000, { windowId: out.peekHover.w2 });
+      out.peekHover.afterClose = await run(`st().closeWindow(${w2}); return settle(1500).then(() => globalThis.expo.modules.SolaraTopStrip.peekMonitors());`);
+      const final = await untilSnapshot(app, "native peek monitors after second window closes", (w, state) => w?.topStrip?.peekMonitors === out.peekHover.afterClose &&
+        !state.windows.some((w) => w.id === out.peekHover.w2), 8000, { windowId: undefined });
+      assert.equal(nativeWindow(stripRestored).topStrip.peekMonitors, out.peekHover.afterStripBack, "native peek monitors after strip restore");
+      assert.equal(nativeWindow(final).topStrip.peekMonitors, out.peekHover.afterClose, "native peek monitors after second window closes");
     }
     const t2 = out.spans.filter(([, , k]) => k !== "SolaraUI.StripNewTabButton").at(-1);
     await run(`return act("w1", "click:${t2[0] + 70},21").then(() => settle(400));`);
     out.clicked = await run(`return st().windows.w1.activeTabIds.default;`);
+    await untilSnapshot(app, "clicked native tab", (w) => w?.selectedTabId === out.clicked);
     out.motion = await run(`
       const size = ${native ? `() => globalThis.expo.modules.SolaraTopStrip.groupSize("w1", "g1")` : `() => Promise.resolve(globalThis.acStrip.groupSize("g1"))`};
       const arm = ${native ? `() => globalThis.expo.modules.SolaraTopStrip.traceGroup("w1", "g1")` : `() => Promise.resolve(globalThis.acStrip.traceGroup("g1"))`};
       const trace = ${native ? `() => globalThis.expo.modules.SolaraTopStrip.groupTrace("w1")` : `() => Promise.resolve(globalThis.acStrip.groupTrace())`};
       return size().then((open) => arm().then(() => {
         st().updateGroup("g1", { collapsed: true });
-        return settle(800).then(trace).then((samples) => { st().updateGroup("g1", { collapsed: false }); return settle(800).then(() => ({ open, samples })); });
+        return settle(800).then(trace).then((samples) => ({ open, samples }));
       }));`);
+    if (native) {
+      const state = await untilSnapshot(app, "native group trace", (w) => w?.topStrip?.groupTrace?.length > 3, 8000, { stripTrace: "group", fields: ["windows.topStrip"] });
+      const trace = nativeWindow(state).topStrip.groupTrace;
+      const captured = trace.filter(([t]) => t <= out.motion.samples.at(-1)[0]);
+      assert.deepEqual(captured, out.motion.samples, "the native trace holds every JS collapse sample, from the first to the last read");
+    }
+    await run(`st().updateGroup("g1", { collapsed: false });`);
+    if (native) await untilSnapshot(app, "native restored group width", (w) => Number.isFinite(out.motion.open) && w?.topStrip?.groupSizes.g1 === out.motion.open);
+    else await run(`return settle(800);`);
     out.room = await run(`
       const key = "g1a,g1b";
       const trace = ${native ? `() => globalThis.expo.modules.SolaraTopStrip.slotTrace("w1")` : `() => Promise.resolve(globalThis.acStrip.slotTrace(key))`};
@@ -367,9 +547,18 @@ async function measure(native) {
       const path = ["222,21", "232,21", "640,21", ...Array(4).fill("640,21")].join(";");
       return arm.then(() => act("w1", "drag:" + path)).then(() => settle(150 + 74 * 16 + 700)).then(trace).then((samples) => {
         const moved = st().windows.w1.tabIds.indexOf("t1") > st().windows.w1.tabIds.indexOf("g1b");
-        st().placeTabs(["t1"], { pinned: false, beforeId: "g1a" });
-        return settle(500).then(() => ({ moved, samples }));
+        return { moved, samples, tabIds: st().windows.w1.tabIds.slice() };
       });`);
+    const dragged = await untilSnapshot(app, "dragged native order", (w) => w.tabIds.includes("t1") && w.tabIds.includes("g1b") &&
+      (w.tabIds.indexOf("t1") > w.tabIds.indexOf("g1b")) === out.room.moved);
+    assert.deepEqual(nativeWindow(dragged).tabIds, out.room.tabIds);
+    if (native) {
+      const state = await untilSnapshot(app, "native slot trace", (w) => w?.topStrip?.slotTrace?.length > 3, 8000, { stripTrace: "slot", fields: ["windows.topStrip"] });
+      assert.deepEqual(nativeWindow(state).topStrip.slotTrace, out.room.samples.slice(-128));
+    }
+    await run(`st().placeTabs(["t1"], { pinned: false, beforeId: "g1a" }); return settle(500);`);
+    const haptics = await untilSnapshot(app, "final native haptics", () => true, 8000, { fields: ["root.haptics"] });
+    assert.equal(haptics.haptics.performed, 0, "hidden drag and swipe paths performed no haptic");
     return { ...out, run, app };
   } catch (e) {
     await app.quit();
@@ -401,12 +590,24 @@ try {
       const g1 = native.items.items.find((i) => i.kind === "groupChip" && i.id === "g1");
       await native.run(`return act("w1", "click:${g1.windowX + g1.width / 2},21").then(() => settle(500));`);
       assert.equal(await native.run(`return st().groups.g1.collapsed;`), true);
-      await native.run(`st().updateGroup("g1", { collapsed: false }); return settle(500);`);
+      await untilSnapshot(native.app, "collapsed native group", (w) => w?.topStrip?.groups.some((g) => g.id === "g1" && g.collapsed));
+      await native.run(`st().updateGroup("g1", { collapsed: false });`);
     });
     await rep.check("hovering moves nothing", async () => {
+      await untilSnapshot(native.app, "native expanded group before hover", (w) => Number.isFinite(native.motion.open) &&
+        w?.topStrip?.groups.some((g) => g.id === "g1" && g.collapsed === false) && w.topStrip.groupSizes.g1 === native.motion.open);
       const result = JSON.parse(await native.run(`return globalThis.expo.modules.SolaraTopStrip.hoverShifts("w1");`));
       assert.ok(result.hovered.length > 5, `hovered ${result.hovered.length}`);
       assert.deepEqual(result.shifts, []);
+      const state = await untilSnapshot(native.app, "native hover targets", (w) => w?.hoverLayout?.targets.length > 5, 8000, { hoverArea: "topStrip" });
+      const baseline = nativeWindow(state).hoverLayout;
+      assert.equal(baseline.targets.length, result.hovered.length);
+      for (const target of baseline.targets) {
+        assert.equal((await native.app.probe("input.hover", { windowId: "w1", area: "topStrip", target, on: true })).delivered, true);
+        const during = await untilSnapshot(native.app, "hovered native frames", (w) => !!w?.hoverLayout, 8000, { hoverArea: "topStrip" });
+        assert.deepEqual(nativeWindow(during).hoverLayout.frames, baseline.frames);
+        assert.equal((await native.app.probe("input.hover", { windowId: "w1", area: "topStrip", target, on: false })).delivered, true);
+      }
     });
   }
   if (rn && native) {
@@ -693,7 +894,10 @@ try {
     }
   }
 } finally {
-  if (native) await native.app.quit();
+  if (native) {
+    try { assert.equal((await untilSnapshot(native.app, "native haptics before quit", () => true, 8000, { fields: ["root.haptics"] })).haptics.performed, 0); }
+    finally { await native.app.quit(); }
+  }
   if (!keep && rep.results.every((r) => r.ok)) for (const name of ["rn", "native", "rn.png", "native.png", ...LOOKS.flatMap(([look]) => [`rn-${look}.png`, `native-${look}.png`]), ...[0.25, 0.5, 0.75].flatMap((v) => [`rn-peek-${v}.png`, `native-peek-${v}.png`])]) rmSync(join(scratch, name), { recursive: true, force: true });
   else rep.say(`kept ${scratch}`);
 }

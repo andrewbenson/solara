@@ -275,7 +275,7 @@ final class ProbeHost {
 
   private func validateSnapshot(_ request: ProbeRequest) throws -> (origin: String, username: String)? {
     try checkSnapshot(request)
-    guard Set(request.args.keys).isSubset(of: ["windowId", "dropTargets", "viewFrames", "hitPoint", "reactBlockerStep", "savedLogin", "hoverPresentation", "hoverArea", "textFields", "shortcuts", "shortcutTable", "shortcutTrace", "fields", "dragPoints", "tabDrag", "fileDropAfter"]),
+    guard Set(request.args.keys).isSubset(of: ["windowId", "dropTargets", "viewFrames", "hitPoint", "reactBlockerStep", "savedLogin", "hoverPresentation", "hoverArea", "textFields", "shortcuts", "shortcutTable", "shortcutTrace", "fields", "stripPoints", "topStrip", "stripTrace", "stripLabels", "dragPoints", "tabDrag", "fileDropAfter"]),
       request.args["windowId"] == nil || request.args["windowId"] is String else { throw ProbeFailure.invalidArgument }
     if let raw = request.args["dragPoints"] {
       guard let points = raw as? [[String: Any]], points.count <= 16,
@@ -310,6 +310,20 @@ final class ProbeHost {
     if let value = request.args["fileDropAfter"] {
       guard let after = Self.number(value), after >= 0, after <= 9007199254740991,
         after.rounded(.down) == after, request.args["tabDrag"] as? Bool == true else { throw ProbeFailure.invalidArgument }
+    }
+    if let value = request.args["stripLabels"] {
+      guard let flag = value as? NSNumber, CFGetTypeID(flag) == CFBooleanGetTypeID() else { throw ProbeFailure.invalidArgument }
+    }
+    if let value = request.args["stripTrace"] {
+      guard let trace = value as? String, ["group", "slot", "glow", "peek"].contains(trace),
+        request.args["topStrip"] as? Bool == true, request.args["windowId"] is String else { throw ProbeFailure.invalidArgument }
+    }
+    if let value = request.args["topStrip"] {
+      guard let flag = value as? NSNumber, CFGetTypeID(flag) == CFBooleanGetTypeID() else { throw ProbeFailure.invalidArgument }
+    }
+    if let value = request.args["stripPoints"] {
+      guard let points = value as? [[NSNumber]], points.count <= 4, request.args["windowId"] is String,
+        points.allSatisfy({ $0.count == 2 && $0.allSatisfy({ CFGetTypeID($0) != CFBooleanGetTypeID() && $0.doubleValue.isFinite && $0.doubleValue >= 0 && $0.doubleValue <= 32768 }) }) else { throw ProbeFailure.invalidArgument }
     }
     if let textFields = request.args["textFields"] {
       guard let textFields = textFields as? NSNumber, CFGetTypeID(textFields) == CFBooleanGetTypeID() else { throw ProbeFailure.invalidArgument }
@@ -362,6 +376,9 @@ final class ProbeHost {
     let shortcutTrace = request.args["shortcutTrace"] as? Bool ?? false
     let tabDrag = request.args["tabDrag"] as? Bool ?? false
     let fileDropAfter = Self.number(request.args["fileDropAfter"])
+    let topStrip = request.args["topStrip"] as? Bool ?? false
+    let stripTrace = request.args["stripTrace"] as? String
+    let stripLabels = request.args["stripLabels"] as? Bool ?? false
     let textFields = request.args["textFields"] as? Bool ?? false
     let dropTargets = request.args["dropTargets"] as? [[String: Any]] ?? []
     let viewFrames = request.args["viewFrames"] as? [String] ?? []
@@ -377,7 +394,7 @@ final class ProbeHost {
     for attempt in 0..<2 {
       let state = initial.state
       let ids = wanted == "settings" ? [] : wanted.map { [$0] } ?? state.windowOrder
-      var windows: [[String: Any]] = ids.compactMap { id in
+      var windows: [[String: Any]] = try ids.compactMap { id in
         guard let model = state.windows[id] else { return nil }
         let window = WindowHost.window(id: id)
         let chrome = SolaraCoreHost.chromeWindows.first { entry in
@@ -462,6 +479,18 @@ final class ProbeHost {
               "value": omniboxText(field["value"] as? String)])
           }
         }
+        var stripPoints: [[String: Any]] = []
+        if let points = request.args["stripPoints"] as? [[Double]], let chromeNumber,
+          let frameView = (chromeWindow ?? window)?.contentView?.superview {
+          guard points.allSatisfy({ $0[0] <= frameView.bounds.width && $0[1] <= frameView.bounds.height }) else { throw ProbeFailure.invalidArgument }
+          for source in WindowPointRead.samples(windowNumber: chromeNumber, points: points, labels: stripLabels) {
+            var row = source
+            for key in ["tip", "ax"] {
+              if let text = source[key] as? String { row[key] = labelText(text) }
+            }
+            stripPoints.append(row)
+          }
+        }
         let responder = (chromeWindow ?? window)?.firstResponder.map { NSStringFromClass(type(of: $0)) }
         let textFieldCount = textFields ? chromeNumber.flatMap { WindowAccessibilityRead.textFieldCount(windowNumber: $0) } : nil
         return ["id": id, "kind": model.fields.kind ?? "browser", "profileId": model.profileId,
@@ -479,6 +508,7 @@ final class ProbeHost {
           "sidebarChromeMetrics": Self.value(SidebarChromeRead.snapshot(windowId: id)),
           "sidebarAddressBar": Self.value(SidebarAddressBarRead.snapshot(windowId: id)),
           "toolbarHosts": ToolbarRead.snapshot(windowId: id),
+          "topStrip": topStrip ? Self.value(TopStripRead.snapshot(windowId: id, trace: stripTrace)) : NSNull(), "stripPoints": stripPoints,
           "hoverCard": Self.value(SidebarHoverCardRead.snapshot(windowId: id)),
           "hoverPresentation": Self.value(hoverPresentation.flatMap { SidebarHoverCardRead.presentation(windowId: id, sample: $0) }),
           "hoverPresentationTrace": SidebarHoverCardRead.trace(windowId: id),
@@ -589,7 +619,7 @@ final class ProbeHost {
           "fileDropSequence": Self.dragSequence(FileDragRead.results.last?["sequence"]) ?? 0,
           "hoverStats": HoverStatsRead.snapshot(), "hoverStatsLive": HoverStatsRead.current(),
           "windows": windows, "tabs": tabs, "downloads": ["count": state.downloads.count, "finished": state.downloads.filter { $0.state == "finished" }.count], "profiles": NSNull(),
-          "capabilities": ["available": ["windows.frame", "windows.chromeWindowNumber", "windows.accessibilityLayers", "windows.focusedURL", "windows.omnibox", "windows.split", "windows.tour", "windows.folderPanel", "windows.iconPicker", "windows.shell", "windows.sidebarShell", "windows.sidebarChromeMetrics", "windows.sidebarAddressBar", "windows.hoverCard", "windows.reactBlockers", "windows.dropTargets", "windows.viewFrames", "windows.hitSlot", "windows.hitView", "windows.firstResponder", "windows.textFieldCount", "windows.media", "windows.media.labels", "windows.mediaKinds", "windows.paneOverlays", "poolAvailable", "onboarding", "newTabAvailable", "windowDragCount", "swipeSimulation", "haptics", "videoUpscaling", "savedLogin", "tabs.url", "tabs.title", "tabs.customTitle", "tabs.customIcon", "tabs.zoom", "windows.overlays.selection", "windows.overlays.zoom", "windows.overlays.history", "windows.overlays.downloads", "windows.overlays.sadTab", "downloads.count", "downloads.finished", "windows.settings.layout", "windows.settings.search", "windows.toolbarStates", "hostedKinds", "windows.hoverPresentation", "windows.hoverPresentationTrace", "windows.hoverLayout", "tabs.pinned", "tabs.pinnedAsRow", "windows.shellHover", "hoverStats", "hoverStatsLive", "windows.toolbarHosts", "windows.shortcuts", "windows.shortcutTable", "windows.shortcuts.focusTrace", "snapshot.fields", "windows.shortcutFields", "windows.omnibox.value", "windows.panelOpen", "windows.sidebarOpen", "windows.activeTabIds", "tabs.find", "windows.sidebarDrag", "windows.savedFrame", "windows.screenFrame", "tabs.tileFolderId", "groups", "splits", "dragPreview", "tabDrag", "fileDragURLs", "fileDropResults", "windows.dragPoints", "fileDropSequence"],
+          "capabilities": ["available": ["windows.frame", "windows.chromeWindowNumber", "windows.accessibilityLayers", "windows.focusedURL", "windows.omnibox", "windows.split", "windows.tour", "windows.folderPanel", "windows.iconPicker", "windows.shell", "windows.sidebarShell", "windows.sidebarChromeMetrics", "windows.sidebarAddressBar", "windows.hoverCard", "windows.reactBlockers", "windows.dropTargets", "windows.viewFrames", "windows.hitSlot", "windows.hitView", "windows.firstResponder", "windows.textFieldCount", "windows.media", "windows.media.labels", "windows.mediaKinds", "windows.paneOverlays", "poolAvailable", "onboarding", "newTabAvailable", "windowDragCount", "swipeSimulation", "haptics", "videoUpscaling", "savedLogin", "tabs.url", "tabs.title", "tabs.customTitle", "tabs.customIcon", "tabs.zoom", "windows.overlays.selection", "windows.overlays.zoom", "windows.overlays.history", "windows.overlays.downloads", "windows.overlays.sadTab", "downloads.count", "downloads.finished", "windows.settings.layout", "windows.settings.search", "windows.toolbarStates", "hostedKinds", "windows.hoverPresentation", "windows.hoverPresentationTrace", "windows.hoverLayout", "tabs.pinned", "tabs.pinnedAsRow", "windows.shellHover", "hoverStats", "hoverStatsLive", "windows.toolbarHosts", "windows.shortcuts", "windows.shortcutTable", "windows.shortcuts.focusTrace", "snapshot.fields", "windows.shortcutFields", "windows.omnibox.value", "windows.panelOpen", "windows.sidebarOpen", "windows.activeTabIds", "tabs.find", "windows.topStrip", "windows.stripPoints", "windows.sidebarDrag", "windows.savedFrame", "windows.screenFrame", "tabs.tileFolderId", "groups", "splits", "dragPreview", "tabDrag", "fileDragURLs", "fileDropResults", "windows.dragPoints", "fileDropSequence"],
             "partial": ["tabs.live"], "unavailable": ["windows.occluded", "windows.selectedTabIds", "windows.spaces", "windows.panes", "windows.focus", "windows.views", "tabs.loading", "tabs.visible", "profiles"]]]
         return ["id": request.id, "protocol": 1, "result": Self.project(result, fields: request.args["fields"] as? [String])]
       }
@@ -745,6 +775,20 @@ final class ProbeHost {
       "opacity": source["opacity"] ?? NSNull(), "frame": rect(source["card"]),
       "list": rect(source["list"]),
       "controls": controls.keys.sorted().map { ["id": $0, "frame": rect(controls[$0])] }]
+  }
+
+  private func labelText(_ raw: String) -> String {
+    let ancestors = raw.components(separatedBy: " < ").map { ancestor in
+      ancestor.components(separatedBy: "\n").map { line in
+        line.components(separatedBy: "|").map { part in
+          if part.range(of: "^[A-Za-z][A-Za-z0-9+.-]*:", options: .regularExpression) != nil {
+            return safeURL(part) as? String ?? ""
+          }
+          return part
+        }.joined(separator: "|")
+      }.joined(separator: "\n")
+    }
+    return String(ancestors.joined(separator: " < ").prefix(512))
   }
 
   private func omniboxText(_ raw: String?) -> Any {

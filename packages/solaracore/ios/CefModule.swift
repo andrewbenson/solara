@@ -547,6 +547,28 @@ public enum WindowAccessibilityRead {
 #endif
 
 #if SOLARA_PROBES
+@MainActor
+public enum WindowPointRead {
+  public static func samples(windowNumber: Int, points: [[Double]], labels: Bool) -> [[String: Any]] {
+    guard let window = NSApp.window(withWindowNumber: windowNumber) else { return [] }
+    var rows: [[String: Any]] = []
+    for point in points {
+      let position = "\(point[0]),\(point[1])"
+      var row: [String: Any] = ["x": point[0], "y": point[1]]
+      if labels {
+        row["tip"] = ACChromeWindowHost.devAction("tip:" + position, window: window) ?? ""
+        row["ax"] = ACChromeWindowHost.devAction("ax:" + position, window: window) ?? ""
+      } else {
+        row["hit"] = ACChromeWindowHost.devAction("hit:" + position, window: window) ?? ""
+      }
+      rows.append(row)
+    }
+    return rows
+  }
+}
+#endif
+
+#if SOLARA_PROBES
 public enum VideoUpscalingRead {
   public static func snapshot() -> [String: Any] { SolaraCoreWebView.videoUpscalingState() as? [String: Any] ?? [:] }
 }

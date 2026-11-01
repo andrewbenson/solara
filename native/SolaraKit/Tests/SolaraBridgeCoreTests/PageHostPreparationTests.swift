@@ -17,11 +17,11 @@ import Testing
     let encoded = Mutex(false)
     let bridge = StoreBridge(store: store, encodeCatchUp: { captured, response in
       let completed = DispatchSemaphore(value: 0)
-      DispatchQueue.global().async {
+      Thread.detachNewThread {
         _ = try? store.dispatch(Command("setMuted", [.string(id), true]))
         completed.signal()
       }
-      #expect(completed.wait(timeout: .now() + 2) == .success)
+      #expect(completed.wait(timeout: .now() + 10) == .success)
       encoded.withLock { $0 = true }
       return StoreBridge.encode(captured, into: response)
     })

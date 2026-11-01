@@ -1,2 +1,3 @@
 # Prebuilt engines (scripts/fetch-engine.sh): engine/'s git tree, the release whose assets have SolaraCore-<tree:12>.tar.xz,
 # the archive's SHA-256. The release skill adds a line after publishing a release whose engine/ changed.
+a9a80762a40e890deab9db9d0ba7aff337a2f534	0.0.1	318de1662924ba974cc2ecd462cb9e3148ab90e1622910e86f3f92f480d09e38

@@ -49,6 +49,7 @@ public struct StoreConfig: Sendable, Equatable {
   public var listeners: [SettleListener] = SettleListener.app
   public var syncOrigins = false
   public var replicaProfilesFromDisk = false
+  public var nativePrivateSessionEffects = false
   public var profileDataTombstones: URL?
 
   public init() {}

@@ -424,7 +424,11 @@ public final class Store: Sendable {
     patch.fromBridge = tags && origin == .bridge
     patch.fromSync = fromSync
     var seen = Set<Effect>()
-    let effects = session.effects.filter { seen.insert($0).inserted }
+    var privateEnds = Set<JSKey>()
+    let effects = session.effects.filter { effect in
+      if case .endPrivateSession(let session) = effect { return privateEnds.insert(JSKey(session)).inserted }
+      return seen.insert(effect).inserted
+    }
     let commit = Commit(
       rev: rev, origin: origin, fromSync: fromSync, commands: commands, changes: changes, patch: patch, effects: effects,
       result: session.result, durable: durable, state: changed ? session.state : before,
@@ -446,6 +450,38 @@ public final class Store: Sendable {
 
   public func patches(since rev: Int) -> [Patch]? {
     sequence { core.withLock { $0.suffix(since: rev) } }
+  }
+
+  public func setPrivateSessionGeneration(session: String, generation: String) {
+    sequence { core.withLock { core in
+      core.memory.privateSessionGenerations[JSKey(session)] = generation
+      core.held?.memory.privateSessionGenerations[JSKey(session)] = generation
+    } }
+  }
+
+  @discardableResult
+  public func confirmPrivateSessionEnded(session: String, profiles: [String], generation: String? = nil) -> Bool {
+    sequence {
+      let active = core.withLock { core in
+        if let generation, core.memory.privateSessionGenerations[JSKey(session)] != generation { return true }
+        return core.state.windows.values.contains { window in
+          window.incognito && (profiles.contains { $0.jsEquals(window.profileId) } || core.state.privateSession(window.profileId)?.jsEquals(session) == true)
+        }
+      }
+      guard !active else { return false }
+      core.withLock { core in
+        core.memory.privateSessionGenerations.removeValue(forKey: JSKey(session))
+        scrubPrivateClosingMemory(&core.memory, session: session, profiles: profiles)
+        if let held = core.held {
+          held.memory.privateSessionGenerations.removeValue(forKey: JSKey(session))
+          scrubPrivateClosingMemory(&held.memory, session: session, profiles: profiles)
+          if let heard = held.heard { held.heard = scrubPrivateClosingState(heard, session: session, profiles: profiles) }
+        }
+        core.ring.removeAll(keepingCapacity: false)
+        core.ringStart = 0
+      }
+      return true
+    }
   }
 
   private var ownsSequence: Bool {

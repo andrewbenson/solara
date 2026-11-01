@@ -178,6 +178,8 @@ NSArray<SolaraCoreProfile *> *ProfilesWithTabs(SolaraCoreWindowController *contr
 }
 
 + (void)windowClosed:(SolaraCoreWindowController *)controller {
+  if (controller.appWindowId.length)
+    [NSNotificationCenter.defaultCenter postNotificationName:@"SolaraPrivateWindowClosed" object:nil userInfo:@{@"id" : controller.appWindowId}];
   NSDictionary<NSNumber *, NSString *> *strips = [KnownStrips() objectForKey:controller];
   [KnownStrips() removeObjectForKey:controller];
   if (!Observed() || !strips.count) return;

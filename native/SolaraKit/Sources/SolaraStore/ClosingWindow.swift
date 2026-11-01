@@ -14,6 +14,64 @@ struct ClosingWindowUndo: Sendable, Equatable {
   var endedHeldPages: Set<String> = []
 }
 
+func scrubPrivateClosingState(_ source: BrowserState, session: String, profiles: [String]) -> BrowserState {
+  func retired(_ profile: String) -> Bool {
+    Ids.isIncognitoProfile(profile) && (profiles.contains { $0.jsEquals(profile) } || source.privateSession(profile)?.jsEquals(session) == true)
+  }
+  let windows = source.windows.values.filter { $0.incognito && retired($0.profileId) }
+  let windowIds = Set(windows.map { JSKey($0.id) })
+  let tabIds = Set(source.tabs.values.filter { retired($0.profileId) || windowIds.contains(JSKey($0.windowId)) }.map { JSKey($0.id) })
+  let groupIds = Set(source.groups.values.filter { retired($0.profileId) || windowIds.contains(JSKey($0.windowId)) }.map { JSKey($0.id) })
+  let ids = windowIds.union(tabIds).union(groupIds).union(profiles.map(JSKey.init))
+  func references(_ value: JSONValue) -> Bool {
+    switch value {
+    case .string(let value): retired(value) || ids.contains(JSKey(value)) || value.hasPrefix("restore:") && ids.contains(JSKey(String(value.dropFirst(8))))
+    case .array(let values): values.contains(where: references)
+    case .object(let values): values.contains { ids.contains(JSKey($0.key)) || references($0.value) }
+    default: false
+    }
+  }
+  let cleaner = Session(state: source, memory: StoreMemory(), env: PlainWebAddressing(), config: StoreConfig(), now: 0)
+  for window in windows { cleaner.closeWindow(window.id) }
+  var next = cleaner.state
+  next.tabs = next.tabs.filtered { !retired($0.profileId) && !tabIds.contains(JSKey($0.id)) }
+  next.groups = next.groups.filtered { !retired($0.profileId) && !references($0.jsonValue) }
+  next.splits = next.splits.filtered { !references($0.jsonValue) }
+  next.peeks = Table(next.peeks.map.filter { !windowIds.contains(JSKey($0)) && !references($1.jsonValue) })
+  next.closedTabs = next.closedTabs.filter { !retired($0.tab.profileId) && !references($0.jsonValue) }
+  next.closedWindows = next.closedWindows.filter { !retired($0.profileId) && !references($0.jsonValue) }
+  next.closedGroups = next.closedGroups.filter { !$0.tabs.contains { retired($0.profileId) } && !references($0.jsonValue) }
+  next.deletedGroups = next.deletedGroups.filter { !$0.tabs.contains { retired($0.profileId) } && !references($0.jsonValue) }
+  next.cleanedTabs = next.cleanedTabs.filter { !retired($0.tab.profileId) && !references($0.jsonValue) }
+  next.privateCleanedTabs = next.privateCleanedTabs.filter { key, _ in !windowIds.contains(JSKey(key)) }.mapValues { $0.filter { !retired($0.tab.profileId) && !references($0.jsonValue) } }
+  next.privateSiteMutes = next.privateSiteMutes.filter { key, _ in !windowIds.contains(JSKey(key)) }
+  next.parkedPins = Table(next.parkedPins.map.filter { !retired($0) && !references($1.jsonValue) })
+  next.pinChoices = Table(next.pinChoices.map.filter { key, _ in !retired(key) })
+  next.pinSync = Table(next.pinSync.map.filter { key, _ in !retired(key) })
+  next.downloads = next.downloads.filter { download in
+    if let profile = download.profile, retired(profile) { return false }
+    return !(download.offTheRecord && (download.profile ?? "").jsEquals(session))
+  }
+  next.live = next.live.filter { !tabIds.contains(JSKey($0.key)) }
+  next.find = next.find.filter { key, _ in !tabIds.contains(JSKey(key)) }
+  next.selection = next.selection.filter { key, _ in !windowIds.contains(JSKey(key)) }.mapValues { TabSelection($0.ids.filter { !tabIds.contains(JSKey($0)) }) }
+  next.selectionAnchors = next.selectionAnchors.filter { !windowIds.contains(JSKey($0)) && !tabIds.contains(JSKey($1.tabId)) }
+  next.windowUi = next.windowUi.filter { !windowIds.contains(JSKey($0)) && !references($1.jsonValue) }
+  next.caches.historyHints = next.caches.historyHints.filter { key, _ in !retired(key) }
+  next.caches.playingAudio = next.caches.playingAudio.filter { !tabIds.contains(JSKey($0)) }
+  return next
+}
+
+func scrubPrivateClosingMemory(_ memory: inout StoreMemory, session: String, profiles: [String]) {
+  memory.closingWindowUndos = memory.closingWindowUndos.compactMapValues { undo in
+    var undo = undo
+    undo.before = scrubPrivateClosingState(undo.before, session: session, profiles: profiles)
+    undo.after = scrubPrivateClosingState(undo.after, session: session, profiles: profiles)
+    return undo
+  }
+  memory.closingWindowUndos = memory.closingWindowUndos.filter { $0.value.before.windows[$0.key] != nil }
+}
+
 private func undoClosingMap<T: Equatable>(_ current: JSMap<T>, _ before: JSMap<T>, _ after: JSMap<T>) -> JSMap<T>? {
   let changed = Set(before.keys + after.keys).filter { before[$0] != after[$0] }
   guard changed.allSatisfy({ current[$0] == after[$0] }) else { return nil }

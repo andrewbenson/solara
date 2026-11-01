@@ -85,11 +85,11 @@ extension Session {
     if !s.windows.changed(from: prev.windows) { return }
     for w in prev.windows.values {
       if !w.incognito || s.windows[w.id] != nil { continue }
-      let session = s.privateSession(w.profileId)
-      if s.windows.values.contains(where: { $0.incognito && s.privateSession($0.profileId) == session }) { continue }
+      guard let session = prev.privateSession(w.profileId) else { continue }
+      if s.windows.values.contains(where: { $0.incognito && s.privateSession($0.profileId)?.jsEquals(session) == true }) { continue }
       for d in s.downloads where downloadSession(s, d) == session && d.isDownloading { emit(.cancelDownload(id: d.id)) }
       forgetDownloads(w.profileId)
-      if let session { emit(.endPrivateSession(session: session)) }
+      emit(.endPrivateSession(session: session))
     }
   }
 }

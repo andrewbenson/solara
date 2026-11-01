@@ -6,6 +6,7 @@ public struct StoreMemory: Sendable, Equatable {
   public var lastPinChoice: Double = 0
   public var remotePinDeletions: JSMap<Double> = JSMap()
   public var endedPrivateDownloads: Set<String> = []
+  var privateSessionGenerations: [JSKey: String] = [:]
   public var closingWindows: Set<String> = []
   var closingWindowUndos: [String: ClosingWindowUndo] = [:]
   var hydrating = false

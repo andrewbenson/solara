@@ -1,0 +1,1 @@
+../../../../packages/solaracore/ios/NativePrivateSessionCleanup.swift

@@ -101,10 +101,12 @@ final class WindowManager: NSObject, NSWindowDelegate {
     if kind != "browser" && !small { return openAux(id: id, kind: kind, title: title) }
     guard let makeWindow = WindowHost.makeWindow, let makeContentView = WindowHost.makeContentView else { return }
     if !small, ChromeWindows.takeDismissed(appWindow: id) {
+      NotificationCenter.default.post(name: Notification.Name("SolaraPrivateWindowClosed"), object: nil, userInfo: ["id": id])
       emit?("onWindowEvent", ["type": "close", "id": id])
       return
     }
     if small, let claim, ChromeWindows.takeDismissed(appWindow: claim) {
+      NotificationCenter.default.post(name: Notification.Name("SolaraPrivateWindowClosed"), object: nil, userInfo: ["id": id])
       emit?("onWindowEvent", ["type": "close", "id": id])
       return
     }
@@ -532,6 +534,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
   func close(id: String) {
     if pendingOpens.removeValue(forKey: id) != nil {
       pendingOrder.removeAll { $0 == id }
+      NotificationCenter.default.post(name: Notification.Name("SolaraPrivateWindowClosed"), object: nil, userInfo: ["id": id])
       return
     }
     entrances[id] = nil
@@ -588,6 +591,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
 
   func windowWillClose(_ notification: Notification) {
     guard let window = notification.object as? NSWindow, let id = id(of: window) else { return }
+    NotificationCenter.default.post(name: Notification.Name("SolaraPrivateWindowClosed"), object: nil, userInfo: ["id": id])
     NotificationCenter.default.removeObserver(self, name: nil, object: window)
     windows[id] = nil
     entrances[id] = nil

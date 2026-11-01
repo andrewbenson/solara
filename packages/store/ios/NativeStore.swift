@@ -20,6 +20,7 @@ public final class NativeStore: Sendable {
     var config = StoreConfig()
     config.safeMode = safeMode
     config.replicaProfilesFromDisk = scope == .settingsAndDownloads
+    config.nativePrivateSessionEffects = scope == .everything
     config.handOffPinsImmediately = false
     config.earlyLaunchTab = earlyLaunchTabSwitch(folder)
     return config
@@ -38,6 +39,7 @@ public final class NativeStore: Sendable {
   nonisolated(unsafe) static var folderLock: FolderLock?
 
   let profileDataCleanup: NativeProfileDataCleanup
+  let privateSessionEffects: NativePrivateSessionEffects
   let host: StoreHost
   var bridge: StoreBridge { host.bridge }
   var writer: PersistenceWriter? { host.writer }
@@ -48,6 +50,7 @@ public final class NativeStore: Sendable {
   @MainActor
   init(host: StoreHost, launch: SafeLaunch, folder: URL) {
     profileDataCleanup = NativeProfileDataCleanup(store: host.bridge.store)
+    privateSessionEffects = NativePrivateSessionEffects(store: host.bridge.store)
     self.host = host
     let bridge = host.bridge
     self.launch = launch
@@ -174,6 +177,7 @@ public final class NativeStore: Sendable {
       NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: nil) { _ in
         guard let store = NativeStore.shared else { return }
         store.profileDataCleanup.stop()
+        store.privateSessionEffects.stop()
         let result = store.host.termination()
         if result != .saved { NSLog("[store] quit flush: %@", result.description) }
       }
@@ -209,11 +213,13 @@ public final class NativeStore: Sendable {
 
   public func flushForQuit(barrierTimeout: TimeInterval = 0.5, writerTimeout: TimeInterval = 0.5) -> FlushResult {
     profileDataCleanup.stop()
+    privateSessionEffects.stop()
     return host.flushForQuit(barrierTimeout: barrierTimeout, writerTimeout: writerTimeout)
   }
 
   public func freeze() {
     profileDataCleanup.stop()
+    privateSessionEffects.stop()
     writer?.freeze()
   }
 }

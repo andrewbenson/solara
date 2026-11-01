@@ -113,7 +113,7 @@ values directly. Step 3's `brand-namesub` reads the product name from `engine/pa
 
 | What | Where | Value |
 |---|---|---|
-| Bundle and team id, the keychain access groups for passkeys, device-bound session keys and secure payment confirmation | `chrome/app/theme/solara/BRANDING` (`chromium-branding.patch`) | `com.hill.solara`, `33W8BDN775` |
+| Bundle and team id, the keychain access groups for passkeys, device-bound session keys and secure payment confirmation | `chrome/app/theme/solara/BRANDING` (`chromium-branding.patch`) | `network.benson.solara`, `555T74U353` |
 | The Safe Storage item | `keychain_password_mac.mm` (`chromium-safe-storage-name.patch`) | "Solara Safe Storage" / "Solara" |
 | Chrome's strings | every `.grd`, `.grdp` and `.xtb` (step 3's `brand-namesub`, `solara_namesub.py --product`) | Solara, solara:// |
 | The product logo and favicon (chrome://version, About, the NTP favicon, notifications) | `engine/chromium/src`'s logos, `favicon_ntp.png` and `product_logo_22_mono.png`, and `solara_resources.txt`'s step-3 copies | Solara's |
@@ -134,7 +134,11 @@ published with each release whose engine changed; `docs/releasing.md`). It trust
 `packages/solaracore/prebuilt-engines.tsv`: an engine with no entry there isn't fetched, and no table is ever read from
 the network, so every engine the build accepts is a reviewed change in this repo. After an engine change, rebuild incrementally
 (`scripts/agent/engine-build`, or `scripts/agent/locked chromium -- autoninja -C out/Release_GN_arm64 chrome_framework`)
-and the next app build picks it up.
+and the next app build picks it up. `engine-build` copies only the layers (`engine/chromium/apply.sh`, `engine/solaracore/apply.sh`)
+into the tree: a changed chromium patch, or a changed `solara_resources.txt` file, doesn't reach an already-built tree that
+way, and its `series.py check` fails until it does. Bring each changed file to what the series makes (the scratch copy
+`check` keeps, or the resource file itself), under the chromium lock and outside `out/`, then build; step 3 runs only
+once per tree.
 
 ## Our hooks in Chrome's code
 

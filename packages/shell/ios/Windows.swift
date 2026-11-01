@@ -943,9 +943,6 @@ enum WindowMotion {
 }
 
 public enum FocusMoves {
-  public typealias PageFocus = @MainActor (@escaping @MainActor () -> Bool) -> Bool
-  @MainActor public static var preparePageFocus: (@MainActor (NSView) -> PageFocus?)?
-
   @MainActor public static func claim(_ generation: Int, destination: NSView) {
     FocusHandoff.shared.claim(generation, destination: destination)
   }
@@ -982,8 +979,6 @@ final class FocusHandoff {
   private final class Generation {
     let id: Int
     weak var destination: NSView?
-    weak var page: NSView?
-    var pageFocus: FocusMoves.PageFocus?
     var claimed = false
     init(_ id: Int) { self.id = id }
   }
@@ -1097,12 +1092,6 @@ final class FocusHandoff {
     note("claim \(id) \(type(of: destination))")
     guard let gate = gate(of: id), live(gate), let newest = gate.generations.last, newest.id == id else { return }
     newest.destination = destination
-    newest.page = Self.webView(in: destination)
-    newest.pageFocus = MainActor.assumeIsolated {
-      guard let page = newest.page else { return nil }
-      guard let prepare = FocusMoves.preparePageFocus else { return { _ in false } }
-      return prepare(page)
-    }
     newest.claimed = true
     deliverIfReady(gate)
     DispatchQueue.main.async { [weak self, weak gate] in
@@ -1293,21 +1282,11 @@ final class FocusHandoff {
 
   private func focusClaimedPage(_ gate: Gate) {
     guard let window = gate.window, gates[ObjectIdentifier(window)] === gate, CACurrentMediaTime() < gate.deadline, Self.unfocused(window),
-      let newest = gate.generations.last, newest.claimed, let claimed = newest.destination, let page = newest.page,
-      Self.webView(in: claimed) === page,
+      let newest = gate.generations.last, newest.claimed, let claimed = newest.destination, let page = Self.webView(in: claimed),
       page.window === window, !page.isHiddenOrHasHiddenAncestor
     else { return }
     note("focus claimed page \(newest.id)")
-    let current: @MainActor () -> Bool = { [weak self, weak gate, weak newest, weak claimed, weak page, weak window] in
-      guard let self, let gate, let newest, let claimed, let page, let window else { return false }
-      return self.gates[ObjectIdentifier(window)] === gate && gate.window === window && CACurrentMediaTime() < gate.deadline &&
-        gate.generations.last === newest && newest.claimed && newest.destination === claimed && newest.page === page &&
-        Self.unfocused(window) && Self.webView(in: claimed) === page && page.window === window && !page.isHiddenOrHasHiddenAncestor
-    }
-    MainActor.assumeIsolated {
-      if let focus = newest.pageFocus { _ = focus(current) }
-      else if current() { _ = page.perform(Self.focusPageSelector) }
-    }
+    _ = page.perform(Self.focusPageSelector)
   }
 
   private static let focusPageSelector = NSSelectorFromString("focusPage")

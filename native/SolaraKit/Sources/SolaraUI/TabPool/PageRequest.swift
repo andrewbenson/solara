@@ -1,5 +1,4 @@
 import Foundation
-import SolaraStore
 
 public struct PageNavigationEntry: Codable, Equatable, Sendable {
   public let url: String
@@ -195,13 +194,6 @@ public extension PageRequest where Output == PageSiteDataResult {
 }
 
 public extension PageRequest where Output == Bool {
-  static func finishPageIssue(_ guardValue: PageIssueGuard) -> Self {
-    Self(command: .finishPageIssue(guardValue)) { value in
-      guard case .object(let fields) = value, let raw = fields["accepted"], case .bool(let accepted) = raw else { throw PageRegistryError.invalidValue }
-      return accepted
-    }
-  }
-
   static func requestPictureInPicture(_ clickAt: Double = 0, control: Int = 0) -> Self {
     Self(command: .requestPictureInPicture(clickAt, control)) { try pageDecoded($0) }
   }

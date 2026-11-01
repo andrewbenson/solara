@@ -5,20 +5,15 @@ export type PooledPageProps = {
   contentsBackgroundColor?: string | null;
   autoPictureInPicture?: boolean;
   shownUrl?: string | null;
-  navigationSeq?: number | null;
-  contextRevision?: number;
-  wasNewTab?: boolean;
-  newTabShownUrl?: string | null;
 };
 
-export type PooledPageIdentity = { tabId: string; sessionGeneration: string; registrationGeneration: number };
-export type PooledPageEvent = PooledPageIdentity & { generation: string; contextRevision: number; factsOwner: "native"; navigationOwner: "native"; eventSeq?: number; name: string; payload: Record<string, unknown> };
+export type PooledPageEvent = { tabId: string; name: string; payload: Record<string, unknown> };
 
-export type LivePooledPage = PooledPageIdentity & { generation: string; contextRevision: number; engine: string; ready: Record<string, unknown> | null; navigation: Record<string, unknown> | null };
+export type LivePooledPage = { tabId: string; engine: string; ready: Record<string, unknown> | null; navigation: Record<string, unknown> | null };
 
 export type TabPool = {
   available(): boolean;
-  pageCall(tabId: string, method: string, args: unknown[], registrationGeneration?: number): Promise<unknown>;
+  pageCall(tabId: string, method: string, args: unknown[]): Promise<unknown>;
   claimFocusPage(generation: number, tabId: string): Promise<boolean>;
   setPageProps(tabId: string, props: PooledPageProps): Promise<void>;
   livePages?(): Promise<LivePooledPage[]>;

@@ -199,16 +199,9 @@ test("replacement writes retain the native ui and find identities", () => {
   console.warn = () => {};
   sent.length = 0;
   try {
-    const replacement = { ...before, ui: { ...before.ui, appDark: !before.ui.appDark }, find: {} };
-    assert.throws(() => useBrowser.setState(replacement, true), /live is owned by the native store/);
-    assert.equal(S(), before);
-    assert.deepEqual(seen, []);
-    assert.deepEqual(sent, []);
-    delete replacement.live;
-    useBrowser.setState(replacement, true);
+    useBrowser.setState({ ...before, ui: { ...before.ui, appDark: !before.ui.appDark }, find: {} }, true);
     assert.equal(S().ui, before.ui);
     assert.equal(S().find, before.find);
-    assert.equal(S().live, before.live);
     assert.ok(seen.every(([ui, find]) => ui === before.ui && find === before.find));
     assert.deepEqual(sent, []);
   } finally {

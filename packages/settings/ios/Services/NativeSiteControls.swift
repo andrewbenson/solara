@@ -163,16 +163,9 @@ final class NativeSiteMenu {
 
   private func page(_ method: String, _ args: [Any] = []) async -> JSONValue {
     let tabId = context["tabId"]?.string ?? ""
-    if let issuer = PageIssuer.shared, let binding = issuer.binding(tabId: tabId), binding.host == .pooled {
-      let identity = binding.identity
-      guard let command = try? PageCommand.decode(method: method, args: args.map { try PageValue(any: $0) }) else { return .null }
+    if let view = TabPoolHost.shared.pageView(tabId) {
       return await withCheckedContinuation { continuation in
-        issuer.issue(tabId: tabId, identity: identity, command: command) { result in
-          switch result {
-          case .success(let value): continuation.resume(returning: NativeSiteControls.json(value.foundation))
-          case .failure: continuation.resume(returning: .null)
-          }
-        }
+        PageCalls.run(view, method, args, resolve: { continuation.resume(returning: NativeSiteControls.json($0)) }, reject: { _, _ in continuation.resume(returning: .null) })
       }
     }
     return NativeSiteControls.json(await SettingsAdapters.js("site.page", tabId, method, args))

@@ -27,7 +27,6 @@ final class NativeAppIntegration {
   }
 
   private init() {
-    FocusMoves.preparePageFocus = Self.preparePageFocus
     ShellScripting.availabilityError = {
       MainActor.assumeIsolated {
         AppIntegrationPolicy.scriptError(
@@ -37,40 +36,6 @@ final class NativeAppIntegration {
     for action in AppIntegrationMenuAction.allCases {
       NativeMenuCommands.handlers[action.rawValue] = { windowId in _ = NativeAppIntegration.shared.perform(action.rawValue, windowId: windowId) }
     }
-  }
-
-  static func preparePageFocus(_ page: NSView) -> FocusMoves.PageFocus? {
-    guard NativeStoreHandle.opened else { return { _ in false } }
-    guard NativeStoreHandle.ownedWorkspaceAtLaunch, let page = page as? SolaraCoreWebView else { return nil }
-    guard NativeStoreHandle.ownsWorkspace else { return { _ in false } }
-    guard let tabId = page.transferKey, !tabId.isEmpty else {
-      if page.standalone { return nil }
-      return { _ in false }
-    }
-    guard let issuer = PageIssuer.shared else { return { _ in false } }
-    let ownershipGeneration = NativeStoreHandle.ownershipGeneration
-    let identity = issuer.store.sequence { () -> PageIdentity? in
-      guard let binding = issuer.binding(tabId: tabId), issuer.ensurePageEstablished(binding),
-        matches(page, binding: binding), issuer.isCurrent(binding) else { return nil }
-      return binding.identity
-    }
-    guard let identity else { return { _ in false } }
-    return { [weak page] current in
-      issuer.store.sequence {
-        guard PageIssuer.shared === issuer, NativeStoreHandle.ownsWorkspace,
-          NativeStoreHandle.ownershipGeneration == ownershipGeneration,
-          let page, let binding = issuer.binding(identity: identity), issuer.ensurePageEstablished(binding),
-          matches(page, binding: binding), issuer.isCurrent(binding), current() else { return false }
-        issuer.issueInScope(tabId: tabId, identity: identity, command: .focus) { _ in }
-        return true
-      }
-    }
-  }
-
-  private static func matches(_ page: NSView, binding: PageHostBinding) -> Bool {
-    if binding.host == .pooled { return TabPoolHost.shared.pageView(binding.tabId) === page }
-    guard let owner = binding.owner as? NSView else { return false }
-    return page === owner || page.isDescendant(of: owner)
   }
 
   func startWhenReady(tries: Int = 40) {
@@ -100,27 +65,9 @@ final class NativeAppIntegration {
     started = true
     let writer = StoreWorkspaceWriter(store: store, showWindow: ShellScripting.showWindow)
     let pages = PoolScriptPages(
-      page: { tabId -> PageIdentity? in
-        guard let issuer = PageIssuer.shared else { return nil }
-        return issuer.store.sequence {
-          guard let binding = issuer.binding(tabId: tabId), binding.host == .pooled,
-            issuer.ensurePageEstablished(binding), issuer.isCurrent(binding) else { return nil }
-          return binding.identity
-        }
-      },
-      invoke: { identity, method, args, done in
-        guard let issuer = PageIssuer.shared else { return done(nil, ScriptCommandRunner.notLoaded) }
-        do {
-          let command = try PageCommand.decode(method: method, args: args.map { try PageValue(any: $0) })
-          issuer.issue(tabId: identity.tabId, identity: identity, command: command) { result in
-            switch result {
-            case .success(let value): done(value == .null ? nil : value.foundation, nil)
-            case .failure(let error): done(nil, error.message)
-            }
-          }
-        } catch let error as PageRegistryError {
-          issuer.afterSequence { done(nil, error.message) }
-        } catch { issuer.afterSequence { done(nil, "Invalid page arguments") } }
+      page: { TabPoolHost.shared.pageView($0) },
+      invoke: { page, method, args, done in
+        PageCalls.run(page, method, args, resolve: { done($0, nil) }, reject: { _, message in done(nil, message) })
       })
     ShellScripting.nativeCommand = { body, done in
       MainActor.assumeIsolated {

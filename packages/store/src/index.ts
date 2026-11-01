@@ -12,13 +12,6 @@ type NativeStoreModule = {
   flush(timeout: number): string | boolean;
   freeze?(): boolean;
   useSyncOrigins?(on: boolean): boolean;
-  pageFacts(tabId: string): string | null;
-  livePages(): string | null;
-  updateRNPageContext(tabId: string, sessionGeneration: string, contextJSON: string): boolean;
-  isRNPageCurrent(tabId: string, sessionGeneration: string): boolean;
-  updatePageContext(tabId: string, sessionGeneration: string, registrationGeneration: number, contextJSON: string): boolean;
-  isPageCurrent(tabId: string, sessionGeneration: string, registrationGeneration: number): boolean;
-  finishRNPageIssue(tabId: string, guardJSON: string): Promise<{ accepted: boolean }>;
   syncAnchor?(): string | null;
   setSyncAnchor?(anchor: string): boolean;
   addListener(event: "onStoreCommit", listener: (payload: { event: string }) => void): EventSubscription;
@@ -115,62 +108,3 @@ export function onForeignCommit(listener: (commit: ForeignCommit) => void): () =
   const subscription = native.addListener("onStoreCommit", ({ event }) => listener(JSON.parse(event)));
   return () => subscription.remove();
 }
-
-export type PageSessionGeneration = string;
-export type PageNavigation = { url: string; seq: number; userInitiated?: boolean };
-export type PageContext = { navigationSeq: number | null; contextRevision: number; wasNewTab: boolean; newTabShownUrl: string | null };
-export type PageIdentity = { tabId: string; registrationGeneration: number; sessionGeneration: string };
-export type PageIssueGuard = { sessionGeneration: string; navigation: PageNavigation | null; contextRevision: number; modelSerial: number; startedEarly: boolean; sameProfileMove: boolean };
-export type PageIssueAction = { type: "clearNewTabShown" } | { type: "load"; url: string; userInitiated: boolean };
-export type PageIssuePreview = { actions: PageIssueAction[]; guard: PageIssueGuard | null };
-export type KeepAliveKeep = { capturing: boolean; newTabShown: boolean; pip: boolean; displayRequest: boolean; media: "none" | "present" | "playing" };
-export type KeepAliveReveal = { fullscreen: boolean; crashed: boolean; unresponsive: boolean; scrolledDown: boolean; sharing: boolean };
-export type KeepAliveFacts = { epoch: number; seq: number; handled: number; keep: KeepAliveKeep; reveal: KeepAliveReveal };
-export type PageReadyFacts = { browserId: number; tabId: number | null };
-export type PageFacts = { generation: string; ready: PageReadyFacts | null; keepAlive: KeepAliveFacts | null; latchedThrough: number; newestEventSeq: number };
-export type PageReport =
-  | ({ type: "created"; generation: string; engine: "chromium" | "webkit"; handoffSeq?: number | null; reestablished?: boolean } & PageContext)
-  | ({ type: "context"; generation: string } & PageContext)
-  | ({ type: "issued"; generation: string; navigation: PageNavigation | null; startedEarly: boolean; sameProfileMove?: boolean } & PageContext)
-  | { type: "navigation"; generation: string; url: string; title: string; isLoading: boolean; canGoBack: boolean; canGoForward: boolean; themeColor?: string | null; initialDocumentAccessed?: boolean; committedInitial?: boolean; committedUrl?: string; eventSeq?: number }
-  | { type: "media"; generation: string; playing: boolean; muted?: boolean; eventSeq?: number }
-  | { type: "ready"; generation: string; browserId: number; tabId?: number; eventSeq?: number }
-  | { type: "download"; generation: string; committedUrl?: string | null; skipped?: boolean; eventSeq?: number }
-  | { type: "discarded"; generation: string; url: string; eventSeq?: number }
-  | { type: "failed" | "loadError" | "advance" | "gone"; generation: string; eventSeq?: number }
-  | { type: "moved"; generation: string; sameProfile: boolean }
-  | { type: "restore"; themes: { tab: string; page: string; color: string }[] }
-  | { type: "keepAlive"; generation: string; epoch: number; seq: number; handled: number; keep: KeepAliveKeep; reveal: KeepAliveReveal }
-  | { type: "latch"; generation: string; eventSeq: number };
-
-let pageReportWriter: ((command: StoreCommand) => DispatchResponse | null) | undefined;
-
-export function installPageReportWriter(writer: (command: StoreCommand) => DispatchResponse | null) {
-  pageReportWriter = writer;
-}
-
-export function pageReport(tabId: string, report: PageReport): DispatchResponse | null {
-  return pageReportWriter?.({ name: "pageReport", args: [tabId, report] }) ?? null;
-}
-
-export function registerKeepAliveRuntime(): number {
-  const response = pageReportWriter?.({ name: "registerKeepAliveRuntime", args: [] });
-  if (!response || response.error || !Number.isSafeInteger(response.result) || Number(response.result) <= 0) throw new Error(response?.error ?? "keepalive runtime registration failed");
-  return response.result as number;
-}
-
-export function nativePageFacts(tabId: string): PageFacts | null {
-  const value = native?.pageFacts(tabId);
-  return value ? JSON.parse(value) : null;
-}
-
-export function nativeLivePages(): Record<string, PageFacts> {
-  const value = native?.livePages();
-  return value ? JSON.parse(value) : {};
-}
-
-export const isRNPageCurrent = (tabId: string, sessionGeneration: string): boolean => native?.isRNPageCurrent(tabId, sessionGeneration) ?? false;
-export const isPageCurrent = ({ tabId, sessionGeneration, registrationGeneration }: PageIdentity): boolean => native?.isPageCurrent(tabId, sessionGeneration, registrationGeneration) ?? false;
-export const updateRNPageContext = (tabId: string, sessionGeneration: string, context: PageContext): boolean => native?.updateRNPageContext(tabId, sessionGeneration, JSON.stringify(context)) ?? false;
-export const updatePageContext = ({ tabId, sessionGeneration, registrationGeneration }: PageIdentity, context: PageContext): boolean => native?.updatePageContext(tabId, sessionGeneration, registrationGeneration, JSON.stringify(context)) ?? false;
-export const finishRNPageIssue = (tabId: string, guard: PageIssueGuard): Promise<{ accepted: boolean }> => native?.finishRNPageIssue(tabId, JSON.stringify(guard)) ?? Promise.resolve({ accepted: false });

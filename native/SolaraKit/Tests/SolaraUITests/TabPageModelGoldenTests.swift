@@ -165,8 +165,10 @@ private final class TabPageGoldenReplay {
         let before = live.facts
         let patch = live.discard()
         updatedLive(patch, before: before)
+        push("lifecycle", ["value": "discarded"])
       case .ready:
         live.ready()
+        push("lifecycle", ["value": "ready"])
       case .setMuted(let value):
         push("handle", ["method": "setMuted", "args": [.bool(value)]])
       case .markLoading, .keepNewTabShown, .navigated, .leftPage, .closeTabs:

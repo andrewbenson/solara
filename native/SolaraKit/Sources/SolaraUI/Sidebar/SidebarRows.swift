@@ -64,7 +64,11 @@ final class SidebarContext {
     self.state = state
     query = SidebarQuery(state)
     self.host = host
-    flags = SidebarFlags(host, live: NativeStoreHandle.ownsWorkspace ? state.live : nil)
+    if let previous, previous.host == host {
+      flags = previous.flags
+    } else {
+      flags = SidebarFlags(host)
+    }
     if let previous, previous.host.dark == host.dark, previous.host.theme == host.theme, previous.host.border == host.border, previous.host.glow == host.glow {
       palette = previous.palette
       paletteGeneration = previous.paletteGeneration

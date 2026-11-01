@@ -29,20 +29,14 @@ public final class StoreBridge: Sendable {
     dispatch(json: commandJSON, sinceRev: sinceRev).text()
   }
 
-  public func dispatch(json commandJSON: String, sinceRev: Int, prepare: ([Command]) throws -> [Command] = { $0 }) -> JSONValue {
+  public func dispatch(json commandJSON: String, sinceRev: Int) -> JSONValue {
     var response = JSONObject()
     do {
       let parsed = try JSONValue.parse(commandJSON)
       let fromSync = parsed["fromSync"]?.truthy ?? false
       let listed = parsed["commands"].map { $0.array ?? [$0] } ?? parsed.array ?? [parsed]
       let commands = try listed.map(Command.init(json:))
-      let commit = try store.sequence {
-        let isolated = commands.contains { $0.name == "syncPinsApply" || $0.name == "settlePinChoices" }
-        let prepared: [Command]
-        if fromSync || isolated { prepared = commands }
-        else { prepared = try prepare(commands) }
-        return try store.dispatch(prepared, origin: .bridge, fromSync: fromSync)
-      }
+      let commit = try store.dispatch(commands, origin: .bridge, fromSync: fromSync)
       if let result = commit.result { response["result"] = result }
       if !commit.effects.isEmpty { response["effects"] = .array(commit.effects.map(\.json)) }
     } catch is StoreBusy {

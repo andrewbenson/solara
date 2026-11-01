@@ -20,17 +20,24 @@ public class TabPoolModule: Module {
 
     Function("available") { () -> Bool in TabPoolHost.available }
 
-    AsyncFunction("pageCall") { (tabId: String, method: String, args: [Any], registrationGeneration: Double?, promise: Promise) in
+    AsyncFunction("pageCall") { (tabId: String, method: String, args: [Any], promise: Promise) in
       nonisolated(unsafe) let reply = promise
       nonisolated(unsafe) let values = args
       MainActor.assumeIsolated {
-        TabPoolHost.shared.pageCall(tabId, method, values, registrationGeneration: registrationGeneration, resolve: { reply.resolve($0) }, reject: { reply.reject($0, $1) })
+        guard let page = TabPoolHost.shared.pageView(tabId) else {
+          return reply.reject("ERR_NO_PAGE", "no pooled page for tab \(tabId)")
+        }
+        let pending = PendingPageCalls.shared
+        let id = pending.add(tabId, reply)
+        PageCalls.run(page, method, values, resolve: { pending.take(tabId, id)?.resolve($0) }, reject: { pending.take(tabId, id)?.reject($0, $1) })
       }
     }.runOnQueue(.main)
 
     AsyncFunction("claimFocusPage") { (generation: Int, tabId: String) -> Bool in
       MainActor.assumeIsolated {
-        TabPoolHost.shared.claimFocusPage(generation, tabId: tabId)
+        guard let page = TabPoolHost.shared.pageView(tabId) else { return false }
+        FocusMoves.claim(generation, destination: page)
+        return true
       }
     }.runOnQueue(.main)
 

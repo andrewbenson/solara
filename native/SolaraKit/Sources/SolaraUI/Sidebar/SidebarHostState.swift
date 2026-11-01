@@ -103,17 +103,11 @@ public struct SidebarFlags: Equatable, Sendable {
 
   public init() {}
 
-  init(_ state: SidebarHostState, live: [String: PageLiveFacts]? = nil) {
+  init(_ state: SidebarHostState) {
     selection = Set(state.selection)
-    if let live {
-      loading = Set(live.compactMap { $0.value.isLoading ? $0.key : nil })
-      playing = Set(live.compactMap { $0.value.playingAudio ? $0.key : nil })
-      sleeping = Set(live.compactMap { $0.value.discarded ? $0.key : nil })
-    } else {
-      loading = Set(state.loading)
-      playing = Set(state.playing)
-      sleeping = Set(state.sleeping)
-    }
+    loading = Set(state.loading)
+    playing = Set(state.playing)
+    sleeping = Set(state.sleeping)
     developer = Set(state.developer)
     pip = Set(state.pip ?? [])
     capture = state.capture ?? [:]

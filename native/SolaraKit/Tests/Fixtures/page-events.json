@@ -1,14 +1,14 @@
 {
   "version": 1,
   "sources": {
-    "components/pageEvents": "9b19ad5aef54508dac8c0018ba946e5818d604b9b9530f7f9f21feee7610af59",
-    "components/pooledPages": "3f27c6e53e2ffe7d09fc04565544b2405dd14790aea40d8985fe3f1deb7495ce",
+    "components/pageEvents": "105893ce86cae8fc2a0a90bfe2aadd62b8fcae21f1e20702efe2b0faf6c41701",
+    "components/pooledPages": "829c5c5121b9b6ad939041388dfd890fda22c8eed02688941f92dc2db9cc4ed7",
     "lib/nativeEvents": "980d88b151ce735fa3ecec0a28b8a2988dc8a7d05948555584385cd5eb534491",
-    "lib/launchLook": "e5701fdfa398b697f1721a80bf20e2e2985b7898ebdb7f70fabca2ed8d50af80",
+    "lib/launchLook": "681124e0ad6e2f57bbbe0c49f765a11185d761d6e4ed0f10a7690b18de86f970",
     "lib/pageHandoff": "8316d9ce298be99aec5cf3beb7d824503095695d56d1e11b34327c82603af00d",
-    "lib/webviews": "a09c0ae5e52fa329c5695f80a7b78dd9167d9a11be4d15d5c928881c4e55e7ab",
-    "store/model": "483aacb2195aacab7417e8a1dc455250af5088c18807c8f3c6c1d26764c1325d",
-    "store/tabs": "d49c0e78a6df0da7513d0681ef6deb3a7c8f8b63b65b5c3b4b22d9605405cd26"
+    "lib/webviews": "66039df7e6cf934734b3b0cfa0f4bdb761fd43ea28b8583f1ee0d252ef87cb3f",
+    "store/model": "fe036cb8187867f21dc82e912fd4b357edb06bb35d4d0edbda73181dd09668b0",
+    "store/tabs": "ef7af4245cea12dcfc29860e20d57231f12e1c9d423bd236f525f46f36cbdedd"
   },
   "cases": [
     {
@@ -971,6 +971,14 @@
             "themeColor": null
           },
           "activeTabId": "other"
+        },
+        {
+          "kind": "lifecycle",
+          "value": "discarded"
+        },
+        {
+          "kind": "lifecycle",
+          "value": "ready"
         },
         {
           "kind": "call",

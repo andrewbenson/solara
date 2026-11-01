@@ -4,52 +4,71 @@ import { spawnSync } from "node:child_process";
 
 globalThis.__DEV__ = false;
 
-test("native replica movement holder and swap keep live identity without JS strip writes", () => {
+test("a busy native strip acknowledgement retries without sending the engine command again", () => {
   const script = `
     import assert from "node:assert/strict";
-    globalThis.__DEV__ = true;
+    import { mock } from "node:test";
+    globalThis.__DEV__ = false;
+    const commands = [];
+    const acknowledgements = [];
+    const origins = [];
     let listener;
-    let rev = 0;
-    const engine = [];
+    let busy = 2;
     globalThis.acTestTabStrip = {
-      listen: () => { throw new Error("JS must not follow native-owned strips"); },
-      snapshot: () => { throw new Error("JS must not snapshot native-owned strips"); },
-      command: (command, id) => engine.push({ command, id }),
+      listen: () => ({ remove() {} }),
+      snapshot: () => Promise.resolve({ rev: 0, cmd: null, strips: [] }),
+      command: (command, id) => commands.push({ command, id }),
     };
     globalThis.acTestNativeModules = {
       SolaraStoreAdapter: {
-        status: () => ({ active: true, scope: "everything" }),
-        dispatch: () => JSON.stringify({ rev, patches: [] }),
-        addListener: (_name, receive) => { listener = receive; return { remove() {} }; },
+        status: () => ({ active: true, scope: "everything", syncRedesign: true }),
+        useSyncOrigins: (on) => on,
+        dispatch(json) {
+          const message = JSON.parse(json);
+          const command = message.commands ?? message;
+          if (command.name === "stripCommandSent") {
+            acknowledgements.push(command.args);
+            origins.push(message.fromSync === true);
+            if (busy-- > 0) return JSON.stringify({ rev: 0, busy: true });
+          }
+          return JSON.stringify({ rev: 0, patches: [] });
+        },
+        catchUp: () => JSON.stringify({ rev: 0, patches: [] }),
+        addListener(_event, receive) {
+          listener = receive;
+          return { remove() {} };
+        },
       },
     };
     const { useBrowser } = await import("./src/store/browser.ts");
     const { startNativeStore, attachReplica } = await import("./src/store/nativeStore.ts");
     const { startChromeTabs } = await import("./src/lib/chromeTabs.ts");
-    const { IDLE_LIVE } = await import("./src/store/model.ts");
     startNativeStore();
     attachReplica(useBrowser);
     startChromeTabs();
-    const tab = (id, patch = {}) => ({ id, windowId: "one", profileId: "default", url: "https://native.test/", title: "Native", favicon: null, pinned: false, muted: false, zoom: 1, customTitle: null, customIcon: null, pinnedUrl: null, openerId: null, createdAt: 1, lastActiveAt: 1, ...patch });
-    const emit = (patch, effects = []) => listener({ event: JSON.stringify({ rev: ++rev, patch: { ...patch, rev }, effects }) });
-    const facts = { ...IDLE_LIVE, isLoading: true, playingAudio: true, discarded: true };
-    emit({ tabs: { upsert: [tab("holder"), tab("borrower", { pageIn: "holder" })], remove: [] }, live: { upsert: [{ id: "holder", ...facts }, { id: "borrower", ...IDLE_LIVE }], remove: [] } });
-    const original = useBrowser.getState().live;
-    assert.deepEqual(original.borrower, IDLE_LIVE, "JS never derives holder facts");
-    emit({ tabs: { upsert: [tab("holder", { windowId: "two" })], remove: [] } });
-    assert.equal(useBrowser.getState().live, original, "native movement never rewrites live");
-    emit({}, [{ type: "swapTabs", a: "holder", b: "borrower" }]);
-    assert.equal(useBrowser.getState().live, original, "swap effect cannot forge a live transfer");
-    emit({ live: { upsert: [{ id: "borrower", ...facts }], remove: [] } }, [{ type: "stripCommand", strip: 7, command: { op: "activate", strip: 7, key: "borrower" } }]);
-    assert.equal(engine.length, 0, "native live patches and strip effects do not start a JS strip writer");
-    assert.deepEqual(useBrowser.getState().live.borrower, facts);
-    assert.equal(useBrowser.getState().live.holder, original.holder);
-    emit({ tabs: { upsert: [], remove: ["holder"] }, live: { upsert: [], remove: ["holder"] } });
-    assert.equal(useBrowser.getState().live.holder, undefined);
-    assert.deepEqual(useBrowser.getState().live.borrower, facts);
+    await new Promise((resolve) => setImmediate(resolve));
+    mock.timers.enable({ apis: ["setTimeout"] });
+    try {
+      listener({ event: JSON.stringify({
+        rev: 0,
+        patch: { rev: 0, sync: true },
+        effects: [{ type: "stripCommand", strip: 7, command: { op: "activate", strip: 7, key: "t1" } }],
+      }) });
+      assert.equal(commands.length, 1);
+      mock.timers.tick(50);
+      mock.timers.tick(50);
+      assert.equal(acknowledgements.length, 3);
+      assert.equal(commands.length, 1, "only the acknowledgement retries");
+      assert.deepEqual(origins, [true, true, true]);
+      assert.deepEqual(acknowledgements, [[7, commands[0].id], [7, commands[0].id], [7, commands[0].id]]);
+    } finally {
+      mock.timers.reset();
+    }
   `;
   const result = spawnSync(process.execPath, ["--no-warnings", "--import", "./src/test-loader.mjs", "--input-type=module", "-e", script], {
-    cwd: new URL("../..", import.meta.url), encoding: "utf8", timeout: 10000,
+    cwd: new URL("../..", import.meta.url),
+    encoding: "utf8",
+    timeout: 10000,
   });
   assert.equal(result.status, 0, result.stderr || result.error?.message);
 });

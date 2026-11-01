@@ -33,15 +33,12 @@ final class StripContext {
   init(state: BrowserState, host: StripHostState, windowId: String, favicons: SidebarFavicons, previous: StripContext?) {
     self.state = state
     query = StripQuery(state)
-    var sidebarHost = host.sidebarLook
-    sidebarHost.playing = host.playing
-    let sidebar = SidebarContext(state: state, host: sidebarHost, windowId: windowId, favicons: favicons, previous: previous?.sidebar)
-    self.sidebar = sidebar
+    sidebar = SidebarContext(state: state, host: host.sidebarLook, windowId: windowId, favicons: favicons, previous: previous?.sidebar)
     self.host = host
     palette = previous.flatMap { $0.host.dark == host.dark && $0.host.theme == host.theme && $0.host.border == host.border ? $0.palette : nil } ?? StripPalette(host)
     self.windowId = windowId
     activeId = state.windows[windowId]?.activeTabIds[host.profileId] ?? ""
-    playing = sidebar.flags.playing
+    playing = Set(host.playing)
   }
 
   var base: SidebarPalette { palette.base }

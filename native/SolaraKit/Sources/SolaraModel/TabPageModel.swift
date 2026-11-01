@@ -112,8 +112,6 @@ public struct TabPageModel: Equatable, Sendable {
     return String(url[..<hash])
   }
 
-  public mutating func executionConfirmed() { loadsOnCreate = nil }
-
   public mutating func issued(_ navigation: TabNavigationRequest?, newTabShown: Bool, startedEarly: Bool) -> [TabPageEffect] {
     if hasFollowed && navigation?.seq == followedSeq { return [] }
     if !hasFollowed && navigation?.seq != loadedSeq { arrived = false }

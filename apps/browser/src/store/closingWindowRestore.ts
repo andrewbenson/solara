@@ -1,5 +1,6 @@
 import type { BrowserState } from "./browser";
 import type { ClosingWindowSnapshot } from "./windows";
+import { IDLE_LIVE } from "./model";
 
 export const sameClosingValue = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.stringify(b);
 
@@ -74,6 +75,59 @@ export function remapClosingWindow(s: BrowserState, oldId: string, id: string, c
   };
 }
 
+type LocalCloseState = Pick<BrowserState, "live">;
+const nativeLocals = new Map<string, NativeClosingUndo>();
+
+export function rememberNativeClosingLocals(before: BrowserState, after: BrowserState) {
+  for (const id of Object.keys(before.windows)) {
+    if (after.windows[id]) continue;
+    for (const [key, entry] of nativeLocals) if (Date.now() - entry.closedAt > 30_000) nativeLocals.delete(key);
+    nativeLocals.set(id, { before: { live: before.live }, after: { live: after.live }, closedAt: Date.now() });
+    while (nativeLocals.size > 10) nativeLocals.delete(nativeLocals.keys().next().value!);
+  }
+}
+
+type NativeClosingUndo = { before: LocalCloseState; after: LocalCloseState; closedAt: number };
+
+export function nativeClosingUndo(oldId: string): NativeClosingUndo | null {
+  const undo = nativeLocals.get(oldId);
+  return undo && Date.now() - undo.closedAt <= 30_000 ? undo : null;
+}
+
+export function restoredNativeClosingLocals(s: BrowserState, oldId: string): LocalCloseState | null {
+  const undo = nativeClosingUndo(oldId);
+  if (!undo) return null;
+  const live = undoClosingEntries(s.live, undo.before.live, undo.after.live);
+  return live ? { live } : null;
+}
+
+export function nativeClosingLiveAtApply(s: BrowserState, undo: NativeClosingUndo): LocalCloseState {
+  const live = { ...s.live };
+  const { before, after } = undo;
+  for (const id of new Set([...Object.keys(before.live), ...Object.keys(after.live)])) {
+    const untouched = sameClosingValue(s.live[id], after.live[id]) || (!(id in after.live) && sameClosingValue(s.live[id], IDLE_LIVE));
+    if (sameClosingValue(before.live[id], after.live[id]) || !untouched) continue;
+    if (id in before.live) live[id] = before.live[id]!;
+    else delete live[id];
+  }
+  return { live };
+}
+
+export function clearNativeClosingLocals(id?: string) {
+  if (id) nativeLocals.delete(id);
+  else nativeLocals.clear();
+}
+
+export function pruneClosingLocals(local: LocalCloseState, state?: BrowserState, tabIds: string[] = []): LocalCloseState {
+  if (!state) return { live: local.live };
+  const affected = new Set(tabIds);
+  const kept = (tabId: string) => !!state.tabs[tabId] && (!affected.has(tabId) || !state.tabs[tabId]!.unloaded);
+  return {
+    live: Object.fromEntries(Object.entries(local.live).filter(([tabId]) => state.tabs[tabId]).map(([tabId, value]) => [tabId, kept(tabId) ? value : IDLE_LIVE])),
+  };
+}
+
 export function clearClosingWindowRestores() {
   closingWindowUndos.clear();
+  clearNativeClosingLocals();
 }

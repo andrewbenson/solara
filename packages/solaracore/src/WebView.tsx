@@ -1,5 +1,5 @@
 import { toAppUrl, toEngineUrl } from "@solara/core";
-import { requireNativeViewManager, requireOptionalNativeModule } from "expo-modules-core";
+import { requireNativeViewManager } from "expo-modules-core";
 import { forwardRef, useImperativeHandle, useRef } from "react";
 import { findNodeHandle, type NativeSyntheticEvent, type ViewProps } from "react-native";
 import type { ExternalAppRequest } from "./externalApps";
@@ -143,21 +143,12 @@ export type AutofillPrompt = {
 export type AutofillPromptAnswer = "accept" | "decline" | "dismiss";
 export type ExtensionActionResult = "none" | "popup" | "sidePanel";
 
-export type PageNativeIdentity = { tabId: string; sessionGeneration: string; registrationGeneration: number };
-export type StoreReportDisposition = { kind: "fallback" } | ({ kind: "reserved" } & Omit<PageNativeIdentity, "tabId">) | { kind: "rejected"; sessionGeneration?: string; registrationGeneration?: number };
-export type PageCreated = PageNativeIdentity & { generation: string; reestablished?: boolean };
-export type PageIssue = PageNativeIdentity & { accepted?: boolean; clearNewTabShown?: boolean; retry?: boolean; contextRevision?: number; navigation?: { seq: number; url: string; userInitiated?: boolean } | null };
-
 export type WebViewProps = ViewProps & {
-  acceptStoreReport?: (report: StoreReportDisposition) => boolean;
-  onPageCreated?: (page: PageCreated) => void;
-  onPageIssue?: (issue: PageIssue) => void;
   engine?: PageEngine;
   url?: string;
   profile?: string;
   adoptId?: string;
   transferKey?: string;
-  pageContext?: { navigationSeq: number | null; contextRevision: number; wasNewTab: boolean; newTabShownUrl: string | null };
   temporary?: boolean;
   temporarySource?: string;
   standalone?: boolean;
@@ -258,8 +249,6 @@ export type DiscardOutcome = "discarded" | "already" | "refused" | "unsupported"
 
 type Evt<T> = (e: NativeSyntheticEvent<T>) => void;
 type NativeEvents = {
-  onPageCreated: PageCreated;
-  onPageIssue: PageIssue;
   onNavigationChange: NavigationState;
   onProgress: { progress: number };
   onFavicon: { url: string; urls: string[] };
@@ -297,11 +286,9 @@ type NativeEvents = {
   onPreferredSize: { width: number; height: number };
 };
 type Handlers = keyof NativeEvents;
-type NativeProps = Omit<WebViewProps, Handlers | "acceptStoreReport"> & { [K in Handlers]?: Evt<NativeEvents[K]> };
+type NativeProps = Omit<WebViewProps, Handlers> & { [K in Handlers]?: Evt<NativeEvents[K]> };
 
 const unwrap: { [K in Handlers]: (e: NativeEvents[K]) => Parameters<NonNullable<WebViewProps[K]>> } = {
-  onPageCreated: (e) => [e],
-  onPageIssue: (e) => [e],
   onNavigationChange: (e) => [{ ...e, url: toAppUrl(e.url) }],
   onProgress: (e) => [e.progress],
   onFavicon: (e) => [e.url, e.urls],
@@ -441,19 +428,6 @@ export type ViewEventName = Handlers;
 export const unwrapPageEvent = <K extends Handlers>(name: K, payload: NativeEvents[K]) =>
   (unwrap[name] as (e: NativeEvents[K]) => unknown[])(payload);
 
-const pageAuthority = requireOptionalNativeModule<{ isPageCurrent(tabId: string, sessionGeneration: string, registrationGeneration: number): boolean }>("SolaraStoreAdapter");
-
-export function deliverWebViewEvent<K extends Handlers>(props: WebViewProps, name: K, payload: NativeEvents[K] & { storeReport?: StoreReportDisposition }): boolean {
-  const report = payload.storeReport;
-  if (report?.kind === "rejected") return false;
-  if (report?.kind === "reserved" && (!props.transferKey || !pageAuthority?.isPageCurrent(props.transferKey, report.sessionGeneration, report.registrationGeneration))) return false;
-  if (report && props.acceptStoreReport?.(report) === false) return false;
-  const handler = props[name] as ((...args: unknown[]) => void) | undefined;
-  if (!handler) return false;
-  handler(...unwrapPageEvent(name, payload));
-  return true;
-}
-
 export const WebView = forwardRef<WebViewHandle, WebViewProps>(function WebView(props, ref) {
   const native = useRef<NativeHandle>(null);
   useImperativeHandle(ref, () => {
@@ -475,7 +449,7 @@ export const WebView = forwardRef<WebViewHandle, WebViewProps>(function WebView(
 
   const nativeProps: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(props)) {
-    if (key === "engine" || key === "acceptStoreReport") continue;
+    if (key === "engine") continue;
     if (key === "url" || key === "shownUrl") {
       nativeProps[key] = typeof value === "string" ? toEngineUrl(value) : value;
       continue;
@@ -483,7 +457,7 @@ export const WebView = forwardRef<WebViewHandle, WebViewProps>(function WebView(
     const map = unwrap[key as Handlers] as ((e: unknown) => unknown[]) | undefined;
     nativeProps[key] =
       map && typeof value === "function"
-        ? (e: NativeSyntheticEvent<NativeEvents[Handlers] & { storeReport?: StoreReportDisposition }>) => deliverWebViewEvent(props, key as Handlers, e.nativeEvent)
+        ? (e: NativeSyntheticEvent<unknown>) => (value as (...args: unknown[]) => void)(...map(e.nativeEvent))
         : value;
   }
 

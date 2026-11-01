@@ -1,5 +1,4 @@
 import ExpoModulesCore
-import React
 import AppKit
 import IOKit.ps
 
@@ -249,7 +248,6 @@ public class CefModule: Module {
       Prop("profile") { (view: CefWebView, profile: String?) in view.browser.profile = profile ?? "" }
       Prop("adoptId") { (view: CefWebView, id: String?) in view.browser.adoptId = id }
       Prop("transferKey") { (view: CefWebView, key: String?) in view.browser.transferKey = key }
-      Prop("pageContext") { (view: CefWebView, context: [String: Any]?) in view.pageContext = context ?? [:] }
       Prop("standalone") { (view: CefWebView, standalone: Bool?) in view.browser.standalone = standalone ?? false }
       Prop("temporary") { (view: CefWebView, temporary: Bool?) in view.browser.temporary = temporary ?? false }
       Prop("temporarySource") { (view: CefWebView, source: String?) in view.browser.temporarySource = source }
@@ -265,44 +263,93 @@ public class CefModule: Module {
         view.browser.autoPictureInPicture = enabled ?? false
       }
 
-      AsyncFunction("loadUrl") { (view: CefWebView, url: String, userInitiated: Bool?, promise: Promise) in view.call("loadUrl", [url, userInitiated ?? false], promise) }.runOnQueue(.main)
-      AsyncFunction("goBack") { (view: CefWebView, promise: Promise) in view.call("goBack", [], promise) }.runOnQueue(.main)
-      AsyncFunction("goForward") { (view: CefWebView, promise: Promise) in view.call("goForward", [], promise) }.runOnQueue(.main)
-      AsyncFunction("goToOffset") { (view: CefWebView, offset: Int, promise: Promise) in view.call("goToOffset", [offset], promise) }.runOnQueue(.main)
-      AsyncFunction("reload") { (view: CefWebView, promise: Promise) in view.call("reload", [], promise) }.runOnQueue(.main)
-      AsyncFunction("forceReload") { (view: CefWebView, promise: Promise) in view.call("forceReload", [], promise) }.runOnQueue(.main)
-      AsyncFunction("stopLoading") { (view: CefWebView, promise: Promise) in view.call("stopLoading", [], promise) }.runOnQueue(.main)
-      AsyncFunction("focus") { (view: CefWebView, promise: Promise) in view.call("focus", [], promise) }.runOnQueue(.main)
-      AsyncFunction("setMuted") { (view: CefWebView, muted: Bool, promise: Promise) in view.call("setMuted", [muted], promise) }.runOnQueue(.main)
-      AsyncFunction("zoomStep") { (view: CefWebView, direction: Int, promise: Promise) in view.call("zoomStep", [direction], promise) }.runOnQueue(.main)
-      AsyncFunction("find") { (view: CefWebView, text: String, forward: Bool, findNext: Bool, promise: Promise) in view.call("find", [text, forward, findNext], promise) }.runOnQueue(.main)
-      AsyncFunction("stopFinding") { (view: CefWebView, clear: Bool, promise: Promise) in view.call("stopFinding", [clear], promise) }.runOnQueue(.main)
-      AsyncFunction("print") { (view: CefWebView, promise: Promise) in view.call("print", [], promise) }.runOnQueue(.main)
-      AsyncFunction("runPageCommand") { (view: CefWebView, name: String, promise: Promise) in view.call("runPageCommand", [name], promise) }.runOnQueue(.main)
-      AsyncFunction("showDevTools") { (view: CefWebView, panel: String?, promise: Promise) in view.call("showDevTools", [panel as Any? ?? NSNull()], promise) }.runOnQueue(.main)
-      AsyncFunction("executeJavaScript") { (view: CefWebView, code: String, promise: Promise) in view.call("executeJavaScript", [code], promise) }.runOnQueue(.main)
-      AsyncFunction("evaluate") { (view: CefWebView, code: String, promise: Promise) in view.call("evaluate", [code], promise) }.runOnQueue(.main)
-      AsyncFunction("navigationEntries") { (view: CefWebView, promise: Promise) in view.call("navigationEntries", [], promise) }.runOnQueue(.main)
-      AsyncFunction("capturePicture") { (view: CefWebView, scale: Double, promise: Promise) in view.call("capturePicture", [scale], promise) }.runOnQueue(.main)
-      AsyncFunction("downloadFavicon") { (view: CefWebView, url: String, promise: Promise) in view.call("downloadFavicon", [url], promise) }.runOnQueue(.main)
-      AsyncFunction("downloadImage") { (view: CefWebView, url: String, maxPixels: Int, promise: Promise) in view.call("downloadImage", [url, maxPixels], promise) }.runOnQueue(.main)
-      AsyncFunction("mediaCommand") { (view: CefWebView, action: String, seconds: Double?, promise: Promise) in view.call("mediaCommand", [action, seconds ?? 0], promise) }.runOnQueue(.main)
-      AsyncFunction("requestPictureInPicture") { (view: CefWebView, clickAt: Double?, control: Int?, promise: Promise) in view.call("requestPictureInPicture", [clickAt ?? 0, control ?? 0], promise) }.runOnQueue(.main)
-      AsyncFunction("takeControlPress") { (view: CefWebView, clickAt: Double?, control: Int?, promise: Promise) in view.call("takeControlPress", [clickAt ?? 0, control ?? 0], promise) }.runOnQueue(.main)
-      AsyncFunction("exitPictureInPicture") { (view: CefWebView, promise: Promise) in view.call("exitPictureInPicture", [], promise) }.runOnQueue(.main)
-      AsyncFunction("getSecurityInfo") { (view: CefWebView, promise: Promise) in view.call("getSecurityInfo", [], promise) }.runOnQueue(.main)
-      AsyncFunction("pageCookies") { (view: CefWebView, urls: [String], promise: Promise) in view.call("pageCookies", [urls], promise) }.runOnQueue(.main)
-      AsyncFunction("openBlockedPopup") { (view: CefWebView, id: String, always: Bool?, promise: Promise) in view.call("openBlockedPopup", [id, always ?? false], promise) }.runOnQueue(.main)
-      AsyncFunction("clearSiteData") { (view: CefWebView, promise: Promise) in view.call("clearSiteData", [], promise) }.runOnQueue(.main)
-      AsyncFunction("resolvePasswordPrompt") { (view: CefWebView, action: String, username: String?, password: String?, promise: Promise) in view.call("resolvePasswordPrompt", [action, username as Any? ?? NSNull(), password as Any? ?? NSNull()], promise) }.runOnQueue(.main)
-      AsyncFunction("resolveAutofillPrompt") { (view: CefWebView, promptId: Int, action: String, promise: Promise) in view.call("resolveAutofillPrompt", [promptId, action], promise) }.runOnQueue(.main)
-      AsyncFunction("executeExtensionAction") { (view: CefWebView, extensionId: String, promise: Promise) in view.call("executeExtensionAction", [extensionId], promise) }.runOnQueue(.main)
-      AsyncFunction("resolveDisplayMedia") { (view: CefWebView, id: String, sourceId: String?, audio: Bool, promise: Promise) in view.call("resolveDisplayMedia", [id, sourceId as Any? ?? NSNull(), audio], promise) }.runOnQueue(.main)
-      AsyncFunction("mediaCaptureSourceId") { (view: CefWebView, promise: Promise) in view.call("mediaCaptureSourceId", [], promise) }.runOnQueue(.main)
-      AsyncFunction("notificationAction") { (view: CefWebView, id: String, action: String, promise: Promise) in view.call("notificationAction", [id, action], promise) }.runOnQueue(.main)
-      AsyncFunction("resolveUnresponsive") { (view: CefWebView, terminate: Bool, promise: Promise) in view.call("resolveUnresponsive", [terminate], promise) }.runOnQueue(.main)
-      AsyncFunction("discard") { (view: CefWebView, unload: Bool?, promise: Promise) in view.call("discard", [unload ?? false], promise) }.runOnQueue(.main)
-      AsyncFunction("setFrozen") { (view: CefWebView, frozen: Bool, promise: Promise) in view.call("setFrozen", [frozen], promise) }.runOnQueue(.main)
+      AsyncFunction("loadUrl") { (view: CefWebView, url: String, userInitiated: Bool?) in
+        view.browser.loadURL(url, userInitiated: userInitiated ?? false)
+      }.runOnQueue(.main)
+      AsyncFunction("goBack") { (view: CefWebView) in view.browser.goBack() }.runOnQueue(.main)
+      AsyncFunction("goForward") { (view: CefWebView) in view.browser.goForward() }.runOnQueue(.main)
+      AsyncFunction("goToOffset") { (view: CefWebView, offset: Int) in view.browser.go(toHistoryOffset: offset) }.runOnQueue(.main)
+      AsyncFunction("reload") { (view: CefWebView) in view.browser.reload() }.runOnQueue(.main)
+      AsyncFunction("forceReload") { (view: CefWebView) in view.browser.reloadIgnoringCache() }.runOnQueue(.main)
+      AsyncFunction("stopLoading") { (view: CefWebView) in view.browser.stopLoading() }.runOnQueue(.main)
+      AsyncFunction("focus") { (view: CefWebView) in view.browser.focusPage() }.runOnQueue(.main)
+      AsyncFunction("setMuted") { (view: CefWebView, muted: Bool) in view.browser.setMuted(muted) }.runOnQueue(.main)
+      AsyncFunction("zoomStep") { (view: CefWebView, direction: Int) in view.browser.zoomStep(direction) }.runOnQueue(.main)
+      AsyncFunction("find") { (view: CefWebView, text: String, forward: Bool, findNext: Bool) in
+        view.browser.find(text, forward: forward, findNext: findNext)
+      }.runOnQueue(.main)
+      AsyncFunction("stopFinding") { (view: CefWebView, clear: Bool) in view.browser.stopFinding(clear) }.runOnQueue(.main)
+      AsyncFunction("print") { (view: CefWebView) in view.browser.print() }.runOnQueue(.main)
+      AsyncFunction("runPageCommand") { (view: CefWebView, name: String) in view.browser.runPageCommand(name) }.runOnQueue(.main)
+      AsyncFunction("showDevTools") { (view: CefWebView, panel: String?) in view.browser.showDevTools(panel: panel) }
+        .runOnQueue(.main)
+      AsyncFunction("executeJavaScript") { (view: CefWebView, code: String) in
+        view.browser.executeJavaScript(code)
+      }.runOnQueue(.main)
+      AsyncFunction("evaluate") { (view: CefWebView, code: String, promise: Promise) in
+        view.browser.evaluate(code) { json in promise.resolve(json) }
+      }.runOnQueue(.main)
+      AsyncFunction("navigationEntries") { (view: CefWebView, promise: Promise) in
+        view.browser.navigationEntries { promise.resolve($0) }
+      }.runOnQueue(.main)
+      AsyncFunction("capturePicture") { (view: CefWebView, scale: Double, promise: Promise) in
+        view.browser.capturePicture(scale) { promise.resolve($0) }
+      }.runOnQueue(.main)
+      AsyncFunction("downloadFavicon") { (view: CefWebView, url: String, promise: Promise) in
+        view.browser.downloadFavicon(url, name: nil) { promise.resolve($0) }
+      }.runOnQueue(.main)
+      AsyncFunction("downloadImage") { (view: CefWebView, url: String, maxPixels: Int, promise: Promise) in
+        view.browser.downloadImage(url, maxPixels: maxPixels) { promise.resolve($0) }
+      }.runOnQueue(.main)
+
+      AsyncFunction("mediaCommand") { (view: CefWebView, action: String, seconds: Double?) in
+        view.browser.mediaCommand(action, seconds: seconds ?? 0)
+      }.runOnQueue(.main)
+      AsyncFunction("requestPictureInPicture") { (view: CefWebView, clickAt: Double?, control: Int?, promise: Promise) in
+        view.browser.requestPictureInPicture(clickAt: clickAt ?? 0, control: control ?? 0) { promise.resolve($0) }
+      }.runOnQueue(.main)
+      AsyncFunction("takeControlPress") { (view: CefWebView, clickAt: Double?, control: Int?) -> Bool in
+        view.browser.takeControlPress(clickAt: clickAt ?? 0, control: control ?? 0)
+      }.runOnQueue(.main)
+      AsyncFunction("exitPictureInPicture") { (view: CefWebView) in view.browser.exitPictureInPicture() }.runOnQueue(.main)
+
+      AsyncFunction("getSecurityInfo") { (view: CefWebView, promise: Promise) in
+        view.browser.securityInfo { promise.resolve($0) }
+      }.runOnQueue(.main)
+      AsyncFunction("pageCookies") { (view: CefWebView, urls: [String], promise: Promise) in
+        view.browser.pageCookies(urls) { promise.resolve($0 ?? []) }
+      }.runOnQueue(.main)
+      AsyncFunction("openBlockedPopup") { (view: CefWebView, id: String, always: Bool?) in
+        view.browser.openBlockedPopup(id, always: always ?? false)
+      }.runOnQueue(.main)
+      AsyncFunction("clearSiteData") { (view: CefWebView, promise: Promise) in
+        view.browser.clearSiteData { promise.resolve($0) }
+      }.runOnQueue(.main)
+
+      AsyncFunction("resolvePasswordPrompt") { (view: CefWebView, action: String, username: String?, password: String?) in
+        view.browser.resolvePasswordPrompt(action, username: username, password: password)
+      }.runOnQueue(.main)
+      AsyncFunction("resolveAutofillPrompt") { (view: CefWebView, promptId: Int, action: String) in
+        view.browser.resolveAutofillPrompt(promptId, action: action)
+      }.runOnQueue(.main)
+      AsyncFunction("executeExtensionAction") { (view: CefWebView, extensionId: String) in
+        view.browser.executeExtensionAction(extensionId)
+      }.runOnQueue(.main)
+
+      AsyncFunction("resolveDisplayMedia") { (view: CefWebView, id: String, sourceId: String?, audio: Bool) in
+        view.browser.resolveDisplayMedia(id, sourceId: sourceId, audio: audio)
+      }.runOnQueue(.main)
+      AsyncFunction("mediaCaptureSourceId") { (view: CefWebView) in view.browser.mediaCaptureSourceId }.runOnQueue(.main)
+      AsyncFunction("notificationAction") { (view: CefWebView, id: String, action: String) in
+        view.browser.notificationAction(id, action: action)
+      }.runOnQueue(.main)
+
+      AsyncFunction("resolveUnresponsive") { (view: CefWebView, terminate: Bool) in
+        view.browser.resolveUnresponsive(terminate: terminate)
+      }.runOnQueue(.main)
+      AsyncFunction("discard") { (view: CefWebView, unload: Bool?) in view.browser.discard(unload: unload ?? false) }
+        .runOnQueue(.main)
+      AsyncFunction("setFrozen") { (view: CefWebView, frozen: Bool) in view.browser.frozen = frozen }.runOnQueue(.main)
 
       OnViewDidUpdateProps { (view: CefWebView) in view.propsDidUpdate() }
     }
@@ -313,13 +360,11 @@ public class CefModule: Module {
   }
 }
 
-final class CefWebView: ExpoView, SolaraCoreWebViewDelegate, @preconcurrency RCTInvalidating {
+final class CefWebView: ExpoView, SolaraCoreWebViewDelegate {
   static let events = PageEvents.names
 
   let browser = SolaraCoreWebView(frame: .zero)
 
-  let onPageCreated = EventDispatcher()
-  let onPageIssue = EventDispatcher()
   let onNavigationChange = EventDispatcher()
   let onProgress = EventDispatcher()
   let onFavicon = EventDispatcher()
@@ -357,12 +402,7 @@ final class CefWebView: ExpoView, SolaraCoreWebViewDelegate, @preconcurrency RCT
   let onExternalApp = EventDispatcher()
   let onPreferredSize = EventDispatcher()
 
-  var pageContext: [String: Any] = [:]
-
   private var propsReady = false
-  private var attachment: RNPageAttachment?
-  private var invalidated = false
-  private var mounted = false
 
   required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
@@ -376,39 +416,10 @@ final class CefWebView: ExpoView, SolaraCoreWebViewDelegate, @preconcurrency RCT
   }
 
   func propsDidUpdate() {
+    guard !propsReady else { return }
     propsReady = true
-    syncAttachment()
-  }
-
-  override func viewDidMoveToSuperview() {
-    super.viewDidMoveToSuperview()
-    guard superview != nil else { return }
-    if propsReady { syncAttachment() }
-  }
-
-  func invalidate() {
-    guard !invalidated else { return }
-    invalidated = true
-    RNPageEventTap.detach(attachment)
-  }
-
-  private func syncAttachment() {
-    guard !invalidated, superview != nil else { return }
-    attachment = RNPageEventTap.attach(owner: self, page: browser, tabId: browser.transferKey,
-      engine: "chromium", profile: browser.profile, context: pageContext, previous: attachment) { [weak self] name, payload in
-        self?.dispatchers[name]?(payload)
-      }
-    guard !mounted, attachment?.allowsStart != false else { return }
-    RNPageEventTap.start(attachment: attachment) { [self] in
-      mounted = true
-      browser.frame = bounds
-      addSubview(browser)
-    }
-  }
-
-  func call(_ method: String, _ args: [Any], _ promise: Promise) {
-    RNPageEventTap.call(attachment: attachment, page: browser, transferKey: browser.transferKey, propsReady: propsReady, method: method, args: args,
-      resolve: { @MainActor in promise.resolve($0) }, reject: { @MainActor in promise.reject($0, $1) })
+    browser.frame = bounds
+    addSubview(browser)
   }
 
   deinit {
@@ -418,10 +429,7 @@ final class CefWebView: ExpoView, SolaraCoreWebViewDelegate, @preconcurrency RCT
   private lazy var dispatchers = PageEvents.dispatchers(of: self, as: EventDispatcher.self)
 
   func webView(_ view: SolaraCoreWebView, event name: String, payload: [String: Any]) {
-    guard let prop = PageEvents.props[name] else { return }
-    RNPageEventTap.forward(attachment: attachment, name: prop, payload: payload) { [weak self] body in
-      self?.dispatchers[prop]?(body)
-    }
+    if let prop = PageEvents.props[name] { dispatchers[prop]?(payload) }
   }
 }
 

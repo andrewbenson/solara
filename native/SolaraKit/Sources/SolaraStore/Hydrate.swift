@@ -183,8 +183,6 @@ extension Session {
     memory.feedWatermark = memory.feedWatermark.filter { next.tabs[$0.key] != nil }
     memory.pageProducerFence = memory.pageProducerFence.filter { next.tabs[$0.key] != nil }
     memory.closingWindowUndos = [:]
-    memory.hydrating = true
     set(next)
-    memory.hydrating = false
   }
 }

@@ -1,7 +1,6 @@
 import { readDocument, writeDocument } from "@solara/shell";
 import { useBrowser, type BrowserState } from "../store/browser";
 import { isIncognitoProfile } from "../store/model";
-import { nativeOwnsWorkspace } from "../store/nativeStore";
 import { isPeekTab } from "../store/peek";
 import type { Tab } from "../store/types";
 import { launchFavicons, pageKey, seedFavicons, type LaunchFavicons } from "./favicons";
@@ -66,7 +65,6 @@ export function restoreLaunchLook() {
   const look = readLaunchLook();
   if (!look) return;
   seedFavicons(look.favicons);
-  if (nativeOwnsWorkspace()) return;
   const s = useBrowser.getState();
   const live: BrowserState["live"] = {};
   for (const theme of look.themes.filter(isRestoredTheme)) {
@@ -94,13 +92,12 @@ function settleRestoredTheme(tabId: string) {
     setTimeout(() => {
       settling.delete(tabId);
       if (!restored.delete(tabId)) return;
-      if (!nativeOwnsWorkspace()) useBrowser.getState().updateLive(tabId, { themeColor: null });
+      useBrowser.getState().updateLive(tabId, { themeColor: null });
     }, RESTORED_THEME_GRACE_MS),
   );
 }
 
 export function restoredThemeColor(tabId: string, url: string, reported: string | null | undefined, isLoading: boolean): string | null {
-  if (nativeOwnsWorkspace()) return reported ?? null;
   const held = restored.get(tabId);
   if (!held) return reported ?? null;
   if (reported || (!onBlank(url) && pageKey(url) !== held.page)) {

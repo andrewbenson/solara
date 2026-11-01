@@ -68,8 +68,7 @@ extension Session {
     var model = page.model
     if sameProfileMove { model.moved(sameProfile: true) }
     var effects = model.issued(navigation, newTabShown: context.newTabShownUrl != nil, startedEarly: startedEarly)
-    if let navigation, page.model.issuedSeq != navigation.seq,
-      context.newTabShownUrl != nil, !effects.contains(.clearNewTabShown) {
+    if navigation != nil, context.newTabShownUrl != nil, !effects.contains(.clearNewTabShown) {
       effects.insert(.clearNewTabShown, at: 0)
     }
     let actions: JSONValue = .array(effects.compactMap { effect in
@@ -128,82 +127,6 @@ extension Session {
     memory.pages[id] = page
   }
 
-  func interpretPageReport(_ report: JSONValue, type: String, tab: Tab, page: inout PageReportMemory, hasOtherProfileTab: Bool, heldNavigationURL: String? = nil) throws -> [TabPageEffect] {
-    if let raw = report["eventSeq"] {
-      guard let sequence = pageSafeInteger(raw) else { throw CommandError("pageReport: invalid eventSeq") }
-      page.newestEventSeq = max(page.newestEventSeq, sequence)
-    }
-    var effects: [TabPageEffect] = []
-    switch type {
-    case "navigation":
-      guard let url = report["url"]?.string, let title = report["title"]?.string,
-        let loading = report["isLoading"]?.bool, let back = report["canGoBack"]?.bool,
-        let forward = report["canGoForward"]?.bool else { throw CommandError("pageReport: malformed navigation") }
-      if let theme = report["themeColor"], !theme.isNull && theme.string == nil { throw CommandError("pageReport: malformed theme") }
-      if let accessed = report["initialDocumentAccessed"], accessed.bool == nil { throw CommandError("pageReport: malformed initial document") }
-      if let committed = report["committedInitial"], committed.bool == nil { throw CommandError("pageReport: malformed initial commit") }
-      page.modelSerial = try nextPageModelSerial()
-      effects = page.model.reported(TabNavigationReport(url: url, title: title, isLoading: loading, canGoBack: back,
-        canGoForward: forward, initialDocumentAccessed: report["initialDocumentAccessed"]?.bool ?? false,
-        committedInitial: report["committedInitial"]?.bool), TabPageContext(navigationUrl: heldNavigationURL ?? tab.navigation?.url,
-          prewarmOnly: tab.navigation == nil && heldNavigationURL == nil && !truthy(tab.adoptId), openedByAdoption: truthy(tab.openerId) && truthy(tab.adoptId),
-          newTabShownUrl: page.newTabShownUrl))
-    case "media":
-      if let muted = report["muted"], muted.bool == nil { throw CommandError("pageReport: malformed media mute") }
-      guard let playing = report["playing"]?.bool else { throw CommandError("pageReport: malformed media") }
-      _ = page.live.media(playing: playing)
-    case "download":
-      if let skipped = report["skipped"], skipped.bool == nil { throw CommandError("pageReport: malformed download") }
-      if let url = report["committedUrl"], !url.isNull && url.string == nil { throw CommandError("pageReport: malformed download URL") }
-      page.modelSerial = try nextPageModelSerial()
-      effects = page.model.downloadNavigation(committedUrl: report["committedUrl"]?.string, skipped: report["skipped"]?.bool ?? false,
-        context: TabDownloadContext(currentUrl: tab.url, hasOtherProfileTab: hasOtherProfileTab, hasOpener: truthy(tab.openerId),
-          hasAdoptId: truthy(tab.adoptId), wasNewTab: page.wasNewTab, canGoBack: page.live.facts?.canGoBack ?? false))
-    case "discarded":
-      guard let url = report["url"]?.string else { throw CommandError("pageReport: malformed discard") }
-      page.modelSerial = try nextPageModelSerial()
-      effects = page.model.discarded(url)
-    case "ready":
-      guard let browserId = pageSafeInteger(report["browserId"]) else { throw CommandError("pageReport: malformed ready") }
-      let tabId: Int?
-      if let raw = report["tabId"] {
-        guard let value = pageSafeInteger(raw) else { throw CommandError("pageReport: malformed ready tab") }
-        tabId = value
-      } else { tabId = nil }
-      page.ready = PageReadyFacts(browserId: browserId, tabId: tabId)
-      page.live.ready()
-    case "failed", "loadError":
-      page.modelSerial = try nextPageModelSerial()
-      page.model.loadFailed()
-      _ = page.live.download()
-    case "moved":
-      guard let sameProfile = report["sameProfile"]?.bool else { throw CommandError("pageReport: malformed move") }
-      page.modelSerial = try nextPageModelSerial()
-      page.model.moved(sameProfile: sameProfile)
-    case "advance": _ = page.live.advance(to: now)
-    default: break
-    }
-    return effects
-  }
-
-  func applyPageLiveEffect(_ effect: TabPageEffect, report: JSONValue, page: inout PageReportMemory) {
-    switch effect {
-    case .markLoading: _ = page.live.markLoading()
-    case .navigated(let url, _, let loading, let back, let forward):
-      _ = page.live.navigation(url: url, isLoading: loading, canGoBack: back, canGoForward: forward,
-        themeColor: report["themeColor"]?.string, now: now)
-    case .keepNewTabShown:
-      let url = report["initialDocumentAccessed"]?.bool == true && report["committedInitial"]?.bool == true ? "about:blank" : report["url"]?.string ?? ""
-      _ = page.live.navigation(url: url, isLoading: report["isLoading"]?.bool ?? false,
-        canGoBack: report["canGoBack"]?.bool ?? false, canGoForward: report["canGoForward"]?.bool ?? false,
-        themeColor: report["themeColor"]?.string, now: now)
-    case .clearNewTabShown: page.newTabShownUrl = nil
-    case .stopLoading: _ = page.live.download()
-    case .discarded: _ = page.live.discard()
-    default: break
-    }
-  }
-
   public func pageReport(_ id: String, _ report: JSONValue) throws {
     guard let type = report["type"]?.string else { throw CommandError("pageReport: missing type") }
     let known: Set<String> = ["created", "context", "issued", "navigation", "media", "download", "discarded", "ready", "failed", "loadError", "moved", "restore", "advance", "gone", "keepAlive", "latch"]
@@ -214,10 +137,7 @@ extension Session {
       fence.retired = true
       memory.pageProducerFence[id] = fence
     }
-    guard let tab = state.tabs[id], pageIsEligible(tab) else {
-      if state.tabs[id] == nil { try reportHeldPage(id, report: report, type: type, generation: generation) }
-      return
-    }
+    guard let tab = state.tabs[id], pageIsEligible(tab) else { return }
     if type == "gone" {
       guard let generation, let fence = memory.pageProducerFence[id], fence.generation == generation,
         memory.pages[id]?.generation == nil || memory.pages[id]?.generation == generation else { return }
@@ -289,17 +209,78 @@ extension Session {
       memory.pages[id] = page
       return
     }
-    let others = state.windows[tab.windowId]?.tabIds.contains { $0 != id && state.tabs[$0]?.profileId == tab.profileId } ?? false
-    let effects = try interpretPageReport(report, type: type, tab: tab, page: &page, hasOtherProfileTab: others)
+    if let raw = report["eventSeq"] {
+      guard let sequence = pageSafeInteger(raw) else { throw CommandError("pageReport: invalid eventSeq") }
+      page.newestEventSeq = max(page.newestEventSeq, sequence)
+    }
+    var effects: [TabPageEffect] = []
+    switch type {
+    case "navigation":
+      guard let url = report["url"]?.string, let title = report["title"]?.string,
+        let loading = report["isLoading"]?.bool, let back = report["canGoBack"]?.bool,
+        let forward = report["canGoForward"]?.bool else { throw CommandError("pageReport: malformed navigation") }
+      if let theme = report["themeColor"], !theme.isNull && theme.string == nil { throw CommandError("pageReport: malformed theme") }
+      if let accessed = report["initialDocumentAccessed"], accessed.bool == nil { throw CommandError("pageReport: malformed initial document") }
+      if let committed = report["committedInitial"], committed.bool == nil { throw CommandError("pageReport: malformed initial commit") }
+      page.modelSerial = try nextPageModelSerial()
+      effects = page.model.reported(TabNavigationReport(url: url, title: title, isLoading: loading, canGoBack: back,
+        canGoForward: forward, initialDocumentAccessed: report["initialDocumentAccessed"]?.bool ?? false,
+        committedInitial: report["committedInitial"]?.bool), TabPageContext(navigationUrl: tab.navigation?.url,
+          prewarmOnly: tab.navigation == nil && !truthy(tab.adoptId), openedByAdoption: truthy(tab.openerId) && truthy(tab.adoptId),
+          newTabShownUrl: page.newTabShownUrl))
+    case "media":
+      if let muted = report["muted"], muted.bool == nil { throw CommandError("pageReport: malformed media mute") }
+      guard let playing = report["playing"]?.bool else { throw CommandError("pageReport: malformed media") }
+      _ = page.live.media(playing: playing)
+    case "download":
+      if let skipped = report["skipped"], skipped.bool == nil { throw CommandError("pageReport: malformed download") }
+      if let url = report["committedUrl"], !url.isNull && url.string == nil { throw CommandError("pageReport: malformed download URL") }
+      page.modelSerial = try nextPageModelSerial()
+      let others = state.windows[tab.windowId]?.tabIds.contains { $0 != id && state.tabs[$0]?.profileId == tab.profileId } ?? false
+      effects = page.model.downloadNavigation(committedUrl: report["committedUrl"]?.string, skipped: report["skipped"]?.bool ?? false,
+        context: TabDownloadContext(currentUrl: tab.url, hasOtherProfileTab: others, hasOpener: truthy(tab.openerId),
+          hasAdoptId: truthy(tab.adoptId), wasNewTab: page.wasNewTab, canGoBack: page.live.facts?.canGoBack ?? false))
+    case "discarded":
+      guard let url = report["url"]?.string else { throw CommandError("pageReport: malformed discard") }
+      page.modelSerial = try nextPageModelSerial()
+      effects = page.model.discarded(url)
+    case "ready":
+      guard let browserId = pageSafeInteger(report["browserId"]) else { throw CommandError("pageReport: malformed ready") }
+      let tabId: Int?
+      if let raw = report["tabId"] {
+        guard let value = pageSafeInteger(raw) else { throw CommandError("pageReport: malformed ready tab") }
+        tabId = value
+      } else { tabId = nil }
+      page.ready = PageReadyFacts(browserId: browserId, tabId: tabId)
+      page.live.ready()
+    case "failed", "loadError":
+      page.modelSerial = try nextPageModelSerial()
+      page.model.loadFailed()
+    case "moved":
+      guard let sameProfile = report["sameProfile"]?.bool else { throw CommandError("pageReport: malformed move") }
+      page.modelSerial = try nextPageModelSerial()
+      page.model.moved(sameProfile: sameProfile)
+    case "advance": _ = page.live.advance(to: now)
+    default: break
+    }
     for effect in effects {
-      applyPageLiveEffect(effect, report: report, page: &page)
       switch effect {
-      case .navigated(let url, let title, _, _, _):
+      case .markLoading: _ = page.live.markLoading()
+      case .navigated(let url, let title, let loading, let back, let forward):
+        _ = page.live.navigation(url: url, isLoading: loading, canGoBack: back, canGoForward: forward,
+          themeColor: report["themeColor"]?.string, now: now)
         memory.pages[id] = page
         updateTab(id, TabUpdate(set: ["url": .string(url), "title": .string(title)]), live: page.live.facts)
+      case .keepNewTabShown:
+        let url = report["initialDocumentAccessed"]?.bool == true && report["committedInitial"]?.bool == true ? "about:blank" : report["url"]?.string ?? ""
+        _ = page.live.navigation(url: url, isLoading: report["isLoading"]?.bool ?? false,
+          canGoBack: report["canGoBack"]?.bool ?? false, canGoForward: report["canGoForward"]?.bool ?? false,
+          themeColor: report["themeColor"]?.string, now: now)
       case .adoptNavigation(let url):
         memory.pages[id] = page
         updateTab(id, TabUpdate(set: ["navigation": navigationTo(url).jsonValue]), live: page.live.facts)
+      case .clearNewTabShown: page.newTabShownUrl = nil
+      case .stopLoading: _ = page.live.download()
       case .updateURL(let url):
         memory.pages[id] = page
         updateTab(id, TabUpdate(set: ["url": .string(url)]), live: page.live.facts)
@@ -307,6 +288,7 @@ extension Session {
       case .resetToNewTab:
         memory.pages[id] = page
         updateTab(id, TabUpdate(set: ["url": "", "title": "", "favicon": .null]), live: page.live.facts)
+      case .discarded: _ = page.live.discard()
       default: break
       }
     }

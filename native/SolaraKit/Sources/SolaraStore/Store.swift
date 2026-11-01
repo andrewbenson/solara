@@ -83,18 +83,7 @@ public final class Store: Sendable {
 
   enum DeliveryEvent {
     case commit(Commit)
-    case callback(DeferredCallback)
     case sequencedFailure(Command, Error, [@Sendable (Command, Error) -> Void])
-  }
-
-  final class DeferredCallback: Sendable {
-    let action: @Sendable () -> Void
-    let ready: Mutex<Bool>
-
-    init(action: @escaping @Sendable () -> Void, ready: Bool) {
-      self.action = action
-      self.ready = Mutex(ready)
-    }
   }
 
   struct Delivery {
@@ -111,7 +100,6 @@ public final class Store: Sendable {
     var invariantReports: [(found: [String], commands: [Command])] = []
     var syncFailures: [String] = []
     var failedSequenced = false
-    var callbacks: [DeferredCallback] = []
   }
 
   public typealias Listener = @Sendable (Commit) -> Void
@@ -405,7 +393,6 @@ public final class Store: Sendable {
     from before: BrowserState, generations: [String: String], rev current: Int, settled: Bool, _ session: Session, origin: Origin, fromSync: Bool, tags: Bool, commands: [Command], durable: Bool
   ) throws -> (Commit, Patch?) {
     session.settleLive()
-    session.finalizeClosingWindowLive()
     if checksInvariants && settled {
       try Invariants.check(session.state)
       let found = Invariants.violations(session.state)
@@ -453,50 +440,6 @@ public final class Store: Sendable {
     #endif
     guard owns else { throw StoreSequenceRequired() }
     return try body()
-  }
-
-  public func afterSequence(_ action: @escaping @Sendable () -> Void) {
-    ingress.lock()
-    let callback = sequencing.withLock { sequencing in
-      let callback = DeferredCallback(action: action, ready: sequencing.depth == 0)
-      if sequencing.depth > 0 { sequencing.callbacks.append(callback) }
-      return callback
-    }
-    delivery.withLock { $0.queue.append(.callback(callback)) }
-    ingress.unlock()
-    if callback.ready.withLock({ $0 }) { drain() }
-  }
-
-  public func pageHostSnapshotInScope(_ tabId: String, generation: String) throws -> (state: BrowserState, facts: PageFacts?, producerCurrent: Bool) {
-    try withinSequence { core.withLock { core in
-      let fence = core.memory.pageProducerFence[tabId]
-      return (core.state, core.memory.pages[tabId]?.facts,
-        fence?.generation == generation && fence?.retired == false)
-    } }
-  }
-
-  public func rebasePageExecutionInScope(_ tabId: String, generation: String, executedNavigationSeq: Int?) throws {
-    try withinSequence {
-      _ = try transactUnsequenced(commands: [], origin: .engine, durable: false, fromSync: false, waiting: nil, replaying: false) { session in
-        guard var page = session.memory.pages[tabId], page.generation == generation,
-          let tab = session.state.tabs[tabId] else { return }
-        page.model = TabPageModel(navigation: pageNavigation(tab), adoptedUrl: truthy(tab.adoptId) ? tab.url : nil,
-          handoffSeq: executedNavigationSeq, webkitWithoutHandoff: false, wasNewTab: page.wasNewTab)
-        page.modelSerial = try session.nextPageModelSerial()
-        session.memory.pages[tabId] = page
-      }
-    }
-  }
-
-  public func confirmPageExecutionInScope(_ tabId: String, generation: String) throws {
-    try withinSequence {
-      _ = try transactUnsequenced(commands: [], origin: .engine, durable: false, fromSync: false, waiting: nil, replaying: false) { session in
-        guard var page = session.memory.pages[tabId], page.generation == generation else { return }
-        page.model.executionConfirmed()
-        page.modelSerial = try session.nextPageModelSerial()
-        session.memory.pages[tabId] = page
-      }
-    }
   }
 
   public func deliveryCursor() -> (committed: Int, delivered: Int) {
@@ -553,16 +496,6 @@ public final class Store: Sendable {
       }
       return Int(result)
     } catch { preconditionFailure("keepalive runtime epoch exhausted: \(error)") }
-  }
-
-  public func preparePageIssueInScope(id: String, report: JSONValue) throws -> PreparedPageIssue? {
-    try withinSequence {
-      var prepared: PreparedPageIssue?
-      _ = try transactUnsequenced(commands: [], origin: .engine, durable: false, fromSync: false, waiting: nil, replaying: false) {
-        prepared = try $0.preparePageIssue(id: id, report: report)
-      }
-      return prepared
-    }
   }
 
   public func preparePooledIssue(id: String, report: JSONValue) throws -> PreparedPageIssue? {
@@ -629,8 +562,7 @@ public final class Store: Sendable {
         let refusals = outermost ? sequencing.persistenceRefusals : []
         let failures = outermost ? sequencing.syncFailures : []
         let invariants = outermost ? sequencing.invariantReports : []
-        let callbacks = outermost ? sequencing.callbacks : []
-        let delivers = replay || sequencing.failedSequenced || !callbacks.isEmpty
+        let delivers = replay || sequencing.failedSequenced
         if outermost {
           sequencing.owner = nil
           sequencing.replaySync = false
@@ -638,14 +570,12 @@ public final class Store: Sendable {
           sequencing.persistenceRefusals.removeAll(keepingCapacity: true)
           sequencing.syncFailures.removeAll(keepingCapacity: true)
           sequencing.invariantReports.removeAll(keepingCapacity: true)
-          sequencing.callbacks.removeAll(keepingCapacity: true)
         }
-        return (outermost: outermost, replay: replay, delivers: delivers, refusals: refusals, failures: failures, invariants: invariants, callbacks: callbacks)
+        return (outermost: outermost, replay: replay, delivers: delivers, refusals: refusals, failures: failures, invariants: invariants)
       }
       if !completion.outermost && completion.replay { runQueuedFromSync(sequenced: false) }
       ingress.unlock()
       if completion.outermost {
-        for callback in completion.callbacks { callback.ready.withLock { $0 = true } }
         refreshLaunchPageThemeTimers()
         for report in completion.invariants { invariantHandler(report.found, report.commands) }
         for message in completion.failures { FileHandle.standardError.write(Data(message.utf8)) }
@@ -762,15 +692,9 @@ public final class Store: Sendable {
         delivery.draining = false
         return nil
       }
-      if case .callback(let callback) = delivery.queue[0], !callback.ready.withLock({ $0 }) {
-        delivery.draining = false
-        return nil
-      }
       return delivery.queue.removeFirst()
     }) {
       switch event {
-      case .callback(let callback):
-        callback.action()
       case .commit(let commit):
         for (_, listener) in listeners.withLock({ $0 }) { listener(commit) }
         delivery.withLock { $0.deliveredRev = max($0.deliveredRev, commit.rev) }

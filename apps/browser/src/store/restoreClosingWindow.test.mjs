@@ -5,6 +5,7 @@ const { pinnedAreaAdapters } = await import("../sync/pinned.ts");
 const { deviceTabsAdapter } = await import("../sync/adapters.ts");
 const { newTileFolder } = await import("./tileFolders.ts");
 const { workspaceFromPatch, workspaceFromSnapshot } = await import("./nativeWorkspace.ts");
+const { restoredNativeClosingLocals, pruneClosingLocals, nativeClosingLiveAtApply, nativeClosingUndo } = await import("./closingWindowRestore.ts");
 await import("../test-native/index.ts");
 const { IDLE_LIVE } = await import("./model.ts");
 
@@ -135,9 +136,53 @@ test("all pin adapters extract the same records before close, parked, and after 
   assert.deepEqual([...deviceTabsAdapter("default", "device", () => "Mac").extract().values], withPrivate);
 });
 
+test("the native workspace close undo contains only JS-owned live state", () => {
+  const { w, saved, before } = fixture();
+  const removed = workspaceFromPatch(before, {
+    rev: 1,
+    windows: { upsert: [], remove: [w] },
+    tabs: { upsert: [], remove: saved.tabs.map((t) => t.id) },
+    find: { upsert: [], remove: saved.tabs.map((t) => t.id) },
+    selection: { upsert: [], remove: [w] },
+    selectionAnchors: { upsert: [], remove: [w] },
+    windowUi: { upsert: [], remove: [w] },
+  });
+  const closed = { ...before, ...removed };
+  assert.equal(closed.live[saved.tabs[0].id], undefined);
+  assert.equal(closed.windowUi[w], undefined);
+  const locals = restoredNativeClosingLocals(closed, w);
+  assert.ok(locals);
+  const restored = pruneClosingLocals(locals);
+  assert.deepEqual(restored.live, before.live);
+  assert.equal("find" in restored, false);
+  assert.equal("ui" in restored, false);
+  assert.deepEqual(Object.keys(restored), ["live"]);
+  assert.ok(restoredNativeClosingLocals({ ...closed, find: before.find }, w));
+  assert.equal(restoredNativeClosingLocals({ ...closed, live: before.live }, w), null);
+});
 
-
-
+test("the native live undo applies per entry only while it still holds the post-close value", () => {
+  const { w, saved, before } = fixture();
+  const removed = workspaceFromPatch(before, {
+    rev: 1,
+    windows: { upsert: [], remove: [w] },
+    tabs: { upsert: [], remove: saved.tabs.map((t) => t.id) },
+    find: { upsert: [], remove: saved.tabs.map((t) => t.id) },
+    selection: { upsert: [], remove: [w] },
+    selectionAnchors: { upsert: [], remove: [w] },
+    windowUi: { upsert: [], remove: [w] },
+  });
+  const closed = { ...before, ...removed };
+  const a = Object.keys(before.live).find((id) => saved.tabs.some((t) => t.id === id));
+  assert.ok(a);
+  assert.deepEqual(nativeClosingLiveAtApply(closed, nativeClosingUndo(w)).live[a], before.live[a]);
+  assert.deepEqual(nativeClosingLiveAtApply({ ...closed, live: { ...closed.live, [a]: IDLE_LIVE } }, nativeClosingUndo(w)).live[a], before.live[a]);
+  const newer = { ...before.live[a], playingAudio: false };
+  const edited = { ...closed, live: { ...closed.live, [a]: newer, other: { playingAudio: true } } };
+  const applied = nativeClosingLiveAtApply(edited, nativeClosingUndo(w)).live;
+  assert.deepEqual(applied[a], newer);
+  assert.deepEqual(applied.other, { playingAudio: true });
+});
 
 test("Stay takes back pin keys and leaves unrelated preexisting parked pins alone", () => {
   const f = fixture();
@@ -162,7 +207,18 @@ test("hydrate invalidates an earlier close undo", () => {
   assert.equal(S(), before);
 });
 
-
+test("a native snapshot fallback also retains local close undo", () => {
+  const { w, saved, before } = fixture();
+  const removed = workspaceFromSnapshot(before, { windows: {}, tabs: {}, windowOrder: [] }, { keepLocal: true });
+  const local = restoredNativeClosingLocals({ ...before, ...removed }, w);
+  assert.ok(local);
+  assert.deepEqual(local.live, before.live);
+  assert.equal("find" in local, false);
+  assert.equal("ui" in local, false);
+  assert.deepEqual(Object.keys(local), ["live"]);
+  assert.deepEqual(Object.keys(pruneClosingLocals(local)), ["live"]);
+  assert.ok(saved.tabs.length);
+});
 
 test("a restored id parked under another profile refuses without changing state", () => {
   const f = fixture();
@@ -283,7 +339,29 @@ test("Stay keeps a live pinned split pane loaded when its sibling has closed", (
   assert.deepEqual(S().closedTabs.map((c) => c.tabId), [first]);
 });
 
-
+test("native local restoration prunes closed tabs and unloaded pins", () => {
+  const f = fixture();
+  S().closeWindow(f.w);
+  const live = f.saved.tabs.at(-1).id;
+  const restored = S().restoreClosingWindow(f.saved, "chrome-stay", [live]);
+  const other = S().createWindow({ url: "https://unrelated.example/" });
+  const otherTab = S().windows[other].tabIds[0];
+  S().pinTabs([otherTab], true);
+  S().closeTabs([otherTab]);
+  const local = {
+    live: { ...f.before.live, [otherTab]: { playingAudio: true } },
+  };
+  const filtered = pruneClosingLocals(local, S(), f.saved.tabs.map((t) => t.id));
+  for (const tab of f.saved.tabs.filter((t) => t.id !== live)) {
+    assert.equal(filtered.live[tab.id]?.playingAudio ?? false, false);
+    if (!S().tabs[tab.id]) assert.equal(filtered.live[tab.id], undefined);
+  }
+  assert.deepEqual(filtered.live[live], f.before.live[live]);
+  assert.deepEqual(Object.keys(filtered), ["live"]);
+  assert.deepEqual(filtered.live[otherTab], local.live[otherTab]);
+  assert.equal("find" in filtered, false);
+  assert.equal("ui" in filtered, false);
+});
 
 test("Stay keeps an already unloaded pin without recording another close", () => {
   S().hydrate({});
@@ -352,17 +430,4 @@ test("Stay does not recreate a peek missing from the live snapshot tabs", () => 
   assert.equal(S().tabs[peek], undefined);
   assert.equal(S().peeks[restored], undefined);
   assert.equal(S().closedTabs.length, 0);
-});
-
-
-test("native restore projection applies only the live patch supplied by Swift", () => {
-  const { w, saved, before } = fixture();
-  const ids = saved.tabs.map((t) => t.id);
-  const closePatch = { rev: 1, windows: { upsert: [], remove: [w] }, tabs: { upsert: [], remove: ids }, live: { upsert: [], remove: ids } };
-  const closed = { ...before, ...workspaceFromPatch(before, closePatch) };
-  for (const id of ids) assert.equal(closed.live[id], undefined);
-  const next = workspaceFromSnapshot(closed, { live: {}, tabs: before.tabs, windows: before.windows }, { keepLocal: true });
-  assert.deepEqual(next.live, {});
-  const restored = workspaceFromPatch(closed, { rev: 2, live: { upsert: [{ id: ids[0], ...IDLE_LIVE, discarded: true }], remove: [] } });
-  assert.deepEqual(restored.live[ids[0]], { ...IDLE_LIVE, discarded: true });
 });

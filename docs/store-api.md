@@ -11,11 +11,7 @@ modules before using them — this is a summary from the agent that built it.
   `lastActiveProfile`). Its engine profile (`engineProfile`) is that profile's off-the-record one: private windows of one
   profile share a session (`privateSession(profileId)`, the regular engine name), another profile's never. Downloads
   carry `offTheRecord` and their regular profile (`downloadSession`, store/ui.ts); a session's go with its last window.
-- `tabs` (persisted) vs `live` (in-memory page facts, replicated on the native wire and never persisted).
-  When Swift owns the workspace, each `live[tabId]` is `{ discarded, isLoading, canGoBack, canGoForward, playingAudio, themeColor }`;
-  Swift owns every field, including `discarded` (default false). Progress and other presentation state remain JS UI state.
-  JS consumes authoritative patches and full snapshot replacement; it does not fill idle entries, prune closed ids,
-  copy holder/borrower facts or transfer facts for swaps. Swift normalizes those changes in each settlement.
+- `tabs` (persisted) vs `live` (loading/progress/back-forward/audio/theme color; never persisted).
 - `groups`: `{ windowId, profileId, name, icon, color, collapsed, pinned, tabIds }` (members contiguous). `color` is
   `null` for Neutral, `"none"` for a transparent group, or one of Chrome's nine group colors.
 - `splits` (store/splits.ts): `{ windowId, tabIds (2–3, pane order), orientation, sizes, stack? }` — `stack` = two panes sharing a slot the other way (Add Bottom Split). Members are contiguous in `window.tabIds`; the window's active tab is the focused pane. A split is one sidebar row (`splitRowPanes`): its panes are all unpinned, or all pinned rows; `placing`, `withGroup`, `createGroup`, `addTabsToGroup` and `removeTabsFromGroup` take every pane of a row they're given one of (`withSplitRows`), pinned panes are always rows, and a pinned split is mirrored to the profile's windows (pinMirror) and parked with them (`ParkedPins.splits`). `window.tabLayout` ("sidebar" | "top", unset = Settings).
@@ -58,11 +54,9 @@ modules before using them — this is a summary from the agent that built it.
   `newTab` into it goes to `mainWindowFor(s, profileId)`; `resolveWindowId(s, null)` never picks it; closing it records a
   `ClosedTab` with `small: true` that reopens in a new Little Solara; it isn't saved with the session.
 - Tabs: `newTab(windowId, { url, background, adoptId, openerId, profileId, pinned, index })`, `closeTabs(ids, { lastClosesWindow })`
-  and `closeTab(id)` (the same path with `lastClosesWindow`, for ⌘W and ✕), `activate`, `navigate`, `updateTab(id, patch)`,
-  `togglePin`, `moveTab`, `moveTabBy(id, ±1)` (both within the tab's pin section), `duplicateTab`, and
-  `faviconChanged(id, favicon)`. When Swift owns the workspace, native `pageReport` interprets URL/title and live
-  together; JS `navigated`/`updateLive` and the third `updateTab` live argument cannot write those facts. Those reducers
-  retain their existing behavior when the native workspace is off. Chrome records visits (HistoryService) and icons (FaviconService).
+  and `closeTab(id)` (the same path with `lastClosesWindow`, for ⌘W and ✕), `activate`, `navigate`, `updateTab(id, patch, live?)` (the live patch lands in the same store update), `updateLive`,
+  `togglePin`, `moveTab`, `moveTabBy(id, ±1)` (both within the tab's pin section), `duplicateTab`. The engine's page reports go through `navigated(id, { url, title }, live)` and
+  `faviconChanged(id, favicon)`. Chrome records the visit (HistoryService) and keeps the icon (FaviconService) itself.
   Closing a pinned tab only unloads it (`unloadPinnedTabs`, like Dia): the tile stays with `unloaded: true`, back at its
   pinned URL and without a web view until selected; the window selects its last-used regular tab, else the loaded
   pinned tab it showed last, else a New Tab page, and ⇧⌘T restores the page into the tile. Closing the last tab closes
@@ -155,187 +149,21 @@ don't re-render every tab.
 - Menu commands: lib/commands.ts (JS) + packages/shell/ios/Menus.swift (native menu bar).
 - Tests: `pnpm --filter @solara/browser test` (`docs/testing.md`).
 
-## Page reports, ownership and native events
-
-`@solara/store` keeps one synchronous command transport: `nativeWrite({ name, args })`.
-`pageReport(tabId, report)` sends `{ name: "pageReport", args: [tabId, report] }` and returns the usual
-revision/patch/result/effects response. There is no second live mutation channel. `applyState` carrying `live`
-throws before mutation. Owned JS `writeState.live` and direct guarded setState writes are refused before local
-subscriber exposure; live is separate from writable owned slices. UI effects, sync busy/error handling, writable
-UI keys and command-only slices keep their existing contracts. The compatibility `setPlayingAudio` command
-still updates its cache, but JS no longer produces it for an owned workspace and native decisions use `live`.
-
-The report types are:
-
-| Type | Fields besides `type` and lifetime `generation` |
-| --- | --- |
-| `created` | `engine: "chromium" | "webkit"`, optional nullable `handoffSeq`, optional `reestablished`, and PageContext |
-| `context` | PageContext |
-| `issued` | nullable `navigation: { url, seq, userInitiated? }`, `startedEarly`, optional `sameProfileMove`, and PageContext |
-| `navigation` | `url`, `title`, `isLoading`, `canGoBack`, `canGoForward`; optional nullable `themeColor`, optional `initialDocumentAccessed`, `committedInitial`, `committedUrl`, `eventSeq` |
-| `media` | `playing`, optional `muted`, `eventSeq` |
-| `ready` | `browserId`, optional `tabId`, `eventSeq` |
-| `download` | optional nullable `committedUrl`, optional `skipped`, `eventSeq` |
-| `discarded` | `url`, optional `eventSeq` |
-| `failed`, `loadError`, `advance`, `gone` | optional `eventSeq` |
-| `moved` | `sameProfile` |
-| `restore` | startup-only, untagged `themes: [{ tab, page, color }]`; no active lifetime is created |
-| `keepAlive` | `epoch`, `seq`, `handled`, `keep`, `reveal` |
-| `latch` | `eventSeq` |
-
-PageContext is `{ navigationSeq: number | null, contextRevision: number, wasNewTab: boolean,
-newTabShownUrl: string | null }`. Optional report fields are absent when unsent; explicit null clears nullable
-context. Context requires the current navigation sequence and a strictly newer revision. Issuance supplies
-current context, including explicit null, and can reuse an equal revision only when its contents match.
-The ordinary RN `pageContext` prop supplies context to native attachment before constructor reports; it carries no
-identity or activation authority. Native attachment uses it only when its navigation sequence is current.
-show/hide New Tab publishes context synchronously before updateTab or later navigation; asynchronous RN/pool
-props supplement this publication. Loading A, Back to New Tab, then navigating to A clears the overlay even when
-navigation's URL is unchanged. A no-op follow of the already consumed sequence preserves the overlay.
-A stale prop cannot overwrite accepted newer context. Pooled creation validates cached context before attachment and engine construction; later appearance-only prop batches retain that context.
-
-Swift interprets the existing pure TabPageModel and PageLive rules. Navigation commits URL/title and live in one
-settlement; ready records `{ browserId, tabId? }` and clears discarded. Discard changes facts through reports and
-keeps the producer identity, as does freeze. Gone retires the matching fence and resets surviving tab facts to idle.
-A replacement starts with new ready/feed/latch/stamps and clears discarded. Same-session ordinary document reports
-remain ordered; there is no document-age filter. Each report in an array settles separately so loading/URL edges
-remain observable. `LiveChange` retains `tabId`, `previous`, `current`, `url`, `profileId` and adds nullable
-`previousGeneration`/`currentGeneration` session strings. Closing removes live and emits `current == nil`.
-`observeLive(_:)` returns `(token, baseline: [String: PageLiveFacts])`; `observeLive(tabId:_:)` returns an optional
-single baseline, and `unsubscribe(token)` ends either observation.
-
-There are two independent generation fields:
-
-- `registrationGeneration` is a positive process-wide monotonically allocated JS-safe native registration number.
-  It changes on registration replacement; numeric calls retain the captured registration and never upgrade it by tab id.
-- `sessionGeneration` is an opaque native producer UUID string, compared only for equality. Native attach/create
-  mints it; JS/render/nativeID never choose it. Every owned descriptor/event carries both fields. External registry
-  descriptors may have `sessionGeneration: null` and no Store facts. Existing `PageReport.generation`,
-  `PageFacts.generation`, Store `livePages()` values and `onPageCreated.payload.generation` retain their string
-  session meaning. `eventSeq` is an independent per-session native stamp, not either generation or a feed epoch.
-
-The native host registers each binding through PageRegistry.shared and installs its after-ingress deliver hook
-before registration. Failed installation traps in Debug and logs/refuses registration in Release. Committed RN
-mount attachment establishes Store memory and mapping before constructor events. Speculative React render does
-nothing. Attach is idempotent for the same current native mount; logical detach/runtime retirement is exact and
-precedes gone/close. Temporary visual reparenting retains authority. Replacement and transfers in both directions
-retire the source session/registration before minting destination identities, preserving only confirmed physical
-execution metadata. A late source callback, detach or old runtime teardown cannot claim or remove a replacement.
-Pool sessions survive JS reload and discard/freeze. Pooled event/live descriptors include accepted `contextRevision`;
-JS rebases its context clock above that value when adopting a retained producer after reload. Owned malformed or
-missing-identity envelopes are rejected. Little Solara uses a pooled producer too.
-
-RN's pre-Expo native tap reserves and settles facts before emitting UI events. Its private `storeReport` disposition
-is `fallback`, `reserved` with the original session, or `rejected` with an optional original session. Rejected owned
-events never become fallback. WebView checks disposition before decoding and checks current native authority again
-when each held handler actually executes, including its captured registration. JS retains navigation following for
-RN and UI effects for both hosts (history/favicon/prompts/status/media/overlay); pooled navigation following is native.
-There are no duplicate JS created/gone/navigation/media/download/discard/ready writes on the owned path. Ready still records loaded profiles for resource release. Sleeping hooks read owned live.discarded; internal React pages complete semantic URL/title through updateTab without writing live facts.
-
-`updateRNPageContext(tabId, sessionGeneration, context): boolean` publishes only to the exact current attachment;
-`isRNPageCurrent(tabId, sessionGeneration): boolean` is nonactivating. The shared RN/pool helpers
-`isPageCurrent(identity): boolean` and `updatePageContext(identity, context): boolean` additionally validate the exact
-`registrationGeneration` and `sessionGeneration`; JS uses them for held-event delivery and synchronous context
-publication. Their native ABI takes tab id, session string, registration number and (for update) JSON context.
-None creates identity. RN `issued`
-returns a nonconsuming `{ actions, guard }` preview. PageIssueGuard contains `sessionGeneration`, complete nullable
-`navigation`, `contextRevision`, `modelSerial`, `startedEarly`, `sameProfileMove`. Always finalize even an empty
-preview using `finishRNPageIssue(tabId, guard): Promise<{ accepted: boolean }>` (the same native
-`PageCommand.finishPageIssue` executor). JS never executes preview load/clear actions or clears on completion.
-Native acceptance emits the matching UI clear before any engine-event UI notifications. The clear carries the consumed contextRevision and complete nullable navigation; JS clears only an overlay whose current revision and navigation still match. Rejected candidates leave
-current following pending; JS retries a rejected completion once from the current request and coalesces intervening
-follow requests. Owned `startNavigation` effects issue no raw JS load.
-
-All legacy, G3 and typed native calls use one PageIssuer. Standalone `issue` enters Store.sequence;
-`issueInScope` uses Store.withinSequence without a nested drain and requires existing ingress ownership (Debug
-precondition, Release refusal). Its final body rechecks current tab/window/load/page eligibility, engine/profile,
-exact binding/session/registration/fence, full navigation and accepted context, then consumes and invokes clear/load
-synchronously outside core while holding ingress. No outward callback or intervening barrier can invalidate that
-boundary. Pooled preparation is an immutable candidate; failed final consumption advances no followed marker.
-Async completion/result waiting, main hops and callback delivery stay outside ingress/core.
-
-A report enqueued inside a sequence body waits for the next barrier; sequence drains before the body and has no exit drain.
-
-`nativePageFacts(tabId)` returns a copied nullable `{ generation, ready, keepAlive, latchedThrough, newestEventSeq }`;
-`nativeLivePages()` returns the copied map for existing loaded RN/pool producers with active memory, including
-not-yet-ready pages. These wrap native `pageFacts`/`livePages` JSON reads. Store reads, TabPool/module livePages,
-registry descriptors/describe/snapshots and read-like page calls all capture after drain under the same barrier,
-filter retired/unloaded/held entries and take ready from current Store facts, including null. They do not start or
-close views. Returned copies describe their barrier; callbacks released after ingress may commit newer state before
-the read returns to its caller. `deliveryCursor()` is a barrier read outside sequence and a no-drain read inside its
-owning sequence; it reports committed revision and the last revision whose listeners have all finished.
-
-`registerKeepAliveRuntime()` returns a new positive JS-safe numeric epoch, clears feed values and retains readiness,
-generation, stamps, latch and anti-replay watermarks. Epoch starts at zero before registration. `keep` contains
-boolean `capturing`, `newTabShown`, `pip`, `displayRequest` and `media: "none" | "present" | "playing"`;
-`reveal` contains boolean `fullscreen`, `crashed`, `unresponsive`, `scrolledDown`, `sharing`.
-keepAlive requires a current loaded tab/session, current positive epoch, positive safe integer seq, nonnegative
-safe integer handled and a strictly increasing seq for that epoch/session watermark. Invalid/stale/missing-memory
-feeds silently drop and never establish a page. Latch takes max(latchedThrough, eventSeq); stamped reports take
-max(newestEventSeq, eventSeq). Feed/latch/runtime registration change Store memory only: no revision, patch,
-persistence, effects or live listeners. Step 6 owns feed production and lifecycle policy; RN stays exempt from that
-policy. 5b adds no JS lifecycle runner or download-started policy.
-
-Unload/hydrate clears active page memory and live presentation; normalization restores idle entries and holder facts.
-Nonretired producer fences and same-session watermarks survive retained ids; tab removal drops them, except bounded
-close-held authority. Model serials remain monotonic across resets. Before refresh/following/facts, a trusted native
-retained binding must prove current native routing/session/registration, eligibility and a matching nonretired fence,
-then establish the same session with `reestablished: true`. Arbitrary reports cannot recover missing memory. Recovery
-uses actual executed handoff sequence, never pending navigation, and fresh model/idle facts with ready/feed null and
-latch/stamps zero; it replays no cached ready/feed. Its created event asks Step 6 to resend a full feed at its next seq.
-Retired fences never recover; absent readiness remains protective until a real new ready report.
-
-Close cancellation keeps structural snapshots free of live and separately retains affected transient facts plus
-bounded held model seeds/fences (30 seconds, at most 10 windows). Matching held facts reduce FIFO into their existing
-seed without creating tabs, commits, workspace/engine effects or feed values. Download/discard/failure update its
-model/live; terminal close makes it non-restorable and gone removes authority. Restore preflights existing structural
-and affected-live conflicts before mutation/undo consumption, preserves unrelated newer facts and atomically restores
-surviving loaded projections/live/model/same-session authority under the new window id. Missing ordinary tabs stay
-absent; unloaded pins stay idle. No old feed/latch/watermark or historical ready sequence is replayed, and no reload
-is needed. A no-seed valid structural restore remains supported but requires trusted fence recovery before later
-facts. Expiry, gone, consumed undo and hydrate release held authority. JS owns close-live undo only in fallback mode.
-
-Native chrome uses the existing SidebarFlags: owned loading/audio/discarded come from BrowserState.live, including
-an empty dictionary; nil alone selects fallback host arrays. Selection/developer/PiP/capture remain host presentation.
-Contexts recompute facts without host prop changes and top-strip audio uses those same sidebar flags. Unloaded
-fading remains separate from discarded sleeping.
-
-The UI event queue (`lib/nativeEvents.ts`) still batches HELD_EVENTS in arrival order until a zero-delay timer or
-another event/callback flushes them, then uses one React/store transaction. The queue retains only UI/fallback work
-for owned producers. Native facts are already ordered before Expo; applyHeldReports after an await handles queued
-JS UI work, not authoritative native fact admission. No input or page UI event is intentionally reordered or dropped.
-
-## Replica retention, persistence and quit
-
-One revision/cursor and one 65,536-patch ring carries workspace and live-only changes, including foreign commits.
-Catch-up copies the requested suffix or a full snapshot and its exact revision together under ingress/core, then
-encodes outside ingress. There is no separate live channel, cursor reconstruction or patch coalescing. Unlimited
-suspension can exceed retention and uses snapshot fallback, which replaces live fully and preserves references for
-equal JSON where possible. Hydrate consumes the native reset response rather than applying a second JS live reset.
-
-Live, page memory, producer fences, generations, ready/feed values and watermarks never enter session documents,
-SQL, sync records or schema migrations. Live-only commits do not schedule persistence; a URL/title change still does.
-Native startup restores launch-look v2 themes before the first snapshot/render (maximum 1100*1024 bytes, 200 valid
-themes, matching tab/page without hash, color at most 64 UTF-16 units), preserving an existing nonempty color.
-Blank documents do not start grace; first matching settled nonblank navigation starts 1,500 ms. New color/page
-cancels it; generation-checked native advance timers cannot clear a replacement. JS retains favicon seeding and saves
-launch look by reading the replica.
-
-Ordinary PersistenceWriter.flush reads committed state on its own queue and never enters ingress. Quit separately
-runs a bounded report barrier on a dedicated non-persistence worker before writer flush. `flushForQuit` has independent
-barrier/writer budgets, each 0.5 seconds by default; the JS/native flush(timeout) API retains its writer timeout plus
-the independent 0.5-second barrier budget. Nonpositive budgets time out immediately. Barrier timeout starts no writer
-and a cancelled late worker cannot start persistence later; accepted in-flight reduction can finish afterward without
-a saved claim. Simultaneous quit flushes coalesce. Success covers reservations through the queue-empty check, not
-future engine callbacks. Missing writer still drains, then reports skipped-safe-mode; failed/frozen/timedOut results
-remain distinct. Total caller budget is the sum plus scheduling overhead. Teardown retires exact authorities; a
-cancelled quit permits surviving bindings without reviving retired ones.
-
-Safe mode can still own the workspace while using a settings/download-only writer or no writer. Its native reports
-are ordered as usual, but workspace rows and session shadow remain untouched by persistence. If workspace ownership
-is off, native reports/interpretation and pool availability are gated off and RN/JS fallback remains; there is no
-native workspace projection.
-The retired diagnostic scope is not reintroduced by page reports.
+## Native events (lib/nativeEvents.ts)
+Every native→JS call is its own task, and React Native commits after each, so a page's reports used to cost a commit
+apiece (about ten per new tab). A WebView's page reports (`HELD_EVENTS`: navigation, progress, favicon, media, now
+playing, status, security, blocked count, media access, load error) are held until the calls already queued behind
+them have run (a 0 ms timer), then applied in arrival order in one React batch. Anything else that reaches JS first
+applies them before it runs: any other event (touches, layout, a page opening a window, focus, activation, commands,
+find, zoom, a new page's ready report), a timer, a callback, and every native module listener (Expo's EventEmitter, so
+a tab strip transaction or a download), which also runs as one commit with them. Nothing is reordered or dropped, and
+nothing a user action waits on is held. Work JSI delivers without a listener (an Expo promise settling) can run before
+held reports, as it already could before a view event's own dispatch hop: code that decides from a page's live state
+after awaiting the engine calls `applyHeldReports()` first (tabLifecycle's sleep and freeze, closeTab). A flush
+also runs as one store transaction (`storeTransaction`, store/transaction.ts): its writes apply at once, and the store's
+listeners and subscriptions hear them together at the end, except a write that changes a tab's address or starts or
+ends its load, which is heard as it lands (a value that flips back within the flush stays visible to the listeners
+that act on it: translate's detection, the web store's script, a screen-share request going with its page).
 
 ## Live tabs: Chrome's tab strips (lib/chromeTabs.ts, store/liveTabs.ts, packages/solaracore/src/tabStrip.ts)
 

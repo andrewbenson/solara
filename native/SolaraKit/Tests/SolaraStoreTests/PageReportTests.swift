@@ -352,43 +352,4 @@ func phaseAIssued(_ store: Store, _ id: String, generation: String = "G", revisi
     #expect(!store.consumePooledIssue(id: id, prepared: candidate))
     #expect(store.memory.pages[id]!.modelSerial > candidate.guardValue.modelSerial)
   }
-
-  @Test func followedNavigationKeepsBackOverlayUntilANewSameURLRequestIsConsumed() throws {
-    let (store, tab) = try phaseAPageFixture()
-    try store.dispatch(phaseAReport(tab, phaseACreated(store, tab)))
-    let first = try #require(try store.preparePooledIssue(id: tab, report: phaseAIssued(store, tab)))
-    #expect(store.consumePooledIssue(id: tab, prepared: first))
-    let url = store.state.tabs[tab]!.navigation!.url
-    var context = phaseAContext(store, tab, revision: 2, shown: url)
-    context["type"] = "context"
-    context["generation"] = "G"
-    try store.dispatch(phaseAReport(tab, .object(context)))
-    let shown = try #require(try store.preparePooledIssue(id: tab, report: phaseAIssued(store, tab, revision: 2, shown: url)))
-    #expect(shown.actions == [])
-    #expect(store.consumePooledIssue(id: tab, prepared: shown))
-    #expect(store.memory.pages[tab]?.newTabShownUrl == url)
-    try store.dispatch(Command("navigate", [.string(tab), .string(url)]))
-    let next = try #require(try store.preparePooledIssue(id: tab, report: phaseAIssued(store, tab, revision: 3, shown: url)))
-    #expect(next.actions.array?.first == ["type": "clearNewTabShown"])
-    #expect(next.actions.array?.last?["type"] == "load")
-    #expect(store.memory.pages[tab]?.newTabShownUrl == url)
-    #expect(store.consumePooledIssue(id: tab, prepared: next))
-    #expect(store.memory.pages[tab]?.newTabShownUrl == nil)
-  }
-
-  @Test func firstNoLoadIssuanceStillClearsCurrentOverlayAtConsumption() throws {
-    let (store, tab) = try phaseAPageFixture()
-    var created = phaseACreated(store, tab).object!
-    created["handoffSeq"] = JSONValue(store.state.tabs[tab]!.navigation!.seq)
-    try store.dispatch(phaseAReport(tab, .object(created)))
-    let url = store.state.tabs[tab]!.navigation!.url
-    let report = phaseAIssued(store, tab, revision: 2, shown: url)
-    let prepared = try #require(try store.preparePooledIssue(id: tab, report: report))
-    #expect(prepared.actions == [["type": "clearNewTabShown"]])
-    #expect(store.memory.pages[tab]?.model.issuedSeq == nil)
-    #expect(store.consumePooledIssue(id: tab, prepared: prepared))
-    #expect(store.memory.pages[tab]?.newTabShownUrl == nil)
-    #expect(store.memory.pages[tab]?.model.issuedSeq == Int(store.state.tabs[tab]!.navigation!.seq))
-  }
-
 }

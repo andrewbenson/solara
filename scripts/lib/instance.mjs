@@ -10,6 +10,14 @@ import { fileURLToPath } from "node:url";
 import { joinWouldExtend, parseFront, prune, readState, suppressedLog, waitingOthers } from "./ui-guard.mjs";
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+export const screenLocked = () => {
+  try {
+    return /<key>CGSSessionScreenIsLocked<\/key>\s*<true\/>/.test(execFileSync("/usr/sbin/ioreg", ["-n", "Root", "-d1", "-a"], { encoding: "utf8", timeout: 5000 }));
+  } catch {
+    return false;
+  }
+};
+export const screenLockedPending = "pending: the screen is locked (CGSSessionScreenIsLocked), so the window shell's display link doesn't resolve the pointer";
 const here = fileURLToPath(import.meta.url);
 
 export const freePort = () => new Promise((resolve) => {

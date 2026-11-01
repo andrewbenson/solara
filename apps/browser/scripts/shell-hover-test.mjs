@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { launch, reporter, session, sleep } from "../../../scripts/lib/instance.mjs";
+import { launch, reporter, screenLocked, screenLockedPending, session, sleep } from "../../../scripts/lib/instance.mjs";
 
 const args = process.argv.slice(2);
 const appArg = args.find((a) => !a.startsWith("--"));
@@ -17,7 +17,8 @@ peeking sidebar takes its hover too (--sidebar runs the native column, the RN ro
 the pointer stays under 40 µs. With the RN main root on top (SOLARA_SHELL_MAIN_TOP=1) the exact lookup walks the RN
 tree, so it stays under 120 µs and the shell runs it at most once a display frame: a 120 Hz pointer stream costs at most
 one lookup per frame and 3% of a core on a 60 Hz display (the 120 Hz display estimate is only reported), and with or
-without it the hover layer changes within a frame of the move.`);
+without it the hover layer changes within a frame of the move. While the screen is locked the shell's display link
+doesn't resolve the pointer, so the native rows' hover checks and the within-a-frame check are pending.`);
   process.exit(2);
 }
 const keep = args.includes("--keep-data");
@@ -93,14 +94,17 @@ try {
   const chromeWindowNumber = await run(`return win();`);
   await untilSnapshot("Chrome window number", (snapshot) => snapshot.windows[0]?.chromeWindowNumber === chromeWindowNumber);
 
-  await rep.check("rows-hover", async () => {
+  const locked = screenLocked();
+  const hoverCheck = (name, fn) => locked && (native || name === "hover-within-a-frame") ? rep.record(name, { skip: screenLockedPending }) : rep.check(name, fn);
+
+  await hoverCheck("rows-hover", async () => {
     const enters = [];
     for (const y of ROWS) enters.push(await entersAt(y));
     if (enters.some((n) => n === 0)) throw new Error(`a row didn't hover: ${enters}`);
     return { native, enters };
   });
 
-  await rep.check("covered-rows-dont-hover", async () => {
+  await hoverCheck("covered-rows-dont-hover", async () => {
     if (!(await run(`return S.devCover("w1", ${JSON.stringify(COVER)}, null);`))) throw new Error("no shell host for w1");
     try {
       const enters = [];
@@ -112,7 +116,7 @@ try {
     }
   });
 
-  await rep.check("still-pointer-follows-the-cover", async () => {
+  await hoverCheck("still-pointer-follows-the-cover", async () => {
     if (native) {
       await run(`return at(700, 400);`);
       const parked = await run(`return at(120, 130).then(hover);`);
@@ -129,7 +133,7 @@ try {
     return out;
   });
 
-  await rep.check("a-hidden-cover-gives-hover-back", async () => {
+  await hoverCheck("a-hidden-cover-gives-hover-back", async () => {
     if (native) {
       await run(`return at(700, 400);`);
       const parked = await run(`return at(120, 130).then(hover);`);
@@ -151,7 +155,7 @@ try {
 
   const PEEK = "a-cover-over-the-peeking-sidebar-takes-its-hover";
   if (!native) rep.record(PEEK, { skip: "RN sidebar" });
-  else await rep.check(PEEK, async () => {
+  else await hoverCheck(PEEK, async () => {
     await run(`if (ac.store.getState().windows.w1.sidebarOpen) ac.store.getState().toggleSidebar("w1"); return settle(900);`);
     try {
       await run(`return ac.shell.devLeftEdgePointer("w1", { x: -4, y: 300 }).then(() => settle(500));`);
@@ -184,7 +188,7 @@ try {
     return { perCall: micros, stream, frames, coreShareAt120Hz: stream.coreShare * 120 * stream.frame };
   });
 
-  await rep.check("hover-within-a-frame", async () => {
+  await hoverCheck("hover-within-a-frame", async () => {
     const moves = [];
     await run(`return S.devPointerLatency("w1", -1, -1);`);
     for (const [x, y] of [[120, 130], [-1, -1], [700, 400], [-1, -1], [120, 130], [-1, -1]]) {
@@ -202,6 +206,8 @@ try {
   await app?.quit().catch(() => {});
   if (!keep && rep.disposable) rmSync(scratch, { recursive: true, force: true });
 }
-const failed = rep.results.filter((r) => !r.ok);
-console.log(`${rep.results.length - failed.length}/${rep.results.length} passed${failed.length ? `; log ${rep.logFile}` : ""}`);
+const ran = rep.results.filter((r) => !r.skipped);
+const failed = ran.filter((r) => !r.ok);
+const pending = rep.results.length - ran.length;
+console.log(`${ran.length - failed.length}/${ran.length} passed${pending ? `, ${pending} pending` : ""}${failed.length ? `; log ${rep.logFile}` : ""}`);
 process.exit(failed.length ? 1 : 0);

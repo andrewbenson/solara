@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { launch, reporter, session, sleep } from "../../../scripts/lib/instance.mjs";
+import { launch, reporter, screenLocked, screenLockedPending, session, sleep } from "../../../scripts/lib/instance.mjs";
 
 const args = process.argv.slice(2);
 const appArg = args.find((a) => !a.startsWith("--"));
 if (!appArg) {
-  console.error("usage: node sidebar-bulk-test.mjs <Debug Solara.app> [--port=<DevTools port>] [--keep-data]\n\nMany tabs duplicated, opened or closed at once leave the sidebar's rows at an even pitch, in store order, with no slide left part way and the row under the pointer the one hovered. SOLARA_NATIVE_SIDEBAR=1 runs it on the native sidebar.");
+  console.error("usage: node sidebar-bulk-test.mjs <Debug Solara.app> [--port=<DevTools port>] [--keep-data]\n\nMany tabs duplicated, opened or closed at once leave the sidebar's rows at an even pitch, in store order, with no slide left part way and the row under the pointer the one hovered (pending while the screen is locked, when the window shell's display link doesn't resolve the pointer). SOLARA_NATIVE_SIDEBAR=1 runs it on the native sidebar.");
   process.exit(2);
 }
 const appPath = resolve(appArg);
@@ -50,6 +50,7 @@ try {
     throw new Error(`${what}: native snapshot never matched (${JSON.stringify(last)})`);
   };
 
+  const locked = screenLocked();
   const settled = async (what) => {
     await sleep(1200);
     const { list, rows, moving, clipped } = await run(SETTLED);
@@ -66,6 +67,11 @@ try {
       assert.ok(Math.abs(pitch - 37) < 0.6, `${what}: ${placed[i - 1].id} -> ${placed[i].id} is ${pitch} apart, not 37`);
     }
     const visible = placed.filter((r) => r.f.y > 40 && r.f.y + r.f.height < 700);
+    if (locked) {
+      rep.record(`${what}: the row under the pointer is the one hovered`, { skip: screenLockedPending });
+      rep.log(`${what}: ${list.length} rows`);
+      return;
+    }
     for (const row of [visible[1], visible[Math.floor(visible.length / 2)], visible.at(-2)]) {
       await run(`return ac.shell.devSetPointer("w1", { x: 700, y: 500 });`);
       await sleep(300);

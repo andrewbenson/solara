@@ -1,5 +1,7 @@
 import Foundation
 import CoreFoundation
+import SolaraModel
+import SolaraStore
 
 public indirect enum PageValue: Equatable, Sendable {
   case null
@@ -31,6 +33,30 @@ public indirect enum PageValue: Equatable, Sendable {
     case .string(let value): value
     case .array(let value): value.map(\.foundation)
     case .object(let value): value.mapValues(\.foundation)
+    }
+  }
+}
+
+public extension PageValue {
+  init(json: JSONValue) {
+    switch json {
+    case .null: self = .null
+    case .bool(let value): self = .bool(value)
+    case .number(let value): self = .number(value)
+    case .string(let value): self = .string(value)
+    case .array(let values): self = .array(values.map(PageValue.init(json:)))
+    case .object(let values): self = .object(Dictionary(uniqueKeysWithValues: values.map { ($0.key, PageValue(json: $0.value)) }))
+    }
+  }
+
+  var json: JSONValue {
+    switch self {
+    case .null: .null
+    case .bool(let value): .bool(value)
+    case .number(let value): .number(value)
+    case .string(let value): .string(value)
+    case .array(let values): .array(values.map(\.json))
+    case .object(let values): .object(JSONObject(values.map { ($0.key, $0.value.json) }))
     }
   }
 }
@@ -96,6 +122,7 @@ public enum PageCommand: Equatable, Sendable {
   case setFrozen(Bool)
   case nativeTag
   case livePage
+  case finishPageIssue(PageIssueGuard)
 
   public var method: String {
     switch self {
@@ -139,6 +166,31 @@ public enum PageCommand: Equatable, Sendable {
     case .setFrozen: "setFrozen"
     case .nativeTag: "nativeTag"
     case .livePage: "livePage"
+    case .finishPageIssue: "finishPageIssue"
+    }
+  }
+
+  public var arguments: [PageValue] {
+    switch self {
+    case .loadUrl(let url, let user): [.string(url), .bool(user)]
+    case .goToOffset(let value), .zoomStep(let value): [.number(Double(value))]
+    case .setMuted(let value), .stopFinding(let value), .resolveUnresponsive(let value), .discard(let value), .setFrozen(let value): [.bool(value)]
+    case .find(let text, let forward, let next): [.string(text), .bool(forward), .bool(next)]
+    case .runPageCommand(let value), .executeJavaScript(let value), .evaluate(let value), .downloadFavicon(let value),
+      .executeExtensionAction(let value): [.string(value)]
+    case .showDevTools(let value): [value.map(PageValue.string) ?? .null]
+    case .capturePicture(let value): [.number(value)]
+    case .downloadImage(let url, let pixels): [.string(url), .number(Double(pixels))]
+    case .mediaCommand(let command, let seconds): [.string(command), .number(seconds)]
+    case .requestPictureInPicture(let time, let control), .takeControlPress(let time, let control): [.number(time), .number(Double(control))]
+    case .pageCookies(let urls): [.array(urls.map(PageValue.string))]
+    case .openBlockedPopup(let id, let always): [.string(id), .bool(always)]
+    case .resolvePasswordPrompt(let action, let username, let password): [.string(action), username.map(PageValue.string) ?? .null, password.map(PageValue.string) ?? .null]
+    case .resolveAutofillPrompt(let id, let action): [.number(Double(id)), .string(action)]
+    case .resolveDisplayMedia(let request, let source, let audio): [.string(request), source.map(PageValue.string) ?? .null, .bool(audio)]
+    case .notificationAction(let id, let action): [.string(id), .string(action)]
+    case .finishPageIssue(let guardValue): [PageValue(json: guardValue.json)]
+    default: []
     }
   }
 
@@ -184,6 +236,7 @@ public enum PageCommand: Equatable, Sendable {
     case .setFrozen: .none
     case .nativeTag: .optionalInteger
     case .livePage: .optionalObject
+    case .finishPageIssue: .object
     }
   }
 
@@ -317,6 +370,10 @@ public enum PageCommand: Equatable, Sendable {
     case "nativeTag":
       try a.limit(0)
       return .nativeTag
+    case "finishPageIssue":
+      try a.limit(1)
+      do { return .finishPageIssue(try PageIssueGuard(json: a.value(0).json)) }
+      catch { throw PageRegistryError.invalidArguments(method, 0) }
     case "livePage":
       try a.limit(0)
       return .livePage

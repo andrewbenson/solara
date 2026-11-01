@@ -2,6 +2,7 @@ import AppKit
 import SolaraCore
 import SolaraModel
 import SolaraOmnibox
+import SolaraShell
 import SolaraStore
 import SolaraUI
 
@@ -9,11 +10,11 @@ import SolaraUI
 final class TabPoolHost {
   static let shared = TabPoolHost()
 
-  nonisolated static var available: Bool { NativeSplitChrome.panesEnabled && NativePaneRoots.available && NativeStoreHandle.opened
+  nonisolated static var available: Bool { NativeSplitChrome.panesEnabled && NativePaneRoots.available && NativeStoreHandle.opened && NativeStoreHandle.ownedWorkspaceAtLaunch
     && ProcessInfo.processInfo.environment["SOLARA_TAB_POOL"] != "0" }
 
-  var emit: ((String, [String: Any]) -> Void)?
-  var onPageGone: ((String) -> Void)?
+  var emit: (@MainActor (String, [String: Any]) -> Void)?
+  var onPageGone: (@MainActor (String) -> Void)?
   var pageEventObservers: [@MainActor (String, String, [String: Any]) -> Void] = []
   var stateObservers: [@MainActor () -> Void] = []
   private var pool: TabViewPool?
@@ -32,6 +33,8 @@ final class TabPoolHost {
   private var park = TabViewPark()
   private var making: PoolPageToken?
   private var parkCheckDue: Date?
+  private var following: Set<String> = []
+  private var scheduledFollows: Set<String> = []
   private let shellNSWindows = NSMapTable<NSString, NSWindow>.strongToWeakObjects()
 
   func start() {
@@ -40,8 +43,14 @@ final class TabPoolHost {
     if let slotObserver { NotificationCenter.default.removeObserver(slotObserver) }
     let pool = TabViewPool(make: { [weak self] tabId, windowId in self?.makePage(tabId, windowId) })
     pool.hiddenContainer = { NativeWindowShell.hiddenPages($0) }
-    pool.onPlaced = { [weak self] places in self?.emit?("onPlaced", ["places": places]) }
-    pool.onReplace = { [weak self] tabId in self?.pages[tabId]?.page.discard() }
+    pool.onPlaced = { [weak self] places in
+      PageIssuer.shared?.afterIngress { [weak self] in self?.emit?("onPlaced", ["places": places]) }
+    }
+    pool.onReplace = { [weak self] tabId in
+      guard let entry = self?.pages[tabId] else { return }
+      if let binding = entry.token.binding { PageIssuer.shared?.retire(binding) }
+      entry.page.discard()
+    }
     self.pool = pool
     commits.host = self
     let sink = commits
@@ -63,16 +72,53 @@ final class TabPoolHost {
     }
   }
 
-  func pageView(_ tabId: String) -> NSView? { pages[tabId]?.page.view }
+  func pageView(_ tabId: String) -> NSView? {
+    guard let issuer = PageIssuer.shared else { return nil }
+    return issuer.store.sequence {
+      guard let entry = pages[tabId], let binding = entry.token.binding,
+        issuer.ensurePageEstablished(binding), issuer.isCurrent(binding) else { return nil }
+      return entry.page.view
+    }
+  }
 
-  func windowOf(_ tabId: String) -> String? { state?.tabs[tabId]?.windowId }
+  func pageCall(_ tabId: String, _ method: String, _ args: [Any], registrationGeneration: Double?, resolve: @escaping PageCalls.Resolve, reject: @escaping PageCalls.Reject) {
+    guard let issuer = PageIssuer.shared else { return reject("ERR_NO_PAGE", "No native page issuer") }
+    issuer.store.sequence {
+      guard let binding = pages[tabId]?.token.binding else { return issuer.afterIngress { reject("ERR_NO_PAGE", "No pooled page for \(tabId)") } }
+      guard let registrationGeneration, registrationGeneration.isFinite, registrationGeneration > 0,
+        registrationGeneration <= 9_007_199_254_740_991, registrationGeneration.rounded(.towardZero) == registrationGeneration,
+        binding.registrationGeneration == UInt64(registrationGeneration) else {
+        return issuer.afterIngress { reject("ERR_NO_PAGE", "The pooled page registration is no longer current") }
+      }
+      do {
+        let command = try PageCommand.decode(method: method, args: args.map { try PageValue(any: $0) })
+        issuer.issue(tabId: tabId, identity: binding.identity, command: command) { result in
+          switch result {
+          case .success(let value): resolve(value == .null ? nil : value.foundation)
+          case .failure(let error): reject(error.code, error.message)
+          }
+        }
+      } catch let error as PageRegistryError {
+        issuer.afterIngress { reject(error.code, error.message) }
+      } catch { issuer.afterIngress { reject("ERR_PAGE_VALUE", "Invalid page arguments") } }
+    }
+  }
+
+  func windowOf(_ tabId: String) -> String? { NativeStoreHandle.store?.state.tabs[tabId]?.windowId }
+
+  func claimFocusPage(_ generation: Int, tabId: String) -> Bool {
+    guard let issuer = PageIssuer.shared else { return false }
+    return issuer.store.sequence {
+      guard let page = pageView(tabId) else { return false }
+      FocusMoves.claim(generation, destination: page)
+      return true
+    }
+  }
 
   func devPageEvent(_ tabId: String, _ name: String, _ payload: [String: Any]) -> Bool {
     #if DEBUG
-      guard pages[tabId] != nil else { return false }
-      emit?("onPageEvent", ["tabId": tabId, "name": name, "payload": payload])
-      pageEventObservers.forEach { $0(tabId, name, payload) }
-      return true
+      guard let entry = pages[tabId] else { return false }
+      return reportEvent(tabId, token: entry.token, name: name, payload: payload)
     #else
       return false
     #endif
@@ -80,7 +126,17 @@ final class TabPoolHost {
 
   func setPageProps(_ tabId: String, _ changed: [String: Any]) {
     props[tabId, default: [:]].merge(changed) { _, new in new }
-    pages[tabId]?.page.apply(changed)
+    guard let issuer = PageIssuer.shared else { return }
+    issuer.store.sequence {
+      guard let entry = pages[tabId], let binding = entry.token.binding,
+        issuer.ensurePageEstablished(binding) else { return }
+      if let value = cachedPageProps(tabId), let context = PageHostContext(json: value) {
+        _ = issuer.updateContext(binding, context: context)
+      }
+      guard issuer.isCurrent(binding) else { return }
+      entry.page.apply(changed)
+      follow(entry)
+    }
   }
 
   func receive(_ next: BrowserState) {
@@ -91,7 +147,13 @@ final class TabPoolHost {
   }
 
   private func refresh() {
-    guard let pool, let state else { return }
+    guard let store = NativeStoreHandle.store else { return }
+    store.sequence { refreshInScope(store.state) }
+  }
+
+  private func refreshInScope(_ state: BrowserState) {
+    guard let pool else { return }
+    self.state = state
     shellWindows.formUnion(NativeWindowShell.activeWindowIds)
     for windowId in shellWindows {
       if let window = NativeWindowShell.host(windowId)?.shell.window { shellNSWindows.setObject(window, forKey: windowId as NSString) }
@@ -115,6 +177,10 @@ final class TabPoolHost {
     wanted = fresh + parked + closing.sorted { $0.key < $1.key }.flatMap { $0.value.tabs.filter { !freshIds.contains($0.tabId) } }
     warm = Set(fresh.filter(\.warm).map(\.tabId))
     for page in pages.values { page.setWarm(warm.contains(page.tabId), neighbour: Self.neighbour(state, page.tabId)) }
+    for entry in pages.values {
+      if let binding = entry.token.binding { _ = PageIssuer.shared?.ensurePageEstablished(binding) }
+      follow(entry)
+    }
     pool.update(wanted.map { identified($0, in: state) })
     followCardPages()
   }
@@ -174,12 +240,26 @@ final class TabPoolHost {
     return state.windows[tab.windowId] != nil
   }
 
-  func devPageIds() -> [String] { pages.keys.sorted() }
+  func devPageIds() -> [String] { livePages().compactMap { $0["tabId"] as? String } }
 
   func livePages() -> [[String: Any]] {
-    pages.keys.sorted().compactMap { tabId in
-      guard let entry = pages[tabId] else { return nil }
-      return ["tabId": tabId, "engine": entry.page.spec.engine, "ready": entry.token.ready ?? NSNull(), "navigation": entry.token.navigation ?? NSNull()]
+    guard let issuer = PageIssuer.shared else { return [] }
+    return issuer.store.sequence {
+      pages.keys.sorted().compactMap { tabId in
+        guard let entry = pages[tabId], let binding = entry.token.binding,
+          issuer.ensurePageEstablished(binding), issuer.isCurrent(binding),
+          let facts = issuer.store.pageFacts(tabId) else { return nil }
+        let ready: Any
+        if let value = facts.ready {
+          var result: [String: Any] = ["browserId": value.browserId]
+          if let tabId = value.tabId { result["tabId"] = tabId }
+          ready = result
+        } else { ready = NSNull() }
+        return ["tabId": tabId, "engine": entry.page.spec.engine, "ready": ready,
+          "navigation": PageValue(json: binding.navigation ?? .null).foundation, "generation": binding.sessionGeneration,
+          "sessionGeneration": binding.sessionGeneration, "registrationGeneration": binding.registrationGeneration,
+          "contextRevision": binding.context.contextRevision]
+      }
     }
   }
 
@@ -221,38 +301,157 @@ final class TabPoolHost {
   }
 
   private func makePage(_ tabId: String, _ windowId: String) -> TabPoolPage? {
-    guard let state, let store = NativeStoreHandle.store, let tab = state.tabs[tabId] else { return nil }
-    let peek = state.peeks[windowId]
-    let url = tab.navigation?.url ?? (tab.adoptId != nil ? tab.url : nil)
-    let spec = PooledPageSpec(
-      engine: store.pageEngine(tabId, in: state), profile: state.engineProfile(tab.profileId), url: url.map(toEngineUrl),
-      adoptId: tab.adoptId, temporarySource: peek?.tabId == tabId ? peek?.sourceId : nil)
-    let token = PoolPageToken()
-    making = token
-    defer { if making === token { making = nil } }
-    let page = PooledPage(tabId: tabId, spec: spec) { [weak self] name, payload in
-      guard let self else { return }
-      let current = self.pages[tabId]
-      guard current?.token === token || self.making === token else { return }
-      token.note(name, payload)
-      self.emit?("onPageEvent", ["tabId": tabId, "name": name, "payload": payload])
-      self.pageEventObservers.forEach { $0(tabId, name, payload) }
+    guard let issuer = PageIssuer.shared else { return nil }
+    return issuer.store.sequence {
+      let state = issuer.store.state
+      guard let tab = state.tabs[tabId], tab.unloaded != true, (tab.pageIn ?? "").isEmpty,
+        state.windows[tab.windowId] != nil else { return nil }
+      let peek = state.peeks[windowId]
+      let url = tab.navigation?.url ?? (tab.adoptId != nil ? tab.url : nil)
+      let spec = PooledPageSpec(
+        engine: issuer.store.pageEngine(tabId, in: state), profile: state.engineProfile(tab.profileId), url: url.map(toEngineUrl),
+        adoptId: tab.adoptId, temporarySource: peek?.tabId == tabId ? peek?.sourceId : nil)
+      let token = PoolPageToken()
+      token.execution = PageExecutionMemory(initial: Self.navigation(tab.navigation))
+      let context = PageHostContext.initial(navigationSeq: tab.navigation.flatMap { Int(exactly: $0.seq) },
+        wasNewTab: tab.url.isEmpty, cached: cachedPageProps(tabId))
+      guard let engine = PageEngine(rawValue: spec.engine),
+        let binding = issuer.attach(tabId: tabId, engine: engine, host: .pooled, owner: token, context: context,
+          onCreated: { [weak self] binding, reestablished in
+            guard let self else { return }
+            var payload: [String: Any] = ["engine": binding.engine.rawValue, "generation": binding.sessionGeneration,
+              "reestablished": reestablished, "seq": binding.executedNavigationSeq ?? -1, "url": spec.url ?? ""]
+            payload["tabId"] = tabId
+            self.emitEvent(binding, name: "onPageCreated", payload: payload)
+          }, onClearNewTabShown: { [weak self] binding, consumed in
+            self?.emitEvent(binding, name: "onPageIssue", payload: ["clearNewTabShown": true,
+              "contextRevision": consumed.contextRevision,
+              "navigation": PageValue(json: consumed.json["navigation"] ?? .null).foundation])
+          }, onNeedsFollow: { [weak self] _ in self?.scheduleFollow(tabId) },
+          perform: { [weak token] command, finish in
+            guard let token, let page = token.page else { return finish(.failure(.noPage(tabId))) }
+            if case .loadUrl(let url, let userInitiated) = command {
+              let current = token.binding.flatMap { binding in
+                (try? issuer.store.pageHostSnapshotInScope(tabId, generation: binding.sessionGeneration))?.state.tabs[tabId]?.navigation
+              }
+              token.execution.stage(navigation: Self.navigation(current), url: toAppUrl(url), userInitiated: userInitiated)
+            }
+            var engineArguments = command.arguments.map(\.foundation)
+            if case .loadUrl(let url, _) = command { engineArguments[0] = toEngineUrl(url) }
+            defer { token.execution.finishStaging() }
+            PageCalls.run(page.view, command.method, engineArguments, resolve: { value in
+              do { finish(.success(try PageValue(any: value))) }
+              catch { finish(.failure(.invalidValue)) }
+            }, reject: { code, message in finish(.failure(.failed("\(code): \(message)"))) })
+          }) else { return nil }
+      token.binding = binding
+      making = token
+      defer { if making === token { making = nil } }
+      let page = PooledPage(tabId: tabId, spec: spec) { [weak self, weak token] name, payload in
+        guard let self, let token else { return }
+        _ = self.reportEvent(tabId, token: token, name: name, payload: payload)
+      }
+      token.page = page
+      if let given = props[tabId] { page.apply(given) }
+      let entry = PoolPage(page: page, token: token) { [weak self, weak token] in
+        guard let token else { return }
+        if let binding = token.binding { issuer.retire(binding) }
+        guard let self, self.pages[tabId]?.token === token else { return }
+        self.pages[tabId] = nil
+        issuer.afterIngress { [weak self] in
+          self?.onPageGone?(tabId)
+          self?.emitEvent(binding, name: "onPageGone", payload: [:])
+        }
+      }
+      entry.setWarm(warm.contains(tabId), neighbour: Self.neighbour(state, tabId))
+      pages[tabId] = entry
+      follow(entry)
+      return entry
     }
-    if let given = props[tabId] { page.apply(given) }
-    let entry = PoolPage(page: page, token: token) { [weak self] in
-      guard let self, self.pages[tabId]?.page === page else { return }
-      self.pages[tabId] = nil
-      self.onPageGone?(tabId)
-      self.emit?("onPageEvent", ["tabId": tabId, "name": "onPageGone", "payload": [String: Any]()])
-      self.pageEventObservers.forEach { $0(tabId, "onPageGone", [:]) }
+  }
+
+  @discardableResult
+  private func reportEvent(_ tabId: String, token: PoolPageToken, name: String, payload: [String: Any]) -> Bool {
+    guard let issuer = PageIssuer.shared, let binding = token.binding else { return false }
+    return issuer.store.sequence {
+      guard pages[tabId]?.token === token || making === token else { return false }
+      if issuer.store.state.tabs[tabId] == nil {
+        guard PageNativeReport.names.contains(name),
+          let data = try? JSONSerialization.data(withJSONObject: payload), let value = try? JSONValue.parse(data),
+          var report = PageNativeReport.report(name: name, payload: value)?.object else { return false }
+        report["generation"] = .string(binding.sessionGeneration)
+        issuer.store.enqueuePageReport(id: tabId, report: .object(report))
+        issuer.store.sequence {}
+        return true
+      }
+      guard issuer.ensurePageEstablished(binding), issuer.isCurrent(binding) else { return false }
+      if name == "onPagePhysical" {
+        guard let page = payload["page"] as? NSView else { return false }
+        issuer.transferExecution(from: page, to: binding)
+        issuer.associateNativePage(binding, page: page)
+        return true
+      }
+      if name == "onPageConstructorCaptured" {
+        guard let rawURL = payload["url"] as? String else { return false }
+        token.execution.constructorCaptured(url: toAppUrl(rawURL))
+        return true
+      }
+      if name == "onPageRequestAccepted" {
+        guard let rawURL = payload["url"] as? String else { return false }
+        token.execution.accepted(url: toAppUrl(rawURL))
+        return true
+      }
+      if name == "onPageExecution" {
+        guard let rawURL = payload["url"] as? String else { return false }
+        issuer.noteExecuted(binding, navigationSeq: token.execution.executed(url: toAppUrl(rawURL),
+          constructor: payload["constructor"] as? Bool == true))
+        return true
+      }
+      if PageNativeReport.names.contains(name) {
+        guard let data = try? JSONSerialization.data(withJSONObject: payload), let value = try? JSONValue.parse(data),
+          let report = PageNativeReport.report(name: name, payload: value),
+          issuer.report(binding, report: report) else { return false }
+      }
+      issuer.afterIngress { [weak self] in self?.emitEvent(binding, name: name, payload: payload) }
+      return true
     }
-    entry.setWarm(warm.contains(tabId), neighbour: Self.neighbour(state, tabId))
-    pages[tabId] = entry
-    let seq = tab.adoptId == nil ? tab.navigation?.seq ?? -1 : -1
-    emit?("onPageEvent", ["tabId": tabId, "name": "onPageCreated", "payload": ["engine": spec.engine, "seq": seq, "url": spec.url ?? ""]])
-    pageEventObservers.forEach { $0(tabId, "onPageCreated", ["engine": spec.engine]) }
-    if let ready = token.ready { emit?("onPageEvent", ["tabId": tabId, "name": "onReady", "payload": ready]) }
-    return entry
+  }
+
+  private func emitEvent(_ binding: PageHostBinding, name: String, payload: [String: Any]) {
+    let envelope: [String: Any] = ["tabId": binding.tabId, "name": name, "payload": payload,
+      "generation": binding.sessionGeneration, "sessionGeneration": binding.sessionGeneration,
+      "registrationGeneration": binding.registrationGeneration, "contextRevision": binding.context.contextRevision, "factsOwner": "native", "navigationOwner": "native"]
+    emit?("onPageEvent", envelope)
+    pageEventObservers.forEach { $0(binding.tabId, name, payload) }
+  }
+
+  private func follow(_ entry: PoolPage) {
+    guard let issuer = PageIssuer.shared, let binding = entry.token.binding,
+      !following.contains(entry.tabId), !closing.values.contains(where: { $0.tabs.contains { $0.tabId == entry.tabId } }) else { return }
+    following.insert(entry.tabId)
+    defer { following.remove(entry.tabId) }
+    _ = issuer.follow(binding)
+  }
+
+  private func scheduleFollow(_ tabId: String) {
+    guard scheduledFollows.insert(tabId).inserted else { return }
+    DispatchQueue.main.async { [weak self] in
+      MainActor.assumeIsolated {
+        guard let self else { return }
+        self.scheduledFollows.remove(tabId)
+        if let entry = self.pages[tabId] { self.follow(entry) }
+      }
+    }
+  }
+
+  private static func navigation(_ value: SolaraModel.Navigation?) -> TabNavigationRequest? {
+    guard let value, let sequence = Int(exactly: value.seq) else { return nil }
+    return TabNavigationRequest(seq: sequence, url: toAppUrl(value.url), userInitiated: value.userInitiated ?? false)
+  }
+
+  private func cachedPageProps(_ tabId: String) -> JSONValue? {
+    guard let props = props[tabId], let data = try? JSONSerialization.data(withJSONObject: props) else { return nil }
+    return try? JSONValue.parse(data)
   }
 
   static func neighbour(_ state: BrowserState, _ tabId: String) -> Bool {
@@ -287,12 +486,9 @@ final class ClosingWindow {
 
 @MainActor
 final class PoolPageToken {
-  private(set) var ready: [String: Any]?
-  private(set) var navigation: [String: Any]?
-
-  func note(_ name: String, _ payload: [String: Any]) {
-    if name == "onReady" { ready = payload } else if name == "onNavigationChange" { navigation = payload }
-  }
+  var binding: PageHostBinding?
+  var execution = PageExecutionMemory(initial: nil)
+  weak var page: PooledPage?
 }
 
 @MainActor
@@ -325,16 +521,21 @@ final class PoolPage: TabPoolPage {
   }
 
   func focus() {
-    page.focus()
+    guard let issuer = PageIssuer.shared, let binding = token.binding else { return }
+    issuer.issue(tabId: tabId, identity: binding.identity, command: .focus) { _ in }
   }
 
   func retire() {
-    page.retire()
     onRetire()
+    page.retire()
   }
 
   private func apply() {
-    page.setShown(shown, warm: warm && !shown, neighbour: neighbour && !shown)
+    guard let issuer = PageIssuer.shared, let binding = token.binding else { return }
+    issuer.store.sequence {
+      guard issuer.ensurePageEstablished(binding), issuer.isCurrent(binding) else { return }
+      page.setShown(shown, warm: warm && !shown, neighbour: neighbour && !shown)
+    }
   }
 }
 

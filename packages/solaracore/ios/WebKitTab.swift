@@ -10,6 +10,7 @@ final class SolaraWKWebView: WKWebView {
   var onFocus: (() -> Void)?
   var mediaFrames: [String: WKFrameInfo] = [:]
   var playingFrames = Set<String>()
+  var pageMuted = false
   var nowPlayingFrame: String?
   var captureOrigins: [String: Set<String>] = [:]
 
@@ -78,6 +79,7 @@ final class WebKitTab: NSView, WKNavigationDelegate, WKUIDelegate {
   private var started = false
   private var closed = false
   private var navigationQueued = false
+  private var constructorNavigation = false
   private var mediaFrames: [String: WKFrameInfo] {
     get { webView?.mediaFrames ?? [:] }
     set { webView?.mediaFrames = newValue }
@@ -135,7 +137,12 @@ final class WebKitTab: NSView, WKNavigationDelegate, WKUIDelegate {
     let created = SolaraWKWebView(frame: bounds, configuration: WebKitHub.shared.configuration(profile: profile))
     attach(created)
     emit("ready", ["browserId": Int(browserId), "tabId": 0])
-    if let url = initialURL, !url.isEmpty { loadURL(url, userInitiated: false) }
+    if let url = initialURL, !url.isEmpty {
+      constructorNavigation = true
+      emit("constructorCaptured", ["url": url])
+      loadURL(url, userInitiated: false)
+      constructorNavigation = false
+    }
   }
 
   func relinquish() -> SolaraWKWebView? {
@@ -157,12 +164,15 @@ final class WebKitTab: NSView, WKNavigationDelegate, WKUIDelegate {
     emit("ready", ["browserId": Int(browserId), "tabId": 0])
     queueNavigation()
     emit("progress", ["progress": webView?.estimatedProgress ?? 0])
+    emit("media", ["playing": !playingFrames.isEmpty, "muted": muted])
     emitSecurity()
     emitZoom()
   }
 
   private func attach(_ view: SolaraWKWebView) {
     webView = view
+    muted = view.pageMuted
+    emit("physicalPage", ["page": view])
     WebKitHub.shared.register(view, tab: self)
     view.navigationDelegate = self
     view.uiDelegate = self
@@ -263,11 +273,13 @@ final class WebKitTab: NSView, WKNavigationDelegate, WKUIDelegate {
   func loadURL(_ url: String, userInitiated: Bool) {
     guard let view = webView, let target = URL(string: url) else { return }
     showingError = false
+    if !constructorNavigation { emit("requestAccepted", ["url": url]) }
     if target.isFileURL {
       view.loadFileURL(target, allowingReadAccessTo: target.deletingLastPathComponent())
     } else {
       view.load(URLRequest(url: target))
     }
+    emit("execution", ["url": url, "constructor": constructorNavigation])
   }
 
   func goBack() { webView?.goBack() }
@@ -297,6 +309,7 @@ final class WebKitTab: NSView, WKNavigationDelegate, WKUIDelegate {
 
   func setMuted(_ on: Bool) {
     muted = on
+    webView?.pageMuted = on
     let code = muteScript
     runInWorld(code)
     for frame in mediaFrames.values where !frame.isMainFrame { runInWorld(code, frame: frame) }

@@ -6,6 +6,7 @@ import { useShallow } from "zustand/react/shallow";
 import { closeTab, toggleMute } from "../../lib/actions";
 import { shortcutHint } from "../../lib/commandShortcuts";
 import { PRODUCT } from "../../lib/productName";
+import { nativeOwnsWorkspace } from "../../store/nativeStore";
 import { useLifecycle } from "../../lib/tabLifecycle";
 import { hex, profileNameColor, profileTheme, selectedTabGlow, spaceLookSource, useSelectedTabGlow, useTheme, type Theme } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
@@ -308,7 +309,9 @@ export const NativeSidebar = memo(function NativeSidebar({ windowId, profileId, 
   const selection = useBrowser((s) => s.selection[windowId] ?? NONE);
   const loading = useBrowser((s) => liveIds(s, windowId, "isLoading"));
   const playing = useBrowser((s) => liveIds(s, windowId, "playingAudio"));
-  const sleeping = useLifecycle(useShallow((l) => Object.keys(l.discarded).filter((id) => l.discarded[id])));
+  const legacySleeping = useLifecycle(useShallow((l) => Object.keys(l.discarded).filter((id) => l.discarded[id])));
+  const nativeSleeping = useBrowser(useShallow((s) => (s.windows[windowId]?.tabIds ?? NONE).filter((id) => s.live[id]?.discarded)));
+  const sleeping = nativeOwnsWorkspace() ? nativeSleeping : legacySleeping;
   const renaming = useSidebarUi((u) => (u.renaming?.windowId === windowId && (u.renaming.kind === "tab" || u.renaming.kind === "group") ? `${u.renaming.kind}:${u.renaming.id}` : null));
   const clear = useSettings((s) => s.showClearButton);
   const tidy = useBrowser((s) => canTidyPins(s, windowId, profileId));
@@ -359,9 +362,7 @@ export const NativeSidebar = memo(function NativeSidebar({ windowId, profileId, 
       border: theme.tabSelectedBorder.map(hex),
       glow: { color: glow.shadowColor, opacity: glow.shadowOpacity, radius: glow.shadowRadius },
       selection,
-      loading: split(loading),
-      playing: split(playing),
-      sleeping,
+      ...(nativeOwnsWorkspace() ? {} : { loading: split(loading), playing: split(playing), sleeping }),
       closeHint,
       backHint: null,
       renaming,

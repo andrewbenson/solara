@@ -5,6 +5,7 @@ internal import SolaraModel
 internal import SolaraOmnibox
 public import SolaraPersistence
 internal import SolaraStore
+internal import SolaraUI
 
 public final class NativeStore: Sendable {
   nonisolated(unsafe) public private(set) static var ownsWorkspace = false
@@ -96,6 +97,7 @@ public final class NativeStore: Sendable {
   @MainActor
   @discardableResult
   public static func launchAtStartup() -> Bool {
+    RNPageReports.install(issuer: nil)
     _ = setAppScheme(productName())
     guard let folder = dataFolder() else {
       unavailableReason = "no data folder"
@@ -146,6 +148,11 @@ public final class NativeStore: Sendable {
             scope: safeMode ? .settingsAndDownloads : activeScope,
             trouble: { message in NSLog("[store] %@", message) })
         } })
+      if ownsWorkspace {
+        let issuer = PageIssuer(store: store, deliver: { work in host.deliverPageCallback(work) })
+        PageIssuer.shared = issuer
+        RNPageReports.install(issuer: issuer)
+      }
       shared = NativeStore(host: host, launch: launch, folder: folder)
       NativeSettingsHandle.active = true
       NativeStoreHandle.ownsWorkspace = ownsWorkspace

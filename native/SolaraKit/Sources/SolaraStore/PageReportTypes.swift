@@ -1,5 +1,7 @@
 import SolaraModel
 
+public typealias PageSessionGeneration = String
+
 public struct PageReadyFacts: Sendable, Equatable {
   public let browserId: Int
   public let tabId: Int?
@@ -103,6 +105,14 @@ struct PageReportMemory: Sendable, Equatable {
   }
 }
 
+struct HeldPageSeed: Sendable, Equatable {
+  var tab: Tab
+  var page: PageReportMemory
+  var generation: String
+  var restorable = true
+  var adoptNavigationURL: String? = nil
+}
+
 public struct PageIssueGuard: Sendable, Equatable {
   public let sessionGeneration: String
   public let navigation: TabNavigationRequest?
@@ -110,6 +120,32 @@ public struct PageIssueGuard: Sendable, Equatable {
   public let modelSerial: Int
   public let startedEarly: Bool
   public let sameProfileMove: Bool
+
+  public init(sessionGeneration: String, navigation: TabNavigationRequest?, contextRevision: Int, modelSerial: Int, startedEarly: Bool, sameProfileMove: Bool) {
+    self.sessionGeneration = sessionGeneration
+    self.navigation = navigation
+    self.contextRevision = contextRevision
+    self.modelSerial = modelSerial
+    self.startedEarly = startedEarly
+    self.sameProfileMove = sameProfileMove
+  }
+
+  public init(json: JSONValue) throws {
+    guard let generation = json["sessionGeneration"]?.string, !generation.isEmpty,
+      let revision = pageSafeInteger(json["contextRevision"]),
+      let serial = pageSafeInteger(json["modelSerial"], minimum: 1),
+      let started = json["startedEarly"]?.bool, let moved = json["sameProfileMove"]?.bool,
+      let rawNavigation = json["navigation"] else { throw CommandError("malformed page issue guard") }
+    let navigation: TabNavigationRequest?
+    if rawNavigation.isNull { navigation = nil }
+    else {
+      guard let seq = pageSafeInteger(rawNavigation["seq"]), let url = rawNavigation["url"]?.string,
+        let userInitiated = rawNavigation["userInitiated"]?.bool else { throw CommandError("malformed page issue navigation") }
+      navigation = TabNavigationRequest(seq: seq, url: url, userInitiated: userInitiated)
+    }
+    self.init(sessionGeneration: generation, navigation: navigation, contextRevision: revision,
+      modelSerial: serial, startedEarly: started, sameProfileMove: moved)
+  }
 
   public var json: JSONValue {
     ["sessionGeneration": .string(sessionGeneration), "navigation": pageNavigationJSON(navigation),

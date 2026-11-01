@@ -27,6 +27,12 @@ public struct StoreHost: Sendable {
     self.quitStages = quitStages
   }
 
+  public func deliverPageCallback(_ action: @escaping @MainActor () -> Void) {
+    bridge.store.afterSequence {
+      DispatchQueue.main.async { action() }
+    }
+  }
+
   public func termination() -> FlushResult { flushForQuit() }
 
   public func flush(timeout: TimeInterval) -> FlushResult { flushForQuit(writerTimeout: timeout) }

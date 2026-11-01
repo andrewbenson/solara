@@ -32,7 +32,6 @@ import {
   startNativeStore,
   withApplier,
 } from "../store/nativeStore";
-import type { StoreCommand } from "@solara/store";
 import { journalAnchor, journalVersion, onJournalChange } from "../sync/journalHost";
 
 const SAVE_DELAY_MS = 800;
@@ -108,11 +107,6 @@ const unreadableDocs = new Set<string>();
 const docsToWrite = () =>
   (nativeOwnsWorkspace() ? [] : nativeStoreActive() ? DOCS.filter((d) => d.name !== "downloads.json") : DOCS)
     .filter((d) => !unreadableDocs.has(d.name) && !(nativeSafeMode() && d.name === "session.json"));
-
-function nativeCaches(s: BrowserState): StoreCommand[] {
-  const playing = Object.keys(s.live).filter((id) => s.live[id]?.playingAudio);
-  return [{ name: "setPlayingAudio", args: [playing] }];
-}
 
 function parsed<T>(name: string, read: DocumentRead | null): T | null {
   if (!read || !("contents" in read) || !read.contents) return null;
@@ -268,7 +262,7 @@ export function startPersistence() {
   if (!store.active && store.modulePresent) return failClosed(store.reason);
   if (nativeOwnsWorkspace()) {
     if (!hydrateFromNative(useBrowser)) return failClosed();
-    attachReplica(useBrowser, nativeCaches);
+    attachReplica(useBrowser);
     if (!nativeSafeMode()) restoreLaunchLook();
     cleanStaging(useBrowser.getState().downloads);
     tellSafeModeAfterFailedLaunches();

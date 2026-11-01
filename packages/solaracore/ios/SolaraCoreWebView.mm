@@ -1078,6 +1078,7 @@ static SolaraCoreTab *StartParkedPage(NSString *url, NSString *profileName, NSSt
     view->_pendingURL = nil;
     view->_creatingURL = url;
     view->_creatingAt = CACurrentMediaTime();
+    if (url.length) [view emit:@"constructorCaptured" payload:@{@"url" : url}];
     if (view->_extensionHost.length && url.length && controller.coreWindow) {
       if (SolaraCoreTab *tab = [controller.coreWindow openExtensionView:url profile:profile kind:view->_extensionHost])
         return [view attach:tab];
@@ -1099,6 +1100,7 @@ static SolaraCoreTab *StartParkedPage(NSString *url, NSString *profileName, NSSt
                   if (state.length) tab = [now.coreWindow restoreTab:state profile:profile foreground:NO];
                   if (!tab) tab = [now.coreWindow openTab:url profile:profile foreground:NO];
                   now.hostChanges--;
+                  if (tab && url.length) [later emit:@"execution" payload:@{@"url" : url, @"constructor" : @YES}];
                   if (tab) [later attach:tab];
                 }];
       return;
@@ -1113,6 +1115,7 @@ static SolaraCoreTab *StartParkedPage(NSString *url, NSString *profileName, NSSt
     if (!tab) tab = [controller.coreWindow openTab:url.length ? url : @"" profile:profile foreground:NO];
     controller.hostChanges--;
     if (url.length && tab.loading) ACFieldMarkNow(view->_transferKey, @"start");
+    if (tab && url.length) [view emit:@"execution" payload:@{@"url" : url, @"constructor" : @YES}];
     if (tab) [view attach:tab];
     if (tab && url.length) [view focusAfterLoad];
   });
@@ -1329,6 +1332,8 @@ static SolaraCoreTab *StartParkedPage(NSString *url, NSString *profileName, NSSt
   [LiveViews() addObject:self];
   InstallControlPressMonitor();
   _tab = tab;
+  NSView *page = tab.view;
+  if (page) [self emit:@"physicalPage" payload:@{@"page" : page}];
   tab.delegate = self;
   [SolaraCoreTabs setView:self forTab:tab];
   [self markTemporary];
@@ -1339,7 +1344,6 @@ static SolaraCoreTab *StartParkedPage(NSString *url, NSString *profileName, NSSt
   if ([tab respondsToSelector:@selector(deliverHeldPageMessages)]) [tab deliverHeldPageMessages];
   [self userSightChanged];
   [self adoptIntoWindow];
-  NSView *page = tab.view;
   if (page.superview != self) {
     if (!page.window || page.window != self.window) [page removeFromSuperview];
     [self addSubview:page];
@@ -2724,6 +2728,7 @@ static NSString *LinkKeyAction(NSString *key) {
   _creatingURL = nil;
   if (_tab && SamePage(url, transferred)) return;
   if ((_tab || _creating) && [url isEqualToString:creating] && CACurrentMediaTime() - _creatingAt < 2) return;
+  [self emit:@"requestAccepted" payload:@{@"url" : url}];
   if (_tab) return [self loadNow:url userInitiated:userInitiated];
   _pendingURL = url;
   _pendingUserInitiated = userInitiated;
@@ -2735,6 +2740,7 @@ static NSString *LinkKeyAction(NSString *key) {
   if (url.length && ![url hasPrefix:@"about:"]) [self holdLittlePage];
   ACFieldMarkNow(_transferKey, @"request");
   [_tab loadURL:url userInitiated:userInitiated];
+  [self emit:@"execution" payload:@{@"url" : url, @"constructor" : @NO}];
   [self focusAfterLoad];
 }
 

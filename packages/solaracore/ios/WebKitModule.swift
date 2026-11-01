@@ -1,5 +1,6 @@
 import AppKit
 import ExpoModulesCore
+import React
 import WebKit
 
 public class WebKitModule: Module {
@@ -73,79 +74,60 @@ public class WebKitModule: Module {
       Prop("profile") { (view: WebKitTabView, profile: String?) in view.tab.profile = profile ?? "" }
       Prop("adoptId") { (view: WebKitTabView, id: String?) in view.tab.adoptId = id }
       Prop("transferKey") { (view: WebKitTabView, key: String?) in view.tab.transferKey = key }
+      Prop("pageContext") { (view: WebKitTabView, context: [String: Any]?) in view.pageContext = context ?? [:] }
       Prop("visible") { (view: WebKitTabView, visible: Bool?) in view.tab.visible = visible ?? true }
       Prop("warm") { (view: WebKitTabView, warm: Bool?) in view.tab.warm = warm ?? false }
       Prop("pageBackgroundColor") { (view: WebKitTabView, color: NSColor?) in view.tab.pageBackgroundColor = color }
 
-      AsyncFunction("loadUrl") { (view: WebKitTabView, url: String, userInitiated: Bool?) in
-        view.tab.loadURL(url, userInitiated: userInitiated ?? false)
-      }.runOnQueue(.main)
-      AsyncFunction("goBack") { (view: WebKitTabView) in view.tab.goBack() }.runOnQueue(.main)
-      AsyncFunction("goForward") { (view: WebKitTabView) in view.tab.goForward() }.runOnQueue(.main)
-      AsyncFunction("goToOffset") { (view: WebKitTabView, offset: Int) in view.tab.go(toHistoryOffset: offset) }.runOnQueue(.main)
-      AsyncFunction("reload") { (view: WebKitTabView) in view.tab.reload() }.runOnQueue(.main)
-      AsyncFunction("forceReload") { (view: WebKitTabView) in view.tab.reloadIgnoringCache() }.runOnQueue(.main)
-      AsyncFunction("stopLoading") { (view: WebKitTabView) in view.tab.stopLoading() }.runOnQueue(.main)
-      AsyncFunction("focus") { (view: WebKitTabView) in view.tab.focusPage() }.runOnQueue(.main)
-      AsyncFunction("setMuted") { (view: WebKitTabView, muted: Bool) in view.tab.setMuted(muted) }.runOnQueue(.main)
-      AsyncFunction("zoomStep") { (view: WebKitTabView, direction: Int) in view.tab.zoomStep(direction) }.runOnQueue(.main)
-      AsyncFunction("find") { (view: WebKitTabView, text: String, forward: Bool, findNext: Bool) in
-        view.tab.find(text, forward: forward, findNext: findNext)
-      }.runOnQueue(.main)
-      AsyncFunction("stopFinding") { (view: WebKitTabView, clear: Bool) in view.tab.stopFinding(clear) }.runOnQueue(.main)
-      AsyncFunction("print") { (view: WebKitTabView) in view.tab.print() }.runOnQueue(.main)
-      AsyncFunction("runPageCommand") { (view: WebKitTabView, name: String) in view.tab.runPageCommand(name) }.runOnQueue(.main)
-      AsyncFunction("showDevTools") { (view: WebKitTabView, panel: String?) in }.runOnQueue(.main)
-      AsyncFunction("executeJavaScript") { (view: WebKitTabView, code: String) in view.tab.executeJavaScript(code) }.runOnQueue(.main)
-      AsyncFunction("evaluate") { (view: WebKitTabView, code: String, promise: Promise) in
-        view.tab.evaluate(code) { promise.resolve($0) }
-      }.runOnQueue(.main)
-      AsyncFunction("navigationEntries") { (view: WebKitTabView) in view.tab.navigationEntries() }.runOnQueue(.main)
-      AsyncFunction("capturePicture") { (view: WebKitTabView, scale: Double, promise: Promise) in
-        view.tab.capturePicture(scale) { promise.resolve($0) }
-      }.runOnQueue(.main)
-      AsyncFunction("downloadFavicon") { (view: WebKitTabView, url: String, promise: Promise) in
-        view.tab.downloadFavicon(url) { promise.resolve($0) }
-      }.runOnQueue(.main)
-      AsyncFunction("downloadImage") { (view: WebKitTabView, url: String, maxPixels: Int, promise: Promise) in
-        view.tab.downloadFavicon(url) { promise.resolve($0) }
-      }.runOnQueue(.main)
-
-      AsyncFunction("mediaCommand") { (view: WebKitTabView, action: String, seconds: Double?) in
-        view.tab.mediaCommand(action, seconds: seconds ?? 0)
-      }.runOnQueue(.main)
-      AsyncFunction("requestPictureInPicture") { (view: WebKitTabView, clickAt: Double?, control: Int?, promise: Promise) in
-        view.tab.setPictureInPicture(true) { promise.resolve($0) }
-      }.runOnQueue(.main)
-      AsyncFunction("takeControlPress") { (view: WebKitTabView, clickAt: Double?, control: Int?) -> Bool in true }.runOnQueue(.main)
-      AsyncFunction("exitPictureInPicture") { (view: WebKitTabView) in view.tab.setPictureInPicture(false) { _ in } }.runOnQueue(.main)
-
-      AsyncFunction("getSecurityInfo") { (view: WebKitTabView) in view.tab.securityInfo() }.runOnQueue(.main)
-      AsyncFunction("pageCookies") { (view: WebKitTabView, urls: [String]) -> [[String: Any]] in [] }.runOnQueue(.main)
-      AsyncFunction("openBlockedPopup") { (view: WebKitTabView, id: String, always: Bool?) in }.runOnQueue(.main)
-      AsyncFunction("clearSiteData") { (view: WebKitTabView, promise: Promise) in
-        view.tab.clearSiteData { promise.resolve($0) }
-      }.runOnQueue(.main)
-
-      AsyncFunction("resolvePasswordPrompt") { (view: WebKitTabView, action: String, username: String?, password: String?) in }
-        .runOnQueue(.main)
-      AsyncFunction("resolveAutofillPrompt") { (view: WebKitTabView, promptId: Int, action: String) in }.runOnQueue(.main)
-      AsyncFunction("executeExtensionAction") { (view: WebKitTabView, extensionId: String) -> String? in nil }.runOnQueue(.main)
-      AsyncFunction("resolveDisplayMedia") { (view: WebKitTabView, id: String, sourceId: String?, audio: Bool) in }.runOnQueue(.main)
-      AsyncFunction("mediaCaptureSourceId") { (view: WebKitTabView) -> String? in nil }.runOnQueue(.main)
-      AsyncFunction("notificationAction") { (view: WebKitTabView, id: String, action: String) in }.runOnQueue(.main)
-      AsyncFunction("resolveUnresponsive") { (view: WebKitTabView, terminate: Bool) in }.runOnQueue(.main)
-      AsyncFunction("discard") { (view: WebKitTabView, unload: Bool?) in "unsupported" }.runOnQueue(.main)
-      AsyncFunction("setFrozen") { (view: WebKitTabView, frozen: Bool) in }.runOnQueue(.main)
+      AsyncFunction("loadUrl") { (view: WebKitTabView, url: String, userInitiated: Bool?, promise: Promise) in view.call("loadUrl", [url, userInitiated ?? false], promise) }.runOnQueue(.main)
+      AsyncFunction("goBack") { (view: WebKitTabView, promise: Promise) in view.call("goBack", [], promise) }.runOnQueue(.main)
+      AsyncFunction("goForward") { (view: WebKitTabView, promise: Promise) in view.call("goForward", [], promise) }.runOnQueue(.main)
+      AsyncFunction("goToOffset") { (view: WebKitTabView, offset: Int, promise: Promise) in view.call("goToOffset", [offset], promise) }.runOnQueue(.main)
+      AsyncFunction("reload") { (view: WebKitTabView, promise: Promise) in view.call("reload", [], promise) }.runOnQueue(.main)
+      AsyncFunction("forceReload") { (view: WebKitTabView, promise: Promise) in view.call("forceReload", [], promise) }.runOnQueue(.main)
+      AsyncFunction("stopLoading") { (view: WebKitTabView, promise: Promise) in view.call("stopLoading", [], promise) }.runOnQueue(.main)
+      AsyncFunction("focus") { (view: WebKitTabView, promise: Promise) in view.call("focus", [], promise) }.runOnQueue(.main)
+      AsyncFunction("setMuted") { (view: WebKitTabView, muted: Bool, promise: Promise) in view.call("setMuted", [muted], promise) }.runOnQueue(.main)
+      AsyncFunction("zoomStep") { (view: WebKitTabView, direction: Int, promise: Promise) in view.call("zoomStep", [direction], promise) }.runOnQueue(.main)
+      AsyncFunction("find") { (view: WebKitTabView, text: String, forward: Bool, findNext: Bool, promise: Promise) in view.call("find", [text, forward, findNext], promise) }.runOnQueue(.main)
+      AsyncFunction("stopFinding") { (view: WebKitTabView, clear: Bool, promise: Promise) in view.call("stopFinding", [clear], promise) }.runOnQueue(.main)
+      AsyncFunction("print") { (view: WebKitTabView, promise: Promise) in view.call("print", [], promise) }.runOnQueue(.main)
+      AsyncFunction("runPageCommand") { (view: WebKitTabView, name: String, promise: Promise) in view.call("runPageCommand", [name], promise) }.runOnQueue(.main)
+      AsyncFunction("showDevTools") { (view: WebKitTabView, panel: String?, promise: Promise) in view.call("showDevTools", [panel as Any? ?? NSNull()], promise) }.runOnQueue(.main)
+      AsyncFunction("executeJavaScript") { (view: WebKitTabView, code: String, promise: Promise) in view.call("executeJavaScript", [code], promise) }.runOnQueue(.main)
+      AsyncFunction("evaluate") { (view: WebKitTabView, code: String, promise: Promise) in view.call("evaluate", [code], promise) }.runOnQueue(.main)
+      AsyncFunction("navigationEntries") { (view: WebKitTabView, promise: Promise) in view.call("navigationEntries", [], promise) }.runOnQueue(.main)
+      AsyncFunction("capturePicture") { (view: WebKitTabView, scale: Double, promise: Promise) in view.call("capturePicture", [scale], promise) }.runOnQueue(.main)
+      AsyncFunction("downloadFavicon") { (view: WebKitTabView, url: String, promise: Promise) in view.call("downloadFavicon", [url], promise) }.runOnQueue(.main)
+      AsyncFunction("downloadImage") { (view: WebKitTabView, url: String, maxPixels: Int, promise: Promise) in view.call("downloadImage", [url, maxPixels], promise) }.runOnQueue(.main)
+      AsyncFunction("mediaCommand") { (view: WebKitTabView, action: String, seconds: Double?, promise: Promise) in view.call("mediaCommand", [action, seconds ?? 0], promise) }.runOnQueue(.main)
+      AsyncFunction("requestPictureInPicture") { (view: WebKitTabView, clickAt: Double?, control: Int?, promise: Promise) in view.call("requestPictureInPicture", [clickAt ?? 0, control ?? 0], promise) }.runOnQueue(.main)
+      AsyncFunction("takeControlPress") { (view: WebKitTabView, clickAt: Double?, control: Int?, promise: Promise) in view.call("takeControlPress", [clickAt ?? 0, control ?? 0], promise) }.runOnQueue(.main)
+      AsyncFunction("exitPictureInPicture") { (view: WebKitTabView, promise: Promise) in view.call("exitPictureInPicture", [], promise) }.runOnQueue(.main)
+      AsyncFunction("getSecurityInfo") { (view: WebKitTabView, promise: Promise) in view.call("getSecurityInfo", [], promise) }.runOnQueue(.main)
+      AsyncFunction("pageCookies") { (view: WebKitTabView, urls: [String], promise: Promise) in view.call("pageCookies", [urls], promise) }.runOnQueue(.main)
+      AsyncFunction("openBlockedPopup") { (view: WebKitTabView, id: String, always: Bool?, promise: Promise) in view.call("openBlockedPopup", [id, always ?? false], promise) }.runOnQueue(.main)
+      AsyncFunction("clearSiteData") { (view: WebKitTabView, promise: Promise) in view.call("clearSiteData", [], promise) }.runOnQueue(.main)
+      AsyncFunction("resolvePasswordPrompt") { (view: WebKitTabView, action: String, username: String?, password: String?, promise: Promise) in view.call("resolvePasswordPrompt", [action, username as Any? ?? NSNull(), password as Any? ?? NSNull()], promise) }.runOnQueue(.main)
+      AsyncFunction("resolveAutofillPrompt") { (view: WebKitTabView, promptId: Int, action: String, promise: Promise) in view.call("resolveAutofillPrompt", [promptId, action], promise) }.runOnQueue(.main)
+      AsyncFunction("executeExtensionAction") { (view: WebKitTabView, extensionId: String, promise: Promise) in view.call("executeExtensionAction", [extensionId], promise) }.runOnQueue(.main)
+      AsyncFunction("resolveDisplayMedia") { (view: WebKitTabView, id: String, sourceId: String?, audio: Bool, promise: Promise) in view.call("resolveDisplayMedia", [id, sourceId as Any? ?? NSNull(), audio], promise) }.runOnQueue(.main)
+      AsyncFunction("mediaCaptureSourceId") { (view: WebKitTabView, promise: Promise) in view.call("mediaCaptureSourceId", [], promise) }.runOnQueue(.main)
+      AsyncFunction("notificationAction") { (view: WebKitTabView, id: String, action: String, promise: Promise) in view.call("notificationAction", [id, action], promise) }.runOnQueue(.main)
+      AsyncFunction("resolveUnresponsive") { (view: WebKitTabView, terminate: Bool, promise: Promise) in view.call("resolveUnresponsive", [terminate], promise) }.runOnQueue(.main)
+      AsyncFunction("discard") { (view: WebKitTabView, unload: Bool?, promise: Promise) in view.call("discard", [unload ?? false], promise) }.runOnQueue(.main)
+      AsyncFunction("setFrozen") { (view: WebKitTabView, frozen: Bool, promise: Promise) in view.call("setFrozen", [frozen], promise) }.runOnQueue(.main)
 
       OnViewDidUpdateProps { (view: WebKitTabView) in view.propsDidUpdate() }
     }
   }
 }
 
-final class WebKitTabView: ExpoView, WebKitTabDelegate {
+final class WebKitTabView: ExpoView, WebKitTabDelegate, @preconcurrency RCTInvalidating {
   let tab = WebKitTab(frame: .zero)
 
+  let onPageCreated = EventDispatcher()
+  let onPageIssue = EventDispatcher()
   let onNavigationChange = EventDispatcher()
   let onProgress = EventDispatcher()
   let onFavicon = EventDispatcher()
@@ -182,7 +164,12 @@ final class WebKitTabView: ExpoView, WebKitTabDelegate {
   let onExternalApp = EventDispatcher()
   let onPreferredSize = EventDispatcher()
 
+  var pageContext: [String: Any] = [:]
+
   private var propsReady = false
+  private var attachment: RNPageAttachment?
+  private var invalidated = false
+  private var mounted = false
 
   required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
@@ -196,11 +183,40 @@ final class WebKitTabView: ExpoView, WebKitTabDelegate {
   }
 
   func propsDidUpdate() {
-    guard !propsReady else { return }
     propsReady = true
-    tab.frame = bounds
-    addSubview(tab)
-    tab.start()
+    syncAttachment()
+  }
+
+  override func viewDidMoveToSuperview() {
+    super.viewDidMoveToSuperview()
+    guard superview != nil else { return }
+    if propsReady { syncAttachment() }
+  }
+
+  func invalidate() {
+    guard !invalidated else { return }
+    invalidated = true
+    RNPageEventTap.detach(attachment)
+  }
+
+  private func syncAttachment() {
+    guard !invalidated, superview != nil else { return }
+    attachment = RNPageEventTap.attach(owner: self, page: tab, tabId: tab.transferKey,
+      engine: "webkit", profile: tab.profile, context: pageContext, previous: attachment) { [weak self] name, payload in
+        self?.dispatchers[name]?(payload)
+      }
+    guard !mounted, attachment?.allowsStart != false else { return }
+    RNPageEventTap.start(attachment: attachment) { [self] in
+      mounted = true
+      tab.frame = bounds
+      addSubview(tab)
+      tab.start()
+    }
+  }
+
+  func call(_ method: String, _ args: [Any], _ promise: Promise) {
+    RNPageEventTap.call(attachment: attachment, page: tab, transferKey: tab.transferKey, propsReady: propsReady, method: method, args: args,
+      resolve: { @MainActor in promise.resolve($0) }, reject: { @MainActor in promise.reject($0, $1) })
   }
 
   deinit {
@@ -211,6 +227,9 @@ final class WebKitTabView: ExpoView, WebKitTabDelegate {
   private lazy var dispatchers = PageEvents.dispatchers(of: self, as: EventDispatcher.self)
 
   func webKitTab(_ tab: WebKitTab, event name: String, payload: [String: Any]) {
-    if let prop = PageEvents.props[name] { dispatchers[prop]?(payload) }
+    guard let prop = PageEvents.props[name] else { return }
+    RNPageEventTap.forward(attachment: attachment, name: prop, payload: payload) { [weak self] body in
+      self?.dispatchers[prop]?(body)
+    }
   }
 }

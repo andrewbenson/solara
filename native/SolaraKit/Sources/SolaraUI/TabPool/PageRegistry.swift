@@ -1,5 +1,7 @@
 import Foundation
 import Synchronization
+import SolaraModel
+import SolaraStore
 
 public typealias PageRegistrationGeneration = UInt64
 
@@ -28,6 +30,9 @@ public struct PageDescriptor: Equatable, Sendable {
   public let engine: PageEngine
   public let host: PageHost
   public let nativeTag: Int?
+  public let sessionGeneration: String?
+  public var ready: PageReadyFacts? = nil
+  public var navigation: JSONValue? = nil
   public var tabID: String { registration.tabID }
   public var registrationGeneration: PageRegistrationGeneration { registration.registrationGeneration }
 }
@@ -83,6 +88,8 @@ public enum PageRegistryError: Error, Equatable, Sendable, LocalizedError {
 public final class PageRegistry {
   public typealias Completion = @MainActor (Result<PageValue, PageRegistryError>) -> Void
   public typealias Perform = @MainActor (PageCommand, @escaping Completion) -> Void
+  public typealias CallScope = @MainActor (@MainActor () -> UUID) -> UUID
+  public typealias Snapshot = @MainActor (@MainActor () -> [PageDescriptor]) -> [PageDescriptor]
   public typealias Deliver = @MainActor (@escaping @MainActor () -> Void) -> Void
   typealias ScheduleTimeout = @MainActor (Duration, @escaping @MainActor () -> Void) -> (@MainActor () -> Void)
   public static let shared = PageRegistry()
@@ -105,6 +112,8 @@ public final class PageRegistry {
   }
 
   private let timeout: Duration
+  private var callScope: CallScope?
+  private var captureSnapshot: Snapshot?
   private var deliver: Deliver
   private let scheduleTimeout: ScheduleTimeout
   private var hasRegistered = false
@@ -139,6 +148,20 @@ public final class PageRegistry {
     return true
   }
 
+  @discardableResult
+  public func configureSnapshot(_ capture: @escaping Snapshot) -> Bool {
+    guard !hasRegistered, deliveries.isEmpty, !deliveryPending, !schedulingDelivery else { return false }
+    captureSnapshot = capture
+    return true
+  }
+
+  @discardableResult
+  public func configureCallScope(_ scope: @escaping CallScope) -> Bool {
+    guard !hasRegistered, deliveries.isEmpty, !deliveryPending, !schedulingDelivery else { return false }
+    callScope = scope
+    return true
+  }
+
   private static func makeTimeout(_ duration: Duration, _ action: @escaping @MainActor () -> Void) -> @MainActor () -> Void {
     let task = Task { @MainActor in
       do { try await Task.sleep(for: duration) } catch { return }
@@ -148,10 +171,20 @@ public final class PageRegistry {
   }
 
   public var descriptors: [PageDescriptor] {
+    if let captureSnapshot { return captureSnapshot { self.rawDescriptors } }
+    return rawDescriptors
+  }
+
+  private var rawDescriptors: [PageDescriptor] {
     entries.values.map(\.descriptor).sorted { $0.tabID < $1.tabID }
   }
 
   public func descriptor(_ registration: PageRegistration) -> PageDescriptor? {
+    if let captureSnapshot { return captureSnapshot { self.rawDescriptor(registration).map { [$0] } ?? [] }.first }
+    return rawDescriptor(registration)
+  }
+
+  private func rawDescriptor(_ registration: PageRegistration) -> PageDescriptor? {
     guard let entry = entries[registration.tabID], entry.descriptor.registration == registration else { return nil }
     return entry.descriptor
   }
@@ -166,10 +199,10 @@ public final class PageRegistry {
   public func removeObserver(_ id: UUID) { observers.removeAll { $0.id == id } }
 
   @discardableResult
-  public func register(tabID: String, engine: PageEngine, host: PageHost, nativeTag: Int? = nil, perform: @escaping Perform) -> PageRegistration {
+  public func register(tabID: String, engine: PageEngine, host: PageHost, nativeTag: Int? = nil, sessionGeneration: String? = nil, perform: @escaping Perform) -> PageRegistration {
     let token = PageRegistration(tabID: tabID, registrationGeneration: nextPageRegistrationGeneration())
     hasRegistered = true
-    let descriptor = PageDescriptor(registration: token, engine: engine, host: host, nativeTag: nativeTag)
+    let descriptor = PageDescriptor(registration: token, engine: engine, host: host, nativeTag: nativeTag, sessionGeneration: sessionGeneration)
     let old = entries.updateValue(Entry(descriptor: descriptor, perform: perform), forKey: tabID)
     let abandoned = old.map { extract($0.descriptor.registration) } ?? []
     if let old { enqueue(.retired(old.descriptor.registration)) }
@@ -180,7 +213,7 @@ public final class PageRegistry {
   }
 
   public func retire(_ registration: PageRegistration) {
-    guard descriptor(registration) != nil else { return }
+    guard rawDescriptor(registration) != nil else { return }
     entries.removeValue(forKey: registration.tabID)
     let abandoned = extract(registration)
     enqueue(.retired(registration))
@@ -190,9 +223,27 @@ public final class PageRegistry {
 
   @discardableResult
   public func call(tabID: String, registrationGeneration: PageRegistrationGeneration? = nil, method: String, args: [PageValue], completion: @escaping Completion) -> UUID {
+    let action: @MainActor () -> UUID = { self.callRaw(tabID: tabID, registrationGeneration: registrationGeneration, method: method, args: args, completion: completion) }
+    return callScope?(action) ?? action()
+  }
+
+  @discardableResult
+  public func call(tabID: String, registrationGeneration: PageRegistrationGeneration? = nil, command: PageCommand, completion: @escaping Completion) -> UUID {
+    let action: @MainActor () -> UUID = { self.callRaw(tabID: tabID, registrationGeneration: registrationGeneration, command: command, completion: completion) }
+    return callScope?(action) ?? action()
+  }
+
+  @discardableResult
+  public func call(_ registration: PageRegistration, command: PageCommand, completion: @escaping Completion) -> UUID {
+    let action: @MainActor () -> UUID = { self.callRaw(registration, command: command, completion: completion) }
+    return callScope?(action) ?? action()
+  }
+
+  @discardableResult
+  private func callRaw(tabID: String, registrationGeneration: PageRegistrationGeneration? = nil, method: String, args: [PageValue], completion: @escaping Completion) -> UUID {
     do {
       let command = try PageCommand.decode(method: method, args: args)
-      return call(tabID: tabID, registrationGeneration: registrationGeneration, command: command, completion: completion)
+      return callRaw(tabID: tabID, registrationGeneration: registrationGeneration, command: command, completion: completion)
     } catch let error as PageRegistryError {
       return complete(.failure(error), completion: completion)
     } catch {
@@ -201,28 +252,28 @@ public final class PageRegistry {
   }
 
   @discardableResult
-  public func call(tabID: String, registrationGeneration: PageRegistrationGeneration? = nil, command: PageCommand, completion: @escaping Completion) -> UUID {
+  private func callRaw(tabID: String, registrationGeneration: PageRegistrationGeneration? = nil, command: PageCommand, completion: @escaping Completion) -> UUID {
     if let registrationGeneration {
-      return call(PageRegistration(tabID: tabID, registrationGeneration: registrationGeneration), command: command, completion: completion)
+      return callRaw(PageRegistration(tabID: tabID, registrationGeneration: registrationGeneration), command: command, completion: completion)
     }
     guard let entry = entries[tabID] else {
       return complete(.failure(.noPage(tabID)), completion: completion)
     }
-    return call(entry.descriptor.registration, command: command, completion: completion)
+    return callRaw(entry.descriptor.registration, command: command, completion: completion)
   }
 
   @discardableResult
-  public func call(_ registration: PageRegistration, command: PageCommand, completion: @escaping Completion) -> UUID {
+  private func callRaw(_ registration: PageRegistration, command: PageCommand, completion: @escaping Completion) -> UUID {
     guard let entry = entries[registration.tabID], entry.descriptor.registration == registration else {
       return complete(.failure(.retired(registration)), completion: completion)
     }
     guard command.supports(engine: entry.descriptor.engine) else {
       return complete(.failure(.unsupported(entry.descriptor.engine, command.method)), completion: completion)
     }
-    if command == .nativeTag {
+    if command == .nativeTag, entry.descriptor.sessionGeneration == nil {
       return complete(.success(entry.descriptor.nativeTag.map { .number(Double($0)) } ?? .null), completion: completion)
     }
-    if entry.descriptor.engine == .webKit, case .takeControlPress = command {
+    if entry.descriptor.sessionGeneration == nil, entry.descriptor.engine == .webKit, case .takeControlPress = command {
       return complete(.success(.bool(true)), completion: completion)
     }
     let id = UUID()
@@ -276,7 +327,7 @@ public final class PageRegistry {
     pendingOrder.removeAll { $0 == id }
     item.cancelDeadline?()
     let output: Result<PageValue, PageRegistryError>
-    if descriptor(item.registration) == nil {
+    if rawDescriptor(item.registration) == nil {
       output = .failure(.retired(item.registration))
     } else if case .success(let value) = result, !item.resultKind.accepts(value) {
       output = .failure(.invalidValue)

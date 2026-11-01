@@ -1,13 +1,15 @@
 import { pooledWebViewHandle, unwrapPageEvent, type PageEngine, type ViewEventName } from "@solara/solaracore";
-import type { TabPool } from "@solara/settings";
+import { isPageCurrent } from "@solara/store";
+import type { PooledPageEvent, PooledPageIdentity, TabPool } from "@solara/settings";
 import { persistEngine } from "../lib/engines";
 import { holdModuleEvent } from "../lib/nativeEvents";
 import { noteGone } from "../lib/tabLifecycle";
 import { notePooledPage, webviewRef } from "../lib/webviews";
 import { useBrowser, type BrowserState } from "../store/browser";
+import { nativeOwnsWorkspace } from "../store/nativeStore";
 import { engineProfile } from "../store/model";
 import { setPageProgress } from "../store/pageProgress";
-import { followNavigation, newPageSession, pageEventHandlers, type PageEventHandlers, type PageSession } from "./pageEvents";
+import { deliverPageEvent, followNavigation, newPageSession, observePageIdentity, pageEventHandlers, publishPageContext, releasePageSession, type PageEventHandlers, type PageSession } from "./pageEvents";
 
 type PooledPage = {
   session: PageSession;
@@ -52,18 +54,21 @@ function followNow() {
   }
 }
 
-function pageCreated(pool: TabPool, tabId: string, engine: PageEngine, seq: number) {
+function pageCreated(pool: TabPool, tabId: string, engine: PageEngine, seq: number, identity?: PooledPageIdentity, contextRevision?: number) {
+  if (identity && !isPageCurrent(identity)) return;
   pageGone(tabId);
   const s = useBrowser.getState();
   const navigation = s.tabs[tabId]?.navigation;
   const loadedSeq = seq >= 0 ? seq : navigation?.seq;
   const session = newPageSession(tabId, engine, peekSource(s, tabId), loadedSeq === undefined ? null : { seq: loadedSeq });
+  if (identity && !observePageIdentity(session, identity, "native", contextRevision)) return;
   const register = webviewRef(tabId);
-  register(pooledWebViewHandle((method, args) => pool.pageCall(tabId, method, args)));
+  register(pooledWebViewHandle((method, args) => pool.pageCall(tabId, method, args, identity?.registrationGeneration)));
   notePooledPage(tabId, true);
   pooled.set(tabId, { session, handlers: pageEventHandlers(session), register, seq: navigation?.seq, windowId: s.tabs[tabId]?.windowId, followed: null, loadedSeq });
   persistEngine(tabId, engine);
-  followLater(tabId);
+  if (identity) publishPageContext(tabId);
+  else followLater(tabId);
 }
 
 function pageGone(tabId: string) {
@@ -72,7 +77,8 @@ function pageGone(tabId: string) {
   pooled.delete(tabId);
   notePooledPage(tabId, false);
   page.register(null);
-  noteGone(tabId);
+  releasePageSession(page.session);
+  if (page.session.factsOwner === "js") noteGone(tabId);
   setPageProgress(tabId, 0);
 }
 
@@ -93,32 +99,46 @@ function followStore(s: BrowserState, prev: BrowserState) {
     if (seq === page.seq) continue;
     page.seq = seq;
     if (tab && moved && sameProfile) page.session.arrived = true;
-    followLater(tabId);
+    if (page.session.navigationOwner === "js") followLater(tabId);
   }
 }
 
-function pageEvent(tabId: string, name: ViewEventName, payload: unknown) {
-  const handlers: Partial<Record<ViewEventName, (...args: never[]) => void>> | undefined = pooled.get(tabId)?.handlers;
-  const handler = handlers?.[name] as ((...args: unknown[]) => void) | undefined;
-  if (!handler) return;
-  holdModuleEvent(`top${name.slice(2)}`, () => handler(...unwrapPageEvent(name, payload as never)));
+function pageEvent(tabId: string, name: ViewEventName, payload: unknown, identity?: PooledPageIdentity) {
+  const page = pooled.get(tabId);
+  if (!page) return;
+  if (identity) {
+    holdModuleEvent(`top${name.slice(2)}`, () => { deliverPageEvent(page.session, name, payload, identity); });
+    return;
+  }
+  if (page.session.factsOwner === "native") return;
+  const handler = page.handlers[name as keyof PageEventHandlers] as ((...args: unknown[]) => void) | undefined;
+  if (handler) holdModuleEvent(`top${name.slice(2)}`, () => handler(...unwrapPageEvent(name, payload as never)));
 }
 
 export function startPooledPages(pool: TabPool) {
-  const events = pool.addListener("onPageEvent", ({ tabId, name, payload }) => {
+  const events = pool.addListener("onPageEvent", (event: PooledPageEvent) => {
+    const { tabId, name, payload } = event;
+    const identity = typeof event.sessionGeneration === "string" && !!event.sessionGeneration && Number.isSafeInteger(event.registrationGeneration) && event.registrationGeneration > 0
+      ? { tabId, sessionGeneration: event.sessionGeneration, registrationGeneration: event.registrationGeneration } : undefined;
+    if (!identity && nativeOwnsWorkspace()) return;
     if (name === "onPageCreated") {
       const { engine, seq } = payload as { engine: PageEngine; seq: number };
-      pageCreated(pool, tabId, engine, seq);
-    } else if (name === "onPageGone") pageGone(tabId);
-    else pageEvent(tabId, name as ViewEventName, payload);
+      pageCreated(pool, tabId, engine, seq, identity, event.contextRevision);
+    } else if (name === "onPageGone") {
+      const current = pooled.get(tabId)?.session.identity;
+      if (!identity || (current?.sessionGeneration === identity.sessionGeneration && current.registrationGeneration === identity.registrationGeneration)) pageGone(tabId);
+    } else pageEvent(tabId, name as ViewEventName, payload, identity);
   });
   const stopStore = useBrowser.subscribe(followStore);
   void pool.livePages?.().then((live) => {
-    for (const { tabId, engine, ready, navigation } of live) {
+    for (const { tabId, engine, ready, navigation, sessionGeneration, registrationGeneration, contextRevision } of live) {
       if (pooled.has(tabId)) continue;
-      pageCreated(pool, tabId, engine as PageEngine, -1);
-      if (ready) pageEvent(tabId, "onReady", ready);
-      if (navigation) pageEvent(tabId, "onNavigationChange", navigation);
+      const identity = typeof sessionGeneration === "string" && !!sessionGeneration && Number.isSafeInteger(registrationGeneration) && registrationGeneration > 0
+        ? { tabId, sessionGeneration, registrationGeneration } : undefined;
+      if (!identity && nativeOwnsWorkspace()) continue;
+      pageCreated(pool, tabId, engine as PageEngine, -1, identity, contextRevision);
+      if (ready) pageEvent(tabId, "onReady", ready, identity);
+      if (navigation) pageEvent(tabId, "onNavigationChange", navigation, identity);
     }
   });
   return () => {

@@ -7,6 +7,7 @@ import { useShallow } from "zustand/react/shallow";
 import { toggleMute } from "../../lib/actions";
 import { shortcutHint, useShortcutHint, withShortcut } from "../../lib/commandShortcuts";
 import { PRODUCT } from "../../lib/productName";
+import { nativeOwnsWorkspace } from "../../store/nativeStore";
 import { useLifecycle } from "../../lib/tabLifecycle";
 import { hex, profileNameColor, profileTheme, selectedTabGlow, spaceLookSource, useSelectedTabGlow, useTheme, type Theme } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
@@ -199,7 +200,9 @@ function useTopStripState(windowId: string, profileId: string, floating: boolean
     for (const id of s.windows[windowId]?.tabIds ?? NONE) if (s.live[id]?.playingAudio) out += (out ? "," : "") + id;
     return out;
   });
-  const sleeping = useLifecycle(useShallow((l) => Object.keys(l.discarded).filter((id) => l.discarded[id])));
+  const legacySleeping = useLifecycle(useShallow((l) => Object.keys(l.discarded).filter((id) => l.discarded[id])));
+  const nativeSleeping = useBrowser(useShallow((s) => (s.windows[windowId]?.tabIds ?? NONE).filter((id) => s.live[id]?.discarded)));
+  const sleeping = nativeOwnsWorkspace() ? nativeSleeping : legacySleeping;
   const closeHint = useBrowser((s) => shortcutHint("closeTab", s) ?? null);
   const engines = useBrowser(
     useShallow((s) => {
@@ -235,8 +238,7 @@ function useTopStripState(windowId: string, profileId: string, floating: boolean
         glow: { color: glow.shadowColor, opacity: glow.shadowOpacity, radius: glow.shadowRadius },
         floating,
         pageWidth,
-        playing: split(playing),
-        sleeping,
+        ...(nativeOwnsWorkspace() ? {} : { playing: split(playing), sleeping }),
         engines,
         capture,
         bands,

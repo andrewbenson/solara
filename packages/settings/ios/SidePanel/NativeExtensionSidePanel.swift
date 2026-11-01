@@ -168,6 +168,13 @@ enum SidePanelFocus {
     guard let window = ShellDrag.window(windowId), window.isVisible, window.firstResponder === window else { return false }
     let page = (TabPoolHost.shared.pageView(tabId) as? SolaraCoreWebView) ?? find(tabId, in: window.contentView?.superview ?? window.contentView)
     guard let page, page.window === window, !page.isHiddenOrHasHiddenAncestor else { return false }
+    if let focus = NativeAppIntegration.preparePageFocus(page) {
+      return focus { [weak page, weak window] in
+        guard let page, let window else { return false }
+        return ShellDrag.window(windowId) === window && window.isVisible && window.firstResponder === window &&
+          page.window === window && !page.isHiddenOrHasHiddenAncestor
+      }
+    }
     page.focusPage()
     return true
   }

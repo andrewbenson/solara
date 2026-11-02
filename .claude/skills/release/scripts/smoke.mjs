@@ -50,8 +50,8 @@ async function go(url, wait = 15000) {
 async function click(selector, button = "left") {
   const b = JSON.parse(await evaluate(`JSON.stringify(document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect())`));
   const at = { x: b.x + 20, y: b.y + b.height / 2, button, clickCount: 1 };
-  await send("Input.dispatchMouseEvent", { type: "mousePressed", ...at });
-  if (button === "left") await send("Input.dispatchMouseEvent", { type: "mouseReleased", ...at });
+  await send("Input.dispatchMouseEvent", { type: "mousePressed", ...at, buttons: button === "left" ? 1 : 2 });
+  if (button === "left") await send("Input.dispatchMouseEvent", { type: "mouseReleased", ...at, buttons: 0 });
 }
 async function key(k) {
   const code = { ArrowDown: 40, Enter: 13 }[k];
@@ -136,6 +136,7 @@ check("…showing the Work profile's pages", !!workContext && shownContext === w
   `work ${workContext}, shown ${shownContext} (${shownVisible})`);
 
 await go(`${pages}/form.html`);
+await send("Emulation.setFocusEmulationEnabled", { enabled: true });
 await evaluate(`document.getElementById("c").value="Springfield"; document.getElementById("b").click(); 1`);
 await sleep(2500);
 await click("#c");
@@ -145,6 +146,7 @@ await sleep(300);
 await key("Enter");
 await sleep(800);
 check("autofill dropdown accepts a suggestion", (await evaluate(`document.getElementById("c").value`)) === "Springfield");
+await send("Emulation.setFocusEmulationEnabled", { enabled: false });
 
 await go(`${pages}/passkey.html`);
 await click("#b");

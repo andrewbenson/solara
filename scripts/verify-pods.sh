@@ -82,6 +82,9 @@ while read -r name version want; do
     || fail "Podfile.lock doesn't lock $name $version: compare the new Pods/$name with upstream's source at the tag's commit, then re-pin here (--print)"
   check_tree "$pods/$name" "$want"
 done <<<"$SOURCE_PODS"
-[ "$failed" = 0 ] || { echo "error: verify-pods: the Pods don't match their pins; not building from them" >&2; exit 1; }
-echo "verify-pods: Sparkle $SPARKLE_VERSION, Hermes $HERMES_VERSION and the source pods match their pins"
+stale="$(node "$root/scripts/lib/pods-sources.mjs" "$root" 2>&1)" \
+  || fail "the Pods project doesn't list these pod sources, so a build would leave them out (pnpm pods, then rerun):
+$stale"
+[ "$failed" = 0 ] || { echo "error: verify-pods: the Pods don't match their pins or the pod sources; not building from them" >&2; exit 1; }
+echo "verify-pods: Sparkle $SPARKLE_VERSION, Hermes $HERMES_VERSION and the source pods match their pins, and the Pods project lists every pod source"
 [ $# -eq 0 ] || exec "$@"

@@ -1,4 +1,5 @@
 #import "SolaraCoreServices.h"
+#import "SolaraCore-Swift.h"
 
 #import "SolaraCoreEarlyWindow.h"
 #import "SolaraCoreEngineBridge.h"
@@ -10,6 +11,10 @@
 #include <string.h>
 
 #include <cmath>
+
+bool SolaraPrivateDownloadSourceFenceAvailable() {
+  return false;
+}
 
 namespace {
 
@@ -357,9 +362,27 @@ NSString *StoreFolder(NSString *profile, NSString *extensionId, id version) {
 }
 
 void (^gDownloadsHandler)(NSDictionary *);
-NSMutableDictionary<NSString *, NSString *> *DownloadProfiles() {
-  static NSMutableDictionary *profiles = [NSMutableDictionary dictionary];
-  return profiles;
+void DeliverDownload(NSDictionary *download, NSString *profile, NSInteger epoch) {
+  NSDictionary *forwarded = [NativePrivateDownloadRoutes.shared forwardedDownload:download profile:profile ?: @"" epoch:epoch
+                                                       privateDownloadsSupported:SolaraPrivateDownloadSourceFenceAvailable()];
+  if (forwarded && gDownloadsHandler) gDownloadsHandler(forwarded);
+}
+
++ (void)setPrivateSessionGeneration:(NSString *)engineProfile generation:(NSString *)generation {
+  engineProfile = engineProfile ?: @"";
+  if ([[NativePrivateDownloadRoutes.shared generation:engineProfile] isEqualToString:generation]) return;
+  [NativePrivateDownloadRoutes.shared setGeneration:engineProfile generation:generation];
+  if (!SolaraPrivateDownloadSourceFenceAvailable()) return;
+  [self call:@"ac_downloads_begin_private" profile:engineProfile
+        args:@{@"privateSessionEpoch" : @([NativePrivateDownloadRoutes.shared epoch:engineProfile])} completion:^(NSDictionary *) {}];
+}
+
++ (void)endPrivateSession:(NSString *)engineProfile {
+  engineProfile = engineProfile ?: @"";
+  [NativePrivateDownloadRoutes.shared endSession:engineProfile privateDownloadsSupported:SolaraPrivateDownloadSourceFenceAvailable()];
+  if (!SolaraPrivateDownloadSourceFenceAvailable()) return;
+  [self call:@"ac_downloads_end_private" profile:engineProfile
+        args:@{@"privateSessionEpoch" : @([NativePrivateDownloadRoutes.shared epoch:engineProfile])} completion:^(NSDictionary *) {}];
 }
 
 + (void (^)(NSDictionary *))downloadsHandler {
@@ -375,28 +398,26 @@ NSMutableDictionary<NSString *, NSString *> *DownloadProfiles() {
                       handler:^(NSDictionary *payload) {
                         NSDictionary *download = [payload[@"download"] isKindOfClass:NSDictionary.class] ? payload[@"download"] : nil;
                         if (!download) return;
-                        NSMutableDictionary *d = [download mutableCopy];
-                        d[@"profile"] = payload[@"profile"] ?: @"";
-                        if ([d[@"id"] isKindOfClass:NSString.class]) DownloadProfiles()[d[@"id"]] = d[@"profile"];
-                        if (gDownloadsHandler) gDownloadsHandler(d);
+                        NSString *profile = [payload[@"profile"] isKindOfClass:NSString.class] ? payload[@"profile"] : @"";
+                        DeliverDownload(download, profile, [NativePrivateDownloadRoutes.shared epoch:profile]);
                       }];
 }
 
 + (void)watchDownloads:(NSString *)profile {
+  profile = profile ?: @"";
+  const NSInteger epoch = [NativePrivateDownloadRoutes.shared epoch:profile];
   [self call:@"ac_downloads_list" profile:profile args:nil completion:^(NSDictionary *result) {
     for (NSDictionary *download in [result[@"downloads"] isKindOfClass:NSArray.class] ? result[@"downloads"] : @[]) {
       if (![download isKindOfClass:NSDictionary.class]) continue;
-      NSMutableDictionary *d = [download mutableCopy];
-      d[@"profile"] = profile ?: @"";
-      if ([d[@"id"] isKindOfClass:NSString.class]) DownloadProfiles()[d[@"id"]] = d[@"profile"];
-      if (gDownloadsHandler) gDownloadsHandler(d);
+      DeliverDownload(download, profile, epoch);
     }
   }];
 }
 
 + (void)downloadCommand:(NSString *)command id:(NSString *)downloadId {
-  NSString *profile = DownloadProfiles()[downloadId ?: @""] ?: @"";
-  [self call:[@"ac_downloads_" stringByAppendingString:command] profile:profile args:@{@"id" : downloadId ?: @""}
+  NSString *profile = [NativePrivateDownloadRoutes.shared profile:downloadId ?: @""];
+  if (!profile && SolaraPrivateDownloadSourceFenceAvailable()) return;
+  [self call:[@"ac_downloads_" stringByAppendingString:command] profile:profile ?: @"" args:@{@"id" : downloadId ?: @""}
       completion:^(NSDictionary *) {}];
 }
 

@@ -1,11 +1,12 @@
 #import "SolaraCoreInternal.h"
+#import "SolaraCore-Swift.h"
 
 namespace {
 
 constexpr int kFaviconSize = 32;
 constexpr NSUInteger kMaxBytes = 2 * 1024 * 1024;
 
-NSCache<NSString *, NSImage *> *Seen() {
+NSCache<NSString *, NSImage *> *OrdinarySeen() {
   static NSCache *cache = [] {
     NSCache *c = [NSCache new];
     c.countLimit = 512;
@@ -87,15 +88,25 @@ void Download(NSString *url, NSString *profileName, void (^done)(NSData *_Nullab
 @implementation SolaraCoreFavicons
 
 + (void)noteImage:(NSImage *)image forURL:(NSString *)url profile:(NSString *)profile {
-  if (image && url.length) [Seen() setObject:image forKey:SeenKey(profile, url)];
+  if (!image || !url.length) return;
+  if (solaracore_host::IsIncognito(profile)) [NativePrivateFaviconCache.shared noteImage:image url:url profile:profile];
+  else [OrdinarySeen() setObject:image forKey:SeenKey(profile, url)];
+}
+
++ (void)forgetPrivateProfiles:(NSArray<NSString *> *)profiles {
+  [NativePrivateFaviconCache.shared forgetProfiles:profiles];
 }
 
 + (void)fetch:(NSString *)url
        profile:(NSString *)profile
           name:(NSString *)name
     completion:(void (^)(NSDictionary<NSString *, id> *))completion {
+  NativePrivateFaviconCache *privateCache = NativePrivateFaviconCache.shared;
+  const NSInteger generation = [privateCache generation:profile];
+  if (![privateCache isCurrent:profile generation:generation]) return completion(nil);
   int width = 0, height = 0;
-  if (NSImage *seen = [Seen() objectForKey:SeenKey(profile, url)]) {
+  NSImage *seen = solaracore_host::IsIncognito(profile) ? [privateCache image:url profile:profile] : [OrdinarySeen() objectForKey:SeenKey(profile, url)];
+  if (seen) {
     return completion(Store(PNG(seen, kFaviconSize * 2, &width, &height), width, height, profile, name));
   }
   if ([url hasPrefix:@"data:image/"]) {
@@ -106,6 +117,7 @@ void Download(NSString *url, NSString *profileName, void (^done)(NSData *_Nullab
   NSString *scheme = [NSURL URLWithString:url].scheme.lowercaseString;
   if (!([scheme isEqualToString:@"https"] || [scheme isEqualToString:@"http"])) return completion(nil);
   Download(url, profile, ^(NSData *body) {
+    if (![privateCache isCurrent:profile generation:generation]) return completion(nil);
     int w = 0, h = 0;
     NSImage *image = body ? [[NSImage alloc] initWithData:body] : nil;
     completion(image ? Store(PNG(image, kFaviconSize * 2, &w, &h), w, h, profile, name) : nil);

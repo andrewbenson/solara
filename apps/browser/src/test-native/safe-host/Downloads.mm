@@ -63,7 +63,8 @@ int main() {
   @autoreleasepool {
     received = [NSMutableArray array];
     symbols = [NSMutableArray array];
-    DownloadProfiles()[@"download-42"] = @"fixture-profile-id";
+    [NativePrivateDownloadRoutes.shared forwardedDownload:@{ @"id": @"download-42", @"offTheRecord": @NO }
+                                                profile:@"fixture-profile-id" epoch:0 privateDownloadsSupported:NO];
     NSMutableArray *results = [NSMutableArray array];
     for (NSNumber *mode in @[ @YES, @NO ]) {
       SolaraCoreHost.safeMode = mode.boolValue;

@@ -87,8 +87,10 @@ extension Session {
       if !w.incognito || s.windows[w.id] != nil { continue }
       guard let session = prev.privateSession(w.profileId) else { continue }
       if s.windows.values.contains(where: { $0.incognito && s.privateSession($0.profileId)?.jsEquals(session) == true }) { continue }
-      for d in s.downloads where downloadSession(s, d) == session && d.isDownloading { emit(.cancelDownload(id: d.id)) }
-      forgetDownloads(w.profileId)
+      if !config.nativePrivateSessionEffects {
+        for d in s.downloads where downloadSession(s, d) == session && d.isDownloading { emit(.cancelDownload(id: d.id)) }
+        forgetDownloads(w.profileId)
+      }
       emit(.endPrivateSession(session: session))
     }
   }

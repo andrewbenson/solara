@@ -47,6 +47,7 @@ NS_ASSUME_NONNULL_BEGIN
 + (void)deleteProfileData:(NSString *)profile deletionAllowed:(BOOL (^)(void))deletionAllowed completion:(void (^)(NSArray<NSString *> *remaining))completion
     NS_SWIFT_NAME(deleteProfileData(_:deletionAllowed:completion:));
 + (void)releaseProfile:(NSString *)profile;
++ (void)endPrivateSession:(NSString *)engineProfile aliases:(NSArray<NSString *> *)aliases NS_SWIFT_NAME(endPrivateSession(_:aliases:));
 + (int)chromeTabId:(int)browserId NS_SWIFT_NAME(chromeTabId(browserId:));
 + (BOOL)stopCapture:(int)browserId NS_SWIFT_NAME(stopCapture(browserId:));
 + (BOOL)showAutofillSuggestions:(int)browserId passwords:(BOOL)passwords NS_SWIFT_NAME(showAutofillSuggestions(browserId:passwords:));
@@ -56,6 +57,7 @@ NS_ASSUME_NONNULL_BEGIN
 @end
 
 @interface SolaraCoreFavicons : NSObject
++ (void)forgetPrivateProfiles:(NSArray<NSString *> *)profiles;
 + (void)fetch:(NSString *)url
        profile:(NSString *)profile
           name:(nullable NSString *)name

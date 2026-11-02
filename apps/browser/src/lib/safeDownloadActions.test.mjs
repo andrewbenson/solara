@@ -8,7 +8,7 @@ function downloadBridge() {
     .replace('#import "SolaraCoreInternal.h"', "")
     .replace('#include "../../../engine/chromium/src/chrome/browser/solara/public/ac_engine.h"', "");
   const services = source("packages/solaracore/ios/SolaraCoreServices.mm");
-  const helpers = ["NSDictionary *Parse(", "NSString *JSON(NSDictionary *", "NSMutableDictionary<NSString *, NSString *> *DownloadProfiles()"]
+  const helpers = ["NSDictionary *Parse(", "NSString *JSON(NSDictionary *"]
     .map((signature) => declaration(services, signature)).join("\n");
   const methods = ["+ (void)call:(NSString *)name profile:(NSString *)profile args:(NSDictionary *)args completion:", "+ (void)downloadCommand:"]
     .map((signature) => declaration(services, signature)).join("\n");

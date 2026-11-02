@@ -108,4 +108,32 @@ struct NewTabFaviconCacheTests {
       }
     }
   }
+
+  @Test func heldPrivateLoadCannotRestoreAMissAfterSessionEnd() async throws {
+    let client = HeldUIFaviconClient()
+    let library = FaviconLibrary(client: client)
+    let profile = "incognito:held-new-tab-\(UUID().uuidString)@profile-a"
+    var loads = 0
+    let favicons = NewTabFavicons { page, source, profile, dark in
+      loads += 1
+      let result = await library.favicon(page: page, source: source, engineProfile: profile, appearance: dark)
+      return result.map { _ in NSImage(size: NSSize(width: 16, height: 16)) }
+    }
+    let request = Task { @MainActor in
+      let result = await favicons.fetch(url, favicon, profileId: profile, dark: false)
+      #expect(result == nil)
+      #expect(favicons.cached(url, favicon, profileId: profile, dark: false) == nil)
+      #expect(library.cachedCount == 0)
+      #expect(loads == 1)
+      let retried = await favicons.fetch(url, favicon, profileId: profile, dark: false)
+      #expect(retried == nil)
+      #expect(loads == 2)
+    }
+    defer { client.finish(nil) }
+    try await client.waitForFetch()
+
+    NotificationCenter.default.post(name: FaviconLibrary.didEndPrivateSession, object: nil, userInfo: ["aliases": [profile]])
+    client.finish(Data([9]))
+    await request.value
+  }
 }

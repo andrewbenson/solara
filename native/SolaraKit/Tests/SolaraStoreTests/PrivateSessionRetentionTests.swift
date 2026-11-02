@@ -116,6 +116,27 @@ import Testing
     #expect(store.state.tabs.values.contains { $0.url == "https://other.example/private" })
   }
 
+  @Test func confirmedEndRemovesSessionDownloadRecordsAndRejectsTheirLateReturn() throws {
+    var config = StoreConfig()
+    config.nativePrivateSessionEffects = true
+    let store = Store(memory: StoreMemory(ids: IdSource(launch: "private-downloads")), config: config, clock: { 1_000 })
+    let id = try window(store, privateMode: true, url: "https://secret.example/downloads")
+    store.setPrivateSessionGeneration(session: "", generation: "download-generation")
+    let profile = try #require(store.state.windows[id]?.profileId)
+    let privateRecord = Download(json: ["id": "private-complete", "state": "complete", "offTheRecord": true, "profile": "", "path": "/saved/private.pdf"])
+    let ordinaryRecord = Download(json: ["id": "ordinary-complete", "state": "complete", "profile": "", "path": "/saved/ordinary.pdf"])
+    try store.dispatch(upsert(privateRecord))
+    try store.dispatch(upsert(ordinaryRecord))
+    try store.dispatch(Command("closeWindow", [.string(id)]))
+    #expect(store.state.downloads.contains { $0.id == privateRecord.id })
+    #expect(store.confirmPrivateSessionEnded(session: "", profiles: [profile]))
+    #expect(store.state.downloads == [ordinaryRecord])
+    #expect(store.memory.endedPrivateDownloads.contains(privateRecord.id))
+    try store.dispatch(upsert(privateRecord))
+    #expect(store.state.downloads == [ordinaryRecord])
+  }
+
+
   @Test func anOldConfirmationCannotRetireAReplacementGenerationWithoutWindows() throws {
     let store = makeStore()
     let id = try window(store, privateMode: true, url: "https://secret.example/replacement")
@@ -130,5 +151,20 @@ import Testing
     #expect(store.memory.privateSessionGenerations[JSKey("")] == nil)
   }
 
+
+  @Test func nativeLaneAcceptsUnmodifiedAPI34DownloadPayloads() throws {
+    var config = StoreConfig()
+    config.nativePrivateSessionEffects = true
+    let store = Store(memory: StoreMemory(ids: IdSource(launch: "api34-downloads")), config: config, clock: { 1_000 })
+    let id = try window(store, privateMode: true, url: "https://secret.example/current-download")
+    store.setPrivateSessionGeneration(session: "", generation: "native-only-generation")
+    let privateRecord = Download(json: ["id": "api34-private", "state": "complete", "offTheRecord": true, "profile": ""])
+    let ordinaryRecord = Download(json: ["id": "api34-ordinary", "state": "complete", "profile": ""])
+    try store.dispatch(upsert(privateRecord))
+    try store.dispatch(upsert(ordinaryRecord))
+    #expect(store.state.windows[id]?.incognito == true)
+    #expect(store.state.downloads == [ordinaryRecord, privateRecord])
+    #expect(store.state.downloads.last?.json == privateRecord.json)
+  }
 
 }

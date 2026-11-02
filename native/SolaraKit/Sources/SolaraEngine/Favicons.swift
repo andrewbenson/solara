@@ -20,10 +20,11 @@ public extension EngineClient {
 @MainActor
 public final class FaviconLibrary {
   public static let didInvalidate = Notification.Name("SolaraFaviconInvalidated")
+  public static let didEndPrivateSession = Notification.Name("SolaraPrivateSessionEnded")
   struct Key: Hashable {
     var page: String
     var source: String
-    var engineProfile: String
+    var engineProfile: Data
     var dark: Bool
   }
 
@@ -39,20 +40,37 @@ public final class FaviconLibrary {
   private var cache: [Key: Entry] = [:]
   private var order: [Key] = []
   private var pending: [Key: (generation: Int, task: Task<FaviconLookup?, Never>)] = [:]
-  private var generations: [String: Int] = [:]
+  private var generations: [Data: Int] = [:]
+  private var retiredProfiles: Set<Data> = []
+  nonisolated(unsafe) private var privateSessionObservation: NSObjectProtocol?
 
   public init(client: any EngineClient, limit: Int = 3_000, missLifetime: TimeInterval = 30, now: @escaping () -> Date = Date.init) {
     self.client = client
     self.limit = max(1, limit)
     self.missLifetime = missLifetime
     self.now = now
+    privateSessionObservation = NotificationCenter.default.addObserver(forName: Self.didEndPrivateSession, object: nil, queue: .main) { [weak self] notification in
+      let aliases = notification.userInfo?["aliases"] as? [String] ?? []
+      MainActor.assumeIsolated { self?.endPrivateSession(engineProfiles: aliases) }
+    }
+  }
+
+  deinit {
+    if let privateSessionObservation { NotificationCenter.default.removeObserver(privateSessionObservation) }
+  }
+
+  public func endPrivateSession(engineProfiles: [String]) {
+    for profile in engineProfiles where profile.hasPrefix("incognito:") {
+      retiredProfiles.insert(Data(profile.utf8))
+      invalidate(engineProfile: profile)
+    }
   }
 
   public var cachedCount: Int { cache.count }
 
   public func favicon(page: String, source: String? = nil, engineProfile: String, appearance dark: Bool) async -> FaviconLookup? {
-    guard !page.isEmpty || !(source ?? "").isEmpty else { return nil }
-    let key = Key(page: String(page.prefix { $0 != "#" }), source: source ?? "", engineProfile: engineProfile, dark: dark)
+    guard !retiredProfiles.contains(Data(engineProfile.utf8)), !page.isEmpty || !(source ?? "").isEmpty else { return nil }
+    let key = Key(page: String(page.prefix { $0 != "#" }), source: source ?? "", engineProfile: Data(engineProfile.utf8), dark: dark)
     if let entry = cache[key] {
       switch entry {
       case .found(let result): return result
@@ -64,9 +82,9 @@ public final class FaviconLibrary {
     }
     if let pending = pending[key] {
       let result = await pending.task.value
-      return generations[engineProfile, default: 0] == pending.generation ? result : nil
+      return generations[Data(engineProfile.utf8), default: 0] == pending.generation ? result : nil
     }
-    let generation = generations[engineProfile, default: 0]
+    let generation = generations[Data(engineProfile.utf8), default: 0]
     let client = client
     let task = Task<FaviconLookup?, Never> { @MainActor in
       let privateProfile = engineProfile.hasPrefix("incognito:")
@@ -74,7 +92,7 @@ public final class FaviconLibrary {
         return FaviconLookup(data: data, source: "chrome")
       }
       if !key.source.isEmpty, let data = await client.fetchFavicon(source: key.source, engineProfile: engineProfile), !data.isEmpty {
-        if !privateProfile, !key.page.isEmpty, (key.source.hasPrefix("http://") || key.source.hasPrefix("https://")), generations[engineProfile, default: 0] == generation {
+        if !privateProfile, !key.page.isEmpty, (key.source.hasPrefix("http://") || key.source.hasPrefix("https://")), generations[Data(engineProfile.utf8), default: 0] == generation {
           try? await client.storeFavicon(page: key.page, source: key.source, data: data, engineProfile: engineProfile)
         }
         return FaviconLookup(data: data, source: "source")
@@ -86,19 +104,19 @@ public final class FaviconLibrary {
     }
     pending[key] = (generation, task)
     let result = await task.value
-    if generations[engineProfile, default: 0] == generation {
+    if generations[Data(engineProfile.utf8), default: 0] == generation {
       cache[key] = result.map(Entry.found) ?? .missing(since: now())
       order.append(key)
       if order.count > limit { cache[order.removeFirst()] = nil }
     }
     if pending[key]?.generation == generation { pending[key] = nil }
-    return generations[engineProfile, default: 0] == generation ? result : nil
+    return generations[Data(engineProfile.utf8), default: 0] == generation ? result : nil
   }
 
   public func forgetMisses(engineProfile: String, pages: [String]) {
     let shown = Set(pages.map { String($0.prefix { $0 != "#" }) })
     let keys = cache.compactMap { key, entry -> Key? in
-      guard case .missing = entry, key.engineProfile == engineProfile, shown.contains(key.page) else { return nil }
+      guard case .missing = entry, key.engineProfile == Data(engineProfile.utf8), shown.contains(key.page) else { return nil }
       return key
     }
     guard !keys.isEmpty else { return }
@@ -110,11 +128,11 @@ public final class FaviconLibrary {
 
   public func invalidate(engineProfile: String, pages: [String]? = nil) {
     let gone = pages.map { Set($0.map { String($0.prefix { $0 != "#" }) }) }
-    generations[engineProfile, default: 0] += 1
-    let keys = cache.keys.filter { $0.engineProfile == engineProfile && (gone == nil || gone!.contains($0.page)) }
+    generations[Data(engineProfile.utf8), default: 0] += 1
+    let keys = cache.keys.filter { $0.engineProfile == Data(engineProfile.utf8) && (gone == nil || gone!.contains($0.page)) }
     for key in keys { cache[key] = nil }
-    order.removeAll { key in key.engineProfile == engineProfile && (gone == nil || gone!.contains(key.page)) }
-    pending = pending.filter { key, _ in key.engineProfile != engineProfile || (gone != nil && !gone!.contains(key.page)) }
+    order.removeAll { key in key.engineProfile == Data(engineProfile.utf8) && (gone == nil || gone!.contains(key.page)) }
+    pending = pending.filter { key, _ in key.engineProfile != Data(engineProfile.utf8) || (gone != nil && !gone!.contains(key.page)) }
     NotificationCenter.default.post(name: Self.didInvalidate, object: nil)
   }
 }

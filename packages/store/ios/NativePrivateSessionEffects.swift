@@ -1,6 +1,7 @@
 import AppKit
 import SolaraCore
 internal import SolaraStore
+internal import SolaraUI
 
 @MainActor
 final class NativePrivateSessionEffects {
@@ -13,7 +14,16 @@ final class NativePrivateSessionEffects {
 
   init(store: Store) {
     self.store = store
-    effects = PrivateSessionEffects(store: store) { _ in }
+    effects = PrivateSessionEffects(store: store, begin: { session, generation in
+      NativePrivateSessionCleanup.beginWebKitSession(session, generation: generation)
+      SolaraCoreServices.setPrivateSessionGeneration(session, generation: generation)
+    }, end: { ended in
+      NativePrivateSessionCleanup.endWebKitSession(ended.session)
+      SolaraCoreHost.endPrivateSession(ended.session, aliases: ended.engineProfiles)
+      PageIssuer.shared?.endPrivateSession(engineProfiles: ended.engineProfiles)
+      NotificationCenter.default.post(name: Notification.Name("SolaraPrivateSessionEnded"), object: nil,
+        userInfo: ["aliases": ended.engineProfiles])
+    })
     closed = NotificationCenter.default.addObserver(forName: Notification.Name("SolaraPrivateWindowClosed"), object: nil, queue: .main) { [weak self] note in
       guard let id = note.userInfo?["id"] as? String else { return }
       MainActor.assumeIsolated { self?.effects.confirmWindowClosed(id) }

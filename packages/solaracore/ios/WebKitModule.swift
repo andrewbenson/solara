@@ -27,7 +27,9 @@ public class WebKitModule: Module {
       WebKitDownloads.removeStaging(path, uuid: uuid, folder: folder)
     }
       .runOnQueue(.main)
-    AsyncFunction("endPrivateSession") { (session: String) in WebKitHub.shared.endPrivateSession(session) }.runOnQueue(.main)
+    AsyncFunction("endPrivateSession") { (session: String) in
+      MainActor.assumeIsolated { NativePrivateSessionCleanup.endFallbackWebKitSession(session) }
+    }.runOnQueue(.main)
     AsyncFunction("sitePermissions") { (profile: String, origin: String) in
       WebKitHub.shared.sitePermissions(profile: profile, origin: origin)
     }.runOnQueue(.main)
@@ -53,9 +55,11 @@ public class WebKitModule: Module {
         "passkeys": WebKitHub.passkeysEntitled,
       ]
     }.runOnQueue(.main)
-    AsyncFunction("passkeyAccess") { () -> [String: Any] in WebKitPasskeys.access() }.runOnQueue(.main)
+    AsyncFunction("passkeyAccess") { () -> [String: Any] in
+      MainActor.assumeIsolated { WebKitPasskeys.access() }
+    }.runOnQueue(.main)
     AsyncFunction("requestPasskeyAccess") { (promise: Promise) in
-      WebKitPasskeys.requestAccess { promise.resolve($0) }
+      MainActor.assumeIsolated { WebKitPasskeys.requestAccess { promise.resolve($0) } }
     }.runOnQueue(.main)
     #if DEBUG
     AsyncFunction("devStoreExists") { (profile: String, promise: Promise) in

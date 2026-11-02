@@ -1,0 +1,1 @@
+../../../../packages/solaracore/ios/WebKitSessionResources.swift

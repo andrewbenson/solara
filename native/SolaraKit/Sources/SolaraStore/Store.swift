@@ -469,6 +469,19 @@ public final class Store: Sendable {
         }
       }
       guard !active else { return false }
+      do {
+        _ = try transactUnsequenced(commands: [], origin: .native, durable: false, fromSync: false, waiting: nil, replaying: false) { transaction in
+          let removed = transaction.state.downloads.filter { download in
+            guard download.isPrivate else { return false }
+            if download.offTheRecord && (download.profile ?? "").jsEquals(session) { return true }
+            guard let profile = download.profile else { return false }
+            return profiles.contains { $0.jsEquals(profile) } || transaction.state.privateSession(profile)?.jsEquals(session) == true
+          }
+          let ids = Set(removed.map { JSKey($0.id) })
+          transaction.memory.endedPrivateDownloads.formUnion(removed.map(\.id))
+          if !ids.isEmpty { transaction.update { $0.downloads = $0.downloads.filter { !ids.contains(JSKey($0.id)) } } }
+        }
+      } catch { return false }
       core.withLock { core in
         core.memory.privateSessionGenerations.removeValue(forKey: JSKey(session))
         scrubPrivateClosingMemory(&core.memory, session: session, profiles: profiles)

@@ -6,6 +6,7 @@ public struct PrivateSessionEnd: Sendable, Equatable {
   public let session: String
   public let generation: String
   public let profiles: [String]
+  public let engineProfiles: [String]
 }
 
 @MainActor
@@ -13,12 +14,14 @@ public final class PrivateSessionEffects {
   private struct Window {
     let id: String
     let profile: String
+    let engineProfile: String
     let session: String
   }
 
   private struct Lifetime {
     let generation = UUID().uuidString
     var profiles: [String] = []
+    var engineProfiles: [String] = []
     var pending: [JSKey: Window] = [:]
   }
 
@@ -105,7 +108,8 @@ public final class PrivateSessionEffects {
       guard let session = state.privateSession(window.profileId) else { continue }
       let key = JSKey(window.id)
       let prior = windows[key]
-      let item = Window(id: window.id, profile: window.profileId, session: prior?.session ?? session)
+      let item = Window(id: window.id, profile: window.profileId,
+        engineProfile: prior?.engineProfile ?? state.engineProfile(window.profileId), session: prior?.session ?? session)
       next[key] = item
       let scope = JSKey(item.session)
       if lifetimes[scope] == nil {
@@ -115,6 +119,7 @@ public final class PrivateSessionEffects {
         begin(item.session, generation)
       }
       if !lifetimes[scope]!.profiles.contains(where: { $0.jsEquals(item.profile) }) { lifetimes[scope]!.profiles.append(item.profile) }
+      if !lifetimes[scope]!.engineProfiles.contains(where: { $0.jsEquals(item.engineProfile) }) { lifetimes[scope]!.engineProfiles.append(item.engineProfile) }
       lifetimes[scope]?.pending.removeValue(forKey: key)
     }
     for (key, item) in windows where next[key] == nil {
@@ -146,7 +151,7 @@ public final class PrivateSessionEffects {
         pendingEnds.removeFirst()
         lifetimes[pending.scope] = nil
         end(PrivateSessionEnd(session: pending.scope.text, generation: lifetime.generation,
-          profiles: lifetime.profiles))
+          profiles: lifetime.profiles, engineProfiles: lifetime.engineProfiles))
         return true
       }
       guard finished else { return }

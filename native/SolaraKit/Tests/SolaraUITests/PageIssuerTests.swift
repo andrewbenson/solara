@@ -199,6 +199,85 @@ private func heldPageAnswer(_ command: PageCommand = .livePage, incognito: Bool,
     #expect(results == [.success(.null)])
   }
 
+  @Test func anEndedPrivateSessionReleasesItsRetiredNativeExecutions() throws {
+    let store = Store(state: BrowserState(settings: Settings.hydrated(from: nil)), checksInvariants: false)
+    let privateWindow = try #require(try store.dispatch(Command("createWindow", [["url": "https://private.example/secret", "incognito": true]])).result?.string)
+    let ordinaryWindow = try #require(try store.dispatch(Command("createWindow", [["url": "https://ordinary.example/"]])).result?.string)
+    let held = HeldDeliveries()
+    let issuer = PageIssuer(store: store, registry: PageRegistry(), deliver: { held.work.append($0) })
+    let producer = IssuerProducer()
+    let pages = [NSObject(), NSObject()]
+    var bindings: [PageHostBinding] = []
+    for window in [privateWindow, ordinaryWindow] {
+      let id = try #require(store.state.windows[window]?.tabIds.first)
+      bindings.append(try #require(issuer.attach(tabId: id, engine: .chromium, host: .pooled, owner: producer,
+        context: PageHostContext(navigationSeq: store.state.tabs[id]?.navigation.flatMap { Int(exactly: $0.seq) },
+          contextRevision: 1, wasNewTab: false, newTabShownUrl: nil),
+        perform: producer.perform)))
+    }
+    held.runAll()
+    for (binding, page) in zip(bindings, pages) { issuer.associateNativePage(binding, page: page) }
+    try #require(issuer.retainedNativeExecutions == 2)
+    try store.dispatch(Command("closeWindow", [.string(privateWindow)]))
+    issuer.retire(bindings[0])
+    held.runAll()
+    #expect(!issuer.isCurrent(bindings[0]))
+    #expect(issuer.retainedNativeExecutions == 2)
+    issuer.endPrivateSession(engineProfiles: [bindings[1].profile])
+    #expect(issuer.retainedNativeExecutions == 2)
+    issuer.endPrivateSession(engineProfiles: [bindings[0].profile])
+    #expect(issuer.retainedNativeExecutions == 1)
+    #expect(issuer.isCurrent(bindings[1]))
+  }
+
+  @Test func endingAPrivateProfileDropsOnlyItsRetiredNativeExecutions() throws {
+    let store = Store(state: BrowserState(settings: Settings.hydrated(from: nil)), checksInvariants: false)
+    let privateWindow = try #require(try store.dispatch(Command("createWindow", [["url": "https://ended.example/", "incognito": true]])).result?.string)
+    let retiredId = try #require(store.state.windows[privateWindow]?.tabIds.first)
+    let liveId = try #require(try store.dispatch(Command("newTab", [.string(privateWindow), ["url": "https://live.example/"]])).result?.string)
+    let otherWindow = try #require(try store.dispatch(Command("createWindow", [["url": "https://other.example/", "incognito": true]])).result?.string)
+    let otherId = try #require(store.state.windows[otherWindow]?.tabIds.first)
+    let ordinaryWindow = try #require(try store.dispatch(Command("createWindow", [["url": "https://ordinary.example/"]])).result?.string)
+    let ordinaryId = try #require(store.state.windows[ordinaryWindow]?.tabIds.first)
+    let held = HeldDeliveries()
+    let issuer = PageIssuer(store: store, registry: PageRegistry(), deliver: { held.work.append($0) })
+    let producer = IssuerProducer()
+    let pages = [NSObject(), NSObject(), NSObject(), NSObject()]
+    var bindings: [PageHostBinding] = []
+    for id in [retiredId, liveId, otherId, ordinaryId] {
+      bindings.append(try #require(issuer.attach(tabId: id, engine: .chromium, host: .pooled, owner: producer,
+        context: PageHostContext(navigationSeq: store.state.tabs[id]?.navigation.flatMap { Int(exactly: $0.seq) },
+          contextRevision: 1, wasNewTab: false, newTabShownUrl: nil),
+        perform: producer.perform)))
+    }
+    held.runAll()
+    withExtendedLifetime(pages) {
+      for (binding, page) in zip(bindings, pages) { issuer.associateNativePage(binding, page: page) }
+      #expect(bindings[0].profile == bindings[1].profile)
+      #expect(bindings[0].profile != bindings[2].profile)
+      #expect(bindings[0].profile != bindings[3].profile)
+      issuer.retire(bindings[0])
+      issuer.retire(bindings[2])
+      held.runAll()
+      #expect(bindings[0].retired)
+      #expect(bindings[2].retired)
+      #expect(issuer.isCurrent(bindings[1]))
+      #expect(issuer.isCurrent(bindings[3]))
+      #expect(issuer.retainedNativeExecutions == 4)
+      issuer.endPrivateSession(engineProfiles: [bindings[0].profile])
+      #expect(issuer.retainedNativeExecutions == 3)
+      issuer.endPrivateSession(engineProfiles: [bindings[0].profile])
+      #expect(issuer.retainedNativeExecutions == 3)
+      issuer.endPrivateSession(engineProfiles: [bindings[2].profile])
+      #expect(issuer.retainedNativeExecutions == 2)
+      issuer.retire(bindings[1])
+      held.runAll()
+      issuer.endPrivateSession(engineProfiles: [bindings[0].profile])
+      #expect(issuer.retainedNativeExecutions == 1)
+      #expect(issuer.isCurrent(bindings[3]))
+    }
+  }
+
   @Test func inScopeIssueAdmitsNothingBetweenRecheckAndInvoke() throws {
     let fixture = try IssuerFixture()
     let attempting = DispatchSemaphore(value: 0)

@@ -37,6 +37,7 @@ function persistence(category) {
     const program = `${directory}/test.mm`;
     const binary = `${directory}/test`;
     const harness = source("apps/browser/src/test-native/safe-host/EnginePersistence.mm");
+    writeFileSync(`${directory}/SolaraCore-Swift.h`, source("apps/browser/src/test-native/safe-host/SolaraCore-Swift.h"));
     writeFileSync(program, harness.replace("__PRODUCTION__", production));
     const env = { ...process.env, TMPDIR: directory, CLANG_MODULE_CACHE_PATH: `${directory}/cache` };
     execFileSync("/usr/bin/clang++", ["-std=c++17", "-fobjc-arc", "-fblocks", "-Wno-nullability-completeness", "-framework", "Foundation", program, "-o", binary], { env, stdio: "pipe", timeout: 120000 });

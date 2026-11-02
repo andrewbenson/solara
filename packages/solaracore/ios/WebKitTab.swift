@@ -557,7 +557,7 @@ final class WebKitTab: NSView, WKNavigationDelegate, WKUIDelegate {
       guard action.navigationType == .linkActivated || fromMainFrame else { return }
       let source = action.sourceFrame.securityOrigin
       let origin = source.host.isEmpty ? nil : "\(source.protocol)://\(source.host)" + (source.port > 0 ? ":\(source.port)" : "")
-      if let request = WebKitHub.shared.externalAppRequest(url: url, origin: origin, profile: profile) { emit("externalApp", request) }
+      if let request = WebKitHub.shared.externalAppRequest(url: url, origin: origin, profile: profile, webView: webView) { emit("externalApp", request) }
       return
     }
     if action.navigationType == .linkActivated, action.targetFrame != nil {

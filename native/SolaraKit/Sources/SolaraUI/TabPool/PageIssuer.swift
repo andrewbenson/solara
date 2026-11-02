@@ -122,6 +122,7 @@ public final class PageIssuer {
   }
 
   private var nativeExecutions: [ObjectIdentifier: NativeExecution] = [:]
+  var retainedNativeExecutions: Int { nativeExecutions.count }
   private let deliver: PageRegistry.Deliver
   private var bindings: [String: PageHostBinding] = [:]
   private var registrations: [PageRegistration: PageHostBinding] = [:]
@@ -297,6 +298,14 @@ public final class PageIssuer {
       guard currentInScope(binding, requirePage: true) else { return nil }
       return ["tabId": .string(binding.tabId), "registrationGeneration": JSONValue(Double(binding.registrationGeneration)),
         "sessionGeneration": .string(binding.sessionGeneration), "name": .string(name), "payload": payload]
+    }
+  }
+
+  public func endPrivateSession(engineProfiles: [String]) {
+    store.sequence {
+      nativeExecutions = nativeExecutions.filter { entry in
+        entry.value.page != nil && !(entry.value.binding.retired && engineProfiles.contains(entry.value.binding.profile))
+      }
     }
   }
 

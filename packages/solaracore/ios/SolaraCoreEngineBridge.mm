@@ -1,11 +1,14 @@
 #import "SolaraCoreEngineBridge.h"
 
 #import "SolaraCoreInternal.h"
+#import "SolaraCore-Swift.h"
 
 #import <dlfcn.h>
 #include <stdlib.h>
 
 #include "../../../engine/chromium/src/chrome/browser/solara/public/ac_engine.h"
+
+bool SolaraPrivateDownloadSourceFenceAvailable();
 
 namespace {
 
@@ -76,16 +79,28 @@ bool Forwarded(NSString *topic) {
   return gEventHandler && (ForwardsEveryEngineEvent() || !gForwardedTopics || [gForwardedTopics containsObject:topic]);
 }
 
+bool CurrentForward(NSArray *event) {
+  if (event.count < 3) return true;
+  NSDictionary *payload = event[1];
+  NSNumber *epoch = event[2];
+  return [NativePrivateDownloadRoutes.shared isCurrentPrivateEvent:payload[@"profile"] epoch:epoch.integerValue
+                                          privateDownloadsSupported:SolaraPrivateDownloadSourceFenceAvailable()];
+}
+
 void FlushForwards() {
   NSArray<NSArray *> *events = gPendingForwards;
   gPendingForwards = nil;
   for (NSArray *event in events)
-    if (gEventHandler) gEventHandler(event[0], JSON(event[1]));
+    if (gEventHandler && CurrentForward(event)) gEventHandler(event[0], JSON(event[1]));
 }
 
 void Forward(NSString *topic, NSDictionary *payload) {
-  if (ForwardsEveryEngineEvent()) return gEventHandler(topic, JSON(payload));
-  NSArray *event = @[ topic, [payload copy] ];
+  NSNumber *epoch = [NativePrivateDownloadRoutes.shared privateEventEpoch:topic payload:payload];
+  NSArray *event = epoch ? @[ topic, [payload copy], epoch ] : @[ topic, [payload copy] ];
+  if (ForwardsEveryEngineEvent()) {
+    if (CurrentForward(event)) gEventHandler(topic, JSON(payload));
+    return;
+  }
   if (gPendingForwards) {
     if (![gPendingForwards.lastObject isEqualToArray:event]) [gPendingForwards addObject:event];
     return;

@@ -947,6 +947,16 @@ static void StartEarlyWindow() {
   if (p && [engine respondsToSelector:@selector(releaseProfile:)]) [engine releaseProfile:p];
 }
 
++ (void)endPrivateSession:(NSString *)engineProfile aliases:(NSArray<NSString *> *)aliases {
+  NSMutableArray<NSString *> *privateAliases = [NSMutableArray array];
+  for (NSString *alias in aliases)
+    if ([alias hasPrefix:@"incognito:"] && [solaracore_host::OriginalProfileName(alias) isEqualToString:engineProfile ?: @""])
+      [privateAliases addObject:alias];
+  [SolaraCoreFavicons forgetPrivateProfiles:privateAliases];
+  [SolaraCoreServices endPrivateSession:engineProfile ?: @""];
+  for (NSString *alias in privateAliases) [self releaseProfile:alias];
+}
+
 + (int)chromeTabId:(int)browserId {
   SolaraCoreTab *tab = solaracore_host::TabWithBrowserId(browserId);
   return [tab respondsToSelector:@selector(tabId)] ? tab.tabId : -1;

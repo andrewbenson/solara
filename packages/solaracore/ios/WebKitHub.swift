@@ -10,7 +10,16 @@ final class WebKitHub: NSObject, WKScriptMessageHandler {
   static let silenced = background && ProcessInfo.processInfo.environment["SOLARA_ALLOW_AUDIO"] != "1"
 
   var events: ((String, [String: Any]) -> Void)?
-  let downloads = WebKitDownloads()
+  lazy var downloads = WebKitDownloads(hub: self)
+  private let externalApplication: (URL) -> URL?
+  private let openExternal: ((URL) -> Void)?
+
+  init(externalApplication: @escaping (URL) -> URL? = { NSWorkspace.shared.urlForApplication(toOpen: $0) },
+       openExternal: ((URL) -> Void)? = nil) {
+    self.externalApplication = externalApplication
+    self.openExternal = openExternal
+    super.init()
+  }
 
   private final class WeakTab {
     weak var tab: WebKitTab?
@@ -44,7 +53,7 @@ final class WebKitHub: NSObject, WKScriptMessageHandler {
 
   private var lastBrowserId: Int32 = -1000
   private var persistentStores: [Data: WKWebsiteDataStore] = [:]
-  private var privateSessions: [String: PrivateSession] = [:]
+  private var privateSessions: [Data: PrivateSession] = [:]
   private var owners: [ObjectIdentifier: WeakTab] = [:]
   private var liveByKey: [String: WeakTab] = [:]
   private let transferLock = NSLock()
@@ -56,7 +65,7 @@ final class WebKitHub: NSObject, WKScriptMessageHandler {
   private var rememberedPermissions: [String: Bool] = [:]
   private var lastPermission = 0
   private var zoomByHost: [String: Double] = [:]
-  private var pendingExternal: [String: PendingExternal] = [:]
+  private var pendingExternal = WebKitSessionResources<PendingExternal>()
   private var externalAllowances: [String: ExternalGrant] = [:]
   private var lastExternal = 0
   private var resumeHosts: [Data: WKWebView] = [:]
@@ -80,9 +89,9 @@ final class WebKitHub: NSObject, WKScriptMessageHandler {
   static func regularProfile(_ profile: String) -> String { isPrivate(profile) ? privateSession(profile) : profile }
 
   private func session(_ name: String) -> PrivateSession {
-    if let live = privateSessions[name] { return live }
+    if let live = privateSessions[Data(name.utf8)] { return live }
     let made = PrivateSession(store: .nonPersistent(), token: UUID().uuidString)
-    privateSessions[name] = made
+    privateSessions[Data(name.utf8)] = made
     return made
   }
 
@@ -136,12 +145,22 @@ final class WebKitHub: NSObject, WKScriptMessageHandler {
   func liveDataStore(for profile: String, storeKey key: String) -> WKWebsiteDataStore? {
     guard Self.isPrivate(profile) else { return key.utf16.elementsEqual(profile.utf16) ? dataStore(for: profile) : nil }
     let name = Self.privateSession(profile)
-    guard let live = privateSessions[name], key == "private@\(name)#\(live.token)" else { return nil }
+    guard let live = privateSessions[Data(name.utf8)], key == "private@\(name)#\(live.token)" else { return nil }
     return live.store
   }
 
+  func privateGeneration(profile: String, store: WKWebsiteDataStore?) -> WebKitResourceGeneration? {
+    guard Self.isPrivate(profile) else { return nil }
+    let name = Self.privateSession(profile)
+    guard let live = privateSessions[Data(name.utf8)], store === live.store else { return nil }
+    return WebKitResourceGeneration(session: name, token: live.token)
+  }
+
   func endPrivateSession(_ name: String) {
-    guard let ended = privateSessions.removeValue(forKey: name) else { return }
+    guard let ended = privateSessions.removeValue(forKey: Data(name.utf8)) else { return }
+    let generation = WebKitResourceGeneration(session: name, token: ended.token)
+    _ = pendingExternal.removePrivateSession(generation)
+    downloads.endPrivateSession(generation)
     let prefix = "private@\(name)#\(ended.token)|"
     rememberedPermissions = rememberedPermissions.filter { !$0.key.hasPrefix(prefix) }
     zoomByHost = zoomByHost.filter { !$0.key.hasPrefix(prefix) }
@@ -401,13 +420,15 @@ final class WebKitHub: NSObject, WKScriptMessageHandler {
     "x-man-page", "x-apple.systempreferences",
   ]
 
-  func externalAppRequest(url: URL, origin: String?, profile: String) -> [String: Any]? {
+  func externalAppRequest(url: URL, origin: String?, profile: String, webView: WKWebView) -> [String: Any]? {
+    let generation = privateGeneration(profile: profile, store: webView.configuration.websiteDataStore)
+    guard !Self.isPrivate(profile) || generation != nil else { return nil }
     let scheme = url.scheme?.lowercased() ?? ""
     if scheme.isEmpty || Self.blockedSchemes.contains(scheme) {
       NSLog("[webkit] refused a link to the %@: scheme", scheme)
       return nil
     }
-    let app = NSWorkspace.shared.urlForApplication(toOpen: url)
+    let app = externalApplication(url)
     let name = app.map { (FileManager.default.displayName(atPath: $0.path) as NSString).deletingPathExtension }
     let trusted = origin.map(Self.isTrustworthy) ?? false
     let allowance = app != nil && trusted && !Self.isPrivate(profile) ? storeKey(profile) + "|" + origin! + "|" + scheme : nil
@@ -420,7 +441,7 @@ final class WebKitHub: NSObject, WKScriptMessageHandler {
     let id = "wk-external-\(lastExternal)"
     if app != nil {
       if pendingExternal.count >= 50 { pendingExternal.removeAll() }
-      pendingExternal[id] = PendingExternal(url: url, allowance: allowance, grant: grant)
+      pendingExternal.insert(PendingExternal(url: url, allowance: allowance, grant: grant), id: id, generation: generation)
     }
     let title = name.map { "Open “\($0)”?" } ?? "No application is set to open this link"
     let message = app == nil
@@ -459,6 +480,7 @@ final class WebKitHub: NSObject, WKScriptMessageHandler {
   }
 
   private func open(_ url: URL) {
+    if let openExternal { return openExternal(url) }
     if Self.background { return NSLog("[webkit] external URL (background mode, not opened): %@", url.absoluteString) }
     NSWorkspace.shared.open(url)
   }
@@ -568,6 +590,7 @@ final class WebKitHub: NSObject, WKScriptMessageHandler {
   #endif
 }
 
+@MainActor
 enum WebKitStoreRemovals {
   private static let webKitStarted: Void = { _ = WKWebsiteDataStore.nonPersistent() }()
 
@@ -594,6 +617,7 @@ enum WebKitStoreRemovals {
   }
 }
 
+@MainActor
 enum WebKitPasskeys {
   static func access() -> [String: Any] {
     guard WebKitHub.passkeysEntitled else { return ["entitled": false, "status": "entitlementRequired"] }
@@ -604,8 +628,9 @@ enum WebKitPasskeys {
     guard WebKitHub.passkeysEntitled, deviceConfigured(), ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] != "1" else {
       return completion(access())
     }
+    nonisolated(unsafe) let reply = completion
     ASAuthorizationWebBrowserPublicKeyCredentialManager().requestAuthorizationForPublicKeyCredentials { state in
-      DispatchQueue.main.async { completion(["entitled": true, "status": Self.status(state)]) }
+      DispatchQueue.main.async { reply(["entitled": true, "status": Self.status(state)]) }
     }
   }
 
@@ -625,6 +650,16 @@ enum WebKitPasskeys {
   }
 }
 
+@MainActor
+protocol WebKitDownloadSource: AnyObject {
+  var originalRequest: URLRequest? { get }
+  var progress: Progress { get }
+  var delegate: (any WKDownloadDelegate)? { get set }
+  func cancel(_ completionHandler: (@MainActor (Data?) -> Void)?)
+}
+
+extension WKDownload: WebKitDownloadSource {}
+
 final class WebKitDownloads: NSObject, WKDownloadDelegate {
   private enum Phase { case running, pausing, paused, resuming, done }
 
@@ -633,45 +668,44 @@ final class WebKitDownloads: NSObject, WKDownloadDelegate {
     let inode: ino_t
   }
 
-  private final class Item {
+  private final class Item: WebKitDownloadPayload {
     let uuid = UUID().uuidString
     var id: String { "wk-download-" + uuid }
-    var download: WKDownload?
+    var download: (any WebKitDownloadSource)?
     weak var webView: WKWebView?
-    let url: String
-    let profile: String
-    var request: URLRequest?
+    var panel: NSSavePanel?
     var phase = Phase.running
-    var filename = ""
-    var path = ""
-    var final: URL?
     var replaces: FileIdentity?
     var staging: URL?
     var state = "downloading"
     var received: Int64 = 0
     var total: Int64 = 0
     var speed: Double = 0
-    var mimeType = ""
-    var resumeData: Data?
     var progress: NSKeyValueObservation?
     var sampledAt = Date()
     var sampledBytes: Int64 = 0
     var reportedAt = Date.distantPast
 
-    init(url: String, profile: String) {
-      self.url = url
-      self.profile = profile
-    }
-
     var stagingFile: URL? { staging.map { $0.appendingPathComponent(filename.isEmpty ? "download" : filename) } }
   }
 
-  private var items: [String: Item] = [:]
+  private unowned let hub: WebKitHub
+  var destinationSettings: ((String, @escaping (URL, Bool) -> Void) -> Void)?
+  var restartDownload: ((WKWebView?, String, Data?, URLRequest?, @escaping (any WebKitDownloadSource) -> Void) -> Void)?
+  var retainedDownloadCount: Int { items.count }
+
+  init(hub: WebKitHub) {
+    self.hub = hub
+    super.init()
+  }
+
+  private var items = WebKitSessionResources<Item>()
   private var byDownload: [ObjectIdentifier: String] = [:]
   private let fallbackFolder: URL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
     ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Downloads")
 
   private func resolveDestination(for profile: String, completion: @escaping (URL, Bool) -> Void) {
+    if let destinationSettings { return destinationSettings(profile, completion) }
     guard SolaraCoreEngineBridge.exports("ac_downloads_settings") else { return completion(fallbackFolder, true) }
     SolaraCoreEngineBridge.call("ac_downloads_settings", profile: WebKitHub.regularProfile(profile), args: nil) { [weak self] json in
       let parsed = (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any]
@@ -684,21 +718,29 @@ final class WebKitDownloads: NSObject, WKDownloadDelegate {
     }
   }
 
-  func adopt(_ download: WKDownload, profile: String, webView: WKWebView?) {
+  @discardableResult
+  func adopt(_ download: any WebKitDownloadSource, profile: String, webView: WKWebView?) -> String? {
+    let generation = hub.privateGeneration(profile: profile, store: webView?.configuration.websiteDataStore)
+    guard !WebKitHub.isPrivate(profile) || generation != nil else {
+      download.cancel(nil)
+      return nil
+    }
     let item = Item(url: download.originalRequest?.url?.absoluteString ?? "", profile: profile)
     item.webView = webView
     item.request = download.originalRequest
     attach(download, to: item)
-    items[item.id] = item
+    items.insert(item, id: item.id, generation: generation)
+    return item.id
   }
 
-  private func attach(_ download: WKDownload, to item: Item) {
+  private func attach(_ download: any WebKitDownloadSource, to item: Item) {
     item.download = download
     byDownload[ObjectIdentifier(download)] = item.id
     download.delegate = self
-    item.progress = download.progress.observe(\.completedUnitCount, options: [.new]) { [weak self, weak item] progress, _ in
+    let id = item.id
+    item.progress = download.progress.observe(\.completedUnitCount, options: [.new]) { [weak self] progress, _ in
       DispatchQueue.main.async {
-        guard let self, let item, item.phase == .running else { return }
+        guard let self, let item = self.items[id], item.phase == .running else { return }
         item.received = progress.completedUnitCount
         item.total = max(0, progress.totalUnitCount)
         let now = Date()
@@ -722,16 +764,18 @@ final class WebKitDownloads: NSObject, WKDownloadDelegate {
     item.download = nil
   }
 
-  private func item(for download: WKDownload) -> Item? { byDownload[ObjectIdentifier(download)].flatMap { items[$0] } }
+  private func item(for download: any WebKitDownloadSource) -> Item? { byDownload[ObjectIdentifier(download)].flatMap { items[$0] } }
 
   private func report(_ item: Item) {
-    WebKitHub.shared.events?("onWebKitDownload", [
+    guard items[item.id] === item else { return }
+    let payload: [String: Any] = [
       "id": item.id, "url": item.url, "filename": item.filename, "path": item.path, "state": item.state,
       "paused": item.phase == .pausing || item.phase == .paused || item.phase == .resuming,
       "received": Double(item.received), "total": Double(item.total), "speed": item.speed, "mimeType": item.mimeType,
       "profile": item.profile, "offTheRecord": false, "staging": item.staging?.path ?? NSNull(),
       "destination": item.final?.path ?? NSNull(),
-    ])
+    ]
+    hub.events?("onWebKitDownload", payload)
   }
 
   static let stagingPrefix = ".solara-download-"
@@ -784,7 +828,12 @@ final class WebKitDownloads: NSObject, WKDownloadDelegate {
   }
 
   func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String,
-                completionHandler: @escaping (URL?) -> Void) {
+                completionHandler: @escaping @MainActor @Sendable (URL?) -> Void) {
+    decideDestination(download, response: response, suggestedFilename: suggestedFilename, completionHandler: completionHandler)
+  }
+
+  func decideDestination(_ download: any WebKitDownloadSource, response: URLResponse, suggestedFilename: String,
+                         completionHandler: @escaping @MainActor @Sendable (URL?) -> Void) {
     guard let item = item(for: download) else { return completionHandler(nil) }
     if let file = item.stagingFile {
       try? FileManager.default.removeItem(at: file)
@@ -795,12 +844,17 @@ final class WebKitDownloads: NSObject, WKDownloadDelegate {
     let name = Self.safeName(suggestedFilename.isEmpty ? (response.suggestedFilename ?? "download") : suggestedFilename)
     item.mimeType = response.mimeType ?? ""
     item.total = max(0, response.expectedContentLength)
-    let accept = { (target: URL?, replacing: Bool) in
+    item.destination = completionHandler
+    let accept = { [weak self, weak item] (target: URL?, replacing: Bool) in
+      guard let self, let item, self.items[item.id] === item, let completion = item.destination else { return }
+      item.destination = nil
+      item.panel = nil
+      guard item.phase != .done else { return completion(nil) }
       guard let target, let staging = Self.makeStaging(in: target.deletingLastPathComponent(), uuid: item.uuid) else {
         item.phase = .done
         item.state = target == nil ? "cancelled" : "failed"
         self.report(item)
-        completionHandler(nil)
+        completion(nil)
         return
       }
       item.final = target
@@ -810,18 +864,22 @@ final class WebKitDownloads: NSObject, WKDownloadDelegate {
       let file = staging.appendingPathComponent(item.filename)
       item.path = file.path
       self.report(item)
-      completionHandler(file)
+      completion(file)
     }
-    resolveDestination(for: item.profile) { folder, ask in
+    resolveDestination(for: item.profile) { [weak self, weak item] folder, ask in
+      guard let self, let item, self.items[item.id] === item, item.destination != nil, item.phase != .done else { return }
       guard ask, !WebKitHub.background else { return accept(folder.appendingPathComponent(name), false) }
       let panel = NSSavePanel()
+      item.panel = panel
       panel.directoryURL = folder
       panel.nameFieldStringValue = name
-      panel.begin { response in accept(response == .OK ? panel.url : nil, true) }
+      panel.begin { [weak panel] response in accept(response == .OK ? panel?.url : nil, true) }
     }
   }
 
-  func downloadDidFinish(_ download: WKDownload) {
+  func downloadDidFinish(_ download: WKDownload) { finish(download) }
+
+  func finish(_ download: any WebKitDownloadSource) {
     guard let item = item(for: download) else { return }
     item.phase = .done
     detach(item)
@@ -842,6 +900,10 @@ final class WebKitDownloads: NSObject, WKDownloadDelegate {
   }
 
   func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
+    fail(download, error: error, resumeData: resumeData)
+  }
+
+  func fail(_ download: any WebKitDownloadSource, error: Error, resumeData: Data?) {
     guard let item = item(for: download) else { return }
     detach(item)
     switch item.phase {
@@ -856,6 +918,21 @@ final class WebKitDownloads: NSObject, WKDownloadDelegate {
       Self.dropStaging(item)
     }
     report(item)
+  }
+
+  func endPrivateSession(_ generation: WebKitResourceGeneration) {
+    for item in items.removePrivateSession(generation) {
+      let download = item.download
+      item.phase = .done
+      item.panel?.cancel(nil)
+      item.panel = nil
+      detach(item)
+      Self.dropStaging(item)
+      item.webView = nil
+      item.replaces = nil
+      item.retire()
+      download?.cancel(nil)
+    }
   }
 
   func handles(_ id: String) -> Bool { id.hasPrefix("wk-download-") }
@@ -873,10 +950,20 @@ final class WebKitDownloads: NSObject, WKDownloadDelegate {
       item.phase = .done
       item.state = "cancelled"
       item.resumeData = nil
+      let destination = item.destination
+      item.destination = nil
+      item.panel?.cancel(nil)
+      item.panel = nil
       detach(item)
       report(item)
+      destination?(nil)
       if let download {
-        download.cancel { _ in DispatchQueue.main.async { Self.dropStaging(item) } }
+        download.cancel { [weak self, weak item] _ in
+          DispatchQueue.main.async {
+            guard let self, let item, self.items[item.id] === item else { return }
+            Self.dropStaging(item)
+          }
+        }
       } else {
         Self.dropStaging(item)
       }
@@ -884,10 +971,12 @@ final class WebKitDownloads: NSObject, WKDownloadDelegate {
       guard item.phase == .running, let download = item.download else { return }
       item.phase = .pausing
       report(item)
-      download.cancel { [weak self] data in
+      let downloadIdentity = ObjectIdentifier(download)
+      download.cancel { [weak self, weak item] data in
         DispatchQueue.main.async {
+          guard let self, let item, self.items[item.id] === item, item.phase == .pausing || item.phase == .paused else { return }
           if let data { item.resumeData = data }
-          if item.download === download { self?.detach(item) }
+          if item.download.map(ObjectIdentifier.init) == downloadIdentity { self.detach(item) }
           if item.phase == .pausing { item.phase = .paused }
         }
       }
@@ -904,20 +993,21 @@ final class WebKitDownloads: NSObject, WKDownloadDelegate {
       }
       item.phase = .resuming
       item.resumeData = nil
-      let host = item.webView ?? WebKitHub.shared.resumeHost(for: item.profile)
-      let resumed: (WKDownload) -> Void = { [weak self] download in
+      let restarts = data == nil
+      let resumed: (any WebKitDownloadSource) -> Void = { [weak self, weak item] download in
         DispatchQueue.main.async {
-          guard let self else { return }
-          guard item.phase == .resuming else { return download.cancel(nil) }
+          guard let self, let item, self.items[item.id] === item, item.phase == .resuming else { return download.cancel(nil) }
           item.phase = .running
-          if data == nil { item.received = 0 }
+          if restarts { item.received = 0 }
           item.sampledAt = Date()
           item.sampledBytes = item.received
           self.attach(download, to: item)
           self.report(item)
         }
       }
-      if let data { host.resumeDownload(fromResumeData: data, completionHandler: resumed) } else if let request { host.startDownload(using: request, completionHandler: resumed) }
+      if let restartDownload { return restartDownload(item.webView, item.profile, data, request, resumed) }
+      let host = item.webView ?? hub.resumeHost(for: item.profile)
+      if let data { host.resumeDownload(fromResumeData: data) { resumed($0) } } else if let request { host.startDownload(using: request) { resumed($0) } }
     default: break
     }
   }

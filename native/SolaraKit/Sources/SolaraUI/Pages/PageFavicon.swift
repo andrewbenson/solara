@@ -9,6 +9,7 @@ public final class PageFavicons {
   private var cache: [String: NSImage] = [:]
   private var misses: Set<String> = []
   private var bundledCache: [String: NSImage] = [:]
+  private var generation = 0
   nonisolated(unsafe) private var invalidationObserver: NSObjectProtocol?
 
   public init(
@@ -19,6 +20,7 @@ public final class PageFavicons {
     bundledImage = bundled
     invalidationObserver = NotificationCenter.default.addObserver(forName: FaviconLibrary.didInvalidate, object: nil, queue: nil) { [weak self] _ in
       MainActor.assumeIsolated {
+        self?.generation += 1
         self?.cache.removeAll()
         self?.misses.removeAll()
       }
@@ -35,7 +37,10 @@ public final class PageFavicons {
     let key = Self.key(url, favicon, profileId, dark: dark)
     if let image = cache[key] { return image }
     if misses.contains(key) { return nil }
-    guard let image = await load(url, favicon, profileId, dark) else {
+    let generation = generation
+    let image = await load(url, favicon, profileId, dark)
+    guard generation == self.generation else { return nil }
+    guard let image else {
       misses.insert(key)
       return nil
     }

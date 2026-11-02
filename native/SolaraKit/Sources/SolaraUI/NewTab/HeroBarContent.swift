@@ -15,12 +15,14 @@ public final class NewTabFavicons {
   private let load: (String, String?, String, Bool) async -> NSImage?
   private var cache: [Key: NSImage] = [:]
   private var missing: Set<Key> = []
+  private var generation = 0
   nonisolated(unsafe) private var invalidationObserver: NSObjectProtocol?
 
   public init(load: @escaping (_ url: String, _ favicon: String?, _ profileId: String, _ dark: Bool) async -> NSImage?) {
     self.load = load
     invalidationObserver = NotificationCenter.default.addObserver(forName: FaviconLibrary.didInvalidate, object: nil, queue: nil) { [weak self] _ in
       MainActor.assumeIsolated {
+        self?.generation += 1
         self?.cache.removeAll()
         self?.missing.removeAll()
       }
@@ -39,7 +41,10 @@ public final class NewTabFavicons {
     let key = Self.key(url, favicon, profileId: profileId, dark: dark)
     if let image = cache[key] { return image }
     if missing.contains(key) { return nil }
-    guard let image = await load(url, favicon, profileId, dark) else {
+    let generation = generation
+    let image = await load(url, favicon, profileId, dark)
+    guard generation == self.generation else { return nil }
+    guard let image else {
       missing.insert(key)
       return nil
     }

@@ -11,6 +11,7 @@ final class FakeFaviconClient: EngineClient {
   var fetches = 0
   var writes = 0
   var fetchDelay = false
+  var fetchOverride: (@MainActor () async -> Data?)?
   var historyHandler: (@MainActor @Sendable (HistoryChange) -> Void)?
 
   func observeHistory(_ handler: @escaping @MainActor @Sendable (HistoryChange) -> Void) { historyHandler = handler }
@@ -24,6 +25,7 @@ final class FakeFaviconClient: EngineClient {
 
   func fetchFavicon(source: String, engineProfile: String) async -> Data? {
     fetches += 1
+    if let fetchOverride { return await fetchOverride() }
     if fetchDelay { try? await Task.sleep(for: .milliseconds(20)) }
     return fetched
   }
@@ -139,5 +141,107 @@ final class FakeFaviconClient: EngineClient {
     #expect(await library.favicon(page: "https://a.test/", source: "https://a.test/icon", engineProfile: "incognito:w@p", appearance: false)?.data == Data([2]))
     #expect(client.reads == 0)
     #expect(client.writes == 0)
+  }
+}
+
+@Suite @MainActor struct PrivateFaviconTests {
+  @Test func confirmedEndEvictsExactPrivateAliasesAndKeepsOrdinaryCache() async {
+    let client = FakeFaviconClient()
+    client.fetched = Data([2])
+    client.stored = Data([1])
+    let library = FaviconLibrary(client: client)
+    let session = UUID().uuidString
+    let aliases = ["incognito:w-\(session)@p", "incognito:x-\(session)@p"]
+    for alias in aliases + ["incognito:y-\(session)@other", "p"] {
+      _ = await library.favicon(page: "https://private.test/", source: "https://private.test/icon", engineProfile: alias, appearance: false)
+    }
+    #expect(library.cachedCount == 4)
+    NotificationCenter.default.post(name: FaviconLibrary.didEndPrivateSession, object: nil, userInfo: ["aliases": aliases])
+    #expect(library.cachedCount == 2)
+    #expect(await library.favicon(page: "https://private.test/", source: "https://private.test/icon", engineProfile: aliases[0], appearance: false) == nil)
+    #expect(client.fetches == 3)
+    #expect(await library.favicon(page: "https://private.test/", engineProfile: "p", appearance: false)?.data == Data([1]))
+    #expect(client.reads == 2)
+  }
+
+  @Test func privateLibraryScopesUseExactEngineProfileIds() async {
+    let client = FakeFaviconClient()
+    client.fetched = Data([2])
+    let library = FaviconLibrary(client: client)
+    let first = "incognito:w@caf\u{e9}"
+    let second = "incognito:w@cafe\u{301}"
+    for profile in [first, second] {
+      _ = await library.favicon(page: "https://private.test/", source: "https://private.test/icon", engineProfile: profile, appearance: false)
+    }
+    #expect(library.cachedCount == 2)
+    library.endPrivateSession(engineProfiles: [first])
+    #expect(library.cachedCount == 1)
+    client.fetched = Data([3])
+    #expect(await library.favicon(page: "https://private.test/", source: "https://private.test/icon", engineProfile: second, appearance: false)?.data == Data([2]))
+    #expect(await library.favicon(page: "https://private.test/", source: "https://private.test/icon", engineProfile: first, appearance: false) == nil)
+  }
+
+  @Test func heldFetchCannotReturnOrRepopulateAfterConfirmedEnd() async {
+    let client = FakeFaviconClient()
+    let library = FaviconLibrary(client: client)
+    let session = UUID().uuidString
+    let alias = "incognito:w-\(session)@p"
+    let gate = PrivateFaviconFetchGate()
+    client.fetchOverride = { await gate.fetch() }
+    let request = Task { await library.favicon(page: "https://private.test/", source: "https://private.test/icon", engineProfile: alias, appearance: false) }
+    #expect(await gate.waitForEntry(producer: request))
+    NotificationCenter.default.post(name: FaviconLibrary.didEndPrivateSession, object: nil, userInfo: ["aliases": [alias]])
+    gate.finish(Data([9]))
+    #expect(await request.value == nil)
+    #expect(library.cachedCount == 0)
+    #expect(client.writes == 0)
+    client.fetchOverride = nil
+    client.fetched = Data([3])
+    #expect(await library.favicon(page: "https://replacement.test/", source: "https://replacement.test/icon", engineProfile: "incognito:new-\(session)@p", appearance: false)?.data == Data([3]))
+  }
+}
+
+@MainActor private final class PrivateFaviconFetchGate {
+  private var held: CheckedContinuation<Data?, Never>?
+  private var entered: Bool?
+  private var entryWaiter: CheckedContinuation<Bool, Never>?
+
+  func fetch() async -> Data? {
+    await withCheckedContinuation { continuation in
+      held = continuation
+      resolveEntry(true)
+      DispatchQueue.main.asyncAfter(deadline: .now() + 5) { self.finish(nil) }
+    }
+  }
+
+  func waitForEntry(producer: Task<FaviconLookup?, Never>) async -> Bool {
+    let completion = Task { @MainActor in
+      _ = await producer.value
+      resolveEntry(false)
+    }
+    defer { completion.cancel() }
+    return await withTaskCancellationHandler {
+      await withCheckedContinuation { continuation in
+        if let entered { continuation.resume(returning: entered); return }
+        entryWaiter = continuation
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { self.resolveEntry(false) }
+      }
+    } onCancel: {
+      Task { @MainActor in self.resolveEntry(false) }
+    }
+  }
+
+  func finish(_ data: Data?) {
+    let continuation = held
+    held = nil
+    continuation?.resume(returning: data)
+  }
+
+  private func resolveEntry(_ value: Bool) {
+    guard entered == nil else { return }
+    entered = value
+    let continuation = entryWaiter
+    entryWaiter = nil
+    continuation?.resume(returning: value)
   }
 }

@@ -29,6 +29,7 @@ export function runNative(template, production, args = [], swift = false) {
     const binary = `${directory}/test`;
     const harness = source(`apps/browser/src/test-native/safe-host/${template}`);
     assert.equal(harness.split("__PRODUCTION__").length, 2);
+    if (!swift) writeFileSync(`${directory}/SolaraCore-Swift.h`, source("apps/browser/src/test-native/safe-host/SolaraCore-Swift.h"));
     writeFileSync(program, harness.replace("__PRODUCTION__", production));
     const env = { ...process.env, TMPDIR: directory, CLANG_MODULE_CACHE_PATH: `${directory}/cache`, SWIFT_MODULECACHE_PATH: `${directory}/cache` };
     const compilation = swift

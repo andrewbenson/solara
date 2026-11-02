@@ -186,6 +186,7 @@ struct PrivateSessionEffectsTests {
     effects.confirmWindowClosed(b)
     await privateEffectsTurn()
     #expect(log.ended.map(\.session) == [original])
+    #expect(log.ended.first?.engineProfiles.count == 2)
   }
 
   @Test(arguments: [(30_000.0, true), (30_001.0, false)])

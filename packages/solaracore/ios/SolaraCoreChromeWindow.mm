@@ -1,5 +1,6 @@
 #import "ACChromeWindow.h"
 #import "SolaraCoreEarlyWindow.h"
+#import "SolaraCoreEscapeKey.h"
 #import "SolaraCoreInternal.h"
 #import "SolaraCoreWebView.h"
 #import "SolaraCoreWebViewInternal.h"
@@ -1773,8 +1774,7 @@ NSMapTable<SolaraCoreProfile *, SolaraCoreWindowController *> *StandaloneWindows
 
 - (BOOL)window:(SolaraCoreWindow *)window handleKeyEvent:(NSEvent *)event {
   if (KeepsUnhandledSidebarKeyInPage(window.window, event)) return YES;
-  const NSEventModifierFlags mods = event.modifierFlags & NSEventModifierFlagDeviceIndependentFlagsMask;
-  if (event.type == NSEventTypeKeyDown && event.keyCode == 53 && !(mods & (NSEventModifierFlagCommand | NSEventModifierFlagOption | NSEventModifierFlagControl))) {
+  if (solaracore_keys::IsPlainEscape(event)) {
     NSResponder *focused = window.window.firstResponder;
     SolaraCoreWebView *target = nil;
     for (SolaraCoreProfile *profile in solaracore_host::LoadedProfiles()) {
@@ -1786,6 +1786,7 @@ NSMapTable<SolaraCoreProfile *, SolaraCoreWindowController *> *StandaloneWindows
     }
     [target emit:@"command" payload:@{@"command" : @"escape", @"text" : @""}];
   }
+  if (solaracore_keys::KeepsUnhandledEscapeFromWindow(event, IsWindowFullScreen(window.window))) return YES;
   return gRefusesUnhandledKey && gRefusesUnhandledKey(window.window, event);
 }
 

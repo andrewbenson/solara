@@ -61,7 +61,7 @@ const usesPageA = [
   "private-windows-create", "extension-installed-bubble", "popup-window", "popup-window-permission", "popup-origin-strip", "autofill-save-prompts",
   "settings-services", "download-navigation", "page-events", "page-background", "external-app-answer",
   "notifications", "now-playing", "media-state", "auto-picture-in-picture", "pip-window", "page-focus", "page-press-split",
-  "fullscreen-tab-switch", "fullscreen-native", "fullscreen-transition-picture", "fullscreen-hidden-page", "fullscreen-split-sibling",
+  "fullscreen-tab-switch", "fullscreen-native", "escape-in-window-fullscreen", "fullscreen-transition-picture", "fullscreen-hidden-page", "fullscreen-split-sibling",
   "fullscreen-pip", "autofill-suggestions", "images", "extension-surfaces", "frozen", "discard",
   "permission-prompt", "popup-blocked", "move-tab-slow-mount", "move-last-tab-slow-mount",
   "move-tab-closed-while-parked", "move-tab-to-window", "title-bar-close", "last-used-profile",
@@ -4775,6 +4775,45 @@ try {
       return out;
     } finally {
       await cef(`devWindow(${await cef(`devWindowNumber(${await browserOf(first.id)})`)}, "fakeFullScreenMs:0")`).catch(() => null);
+      await closeTab(tab.id).catch(() => null);
+      await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
+    }
+  });
+
+  await check("escape-in-window-fullscreen", async () => {
+    const tab = await openTab(`${base}/b?esc-fs`, "Page B");
+    const out = {};
+    try {
+      const t = await pageFor(tab.id, "/b?esc-fs");
+      const win = () => fsWindow(tab.id);
+      const settled = (what, test) => until(what, async () => {
+        const w = await win();
+        return !w.pageFullScreen?.transitioning && test(w) ? w : null;
+      }, 6000).catch(async (e) => { throw new Error(`${e.message}; window ${JSON.stringify(await win())}`); });
+      const escapes = async () => (await cdp(t, "Runtime.evaluate", { expression: "window.escapes ?? 0", returnByValue: true })).result.value;
+      const press = async () => {
+        const s = await state();
+        await evalApp(`return ac.webviews.get("${tab.id}").focus()`);
+        return evalApp(`return ac.shell.devKeyEquivalent("${s.windowId}", { key: "\u001b", keyCode: 53, modifiers: [], focus: "page" })`);
+      };
+      await cdp(t, "Runtime.evaluate", { expression: "window.escapes = 0; addEventListener('keydown', (e) => { if (e.key === 'Escape') window.escapes++; }, true); true", returnByValue: true });
+      await fsWindow(tab.id, "fakeFullScreen:1");
+      out.entered = await settled("the window in full screen", (w) => w.fullScreen);
+      out.pressed = await press();
+      out.pageEscapes = await until("the page's keydown for Esc", async () => ((await escapes()) >= 1 ? await escapes() : null), 5000);
+      await sleep(800);
+      out.afterEscape = await win();
+      if (!out.afterEscape.fullScreen) throw new Error(`Esc on the page took the window out of full screen: ${JSON.stringify(out.afterEscape)}`);
+      await fsEnter(tab.id, t);
+      out.element = await settled("the page in full screen in the full-screen window", (w) => w.fullScreen && w.pageFullScreen);
+      await press();
+      await fsLeft(tab.id, t, "Esc ended the element's full screen");
+      await sleep(800);
+      out.afterElementEscape = await win();
+      if (!out.afterElementEscape.fullScreen) throw new Error(`Esc after the element's full screen took the window out: ${JSON.stringify(out.afterElementEscape)}`);
+      return out;
+    } finally {
+      await fsWindow(tab.id, "fakeFullScreen:0").catch(() => null);
       await closeTab(tab.id).catch(() => null);
       await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
     }

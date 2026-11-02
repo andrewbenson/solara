@@ -70,7 +70,14 @@ private final class NotificationDelegateCompletion<Value>: @unchecked Sendable {
 
 @MainActor @objc(SolaraNotificationHub) final class NotificationHub: NSObject, UNUserNotificationCenterDelegate {
   static let shared = NotificationHub()
-  private let simulated = ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] == "1"
+  private let simulated: Bool = {
+    #if DEBUG
+    let debug = true
+    #else
+    let debug = false
+    #endif
+    return NotificationAdapterMode.choose(environment: ProcessInfo.processInfo.environment, debug: debug) == .memory
+  }()
   private var observer: NSObjectProtocol?
   private var installed = false
   private let lifetime = NotificationLifetime()

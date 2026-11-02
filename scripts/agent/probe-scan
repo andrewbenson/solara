@@ -3,7 +3,7 @@ set -euo pipefail
 
 if [ "${1:-}" = --help ] || [ "${1:-}" = -h ]; then
   echo 'usage: scripts/agent/probe-scan <Solara.app>'
-  echo 'Fails if any Mach-O anywhere in the bundle carries the native probe host: its marker symbol or its command strings.'
+  echo 'Fails if any Mach-O anywhere in the bundle carries the native probe host (its marker symbol or command strings) or the Debug notification override.'
   exit 0
 fi
 app="${1:?usage: scripts/agent/probe-scan <Solara.app>}"
@@ -20,8 +20,8 @@ while IFS= read -r -d '' binary; do
     found=1
   fi
   text=$(strings -a "$binary") || { echo "error: can't read strings from $binary" >&2; exit 1; }
-  if grep -qE 'probe\.hello|state\.snapshot|\[solara-probe\]|\.solara-probe-scratch|SolaraProbeHostMarker' <<<"$text"; then
-    echo "error: probe command or protocol string in $binary" >&2
+  if grep -qE 'probe\.hello|state\.snapshot|\[solara-probe\]|\.solara-probe-scratch|SolaraProbeHostMarker|SOLARA_NOTIFICATIONS_SYSTEM' <<<"$text"; then
+    echo "error: probe or Debug notification string in $binary" >&2
     found=1
   fi
 done < <(find "$app/Contents" -type f -print0)

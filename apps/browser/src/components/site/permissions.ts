@@ -65,6 +65,14 @@ export async function answerPermission(tabId: string, requestId: string, result:
   for (const [id, queue] of queues) queues.set(id, queue.filter((r) => r.id !== requestId));
 }
 
+export async function devAnswerPermission(tabId: string, result: "allow" | "deny"): Promise<boolean> {
+  if (!__DEV__) return false;
+  const request = pageOf(tabId).permission;
+  if (!request) return false;
+  await answerPermission(tabId, request.id, result === "allow" ? "accept" : "deny");
+  return true;
+}
+
 export function dismissPermissions(tabId: string) {
   for (const r of queues.get(tabId) ?? []) void resolvePermission(r.id, "dismiss");
   queues.delete(tabId);

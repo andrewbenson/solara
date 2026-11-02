@@ -35,7 +35,7 @@ final class SolaraHostedView: ExpoView {
     guard active, !kind.isEmpty, let window else { return unmount() }
     if mount != nil && mountedKey == key { return deliverState() }
     unmount()
-    guard let content = HostedViews.make(kind, windowId: windowId) else { return }
+    guard let content = HostedViews.make(kind, windowId: windowId, state: state) else { return }
     mountedKey = key
     mount = HostedMount(content: content, in: self, window: window)
     deliverState()

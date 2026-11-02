@@ -19,10 +19,14 @@ public struct HostedContent {
 public enum HostedViews {
   public typealias Make = (_ windowId: String) -> HostedContent?
 
-  private static var makers: [String: Make] = [:]
+  private static var makers: [String: (String, String) -> HostedContent?] = [:]
   nonisolated private static let registered = Mutex<Set<String>>([])
 
   public static func register(_ kind: String, _ make: @escaping Make) {
+    register(kind) { windowId, _ in make(windowId) }
+  }
+
+  public static func register(_ kind: String, _ make: @escaping (String, String) -> HostedContent?) {
     makers[kind] = make
     registered.withLock { _ = $0.insert(kind) }
   }
@@ -32,8 +36,8 @@ public enum HostedViews {
     registered.withLock { _ = $0.remove(kind) }
   }
 
-  static func make(_ kind: String, windowId: String) -> HostedContent? {
-    makers[kind]?(windowId)
+  static func make(_ kind: String, windowId: String, state: String = "") -> HostedContent? {
+    makers[kind]?(windowId, state)
   }
 
   nonisolated static var kinds: [String] { registered.withLock { $0.sorted() } }

@@ -129,6 +129,7 @@ type LiveBaseline = Partial<Settings> & { color?: ProfileColor };
 
 type OnboardingState = {
   windowId: string | null;
+  requestId: string | null;
   step: OnboardingStep;
   sub: number;
   leaving: boolean;
@@ -164,6 +165,7 @@ export const setWindowLayout = (windowId: string, tabLayout: Settings["tabLayout
 
 export const useOnboarding = create<OnboardingState>((set, get) => ({
   windowId: null,
+  requestId: null,
   step: "intro",
   sub: 0,
   leaving: false,
@@ -326,11 +328,11 @@ export const saveIntroMusicMuted = (muted: boolean) => save({ introMusicMuted: m
 
 const FRESH = { preset: "dia", source: null, draft: {}, extras: {}, baseline: {}, picked: {} } satisfies Partial<OnboardingState>;
 
-export function startOnboarding(windowId?: string | null, step: OnboardingStep = "intro") {
+export function startOnboarding(windowId?: string | null, step: OnboardingStep = "intro", requestId: string | null = null) {
   const id = resolveWindowId(useBrowser.getState(), windowId);
   if (!id) return;
   endToolTour();
-  useOnboarding.setState((s) => ({ ...FRESH, windowId: id, step, sub: 0, leaving: false, tourAfter: false, session: s.session + 1 }));
+  useOnboarding.setState((s) => ({ ...FRESH, windowId: id, requestId: requestId || null, step, sub: 0, leaving: false, tourAfter: false, session: s.session + 1 }));
   save({ step, sub: 0, source: null, preset: "dia", picked: {} });
 }
 
@@ -342,6 +344,7 @@ export function resumeOnboarding(saved: Saved) {
   useOnboarding.setState((s) => ({
     ...FRESH,
     windowId: id,
+    requestId: null,
     step,
     sub: 0,
     source,
@@ -366,7 +369,7 @@ export function finishOnboarding(options: { tour?: boolean } = {}) {
 export function dismissOnboarding(session: number) {
   const { session: current, windowId, tourAfter } = useOnboarding.getState();
   if (current !== session) return;
-  useOnboarding.setState({ windowId: null, step: "intro", leaving: false, tourAfter: false });
+  useOnboarding.setState({ windowId: null, requestId: null, step: "intro", leaving: false, tourAfter: false });
   if (tourAfter && windowId) startToolTour(windowId);
 }
 

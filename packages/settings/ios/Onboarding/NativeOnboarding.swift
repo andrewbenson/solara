@@ -16,19 +16,29 @@ enum NativeOnboarding {
   }
 
   private static var sessions: [OnboardingSession] = []
-
   static func register() {
     guard enabled else { return }
     OnboardingProbe.enabled = ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] == "1"
-    HostedViews.register(kind) { windowId in
-      guard let settings = NativeSettingsHandle.model else { return nil }
-      let session = OnboardingSession(windowId: windowId, settings: settings)
+    HostedViews.register(kind) { windowId, requestId in
+      guard let settings = NativeSettingsHandle.model else {
+        NativeAppStartup.shared.cancelOnboardingReplay(requestId)
+        return nil
+      }
+      let session = OnboardingSession(windowId: windowId, settings: settings, replayRequestId: requestId)
       sessions.append(session)
       return HostedContent(view: session.view, onUnmount: {
         session.end()
         sessions.removeAll { $0 === session }
       })
     }
+  }
+
+  static func resumeCommittedJoinAtLaunch() {
+    guard let settings = NativeSettingsHandle.model else { return }
+    let adapter = OnboardingAdapter(windowId: "", settings: settings)
+    let model = OnboardingModel(services: adapter, store: StoreSettingsSource(model: settings), appName: Bundle.main.productName)
+    _ = model.resumeCommittedJoin()
+    adapter.dispose()
   }
 
   static func drive(_ action: String, _ argument: String?) -> String {
@@ -70,9 +80,11 @@ final class OnboardingSession {
   let model: OnboardingModel
   private(set) var view: NSView = NSView()
   private var ended = false
+  private let replayRequestId: String?
 
-  init(windowId: String, settings: SettingsModel) {
+  init(windowId: String, settings: SettingsModel, replayRequestId: String? = nil) {
     self.windowId = windowId
+    self.replayRequestId = replayRequestId
     adapter = OnboardingAdapter(windowId: windowId, settings: settings)
     model = OnboardingModel(
       services: adapter, store: StoreSettingsSource(model: settings),
@@ -82,29 +94,49 @@ final class OnboardingSession {
     let hosting = NSHostingView(rootView: OnboardingHostedRoot(model: model, windowId: windowId) { [weak self] in self?.dismissed() })
     hosting.safeAreaRegions = []
     view = hosting
-    begin()
+    adapter.onboardingWindow = { [weak self] in self?.view.window }
+    begin(replayRequested: NativeAppStartup.shared.takeOnboardingReplay(replayRequestId))
   }
 
-  private func begin() {
+  private func begin(replayRequested: Bool) {
+    adapter.onboardingSession = { [weak model] in model?.session }
+    adapter.onRecoveryPhraseConnected = { [weak model] session in
+      guard let model, model.isActive, model.session == session else { return }
+      model.finish()
+    }
     let saved = adapter.savedDocument
+    let token = saved?.string("joinedCompletionToken")
+    let committed = adapter.committedOnboardingJoinToken
+    let entered = saved?["joinedEnteredBrowser"] as? Bool == true
     let step = saved?.string("step").flatMap(OnboardingStep.init(rawValue:))
-    let completed = saved?["completedAt"] is NSNumber
-    if let step, step != .intro, !completed, saved?["startedAt"] is NSNumber {
-      model.maybeStart()
-    } else {
+    let finishedJoin = token != nil && entered && committed == token
+    if replayRequested, saved?["completedAt"] is NSNumber, finishedJoin {
+      model.start(windowId: windowId, step: .intro)
+    } else if model.startCommittedJoin(windowId: windowId) {
+      return
+    } else if saved?["completedAt"] is NSNumber, committed == nil {
       model.start(windowId: windowId, step: step ?? .intro)
+    } else if committed != nil {
+      model.maybeStart(windowId: windowId)
+    } else if step == nil || step == .intro {
+      let firstRun = saved?["startedAt"] is NSNumber || !adapter.hasSessionDocument()
+      model.start(windowId: windowId, step: .intro, isFirstRunOnboarding: firstRun)
+      model.discoverSync()
+    } else {
+      model.maybeStart(windowId: windowId)
     }
   }
 
   private func dismissed() {
     guard !ended else { return }
-    OnboardingAdapter.fire("onboarding.dismissed", windowId)
+    OnboardingAdapter.fire("onboarding.dismissed", windowId, replayRequestId ?? "")
   }
 
   func end() {
     guard !ended else { return }
     ended = true
-    if model.isActive { adapter.stopIntroMusic(fade: 0.2) }
+    model.leaveSetup()
+    adapter.stopIntroMusic(fade: 0.2)
     adapter.dispose()
   }
 }

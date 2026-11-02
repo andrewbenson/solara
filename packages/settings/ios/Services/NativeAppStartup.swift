@@ -16,6 +16,8 @@ final class NativeAppStartup {
   private var development = false
   private var presentation: (([String: Any]) -> Void)?
   private var pending: [[String: Any]] = []
+  private var onboardingRequestId: String?
+  private var onboardingExpiry: Task<Void, Never>?
 
   private init() {}
 
@@ -25,6 +27,18 @@ final class NativeAppStartup {
     for command in ["showOnboarding", "toolTour", "videoTour", "releaseNotes"] {
       NativeMenuCommands.handlers[command] = { windowId in _ = Self.shared.perform(command, windowId: windowId) }
     }
+  }
+
+  private func onboardingSaved() -> JSONValue? {
+    let saved = read("onboarding.json")
+    guard let token = OnboardingPairingServices.committedJoinToken?() else { return saved }
+    if saved?["joinedEnteredBrowser"]?.bool == true, saved?["joinedCompletionToken"]?.string == nil { return saved }
+    guard saved?["joinedCompletionToken"]?.string != token || saved?["joinedEnteredBrowser"]?.bool != true else { return saved }
+    return .object(AppStartupPolicy.onboardingDocument(saved: saved, patch: [
+      "startedAt": saved?["startedAt"] ?? .number(Self.now),
+      "joinedCompletionToken": .string(token),
+      "joinedEnteredBrowser": false,
+    ]))
   }
 
   func start(_ options: [String: Any], presentation: @escaping ([String: Any]) -> Void) -> String {
@@ -37,12 +51,14 @@ final class NativeAppStartup {
     let versions = Set(options["releaseNotesVersions"] as? [String] ?? [])
     let hasSession = !(DocumentStore.read("session.json") ?? "").isEmpty
     let hosted = options["hostedOnboarding"] as? Bool ?? false
+    if result == nil, !refused, !safeMode, hosted { NativeOnboarding.resumeCommittedJoinAtLaunch() }
     if !hosted { NSLog("[appIntegration] automatic onboarding unavailable: native onboarding host is off") }
     if result != nil {
-      let saved = read("onboarding.json")
+      let saved = onboardingSaved()
       let decision = AppStartupPolicy.onboarding(
         saved: saved, hasSession: hasSession, refused: refused, safeMode: safeMode,
-        hosted: hosted, development: development, force: Self.debugEnvironment("SOLARA_ONBOARDING"))
+        hosted: hosted, development: development, force: Self.debugEnvironment("SOLARA_ONBOARDING"),
+        committedJoinToken: OnboardingPairingServices.committedJoinToken?())
       let pending = AppStartupPolicy.version(
         current: version, saved: read("release-notes.json"), hasSession: hasSession, refused: refused,
         safeMode: true, development: true, forcePostcard: false, now: Self.now, knownVersions: versions).pending
@@ -58,11 +74,12 @@ final class NativeAppStartup {
       now: Self.now, knownVersions: versions)
     updated = tracked.updated
     if let document = tracked.document { save("release-notes.json", document) }
-    let saved = read("onboarding.json")
+    let saved = onboardingSaved()
     let onboarding = AppStartupPolicy.onboarding(
       saved: saved, hasSession: hasSession, refused: refused, safeMode: safeMode,
       hosted: hosted,
-      development: development, force: Self.debugEnvironment("SOLARA_ONBOARDING"))
+      development: development, force: Self.debugEnvironment("SOLARA_ONBOARDING"),
+        committedJoinToken: OnboardingPairingServices.committedJoinToken?())
     var action = "none"
     switch onboarding {
     case .none: break
@@ -97,11 +114,35 @@ final class NativeAppStartup {
 
   func disconnect() {
     presentation = nil
+    if let onboardingRequestId { cancelOnboardingReplay(onboardingRequestId) }
+  }
+
+  func cancelOnboardingReplay(_ requestId: String) {
+    guard onboardingRequestId == requestId else { return }
+    onboardingRequestId = nil
+    onboardingExpiry?.cancel()
+    onboardingExpiry = nil
+    pending.removeAll { $0["requestId"] as? String == requestId }
+  }
+
+  func takeOnboardingReplay(_ requestId: String?) -> Bool {
+    guard let requestId, onboardingRequestId == requestId else { return false }
+    cancelOnboardingReplay(requestId)
+    return true
   }
 
   func perform(_ command: String, windowId: String?) -> Bool {
     switch command {
-    case "showOnboarding", "toolTour":
+    case "showOnboarding":
+      if let onboardingRequestId { cancelOnboardingReplay(onboardingRequestId) }
+      let requestId = UUID().uuidString
+      onboardingRequestId = requestId
+      onboardingExpiry = Task { [weak self] in
+        do { try await Task.sleep(for: .seconds(60)) } catch { return }
+        self?.cancelOnboardingReplay(requestId)
+      }
+      emit(["action": command, "windowId": windowId as Any? ?? NSNull(), "requestId": requestId])
+    case "toolTour":
       emit(["action": command, "windowId": windowId as Any? ?? NSNull()])
     case "videoTour":
       if let url = AppStartupPolicy.videoURL(page: AppModule.systemInfo["videoTourURL"] as? String) { open(url, windowId: windowId) }
@@ -168,8 +209,13 @@ final class NativeAppStartup {
   }
 
   private func emit(_ event: [String: Any]) {
+    let requestId = event["requestId"] as? String
+    if event["action"] as? String == "showOnboarding", requestId == nil || requestId != onboardingRequestId { return }
     guard completed, let presentation else {
-      guard pending.count < 50 else { return NSLog("[appIntegration] JS presentation unavailable; action queue is full") }
+      guard pending.count < 50 else {
+        if let requestId { cancelOnboardingReplay(requestId) }
+        return NSLog("[appIntegration] JS presentation unavailable; action queue is full")
+      }
       pending.append(event)
       NSLog("[appIntegration] waiting for JS presentation: %@", event["action"] as? String ?? "unknown")
       return
@@ -178,7 +224,8 @@ final class NativeAppStartup {
   }
 
   private func read(_ name: String) -> JSONValue? {
-    DocumentStore.read(name).flatMap { try? JSONValue.parse($0) }
+    let text = name == OnboardingAdapter.document ? OnboardingAdapter.readSavedDocument() : DocumentStore.read(name)
+    return text.flatMap { try? JSONValue.parse($0) }
   }
 
   private func save(_ name: String, _ document: JSONObject) {

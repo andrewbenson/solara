@@ -86,8 +86,9 @@ export const onboardingHandlers: Record<string, SettingsHandler> = {
   "onboarding.addToDock": () => addToDock().catch(() => false),
   "onboarding.currentAppIcon": () => currentAppIcon().catch(() => null),
   "onboarding.pinSites": (windowId: string, ids: string[]) => pinSites(windowId, ids),
-  "onboarding.dismissed": (windowId: string) => {
-    if (useOnboarding.getState().windowId !== windowId) return;
-    useOnboarding.setState({ windowId: null, step: "intro", leaving: false, tourAfter: false });
+  "onboarding.dismissed": (windowId: string, requestId?: string | null) => {
+    const current = useOnboarding.getState();
+    if (current.windowId !== windowId || (current.requestId || null) !== (requestId || null)) return;
+    useOnboarding.setState({ windowId: null, requestId: null, step: "intro", leaving: false, tourAfter: false });
   },
 };

@@ -244,4 +244,21 @@ import Testing
     state.windows[""] = state.windows["w"]
     #expect(AppStartupPolicy.notificationTarget(state: state, action: "click", tabId: "", windowId: "") == .none)
   }
+  @Test func joinedRouteTakesPriorityOverCompletedAndSessionDocuments() {
+    let saved: JSONValue = ["completedAt": 100, "joinedCompletionToken": "joined", "joinedEnteredBrowser": false]
+    #expect(AppStartupPolicy.onboarding(saved: saved, hasSession: true, refused: false, safeMode: false, hosted: true, development: false, force: false, committedJoinToken: "joined") == .resume)
+  }
+
+  @Test func durableJoinMarkerResumesWithoutAnOnboardingDocument() {
+    for saved: JSONValue? in [nil, ["completedAt": 100]] {
+      #expect(AppStartupPolicy.onboarding(saved: saved, hasSession: true, refused: false, safeMode: false, hosted: true, development: false, force: false, committedJoinToken: "durable") == .resume)
+    }
+  }
+
+  @Test func acknowledgedBrowserEntryKeepsNormalLaunchQuiet() {
+    let saved: JSONValue = ["completedAt": 100, "joinedCompletionToken": "joined", "joinedEnteredBrowser": true]
+    #expect(AppStartupPolicy.onboarding(saved: saved, hasSession: true, refused: false, safeMode: false, hosted: true, development: false, force: false, committedJoinToken: "joined") == .none)
+    #expect(AppStartupPolicy.onboarding(saved: saved, hasSession: true, refused: false, safeMode: false, hosted: true, development: false, force: false, committedJoinToken: "new-join") == .resume)
+  }
+
 }

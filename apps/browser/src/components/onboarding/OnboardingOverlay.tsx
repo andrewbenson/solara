@@ -8,10 +8,11 @@ export function OnboardingOverlay() {
   const windowId = useWindowId();
   const active = useOnboarding((s) => s.windowId === windowId);
   const session = useOnboarding((s) => s.session);
+  const requestId = useOnboarding((s) => s.requestId);
   return (
     <>
       {active && hostedKinds().includes("onboarding") ? (
-        <SolaraHostedView key={session} kind="onboarding" windowId={windowId} active style={StyleSheet.absoluteFill} />
+        <SolaraHostedView key={session} kind="onboarding" windowId={windowId} state={requestId ?? ""} active style={StyleSheet.absoluteFill} />
       ) : null}
       <ToolTour />
     </>

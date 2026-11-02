@@ -4,17 +4,115 @@ import Foundation
 import SolaraModel
 import SolaraStore
 import SolaraUI
+import SwiftUI
 
 @MainActor
 final class OnboardingAdapter: OnboardingServices {
   static let topic = "onboarding.window"
   static let document = "onboarding.json"
+  private static let joinedWriter = OnboardingJoinedWriter()
+  var onboardingJoinedWriter: OnboardingJoinedWriter? { Self.joinedWriter }
 
   let windowId: String
   let settings: SettingsModel
   var onWindowChange: (() -> Void)?
   private var window: [String: Any]
   private var observer: UUID?
+  private let previewWrites = OnboardingPreviewQueue()
+  private var recoverySheet: NSWindow?
+  private var recoveryGeneration = 0
+  var onRecoveryPhraseConnected: ((Int) -> Void)?
+  var onboardingSession: (() -> Int?)?
+  var onboardingWindow: (() -> NSWindow?)?
+  private let discovery = OnboardingDiscoveryAdapter(folder: OnboardingAdapter.defaultSyncFolder)
+
+  static var defaultSyncFolder: URL {
+    if let path = ProcessInfo.processInfo.environment["SOLARA_SYNC_DEFAULT_FOLDER"] {
+      return URL(fileURLWithPath: path, isDirectory: true)
+    }
+    let name = Bundle.main.productName
+    if let path = ProcessInfo.processInfo.environment["SOLARA_DATA_DIR"] {
+      return URL(fileURLWithPath: path, isDirectory: true).appendingPathComponent("\(name) Sync", isDirectory: true)
+    }
+    return FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs/\(name) Sync", isDirectory: true)
+  }
+
+  var onboardingDiscovery: OnboardingDiscovering? { discovery }
+  var onboardingSyncFolder: String? {
+    let cloud = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs", isDirectory: true)
+    if discovery.folder.deletingLastPathComponent().standardizedFileURL == cloud.standardizedFileURL {
+      return "iCloud Drive › \(discovery.folder.lastPathComponent)"
+    }
+    return discovery.folder.path
+  }
+  var pairingJoining: PairingJoining? { OnboardingPairingServices.joining?(discovery.folder.path) }
+  var committedOnboardingJoinToken: String? { OnboardingPairingServices.committedJoinToken?() }
+
+  func writeJoinedOnboardingDocument(_ json: String) async throws {
+    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+      do {
+        try DocumentStore.write(Self.document, json) { error in
+          if let error {
+            continuation.resume(throwing: error)
+          } else {
+            continuation.resume()
+          }
+        }
+      } catch {
+        continuation.resume(throwing: error)
+      }
+    }
+  }
+
+  func drainOnboardingPreviews() async throws {
+    try await previewWrites.drain()
+  }
+
+  private func enqueuePreview(_ name: String, _ arguments: [Any]) {
+    previewWrites.enqueue {
+      let deadline = ContinuousClock.now + Self.connectWait
+      while !SettingsJS.shared.connected, ContinuousClock.now < deadline {
+        try await Task.sleep(for: .milliseconds(100))
+      }
+      guard SettingsJS.shared.connected else { throw CocoaError(.fileWriteUnknown) }
+      _ = try await SettingsJS.shared.invoke(name, arguments)
+    }
+  }
+
+  func chooseOnboardingFolder(beforeChange: @MainActor () -> Bool) async -> Bool {
+    guard let path = await SyncAdapter().chooseSyncFolder(), !Task.isCancelled else { return false }
+    guard beforeChange() else { return false }
+    discovery.folder = URL(fileURLWithPath: path, isDirectory: true)
+    return true
+  }
+
+  func openOnboardingICloudSettings() { SyncAdapter().openICloudSettings() }
+
+  func openOnboardingRecoveryPhrase() -> Bool {
+    if recoverySheet != nil { return true }
+    guard let parent = onboardingWindow?(), let session = onboardingSession?() else { return false }
+    recoveryGeneration += 1
+    let generation = recoveryGeneration
+    let content = OnboardingRecoveryPhraseView(services: SyncAdapter(), folder: discovery.folder.path, onCancel: { [weak self] in
+      guard let self, recoveryGeneration == generation else { return }
+      recoveryGeneration += 1
+      if let sheet = recoverySheet { parent.endSheet(sheet) }
+    }) { [weak self] in
+      guard let self, recoveryGeneration == generation, recoverySheet != nil else { return }
+      recoveryGeneration += 1
+      if let sheet = recoverySheet { parent.endSheet(sheet) }
+      onRecoveryPhraseConnected?(session)
+    }
+    let sheet = NSWindow(contentViewController: NSHostingController(rootView: content))
+    recoverySheet = sheet
+    parent.beginSheet(sheet) { [weak self] _ in
+      guard let self else { return }
+      recoverySheet = nil
+      recoveryGeneration += 1
+    }
+    return true
+  }
 
   init(windowId: String, settings: SettingsModel) {
     self.windowId = windowId
@@ -31,6 +129,12 @@ final class OnboardingAdapter: OnboardingServices {
     if let observer { SettingsJS.shared.stopObserving(Self.topic, observer) }
     observer = nil
     onWindowChange = nil
+    onRecoveryPhraseConnected = nil
+    onboardingSession = nil
+    recoveryGeneration += 1
+    onboardingWindow = nil
+    if let sheet = recoverySheet { sheet.sheetParent?.endSheet(sheet) }
+    recoverySheet = nil
   }
 
   static func entry(_ value: Any?, for windowId: String) -> [String: Any]? {
@@ -39,9 +143,13 @@ final class OnboardingAdapter: OnboardingServices {
   }
 
   var savedDocument: [String: Any]? {
-    guard let text = readOnboardingDocument(), let data = text.data(using: .utf8) else { return nil }
+    guard let text = readDurableOnboardingDocument(), let data = text.data(using: .utf8) else { return nil }
     return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
   }
+
+  static func readSavedDocument() -> String? { DocumentStore.readDurable(document) }
+
+  func readDurableOnboardingDocument() -> String? { Self.readSavedDocument() }
 
   func readOnboardingDocument() -> String? { DocumentStore.read(Self.document) }
 
@@ -74,7 +182,7 @@ final class OnboardingAdapter: OnboardingServices {
 
   func setWindowTabLayout(_ windowId: String, _ layout: String) {
     if windowId == self.windowId { window["tabLayout"] = layout }
-    Self.fire("onboarding.setWindowLayout", windowId, layout)
+    enqueuePreview("onboarding.setWindowLayout", [windowId, layout])
   }
 
   func previewSettings(_ patch: JSONObject) { settings.update(patch, fromSync: true) }
@@ -88,7 +196,7 @@ final class OnboardingAdapter: OnboardingServices {
 
   func setProfileColor(_ windowId: String, _ color: ProfileColorValue) {
     if windowId == self.windowId { window["color"] = color.rawValue }
-    Self.fire("onboarding.setProfileColor", windowId, color.rawValue)
+    enqueuePreview("onboarding.setProfileColor", [windowId, color.rawValue])
   }
 
   func endToolTour() { Self.fire("onboarding.endToolTour") }
@@ -120,6 +228,12 @@ final class OnboardingAdapter: OnboardingServices {
   var importAvailable: Bool { window.bool("importAvailable") ?? false }
 
   func openImport(_ browserId: String) { Self.fire("onboarding.openImport", browserId) }
+
+  func cancelOnboardingImport() {
+    NativeImportWindow.current?.dispose()
+    ImportAdapter().close()
+    enqueuePreview("import.cancelAndDrain", [])
+  }
 
   var backgroundInstance: Bool { ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] == "1" }
 

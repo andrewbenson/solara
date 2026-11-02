@@ -70,5 +70,36 @@ struct OnboardingSnapshotTests {
     model.go(.outro)
     try await Self.page(model, "outro")
   }
+  @Test(.enabled(if: Snapshot.directory != nil))
+  func rendersDiscoveryAndJoinRoutes() async throws {
+    let suite = OnboardingPairingTests()
+    let (model, _, _, discovery, joining, scheduler) = suite.fixture()
+    model.maybeStart()
+    try await Self.page(model, "sync-discovering")
+    scheduler.advance(.seconds(10))
+    try await Self.page(model, "sync-timeout")
+    model.discoverSync()
+    discovery.emit(.found([
+      .init(cid: "first", lastActivity: Date(timeIntervalSince1970: 1_790_000_000)),
+      .init(cid: "second", lastActivity: nil),
+    ]))
+    try await Self.page(model, "sync-choice")
+    model.selectSync(cid: "first")
+    model.pairWithAnotherMac()
+    await suite.settle()
+    try await Self.page(model, "sync-preparing")
+    joining.emit(.waiting(expires: scheduler.now + .seconds(300)))
+    try await Self.page(model, "sync-waiting")
+    joining.emit(.comparing(code: "ABC DEF", claimedName: "Office Mac"))
+    try await Self.page(model, "sync-comparing")
+    joining.emit(.failed(.denied))
+    try await Self.page(model, "sync-denied")
+    joining.emit(.approved)
+    try await Self.page(model, "sync-approved")
+    joining.emit(.installed)
+    await suite.settle()
+    try await Self.page(model, "sync-joined")
+  }
+
 }
 

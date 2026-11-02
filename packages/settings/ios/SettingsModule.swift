@@ -38,6 +38,10 @@ public class SettingsModule: Module {
       MainActor.assumeIsolated { NativeAppStartup.shared.complete() }
     }.runOnQueue(.main)
 
+    AsyncFunction("cancelOnboardingReplay") { (requestId: String) in
+      MainActor.assumeIsolated { NativeAppStartup.shared.cancelOnboardingReplay(requestId) }
+    }.runOnQueue(.main)
+
     AsyncFunction("appIntegrationFirstWindow") { (onboardingActive: Bool, promise: Promise) in
       nonisolated(unsafe) let reply = promise
       MainActor.assumeIsolated {

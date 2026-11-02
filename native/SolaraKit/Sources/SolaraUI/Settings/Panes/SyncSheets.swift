@@ -191,6 +191,8 @@ struct SyncPhraseSheet: View {
   @Environment(\.dismiss) private var dismiss
   let model: SyncPaneModel
   let canChangeFolder: Bool
+  var onConnected: (() -> Void)? = nil
+  var onCancel: (() -> Void)? = nil
   @State private var text = ""
   @State private var busy = false
   @State private var error: String?
@@ -245,7 +247,9 @@ struct SyncPhraseSheet: View {
         .padding(.top, 10)
       }
     } buttons: {
-      Button("Cancel") { dismiss() }
+      Button("Cancel") {
+        if let onCancel { onCancel() } else { dismiss() }
+      }
         .keyboardShortcut(.cancelAction)
       Button(busy ? "Connecting…" : "Connect") { Task { await submit() } }
         .keyboardShortcut(.defaultAction)
@@ -261,6 +265,7 @@ struct SyncPhraseSheet: View {
     let message = await model.submitPhrase(text)
     busy = false
     error = message
+    if message == nil { onConnected?() }
   }
 }
 

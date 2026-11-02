@@ -12,6 +12,7 @@ Pod::Spec.new do |s|
   s.dependency 'SolaraStoreAdapter'
   s.dependency 'SolaraShell'
   s.dependency 'SolaraShaders'
+  s.dependency 'SolaraSyncAdapter'
   s.dependency 'SolaraCore'
   s.frameworks     = 'AppKit', 'SwiftUI'
   s.source_files   = '**/*.swift'

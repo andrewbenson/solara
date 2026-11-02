@@ -282,10 +282,11 @@ public extension OnboardingModel {
   }
 
   func confirmCurrent() {
+    guard syncRoute == .setup, isActive else { return }
     guard let question else { return }
     switch question {
     case .lookMore:
-      if let icon = extras.appIcon, icon != currentIcon { Task { await services.setAppIcon(icon) } }
+      if let icon = extras.appIcon, icon != currentIcon { Task { if syncRoute == .setup, isActive { await services.setAppIcon(icon) } } }
     case .pins:
       if let windowId, !selectedPins.isEmpty { pinSelected(windowId) }
     case .defaultBrowser:
@@ -359,17 +360,21 @@ public extension OnboardingModel {
   var canImport: Bool { chosenTile?.app != nil && services.importAvailable }
 
   func startImport() {
+    guard syncRoute == .setup, isActive else { return }
     guard let tile = chosenTile else { return }
     services.openImport(tile.importId ?? tile.id.rawValue)
     importing = tile.id
   }
 
   func loadSources() async {
+    guard syncRoute == .setup, isActive else { return }
+    let activeSession = session
     if sourceTiles.isEmpty { sourceTiles = BrowserSourceTile.detect(fileExists: services.fileExists) }
     var tiles = sourceTiles
     for i in tiles.indices {
       if let app = tiles[i].app, tiles[i].icon == nil { tiles[i].icon = await services.fileIcon(app, size: 64) }
     }
+    guard syncRoute == .setup, isActive, session == activeSession, !Task.isCancelled else { return }
     sourceTiles = tiles
   }
 
@@ -379,35 +384,65 @@ public extension OnboardingModel {
   var loginChoice: Bool { extras.login ?? system?.loginEnabled ?? false }
 
   func loadSystem() async {
+    guard syncRoute == .setup, isActive else { return }
+    let activeSession = session
     let isDefault = await services.isDefaultBrowser()
     let inDock = await services.isInDock()
     let login = await services.loginItemStatus()
+    guard syncRoute == .setup, isActive, session == activeSession, !Task.isCancelled else { return }
     system = OnboardingSystemState(isDefault: isDefault, inDock: inDock, loginEnabled: login == .enabled)
   }
 
   func applySystem() async {
-    guard let system else { return }
+    guard syncRoute == .setup, isActive, systemOperation == nil, let system else { return }
+    let activeSession = session
+    let operation = UUID()
+    systemOperation = operation
     busy = true
+    defer {
+      if systemOperation == operation {
+        systemOperation = nil
+        if session == activeSession { busy = false }
+        let waiters = systemWaiters
+        systemWaiters = []
+        for waiter in waiters { waiter.resume() }
+      }
+    }
     var lines: [String] = []
     let setDefault = setDefaultChoice, trial = trialChoice, dock = dockChoice, login = loginChoice
     if !system.isDefault && (setDefault || trial), await services.setAsDefaultBrowser() {
+      guard syncRoute == .setup, isActive, session == activeSession, !Task.isCancelled else { return }
       if !setDefault { recordDefaultBrowserTrial() }
       lines.append(setDefault ? copy.isDefault : "A week as your default browser")
     }
+    guard syncRoute == .setup, isActive, session == activeSession, !Task.isCancelled else { return }
     if login != system.loginEnabled { await services.setLaunchAtLogin(login) }
+    guard syncRoute == .setup, isActive, session == activeSession, !Task.isCancelled else { return }
     if dock && !system.inDock { await services.addToDock() }
+    guard syncRoute == .setup, isActive, session == activeSession, !Task.isCancelled else { return }
     busy = false
     confirm(.defaultBrowser, patch: [:], picked: lines)
   }
 
+  func waitForSystemChoices() async {
+    guard systemOperation != nil else { return }
+    await withCheckedContinuation { systemWaiters.append($0) }
+  }
+
   func loadIcons() async {
-    icons = await services.appIcons(size: 56)
-    currentIcon = await services.currentAppIcon()
+    guard syncRoute == .setup, isActive else { return }
+    let activeSession = session
+    let loaded = await services.appIcons(size: 56)
+    let current = await services.currentAppIcon()
+    guard syncRoute == .setup, isActive, session == activeSession, !Task.isCancelled else { return }
+    icons = loaded
+    currentIcon = current
   }
 
   var appIconValue: String? { extras.appIcon ?? currentIcon ?? icons.first?.id }
 
   func enter(_ step: OnboardingStep) async {
+    guard syncRoute == .setup, isActive, !Task.isCancelled else { return }
     switch step {
     case .source: await loadSources()
     case .layout: previewLive(resolve(Self.layoutKeys))

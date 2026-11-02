@@ -23,6 +23,27 @@ final class OnboardingFakeStore: SettingsStoreSource {
 @MainActor
 final class OnboardingFakeServices: OnboardingServices {
   let store: OnboardingFakeStore
+  var discovery: OnboardingFakeDiscovery?
+  var joining: OnboardingFakeJoining?
+  var onboardingDiscovery: OnboardingDiscovering? { discovery }
+  var pairingJoining: PairingJoining? { joining }
+  var onboardingSyncFolder: String?
+  var committedOnboardingJoinToken: String?
+  let onboardingJoinedWriter: OnboardingJoinedWriter? = OnboardingJoinedWriter()
+  var stagesJoinedWrites = false
+  private var stagedJoinedDocument: String?
+  private var durableJoinedBaseline: String?
+  var joinedWrites = 0
+  var failJoinedWrite = false
+  var holdJoinedWrite = false
+  var joinedWriteContinuation: CheckedContinuation<Void, any Error>?
+  var folderChoiceContinuation: CheckedContinuation<Bool, Never>?
+  var folderChanges = 0
+  var recoveryPhraseCalls = 0
+  var recoveryAvailable = true
+  var drainContinuation: CheckedContinuation<Void, any Error>?
+  var holdDrain = false
+  var drainCalls = 0
   var document: String?
   var session = false
   var startsOnFirstLaunch = true
@@ -37,6 +58,11 @@ final class OnboardingFakeServices: OnboardingServices {
   var installed: Set<String> = ["/Applications/Arc.app", "/Applications/Safari.app", "/Applications/Brave Browser Beta.app"]
   var importAvailable = true
   var imports: [String] = []
+  var importCancelled = false
+  var importedWrites = 0
+  var defaultOperation: (() async -> Bool)?
+  var loginOperation: (() async -> Void)?
+  var dockOperation: (() async -> Void)?
   var backgroundInstance = false
   var isDefault = false
   var inDock = false
@@ -57,7 +83,47 @@ final class OnboardingFakeServices: OnboardingServices {
   }
 
   func readOnboardingDocument() -> String? { document }
-  func writeOnboardingDocument(_ json: String) { document = json }
+  func readDurableOnboardingDocument() -> String? {
+    stagedJoinedDocument == nil ? document : durableJoinedBaseline
+  }
+  func writeOnboardingDocument(_ json: String) {
+    stagedJoinedDocument = nil
+    durableJoinedBaseline = nil
+    document = json
+  }
+  func landJoinedRetry() {
+    guard let stagedJoinedDocument else { return }
+    document = stagedJoinedDocument
+    self.stagedJoinedDocument = nil
+    durableJoinedBaseline = nil
+  }
+  func writeJoinedOnboardingDocument(_ json: String) async throws {
+    joinedWrites += 1
+    if stagesJoinedWrites {
+      if stagedJoinedDocument == nil { durableJoinedBaseline = document }
+      stagedJoinedDocument = json
+      document = json
+    }
+    if holdJoinedWrite { try await withCheckedThrowingContinuation { joinedWriteContinuation = $0 } }
+    if failJoinedWrite { throw CocoaError(.fileWriteUnknown) }
+    stagedJoinedDocument = nil
+    durableJoinedBaseline = nil
+    document = json
+  }
+  func drainOnboardingPreviews() async throws {
+    drainCalls += 1
+    if holdDrain { try await withCheckedThrowingContinuation { drainContinuation = $0 } }
+  }
+  func chooseOnboardingFolder(beforeChange: @MainActor () -> Bool) async -> Bool {
+    let selected = await withCheckedContinuation { folderChoiceContinuation = $0 }
+    guard selected, beforeChange() else { return false }
+    folderChanges += 1
+    return true
+  }
+  func openOnboardingRecoveryPhrase() -> Bool {
+    if recoveryAvailable { recoveryPhraseCalls += 1 }
+    return recoveryAvailable
+  }
   func hasSessionDocument() -> Bool { session }
   func now() -> Double { clock }
   func resolveWindowId(_ windowId: String?) -> String? { windowId ?? "w1" }
@@ -77,16 +143,25 @@ final class OnboardingFakeServices: OnboardingServices {
   func stopIntroMusic(fade: Double) { music.append("stop \(fade)") }
   func fileExists(_ path: String) -> Bool { installed.contains(path) }
   func fileIcon(_ path: String, size: Int) async -> NSImage? { nil }
-  func openImport(_ browserId: String) { imports.append(browserId) }
+  func openImport(_ browserId: String) { imports.append(browserId); importCancelled = false }
+  func cancelOnboardingImport() { importCancelled = true }
+  func completeImport() { if !importCancelled { importedWrites += 1 } }
   func isDefaultBrowser() async -> Bool { isDefault }
   func isInDock() async -> Bool { inDock }
   func loginItemStatus() async -> LoginItemStatus { login }
   func setAsDefaultBrowser() async -> Bool {
     setDefaultCalls += 1
+    if let defaultOperation { return await defaultOperation() }
     return setDefaultResult
   }
-  func setLaunchAtLogin(_ on: Bool) async { loginCalls.append(on) }
-  func addToDock() async { dockCalls += 1 }
+  func setLaunchAtLogin(_ on: Bool) async {
+    loginCalls.append(on)
+    await loginOperation?()
+  }
+  func addToDock() async {
+    dockCalls += 1
+    await dockOperation?()
+  }
   func appIcons(size: Int) async -> [OnboardingAppIcon] { icons }
   func currentAppIcon() async -> String? { current }
   func setAppIcon(_ id: String) async { iconSet.append(id) }
@@ -107,5 +182,104 @@ enum OnboardingFixture {
 
   static func saved(_ services: OnboardingFakeServices) -> JSONObject {
     (try? JSONValue.parse(services.document ?? "{}"))?.object ?? [:]
+  }
+}
+
+@MainActor
+final class OnboardingFakeDiscovery: OnboardingDiscovering {
+  final class Handle: OnboardingDiscoveryHandle {
+    var cancellations = 0
+    func cancel() { cancellations += 1 }
+  }
+  var callbacks: [@MainActor (OnboardingDiscoveryResult) -> Void] = []
+  var handles: [Handle] = []
+  func start(onResult: @escaping @MainActor (OnboardingDiscoveryResult) -> Void) -> OnboardingDiscoveryHandle {
+    callbacks.append(onResult)
+    let handle = Handle()
+    handles.append(handle)
+    return handle
+  }
+  func emit(_ result: OnboardingDiscoveryResult, request: Int? = nil) {
+    guard !callbacks.isEmpty else { return }
+    callbacks[request ?? callbacks.count - 1](result)
+  }
+}
+
+@MainActor
+final class OnboardingFakeJoining: @preconcurrency PairingJoining {
+  final class Handle: PairingJoinHandle {
+    var cancellations = 0
+    var restarts = 0
+    var cancelResult: PairingCancelResult = .cancelled
+    @discardableResult func cancel() -> PairingCancelResult { cancellations += 1; return cancelResult }
+    func startAgain() { restarts += 1 }
+  }
+  var cids: [String] = []
+  var callbacks: [@MainActor (PairingJoinState) -> Void] = []
+  var cancelResult: PairingCancelResult = .cancelled
+  var committedResult = false
+  var committedState: PairingJoinState?
+  var committedCallbacks: [@MainActor (PairingJoinState) -> Void] = []
+  var handles: [Handle] = []
+  var initialState: PairingJoinState?
+  var onStart: (() -> Void)?
+  var onInstalled: (() -> Void)?
+  func committedJoin(onState: @escaping @MainActor (PairingJoinState) -> Void) -> Bool {
+    committedCallbacks.append(onState)
+    if committedResult, let committedState { onState(committedState) }
+    return committedResult
+  }
+  func emitCommitted(_ state: PairingJoinState) {
+    if state == .installed { onInstalled?() }
+    committedCallbacks.last?(state)
+  }
+  func start(cid: String, onState: @escaping @MainActor (PairingJoinState) -> Void) -> PairingJoinHandle {
+    cids.append(cid)
+    callbacks.append(onState)
+    let handle = Handle()
+    handle.cancelResult = cancelResult
+    handles.append(handle)
+    onStart?()
+    if let initialState {
+      if initialState == .installed { onInstalled?() }
+      onState(initialState)
+    }
+    return handle
+  }
+  @MainActor
+  func emit(_ state: PairingJoinState, request: Int? = nil) {
+    guard !callbacks.isEmpty else { return }
+    if state == .installed { onInstalled?() }
+    callbacks[request ?? callbacks.count - 1](state)
+  }
+}
+
+@MainActor
+final class OnboardingFakeScheduler: OnboardingScheduler {
+  final class Scheduled: OnboardingScheduledTask {
+    let deadline: ContinuousClock.Instant
+    let action: @MainActor () -> Void
+    var cancelled = false
+    init(deadline: ContinuousClock.Instant, action: @escaping @MainActor () -> Void) {
+      self.deadline = deadline
+      self.action = action
+    }
+    func cancel() { cancelled = true }
+  }
+  var now = ContinuousClock.now
+  var tasks: [Scheduled] = []
+  func schedule(at deadline: ContinuousClock.Instant, action: @escaping @MainActor () -> Void) -> OnboardingScheduledTask {
+    let scheduled = Scheduled(deadline: deadline, action: action)
+    tasks.append(scheduled)
+    return scheduled
+  }
+  func advance(_ duration: Duration, fire: Bool = true) {
+    now += duration
+    guard fire else { return }
+    let due = tasks.filter { !$0.cancelled && $0.deadline <= now }
+    for scheduled in due {
+      scheduled.cancelled = true
+      scheduled.action()
+    }
   }
 }

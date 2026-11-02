@@ -33,6 +33,41 @@ const session: { browsers: BrowserSource[]; abort: AbortController | null; dia: 
   diaLaunched: 0,
 };
 
+let importGeneration = 0;
+let importSession = 0;
+let revokedSession = 0;
+let importDrains = 0;
+const activeImports = new Set<Promise<unknown>>();
+
+function admitted(sessionId: number | undefined) {
+  if (importDrains) return false;
+  return sessionId === undefined ? importGeneration === 0 : Number.isInteger(sessionId) && sessionId > revokedSession && sessionId <= importSession;
+}
+
+function trackPending<T>(pending: Promise<T>): Promise<T> {
+  activeImports.add(pending);
+  void pending.then(() => activeImports.delete(pending), () => activeImports.delete(pending));
+  return pending;
+}
+
+function trackImport(operation: () => Promise<unknown>, sessionId: number | undefined) {
+  if (!admitted(sessionId)) return Promise.resolve({ cancelled: true });
+  return trackPending(operation());
+}
+
+async function cancelAndDrain() {
+  importGeneration++;
+  revokedSession = importSession;
+  dispose();
+  importDrains++;
+  try {
+    await Promise.allSettled([...activeImports]);
+    return true;
+  } finally {
+    importDrains--;
+  }
+}
+
 const codeOf = (e: unknown) => (e as { code?: string }).code;
 
 function defaultTarget(): string {
@@ -49,7 +84,8 @@ function targets() {
   });
 }
 
-async function destination(target: string, index: number, name: string, color?: string, emoji?: string, shareWith?: string | null): Promise<string> {
+async function destination(target: string, index: number, name: string, cancelled: () => boolean, color?: string, emoji?: string, shareWith?: string | null): Promise<string | null> {
+  if (cancelled()) return null;
   if (index === 0) return target;
   const s = useBrowser.getState();
   const clash = s.profileOrder.find((id) => s.profiles[id]!.name.trim().toLowerCase() === name.trim().toLowerCase());
@@ -61,12 +97,16 @@ async function destination(target: string, index: number, name: string, color?: 
       confirmTitle: "Import as new profile",
       cancelTitle: "Replace this profile",
     });
+    if (cancelled()) return null;
     if (!confirmed) return clash;
   }
+  if (cancelled()) return null;
   return s.createProfile({ name, color: profileColorFor(color) as ProfileColor | undefined, icon: emoji ?? null, shareWith });
 }
 
-async function run(req: RunRequest) {
+async function run(req: RunRequest, sessionId: number | undefined) {
+  const generation = importGeneration;
+  const cancelled = () => generation !== importGeneration || !admitted(sessionId);
   const api = importModule();
   const source = session.browsers.find((b) => b.id === req.browserId);
   if (!api || !source) return { cancelled: true };
@@ -90,6 +130,7 @@ async function run(req: RunRequest) {
     status: Object.fromEntries([...order.map((k) => [k, "pending"]), ...refused.map((k) => [k, "failed"])]) as Partial<Record<ImportKind, Status>>,
   };
   const setStatus = (kind: ImportKind, next: (current: Status | undefined) => Status) => {
+    if (cancelled()) return;
     progress.status = { ...progress.status, [kind]: next(progress.status[kind]) };
     publishSettingsTopic("import.progress", progress);
   };
@@ -107,10 +148,12 @@ async function run(req: RunRequest) {
   let extensionsProfile = "";
   if (source.family === "firefox" && requested.includes("passwords") && !api.isBrowserUnlocked(source.id)) {
     await api.unlockBrowser(source.id).catch(() => {});
+    if (cancelled()) return { cancelled: true };
   }
 
   try {
     for (const [profileIndex, profile] of selected.entries()) {
+      if (cancelled()) return { cancelled: true };
       activeProfileIndex = profileIndex;
       let result: ImportResult;
       const profileKinds = tabsLocked(profile) ? order.filter((k) => k !== "tabs") : order;
@@ -124,10 +167,11 @@ async function run(req: RunRequest) {
           },
         });
       } catch (e) {
-        if (codeOf(e) === "cancelled") return { cancelled: true };
+        if (cancelled() || codeOf(e) === "cancelled") return { cancelled: true };
         for (const k of profileKinds) failed.set(k, [...(failed.get(k) ?? []), profile.name]);
         continue;
       }
+      if (cancelled()) return discardImported(result);
       for (const k of result.failed) failed.set(k, [...(failed.get(k) ?? []), profile.name]);
       for (const w of result.warnings) {
         if (["undecryptable", "skipped", "locked"].includes(w.code) && !result.failed.includes(w.kind!)) left.push(`${w.message}.`);
@@ -141,22 +185,29 @@ async function run(req: RunRequest) {
         let first: string | null = null;
         for (const space of result.spaces) {
           const name = space.name || "Space";
-          const dest = await destination(req.target, destinationIndex++, name, space.color, space.emoji, first);
+          const dest = await destination(req.target, destinationIndex++, name, cancelled, space.color, space.emoji, first);
+          if (dest === null || cancelled()) return discardImported(result);
           first ??= dest;
-          const r = importArcSpace(dest, space, result.favicons);
+          const r = importArcSpace(dest, space, result.favicons, trackPending);
           add({ ...emptyCounts(), tabs: r.tabs, bookmarks: r.bookmarks });
           if (r.skipped) left.push(`${plural(r.skipped, "link")} in ${name}'s folders weren't imported: each folder brings up to ${MAX_DRAFT_LINKS.toLocaleString("en-US")} links.`);
         }
-        const dest = first ?? (await destination(req.target, destinationIndex++, result.profile?.name ?? profile.name, result.profile?.color));
-        add(await applyResult(dest, result, source.name, profileKinds, refused));
+        const dest = first ?? (await destination(req.target, destinationIndex++, result.profile?.name ?? profile.name, cancelled, result.profile?.color));
+        if (dest === null || cancelled()) return discardImported(result);
+        add(await applyResult(dest, result, source.name, profileKinds, refused, trackPending));
+        if (cancelled()) return { cancelled: true };
         extensionsProfile ||= dest;
       } else {
-        const dest = await destination(req.target, destinationIndex++, result.profile?.name ?? profile.name, result.profile?.color ?? profile.color);
-        add(await applyResult(dest, result, source.name, profileKinds, refused));
+        const dest = await destination(req.target, destinationIndex++, result.profile?.name ?? profile.name, cancelled, result.profile?.color ?? profile.color);
+        if (dest === null || cancelled()) return discardImported(result);
+        add(await applyResult(dest, result, source.name, profileKinds, refused, trackPending));
+        if (cancelled()) return { cancelled: true };
         extensionsProfile ||= dest;
       }
       if (source.family === "chromium" || source.family === "arc") {
-        for (const e of await api.listExtensions(source.id, profile.id).catch(() => [])) found.set(e.id, e);
+        const extensions = await api.listExtensions(source.id, profile.id).catch(() => []);
+        if (cancelled()) return { cancelled: true };
+        for (const e of extensions) found.set(e.id, e);
       }
     }
     const status = Object.fromEntries(
@@ -173,6 +224,7 @@ async function run(req: RunRequest) {
       },
     };
   } catch (error) {
+    if (cancelled()) return { cancelled: true };
     const remaining = selected.slice(activeProfileIndex).map((p) => p.name);
     for (const kind of order) failed.set(kind, [...new Set([...(failed.get(kind) ?? []), ...remaining])]);
     return {
@@ -211,7 +263,9 @@ async function readDia() {
   };
 }
 
-async function runDia(req: { profileIds: string[]; target: string; pinned: boolean; open: boolean }) {
+async function runDia(req: { profileIds: string[]; target: string; pinned: boolean; open: boolean }, sessionId: number | undefined) {
+  const generation = importGeneration;
+  const cancelled = () => generation !== importGeneration || !admitted(sessionId);
   const total = emptyCounts();
   const kinds: ImportKind[] = [...(req.open ? ["tabs" as const] : []), ...(req.pinned ? ["pinnedTabs" as const] : [])];
   const result = session.dia;
@@ -222,11 +276,13 @@ async function runDia(req: { profileIds: string[]; target: string; pinned: boole
     if (!result) throw new Error("Read Dia's tabs again before importing.");
     for (const [i, p] of selected.entries()) {
       activeProfileIndex = i;
-      const dest = await destination(req.target, i, p.name);
-      total.tabs += importDiaProfile(dest, p, { pinned: req.pinned, open: req.open }, result.favicons);
+      const dest = await destination(req.target, i, p.name, cancelled);
+      if (dest === null || cancelled()) return { cancelled: true };
+      total.tabs += importDiaProfile(dest, p, { pinned: req.pinned, open: req.open }, result.favicons, trackPending);
     }
     return { counts: total, status: Object.fromEntries(kinds.map((kind) => [kind, "done"])), failures: [], notes: [] };
   } catch (error) {
+    if (cancelled()) return { cancelled: true };
     return {
       counts: total,
       status: Object.fromEntries(kinds.map((kind) => [kind, "failed"])),
@@ -236,20 +292,32 @@ async function runDia(req: { profileIds: string[]; target: string; pinned: boole
   }
 }
 
-async function safariExport(path: string, target: string) {
+async function discardImported(result: { vaultToken?: string }) {
+  if (result.vaultToken) await importModule()?.discardImported(result.vaultToken);
+  return { cancelled: true };
+}
+
+async function safariExport(path: string, target: string, sessionId: number | undefined) {
+  const generation = importGeneration;
+  const cancelled = () => generation !== importGeneration || !admitted(sessionId);
   const api = importModule();
   if (!api) return { error: "unavailable" };
   try {
     const data = await api.importSafariExport(path);
+    if (cancelled()) return discardImported(data);
     const failed: ImportKind[] = [];
-    const counts = await applySafari(target, data, false, (k) => failed.push(k));
+    const counts = await applySafari(target, data, false, (k) => failed.push(k), trackPending);
+    if (cancelled()) return { cancelled: true };
     return { counts, failed };
   } catch (e) {
+    if (cancelled()) return { cancelled: true };
     return { error: codeOf(e) === "unsupported" ? "unsupported" : "invalid" };
   }
 }
 
-async function safariDirect(target: string, cookies: boolean) {
+async function safariDirect(target: string, cookies: boolean, sessionId: number | undefined) {
+  const generation = importGeneration;
+  const cancelled = () => generation !== importGeneration || !admitted(sessionId);
   const api = importModule();
   if (!api) return { error: "unavailable" };
   session.abort?.abort();
@@ -257,26 +325,32 @@ async function safariDirect(target: string, cookies: boolean) {
   session.abort = abort;
   try {
     const data = await api.importSafariDirect({ signal: abort.signal });
+    if (cancelled()) return discardImported(data);
     const failed: ImportKind[] = [];
-    const counts = await applySafari(target, data, cookies, (k) => failed.push(k));
+    const counts = await applySafari(target, data, cookies, (k) => failed.push(k), trackPending);
+    if (cancelled()) return { cancelled: true };
     return { counts, failed };
   } catch (e) {
-    if (codeOf(e) === "cancelled") return { cancelled: true };
+    if (cancelled() || codeOf(e) === "cancelled") return { cancelled: true };
     return { error: codeOf(e) === "locked" ? "locked" : "unreadable" };
   } finally {
     if (session.abort === abort) session.abort = null;
   }
 }
 
-async function bookmarksHtml(target: string) {
+async function bookmarksHtml(target: string, sessionId: number | undefined) {
+  const generation = importGeneration;
+  const cancelled = () => generation !== importGeneration || !admitted(sessionId);
   const api = importModule();
   if (!api) return { cancelled: true };
   const path = await api.chooseImportFile("bookmarksHTML");
-  if (!path) return { cancelled: true };
+  if (!path || cancelled()) return { cancelled: true };
   try {
     const root = await api.importBookmarksHTML(path);
+    if (cancelled()) return { cancelled: true };
     return { counts: { ...emptyCounts(), bookmarks: importBookmarks(target, root, "HTML File") }, failed: [] };
   } catch {
+    if (cancelled()) return { cancelled: true };
     return { error: "invalid" };
   }
 }
@@ -291,7 +365,9 @@ function dispose() {
 const diaStatus = (status: Promise<DiaAutomationStatus> | undefined) => (status ?? Promise.resolve("denied" as const)).catch((): DiaAutomationStatus => "denied");
 
 export const importHandlers: Record<string, SettingsHandler> = {
-  "import.open": () => ({ available: !!importModule(), preferred: takePreferredImportSource(), targets: targets(), defaultTarget: defaultTarget() }),
+  "import.open": () => {
+    return { session: ++importSession, available: !importDrains && !!importModule(), preferred: takePreferredImportSource(), targets: targets(), defaultTarget: defaultTarget() };
+  },
   "import.listBrowsers": async () => {
     const api = importModule();
     if (!api) return null;
@@ -305,8 +381,9 @@ export const importHandlers: Record<string, SettingsHandler> = {
     const api = importModule();
     return api ? api.unlockBrowser(browserId).then(() => true, () => false) : false;
   },
-  "import.run": (req: RunRequest) => run(req),
+  "import.run": (req: RunRequest, sessionId?: number) => trackImport(() => run(req, sessionId), sessionId),
   "import.cancel": () => session.abort?.abort(),
+  "import.cancelAndDrain": () => cancelAndDrain(),
   "import.dispose": () => dispose(),
   "import.diaStatus": () => diaStatus(importModule()?.diaAutomationStatus()),
   "import.requestDia": () => diaStatus(importModule()?.requestDiaAutomation()),
@@ -317,17 +394,20 @@ export const importHandlers: Record<string, SettingsHandler> = {
     return api.openDia().then(() => true, () => false);
   },
   "import.readDia": () => readDia(),
-  "import.runDia": (req: { profileIds: string[]; target: string; pinned: boolean; open: boolean }) => runDia(req),
-  "import.safariExport": (path: string, target: string) => safariExport(path, target),
-  "import.safariDirect": (target: string, cookies: boolean) => safariDirect(target, cookies),
-  "import.bookmarksHtml": (target: string) => bookmarksHtml(target),
+  "import.runDia": (req: { profileIds: string[]; target: string; pinned: boolean; open: boolean }, sessionId?: number) => trackImport(() => runDia(req, sessionId), sessionId),
+  "import.safariExport": (path: string, target: string, sessionId?: number) => trackImport(() => safariExport(path, target, sessionId), sessionId),
+  "import.safariDirect": (target: string, cookies: boolean, sessionId?: number) => trackImport(() => safariDirect(target, cookies, sessionId), sessionId),
+  "import.bookmarksHtml": (target: string, sessionId?: number) => trackImport(() => bookmarksHtml(target, sessionId), sessionId),
   "import.chooseFile": (kind: "safariExport" | "bookmarksHTML") => importModule()?.chooseImportFile(kind) ?? null,
   "import.openFullDiskAccessSettings": () => importModule()?.openFullDiskAccessSettings(),
   "import.openAutomationSettings": () => importModule()?.openAutomationSettings(),
-  "import.openInWebStore": (profileId: string, urls: string[]) => openInWebStore(profileId, urls),
+  "import.openInWebStore": (profileId: string, urls: string[], sessionId?: number) => {
+    if (!admitted(sessionId)) return { cancelled: true };
+    return openInWebStore(profileId, urls);
+  },
   "import.arcHolders": () => allArcHolders(useBrowser.getState()).length,
-  "import.restoreArcFolders": () => {
-    if (transientImportRefused()) return allArcHolders(useBrowser.getState()).length;
+  "import.restoreArcFolders": (sessionId?: number) => {
+    if (!admitted(sessionId) || transientImportRefused()) return allArcHolders(useBrowser.getState()).length;
     for (const id of allArcHolders(useBrowser.getState())) restoreArcFolders(id, null);
     return allArcHolders(useBrowser.getState()).length;
   },

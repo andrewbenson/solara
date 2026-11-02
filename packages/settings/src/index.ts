@@ -7,6 +7,7 @@ type NativeSettingsModule = {
   servicesActive?(): boolean;
   startAppStartup(optionsJSON: string): Promise<string>;
   completeAppStartup(): Promise<void>;
+  cancelOnboardingReplay(requestId: string): Promise<void>;
   appIntegrationFirstWindow(onboardingActive: boolean): Promise<void>;
   appIntegrationNotification(action: string, tabId: string | null, windowId: string | null): Promise<void>;
   appIntegrationCommand(command: AppIntegrationCommand, windowId: string | null): Promise<void>;
@@ -74,7 +75,7 @@ export const nativeInstallCli = (reason: string) =>
 
 export type AppIntegrationCommand = "sendFeedback" | "copyDiagnostics" | "recordPerformanceIssue" | "taskManager" | "showOnboarding" | "toolTour" | "videoTour" | "releaseNotes";
 
-export type AppIntegrationPresentation = { action: "showOnboarding" | "toolTour" | "openURL"; windowId?: string | null; url?: string };
+export type AppIntegrationPresentation = { action: "showOnboarding" | "toolTour" | "openURL"; windowId?: string | null; url?: string; requestId?: string };
 export type AppStartupOptions = { development: boolean; persistenceRefused: boolean; safeMode: boolean; hostedOnboarding: boolean; releaseNotesVersions: string[] };
 export type AppStartupResult = { pendingJSON: string | null; onboarding: "none" | "start" | "resume"; savedJSON: string | null };
 
@@ -88,6 +89,9 @@ export async function startNativeAppStartup(options: AppStartupOptions): Promise
 
 export const completeNativeAppStartup = (): Promise<void> =>
   native?.completeAppStartup() ?? Promise.reject(new Error("native app startup unavailable"));
+
+export const cancelNativeOnboardingReplay = (requestId: string): Promise<void> =>
+  native?.cancelOnboardingReplay(requestId) ?? Promise.reject(new Error("native app startup unavailable"));
 
 export const nativeAppIntegrationFirstWindow = (onboardingActive: boolean): Promise<void> =>
   native?.appIntegrationFirstWindow(onboardingActive) ?? Promise.reject(new Error("native app startup unavailable"));

@@ -85,7 +85,7 @@ struct OnboardingOverlay: View {
 
   var body: some View {
     let colors = OnboardingColors.of(scheme)
-    let intro = model.step == .intro
+    let intro = model.step == .intro && model.syncRoute == .setup
     GeometryReader { proxy in
       let width = min(Self.card.width, max(0, proxy.size.width - Self.card.margin * 2))
       let height = min(Self.card.height, max(0, proxy.size.height - Self.card.margin * 2))
@@ -96,7 +96,11 @@ struct OnboardingOverlay: View {
         if !intro && width > 0 {
           ZStack {
             WindowDragArea(draggable: false)
-            OnboardingStepView(model: model).id(stepIdentity)
+            if model.syncRoute == .setup {
+              OnboardingStepView(model: model).id(stepIdentity)
+            } else {
+              OnboardingSyncView(model: model)
+            }
           }
           .frame(width: width, height: height)
           .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(colors.card))
@@ -106,10 +110,20 @@ struct OnboardingOverlay: View {
           .modifier(OnboardingCardDriver(card: settled ? 1 : card))
         }
         if intro {
-          OnboardingIntroView(model: model) { if model.step == .intro { model.go(.source) } }
+          OnboardingIntroView(model: model) {
+            if model.step == .intro, model.syncRoute == .setup { model.go(.source) }
+          }
         }
       }
       .frame(width: proxy.size.width, height: proxy.size.height)
+      .overlay(alignment: .topTrailing) {
+        if model.syncRoute == .setup, model.isFirstRunOnboarding {
+          Button("Use Sync Instead…") { model.discoverSync() }
+            .buttonStyle(.plain)
+            .font(.system(size: 12))
+            .padding(24)
+        }
+      }
     }
     .opacity(settled ? 1 : presence)
     .onAppear {

@@ -4,13 +4,14 @@ import { after, test } from "node:test";
 
 const appURL = new URL("./appIntegration.ts", import.meta.url).href;
 const f = globalThis.appIntegrationTest = {
-  state: { live: {} }, subscriptions: [], loading: [], native: [], startup: [], help: [], notifications: [], offers: [],
+  state: { live: {} }, subscriptions: [], loading: [], native: [], startup: [], help: [], notifications: [], offers: [], cancelled: [],
 };
 const fake = (source) => ({ url: `data:text/javascript,${encodeURIComponent(source)}`, shortCircuit: true });
 const sources = {
   "@solara/settings": `
     const f = globalThis.appIntegrationTest;
-    export const hostedKinds = () => ["onboarding"];
+    export const hostedKinds = () => f.hostOff ? [] : ["onboarding"];
+    export const cancelNativeOnboardingReplay = async (id) => { f.cancelled.push(id); };
     export const nativeAppIntegrationCommand = async (command, windowId) => {
       f.native.push([command, windowId]);
       await new Promise((resolve) => { f.resolveNative = resolve; });
@@ -31,7 +32,7 @@ const sources = {
   `,
   "../components/onboarding/state": `
     const f = globalThis.appIntegrationTest;
-    export const startOnboarding = (id) => { f.help.push(["onboarding", id]); };
+    export const startOnboarding = (id, step, requestId) => { if (f.startError) throw new Error("failed mount"); f.help.push(["onboarding", id, step, requestId]); };
     export const resumeOnboarding = (saved) => { f.startup.push(["resume", saved]); f.active = true; };
     export const useOnboarding = { getState: () => ({ windowId: f.active ? "w" : null }) };
   `,
@@ -41,7 +42,7 @@ const sources = {
     export const applyPendingReleaseNotes = (pending) => { globalThis.appIntegrationTest.startup.push(["pending", pending]); };
   `,
   "../store/browser": `export const useBrowser = { getState: () => globalThis.appIntegrationTest.state, subscribe: (fn) => { globalThis.appIntegrationTest.subscriptions.push(fn); } };`,
-  "../store/model": `export const resolveWindowId = () => "w";`,
+  "../store/model": `export const resolveWindowId = () => globalThis.appIntegrationTest.noWindow ? null : "w";`,
   "../store/nativeStore": `export const nativeSafeMode = () => true;`,
   "./persistLatch": `export const persistenceRefused = () => true;`,
   "./actions": `export const openUrls = (urls, id) => { globalThis.appIntegrationTest.help.push(["urls", urls, id]); };`,
@@ -74,10 +75,10 @@ test("native launch guards and presentation finish before the first-window offer
 });
 
 test("native presentation retains onboarding, tour and unowned URL effects", () => {
-  f.presentation({ action: "showOnboarding", windowId: "w" });
+  f.presentation({ action: "showOnboarding", windowId: "w", requestId: "replay-1" });
   f.presentation({ action: "toolTour", windowId: "w" });
   f.presentation({ action: "openURL", windowId: "w", url: "https://example.com" });
-  assert.deepEqual(f.help, [["onboarding", "w"], ["tool", "w"], ["urls", ["https://example.com"], "w"]]);
+  assert.deepEqual(f.help, [["onboarding", "w", "intro", "replay-1"], ["tool", "w"], ["urls", ["https://example.com"], "w"]]);
 });
 
 test("generic Hub responses reach Swift", () => {
@@ -118,3 +119,18 @@ test("the feedback export awaits Swift for check-in callers", async () => {
   await pending;
   assert.equal(finished, true);
 });
+
+for (const failure of ["hostOff", "noWindow", "startError"]) {
+  test(`failed presentation clears its replay when ${failure}`, () => {
+    const warn = console.warn;
+    console.warn = () => {};
+    f[failure] = true;
+    try {
+      f.presentation({ action: "showOnboarding", windowId: "w", requestId: failure });
+      assert.equal(f.cancelled.at(-1), failure);
+    } finally {
+      f[failure] = false;
+      console.warn = warn;
+    }
+  });
+}

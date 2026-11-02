@@ -12,7 +12,7 @@ export type HistorySlice = {
 
   removeHistory(profileId: string, urls: string[]): void;
   clearHistory(profileId: string, since?: number): void;
-  importHistory(profileId: string, entries: Omit<HistoryEntry, "favicon">[]): number;
+  importHistory(profileId: string, entries: Omit<HistoryEntry, "favicon">[], onPending?: (pending: Promise<unknown>) => void): number;
 };
 
 export const MAX_HISTORY = 5000;
@@ -39,7 +39,7 @@ export const createHistorySlice: StateCreator<BrowserState, [], [], HistorySlice
     void nativeDeleteHistoryUrls(engineProfile(profileId), urls).catch(failed("delete"));
   },
 
-  importHistory(profileId, entries) {
+  importHistory(profileId, entries, onPending) {
     if (isIncognitoProfile(profileId)) return 0;
     const rows = entries.filter((e) => /^(https?|file):/.test(e.url));
     let added = 0;
@@ -54,7 +54,8 @@ export const createHistorySlice: StateCreator<BrowserState, [], [], HistorySlice
       const merged = [...byUrl.values()].sort((a, b) => b.lastVisit - a.lastVisit).slice(0, MAX_HISTORY);
       return { history: { ...s.history, [profileId]: merged } };
     });
-    void nativeImportHistoryRows(engineProfile(profileId), rows).catch(failed("import"));
+    const pending = nativeImportHistoryRows(engineProfile(profileId), rows).catch(failed("import"));
+    onPending?.(pending);
     return added;
   },
 

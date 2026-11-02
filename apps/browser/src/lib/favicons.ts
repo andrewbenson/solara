@@ -179,7 +179,7 @@ function remember(key: string, page: string, src: string, uri: string) {
 
 export type KnownFavicon = { page: string; icon: string; png: string };
 
-export function adoptFavicons(profileId: string, known: KnownFavicon[]) {
+export function adoptFavicons(profileId: string, known: KnownFavicon[], onPending?: (pending: Promise<unknown>) => void) {
   if (isIncognitoProfile(profileId) || !known.length) return;
   const key = cacheKey(profileId);
   const found = new Map(known.map((f) => [pageKey(f.page), f]));
@@ -196,9 +196,10 @@ export function adoptFavicons(profileId: string, known: KnownFavicon[]) {
     }
     return { ...icons, pages };
   }, true);
-  void (async () => {
+  const pending = (async () => {
     for (const [page, f] of found) await nativeStoreFavicon(key, page, f.icon, f.png).catch(() => null);
   })();
+  onPending?.(pending);
 }
 
 const failedFetches = new Set<string>();

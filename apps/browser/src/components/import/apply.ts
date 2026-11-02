@@ -41,18 +41,19 @@ const liveSources = (nodes: ImportedNode[]): LiveSourceId[] =>
 const withoutLiveFolders = (nodes: ImportedNode[]): ImportedNode[] =>
   nodes.filter((n) => !liveSourceOf(n)).map((n) => (n.children ? { ...n, children: withoutLiveFolders(n.children) } : n));
 
-function importPullRequestsFolders(profileId: string, nodes: ImportedNode[]) {
+function importPullRequestsFolders(profileId: string, nodes: ImportedNode[], onPending?: (pending: Promise<unknown>) => void) {
   for (const source of new Set(liveSources(nodes))) {
-    void liveCommand("importFolder", { profileId, kind: "pullRequests", source });
+    const pending = liveCommand("importFolder", { profileId, kind: "pullRequests", source }).catch(() => {});
+    onPending?.(pending);
   }
 }
 
 const linksOf = (nodes: ImportedNode[]): string[] => nodes.flatMap((n) => (n.type === "url" ? (n.url ? [n.url] : []) : linksOf(n.children ?? [])));
 
-function importFavicons(profileId: string, favicons: ImportedFavicon[] | undefined, urls: string[]) {
+function importFavicons(profileId: string, favicons: ImportedFavicon[] | undefined, urls: string[], onPending?: (pending: Promise<unknown>) => void) {
   if (!favicons?.length || !urls.length) return;
   const wanted = new Set(urls.map(faviconPage));
-  adoptFavicons(profileId, favicons.filter((f) => wanted.has(faviconPage(f.page))));
+  adoptFavicons(profileId, favicons.filter((f) => wanted.has(faviconPage(f.page))), onPending);
 }
 
 const linkCount = (nodes: ImportedNode[]): number => nodes.reduce((n, c) => n + (c.type === "url" ? 1 : linkCount(c.children ?? [])), 0);
@@ -81,9 +82,9 @@ function importSafariBookmarks(profileId: string, root: ImportedNode | undefined
   return importBookmarks(profileId, root, "Safari");
 }
 
-export function importHistory(profileId: string, entries: { url: string; title: string; visits: number; lastVisit: number }[]): number {
+export function importHistory(profileId: string, entries: { url: string; title: string; visits: number; lastVisit: number }[], onPending?: (pending: Promise<unknown>) => void): number {
   const before = useBrowser.getState().history[profileId]?.length ?? 0;
-  useBrowser.getState().importHistory(profileId, entries);
+  useBrowser.getState().importHistory(profileId, entries, onPending);
   return (useBrowser.getState().history[profileId]?.length ?? 0) - before;
 }
 
@@ -185,11 +186,11 @@ export function importTabs(
   return usable.length;
 }
 
-export function importArcSpace(profileId: string, space: SpaceSuggestion, favicons?: ImportedFavicon[]): { tabs: number; bookmarks: number; skipped: number } {
+export function importArcSpace(profileId: string, space: SpaceSuggestion, favicons?: ImportedFavicon[], onPending?: (pending: Promise<unknown>) => void): { tabs: number; bookmarks: number; skipped: number } {
   if (transientImportRefused()) return { tabs: 0, bookmarks: 0, skipped: 0 };
-  importFavicons(profileId, favicons, [...linksOf(space.pinned), ...space.tabs.map((t) => t.url)]);
+  importFavicons(profileId, favicons, [...linksOf(space.pinned), ...space.tabs.map((t) => t.url)], onPending);
   const links = space.pinned.filter((n) => n.type === "url" && n.url);
-  importPullRequestsFolders(profileId, space.pinned);
+  importPullRequestsFolders(profileId, space.pinned, onPending);
   const folders = withoutLiveFolders(space.pinned.filter((n) => n.type === "folder"));
   const theme = space.theme ? parseArcTheme(space.theme) : null;
   if (nativeOwnsWorkspace()) {
@@ -221,9 +222,9 @@ export function importArcSpace(profileId: string, space: SpaceSuggestion, favico
   return { tabs, bookmarks: 0, skipped };
 }
 
-export function importDiaProfile(profileId: string, profile: DiaTabsProfile, what: { pinned: boolean; open: boolean }, favicons?: ImportedFavicon[]): number {
+export function importDiaProfile(profileId: string, profile: DiaTabsProfile, what: { pinned: boolean; open: boolean }, favicons?: ImportedFavicon[], onPending?: (pending: Promise<unknown>) => void): number {
   if (transientImportRefused()) return 0;
-  importFavicons(profileId, favicons, [...(what.pinned ? profile.pinned : []), ...(what.open ? profile.tabs : [])].map((t) => t.url));
+  importFavicons(profileId, favicons, [...(what.pinned ? profile.pinned : []), ...(what.open ? profile.tabs : [])].map((t) => t.url), onPending);
   if (nativeOwnsWorkspace()) {
     const windows = [
       ...(what.pinned ? [{ tabs: profile.pinned, skipExistingOpen: true }] : []),
@@ -245,12 +246,13 @@ export async function applyResult(
   browserName: string,
   requested: ImportKind[],
   onFailed?: (kind: ImportKind) => void,
+  onPending?: (pending: Promise<unknown>) => void,
 ): Promise<ImportCounts> {
   const toolbar = (result.bookmarks?.children ?? []).filter((c) => c.role === "toolbar");
-  importFavicons(profileId, result.favicons, [...result.favorites.map((t) => t.url), ...(result.spaces.length ? [] : result.tabs.map((t) => t.url)), ...linksOf(toolbar)]);
+  importFavicons(profileId, result.favicons, [...result.favorites.map((t) => t.url), ...(result.spaces.length ? [] : result.tabs.map((t) => t.url)), ...linksOf(toolbar)], onPending);
   const counts = emptyCounts();
   counts.bookmarks += importBookmarks(profileId, result.bookmarks, browserName);
-  if (result.history.length) counts.history += importHistory(profileId, result.history);
+  if (result.history.length) counts.history += importHistory(profileId, result.history, onPending);
   const native = (["cookies", "autofill"] as const).filter((k) => requested.includes(k));
   Object.assign(counts, await importNative(profileId, result.vaultToken, native, onFailed));
   const tabs = result.tabs.length > 0 && !result.spaces.length;
@@ -272,11 +274,11 @@ export async function applyResult(
   return counts;
 }
 
-export async function applySafari(profileId: string, data: SafariExport, cookies = true, onFailed?: (kind: ImportKind) => void): Promise<ImportCounts> {
+export async function applySafari(profileId: string, data: SafariExport, cookies = true, onFailed?: (kind: ImportKind) => void, onPending?: (pending: Promise<unknown>) => void): Promise<ImportCounts> {
   const counts = emptyCounts();
   counts.bookmarks = importSafariBookmarks(profileId, data.bookmarks);
   const history = data.profiles.find((p) => !p.name)?.history ?? data.profiles[0]?.history ?? [];
-  counts.history = importHistory(profileId, history);
+  counts.history = importHistory(profileId, history, onPending);
   Object.assign(counts, await importNative(profileId, data.vaultToken, cookies ? ["cookies", "autofill"] : ["autofill"], onFailed));
   if (data.tabs.length) {
     counts.tabs += importTabs(profileId, data.tabs, "Imported");

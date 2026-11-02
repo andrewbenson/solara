@@ -6,9 +6,11 @@ import SolaraUI
 final class ImportAdapter: ImportServices {
   static let progressTopic = "import.progress"
   static let targetsTopic = "import.targets"
+  private var session = 0
 
   func open() async -> ImportOpening {
     let opened = await SettingsAdapters.js("import.open") as? [String: Any] ?? [:]
+    session = opened.int("session") ?? 0
     return ImportOpening(
       available: opened.bool("available") ?? false,
       preferredSource: opened.string("preferred"),
@@ -49,7 +51,7 @@ final class ImportAdapter: ImportServices {
       "target": request.target,
       "withoutKey": request.withoutKey,
     ]
-    return Self.runOutcome(await SettingsAdapters.js("import.run", arg), kinds: request.kinds)
+    return Self.runOutcome(await SettingsAdapters.js("import.run", arg, session), kinds: request.kinds)
   }
 
   static func runOutcome(_ value: Any?, kinds: [ImportKind]) -> ImportRunOutcome {
@@ -103,19 +105,19 @@ final class ImportAdapter: ImportServices {
 
   func runDia(profileIds: [String], target: String, pinned: Bool, open: Bool) async -> ImportRunOutcome {
     let kinds: [ImportKind] = (open ? [.tabs] : []) + (pinned ? [.pinnedTabs] : [])
-    return Self.runOutcome(await SettingsAdapters.js("import.runDia", ["profileIds": profileIds, "target": target, "pinned": pinned, "open": open]), kinds: kinds)
+    return Self.runOutcome(await SettingsAdapters.js("import.runDia", ["profileIds": profileIds, "target": target, "pinned": pinned, "open": open], session), kinds: kinds)
   }
 
   func importSafariExport(path: String, target: String) async -> ImportFileOutcome {
-    Self.fileOutcome(await SettingsAdapters.js("import.safariExport", path, target))
+    Self.fileOutcome(await SettingsAdapters.js("import.safariExport", path, target, session))
   }
 
   func importSafariDirect(target: String, cookies: Bool) async -> ImportFileOutcome {
-    Self.fileOutcome(await SettingsAdapters.js("import.safariDirect", target, cookies))
+    Self.fileOutcome(await SettingsAdapters.js("import.safariDirect", target, cookies, session))
   }
 
   func importBookmarksHTML(target: String) async -> ImportFileOutcome {
-    Self.fileOutcome(await SettingsAdapters.js("import.bookmarksHtml", target))
+    Self.fileOutcome(await SettingsAdapters.js("import.bookmarksHtml", target, session))
   }
 
   func chooseImportFile(_ kind: ImportFileKind) async -> String? {
@@ -126,11 +128,11 @@ final class ImportAdapter: ImportServices {
 
   func openAutomationSettings() { SettingsJS.shared.fire("import.openAutomationSettings") }
 
-  func openInWebStore(profileId: String, urls: [String]) { SettingsJS.shared.fire("import.openInWebStore", profileId, urls) }
+  func openInWebStore(profileId: String, urls: [String]) { SettingsJS.shared.fire("import.openInWebStore", profileId, urls, session) }
 
   func arcHolderCount() async -> Int { await SettingsAdapters.js("import.arcHolders") as? Int ?? 0 }
 
-  func restoreArcFolders() async -> Int { await SettingsAdapters.js("import.restoreArcFolders") as? Int ?? 0 }
+  func restoreArcFolders() async -> Int { await SettingsAdapters.js("import.restoreArcFolders", session) as? Int ?? 0 }
 
   func isOnboarding() async -> Bool { await SettingsAdapters.js("import.onboarding") as? Bool ?? false }
 

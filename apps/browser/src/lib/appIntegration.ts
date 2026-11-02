@@ -1,4 +1,5 @@
 import {
+  cancelNativeOnboardingReplay,
   completeNativeAppStartup,
   hostedKinds,
   nativeAppIntegrationCommand,
@@ -23,13 +24,22 @@ let presentationStarted = false;
 export function startAppIntegrationPresentation() {
   if (presentationStarted) return;
   presentationStarted = true;
-  onAppIntegrationPresentation(({ action, windowId, url }) => {
+  onAppIntegrationPresentation(({ action, windowId, url, requestId }) => {
+    const cancelReplay = () => {
+      if (requestId) void cancelNativeOnboardingReplay(requestId).catch((error) => console.warn("[appIntegration] replay cancellation failed", error));
+    };
     try {
       switch (action) {
         case "showOnboarding":
-          if (!hostedKinds().includes("onboarding")) return void console.warn("[appIntegration] native onboarding host is off");
-          if (!resolveWindowId(useBrowser.getState(), windowId)) return void console.warn("[appIntegration] no window for onboarding");
-          return startOnboarding(windowId);
+          if (!hostedKinds().includes("onboarding")) {
+            cancelReplay();
+            return void console.warn("[appIntegration] native onboarding host is off");
+          }
+          if (!resolveWindowId(useBrowser.getState(), windowId)) {
+            cancelReplay();
+            return void console.warn("[appIntegration] no window for onboarding");
+          }
+          return startOnboarding(windowId, "intro", requestId);
         case "toolTour":
           if (!resolveWindowId(useBrowser.getState(), windowId)) return void console.warn("[appIntegration] no window for tool tour");
           return void startToolTour(windowId).catch((error) => console.warn("[appIntegration] tool tour failed", error));
@@ -37,6 +47,7 @@ export function startAppIntegrationPresentation() {
           if (url) openUrls([url], windowId);
       }
     } catch (error) {
+      cancelReplay();
       console.warn(`[appIntegration] ${action} presentation failed`, error);
     }
   });

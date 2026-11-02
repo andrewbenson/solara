@@ -52,9 +52,15 @@ public enum AppStartupPolicy {
 
   public static func onboarding(
     saved: JSONValue?, hasSession: Bool, refused: Bool, safeMode: Bool,
-    hosted: Bool, development: Bool, force: Bool
+    hosted: Bool, development: Bool, force: Bool, committedJoinToken: String? = nil
   ) -> AppOnboardingDecision {
-    guard !safeMode, saved?["completedAt"]?.truthy != true, hosted else { return .none }
+    guard !safeMode, hosted else { return .none }
+    if let token = committedJoinToken {
+      let completion = saved?["joinedCompletionToken"]?.string
+      let entered = saved?["joinedEnteredBrowser"]?.bool == true && (completion == nil || completion == token)
+      return entered ? .none : .resume
+    }
+    guard saved?["completedAt"]?.truthy != true else { return .none }
     if saved?["startedAt"]?.truthy == true { return .resume }
     guard !refused else { return .none }
     if hasSession { return .complete }

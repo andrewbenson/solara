@@ -196,6 +196,11 @@ public enum DocumentStore {
     return pending ?? (try? String(contentsOf: url, encoding: .utf8))
   }
 
+  public static func readDurable(_ name: String) -> String? {
+    guard let url = try? ShellModule.documentURL(name) else { return nil }
+    return try? String(contentsOf: url, encoding: .utf8)
+  }
+
   public static func list(_ prefix: String) -> [String] {
     guard let dir = try? ShellModule.documentURL(prefix).deletingLastPathComponent() else { return [] }
     return DocumentListing.names(

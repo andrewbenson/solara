@@ -22,7 +22,7 @@ final class PairingInstallationHostTests: XCTestCase {
       try FileManager.default.createDirectory(at: folder.appendingPathComponent(cid), withIntermediateDirectories: false)
       let identity = try PairingMailbox(folder: folder, cid: cid).folderIdentity
       keys = FileKeyStore(directory: data)
-      store = try PairingDurableStore(dataDirectory: data, syncFolder: folder, firstInstallation: .init(noPriorSyncState: false, noJoinOrStopMarker: false, keychainAccountAffirmativelyAbsent: false))
+      store = try PairingDurableStore(dataDirectory: data, syncFolder: folder, firstInstallation: .init(noPairingEraSyncState: false, noJoinOrStopMarker: false, keyStateKnown: false))
       installation = PairingInstallation(transaction: Data(repeating: 11, count: 32), cid: cid, device: Base32.encode(Data(repeating: 9, count: 16)), folderIdentity: identity, generation: 1)
       host = PairingInstallationHost(dataDirectory: data, folder: folder, folderIdentity: identity, keys: keys, accounting: store)
     }
@@ -495,7 +495,7 @@ final class PairingInstallationHostTests: XCTestCase {
     let folder = f.root.appendingPathComponent("replacement")
     try FileManager.default.createDirectory(at: folder.appendingPathComponent(f.installation.cid), withIntermediateDirectories: true)
     let identity = try PairingMailbox(folder: folder, cid: f.installation.cid).folderIdentity
-    let store = try PairingDurableStore(dataDirectory: f.data, syncFolder: folder, firstInstallation: .init(noPriorSyncState: false, noJoinOrStopMarker: false, keychainAccountAffirmativelyAbsent: false))
+    let store = try PairingDurableStore(dataDirectory: f.data, syncFolder: folder, firstInstallation: .init(noPairingEraSyncState: false, noJoinOrStopMarker: false, keyStateKnown: false))
     let host = PairingInstallationHost(dataDirectory: f.data, folder: folder, folderIdentity: identity, keys: f.keys, accounting: store)
     XCTAssertEqual(host.minimumGeneration, 2)
     let installation = PairingInstallation(transaction: Data(repeating: 13, count: 32), cid: f.installation.cid, device: Base32.encode(Data(repeating: 14, count: 16)), folderIdentity: identity, generation: 3)

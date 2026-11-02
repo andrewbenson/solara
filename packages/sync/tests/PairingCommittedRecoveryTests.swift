@@ -11,7 +11,7 @@ final class PairingCommittedRecoveryTests: XCTestCase {
     try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: folder.appendingPathComponent(keys.chainTag), withIntermediateDirectories: true)
     let identity = try PairingMailbox(folder: folder, cid: keys.chainTag).folderIdentity
-    let store = try PairingDurableStore(dataDirectory: data, syncFolder: folder, firstInstallation: .init(noPriorSyncState: false, noJoinOrStopMarker: false, keychainAccountAffirmativelyAbsent: false))
+    let store = try PairingDurableStore(dataDirectory: data, syncFolder: folder, firstInstallation: .init(noPairingEraSyncState: false, noJoinOrStopMarker: false, keyStateKnown: false))
     let keyStore = FileKeyStore(directory: data)
     let installation = PairingInstallation(transaction: Data(repeating: 42, count: 32), cid: keys.chainTag, device: Base32.encode(Data(repeating: 43, count: 16)), folderIdentity: identity, generation: 1)
     let host = PairingInstallationHost(dataDirectory: data, folder: folder, folderIdentity: identity, keys: keyStore, accounting: store)

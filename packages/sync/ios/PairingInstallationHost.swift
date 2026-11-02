@@ -144,7 +144,7 @@ final class PairingInstallationHost: PairingInstallationHosting {
     let value = try decodeRecord(io.read(directory.appendingPathComponent("host-installation.json"), limit: 32768))
     let folder = URL(fileURLWithPath: value.folder, isDirectory: true)
     guard folder.standardized.path == value.folder, !value.folder.contains("//") else { throw Failure.invalid }
-    let accounting = try PairingDurableStore(dataDirectory: dataDirectory, syncFolder: folder, firstInstallation: .init(noPriorSyncState: false, noJoinOrStopMarker: false, keychainAccountAffirmativelyAbsent: false), io: io)
+    let accounting = try PairingDurableStore(dataDirectory: dataDirectory, syncFolder: folder, firstInstallation: .init(noPairingEraSyncState: false, noJoinOrStopMarker: false, keyStateKnown: false), io: io)
     let stopped = try read(UInt64.self, name: "host-stop.json", directory: directory, io: io) ?? 0
     guard stopped <= maximum else { throw Failure.invalid }
     guard stopped <= value.stopGeneration, try accounting.installationDecision(for: value.installation)?.disposition == .admitted else { return nil }

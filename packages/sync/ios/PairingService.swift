@@ -53,7 +53,7 @@ public final class PairingServices: PairingJoining, CustomReflectable {
   private(set) var coordinator: PairingCoordinator?
   private(set) var installationHost: PairingInstallationHost?
   private var hostFolderIdentity: Data?
-  private var accountingStore: PairingAccountingStoring?
+  private var accountingStore: PairingDurableStore?
   private let installationRouter = PairingInstallationRouter()
   private var attached = false
   private var pendingStops = 0
@@ -86,7 +86,9 @@ public final class PairingServices: PairingJoining, CustomReflectable {
   var onRequest: (() -> Void)?
   var onKeyAvailable: ((String, Data) -> Void)?
 
-  init() {}
+  private let sessionDictionary: () -> [String: Any]?
+
+  init(sessionDictionary: @escaping () -> [String: Any]? = { CGSessionCopyCurrentDictionary() as? [String: Any] }) { self.sessionDictionary = sessionDictionary }
 
   func register(_ coordinator: PairingCoordinator) {
     lock.lock()
@@ -256,18 +258,21 @@ public final class PairingServices: PairingJoining, CustomReflectable {
       }
       let folder = committed?.folder ?? chosenFolder ?? (document?["folder"] as? String).map { URL(fileURLWithPath: $0, isDirectory: true) } ?? defaultFolder
       let account = document?["deviceId"] as? String
+      let keyState: PairingKeyLookup?
+      if !safeMode(), let account, (try? PairingFormat.cid(account)) != nil { keyState = keys.pairingLookup(account: account) }
+      else { keyState = account == nil ? nil : .failure }
       let entropy: Data?
-      if !safeMode(), let account, (try? PairingFormat.cid(account)) != nil, case .found(let value) = keys.pairingLookup(account: account) { entropy = value }
+      if case .found(let value) = keyState { entropy = value }
       else { entropy = nil }
       let enabled = document?["enabled"] as? Bool == true
       let rootCID = entropy.map { SyncKeys(entropy: $0).chainTag }
       let cid = committed?.installation.cid ?? (enabled ? rootCID : chosenCID) ?? rootCID ?? Base32.encode(Data(repeating: 1, count: 16))
       let mailbox = try PairingMailbox(folder: folder, cid: cid)
       if let committed { guard mailbox.folderIdentity == committed.installation.folderIdentity else { throw PairingCoordinator.Failure.unavailable } }
-      let accounting: PairingAccountingStoring
+      let accounting: PairingDurableStore
       if let existing = accountingStore { accounting = existing }
       else {
-        let evidence = PairingFirstInstallationEvidence(noPriorSyncState: bytes == nil, noJoinOrStopMarker: false, keychainAccountAffirmativelyAbsent: false)
+        let evidence = try Self.firstInstallationEvidence(dataDirectory: dataDirectory, syncState: .success(bytes), version: version, keyState: keyState)
         accounting = try PairingDurableStore(dataDirectory: dataDirectory, syncFolder: folder, firstInstallation: evidence)
         accountingStore = accounting
       }
@@ -324,6 +329,8 @@ public final class PairingServices: PairingJoining, CustomReflectable {
       }
       lock.unlock()
       if coordinator == nil {
+        guard keyState != .failure else { return }
+        accounting.setFirstInstallationEvidence(try Self.firstInstallationEvidence(dataDirectory: dataDirectory, syncState: .success(bytes), version: version, keyState: keyState))
         let made = PairingCoordinator(configuration: configuration, mailbox: mailbox, store: accounting, authenticator: FreshPairingOwnerAuthenticator(), keyStore: keys, host: installationRouter, clock: { (try? PairingBootClock.sample().milliseconds) ?? UInt64.max }, wall: { UInt64(max(0, Date().timeIntervalSince1970 * 1000)) }, initialGeneration: host.minimumGeneration, eligibility: { [weak self] in self?.currentEligibility(safeMode: safeMode) == true })
         lock.lock()
         guard revision == captured else { lock.unlock(); return }
@@ -345,6 +352,20 @@ public final class PairingServices: PairingJoining, CustomReflectable {
     } catch { invalidate("health") }
   }
 
+  static func firstInstallationEvidence(dataDirectory: URL, syncState: Result<Data?, Error>, version: Int?, keyState: PairingKeyLookup?) throws -> PairingFirstInstallationEvidence {
+    let noPairingEraSyncState: Bool
+    switch syncState {
+    case .success(let bytes): noPairingEraSyncState = bytes == nil || version == 1
+    case .failure: noPairingEraSyncState = false
+    }
+    let directory = dataDirectory.appendingPathComponent("Application Support/sync-pairing")
+    let io = PairingPOSIXDurableIO()
+    try io.prepare(directory)
+    let names = try io.contents(directory)
+    let noJoinOrStopMarker = !names.contains { $0 == "host-installation.json" || $0 == "host-stop.json" || $0.hasPrefix("host-history-") || $0.hasPrefix("installation-") || $0.hasPrefix("cancelled-") }
+    return PairingFirstInstallationEvidence(noPairingEraSyncState: noPairingEraSyncState, noJoinOrStopMarker: noJoinOrStopMarker, keyStateKnown: keyState != .failure)
+  }
+
   private func currentEligibility(safeMode: () -> Bool) -> Bool {
     lock.lock()
     let allowed = eligible && lockKnown && unlocked && !stopped
@@ -360,10 +381,10 @@ public final class PairingServices: PairingJoining, CustomReflectable {
 
   private func installLifecycle() {
     guard observers.isEmpty else { return }
-    let session = CGSessionCopyCurrentDictionary() as? [String: Any]
+    let state = PairingScreenLockState.from(session: sessionDictionary())
     lock.lock()
-    lockKnown = session?["CGSSessionScreenIsLocked"] as? Bool != nil
-    unlocked = session?["CGSSessionScreenIsLocked"] as? Bool == false
+    lockKnown = state != .unknown
+    unlocked = state == .unlocked
     lock.unlock()
     let distributed = DistributedNotificationCenter.default()
     for (name, value) in [("com.apple.screenIsLocked", false), ("com.apple.screenIsUnlocked", true)] {

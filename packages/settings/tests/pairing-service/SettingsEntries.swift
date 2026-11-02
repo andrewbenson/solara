@@ -52,7 +52,7 @@ struct SettingsEntries {
     let entropy = Data(repeating: 13, count: 32)
     let cid = SyncKeys(entropy: entropy).chainTag
     let mailbox = try PairingMailbox(folder: folder, cid: cid)
-    let store = try PairingDurableStore(dataDirectory: data, syncFolder: folder, firstInstallation: .init(noPriorSyncState: true, noJoinOrStopMarker: true, keychainAccountAffirmativelyAbsent: true))
+    let store = try PairingDurableStore(dataDirectory: data, syncFolder: folder, firstInstallation: .init(noPairingEraSyncState: true, noJoinOrStopMarker: true, keyStateKnown: true))
     let keys = FileKeyStore(directory: data)
     let host = PairingInstallationHost(dataDirectory: data, folder: folder, folderIdentity: mailbox.folderIdentity, keys: keys, accounting: store)
     let epoch = Data(repeating: 1, count: 16)

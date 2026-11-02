@@ -107,9 +107,9 @@ final class PairingDurableStoreTests: XCTestCase {
     return URL(fileURLWithPath: String(cString: pointer), isDirectory: true).appendingPathComponent(UUID().uuidString)
   }
   let epoch = Data(repeating: 1, count: 16)
-  let empty = PairingFirstInstallationEvidence(noPriorSyncState: true, noJoinOrStopMarker: true, keychainAccountAffirmativelyAbsent: true)
+  let empty = PairingFirstInstallationEvidence(noPairingEraSyncState: true, noJoinOrStopMarker: true, keyStateKnown: true)
   func store(_ disk: Disk, verified: Bool = true) throws -> PairingDurableStore {
-    try PairingDurableStore(dataDirectory: URL(fileURLWithPath: "/private/tmp/pairing-data"), syncFolder: URL(fileURLWithPath: "/private/tmp/pairing-sync"), firstInstallation: verified ? empty : .init(noPriorSyncState: false, noJoinOrStopMarker: true, keychainAccountAffirmativelyAbsent: true), io: disk)
+    try PairingDurableStore(dataDirectory: URL(fileURLWithPath: "/private/tmp/pairing-data"), syncFolder: URL(fileURLWithPath: "/private/tmp/pairing-sync"), firstInstallation: verified ? empty : .init(noPairingEraSyncState: false, noJoinOrStopMarker: true, keyStateKnown: true), io: disk)
   }
   func accounting(_ disposition: PairingSession.RestorationDisposition) -> PairingSession.Accounting? {
     if case .restored(let value) = disposition { return value }
@@ -559,7 +559,7 @@ final class PairingDurableStoreTests: XCTestCase {
   }
   func testUncertainAccountAndUnknownHistoryCannotInitializeFresh() throws {
     let disk = Disk()
-    let s = try PairingDurableStore(dataDirectory: URL(fileURLWithPath: "/private/tmp/pairing-data"), syncFolder: URL(fileURLWithPath: "/private/tmp/pairing-sync"), firstInstallation: .init(noPriorSyncState: true, noJoinOrStopMarker: true, keychainAccountAffirmativelyAbsent: false), io: disk)
+    let s = try PairingDurableStore(dataDirectory: URL(fileURLWithPath: "/private/tmp/pairing-data"), syncFolder: URL(fileURLWithPath: "/private/tmp/pairing-sync"), firstInstallation: .init(noPairingEraSyncState: true, noJoinOrStopMarker: true, keyStateKnown: false), io: disk)
     if case .newInstallation = s.restoreAccounting(now: 100, epoch: epoch) { XCTFail("keychain failure became absence") }
     let other = Disk(), clean = try store(other)
     other.files[clean.directory.appendingPathComponent("prior-history")] = Data([1])

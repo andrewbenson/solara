@@ -3,10 +3,10 @@ import Darwin
 import CryptoKit
 
 struct PairingFirstInstallationEvidence {
-  var noPriorSyncState: Bool
+  var noPairingEraSyncState: Bool
   var noJoinOrStopMarker: Bool
-  var keychainAccountAffirmativelyAbsent: Bool
-  var verified: Bool { noPriorSyncState && noJoinOrStopMarker && keychainAccountAffirmativelyAbsent }
+  var keyStateKnown: Bool
+  var verified: Bool { noPairingEraSyncState && noJoinOrStopMarker && keyStateKnown }
 }
 
 struct PairingConsumedApproval: Codable, Equatable {
@@ -54,7 +54,8 @@ final class PairingDurableStore: PairingAccountingStoring {
   enum Failure: Error { case storage, placement, staleRevision, duplicate, capacity, malformed }
   let directory: URL
   private let io: PairingDurableIO
-  private let firstInstallation: PairingFirstInstallationEvidence
+  private var firstInstallation: PairingFirstInstallationEvidence
+  private var accountingRestored = false
   private let lock = NSLock()
   private var latest: PairingSession.Accounting?
   private var suppressionFailed = false
@@ -218,9 +219,17 @@ final class PairingDurableStore: PairingAccountingStoring {
     return result
   }
 
+  func setFirstInstallationEvidence(_ evidence: PairingFirstInstallationEvidence) {
+    lock.lock()
+    defer { lock.unlock() }
+    guard !accountingRestored else { return }
+    firstInstallation = evidence
+  }
+
   func restoreAccounting(now: UInt64, epoch: Data) -> PairingSession.RestorationDisposition {
     lock.lock()
     defer { lock.unlock() }
+    accountingRestored = true
     guard !epoch.isEmpty, epoch.count <= 64 else { return .unreadable }
     do {
       try io.prepare(directory)

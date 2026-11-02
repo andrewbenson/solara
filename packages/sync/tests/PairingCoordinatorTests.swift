@@ -1138,7 +1138,7 @@ final class PairingCoordinatorTests: XCTestCase {
     try FileManager.default.createDirectory(at: remote, withIntermediateDirectories: true)
     let barriers = PairingDurableStoreTests.DirectoryBarriers(failedParent: parent)
     let io = PairingPOSIXDurableIO(barriers: barriers)
-    let evidence = PairingFirstInstallationEvidence(noPriorSyncState: true, noJoinOrStopMarker: true, keychainAccountAffirmativelyAbsent: true)
+    let evidence = PairingFirstInstallationEvidence(noPairingEraSyncState: true, noJoinOrStopMarker: true, keyStateKnown: true)
     let epoch = Data(repeating: 1, count: 16)
     let original = try PairingDurableStore(dataDirectory: local, syncFolder: remote, firstInstallation: evidence, io: io)
     guard case .unreadable = original.restoreAccounting(now: 100, epoch: epoch) else { return XCTFail("initial parent barrier did not fail restoreAccounting") }
@@ -1341,7 +1341,7 @@ final class PairingCoordinatorTests: XCTestCase {
     try FileManager.default.createDirectory(at: a, withIntermediateDirectories: true)
     let rig = Rig(), cid = SyncKeys(entropy: Data(count: 32)).chainTag
     let old = try PairingMailbox(folder: a, cid: cid), replacement = try PairingMailbox(folder: root, cid: cid)
-    let store = try PairingDurableStore(dataDirectory: root.appendingPathComponent("private"), syncFolder: a, firstInstallation: .init(noPriorSyncState: true, noJoinOrStopMarker: true, keychainAccountAffirmativelyAbsent: true))
+    let store = try PairingDurableStore(dataDirectory: root.appendingPathComponent("private"), syncFolder: a, firstInstallation: .init(noPairingEraSyncState: true, noJoinOrStopMarker: true, keyStateKnown: true))
     var config = PairingCoordinator.Configuration(cid: cid, environment: .init(folderIdentity: old.folderIdentity, entropyHandle: Data([8]), clockEpoch: Data([1])), localName: "Fixture Mac", entropy: Data(count: 32), trustedDevice: Data(repeating: 6, count: 16))
     let owner = PairingCoordinator(configuration: config, mailbox: old, store: store, authenticator: rig.auth, keyStore: rig.keys, host: rig.host, clock: rig.time.read, wall: { 1793552400000 }, random: rig.rng.take)
     XCTAssertNoThrow(try owner.armTrusted())
@@ -1436,7 +1436,7 @@ final class PairingCoordinatorTests: XCTestCase {
       defer { try? FileManager.default.removeItem(at: root) }
       let remote = root.appendingPathComponent("remote"), local = root.appendingPathComponent("local")
       try FileManager.default.createDirectory(at: remote, withIntermediateDirectories: true)
-      let evidence = PairingFirstInstallationEvidence(noPriorSyncState: true, noJoinOrStopMarker: true, keychainAccountAffirmativelyAbsent: true)
+      let evidence = PairingFirstInstallationEvidence(noPairingEraSyncState: true, noJoinOrStopMarker: true, keyStateKnown: true)
       let store = try PairingDurableStore(dataDirectory: local, syncFolder: remote, firstInstallation: evidence)
       let rig = Rig(), reached = expectation(description: "crash cut")
       rig.mailbox.pairingFolder = remote

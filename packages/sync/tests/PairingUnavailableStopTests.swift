@@ -16,7 +16,7 @@ final class PairingUnavailableStopTests: XCTestCase {
     }
     let identity = try PairingMailbox(folder: custom, cid: cid).folderIdentity
     let keys = FileKeyStore(directory: data)
-    let store = try PairingDurableStore(dataDirectory: data, syncFolder: custom, firstInstallation: .init(noPriorSyncState: false, noJoinOrStopMarker: false, keychainAccountAffirmativelyAbsent: false))
+    let store = try PairingDurableStore(dataDirectory: data, syncFolder: custom, firstInstallation: .init(noPairingEraSyncState: false, noJoinOrStopMarker: false, keyStateKnown: false))
     let installation = PairingInstallation(transaction: Data(repeating: 42, count: 32), cid: cid, device: Base32.encode(Data(repeating: 43, count: 16)), folderIdentity: identity, generation: 1)
     let host = PairingInstallationHost(dataDirectory: data, folder: custom, folderIdentity: identity, keys: keys, accounting: store)
     var prepared = false
@@ -69,7 +69,7 @@ final class PairingUnavailableStopTests: XCTestCase {
     }
     let identity = try PairingMailbox(folder: custom, cid: cid).folderIdentity
     let keys = FileKeyStore(directory: data)
-    let store = try PairingDurableStore(dataDirectory: data, syncFolder: custom, firstInstallation: .init(noPriorSyncState: false, noJoinOrStopMarker: false, keychainAccountAffirmativelyAbsent: false))
+    let store = try PairingDurableStore(dataDirectory: data, syncFolder: custom, firstInstallation: .init(noPairingEraSyncState: false, noJoinOrStopMarker: false, keyStateKnown: false))
     let installation = PairingInstallation(transaction: Data(repeating: 42, count: 32), cid: cid, device: Base32.encode(Data(repeating: 43, count: 16)), folderIdentity: identity, generation: 1)
     let host = PairingInstallationHost(dataDirectory: data, folder: custom, folderIdentity: identity, keys: keys, accounting: store)
     var prepared = false
@@ -126,7 +126,7 @@ final class PairingUnavailableStopTests: XCTestCase {
     }
     let identity = try PairingMailbox(folder: custom, cid: cid).folderIdentity
     let keys = FileKeyStore(directory: data)
-    let store = try PairingDurableStore(dataDirectory: data, syncFolder: custom, firstInstallation: .init(noPriorSyncState: false, noJoinOrStopMarker: false, keychainAccountAffirmativelyAbsent: false))
+    let store = try PairingDurableStore(dataDirectory: data, syncFolder: custom, firstInstallation: .init(noPairingEraSyncState: false, noJoinOrStopMarker: false, keyStateKnown: false))
     let installation = PairingInstallation(transaction: Data(repeating: 42, count: 32), cid: cid, device: Base32.encode(Data(repeating: 43, count: 16)), folderIdentity: identity, generation: 1)
     let host = PairingInstallationHost(dataDirectory: data, folder: custom, folderIdentity: identity, keys: keys, accounting: store)
     var prepared = false

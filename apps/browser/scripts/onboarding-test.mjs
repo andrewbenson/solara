@@ -24,6 +24,17 @@ const data = join(scratch, "data");
 const rep = reporter(join(scratch, "onboarding-test.log"), { name: "onboarding-test" });
 
 let app = null;
+const metroPort = Number(process.env.METRO_PORT ?? 8081);
+const warmBundle = async (ms = 300000) => {
+  const started = Date.now();
+  const url = `http://localhost:${metroPort}/index.bundle?platform=macos&dev=true&minify=false`;
+  const response = await fetch(url, { signal: AbortSignal.timeout(ms) }).catch((error) => {
+    throw new Error(`Metro on :${metroPort} didn't build the bundle within ${ms / 1000} s: ${error.message}`);
+  });
+  if (!response.ok) throw new Error(`Metro on :${metroPort} answered ${response.status} for the bundle`);
+  await response.arrayBuffer();
+  return Date.now() - started;
+};
 const HELPERS = `
 const C = globalThis.expo.modules.SolaraCEF;
 const settle = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -80,9 +91,14 @@ const untilSnapshot = async (what, accept, args = {}, ms = 5000) => {
 };
 
 try {
+  rep.log(`bundle: built by Metro on :${metroPort} in ${await warmBundle()} ms`);
   app = await launch(appPath, { data, port, env: { SOLARA_ONBOARDING: "1", ...overlay, ...extraEnv } });
   rep.log(`instance: pid ${app.pid}, DevTools port ${app.port}, data ${data}`);
-  await app.ready({ test: "return !!globalThis.acOnboarding?.store.getState().windowId" });
+  await app.ready({ test: "const S = globalThis.expo?.modules?.SolaraSettings; return S?.devOnboarding ? S.devOnboarding(\"state\").then((t) => JSON.parse(t).active === true) : false" }).catch(async (error) => {
+    const state = await run("return S.devOnboarding ? S.devOnboarding(\"state\") : \"no devOnboarding\";").catch((e) => e.message);
+    const lines = readFileSync(app.log, "utf8").split("\n").filter((line) => /onboarding|appIntegration|bundle/i.test(line)).slice(-12);
+    throw new Error(`${error.message}\nonboarding state: ${state}\n${lines.join("\n")}`);
+  });
   rep.log(`overlay: ${(await run("return nativeOverlay();")) ? "native" : "RN"}`);
 
   const native = await run("return nativeOverlay();");

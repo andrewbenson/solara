@@ -24,7 +24,6 @@ import { clickTab, tabTitle } from "./actions";
 import { returnFocusToPage, useGroupRows } from "./GroupPanel";
 import { cardHoverProps, dismissHover, holdHover } from "./hover";
 import { useFolderPanel } from "./tileFolderUi";
-import { nativeSidebarEnabled } from "./NativeSidebar";
 import type { Anchor, Hover } from "./state";
 
 const TOPIC = "sidebar.hoverCard";
@@ -60,7 +59,7 @@ export function bareHost(url: string): string {
 }
 
 export function useNativeHoverCardActive(windowId: string): boolean {
-  const [active] = useState(() => nativeSidebarEnabled() && windowShellActive(windowId));
+  const [active] = useState(() => windowShellActive(windowId));
   return active;
 }
 

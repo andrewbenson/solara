@@ -9,8 +9,6 @@ public class FolderPanelModule: Module {
 
     Events("onFolderPanelEvent")
 
-    Function("available") { () -> Bool in NativeSidebar.enabled }
-
     AsyncFunction("show") { (windowId: String, json: String) in
       let sink = FolderPanelSink(self)
       MainActor.assumeIsolated {

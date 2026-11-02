@@ -9,12 +9,7 @@ enum NativeSidebar {
   static let kind = "sidebar"
   static var hosts: [String: SidebarHost] = [:]
 
-  nonisolated static var enabled: Bool {
-    LaunchSwitches.shared.isOn(.nativeSidebar)
-  }
-
   static func register() {
-    guard enabled else { return }
     NativeSidebarLive.start()
     NativeSidebarHoverCard.start()
     NativeSidebarShell.register()

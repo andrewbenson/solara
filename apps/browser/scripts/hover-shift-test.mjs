@@ -4,6 +4,21 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { launch, reporter, session, sleep } from "../../../scripts/lib/instance.mjs";
 
+let nativePollDeadline = null;
+const evaluate = (body, options = {}) => {
+  if (nativePollDeadline !== null && nativePollDeadline - Date.now() < 1000) throw new Error("native comparison has less than 1000 ms left");
+  return app.eval(body, { ...options, ...(nativePollDeadline === null ? {} : { timeout: 1000 }) });
+};
+const acceptSnapshot = async (deadline, accept, ...args) => {
+  const previous = nativePollDeadline;
+  nativePollDeadline = previous === null ? deadline : Math.min(previous, deadline);
+  try {
+    return await accept(...args);
+  } finally {
+    nativePollDeadline = previous;
+  }
+};
+
 const [appArg, port] = process.argv.slice(2);
 if (!appArg) {
   console.error("usage: node hover-shift-test.mjs <Debug Solara.app> [cdpPort]");
@@ -29,16 +44,18 @@ try {
     session: session({ profiles: ["Personal", "Work"], windows: [{ id: "w1", tabIds: ids, activeTabIds: { default: "t2" } }], tabs: ids.map(tab) }),
     ready: "return !!ac.hoverShift",
   });
-  const ac = (body) => app.eval(body, { timeout: 120000 });
+  const ac = (body) => evaluate(body, { timeout: 120000 });
   const untilSnapshot = async (what, accept, ms = 8000, args = {}) => {
     const end = Date.now() + ms;
     let last;
-    do {
-      last = await app.snapshot({ windowId: "w1", ...args });
+    while (Date.now() < end) {
+      if (!app.alive) throw new Error(`${what}: app exited`);
+      if (Math.min(end, nativePollDeadline ?? Infinity) - Date.now() < 1000) break;
+      last = await app.snapshot({ windowId: "w1", ...args }, { timeout: 1000 });
       assert.equal(last.schema, 1);
-      if (last.consistent && accept(last)) return last;
+      if (Date.now() < end && last.consistent && await acceptSnapshot(end, accept, last) && Date.now() < end) return last;
       await sleep(60);
-    } while (Date.now() < end);
+    }
     throw new Error(`${what}: native snapshot never matched (${JSON.stringify(last)})`);
   };
   const hoverNative = async (area, expected) => {
@@ -49,11 +66,13 @@ try {
     if (area === "downloads") assert.ok(first.windows[0].hoverLayout.hosts > 0, "native downloads host is shown");
     let moved = 0;
     for (const target of targets) {
-      const before = await app.snapshot({ windowId: "w1", hoverArea: area });
+      const before = await app.snapshot({ windowId: "w1", hoverArea: area }, { timeout: 1000 });
+      assert.equal(before.consistent, true);
       const input = await app.probe("input.hover", { windowId: "w1", area, target, on: true });
       assert.equal(input.delivered, true);
       try {
-        const during = await app.snapshot({ windowId: "w1", hoverArea: area });
+        const during = await app.snapshot({ windowId: "w1", hoverArea: area }, { timeout: 1000 });
+        assert.equal(during.consistent, true);
         const a = before.windows[0].hoverLayout, b = during.windows[0].hoverLayout;
         const duringFrames = new Map(b.frames.map((frame) => [frame.id, frame]));
         for (const was of a.frames) {
@@ -112,10 +131,15 @@ try {
     await rep.check(name, async () => {
       await ac(`${setup} return true;`);
       await sleep(1200);
-      const native = name === "sidebar" && (await ac(`return globalThis.expo.modules.SolaraHosted.kinds().includes("sidebar");`));
+      const native = name === "sidebar";
       const nativeStrip = name === "tab strip" && (await ac(`return globalThis.expo.modules.SolaraHosted.kinds().includes("topStrip");`));
       const nativeDownloads = name === "downloads" && (!!JSON.parse(await ac(`return globalThis.expo.modules.SolaraDownloads.devHoverShifts();`)).hosts);
-      const capabilitySnapshot = await untilSnapshot("hosted hover capabilities", (s) => Array.isArray(s.hostedKinds));
+      const capabilitySnapshot = await untilSnapshot("hosted hover capabilities", async (s) => {
+        if (!Array.isArray(s.hostedKinds)) return false;
+        if (native) return s.hostedKinds.includes("sidebar") === await ac(`return globalThis.expo.modules.SolaraHosted.kinds().includes("sidebar");`) && s.hostedKinds.includes("sidebar");
+        if (name === "tab strip") return s.hostedKinds.includes("topStrip") === await ac(`return globalThis.expo.modules.SolaraHosted.kinds().includes("topStrip");`) && s.hostedKinds.includes("topStrip") === nativeStrip;
+        return true;
+      });
       if (name === "sidebar") assert.equal(capabilitySnapshot.hostedKinds.includes("sidebar"), native);
       if (name === "tab strip") assert.equal(capabilitySnapshot.hostedKinds.includes("topStrip"), nativeStrip);
       const { hovered, shifts, forced = null } = nativeDownloads

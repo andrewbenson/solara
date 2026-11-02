@@ -13,7 +13,7 @@ enum NativeSidebarShell {
   private static var columns: [String: SidebarShellColumn] = [:]
 
   nonisolated static var enabled: Bool {
-    NativeWindowShell.enabled && NativeSidebar.enabled
+    NativeWindowShell.enabled
   }
 
   static func register() {

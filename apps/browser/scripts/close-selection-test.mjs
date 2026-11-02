@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -12,7 +13,7 @@ if (!appArg) {
 ⌘W with several tabs selected in the sidebar, through a real key press on the window: the File menu's item reads
 "Close 3 Tabs", the press closes all 3 selected tabs (not just the active one) and clears the selection, and one
 ⇧⌘T brings all 3 back in their places. Then, with a New Tab among the selection so the close would take the window,
-⌘W asks once (SolaraShell.confirm, stubbed to count calls and answer Cancel) and cancelling closes nothing. Run two ways: the RN sidebar and the native sidebar (SOLARA_NATIVE_SIDEBAR=1).`);
+⌘W asks once (SolaraShell.confirm, stubbed to count calls and answer Cancel) and cancelling closes nothing. The sidebar is native.`);
   process.exit(2);
 }
 const keep = args.includes("--keep-data");
@@ -34,15 +35,29 @@ const fixture = session({
 
 const K = (key, keyCode, ...modifiers) => ({ key, keyCode, modifiers: ["command", ...modifiers], focus: "window" });
 let app = null;
-const run = (body, timeout = 20000) => app.eval(body, { timeout });
+let nativePollDeadline = 0;
+const run = (body, timeout = 20000) => {
+  if (nativePollDeadline) {
+    if (nativePollDeadline - Date.now() < 1000) throw new Error("native comparison has less than 1000 ms remaining");
+    timeout = Math.min(timeout, 1000);
+  }
+  return app.eval(body, { timeout });
+};
 const press = (key, extra = {}) => run(`return ac.shell.devKeyEquivalent("w1", ${JSON.stringify({ ...key, ...extra })});`);
 const titles = `const s = ac.store.getState(); return s.windows.w1.tabIds.map((id) => s.tabs[id].title || s.tabs[id].url.split("/").pop().toUpperCase());`;
 const untilSnapshot = async (what, accept, ms = 5000) => {
   const deadline = Date.now() + ms;
   let last;
   while (Date.now() < deadline) {
-    last = await app.snapshot({ windowId: "w1" }).catch((error) => ({ error: error.message }));
-    if (!last.error && last.consistent && accept(last)) return last;
+    if (!app.alive) throw new Error(`${what}: the owned app exited`);
+    if (deadline - Date.now() < 1000) break;
+    last = await app.snapshot({ windowId: "w1" }, { timeout: 1000 }).catch((error) => ({ error: error.message }));
+    nativePollDeadline = deadline;
+    try {
+      if (!last.error && last.consistent && Date.now() < deadline && await accept(last) && Date.now() < deadline) return last;
+    } finally {
+      nativePollDeadline = 0;
+    }
     await sleep(100);
   }
   throw new Error(`${what}: native snapshot never matched (${JSON.stringify(last)})`);
@@ -59,8 +74,7 @@ const until = async (what, body, ms = 8000) => {
 };
 
 const modes = [
-  ["rn-sidebar", {}],
-  ["native-sidebar", { SOLARA_NATIVE_SIDEBAR: "1" }],
+  ["native-sidebar", {}],
 ];
 try {
   for (const [tag, env] of modes) {
@@ -77,8 +91,8 @@ try {
       if (title !== "Close 3 Tabs") throw new Error(`⌘W's item reads ${JSON.stringify(title)}: ${JSON.stringify(dry)}`);
       const native = await untilSnapshot("native selection before close", (state) => {
         const window = state.windows.find((entry) => entry.id === "w1");
-        return window?.tabIds.join() === names.join() && state.tabs.length === names.length &&
-          window.tabIds.map((id) => state.tabs.find((tab) => tab.id === id)?.title).join() === names.map((id) => id.toUpperCase()).join();
+        return isDeepStrictEqual(window?.tabIds, names) && state.tabs.length === names.length &&
+          isDeepStrictEqual(window.tabIds.map((id) => state.tabs.find((tab) => tab.id === id)?.title), names.map((id) => id.toUpperCase()));
       });
       const window = native.windows.find((entry) => entry.id === "w1");
       if (window.selectedTabId !== "c") throw new Error(`native selected tab ${window.selectedTabId}`);
@@ -86,29 +100,36 @@ try {
     });
     await rep.check(`${tag}-cmd-w-closes-the-selection`, async () => {
       await press(K("w", 13));
-      const left = await until("3 closed", `return (() => { ${titles} })().length === 2 ? (() => { ${titles} })() : null;`);
+      let left = await until("3 closed", `return (() => { ${titles} })().length === 2 ? (() => { ${titles} })() : null;`);
       if (left.join() !== "A,D") throw new Error(`left ${left}`);
       const selection = await run(`return ac.store.getState().selection.w1 ?? [];`);
       if (selection.length) throw new Error(`selection not cleared: ${selection}`);
-      const native = await untilSnapshot("native three tabs closed", (state) => {
+      const native = await untilSnapshot("native three tabs closed", async (state) => {
+        left = await run(titles);
+        if (!isDeepStrictEqual(left, ["A", "D"])) throw new Error(`left ${left}`);
         const window = state.windows.find((entry) => entry.id === "w1");
-        return window?.tabIds.join() === "a,d" && state.tabs.map((tab) => tab.id).join() === "a,d" &&
-          window.tabIds.map((id) => state.tabs.find((tab) => tab.id === id)?.title).join() === left.join();
+        return isDeepStrictEqual(window?.tabIds, ["a", "d"]) && isDeepStrictEqual(state.tabs.map((tab) => tab.id), ["a", "d"]) &&
+          isDeepStrictEqual(window.tabIds.map((id) => state.tabs.find((tab) => tab.id === id)?.title), left);
       });
       const nativeTitles = native.windows[0].tabIds.map((id) => native.tabs.find((tab) => tab.id === id)?.title);
-      if (nativeTitles.join() !== left.join()) throw new Error(`native titles ${nativeTitles} vs JS ${left}`);
+      if (!isDeepStrictEqual(nativeTitles, left)) throw new Error(`native titles ${nativeTitles} vs JS ${left}`);
       return left;
     });
     await rep.check(`${tag}-shift-cmd-t-reopens-all-3`, async () => {
       await press(K("t", 17, "shift"));
-      const back = await until("5 tabs", `return (() => { ${titles} })().length === 5 ? (() => { ${titles} })() : null;`);
+      let back = await until("5 tabs", `return (() => { ${titles} })().length === 5 ? (() => { ${titles} })() : null;`);
       if (back.join() !== "A,B,C,D,E") throw new Error(`back ${back}`);
       const closed = await run(`return ac.store.getState().closedTabs.length;`);
       if (closed) throw new Error(`${closed} still in Recently Closed`);
-      const backIds = await run(`return ac.store.getState().windows.w1.tabIds;`);
-      const native = await untilSnapshot("native tabs restored in order", (state) => state.windows[0]?.tabIds.join() === backIds.join() && state.windows[0].tabIds.map((id) => state.tabs.find((tab) => tab.id === id)?.title).join() === back.join());
+      let backIds;
+      const native = await untilSnapshot("native tabs restored in order", async (state) => {
+        back = await run(titles);
+        if (!isDeepStrictEqual(back, ["A", "B", "C", "D", "E"])) throw new Error(`back ${back}`);
+        backIds = await run(`return ac.store.getState().windows.w1.tabIds;`);
+        return isDeepStrictEqual(state.windows[0]?.tabIds, backIds) && isDeepStrictEqual(state.windows[0].tabIds.map((id) => state.tabs.find((tab) => tab.id === id)?.title), back);
+      });
       const nativeTitles = native.windows[0].tabIds.map((id) => native.tabs.find((tab) => tab.id === id)?.title);
-      if (nativeTitles.join() !== back.join()) throw new Error(`native titles ${nativeTitles} vs JS ${back}`);
+      if (!isDeepStrictEqual(nativeTitles, back)) throw new Error(`native titles ${nativeTitles} vs JS ${back}`);
       return back;
     });
     await rep.check(`${tag}-closing-the-window-asks-once`, async () => {
@@ -120,9 +141,12 @@ try {
       await sleep(800);
       const asked = await run(`return globalThis.__asked;`);
       if (asked.length !== 1) throw new Error(`asked ${asked.length} times: ${JSON.stringify(asked)}`);
-      const left = await run(`return ac.store.getState().windows.w1?.tabIds.length ?? 0;`);
+      let left = await run(`return ac.store.getState().windows.w1?.tabIds.length ?? 0;`);
       if (left !== 6) throw new Error(`cancel left ${left} tabs`);
-      await untilSnapshot("native cancel keeps every tab", (state) => state.windows[0]?.tabIds.join() === ids.join() && state.tabs.length === left);
+      await untilSnapshot("native cancel keeps every tab", async (state) => {
+        left = await run(`return ac.store.getState().windows.w1?.tabIds.length ?? 0;`);
+        return isDeepStrictEqual(state.windows[0]?.tabIds, ids) && state.tabs.length === left;
+      });
       return asked[0];
     });
     await app.quit();

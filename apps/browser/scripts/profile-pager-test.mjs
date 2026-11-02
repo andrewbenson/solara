@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -38,7 +39,14 @@ const win = (id) => C.chromeWindows().then((ws) => { const f = st().windows[id].
 const swipe = (id, x, y, steps) => win(id).then((w) => S.devSimulate(x, y, w.window, steps, true));
 `;
 let app = null;
-const run = (body, timeout = 20000) => app.eval(`${HELPERS}\n${body}`, { timeout });
+let nativePollDeadline = 0;
+const run = (body, timeout = 20000) => {
+  if (nativePollDeadline) {
+    if (nativePollDeadline - Date.now() < 1000) throw new Error("native comparison has less than 1000 ms remaining");
+    timeout = Math.min(timeout, 1000);
+  }
+  return app.eval(`${HELPERS}\n${body}`, { timeout });
+};
 const until = async (what, body, ms = 4000) => {
   const end = Date.now() + ms;
   let last;
@@ -58,11 +66,18 @@ const STRIP = [420, 20];
 const pagerState = (id) => run(`return S.devPagerState(${JSON.stringify(id)});`);
 const profileOf = (id) => run(`return st().windows[${JSON.stringify(id)}].profileId;`);
 const untilSnapshot = async (what, accept, ms = 5000) => {
-  const deadline = Date.now() + ms;
+  const end = Date.now() + ms;
   let last;
-  while (Date.now() < deadline) {
-    last = await app.snapshot().catch((error) => ({ error: error.message }));
-    if (!last.error && last.consistent && await accept(last)) return last;
+  while (end - Date.now() >= 1000) {
+    if (!app.alive) throw new Error(`${what}: instance exited`);
+    last = await app.snapshot({}, { timeout: 1000 }).catch((error) => ({ error: error.message }));
+    if (Date.now() >= end) break;
+    nativePollDeadline = end;
+    try {
+      if (!last.error && last.consistent && await accept(last) && Date.now() < end) return last;
+    } finally {
+      nativePollDeadline = 0;
+    }
     await sleep(100);
   }
   throw new Error(`${what}: native snapshot never matched (${JSON.stringify(last)})`);
@@ -127,7 +142,7 @@ try {
   const mine = {};
   app = await launch(resolve(appArg), {
     data: join(scratch, `data-${tag}`), fresh: true, session: fixture, onboarded: true, probe: true,
-    env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_SIDEBAR: "1", SOLARA_NATIVE_TOP_STRIP: "1" },
+    env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_TOP_STRIP: "1" },
     ready: "return !!ac.store.getState().windows.w1 && !!ac.store.getState().windows.w2",
   });
   await until("both windows", `return Promise.all([win("w1"), win("w2")]).then((ws) => ws.every(Boolean) || null);`, 15000);
@@ -231,7 +246,7 @@ try {
     const jumped = await until("the pager jumps to Play", `return S.devPagerState("w1").then((p) => p.selected === 2 && p.position === 2 && p.phase === "idle" ? p : null);`);
     await nativeProfile("w1", "play");
     const d = JSON.parse(await run(`return P.describe("w1");`));
-    if (d.tint.pages.map((p) => p.opacity).join() !== "1,1,1") throw new Error(JSON.stringify(d.tint));
+    if (!isDeepStrictEqual(d.tint.pages.map((p) => p.opacity), [1, 1, 1])) throw new Error(JSON.stringify(d.tint));
     const trace = await traced(`ac.actions.switchProfile("w1", "default", true); return true;`, 900);
     await until("Personal", `return st().windows.w1.profileId === "default" || null;`, 1800);
     await nativeProfile("w1", "default");
@@ -268,7 +283,7 @@ try {
         .then(() => settle(900)).then(() => S.devPagerState("w2"))
         .then((p) => { stop(); ac.store.setState({ switchProfile: original }); const out = { calls, profiles, live: peek().live, phase: p.phase, position: p.position, profile: st().windows.w2.profileId }; peek().hide(); return settle(600).then(() => { st().toggleSidebar("w2"); return settle(600); }).then(() => out); });`);
     mine.peek = seen;
-    if (!seen.live || seen.profile !== "work" || seen.phase !== "idle" || seen.position !== 1 || JSON.stringify(seen.profiles) !== '["work"]') throw new Error(JSON.stringify(seen));
+    if (!seen.live || seen.profile !== "work" || seen.phase !== "idle" || seen.position !== 1 || !isDeepStrictEqual(seen.profiles, ["work"])) throw new Error(JSON.stringify(seen));
     if (seen.calls.length !== 0) throw new Error(`JS switched too: ${JSON.stringify(seen)}`);
     await nativeProfile("w2", seen.profile);
     return seen;

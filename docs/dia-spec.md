@@ -302,7 +302,7 @@ the same as top"), so if a Dia capture ever differs, the owner's equal insets wi
   - Pressed: white 31% (dark) or 70% (light). Dia has no pressed color for the selected tab.
     Ours also eases the pressed row to scale 0.99 and opacity 0.95 (80 ms in, 180 ms out, ease-out cubic; no scale
     with Reduce Motion), the selected row and split panes included, so a click on the selected tab shows too
-    (`sidebar/PressFeedback.tsx`, issue #232).
+    (`native/SolaraKit/Sources/SolaraUI/Sidebar/SidebarControls.swift` (`PressFeedback`), issue #232).
   - Selected (regular): dark fill ≈ black 40% (sample `#1B1618` on `#2A1E23`), white title.
   - Audio: a `speaker.wave.2` glyph after the favicon.
 - "+ New Tab" row: label in `secondaryLabelColor` (white 0.55 dark), the `plus` in `tertiaryLabelColor` (white 0.25
@@ -389,13 +389,13 @@ Regular rows on the 37 pt pitch; the same for "+ New Tab" and ⌘T, and for the 
 - Curves: the slide is Core Animation's default, cubic-bezier(0.25, 0.1, 0.25, 1) over 0.14 s, no overshoot (a
   spring with ω ≈ 40 rad/s and damping ratio 0.9 fits almost as well). The fade is ease-out, cubic-bezier(0, 0, 0.58,
   1) over 0.10 s, opacity 1 → 0.
-- Solara (`sidebar/listMotion.tsx`): the same, for every top-level list entry (rows, splits, group blocks, the + row)
+- Solara (`native/SolaraKit/Sources/SolaraUI/Sidebar/SidebarView.swift` (`slide` / `retire`)): the same, for every top-level list entry (rows, splits, group blocks, the + row)
   and inside an expanded group, whose box grows or shrinks with its rows (a tab added as the group's last row: the box
   takes its height at once and what is below the group slides instead); several closes at once fade together. The row
   just under a new one is clipped at the new row's bottom edge while it slides, which gives Dia's look over our
   translucent selected fill. Hover is checked again after every layout (react-native-macos patch, `RCTView.m`), so it
   follows the final layout during the slide. Collapsed groups, pins and moves between windows don't animate.
-- Native sidebar (`SidebarView.swift`, behind `SOLARA_NATIVE_SIDEBAR=1`): the same curves and durations with Core
+- Native sidebar (`SidebarView.swift`): the same curves and durations with Core
   Animation. Rows in the scroll area that keep their slot's size slide, a closed row (rows and group boxes) drops its
   selected fill and fades behind the others, and the row under a new one is masked at the new row's bottom edge. Hover
   is checked against the final layout right after. Measured with `SolaraHosted.sidebarMotion` in a hidden instance
@@ -451,7 +451,7 @@ Clear Tabs; Clear Today"); a toast confirms the clear and offers Undo. Measured 
 pitch, about 6.3 px/pt): the line is 1 pt at about white 0.08 and starts at the favicons' left edge; it ends 7.5 pt before
 the arrow; the arrow is 7 pt wide and 8 pt tall, 3 pt from the text; "Clear" is semibold with a cap height 0.75 of the
 tab titles' (10 pt beside our 13 pt titles) and ends where the titles do; the line's center is 25 pt above the first
-row's center. Ours: `components/sidebar/ClearDivider.tsx`, a 16 pt row with Dia's `divider` color and secondary text.
+row's center. Ours: `native/SolaraKit/Sources/SolaraUI/Sidebar/SidebarRows.swift` (`DividerRowView`), a 16 pt row with Dia's `divider` color and secondary text.
 What it closes (issue #149): the unselected unpinned tabs (`clearOthers`), keeping the selected tab and, per Arc's 2022
 release notes, tabs playing media. Dia's Close All in the sidebar does the same with the selected tab (the issue's
 recording: of three unpinned tabs, the two unselected close and the selected one stays selected).
@@ -858,7 +858,7 @@ than ours at the same cap height.
   top content inset (`SidebarLayoutGuide.tabListTopInset`); without a dock the line sits at the header's foot. The header
   doesn't scroll either. The line starts at alpha 0; on every clip-view bounds change it targets 1 when the visible
   rect's minY > −inset (any scroll past the top) and 0 otherwise (the top, or rubber-banding above it), animated by
-  `NSAnimationContext` over **0.1 s** with the hover card's curve (0.25, 0.46, 0.45, 0.94). Ours: sidebar/ScrollEdge.tsx.
+  `NSAnimationContext` over **0.1 s** with the hover card's curve (0.25, 0.46, 0.45, 0.94). Ours: `native/SolaraKit/Sources/SolaraUI/Sidebar/SidebarView.swift` (`syncEdge` / `fade`).
 - A New Tab tab's icon (the favicon of a tab showing the NTP, not the "+ New Tab" row) is the Dia mark (the NTP logo's
   shape), 16 pt wide, white 0.28 in dark over any row state (measured; which asset draws it wasn't traced).
 - The clean-tabs upsell is a borderless child window (not a popover), 316 wide: title at (24, 24), a 21 × 26

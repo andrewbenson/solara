@@ -98,6 +98,71 @@ private func layout(_ state: BrowserState, height: CGFloat = 600, addressBar: Bo
     #expect(first.frame.minY >= divider.frame.maxY)
   }
 
+  @Test func pinGridUsesTheCountAfterTheDrop() {
+    for (count, width, columns, tileWidth) in [(3, 178.0, 3, 55.0), (4, 178, 3, 55), (2, 178, 2, 86), (4, 240, 4, 55.5), (0, 178, 1, 178)] {
+      #expect(PinGrid.of(count: count, innerWidth: CGFloat(width), balanced: false) == PinGrid(columns: columns, width: CGFloat(tileWidth)))
+    }
+  }
+
+  @Test func balancedPinRowsKeepAtMostFourColumns() {
+    for (count, width, columns) in [(5, 451.0, 3), (5, 295, 3), (5, 147, 2), (4, 408, 4), (4, 261, 4), (4, 168, 2), (9, 432, 3), (9, 290, 3), (9, 180, 3), (9, 144, 2), (7, 400, 4), (6, 400, 3), (3, 400, 3)] {
+      #expect(PinGrid.of(count: count, innerWidth: CGFloat(width), balanced: true).columns == columns)
+    }
+    #expect(PinGrid.of(count: 4, innerWidth: 178, balanced: true) == PinGrid(columns: 2, width: 86))
+    #expect(PinGrid.of(count: 9, innerWidth: 400, balanced: true) == PinGrid(columns: 3, width: 129))
+    #expect(PinGrid.of(count: 9, innerWidth: 400, balanced: false) == PinGrid(columns: 7, width: 52))
+  }
+
+  @Test func balancedPinTilesGrowWithoutAddingColumns() {
+    let grids = [178.0, 240, 320, 400].map { PinGrid.of(count: 6, innerWidth: CGFloat($0), balanced: true) }
+    #expect(grids.map(\.columns) == [3, 3, 3, 3])
+    for i in 1..<grids.count { #expect(grids[i].width > grids[i - 1].width) }
+  }
+
+  @Test func fullPinRowsNeverOverflowOrShrinkBelowTheMinimum() {
+    for balanced in [false, true] {
+      for halfPoints in 240...800 {
+        let width = CGFloat(halfPoints) / 2
+        for count in 1...12 {
+          let grid = PinGrid.of(count: count, innerWidth: width, balanced: balanced)
+          #expect(CGFloat(grid.columns) * grid.width + CGFloat(grid.columns - 1) * 6 <= width + 1e-9)
+          #expect(grid.width >= 50 || grid.columns == 1)
+        }
+      }
+    }
+  }
+
+  @Test func anExpandedParentSpacesANestedFirstGroupInItsHeightAndRows() throws {
+    for nestedFirst in [true, false] {
+      let nested = nestedFirst ? #"["t2", "t3"]"# : #"["t5", "t6"]"#
+      let groups = #"{"g": {"id": "g", "windowId": "w1", "name": "G", "tabIds": ["t2", "t3", "t4", "t5", "t6"], "collapsed": false}, "n": {"id": "n", "windowId": "w1", "name": "N", "tabIds": \#(nested), "parentId": "g", "collapsed": true}}"#
+      let state = try sidebarState(tabs: (0...7).map { (id: "t\($0)", extra: "") }, groups: groups, active: "t0")
+      let query = SidebarQuery(state)
+      let engine = SidebarLayout(query: query, input: SidebarLayoutInput(windowId: "w1", profileId: "p", width: 190, height: 600))
+      let out = engine.layout(query.entries(windowId: "w1", profileId: "p"))
+      #expect(query.groupEntries("g").first == (nestedFirst ? "g:n" : "t:t2"))
+      #expect(engine.entryHeight("g:n") == 35)
+      #expect(engine.entryHeight("g:g") == (nestedFirst ? 186 : 183))
+      #expect(out.item("gb:g")?.frame.height == (nestedFirst ? 186 : 183))
+      #expect(out.item("t:t4")?.frame.minY == (nestedFirst ? 174.5 : 207.5))
+    }
+  }
+
+  @Test func aCollapsedParentSpacesItsActiveNestedGroupBelowTheHeader() throws {
+    let groups = #"{"g": {"id": "g", "windowId": "w1", "name": "G", "tabIds": ["t2", "t3", "t4", "t5", "t6"], "collapsed": true}, "n": {"id": "n", "windowId": "w1", "name": "N", "tabIds": ["t2", "t3"], "parentId": "g", "collapsed": true}}"#
+    let state = try sidebarState(tabs: (0...7).map { (id: "t\($0)", extra: "") }, groups: groups, active: "t3")
+    let query = SidebarQuery(state)
+    let engine = SidebarLayout(query: query, input: SidebarLayoutInput(windowId: "w1", profileId: "p", width: 190, height: 600))
+    let out = engine.layout(query.entries(windowId: "w1", profileId: "p"))
+    #expect(engine.entryHeight("g:n") == 71)
+    #expect(engine.entryHeight("g:g") == 111)
+    #expect(out.item("gb:n")?.frame.height == 71)
+    #expect(out.item("gb:g")?.frame.height == 111)
+    #expect(out.item("gb:n")?.frame.minY == 136.5)
+    #expect(out.item("t:t3")?.frame.minY == 171)
+    #expect(out.item("t:t2") == nil)
+  }
+
   @MainActor @Test func rowTitlesFallBackToTheUrlWithoutSchemeOrWww() throws {
     let state = try sidebarState(tabs: [("t1", #", "title": "", "url": "https://www.site.test/path/""#)])
     let context = SidebarContextProbe.title(state, "t1")

@@ -14,8 +14,6 @@ export const useFolderPanel = create<{ open: Open | null }>()(() => ({ open: nul
 
 export const folderPanel = () => useFolderPanel.getState().open;
 
-let pressedAway: { folderId: string; at: number | undefined } | null = null;
-
 export function closeFolderPanel() {
   if (useFolderPanel.getState().open) useFolderPanel.setState({ open: null });
 }
@@ -25,15 +23,6 @@ export function closeFolderPanelIn(windowId: string | undefined): boolean {
   closeFolderPanel();
   return true;
 }
-
-export function closeFolderPanelOnPress(event: { nativeEvent: { timestamp?: number } }) {
-  const open = folderPanel();
-  if (!open) return;
-  pressedAway = { folderId: open.folderId, at: event.nativeEvent.timestamp };
-  closeFolderPanel();
-}
-
-export const closedByPress = (folderId: string, at: number | undefined) => at !== undefined && pressedAway?.folderId === folderId && pressedAway.at === at;
 
 export async function toggleFolderPanel(windowId: string, folderId: string) {
   const open = folderPanel();

@@ -23,17 +23,6 @@ public class SidebarDragModule: Module {
       MainActor.assumeIsolated { NativeSidebarDrag.external(windowId: windowId, phase: phase, at: CGPoint(x: x, y: y), count: count) }
     }.runOnQueue(.main)
 
-    AsyncFunction("panel") { (windowId: String, frameJSON: String?) in
-      MainActor.assumeIsolated { NativeSidebarDrag.panel(windowId: windowId, frameJSON) }
-    }.runOnQueue(.main)
-
-    AsyncFunction("panelDrag") { (windowId: String, phase: String, tabId: String, x: Double, y: Double) in
-      MainActor.assumeIsolated {
-        guard let page = NativeSidebarDrag.page(windowId) else { return }
-        SidebarDragController.of(page).panelDrag(phase, tabId: tabId, at: CGPoint(x: x, y: y))
-      }
-    }.runOnQueue(.main)
-
     AsyncFunction("startProbe") { (windowId: String) -> String in
       MainActor.assumeIsolated { NativeSidebarDrag.startProbe(windowId) }
     }.runOnQueue(.main)
@@ -125,9 +114,6 @@ final class NativeSidebarDrag: SidebarDragBridge {
 
   func changed(windowId: String) {
     if SidebarDragHub.probing { Self.refreshSoon(windowId) }
-    if let page = Self.page(windowId), let controller = SidebarDragController.existing(page), controller.panelOpen {
-      send("sidebar.drag.marks", [windowId, controller.marksJSON])
-    }
   }
 
   nonisolated(unsafe) private static let lock = NSLock()
@@ -196,11 +182,6 @@ final class NativeSidebarDrag: SidebarDragBridge {
     return nil
   }
 
-  static func panel(windowId: String, _ frameJSON: String?) {
-    guard let page = page(windowId) else { return }
-    let controller = SidebarDragController.of(page)
-    controller.setFolderPanel(frameJSON.flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) })
-  }
 }
 
 #if SOLARA_PROBES

@@ -616,8 +616,7 @@ export async function launch(app, opts = {}) {
     SOLARA_BACKGROUND: "1", SOLARA_DATA_DIR: canonicalData, SOLARA_REMOTE_DEBUGGING_PORT: String(port),
     ...(location ? { SOLARA_JS_LOCATION: location } : {}),
     ...(switches ? { SOLARA_CHROMIUM_SWITCHES: switches } : {}),
-    ...(process.env.SOLARA_NATIVE_SIDEBAR ? { SOLARA_NATIVE_SIDEBAR: process.env.SOLARA_NATIVE_SIDEBAR } : {}),
-    ...Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith("SOLARA_NATIVE_") || k.startsWith("SOLARA_SHELL_") || k.startsWith("SOLARA_SYNC_"))),
+    ...Object.fromEntries(Object.entries(process.env).filter(([k]) => ["SOLARA_NATIVE_SHELL", "SOLARA_NATIVE_PAGES_POOL", "SOLARA_NATIVE_TOP_STRIP", "SOLARA_NATIVE_SIDE_PANEL", "SOLARA_NATIVE_SERVICES", "SOLARA_NATIVE_SIDEBAR_ADDRESS", "SOLARA_NATIVE_SCOPE"].includes(k) || k.startsWith("SOLARA_SHELL_") || k.startsWith("SOLARA_SYNC_"))),
     ...(opts.urls?.length ? { SOLARA_ACCEPT_EXTERNAL_URLS: "1" } : {}),
     ...opts.env,
   };

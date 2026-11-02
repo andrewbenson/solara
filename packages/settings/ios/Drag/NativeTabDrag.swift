@@ -185,7 +185,7 @@ final class NativeTabDrag {
   private static func ownsDrop(_ windowId: String) -> Bool {
     guard TabDragSession.hasZone(in: windowId, .split), let state = NativeStoreHandle.store?.state else { return false }
     let layout = state.settings.string("tabLayout")
-    return state.windows.values.allSatisfy { ($0.tabLayout ?? layout) == "top" ? NativeTopStrip.enabled : NativeSidebar.enabled }
+    return state.windows.values.allSatisfy { ($0.tabLayout ?? layout) == "top" ? NativeTopStrip.enabled : true }
   }
 
   private func session(_ windowId: String) -> TabDragSession? {

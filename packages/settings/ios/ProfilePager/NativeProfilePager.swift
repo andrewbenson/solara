@@ -14,7 +14,7 @@ enum NativeProfilePager {
   private(set) static var looks: [String: NSDictionary] = [:]
 
   static func start(_ shell: WindowShellView) -> ProfilePagerHost? {
-    guard NativeWindowShell.enabled, NativeSidebar.enabled, NativeTopStrip.enabled else { return nil }
+    guard NativeWindowShell.enabled, NativeTopStrip.enabled else { return nil }
     let host = ProfilePagerHost(shell: shell)
     hosts[shell.windowId] = host
     return host
@@ -401,7 +401,7 @@ public class ProfilePagerModule: Module {
     }
 
     Function("active") { (windowId: String) -> Bool in
-      NativeWindowShell.enabled && NativeSidebar.enabled && NativeTopStrip.enabled && NativeWindowShell.active(windowId)
+      NativeWindowShell.enabled && NativeTopStrip.enabled && NativeWindowShell.active(windowId)
     }
 
     AsyncFunction("setLooks") { (json: String) in

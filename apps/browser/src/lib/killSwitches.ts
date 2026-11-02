@@ -16,12 +16,6 @@ export const SWITCHES = {
     removeBy: "2026-12-15",
     live: true,
   },
-  lazySidebarRows: {
-    about: "A launch mounts only the sidebar rows its window shows, and the profile pages beside it a frame later (Sidebar.tsx).",
-    owner: "sidebar",
-    removeBy: "2026-12-15",
-    live: false,
-  },
   updatePrewarm: {
     about: "An update staged for install-on-quit is run once, hidden, so its first launch skips macOS's first-exec checks (Updater.swift).",
     owner: "updater",

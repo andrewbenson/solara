@@ -113,7 +113,6 @@ function unintended(changes: Change[]): Change[] {
   const madeRoom = titles.length > 0 && Math.abs(shrunk - grown) <= 0.5;
   return changes.filter((c) => {
     if (madeRoom && (titles.includes(c) || slots.includes(c))) return false;
-    if (ownerName(c.fiber) === "ClearDivider" && trailingShrinks(c.before, c.after)) return false;
     return true;
   });
 }

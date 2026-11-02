@@ -7,7 +7,7 @@ import { useWindowId, useWindowUi } from "../store/hooks";
 import { activeTabId } from "../store/model";
 import { useStoreWhile } from "../store/tabWatch";
 import { pageOf, usePage } from "./layout/pageState";
-import { dismissHover, setRowsCovered } from "./sidebar/hover";
+import { dismissHover } from "./sidebar/hover";
 import { commandBarCentred, useCardAnchors, useUrlAnchors } from "./layout/windowLayout";
 import { barWidth } from "./NewTabPage";
 import { markPanelFrame } from "../lib/perfMarks";
@@ -146,11 +146,9 @@ function CommandPanelBody({ windowWidth }: { windowWidth: number }) {
   const anchor = useUrlAnchors((s) => (panel.open ? s[windowId] : undefined));
   const centred = useBrowser((s) => panel.open && !panel.newTab && commandBarCentred(s, windowId));
   const card = useCardAnchors((s) => (panel.newTab || centred ? s[windowId] : undefined));
-  const overRows = panel.open && !panel.newTab && !centred && !!anchor?.sidebar;
   useEffect(() => {
     if (panel.open) dismissHover();
-    setRowsCovered(windowId, overRows);
-  }, [panel.open, overRows, windowId]);
+  }, [panel.open]);
   if (!panel.open || !activeId) return null;
   if (panel.newTab) return card ? <CentredBar windowId={windowId} tabId={activeId} target={panel.newTab} card={card} /> : null;
 

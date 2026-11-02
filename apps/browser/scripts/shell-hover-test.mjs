@@ -4,16 +4,30 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { launch, reporter, screenLocked, screenLockedPending, session, sleep } from "../../../scripts/lib/instance.mjs";
 
+let nativePollDeadline = null;
+const evaluate = (body, options = {}) => {
+  if (nativePollDeadline !== null && nativePollDeadline - Date.now() < 1000) throw new Error("native comparison has less than 1000 ms left");
+  return app.eval(body, { ...options, ...(nativePollDeadline === null ? {} : { timeout: 1000 }) });
+};
+const acceptSnapshot = async (deadline, accept, ...args) => {
+  const previous = nativePollDeadline;
+  nativePollDeadline = previous === null ? deadline : Math.min(previous, deadline);
+  try {
+    return await accept(...args);
+  } finally {
+    nativePollDeadline = previous;
+  }
+};
+
 const args = process.argv.slice(2);
 const appArg = args.find((a) => !a.startsWith("--"));
 if (!appArg) {
-  console.error(`usage: node shell-hover-test.mjs <Debug Solara.app> [--sidebar] [--keep-data]
+  console.error(`usage: node shell-hover-test.mjs <Debug Solara.app> [--keep-data]
 
-Hover goes to what's on top in a native window shell (SOLARA_NATIVE_SHELL=1): the sidebar's rows (RN's, or the native
-column's when the native sidebar is on) hover under the pointer; under a native view mounted in the shell's overlay slot
+Hover goes to what's on top in a native window shell (SOLARA_NATIVE_SHELL=1): the native sidebar's rows hover under the pointer; under a native view mounted in the shell's overlay slot
 they don't; a row under a still pointer leaves when the native view arrives and enters again when it goes, and the same
 when the native view is hidden and shown without leaving the overlay; with the native sidebar, a native view over the
-peeking sidebar takes its hover too (--sidebar runs the native column, the RN rows otherwise); finding the layer under
+peeking sidebar takes its hover too; finding the layer under
 the pointer stays under 40 µs. With the RN main root on top (SOLARA_SHELL_MAIN_TOP=1) the exact lookup walks the RN
 tree, so it stays under 120 µs and the shell runs it at most once a display frame: a 120 Hz pointer stream costs at most
 one lookup per frame and 3% of a core on a 60 Hz display (the 120 Hz display estimate is only reported), and with or
@@ -22,7 +36,6 @@ doesn't resolve the pointer, so the native rows' hover checks and the within-a-f
   process.exit(2);
 }
 const keep = args.includes("--keep-data");
-const nativeColumn = args.includes("--sidebar");
 const scratch = mkdtempSync(join(tmpdir(), "ac-shell-hover-"));
 const data = join(scratch, "data");
 const rep = reporter(join(scratch, "shell-hover-test.log"), { name: "shell-hover-test" });
@@ -37,21 +50,20 @@ const C = globalThis.expo.modules.SolaraCEF;
 const settle = (ms) => new Promise((r) => setTimeout(r, ms));
 const win = () => C.chromeWindows().then((ws) => ws.find((w) => w.hasRoot).window);
 const at = (x, y) => ac.shell.devSetPointer("w1", { x, y }).then(() => win()).then((n) => C.devWindow(n, "mouse:moved:" + x + "," + y)).then(() => settle(250));
-const stats = () => ac.shell.devHoverStats(true).then((value) => { globalThis.__shellHoverStats = value; return value; });
-const count = (s, kind) => (s.log || []).filter((e) => e[0] === kind).length;
 const H = globalThis.expo.modules.SolaraHosted;
 const hover = () => (H?.sidebarShell ? H.sidebarShell("w1").then((d) => JSON.parse(d)?.hover ?? null) : Promise.resolve(null)).then((value) => { globalThis.__shellHoverValue = { value }; return value; });
 `;
 const ROWS = [90, 130, 170, 210];
 const COVER = [0, 0, 320, 800];
 let app = null;
-let native = false;
 const untilSnapshot = async (what, accept, ms = 5000) => {
   const end = Date.now() + ms;
   let last;
   while (Date.now() < end) {
-    last = await app.snapshot({ windowId: "w1" }).catch((error) => ({ error: error.message }));
-    if (!last.error && await accept(last)) return last;
+    if (!app.alive) throw new Error(`${what}: app exited`);
+    if (Math.min(end, nativePollDeadline ?? Infinity) - Date.now() < 1000) break;
+    last = await app.snapshot({ windowId: "w1" }, { timeout: 1000 }).catch((error) => ({ error: error.message }));
+    if (Date.now() < end && !last.error && last.consistent && await acceptSnapshot(end, accept, last) && Date.now() < end) return last;
     await sleep(50);
   }
   throw new Error(`${what}: native snapshot never matched (${JSON.stringify(last)})`);
@@ -60,48 +72,39 @@ const same = (a, b) => {
   try { assert.deepEqual(a, b); return true; } catch { return false; }
 };
 const run = async (body) => {
-  const result = await app.eval(`${HELPERS}
-    globalThis.__shellHoverStats = null;
+  const result = await evaluate(`${HELPERS}
     globalThis.__shellHoverValue = null;
-    return Promise.resolve().then(() => { ${body} }).then((value) => ({ value, stats: globalThis.__shellHoverStats, hover: globalThis.__shellHoverValue }));`, { timeout: 30000 });
-  if (result.stats) {
-    await untilSnapshot("RN hover counts and event ids", (snapshot) => same(snapshot.hoverStats,
-      { passes: result.stats.passes, registered: result.stats.registered, log: (result.stats.log ?? []).slice(0, 512) }));
-    await untilSnapshot("live RN hover counts and event ids", async (snapshot) => {
-      const live = await app.eval(`return ac.shell.devHoverStats(false);`);
-      return same(snapshot.hoverStatsLive, { passes: live.passes, registered: live.registered, log: (live.log ?? []).slice(0, 512) });
-    });
-  }
+    return Promise.resolve().then(() => { ${body} }).then((value) => ({ value, hover: globalThis.__shellHoverValue }));`, { timeout: 30000 });
   if (result.hover) await untilSnapshot("native sidebar hovered id", (snapshot) =>
     (snapshot.windows[0]?.sidebarShell?.hover ?? null) === result.hover.value);
   return result.value;
 };
-const entersAt = (y) =>
-  native
-    ? run(`return at(700, 400).then(() => at(120, ${y})).then(hover).then((k) => (k ? 1 : 0));`)
-    : run(`return at(700, 400).then(stats).then(() => at(120, ${y})).then(stats).then((s) => count(s, "enter"));`);
+const entersAt = (y) => run(`return at(700, 400).then(() => at(120, ${y})).then(hover).then((k) => (k ? 1 : 0));`);
 const cover = (rect, hidden) => `S.devCover("w1", ${JSON.stringify(rect)}, ${JSON.stringify(hidden)}).then(() => settle(250))`;
 
 try {
   app = await launch(resolve(appArg), {
     data, fresh: true, session: fixture, onboarded: true,
-    env: nativeColumn ? { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_SIDEBAR: "1", SOLARA_NATIVE_TOP_STRIP: "1" } : { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_SIDEBAR: "0" },
+    env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_TOP_STRIP: "1" },
     ready: "return !!ac.store.getState().windows.w1 && !!globalThis.expo.modules.SolaraWindowShell.devCover",
   });
   await sleep(2000);
-  native = await run(`return H?.sidebarShell ? H.sidebarShell("w1").then((d) => d !== "null") : false;`);
-  await untilSnapshot("native sidebar availability", (snapshot) => (snapshot.windows[0]?.sidebarShell != null) === native);
+  const column = await run(`return H?.sidebarShell ? H.sidebarShell("w1").then((d) => d !== "null") : false;`);
+  assert.ok(column, "the native sidebar column is mounted");
+  await untilSnapshot("native sidebar availability", async (snapshot) =>
+    (snapshot.windows[0]?.sidebarShell != null) === await run(`return H?.sidebarShell ? H.sidebarShell("w1").then((d) => d !== "null") : false;`) && snapshot.windows[0]?.sidebarShell != null);
   const chromeWindowNumber = await run(`return win();`);
-  await untilSnapshot("Chrome window number", (snapshot) => snapshot.windows[0]?.chromeWindowNumber === chromeWindowNumber);
+  await untilSnapshot("Chrome window number", async (snapshot) =>
+    snapshot.windows[0]?.chromeWindowNumber === await run(`return win();`) && snapshot.windows[0]?.chromeWindowNumber === chromeWindowNumber);
 
   const locked = screenLocked();
-  const hoverCheck = (name, fn) => locked && (native || name === "hover-within-a-frame") ? rep.record(name, { skip: screenLockedPending }) : rep.check(name, fn);
+  const hoverCheck = (name, fn) => locked ? rep.record(name, { skip: screenLockedPending }) : rep.check(name, fn);
 
   await hoverCheck("rows-hover", async () => {
     const enters = [];
     for (const y of ROWS) enters.push(await entersAt(y));
     if (enters.some((n) => n === 0)) throw new Error(`a row didn't hover: ${enters}`);
-    return { native, enters };
+    return { enters };
   });
 
   await hoverCheck("covered-rows-dont-hover", async () => {
@@ -117,45 +120,24 @@ try {
   });
 
   await hoverCheck("still-pointer-follows-the-cover", async () => {
-    if (native) {
-      await run(`return at(700, 400);`);
-      const parked = await run(`return at(120, 130).then(hover);`);
-      const out = { parked, coverOn: await run(`return ${cover(COVER, null)}.then(hover);`), coverOff: await run(`return ${cover(null, null)}.then(hover);`) };
-      if (!parked || out.coverOn !== null || out.coverOff !== parked) throw new Error(`hover didn't follow the cover: ${JSON.stringify(out)}`);
-      return out;
-    }
-    await run(`return at(700, 400).then(stats);`);
-    const parked = await run(`return at(120, 130).then(stats).then((s) => count(s, "enter"));`);
-    const on = await run(`return S.devCover("w1", ${JSON.stringify(COVER)}, null).then(() => settle(250)).then(stats).then((s) => [count(s, "leave"), count(s, "enter")]);`);
-    const off = await run(`return S.devCover("w1", null, null).then(() => settle(250)).then(stats).then((s) => count(s, "enter"));`);
-    const out = { parked, coverOn: on, coverOff: off };
-    if (!parked || on[0] !== parked || on[1] !== 0 || off !== parked) throw new Error(`hover didn't follow the cover: ${JSON.stringify(out)}`);
+    await run(`return at(700, 400);`);
+    const parked = await run(`return at(120, 130).then(hover);`);
+    const out = { parked, coverOn: await run(`return ${cover(COVER, null)}.then(hover);`), coverOff: await run(`return ${cover(null, null)}.then(hover);`) };
+    if (!parked || out.coverOn !== null || out.coverOff !== parked) throw new Error(`hover didn't follow the cover: ${JSON.stringify(out)}`);
     return out;
   });
 
   await hoverCheck("a-hidden-cover-gives-hover-back", async () => {
-    if (native) {
-      await run(`return at(700, 400);`);
-      const parked = await run(`return at(120, 130).then(hover);`);
-      const out = { parked, shown: await run(`return ${cover(COVER, null)}.then(hover);`), hidden: await run(`return ${cover(null, true)}.then(hover);`), again: await run(`return ${cover(null, false)}.then(hover);`) };
-      await run(`return S.devCover("w1", null, null);`);
-      if (!parked || out.shown !== null || out.hidden !== parked || out.again !== null) throw new Error(`hover didn't follow the cover's isHidden: ${JSON.stringify(out)}`);
-      return out;
-    }
-    await run(`return at(700, 400).then(stats);`);
-    const parked = await run(`return at(120, 130).then(stats).then((s) => count(s, "enter"));`);
-    const shown = await run(`return S.devCover("w1", ${JSON.stringify(COVER)}, null).then(() => settle(250)).then(stats).then((s) => count(s, "leave"));`);
-    const hidden = await run(`return S.devCover("w1", null, true).then(() => settle(250)).then(stats).then((s) => count(s, "enter"));`);
-    const again = await run(`return S.devCover("w1", null, false).then(() => settle(250)).then(stats).then((s) => count(s, "leave"));`);
+    await run(`return at(700, 400);`);
+    const parked = await run(`return at(120, 130).then(hover);`);
+    const out = { parked, shown: await run(`return ${cover(COVER, null)}.then(hover);`), hidden: await run(`return ${cover(null, true)}.then(hover);`), again: await run(`return ${cover(null, false)}.then(hover);`) };
     await run(`return S.devCover("w1", null, null);`);
-    const out = { parked, shown, hidden, again };
-    if (!parked || shown !== parked || hidden !== parked || again !== parked) throw new Error(`hover didn't follow the cover's isHidden: ${JSON.stringify(out)}`);
+    if (!parked || out.shown !== null || out.hidden !== parked || out.again !== null) throw new Error(`hover didn't follow the cover's isHidden: ${JSON.stringify(out)}`);
     return out;
   });
 
   const PEEK = "a-cover-over-the-peeking-sidebar-takes-its-hover";
-  if (!native) rep.record(PEEK, { skip: "RN sidebar" });
-  else await hoverCheck(PEEK, async () => {
+  await hoverCheck(PEEK, async () => {
     await run(`if (ac.store.getState().windows.w1.sidebarOpen) ac.store.getState().toggleSidebar("w1"); return settle(900);`);
     try {
       await run(`return ac.shell.devLeftEdgePointer("w1", { x: -4, y: 300 }).then(() => settle(500));`);

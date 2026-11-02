@@ -1,8 +1,4 @@
 #!/usr/bin/env node
-// With SOLARA_NATIVE_SIDEBAR=1, a click on the empty sidebar under the rows ends a tab's rename the way RN's does since
-// c69941d5: the typed name is kept, the field closes, and the click opens no tab. Esc still cancels.
-//
-//   node apps/browser/scripts/sidebar-rename-test.mjs <Debug Solara.app under apps/browser/build-*> [--keep-data]
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -23,11 +19,17 @@ const tabs = ids.map((id) => ({ id, url: `data:text/html,<title>Tab ${id}</title
 
 const app = await launch(resolve(appArg), {
   data: join(scratch, "data"),
-  env: { SOLARA_NATIVE_SIDEBAR: "1" },
   session: session({ profiles: ["Personal"], windows: [{ id: "w1", tabIds: ids, activeTabIds: { default: "t0" }, frame: [60, 60, 1200, 800] }], tabs }),
   ready: "return !!ac.store",
 });
-const run = (body) => app.eval(body, { timeout: 30000 });
+let nativePollDeadline = 0;
+const run = (body, timeout = 30000) => {
+  if (nativePollDeadline) {
+    if (nativePollDeadline - Date.now() < 1000) throw new Error("native comparison has less than 1000 ms remaining");
+    timeout = Math.min(timeout, 1000);
+  }
+  return app.eval(body, { timeout });
+};
 const renaming = () => run(`return ac.sidebarRows.useSidebarUi.getState().renaming?.id ?? null`);
 const tabCount = () => run(`return ac.store.getState().windows.w1.tabIds.length`);
 const until = async (what, test, ms = 3000) => {
@@ -42,8 +44,15 @@ const untilSnapshot = async (what, accept, ms = 5000) => {
   const end = Date.now() + ms;
   let last;
   while (Date.now() < end) {
-    last = await app.snapshot({ windowId: "w1" }).catch((error) => ({ error: error.message }));
-    if (!last.error && accept(last)) return last;
+    if (!app.alive) throw new Error(`${what}: the owned app exited`);
+    if (end - Date.now() < 1000) break;
+    last = await app.snapshot({ windowId: "w1" }, { timeout: 1000 }).catch((error) => ({ error: error.message }));
+    nativePollDeadline = end;
+    try {
+      if (!last.error && last.consistent && Date.now() < end && await accept(last) && Date.now() < end) return last;
+    } finally {
+      nativePollDeadline = 0;
+    }
     await sleep(100);
   }
   throw new Error(`${what}: native snapshot never matched (${JSON.stringify(last)})`);

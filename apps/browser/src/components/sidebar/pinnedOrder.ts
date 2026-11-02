@@ -1,6 +1,4 @@
-import { useMemo } from "react";
-import { useShallow } from "zustand/react/shallow";
-import { arrangeFolders, live, useLive } from "../../live/store";
+import { arrangeFolders, live } from "../../live/store";
 import type { LiveFolder } from "../../live/types";
 import { useBrowser, type BrowserState } from "../../store/browser";
 import { pinnedAreaKeys } from "../../store/pinnedArea";
@@ -102,14 +100,3 @@ export function keepLiveAnchors(s: BrowserState, prev: BrowserState) {
 }
 
 useBrowser.subscribe(keepLiveAnchors);
-
-export function usePinnedSequence(windowId: string, profileId: string, off: boolean): string[] {
-  const pinned = useBrowser((s) => (off ? NO_ENTRIES : sidebarEntries(s, windowId, profileId).pinned));
-  const keys = useBrowser(useShallow((s) => pinned.map((e) => anchorKey(s, e))));
-  const incognito = useBrowser((s) => !!s.windows[windowId]?.incognito);
-  const folders = useLive(useShallow((s) => (off || incognito ? NO_FOLDERS : foldersOf(s.folders, s.folderOrder, profileId))));
-  return useMemo(() => withLiveFolders(pinned, keys, folders), [pinned, keys, folders]);
-}
-
-const NO_ENTRIES: string[] = [];
-const NO_FOLDERS: LiveFolder[] = [];

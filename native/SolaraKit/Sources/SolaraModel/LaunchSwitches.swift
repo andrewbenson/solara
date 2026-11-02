@@ -12,23 +12,22 @@ public enum LaunchSwitch: String, CaseIterable, Sendable {
   case shellPanes = "SOLARA_SHELL_PANES"
   case nativePagesPool = "SOLARA_NATIVE_PAGES_POOL"
   case shellMainTop = "SOLARA_SHELL_MAIN_TOP"
-  case nativeSidebar = "SOLARA_NATIVE_SIDEBAR"
   case nativeTopStrip = "SOLARA_NATIVE_TOP_STRIP"
   case nativeSidePanel = "SOLARA_NATIVE_SIDE_PANEL"
   case syncRedesign = "SOLARA_SYNC_REDESIGN"
   case nativeServices = "SOLARA_NATIVE_SERVICES"
 
   public static let experiments: [LaunchSwitch] = [
-    .nativeShell, .shellPanes, .nativeSidebar, .nativeTopStrip, .nativeSidePanel,
+    .nativeShell, .shellPanes, .nativeTopStrip, .nativeSidePanel,
   ]
   static let storedInDevelopment: Set<LaunchSwitch> = [
-    .nativeShell, .shellPanes, .nativePagesPool, .shellMainTop, .nativeSidebar, .nativeTopStrip,
+    .nativeShell, .shellPanes, .nativePagesPool, .shellMainTop, .nativeTopStrip,
     .nativeSidePanel,
   ]
   static let developmentOnly: Set<LaunchSwitch> = [.syncRedesign]
   public static let onByDefault: Set<LaunchSwitch> = [
     .nativeShell, .nativeTopStrip, .nativeSidePanel,
-    .nativeSidebar, .shellPanes, .nativePagesPool, .shellMainTop,
+    .shellPanes, .nativePagesPool, .shellMainTop,
   ]
 
   public var needs: [LaunchSwitch] {

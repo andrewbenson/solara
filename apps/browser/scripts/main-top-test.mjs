@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -10,9 +11,8 @@ if (!appArg) {
   console.error(`usage: node main-top-test.mjs <Debug Solara.app> [--keep-data]
 
 The window's RN main root on top of the native shell's layers (SOLARA_SHELL_MAIN_TOP=1, with SOLARA_NATIVE_SHELL=1,
-SOLARA_SHELL_PANES=1 and SOLARA_NATIVE_PAGES_POOL=1), once with the native sidebar column (SOLARA_NATIVE_SIDEBAR=1,
-SOLARA_NATIVE_TOP_STRIP=1: the column must be up), once with the native sidebar alone and once
-with RN's: the root is stacked under the overlay and above every other slot (the profile pager's swipe targets, which
+SOLARA_SHELL_PANES=1 and SOLARA_NATIVE_PAGES_POOL=1), with the native sidebar and
+SOLARA_NATIVE_TOP_STRIP=1 (the sidebar column must be up): the root is stacked under the overlay and above every other slot (the profile pager's swipe targets, which
 draw nothing and hit nothing, sit above the overlay as the shell keeps views it doesn't own, and don't count);
 no React Native view that draws nothing and handles nothing catches the pointer over the card, the sidebar or the top
 strip (devReactBlockers hit-tests a grid over them and names each RN view there with no background or content; the
@@ -49,7 +49,14 @@ const describe = () => W.describe("w1").then(JSON.parse);
 const PRESS_PROPS = ["onPress", "onPressIn", "onClick", "onMouseDown", "onStartShouldSetResponder", "onResponderGrant", "draggedTypes", "onDrop", "onDragEnter"];
 const OWN_PROPS = ["onMouseEnter", "onMouseLeave"];
 let app = null;
-const run = (body, timeout = 20000) => app.eval(`${HELPERS}\n${body}`, { timeout });
+let nativePollDeadline = 0;
+const run = (body, timeout = 20000) => {
+  if (nativePollDeadline) {
+    if (nativePollDeadline - Date.now() < 1000) throw new Error("native comparison has less than 1000 ms remaining");
+    timeout = Math.min(timeout, 1000);
+  }
+  return app.eval(`${HELPERS}\n${body}`, { timeout });
+};
 const until = async (what, body, ms = 8000) => {
   const end = Date.now() + ms;
   let last;
@@ -65,13 +72,20 @@ const untilSnapshot = async (what, accept, args = {}, ms = 5000) => {
   const end = Date.now() + ms;
   let last;
   while (Date.now() < end) {
-    last = await app.snapshot(args).catch((error) => ({ error: error.message }));
-    if (!last.error && accept(last)) return last;
+    if (!app.alive) throw new Error(`${what}: the owned app exited`);
+    if (end - Date.now() < 1000) break;
+    last = await app.snapshot(args, { timeout: 1000 }).catch((error) => ({ error: error.message }));
+    nativePollDeadline = end;
+    try {
+      if (!last.error && last.consistent && Date.now() < end && await accept(last) && Date.now() < end) return last;
+    } finally {
+      nativePollDeadline = 0;
+    }
     await sleep(100);
   }
   throw new Error(`${what}: native snapshot never matched (${JSON.stringify(last)})`);
 };
-const rectNear = (a, b) => a && b && a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= 0.5);
+const rectNear = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => Number.isFinite(v) && Number.isFinite(b[i]) && Math.abs(v - b[i]) <= 0.5);
 
 async function pass(label, env) {
   app = await launch(resolve(appArg), {
@@ -81,34 +95,36 @@ async function pass(label, env) {
   });
   await until("page ONE", `return S().tabs.a.title === "ONE" || null;`, 15000);
   await sleep(1500);
-  const shell = await run(`return describe();`);
+  let shell = await run(`return describe();`);
 
   await rep.check(`${label}: the-main-root-is-under-the-overlay-and-above-the-rest`, async () => {
-    const order = shell.order.filter((name) => name !== "SolaraSettingsAdapter.NativeSwipeTarget");
+    let order = shell.order.filter((name) => name !== "SolaraSettingsAdapter.NativeSwipeTarget");
     if (!shell.reactOnTop) throw new Error(`the flag didn't take: ${JSON.stringify(shell)}`);
     if (order.at(-1) !== "SolaraUI.ShellOverlayView" || order.at(-2) !== "RCTRootView") throw new Error(`order ${order.join(" < ")}`);
-    const snapshot = await untilSnapshot("shell layer order", (state) => {
+    const snapshot = await untilSnapshot("shell layer order", async (state) => {
+      shell = await run(`return describe();`);
+      order = shell.order.filter((name) => name !== "SolaraSettingsAdapter.NativeSwipeTarget");
       const native = state.windows.find((w) => w.id === "w1")?.shell;
-      return native?.reactOnTop === shell.reactOnTop &&
-        JSON.stringify(native.order.filter((name) => name !== "SolaraSettingsAdapter.NativeSwipeTarget")) === JSON.stringify(order) &&
+      return shell.reactOnTop && order.at(-1) === "SolaraUI.ShellOverlayView" && order.at(-2) === "RCTRootView" && native?.reactOnTop === shell.reactOnTop &&
+        isDeepStrictEqual(native.order.filter((name) => name !== "SolaraSettingsAdapter.NativeSwipeTarget"), order) &&
         rectNear(native.card, shell.card);
     }, { windowId: "w1" });
     return { order: order.join(" < "), native: snapshot.windows.find((w) => w.id === "w1").shell.order };
   });
 
-  if (env.SOLARA_NATIVE_SIDEBAR === "1" && env.SOLARA_NATIVE_TOP_STRIP === "1")
+  if (env.SOLARA_NATIVE_TOP_STRIP === "1")
     await rep.check(`${label}: the-native-sidebar-column-is-up`, async () => {
-      const column = await run(`return globalThis.expo.modules.SolaraHosted.sidebarShell("w1").then(JSON.parse);`);
-      if (!column?.chrome) throw new Error(`no native column: ${JSON.stringify(column)}`);
-      await untilSnapshot("native sidebar column", (state) => {
+      let column;
+      await untilSnapshot("native sidebar column", async (state) => {
+        column = await run(`return globalThis.expo.modules.SolaraHosted.sidebarShell("w1").then(JSON.parse);`);
         const native = state.windows.find((w) => w.id === "w1")?.sidebarShell;
-        return native?.chrome && rectNear(native.frame, column.frame);
+        return column?.chrome && native?.chrome && rectNear(native.frame, column.frame);
       }, { windowId: "w1" });
       return { frame: column.frame };
     });
 
   await rep.check(`${label}: no-rn-view-that-draws-and-handles-nothing-catches-the-pointer`, async () => {
-    const found = await run(`return W.devReactBlockers("w1", 24).then(JSON.parse).then((views) => views.map((v) => {
+    const readFound = () => run(`return W.devReactBlockers("w1", 24).then(JSON.parse).then((views) => views.map((v) => {
       const press = ${JSON.stringify(PRESS_PROPS)};
       const host = typeof v.reactTag === "number" ? acPerf.hostFiber(v.reactTag) : null;
       const own = (host && host.memoizedProps) || {};
@@ -128,7 +144,9 @@ async function pass(label, env) {
       }
       return { ...v, ancestors: undefined, owner: ownerOf(host), control: !!by, by, stoppedAt, resolved: !!host };
     }));`);
-    await untilSnapshot("React hit samples", (state) => {
+    let found;
+    await untilSnapshot("React hit samples", async (state) => {
+      found = await readFound();
       const native = state.windows.find((w) => w.id === "w1")?.reactBlockers;
       return Array.isArray(native) && native.length === found.length && found.every((view) =>
         native.some((item) => item.reactTag === view.reactTag && item.class === view.class && rectNear(item.frame, view.frame)));
@@ -140,18 +158,22 @@ async function pass(label, env) {
 
   const clickCheck = `${label}: a-click-on-the-page-lands-outside-the-main-root-and-focuses-it`;
   await rep.check(clickCheck, async () => {
-    const pooled = await run(`return !!globalThis.expo.modules.SolaraTabPool?.available?.();`);
+    let pooled = await run(`return !!globalThis.expo.modules.SolaraTabPool?.available?.();`);
     if (!pooled) throw new Error("SolaraTabPool isn't available, so the pages are still RN's");
-    await untilSnapshot("page pool available", (state) => state.poolAvailable === pooled, { windowId: "w1" });
+    await untilSnapshot("page pool available", async (state) => {
+      pooled = await run(`return !!globalThis.expo.modules.SolaraTabPool?.available?.();`);
+      return pooled && state.poolAvailable === pooled;
+    }, { windowId: "w1" });
     const [x, y] = shell.card;
-    const slot = await run(`return W.devHitCost("w1", ${x + 200}, ${y + 300}).then((r) => r.slot);`);
+    let slot = await run(`return W.devHitCost("w1", ${x + 200}, ${y + 300}).then((r) => r.slot);`);
     const r = await run(`return ac.shell.devClick("w1", { in: "page", x: 200, y: 300, wait: 250 });`);
     if (!WEB.test(String(r.hit))) throw new Error(`the click landed on ${r.hit}`);
     if (!WEB.test(String(r.firstResponderAfter))) throw new Error(`first responder after the click: ${r.firstResponderAfter}`);
     if (slot === "react") throw new Error(`the page is still under the main root (the pool hasn't taken it): ${r.hit} in the react slot`);
-    await untilSnapshot("page hit and focus", (state) => {
+    await untilSnapshot("page hit and focus", async (state) => {
+      slot = await run(`return W.devHitCost("w1", ${x + 200}, ${y + 300}).then((r) => r.slot);`);
       const native = state.windows.find((w) => w.id === "w1");
-      return native?.hitSlot === slot && WEB.test(String(native.hitView)) && WEB.test(String(native.firstResponder));
+      return slot !== "react" && native?.hitSlot === slot && WEB.test(String(native.hitView)) && WEB.test(String(native.firstResponder));
     }, { windowId: "w1", hitPoint: [x + 200, y + 300] });
     return { ...r, slot };
   });
@@ -166,7 +188,12 @@ async function pass(label, env) {
       if (!WEB.test(String(hit.view))) throw new Error(`${type} at ${at} taken by ${hit.chain?.join(" < ") ?? hit.view}`);
       seen[type] = hit.view;
     }
-    await untilSnapshot("drop targets", (state) => {
+    await untilSnapshot("drop targets", async (state) => {
+      for (const type of TYPES) {
+        const hit = JSON.parse(await run(`return globalThis.expo.modules.SolaraPages.devDropTarget(${win}, ${at[0]}, ${at[1]}, ${JSON.stringify(type)});`));
+        if (!WEB.test(String(hit.view))) throw new Error(`${type} at ${at} taken by ${hit.chain?.join(" < ") ?? hit.view}`);
+        seen[type] = hit.view;
+      }
       const targets = state.windows.find((w) => w.id === "w1")?.dropTargets;
       return targets?.length === TYPES.length && targets.every((target) => target.view === seen[target.type]);
     }, { windowId: "w1", dropTargets: TYPES.map((type) => ({ x: at[0], y: at[1], type })) });
@@ -177,9 +204,7 @@ async function pass(label, env) {
 }
 
 try {
-  await pass("native-column", { SOLARA_NATIVE_SIDEBAR: "1", SOLARA_NATIVE_TOP_STRIP: "1" });
-  await pass("native-sidebar", { SOLARA_NATIVE_SIDEBAR: "1" });
-  await pass("rn-sidebar", { SOLARA_NATIVE_SIDEBAR: "0" });
+  await pass("native-column", { SOLARA_NATIVE_TOP_STRIP: "1" });
 } catch (e) {
   rep.record("run", { error: e });
 } finally {

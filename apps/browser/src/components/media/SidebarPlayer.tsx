@@ -1,15 +1,9 @@
 import { useShallow } from "zustand/react/shallow";
 import { useRef } from "react";
 import { switchToTab } from "../../lib/actions";
-import { hex, useTheme } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
-import { useTab, useWindowId } from "../../store/hooks";
-import { useSidebarTokens } from "../sidebar/tokens";
-import { useArtwork } from "./artwork";
-import { isTabShown, playerTabFor, useMedia, useSession } from "./state";
-import { addMediaActions, mediaTheme, NativeMediaView, playerState, runPlayerAction } from "./nativeMedia";
-
-export const SIDEBAR_PLAYER_HEIGHT = 74 + 8;
+import { isTabShown, playerTabFor, useMedia } from "./state";
+import { addMediaActions, runPlayerAction } from "./nativeMedia";
 
 const NO_IDS: string[] = [];
 
@@ -29,15 +23,3 @@ export function useSidebarPlayerTab(windowId: string, profileId: string): string
 }
 
 addMediaActions({ sidebarPlayer: (_windowId, tabId, extra) => runPlayerAction(tabId, extra, () => switchToTab(tabId)) });
-
-export function SidebarPlayer({ tabId }: { tabId: string }) {
-  const theme = useTheme();
-  const tokens = useSidebarTokens();
-  const windowId = useWindowId();
-  const session = useSession(tabId);
-  const tab = useTab(tabId);
-  const artwork = useArtwork(tabId, session?.artwork);
-  if (!session || !tab) return null;
-  const look = mediaTheme(theme, { groupFill: hex(tokens.groupFill), groupStroke: hex(tokens.groupStroke) });
-  return <NativeMediaView kind="media.sidebarPlayer" windowId={windowId} state={playerState(session, tab, artwork, look)} style={{ height: SIDEBAR_PLAYER_HEIGHT - 8 }} />;
-}

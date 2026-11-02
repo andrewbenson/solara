@@ -27,7 +27,6 @@
 //   display+CA commit   the blocks' end → Core Animation's commit of that transaction (AppKit layout, views drawn, commit)
 //   first paint         event → that commit, for the first React commit after the store change
 //   selection shown     event → the Core Animation commit that shows the new active row: the native sidebar's
-//                       (SOLARA_NATIVE_SIDEBAR=1, its SolaraSidebarSelectionShown notification), else first paint
 //   ui                  event → the commit of the last React commit within 500 ms that changed anything on screen (a flush
 //                       Core Animation doesn't commit within 60 ms had nothing to draw)
 //                       or, with the native top strip (SOLARA_NATIVE_TOP_STRIP=1), the commit that shows the strip's change
@@ -330,12 +329,7 @@ async function runAction(rig, ctx, name) {
       await sleep(900);
       const r = await rowPoint(rig, w1, id);
       if (!r) throw new Error("no row for the new tab");
-      const fiber = await rig.eval(`const f = acPerf.findFibers("TabRow", 400).find((f) => f.memoizedProps.tabId === ${JSON.stringify(id)});
-        let host = null;
-        for (let c = f?.child; c && !host; c = c.child) if (c.tag === 5) host = c;
-        host?.memoizedProps.onMouseEnter?.();
-        return !!host;`);
-      if (!fiber) await rig.op({ op: "hover", window: ctx.win.number, x: r.x + r.width / 2, y: r.y + r.height / 2 });
+      await rig.op({ op: "hover", window: ctx.win.number, x: r.x + r.width / 2, y: r.y + r.height / 2 });
       await sleep(250);
       send = () => rig.op({ op: "click", window: ctx.win.number, x: r.x + r.width - 6 - 11, y: r.y + r.height / 2, holdMs: 60 });
       start = "up";
@@ -423,8 +417,13 @@ async function runAction(rig, ctx, name) {
   }
   const timing = analyse({ changes: got.changes, commits: got.commits, flushes, pageFrame }, startAt);
   const nativeShown = rig.records(t0).find((r) => r.k === "n" && r.s >= startAt - 1);
-  timing.shown = nativeShown ? nativeShown.c - startAt : timing.firstPaint;
+  if (worked && after !== before && !ctx.layout && !nativeShown) throw new Error("native sidebar selection was not shown");
+  timing.shown = nativeShown ? nativeShown.c - startAt : NaN;
   timing.nativeStore = nativeShown ? nativeShown.s - startAt : NaN;
+  if (nativeShown) {
+    timing.ui = Math.max(Number.isFinite(timing.ui) ? timing.ui : -Infinity, timing.shown);
+    timing.total = Math.max(timing.ui, Number.isFinite(timing.page) ? timing.page : -Infinity);
+  }
   const stripShown = rig.records(t0).find((r) => r.k === "t" && r.s >= startAt - 1);
   if (stripShown) {
     timing.strip = stripShown.c - startAt;
@@ -461,7 +460,7 @@ async function oneLaunch(side, opts, out) {
     await rig.install();
     await sleep(3000);
     const win = await windowNumber(rig, fx.session.windows[0].frame);
-    const ctx = { ...fx, origin, win, frame: fx.session.windows[0].frame, skip: new Set(), iter: 0, countAdds: !!side.env.AC_BENCH_COUNT_ADDS };
+    const ctx = { ...fx, origin, win, layout: opts.layout, frame: fx.session.windows[0].frame, skip: new Set(), iter: 0, countAdds: !!side.env.AC_BENCH_COUNT_ADDS };
     const warm = await rig.store(`const s = S(), w = s.windows["w-tabs-1"]; return w.tabIds.filter((id) => s.tabs[id].profileId === w.profileId && !s.tabs[id].url.includes("/slow/"));`);
     for (const id of warm) {
       await rig.store(`S().activate(${JSON.stringify(id)}); return true;`);

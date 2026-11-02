@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -8,7 +9,7 @@ const appArg = args.find((a) => !a.startsWith("--"));
 if (!appArg) {
   console.error(`usage: node sidebar-chrome-test.mjs <Debug Solara.app> [--keep-data]
 
-The native sidebar column's own chrome, with the window shell, native sidebar and top strip switches on:
+The native sidebar column's own chrome, with the window shell, sidebar and top strip switches on:
 the blank header drags the window and a double-click there does what the titlebar's does; the sidebar address bar sits
 in the header's slot, survives toggling it out and back and a reload, and opens its dropdown; the header's and the
 footer's downloads buttons open the downloads list; the resize handle drags the width live, keeps it on release and
@@ -39,22 +40,34 @@ const click = (x, y, n = 1) => act("mouse:down:" + x + "," + y + "," + n).then((
 `;
 const centre = (c, r) => [Math.round(c.frame[0] + r[0] + r[2] / 2), Math.round(c.frame[1] + r[1] + r[3] / 2)];
 let inst = null;
-const run = (body) => inst.eval(`${HELPERS}\n${body}`, { timeout: 30000 });
+let nativePollDeadline = 0;
+const run = (body) => {
+  if (nativePollDeadline && nativePollDeadline - Date.now() < 1000) throw new Error("native comparison has less than 1000 ms remaining");
+  return inst.eval(`${HELPERS}\n${body}`, { timeout: nativePollDeadline ? 1000 : 30000 });
+};
 const untilSnapshot = async (what, accept, ms = 5000) => {
   const end = Date.now() + ms;
   let last;
-  while (Date.now() < end) {
-    last = await inst.snapshot({ windowId: "w1" }).catch((error) => ({ error: error.message }));
-    if (!last.error && accept(last.windows.find((w) => w.id === "w1"), last)) return last;
+  while (end - Date.now() >= 1000) {
+    if (!inst.alive) throw new Error(`${what}: instance exited`);
+    last = await inst.snapshot({ windowId: "w1" }, { timeout: 1000 }).catch((error) => ({ error: error.message }));
+    if (Date.now() >= end) break;
+    nativePollDeadline = end;
+    try {
+      if (!last.error && last.consistent && await accept(last.windows.find((w) => w.id === "w1"), last) && Date.now() < end) return last;
+    } finally {
+      nativePollDeadline = 0;
+    }
     await sleep(100);
   }
   throw new Error(`${what}: native snapshot never matched (${JSON.stringify(last)})`);
 };
-const nearRect = (a, b) => a && b && a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= 0.5);
-const checkColumn = (what, column) => untilSnapshot(what, (window) => {
+const nearRect = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => Number.isFinite(v) && Number.isFinite(b[i]) && Math.abs(v - b[i]) <= 0.5);
+const checkColumn = (what) => untilSnapshot(what, async (window) => {
+  const column = await run(`return col();`);
   const read = window?.sidebarShell;
-  return read && nearRect(read.frame, column.frame) && read.chrome?.header === column.chrome?.header &&
-    JSON.stringify(read.chrome?.dots?.map((dot) => dot.id)) === JSON.stringify(column.chrome?.dots?.map((dot) => dot.id));
+  return read && column && nearRect(read.frame, column.frame) && read.chrome?.header === column.chrome?.header &&
+    isDeepStrictEqual(read.chrome?.dots?.map((dot) => dot.id), column.chrome?.dots?.map((dot) => dot.id));
 });
 
 const canary = async (after) => {
@@ -70,7 +83,7 @@ try {
     fresh: true,
     session: fixture,
     onboarded: true,
-    env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_SIDEBAR: "1", SOLARA_NATIVE_TOP_STRIP: "1" },
+    env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_TOP_STRIP: "1" },
     ready: "return !!ac.store.getState().windows.w1",
   });
   await sleep(2500);
@@ -90,7 +103,7 @@ try {
         .then((f) => { o.before = f; return o; });`);
     await untilSnapshot("header drag counter after click", (_, snapshot) => snapshot.windowDragCount - beforeCount === out.drags);
     out.after = await run(`return click(172, 20).then(() => click(172, 20, 2)).then(() => settle(900)).then(frame);`);
-    if (!/SidebarChromeView/.test(out.hit) || out.drags !== 1 || JSON.stringify(out.after) === JSON.stringify(out.before)) throw new Error(JSON.stringify(out));
+    if (!/SidebarChromeView/.test(out.hit) || out.drags !== 1 || isDeepStrictEqual(out.after, out.before)) throw new Error(JSON.stringify(out));
     const afterFrame = out.after.replace(/[{}]/g, "").split(",").map(Number);
     await untilSnapshot("header drag window frame", (window) => window?.sidebarShell?.chrome?.header === 46 &&
       Math.abs(window.frame.width - afterFrame[2]) <= 0.5 && Math.abs(window.frame.height - afterFrame[3]) <= 0.5);
@@ -101,26 +114,37 @@ try {
 
   await rep.check("(b) the address bar sits in the slot, survives toggling out and back and a reload, and opens the dropdown", async () => {
     const sample = () => run(`return globalThis.expo.modules.SolaraSidebarAddressBar.sample("w1").then((s) => s && JSON.parse(s));`);
-    const first = await sample();
-    await untilSnapshot("sidebar address at launch", (window) =>
-      window?.sidebarAddressBar?.claimed === first.claimed && window.sidebarAddressBar.inWindow === first.inWindow);
+    let first;
+    await untilSnapshot("sidebar address at launch", async (window) => {
+      first = await sample();
+      return window?.sidebarAddressBar?.claimed === first?.claimed && window?.sidebarAddressBar?.inWindow === first?.inWindow;
+    });
     await run(`st().updateSettings({ addressBar: "toolbar" }); return settle(900);`);
-    const off = await run(`return col().then((c) => c?.chrome?.header ?? null);`);
-    await untilSnapshot("address bar outside sidebar", (window) => window?.sidebarShell?.chrome?.header === off &&
-      (window?.sidebarAddressBar == null || window.sidebarAddressBar.claimed === false));
+    let off;
+    await untilSnapshot("address bar outside sidebar", async (window) => {
+      off = await run(`return col().then((c) => c?.chrome?.header ?? null);`);
+      return window?.sidebarShell?.chrome?.header === off && (window?.sidebarAddressBar == null || window.sidebarAddressBar.claimed === false);
+    });
     await run(`st().updateSettings({ addressBar: "sidebar" }); return settle(900);`);
-    const back = await sample();
-    await untilSnapshot("address bar restored", (window) =>
-      window?.sidebarAddressBar?.claimed === back.claimed && window.sidebarAddressBar.inWindow === back.inWindow);
+    let back;
+    await untilSnapshot("address bar restored", async (window) => {
+      back = await sample();
+      return window?.sidebarAddressBar?.claimed === back?.claimed && window?.sidebarAddressBar?.inWindow === back?.inWindow;
+    });
     await run(`ac.reload?.(); return settle(3000);`).catch(() => null);
     await sleep(2000);
-    const reloaded = await sample();
-    await untilSnapshot("address bar after reload", (window) =>
-      window?.sidebarAddressBar?.claimed === reloaded.claimed && window.sidebarAddressBar.inWindow === reloaded.inWindow);
-    const c = await run(`return col();`);
+    let reloaded;
+    await untilSnapshot("address bar after reload", async (window) => {
+      reloaded = await sample();
+      return window?.sidebarAddressBar?.claimed === reloaded?.claimed && window?.sidebarAddressBar?.inWindow === reloaded?.inWindow;
+    });
+    let c = await run(`return col();`);
     const opened = await run(`const [x, y] = [${Math.round(c0.frame[0] + 80)}, ${Math.round(c0.frame[1] + 62)}];
       return click(x, y).then(() => settle(700)).then(() => ({ panel: !!st().windowUi.w1?.panel.open }));`);
-    await untilSnapshot("address panel opened", (window) => window?.sidebarShell?.chrome?.header === c?.chrome?.header);
+    await untilSnapshot("address panel opened", async (window) => {
+      c = await run(`return col();`);
+      return window?.sidebarShell?.chrome?.header === c?.chrome?.header;
+    });
     await run(`st().closePanel("w1"); return settle(400);`);
     const out = { first, off, back, reloaded, header: c?.chrome?.header, opened };
     for (const s of [first, back, reloaded]) if (!s?.claimed || !s?.inWindow) throw new Error(JSON.stringify(out));
@@ -157,20 +181,29 @@ try {
       return act("mouse:down:${x},${y},1").then(() => act("mouse:dragged:${x + 20},${y}")).then(() => act("mouse:dragged:${x + 40},${y}")).then(() => settle(200))
         .then(() => col()).then((c) => ({ ...o, live: c.frame[2] }));`);
     try {
-      await untilSnapshot("sidebar resize live width", (window) =>
-        Math.abs(window?.sidebarChromeMetrics?.liveWidth - out.live) <= 0.5 &&
-        Math.abs(window?.sidebarChromeMetrics?.committedWidth - out.saved) <= 0.5);
+      await untilSnapshot("sidebar resize live width", async (window) => {
+        const column = await run(`return col();`);
+        return Math.abs(window?.sidebarChromeMetrics?.liveWidth - column?.frame?.[2]) <= 0.5 &&
+          Math.abs(window?.sidebarChromeMetrics?.liveWidth - out.live) <= 0.5 &&
+          Math.abs(window?.sidebarChromeMetrics?.committedWidth - out.saved) <= 0.5;
+      });
     } finally {
       await run(`return act("mouse:up:${x + 40},${y},1").then(() => settle(500));`);
     }
-    Object.assign(out, await run(`const committed = st().settings.sidebarWidth; return col().then((c) => ({ committed, after: c.frame[2] }));`));
-    await untilSnapshot("sidebar resize committed width", (window) =>
-      Math.abs(window?.sidebarChromeMetrics?.liveWidth - out.after) <= 0.5 &&
-      Math.abs(window?.sidebarChromeMetrics?.committedWidth - out.committed) <= 0.5);
+    await untilSnapshot("sidebar resize committed width", async (window) => {
+      Object.assign(out, await run(`const committed = st().settings.sidebarWidth; return col().then((c) => ({ committed, after: c.frame[2] }));`));
+      return Math.abs(window?.sidebarChromeMetrics?.liveWidth - out.after) <= 0.5 &&
+        Math.abs(window?.sidebarChromeMetrics?.committedWidth - out.committed) <= 0.5;
+    });
     out.reset = await run(`return click(${x + 40}, ${y}).then(() => click(${x + 40}, ${y}, 2)).then(() => settle(600)).then(() => st().settings.sidebarWidth);`);
     if (!(out.live > out.saved + 30) || !(Math.abs(out.committed - out.after) < 1) || out.reset !== 190) throw new Error(JSON.stringify(out));
-    await untilSnapshot("sidebar resize reset", (window) => Math.abs(window?.sidebarShell?.frame?.[2] - out.reset) <= 0.5 &&
-      Math.abs(window?.sidebarChromeMetrics?.committedWidth - out.reset) <= 0.5);
+    await untilSnapshot("sidebar resize reset", async (window) => {
+      const read = await run(`const committed = st().settings.sidebarWidth; return col().then((c) => ({ committed, after: c.frame[2] }));`);
+      return Math.abs(window?.sidebarShell?.frame?.[2] - out.reset) <= 0.5 &&
+        Math.abs(window?.sidebarChromeMetrics?.committedWidth - out.reset) <= 0.5 &&
+        Math.abs(window?.sidebarShell?.frame?.[2] - read.after) <= 0.5 &&
+        Math.abs(window?.sidebarChromeMetrics?.committedWidth - read.committed) <= 0.5;
+    });
     return out;
   });
   await canary("(d)");
@@ -195,20 +228,27 @@ try {
         return FD.drag("w1", "move", 120, ${y}, { urls: ["https://example.com/${name}"] }).then(() => settle(400))
           .then(() => FD.drag("w1", "drop", 120, ${y})).then(() => settle(900)).then(() => ({ added: Object.keys(st().tabs).length - before }));`);
     }
-    out.total = await run(`return Object.keys(st().tabs).length;`);
-    await untilSnapshot("header and footer dropped tabs", (_, state) => state.tabs.length === out.total);
+    await untilSnapshot("header and footer dropped tabs", async (_, state) => {
+      out.total = await run(`return Object.keys(st().tabs).length;`);
+      return state.tabs.length === out.total;
+    });
     await run(`const T = globalThis.acTabDrag; globalThis.__dropGlowWas = T.getState(); T.setState({ overWindow: "w1" }); return true;`);
     let glowOn;
     try {
       await sleep(400);
-      glowOn = await run(`return col().then((c) => c.chrome.dropGlow);`);
-      await untilSnapshot("sidebar drop glow on", (window) => Math.abs(window?.sidebarShell?.chrome?.dropGlow - glowOn) <= 0.05);
+      await untilSnapshot("sidebar drop glow on", async (window) => {
+        glowOn = await run(`return col().then((c) => c.chrome.dropGlow);`);
+        return Math.abs(window?.sidebarShell?.chrome?.dropGlow - glowOn) <= 0.05;
+      });
     } finally {
       await run(`globalThis.acTabDrag.setState({ overWindow: globalThis.__dropGlowWas.overWindow }); return true;`);
     }
     await sleep(400);
-    const glowOff = await run(`return col().then((c) => c.chrome.dropGlow);`);
-    await untilSnapshot("sidebar drop glow off", (window) => Math.abs(window?.sidebarShell?.chrome?.dropGlow - glowOff) <= 0.05);
+    let glowOff;
+    await untilSnapshot("sidebar drop glow off", async (window) => {
+      glowOff = await run(`return col().then((c) => c.chrome.dropGlow);`);
+      return Math.abs(window?.sidebarShell?.chrome?.dropGlow - glowOff) <= 0.05;
+    });
     out.glow = [glowOn, glowOff];
     if (out.header.added !== 1 || out.footer.added !== 1 || !(out.glow[0] > 0.9) || !(out.glow[1] < 0.1)) throw new Error(JSON.stringify(out));
     return out;

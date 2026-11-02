@@ -1,5 +1,4 @@
 import { sidebarRowFrame } from "@solara/settings";
-import type { View } from "react-native";
 import { create } from "zustand";
 
 export type Anchor = { x: number; y: number; width: number; height: number };
@@ -27,23 +26,6 @@ export const useSidebarUi = create<SidebarUi>()(() => ({
 export const sidebarUi = () => useSidebarUi.getState();
 export const setSidebarUi = (patch: Partial<SidebarUi>) => useSidebarUi.setState(patch);
 
-const rows = new Map<string, Map<string, View>>();
-
-export function registerRow(windowId: string, id: string, view: View | null) {
-  let byId = rows.get(windowId);
-  if (!byId) rows.set(windowId, (byId = new Map()));
-  if (view) byId.set(id, view);
-  else byId.delete(id);
-}
-
-export const rowIds = (windowId: string): string[] => [...(rows.get(windowId)?.keys() ?? [])];
-
-export function rowView(windowId: string, id: string): View | undefined {
-  return rows.get(windowId)?.get(id);
-}
-
 export function measureRow(windowId: string, id: string): Promise<Anchor | null> {
-  const view = rowView(windowId, id);
-  if (!view) return sidebarRowFrame(windowId, id).catch(() => null);
-  return new Promise((resolve) => view.measureInWindow((x, y, width, height) => resolve(width ? { x, y, width, height } : null)));
+  return sidebarRowFrame(windowId, id).catch(() => null);
 }

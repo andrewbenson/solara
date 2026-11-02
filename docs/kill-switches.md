@@ -17,7 +17,7 @@ from `SOLARA_SWITCHES`, else from `switches-cache.json` in the data dir (written
 
 ## For a bench or a test instance
 
-`SOLARA_SWITCHES="newTabPrewarm=off,lazySidebarRows=off"` sets a launch's values over everything else (the app and
+`SOLARA_SWITCHES="newTabPrewarm=off,focusedWindowFirst=off"` sets a launch's values over everything else (the app and
 the updater both read it).
 
 ## The switches (see `SWITCHES` for owners and dates)
@@ -25,7 +25,6 @@ the updater both read it).
 | Switch | Off means | Live |
 |---|---|---|
 | `newTabPrewarm` | a New Tab page's tab is made by Enter, as before the prewarm | yes |
-| `lazySidebarRows` | a launch mounts 64 rows per page and every profile page at once | no |
 | `updatePrewarm` | a staged update waits for the quit without the hidden first run (read natively: `KillSwitch` in `Updater.swift`) | yes |
 | `launchTab` | session.json keeps no launch hint and a launch claims nothing: the restored page loads once its window's content mounts, and the early window stays off (it also has its own environment switch, `SOLARA_EARLY_WINDOW=off`) | no |
 | `focusedWindowFirst` | a launch opens every window at once, the focused one last | no |

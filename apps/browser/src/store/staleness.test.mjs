@@ -26,7 +26,6 @@ const { useBrowser } = await import("./browser.ts");
 const { useIsActiveTab, useTab, useTabLive, WindowContext } = await import("./hooks.ts");
 const { useTabValue, useStoreWhile, shallowEqual } = await import("./tabWatch.ts");
 const { usePageProgress, setPageProgress } = await import("./pageProgress.ts");
-const { useRowState, ACTIVE, SELECTED, PLAYING, LOADING } = await import("../components/sidebar/rowState.ts");
 const { useSidebarUi, setSidebarUi } = await import("../components/sidebar/state.ts");
 const { useIsSleeping, noteDiscarded, noteReady } = await import("../lib/tabLifecycle.ts");
 const { useMedia, setPictureInPictureState } = await import("../components/media/state.ts");
@@ -44,20 +43,20 @@ const setup = () => {
   return { w, a };
 };
 
-const row = (tabId, windowId) =>
+const sidebarFeed = (tabId, windowId) =>
   mount(
     () => {
-      const { tab, flags } = useRowState(tabId, windowId);
+      const tab = useTab(tabId);
       return {
         title: tab?.customTitle ?? tab?.title,
         url: tab?.url,
         pinned: tab?.pinned,
         favicon: tab?.favicon,
         gone: !tab,
-        active: !!(flags & ACTIVE),
-        selected: !!(flags & SELECTED),
-        playing: !!(flags & PLAYING),
-        loading: !!(flags & LOADING),
+        active: useIsActiveTab(tabId),
+        selected: useBrowser((s) => !!s.selection[windowId]?.includes(tabId)),
+        playing: useTabLive(tabId, (live) => !!live.playingAudio),
+        loading: useTabLive(tabId, (live) => !!live.isLoading),
         renaming: useSidebarUi((u) => u.renaming?.kind === "tab" && u.renaming.id === tabId),
         sleeping: useIsSleeping(tabId),
         pip: useMedia((m) => !!m.pipOpen[tabId]),
@@ -68,11 +67,11 @@ const row = (tabId, windowId) =>
     { contexts: [[WindowContext, windowId]] },
   );
 
-test("a sidebar row: created, renamed, re-iconed, pinned, flagged, badged, slept, woken, closed", () => {
+test("the native sidebar feed: created, renamed, re-iconed, pinned, flagged, badged, slept, woken, closed", () => {
   const { w, a } = setup();
   const b = S().newTab(w, { url: "https://b.com/", background: true });
-  const ra = row(a, w);
-  const rb = row(b, w);
+  const ra = sidebarFeed(a, w);
+  const rb = sidebarFeed(b, w);
   assert.equal(rb.value.url, "https://b.com/", "created: shows");
   assert.equal(ra.value.active, true);
   assert.equal(rb.value.active, false);
@@ -121,7 +120,7 @@ test("a sidebar row: created, renamed, re-iconed, pinned, flagged, badged, slept
   const c = S().newTab(w, { url: "https://c.com/", background: true });
   S().moveTabsToWindow([c], null);
   const moved = S().tabs[c].windowId;
-  const rc = row(c, moved);
+  const rc = sidebarFeed(c, moved);
   S().activate(c);
   assert.equal(rc.value.active, true, "a tab moved to another window is active there");
 
@@ -131,7 +130,7 @@ test("a sidebar row: created, renamed, re-iconed, pinned, flagged, badged, slept
   for (const r of [ra, rb, rc]) r.unmount();
 });
 
-test("a row's tab and flags survive a relaunch: a row mounted on the restored session shows it", () => {
+test("the native sidebar feed survives a relaunch and follows the restored tab", () => {
   stub.docs.clear();
   S().hydrate({});
   const stop = startPersistence();
@@ -143,7 +142,7 @@ test("a row's tab and flags survive a relaunch: a row mounted on the restored se
   stop();
   S().hydrate({});
   S().hydrate(loadSession());
-  const r = row(b, w);
+  const r = sidebarFeed(b, w);
   assert.equal(r.value.title, "Before quit");
   assert.equal(r.value.pinned, true);
   assert.equal(r.value.active, true);

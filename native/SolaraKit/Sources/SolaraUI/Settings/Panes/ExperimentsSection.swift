@@ -19,7 +19,6 @@ public final class ExperimentsModel {
   static let titles: [LaunchSwitch: (title: String, detail: String)] = [
     .nativeShell: ("Native window", "The window's frame, page card and overlays, drawn by Solara's Swift interface."),
     .shellPanes: ("Native page overlays", "Each tab's overlays get their own place in the native window."),
-    .nativeSidebar: ("Native sidebar", "The sidebar's tabs, pins, folders and hover cards."),
     .nativeTopStrip: ("Native tab strip", "The tab strip at the top of the window."),
     .nativeSidePanel: ("Native side panel", "An extension's side panel, beside the page."),
   ]

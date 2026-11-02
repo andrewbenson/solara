@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
+import { isDeepStrictEqual } from "node:util";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -33,33 +34,48 @@ const calendarFixture = {
 const app = await launch(resolve(appArg), {
   data: join(scratch, "data"),
   files: { "calendar-fixture.json": calendarFixture },
-  env: { SOLARA_NATIVE_SIDEBAR: "1", SOLARA_NATIVE_SHELL: "1", SOLARA_CALENDAR_FIXTURE: "1" },
+  env: { SOLARA_NATIVE_SHELL: "1", SOLARA_CALENDAR_FIXTURE: "1" },
   probe: true,
   session: session({ profiles: ["Personal", "Work"], windows: [{ id: "w1", tabIds: ids, activeTabIds: { default: "t1" }, frame: [60, 60, 1200, 800] }], tabs }),
   ready: "return !!ac.store",
 });
-const run = (body) => app.eval(body, { timeout: 30000 });
+let nativePollDeadline = 0;
+const run = (body, timeout = 30000) => {
+  if (nativePollDeadline) {
+    if (nativePollDeadline - Date.now() < 1000) throw new Error("native comparison has less than 1000 ms remaining");
+    timeout = Math.min(timeout, 1000);
+  }
+  return app.eval(body, { timeout });
+};
 const untilSnapshot = async (what, accept, ms = 3000, args = {}) => {
   const end = Date.now() + ms;
   let last;
   do {
-    last = await app.snapshot({ windowId: "w1", ...args });
+    if (!app.alive) throw new Error(`${what}: the owned app exited`);
+    if (end - Date.now() < 1000) break;
+    last = await app.snapshot({ windowId: "w1", ...args }, { timeout: 1000 });
     assert.equal(last.schema, 1);
-    if (last.consistent && await accept(last)) return last;
+    nativePollDeadline = end;
+    try {
+      if (last.consistent && Date.now() < end && await accept(last) && Date.now() < end) return last;
+    } finally {
+      nativePollDeadline = 0;
+    }
     await sleep(40);
   } while (Date.now() < end);
   throw new Error(`${what}: native snapshot never matched (${JSON.stringify(last)})`);
 };
-const near = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= 0.5);
+const near = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => Number.isFinite(v) && Number.isFinite(b[i]) && Math.abs(v - b[i]) <= 0.5);
 const crossCard = async (js) => {
   if (js && !["shown", "hidden"].includes(js.phase)) return js;
   const snapshot = await untilSnapshot("hover card", async (s) => {
+    js = JSON.parse(await run(`return globalThis.expo.modules.SolaraHosted.sidebarHoverCard("w1")`));
+
     const n = s.windows[0]?.hoverCard;
     const same = js === null ? n === null : n && ["shown", "hidden"].includes(js.phase) && n.phase === js.phase && n.kind === js.kind && (!js.frame || near(n.frame, js.frame)) &&
-      ["inWindow", "onScreen", "typingInCard", "titleShown", "title", "more", "rows"].every((key) => !(key in js) || JSON.stringify(n[key]) === JSON.stringify(js[key])) &&
-      ["buttons", "events"].every((key) => !js[key] || n[key] && JSON.stringify(Object.keys(n[key]).sort()) === JSON.stringify(Object.keys(js[key]).sort()) && Object.keys(js[key]).every((label) => near(n[key][label], js[key][label])));
+      ["inWindow", "onScreen", "typingInCard", "titleShown", "title", "more", "rows"].every((key) => !(key in js) || isDeepStrictEqual(n[key], js[key])) &&
+      ["buttons", "events"].every((key) => !js[key] || n[key] && isDeepStrictEqual(Object.keys(n[key]).sort(), Object.keys(js[key]).sort()) && Object.keys(js[key]).every((label) => near(n[key][label], js[key][label])));
     if (same) return true;
-    js = JSON.parse(await run(`return globalThis.expo.modules.SolaraHosted.sidebarHoverCard("w1")`));
     return false;
   });
   const native = snapshot.windows[0].hoverCard;
@@ -104,8 +120,10 @@ try {
     assert.ok(early.ms < 450, `sampled in time (${early.ms} ms)`);
     assert.equal(early.hover, null, "nothing at 300 ms");
     assert.equal(early.phase, "hidden", "no native card at 300 ms");
-    const earlySnapshot = await app.snapshot({ windowId: "w1" });
-    assert.equal(earlySnapshot.windows[0]?.hoverCard?.phase ?? "hidden", early.phase);
+    await untilSnapshot("native hover phase after the early sample", async (snapshot) => {
+      const live = JSON.parse(await run(`return globalThis.expo.modules.SolaraHosted.sidebarHoverCard("w1")`));
+      return (snapshot.windows[0]?.hoverCard?.phase ?? "hidden") === (live?.phase ?? "hidden");
+    });
     const c = await shown("t3");
     rep.say(`shown at ${c.frame.map(Math.round)}`);
     assert.ok(c.inWindow && c.onScreen && c.opacity > 0.99, "on screen and opaque");

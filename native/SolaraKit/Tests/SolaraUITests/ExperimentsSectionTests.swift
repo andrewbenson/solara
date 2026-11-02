@@ -23,10 +23,10 @@ import Testing
 
   @Test func theRowsAreTheRemainingInterfaceSwitchesWithTheirDependencies() {
     let model = model(defaults: scratchDefaults())
-    #expect(model.rows.map(\.name) == [.nativeShell, .shellPanes, .nativeSidebar, .nativeTopStrip, .nativeSidePanel])
+    #expect(model.rows.map(\.name) == [.nativeShell, .shellPanes, .nativeTopStrip, .nativeSidePanel])
     #expect(!model.rows.contains { $0.name == .nativePagesPool || $0.name == .shellMainTop })
     #expect(row(model, .shellPanes).needs == "Needs Native window.")
-    #expect(row(model, .nativeSidebar).needs == nil)
+    #expect(row(model, .nativeShell).needs == nil)
   }
 
   @Test func aRowWhoseDependencyIsOffIsGreyedUntilItIsTurnedOn() {
@@ -34,7 +34,7 @@ import Testing
     let model = model(defaults: defaults)
     #expect(row(model, .nativeShell).on)
     #expect(row(model, .shellPanes).enabled)
-    #expect(row(model, .nativeSidebar).enabled)
+    #expect(row(model, .nativeShell).enabled)
     #expect(!model.pendingRelaunch)
     model.set(.nativeShell, false)
     #expect(defaults.string(forKey: "SOLARA_NATIVE_SHELL") == "0")
@@ -66,11 +66,11 @@ import Testing
 
   @Test func turnAllOffClearsEverySavedSwitch() {
     let defaults = scratchDefaults()
-    defaults.set("0", forKey: "SOLARA_NATIVE_SIDEBAR")
+    defaults.set("0", forKey: "SOLARA_SHELL_PANES")
     defaults.set("1", forKey: "SOLARA_SHELL_MAIN_TOP")
     let model = model(defaults: defaults)
     model.turnAllOff()
-    #expect(defaults.object(forKey: "SOLARA_NATIVE_SIDEBAR") == nil)
+    #expect(defaults.object(forKey: "SOLARA_SHELL_PANES") == nil)
     #expect(defaults.object(forKey: "SOLARA_SHELL_MAIN_TOP") == nil)
     #expect(model.pendingRelaunch)
   }
@@ -86,7 +86,7 @@ import Testing
     let saved = model(defaults: defaults)
     saved.reveal(optionHeld: false)
     #expect(saved.revealed)
-    let environment = model(environment: ["SOLARA_NATIVE_SIDEBAR": "1"], defaults: scratchDefaults())
+    let environment = model(environment: ["SOLARA_SHELL_PANES": "1"], defaults: scratchDefaults())
     environment.reveal(optionHeld: false)
     #expect(environment.revealed)
   }
@@ -99,8 +99,8 @@ import Testing
     #expect(row(model, .nativeShell).on)
     #expect(row(model, .nativeShell).fromEnvironment)
     #expect(model.rows.allSatisfy { !$0.enabled })
-    model.set(.nativeSidebar, true)
-    #expect(defaults.object(forKey: "SOLARA_NATIVE_SIDEBAR") == nil)
+    model.set(.shellPanes, true)
+    #expect(defaults.object(forKey: "SOLARA_SHELL_PANES") == nil)
   }
 
   @Test func aSafeLaunchAfterFailedLaunchesSaysSoAndLeavesTheSwitchesAlone() {

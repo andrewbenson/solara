@@ -1,13 +1,6 @@
 #!/usr/bin/env node
-// With the native window shell on (SOLARA_NATIVE_SHELL=1), a file, link or text dragged over the page still lands on
-// Chromium's web contents: no shell view above the page registers those drag types, as in RN. Checked with the page
-// alone, with the zoom popover open in the pane overlays, with the native sidebar's hover card shown in the shell
-// overlay (SOLARA_NATIVE_SIDEBAR=1; its frame, opacity and pixels are checked before and after the drops), and with two
-// tabs in the native split chrome. A drop on the zoom popover's card must go where RN's does: the same point is probed in an RN
-// instance (shell and native toolbar off), and the shell must hand the drop to the same kind of view.
-//
-//   node apps/browser/scripts/shell-drop-test.mjs <Debug Solara.app under apps/browser/build-*> [--keep-data]
 import assert from "node:assert/strict";
+import { isDeepStrictEqual } from "node:util";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -29,6 +22,11 @@ const PAGE = "data:text/html,<body style='height:2000px'>drop here</body>";
 
 async function open(env, dir) {
   const app = await launch(resolve(appArg), { data: join(scratch, dir), onboarded: true, env });
+  let nativePollDeadline = 0;
+  const read = (body) => {
+    if (nativePollDeadline && nativePollDeadline - Date.now() < 1000) throw new Error("native comparison has less than 1000 ms remaining");
+    return app.eval(body, { timeout: nativePollDeadline ? 1000 : 20000 });
+  };
   await app.ready({ test: "return !!globalThis.expo?.modules?.SolaraPages?.devDropTarget" });
   await sleep(4000);
   await app.eval(`const s = ac.store.getState(); const w = Object.keys(s.windows)[0]; s.newTab(w, { url: ${JSON.stringify(PAGE)} }); return true`);
@@ -42,8 +40,15 @@ async function open(env, dir) {
     const end = Date.now() + ms;
     let last;
     while (Date.now() < end) {
-      last = await app.snapshot({ windowId, ...args }).catch((error) => ({ error: error.message }));
-      if (!last.error && accept(last.windows.find((w) => w.id === windowId), last)) return last;
+      if (!app.alive) throw new Error(`${what}: the owned app exited`);
+      if (end - Date.now() < 1000) break;
+      last = await app.snapshot({ windowId, ...args }, { timeout: 1000 }).catch((error) => ({ error: error.message }));
+      nativePollDeadline = end;
+      try {
+        if (!last.error && last.consistent && Date.now() < end && await accept(last.windows.find((w) => w.id === windowId), last) && Date.now() < end) return last;
+      } finally {
+        nativePollDeadline = 0;
+      }
       await sleep(100);
     }
     throw new Error(`${what}: native snapshot never matched (${JSON.stringify(last)})`);
@@ -52,29 +57,31 @@ async function open(env, dir) {
     window?.chromeWindowNumber === win && window.selectedTabId === tab &&
     Math.abs(window.frame.width - w) <= 0.5 && Math.abs(window.frame.height - h) <= 0.5);
   const target = async (x, y, type) => {
-    const hit = JSON.parse(await app.eval(`return globalThis.expo.modules.SolaraPages.devDropTarget(${win}, ${x}, ${y}, ${JSON.stringify(type)})`));
-    await untilSnapshot("drop target", { dropTargets: [{ x, y, type }] }, (window) => {
+    let hit;
+    await untilSnapshot("drop target", { dropTargets: [{ x, y, type }] }, async (window) => {
+      hit = JSON.parse(await read(`return globalThis.expo.modules.SolaraPages.devDropTarget(${win}, ${x}, ${y}, ${JSON.stringify(type)})`));
       const native = window?.dropTargets?.[0];
-      return native?.view === hit.view && JSON.stringify(native.chain) === JSON.stringify(hit.chain);
+      return native?.view === hit.view && isDeepStrictEqual(native.chain, hit.chain);
     });
     return hit;
   };
   const frameOf = async (needle) => {
-    const frame = JSON.parse(await app.eval(`return globalThis.expo.modules.SolaraPages.devViewFrame(${win}, ${JSON.stringify(needle)})`));
-    await untilSnapshot("view frame", { viewFrames: [needle] }, (window) => {
+    let frame;
+    await untilSnapshot("view frame", { viewFrames: [needle] }, async (window) => {
+      frame = JSON.parse(await read(`return globalThis.expo.modules.SolaraPages.devViewFrame(${win}, ${JSON.stringify(needle)})`));
       const native = window?.viewFrames?.[needle];
       return native?.found === frame.found && (!frame.found || ["x", "y", "width", "height"].every((key) => Math.abs(native[key] - frame[key]) <= 0.5));
     });
     return frame;
   };
   const zoom = (on) => app.eval(`ac.pageState.setState((s) => ({ popover: { ...s.popover, [${JSON.stringify(tab)}]: ${on ? '"zoom"' : "null"} } })); return true`);
-  return { app, w, h, tab, windowId, target, frameOf, zoom, untilSnapshot };
+  return { app, read, w, h, tab, windowId, target, frameOf, zoom, untilSnapshot };
 }
 
 let shell = null;
 let rn = null;
 try {
-  shell = await open({ SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_SIDEBAR: "1" }, "shell-data");
+  shell = await open({ SOLARA_NATIVE_SHELL: "1" }, "shell-data");
   const { w, h } = shell;
   const page = [Math.round(w * 0.6), Math.round(h * 0.6)];
   const pageGoesToWeb = async (label, at = page) => {
@@ -101,7 +108,7 @@ try {
   });
 
   const windowId = shell.windowId;
-  const card = async () => JSON.parse(await shell.app.eval(`return globalThis.expo.modules.SolaraHosted.sidebarHoverCard(${JSON.stringify(windowId)})`));
+  const card = async () => JSON.parse(await shell.read(`return globalThis.expo.modules.SolaraHosted.sidebarHoverCard(${JSON.stringify(windowId)})`));
   const region = (png, x, y, w, h) => execFileSync("ffmpeg", ["-v", "error", "-i", png, "-vf", `crop=${w}:${h}:${x}:${y}`, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], { maxBuffer: 64 << 20 });
   const pixel = (png, x, y) => [...region(png, x, y, 1, 1)];
   const snapshot = async (label) => {
@@ -109,17 +116,18 @@ try {
     assert.ok(await shell.app.eval(`return ac.shell.devSnapshotWindow(${JSON.stringify(windowId)}, ${JSON.stringify(png)})`), `${label}: window snapshot`);
     return png;
   };
-  const near = (a, b, by) => a.every((v, i) => Math.abs(v - b[i]) <= by);
+  const near = (a, b, by) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => Number.isFinite(v) && Number.isFinite(b[i]) && Math.abs(v - b[i]) <= by);
   let bare = null;
   const cardOnScreen = async (label) => {
-    const c = await card();
+    let c = await card();
     assert.equal(c?.kind, "tab", `${label}: the native tab card is mounted (${JSON.stringify(c)})`);
     assert.equal(c.phase, "shown", `${label}: phase`);
     assert.ok(c.opacity > 0.99 && Math.abs(c.scale - 1) < 0.001, `${label}: fully faded in (${c.opacity}, ${c.scale})`);
     assert.ok(c.onScreen && c.inWindow, `${label}: on screen inside the window`);
-    await shell.untilSnapshot("hover card", {}, (window) => {
+    await shell.untilSnapshot("hover card", {}, async (window) => {
+      c = await card();
       const native = window?.hoverCard;
-      return native?.kind === c.kind && native.phase === c.phase &&
+      return c?.kind === "tab" && c.phase === "shown" && c.opacity > 0.99 && Math.abs(c.scale - 1) < 0.001 && c.onScreen && c.inWindow && native?.kind === c.kind && native.phase === c.phase &&
         Math.abs(native.opacity - c.opacity) <= 0.01 && Math.abs(native.scale - c.scale) <= 0.01 &&
         native.frame?.every((value, index) => Math.abs(value - c.frame[index]) <= 0.5);
     });

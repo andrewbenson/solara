@@ -1,13 +1,29 @@
 import assert from "node:assert/strict";
+import { isDeepStrictEqual } from "node:util";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { launch, reporter, screenLocked, screenLockedPending, session, sleep } from "../../../scripts/lib/instance.mjs";
 
+let nativePollDeadline = null;
+const evaluate = (body, options = {}) => {
+  if (nativePollDeadline !== null && nativePollDeadline - Date.now() < 1000) throw new Error("native comparison has less than 1000 ms left");
+  return app.eval(body, { ...options, ...(nativePollDeadline === null ? {} : { timeout: 1000 }) });
+};
+const acceptSnapshot = async (deadline, accept, ...args) => {
+  const previous = nativePollDeadline;
+  nativePollDeadline = previous === null ? deadline : Math.min(previous, deadline);
+  try {
+    return await accept(...args);
+  } finally {
+    nativePollDeadline = previous;
+  }
+};
+
 const args = process.argv.slice(2);
 const appArg = args.find((a) => !a.startsWith("--"));
 if (!appArg) {
-  console.error("usage: node sidebar-bulk-test.mjs <Debug Solara.app> [--port=<DevTools port>] [--keep-data]\n\nMany tabs duplicated, opened or closed at once leave the sidebar's rows at an even pitch, in store order, with no slide left part way and the row under the pointer the one hovered (pending while the screen is locked, when the window shell's display link doesn't resolve the pointer). SOLARA_NATIVE_SIDEBAR=1 runs it on the native sidebar.");
+  console.error("usage: node sidebar-bulk-test.mjs <Debug Solara.app> [--port=<DevTools port>] [--keep-data]\n\nMany tabs duplicated, opened or closed at once leave the sidebar's rows at an even pitch, in store order, with no slide left part way and the row under the pointer the one hovered (pending while the screen is locked, when the window shell's display link doesn't resolve the pointer).");
   process.exit(2);
 }
 const appPath = resolve(appArg);
@@ -27,24 +43,28 @@ const SETTLED = `
   const s = ac.store.getState();
   const w = s.windows.w1;
   const list = w.tabIds.filter((id) => !s.tabs[id].pinned);
-  const motion = globalThis.sidebarMotion?.w1;
-  const moving = motion ? [...motion.slides].filter(([, slide]) => slide.value.__getValue() !== 0).map(([key]) => key) : [];
-  const clipped = motion ? [...motion.clipped] : [];
-  return Promise.all(list.map((id) => ac.sidebarRows.measureRow("w1", id).then((f) => ({ id, f })))).then((rows) => ({ list, rows, moving, clipped }));`;
+  return globalThis.expo.modules.SolaraHosted.sidebarMotion("w1").then(JSON.parse).then((motion) => {
+    if (!motion) throw new Error("native sidebar motion unavailable");
+    const moving = motion.rows.filter((row) => !row.box && (!Number.isFinite(row.shownY) || !Number.isFinite(row.y) || row.shownY !== row.y || row.alpha !== 1 || row.retired)).map((row) => row.key);
+    const clipped = motion.rows.filter((row) => !row.box && row.clip !== null).map((row) => row.key);
+    return Promise.all(list.map((id) => ac.sidebarRows.measureRow("w1", id).then((f) => ({ id, f })))).then((rows) => ({ list, rows, moving, clipped }));
+  });`;
 
 let app = null;
 try {
   app = await launch(appPath, { data, port, session: fixture, onboarded: true });
   rep.log(`instance: pid ${app.pid}, DevTools port ${app.port}, data ${data}`);
-  const run = (body) => app.eval(body, { timeout: 60000 });
+  const run = (body) => evaluate(body, { timeout: 60000 });
   await sleep(1500);
 
   const untilSnapshot = async (what, accept, ms = 5000) => {
     const deadline = Date.now() + ms;
     let last;
     while (Date.now() < deadline) {
-      last = await app.snapshot({ windowId: "w1" }).catch((error) => ({ error: error.message }));
-      if (!last.error && last.consistent && accept(last)) return last;
+      if (!app.alive) throw new Error(`${what}: app exited`);
+      if (Math.min(deadline, nativePollDeadline ?? Infinity) - Date.now() < 1000) break;
+      last = await app.snapshot({ windowId: "w1" }, { timeout: 1000 }).catch((error) => ({ error: error.message }));
+      if (Date.now() < deadline && !last.error && last.consistent && await acceptSnapshot(deadline, accept, last) && Date.now() < deadline) return last;
       await sleep(100);
     }
     throw new Error(`${what}: native snapshot never matched (${JSON.stringify(last)})`);
@@ -53,10 +73,14 @@ try {
   const locked = screenLocked();
   const settled = async (what) => {
     await sleep(1200);
-    const { list, rows, moving, clipped } = await run(SETTLED);
-    assert.deepEqual(moving, [], `${what}: rows left part way through their slide`);
-    assert.deepEqual(clipped, [], `${what}: rows left clipped`);
-    const native = await untilSnapshot(`${what} native tab order`, (state) => state.windows[0]?.tabIds.join() === list.join());
+    let list, rows;
+    const native = await untilSnapshot(`${what} native tab order`, async (state) => {
+      const sample = await run(SETTLED);
+      ({ list, rows } = sample);
+      assert.deepEqual(sample.moving, [], `${what}: rows left part way through their slide`);
+      assert.deepEqual(sample.clipped, [], `${what}: rows left clipped`);
+      return isDeepStrictEqual(state.windows[0]?.tabIds, list);
+    });
     assert.deepEqual(native.windows[0].tabIds, list, `${what}: native store order differs from the measured rows`);
     assert.deepEqual(native.tabs.map((tab) => tab.id).sort(), [...list].sort(), `${what}: native tab IDs differ from JS`);
     const shown = rows.filter((r) => r.f);

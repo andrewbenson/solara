@@ -29,19 +29,19 @@ test("at most 8 live switches, each on by default with an owner and a removal da
 
 test("a cached value is read synchronously; unknown names and non-booleans are ignored", () => {
   reset();
-  docs.set("switches-cache.json", JSON.stringify(file({ sidebarSlide: false, newTabPrewarm: "no", gone: false, lazySidebarRows: 0 })));
+  docs.set("switches-cache.json", JSON.stringify(file({ sidebarSlide: false, newTabPrewarm: "no", gone: false, launchTab: 0 })));
   assert.equal(ks.switchOn("sidebarSlide"), false);
   assert.equal(ks.switchOn("newTabPrewarm"), true);
-  assert.equal(ks.switchOn("lazySidebarRows"), true);
+  assert.equal(ks.switchOn("launchTab"), true);
   reset();
   docs.set("switches-cache.json", "not json");
   assert.equal(ks.switchOn("sidebarSlide"), true);
 });
 
 test("SOLARA_SWITCHES text parses to values, and ignores what it doesn't know", () => {
-  assert.deepEqual(ks.parseOverride("sidebarSlide=off, lazySidebarRows=on,nope=off,newTabPrewarm=maybe,=1"), {
+  assert.deepEqual(ks.parseOverride("sidebarSlide=off, launchTab=on,nope=off,newTabPrewarm=maybe,=1"), {
     sidebarSlide: false,
-    lazySidebarRows: true,
+    launchTab: true,
   });
   assert.deepEqual(ks.parseOverride(null), {});
 });

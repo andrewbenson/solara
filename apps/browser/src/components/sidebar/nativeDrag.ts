@@ -1,6 +1,5 @@
 import { hapticTick, onAppEvent, setDragEscapeCapture } from "@solara/shell";
 import { requireOptionalNativeModule } from "expo-modules-core";
-import { create } from "zustand";
 import type { TabPlacement } from "../../store/organize";
 import { addNativeSettingsHandlers } from "../settings/nativeSettings";
 import "../layout/nativeTabDrag";
@@ -29,7 +28,7 @@ type Probe = {
   viewport: Frame | null;
   scrollY: number;
 };
-export type NativeMarks = {
+type NativeMarks = {
   sources: string[];
   folderAway: boolean;
   folderTarget: string | null;
@@ -41,8 +40,6 @@ export type NativeMarks = {
 type DragModule = {
   escape(): Promise<void>;
   external(windowId: string, phase: string, x: number, y: number, count: number): Promise<string | null>;
-  panel(windowId: string, frameJSON: string | null): Promise<void>;
-  panelDrag(windowId: string, phase: string, tabId: string, x: number, y: number): Promise<void>;
   startProbe(windowId: string): Promise<string>;
   probe(windowId: string): string;
   clearLanded(windowId: string): Promise<void>;
@@ -51,17 +48,11 @@ type DragModule = {
 
 const native = requireOptionalNativeModule<DragModule>("SolaraSidebarDrag");
 
-export const useNativeDragMarks = create<{
-  windowId: string | null;
-  marks: NativeMarks | null;
-}>()(() => ({ windowId: null, marks: null }));
-
 addNativeSettingsHandlers({
   "sidebar.drag.live": (sequence: string[]) => arrangeLive(sequence),
   "sidebar.drag.escape": (on: boolean) => setDragEscapeCapture(on),
   "sidebar.drag.haptic": () => hapticTick(),
   "sidebar.drag.closePanel": () => closeFolderPanel(),
-  "sidebar.drag.marks": (windowId: string, marks: NativeMarks) => useNativeDragMarks.setState({ windowId, marks }),
 });
 
 if (native) onAppEvent((e) => e.type === "dragEscape" && void native.escape());
@@ -71,26 +62,13 @@ export const nativeSidebarDrag = {
     if (!native) return Promise.resolve(null);
     return native.external(windowId, phase, x, y, count).then((text) => (text ? (JSON.parse(text) as TabPlacement) : null));
   },
-  panel(windowId: string, panel: { frame: Frame; members: (Frame & { tabId: string })[] } | null) {
-    if (!panel) useNativeDragMarks.setState({ windowId: null, marks: null });
-    return native?.panel(windowId, panel ? JSON.stringify(panel) : null);
-  },
-  panelDrag(windowId: string, phase: "begin" | "move" | "end" | "cancel", tabId: string, x: number, y: number) {
-    return native?.panelDrag(windowId, phase, tabId, x, y);
-  },
 };
 
 type ViewLike = {
   measureInWindow(cb: (x: number, y: number, w: number, h: number) => void): void;
 };
 
-export function installNativeDragProbe(
-  windowId: string,
-  jsPanel: () => {
-    items: Map<string, { section: string; view: unknown }>;
-    regions: Map<string, unknown>;
-  } | null,
-) {
+export function installNativeDragProbe(windowId: string) {
   if (!__DEV__ || !native) return;
   void native.startProbe(windowId);
   const read = (): Probe | null => {
@@ -117,14 +95,11 @@ export function installNativeDragProbe(
       const p = read();
       const out = new Map<string, unknown>();
       for (const i of p?.items ?? []) {
-        if (i.kind === "tail" && i.section === "folder") continue;
         out.set(i.key, {
           ...i,
           view: view((q) => q.items.find((x) => x.key === i.key)),
         });
       }
-      const panel = jsPanel();
-      for (const [key, i] of panel?.items ?? []) if (i.section === "folder") out.set(key, i);
       return out;
     },
     get regions() {
@@ -135,8 +110,6 @@ export function installNativeDragProbe(
           name,
           view((q) => q.regions[name]),
         );
-      const folder = jsPanel()?.regions.get("folder");
-      if (folder) out.set("folder", folder);
       return out;
     },
     get marks() {

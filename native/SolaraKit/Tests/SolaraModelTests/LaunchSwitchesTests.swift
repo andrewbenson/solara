@@ -6,7 +6,7 @@ import Testing
 @Suite struct LaunchSwitchesTests {
   static let defaultOn: Set<LaunchSwitch> = [
     .nativeShell, .nativeTopStrip, .nativeSidePanel,
-    .nativeSidebar, .shellPanes, .nativePagesPool, .shellMainTop,
+    .shellPanes, .nativePagesPool, .shellMainTop,
   ]
   static let shippedSurfaces = defaultOn.filter { !$0.storable(distribution: true) }
 
@@ -80,11 +80,11 @@ import Testing
 
   @Test func storedValuesCountOnlyAsOneOrZero() {
     let defaults = scratchDefaults()
-    defaults.set(true, forKey: "SOLARA_NATIVE_SIDEBAR")
+    defaults.set(true, forKey: "SOLARA_NATIVE_PAGES_POOL")
     defaults.set("on", forKey: "SOLARA_SHELL_PANES")
     defaults.set(1, forKey: "SOLARA_NATIVE_TOP_STRIP")
     let switches = LaunchSwitches(environment: [:], defaults: defaults, distribution: false, skipStored: false)
-    #expect(switches.isOn(.nativeSidebar, defaultOn: false))
+    #expect(switches.isOn(.nativePagesPool, defaultOn: false))
     #expect(!switches.isOn(.shellPanes, defaultOn: false))
     #expect(switches.isOn(.nativeTopStrip, defaultOn: false))
   }
@@ -99,8 +99,8 @@ import Testing
       let stored = StoredLaunchSwitches(switches, defaults: defaults)
       #expect(!stored.writable)
       #expect(stored.value(.nativeShell) == nil)
-      stored.set(.nativeSidebar, true)
-      #expect(defaults.object(forKey: "SOLARA_NATIVE_SIDEBAR") == nil)
+      stored.set(.nativePagesPool, true)
+      #expect(defaults.object(forKey: "SOLARA_NATIVE_PAGES_POOL") == nil)
     }
   }
 
@@ -161,10 +161,10 @@ import Testing
     #expect(!stored.any)
     stored.set(.nativeShell, nil)
     #expect(!stored.any)
-    stored.set(.nativeSidebar, false)
+    stored.set(.nativePagesPool, false)
     stored.clear()
     #expect(defaults.object(forKey: "SOLARA_NATIVE_GONE") == nil)
-    #expect(defaults.object(forKey: "SOLARA_NATIVE_SIDEBAR") == nil)
+    #expect(defaults.object(forKey: "SOLARA_NATIVE_PAGES_POOL") == nil)
     #expect(defaults.string(forKey: "SOLARA_SHELL_MAIN_TOP") == "1")
   }
 
@@ -172,7 +172,6 @@ import Testing
     #expect(LaunchSwitch.shellPanes.needs == [.nativeShell])
     #expect(LaunchSwitch.nativePagesPool.needs == [.nativeShell])
     #expect(LaunchSwitch.shellMainTop.needs == [.shellPanes, .nativePagesPool])
-    #expect(LaunchSwitch.nativeSidebar.needs.isEmpty)
     #expect(LaunchSwitch.nativeTopStrip.needs.isEmpty)
     #expect(LaunchSwitch.onByDefault == Self.defaultOn)
   }
@@ -239,7 +238,7 @@ import Testing
   @Test func twoUnfinishedLaunchesTriggerSafeModeWithoutChangingSwitches() {
     for distribution in [false, true] {
       let defaults = scratchDefaults()
-      defaults.set("1", forKey: "SOLARA_NATIVE_SIDEBAR")
+      defaults.set("1", forKey: "SOLARA_NATIVE_PAGES_POOL")
       let launch = { LaunchSwitches.launching(environment: [:], defaults: defaults, distribution: distribution, optionHeld: { false }) }
       #expect(launch().countedLaunch)
       #expect(defaults.integer(forKey: LaunchSwitches.failedLaunchesKey) == 1)
@@ -247,9 +246,9 @@ import Testing
       #expect(defaults.integer(forKey: LaunchSwitches.failedLaunchesKey) == 2)
       let third = launch()
       #expect(third.safeMode && third.safeModeAfterFailedLaunches && third.countedLaunch)
-      #expect(third.isOn(.nativeShell) && third.isOn(.nativeTopStrip) && third.isOn(.nativeSidebar))
+      #expect(third.isOn(.nativeShell) && third.isOn(.nativeTopStrip) && third.isOn(.nativePagesPool))
       #expect(defaults.object(forKey: "SOLARA_NATIVE_SHELL") == nil)
-      #expect(defaults.string(forKey: "SOLARA_NATIVE_SIDEBAR") == "1")
+      #expect(defaults.string(forKey: "SOLARA_NATIVE_PAGES_POOL") == "1")
       #expect(defaults.integer(forKey: LaunchSwitches.failedLaunchesKey) == 2)
       #expect((third.safeModeReport ?? "").contains("twice in a row"))
       let fourth = launch()
@@ -288,13 +287,13 @@ import Testing
   @Test func holdingOptionStartsSafeModeForOneLaunchWithoutWritingSwitches() {
     for distribution in [false, true] {
       let defaults = scratchDefaults()
-      defaults.set("1", forKey: "SOLARA_NATIVE_SIDEBAR")
+      defaults.set("1", forKey: "SOLARA_NATIVE_PAGES_POOL")
       defaults.set(1, forKey: LaunchSwitches.failedLaunchesKey)
       let held = LaunchSwitches.launching(environment: [:], defaults: defaults, distribution: distribution, optionHeld: { true })
       #expect(held.safeMode && held.countedLaunch && !held.safeModeAfterFailedLaunches)
-      #expect(held.isOn(.nativeShell) && held.isOn(.nativeSidebar) && held.isOn(.nativeTopStrip))
+      #expect(held.isOn(.nativeShell) && held.isOn(.nativePagesPool) && held.isOn(.nativeTopStrip))
       #expect(defaults.object(forKey: "SOLARA_NATIVE_SHELL") == nil)
-      #expect(defaults.string(forKey: "SOLARA_NATIVE_SIDEBAR") == "1")
+      #expect(defaults.string(forKey: "SOLARA_NATIVE_PAGES_POOL") == "1")
       #expect(defaults.integer(forKey: LaunchSwitches.failedLaunchesKey) == 2)
       let retry = LaunchSwitches.launching(environment: [:], defaults: defaults, distribution: distribution, optionHeld: { false })
       #expect(retry.safeMode && retry.safeModeAfterFailedLaunches && retry.countedLaunch)

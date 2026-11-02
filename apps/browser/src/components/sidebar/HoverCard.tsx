@@ -24,7 +24,6 @@ import { useSidebarUi, type Anchor, type Hover } from "./state";
 import { TabIcon } from "./TabIcon";
 import { HoverPlayer, usePlayerEdge, useShowsMiniPlayer } from "../media/HoverPlayer";
 import { useMedia, usePictureInPicture } from "../media/state";
-import { nativeSidebarEnabled } from "./NativeSidebar";
 import { useSidebarWidth } from "./tokens";
 import { bareHost, FOLDER_PEEK_ROWS, NativeCalendarCard, nativeCardKind, useNativeHoverCard, useNativeHoverCardActive } from "./nativeHoverCard";
 
@@ -61,7 +60,7 @@ export function HoverCard({ windowId, width, height }: { windowId: string; width
   const edge = usePlayerEdge(windowId, shown?.anchor);
   const sidebarWidth = useSidebarWidth(windowId);
   const [diaHeight, setDiaHeight] = useState(DIA_HEIGHT);
-  const dia = nativeSidebarEnabled() && shown?.kind === "tab" && !player && !calendar;
+  const dia = shown?.kind === "tab" && !player && !calendar;
   const origin = !shown ? null : dia ? diaCardOrigin(shown.anchor, sidebarWidth, diaHeight, height) : hoverCardOrigin(shown.anchor, player ? edge : undefined);
   useHoverCardPlacement(motion, origin, { width, height });
   const nativeKind = nativeCardKind(useNativeHoverCardActive(windowId), shown, dia, player, calendar);

@@ -1,6 +1,6 @@
 import { writeDocument } from "@solara/shell";
 import { sidebarEntries } from "../components/sidebar/entries";
-import { rowIds, rowView } from "../components/sidebar/state";
+import { measureRow } from "../components/sidebar/state";
 import { useBrowser } from "../store/browser";
 
 const WATCH_MS = 8000;
@@ -30,15 +30,22 @@ function seen(key: string, place: Place, frame: readonly number[] | null | undef
   if (onScreen(place, frame)) shown.add(key);
 }
 
-function missingRows(): string[] {
+function expectedRows(windowId: string): string[] {
+  const s = useBrowser.getState();
+  const w = s.windows[windowId];
+  if (!w) return [];
+  const { cells, pinned, list } = sidebarEntries(s, windowId, w.profileId);
+  return [...cells, ...[...pinned, ...list].map((entry) => entry.startsWith("s:") ? entry : entry.slice(2))];
+}
+
+async function missingRows(): Promise<string[]> {
   const s = useBrowser.getState();
   const missing: string[] = [];
   for (const windowId of s.windowOrder) {
     const w = s.windows[windowId];
     if (!w || !w.sidebarOpen) continue;
-    const { tiles, pinned, list } = sidebarEntries(s, windowId, w.profileId);
-    const ids = [...tiles, ...[...pinned, ...list].map((e) => (e.startsWith("s:") ? e : e.slice(2)))];
-    for (const id of ids) if (!rowView(windowId, id)) missing.push(`${windowId}|${id}`);
+    const ids = expectedRows(windowId);
+    for (const id of ids) if (!(await measureRow(windowId, id))) missing.push(`${windowId}|${id}`);
   }
   return missing;
 }
@@ -59,10 +66,10 @@ function edit() {
   edits = [`added ${added}`, `closed ${closed}`, `moved ${moved}`];
 }
 
-function finish() {
+async function finish() {
   if (finished) return;
   finished = true;
-  writeDocument("layout-watch.json", JSON.stringify({ commits, rows: last.size, shown: shown.size, ms: Date.now() - started, moves, missing: missingRows(), edits }));
+  writeDocument("layout-watch.json", JSON.stringify({ commits, rows: last.size, shown: shown.size, ms: Date.now() - started, moves, missing: await missingRows(), edits }));
 }
 
 export function layoutCommitted(editAt = 0) {
@@ -76,8 +83,17 @@ export function layoutCommitted(editAt = 0) {
   const s = useBrowser.getState();
   for (const windowId of s.windowOrder) {
     const frame = s.windows[windowId]?.frame;
-    for (const id of rowIds(windowId)) {
-      rowView(windowId, id)?.measureInWindow((x, y, width, height) => seen(`${windowId}|${id}`, { x, y, width, height, commit }, frame));
+    const w = s.windows[windowId];
+    const ids = new Set([
+      ...expectedRows(windowId),
+      ...(w?.tabIds ?? []).filter((id) => s.tabs[id]?.profileId === w?.profileId),
+      ...Object.values(s.groups).filter((group) => group.windowId === windowId && group.profileId === w?.profileId).map((group) => group.id),
+      ...Object.values(s.splits).filter((split) => split.windowId === windowId).map((split) => `s:${split.id}`),
+    ]);
+    for (const id of ids) {
+      void measureRow(windowId, id).then((place) => {
+        if (place) seen(`${windowId}|${id}`, { ...place, commit }, frame);
+      });
     }
   }
 }

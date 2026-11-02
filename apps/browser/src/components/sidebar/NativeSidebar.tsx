@@ -48,20 +48,13 @@ import { useProfileDotsShown } from "../profiles/ProfileDots";
 import { useTabDrag } from "../layout/tabDrag";
 import { SidebarAddressBarState } from "./AddressBar";
 import { closeFolderPanelIn, openTileFolderMenu, toggleFolderPanel } from "./tileFolderUi";
-
-let nativeSidebar: boolean | undefined;
-
-export function nativeSidebarEnabled(): boolean {
-  nativeSidebar ??= hostedKinds().includes("sidebar");
-  if (nativeSidebar) publishNativeLive();
-  return nativeSidebar;
-}
+import { installNativeDragProbe } from "./nativeDrag";
 
 const SHELL_TOPIC = "sidebar.shell";
 const shellColumns: Record<string, object> = {};
 
 export function nativeSidebarShell(windowId: string): boolean {
-  return nativeSidebarEnabled() && hostedKinds().includes(SHELL_TOPIC) && windowShellActive(windowId) && pagerFor(windowId).nativeOwned;
+  return hostedKinds().includes(SHELL_TOPIC) && windowShellActive(windowId) && pagerFor(windowId).nativeOwned;
 }
 
 export function shellColumnFitsAddressBar(addressBar: boolean): boolean {
@@ -305,6 +298,8 @@ function useNativeSidebarPlayer(windowId: string, profileId: string, theme: Them
 }
 
 export const NativeSidebar = memo(function NativeSidebar({ windowId, profileId, addressBar, column, width }: { windowId: string; profileId: string; addressBar: boolean; column?: ShellColumn; width?: number }) {
+  useEffect(publishNativeLive, []);
+  useEffect(() => installNativeDragProbe(windowId), [windowId]);
   const theme = useTheme();
   const glow = useSelectedTabGlow();
   const selection = useBrowser((s) => s.selection[windowId] ?? NONE);

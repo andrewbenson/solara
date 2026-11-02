@@ -88,25 +88,29 @@ const heroRef = (w, t) => {
   return null;
 };
 `;
-const run = (body) => {
+const run = (body, timeout = 4000) => {
   assert.ok(!stopping, "test is stopping");
-  return app.eval(`${HELPERS}\n${body}`, { timeout: 4000 });
+  return app.eval(`${HELPERS}\n${body}`, { timeout });
 };
 const until = async (what, sample, accept, ms = 4500) => {
   const end = Date.now() + ms;
   let last;
   do {
     if (!app.stillOwned()) throw new Error(`instance exited while waiting for ${what}`);
-    last = await sample();
-    if (accept(last)) return last;
+    if (end - Date.now() < 1000) break;
+    last = await sample(end);
+    if (Date.now() < end && await accept(last, end) && Date.now() < end) return last;
     await sleep(80);
   } while (Date.now() < end);
   throw new Error(`${what}: ${JSON.stringify(last)}`);
 };
-const view = (w, t) => run(`const ref = heroRef(${JSON.stringify(w)}, ${JSON.stringify(t)}); return ref ? ref.driverState().then(JSON.parse).then((native) => ({ native, js: ac.omnibox.get(${JSON.stringify(`${w}:hero`)})?.state() ?? null })) : null;`);
-const snapshot = (what, accept) => until(what, () => app.snapshot({}, { timeout: 4000 }), (state) => state.consistent && accept(state));
+const view = (w, t, end) => {
+  if (end - Date.now() < 1000) return null;
+  return run(`const ref = heroRef(${JSON.stringify(w)}, ${JSON.stringify(t)}); return ref ? ref.driverState().then(JSON.parse).then((native) => ({ native, js: ac.omnibox.get(${JSON.stringify(`${w}:hero`)})?.state() ?? null })) : null;`, 1000);
+};
+const snapshot = (what, accept) => until(what, () => app.snapshot({}, { timeout: 1000 }), (state, end) => state.consistent && accept(state, end));
 const checkedView = async (w, t, text, { focused = true, title = null, absentTitle = null, compareJS = false } = {}) => {
-  const found = await until(`${w}/${t} native hero state`, () => view(w, t), (state) => {
+  const valid = (state) => {
     if (!state?.native || state.native.typed !== text) return false;
     const n = state.native;
     assert.equal(n.observationVersion, 2, "rebuild with observationVersion 2 native hooks");
@@ -117,8 +121,12 @@ const checkedView = async (w, t, text, { focused = true, title = null, absentTit
     if (title && !n.items.some((item) => item.title === title)) return false;
     if (absentTitle && n.items.some((item) => item.title === absentTitle)) return false;
     return true;
+  };
+  let found;
+  await snapshot(`${w} native hero, selection and focus`, async (state, end) => {
+    found = await view(w, t, end);
+    return valid(found) && state.windows.some((entry) => entry.id === w && entry.selectedTabId === t && (!focused || /NSTextView|NSTextField|FieldEditor|TextField/.test(entry.firstResponder ?? "")));
   });
-  await snapshot(`${w} native selection and focus`, (state) => state.windows.some((entry) => entry.id === w && entry.selectedTabId === t && (!focused || /NSTextView|NSTextField|FieldEditor|TextField/.test(entry.firstResponder ?? ""))));
   return found.native;
 };
 const editorKey = async (key, keyCode, modifiers = []) => {
@@ -161,7 +169,7 @@ try {
     settings: { newTabOpens: "page", addressBar: "toolbar", commandBarPlacement: "field", searchSuggestions: false, warnBeforeClosingLastTab: false, warnBeforeClosingWindow: false },
   });
   launching = launch(appPath, { data, fresh: true, onboarded: true, probe: true, session: fixture, files: { "bench-offline": "" },
-    env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_SIDEBAR: "1", SOLARA_NATIVE_NEWTAB: "1", SOLARA_NATIVE_OMNIBOX: "1" },
+    env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_NEWTAB: "1", SOLARA_NATIVE_OMNIBOX: "1" },
     ready: false, startTimeout: 20_000 });
   app = await launching;
   assert.ok(!stopping, "launch interrupted");

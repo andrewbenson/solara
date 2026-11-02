@@ -72,24 +72,25 @@ const stop = async (code) => {
 for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143], ["SIGHUP", 129]]) {
   process.once(signal, () => void stop(code));
 }
-const run = (body) => {
+const run = (body, timeout = 4000) => {
   assert.ok(!stopping, "test is stopping");
-  return instance.eval(body, { timeout: 4000 });
+  return instance.eval(body, { timeout });
 };
 const until = async (name, read, accept = Boolean, ms = 4000) => {
   const end = Date.now() + ms;
   let last;
   do {
     assert.ok(instance.stillOwned(), `${name}: instance exited`);
-    last = await read();
-    if (accept(last)) return last;
+    if (end - Date.now() < 1000) break;
+    last = await read(end);
+    if (Date.now() < end && await accept(last, end) && Date.now() < end) return last;
     await sleep(40);
   } while (Date.now() < end);
   throw new Error(`${name}: timed out (${JSON.stringify(last)})`);
 };
 const nativeWindow = async (name, accept) => {
-  const snapshot = await until(name, () => instance.snapshot({ windowId: "w1" }, { timeout: 3000 }),
-    (state) => state.consistent && accept(state.windows.find((window) => window.id === "w1"), state));
+  const snapshot = await until(name, () => instance.snapshot({ windowId: "w1" }, { timeout: 1000 }),
+    (state, end) => state.consistent && accept(state.windows.find((window) => window.id === "w1"), state, end));
   return snapshot;
 };
 const plainURL = (url) => typeof url === "string" && /^https?:\/\/[^/@]*\//i.test(url);
@@ -105,17 +106,32 @@ const snapshotMatches = (omnibox, state) => !!omnibox
   && Array.isArray(omnibox.rows) && omnibox.rows.length === Math.min(state.items.length, 64)
   && omnibox.rows.every((row, index) => snapshotRowMatches(row, state.items[index]));
 let current = null;
-const observe =async (name, accept = () => true) => {
-  const pair = await until(name, () => run(`
+const readPair = (end) => {
+  if (end - Date.now() < 1000) return null;
+  return run(`
     const cached = ac.omnibox.get(${JSON.stringify("w1:")} + ${JSON.stringify(current.variant)})?.state();
     return globalThis.__omniboxNative.driverState().then((json) => ({ cached, native: JSON.parse(json) }));
-  `), ({ native }) => {
+  `, 1000);
+};
+const observe = async (name, accept = () => true) => {
+  const valid = ({ native } = {}) => {
+    if (!native) return false;
     if (!native.windowId) return false;
     assert.equal(native.observationVersion, 2, "rebuild with the version 2 native observation hooks");
     if (!accept(native) || !Array.isArray(native.items) || !native.mounted || !native.fieldAttached || native.listAway !== false) return false;
     if (native.windowId !== "w1" || native.tabId !== "a" || native.profileId !== "default" || native.variant !== current.variant || native.opensTab !== current.newTab) return false;
     if (!native.focused || native.fieldValue !== native.value || !isDeepStrictEqual(native.fieldSelection, native.selection)) return false;
     return true;
+  };
+  let pair;
+  const snapshot = await nativeWindow(`${name} probe snapshot rows`, async (window, snapshot, end) => {
+    pair = await readPair(end);
+    if (!pair || !valid(pair)) return false;
+    const state = pair.native;
+    return window?.profileId === "default" && window.selectedTabId === state.tabId
+      && (current.newTab || isDeepStrictEqual(window.focusedURL?.selection, state.selection)
+        && (!/^https?:\/\//.test(state.value) || window.focusedURL?.value === state.value))
+      && snapshotMatches(window?.omnibox, state);
   });
   const state = pair.native;
   assert.equal(state.windowId, "w1");
@@ -126,10 +142,6 @@ const observe =async (name, accept = () => true) => {
   assert.equal(state.fieldValue, state.value, "AppKit field displays the model value");
   assert.deepEqual(state.fieldSelection, state.selection, "AppKit selection matches the native model");
   assert.ok(Array.isArray(state.items), "native model exposes the ordered suggestion list");
-  await nativeWindow(name, (window) => window?.profileId === "default" && window.selectedTabId === state.tabId
-    && (current.newTab || isDeepStrictEqual(window.focusedURL?.selection, state.selection)
-      && (!/^https?:\/\//.test(state.value) || window.focusedURL?.value === state.value)));
-  const snapshot = await nativeWindow(`${name} probe snapshot rows`, (window) => snapshotMatches(window?.omnibox, state));
   rep.log(`${name} probe snapshot`, snapshot.windows.find((window) => window.id === "w1").omnibox);
   rep.log(name, state);
   const differences = ["windowId", "tabId", "profileId", "variant", "opensTab", "typed", "value", "completion", "selection", "scope", "selected", "items"]
@@ -203,7 +215,7 @@ try {
   }, 100000);
   launching = launch(appPath, { data: join(scratch, "data"), session: fixture, onboarded: true, probe: true,
     startTimeout: 25000, ready: { timeout: 20000, test: "return !!ac.store && !!ac.omnibox && !!globalThis.acPerf" },
-    env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_SIDEBAR: "1", SOLARA_NATIVE_OMNIBOX: "1", SOLARA_NATIVE_NEWTAB: "1" },
+    env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_OMNIBOX: "1", SOLARA_NATIVE_NEWTAB: "1" },
     files: { "bench-offline": "1" } });
   instance = await launching;
   assert.ok(!stopping, "launch interrupted");

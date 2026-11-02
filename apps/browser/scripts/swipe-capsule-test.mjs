@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import assert from "node:assert/strict";
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -68,7 +69,14 @@ const gesture = (steps, at) => new Promise((resolve) => {
 });
 `;
 let app = null;
-const run = (body, timeout = 20000) => app.eval(`${HELPERS}\n${body}`, { timeout });
+let nativePollDeadline = 0;
+const run = (body, timeout = 20000) => {
+  if (nativePollDeadline) {
+    if (nativePollDeadline - Date.now() < 1000) throw new Error("native comparison has less than 1000 ms remaining");
+    timeout = Math.min(timeout, 1000);
+  }
+  return app.eval(`${HELPERS}\n${body}`, { timeout });
+};
 const until = async (what, body, ms = 8000) => {
   const end = Date.now() + ms;
   let last;
@@ -79,19 +87,28 @@ const until = async (what, body, ms = 8000) => {
   }
   throw new Error(`${what}: never true (last ${JSON.stringify(last)})`);
 };
-const near = (a, b) => a && b && a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= 0.5);
+const near = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => Number.isFinite(v) && Number.isFinite(b[i]) && Math.abs(v - b[i]) <= 0.5);
 const untilSnapshot = async (what, accept, ms = 5000) => {
   const end = Date.now() + ms;
   let last;
-  while (Date.now() < end) {
-    last = await app.snapshot({ windowId: "w1" }).catch((error) => ({ error: error.message }));
-    if (!last.error && accept(last.windows.find((w) => w.id === "w1"), last)) return last;
+  while (end - Date.now() >= 1000) {
+    if (!app.alive) throw new Error(`${what}: instance exited`);
+    last = await app.snapshot({ windowId: "w1" }, { timeout: 1000 }).catch((error) => ({ error: error.message }));
+    if (Date.now() >= end) break;
+    nativePollDeadline = end;
+    try {
+      if (!last.error && last.consistent && await accept(last.windows.find((w) => w.id === "w1"), last) && Date.now() < end) return last;
+    } finally {
+      nativePollDeadline = 0;
+    }
     await sleep(100);
   }
   throw new Error(`${what}: native snapshot never matched (${JSON.stringify(last)})`);
 };
 const readHaptics = async () => {
-  const { haptics } = await app.snapshot();
+  if (!app.alive) throw new Error("native haptics: instance exited");
+  const { haptics, consistent } = await app.snapshot({}, { timeout: 1000 });
+  assert.equal(consistent, true, "native haptics snapshot is consistent");
   assert.ok(haptics && Number.isSafeInteger(haptics.performed) && Number.isSafeInteger(haptics.suppressed) && haptics.suppressed >= 0,
     `invalid native haptics ${JSON.stringify(haptics)}`);
   assert.equal(haptics.performed, 0, `probe-driven haptic performed: ${JSON.stringify(haptics)}`);
@@ -128,17 +145,17 @@ try {
 
     await rep.check(`${tag}-confirmed-capsule`, async () => {
       const running = gestureSample(kept, 620);
-      let captured = null;
       if (nativeShell) {
         await sleep(620);
-        captured = await untilSnapshot("confirmed native capsule", (window) => window?.paneOverlays?.tabs?.a?.swipe?.confirmed);
+        await untilSnapshot("confirmed native capsule", async (window) => {
+          const at = 0;
+          const sampled = await run(`return new Promise((resolve) => setTimeout(() => sample().then(resolve), ${at}));`);
+          const read = window?.paneOverlays?.tabs?.a?.swipe;
+          return read?.confirmed && sampled?.native?.confirmed && near(read.frame, sampled.native.frame) &&
+            near(read.area, sampled.native.area) && read.confirmed === sampled.native.confirmed;
+        });
       }
       const s = await running;
-      if (captured) {
-        const read = captured.windows.find((window) => window.id === "w1").paneOverlays.tabs.a.swipe;
-        if (!near(read.frame, s.native.frame) || !near(read.area, s.native.area) || read.confirmed !== s.native.confirmed)
-          throw new Error(`native snapshot capsule ${JSON.stringify(read)} vs JS ${JSON.stringify(s.native)}`);
-      }
       const frame = shown(s);
       if (!frame) throw new Error(`no capsule mid-gesture: ${JSON.stringify(s)}`);
       const [, ay, , ah] = s.area;
@@ -146,35 +163,37 @@ try {
       if (nativeShell && (s.rn || !s.native.confirmed)) throw new Error(`RN capsule ${s.rn}, native ${JSON.stringify(s.native)}`);
       await sleep(500);
       if ((await run(`return title();`)) !== "THREE") throw new Error("cancelling navigated");
-      await untilSnapshot("cancel keeps THREE", (_, state) => state.tabs.some((tab) => tab.id === "a" && tab.title === "THREE" && tab.url === url("three")));
+      await untilSnapshot("cancel keeps THREE", async (_, state) => (await run(`return title();`)) === "THREE" &&
+        state.tabs.some((tab) => tab.id === "a" && tab.title === "THREE" && tab.url === url("three")));
       got[`${tag}-capsule`] = frame;
       return { frame, area: s.area };
     });
 
     await rep.check(`${tag}-destination-list`, async () => {
       const running = gestureSample(held, 950);
-      let captured = null;
       if (nativeShell) {
         await sleep(950);
-        captured = await untilSnapshot("native destination list", (window) => window?.paneOverlays?.tabs?.a?.swipe?.list);
+        await untilSnapshot("native destination list", async (window) => {
+          const at = 0;
+          const sampled = await run(`return new Promise((resolve) => setTimeout(() => sample().then(resolve), ${at}));`);
+          const read = window?.paneOverlays?.tabs?.a?.swipe;
+          return read?.list && sampled?.native?.list && near(read.frame, sampled.native.frame) &&
+            near(read.area, sampled.native.area) && isDeepStrictEqual(read.items, sampled.native.items);
+        });
       }
       const s = await running;
-      if (captured) {
-        const read = captured.windows.find((window) => window.id === "w1").paneOverlays.tabs.a.swipe;
-        if (!near(read.frame, s.native.frame) || !near(read.area, s.native.area) || JSON.stringify(read.items) !== JSON.stringify(s.native.items))
-          throw new Error(`native snapshot list ${JSON.stringify(read)} vs JS ${JSON.stringify(s.native)}`);
-      }
       const frame = shown(s);
       if (!frame) throw new Error(`no list mid-gesture: ${JSON.stringify(s)}`);
       const [, ay, , ah] = s.area;
       const want = [200, 2 * 38 + 16];
       if (!near(frame.slice(2), want) || Math.abs(frame[1] - (ay + ah / 2 - 8 - 19)) > 0.5) throw new Error(`list ${frame} in ${s.area}`);
-      if (nativeShell && (s.lists || JSON.stringify(s.native.items) !== JSON.stringify(["TWO", "ONE"]))) throw new Error(`RN lists ${s.lists}, native items ${JSON.stringify(s.native.items)}`);
+      if (nativeShell && (s.lists || !isDeepStrictEqual(s.native.items, ["TWO", "ONE"]))) throw new Error(`RN lists ${s.lists}, native items ${JSON.stringify(s.native.items)}`);
       await until("back to TWO", `return title() === "TWO" || null;`, 4000);
-      await untilSnapshot("back to TWO", (_, state) => state.tabs.some((tab) => tab.id === "a" && tab.title === "TWO" && tab.url === url("two")));
+      await untilSnapshot("back to TWO", async (_, state) => (await run(`return title();`)) === "TWO" &&
+        state.tabs.some((tab) => tab.id === "a" && tab.title === "TWO" && tab.url === url("two")));
       if (nativeShell) {
-        await until("the native capsule goes", `return native().then((d) => !d || !d.inCard || null);`, 2000);
-        await untilSnapshot("native capsule leaves card", (window) => !window?.paneOverlays?.inCard);
+        await untilSnapshot("native capsule leaves card", async (window) =>
+          (await run(`return native().then((d) => !d || !d.inCard || null);`)) && !window?.paneOverlays?.inCard, 2000);
       }
       got[`${tag}-list`] = frame;
       return { frame };
@@ -189,11 +208,17 @@ try {
     ready: "return !!ac.store.getState().windows.w1 && !!globalThis.acSwipe",
   });
   await until("page ONE", `return title() === "ONE" || null;`, 15000);
-  const number = await until("window", `const id = Object.entries(ac.pageState.getState().browsers ?? {}).find(([, t]) => t === "a")?.[0]; return id ? C.devWindowNumber(Number(id)) : null;`, 15000);
-  await untilSnapshot("pooled window number", (window) => window?.chromeWindowNumber === number);
+  let number;
+  await untilSnapshot("pooled window number", async (window) => {
+    number = await run(`const id = Object.entries(ac.pageState.getState().browsers ?? {}).find(([, t]) => t === "a")?.[0]; return id ? C.devWindowNumber(Number(id)) : null;`);
+    return number != null && window?.chromeWindowNumber === number;
+  });
   const back = timed([{ phase: "began", dx: 0, atMs: 0 }, ...push, { phase: "ended", dx: 0, atMs: 200 }]);
   const swipe = async (x, y, steps = back) => {
-    const before = (await app.snapshot()).swipeSimulation.count;
+    if (!app.alive) throw new Error("swipe simulation baseline: instance exited");
+    const baseline = await app.snapshot({}, { timeout: 1000 });
+    assert.equal(baseline.consistent, true, "swipe simulation baseline is consistent");
+    const before = baseline.swipeSimulation.count;
     const where = inputRoute === "js"
       ? await run(`return globalThis.expo.modules.SolaraSwipe.devSimulate(${x}, ${y}, ${number}, ${JSON.stringify(steps)}, true).then((r) => r.where);`)
       : (await app.probe("input.swipe", { windowId: "w1", x, y, steps, ignorePreference: true })).where;
@@ -207,7 +232,8 @@ try {
     await sleep(900);
     const now = await run(`return title();`);
     if (where.hit !== "RenderWidgetHostViewCocoa" || where.target || now !== "TWO") throw new Error(`${what}: hit ${where.hit}, target ${where.target}, page ${now}`);
-    await untilSnapshot(`${what} keeps TWO`, (_, state) => state.tabs.some((tab) => tab.id === "a" && tab.url === url("two")));
+    await untilSnapshot(`${what} keeps TWO`, async (_, state) => (await run(`return title();`)) === "TWO" &&
+      state.tabs.some((tab) => tab.id === "a" && tab.url === url("two")));
     return where;
   };
   await run(`ac.store.getState().navigate("a", ${JSON.stringify(url("two"))}, { userInitiated: true }); return true;`);
@@ -239,7 +265,8 @@ try {
   await rep.check(`${prefix}pool-page-swipe-goes-back`, async () => {
     const where = await swipe(300, 400);
     await until("back to ONE", `return title() === "ONE" || null;`, 4000);
-    await untilSnapshot("page swipe goes back", (_, state) => state.tabs.some((tab) => tab.id === "a" && tab.url === url("one")));
+    await untilSnapshot("page swipe goes back", async (_, state) => (await run(`return title();`)) === "ONE" &&
+      state.tabs.some((tab) => tab.id === "a" && tab.url === url("one")));
     return where;
   });
 
@@ -249,7 +276,8 @@ try {
     await sleep(500);
     const where = await swipe(300, 400, [{ phase: "swipe", dx: 3, atMs: 0 }]);
     await until("back to ONE", `return title() === "ONE" || null;`, 4000);
-    await untilSnapshot("discrete page swipe goes back", (_, state) => state.tabs.some((tab) => tab.id === "a" && tab.url === url("one")));
+    await untilSnapshot("discrete page swipe goes back", async (_, state) => (await run(`return title();`)) === "ONE" &&
+      state.tabs.some((tab) => tab.id === "a" && tab.url === url("one")));
     return where;
   });
   await rep.check(`${prefix}pool-no-haptics`, readHaptics);
@@ -269,7 +297,7 @@ try {
       tabs: [{ id: "a", profileId: "default", url: url("one") }, { id: "b", profileId: "work", url: url("one") }],
       settings: { warnBeforeClosingLastTab: false, warnBeforeClosingWindow: false },
     }),
-    env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_SIDEBAR: "1", SOLARA_NATIVE_TOP_STRIP: "1" },
+    env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_TOP_STRIP: "1" },
     ready: "return !!ac.store.getState().windows.w1 && !!globalThis.acSwipe",
   });
   await rep.check("native-input-pager-detent-suppresses-haptic", async () => {

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { isDeepStrictEqual } from "node:util";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -20,30 +21,45 @@ const layout = { windows: [{ id: "w1", tabIds: ids, activeTabIds: { default: "t1
 const CELL = 30;
 const INSET = 8.5;
 
+let nativePollDeadline = 0;
+
 async function start() {
   const app = await launch(resolve(appArg), {
     data: join(scratch, "native"),
-    env: { SOLARA_NATIVE_SIDEBAR: "1", SOLARA_NATIVE_SHELL: "1" },
+    env: { SOLARA_NATIVE_SHELL: "1" },
     probe: true,
     session: session(layout),
     ready: "return !!ac.store",
   });
-  return { app, run: (body) => app.eval(body, { timeout: 30000 }) };
+  return { app, run: (body) => {
+    if (nativePollDeadline && nativePollDeadline - Date.now() < 1000) throw new Error("native comparison has less than 1000 ms remaining");
+    return app.eval(body, { timeout: nativePollDeadline ? 1000 : 30000 });
+  } };
 }
 
 const untilSnapshot = async (app, what, accept, ms = 5000) => {
-  const deadline = Date.now() + ms;
+  const end = Date.now() + ms;
   let last;
-  while (Date.now() < deadline) {
-    last = await app.snapshot({ windowId: "w1" }).catch((error) => ({ error: error.message }));
-    if (!last.error && last.consistent && accept(last)) return last;
+  while (end - Date.now() >= 1000) {
+    if (!app.alive) throw new Error(`${what}: instance exited`);
+    last = await app.snapshot({ windowId: "w1" }, { timeout: 1000 }).catch((error) => ({ error: error.message }));
+    if (Date.now() >= end) break;
+    nativePollDeadline = end;
+    try {
+      if (!last.error && last.consistent && await accept(last) && Date.now() < end) return last;
+    } finally {
+      nativePollDeadline = 0;
+    }
     await sleep(100);
   }
   throw new Error(`${what}: native snapshot never matched (${JSON.stringify(last)})`);
 };
 const nativePicker = (state) => state.windows.find((window) => window.id === "w1")?.iconPicker;
-const nativeIcon = async (app, id, icon) => untilSnapshot(app, `native icon for ${id}`, (state) => state.tabs.find((tab) => tab.id === id)?.customIcon === icon);
-const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const nativeIcon = async (app, id, icon, readIcon) => untilSnapshot(app, `native icon for ${id}`, async (state) => {
+  const value = await readIcon(id);
+  return Object.is(value, icon) && Object.is(state.tabs.find((tab) => tab.id === id)?.customIcon, value);
+});
+const same = isDeepStrictEqual;
 const until = async (what, test, ms = 3000) => {
   const end = Date.now() + ms;
   for (;;) {
@@ -67,17 +83,18 @@ try {
   const point = (x, y) => run(`return ac.shell.devSetPointer("w1", { x: ${x}, y: ${y} })`);
   const open = async (kind, id) => {
     await openPicker(run, kind, id);
-    const p = await until("the picker shows", async () => ((await picker())?.panel ? picker() : null));
-    await untilSnapshot(native.app, "native picker frame and labels", (state) => {
+    let p;
+    await untilSnapshot(native.app, "native picker frame and labels", async (state) => {
+      p = await picker();
       const read = nativePicker(state);
-      return read && same(read.panel, p.panel) && read.tab === p.tab && read.focused === p.focused &&
+      return p?.panel && read && same(read.panel, p.panel) && read.tab === p.tab && read.focused === p.focused &&
         read.items === p.items && read.first === p.first && same(read.footer, p.footer);
     });
     return p;
   };
   const closed = async () => {
-    await until("the picker closes", async () => (await picker()) === null && (await run(`return ac.sidebarRows.useSidebarUi.getState().iconPicker`)) === null);
-    await untilSnapshot(native.app, "native picker dismissed", (state) => nativePicker(state) === null);
+    await untilSnapshot(native.app, "native picker dismissed", async (state) => (await picker()) === null &&
+      (await run(`return ac.sidebarRows.useSidebarUi.getState().iconPicker`)) === null && nativePicker(state) === null);
   };
   const icon = (id) => run(`return ac.store.getState().tabs[${JSON.stringify(id)}].customIcon ?? null`);
   const cellCenter = (panel, index) => [panel[0] + INSET + (index % 7) * CELL + CELL / 2, panel[1] + INSET + 26 + 8 + Math.floor(index / 7) * CELL + CELL / 2];
@@ -95,13 +112,16 @@ try {
 
   await rep.check("typing filters, and Return takes the first match and closes", async () => {
     await input("type:pizza");
-    const p = await until("one match", async () => ((await picker())?.items === 1 ? picker() : null));
+    let p;
+    await untilSnapshot(native.app, "native filtered picker", async (state) => {
+      p = await picker();
+      return p?.items === 1 && nativePicker(state)?.items === p.items && nativePicker(state)?.first === p.first;
+    });
     assert.equal(p.first, "🍕");
-    await untilSnapshot(native.app, "native filtered picker", (state) => nativePicker(state)?.items === p.items && nativePicker(state)?.first === p.first);
     await input("return");
     await closed();
     assert.equal(await icon("t3"), "🍕");
-    await nativeIcon(native.app, "t3", "🍕");
+    await nativeIcon(native.app, "t3", "🍕", icon);
   });
 
   await rep.check("Escape closes it without a change, and a typed miss shows No matches", async () => {
@@ -109,9 +129,11 @@ try {
     assert.deepEqual(p.footer, ["Reset Icon"], "a custom icon offers Reset Icon");
     assert.equal(p.panel[3], 265);
     await input("type:zzzz");
-    p = await until("no matches", async () => ((await picker())?.items === 0 ? picker() : null));
+    await untilSnapshot(native.app, "native no-match picker", async (state) => {
+      p = await picker();
+      return p?.items === 0 && nativePicker(state)?.items === 0 && same(nativePicker(state)?.panel, p.panel);
+    });
     assert.equal(p.panel[3], 82 + 34);
-    await untilSnapshot(native.app, "native no-match picker", (state) => nativePicker(state)?.items === 0 && same(nativePicker(state)?.panel, p.panel));
     await input("escape");
     await closed();
     assert.equal(await icon("t3"), "🍕");
@@ -121,28 +143,29 @@ try {
     const p = await open("tab", "t3");
     const [x, y] = cellCenter(p.panel, 2);
     await point(x, y);
-    await until("the third cell hovered", async () => (await picker())?.hovered === "❤️");
-    await untilSnapshot(native.app, "native hovered icon", (state) => nativePicker(state)?.hovered === "❤️");
+    await untilSnapshot(native.app, "native hovered icon", async (state) => (await picker())?.hovered === "❤️" && nativePicker(state)?.hovered === "❤️");
     await point(900, 600);
     await until("the hover leaves", async () => (await picker())?.hovered === null);
     await click(x, y);
     await closed();
     assert.equal(await icon("t3"), "❤️");
-    await nativeIcon(native.app, "t3", "❤️");
+    await nativeIcon(native.app, "t3", "❤️", icon);
   });
 
   await rep.check("the Icons tab lists symbols, a click there sets one, and a symbol icon reopens on it", async () => {
     let p = await open("tab", "t4");
     await click(p.panel[0] + 256 - INSET - 14, p.panel[1] + INSET + 13);
-    p = await until("the Icons tab", async () => ((await picker())?.tab === "symbols" ? picker() : null));
+    await untilSnapshot(native.app, "native symbols tab", async (state) => {
+      p = await picker();
+      return p?.tab === "symbols" && nativePicker(state)?.tab === p.tab && nativePicker(state)?.items === p.items && nativePicker(state)?.first === p.first;
+    });
     assert.equal(p.items, 78);
     assert.equal(p.first, "symbol:star");
-    await untilSnapshot(native.app, "native symbols tab", (state) => nativePicker(state)?.tab === p.tab && nativePicker(state)?.items === p.items && nativePicker(state)?.first === p.first);
     const [x, y] = cellCenter(p.panel, 1);
     await click(x, y);
     await closed();
     assert.equal(await icon("t4"), "symbol:heart");
-    await nativeIcon(native.app, "t4", "symbol:heart");
+    await nativeIcon(native.app, "t4", "symbol:heart", icon);
     p = await open("tab", "t4");
     assert.equal(p.tab, "symbols");
     await input("escape");
@@ -154,7 +177,7 @@ try {
     await click(...footerCenter(p.panel));
     await closed();
     assert.equal(await icon("t3"), null);
-    await nativeIcon(native.app, "t3", null);
+    await nativeIcon(native.app, "t3", null, icon);
   });
 
   await rep.check("a group gets No Icon from its footer", async () => {

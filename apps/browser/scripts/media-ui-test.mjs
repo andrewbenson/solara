@@ -6,10 +6,25 @@ import { join, resolve } from "node:path";
 import { inflateSync } from "node:zlib";
 import { launch, reporter, session, sleep } from "../../../scripts/lib/instance.mjs";
 
+let nativePollDeadline = null;
+const evaluate = (body, options = {}) => {
+  if (nativePollDeadline !== null && nativePollDeadline - Date.now() < 1000) throw new Error("native comparison has less than 1000 ms left");
+  return app.eval(body, { ...options, ...(nativePollDeadline === null ? {} : { timeout: 1000 }) });
+};
+const acceptSnapshot = async (deadline, accept, ...args) => {
+  const previous = nativePollDeadline;
+  nativePollDeadline = previous === null ? deadline : Math.min(previous, deadline);
+  try {
+    return await accept(...args);
+  } finally {
+    nativePollDeadline = previous;
+  }
+};
+
 const args = process.argv.slice(2);
 const appArg = args.find((a) => !a.startsWith("--"));
-if (!appArg || args.some((arg) => arg.startsWith("--") && !["--shell", "--sidebar", "--prompts", "--keep-data"].includes(arg))) {
-  console.error(`usage: node media-ui-test.mjs <Debug Solara.app> [--shell | --sidebar | --prompts] [--keep-data]
+if (!appArg || args.some((arg) => arg.startsWith("--") && !["--shell", "--prompts", "--keep-data"].includes(arg))) {
+  console.error(`usage: node media-ui-test.mjs <Debug Solara.app> [--shell | --prompts] [--keep-data]
 
 The media controls on a local tone page: the sidebar player shows for a playing tab that isn't shown, its play
 button pauses and plays, Close Player hides it without pausing or moving to the tab, a new play brings it back, Back
@@ -17,18 +32,16 @@ to Tab shows the tab and ends the player; the pinned tab's hover player scrolls 
 CLI pill appears and hides with RN's timing (and, under --shell, holds still while the toolbar hides and shows); the cast and share pickers open at RN's size and answer their buttons. The native controls are clicked directly. --shell adds SOLARA_NATIVE_SHELL=1: the pickers
 and the CLI pill then live in the pane overlay container on the shell's card, with no RN-hosted NativeMediaView.
 --prompts is --shell with the page pool: RN mounts no CliControlPill and the pill comes
-from the window's published CLI state. --sidebar is --shell with SOLARA_NATIVE_SIDEBAR=1: the sidebar player is the
-native column's own, with no RN-hosted one. Every other mode pins SOLARA_NATIVE_SIDEBAR=0, and every mode but --prompts
+from the window's published CLI state. The sidebar and hover players are always native. Every mode but --prompts
 pins SOLARA_NATIVE_PAGES_POOL=0, so the page is RN's TabWebView.`);
   process.exit(2);
 }
 const prompts = args.includes("--prompts");
-const nativeSidebar = args.includes("--sidebar");
-const shell = prompts || nativeSidebar || args.includes("--shell");
+const shell = prompts || args.includes("--shell");
 const keep = args.includes("--keep-data");
 const scratch = mkdtempSync(join(tmpdir(), "ac-media-ui-"));
 const data = join(scratch, "data");
-const rep = reporter(join(scratch, "media-ui-test.log"), { name: `media-ui-test${prompts ? " --prompts" : nativeSidebar ? " --sidebar" : shell ? " --shell" : ""}` });
+const rep = reporter(join(scratch, "media-ui-test.log"), { name: `media-ui-test${prompts ? " --prompts" : shell ? " --shell" : ""}` });
 
 const LONG_TITLE = "A very long fixture track title that has to scroll in the hover player";
 const tone = (() => {
@@ -82,7 +95,7 @@ const pane = (kind) => M.describePaneOverlays("w1").then(JSON.parse).then((d) =>
 const hosted = (kind) => acPerf.findFibers("NativeMediaView", 200).filter((f) => f.memoizedProps?.kind === kind).length;
 `;
 let app = null;
-const run = (body, timeout = 20000) => app.eval(`${HELPERS}\n${body}`, { timeout });
+const run = (body, timeout = 20000) => evaluate(`${HELPERS}\n${body}`, { timeout });
 const until = async (what, body, ms = 8000) => {
   const end = Date.now() + ms;
   let last;
@@ -97,14 +110,16 @@ const untilSnapshot = async (what, accept, ms = 5000, windowId = "w1") => {
   const end = Date.now() + ms;
   let last;
   while (Date.now() < end) {
-    last = await app.snapshot({ windowId, fields: ["windows.media", "windows.mediaKinds", "windows.paneOverlays", "windows.hoverCard", "windows.selectedTabId", "windows.contentFrame"] }).catch((error) => ({ error: error.message }));
+    if (!app.alive) throw new Error(`${what}: app exited`);
+    if (Math.min(end, nativePollDeadline ?? Infinity) - Date.now() < 1000) break;
+    last = await app.snapshot({ windowId, fields: ["windows.media", "windows.mediaKinds", "windows.paneOverlays", "windows.hoverCard", "windows.selectedTabId", "windows.contentFrame"] }, { timeout: 1000 }).catch((error) => ({ error: error.message }));
     assert.ok(Buffer.byteLength(JSON.stringify(last)) + 256 < 64 * 1024, "native snapshot reply exceeds 64 KiB");
-    if (!last.error && last.consistent && accept(last.windows.find((w) => w.id === windowId), last)) return last;
+    if (Date.now() < end && !last.error && last.consistent && await acceptSnapshot(end, accept, last.windows.find((w) => w.id === windowId), last) && Date.now() < end) return last;
     await sleep(100);
   }
   throw new Error(`${what}: native snapshot never matched (${JSON.stringify(last)})`);
 };
-const nearRect = (a, b) => a && b && a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= 0.5);
+const nearRect = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => Number.isFinite(v) && Number.isFinite(b[i]) && Math.abs(v - b[i]) <= 0.5);
 const mediaRow = (window, kind) => window?.media?.[kind]?.[0];
 const selected = (state) => state.windows.find((w) => w.id === "w1")?.selectedTabId;
 
@@ -120,9 +135,12 @@ const sameMediaRows = (native, js, what) => {
       if (key in theirs) assert.ok(Number.isFinite(ours[key]) && Math.abs(ours[key] - theirs[key]) <= 0.5, `${what} ${key}`);
   }
 };
-const crossCheckMedia = async (what, kind, rows, windowId = "w1") => {
-  const state = await untilSnapshot(what, (window) => {
+const readMedia = (kind) => run(`return probe(${JSON.stringify(kind)});`);
+const crossCheckMedia = async (what, kind, rows, windowId = "w1", read = null) => {
+  const state = await untilSnapshot(what, async (window) => {
+    const live = read ? await read() : await readMedia(kind);
     try {
+      sameMediaRows(window?.media?.[kind], live, what);
       sameMediaRows(window?.media?.[kind], rows, what);
       return true;
     } catch {
@@ -222,7 +240,7 @@ const pressPlayer = async (control) => {
 try {
   app = await launch(resolve(appArg), {
     data, fresh: true, session: fixture, onboarded: true, probe: true,
-    env: { SOLARA_ALLOW_AUDIO: "1", SOLARA_NATIVE_SIDEBAR: nativeSidebar ? "1" : "0", SOLARA_NATIVE_SHELL: shell ? "1" : "0",
+    env: { SOLARA_ALLOW_AUDIO: "1", SOLARA_NATIVE_SHELL: shell ? "1" : "0",
       ...(prompts ? { SOLARA_NATIVE_PAGES_POOL: "1", SOLARA_SHELL_PANES: "1", SOLARA_TAB_POOL: "1" } : { SOLARA_NATIVE_PAGES_POOL: "0" }) },
     switches: "--disable-audio-output --autoplay-policy=no-user-gesture-required",
     ready: "return !!ac.store.getState().windows.w1",
@@ -233,7 +251,10 @@ try {
     const want = ["media.cliPill", "media.hoverPlayer", "media.sidebarPlayer"];
     const have = want.filter((k) => kinds.includes(k));
     if (have.length !== want.length) throw new Error(`native kinds missing: ${JSON.stringify(kinds)}`);
-    await untilSnapshot("registered native media kinds", (window) => !!window && want.every((kind) => window.mediaKinds.includes(kind) === kinds.includes(kind)));
+    await untilSnapshot("registered native media kinds", async (window) => {
+      const live = await run(`return globalThis.expo.modules.SolaraHosted.kinds();`);
+      return !!window && want.every((kind) => window.mediaKinds.includes(kind) === live.includes(kind) && live.includes(kind) === kinds.includes(kind));
+    });
     for (const kind of ["media.sidebarPlayer", "media.hoverPlayer", "media.cliPill", "media.castPicker", "media.sharePicker", "media.shareBar", "littleSolara.bar"]) {
       const rows = await run(`return probe(${JSON.stringify(kind)});`);
       await crossCheckMedia(`${kind} initial rows`, kind, rows);
@@ -274,11 +295,12 @@ try {
     assert.equal(rows[0].labels.close, "Close Player");
     assert.equal(rows[0].labels.art, "Back to Tab");
     if (rows[0].height !== 74) throw new Error(`player height ${rows[0].height}, RN draws 74`);
-    await untilSnapshot("sidebar player", (window) => {
+    await untilSnapshot("sidebar player", async (window) => {
+      const live = await run(`return probe("media.sidebarPlayer");`);
       const row = mediaRow(window, "media.sidebarPlayer");
-      return row?.height === rows[0].height && Object.keys(rows[0].frames).every((name) => nearRect(row.frames[name], rows[0].frames[name]));
+      return row?.height === live[0]?.height && row?.height === rows[0].height && Object.keys(rows[0].frames).every((name) => nearRect(row.frames[name], live[0].frames[name]) && nearRect(row.frames[name], rows[0].frames[name]));
     });
-    if (nativeSidebar && (await run(`return hosted("media.sidebarPlayer");`))) throw new Error("RN hosts a sidebar player beside the native column's");
+    if (await run(`return hosted("media.sidebarPlayer");`)) throw new Error("RN hosts a sidebar player beside the native column's");
     return { count, height: rows?.[0]?.height };
   });
 
@@ -310,8 +332,8 @@ try {
     const still = { paused: await paused(), shown: await run(`return shown();`) };
     if (still.paused) throw new Error("closing the player paused playback");
     if (still.shown !== "b") throw new Error(`closing the player moved to tab ${still.shown}`);
-    await untilSnapshot("player closes without switching", (window, state) =>
-      selected(state) === still.shown && window.media["media.sidebarPlayer"].length === 0);
+    await untilSnapshot("player closes without switching", async (window, state) =>
+      selected(state) === await run(`return shown();`) && selected(state) === still.shown && window.media["media.sidebarPlayer"].length === 0);
     return { ...still, capture };
   });
 
@@ -320,7 +342,7 @@ try {
     await until("paused", `return session()?.playbackState === "paused";`, 6000);
     await inPage("document.getElementById('tone').play().then(() => true)");
     const count = await until("player again", `return playerShown().then((n) => n || null);`, 6000);
-    await untilSnapshot("player returns", (window) => window?.media?.["media.sidebarPlayer"]?.length === count);
+    await untilSnapshot("player returns", async (window) => window?.media?.["media.sidebarPlayer"]?.length === await run(`return playerShown().then((n) => n || null);`) && window?.media?.["media.sidebarPlayer"]?.length === count);
     return count;
   });
 
@@ -337,23 +359,19 @@ try {
     await run(`ac.actions.switchToTab("b"); return true;`);
     await run(`return Promise.resolve(acMediaHover("w1", "p")).then(() => true);`);
 
-    if (nativeSidebar) {
-      const card = () => `return globalThis.expo.modules.SolaraHosted.sidebarHoverCard("w1").then(JSON.parse)`;
+    const card = () => `return globalThis.expo.modules.SolaraHosted.sidebarHoverCard("w1").then(JSON.parse)`;
+    if (shell) {
       const shownCard = await until("the native column's hover player", `${card()}.then((c) => c && c.kind === "player" && c.phase === "shown" ? c : null);`, 3000);
       if (await run(`return hosted("media.hoverPlayer");`)) throw new Error("RN hosts a hover player beside the native card");
-      await untilSnapshot("sidebar hover player card", (window) =>
-        window?.hoverCard?.kind === shownCard.kind && nearRect(window.hoverCard.frame, shownCard.frame));
+      await untilSnapshot("sidebar hover player card", async (window) => {
+        const live = await run(`${card()}.then((c) => c && c.kind === "player" && c.phase === "shown" ? c : null);`);
+        return window?.hoverCard?.kind === live?.kind && nearRect(window?.hoverCard?.frame, live?.frame)
+          && window?.hoverCard?.kind === shownCard.kind && nearRect(window.hoverCard.frame, shownCard.frame);
+      });
       const rows = await run(`return probe("media.hoverPlayer");`);
       assert.ok(rows.length > 0, "native column hover player rows");
       await crossCheckMedia("native column hover player rows and labels", "media.hoverPlayer", rows);
       assert.equal(rows[0].labels.play, "Pause");
-      await run(`return Promise.resolve(acMediaHover("w1", null)).then(() => true);`);
-      await until("hover player gone", `${card()}.then((c) => !c || c.phase === "hidden");`, 3000);
-      await sleep(300);
-      if (await paused()) throw new Error("hiding the hover player paused playback");
-      const after = await run(`return shown();`);
-      if (after !== "b") throw new Error(`hiding the hover player moved to tab ${after}`);
-      return { frame: shownCard.frame, marquee: rows[0].marquee };
     }
     const first = await until("native hover player", `return first("media.hoverPlayer");`, 3000);
     await crossCheckMedia("hover player initial rows and labels", "media.hoverPlayer", [first]);
@@ -364,14 +382,17 @@ try {
     await crossCheckMedia("hover player later rows and labels", "media.hoverPlayer", [later]);
     const max = Math.max(later.titleOverflow, later.artistOverflow);
     const expected = Math.max(0, Math.min(1, ((later.t - first.t - 1.5) * 30) / max));
-    if (Math.abs(later.marquee - expected) > 0.1) throw new Error(`marquee at ${later.marquee}, RN would be near ${expected}`);
-    if (later.elapsed === first.elapsed) throw new Error(`time stood still at ${later.elapsed}`);
-    await untilSnapshot("hover player marquee", (window) => {
+    if (!(Math.abs(later.marquee - expected) <= 0.1)) throw new Error(`marquee at ${later.marquee}, RN would be near ${expected}`);
+    if (!/^\d+:\d\d$/.test(first.elapsed) || !/^\d+:\d\d$/.test(later.elapsed) || later.elapsed === first.elapsed) throw new Error(`time stood still at ${later.elapsed}`);
+    await untilSnapshot("hover player marquee", async (window) => {
+      const live = (await run(`return probe("media.hoverPlayer");`))[0];
       const row = mediaRow(window, "media.hoverPlayer");
-      return row?.titleOverflow === later.titleOverflow && row.elapsed >= first.elapsed && Math.abs(row.marquee - later.marquee) <= 0.1;
+      return row?.titleOverflow === live?.titleOverflow && row?.titleOverflow === later.titleOverflow && row.elapsed >= first.elapsed
+        && Math.abs(row.marquee - live.marquee) <= 0.1 && Math.abs(row.marquee - later.marquee) <= 0.1;
     });
     await run(`return Promise.resolve(acMediaHover("w1", null)).then(() => true);`);
     await until("hover player gone", `return first("media.hoverPlayer").then((r) => !r);`, 3000);
+    if (shell) await until("hover player card hidden", `${card()}.then((c) => !c || c.phase === "hidden");`, 3000);
     await sleep(300);
     if (await paused()) throw new Error("hiding the hover player paused playback");
     const after = await run(`return shown();`);
@@ -385,11 +406,12 @@ try {
     if (!where.entry) throw new Error(`no ${entry} in the pane overlays: ${JSON.stringify(where)}`);
     if (!where.top || !where.inCard) throw new Error(`the overlay container is not the card's top child: ${JSON.stringify(where)}`);
     if (where.hosted) throw new Error(`RN still hosts a NativeMediaView for ${kind}`);
-    await untilSnapshot(`${entry} pane placement`, (window) => {
+    await untilSnapshot(`${entry} pane placement`, async (window) => {
+      const live = await run(`return pane(${JSON.stringify(entry)}).then((p) => ({ ...p, hosted: hosted(${JSON.stringify(kind)}) }));`);
       const pane = window?.paneOverlays;
       const nativeEntry = pane && Object.values(pane.tabs ?? {}).map((tab) => tab[entry]).find(Boolean);
-      return pane?.top === where.top && pane?.inCard === where.inCard && nativeEntry &&
-        nearRect(nativeEntry.frame, where.entry.frame);
+      return pane?.top === live.top && pane?.inCard === live.inCard && pane?.top === where.top && pane?.inCard === where.inCard && nativeEntry &&
+        nearRect(nativeEntry.frame, live.entry?.frame) && nearRect(nativeEntry.frame, where.entry.frame);
     });
     return { inCard: true };
   };
@@ -444,9 +466,10 @@ try {
       const pill = await run(`return first("media.cliPill");`);
       await crossCheckMedia("CLI pill before toolbar slide", "media.cliPill", [pill]);
       const rest = pill.frame;
-      await untilSnapshot("CLI pill frame", (window) => {
+      await untilSnapshot("CLI pill frame", async (window) => {
+        const live = await run(`return first("media.cliPill");`);
         const row = mediaRow(window, "media.cliPill");
-        return row?.opacity > 0.99 && nearRect(row.frame, rest);
+        return row?.opacity > 0.99 && nearRect(row.frame, live?.frame) && nearRect(row.frame, rest);
       });
       const { frames, tops } = await run(`
         const out = [];
@@ -456,12 +479,15 @@ try {
         return page().then(() => { ac.toolbarAutoHide.noteScroll(shown(), { state: "down" }); return sample(performance.now() + 700); }).then(page)
           .then(() => { ac.toolbarAutoHide.noteScroll(shown(), { state: "up" }); return sample(performance.now() + 700); }).then(page).then(() => ({ frames: out, tops }));`, 10000);
       if (!prompts && (!(tops[1] < tops[0]) || tops[2] !== tops[0])) throw new Error(`the toolbar never hid and came back: page tops ${JSON.stringify(tops)}`);
-      const off = frames.filter((f) => f.some((v, i) => Math.abs(v - rest[i]) > 0.5));
+      const off = frames.filter((f) => !nearRect(f, rest));
       if (off.length) throw new Error(`the pill moved off ${JSON.stringify(rest)} while the toolbar slid: ${JSON.stringify(off.slice(0, 5))}`);
       const slid = await run(`return M.describePaneOverlays("w1").then(JSON.parse).then((d) => d.tabs[shown()].cliPill.frame);`);
       const tabId = await run(`return shown();`);
-      await untilSnapshot("CLI pill slot after toolbar slide", (window) =>
-        nearRect(window?.paneOverlays?.tabs?.[tabId]?.cliPill?.frame, slid));
+      await untilSnapshot("CLI pill slot after toolbar slide", async (window) => {
+        const live = await run(`return M.describePaneOverlays("w1").then(JSON.parse).then((d) => d.tabs[shown()].cliPill.frame);`);
+        return nearRect(window?.paneOverlays?.tabs?.[tabId]?.cliPill?.frame, live)
+          && nearRect(window?.paneOverlays?.tabs?.[tabId]?.cliPill?.frame, slid);
+      });
       return { rest, samples: frames.length, pageTops: tops, slot: slid };
     } finally {
       await run(`globalThis.acCli.indicator.setState({ shown: false }); ac.store.getState().updateSettings({ hideToolbarWhileScrolling: false }); return true;`);
@@ -471,7 +497,7 @@ try {
   const CAST_FRAME = [925, 55, 340, 185];
   const SHARE_FRAME = [501.5, 55, 460, 423];
   const sameRect = (what, rect, want) => {
-    if (!rect || rect.some((v, i) => Math.abs(v - want[i]) > 0.5)) throw new Error(`${what} popover at ${JSON.stringify(rect)}, RN draws ${JSON.stringify(want)}`);
+    if (!nearRect(rect, want)) throw new Error(`${what} popover at ${JSON.stringify(rect)}, RN draws ${JSON.stringify(want)}`);
   };
   const staysUp = async (kind) => {
     const gaps = await run(`
@@ -517,10 +543,11 @@ try {
     sameRect("cast", opened.rect, CAST_FRAME);
     assert.equal(opened.labels.done, "Done");
     assert.equal(opened.labels.stop1, "Stop");
-    await untilSnapshot("cast picker card", (window) => {
+    await untilSnapshot("cast picker card", async (window) => {
+      const live = (await readMedia("media.castPicker"))[0];
       const row = mediaRow(window, "media.castPicker");
-      return row?.opacity > 0.99 && nearRect(row.card, opened.rect) &&
-        Object.keys(opened.frames).every((name) => nearRect(row.frames[name], opened.frames[name]));
+      return row?.opacity > 0.99 && nearRect(row.card, live?.card) && nearRect(row.card, opened.rect) &&
+        Object.keys(opened.frames).every((name) => nearRect(row.frames[name], live.frames[name]) && nearRect(row.frames[name], opened.frames[name]));
     });
     const out = { rect: opened.rect, samples: opened.animatedSamples, pane: await inPane("media.castPicker", "castPicker") };
     if (shell) out.staysUp = await staysUp("media.castPicker");
@@ -550,10 +577,11 @@ try {
     sameRect("share", opened.rect, SHARE_FRAME);
     assert.equal(opened.labels.share, "Share");
     assert.equal(opened.labels.cancel, "Cancel");
-    await untilSnapshot("share picker card", (window) => {
+    await untilSnapshot("share picker card", async (window) => {
+      const live = (await readMedia("media.sharePicker"))[0];
       const row = mediaRow(window, "media.sharePicker");
-      return row?.opacity > 0.99 && nearRect(row.card, opened.rect) &&
-        Object.keys(opened.frames).every((name) => nearRect(row.frames[name], opened.frames[name]));
+      return row?.opacity > 0.99 && nearRect(row.card, live?.card) && nearRect(row.card, opened.rect) &&
+        Object.keys(opened.frames).every((name) => nearRect(row.frames[name], live.frames[name]) && nearRect(row.frames[name], opened.frames[name]));
     });
     const out = { rect: opened.rect, samples: opened.animatedSamples, pane: await inPane("media.sharePicker", "sharePicker") };
     if (shell) out.staysUp = await staysUp("media.sharePicker");
@@ -561,9 +589,10 @@ try {
     const picked = await until("tab selected", `return first("media.sharePicker").then((r) => r.selected === "tab:p" ? r : null);`, 3000);
     await crossCheckMedia("share picker selected rows and labels", "media.sharePicker", [picked]);
     out.focused = picked.focused;
-    await untilSnapshot("share picker selection", (window) => {
+    await untilSnapshot("share picker selection", async (window) => {
+      const live = (await readMedia("media.sharePicker"))[0];
       const row = mediaRow(window, "media.sharePicker");
-      return row?.selected === picked.selected && row.focused === picked.focused && !!row.frames.audio;
+      return row?.selected === live?.selected && row?.selected === picked.selected && row.focused === live.focused && row.focused === picked.focused && !!row.frames.audio;
     });
     if (!picked.frames.audio) throw new Error("no tab audio checkbox for a tab");
     if (!picked.focused) throw new Error("the share picker doesn't hold focus for Escape and Enter");
@@ -598,8 +627,10 @@ try {
       await until("the native indicator survives a JS reload", `return globalThis.acCli.indicator.getState().shown || null;`, 5000);
       const pill = await until("the native pill shows after the reload", `return first("media.cliPill").then((r) => r && r.opacity > 0.99 ? r : null);`, 5000);
       if (pill) await crossCheckMedia("native indicator rows after reload", "media.cliPill", [pill]);
-      if (pill) await untilSnapshot("native indicator after reload", (window) =>
-        nearRect(mediaRow(window, "media.cliPill")?.frame, pill.frame));
+      if (pill) await untilSnapshot("native indicator after reload", async (window) => {
+        const live = await run(`return first("media.cliPill").then((r) => r && r.opacity > 0.99 ? r : null);`);
+        return nearRect(mediaRow(window, "media.cliPill")?.frame, live?.frame) && nearRect(mediaRow(window, "media.cliPill")?.frame, pill.frame);
+      });
       await set(false);
       await until("JS follows the native indicator off", `return globalThis.acCli.indicator.getState().shown ? null : true;`, 3000);
       return { pill: pill ? pill.frame : null };
@@ -643,10 +674,10 @@ try {
       const field = bar.frames.field;
       await run(`return ac.shell.devSetPointer(${JSON.stringify(id)}, { x: ${field[0] + field[2] / 2}, y: ${field[1] + field[3] / 2} }).then(() => true);`);
       const hovered = await until("small bar hovered", `return M.probe("littleSolara.bar", ${JSON.stringify(id)}).then(JSON.parse).then((rows) => rows[0]?.hovered === true ? rows[0] : null);`, 3000);
-      await crossCheckMedia("small bar hovered rows", "littleSolara.bar", [hovered], id);
+      await crossCheckMedia("small bar hovered rows", "littleSolara.bar", [hovered], id, async () => [await run(`return M.probe("littleSolara.bar", ${JSON.stringify(id)}).then(JSON.parse).then((rows) => rows[0]?.hovered === true ? rows[0] : null);`)]);
       await run(`return ac.shell.devSetPointer(${JSON.stringify(id)}, { x: ${field[0] + field[2] / 2}, y: ${field[1] + field[3] + 20} }).then(() => true);`);
       const left = await until("small bar hover leaves", `return M.probe("littleSolara.bar", ${JSON.stringify(id)}).then(JSON.parse).then((rows) => rows[0]?.hovered === false ? rows[0] : null);`, 3000);
-      await crossCheckMedia("small bar unhovered rows", "littleSolara.bar", [left], id);
+      await crossCheckMedia("small bar unhovered rows", "littleSolara.bar", [left], id, async () => [await run(`return M.probe("littleSolara.bar", ${JSON.stringify(id)}).then(JSON.parse).then((rows) => rows[0]?.hovered === false ? rows[0] : null);`)]);
       return { hovered: hovered.hovered, left: left.hovered };
     } finally {
       await run(`st().closeWindow(${JSON.stringify(id)}); return true;`);

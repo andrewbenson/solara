@@ -329,9 +329,10 @@ function smallSession(dataDir) {
 function resign(app, clone) {
   const info = spawnSync("codesign", ["-dvv", app], { encoding: "utf8" }).stderr;
   const identity = info.match(/^Authority=(.+)$/m)?.[1] ?? "-";
+  const hardened = /^CodeDirectory .*flags=0x[0-9a-f]+\([^)]*\bruntime\b/m.test(info);
   const entitlements = `${clone}.entitlements.plist`;
   writeFileSync(entitlements, execFileSync("codesign", ["-d", "--entitlements", "-", "--xml", app], { encoding: "utf8" }));
-  execFileSync("codesign", ["--force", "--sign", identity, "--timestamp=none", "--options", "runtime", "--entitlements", entitlements, clone], { stdio: "inherit" });
+  execFileSync("codesign", ["--force", "--sign", identity, "--timestamp=none", ...(hardened ? ["--options", "runtime"] : []), "--entitlements", entitlements, clone], { stdio: "inherit" });
 }
 
 const ALL = ["startup", "persistence", "idle", "typing", "switchTabs", "openClose", "scroll", "pageLoad", "hover", "profileSwipe", "storeUpdate", "idleLate"];

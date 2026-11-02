@@ -12,7 +12,7 @@ import { AreaBoundary } from "../AreaBoundary";
 import { dismissHoverIn } from "../sidebar/hover";
 import { shellColumnFitsAddressBar } from "../sidebar/NativeSidebar";
 import { useSidebarUi } from "../sidebar/state";
-import { peekHeld, watchPeekHolds } from "./peekHold";
+import { followPeekHold, peekHeld, watchPeekHolds } from "./peekHold";
 import { ProfileSwipe } from "./ProfileSwipe";
 import { useShellLayoutPush } from "./shellLayout";
 import { useShellModal } from "./shellModal";
@@ -255,8 +255,9 @@ function NativeDockPublisher({
 }) {
   const windowId = useWindowId();
   const theme = useTheme();
-  const [held, setHeld] = useState(() => peekHeld(windowId));
-  useEffect(() => watchPeekHolds(() => setHeld(peekHeld(windowId))), [windowId]);
+  const floating = !open && !fullscreen && !topTabs;
+  const [held, setHeld] = useState(false);
+  useEffect(() => followPeekHold(windowId, floating, setHeld), [windowId, floating]);
   useNativeDockState(windowId, {
     open,
     arc,

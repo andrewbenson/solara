@@ -18,6 +18,12 @@ type Waiting = { windowId: string; target: Target | null; arrive: () => void };
 const contentHeights = new Map<string, number>();
 let cardFrame: Rect | null = null;
 let onCard = false;
+const cardWatchers = new Set<() => void>();
+function setOnCard(on: boolean) {
+  if (on === onCard) return;
+  onCard = on;
+  for (const watcher of cardWatchers) watcher();
+}
 let exitPoint: Point | null = null;
 let waiting: Waiting | null = null;
 let held = false;
@@ -26,7 +32,7 @@ export const setHoverSpace = (windowId: string, height: number) => void contentH
 
 function hideCard() {
   held = false;
-  onCard = false;
+  setOnCard(false);
   exitPoint = null;
   waiting = null;
   clearTimeout(aimTimer);
@@ -41,12 +47,12 @@ function arrive(next: Waiting | null) {
 export const cardHoverProps = {
   onMouseEnter: () => {
     if (!sidebarUi().hover) return;
-    onCard = true;
+    setOnCard(true);
     clearTimeout(aimTimer);
     keepHover();
   },
   onMouseLeave: () => {
-    onCard = false;
+    setOnCard(false);
     const pending = waiting;
     waiting = null;
     arrive(pending);
@@ -58,6 +64,10 @@ export const cardHoverProps = {
 
 export const pointerOnRow = (id: string) => underPointer === id;
 export const pointerOnCard = () => onCard;
+export function watchPointerOnCard(watcher: () => void): () => void {
+  cardWatchers.add(watcher);
+  return () => void cardWatchers.delete(watcher);
+}
 
 const panelOpen = (windowId: string) => !!useBrowser.getState().windowUi[windowId]?.panel?.open;
 export function suppressHover(value: boolean) {

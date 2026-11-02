@@ -1,7 +1,7 @@
 import { menuShown, watchMenus } from "@solara/shell";
 import { useBrowser } from "../../store/browser";
 import { activeTabId } from "../../store/model";
-import { pointerOnCard } from "../sidebar/hover";
+import { pointerOnCard, watchPointerOnCard } from "../sidebar/hover";
 import { sidebarUi, useSidebarUi } from "../sidebar/state";
 import { usePages } from "./pageState";
 import { addressBarInSidebar } from "./windowLayout";
@@ -18,6 +18,11 @@ export function peekHeld(windowId: string): boolean {
 }
 
 export function watchPeekHolds(changed: () => void): () => void {
-  const stops = [watchMenus(changed), useSidebarUi.subscribe(changed), useBrowser.subscribe(changed), usePages.subscribe(changed)];
+  const stops = [watchMenus(changed), watchPointerOnCard(changed), useSidebarUi.subscribe(changed), useBrowser.subscribe(changed), usePages.subscribe(changed)];
   return () => stops.forEach((stop) => stop());
+}
+
+export function followPeekHold(windowId: string, floating: boolean, set: (held: boolean) => void): () => void {
+  set(floating && peekHeld(windowId));
+  return floating ? watchPeekHolds(() => set(peekHeld(windowId))) : () => {};
 }

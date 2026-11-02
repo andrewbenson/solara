@@ -136,9 +136,13 @@ check("…showing the Work profile's pages", !!workContext && shownContext === w
   `work ${workContext}, shown ${shownContext} (${shownVisible})`);
 
 await go(`${pages}/form.html`);
-await send("Emulation.setFocusEmulationEnabled", { enabled: true });
 await evaluate(`document.getElementById("c").value="Springfield"; document.getElementById("b").click(); 1`);
 await sleep(2500);
+const frontmost = () => execFileSync(windowsTool, ["--frontmost"], { encoding: "utf8" }).trim();
+const frontBefore = frontmost();
+await send("Page.bringToFront");
+await sleep(300);
+const frontAfter = frontmost();
 await click("#c");
 await sleep(1500);
 await key("ArrowDown");
@@ -146,7 +150,10 @@ await sleep(300);
 await key("Enter");
 await sleep(800);
 check("autofill dropdown accepts a suggestion", (await evaluate(`document.getElementById("c").value`)) === "Springfield");
-await send("Emulation.setFocusEmulationEnabled", { enabled: false });
+const frontAfterStep = frontmost();
+check("…and Solara never comes in front of the frontmost app",
+  frontAfter === frontBefore && frontAfterStep === frontBefore && !frontBefore.startsWith(`${pid} `),
+  `${frontBefore} → ${frontAfter} → ${frontAfterStep}`);
 
 await go(`${pages}/passkey.html`);
 await click("#b");

@@ -1,9 +1,15 @@
+import AppKit
 import CoreGraphics
 import Foundation
 
 if CommandLine.arguments[1] == "--locked" {
   let session = CGSessionCopyCurrentDictionary() as? [String: Any]
   print((session?["CGSSessionScreenIsLocked"] as? Bool) == true ? "1" : "0")
+  exit(0)
+}
+if CommandLine.arguments[1] == "--frontmost" {
+  let app = NSWorkspace.shared.frontmostApplication
+  print("\(app?.processIdentifier ?? 0) \(app?.bundleIdentifier ?? "")")
   exit(0)
 }
 let pid = Int(CommandLine.arguments[1])!

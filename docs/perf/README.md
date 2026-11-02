@@ -243,11 +243,13 @@ again shows up here at once: `switchTabs.subNotified` grows by the row count per
   writes. They stay in the js-bench report.
 - A new component, task or timer that has no ceiling shows up in the group total's ceiling, not on its own: `check`
   lists the biggest counts without one.
-- The ceilings are for probe revision 2 and bench revision 5 (`perfProbe.ts` `PERF_PROBE_REVISION`, js-bench
+- The ceilings are for probe revision 3 and bench revision 5 (`perfProbe.ts` `PERF_PROBE_REVISION`, js-bench
   `BENCH_REVISION`). `check` warns when a report has another; rebuild with `baseline` after a change that redefines a
   counter. Revision 4 redefined `scroll` and `hover` for the native sidebar, and only their `timers` totals were
   re-baselined: 868 and 110, the largest of five Release runs (789 and 100) plus 10%. Revision 5 changed only when
-  `idle`, `switchTabs`, `scroll` and `idleFor` start (see the settle wait under js-bench); no ceiling moved.
+  `idle`, `switchTabs`, `scroll` and `idleFor` start (see the settle wait under js-bench); no ceiling moved. Probe
+  revision 3 stopped `storeKeys` counting function-valued keys: the native store installs its workspace commands with one
+  `setState` at launch, which revision 2 counted as 90 store keys; no ceiling moved for it.
 
 ### In the release gate
 

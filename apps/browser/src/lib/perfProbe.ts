@@ -45,7 +45,7 @@ const probeOptions = (() => {
 
 export const perfProbeEnabled = probeOptions !== null;
 
-export const PERF_PROBE_REVISION = 2;
+export const PERF_PROBE_REVISION = 3;
 const rendersProbe = !!probeOptions?.includes("renders");
 const listenersProbe = !!probeOptions?.includes("listeners");
 const layoutProbe = !!probeOptions?.includes("layout");
@@ -452,7 +452,7 @@ export function probeStore(name: string, store: Store) {
     bump(stats.storeUpdates, name);
     const a = s as Record<string, unknown>;
     const b = prev as Record<string, unknown>;
-    for (const key in a) if (a[key] !== b[key]) bump(stats.storeKeys, `${name}.${key}`);
+    for (const key in a) if (a[key] !== b[key] && typeof a[key] !== "function") bump(stats.storeKeys, `${name}.${key}`);
   });
 }
 

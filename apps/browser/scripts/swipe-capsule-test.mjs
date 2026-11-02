@@ -269,7 +269,7 @@ try {
       tabs: [{ id: "a", profileId: "default", url: url("one") }, { id: "b", profileId: "work", url: url("one") }],
       settings: { warnBeforeClosingLastTab: false, warnBeforeClosingWindow: false },
     }),
-    env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_SIDEBAR: "1", SOLARA_NATIVE_TOP_STRIP: "1", SOLARA_NATIVE_PROFILE_PAGER: "1" },
+    env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_SIDEBAR: "1", SOLARA_NATIVE_TOP_STRIP: "1" },
     ready: "return !!ac.store.getState().windows.w1 && !!globalThis.acSwipe",
   });
   await rep.check("native-input-pager-detent-suppresses-haptic", async () => {

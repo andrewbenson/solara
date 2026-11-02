@@ -85,7 +85,7 @@ const cover = (rect, hidden) => `S.devCover("w1", ${JSON.stringify(rect)}, ${JSO
 try {
   app = await launch(resolve(appArg), {
     data, fresh: true, session: fixture, onboarded: true,
-    env: nativeColumn ? { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_SIDEBAR: "1", SOLARA_NATIVE_TOP_STRIP: "1", SOLARA_NATIVE_PROFILE_PAGER: "1" } : { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_SIDEBAR: "0" },
+    env: nativeColumn ? { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_SIDEBAR: "1", SOLARA_NATIVE_TOP_STRIP: "1" } : { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_SIDEBAR: "0" },
     ready: "return !!ac.store.getState().windows.w1 && !!globalThis.expo.modules.SolaraWindowShell.devCover",
   });
   await sleep(2000);

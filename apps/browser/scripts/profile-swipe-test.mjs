@@ -28,7 +28,6 @@ try { port = portArg && parsePort(portArg); } catch (error) {
   process.exit(2);
 }
 const keep = args.includes("--keep-data");
-const nativePager = process.env.SOLARA_NATIVE_PROFILE_PAGER !== "0";
 const stale = args.includes("--stale-window");
 const only = args.find((a) => a.startsWith("--only="))?.slice("--only=".length).toLowerCase();
 let matched = 0;
@@ -88,11 +87,16 @@ const untilSnapshot = async (what, accept, ms = 2500, options = {}) => {
     assert.ok(timeout > 0, `${what}: cross-check deadline`);
     return timeout;
   };
+  const requestBudget = () => {
+    const timeout = remaining();
+    assert.ok(timeout >= 1000, `${what}: minimum request budget`);
+    return timeout;
+  };
   while (Date.now() < end) {
     assertOwnedAlive();
-    last = await owned.snapshot({ fields: snapshotFields, ...options }, { timeout: remaining() });
+    last = await owned.snapshot({ fields: snapshotFields, ...options }, { timeout: requestBudget() });
     if (Date.now() >= end) break;
-    if (last.consistent && await accept(last, remaining) && Date.now() < end) return last;
+    if (last.consistent && await accept(last, requestBudget) && Date.now() < end) return last;
     if (Date.now() < end) await sleep(Math.min(25, remaining()));
   }
   throw new Error(`${what}: native snapshot did not match (${JSON.stringify(last)})`);
@@ -261,9 +265,7 @@ function alternatingGestures(count, gapMs = 112) {
     ...step, atMs: step.atMs + n * gapMs, timestampMs: step.timestampMs + n * gapMs,
   }))).flat();
 }
-const PAGER_DEBUG = nativePager
-  ? 'globalThis.expo.modules.SolaraProfilePager.describe("w1").then(JSON.parse)'
-  : 'Promise.resolve(globalThis.acPager("w1").debug())';
+const PAGER_DEBUG = 'globalThis.expo.modules.SolaraProfilePager.describe("w1").then(JSON.parse)';
 async function nativeBatch(steps, blockedMs = 0) {
   const js = await ac(`
     const simulation=globalThis.acSwipe.sidebar("w1").devSimulate(${JSON.stringify(steps)}, {ignorePreference:true});
@@ -283,7 +285,7 @@ async function crossCase() {
   await crossPager();
   await crossProfile();
   await crossWindows();
-  if (nativePager) await crossAck();
+  await crossAck();
   await crossOrder();
   parityChecked = true;
 }
@@ -372,9 +374,9 @@ try {
     data, port, session: fixture,
     switches: "--disable-backgrounding-occluded-windows",
     ...(bundlePort ? { js: `127.0.0.1:${bundlePort}` } : {}),
-    ready: nativePager ? 'return !!globalThis.acPager?.("w1") && !!globalThis.acSwipe;' : 'return !!globalThis.acSwipe?.sidebar("w1");',
+    ready: 'return !!globalThis.acPager?.("w1") && !!globalThis.acSwipe;',
   });
-  if (nativePager) await ac(`
+  await ac(`
     const at = (x, y) => () => ({ devSimulate: (steps) => Promise.resolve(globalThis.expo.modules.SolaraCEF.chromeWindows())
       .then((all) => (all.find((w) => w.hasRoot && w.profile === "" && w.group) ?? all.find((w) => w.hasRoot)).window)
       .then((n) => globalThis.expo.modules.SolaraSwipe.devSimulate(x, y, n, steps, true)) });
@@ -770,11 +772,16 @@ try {
     assert.ok(remaining > 0, "window capture cross-check deadline");
     return remaining;
   };
+  const captureBudget = () => {
+    const timeout = captureRemaining();
+    assert.ok(timeout >= 1000, "window capture minimum request budget");
+    return timeout;
+  };
   let nativeImage, jsImage;
   do {
     assertOwnedAlive();
     if (evidence.nativeSnapshot) rmSync(join(data, evidence.nativeSnapshot.artifact), { force: true });
-    const nativeCapture = await owned.probe("view.capture", { windowId: "w1" }, { timeout: captureRemaining() });
+    const nativeCapture = await owned.probe("view.capture", { windowId: "w1" }, { timeout: captureBudget() });
     assert.equal(nativeCapture.consistent, true);
     assert.ok(nativeCapture.width > 0 && nativeCapture.height > 0 && nativeCapture.scale > 0);
     evidence.nativeSnapshot = nativeCapture;
@@ -782,7 +789,7 @@ try {
     const path = join(data, "profile-swipe.png");
     rmSync(path, { force: true });
     evidence.snapshot = { path,
-      saved: await ac(`return ac.shell.devSnapshotWindow("w1", ${JSON.stringify(join(data, "profile-swipe.png"))});`, captureRemaining()) };
+      saved: await ac(`return ac.shell.devSnapshotWindow("w1", ${JSON.stringify(join(data, "profile-swipe.png"))});`, captureBudget()) };
     assert.equal(evidence.snapshot.saved, true, "retained JS window capture saved");
     nativeImage = readPng(join(data, nativeCapture.artifact));
     jsImage = readPng(evidence.snapshot.path);

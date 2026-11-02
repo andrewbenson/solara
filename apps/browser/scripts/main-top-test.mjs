@@ -11,7 +11,7 @@ if (!appArg) {
 
 The window's RN main root on top of the native shell's layers (SOLARA_SHELL_MAIN_TOP=1, with SOLARA_NATIVE_SHELL=1,
 SOLARA_SHELL_PANES=1 and SOLARA_NATIVE_PAGES_POOL=1), once with the native sidebar column (SOLARA_NATIVE_SIDEBAR=1,
-SOLARA_NATIVE_TOP_STRIP=1, SOLARA_NATIVE_PROFILE_PAGER=1: the column must be up), once with the native sidebar alone and once
+SOLARA_NATIVE_TOP_STRIP=1: the column must be up), once with the native sidebar alone and once
 with RN's: the root is stacked under the overlay and above every other slot (the profile pager's swipe targets, which
 draw nothing and hit nothing, sit above the overlay as the shell keeps views it doesn't own, and don't count);
 no React Native view that draws nothing and handles nothing catches the pointer over the card, the sidebar or the top
@@ -96,7 +96,7 @@ async function pass(label, env) {
     return { order: order.join(" < "), native: snapshot.windows.find((w) => w.id === "w1").shell.order };
   });
 
-  if (env.SOLARA_NATIVE_PROFILE_PAGER === "1")
+  if (env.SOLARA_NATIVE_SIDEBAR === "1" && env.SOLARA_NATIVE_TOP_STRIP === "1")
     await rep.check(`${label}: the-native-sidebar-column-is-up`, async () => {
       const column = await run(`return globalThis.expo.modules.SolaraHosted.sidebarShell("w1").then(JSON.parse);`);
       if (!column?.chrome) throw new Error(`no native column: ${JSON.stringify(column)}`);
@@ -177,7 +177,7 @@ async function pass(label, env) {
 }
 
 try {
-  await pass("native-column", { SOLARA_NATIVE_SIDEBAR: "1", SOLARA_NATIVE_TOP_STRIP: "1", SOLARA_NATIVE_PROFILE_PAGER: "1" });
+  await pass("native-column", { SOLARA_NATIVE_SIDEBAR: "1", SOLARA_NATIVE_TOP_STRIP: "1" });
   await pass("native-sidebar", { SOLARA_NATIVE_SIDEBAR: "1" });
   await pass("rn-sidebar", { SOLARA_NATIVE_SIDEBAR: "0" });
 } catch (e) {

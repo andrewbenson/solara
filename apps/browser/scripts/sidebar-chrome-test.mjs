@@ -8,7 +8,7 @@ const appArg = args.find((a) => !a.startsWith("--"));
 if (!appArg) {
   console.error(`usage: node sidebar-chrome-test.mjs <Debug Solara.app> [--keep-data]
 
-The native sidebar column's own chrome, with the window shell, native sidebar, top strip and profile pager switches on:
+The native sidebar column's own chrome, with the window shell, native sidebar and top strip switches on:
 the blank header drags the window and a double-click there does what the titlebar's does; the sidebar address bar sits
 in the header's slot, survives toggling it out and back and a reload, and opens its dropdown; the header's and the
 footer's downloads buttons open the downloads list; the resize handle drags the width live, keeps it on release and
@@ -70,7 +70,7 @@ try {
     fresh: true,
     session: fixture,
     onboarded: true,
-    env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_SIDEBAR: "1", SOLARA_NATIVE_TOP_STRIP: "1", SOLARA_NATIVE_PROFILE_PAGER: "1" },
+    env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_SIDEBAR: "1", SOLARA_NATIVE_TOP_STRIP: "1" },
     ready: "return !!ac.store.getState().windows.w1",
   });
   await sleep(2500);

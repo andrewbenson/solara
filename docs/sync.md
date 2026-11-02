@@ -9,7 +9,8 @@ the same way.
 
 The UX follows Dia's sync (Settings › Account › Sync in Dia 1.50.1; its strings are quoted from
 its binary below). Dia's data sits on its servers and devices pair with a 6-character code; here
-the folder takes the servers' place and devices pair by entering the recovery phrase.
+the folder takes the servers' place. A new Mac joins by pairing with a Mac that already syncs,
+through the same folder, comparing a 6-character code on both, or by entering the recovery phrase.
 
 Code:
 - `packages/sync/ios/Core`: plain Swift, also built by `packages/sync/Package.swift`.
@@ -18,6 +19,12 @@ Code:
   - `SyncVault.swift`: the folder, with file coordination and partial files.
   - `SyncKeyStore.swift`: Keychain.
   - `RecoveryKit.swift`: PDF, text sheet and QR code.
+  - `PairingFormat.swift`, `PairingCrypto.swift`, `PairingSession.swift`, `PairingMailbox.swift`:
+    pairing's files, keys, state machine and folder IO. `PairingDurableStore.swift` keeps each
+    Mac's pairing bookkeeping in its own data folder (`Application Support/sync-pairing`), never
+    in the sync folder.
+- `packages/sync/ios/PairingCoordinator.swift`: runs one joining and one trusted pairing at a time
+  and asks for Touch ID or the login password before Allow sends anything.
 - `packages/sync/ios/SyncModule.swift`: the Expo module (`SolaraSyncAdapter`). It also reads this app's saved passwords.
 - `packages/sync/src`: the merge, in TypeScript with no dependencies.
   - `scope.ts`: replica, logs, snapshots, compaction.
@@ -37,8 +44,9 @@ Code:
 Protected against anyone who can read or write the sync folder but doesn't have the phrase:
 Apple, Dropbox, whoever has the NAS or finds the USB drive, malware that reads cloud files.
 
-- They can't read anything. File contents are AES-256-GCM. Folder and file names are keyed
-  (HMAC) or random, and say nothing about profiles, sites or data kinds.
+- They can't read synced data. File contents are AES-256-GCM. Folder and file names are keyed
+  (HMAC) or random, and say nothing about profiles, sites or data kinds. Pairing is the one
+  exception, and only for a Mac's name: see Pairing below.
 - They can't change anything undetected. Every file is authenticated. The associated data binds a
   file to its folder and name, so a file can't be renamed, moved or truncated without failing to
   open. Files that fail are never applied.
@@ -48,7 +56,7 @@ Apple, Dropbox, whoever has the NAS or finds the USB drive, malware that reads c
 
 What they do see (metadata): how many profiles sync (one folder each) and how many devices; when
 and how much each writes (file count, times, sizes to 1 KiB); and that it's Solara sync data
-(the `NNS1` magic and `.nns` extension).
+(the `NNS1` magic and `.nns` extension). Pairing adds its own, listed below.
 
 What they can do: delete or withhold files (denial of service). Withheld files show as
 "waiting for N files to download". They can also replay an old file under its own name, which is
@@ -60,6 +68,59 @@ Not protected against:
 - Someone with the phrase. The phrase is the key, like Dia's.
 - Someone with the unlocked Mac. They have the data in the clear anyway.
 - A compromised Solara binary.
+
+### Pairing
+
+Settings › Sync says it in short: "Pairing shows this Mac’s name to the Mac you’re pairing with
+before you compare codes, even if you cancel. Anyone who can open your sync folder could start a
+pairing. Pairing files show when a pairing happened and how it ended, but none of your synced
+data." In full:
+
+- **The Mac's name goes out before the codes match.** Each Mac sends its real name, encrypted to
+  the Mac it paired up with, before either shows the code. That Mac is whoever answered in the
+  folder, not necessarily yours. The joining Mac takes the answer when exactly one has arrived
+  (with two or more it takes none, and the attempt runs out); a trusted Mac answers only the request its owner selected while Connect another Mac or
+  Review request is open (one 120-second window), and sends its name only after the joining Mac's
+  has arrived. Cancelling, denying or deleting the files doesn't take the name back: the other
+  side can keep it, and so can iCloud. The owner accepted this on 2026-11-01, because a name
+  helps people recognize the right Mac.
+- **Anyone who can write to the sync folder can start a pairing.** They can post a request, or
+  answer one. They don't need the phrase. What they can get is the name above; the synced data
+  stays out of reach, because it goes only after the code matches on both Macs, Allow is chosen on
+  the trusted Mac, and Touch ID or the login password confirms it there.
+- **A passive reader doesn't get the name.** Names travel AES-256-GCM sealed under keys from an
+  X25519 exchange between the two Macs, padded to a fixed size so the length doesn't show. The
+  request and the answer carry only the fixed labels "New Mac" and "Trusted Mac" and a salted
+  hash of the name.
+- **A name is only a claim.** Both sheets show it in quotes as "Unverified until the codes match".
+  A matching code proves that this connection is the one the other Mac sees, not who owns it.
+
+What pairing files show anyone who can read the folder:
+- Where: `Solara Pairing v2/<chain tag>/<request id>/`. The chain tag is the phrase's chain
+  folder name, so a pairing is tied to one sync; the request id is random, and each answer's id
+  (in its file names) is random.
+- That a pairing happened, when, and how far it got. Every file name says what it is: `request`,
+  `offer`, `select`, `reveal`, `confirm`, `j-name`, `t-name`, `approval`, `receipt`,
+  `j-terminal`, `t-terminal`, each `.spj`. Each kind has one fixed size (`request` 197 bytes,
+  `offer` 233, `select`, `reveal` and `receipt` 156, `confirm` 124, the names 376 each, `approval`
+  1160, the terminals 125). So the folder shows how many Macs answered, whether one was approved
+  and whether the new Mac confirmed it installed.
+- In the clear: a 60-byte header (the `SPJ2` magic, version, kind, length, and the chain tag,
+  request id and answer id), each side's X25519 public key and random session id, the request's and
+  each answer's created and expiry times (five minutes apart), the commitments and their openings, and the
+  confirmations. A terminal file also says why the attempt ended: cancelled, denied, expired or a
+  protocol failure.
+- Sealed: the two names and the approval. The approval carries the phrase's entropy, sealed under
+  that exchange's key.
+
+What a folder writer can do to a pairing: withhold, delete or flood the files (the attempt fails
+or times out), answer a request to learn the joining Mac's name, or post one to learn a trusted
+Mac's name if its owner selects it. A wrong Mac gets past the code about once in 2^30 attempts,
+and a trusted Mac takes one attempt per window.
+
+Cleanup is best effort. Each Mac deletes the files it wrote once the attempt ends (a terminal or
+receipt a minute later). A Mac that quits or loses the folder mid-attempt leaves its files, and a
+copy iCloud kept is out of reach. No promise rests on deleting them.
 
 The phrase's entropy is in each Mac's login Keychain (`Solara Sync Key`, this device only,
 never iCloud Keychain). Losing every Mac and the Recovery Kit loses the synced data. There's no
@@ -111,6 +172,11 @@ synced data in this folder".
   <chain tag>/                 one per phrase (several people can share one folder)
     <scope tag>/               "app" (settings, profiles, devices) or "p:<profile sync id>"
       <file id>.nns            128 random bits, base32
+  Solara Pairing v2/           pairing's files, cleaned up best effort
+    <chain tag>/
+      <request id>/            128 random bits, hex
+        request.spj            the joining Mac's request
+        <answer id>.<kind>.spj one per step, see Threat model › Pairing
 ```
 
 A file is `"NNS1" | nonce (12) | AES-GCM ciphertext | tag (16)`.
@@ -412,10 +478,12 @@ Settings › Sync. Dia puts sync in Account › Sync, with the section icon
   - The status line uses Dia's words: "starting up", "updating", "updated just now", "not
     syncing · last synced %@" and "offline" (the folder isn't there: a drive is unplugged, or
     iCloud Drive is off). Downloads still to come add "· waiting for N files to download".
-  - **Connect Another Device…** shows the steps for the other Mac and a QR code of the phrase:
-    scan it with an iPhone and paste it on the Mac with Universal Clipboard. It also has Show
-    Words and Copy Words. Dia's version is an OTP between signed-in devices, which needs its
-    server.
+  - **Connect Another Device…** offers Connect another Mac, with "On the new Mac, open Solara and
+    choose Use Solara from your other Mac. Then arm this Mac to compare the codes and approve."
+    (see Pairing a new Mac below). Use Recovery Phrase… keeps the old way: the steps for the other
+    Mac and a QR code of the phrase, to scan with an iPhone and paste on the Mac with Universal
+    Clipboard, plus Show Words and Copy Words. The pairing code is not that QR code. Dia's version
+    is an OTP between signed-in devices, which needs its server.
   - **Advanced…** has Save Recovery Kit…, Copy Recovery Code (Dia's ⌥ item, copied as
     `org.nspasteboard.ConcealedType`), Sync Now, Show Sync Folder in Finder and Stop Syncing….
   - Then Profiles (toggles, and Add to This Mac), What Syncs (Bookmarks, History, Open Tabs,
@@ -429,6 +497,16 @@ Settings › Sync. Dia puts sync in Account › Sync, with the section icon
     keeps all local data.
   - Deleting removes this phrase's chain folder. The other Macs then show Dia's "This device is
     out of sync. Sync may have been reset from another device." and stop, keeping their data.
+- **Pairing a new Mac.** The new Mac's onboarding finds the sync in the folder and offers "Use
+  Solara from your other Mac". It says "Open Solara on your other Mac and choose Connect another
+  Mac or Review request." On the other Mac, a request shows only a quiet indicator: no sheet, no
+  notification, no name. Connect another Mac or Review request opens a 120-second window to
+  select the request, with "Only continue if you just started connecting your other Mac." and an
+  "I didn't request this" that keeps the indicator hidden until the owner opens pairing again.
+  Both Macs then show the same six characters and the other's claimed name. "The code matches on
+  my other Mac" must be checked before Allow, which asks for Touch ID or the login password. A
+  mismatch says "The codes don't match. Nothing was connected." The recovery phrase still works
+  everywhere instead.
 - **Overflow menu.** One other device with open tabs shows "Your %@ Tabs" (the kind of Mac, from
   its name: "Your MacBook Pro Tabs"). Several roll up into **Your Devices**
   (`macbook.and.iphone`), a submenu per device. Each lists "Recent Tabs"; picking one opens it
@@ -602,5 +680,6 @@ each scope's cycle (`guard` in `engine.ts`) holds that back.
 
 A real two-Mac run over iCloud Drive: turn on sync on one Mac, save the kit, enter the phrase on
 the other, and watch bookmarks, history, pinned tabs, passwords and settings go both ways. Also
-check the iCloud Drive permission prompt, if macOS shows one the first time. The tests use a
-temporary folder, never iCloud Drive.
+check the iCloud Drive permission prompt, if macOS shows one the first time. Then pair a third
+Mac over iCloud Drive: the request reaching the other Mac, an offline Mac, sleep and wake, and
+pairing finishing inside five minutes. The tests use a temporary folder, never iCloud Drive.

@@ -171,7 +171,7 @@ struct SyncTrustedPairingModelTests {
     #expect(!String(reflecting: c).contains(c.code))
     #expect(!String(reflecting: c).contains(c.claimedName))
     #expect(Mirror(reflecting: service.snapshot).children.isEmpty)
-    #expect(SyncText.offNote == "Pairing reveals your Mac’s name to the selected connection before the codes match, even if you cancel. Someone with access to the sync folder can create that connection. Pairing files also expose connection metadata.")
+    #expect(SyncText.offNote == "Pairing shows this Mac’s name to the Mac you’re pairing with before you compare codes, even if you cancel. Anyone who can open your sync folder could start a pairing. Pairing files show when a pairing happened and how it ended, but none of your synced data.")
     #expect(SyncPairingText.claimQualification == "Matching codes authenticate only this connection’s claim to this name. They do not verify the Mac’s system name, hardware, legal identity or Apple account ownership.")
     #expect(SyncPairingText.authority == "Allow only if all six characters match on the Mac you’re connecting. This grants ongoing access to everything available with your recovery phrase, including synced passwords.")
   }

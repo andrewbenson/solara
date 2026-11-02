@@ -466,7 +466,7 @@ public final class SyncPaneModel: SettingsPaneProvider {
 
 enum SyncText {
   static let intro = "Sync your browsing data across Macs through a folder you choose. Synced contents are encrypted."
-  static let offNote = "Pairing reveals your Mac’s name to the selected connection before the codes match, even if you cancel. Someone with access to the sync folder can create that connection. Pairing files also expose connection metadata."
+  static let offNote = "Pairing shows this Mac’s name to the Mac you’re pairing with before you compare codes, even if you cancel. Anyone who can open your sync folder could start a pairing. Pairing files show when a pairing happened and how it ended, but none of your synced data."
   static let unavailable = "Sync isn’t available in this build."
 
   static func ago(_ date: Date, now: Date) -> String {

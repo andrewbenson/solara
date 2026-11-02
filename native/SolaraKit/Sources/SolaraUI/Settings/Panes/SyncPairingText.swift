@@ -6,6 +6,7 @@ enum SyncPairingText {
   static let title = "Another Mac wants to join sync"
   static let authority = "Allow only if all six characters match on the Mac you’re connecting. This grants ongoing access to everything available with your recovery phrase, including synced passwords."
   static let claimQualification = "Matching codes authenticate only this connection’s claim to this name. They do not verify the Mac’s system name, hardware, legal identity or Apple account ownership."
+  static let interrupted = "Pairing stopped. Try again."
   static let sent = "Approval sent; installation not confirmed"
   static let nameWarning = "This name may look like another name. Compare all six code characters."
   static let persistenceFailure = "Couldn't save your pairing preference. Pairing requests will stay hidden until you try again."
@@ -14,6 +15,7 @@ enum SyncPairingText {
 
   static func ended(_ reason: TrustedEndReason) -> String {
     switch reason {
+    case .interrupted: interrupted
     case .mismatch: "The codes don't match. Nothing was connected."
     case .verificationFailed: "This connection couldn't be verified. Nothing was connected."
     case .folderUnavailable: "The sync folder isn't available."

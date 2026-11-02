@@ -44,4 +44,62 @@ struct SyncPairingNavigationTests {
     #expect(service.presentations.isEmpty)
   }
 
+  @Test func stoppedAuthenticationSheetDismissalAllowsImmediateRetry() throws {
+    let service = TrustedPairingTestService()
+    service.clock = TrustedPairingClock.now()
+    let services = FakeSyncServices(state: SyncState(status: .updated, enabled: true, folder: "/fixture"))
+    services.pairingInvalidated = { _ in service.publish(verified: false, eligible: false) }
+    let pane = SyncPaneModel(services: services, pairingService: service)
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 400), styleMask: [.titled], backing: .buffered, defer: true)
+    let model = try #require(pane.pairing)
+    model.attach(to: window)
+    model.connect()
+    let arm = try #require(model.arm)
+    let comparison = service.ready(model)
+    service.publish(phase: .authenticating, arm: arm, comparison: comparison)
+    pane.sheet = .trustedPairing(surfaceID: arm.id)
+    model.surfaceChanged(.visibilityChanged)
+    #expect(model.arm == nil)
+    pane.sheet = nil
+    if case .ended(let reason) = model.phase {
+      #expect(SyncPairingText.ended(reason) == "Pairing stopped. Try again.")
+    } else { Issue.record("interrupted exchange did not end") }
+    pane.connectAnotherMac()
+    #expect(service.arms.count == 2)
+    #expect(model.arm !== arm)
+    #expect(model.eligible)
+    #expect(service.allowed.isEmpty)
+    #expect(service.ends == [.cancel])
+    model.teardown()
+  }
+
+  @Test func stoppedAuthenticationSheetReplacementDoesNotRemoveNewArm() throws {
+    let service = TrustedPairingTestService()
+    service.clock = TrustedPairingClock.now()
+    let services = FakeSyncServices(state: SyncState(status: .updated, enabled: true, folder: "/fixture"))
+    services.pairingInvalidated = { _ in service.publish(verified: false, eligible: false) }
+    let pane = SyncPaneModel(services: services, pairingService: service)
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 400), styleMask: [.titled], backing: .buffered, defer: true)
+    let model = try #require(pane.pairing)
+    model.attach(to: window)
+    model.connect()
+    let arm = try #require(model.arm)
+    let comparison = service.ready(model)
+    service.publish(phase: .authenticating, arm: arm, comparison: comparison)
+    pane.sheet = .trustedPairing(surfaceID: arm.id)
+    model.surfaceChanged(.visibilityChanged)
+    model.connect()
+    let replacement = try #require(model.arm)
+    service.publish(arm: replacement)
+    pane.showPairingIfAdmitted()
+    #expect(pane.sheet == .trustedPairing(surfaceID: replacement.id))
+    #expect(model.arm === replacement)
+    #expect(model.phase == .choosing)
+    #expect(model.eligible)
+    #expect(model.isPresented)
+    #expect(service.allowed.isEmpty)
+    #expect(service.ends == [.cancel])
+    model.teardown()
+  }
+
 }

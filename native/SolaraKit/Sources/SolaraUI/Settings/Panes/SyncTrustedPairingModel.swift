@@ -72,6 +72,7 @@ public final class SyncTrustedPairingModel {
   }
 
   public func connect(reviewing: TrustedRequest? = nil, options: TrustedArmOptions = TrustedArmOptions()) {
+    if surface == nil { resumeObservation() }
     guard eligible, arm == nil, let surface else { return }
     if let reviewing, !requests.contains(where: { $0 === reviewing }) { return }
     clearComparison()
@@ -206,19 +207,25 @@ public final class SyncTrustedPairingModel {
 
   public func surfaceChanged(_ event: TrustedSurfaceEvent) {
     guard let surface else { return }
+    let authenticationInterrupted = phase == .authenticating
+    let interruptionEndsArm = arm != nil && (authenticationInterrupted || event == .removed)
     presentationGeneration &+= 1
     clearComparison()
     foreground = false
     presentationAdmitted = false
+    if interruptionEndsArm, delivery == nil { phase = .ended(.interrupted) }
     if event == .removed {
       if let arm { consumed.insert(arm.id) }
       arm = nil
       selected = false
       isPresented = false
-      phase = delivery ?? .ended(.removed)
+      if case .ended = phase {}
+      else { phase = delivery ?? .ended(.removed) }
       expiry?.cancel()
     }
     service.surfaceChanged(surface, event: event)
+    if authenticationInterrupted && event != .removed { end(.cancel) }
+    if event == .removed { self.surface = nil; window = nil }
   }
 
   public func end(_ disposition: TrustedEnd) {
@@ -232,7 +239,8 @@ public final class SyncTrustedPairingModel {
     foreground = false
     presentationAdmitted = false
     selected = false
-    phase = delivery ?? .ended(disposition == .deny ? .denied : disposition == .unexpectedRequest ? .unexpectedRequest : .cancelled)
+    let reason: TrustedEndReason = phase == .ended(.interrupted) ? .interrupted : disposition == .deny ? .denied : disposition == .unexpectedRequest ? .unexpectedRequest : .cancelled
+    phase = delivery ?? .ended(reason)
     if disposition == .unexpectedRequest { indicator = .suppressed; markerVerified = false }
     expiry?.cancel()
     service.end(endedArm, on: surface, disposition: disposition)
@@ -266,12 +274,13 @@ public final class SyncTrustedPairingModel {
   private func apply(_ snapshot: TrustedSnapshot) {
     guard snapshot.revision > revision else { return }
     revision = snapshot.revision
+    if let arm = snapshot.arm, consumed.contains(arm.id) { return }
     eligible = snapshot.eligible
     markerVerified = snapshot.openMarkerVerified
     indicator = markerVerified ? snapshot.indicator : snapshot.indicator == .persistenceFailure ? .persistenceFailure : .suppressed
     requests = Array(snapshot.requests.prefix(8))
     guard let arm else {
-      if case .ended = snapshot.phase, delivery == nil { phase = snapshot.phase }
+      if case .ended = snapshot.phase, delivery == nil, phase != .ended(.interrupted) { phase = snapshot.phase }
       return
     }
     guard snapshot.arm === arm, !consumed.contains(arm.id), now() < arm.deadline,
@@ -286,7 +295,7 @@ public final class SyncTrustedPairingModel {
       clearComparison()
       consumed.insert(arm.id)
       self.arm = nil
-      phase = delivery ?? snapshot.phase
+      phase = delivery ?? (phase == .ended(.interrupted) ? phase : snapshot.phase)
       isPresented = false
       expiry?.cancel()
       return
@@ -299,7 +308,7 @@ public final class SyncTrustedPairingModel {
     }
     foreground = true
     isPresented = true
-    phase = snapshot.phase
+    if phase != .authenticating || snapshot.phase != .comparing { phase = snapshot.phase }
     guard snapshot.phase == .comparing || snapshot.phase == .authenticating else {
       clearComparison()
       return

@@ -3,6 +3,28 @@ import XCTest
 @testable import SolaraLegacySyncCore
 
 final class PairingServiceTests: XCTestCase {
+  #if DEBUG
+  func testBackendReadinessRequiresCoordinatorAndStoreCallbacksInEitherOrder() {
+    for coordinatorFirst in [false, true] {
+      let service = PairingServices()
+      let rig = PairingCoordinatorTests.Rig()
+      var sampledCallbacks = 0
+      XCTAssertFalse(service.backendReady)
+      let registerStore = {
+        service.registerStore(healthy: { sampledCallbacks += 1; return false }, revision: { sampledCallbacks += 1; return nil }, projection: { _, _ in sampledCallbacks += 1; return [:] })
+      }
+      if coordinatorFirst { service.register(rig.coordinator) }
+      else { registerStore() }
+      XCTAssertFalse(service.backendReady)
+      if coordinatorFirst { registerStore() }
+      else { service.register(rig.coordinator) }
+      XCTAssertTrue(service.backendReady)
+      XCTAssertEqual(sampledCallbacks, 0)
+    }
+  }
+
+  #endif
+
   func testOneOwnerSurvivesRegistrationOrderAndModuleRecreation() throws {
     let first = PairingCoordinatorTests.Rig()
     let replacement = PairingCoordinatorTests.Rig()

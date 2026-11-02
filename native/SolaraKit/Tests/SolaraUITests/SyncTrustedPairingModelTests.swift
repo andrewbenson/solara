@@ -288,6 +288,131 @@ struct SyncTrustedPairingModelTests {
     service.heldAllow?.resume()
     service.heldAllow = nil
   }
+  @Test func pendingAuthenticationHideEndsExchangeAndLateSuccessCannotReviveIt() async throws {
+    let (service, model, window) = setup()
+    defer { _ = window.windowNumber }
+    service.holdAllow = true
+    model.connect()
+    let arm = try #require(model.arm)
+    let comparison = service.ready(model)
+    model.setMatched(true, comparison: comparison, render: model.renderGeneration)
+    let oldAllow = model.captureAllow()
+    oldAllow()
+    for _ in 0..<30 where service.heldAllow == nil { await Task.yield() }
+    #expect(service.heldAllow != nil)
+    #expect(model.phase == .authenticating)
+    service.publish(phase: .comparing, arm: arm, comparison: comparison)
+    #expect(model.phase == .authenticating)
+    model.surfaceChanged(.visibilityChanged)
+    if case .ended(let reason) = model.phase {
+      #expect(SyncPairingText.ended(reason) == "Pairing stopped. Try again.")
+    } else { Issue.record("interrupted exchange did not end") }
+    #expect(model.arm == nil)
+    #expect(model.comparison == nil)
+    #expect(!model.isPresented)
+    #expect(!model.canAllow)
+    #expect(service.ends == [.cancel])
+    service.heldAllow?.resume()
+    service.heldAllow = nil
+    service.publish(phase: .sentUnconfirmed, arm: arm)
+    oldAllow()
+    await Task.yield()
+    if case .ended(let reason) = model.phase {
+      #expect(SyncPairingText.ended(reason) == "Pairing stopped. Try again.")
+    } else { Issue.record("interrupted exchange did not end") }
+    #expect(service.allowed.count == 1)
+    model.surfaceChanged(.removed)
+    model.connect()
+    let replacement = try #require(model.arm)
+    #expect(replacement !== arm)
+    #expect(service.arms.count == 2)
+    let next = service.ready(model)
+    service.publish(phase: .sentUnconfirmed, arm: arm)
+    #expect(model.phase == .comparing)
+    #expect(model.comparison === next)
+    #expect(model.isPresented)
+    service.publish(phase: .comparing, arm: replacement, comparison: next)
+    #expect(model.comparison === next)
+    #expect(service.allowed.count == 1)
+    model.teardown()
+  }
+
+  @Test func queuedAuthenticationHideNeverRequestsAllow() async throws {
+    let (service, model, _) = setup()
+    model.connect()
+    let arm = try #require(model.arm)
+    let comparison = service.ready(model)
+    model.setMatched(true, comparison: comparison, render: model.renderGeneration)
+    model.captureAllow()()
+    model.surfaceChanged(.visibilityChanged)
+    service.publish(phase: .sentUnconfirmed, arm: arm)
+    await Task.yield()
+    if case .ended(let reason) = model.phase {
+      #expect(SyncPairingText.ended(reason) == "Pairing stopped. Try again.")
+    } else { Issue.record("interrupted exchange did not end") }
+    #expect(model.arm == nil)
+    #expect(service.allowed.isEmpty)
+    #expect(service.ends == [.cancel])
+    model.connect()
+    #expect(service.arms.count == 2)
+    model.teardown()
+  }
+
+  @Test func surfaceInterruptionUsesLocalRetryCopyOnlyWhenItEndsALiveArm() throws {
+    for phase: TrustedPhase in [.choosing, .preparing, .comparing, .authenticating] {
+      for event: TrustedSurfaceEvent in [.visibilityChanged, .remounted, .removed] {
+        let (service, model, window) = setup()
+        defer { _ = window.windowNumber }
+        model.connect()
+        let arm = try #require(model.arm)
+        let comparison = service.ready(model)
+        service.publish(phase: phase, arm: arm, comparison: comparison)
+        model.surfaceChanged(event)
+        if event == .removed || phase == .authenticating {
+          #expect(model.arm == nil)
+          if case .ended(let reason) = model.phase {
+            #expect(SyncPairingText.ended(reason) == "Pairing stopped. Try again.")
+          } else { Issue.record("interrupted exchange did not end") }
+          service.publish(phase: .ended(.cancelled))
+          if case .ended(let reason) = model.phase {
+            #expect(SyncPairingText.ended(reason) == "Pairing stopped. Try again.")
+          } else { Issue.record("cleanup replaced interruption state") }
+        } else {
+          #expect(model.arm === arm)
+          #expect(model.phase == phase)
+        }
+        model.teardown()
+      }
+    }
+  }
+
+  @Test func unrelatedEndReasonsKeepTheirExistingCopy() {
+    let cases: [(TrustedEndReason, String)] = [
+      (.denied, "This request ended. Start again on the other Mac."),
+      (.cancelled, "This request ended. Start again on the other Mac."),
+      (.unexpectedRequest, "This request ended. Start again on the other Mac."),
+      (.expired, "This request ended. Start again on the other Mac."),
+      (.removed, "This request ended. Start again on the other Mac."),
+      (.mismatch, "The codes don't match. Nothing was connected."),
+      (.verificationFailed, "This connection couldn't be verified. Nothing was connected."),
+      (.folderUnavailable, "The sync folder isn't available."),
+      (.persistenceFailure, "Couldn't finish saving sync on this Mac."),
+      (.authorizationFailed, "Couldn’t authorize this connection. Use Touch ID or this Mac’s login password and start again."),
+      (.noLoginPassword, "Set a login password in System Settings › Users & Groups, then start this connection again."),
+      (.rateLimited, "Too many pairing requests. Try again or use your recovery phrase."),
+      (.invalidLocalName, "Enter a display form of this Mac’s real name to start a new connection.")
+    ]
+    for (reason, message) in cases {
+      let (service, model, window) = setup()
+      defer { _ = window.windowNumber }
+      service.publish(phase: .ended(reason))
+      #expect(model.phase == .ended(reason))
+      #expect(SyncPairingText.ended(reason) == message)
+      model.surfaceChanged(.removed)
+      #expect(model.phase == .ended(reason))
+    }
+  }
+
   @Test func T15_fixedTerminalReasonProjectsWithoutDisplayOrArm() {
     let (service, model, _) = setup()
     service.publish(phase: .ended(.invalidLocalName))

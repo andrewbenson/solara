@@ -7,6 +7,7 @@ final class TrustedPairingTestService: TrustedPairingService {
   let surface = TrustedSurface()
   var snapshot = TrustedSnapshot(revision: 1, eligible: true, openMarkerVerified: true)
   var observers: [UUID: (TrustedSurface?, @MainActor (TrustedSnapshot) -> Void)] = [:]
+  var attached = false
   var arms: [TrustedArm] = []
   var selections: [TrustedRequest] = []
   var presentations: [TrustedArm] = []
@@ -27,8 +28,9 @@ final class TrustedPairingTestService: TrustedPairingService {
     receive(snapshot)
     return TrustedSubscription { [weak self] in self?.observers[id] = nil; self?.canceledObservers += 1 }
   }
-  func attach(to settingsWindow: NSWindow) -> TrustedSurface { surface }
+  func attach(to settingsWindow: NSWindow) -> TrustedSurface { attached = true; return surface }
   func arm(on surface: TrustedSurface, reviewing: TrustedRequest?, options: TrustedArmOptions) throws -> TrustedArm {
+    guard attached else { throw TrustedPairingFailure.refused(.removed) }
     let arm = TrustedArm(deadline: clock + 120)
     arms.append(arm)
     self.options.append(options)
@@ -37,7 +39,11 @@ final class TrustedPairingTestService: TrustedPairingService {
   }
   func select(_ request: TrustedRequest, in arm: TrustedArm) async throws { selections.append(request) }
   func present(_ arm: TrustedArm, on surface: TrustedSurface) throws { presentations.append(arm) }
-  func surfaceChanged(_ surface: TrustedSurface, event: TrustedSurfaceEvent) { events.append(event); authorization = nil }
+  func surfaceChanged(_ surface: TrustedSurface, event: TrustedSurfaceEvent) {
+    events.append(event)
+    authorization = nil
+    if event == .removed { attached = false }
+  }
   func acknowledge(_ comparison: TrustedComparison, matched: Bool, on surface: TrustedSurface) -> TrustedAuthorization? {
     acknowledgments.append(matched)
     authorization = matched ? TrustedAuthorization() : nil

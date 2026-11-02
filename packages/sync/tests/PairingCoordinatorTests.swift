@@ -416,6 +416,82 @@ final class PairingCoordinatorTests: XCTestCase {
     XCTAssertNil(rig.coordinator.snapshot.code)
   }
 
+  func testHideDuringAuthenticationEndsArmAndLateSuccessCannotReleaseOrBlockRearming() throws {
+    let rig = Rig(), pair = try authPending(rig)
+    let context = try XCTUnwrap(rig.contexts.first)
+    let lateSuccess = try XCTUnwrap(context.reply)
+    let chargedReveals = try XCTUnwrap(rig.store.ledger).reveals
+    XCTAssertEqual(chargedReveals.count, 1)
+
+    try rig.coordinator.hide(pair.1)
+    XCTAssertTrue(context.invalidated)
+    XCTAssertFalse(rig.coordinator.snapshot.trusted)
+    XCTAssertNil(rig.coordinator.snapshot.trustedPhase)
+    XCTAssertNil(rig.coordinator.snapshot.code)
+    XCTAssertThrowsError(try rig.coordinator.comparison(pair.1))
+    XCTAssertThrowsError(try rig.coordinator.allow(pair.1))
+
+    let replacement = try rig.coordinator.armTrusted()
+    try wait { (try? rig.coordinator.requests(replacement)) != nil }
+    lateSuccess(true, nil)
+    XCTAssertTrue(rig.coordinator.snapshot.trusted)
+    XCTAssertEqual(rig.coordinator.snapshot.trustedPhase, .armed)
+    XCTAssertTrue(rig.store.consumed.isEmpty)
+    XCTAssertFalse(rig.mailbox.everVisible.contains { $0.kind == .approval })
+    XCTAssertEqual(rig.keys.inserts, 0)
+    XCTAssertTrue(rig.host.prepared.isEmpty)
+    XCTAssertEqual(rig.store.ledger?.reveals, chargedReveals)
+    XCTAssertFalse(rig.states.contains(.approved))
+
+    rig.time.now += 300000
+    rig.coordinator.poll()
+    try wait { rig.states.last == .failed(.expired) }
+    XCTAssertFalse(rig.coordinator.snapshot.joining)
+    XCTAssertFalse(rig.coordinator.snapshot.trusted)
+    XCTAssertTrue(rig.store.consumed.isEmpty)
+    XCTAssertFalse(rig.mailbox.everVisible.contains { $0.kind == .approval })
+    XCTAssertEqual(rig.store.ledger?.reveals, chargedReveals)
+  }
+
+  func testRearmingAfterAuthenticationAbortComparesFreshRequestBesideStalePeerPackets() throws {
+    let rig = Rig(), pair = try authPending(rig)
+    let lateSuccess = try XCTUnwrap(rig.contexts.first?.reply)
+    let stale = rig.mailbox.externallyVisible.filter { [.select, .confirm, .joiningName].contains($0.kind) }
+    XCTAssertFalse(stale.isEmpty)
+    try rig.coordinator.hide(pair.1)
+    XCTAssertEqual(pair.0.cancel(), .cancelled)
+    try wait { !rig.mailbox.externallyVisible.contains { stale.contains($0) } }
+    rig.mailbox.lock.lock(); rig.mailbox.entries.append(contentsOf: stale); rig.mailbox.lock.unlock()
+
+    let replacement = try rig.coordinator.armTrusted()
+    let fixture = PairingSessionTests()
+    let peer = try fixture.session(.joining, rig.time, seed: 900)
+    let request = try fixture.write(peer.startJoining(createdMs: fixture.wall), .request)
+    rig.mailbox.lock.lock(); rig.mailbox.entries.append(request); rig.mailbox.lock.unlock()
+    try wait { rig.coordinator.poll(); return ((try? rig.coordinator.requests(replacement)) ?? []).contains { $0.descriptor.rid == request.rid } }
+    let selected = try XCTUnwrap(rig.coordinator.requests(replacement).first { $0.descriptor.rid == request.rid })
+    try rig.coordinator.pin(selected, handle: replacement)
+    try wait {
+      rig.coordinator.poll()
+      for entry in rig.mailbox.externallyVisible where entry.rid == request.rid && [.offer, .reveal, .trustedName].contains(entry.kind) {
+        if let output = try? peer.receive(entry) {
+          rig.mailbox.lock.lock()
+          for write in output.writes where !rig.mailbox.entries.contains(write) { rig.mailbox.entries.append(write) }
+          rig.mailbox.lock.unlock()
+        }
+      }
+      if peer.phase == .requestLive, let offer = peer.offers.first, let output = try? peer.selectOffer(offer, handle: peer.handle) {
+        rig.mailbox.lock.lock(); rig.mailbox.entries.append(contentsOf: output.writes); rig.mailbox.lock.unlock()
+      }
+      return rig.coordinator.snapshot.trustedPhase == .comparing && peer.phase == .comparing
+    }
+    lateSuccess(true, nil)
+    XCTAssertEqual(try rig.coordinator.comparison(replacement).code.replacingOccurrences(of: " ", with: ""), peer.code)
+    XCTAssertTrue(rig.store.consumed.isEmpty)
+    XCTAssertFalse(rig.mailbox.everVisible.contains { $0.kind == .approval })
+    XCTAssertEqual(rig.store.ledger?.reveals.count, 2)
+  }
+
   func testExpiredAuthAtEqualityDoesNotRelease() throws {
     let rig = Rig(), pair = try authPending(rig)
     rig.time.now += 120000

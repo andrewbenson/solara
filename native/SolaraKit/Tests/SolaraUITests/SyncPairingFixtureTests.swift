@@ -165,6 +165,48 @@ struct SyncPairingDisplayFixtureTests {
     for _ in 0..<30 { await Task.yield() }
   }
 
+  @Test func interruptedExchangeShowsLocalRetryCopyInSettings() async throws {
+    await configurePairingTestApplication()
+    let accessibility = NSApp.accessibilityAttributeValue(NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface"))
+    NSApp.accessibilitySetValue(true, forAttribute: NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface"))
+    defer { NSApp.accessibilitySetValue(accessibility ?? false, forAttribute: NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")) }
+    let service = TrustedPairingTestService()
+    service.clock = TrustedPairingClock.now()
+    let services = FakeSyncServices(state: SyncState(status: .updated, enabled: true, folder: "/fixture"))
+    let pane = SyncPaneModel(services: services, pairingService: service)
+    await pane.prepare(SettingsPlace(pane: .sync))
+    let model = try #require(pane.pairing)
+    let settings = PairingOffscreenSettingsPanel(contentRect: NSRect(x: -10000, y: -10000, width: 800, height: 1000), styleMask: [.nonactivatingPanel], backing: .buffered, defer: false)
+    settings.isReleasedWhenClosed = false
+    settings.alphaValue = 0
+    defer { model.teardown(); settings.contentView = nil; settings.orderOut(nil) }
+    model.attach(to: settings)
+    model.connect()
+    _ = service.ready(model)
+    model.surfaceChanged(.removed)
+    settings.contentView = NSHostingView(rootView: SyncPane(model: pane))
+    settings.orderFront(nil)
+    await yieldTasks()
+    settings.contentView?.layoutSubtreeIfNeeded()
+    var visited = Set<ObjectIdentifier>()
+    func strings(_ object: NSObject) -> [String] {
+      guard visited.insert(ObjectIdentifier(object)).inserted else { return [] }
+      var result = [(object as? NSTextField)?.stringValue, (object as? NSTextView)?.string].compactMap { $0 }
+      for name in ["accessibilityLabel", "accessibilityTitle", "accessibilityValue"] {
+        let selector = NSSelectorFromString(name)
+        if object.responds(to: selector), let value = object.perform(selector)?.takeUnretainedValue() as? String { result.append(value) }
+      }
+      var children = (object as? NSView)?.subviews.map { $0 as NSObject } ?? []
+      let selector = NSSelectorFromString("accessibilityChildren")
+      if object.responds(to: selector), let values = object.perform(selector)?.takeUnretainedValue() as? [NSObject] { children += values }
+      return result + children.flatMap(strings)
+    }
+    let rendered = settings.contentView.map(strings) ?? []
+    #expect(rendered.contains("Pairing stopped. Try again."))
+    #expect(rendered.contains("Connect another Mac"))
+    #expect(!rendered.contains("This request ended. Start again on the other Mac."))
+  }
+
   @Test func P302_debugFixtureActionsCannotReachRegisteredProductionServiceOrItsEntries() async throws {
     if ProcessInfo.processInfo.environment["SOLARA_PAIRING_OFFSCREEN_TESTS"] == "1" { await configurePairingTestApplication() }
     let data = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("ac-pairing-isolation-\(UUID().uuidString)")
@@ -215,6 +257,28 @@ struct SyncPairingDisplayFixtureTests {
     #expect(allowed["allowRequests"] as? Int == 1)
     #expect(allowed["realAuthenticationRequests"] as? Int == 0)
     #expect(allowed["releaseRequests"] as? Int == 0)
+    #expect(allowed["authenticating"] as? Bool == true)
+    _ = drive("hide", settingsWindow: settings)
+    _ = drive("show", settingsWindow: settings)
+    await yieldTasks()
+    let stopped = drive("state", settingsWindow: settings)
+    #expect(stopped["ended"] as? Bool == true)
+    #expect(stopped["armActive"] as? Bool == false)
+    #expect(stopped["comparisonPresent"] as? Bool == false)
+    #expect(stopped["allowEnabled"] as? Bool == false)
+    #expect(stopped["endedMessage"] as? String == "Pairing stopped. Try again.")
+    #expect(stopped["retryAvailable"] as? Bool == true)
+    #expect(stopped["allowRequests"] as? Int == 1)
+    #expect(stopped["realAuthenticationRequests"] as? Int == 0)
+    #expect(stopped["releaseRequests"] as? Int == 0)
+    #expect(drive("present", settingsWindow: settings)["error"] == nil)
+    await yieldTasks()
+    #expect(drive("state", settingsWindow: settings)["choosing"] as? Bool == true)
+    _ = drive("select", settingsWindow: settings)
+    await yieldTasks()
+    #expect(drive("state", settingsWindow: settings)["preparing"] as? Bool == true)
+    _ = drive("ready", settingsWindow: settings)
+    #expect(drive("state", settingsWindow: settings)["comparisonPresent"] as? Bool == true)
     _ = drive("destroy", settingsWindow: settings)
     _ = drive("mount", settingsWindow: settings)
     _ = drive("select", settingsWindow: settings)

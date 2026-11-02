@@ -69,9 +69,10 @@ try {
   await app.eval('ac.openSettings("sync"); return true');
   await sleep(1000);
 
-  await rep.check("the production coordinator is registered and the fixture stays separate from it", async () => {
+  await rep.check("the UI service and pairing backend are registered and the fixture stays separate", async () => {
     const state = await dev("pairingStatus");
-    assert.equal(state.registered, true, "the native pairing coordinator is registered");
+    assert.equal(state.registered, true, "the trusted pairing UI service is registered");
+    assert.equal(state.backendReady, true, "the pairing coordinator exists and store callbacks are registered");
     assert.equal(state.fixtureMounted, false);
     const absent = await dev("pairingFixture", JSON.stringify({ action: "allow" }));
     assert.ok(absent.error);
@@ -133,6 +134,36 @@ try {
       assert.equal(state.releaseRequests, 0);
       await fixture("destroy");
     }
+  });
+
+  await rep.check("hiding pending fixture authentication ends pairing with a retry", async () => {
+    await mountReady();
+    await fixture("check");
+    await fixture("allow");
+    const authenticating = await waitFor((state) => state.authenticating);
+    assert.equal(authenticating.allowRequests, 1);
+    await fixture("hide");
+    await fixture("show");
+    const stopped = await waitFor((state) => state.ended && state.endedMessage);
+    assert.equal(stopped.endedMessage, "Pairing stopped. Try again.");
+    assert.equal(stopped.armActive, false);
+    assert.equal(stopped.comparisonPresent, false);
+    assert.equal(stopped.allowEnabled, false);
+    assert.equal(stopped.retryAvailable, true);
+    assert.equal(stopped.allowRequests, 1);
+    assert.equal(stopped.realAuthenticationRequests, 0);
+    assert.equal(stopped.releaseRequests, 0);
+    await fixture("present");
+    const restarted = await waitFor((state) => state.choosing);
+    assert.equal(restarted.armActive, true);
+    assert.equal(restarted.comparisonPresent, false);
+    assert.equal(restarted.realAuthenticationRequests, 0);
+    assert.equal(restarted.releaseRequests, 0);
+    await fixture("select");
+    await waitFor((state) => state.preparing);
+    await fixture("ready");
+    assert.equal((await waitFor((state) => state.comparisonPresent)).allowEnabled, false);
+    await fixture("destroy");
   });
 
   await rep.check("hidden readiness and remount never restore acknowledgment or presentation", async () => {

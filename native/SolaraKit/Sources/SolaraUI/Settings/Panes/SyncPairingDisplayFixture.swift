@@ -34,7 +34,10 @@ private final class SyncPairingDisplayService: TrustedPairingService {
     let made = TrustedArm(deadline: TrustedPairingClock.now() + 120)
     currentArm = made
     phase = .choosing
+    selected = false
+    ready = false
     admitted = true
+    publish()
     return made
   }
 
@@ -226,8 +229,9 @@ final class SyncPairingDisplayFixture: SyncPairingFixtureSession {
       service.publish()
     case "remount": model.surfaceChanged(.remounted)
     case "present":
-      control = "review request"
-      guard let present = accessibilityElements().first(where: { $0.strings.contains("Review request") }) else { return failure(control) }
+      let label = model.arm == nil ? "Connect another Mac" : "Review request"
+      control = label
+      guard let present = accessibilityElements().first(where: { $0.strings.contains(label) }) else { return failure(control) }
       guard present.press() else { return failure(control, reason: "refused input", found: true) }
     case "light": for window in hostingWindows() { window.appearance = NSAppearance(named: .aqua) }
     case "dark": for window in hostingWindows() { window.appearance = NSAppearance(named: .darkAqua) }
@@ -376,8 +380,15 @@ final class SyncPairingDisplayFixture: SyncPairingFixtureSession {
       [(view as? NSTextView)?.string, (view as? NSTextField)?.stringValue, view.accessibilityLabel(), view.accessibilityValue() as? String].compactMap { $0 }
     }
     strings += accessible.flatMap(\.strings)
+    let endedReason: TrustedEndReason?
+    if case .ended(let reason) = model.phase { endedReason = reason }
+    else { endedReason = nil }
+    let endedMessage = endedReason.flatMap { reason in strings.first { $0 == SyncPairingText.ended(reason) } }
+    let retryAvailable = accessible.contains { $0.strings.contains("Connect another Mac") }
     let inspection = inspectionRequested && inspect != nil && nameView != nil && strings.contains { $0.contains(SyncPairingName.characters(service.claimedName)) } && strings.contains { $0.contains(SyncPairingName.escaped(service.claimedName)) }
     var result: [String: Any] = ["fixture": true, "mounted": true, "choosing": model.phase == .choosing, "preparing": model.phase == .preparing,
+      "authenticating": model.phase == .authenticating, "ended": endedReason != nil, "armActive": model.arm != nil,
+      "endedMessage": endedMessage ?? "", "retryAvailable": retryAvailable,
       "comparisonPresent": model.comparison != nil, "checked": checkbox.map { $0.state == .on && model.matched } ?? false,
       "allowEnabled": allow.map { $0.isEnabled && model.canAllow } ?? false,
       "allowRequests": service.allowRequests, "realAuthenticationRequests": 0, "releaseRequests": 0,

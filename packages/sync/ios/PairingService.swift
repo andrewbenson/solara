@@ -90,6 +90,14 @@ public final class PairingServices: PairingJoining, CustomReflectable {
 
   init(sessionDictionary: @escaping () -> [String: Any]? = { CGSessionCopyCurrentDictionary() as? [String: Any] }) { self.sessionDictionary = sessionDictionary }
 
+  #if DEBUG
+  public var backendReady: Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return coordinator != nil && healthy != nil && storeRevision != nil && projection != nil
+  }
+  #endif
+
   func register(_ coordinator: PairingCoordinator) {
     lock.lock()
     defer { lock.unlock() }

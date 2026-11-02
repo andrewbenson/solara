@@ -154,6 +154,7 @@ final class PairingCoordinator: PairingJoining {
     let handle = PairingTrustedHandle()
     let session: PairingSession
     var ready = false
+    var requestID: Data?
     var authentication: PairingAuthenticationAttempt?
     var authenticating = false
     var retry: PairingSession.Entry?
@@ -458,7 +459,9 @@ final class PairingCoordinator: PairingJoining {
     try owned {
       let slot = try trustedSlot(handle)
       guard request.owner === handle else { throw Failure.stale }
-      process(try slot.session.pin(request.descriptor, handle: slot.session.handle, armGeneration: slot.session.armGeneration, createdMs: wall()), session: slot.session)
+      let output = try slot.session.pin(request.descriptor, handle: slot.session.handle, armGeneration: slot.session.armGeneration, createdMs: wall())
+      slot.requestID = request.descriptor.rid
+      process(output, session: slot.session)
     }
   }
 
@@ -863,7 +866,7 @@ final class PairingCoordinator: PairingJoining {
           if let quiet = capturedQuiet, self.quiet === quiet, self.generation == capturedGeneration, self.sessionEpochs[ObjectIdentifier(quiet)] == self.invalidationEpoch, self.configuration.environment.eligible, entry.kind == .request {
             _ = try? quiet.receive(entry)
           }
-          if let slot = capturedT, self.trusted === slot, slot.ready, [.request, .select, .confirm, .joiningName, .receipt, .joiningTerminal].contains(entry.kind), let output = try? slot.session.receive(entry) { self.process(output, session: slot.session) }
+          if let slot = capturedT, self.trusted === slot, slot.ready, entry.kind == .request || entry.rid == slot.requestID, [.request, .select, .confirm, .joiningName, .receipt, .joiningTerminal].contains(entry.kind), let output = try? slot.session.receive(entry) { self.process(output, session: slot.session) }
           if let slot = capturedJ, self.joining === slot, !slot.committed, !slot.cancelRequested, !slot.admissionUncertain, [.offer, .reveal, .trustedName, .approval, .trustedTerminal].contains(entry.kind), let output = try? slot.session.receive(entry) { self.process(output, session: slot.session) }
         }
         if let slot = capturedJ, self.joining === slot, slot.session.phase == .requestLive, slot.session.offers.count == 1, let offer = slot.session.offers.first, let output = try? slot.session.selectOffer(offer, handle: slot.session.handle) { self.process(output, session: slot.session) }

@@ -291,8 +291,15 @@ public final class SyncPaneModel: SettingsPaneProvider {
   var sheet: SyncSheet? {
     didSet {
       if oldValue != sheet {
-        if case .trustedPairing = oldValue { services.invalidatePairing("reload") }
-        if case .trustedPairing = oldValue { pairing?.surfaceChanged(.removed) }
+        if case .trustedPairing = oldValue {
+          let presentsCurrentArm: Bool
+          if case .trustedPairing(let id) = sheet { presentsCurrentArm = pairing?.arm?.id == id }
+          else { presentsCurrentArm = false }
+          if !presentsCurrentArm {
+            if pairing?.arm != nil { services.invalidatePairing("reload") }
+            pairing?.surfaceChanged(.removed)
+          }
+        }
         if case .separateSync = oldValue, case .separateSync = sheet {}
         else if case .separateSync = oldValue { creation?.cancel() }
       }
@@ -573,6 +580,10 @@ struct SyncPane: View {
                 SettingRow(title: "A Mac is requesting to connect", description: "Only review a connection you just started.") {
                   Button("Review request") { model.connectAnotherMac() }
                 }
+              }
+              if case .ended(let reason) = pairing.phase, reason != .invalidLocalName, reason != .rateLimited {
+                Text(SyncPairingText.ended(reason))
+                Button("Connect another Mac") { model.connectAnotherMac() }
               }
               if pairing.phase == .sentUnconfirmed { Text(SyncPairingText.sent).foregroundStyle(.secondary) }
               if pairing.phase == .confirmed { Text("Approval received. Sync data is still downloading on your other Mac.").foregroundStyle(.secondary) }

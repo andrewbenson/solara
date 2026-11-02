@@ -486,7 +486,9 @@ public struct SyncTrustedPairingSheet: View {
             case .choosing: SyncRequestChooser(model: model)
             case .sentUnconfirmed: Text(SyncPairingText.sent)
             case .confirmed: Text("Approval received. Sync data is still downloading on your other Mac.")
-            case .ended(let reason): Text(SyncPairingText.ended(reason))
+            case .ended(let reason):
+              Text(SyncPairingText.ended(reason))
+              Button("Connect another Mac") { model.connect() }
             case .comparing, .authenticating:
               Button("Review request", action: model.capturePresentation())
             default: Text(SyncPairingText.preparing)

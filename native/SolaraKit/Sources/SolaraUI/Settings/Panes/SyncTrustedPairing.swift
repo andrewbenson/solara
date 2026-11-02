@@ -88,7 +88,7 @@ public enum TrustedEnd: Sendable { case deny, cancel, unexpectedRequest }
 public enum TrustedIndicator: Sendable { case none, pending, overflow, suppressed, persistenceFailure }
 public enum TrustedEndReason: Sendable {
   case denied, cancelled, unexpectedRequest, mismatch, verificationFailed, folderUnavailable, persistenceFailure
-  case expired, authorizationFailed, noLoginPassword, invalidLocalName, rateLimited, removed
+  case expired, authorizationFailed, noLoginPassword, invalidLocalName, rateLimited, removed, interrupted
 }
 public enum TrustedPhase: Equatable, Sendable {
   case idle, choosing, preparing, comparing, authenticating, sentUnconfirmed, confirmed

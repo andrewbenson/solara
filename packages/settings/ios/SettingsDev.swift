@@ -1,6 +1,7 @@
 import AppKit
 import SolaraShell
 #if DEBUG
+import SolaraSyncAdapter
 import Carbon
 import SwiftUI
 #endif
@@ -188,7 +189,7 @@ enum SettingsDev {
       if command == "destroy" { self.pairingFixtureHost = nil }
       return json(result)
     case "pairingStatus":
-      return json(["registered": TrustedPairingRegistration.service != nil, "fixtureMounted": pairingFixtureHost?.isMounted == true])
+      return json(["registered": TrustedPairingRegistration.service != nil, "backendReady": PairingServices.shared.backendReady, "fixtureMounted": pairingFixtureHost?.isMounted == true])
     case "script":
       let env = ProcessInfo.processInfo.environment
       guard env["SOLARA_BACKGROUND"] == "1", env["SOLARA_DATA_DIR"]?.isEmpty == false else { return #"{"error":"test instances only"}"# }

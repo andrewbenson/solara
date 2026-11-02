@@ -2,7 +2,6 @@ import AppKit
 
 final class BrowserWindow: NSWindow {
   private let trafficLightInset = NSPoint(x: 16, y: 20)
-  private var standardTitlebarHeight: CGFloat?
 
   init() {
     super.init(
@@ -25,22 +24,12 @@ final class BrowserWindow: NSWindow {
     for name in [NSWindow.didResizeNotification, NSWindow.didExitFullScreenNotification, NSWindow.didBecomeKeyNotification] {
       NotificationCenter.default.addObserver(self, selector: #selector(layoutTrafficLights), name: name, object: self)
     }
-    NotificationCenter.default.addObserver(self, selector: #selector(restoreStandardTitlebar), name: NSWindow.willEnterFullScreenNotification, object: self)
-    standardTitlebarHeight = standardWindowButton(.closeButton)?.superview?.superview?.frame.height
     layoutTrafficLights()
   }
 
   override func layoutIfNeeded() {
     super.layoutIfNeeded()
     layoutTrafficLights()
-  }
-
-  @objc private func restoreStandardTitlebar() {
-    guard let height = standardTitlebarHeight, let container = standardWindowButton(.closeButton)?.superview?.superview else { return }
-    var frame = container.frame
-    frame.size.height = height
-    frame.origin.y = self.frame.height - height
-    container.frame = frame
   }
 
   @objc private func layoutTrafficLights() {

@@ -3,6 +3,7 @@ import Foundation
 internal import SolaraBridgeCore
 internal import SolaraModel
 internal import SolaraStore
+internal import SolaraSyncAdapter
 
 public class StoreModule: Module {
   private var subscription: Int?
@@ -14,6 +15,11 @@ public class StoreModule: Module {
     Events("onStoreCommit")
 
     OnCreate {
+      PairingServices.shared.registerStore(healthy: {
+        NativeStore.shared != nil && NativeStore.ownsWorkspace && !NativeStore.safeMode && NativeStore.refusedSession == nil && NativeStore.unavailableReason == nil
+      }, revision: { NativeStore.pairingRevision() }, projection: { operation, links in
+        try NativeStore.pairingCheckpoint(operation: operation, links: links)
+      })
       let id = self.pageRuntimeID
       pageMain { RNPageReports.beginRuntime(id) }
     }

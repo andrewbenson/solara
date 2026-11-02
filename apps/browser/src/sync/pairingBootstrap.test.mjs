@@ -7,6 +7,7 @@ globalThis.setTimeout = (fn, ms) => (timers.push({ fn, ms }), 0);
 globalThis.clearTimeout = () => {};
 globalThis.__DEV__ = false;
 let ids = 0;
+const invalidations = [];
 const calls = { unlock: 0, write: 0, remove: 0, forget: 0, create: 0, reads: 0 };
 const folder = new Map();
 globalThis.acTestNativeModules = {
@@ -17,6 +18,8 @@ globalThis.acTestNativeModules = {
       await this.createChain(folder);
       return account;
     },
+    invalidatePairing: (reason) => invalidations.push(reason),
+    chooseFolder: async () => null,
     newDeviceId: () => `device-${++ids}`,
     deviceName: () => "Joining Mac",
     createPhrase: async () => (calls.create++, true),
@@ -58,6 +61,16 @@ function hostFor() {
   const state = { marker: null, key: false, consumed: 0, saves: 0, stopped: 0, receipts: new Map(), consumeGate: null, readGate: null, checkpointGate: null, failCheckpoint: false, failSave: false, corruptReceipt: false, descriptor: identity(), lostSave: false };
   const receipt = (op) => ({ operationId: op.operationId, transaction: op.transaction, generation: op.generation, key: op.key, value: op.localValue, disposition: op.disposition });
   const host = {
+    acknowledgePairingInitialization: async (transaction, generation) => {
+      state.initialized = { transaction, generation };
+      if (state.initializationGate) await state.initializationGate;
+      if (state.failInitialization) throw new Error("private initialization failure");
+    },
+    acknowledgePairingReady: async (transaction, generation) => {
+      state.ready = { transaction, generation };
+      if (state.readyGate) await state.readyGate;
+      if (state.failReady) throw new Error("private ready failure");
+    },
     consumeInstallation: async (handle, priorState) => {
       state.consumed++;
       if (state.consumeGate) await state.consumeGate;
@@ -102,6 +115,7 @@ function reset(doc = null) {
   shell.heldSaves.only = null;
   shell.heldSaves.queue.length = 0;
   folder.clear();
+  invalidations.length = 0;
   timers.length = 0;
   for (const key of Object.keys(calls)) calls[key] = 0;
   if (doc) shell.docs.set("sync.json", JSON.stringify(doc));
@@ -928,4 +942,261 @@ test("Stop suppresses a delayed rejected disabled-state marker recovery callback
   await settle();
   assert.equal(saved().bootstrap.phase, "stopped");
   assert.equal(engine.useSync.getState().status, "off");
+});
+
+
+test("native initialization acknowledgment holds admission and all bootstrap IO", async () => {
+  reset();
+  const { host, state } = hostFor();
+  let release;
+  state.initializationGate = new Promise((resolve) => { release = resolve; });
+  const engine = await launch();
+  engine.startSync(host);
+  await settle();
+  let result;
+  const joining = engine.joinFromPairing(request(), host).then((value) => { result = value; });
+  await settle();
+  assert.deepEqual(state.initialized, { transaction: identity().transaction, generation: 1 });
+  assert.equal(result, undefined);
+  await engine.syncNow();
+  assert.equal(calls.reads + calls.write, 0);
+  release();
+  await joining;
+  assert.deepEqual(result, { ok: true });
+});
+
+test("native ready acknowledgment blocks publication and ordinary profile identity allocation", async () => {
+  reset();
+  const { engine, state } = await admit();
+  let release;
+  state.readyGate = new Promise((resolve) => { release = resolve; });
+  addLog([["prof:r", remoteDefault]]);
+  const cycling = engine.syncNow();
+  await settle();
+  assert.deepEqual(state.ready, { transaction: identity().transaction, generation: 1 });
+  const allocated = ids;
+  S().createProfile({ name: "Held local profile", color: "green" });
+  await engine.syncNow();
+  assert.equal(ids, allocated);
+  assert.equal(calls.write, 0);
+  release();
+  await cycling;
+});
+
+test("Stop invalidates immediately and persists native Stop even when v2 document write fails", async () => {
+  reset();
+  const { engine, state } = await admit();
+  shell.heldSaves.fail = true;
+  const stopping = engine.stopSync();
+  assert.deepEqual(invalidations, ["stop"]);
+  await stopping;
+  assert.equal(state.stopped, 1);
+  assert.equal(calls.write, 0);
+});
+
+test("Stop invalidates with a null installation before blocked marker recovery or document save", async () => {
+  reset();
+  const { host, state } = hostFor();
+  host.recoverInstallation = async () => new Promise(() => {});
+  const engine = await launch();
+  engine.startSync(host);
+  await settle();
+  shell.heldSaves.on = true;
+  shell.heldSaves.only = "sync.json";
+  const stopping = engine.stopSync();
+  assert.deepEqual(invalidations, ["stop"]);
+  await settle();
+  assert.equal(state.stopped, 1);
+  shell.heldSaves.on = false;
+  shell.heldSaves.queue.shift()();
+  await stopping;
+});
+
+test("folder selection invalidates before the native panel wait", async () => {
+  reset();
+  const engine = await launch();
+  const native = globalThis.acTestNativeModules.SolaraSyncAdapter;
+  const previous = native.chooseFolder;
+  let release;
+  native.chooseFolder = async () => new Promise((resolve) => { release = resolve; });
+  try {
+    const choosing = engine.chooseSyncFolder();
+    assert.deepEqual(invalidations, ["folder"]);
+    release(null);
+    await choosing;
+  } finally {
+    native.chooseFolder = previous;
+  }
+});
+
+test("v1 Stop invalidates before a retiring cycle waits on the provider", async () => {
+  reset();
+  const engine = await launch();
+  engine.startSync();
+  assert.deepEqual(await engine.turnOnSync("/sync"), { ok: true });
+  invalidations.length = 0;
+  const native = globalThis.acTestNativeModules.SolaraSyncAdapter;
+  const previous = native.chainStatus;
+  let release;
+  native.chainStatus = async () => new Promise((resolve) => { release = resolve; });
+  try {
+    const stopping = engine.stopSync();
+    assert.deepEqual(invalidations, ["stop"]);
+    await settle();
+    assert.equal(typeof release, "function");
+    release("ok");
+    await stopping;
+  } finally {
+    native.chainStatus = previous;
+  }
+});
+
+test("direct folder command invalidates before loading or changing the saved folder", async () => {
+  reset();
+  const engine = await launch();
+  globalThis.__DEV__ = true;
+  try {
+    engine.startSync();
+    assert.equal(typeof globalThis.acSync?.setSyncFolder, "function");
+    globalThis.acSync.setSyncFolder("/selected");
+    assert.deepEqual(invalidations, ["folder"]);
+  } finally {
+    globalThis.__DEV__ = false;
+    delete globalThis.acSync;
+  }
+});
+
+test("failed native ready acknowledgment keeps ordinary cycles and onboarding completion blocked", async () => {
+  reset();
+  const { host, state } = hostFor();
+  state.descriptor.route = "onboarding";
+  const engine = await launch();
+  engine.startSync(host);
+  await settle();
+  assert.deepEqual(await engine.joinFromPairing(request(), host), { ok: true });
+  state.failReady = true;
+  addLog([["prof:r", remoteDefault]]);
+  await engine.syncNow();
+  assert.equal(saved().bootstrap.phase, "ready");
+  S().createProfile({ name: "Pending profile", color: "green" });
+  const allocated = ids;
+  await engine.syncNow();
+  assert.equal(ids, allocated);
+  assert.equal(calls.write, 0);
+  assert.equal(await engine.completePairingOnboarding(identity().transaction), false);
+});
+
+for (const [entry, nativeMethod, argument] of [["turnOnSync", "createSync", null], ["enterRecoveryPhrase", "enterPhrase", { error: "keychain" }]]) {
+  test(`${entry} invalidates before the native rekey wait`, async () => {
+    reset();
+    const engine = await launch();
+    engine.startSync();
+    const native = globalThis.acTestNativeModules.SolaraSyncAdapter;
+    const previous = native[nativeMethod];
+    let release;
+    native[nativeMethod] = async () => new Promise((resolve) => { release = resolve; });
+    try {
+      const action = engine[entry]("/sync", "words");
+      assert.deepEqual(invalidations, ["rekey"]);
+      release(argument);
+      await action;
+    } finally {
+      native[nativeMethod] = previous;
+    }
+  });
+}
+
+test("remote-reset forget invalidates before its native keychain wait", async () => {
+  reset();
+  const engine = await launch();
+  engine.startSync();
+  assert.deepEqual(await engine.turnOnSync("/sync"), { ok: true });
+  invalidations.length = 0;
+  const native = globalThis.acTestNativeModules.SolaraSyncAdapter;
+  const previousStatus = native.chainStatus;
+  const previousForget = native.forget;
+  let release;
+  native.chainStatus = async () => "missing";
+  native.forget = async () => new Promise((resolve) => { release = resolve; });
+  try {
+    const cycling = engine.syncNow();
+    await settle();
+    assert.equal(typeof release, "function");
+    assert.deepEqual(invalidations, ["forget"]);
+    release();
+    await cycling;
+  } finally {
+    native.chainStatus = previousStatus;
+    native.forget = previousForget;
+  }
+});
+
+test("v1 Stop durably fences native committed work before the retiring provider cycle", async () => {
+  reset();
+  const { host, state } = hostFor();
+  const engine = await launch();
+  engine.startSync(host);
+  await settle();
+  assert.deepEqual(await engine.turnOnSync("/sync"), { ok: true });
+  invalidations.length = 0;
+  let releaseStop;
+  let releaseProvider;
+  let providerEntered = false;
+  const stop = host.stopInstallation;
+  host.stopInstallation = async (...args) => { await stop(...args); await new Promise((resolve) => { releaseStop = resolve; }); };
+  const native = globalThis.acTestNativeModules.SolaraSyncAdapter;
+  const previous = native.chainStatus;
+  native.chainStatus = async () => { providerEntered = true; return await new Promise((resolve) => { releaseProvider = resolve; }); };
+  try {
+    const stopping = engine.stopSync();
+    assert.deepEqual(invalidations, ["stop"]);
+    await settle();
+    assert.equal(state.stopped, 1);
+    assert.equal(providerEntered, false);
+    releaseStop();
+    await settle();
+    assert.equal(providerEntered, true);
+    releaseProvider("ok");
+    await stopping;
+  } finally {
+    native.chainStatus = previous;
+  }
+});
+
+test("null-installation Stop fences a native admission even after empty recovery completed", async () => {
+  reset();
+  const { host, state } = hostFor();
+  const engine = await launch();
+  engine.startSync(host);
+  await settle();
+  await engine.stopSync();
+  assert.deepEqual(invalidations, ["stop"]);
+  assert.equal(state.stopped, 1);
+  assert.equal(calls.write + calls.create + calls.forget, 0);
+});
+
+test("onboarding cannot complete while native ready acknowledgment is withheld", async () => {
+  reset();
+  const { host, state } = hostFor();
+  state.descriptor.route = "onboarding";
+  let release;
+  state.readyGate = new Promise((resolve) => { release = resolve; });
+  const engine = await launch();
+  engine.startSync(host);
+  await settle();
+  assert.deepEqual(await engine.joinFromPairing(request(), host), { ok: true });
+  addLog([["prof:r", remoteDefault]]);
+  const syncing = engine.syncNow();
+  await settle();
+  try {
+    assert.deepEqual(state.ready, { transaction: "a".repeat(64), generation: 1 });
+    assert.equal(saved().bootstrap.phase, "ready");
+    assert.equal(await engine.completePairingOnboarding("a".repeat(64)), false);
+    assert.equal(saved().bootstrap.phase, "ready");
+  } finally {
+    release();
+    await syncing;
+  }
+  assert.equal(await engine.completePairingOnboarding("a".repeat(64)), true);
+  assert.equal(saved().bootstrap.phase, "onboarding-completed");
 });

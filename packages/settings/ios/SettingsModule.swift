@@ -1,6 +1,7 @@
 import ExpoModulesCore
 import Foundation
 import SolaraLive
+import SolaraSyncAdapter
 
 public class SettingsModule: Module {
   public func definition() -> ModuleDefinition {
@@ -10,7 +11,10 @@ public class SettingsModule: Module {
 
     OnCreate {
       _ = NativeLiveEngine.shared
-      DispatchQueue.main.async { MainActor.assumeIsolated { NativeSettingsWindow.install() } }
+      DispatchQueue.main.async { MainActor.assumeIsolated {
+        PairingAdapter.install()
+        NativeSettingsWindow.install()
+      } }
     }
 
     Function("available") { () -> Bool in

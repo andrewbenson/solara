@@ -1,0 +1,1 @@
+../../../../packages/sync/ios/Core/SealedPasswords.swift

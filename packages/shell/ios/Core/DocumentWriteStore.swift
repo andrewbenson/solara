@@ -24,13 +24,17 @@ final class DocumentWriteStore: @unchecked Sendable {
   private var closed = false
 
   init(writer: @escaping @Sendable (String, URL) throws -> Void = { contents, url in
-    if url.lastPathComponent == "history.json" {
+    if url.lastPathComponent == "history.json" || DocumentWriteStore.requiresDurability(url.lastPathComponent) {
       try DurableDocument.write(contents, to: url)
     } else {
       try contents.write(to: url, atomically: true, encoding: .utf8)
     }
   }) {
     self.writer = writer
+  }
+
+  static func requiresDurability(_ name: String) -> Bool {
+    name == "sync.json" || name.hasPrefix("sync-bootstrap-") || name.hasPrefix("sync-pairing-")
   }
 
   func pendingContents(for url: URL) -> String? {
@@ -55,8 +59,11 @@ final class DocumentWriteStore: @unchecked Sendable {
     }
     generation += 1
     let mine = generation
-    staged[key] = Staged(url: url, generation: mine, contents: contents, waiters: (staged[key]?.waiters ?? []) + (done.map { [$0] } ?? []))
+    let superseded = Self.requiresDurability(key) ? staged[key]?.waiters ?? [] : []
+    let retained = Self.requiresDurability(key) ? [] : staged[key]?.waiters ?? []
+    staged[key] = Staged(url: url, generation: mine, contents: contents, waiters: retained + (done.map { [$0] } ?? []))
     lock.unlock()
+    for waiter in superseded { waiter(POSIXError(.ECANCELED)) }
     lane(key).async { self.land(key, mine, attempt: 0) }
   }
 
@@ -100,7 +107,8 @@ final class DocumentWriteStore: @unchecked Sendable {
     lock.unlock()
     for waiter in waiters { waiter(failure) }
     guard let failure else { return }
-    NSLog("Saving \(key) failed (try \(attempt + 1)): \(failure.localizedDescription)")
+    if Self.requiresDurability(key) { NSLog("Saving pairing document failed") }
+    else { NSLog("Saving \(key) failed (try \(attempt + 1)): \(failure.localizedDescription)") }
     let delay = min(60.0, 2.0 * pow(2.0, Double(min(attempt, 5))))
     lane(key).asyncAfter(deadline: .now() + delay) { self.land(key, generation, attempt: attempt + 1) }
   }

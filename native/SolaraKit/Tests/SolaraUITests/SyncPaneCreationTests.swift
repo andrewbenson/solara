@@ -4,6 +4,7 @@ import Testing
 @MainActor
 struct SyncPaneCreationTests {
   final class Creation: SyncCreationServices {
+  func invalidatePairing(_ reason: String) {}
     var serial = 0
     var creations: [String] = []
     func inspectSyncCreation(folder: String) async -> SyncCreationInspection {

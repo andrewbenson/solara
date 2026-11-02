@@ -69,9 +69,9 @@ try {
   await app.eval('ac.openSettings("sync"); return true');
   await sleep(1000);
 
-  await rep.check("production pairing remains unavailable without the native coordinator", async () => {
+  await rep.check("the production coordinator is registered and the fixture stays separate from it", async () => {
     const state = await dev("pairingStatus");
-    assert.equal(state.registered, false, "piece 5b has not registered a production coordinator");
+    assert.equal(state.registered, true, "the native pairing coordinator is registered");
     assert.equal(state.fixtureMounted, false);
     const absent = await dev("pairingFixture", JSON.stringify({ action: "allow" }));
     assert.ok(absent.error);

@@ -5,6 +5,7 @@ import Testing
 @MainActor
 struct SyncCreationModelTests {
   final class Services: SyncCreationServices {
+  func invalidatePairing(_ reason: String) {}
     var candidates: [String] = []
     var completeness = "complete"
     var created: [String] = []

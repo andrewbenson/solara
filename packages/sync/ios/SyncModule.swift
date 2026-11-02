@@ -5,16 +5,75 @@ import SolaraImportAdapter
 import Security
 
 public class SyncModule: Module {
-  private let state = KeyState()
+  private let state = KeyState.shared
   private let owner = DeviceOwnerCheck()
   private let creation = SyncCreationAdmission.shared
   private static let work = DispatchQueue(label: "solara.sync", qos: .utility)
   private static let sealed = SealedPasswords()
+  private static let pairingWork = DispatchQueue(label: "solara.sync.pairing.bridge", qos: .utility)
 
   public func definition() -> ModuleDefinition {
     Name("SolaraSyncAdapter")
 
-    OnCreate { Self.work.async { Self.removeTemporaryKits() } }
+    Events("pairingInstallationReady")
+
+    OnCreate {
+      let pairing = PairingServices.shared
+      pairing.onRequest = { [weak self] in self?.sendEvent("pairingInstallationReady", [:]) }
+      pairing.onKeyAvailable = { account, entropy in KeyState.shared.set(entropy, account: account) }
+      pairing.bootstrap(dataDirectory: Self.pairingDataDirectory, defaultFolder: Self.defaultFolder, keys: Self.pairingKeyStore, safeMode: { SolaraCoreHost.safeMode })
+      pairing.moduleAttached()
+      Self.work.async { Self.removeTemporaryKits() }
+    }
+
+    Function("invalidatePairing") { (reason: String) in PairingServices.shared.invalidate(reason) }
+
+    AsyncFunction("pairingInstallationRequest") { () -> [String: Any]? in
+      PairingServices.shared.installationHost?.installationRequest()
+    }.runOnQueue(Self.pairingWork)
+
+    AsyncFunction("consumePairingInstallation") { (handle: String, priorState: String) throws -> [String: Any] in
+      try PairingBridgeFailure.perform { try Self.pairingHost().consumeInstallation(handle: handle, priorState: priorState) }
+    }.runOnQueue(Self.pairingWork)
+
+    AsyncFunction("savePairingInstallation") { (dto: [String: Any]) throws in
+      try PairingBridgeFailure.perform { try Self.pairingHost().saveInstallation(dto) }
+    }.runOnQueue(Self.pairingWork)
+
+    AsyncFunction("readPairingInstallation") { (dto: [String: Any]) throws -> [String: Any] in
+      try PairingBridgeFailure.perform { try Self.pairingHost().readInstallation(dto) }
+    }.runOnQueue(Self.pairingWork)
+
+    AsyncFunction("recoverPairingInstallation") { () throws -> [String: Any]? in
+      try PairingBridgeFailure.perform { try Self.pairingHost().recoverInstallation() }
+    }.runOnQueue(Self.pairingWork)
+
+    AsyncFunction("stopPairingInstallation") { (dto: [String: Any]?, generation: Double, promise: Promise) in
+      PairingServices.shared.invalidate("stop")
+      Self.pairingWork.async {
+        do {
+          guard generation.isFinite, generation >= 0, generation <= 9007199254740991, generation.rounded() == generation else { throw PairingInstallationHost.Failure.invalid }
+          try PairingServices.shared.stopInstallation(dto, stopGeneration: UInt64(generation))
+          promise.resolve(nil)
+        } catch { promise.reject("ERR_PAIRING", "unavailable") }
+      }
+    }.runOnQueue(.main)
+
+    AsyncFunction("acknowledgePairingInitialization") { (transaction: String, generation: Double) throws in
+      try PairingBridgeFailure.perform { try Self.pairingHost().acknowledgeInitialization(transaction: transaction, generation: Self.pairingGeneration(generation)) }
+    }.runOnQueue(Self.pairingWork)
+
+    AsyncFunction("acknowledgePairingReady") { (transaction: String, generation: Double) throws in
+      try PairingBridgeFailure.perform { try Self.pairingHost().acknowledgeReady(transaction: transaction, generation: Self.pairingGeneration(generation)) }
+    }.runOnQueue(Self.pairingWork)
+
+    AsyncFunction("reconcilePairingApplied") { (operation: [String: Any]) throws -> [String: Any]? in
+      try PairingBridgeFailure.perform { try Self.pairingHost().reconcileApplied(operation) }
+    }.runOnQueue(Self.pairingWork)
+
+    AsyncFunction("checkpointPairingApplied") { (operation: [String: Any]) throws -> [String: Any] in
+      try PairingBridgeFailure.perform { try Self.pairingHost().checkpointApplied(operation) }
+    }.runOnQueue(Self.pairingWork)
 
     AsyncFunction("folderInfo") { (path: String?) -> [String: Any] in
       let url = path.map { URL(fileURLWithPath: $0, isDirectory: true) } ?? Self.defaultFolder
@@ -32,6 +91,7 @@ public class SyncModule: Module {
     }.runOnQueue(Self.work)
 
     AsyncFunction("chooseFolder") { (current: String?, promise: Promise) in
+      PairingServices.shared.invalidate("folder")
       let panel = NSOpenPanel()
       panel.canChooseFiles = false
       panel.canChooseDirectories = true
@@ -40,7 +100,10 @@ public class SyncModule: Module {
       panel.prompt = "Use Folder"
       panel.message = "Choose a folder that syncs between your Macs, like one in iCloud Drive or Dropbox, or on a NAS or USB drive."
       if let current { panel.directoryURL = URL(fileURLWithPath: current, isDirectory: true) }
-      panel.begin { response in promise.resolve(response == .OK ? panel.url?.path : nil) }
+      panel.begin { response in
+        if response == .OK, let path = panel.url?.path { PairingServices.shared.selectFolder(path); promise.resolve(path) }
+        else { promise.resolve(nil) }
+      }
     }.runOnQueue(.main)
 
     Function("newDeviceId") { SyncKeys.newFileId() }
@@ -53,66 +116,44 @@ public class SyncModule: Module {
       }
     }.runOnQueue(Self.work)
 
-    AsyncFunction("createSync") { (folder: String, inspectionID: String?) throws -> String? in
-      guard !SolaraCoreHost.safeMode else { return nil }
-      let url = URL(fileURLWithPath: folder, isDirectory: true)
-      let finish = try self.creation.admit(folder: url, inspectionID: inspectionID)
-      defer { finish() }
-      let account = SyncKeys.newFileId()
-      let entropy = RecoveryPhrase.generateEntropy()
-      guard Self.keyStore.save(entropy, account: account) else { return nil }
-      do {
-        try self.creation.commit(folder: url, reservation: finish) {
-          let vault = SyncVault(folder: url, keys: SyncKeys(entropy: entropy))
-          guard !vault.chainExists() else { throw SyncCreationAdmission.Failure.changed }
-          try vault.createChain()
-        }
-      } catch {
-        Self.keyStore.delete(account: account)
-        throw SyncCreationAdmission.Failure.changed
+    AsyncFunction("createSync") { (folder: String, inspectionID: String?, promise: Promise) in
+      PairingServices.shared.invalidate("rekey")
+      Self.work.async {
+        do { promise.resolve(try self.createSync(folder: folder, inspectionID: inspectionID)) }
+        catch { promise.reject("ERR_SYNC_CREATION", "folderUnavailable") }
       }
-      self.owner.revoke()
-      self.state.set(entropy)
-      return account
-    }.runOnQueue(Self.work)
+    }.runOnQueue(.main)
 
     AsyncFunction("createPhrase") { (_: String) -> Bool in false }.runOnQueue(Self.work)
 
-    AsyncFunction("enterPhrase") { (account: String, text: String, folder: String) -> [String: Any] in
-      guard !SolaraCoreHost.safeMode else { return ["error": "safe mode"] }
-      let entropy: Data
-      do {
-        entropy = try RecoveryPhrase.entropy(from: text)
-      } catch let problem as RecoveryPhrase.Problem {
-        switch problem {
-        case .wordCount(let n): return ["error": "wordCount", "count": n]
-        case .unknownWord(let word): return ["error": "unknownWord", "word": word]
-        case .checksum: return ["error": "checksum"]
-        }
+    AsyncFunction("enterPhrase") { (account: String, text: String, folder: String, promise: Promise) in
+      PairingServices.shared.invalidate("rekey")
+      Self.work.async {
+        do { promise.resolve(try self.enterPhrase(account: account, text: text, folder: folder)) }
+        catch { promise.resolve(["error": "interrupted"]) }
       }
-      let folderURL = URL(fileURLWithPath: folder, isDirectory: true)
-      if !SyncVault(folder: folderURL, keys: SyncKeys(entropy: entropy)).chainExists() {
-        return ["error": SyncFolder.hasSyncData(folderURL) ? "mismatch" : "noData"]
+    }.runOnQueue(.main)
+
+    AsyncFunction("unlock") { (account: String, promise: Promise) in
+      PairingServices.shared.invalidate("key")
+      Self.work.async {
+        guard let entropy = Self.keyStore.load(account: account), entropy.count == 32 else { promise.resolve(false); return }
+        self.state.set(entropy, account: account)
+        promise.resolve(true)
       }
-      guard Self.keyStore.save(entropy, account: account) else { return ["error": "keychain"] }
-      self.owner.revoke()
-      self.state.set(entropy)
-      return ["ok": true]
-    }.runOnQueue(Self.work)
+    }.runOnQueue(.main)
 
-    AsyncFunction("unlock") { (account: String) -> Bool in
-      guard let entropy = Self.keyStore.load(account: account), entropy.count == 32 else { return false }
-      self.state.set(entropy)
-      return true
-    }.runOnQueue(Self.work)
-
-    AsyncFunction("forget") { (account: String) in
-      guard !SolaraCoreHost.safeMode else { return }
-      Self.keyStore.delete(account: account)
-      self.state.set(nil)
-      self.owner.revoke()
-      Self.removeTemporaryKits()
-    }.runOnQueue(Self.work)
+    AsyncFunction("forget") { (account: String, promise: Promise) in
+      PairingServices.shared.invalidate("forget")
+      Self.work.async {
+        guard !SolaraCoreHost.safeMode else { promise.resolve(nil); return }
+        Self.keyStore.delete(account: account)
+        self.state.set(nil)
+        self.owner.revoke()
+        Self.removeTemporaryKits()
+        promise.resolve(nil)
+      }
+    }.runOnQueue(.main)
 
     AsyncFunction("phraseUnavailable") { () -> String? in DeviceOwnerCheck.unavailable()?.rawValue }.runOnQueue(.main)
 
@@ -149,9 +190,13 @@ public class SyncModule: Module {
       try self.vault(folder).remove(scope: scope, ids: ids)
     }.runOnQueue(Self.work)
 
-    AsyncFunction("deleteChain") { (folder: String) throws in
-      try self.vault(folder).deleteChain()
-    }.runOnQueue(Self.work)
+    AsyncFunction("deleteChain") { (folder: String, promise: Promise) in
+      PairingServices.shared.invalidate("stop")
+      Self.work.async {
+        do { try self.vault(folder).deleteChain(); promise.resolve(nil) }
+        catch { promise.reject("ERR_SYNC_DELETE", "folderUnavailable") }
+      }
+    }.runOnQueue(.main)
 
     AsyncFunction("sealLocal") { (text: String, kind: String?, part: String?) throws -> String in
       guard let keys = self.state.keys else { throw Exception(name: "locked", description: "Sync isn't set up on this Mac.") }
@@ -423,6 +468,72 @@ public class SyncModule: Module {
     return "data:image/png;base64," + png.base64EncodedString()
   }
 
+  private func createSync(folder: String, inspectionID: String?) throws -> String? {
+      guard !SolaraCoreHost.safeMode else { return nil }
+      let url = URL(fileURLWithPath: folder, isDirectory: true)
+      let finish = try self.creation.admit(folder: url, inspectionID: inspectionID)
+      defer { finish() }
+      let account = SyncKeys.newFileId()
+      let entropy = RecoveryPhrase.generateEntropy()
+      guard Self.keyStore.save(entropy, account: account) else { return nil }
+      do {
+        try self.creation.commit(folder: url, reservation: finish) {
+          let vault = SyncVault(folder: url, keys: SyncKeys(entropy: entropy))
+          guard !vault.chainExists() else { throw SyncCreationAdmission.Failure.changed }
+          try vault.createChain()
+        }
+      } catch {
+        Self.keyStore.delete(account: account)
+        throw SyncCreationAdmission.Failure.changed
+      }
+      self.owner.revoke()
+      self.state.set(entropy, account: account)
+      PairingServices.shared.keyActivated()
+      return account
+  }
+
+  private func enterPhrase(account: String, text: String, folder: String) throws -> [String: Any] {
+      guard !SolaraCoreHost.safeMode else { return ["error": "safe mode"] }
+      let entropy: Data
+      do {
+        entropy = try RecoveryPhrase.entropy(from: text)
+      } catch let problem as RecoveryPhrase.Problem {
+        switch problem {
+        case .wordCount(let n): return ["error": "wordCount", "count": n]
+        case .unknownWord(let word): return ["error": "unknownWord", "word": word]
+        case .checksum: return ["error": "checksum"]
+        }
+      }
+      let folderURL = URL(fileURLWithPath: folder, isDirectory: true)
+      if !SyncVault(folder: folderURL, keys: SyncKeys(entropy: entropy)).chainExists() {
+        return ["error": SyncFolder.hasSyncData(folderURL) ? "mismatch" : "noData"]
+      }
+      guard Self.keyStore.save(entropy, account: account) else { return ["error": "keychain"] }
+      self.owner.revoke()
+      self.state.set(entropy, account: account)
+      PairingServices.shared.keyActivated()
+      return ["ok": true]
+  }
+
+  private static func pairingHost() throws -> PairingInstallationHost {
+    guard let host = PairingServices.shared.installationHost else { throw PairingInstallationHost.Failure.unavailable }
+    return host
+  }
+
+  private static func pairingGeneration(_ value: Double) throws -> UInt64 {
+    guard value.isFinite, value >= 0, value <= 9007199254740991, value.rounded() == value else { throw PairingInstallationHost.Failure.invalid }
+    return UInt64(value)
+  }
+
+  private static var pairingKeyStore: PairingInstallationKeyStoring {
+    if let dataDirectory { return FileKeyStore(directory: dataDirectory) }
+    return KeychainKeyStore(service: KeychainKeyStore.service(info: Bundle.main.infoDictionary))
+  }
+
+  private static var pairingDataDirectory: URL {
+    dataDirectory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent(Bundle.main.bundleIdentifier ?? "Solara", isDirectory: true)
+  }
+
   private static let environment = ProcessInfo.processInfo.environment
   private static let dataDirectory = environment["SOLARA_DATA_DIR"].map { URL(fileURLWithPath: $0, isDirectory: true) }
   private static let testFolder = environment["SOLARA_SYNC_DEFAULT_FOLDER"].map { URL(fileURLWithPath: $0, isDirectory: true) }
@@ -456,15 +567,23 @@ public class SyncModule: Module {
 }
 
 private final class KeyState {
+  static let shared = KeyState()
+  private var account: String?
   private let lock = NSLock()
   private var _entropy: Data?
   private var _keys: SyncKeys?
 
-  func set(_ entropy: Data?) {
+  func set(_ entropy: Data?, account: String? = nil) {
     lock.lock()
+    let changed = _entropy != entropy || self.account != account
+    lock.unlock()
+    if changed { PairingServices.shared.invalidate("key") }
+    lock.lock()
+    self.account = account
     defer { lock.unlock() }
     _entropy = entropy
     _keys = entropy.map(SyncKeys.init(entropy:))
+    PairingServices.shared.refresh()
   }
 
   var entropy: Data? {

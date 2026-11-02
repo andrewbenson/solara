@@ -9,11 +9,14 @@ import Testing
 
   @Test func everySourceIsTheSolaraSyncAdapterPodsOwnFile() throws {
     let names = try FileManager.default.contentsOfDirectory(atPath: shared.path).filter { $0.hasSuffix(".swift") }.sorted()
-    #expect(names == ["RecoveryPhrase.swift", "SyncCrypto.swift", "SyncFormat.swift", "SyncKeyStore.swift", "SyncVault.swift", "Wordlist.swift"])
+    let coreNames = try FileManager.default.contentsOfDirectory(atPath: pod.path).filter { $0.hasSuffix(".swift") }.sorted()
+    let coordinatorNames = ["PairingCoordinator.swift", "PairingInstallationHost.swift", "PairingService.swift"]
+    #expect(names == (coreNames + coordinatorNames).sorted())
     for name in names {
       let link = shared.appending(path: name)
-      #expect(link.resolvingSymlinksInPath().path == pod.appending(path: name).resolvingSymlinksInPath().path, "\(name) must link to packages/sync/ios/Core")
-      #expect(try Data(contentsOf: link) == Data(contentsOf: pod.appending(path: name)))
+      let source = coordinatorNames.contains(name) ? pod.deletingLastPathComponent().appending(path: name) : pod.appending(path: name)
+      #expect(link.resolvingSymlinksInPath().path == source.resolvingSymlinksInPath().path)
+      #expect(try Data(contentsOf: link) == Data(contentsOf: source))
     }
   }
 

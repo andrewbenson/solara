@@ -24,6 +24,7 @@ struct PairingConsumedApproval: Codable, Equatable {
 protocol PairingAccountingStoring: AnyObject {
   func validatePlacement(pairingFolder: URL) throws
   func persistInstallationDecision(_ decision: PairingInstallationDecision) throws -> PairingInstallationDecision
+  func persistInstallationDecision(_ decision: PairingInstallationDecision, admit: () -> Bool) throws -> PairingInstallationDecision
   func installationDecision(for installation: PairingInstallation) throws -> PairingInstallationDecision?
   func cancelInstallation(_ installation: PairingInstallation) throws
   func restoreAccounting(now: UInt64, epoch: Data) -> PairingSession.RestorationDisposition
@@ -31,6 +32,13 @@ protocol PairingAccountingStoring: AnyObject {
   func consumeApproval(_ record: PairingConsumedApproval) throws
   func setSuppressed(_ value: Bool) throws
   var suppressed: Bool { get }
+}
+
+extension PairingAccountingStoring {
+  func persistInstallationDecision(_ decision: PairingInstallationDecision, admit: () -> Bool) throws -> PairingInstallationDecision {
+    guard admit() else { throw PairingDurableStore.Failure.staleRevision }
+    return try persistInstallationDecision(decision)
+  }
 }
 
 protocol PairingDurableIO {

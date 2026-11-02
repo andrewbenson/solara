@@ -77,6 +77,9 @@ final class PairingCoordinatorTests: XCTestCase {
     let decisionRelease = DispatchSemaphore(value: 0)
     var badDecisionReadback = false
     var failDecision = false
+    var holdCancellation = false
+    let cancellationRelease = DispatchSemaphore(value: 0)
+    var cancellationReached: (() -> Void)?
     var admitted: [PairingInstallation] = []
     var cancelled: [PairingInstallation] = []
     var holdSuppression = false
@@ -86,6 +89,10 @@ final class PairingCoordinatorTests: XCTestCase {
     var suppressed = true
     func validatePlacement(pairingFolder: URL) throws {}
     func cancelInstallation(_ installation: PairingInstallation) throws {
+      if holdCancellation {
+        cancellationReached?()
+        guard cancellationRelease.wait(timeout: .now() + 5) == .success else { throw PairingCoordinator.Failure.unavailable }
+      }
       if failDecision { throw PairingCoordinator.Failure.unavailable }
       if !cancelled.contains(installation) { cancelled.append(installation) }
     }
@@ -239,6 +246,100 @@ final class PairingCoordinatorTests: XCTestCase {
     try rig.coordinator.allow(pair.1)
     try wait { rig.contexts.last?.reply != nil }
     return pair
+  }
+
+  func testInvalidateEntryDoesNotWaitForDurableCancellation() throws {
+    let rig = Rig()
+    rig.keys.holdInsert = true
+    let insert = expectation(description: "insert")
+    rig.keys.insertReached = { insert.fulfill() }
+    _ = try receivedApproval(rig)
+    wait(for: [insert], timeout: 3)
+    rig.store.holdCancellation = true
+    let returned = DispatchSemaphore(value: 0)
+    DispatchQueue.global().async {
+      rig.coordinator.invalidate(reason: .stop)
+      returned.signal()
+    }
+    XCTAssertEqual(returned.wait(timeout: .now() + 0.2), .success, "entry invalidation waited on local durable cancellation")
+    rig.store.cancellationRelease.signal()
+    rig.keys.insertRelease.signal()
+    try wait { !rig.coordinator.committedJoin { _ in } }
+    XCTAssertFalse(rig.states.contains(.approved))
+    XCTAssertTrue(rig.host.saved.isEmpty)
+  }
+
+  func testUnarmedObservationIsQuietAndDoesNotCreateIntent() throws {
+    let rig = Rig()
+    let fixture = PairingSessionTests()
+    let session = try fixture.session(.joining, rig.time)
+    let request = try fixture.write(session.startJoining(createdMs: fixture.wall), .request)
+    rig.mailbox.entries = [request]
+    rig.coordinator.poll()
+    try wait { rig.mailbox.polls > 0 }
+    try wait { rig.coordinator.quietRequests.count == 1 }
+    XCTAssertEqual(rig.coordinator.quietRequests.first?.wire, request.wire)
+    XCTAssertFalse(rig.coordinator.snapshot.trusted)
+    XCTAssertTrue(rig.mailbox.everVisible.isEmpty)
+    XCTAssertTrue(rig.contexts.isEmpty)
+    rig.coordinator.invalidate(reason: .lock)
+    XCTAssertTrue(rig.coordinator.quietRequests.isEmpty)
+  }
+
+  func testInvalidateEntryDoesNotWaitForAdmissionRecordIO() throws {
+    let rig = Rig(), reached = expectation(description: "admission record")
+    rig.store.holdDecision = true
+    rig.store.decisionReached = { reached.fulfill() }
+    _ = try receivedApproval(rig)
+    wait(for: [reached], timeout: 3)
+    let returned = DispatchSemaphore(value: 0)
+    DispatchQueue.global().async {
+      rig.coordinator.invalidate(reason: .stop)
+      returned.signal()
+    }
+    XCTAssertEqual(returned.wait(timeout: .now() + 0.2), .success, "entry invalidation waited for an admission fsync")
+    XCTAssertFalse(rig.states.contains(.approved))
+    rig.store.decisionRelease.signal()
+  }
+
+  func testDurableStopRetiresCommittedOwnerWithoutRewritingOldHandleHistory() throws {
+    let rig = Rig()
+    let pair = try receivedApproval(rig)
+    try wait { rig.states.contains(.approved) }
+    rig.coordinator.invalidate(reason: .stop)
+    rig.coordinator.finishStop()
+    XCTAssertFalse(rig.coordinator.snapshot.joining)
+    XCTAssertFalse(rig.coordinator.committedJoin { _ in })
+    XCTAssertEqual(pair.0.cancel(), .alreadyCommitted)
+  }
+
+  func testInvalidateEntryDoesNotWaitForAnExplicitCancellationIO() throws {
+    let rig = Rig(), inserted = expectation(description: "insert"), cancellation = expectation(description: "cancel")
+    rig.keys.holdInsert = true
+    rig.keys.insertReached = { inserted.fulfill() }
+    let pair = try receivedApproval(rig)
+    wait(for: [inserted], timeout: 3)
+    rig.store.holdCancellation = true
+    rig.store.cancellationReached = { cancellation.fulfill() }
+    DispatchQueue.global().async { _ = pair.0.cancel() }
+    wait(for: [cancellation], timeout: 3)
+    let returned = DispatchSemaphore(value: 0)
+    DispatchQueue.global().async { rig.coordinator.invalidate(reason: .stop); returned.signal() }
+    let result = returned.wait(timeout: .now() + 0.2)
+    XCTAssertEqual(result, .success, "entry invalidation waited behind another handle's durable cancellation")
+    rig.store.cancellationRelease.signal()
+    rig.keys.insertRelease.signal()
+    if result != .success { XCTAssertEqual(returned.wait(timeout: .now() + 3), .success) }
+    XCTAssertFalse(rig.coordinator.committedJoin { _ in })
+  }
+
+  func testStaleConfigurationCannotPublishAfterStop() throws {
+    let rig = Rig()
+    let epoch = rig.coordinator.configurationEpoch
+    let configuration = PairingCoordinator.Configuration(cid: rig.mailbox.pairingCID, environment: .init(folderIdentity: rig.mailbox.pairingFolderIdentity, entropyHandle: Data([8]), clockEpoch: rig.clockEpoch), localName: "Fixture Mac", entropy: Data(count: 32), trustedDevice: Data(repeating: 6, count: 16))
+    rig.coordinator.invalidate(reason: .stop)
+    XCTAssertFalse(rig.coordinator.update(configuration: configuration, mailbox: rig.mailbox, expectedInvalidationEpoch: epoch))
+    XCTAssertThrowsError(try rig.coordinator.armTrusted())
   }
 
   func testStableControlRestartThenCancel() throws {
@@ -1148,22 +1249,13 @@ final class PairingCoordinatorTests: XCTestCase {
     rig.store.decisionReached = { held.fulfill() }
     let pair = try receivedApproval(rig)
     wait(for: [held], timeout: 3)
-    let cancelDone = DispatchSemaphore(value: 0), observerDone = DispatchSemaphore(value: 0)
-    DispatchQueue.global().async {
-      XCTAssertEqual(pair.0.cancel(), .alreadyCommitted)
-      cancelDone.signal()
-    }
-    DispatchQueue.global().async {
-      XCTAssertTrue(rig.coordinator.committedJoin { _ in })
-      observerDone.signal()
-    }
-    XCTAssertEqual(cancelDone.wait(timeout: .now() + 0.03), .timedOut)
-    XCTAssertEqual(observerDone.wait(timeout: .now() + 0.03), .timedOut)
+    XCTAssertEqual(pair.0.cancel(), .unavailable)
+    XCTAssertFalse(rig.coordinator.committedJoin { _ in })
     XCTAssertFalse(rig.states.contains(.approved))
     rig.store.decisionRelease.signal()
-    XCTAssertEqual(cancelDone.wait(timeout: .now() + 3), .success)
-    XCTAssertEqual(observerDone.wait(timeout: .now() + 3), .success)
     try wait { rig.states.contains(.approved) }
+    XCTAssertEqual(pair.0.cancel(), .alreadyCommitted)
+    XCTAssertTrue(rig.coordinator.committedJoin { _ in })
     XCTAssertEqual(rig.store.admitted.count, 1)
   }
 

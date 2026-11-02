@@ -19,7 +19,7 @@ import { perfMark, perfProbeEnabled, probeStore } from "./lib/perfProbe";
 import { startTabLifecycle } from "./lib/tabLifecycle";
 import { startTabPages } from "./lib/tabPages";
 import { startTabReveal } from "./lib/tabReveal";
-import { startSync } from "./sync/engine";
+import { startPairingSync } from "./sync/pairingNative";
 import { setStoreBatching, useBrowser } from "./store/browser";
 import { startPerfMarks } from "./lib/perfMarks";
 import { startNotifications } from "./lib/notifications";
@@ -41,7 +41,7 @@ afterFirstWindow(() => {
 });
 startTabLifecycle();
 startTranslate();
-startSync();
+startPairingSync();
 startPerfMarks();
 afterFirstWindow(startNativeSettings);
 if (__DEV__ || perfProbeEnabled) require("./lib/devHarness").startDevHarness();

@@ -1,0 +1,1 @@
+../../../../packages/sync/ios/Core/PairingSession.swift

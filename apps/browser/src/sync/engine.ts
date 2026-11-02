@@ -178,6 +178,7 @@ const typePreferences: Partial<Record<DataType, boolean>> = {};
 const profilePreferences = new Map<string, { syncId: string; enabled: boolean }>();
 let pairingNative: PairingNative | null = null;
 let pairingAdmitted = false;
+let pairingReadyAcknowledged = false;
 let pairingReplica: BootstrapReplica | null = null;
 let pairingAdmission: { request: PairingRequest; installation: PairingInstallation | null; generation: number; host: PairingNative } | null = null;
 let pairingWrites: Promise<void> = Promise.resolve();
@@ -187,7 +188,7 @@ let cycleFinished: Promise<void> = Promise.resolve();
 let finishCycle: (() => void) | null = null;
 let bootstrapRead: { generation: number; replica: BootstrapReplica; clock: Clock; promise: Promise<Set<string>>; settled: boolean } | null = null;
 const PAIRING_RECOVERY = "Sync needs recovery in a version of Solara that supports this joining transaction. Nothing has been sent.";
-const pairingPending = () => doc.v === 2 && doc.bootstrap?.phase !== "ready" && doc.bootstrap?.phase !== "onboarding-completed";
+const pairingPending = () => doc.v === 2 && (!pairingReadyAcknowledged || (doc.bootstrap?.phase !== "ready" && doc.bootstrap?.phase !== "onboarding-completed"));
 const localName = (name: string) => doc.v === 2 && doc.joinTransaction && (name === STATE || name === JOURNAL || name.startsWith(DELTA_PREFIX) || name.startsWith(BATCH_PREFIX)) ? `sync-pairing-${doc.joinTransaction}-${name}` : name;
 const readDocument = (name: string) => readStoredDocument(localName(name));
 const writeDocument = (name: string, text: string) => writeStoredDocument(localName(name), text);
@@ -1281,6 +1282,7 @@ function linkProfiles(app: ScopeState) {
 }
 
 async function resetFromElsewhere() {
+  SyncNative?.invalidatePairing?.("forget");
   if (newerFormat || doc.v === 2) return publishUi({ status: "stalled", error: PAIRING_RECOVERY });
   await SyncNative?.forget(doc.deviceId!);
   generation++;
@@ -1336,6 +1338,7 @@ export async function folderInfo(path?: string | null): Promise<FolderInfo | nul
 }
 
 function setSyncFolder(path: string) {
+  SyncNative?.invalidatePairing?.("folder");
   if (!metadataLoaded) load();
   if (doc.enabled) return;
   doc.folder = path;
@@ -1344,6 +1347,7 @@ function setSyncFolder(path: string) {
 }
 
 export async function chooseSyncFolder(): Promise<string | null> {
+  SyncNative?.invalidatePairing?.("folder");
   const picked = (await SyncNative?.chooseFolder(doc.folder)) ?? null;
   if (picked) setSyncFolder(picked);
   return picked;
@@ -1433,7 +1437,10 @@ async function initializePairing(installation: PairingInstallation, host: Pairin
     bootstrap: { phase: "awaiting-profile", transaction: installation.transaction, generation: installation.generation },
   };
   await writePairingDoc(next, expected);
+  await deadline(host.acknowledgePairingInitialization(installation.transaction, installation.generation));
+  if (expected !== generation) throw new Error(PAIRING_RECOVERY);
   resetRuntime();
+  pairingReadyAcknowledged = false;
   pairingNative = host;
   pairingAdmitted = true;
   pairingReplica = { transaction: installation.transaction, generation: installation.generation, revision: 0, app: { ...emptyScope(), awaitRemote: true } };
@@ -1477,9 +1484,27 @@ export async function joinFromPairing(request: PairingRequest, host: PairingNati
   }
 }
 
+export async function resumePairingInitialization(host: PairingNative): Promise<boolean> {
+  if (pairingRecovery) await pairingRecovery;
+  if (newerFormat || stopping || pairingAdmission || turningOn || doc.v !== 2 || !doc.enabled || !doc.installation) return false;
+  if (pairingAdmitted) return true;
+  const recovery = recoverPairing(host);
+  pairingRecovery = recovery;
+  try {
+    await recovery;
+    return pairingAdmitted;
+  } catch {
+    publishUi({ status: "stalled", error: PAIRING_RECOVERY });
+    return false;
+  } finally {
+    if (pairingRecovery === recovery) pairingRecovery = null;
+  }
+}
+
 async function recoverPairing(host: PairingNative | null) {
   const expected = ++generation;
   pairingAdmitted = false;
+  pairingReadyAcknowledged = false;
   if (doc.v === 2 && doc.bootstrap?.phase === "stopped") {
     publishUi({ status: "off", error: null });
     if (host) await deadline(host.stopInstallation(doc.installation ?? null, doc.stopGeneration ?? 0));
@@ -1515,6 +1540,12 @@ async function recoverPairing(host: PairingNative | null) {
     if (doc.bootstrap?.phase !== "awaiting-profile" && (!replica.plan || !bindingPlanValid(replica, replica.plan, doc.bootstrap?.phase === "ready" || doc.bootstrap?.phase === "onboarding-completed"))) throw new Error(PAIRING_RECOVERY);
     if ((doc.bootstrap?.phase === "ready" || doc.bootstrap?.phase === "onboarding-completed") && !replica.plan?.operations.every((op) => receiptMatches(op, replica.plan!.outcomes[op.key] ?? null))) throw new Error(PAIRING_RECOVERY);
   } else pairingReplica = { transaction: installed.transaction, generation: installed.generation, revision: 0, app: { ...emptyScope(), awaitRemote: true } };
+  await deadline(host.acknowledgePairingInitialization(installed.transaction, installed.generation));
+  if (doc.bootstrap?.phase === "ready" || doc.bootstrap?.phase === "onboarding-completed") {
+    await deadline(host.acknowledgePairingReady(installed.transaction, installed.generation));
+    if (expected !== generation) return;
+    pairingReadyAcknowledged = true;
+  }
   if (expected !== generation) return;
   loaded = true;
   locked = false;
@@ -1688,6 +1719,15 @@ async function runBootstrapCycle() {
   try {
     const actual = await deadline(host.readInstallation(installed));
     if (expected !== generation || !installationValid(actual) || actual.phase !== "key-saved" || !sameInstallation(actual, installed)) throw new Error(PAIRING_RECOVERY);
+    if (doc.bootstrap?.phase === "ready" || doc.bootstrap?.phase === "onboarding-completed") {
+      await deadline(host.acknowledgePairingReady(installed.transaction, installed.generation));
+      if (expected !== generation) return;
+      pairingReadyAcknowledged = true;
+      doc.scopes = { [APP_SCOPE]: copyJson(pairingReplica.app) };
+      recordsKnown = true;
+      publishUi({ status: "starting", error: null });
+      return;
+    }
     if (bootstrapRead && bootstrapRead.generation === expected && !bootstrapRead.settled) {
       publishUi({ status: "offline", error: "Waiting for the existing sync-folder read to finish." });
       return;
@@ -1781,6 +1821,9 @@ async function runBootstrapCycle() {
     replica.app.joined = true;
     delete replica.app.awaitRemote;
     await checkpointPairing("ready", replica, expected, plan.links);
+    await deadline(host.acknowledgePairingReady(installed.transaction, installed.generation));
+    if (expected !== generation) return;
+    pairingReadyAcknowledged = true;
     doc.scopes = { [APP_SCOPE]: copyJson(replica.app) };
     doc.clock = clock.last;
     recordsKnown = true;
@@ -1807,8 +1850,8 @@ async function stopPairing() {
   const transaction = installed?.transaction ?? doc.joinTransaction;
   const next: SyncDoc = { ...doc, v: 2, enabled: false, joining: false, stopGeneration, ...(installed ? { installation: installed, joinTransaction: installed.transaction, folder: installed.folder, deviceId: installed.deviceId } : {}), bootstrap: { phase: "stopped", transaction: transaction ?? null, generation: installed?.generation ?? request?.generation ?? doc.bootstrap?.generation ?? 0 } };
   try {
-    await writePairingDoc(next, expected);
     if (host) await deadline(host.stopInstallation(installed ?? null, stopGeneration));
+    await writePairingDoc(next, expected);
     locked = false;
     loaded = true;
     publishUi({ status: "off", error: null });
@@ -1820,7 +1863,7 @@ async function stopPairing() {
 }
 
 export async function completePairingOnboarding(transaction: string): Promise<boolean> {
-  if (newerFormat || pairingCompleting || !doc.enabled || doc.joinTransaction !== transaction || doc.installation?.route !== "onboarding" || (doc.bootstrap?.phase !== "ready" && doc.bootstrap?.phase !== "onboarding-completed") || !pairingReplica) return false;
+  if (newerFormat || pairingCompleting || !pairingReadyAcknowledged || !doc.enabled || doc.joinTransaction !== transaction || doc.installation?.route !== "onboarding" || (doc.bootstrap?.phase !== "ready" && doc.bootstrap?.phase !== "onboarding-completed") || !pairingReplica) return false;
   if (doc.bootstrap.phase === "onboarding-completed") return true;
   pairingCompleting = true;
   const expected = generation;
@@ -1848,6 +1891,7 @@ function begin(folder: string, deviceId: string, joining: boolean) {
 }
 
 export async function turnOnSync(folder: string, inspectionID?: string): Promise<{ ok: true } | { error: string }> {
+  SyncNative?.invalidatePairing?.("rekey");
   const native = SyncNative;
   if (!native) return { error: "Sync isn’t available in this build." };
   if (!metadataLoaded) load();
@@ -1884,6 +1928,7 @@ async function turnOn(native: NonNullable<typeof SyncNative>, folder: string, in
 }
 
 export async function enterRecoveryPhrase(folder: string, text: string): Promise<PhraseResult | { error: "unavailable" }> {
+  SyncNative?.invalidatePairing?.("rekey");
   const native = SyncNative;
   if (!native) return { error: "unavailable" };
   if (!metadataLoaded) load();
@@ -1940,14 +1985,19 @@ function showLocked(error?: unknown) {
 }
 
 export async function stopSync({ deleteData = false } = {}) {
+  SyncNative?.invalidatePairing?.("stop");
   if (!metadataLoaded) load();
   if (newerFormat) return;
   if (doc.v === 2 || pairingAdmission || pairingRecovery) return await stopPairing();
   const native = SyncNative;
-  if (!native || !doc.enabled || stopping) return;
+  if (!native || stopping) return;
   stopping = true;
   try {
-    await turnOff(native, deleteData);
+    if (pairingNative) {
+      try { await deadline(pairingNative.stopInstallation(null, (doc.stopGeneration ?? 0) + 1)); }
+      catch { publishUi({ status: "stalled", error: PAIRING_RECOVERY }); return; }
+    }
+    if (doc.enabled) await turnOff(native, deleteData);
   } finally {
     stopping = false;
   }

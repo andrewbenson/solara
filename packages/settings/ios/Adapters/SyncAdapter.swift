@@ -7,6 +7,8 @@ import SolaraSyncAdapter
 final class SyncAdapter: SyncServices, SyncCreationServices {
   static let topic = "sync.state"
 
+  func invalidatePairing(_ reason: String) { PairingServices.shared.invalidate(reason) }
+
   func currentSyncState() async -> SyncState {
     if let latest = Self.state(SettingsJS.shared.latestValue(Self.topic)) { return latest }
     return Self.state(await SettingsAdapters.js("sync.state")) ?? SyncState(status: .unavailable, enabled: false, folder: nil)
@@ -16,9 +18,13 @@ final class SyncAdapter: SyncServices, SyncCreationServices {
     SettingsJS.shared.stream(Self.topic) { Self.state($0) }
   }
 
-  func chooseSyncFolder() async -> String? { await SettingsAdapters.js("sync.chooseFolder") as? String }
+  func chooseSyncFolder() async -> String? {
+    PairingServices.shared.invalidate("folder")
+    return await SettingsAdapters.js("sync.chooseFolder") as? String
+  }
 
   func turnOnSync(folder: String) async -> String? {
+    PairingServices.shared.invalidate("rekey")
     do {
       return try await SettingsAdapters.jsThrowing("sync.turnOn", folder) as? String
     } catch {
@@ -40,6 +46,7 @@ final class SyncAdapter: SyncServices, SyncCreationServices {
   }
 
   func createSync(folder: String, inspectionID: String) async -> String? {
+    PairingServices.shared.invalidate("rekey")
     guard SyncCreationAdmission.shared.consent(inspectionID: inspectionID) else {
       return "The sync folder changed or couldn't be checked. Check it again before starting a separate sync."
     }
@@ -51,10 +58,14 @@ final class SyncAdapter: SyncServices, SyncCreationServices {
   }
 
   func enterRecoveryPhrase(folder: String, text: String) async -> SyncPhraseResult {
-    Self.phraseResult(await SettingsAdapters.js("sync.enterRecoveryPhrase", folder, text) as? [String: Any])
+    PairingServices.shared.invalidate("rekey")
+    return Self.phraseResult(await SettingsAdapters.js("sync.enterRecoveryPhrase", folder, text) as? [String: Any])
   }
 
-  func stopSync(deleteData: Bool) async { await SettingsAdapters.js("sync.stop", deleteData) }
+  func stopSync(deleteData: Bool) async {
+    PairingServices.shared.invalidate("stop")
+    await SettingsAdapters.js("sync.stop", deleteData)
+  }
 
   func syncNow() async { await SettingsAdapters.js("sync.syncNow") }
 

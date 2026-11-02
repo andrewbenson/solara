@@ -21,6 +21,7 @@ public struct SyncCreationInspection: Equatable, Sendable {
 
 @MainActor
 public protocol SyncCreationServices: AnyObject {
+  func invalidatePairing(_ reason: String)
   func inspectSyncCreation(folder: String) async -> SyncCreationInspection
   func createSync(folder: String, inspectionID: String) async -> String?
   func invalidateSyncCreation(inspectionID: String)
@@ -82,6 +83,8 @@ public final class SyncCreationModel {
   }
 
   public func cancel() {
+    guard state != .idle || currentInspection != nil else { return }
+    services.invalidatePairing("reload")
     if let currentInspection { services.invalidateSyncCreation(inspectionID: currentInspection) }
     currentInspection = nil
     generation &+= 1

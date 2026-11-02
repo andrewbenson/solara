@@ -69,7 +69,7 @@ final class PairingComparisonHandle {
 
 final class PairingRequestHandle {
   fileprivate let owner: PairingTrustedHandle
-  fileprivate let descriptor: PairingSession.Descriptor
+  let descriptor: PairingSession.Descriptor
   fileprivate init(_ owner: PairingTrustedHandle, _ descriptor: PairingSession.Descriptor) {
     self.owner = owner
     self.descriptor = descriptor
@@ -132,6 +132,7 @@ final class PairingCoordinator: PairingJoining {
     var writeStarted = false
     var cancelRequested = false
     var admissionUncertain = false
+    var admissionPending = false
     let control: Control
     let session: PairingSession
     let generation: UInt64
@@ -159,6 +160,8 @@ final class PairingCoordinator: PairingJoining {
     init(_ session: PairingSession, _ binding: Binding) { self.session = session; self.binding = binding }
   }
 
+  private let invalidation = PairingAdmissionEpoch()
+  private var sessionEpochs: [ObjectIdentifier: UInt64] = [:]
   private let admission = DispatchQueue(label: "solara.sync.pairing.admission")
   private let worker = DispatchQueue(label: "solara.sync.pairing.local", qos: .utility)
   private let mailboxWorker = DispatchQueue(label: "solara.sync.pairing.mailbox", qos: .utility)
@@ -170,12 +173,16 @@ final class PairingCoordinator: PairingJoining {
   private let host: PairingInstallationHosting
   private let clock: () -> UInt64
   private let wall: () -> UInt64
+  private let hostEligible: () -> Bool
   private let random: PairingCrypto.Random
   private var configuration: Configuration
   private var restoration: PairingSession.RestorationDisposition
   private var accounting: PairingSession.Accounting?
   private var joining: Joining?
   private var trusted: Trusted?
+  private var quiet: PairingSession?
+  private var suppressed = true
+  private let janitor = PairingJanitor()
   private var control: Control?
   private var generation: UInt64 = 0
   private var outstandingWork = 0
@@ -186,12 +193,15 @@ final class PairingCoordinator: PairingJoining {
   private var cleanupGrace: [(deadline: UInt64, entries: [PairingSession.Entry], binding: Binding)] = []
   private var timer: DispatchSourceTimer?
 
-  init(configuration: Configuration, mailbox: PairingCoordinatingMailbox, store: PairingAccountingStoring, authenticator: PairingOwnerAuthenticating, keyStore: PairingInstallationKeyStoring, host: PairingInstallationHosting, clock: @escaping () -> UInt64, wall: @escaping () -> UInt64, random: @escaping PairingCrypto.Random = PairingCrypto.random) {
+  init(configuration: Configuration, mailbox: PairingCoordinatingMailbox, store: PairingAccountingStoring, authenticator: PairingOwnerAuthenticating, keyStore: PairingInstallationKeyStoring, host: PairingInstallationHosting, clock: @escaping () -> UInt64, wall: @escaping () -> UInt64, random: @escaping PairingCrypto.Random = PairingCrypto.random, initialGeneration: UInt64 = 0, eligibility: @escaping () -> Bool = { true }) {
     self.configuration = configuration; self.store = store
     binding = try? Self.bind(configuration, mailbox: mailbox, store: store)
     if binding == nil { self.configuration.environment.eligible = false }
     self.authenticator = authenticator; self.keyStore = keyStore; self.host = host
+    suppressed = store.suppressed
     self.clock = clock; self.wall = wall; self.random = random
+    hostEligible = eligibility
+    generation = initialGeneration
     restoration = store.restoreAccounting(now: clock(), epoch: configuration.environment.clockEpoch)
     if case .restored(let value) = restoration { accounting = value }
     admission.setSpecific(key: queueKey, value: true)
@@ -223,9 +233,14 @@ final class PairingCoordinator: PairingJoining {
 
   var snapshot: Snapshot {
     owned {
-      Snapshot(joining: joining != nil, trusted: trusted != nil, trustedPhase: trusted?.session.phase, code: trusted?.session.code.map(Self.displayCode), claimedName: trusted?.session.peerName)
+      Snapshot(joining: joining.map { !$0.invalidated } ?? false, trusted: trusted != nil, trustedPhase: trusted?.session.phase, code: trusted?.session.code.map(Self.displayCode), claimedName: trusted?.session.peerName)
     }
   }
+
+  var quietRequests: [PairingSession.Descriptor] {
+    owned { configuration.environment.eligible ? quiet?.descriptors ?? [] : [] }
+  }
+  var quietSuppressed: Bool { owned { suppressed } }
 
   @discardableResult private func work(_ body: @escaping () -> Void) -> Bool { scheduleWork(on: worker, body) }
 
@@ -253,12 +268,29 @@ final class PairingCoordinator: PairingJoining {
     let cidBytes = try PairingFormat.cid(cid)
     var environment = configuration.environment
     environment.sessionGeneration = generation
-    return try PairingSession(role: role, cid: cidBytes, environment: environment, localName: configuration.localName, clock: clock, random: random, restoration: accounting.map { .restored($0) } ?? restoration)
+    let session = try PairingSession(role: role, cid: cidBytes, environment: environment, localName: configuration.localName, clock: clock, random: random, restoration: accounting.map { .restored($0) } ?? restoration)
+    sessionEpochs[ObjectIdentifier(session)] = invalidationEpoch
+    return session
+  }
+
+  func reserveJoiningReplacement() -> UInt64 {
+    let epoch = invalidation.advance()
+    admission.async { [weak self] in
+      guard let self, self.invalidationEpoch == epoch, let control = self.control, self.joining?.committed != true else { return }
+      _ = self.cancel(control)
+    }
+    return epoch
   }
 
   func start(cid: String, onState: @escaping @MainActor (PairingJoinState) -> Void) -> PairingJoinHandle {
+    start(cid: cid, expectedInvalidationEpoch: nil, onState: onState)
+  }
+
+  func start(cid: String, expectedInvalidationEpoch: UInt64?, onState: @escaping @MainActor (PairingJoinState) -> Void) -> PairingJoinHandle {
     owned {
       let next = Control(self, cid, onState)
+      let epoch = expectedInvalidationEpoch ?? invalidationEpoch
+      guard epoch == invalidationEpoch else { next.owner = nil; return next }
       if joining?.committed == true {
         next.owner = nil
         Task { @MainActor in onState(.failed(.invalidPeer)) }
@@ -272,8 +304,11 @@ final class PairingCoordinator: PairingJoining {
         }
         previous.owner = nil
       }
-      control = next
-      begin(next)
+      guard invalidation.admit(epoch, {
+        control = next
+        begin(next)
+        return true
+      }) else { next.owner = nil; return next }
       return next
     }
   }
@@ -306,7 +341,7 @@ final class PairingCoordinator: PairingJoining {
     control.remember(.cancelled)
     emit(control, .preparing)
     do {
-      guard let binding, configuration.environment.eligible, control.cid == configuration.cid else { throw Failure.unavailable }
+      guard let binding, configuration.environment.eligible, hostEligible(), control.cid == configuration.cid else { throw Failure.unavailable }
       let session = try makeSession(.joining, cid: control.cid)
       let output = try session.startJoining(createdMs: wall())
       let slot = Joining(control, session, binding)
@@ -337,6 +372,7 @@ final class PairingCoordinator: PairingJoining {
     owned {
       guard control === value, value.owner === self else { return .cancelled }
       guard joining?.committed != true else { return .alreadyCommitted }
+      if joining?.admissionPending == true { return .unavailable }
       let slot = joining
       if let slot, let installation = slot.installation {
         slot.cancelRequested = true
@@ -381,10 +417,11 @@ final class PairingCoordinator: PairingJoining {
   func armTrusted(override: Bool = false) throws -> PairingTrustedHandle {
     try owned {
       guard trusted == nil else { throw Failure.occupied }
-      guard let binding, configuration.environment.eligible, let entropy = configuration.entropy, entropy.count == 32, SyncKeys(entropy: entropy).chainTag == configuration.cid, let device = configuration.trustedDevice, device.count == 16, device.contains(where: { $0 != 0 }) else { throw Failure.unavailable }
+      guard let binding, configuration.environment.eligible, hostEligible(), let entropy = configuration.entropy, entropy.count == 32, SyncKeys(entropy: entropy).chainTag == configuration.cid, let device = configuration.trustedDevice, device.count == 16, device.contains(where: { $0 != 0 }) else { throw Failure.unavailable }
       guard generation < UInt64.max else { throw Failure.unavailable }
       generation += 1
-      let session = try makeSession(.trusted, cid: configuration.cid)
+      let session = try quiet ?? makeSession(.trusted, cid: configuration.cid)
+      quiet = nil
       _ = try session.arm(override: override)
       let slot = Trusted(session, binding)
       trusted = slot
@@ -399,6 +436,7 @@ final class PairingCoordinator: PairingJoining {
           self.admission.async {
             guard self.trusted === slot, saved == checkpoint, self.live(session) else { return }
             slot.ready = true
+            self.suppressed = false
             self.pollOwned(force: true)
           }
         } catch { self.admission.async { if self.trusted === slot { self.endTrusted() } } }
@@ -446,6 +484,7 @@ final class PairingCoordinator: PairingJoining {
 
   func dismissUnsolicited() {
     owned {
+      suppressed = true
       endTrusted(reason: .deny, notifyPeer: true)
       work { [store] in try? store.setSuppressed(true) }
     }
@@ -509,12 +548,14 @@ final class PairingCoordinator: PairingJoining {
           do {
             _ = try slot.binding.mailbox.publish(entry) {
               self.owned {
-                guard self.valid(tuple, slot), let current = self.configuration.entropy, PairingCrypto.equal(current, entropy) else { return false }
-                do {
-                  _ = try slot.session.commitApproval(wire: wire, ownerAuthentication: capability)
-                  slot.retry = entry
-                  return true
-                } catch { return false }
+                self.admit(slot.session) {
+                  guard self.valid(tuple, slot), let current = self.configuration.entropy, PairingCrypto.equal(current, entropy) else { return false }
+                  do {
+                    _ = try slot.session.commitApproval(wire: wire, ownerAuthentication: capability)
+                    slot.retry = entry
+                    return true
+                  } catch { return false }
+                }
               }
             }
           } catch {
@@ -540,23 +581,83 @@ final class PairingCoordinator: PairingJoining {
     }
   }
 
+  private var invalidationEpoch: UInt64 { invalidation.current }
+
+  private func admit(_ session: PairingSession, _ body: () -> Bool) -> Bool {
+    guard let expected = sessionEpochs[ObjectIdentifier(session)] else { return false }
+    return invalidation.admit(expected, body)
+  }
+
   func invalidate(reason: InvalidationReason) {
-    owned {
+    invalidation.advance()
+    if DispatchQueue.getSpecific(key: queueKey) == true { invalidateOwned(reason: reason) }
+    else { admission.async { [weak self] in self?.invalidateOwned(reason: reason) } }
+  }
+
+  private func invalidateOwned(reason: InvalidationReason) {
       configuration.environment.eligible = false
+      if let quiet { sessionEpochs.removeValue(forKey: ObjectIdentifier(quiet)) }
+      quiet = nil
       if generation < UInt64.max { generation += 1 }
-      if let slot = joining, !slot.committed { slot.invalidated = true }
-      if let value = control, joining?.committed != true { cancel(value) }
+      if let slot = joining, !slot.committed, !slot.admissionPending {
+        slot.invalidated = true
+        slot.cancelRequested = true
+        _ = try? slot.session.end(reason: .invalidated)
+        cleanup(slot.session)
+        if let installation = slot.installation {
+          slot.control.remember(.unavailable)
+          worker.async { [weak self, weak slot] in
+            guard let self, let slot else { return }
+            let durable = (try? self.store.cancelInstallation(installation)) != nil &&
+              (try? self.store.installationDecision(for: installation)) == .init(installation: installation, disposition: .cancelled)
+            self.admission.async {
+              guard self.joining === slot, !slot.committed else { return }
+              if durable {
+                self.joining = nil
+                slot.control.remember(.cancelled)
+                self.emit(slot.control, .failed(.cancelled))
+              } else { self.emit(slot.control, .failed(.folderUnavailable)) }
+            }
+          }
+        } else {
+          joining = nil
+          slot.control.remember(.cancelled)
+          emit(slot.control, .failed(.cancelled))
+        }
+      }
       endTrusted(persist: false)
+      if reason == .shutdown { timer?.cancel(); timer = nil }
+  }
+
+  func finishStop() {
+    owned {
+      guard let slot = joining, slot.committed || slot.admissionPending else { return }
+      slot.invalidated = true
+      slot.control.remember(.alreadyCommitted)
+      slot.control.owner = nil
+      cleanup(slot.session)
+      joining = nil
+      if control === slot.control { control = nil }
     }
   }
 
-  func update(configuration: Configuration, mailbox: PairingCoordinatingMailbox? = nil) {
-    owned {
-      invalidate(reason: .folder)
-      let selected = mailbox ?? binding?.mailbox
-      self.configuration = configuration
-      binding = selected.flatMap { try? Self.bind(configuration, mailbox: $0, store: store) }
-      if binding == nil { self.configuration.environment.eligible = false }
+  func reserveGeneration(above highWater: UInt64) { owned { generation = max(generation, highWater) } }
+
+  var configurationEpoch: UInt64 { invalidationEpoch }
+
+  @discardableResult func update(configuration: Configuration, mailbox: PairingCoordinatingMailbox? = nil, expectedInvalidationEpoch: UInt64? = nil) -> Bool {
+    let expected = expectedInvalidationEpoch ?? invalidationEpoch
+    let selected = mailbox ?? owned { binding?.mailbox }
+    let checked = selected.flatMap { try? Self.bind(configuration, mailbox: $0, store: store) }
+    return owned {
+      invalidation.admit(expected) {
+        self.invalidation.advance()
+        self.invalidateOwned(reason: .folder)
+        self.configuration = configuration
+        self.binding = checked
+        if checked == nil { self.configuration.environment.eligible = false }
+        return true
+      }
     }
   }
 
@@ -589,7 +690,7 @@ final class PairingCoordinator: PairingJoining {
   }
 
   private func live(_ session: PairingSession) -> Bool {
-    guard configuration.environment.eligible else { return false }
+    guard sessionEpochs[ObjectIdentifier(session)] == invalidationEpoch, configuration.environment.eligible, hostEligible() else { return false }
     if let slot = joining, slot.session === session, slot.cancelRequested || slot.admissionUncertain { return false }
     if let result = try? session.tick(), !result.events.isEmpty { process(result, session: session) }
     return current(session) && session.phase != .idle && session.phase != .ended
@@ -605,6 +706,7 @@ final class PairingCoordinator: PairingJoining {
   }
 
   private func cleanup(_ session: PairingSession, grace: UInt64 = 0) {
+    sessionEpochs.removeValue(forKey: ObjectIdentifier(session))
     guard let entries = ownedPackets.removeValue(forKey: ObjectIdentifier(session)), !entries.isEmpty else { return }
     guard let binding = transport(session) else { return }
     cleanup(entries: entries, grace: grace, binding: binding)
@@ -621,6 +723,7 @@ final class PairingCoordinator: PairingJoining {
   private func publishTerminal(_ entry: PairingSession.Entry, session: PairingSession, deadline: UInt64?, binding: Binding) {
     guard entry.kind == .joiningTerminal || entry.kind == .trustedTerminal else { return }
     let capturedGeneration = generation
+    let capturedEpoch = invalidationEpoch
     let environment = configuration.environment
     let revision = session.accounting.revision
     mailboxWork { [weak self] in
@@ -628,10 +731,12 @@ final class PairingCoordinator: PairingJoining {
       do {
         _ = try binding.mailbox.publish(entry) {
           self.owned {
-            guard self.configuration.environment.eligible, self.configuration.environment == environment,
-              self.generation == capturedGeneration, session.phase == .ended, session.accounting.revision == revision else { return false }
-            if let deadline, self.clock() >= deadline { return false }
-            return true
+            self.invalidation.admit(capturedEpoch) {
+              guard self.configuration.environment.eligible, self.configuration.environment == environment,
+                self.generation == capturedGeneration, session.phase == .ended, session.accounting.revision == revision else { return false }
+              if let deadline, self.clock() >= deadline { return false }
+              return true
+            }
           }
         }
         self.admission.async { self.cleanup(entries: [entry], grace: 60000, binding: binding) }
@@ -657,9 +762,11 @@ final class PairingCoordinator: PairingJoining {
         _ = try binding.mailbox.publish(entry) {
           self.owned {
             if entry.kind == .receipt, let slot = self.joining, slot.session === session, slot.committed { return true }
-            guard self.current(session), self.live(session), session.deadline == deadline, session.accounting.revision == revision else { return false }
-            if let deadline, self.clock() >= deadline { return false }
-            return true
+            return self.admit(session) {
+              guard self.current(session), self.live(session), session.deadline == deadline, session.accounting.revision == revision else { return false }
+              if let deadline, self.clock() >= deadline { return false }
+              return true
+            }
           }
         }
         if entry.kind == .receipt { self.admission.async { self.cleanup(session, grace: 60000) } }
@@ -717,7 +824,11 @@ final class PairingCoordinator: PairingJoining {
       if let result = try? session.tick() { process(result, session: session) }
     }
     let activeJoining = joining.flatMap { $0.committed || $0.cancelRequested || $0.admissionUncertain ? nil : $0 }
-    guard activeJoining != nil || trusted != nil else { return }
+    let observing = activeJoining == nil && trusted == nil && configuration.environment.eligible && configuration.entropy != nil
+    guard activeJoining != nil || trusted != nil || observing else { return }
+    if observing, quiet == nil { quiet = try? makeSession(.trusted, cid: configuration.cid) }
+    let capturedQuiet = observing ? quiet : nil
+    let capturedGeneration = generation
     let now = clock()
     guard force || now >= nextPoll else { return }
     if polling { pollDirty = true; return }
@@ -726,11 +837,15 @@ final class PairingCoordinator: PairingJoining {
     nextPoll = overflow ? UInt64.max : next
     polling = true
     let capturedJ = activeJoining, capturedT = trusted
-    guard let binding = capturedJ?.binding ?? capturedT?.binding else { polling = false; return }
+    guard let binding = capturedJ?.binding ?? capturedT?.binding ?? (observing ? self.binding : nil) else { polling = false; return }
     let rids = Set([capturedJ?.session, capturedT?.session].compactMap { $0?.cryptoContext }.compactMap { try? PairingFormat.decode($0.request).rid })
     let scheduled = mailboxWork { [weak self] in
       guard let self else { return }
       let result = Result { try binding.mailbox.poll(rids: rids) }
+      if case .success(let entries) = result {
+        let observed = self.clock()
+        _ = self.janitor.observe(entries: entries, mailbox: binding.mailbox, now: observed == UInt64.max ? nil : observed)
+      }
       self.admission.async {
         self.polling = false
         defer {
@@ -745,6 +860,9 @@ final class PairingCoordinator: PairingJoining {
         for entry in entries.prefix(PairingMailbox.entriesPerPass) {
           guard entry.wire.count <= budget else { break }
           budget -= entry.wire.count
+          if let quiet = capturedQuiet, self.quiet === quiet, self.generation == capturedGeneration, self.sessionEpochs[ObjectIdentifier(quiet)] == self.invalidationEpoch, self.configuration.environment.eligible, entry.kind == .request {
+            _ = try? quiet.receive(entry)
+          }
           if let slot = capturedT, self.trusted === slot, slot.ready, [.request, .select, .confirm, .joiningName, .receipt, .joiningTerminal].contains(entry.kind), let output = try? slot.session.receive(entry) { self.process(output, session: slot.session) }
           if let slot = capturedJ, self.joining === slot, !slot.committed, !slot.cancelRequested, !slot.admissionUncertain, [.offer, .reveal, .trustedName, .approval, .trustedTerminal].contains(entry.kind), let output = try? slot.session.receive(entry) { self.process(output, session: slot.session) }
         }
@@ -818,20 +936,37 @@ final class PairingCoordinator: PairingJoining {
       if saved, case .found(let value) = self.keyStore.pairingLookup(account: installation.device) {
         matches = value.count == 32 && PairingCrypto.equal(entropy, value) && SyncKeys(entropy: value).chainTag == installation.cid
       } else { matches = false }
-      self.admission.async {
-        guard self.joining === slot, !slot.invalidated, !slot.committed, slot.control.generation == slot.generation, self.live(slot.session) else { return }
-        guard matches else { self.failJoining(.invalidPeer); return }
-        guard self.validateWrite(candidate, installation: installation, slot: slot) else { return }
-        do {
-          _ = try slot.session.commitInstall(coordinatorValidatedRootCIDSessionAndDevice: candidate)
+      let validated = self.owned {
+        guard self.joining === slot, !slot.invalidated, !slot.committed, slot.control.generation == slot.generation, self.live(slot.session) else { return false }
+        guard matches else { self.failJoining(.invalidPeer); return false }
+        return self.validateWrite(candidate, installation: installation, slot: slot)
+      }
+      guard validated else { return }
           let decision = PairingInstallationDecision(installation: installation, disposition: .admitted)
-          guard try self.store.persistInstallationDecision(decision) == decision,
-            try self.store.installationDecision(for: installation) == decision else { throw Failure.unavailable }
-        } catch {
-          slot.admissionUncertain = true
-          self.emit(slot.control, .failed(.folderUnavailable))
-          return
-        }
+          let persisted: Bool
+          do {
+            persisted = try self.store.persistInstallationDecision(decision, admit: {
+              self.owned {
+                self.admit(slot.session) {
+                  guard self.validateWrite(candidate, installation: installation, slot: slot) else { return false }
+                  do {
+                    _ = try slot.session.commitInstall(coordinatorValidatedRootCIDSessionAndDevice: candidate)
+                    slot.admissionPending = true
+                    slot.control.remember(.unavailable)
+                    return true
+                  } catch { return false }
+                }
+              }
+            }) == decision && self.store.installationDecision(for: installation) == decision
+          } catch { persisted = false }
+          self.admission.async {
+            guard self.joining === slot, slot.admissionPending else { return }
+            slot.admissionPending = false
+            guard persisted else {
+              slot.admissionUncertain = true
+              self.emit(slot.control, .failed(.folderUnavailable))
+              return
+            }
         slot.committed = true
         slot.control.remember(.alreadyCommitted)
         self.emitCommitted(slot, .approved)
@@ -851,7 +986,7 @@ final class PairingCoordinator: PairingJoining {
             }
           })
         }
-      }
+          }
     }
   }
 }

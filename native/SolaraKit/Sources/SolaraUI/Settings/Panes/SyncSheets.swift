@@ -243,7 +243,7 @@ struct SyncPhraseSheet: View {
             .truncationMode(.middle)
             .frame(maxWidth: .infinity, alignment: .leading)
           if canChangeFolder {
-            Button("Change…") { Task { await model.changeFolderForPhrase() } }
+            Button("Change…") { model.invalidatePairing("folder"); Task { await model.changeFolderForPhrase() } }
               .buttonStyle(.link)
           }
         }
@@ -256,7 +256,7 @@ struct SyncPhraseSheet: View {
         if let onCancel { onCancel() } else { dismiss() }
       }
         .keyboardShortcut(.cancelAction)
-      Button(busy ? "Connecting…" : "Connect") { Task { await submit() } }
+      Button(busy ? "Connecting…" : "Connect") { model.invalidatePairing("rekey"); Task { await submit() } }
         .keyboardShortcut(.defaultAction)
         .disabled(busy || count != SyncPhrase.wordCount || folder == nil)
     }
@@ -442,10 +442,10 @@ struct SyncDeleteDataSheet: View {
         .toggleStyle(.checkbox)
         .padding(.top, 12)
     } buttons: {
-      Button("Keep Sync Data") { Task { await finish(deleteData: false) } }
+      Button("Keep Sync Data") { model.invalidatePairing("stop"); Task { await finish(deleteData: false) } }
         .keyboardShortcut(.cancelAction)
         .disabled(busy)
-      Button("Delete My Sync Data", role: .destructive) { Task { await finish(deleteData: true) } }
+      Button("Delete My Sync Data", role: .destructive) { model.invalidatePairing("stop"); Task { await finish(deleteData: true) } }
         .buttonStyle(.borderedProminent)
         .tint(.red)
         .disabled(!understood || busy)
@@ -638,6 +638,7 @@ struct SyncSeparateChainSheet: View {
       Button("Cancel") { model.creation?.cancel(); model.sheet = nil }
         .keyboardShortcut(.cancelAction)
       SyncAllowButton(title: "Start Separate Sync", enabled: !model.turningOn, invoke: {
+        model.invalidatePairing("rekey")
         let captured = inspectionID
         Task { await model.confirmSeparateSync(inspectionID: captured) }
       }, deny: { model.creation?.cancel(); model.sheet = .phrase(canChangeFolder: true) })

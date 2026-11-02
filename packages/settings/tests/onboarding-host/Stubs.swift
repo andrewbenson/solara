@@ -143,6 +143,7 @@ final class SettingsJS {
 
 @MainActor
 final class SyncAdapter: SyncServices {
+  func invalidatePairing(_ reason: String) {}
   static var folderChoice: CheckedContinuation<String?, Never>?
   func currentSyncState() async -> SyncState { fatalError() }
   func syncStateUpdates() -> AsyncStream<SyncState> { AsyncStream { $0.finish() } }

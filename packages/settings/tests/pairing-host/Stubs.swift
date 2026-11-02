@@ -98,6 +98,7 @@ enum ScriptState { static func build(_ state: Int, loading: [String]) -> [String
 
 @MainActor
 final class SyncAdapter: SyncServices {
+  func invalidatePairing(_ reason: String) {}
   var state: SyncState
   var folders: [String: SyncFolderInfo]
   var defaultFolder = "/Users/owner/Library/Mobile Documents/com~apple~CloudDocs/Solara Sync"

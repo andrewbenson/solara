@@ -30,7 +30,7 @@ let package = Package(
     .target(name: "SolaraBridgeCore", dependencies: ["SolaraModel", "SolaraStore", "SolaraPersistence", "SolaraOmnibox"]),
     .target(name: "SolaraOmnibox", dependencies: ["SolaraModel"]),
     .target(name: "SolaraSync", dependencies: ["SolaraModel", "SolaraStore", "SolaraPersistence"]),
-    .target(name: "SolaraSyncCore"),
+    .target(name: "SolaraSyncCore", swiftSettings: [.swiftLanguageMode(.v5), .define("SOLARA_PAIRING_TESTING", .when(configuration: .debug))]),
     .target(name: "SolaraImport", dependencies: ["SolaraModel"]),
     .target(name: "SolaraEngine", dependencies: ["SolaraStore", "SolaraOmnibox"]),
     .target(name: "SolaraUI", dependencies: ["SolaraModel", "SolaraStore", "SolaraOmnibox", "SolaraEngine", "SolaraLive", "SolaraProbes"]),

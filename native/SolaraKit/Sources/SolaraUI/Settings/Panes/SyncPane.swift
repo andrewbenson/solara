@@ -225,6 +225,7 @@ public enum SyncKitFormat: String, Sendable {
 
 @MainActor
 public protocol SyncServices: AnyObject {
+  func invalidatePairing(_ reason: String)
   func currentSyncState() async -> SyncState
   func syncStateUpdates() -> AsyncStream<SyncState>
   func chooseSyncFolder() async -> String?
@@ -290,6 +291,7 @@ public final class SyncPaneModel: SettingsPaneProvider {
   var sheet: SyncSheet? {
     didSet {
       if oldValue != sheet {
+        if case .trustedPairing = oldValue { services.invalidatePairing("reload") }
         if case .trustedPairing = oldValue { pairing?.surfaceChanged(.removed) }
         if case .separateSync = oldValue, case .separateSync = sheet {}
         else if case .separateSync = oldValue { creation?.cancel() }
@@ -308,6 +310,7 @@ public final class SyncPaneModel: SettingsPaneProvider {
   public func pairingSurfaceAvailable(to window: NSWindow) { pairing?.attach(to: window) }
 
   public func pairingSurfaceRemoved() {
+    services.invalidatePairing("reload")
     pairing?.teardown()
     creation?.cancel()
     sheet = nil
@@ -339,8 +342,13 @@ public final class SyncPaneModel: SettingsPaneProvider {
 
   func apply(_ next: SyncState) {
     let previous = state
+    if let previous, (previous.enabled && !next.enabled) ||
+        (next.status == .locked && previous.status != .locked) || previous.folder != next.folder {
+      services.invalidatePairing("reload")
+      pairing?.surfaceChanged(.removed)
+      creation?.cancel()
+    }
     state = next
-    if !next.enabled || next.status == .locked || previous?.folder != next.folder { pairing?.surfaceChanged(.removed); creation?.cancel() }
     guard let previous else { return }
     if previous.enabled != next.enabled || previous.status != next.status || previous.folder != next.folder {
       Task { await reloadInfo() }
@@ -369,7 +377,10 @@ public final class SyncPaneModel: SettingsPaneProvider {
 
   var folderDescription: String { info.map(SyncText.folderLabel) ?? " " }
 
+  func invalidatePairing(_ reason: String) { services.invalidatePairing(reason) }
+
   func turnOn() async {
+    services.invalidatePairing("rekey")
     guard let info else { return }
     pairing?.end(.cancel)
     turningOn = true
@@ -392,6 +403,7 @@ public final class SyncPaneModel: SettingsPaneProvider {
   func confirmSeparateSync(inspectionID: String) async {
     guard let creation, sheet == .separateSync(inspectionID: inspectionID),
           case .warning(let inspection) = creation.state, inspection.id == inspectionID else { return }
+    services.invalidatePairing("rekey")
     turningOn = true
     await creation.confirmSeparateSync()
     turningOn = false
@@ -419,6 +431,7 @@ public final class SyncPaneModel: SettingsPaneProvider {
   }
 
   func chooseFolder() async {
+    services.invalidatePairing("folder")
     pairing?.end(.cancel)
     creation?.cancel()
     if let picked = await services.chooseSyncFolder() {
@@ -427,6 +440,7 @@ public final class SyncPaneModel: SettingsPaneProvider {
   }
 
   func changeFolderForPhrase() async {
+    services.invalidatePairing("folder")
     pairing?.end(.cancel)
     creation?.cancel()
     let picked = await services.chooseSyncFolder()
@@ -435,6 +449,7 @@ public final class SyncPaneModel: SettingsPaneProvider {
   }
 
   func submitPhrase(_ text: String) async -> String? {
+    services.invalidatePairing("rekey")
     pairing?.end(.cancel)
     creation?.cancel()
     guard let info else { return nil }
@@ -445,6 +460,7 @@ public final class SyncPaneModel: SettingsPaneProvider {
   }
 
   func stop(deleteData: Bool) async {
+    services.invalidatePairing("stop")
     pairing?.surfaceChanged(.removed)
     creation?.cancel()
     await services.stopSync(deleteData: deleteData)
@@ -608,7 +624,7 @@ struct SyncOffSection: View {
           HStack(spacing: 8) {
           if model.hasSyncData {
             Menu("Other Options") {
-              Button("Set Up Without Another Device…") { Task { await model.turnOn() } }
+              Button("Set Up Without Another Device…") { model.invalidatePairing("rekey"); Task { await model.turnOn() } }
                 .disabled(noICloud)
               Button("Enter Recovery Phrase") { model.sheet = .phrase(canChangeFolder: true) }
             }
@@ -618,7 +634,7 @@ struct SyncOffSection: View {
           } else {
             Button("Enter Recovery Phrase…") { model.sheet = .phrase(canChangeFolder: true) }
               .disabled(noICloud)
-            Button(model.turningOn ? "Turning On…" : "Turn On Sync") { Task { await model.turnOn() } }
+            Button(model.turningOn ? "Turning On…" : "Turn On Sync") { model.invalidatePairing("rekey"); Task { await model.turnOn() } }
               .buttonStyle(.borderedProminent)
               .disabled(model.turningOn || noICloud || model.info == nil)
           }
@@ -626,7 +642,7 @@ struct SyncOffSection: View {
         }
       }
       SettingRow("sync.folder", description: model.folderDescription) {
-        Button("Choose…") { Task { await model.chooseFolder() } }
+        Button("Choose…") { model.invalidatePairing("folder"); Task { await model.chooseFolder() } }
       }
       if noICloud {
         HStack(spacing: 10) {

@@ -8,6 +8,7 @@ import Testing
 
 @MainActor
 final class FakeSyncServices: SyncServices {
+  func invalidatePairing(_ reason: String) {}
   var state: SyncState
   var folders: [String: SyncFolderInfo]
   var defaultFolder = "/Users/owner/Library/Mobile Documents/com~apple~CloudDocs/Solara Sync"

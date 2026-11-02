@@ -3,6 +3,46 @@ import XCTest
 @testable import SolaraShellCore
 
 final class DocumentWriteStoreTests: XCTestCase {
+  func testPairingDocumentsRequireDurableBarriers() {
+    for name in ["sync.json", "sync-bootstrap-abc-1.nns", "sync-pairing-marker.json"] {
+      XCTAssertTrue(DocumentWriteStore.requiresDurability(name))
+    }
+    XCTAssertFalse(DocumentWriteStore.requiresDurability("session.json"))
+  }
+
+  func testCoalescedPairingWriteCannotAcknowledgeDifferentBytes() throws {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let entered = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0)
+    let firstDone = DispatchSemaphore(value: 0), secondDone = DispatchSemaphore(value: 0)
+    let attempt = Attempt()
+    let writes = DocumentWriteStore { contents, url in
+      if attempt.next() == 1 {
+        entered.signal()
+        guard release.wait(timeout: .now() + 3) == .success else { throw POSIXError(.ETIMEDOUT) }
+      }
+      try DurableDocument.write(contents, to: url)
+    }
+    let state = SaveResult()
+    let url = folder.appendingPathComponent("sync.json")
+    writes.write(url, contents: "first") { error in state.first(error); firstDone.signal() }
+    XCTAssertEqual(entered.wait(timeout: .now() + 1), .success)
+    writes.write(url, contents: "second") { _ in secondDone.signal() }
+    release.signal()
+    XCTAssertEqual(firstDone.wait(timeout: .now() + 2), .success)
+    XCTAssertEqual(secondDone.wait(timeout: .now() + 2), .success)
+    XCTAssertTrue(state.failed)
+    XCTAssertEqual(try String(contentsOf: url), "second")
+  }
+
+  private final class SaveResult: @unchecked Sendable {
+    private let lock = NSLock()
+    private var failure = false
+    var failed: Bool { lock.lock(); defer { lock.unlock() }; return failure }
+    func first(_ error: Error?) { lock.lock(); failure = error != nil; lock.unlock() }
+  }
+
   private final class Attempt: @unchecked Sendable {
     let lock = NSLock()
     var count = 0

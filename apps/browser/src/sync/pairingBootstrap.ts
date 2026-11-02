@@ -30,6 +30,8 @@ export type PairingOperation = {
 };
 export type PairingReceipt = Pick<PairingOperation, "operationId" | "transaction" | "generation" | "key" | "disposition"> & { value: unknown };
 export interface PairingNative {
+  acknowledgePairingInitialization(transaction: string, generation: number): Promise<void>;
+  acknowledgePairingReady(transaction: string, generation: number): Promise<void>;
   consumeInstallation(handle: string, priorState: string): Promise<PairingInstallation>;
   saveInstallation(installation: PairingInstallation): Promise<void>;
   readInstallation(installation: PairingInstallation): Promise<PairingInstallation>;

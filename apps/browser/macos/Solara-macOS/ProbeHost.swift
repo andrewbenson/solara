@@ -75,7 +75,7 @@ final class ProbeHost {
         switch request.command {
         case "probe.hello":
           guard request.args.isEmpty else { throw ProbeFailure.invalidArgument }
-          response = ["id": id, "protocol": 1, "result": ["protocol": 1, "capabilities": ["probe.hello", "state.snapshot", "input.swipe", "input.hover", "view.capture"], "pid": getpid()]]
+          response = ["id": id, "protocol": 1, "result": ["protocol": 1, "capabilities": ["probe.hello", "state.snapshot", "input.swipe", "input.hover", "view.capture", "onboarding.sync", "sync.enable", "pairing.trusted.arm", "pairing.trusted.select", "pairing.trusted.state", "pairing.trusted.decide"], "pid": getpid()]]
         case "input.swipe":
           try swipe(request)
           continue
@@ -124,6 +124,50 @@ final class ProbeHost {
           response = ["id": id, "protocol": 1, "result": ["artifact": artifact,
             "width": Int(content.bounds.width * scale), "height": Int(content.bounds.height * scale), "scale": scale,
             "tabDrag": dragBefore, "consistent": consistent]]
+        case "onboarding.sync":
+          let keys = Set(request.args.keys)
+          guard keys == ["action"] || keys == ["action", "cid"],
+            let action = request.args["action"] as? String, !action.isEmpty, action.utf8.count <= 32 else { throw ProbeFailure.invalidArgument }
+          let cid = request.args["cid"] as? String
+          if keys.contains("cid") { guard let cid, cid.utf8.count == 26 else { throw ProbeFailure.invalidArgument } }
+          guard let route = OnboardingRead.sync(action: action, cid: cid) else { throw ProbeFailure.notReady }
+          response = ["id": id, "protocol": 1, "result": ["ok": true, "syncRoute": route]]
+        case "sync.enable":
+          guard request.args.isEmpty, let folder = ProcessInfo.processInfo.environment["SOLARA_SYNC_DEFAULT_FOLDER"], !folder.isEmpty else { throw ProbeFailure.invalidArgument }
+          let probeId = id
+          let expires = request.expiresAtMs
+          Task { @MainActor in
+            let result = await PairingProbe.enableSync(folder: folder)
+            self.reply(["id": probeId, "protocol": 1, "result": result], id: probeId, expiresAtMs: expires)
+          }
+          continue
+        case "pairing.trusted.arm", "pairing.trusted.select", "pairing.trusted.state", "pairing.trusted.decide":
+          let result: [String: Any]
+          do {
+            switch request.command {
+            case "pairing.trusted.arm":
+              guard request.args.isEmpty else { throw ProbeFailure.invalidArgument }
+              result = try PairingProbe.armTrusted()
+            case "pairing.trusted.select":
+              guard request.args.isEmpty else { throw ProbeFailure.invalidArgument }
+              result = try PairingProbe.selectTrusted()
+            case "pairing.trusted.state":
+              guard request.args.isEmpty else { throw ProbeFailure.invalidArgument }
+              result = PairingProbe.trustedState()
+            default:
+              guard Set(request.args.keys) == ["decision"], let decision = request.args["decision"] as? String else { throw ProbeFailure.invalidArgument }
+              result = try PairingProbe.decideTrusted(decision)
+            }
+          } catch PairingProbe.Refusal.invalid {
+            throw ProbeFailure.invalidArgument
+          } catch PairingProbe.Refusal.unsupported {
+            throw ProbeFailure.unsupported
+          } catch let failure as ProbeFailure {
+            throw failure
+          } catch {
+            throw ProbeFailure.notReady
+          }
+          response = ["id": id, "protocol": 1, "result": result]
         case "input.hover":
           guard Set(request.args.keys) == ["windowId", "area", "target", "on"],
             let windowId = request.args["windowId"] as? String, !windowId.isEmpty, windowId.utf8.count <= 128,

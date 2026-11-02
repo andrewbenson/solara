@@ -675,6 +675,31 @@ each scope's cycle (`guard` in `engine.ts`) holds that back.
     are now wrapped.
   - Two instances launched in the same millisecond made the same store ids: `newId` now has a
     random part.
+- Pairing end to end: `METRO_PORT=<your Metro> node packages/sync/scripts/pairing-e2e.mjs <Debug .dev app> [work dir]
+  [--only=<case,…>] [--keep] [--require-all]` drives a trusted Mac and a joining Mac, two hidden instances with
+  their own data folders, through one scratch sync folder, using the typed probes (`onboarding.sync`,
+  `sync.enable`, `pairing.trusted.*`). Its scanner's unit tests:
+  `node --test packages/sync/scripts/pairing-scan.test.mjs` (16).
+  - Discovery (6): an empty or missing folder continues setup, one chain leads with pairing, two need a choice, an
+    unreadable folder is "permission denied", malformed entries aren't chains; the joining probe drives onboarding.
+  - Mailbox isolation (4), with T unarmed: a request tampered under the same name (public key, name, commitments), a
+    partial request completed later, a foreign or stale replay across a restart, and a flood of 300 requests with
+    oversized, truncated and symlinked entries. Both Macs stay unjoined, T stays enabled with its chain bytes
+    unchanged and never answers, and a file outside the pairing namespace survives.
+  - Pairing (5): pair, deny, not me, cancel while comparing, and a crash after commit. Pairing refuses while the
+    screen is locked, so these fail at once on a locked screen. Allow needs the owner's password or Touch ID, which a
+    hidden instance can't give: the cases that need it run to Allow, check that it is refused and that T is still
+    comparing with nothing recorded, and end in an owner check, printed at the end with the steps to finish by hand
+    (the join itself, and the resume after a crash). An owner check is neither a skip nor a failure.
+  - Privacy: after each case and over the whole work dir at the end, every byte of the sync folder, the logs,
+    `Application Support/sync-pairing` and each instance's data (Chromium's state included; only its named caches
+    are skipped, and the bytes skipped are printed) is searched for T's root key and phrase, the comparison code,
+    the claimed name and this Mac's name, raw and encoded. A leak names only what and where.
+  - Mismatched codes, an expired request and a cancel that can't be recorded are left to the native pairing tests
+    (`packages/sync/tests/Pairing*Tests.swift`).
+  - 2026-11-02, Hill Studio, screen locked, f5859483: discovery, mailbox isolation and the privacy scan passed
+    (12/12) twice; the pairing cases failed fast on the lock. Still to run: the full `--require-all` run on an
+    unlocked screen, which must pass everything up to Allow and print two owner checks.
 
 ## Left for a person
 

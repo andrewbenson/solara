@@ -66,6 +66,80 @@ enum NativeOnboarding {
     return json(["active": model.isActive, "step": model.step.rawValue, "sub": model.sub, "windowId": sessions.last?.windowId ?? ""])
   }
 
+  #if SOLARA_PROBES
+  static var probeSync: [String: Any] {
+    guard enabled, let model = sessions.last?.model else { return [:] }
+    var read: [String: Any] = ["probeSyncRoute": routeName(model.syncRoute), "probeSyncCandidates": model.candidates.count]
+    if case .joining(.comparing(let code, _)) = model.syncRoute { read["probeSyncCode"] = code }
+    return read
+  }
+
+  static func probeSyncAction(_ action: String, cid: String?) -> String? {
+    guard enabled, let model = sessions.last?.model else { return nil }
+    switch action {
+    case "choose":
+      guard let cid, model.candidates.contains(where: { $0.cid == cid }) else { return nil }
+      model.selectSync(cid: cid)
+    case "pair": model.pairWithAnotherMac()
+    case "cancel": model.cancelPairing()
+    case "startAgain": model.startPairingAgain()
+    case "recovery": model.useRecoveryPhrase()
+    case "keepWaiting": model.keepWaitingForSync()
+    case "continueBrowser": model.finishJoined()
+    default: return nil
+    }
+    return routeName(model.syncRoute)
+  }
+
+  static func routeName(_ route: OnboardingSyncRoute) -> String {
+    switch route {
+    case .setup: "setup"
+    case .discovering: "discovering"
+    case .found: "found"
+    case .discoveryIssue(let result): "discoveryIssue.\(discoveryName(result))"
+    case .setupIssue(let issue):
+      switch issue {
+      case .previewRestoration: "setupIssue.previewRestoration"
+      case .recoveryUnavailable: "setupIssue.recoveryUnavailable"
+      }
+    case .joining(let state): "joining.\(joinName(state))"
+    case .downloading: "downloading"
+    case .joined: "joined"
+    case .savingFailed: "savingFailed"
+    }
+  }
+
+  static func discoveryName(_ result: OnboardingDiscoveryResult) -> String {
+    switch result {
+    case .found: "found"
+    case .empty: "empty"
+    case .needsHydration: "needsHydration"
+    case .unavailable: "unavailable"
+    case .permissionDenied: "permissionDenied"
+    case .timedOut: "timedOut"
+    }
+  }
+
+  static func joinName(_ state: PairingJoinState) -> String {
+    switch state {
+    case .preparing: "preparing"
+    case .waiting: "waiting"
+    case .comparing: "comparing"
+    case .approved: "approved"
+    case .installed: "installed"
+    case .failed(let failure):
+      switch failure {
+      case .expired: "failed.expired"
+      case .denied: "failed.denied"
+      case .mismatch: "failed.mismatch"
+      case .folderUnavailable: "failed.folderUnavailable"
+      case .invalidPeer: "failed.invalidPeer"
+      case .cancelled: "failed.cancelled"
+      }
+    }
+  }
+  #endif
+
   private static func json(_ object: [String: Any]) -> String {
     guard let data = try? JSONSerialization.data(withJSONObject: object), let text = String(data: data, encoding: .utf8) else { return "{}" }
     return text
@@ -175,7 +249,11 @@ public enum OnboardingRead {
     }
     let label = "Set \(Bundle.main.productName) as default browser"
     return ["state": object(NativeOnboarding.drive("state", nil)),
-      "defaultBrowserRow": object(NativeOnboarding.drive("find", label))]
+      "defaultBrowserRow": object(NativeOnboarding.drive("find", label))].merging(NativeOnboarding.probeSync) { current, _ in current }
+  }
+
+  public static func sync(action: String, cid: String?) -> String? {
+    NativeOnboarding.probeSyncAction(action, cid: cid)
   }
 }
 #endif

@@ -1797,6 +1797,7 @@ NSMapTable<SolaraCoreProfile *, SolaraCoreWindowController *> *StandaloneWindows
 
 @interface SolaraCorePopupWindow : NSObject <SolaraCoreWindowDelegate, SolaraCoreTabDelegate>
 @property(nonatomic, readonly) SolaraCoreTab *tab;
+@property(nonatomic, readonly) SolaraCoreWindow *coreWindow;
 - (void)askPermission:(NSDictionary *)request;
 - (BOOL)dropPermission:(NSString *)requestId;
 - (NSDictionary *)originState;
@@ -2016,6 +2017,10 @@ NSImage *_Nullable PermissionIcon(NSDictionary *request) {
 
 - (SolaraCoreTab *)tab {
   return _tab;
+}
+
+- (SolaraCoreWindow *)coreWindow {
+  return _coreWindow;
 }
 
 - (void)askPermission:(NSDictionary *)request {
@@ -2320,6 +2325,35 @@ NSImage *_Nullable PermissionIcon(NSDictionary *request) {
 
 @end
 
+namespace {
+
+SolaraCoreWindow *CoreWindowForNSWindow(NSWindow *window) {
+  if (!window) return nil;
+  if (SolaraCoreWindow *coreWindow = [SolaraCoreWindowController forNSWindow:window].coreWindow) return coreWindow;
+#if DEBUG
+  for (SolaraCorePopupWindow *popup in PopupWindows())
+    if (popup.coreWindow.window == window) return popup.coreWindow;
+#endif
+  return nil;
+}
+
+#if DEBUG
+NSDictionary *ViewState(NSView *view) {
+  NSMutableArray *children = [NSMutableArray array];
+  for (NSView *child in view.subviews) [children addObject:ViewState(child)];
+  return @{
+    @"class" : NSStringFromClass(view.class),
+    @"frame" : NSStringFromRect(view.frame),
+    @"hidden" : @(view.hidden),
+    @"hiddenOrAncestor" : @(view.isHiddenOrHasHiddenAncestor),
+    @"layer" : @(view.layer != nil),
+    @"children" : children,
+  };
+}
+#endif
+
+}
+
 namespace solaracore_host {
 
 bool IsReservedKeyEvent(NSEvent *event) {
@@ -2386,7 +2420,7 @@ SolaraCoreTab *PasswordPromptTab(SolaraCoreWebView *view, SolaraCoreTab *own) {
 
 void ActToggleFullScreen(NSWindow *window) {
   LogActivation(@"toggleFullScreen: (acted out)");
-  if (SolaraCoreWindow *coreWindow = [SolaraCoreWindowController forNSWindow:window].coreWindow)
+  if (SolaraCoreWindow *coreWindow = CoreWindowForNSWindow(window))
     ActWindowFullScreen(coreWindow, !IsWindowFullScreen(window), ActedTransition());
 }
 
@@ -2680,6 +2714,28 @@ NSDictionary *ProbeFrame(NSWindow *window, ACWindowFullScreen *state, CFTimeInte
 + (NSString *)devAction:(NSString *)action window:(NSWindow *)window {
   if (!window) return nil;
   if (!solaracore_host::TestHooksAllowed()) return @"test instances only";
+#if DEBUG
+  if ([action isEqualToString:@"popupPage"]) {
+    for (SolaraCorePopupWindow *popup in PopupWindows()) {
+      if (popup.coreWindow.window != window) continue;
+      NSView *page = popup.tab.view, *host = popup.coreWindow.hostView;
+      NSDictionary *state = @{
+        @"windowFrame" : NSStringFromRect(window.frame),
+        @"contentBounds" : NSStringFromRect(window.contentView.bounds),
+        @"hostFrame" : NSStringFromRect(host.frame),
+        @"pageInWindow" : @(page.window == window),
+        @"pageInHost" : @([page isDescendantOf:host]),
+        @"fullScreen" : @(IsWindowFullScreen(window)),
+        @"occlusionVisible" : @((window.occlusionState & NSWindowOcclusionStateVisible) != 0),
+        @"collectionBehavior" : @(window.collectionBehavior),
+        @"page" : page ? ViewState(page) : NSNull.null,
+      };
+      NSData *json = [NSJSONSerialization dataWithJSONObject:state options:0 error:nil];
+      return json ? [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding] : @"{}";
+    }
+    return @"not a popup window";
+  }
+#endif
   if ([action hasPrefix:@"alertSheets:"]) {
     if (!solaracore_host::ShowAlertSheetsInTests([[action substringFromIndex:12] isEqualToString:@"1"])) return @"test instances only";
     return [action substringFromIndex:12];
@@ -2752,7 +2808,7 @@ NSDictionary *ProbeFrame(NSWindow *window, ACWindowFullScreen *state, CFTimeInte
     return @((window.occlusionState & NSWindowOcclusionStateVisible) != 0).stringValue;
   }
   if ([action hasPrefix:@"fakeFullScreen:"] || [action isEqualToString:@"fullScreen"]) {
-    SolaraCoreWindow *coreWindow = [SolaraCoreWindowController forNSWindow:window].coreWindow;
+    SolaraCoreWindow *coreWindow = CoreWindowForNSWindow(window);
     if (!coreWindow) return @"not an SolaraCore window";
     NSArray<NSString *> *parts = [action componentsSeparatedByString:@":"];
     if (parts.count > 1) {

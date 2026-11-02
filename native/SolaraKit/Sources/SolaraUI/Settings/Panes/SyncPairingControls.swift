@@ -178,7 +178,7 @@ enum SyncPairingWindowState: Equatable {
 }
 
 @MainActor
-final class SyncPairingProbeView: NSView {
+final class SyncPairingSurfaceView: NSView {
   var notificationCenter = NotificationCenter.default
   var workspaceNotificationCenter = NSWorkspace.shared.notificationCenter
   var distributedNotificationCenter: NotificationCenter = DistributedNotificationCenter.default()
@@ -294,21 +294,21 @@ final class SyncPairingProbeView: NSView {
 struct SyncPairingSurfaceProbe: NSViewRepresentable {
   let model: SyncTrustedPairingModel
   var sensitive = false
-  func makeNSView(context: Context) -> SyncPairingProbeView {
-    let view = SyncPairingProbeView()
+  func makeNSView(context: Context) -> SyncPairingSurfaceView {
+    let view = SyncPairingSurfaceView()
     view.sensitive = sensitive
     view.attach = { [weak model] window in if !sensitive { model?.attach(to: window) } }
     view.changed = sensitive ? model.captureSurfaceChange() : { [weak model] event in model?.surfaceChanged(event) }
     view.deny = model.captureEnd(.deny)
     return view
   }
-  func updateNSView(_ view: SyncPairingProbeView, context: Context) {
+  func updateNSView(_ view: SyncPairingSurfaceView, context: Context) {
     if sensitive {
       view.changed = model.captureSurfaceChange()
       view.deny = model.captureEnd(.deny)
     } else if let window = view.window { model.attach(to: window) }
   }
-  static func dismantleNSView(_ view: SyncPairingProbeView, coordinator: ()) { view.changed(view.sensitive ? .remounted : .removed); view.stopObserving() }
+  static func dismantleNSView(_ view: SyncPairingSurfaceView, coordinator: ()) { view.changed(view.sensitive ? .remounted : .removed); view.stopObserving() }
 }
 
 @MainActor

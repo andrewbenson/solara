@@ -266,7 +266,7 @@ final class SyncPairingDisplayFixture: SyncPairingFixtureSession {
   private func actionState(_ control: String) -> [String: Any] {
     var result = state()
     result["actionControl"] = control
-    result["actionControlFound"] = control != "fixture content" || hostedViews().contains { ($0 as? SyncPairingProbeView)?.sensitive == true }
+    result["actionControlFound"] = control != "fixture content" || hostedViews().contains { ($0 as? SyncPairingSurfaceView)?.sensitive == true }
     if result["actionControlFound"] as? Bool != true { result["error"] = "fixture content unavailable" }
     return result
   }

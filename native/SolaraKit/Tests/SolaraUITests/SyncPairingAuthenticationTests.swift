@@ -5,8 +5,8 @@ import Testing
 @Suite(.serialized)
 @MainActor
 struct SyncPairingAuthenticationTests {
-  private func makeProbe() -> SyncPairingProbeView {
-    let probe = SyncPairingProbeView()
+  private func makeProbe() -> SyncPairingSurfaceView {
+    let probe = SyncPairingSurfaceView()
     probe.notificationCenter = NotificationCenter()
     probe.workspaceNotificationCenter = NotificationCenter()
     probe.distributedNotificationCenter = NotificationCenter()
@@ -14,7 +14,7 @@ struct SyncPairingAuthenticationTests {
     return probe
   }
 
-  private func postSoftLoss(_ loss: String, window: PairingProbeTestWindow, probe: SyncPairingProbeView) {
+  private func postSoftLoss(_ loss: String, window: PairingProbeTestWindow, probe: SyncPairingSurfaceView) {
     if loss == "resignKey" {
       window.key = false
       probe.notificationCenter.post(name: NSWindow.didResignKeyNotification, object: window)

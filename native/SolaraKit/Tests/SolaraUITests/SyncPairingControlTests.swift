@@ -45,7 +45,7 @@ struct SyncPairingControlTests {
   @Test func T09_inheritedWindowDefaultCannotReceiveReturnThroughAppKit() {
     _ = NSApplication.shared
     let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 200), styleMask: [.titled], backing: .buffered, defer: false)
-    let probe = SyncPairingProbeView(frame: window.contentView!.bounds)
+    let probe = SyncPairingSurfaceView(frame: window.contentView!.bounds)
     probe.sensitive = true
     var denied = 0
     var inheritedDefault = 0

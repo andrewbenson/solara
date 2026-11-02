@@ -21,6 +21,7 @@ const INSTR_TOLERANCE = 0.04;
 const NAMED_ROOM = 2;
 const MIN_RUNS = 6;
 
+const POINTER_SCENARIOS = new Set(["hover"]);
 const COUNTERS = ["renders", "mounts", "storeUpdates", "storeKeys", "listenerCalls", "tasks", "timers", "writes", "writeBytes", "commitTasks"];
 const FAN_OUT = ["subNotified", "selectorCalls"];
 const SCALARS = ["commits", "hostUpdates"];
@@ -57,7 +58,8 @@ export function flatten(result, prefix = "") {
     ran.add(prefix + scenario);
     flattenStats(out, prefix + scenario, stats);
   };
-  for (const name of ["launch", "typing", "switchTabs", "scroll", "hover", "storeUpdate", "idle"]) if (result[name]?.stats) one(name, result[name].stats);
+  const lockedOut = (name) => POINTER_SCENARIOS.has(name) && !!result.screenLocked?.includes(name);
+  for (const name of ["launch", "typing", "switchTabs", "scroll", "hover", "storeUpdate", "idle"]) if (result[name]?.stats && !lockedOut(name)) one(name, result[name].stats);
   if (result.launch?.firstCommitMounts) {
     let total = 0;
     for (const [name, value] of Object.entries(result.launch.firstCommitMounts)) {
@@ -182,6 +184,12 @@ function evaluate(ceilings, { files = [], micro = null, instr = null }) {
     const rev = reportRevisions(reports);
     if (String(ceilings.revisions.probe) !== rev.probe || String(ceilings.revisions.bench) !== rev.bench)
       notes.push(`WARNING: ratchet.json is for probe revision ${ceilings.revisions.probe}, bench revision ${ceilings.revisions.bench}; this report has probe ${rev.probe}, bench ${rev.bench}. If a counter was redefined (not just added), the ceilings mean something else now: rebuild them with \`ratchet.mjs init\` on a fresh census.`);
+    const results = reports.flatMap((r) => r.results);
+    for (const name of POINTER_SCENARIOS) {
+      const ranIt = results.filter((x) => x[name]);
+      const locked = ranIt.filter((x) => x.screenLocked?.includes(name)).length;
+      if (locked) notes.push(`pending: ${name} (the screen was locked during ${locked} of ${ranIt.length} runs, so the window shell's display link doesn't resolve the pointer; check it on an unlocked screen)`);
+    }
     const c = collect(reports);
     ran = c.ran;
     runs = c.runs;
@@ -255,6 +263,7 @@ function init(files, microRuns, instr, { adopt = false } = {}) {
   const noisy = {};
   const dropped = [];
   for (const [key, v] of Object.entries(values)) {
+    if (!ran.has(scenarioOf(key))) continue;
     const max = Math.max(...v);
     if (max === 0 && !isTotal(key)) continue;
     const mode = modeOf(v);

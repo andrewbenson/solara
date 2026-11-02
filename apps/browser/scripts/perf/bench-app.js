@@ -65,6 +65,22 @@ async function movePointer(w, point) {
   return ms;
 }
 
+function pointerStep(w, point, settleMs) {
+  return new Promise((done) => {
+    P.reset();
+    let pending;
+    const ms = timed(() => (pending = ac.shell.devSetPointer(w, point)));
+    setTimeout(() => done({ ms, pending, stats: mergeStats({}, P.read()) }), settleMs);
+  });
+}
+
+async function measuredPointerStep(w, point, settleMs, into) {
+  const step = await pointerStep(w, point, settleMs);
+  if (!(await step.pending)) throw new Error("native pointer driver unavailable");
+  mergeStats(into, step.stats);
+  return step.ms;
+}
+
 async function nativeHoverRows(rows, from) {
   const w = windowId();
   const drag = globalThis.expo.modules.SolaraSidebarDrag;
@@ -245,17 +261,8 @@ const scenarios = {
     const steps = [];
     const stats = {};
     try {
-      for (const item of native.list) {
-        const point = await native.point(item);
-        P.reset();
-        steps.push(await movePointer(native.w, point));
-        await sleep(gapMs);
-        mergeStats(stats, P.read());
-      }
-      P.reset();
-      steps.push(await movePointer(native.w, native.off));
-      await sleep(800);
-      mergeStats(stats, P.read());
+      for (const item of native.list) steps.push(await measuredPointerStep(native.w, await native.point(item), gapMs, stats));
+      steps.push(await measuredPointerStep(native.w, native.off, 800, stats));
       return { steps, stats };
     } finally {
       await movePointer(native.w, native.off);

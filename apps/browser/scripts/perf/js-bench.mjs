@@ -46,13 +46,16 @@
 //   cenHover      the census variant of native row hover (14 rows, 150 ms per action)
 // Native work can leave zero React counts; P.reset/read still record each interaction's JS work.
 // The ratchet re-baselined only scroll.timers and hover.timers for revision 4; its other ceilings are 0.2.40's.
+// Revision 6: hover counts each step from the pointer move to the end of its wait, without the bench's own sleep
+// timer and promise steps, and a run records the scenarios that saw a locked screen (the ratchet leaves hover pending).
 //
 // Report (<out>/<label>.json):
 //   { label, version (the app's CFBundleShortVersionString), bundle, bundleSize (bytes), when,
 //     probeRevision   acPerf.revision of the bundle (PERF_PROBE_REVISION in perfProbe.ts; inferred for bundles from
 //                     before it existed: 2 if the probe counts commitTasks, else 1). Mixed after --append: an array.
 //     benchRevision   BENCH_REVISION below: this script's seed and scenarios
-//     results: [{ run, launchedAt (epoch ms before `open`), probeRevision, <scenario>: what acBench.run returned }]
+//     results: [{ run, launchedAt (epoch ms before `open`), probeRevision, <scenario>: what acBench.run returned,
+//                 screenLocked: the scenarios that ran while the screen was locked, if any }]
 //       startup      { marks: { bundleStart, bundleEnd, firstCommit, firstWindow, processStart }, stats }
 //       idle, idleLate   { settled, stats }               scroll   { stats }
 //       typing       { keys: [ms per key], items, stats }       switchTabs, hover, storeUpdate   { steps: [ms], stats }
@@ -68,14 +71,14 @@ import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, stat
 import { createServer } from "node:http";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { binaryOf, uiGateLaunching, uiGateWatch } from "../../../../scripts/lib/instance.mjs";
+import { binaryOf, screenLocked, uiGateLaunching, uiGateWatch } from "../../../../scripts/lib/instance.mjs";
 import { writeSeed } from "./seed.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const appDir = resolve(here, "../..");
 const repo = resolve(appDir, "../..");
 const defaultOut = process.env.AC_PERF_OUT ?? "/tmp/ac-perf-js";
-const BENCH_REVISION = 5;
+const BENCH_REVISION = 6;
 
 const [command, ...rest] = process.argv.slice(2);
 const flags = {};
@@ -374,7 +377,9 @@ async function run() {
           process.stderr.write(`[${label} ${r}] ${name}\n`);
           const options = JSON.stringify({ ...(flags.options ? JSON.parse(flags.options) : {}), origin, scenario: name });
           const entry = flags.trace && name !== "startup" ? "traced" : name;
+          const lockedBefore = screenLocked();
           result[name] = await evaluate(dataDir, pid, `return acBench.run(${JSON.stringify(entry)}, ${options});`);
+          if (lockedBefore || screenLocked()) (result.screenLocked ??= []).push(name);
         }
         result.probeRevision = await evaluate(dataDir, pid, `return acPerf.revision ?? ("commitTasks" in acPerf.read() ? 2 : 1);`);
       } finally {

@@ -11,6 +11,14 @@ import SolaraUI
 enum SettingsDev {
   private static var awaiting: (pane: String, asked: Date, done: (String) -> Void)?
   static private(set) var lastSwitch: [String: Any]?
+  #if DEBUG
+  private static var pairingFixtureHost: SyncPairingFixtureHost?
+
+  static func destroyPairingFixture() {
+    pairingFixtureHost?.destroy()
+    pairingFixtureHost = nil
+  }
+  #endif
 
   static func paneAppeared(_ pane: String) {
     guard let waiting = awaiting, waiting.pane == pane else { return }
@@ -56,6 +64,13 @@ enum SettingsDev {
 
   static func capture() -> [String: Any] {
     guard let window = NativeSettingsWindow.window, let root = window.contentView else { return [:] }
+    func sensitive(_ view: NSView?) -> Bool {
+      guard let view else { return false }
+      return view.identifier?.rawValue == "sync-pairing-sensitive" || view.subviews.contains { sensitive($0) }
+    }
+    if sensitive(root) || window.sheets.contains(where: { $0.identifier?.rawValue == "sync-pairing-sensitive" || sensitive($0.contentView) }) {
+      return ["frames": [], "texts": [], "switches": [], "pairingRedacted": true]
+    }
     var frames: [[Any]] = []
     var texts: [[Any]] = []
     func rounded(_ rect: NSRect) -> [Double] {
@@ -63,7 +78,9 @@ enum SettingsDev {
       return [Double(rect.minX), Double(top), Double(rect.width), Double(rect.height)].map { ($0 * 2).rounded() / 2 }
     }
     func walk(_ view: NSView, _ path: String) {
-      guard !view.isHidden else { return }
+      guard !view.isHidden,
+        view.identifier?.rawValue != "sync-pairing-sensitive",
+        view.window?.identifier?.rawValue != "sync-pairing-sensitive" else { return }
       frames.append([path, rounded(view.convert(view.bounds, to: root))])
       if let text = view as? OnboardingTextNSView { texts.append([path, text.text]) }
       if let field = view as? NSTextField { texts.append([path, field.stringValue]) }
@@ -106,7 +123,10 @@ enum SettingsDev {
     switch action {
     case "state":
       break
+    case "capture":
+      return json(capture())
     case "close":
+      NativeSettingsWindow.pairingSurfaceRemoved()
       window?.performClose(nil)
     case "type":
       guard let window else { return #"{"error":"no window"}"# }
@@ -148,6 +168,27 @@ enum SettingsDev {
     case "sendFeedback":
       NativeAppIntegration.shared.sendFeedback(argument)
     #if DEBUG
+    case "pairingFixture":
+      guard SettingsDevActionAdmission.admits(action, environment: ProcessInfo.processInfo.environment) else {
+        destroyPairingFixture()
+        return #"{"error":"test instances only"}"#
+      }
+      guard let data = argument?.data(using: .utf8),
+        let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+        let command = body["action"] as? String else { return #"{"error":"invalid fixture action"}"# }
+      if command == "mount" {
+        guard NativeSettingsWindow.makeContext()?.panes[.sync] is SyncPairingFixturePane else {
+          destroyPairingFixture()
+          return #"{"error":"fixture requires an isolated Settings provider"}"#
+        }
+        if pairingFixtureHost == nil { pairingFixtureHost = SyncPairingFixtureHost() }
+      }
+      guard let pairingFixtureHost else { return #"{"error":"no mounted fixture"}"# }
+      let result = pairingFixtureHost.drive(command, argument: body["argument"] as? String, settingsWindow: window)
+      if command == "destroy" { self.pairingFixtureHost = nil }
+      return json(result)
+    case "pairingStatus":
+      return json(["registered": TrustedPairingRegistration.service != nil, "fixtureMounted": pairingFixtureHost?.isMounted == true])
     case "script":
       let env = ProcessInfo.processInfo.environment
       guard env["SOLARA_BACKGROUND"] == "1", env["SOLARA_DATA_DIR"]?.isEmpty == false else { return #"{"error":"test instances only"}"# }

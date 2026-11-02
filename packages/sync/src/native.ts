@@ -11,6 +11,8 @@ export type FolderInfo = {
   hasSyncData: boolean;
 };
 
+export type CreationInspection = { id: string; folder: string; candidates: string[]; completeness: string };
+
 export type PhraseResult =
   | { ok: true }
   | { error: "wordCount"; count: number }
@@ -32,12 +34,12 @@ type SyncNative = {
   chooseFolder(current: string | null): Promise<string | null>;
   newDeviceId(): string;
   deviceName(): string;
-  createPhrase(account: string): Promise<boolean>;
+  inspectCreation?(folder: string): Promise<CreationInspection>;
+  createSync?(folder: string, inspectionID: string | null): Promise<string | null>;
   enterPhrase(account: string, text: string, folder: string): Promise<PhraseResult>;
   unlock(account: string): Promise<boolean>;
   forget(account: string): Promise<void>;
   chainStatus(folder: string): Promise<"ok" | "missing" | "unavailable">;
-  createChain(folder: string): Promise<void>;
   write(folder: string, scope: string, payload: string): Promise<string>;
   read(folder: string, scope: string, known: string[]): Promise<Listing>;
   remove(folder: string, scope: string, ids: string[]): Promise<void>;

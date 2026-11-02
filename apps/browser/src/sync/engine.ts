@@ -1847,7 +1847,7 @@ function begin(folder: string, deviceId: string, joining: boolean) {
   scheduleSync(0);
 }
 
-export async function turnOnSync(folder: string): Promise<{ ok: true } | { error: string }> {
+export async function turnOnSync(folder: string, inspectionID?: string): Promise<{ ok: true } | { error: string }> {
   const native = SyncNative;
   if (!native) return { error: "Sync isn’t available in this build." };
   if (!metadataLoaded) load();
@@ -1858,20 +1858,26 @@ export async function turnOnSync(folder: string): Promise<{ ok: true } | { error
   if (doc.enabled || turningOn || pairingRecovery) return { error: "Sync is already on." };
   turningOn = true;
   try {
-    return await turnOn(native, folder);
+    return await turnOn(native, folder, inspectionID);
   } finally {
     turningOn = false;
   }
 }
 
-async function turnOn(native: NonNullable<typeof SyncNative>, folder: string): Promise<{ ok: true } | { error: string }> {
-  const deviceId = native.newDeviceId();
+async function turnOn(native: NonNullable<typeof SyncNative>, folder: string, inspectionID?: string): Promise<{ ok: true } | { error: string }> {
+  if (typeof native.createSync !== "function") return { error: "Sync creation isn’t available in this build. Rebuild the app." };
+  const captured = generation;
+  let deviceId: string | null = null;
   try {
-    if (!(await native.createPhrase(deviceId))) return { error: "Couldn’t save the sync key in your Keychain." };
-    await native.createChain(folder);
-  } catch (error) {
-    await native.forget(deviceId);
-    return { error: `Couldn’t use that folder: ${errorText(error)}` };
+    deviceId = await native.createSync(folder, inspectionID ?? null);
+    if (!deviceId) return { error: "Couldn’t save the sync key in your Keychain." };
+    if (captured !== generation || doc.enabled || newerFormat || syncHeld()) {
+      await native.forget(deviceId);
+      return { error: "Sync changed while the folder was checked. Try again." };
+    }
+  } catch {
+    if (deviceId) await native.forget(deviceId);
+    return { error: "The sync folder changed or couldn't be checked. Check it again before starting a separate sync." };
   }
   begin(folder, deviceId, false);
   return { ok: true };

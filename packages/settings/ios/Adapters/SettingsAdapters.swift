@@ -21,7 +21,13 @@ enum SettingsAdapters {
     context.panes[.extensions] = ExtensionsPaneModel(services: ExtensionsAdapter(), store: store)
     context.panes[.shortcuts] = ShortcutsPaneModel(services: ShortcutsAdapter(), store: store)
     context.panes[.profiles] = ProfilesPaneModel(services: ProfilesAdapter(store: store), store: store, safeMode: SolaraCoreHost.safeMode)
+    #if DEBUG
+    context.panes[.sync] = SyncPairingFixturePane.select(environment: ProcessInfo.processInfo.environment) {
+      SyncPaneModel(services: SyncAdapter())
+    }
+    #else
     context.panes[.sync] = SyncPaneModel(services: SyncAdapter())
+    #endif
     let live = LiveAdapter()
     context.panes[.liveFolders] = LiveFoldersPaneModel(services: live, store: store)
     context.panes[.calendar] = CalendarPaneModel(services: live)

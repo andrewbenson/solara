@@ -11,6 +11,12 @@ const damaged = new Set();
 let ids = 0;
 globalThis.acTestNativeModules = {
   SolaraSyncAdapter: {
+    async createSync(folder) {
+      const account = this.newDeviceId();
+      if (!(await this.createPhrase(account))) return null;
+      await this.createChain(folder);
+      return account;
+    },
     newDeviceId: () => `id${++ids}`,
     deviceName: () => "Test Mac",
     createPhrase: async () => true,

@@ -29,6 +29,7 @@ final class SyncDiscovery {
 
   enum Result: Equatable {
     case found([Candidate])
+    case foundIncomplete([Candidate])
     case empty, needsHydration, unavailable, permissionDenied, timedOut
   }
 
@@ -111,7 +112,7 @@ final class SyncDiscovery {
         .filter { $0.isRealDirectory && !$0.isPlaceholder }
         .map { Candidate(cid: $0.name, lastActivity: $0.activity) }
         .sorted { $0.cid < $1.cid }
-      if !candidates.isEmpty { return .found(candidates) }
+      if !candidates.isEmpty { return dataless || truncated || !placeholders.isEmpty ? .foundIncomplete(candidates) : .found(candidates) }
       if dataless || !placeholders.isEmpty { return .needsHydration }
       return truncated ? .unavailable : .empty
     }
@@ -138,16 +139,28 @@ final class LiveDiscoveryFileSystem: DiscoveryFileSystem {
     let fd = open(folder.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
     guard fd >= 0 else {
       switch errno {
-      case ENOENT: return Self.placeholder(of: folder) ? .listing([], dataless: true, truncated: false) : .missing
+      case ENOENT:
+        switch Self.placeholder(of: folder) {
+        case .present: return .listing([], dataless: true, truncated: false)
+        case .absent: return .missing
+        case .unknown: return .unavailable
+        }
       case EACCES, EPERM, ELOOP, ENOTDIR: return .denied
       default: return .unavailable
       }
     }
     defer { close(fd) }
-    let values = try? folder.resourceValues(forKeys: [.isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey])
-    let dataless = values?.isUbiquitousItem == true && values?.ubiquitousItemDownloadingStatus.map { $0 != .current } == true
+    guard let values = try? folder.resourceValues(forKeys: [.isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey]) else { return .unavailable }
+    let dataless: Bool
+    if values.isUbiquitousItem == true {
+      guard let status = values.ubiquitousItemDownloadingStatus else { return .unavailable }
+      dataless = status != .current
+    } else {
+      dataless = false
+    }
     guard let listing = Self.names(fd, limit: limit) else { return errno == EACCES || errno == EPERM ? .denied : .unavailable }
     var entries: [DiscoveryEntry] = []
+    var incomplete = listing.truncated
     for name in listing.names {
       if name.hasPrefix("."), name.hasSuffix(".icloud") {
         let tag = String(name.dropFirst().dropLast(".icloud".count))
@@ -156,7 +169,11 @@ final class LiveDiscoveryFileSystem: DiscoveryFileSystem {
       }
       guard name.utf8.count == 26 else { continue }
       var info = stat()
-      let real = fstatat(fd, name, &info, AT_SYMLINK_NOFOLLOW) == 0 && info.st_mode & S_IFMT == S_IFDIR
+      guard fstatat(fd, name, &info, AT_SYMLINK_NOFOLLOW) == 0 else {
+        if (try? PairingFormat.cid(name)) != nil { incomplete = true }
+        continue
+      }
+      let real = info.st_mode & S_IFMT == S_IFDIR
       var activity = real ? Self.date(info) : nil
       if real {
         let child = openat(fd, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
@@ -172,7 +189,7 @@ final class LiveDiscoveryFileSystem: DiscoveryFileSystem {
       }
       entries.append(DiscoveryEntry(name: name, isRealDirectory: real, activity: activity))
     }
-    return .listing(entries, dataless: dataless, truncated: listing.truncated)
+    return .listing(entries, dataless: dataless, truncated: incomplete)
   }
 
   func requestDownload(_ url: URL) {
@@ -186,9 +203,15 @@ final class LiveDiscoveryFileSystem: DiscoveryFileSystem {
       close(copy)
       return nil
     }
-    defer { closedir(stream) }
+    defer {
+      let error = errno
+      closedir(stream)
+      errno = error
+    }
     var names: [String] = []
-    while let entry = readdir(stream) {
+    while true {
+      errno = 0
+      guard let entry = readdir(stream) else { return errno == 0 ? (names, false) : nil }
       let name = withUnsafePointer(to: entry.pointee.d_name) { pointer in
         pointer.withMemoryRebound(to: CChar.self, capacity: Int(entry.pointee.d_namlen) + 1) { String(cString: $0) }
       }
@@ -196,15 +219,19 @@ final class LiveDiscoveryFileSystem: DiscoveryFileSystem {
       guard names.count < limit else { return (names, true) }
       names.append(name)
     }
-    return (names, false)
   }
 
-  static func placeholder(of folder: URL) -> Bool {
+  enum Placeholder { case present, absent, unknown }
+
+  static func placeholder(of folder: URL) -> Placeholder {
     let parent = open(folder.deletingLastPathComponent().path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
-    guard parent >= 0 else { return false }
+    guard parent >= 0 else { return .unknown }
     defer { close(parent) }
     var info = stat()
-    return fstatat(parent, ".\(folder.lastPathComponent).icloud", &info, AT_SYMLINK_NOFOLLOW) == 0 && info.st_mode & S_IFMT == S_IFREG
+    guard fstatat(parent, ".\(folder.lastPathComponent).icloud", &info, AT_SYMLINK_NOFOLLOW) == 0 else {
+      return errno == ENOENT ? .absent : .unknown
+    }
+    return info.st_mode & S_IFMT == S_IFREG ? .present : .unknown
   }
 
   static func date(_ info: stat) -> Date? {

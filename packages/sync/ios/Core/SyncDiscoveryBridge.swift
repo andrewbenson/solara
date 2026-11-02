@@ -19,7 +19,7 @@ public enum SyncDiscoveryBridge {
   public static func run(folder: URL, timeout: Duration = .seconds(10), done: @escaping @Sendable (SyncDiscoveryOutcome) -> Void) {
     SyncDiscovery(folder: folder, timeout: timeout).run { result in
       switch result {
-      case .found(let candidates): done(.found(candidates.map { .init(cid: $0.cid, lastActivity: $0.lastActivity) }))
+      case .found(let candidates), .foundIncomplete(let candidates): done(.found(candidates.map { .init(cid: $0.cid, lastActivity: $0.lastActivity) }))
       case .empty: done(.empty)
       case .needsHydration: done(.needsHydration)
       case .unavailable: done(.unavailable)

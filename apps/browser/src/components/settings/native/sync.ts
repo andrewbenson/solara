@@ -82,8 +82,9 @@ export const syncHandlers: Record<string, SettingsHandler> = {
   "sync.state": () => syncTopic(),
   "sync.folderInfo": (path: string | null) => folderInfo(path).catch(() => null),
   "sync.chooseFolder": () => chooseSyncFolder().catch(() => null),
-  "sync.turnOn": async (folder: string) => {
-    const result = await turnOnSync(folder);
+  "sync.inspectCreation": (folder: string) => withNative((n) => typeof n.inspectCreation === "function" ? n.inspectCreation(folder) : Promise.resolve(null)),
+  "sync.turnOn": async (folder: string, inspectionID?: string) => {
+    const result = await turnOnSync(folder, inspectionID);
     return "error" in result ? result.error : null;
   },
   "sync.enterRecoveryPhrase": (folder: string, text: string) => enterRecoveryPhrase(folder, text),

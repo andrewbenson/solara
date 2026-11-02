@@ -260,6 +260,8 @@ public enum SyncSheet: Identifiable, Equatable {
   case connectDevice
   case stop
   case deleteData
+  case trustedPairing(surfaceID: UUID)
+  case separateSync(inspectionID: String)
 
   public var id: String {
     switch self {
@@ -268,6 +270,8 @@ public enum SyncSheet: Identifiable, Equatable {
     case .connectDevice: "connectDevice"
     case .stop: "stop"
     case .deleteData: "deleteData"
+    case .trustedPairing(let id): "trusted-\(id)"
+    case .separateSync(let id): "separate-\(id)"
     }
   }
 }
@@ -276,17 +280,37 @@ public enum SyncSheet: Identifiable, Equatable {
 @Observable
 public final class SyncPaneModel: SettingsPaneProvider {
   @ObservationIgnored let services: SyncServices
+  public let pairing: SyncTrustedPairingModel?
+  public let creation: SyncCreationModel?
   var state: SyncState?
   var info: SyncFolderInfo?
   var prepared = false
   var turningOn = false
   var failure: String?
-  var sheet: SyncSheet?
+  var sheet: SyncSheet? {
+    didSet {
+      if oldValue != sheet {
+        if case .trustedPairing = oldValue { pairing?.surfaceChanged(.removed) }
+        if case .separateSync = oldValue, case .separateSync = sheet {}
+        else if case .separateSync = oldValue { creation?.cancel() }
+      }
+    }
+  }
   @ObservationIgnored private var listener: Task<Void, Never>?
   @ObservationIgnored private var infoRequest = 0
 
-  public init(services: SyncServices) {
+  public init(services: SyncServices, pairingService: (any TrustedPairingService)? = nil, creationService: (any SyncCreationServices)? = nil) {
     self.services = services
+    pairing = (pairingService ?? TrustedPairingRegistration.service).map { SyncTrustedPairingModel(service: $0) }
+    creation = (creationService ?? (services as? any SyncCreationServices)).map { SyncCreationModel(services: $0) }
+  }
+
+  public func pairingSurfaceAvailable(to window: NSWindow) { pairing?.attach(to: window) }
+
+  public func pairingSurfaceRemoved() {
+    pairing?.teardown()
+    creation?.cancel()
+    sheet = nil
   }
 
   public func isLoaded(_ place: SettingsPlace) -> Bool { prepared }
@@ -316,6 +340,7 @@ public final class SyncPaneModel: SettingsPaneProvider {
   func apply(_ next: SyncState) {
     let previous = state
     state = next
+    if !next.enabled || next.status == .locked || previous?.folder != next.folder { pairing?.surfaceChanged(.removed); creation?.cancel() }
     guard let previous else { return }
     if previous.enabled != next.enabled || previous.status != next.status || previous.folder != next.folder {
       Task { await reloadInfo() }
@@ -346,8 +371,15 @@ public final class SyncPaneModel: SettingsPaneProvider {
 
   func turnOn() async {
     guard let info else { return }
+    pairing?.end(.cancel)
     turningOn = true
     failure = nil
+    if let creation {
+      await creation.start(folder: info.path)
+      turningOn = false
+      applyCreationState()
+      return
+    }
     let error = await services.turnOnSync(folder: info.path)
     turningOn = false
     if let error {
@@ -357,19 +389,54 @@ public final class SyncPaneModel: SettingsPaneProvider {
     }
   }
 
+  func confirmSeparateSync(inspectionID: String) async {
+    guard let creation, sheet == .separateSync(inspectionID: inspectionID),
+          case .warning(let inspection) = creation.state, inspection.id == inspectionID else { return }
+    turningOn = true
+    await creation.confirmSeparateSync()
+    turningOn = false
+    applyCreationState()
+  }
+
+  private func applyCreationState() {
+    guard let creation else { return }
+    switch creation.state {
+    case .warning(let inspection): sheet = .separateSync(inspectionID: inspection.id)
+    case .created: sheet = .recoveryKit
+    case .failed(let message): failure = message; sheet = nil
+    default: break
+    }
+  }
+
+  func connectAnotherMac(reviewing: TrustedRequest? = nil) {
+    pairing?.connect(reviewing: reviewing)
+    showPairingIfAdmitted()
+  }
+
+  func showPairingIfAdmitted() {
+    guard let pairing, pairing.isPresented, let arm = pairing.arm else { return }
+    sheet = .trustedPairing(surfaceID: arm.id)
+  }
+
   func chooseFolder() async {
+    pairing?.end(.cancel)
+    creation?.cancel()
     if let picked = await services.chooseSyncFolder() {
       await reloadInfo(path: picked)
     }
   }
 
   func changeFolderForPhrase() async {
+    pairing?.end(.cancel)
+    creation?.cancel()
     let picked = await services.chooseSyncFolder()
     await reloadInfo(path: picked)
     sheet = .phrase(canChangeFolder: false)
   }
 
   func submitPhrase(_ text: String) async -> String? {
+    pairing?.end(.cancel)
+    creation?.cancel()
     guard let info else { return nil }
     let result = await services.enterRecoveryPhrase(folder: info.path, text: text)
     if let message = result.message { return message }
@@ -378,6 +445,8 @@ public final class SyncPaneModel: SettingsPaneProvider {
   }
 
   func stop(deleteData: Bool) async {
+    pairing?.surfaceChanged(.removed)
+    creation?.cancel()
     await services.stopSync(deleteData: deleteData)
     sheet = nil
   }
@@ -396,8 +465,8 @@ public final class SyncPaneModel: SettingsPaneProvider {
 }
 
 enum SyncText {
-  static let intro = "Sync your browsing data across Macs through a folder you choose. Only your devices can read it."
-  static let offNote = "No server and no account: your Macs meet in the sync folder. Your recovery phrase never leaves your devices, and without it the folder is unreadable, file names included."
+  static let intro = "Sync your browsing data across Macs through a folder you choose. Synced contents are encrypted."
+  static let offNote = "Pairing reveals your Mac’s name to the selected connection before the codes match, even if you cancel. Someone with access to the sync folder can create that connection. Pairing files also expose connection metadata."
   static let unavailable = "Sync isn’t available in this build."
 
   static func ago(_ date: Date, now: Date) -> String {
@@ -482,10 +551,31 @@ struct SyncPane: View {
           }
         } else if state.enabled {
           SyncOnSections(model: model, state: state)
+          if let pairing = model.pairing {
+            Section {
+              if pairing.indicator == .pending || pairing.indicator == .overflow {
+                SettingRow(title: "A Mac is requesting to connect", description: "Only review a connection you just started.") {
+                  Button("Review request") { model.connectAnotherMac() }
+                }
+              }
+              if pairing.phase == .sentUnconfirmed { Text(SyncPairingText.sent).foregroundStyle(.secondary) }
+              if pairing.phase == .confirmed { Text("Approval received. Sync data is still downloading on your other Mac.").foregroundStyle(.secondary) }
+              if pairing.indicator == .persistenceFailure { Text(SyncPairingText.persistenceFailure).foregroundStyle(.secondary) }
+              if pairing.phase == .ended(.invalidLocalName) { SyncPairingNameRepairView(model: pairing) }
+              if pairing.phase == .ended(.rateLimited) { SyncPairingLimitView(model: pairing) }
+            }
+          }
         } else {
           SyncOffSection(model: model, state: state)
         }
       }
+    }
+    .background {
+      if let pairing = model.pairing { SyncPairingSurfaceProbe(model: pairing).frame(width: 0, height: 0) }
+    }
+    .onChange(of: model.pairing?.isPresented) { _, presented in
+      if presented == true { model.showPairingIfAdmitted() }
+      else if case .trustedPairing = model.sheet { model.sheet = nil }
     }
     .sheet(item: $model.sheet) { sheet in
       SyncSheetView(model: model, sheet: sheet)
@@ -518,7 +608,7 @@ struct SyncOffSection: View {
           HStack(spacing: 8) {
           if model.hasSyncData {
             Menu("Other Options") {
-              Button("Set Up Without Another Device") { Task { await model.turnOn() } }
+              Button("Set Up Without Another Device…") { Task { await model.turnOn() } }
                 .disabled(noICloud)
               Button("Enter Recovery Phrase") { model.sheet = .phrase(canChangeFolder: true) }
             }

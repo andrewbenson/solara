@@ -51,6 +51,16 @@ final class SyncDiscoveryTests: XCTestCase {
     XCTAssertFalse(FileManager.default.fileExists(atPath: missing.path))
   }
 
+  func testANonregularRootPlaceholderCannotAffirmAnEmptyFolder() throws {
+    let missing = root.appendingPathComponent("Later", isDirectory: true)
+    let placeholder = root.appendingPathComponent(".Later.icloud")
+    try FileManager.default.createDirectory(at: placeholder, withIntermediateDirectories: true)
+    XCTAssertEqual(discover(missing), .unavailable)
+    try FileManager.default.removeItem(at: placeholder)
+    try FileManager.default.createSymbolicLink(at: placeholder, withDestinationURL: folder)
+    XCTAssertEqual(discover(missing), .unavailable)
+  }
+
   func testCanonicalChainDirectoriesAreCandidatesWithTheirNewestActivity() throws {
     let a = tag(1), b = tag(2)
     let old = Date(timeIntervalSince1970: 1_700_000_000), newer = Date(timeIntervalSince1970: 1_700_000_500)
@@ -113,7 +123,7 @@ final class SyncDiscoveryTests: XCTestCase {
     XCTAssertEqual(discover(folder, fileSystem: dataless), .needsHydration)
     XCTAssertEqual(dataless.downloads, [folder])
     let partial = ScriptedFileSystem(.listing([DiscoveryEntry(name: tag(1), isRealDirectory: true, activity: nil)], dataless: true, truncated: false))
-    XCTAssertEqual(discover(folder, fileSystem: partial), .found([SyncDiscovery.Candidate(cid: tag(1), lastActivity: nil)]))
+    XCTAssertEqual(discover(folder, fileSystem: partial), .foundIncomplete([SyncDiscovery.Candidate(cid: tag(1), lastActivity: nil)]))
     XCTAssertEqual(partial.downloads, [folder])
   }
 

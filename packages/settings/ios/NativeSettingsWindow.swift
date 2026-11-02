@@ -32,6 +32,7 @@ final class StoreSettingsSource: SettingsStoreSource {
 final class SettingsHostingController: NSHostingController<SettingsWindowView> {
   override func viewWillAppear() {
     super.viewWillAppear()
+    if let window = view.window { NativeSettingsWindow.observePairingLifecycle(window) }
     view.window?.titleVisibility = .visible
     view.window?.titlebarAppearsTransparent = false
     guard view.window?.toolbar == nil else { return }
@@ -51,6 +52,25 @@ final class SettingsHostingController: NSHostingController<SettingsWindowView> {
 enum NativeSettingsWindow {
   static let windowId = "settings"
   private static var context: SettingsContext?
+  private static var pairingCloseObserver: NSObjectProtocol?
+  private static weak var observedPairingWindow: NSWindow?
+
+  static func observePairingLifecycle(_ window: NSWindow) {
+    if context?.navigation.pane == .sync { (context?.panes[.sync] as? SyncPaneModel)?.pairingSurfaceAvailable(to: window) }
+    guard observedPairingWindow !== window else { return }
+    if let pairingCloseObserver { NotificationCenter.default.removeObserver(pairingCloseObserver) }
+    observedPairingWindow = window
+    pairingCloseObserver = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: nil) { _ in
+      MainActor.assumeIsolated { pairingSurfaceRemoved() }
+    }
+  }
+
+  static func pairingSurfaceRemoved() {
+    (context?.panes[.sync] as? SyncPaneModel)?.pairingSurfaceRemoved()
+    #if DEBUG
+    SettingsDev.destroyPairingFixture()
+    #endif
+  }
 
   nonisolated static var enabled: Bool {
     NativeSettingsHandle.active
@@ -99,6 +119,13 @@ enum NativeSettingsWindow {
     guard let model = NativeSettingsHandle.model else { return nil }
     let store = StoreSettingsSource(model: model)
     let made = SettingsContext(appName: Bundle.main.productName, liquidGlass: liquidGlass, store: store)
+    #if DEBUG
+    let priorNavigation = made.navigation.willNavigate
+    made.navigation.willNavigate = { old, next in
+      priorNavigation(old, next)
+      if old.pane == .sync && old != next { SettingsDev.destroyPairingFixture() }
+    }
+    #endif
     made.favicons = SettingsFavicons(displayHost: SettingsAdapters.displayHost, bundled: bundledSiteIcon) { url, profile in await SettingsAdapters.favicon(url: url, profile: profile) }
     made.profileForPane = { pane, current in
       guard pane == .extensions else { return nil }

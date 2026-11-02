@@ -110,7 +110,7 @@ async function environment(prefix, sharedFolderOps) {
   const gate = async (name) => {
     if (heldNatives.has(name)) await new Promise((resolve) => nativeGates.push(resolve));
   };
-  const modes = { chain: "ok", unlock: true, phrase: true, passwordsNull: false };
+  const modes = { chain: "ok", unlock: true, phrase: true, creation: true, passwordsNull: false };
   let deviceIds = 0;
   const recordCall = (n, a, r) => calls?.push(r === undefined ? { n, a: plain(a) } : { n, a: plain(a), r: plain(r) });
   const shellFake = { docs: null, journalHolds: null };
@@ -125,7 +125,21 @@ async function environment(prefix, sharedFolderOps) {
       recordCall("deviceName", [], name);
       return name;
     },
-    createPhrase: async (account) => (await gate("createPhrase"), recordCall("createPhrase", [account], modes.phrase), modes.phrase),
+    createSync: async (folder, inspectionID) => {
+      await gate("createSync");
+      if (!modes.creation) {
+        recordCall("createSync", [folder, inspectionID], { error: "creation refused" });
+        throw new Error("creation refused");
+      }
+      if (!modes.phrase) {
+        recordCall("createSync", [folder, inspectionID], null);
+        return null;
+      }
+      const account = `${prefix}dev${++deviceIds}`;
+      await folderOps("createChain", []);
+      recordCall("createSync", [folder, inspectionID], account);
+      return account;
+    },
     enterPhrase: async (account, text, folder) => {
       await gate("enterPhrase");
       const result = modes.phrase ? { ok: true } : { error: "mismatch" };
@@ -135,10 +149,6 @@ async function environment(prefix, sharedFolderOps) {
     unlock: async (account) => (await gate("unlock"), recordCall("unlock", [account], modes.unlock), modes.unlock),
     forget: async (account) => (await gate("forget"), void recordCall("forget", [account])),
     chainStatus: async (folder) => (await gate("chainStatus"), recordCall("chainStatus", [folder], modes.chain), modes.chain),
-    createChain: async (folder) => {
-      await folderOps("createChain", []);
-      recordCall("createChain", [folder]);
-    },
     deleteChain: async (folder) => {
       await folderOps("deleteChain", []);
       recordCall("deleteChain", [folder]);
@@ -732,7 +742,7 @@ export function randomScript(seed, steps) {
     else if (r < 0.83) push(mac, { op: "deleteProfile", profile: n() });
     else if (r < 0.845) push(mac, { op: "stop", deleteData: rand() < 0.3 });
     else if (r < 0.86) push(mac, { op: pick(["turnOn", "join"]), folder: "/sync", phrase: "abandon ability" });
-    else if (r < 0.9) push(mac, { op: "holdNative", names: [pick(["read", "write", "chainStatus", "unlock", "sealLocal", "openLocal", "forget", "createPhrase", "enterPhrase"])] });
+    else if (r < 0.9) push(mac, { op: "holdNative", names: [pick(["read", "write", "chainStatus", "unlock", "sealLocal", "openLocal", "forget", "createSync", "enterPhrase"])] });
     else if (r < 0.93) push(mac, { op: "releaseNative" });
     else if (r < 0.945) {
       const doc = pick(["sync-state.nns", "sync-journal.nns"]);

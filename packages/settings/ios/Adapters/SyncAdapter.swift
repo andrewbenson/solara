@@ -1,9 +1,10 @@
 import AppKit
 import Foundation
 import SolaraUI
+import SolaraSyncAdapter
 
 @MainActor
-final class SyncAdapter: SyncServices {
+final class SyncAdapter: SyncServices, SyncCreationServices {
   static let topic = "sync.state"
 
   func currentSyncState() async -> SyncState {
@@ -22,6 +23,30 @@ final class SyncAdapter: SyncServices {
       return try await SettingsAdapters.jsThrowing("sync.turnOn", folder) as? String
     } catch {
       return "Sync isn’t available in this build."
+    }
+  }
+
+  func inspectSyncCreation(folder: String) async -> SyncCreationInspection {
+    guard let value = await SettingsAdapters.js("sync.inspectCreation", folder) as? [String: Any],
+          let id = value.string("id"), let path = value.string("folder"),
+          let candidates = value["candidates"] as? [String], let completeness = value.string("completeness") else {
+      return SyncCreationInspection(id: "", folder: folder, candidates: [], completeness: "unknown")
+    }
+    return SyncCreationInspection(id: id, folder: path, candidates: candidates, completeness: completeness)
+  }
+
+  func invalidateSyncCreation(inspectionID: String) {
+    SyncCreationAdmission.shared.invalidate(inspectionID: inspectionID)
+  }
+
+  func createSync(folder: String, inspectionID: String) async -> String? {
+    guard SyncCreationAdmission.shared.consent(inspectionID: inspectionID) else {
+      return "The sync folder changed or couldn't be checked. Check it again before starting a separate sync."
+    }
+    do {
+      return try await SettingsAdapters.jsThrowing("sync.turnOn", folder, inspectionID) as? String
+    } catch {
+      return "Couldn't finish checking iCloud Drive."
     }
   }
 

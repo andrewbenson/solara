@@ -36,6 +36,12 @@ let ids = 0;
 const called = (name, result) => (calls.push(name), result);
 globalThis.acTestNativeModules = {
   SolaraSyncAdapter: {
+    async createSync(folder) {
+      const account = this.newDeviceId();
+      if (!(await this.createPhrase(account))) return null;
+      await this.createChain(folder);
+      return account;
+    },
     newDeviceId: () => called("allocate", `allocated-${++ids}`),
     deviceName: () => "Joining Mac",
     createPhrase: async () => called("createPhrase", true),

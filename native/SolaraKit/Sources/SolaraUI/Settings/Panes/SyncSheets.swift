@@ -12,6 +12,11 @@ struct SyncSheetView: View {
     case .connectDevice: SyncConnectDeviceSheet(model: model)
     case .stop: SyncStopSheet(model: model)
     case .deleteData: SyncDeleteDataSheet(model: model)
+    case .trustedPairing(let expectedID):
+      if let pairing = model.pairing, pairing.arm?.id == expectedID {
+        SyncTrustedPairingSheet(model: pairing, useRecovery: { model.sheet = .connectDevice })
+      }
+    case .separateSync(let id): SyncSeparateChainSheet(model: model, inspectionID: id)
     }
   }
 }
@@ -330,6 +335,11 @@ struct SyncConnectDeviceSheet: View {
     let app = context?.appName ?? ""
     SyncSheetFrame(width: 480) {
       SyncSheetTitle("Connect Another Device")
+      if model.pairing != nil {
+        SyncSheetBody(SyncPairingText.instructions)
+        Button("Connect another Mac") { model.sheet = nil; model.connectAnotherMac() }
+        SyncSheetBody("Use Recovery Phrase… uses the existing 24 words or recovery phrase QR code below.")
+      }
       SyncSheetBody("On your other Mac, open \(app) › Settings › Sync and choose the same sync folder. Then click Enter Recovery Phrase and enter the 24 words of your recovery phrase.")
       HStack(spacing: 16) {
         Group {
@@ -446,5 +456,193 @@ struct SyncDeleteDataSheet: View {
   func finish(deleteData: Bool) async {
     busy = true
     await model.stop(deleteData: deleteData)
+  }
+}
+
+public struct SyncTrustedPairingSheet: View {
+  @Bindable var model: SyncTrustedPairingModel
+  private let useRecovery: (() -> Void)?
+  private let originalArm: TrustedArm?
+  @State private var inspecting = false
+
+  public init(model: SyncTrustedPairingModel, useRecovery: (() -> Void)? = nil) {
+    self.model = model
+    self.useRecovery = useRecovery
+    originalArm = model.arm
+  }
+
+  public var body: some View {
+    SyncSheetFrame(width: 520) {
+      SyncSheetTitle(SyncPairingText.title)
+      SyncSheetBody(SyncPairingText.intent)
+      ScrollView {
+        VStack(alignment: .leading, spacing: 12) {
+          if model.requiresExplicitPresentation {
+            Button("Review request", action: model.capturePresentation())
+          } else if let comparison = model.comparison {
+            SyncComparisonView(model: model, comparison: comparison, inspecting: $inspecting)
+          } else {
+            switch model.phase {
+            case .choosing: SyncRequestChooser(model: model)
+            case .sentUnconfirmed: Text(SyncPairingText.sent)
+            case .confirmed: Text("Approval received. Sync data is still downloading on your other Mac.")
+            case .ended(let reason): Text(SyncPairingText.ended(reason))
+            case .comparing, .authenticating:
+              Button("Review request", action: model.capturePresentation())
+            default: Text(SyncPairingText.preparing)
+            }
+          }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 12)
+      }
+      .frame(maxHeight: 330)
+    } leading: {
+      if model.canDismissUnexpected {
+        Button("I didn't request this", action: model.captureEnd(.unexpectedRequest))
+      }
+    } buttons: {
+      if let useRecovery {
+        Button("Use Recovery Phrase…", action: model.captureEnd(.cancel, then: useRecovery))
+      }
+      Button("Deny", action: model.captureEnd(.deny))
+        .keyboardShortcut(.cancelAction)
+      SyncAllowButton(enabled: model.canAllow, invoke: model.captureAllow(), deny: model.captureEnd(.deny))
+        .frame(width: 74, height: 24)
+        .id(model.actionGeneration)
+    }
+    .background(SyncPairingSurfaceProbe(model: model, sensitive: true).frame(width: 0, height: 0))
+    .onChange(of: model.renderGeneration) { _, _ in inspecting = false }
+    .onDisappear {
+      if let originalArm, model.arm === originalArm { model.surfaceChanged(.removed) }
+    }
+    .onKeyPress(.return) {
+      if let originalArm, model.arm === originalArm { model.end(.deny) }
+      return .handled
+    }
+  }
+}
+
+struct SyncRequestChooser: View {
+  let model: SyncTrustedPairingModel
+  var body: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      Text(model.requests.isEmpty ? "Start connecting on your other Mac, then select its request here." : "Choose the request you just started on your other Mac.")
+      ForEach(model.requests) { request in
+        let select = model.captureSelection(request)
+        SyncRequestButton(request: request) { _ in select() }
+        .frame(height: 26)
+        .id(request.id)
+      }
+    }
+  }
+}
+
+struct SyncComparisonView: View {
+  let model: SyncTrustedPairingModel
+  let comparison: TrustedComparison
+  @Binding var inspecting: Bool
+
+  var body: some View {
+    let toggle = model.captureToggle()
+    VStack(alignment: .leading, spacing: 12) {
+      Text(comparison.code.prefix(3) + " " + comparison.code.suffix(3))
+        .font(.system(size: 32, weight: .semibold, design: .monospaced))
+        .accessibilityLabel("Six character comparison code")
+        .accessibilityValue(comparison.code)
+      SyncClaimedNameText(text: "Name the other Mac claims: “\u{2068}\(comparison.claimedName)\u{2069}” — Unverified until the codes match.")
+      Text(SyncPairingText.claimQualification)
+        .font(.callout)
+        .foregroundStyle(.secondary)
+      if comparison.nameWarning || SyncPairingName.warning(comparison.claimedName, knownNames: []) == true {
+        Text(SyncPairingText.nameWarning).font(.callout).foregroundStyle(.secondary)
+      } else if SyncPairingName.warning(comparison.claimedName, knownNames: []) == nil {
+        Text("Name similarity checks aren't available. Inspect the name characters and compare all six code characters.")
+          .font(.callout).foregroundStyle(.secondary)
+      }
+      Button("Inspect name characters") { inspecting.toggle() }
+      if inspecting { SyncNameCharactersView(name: comparison.claimedName) }
+      Text(SyncPairingText.authority).font(.callout)
+      SyncMatchedCheckbox(isOn: Binding(get: { model.matched }, set: { toggle($0) }))
+        .frame(height: 20)
+        .disabled(model.phase != .comparing)
+        .accessibilityIdentifier("sync-pairing-matched")
+    }
+  }
+}
+
+struct SyncNameCharactersView: View {
+  let name: String
+  var body: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Text(SyncPairingName.characters(name))
+      Text(SyncPairingName.escaped(name))
+    }
+    .font(.system(size: 11, design: .monospaced))
+    .fixedSize(horizontal: false, vertical: true)
+    .environment(\.layoutDirection, .leftToRight)
+    .accessibilityIdentifier("sync-pairing-name-characters")
+  }
+}
+
+struct SyncPairingNameRepairView: View {
+  let model: SyncTrustedPairingModel
+  @State private var name = ""
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text(SyncPairingText.ended(.invalidLocalName))
+      TextField("This Mac’s real name", text: $name)
+      Button("Connect another Mac") {
+        let captured = name
+        name = ""
+        model.connect(options: TrustedArmOptions(localDisplayForm: captured))
+      }
+      .disabled(!SyncPairingName.isValid(name))
+    }
+    .onDisappear { name = "" }
+  }
+}
+
+struct SyncPairingLimitView: View {
+  let model: SyncTrustedPairingModel
+  @State private var confirming = false
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text(SyncPairingText.ended(.rateLimited))
+      Button("Try one more connection…") { confirming = true }
+    }
+    .confirmationDialog("Allow one more pairing attempt?", isPresented: $confirming) {
+      Button("Start One More Attempt") { model.connect(options: TrustedArmOptions(confirmedLimitOverride: true)) }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text("Only continue if you just started connecting your other Mac. This attempt still requires selecting a request, comparing all six characters and authorizing with Touch ID or your login password.")
+    }
+  }
+}
+
+struct SyncSeparateChainSheet: View {
+  let model: SyncPaneModel
+  let inspectionID: String
+  var body: some View {
+    SyncSheetFrame(width: 500) {
+      SyncSheetTitle("Start a separate sync?")
+      SyncSheetBody("This folder already contains Solara sync data. A new sync will use a different recovery phrase and won't connect to your other Macs' existing data.")
+      SyncSheetBody("Another Mac may create sync data while this folder is being checked.")
+    } leading: {
+      if model.pairing != nil {
+        Button("Pair With Another Mac") { model.creation?.cancel(); model.sheet = nil }
+      }
+    } buttons: {
+      Button("Enter Recovery Phrase…") { model.creation?.cancel(); model.sheet = .phrase(canChangeFolder: true) }
+        .keyboardShortcut(.defaultAction)
+      Button("Cancel") { model.creation?.cancel(); model.sheet = nil }
+        .keyboardShortcut(.cancelAction)
+      SyncAllowButton(title: "Start Separate Sync", enabled: !model.turningOn, invoke: {
+        let captured = inspectionID
+        Task { await model.confirmSeparateSync(inspectionID: captured) }
+      }, deny: { model.creation?.cancel(); model.sheet = .phrase(canChangeFolder: true) })
+      .frame(width: 140, height: 24)
+      .id(inspectionID)
+    }
   }
 }

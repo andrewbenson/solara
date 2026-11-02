@@ -38,6 +38,10 @@ public final class SettingsContext {
     self.navigation = navigation
     index = SettingsIndex(appName: appName)
     search = SettingsSearchModel(index: index, liquidGlass: liquidGlass)
+    navigation.willNavigate = { [weak self] old, next in
+      if old.pane == .sync && old != next { (self?.panes[.sync] as? SyncPaneModel)?.pairingSurfaceRemoved() }
+      if next.pane == .sync && old != next { (self?.panes[.sync] as? SyncPaneModel)?.pairing?.resumeObservation() }
+    }
   }
 
   public func title(for place: SettingsPlace) -> String {

@@ -7,6 +7,7 @@ import Security
 public class SyncModule: Module {
   private let state = KeyState()
   private let owner = DeviceOwnerCheck()
+  private let creation = SyncCreationAdmission.shared
   private static let work = DispatchQueue(label: "solara.sync", qos: .utility)
   private static let sealed = SealedPasswords()
 
@@ -46,14 +47,36 @@ public class SyncModule: Module {
 
     Function("deviceName") { Host.current().localizedName ?? "This Mac" }
 
-    AsyncFunction("createPhrase") { (account: String) -> Bool in
-      guard !SolaraCoreHost.safeMode else { return false }
+    AsyncFunction("inspectCreation") { (folder: String, promise: Promise) in
+      self.creation.discover(folder: URL(fileURLWithPath: folder, isDirectory: true)) { inspection in
+        promise.resolve(["id": inspection.id, "folder": inspection.folder, "candidates": inspection.candidates, "completeness": inspection.completeness])
+      }
+    }.runOnQueue(Self.work)
+
+    AsyncFunction("createSync") { (folder: String, inspectionID: String?) throws -> String? in
+      guard !SolaraCoreHost.safeMode else { return nil }
+      let url = URL(fileURLWithPath: folder, isDirectory: true)
+      let finish = try self.creation.admit(folder: url, inspectionID: inspectionID)
+      defer { finish() }
+      let account = SyncKeys.newFileId()
       let entropy = RecoveryPhrase.generateEntropy()
-      guard Self.keyStore.save(entropy, account: account) else { return false }
+      guard Self.keyStore.save(entropy, account: account) else { return nil }
+      do {
+        try self.creation.commit(folder: url, reservation: finish) {
+          let vault = SyncVault(folder: url, keys: SyncKeys(entropy: entropy))
+          guard !vault.chainExists() else { throw SyncCreationAdmission.Failure.changed }
+          try vault.createChain()
+        }
+      } catch {
+        Self.keyStore.delete(account: account)
+        throw SyncCreationAdmission.Failure.changed
+      }
       self.owner.revoke()
       self.state.set(entropy)
-      return true
+      return account
     }.runOnQueue(Self.work)
+
+    AsyncFunction("createPhrase") { (_: String) -> Bool in false }.runOnQueue(Self.work)
 
     AsyncFunction("enterPhrase") { (account: String, text: String, folder: String) -> [String: Any] in
       guard !SolaraCoreHost.safeMode else { return ["error": "safe mode"] }
@@ -100,10 +123,8 @@ public class SyncModule: Module {
       return vault.chainExists() ? "ok" : "missing"
     }.runOnQueue(Self.work)
 
-    AsyncFunction("createChain") { (folder: String) throws in
-      let vault = try self.vault(folder)
-      try FileManager.default.createDirectory(at: URL(fileURLWithPath: folder, isDirectory: true), withIntermediateDirectories: true)
-      try vault.createChain()
+    AsyncFunction("createChain") { (_: String) throws -> Void in
+      throw SyncCreationAdmission.Failure.invalidPermit
     }.runOnQueue(Self.work)
 
     AsyncFunction("write") { (folder: String, scope: String, payload: String) throws -> String in

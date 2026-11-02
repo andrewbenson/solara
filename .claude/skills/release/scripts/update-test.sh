@@ -62,6 +62,7 @@ ditto "$new" "$work/new/$zip_name"
 retag "$work/installed/$installed_name" "$test_id"
 retag "$work/new/$zip_name" "$test_id"
 ditto "$old/Contents/Frameworks/Sparkle.framework" "$work/fw/Sparkle.framework"
+codesign --force --deep --timestamp=none --sign "$identity" "$work/fw/Sparkle.framework" 2>/dev/null
 pods="$root/apps/browser/macos/Pods/Sparkle"
 swiftc -O "$here/sparkle-host.swift" -F "$pods" -framework Sparkle -Xlinker -rpath -Xlinker "$work/fw" \
   -o "$work/sparkle-host" 2>"$work/swiftc.log" || { cat "$work/swiftc.log" >&2; exit 1; }

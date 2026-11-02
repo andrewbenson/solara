@@ -2308,6 +2308,7 @@ PODS:
     - SolaraShaders
     - SolaraShell
     - SolaraStoreAdapter
+    - SolaraSyncAdapter
   - SolaraShaders (0.0.0):
     - ExpoModulesCore
   - SolaraShell (0.0.0):
@@ -2671,7 +2672,7 @@ SPEC CHECKSUMS:
   SocketRocket: d4aabe649be1e368d1318fdf28a022d714d65748
   SolaraCore: 8b3bc9e67e84b8bf9969304648d0ea8b581f38f6
   SolaraImportAdapter: 10af0a10b16d0102876d7684dfdfaa80a896705c
-  SolaraSettingsAdapter: 05a1d97099ce8c184827a142cb53db7f748fe585
+  SolaraSettingsAdapter: f5f62d121db61d9e0bc7c6fcde4adc76af6b9169
   SolaraShaders: 371449cdf23d0316cfe58f6047646f13ddb6e511
   SolaraShell: 88bdfbf6101f10c90feec7aea235ba7a97f7041a
   SolaraStoreAdapter: 5d95e3f9ef9ad661a578d71ab2c952b8a0fe4e03

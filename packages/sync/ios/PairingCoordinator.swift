@@ -54,7 +54,105 @@ protocol PairingInstallationHosting: AnyObject {
 }
 
 final class PairingTrustedHandle {
+  fileprivate let interruption = PairingAdmissionEpoch()
+  private let lock = NSLock()
+  private var authentication: PairingAuthenticationAttempt?
+  private var authenticationEpoch: UInt64 = 0
+  private var replyDeadline: UInt64?
+  private var replySnapshotPinned = false
+  private var foregroundObserved = false
+  private var published = false
+  private var replyEpoch: UInt64 = 0
+
+  fileprivate func beginReply(now: UInt64, epoch: UInt64) -> Bool {
+    interruption.withLock {
+      guard interruption.current == epoch, replyDeadline == nil else { return false }
+      replyEpoch = epoch
+      let (deadline, overflow) = now.addingReportingOverflow(PairingCoordinator.foregroundRegainDeadlineMilliseconds)
+      replyDeadline = overflow ? UInt64.max : deadline
+      return true
+    }
+  }
+
+  fileprivate enum ReplySnapshot { case accepted, duplicate, expired }
+
+  fileprivate func pinReply(foreground: Bool, now: UInt64) -> ReplySnapshot {
+    interruption.withLock {
+      guard !replySnapshotPinned, interruption.current == replyEpoch else { return .duplicate }
+      replySnapshotPinned = true
+      if expireReply(now: now) { return .expired }
+      foregroundObserved = foregroundObserved || foreground
+      return .accepted
+    }
+  }
+
+  fileprivate func expireReply(now: UInt64) -> Bool {
+    interruption.withLock {
+      guard let replyDeadline, now >= replyDeadline, !foregroundObserved, !published,
+            interruption.current == replyEpoch else { return false }
+      interruption.advance()
+      return true
+    }
+  }
+
+  fileprivate enum SoftLoss { case tolerated, hide, interrupted }
+
+  fileprivate func softLoss(foreground: Bool, now: UInt64) -> SoftLoss {
+    let live = panelLive
+    return interruption.withLock {
+      guard let replyDeadline else { return foreground || live ? .tolerated : .hide }
+      guard interruption.current == replyEpoch else { return .interrupted }
+      if !foregroundObserved, !published, now >= replyDeadline {
+        interruption.advance()
+        return .interrupted
+      }
+      if foreground { foregroundObserved = true; return .tolerated }
+      if foregroundObserved {
+        if !published { interruption.advance() }
+        return .interrupted
+      }
+      return .tolerated
+    }
+  }
+
+  fileprivate func remainingReplyWait(now: UInt64) -> UInt64? {
+    interruption.withLock {
+      guard let replyDeadline, !foregroundObserved, !published, interruption.current == replyEpoch else { return nil }
+      return replyDeadline > now ? replyDeadline - now : 0
+    }
+  }
+
+  fileprivate func markPublished() { interruption.withLock { published = true } }
   fileprivate init() {}
+
+  fileprivate func bind(_ attempt: PairingAuthenticationAttempt, epoch: UInt64) {
+    lock.lock()
+    authentication = attempt
+    authenticationEpoch = epoch
+    lock.unlock()
+    if interruption.current != epoch { attempt.cancel() }
+  }
+
+  fileprivate var panelLive: Bool {
+    lock.lock()
+    let attempt = authentication
+    let epoch = authenticationEpoch
+    lock.unlock()
+    return interruption.current == epoch && attempt?.panelLive == true
+  }
+
+  fileprivate func interrupt() {
+    interruption.advance()
+    cancelAuthentication()
+  }
+
+  fileprivate func cancelAuthentication() {
+    lock.lock()
+    let attempt = authentication
+    authentication = nil
+    lock.unlock()
+    attempt?.cancel()
+  }
 }
 
 final class PairingComparisonHandle {
@@ -77,6 +175,8 @@ final class PairingRequestHandle {
 }
 
 final class PairingCoordinator: PairingJoining {
+  static let foregroundRegainDeadlineMilliseconds: UInt64 = 2000
+
   enum InvalidationReason { case stop, lock, safeMode, folder, key, surface, shutdown }
   enum Failure: Error { case occupied, stale, unavailable }
   struct Configuration {
@@ -157,6 +257,8 @@ final class PairingCoordinator: PairingJoining {
     var requestID: Data?
     var authentication: PairingAuthenticationAttempt?
     var authenticating = false
+    var surfaceReplyUsed = false
+    var interruptionEpoch: UInt64 = 0
     var retry: PairingSession.Entry?
     init(_ session: PairingSession, _ binding: Binding) { self.session = session; self.binding = binding }
   }
@@ -181,6 +283,8 @@ final class PairingCoordinator: PairingJoining {
   private var accounting: PairingSession.Accounting?
   private var joining: Joining?
   private var trusted: Trusted?
+  private let trustedHandleLock = NSLock()
+  private var currentTrustedHandle: PairingTrustedHandle?
   private var quiet: PairingSession?
   private var suppressed = true
   private let janitor = PairingJanitor()
@@ -426,6 +530,9 @@ final class PairingCoordinator: PairingJoining {
       _ = try session.arm(override: override)
       let slot = Trusted(session, binding)
       trusted = slot
+      trustedHandleLock.lock()
+      currentTrustedHandle = slot.handle
+      trustedHandleLock.unlock()
       nextPoll = clock()
       let checkpoint = try session.checkpointAccounting()
       accounting = checkpoint
@@ -482,6 +589,7 @@ final class PairingCoordinator: PairingJoining {
   }
 
   func deny(_ handle: PairingTrustedHandle) throws {
+    handle.interrupt()
     try owned { _ = try trustedSlot(handle); endTrusted(reason: .deny, notifyPeer: true) }
   }
 
@@ -500,38 +608,98 @@ final class PairingCoordinator: PairingJoining {
     }
   }
 
+  func panelLive(_ handle: PairingTrustedHandle) -> Bool { handle.panelLive }
+
+  func toleratesSoftLoss(_ handle: PairingTrustedHandle, foreground: Bool) -> Bool {
+    switch handle.softLoss(foreground: foreground, now: clock()) {
+    case .tolerated: return true
+    case .hide: handle.cancelAuthentication(); return false
+    case .interrupted: cancelReply(handle); return false
+    }
+  }
+
+  private func scheduleReplyDeadline(_ handle: PairingTrustedHandle) {
+    guard let remaining = handle.remainingReplyWait(now: clock()) else { return }
+    DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + .milliseconds(Int(min(remaining, UInt64(Int.max))))) { [weak self, weak handle] in
+      guard let self, let handle else { return }
+      self.expireReply(handle)
+      self.scheduleReplyDeadline(handle)
+    }
+  }
+
+  private func expireReply(_ handle: PairingTrustedHandle) {
+    guard handle.expireReply(now: clock()) else { return }
+    cancelReply(handle)
+  }
+
+  private func cancelReply(_ handle: PairingTrustedHandle) {
+    handle.cancelAuthentication()
+    admission.async { [weak self, weak handle] in
+      guard let self, let handle, let slot = self.trusted, slot.handle === handle,
+            slot.session.phase != .released, slot.session.phase != .installed else { return }
+      self.endTrusted()
+    }
+  }
+
   func hide(_ handle: PairingTrustedHandle) throws {
+    handle.interrupt()
     try owned {
       let slot = try trustedSlot(handle)
       slot.authentication?.cancel()
+      if slot.session.phase == .released || slot.session.phase == .installed { return }
       if slot.authenticating { endTrusted() }
       else { _ = try slot.session.hide() }
     }
   }
 
-  func allow(_ handle: PairingTrustedHandle) throws {
+  func allow(_ handle: PairingTrustedHandle, observingSurfaceAtReply: @escaping (@escaping (Bool) -> Void) -> Void = { $0(true) }, validatingSurface: @escaping (@escaping (Bool) -> Void) -> Void = { $0(true) }) throws {
     try owned {
       let slot = try trustedSlot(handle)
       guard !slot.authenticating else { throw Failure.occupied }
       let tuple = try slot.session.authorization()
       slot.authenticating = true
+      slot.interruptionEpoch = handle.interruption.current
       slot.authentication = authenticator.authenticate(tuple, validate: { [weak self, weak slot] value in
         guard let self, let slot else { return false }
         return self.owned { self.trusted === slot && slot.authenticating && self.valid(value, slot) }
+      }, replyBegan: { [weak self, weak slot] in
+        guard let self, let slot else { return }
+        guard slot.handle.beginReply(now: self.clock(), epoch: slot.interruptionEpoch) else { return }
+        self.scheduleReplyDeadline(slot.handle)
+      }, replied: { [weak self, weak slot] resume in
+        guard let self, let slot else { return }
+        let handle = slot.handle
+        observingSurfaceAtReply { [weak self, weak handle] foreground in
+          guard let self, let handle else { return }
+          switch handle.pinReply(foreground: foreground, now: self.clock()) {
+          case .accepted: resume()
+          case .expired: self.cancelReply(handle)
+          case .duplicate: return
+          }
+        }
       }, completion: { [weak self, weak slot] capability in
         guard let self, let slot else { return }
         self.admission.async {
           guard self.trusted === slot, slot.authenticating else { return }
           guard let capability, self.valid(tuple, slot) else { self.endTrusted(); return }
-          do { try self.prepareApproval(slot, tuple: tuple, capability: capability) }
-          catch { self.endTrusted() }
+          validatingSurface { [weak self, weak slot] allowed in
+            guard let self, let slot else { return }
+            self.admission.async {
+              guard self.trusted === slot, slot.authenticating, !slot.surfaceReplyUsed else { return }
+              slot.surfaceReplyUsed = true
+              guard allowed, self.valid(tuple, slot) else { self.endTrusted(); return }
+              do { try self.prepareApproval(slot, tuple: tuple, capability: capability) }
+              catch { self.endTrusted() }
+            }
+          }
         }
       })
+      if let attempt = slot.authentication { handle.bind(attempt, epoch: slot.interruptionEpoch) }
     }
   }
 
   private func valid(_ tuple: PairingSession.Authorization, _ slot: Trusted) -> Bool {
-    guard trusted === slot, configuration.environment.eligible, live(slot.session), let entropy = configuration.entropy, SyncKeys(entropy: entropy).chainTag == configuration.cid else { return false }
+    guard trusted === slot, slot.handle.interruption.current == slot.interruptionEpoch, configuration.environment.eligible, live(slot.session), let entropy = configuration.entropy, SyncKeys(entropy: entropy).chainTag == configuration.cid else { return false }
     return (try? slot.session.validateAuthorization(tuple)) != nil
   }
 
@@ -550,14 +718,21 @@ final class PairingCoordinator: PairingJoining {
         self.mailboxWork {
           do {
             _ = try slot.binding.mailbox.publish(entry) {
-              self.owned {
-                self.admit(slot.session) {
-                  guard self.valid(tuple, slot), let current = self.configuration.entropy, PairingCrypto.equal(current, entropy) else { return false }
-                  do {
-                    _ = try slot.session.commitApproval(wire: wire, ownerAuthentication: capability)
-                    slot.retry = entry
-                    return true
-                  } catch { return false }
+              self.expireReply(slot.handle)
+              return self.owned {
+                slot.handle.interruption.admit(slot.interruptionEpoch) {
+                  guard !slot.handle.expireReply(now: self.clock()) else { return false }
+                  return self.admit(slot.session) {
+                    guard self.valid(tuple, slot), let current = self.configuration.entropy, PairingCrypto.equal(current, entropy) else { return false }
+                    guard slot.handle.interruption.current == slot.interruptionEpoch,
+                          !slot.handle.expireReply(now: self.clock()) else { return false }
+                    do {
+                      _ = try slot.session.commitApproval(wire: wire, ownerAuthentication: capability)
+                      slot.handle.markPublished()
+                      slot.retry = entry
+                      return true
+                    } catch { return false }
+                  }
                 }
               }
             }
@@ -593,6 +768,10 @@ final class PairingCoordinator: PairingJoining {
 
   func invalidate(reason: InvalidationReason) {
     invalidation.advance()
+    trustedHandleLock.lock()
+    let handle = currentTrustedHandle
+    trustedHandleLock.unlock()
+    handle?.interrupt()
     if DispatchQueue.getSpecific(key: queueKey) == true { invalidateOwned(reason: reason) }
     else { admission.async { [weak self] in self?.invalidateOwned(reason: reason) } }
   }
@@ -666,7 +845,11 @@ final class PairingCoordinator: PairingJoining {
 
   private func endTrusted(persist: Bool = true, reason: PairingSession.EndReason = .invalidated, notifyPeer: Bool = false) {
     guard let slot = trusted else { return }
+    slot.handle.cancelAuthentication()
     slot.authentication?.cancel()
+    trustedHandleLock.lock()
+    if currentTrustedHandle === slot.handle { currentTrustedHandle = nil }
+    trustedHandleLock.unlock()
     let deadline = slot.session.deadline
     let output = try? slot.session.end(reason: reason)
     cleanup(slot.session)
@@ -819,7 +1002,13 @@ final class PairingCoordinator: PairingJoining {
 
   func tick() { admission.async { [weak self] in self?.pollOwned() } }
 
-  func poll() { admission.async { [weak self] in self?.pollOwned(force: true) } }
+  func poll() {
+    trustedHandleLock.lock()
+    let handle = currentTrustedHandle
+    trustedHandleLock.unlock()
+    if let handle { expireReply(handle) }
+    admission.async { [weak self] in self?.pollOwned(force: true) }
+  }
 
   private func pollOwned(force: Bool = false) {
     cleanDuePackets()

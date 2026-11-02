@@ -20,6 +20,8 @@ import SolaraUI
   func arm(on surface: TrustedSurface, reviewing: TrustedRequest?, options: TrustedArmOptions) throws -> TrustedArm { reached(); throw TrustedPairingFailure.refused(.removed) }
   func select(_ request: TrustedRequest, in arm: TrustedArm) async throws { reached() }
   func present(_ arm: TrustedArm, on surface: TrustedSurface) throws { reached() }
+  func toleratesSoftLoss(_ arm: TrustedArm) -> Bool { false }
+  func panelLive(_ arm: TrustedArm) -> Bool { reached(); return false }
   func surfaceChanged(_ surface: TrustedSurface, event: TrustedSurfaceEvent) { reached() }
   func acknowledge(_ comparison: TrustedComparison, matched: Bool, on surface: TrustedSurface) -> TrustedAuthorization? { reached(); return nil }
   func allow(_ authorization: TrustedAuthorization, on surface: TrustedSurface) async throws { reached() }
@@ -83,6 +85,25 @@ import SolaraUI
       Evidence.check(ended["allowRequests"] as? Int == 0, "Escape never authorizes")
       _ = await step("destroy")
     }
+    await mountReady(panel)
+    _ = await step("inspect")
+    Evidence.check(command("state")["inspectionComplete"] as? Bool == true, "comparison inspector expands before authentication")
+    _ = await step("check")
+    _ = await step("allow")
+    let authenticating = await step("state")
+    Evidence.check(authenticating["authenticating"] as? Bool == true, "synthetic Allow enters authentication")
+    Evidence.check(authenticating["allowRequests"] as? Int == 1, "authentication records one synthetic request")
+    Evidence.check(authenticating["comparisonPresent"] as? Bool == false, "authentication hides comparison")
+    Evidence.check(authenticating["nameFullyRendered"] as? Bool == false, "authentication hides claimed name")
+    Evidence.check(authenticating["inspectionComplete"] as? Bool == false, "authentication removes expanded name inspection")
+    let controls = authenticating["controlsFound"] as? [String: Bool] ?? [:]
+    for control in ["checkbox", "inspect", "name"] {
+      Evidence.check(controls[control] == false, "authentication removes \(control) control")
+    }
+    Evidence.check(authenticating["requiredControlsFound"] as? Bool == true, "authentication keeps its required controls")
+    Evidence.check(authenticating["realAuthenticationRequests"] as? Int == 0, "fixture authentication stays synthetic")
+    Evidence.check(authenticating["releaseRequests"] as? Int == 0, "fixture authentication never releases data")
+    _ = await step("destroy")
     for transition in ["hide", "remount"] {
       await mountReady(panel)
       for action in ["check", "saveTarget", transition, "ready", "show", "pressSaved"] { _ = await step(action) }

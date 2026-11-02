@@ -154,6 +154,8 @@ private final class FixtureProductionSpies: TrustedPairingService {
   func present(_ arm: TrustedArm, on surface: TrustedSurface) throws { reached() }
   func surfaceChanged(_ surface: TrustedSurface, event: TrustedSurfaceEvent) { reached() }
   func acknowledge(_ comparison: TrustedComparison, matched: Bool, on surface: TrustedSurface) -> TrustedAuthorization? { reached(); return nil }
+  func toleratesSoftLoss(_ arm: TrustedArm) -> Bool { false }
+  func panelLive(_ arm: TrustedArm) -> Bool { false }
   func allow(_ authorization: TrustedAuthorization, on surface: TrustedSurface) async throws { reached() }
   func end(_ arm: TrustedArm?, on surface: TrustedSurface, disposition: TrustedEnd) { reached() }
 }
@@ -163,6 +165,47 @@ extension SyncPairingOffscreenTests {
 struct SyncPairingDisplayFixtureTests {
   private func yieldTasks() async {
     for _ in 0..<30 { await Task.yield() }
+  }
+
+  @Test(arguments: ["hide", "remount"])
+  func hiddenComparisonReturnsUncheckedOnlyAfterExplicitPresentation(transition: String) async throws {
+    await configurePairingTestApplication()
+    let data = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("ac-pairing-presentation-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: data) }
+    try Data().write(to: data.appendingPathComponent(".solara-probe-scratch"))
+    let environment = ["SOLARA_BACKGROUND": "1", "SOLARA_DATA_DIR": data.path, "SOLARA_SYNC_PAIRING_FIXTURE": "1"]
+    let host = SyncPairingFixtureHost(environment: environment)
+    let settings = PairingOffscreenSettingsPanel(contentRect: NSRect(x: -10000, y: -10000, width: 800, height: 600), styleMask: [.nonactivatingPanel], backing: .buffered, defer: false)
+    settings.isReleasedWhenClosed = false
+    settings.alphaValue = 0
+    defer { host.destroy(); settings.contentView = nil; settings.orderOut(nil) }
+    func drive(_ action: String) -> [String: Any] { host.drive(action, settingsWindow: settings) }
+    #expect(drive("mount")["error"] == nil)
+    #expect(drive("select")["error"] == nil)
+    await yieldTasks()
+    #expect(drive("ready")["comparisonPresent"] as? Bool == true)
+    #expect(drive("check")["checked"] as? Bool == true)
+    #expect(drive("saveTarget")["error"] == nil)
+    _ = drive(transition)
+    _ = drive("ready")
+    _ = drive("show")
+    _ = drive("pressSaved")
+    await yieldTasks()
+    let hidden = drive("state")
+    #expect(hidden["armActive"] as? Bool == true)
+    #expect(hidden["comparisonPresent"] as? Bool == false)
+    #expect(hidden["allowRequests"] as? Int == 0)
+    #expect(drive("present")["error"] == nil)
+    await yieldTasks()
+    let presented = drive("state")
+    #expect(presented["armActive"] as? Bool == true)
+    #expect(presented["comparisonPresent"] as? Bool == true)
+    #expect(presented["checked"] as? Bool == false)
+    #expect(presented["allowEnabled"] as? Bool == false)
+    #expect(presented["allowRequests"] as? Int == 0)
+    #expect(presented["realAuthenticationRequests"] as? Int == 0)
+    #expect(presented["releaseRequests"] as? Int == 0)
   }
 
   @Test func interruptedExchangeShowsLocalRetryCopyInSettings() async throws {
@@ -258,6 +301,14 @@ struct SyncPairingDisplayFixtureTests {
     #expect(allowed["realAuthenticationRequests"] as? Int == 0)
     #expect(allowed["releaseRequests"] as? Int == 0)
     #expect(allowed["authenticating"] as? Bool == true)
+    #expect(allowed["comparisonPresent"] as? Bool == false)
+    #expect(allowed["nameFullyRendered"] as? Bool == false)
+    #expect(allowed["inspectionComplete"] as? Bool == false)
+    let controls = try #require(allowed["controlsFound"] as? [String: Bool])
+    #expect(controls["checkbox"] == false)
+    #expect(controls["inspect"] == false)
+    #expect(controls["name"] == false)
+    #expect(allowed["requiredControlsFound"] as? Bool == true)
     _ = drive("hide", settingsWindow: settings)
     _ = drive("show", settingsWindow: settings)
     await yieldTasks()

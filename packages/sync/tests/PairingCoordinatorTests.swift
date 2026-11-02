@@ -6,6 +6,16 @@ import XCTest
 final class PairingCoordinatorTests: XCTestCase {
   typealias S = PairingSession
 
+  final class Handoff<Value> {
+    private let lock = NSLock()
+    private var stored: Value
+    init(_ value: Value) { stored = value }
+    var value: Value {
+      get { lock.lock(); defer { lock.unlock() }; return stored }
+      set { lock.lock(); stored = newValue; lock.unlock() }
+    }
+  }
+
   final class Mailbox: PairingCoordinatingMailbox {
     var pairingCID = SyncKeys(entropy: Data(count: 32)).chainTag
     var pairingFolderIdentity = Data([9])
@@ -13,6 +23,8 @@ final class PairingCoordinatorTests: XCTestCase {
     let lock = NSLock()
     var entries: [S.Entry] = []
     private var disclosures: [S.Entry] = []
+    private var finishedWrites: [S.Entry] = []
+    var finishedPublications: [S.Entry] { lock.lock(); defer { lock.unlock() }; return finishedWrites }
     var everVisible: [S.Entry] { lock.lock(); defer { lock.unlock() }; return disclosures }
     var removals: [[S.Entry]] = []
     var holdRemoval = false
@@ -50,6 +62,7 @@ final class PairingCoordinatorTests: XCTestCase {
       return externallyVisible
     }
     func publish(_ entry: S.Entry, admit: () -> Bool) throws -> PairingMailbox.WriteOutcome {
+      defer { lock.lock(); finishedWrites.append(entry); lock.unlock() }
       if hold == entry.kind {
         reached?()
         guard release.wait(timeout: .now() + 5) == .success else { throw PairingCoordinator.Failure.unavailable }
@@ -65,8 +78,16 @@ final class PairingCoordinatorTests: XCTestCase {
   }
 
   final class Store: PairingAccountingStoring {
-    var ledger: S.Accounting?
-    var consumed: [PairingConsumedApproval] = []
+    private let ledgerHandoff = Handoff<S.Accounting?>(nil)
+    private let consumedHandoff = Handoff<[PairingConsumedApproval]>([])
+    var ledger: S.Accounting? {
+      get { ledgerHandoff.value }
+      set { ledgerHandoff.value = newValue }
+    }
+    var consumed: [PairingConsumedApproval] {
+      get { consumedHandoff.value }
+      set { consumedHandoff.value = newValue }
+    }
     var failAccounting = false
     var holdAccounting = false
     var accountingReached: (() -> Void)?
@@ -139,8 +160,16 @@ final class PairingCoordinatorTests: XCTestCase {
   final class Context: SyntheticPairingAuthenticationContext {
     var touchIDAuthenticationAllowableReuseDuration: TimeInterval = 100
     var available = true
-    var reply: ((Bool, Error?) -> Void)?
-    var invalidated = false
+    private let replyHandoff = Handoff<((Bool, Error?) -> Void)?>(nil)
+    private let invalidatedHandoff = Handoff(false)
+    var reply: ((Bool, Error?) -> Void)? {
+      get { replyHandoff.value }
+      set { replyHandoff.value = newValue }
+    }
+    var invalidated: Bool {
+      get { invalidatedHandoff.value }
+      set { invalidatedHandoff.value = newValue }
+    }
     func canEvaluatePolicy(_ policy: LAPolicy) -> Bool { available }
     func evaluatePolicy(_ policy: LAPolicy, localizedReason: String, reply: @escaping (Bool, Error?) -> Void) { self.reply = reply }
     func invalidate() { invalidated = true }
@@ -194,9 +223,18 @@ final class PairingCoordinatorTests: XCTestCase {
   final class Rig {
     let mailbox = Mailbox(), store = Store(), keys = Keys(), host = Host()
     let time = PairingSessionTests.Time(), rng = PairingSessionTests.Random(120)
+    private let eligibilityHandoff = Handoff<() -> Bool>({ true })
+    var eligibility: () -> Bool {
+      get { eligibilityHandoff.value }
+      set { eligibilityHandoff.value = newValue }
+    }
     var clockEpoch = Data([1])
     var durableStore: PairingAccountingStoring?
-    var contexts: [Context] = []
+    private let contextHandoff = Handoff<[Context]>([])
+    var contexts: [Context] {
+      get { contextHandoff.value }
+      set { contextHandoff.value = newValue }
+    }
     var states: [PairingJoinState] = []
     var allCallbacksOnMain = true
     deinit {
@@ -206,10 +244,14 @@ final class PairingCoordinatorTests: XCTestCase {
       host.heldKeySaved = nil
       for context in contexts { context.reply = nil }
     }
+    var scheduleAuthentication: ((@escaping () -> Void) -> Void)?
     lazy var auth = SyntheticPairingOwnerAuthenticator(makeContext: { [unowned self] in
       let value = Context(); self.contexts.append(value); return value
-    }, schedule: { $0() })
-    lazy var coordinator = PairingCoordinator(configuration: .init(cid: SyncKeys(entropy: Data(count: 32)).chainTag, environment: .init(folderIdentity: Data([9]), entropyHandle: Data([8]), clockEpoch: clockEpoch), localName: "Fixture Mac", entropy: Data(count: 32), trustedDevice: Data(repeating: 6, count: 16)), mailbox: mailbox, store: durableStore ?? store, authenticator: auth, keyStore: keys, host: host, clock: time.read, wall: { 1793552400000 }, random: rng.take)
+    }, schedule: { [unowned self] work in
+      if let scheduleAuthentication = self.scheduleAuthentication { scheduleAuthentication(work) }
+      else { work() }
+    })
+    lazy var coordinator = PairingCoordinator(configuration: .init(cid: SyncKeys(entropy: Data(count: 32)).chainTag, environment: .init(folderIdentity: Data([9]), entropyHandle: Data([8]), clockEpoch: clockEpoch), localName: "Fixture Mac", entropy: Data(count: 32), trustedDevice: Data(repeating: 6, count: 16)), mailbox: mailbox, store: durableStore ?? store, authenticator: auth, keyStore: keys, host: host, clock: time.read, wall: { 1793552400000 }, random: rng.take, eligibility: { [eligibilityHandoff] in eligibilityHandoff.value() })
     func start() -> PairingJoinHandle {
       coordinator.start(cid: SyncKeys(entropy: Data(count: 32)).chainTag) { [weak self] state in
         self?.allCallbacksOnMain = (self?.allCallbacksOnMain ?? false) && Thread.isMainThread
@@ -378,6 +420,520 @@ final class PairingCoordinatorTests: XCTestCase {
     XCTAssertFalse(rig.mailbox.everVisible.contains { $0.kind == .approval })
   }
 
+  func testHideCancelsPendingContextBeforeAdmissionQueueResumes() throws {
+    let rig = Rig(), pair = try authPending(rig)
+    let entered = DispatchSemaphore(value: 0)
+    let resume = DispatchSemaphore(value: 0)
+    let comparisonFinished = DispatchSemaphore(value: 0)
+    let hideFinished = DispatchSemaphore(value: 0)
+    rig.eligibility = {
+      entered.signal()
+      _ = resume.wait(timeout: .now() + 3)
+      return true
+    }
+    DispatchQueue.global().async {
+      _ = try? rig.coordinator.comparison(pair.1)
+      comparisonFinished.signal()
+    }
+    XCTAssertEqual(entered.wait(timeout: .now() + 1), .success)
+    DispatchQueue.global().async {
+      try? rig.coordinator.hide(pair.1)
+      hideFinished.signal()
+    }
+    let deadline = Date().addingTimeInterval(0.2)
+    while !rig.contexts[0].invalidated, Date() < deadline { Thread.sleep(forTimeInterval: 0.002) }
+    XCTAssertTrue(rig.contexts[0].invalidated, "a real interruption must cancel LA before admission unblocks")
+    resume.signal()
+    resume.signal()
+    XCTAssertEqual(comparisonFinished.wait(timeout: .now() + 1), .success)
+    XCTAssertEqual(hideFinished.wait(timeout: .now() + 1), .success)
+    XCTAssertFalse(rig.mailbox.everVisible.contains { $0.kind == .approval })
+    withExtendedLifetime(pair.0) {}
+  }
+
+  func testGlobalLockCancelsPendingContextBeforeAdmissionQueueResumes() throws {
+    let rig = Rig(), pair = try authPending(rig)
+    let context = try XCTUnwrap(rig.contexts.first)
+    let lateSuccess = try XCTUnwrap(context.reply)
+    let chargedReveals = try XCTUnwrap(rig.store.ledger).reveals
+    XCTAssertEqual(chargedReveals.count, 1)
+    XCTAssertTrue(rig.coordinator.panelLive(pair.1))
+    let entered = DispatchSemaphore(value: 0)
+    let resume = DispatchSemaphore(value: 0)
+    let comparisonFinished = DispatchSemaphore(value: 0)
+    rig.eligibility = {
+      entered.signal()
+      _ = resume.wait(timeout: .now() + 3)
+      return true
+    }
+    DispatchQueue.global().async {
+      _ = try? rig.coordinator.comparison(pair.1)
+      comparisonFinished.signal()
+    }
+    XCTAssertEqual(entered.wait(timeout: .now() + 1), .success)
+    rig.coordinator.invalidate(reason: .lock)
+    XCTAssertTrue(context.invalidated, "global invalidation must cancel LA before admission unblocks")
+    XCTAssertFalse(rig.coordinator.panelLive(pair.1), "global invalidation must clear panelLive before admission unblocks")
+    rig.eligibility = { true }
+    resume.signal()
+    XCTAssertEqual(comparisonFinished.wait(timeout: .now() + 1), .success)
+    lateSuccess(true, nil)
+    XCTAssertFalse(rig.coordinator.snapshot.trusted)
+    XCTAssertTrue(rig.store.consumed.isEmpty)
+    XCTAssertFalse(rig.mailbox.everVisible.contains { $0.kind == .approval })
+    XCTAssertEqual(rig.keys.inserts, 0)
+    XCTAssertTrue(rig.host.prepared.isEmpty)
+    XCTAssertEqual(rig.store.ledger?.reveals, chargedReveals)
+    withExtendedLifetime(pair.0) {}
+  }
+
+  func testPanelTailAfterReplyWithoutForegroundStillPublishes() throws {
+    let rig = Rig(), pair = try comparing(rig)
+    try rig.coordinator.acknowledgeComparison(rig.coordinator.comparison(pair.1))
+    let charged = try XCTUnwrap(rig.store.ledger).reveals
+    XCTAssertEqual(charged.count, 1)
+    let validation = Handoff<((Bool) -> Void)?>(nil)
+    try rig.coordinator.allow(pair.1, observingSurfaceAtReply: { $0(false) }, validatingSurface: { validation.value = $0 })
+    try wait { rig.contexts.last?.reply != nil }
+    rig.contexts[0].reply?(true, nil)
+    try wait { validation.value != nil }
+    for _ in 0..<3 {
+      if !rig.coordinator.toleratesSoftLoss(pair.1, foreground: false) { try? rig.coordinator.hide(pair.1) }
+    }
+    _ = rig.coordinator.toleratesSoftLoss(pair.1, foreground: true)
+    validation.value?(true)
+    try wait { rig.mailbox.finishedPublications.contains { $0.kind == .approval } || !rig.coordinator.snapshot.trusted }
+    XCTAssertEqual(rig.mailbox.everVisible.filter { $0.kind == .approval }.count, 1)
+    XCTAssertEqual(rig.store.ledger?.reveals, charged)
+    withExtendedLifetime(pair.0) {}
+  }
+
+  func testReplyWithoutForegroundExpiresBeforeHeldPublication() throws {
+    let rig = Rig(), pair = try comparing(rig)
+    try rig.coordinator.acknowledgeComparison(rig.coordinator.comparison(pair.1))
+    let charged = try XCTUnwrap(rig.store.ledger).reveals
+    XCTAssertEqual(charged.count, 1)
+    let reached = expectation(description: "approval held")
+    rig.mailbox.hold = .approval
+    rig.mailbox.reached = { reached.fulfill() }
+    try rig.coordinator.allow(pair.1, observingSurfaceAtReply: { $0(false) })
+    try wait { rig.contexts.last?.reply != nil }
+    rig.contexts[0].reply?(true, nil)
+    wait(for: [reached], timeout: 3)
+    rig.time.now += 2000
+    rig.coordinator.poll()
+    rig.mailbox.release.signal()
+    try wait { rig.mailbox.finishedPublications.contains { $0.kind == .approval } }
+    XCTAssertFalse(rig.mailbox.everVisible.contains { $0.kind == .approval })
+    XCTAssertEqual(rig.store.ledger?.reveals, charged)
+    withExtendedLifetime(pair.0) {}
+  }
+
+  func testReplyDeadlineCrossedDuringFinalEligibilityRejectsApproval() throws {
+    try replyDeadlineCrossedDuringFinalEligibility(hold: 0)
+  }
+
+  func testReplyDeadlineCrossedDuringHeldFinalEligibilityRejectsApproval() throws {
+    try replyDeadlineCrossedDuringFinalEligibility(hold: 2.1)
+  }
+
+  private func replyDeadlineCrossedDuringFinalEligibility(hold: TimeInterval) throws {
+    let rig = Rig(), pair = try comparing(rig)
+    try rig.coordinator.acknowledgeComparison(rig.coordinator.comparison(pair.1))
+    let charged = try XCTUnwrap(rig.store.ledger).reveals
+    let reached = expectation(description: "approval waiting before final admission")
+    rig.mailbox.hold = .approval
+    rig.mailbox.reached = { reached.fulfill() }
+    try rig.coordinator.allow(pair.1, observingSurfaceAtReply: { $0(false) })
+    try wait { rig.contexts.last?.reply != nil }
+    let context = try XCTUnwrap(rig.contexts.first)
+    context.reply?(true, nil)
+    wait(for: [reached], timeout: 3)
+    let crossedDeadline = Handoff(false)
+    rig.eligibility = { [weak rig] in
+      guard let rig else { return false }
+      if !crossedDeadline.value {
+        crossedDeadline.value = true
+        rig.time.now += PairingCoordinator.foregroundRegainDeadlineMilliseconds + 1
+        if hold > 0 { Thread.sleep(forTimeInterval: hold) }
+      }
+      return true
+    }
+    defer { rig.eligibility = { true } }
+    rig.mailbox.release.signal()
+    try wait { rig.mailbox.finishedPublications.contains { $0.kind == .approval } }
+    try wait {
+      let snapshot = rig.coordinator.snapshot
+      return !snapshot.trusted || snapshot.trustedPhase == .released
+    }
+    XCTAssertTrue(crossedDeadline.value)
+    XCTAssertFalse(rig.mailbox.everVisible.contains { $0.kind == .approval })
+    XCTAssertFalse(rig.coordinator.snapshot.trusted)
+    XCTAssertTrue(context.invalidated)
+    XCTAssertEqual(rig.store.consumed.count, 1)
+    XCTAssertEqual(rig.store.ledger?.reveals, charged)
+    withExtendedLifetime(pair.0) {}
+  }
+
+  func testInterruptionDuringFinalEligibilityRejectsApproval() throws {
+    let rig = Rig(), pair = try comparing(rig)
+    try rig.coordinator.acknowledgeComparison(rig.coordinator.comparison(pair.1))
+    let charged = try XCTUnwrap(rig.store.ledger).reveals
+    let reached = expectation(description: "approval waiting before final admission")
+    rig.mailbox.hold = .approval
+    rig.mailbox.reached = { reached.fulfill() }
+    try rig.coordinator.allow(pair.1, observingSurfaceAtReply: { $0(false) })
+    try wait { rig.contexts.last?.reply != nil }
+    rig.contexts[0].reply?(true, nil)
+    wait(for: [reached], timeout: 3)
+    let regained = Handoff(false)
+    let interrupted = Handoff(false)
+    rig.eligibility = { [weak rig] in
+      guard let rig else { return false }
+      if !interrupted.value {
+        regained.value = rig.coordinator.toleratesSoftLoss(pair.1, foreground: true)
+        interrupted.value = !rig.coordinator.toleratesSoftLoss(pair.1, foreground: false)
+      }
+      return true
+    }
+    defer { rig.eligibility = { true } }
+    rig.mailbox.release.signal()
+    try wait { rig.mailbox.finishedPublications.contains { $0.kind == .approval } }
+    try wait {
+      let snapshot = rig.coordinator.snapshot
+      return !snapshot.trusted || snapshot.trustedPhase == .released
+    }
+    XCTAssertTrue(regained.value)
+    XCTAssertTrue(interrupted.value)
+    XCTAssertFalse(rig.mailbox.everVisible.contains { $0.kind == .approval })
+    XCTAssertFalse(rig.coordinator.snapshot.trusted)
+    XCTAssertEqual(rig.store.consumed.count, 1)
+    XCTAssertEqual(rig.store.ledger?.reveals, charged)
+    withExtendedLifetime(pair.0) {}
+  }
+
+  func testReplyForegroundAndRegainedForegroundBothCancelANewLoss() throws {
+    for initialForeground in [false, true] {
+      let rig = Rig(), pair = try comparing(rig)
+      try rig.coordinator.acknowledgeComparison(rig.coordinator.comparison(pair.1))
+      let charged = try XCTUnwrap(rig.store.ledger).reveals
+    XCTAssertEqual(charged.count, 1)
+      let validation = Handoff<((Bool) -> Void)?>(nil)
+      try rig.coordinator.allow(pair.1, observingSurfaceAtReply: { $0(initialForeground) }, validatingSurface: { validation.value = $0 })
+      try wait { rig.contexts.last?.reply != nil }
+      rig.contexts[0].reply?(true, nil)
+      try wait { validation.value != nil }
+      if !initialForeground { _ = rig.coordinator.toleratesSoftLoss(pair.1, foreground: true) }
+      XCTAssertFalse(rig.coordinator.toleratesSoftLoss(pair.1, foreground: false))
+      try? rig.coordinator.hide(pair.1)
+      validation.value?(true)
+      XCTAssertFalse(rig.coordinator.snapshot.trusted)
+      XCTAssertFalse(rig.mailbox.everVisible.contains { $0.kind == .approval })
+      XCTAssertEqual(rig.store.ledger?.reveals, charged)
+      withExtendedLifetime(pair.0) {}
+    }
+  }
+
+  func testHardLossCancelsBeforeReplyWithoutForegroundAndAfterRegain() throws {
+    for point in ["panel", "tail", "foreground", "regained"] {
+      let rig = Rig(), pair = try comparing(rig)
+      try rig.coordinator.acknowledgeComparison(rig.coordinator.comparison(pair.1))
+      let charged = try XCTUnwrap(rig.store.ledger).reveals
+    XCTAssertEqual(charged.count, 1)
+      let validation = Handoff<((Bool) -> Void)?>(nil)
+      try rig.coordinator.allow(pair.1, observingSurfaceAtReply: { $0(point == "foreground") }, validatingSurface: { validation.value = $0 })
+      try wait { rig.contexts.last?.reply != nil }
+      if point != "panel" {
+        rig.contexts[0].reply?(true, nil)
+        try wait { validation.value != nil }
+      }
+      if point == "regained" { _ = rig.coordinator.toleratesSoftLoss(pair.1, foreground: true) }
+      try rig.coordinator.hide(pair.1)
+      rig.contexts[0].reply?(true, nil)
+      validation.value?(true)
+      XCTAssertFalse(rig.coordinator.snapshot.trusted)
+      XCTAssertFalse(rig.mailbox.everVisible.contains { $0.kind == .approval })
+      XCTAssertEqual(rig.store.ledger?.reveals, charged)
+      withExtendedLifetime(pair.0) {}
+    }
+  }
+
+  func testReplyWithoutForegroundPublishesWithoutWaitingAndIgnoresLaterDeadline() throws {
+    let rig = Rig(), pair = try comparing(rig)
+    try rig.coordinator.acknowledgeComparison(rig.coordinator.comparison(pair.1))
+    try rig.coordinator.allow(pair.1, observingSurfaceAtReply: { $0(false) })
+    try wait { rig.contexts.last?.reply != nil }
+    rig.contexts[0].reply?(true, nil)
+    try wait { rig.mailbox.everVisible.contains { $0.kind == .approval } }
+    rig.time.now += 2000
+    rig.coordinator.poll()
+    XCTAssertEqual(rig.coordinator.snapshot.trustedPhase, .released)
+    XCTAssertEqual(rig.mailbox.everVisible.filter { $0.kind == .approval }.count, 1)
+    withExtendedLifetime(pair.0) {}
+  }
+
+  func testRegainRetiresDeadlineBeforeHeldPublication() throws {
+    let rig = Rig(), pair = try comparing(rig)
+    try rig.coordinator.acknowledgeComparison(rig.coordinator.comparison(pair.1))
+    let reached = expectation(description: "approval held")
+    rig.mailbox.hold = .approval
+    rig.mailbox.reached = { reached.fulfill() }
+    try rig.coordinator.allow(pair.1, observingSurfaceAtReply: { $0(false) })
+    try wait { rig.contexts.last?.reply != nil }
+    rig.contexts[0].reply?(true, nil)
+    wait(for: [reached], timeout: 3)
+    rig.time.now += 1999
+    _ = rig.coordinator.toleratesSoftLoss(pair.1, foreground: true)
+    rig.time.now += 10000
+    rig.coordinator.poll()
+    rig.mailbox.release.signal()
+    try wait { rig.mailbox.finishedPublications.contains { $0.kind == .approval } }
+    XCTAssertEqual(rig.mailbox.everVisible.filter { $0.kind == .approval }.count, 1)
+    withExtendedLifetime(pair.0) {}
+  }
+
+  func testHardLossAtEveryReplyPointCancelsHeldMailboxAdmission() throws {
+    for point in ["tail", "foreground", "regained"] {
+      let rig = Rig(), pair = try comparing(rig)
+      try rig.coordinator.acknowledgeComparison(rig.coordinator.comparison(pair.1))
+      let charged = try XCTUnwrap(rig.store.ledger).reveals
+      XCTAssertEqual(charged.count, 1)
+      let reached = expectation(description: "approval held")
+      rig.mailbox.hold = .approval
+      rig.mailbox.reached = { reached.fulfill() }
+      try rig.coordinator.allow(pair.1, observingSurfaceAtReply: { $0(point == "foreground") })
+      try wait { rig.contexts.last?.reply != nil }
+      rig.contexts[0].reply?(true, nil)
+      wait(for: [reached], timeout: 3)
+      if point == "regained" { _ = rig.coordinator.toleratesSoftLoss(pair.1, foreground: true) }
+      try rig.coordinator.hide(pair.1)
+      rig.mailbox.release.signal()
+      try wait { rig.mailbox.finishedPublications.contains { $0.kind == .approval } }
+      XCTAssertFalse(rig.mailbox.everVisible.contains { $0.kind == .approval })
+      XCTAssertEqual(rig.store.ledger?.reveals, charged)
+      withExtendedLifetime(pair.0) {}
+    }
+  }
+
+  func testReplyDeadlineAutomaticallyCancelsWhileMailboxIsHeld() throws {
+    let rig = Rig(), pair = try comparing(rig)
+    try rig.coordinator.acknowledgeComparison(rig.coordinator.comparison(pair.1))
+    let charged = try XCTUnwrap(rig.store.ledger).reveals
+    XCTAssertEqual(charged.count, 1)
+    let reached = expectation(description: "approval held")
+    rig.mailbox.hold = .approval
+    rig.mailbox.reached = { reached.fulfill() }
+    try rig.coordinator.allow(pair.1, observingSurfaceAtReply: { $0(false) })
+    try wait { rig.contexts.last?.reply != nil }
+    rig.contexts[0].reply?(true, nil)
+    wait(for: [reached], timeout: 3)
+    rig.time.now += 2000
+    try wait { !rig.coordinator.snapshot.trusted }
+    rig.mailbox.release.signal()
+    try wait { rig.mailbox.finishedPublications.contains { $0.kind == .approval } }
+    XCTAssertFalse(rig.mailbox.everVisible.contains { $0.kind == .approval })
+    XCTAssertEqual(rig.store.ledger?.reveals, charged)
+    withExtendedLifetime(pair.0) {}
+  }
+
+  func testGainBeforeDelayedReplySnapshotStillMakesNextLossCancel() throws {
+    let rig = Rig(), pair = try comparing(rig)
+    try rig.coordinator.acknowledgeComparison(rig.coordinator.comparison(pair.1))
+    let snapshot = Handoff<((Bool) -> Void)?>(nil)
+    let validation = Handoff<((Bool) -> Void)?>(nil)
+    try rig.coordinator.allow(pair.1, observingSurfaceAtReply: { snapshot.value = $0 }, validatingSurface: { validation.value = $0 })
+    try wait { rig.contexts.last?.reply != nil }
+    rig.contexts[0].reply?(true, nil)
+    try wait { snapshot.value != nil }
+    XCTAssertFalse(rig.coordinator.panelLive(pair.1))
+    XCTAssertTrue(rig.coordinator.toleratesSoftLoss(pair.1, foreground: false))
+    XCTAssertTrue(rig.coordinator.toleratesSoftLoss(pair.1, foreground: true))
+    snapshot.value?(false)
+    snapshot.value?(false)
+    try wait { validation.value != nil }
+    XCTAssertFalse(rig.coordinator.toleratesSoftLoss(pair.1, foreground: false))
+    validation.value?(true)
+    try wait { !rig.coordinator.snapshot.trusted }
+    XCTAssertFalse(rig.mailbox.everVisible.contains { $0.kind == .approval })
+    withExtendedLifetime(pair.0) {}
+  }
+
+  func testHardLossWhileReplySnapshotIsPendingRejectsLateSnapshot() throws {
+    let rig = Rig(), pair = try comparing(rig)
+    try rig.coordinator.acknowledgeComparison(rig.coordinator.comparison(pair.1))
+    let snapshot = Handoff<((Bool) -> Void)?>(nil)
+    try rig.coordinator.allow(pair.1, observingSurfaceAtReply: { snapshot.value = $0 })
+    try wait { rig.contexts.last?.reply != nil }
+    rig.contexts[0].reply?(true, nil)
+    try wait { snapshot.value != nil }
+    try rig.coordinator.hide(pair.1)
+    snapshot.value?(true)
+    snapshot.value?(false)
+    XCTAssertFalse(rig.coordinator.snapshot.trusted)
+    XCTAssertFalse(rig.mailbox.everVisible.contains { $0.kind == .approval })
+    withExtendedLifetime(pair.0) {}
+  }
+
+  func testForegroundGainBeforeEvaluationDoesNotCancelPendingAuthentication() throws {
+    let rig = Rig()
+    let evaluation = Handoff<(() -> Void)?>(nil)
+    rig.scheduleAuthentication = { evaluation.value = $0 }
+    let pair = try comparing(rig)
+    try rig.coordinator.acknowledgeComparison(rig.coordinator.comparison(pair.1))
+    try rig.coordinator.allow(pair.1)
+    XCTAssertNotNil(evaluation.value)
+    XCTAssertTrue(rig.contexts.isEmpty)
+    XCTAssertTrue(rig.coordinator.toleratesSoftLoss(pair.1, foreground: true))
+    evaluation.value?()
+    XCTAssertEqual(rig.contexts.count, 1)
+    XCTAssertTrue(rig.coordinator.panelLive(pair.1))
+    try? rig.coordinator.hide(pair.1)
+    withExtendedLifetime(pair.0) {}
+  }
+
+  func testReplyDeadlineCancelsPendingSnapshotContextBeforeAdmissionResumes() throws {
+    let rig = Rig(), pair = try comparing(rig)
+    try rig.coordinator.acknowledgeComparison(rig.coordinator.comparison(pair.1))
+    let charged = try XCTUnwrap(rig.store.ledger).reveals
+    XCTAssertEqual(charged.count, 1)
+    let snapshot = Handoff<((Bool) -> Void)?>(nil)
+    try rig.coordinator.allow(pair.1, observingSurfaceAtReply: { snapshot.value = $0 })
+    try wait { rig.contexts.last?.reply != nil }
+    let context = try XCTUnwrap(rig.contexts.first)
+    context.reply?(true, nil)
+    try wait { snapshot.value != nil }
+    XCTAssertFalse(context.invalidated)
+    let entered = DispatchSemaphore(value: 0)
+    let resume = DispatchSemaphore(value: 0)
+    let comparisonFinished = DispatchSemaphore(value: 0)
+    rig.eligibility = {
+      entered.signal()
+      _ = resume.wait(timeout: .now() + 5)
+      return true
+    }
+    defer { rig.eligibility = { true }; resume.signal(); snapshot.value?(false) }
+    DispatchQueue.global().async {
+      _ = try? rig.coordinator.comparison(pair.1)
+      comparisonFinished.signal()
+    }
+    XCTAssertEqual(entered.wait(timeout: .now() + 1), .success)
+    XCTAssertFalse(context.invalidated)
+    rig.time.now += 2000
+    try wait { context.invalidated }
+    XCTAssertFalse(rig.coordinator.panelLive(pair.1))
+    XCTAssertFalse(rig.mailbox.everVisible.contains { $0.kind == .approval })
+    XCTAssertEqual(rig.store.ledger?.reveals, charged)
+    rig.eligibility = { true }
+    resume.signal()
+    XCTAssertEqual(comparisonFinished.wait(timeout: .now() + 1), .success)
+    snapshot.value?(false)
+    try wait { !rig.coordinator.snapshot.trusted }
+    XCTAssertFalse(rig.mailbox.everVisible.contains { $0.kind == .approval })
+    withExtendedLifetime(pair.0) {}
+  }
+
+  func testFinalSurfaceAdmissionWaitsForVisibleReplyWithoutRestoredFocus() throws {
+    let rig = Rig(), pair = try comparing(rig)
+    try rig.coordinator.acknowledgeComparison(rig.coordinator.comparison(pair.1))
+    let reply = Handoff<((Bool) -> Void)?>(nil)
+    try rig.coordinator.allow(pair.1, validatingSurface: { reply.value = $0 })
+    try wait { rig.contexts.last?.reply != nil }
+    rig.contexts[0].reply?(true, nil)
+    try wait { reply.value != nil }
+    XCTAssertTrue(rig.store.consumed.isEmpty, "approval waits for the final visible-surface reply")
+    XCTAssertFalse(rig.mailbox.everVisible.contains { $0.kind == .approval })
+    reply.value?(true)
+    reply.value?(true)
+    try wait { rig.mailbox.everVisible.contains { $0.kind == .approval } }
+    XCTAssertEqual(rig.coordinator.snapshot.trustedPhase, .released)
+    XCTAssertEqual(rig.store.consumed.count, 1, "duplicate surface replies cannot consume two approvals")
+    XCTAssertEqual(rig.mailbox.everVisible.filter { $0.kind == .approval }.count, 1)
+    withExtendedLifetime(pair.0) {}
+  }
+
+  func testFinalSurfaceAdmissionRejectsHardLossAfterSuccessfulAuthentication() throws {
+    let rig = Rig(), pair = try comparing(rig)
+    try rig.coordinator.acknowledgeComparison(rig.coordinator.comparison(pair.1))
+    let chargedReveals = rig.store.ledger?.reveals
+    let checks = Handoff(0)
+    try rig.coordinator.allow(pair.1, validatingSurface: { reply in checks.value += 1; reply(false) })
+    try wait { rig.contexts.last?.reply != nil }
+    rig.contexts[0].reply?(true, nil)
+    try wait { !rig.coordinator.snapshot.trusted }
+    XCTAssertEqual(checks.value, 1, "successful LA requires a final visible-surface check")
+    XCTAssertTrue(rig.store.consumed.isEmpty)
+    XCTAssertFalse(rig.mailbox.everVisible.contains { $0.kind == .approval })
+    XCTAssertEqual(rig.store.ledger?.reveals, chargedReveals)
+    XCTAssertTrue(rig.contexts[0].invalidated)
+    withExtendedLifetime(pair.0) {}
+  }
+
+  func testFinalSurfaceAdmissionRejectsLateVisibleReplyAfterHide() throws {
+    let rig = Rig(), pair = try comparing(rig)
+    try rig.coordinator.acknowledgeComparison(rig.coordinator.comparison(pair.1))
+    let chargedReveals = rig.store.ledger?.reveals
+    let reply = Handoff<((Bool) -> Void)?>(nil)
+    try rig.coordinator.allow(pair.1, validatingSurface: { reply.value = $0 })
+    try wait { rig.contexts.last?.reply != nil }
+    rig.contexts[0].reply?(true, nil)
+    try wait { reply.value != nil }
+    try rig.coordinator.hide(pair.1)
+    reply.value?(true)
+    reply.value?(true)
+    XCTAssertFalse(rig.coordinator.snapshot.trusted)
+    XCTAssertTrue(rig.store.consumed.isEmpty)
+    XCTAssertFalse(rig.mailbox.everVisible.contains { $0.kind == .approval })
+    XCTAssertEqual(rig.store.ledger?.reveals, chargedReveals)
+    XCTAssertTrue(rig.contexts[0].invalidated)
+    withExtendedLifetime(pair.0) {}
+  }
+
+  func testReplyThenInterruptionWhileApprovalMailboxHeldPreventsGrantAndKeepsRevealCharged() throws {
+    let rig = Rig(), pair = try authPending(rig)
+    let charged = rig.store.ledger?.reveals
+    let reached = expectation(description: "approval publication held")
+    rig.mailbox.hold = .approval
+    rig.mailbox.reached = { reached.fulfill() }
+    rig.contexts[0].reply?(true, nil)
+    wait(for: [reached], timeout: 3)
+    XCTAssertFalse(rig.coordinator.panelLive(pair.1))
+    try rig.coordinator.hide(pair.1)
+    rig.mailbox.release.signal()
+    try wait { rig.mailbox.finishedPublications.contains { $0.kind == .approval } }
+    XCTAssertFalse(rig.coordinator.snapshot.trusted)
+    XCTAssertFalse(rig.mailbox.everVisible.contains { $0.kind == .approval })
+    XCTAssertEqual(rig.store.ledger?.reveals, charged)
+    withExtendedLifetime(pair.0) {}
+  }
+
+  func testReplyThenNoLossWhileApprovalMailboxHeldPublishesOnce() throws {
+    let rig = Rig(), pair = try authPending(rig)
+    let reached = expectation(description: "approval publication held")
+    rig.mailbox.hold = .approval
+    rig.mailbox.reached = { reached.fulfill() }
+    rig.contexts[0].reply?(true, nil)
+    wait(for: [reached], timeout: 3)
+    XCTAssertFalse(rig.coordinator.panelLive(pair.1))
+    rig.mailbox.release.signal()
+    try wait { rig.mailbox.everVisible.contains { $0.kind == .approval } }
+    XCTAssertEqual(rig.mailbox.everVisible.filter { $0.kind == .approval }.count, 1)
+    try rig.coordinator.hide(pair.1)
+    XCTAssertEqual(rig.coordinator.snapshot.trustedPhase, .released)
+    withExtendedLifetime(pair.0) {}
+  }
+
+  func testPanelStateCannotTransferToReplacementArm() throws {
+    let rig = Rig(), pair = try authPending(rig)
+    XCTAssertTrue(rig.coordinator.panelLive(pair.1))
+    try rig.coordinator.hide(pair.1)
+    let replacement = try rig.coordinator.armTrusted()
+    XCTAssertFalse(rig.coordinator.panelLive(pair.1))
+    XCTAssertFalse(rig.coordinator.panelLive(replacement))
+    rig.contexts[0].reply?(true, nil)
+    XCTAssertFalse(rig.mailbox.everVisible.contains { $0.kind == .approval })
+    withExtendedLifetime(pair.0) {}
+  }
+
   func testAuthenticationFailureBurnsArm() throws {
     let rig = Rig(), pair = try authPending(rig)
     rig.contexts[0].reply?(false, nil)
@@ -402,6 +958,9 @@ final class PairingCoordinatorTests: XCTestCase {
     for reason in [PairingCoordinator.InvalidationReason.lock, .safeMode, .key, .folder, .surface, .shutdown] {
       let rig = Rig(), pair = try authPending(rig)
       rig.coordinator.invalidate(reason: reason)
+      XCTAssertFalse(rig.coordinator.snapshot.trusted)
+      XCTAssertTrue(rig.contexts[0].invalidated)
+      XCTAssertFalse(rig.coordinator.panelLive(pair.1))
       rig.contexts[0].reply?(true, nil)
       XCTAssertThrowsError(try rig.coordinator.allow(pair.1))
       XCTAssertFalse(rig.mailbox.everVisible.contains { $0.kind == .approval })

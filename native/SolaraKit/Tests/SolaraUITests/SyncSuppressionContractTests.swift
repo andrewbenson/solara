@@ -129,6 +129,8 @@ final class SuppressionContractService: TrustedPairingService {
   }
 
   func acknowledge(_ comparison: TrustedComparison, matched: Bool, on surface: TrustedSurface) -> TrustedAuthorization? { nil }
+  func toleratesSoftLoss(_ arm: TrustedArm) -> Bool { false }
+  func panelLive(_ arm: TrustedArm) -> Bool { false }
   func allow(_ authorization: TrustedAuthorization, on surface: TrustedSurface) async throws { throw Refusal.invalid }
 
   func end(_ arm: TrustedArm?, on surface: TrustedSurface, disposition: TrustedEnd) {

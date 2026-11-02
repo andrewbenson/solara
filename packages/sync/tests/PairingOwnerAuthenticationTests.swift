@@ -24,6 +24,52 @@ final class PairingOwnerAuthenticationTests: XCTestCase {
     .init(handle: Data([1]), transcript: Data([2]), cid: Data([3]), rid: Data([4]), aid: Data([5]), folderIdentity: Data([6]), folderGeneration: 1, entropyHandle: Data([7]), entropyGeneration: 2, sessionGeneration: 3, comparisonGeneration: 4, armGeneration: 5, armDeadline: 120000, requestDeadline: 300000, nameCommitment: Data([8]))
   }
 
+  func testPanelLifetimeEndsAtReplyBeforeAdjudication() {
+    let context = Context()
+    var evaluation: (() -> Void)?
+    var adjudication: (() -> Void)?
+    let factory = FreshPairingOwnerAuthenticator.testing(makeContext: { context }, schedule: { evaluation = $0 }, scheduleReply: { adjudication = $0 })
+    var callbacks = 0
+    let attempt = factory.authenticate(tuple(), validate: { _ in true }, completion: { _ in callbacks += 1 })
+    XCTAssertFalse(attempt.panelLive)
+    evaluation?()
+    XCTAssertTrue(attempt.panelLive)
+    context.reply?(true, nil)
+    XCTAssertFalse(attempt.panelLive)
+    XCTAssertEqual(callbacks, 0)
+    adjudication?()
+    XCTAssertEqual(callbacks, 1)
+    XCTAssertFalse(attempt.panelLive)
+  }
+
+  func testReplySurfaceHandoffDoesNotHoldAttemptLock() {
+    let context = Context()
+    let factory = FreshPairingOwnerAuthenticator.testing(makeContext: { context })
+    let attempt = PairingCoordinatorTests.Handoff<PairingAuthenticationAttempt?>(nil)
+    let cancelled = DispatchSemaphore(value: 0)
+    attempt.value = factory.authenticate(tuple(), validate: { _ in true }, replied: { resume in
+      DispatchQueue.global().async { attempt.value?.cancel(); cancelled.signal() }
+      XCTAssertEqual(cancelled.wait(timeout: .now() + 0.2), .success)
+      XCTAssertEqual(context.invalidations, 1)
+      resume()
+    }, completion: { _ in })
+    context.reply?(true, nil)
+    withExtendedLifetime(attempt.value) {}
+  }
+
+  func testCancellationEndsLivePanelAndRejectsLateReply() {
+    let context = Context()
+    let factory = FreshPairingOwnerAuthenticator.testing(makeContext: { context })
+    var callbacks = 0
+    let attempt = factory.authenticate(tuple(), validate: { _ in true }, completion: { _ in callbacks += 1 })
+    XCTAssertTrue(attempt.panelLive)
+    attempt.cancel()
+    XCTAssertFalse(attempt.panelLive)
+    XCTAssertEqual(context.invalidations, 1)
+    context.reply?(true, nil)
+    XCTAssertEqual(callbacks, 0)
+  }
+
   func testCapabilitySingleUse() {
     let value = tuple(), capability = SyntheticPairingOwnerAuthenticator.authenticated(tuple())
     XCTAssertTrue(capability.consume(matching: value))

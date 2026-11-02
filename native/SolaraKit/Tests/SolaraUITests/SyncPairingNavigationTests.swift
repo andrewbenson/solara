@@ -58,7 +58,7 @@ struct SyncPairingNavigationTests {
     let comparison = service.ready(model)
     service.publish(phase: .authenticating, arm: arm, comparison: comparison)
     pane.sheet = .trustedPairing(surfaceID: arm.id)
-    model.surfaceChanged(.visibilityChanged)
+    model.surfaceChanged(.unavailable)
     #expect(model.arm == nil)
     pane.sheet = nil
     if case .ended(let reason) = model.phase {
@@ -87,7 +87,7 @@ struct SyncPairingNavigationTests {
     let comparison = service.ready(model)
     service.publish(phase: .authenticating, arm: arm, comparison: comparison)
     pane.sheet = .trustedPairing(surfaceID: arm.id)
-    model.surfaceChanged(.visibilityChanged)
+    model.surfaceChanged(.unavailable)
     model.connect()
     let replacement = try #require(model.arm)
     service.publish(arm: replacement)

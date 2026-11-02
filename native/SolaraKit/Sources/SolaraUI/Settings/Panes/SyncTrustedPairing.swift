@@ -11,6 +11,8 @@ public protocol TrustedPairingService: AnyObject {
   func present(_ arm: TrustedArm, on surface: TrustedSurface) throws
   func surfaceChanged(_ surface: TrustedSurface, event: TrustedSurfaceEvent)
   func acknowledge(_ comparison: TrustedComparison, matched: Bool, on surface: TrustedSurface) -> TrustedAuthorization?
+  func toleratesSoftLoss(_ arm: TrustedArm) -> Bool
+  func panelLive(_ arm: TrustedArm) -> Bool
   func allow(_ authorization: TrustedAuthorization, on surface: TrustedSurface) async throws
   func end(_ arm: TrustedArm?, on surface: TrustedSurface, disposition: TrustedEnd)
 }
@@ -83,7 +85,7 @@ public final class TrustedComparison: TrustedCapability {
 
 public enum TrustedPairingFailure: Error { case refused(TrustedEndReason) }
 
-public enum TrustedSurfaceEvent: Sendable { case visibilityChanged, remounted, removed }
+public enum TrustedSurfaceEvent: Sendable { case foreground, visibilityChanged, unavailable, remounted, removed }
 public enum TrustedEnd: Sendable { case deny, cancel, unexpectedRequest }
 public enum TrustedIndicator: Sendable { case none, pending, overflow, suppressed, persistenceFailure }
 public enum TrustedEndReason: Sendable {

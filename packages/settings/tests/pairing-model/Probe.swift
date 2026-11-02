@@ -35,6 +35,8 @@ final class Evidence: @unchecked Sendable {
   func arm(on surface: TrustedSurface, reviewing: TrustedRequest?, options: TrustedArmOptions) throws -> TrustedArm { TrustedArm(deadline: TrustedPairingClock.now() + 100) }
   func select(_ request: TrustedRequest, in arm: TrustedArm) async throws {}
   func present(_ arm: TrustedArm, on surface: TrustedSurface) throws {}
+  func toleratesSoftLoss(_ arm: TrustedArm) -> Bool { false }
+  func panelLive(_ arm: TrustedArm) -> Bool { false }
   func surfaceChanged(_ surface: TrustedSurface, event: TrustedSurfaceEvent) { block("surfaceChanged") }
   func acknowledge(_ comparison: TrustedComparison, matched: Bool, on surface: TrustedSurface) -> TrustedAuthorization? { nil }
   func allow(_ authorization: TrustedAuthorization, on surface: TrustedSurface) async throws {}

@@ -477,15 +477,19 @@ public struct SyncTrustedPairingSheet: View {
       SyncSheetBody(SyncPairingText.intent)
       ScrollView {
         VStack(alignment: .leading, spacing: 12) {
-          if model.requiresExplicitPresentation {
+          if model.phase == .sentUnconfirmed {
+            Text(SyncPairingText.sent)
+          } else if model.phase == .confirmed {
+            Text("Approval received. Sync data is still downloading on your other Mac.")
+          } else if model.phase == .authenticating {
+            Text(SyncPairingText.authenticating)
+          } else if model.requiresExplicitPresentation {
             Button("Review request", action: model.capturePresentation())
-          } else if let comparison = model.comparison {
+          } else if let comparison = model.presentedComparison {
             SyncComparisonView(model: model, comparison: comparison, inspecting: $inspecting)
           } else {
             switch model.phase {
             case .choosing: SyncRequestChooser(model: model)
-            case .sentUnconfirmed: Text(SyncPairingText.sent)
-            case .confirmed: Text("Approval received. Sync data is still downloading on your other Mac.")
             case .ended(let reason):
               Text(SyncPairingText.ended(reason))
               Button("Connect another Mac") { model.connect() }
@@ -515,6 +519,9 @@ public struct SyncTrustedPairingSheet: View {
     }
     .background(SyncPairingSurfaceProbe(model: model, sensitive: true).frame(width: 0, height: 0))
     .onChange(of: model.renderGeneration) { _, _ in inspecting = false }
+    .onChange(of: model.phase) { _, phase in
+      if phase == .authenticating { inspecting = false }
+    }
     .onDisappear {
       if let originalArm, model.arm === originalArm { model.surfaceChanged(.removed) }
     }

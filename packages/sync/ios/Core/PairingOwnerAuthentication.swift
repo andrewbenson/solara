@@ -24,12 +24,16 @@ final class PairingAuthenticationAttempt {
   fileprivate var pending = true
   fileprivate var callbackUsed = false
   fileprivate var cancelled = false
+  private var evaluating = false
+
+  var panelLive: Bool { lock.lock(); defer { lock.unlock() }; return evaluating && !cancelled }
   fileprivate var invalidateContext: (() -> Void)?
 
   func cancel() {
     lock.lock()
     cancelled = true
     pending = false
+    evaluating = false
     let invalidate = invalidateContext
     invalidateContext = nil
     lock.unlock()
@@ -54,12 +58,14 @@ final class PairingAuthenticationAttempt {
     return true
   }
 
-  fileprivate func takeCallback() -> Bool {
+  fileprivate func takeCallback(replied: () -> Void = {}) -> Bool {
     lock.lock()
     defer { lock.unlock() }
     guard pending && !cancelled && !callbackUsed else { return false }
     pending = false
+    evaluating = false
     callbackUsed = true
+    replied()
     return true
   }
 
@@ -67,6 +73,7 @@ final class PairingAuthenticationAttempt {
     lock.lock()
     defer { lock.unlock() }
     guard pending && !cancelled && !callbackUsed else { return }
+    evaluating = true
     evaluate()
   }
 
@@ -83,7 +90,7 @@ final class PairingAuthenticationAttempt {
 
 protocol PairingOwnerAuthenticating: AnyObject {
   @discardableResult
-  func authenticate(_ tuple: PairingSession.Authorization, validate: @escaping (PairingSession.Authorization) -> Bool, completion: @escaping (OwnerAuthentication?) -> Void) -> PairingAuthenticationAttempt
+  func authenticate(_ tuple: PairingSession.Authorization, validate: @escaping (PairingSession.Authorization) -> Bool, replyBegan: @escaping () -> Void, replied: @escaping (@escaping () -> Void) -> Void, completion: @escaping (OwnerAuthentication?) -> Void) -> PairingAuthenticationAttempt
 }
 
 final class FreshPairingOwnerAuthenticator: PairingOwnerAuthenticating {
@@ -125,7 +132,7 @@ final class FreshPairingOwnerAuthenticator: PairingOwnerAuthenticating {
   }
 
   @discardableResult
-  func authenticate(_ tuple: PairingSession.Authorization, validate: @escaping (PairingSession.Authorization) -> Bool, completion: @escaping (OwnerAuthentication?) -> Void) -> PairingAuthenticationAttempt {
+  func authenticate(_ tuple: PairingSession.Authorization, validate: @escaping (PairingSession.Authorization) -> Bool, replyBegan: @escaping () -> Void = {}, replied: @escaping (@escaping () -> Void) -> Void = { $0() }, completion: @escaping (OwnerAuthentication?) -> Void) -> PairingAuthenticationAttempt {
     let attempt = PairingAuthenticationAttempt()
     schedule {
       guard attempt.isPending() else { return }
@@ -139,17 +146,19 @@ final class FreshPairingOwnerAuthenticator: PairingOwnerAuthenticating {
       guard attempt.isPending(), validate(tuple), attempt.isPending() else { attempt.endUnavailable(completion); return }
       attempt.evaluateIfPending {
         context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: Self.reason) { success, error in
-          guard attempt.takeCallback() else { return }
-          self.scheduleReply {
-            let valid = success && error == nil && validate(tuple)
-            attempt.lock.lock()
-            guard !attempt.cancelled else { attempt.lock.unlock(); return }
-            let capability = valid ? OwnerAuthentication(tuple) : nil
-            let invalidate = attempt.invalidateContext
-            attempt.invalidateContext = nil
-            attempt.lock.unlock()
-            invalidate?()
-            completion(capability)
+          guard attempt.takeCallback(replied: replyBegan) else { return }
+          replied {
+            self.scheduleReply {
+              let valid = success && error == nil && validate(tuple)
+              attempt.lock.lock()
+              guard !attempt.cancelled else { attempt.lock.unlock(); return }
+              let capability = valid ? OwnerAuthentication(tuple) : nil
+              let invalidate = attempt.invalidateContext
+              attempt.invalidateContext = nil
+              attempt.lock.unlock()
+              invalidate?()
+              completion(capability)
+            }
           }
         }
       }
@@ -202,8 +211,8 @@ final class SyntheticPairingOwnerAuthenticator: PairingOwnerAuthenticating {
   }
 
   @discardableResult
-  func authenticate(_ tuple: PairingSession.Authorization, validate: @escaping (PairingSession.Authorization) -> Bool, completion: @escaping (OwnerAuthentication?) -> Void) -> PairingAuthenticationAttempt {
-    authenticator.authenticate(tuple, validate: validate, completion: completion)
+  func authenticate(_ tuple: PairingSession.Authorization, validate: @escaping (PairingSession.Authorization) -> Bool, replyBegan: @escaping () -> Void = {}, replied: @escaping (@escaping () -> Void) -> Void = { $0() }, completion: @escaping (OwnerAuthentication?) -> Void) -> PairingAuthenticationAttempt {
+    authenticator.authenticate(tuple, validate: validate, replyBegan: replyBegan, replied: replied, completion: completion)
   }
 }
 #endif

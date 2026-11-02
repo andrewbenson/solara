@@ -528,13 +528,15 @@ public final class PairingServices: PairingJoining, CustomReflectable {
   }
 
   public func present(_ arm: PairingNativeArm) throws { try coordinator?.present(arm.handle) }
+  public func panelLive(_ arm: PairingNativeArm) -> Bool { coordinator?.panelLive(arm.handle) == true }
+  public func toleratesSoftLoss(_ arm: PairingNativeArm, foreground: Bool) -> Bool { coordinator?.toleratesSoftLoss(arm.handle, foreground: foreground) == true }
   public func hide(_ arm: PairingNativeArm) { try? coordinator?.hide(arm.handle) }
   public func comparison(_ arm: PairingNativeArm) throws -> PairingNativeComparison {
     guard let coordinator else { throw PairingCoordinator.Failure.unavailable }
     return try PairingNativeComparison(coordinator.comparison(arm.handle))
   }
   public func acknowledge(_ comparison: PairingNativeComparison) throws { try coordinator?.acknowledgeComparison(comparison.handle) }
-  public func allow(_ arm: PairingNativeArm) throws { try coordinator?.allow(arm.handle) }
+  public func allow(_ arm: PairingNativeArm, observingSurfaceAtReply: @escaping (@escaping (Bool) -> Void) -> Void = { $0(true) }, validatingSurface: @escaping (@escaping (Bool) -> Void) -> Void = { $0(true) }) throws { try coordinator?.allow(arm.handle, observingSurfaceAtReply: observingSurfaceAtReply, validatingSurface: validatingSurface) }
   public func end(_ arm: PairingNativeArm?, unexpected: Bool = false) {
     if unexpected { coordinator?.dismissUnsolicited() }
     else if let arm { try? coordinator?.deny(arm.handle) }

@@ -3,6 +3,7 @@ import Foundation
 enum SyncPairingText {
   static let intent = "Only continue if you just started connecting your other Mac."
   static let preparing = "Preparing a secure connection…"
+  static let authenticating = "Authorizing this connection…"
   static let title = "Another Mac wants to join sync"
   static let authority = "Allow only if all six characters match on the Mac you’re connecting. This grants ongoing access to everything available with your recovery phrase, including synced passwords."
   static let claimQualification = "Matching codes authenticate only this connection’s claim to this name. They do not verify the Mac’s system name, hardware, legal identity or Apple account ownership."

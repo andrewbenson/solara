@@ -59,7 +59,7 @@ private final class SyncPairingDisplayService: TrustedPairingService {
   }
 
   func surfaceChanged(_ surface: TrustedSurface, event: TrustedSurfaceEvent) {
-    guard surface === self.surface else { return }
+    guard surface === self.surface, event != .foreground else { return }
     authorization = nil
     comparison = nil
     admitted = false
@@ -76,6 +76,8 @@ private final class SyncPairingDisplayService: TrustedPairingService {
     return authorization
   }
 
+  func toleratesSoftLoss(_ arm: TrustedArm) -> Bool { false }
+  func panelLive(_ arm: TrustedArm) -> Bool { false }
   func allow(_ authorization: TrustedAuthorization, on surface: TrustedSurface) async throws {
     guard surface === self.surface, authorization === self.authorization, visible, admitted, phase == .comparing,
       let currentArm, TrustedPairingClock.now() < currentArm.deadline else { throw FixtureError.refused }
@@ -223,7 +225,7 @@ final class SyncPairingDisplayFixture: SyncPairingFixtureSession {
       inspectionRequested = true
     case "hide":
       service.visible = false
-      model.surfaceChanged(.visibilityChanged)
+      model.surfaceChanged(.unavailable)
     case "show":
       service.visible = true
       service.publish()
@@ -349,7 +351,7 @@ final class SyncPairingDisplayFixture: SyncPairingFixtureSession {
     let inspect = accessible.first { $0.strings.contains("Inspect name characters") }
     let found = ["allow": allow != nil, "checkbox": checkbox != nil, "deny": deny != nil, "inspect": inspect != nil, "name": nameView != nil]
     var nameLayout: [String: Any] = ["found": nameView != nil, "textViews": texts.count]
-    var nameReason = model.comparison == nil ? "comparison not presented" : "name view unavailable"
+    var nameReason = model.presentedComparison == nil ? "comparison not presented" : "name view unavailable"
     let complete = nameView.map { text in
       guard let layout = text.layoutManager, let container = text.textContainer else { nameReason = "name layout unavailable"; return false }
       layout.ensureLayout(for: container)
@@ -373,7 +375,7 @@ final class SyncPairingDisplayFixture: SyncPairingFixtureSession {
       guard contained(text) else { nameReason = "name view outside visible content"; return false }
       return true
     } ?? false
-    let required = model.comparison != nil ? ["allow", "checkbox", "deny", "inspect", "name"] : ["allow", "deny"]
+    let required = model.presentedComparison != nil ? ["allow", "checkbox", "deny", "inspect", "name"] : ["allow", "deny"]
     let missing = required.filter { found[$0] != true }
     let visible = missing.isEmpty && allow.map(contained) == true
     var strings = allViews.flatMap { view -> [String] in
@@ -389,14 +391,14 @@ final class SyncPairingDisplayFixture: SyncPairingFixtureSession {
     var result: [String: Any] = ["fixture": true, "mounted": true, "choosing": model.phase == .choosing, "preparing": model.phase == .preparing,
       "authenticating": model.phase == .authenticating, "ended": endedReason != nil, "armActive": model.arm != nil,
       "endedMessage": endedMessage ?? "", "retryAvailable": retryAvailable,
-      "comparisonPresent": model.comparison != nil, "checked": checkbox.map { $0.state == .on && model.matched } ?? false,
+      "comparisonPresent": model.presentedComparison != nil, "checked": checkbox.map { $0.state == .on && model.matched } ?? false,
       "allowEnabled": allow.map { $0.isEnabled && model.canAllow } ?? false,
       "allowRequests": service.allowRequests, "realAuthenticationRequests": 0, "releaseRequests": 0,
       "nameFullyRendered": complete, "nameLayout": nameLayout, "inspectionComplete": inspection, "controlsVisible": visible,
       "controlsFound": found, "requiredControlsFound": missing.isEmpty, "windows": windowStructure()]
     if !complete { result["nameFullyRenderedReason"] = nameReason }
     if !visible { result["controlsVisibleReason"] = missing.isEmpty ? "controls outside visible content" : "missing controls: " + missing.joined(separator: ", ") }
-    if checkbox == nil { result["checkedReason"] = model.comparison == nil ? "comparison not presented" : "checkbox unavailable" }
+    if checkbox == nil { result["checkedReason"] = model.presentedComparison == nil ? "comparison not presented" : "checkbox unavailable" }
     if allow == nil { result["allowEnabledReason"] = "allow unavailable" }
     if !inspection { result["inspectionCompleteReason"] = inspect == nil ? "inspect control unavailable" : (nameView == nil ? "name view unavailable" : (inspectionRequested ? "inspection text unavailable" : "inspection not requested")) }
     return result

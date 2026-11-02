@@ -237,7 +237,7 @@ struct SyncTrustedPairingModelTests {
     for event: TrustedSurfaceEvent in [.remounted, .removed] {
       let (service, model, _) = setup()
       model.connect()
-      guard let arm = service.arms.last else { Issue.record("native arm absent"); continue }
+      guard !service.arms.isEmpty else { Issue.record("native arm absent"); continue }
       let c = service.ready(model)
       model.setMatched(true, comparison: c, render: model.renderGeneration)
       let toggle = model.captureToggle()
@@ -250,7 +250,7 @@ struct SyncTrustedPairingModelTests {
       #expect(model.comparison == nil)
       #expect(!model.canAllow)
       if event == .removed { #expect(model.arm == nil) }
-      else { #expect(model.arm === arm) }
+      else { #expect(model.arm === c.arm) }
     }
   }
 
@@ -281,7 +281,7 @@ struct SyncTrustedPairingModelTests {
     model.captureAllow()()
     await Task.yield()
     #expect(service.allowed.count == 1)
-    model.surfaceChanged(.visibilityChanged)
+    model.surfaceChanged(.unavailable)
     service.publish(phase: .authenticating, arm: arm, comparison: c)
     #expect(model.comparison == nil)
     #expect(!model.canAllow)
@@ -303,7 +303,7 @@ struct SyncTrustedPairingModelTests {
     #expect(model.phase == .authenticating)
     service.publish(phase: .comparing, arm: arm, comparison: comparison)
     #expect(model.phase == .authenticating)
-    model.surfaceChanged(.visibilityChanged)
+    model.surfaceChanged(.unavailable)
     if case .ended(let reason) = model.phase {
       #expect(SyncPairingText.ended(reason) == "Pairing stopped. Try again.")
     } else { Issue.record("interrupted exchange did not end") }
@@ -344,7 +344,7 @@ struct SyncTrustedPairingModelTests {
     let comparison = service.ready(model)
     model.setMatched(true, comparison: comparison, render: model.renderGeneration)
     model.captureAllow()()
-    model.surfaceChanged(.visibilityChanged)
+    model.surfaceChanged(.unavailable)
     service.publish(phase: .sentUnconfirmed, arm: arm)
     await Task.yield()
     if case .ended(let reason) = model.phase {
@@ -360,7 +360,7 @@ struct SyncTrustedPairingModelTests {
 
   @Test func surfaceInterruptionUsesLocalRetryCopyOnlyWhenItEndsALiveArm() throws {
     for phase: TrustedPhase in [.choosing, .preparing, .comparing, .authenticating] {
-      for event: TrustedSurfaceEvent in [.visibilityChanged, .remounted, .removed] {
+      for event: TrustedSurfaceEvent in [.visibilityChanged, .unavailable, .remounted, .removed] {
         let (service, model, window) = setup()
         defer { _ = window.windowNumber }
         model.connect()
@@ -447,7 +447,7 @@ struct SyncTrustedPairingModelTests {
     let comparison = service.ready(model)
     model.setMatched(true, comparison: comparison, render: model.renderGeneration)
     model.captureAllow()()
-    model.surfaceChanged(.visibilityChanged)
+    model.surfaceChanged(.unavailable)
     await Task.yield()
     #expect(service.allowed.isEmpty)
   }

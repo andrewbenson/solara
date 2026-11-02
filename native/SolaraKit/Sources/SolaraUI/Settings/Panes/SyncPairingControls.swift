@@ -160,15 +160,38 @@ struct SyncClaimedNameText: NSViewRepresentable {
   }
 }
 
+enum SyncPairingWindowState: Equatable {
+  case foreground, softLoss, hardLoss
+
+  static func classify(attached: Bool, visible: Bool, parentVisible: Bool, miniaturized: Bool, hidden: Bool, active: Bool, key: Bool, occluded: Bool, onActiveSpace: Bool = true) -> Self {
+    guard attached, visible, parentVisible, !miniaturized, !hidden, onActiveSpace else { return .hardLoss }
+    return active && key && !occluded ? .foreground : .softLoss
+  }
+
+  var event: TrustedSurfaceEvent? {
+    switch self {
+    case .foreground: nil
+    case .softLoss: .visibilityChanged
+    case .hardLoss: .unavailable
+    }
+  }
+}
+
 @MainActor
 final class SyncPairingProbeView: NSView {
+  var notificationCenter = NotificationCenter.default
+  var workspaceNotificationCenter = NSWorkspace.shared.notificationCenter
+  var distributedNotificationCenter: NotificationCenter = DistributedNotificationCenter.default()
+  var applicationIsActive: () -> Bool = { NSApp.isActive }
   var attach: (NSWindow) -> Void = { _ in }
   var changed: (TrustedSurfaceEvent) -> Void = { _ in }
   var sensitive = false
   var deny: () -> Void = {}
   private var notifications: [NSObjectProtocol] = []
+  private var workspaceNotifications: [NSObjectProtocol] = []
+  private var screensaverNotification: NSObjectProtocol?
   private var keys: Any?
-  private var visibility: NSKeyValueObservation?
+  private var visibility: [NSKeyValueObservation] = []
   private weak var observedWindow: NSWindow?
   override func performKeyEquivalent(with event: NSEvent) -> Bool {
     if sensitive && (event.keyCode == 36 || event.keyCode == 76 || event.keyCode == 53) { deny(); return true }
@@ -188,21 +211,51 @@ final class SyncPairingProbeView: NSView {
                  NSWindow.didDeminiaturizeNotification, NSWindow.didChangeOcclusionStateNotification,
                  NSApplication.didResignActiveNotification, NSApplication.didBecomeActiveNotification, NSApplication.didHideNotification,
                  NSApplication.didUnhideNotification] {
-      notifications.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self, weak window] notification in
+      notifications.append(notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self, weak window] notification in
         let source = notification.object as? NSWindow
+        let name = notification.name
         MainActor.assumeIsolated {
           guard let self, let window else { return }
           if let source,
              source !== window && source !== window.sheetParent && !window.sheets.contains(where: { $0 === source }) { return }
-          if !Self.isForeground(window) { self.changed(.visibilityChanged) }
+          let state = self.state(of: window)
+          if name == NSWindow.didMiniaturizeNotification || name == NSApplication.didHideNotification || state == .hardLoss {
+            self.changed(.unavailable)
+          } else if state == .foreground {
+            self.changed(.foreground)
+          } else if name == NSWindow.didResignKeyNotification || name == NSApplication.didResignActiveNotification ||
+                    name == NSWindow.didChangeOcclusionStateNotification && !(source ?? window).occlusionState.contains(.visible) {
+            self.changed(.visibilityChanged)
+          }
         }
       })
     }
-    notifications.append(NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { [weak self] _ in
-      MainActor.assumeIsolated { self?.changed(.removed) }
+    let workspace = workspaceNotificationCenter
+    for name in [NSWorkspace.sessionDidResignActiveNotification, NSWorkspace.screensDidSleepNotification, NSWorkspace.willSleepNotification] {
+      workspaceNotifications.append(workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+        MainActor.assumeIsolated { self?.changed(.unavailable) }
+      })
+    }
+    workspaceNotifications.append(workspace.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) { [weak self, weak window] _ in
+      MainActor.assumeIsolated {
+        guard let self, let window, self.state(of: window) == .hardLoss else { return }
+        self.changed(.unavailable)
+      }
     })
-    visibility = window.observe(\.isVisible, options: [.new]) { [weak self] _, _ in
-      MainActor.assumeIsolated { self?.changed(.visibilityChanged) }
+    screensaverNotification = distributedNotificationCenter.addObserver(forName: Notification.Name("com.apple.screensaver.didstart"), object: nil, queue: .main) { [weak self] _ in
+      MainActor.assumeIsolated { self?.changed(.unavailable) }
+    }
+    let parent = window.sheetParent ?? window
+    for observed in parent === window ? [window] : [window, parent] {
+      notifications.append(notificationCenter.addObserver(forName: NSWindow.willCloseNotification, object: observed, queue: .main) { [weak self] _ in
+        MainActor.assumeIsolated { self?.changed(.removed) }
+      })
+      visibility.append(observed.observe(\.isVisible, options: [.new]) { [weak self, weak window] _, _ in
+        MainActor.assumeIsolated {
+          guard let self, let window else { return }
+          if self.state(of: window) == .hardLoss { self.changed(.unavailable) }
+        }
+      })
     }
     if sensitive {
       keys = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self, weak window] event in
@@ -215,19 +268,25 @@ final class SyncPairingProbeView: NSView {
       }
     }
   }
-  static func isForeground(_ window: NSWindow) -> Bool {
+  private func state(of window: NSWindow) -> SyncPairingWindowState {
     let parent = window.sheetParent ?? window
     let family = [parent] + parent.sheets
-    return NSApp.isActive && !NSApp.isHidden && parent.isVisible && !parent.isMiniaturized &&
-      family.contains { $0.isKeyWindow && $0.occlusionState.contains(.visible) }
+    let keyVisible = family.contains { $0.isKeyWindow && $0.occlusionState.contains(.visible) }
+    return .classify(attached: self.window === window && (!sensitive || window.sheetParent != nil), visible: window.isVisible,
+                     parentVisible: parent.isVisible, miniaturized: parent.isMiniaturized || window.isMiniaturized,
+                     hidden: NSApp.isHidden, active: applicationIsActive(), key: family.contains { $0.isKeyWindow }, occluded: !keyVisible, onActiveSpace: window.isOnActiveSpace)
   }
   func stopObserving() {
-    for token in notifications { NotificationCenter.default.removeObserver(token) }
+    for token in notifications { notificationCenter.removeObserver(token) }
     notifications = []
+    for token in workspaceNotifications { workspaceNotificationCenter.removeObserver(token) }
+    workspaceNotifications = []
+    if let screensaverNotification { distributedNotificationCenter.removeObserver(screensaverNotification) }
+    screensaverNotification = nil
     if let keys { NSEvent.removeMonitor(keys) }
     keys = nil
-    visibility?.invalidate()
-    visibility = nil
+    for observation in visibility { observation.invalidate() }
+    visibility = []
     observedWindow = nil
   }
 }

@@ -15,12 +15,18 @@ final class TrustedPairingTestService: TrustedPairingService {
   var acknowledgments: [Bool] = []
   var allowed: [TrustedAuthorization] = []
   var ends: [TrustedEnd] = []
+  var granted: [TrustedAuthorization] = []
   var canceledObservers = 0
   var clock: TimeInterval = 10
   var heldAllow: CheckedContinuation<Void, Never>?
+  var livePanelArm: TrustedArm?
+  func panelLive(_ arm: TrustedArm) -> Bool { livePanelArm === arm }
+  var toleratingSoftLoss = false
+  func toleratesSoftLoss(_ arm: TrustedArm) -> Bool { panelLive(arm) || toleratingSoftLoss }
   var holdAllow = false
   var authorization: TrustedAuthorization?
   var options: [TrustedArmOptions] = []
+  var onSurfaceChanged: (() -> Void)?
 
   func observe(on surface: TrustedSurface?, _ receive: @escaping @MainActor (TrustedSnapshot) -> Void) -> TrustedSubscription {
     let id = UUID()
@@ -40,7 +46,9 @@ final class TrustedPairingTestService: TrustedPairingService {
   func select(_ request: TrustedRequest, in arm: TrustedArm) async throws { selections.append(request) }
   func present(_ arm: TrustedArm, on surface: TrustedSurface) throws { presentations.append(arm) }
   func surfaceChanged(_ surface: TrustedSurface, event: TrustedSurfaceEvent) {
+    if event == .foreground { toleratingSoftLoss = false; return }
     events.append(event)
+    onSurfaceChanged?()
     authorization = nil
     if event == .removed { attached = false }
   }
@@ -51,7 +59,12 @@ final class TrustedPairingTestService: TrustedPairingService {
   }
   func allow(_ authorization: TrustedAuthorization, on surface: TrustedSurface) async throws {
     allowed.append(authorization)
+    livePanelArm = arms.last
+    let ending = ends.count
+    let interruptions = events.count
     if holdAllow { await withCheckedContinuation { heldAllow = $0 } }
+    livePanelArm = nil
+    if attached && ends.count == ending && events.count == interruptions { granted.append(authorization) }
   }
   func end(_ arm: TrustedArm?, on surface: TrustedSurface, disposition: TrustedEnd) { ends.append(disposition); authorization = nil }
   func publish(phase: TrustedPhase = .choosing, arm: TrustedArm? = nil, comparison: TrustedComparison? = nil, foreground: Bool = true, verified: Bool = true, eligible: Bool = true, indicator: TrustedIndicator = .none, requests: [TrustedRequest] = []) {

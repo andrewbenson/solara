@@ -8,6 +8,7 @@ public final class SyncTrustedPairingModel {
   public private(set) var indicator: TrustedIndicator = .none
   public private(set) var requests: [TrustedRequest] = []
   public private(set) var comparison: TrustedComparison?
+  public var presentedComparison: TrustedComparison? { phase == .comparing ? comparison : nil }
   public private(set) var renderGeneration: UInt64 = 0
   public private(set) var actionGeneration: UInt64 = 0
   public private(set) var presentationGeneration: UInt64 = 0
@@ -15,7 +16,7 @@ public final class SyncTrustedPairingModel {
   public private(set) var eligible = false
   public private(set) var arm: TrustedArm?
   public private(set) var matched = false
-  public var requiresExplicitPresentation: Bool { arm != nil && !presentationAdmitted }
+  public var requiresExplicitPresentation: Bool { arm != nil && delivery == nil && !presentationAdmitted }
   public var canDismissUnexpected: Bool { markerVerified && isPresented && arm != nil }
   public var canAllow: Bool {
     eligible && markerVerified && foreground && presentationAdmitted && phase == .comparing && matched &&
@@ -194,7 +195,7 @@ public final class SyncTrustedPairingModel {
       Task { [weak self] in
         guard let self, self.phase == .authenticating, self.comparison === comparison,
               self.renderGeneration == render, self.actionGeneration == action,
-              self.foreground, self.eligible, self.now() < comparison.arm.deadline else { return }
+              self.arm === comparison.arm, self.foreground, self.presentationAdmitted, self.eligible, self.now() < comparison.arm.deadline else { return }
         do { try await self.service.allow(authorization, on: surface) }
         catch {
           guard self.arm === comparison.arm, self.renderGeneration == render else { return }
@@ -207,6 +208,8 @@ public final class SyncTrustedPairingModel {
 
   public func surfaceChanged(_ event: TrustedSurfaceEvent) {
     guard let surface else { return }
+    if event == .foreground { service.surfaceChanged(surface, event: event); return }
+    if event == .visibilityChanged, let arm, service.toleratesSoftLoss(arm) { foreground = false; return }
     let authenticationInterrupted = phase == .authenticating
     let interruptionEndsArm = arm != nil && (authenticationInterrupted || event == .removed)
     presentationGeneration &+= 1
@@ -214,6 +217,8 @@ public final class SyncTrustedPairingModel {
     foreground = false
     presentationAdmitted = false
     if interruptionEndsArm, delivery == nil { phase = .ended(.interrupted) }
+    service.surfaceChanged(surface, event: event)
+    if authenticationInterrupted && event != .removed { end(.cancel) }
     if event == .removed {
       if let arm { consumed.insert(arm.id) }
       arm = nil
@@ -223,8 +228,6 @@ public final class SyncTrustedPairingModel {
       else { phase = delivery ?? .ended(.removed) }
       expiry?.cancel()
     }
-    service.surfaceChanged(surface, event: event)
-    if authenticationInterrupted && event != .removed { end(.cancel) }
     if event == .removed { self.surface = nil; window = nil }
   }
 
@@ -283,6 +286,18 @@ public final class SyncTrustedPairingModel {
       if case .ended = snapshot.phase, delivery == nil, phase != .ended(.interrupted) { phase = snapshot.phase }
       return
     }
+    if phase == .authenticating {
+      let continuing = snapshot.phase == .comparing || snapshot.phase == .authenticating
+      let completing = snapshot.phase == .sentUnconfirmed || snapshot.phase == .confirmed
+      let ended: Bool
+      if case .ended = snapshot.phase { ended = true } else { ended = false }
+      guard snapshot.arm === arm, eligible, markerVerified, now() < arm.deadline,
+            ended || completing || continuing && snapshot.comparison === comparison && comparison != nil else {
+        end(.cancel)
+        phase = .ended(now() >= arm.deadline ? .expired : .verificationFailed)
+        return
+      }
+    }
     guard snapshot.arm === arm, !consumed.contains(arm.id), now() < arm.deadline,
           eligible, markerVerified else {
       clearComparison()
@@ -290,7 +305,14 @@ public final class SyncTrustedPairingModel {
       if !eligible || now() >= arm.deadline { expire(arm) }
       return
     }
-    if snapshot.phase == .sentUnconfirmed || snapshot.phase == .confirmed { delivery = snapshot.phase }
+    if snapshot.phase == .sentUnconfirmed || snapshot.phase == .confirmed {
+      delivery = snapshot.phase
+      phase = snapshot.phase
+      clearComparison()
+      foreground = snapshot.foreground
+      isPresented = true
+      return
+    }
     if case .ended = snapshot.phase {
       clearComparison()
       consumed.insert(arm.id)
@@ -300,13 +322,13 @@ public final class SyncTrustedPairingModel {
       expiry?.cancel()
       return
     }
-    guard presentationAdmitted, snapshot.foreground else {
+    guard presentationAdmitted, snapshot.foreground || phase == .authenticating else {
       clearComparison()
       foreground = false
       presentationAdmitted = false
       return
     }
-    foreground = true
+    foreground = snapshot.foreground
     isPresented = true
     if phase != .authenticating || snapshot.phase != .comparing { phase = snapshot.phase }
     guard snapshot.phase == .comparing || snapshot.phase == .authenticating else {

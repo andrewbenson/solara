@@ -809,20 +809,95 @@ const void *kFullScreenLightsWatchKey = &kFullScreenLightsWatchKey;
 
 @end
 
-@interface NSTitlebarAccessoryViewController (ACRevealAmount)
-- (double)revealAmount;
-- (void)setRevealAmount:(double)revealAmount;
+@interface ACTitlebarRevealWatch : NSObject
+@property(nonatomic, weak, readonly) NSWindow *bar;
+- (instancetype)initWithWindow:(NSWindow *)window findBar:(NSWindow * (^)(NSWindow *))findBar changed:(void (^)(void))changed;
+- (void)refresh;
+- (void)stop;
 @end
 
-@interface ACTitlebarRevealWatch : NSTitlebarAccessoryViewController
-@property(nonatomic, copy) void (^revealChanged)(void);
-@end
+@implementation ACTitlebarRevealWatch {
+  __weak NSWindow *_window;
+  NSWindow * (^_findBar)(NSWindow *);
+  void (^_changed)(void);
+  NSArray *_windowObservers;
+  NSArray *_barObservers;
+  NSTimer *_settle;
+  CFTimeInterval _settleUntil;
+}
 
-@implementation ACTitlebarRevealWatch
+- (instancetype)initWithWindow:(NSWindow *)window findBar:(NSWindow * (^)(NSWindow *))findBar changed:(void (^)(void))changed {
+  if ((self = [super init])) {
+    _window = window;
+    _findBar = [findBar copy];
+    _changed = [changed copy];
+    _windowObservers = [self observe:@[ NSWindowDidChangeScreenNotification, NSWindowDidChangeOcclusionStateNotification ] of:window];
+  }
+  return self;
+}
 
-- (void)setRevealAmount:(double)revealAmount {
-  [super setRevealAmount:revealAmount];
-  if (self.revealChanged) self.revealChanged();
+- (NSArray *)observe:(NSArray<NSNotificationName> *)names of:(NSWindow *)object {
+  __weak ACTitlebarRevealWatch *weakSelf = self;
+  NSMutableArray *observers = [NSMutableArray array];
+  for (NSNotificationName name in names)
+    [observers addObject:[NSNotificationCenter.defaultCenter addObserverForName:name
+                                                                         object:object
+                                                                          queue:nil
+                                                                     usingBlock:^(NSNotification *) { [weakSelf refresh]; }]];
+  return observers;
+}
+
+- (void)forget:(NSArray *)observers {
+  for (id observer in observers) [NSNotificationCenter.defaultCenter removeObserver:observer];
+}
+
+- (void)bind {
+  NSWindow *window = _window;
+  NSWindow *bar = window ? _findBar(window) : nil;
+  if (bar == _bar && (bar || !_barObservers.count)) return;
+  [self forget:_barObservers];
+  _barObservers = nil;
+  _bar = bar;
+  if (bar)
+    _barObservers = [self observe:@[ NSWindowDidMoveNotification, NSWindowDidResizeNotification, NSWindowDidChangeOcclusionStateNotification ] of:bar];
+}
+
+- (void)tick {
+  if (!_window) return [self stop];
+  [self bind];
+  _changed();
+}
+
+- (void)refresh {
+  [self tick];
+  if (!_window) return;
+  _settleUntil = CACurrentMediaTime() + 0.5;
+  if (_settle) return;
+  __weak ACTitlebarRevealWatch *weakSelf = self;
+  _settle = [NSTimer timerWithTimeInterval:1.0 / 60
+                                   repeats:YES
+                                     block:^(NSTimer *timer) {
+                                       ACTitlebarRevealWatch *watch = weakSelf;
+                                       if (!watch) return [timer invalidate];
+                                       [watch tick];
+                                       if (CACurrentMediaTime() < watch->_settleUntil) return;
+                                       [timer invalidate];
+                                       watch->_settle = nil;
+                                     }];
+  [NSRunLoop.mainRunLoop addTimer:_settle forMode:NSRunLoopCommonModes];
+}
+
+- (void)stop {
+  [self forget:_windowObservers];
+  [self forget:_barObservers];
+  _windowObservers = nil;
+  _barObservers = nil;
+  [_settle invalidate];
+  _settle = nil;
+}
+
+- (void)dealloc {
+  [self stop];
 }
 
 @end
@@ -831,9 +906,16 @@ namespace {
 
 const void *kTitlebarRevealWatchKey = &kTitlebarRevealWatchKey;
 
+NSWindow *FullScreenTitlebarWindow(NSWindow *window) {
+  NSWindow *bar = [window standardWindowButton:NSWindowCloseButton].window;
+  return bar != window ? bar : nil;
+}
+
 BOOL FullScreenTitlebarRevealed(NSWindow *window) {
   ACTitlebarRevealWatch *watch = window ? objc_getAssociatedObject(window, kTitlebarRevealWatchKey) : nil;
-  return watch && (window.styleMask & NSWindowStyleMaskFullScreen) && watch.revealAmount > 0;
+  NSWindow *bar = watch.bar;
+  if (!bar || !(window.styleMask & NSWindowStyleMaskFullScreen) || !bar.isVisible || bar.alphaValue <= 0) return NO;
+  return NSHeight(NSIntersectionRect(bar.frame, window.screen.frame)) > 0;
 }
 
 void PlaceFullScreenLights(NSWindow *window) {
@@ -875,47 +957,34 @@ void ShowLightsForReveal(NSWindow *window) {
 }
 
 void WatchTitlebarReveal(NSWindow *window) {
-  if (!(window.styleMask & NSWindowStyleMaskFullScreen) || objc_getAssociatedObject(window, kTitlebarRevealWatchKey) ||
-      ![NSTitlebarAccessoryViewController instancesRespondToSelector:@selector(setRevealAmount:)])
-    return;
-  ACTitlebarRevealWatch *watch = [[ACTitlebarRevealWatch alloc] init];
-  watch.view = [[NSView alloc] initWithFrame:NSZeroRect];
-  watch.layoutAttribute = NSLayoutAttributeBottom;
-  watch.fullScreenMinHeight = 0;
-  __weak NSWindow *weakWindow = window;
-  __weak ACTitlebarRevealWatch *weakWatch = watch;
-  watch.revealChanged = ^{
-    NSWindow *w = weakWindow;
-    if (w && objc_getAssociatedObject(w, kTitlebarRevealWatchKey) == weakWatch) ShowLightsForReveal(w);
-  };
-  objc_setAssociatedObject(window, kTitlebarRevealWatchKey, watch, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-  [window addTitlebarAccessoryViewController:watch];
-}
-
-void RefreshTitlebarReveal(NSWindow *window) {
+  if (!(window.styleMask & NSWindowStyleMaskFullScreen)) return;
   ACTitlebarRevealWatch *watch = objc_getAssociatedObject(window, kTitlebarRevealWatchKey);
-  if (!watch) return;
-  watch.hidden = YES;
-  watch.hidden = NO;
+  if (!watch) {
+    __weak NSWindow *weakWindow = window;
+    watch = [[ACTitlebarRevealWatch alloc] initWithWindow:window
+                                                  findBar:^NSWindow *(NSWindow *w) { return FullScreenTitlebarWindow(w); }
+                                                  changed:^{
+                                                    if (NSWindow *w = weakWindow) ShowLightsForReveal(w);
+                                                  }];
+    objc_setAssociatedObject(window, kTitlebarRevealWatchKey, watch, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+  }
+  [watch refresh];
 }
 
 void LogFullScreenTitlebar(NSWindow *window) {
   ACTitlebarRevealWatch *watch = objc_getAssociatedObject(window, kTitlebarRevealWatchKey);
-  NSWindow *bar = nil;
-  for (NSWindow *child in window.childWindows)
-    if ([NSStringFromClass(child.class) containsString:@"NSToolbarFullScreenWindow"]) bar = child;
+  NSWindow *bar = FullScreenTitlebarWindow(window);
   NSLog(@"[solaracore-fullscreen] window %ld entered: toolbar window %@ frame %@ visible %d alpha %.2f level %ld frameHidden %d; "
-        @"screen %@; reveal watch %d revealAmount %.2f",
+        @"screen %@; reveal watch %d revealed %d",
         (long)window.windowNumber, bar ? @"found" : @"none", bar ? NSStringFromRect(bar.frame) : @"-", bar.isVisible, bar.alphaValue,
-        (long)bar.level, bar.contentView.superview.hidden, NSStringFromRect(window.screen.frame), watch != nil, watch ? watch.revealAmount : -1.0);
+        (long)bar.level, bar.contentView.superview.hidden, NSStringFromRect(window.screen.frame), watch != nil, FullScreenTitlebarRevealed(window));
 }
 
 void UnwatchTitlebarReveal(NSWindow *window) {
   ACTitlebarRevealWatch *watch = objc_getAssociatedObject(window, kTitlebarRevealWatchKey);
   if (!watch) return;
-  watch.revealChanged = nil;
+  [watch stop];
   objc_setAssociatedObject(window, kTitlebarRevealWatchKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-  [watch removeFromParentViewController];
 }
 
 }
@@ -932,15 +1001,9 @@ void UnwatchTitlebarReveal(NSWindow *window) {
   ACFullScreenLightsWatch *watch = [[ACFullScreenLightsWatch alloc] init];
   watch->_window = window;
   NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
-  [center addObserver:watch selector:@selector(willEnter) name:NSWindowWillEnterFullScreenNotification object:window];
   [center addObserver:watch selector:@selector(didEnter) name:NSWindowDidEnterFullScreenNotification object:window];
   [center addObserver:watch selector:@selector(didExit) name:NSWindowDidExitFullScreenNotification object:window];
   objc_setAssociatedObject(window, kFullScreenLightsWatchKey, watch, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-}
-
-- (void)willEnter {
-  NSWindow *window = _window;
-  if (window) WatchTitlebarReveal(window);
 }
 
 - (void)didEnter {
@@ -949,7 +1012,6 @@ void UnwatchTitlebarReveal(NSWindow *window) {
   ShowFullScreenLights(window, YES);
   HideStandardLights(window, YES);
   WatchTitlebarReveal(window);
-  RefreshTitlebarReveal(window);
   ShowLightsForReveal(window);
   LogFullScreenTitlebar(window);
 }

@@ -303,7 +303,7 @@ checkKeys("Personal's pages run in Personal's profile when Work was the last use
   `personal ${homeContext}, work ${workContext}`);
 
 const hangEvents = async () =>
-  Object.entries((await instance.eval("return globalThis.acPerf.read().tasks", { timeout: 10000 })) ?? {}).filter(([k]) => /Unresponsive/.test(k)).reduce((n, [, c]) => n + c, 0);
+  (await instance.eval("return Object.values(ac.pageState.getState().pages).filter((p) => p.unresponsive).length", { timeout: 10000 })) ?? 0;
 let hang;
 try {
   const { targetId: busyId } = await browserCall("Target.createTarget", { url: `${pages}/busy.html` });

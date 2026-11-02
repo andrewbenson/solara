@@ -1,17 +1,20 @@
 #import "ACChromeWindow.h"
 #import "SolaraCoreEarlyWindow.h"
 #import "SolaraCoreEscapeKey.h"
+#import "SolaraCorePopupSpace.h"
 #import "SolaraCoreInternal.h"
 #import "SolaraCoreWebView.h"
 #import "SolaraCoreWebViewInternal.h"
 #import "SolaraCoreServices.h"
 #import "SolaraCoreTabParking.h"
+#import "SolaraCoreTabInsertion.h"
 
 #import <QuartzCore/QuartzCore.h>
 #import <objc/message.h>
 #import <objc/runtime.h>
 
 #include <initializer_list>
+#include <optional>
 
 namespace {
 
@@ -1612,7 +1615,7 @@ NSMapTable<SolaraCoreProfile *, SolaraCoreWindowController *> *StandaloneWindows
 - (void)window:(SolaraCoreWindow *)window didInsertTab:(SolaraCoreTab *)tab opener:(SolaraCoreTab *)opener disposition:(NSString *)disposition {
   [SolaraCoreTabStrip changedInWindow:self profile:tab.profile];
   if (_hostChanges > 0) return;
-  if (_awaitingApp) {
+  if (solaracore_tabs::ShouldAnnounceInsertedTab(_awaitingApp, disposition)) {
     __weak SolaraCoreWindowController *weakSelf = self;
     dispatch_async(dispatch_get_main_queue(), ^{ [weakSelf announceChromeMadeTab:tab tries:0]; });
     return;
@@ -2002,6 +2005,7 @@ NSImage *_Nullable PermissionIcon(NSDictionary *request) {
   SolaraCorePopupOriginStrip *_strip;
   id _closeObserver;
   BOOL _adopting;
+  std::optional<NSWindowCollectionBehavior> _collectionBehaviorToRestore;
   NSMutableArray<NSDictionary *> *_permissionQueue;
   NSDictionary *_shownPermission;
   NSAlert *_permissionAlert;
@@ -2144,6 +2148,7 @@ NSImage *_Nullable PermissionIcon(NSDictionary *request) {
                       NSWindowStyleMaskResizable;
   window.releasedWhenClosed = NO;
   window.tabbingMode = NSWindowTabbingModeDisallowed;
+  window.collectionBehavior = solaracore_popup::CollectionBehavior(window.collectionBehavior);
   window.minSize = NSMakeSize(200, 150);
   [window setContentSize:size];
   [self placeWithFeatures:features];
@@ -2201,9 +2206,29 @@ NSImage *_Nullable PermissionIcon(NSDictionary *request) {
   [host addSubview:_strip positioned:NSWindowAbove relativeTo:page];
   [self updateTitle];
   [self updateOrigin];
-  if (solaracore_host::Background()) [_coreWindow showInactive];
-  else [_coreWindow.window makeKeyAndOrderFront:nil];
+  [self show];
   [_tab focus];
+}
+
+- (void)restoreCollectionBehavior {
+  if (!_collectionBehaviorToRestore) return;
+  _coreWindow.window.collectionBehavior = *_collectionBehaviorToRestore;
+  _collectionBehaviorToRestore.reset();
+}
+
+- (void)show {
+  if (solaracore_host::Background()) return [_coreWindow showInactive];
+  [self restoreCollectionBehavior];
+  NSWindow *window = _coreWindow.window;
+  const auto behavior = solaracore_popup::MoveToActiveSpace(window.collectionBehavior);
+  _collectionBehaviorToRestore = behavior.restore;
+  window.collectionBehavior = behavior.temporary;
+  [window orderFrontRegardless];
+  [window makeKeyAndOrderFront:nil];
+  NSWindow *parent = _opener.window;
+  if (parent.visible) [window orderWindow:NSWindowAbove relativeTo:parent.windowNumber];
+  __weak SolaraCorePopupWindow *weakSelf = self;
+  dispatch_async(dispatch_get_main_queue(), ^{ [weakSelf restoreCollectionBehavior]; });
 }
 
 - (void)updateTitle {
@@ -2224,6 +2249,7 @@ NSImage *_Nullable PermissionIcon(NSDictionary *request) {
 }
 
 - (void)windowWillClose {
+  [self restoreCollectionBehavior];
   if (_closeObserver) [NSNotificationCenter.defaultCenter removeObserver:_closeObserver];
   _closeObserver = nil;
   [_permissionQueue removeAllObjects];
@@ -2249,7 +2275,7 @@ NSImage *_Nullable PermissionIcon(NSDictionary *request) {
 }
 
 - (void)tab:(SolaraCoreTab *)tab requestsActivation:(NSString *)reason {
-  if (!solaracore_host::Background()) [_coreWindow.window makeKeyAndOrderFront:nil];
+  if (!solaracore_host::Background()) [self show];
 }
 
 - (void)tab:(SolaraCoreTab *)tab externalAppRequest:(NSDictionary<NSString *, id> *)request {

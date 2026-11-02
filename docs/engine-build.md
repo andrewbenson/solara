@@ -141,6 +141,17 @@ way, and its `series.py check` fails until it does. Bring each changed file to w
 `check` keeps, or the resource file itself), under the chromium lock and outside `out/`, then build; step 3 runs only
 once per tree.
 
+A new chromium patch that touches files no earlier patch touched also needs their base: under the chromium lock, with
+the patch not yet in the tree, run `series.py capture-base --phase chromium`, then `git -C <src> apply` the patch and
+`series.py check`.
+
+The Hill Studio has no Chromium tree. After an engine build that changes what main ships, copy the framework there and
+point `hill` at it, or its app builds embed the previous engine: `rsync -a "out/Release_GN_arm64/Chromium
+Framework.framework" hill-studio:solara-engine/<uuid16>/` (the first 16 hex digits of `dwarfdump --uuid`, without
+dashes), check the UUID there, then set `SOLARACORE_FRAMEWORK` in `remote_env` and the engine line of
+`~/.cache/solara-lead/bin/hill`'s header to that directory. A pair of app and engine that must ship together (a new
+native API) lands in one commit, so main never builds an app against an engine it can't start with.
+
 ## Our hooks in Chrome's code
 
 Where our patches and `engine/solaracore/apply.sh` let SolaraCore decide something in Chrome's code, the hook is a

@@ -144,9 +144,13 @@ private final class NotificationDelegateCompletion<Value>: @unchecked Sendable {
     observer = NotificationCenter.default.addObserver(forName: Notification.Name("SolaraNotificationControl"), object: nil, queue: nil) { [self] note in
       precondition(Thread.isMainThread)
       MainActor.assumeIsolated {
-        guard let payload = note.userInfo?["payload"] as? [String: Any],
-              let block = note.userInfo?["completion"] as AnyObject? else { return }
+        guard let blockClass = NSClassFromString("NSBlock"), let block = note.userInfo?["completion"] as AnyObject?,
+              block.isKind(of: blockClass) else { return }
         let reply = unsafeBitCast(block, to: NotificationReply.self)
+        guard let payload = note.userInfo?["payload"] as? [String: Any] else {
+          reply(["ok": false, "error": "invalidControl"] as NSDictionary)
+          return
+        }
         let callback = NotificationDelegateCompletion<NSDictionary> { reply($0) }
         self.control(payload) { callback.finish($0 as NSDictionary) }
       }

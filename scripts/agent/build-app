@@ -311,6 +311,16 @@ for command in failed:
 PY
 warnings=$(grep -E '(^|[[:space:]])warning:' "$log" | grep -v MACOSX_DEPLOYMENT_TARGET | sort -u | wc -l | tr -d ' ')
 duration="$((elapsed / 60))m $((elapsed % 60))s"
+engine_uuid() { dwarfdump --uuid "$1/Versions/Current/Chromium Framework" 2>/dev/null | awk 'NR == 1 { print $2 }'; }
+engine_src=${SOLARACORE_FRAMEWORK:-$HOME/chromium-build/chromium_git/chromium/src/out/Release_GN_arm64/Chromium Framework.framework}
+if [[ $status -eq 0 && -d "$engine_src" ]]; then
+  built_uuid=$(engine_uuid "$app/Contents/Frameworks/Chromium Framework.framework")
+  src_uuid=$(engine_uuid "$engine_src")
+  if [[ -z "$built_uuid" || "$built_uuid" != "$src_uuid" ]]; then
+    echo "build-app: the app's engine (${built_uuid:-none}) isn't the one at $engine_src ($src_uuid): a stale staged framework; nothing to test" >&2
+    status=1
+  fi
+fi
 if [[ $status -eq 0 ]] && grep -q '\*\* BUILD SUCCEEDED \*\*' "$log"; then
   echo "$stamp" >"$stamp_file"
   echo "warnings: $warnings"

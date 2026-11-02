@@ -1,4 +1,4 @@
-import { listDocuments, readDocument, removeDocument, saveDocument, writeDocument } from "@solara/shell";
+import { listDocuments as listStoredDocuments, readDocument as readStoredDocument, removeDocument as removeStoredDocument, saveDocument as saveStoredDocument, writeDocument as writeStoredDocument } from "@solara/shell";
 import {
   canonical,
   ApplyRefusal,
@@ -6,6 +6,7 @@ import {
   emptyScope,
   folderTransport,
   restoreJournal,
+  pull,
   syncScope,
   SyncNative,
   visible,
@@ -27,8 +28,9 @@ import { useBrowser } from "../store/browser";
 import { nativeBusyWrites, nativeOwnsWorkspace, nativeSafeMode } from "../store/nativeStore";
 import { persistenceRefused } from "../lib/persistLatch";
 import { engineProfile, isIncognitoProfile } from "../store/model";
-import { DEFAULT_PROFILE_ID } from "../store/settings";
+import { DEFAULT_PROFILE_ID, DEFAULT_SETTINGS } from "../store/settings";
 import type { Profile } from "../store/types";
+import { fromLegacy } from "../legacy";
 import {
   bookmarksAdapter,
   applySyncedProfilePatch,
@@ -42,6 +44,7 @@ import {
   settingsAdapter,
   settingsToReapply,
   sharedDataAdapter,
+  SYNCED_SETTINGS,
   type DeviceRecord,
   type DeviceTabs,
   type ProfileRecord,
@@ -60,6 +63,10 @@ import { editJournal, noteInStep, noteSeen, prunableSeen, pruneSeen } from "./jo
 import { choice, digest } from "./notes";
 import { isObject, readableBatch, readableScope } from "./readable";
 import { applyDelta, BATCH_PREFIX, batchName, batchPart, DELTA_PREFIX, deltaName, deltaOf, deltaPart, newEpoch, parseBatchName, parseDeltaName, writtenOf, type DeltaName, type Written } from "./stateDeltas";
+
+import { bootstrapValid, evidenceOf, installationValid, planCurrent, priorStateOf, receiptMatches, replicaValid, sameInstallation, type BindingPlan, type Bootstrap, type BootstrapReplica, type PairingInstallation, type PairingNative, type PairingOperation, type PairingRequest } from "./pairingBootstrap";
+
+export type { PairingInstallation, PairingNative, PairingOperation, PairingReceipt, PairingRequest } from "./pairingBootstrap";
 
 type DataType = "bookmarks" | "history" | "tabs" | "pinned" | "passwords" | "extensions" | "settings";
 
@@ -81,7 +88,11 @@ type ProfileLink = {
 };
 
 type SyncDoc = {
-  v: 1;
+  v: 1 | 2;
+  bootstrap?: Bootstrap;
+  joinTransaction?: string;
+  installation?: PairingInstallation;
+  stopGeneration?: number;
   enabled: boolean;
   folder: string | null;
   deviceId: string | null;
@@ -161,6 +172,34 @@ export const useSync = create<SyncUi>(() => ({
 
 let doc: SyncDoc = emptyDoc();
 let savedJson = "";
+let metadataLoaded = false;
+let started = false;
+const typePreferences: Partial<Record<DataType, boolean>> = {};
+const profilePreferences = new Map<string, { syncId: string; enabled: boolean }>();
+let pairingNative: PairingNative | null = null;
+let pairingAdmitted = false;
+let pairingReplica: BootstrapReplica | null = null;
+let pairingAdmission: { request: PairingRequest; installation: PairingInstallation | null; generation: number; host: PairingNative } | null = null;
+let pairingWrites: Promise<void> = Promise.resolve();
+let pairingRecovery: Promise<void> | null = null;
+let pairingCompleting = false;
+let cycleFinished: Promise<void> = Promise.resolve();
+let finishCycle: (() => void) | null = null;
+let bootstrapRead: { generation: number; replica: BootstrapReplica; clock: Clock; promise: Promise<Set<string>>; settled: boolean } | null = null;
+const PAIRING_RECOVERY = "Sync needs recovery in a version of Solara that supports this joining transaction. Nothing has been sent.";
+const pairingPending = () => doc.v === 2 && doc.bootstrap?.phase !== "ready" && doc.bootstrap?.phase !== "onboarding-completed";
+const localName = (name: string) => doc.v === 2 && doc.joinTransaction && (name === STATE || name === JOURNAL || name.startsWith(DELTA_PREFIX) || name.startsWith(BATCH_PREFIX)) ? `sync-pairing-${doc.joinTransaction}-${name}` : name;
+const readDocument = (name: string) => readStoredDocument(localName(name));
+const writeDocument = (name: string, text: string) => writeStoredDocument(localName(name), text);
+const saveDocument = (name: string, text: string) => saveStoredDocument(localName(name), text);
+const removeDocument = (name: string) => removeStoredDocument(localName(name));
+const listDocuments = (prefix: string) => {
+  const mapped = localName(prefix);
+  const names = listStoredDocuments(mapped);
+  return names && names.map((name) => mapped === prefix ? name : prefix + name.slice(mapped.length));
+};
+const copyJson = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+
 let running = false;
 let again = false;
 let timer: ReturnType<typeof setTimeout> | undefined;
@@ -225,11 +264,14 @@ function load() {
     const json = readDocument(DOC);
     if (json) {
       const saved = JSON.parse(json) as SyncDoc;
-      newerFormat = isObject(saved) && saved.v !== 1;
+      newerFormat = !isObject(saved) || (saved.v !== 1 && (saved.v !== 2 || !bootstrapValid(saved)));
       if (!newerFormat) doc = { ...emptyDoc(), ...saved, types: { ...defaultTypes(), ...saved.types }, scopes: {} };
     }
     savedJson = json ?? "";
+    metadataLoaded = true;
   } catch (error) {
+    newerFormat = true;
+    metadataLoaded = true;
     console.warn("[sync] couldn't read sync.json", error);
   }
 }
@@ -481,12 +523,24 @@ const compactionDue = () =>
   Date.now() - compactedAt >= COMPACT_MS;
 
 function save() {
+  if (!metadataLoaded) load();
   if (newerFormat || syncHeld()) return;
+  if (doc.v === 2 && (pairingAdmission || pairingRecovery)) return;
+  if (doc.v === 2 && pairingPending()) {
+    if (!pairingAdmitted && doc.bootstrap?.phase !== "stopped") return;
+    void writePairingDoc({ ...doc }, generation, false).catch((error) => publishUi({ status: "stalled", error: errorText(error) }));
+    return;
+  }
+  if (doc.v === 2 && !pairingAdmitted) return;
   const { scopes, ...meta } = doc;
   const json = JSON.stringify(loaded ? { ...meta, seqs: Object.fromEntries(Object.entries(scopes).map(([k, s]) => [k, writtenSeq(s)])) } : meta);
   if (json !== savedJson) {
-    savedJson = json;
-    writeDocument(DOC, json);
+    if (doc.v === 2) {
+      void writePairingDoc({ ...doc }, generation, false).catch((error) => publishUi({ status: "stalled", error: errorText(error) }));
+    } else {
+      savedJson = json;
+      writeDocument(DOC, json);
+    }
   }
   if (!loaded || sealing) return;
   if (!doc.enabled) {
@@ -679,7 +733,7 @@ function profileAdapters(profileId: string, retiring: boolean, everyType = false
 }
 
 async function watchExtensions() {
-  if (!doc.enabled || !doc.types.extensions) return;
+  if (!doc.enabled || pairingPending() || !doc.types.extensions) return;
   const s = useBrowser.getState();
   const profiles = [...new Set(Object.entries(doc.profiles).filter(([id, l]) => l.enabled && s.profiles[id] && !s.profiles[id]!.dataId).map(([id]) => engineProfile(id)))];
   if (profiles.length && (await probeExtensionSync(profiles[0]!))) watchExtensionIntents(profiles);
@@ -692,7 +746,7 @@ function extensionsOf(profileId: string): ExtensionsAdapter {
 }
 
 function scheduleSync(delay = AFTER_EDIT_MS) {
-  if (!doc.enabled) return;
+  if (newerFormat || !doc.enabled || pairingRecovery) return;
   clearTimeout(timer);
   timer = setTimeout(() => void runCycle(), delay);
 }
@@ -705,26 +759,38 @@ export async function syncNow() {
 
 async function runCycle({ retiring = false } = {}) {
   const native = SyncNative;
+  if (pairingCompleting) { again = true; return; }
+  if (doc.v === 2 && (!pairingAdmitted || !bootstrapValid(doc))) return;
+  if (pairingPending()) return await runBootstrapCycle();
   if (!native || newerFormat || syncHeld() || !doc.enabled || !doc.folder || !doc.deviceId || locked || !loaded || (stopping && !retiring)) return;
   if (running) {
     again = true;
     return;
   }
   running = true;
+  cycleFinished = new Promise((resolve) => { finishCycle = resolve; });
   const busyBefore = nativeBusyWrites();
   extractedThisCycle.clear();
   cycleForcesPasswords = forcePasswords;
   const forcedBy = forceRequests;
   const cycleDoc = doc;
+  const cycleGeneration = generation;
   let clock: Clock | null = null;
   clearTimeout(timer);
   const slow = setTimeout(() => useSync.getState().status === "updated" && publishUi({ status: "updating" }), 1000);
   try {
     await watchExtensions();
     const status = await native.chainStatus(doc.folder);
+    if (doc.v === 2 && (cycleGeneration !== generation || doc !== cycleDoc || !doc.enabled)) return;
     if (status === "unavailable") return publishUi({ status: "offline", error: null });
     if (status === "missing") return await resetFromElsewhere();
-    const transport = folderTransport(native, doc.folder);
+    const rawTransport = folderTransport(native, doc.folder);
+    const allowed = () => { if (doc.v === 2 && (cycleGeneration !== generation || !doc.enabled || pairingPending() || !pairingAdmitted)) throw new Error(PAIRING_RECOVERY); };
+    const transport: Transport = doc.v === 2 ? {
+      read: async (scope, known) => { allowed(); const listing = await rawTransport.read(scope, known); allowed(); return listing; },
+      write: async (scope, payload) => { allowed(); return await rawTransport.write(scope, payload); },
+      remove: async (scope, ids) => { allowed(); await rawTransport.remove(scope, ids); },
+    } : rawTransport;
     if (sealingPasswords() && recordsKnown && !journalRefused) await migrateLedger((text) => native.migrateLedger!(text, ledgerScopes(), JSON.stringify(doc.scopes)));
     clock = new Clock(doc.deviceId, doc.clock);
     const device = doc.deviceId;
@@ -786,15 +852,18 @@ async function runCycle({ retiring = false } = {}) {
     publishUi({ status: "updated", error: null, pending });
   } catch (error) {
     const fault = sealedPasswordFault(error);
+    if (doc.v === 2 && cycleGeneration !== generation) return;
     console.warn("[sync] cycle failed", fault ?? error);
     publishUi({ status: "stalled", error: fault ?? errorText(error) });
   } finally {
     clearTimeout(slow);
     running = false;
+    finishCycle?.();
+    finishCycle = null;
     cycleForcesPasswords = false;
     if (clock && doc === cycleDoc) doc.clock = clock.last;
-    save();
-    if (doc.enabled) {
+    if (doc.v !== 2 || cycleGeneration === generation) save();
+    if (doc.enabled && (doc.v !== 2 || cycleGeneration === generation)) {
       if (again) {
         again = false;
         scheduleSync(0);
@@ -1175,6 +1244,7 @@ function themeAdopted(profileId: string) {
 }
 
 export function adoptProfileTheme(profileId: string) {
+  if (!metadataLoaded) load();
   const link = doc.profiles[profileId];
   if (!link?.themeAdopting) return;
   delete link.themeAdopting;
@@ -1183,6 +1253,7 @@ export function adoptProfileTheme(profileId: string) {
 }
 
 function linkProfiles(app: ScopeState) {
+  if (newerFormat || pairingPending()) return;
   const s = useBrowser.getState();
   const remote = [...visible(app, "prof:")].map(([k, v]) => [k.slice(5), v as ProfileRecord] as const);
   const taken = new Set(Object.values(doc.profiles).map((l) => l.syncId));
@@ -1210,6 +1281,7 @@ function linkProfiles(app: ScopeState) {
 }
 
 async function resetFromElsewhere() {
+  if (newerFormat || doc.v === 2) return publishUi({ status: "stalled", error: PAIRING_RECOVERY });
   await SyncNative?.forget(doc.deviceId!);
   generation++;
   doc = { ...emptyDoc(), folder: doc.folder, types: doc.types };
@@ -1264,6 +1336,7 @@ export async function folderInfo(path?: string | null): Promise<FolderInfo | nul
 }
 
 function setSyncFolder(path: string) {
+  if (!metadataLoaded) load();
   if (doc.enabled) return;
   doc.folder = path;
   save();
@@ -1276,12 +1349,495 @@ export async function chooseSyncFolder(): Promise<string | null> {
   return picked;
 }
 
-function begin(folder: string, deviceId: string, joining: boolean) {
-  generation++;
+function deadline<T>(work: Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error("Sync is still downloading. Try again when the folder is available.")), 10_000);
+    work.then((value) => { clearTimeout(timeout); resolve(value); }, (error) => { clearTimeout(timeout); reject(error); });
+  });
+}
+
+function withPairingPreferences(next: SyncDoc): SyncDoc {
+  const profiles = { ...next.profiles };
+  for (const [id, preference] of profilePreferences) {
+    const link = profiles[id];
+    if (!link || link.syncId !== preference.syncId) continue;
+    profiles[id] = { ...link, enabled: preference.enabled };
+    if (preference.enabled) delete profiles[id]!.retire;
+    else profiles[id]!.retire = true;
+  }
+  return { ...next, types: { ...next.types, ...typePreferences }, profiles };
+}
+
+async function writePairingDoc(next: SyncDoc, expected: number, phaseChange = true) {
+  const write = pairingWrites.catch(() => {}).then(async () => {
+    if (expected !== generation || newerFormat) throw new Error(PAIRING_RECOVERY);
+    let candidate = phaseChange ? next : { ...doc, ...(loaded ? { seqs: Object.fromEntries(Object.entries(doc.scopes).map(([key, state]) => [key, writtenSeq(state)])) } : {}) };
+    for (;;) {
+      candidate = withPairingPreferences(candidate);
+      const { scopes, ...meta } = candidate;
+      const json = JSON.stringify(meta);
+      await saveDocument(DOC, json);
+      if (readDocument(DOC) !== json || expected !== generation) throw new Error(PAIRING_RECOVERY);
+      const latest = withPairingPreferences(candidate);
+      const { scopes: _scopes, ...latestMeta } = latest;
+      if (JSON.stringify(latestMeta) !== json) { candidate = latest; continue; }
+      if (phaseChange) doc = latest;
+      else { doc.types = latest.types; doc.profiles = latest.profiles; doc.seqs = latest.seqs; }
+      savedJson = json;
+      break;
+    }
+  });
+  pairingWrites = write;
+  await write;
+}
+
+async function checkpointPairing(phase: Bootstrap["phase"], replica: BootstrapReplica, expected: number, links?: SyncDoc["profiles"]) {
+  if (!doc.installation || expected !== generation) throw new Error(PAIRING_RECOVERY);
+  replica.revision++;
+  const text = JSON.stringify(replica);
+  const name = `sync-bootstrap-${replica.transaction}-${replica.revision}.nns`;
+  const sealed = await deadline(sealLocal(text, "state"));
+  if (!sealed || expected !== generation) throw new Error(PAIRING_RECOVERY);
+  await saveDocument(name, sealed);
+  if (readDocument(name) !== sealed || expected !== generation) throw new Error(PAIRING_RECOVERY);
+  const next = { ...doc, ...(links ? { profiles: links } : {}), joining: phase !== "ready" && phase !== "onboarding-completed" && phase !== "stopped", bootstrap: { phase, transaction: replica.transaction, generation: replica.generation, checkpoint: { name, digest: digest(text) } } };
+  await writePairingDoc(next, expected);
+  pairingReplica = replica;
+}
+
+function resetRuntime() {
   unverified = new Set();
   firstLooks = new Map();
   freshDelivered = new Map();
   revivalBatches = new Map();
+  passwordAdapters.clear();
+  extensionAdapters.clear();
+  journal = {};
+  legacyJournal = new Set();
+  legacyJournalOnDisk = false;
+  journalRefused = false;
+  stateGeneration = null;
+  written = null;
+  stateCleared = true;
+  compactNext = false;
+  recordsKnown = false;
+  bootstrapRead = null;
+}
+
+async function initializePairing(installation: PairingInstallation, host: PairingNative, expected: number) {
+  if (expected !== generation || newerFormat || doc.enabled || (doc.stopGeneration ?? 0) > installation.stopGeneration) throw new Error(PAIRING_RECOVERY);
+  if (installation.priorState !== undefined && installation.priorState !== priorStateOf(savedJson)) throw new Error(PAIRING_RECOVERY);
+  const next: SyncDoc = {
+    ...emptyDoc(), v: 2, types: doc.types, profiles: doc.profiles, enabled: true, folder: installation.folder, deviceId: installation.deviceId,
+    setupAt: Date.now(), joining: true, joinTransaction: installation.transaction, installation, stopGeneration: installation.stopGeneration,
+    bootstrap: { phase: "awaiting-profile", transaction: installation.transaction, generation: installation.generation },
+  };
+  await writePairingDoc(next, expected);
+  resetRuntime();
+  pairingNative = host;
+  pairingAdmitted = true;
+  pairingReplica = { transaction: installation.transaction, generation: installation.generation, revision: 0, app: { ...emptyScope(), awaitRemote: true } };
+  loaded = true;
+  locked = false;
+  publishUi({ status: "starting", error: null });
+  scheduleSync(0);
+}
+
+export async function joinFromPairing(request: PairingRequest, host: PairingNative): Promise<{ ok: true } | { error: string }> {
+  if (!metadataLoaded) load();
+  if (pairingRecovery) await pairingRecovery;
+  if (newerFormat) return { error: NEWER_FORMAT };
+  if (!SyncNative || syncHeld() || doc.enabled || turningOn || stopping || pairingAdmission || pairingRecovery) return { error: "Sync cannot join while another sync operation is in progress." };
+  if (!request || typeof request.handle !== "string" || !request.handle || request.stopGeneration !== (doc.stopGeneration ?? 0) || !Number.isSafeInteger(request.generation) || request.generation <= (doc.bootstrap?.generation ?? 0)) return { error: PAIRING_RECOVERY };
+  turningOn = true;
+  const expected = ++generation;
+  const admission = { request, installation: null as PairingInstallation | null, generation: expected, host };
+  pairingAdmission = admission;
+  pairingNative = host;
+  try {
+    const installation = await deadline(host.consumeInstallation(request.handle, priorStateOf(savedJson)));
+    admission.installation = installation;
+    if (expected !== generation) {
+      await host.stopInstallation(installation, doc.stopGeneration ?? request.stopGeneration + 1);
+      return { error: PAIRING_RECOVERY };
+    }
+    if (!installationValid(installation) || !["folder", "folderIdentity", "cid", "generation", "stopGeneration"].every((key) => installation[key as keyof PairingInstallation] === request[key as keyof PairingRequest]) || (installation.priorState !== undefined && installation.priorState !== priorStateOf(savedJson))) return { error: PAIRING_RECOVERY };
+    if (installation.phase !== "prepared" || (doc.v === 2 && (installation.transaction === doc.joinTransaction || installation.account === doc.installation?.account))) return { error: PAIRING_RECOVERY };
+    try { await deadline(host.saveInstallation(installation)); } catch {}
+    const installed = await deadline(host.readInstallation(installation));
+    if (expected !== generation || !installationValid(installed) || installed.phase !== "key-saved" || !sameInstallation(installation, installed)) return { error: PAIRING_RECOVERY };
+    await initializePairing(installed, host, expected);
+    return { ok: true };
+  } catch (error) {
+    if (expected === generation) publishUi({ status: "stalled", error: errorText(error) });
+    return { error: errorText(error) };
+  } finally {
+    if (pairingAdmission === admission) pairingAdmission = null;
+    turningOn = false;
+  }
+}
+
+async function recoverPairing(host: PairingNative | null) {
+  const expected = ++generation;
+  pairingAdmitted = false;
+  if (doc.v === 2 && doc.bootstrap?.phase === "stopped") {
+    publishUi({ status: "off", error: null });
+    if (host) await deadline(host.stopInstallation(doc.installation ?? null, doc.stopGeneration ?? 0));
+    return;
+  }
+  if (!host) throw new Error(PAIRING_RECOVERY);
+  if (doc.v !== 2) {
+    if (doc.enabled || turningOn) return;
+    const marker = await deadline(host.recoverInstallation());
+    if (!marker || expected !== generation) return;
+    if (!installationValid(marker)) throw new Error(PAIRING_RECOVERY);
+    const actual = await deadline(host.readInstallation(marker));
+    if (expected !== generation || !installationValid(actual) || !sameInstallation(marker, actual)) throw new Error(PAIRING_RECOVERY);
+    if (actual.phase === "prepared") {
+      await deadline(host.stopInstallation(actual, actual.stopGeneration));
+      return;
+    }
+    await initializePairing(actual, host, expected);
+    return;
+  }
+  const installed = doc.installation;
+  if (!installed || !bootstrapValid(doc)) throw new Error(PAIRING_RECOVERY);
+  const actual = await deadline(host.readInstallation(installed));
+  if (expected !== generation || !installationValid(actual) || actual.phase !== "key-saved" || !sameInstallation(installed, actual)) throw new Error(PAIRING_RECOVERY);
+  const checkpoint = doc.bootstrap?.checkpoint;
+  if (checkpoint) {
+    const sealed = readDocument(checkpoint.name);
+    const text = sealed ? await deadline(SyncNative!.openLocal(sealed, "state")) : null;
+    if (!text || digest(text) !== checkpoint.digest) throw new Error(PAIRING_RECOVERY);
+    const replica = JSON.parse(text) as unknown;
+    if (!replicaValid(replica, installed)) throw new Error(PAIRING_RECOVERY);
+    pairingReplica = replica;
+    if (doc.bootstrap?.phase !== "awaiting-profile" && (!replica.plan || !bindingPlanValid(replica, replica.plan, doc.bootstrap?.phase === "ready" || doc.bootstrap?.phase === "onboarding-completed"))) throw new Error(PAIRING_RECOVERY);
+    if ((doc.bootstrap?.phase === "ready" || doc.bootstrap?.phase === "onboarding-completed") && !replica.plan?.operations.every((op) => receiptMatches(op, replica.plan!.outcomes[op.key] ?? null))) throw new Error(PAIRING_RECOVERY);
+  } else pairingReplica = { transaction: installed.transaction, generation: installed.generation, revision: 0, app: { ...emptyScope(), awaitRemote: true } };
+  if (expected !== generation) return;
+  loaded = true;
+  locked = false;
+  pairingAdmitted = true;
+  if (!pairingPending()) {
+    await noteWhatThisMacHas();
+    if (readDocument(STATE)) {
+      if (!(await loadState(expected)) || expected !== generation) return;
+    } else doc.scopes = { [APP_SCOPE]: copyJson(pairingReplica.app) };
+    keepNotes();
+    editJournal();
+  }
+  const recoveredClock = new Clock(installed.deviceId, doc.clock);
+  for (const record of Object.values(pairingReplica.app.records)) recoveredClock.observe(record.h);
+  doc.clock = recoveredClock.last;
+  publishUi({ status: "starting", error: null });
+  scheduleSync(500);
+}
+
+const validProfileRecord = (value: unknown): value is ProfileRecord => isObject(value) && typeof value.n === "string" && value.n.length > 0 && ["plum", "blue", "purple", "pink", "red", "orange", "yellow", "green", "neutral"].includes(value.c as string) && (value.i === null || typeof value.i === "string") && (value.d === undefined || value.d === true) && (value.th === undefined || value.th === null || !!legacyThemeOf(value as ProfileRecord));
+
+function localBootstrapValue(key: string, desired: unknown, links: SyncDoc["profiles"]) {
+  const state = useBrowser.getState();
+  if (key.startsWith("set:")) return { v: state.settings[key.slice(4) as keyof typeof state.settings] };
+  const id = Object.entries(links).find(([, link]) => key === `prof:${link.syncId}` || key === `pth:${link.syncId}` || key === themeAngleKey(link.syncId) || key === `share:${link.syncId}`)?.[0];
+  const profile = id ? state.profiles[id] : undefined;
+  if (!profile) return null;
+  if (key.startsWith("prof:")) return { n: profile.name, c: profile.color, i: profile.icon, ...(isObject(desired) && "theme" in desired ? { theme: profile.theme ?? null } : {}) };
+  if (key.startsWith("pth:")) return key.endsWith(":angle") ? { a: profile.theme?.angle ?? null, d: profile.theme?.dark?.angle ?? null } : { theme: profile.theme ?? null };
+  if (key.startsWith("share:")) return { owner: profile.dataId ?? id };
+  return null;
+}
+
+let bootstrapDiagnostic: { status: "offline" | "stalled"; error: string } = { status: "offline", error: "Waiting for the synced default profile and its required data." };
+const incompatibleBootstrap = (error: string): null => { bootstrapDiagnostic = { status: "stalled", error }; return null; };
+
+function bootstrapPlan(replica: BootstrapReplica): BindingPlan | null {
+  bootstrapDiagnostic = { status: "offline", error: "Waiting for the synced default profile and its required data." };
+  const app = replica.app;
+  const remote = Object.entries(app.records).filter(([key, record]) => key.startsWith("prof:") && record.v !== null);
+  if (remote.some(([, record]) => !validProfileRecord(record.v))) return incompatibleBootstrap("The synced profile metadata is invalid. Sync is paused until that profile can be recovered.");
+  const defaults = remote.filter(([, record]) => (record.v as ProfileRecord).d === true);
+  if (defaults.length > 1) return incompatibleBootstrap("More than one synced profile is marked as the default. Recover the default profile before this Mac can finish joining.");
+  if (defaults.length !== 1 || !useBrowser.getState().profiles[DEFAULT_PROFILE_ID]) return null;
+  const [defaultKey] = defaults[0]!;
+  const defaultSyncId = defaultKey.slice(5);
+  if (doc.profiles[DEFAULT_PROFILE_ID] && doc.profiles[DEFAULT_PROFILE_ID]!.syncId !== defaultSyncId) return incompatibleBootstrap("The synced default profile conflicts with this Mac’s existing profile link. Recover that link before joining can continue.");
+  const links = copyJson(doc.profiles);
+  links[DEFAULT_PROFILE_ID] ??= { syncId: defaultSyncId, enabled: true, themeAdopting: true };
+  const taken = new Set(Object.values(links).map((link) => link.syncId));
+  const store = useBrowser.getState();
+  for (const id of store.profileOrder) {
+    if (id === DEFAULT_PROFILE_ID || links[id] || isIncognitoProfile(id)) continue;
+    const matches = remote.filter(([key, record]) => !taken.has(key.slice(5)) && (record.v as ProfileRecord).n === store.profiles[id]?.name);
+    if (matches.length === 1) {
+      const syncId = matches[0]![0].slice(5);
+      links[id] = { syncId, enabled: true, themeAdopting: true };
+      taken.add(syncId);
+    }
+  }
+  const keys = new Set<string>([defaultKey]);
+  for (const link of Object.values(links)) {
+    const key = `prof:${link.syncId}`;
+    if (!app.records[key]?.v) continue;
+    keys.add(key);
+    const themeKey = `pth:${link.syncId}`;
+    const angle = themeAngleKey(link.syncId);
+    if (app.records[angle]?.v && !app.records[themeKey]?.v) return null;
+    if (app.records[themeKey]?.v) {
+      if (!themeFromRecord(app.records[themeKey]!.v, app.records[angle]?.v)) return null;
+      keys.add(themeKey);
+      if (app.records[angle]?.v) keys.add(angle);
+    }
+    const shareKey = `share:${link.syncId}`;
+    if (app.records[shareKey]?.v) {
+      const share = app.records[shareKey]!.v;
+      if (!isObject(share) || typeof share.o !== "string" || !validProfileRecord(app.records[`prof:${share.o}`]?.v) || !taken.has(share.o)) return null;
+      const localId = Object.entries(links).find(([, current]) => current.syncId === link.syncId)?.[0];
+      const ownerId = Object.entries(links).find(([, current]) => current.syncId === share.o)?.[0];
+      if (!localId || !ownerId || (store.profiles[localId]?.dataId ?? localId) !== (store.profiles[ownerId]?.dataId ?? ownerId)) return incompatibleBootstrap("The synced profile’s browser-data sharing conflicts with this Mac’s existing data groups. Existing local data has been kept; this sharing relationship needs recovery before joining can continue.");
+      keys.add(shareKey);
+      keys.add(`prof:${share.o}`);
+    }
+  }
+  for (const key of Object.keys(app.records)) if (key.startsWith("set:") && app.records[key]?.v !== null && (SYNCED_SETTINGS as readonly string[]).includes(key.slice(4))) {
+    const value = fromLegacy(app.records[key]!.v);
+    if (!isObject(value) || !("v" in value)) return null;
+    const sample = DEFAULT_SETTINGS[key.slice(4) as keyof typeof DEFAULT_SETTINGS];
+    if (sample !== null && typeof value.v !== typeof sample) return null;
+    if (Array.isArray(sample) !== Array.isArray(value.v)) return null;
+    keys.add(key);
+  }
+  const plan: BindingPlan = { defaultKey, links, evidence: {}, operations: [], outcomes: {} };
+  for (const key of keys) {
+    const evidence = evidenceOf(app, key);
+    if (!evidence) return null;
+    plan.evidence[key] = evidence;
+    const value = evidence.record.v;
+    let desired: unknown = key.startsWith("set:") ? fromLegacy(value) : value;
+    if (key.startsWith("prof:")) {
+      const record = value as ProfileRecord;
+      const legacy = !app.records[`pth:${key.slice(5)}`]?.v ? legacyThemeOf(record) : null;
+      desired = { n: record.n, c: record.c, i: record.i, ...(legacy ? { theme: legacy.theme } : {}) };
+    } else if (key.startsWith("pth:")) {
+      const syncId = key.slice(4).replace(/:angle$/, "");
+      const theme = themeFromRecord(app.records[`pth:${syncId}`]?.v, app.records[themeAngleKey(syncId)]?.v)?.theme ?? null;
+      desired = key.endsWith(":angle") ? { a: theme?.angle ?? null, d: theme?.dark?.angle ?? null } : { theme };
+    } else if (key.startsWith("share:")) {
+      const owner = (value as ShareRecord).o;
+      const local = Object.entries(links).find(([, link]) => link.syncId === owner)?.[0];
+      if (!local) return null;
+      desired = { owner: store.profiles[local]?.dataId ?? local };
+    }
+    const before = localBootstrapValue(key, desired, links);
+    const linked = Object.values(links).find((link) => key.endsWith(link.syncId) || key === themeAngleKey(link.syncId));
+    const optedOut = key.startsWith("set:") ? !doc.types.settings : linked?.enabled === false;
+    plan.operations.push({ operationId: `${replica.transaction}:${replica.generation}:${key}:${evidence.record.h}:${evidence.digest}`, transaction: replica.transaction, generation: replica.generation, key, desired, before, localValue: optedOut ? before : desired, disposition: optedOut ? "opt-out" : "applied" });
+  }
+  return plan;
+}
+
+function historicalBindingKeys(replica: BootstrapReplica, plan: BindingPlan): string[] | null {
+  const app = replica.app;
+  const profiles = Object.entries(app.records).filter(([key, record]) => key.startsWith("prof:") && record.v !== null);
+  if (profiles.some(([, record]) => !validProfileRecord(record.v))) return null;
+  const defaults = profiles.filter(([, record]) => (record.v as ProfileRecord).d === true);
+  if (defaults.length !== 1 || defaults[0]![0] !== plan.defaultKey) return null;
+  const keys = new Set<string>([plan.defaultKey]);
+  for (const link of Object.values(plan.links)) {
+    if (!app.records[`prof:${link.syncId}`]?.v) continue;
+    keys.add(`prof:${link.syncId}`);
+    const theme = `pth:${link.syncId}`;
+    const angle = themeAngleKey(link.syncId);
+    if (app.records[angle]?.v && !app.records[theme]?.v) return null;
+    if (app.records[theme]?.v) {
+      if (!themeFromRecord(app.records[theme]!.v, app.records[angle]?.v)) return null;
+      keys.add(theme);
+      if (app.records[angle]?.v) keys.add(angle);
+    }
+    const share = `share:${link.syncId}`;
+    if (app.records[share]?.v) {
+      const value = app.records[share]!.v;
+      if (!isObject(value) || typeof value.o !== "string" || !validProfileRecord(app.records[`prof:${value.o}`]?.v) || !Object.values(plan.links).some((candidate) => candidate.syncId === value.o)) return null;
+      keys.add(share);
+      keys.add(`prof:${value.o}`);
+    }
+  }
+  for (const key of Object.keys(app.records)) if (key.startsWith("set:") && app.records[key]?.v !== null && (SYNCED_SETTINGS as readonly string[]).includes(key.slice(4))) keys.add(key);
+  return [...keys].sort();
+}
+
+function bindingPlanValid(replica: BootstrapReplica, plan: BindingPlan, historical = false): boolean {
+  if (!isObject(plan) || !isObject(plan.links) || !isObject(plan.evidence) || !Array.isArray(plan.operations) || !plan.operations.length || !isObject(plan.outcomes)) return false;
+  const expected = historical ? null : bootstrapPlan(replica);
+  if ((!historical && (!expected || expected.defaultKey !== plan.defaultKey)) || typeof plan.defaultKey !== "string" || !plan.links[DEFAULT_PROFILE_ID] || plan.links[DEFAULT_PROFILE_ID]!.syncId !== plan.defaultKey.slice(5)) return false;
+  if (doc.bootstrap?.phase !== "binding-persisted" && doc.profiles[DEFAULT_PROFILE_ID]?.syncId !== plan.links[DEFAULT_PROFILE_ID]!.syncId) return false;
+  for (const [id, link] of Object.entries(plan.links)) if (doc.profiles[id] && doc.profiles[id]!.syncId !== link.syncId) return false;
+  if (!planCurrent(replica.app, plan)) return false;
+  const required = historical ? historicalBindingKeys(replica, plan) : expected!.operations.map((op) => op.key).sort();
+  if (!required) return false;
+  if (canonical(Object.keys(plan.evidence).sort()) !== canonical(required) || canonical(plan.operations.map((op) => op.key).sort()) !== canonical(required)) return false;
+  return plan.operations.every((op) => op.transaction === replica.transaction && op.generation === replica.generation && typeof op.operationId === "string" && op.operationId.startsWith(`${replica.transaction}:${replica.generation}:${op.key}:`) && ["applied", "local-choice", "opt-out"].includes(op.disposition) && (historical || canonical(op.desired) === canonical(expected!.operations.find((current) => current.key === op.key)!.desired)));
+}
+
+async function runBootstrapCycle() {
+  if (newerFormat || syncHeld() || !doc.enabled || !doc.installation || !pairingNative || !pairingReplica || pairingRecovery || stopping || running || !loaded) return;
+  running = true;
+  const expected = generation;
+  const installed = doc.installation;
+  const host = pairingNative;
+  try {
+    const actual = await deadline(host.readInstallation(installed));
+    if (expected !== generation || !installationValid(actual) || actual.phase !== "key-saved" || !sameInstallation(actual, installed)) throw new Error(PAIRING_RECOVERY);
+    if (bootstrapRead && bootstrapRead.generation === expected && !bootstrapRead.settled) {
+      publishUi({ status: "offline", error: "Waiting for the existing sync-folder read to finish." });
+      return;
+    }
+    if (!bootstrapRead || bootstrapRead.generation !== expected) {
+      const replica = copyJson(pairingReplica);
+      const clock = new Clock(installed.deviceId, doc.clock);
+      const read = { generation: expected, replica, clock, settled: false, promise: Promise.resolve(new Set<string>()) };
+      read.promise = pull(replica.app, folderTransport(SyncNative!, installed.folder), APP_SCOPE, clock, Date.now());
+      bootstrapRead = read;
+      void read.promise.then(() => { read.settled = true; }, () => { read.settled = true; });
+    }
+    const reading = bootstrapRead;
+    let changed: Set<string>;
+    try { changed = await deadline(reading.promise); } catch (error) {
+      if (reading.settled && bootstrapRead === reading) bootstrapRead = null;
+      throw error;
+    }
+    if (expected !== generation) return;
+    const { replica, clock } = reading;
+    if (bootstrapRead === reading) bootstrapRead = null;
+    doc.clock = clock.last;
+    replica.app.unapplied = [...new Set([...replica.app.unapplied, ...changed])];
+    if (replica.plan && !bindingPlanValid(replica, replica.plan)) {
+      (replica.superseded ??= []).push(replica.plan);
+      delete replica.plan;
+      await checkpointPairing("awaiting-profile", replica, expected);
+    }
+    if (!replica.plan) {
+      const plan = bootstrapPlan(replica);
+      if (!plan) {
+        if (!doc.bootstrap?.checkpoint || canonical(replica.app) !== canonical(pairingReplica.app)) await checkpointPairing("awaiting-profile", replica, expected);
+        publishUi(bootstrapDiagnostic);
+        return;
+      }
+      replica.plan = plan;
+      await checkpointPairing("binding-persisted", replica, expected);
+    }
+    const plan = replica.plan;
+    if (!plan || expected !== generation) return;
+    if (doc.bootstrap?.phase === "binding-persisted") await checkpointPairing("applying", replica, expected, plan.links);
+    const adapters = appAdapters(false).filter((adapter) => adapter.prefix !== "dev:");
+    for (const operation of plan.operations) {
+      if (expected !== generation) return;
+      const current = localBootstrapValue(operation.key, operation.desired, plan.links);
+      const prior = plan.outcomes[operation.key];
+      const journalChoice = editJournal()?.entry(APP_SCOPE, operation.key);
+      const priorIntent = canonical({ disposition: operation.disposition, value: operation.localValue });
+      const chosenSetting = operation.key.startsWith("set:") && useBrowser.getState().settings.chosen?.includes(operation.key.slice(4) as typeof SYNCED_SETTINGS[number]);
+      if (operation.disposition !== "opt-out" && (journalChoice || chosenSetting || (canonical(current) !== canonical(operation.before) && canonical(current) !== canonical(operation.desired)))) {
+        operation.disposition = "local-choice";
+        operation.localValue = current;
+      }
+      const link = Object.values(plan.links).find((value) => operation.key.endsWith(value.syncId) || operation.key === themeAngleKey(value.syncId));
+      if ((operation.key.startsWith("set:") && !doc.types.settings) || link?.enabled === false) {
+        operation.disposition = "opt-out";
+        operation.localValue = current;
+      }
+      if (priorIntent !== canonical({ disposition: operation.disposition, value: operation.localValue })) {
+        operation.operationId = `${installed.transaction}:${installed.generation}:${operation.key}:intent-${replica.revision + 1}`;
+        delete plan.outcomes[operation.key];
+        await checkpointPairing("applying", replica, expected, plan.links);
+      }
+      if (prior && receiptMatches(operation, prior) && canonical(current) === canonical(operation.localValue)) continue;
+      const durable = await deadline(host.reconcileApplied(operation));
+      if (expected !== generation) return;
+      if (receiptMatches(operation, durable) && canonical(current) === canonical(operation.localValue)) {
+        plan.outcomes[operation.key] = durable;
+        await checkpointPairing("applying", replica, expected, plan.links);
+        continue;
+      }
+      if (operation.disposition === "applied" && canonical(current) !== canonical(operation.desired)) {
+        const adapter = adapters.find((a) => operation.key.startsWith(a.prefix));
+        if (!adapter) throw new Error(PAIRING_RECOVERY);
+        const result = await deadline(Promise.resolve(adapter.apply(visible(replica.app, adapter.prefix), new Set([operation.key]), (key) => replica.app.base[key] ? JSON.parse(replica.app.base[key]!) as unknown : undefined, { known: (key) => key in replica.app.records, now: Date.now(), horizon: 90 * 86_400_000, joined: false })));
+        if (expected !== generation) return;
+        if (result === false || (result instanceof Set && !result.has(operation.key))) throw new Error("A required synced setting could not be applied.");
+      }
+      const local = localBootstrapValue(operation.key, operation.desired, plan.links);
+      if (canonical(local) !== canonical(operation.localValue)) throw new Error("A required synced setting has not been applied yet.");
+      const receipt = await deadline(host.checkpointApplied({ ...operation, localValue: local }));
+      if (expected !== generation) return;
+      if (!receiptMatches(operation, receipt)) throw new Error(PAIRING_RECOVERY);
+      if (canonical(localBootstrapValue(operation.key, operation.desired, plan.links)) !== canonical(operation.localValue)) throw new Error("A local choice changed while its sync application was being saved. Sync will reconcile it before continuing.");
+      plan.outcomes[operation.key] = receipt;
+      if (operation.disposition === "applied") replica.app.base[operation.key] = canonical(replica.app.records[operation.key]!.v);
+      replica.app.unapplied = replica.app.unapplied.filter((key) => key !== operation.key);
+      await checkpointPairing("applying", replica, expected, plan.links);
+    }
+    if (expected !== generation || !plan.operations.every((op) => receiptMatches(op, plan.outcomes[op.key] ?? null))) return;
+    replica.app.joined = true;
+    delete replica.app.awaitRemote;
+    await checkpointPairing("ready", replica, expected, plan.links);
+    doc.scopes = { [APP_SCOPE]: copyJson(replica.app) };
+    doc.clock = clock.last;
+    recordsKnown = true;
+    publishUi({ status: "starting", error: null });
+  } catch (error) {
+    if (expected === generation) publishUi({ status: "stalled", error: errorText(error) });
+  } finally {
+    running = false;
+    if (expected === generation && doc.enabled) scheduleSync(CYCLE_MS);
+  }
+}
+
+async function stopPairing() {
+  if (stopping) return;
+  stopping = true;
+  const admission = pairingAdmission;
+  const installed = doc.installation ?? admission?.installation ?? undefined;
+  const host = pairingNative ?? admission?.host;
+  const request = admission?.request;
+  const expected = ++generation;
+  pairingAdmitted = false;
+  clearTimeout(timer);
+  const stopGeneration = Math.max(doc.stopGeneration ?? 0, installed?.stopGeneration ?? request?.stopGeneration ?? 0) + 1;
+  const transaction = installed?.transaction ?? doc.joinTransaction;
+  const next: SyncDoc = { ...doc, v: 2, enabled: false, joining: false, stopGeneration, ...(installed ? { installation: installed, joinTransaction: installed.transaction, folder: installed.folder, deviceId: installed.deviceId } : {}), bootstrap: { phase: "stopped", transaction: transaction ?? null, generation: installed?.generation ?? request?.generation ?? doc.bootstrap?.generation ?? 0 } };
+  try {
+    await writePairingDoc(next, expected);
+    if (host) await deadline(host.stopInstallation(installed ?? null, stopGeneration));
+    locked = false;
+    loaded = true;
+    publishUi({ status: "off", error: null });
+  } catch (error) {
+    publishUi({ status: "stalled", error: errorText(error) });
+  } finally {
+    stopping = false;
+  }
+}
+
+export async function completePairingOnboarding(transaction: string): Promise<boolean> {
+  if (newerFormat || pairingCompleting || !doc.enabled || doc.joinTransaction !== transaction || doc.installation?.route !== "onboarding" || (doc.bootstrap?.phase !== "ready" && doc.bootstrap?.phase !== "onboarding-completed") || !pairingReplica) return false;
+  if (doc.bootstrap.phase === "onboarding-completed") return true;
+  pairingCompleting = true;
+  const expected = generation;
+  try {
+    await cycleFinished;
+    if (expected !== generation || !doc.enabled || doc.joinTransaction !== transaction || !pairingReplica) return false;
+    await checkpointPairing("onboarding-completed", copyJson(pairingReplica), expected);
+    return true;
+  } finally {
+    pairingCompleting = false;
+    if (expected === generation && doc.enabled) scheduleSync(again ? 0 : CYCLE_MS);
+  }
+}
+
+function begin(folder: string, deviceId: string, joining: boolean) {
+  generation++;
+  resetRuntime();
   doc = { ...emptyDoc(), types: doc.types, enabled: true, folder, deviceId, setupAt: Date.now(), joining };
   locked = false;
   loaded = true;
@@ -1294,10 +1850,12 @@ function begin(folder: string, deviceId: string, joining: boolean) {
 export async function turnOnSync(folder: string): Promise<{ ok: true } | { error: string }> {
   const native = SyncNative;
   if (!native) return { error: "Sync isn’t available in this build." };
+  if (!metadataLoaded) load();
   if (newerFormat) return { error: NEWER_FORMAT };
+  if (doc.v === 2) return { error: PAIRING_RECOVERY };
   const held = syncHeld();
   if (held) return { error: held };
-  if (doc.enabled || turningOn) return { error: "Sync is already on." };
+  if (doc.enabled || turningOn || pairingRecovery) return { error: "Sync is already on." };
   turningOn = true;
   try {
     return await turnOn(native, folder);
@@ -1322,6 +1880,8 @@ async function turnOn(native: NonNullable<typeof SyncNative>, folder: string): P
 export async function enterRecoveryPhrase(folder: string, text: string): Promise<PhraseResult | { error: "unavailable" }> {
   const native = SyncNative;
   if (!native) return { error: "unavailable" };
+  if (!metadataLoaded) load();
+  if (newerFormat || pairingRecovery || (doc.v === 2 && (!doc.enabled || pairingPending()))) return { error: "unavailable" };
   if (doc.enabled && doc.deviceId && locked) {
     if (phraseEntry) return phraseEntry;
     phraseEntry = unlockWithPhrase(native, folder, text);
@@ -1374,6 +1934,9 @@ function showLocked(error?: unknown) {
 }
 
 export async function stopSync({ deleteData = false } = {}) {
+  if (!metadataLoaded) load();
+  if (newerFormat) return;
+  if (doc.v === 2 || pairingAdmission || pairingRecovery) return await stopPairing();
   const native = SyncNative;
   if (!native || !doc.enabled || stopping) return;
   stopping = true;
@@ -1415,6 +1978,9 @@ async function turnOff(native: NonNullable<typeof SyncNative>, deleteData: boole
 }
 
 export function setTypeSynced(type: DataType, enabled: boolean) {
+  if (!metadataLoaded) load();
+  if (newerFormat) return;
+  if (doc.v === 2 || pairingAdmission) typePreferences[type] = enabled;
   doc.types = { ...doc.types, [type]: enabled };
   save();
   publishUi();
@@ -1422,8 +1988,11 @@ export function setTypeSynced(type: DataType, enabled: boolean) {
 }
 
 export function setProfileSynced(profileId: string, enabled: boolean) {
+  if (!metadataLoaded) load();
+  if (newerFormat) return;
   const link = doc.profiles[profileId];
   if (!link) return;
+  if (doc.v === 2 || pairingAdmission) profilePreferences.set(profileId, { syncId: link.syncId, enabled });
   doc.profiles[profileId] = enabled
     ? { syncId: link.syncId, enabled, ...(link.themeAdopting ? { themeAdopting: true as const } : {}) }
     : { ...link, enabled, retire: true };
@@ -1464,6 +2033,8 @@ function sharedDataChain(syncId: string): { adds: string[]; sharesWith: string |
 export const appScopeRecords = () => doc.scopes[APP_SCOPE]?.records ?? {};
 
 export function addRemoteProfile(syncId: string): string | null {
+  if (!metadataLoaded) load();
+  if (newerFormat || pairingPending() || pairingCompleting) return null;
   if (!remoteProfileRecord(syncId) || linkedProfileId(syncId)) return null;
   const { adds, sharesWith, waitingFor } = sharedDataChain(syncId);
   if (waitingFor) return null;
@@ -1489,14 +2060,35 @@ function addLinkedProfile(syncId: string, record: ProfileRecord, shareWith: stri
   return id;
 }
 
-export function startSync() {
-  if (!SyncNative) return;
+let watchingBrowser = false;
+function watchBrowserChanges() {
+  if (watchingBrowser) return;
+  watchingBrowser = true;
+  useBrowser.subscribe((s, prev) => {
+    if (doc.enabled && !pairingPending() && s.bookmarksReady !== prev.bookmarksReady) void noteWhatThisMacHas("bm:");
+    if (doc.enabled && !pairingPending() && s.historyReady !== prev.historyReady) void noteWhatThisMacHas("h:");
+    if (!doc.enabled || running) return;
+    if (s.bookmarks !== prev.bookmarks || s.settings !== prev.settings || s.profiles !== prev.profiles || s.groups !== prev.groups) scheduleSync();
+  });
+}
+
+export function startSync(host?: PairingNative) {
+  if (!SyncNative || started) return;
+  started = true;
   const held = syncHeld();
   if (held) return publishUi({ status: "unavailable", error: held });
-  if (sealingPasswords()) SyncNative.useSealedPasswords!();
   load();
-  editJournal();
   if (newerFormat) return publishUi({ status: "unavailable", error: NEWER_FORMAT });
+  pairingNative = host ?? pairingNative;
+  watchBrowserChanges();
+  if (doc.v === 2 || host) {
+    const recovery = recoverPairing(host ?? null);
+    const recovering = generation;
+    pairingRecovery = recovery.catch((error) => { if (recovering === generation) publishUi({ status: "unavailable", error: errorText(error) }); }).finally(() => { pairingRecovery = null; });
+    if (doc.v === 2) return;
+  }
+  if (sealingPasswords()) SyncNative.useSealedPasswords!();
+  editJournal();
   publishUi({ status: doc.enabled ? "starting" : "off" });
   void watchExtensions();
   if (doc.enabled && doc.deviceId) {
@@ -1522,12 +2114,6 @@ export function startSync() {
         if (unlocking === generation) loading = null;
       });
   }
-  useBrowser.subscribe((s, prev) => {
-    if (doc.enabled && s.bookmarksReady !== prev.bookmarksReady) void noteWhatThisMacHas("bm:");
-    if (doc.enabled && s.historyReady !== prev.historyReady) void noteWhatThisMacHas("h:");
-    if (!doc.enabled || running) return;
-    if (s.bookmarks !== prev.bookmarks || s.settings !== prev.settings || s.profiles !== prev.profiles || s.groups !== prev.groups) scheduleSync();
-  });
   if (__DEV__) {
     (globalThis as { acSync?: object }).acSync = {
       useSync, syncNow, turnOnSync, enterRecoveryPhrase, stopSync, setTypeSynced, setProfileSynced, addRemoteProfile, setSyncFolder, folderInfo,

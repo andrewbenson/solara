@@ -135,7 +135,7 @@ final class PairingSessionTests: XCTestCase {
     XCTAssertEqual(p.j.code?.count, 6)
     XCTAssertThrowsError(try p.t.authorization())
     let tuple = try acknowledge(p), wire = try grant(p)
-    let sent = try write(p.t.commitApproval(wire: wire, ownerAuthentication: S.OwnerAuthentication(authorizationAfterOwnerAuthentication: tuple)), .approval)
+    let sent = try write(p.t.commitApproval(wire: wire, ownerAuthentication: SyntheticPairingOwnerAuthenticator.authenticated( tuple)), .approval)
     XCTAssertEqual(sent.wire, wire)
     let candidate = try p.j.receive(sent)
     XCTAssertTrue(candidate.approvalCandidate != nil)
@@ -704,7 +704,7 @@ final class PairingSessionTests: XCTestCase {
         _ = try p.t.invalidate(env)
       }
       XCTAssertThrowsError(try p.t.validateAuthorization(tuple))
-      XCTAssertThrowsError(try p.t.commitApproval(wire: wire, ownerAuthentication: S.OwnerAuthentication(authorizationAfterOwnerAuthentication: tuple)))
+      XCTAssertThrowsError(try p.t.commitApproval(wire: wire, ownerAuthentication: SyntheticPairingOwnerAuthenticator.authenticated( tuple)))
       XCTAssertEqual(p.t.phase, .ended)
     }
   }
@@ -712,7 +712,7 @@ final class PairingSessionTests: XCTestCase {
   func testApprovalRetryIsExactAndOneAuthorizationCannotReleaseTwice() throws {
     let p = try pair()
     _ = try ready(p)
-    let auth = S.OwnerAuthentication(authorizationAfterOwnerAuthentication: try acknowledge(p)), wire = try grant(p)
+    let auth = SyntheticPairingOwnerAuthenticator.authenticated( try acknowledge(p)), wire = try grant(p)
     _ = try p.t.commitApproval(wire: wire, ownerAuthentication: auth)
     XCTAssertEqual(try write(p.t.retryApproval(), .approval).wire, wire)
     XCTAssertThrowsError(try p.t.commitApproval(wire: wire, ownerAuthentication: auth))
@@ -724,7 +724,7 @@ final class PairingSessionTests: XCTestCase {
   func testReceiptMustMatchReleasedApprovalAndBadReceiptIsIgnored() throws {
     let p = try pair()
     _ = try ready(p)
-    let auth = S.OwnerAuthentication(authorizationAfterOwnerAuthentication: try acknowledge(p)), wire = try grant(p)
+    let auth = SyntheticPairingOwnerAuthenticator.authenticated( try acknowledge(p)), wire = try grant(p)
     _ = try p.t.commitApproval(wire: wire, ownerAuthentication: auth)
     let context = try XCTUnwrap(p.t.cryptoContext)
     let receipt = try entry(C.receipt(approval: wire, keys: context.keys))
@@ -738,7 +738,7 @@ final class PairingSessionTests: XCTestCase {
   func testTerminalAfterReleaseCannotRetractGrant() throws {
     let p = try pair()
     _ = try ready(p)
-    let auth = S.OwnerAuthentication(authorizationAfterOwnerAuthentication: try acknowledge(p)), wire = try grant(p)
+    let auth = SyntheticPairingOwnerAuthenticator.authenticated( try acknowledge(p)), wire = try grant(p)
     _ = try p.t.commitApproval(wire: wire, ownerAuthentication: auth)
     let cancel = try write(p.j.end(reason: .cancel), .joiningTerminal)
     _ = try p.t.receive(cancel)
@@ -1187,10 +1187,10 @@ extension PairingSessionTests {
     let tuple = try acknowledge(p)
     var different = tuple
     different.handle[0] ^= 1
-    let authentication = S.OwnerAuthentication(authorizationAfterOwnerAuthentication: different)
+    let authentication = SyntheticPairingOwnerAuthenticator.authenticated( different)
     XCTAssertThrowsError(try p.t.commitApproval(wire: grant(p), ownerAuthentication: authentication))
     XCTAssertEqual(p.t.phase, .comparing)
-    let exact = S.OwnerAuthentication(authorizationAfterOwnerAuthentication: tuple)
+    let exact = SyntheticPairingOwnerAuthenticator.authenticated( tuple)
     XCTAssertEqual(try write(p.t.commitApproval(wire: grant(p), ownerAuthentication: exact), .approval).kind, .approval)
   }
 
@@ -1231,7 +1231,7 @@ extension PairingSessionTests {
     _ = try ready(p)
     var wire = try grant(p)
     wire[60] ^= 1
-    XCTAssertThrowsError(try p.t.commitApproval(wire: wire, ownerAuthentication: S.OwnerAuthentication(authorizationAfterOwnerAuthentication: acknowledge(p))))
+    XCTAssertThrowsError(try p.t.commitApproval(wire: wire, ownerAuthentication: SyntheticPairingOwnerAuthenticator.authenticated( acknowledge(p))))
     XCTAssertEqual(p.t.phase, .comparing)
   }
 
@@ -1490,13 +1490,13 @@ extension PairingSessionTests {
     let p = try pair()
     _ = try ready(p)
     let tuple = try acknowledge(p)
-    let authentication = S.OwnerAuthentication(authorizationAfterOwnerAuthentication: tuple)
+    let authentication = SyntheticPairingOwnerAuthenticator.authenticated( tuple)
     var bad = try grant(p)
     bad[60] ^= 1
     XCTAssertThrowsError(try p.t.commitApproval(wire: bad, ownerAuthentication: authentication))
     XCTAssertEqual(p.t.phase, .comparing)
     XCTAssertThrowsError(try p.t.commitApproval(wire: grant(p), ownerAuthentication: authentication))
-    let replacement = S.OwnerAuthentication(authorizationAfterOwnerAuthentication: tuple)
+    let replacement = SyntheticPairingOwnerAuthenticator.authenticated( tuple)
     _ = try write(p.t.commitApproval(wire: grant(p), ownerAuthentication: replacement), .approval)
   }
 
@@ -1504,13 +1504,13 @@ extension PairingSessionTests {
     let p = try pair()
     _ = try ready(p)
     var tuple = try acknowledge(p)
-    let authentication = S.OwnerAuthentication(authorizationAfterOwnerAuthentication: tuple)
+    let authentication = SyntheticPairingOwnerAuthenticator.authenticated( tuple)
     _ = try p.t.remount()
     _ = try p.t.present(handle: p.t.handle, armGeneration: p.t.armGeneration)
     tuple = try acknowledge(p)
     XCTAssertThrowsError(try p.t.commitApproval(wire: grant(p), ownerAuthentication: authentication))
     XCTAssertEqual(p.t.phase, .comparing)
-    _ = try write(p.t.commitApproval(wire: grant(p), ownerAuthentication: S.OwnerAuthentication(authorizationAfterOwnerAuthentication: tuple)), .approval)
+    _ = try write(p.t.commitApproval(wire: grant(p), ownerAuthentication: SyntheticPairingOwnerAuthenticator.authenticated( tuple)), .approval)
   }
 
   func testUnreadableDispositionQuarantineSurvivesSerializedRestart() throws {
@@ -1526,4 +1526,42 @@ extension PairingSessionTests {
     _ = try restarted.arm()
     XCTAssertEqual(restarted.accounting.uncertainReveals, 0)
   }
+  func testAccountingCheckpointAdvancesRevisionAndObservationTime() throws {
+    let time = Time(), trusted = try session(.trusted, Time())
+    let initial = trusted.accounting
+    let first = try trusted.checkpointAccounting()
+    XCTAssertEqual(first.revision, initial.revision + 1)
+    XCTAssertEqual(first.lastTime, time.now)
+    let clocked = try session(.trusted, time)
+    _ = try clocked.arm()
+    time.now += 500
+    let armed = try clocked.checkpointAccounting()
+    XCTAssertEqual(armed.lastTime, time.now)
+    _ = try clocked.end(reason: .cancel)
+    time.now += 500
+    let ended = try clocked.checkpointAccounting()
+    XCTAssertEqual(ended.revision, armed.revision + 1)
+    XCTAssertEqual(ended.lastTime, time.now)
+  }
+
+  func testAccountingCheckpointPersistsRollbackQuarantineWithoutRenewingIt() throws {
+    let time = Time(), trusted = try session(.trusted, Time())
+    var record = trusted.accounting
+    record.lastTime = time.now
+    record.revision = 6
+    let restored = try session(.trusted, time, accounting: record)
+    time.now -= 1
+    let quarantined = try restored.checkpointAccounting()
+    XCTAssertEqual(quarantined.revision, 7)
+    XCTAssertEqual(quarantined.lastTime, time.now)
+    XCTAssertEqual(quarantined.blockedUntil, time.now + 86400000)
+    XCTAssertGreaterThanOrEqual(quarantined.uncertainReveals, 20)
+    let restarted = try session(.trusted, time, accounting: quarantined)
+    time.now += 10
+    let again = try restarted.checkpointAccounting()
+    XCTAssertEqual(again.blockedUntil, quarantined.blockedUntil)
+    XCTAssertEqual(again.revision, 8)
+    XCTAssertEqual(again.lastTime, time.now)
+  }
+
 }

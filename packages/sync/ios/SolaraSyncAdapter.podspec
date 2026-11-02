@@ -11,7 +11,7 @@ Pod::Spec.new do |s|
   s.dependency 'ExpoModulesCore'
   s.dependency 'SolaraImportAdapter'
   s.dependency 'SolaraCore'
-  s.frameworks     = 'AppKit', 'CoreImage', 'CryptoKit', 'Security'
-  s.source_files   = 'SyncModule.swift', 'Core/**/*.swift'
+  s.frameworks     = 'AppKit', 'CoreImage', 'CryptoKit', 'Security', 'LocalAuthentication'
+  s.source_files   = 'SyncModule.swift', 'PairingCoordinator.swift', 'Core/**/*.swift'
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES' }
 end

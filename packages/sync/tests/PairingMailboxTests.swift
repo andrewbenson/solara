@@ -10,7 +10,7 @@ final class PairingMailboxTests: XCTestCase {
   let cid = SyncKeys(entropy: Data(count: 32)).chainTag
 
   override func setUpWithError() throws {
-    root = FileManager.default.temporaryDirectory.appendingPathComponent("pairing-mailbox-\(UUID().uuidString)", isDirectory: true)
+    root = SyncTestDirectory.url.appendingPathComponent("pairing-mailbox-\(UUID().uuidString)", isDirectory: true)
     folder = root.appendingPathComponent("Solara Sync", isDirectory: true)
     outside = root.appendingPathComponent("outside", isDirectory: true)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

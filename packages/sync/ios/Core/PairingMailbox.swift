@@ -54,6 +54,7 @@ final class PairingMailbox {
     var skipped = 0
     var truncated = false
     var bytesRead = 0
+    var unavailable = false
   }
 
   enum WriteOutcome: Equatable {
@@ -64,14 +65,23 @@ final class PairingMailbox {
     case folder, name, notRegularFile, size, conflict, pending, io(Int32)
   }
 
+  var folderIdentity: Data { Data("\(folderDevice):\(folderInode)".utf8) }
   let folder: URL
   let cid: String
   private let cidBytes: Data
+  private let folderDevice: dev_t
+  private let folderInode: ino_t
+  private let ownershipLock = NSLock()
+  private var owned: [String: PairingSession.Entry] = [:]
 
   init(folder: URL, cid: String) throws {
     guard let bytes = try? PairingFormat.cid(cid) else { throw Failure.name }
     let fd = open(folder.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
     guard fd >= 0 else { throw Failure.folder }
+    var identity = stat()
+    guard fstat(fd, &identity) == 0 else { close(fd); throw Failure.folder }
+    folderDevice = identity.st_dev
+    folderInode = identity.st_ino
     close(fd)
     self.folder = folder
     self.cid = cid
@@ -118,13 +128,64 @@ final class PairingMailbox {
     return found
   }
 
+  func poll(rids: [Data] = []) -> Listing {
+    var output = Listing()
+    var remainingEntries = Self.entriesPerPass
+    var remainingBytes = Self.bytesPerPass
+    var selected: [Data] = []
+    for rid in rids where !selected.contains(rid) && selected.count < Self.requestsPerPass { selected.append(rid) }
+    do {
+      if let chain = try openChainIfPresent() {
+        defer { close(chain) }
+        let names = try namesIn(chain, limit: Self.entriesPerPass / 2)
+        remainingEntries -= names.names.count
+        output.truncated = names.truncated
+        for name in names.names {
+          guard let rid = Self.id(Substring(name)), rid.contains(where: { $0 != 0 }), !selected.contains(rid) else { continue }
+          guard selected.count < Self.requestsPerPass else { output.truncated = true; continue }
+          let fd = openat(chain, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+          guard fd >= 0 else { continue }
+          close(fd)
+          selected.append(rid)
+        }
+      }
+    } catch {
+      output.unavailable = true
+      return output
+    }
+    if rids.count > Self.requestsPerPass { output.truncated = true }
+    for rid in selected {
+      let next = read(rid: rid, remainingEntries: &remainingEntries, remainingBytes: &remainingBytes)
+      output.entries += next.entries
+      output.pending += next.pending
+      output.bytesRead += next.bytesRead
+      output.skipped += next.skipped
+      output.truncated = output.truncated || next.truncated
+      output.unavailable = output.unavailable || next.unavailable
+    }
+    return output
+  }
+
   func read(rid: Data) -> Listing {
+    var remainingEntries = Self.entriesPerPass
+    var remainingBytes = Self.bytesPerPass
+    return read(rid: rid, remainingEntries: &remainingEntries, remainingBytes: &remainingBytes)
+  }
+
+  private func read(rid: Data, remainingEntries: inout Int, remainingBytes: inout Int) -> Listing {
     var listing = Listing()
-    guard let directory = try? openRequest(rid, create: false) else { return listing }
+    guard remainingEntries > 0, remainingBytes > 0 else { listing.truncated = true; return listing }
+    let directory: Int32
+    let names: (names: [String], truncated: Bool)
+    do {
+      guard let opened = try openRequestIfPresent(rid) else { return listing }
+      directory = opened
+      do { names = try namesIn(directory, limit: remainingEntries) }
+      catch { close(directory); throw error }
+    } catch { listing.unavailable = true; return listing }
     defer { close(directory) }
-    let names = list(directory)
+    remainingEntries -= names.names.count
     listing.truncated = names.truncated
-    var budget = Self.bytesPerPass
     for name in names.names {
       if name.hasPrefix("."), name.hasSuffix(".icloud") {
         if let parsed = Self.parse(String(name.dropFirst().dropLast(".icloud".count))) {
@@ -134,13 +195,13 @@ final class PairingMailbox {
         continue
       }
       guard let (aid, kind) = Self.parse(name) else { continue }
-      guard budget >= kind.size else {
+      guard remainingBytes >= kind.size else {
         listing.truncated = true
         continue
       }
       let wire: Data
       do {
-        wire = try readFile(directory, name: name, size: kind.size) { budget -= $0; listing.bytesRead += $0 }
+        wire = try readFile(directory, name: name, size: kind.size) { remainingBytes -= $0; listing.bytesRead += $0 }
       } catch Failure.pending {
         listing.pending.append((aid, kind))
         continue
@@ -159,45 +220,109 @@ final class PairingMailbox {
 
   @discardableResult
   func write(_ wire: Data, rid: Data, aid: Data?, kind: Kind) throws -> WriteOutcome {
-    guard (kind == .request) == (aid == nil), wire.count == kind.size, headerMatches(wire, rid: rid, aid: aid, kind: kind) else { throw Failure.size }
-    let name = Self.filename(aid: aid, kind: kind)
-    let directory = try openRequest(rid, create: true)
+    guard let sessionKind = PairingSession.Kind(rawValue: kind.rawValue) else { throw Failure.name }
+    return try publish(.init(rid: rid, aid: aid, kind: sessionKind, wire: wire), admit: { true })
+  }
+
+  @discardableResult
+  func publish(_ entry: PairingSession.Entry, admit: () -> Bool) throws -> WriteOutcome {
+    guard let kind = Kind(rawValue: entry.kind.rawValue), (kind == .request) == (entry.aid == nil), headerMatches(entry.wire, rid: entry.rid, aid: entry.aid, kind: kind) else { throw Failure.size }
+    try validateFolder()
+    let directory = try openRequest(entry.rid, create: true)
     defer { close(directory) }
-    var placeholder = stat()
-    guard fstatat(directory, ".\(name).icloud", &placeholder, AT_SYMLINK_NOFOLLOW) != 0 else { throw Failure.pending }
-    let destination = requestURL(rid).appendingPathComponent(name)
-    let staging = try FileManager.default.url(for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: requestURL(rid), create: true)
-    defer { try? FileManager.default.removeItem(at: staging) }
-    let stagingFD = open(staging.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
-    guard stagingFD >= 0 else { throw Failure.io(errno) }
-    defer { close(stagingFD) }
-    try writeNew(stagingFD, name: name, data: wire)
-    var moved: Int32 = 0
+    let name = Self.filename(aid: entry.aid, kind: kind)
+    let destination = requestURL(entry.rid).appendingPathComponent(name)
+    var result: Result<WriteOutcome, Error> = .failure(Failure.io(EIO))
     var coordinationError: NSError?
-    NSFileCoordinator(filePresenter: nil).coordinate(writingItemAt: destination, options: [], error: &coordinationError) { _ in
-      moved = renameatx_np(stagingFD, name, directory, name, UInt32(RENAME_EXCL)) == 0 ? 0 : errno
+    NSFileCoordinator(filePresenter: nil).coordinate(writingItemAt: destination, options: [], error: &coordinationError) { coordinated in
+      result = Result {
+        guard coordinated.standardizedFileURL == destination.standardizedFileURL else { throw Failure.folder }
+        try validateFolder()
+        let current = try openRequest(entry.rid, create: false)
+        defer { close(current) }
+        guard Self.sameDirectory(current, directory) else { throw Failure.folder }
+        var placeholder = stat()
+        guard fstatat(current, ".\(name).icloud", &placeholder, AT_SYMLINK_NOFOLLOW) != 0 else { throw Failure.pending }
+        var existing = stat()
+        let exists = fstatat(current, name, &existing, AT_SYMLINK_NOFOLLOW) == 0
+        if exists {
+          guard let bytes = try? readFile(current, name: name, size: kind.size, charge: { _ in }), bytes == entry.wire else { throw Failure.conflict }
+        }
+        guard admit() else { throw Failure.pending }
+        if exists { return .identical }
+        let temporary = ".pairing-delivery-\(UUID().uuidString)"
+        defer { _ = unlinkat(current, temporary, 0) }
+        try writeNew(current, name: temporary, data: entry.wire)
+        if renameatx_np(current, temporary, current, name, UInt32(RENAME_EXCL)) == 0 { return .written }
+        guard errno == EEXIST else { throw Failure.io(errno) }
+        guard let bytes = try? readFile(current, name: name, size: kind.size, charge: { _ in }), bytes == entry.wire else { throw Failure.conflict }
+        return .identical
+      }
     }
-    if coordinationError != nil { throw Failure.io(EIO) }
-    if moved == 0 { return .written }
-    guard moved == EEXIST else { throw Failure.io(moved) }
-    guard let existing = try? readFile(directory, name: name, size: kind.size, charge: { _ in }), existing == wire else { throw Failure.conflict }
-    return .identical
+    guard coordinationError == nil else { throw Failure.io(EIO) }
+    let outcome = try result.get()
+    ownershipLock.lock()
+    if owned.count < Self.entriesPerPass || owned[ownershipKey(entry)] != nil { owned[ownershipKey(entry)] = entry }
+    ownershipLock.unlock()
+    return outcome
+  }
+
+  private func openFolder() throws -> Int32 {
+    let fd = open(folder.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+    guard fd >= 0 else { throw Failure.folder }
+    var identity = stat()
+    guard fstat(fd, &identity) == 0, identity.st_dev == folderDevice, identity.st_ino == folderInode else {
+      close(fd)
+      throw Failure.folder
+    }
+    return fd
+  }
+
+  private func validateFolder() throws {
+    close(try openFolder())
+  }
+
+  private static func sameDirectory(_ lhs: Int32, _ rhs: Int32) -> Bool {
+    var a = stat(), b = stat()
+    return fstat(lhs, &a) == 0 && fstat(rhs, &b) == 0 && a.st_dev == b.st_dev && a.st_ino == b.st_ino
+  }
+
+  private func ownershipKey(_ entry: PairingSession.Entry) -> String {
+    Self.hex(entry.rid) + "/" + Self.hex(entry.aid ?? Data()) + "/" + String(entry.kind.rawValue)
+  }
+
+  func remove(expected: [PairingSession.Entry]) {
+    var remainingBytes = Self.bytesPerPass
+    for entry in expected.prefix(Self.entriesPerPass) {
+      guard let kind = Kind(rawValue: entry.kind.rawValue), headerMatches(entry.wire, rid: entry.rid, aid: entry.aid, kind: kind), remainingBytes >= entry.wire.count else { continue }
+      remainingBytes -= entry.wire.count
+      guard (try? validateFolder()) != nil, let directory = try? openRequest(entry.rid, create: false) else { continue }
+      defer { close(directory) }
+      let name = Self.filename(aid: entry.aid, kind: kind)
+      let destination = requestURL(entry.rid).appendingPathComponent(name)
+      var coordinationError: NSError?
+      NSFileCoordinator(filePresenter: nil).coordinate(writingItemAt: destination, options: .forDeleting, error: &coordinationError) { coordinated in
+        guard coordinated.standardizedFileURL == destination.standardizedFileURL, (try? validateFolder()) != nil,
+              let current = try? openRequest(entry.rid, create: false) else { return }
+        defer { close(current) }
+        guard Self.sameDirectory(current, directory),
+              let bytes = try? readFile(current, name: name, size: kind.size, charge: { _ in }), bytes == entry.wire else { return }
+        _ = unlinkat(current, name, 0)
+      }
+      guard let chain = try? openChain(create: false) else { continue }
+      _ = unlinkat(chain, Self.hex(entry.rid), AT_REMOVEDIR)
+      close(chain)
+    }
   }
 
   func remove(rid: Data, files: [(aid: Data?, kind: Kind)]) {
-    guard let directory = try? openRequest(rid, create: false) else { return }
-    defer { close(directory) }
-    for file in files {
-      let name = Self.filename(aid: file.aid, kind: file.kind)
-      guard let wire = try? readFile(directory, name: name, size: file.kind.size, charge: { _ in }), headerMatches(wire, rid: rid, aid: file.aid, kind: file.kind) else { continue }
-      var coordinationError: NSError?
-      NSFileCoordinator(filePresenter: nil).coordinate(writingItemAt: requestURL(rid).appendingPathComponent(name), options: .forDeleting, error: &coordinationError) { _ in
-        _ = unlinkat(directory, name, 0)
-      }
+    ownershipLock.lock()
+    let expected = files.compactMap { file -> PairingSession.Entry? in
+      guard let kind = PairingSession.Kind(rawValue: file.kind.rawValue) else { return nil }
+      return owned[ownershipKey(.init(rid: rid, aid: file.aid, kind: kind, wire: Data()))]
     }
-    guard let chain = try? openChain(create: false) else { return }
-    defer { close(chain) }
-    _ = unlinkat(chain, Self.hex(rid), AT_REMOVEDIR)
+    ownershipLock.unlock()
+    remove(expected: expected)
   }
 
   private var namespaceURL: URL { folder.appendingPathComponent(Self.namespace, isDirectory: true) }
@@ -215,12 +340,31 @@ final class PairingMailbox {
   }
 
   private func openChain(create: Bool) throws -> Int32 {
-    let root = open(folder.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
-    guard root >= 0 else { throw Failure.folder }
+    let root = try openFolder()
     defer { close(root) }
     let namespace = try openDirectory(root, Self.namespace, create: create)
     defer { close(namespace) }
     return try openDirectory(namespace, cid, create: create)
+  }
+
+  private func openChainIfPresent() throws -> Int32? {
+    let root = try openFolder()
+    defer { close(root) }
+    var info = stat()
+    if fstatat(root, Self.namespace, &info, AT_SYMLINK_NOFOLLOW) != 0, errno == ENOENT { return nil }
+    let namespace = try openDirectory(root, Self.namespace, create: false)
+    defer { close(namespace) }
+    if fstatat(namespace, cid, &info, AT_SYMLINK_NOFOLLOW) != 0, errno == ENOENT { return nil }
+    return try openDirectory(namespace, cid, create: false)
+  }
+
+  private func openRequestIfPresent(_ rid: Data) throws -> Int32? {
+    guard rid.count == 16, rid.contains(where: { $0 != 0 }) else { throw Failure.name }
+    guard let chain = try openChainIfPresent() else { return nil }
+    defer { close(chain) }
+    var info = stat()
+    if fstatat(chain, Self.hex(rid), &info, AT_SYMLINK_NOFOLLOW) != 0, errno == ENOENT { return nil }
+    return try openDirectory(chain, Self.hex(rid), create: false)
   }
 
   private func openRequest(_ rid: Data, create: Bool) throws -> Int32 {
@@ -245,6 +389,7 @@ final class PairingMailbox {
     defer { closedir(stream) }
     rewinddir(stream)
     var names: [String] = []
+    errno = 0
     while let entry = readdir(stream) {
       let name = withUnsafePointer(to: entry.pointee.d_name) { pointer in
         pointer.withMemoryRebound(to: CChar.self, capacity: Int(entry.pointee.d_namlen) + 1) { String(cString: $0) }
@@ -253,11 +398,12 @@ final class PairingMailbox {
       guard names.count < limit else { return (names, true) }
       names.append(name)
     }
+    guard errno == 0 else { throw Failure.io(errno) }
     return (names, false)
   }
 
   private func list(_ fd: Int32) -> (names: [String], truncated: Bool) {
-    (try? namesIn(fd, limit: Self.entriesPerPass)) ?? ([], false)
+    (try? namesIn(fd, limit: Self.entriesPerPass)) ?? (names: [], truncated: false)
   }
 
   private func readFile(_ directory: Int32, name: String, size: Int, charge: (Int) -> Void) throws -> Data {

@@ -97,15 +97,6 @@ final class PairingSession {
     case unreadable
   }
 
-  final class OwnerAuthentication {
-    fileprivate let authorization: Authorization
-    fileprivate var consumed = false
-
-    init(authorizationAfterOwnerAuthentication: Authorization) {
-      authorization = authorizationAfterOwnerAuthentication
-    }
-  }
-
   final class ValidatedApprovalCandidate: Equatable {
     let wire: Data
     let payload: PairingCrypto.Approval
@@ -663,6 +654,15 @@ final class PairingSession {
     return output
   }
 
+  func checkpointAccounting() throws -> Accounting {
+    _ = try tick()
+    guard phase != .awaitingPersistence, accounting.revision < UInt64.max else { throw Failure.accounting }
+    normalizeAccounting(now: lastObserved)
+    accounting.lastTime = max(accounting.lastTime, lastObserved)
+    accounting.revision += 1
+    return accounting
+  }
+
   func tick() throws -> Output {
     if phase == .installCommitted || phase == .installed { return Output() }
     let now = clock()
@@ -730,9 +730,9 @@ final class PairingSession {
   }
 
   func commitApproval(wire: Data, ownerAuthentication: OwnerAuthentication) throws -> Output {
-    guard !ownerAuthentication.consumed else { throw Failure.authorization }
-    ownerAuthentication.consumed = true
-    try validateAuthorization(ownerAuthentication.authorization)
+    let tuple = try authorization()
+    guard ownerAuthentication.consume(matching: tuple) else { throw Failure.authorization }
+    try validateAuthorization(tuple)
     try checkEnvelope(wire, kind: .approval)
     let entry = try emit(wire, kind: .approval)
     approval = entry
@@ -747,9 +747,13 @@ final class PairingSession {
     return Output(writes: [approval])
   }
 
-  func commitInstall(coordinatorValidatedRootCIDSessionAndDevice candidate: ValidatedApprovalCandidate) throws -> Output {
+  func validateInstall(_ candidate: ValidatedApprovalCandidate) throws {
     try requireLive()
     guard role == .joining, phase == .comparing, let approval, approvalCandidate === candidate, !candidate.consumed, PairingCrypto.equal(approval.wire, candidate.wire), validatedName != nil else { throw Failure.authorization }
+  }
+
+  func commitInstall(coordinatorValidatedRootCIDSessionAndDevice candidate: ValidatedApprovalCandidate) throws -> Output {
+    try validateInstall(candidate)
     candidate.consumed = true
     phase = .installCommitted
     compared = false

@@ -7,7 +7,7 @@ final class SyncDiscoveryTests: XCTestCase {
   var folder: URL!
 
   override func setUpWithError() throws {
-    root = FileManager.default.temporaryDirectory.appendingPathComponent("sync-discovery-\(UUID().uuidString)", isDirectory: true)
+    root = SyncTestDirectory.url.appendingPathComponent("sync-discovery-\(UUID().uuidString)", isDirectory: true)
     folder = root.appendingPathComponent("Solara Sync", isDirectory: true)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
   }

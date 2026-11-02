@@ -1,6 +1,16 @@
 import Foundation
+import Darwin
 import XCTest
 @testable import SolaraLegacySyncCore
+
+enum SyncTestDirectory {
+  static var url: URL {
+    let path = ProcessInfo.processInfo.environment["TMPDIR"] ?? NSTemporaryDirectory()
+    guard let pointer = realpath(path, nil) else { preconditionFailure("test temporary directory unavailable") }
+    defer { free(pointer) }
+    return URL(fileURLWithPath: String(cString: pointer), isDirectory: true)
+  }
+}
 
 final class RecoveryPhraseTests: XCTestCase {
   func testReferenceVectors() throws {
@@ -59,7 +69,7 @@ final class SyncVaultTests: XCTestCase {
   var vault: SyncVault!
 
   override func setUpWithError() throws {
-    folder = FileManager.default.temporaryDirectory.appendingPathComponent("ac-sync-tests-\(UUID().uuidString)", isDirectory: true)
+    folder = SyncTestDirectory.url.appendingPathComponent("ac-sync-tests-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     vault = SyncVault(folder: folder, keys: SyncKeys(entropy: entropy))
   }

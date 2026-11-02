@@ -17,7 +17,7 @@ final class RekeyStoresTests: XCTestCase {
   lazy var other = try! R.Key(secret: otherSecret)
 
   override func setUpWithError() throws {
-    dir = FileManager.default.temporaryDirectory.appendingPathComponent("rekey-\(UUID().uuidString)")
+    dir = SyncTestDirectory.url.appendingPathComponent("rekey-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: profile, withIntermediateDirectories: true)
   }
 

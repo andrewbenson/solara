@@ -55,7 +55,7 @@ final class SafeStorageRekeyRunTests: XCTestCase {
   let mock = SafeStorageRekeyRun.mockSecret
 
   override func setUpWithError() throws {
-    root = FileManager.default.temporaryDirectory.appendingPathComponent("rekey-\(UUID().uuidString)")
+    root = SyncTestDirectory.url.appendingPathComponent("rekey-\(UUID().uuidString)")
     dir = root.appendingPathComponent("Chromium")
     try FileManager.default.createDirectory(at: dir.appendingPathComponent("Default/GCM Store"), withIntermediateDirectories: true)
     for (index, (path, _)) in RekeyCoreFakeStores.listed.enumerated() {
@@ -561,7 +561,7 @@ final class SafeStorageRekeyGateTests: XCTestCase {
   }
 
   func testSyncReadsTheTestKeyWheneverChromeDoes() throws {
-    let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("rekey-gate-\(UUID().uuidString)")
+    let scratch = SyncTestDirectory.url.appendingPathComponent("rekey-gate-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: scratch) }
     let chromium = scratch.appendingPathComponent("Chromium")
     try FileManager.default.createDirectory(at: chromium, withIntermediateDirectories: true)

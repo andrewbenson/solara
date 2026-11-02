@@ -1,4 +1,5 @@
 #import <Security/Security.h>
+#import <CoreFoundation/CFUserNotification.h>
 #import <objc/runtime.h>
 
 #import "SolaraCoreEarlyWindow.h"
@@ -6,6 +7,7 @@
 #import "SolaraCoreServices.h"
 #import "SolaraCoreNavigationDownloads.h"
 #import "SolaraCoreStartup.h"
+#import "SolaraCoreNotifications.h"
 #import "SolaraCoreTabParking.h"
 #import "SolaraCoreWebView.h"
 #import "SolaraCoreWebViewInternal.h"
@@ -673,6 +675,19 @@ static void StartEarlyWindow() {
 
 + (int)runWithArgc:(int)argc argv:(char **)argv delegate:(id<NSApplicationDelegate> (^)(void))makeDelegate {
   [self prepareEnvironment];
+  const auto notificationFailure = [](CFStringRef message) {
+    if (!solaracore_host::Background())
+      CFUserNotificationDisplayAlert(30, kCFUserNotificationStopAlertLevel, nullptr, nullptr, nullptr,
+          CFSTR("Solara Cannot Start"), message, CFSTR("Quit"), nullptr, nullptr, nullptr);
+    return 1;
+  };
+  if (![SolaraCoreNotifications install]) {
+    fprintf(stderr, "[solaracore] notification protocol 2 / native API 36 preflight failed\n");
+    return notificationFailure(CFSTR("This app and its engine must both support native API 36 and notification protocol 2. Reinstall the complete Solara app."));
+  }
+  struct NotificationStartupLifetime {
+    ~NotificationStartupLifetime() { [SolaraCoreNotifications abortStartup]; }
+  } notificationStartupLifetime;
   const char *dataDir = getenv("SOLARA_DATA_DIR");
   gScratchDataDir = dataDir && *dataDir;
 #if DEBUG
@@ -691,6 +706,10 @@ static void StartEarlyWindow() {
     fprintf(stderr, "[solaracore] can't use the data dir %s: %s\n", gDataDirectory.fileSystemRepresentation,
             dirError.localizedDescription.UTF8String ?: "");
     return 1;
+  }
+  if (![SolaraCoreNotifications configureRoot:gDataDirectory]) {
+    fprintf(stderr, "[solaracore] notification process identity initialization failed\n");
+    return notificationFailure(CFSTR("Solara could not initialize notification identity for its data directory. Quit and check access to the selected data directory."));
   }
   solaracore_host::InstallTestCrashGuard(scratch && solaracore_host::Background() ? scratch.stringByStandardizingPath : nil);
   solaracore_host::InstallActivationGuardsEarly();
@@ -886,6 +905,9 @@ static void StartEarlyWindow() {
   SolaraCoreEngine *engine = SolaraCoreEngine.sharedEngine;
   SolaraCoreProfile *p = solaracore_host::LoadedProfile(profile);
   if (!profile.length || ![engine respondsToSelector:@selector(deleteProfile:completion:)]) return completion(@[ @"data" ]);
+  if (![engine respondsToSelector:@selector(fenceNotificationsForProfileDeletionAtPath:completion:)])
+    return completion(@[ @"notification deletion admission unavailable" ]);
+  if (!deletionAllowed()) return completion(@[ @"live profile filesystem identity" ]);
   [DeletedProfiles() addObject:profile];
   void (^remove)(SolaraCoreProfile *) = ^(SolaraCoreProfile *loaded) {
     NSDictionary *current = DeletionLocation(profile);
@@ -926,16 +948,35 @@ static void StartEarlyWindow() {
     }];
   };
   if (!p && ProfileWaiters()[profile]) {
-    DeletionsAfterLoad()[profile] = [remove copy];
+    DeletionsAfterLoad()[profile] = [^(SolaraCoreProfile *loaded) {
+      [engine fenceNotificationsForProfileDeletionAtPath:location[@"path"] completion:^(BOOL admitted) {
+        if (!admitted) {
+          [DeletedProfiles() removeObject:profile];
+          return completion(@[ @"notification deletion admission rejected" ]);
+        }
+        remove(loaded);
+      }];
+    } copy];
     return;
   }
-  remove(p);
+  [engine fenceNotificationsForProfileDeletionAtPath:location[@"path"] completion:^(BOOL admitted) {
+    if (!admitted) {
+      [DeletedProfiles() removeObject:profile];
+      return completion(@[ @"notification deletion admission rejected" ]);
+    }
+    remove(solaracore_host::LoadedProfile(profile));
+  }];
 }
 
 + (void)releaseProfile:(NSString *)profile {
   SolaraCoreEngine *engine = SolaraCoreEngine.sharedEngine;
   SolaraCoreProfile *p = solaracore_host::LoadedProfile(profile);
   if (solaracore_host::IsIncognito(profile)) {
+    BOOL shared = NO;
+    for (NSString *alias in Profiles())
+      if (![alias isEqualToString:profile] && Profiles()[alias] == p) shared = YES;
+    if (p && !shared && [engine respondsToSelector:@selector(fenceNotificationsForPrivateProfile:)])
+      [engine fenceNotificationsForPrivateProfile:p];
     if (profile) [ReleasedPrivateNames() addObject:profile];
     [Profiles() removeObjectForKey:profile];
     NSArray *waiting = ProfileWaiters()[profile];
@@ -952,6 +993,14 @@ static void StartEarlyWindow() {
   for (NSString *alias in aliases)
     if ([alias hasPrefix:@"incognito:"] && [solaracore_host::OriginalProfileName(alias) isEqualToString:engineProfile ?: @""])
       [privateAliases addObject:alias];
+  SolaraCoreEngine *engine = SolaraCoreEngine.sharedEngine;
+  NSMutableSet<SolaraCoreProfile *> *exactProfiles = [NSMutableSet set];
+  for (NSString *alias in privateAliases) {
+    SolaraCoreProfile *profile = solaracore_host::LoadedProfile(alias);
+    if (profile && profile.offTheRecord) [exactProfiles addObject:profile];
+  }
+  for (SolaraCoreProfile *profile in exactProfiles)
+    if ([engine respondsToSelector:@selector(fenceNotificationsForPrivateProfile:)]) [engine fenceNotificationsForPrivateProfile:profile];
   [SolaraCoreFavicons forgetPrivateProfiles:privateAliases];
   [SolaraCoreServices endPrivateSession:engineProfile ?: @""];
   for (NSString *alias in privateAliases) [self releaseProfile:alias];

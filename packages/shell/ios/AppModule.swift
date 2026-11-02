@@ -9,7 +9,7 @@ extension Bundle {
 public class AppModule: Module {
   public func definition() -> ModuleDefinition {
     Name("SolaraApp")
-    Constant("apiVersion") { () -> Int in 35 }
+    Constant("apiVersion") { () -> Int in 36 }
     Events("onNotificationResponse")
 
     OnCreate {
@@ -24,9 +24,7 @@ public class AppModule: Module {
     OnStartObserving("onNotificationResponse") {
       DispatchQueue.main.async { [weak self] in
         NotificationHub.shared.onResponse = { id, action, info in
-          self?.sendEvent("onNotificationResponse", [
-            "id": id, "action": action, "tabId": info["tabId"] as Any, "windowId": info["windowId"] as Any, "data": info["data"] as Any,
-          ])
+          self?.sendEvent("onNotificationResponse", ["id": id, "action": action, "data": info["data"] as Any])
         }
         NotificationHub.shared.flushPending()
       }
@@ -57,15 +55,36 @@ public class AppModule: Module {
     AsyncFunction("devApplicationIconImage") { () -> String? in AppIcons.dataURL(NSApp.applicationIconImage) }.runOnQueue(.main)
 
     AsyncFunction("notificationPermission") { (promise: Promise) in
-      NotificationHub.shared.permission { promise.resolve($0) }
+      MainActor.assumeIsolated { NotificationHub.shared.permission { promise.resolve($0) } }
     }.runOnQueue(.main)
     AsyncFunction("requestNotificationPermission") { (promise: Promise) in
-      NotificationHub.shared.requestPermission { promise.resolve($0) }
+      MainActor.assumeIsolated { NotificationHub.shared.requestPermission { promise.resolve($0) } }
     }.runOnQueue(.main)
     AsyncFunction("postNotification") { (options: [String: Any], promise: Promise) in
-      NotificationHub.shared.post(options) { promise.resolve($0) }
+      MainActor.assumeIsolated { NotificationHub.shared.post(options) { promise.resolve($0) } }
     }.runOnQueue(.main)
-    AsyncFunction("removeNotifications") { (ids: [String]) in NotificationHub.shared.remove(ids) }.runOnQueue(.main)
+    AsyncFunction("removeNotifications") { (ids: [String]) in MainActor.assumeIsolated { NotificationHub.shared.remove(ids) } }.runOnQueue(.main)
+    AsyncFunction("notificationDebugAuthorization") { (payload: [String: Any]) -> [String: Any] in
+      #if DEBUG
+      return MainActor.assumeIsolated { NotificationHub.shared.debugAuthorization(payload) }
+      #else
+      return ["ok": false]
+      #endif
+    }.runOnQueue(.main)
+    AsyncFunction("notificationDebugRestorePrior") { (envelope: [String: Any]) -> Bool in
+      #if DEBUG
+      return MainActor.assumeIsolated { NotificationHub.shared.debugRestorePrior(envelope) }
+      #else
+      return false
+      #endif
+    }.runOnQueue(.main)
+    AsyncFunction("notificationDebugRespond") { (nativeID: String, actionIdentifier: String, promise: Promise) in
+      #if DEBUG
+      MainActor.assumeIsolated { NotificationHub.shared.debugRespond(nativeID, identifier: actionIdentifier) { promise.resolve($0) } }
+      #else
+      promise.resolve(["accepted": false])
+      #endif
+    }.runOnQueue(.main)
     AsyncFunction("openNotificationSettings") {
       let id = Bundle.main.bundleIdentifier ?? ""
       if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(id)") {

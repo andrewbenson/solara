@@ -45,7 +45,6 @@ const sources = {
   "../store/nativeStore": `export const nativeSafeMode = () => true;`,
   "./persistLatch": `export const persistenceRefused = () => true;`,
   "./actions": `export const openUrls = (urls, id) => { globalThis.appIntegrationTest.help.push(["urls", urls, id]); };`,
-  "./webNotifications": `export const handleWebNotificationResponse = (response) => response.id.startsWith("web:");`,
 };
 const hooks = registerHooks({
   resolve(specifier, context, next) {
@@ -81,9 +80,7 @@ test("native presentation retains onboarding, tour and unowned URL effects", () 
   assert.deepEqual(f.help, [["onboarding", "w"], ["tool", "w"], ["urls", ["https://example.com"], "w"]]);
 });
 
-test("web response bookkeeping stays in JS and generic responses reach Swift", () => {
-  f.notification({ id: "web:one", action: "click", tabId: "t" });
-  f.notification({ id: "web:one", action: "close", tabId: "t" });
+test("generic Hub responses reach Swift", () => {
   const click = { id: "other", action: "click", tabId: "t", windowId: "w" };
   f.notification(click);
   assert.deepEqual(f.notifications, [click]);

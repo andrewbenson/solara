@@ -22,7 +22,7 @@ export type UpdateChannel = "stable" | "nightly";
 
 export type AppIcon = { id: string; name: string; preview: string | null };
 
-export type NotificationPermission = "granted" | "denied" | "notDetermined" | "provisional";
+export type NotificationPermission = "granted" | "denied" | "notDetermined" | "provisional" | "simulated";
 
 export type NotificationOptions = {
   id?: string;

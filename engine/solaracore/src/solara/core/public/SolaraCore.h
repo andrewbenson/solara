@@ -81,7 +81,10 @@ SOLARACORE_EXPORT
 + (void)endTracing:(BOOL)keep completion:(void (^)(NSString* _Nullable path))completion;
 @property(class, readonly) BOOL isTracing;
 - (void)deleteProfile:(SolaraCoreProfile*)profile
-           completion:(nullable void (^)(BOOL deleted))completion;
+           completion:(nullable void (^)(BOOL admitted))completion;
+- (void)fenceNotificationsForProfileDeletionAtPath:(NSString*)path
+                                      completion:(void (^)(BOOL admitted))completion;
+- (void)fenceNotificationsForPrivateProfile:(SolaraCoreProfile*)profile;
 - (void)releaseProfile:(SolaraCoreProfile*)profile;
 + (void)resolveExternalApp:(NSString*)requestId open:(BOOL)open remember:(BOOL)remember;
 @property(class, readonly) NSArray<NSDictionary*>* testExternalLaunches;

@@ -35,15 +35,17 @@
 //   pipByHand(tabId)               Site Controls › Picture in Picture, clicked as the user does (manual PiP needs the click)
 //   launch(log, env, args, opts) · appUp(log)   (re)start the app on the run's data dir; `exited` is set once it's gone
 //   onScreenWindows() · firstPixel(png) · writePopupExtension(opts) · fixtureCrx()
-import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { execFile, execFileSync } from "node:child_process";
+import assert from "node:assert/strict";
+import { assertNotificationAuthorizationLog } from "./notification-authorization-log.mjs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { networkInterfaces } from "node:os";
+import { networkInterfaces, tmpdir } from "node:os";
 import { createServer as createHttpsServer } from "node:https";
 import { basename, join, resolve } from "node:path";
 import { X509Certificate, createHash, createSign, generateKeyPairSync } from "node:crypto";
 import { crc32, deflateSync, inflateSync } from "node:zlib";
-import { attach as attachInstance, launch as launchInstance, onScreenWindows as windowsOf, reporter, sleep } from "../../../scripts/lib/instance.mjs";
+import { attach as attachInstance, launch as launchInstance, onScreenWindows as windowsOf, reporter, sleep, temporaryData } from "../../../scripts/lib/instance.mjs";
 
 // MARK: What each check needs
 
@@ -106,7 +108,7 @@ function selection(asked) {
     console.error(`no such check: ${unknown.join(", ")} (--list shows them)`);
     process.exit(64);
   }
-  if (!asked.length) return { run: new Set(index), deps: new Map() };
+  if (!asked.length) return { run: new Set(index.filter((name) => name !== "notifications-one-requester")), deps: new Map() };
   const run = new Set(["boot", ...asked]);
   const deps = new Map();
   const add = (name, by) => {
@@ -133,6 +135,8 @@ if (flag("--list")) listChecks();
 const attaching = argv[0] === "--attach";
 if (attaching) argv.shift();
 const keep = flag("--keep") || attaching;
+if (argv.includes("notifications-one-requester") && (attaching || keep))
+  throw new Error("notifications-one-requester requires a fresh owned instance without --attach or --keep");
 const audioOutputOf = (browserPid) => {
   const utilities = execFileSync("ps", ["-A", "-ww", "-o", "ppid=,command="], { encoding: "utf8", maxBuffer: 64 << 20 }).split("\n")
     .filter((line) => line.trim().split(/\s+/)[0] === String(browserPid) && line.includes("--type=utility"));
@@ -176,6 +180,22 @@ if (!appArg || !scratchArg) {
 }
 const app = resolve(appArg);
 const scratch = resolve(scratchArg);
+const notificationOnly = selected.has("notifications-one-requester");
+if (notificationOnly) {
+  assert.deepEqual(only, ["notifications-one-requester"], "run notifications-one-requester alone");
+  assert.equal(process.env.SKIP ?? "", "", "the notification check cannot skip prerequisites");
+  assert.equal(Number(process.env.SOLARA_NOTIFICATION_DISPOSABLE_UID), process.getuid(), "attest the disposable GUI user's UID");
+  assert.equal(statSync("/dev/console").uid, process.getuid(), "the disposable GUI session must own the console");
+  assert.equal(existsSync(scratch), false, "use a new nonexistent notification scratch directory");
+}
+let notificationRun = null;
+const notificationDiagnostics = [];
+let notificationRetired = null;
+const notificationEvidence = notificationOnly ? mkdtempSync(join(tmpdir(), "notif-r3-evidence-")) : null;
+if (notificationOnly) {
+  assert.equal(temporaryData(notificationEvidence), null, "notification evidence must be outside reporter auto-cleanup");
+  console.log(`retained notification evidence: ${notificationEvidence}`);
+}
 const data = join(scratch, "data");
 let port;
 const downloadsDir = join(scratch, "downloads");
@@ -189,7 +209,7 @@ mkdirSync(downloadsDir, { recursive: true });
 mkdirSync(data, { recursive: true });
 
 const results = [];
-const report = reporter(join(data, "acceptance.log"), { name: `acceptance ${kept ? `attached to pid ${kept.pid}` : app}` });
+const report = reporter(notificationOnly ? join(notificationEvidence, "notification-acceptance.log") : join(data, "acceptance.log"), { name: `acceptance ${kept ? `attached to pid ${kept.pid}` : app}` });
 const log = (...a) => report.log(...a);
 const stamp = () => new Date().toISOString().slice(11, 23);
 
@@ -198,6 +218,7 @@ const stamp = () => new Date().toISOString().slice(11, 23);
 const adServed = [];
 const served = new Map();
 const referers = new Map();
+const notificationWorkerEvents = [];
 const siteDataDomain = "solara-sitedata.com";
 const siteDataSecureHosts = [`s.${siteDataDomain}`, "embed.solara-thirdparty.com", "top.solara-elsewhere.com"];
 let clipBytes = null;
@@ -218,6 +239,16 @@ const server = createServer((req, res) => {
   const url = new URL(req.url, "http://x");
   const page = (title, body, extra = "") =>
     `<!doctype html><html><head><title>${title}</title><link rel="icon" href="/icon.png">${extra}</head><body>${body}</body></html>`;
+  if (url.pathname === "/notification-fixture/event") {
+    notificationWorkerEvents.push(Object.fromEntries(url.searchParams));
+    res.writeHead(204);
+    return res.end();
+  }
+  if (url.pathname === "/notification-fixture/" || url.pathname === "/notification-fixture/worker.js") {
+    const worker = url.pathname.endsWith("worker.js");
+    res.writeHead(200, { "content-type": worker ? "text/javascript" : "text/html", "cache-control": "no-store" });
+    return res.end(readFileSync(new URL(`./fixtures/notifications/${worker ? "worker.js" : "index.html"}`, import.meta.url)));
+  }
   if (url.pathname === "/icon.png") {
     const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==", "base64");
     res.writeHead(200, { "content-type": "image/png" });
@@ -416,6 +447,163 @@ const tlsSpki = createHash("sha256").update(new X509Certificate(tlsCert).publicK
 
 let exe, stdout, pid, child, launchedAt, exited = null;
 let instance = null;
+let notificationWatch = null;
+let notificationQuit = null;
+const notificationOwnedProcesses = new Map();
+const notificationEffects = ["centerAcquire", "delegate", "categories", "authorization", "settings", "attachmentLoad", "add", "query", "removeDelivered", "removePending"];
+function assertNotificationEffectsZero(value) {
+  for (const key of notificationEffects) assert.equal(value?.[key], 0, `real-center effect ${key}`);
+}
+function notificationJournal(snapshot = null) {
+  if (snapshot) {
+    const coverage = snapshot.coverage;
+    assert.equal(coverage?.initialized, true);
+    assert.equal(coverage.complete, true, "coverage truncation is red");
+    assert.equal(coverage.dropped, "0");
+    assert.notEqual(snapshot.truncated, true);
+    const records = [...Object.values(coverage.checkpoints ?? {}), ...(coverage.events ?? [])];
+    const start = records.find((row) => row.kind === "coverage-start");
+    assert.ok(start?.runNonce, "engine-generated startup nonce");
+    notificationRun ??= start.runNonce;
+    for (const row of records) {
+      assert.equal(row.pid, pid);
+      assert.equal(row.runNonce, notificationRun);
+      assert.match(row.ordinal, /^[1-9][0-9]*$/);
+      if (!notificationDiagnostics.some((entry) => entry.ordinal === row.ordinal)) notificationDiagnostics.push(row);
+    }
+  }
+  return notificationDiagnostics.sort((a, b) => BigInt(a.ordinal) < BigInt(b.ordinal) ? -1 : 1);
+}
+function assertNotificationJournal(records, final = false) {
+  assert.ok(records.length >= 2, "native startup coverage diagnostics");
+  records.forEach((row, index) => {
+    assert.equal(row.pid, pid);
+    assert.equal(row.runNonce, notificationRun);
+    assert.equal(row.ordinal, String(index + 1), "complete native coverage ordinal");
+    for (const key of ["alertLaunch", "bannerBind", "appShimBind", "providerBind"]) assert.equal(row[key], "0", `native attempted provider use: ${key}`);
+  });
+  assert.equal(records[0].kind, "coverage-start");
+  assert.equal(records[0].phase, "engine");
+  assert.equal(records.find((row) => row.kind === "startup-complete")?.hooksInstalled, true);
+  if (final) {
+    const drain = records.find((row) => row.kind === "drain-complete");
+    assert.ok(drain, "native early drain receipt");
+    assert.equal(drain.settled, true);
+    assert.equal(drain.complete, true);
+    assert.equal(drain.unresolvedIDCount, 0);
+    assert.equal(drain.unresolvedOperationCount, 0);
+    assert.deepEqual(drain.unresolvedIDs, []);
+    assert.deepEqual(drain.unresolvedOperations, []);
+    assert.equal(records.at(-1).kind, "coverage-end");
+    assert.ok(notificationRetired, "synchronous retirement diagnostic copy");
+    assert.equal(notificationRetired.drainSettled, true);
+    assert.equal(notificationRetired.queryCount, 0);
+    assert.equal(notificationRetired.nativeOperationCount, 0);
+    assert.equal(notificationRetired.hub.diagnosticsComplete, true);
+    assert.equal(notificationRetired.hub.pendingCount, 0);
+    assert.equal(notificationRetired.hub.deliveredCount, 0);
+    assert.equal(notificationRetired.hub.removalCount, 0);
+    assert.equal(notificationRetired.hub.inFlight, 0);
+    assert.equal(notificationRetired.hub.diagnosticDrops, 0);
+    assert.deepEqual(notificationRetired.hub.pending, []);
+    assert.deepEqual(notificationRetired.hub.delivered, []);
+    assertNotificationEffectsZero(notificationRetired.hub.realEffects);
+  }
+}
+function captureNotificationRetirement() {
+  const text = existsSync(stdout) ? readFileSync(stdout, "utf8") : "";
+  const line = text.split("\n").findLast((row) => row.startsWith("SOLARA_NOTIFICATION_RETIRED "));
+  assert.ok(line, "app copied and published final diagnostics before the quit continuation");
+  notificationRetired = JSON.parse(line.slice("SOLARA_NOTIFICATION_RETIRED ".length));
+  notificationJournal(notificationRetired);
+  writeFileSync(join(notificationEvidence, "notification-native.jsonl"), notificationJournal().map((row) => JSON.stringify(row)).join("\n") + "\n");
+  writeFileSync(join(notificationEvidence, "notification-retirement.json"), JSON.stringify(notificationRetired, null, 2));
+}
+function startNotificationWatch() {
+  let running = true;
+  const history = new Map();
+  const errors = [];
+  let samples = 0;
+  const key = (row) => `${row.pid}:${row.started}`;
+  const artifact = (command) => /^(.*?\.app)\/Contents\//.exec(command)?.[1] ?? "";
+  const classify = () => {
+    for (const [id, root] of notificationOwnedProcesses) {
+      const row = history.get(id);
+      if (row && row.command.startsWith(root.binary)) row.ownedBy.add(id);
+    }
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const row of history.values()) {
+        for (const parent of row.parents) for (const owner of history.get(parent)?.ownedBy ?? []) {
+          if (!row.ownedBy.has(owner)) { row.ownedBy.add(owner); changed = true; }
+        }
+      }
+    }
+    const descendants = [...history.values()].filter((row) => row.ownedBy.size > 0);
+    for (const row of history.values()) {
+      if (!row.alerts || row.ownedBy.size > 0) continue;
+      const related = descendants.filter((ancestor) => artifact(ancestor.command) && artifact(ancestor.command) === artifact(row.command) && Date.parse(ancestor.started) <= Date.parse(row.started));
+      if (related.length > 0) {
+        row.association = "same-built-artifact-after-observed-descendant";
+        for (const ancestor of related) for (const owner of ancestor.ownedBy) row.possibleOwners.add(owner);
+      }
+    }
+  };
+  const sample = () => new Promise((done) => {
+    execFile("ps", ["-A", "-ww", "-o", "pid=,ppid=,lstart=,command="], { encoding: "utf8", timeout: 2000, maxBuffer: 64 << 20 }, (error, stdout) => {
+      if (error) errors.push(String(error));
+      else {
+        samples++;
+        const lines = stdout.split("\n").filter((line) => line.trim());
+        const rows = lines.map((line) => /^\s*(\d+)\s+(\d+)\s+(.{24})\s+(.*)$/.exec(line)).filter(Boolean)
+          .map((m) => ({ pid: Number(m[1]), ppid: Number(m[2]), started: m[3], command: m[4] }));
+        if (rows.length !== lines.length || rows.some((row) => !Number.isFinite(Date.parse(row.started)))) errors.push("incomplete process-start identity snapshot");
+        const byPid = new Map(rows.map((row) => [row.pid, row]));
+        const now = new Date().toISOString();
+        for (const row of rows) {
+          const id = key(row);
+          const seen = history.get(id) ?? { ...row, parents: new Set(), ownedBy: new Set(), possibleOwners: new Set(), firstSeen: now,
+            alerts: / Helper \((?:Aperitif |Apéritif )?Alerts\)\.app\//.test(row.command) };
+          const parent = byPid.get(row.ppid);
+          if (parent && Date.parse(parent.started) <= Date.parse(row.started)) seen.parents.add(key(parent));
+          if (!parent) {
+            for (const previous of history.values()) {
+              if (previous.pid === row.ppid && Date.parse(previous.started) <= Date.parse(row.started) && Date.parse(previous.lastSeen) >= Date.parse(row.started)) seen.parents.add(key(previous));
+            }
+          }
+          seen.lastSeen = now;
+          history.set(id, seen);
+        }
+        classify();
+      }
+      done();
+    });
+  });
+  const loop = (async () => {
+    while (running) {
+      await sample();
+      if (running) await sleep(100);
+    }
+  })();
+  return {
+    get finished() { return !running; },
+    async finish() { running = false; await loop; classify(); },
+    async assertZero() {
+      await sample();
+      assert.deepEqual(errors, [], "process monitoring errors");
+      assert.ok(samples > 0, "process observation began before launch");
+      assert.ok([...notificationOwnedProcesses.keys()].every((id) => history.has(id)), "every owned process has an observed exact start identity");
+      assert.deepEqual([...history.values()].filter((row) => row.alerts && (row.ownedBy.size > 0 || row.possibleOwners.size > 0)), [], "owned or potentially reparented Alerts process history");
+    },
+    evidence() {
+      classify();
+      return { samples, errors, roots: [...notificationOwnedProcesses.values()], supplemental: true,
+        processes: [...history.values()].filter((row) => row.alerts || row.ownedBy.size > 0).map((row) => ({ ...row, parents: [...row.parents], ownedBy: [...row.ownedBy], possibleOwners: [...row.possibleOwners] })) };
+    },
+  };
+}
+
 process.env.SOLARA_CHROMIUM_SWITCHES = `--force-color-profile=srgb --solara-test-media-route-provider --disable-media-route-providers-for-test --solara-test-bluetooth-chooser --solara-test-browser-lifetime ${process.env.SOLARA_CHROMIUM_SWITCHES ?? ""}`.trim();
 process.env.SOLARA_CHROMIUM_SWITCHES += ` --host-resolver-rules=${["ib.adnxs.com", "securepubads.g.doubleclick.net", "pagead2.googlesyndication.com", "adpage.test"]
   .map((host) => `MAP ${host} 127.0.0.1:${server.address().port}`).concat([`one.${siteDataDomain}`, `two.${siteDataDomain}`, ...siteDataSecureHosts].map((host) => `MAP ${host} 127.0.0.1:${tlsServer.address().port}`)).join(", ")}`;
@@ -445,12 +633,20 @@ function adopt(i) {
   instance = i;
   ({ pid, port, launchedAt, binary: exe, log: stdout } = i);
   const own = pid;
+  if (notificationOnly) notificationOwnedProcesses.set(`${own}:${i.started}`, { pid: own, started: i.started, binary: i.binary });
   child = { pid: own, kill: (sig) => { if (i.stillOwned()) try { process.kill(own, sig); } catch {} } };
   exited = null;
   writeFileSync(join(scratch, "app.pid"), String(own));
 }
-if (kept) adopt(kept);
-else await launch();
+if (notificationOnly) notificationWatch = startNotificationWatch();
+try {
+  if (kept) adopt(kept);
+  else await launch();
+} catch (error) {
+  try { if (instance) await instance.quit(); }
+  finally { await notificationWatch?.finish(); }
+  throw error;
+}
 const alive = () => { try { process.kill(pid, 0); return true; } catch { return false; } };
 setInterval(() => { if (!exited && !alive()) exited = { pid }; }, 300).unref();
 const appLog = { join: () => (existsSync(stdout) ? readFileSync(stdout, "utf8") : "") };
@@ -788,6 +984,297 @@ try {
     const native = await evalApp(`return ac.shell.windowIds()`);
     if (native.length !== 1) throw new Error(`windows ${JSON.stringify(native)} (a second JS runtime?)`);
     return { chromium: info.chromiumVersion, windows: s.windows, tabs: s.tabs.length, pid: child.pid };
+  });
+
+  await check("notifications-one-requester", async () => {
+    const errors = [];
+    const delivered = [];
+    const displayedQueries = [];
+    const authorizationRevocations = [];
+    let tab = null;
+    let target = null;
+    let settingTouched = false;
+    let initialPermission = null;
+    let evidence = null;
+    let osAuthorization = { status: "not-measured-hidden-adapter" };
+    let previousLifetime = null;
+    let priorEnvelope = null;
+    const snapshot = async (requireLive = true) => {
+      const value = await cef("notificationDebugSnapshot()");
+      assert.equal(value.protocol, 2);
+      assert.equal(value.hub.mode, "memory");
+      notificationJournal(value);
+      if (requireLive) assert.equal(value.state, "Live");
+      assertNotificationEffectsZero(value.hub.realEffects);
+      assert.equal(value.hub.diagnosticsComplete, true);
+      assert.notEqual(value.hub.truncated, true);
+      assert.equal(value.hub.diagnosticDrops, 0);
+      assert.equal(value.hub.pendingCount, value.hub.pending.length);
+      assert.equal(value.hub.deliveredCount, value.hub.delivered.length);
+      for (const key of ["alertLaunch", "bannerBind", "appShimBind", "providerBind"]) assert.equal(value.providerAttempts[key], "0", `provider attempts ${key}`);
+      return value;
+    };
+    const displayed = async () => until("authoritative Chromium displayed callback", async () => {
+      const value = await cef(`notificationDebugDisplayed("", ${JSON.stringify(base)})`);
+      displayedQueries.push(value);
+      assert.equal(value.completed, true, "displayed callback completed");
+      if (!value.supportsSynchronization) return null;
+      return value.ids;
+    }, 10000);
+    const page = async (expression) => {
+      const result = await cdp(target, "Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
+      if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
+      return result.result?.value;
+    };
+    const removed = async (route) => until(`Hub and Chromium removal ${route.nativeID}`, async () => {
+      const value = await snapshot();
+      if (value.hub.delivered.some((row) => row.nativeID === route.nativeID) || value.hub.pending.some((row) => row.nativeID === route.nativeID)) return false;
+      return !(await displayed()).includes(route.chromiumID);
+    }, 10000);
+    const post = async (phase) => {
+      await page(`window.showPersistent(${JSON.stringify(notificationRun)}, ${JSON.stringify(phase)})`);
+      await until(`worker showNotification resolved: ${phase}`, async () => {
+        const value = await page("window.notificationState");
+        if (value?.state === "error") throw new Error(JSON.stringify(value));
+        return value?.phase === phase && value.entered && value.state === "shown";
+      }, 10000);
+      const route = await until(`Hub accepted, delivered and engine acknowledged: ${phase}`, async () => {
+        const value = await snapshot();
+        const post = value.hub.posts.find((row) => row.title === `${notificationRun}:${phase}` && row.status === "accepted");
+        if (!post?.receipt) return null;
+        assert.equal(post.body, "from service worker");
+        const route = value.routes.find((row) => row.token === post.token && row.generation === post.generation && row.nativeID === post.nativeID && new URL(row.origin).origin === new URL(base).origin);
+        if (!route?.accepted) return null;
+        assert.ok(route.token && route.generation && route.nativeID && route.chromiumID && route.scope && route.lifetime, "complete engine route");
+        assert.equal(route.receipt, post.receipt);
+        const scope = value.scopes.find((row) => row.scope === route.scope && row.lifetime === route.lifetime);
+        assert.ok(scope && !scope.session && !scope.process, "exact regular producer scope");
+        const hub = value.hub.delivered.find((row) => row.token === route.token && row.generation === route.generation && row.nativeID === route.nativeID);
+        if (!hub || hub.title !== post.title || hub.body !== post.body) return null;
+        assert.ok(hub.workerScope?.startsWith(base + "/notification-fixture/"), "Hub carries Chromium worker scope resources");
+        if (value.hub.pending.some((row) => row.nativeID === route.nativeID)) return null;
+        const ack = value.hub.acks.find((row) => row.token === route.token && row.generation === route.generation && row.nativeID === route.nativeID && row.receipt === post.receipt && row.engineAccepted === true);
+        return ack ? { ...route, B: value.B, W: value.W, title: post.title, body: post.body, receipt: post.receipt } : null;
+      }, 10000);
+      assert.ok((await displayed()).includes(route.chromiumID), "Chromium displayed contains accepted Hub generation");
+      delivered.push(route);
+      return route;
+    };
+    const authorizationControl = async (op, values = {}) => {
+      const value = await evalApp(`return globalThis.expo.modules.SolaraApp.notificationDebugAuthorization(${JSON.stringify({ op, ...values })})`);
+      assert.equal(value.ok, true, `hidden authorization control ${op}`);
+      return value;
+    };
+    const revokedAuthorization = async (delay, setting, calendarSurvivor = false) => {
+      const phase = `revocation-${delay}-${setting}-${calendarSurvivor ? "calendar-survivor" : "alone"}`;
+      await cef(`setSiteSetting("", ${JSON.stringify(base)}, "notifications", "allow")`);
+      await until(`${phase} starts at effective Allow`, async () => (await cef(`getSiteSettings("", ${JSON.stringify(base)})`)).notifications.value === "allow", 5000);
+      const before = await snapshot();
+      const known = new Set(before.routes.map((route) => route.token));
+      await authorizationControl("configure", { holdSettings: delay === "settings", holdConsumption: delay === "consumption" });
+      await page(`window.revocationNotifications ??= []; window.revocationNotifications.push(new Notification(${JSON.stringify(phase)}, { body: "current effective permission", silent: true })); true`);
+      const route = await until(`${phase} has a trusted live engine route`, async () => {
+        const value = await snapshot();
+        return value.routes.find((row) => !known.has(row.token) && row.authorizationEligible === true && !row.withdrawn && new URL(row.origin).origin === new URL(base).origin);
+      }, 5000);
+      const delayed = await until(`${phase} reaches its delay`, async () => {
+        const value = await authorizationControl("snapshot");
+        return delay === "settings" ? value.heldSettings === 1 && value.permissionWaiters === 1 && value : value.heldConsumption > 0 && value;
+      }, 5000);
+      assert.equal(delayed.authorizationCalls, 0);
+      if (calendarSurvivor) {
+        await evalApp(`globalThis.notificationCalendarSurvivor = { settled: false }; globalThis.expo.modules.SolaraApp.requestNotificationPermission().then((granted) => { globalThis.notificationCalendarSurvivor = { settled: true, granted }; }); return true`);
+        const shared = await until(`${phase} joins the same pending settings operation`, async () => {
+          const value = await authorizationControl("snapshot");
+          return value.permissionWaiters === 2 && value;
+        }, 5000);
+        assert.equal(shared.settingsCalls, 1);
+        assert.equal(shared.authorizationCalls, 0);
+      }
+      if (setting === "reset") await cef(`resetSiteSettings("", ${JSON.stringify(base)})`);
+      else await cef(`setSiteSetting("", ${JSON.stringify(base)}, "notifications", ${JSON.stringify(setting)})`);
+      const effective = setting === "block" ? "block" : "ask";
+      await until(`${phase} revokes effective permission before release`, async () => (await cef(`getSiteSettings("", ${JSON.stringify(base)})`)).notifications.value === effective, 5000);
+      const released = await authorizationControl(delay === "settings" ? "releaseSettings" : "releaseConsumption");
+      assert.equal(released.authorizationCalls, calendarSurvivor ? 1 : 0, `${phase}: revoked site cannot initiate authorization`);
+      assert.equal(released.authorizationPending, calendarSurvivor);
+      if (calendarSurvivor) {
+        await authorizationControl("completeAuthorization", { granted: true });
+        const calendar = await until(`${phase} completes surviving explicit calendar caller`, async () => evalApp(`return globalThis.notificationCalendarSurvivor?.settled ? globalThis.notificationCalendarSurvivor : null`), 5000);
+        assert.equal(calendar.granted, true);
+      }
+      await until(`${phase} settles without delivery`, async () => {
+        const value = await snapshot();
+        const denied = value.hub.posts.some((row) => row.nativeID === route.nativeID && row.status === "denied");
+        assert.equal(value.hub.posts.some((row) => row.nativeID === route.nativeID && row.status === "accepted"), false, `${phase}: revoked waiter remains denied after shared completion`);
+        return denied && !value.hub.pending.some((row) => row.nativeID === route.nativeID) && !value.hub.delivered.some((row) => row.nativeID === route.nativeID) && value.hub.inFlight === 0;
+      }, 5000);
+      const completed = await authorizationControl("snapshot");
+      assert.equal(completed.authorizationCalls, calendarSurvivor ? 1 : 0);
+      assert.equal(completed.permissionWaiters, 0);
+      assert.equal(completed.heldSettings, 0);
+      assert.equal(completed.heldConsumption, 0);
+      assert.equal(completed.authorizationPending, false);
+      authorizationRevocations.push({ phase, route, effective, delayed, released, completed });
+      await cef(`setSiteSetting("", ${JSON.stringify(base)}, "notifications", "allow")`);
+      await until(`${phase} restores Allow before closing its fixture`, async () => (await cef(`getSiteSettings("", ${JSON.stringify(base)})`)).notifications.value === "allow", 5000);
+      await page("for (const notification of window.revocationNotifications ?? []) notification.close(); window.revocationNotifications = []; true");
+      await removed(route);
+      await authorizationControl("reset");
+    };
+    const respond = async (route, kind) => {
+      const identifier = kind === "click" ? "com.apple.UNNotificationDefaultActionIdentifier" : "com.apple.UNNotificationDismissActionIdentifier";
+      const response = await evalApp(`return globalThis.expo.modules.SolaraApp.notificationDebugRespond(${JSON.stringify(route.nativeID)}, ${JSON.stringify(identifier)})`);
+      assert.equal(response.accepted, true, "native response decoder accepted current route");
+      assert.ok(response.token, "native action token");
+      await until(`Chromium operation completion: ${kind}`, async () => {
+        const value = await snapshot();
+        return value.hub.operations.some((row) => row.token === response.token && row.state === "settled" && row.engineCompleted === true);
+      }, 10000);
+      await until(`worker notification${kind}`, async () => notificationWorkerEvents.find((row) => row.run === notificationRun && row.kind === kind && row.title === route.title), 10000);
+      await removed(route);
+    };
+    const quitAndCapture = async () => {
+      notificationQuit = await instance.quit();
+      assert.equal(notificationQuit.how, "quit", "owned instance must shut down gracefully");
+      assert.equal(alive(), false);
+      captureNotificationRetirement();
+      assertNotificationJournal(notificationJournal(), true);
+      await notificationWatch.assertZero();
+    };
+    try {
+      await until("native startup coverage diagnostics", async () => {
+        try {
+          const records = notificationJournal(await cef("notificationDebugSnapshot()"));
+          return records.some((row) => row.kind === "coverage-start") && records.some((row) => row.kind === "startup-complete") ? records : null;
+        } catch (error) {
+          if (!alive()) throw error;
+          return null;
+        }
+      }, 8000);
+      assertNotificationJournal(notificationJournal());
+      await notificationWatch.assertZero();
+      assert.equal(await evalApp("return ac.shell.backgroundInstance"), true);
+      await until("notification consumer Live after replay", async () => (await snapshot(false)).state === "Live", 10000);
+      initialPermission = (await cef(`getSiteSettings("", ${JSON.stringify(base)})`)).notifications;
+      assert.equal(initialPermission.isDefault, true);
+      settingTouched = true;
+      await cef(`setSiteSetting("", ${JSON.stringify(base)}, "notifications", "allow")`);
+      await until("fixture site notification Allow", async () => (await cef(`getSiteSettings("", ${JSON.stringify(base)})`)).notifications.value === "allow", 5000);
+      tab = await openTab(`${base}/notification-fixture/?${notificationRun}`, "Persistent notification fixture");
+      target = await pageFor(tab.id, `${base}/notification-fixture/`);
+      for (const delay of ["settings", "consumption"]) {
+        for (const setting of ["block", "ask", "reset"]) await revokedAuthorization(delay, setting);
+      }
+      for (const setting of ["block", "ask"]) await revokedAuthorization("settings", setting, true);
+      await cef(`setSiteSetting("", ${JSON.stringify(base)}, "notifications", "allow")`);
+      await until("persistent fixture permission restored to Allow", async () => (await cef(`getSiteSettings("", ${JSON.stringify(base)})`)).notifications.value === "allow", 5000);
+      const click = await post("click");
+      const unsupported = await evalApp(`return globalThis.expo.modules.SolaraApp.notificationDebugRespond(${JSON.stringify(click.nativeID)}, "solara.unsupported.action")`);
+      assert.equal(unsupported.accepted, false, "v1 rejects action buttons before engine dispatch");
+      assert.ok((await snapshot()).hub.delivered.some((row) => row.nativeID === click.nativeID));
+      await respond(click, "click");
+      await respond(await post("close"), "close");
+      const programmatic = await post("programmatic");
+      assert.equal(await page(`window.closePersistent(${JSON.stringify(notificationRun)}, "programmatic")`), 1);
+      await removed(programmatic);
+      await post("cleanup");
+      const cleanup = await page("window.cleanupPersistent()");
+      assert.deepEqual(cleanup, { closed: 1, remaining: 0, unregistered: true, registration: false });
+      for (const route of delivered) await removed(route);
+      assert.deepEqual(await displayed(), []);
+      await sleep(1000);
+      assert.deepEqual(notificationWorkerEvents.filter((row) => row.run === notificationRun).map((row) => `${row.kind}:${row.title}`).sort(), [`click:${notificationRun}:click`, `close:${notificationRun}:close`].sort(), "no synthetic programmatic-close or duplicate worker event");
+      const quitLive = await post("quit-live");
+      await post("quit-live-second");
+      const liveID = await evalApp(`return globalThis.expo.modules.SolaraApp.postNotification({ id: "notification-quit-live", title: "App quit removal", body: "native app namespace", silent: true })`);
+      assert.ok(liveID, "native app notification accepted before quit");
+      const beforeQuit = await snapshot();
+      assert.ok(beforeQuit.hub.delivered.some((row) => row.nativeID === liveID), "quit includes native app notifications as well as engine generations");
+      assert.ok(beforeQuit.hub.delivered.filter((row) => [quitLive.nativeID, delivered.at(-1).nativeID].includes(row.nativeID)).length === 2, "quit starts with accepted settled persistent notifications still delivered");
+      priorEnvelope = Object.fromEntries(["B", "W", "scope", "lifetime", "root", "profile", "incarnation", "session", "token", "creation", "generation", "nativeID"].map((key) => [key, quitLive[key]]));
+      await quitAndCapture();
+      previousLifetime = { pid, runNonce: notificationRun, B: beforeQuit.B, retired: notificationRetired, journal: [...notificationJournal()] };
+      writeFileSync(join(notificationEvidence, "notification-first-lifetime.json"), JSON.stringify(previousLifetime, null, 2));
+      notificationDiagnostics.length = 0;
+      notificationRun = null;
+      notificationRetired = null;
+      await launch("app-notification-relaunched.out.log");
+      await until("relaunched notification diagnostics", async () => {
+        try { return (await snapshot(false)).state === "Live"; }
+        catch (error) { if (!alive()) throw error; return false; }
+      }, 30000);
+      const beforePrior = await snapshot();
+      assert.notEqual(beforePrior.B, previousLifetime.B);
+      assert.notEqual(notificationRun, previousLifetime.runNonce);
+      assert.deepEqual(beforePrior.routes, [], "relaunch does not reconstruct route authority from the notification database");
+      assert.equal(await evalApp(`return globalThis.expo.modules.SolaraApp.notificationDebugRestorePrior(${JSON.stringify(priorEnvelope)})`), true, "seed only the hidden native adapter with a prior-process item");
+      assert.ok((await snapshot()).hub.delivered.some((row) => row.nativeID === priorEnvelope.nativeID));
+      const prior = await evalApp(`return globalThis.expo.modules.SolaraApp.notificationDebugRespond(${JSON.stringify(priorEnvelope.nativeID)}, "com.apple.UNNotificationDefaultActionIdentifier")`);
+      assert.equal(prior.accepted, false);
+      assert.equal(prior.error, "priorProcessAction");
+      assert.equal(prior.removed, true);
+      await until("prior-process exact native item removed", async () => {
+        const value = await snapshot();
+        return !value.hub.pending.some((row) => row.nativeID === priorEnvelope.nativeID) && !value.hub.delivered.some((row) => row.nativeID === priorEnvelope.nativeID);
+      }, 5000);
+      assert.deepEqual((await snapshot()).routes, []);
+      assert.deepEqual(await displayed(), []);
+      if (process.env.SOLARA_NOTIFICATION_USERNOTED_LOG) {
+        const source = readFileSync(process.env.SOLARA_NOTIFICATION_USERNOTED_LOG, "utf8");
+        const evidence = JSON.parse(source);
+        writeFileSync(join(notificationEvidence, "usernoted-evidence.json"), JSON.stringify(evidence, null, 2));
+        try { osAuthorization = assertNotificationAuthorizationLog(evidence); }
+        catch (error) { osAuthorization = { status: "inconclusive", reason: error.message }; throw error; }
+        assert.equal(osAuthorization.status, "measured-pass", "separate calibrated OS authorization measurement");
+      }
+      await sleep(1000);
+      assert.deepEqual(notificationWorkerEvents.filter((row) => row.run === previousLifetime.runNonce).map((row) => row.kind).sort(), ["click", "close"], "prior-process click dispatches no worker event");
+    } catch (error) {
+      errors.push(error);
+    } finally {
+      const attempt = async (operation) => { try { await operation(); } catch (error) { errors.push(error); } };
+      if (alive()) await attempt(async () => {
+        await authorizationControl("reset");
+        if (target && !previousLifetime) {
+          await cef(`setSiteSetting("", ${JSON.stringify(base)}, "notifications", "allow")`);
+          await page("for (const notification of window.revocationNotifications ?? []) notification.close(); window.revocationNotifications = []; true");
+        }
+        await evalApp("delete globalThis.notificationCalendarSurvivor; return true");
+      });
+      if (settingTouched && alive()) await attempt(async () => {
+        await cef(`setSiteSetting("", ${JSON.stringify(base)}, "notifications", "default")`);
+        await until("scratch site permission restored", async () => {
+          const setting = (await cef(`getSiteSettings("", ${JSON.stringify(base)})`)).notifications;
+          return setting.isDefault === true && setting.value === initialPermission.value;
+        }, 5000);
+      });
+      if (alive()) await attempt(async () => {
+        if (previousLifetime) {
+          tab = await openTab(`${base}/notification-fixture/?cleanup`, "Persistent notification fixture");
+          target = await pageFor(tab.id, `${base}/notification-fixture/`);
+        }
+        if (target) {
+          const cleanup = await page("window.cleanupPersistent()");
+          assert.equal(cleanup.unregistered, true);
+          assert.equal(cleanup.registration, false);
+          assert.equal(cleanup.remaining, 0);
+        }
+        if (tab) await closeTab(tab.id);
+      });
+      if (alive()) await attempt(quitAndCapture);
+      await attempt(async () => notificationWatch.assertZero());
+      await attempt(async () => {
+        evidence = { directory: notificationEvidence, runNonce: notificationRun, pid, previousLifetime, priorEnvelope, osAuthorization, delivered, displayedQueries, authorizationRevocations, workerEvents: notificationWorkerEvents, journal: notificationJournal(), monitor: notificationWatch.evidence(), quit: notificationQuit, errors: errors.map(String) };
+        writeFileSync(join(notificationEvidence, "notification-evidence.json"), JSON.stringify(evidence, null, 2));
+        writeFileSync(join(notificationEvidence, "notification-native.jsonl"), notificationJournal().map((row) => JSON.stringify(row)).join("\n") + "\n");
+        assert.equal(alive(), false, "never delete a running instance's data");
+        rmSync(data, { recursive: true, force: true });
+        assert.equal(existsSync(data), false);
+      });
+    }
+    if (errors.length) throw new AggregateError(errors, errors.map((error) => String(error?.message ?? error)).join("; "));
+    return evidence;
   });
 
   await check("window-profiles", async () => {
@@ -3790,42 +4277,37 @@ try {
     await cef(`setSiteSetting("", "${base}", "notifications", "allow")`);
     await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
     const t = await pageFor(first.id, `${base}/a`);
+    const snapshot = () => cef("notificationDebugSnapshot()");
+    const routeFor = async (title) => until(`native document route ${title}`, async () => {
+      const value = await snapshot();
+      const native = value.hub.delivered.find((row) => row.title === title);
+      const route = value.routes.find((row) => row.nativeID === native?.nativeID && row.accepted && !row.withdrawn);
+      return route ? { ...route, title } : null;
+    }, 8000);
+    const nativeConstructor = await cdp(t, "Runtime.evaluate", { expression: "Function.prototype.toString.call(Notification)", returnByValue: true });
+    assert.match(nativeConstructor.result.value, /\[native code\]/, "Blink owns the Notification constructor");
     await cdp(t, "Runtime.evaluate", {
-      expression: "window.__clicked = false; const n = new Notification('Acceptance', { body: 'hello', tag: 'ac' }); n.onclick = () => (window.__clicked = true); true",
+      expression: "window.__clicked = false; window.__documentNotification = new Notification('Acceptance', { body: 'hello', tag: 'ac' }); window.__documentNotification.onclick = () => (window.__clicked = true); true",
       userGesture: true,
     });
-    const e = await until("onNotification", async () => (await eventsOf(first.id)).findLast((x) => x.name === "notification"), 8000);
-    await evalApp(`return ac.webviews.get("${first.id}").notificationAction(${JSON.stringify(e.payload.id)}, "click")`);
-    const clicked = await until("the page's click", async () => {
-      const r = await cdp(t, "Runtime.evaluate", { expression: "window.__clicked", returnByValue: true });
-      return r.result.value === true ? true : null;
-    }, 8000);
-    await cdp(t, "Runtime.evaluate", { expression: "window.__n2 = new Notification('Second'); setTimeout(() => window.__n2.close(), 300); true", userGesture: true });
-    const closed = await until("onNotificationClose", async () => (await eventsOf(first.id)).find((x) => x.name === "notificationClose"), 8000);
-    await cdp(t, "Runtime.evaluate", { expression: "window.__kept = new Notification('Kept', { tag: 'kept' }); true", userGesture: true });
-    const kept = await until("the kept notification", async () => (await eventsOf(first.id)).findLast((x) => x.name === "notification" && x.payload.title === "Kept"), 8000);
-    const closesOfKept = async () => (await eventsOf(first.id)).filter((x) => x.name === "notificationClose" && x.payload.id === kept.payload.id).length;
-    await cdp(t, "Runtime.evaluate", {
-      expression: `new Promise((done) => { const f = document.createElement("iframe"); f.id = "forger"; f.onload = () => done(true); f.src = "${base}/b?forger"; document.body.appendChild(f); })`,
-      awaitPromise: true,
-    });
+    const route = await routeFor("Acceptance");
+    const response = await evalApp(`return globalThis.expo.modules.SolaraApp.notificationDebugRespond(${JSON.stringify(route.nativeID)}, "com.apple.UNNotificationDefaultActionIdentifier")`);
+    assert.equal(response.accepted, true);
+    const clicked = await until("the native document listener click", async () => (await cdp(t, "Runtime.evaluate", { expression: "window.__clicked", returnByValue: true })).result.value === true, 8000);
+    await cdp(t, "Runtime.evaluate", { expression: "window.__documentNotification.close(); window.__closed = 0; window.__n2 = new Notification('Second'); window.__n2.onclose = () => window.__closed++; true", userGesture: true });
+    const second = await routeFor("Second");
+    await cdp(t, "Runtime.evaluate", { expression: "window.__n2.close(); true" });
+    await until("programmatic document removal", async () => !(await snapshot()).hub.delivered.some((row) => row.nativeID === second.nativeID), 8000);
+    const closed = await until("one Blink close event", async () => (await cdp(t, "Runtime.evaluate", { expression: "window.__closed", returnByValue: true })).result.value === 1, 8000);
     await sleep(500);
-    const forged = (await cdp(t, "Runtime.evaluate", {
-      expression: `(() => { const w = document.getElementById("forger").contentWindow; return w.eval(${JSON.stringify(`Map.prototype.has = () => true; Notification.prototype.close.call({ _id: ${JSON.stringify(kept.payload.id)} }); "sent"`)}); })()`,
-      returnByValue: true,
-    })).result.value;
-    await sleep(1000);
-    const forgedCloses = await closesOfKept();
-    await cdp(t, "Runtime.evaluate", { expression: `document.getElementById("forger").remove(); window.__kept.close(); true` });
-    if (forgedCloses) throw new Error(`a close forged from another frame (${forged}) closed the main frame's notification`);
-    await until("the owner's own close", async () => ((await closesOfKept()) ? true : null), 8000);
-    const shownCount = async () => (await eventsOf(first.id)).filter((x) => x.name === "notification").length;
+    assert.equal((await cdp(t, "Runtime.evaluate", { expression: "window.__closed", returnByValue: true })).result.value, 1);
+    const shownCount = async () => (await snapshot()).hub.posts.length;
     const nothingShown = async (expression, what) => {
       const before = await shownCount();
       await cdp(t, "Runtime.evaluate", { expression, userGesture: true });
-      await sleep(1500);
+      await sleep(1000);
       const pagePermission = (await cdp(t, "Runtime.evaluate", { expression: "Notification.permission", returnByValue: true })).result.value;
-      if ((await shownCount()) - before) throw new Error(`a notification went out ${what} (page saw ${pagePermission})`);
+      assert.equal(await shownCount(), before, `no native post ${what}`);
       return pagePermission;
     };
     await cef(`setSiteSetting("", "${base}", "notifications", "block")`);
@@ -3841,10 +4323,7 @@ try {
     }, 10000);
     const deniedPermission = await nothingShown("window.__n5 = new Notification('Denied'); true", "after the prompt was denied");
     await cef(`setSiteSetting("", "${base}", "notifications", "default")`);
-    return {
-      title: e.payload.title, body: e.payload.body, clicked, closed: !!closed, forged, blockedPagePermission: permission,
-      askPagePermission: askPermission, deniedAnswer: asked, deniedPagePermission: deniedPermission,
-    };
+    return { clicked, closed, nativeConstructor: true, blockedPagePermission: permission, askPagePermission: askPermission, deniedAnswer: asked, deniedPagePermission: deniedPermission };
   });
 
   await check("now-playing", async () => {
@@ -5841,8 +6320,30 @@ try {
     return { record: readFileSync(record, "utf8").split("\n")[0], front: "unchanged" };
   });
 } finally {
+  if (notificationOnly && instance && alive()) {
+    try {
+      notificationQuit = await instance.quit();
+      assert.equal(alive(), false, "fallback owned shutdown completed");
+      captureNotificationRetirement();
+      assertNotificationJournal(notificationJournal(), true);
+    } catch (error) {
+      results.push({ name: "notifications-one-requester-shutdown", ok: false, error: String(error) });
+      report.record("notifications-one-requester-shutdown", { error });
+    }
+  }
+  if (notificationWatch) {
+    if (!notificationWatch.finished) {
+      await notificationWatch.finish();
+      try { await notificationWatch.assertZero(); }
+      catch (error) {
+        results.push({ name: "notifications-one-requester-monitor", ok: false, error: String(error) });
+        report.record("notifications-one-requester-monitor", { error });
+      }
+    }
+    writeFileSync(join(notificationEvidence, "notification-process-history.json"), JSON.stringify(notificationWatch.evidence(), null, 2));
+  }
   visibilityWatch?.stop();
-  writeFileSync(join(scratch, "results.json"), JSON.stringify(results, null, 2));
+  writeFileSync(join(notificationOnly ? notificationEvidence : scratch, "results.json"), JSON.stringify(results, null, 2));
   const passed = results.filter((r) => r.ok).length;
   report.summary();
   if (keep && !exited) {
@@ -5850,7 +6351,7 @@ try {
     report.say(`kept pid ${pid}: --attach ${scratch} [check…] runs more; scripts/agent/ac quit ${data} ends it`);
   } else {
     if (keep) report.say("not kept: the app had exited");
-    await instance.quit();
+    if (!notificationOnly) await instance.quit();
     rmSync(join(scratch, "media-app"), { recursive: true, force: true });
   }
   server.closeAllConnections?.();

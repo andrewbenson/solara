@@ -123,7 +123,6 @@ public enum PageCommand: Equatable, Sendable {
   case executeExtensionAction(String)
   case resolveDisplayMedia(String, String?, Bool)
   case mediaCaptureSourceId
-  case notificationAction(String, String)
   case resolveUnresponsive(Bool)
   case discard(Bool)
   case setFrozen(Bool)
@@ -167,7 +166,6 @@ public enum PageCommand: Equatable, Sendable {
     case .executeExtensionAction: "executeExtensionAction"
     case .resolveDisplayMedia: "resolveDisplayMedia"
     case .mediaCaptureSourceId: "mediaCaptureSourceId"
-    case .notificationAction: "notificationAction"
     case .resolveUnresponsive: "resolveUnresponsive"
     case .discard: "discard"
     case .setFrozen: "setFrozen"
@@ -195,7 +193,6 @@ public enum PageCommand: Equatable, Sendable {
     case .resolvePasswordPrompt(let action, let username, let password): [.string(action), username.map(PageValue.string) ?? .null, password.map(PageValue.string) ?? .null]
     case .resolveAutofillPrompt(let id, let action): [.number(Double(id)), .string(action)]
     case .resolveDisplayMedia(let request, let source, let audio): [.string(request), source.map(PageValue.string) ?? .null, .bool(audio)]
-    case .notificationAction(let id, let action): [.string(id), .string(action)]
     case .finishPageIssue(let guardValue): [PageValue(json: guardValue.json)]
     default: []
     }
@@ -244,7 +241,6 @@ public enum PageCommand: Equatable, Sendable {
     case .executeExtensionAction: .optionalString
     case .resolveDisplayMedia: .none
     case .mediaCaptureSourceId: .optionalString
-    case .notificationAction: .none
     case .resolveUnresponsive: .none
     case .discard: .string
     case .setFrozen: .none
@@ -261,7 +257,7 @@ public enum PageCommand: Equatable, Sendable {
     case .loadUrl, .goBack, .goForward, .goToOffset, .reload, .forceReload, .stopLoading, .focus, .setMuted, .zoomStep,
       .find, .stopFinding, .print, .runPageCommand, .showDevTools, .executeJavaScript, .mediaCommand,
       .requestPictureInPicture, .takeControlPress, .exitPictureInPicture, .openBlockedPopup, .clearSiteData,
-      .resolvePasswordPrompt, .resolveAutofillPrompt, .resolveDisplayMedia, .notificationAction, .resolveUnresponsive,
+      .resolvePasswordPrompt, .resolveAutofillPrompt, .resolveDisplayMedia, .resolveUnresponsive,
       .discard, .setFrozen, .nativeTag, .finishPageIssue: false
     }
   }
@@ -270,7 +266,7 @@ public enum PageCommand: Equatable, Sendable {
     guard engine == .webKit else { return true }
     return switch self {
     case .showDevTools, .pageCookies, .openBlockedPopup, .resolvePasswordPrompt, .resolveAutofillPrompt,
-      .executeExtensionAction, .resolveDisplayMedia, .mediaCaptureSourceId, .notificationAction,
+      .executeExtensionAction, .resolveDisplayMedia, .mediaCaptureSourceId,
       .resolveUnresponsive, .discard, .setFrozen, .downloadImage: false
     default: true
     }
@@ -381,9 +377,6 @@ public enum PageCommand: Equatable, Sendable {
     case "mediaCaptureSourceId":
       try a.limit(0)
       return .mediaCaptureSourceId
-    case "notificationAction":
-      try a.limit(2)
-      return .notificationAction(try a.string(0), try a.string(1))
     case "resolveUnresponsive":
       try a.limit(1)
       return .resolveUnresponsive(try a.bool(0))

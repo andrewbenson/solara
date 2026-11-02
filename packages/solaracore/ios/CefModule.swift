@@ -14,11 +14,15 @@ public enum SolaraCoreEventTaps {
 }
 
 public class CefModule: Module {
+  private let notificationConsumer = UUID().uuidString
   public func definition() -> ModuleDefinition {
     Name("SolaraCEF")
-    Events("onDownload", "onPermission", "onPermissionDismissed", "onContentBlocker", "onSystemState", "onEngineEvent", "onTabStrip")
+    Events("onDownload", "onPermission", "onPermissionDismissed", "onContentBlocker", "onSystemState", "onEngineEvent", "onTabStrip", "onNotificationEvent")
 
     OnCreate {
+      DispatchQueue.main.async {
+        SolaraCoreNotifications.setEventHandler({ [weak self] event in self?.sendEvent("onNotificationEvent", event) }, owner: self.notificationConsumer)
+      }
       SolaraCoreEngineBridge.setEventHandler { [weak self] topic, json in self?.sendEvent("onEngineEvent", ["topic": topic, "payload": json]) }
       SolaraCoreTabStrip.setHandler { [weak self] tx in
         self?.sendEvent("onTabStrip", tx)
@@ -38,6 +42,26 @@ public class CefModule: Module {
       SystemState.shared.onChange = { [weak self] state in self?.sendEvent("onSystemState", state) }
       SystemState.shared.start()
     }
+
+    OnDestroy {
+      let owner = self.notificationConsumer
+      DispatchQueue.main.async { SolaraCoreNotifications.clearEventHandler(owner) }
+    }
+    AsyncFunction("notificationWatch") { (promise: Promise) in
+      MainActor.assumeIsolated { SolaraCoreNotifications.watch { promise.resolve($0) } }
+    }.runOnQueue(.main)
+    AsyncFunction("notificationConsume") { (event: [String: Any], promise: Promise) in
+      MainActor.assumeIsolated { SolaraCoreNotifications.consume(event) { promise.resolve($0) } }
+    }.runOnQueue(.main)
+    AsyncFunction("notificationControl") { (payload: [String: Any], promise: Promise) in
+      MainActor.assumeIsolated { SolaraCoreNotifications.control(payload) { promise.resolve($0) } }
+    }.runOnQueue(.main)
+    AsyncFunction("notificationDebugSnapshot") { (promise: Promise) in
+      MainActor.assumeIsolated { SolaraCoreNotifications.debugSnapshot { promise.resolve($0) } }
+    }.runOnQueue(.main)
+    AsyncFunction("notificationDebugDisplayed") { (profile: String, origin: String, promise: Promise) in
+      MainActor.assumeIsolated { SolaraCoreNotifications.debugDisplayed(profile, origin: origin) { promise.resolve($0) } }
+    }.runOnQueue(.main)
 
     AsyncFunction("engineInfo") { SolaraCoreHost.engineInfo }.runOnQueue(.main)
     AsyncFunction("forwardEngineTopics") { (topics: [String]) in SolaraCoreEngineBridge.forwardTopics(topics) }.runOnQueue(.main)
@@ -299,7 +323,6 @@ public class CefModule: Module {
       AsyncFunction("executeExtensionAction") { (view: CefWebView, extensionId: String, promise: Promise) in view.call("executeExtensionAction", [extensionId], promise) }.runOnQueue(.main)
       AsyncFunction("resolveDisplayMedia") { (view: CefWebView, id: String, sourceId: String?, audio: Bool, promise: Promise) in view.call("resolveDisplayMedia", [id, sourceId as Any? ?? NSNull(), audio], promise) }.runOnQueue(.main)
       AsyncFunction("mediaCaptureSourceId") { (view: CefWebView, promise: Promise) in view.call("mediaCaptureSourceId", [], promise) }.runOnQueue(.main)
-      AsyncFunction("notificationAction") { (view: CefWebView, id: String, action: String, promise: Promise) in view.call("notificationAction", [id, action], promise) }.runOnQueue(.main)
       AsyncFunction("resolveUnresponsive") { (view: CefWebView, terminate: Bool, promise: Promise) in view.call("resolveUnresponsive", [terminate], promise) }.runOnQueue(.main)
       AsyncFunction("discard") { (view: CefWebView, unload: Bool?, promise: Promise) in view.call("discard", [unload ?? false], promise) }.runOnQueue(.main)
       AsyncFunction("setFrozen") { (view: CefWebView, frozen: Bool, promise: Promise) in view.call("setFrozen", [frozen], promise) }.runOnQueue(.main)
@@ -339,8 +362,6 @@ final class CefWebView: ExpoView, SolaraCoreWebViewDelegate, @preconcurrency RCT
   let onZoom = EventDispatcher()
   let onContentBlocked = EventDispatcher()
   let onDownloadNavigation = EventDispatcher()
-  let onNotification = EventDispatcher()
-  let onNotificationClose = EventDispatcher()
   let onPictureInPicture = EventDispatcher()
   let onActivateRequest = EventDispatcher()
   let onDisplayMediaRequest = EventDispatcher()

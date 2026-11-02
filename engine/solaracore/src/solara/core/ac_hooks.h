@@ -25,6 +25,7 @@ class DesktopBrowserWindowCapabilities;
 class ExclusiveAccessManager;
 class GURL;
 class Profile;
+class NotificationPlatformBridge;
 class SkBitmap;
 class UnloadController;
 
@@ -69,6 +70,15 @@ class AppBrowserController;
 }
 
 extern bool g_solara_embedder;
+
+extern std::unique_ptr<NotificationPlatformBridge> (
+    *g_solara_notification_bridge_factory)();
+
+extern void (*g_solara_notification_provider_attempt)(const char* kind);
+
+extern void (*g_solara_notification_quit)(base::OnceClosure continuation);
+
+extern void (*g_solara_notification_profile_loaded)(Profile* profile);
 
 extern ui::ResourceBundle::Delegate* g_solara_resource_bundle_delegate;
 

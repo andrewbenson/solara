@@ -766,7 +766,6 @@ static BOOL HeldSelector(SEL selector) {
   CFTimeInterval _linkDropAt;
   NSMutableDictionary<NSString *, NSDictionary *> *_nowPlaying;
   NSString *_nowPlayingFrame;
-  NSMutableDictionary<NSString *, NSString *> *_notificationFrames;
   NSMutableDictionary<NSString *, NSDictionary *> *_displayRequests;
   double _pinchScale;
   BOOL _autoPictureInPictureActive;
@@ -1413,7 +1412,6 @@ static SolaraCoreTab *StartParkedPage(NSString *url, NSString *profileName, NSSt
   reports[@"lastBlocked"] = _lastBlocked;
   reports[@"nowPlaying"] = _nowPlaying;
   reports[@"nowPlayingFrame"] = _nowPlayingFrame;
-  reports[@"notifications"] = _notificationFrames;
   reports[@"displayRequests"] = _displayRequests;
   reports[@"pinch"] = @(_pinchScale);
   reports[@"capturing"] = @(_capturing);
@@ -1439,7 +1437,6 @@ static SolaraCoreTab *StartParkedPage(NSString *url, NSString *profileName, NSSt
   _lastBlocked = reports[@"lastBlocked"];
   _nowPlaying = reports[@"nowPlaying"];
   _nowPlayingFrame = reports[@"nowPlayingFrame"];
-  _notificationFrames = reports[@"notifications"];
   _displayRequests = reports[@"displayRequests"];
   _pinchScale = [reports[@"pinch"] doubleValue];
   _capturing = [reports[@"capturing"] boolValue];
@@ -2476,40 +2473,6 @@ void SolaraCoreWebViewsSetFieldTiming(BOOL on) {
     if (TracingPictureInPicture())
       [_tab tracePictureInPicture:[NSString stringWithFormat:@"page (%@): %@", main ? @"main frame" : @"subframe", JSONString(dict ?: @{})]
                        withInputs:NO];
-  } else if ([kind isEqualToString:@"notification"] && dict) {
-    PeekTrace(@{@"event" : @"notification", @"bytes" : @(json.length), @"origin" : sender ?: @""});
-    NSString *nid = Text(dict, @"id", 128);
-    NSString *origin = sender;
-    if (!nid.length || !Text(dict, @"title", 1024) || !origin) return;
-    NSString *owner = _notificationFrames[nid];
-    if (owner && ![owner isEqualToString:frameId]) return;
-    if (!_notificationFrames || _notificationFrames.count > 500) _notificationFrames = [NSMutableDictionary dictionary];
-    _notificationFrames[nid] = frameId;
-    NSDictionary *notification = @{
-      @"id" : nid,
-      @"title" : Text(dict, @"title", 1024),
-      @"body" : Text(dict, @"body", 4096) ?: @"",
-      @"icon" : Text(dict, @"icon", 1 << 20) ?: NSNull.null,
-      @"tag" : Text(dict, @"tag", 1024) ?: @"",
-      @"silent" : @(Flag(dict, @"silent")),
-      @"requireInteraction" : @(Flag(dict, @"requireInteraction")),
-      @"origin" : origin,
-      @"browserId" : @(solaracore_host::BrowserId(tab)),
-      @"isMainFrame" : @(main),
-    };
-    __weak SolaraCoreWebView *weakSelf = self;
-    [SolaraCoreServices siteSettings:_profile ?: @"" origin:origin completion:^(NSDictionary *settings) {
-      SolaraCoreWebView *view = weakSelf;
-      if (!view || ![view->_notificationFrames[nid] isEqualToString:frameId]) return;
-      NSDictionary *permission = [settings[@"notifications"] isKindOfClass:NSDictionary.class] ? settings[@"notifications"] : nil;
-      if ([permission[@"value"] isEqual:@"allow"]) [view emit:@"notification" payload:notification];
-      else [view notificationAction:nid action:@"close"];
-    }];
-  } else if ([kind isEqualToString:@"notificationClose"] && dict) {
-    NSString *nid = Text(dict, @"id", 128);
-    if (!nid.length || ![_notificationFrames[nid] isEqualToString:frameId]) return;
-    [_notificationFrames removeObjectForKey:nid];
-    [self emit:@"notificationClose" payload:@{@"id" : nid}];
   } else if ([kind isEqualToString:@"displayMedia"] && dict) {
     double pageId;
     if (!Finite(dict, @"id", &pageId) || pageId < 1 || pageId > INT_MAX || pageId != floor(pageId) || !sender) return;
@@ -3163,13 +3126,6 @@ static NSString *LinkKeyAction(NSString *key) {
 - (void)tab:(SolaraCoreTab *)tab requestsActivation:(NSString *)reason {
   solaracore_pip::TabRequestedActivation(self);
   [self emit:@"activateRequest" payload:@{@"reason" : reason ?: @"page"}];
-}
-
-- (void)notificationAction:(NSString *)notificationId action:(NSString *)action {
-  NSString *frame = notificationId ? _notificationFrames[notificationId] : nil;
-  if (!frame) return;
-  if (![action isEqualToString:@"click"]) [_notificationFrames removeObjectForKey:notificationId];
-  [self callFrame:frame kind:@"notification" json:JSONString(@{@"id" : notificationId, @"action" : action ?: @""})];
 }
 
 - (void)resolveUnresponsive:(BOOL)terminate {

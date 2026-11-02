@@ -22,10 +22,12 @@ import { startTabReveal } from "./lib/tabReveal";
 import { startSync } from "./sync/engine";
 import { setStoreBatching, useBrowser } from "./store/browser";
 import { startPerfMarks } from "./lib/perfMarks";
+import { startNotifications } from "./lib/notifications";
 import { startNativeSettings } from "./components/settings/nativeSettings";
 
 probeStore("browser", useBrowser);
 setStoreBatching(unstable_batchedUpdates);
+startNotifications();
 startPersistence();
 startNewTabBar();
 startTabPages();

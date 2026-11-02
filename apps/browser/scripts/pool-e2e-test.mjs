@@ -13,8 +13,8 @@ The page pool end to end (docs/native/page-contract.md › Checks), in a hidden 
 pane roots and the pool on (SOLARA_NATIVE_SHELL=1 SOLARA_SHELL_PANES=1 SOLARA_NATIVE_PAGES_POOL=1): the pool serves the
 window's pages and RN mounts no TabWebView; the tab's handle reaches the page (evaluate, find and its match count,
 zoom in and back, load and go back); the page's events reach the store (title, favicon, load progress partway and
-then done); a page's notification, clicked while another tab is active, brings its tab back
-and fires the page's onclick; a peek opens on its own pooled page and Open as Tab promotes that page into the window;
+then done); a page's notification reaches native diagnostics and its native response fires Chromium's page onclick
+while another tab is active; a peek opens on its own pooled page and Open as Tab promotes that page into the window;
 in a split, a click in the unfocused pane focuses it and a pane's close button closes its tab; a tab moved to another
 profile, and back, gets a new page each time in the right profile (cookies prove it); and an engine change makes a new
 page whose ready reaches the store, never one revived from an armed WebKit transfer, and that keeps keyboard focus
@@ -146,16 +146,23 @@ try {
     return seen.slice(0, 12);
   });
 
-  await rep.check("a notification click brings its tab back and reaches the page", async () => {
+  await rep.check("a native notification response reaches Chromium's pooled document listener", async () => {
     await run(`return globalThis.expo.modules.SolaraCEF.setSiteSetting("", ${json(origin)}, "notifications", "allow").then(() => true);`);
-    await run(`return ev("a", "(() => { const n = new Notification('Ping', { body: 'pool', tag: 'pool' }); n.onclick = () => { document.title = 'CLICKED'; }; return true; })()");`);
-    const shown = await until("the notification reaches the app", `const n = acWebNotifications.received().find((n) => n.title === "Ping"); return n ? { id: n.id, tag: n.tag, origin: n.origin } : null;`);
+    await run(`return ev("a", "(() => { window.__poolNotification = new Notification('Ping', { body: 'pool', tag: 'pool' }); window.__poolNotification.onclick = () => { document.title = 'CLICKED'; }; return true; })()");`);
+    const shown = await until("the native notification is delivered and acknowledged", `return globalThis.expo.modules.SolaraCEF.notificationDebugSnapshot().then((value) => {
+      if (!value.hub?.diagnosticsComplete || !value.hub.delivered) return null;
+      const native = value.hub.delivered.find((row) => row.title === "Ping" && row.body === "pool");
+      const route = value.routes?.find((row) => row.nativeID === native?.nativeID && row.accepted && !row.withdrawn && new URL(row.origin).origin === ${json(origin)});
+      const posted = value.hub.posts?.find((row) => row.nativeID === route?.nativeID && row.status === "accepted");
+      const ack = value.hub.acks?.find((row) => row.nativeID === route?.nativeID && row.receipt === posted?.receipt && row.engineAccepted === true);
+      return route && posted && ack ? { nativeID: route.nativeID, token: route.token, generation: route.generation } : null;
+    });`);
     await run(`S().activate("b"); return true;`);
     await until("b active", `return active() === "b" || null;`);
-    const macId = shown.tag ? `web:${shown.origin}#${shown.tag}` : `web:${shown.id}`;
-    await run(`return ac.webNotifications.handleWebNotificationResponse({ id: ${json(macId)}, action: "click", tabId: "a", data: { engineId: ${json(shown.id)} } });`);
-    await until("a active again", `return active() === "a" || null;`);
-    await until("the page's onclick ran", `return ev("a", "document.title").then((t) => t === "CLICKED" || null);`);
+    const response = await run(`return globalThis.expo.modules.SolaraApp.notificationDebugRespond(${json(shown.nativeID)}, "com.apple.UNNotificationDefaultActionIdentifier");`);
+    if (response?.accepted !== true) throw new Error(`native response rejected: ${json(response)}`);
+    await until("Chromium dispatched the document onclick", `return ev("a", "document.title").then((t) => t === "CLICKED" || null);`);
+    await run(`S().activate("a"); return ev("a", "(() => { window.__poolNotification.close(); return true; })()");`);
     return shown;
   });
 

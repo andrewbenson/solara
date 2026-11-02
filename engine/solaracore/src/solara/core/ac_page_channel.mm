@@ -28,8 +28,6 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/media_session.h"
 #include "content/public/browser/page.h"
-#include "content/public/browser/permission_controller.h"
-#include "content/public/browser/permission_descriptor_util.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
@@ -42,8 +40,6 @@
 #import "solara/core/solaracore_internal.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_registry.h"
-#include "third_party/blink/public/common/permissions/permission_utils.h"
-#include "third_party/blink/public/mojom/permissions/permission_status.mojom.h"
 #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom.h"
 #include "url/gurl.h"
 #include "url/origin.h"
@@ -75,16 +71,6 @@ const std::vector<std::string_view>* HeldFields(const std::string& kind) {
       });
   auto it = fields->find(kind);
   return it == fields->end() ? nullptr : &it->second;
-}
-
-bool MayShowNotification(content::RenderFrameHost& frame) {
-  return frame.GetBrowserContext()
-             ->GetPermissionController()
-             ->GetPermissionStatusForCurrentDocument(
-                 content::PermissionDescriptorUtil::
-                     CreatePermissionDescriptorForPermissionType(
-                         blink::PermissionType::NOTIFICATIONS),
-                 &frame) == blink::mojom::PermissionStatus::GRANTED;
 }
 
 bool MayRequestDisplayMedia(content::RenderFrameHost& frame) {
@@ -373,7 +359,7 @@ void PageChannel::Post(const std::string& kind, const std::string& json) {
       json.size() > MaxPageMessageBytes(kind)) {
     return;
   }
-  if (kind == "notification" && !MayShowNotification(frame)) {
+  if (kind == "notification" || kind == "notificationClose") {
     return;
   }
   if (kind == "displayMedia" && !MayRequestDisplayMedia(frame)) {

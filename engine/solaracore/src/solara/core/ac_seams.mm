@@ -2,8 +2,10 @@
 
 #include <memory>
 
+#include "base/check.h"
 #include "base/functional/callback.h"
 #include "chrome/browser/lifetime/browser_shutdown.h"
+#include "chrome/browser/solara/ac_notifications.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
 #include "components/permissions/chooser_controller.h"
@@ -125,6 +127,10 @@ void DevToolsDockChanged(BrowserWindowInterface* browser,
 }
 
 void InstallChromeHooks() {
+  CHECK(solara::NotificationBridgeConfigured());
+  CHECK(!g_solara_notification_bridge_factory);
+  g_solara_notification_bridge_factory = &solara::CreateNotificationPlatformBridge;
+  g_solara_notification_provider_attempt = &solara::RecordNotificationProviderAttempt;
   g_solara_password_bubble = &HandlePasswordBubble;
   g_solara_extension_install_prompt = &HostExtensionInstallPrompt;
   g_solara_device_chooser = &HandleDeviceChooser;
@@ -143,6 +149,7 @@ void InstallChromeHooks() {
   g_solara_live_tab_skips_restore = &LiveTabSkipsRestore;
   g_solara_omits_from_session_service = &OmitsFromSessionService;
   g_solara_viewless_browsers = true;
+  solara::NotificationHooksInstalled();
 }
 
 }

@@ -1,0 +1,460 @@
+diff --git a/chrome/app_shim/BUILD.gn b/chrome/app_shim/BUILD.gn
+index c5629cd..85af400 100644
+--- a/chrome/app_shim/BUILD.gn
++++ b/chrome/app_shim/BUILD.gn
+@@ -10,6 +10,7 @@ import("//build/util/branding.gni")
+ # in the shim process, after the shim finds and loads the Chrome
+ # Framework bundle.
+ source_set("app_shim") {
++  defines = [ "SOLARA_APP_SHIM_NOTIFICATIONS_DISABLED=1" ]
+   sources = [
+     "../app/chrome_crash_reporter_client.h",
+     "app_shim_application.h",
+diff --git a/chrome/app_shim/app_shim_controller.mm b/chrome/app_shim/app_shim_controller.mm
+index f1d6d60..2c62008 100644
+--- a/chrome/app_shim/app_shim_controller.mm
++++ b/chrome/app_shim/app_shim_controller.mm
+@@ -132,6 +132,12 @@ - (void)commandFromDock:(id)sender {
+ @end
+ 
+ namespace {
++#if defined(SOLARA_APP_SHIM_NOTIFICATIONS_DISABLED)
++constexpr bool kSolaraAppShimNotificationsDisabled = true;
++#else
++constexpr bool kSolaraAppShimNotificationsDisabled = false;
++#endif
++
+ // The maximum amount of time to wait for Chrome's AppShimListener to be
+ // ready.
+ constexpr base::TimeDelta kPollTimeoutSeconds = base::Seconds(60);
+@@ -833,12 +839,20 @@ explicit ScopedSynchronizeThreads(
+ void AppShimController::BindNotificationProvider(
+     mojo::PendingReceiver<mac_notifications::mojom::MacNotificationProvider>
+         provider) {
++  if (kSolaraAppShimNotificationsDisabled) {
++    return;
++  }
+   notifications_receiver_.reset();
+   notifications_receiver_.Bind(std::move(provider));
+ }
+ 
+ void AppShimController::RequestNotificationPermission(
+     RequestNotificationPermissionCallback callback) {
++  if (kSolaraAppShimNotificationsDisabled) {
++    std::move(callback).Run(
++        mac_notifications::mojom::RequestPermissionResult::kPermissionDenied);
++    return;
++  }
+   if (!notification_service_un()) {
+     std::move(callback).Run(
+         mac_notifications::mojom::RequestPermissionResult::kRequestFailed);
+@@ -852,6 +866,9 @@ explicit ScopedSynchronizeThreads(
+         service,
+     mojo::PendingRemote<mac_notifications::mojom::MacNotificationActionHandler>
+         handler) {
++  if (kSolaraAppShimNotificationsDisabled) {
++    return;
++  }
+   CHECK(
+       base::FeatureList::IsEnabled(features::kAppShimNotificationAttribution));
+   // TODO(crbug.com/40616749): Once ad-hoc signed app shims become the
+@@ -899,7 +916,7 @@ explicit ScopedSynchronizeThreads(
+ 
+ mac_notifications::MacNotificationServiceUN*
+ AppShimController::notification_service_un() {
+-  if (!WebAppIsAdHocSigned()) {
++  if (kSolaraAppShimNotificationsDisabled || !WebAppIsAdHocSigned()) {
+     return nullptr;
+   }
+   return static_cast<mac_notifications::MacNotificationServiceUN*>(
+@@ -1012,7 +1029,8 @@ explicit ScopedSynchronizeThreads(
+ }
+ 
+ bool AppShimController::ShouldCreateNotificationServiceUN() const {
+-  if (g_disable_notification_service_for_testing) {
++  if (kSolaraAppShimNotificationsDisabled ||
++      g_disable_notification_service_for_testing) {
+     return false;
+   }
+   if (!base::FeatureList::IsEnabled(
+diff --git a/chrome/browser/apps/app_shim/app_shim_manager_mac.cc b/chrome/browser/apps/app_shim/app_shim_manager_mac.cc
+index 029fec0..43e4f6c 100644
+--- a/chrome/browser/apps/app_shim/app_shim_manager_mac.cc
++++ b/chrome/browser/apps/app_shim/app_shim_manager_mac.cc
+@@ -44,6 +44,7 @@
+ #include "chrome/browser/browser_process_platform_part.h"
+ #include "chrome/browser/notifications/mac/notification_platform_bridge_mac.h"
+ #include "chrome/browser/notifications/mac/notification_utils.h"
++#include "solara/core/ac_hooks.h"  // nogncheck
+ #include "chrome/browser/profiles/avatar_menu.h"
+ #include "chrome/browser/profiles/profile.h"
+ #include "chrome/browser/profiles/profile_attributes_entry.h"
+@@ -1651,9 +1652,11 @@ void AppShimManager::OnShimWillTerminate(AppShimHost* host) {
+   AppState* app_state = found_app->second.get();
+   DCHECK(app_state);
+ 
+-  auto* notification_bridge = static_cast<NotificationPlatformBridgeMac*>(
+-      g_browser_process->notification_platform_bridge());
+-  notification_bridge->AppShimWillTerminate(host->GetAppId());
++  if (!g_solara_notification_bridge_factory) {
++    auto* notification_bridge = static_cast<NotificationPlatformBridgeMac*>(
++        g_browser_process->notification_platform_bridge());
++    notification_bridge->AppShimWillTerminate(host->GetAppId());
++  }
+ 
+   DCHECK(!app_state->did_save_last_active_profiles_on_terminate);
+   app_state->MaybeSaveLastActiveProfiles();
+diff --git a/chrome/browser/browser_process_impl.cc b/chrome/browser/browser_process_impl.cc
+index 5f5e54c..fcd4267 100644
+--- a/chrome/browser/browser_process_impl.cc
++++ b/chrome/browser/browser_process_impl.cc
+@@ -290,6 +290,7 @@ void OnLocalStatePrefsLoaded();
+ #include "chrome/browser/ui/simple_message_box.h"
+ #include "chrome/grit/generated_resources.h"
+ #include "components/os_crypt/async/browser/keychain_key_provider.h"
++#include "solara/core/ac_hooks.h"  // nogncheck
+ #endif
+ 
+ #if BUILDFLAG(SAFE_BROWSING_AVAILABLE)
+@@ -318,6 +319,10 @@ static constexpr base::TimeDelta kEndSessionTimeout = base::Seconds(10);
+ using content::BrowserThread;
+ using content::ChildProcessSecurityPolicy;
+ 
++#if BUILDFLAG(IS_MAC)
++void (*g_solara_notification_quit)(base::OnceClosure) = nullptr;
++#endif
++
+ #if BUILDFLAG(IS_MAC)
+ namespace {
+ 
+@@ -1974,16 +1979,25 @@ void BrowserProcessImpl::Unpin() {
+   CHECK(base::RunLoop::IsRunningOnCurrentThread());
+ 
+ #if BUILDFLAG(IS_MAC)
+-  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+-      FROM_HERE,
+-      base::BindOnce(ChromeBrowserMainPartsMac::DidEndMainMessageLoop));
+-#endif
+-
+-#if !BUILDFLAG(IS_ANDROID)
++  auto quit = base::BindOnce(
++      [](base::OnceClosure quit_closure) {
++        base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
++            FROM_HERE,
++            base::BindOnce(ChromeBrowserMainPartsMac::DidEndMainMessageLoop));
++        std::move(quit_closure).Run();
++        chrome::ShutdownIfNeeded();
++      },
++      std::move(quit_closure_));
++  if (g_solara_notification_quit) {
++    g_solara_notification_quit(std::move(quit));
++  } else {
++    std::move(quit).Run();
++  }
++#elif !BUILDFLAG(IS_ANDROID)
+   std::move(quit_closure_).Run();
+ 
+   chrome::ShutdownIfNeeded();
+-#endif  // !BUILDFLAG(IS_ANDROID)
++#endif
+ }
+ 
+ // Mac is currently not supported.
+diff --git a/chrome/browser/notifications/mac/mac_notification_provider_factory.cc b/chrome/browser/notifications/mac/mac_notification_provider_factory.cc
+index c233352..63a72ff 100644
+--- a/chrome/browser/notifications/mac/mac_notification_provider_factory.cc
++++ b/chrome/browser/notifications/mac/mac_notification_provider_factory.cc
+@@ -20,12 +20,18 @@
+ #include "content/public/browser/service_process_host.h"
+ #include "content/public/common/content_switches.h"
+ #include "mojo/public/cpp/bindings/self_owned_receiver.h"
++#include "solara/core/ac_hooks.h"  // nogncheck
++
++void (*g_solara_notification_provider_attempt)(const char* kind) = nullptr;
+ 
+ namespace {
+ 
+ // Launches a new utility process that can display alert notifications.
+ mojo::Remote<mac_notifications::mojom::MacNotificationProvider>
+ LaunchOutOfProcessProvider() {
++  if (g_solara_notification_provider_attempt) {
++    g_solara_notification_provider_attempt("alertLaunch");
++  }
+   return content::ServiceProcessHost::Launch<
+       mac_notifications::mojom::MacNotificationProvider>(
+       content::ServiceProcessHost::Options()
+@@ -40,6 +46,9 @@ LaunchOutOfProcessProvider() {
+ void BindInProcessProvider(
+     mojo::PendingReceiver<mac_notifications::mojom::MacNotificationProvider>
+         receiver) {
++  if (g_solara_notification_provider_attempt) {
++    g_solara_notification_provider_attempt("bannerBind");
++  }
+   mojo::MakeSelfOwnedReceiver(
+       std::make_unique<mac_notifications::MacNotificationProviderImpl>(),
+       std::move(receiver));
+@@ -80,6 +89,9 @@ MacNotificationProviderFactory::LaunchProvider() {
+     case mac_notifications::NotificationStyle::kAlert:
+       return LaunchOutOfProcessProvider();
+     case mac_notifications::NotificationStyle::kAppShim:
++      if (g_solara_notification_provider_attempt) {
++        g_solara_notification_provider_attempt("appShimBind");
++      }
+       return apps::AppShimManager::Get()->LaunchNotificationProvider(
+           web_app_id_);
+   }
+diff --git a/chrome/browser/notifications/mac/notification_dispatcher_mojo.cc b/chrome/browser/notifications/mac/notification_dispatcher_mojo.cc
+index ff6d2d0..5011b21 100644
+--- a/chrome/browser/notifications/mac/notification_dispatcher_mojo.cc
++++ b/chrome/browser/notifications/mac/notification_dispatcher_mojo.cc
+@@ -20,6 +20,7 @@
+ #include "chrome/browser/notifications/mac/notification_utils.h"
+ #include "content/public/browser/browser_task_traits.h"
+ #include "content/public/browser/browser_thread.h"
++#include "solara/core/ac_hooks.h"  // nogncheck
+ 
+ namespace {
+ 
+@@ -249,6 +250,9 @@ NotificationDispatcherMojo::GetOrCreateService() {
+     provider_.set_disconnect_handler(base::BindOnce(
+         &NotificationDispatcherMojo::OnServiceDisconnectedGracefully,
+         base::Unretained(this), ShutdownType::kUnexpected));
++    if (g_solara_notification_provider_attempt) {
++      g_solara_notification_provider_attempt("providerBind");
++    }
+     provider_->BindNotificationService(service_.BindNewPipeAndPassReceiver(),
+                                        handler_.BindNewPipeAndPassRemote());
+   }
+diff --git a/chrome/browser/notifications/mac/notification_platform_bridge_mac.cc b/chrome/browser/notifications/mac/notification_platform_bridge_mac.cc
+index ec0919a..f49151d 100644
+--- a/chrome/browser/notifications/mac/notification_platform_bridge_mac.cc
++++ b/chrome/browser/notifications/mac/notification_platform_bridge_mac.cc
+@@ -7,6 +7,7 @@
+ #include <utility>
+ 
+ #include "base/barrier_closure.h"
++#include "base/check.h"
+ #include "base/feature_list.h"
+ #include "base/functional/bind.h"
+ #include "base/functional/callback.h"
+@@ -27,6 +28,10 @@
+ #include "third_party/blink/public/common/notifications/notification_constants.h"
+ #include "ui/message_center/public/cpp/notification.h"
+ #include "ui/message_center/public/cpp/notification_types.h"
++#include "solara/core/ac_hooks.h"  // nogncheck
++
++std::unique_ptr<NotificationPlatformBridge> (
++    *g_solara_notification_bridge_factory)() = nullptr;
+ 
+ NotificationPlatformBridgeMac::NotificationPlatformBridgeMac(
+     std::unique_ptr<NotificationDispatcherMac> banner_dispatcher,
+@@ -45,6 +50,11 @@ NotificationPlatformBridgeMac::~NotificationPlatformBridgeMac() {
+ // static
+ std::unique_ptr<NotificationPlatformBridge>
+ NotificationPlatformBridge::Create() {
++  if (g_solara_notification_bridge_factory) {
++    auto bridge = g_solara_notification_bridge_factory();
++    CHECK(bridge);
++    return bridge;
++  }
+   auto banner_dispatcher = std::make_unique<NotificationDispatcherMojo>(
+       std::make_unique<MacNotificationProviderFactory>(
+           mac_notifications::NotificationStyle::kBanner));
+@@ -67,7 +77,8 @@ NotificationPlatformBridge::Create() {
+ // static
+ bool NotificationPlatformBridge::CanHandleType(
+     NotificationHandler::Type notification_type) {
+-  return notification_type != NotificationHandler::Type::TRANSIENT;
++  return g_solara_notification_bridge_factory ||
++         notification_type != NotificationHandler::Type::TRANSIENT;
+ }
+ 
+ void NotificationPlatformBridgeMac::Display(
+diff --git a/chrome/browser/notifications/notification_display_service_impl.cc b/chrome/browser/notifications/notification_display_service_impl.cc
+index 555b3c0..6b10d9a 100644
+--- a/chrome/browser/notifications/notification_display_service_impl.cc
++++ b/chrome/browser/notifications/notification_display_service_impl.cc
+@@ -57,6 +57,12 @@
+ #include "chrome/browser/safe_browsing/tailored_security/notification_handler_desktop.h"
+ #endif
+ 
++#if BUILDFLAG(IS_MAC)
++#include "solara/core/ac_hooks.h"  // nogncheck
++
++void (*g_solara_notification_profile_loaded)(Profile*) = nullptr;
++#endif
++
+ // static
+ NotificationDisplayServiceImpl* NotificationDisplayServiceImpl::GetForProfile(
+     Profile* profile) {
+@@ -74,6 +80,11 @@ void NotificationDisplayServiceImpl::RegisterProfilePrefs(
+ 
+ NotificationDisplayServiceImpl::NotificationDisplayServiceImpl(Profile* profile)
+     : profile_(profile) {
++#if BUILDFLAG(IS_MAC)
++  if (g_solara_notification_profile_loaded) {
++    g_solara_notification_profile_loaded(profile_);
++  }
++#endif
+   // TODO(peter): Move these to the NotificationDisplayServiceFactory.
+   if (profile_) {
+     AddNotificationHandler(
+diff --git a/chrome/browser/notifications/notification_platform_bridge_delegator.cc b/chrome/browser/notifications/notification_platform_bridge_delegator.cc
+index d28134c..f4b5b5e 100644
+--- a/chrome/browser/notifications/notification_platform_bridge_delegator.cc
++++ b/chrome/browser/notifications/notification_platform_bridge_delegator.cc
+@@ -30,6 +30,10 @@
+ #include "chrome/browser/notifications/notification_platform_bridge_win.h"
+ #endif
+ 
++#if BUILDFLAG(IS_MAC)
++#include "solara/core/ac_hooks.h"  // nogncheck
++#endif
++
+ namespace {
+ 
+ // Returns if the current platform has system notifications enabled.
+@@ -50,6 +54,11 @@ namespace {
+ // Please try to keep this comment up to date when changing behaviour on one of
+ // the platforms supported by the browser.
+ bool SystemNotificationsEnabled(Profile* profile) {
++#if BUILDFLAG(IS_MAC)
++  if (g_solara_notification_bridge_factory) {
++    return true;
++  }
++#endif
+ #if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
+   return true;
+ #elif BUILDFLAG(IS_WIN)
+@@ -81,6 +90,11 @@ NotificationPlatformBridge* GetSystemNotificationPlatformBridge(
+ // Returns the NotificationPlatformBridge to use for the message center. May be
+ // a nullptr for platforms where the message center is not available.
+ NotificationPlatformBridge* GetMessageCenterBridge() {
++#if BUILDFLAG(IS_MAC)
++  if (g_solara_notification_bridge_factory) {
++    return nullptr;
++  }
++#endif
+ #if BUILDFLAG(ENABLE_CHROME_NOTIFICATIONS)
+   return NotificationPlatformBridgeMessageCenter::Get();
+ #else
+@@ -171,6 +185,12 @@ NotificationPlatformBridgeDelegator::GetBridgeForType(
+ 
+ void NotificationPlatformBridgeDelegator::
+     OnSystemNotificationPlatformBridgeReady(bool success) {
++#if BUILDFLAG(IS_MAC)
++  if (g_solara_notification_bridge_factory) {
++    CHECK(success);
++    CHECK(system_bridge_);
++  }
++#endif
+   if (!success) {
+     // Fall back to the message center if initialization failed. Initialization
+     // must always succeed on platforms where the message center is unavailable.
+diff --git a/chrome/browser/profiles/off_the_record_profile_impl.cc b/chrome/browser/profiles/off_the_record_profile_impl.cc
+index aa154c5..36a984a 100644
+--- a/chrome/browser/profiles/off_the_record_profile_impl.cc
++++ b/chrome/browser/profiles/off_the_record_profile_impl.cc
+@@ -18,6 +18,9 @@
+ #include "base/strings/string_util.h"
+ #include "base/task/sequenced_task_runner.h"
+ #include "build/build_config.h"
++#if BUILDFLAG(IS_MAC)
++#include "solara/core/ac_hooks.h"  // nogncheck
++#endif
+ #include "build/chromeos_buildflags.h"
+ #include "chrome/browser/accessibility/accessibility_labels_service.h"
+ #include "chrome/browser/background/background_contents_service_factory.h"
+@@ -194,6 +197,11 @@ OffTheRecordProfileImpl::OffTheRecordProfileImpl(
+ }
+ 
+ void OffTheRecordProfileImpl::Init() {
++#if BUILDFLAG(IS_MAC)
++  if (g_solara_notification_profile_loaded) {
++    g_solara_notification_profile_loaded(this);
++  }
++#endif
+   FullBrowserTransitionManager::Get()->OnProfileCreated(this);
+ 
+   BrowserContextDependencyManager::GetInstance()->CreateBrowserContextServices(
+diff --git a/chrome/browser/profiles/profile_impl.cc b/chrome/browser/profiles/profile_impl.cc
+index 1f64ea2..b0ee914 100644
+--- a/chrome/browser/profiles/profile_impl.cc
++++ b/chrome/browser/profiles/profile_impl.cc
+@@ -39,6 +39,9 @@
+ #include "base/trace_event/trace_event.h"
+ #include "base/version.h"
+ #include "build/build_config.h"
++#if BUILDFLAG(IS_MAC)
++#include "solara/core/ac_hooks.h"  // nogncheck
++#endif
+ #include "build/chromeos_buildflags.h"
+ #include "chrome/browser/background/background_contents_service_factory.h"
+ #include "chrome/browser/background_fetch/background_fetch_delegate_factory.h"
+@@ -1145,6 +1148,11 @@ ExtensionSpecialStoragePolicy* ProfileImpl::GetExtensionSpecialStoragePolicy() {
+ 
+ void ProfileImpl::OnLocaleReady(CreateMode create_mode) {
+   TRACE_EVENT0("browser", "ProfileImpl::OnLocaleReady");
++#if BUILDFLAG(IS_MAC)
++  if (g_solara_notification_profile_loaded) {
++    g_solara_notification_profile_loaded(this);
++  }
++#endif
+ 
+   // Migrate obsolete prefs.
+   MigrateObsoleteProfilePrefs(GetPrefs(), GetPath());
+diff --git a/chrome/browser/profiles/profile_manager.cc b/chrome/browser/profiles/profile_manager.cc
+index 64e5e13..3f75041 100644
+--- a/chrome/browser/profiles/profile_manager.cc
++++ b/chrome/browser/profiles/profile_manager.cc
+@@ -41,6 +41,9 @@
+ #include "base/trace_event/trace_event.h"
+ #include "base/version_info/version_info.h"
+ #include "build/build_config.h"
++#if BUILDFLAG(IS_MAC)
++#include "solara/core/ac_hooks.h"  // nogncheck
++#endif
+ #include "build/chromeos_buildflags.h"
+ #include "chrome/browser/accessibility/accessibility_labels_service.h"
+ #include "chrome/browser/accessibility/accessibility_labels_service_factory.h"
+@@ -1517,8 +1520,18 @@ void ProfileManager::DoFinalInit(ProfileInfo* profile_info,
+   TRACE_EVENT0("browser", "ProfileManager::DoFinalInit");
+ 
+   Profile* profile = profile_info->GetRawProfile();
++#if BUILDFLAG(IS_MAC)
++  if (g_solara_notification_profile_loaded) {
++    g_solara_notification_profile_loaded(profile);
++  }
++#endif
+   DoFinalInitForServices(profile, go_off_the_record);
+   AddProfileToStorage(profile);
++#if BUILDFLAG(IS_MAC)
++  if (g_solara_notification_profile_loaded) {
++    g_solara_notification_profile_loaded(profile);
++  }
++#endif
+   DoFinalInitLogging(profile);
+ 
+   // Set the |created| flag now so that PROFILE_ADDED handlers can use
+diff --git a/chrome/browser/web_applications/os_integration/mac/web_app_shortcut_mac.mm b/chrome/browser/web_applications/os_integration/mac/web_app_shortcut_mac.mm
+index 9aa3199..ab779f8 100644
+--- a/chrome/browser/web_applications/os_integration/mac/web_app_shortcut_mac.mm
++++ b/chrome/browser/web_applications/os_integration/mac/web_app_shortcut_mac.mm
+@@ -33,6 +33,7 @@
+ #include "components/prefs/pref_service.h"
+ #include "content/public/browser/browser_thread.h"
+ #include "content/public/common/content_switches.h"
++#include "solara/core/ac_hooks.h"  // nogncheck
+ 
+ namespace web_app {
+ 
+@@ -150,6 +151,9 @@ bool UseAdHocSigningForWebAppShims() {
+ }
+ 
+ bool UseNotificationAttributionForWebAppShims() {
++  if (g_solara_notification_bridge_factory) {
++    return false;
++  }
+   return base::FeatureList::IsEnabled(
+              features::kAppShimNotificationAttribution) &&
+          UseAdHocSigningForWebAppShims();

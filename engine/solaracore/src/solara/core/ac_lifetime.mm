@@ -27,6 +27,7 @@
 #include "chrome/browser/profiles/profile_attributes_storage.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profiles_state.h"
+#include "chrome/browser/solara/ac_notifications.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
@@ -161,8 +162,10 @@ void StartLifetimeObservers() {
                    queue:nil
               usingBlock:^(NSNotification*) {
                 g_phase = QuitPhase::kExiting;
-                ReleaseAppKeepAlive();
-                ChromeDevToolsManagerDelegate::AllowBrowserToClose();
+                solara::BeginNotificationDrain(base::BindOnce([] {
+                  ReleaseAppKeepAlive();
+                  ChromeDevToolsManagerDelegate::AllowBrowserToClose();
+                }));
               }];
 }
 

@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Persistent notification fixture</title></head>
+<body>
+<script>
+window.notificationState = null;
+window.showPersistent = async (run, phase) => {
+  window.notificationState = { run, phase, state: "registering" };
+  await navigator.serviceWorker.register("./worker.js");
+  const registration = await navigator.serviceWorker.ready;
+  const channel = new MessageChannel();
+  channel.port1.onmessage = (event) => {
+    window.notificationState = { ...window.notificationState, ...event.data };
+    if (["shown", "error"].includes(event.data.state)) channel.port1.close();
+  };
+  registration.active.postMessage({ run, phase }, [channel.port2]);
+  return true;
+};
+window.closePersistent = async (run, phase) => {
+  const registration = await navigator.serviceWorker.getRegistration(location.href);
+  if (!registration) throw new Error("registration absent before programmatic close");
+  const notifications = (await registration.getNotifications()).filter((notification) => notification.title === `${run}:${phase}`);
+  for (const notification of notifications) notification.close();
+  return notifications.length;
+};
+window.cleanupPersistent = async () => {
+  const registration = await navigator.serviceWorker.getRegistration(location.href);
+  if (!registration) return { closed: 0, remaining: 0, unregistered: true, registration: false };
+  const notifications = await registration.getNotifications();
+  for (const notification of notifications) notification.close();
+  let remaining = notifications.length;
+  const deadline = Date.now() + 5000;
+  do {
+    remaining = (await registration.getNotifications()).length;
+    if (!remaining) break;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  } while (Date.now() < deadline);
+  if (remaining) throw new Error(`cleanup left ${remaining} worker notifications`);
+  const unregistered = await registration.unregister();
+  if (!unregistered) throw new Error("worker unregister failed");
+  return { closed: notifications.length, remaining, unregistered, registration: !!(await navigator.serviceWorker.getRegistration(location.href)) };
+};
+</script>
+</body>
+</html>

@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SolaraShell
 import SolaraLive
 import SolaraUI
 
@@ -112,6 +113,10 @@ final class LiveAdapter: LiveFoldersServices, CalendarServices {
   func refreshCalendar() async { await perform(.refreshCalendar(.object([:]))) }
 
   func connectCalendar() async { await perform(.connectCalendar(.object([:]))) }
+
+  func requestCalendarAlertPermission() async -> Bool {
+    await ShellLiveNotifications.requestCalendarAlertPermission()
+  }
 
   func updateCalendarOptions(_ change: LiveCalendarOptionChange) {
     let patch: [String: LiveAnyJSON]

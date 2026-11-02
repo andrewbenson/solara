@@ -21,6 +21,12 @@ export function valueOr<T extends object, F>(result: Result<T>, fallback: F): T 
 }
 
 export type CefNative = {
+  addListener(name: "onNotificationEvent", listener: (event: Record<string, unknown>) => void): EventSubscription;
+  notificationWatch(): Promise<Record<string, unknown>>;
+  notificationConsume(event: Record<string, unknown>): Promise<Record<string, unknown>>;
+  notificationControl(payload: Record<string, unknown>): Promise<Record<string, unknown>>;
+  notificationDebugSnapshot(): Promise<Record<string, unknown>>;
+  notificationDebugDisplayed(profile: string, origin: string): Promise<Record<string, unknown>>;
   addListener(name: "onDownload", listener: (d: Download) => void): EventSubscription;
   addListener(name: "onPermission", listener: (p: PermissionRequest) => void): EventSubscription;
   addListener(name: "onPermissionDismissed", listener: (p: { id: string }) => void): EventSubscription;

@@ -43,8 +43,11 @@
 #include "chrome/browser/printing/print_preview_dialog_controller.h"
 #endif
 #include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/lifetime/application_lifetime_desktop.h"
 #include "chrome/browser/lifetime/browser_shutdown.h"
 #include "components/keep_alive_registry/keep_alive_registry.h"
+#include "components/keep_alive_registry/keep_alive_types.h"
+#include "components/keep_alive_registry/scoped_keep_alive.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_observer.h"
 #include "chrome/browser/profiles/profile_manager_observer.h"
@@ -53,7 +56,10 @@
 #include "components/prefs/pref_service.h"
 #include "base/scoped_observation.h"
 #include "base/supports_user_data.h"
+#include "chrome/browser/profiles/keep_alive/profile_keep_alive_types.h"
+#include "chrome/browser/profiles/keep_alive/scoped_profile_keep_alive.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/solara/ac_notifications.h"
 #include "base/command_line.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
@@ -243,7 +249,14 @@ class ProfileGoneObserver : public ProfileObserver {
   }
   void OnProfileWillBeDestroyed(Profile* profile) override {
     observation_.Reset();
+    const solara::NotificationReleaseReason reason =
+        solaracore::IsProfileDeleting(profile)
+            ? solara::NotificationReleaseReason::kProfileDelete
+            : profile->IsOffTheRecord()
+                  ? solara::NotificationReleaseReason::kPrivateEnd
+                  : solara::NotificationReleaseReason::kProfileUnload;
     solaracore::NoteProfileDying(profile);
+    solara::ReleaseNotificationProfile(profile, reason);
     [wrapper_ profileWillBeDestroyed];
   }
 
@@ -283,7 +296,11 @@ void ApplyAutoPictureInPicture(Profile* profile) {
 }
 
 void PrepareProfilePrefs(Profile* profile) {
-  if (!profile || profile->IsOffTheRecord()) {
+  if (!profile) {
+    return;
+  }
+  solara::RegisterNotificationProfile(profile);
+  if (profile->IsOffTheRecord()) {
     return;
   }
   PrefService* prefs = profile->GetPrefs();
@@ -979,43 +996,134 @@ void WatchTracingStart(std::shared_ptr<TracingStart> start, int checks_left) {
   solaracore::ResolveExtensionInstallPrompt(base::SysNSStringToUTF8(requestId), accepted);
 }
 
-- (void)deleteProfile:(SolaraCoreProfile*)profile completion:(void (^)(BOOL deleted))completion {
+- (void)deleteProfile:(SolaraCoreProfile*)profile completion:(void (^)(BOOL admitted))completion {
   Profile* chrome_profile = profile.chromeProfile;
-  ProfileManager* manager = g_browser_process->profile_manager();
-  if (!chrome_profile || !chrome_profile->IsRegularProfile() ||
+  ProfileManager* manager = g_browser_process ? g_browser_process->profile_manager() : nullptr;
+  if (!manager || browser_shutdown::HasShutdownStarted() || !chrome_profile ||
+      !chrome_profile->IsRegularProfile() || chrome_profile->ShutdownStarted() ||
+      solaracore::IsProfileDying(chrome_profile) ||
+      solaracore::IsProfileDeleting(chrome_profile) ||
+      IsProfileDirectoryMarkedForDeletion(chrome_profile->GetPath()) ||
       chrome_profile->GetPath() ==
           manager->user_data_dir().Append(ProfileManager::GetInitialProfileDir())) {
-    if (completion) {
-      completion(NO);
-    }
+    if (completion) completion(NO);
     return;
   }
-  solaracore::NoteProfileDeleting(chrome_profile);
-  base::WeakPtr<Profile> weak = chrome_profile->GetWeakPtr();
-  const base::FilePath path = chrome_profile->GetPath();
-  manager->GetDeleteProfileHelper().MaybeScheduleProfileForDeletion(
-      chrome_profile->GetPath(), base::DoNothing(),
-      ProfileMetrics::DELETE_PROFILE_SETTINGS);
-  if (weak) {
-    manager->ClearFirstBrowserWindowKeepAlive(weak.get());
+  struct Deletion : public std::enable_shared_from_this<Deletion> {
+    base::WeakPtr<Profile> profile;
+    base::FilePath path;
+    void (^completion)(BOOL) = nil;
+    std::unique_ptr<ScopedKeepAlive> browser_keep_alive;
+    std::unique_ptr<ScopedProfileKeepAlive> profile_keep_alive;
+    int attempts = 0;
+    bool finished = false;
+
+    void Finish(bool admitted) {
+      if (finished) return;
+      finished = true;
+      auto reply = completion;
+      completion = nil;
+      if (reply) reply(admitted);
+      profile_keep_alive.reset();
+      browser_keep_alive.reset();
+    }
+    void Commit() {
+      if (finished) return;
+      ProfileManager* manager = g_browser_process ? g_browser_process->profile_manager() : nullptr;
+      if (!profile || !manager || browser_shutdown::HasShutdownStarted() ||
+          profile->ShutdownStarted() || manager->GetProfileByPath(path) != profile.get() ||
+          IsProfileDirectoryMarkedForDeletion(path) ||
+          solaracore::IsProfileDeleting(profile.get())) {
+        Finish(false);
+        return;
+      }
+      bool has_browsers = false;
+      GlobalBrowserCollection::GetInstance()->ForEach([&](BrowserWindowInterface* browser) {
+        has_browsers |= browser->GetProfile()->GetOriginalProfile() == profile.get();
+        return !has_browsers;
+      });
+      if (has_browsers) {
+        if (++attempts == 100) {
+          Finish(false);
+          return;
+        }
+        content::GetUIThreadTaskRunner({})->PostDelayedTask(
+            FROM_HERE,
+            base::BindOnce([](std::shared_ptr<Deletion> request) { request->Commit(); },
+                           shared_from_this()),
+            base::Milliseconds(50));
+        return;
+      }
+      solara::ReleaseNotificationProfilePath(
+          path, solara::NotificationReleaseReason::kProfileDelete,
+          base::BindOnce([](std::shared_ptr<Deletion> request, bool admitted) {
+            if (!admitted) {
+              request->Finish(false);
+              return;
+            }
+            Profile* profile = request->profile.get();
+            ProfileManager* manager = g_browser_process->profile_manager();
+            solaracore::NoteProfileDeleting(profile);
+            manager->GetDeleteProfileHelper().MaybeScheduleProfileForDeletion(
+                request->path, base::DoNothing(), ProfileMetrics::DELETE_PROFILE_SETTINGS);
+            manager->ClearFirstBrowserWindowKeepAlive(profile);
+            for (const base::TimeDelta delay : {base::Seconds(2), base::Seconds(10)}) {
+              content::GetUIThreadTaskRunner({})->PostDelayedTask(
+                  FROM_HERE, base::BindOnce([](const base::FilePath& dir) {
+                    if (!g_browser_process || !g_browser_process->profile_manager() ||
+                        !IsProfileDirectoryMarkedForDeletion(dir) ||
+                        g_browser_process->profile_manager()->GetProfileByPath(dir)) {
+                      return;
+                    }
+                    base::ThreadPool::PostTask(
+                        FROM_HERE,
+                        {base::MayBlock(), base::TaskPriority::BEST_EFFORT,
+                         base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN},
+                        base::BindOnce(base::IgnoreResult(&base::DeletePathRecursively), dir));
+                  }, request->path), delay);
+            }
+            request->Finish(true);
+          }, shared_from_this()));
+    }
+  };
+  auto request = std::make_shared<Deletion>();
+  request->profile = chrome_profile->GetWeakPtr();
+  request->path = chrome_profile->GetPath();
+  request->completion = completion;
+  request->browser_keep_alive = std::make_unique<ScopedKeepAlive>(
+      KeepAliveOrigin::PROFILE_MANAGER, KeepAliveRestartOption::DISABLED);
+  request->profile_keep_alive = std::make_unique<ScopedProfileKeepAlive>(
+      chrome_profile, ProfileKeepAliveOrigin::kProfileDeletionProcess);
+  chrome::CloseAllBrowsersWithProfile(
+      chrome_profile, false,
+      base::BindRepeating([](std::shared_ptr<Deletion> request, const base::FilePath&) {
+        request->Commit();
+      }, request),
+      base::BindRepeating([](std::shared_ptr<Deletion> request, const base::FilePath&) {
+        request->Finish(false);
+      }, request));
+}
+
+- (void)fenceNotificationsForProfileDeletionAtPath:(NSString*)path
+                                      completion:(void (^)(BOOL))completion {
+  const base::FilePath profile_path(base::SysNSStringToUTF8(path));
+  if (profile_path.empty() || !profile_path.IsAbsolute()) {
+    completion(NO);
+    return;
   }
-  for (const base::TimeDelta delay : {base::Seconds(2), base::Seconds(10)}) {
-    content::GetUIThreadTaskRunner({})->PostDelayedTask(
-        FROM_HERE, base::BindOnce([](const base::FilePath& dir) {
-          if (!IsProfileDirectoryMarkedForDeletion(dir) ||
-              g_browser_process->profile_manager()->GetProfileByPath(dir)) {
-            return;
-          }
-          base::ThreadPool::PostTask(
-              FROM_HERE,
-              {base::MayBlock(), base::TaskPriority::BEST_EFFORT,
-               base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN},
-              base::BindOnce(base::IgnoreResult(&base::DeletePathRecursively), dir));
-        }, path),
-        delay);
-  }
-  if (completion) {
-    completion(YES);
+  solara::ReleaseNotificationProfilePath(
+      profile_path,
+      solara::NotificationReleaseReason::kProfileDelete,
+      base::BindOnce([](void (^completion)(BOOL), bool admitted) {
+        completion(admitted);
+      }, completion));
+}
+
+- (void)fenceNotificationsForPrivateProfile:(SolaraCoreProfile*)profile {
+  Profile* chrome_profile = profile.chromeProfile;
+  if (chrome_profile && chrome_profile->IsOffTheRecord()) {
+    solara::ReleaseNotificationProfile(
+        chrome_profile, solara::NotificationReleaseReason::kPrivateEnd);
   }
 }
 
@@ -1031,7 +1139,12 @@ void WatchTracingStart(std::shared_ptr<TracingStart> start, int checks_left) {
     return !in_use;
   });
   if (!in_use) {
-    ProfileDestroyer::DestroyOTRProfileWhenAppropriate(chrome_profile);
+    base::WeakPtr<Profile> weak = chrome_profile->GetWeakPtr();
+    solara::ReleaseNotificationProfile(
+        chrome_profile, solara::NotificationReleaseReason::kPrivateEnd);
+    if (weak && !solaracore::IsProfileDying(weak.get())) {
+      ProfileDestroyer::DestroyOTRProfileWhenAppropriate(weak.get());
+    }
   }
 }
 
@@ -1109,6 +1222,7 @@ void WatchTracingStart(std::shared_ptr<TracingStart> start, int checks_left) {
   if (!profile || solaracore::IsProfileDying(profile)) {
     return nil;
   }
+  solara::RegisterNotificationProfile(profile);
   SolaraCoreProfile* __strong& wrapper = ProfileWrappers()[profile];
   if (!wrapper) {
     wrapper = [[SolaraCoreProfile alloc] init];

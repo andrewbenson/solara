@@ -24,7 +24,6 @@ import { copyLinkToSelection, searchSelection, setPageSelection, type PageSelect
 import { requestDisplayMedia } from "./media/SharePicker";
 import { setNowPlaying, setPictureInPictureState } from "./media/state";
 import { noteScroll, revealToolbar } from "./layout/toolbarAutoHide";
-import { closeWebNotification, showWebNotification } from "../lib/webNotifications";
 import { closeLittleSolaraOnEscape } from "./littleSolara/actions";
 import { closePeekOnEscape } from "./peek/actions";
 
@@ -78,10 +77,8 @@ export type PageEventName =
   | "onPageFocus"
   | "onPagePress"
   | "onWindowClose"
-  | "onNotification"
   | "onCommand"
   | "onPageMessage"
-  | "onNotificationClose"
   | "onDiscarded"
   | "onActivateRequest";
 
@@ -359,7 +356,6 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
     onWindowClose: (withWindow) => {
       if (!isQuitting()) store().closeTabs([tabId], { lastClosesWindow: true, windowClosedByChrome: withWindow });
     },
-    onNotification: (notification) => showWebNotification(tabId, notification),
     onCommand: ({ command, text, modifiers }) => {
       if (command === "search") searchSelection(tabId, text, modifiers);
       else if (command === "copyLinkToHighlight") void copyLinkToSelection(tabId);
@@ -371,7 +367,6 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
       else if (kind === "scroll") noteScroll(tabId, data);
       else if (kind === "drm") offerWebKit(tabId, data);
     },
-    onNotificationClose: (id) => closeWebNotification(tabId, id),
     onDiscarded: (url) => {
       session.pending = url;
       session.fromNewTab = false;

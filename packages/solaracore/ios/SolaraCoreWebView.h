@@ -120,7 +120,6 @@ NS_ASSUME_NONNULL_BEGIN
     NS_SWIFT_NAME(resolveDisplayMedia(_:sourceId:audio:));
 @property (nonatomic, readonly, nullable) NSString *mediaCaptureSourceId;
 
-- (void)notificationAction:(NSString *)notificationId action:(NSString *)action NS_SWIFT_NAME(notificationAction(_:action:));
 
 - (void)resolveUnresponsive:(BOOL)terminate NS_SWIFT_NAME(resolveUnresponsive(terminate:));
 - (NSString *)discard:(BOOL)unload NS_SWIFT_NAME(discard(unload:));

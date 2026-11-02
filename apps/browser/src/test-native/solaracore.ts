@@ -261,6 +261,11 @@ let autofillIds = 0;
 const cef: Modules["SolaraCEF"] = {
   addListener: (name: string, listener: (payload: never) => void) =>
     name === "onTabStrip" ? tabStripHost().listen(listener as (tx: TabStripTransaction) => void) : cefEvents.addListener(name, listener),
+  notificationWatch: async () => unfaked("SolaraCEF", "notificationWatch"),
+  notificationConsume: async () => unfaked("SolaraCEF", "notificationConsume"),
+  notificationControl: async () => unfaked("SolaraCEF", "notificationControl"),
+  notificationDebugSnapshot: async () => unfaked("SolaraCEF", "notificationDebugSnapshot"),
+  notificationDebugDisplayed: async () => unfaked("SolaraCEF", "notificationDebugDisplayed"),
   engineInfo: () => unfaked("SolaraCEF", "engineInfo"),
   chromeWindows: () => Promise.resolve([]),
   prepareTransfer: () => {},

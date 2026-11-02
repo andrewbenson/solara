@@ -27,8 +27,6 @@ public enum PageEvents {
     "zoom": "onZoom",
     "contentBlocked": "onContentBlocked",
     "downloadNavigation": "onDownloadNavigation",
-    "notification": "onNotification",
-    "notificationClose": "onNotificationClose",
     "pictureInPicture": "onPictureInPicture",
     "activateRequest": "onActivateRequest",
     "displayMediaRequest": "onDisplayMediaRequest",
@@ -98,7 +96,7 @@ public enum PageCalls {
     "navigationEntries", "capturePicture", "downloadFavicon", "downloadImage", "mediaCommand",
     "requestPictureInPicture", "takeControlPress", "exitPictureInPicture", "getSecurityInfo", "pageCookies",
     "openBlockedPopup", "clearSiteData", "resolvePasswordPrompt", "resolveAutofillPrompt", "executeExtensionAction",
-    "resolveDisplayMedia", "mediaCaptureSourceId", "notificationAction", "resolveUnresponsive", "discard", "setFrozen",
+    "resolveDisplayMedia", "mediaCaptureSourceId", "resolveUnresponsive", "discard", "setFrozen",
   ]
 
   public static func run(_ page: NSView, _ method: String, _ args: [Any], resolve: @escaping Resolve, reject: @escaping Reject) {
@@ -154,7 +152,6 @@ public enum PageCalls {
     case "executeExtensionAction": return resolve(web.executeExtensionAction(try a.string(required: 0)))
     case "resolveDisplayMedia": web.resolveDisplayMedia(try a.string(required: 0), sourceId: a.string(1), audio: try a.bool(required: 2))
     case "mediaCaptureSourceId": return resolve(web.mediaCaptureSourceId)
-    case "notificationAction": web.notificationAction(try a.string(required: 0), action: try a.string(required: 1))
     case "resolveUnresponsive": web.resolveUnresponsive(terminate: try a.bool(required: 0))
     case "discard": return resolve(web.discard(unload: a.bool(0) ?? false))
     case "setFrozen": web.frozen = try a.bool(required: 0)

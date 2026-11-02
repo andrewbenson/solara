@@ -133,7 +133,6 @@ public extension PageRequest where Output == Void {
   }
   static func resolveAutofillPrompt(_ id: Int, action: String) -> Self { .void(.resolveAutofillPrompt(id, action)) }
   static func resolveDisplayMedia(_ id: String, sourceID: String?, audio: Bool = false) -> Self { .void(.resolveDisplayMedia(id, sourceID, audio)) }
-  static func notificationAction(_ id: String, action: String) -> Self { .void(.notificationAction(id, action)) }
   static func resolveUnresponsive(_ terminate: Bool) -> Self { .void(.resolveUnresponsive(terminate)) }
   static var stopLoading: Self { .void(.stopLoading) }
   static var goBack: Self { .void(.goBack) }

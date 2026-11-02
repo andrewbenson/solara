@@ -18,3 +18,4 @@ export * from "./swipe";
 export * from "./tabStrip";
 export * from "./webkit";
 export type { SolaraCoreNativeModules, SolaraCoreOptionalNativeModules } from "./nativeModules";
+export * from "./notifications";

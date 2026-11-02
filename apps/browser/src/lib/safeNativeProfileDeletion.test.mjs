@@ -53,7 +53,8 @@ test("SolaraCoreHost refuses loaded and unloaded profile deletion with a reason 
     } else {
       assert.deepEqual(result.remaining, result.loaded ? ["Chromium deletion pending restart"] : []);
       assert.equal(result.engineLookups, 1);
-      assert.equal(result.profileLookups, 1);
+      assert.equal(result.profileLookups, 2);
+      assert.equal(result.fenceCalls, 1);
       assert.equal(result.engineCalls, result.loaded ? 1 : 0);
       assert.equal(result.deletedProfiles, result.loaded ? 1 : 0);
       assert.equal(result.directoryExists, result.loaded);

@@ -17,12 +17,14 @@ final class FakeCalendarServices: CalendarServices {
     options: LiveCalendarOptions(hiddenCalendarIds: ["holidays"])
   )
   var calls: [String] = []
+  var alertPermission = true
   let changes = AsyncStream<CalendarPaneState>.makeStream()
 
   func calendarState() async -> CalendarPaneState { state }
   func calendarChanges() -> AsyncStream<CalendarPaneState> { changes.stream }
   func refreshCalendar() async { calls.append("refresh") }
   func connectCalendar() async { calls.append("connect") }
+  func requestCalendarAlertPermission() async -> Bool { calls.append("alertPermission"); return alertPermission }
   func updateCalendarOptions(_ change: LiveCalendarOptionChange) { calls.append("\(change)") }
   func setCalendarHidden(_ id: String, hidden: Bool) { calls.append("hide \(id) \(hidden)") }
   func openCalendarPrivacySettings() { calls.append("privacy") }
@@ -91,6 +93,23 @@ struct CalendarPaneTests {
     #expect(services.calls.contains("\(LiveCalendarOptionChange.showPreview(false))"))
     #expect(services.calls.contains("connect"))
     #expect(services.calls.contains("refresh"))
+  }
+
+  @Test func onlyTurningOnAlertsRequestsNotificationPermission() async {
+    let (_, _, model, services) = await Self.loaded()
+    model.update(.alertLead("5"))
+    model.update(.alertCondition("always"))
+    await model.refresh()
+    model.setAlertsEnabled(false)
+    #expect(!services.calls.contains("alertPermission"))
+    model.setAlertsEnabled(true)
+    await LiveSettingsWait.until { model.options.alertLead == "5" }
+    #expect(services.calls.filter { $0 == "alertPermission" }.count == 1)
+    model.setAlertsEnabled(false)
+    services.alertPermission = false
+    model.setAlertsEnabled(true)
+    await LiveSettingsWait.until { model.alertPermissionUnavailable }
+    #expect(model.options.alertLead == "never")
   }
 
   @Test func alertLeadsMatchTheEngine() {

@@ -542,14 +542,13 @@ private final class ControlledPageTimeouts {
       ("executeExtensionAction", [.string("value")], .executeExtensionAction("value")),
       ("resolveDisplayMedia", [.string("value"), .null, .bool(true)], .resolveDisplayMedia("value", nil, true)),
       ("mediaCaptureSourceId", [], .mediaCaptureSourceId),
-      ("notificationAction", [.string("value"), .string("value")], .notificationAction("value", "value")),
       ("resolveUnresponsive", [.bool(true)], .resolveUnresponsive(true)),
       ("discard", [.bool(true)], .discard(true)),
       ("setFrozen", [.bool(true)], .setFrozen(true)),
       ("nativeTag", [], .nativeTag),
       ("livePage", [], .livePage)
     ]
-    #expect(cases.count == 40)
+    #expect(cases.count == 39)
     for (method, arguments, expected) in cases {
       #expect(try PageCommand.decode(method: method, args: arguments) == expected)
       #expect(expected.method == method)

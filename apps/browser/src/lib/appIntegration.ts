@@ -16,7 +16,6 @@ import { nativeSafeMode } from "../store/nativeStore";
 import { resolveWindowId } from "../store/model";
 import { openUrls } from "./actions";
 import { persistenceRefused } from "./persistLatch";
-import { handleWebNotificationResponse } from "./webNotifications";
 
 let startup: Promise<void> = Promise.resolve();
 let presentationStarted = false;
@@ -42,7 +41,6 @@ export function startAppIntegrationPresentation() {
     }
   });
   onNotificationResponse((response) => {
-    if (handleWebNotificationResponse(response)) return;
     void nativeAppIntegrationNotification(response).catch((error) => console.warn("[appIntegration] notification failed", error));
   });
   startup = startNativeAppStartup({

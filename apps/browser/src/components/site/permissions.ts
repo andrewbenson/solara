@@ -1,6 +1,5 @@
 import { onPermission, onPermissionDismissed, resolvePermission, type PermissionKind, type PermissionRequest, type PermissionResult } from "@solara/solaracore";
-import { ensureNotificationPermission } from "../../lib/webNotifications";
-import { useBrowser } from "../../store/browser";
+import { requestNotificationPermission } from "@solara/shell";
 import { patchPage, pageOf, tabForBrowser, usePages } from "../layout/pageState";
 import { startDeviceChoosers } from "./DeviceChooser";
 
@@ -50,15 +49,17 @@ function drop(id: string) {
   for (const [tabId, queue] of queues) queues.set(tabId, queue.filter((r) => r.id !== id));
 }
 
-export function answerPermission(tabId: string, requestId: string, result: PermissionResult) {
+export async function answerPermission(tabId: string, requestId: string, result: PermissionResult) {
   const current = pageOf(tabId).permission;
   const queued = queues.get(tabId)?.find((r) => r.id === requestId) ?? orphans.find((r) => r.id === requestId);
   const request = current?.id === requestId ? current : queued;
   if (!request) return void resolvePermission(requestId, result, result !== "dismiss");
-  void resolvePermission(request.id, result, result !== "dismiss");
   if (result === "accept" && request.permissions.includes("notifications")) {
-    void ensureNotificationPermission(useBrowser.getState().tabs[tabId]?.windowId);
+    const allowed = await requestNotificationPermission().catch(() => false);
+    if (pageOf(tabId).permission !== request && !queues.get(tabId)?.includes(request) && !orphans.includes(request)) return;
+    if (!allowed) result = "dismiss";
   }
+  void resolvePermission(request.id, result, result !== "dismiss");
   if (request === current) return next(tabId);
   orphans.splice(0, orphans.length, ...orphans.filter((r) => r.id !== requestId));
   for (const [id, queue] of queues) queues.set(id, queue.filter((r) => r.id !== requestId));

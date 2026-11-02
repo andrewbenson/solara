@@ -28,8 +28,9 @@
 #include "chrome/browser/browser_process_impl.h"
 #include "chrome/browser/chrome_browser_main.h"
 #include "chrome/browser/chrome_browser_main_extra_parts.h"
-#include "chrome/browser/solara/ac_scripts_policy.h"  // nogncheck
 #include "chrome/browser/chrome_content_browser_client.h"
+#include "chrome/browser/solara/ac_notifications.h"
+#include "chrome/browser/solara/ac_scripts_policy.h"  // nogncheck
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_paths_internal.h"
 #include "chrome/common/chrome_switches.h"
@@ -365,6 +366,10 @@ std::optional<int> ACMainDelegate::BasicStartupComplete() {
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   g_solara_begin_frame_bridge = EnvIs("SOLARA_BEGIN_FRAME_BRIDGE", "on");
   if (!command_line->HasSwitch(switches::kProcessType)) {
+    solara::InitializeNotificationBridgeCoverage();
+    CHECK(solara::NotificationBridgeConfigured());
+    g_solara_notification_quit = &solara::BeginNotificationDrain;
+    g_solara_notification_profile_loaded = &solara::RegisterNotificationProfile;
     KeepRealProfileClosed(command_line, "at startup");
     GuardSafeStorageKey(*command_line);
     command_line->AppendSwitch(switches::kNoStartupWindow);

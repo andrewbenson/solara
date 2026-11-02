@@ -446,6 +446,8 @@ sign --options restrict,library,kill,runtime "$fwv/Helpers/app_mode_loader"
 [ -e "$fwv/Helpers/web_app_shortcut_copier" ] && sign --options restrict,library,kill,runtime \
   --identifier "$bundle_id.web_app_shortcut_copier" "$fwv/Helpers/web_app_shortcut_copier"
 sign "$fw"
+"$solaracore/scripts/write-engine-pair.sh" "$app" "" "" "" finalize
+cp "$app/Contents/Resources/solara-engine-pair.plist" "$dist/solara-engine-pair.plist"
 [ -d "$app/Contents/Frameworks/hermes.framework" ] \
   && sign --preserve-metadata=identifier,entitlements,flags,runtime "$app/Contents/Frameworks/hermes.framework"
 if [ "$unsigned" = 1 ]; then

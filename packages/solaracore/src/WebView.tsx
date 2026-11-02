@@ -86,19 +86,6 @@ export type SecurityInfo = {
 
 export type DownloadNavigation = { url: string; committedUrl: string; skipped: boolean };
 
-export type WebNotification = {
-  id: string;
-  title: string;
-  body: string;
-  icon: string | null;
-  tag: string;
-  silent: boolean;
-  requireInteraction: boolean;
-  origin: string;
-  browserId: number;
-  isMainFrame: boolean;
-};
-
 export type PictureInPictureState = { kind: "video" | "document"; active: boolean };
 export type ControlPress = { clickAt: number; control: number };
 export type ActivateRequest = { reason: "pictureInPicture" };
@@ -189,8 +176,6 @@ export type WebViewProps = ViewProps & {
   onZoom?: (zoom: ZoomState) => void;
   onContentBlocked?: (state: ContentBlockedState) => void;
   onDownloadNavigation?: (navigation: DownloadNavigation) => void;
-  onNotification?: (notification: WebNotification) => void;
-  onNotificationClose?: (id: string) => void;
   onPictureInPicture?: (state: PictureInPictureState) => void;
   onActivateRequest?: (request: ActivateRequest) => void;
   onDisplayMediaRequest?: (request: DisplayMediaRequest) => void;
@@ -247,7 +232,6 @@ export type WebViewHandle = {
 
   resolveDisplayMedia(id: string, sourceId: string | null, audio?: boolean): Promise<void>;
   mediaCaptureSourceId(): Promise<string | null>;
-  notificationAction(id: string, action: "click" | "close"): Promise<void>;
 
   resolveUnresponsive(terminate: boolean): Promise<void>;
   discard(options?: { unload?: boolean }): Promise<DiscardOutcome>;
@@ -279,8 +263,6 @@ type NativeEvents = {
   onZoom: ZoomState;
   onContentBlocked: ContentBlockedState;
   onDownloadNavigation: DownloadNavigation;
-  onNotification: WebNotification;
-  onNotificationClose: { id: string };
   onPictureInPicture: PictureInPictureState;
   onActivateRequest: ActivateRequest;
   onDisplayMediaRequest: DisplayMediaRequest;
@@ -321,8 +303,6 @@ const unwrap: { [K in Handlers]: (e: NativeEvents[K]) => Parameters<NonNullable<
   onZoom: (e) => [e],
   onContentBlocked: (e) => [e],
   onDownloadNavigation: (e) => [{ ...e, url: toAppUrl(e.url), committedUrl: toAppUrl(e.committedUrl) }],
-  onNotification: (e) => [e],
-  onNotificationClose: (e) => [e.id],
   onPictureInPicture: (e) => [e],
   onActivateRequest: (e) => [e],
   onDisplayMediaRequest: (e) => [e],
@@ -410,7 +390,6 @@ function webViewHandle(call: HandleCall, nativeTag: () => number | null): WebVie
     executeExtensionAction: (extensionId) => call(null, (n) => n.executeExtensionAction(extensionId)),
     resolveDisplayMedia: (id, sourceId, audio = false) => call(undefined, (n) => n.resolveDisplayMedia(id, sourceId, audio)),
     mediaCaptureSourceId: () => call(null, (n) => n.mediaCaptureSourceId()),
-    notificationAction: (id, action) => call(undefined, (n) => n.notificationAction(id, action)),
     resolveUnresponsive: (terminate) => call(undefined, (n) => n.resolveUnresponsive(terminate)),
     discard: (options) => call<DiscardOutcome>("refused", (n) => n.discard(options?.unload ?? false)),
     setFrozen: (frozen) => call(undefined, (n) => n.setFrozen(frozen)),

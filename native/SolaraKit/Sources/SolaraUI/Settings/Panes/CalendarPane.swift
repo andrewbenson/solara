@@ -68,6 +68,7 @@ public protocol CalendarServices: AnyObject {
   func calendarChanges() -> AsyncStream<CalendarPaneState>
   func refreshCalendar() async
   func connectCalendar() async
+  func requestCalendarAlertPermission() async -> Bool
   func updateCalendarOptions(_ change: LiveCalendarOptionChange)
   func setCalendarHidden(_ id: String, hidden: Bool)
   func openCalendarPrivacySettings()
@@ -96,6 +97,9 @@ public final class CalendarPaneModel: SettingsPaneProvider {
   @ObservationIgnored let services: CalendarServices
   @ObservationIgnored private var listening: Task<Void, Never>?
   var state: CalendarPaneState?
+  var alertPermissionUnavailable = false
+  private var alertChange = 0
+  private var lastAlertLead = "1"
 
   public init(services: CalendarServices) {
     self.services = services
@@ -149,12 +153,32 @@ public final class CalendarPaneModel: SettingsPaneProvider {
 
   func update(_ change: LiveCalendarOptionChange) {
     switch change {
-    case .alertLead(let value): state?.options.alertLead = value
+    case .alertLead(let value):
+      if options.alertLead != "never" { lastAlertLead = options.alertLead }
+      state?.options.alertLead = value
     case .alertCondition(let value): state?.options.alertCondition = value
     case .showPreview(let value): state?.options.showPreview = value
     case .showTimeToNext(let value): state?.options.showTimeToNext = value
     }
     services.updateCalendarOptions(change)
+  }
+
+  func setAlertsEnabled(_ enabled: Bool) {
+    alertChange += 1
+    let change = alertChange
+    alertPermissionUnavailable = false
+    if !enabled {
+      if options.alertLead != "never" { lastAlertLead = options.alertLead }
+      update(.alertLead("never"))
+      return
+    }
+    guard options.alertLead == "never" else { return }
+    Task {
+      let granted = await services.requestCalendarAlertPermission()
+      guard change == alertChange else { return }
+      alertPermissionUnavailable = !granted
+      if granted { update(.alertLead(lastAlertLead)) }
+    }
   }
 
   func connect() {
@@ -189,8 +213,16 @@ struct CalendarPane: View {
       }
 
       SettingsSection("Meeting alerts") {
+        Toggle("Enable meeting alerts", isOn: Binding(get: { options.alertLead != "never" }, set: { model.setAlertsEnabled($0) }))
+          .toggleStyle(.settingsSwitch)
+        if model.alertPermissionUnavailable {
+          Text("Allow notifications for this app in System Settings to receive meeting alerts.")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+        }
         SettingRow("calendar.nextAlert") {
           SettingPicker(CalendarAlertLeads.options, selection: Binding(get: { options.alertLead }, set: { model.update(.alertLead($0)) }))
+            .disabled(options.alertLead == "never")
         }
         SettingRow("calendar.alertCondition") {
           SettingPicker(CalendarAlertLeads.conditions, selection: Binding(get: { options.alertCondition }, set: { model.update(.alertCondition($0)) }))

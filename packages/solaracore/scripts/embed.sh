@@ -32,6 +32,8 @@ if ! [[ -f "$stamp" && "$(cat "$stamp")" == "$want" && -d "$frameworks/Chromium 
   echo "$want" > "$stamp"
 fi
 
+"$here/write-engine-pair.sh" "$TARGET_BUILD_DIR/$WRAPPER_NAME" "${PRODUCT_BUNDLE_IDENTIFIER:-}" "${MARKETING_VERSION:-}" "${CURRENT_PROJECT_VERSION:-}"
+
 "$here/ubo.sh"
 ubo="$repo/packages/solaracore/vendor/ubo/ext"
 if [ -n "${UNLOCALIZED_RESOURCES_FOLDER_PATH:-}" ] && [ -f "$ubo/manifest.json" ]; then

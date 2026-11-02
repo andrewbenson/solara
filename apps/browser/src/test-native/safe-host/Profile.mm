@@ -5,6 +5,7 @@ static NSString *gDataDirectory;
 static int engineLookups = 0;
 static int profileLookups = 0;
 static int engineCalls = 0;
+static int fenceCalls = 0;
 static BOOL loaded = NO;
 
 @interface SolaraCoreProfile : NSObject
@@ -16,10 +17,12 @@ static BOOL loaded = NO;
 @interface SolaraCoreEngine : NSObject
 @property(class, readonly) SolaraCoreEngine *sharedEngine;
 - (void)deleteProfile:(SolaraCoreProfile *)profile completion:(void (^)(BOOL))done;
+- (void)fenceNotificationsForProfileDeletionAtPath:(NSString *)path completion:(void (^)(BOOL))done;
 @end
 @implementation SolaraCoreEngine
 + (SolaraCoreEngine *)sharedEngine { engineLookups++; return [SolaraCoreEngine new]; }
 - (void)deleteProfile:(SolaraCoreProfile *)profile completion:(void (^)(BOOL))done { engineCalls++; done(YES); }
+- (void)fenceNotificationsForProfileDeletionAtPath:(NSString *)path completion:(void (^)(BOOL))done { fenceCalls++; done(YES); }
 @end
 
 namespace solaracore_host {
@@ -60,12 +63,12 @@ int main() {
         [history writeToFile:historyPath atomically:YES];
         [DeletedProfiles() removeAllObjects];
         [ScheduledProfileDeletions() removeAllObjects];
-        engineLookups = profileLookups = engineCalls = 0;
+        engineLookups = profileLookups = engineCalls = fenceCalls = 0;
         __block int callbacks = 0;
         __block NSArray *remaining;
         [SolaraCoreHost deleteProfileData:@"1" deletionAllowed:^BOOL { return YES; } completion:^(NSArray *value) { callbacks++; remaining = value; }];
         [results addObject:@{ @"safe": mode, @"loaded": isLoaded, @"remaining": remaining ?: @[], @"callbacks": @(callbacks),
-                             @"engineLookups": @(engineLookups), @"profileLookups": @(profileLookups), @"engineCalls": @(engineCalls),
+                             @"engineLookups": @(engineLookups), @"profileLookups": @(profileLookups), @"engineCalls": @(engineCalls), @"fenceCalls": @(fenceCalls),
                              @"bookmarksKept": @([[NSData dataWithContentsOfFile:bookmarkPath] isEqualToData:bookmarks]),
                              @"historyKept": @([[NSData dataWithContentsOfFile:historyPath] isEqualToData:history]),
                              @"directoryExists": @([NSFileManager.defaultManager fileExistsAtPath:dir]),

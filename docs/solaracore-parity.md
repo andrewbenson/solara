@@ -126,7 +126,7 @@ Test hygiene the run keeps (each was a real failure):
 - Every file the app is asked to read lives in the scratch dir: the checkout is under `~/Documents`, and an ad hoc
   build reading it raises macOS's folder-access prompt and blocks the main thread on it (the extension fixture is
   copied).
-- Permissions use MIDI and notifications (no macOS prompt behind them), external apps a scheme no app handles;
+- Permissions use MIDI and notifications (the hidden Hub adapter never acquires a real notification center), external apps a scheme no app handles;
   never location or `mailto:`. Camera and microphone only on a copy of the app without the device entitlements
   (ad hoc, hardened runtime: macOS refuses the devices without asking) and Chrome's fake devices: every hidden
   instance gets `--use-fake-device-for-media-stream` (SolaraCoreHost), and with it the engine keeps the microphone on a
@@ -178,7 +178,7 @@ Test hygiene the run keeps (each was a real failure):
 | tasks-components, tracing | Chrome's task manager (with tab ids), components, tracing start/stop (also on a fresh instance showing only the New Tab page) |
 | delete-profile-data | A loaded profile deleted through Chrome's profile deletion; its folder goes |
 | page-events | `zoomStep` → `onZoom`, `getSecurityInfo` and `onSecurity`, an app link with no app → `onExternalApp`, Esc the page leaves → `onCommand escape` |
-| notifications | A page's `Notification` → `onNotification`, the app's click reaches the page, `close()` → `onNotificationClose` |
+| notifications | Native document constructor/click/programmatic-close and site Ask/Block tests use the process-scoped module/Hub diagnostic channel. No WebView notification event or forged shim `_id` authority remains. The explicitly selected `notifications-one-requester` check adds real worker dispatch, authoritative displayed callbacks, replay/receipt checks, quit-removes-all and prior-process rejection/removal under a memory adapter. These drafts have not been executed. `scripts/notification-authorization-log.mjs` separately checks calibrated usernoted records; hidden counters never establish OS prompt behavior. |
 | now-playing | `<audio>` with Media Session metadata (tab muted) → `onNowPlaying`; the app's `mediaCommand("pause")` pauses it |
 | images | `downloadImage`, `downloadFavicon`, `fetchFavicon` as `data:` PNGs |
 | frozen | `setFrozen(true/false)` on a background page: the page sees freeze and resume |
@@ -242,7 +242,8 @@ and sent only when changed, progress at most 10 times a second, a held report fl
 | `onFindResult`, `onFullscreen`, `onStatus`, `onCrashed`, `onLoadError` | done | `onLoadError` skips ERR_ABORTED (stopped loads, downloads), as CEF |
 | `onZoom`, `onSecurity`, `onExternalApp`, `onCommand` | done | `onCommand`: Esc the page left alone, the menu's search |
 | `onDiscarded`, `onPopupBlocked`, `onDownloadNavigation` | done | |
-| `onNotification`, `onNotificationClose`, `onNowPlaying` | done | Through the page script, as CEF |
+| `onNowPlaying` | done | Through the page script; unchanged by notification migration |
+| Profile-scoped notification module events/actions | draft, unbuilt | Global watch/replay with exact engine scope, session and generation; independent of WebView/frame lifetime. The WebView `onNotification` and `onNotificationClose` APIs are removed. |
 | `onContentBlocked` | done | The engine's per-tab report (`tab:didBlockRequests:lastURL:`, e809deac) of what extensions' declarativeNetRequest rules blocked or redirected (to a stand-in, as uBlock Origin Lite answers most ad scripts), from a hook in Chrome's `ActionTracker` (engine/solaracore/apply.sh), plus any other ERR_BLOCKED_BY_CLIENT, each request once; counted and coalesced as CEF (150 ms, reset when a page starts loading). A report can land a turn late, so a few of the old page's blocks may count on the next page |
 | `onPageMessage` | partial | `selection` from the page script (main frame). Programmatic selections don't send it; a mouse selection does (needs a visible window) |
 | `onMedia` | partial | Audible state from the page script; the muted test tab doesn't prove it |
@@ -262,7 +263,8 @@ and sent only when changed, progress at most 10 times a second, a held report fl
 | `executeJavaScript`, `evaluate`, `navigationEntries` | done | SolaraCore's renderer side (`ACContentRendererClient`, a mojo channel) |
 | `getSecurityInfo`, `openBlockedPopup`, `clearSiteData`, `discard`, `setFrozen` | done | `discard` answers what happened (`discarded`, `already`, `refused`; `unload` is `unsupported`: SolaraCore keeps a regular profile loaded), and a woken tab sends `onReady` again |
 | `downloadFavicon`, `downloadImage` | done | `data:` PNGs; Chrome's FaviconService keeps icons |
-| `mediaCommand`, `notificationAction` | done | |
+| `mediaCommand` | done | |
+| Native notification actions | draft, unbuilt | Trusted global module action with exact engine identity; default click/dismiss only. The WebView/frame `notificationAction` method is removed. |
 | `print`, `runPageCommand` | partial | Chrome's commands (print preview, save page, system print, caret browsing): dialogs in a hidden run |
 | `requestPictureInPicture`, `exitPictureInPicture` | partial | Through the page script with a user gesture; a PiP window shows on screen |
 | `resolveDisplayMedia`, `mediaCaptureSourceId` | partial | `mediaCaptureSourceId` is Chrome's (engine-proven); an app-picked source needs the engine to grant it to `getUserMedia` (CEF's `site::AllowDesktopCapture`), so pages keep Chrome's own picker for now |
@@ -343,6 +345,7 @@ lights are placed again after every switch), `prepareProfiles:forWindow:`, `setT
 
 | Item | Status | Note |
 |---|---|---|
+| Native notifications, paired app/engine (API 36 / protocol 2) | draft, unbuilt | Process-lifetime custom Mac bridge (quit removes all; prior-process clicks are rejected), exact scope/session/generation identity, reentrancy-safe global watch/replay and displayed-query ownership, typed/delegate reverse dispatch and direct native fences/drain. Deletion admission fences that profile's notifications until relaunch even if physical deletion fails. Coverage and final drain evidence are bounded in-memory diagnostics exposed to the app for harness persistence; the notification engine writes no files. Default click and user dismiss only; action buttons/reply remain the accepted v1 gap. The matching app draft installs profile-free pre-start capability/transport controls, native Hub adapters and the global watch consumer, removes the whole page shim, and copies final diagnostics during synchronous retirement for harness persistence. Renderer engine allowlists remain narrow. No build, lifetime test, worker/no-tab result or one-prompt OS result is claimed; the pair is unreleasable until those gates pass. |
 | RN app in Chromium's loop | done | `SolaraCoreHost` runs `ChromeMain`; React Native starts on the loop's first idle (React Native's debug `ReentrancyCheck` trapped when it started inside Chrome's startup burst). The app delegate gets each launch callback once: when that idle comes before AppKit finished launching, AppKit sends them (sending them twice made a second React Native factory, two JS runtimes), and a cold launch's URLs follow |
 | Popups and Chrome-made tabs as the app's tabs | done | |
 | Two profiles in one window | done | |
@@ -366,8 +369,8 @@ renderer client (`ACContentRendererClient`) and a mojo interface (`engine/solara
 | CEF | SolaraCore | Used by |
 |---|---|---|
 | `OnContextCreated` runs `page_script.js` in every frame's main world | `DidCreateScriptContext` (main world), the script sent at launch (`SolaraCoreEngine.pageScript`) | Everything below |
-| `post(kind, json)` → `ACClient::OnPageMessage` | `tab:didReceivePageMessage:json:frame:main:` | hello (→ config with `blockAutoplay`), media, nowPlaying, theme, selection, pinch, pip, displayMedia, notification, notificationClose |
-| "ac-call" (`CallPage`) | `callPage:json:`, `callFrame:kind:json:` | config, media, displayMedia, notification |
+| `post(kind, json)` → `ACClient::OnPageMessage` | `tab:didReceivePageMessage:json:frame:main:` | hello (→ config with `blockAutoplay`), media, nowPlaying, theme, selection, pinch, pip, displayMedia |
+| "ac-call" (`CallPage`) | `callPage:json:`, `callFrame:kind:json:` | config, media, displayMedia |
 | "ac-eval" | `evaluate:completion:`, `evaluate:userGesture:completion:` | `WebViewHandle.evaluate`, PiP requests |
 | `ExecuteJavaScript` | `executeJavaScript:` (`:frame:`, `:userGesture:`) | `WebViewHandle.executeJavaScript`, blocked-popup replay |
 | `IsAppURL` checks | A navigation throttle; a Chrome page's `solara:` link → `tab:didRequestAppURL:userGesture:` → `onOpenWindow` `current` | The app's own pages linked from chrome:// pages |
@@ -395,6 +398,7 @@ Plain Chromium code over Chrome's services (`engine/chromium/src/chrome/browser/
 | `ac_history_*`, `ac_favicons_*`, `ac_bookmarks_*` | `history.ts`, `favicons.ts`, `bookmarks.ts` (through `engineCall`) |
 | `ac_tab_restore_tag`, `_take`, `_load` | native: the WebView's attach (and close) and `restore:` |
 | `ac_tabs_watch`, `ac_tabs_group` | tab groups in strip transactions |
+| `ac_notifications_capabilities`, `ac_notifications_*` | Engine-only draft: profile-free static API 36/protocol 2 descriptor, pre-start native control registration, watch/replay acknowledgments, post/removal receipts, fenced displayed answers and strict reverse actions; bypass generic `WithProfile` and renderer allowlists. Native release/drain works independently of the event sink and JS. Paired app draft resolves exports before Chrome startup, installs direct controls with retain/release/retire ownership, and gates native API 36/protocol 2. Acceptance execution remains pending. |
 
 ## Status
 
@@ -440,3 +444,38 @@ Fixed during stage 2 because the acceptance run caught them:
   changes what `activeProfile` answers is still open).
 - The content blocker's writable copy blocked the main thread at launch; deleting a profile that the session
   never loaded created it first.
+
+### Notification draft acceptance and OS calibration
+
+The notification drafts have only been statically reviewed. No build, launch, test or macOS authorization experiment
+was run for this draft. Run `notifications-one-requester` explicitly, alone, without `--keep`/`--attach`, in a new
+nonexistent scratch directory in a disposable logged-in GUI account. Set `SOLARA_NOTIFICATION_DISPOSABLE_UID` to that
+account's UID; it must own `/dev/console`. The hidden adapter records native posts, exact generation acknowledgments,
+real worker events, authoritative display-service callbacks, quit with two still-delivered regular persistent
+notifications, and a stale native response after a same-root relaunch. Only the hidden native delivered store is
+seeded for the stale-item case; it cannot create an engine route. The common native response decoder must reject it
+and remove its exact ID. No live renderer or profile fallback supplies routing authority.
+
+The engine generates the coverage nonce; the harness binds it to its owned PID, verifies bounded complete coverage
+and zero concrete provider attempts, and persists the diagnostic records itself. During synchronous transport
+retirement the app copies the profile-free engine snapshot into app-owned memory and publishes one bounded
+`SOLARA_NOTIFICATION_RETIRED` JSON record through the existing captured diagnostic stream before the quit
+continuation. The harness retains that record and its journal outside every reporter cleanup ancestry. Missing or
+incomplete retirement evidence, timeout drain, non-graceful exit or native membership left at retirement is red.
+
+Hidden mode must report every real-effect counter as zero; it cannot prove a one-prompt result. Separately perform
+the calibrated fresh-permission treatments from notification design r6 §7 and the Hill Studio prompt experiment in
+a disposable GUI session, using the exact production app and built Alerts helper identities. Capture the entire
+treatment's raw `usernoted` records with `log show --style json` (or NDJSON), retaining timestamps, process image and
+unredacted requester bundle IDs, together with fresh Allow/Deny status, positive stock controls and request-site-grant
+versus already-allowed-post results. Analyze the captured treatment with:
+
+```sh
+node packages/solaracore/scripts/notification-authorization-log.mjs usernoted.json network.benson.solara EXACT_BUILT_ALERTS_BUNDLE_ID
+```
+
+Pass every normal/alternate built Alerts ID as an additional argument. The analyzer requires exactly one authorization
+request naming the app ID and zero naming each Alerts ID, using exact identifier tokens rather than substring
+matching. It fails absent app evidence and unattributed authorization requests. Its recognized authorization-request
+log messages must first be calibrated against a known positive request on the tested macOS version; changed/redacted
+logging is inconclusive, never a zero-request proof. Do not treat hidden acceptance or process samples as an OS result.

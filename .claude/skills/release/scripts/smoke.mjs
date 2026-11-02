@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { attach, sleep } from "../../../../scripts/lib/instance.mjs";
+import { dialogOver } from "./dialog-window.mjs";
 
 const [version, windowsTool, pages] = process.argv.slice(2);
 const product = process.env.SMOKE_PRODUCT;
@@ -156,29 +157,31 @@ check("…and Solara never comes in front of the frontmost app",
   `${frontBefore} → ${frontAfter} → ${frontAfterStep}`);
 
 await go(`${pages}/passkey.html`);
+const beforePasskey = windows();
 await click("#b");
 await sleep(1500);
 let list = windows();
 for (let i = 0, last = ""; i < 12; i++) {
   const now = JSON.stringify(list.map((w) => [w.id, w.x, w.y, w.w, w.h]));
-  if (now === last && list.some((w) => /passkey/i.test(w.title))) break;
+  if (now === last && dialogOver(beforePasskey, list, level)) break;
   last = now;
   await sleep(500);
   list = windows();
 }
-const dialog = list.find((w) => /passkey/i.test(w.title));
-check("passkey dialog shows", !!dialog, dialog?.title ?? "no passkey window");
+const { dialog, owner } = dialogOver(beforePasskey, list, level) ?? {};
+const passkeyState = await evaluate("window.passkeyState");
+check("passkey dialog shows", !!dialog && passkeyState === "pending",
+  dialog ? `${dialog.title || "untitled"} ${dialog.w}x${dialog.h} over the app window; create() ${passkeyState}`
+    : `no new window centred over the app window; create() ${passkeyState}; windows ${list.map((w) => `${w.id} L${w.layer} @${w.x},${w.y} ${w.w}x${w.h}`).join(" | ")}`);
 if (dialog) {
-  const owner = list.slice(list.indexOf(dialog) + 1).find((w) => level(w) === 0 && w.w > 400 && w.h > 300);
-  const inside = owner && dialog.x >= owner.x && dialog.x + dialog.w <= owner.x + owner.w && dialog.y >= owner.y && dialog.y + dialog.h <= owner.y + owner.h;
-  const ok = list[0]?.id === dialog.id && owner?.alpha > 0 && !!inside;
+  const ok = list[0]?.id === dialog.id && owner?.alpha > 0;
   checkUnlocked("…in front, directly over the visible app window it belongs to", ok,
     `dialog @${dialog.x},${dialog.y} ${dialog.w}x${dialog.h} alpha ${dialog.alpha}; window under it ${owner ? `@${owner.x},${owner.y} ${owner.w}x${owner.h} alpha ${owner.alpha}` : "none"}` +
       (ok ? "" : `; windows ${list.map((w) => `${w.id} L${w.layer} @${w.x},${w.y} ${w.w}x${w.h} a${w.alpha} "${w.title}"`).join(" | ")}`));
 }
 await go(`${pages}/form.html`);
 await sleep(1500);
-checkUnlocked("…and closes when the page navigates", !windows().some((w) => /passkey/i.test(w.title)));
+checkUnlocked("…and closes when the page navigates", !!dialog && !windows().some((w) => w.id === dialog.id));
 
 const adsOnPage = () => adFate(adScript, () => go(`${pages}/ad.html`));
 const allowAds = (allowed) => instance.eval(`return globalThis.expo.modules.SolaraCEF.setContentBlockerAllowed("localhost", ${allowed})`, { timeout: 30000 });

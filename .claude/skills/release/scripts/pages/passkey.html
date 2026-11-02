@@ -2,7 +2,8 @@
 <title>passkey</title>
 <button id="b" style="font-size: 20px; margin: 80px">create</button>
 <script>
-  b.onclick = () =>
+  b.onclick = () => {
+    window.passkeyState = "pending";
     navigator.credentials.create({
       publicKey: {
         challenge: new Uint8Array(16),
@@ -10,5 +11,6 @@
         user: { id: new Uint8Array(8), name: "smoke", displayName: "smoke" },
         pubKeyCredParams: [{ type: "public-key", alg: -7 }],
       },
-    }).catch(() => {});
+    }).then(() => (window.passkeyState = "resolved"), () => (window.passkeyState = "rejected"));
+  };
 </script>

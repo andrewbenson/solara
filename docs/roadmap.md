@@ -39,7 +39,7 @@ backlog, and check this file against the release notes.
 |---|---|
 | Fixes from the owner's two-Mac sync-join test of 0.1.3 | waiting on the test |
 | Icons-only sidebar rail, 84 pt: drag-to-snap, View menu and Settings toggle, hover × to close, loading and audio badges, the address bar moves to the toolbar | landed bc695c27 |
-| Folder and group popovers, footer profile switcher, the hidden sidebar's peek in rail mode | landed b19c9f93; follow-up: dragging a tab out of a group or folder popover |
+| Folder and group popovers, footer profile switcher, the hidden sidebar's peek in rail mode | landed b19c9f93; dragging a tab out of a group popover landed 610b257f |
 | Engine: Chromium 156.0.8078.79 or newer (Chrome stable security updates; we ship .47). Needs a Chromium sync and rebuild: owner approved for 0.2.0 | planned |
 | Share… in the page's right-click menu and File › Share (⌥⌘S): selected text, an image, a link with trackers removed, media, the page (engine change) | planned |
 | A full emoji picker for profile, tab and folder icons (search, categories, symbols), and names that save on click-away; built in Swift, replacing the React Native icon pickers | landed 8e7f5d12 |

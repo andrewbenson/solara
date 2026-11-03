@@ -64,3 +64,13 @@ already native (RN removal 01–08).
 | Remove Expo, react-native-macos, Hermes and Metro; the Xcode project builds without Pods for JS | planned |
 | Move the repo from pnpm to Bun where JS tooling remains (backlog, after RN is removed) | planned |
 | Perf: the speed comparison against the previous stable, deferred since 0.1.0 | planned |
+
+## 1.1.0: a VPN per profile
+
+| Item | Status |
+|---|---|
+| Attach a WireGuard configuration to a profile (import a .conf or paste one; the private key lives in the Keychain, never in sync) | planned |
+| A WireGuard tunnel inside Solara, in userspace with no system VPN or admin prompt (wireguard-go or boringtun), one per configuration, exposing a local proxy only Solara can reach | planned |
+| Route all of the profile's traffic through it: Chromium's per-profile proxy (pages, extensions, downloads, service workers) and WebKit's per-data-store proxy; Solara's own requests for that profile go through it too | planned |
+| No leaks: DNS resolves through the tunnel, WebRTC is forced through the proxy, HTTP/3 falls back to TCP, and a tunnel that drops stops the profile's traffic rather than letting it out; leak tests for DNS, WebRTC and the visible IP | planned |
+| A connected / connecting / failed indicator in the profile's sidebar | planned |

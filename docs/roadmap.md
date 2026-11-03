@@ -22,16 +22,13 @@ backlog, and check this file against the release notes.
 
 ## 0.2.0: the sidebar your way, and a fresh engine
 
-Several items were seen in Ardia (github.com/mantrakp04/ardia) the week of 2026-10-27; its code is Apache-2.0, so
-ideas are free and any reused code keeps the NOTICE credit.
-
 | Item | Status |
 |---|---|
 | Icons-only sidebar rail, 84 pt: drag-to-snap, View menu and Settings toggle, hover × to close, loading and audio badges, the address bar moves to the toolbar | drafted (~/.cache/solara-lead/work/r14/rail: rail.patch on be7b9864, NOTES.txt, 7 review findings open), not landed |
 | Folder and group popovers, footer profile switcher, the hidden sidebar's peek in rail mode | planned |
-| Sidebar on the right: a Left/Right position in Settings, the View menu and the sidebar's menu; peek, resize, hover cards and drops mirror; the window buttons stay top left (as Ardia 4844d5a1, Arc, Zen) | planned |
+| Sidebar on the right: a Left/Right position in Settings, the View menu and the sidebar's menu; peek, resize, hover cards and drops mirror; the window buttons stay top left (as in Arc and Zen) | planned |
 | Engine: Chromium 156.0.8078.79 or newer (Chrome stable security updates; we ship .47). Needs a Chromium sync and rebuild: owner approved for 0.2.0 | planned |
-| Update safety: never move or delete staged updates ourselves; drop a staged nightly only through Sparkle's Skip; quit holds 8 s at most (Ardia 55a78c6c) | planned |
+| Update safety: never move or delete staged updates ourselves; drop a staged nightly only through Sparkle's Skip; quit holds 8 s at most | planned |
 | Share… in the page's right-click menu and File › Share (⌥⌘S): selected text, an image, a link with trackers removed, media, the page (engine change) | planned |
 | A full emoji picker for profile, tab and folder icons (search, categories, symbols), and names that save on click-away | planned |
 | Little Solara can keep new-tab links inside itself (a setting) | planned |

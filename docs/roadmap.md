@@ -38,7 +38,7 @@ backlog, and check this file against the release notes.
 | A muted tab's or site's notifications make no sound | planned |
 | The hidden sidebar doesn't peek out while another app is in front | planned |
 
-## 0.3.0: the CLI and Raycast, revamped
+## 0.3.0: the CLI and Raycast revamped, and tabs that cost less
 
 | Item | Status |
 |---|---|
@@ -46,6 +46,10 @@ backlog, and check this file against the release notes.
 | Revamp the Raycast extension (extras/raycast-solara) against the revamped CLI | planned |
 | Publish the extension on the Raycast Store: meet its review guidelines and submit to raycast/extensions (a public PR in another project, so it needs the owner's OK at submission) | planned |
 | Video call pop-out (Google Meet and others: the floating window a call opens, document picture-in-picture): make getting back to the call's tab easy and obvious; first find out what that window lets us change | planned |
+| Tab discarding (highest priority of the performance items): Chromium's memory saver unloads background tabs and wakes them on click, with site exceptions and protection for tabs playing audio, holding a form or in a call; reconcile with Solara's existing sleeping tabs | planned |
+| Heavy tab detection: Chromium's detector flags a tab using too much CPU or memory; Solara badges it and offers to put it to sleep | planned |
+| Per-tab CPU and memory attribution: Chromium's resource attribution splits a shared process's cost between its tabs | planned |
+| Memory use per tab on hover cards | planned |
 
 ## 1.0.0: all Swift
 

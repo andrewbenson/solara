@@ -1,3 +1,5 @@
+import { escapeRegExp } from "./regExpLiteral.ts";
+
 export const UPSTREAM_APP_SCHEME = "solara";
 
 let APP_SCHEME = UPSTREAM_APP_SCHEME;
@@ -7,7 +9,7 @@ let APP_URL = urlPatternFor(APP_SCHEME);
 const RESERVED_SCHEMES = new Set(["http", "https", "file", "about", "data", "blob", "javascript", "view-source", "chrome", "chrome-extension", "devtools"]);
 
 function schemesFor(scheme: string): string {
-  return scheme === UPSTREAM_APP_SCHEME ? UPSTREAM_APP_SCHEME : `${UPSTREAM_APP_SCHEME}|${scheme.replace(/[.+]/g, "\\$&")}`;
+  return scheme === UPSTREAM_APP_SCHEME ? UPSTREAM_APP_SCHEME : `${UPSTREAM_APP_SCHEME}|${escapeRegExp(scheme)}`;
 }
 
 function prefixFor(scheme: string): RegExp {

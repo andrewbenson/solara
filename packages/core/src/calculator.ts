@@ -1,3 +1,5 @@
+import { escapeRegExp } from "./regExpLiteral.ts";
+
 
 type Token = { type: "num"; value: number } | { type: "op"; value: string } | { type: "id"; value: string };
 
@@ -281,7 +283,7 @@ const fromCelsius = { C: (v: number) => v, F: (v: number) => (v * 9) / 5 + 32, K
 
 const unitPattern = [...Object.keys(UNITS), ...Object.keys(TEMPERATURES)]
   .sort((a, b) => b.length - a.length)
-  .map((u) => u.replace(/[/.]/g, "\\$&").replace(/ /g, "\\s*"))
+  .map((u) => escapeRegExp(u).replace(/ /g, "\\s*"))
   .join("|");
 const CONVERSION = new RegExp(`^(.+?)\\s*(${unitPattern})\\s+(?:to|in|into|as|=|->|→)\\s+(${unitPattern})$`, "i");
 

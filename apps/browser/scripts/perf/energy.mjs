@@ -35,7 +35,7 @@
 // Metrics per process, summed per kind: CPU time, idle + interrupt wakeups, ri_energy_nj (macOS's per-process energy
 // estimate), ri_billed_energy, and GPU time from the AGX user clients the process created.
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { loadavg } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -387,7 +387,8 @@ class PrefsGuard {
     this.existed = existsSync(join(process.env.HOME, "Library/Preferences", `${this.domain}.plist`));
     if (this.existed) {
       rmSync(this.file, { force: true });
-      execFileSync("sh", ["-c", 'umask 077 && exec defaults export "$0" "$1"', this.domain, this.file]);
+      execFileSync("defaults", ["export", this.domain, this.file]);
+      chmodSync(this.file, 0o600);
     }
     return this;
   }

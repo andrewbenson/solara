@@ -61,7 +61,7 @@
 //   download, on disk             size     the DMG's bytes; du of the bundle
 // Results: <out>/samples.jsonl (one line per finished item), report → bench.json and the table.
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { accessSync, appendFileSync, constants as fsConstants, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { accessSync, appendFileSync, chmodSync, constants as fsConstants, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { cpus, loadavg, totalmem } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -604,7 +604,8 @@ class PrefsGuard {
     this.existed = existsSync(join(process.env.HOME, "Library/Preferences", `${this.domain}.plist`));
     if (this.existed) {
       rmSync(this.file, { force: true });
-      execFileSync("sh", ["-c", 'umask 077 && exec defaults export "$0" "$1"', this.domain, this.file]);
+      execFileSync("defaults", ["export", this.domain, this.file]);
+      chmodSync(this.file, 0o600);
       const first = join(this.dir, `${this.domain}.first.plist`);
       if (!existsSync(first)) execFileSync("cp", ["-p", this.file, first]);
     }

@@ -14,6 +14,10 @@ of its time in `swift test`'s first build. Each package also runs its own:
 | `native/SolaraKit` | `swift test -Xswiftc -DSOLARA_PROBES` in `native/SolaraKit` (without the define `SolaraProbesTests` compiles to nothing and is skipped silently) | every suite |
 | Sync pin apply corpus | `node src/sync/recordPinsApply.mjs --help` in `apps/browser`; `--representative <fresh-dir>` regenerates the four checked-in fixtures, `<fresh-dir>` records the exhaustive pairs; `PIN_APPLY_DIR=<dir> swift test --filter SyncPinsApplyReplayTests` in `native/SolaraKit` | Six kinds, 22 named regressions, six labelled schedules and both Legacy fixtures; every apply replays under both native configurations |
 
+Give a Swift package's tests a deadline with `scripts/agent/swift-test-bounded --timeout SECS --package DIR -- <swift test
+arguments>`, never `timeout swift test`: `timeout` ends swift-test but leaves its `swiftpm-testing-helper` running a hung
+test, holding the main thread and the UI gate (`--help`).
+
 `apps/browser` runs its TypeScript under plain Node, with the real `@solara/shell` and `@solara/solaracore` code:
 `src/test-loader.mjs` swaps only the native side. `expo-modules-core` becomes `src/test-native/expo.ts`, which hands
 each package the fake of every native module it asks for (`src/test-native/shell.ts`, `src/test-native/solaracore.ts`),

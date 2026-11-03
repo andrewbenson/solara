@@ -1,0 +1,54 @@
+#!/bin/bash
+# Run `swift test` with a deadline that really ends it, instead of `timeout swift test`.
+#
+#   scripts/agent/swift-test-bounded [--timeout SECS] [--log FILE] [--package DIR] [--] [swift test arguments…]
+#   scripts/agent/swift-test-bounded -h | --help
+#
+# `timeout` kills swift-test but leaves its swiftpm-testing-helper (the process that runs the tests)
+# alive, so a hung test keeps holding the main thread, the UI gate and a CPU slot after the deadline.
+# This runs swift test in the package (default: the current directory), and at the deadline
+# (default 540 s, under the Bash tool's 600 s) kills swift test and every swiftpm-testing-helper
+# whose test bundle is in that package's .build, and nothing else. Exits with swift test's status,
+# or 124 at the deadline. With --log, output goes to FILE and its last line says how it ended.
+#
+#   scripts/agent/swift-test-bounded --timeout 120 --package native/SolaraKit -- --filter SolaraUITests
+#   scripts/agent/swift-test-bounded --log /tmp/kit.log --package packages/shell
+set -uo pipefail
+
+help() {
+  awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"
+  exit 0
+}
+
+secs=540 log="" package="."
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h | --help) help ;;
+    --timeout) secs="$2"; shift 2 ;;
+    --log) log="$2"; shift 2 ;;
+    --package) package="$2"; shift 2 ;;
+    --) shift; break ;;
+    *) break ;;
+  esac
+done
+
+cd "$package" || { echo "swift-test-bounded: no package at $package" >&2; exit 64; }
+build="$(pwd -P)/.build"
+note() { if [[ -n "$log" ]]; then printf '\n%s\n' "$1" >> "$log"; else echo "$1" >&2; fi; }
+
+if [[ -n "$log" ]]; then swift test "$@" > "$log" 2>&1 & else swift test "$@" & fi
+pid=$!
+end=$((SECONDS + secs))
+while kill -0 "$pid" 2>/dev/null && (( SECONDS < end )); do sleep 2; done
+
+if kill -0 "$pid" 2>/dev/null; then
+  kill "$pid" 2>/dev/null
+  for helper in $(pgrep -f "swiftpm-testing-helper.*$build/"); do kill -9 "$helper" 2>/dev/null; done
+  wait "$pid" 2>/dev/null
+  note "swift-test-bounded: TIMEOUT after ${secs} s; swift test and its test helpers in $build were killed"
+  exit 124
+fi
+wait "$pid"
+status=$?
+note "swift-test-bounded: swift test exited $status"
+exit "$status"

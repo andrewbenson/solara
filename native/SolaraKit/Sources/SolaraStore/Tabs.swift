@@ -536,7 +536,7 @@ extension Session {
 
   func leavesEmptyWindow(_ s: BrowserState, _ id: String) -> Bool {
     guard let tab = s.tabs[id], let w = s.windows[tab.windowId], !w.isSmall else { return false }
-    if memory.lastTabKeepsWindow { return s.closesWindow(id) }
+    if memory.lastTabKeepsWindow || s.hasPinnedTiles(w.id) { return s.closesWindow(id) }
     if w.incognito || isEmptyCardTab(s, tab) { return false }
     return s.closesWindow(id)
   }

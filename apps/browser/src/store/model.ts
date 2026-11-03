@@ -124,6 +124,12 @@ export function viewTabIds(s: BrowserState, windowId: string, profileId?: string
   return w.tabIds.filter((id) => s.tabs[id]?.profileId === profile);
 }
 
+export function hasPinnedTiles(s: BrowserState, windowId: string): boolean {
+  const w = s.windows[windowId];
+  if (!w) return false;
+  return viewTabIds(s, windowId).some((id) => inPinnedContainer(s, id)) || Object.values(s.groups).some((g) => g.pinned && g.windowId === windowId && g.profileId === w.profileId);
+}
+
 export function closesWindow(s: BrowserState, id: string): boolean {
   const tab = s.tabs[id];
   const w = tab && s.windows[tab.windowId];

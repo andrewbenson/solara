@@ -64,6 +64,12 @@ public extension BrowserState {
     return w.tabIds.filter { tabs[$0]?.profileId == profile }
   }
 
+  func hasPinnedTiles(_ windowId: String) -> Bool {
+    guard let w = windows[windowId] else { return false }
+    return viewTabIds(windowId).contains { inPinnedContainer($0) }
+      || groups.values.contains { $0.pinned && $0.windowId == windowId && $0.profileId == w.profileId }
+  }
+
   func closesWindow(_ id: String) -> Bool {
     guard let tab = tabs[id], let w = windows[tab.windowId], tab.profileId == w.profileId, !inPinnedContainer(id) else { return false }
     return viewTabIds(w.id).allSatisfy { $0 == id || tabs[$0]!.unloaded == true }

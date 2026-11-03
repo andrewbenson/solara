@@ -53,7 +53,7 @@ import { shareTab } from "../components/site/share";
 import { openProfileMenu } from "../components/ProfileIndicator";
 import { groupOf, multiSelection } from "../store/organize";
 import { reopenClosedTogether } from "../store/closedTogether";
-import { isSmall, mainWindowFor, originalProfile } from "../store/small";
+import { isSmall, mainWindowFor, newWindowProfile, originalProfile } from "../store/small";
 import {
   closeLittleSolara,
   cycleLittleSolaraProfile,
@@ -93,7 +93,7 @@ export function runCommand({ command, arg, windowId: requested }: CommandEvent) 
 
   switch (command) {
     case "newWindow":
-      return void openWindow({ profileId: arg ?? undefined });
+      return void openWindow({ profileId: newWindowProfile(s, requested, arg) });
     case "newIncognitoWindow":
       return void openWindow({ incognito: true, profileId: originalProfile(s, s.windows[requested ?? ""]) });
     case "newLittleSolara":

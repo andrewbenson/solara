@@ -459,7 +459,7 @@ private final class NotificationDelegateCompletion<Value>: @unchecked Sendable {
       content.body = text(resources, "body")
       content.threadIdentifier = hash([text(row, "scope"), text(row, "origin")])
       content.categoryIdentifier = Self.category
-      if resources["silent"] as? Bool != true { content.sound = .default }
+      if makesSound(row) { content.sound = .default }
       content.userInfo = route(row)
       if let attachment = attachment(row) { content.attachments = [attachment] }
       submitted[id] = route(row)
@@ -482,6 +482,10 @@ private final class NotificationDelegateCompletion<Value>: @unchecked Sendable {
       DispatchQueue.main.async { cleanup.finish(success) }
     }
   }
+  private func makesSound(_ row: [String: Any]) -> Bool {
+    let resources = row["resources"] as? [String: Any] ?? [:]
+    return resources["silent"] as? Bool != true && ShellLiveNotifications.silencesSite?(text(row, "profile"), text(row, "origin")) != true
+  }
   private func finishAdd(_ row: [String: Any], operation: String, expectedWatch: String, success: Bool, completion: @escaping @MainActor @Sendable (Bool) -> Void) {
     guard !retired else { return }
     let id = text(row, "nativeID")
@@ -500,6 +504,7 @@ private final class NotificationDelegateCompletion<Value>: @unchecked Sendable {
     let resources = row["resources"] as? [String: Any] ?? [:]
     stored["title"] = text(resources, "title")
     stored["body"] = text(resources, "body")
+    stored["sound"] = makesSound(row)
     delivered[id] = stored
     presented[id] = route(row)
     guard expectedWatch == watch else { completion(false); return }
@@ -1144,6 +1149,7 @@ private final class NotificationDelegateCompletion<Value>: @unchecked Sendable {
 }
 
 @MainActor public enum ShellLiveNotifications {
+  public static var silencesSite: ((_ profileDirectory: String, _ origin: String) -> Bool)?
   public static func requestCalendarAlertPermission() async -> Bool {
     await withCheckedContinuation { continuation in
       NotificationHub.shared.requestPermission { continuation.resume(returning: $0) }

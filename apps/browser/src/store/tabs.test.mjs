@@ -193,7 +193,7 @@ test("a tab close that takes the window asks first only when other tabs would go
   const tile = S().windows[x].tabIds[0];
   S().closeTab(tile);
   const empty = model.activeTabId(S(), x);
-  assert.equal(windowClosingWithTab(S(), empty), x, "pinned tiles leave with the window, so they count, as in Dia");
+  assert.equal(windowClosingWithTab(S(), empty), null, "pinned tiles keep the window: nothing to ask");
 
   const [y] = setup("c");
   S().switchProfile(y, S().createProfile({ name: "Work" }));

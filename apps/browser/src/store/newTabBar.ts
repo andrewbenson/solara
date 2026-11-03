@@ -1,5 +1,5 @@
 import type { BrowserState } from "./browser";
-import { closesWindow, inPinnedContainer, tabsClosingWithWindow } from "./model";
+import { closesWindow, hasPinnedTiles, inPinnedContainer, tabsClosingWithWindow } from "./model";
 import { splitOf } from "./splits";
 import type { Tab } from "./types";
 
@@ -27,7 +27,7 @@ export function leavesEmptyWindow(s: BrowserState, id: string): boolean {
   const tab = s.tabs[id];
   const w = tab && s.windows[tab.windowId];
   if (!w || w.kind === "small") return false;
-  if (lastTabKeepsWindow) return closesWindow(s, id);
+  if (lastTabKeepsWindow || hasPinnedTiles(s, w.id)) return closesWindow(s, id);
   if (w.incognito || isEmptyCardTab(s, tab)) return false;
   return closesWindow(s, id);
 }

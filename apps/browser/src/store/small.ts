@@ -37,3 +37,10 @@ export function lastActiveProfile(s: BrowserState): string {
   }
   return s.settings.defaultProfileId;
 }
+
+export function newWindowProfile(s: Pick<BrowserState, "profiles" | "windows" | "ui" | "windowOrder">, requested: string | null | undefined, arg?: string | null): string | undefined {
+  if (arg) return arg;
+  const exists = (id: string) => !!s.windows[id];
+  const id = requested && exists(requested) ? requested : s.ui.focusOrder.find(exists) ?? s.windowOrder.find(exists);
+  return originalProfile(s, id ? s.windows[id] : undefined);
+}

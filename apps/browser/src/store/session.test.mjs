@@ -191,7 +191,7 @@ test("⌘W on a pinned tab unloads its page; the tile stays with its title, icon
   assert.equal(active(w), a);
 });
 
-test("holding ⌘W over pinned tiles ends by closing the window: no unloaded page wakes", () => {
+test("holding ⌘W over pinned tiles keeps the window on a New Tab page: no unloaded page wakes", () => {
   reset();
   const { w, ids: [x] } = windowWith("x", "a");
   S().togglePin(x);
@@ -203,8 +203,11 @@ test("holding ⌘W over pinned tiles ends by closing the window: no unloaded pag
     if (S().windows[w] && !before && S().tabs[x].navigation) wakes.push(i);
   }
   assert.deepEqual(wakes, [], "x.com never loads again");
-  assert.equal(S().windows[w], undefined, "the window closed, as in Dia");
-  assert.deepEqual(S().parkedPins.default.tabs.map((t) => t.id), [x], "the tile waits for the profile's next window");
+  assert.ok(S().windows[w], "the pinned tile keeps the window");
+  assert.equal(S().tabs[active(w)].url, "", "it shows a New Tab page");
+  assert.equal(S().tabs[x].windowId, w);
+  S().closeWindow(w);
+  assert.deepEqual(S().parkedPins.default.tabs.map((t) => t.id), [x], "closing the window parks the tile for the profile's next window");
 });
 
 const sidebar = (w) =>
@@ -226,11 +229,13 @@ function pinnedWindow() {
 }
 const PINS = ["https://mail.com", "https://docs.com", "Work/https://jira.com", "Work/https://wiki.com"];
 
-test("⌘W until the window closes, then ⌘N: the pinned tabs and pinned groups are back, in order, unloaded", () => {
+test("⌘W keeps a window with pinned tabs; close it, then ⌘N: the pinned tabs and pinned groups are back, in order, unloaded", () => {
   reset();
   const { w, mail, work } = pinnedWindow();
   assert.deepEqual(sidebar(w), ["https://mail.com (loaded)", "https://docs.com (loaded)", "Work/https://jira.com (loaded)", "Work/https://wiki.com (loaded)"]);
   for (let i = 0; i < 12 && S().windows[w]; i++) S().closeTab(active(w));
+  assert.ok(S().windows[w], "the pinned tabs keep the window");
+  S().closeWindow(w);
   assert.equal(S().windows[w], undefined, "the window closed");
   const n = S().createWindow();
   assert.deepEqual(sidebar(n), PINS, "same tiles, same order, the group still pinned, nothing loaded");

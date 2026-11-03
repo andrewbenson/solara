@@ -80,6 +80,9 @@ enum NativeSettingsWindow {
     SettingsProbe.enabled = ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] == "1"
     NativeOnboarding.register()
     NativeAppStartup.shared.install()
+    ShellLiveNotifications.silencesSite = { directory, origin in
+      NativeStoreHandle.store?.silencesNotifications(profileDirectory: directory, origin: origin) ?? false
+    }
     SettingsPrewarm.schedule()
     NativeCliControl.shared.startWhenReady()
     NativeAppIntegration.shared.startWhenReady()

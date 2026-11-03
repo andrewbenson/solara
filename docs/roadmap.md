@@ -38,8 +38,8 @@ backlog, and check this file against the release notes.
 | Item | Status |
 |---|---|
 | Fixes from the owner's two-Mac sync-join test of 0.1.3 | waiting on the test |
-| Icons-only sidebar rail, 84 pt: drag-to-snap, View menu and Settings toggle, hover × to close, loading and audio badges, the address bar moves to the toolbar | drafted (~/.cache/solara-lead/work/r14/rail: rail.patch on be7b9864, NOTES.txt, 7 review findings open), not landed |
-| Folder and group popovers, footer profile switcher, the hidden sidebar's peek in rail mode | planned |
+| Icons-only sidebar rail, 84 pt: drag-to-snap, View menu and Settings toggle, hover × to close, loading and audio badges, the address bar moves to the toolbar | landed bc695c27 |
+| Folder and group popovers, footer profile switcher, the hidden sidebar's peek in rail mode | started: the rail's group and live-folder contents popover (`SidebarRailPopover`, bc695c27) |
 | Engine: Chromium 156.0.8078.79 or newer (Chrome stable security updates; we ship .47). Needs a Chromium sync and rebuild: owner approved for 0.2.0 | planned |
 | Share… in the page's right-click menu and File › Share (⌥⌘S): selected text, an image, a link with trackers removed, media, the page (engine change) | planned |
 | A full emoji picker for profile, tab and folder icons (search, categories, symbols), and names that save on click-away; built in Swift, replacing the React Native icon pickers | landed 8e7f5d12 |

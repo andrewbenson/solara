@@ -867,7 +867,7 @@
     "small.launch.writes.release-notes.json": 1,
     "switchTabs.commitTasks.event:topLayout": 21,
     "switchTabs.commitTasks.setImmediate:anonymous": 84,
-    "switchTabs.commits": 147,
+    "switchTabs.commits": 149,
     "switchTabs.hostUpdates": 780,
     "switchTabs.listenerCalls": 650,
     "switchTabs.listenerCalls.browser": 650,
@@ -1036,7 +1036,7 @@
     "typing.renders": 1533,
     "typing.selectorCalls": 14954,
     "typing.subNotified": 13462,
-    "typing.tasks": 136,
+    "typing.tasks": 164,
     "typing.timers": 199
   },
   "micro": {
@@ -1050,10 +1050,10 @@
     "entries.strip500.afterLoadState": 40,
     "entries.strip500.afterTitle": 2290,
     "groupLabel.500.afterLoadState": 38,
-    "groupLabel.500.afterMemberTitle": 14888,
+    "groupLabel.500.afterMemberTitle": 14903,
     "suggest.firstKey": 23489,
-    "suggest.keys.phrase": 144710,
-    "suggest.keys.url": 61615,
+    "suggest.keys.phrase": 145651,
+    "suggest.keys.url": 64433,
     "suggest.prepare": 174966,
     "suggest.typeAll": 35604,
     "suggest.typeAllWords": 279443

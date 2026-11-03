@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { launch, reporter, session, sleep } from "../../../scripts/lib/instance.mjs";
+import { fixturePage } from "../../../scripts/lib/fixture-html.mjs";
 
 const args = process.argv.slice(2);
 const appArg = args.find((a) => !a.startsWith("--"));
@@ -22,7 +23,7 @@ const rep = reporter(join(scratch, "tab-pickers-test.log"), { name: "tab-pickers
 const PAGES = { a: "Inbox Mail", b: "Docs Editor", c: "News Today", d: "Daily Notes", e: "Recipe Box" };
 const server = createServer((req, res) => {
   res.writeHead(200, { "content-type": "text/html" });
-  res.end(`<!doctype html><title>${PAGES[req.url.slice(1)] ?? "?"}</title><link rel="icon" href="data:,"><body>${req.url.slice(1)}</body>`);
+  res.end(fixturePage(req.url.slice(1), { title: PAGES[req.url.slice(1)] ?? "?" }));
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const url = (id) => `http://127.0.0.1:${server.address().port}/${id}`;

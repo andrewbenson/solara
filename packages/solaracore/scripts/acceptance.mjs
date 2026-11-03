@@ -35,6 +35,7 @@
 //   pipByHand(tabId)               Site Controls › Picture in Picture, clicked as the user does (manual PiP needs the click)
 //   launch(log, env, args, opts) · appUp(log)   (re)start the app on the run's data dir; `exited` is set once it's gone
 //   onScreenWindows() · firstPixel(png) · writePopupExtension(opts) · fixtureCrx()
+import { acceptancePage as page, acceptancePathPage, adFirstPage, capturerPage, frameHostResponse, solidPage } from "./fixture-pages.mjs";
 import { execFile, execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { assertNotificationAuthorizationLog } from "./notification-authorization-log.mjs";
@@ -237,8 +238,6 @@ const server = createServer((req, res) => {
   served.set(req.url, (served.get(req.url) ?? 0) + 1);
   referers.set(req.url, req.headers.referer ?? "");
   const url = new URL(req.url, "http://x");
-  const page = (title, body, extra = "") =>
-    `<!doctype html><html><head><title>${title}</title><link rel="icon" href="/icon.png">${extra}</head><body>${body}</body></html>`;
   if (url.pathname === "/notification-fixture/event") {
     notificationWorkerEvents.push(Object.fromEntries(url.searchParams));
     res.writeHead(204);
@@ -260,8 +259,9 @@ const server = createServer((req, res) => {
     return res.end(page("Site data", set ? `<script>localStorage.setItem("kept", "yes")</script>` : ""));
   }
   if (url.pathname === "/frame-host") {
-    res.writeHead(200, { "content-type": "text/html" });
-    return res.end(page("Frame host", `<script>window.__frame = null; addEventListener("message", (e) => (window.__frame = e.data));</script><iframe src="${url.searchParams.get("src")}"></iframe>`));
+    const response = frameHostResponse(url, siteDataSecureHosts.map((host) => `https://${host}`));
+    res.writeHead(response.status, { "content-type": "text/html" });
+    return res.end(response.html);
   }
   if (url.pathname === "/frame-probe") {
     const set = url.searchParams.has("set");
@@ -332,9 +332,7 @@ const server = createServer((req, res) => {
     </script>`));
   if (url.pathname === "/blocking") return res.end(page("Blocking", `<img src="/nnblock-1.png"><img src="/nnblock-2.png"><img src="/icon.png">`));
   if (url.pathname === "/adfirst") {
-    const tag = url.search.slice(1);
-    return res.end(page("Ad first", "ads", `<script src="http://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?${tag}"></script>
-      <script src="http://securepubads.g.doubleclick.net/tag/js/gpt.js?${tag}"></script><img src="http://ib.adnxs.com/ut/v3?${tag}">`));
+    return res.end(adFirstPage(url));
   }
   if (url.pathname === "/login") return res.end(page("Login", `<form action="/b" method="get"><input name="u" id="u" autocomplete="username"><input type="password" name="p" id="p" autocomplete="current-password"><button id="go">Sign in</button></form>`));
   if (url.pathname === "/text") return res.end(page("Text", `<p id="t" style="font: 20px sans-serif; margin: 40px">Hello selection world, select me please</p>`));
@@ -345,18 +343,9 @@ const server = createServer((req, res) => {
       card.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/plain", "card"));</script>`));
   if (url.pathname === "/capture-target") return res.end(page("Capture Target", "the tab that tab capture picks"));
   if (url.pathname === "/solid")
-    return res.end(page(url.searchParams.get("t") ?? "Solid", "", `<style>html, body { margin: 0; height: 100%; background: #${url.searchParams.get("c") ?? "808080"} }</style>`));
+    return res.end(solidPage(url));
   if (url.pathname === "/capturer")
-    return res.end(page(url.searchParams.get("t") ?? "Capturer", "capturer", `<script>
-      window.__cap = "idle";
-      window.share = () => { window.__cap = "pending"; navigator.mediaDevices.getDisplayMedia({ video: true }).then((s) => { window.__stream = s; window.__cap = "live"; }, (e) => (window.__cap = e.name)); return true; };
-      window.pixel = async () => {
-        const bitmap = await new ImageCapture(window.__stream.getVideoTracks()[0]).grabFrame();
-        const c = new OffscreenCanvas(bitmap.width, bitmap.height), g = c.getContext("2d");
-        g.drawImage(bitmap, 0, 0);
-        return Array.from(g.getImageData(bitmap.width >> 1, bitmap.height >> 1, 1, 1).data.slice(0, 3));
-      };
-    </script>`));
+    return res.end(capturerPage(url));
   if (url.pathname === "/media") return res.end(page("Media", `<audio id="tone" src="/tone.wav" loop></audio>`));
   if (url.pathname === "/form")
     return res.end(page("Form", `<form action="/form" method="get" autocomplete="on"><input id="c" name="city" autocomplete="on" style="font-size: 20px; margin: 80px; width: 300px"><button id="b">go</button></form>`));
@@ -425,7 +414,7 @@ const server = createServer((req, res) => {
     req.resume();
     return res.end(page("Saved", "saved"));
   }
-  return res.end(page(url.pathname, url.pathname));
+  return res.end(acceptancePathPage(url.pathname));
 });
 const listen = (srv, at) => new Promise((r, j) => {
   srv.once("error", (e) => j(new Error(`fixture port ${at}: ${e.message} (the kept instance needs it back; quit it and run without --attach)`)));

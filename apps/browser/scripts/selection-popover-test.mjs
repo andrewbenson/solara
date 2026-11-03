@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { launch, reporter, session, sleep } from "../../../scripts/lib/instance.mjs";
+import { searchPage } from "../../../scripts/lib/fixture-html.mjs";
 
 const args = process.argv.slice(2);
 const appArg = args.find((a) => !a.startsWith("--"));
@@ -23,7 +24,7 @@ const rep = reporter(join(scratch, "selection-popover-test.log"), { name: "selec
 
 const server = createServer((req, res) => {
   res.writeHead(200, { "content-type": "text/html" });
-  if (req.url.startsWith("/search")) return res.end(`<!doctype html><title>RESULTS</title><link rel="icon" href="data:,"><body>${req.url}</body>`);
+  if (req.url.startsWith("/search")) return res.end(searchPage(req.url));
   res.end(`<!doctype html><title>WORDS</title><link rel="icon" href="data:,"><body style="margin:0;font:16px sans-serif">
 <p style="position:absolute;left:10px;top:4px;margin:0"><span id="top">topmost</span></p>
 <p style="position:absolute;left:300px;top:300px;margin:0">some <span id="mid">selectable</span> words</p></body>`);

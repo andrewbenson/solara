@@ -6,6 +6,7 @@ import { hostname, tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { attach, binaryOf, binaryPids, freePort, isAlive, launch, listenerPids, processInfo, sleep, uiGateLaunching, uiGateWatch } from "../../../scripts/lib/instance.mjs";
+import { rekeyPage } from "../../../scripts/lib/fixture-html.mjs";
 
 const USAGE = `usage:
   node apps/browser/scripts/rekey-e2e.mjs fixture <Debug app> <fixture dir> [--other-key-only]
@@ -247,7 +248,7 @@ async function serve() {
   const server = createServer((req, res) => {
     const page = req.url.split("?")[0].slice(1) || "index.html";
     res.writeHead(200, { "content-type": "text/html" });
-    res.end(`<!doctype html><title>Rekey ${page}</title><h1>${page}</h1><form><input name="username" autocomplete="username"><input type="password" autocomplete="current-password"></form>`);
+    res.end(rekeyPage(page));
   });
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   return { server, origin: `http://127.0.0.1:${server.address().port}` };

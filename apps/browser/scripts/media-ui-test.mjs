@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { inflateSync } from "node:zlib";
 import { launch, reporter, session, sleep } from "../../../scripts/lib/instance.mjs";
+import { fixturePage } from "../../../scripts/lib/fixture-html.mjs";
 
 let nativePollDeadline = null;
 const evaluate = (body, options = {}) => {
@@ -64,7 +65,7 @@ const server = createServer((req, res) => {
   if (name === "player")
     return res.end(`<!doctype html><title>Player</title><link rel="icon" href="data:,"><audio id="tone" src="/tone.wav" loop></audio>
 <script>navigator.mediaSession.metadata = new MediaMetadata({ title: ${JSON.stringify(LONG_TITLE)}, artist: "Fixture Artist" });</script>`);
-  res.end(`<!doctype html><title>${name.toUpperCase()}</title><link rel="icon" href="data:,"><body>${name}</body>`);
+  res.end(fixturePage(name));
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const url = (name) => `http://127.0.0.1:${server.address().port}/${name}`;

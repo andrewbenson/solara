@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { launch, reporter, session, sleep } from "../../../scripts/lib/instance.mjs";
+import { poolPage } from "../../../scripts/lib/fixture-html.mjs";
 
 const args = process.argv.slice(2);
 const appArg = args.find((a) => !a.startsWith("--"));
@@ -38,8 +39,7 @@ const server = createServer((req, res) => {
   if (path === "slow.png") return setTimeout(() => (res.writeHead(200, { "content-type": "image/png" }), res.end(ICON)), 2500);
   res.writeHead(200, { "content-type": "text/html", ...(path === "set" ? { "set-cookie": "who=A; Path=/; Max-Age=3600" } : {}) });
   const slow = path === "slow" ? `<img src="/slow.png?${Date.now()}">` : "";
-  res.end(`<!doctype html><title>${path.toUpperCase()}</title><link rel="icon" href="/icon.png"><body style="height:2000px;font:16px sans-serif">
-<p>a needle and another needle</p>${slow}</body>`);
+  res.end(poolPage(path, slow));
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const origin = `http://127.0.0.1:${server.address().port}`;

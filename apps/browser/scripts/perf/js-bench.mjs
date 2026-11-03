@@ -188,22 +188,44 @@ const TONE = (() => {
   return wav;
 })();
 
+const escapeHtml = (value) => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+
 export function startServer(port) {
+  let pending = 0;
   const server = createServer((req, res) => {
     const url = new URL(req.url, "http://localhost");
     if (url.pathname.startsWith("/img/") || url.pathname === "/favicon.ico") {
-      const delay = Number(url.searchParams.get("d") ?? 0);
-      return void setTimeout(() => {
+      const value = url.searchParams.get("d") ?? "0";
+      const delay = Number(value);
+      if (!/^\d+$/.test(value) || !Number.isInteger(delay) || delay < 0 || delay > 2000) {
+        res.writeHead(400);
+        return void res.end();
+      }
+      if (pending >= 128) {
+        res.writeHead(503);
+        return void res.end();
+      }
+      pending++;
+      const release = () => {
+        clearTimeout(timer);
+        res.off("close", release);
+        pending--;
+      };
+      const timer = setTimeout(() => {
+        release();
         res.writeHead(200, { "content-type": "image/png", "cache-control": "no-store" });
         res.end(PNG);
       }, delay);
+      res.once("close", release);
+      return;
     }
     if (url.pathname === "/heavy") {
       const run = url.searchParams.get("run") ?? "";
-      const images = Array.from({ length: 40 }, (_, i) => `<img src="/img/${i}?d=${40 + ((i * 37) % 900)}&r=${run}" width=40 height=40>`).join("");
+      const runQuery = escapeHtml(new URLSearchParams({ r: run }).toString());
+      const images = Array.from({ length: 40 }, (_, i) => `<img src="/img/${i}?${new URLSearchParams({ d: 40 + ((i * 37) % 900) })}&${runQuery}" width=40 height=40>`).join("");
       res.writeHead(200, { "content-type": "text/html", "cache-control": "no-store" });
-      return void res.end(`<!doctype html><html><head><meta name="theme-color" content="#336699"><title>Loading ${run}</title>
-<link rel="icon" href="/favicon.ico?d=300&r=${run}"></head><body><h1>Heavy page</h1>${images}
+      return void res.end(`<!doctype html><html><head><meta name="theme-color" content="#336699"><title>Loading ${escapeHtml(run)}</title>
+<link rel="icon" href="/favicon.ico?${new URLSearchParams({ d: 300 })}&${runQuery}"></head><body><h1>Heavy page</h1>${images}
 <script>let n=0;const t=setInterval(()=>{document.title='Heavy '+(++n);if(n>=5)clearInterval(t)},150);</script></body></html>`);
     }
     if (url.pathname === "/ticker") {
@@ -224,7 +246,7 @@ export function startServer(port) {
       res.writeHead(200, { "content-type": "text/html", "cache-control": "no-store" });
       return void res.end(`<!doctype html><html><head><title>Long page</title></head><body>${rows}</body></html>`);
     }
-    const name = url.pathname.split("/").pop();
+    const name = escapeHtml(url.pathname.split("/").pop());
     res.writeHead(200, { "content-type": "text/html", "cache-control": "no-store" });
     res.end(`<!doctype html><html><head><title>Page ${name}</title></head><body><p>${name}</p></body></html>`);
   });

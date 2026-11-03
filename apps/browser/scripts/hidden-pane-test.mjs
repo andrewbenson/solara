@@ -7,6 +7,7 @@ import { parseArgs } from "node:util";
 import assert from "node:assert/strict";
 import { evaluate, quit } from "./perf/js-bench.mjs";
 import { devtools, launch, sleep } from "../../../scripts/lib/instance.mjs";
+import { loadingPageHtml } from "../../../scripts/lib/fixture-html.mjs";
 
 const { values: flags, positionals } = parseArgs({ allowPositionals: true, options: { bundle: { type: "string" }, out: { type: "string" }, port: { type: "string" } } });
 if (!positionals[0]) {
@@ -53,7 +54,7 @@ const unfinished = new Set();
 const stillLoading = createServer((req, res) => {
   const name = req.url.slice(1);
   res.writeHead(200, { "content-type": "text/html" });
-  res.write(`<!doctype html><title>${name}</title><p>${name}-findme</p>`);
+  res.write(loadingPageHtml(name));
   unfinished.add(res);
 });
 await new Promise((r) => stillLoading.listen(0, "127.0.0.1", r));

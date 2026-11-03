@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { launch, reporter, session, sleep } from "../../../scripts/lib/instance.mjs";
+import { fixturePage } from "../../../scripts/lib/fixture-html.mjs";
 
 const args = process.argv.slice(2);
 const appArg = args.find((a) => !a.startsWith("--"));
@@ -31,7 +32,7 @@ const TYPES = ["public.file-url", "public.url", "public.utf8-plain-text"];
 
 const server = createServer((req, res) => {
   res.writeHead(200, { "content-type": "text/html" });
-  res.end(`<!doctype html><title>${req.url.slice(1).toUpperCase()}</title><link rel="icon" href="data:,"><body style="height:2000px">${req.url.slice(1)}</body>`);
+  res.end(fixturePage(req.url.slice(1), { bodyStyle: "height:2000px" }));
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const url = (n) => `http://127.0.0.1:${server.address().port}/${n}`;

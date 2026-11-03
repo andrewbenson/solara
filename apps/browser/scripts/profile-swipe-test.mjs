@@ -7,6 +7,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { inflateSync } from "node:zlib";
 import { launch, listenerPids, parsePort, reporter, session, sleep } from "../../../scripts/lib/instance.mjs";
+import { historyPage } from "../../../scripts/lib/fixture-html.mjs";
 
 const args = process.argv.slice(2);
 if (args.includes("--self-test")) {
@@ -48,7 +49,7 @@ function assertOwnedAlive() {
 }
 const server = createServer((req, res) => {
   res.writeHead(200, { "content-type": "text/html" });
-  if (req.url.startsWith("/history")) return res.end(`<!doctype html><title>${req.url}</title><h1>${req.url}</h1>`);
+  if (req.url.startsWith("/history")) return res.end(historyPage(req.url));
   res.end('<!doctype html><title>Swipe scroll fixture</title><body style="margin:0"><div style="width:2600px;height:4000px;background:linear-gradient(120deg,#ffd9dd,#addbff)">Native scroll fixture</div>');
 });
 

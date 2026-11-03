@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { inflateSync } from "node:zlib";
 import { launch, sleep } from "../../../scripts/lib/instance.mjs";
+import { developerPage } from "../../../scripts/lib/fixture-html.mjs";
 
 const argv = process.argv.slice(2);
 if (!argv.length || argv.includes("-h") || argv.includes("--help")) {
@@ -83,7 +84,7 @@ function redPixels(png, [x0, y0, x1, y1]) {
 
 const server = createServer((req, res) => {
   res.writeHead(200, { "content-type": "text/html" });
-  res.end(`<!doctype html><title>dev</title><body style="margin:0;background:#3a6ea5;color:white">${req.url}</body>`);
+  res.end(developerPage(req.url));
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const base = `http://127.0.0.1:${server.address().port}`;

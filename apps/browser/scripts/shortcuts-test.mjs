@@ -6,6 +6,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { isAlive, launch, reporter, session, sleep } from "../../../scripts/lib/instance.mjs";
+import { shortcutPage } from "../../../scripts/lib/fixture-html.mjs";
 
 const [appArg, part, port] = process.argv.slice(2);
 const appPath = appArg && resolve(appArg);
@@ -22,7 +23,7 @@ const server = createServer((req, res) => {
   const name = new URL(req.url, "http://x").search.slice(1) || "page";
   res.writeHead(200, { "content-type": "text/html" });
   if (name === "autofocus") return res.end(`<!doctype html><title>autofocus</title><textarea id=t autofocus style="position:fixed;left:20px;top:120px;width:300px;height:60px"></textarea><script>document.getElementById("t").focus()</script>`);
-  res.end(`<!doctype html><title>${name}</title><body style="font:20px system-ui"><h1>${name}</h1><input id=f value="hello field" style="position:fixed;left:20px;top:120px;width:300px;height:30px">`);
+  res.end(shortcutPage(name));
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const pages = `http://127.0.0.1:${server.address().port}`;

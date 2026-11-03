@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-import { execSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { folderIsEmpty, listFolderEntries, listSyncFiles } from "./e2e-files.mjs";
 import { identity } from "../../../scripts/lib/identity.mjs";
 import { freePort, launch, reporter, sleep } from "../../../scripts/lib/instance.mjs";
 
@@ -302,7 +302,7 @@ try {
   await sync("A", "B", "A", "B", "A", "B");
   check("steady state: no files written while nothing changes", (await seqs()) === before);
 
-  const list = () => execSync(`find ${FOLDER} -name '*.nns' -type f`).toString().trim().split("\n");
+  const list = () => listSyncFiles(FOLDER);
   const known = new Set(list());
   await ev("A", `ac.store.getState().addBookmark({ profileId: "default", url: "${W}/alpha.html?nne2e=partial1", title: "ACE2E Partial One" }); return acSync.syncNow()`);
   const first = list().find((f) => !known.has(f));
@@ -324,7 +324,7 @@ try {
   b = await state("B");
   check("once they arrive whole, both apply", text(b.bookmarks).includes("Partial One") && text(b.bookmarks).includes("Partial Two") && b.pending === 0);
 
-  const files = execSync(`find ${FOLDER} -mindepth 1`).toString().trim().split("\n");
+  const files = listFolderEntries(FOLDER);
   const needles = ["ACE2E", "nne2e", "hunter2", "127.0.0.1", "alpha.html", "Bookmark", "duckduckgo", "appearance", "MacBook", "https", "default", "pw:", "bm:"];
   const leaks = needles.filter((n) => files.some((f) => f.slice(FOLDER.length).includes(n) || (fs.statSync(f).isFile() && fs.readFileSync(f).includes(n))));
   check(`no plaintext in the sync folder (${files.filter((f) => f.endsWith(".nns")).length} files; ${needles.length} strings searched)`, leaks.length === 0, leaks.join(", "));
@@ -392,7 +392,7 @@ try {
   await ev("A", "return acSync.stopSync({ deleteData: true })");
   await sync("C");
   const cAfter = await state("C");
-  check("A's Delete My Sync Data empties the folder", execSync(`find ${FOLDER} -mindepth 1 | wc -l`).toString().trim() === "0");
+  check("A's Delete My Sync Data empties the folder", folderIsEmpty(FOLDER));
   check("C shows Dia's reset message and stops", cAfter.status === "reset" && /reset from another device/.test(cAfter.error ?? "") && !cAfter.enabled, text(cAfter.status));
   check("A and C keep all their data", same(a, await state("A")) && same(cBefore, cAfter));
 } catch (error) {

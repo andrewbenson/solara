@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { launch, reporter, session, sleep } from "../../../scripts/lib/instance.mjs";
+import { fixturePage } from "../../../scripts/lib/fixture-html.mjs";
 
 const args = process.argv.slice(2);
 const appArg = args.find((a) => !a.startsWith("--"));
@@ -22,7 +23,7 @@ const rep = reporter(join(scratch, "sidebar-click-test.log"), { name: "sidebar-c
 const server = createServer((req, res) => {
   const name = req.url.slice(1) || "root";
   res.writeHead(200, { "content-type": "text/html" });
-  res.end(`<!doctype html><title>${name.toUpperCase()}</title><link rel="icon" href="data:,"><body style="font:40px sans-serif">${name}</body>`);
+  res.end(fixturePage(name, { bodyStyle: "font:40px sans-serif" }));
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const url = (name) => `http://127.0.0.1:${server.address().port}/${name}`;

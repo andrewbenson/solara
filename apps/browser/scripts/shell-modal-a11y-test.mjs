@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { launch, reporter, session, sleep } from "../../../scripts/lib/instance.mjs";
+import { modalPage } from "../../../scripts/lib/fixture-html.mjs";
 
 const args = process.argv.slice(2);
 const appArg = args.find((a) => !a.startsWith("--"));
@@ -24,7 +25,7 @@ const scratch = mkdtempSync(join(tmpdir(), "ac-shell-modal-a11y-"));
 const rep = reporter(join(scratch, "shell-modal-a11y-test.log"), { name: "shell-modal-a11y-test" });
 const server = createServer((req, res) => {
   res.writeHead(200, { "content-type": "text/html" });
-  res.end(`<!doctype html><title>${req.url}</title><link rel="icon" href="data:,"><body><button>Inside the page</button></body>`);
+  res.end(modalPage(req.url));
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const base = `http://127.0.0.1:${server.address().port}`;

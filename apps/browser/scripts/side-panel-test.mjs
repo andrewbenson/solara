@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { devtools, launch, reporter, session, sleep } from "../../../scripts/lib/instance.mjs";
+import { fixturePage } from "../../../scripts/lib/fixture-html.mjs";
 
 const args = process.argv.slice(2);
 const appArg = args.find((a) => !a.startsWith("--"));
@@ -47,7 +48,7 @@ for (const [dir, name] of [[extA, "Side panel A"], [extB, "Side panel B"], [extC
 const server = createServer((req, res) => {
   res.writeHead(200, { "content-type": "text/html" });
   const name = req.url.slice(1) || "a";
-  res.end(`<!doctype html><title>${name.toUpperCase()}</title><link rel="icon" href="data:,"><body><input id="field">${name}</body>`);
+  res.end(fixturePage(name, { bodyPrefix: '<input id="field">' }));
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const origin = `http://127.0.0.1:${server.address().port}`;

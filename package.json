@@ -12,7 +12,7 @@
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "shaders:check": "turbo run shaders:check",
-    "test": "turbo run test && node --no-warnings --test extras/raycast-solara/src/scripts.test.ts scripts/lib/pods-sources.test.mjs apps/browser/scripts/perf/bench-hover.test.mjs apps/browser/scripts/perf/ratchet-locked.test.mjs"
+    "test": "turbo run test && node --no-warnings --test extras/raycast-solara/src/scripts.test.ts scripts/lib/pods-sources.test.mjs apps/browser/scripts/perf/bench-hover.test.mjs apps/browser/scripts/perf/ratchet-locked.test.mjs scripts/lib/fixture-html.test.mjs packages/solaracore/scripts/fixture-pages.test.mjs packages/sync/scripts/e2e-files.test.mjs apps/browser/scripts/perf/js-bench-server.test.mjs"
   },
   "devDependencies": {
     "esbuild": "0.28.2",

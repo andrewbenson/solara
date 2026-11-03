@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { inflateSync } from "node:zlib";
 import { launch, reporter, session, sleep } from "../../../scripts/lib/instance.mjs";
+import { placementPage } from "../../../scripts/lib/fixture-html.mjs";
 
 const args = process.argv.slice(2);
 const appArg = args.find((a) => !a.startsWith("--"));
@@ -84,8 +85,7 @@ function pixelDiff(pathA, pathB, skips = []) {
 
 const server = createServer((req, res) => {
   res.writeHead(200, { "content-type": "text/html" });
-  res.end(`<!doctype html><title>${req.url.slice(1).toUpperCase()}</title><link rel="icon" href="data:,"><body style="margin:0;height:4000px;font:16px sans-serif;caret-color:transparent;background:#fff">
-<p style="position:absolute;left:300px;top:300px;margin:0">some <span id="mid">selectable</span> words</p></body>`);
+  res.end(placementPage(req.url.slice(1)));
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const base = `http://127.0.0.1:${server.address().port}`;

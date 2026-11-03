@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { activationPage as page, activationPathPage } from "./fixture-pages.mjs";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer as createHttpsServer } from "node:https";
@@ -33,8 +34,6 @@ mkdirSync(certDir, { recursive: true });
 writeFileSync(join(certDir, "openssl.cnf"), `[req]\ndistinguished_name=dn\nx509_extensions=ext\nprompt=no\n[dn]\nCN=localhost\n[ext]\nsubjectAltName=DNS:localhost,DNS:*.localhost,IP:127.0.0.1\n`);
 execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "2", "-keyout", join(certDir, "key.pem"), "-out", join(certDir, "cert.pem"), "-config", join(certDir, "openssl.cnf")], { stdio: "ignore" });
 
-const page = (title, body, script = "") =>
-  `<!doctype html><html><head><title>${title}</title><link rel="icon" href="data:,"></head><body style="font: 20px sans-serif">${body}<script>${script}</script></body></html>`;
 const conference = `
   window.__pip = 0; window.__pipClosed = 0; window.__pipError = null;
   navigator.mediaSession.setActionHandler("enterpictureinpicture", async () => {
@@ -60,7 +59,7 @@ const server = createHttpsServer({ key: readFileSync(join(certDir, "key.pem")), 
   if (url.pathname === "/conf") return res.end(page("Conference", `<video muted playsinline style="width:320px;height:180px"></video>`, conference));
   if (url.pathname === "/ask") return res.end(page("Ask", "ask", asks));
   if (url.pathname === "/keys") return res.end(page("Keys", "keys", `window.__keys = ""; addEventListener("keydown", (e) => (__keys += e.key), true);`));
-  return res.end(page(url.searchParams.get("t") ?? url.pathname.slice(1), url.pathname));
+  return res.end(activationPathPage(url));
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const port = server.address().port;

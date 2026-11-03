@@ -93,7 +93,8 @@ in [docs/agent-brief.md](docs/agent-brief.md): read it before your first change.
 ## Building features
 
 - **Sources of truth.** [docs/dia-feature-parity.md](docs/dia-feature-parity.md) is the checklist: update its row
-  when you ship. [docs/dia-spec.md](docs/dia-spec.md) has Dia's measured values.
+  when you ship. [docs/dia-spec.md](docs/dia-spec.md) has Dia's measured values. [docs/roadmap.md](docs/roadmap.md)
+  says what ships in which version: update an item's status when it lands.
 - **Match Dia with numbers**, against a capture with the same crop and state. When the owner asks for Arc's layout,
   keep Dia's styling unless told otherwise.
 - **Parity means UX too:** what each click does, what it remembers, animation timing in frames, what keeps running.

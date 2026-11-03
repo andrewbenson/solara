@@ -132,6 +132,10 @@ bumps the patch (0.1.5 → 0.1.6) unless the user says otherwise. With no stable
 
 ## 2. Write the notes
 
+First update `docs/roadmap.md`: mark this version's landed items shipped, move anything unfinished to the next version
+or back to `docs/backlog.md`, and check that the notes and the roadmap agree.
+
+
 Create `docs/release-notes/<version>.md` following `docs/release-notes/README.md`: frontmatter `date`
 (today, `YYYY-MM-DD`) and `headline` (30–60 chars, one sentence, the only witty line: the most noticeable
 change said dry and calm, true, no pun and no politics, with an open-country touch only where it fits, per

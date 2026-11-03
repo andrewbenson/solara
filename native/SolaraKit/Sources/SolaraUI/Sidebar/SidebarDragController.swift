@@ -44,6 +44,21 @@ public enum SidebarDragHub {
       controller.end(commit: false)
     }
   }
+
+  public static func capturesEscape(in window: NSWindow?) -> Bool {
+    guard let window else { return true }
+    return (controllers.objectEnumerator()?.allObjects ?? []).contains { object in
+      guard let controller = object as? SidebarDragController else { return false }
+      return (controller.active || controller.external > 0) && controller.view?.window === window
+    }
+  }
+
+  public static func escapeCaptureSwallows(_ event: NSEvent, cancel: () -> Void) -> Bool {
+    let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+    guard event.keyCode == 53 || event.charactersIgnoringModifiers == "\u{1b}", modifiers.isEmpty else { return false }
+    cancel()
+    return capturesEscape(in: event.window)
+  }
 }
 
 @MainActor

@@ -572,10 +572,8 @@ public class ShellModule: Module {
       guard active else { return }
       let emit: ([String: Any]) -> Void = { [weak self] body in self?.sendEvent("onAppEvent", body) }
       self.dragEscapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-        let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
-        guard event.keyCode == 53 || event.charactersIgnoringModifiers == "\u{1b}", modifiers.isEmpty else { return event }
-        emit(["type": "dragEscape"])
-        return nil
+        let swallowed = MainActor.assumeIsolated { ShellDragEscape.swallows?(event) { emit(["type": "dragEscape"]) } ?? false }
+        return swallowed ? nil : event
       }
     }.runOnQueue(.main)
 
@@ -2237,4 +2235,9 @@ final class PopoverBubble: ExpoView {
     }
     CATransaction.commit()
   }
+}
+
+@MainActor
+public enum ShellDragEscape {
+  public static var swallows: ((NSEvent, () -> Void) -> Bool)?
 }

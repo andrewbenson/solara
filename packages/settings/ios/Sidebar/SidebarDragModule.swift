@@ -9,7 +9,14 @@ public class SidebarDragModule: Module {
   public func definition() -> ModuleDefinition {
     Name("SolaraSidebarDrag")
 
-    OnCreate { DispatchQueue.main.async { MainActor.assumeIsolated { SidebarDragHub.bridge = NativeSidebarDrag.shared } } }
+    OnCreate {
+      DispatchQueue.main.async {
+        MainActor.assumeIsolated {
+          SidebarDragHub.bridge = NativeSidebarDrag.shared
+          ShellDragEscape.swallows = { SidebarDragHub.escapeCaptureSwallows($0, cancel: $1) }
+        }
+      }
+    }
 
     AsyncFunction("tabDrag") { (onPage: Bool, insert: Bool) in
       MainActor.assumeIsolated { NativeTabDrag.shared.pageChanged(onPage: onPage, insert: insert) }

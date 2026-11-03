@@ -49,6 +49,7 @@ import { useTabDrag } from "../layout/tabDrag";
 import { SidebarAddressBarState } from "./AddressBar";
 import { closeFolderPanelIn, openTileFolderMenu, toggleFolderPanel } from "./tileFolderUi";
 import { installNativeDragProbe } from "./nativeDrag";
+import { UPDATE_PILL_TEXT, updatePillTooltip, usePendingUpdate } from "../../lib/pendingUpdate";
 
 const SHELL_TOPIC = "sidebar.shell";
 const shellColumns: Record<string, object> = {};
@@ -107,6 +108,7 @@ function useShellChrome(windowId: string, addressBar: boolean, theme: Theme): st
   const names = useBrowser(useShallow((s) => order.map((id) => s.profiles[id]?.name ?? "")));
   const { pages } = usePagerPages(windowId);
   const dropOver = useTabDrag((d) => d.overWindow === windowId);
+  const pending = usePendingUpdate();
   return useMemo(
     () =>
       JSON.stringify({
@@ -125,8 +127,9 @@ function useShellChrome(windowId: string, addressBar: boolean, theme: Theme): st
         dots: dotsShown ? order.map((id, i) => ({ id, name: names[i] ?? "", slot: pages.find((p) => p.id === id)?.slot ?? null })) : [],
         savedWidth,
         dropOver,
+        update: pending ? { text: UPDATE_PILL_TEXT, tooltip: updatePillTooltip(pending) } : null,
       }),
-    [incognito, profile, profiles, theme, downloadsOpen, hint, downloads, addressBar, dotsShown, order, names, pages, savedWidth, dropOver],
+    [incognito, profile, profiles, theme, downloadsOpen, hint, downloads, addressBar, dotsShown, order, names, pages, savedWidth, dropOver, pending],
   );
 }
 

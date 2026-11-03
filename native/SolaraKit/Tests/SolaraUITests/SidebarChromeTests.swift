@@ -4,11 +4,48 @@ import Testing
 
 @MainActor
 struct SidebarChromeTests {
-  func state(addressBar: Bool = false, downloads: Bool = true, dots: Int = 3, profiles: Int = 3) -> SidebarChromeState {
+  func state(addressBar: Bool = false, downloads: Bool = true, dots: Int = 3, profiles: Int = 3, update: SidebarUpdatePillState? = nil) -> SidebarChromeState {
     SidebarChromeState(
       controls: StripControlsState(title: "Work", incognito: false, profiles: profiles, nameColor: "#336699", downloadsOpen: false, downloadsTooltip: "Downloads"),
       downloads: downloads, addressBar: addressBar, dark: false, theme: [:],
-      dots: (0..<dots).map { SidebarChromeDot(id: "p\($0)", name: "P\($0)", slot: $0 < 2 ? Double($0) : nil) }, savedWidth: 220)
+      dots: (0..<dots).map { SidebarChromeDot(id: "p\($0)", name: "P\($0)", slot: $0 < 2 ? Double($0) : nil) }, savedWidth: 220, update: update)
+  }
+
+  @Test func updatePillSitsAboveTheFooterRow() {
+    let host = FlippedContainerView(frame: NSRect(x: 0, y: 0, width: 220, height: 600))
+    let view = SidebarChromeView(frame: host.bounds)
+    host.addSubview(view)
+    view.update(state(update: SidebarUpdatePillState(text: "New Solara Version Available")))
+    #expect(view.footerHeight == 79, "footer \(view.footerHeight)")
+    #expect(view.updatePill.frame == NSRect(x: 8, y: 600 - 41 - 8 - 30, width: 204, height: 30))
+    #expect(view.updatePill.text == "New Solara Version Available")
+    #expect(view.hitTest(NSPoint(x: 100, y: 600 - 41 - 20)) === view.updatePill)
+  }
+
+  @Test func updatePillAloneKeepsItsOwnBand() {
+    let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 220, height: 600))
+    view.update(state(downloads: false, dots: 0, update: SidebarUpdatePillState(text: "New Solara Version Available")))
+    #expect(view.footerHeight == 38)
+    #expect(view.updatePill.frame.maxY == 592)
+    view.update(state(downloads: false, dots: 0))
+    #expect(view.footerHeight == 0)
+    #expect(view.updatePill.isHidden)
+  }
+
+  @Test func updatePillPressInstalls() {
+    let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 220, height: 600))
+    var actions: [SidebarChromeAction] = []
+    view.onAction = { actions.append($0) }
+    view.update(state(update: SidebarUpdatePillState(text: "New Solara Version Available")))
+    #expect(view.updatePill.accessibilityPerformPress())
+    #expect(actions == [.installUpdate])
+  }
+
+  @Test func chromeDecodesWithAndWithoutUpdate() {
+    let base = ##"{"controls":{"title":"W","incognito":false,"profiles":1,"nameColor":"#000","downloadsOpen":false,"downloadsTooltip":"D"},"downloads":false,"addressBar":false,"dark":true,"theme":{},"dots":[],"savedWidth":190,"dropOver":false"##
+    #expect(SidebarChromeState.decode(base + "}")?.update == nil)
+    #expect(SidebarChromeState.decode(base + #","update":null}"#)?.update == nil)
+    #expect(SidebarChromeState.decode(base + #","update":{"text":"New","tooltip":"t"}}"#)?.update == SidebarUpdatePillState(text: "New", tooltip: "t"))
   }
 
   @Test func rubberBandMatchesRN() {

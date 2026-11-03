@@ -69,6 +69,12 @@ public struct ToolbarUrlState: Decodable, Equatable, Sendable {
   public var pinned: Bool
 }
 
+public struct ToolbarUpdateState: Decodable, Equatable, Sendable {
+  public var text: String
+  public var short: String
+  public var tooltip: String?
+}
+
 public struct ToolbarState: Decodable, Equatable, Sendable {
   public var tabId: String
   public var height: Double
@@ -83,6 +89,7 @@ public struct ToolbarState: Decodable, Equatable, Sendable {
   public var rightInset: Double
   public var extensions: [ToolbarButtonState]?
   public var extensionsRight: Double?
+  public var update: ToolbarUpdateState?
   public var hairline: Bool
   public var progress: Double?
   public var stripes: String?

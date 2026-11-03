@@ -16,7 +16,10 @@ export type UpdaterState =
       displayVersion?: string;
       channel?: UpdateChannel;
       buildChannel?: UpdateChannel;
+      pendingUpdate?: PendingUpdate | null;
     };
+
+export type PendingUpdate = { version: string; build: string };
 
 export type UpdateChannel = "stable" | "nightly";
 
@@ -75,6 +78,12 @@ export type SystemInfo = {
 
 export type AppModule = {
   addListener(name: "onNotificationResponse", listener: (e: NotificationResponse) => void): EventSubscription;
+  addListener(name: "onPendingUpdate", listener: (e: { update: PendingUpdate | null }) => void): EventSubscription;
+  pendingUpdate?(): Promise<PendingUpdate | null>;
+  installPendingUpdate?(): Promise<void>;
+  devSimulatePendingUpdate?(version: string | null, onInstall: "count" | "quit"): Promise<number>;
+  devSimulatedInstallRequests?(): Promise<number>;
+  devRestartToUpdateShown?(): Promise<boolean | null>;
   updaterState(): Promise<UpdaterState>;
   checkForUpdates(): Promise<void>;
   setAutomaticUpdateChecks(on: boolean): Promise<void>;
@@ -122,6 +131,13 @@ export const checkForUpdates = () => App.checkForUpdates();
 export const setAutomaticUpdateChecks = (on: boolean) => App.setAutomaticUpdateChecks(on);
 export const setAutomaticUpdateDownloads = (on: boolean) => App.setAutomaticUpdateDownloads(on);
 export const setUpdateChannel = (channel: UpdateChannel) => App.setUpdateChannel(channel);
+export const pendingUpdate = async (): Promise<PendingUpdate | null> => (App.pendingUpdate ? App.pendingUpdate() : null);
+export const installPendingUpdate = async () => App.installPendingUpdate?.();
+export const onPendingUpdate = (listener: (update: PendingUpdate | null) => void): EventSubscription | null =>
+  App.pendingUpdate ? App.addListener("onPendingUpdate", (e) => listener(e.update ?? null)) : null;
+export const devSimulatePendingUpdate = async (version: string | null, onInstall: "count" | "quit" = "count") =>
+  App.devSimulatePendingUpdate ? App.devSimulatePendingUpdate(version, onInstall) : -1;
+export const devSimulatedInstallRequests = async () => (App.devSimulatedInstallRequests ? App.devSimulatedInstallRequests() : -1);
 
 export type ShareAnchor = [number, number, number, number];
 

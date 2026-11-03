@@ -1,6 +1,6 @@
 import { WindowDragRegion } from "@solara/shell";
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
-import { Animated, Easing, StyleSheet, View } from "react-native";
+import { Animated, Easing, Pressable, StyleSheet, Text, View } from "react-native";
 import { layout, useTheme } from "../lib/theme";
 import { useBrowser } from "../store/browser";
 import { useWindowId, useWindowProfileId } from "../store/hooks";
@@ -17,6 +17,8 @@ import { dismissHoverIn } from "./sidebar/hover";
 import { ResizeHandle } from "./sidebar/ResizeHandle";
 import { NativeSidebar, nativeSidebarShell, shellColumnFitsAddressBar } from "./sidebar/NativeSidebar";
 import { useTabDrag } from "./layout/tabDrag";
+import { useHover } from "./primitives";
+import { installUpdateNow, UPDATE_PILL_BAND, UPDATE_PILL_HEIGHT, UPDATE_PILL_TEXT, updatePillTooltip, usePendingUpdate } from "../lib/pendingUpdate";
 
 const GLOW_ROOM = 24;
 
@@ -29,7 +31,9 @@ export function Sidebar({ width }: { width: number }) {
   const hasDownloads = useBrowser((s) => downloadsIn(s, windowId).length > 0);
   const dots = useProfileDotsShown();
   const footerDownloads = addressBar && hasDownloads;
-  const footer = dots || footerDownloads ? PROFILE_DOTS_HEIGHT : 0;
+  const pending = usePendingUpdate();
+  const footerRow = dots || footerDownloads ? PROFILE_DOTS_HEIGHT : 0;
+  const footer = footerRow + (pending ? UPDATE_PILL_BAND : 0);
   const [shellCapable] = useState(() => nativeSidebarShell(windowId));
   const shellColumn = shellCapable && shellColumnFitsAddressBar(addressBar);
   const column = useMemo(() => ({ top: header - GLOW_ROOM, header, bottom: footer, clip: paging }), [header, footer, paging]);
@@ -60,8 +64,10 @@ export function Sidebar({ width }: { width: number }) {
         <NativeSidebar windowId={windowId} profileId={current} addressBar={addressBar} />
       </View>
 
-      {footer ? (
-        <View style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: footer }}>
+      {pending ? <UpdatePill bottom={footerRow + UPDATE_PILL_BAND - UPDATE_PILL_HEIGHT} tooltip={updatePillTooltip(pending)} /> : null}
+
+      {footerRow ? (
+        <View style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: footerRow }}>
           {dots ? <ProfileDots windowId={windowId} /> : null}
           {footerDownloads ? (
             <View style={{ position: "absolute", left: layout.sidebarInset, bottom: SIDEBAR_FOOTER_DOWNLOADS.bottom }}>
@@ -91,6 +97,36 @@ export function Sidebar({ width }: { width: number }) {
       <FolderPanel windowId={windowId} />
       <WindowDropHighlight />
     </SidebarDropArea>
+  );
+}
+
+function UpdatePill({ bottom, tooltip }: { bottom: number; tooltip: string }) {
+  const theme = useTheme();
+  const ink = theme.dark ? "255,255,255" : "0,0,0";
+  const { hovered, hoverProps } = useHover();
+  return (
+    <View {...hoverProps} tooltip={tooltip} style={{ position: "absolute", left: 8, right: 8, bottom, height: UPDATE_PILL_HEIGHT }}>
+      <Pressable accessibilityRole="button" accessibilityLabel={UPDATE_PILL_TEXT} onPress={installUpdateNow}>
+        {({ pressed }) => (
+          <View
+            style={{
+              height: UPDATE_PILL_HEIGHT,
+              borderRadius: UPDATE_PILL_HEIGHT / 2,
+              borderWidth: 0.5,
+              borderColor: `rgba(${ink},${theme.dark ? 0.08 : 0.05})`,
+              backgroundColor: `rgba(${ink},${pressed ? (theme.dark ? 0.2 : 0.13) : hovered ? (theme.dark ? 0.15 : 0.1) : theme.dark ? 0.1 : 0.06})`,
+              alignItems: "center",
+              justifyContent: "center",
+              paddingHorizontal: 8,
+            }}
+          >
+            <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: "500", color: theme.textPrimary }}>
+              {UPDATE_PILL_TEXT}
+            </Text>
+          </View>
+        )}
+      </Pressable>
+    </View>
   );
 }
 

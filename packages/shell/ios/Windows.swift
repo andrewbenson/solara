@@ -717,7 +717,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
       quitAfterUpdaterSettles()
       return .terminateLater
     }
-    guard confirmActiveDownloads() else { return .terminateCancel }
+    guard UpdateQuitApproval.consume() || confirmActiveDownloads() else { return .terminateCancel }
     quitAttempt += 1
     quitStep = .saving
     emit("onAppEvent", ["type": "willQuit"])
@@ -764,6 +764,8 @@ final class WindowManager: NSObject, NSWindowDelegate {
     }
   }
 
+  fileprivate static func confirmActiveDownloads() -> Bool { shared.confirmActiveDownloads() }
+
   private func confirmActiveDownloads() -> Bool {
     let count = MenuState.current.downloadsInProgress
     guard count > 0 else { return true }
@@ -808,6 +810,26 @@ final class WindowManager: NSObject, NSWindowDelegate {
 
   func reopen() {
     emit?("onAppEvent", ["type": "reopen"])
+  }
+}
+
+enum UpdateQuitApproval {
+  static let lifetime: TimeInterval = 30
+  private static var approvedUntil: Date?
+
+  static func approve() -> Bool {
+    approvedUntil = nil
+    guard MenuState.current.downloadsInProgress > 0 else { return true }
+    guard WindowManager.confirmActiveDownloads() else { return false }
+    approvedUntil = Date().addingTimeInterval(lifetime)
+    return true
+  }
+
+  static func revoke() { approvedUntil = nil }
+
+  static func consume() -> Bool {
+    defer { approvedUntil = nil }
+    return approvedUntil.map { Date() < $0 } ?? false
   }
 }
 

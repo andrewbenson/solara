@@ -3,8 +3,24 @@ import AppKit
 import Sparkle
 #endif
 
+public struct PendingUpdate: Equatable {
+  public let version: String
+  public let build: String
+  public let channel: String?
+
+  public var payload: [String: Any] { ["version": version, "build": build] }
+}
+
 public final class AppUpdater: NSObject {
   public static let shared = AppUpdater()
+  public static let pendingUpdateChanged = Notification.Name("SolaraPendingUpdateChanged")
+
+  public private(set) var pendingUpdate: PendingUpdate? {
+    didSet {
+      guard pendingUpdate != oldValue else { return }
+      NotificationCenter.default.post(name: Self.pendingUpdateChanged, object: self)
+    }
+  }
 
   static var releaseRepository: String? {
     let repo = (Bundle.main.object(forInfoDictionaryKey: "ACReleaseRepo") as? String ?? "").trimmingCharacters(in: .whitespaces)
@@ -34,6 +50,10 @@ public final class AppUpdater: NSObject {
   public func setChannel(_ channel: String) {
     guard Self.channels.contains(channel) else { return }
     UserDefaults.standard.set(channel, forKey: Self.channelDefaultsKey)
+    if let pendingUpdate, !isOnChannel(pendingUpdate.channel) {
+      self.pendingUpdate = nil
+      installWhenIdle = false
+    }
     #if canImport(Sparkle)
     guard started else { return }
     channelChangePending = true
@@ -102,6 +122,62 @@ public final class AppUpdater: NSObject {
     channel == "nightly" ? ["nightly"] : []
   }
 
+  func isOnChannel(_ itemChannel: String?) -> Bool {
+    itemChannel.map { allowedChannels.contains($0) } ?? true
+  }
+
+  private var installWhenIdle = false
+  #if DEBUG
+  private var simulatedInstall: String?
+  public private(set) var simulatedInstallRequests = 0
+  #endif
+
+  @objc public func installPendingUpdate(_ sender: Any?) {
+    guard pendingUpdate != nil else { return }
+    #if DEBUG
+    if let simulatedInstall {
+      simulatedInstallRequests += 1
+      NSLog("\(Bundle.main.productName): simulated update install requested (\(simulatedInstallRequests))")
+      if simulatedInstall == "quit" { NSApp.terminate(nil) }
+      return
+    }
+    #endif
+    #if canImport(Sparkle)
+    guard started, UpdateQuitApproval.approve() else { return }
+    if userDriver.retryQuietInstall() || userDriver.installStagedNow() { return }
+    installWhenIdle = true
+    startQuietInstallWhenIdle()
+    #endif
+  }
+
+  #if DEBUG
+  public func devSimulatePendingUpdate(version: String?, onInstall: String) {
+    simulatedInstall = version == nil ? nil : onInstall
+    simulatedInstallRequests = 0
+    pendingUpdate = version.map { PendingUpdate(version: $0, build: $0, channel: nil) }
+  }
+  #endif
+
+  #if canImport(Sparkle)
+  private func startQuietInstallWhenIdle() {
+    guard installWhenIdle, pendingUpdate != nil, !updater.sessionInProgress else { return }
+    installWhenIdle = false
+    userDriver.installsQuietly = true
+    updater.checkForUpdates()
+  }
+
+  private func forgetSkippedUpdate() {
+    UpdateQuitApproval.revoke()
+    pendingUpdate = nil
+    installWhenIdle = false
+  }
+
+  private func publishPending(_ item: SUAppcastItem) {
+    guard isOnChannel(item.channel) else { return }
+    pendingUpdate = PendingUpdate(version: item.displayVersionString, build: item.versionString, channel: item.channel)
+  }
+  #endif
+
   private func rememberChannel() {
     guard !Self.channels.contains(UserDefaults.standard.string(forKey: Self.channelDefaultsKey) ?? "") else { return }
     UserDefaults.standard.set(Self.buildChannel, forKey: Self.channelDefaultsKey)
@@ -155,7 +231,7 @@ public final class AppUpdater: NSObject {
 
   #if canImport(Sparkle)
   private lazy var userDriver = ChannelUserDriver(standard: SPUStandardUserDriver(hostBundle: .main, delegate: self)) { [unowned self] item in
-    item.channel.map { self.allowedChannels.contains($0) } ?? true
+    self.isOnChannel(item.channel)
   }
   private lazy var updater = SPUUpdater(hostBundle: .main, applicationBundle: .main, userDriver: userDriver, delegate: self)
   private var deferredUpdate = false
@@ -187,6 +263,7 @@ public final class AppUpdater: NSObject {
     rememberChannel()
     guard !started, isConfigured else { return }
     started = true
+    userDriver.onSkip = { [weak self] in self?.forgetSkippedUpdate() }
     firstCheckPending = updater.lastUpdateCheckDate == nil
     do {
       try updater.start()
@@ -195,7 +272,10 @@ public final class AppUpdater: NSObject {
     }
     sessionObservation = updater.observe(\.sessionInProgress, options: [.new]) { [weak self] _, change in
       guard change.newValue == false else { return }
-      DispatchQueue.main.async { self?.applyChannelChangeWhenIdle() }
+      DispatchQueue.main.async {
+        self?.applyChannelChangeWhenIdle()
+        self?.startQuietInstallWhenIdle()
+      }
     }
     NotificationCenter.default.addObserver(self, selector: #selector(fullScreenChanged), name: NSWindow.didExitFullScreenNotification, object: nil)
     #endif
@@ -229,6 +309,7 @@ public final class AppUpdater: NSObject {
       "displayVersion": Self.displayVersion,
       "channel": channel,
       "buildChannel": Self.buildChannel,
+      "pendingUpdate": pendingUpdate?.payload as Any,
     ]
     #else
     return ["available": false]
@@ -299,6 +380,7 @@ extension AppUpdater: SPUUpdaterDelegate {
 
   public func updater(_ updater: SPUUpdater, willInstallUpdateOnQuit item: SUAppcastItem, immediateInstallationBlock immediateInstallHandler: @escaping () -> Void) -> Bool {
     UpdatePrewarm.start(version: item.versionString)
+    publishPending(item)
     return false
   }
 }
@@ -581,6 +663,11 @@ final class ChannelUserDriver: NSObject, SPUUserDriver {
   private var pendingChoice: PendingChoice?
   private var heldInstall: PendingChoice?
   private var pendingCancellation: (() -> Void)?
+  private var quietInstall = false
+  private var retryTermination: (() -> Void)?
+  private var stagedAnswer: (choice: PendingChoice, answer: (SPUUserUpdateChoice) -> Void)?
+  var installsQuietly = false
+  var onSkip: () -> Void = {}
 
   init(standard: SPUStandardUserDriver, isOnChannel: @escaping (SUAppcastItem) -> Bool) {
     self.standard = standard
@@ -600,7 +687,18 @@ final class ChannelUserDriver: NSObject, SPUUserDriver {
     shownItem = appcastItem
     let staged = state.stage == .installing
     if staged { UpdatePrewarm.warm(version: appcastItem.versionString) }
-    standard.showUpdateFound(with: appcastItem, state: state, reply: awaiting(reply, staged: staged))
+    let answer = awaiting(reply, staged: staged)
+    let quiet = installsQuietly && staged
+    installsQuietly = false
+    guard quiet else { return standard.showUpdateFound(with: appcastItem, state: state, reply: answer) }
+    quietInstall = true
+    answer(.install)
+  }
+
+  func retryQuietInstall() -> Bool {
+    guard quietInstall, let retry = retryTermination else { return false }
+    retry()
+    return true
   }
 
   func leaveOffChannelUpdate() {
@@ -623,8 +721,13 @@ final class ChannelUserDriver: NSObject, SPUUserDriver {
   private func awaiting(_ reply: @escaping (SPUUserUpdateChoice) -> Void, staged: Bool = false) -> (SPUUserUpdateChoice) -> Void {
     let choice = PendingChoice(reply)
     pendingChoice = choice
-    return { [weak self] picked in
+    var answered = false
+    let answer: (SPUUserUpdateChoice) -> Void = { [weak self] picked in
+      guard !answered else { return }
+      answered = true
       if self?.pendingChoice === choice { self?.pendingChoice = nil }
+      if self?.stagedAnswer?.choice === choice { self?.stagedAnswer = nil }
+      if picked == .skip { self?.onSkip() }
       guard picked == .install, let self, let item = self.shownItem else { return choice.answer(picked) }
       guard self.isOnChannel(item) else { return self.drop(item, answering: choice.answer) }
       guard staged else { return choice.answer(.install) }
@@ -635,6 +738,18 @@ final class ChannelUserDriver: NSObject, SPUUserDriver {
         choice.answer(.install)
       }
     }
+    stagedAnswer = staged ? (choice, answer) : nil
+    return answer
+  }
+
+  func installStagedNow() -> Bool {
+    guard let staged = stagedAnswer, let item = shownItem, isOnChannel(item) else { return false }
+    stagedAnswer = nil
+    installsQuietly = false
+    quietInstall = true
+    standard.dismissUpdateInstallation()
+    staged.answer(.install)
+    return true
   }
 
   func show(_ request: SPUUpdatePermissionRequest, reply: @escaping (SUUpdatePermissionResponse) -> Void) {
@@ -642,6 +757,7 @@ final class ChannelUserDriver: NSObject, SPUUserDriver {
   }
 
   func showUserInitiatedUpdateCheck(cancellation: @escaping () -> Void) {
+    installsQuietly = false
     standard.showUserInitiatedUpdateCheck(cancellation: cancellation)
   }
 
@@ -690,6 +806,10 @@ final class ChannelUserDriver: NSObject, SPUUserDriver {
   }
 
   func showInstallingUpdate(withApplicationTerminated applicationTerminated: Bool, retryTerminatingApplication: @escaping () -> Void) {
+    guard !quietInstall else {
+      retryTermination = retryTerminatingApplication
+      return
+    }
     standard.showInstallingUpdate(withApplicationTerminated: applicationTerminated, retryTerminatingApplication: retryTerminatingApplication)
   }
 
@@ -702,6 +822,11 @@ final class ChannelUserDriver: NSObject, SPUUserDriver {
   }
 
   func dismissUpdateInstallation() {
+    if quietInstall { UpdateQuitApproval.revoke() }
+    stagedAnswer = nil
+    installsQuietly = false
+    quietInstall = false
+    retryTermination = nil
     heldInstall?.discard()
     heldInstall = nil
     shownItem = nil

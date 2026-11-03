@@ -394,6 +394,7 @@ enum MainMenu {
     _ = top(appName, [
       aboutItem("About \(appName)"),
       updatesItem(),
+      restartToUpdateItem(appName),
       .separator(),
       cmd("Settings…", "openSettings", ","),
       cmd("Import from Another Browser…", "importBrowserData"),
@@ -709,6 +710,32 @@ enum MainMenu {
     item.target = AppUpdater.shared
     item.isHidden = !AppUpdater.shared.isAvailable
     return item
+  }
+
+  private static var restartToUpdate: NSMenuItem?
+  private static var pendingUpdateObserver: NSObjectProtocol?
+
+  private static func restartToUpdateItem(_ appName: String) -> NSMenuItem {
+    let item = NSMenuItem(title: "Restart to Update \(appName)", action: #selector(AppUpdater.installPendingUpdate(_:)), keyEquivalent: "")
+    item.target = AppUpdater.shared
+    restartToUpdate = item
+    showRestartToUpdate()
+    if pendingUpdateObserver == nil {
+      pendingUpdateObserver = NotificationCenter.default.addObserver(forName: AppUpdater.pendingUpdateChanged, object: nil, queue: .main) { _ in
+        showRestartToUpdate()
+      }
+    }
+    return item
+  }
+
+  #if DEBUG
+  static var restartToUpdateShown: Bool? { restartToUpdate.map { !$0.isHidden } }
+  #endif
+
+  private static func showRestartToUpdate() {
+    let pending = AppUpdater.shared.pendingUpdate
+    restartToUpdate?.isHidden = pending == nil
+    restartToUpdate?.toolTip = pending.map { "Installs \(Bundle.main.productName) \($0.version) and reopens your windows and tabs." }
   }
 
   private static func videoTourItem() -> NSMenuItem {

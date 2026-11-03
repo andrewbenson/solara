@@ -21,10 +21,11 @@ public struct SidebarChromeState: Decodable, Equatable, Sendable {
   public var dots: [SidebarChromeDot]
   public var savedWidth: Double
   public var dropOver: Bool
+  public var update: SidebarUpdatePillState?
 
   public init(
     controls: StripControlsState, downloads: Bool, addressBar: Bool, dark: Bool, theme: [String: String], dots: [SidebarChromeDot], savedWidth: Double,
-    dropOver: Bool = false
+    dropOver: Bool = false, update: SidebarUpdatePillState? = nil
   ) {
     self.controls = controls
     self.downloads = downloads
@@ -34,6 +35,7 @@ public struct SidebarChromeState: Decodable, Equatable, Sendable {
     self.dots = dots
     self.savedWidth = savedWidth
     self.dropOver = dropOver
+    self.update = update
   }
 
   public static func decode(_ json: String) -> SidebarChromeState? {
@@ -48,6 +50,7 @@ public enum SidebarChromeAction: Equatable, Sendable {
   case liveWidth(Double?)
   case commitWidth(Double)
   case resetWidth
+  case installUpdate
 }
 
 public enum SidebarChromeMetrics {
@@ -70,8 +73,12 @@ public enum SidebarChromeMetrics {
 
   public static func headerHeight(addressBar: Bool) -> CGFloat { addressBar ? header + fieldRow : header }
 
-  public static func footerHeight(_ state: SidebarChromeState) -> CGFloat {
+  public static func footerRowHeight(_ state: SidebarChromeState) -> CGFloat {
     !state.dots.isEmpty || (state.addressBar && state.downloads) ? footer : 0
+  }
+
+  public static func footerHeight(_ state: SidebarChromeState) -> CGFloat {
+    footerRowHeight(state) + (state.update == nil ? 0 : SidebarUpdatePillMetrics.band)
   }
 
   public static func indicatorRoom(width: CGFloat, downloads: Bool) -> CGFloat {
@@ -126,6 +133,7 @@ public final class SidebarChromeView: NSView {
   let headerDownloads = StripIconButton()
   let footerDownloads = StripIconButton()
   let resize = SidebarResizeHandle()
+  let updatePill = SidebarUpdatePill()
   private var dots: [SidebarProfileDot] = []
   private let tooltip = SidebarDotTooltip()
   private let dropGlow = CALayer()
@@ -155,6 +163,9 @@ public final class SidebarChromeView: NSView {
     }
     indicator.onPress = { [weak self] in self?.onAction(.profileMenu) }
     addSubview(indicator)
+    updatePill.isHidden = true
+    updatePill.onPress = { [weak self] in self?.onAction(.installUpdate) }
+    addSubview(updatePill)
     resize.onWidth = { [weak self] action in self?.onAction(action) }
     resize.savedWidth = { [weak self] in self?.state?.savedWidth ?? SidebarChromeMetrics.defaultWidth }
     addSubview(resize)
@@ -207,7 +218,7 @@ public final class SidebarChromeView: NSView {
     func color(_ key: String) -> NSColor { SidebarPalette.parse(state.theme[key]) ?? .clear }
     let width = bounds.width
     let header = headerHeight
-    let footer = footerHeight
+    let footer = SidebarChromeMetrics.footerRowHeight(state)
     addressSlot.isHidden = !state.addressBar
     addressSlot.frame = NSRect(x: 0, y: 0, width: width, height: header)
 
@@ -245,6 +256,14 @@ public final class SidebarChromeView: NSView {
       dot.ink = state.dark ? .white : .black
     }
     paintDots()
+
+    updatePill.isHidden = state.update == nil
+    if let update = state.update {
+      updatePill.set(update, color: color("textPrimary"), dark: state.dark)
+      let pill = SidebarUpdatePillMetrics.self
+      updatePill.frame = NSRect(
+        x: pill.sideInset, y: bounds.height - footer - pill.gap - pill.height, width: max(0, width - pill.sideInset * 2), height: pill.height)
+    }
 
     resize.frame = NSRect(
       x: width - SidebarChromeMetrics.resizeStrip, y: SidebarChromeMetrics.header, width: SidebarChromeMetrics.resizeStrip,
@@ -318,6 +337,7 @@ public final class SidebarChromeView: NSView {
   private func hover(at point: NSPoint?) {
     indicator.hovered = point.map { !indicator.isHidden && indicator.frame.contains($0) } ?? false
     for button in [headerDownloads, footerDownloads] { button.hovered = point.map { !button.isHidden && button.frame.contains($0) } ?? false }
+    updatePill.hovered = point.map { !updatePill.isHidden && updatePill.frame.contains($0) } ?? false
     for dot in dots { dot.setHovered(point.map { dot.frame.contains($0) } ?? false) }
   }
 
@@ -332,6 +352,7 @@ public final class SidebarChromeView: NSView {
       "headerDownloads": headerDownloads.isHidden ? NSNull() : rect(headerDownloads),
       "footerDownloads": footerDownloads.isHidden ? NSNull() : rect(footerDownloads),
       "resize": rect(resize),
+      "update": updatePill.isHidden ? NSNull() : ["text": updatePill.text, "rect": rect(updatePill)],
       "dropGlow": Double(dropGlow.opacity),
       "dots": dots.map { ["id": $0.profileId, "rect": rect($0), "opacity": Double($0.opacity)] },
       "tooltip": tooltip.isHidden ? NSNull() : ["text": tooltip.text, "rect": rect(tooltip), "alpha": Double(tooltip.alphaValue)],

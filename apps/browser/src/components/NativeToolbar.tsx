@@ -29,6 +29,7 @@ import { useRef } from "react";
 import { showTranslateMenu } from "./site/TranslateControls";
 import { languageName, toggleTranslation, useTranslateState } from "./site/translate";
 import { insecureLevel, urlFieldRight, useToolbarTab } from "./Toolbar";
+import { installUpdateNow, UPDATE_PILL_SHORT_TEXT, UPDATE_PILL_TEXT, updatePillTooltip, usePendingUpdate } from "../lib/pendingUpdate";
 
 const isWebUrl = (url: string) => /^https?:/i.test(url);
 
@@ -107,6 +108,9 @@ export function useNativeToolbarModel({ tabId, geometry, windowId, inSplit, focu
     if (!sidebar) setToolbarExtensionsWidth(windowId, extensionsWidth);
   }, [windowId, extensionsWidth, !sidebar]);
   const showFullUrl = useSettings((s) => s.showFullUrl);
+  const topTabs = useSettings((s) => s.tabLayout === "top");
+  const pending = usePendingUpdate();
+  const update = pending && topTabs && !sidebar && (!inSplit || focused) ? { text: UPDATE_PILL_TEXT, short: UPDATE_PILL_SHORT_TEXT, tooltip: updatePillTooltip(pending) } : null;
   const bookmarked = useIsBookmarked(tab?.url ?? "");
   const insecure = usePage(tabId, insecureLevel);
   const developer = useTabDeveloperMode(tabId);
@@ -224,11 +228,12 @@ export function useNativeToolbarModel({ tabId, geometry, windowId, inSplit, focu
       rightInset: 8,
       extensions: JSON.parse(extensionsJson),
       extensionsRight: inSplit ? 8 + 60 : 8,
+      update,
       hairline: !!url && !bare,
       progress: isLoading ? progress : null,
       stripes: developer ? stripesUri(palette) : null,
     };
-  }, [tab, tabId, bare, focused, palette, theme, geometry, inSplit, !sidebar, extensionsWidth, showFullUrl, bookmarked, insecure, popups, capture, popover, progress, translate, isLoading, history, developer, editing, editRequest, hints.sidebar, hints.back, hints.forward, hints.reload, hints.bookmark, hints.split, extensionsJson]);
+  }, [tab, tabId, bare, focused, palette, theme, geometry, inSplit, !sidebar, extensionsWidth, showFullUrl, bookmarked, insecure, popups, capture, popover, progress, translate, isLoading, history, developer, editing, editRequest, hints.sidebar, hints.back, hints.forward, hints.reload, hints.bookmark, hints.split, extensionsJson, update?.tooltip]);
   const json = useMemo(() => (state ? JSON.stringify(state) : null), [state]);
 
   const focus = () => {
@@ -300,6 +305,8 @@ export function useNativeToolbarModel({ tabId, geometry, windowId, inSplit, focu
         return showSplitMenu(tabId);
       case "closePane":
         return closePane(tabId);
+      case "update":
+        return installUpdateNow();
       default:
         if (c.id.startsWith("ext")) extensions.onClick(c.id, c.kind === "menu" ? "menu" : "press");
     }

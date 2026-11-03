@@ -7,10 +7,12 @@ extension Bundle {
 }
 
 public class AppModule: Module {
+  private var pendingObserver: NSObjectProtocol?
+
   public func definition() -> ModuleDefinition {
     Name("SolaraApp")
     Constant("apiVersion") { () -> Int in 36 }
-    Events("onNotificationResponse")
+    Events("onNotificationResponse", "onPendingUpdate")
 
     OnCreate {
       DispatchQueue.main.async {
@@ -35,6 +37,46 @@ public class AppModule: Module {
     AsyncFunction("setAutomaticUpdateChecks") { (on: Bool) in AppUpdater.shared.setAutomaticChecks(on) }.runOnQueue(.main)
     AsyncFunction("setAutomaticUpdateDownloads") { (on: Bool) in AppUpdater.shared.setAutomaticDownloads(on) }.runOnQueue(.main)
     AsyncFunction("setUpdateChannel") { (channel: String) in AppUpdater.shared.setChannel(channel) }.runOnQueue(.main)
+    AsyncFunction("pendingUpdate") { () -> [String: Any]? in AppUpdater.shared.pendingUpdate?.payload }.runOnQueue(.main)
+    AsyncFunction("installPendingUpdate") { AppUpdater.shared.installPendingUpdate(nil) }.runOnQueue(.main)
+    AsyncFunction("devSimulatePendingUpdate") { (version: String?, onInstall: String) -> Int in
+      #if DEBUG
+      AppUpdater.shared.devSimulatePendingUpdate(version: version, onInstall: onInstall)
+      return AppUpdater.shared.simulatedInstallRequests
+      #else
+      return -1
+      #endif
+    }.runOnQueue(.main)
+    AsyncFunction("devRestartToUpdateShown") { () -> Bool? in
+      #if DEBUG
+      return MainMenu.restartToUpdateShown
+      #else
+      return nil
+      #endif
+    }.runOnQueue(.main)
+    AsyncFunction("devSimulatedInstallRequests") { () -> Int in
+      #if DEBUG
+      return AppUpdater.shared.simulatedInstallRequests
+      #else
+      return -1
+      #endif
+    }.runOnQueue(.main)
+
+    OnStartObserving("onPendingUpdate") {
+      DispatchQueue.main.async { [weak self] in
+        guard let self, self.pendingObserver == nil else { return }
+        let publish = { [weak self] in self?.sendEvent("onPendingUpdate", ["update": AppUpdater.shared.pendingUpdate?.payload as Any]) }
+        self.pendingObserver = NotificationCenter.default.addObserver(forName: AppUpdater.pendingUpdateChanged, object: nil, queue: .main) { _ in publish() }
+        publish()
+      }
+    }
+
+    OnStopObserving("onPendingUpdate") {
+      DispatchQueue.main.async { [weak self] in
+        if let observer = self?.pendingObserver { NotificationCenter.default.removeObserver(observer) }
+        self?.pendingObserver = nil
+      }
+    }
 
     AsyncFunction("share") { (url: String, title: String?, windowId: String?, anchor: [Double]?, promise: Promise) in
       SharePicker.show(url: url, title: title, windowId: windowId, anchor: anchor) { promise.resolve(nil) }

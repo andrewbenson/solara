@@ -21,6 +21,12 @@ public final class ToolbarView: NSView {
   private var extensions: [ToolbarButtonView] = []
   private var reportedAnchors: [String: CGRect]?
   private let url = ToolbarUrlFieldView()
+  private let updatePill = SidebarUpdatePill()
+  static let updatePillHeight: CGFloat = 24
+  static let updatePillPadding: CGFloat = 12
+  static let updatePillGap: CGFloat = 6
+  static let urlRoomBesideUpdate: CGFloat = 300
+  static let urlRoomBesideShortUpdate: CGFloat = 120
   private var bandColor: CGColor?
   private var shownProgress: Double?
   private var interactive = true
@@ -37,6 +43,9 @@ public final class ToolbarView: NSView {
     addSubview(content)
     content.addSubview(url)
     url.onClick = { [weak self] click in self?.onClick(click) }
+    updatePill.isHidden = true
+    updatePill.onPress = { [weak self] in self?.onClick(ToolbarClick(id: "update", kind: .press)) }
+    content.addSubview(updatePill)
     layer?.addSublayer(hairline)
     progress.anchorPoint = .zero
     layer?.addSublayer(progress)
@@ -219,6 +228,7 @@ public final class ToolbarView: NSView {
     url.frame = CGRect(x: CGFloat(g.urlLeft), y: ToolbarView.buttonTop, width: max(0, bounds.width - CGFloat(g.urlLeft) - CGFloat(g.urlRight)), height: ToolbarUrlFieldView.height)
     for b in left + right + extensions { b.recheckHover() }
     var anchors: [String: CGRect] = [:]
+    var trailingEdge = x
     if let extensionsRight = state.extensionsRight {
       var ex = bounds.width - CGFloat(extensionsRight)
       for b in extensions.reversed() {
@@ -230,11 +240,45 @@ public final class ToolbarView: NSView {
       if extensions.isEmpty {
         anchors["*"] = windowRect(CGRect(x: px(ex - 28), y: px(21.2 - 14), width: 28, height: 28))
       }
+      trailingEdge = min(trailingEdge, ex + 2)
     }
+    layoutUpdatePill(state, trailingEdge: trailingEdge, px: px)
     if window != nil, anchors != reportedAnchors {
       reportedAnchors = anchors
       onAnchors(anchors)
     }
+  }
+
+  private func layoutUpdatePill(_ state: ToolbarState, trailingEdge: CGFloat, px: (CGFloat) -> CGFloat) {
+    guard let update = state.update else {
+      updatePill.isHidden = true
+      return
+    }
+    let font = NSFont.systemFont(ofSize: SidebarUpdatePillMetrics.fontSize, weight: .medium)
+    let measure = { (text: String) in ceil((text as NSString).size(withAttributes: [.font: font]).width) + ToolbarView.updatePillPadding * 2 }
+    let right = trailingEdge - ToolbarView.updatePillGap
+    let room = right - CGFloat(state.geometry.urlLeft) - ToolbarView.urlRoomBesideUpdate
+    let long = measure(update.text)
+    let short = measure(update.short)
+    let fitsShort = short <= room + ToolbarView.urlRoomBesideUpdate - ToolbarView.urlRoomBesideShortUpdate
+    guard long <= room || fitsShort else {
+      updatePill.isHidden = true
+      return
+    }
+    let text = long <= room ? update.text : update.short
+    let width = text == update.text ? long : short
+    let height = ToolbarView.updatePillHeight
+    updatePill.set(SidebarUpdatePillState(text: text, tooltip: update.tooltip), color: toolbarColor(state.palette.text) ?? .labelColor, dark: ToolbarView.isLightInk(state.palette.text))
+    updatePill.frame = CGRect(x: px(right - width), y: px(21.2 - height / 2), width: width, height: height)
+    updatePill.isHidden = false
+    updatePill.recheckHover()
+    let urlRight = updatePill.frame.minX - ToolbarView.updatePillGap
+    if url.frame.maxX > urlRight { url.frame.size.width = max(0, urlRight - url.frame.minX) }
+  }
+
+  static func isLightInk(_ text: String) -> Bool {
+    guard let color = toolbarColor(text)?.usingColorSpace(.sRGB) else { return true }
+    return 0.2126 * color.redComponent + 0.7152 * color.greenComponent + 0.0722 * color.blueComponent > 0.5
   }
 
   private func windowRect(_ local: CGRect) -> CGRect {

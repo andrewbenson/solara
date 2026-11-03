@@ -229,6 +229,7 @@ final class SidebarShellColumn: NSView, DevDropDestination {
     case .resetWidth:
       shell?.update { $0.sidebarWidth = CGFloat(SidebarChromeMetrics.defaultWidth) }
       NativeSidebarShell.send(windowId, "commitWidth", ["width": SidebarChromeMetrics.defaultWidth])
+    case .installUpdate: AppUpdater.shared.installPendingUpdate(nil)
     }
   }
 

@@ -76,6 +76,8 @@ notary_auth=()
 if [ "$unsigned" = 0 ]; then
   if [ -n "${NOTARY_KEY:-}" ]; then
     notary_auth=(--key "$NOTARY_KEY" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER")
+  elif [ -n "${NOTARY_APPLE_ID:-}" ]; then
+    notary_auth=(--apple-id "$NOTARY_APPLE_ID" --team-id "${NOTARY_TEAM_ID:-$team_id}" --password "$NOTARY_PASSWORD")
   else
     notary_auth=(--keychain-profile "$notary_profile")
   fi

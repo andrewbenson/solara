@@ -74,10 +74,10 @@ public final class AppUpdater: NSObject {
   }
 
   private var hasOffChannelStagedUpdate: Bool {
-    UpdatePrewarm.stagedApps().contains { staged in
-      let built = staged.bundle.object(forInfoDictionaryKey: "ACUpdateChannel") as? String
-      return built == "nightly" && !allowedChannels.contains("nightly")
-    }
+    guard !allowedChannels.contains("nightly") else { return false }
+    guard let bundleId = Bundle.main.bundleIdentifier else { return true }
+    let staged = StagedUpdates.scan(bundleId: bundleId)
+    return !staged.complete || staged.channels.contains("nightly")
   }
   #endif
 
@@ -430,10 +430,10 @@ enum UpdatePrewarm {
 
   static func warm(version: String) {
     guard runningVersion != version, !warmed.contains(version), KillSwitch.isOn("updatePrewarm"),
-      let staged = stagedApp(version: version), let executable = staged.executableURL
+      let bundleId = Bundle.main.bundleIdentifier, let staged = StagedUpdates.newest(version: version, bundleId: bundleId)
     else { return }
     stop()
-    launch(staged.bundleURL, executable: executable, version: version)
+    launch(staged, version: version)
   }
 
   static func beforeInstall(version: String, install: @escaping () -> Void) {
@@ -455,13 +455,6 @@ enum UpdatePrewarm {
     runningVersion = nil
     afterRun = []
     generation += 1
-  }
-
-  static func signedLikeThisApp(_ bundle: URL) -> Bool {
-    guard let requirement = ownRequirement else { return false }
-    var code: SecStaticCode?
-    guard SecStaticCodeCreateWithPath(bundle as CFURL, [], &code) == errSecSuccess, let code else { return false }
-    return SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSStrictValidate | kSecCSCheckNestedCode | kSecCSCheckAllArchitectures), requirement) == errSecSuccess
   }
 
   private static let ownRequirement: SecRequirement? = {
@@ -547,7 +540,7 @@ enum UpdatePrewarm {
     }
   }
 
-  private static func launch(_ bundle: URL, executable: URL, version: String) {
+  private static func launch(_ staged: StagedCopy, version: String) {
     if !watchingQuit {
       watchingQuit = true
       NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { _ in stop() }
@@ -560,14 +553,14 @@ enum UpdatePrewarm {
     var env = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("SOLARA_") && !$0.key.hasPrefix("DYLD_") }
     env["SOLARA_PREWARM"] = "1"
     DispatchQueue.global(qos: .utility).async {
-      guard signedLikeThisApp(bundle), let requirement = ownRequirement else {
+      guard let requirement = ownRequirement, let verified = VerifiedLaunch.verify(staged, requirement: requirement) else {
         tried.record(status: statusRejected)
-        NSLog("\(Bundle.main.productName): not prewarming \(bundle.path): its signature isn't this app's")
+        NSLog("\(Bundle.main.productName): not prewarming \(staged.bundleURL.path): its signature isn't this app's")
         return DispatchQueue.main.async { finish(current) }
       }
       let child: pid_t
       do {
-        guard let spawned = try tried.spawnSuspended(executable, environment: env, ended: { DispatchQueue.main.async { finish(current) } })
+        guard let spawned = try tried.spawnSuspended(staged.executableURL, environment: env, ended: { DispatchQueue.main.async { finish(current) } })
         else { return }
         child = spawned
       } catch {
@@ -575,8 +568,8 @@ enum UpdatePrewarm {
         NSLog("\(Bundle.main.productName): couldn't prewarm update \(version): \(error.localizedDescription)")
         return DispatchQueue.main.async { finish(current) }
       }
-      guard VerifiedLaunch.isGenuine(pid: child, requirement: requirement, inside: bundle) else {
-        NSLog("\(Bundle.main.productName): not prewarming \(bundle.path): the process it started isn't this app's code")
+      guard VerifiedLaunch.isGenuine(pid: child, verified: verified, inside: staged.bundleURL) else {
+        NSLog("\(Bundle.main.productName): not prewarming \(staged.bundleURL.path): the process it started isn't the code it checked")
         tried.stop(status: statusRejected)
         return
       }
@@ -597,32 +590,6 @@ enum UpdatePrewarm {
     let waiting = afterRun
     afterRun = []
     waiting.forEach { $0() }
-  }
-
-  static func stagedApp(version: String, bundleId: String? = Bundle.main.bundleIdentifier, root: URL? = nil) -> Bundle? {
-    stagedApps(bundleId: bundleId, root: root)
-      .filter { $0.bundle.infoDictionary?["CFBundleVersion"] as? String == version }
-      .max { $0.modified < $1.modified }?.bundle
-  }
-
-  static func stagedApps(bundleId: String? = Bundle.main.bundleIdentifier, root: URL? = nil) -> [(bundle: Bundle, modified: Date)] {
-    guard let bundleId,
-      let root = root ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
-        .appendingPathComponent(bundleId).appendingPathComponent("org.sparkle-project.Sparkle/Installation")
-    else { return [] }
-    guard let walk = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.contentModificationDateKey],
-                                                     options: [.skipsHiddenFiles, .skipsPackageDescendants]) else { return [] }
-    var found: [(bundle: Bundle, modified: Date)] = []
-    for case let url as URL in walk {
-      if walk.level > 4 { walk.skipDescendants(); continue }
-      guard url.pathExtension == "app", let bundle = Bundle(url: url), let info = bundle.infoDictionary,
-        info["CFBundleIdentifier"] as? String == bundleId,
-        let executable = bundle.executableURL, FileManager.default.isExecutableFile(atPath: executable.path)
-      else { continue }
-      let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
-      found.append((bundle, date))
-    }
-    return found
   }
 }
 

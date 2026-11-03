@@ -47,3 +47,60 @@ enum VerifiedLaunch {
     return signal == 0 ? Int((status >> 8) & 0xff) : Int(signal)
   }
 }
+
+struct VerifiedCode {
+  let requirement: SecRequirement
+  let codeHash: Data
+  let sameCode: SecRequirement
+}
+
+extension VerifiedLaunch {
+  static let runningArchitecture: String = {
+    #if arch(arm64)
+    "arm64"
+    #else
+    "x86_64"
+    #endif
+  }()
+
+  static func verify(_ copy: StagedCopy, requirement: SecRequirement) -> VerifiedCode? {
+    guard StagedUpdates.isUnchanged(copy) else { return nil }
+    var code: SecStaticCode?
+    let slice = [kSecCodeAttributeArchitecture: runningArchitecture] as CFDictionary
+    let checks = SecCSFlags(rawValue: kSecCSStrictValidate | kSecCSCheckNestedCode | kSecCSCheckAllArchitectures)
+    guard SecStaticCodeCreateWithPathAndAttributes(copy.bundleURL as CFURL, [], slice, &code) == errSecSuccess, let code,
+      SecStaticCodeCheckValidity(code, checks, requirement) == errSecSuccess
+    else { return nil }
+    var signing: CFDictionary?
+    guard SecCodeCopySigningInformation(code, [], &signing) == errSecSuccess, let info = signing as? [String: Any],
+      let hash = info[kSecCodeInfoUnique as String] as? Data, !hash.isEmpty,
+      let plist = info[kSecCodeInfoPList as String] as? [String: Any],
+      plist["CFBundleIdentifier"] as? String == copy.bundleId,
+      plist["CFBundleVersion"] as? String == copy.version,
+      plist["ACUpdateChannel"] as? String == copy.channel,
+      let main = info[kSecCodeInfoMainExecutable as String] as? URL, isSameFile(main, copy.executableURL),
+      let sameCode = codeHashRequirement(hash),
+      StagedUpdates.isUnchanged(copy)
+    else { return nil }
+    return VerifiedCode(requirement: requirement, codeHash: hash, sameCode: sameCode)
+  }
+
+  static func isGenuine(pid: pid_t, verified: VerifiedCode, inside bundle: URL) -> Bool {
+    var code: SecCode?
+    guard isGenuine(pid: pid, requirement: verified.requirement, inside: bundle),
+      SecCodeCopyGuestWithAttributes(nil, [kSecGuestAttributePid: pid] as CFDictionary, [], &code) == errSecSuccess, let code
+    else { return false }
+    return SecCodeCheckValidity(code, [], verified.sameCode) == errSecSuccess
+  }
+
+  private static func codeHashRequirement(_ hash: Data) -> SecRequirement? {
+    let hex = hash.map { String(format: "%02x", $0) }.joined()
+    var requirement: SecRequirement?
+    guard SecRequirementCreateWithString("cdhash H\"\(hex)\"" as CFString, [], &requirement) == errSecSuccess else { return nil }
+    return requirement
+  }
+
+  private static func isSameFile(_ one: URL, _ other: URL) -> Bool {
+    one.resolvingSymlinksInPath().standardizedFileURL.path == other.resolvingSymlinksInPath().standardizedFileURL.path
+  }
+}

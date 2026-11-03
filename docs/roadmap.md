@@ -11,19 +11,19 @@ backlog, and check this file against the release notes.
 
 | Item | Status |
 |---|---|
-| "New Solara Version Available" pill in the sidebar (toolbar with horizontal tabs) and "Restart to Update Solara" in the app menu, on a background download | landed 4973e888 |
-| The active pinned tab is obvious: flat inactive tiles, the active one raised and tinted with its icon's colour | landed ba15bc0b |
-| Tab, profile and window shortcuts win over pages (Google Sheets); per-shortcut Prefer Solara / Prefer Website / Use Both in Settings › Shortcuts | landed e3478b3d |
-| Security fixes in shipped code (CodeQL #101, #104, #160, #162–167) | landed (c2a9d598) |
-| Security fixes in test tooling (31 alerts) and dependency overrides | landed (test tooling 29023ae2; the overrides with this row) |
-| Alert re-scan and the approved dismissals (#6, #7, #34, #105, #106, #136) | planned |
-| Perf ratchet runs again ("dev harness never answered" on 0.1.2 and 0.1.3) | planned |
-| Fixes from the owner's two-Mac sync-join test of 0.1.3 | waiting on the test |
+| "New Solara Version Available" pill in the sidebar (toolbar with horizontal tabs) and "Restart to Update Solara" in the app menu, on a background download | shipped (0.1.4) |
+| The active pinned tab is obvious: flat inactive tiles, the active one raised and tinted with its icon's colour | shipped (0.1.4) |
+| Tab, profile and window shortcuts win over pages (Google Sheets); per-shortcut Prefer Solara / Prefer Website / Use Both in Settings › Shortcuts | shipped (0.1.4) |
+| Security fixes in shipped code (CodeQL #101, #104, #160, #162–167) | shipped (0.1.4) |
+| Security fixes in test tooling (31 alerts) and dependency overrides | shipped (0.1.4) |
+| Alert re-scan, fixes and the approved dismissals (CodeQL: 59 fixed, the rest dismissed with reasons; #102 and #103 left open) | shipped (0.1.4) |
+| Perf ratchet runs again ("dev harness never answered" on 0.1.2 and 0.1.3) | shipped (0.1.4) |
 
 ## 0.2.0: the sidebar your way, and a fresh engine
 
 | Item | Status |
 |---|---|
+| Fixes from the owner's two-Mac sync-join test of 0.1.3 | waiting on the test |
 | Icons-only sidebar rail, 84 pt: drag-to-snap, View menu and Settings toggle, hover × to close, loading and audio badges, the address bar moves to the toolbar | drafted (~/.cache/solara-lead/work/r14/rail: rail.patch on be7b9864, NOTES.txt, 7 review findings open), not landed |
 | Folder and group popovers, footer profile switcher, the hidden sidebar's peek in rail mode | planned |
 | Engine: Chromium 156.0.8078.79 or newer (Chrome stable security updates; we ship .47). Needs a Chromium sync and rebuild: owner approved for 0.2.0 | planned |

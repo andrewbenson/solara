@@ -78,6 +78,7 @@ final class SidebarRailPopover: NSObject, NSPopoverDelegate {
     super.init()
     prepare()
     content.onChoose = { [weak self] in self?.choose($0, flags: $1) }
+    content.onDragOut = { [weak self] in self?.dragOut($0, event: $1) }
     content.onBack = { [weak self] in
       guard let self, self.pages.count > 1 else { return }
       self.pages.removeLast()
@@ -154,6 +155,16 @@ final class SidebarRailPopover: NSObject, NSPopoverDelegate {
     }
   }
 
+  private func dragOut(_ index: Int, event: NSEvent) {
+    guard !closed, let page = pages.last, let groupId = page.groupId, page.rows.indices.contains(index),
+      case .click(let tabId, _) = page.rows[index].action, let row = anchor, let sidebar = row.hoverHost else { return }
+    let controller = SidebarDragController.of(sidebar)
+    let size = controller.windowRect(row)?.size ?? row.bounds.size
+    let at = controller.popoverLocation(event)
+    close()
+    controller.popoverDrag(tabId: tabId, groupId: groupId, size: size, at: at)
+  }
+
   private func prepare() {
     popover.behavior = .transient
     popover.animates = false
@@ -211,6 +222,7 @@ final class SidebarRailPopover: NSObject, NSPopoverDelegate {
 private final class SidebarRailPopoverBody: NSView {
   var onCancel: (() -> Void)?
   var onChoose: ((Int, NSEvent.ModifierFlags) -> Void)?
+  var onDragOut: ((Int, NSEvent) -> Void)?
   var onSelection: ((Int) -> Void)?
   var onBack: (() -> Void)?
   var onRefresh: (() -> Void)?
@@ -275,6 +287,7 @@ private final class SidebarRailPopoverBody: NSView {
     rows = values.enumerated().map { index, value in
       let row = SidebarRailPopoverRowView(value, context: context)
       row.onChoose = { [weak self] in self?.onChoose?(index, $0) }
+      if case .click = value.action { row.onDragOut = { [weak self] in self?.onDragOut?(index, $0) } }
       list.addSubview(row)
       return row
     }
@@ -348,6 +361,7 @@ private final class SidebarRailPopoverBody: NSView {
 @MainActor
 final class SidebarRailPopoverRowView: NSView {
   var onChoose: ((NSEvent.ModifierFlags) -> Void)?
+  var onDragOut: ((NSEvent) -> Void)?
   let tabId: String
   private let value: SidebarRailPopoverRow
   private let context: SidebarContext
@@ -359,6 +373,7 @@ final class SidebarRailPopoverRowView: NSView {
   private let chevron = SymbolView()
   private var hovered = false
   private var pressed = false
+  private var downAt: NSPoint?
   var selected = false { didSet { paint() } }
 
   override var isFlipped: Bool { true }
@@ -425,9 +440,20 @@ final class SidebarRailPopoverRowView: NSView {
   override func mouseDown(with event: NSEvent) {
     if event.modifierFlags.contains(.control) { return rightMouseDown(with: event) }
     pressed = true
+    downAt = event.locationInWindow
     paint()
   }
+  override func mouseDragged(with event: NSEvent) {
+    guard let downAt, let onDragOut else { return }
+    let p = event.locationInWindow
+    guard hypot(p.x - downAt.x, p.y - downAt.y) > SidebarDragController.threshold else { return }
+    self.downAt = nil
+    pressed = false
+    paint()
+    onDragOut(event)
+  }
   override func mouseUp(with event: NSEvent) {
+    downAt = nil
     let open = pressed && bounds.contains(convert(event.locationInWindow, from: nil))
     pressed = false
     paint()

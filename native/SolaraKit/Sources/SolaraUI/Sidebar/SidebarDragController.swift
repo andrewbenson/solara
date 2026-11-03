@@ -199,6 +199,7 @@ public final class SidebarDragController {
     items = [:]
     order = []
     passive = []
+    if let floating { items[floating.key] = floating }
     let layout = view.pageLayout
     func add(_ item: DragItem) {
       items[item.key] = item
@@ -377,7 +378,7 @@ public final class SidebarDragController {
     collect()
     guard let item = items[key], item.kind != .tail else { return }
     let lead = (item.kind == .row || item.kind == .tile) && item.folderId == nil ? item.tabIds.first : nil
-    let moving = lead.map { movingTabIds(state, $0) } ?? []
+    let moving = floating?.key == key ? [] : lead.map { movingTabIds(state, $0) } ?? []
     sources = moving.count > 1
       ? order.filter { ($0.kind == .row || $0.kind == .tile) && $0.folderId == nil && $0.tabIds.contains { moving.contains($0) } }
       : [item]
@@ -506,6 +507,7 @@ public final class SidebarDragController {
       return
     }
     guard !sources.isEmpty, !sourcesEnding else { return }
+    stopFollowingPopoverDrag()
     let sources = self.sources
     let drop = self.drop
     let sequence = self.sequence
@@ -586,6 +588,8 @@ public final class SidebarDragController {
   }
 
   private func reset() {
+    stopFollowingPopoverDrag()
+    floating = nil
     scrollTimer?.invalidate()
     scrollTimer = nil
     clearHold()
@@ -1160,6 +1164,97 @@ public final class SidebarDragController {
     order.append(tail)
   }
 
+  private var floating: DragItem?
+  private var popoverFollow: PopoverDragFollow?
+
+  var followsPopoverDrag: Bool { popoverFollow != nil }
+
+  func popoverDrag(tabId: String, groupId: String, size: CGSize, at: CGPoint) {
+    guard !active, !sourcesEnding else { return }
+    collect()
+    let key = "t:\(tabId)"
+    guard items[key] == nil else { return }
+    let home = order.first { $0.kind == .group && ($0.groupId == groupId || $0.tabIds.contains(tabId)) }
+    let item = DragItem(key: key, kind: .row, tabIds: [tabId], section: home?.section == .pinnedGroups ? .pinnedRows : .list)
+    item.parentGroup = groupId
+    item.frame = CGRect(x: at.x - size.width / 2, y: at.y - size.height / 2, width: size.width, height: size.height)
+    floating = item
+    begin(key, at)
+    guard active else {
+      floating = nil
+      return
+    }
+    let follow = PopoverDragFollow(token: token)
+    popoverFollow = follow
+    follow.monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDragged, .leftMouseUp, .keyDown]) { [weak self] event in
+      let consumed = MainActor.assumeIsolated { () -> Bool in
+        guard let self else {
+          follow.stop()
+          return false
+        }
+        return self.handlePopoverEvent(event)
+      }
+      return consumed ? nil : event
+    }
+    follow.resignObserver = NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: nil) { [weak self] _ in
+      MainActor.assumeIsolated {
+        guard let self else { return follow.stop() }
+        self.cancelPopoverDrag()
+      }
+    }
+  }
+
+  private func cancelPopoverDrag() {
+    guard let follow = popoverFollow, follow.token == token, active, !sourcesEnding else { return stopFollowingPopoverDrag() }
+    stopFollowingPopoverDrag()
+    end(commit: false)
+  }
+
+  func handlePopoverEvent(_ event: NSEvent) -> Bool {
+    guard let follow = popoverFollow, follow.token == token, active, external == 0, !sourcesEnding else {
+      stopFollowingPopoverDrag()
+      return false
+    }
+    guard let window = view?.window else {
+      stopFollowingPopoverDrag()
+      cancelForModeChange()
+      return false
+    }
+    switch event.type {
+    case .leftMouseDragged:
+      move(popoverLocation(event))
+    case .leftMouseUp:
+      stopFollowingPopoverDrag()
+      move(popoverLocation(event))
+      end(commit: true)
+    case .keyDown where event.keyCode == 53:
+      stopFollowingPopoverDrag()
+      end(commit: false)
+      return event.window == nil || event.window === window
+    default:
+      return false
+    }
+    return true
+  }
+
+  private func stopFollowingPopoverDrag() {
+    popoverFollow?.stop()
+    popoverFollow = nil
+  }
+
+  func popoverLocation(_ event: NSEvent) -> CGPoint {
+    guard let window = view?.window, let content = window.contentView else { return pointer }
+    let local: NSPoint
+    if event.window === window {
+      local = event.locationInWindow
+    } else if let source = event.window {
+      local = window.convertPoint(fromScreen: source.convertPoint(toScreen: event.locationInWindow))
+    } else {
+      local = window.convertPoint(fromScreen: event.locationInWindow)
+    }
+    return CGPoint(x: local.x, y: content.bounds.height - local.y)
+  }
+
   public func panelDrag(_ phase: String, tabId: String, at: CGPoint) {
     switch phase {
     case "begin":
@@ -1222,4 +1317,20 @@ public final class SidebarDragController {
   public var marksJSON: [String: Any] { marks.json }
 
   public var panelOpen: Bool { panelFrame != nil }
+}
+
+@MainActor
+final class PopoverDragFollow {
+  let token: Int
+  var monitor: Any?
+  var resignObserver: NSObjectProtocol?
+
+  init(token: Int) { self.token = token }
+
+  func stop() {
+    if let monitor { NSEvent.removeMonitor(monitor) }
+    if let resignObserver { NotificationCenter.default.removeObserver(resignObserver) }
+    monitor = nil
+    resignObserver = nil
+  }
 }

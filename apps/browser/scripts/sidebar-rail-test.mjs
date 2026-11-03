@@ -11,7 +11,8 @@ if (!appArg) {
 The icons-only sidebar rail under the native shell. View › Icons-Only Sidebar (the toggleSidebarIconsOnly command)
 narrows the native column to 84 pt and back to the saved full width, which the rail never overwrites; in the rail the
 footer's downloads button and profile dots sit in separate bands inside the column, and a pending update shows as a
-round 34 pt button inside it; Settings › Tabs' switch is the same setting. With --shots, snapshots the window in-process (devSnapshotWindow) in the
+round 34 pt button inside it; dragging a tab out of a group's popover closes the popover and drops the tab below
+a loose tab, out of the group; Settings › Tabs' switch is the same setting. With --shots, snapshots the window in-process (devSnapshotWindow) in the
 rail and at full width, dark and light, with a pending update, for the owner's visual check.`);
   process.exit(2);
 }
@@ -32,6 +33,12 @@ const H = globalThis.expo.modules.SolaraHosted;
 const A = globalThis.expo.modules.SolaraApp;
 const st = () => ac.store.getState();
 const col = () => H.sidebarShell("w1").then((d) => JSON.parse(d));
+const C = globalThis.expo.modules.SolaraCEF;
+const S = globalThis.expo.modules.SolaraSettings;
+const D = globalThis.expo.modules.SolaraSidebarDrag;
+const win = (id) => C.chromeWindows().then((ws) => { const f = st().windows[id].frame; const w = ws.filter((w) => w.hasRoot).find((w) => { const r = w.frame.match(/[-\\d.]+/g).map(Number); return Math.abs(r[0] - f[0]) < 2 && Math.abs(r[2] - f[2]) < 2; }); return w && w.window; });
+const popovers = () => S.devSettings("windows", null).then((t) => JSON.parse(t).windows.filter((w) => /Popover/.test(w) && /visible=true/.test(w)).map((w) => Number(w.match(/#(\\d+)/)[1])));
+const items = () => D.startProbe("w1").then((t) => JSON.parse(t).items);
 `;
 let inst = null;
 const run = (body, timeout = 15000) => inst.eval(`${HELPERS}\n${body}`, { timeout });
@@ -121,6 +128,41 @@ try {
     } finally {
       await run(`return A.devSimulatePendingUpdate(null, "count");`).catch(() => {});
     }
+  });
+
+  await rep.check("dragging a tab out of a group's popover drops it below a loose tab, out of the group", async () => {
+    const groupId = await run(`return st().createGroup(["a", "b"], { name: "Work" });`);
+    const found = await until("the rail group icon and the loose tab", async () => {
+      const list = await run(`return items();`);
+      const group = list.find((i) => i.key === `g:${groupId}`);
+      const loose = list.find((i) => i.key === "t:c");
+      return { ok: !!group && !!loose && group.y < loose.y, group, loose };
+    });
+    const { group, loose } = found;
+    await run(`return win("w1").then((n) => C.devWindow(n, "click:${Math.round(group.x + group.w / 2)},${Math.round(group.y + group.h / 2)}"));`);
+    const pop = await until("the group popover", async () => {
+      const ns = await run(`return popovers();`);
+      return { ok: ns.length === 1, number: ns[0], all: ns };
+    });
+    const row = await run(`const ys = []; for (let y = 0; y < 300; y += 2) ys.push(y);
+      return Promise.all(ys.map((y) => C.devWindow(${pop.number}, "hit:80," + y))).then((hits) => {
+        const at = ys.filter((y, i) => /SidebarRailPopoverRowView|FadeLabel|TabIconView/.test(hits[i]));
+        return at.length ? at[Math.floor(at.length / 2)] : null; });`);
+    if (row == null) throw new Error("no row in the group popover");
+    const tx = Math.round(loose.x + loose.w / 2);
+    const ty = Math.round(loose.y + loose.h + 6);
+    await run(`const n = ${pop.number};
+      return C.devWindow(n, "mouse:down:80,${row}").then(() => C.devWindow(n, "mouse:dragged:72,${row}")).then(() => C.devWindow(n, "mouse:dragged:60,${row}"));`);
+    const closed = await until("the popover closing as the drag starts", async () => {
+      const ns = await run(`return popovers();`);
+      return { ok: ns.length === 0, all: ns };
+    });
+    await run(`return win("w1").then((n) => C.devWindow(n, "mouse:dragged:${tx},${Math.round(group.y + group.h)}").then(() => C.devWindow(n, "mouse:dragged:${tx},${ty}")).then(() => C.devWindow(n, "mouse:up:${tx},${ty}")));`);
+    const after = await until("the tab out of the group", async () => {
+      const s = await run(`return { members: st().groups["${groupId}"]?.tabIds ?? null, order: st().windows.w1.tabIds };`);
+      return { ok: !!s.members && !s.members.includes("b") && s.order.includes("b"), ...s };
+    });
+    return { popoverClosed: closed.ok, members: after.members, order: after.order };
   });
 
   await rep.check("toggling again restores the saved full width", async () => {

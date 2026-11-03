@@ -79,7 +79,7 @@ test("the app's own timers and promise steps after each pointer move are still c
   const restore = countImmediates();
   try {
     const { stats } = await bench.run("hover", { rows: 4, from: 0, gapMs: 5 });
-    assert.equal(JSON.stringify(stats.timers), JSON.stringify({ "setImmediate:anonymous": 5, "setTimeout:anonymous": 5 }));
+    assert.deepStrictEqual({ ...stats.timers }, { "setTimeout:anonymous": 5, "setImmediate:anonymous": 5 });
   } finally {
     restore();
   }

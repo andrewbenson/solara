@@ -1983,6 +1983,7 @@ NSImage *_Nullable PermissionIcon(NSDictionary *request) {
   _origin.lineBreakMode = NSLineBreakByTruncatingHead;
   [self addSubview:_glyph];
   [self addSubview:_origin];
+  self.clipsToBounds = YES;
   [self setFrameSize:frame.size];
   return self;
 }
@@ -2014,7 +2015,7 @@ NSImage *_Nullable PermissionIcon(NSDictionary *request) {
 
 - (void)drawRect:(NSRect)dirtyRect {
   [NSColor.windowBackgroundColor setFill];
-  NSRectFill(dirtyRect);
+  NSRectFill(NSIntersectionRect(dirtyRect, self.bounds));
   [NSColor.separatorColor setFill];
   NSRectFillUsingOperation(NSMakeRect(0, 0, NSWidth(self.bounds), 1 / MAX(self.window.backingScaleFactor, 1)),
                            NSCompositingOperationSourceOver);

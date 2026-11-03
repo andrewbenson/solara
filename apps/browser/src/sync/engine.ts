@@ -456,8 +456,15 @@ const persistJournal = (scope: string) => async (batches: LogFile[]) => {
   for (const file of batches) {
     if (list.some((f) => f.device === file.device && f.seq === file.seq)) continue;
     list.push(file);
-    const sealed = await sealLocal(JSON.stringify({ journal: { [scope]: [file] } }), "journal", batchPart(scope, file.seq));
-    await saveDocument(batchName(scope, file.seq), sealed);
+    try {
+      const sealed = await sealLocal(JSON.stringify({ journal: { [scope]: [file] } }), "journal", batchPart(scope, file.seq));
+      await saveDocument(batchName(scope, file.seq), sealed);
+    } catch (error) {
+      const current = journal[scope];
+      const at = current?.findIndex((f) => f.device === file.device && f.seq === file.seq) ?? -1;
+      if (at >= 0) current!.splice(at, 1);
+      throw error;
+    }
   }
 };
 

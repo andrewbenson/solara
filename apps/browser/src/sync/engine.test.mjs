@@ -106,3 +106,55 @@ test("a batch is published only once the journal holding it is on disk", async (
   await syncing;
   assert.equal(published().length, 1, "published once the journal landed");
 });
+
+async function journalSaveRejectedOnce(name, { replaceList }) {
+  reset();
+  shell.docs.clear();
+  const engine = await import(`./engine.ts?${name}`);
+  engine.startSync();
+  assert.ok("ok" in (await engine.turnOnSync("/sync")));
+  await engine.syncNow();
+  const native = shell.shellNativeModules.SolaraShell;
+  const saveDocument = native.saveDocument;
+  const published = () => [...folder.values()].map((f) => JSON.parse(f.payload)).filter((f) => f.ops?.some((op) => op.v?.t === name));
+  let batchSaves = 0;
+  if (replaceList) {
+    shell.heldSaves.on = true;
+    shell.heldSaves.only = "sync-state";
+    S().addBookmark({ profileId: "default", url: "https://before.example/", title: "Before" });
+    await engine.syncNow();
+    for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
+    assert.ok(shell.heldSaves.queue.length, "an older state save is still on its way");
+  }
+  native.saveDocument = async (doc, value) => {
+    if (doc.startsWith("sync-journal-b-") && value.includes(name) && ++batchSaves === 1) {
+      if (replaceList) {
+        shell.heldSaves.queue.shift()();
+        for (let i = 0; i < 10; i++) await new Promise((resolve) => setImmediate(resolve));
+      }
+      throw new Error("disk full");
+    }
+    return await saveDocument(doc, value);
+  };
+  try {
+    S().addBookmark({ profileId: "default", url: `https://${name.toLowerCase()}.example/`, title: name });
+    await engine.syncNow().catch(() => {});
+    assert.equal(published().length, 0, "nothing goes out while its journal save failed");
+    await engine.syncNow().catch(() => {});
+    assert.equal(batchSaves, 2, "the retry saves the batch again instead of taking it as saved");
+    assert.equal(published().length, 1);
+  } finally {
+    native.saveDocument = saveDocument;
+    shell.heldSaves.on = false;
+    shell.heldSaves.only = null;
+    for (const land of shell.heldSaves.queue.splice(0)) land();
+  }
+}
+
+test("a batch whose journal save failed is saved again before it's published", async () => {
+  await journalSaveRejectedOnce("Rejected", { replaceList: false });
+});
+
+test("a batch whose journal save failed after a state save replaced the journal list is saved again too", async () => {
+  await journalSaveRejectedOnce("Replaced", { replaceList: true });
+});

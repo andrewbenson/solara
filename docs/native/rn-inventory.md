@@ -126,7 +126,7 @@ Brace lists name separate files. All listed native filenames end in `.swift` unl
 | Sync | `Sync/{Scope,Files,HLC,Order,Canon,StateDecode,EditJournal,StoreAdapters,HostedAdapters,PinnedAdapters,Extensions,LedgerPasswords,PasswordLedger}`; `Store/{SyncPinsCommand,SyncPinned,SyncPinnedApply}`; `packages/sync/ios/SyncModule.swift` | JS sync orchestrator remains live when sync is enabled. Native transport/crypto/pairing and native pin apply do not replace JS adapter selection, cycles, sync.json, metadata, recovery, or merging. Native `syncScope` exists in CLI use; app ownership is **unverified** because inspected app adapters import SolaraSyncAdapter, not the SolaraSync library. |
 | Lib | `UI/Services/{AppStartupPolicy,AppIntegrationPolicy,ScriptCommands,CliControlSync,MemoryTrimSchedule,SiteControlsLogic}`; `Settings/Services/{NativeAppStartup,NativeAppIntegration,NativeCliControl,NativeUserScripts,NativeMemoryTrim}`; `Shell/{Menus,Windows,Notifications,UserScripts}`; `Store/{ChromeTabs,NativeCaches,ProfileDataCleanup}` | JS window/menu/command/focus/engine/lifecycle integration remains live. Library sync/cache/migration services run even with native workspace. Native service files cover parts only; for example native memory trim still invokes JS compact. |
 
-## Data ownership that still matters for 0.6
+## Data ownership that still matters for 0.6.0
 
 - `src/store/nativeStore.ts:253,288,400` forwards wrapped commands, applies revision commits, and guards writes to owned state. `store/browser.ts:204` disables several JS normalization/mirror observers under full ownership. This is real native ownership.
 - `src/lib/persist.ts:395` starts bookmark/history/favicon services in the native branch too. `lib/bookmarks.ts:219,337,399` owns Chrome tree reconciliation, `bookmarks-cache.json`, and legacy bookmark retirement. `lib/history.ts:199,242,326` retains legacy history redaction/migration and tombstone handling.
@@ -156,21 +156,38 @@ The skew code requests a settings-kind auxiliary; whether its RN error UI become
 The checked-in app uses Legacy RN: `Solara-macOS/Info.plist:127` and `macos/Podfile:10`; the Podfile permits an architecture override.
 Main-window close removes its root/controller. Explicit RN invalidation is evident for pane roots; main-root unmount timing is **unverified** because framework lifetime also applies.
 
+## Columns by roadmap version
+
+The milestones are the ones in docs/roadmap.md (approved 2026-11-02). Each column leaves with one version.
+Secondary work in a file moves with its own column: drawing inside a b or d file still has to go by 0.4.0.
+
+| Version | Leaves | Files | Lines | Largest groups (lines in that column) |
+| --- | --- | ---: | ---: | --- |
+| 0.4.0: React Native draws nothing | a, drawing | 56 | 12,097 | Site and prompts 2,084; Top strip 1,754; Sidebar 1,161; Toolbar 1,108; Extensions 984 |
+| 0.5.0: React Native decides nothing | b, behaviour | 194 | 24,435 | Store 5,504; Lib 5,086; Sidebar 2,375; Window layout 1,664; Page hosting 1,454 |
+| 0.6.0: the data layer is native | c, data | 77 | 13,639 | Sync 5,716; Store 2,844; Lib 2,459; Settings 647; Onboarding 501 |
+| 0.7.0: React Native off by default | d, glue, once nothing needs a root | 61 | 4,323 | Sidebar 1,020; Top strip 412; Toolbar 316; Lib 301; Page hosting 256 |
+| 1.0.0: React Native deleted | everything left, plus the RN host, Expo modules, Metro, pods and patches outside apps/browser/src | 388 | 54,494 | see the 1.0.0 row below |
+
+React Native roots left today: 3 AppRegistry registrations (`main`, `pane`, and the API-skew screen, which reuses `main`),
+so 2 module names; one `main` root per browser or Little Solara window, plus a `pane` root for each pane whose overlay
+is shown (hidden ones retire after 1 s). Settings and Import windows normally have none.
+
 ## Milestone removal order
 
 Each cell lists the largest dependencies first. These are proposed work boundaries inferred from the inspected call paths.
 
 | Milestone | Required moves | Exit evidence to collect later |
 | --- | --- | --- |
-| 0.4: draws nothing in RN | Port NTP extras and their shared onboarding/settings controls; port bookmarks bar; replace RN extension popup/frame and remaining supported fallback pixels. Cover error/skew, nonpooled peek/prompts, toolbar/find/site/download, and small-window paths. Transfer RN-driven layout/animation where native content still depends on it. Secondary a work inside b/d files also counts. | Every supported release surface and recovery path draws native pixels. Exercise unavailable-capability and handoff paths. Retained development fallbacks must be outside the milestone's supported release lane. |
-| 0.5: decides nothing in RN | Move command/menu/window/focus/navigation orchestration; omnibox action/disposition/clipboard policy; import and settings RPC actions; sidebar/top-strip drag/selection/close/rename; live auth/meeting integration; media/extension/prompt/translation lifecycle. Retire TS workspace fallback reducers after native parity is demonstrated. | Native views and commands work with JS action/RPC handlers disabled. Native UI has no required JS decision round trip. |
-| 0.6: data layer is native | Move the JS sync coordinator/adapters/durable metadata and legacy library reconciliation/migrations first. Remove JS bookmark/history/favicon/launch caches and unwrapped Zustand stores. Replace or delete UI/page/media/extension replicas. Keep native writer/ownership safeguards during the transition. | Full persistence, restart, import, sync, privacy deletion, and recovery work without JS data services. Native SolaraSync must be wired into the app, not merely present in the library. |
-| 0.9: RN off by default | Remove mandatory `AppDelegate` main/pane root creation and `main.tsx` startup dependency. Give native app startup, window/menu binding, settings services, page props, and root handoff independent lifetimes. Default to no RN host/bridge; any compatibility switch must explicitly opt in. | Signed distribution starts, opens windows/tabs/settings, syncs, quits, and restores with no RN runtime or roots. UI switches being on is insufficient evidence. |
-| 1.0: RN deleted | Delete retained RN roots, JS UI/decision/data fallbacks, JSON/RPC topics, test doubles, and skew plumbing. Remove Expo/RN native bindings, package dependencies, Metro/bundle phases, Pod integration, RN patches, and tests/harnesses that require RN. Audit package TS wrappers beyond this appendix before deleting shared pure TS. | Dependency/source/build audit finds no RN/Expo host or required bundle. Native-only release and recovery acceptance pass. Preserve engine/native APIs still used by the app. |
+| 0.4.0: draws nothing in RN | Port NTP extras and their shared onboarding/settings controls; port bookmarks bar; replace RN extension popup/frame and remaining supported fallback pixels. Cover error/skew, nonpooled peek/prompts, toolbar/find/site/download, and small-window paths. Transfer RN-driven layout/animation where native content still depends on it. Secondary a work inside b/d files also counts. | Every supported release surface and recovery path draws native pixels. Exercise unavailable-capability and handoff paths. Retained development fallbacks must be outside the milestone's supported release lane. |
+| 0.5.0: decides nothing in RN | Move command/menu/window/focus/navigation orchestration; omnibox action/disposition/clipboard policy; import and settings RPC actions; sidebar/top-strip drag/selection/close/rename; live auth/meeting integration; media/extension/prompt/translation lifecycle. Retire TS workspace fallback reducers after native parity is demonstrated. | Native views and commands work with JS action/RPC handlers disabled. Native UI has no required JS decision round trip. |
+| 0.6.0: data layer is native | Move the JS sync coordinator/adapters/durable metadata and legacy library reconciliation/migrations first. Remove JS bookmark/history/favicon/launch caches and unwrapped Zustand stores. Replace or delete UI/page/media/extension replicas. Keep native writer/ownership safeguards during the transition. | Full persistence, restart, import, sync, privacy deletion, and recovery work without JS data services. Native SolaraSync must be wired into the app, not merely present in the library. |
+| 0.7.0: RN off by default | Remove mandatory `AppDelegate` main/pane root creation and `main.tsx` startup dependency. Give native app startup, window/menu binding, settings services, page props, and root handoff independent lifetimes. Default to no RN host/bridge; any compatibility switch must explicitly opt in. | Signed distribution starts, opens windows/tabs/settings, syncs, quits, and restores with no RN runtime or roots. UI switches being on is insufficient evidence. |
+| 1.0.0: RN deleted | Delete retained RN roots, JS UI/decision/data fallbacks, JSON/RPC topics, test doubles, and skew plumbing. Remove Expo/RN native bindings, package dependencies, Metro/bundle phases, Pod integration, RN patches, and tests/harnesses that require RN. Audit package TS wrappers beyond this appendix before deleting shared pure TS. | Dependency/source/build audit finds no RN/Expo host or required bundle. Native-only release and recovery acceptance pass. Preserve engine/native APIs still used by the app. |
 
 The 388-file appendix is not the full deletion boundary.
 Outside it are `apps/browser/index.js`, macOS AppDelegate/Podfile/Xcode configuration, `packages/{settings,shell,solaracore}/src` wrappers, Expo module adapters, dependency manifests/locks, RN dependency patches, and build/test tooling.
-These need a separate dependency closure check before 1.0. No package deletion safety claim is made here.
+These need a separate dependency closure check before 1.0.0. No package deletion safety claim is made here.
 
 ## Appendix: full file inventory
 

@@ -51,18 +51,67 @@ backlog, and check this file against the release notes.
 | Per-tab CPU and memory attribution: Chromium's resource attribution splits a shared process's cost between its tabs | planned |
 | Memory use per tab on hover cards | planned |
 
-## 1.0.0: all Swift
+## The road to all Swift (0.4.0 to 1.0.0)
 
-React Native and Expo are gone: the app is Swift on SolaraCore, with no JS runtime, no Hermes, no Metro and no
-Expo modules. Settings, onboarding, Import, New Tab, the omnibox, internal pages, the link bubble and the store are
-already native (RN removal 01–08).
+React Native leaves one layer at a time: first it stops drawing, then it stops deciding, then it stops holding data,
+then it's switched off, and only then is it deleted. Settings, onboarding, Import, New Tab, the omnibox, the internal
+pages, the link bubble and the store are already native (RN removal 01–08). Each milestone ships as its own release;
+feature releases can fit between them.
+
+Progress, updated at each release: TypeScript lines left in apps/browser/src (55,264 on 2026-11-03) and React Native
+roots left (to be counted by the inventory).
+
+## 0.4.0: React Native draws nothing
+
+Done when no React Native view appears on screen; React Native only arranges native views.
 
 | Item | Status |
 |---|---|
-| Inventory what still runs in React Native (apps/browser/src) and order the ports | planned |
-| Port the remaining RN surfaces to Swift (bookmarks bar and the native bookmark coordinator first; see backlog) | planned |
+| Inventory every file left in apps/browser/src by what it does (draws, decides, holds data, glue) and the milestone that removes it: docs/native/rn-inventory.md | in progress |
+| Native bookmarks bar, with the native bookmark coordinator (see backlog) | planned |
+| Native site controls and prompts (permissions, autofill, translate, zoom, developer mode) | planned |
+| Native extensions toolbar, overlays and side panel | planned |
+| Native media: sidebar player, hover player, cast and share pickers, tab badges | planned |
+| Native peek, Little Solara, calendar and meeting cards | planned |
+| Native top tab strip, split chrome, swipe overlay and the rest of the layout surfaces | planned |
+
+## 0.5.0: React Native decides nothing
+
+Done when every user action is handled in Swift; JavaScript only mirrors state.
+
+| Item | Status |
+|---|---|
+| Commands, menus and shortcuts in Swift | planned |
+| Tab and window drag and drop, folder and group actions in Swift | planned |
+| The omnibox's actions and the sidebar's actions in Swift | planned |
+
+## 0.6.0: the data layer is native
+
+Done when JavaScript holds no state of its own.
+
+| Item | Status |
+|---|---|
+| The sync engine in Swift | planned |
+| Legacy migrations in Swift | planned |
+| The JavaScript mirror of the store is gone | planned |
+
+## 0.7.0: React Native off by default
+
+Done when a full release cycle passes with the React Native fallback never needed.
+
+| Item | Status |
+|---|---|
+| The app starts without React Native; React Native stays bundled as a fallback, switched off | planned |
+
+## 1.0.0: all Swift
+
+React Native and Expo are gone: the app is Swift on SolaraCore, with no JS runtime, no Hermes, no Metro and no
+Expo modules.
+
+| Item | Status |
+|---|---|
 | Remove Expo, react-native-macos, Hermes and Metro; the Xcode project builds without Pods for JS | planned |
-| Move the repo from pnpm to Bun where JS tooling remains (backlog, after RN is removed) | planned |
+| Move the repo from pnpm to Bun where JS tooling remains | planned |
 | Perf: the speed comparison against the previous stable, deferred since 0.1.0 | planned |
 
 ## 1.1.0: a VPN per profile

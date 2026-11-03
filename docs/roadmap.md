@@ -14,8 +14,8 @@ backlog, and check this file against the release notes.
 | "New Solara Version Available" pill in the sidebar (toolbar with horizontal tabs) and "Restart to Update Solara" in the app menu, on a background download | in progress |
 | The active pinned tab is obvious: flat inactive tiles, the active one raised and tinted with its icon's colour | planned |
 | Tab, profile and window shortcuts win over pages (Google Sheets); per-shortcut Prefer Solara / Prefer Website / Use Both in Settings › Shortcuts | in progress |
-| Security fixes in shipped code (CodeQL #101, #104, #160, #162–167) | in progress |
-| Security fixes in test tooling (31 alerts) and dependency overrides | planned |
+| Security fixes in shipped code (CodeQL #101, #104, #160, #162–167) | landed (c2a9d598) |
+| Security fixes in test tooling (31 alerts) and dependency overrides | landed (test tooling 29023ae2; the overrides with this row) |
 | Alert re-scan and the approved dismissals (#6, #7, #34, #105, #106, #136) | planned |
 | Perf ratchet runs again ("dev harness never answered" on 0.1.2 and 0.1.3) | planned |
 | Fixes from the owner's two-Mac sync-join test of 0.1.3 | waiting on the test |

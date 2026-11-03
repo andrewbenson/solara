@@ -23,15 +23,15 @@ backlog, and check this file against the release notes.
 
 | Item | Status |
 |---|---|
-| Sign-in windows ("Sign in with Google" on claude.ai, Slack's connect flow) open blank and take no input; 0.1.3's Space fix (bd3b6619) didn't cover it | landed 4809b2e9 |
-| Remove from Sync…: a profile deleted on every Mac can be removed from sync, so no Mac offers it as "Add to This Mac" again | landed 292c8a1d (with the journal fix cb6bd318) |
-| Update safety: never move or delete staged updates ourselves; drop a staged nightly only through Sparkle's Skip; quit holds 8 s at most. Checked 2026-11-02: nothing deletes or moves in Sparkle's folder and there's no startup sweep; what's left is identity by path in UpdatePrewarm, which finds staged copies by walking Sparkle's Installation folder (it launches one only after a designated-requirement check, suspended, and verifies the started process's code before resuming it). Identity: staged copies are found by descriptor and inode, not path, and the launch is bound to the checked slice's cdhash; a Developer ID prewarm run is on the 0.1.5 release smoke | landed 0f817ff2 |
-| Little Solara can keep new-tab links inside itself (a setting) | landed 98431a78 |
-| Tabs moved to another window land where a new tab would open | landed 98431a78 |
-| New Window opens on the profile you're in | landed f0c1b8ae |
-| Closing the last tab keeps the window while it has pinned tiles or a pinned group | landed f0c1b8ae |
-| A muted tab's or site's notifications make no sound | landed f0c1b8ae |
-| The hidden sidebar doesn't peek out while another app is in front (in Swift) | landed 98431a78 |
+| Sign-in windows ("Sign in with Google" on claude.ai, Slack's connect flow) open blank and take no input; 0.1.3's Space fix (bd3b6619) didn't cover it | shipped (0.1.5) |
+| Remove from Sync…: a profile deleted on every Mac can be removed from sync, so no Mac offers it as "Add to This Mac" again | shipped (0.1.5) |
+| Update safety: never move or delete staged updates ourselves; drop a staged nightly only through Sparkle's Skip; quit holds 8 s at most. Checked 2026-11-02: nothing deletes or moves in Sparkle's folder and there's no startup sweep; what's left is identity by path in UpdatePrewarm, which finds staged copies by walking Sparkle's Installation folder (it launches one only after a designated-requirement check, suspended, and verifies the started process's code before resuming it). Identity: staged copies are found by descriptor and inode, not path, and the launch is bound to the checked slice's cdhash; a Developer ID prewarm run is on the 0.1.5 release smoke | shipped (0.1.5) |
+| Little Solara can keep new-tab links inside itself (a setting) | shipped (0.1.5) |
+| Tabs moved to another window land where a new tab would open | shipped (0.1.5) |
+| New Window opens on the profile you're in | shipped (0.1.5) |
+| Closing the last tab keeps the window while it has pinned tiles or a pinned group | shipped (0.1.5) |
+| A muted tab's or site's notifications make no sound | shipped (0.1.5) |
+| The hidden sidebar doesn't peek out while another app is in front (in Swift) | shipped (0.1.5) |
 
 ## 0.2.0: the sidebar your way, and a fresh engine
 

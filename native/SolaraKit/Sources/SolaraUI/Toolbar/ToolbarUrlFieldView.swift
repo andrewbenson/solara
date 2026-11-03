@@ -129,7 +129,14 @@ final class ToolbarUrlFieldView: NSView {
         out.append(views[i])
       } else {
         let made = ToolbarButtonView(state: spec, palette: palette)
-        made.onClick = { [weak self] click in self?.onClick(click) }
+        made.onClick = { [weak self, weak made] click in
+          guard let self else { return }
+          if click.kind == .press, let made, let info = made.state.info {
+            ToolbarInfoPopover.show(info, relativeTo: made) { [weak self] in self?.onClick(ToolbarClick(id: info.actionId, kind: .press)) }
+            return
+          }
+          self.onClick(click)
+        }
         addSubview(made)
         out.append(made)
       }
@@ -328,8 +335,8 @@ final class ToolbarUrlFieldView: NSView {
     var right = bounds.width - 3 - border
     for (i, b) in accessory.reversed().enumerated() {
       if i > 0 { right -= ToolbarUrlFieldView.accessoryGap }
-      right -= b.box
-      b.frame = backingAlignedRect(CGRect(x: right, y: (h - b.box) / 2, width: b.box, height: b.box), options: .alignAllEdgesNearest)
+      right -= b.width
+      b.frame = backingAlignedRect(CGRect(x: right, y: (h - b.box) / 2, width: b.width, height: b.box), options: .alignAllEdgesNearest)
     }
     var usedDividers = 0
     let scale = window?.backingScaleFactor ?? 2

@@ -117,7 +117,14 @@ public final class ToolbarView: NSView {
         out.append(views[i])
       } else {
         let made = ToolbarButtonView(state: spec, palette: palette)
-        made.onClick = { [weak self] click in self?.onClick(click) }
+        made.onClick = { [weak self, weak made] click in
+          guard let self else { return }
+          if click.kind == .press, let made, let info = made.state.info {
+            ToolbarInfoPopover.show(info, relativeTo: made) { [weak self] in self?.onClick(ToolbarClick(id: info.actionId, kind: .press)) }
+            return
+          }
+          self.onClick(click)
+        }
         content.addSubview(made)
         out.append(made)
       }
@@ -232,8 +239,8 @@ public final class ToolbarView: NSView {
     if let extensionsRight = state.extensionsRight {
       var ex = bounds.width - CGFloat(extensionsRight)
       for b in extensions.reversed() {
-        ex -= b.box
-        b.frame = CGRect(x: px(ex), y: px(21.2 - b.box / 2), width: b.box, height: b.box)
+        ex -= b.width
+        b.frame = CGRect(x: px(ex), y: px(21.2 - b.box / 2), width: b.width, height: b.box)
         if let slot = b.state.anchor { anchors[slot] = windowRect(b.frame) }
         ex -= 2
       }
@@ -241,6 +248,9 @@ public final class ToolbarView: NSView {
         anchors["*"] = windowRect(CGRect(x: px(ex - 28), y: px(21.2 - 14), width: 28, height: 28))
       }
       trailingEdge = min(trailingEdge, ex + 2)
+      if extensions.contains(where: { $0.state.label != nil }), url.frame.maxX > trailingEdge - ToolbarView.updatePillGap {
+        url.frame.size.width = max(0, trailingEdge - ToolbarView.updatePillGap - url.frame.minX)
+      }
     }
     layoutUpdatePill(state, trailingEdge: trailingEdge, px: px)
     if window != nil, anchors != reportedAnchors {
@@ -279,6 +289,13 @@ public final class ToolbarView: NSView {
   static func isLightInk(_ text: String) -> Bool {
     guard let color = toolbarColor(text)?.usingColorSpace(.sRGB) else { return true }
     return 0.2126 * color.redComponent + 0.7152 * color.greenComponent + 0.0722 * color.blueComponent > 0.5
+  }
+
+  public func describeExtensions() -> [[String: Any]] {
+    extensions.map { b in
+      let r = windowRect(b.frame)
+      return ["id": b.state.id, "label": b.state.label as Any? ?? NSNull(), "frame": [r.minX, r.minY, r.width, r.height]]
+    }
   }
 
   private func windowRect(_ local: CGRect) -> CGRect {

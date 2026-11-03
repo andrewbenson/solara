@@ -4,6 +4,7 @@ import type { Tab } from "./types";
 
 export const ENGINE_NAMES: Record<PageEngine, string> = { chromium: "Chromium", webkit: "WebKit" };
 export const ENGINE_SYMBOLS: Record<PageEngine, string> = { chromium: "globe", webkit: "safari" };
+export const openPageInTitle = (engine: PageEngine) => `Open Page in ${ENGINE_NAMES[engine]}`;
 export const RECOMMENDED_ENGINE: PageEngine = "chromium";
 export const otherEngine = (engine: PageEngine): PageEngine => (engine === "webkit" ? "chromium" : "webkit");
 

@@ -30,7 +30,7 @@ import { hasOwnGroupIcon } from "./TabIcon";
 import { newFolderWithTab, removeFromFolder } from "./tileFolderUi";
 import { toggleNewTabBar } from "../omnibox/newTabBar";
 import { togglePageEngine } from "../../lib/engines";
-import { canSwitchEngine, ENGINE_NAMES, ENGINE_SYMBOLS, otherEngine, tabEngine } from "../../store/engines";
+import { canSwitchEngine, ENGINE_SYMBOLS, openPageInTitle, otherEngine, tabEngine } from "../../store/engines";
 import { GROUP_COLORS, NEUTRAL_GROUP_SWATCH, nearestGroupColor, type GroupTint } from "./tokens";
 
 const store = () => useBrowser.getState();
@@ -125,7 +125,7 @@ export async function openTabMenu(windowId: string, tab: Tab) {
     sep,
     { id: "duplicate", title: "Duplicate", symbol: "plus.square.on.square" },
     { id: "bookmark", title: "Add to Bookmarks…", symbol: "bookmark", enabled: !!tab.url, ...menuShortcut("bookmarkPage") },
-    ...(canSwitchEngine(tab.url) ? [{ id: "engine", title: `Open Page in ${ENGINE_NAMES[otherEngine(tabEngine(s, tab.id))]}`, symbol: ENGINE_SYMBOLS[otherEngine(tabEngine(s, tab.id))] }] : []),
+    ...(canSwitchEngine(tab.url) ? [{ id: "engine", title: openPageInTitle(otherEngine(tabEngine(s, tab.id))), symbol: ENGINE_SYMBOLS[otherEngine(tabEngine(s, tab.id))] }] : []),
     ...(split ? [{ id: "unsplit", title: "Remove from Split View", symbol: "rectangle.split.2x1.slash" }] : []),
     {
       id: "moveTo",

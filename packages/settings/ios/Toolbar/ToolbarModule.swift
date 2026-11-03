@@ -13,6 +13,38 @@ public class ToolbarModule: Module {
 
     Function("available") { () -> Bool in ToolbarModule.available }
 
+    AsyncFunction("devToolbar") { (windowId: String, tabId: String) -> String in
+      MainActor.assumeIsolated {
+        #if DEBUG
+        let toolbar = NativeToolbarHostView.toolbar(windowId: windowId, tabId: tabId)
+        let out: [String: Any] = [
+          "extensions": toolbar?.describeExtensions() ?? [],
+          "urlRight": toolbar?.state.map { $0.geometry.urlRight as Any } ?? NSNull(),
+          "infoPopover": ToolbarInfoPopover.describe() ?? NSNull(),
+        ]
+        return (try? JSONSerialization.data(withJSONObject: out)).flatMap { String(data: $0, encoding: .utf8) } ?? "null"
+        #else
+        return "null"
+        #endif
+      }
+    }.runOnQueue(.main)
+
+    AsyncFunction("devInfoPopover") { (action: String) -> Bool in
+      MainActor.assumeIsolated {
+        #if DEBUG
+        switch action {
+        case "press": return ToolbarInfoPopover.pressAction()
+        case "close":
+          ToolbarInfoPopover.close()
+          return true
+        default: return ToolbarInfoPopover.describe() != nil
+        }
+        #else
+        return false
+        #endif
+      }
+    }.runOnQueue(.main)
+
     View(NativeToolbarHostView.self) {
       Events("onToolbarClick", "onToolbarAnchors")
 

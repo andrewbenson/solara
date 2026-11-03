@@ -15,6 +15,10 @@ final class ToolbarButtonView: NSView {
 
   private let plate = CALayer()
   private let image = NSImageView()
+  private let title = NSTextField(labelWithString: "")
+  static let labelFont = NSFont.systemFont(ofSize: 12, weight: .medium)
+  static let labelPadding: CGFloat = 10
+  static let labelGap: CGFloat = 4
   private var badge: NSView?
   private var decoded: (uri: String, image: NSImage?)?
   private var hovered = false
@@ -28,6 +32,13 @@ final class ToolbarButtonView: NSView {
 
   var box: CGFloat { CGFloat(state.box ?? 30) }
 
+  var width: CGFloat {
+    guard let label = state.label else { return box }
+    let text = ceil((label as NSString).size(withAttributes: [.font: ToolbarButtonView.labelFont]).width)
+    let glyph = state.icon.isEmpty ? 0 : CGFloat(state.size ?? 15) + ToolbarButtonView.labelGap
+    return text + glyph + 2 * ToolbarButtonView.labelPadding
+  }
+
   init(state: ToolbarButtonState, palette: ToolbarPaletteState) {
     self.state = state
     self.palette = palette
@@ -36,6 +47,9 @@ final class ToolbarButtonView: NSView {
     layer?.addSublayer(plate)
     image.imageScaling = .scaleNone
     addSubview(image)
+    title.font = ToolbarButtonView.labelFont
+    title.isHidden = true
+    addSubview(title)
     apply()
     DevPointer.observe(self, #selector(devPointerChanged(_:)))
   }
@@ -129,14 +143,35 @@ final class ToolbarButtonView: NSView {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     let b = box
-    plate.frame = CGRect(x: (bounds.width - b) / 2, y: (bounds.height - b) / 2, width: b, height: b)
-    plate.cornerRadius = CGFloat(state.radius ?? 7)
+    let labeled = state.label != nil
+    plate.frame = labeled ? bounds : CGRect(x: (bounds.width - b) / 2, y: (bounds.height - b) / 2, width: b, height: b)
+    plate.cornerRadius = labeled ? bounds.height / 2 : CGFloat(state.radius ?? 7)
     let plain = state.plain == true
     let background: String? =
-      plain || !enabled ? nil : pressed || state.active == true ? palette.pressed : (hovered || forcedHover) ? palette.hover : nil
+      plain || !enabled ? nil : pressed || state.active == true ? palette.pressed : (hovered || forcedHover) ? palette.hover : labeled ? palette.pill : nil
     plate.backgroundColor = toolbarColor(background)?.cgColor
     CATransaction.commit()
     let tint = toolbarColor(state.color) ?? toolbarColor(enabled ? palette.icon : palette.iconDisabled) ?? .labelColor
+    title.isHidden = !labeled
+    if let label = state.label {
+      title.stringValue = label
+      title.textColor = toolbarColor(palette.text) ?? .labelColor
+      let size = title.fittingSize
+      let glyph = state.icon.isEmpty ? 0 : CGFloat(state.size ?? 15)
+      let config = NSImage.SymbolConfiguration(pointSize: glyph, weight: ToolbarButtonView.weight(state.weight))
+      image.image = state.icon.isEmpty ? nil : NSImage(systemSymbolName: state.icon, accessibilityDescription: nil)?.withSymbolConfiguration(config)
+      image.imageScaling = .scaleNone
+      image.contentTintColor = tint
+      image.alphaValue = 1
+      image.frame = CGRect(x: ToolbarButtonView.labelPadding, y: (bounds.height - glyph) / 2, width: glyph, height: glyph)
+      let left = ToolbarButtonView.labelPadding + (glyph > 0 ? glyph + ToolbarButtonView.labelGap : 0)
+      title.frame = CGRect(x: left, y: ((bounds.height - size.height) / 2 * 2).rounded() / 2, width: max(0, bounds.width - left - ToolbarButtonView.labelPadding + 2), height: size.height)
+      applyBadge()
+      toolTip = state.tooltip
+      setAccessibilityLabel(state.tooltip ?? label)
+      setAccessibilityRole(.button)
+      return
+    }
     if let picture = picture() {
       let side = CGFloat(state.imageSize ?? 16)
       image.image = picture

@@ -30,9 +30,18 @@ public struct ToolbarBadgeState: Decodable, Equatable, Sendable {
   public var textColor: String
 }
 
+public struct ToolbarInfoState: Decodable, Equatable, Sendable {
+  public var title: String
+  public var message: String
+  public var action: String
+  public var actionId: String
+}
+
 public struct ToolbarButtonState: Decodable, Equatable, Sendable {
   public var id: String
   public var icon: String
+  public var label: String?
+  public var info: ToolbarInfoState?
   public var image: String?
   public var imageSize: Double?
   public var dimmed: Bool?

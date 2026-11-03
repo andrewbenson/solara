@@ -1535,11 +1535,14 @@ final class PairingCoordinatorTests: XCTestCase {
       try wait { rig.mailbox.externallyVisible.contains { $0.kind == .request } }
       rig.coordinator.poll()
       try wait { ((try? rig.coordinator.requests(arm)) ?? []).count == 1 }
-      try rig.coordinator.pin(XCTUnwrap(rig.coordinator.requests(arm).first), handle: arm)
       let reached = expectation(description: "reveal held")
       rig.mailbox.hold = .reveal
       rig.mailbox.reached = { reached.fulfill() }
-      for _ in 0..<4 { rig.coordinator.poll(); RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+      try rig.coordinator.pin(XCTUnwrap(rig.coordinator.requests(arm).first), handle: arm)
+      try wait { rig.mailbox.finishedPublications.contains { $0.kind == .offer } }
+      rig.coordinator.poll()
+      try wait { rig.mailbox.finishedPublications.contains { $0.kind == .select } }
+      rig.coordinator.poll()
       wait(for: [reached], timeout: 3)
       switch schedule {
       case 0: rig.coordinator.invalidate(reason: .stop)
@@ -1550,7 +1553,7 @@ final class PairingCoordinatorTests: XCTestCase {
       }
       rig.mailbox.release.signal()
       try wait { !rig.coordinator.snapshot.trusted }
-      RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+      try wait { rig.mailbox.finishedPublications.contains { $0.kind == .reveal } }
       XCTAssertFalse(rig.mailbox.everVisible.contains { $0.kind == .reveal })
       XCTAssertEqual(rig.store.ledger?.reveals.count, 1)
       if case .restored(let charged) = rig.store.restoreAccounting(now: rig.time.read(), epoch: Data([1])) { XCTAssertEqual(charged.reveals.count, 1) }

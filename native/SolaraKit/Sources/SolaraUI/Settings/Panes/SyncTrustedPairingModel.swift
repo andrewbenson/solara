@@ -40,6 +40,9 @@ public final class SyncTrustedPairingModel {
   @ObservationIgnored private var pendingSnapshot: TrustedSnapshot?
   @ObservationIgnored private var arming = false
   @ObservationIgnored private var expiry: Task<Void, Never>?
+  #if DEBUG
+  @ObservationIgnored var pendingAction: Task<Void, Never>?
+  #endif
 
   public init(service: any TrustedPairingService, now: @escaping () -> TimeInterval = { TrustedPairingClock.now() }) {
     self.service = service
@@ -104,10 +107,15 @@ public final class SyncTrustedPairingModel {
     let presentation = presentationGeneration
     return { [weak self, weak originalArm] in
       guard let self, let originalArm, self.arm === originalArm, self.observerGeneration == generation, self.presentationGeneration == presentation else { return }
-      Task { [weak self, weak originalArm] in
+      let task = Task { [weak self, weak originalArm] in
         guard let self, let originalArm, self.arm === originalArm, self.observerGeneration == generation, self.presentationGeneration == presentation else { return }
         await self.select(request)
       }
+      #if DEBUG
+      self.pendingAction = task
+      #else
+      _ = task
+      #endif
     }
   }
 
@@ -192,7 +200,7 @@ public final class SyncTrustedPairingModel {
       self.phase = .authenticating
       self.matched = false
       self.authorization = nil
-      Task { [weak self] in
+      let task = Task { [weak self] in
         guard let self, self.phase == .authenticating, self.comparison === comparison,
               self.renderGeneration == render, self.actionGeneration == action,
               self.arm === comparison.arm, self.foreground, self.presentationAdmitted, self.eligible, self.now() < comparison.arm.deadline else { return }
@@ -203,6 +211,11 @@ public final class SyncTrustedPairingModel {
           self.phase = .ended(.authorizationFailed)
         }
       }
+      #if DEBUG
+      self.pendingAction = task
+      #else
+      _ = task
+      #endif
     }
   }
 

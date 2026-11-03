@@ -163,10 +163,6 @@ private final class FixtureProductionSpies: TrustedPairingService {
 extension SyncPairingOffscreenTests {
 @MainActor
 struct SyncPairingDisplayFixtureTests {
-  private func yieldTasks() async {
-    for _ in 0..<30 { await Task.yield() }
-  }
-
   @Test(arguments: ["hide", "remount"])
   func hiddenComparisonReturnsUncheckedOnlyAfterExplicitPresentation(transition: String) async throws {
     await configurePairingTestApplication()
@@ -183,7 +179,7 @@ struct SyncPairingDisplayFixtureTests {
     func drive(_ action: String) -> [String: Any] { host.drive(action, settingsWindow: settings) }
     #expect(drive("mount")["error"] == nil)
     #expect(drive("select")["error"] == nil)
-    await yieldTasks()
+    await host.waitForPendingActions()
     #expect(drive("ready")["comparisonPresent"] as? Bool == true)
     #expect(drive("check")["checked"] as? Bool == true)
     #expect(drive("saveTarget")["error"] == nil)
@@ -191,13 +187,11 @@ struct SyncPairingDisplayFixtureTests {
     _ = drive("ready")
     _ = drive("show")
     _ = drive("pressSaved")
-    await yieldTasks()
     let hidden = drive("state")
     #expect(hidden["armActive"] as? Bool == true)
     #expect(hidden["comparisonPresent"] as? Bool == false)
     #expect(hidden["allowRequests"] as? Int == 0)
     #expect(drive("present")["error"] == nil)
-    await yieldTasks()
     let presented = drive("state")
     #expect(presented["armActive"] as? Bool == true)
     #expect(presented["comparisonPresent"] as? Bool == true)
@@ -229,7 +223,6 @@ struct SyncPairingDisplayFixtureTests {
     model.surfaceChanged(.removed)
     settings.contentView = NSHostingView(rootView: SyncPane(model: pane))
     settings.orderFront(nil)
-    await yieldTasks()
     settings.contentView?.layoutSubtreeIfNeeded()
     var visited = Set<ObjectIdentifier>()
     func strings(_ object: NSObject) -> [String] {
@@ -284,18 +277,16 @@ struct SyncPairingDisplayFixtureTests {
     #expect(drive("allow", settingsWindow: settings)["error"] != nil)
     _ = drive("mount", settingsWindow: settings)
     _ = drive("select", settingsWindow: settings)
-    await yieldTasks()
+    await host.waitForPendingActions()
     #expect(drive("state", settingsWindow: settings)["preparing"] as? Bool == true)
     _ = drive("ready", settingsWindow: settings)
     #expect(drive("state", settingsWindow: settings)["comparisonPresent"] as? Bool == true)
     #expect(drive("check", settingsWindow: settings)["checked"] as? Bool == true)
-    await yieldTasks()
     #expect(drive("uncheck", settingsWindow: settings)["checked"] as? Bool == false)
     #expect(drive("state", settingsWindow: settings)["allowEnabled"] as? Bool == false)
     #expect(drive("check", settingsWindow: settings)["checked"] as? Bool == true)
-    await yieldTasks()
     _ = drive("allow", settingsWindow: settings)
-    await yieldTasks()
+    await host.waitForPendingActions()
     let allowed = drive("state", settingsWindow: settings)
     #expect(allowed["allowRequests"] as? Int == 1)
     #expect(allowed["realAuthenticationRequests"] as? Int == 0)
@@ -311,7 +302,6 @@ struct SyncPairingDisplayFixtureTests {
     #expect(allowed["requiredControlsFound"] as? Bool == true)
     _ = drive("hide", settingsWindow: settings)
     _ = drive("show", settingsWindow: settings)
-    await yieldTasks()
     let stopped = drive("state", settingsWindow: settings)
     #expect(stopped["ended"] as? Bool == true)
     #expect(stopped["armActive"] as? Bool == false)
@@ -323,20 +313,19 @@ struct SyncPairingDisplayFixtureTests {
     #expect(stopped["realAuthenticationRequests"] as? Int == 0)
     #expect(stopped["releaseRequests"] as? Int == 0)
     #expect(drive("present", settingsWindow: settings)["error"] == nil)
-    await yieldTasks()
     #expect(drive("state", settingsWindow: settings)["choosing"] as? Bool == true)
     _ = drive("select", settingsWindow: settings)
-    await yieldTasks()
+    await host.waitForPendingActions()
     #expect(drive("state", settingsWindow: settings)["preparing"] as? Bool == true)
     _ = drive("ready", settingsWindow: settings)
     #expect(drive("state", settingsWindow: settings)["comparisonPresent"] as? Bool == true)
     _ = drive("destroy", settingsWindow: settings)
     _ = drive("mount", settingsWindow: settings)
     _ = drive("select", settingsWindow: settings)
-    await yieldTasks()
+    await host.waitForPendingActions()
     _ = drive("ready", settingsWindow: settings)
     let actions = ["check", "saveTarget", "uncheck", "check", "pressSaved", "return", "enter", "inspect", "light", "dark", "hide", "ready", "show", "remount", "present", "allow", "space", "escape"]
-    for action in actions { _ = drive(action, settingsWindow: settings); await yieldTasks() }
+    for action in actions { _ = drive(action, settingsWindow: settings); await host.waitForPendingActions() }
     _ = drive("snapshot", argument: data.appendingPathComponent("fixture.png").path, settingsWindow: settings)
     _ = drive("longName", settingsWindow: settings)
     _ = drive("confusable", settingsWindow: settings)

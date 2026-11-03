@@ -337,6 +337,11 @@ final class SyncPairingDisplayFixture: SyncPairingFixtureSession {
   private func buttons() -> [NSButton] { hostedViews().compactMap { $0 as? NSButton } }
   private func allowButton() -> SyncAllowNativeButton? { buttons().compactMap { $0 as? SyncAllowNativeButton }.first }
 
+  func waitForPendingActions() async {
+    await model.pendingAction?.value
+    layout()
+  }
+
   func mountedState() -> [String: Any] { actionState("fixture content") }
 
   private func state() -> [String: Any] {

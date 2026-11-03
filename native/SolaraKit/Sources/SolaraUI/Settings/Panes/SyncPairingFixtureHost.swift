@@ -7,9 +7,11 @@ protocol SyncPairingFixtureSession: AnyObject {
   func drive(_ action: String, argument: String?) -> [String: Any]
   func destroy()
   func mountedState() -> [String: Any]
+  func waitForPendingActions() async
 }
 
 extension SyncPairingFixtureSession {
+  func waitForPendingActions() async {}
   func mountedState() -> [String: Any] { ["fixture": true, "mounted": true] }
 }
 
@@ -42,6 +44,8 @@ public final class SyncPairingFixtureHost {
     guard let session else { return ["error": "no mounted fixture"] }
     return session.drive(action, argument: argument)
   }
+
+  func waitForPendingActions() async { await session?.waitForPendingActions() }
 
   public var isMounted: Bool { session != nil }
 

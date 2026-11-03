@@ -4,11 +4,13 @@ public struct SidebarChromeDot: Decodable, Equatable, Sendable {
   public var id: String
   public var name: String
   public var slot: Double?
+  public var icon: String?
 
-  public init(id: String, name: String, slot: Double?) {
+  public init(id: String, name: String, slot: Double?, icon: String? = nil) {
     self.id = id
     self.name = name
     self.slot = slot
+    self.icon = icon
   }
 }
 
@@ -20,6 +22,7 @@ public struct SidebarChromeState: Decodable, Equatable, Sendable {
   public var theme: [String: String]
   public var dots: [SidebarChromeDot]
   public var savedWidth: Double
+  public var currentProfileId: String?
   public var iconsOnly: Bool?
   public var dropOver: Bool
   public var update: SidebarUpdatePillState?
@@ -28,7 +31,7 @@ public struct SidebarChromeState: Decodable, Equatable, Sendable {
 
   public init(
     controls: StripControlsState, downloads: Bool, addressBar: Bool, dark: Bool, theme: [String: String], dots: [SidebarChromeDot], savedWidth: Double,
-    iconsOnly: Bool = false, dropOver: Bool = false, update: SidebarUpdatePillState? = nil
+    iconsOnly: Bool = false, dropOver: Bool = false, update: SidebarUpdatePillState? = nil, currentProfileId: String? = nil
   ) {
     self.controls = controls
     self.downloads = downloads
@@ -37,6 +40,7 @@ public struct SidebarChromeState: Decodable, Equatable, Sendable {
     self.theme = theme
     self.dots = dots
     self.savedWidth = savedWidth
+    self.currentProfileId = currentProfileId
     self.iconsOnly = iconsOnly
     self.dropOver = dropOver
     self.update = update
@@ -72,6 +76,7 @@ public enum SidebarChromeMetrics {
   public static let dotCell: CGFloat = 12
   public static let dotBand: CGFloat = 28
   public static let dot: CGFloat = 6
+  public static let profileButton: CGFloat = 28
   public static let minWidth: Double = 160
   public static let maxWidth: Double = 400
   public static let defaultWidth: Double = 190
@@ -161,6 +166,8 @@ public final class SidebarChromeView: NSView {
   let resize = SidebarResizeHandle()
   let updatePill = SidebarUpdatePill()
   private var dots: [SidebarProfileDot] = []
+  let profileSwitcher = SidebarRailProfileButton()
+  let profilePopover = NSPopover()
   private let tooltip = SidebarDotTooltip()
   private let dropGlow = CALayer()
   private var position: Double = 0
@@ -189,6 +196,11 @@ public final class SidebarChromeView: NSView {
     }
     indicator.onPress = { [weak self] in self?.onAction(.profileMenu) }
     addSubview(indicator)
+    profileSwitcher.isHidden = true
+    profileSwitcher.onPress = { [weak self] in self?.showProfiles() }
+    addSubview(profileSwitcher)
+    profilePopover.behavior = .transient
+    profilePopover.animates = false
     updatePill.isHidden = true
     updatePill.onPress = { [weak self] in self?.onAction(.installUpdate) }
     addSubview(updatePill)
@@ -208,6 +220,7 @@ public final class SidebarChromeView: NSView {
   public func update(_ next: SidebarChromeState) {
     guard next != state else { return }
     if next.dropOver != state?.dropOver { fadeDropGlow(to: next.dropOver ? 1 : 0) }
+    if next.rail != state?.rail || next.dots != state?.dots || next.currentProfileId != state?.currentProfileId { profilePopover.performClose(nil) }
     state = next
     syncDots(next.dots)
     needsLayout = true
@@ -277,11 +290,22 @@ public final class SidebarChromeView: NSView {
       y: bounds.height - SidebarChromeMetrics.footerDownloadsBottom - box - (state.rail && !state.dots.isEmpty ? SidebarChromeMetrics.footer : 0), width: box, height: box)
 
     let cell = SidebarChromeMetrics.dotCell
+    let overflow = state.rail && cell * CGFloat(dots.count) > max(0, width - SidebarChromeMetrics.inset * 2)
     let rowLeft = ((width - cell * CGFloat(dots.count)) / 2 * 2).rounded() / 2
     let rowTop = bounds.height - (state.rail ? SidebarChromeMetrics.footer : footer) + (SidebarChromeMetrics.footer - 3 - SidebarChromeMetrics.dotBand) / 2
     for (index, dot) in dots.enumerated() {
       dot.frame = NSRect(x: rowLeft + cell * CGFloat(index), y: rowTop, width: cell, height: SidebarChromeMetrics.dotBand)
       dot.ink = state.dark ? .white : .black
+      dot.isHidden = overflow
+      if overflow { dot.setHovered(false) }
+    }
+    profileSwitcher.isHidden = !overflow
+    if overflow, let profile = currentProfile {
+      let side = SidebarChromeMetrics.profileButton
+      profileSwitcher.frame = NSRect(x: ((width - side) / 2).rounded(), y: rowTop, width: side, height: side)
+      profileSwitcher.set(profile, dark: state.dark, hover: color("toolbarHover"), pressed: color("toolbarPressed"))
+    } else {
+      profilePopover.performClose(nil)
     }
     paintDots()
 
@@ -344,6 +368,43 @@ public final class SidebarChromeView: NSView {
     }
   }
 
+  private var currentProfile: SidebarChromeDot? {
+    guard let state else { return nil }
+    return state.dots.first { $0.id == state.currentProfileId }
+      ?? state.dots.min { abs(($0.slot ?? .infinity) - position) < abs(($1.slot ?? .infinity) - position) }
+  }
+
+  private func showProfiles() {
+    guard let state, state.rail, !profileSwitcher.isHidden else { return }
+    if profilePopover.isShown { return profilePopover.performClose(nil) }
+    let width = CGFloat(min(320, max(200, state.savedWidth)))
+    let height = CGFloat(state.dots.count) * (FolderPanelMetrics.rowHeight + FolderPanelMetrics.rowGap) - FolderPanelMetrics.rowGap + FolderPanelMetrics.padding * 2
+    let body = FlippedContainerView(frame: NSRect(x: 0, y: 0, width: width, height: height))
+    let colors = FolderPanelColors(dark: state.dark, tokens: state.theme)
+    body.wantsLayer = true
+    body.layer?.backgroundColor = colors.panel.ns.cgColor
+    for (index, profile) in state.dots.enumerated() {
+      let row = SidebarRailProfileRow(profile: profile, current: profile.id == currentProfile?.id, color: colors.textPrimary.ns)
+      row.onChoose = { [weak self] in
+        self?.profilePopover.performClose(nil)
+        self?.onAction(.switchProfile(profile.id))
+      }
+      row.frame = NSRect(
+        x: FolderPanelMetrics.padding, y: FolderPanelMetrics.padding + CGFloat(index) * (FolderPanelMetrics.rowHeight + FolderPanelMetrics.rowGap),
+        width: width - FolderPanelMetrics.padding * 2, height: FolderPanelMetrics.rowHeight)
+      body.addSubview(row)
+    }
+    let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: width, height: min(400, height)))
+    scroll.drawsBackground = false
+    scroll.hasVerticalScroller = height > 400
+    scroll.documentView = body
+    let controller = NSViewController()
+    controller.view = scroll
+    profilePopover.contentViewController = controller
+    profilePopover.contentSize = scroll.frame.size
+    if profileSwitcher.window != nil { profilePopover.show(relativeTo: profileSwitcher.bounds, of: profileSwitcher, preferredEdge: .maxX) }
+  }
+
   private func paintDots() {
     for dot in dots { dot.opacity = SidebarChromeMetrics.dotOpacity(slot: dot.slot, position: position, hovered: dot.hovered) }
   }
@@ -369,7 +430,8 @@ public final class SidebarChromeView: NSView {
     indicator.hovered = point.map { !indicator.isHidden && indicator.frame.contains($0) } ?? false
     for button in [headerDownloads, footerDownloads] { button.hovered = point.map { !button.isHidden && button.frame.contains($0) } ?? false }
     updatePill.hovered = point.map { !updatePill.isHidden && updatePill.frame.contains($0) } ?? false
-    for dot in dots { dot.setHovered(point.map { dot.frame.contains($0) } ?? false) }
+    profileSwitcher.hovered = point.map { !profileSwitcher.isHidden && profileSwitcher.frame.contains($0) } ?? false
+    for dot in dots { dot.setHovered(point.map { !dot.isHidden && dot.frame.contains($0) } ?? false) }
   }
 
   public func describe() -> [String: Any] {

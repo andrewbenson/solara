@@ -143,10 +143,14 @@ class RailIconView: SidebarRowView {
     needsLayout = true
   }
 
-  func showContents(title: String, rows: [SidebarRailPopoverRow]) {
+  func showContents(title: String, rows: [SidebarRailPopoverRow], groupId: String? = nil, folderId: String? = nil) {
     guard let context else { return }
-    popover?.close()
-    popover = SidebarRailPopover(title: title, rows: rows, context: context)
+    if popover?.popover.isShown == true || popover?.dismissedByAnchorClick == true {
+      popover?.close()
+      popover = nil
+      return
+    }
+    popover = SidebarRailPopover(title: title, rows: rows, context: context, groupId: groupId, folderId: folderId)
     popover?.show(on: self)
   }
 
@@ -367,20 +371,15 @@ final class RailGroupView: RailIconView {
       TabIconSpec(url: tab?.url ?? "", favicon: tab?.favicon, customIcon: group.icon ?? tab?.customIcon, profileId: tab?.profileId ?? context.host.profileId),
       palette: palette)
     toolTip = context.query.groupLabel(id)
+    popover?.update(context: context)
     syncRailRename(kind: "group", id: id, initial: group.name, placeholder: context.query.groupLabel(id))
     repaint()
   }
 
   override func click(_ mods: SidebarClickMods, count: Int) {
-    guard let context, let group = context.state.groups[groupId] else { return }
+    guard let context, context.state.groups[groupId] != nil else { return }
     guard context.host.renaming != "group:\(groupId)" else { return }
-    let rows = group.tabIds.compactMap { id -> SidebarRailPopoverRow? in
-      guard let tab = context.state.tabs[id] else { return nil }
-      return SidebarRailPopoverRow(
-        content: SidebarFolderPeekState.Row(id: id, title: context.title(tab), url: tab.url, favicon: tab.favicon, icon: tab.customIcon, profileId: tab.profileId),
-        action: .click(tabId: id, mods: mods))
-    }
-    showContents(title: context.query.groupLabel(groupId), rows: rows)
+    showContents(title: context.query.groupLabel(groupId), rows: SidebarRailPopoverRow.group(groupId, context: context), groupId: groupId)
   }
 
   override func contextMenu() { context?.send(.groupMenu(groupId: groupId)) }
@@ -408,18 +407,13 @@ final class RailLiveFolderView: RailIconView {
     icon.favicons = context.favicons
     icon.set(TabIconSpec(url: site, favicon: nil, customIcon: glyph, profileId: spec.folder.profileId), palette: context.palette)
     toolTip = spec.folder.name
+    popover?.update(context: context)
     repaint()
   }
 
   override func click(_ mods: SidebarClickMods, count: Int) {
     guard let context, let live = context.live?.live, let folder = live.state.folders[folderId] else { return }
-    let rows = (live.state.items[folderId] ?? []).map { item in
-      let remoteIcon = item.icon.map { $0.hasPrefix("http:") || $0.hasPrefix("https:") } ?? false
-      return SidebarRailPopoverRow(
-        content: SidebarFolderPeekState.Row(id: item.id, title: item.title, url: item.url, favicon: remoteIcon ? item.icon : nil, icon: remoteIcon ? nil : item.icon, profileId: folder.profileId),
-        action: .live(action: "open", folderId: folderId, id: item.id, meta: mods.meta))
-    }
-    showContents(title: folder.name, rows: rows)
+    showContents(title: folder.name, rows: SidebarRailPopoverRow.live(folderId, context: context), folderId: folderId)
   }
 
   override func contextMenu() { context?.send(.live(action: "folderMenu", folderId: folderId, id: nil, meta: false)) }

@@ -96,6 +96,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -117,7 +118,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -792,6 +795,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -813,7 +817,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -1250,6 +1256,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -1271,7 +1278,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -1723,6 +1732,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -1744,7 +1754,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -2198,6 +2210,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -2219,7 +2232,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -2788,6 +2803,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -2809,7 +2825,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -3489,6 +3507,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -3510,7 +3529,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -4190,6 +4211,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -4211,7 +4233,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -4902,6 +4926,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -4923,7 +4948,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -5614,6 +5641,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -5635,7 +5663,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -6326,6 +6356,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -6347,7 +6378,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -7038,6 +7071,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -7059,7 +7093,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -7750,6 +7786,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -7771,7 +7808,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -8462,6 +8501,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -8483,7 +8523,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -9163,6 +9205,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -9184,7 +9227,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -9864,6 +9909,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -9885,7 +9931,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -10576,6 +10624,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -10597,7 +10646,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -11288,6 +11339,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -11309,7 +11361,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -12001,6 +12055,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -12022,7 +12077,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -12713,6 +12770,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -12734,7 +12792,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -13425,6 +13485,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -13446,7 +13507,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -14137,6 +14200,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -14158,7 +14222,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -14665,6 +14731,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -14686,7 +14753,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -15256,6 +15325,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -15277,7 +15347,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -15846,6 +15918,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -15867,7 +15940,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -16437,6 +16512,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -16458,7 +16534,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -17027,6 +17105,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -17048,7 +17127,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -17618,6 +17699,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -17639,7 +17721,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -18299,6 +18383,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -18320,7 +18405,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -19177,6 +19264,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -19198,7 +19286,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -19912,6 +20002,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -19933,7 +20024,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -20636,6 +20729,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -20657,7 +20751,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -21281,6 +21377,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -21302,7 +21399,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -21940,6 +22039,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -21961,7 +22061,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -22597,6 +22699,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -22618,7 +22721,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -23253,6 +23358,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -23274,7 +23380,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -23979,6 +24087,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -24000,7 +24109,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -24470,6 +24581,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -24491,7 +24603,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -25244,6 +25358,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -25265,7 +25380,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -25994,6 +26111,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -26015,7 +26133,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -26494,6 +26614,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -26515,7 +26636,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -27251,6 +27374,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -27272,7 +27396,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -27990,6 +28116,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -28011,7 +28138,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -28704,6 +28833,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -28725,7 +28855,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -29429,6 +29561,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -29450,7 +29583,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -30154,6 +30289,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -30175,7 +30311,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -30870,6 +31008,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -30891,7 +31030,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -31597,6 +31738,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -31618,7 +31760,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -32340,6 +32484,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -32361,7 +32506,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -33065,6 +33212,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -33086,7 +33234,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -33790,6 +33940,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -33811,7 +33962,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -34527,6 +34680,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -34548,7 +34702,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -35253,6 +35409,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -35274,7 +35431,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -35969,6 +36128,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -35990,7 +36150,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -36687,6 +36849,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -36708,7 +36871,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -38407,6 +38572,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -38428,7 +38594,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -40126,6 +40294,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -40147,7 +40316,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -40839,6 +41010,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -40860,7 +41032,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -41570,6 +41744,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -41591,7 +41766,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -42323,6 +42500,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -42344,7 +42522,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -43076,6 +43256,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -43097,7 +43278,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -43818,6 +44001,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -43839,7 +44023,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -44583,6 +44769,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -44604,7 +44791,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -45366,6 +45555,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -45387,7 +45577,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -46186,6 +46378,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -46207,7 +46400,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -46995,6 +47190,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -47016,7 +47212,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -47816,6 +48014,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -47837,7 +48036,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -48623,6 +48824,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -48644,7 +48846,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -49430,6 +49634,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -49451,7 +49656,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -50211,6 +50418,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -50232,7 +50440,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -51031,6 +51241,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -51052,7 +51263,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -51840,6 +52053,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -51861,7 +52075,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -52661,6 +52877,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -52682,7 +52899,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -53468,6 +53687,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -53489,7 +53709,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -54275,6 +54497,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -54296,7 +54519,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -55039,6 +55264,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -55060,7 +55286,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -55706,6 +55934,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -55727,7 +55956,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -56490,6 +56721,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -56511,7 +56743,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -57157,6 +57391,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -57178,7 +57413,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -57873,6 +58110,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -57894,7 +58132,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -58638,6 +58878,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -58659,7 +58900,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -59439,6 +59682,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -59460,7 +59704,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -60194,6 +60440,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -60215,7 +60462,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -60738,6 +60987,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -60759,7 +61009,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -61467,6 +61719,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -61488,7 +61741,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -62196,6 +62451,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -62217,7 +62473,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -62908,6 +63166,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -62929,7 +63188,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -63778,6 +64039,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -63799,7 +64061,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -64545,6 +64809,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -64566,7 +64831,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -65177,6 +65444,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -65198,7 +65466,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -66181,6 +66451,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -66202,7 +66473,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -66902,6 +67175,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -66923,7 +67197,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -67619,6 +67895,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -67640,7 +67917,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -68348,6 +68627,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -68369,7 +68649,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -69073,6 +69355,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -69094,7 +69377,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -69794,6 +70079,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -69815,7 +70101,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -70519,6 +70807,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -70540,7 +70829,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -71236,6 +71527,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -71257,7 +71549,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -71961,6 +72255,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -71982,7 +72277,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -72682,6 +72979,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -72703,7 +73001,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -73435,6 +73735,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -73456,7 +73757,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -74225,6 +74528,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -74246,7 +74550,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -74937,6 +75243,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -74958,7 +75265,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -75619,6 +75928,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -75640,7 +75950,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -76149,6 +76461,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -76170,7 +76483,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -76938,6 +77253,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -76959,7 +77275,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -77685,6 +78003,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -77706,7 +78025,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -78187,6 +78508,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -78218,7 +78540,9 @@
               "command"
             ]
           },
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -78935,6 +79259,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -78965,7 +79290,9 @@
               "command"
             ]
           },
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -79681,6 +80008,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -79702,7 +80030,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -80302,6 +80632,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -80323,7 +80654,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -81001,6 +81334,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -81022,7 +81356,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -81634,6 +81970,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -81669,7 +82006,9 @@
               "command"
             ]
           },
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -82346,6 +82685,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -82367,7 +82707,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640
@@ -83098,6 +83440,7 @@
           "videoUpscaling": true,
           "sidebarMediaControls": true,
           "sidebarWidth": 190,
+          "sidebarIconsOnly": false,
           "showSidebarButton": true,
           "showClearButton": true,
           "balancedTopApps": false,
@@ -83119,7 +83462,9 @@
           "spacesFollowAppearance": true,
           "defaultProfileId": "default",
           "shortcuts": {},
+          "shortcutPrecedence": {},
           "openLinksInLittleSolara": true,
+          "littleSolaraKeepsNewTabLinks": false,
           "littleSolaraSize": [
             900,
             640

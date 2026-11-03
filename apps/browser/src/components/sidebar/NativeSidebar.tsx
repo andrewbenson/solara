@@ -109,6 +109,7 @@ function useShellChrome(windowId: string, addressBar: boolean, theme: Theme): st
   const dotsShown = useProfileDotsShown();
   const order = useBrowser(useShallow((s) => s.profileOrder));
   const names = useBrowser(useShallow((s) => order.map((id) => s.profiles[id]?.name ?? "")));
+  const icons = useBrowser(useShallow((s) => order.map((id) => s.profiles[id]?.icon ?? null)));
   const { pages } = usePagerPages(windowId);
   const dropOver = useTabDrag((d) => d.overWindow === windowId);
   const pending = usePendingUpdate();
@@ -127,13 +128,14 @@ function useShellChrome(windowId: string, addressBar: boolean, theme: Theme): st
         addressBar,
         dark: theme.dark,
         theme: { ...themeTokens(theme), panel: theme.panel, panelBorder: theme.panelBorder },
-        dots: dotsShown ? order.map((id, i) => ({ id, name: names[i] ?? "", slot: pages.find((p) => p.id === id)?.slot ?? null })) : [],
+        dots: dotsShown ? order.map((id, i) => ({ id, name: names[i] ?? "", icon: icons[i] ?? null, slot: pages.find((p) => p.id === id)?.slot ?? null })) : [],
         savedWidth,
+        currentProfileId: profile?.id ?? null,
         iconsOnly,
         dropOver,
         update: pending ? { text: UPDATE_PILL_TEXT, tooltip: updatePillTooltip(pending) } : null,
       }),
-    [incognito, profile, profiles, theme, downloadsOpen, hint, downloads, addressBar, dotsShown, order, names, pages, savedWidth, iconsOnly, dropOver, pending],
+    [incognito, profile, profiles, theme, downloadsOpen, hint, downloads, addressBar, dotsShown, order, names, icons, pages, savedWidth, iconsOnly, dropOver, pending],
   );
 }
 

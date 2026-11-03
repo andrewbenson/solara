@@ -5,7 +5,7 @@ import Testing
 @testable import SolaraUI
 
 @MainActor
-@Suite struct SidebarRailPopoverTests {
+@Suite(.serialized) struct SidebarRailPopoverTests {
   private func state() throws -> BrowserState {
     try BrowserState(stateJSON: JSONValue.parse(#"""
       {"windows":{"w":{"id":"w","profileId":"p","tabIds":["t1","t2","t3"],"activeTabIds":{"p":"t1"}}},
@@ -18,6 +18,7 @@ import Testing
   }
 
   private func mounted(renaming: String? = nil) throws -> (NSWindow, SidebarView) {
+    let browser = try state()
     NSApplication.shared.setActivationPolicy(.prohibited)
     let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 84, height: 600), styleMask: [.borderless], backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false
@@ -28,9 +29,16 @@ import Testing
     window.contentView = sidebar
     var host = SidebarHostState(profileId: "p")
     host.renaming = renaming
-    sidebar.update(state: try state(), host: host)
+    sidebar.update(state: browser, host: host)
     sidebar.layoutSubtreeIfNeeded()
     return (window, sidebar)
+  }
+
+  private func close(_ window: NSWindow, sidebar: SidebarView) {
+    for row in sidebar.views.values.compactMap({ $0 as? RailIconView }) {
+      row.popover?.close(commitRename: false)
+    }
+    window.close()
   }
 
   private func reflectedPopover(_ value: Any, depth: Int = 0) -> NSPopover? {
@@ -52,7 +60,7 @@ import Testing
 
   @Test func railTabRenameUsesTheInlineRenameCallback() throws {
     let (window, sidebar) = try mounted(renaming: "tab:t1")
-    _ = window
+    defer { close(window, sidebar: sidebar) }
     var renamed: [String] = []
     sidebar.onAction = { if case .renamed(let kind, let id, let text) = $0 { renamed.append("\(kind):\(id):\(text ?? "cancel")") } }
     let row = try #require(sidebar.views["t:t1"])
@@ -67,7 +75,7 @@ import Testing
 
   @Test func railGroupRenameEscapeCancels() throws {
     let (window, sidebar) = try mounted(renaming: "group:g")
-    _ = window
+    defer { close(window, sidebar: sidebar) }
     var renamed: [String?] = []
     sidebar.onAction = { if case .renamed(let kind, let id, let text) = $0, kind == "group", id == "g" { renamed.append(text) } }
     let row = try #require(sidebar.views["gh:g"])
@@ -82,7 +90,7 @@ import Testing
 
   @Test func clickingRailGroupShowsItsMembersAndChoosingOneActivatesIt() throws {
     let (window, sidebar) = try mounted()
-    _ = window
+    defer { close(window, sidebar: sidebar) }
     var clicked: [String] = []
     sidebar.onAction = { if case .click(let id, _) = $0 { clicked.append(id) } }
     let row = try #require(sidebar.views["gh:g"] as? SidebarRowView)
@@ -91,7 +99,7 @@ import Testing
     let content = try #require(popover.contentViewController?.view)
     #expect(popover.isShown)
     #expect(popover.behavior == .transient)
-    let rows = all(FolderPeekRowView.self, in: content)
+    let rows = all(SidebarRailPopoverRowView.self, in: content)
     #expect(rows.map(\.tabId) == ["t2", "t3"])
     #expect(rows.map { $0.accessibilityLabel() } == ["Two", "Three"])
     #expect(clicked.isEmpty)
@@ -103,7 +111,7 @@ import Testing
 
   @Test func railContentsEscapeClosesThePopover() throws {
     let (window, sidebar) = try mounted()
-    _ = window
+    defer { close(window, sidebar: sidebar) }
     let row = try #require(sidebar.views["gh:g"] as? SidebarRowView)
     row.click(SidebarClickMods([]), count: 1)
     let popover = try #require(reflectedPopover(row))
@@ -115,7 +123,7 @@ import Testing
 
   @Test func railRenameClickAwayCommitsTheTypedNameOnce() throws {
     let (window, sidebar) = try mounted(renaming: "tab:t1")
-    _ = window
+    defer { close(window, sidebar: sidebar) }
     var renamed: [String?] = []
     sidebar.onAction = { if case .renamed(_, _, let text) = $0 { renamed.append(text) } }
     let row = try #require(sidebar.views["t:t1"])
@@ -148,6 +156,7 @@ import Testing
     window.level = NSWindow.Level(rawValue: -1_000_000)
     window.orderBack(nil)
     let row = RailLiveFolderView(frame: NSRect(x: 6, y: 25, width: 72, height: 34))
+    defer { row.popover?.close(commitRename: false); window.close() }
     window.contentView?.addSubview(row)
     row.update(SidebarItem(kind: .live("livefolder|f"), frame: row.frame, region: .scroll, groups: [], section: .pinned), context)
     row.layoutSubtreeIfNeeded()
@@ -158,7 +167,7 @@ import Testing
     let content = try #require(popover.contentViewController?.view)
     #expect(popover.isShown)
     #expect(popover.behavior == .transient)
-    let rows = all(FolderPeekRowView.self, in: content)
+    let rows = all(SidebarRailPopoverRowView.self, in: content)
     #expect(rows.map(\.tabId) == ["a", "b"])
     #expect(rows.map { $0.accessibilityLabel() } == ["First document", "Second document"])
     #expect(opened.isEmpty)

@@ -67,6 +67,7 @@ public struct Settings: Sendable, Hashable {
     "shortcuts": [:],
     "shortcutPrecedence": [:],
     "openLinksInLittleSolara": true,
+    "littleSolaraKeepsNewTabLinks": false,
     "littleSolaraSize": [900, 640],
     "pageEngine": "chromium",
     "websiteEngines": [:],

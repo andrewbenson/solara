@@ -45,13 +45,17 @@ extension Session {
     return next
   }
 
-  func moveTabsInto(_ s: BrowserState, _ ids: [String], _ targetId: String) -> BrowserState {
+  enum MovedTabsLanding { case end, newTab }
+
+  func moveTabsInto(_ s: BrowserState, _ ids: [String], _ targetId: String, landing: MovedTabsLanding = .end) -> BrowserState {
     guard let target = s.windows[targetId], !target.isSmall else { return s }
     let moving = ids.compactMap { s.tabs[$0] }.filter { $0.windowId != targetId && !Ids.isIncognitoProfile($0.profileId) && !target.incognito }
     if moving.isEmpty { return s }
     let sources = OrderedSet(moving.map(\.windowId))
     var next = removeTabs(s, moving.map(\.id), record: false)
     let w = next.windows[targetId]!
+    var landed = w.tabIds
+    landed.insert(contentsOf: moving.map(\.id), at: landing == .newTab ? newTabSlot(next, w, moving[0]) : w.tabIds.count)
     var tabs = next.tabs
     var activeTabIds = w.activeTabIds
     for tab in moving {
@@ -64,7 +68,7 @@ extension Session {
     }
     next.tabs = tabs
     var window = w
-    window.tabIds = pinnedFirst(w.tabIds + moving.map(\.id), tabs, next.groups)
+    window.tabIds = pinnedFirst(landed, tabs, next.groups)
     window.activeTabIds = activeTabIds
     next.windows[targetId] = window
     for id in sources {
@@ -222,7 +226,13 @@ extension Session {
       o.tabIds = tabIds
       return createWindow(o)
     }
-    var next = moveTabsInto(s, tabIds, windowId)
+    let beside = nextToActive(s, windowId, s.tabs[tabIds.first ?? ""]?.profileId)
+    var next = moveTabsInto(s, tabIds, windowId, landing: .newTab)
+    if let beside, !next.inPinnedContainer(beside.openerId) {
+      for id in tabIds where s.tabs[id]?.windowId != windowId && next.tabs[id]?.windowId == windowId {
+        next = groupWithOpener(next, id, beside.openerId, background: false)
+      }
+    }
     if let last = tabIds.last(where: { next.tabs[$0]?.windowId == windowId }) { next = activated(next, last) }
     set(next)
     return windowId

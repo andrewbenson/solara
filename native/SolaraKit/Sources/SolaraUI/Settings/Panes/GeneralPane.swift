@@ -121,6 +121,17 @@ struct GeneralPane: View {
             selection: Binding(get: { store.bool("openLinksInLittleSolara") ? "small" : "tab" }, set: { store.set("openLinksInLittleSolara", $0 == "small") })
           )
         }
+        SettingRow(
+          "general.littleSolaraNewTabLinks",
+          description: .text(store.bool("littleSolaraKeepsNewTabLinks")
+            ? "A link that opens a new tab opens in another Little \(app) window; ⌘-click still opens it behind, in the main window."
+            : "A link that opens a new tab opens behind, as a tab of the main window.")
+        ) {
+          SettingPicker(
+            [SettingOption("main", "Main Window"), SettingOption("small", "Little \(app)")],
+            selection: Binding(get: { store.bool("littleSolaraKeepsNewTabLinks") ? "small" : "main" }, set: { store.set("littleSolaraKeepsNewTabLinks", $0 == "small") })
+          )
+        }
       }
 
       SettingsSection("When quitting \(app):") {

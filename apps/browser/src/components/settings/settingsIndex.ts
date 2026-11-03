@@ -39,6 +39,7 @@ const ROWS: Record<SettingsPane, Section[]> = {
           keywords: ["close window", "confirm"],
         },
         openLinksFrom: { title: "Open links from other apps in", keywords: ["little solara", "external links", "mini window", "discord", "slack", "mail"] },
+        littleSolaraNewTabLinks: { title: `Open new-tab links from Little ${APP} in`, keywords: ["little solara", "target blank", "new tab", "links", "mini window"] },
       },
     },
     {

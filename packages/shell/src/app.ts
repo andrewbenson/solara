@@ -115,6 +115,7 @@ export type AppModule = {
   devSetPointer(windowId: string, x: number, y: number, on: boolean): Promise<boolean>;
   devSetMouseButtons(pressed: number): Promise<boolean>;
   devLeftEdgePointer?(windowId: string, x: number, y: number, on: boolean): Promise<boolean>;
+  devLeftEdgeAppActive?(active: boolean, on: boolean): Promise<boolean>;
   devLeftEdgeStats?(reset: boolean): Promise<LeftEdgeStats>;
   devHoverStats(reset: boolean): Promise<{ passes?: number; log?: [string, number, number][]; registered?: number }>;
   devMenuCommand(command: string, arg: string | null): Promise<void>;
@@ -190,6 +191,7 @@ export const devSetMouseButtons = (pressed: boolean | null) => App.devSetMouseBu
 export const devHoverStats = (reset = true) => App.devHoverStats(reset);
 export const devLeftEdgePointer = (windowId: string, point: { x: number; y: number } | null) =>
   App.devLeftEdgePointer?.(windowId, point?.x ?? 0, point?.y ?? 0, !!point) ?? Promise.resolve(false);
+export const devLeftEdgeAppActive = (active: boolean | null) => App.devLeftEdgeAppActive?.(active ?? false, active !== null) ?? Promise.resolve(false);
 export type LeftEdgeStats = { wakes?: { global: number; local: number }; global?: boolean; local?: boolean; watched?: number };
 export const devLeftEdgeStats = (reset = false) => App.devLeftEdgeStats?.(reset) ?? Promise.resolve<LeftEdgeStats>({});
 export type KeyTiming = { due: number; handled: number; drawn: number };

@@ -36,6 +36,10 @@ extension Session {
     return (active.id, outsideSplit(s, w, JS.max(panes.map { w.tabIds.jsIndexOf($0) }) + 1))
   }
 
+  func newTabSlot(_ s: BrowserState, _ w: BrowserWindow, _ tab: Tab) -> Int {
+    nextToActive(s, w.id, tab.profileId)?.index ?? outsideSplit(s, w, listStart(s, w, tab))
+  }
+
   func listStart(_ s: BrowserState, _ w: BrowserWindow, _ tab: Tab) -> Int {
     s.settings.string("newTabPosition") == "top" ? firstRegular(s, w, tab) : w.tabIds.count
   }

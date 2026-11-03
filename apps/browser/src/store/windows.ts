@@ -20,7 +20,8 @@ import {
   viewTabIds,
   without,
 } from "./model";
-import { nextPinChoice, placeChoiceKey, restoringGroup } from "./organize";
+import { newTabSlot, nextToActive } from "./openers";
+import { groupWithOpener, nextPinChoice, placeChoiceKey, restoringGroup } from "./organize";
 import { hasLoadedPage, hasPage } from "./pageSession";
 import { withoutPeek } from "./peek";
 import { adoptParkedPins, parkWindowPins } from "./parkedPins";
@@ -93,7 +94,7 @@ function withWindow(s: BrowserState, w: BrowserWindow): BrowserState {
   };
 }
 
-export function moveTabsInto(s: BrowserState, ids: string[], targetId: string): BrowserState {
+export function moveTabsInto(s: BrowserState, ids: string[], targetId: string, landing: "end" | "newTab" = "end"): BrowserState {
   const target = s.windows[targetId];
   if (!target || isSmallWindow(target)) return s;
   const moving = ids
@@ -104,6 +105,8 @@ export function moveTabsInto(s: BrowserState, ids: string[], targetId: string): 
   const sources = new Set(moving.map((t) => t.windowId));
   let next = removeTabs(s, moving.map((t) => t.id), false);
   const w = next.windows[targetId]!;
+  const landed = [...w.tabIds];
+  landed.splice(landing === "newTab" ? newTabSlot(next, w, moving[0]!) : w.tabIds.length, 0, ...moving.map((t) => t.id));
   const tabs = { ...next.tabs };
   const live = { ...next.live };
   const activeTabIds = { ...w.activeTabIds };
@@ -118,7 +121,7 @@ export function moveTabsInto(s: BrowserState, ids: string[], targetId: string): 
     ...next,
     tabs,
     live,
-    windows: { ...next.windows, [targetId]: { ...w, tabIds: pinnedFirst([...w.tabIds, ...moving.map((t) => t.id)], tabs, next.groups), activeTabIds } },
+    windows: { ...next.windows, [targetId]: { ...w, tabIds: pinnedFirst(landed, tabs, next.groups), activeTabIds } },
   };
   for (const id of sources) {
     const src = next.windows[id];
@@ -305,7 +308,13 @@ export const createWindowsSlice: StateCreator<BrowserState, [], [], WindowsSlice
       if (!first || isIncognitoProfile(first.profileId)) return undefined;
       return get().createWindow({ profileId: first.profileId, tabIds });
     }
-    let next = moveTabsInto(s, tabIds, windowId);
+    const beside = nextToActive(s, windowId, s.tabs[tabIds[0] ?? ""]?.profileId);
+    let next = moveTabsInto(s, tabIds, windowId, "newTab");
+    if (beside && !inPinnedContainer(next, beside.openerId)) {
+      for (const id of tabIds) {
+        if (s.tabs[id]?.windowId !== windowId && next.tabs[id]?.windowId === windowId) next = groupWithOpener(next, id, beside.openerId, false);
+      }
+    }
     const last = findLast(tabIds, (id) => next.tabs[id]?.windowId === windowId);
     if (last) next = apply(next, activated(next, last));
     set(next);

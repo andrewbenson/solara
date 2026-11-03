@@ -86,6 +86,7 @@ export type Settings = {
   shortcutPrecedence: Record<string, ShortcutPrecedence>;
 
   openLinksInLittleSolara: boolean;
+  littleSolaraKeepsNewTabLinks: boolean;
   littleSolaraSize: [number, number];
 
   pageEngine: PageEngine;
@@ -176,6 +177,7 @@ export const DEFAULT_SETTINGS: Settings = {
   shortcuts: {},
   shortcutPrecedence: {},
   openLinksInLittleSolara: true,
+  littleSolaraKeepsNewTabLinks: false,
   littleSolaraSize: [900, 640],
   pageEngine: "chromium",
   websiteEngines: {},

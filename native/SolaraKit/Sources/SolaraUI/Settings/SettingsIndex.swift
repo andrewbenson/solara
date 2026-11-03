@@ -81,6 +81,7 @@ public struct SettingsIndex: Sendable {
             keywords: ["close window", "confirm"]
           ),
           Row(key: "openLinksFrom", title: "Open links from other apps in", keywords: ["little solara", "little \(cli)", "external links", "mini window", "discord", "slack", "mail"]),
+          Row(key: "littleSolaraNewTabLinks", title: "Open new-tab links from Little \(app) in", keywords: ["little solara", "little \(cli)", "target blank", "new tab", "links", "mini window"]),
         ]),
         Section(section: "When quitting \(app):", rows: [
           Row(

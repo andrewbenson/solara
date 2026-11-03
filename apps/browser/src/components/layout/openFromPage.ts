@@ -20,6 +20,9 @@ export function openFromPage({ url, adoptId, disposition, profile, point }: Open
     return;
   }
   const from = peekSource ? { ...page, tabId: peekSource } : page;
+  if (isSmall(s, w.id) && disposition === "foreground" && adoptId && s.settings.littleSolaraKeepsNewTabLinks) {
+    return void s.createWindow({ small: true, url, profileId: from.profileId, adoptId });
+  }
   if (isSmall(s, w.id) && disposition !== "window" && disposition !== "incognito") {
     return void s.newTab(w.id, { url, adoptId, openerId: from.tabId, profileId: from.profileId, background: true });
   }

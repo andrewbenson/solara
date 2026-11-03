@@ -44,6 +44,10 @@ export function nextToActive(s: BrowserState, windowId: string, profileId: strin
   return { openerId: active.id, index: outsideSplit(s, w, Math.max(...panes.map((id) => w.tabIds.indexOf(id))) + 1) };
 }
 
+export function newTabSlot(s: BrowserState, w: BrowserWindow, tab: Tab): number {
+  return nextToActive(s, w.id, tab.profileId)?.index ?? outsideSplit(s, w, listStart(s, w, tab));
+}
+
 const listStart = (s: BrowserState, w: BrowserWindow, tab: Tab) =>
   s.settings.newTabPosition === "top" ? firstRegular(s, w, tab) : w.tabIds.length;
 

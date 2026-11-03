@@ -16,6 +16,9 @@ final class LeftEdgeWatcher {
 
   var emit: ((String, [String: Any]) -> Void)?
   var pointerOverride: NSPoint?
+  var activeOverride: Bool? {
+    didSet { checkPointer() }
+  }
   private var watched: [String: CGFloat] = [:]
   private var listeners: [String: (Bool) -> Void] = [:]
   private var over: Set<String> = []
@@ -50,8 +53,11 @@ final class LeftEdgeWatcher {
     check(NSEvent.mouseLocation, live: true)
   }
 
+  private var appActive: Bool { activeOverride ?? (pointerOverride != nil || NSApp.isActive) }
+
   private func check(_ point: NSPoint, live: Bool) {
-    lazy var onDock = live && NSApp.isActive && isOnDock(point)
+    let active = appActive
+    lazy var onDock = live && active && isOnDock(point)
     for (id, hold) in watched {
       guard let window = WindowManager.shared.windows[id] else {
         watched[id] = nil
@@ -61,9 +67,9 @@ final class LeftEdgeWatcher {
         continue
       }
       let inColumn = point.x < window.frame.minX + hold && window.screen?.frame.contains(point) == true
-      let now = isOver(point, of: window, hold: hold, live: live)
+      let now = active && (isOver(point, of: window, hold: hold, live: live)
         || (inColumn && over.contains(id) && onDock)
-        || (inColumn && isOver(point, of: window, hold: hold, live: false) && onDock && isTopBeneathDock(point, of: window))
+        || (inColumn && isOver(point, of: window, hold: hold, live: false) && onDock && isTopBeneathDock(point, of: window)))
       let fresh = unreported.remove(id) != nil
       guard fresh || now != over.contains(id) else { continue }
       if now { over.insert(id) } else { over.remove(id) }
@@ -92,8 +98,7 @@ final class LeftEdgeWatcher {
     let edge = NSPoint(x: frame.minX + 1, y: point.y)
     guard Self.windowNumber(at: edge) == window.windowNumber else { return false }
     let under = Self.windowNumber(at: point)
-    if under != window.windowNumber, NSApp.window(withWindowNumber: under) != nil { return false }
-    return NSApp.isActive || Self.besideScreenEdge(window, screen)
+    return under == window.windowNumber || NSApp.window(withWindowNumber: under) == nil
   }
 
   private static func windowNumber(at point: NSPoint, below start: Int = 0) -> Int {
@@ -143,19 +148,7 @@ final class LeftEdgeWatcher {
     return owner == dockApp.processIdentifier && layer >= Int(CGWindowLevelForKey(.dockWindow))
   }
 
-  private static func besideScreenEdge(_ window: NSWindow, _ screen: NSScreen) -> Bool {
-    window.frame.minX - screen.frame.minX <= reach
-  }
-
-  private var needsGlobalMonitor: Bool {
-    if NSApp.isActive || !over.isEmpty { return true }
-    return watched.contains { id, hold in
-      guard let window = WindowManager.shared.windows[id] else { return false }
-      if hold > 0 { return true }
-      guard let screen = window.screen else { return false }
-      return Self.besideScreenEdge(window, screen)
-    }
-  }
+  private var needsGlobalMonitor: Bool { appActive || !over.isEmpty }
 
   private func updateGlobalMonitor() {
     let needed = !watched.isEmpty && needsGlobalMonitor
@@ -213,6 +206,7 @@ final class LeftEdgeWatcher {
     over = []
     unreported = []
     pointerOverride = nil
+    activeOverride = nil
     stop()
   }
 

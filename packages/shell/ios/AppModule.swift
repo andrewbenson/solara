@@ -342,6 +342,15 @@ public class AppModule: Module {
       #endif
     }.runOnQueue(.main)
 
+    AsyncFunction("devLeftEdgeAppActive") { (active: Bool, on: Bool) -> Bool in
+      #if DEBUG
+      LeftEdgeWatcher.shared.activeOverride = on ? active : nil
+      return true
+      #else
+      return false
+      #endif
+    }.runOnQueue(.main)
+
     AsyncFunction("devLeftEdgeStats") { (reset: Bool) -> [String: Any] in
       #if DEBUG
       let stats = LeftEdgeWatcher.shared.stats

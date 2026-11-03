@@ -236,6 +236,7 @@ open class IconRingView: NSView {
   public var dark = true { didSet { if dark != oldValue { apply() } } }
   public var iconSize: CGFloat = 16 { didSet { if iconSize != oldValue { apply() } } }
   public var glass = false { didSet { if glass != oldValue { apply() } } }
+  public var tintedRim = false { didSet { if tintedRim != oldValue { apply() } } }
 
   public var drawsTemplateIcon: Bool {
     if case .template = theme { return !glass }
@@ -325,7 +326,8 @@ open class IconRingView: NSView {
       layer.insertSublayer(sheen, above: hue)
       layer.insertSublayer(rim, above: sheen)
     }
-    for dia in [tile, ring, icon] { dia.isHidden = glass }
+    for dia in [tile, icon] { dia.isHidden = glass }
+    ring.isHidden = glass && !tintedRim
     for glassLayer in [lift, hue, sheen, rim] { glassLayer.isHidden = !glass }
     let radius = min(cornerRadius, bounds.width / 2)
     let scale = window?.backingScaleFactor ?? 2
@@ -382,6 +384,33 @@ open class IconRingView: NSView {
     }
   }
 
+  private func applyTintedRim(radius: CGFloat, width: CGFloat, big: CGRect, color: CGColor?) {
+    guard tintedRim else { return }
+    for shape in [ring, ringMask] {
+      shape.frame = bounds
+      shape.cornerRadius = radius
+      shape.cornerCurve = .continuous
+    }
+    ring.compositingFilter = nil
+    ring.backgroundColor = nil
+    let blurred = theme == .blur ? source.flatMap(IconRingImages.blur) : nil
+    if let blurred {
+      ringMask.borderWidth = width
+      ring.mask = ringMask
+      ring.borderWidth = 0
+      ringImage.frame = big
+      ringImage.contents = blurred.plain
+      ringImage.opacity = dark ? 0.8 : 0.65
+      ringImage.isHidden = false
+    } else {
+      ring.mask = nil
+      ring.borderWidth = width
+      ring.borderColor = color.flatMap { $0.copy(alpha: min(1, $0.alpha * 2) * (dark ? 0.8 : 0.65)) }
+      ringImage.contents = nil
+      ringImage.isHidden = true
+    }
+  }
+
   private func applyGlass(radius: CGFloat, rimWidth: CGFloat, big: CGRect) {
     let flipped = layer?.isGeometryFlipped == true || isFlipped
     let top = CGPoint(x: 0.5, y: flipped ? 0 : 1)
@@ -411,6 +440,7 @@ open class IconRingView: NSView {
     hue.backgroundColor = color
     hue.isHidden = glow == nil && color == nil
     hue.opacity = dark ? 0.35 : 0.3
+    applyTintedRim(radius: radius, width: rimWidth, big: big, color: color)
 
     sheen.colors = [NSColor.white.withAlphaComponent(dark ? 0.12 : 0.4).cgColor, NSColor.white.withAlphaComponent(0).cgColor]
     sheen.locations = [0, 0.6]

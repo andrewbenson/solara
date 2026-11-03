@@ -59,16 +59,32 @@ import Testing
     return find(tile)
   }
 
-  @Test func aOneColourIconGetsATemplateRingOnTheActiveTileOnly() async throws {
+  @Test func aOneColourIconGetsATintedGlassRingOnTheActiveTileOnly() async throws {
     let (window, sidebar) = try await mounted(active: "p1", ring: true, colors: [.systemBlue])
     _ = window
     let active = try #require(sidebar.views["tile:p1"])
     let shown = try #require(ring(active))
     #expect(!shown.isHidden)
-    #expect(shown.drawsTemplateIcon)
+    #expect(shown.glass && shown.tintedRim)
+    #expect(!shown.drawsTemplateIcon)
     #expect(shown.frame == active.bounds)
+    #expect(glassTile(active).map { !$0.flat && $0.crisp } == true)
+    let inactive = try #require(sidebar.views["tile:p2"])
+    #expect(ring(inactive)?.isHidden ?? true)
+    #expect(glassTile(inactive).map { $0.flat && !$0.raisedSelection } == true)
     let other = try #require(sidebar.views["t:t1"])
     #expect(ring(other)?.isHidden ?? true)
+  }
+
+  private func glassTile(_ tile: NSView) -> SidebarGlassTile? {
+    func find(_ view: NSView) -> SidebarGlassTile? {
+      for sub in view.subviews {
+        if let glass = sub as? SidebarGlassTile { return glass }
+        if let found = find(sub) { return found }
+      }
+      return nil
+    }
+    return find(tile)
   }
 
   @Test func anInvalidatedFaviconReloadsTheActiveRing() async throws {
@@ -94,11 +110,14 @@ import Testing
     #expect(shown.theme == .blur)
   }
 
-  @Test func withTheSettingOffTheTileStaysGlass() async throws {
+  @Test func withTheSettingOffEveryTileStaysRaisedGlass() async throws {
     let (window, sidebar) = try await mounted(active: "p1", ring: false, colors: [.systemBlue])
     _ = window
     let tile = try #require(sidebar.views["tile:p1"])
     #expect(ring(tile)?.isHidden ?? true)
+    #expect(glassTile(tile).map { !$0.flat && $0.raisedSelection && !$0.crisp } == true)
+    let inactive = try #require(sidebar.views["tile:p2"])
+    #expect(glassTile(inactive).map { !$0.flat } == true)
   }
 
   @Test func themesMatchTheShellsRules() throws {

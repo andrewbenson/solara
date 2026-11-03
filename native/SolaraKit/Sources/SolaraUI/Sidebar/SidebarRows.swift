@@ -1227,6 +1227,7 @@ final class TileView: SidebarRowView {
   private var showsBadge = false
   private var badges: TabMediaBadgesView?
   private var ring: IconRingView?
+  private var ringShown = false
   private var ringRequest: SidebarFaviconRequest?
 
   override var accessibleTitle: String? {
@@ -1293,7 +1294,7 @@ final class TileView: SidebarRowView {
     let source = active && context.host.iconRing ? tab.flatMap { ringSource($0, context) } : nil
     guard let source, let theme = IconRingView.theme(of: source) else {
       ring?.isHidden = true
-      glass.isHidden = false
+      ringShown = false
       return
     }
     let view = ring ?? IconRingView()
@@ -1303,26 +1304,42 @@ final class TileView: SidebarRowView {
       view.frame = bounds
     }
     view.cornerRadius = SidebarMetrics.tileRadius
+    view.strokeWidth = 1.5
+    view.glass = true
+    view.tintedRim = true
     view.dark = context.palette.dark
     view.source = source
     view.theme = theme
     view.isHidden = false
-    glass.isHidden = true
-    if view.drawsTemplateIcon { icon.isHidden = true }
+    ringShown = true
   }
 
   private func ringSource(_ tab: Tab, _ context: SidebarContext) -> IconRingSource? {
+    switch Self.cachedRingSource(tab, context) {
+    case .known(let source): return source
+    case .loading(let request): return load(request, context)
+    }
+  }
+
+  enum CachedRing {
+    case known(IconRingSource?)
+    case loading(SidebarFaviconRequest)
+  }
+
+  static func cachedRingSource(_ tab: Tab, _ context: SidebarContext) -> CachedRing {
     if let custom = tab.customIcon, !custom.isEmpty {
-      return custom.hasPrefix("symbol:") ? nil : IconRingSource(uri: nil, emoji: custom)
+      return .known(custom.hasPrefix("symbol:") ? nil : IconRingSource(uri: nil, emoji: custom))
     }
     let request = SidebarFaviconRequest(url: tab.url, favicon: tab.favicon, profileId: tab.profileId, dark: context.palette.dark)
-    if let known = context.favicons.cached(request) {
-      guard let picture = known?.cgImage(forProposedRect: nil, context: nil, hints: nil),
-        let source = IconRingSource(uri: "sidebar:\(request.profileId)|\(request.dark)|\(request.url)|\(request.favicon ?? "")", emoji: nil)
-      else { return nil }
-      IconRingView.remember(picture, for: source)
-      return source
-    }
+    guard let known = context.favicons.cached(request) else { return .loading(request) }
+    guard let picture = known?.cgImage(forProposedRect: nil, context: nil, hints: nil),
+      let source = IconRingSource(uri: "sidebar:\(request.profileId)|\(request.dark)|\(request.url)|\(request.favicon ?? "")", emoji: nil)
+    else { return .known(nil) }
+    IconRingView.remember(picture, for: source)
+    return .known(source)
+  }
+
+  private func load(_ request: SidebarFaviconRequest, _ context: SidebarContext) -> IconRingSource? {
     guard ringRequest != request else { return nil }
     ringRequest = request
     context.favicons.load(request) { [weak self] picture in
@@ -1337,8 +1354,12 @@ final class TileView: SidebarRowView {
     guard let context else { return }
     let palette = context.palette
     let fill = active ? palette.pinnedSelectedFill : pressed ? palette.pressed : hovered || selected ? palette.hover : palette.pinnedResting
-    glass.tint = palette.glassTint(fill, raised: active && !pressed)
-    glass.raisedSelection = active
+    let standsOut = context.host.iconRing
+    let flat = standsOut && !active
+    glass.flat = flat
+    glass.tint = flat ? palette.flatTile(fill) : palette.glassTint(fill, raised: active && !pressed, solid: standsOut && active)
+    glass.raisedSelection = active && !ringShown
+    glass.crisp = standsOut && active
     glass.outlineColor = !active && selected ? palette.dragBorder : nil
   }
 

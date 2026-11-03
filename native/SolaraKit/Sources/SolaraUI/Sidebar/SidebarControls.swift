@@ -95,11 +95,14 @@ final class SidebarGlassTile: NSView {
   private let glass = NSGlassEffectView()
   private let selection = GlassSelectionLayer()
   private let outline = CALayer()
+  private let flatFill = CALayer()
   var radius: CGFloat = SidebarMetrics.tileRadius { didSet { if radius != oldValue { needsLayout = true } } }
-  var tint: NSColor? { didSet { if tint != oldValue { glass.tintColor = tint } } }
+  var tint: NSColor? { didSet { if tint != oldValue { glass.tintColor = tint; if flat { needsLayout = true } } } }
   var dark = true { didSet { if dark != oldValue { glass.appearance = NSAppearance(named: dark ? .darkAqua : .aqua); needsLayout = true } } }
   var raisedSelection = false { didSet { if raisedSelection != oldValue { needsLayout = true } } }
   var outlineColor: NSColor? { didSet { if outlineColor != oldValue { needsLayout = true } } }
+  var flat = false { didSet { if flat != oldValue { needsLayout = true } } }
+  var crisp = false { didSet { if crisp != oldValue { needsLayout = true } } }
 
   override var isFlipped: Bool { true }
 
@@ -112,6 +115,10 @@ final class SidebarGlassTile: NSView {
     addSubview(glass)
     outline.actions = SurfaceLayer.noActions
     outline.cornerCurve = .continuous
+    flatFill.actions = SurfaceLayer.noActions
+    flatFill.cornerCurve = .continuous
+    flatFill.isHidden = true
+    layer?.addSublayer(flatFill)
     layer?.addSublayer(selection)
     layer?.addSublayer(outline)
     apply()
@@ -132,7 +139,7 @@ final class SidebarGlassTile: NSView {
   #if SOLARA_PROBES
   private func prepareForCapture() -> ProbeCapture.Restore {
     guard let layer else { return {} }
-    let hidden = glass.isHidden
+    let hidden = glass.isHidden || flat
     let fill = CALayer()
     fill.frame = bounds
     fill.cornerRadius = radius
@@ -151,11 +158,16 @@ final class SidebarGlassTile: NSView {
   private func apply() {
     if glass.frame != bounds { glass.frame = bounds }
     if glass.cornerRadius != radius { glass.cornerRadius = radius }
+    if glass.isHidden != flat { glass.isHidden = flat }
     CATransaction.begin()
     CATransaction.setDisableActions(true)
+    flatFill.isHidden = !flat
+    flatFill.frame = bounds
+    flatFill.cornerRadius = radius
+    flatFill.backgroundColor = flat ? tint?.cgColor : nil
     selection.frame = bounds
     selection.isHidden = !raisedSelection
-    if raisedSelection { selection.apply(radius: radius, dark: dark, scale: window?.backingScaleFactor ?? 2) }
+    if raisedSelection { selection.apply(radius: radius, dark: dark, scale: window?.backingScaleFactor ?? 2, crisp: crisp) }
     outline.frame = bounds
     outline.cornerRadius = radius
     outline.borderWidth = outlineColor == nil ? 0 : 1
@@ -171,6 +183,7 @@ final class GlassSelectionLayer: CALayer {
   private let sheen = CAGradientLayer()
   private let rim = CAGradientLayer()
   private let rimMask = CALayer()
+  private let edge = CALayer()
 
   override init() {
     super.init()
@@ -181,8 +194,9 @@ final class GlassSelectionLayer: CALayer {
     sheen.masksToBounds = true
     rimMask.borderColor = NSColor.white.cgColor
     rim.mask = rimMask
-    for layer in [lift, sheen, rim] as [CALayer] { addSublayer(layer) }
-    for layer in [self, lift, liftMask, sheen, rim, rimMask] as [CALayer] { layer.actions = SurfaceLayer.noActions }
+    edge.cornerCurve = .continuous
+    for layer in [lift, sheen, rim, edge] as [CALayer] { addSublayer(layer) }
+    for layer in [self, lift, liftMask, sheen, rim, rimMask, edge] as [CALayer] { layer.actions = SurfaceLayer.noActions }
   }
 
   override init(layer: Any) {
@@ -191,7 +205,7 @@ final class GlassSelectionLayer: CALayer {
 
   required init?(coder: NSCoder) { fatalError() }
 
-  func apply(radius: CGFloat, dark: Bool, scale: CGFloat) {
+  func apply(radius: CGFloat, dark: Bool, scale: CGFloat, crisp: Bool = false) {
     let rect = bounds
     let top = CGPoint(x: 0.5, y: 0)
     let bottom = CGPoint(x: 0.5, y: 1)
@@ -203,7 +217,7 @@ final class GlassSelectionLayer: CALayer {
     let shape = CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
     lift.frame = rect
     lift.shadowPath = shape
-    lift.shadowOpacity = dark ? 0.5 : 0.2
+    lift.shadowOpacity = crisp ? (dark ? 0.6 : 0.28) : (dark ? 0.5 : 0.2)
     lift.shadowOffset = CGSize(width: 0, height: 1)
     let outside = CGMutablePath()
     outside.addRect(rect.insetBy(dx: -12, dy: -12))
@@ -215,9 +229,16 @@ final class GlassSelectionLayer: CALayer {
     sheen.startPoint = top
     sheen.endPoint = bottom
     rimMask.borderWidth = (1 * scale).rounded() / scale
-    rim.colors = [NSColor.white.withAlphaComponent(dark ? 0.5 : 1).cgColor, NSColor.white.withAlphaComponent(dark ? 0.14 : 0.55).cgColor]
+    let rimTop: CGFloat = crisp ? (dark ? 0.62 : 1) : (dark ? 0.5 : 1)
+    let rimBottom: CGFloat = crisp ? (dark ? 0.24 : 0.8) : (dark ? 0.14 : 0.55)
+    rim.colors = [NSColor.white.withAlphaComponent(rimTop).cgColor, NSColor.white.withAlphaComponent(rimBottom).cgColor]
     rim.startPoint = top
     rim.endPoint = bottom
+    edge.isHidden = !crisp
+    edge.frame = rect
+    edge.cornerRadius = radius
+    edge.borderWidth = 1 / scale
+    edge.borderColor = NSColor.black.withAlphaComponent(dark ? 0.35 : 0.1).cgColor
   }
 }
 

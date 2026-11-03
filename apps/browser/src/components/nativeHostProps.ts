@@ -19,6 +19,7 @@ export type StripHostProps = {
   newTabMark: string | null;
   pages: unknown;
   selection: readonly string[];
+  iconRing?: boolean;
 };
 
 export type SidebarHostProps = {

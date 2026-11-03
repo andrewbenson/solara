@@ -121,11 +121,10 @@ const ROWS: Record<SettingsPane, Section[]> = {
           description: "As in Arc: up to four tiles across in balanced rows, and a wider sidebar makes them larger. Off, as in Dia, each row fills with as many tiles as fit.",
           keywords: ["pinned tiles", "favorites", "grid", "columns", "rows", "arc"],
         },
-        pinnedTabIconRing: {
-          title: "Highlight pinned tabs in their icon's colors",
-          description: "As in Dia: the Top App you're on gets a ring and tint from its icon instead of the raised glass.",
-          keywords: ["dia", "liquid glass", "top apps", "favicon", "colour", "ring", "tint", "selected tile"],
-          liquidGlassOnly: true,
+        classicPinnedTabs: {
+          title: "Make the pinned tab you're on stand out",
+          description: "The Top App you're on is raised, with a faint tint and ring in its icon's colors, and the others sit flat. Off, every Top App is raised glass, as before.",
+          keywords: ["dia", "liquid glass", "top apps", "pinned tabs", "favicon", "colour", "color", "icon ring", "tint", "selected tile", "active", "flat", "raised"],
         },
         fadeUnloadedTabs: {
           title: "Fade icons of unloaded tabs",

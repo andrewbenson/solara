@@ -222,12 +222,17 @@ public struct SidebarPalette {
     return (tint.withAlpha(0.16).ns, tint.withAlpha(0.3).ns)
   }
 
-  public func glassTint(_ fill: NSColor, raised: Bool) -> NSColor {
+  public func flatTile(_ fill: NSColor) -> NSColor {
+    guard let c = fill.usingColorSpace(.sRGB) else { return fill }
+    return c.withAlphaComponent(c.alphaComponent * 0.45)
+  }
+
+  public func glassTint(_ fill: NSColor, raised: Bool, solid: Bool = false) -> NSColor {
     guard let c = fill.usingColorSpace(.sRGB) else { return fill }
     let r = c.redComponent * 255, g = c.greenComponent * 255, b = c.blueComponent * 255, a = c.alphaComponent
     let profile = backdropTint ?? CSSColor(red: 0, green: 0, blue: 0, alpha: 1)
     let lightening = r + g + b > 3 * 127
-    let alpha = a * (!lightening ? 1 : dark ? (raised ? 0.9 : 0.6) : raised ? 0.8 : 0.55)
+    let alpha = a * (!lightening || solid ? 1 : dark ? (raised ? 0.9 : 0.6) : raised ? 0.8 : 0.55)
     func mix(_ v: Double, _ p: Double) -> Double { v + (p * 255 - v) * 0.15 }
     func byte(_ v: Double) -> Double { (min(255, max(0, v))).rounded() / 255 }
     return NSColor(srgbRed: byte(mix(r, profile.red)), green: byte(mix(g, profile.green)), blue: byte(mix(b, profile.blue)), alpha: byte(alpha * 255))

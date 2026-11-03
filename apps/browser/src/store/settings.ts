@@ -60,6 +60,7 @@ export type Settings = {
   showClearButton: boolean;
   balancedTopApps: boolean;
   pinnedTabIconRing: boolean;
+  classicPinnedTabs?: boolean;
   selectedTabGlow: SelectedTabGlow;
   pageScrollBars: "system" | "thin";
   fadeUnloadedTabs: boolean;

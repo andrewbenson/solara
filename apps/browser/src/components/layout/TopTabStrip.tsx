@@ -5,7 +5,6 @@ import { create } from "zustand";
 import { toggleMute } from "../../lib/actions";
 import { hex, layout, ThemeScope, useTheme } from "../../lib/theme";
 import { useTileTheme } from "../../lib/tileTheme";
-import { liquidGlass } from "../glass";
 import { useBrowser } from "../../store/browser";
 import { PageProfileContext, useIsActiveTab, usePageProfileId, useSettings, useTab, useTabLive, useWindowId, useWindowProfileId } from "../../store/hooks";
 import { ProfileIndicator, ProfileNameMeasure, useProfileIndicatorWidth, useProfileTitle } from "../ProfileIndicator";
@@ -1107,9 +1106,9 @@ function PinnedFace({ tabId, active, hovered, pressed }: { tabId: string; active
   const theme = useTheme();
   const tab = useTab(tabId);
   const tileTheme = useTileTheme(tab?.url ?? "", tab?.favicon, tab?.customIcon, tab?.profileId ?? "");
-  const iconRing = useSettings((s) => s.pinnedTabIconRing);
+  const iconRing = useSettings((s) => !s.classicPinnedTabs);
   if (!tab) return null;
-  const ring = active && liquidGlass && iconRing && tileTheme ? tileTheme : null;
+  const ring = active && iconRing && tileTheme ? tileTheme : null;
   const template = ring?.theme.kind === "template" ? ring.theme : null;
   const face = { position: "absolute", left: PINNED_FACE_INSET, right: PINNED_FACE_INSET, top: PINNED_FACE_INSET, bottom: PINNED_FACE_INSET } as const;
   return (

@@ -18,6 +18,7 @@ public struct StripHostState: Decodable, Equatable, Sendable {
   public var newTabMark: String?
   public var pages: [SidebarPageLook]?
   public var selection: [String]?
+  public var iconRing: Bool?
 
   public init(profileId: String, dark: Bool = true) {
     self.profileId = profileId
@@ -58,6 +59,7 @@ public struct StripHostState: Decodable, Equatable, Sendable {
     look.sleeping = sleeping
     look.engines = engines
     look.capture = capture
+    look.iconRing = iconRing ?? false
     return look
   }
 }

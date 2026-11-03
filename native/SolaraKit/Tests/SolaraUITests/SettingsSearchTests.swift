@@ -142,14 +142,13 @@ struct SettingsSearchTests {
     #expect(!index.entries.contains { $0.pane == .general && $0.section == "Updates" })
   }
 
-  @Test func liquidGlassOnlyRowsAreHiddenWithoutLiquidGlass() async {
+  @Test func thePinnedTabLookIsFoundWithAndWithoutLiquidGlass() async {
     await MainActor.run {
-      let plain = SettingsSearchModel(index: index, liquidGlass: false)
-      plain.query = "icon ring"
-      #expect(!plain.results.contains { $0.id == "tabs.pinnedTabIconRing" })
-      let glass = SettingsSearchModel(index: index, liquidGlass: true)
-      glass.query = "icon ring"
-      #expect(glass.results.contains { $0.id == "tabs.pinnedTabIconRing" })
+      for liquidGlass in [false, true] {
+        let model = SettingsSearchModel(index: index, liquidGlass: liquidGlass)
+        model.query = "icon ring"
+        #expect(model.results.contains { $0.id == "tabs.classicPinnedTabs" })
+      }
     }
   }
 

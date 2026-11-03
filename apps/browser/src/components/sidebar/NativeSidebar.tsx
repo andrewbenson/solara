@@ -315,7 +315,7 @@ export const NativeSidebar = memo(function NativeSidebar({ windowId, profileId, 
   const clear = useSettings((s) => s.showClearButton);
   const tidy = useBrowser((s) => canTidyPins(s, windowId, profileId));
   const newTabAtTop = useSettings((s) => s.newTabButtonPosition === "top");
-  const iconRing = useSettings((s) => s.pinnedTabIconRing);
+  const iconRing = useSettings((s) => !s.classicPinnedTabs);
   const cleaned = useBrowser((s) => cleanedTabsFor(s, windowId).length);
   const upsell = useCleanUpUpsellCount(windowId, true);
   const closeHint = useBrowser((s) => shortcutHint("closeTab", s) ?? null);

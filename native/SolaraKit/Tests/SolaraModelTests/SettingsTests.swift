@@ -37,6 +37,15 @@ import Testing
     #expect(settings.inferred == settings.chosen)
   }
 
+  @Test func theClassicPinnedTabLookIsOnlyEverAChoice() {
+    #expect(Settings.defaults.values["classicPinnedTabs"] == nil)
+    #expect(Settings.hydrated(from: nil).values["classicPinnedTabs"] == nil)
+    let chose = Settings.hydrated(from: nil).updated(["classicPinnedTabs": true], fromSync: false)
+    let relaunched = Settings.hydrated(from: try! JSONValue.parse(chose.json.text()))
+    #expect(relaunched["classicPinnedTabs"] == true)
+    #expect(relaunched.chosen?.contains("classicPinnedTabs") == true)
+  }
+
   @Test func batterySaverMigration() {
     let migrated = Settings.migrateSaved(["batterySaver": false, "hideToolbarWhileScrolling": true, "chosen": ["batterySaver"]])!
     #expect(migrated["batterySaverWhen"] == "never")

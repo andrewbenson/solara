@@ -427,6 +427,8 @@ final class StripTabChip: StripHoverView, StripDraggable {
 @MainActor
 final class StripPinnedCell: StripHoverView {
   private let face = CALayer()
+  private var ring: IconRingView?
+  private var ringRequest: SidebarFaviconRequest?
   private let icon = TabIconView()
   private var badges: TabMediaBadgesView?
   private let mosaic = FolderMosaicView()
@@ -460,6 +462,7 @@ final class StripPinnedCell: StripHoverView {
       mosaic.render(members: members, context: context.sidebar)
       badges?.isHidden = true
       active = false
+      ring?.isHidden = true
       title = context.query.folderLabel(windowId: context.windowId, folderId: folderId)
       toolTip = "\(title ?? "")\nShow Folder"
     } else if let tab = context.state.tabs[cell] {
@@ -469,6 +472,7 @@ final class StripPinnedCell: StripHoverView {
       icon.set(context.sidebar.iconSpec(tab), palette: context.base)
       TabMediaBadgesView.attach(&badges, to: self, flags: context.sidebar.flags, tabId: cell, host: context.sidebar.host, palette: context.base)
       active = context.activeId == cell
+      renderRing(tab, context)
       let title = (tab.customTitle?.isEmpty == false ? tab.customTitle! : !tab.title.isEmpty ? tab.title : tab.url)
       self.title = title
       toolTip = tab.url.isEmpty ? title : "\(title)\n\(tab.url)"
@@ -477,14 +481,62 @@ final class StripPinnedCell: StripHoverView {
     needsLayout = true
   }
 
+  private var standsOut: Bool { active && folderId == nil && context?.sidebar.host.iconRing == true }
+
+  private func renderRing(_ tab: Tab, _ context: StripContext) {
+    var source: IconRingSource?
+    if active, context.sidebar.host.iconRing {
+      switch TileView.cachedRingSource(tab, context.sidebar) {
+      case .known(let known): source = known
+      case .loading(let request): loadRing(request, tabId: tab.id, context)
+      }
+    }
+    guard let source, let theme = IconRingView.theme(of: source) else {
+      ring?.isHidden = true
+      return
+    }
+    let view = ring ?? IconRingView()
+    if ring == nil {
+      ring = view
+      addSubview(view, positioned: .below, relativeTo: icon)
+    }
+    view.cornerRadius = StripMetrics.pinnedFaceRadius
+    view.strokeWidth = 1.5
+    view.glass = true
+    view.tintedRim = true
+    view.dark = context.base.dark
+    view.source = source
+    view.theme = theme
+    view.isHidden = false
+    needsLayout = true
+  }
+
+  private func loadRing(_ request: SidebarFaviconRequest, tabId: String, _ context: StripContext) {
+    guard ringRequest != request else { return }
+    ringRequest = request
+    context.sidebar.favicons.load(request) { [weak self] picture in
+      guard let self, self.ringRequest == request else { return }
+      self.ringRequest = nil
+      guard picture != nil, self.cell == tabId, let current = self.context, let tab = current.state.tabs[tabId] else { return }
+      self.renderRing(tab, current)
+    }
+  }
+
   override func repaint() {
     guard let context else { return }
     let base = context.base
     let folder = folderId != nil
     let fill: NSColor? = pressed ? base.pressed : active && !folder ? base.pinnedSelectedFill : hovered ? base.hover : nil
+    let raised = standsOut && !pressed
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    face.backgroundColor = fill?.cgColor
+    face.backgroundColor = fill.map { raised ? base.glassTint($0, raised: true, solid: true) : $0 }?.cgColor
+    face.borderWidth = raised ? 1 / (window?.backingScaleFactor ?? 2) : 0
+    face.borderColor = NSColor.black.withAlphaComponent(base.dark ? 0.35 : 0.1).cgColor
+    face.shadowOpacity = raised ? (base.dark ? 0.5 : 0.18) : 0
+    face.shadowRadius = 2
+    face.shadowOffset = CGSize(width: 0, height: 1)
+    face.shadowColor = NSColor.black.cgColor
     CATransaction.commit()
   }
 
@@ -494,7 +546,9 @@ final class StripPinnedCell: StripHoverView {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     face.frame = bounds.insetBy(dx: inset, dy: inset)
+    face.shadowPath = CGPath(roundedRect: face.bounds, cornerWidth: StripMetrics.pinnedFaceRadius, cornerHeight: StripMetrics.pinnedFaceRadius, transform: nil)
     CATransaction.commit()
+    ring?.frame = bounds.insetBy(dx: inset, dy: inset)
     icon.frame = NSRect(x: (bounds.width - 16) / 2, y: (bounds.height - 16) / 2, width: 16, height: 16)
     badges?.frame = icon.frame
     let side = FolderMosaicView.side
@@ -543,9 +597,11 @@ final class StripDockView: NSView {
 
   func update(cells ids: [String], members: [String: [String]], geometry: StripDragGeometry, _ context: StripContext) {
     order = ids
+    let flat = context.sidebar.host.iconRing
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    box.backgroundColor = context.base.pinnedResting.cgColor
+    box.backgroundColor = (flat ? context.base.flatTile(context.base.pinnedResting) : context.base.pinnedResting).cgColor
+    box.borderWidth = flat ? 0 : 0.5
     box.borderColor = context.base.pinnedRestingStroke.cgColor
     CATransaction.commit()
     for (id, view) in cells where !ids.contains(id) {

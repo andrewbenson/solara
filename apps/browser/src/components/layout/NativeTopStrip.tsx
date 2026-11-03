@@ -227,6 +227,7 @@ function useTopStripState(windowId: string, profileId: string, floating: boolean
     }),
   );
   useIncomingFile(windowId);
+  const iconRing = useBrowser((s) => !s.settings.classicPinnedTabs);
 
   const state = useMemo(
     () =>
@@ -247,8 +248,9 @@ function useTopStripState(windowId: string, profileId: string, floating: boolean
         newTabMark: Image.resolveAssetSource(NEW_TAB_MARK)?.uri ?? null,
         pages,
         selection,
+        iconRing,
       })),
-    [pages, selection, theme, glow.shadowColor, glow.shadowOpacity, glow.shadowRadius, profileId, floating, pageWidth, playing, sleeping, engines, capture, bands, closeHint],
+    [iconRing, pages, selection, theme, glow.shadowColor, glow.shadowOpacity, glow.shadowRadius, profileId, floating, pageWidth, playing, sleeping, engines, capture, bands, closeHint],
   );
 
   return state;

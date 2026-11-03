@@ -42,3 +42,12 @@ test("the battery saver migration still runs alongside it", () => {
   assert.deepEqual(migrated.migrations, ["toolbarStaysOnScroll"]);
   assert.equal(migrateSavedSettings(undefined), undefined);
 });
+
+test("pinned tabs stand out unless someone picks the classic look, and that choice survives a relaunch", () => {
+  S().hydrate({});
+  assert.equal(S().settings.classicPinnedTabs ?? false, false);
+  S().updateSettings({ classicPinnedTabs: true });
+  S().hydrate({ settings: JSON.parse(JSON.stringify(S().settings)) });
+  assert.equal(S().settings.classicPinnedTabs, true);
+  assert.ok(S().settings.chosen.includes("classicPinnedTabs"));
+});

@@ -65,7 +65,6 @@ struct TabsPane: View {
 
   var body: some View {
     let top = store.topTabLayout
-    let liquidGlass = context?.liquidGlass ?? false
     SettingsForm {
       Section {
         SettingToggle("tabs.hideToolbarWhileScrolling", key: "hideToolbarWhileScrolling")
@@ -74,9 +73,7 @@ struct TabsPane: View {
           SettingToggle("tabs.showClearButton", key: "showClearButton")
           SettingToggle("tabs.balancedTopApps", key: "balancedTopApps")
         }
-        if liquidGlass {
-          SettingToggle("tabs.pinnedTabIconRing", key: "pinnedTabIconRing")
-        }
+        SettingToggle("tabs.classicPinnedTabs", key: "classicPinnedTabs", inverted: true)
         SettingToggle("tabs.fadeUnloadedTabs", key: "fadeUnloadedTabs")
       } header: {
         VStack(alignment: .leading, spacing: 14) {

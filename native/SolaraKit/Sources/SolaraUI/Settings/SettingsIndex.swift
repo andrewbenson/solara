@@ -162,12 +162,11 @@ public struct SettingsIndex: Sendable {
             keywords: ["pinned tiles", "favorites", "grid", "columns", "rows", "arc"]
           ),
           Row(
-            key: "pinnedTabIconRing",
-            title: "Highlight pinned tabs in their icon's colors",
-            description: "As in Dia: the Top App you're on gets a ring and tint from its icon instead of the raised glass.",
-            caption: "The selected Top App gets a ring and tint from its icon.",
-            keywords: ["dia", "liquid glass", "top apps", "favicon", "colour", "ring", "tint", "selected tile"],
-            liquidGlassOnly: true
+            key: "classicPinnedTabs",
+            title: "Make the pinned tab you're on stand out",
+            description: "The Top App you're on is raised, with a faint tint and ring in its icon's colors, and the others sit flat. Off, every Top App is raised glass, as before.",
+            caption: "Raises the selected Top App and tints it in its icon's colors; the others sit flat.",
+            keywords: ["dia", "liquid glass", "top apps", "pinned tabs", "favicon", "colour", "color", "icon ring", "tint", "selected tile", "active", "flat", "raised"]
           ),
           Row(
             key: "fadeUnloadedTabs",

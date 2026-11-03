@@ -20,19 +20,33 @@ private enum PairingTestApplication {
       waiters.append(continuation)
       guard !scheduled else { return }
       scheduled = true
-      CFRunLoopPerformBlock(CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue) {
-        MainActor.assumeIsolated {
-          DispatchQueue.main.async {
-            ready = true
-            let pending = waiters
-            waiters.removeAll()
-            for waiter in pending { waiter.resume() }
-          }
-          NSApp.run()
-        }
-      }
-      CFRunLoopWakeUp(CFRunLoopGetMain())
+      runAppAtTheOutermostRunLoop()
     }
+  }
+
+  private static func runAppAtTheOutermostRunLoop() {
+    CFRunLoopPerformBlock(CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue) {
+      MainActor.assumeIsolated {
+        guard !insideNestedRunLoop() else {
+          DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { runAppAtTheOutermostRunLoop() }
+          return
+        }
+        DispatchQueue.main.async {
+          ready = true
+          let pending = waiters
+          waiters.removeAll()
+          for waiter in pending { waiter.resume() }
+        }
+        NSApp.run()
+      }
+    }
+    CFRunLoopWakeUp(CFRunLoopGetMain())
+  }
+
+  private static func insideNestedRunLoop() -> Bool {
+    let frames = Thread.callStackSymbols
+    guard let loop = frames.firstIndex(where: { $0.contains("CFRunLoopRunSpecific") }), loop + 1 < frames.count else { return true }
+    return !frames[loop + 1].contains(" CFRunLoopRun + ")
   }
 }
 

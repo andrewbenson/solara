@@ -35,7 +35,7 @@ test("an empty lookup that started before an import doesn't wipe the imported ic
   globalThis.faviconsForTest = (profile, pages) => new Promise((resolve) => lookups.push({ pages, answer: () => resolve({ pages: new Map(), icons: new Map() }) }));
   const row = mount(() => useFavicon(page, null, "default"));
   try {
-    await waitFor(() => lookups.some((l) => l.pages.includes(page)));
+    await waitFor(() => lookups.some((l) => l.pages.some((p) => p === page)));
     adoptFavicons("default", [{ page, icon: `${page}favicon.png`, png: "AAAA" }]);
     assert.equal(resolveFavicon(page, null, "default")?.uri, "data:image/png;base64,AAAA");
     for (const l of lookups) l.answer();

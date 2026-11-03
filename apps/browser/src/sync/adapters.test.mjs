@@ -909,7 +909,7 @@ for (const split of [false, true]) {
     await syncAll([a, b]);
     windowsWhole(b);
     assert.equal(b.with(() => S().tabs[tabAt("https://x.example/")]?.windowId), b1, "the open page stays in its window");
-    assert.ok(pinnedGroupMembers(b, "default").some(([name, urls]) => name === "Team" && urls.includes("https://x.example/")), "and B has the group with it");
+    assert.ok(pinnedGroupMembers(b, "default").some(([name, urls]) => name === "Team" && urls.some((url) => url === "https://x.example/")), "and B has the group with it");
     assert.equal((await b.sync()).published + (await a.sync()).published, 0, "settled");
     assert.deepEqual(pinnedGroupMembers(a, "default"), [["Team", ["https://x.example/"]]]);
   });

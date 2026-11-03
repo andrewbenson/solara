@@ -224,7 +224,7 @@ try {
     await point(x + 40, y + h - 20);
     await sleep(200);
     await run(`return ac.shell.devClick("w1", { x: ${x + 40}, y: ${y + h - 20} })`);
-    await until("the pull request to open", async () => (await run(`const s = ac.store.getState(); return s.windows.w1.tabIds.map((id) => s.tabs[id].url)`)).includes("https://example.com/pr/7"));
+    await until("the pull request to open", async () => (await run(`const s = ac.store.getState(); return s.windows.w1.tabIds.map((id) => s.tabs[id].url)`)).some((url) => url === "https://example.com/pr/7"));
     await gone("opening the item");
     assert.ok((await run(`return ac.store.getState().windows.w1.tabIds.length`)) >= before);
   });

@@ -117,8 +117,8 @@ test("cleaned tabs leave Recently Cleaned a week after their clean-up", () => {
   assert.deepEqual(cleanedTabsFor(S(), w).map((c) => c.id), ["ct-recent"], "the list and its count read only the last 7 days");
   S().restoreCleaned(undefined, w);
   const urls = model.viewTabIds(S(), w).map((id) => S().tabs[id].url);
-  assert.ok(urls.includes("https://recent.example/"));
-  assert.ok(!urls.includes("https://stale.example/"), "Restore All brings back only the recent one");
+  assert.ok(urls.some((url) => url === "https://recent.example/"));
+  assert.ok(!urls.some((url) => url === "https://stale.example/"), "Restore All brings back only the recent one");
 
   useBrowser.setState({ cleanedTabs: [stale] });
   const old = S().newTab(w, { url: "https://idle.example/" });

@@ -57,8 +57,8 @@ test("staleness: pin in A shows in B; unpin in B is gone in A; reorder, rename a
   S().pinTabs([tileOf(b, "https://docs.com")], false);
   assert.deepEqual(pinned(a), ["https://mail.com", "https://x.com"], "delete in B → gone in A");
   assert.deepEqual(pinned(b), ["https://mail.com", "https://x.com"]);
-  assert.ok(regular(b).includes("https://docs.com"), "B's own copy stays as a regular tab there");
-  assert.ok(regular(a).includes("https://docs.com"), "A's copy had a page: it stays as a regular tab, nothing closes under the user");
+  assert.ok(regular(b).some((url) => url === "https://docs.com"), "B's own copy stays as a regular tab there");
+  assert.ok(regular(a).some((url) => url === "https://docs.com"), "A's copy had a page: it stays as a regular tab, nothing closes under the user");
 
   S().moveTab(tileOf(a, "https://x.com"), 0);
   assert.deepEqual(pinned(b), ["https://x.com", "https://mail.com"], "update (order) → B follows");
@@ -82,7 +82,7 @@ test("an unloaded copy unpinned elsewhere goes; nothing ever ping-pongs between 
   assert.ok(writes <= 3, `settles at once (${writes} writes)`);
   assert.deepEqual(pinned(a), ["https://docs.com"]);
   assert.deepEqual(pinned(b), ["https://docs.com"]);
-  assert.ok(!regular(b).includes("https://mail.com"), "B's copy never loaded: it's gone, not a stray tab");
+  assert.ok(!regular(b).some((url) => url === "https://mail.com"), "B's copy never loaded: it's gone, not a stray tab");
 });
 
 test("closing a window keeps the pins in the others and parks nothing; the last window parks them for the next", () => {

@@ -65,7 +65,7 @@ test("preventInline (after a deletion): no completion, and the search is first u
   const after = typed("gi", true);
   assert.equal(after.completion, "");
   assert.equal(rows(after.items)[0], "search:gi");
-  assert.ok(rows(after.items).includes("https://github.com/"), "the page stays in the list");
+  assert.ok(rows(after.items).some((url) => url === "https://github.com/"), "the page stays in the list");
   assert.equal(rows(typed("gith", true).items)[0], "search:gith");
   assert.equal(rows(typed("x.c", true).items)[0], "search:x.c");
   assert.equal(rows(typed("github.com", true).items)[0], "https://github.com/");
@@ -104,7 +104,7 @@ test("a word and a space: no completion, the search goes first unless it is the 
     const r = typed(text);
     assert.equal(r.completion, "", JSON.stringify(text));
     assert.equal(rows(r.items)[0], `search:${text.trim()}`, JSON.stringify(text));
-    assert.ok(rows(r.items).includes("https://github.com/") || text.startsWith("x"), "the page stays in the list");
+    assert.ok(rows(r.items).some((url) => url === "https://github.com/") || text.startsWith("x"), "the page stays in the list");
   }
   assert.equal(rows(typed("github.com ").items)[0], "https://github.com/");
   assert.equal(typed("github.com ").completion, "");
@@ -119,7 +119,7 @@ test("only a visited page completes: a bookmark or an open tab with no history r
   const tabs = [{ id: "t9", url: "https://news.ycombinator.com/", title: "Hacker News", favicon: null }];
   const r = buildSuggestions("bookm", { tabs, history, bookmarks }, { now });
   assert.equal(r.completion, "");
-  assert.ok(rows(r.items).includes("https://bookmarked.example.org/"), "still a row");
+  assert.ok(rows(r.items).some((url) => url === "https://bookmarked.example.org/"), "still a row");
   const t = buildSuggestions("news", { tabs, history, bookmarks }, { now });
   assert.equal(t.completion, "");
   assert.ok(rows(t.items).includes("tab:https://news.ycombinator.com/"), "still a switch-to-tab row");

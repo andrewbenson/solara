@@ -176,7 +176,7 @@ for (const on of [false, true]) {
     await a.sync();
     assert.ok(n());
     assert.deepEqual(memberUrls(a, g), ["https://new-member.example/", "https://stays.example/"]);
-    assert.ok(memberUrls(a, h).includes("https://member.example/"), "m is in h");
+    assert.ok(memberUrls(a, h).some((url) => url === "https://member.example/"), "m is in h");
   });
 
   test(`a pinned group deleted on another Mac leaves a member added locally after the view froze as a pinned tile, redesign ${on}`, async () => {

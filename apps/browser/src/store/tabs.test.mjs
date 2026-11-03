@@ -9,6 +9,7 @@ const { windowClosingWithTab } = await import("./newTabBar.ts");
 
 const S = () => useBrowser.getState();
 const view = (w) => model.viewTabIds(S(), w).map((id) => S().tabs[id].url);
+const hostOf = (url) => new URL(url).hostname;
 const short = (url) => url.replace(/^https:\/\/|\.com$/g, "");
 const hosts = (w) => S().windows[w].tabIds.map((id) => short(S().tabs[id].url));
 const shown = (w) => short(S().tabs[model.activeTabId(S(), w)].url);
@@ -160,7 +161,7 @@ test("closing the last tab keeps the window with one selected New Tab page; ⌘W
     assert.equal(S().closedTabs.at(-1).tab.url, "https://a.com", "recorded as a closed tab");
     assert.equal(S().closedWindows.length, windows, "not as a closed window");
     S().reopenClosed(w);
-    assert.ok(view(w).includes("https://a.com"), "⇧⌘T reopens it in the same window");
+    assert.ok(view(w).some((url) => url === "https://a.com"), "⇧⌘T reopens it in the same window");
     assert.equal(shown(w), "a");
     S().closeTab(model.activeTabId(S(), w));
     S().closeTab(model.activeTabId(S(), w));
@@ -324,7 +325,7 @@ test("a reopened group's and cleaned tabs' tabs take their back/forward lists ba
   S().restoreClosed(entry.id);
   const old = Object.values(S().groups).find((x) => x.name === "Old");
   assert.equal(adopts(old.tabIds[0]), undefined);
-  assert.ok(S().tabs[old.tabIds[0]].url.includes("d.com"));
+  assert.equal(hostOf(S().tabs[old.tabIds[0]].url), "d.com");
   S().updateTab(a, { lastActiveAt: Date.now() - 13 * 3600_000 });
   assert.equal(S().cleanUpTabs(w), 1);
   S().restoreCleaned();
@@ -346,7 +347,7 @@ test("a reopened tab not shown yet keeps its back/forward list's source through 
   assert.equal(S().tabs[c3].wakeAdoptId, `restore:${c}`);
   S().closeTab(c3);
   S().reopenClosedTab();
-  const c4 = S().windows[w].tabIds.find((id) => S().tabs[id].url.includes("c.com"));
+  const c4 = S().windows[w].tabIds.find((id) => hostOf(S().tabs[id].url) === "c.com");
   assert.equal(S().tabs[c4].adoptId ?? S().tabs[c4].wakeAdoptId, `restore:${c}`);
 });
 
@@ -377,7 +378,7 @@ test("a pinned group's reopened tab not shown yet keeps its back/forward list th
   S().closeWindow(w);
   assert.ok(S().parkedPins.default, "the profile's pins are parked");
   const n = S().createWindow();
-  const back = S().windows[n].tabIds.find((id) => S().tabs[id].url.includes("c.com"));
+  const back = S().windows[n].tabIds.find((id) => hostOf(S().tabs[id].url) === "c.com");
   S().activate(back);
   assert.equal(S().tabs[back].adoptId, `restore:${c}`);
 });

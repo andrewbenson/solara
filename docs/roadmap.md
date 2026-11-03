@@ -21,12 +21,26 @@ backlog, and check this file against the release notes.
 | Fixes from the owner's two-Mac sync-join test of 0.1.3 | — | waiting on the test |
 | Icons-only sidebar | — | cut 2026-11-03: too costly for 0.1.4; moved to 0.2.0 |
 
-## 0.2.0: the icons-only sidebar
+## 0.2.0: the sidebar your way, and a fresh engine
+
+Several items were seen in Ardia (github.com/mantrakp04/ardia) the week of 2026-10-27; its code is Apache-2.0, so
+ideas are free and any reused code keeps the NOTICE credit.
 
 | Item | Owner | Status |
 |---|---|---|
 | Icons-only sidebar rail, 84 pt: drag-to-snap, View menu and Settings toggle, hover × to close, loading and audio badges, the address bar moves to the toolbar | r14 | drafted (work/r14/rail: rail.patch on be7b9864, NOTES.txt, 7 review findings open), not landed |
 | Folder and group popovers, footer profile switcher, the hidden sidebar's peek in rail mode | — | planned |
+| Sidebar on the right: a Left/Right position in Settings, the View menu and the sidebar's menu; peek, resize, hover cards and drops mirror; the window buttons stay top left (as Ardia 4844d5a1, Arc, Zen) | — | planned |
+| Engine: Chromium 156.0.8078.79 or newer (Chrome stable security updates; we ship .47). Needs a Chromium sync and rebuild: owner approved for 0.2.0 | — | planned |
+| Update safety: never move or delete staged updates ourselves; drop a staged nightly only through Sparkle's Skip; quit holds 8 s at most (Ardia 55a78c6c) | — | planned |
+| Share… in the page's right-click menu and File › Share (⌥⌘S): selected text, an image, a link with trackers removed, media, the page (engine change) | — | planned |
+| A full emoji picker for profile, tab and folder icons (search, categories, symbols), and names that save on click-away | — | planned |
+| Little Solara can keep new-tab links inside itself (a setting) | — | planned |
+| Tabs moved to another window land where a new tab would open | — | planned |
+| New Window opens on the profile you're in | — | planned |
+| Closing the last tab keeps the window while it has pinned tiles or a pinned group | — | planned |
+| A muted tab's or site's notifications make no sound | — | planned |
+| The hidden sidebar doesn't peek out while another app is in front | — | planned |
 
 ## 0.3.0: the CLI and Raycast, revamped
 
@@ -35,6 +49,7 @@ backlog, and check this file against the release notes.
 | Revamp the `solara` command (apps/cli, docs/cli.md): scope to be set with the owner | — | planned |
 | Revamp the Raycast extension (extras/raycast-solara) against the revamped CLI | — | planned |
 | Publish the extension on the Raycast Store: meet its review guidelines and submit to raycast/extensions (a public PR in another project, so it needs the owner's OK at submission) | — | planned |
+| Video call pop-out (Google Meet and others: the floating window a call opens, document picture-in-picture): make getting back to the call's tab easy and obvious; first find out what that window lets us change | — | planned |
 
 ## 1.0.0: all Swift
 

@@ -2698,11 +2698,10 @@ NSEvent *Key(NSWindow *window, NSEventType type, NSEventModifierFlags flags, NSS
 
 namespace {
 
-NSDictionary *ProbeFrame(NSWindow *window, ACWindowFullScreen *state, CFTimeInterval start, NSSize before) {
+NSData *RenderContentLayer(NSWindow *window, CGFloat scale, size_t *width, size_t *height) {
   NSView *content = window.contentView;
   CALayer *layer = content.layer;
   if (!layer) return nil;
-  const CGFloat scale = 0.125;
   const NSSize size = content.bounds.size;
   const size_t w = MAX(1, (size_t)ceil(size.width * scale)), h = MAX(1, (size_t)ceil(size.height * scale));
   NSMutableData *pixels = [NSMutableData dataWithLength:w * h * 4];
@@ -2718,6 +2717,65 @@ NSDictionary *ProbeFrame(NSWindow *window, ACWindowFullScreen *state, CFTimeInte
   }
   [layer renderInContext:context];
   CGContextRelease(context);
+  *width = w;
+  *height = h;
+  return pixels;
+}
+
+NSDictionary *PixelGrid(NSData *pixels, size_t w, long x0, long y0, long x1, long y1) {
+  const uint8_t *p = (const uint8_t *)pixels.bytes;
+  NSMutableDictionary<NSNumber *, NSNumber *> *counts = [NSMutableDictionary dictionary];
+  double sums[6][8][3] = {};
+  long cells[6][8] = {}, n = 0, most = 0;
+  for (long y = y0; y < y1; y++) {
+    for (long x = x0; x < x1; x++) {
+      const uint8_t *px = p + (y * w + x) * 4;
+      NSNumber *key = @(((px[0] >> 3) << 10) | ((px[1] >> 3) << 5) | (px[2] >> 3));
+      const long c = counts[key].longValue + 1;
+      counts[key] = @(c);
+      most = MAX(most, c);
+      const long gy = (y - y0) * 6 / (y1 - y0), gx = (x - x0) * 8 / (x1 - x0);
+      for (int k = 0; k < 3; k++) sums[gy][gx][k] += px[k];
+      cells[gy][gx]++;
+      n++;
+    }
+  }
+  NSMutableArray *grid = [NSMutableArray array];
+  for (int gy = 0; gy < 6; gy++)
+    for (int gx = 0; gx < 8; gx++) {
+      const long c = MAX(1, cells[gy][gx]);
+      [grid addObject:[NSString stringWithFormat:@"%02x%02x%02x", (int)(sums[gy][gx][0] / c), (int)(sums[gy][gx][1] / c),
+                                                 (int)(sums[gy][gx][2] / c)]];
+    }
+  return @{@"uniform" : @(round((double)most / n * 1000) / 1000), @"grid" : grid};
+}
+
+#if DEBUG
+NSDictionary *PopupPagePixels(NSWindow *window, NSView *page) {
+  NSView *content = window.contentView;
+  if (!page || page.window != window) return @{@"error" : @"the page isn't in this window"};
+  const CGFloat scale = 0.25;
+  size_t w = 0, h = 0;
+  NSData *pixels = RenderContentLayer(window, scale, &w, &h);
+  if (!pixels) return @{@"error" : @"no layer"};
+  const NSRect r = [page convertRect:page.bounds toView:content];
+  const CGFloat top = content.isFlipped ? NSMinY(r) : NSHeight(content.bounds) - NSMaxY(r);
+  const long x0 = MAX(0L, lround(NSMinX(r) * scale)), y0 = MAX(0L, lround(top * scale));
+  const long x1 = MIN((long)w, lround(NSMaxX(r) * scale)), y1 = MIN((long)h, lround((top + NSHeight(r)) * scale));
+  if (x1 - x0 < 8 || y1 - y0 < 6) return @{@"error" : @"the page is too small"};
+  NSMutableDictionary *out = [PixelGrid(pixels, w, x0, y0, x1, y1) mutableCopy];
+  out[@"page"] = @[ @(NSMinX(r)), @(top), @(NSWidth(r)), @(NSHeight(r)) ];
+  return out;
+}
+#endif
+
+NSDictionary *ProbeFrame(NSWindow *window, ACWindowFullScreen *state, CFTimeInterval start, NSSize before) {
+  NSView *content = window.contentView;
+  const CGFloat scale = 0.125;
+  const NSSize size = content.bounds.size;
+  size_t w = 0, h = 0;
+  NSData *pixels = RenderContentLayer(window, scale, &w, &h);
+  if (!pixels) return nil;
   NSMutableDictionary *frame = [@{
     @"t" : @(round((CACurrentMediaTime() - start) * 1000)),
     @"size" : @[ @(size.width), @(size.height) ],
@@ -2743,32 +2801,7 @@ NSDictionary *ProbeFrame(NSWindow *window, ACWindowFullScreen *state, CFTimeInte
   const long x0 = lround(NSMinX(r) * scale), y0 = lround(top * scale);
   const long x1 = MIN((long)w, lround(NSMaxX(r) * scale)), y1 = MIN((long)h, lround((top + NSHeight(r)) * scale));
   if (x1 - x0 < 8 || y1 - y0 < 6) return frame;
-  const uint8_t *p = (const uint8_t *)pixels.bytes;
-  NSMutableDictionary<NSNumber *, NSNumber *> *counts = [NSMutableDictionary dictionary];
-  double sums[6][8][3] = {};
-  long cells[6][8] = {}, n = 0, most = 0;
-  for (long y = y0; y < y1; y++) {
-    for (long x = x0; x < x1; x++) {
-      const uint8_t *px = p + (y * w + x) * 4;
-      NSNumber *key = @(((px[0] >> 3) << 10) | ((px[1] >> 3) << 5) | (px[2] >> 3));
-      const long c = counts[key].longValue + 1;
-      counts[key] = @(c);
-      most = MAX(most, c);
-      const long gy = (y - y0) * 6 / (y1 - y0), gx = (x - x0) * 8 / (x1 - x0);
-      for (int k = 0; k < 3; k++) sums[gy][gx][k] += px[k];
-      cells[gy][gx]++;
-      n++;
-    }
-  }
-  NSMutableArray *grid = [NSMutableArray array];
-  for (int gy = 0; gy < 6; gy++)
-    for (int gx = 0; gx < 8; gx++) {
-      const long c = MAX(1, cells[gy][gx]);
-      [grid addObject:[NSString stringWithFormat:@"%02x%02x%02x", (int)(sums[gy][gx][0] / c), (int)(sums[gy][gx][1] / c),
-                                                 (int)(sums[gy][gx][2] / c)]];
-    }
-  frame[@"uniform"] = @(round((double)most / n * 1000) / 1000);
-  frame[@"grid"] = grid;
+  [frame addEntriesFromDictionary:PixelGrid(pixels, w, x0, y0, x1, y1)];
   return frame;
 }
 
@@ -2780,6 +2813,14 @@ NSDictionary *ProbeFrame(NSWindow *window, ACWindowFullScreen *state, CFTimeInte
   if (!window) return nil;
   if (!solaracore_host::TestHooksAllowed()) return @"test instances only";
 #if DEBUG
+  if ([action isEqualToString:@"popupPixels"]) {
+    for (SolaraCorePopupWindow *popup in PopupWindows()) {
+      if (popup.coreWindow.window != window) continue;
+      NSData *json = [NSJSONSerialization dataWithJSONObject:PopupPagePixels(window, popup.tab.view) options:0 error:nil];
+      return json ? [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding] : @"{}";
+    }
+    return @"not a popup window";
+  }
   if ([action isEqualToString:@"popupPage"]) {
     for (SolaraCorePopupWindow *popup in PopupWindows()) {
       if (popup.coreWindow.window != window) continue;

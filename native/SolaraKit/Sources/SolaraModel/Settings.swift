@@ -44,6 +44,7 @@ public struct Settings: Sendable, Hashable {
     "videoUpscaling": true,
     "sidebarMediaControls": true,
     "sidebarWidth": 190,
+    "sidebarIconsOnly": false,
     "showSidebarButton": true,
     "showClearButton": true,
     "balancedTopApps": false,

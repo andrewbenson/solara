@@ -139,6 +139,7 @@ public struct SidebarLayoutInput: Sendable {
   public var playerHeight: CGFloat = 0
   public var upsellHeight: CGFloat = 0
   public var live: SidebarLiveBlocks?
+  public var rail = false
 
   public init(windowId: String, profileId: String, width: CGFloat, height: CGFloat) {
     self.windowId = windowId
@@ -162,6 +163,7 @@ public struct SidebarLayout {
   public static func headGap(_ first: String?) -> CGFloat { first?.hasPrefix("g:") == true ? M.rowGap : 0 }
 
   public func entryHeight(_ entry: String) -> CGFloat {
+    if input.rail { return M.rowHeight }
     if entry.hasPrefix(SidebarLive.prefix) { return liveHeight(entry) }
     guard entry.hasPrefix("g:") else { return M.rowHeight }
     return M.groupBorder * 2 + M.rowHeight + membersHeight(String(entry.dropFirst(2)))
@@ -188,7 +190,7 @@ public struct SidebarLayout {
     out.grid = PinGrid.of(count: tiles.count, innerWidth: innerWidth, balanced: input.balanced)
     let gridHeight = tiles.isEmpty ? 0 : PinGrid.height(count: tiles.count, innerWidth: innerWidth, balanced: input.balanced)
     let pageHeight = max(0, input.height - (input.addressBar ? M.glowRoom : 0))
-    let dockRoom = pageHeight > 0 ? (pageHeight - input.playerHeight) * M.dockShare - topGap - M.edgeGap - M.edgeLine : .infinity
+    let dockRoom = pageHeight > 0 ? (pageHeight - (input.rail ? 0 : input.playerHeight)) * M.dockShare - topGap - M.edgeGap - M.edgeLine : .infinity
     out.tilesFixed = tiles.isEmpty || gridHeight <= dockRoom
 
     if out.tilesFixed && !tiles.isEmpty {
@@ -202,7 +204,7 @@ public struct SidebarLayout {
 
     var rows: [SidebarItem] = []
     var y: CGFloat = 0
-    if input.incognitoBadge {
+    if input.incognitoBadge && !input.rail {
       rows.append(SidebarItem(kind: .incognito, frame: CGRect(x: 0, y: y, width: innerWidth, height: M.incognitoBadge), region: .scroll, groups: [], section: .chrome))
       y += M.incognitoBadge + M.incognitoBadgeGap
     }
@@ -224,7 +226,8 @@ public struct SidebarLayout {
 
     let listHeightWithoutNewTab = y + listHeight(entries.list, newTab: false)
     let listForDock = out.fixedHeight + listHeightWithoutNewTab + M.edgeInset
-    out.docked = !input.newTabAtTop && input.height > 0 && listForDock + input.playerHeight + M.rowPitch + M.dockSlack > input.height
+    let playerHeight = input.rail ? 0 : input.playerHeight
+    out.docked = !input.newTabAtTop && input.height > 0 && listForDock + playerHeight + M.rowPitch + M.dockSlack > input.height
     let inlineNewTab = !out.docked
 
     var listItems: [(kind: String, entry: String?)] = []
@@ -243,7 +246,7 @@ public struct SidebarLayout {
       }
     }
     out.rowsHeight = y
-    if input.upsellHeight > 0 {
+    if input.upsellHeight > 0 && !input.rail {
       y += M.upsellGap
       rows.append(SidebarItem(kind: .upsell, frame: CGRect(x: 0, y: y, width: innerWidth, height: input.upsellHeight), region: .scroll, groups: [], section: .chrome))
       y += input.upsellHeight
@@ -258,7 +261,7 @@ public struct SidebarLayout {
       out.items.append(SidebarItem(kind: .newTab, frame: CGRect(x: M.inset, y: dockTop, width: innerWidth, height: M.rowHeight), region: .dock, groups: [], section: .list))
       out.scrollBottom = dockTop - M.rowGap
     }
-    if input.playerHeight > 0 {
+    if input.playerHeight > 0 && !input.rail {
       let playerBody = input.playerHeight - SidebarPlayerView.gap
       let playerTop = out.docked ? out.scrollBottom - playerBody : input.height - input.playerHeight
       out.playerFrame = CGRect(x: M.inset, y: playerTop, width: innerWidth, height: playerBody)
@@ -286,11 +289,22 @@ public struct SidebarLayout {
     for (i, entry) in entries.enumerated() {
       if i > 0 { y += M.rowGap }
       if entry.hasPrefix(SidebarLive.prefix) {
-        y = placeLive(entry, top: y, x: x, width: width, section: section, into: &items)
+        if input.rail {
+          let folderId = String(entry.dropFirst(SidebarLive.prefix.count))
+          items.append(SidebarItem(kind: .live(SidebarLiveMetrics.headerKey(folderId)), frame: CGRect(x: x, y: y, width: width, height: M.rowHeight), region: .scroll, groups: groups, section: section))
+          y += M.rowHeight
+        } else {
+          y = placeLive(entry, top: y, x: x, width: width, section: section, into: &items)
+        }
         continue
       }
       let id = String(entry.dropFirst(2))
-      if entry.hasPrefix("g:") {
+      if entry.hasPrefix("g:") && input.rail {
+        let frame = CGRect(x: x, y: y, width: width, height: M.rowHeight)
+        items.append(SidebarItem(kind: .groupBox(id), frame: frame, region: .scroll, groups: groups + [id], section: section))
+        items.append(SidebarItem(kind: .groupHeader(id), frame: frame, region: .scroll, groups: groups + [id], section: section))
+        y += M.rowHeight
+      } else if entry.hasPrefix("g:") {
         y = placeGroup(id, top: y, x: x, width: width, groups: groups, section: section, into: &items)
       } else if entry.hasPrefix("s:") {
         items.append(SidebarItem(kind: .split(id), frame: CGRect(x: x, y: y, width: width, height: M.rowHeight), region: .scroll, groups: groups, section: section))

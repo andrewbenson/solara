@@ -42,6 +42,7 @@ export type BrowserCommand =
   | "toggleDeveloperMode"
   | "toggleJavaScriptFromAppleEvents"
   | "toggleAddressBar"
+  | "toggleSidebarIconsOnly"
   | "cast"
   | "zoomReset"
   | "zoomIn"

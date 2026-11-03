@@ -188,7 +188,7 @@ NSString *StateOf(NSDictionary *session, NSString *windowId) {
     if ([w isKindOfClass:NSDictionary.class] && [w[@"id"] isEqual:windowId]) window = w;
   if (!window) return nil;
   NSMutableDictionary *state = [NSMutableDictionary dictionary];
-  for (NSString *key in @[ @"tabLayout", @"addressBar", @"sidebarWidth", @"bookmarksBar", @"appearance", @"hideToolbarWhileScrolling", @"showFullUrl" ])
+  for (NSString *key in @[ @"tabLayout", @"addressBar", @"sidebarWidth", @"sidebarIconsOnly", @"bookmarksBar", @"appearance", @"hideToolbarWhileScrolling", @"showFullUrl" ])
     if (settings[key]) state[[@"s." stringByAppendingString:key]] = settings[key];
   for (NSString *key in @[ @"sidebarOpen", @"tabLayout", @"profileId", @"incognito" ])
     if (window[key]) state[[@"w." stringByAppendingString:key]] = window[key];

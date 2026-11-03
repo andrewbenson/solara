@@ -128,10 +128,11 @@ final class SidebarShellColumn: NSView, DevDropDestination {
   }
 
   func apply(state: String, layout: Layout, chrome look: SidebarChromeState?) {
+    let previousFooter = footerInset
     chrome.isHidden = look == nil
     if let look { chrome.update(look) }
     syncAddress(look?.addressBar == true)
-    if layout != given {
+    if layout != given || previousFooter != footerInset {
       given = layout
       list.layer?.masksToBounds = layout.clip
       placeList()
@@ -144,8 +145,10 @@ final class SidebarShellColumn: NSView, DevDropDestination {
     placeList()
   }
 
+  private var footerInset: CGFloat { chrome.state?.rail == true && !chrome.isHidden ? chrome.footerHeight : given.bottom }
+
   private func placeList() {
-    list.frame = CGRect(x: 0, y: given.top, width: bounds.width, height: max(0, bounds.height - given.top - given.bottom))
+    list.frame = CGRect(x: 0, y: given.top, width: bounds.width, height: max(0, bounds.height - given.top - footerInset))
     host.view.frame = list.bounds
     chrome.frame = bounds
   }
@@ -166,7 +169,7 @@ final class SidebarShellColumn: NSView, DevDropDestination {
     let height = window?.contentView?.bounds.height ?? 0
     let rect = { (r: CGRect) -> [Double] in [r.minX, height - r.maxY, r.width, r.height] }
     return [
-      "frame": rect(inWindow), "list": rect(list), "header": given.header, "bottom": given.bottom, "clip": given.clip,
+      "frame": rect(inWindow), "list": rect(list), "header": given.header, "bottom": footerInset, "clip": given.clip,
       "slot": (superview as? WindowShellView)?.slot(of: self)?.rawValue ?? NSNull(), "hidden": isHiddenOrHasHiddenAncestor,
       "hover": host.view.current?.hoverKey ?? NSNull(),
       "reactUnder": reactUnderList().map { [$0.0, $0.1.minX, height - $0.1.maxY, $0.1.width, $0.1.height] },
@@ -230,6 +233,10 @@ final class SidebarShellColumn: NSView, DevDropDestination {
       shell?.update { $0.sidebarWidth = CGFloat(SidebarChromeMetrics.defaultWidth) }
       NativeSidebarShell.send(windowId, "commitWidth", ["width": SidebarChromeMetrics.defaultWidth])
     case .installUpdate: AppUpdater.shared.installPendingUpdate(nil)
+    case .iconsOnly(let on):
+      let full = SidebarResizeMath.clamp(chrome.state?.savedWidth ?? SidebarChromeMetrics.defaultWidth)
+      shell?.update { $0.sidebarWidth = CGFloat(on ? SidebarRail.width : full) }
+      NativeSidebarShell.send(windowId, "iconsOnly", ["on": on])
     }
   }
 
@@ -294,8 +301,10 @@ final class SidebarShellColumn: NSView, DevDropDestination {
 public enum SidebarChromeRead {
   public static func snapshot(windowId: String) -> [String: Any]? {
     guard let column = NativeSidebarShell.column(windowId) else { return nil }
-    let committed = NativeStoreHandle.store?.state.settings["sidebarWidth"]?.number ?? SidebarChromeMetrics.defaultWidth
-    return ["liveWidth": Double(column.frame.width), "committedWidth": committed]
+    let settings = NativeStoreHandle.store?.state.settings
+    let committed = settings?["sidebarWidth"]?.number ?? SidebarChromeMetrics.defaultWidth
+    let effective = settings.map(SidebarRail.effectiveWidth) ?? committed
+    return ["liveWidth": Double(column.frame.width), "committedWidth": committed, "effectiveWidth": effective, "iconsOnly": settings?.bool("sidebarIconsOnly") ?? false]
   }
 }
 #endif

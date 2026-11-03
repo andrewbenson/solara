@@ -251,7 +251,7 @@ public final class SidebarDragController {
         let item = items["g:\(id)"] ?? DragItem(key: "g:\(id)", kind: .group, tabIds: context.state.groups[id]?.tabIds ?? [], section: section(entry.section, group: true))
         item.groupId = id
         item.parentGroup = entry.groups.dropLast().last
-        item.collapsed = context.state.groups[id]?.collapsed == true
+        item.collapsed = context.state.groups[id]?.collapsed == true || SidebarRail.contains(width: Double(view.bounds.width))
         item.frame = frame
         item.box = shown
         if items[item.key] == nil { add(item) }
@@ -269,6 +269,16 @@ public final class SidebarDragController {
         add(item)
         liveBox = item
       case .live(let key) where key.hasPrefix(Self.liveHeaderPrefix):
+        if SidebarRail.contains(width: Double(view.bounds.width)) {
+          let id = String(key.dropFirst(Self.liveHeaderPrefix.count))
+          let item = DragItem(key: SidebarLive.prefix + id, kind: .live, tabIds: [], section: section(entry.section, group: true))
+          item.liveFolderId = id
+          item.parentGroup = parent
+          item.collapsed = true
+          item.frame = frame
+          add(item)
+          liveBox = item
+        }
         liveBox?.headerFrame = frame
         liveBox?.views.append(shown)
       case .live:
@@ -475,6 +485,21 @@ public final class SidebarDragController {
     if measured { retarget() }
   }
 
+  func cancelForModeChange() {
+    press = nil
+    swallowing = false
+    guard active || landingKey != nil else { return }
+    let tabsDrag = (sources.first?.kind == .row || sources.first?.kind == .tile) && sources.first?.folderId == nil
+    let endBridge = active && external == 0 && !sourcesEnding && tabsDrag
+    token += 1
+    sourcesEnding = false
+    reset()
+    restoreAll()
+    finishLanding()
+    if endBridge { bridge?.dragEnded(windowId: windowId, commit: false) { _ in } }
+    changed()
+  }
+
   func end(commit: Bool) {
     if external > 0 {
       _ = finishExternal(commit: false)
@@ -489,8 +514,9 @@ public final class SidebarDragController {
     let leftPanel = sources.first?.section == .folder && marks.folderAway
     let ids = sources.flatMap(\.tabIds)
     let tabsDrag = (sources.first?.kind == .row || sources.first?.kind == .tile) && sources.first?.folderId == nil
+    let endingToken = token
     let finish: @MainActor (Bool) -> Void = { [weak self] split in
-      guard let self else { return }
+      guard let self, self.token == endingToken else { return }
       let single = sources.count == 1 ? sources[0] : nil
       let lands = !split && wasMeasured && self.ghost != nil && single != nil && single!.kind != .tile && single!.section != .folder && into == nil
         && SidebarDrop.type(drop) != "onto" && SidebarDrop.type(drop) != "folder" && !(commit && SidebarDrop.pins(drop))
@@ -509,7 +535,8 @@ public final class SidebarDragController {
     if tabsDrag, let bridge {
       sourcesEnding = true
       bridge.dragEnded(windowId: windowId, commit: commit) { [weak self] split in
-        self?.sourcesEnding = false
+        guard let self, self.token == endingToken else { return }
+        self.sourcesEnding = false
         finish(split)
       }
     } else {

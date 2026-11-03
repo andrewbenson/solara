@@ -14,6 +14,8 @@ public enum SidebarUpdatePillMetrics {
   public static let height: CGFloat = 30
   public static let gap: CGFloat = 8
   public static let band: CGFloat = height + gap
+  public static let railHeight: CGFloat = 34
+  public static let railBand: CGFloat = railHeight + gap
   public static let sideInset: CGFloat = 8
   public static let fontSize: CGFloat = 12
 
@@ -30,6 +32,7 @@ final class SidebarUpdatePill: NSView {
   var onPress: (() -> Void)?
   private let plate = CALayer()
   private let label = NSTextField(labelWithString: "")
+  private let icon = NSImageView()
   private var tracking: NSTrackingArea?
   private(set) var text = ""
   private var dark = true
@@ -50,15 +53,21 @@ final class SidebarUpdatePill: NSView {
     label.lineBreakMode = .byTruncatingTail
     label.cell?.truncatesLastVisibleLine = true
     addSubview(label)
+    icon.image = NSImage(systemSymbolName: "arrow.down.circle", accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 16, weight: .regular))
+    icon.isHidden = true
+    addSubview(icon)
   }
 
   required init?(coder: NSCoder) { fatalError() }
 
-  func set(_ state: SidebarUpdatePillState, color: NSColor, dark: Bool) {
+  func set(_ state: SidebarUpdatePillState, color: NSColor, dark: Bool, rail: Bool = false) {
     text = state.text
     label.stringValue = state.text
     label.textColor = color
-    toolTip = state.tooltip
+    label.isHidden = rail
+    icon.isHidden = !rail
+    icon.contentTintColor = color
+    toolTip = rail ? state.text : state.tooltip
     self.dark = dark
     paint()
     needsLayout = true
@@ -80,6 +89,7 @@ final class SidebarUpdatePill: NSView {
     plate.frame = bounds
     plate.cornerRadius = bounds.height / 2
     CATransaction.commit()
+    icon.frame = NSRect(x: ((bounds.width - 16) / 2).rounded(), y: ((bounds.height - 16) / 2).rounded(), width: 16, height: 16)
     let size = label.fittingSize
     let width = min(size.width, max(0, bounds.width - 16))
     label.frame = NSRect(x: ((bounds.width - width) / 2 * 2).rounded() / 2, y: ((bounds.height - size.height) / 2 * 2).rounded() / 2, width: width, height: size.height)

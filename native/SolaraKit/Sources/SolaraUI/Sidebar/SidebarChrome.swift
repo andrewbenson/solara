@@ -20,12 +20,15 @@ public struct SidebarChromeState: Decodable, Equatable, Sendable {
   public var theme: [String: String]
   public var dots: [SidebarChromeDot]
   public var savedWidth: Double
+  public var iconsOnly: Bool?
   public var dropOver: Bool
   public var update: SidebarUpdatePillState?
 
+  public var rail: Bool { iconsOnly == true }
+
   public init(
     controls: StripControlsState, downloads: Bool, addressBar: Bool, dark: Bool, theme: [String: String], dots: [SidebarChromeDot], savedWidth: Double,
-    dropOver: Bool = false, update: SidebarUpdatePillState? = nil
+    iconsOnly: Bool = false, dropOver: Bool = false, update: SidebarUpdatePillState? = nil
   ) {
     self.controls = controls
     self.downloads = downloads
@@ -34,6 +37,7 @@ public struct SidebarChromeState: Decodable, Equatable, Sendable {
     self.theme = theme
     self.dots = dots
     self.savedWidth = savedWidth
+    self.iconsOnly = iconsOnly
     self.dropOver = dropOver
     self.update = update
   }
@@ -51,6 +55,7 @@ public enum SidebarChromeAction: Equatable, Sendable {
   case commitWidth(Double)
   case resetWidth
   case installUpdate
+  case iconsOnly(Bool)
 }
 
 public enum SidebarChromeMetrics {
@@ -74,12 +79,16 @@ public enum SidebarChromeMetrics {
   public static func headerHeight(addressBar: Bool) -> CGFloat { addressBar ? header + fieldRow : header }
 
   public static func footerRowHeight(_ state: SidebarChromeState) -> CGFloat {
-    !state.dots.isEmpty || (state.addressBar && state.downloads) ? footer : 0
+    if state.rail { return (state.dots.isEmpty ? 0 : footer) + (state.downloads ? footer : 0) }
+    return !state.dots.isEmpty || (footerDownloads(state) && state.downloads) ? footer : 0
   }
 
   public static func footerHeight(_ state: SidebarChromeState) -> CGFloat {
-    footerRowHeight(state) + (state.update == nil ? 0 : SidebarUpdatePillMetrics.band)
+    let updateBand = state.rail ? SidebarUpdatePillMetrics.railBand : SidebarUpdatePillMetrics.band
+    return footerRowHeight(state) + (state.update == nil ? 0 : updateBand)
   }
+
+  public static func footerDownloads(_ state: SidebarChromeState) -> Bool { state.addressBar || state.rail }
 
   public static func indicatorRoom(width: CGFloat, downloads: Bool) -> CGFloat {
     width - indicatorX - headerRight - (downloads ? downloadsBox + 2 : 0)
@@ -120,6 +129,23 @@ public enum SidebarResizeMath {
   }
 
   public static func live(_ width: Double) -> Double { (width * 2).rounded() / 2 }
+
+  public static let snapIn = 120.0
+  public static let snapOut = 110.0
+
+  public struct Snap: Equatable, Sendable {
+    public var width: Double
+    public var rail: Bool
+  }
+
+  public static func snap(pointer: Double, fromRail: Bool, saved: Double) -> Snap {
+    let rail = Snap(width: SidebarRail.width, rail: true)
+    if fromRail {
+      guard pointer > snapOut else { return rail }
+      return Snap(width: rubberBand(Swift.max(clamp(saved), pointer)), rail: false)
+    }
+    return pointer < snapIn ? rail : Snap(width: rubberBand(pointer), rail: false)
+  }
 }
 
 @MainActor
@@ -168,6 +194,7 @@ public final class SidebarChromeView: NSView {
     addSubview(updatePill)
     resize.onWidth = { [weak self] action in self?.onAction(action) }
     resize.savedWidth = { [weak self] in self?.state?.savedWidth ?? SidebarChromeMetrics.defaultWidth }
+    resize.railShown = { [weak self] in self?.state?.rail ?? false }
     addSubview(resize)
     tooltip.isHidden = true
     addSubview(tooltip)
@@ -223,7 +250,7 @@ public final class SidebarChromeView: NSView {
     addressSlot.frame = NSRect(x: 0, y: 0, width: width, height: header)
 
     let controls = state.controls
-    let inHeader = !state.addressBar
+    let inHeader = !state.addressBar && !state.rail
     let room = SidebarChromeMetrics.indicatorRoom(width: width, downloads: state.downloads)
     let layout = StripControlsLayout.indicator(
       textWidth: StripControlsLayout.nameWidth(controls.title), room: room, incognito: controls.incognito, profiles: controls.profiles)
@@ -244,13 +271,14 @@ public final class SidebarChromeView: NSView {
     }
     headerDownloads.isHidden = !inHeader || !state.downloads
     headerDownloads.frame = NSRect(x: width - SidebarChromeMetrics.headerRight - box, y: SidebarChromeMetrics.controlTop, width: box, height: box)
-    footerDownloads.isHidden = !(state.addressBar && state.downloads)
+    footerDownloads.isHidden = !(SidebarChromeMetrics.footerDownloads(state) && state.downloads)
     footerDownloads.frame = NSRect(
-      x: SidebarChromeMetrics.inset, y: bounds.height - SidebarChromeMetrics.footerDownloadsBottom - box, width: box, height: box)
+      x: state.rail ? ((width - box) / 2).rounded() : SidebarChromeMetrics.inset,
+      y: bounds.height - SidebarChromeMetrics.footerDownloadsBottom - box - (state.rail && !state.dots.isEmpty ? SidebarChromeMetrics.footer : 0), width: box, height: box)
 
     let cell = SidebarChromeMetrics.dotCell
     let rowLeft = ((width - cell * CGFloat(dots.count)) / 2 * 2).rounded() / 2
-    let rowTop = bounds.height - footer + (SidebarChromeMetrics.footer - 3 - SidebarChromeMetrics.dotBand) / 2
+    let rowTop = bounds.height - (state.rail ? SidebarChromeMetrics.footer : footer) + (SidebarChromeMetrics.footer - 3 - SidebarChromeMetrics.dotBand) / 2
     for (index, dot) in dots.enumerated() {
       dot.frame = NSRect(x: rowLeft + cell * CGFloat(index), y: rowTop, width: cell, height: SidebarChromeMetrics.dotBand)
       dot.ink = state.dark ? .white : .black
@@ -259,10 +287,13 @@ public final class SidebarChromeView: NSView {
 
     updatePill.isHidden = state.update == nil
     if let update = state.update {
-      updatePill.set(update, color: color("textPrimary"), dark: state.dark)
+      updatePill.set(update, color: color("textPrimary"), dark: state.dark, rail: state.rail)
       let pill = SidebarUpdatePillMetrics.self
+      let height = state.rail ? pill.railHeight : pill.height
+      let pillWidth = state.rail ? height : max(0, width - pill.sideInset * 2)
       updatePill.frame = NSRect(
-        x: pill.sideInset, y: bounds.height - footer - pill.gap - pill.height, width: max(0, width - pill.sideInset * 2), height: pill.height)
+        x: state.rail ? ((width - pillWidth) / 2).rounded() : pill.sideInset,
+        y: bounds.height - footer - pill.gap - height, width: pillWidth, height: height)
     }
 
     resize.frame = NSRect(
@@ -516,9 +547,11 @@ final class SidebarDotTooltip: NSView {
 public final class SidebarResizeHandle: NSView {
   var onWidth: (SidebarChromeAction) -> Void = { _ in }
   var savedWidth: () -> Double = { SidebarChromeMetrics.defaultWidth }
+  var railShown: () -> Bool = { false }
   public private(set) var dragging = false
   private var live: Double?
   private var start: Double = 0
+  private var fromRail = false
   private var downX: CGFloat = 0
   private var spring: (from: Double, to: Double, began: CFTimeInterval, link: CADisplayLink)?
 
@@ -540,28 +573,42 @@ public final class SidebarResizeHandle: NSView {
     onWidth(.liveWidth(nil))
   }
 
+  private func commitRail() {
+    live = nil
+    dragging = false
+    onWidth(.iconsOnly(true))
+    onWidth(.liveWidth(nil))
+  }
+
+  private func snapped(_ event: NSEvent) -> SidebarResizeMath.Snap {
+    SidebarResizeMath.snap(pointer: start + Double(event.locationInWindow.x - downX), fromRail: fromRail, saved: savedWidth())
+  }
+
   public override func mouseDown(with event: NSEvent) {
     if event.clickCount == 2 {
       stopSpring()
       live = nil
       dragging = false
-      return onWidth(.resetWidth)
+      return onWidth(railShown() ? .iconsOnly(false) : .resetWidth)
     }
     stopSpring()
     dragging = true
     downX = event.locationInWindow.x
-    start = SidebarResizeMath.unstretch(live ?? savedWidth())
-    show(SidebarResizeMath.rubberBand(start))
+    fromRail = live == nil && railShown()
+    start = fromRail ? SidebarRail.width : SidebarResizeMath.unstretch(live ?? savedWidth())
+    show(fromRail ? SidebarRail.width : SidebarResizeMath.rubberBand(start))
   }
 
   public override func mouseDragged(with event: NSEvent) {
     guard dragging else { return }
-    show(SidebarResizeMath.rubberBand(start + Double(event.locationInWindow.x - downX)))
+    show(snapped(event).width)
   }
 
   public override func mouseUp(with event: NSEvent) {
     guard dragging else { return }
-    let raw = SidebarResizeMath.rubberBand(start + Double(event.locationInWindow.x - downX))
+    let snap = snapped(event)
+    if snap.rail { return commitRail() }
+    let raw = snap.width
     let target = SidebarResizeMath.clamp(raw)
     if raw == target { return commit(target) }
     let link = displayLink(target: self, selector: #selector(step(_:)))
@@ -587,6 +634,10 @@ public final class SidebarResizeHandle: NSView {
   public override func viewDidMoveToWindow() {
     super.viewDidMoveToWindow()
     if window == nil, dragging || spring != nil {
+      if spring == nil, let live, SidebarRail.contains(width: live) {
+        stopSpring()
+        return commitRail()
+      }
       let target = spring?.to ?? SidebarResizeMath.clamp(live ?? savedWidth())
       stopSpring()
       commit(target)

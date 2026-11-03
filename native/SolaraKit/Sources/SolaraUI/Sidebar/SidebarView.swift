@@ -29,6 +29,7 @@ public final class SidebarView: NSView {
   private var clipShift: CGFloat = 0
   private var lastSize = NSSize.zero
   private var player: SidebarPlayerView?
+  private var railShown = false
 
   public override var isFlipped: Bool { true }
 
@@ -238,6 +239,15 @@ public final class SidebarView: NSView {
   private func reconcile(animated: Bool = false) {
     guard let context, bounds.width > 0 else { return }
     var input = SidebarLayoutInput(windowId: windowId, profileId: context.host.profileId, width: bounds.width, height: bounds.height)
+    input.rail = SidebarRail.contains(width: Double(bounds.width))
+    if input.rail != railShown {
+      SidebarDragController.existing(self)?.cancelForModeChange()
+      setHover(nil, group: nil)
+      sendHoverTarget()
+      railShown = input.rail
+      for view in views.values { view.removeFromSuperview() }
+      views.removeAll()
+    }
     input.addressBar = context.host.addressBar
     input.newTabAtTop = context.host.newTabAtTop
     input.balanced = context.state.settings.bool("balancedTopApps")
@@ -421,7 +431,8 @@ public final class SidebarView: NSView {
   }
 
   private func make(_ kind: SidebarItemKind) -> NSView {
-    switch kind {
+    if railShown, let rail = SidebarRail.make(kind) { return rail }
+    return switch kind {
     case .tab: TabRowView()
     case .split: SplitRowView()
     case .groupHeader: GroupHeaderView()

@@ -1,3 +1,4 @@
+import { nativeSidebarShell } from "../sidebar/sidebarShell";
 import { onWindowEvent, setTrafficLightsCenter, Surface, watchLeftEdge, WindowDragRegion } from "@solara/shell";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AccessibilityInfo, Animated, Easing, StyleSheet, View } from "react-native";
@@ -7,6 +8,7 @@ import { pagesPooledIn } from "../../lib/pagesPool";
 import { hex, layout, useTheme } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
 import { useWindowId } from "../../store/hooks";
+import { sidebarWidthOf, SIDEBAR_RAIL_WIDTH } from "../../store/sidebarRail";
 import { Sidebar } from "../Sidebar";
 import { AreaBoundary } from "../AreaBoundary";
 import { dismissHoverIn } from "../sidebar/hover";
@@ -163,8 +165,8 @@ export function DockedLayout({
       (s) =>
         [
           s.windows[windowId]?.sidebarOpen ?? true,
-          s.settings.sidebarWidth ?? layout.sidebarWidth,
-          s.settings.addressBar === "sidebar",
+          sidebarWidthOf(s.settings, nativeSidebarShell(windowId)),
+          s.settings.addressBar === "sidebar" && sidebarWidthOf(s.settings, nativeSidebarShell(windowId)) !== SIDEBAR_RAIL_WIDTH,
         ] as const,
     ),
   );

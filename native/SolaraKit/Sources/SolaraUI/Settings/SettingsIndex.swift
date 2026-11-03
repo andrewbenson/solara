@@ -147,6 +147,13 @@ public struct SettingsIndex: Sendable {
             caption: "Scrolling down tucks the toolbar into a thin strip; scroll up to bring it back.",
             keywords: ["auto hide", "compact"]
           ),
+          Row(
+            key: "sidebarIconsOnly",
+            title: "Show only icons in the sidebar",
+            description: "A narrow sidebar of icons: Top Apps, then each tab's icon. Hover one for its title. Dragging the sidebar's edge narrower does the same, and dragging it back out restores its width.",
+            caption: "A narrow sidebar of icons; drag its edge back out to restore its width.",
+            keywords: ["compact", "collapsed", "narrow", "rail", "favicons", "icons only", "vertical tabs"]
+          ),
           Row(key: "showSidebarButton", title: "Show sidebar button", description: "⌘S and View › Auto-Hide Tabs still hide and show the sidebar.", keywords: ["toggle sidebar"]),
           Row(
             key: "showClearButton",

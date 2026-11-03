@@ -69,6 +69,7 @@ struct TabsPane: View {
       Section {
         SettingToggle("tabs.hideToolbarWhileScrolling", key: "hideToolbarWhileScrolling")
         if !top {
+          SettingToggle("tabs.sidebarIconsOnly", key: "sidebarIconsOnly")
           SettingToggle("tabs.showSidebarButton", key: "showSidebarButton")
           SettingToggle("tabs.showClearButton", key: "showClearButton")
           SettingToggle("tabs.balancedTopApps", key: "balancedTopApps")

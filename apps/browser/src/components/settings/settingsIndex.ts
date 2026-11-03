@@ -111,6 +111,11 @@ const ROWS: Record<SettingsPane, Section[]> = {
           description: "Scrolling down tucks the toolbar into a thin strip with the site's name. Scroll up, or click the strip, to bring it back.",
           keywords: ["auto hide", "compact"],
         },
+        sidebarIconsOnly: {
+          title: "Show only icons in the sidebar",
+          description: "A narrow sidebar of icons: Top Apps, then each tab's icon. Hover one for its title. Dragging the sidebar's edge narrower does the same, and dragging it back out restores its width.",
+          keywords: ["compact", "collapsed", "narrow", "rail", "favicons", "icons only", "vertical tabs"],
+        },
         showSidebarButton: { title: "Show sidebar button", description: "⌘S and View › Auto-Hide Tabs still hide and show the sidebar.", keywords: ["toggle sidebar"] },
         showClearButton: {
           title: "Show Clear button",

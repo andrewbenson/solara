@@ -56,6 +56,7 @@ export const COMMANDS: Readonly<Record<BrowserCommand, CommandSpec>> = {
   toggleFullUrl: { title: "Show Full URL", symbol: "text.alignleft" },
   toggleJavaScriptFromAppleEvents: { title: "Allow JavaScript from Apple Events" },
   toggleAddressBar: { title: "Show Address Bar in Sidebar", ...offInLittleSolara },
+  toggleSidebarIconsOnly: { title: "Icons-Only Sidebar", symbol: "sidebar.squares.left", ...offInLittleSolara },
   cast: { title: "Cast…", littleSolara: "page" },
   zoomReset: { title: "Zoom to Actual Size", barTitle: "Actual Size", symbol: "1.magnifyingglass", keys: ["⌘0"], ...pageInLittleSolara },
   zoomIn: { title: "Zoom In", symbol: "plus.magnifyingglass", keys: ["⌘+", "⌘="], ...pageInLittleSolara },

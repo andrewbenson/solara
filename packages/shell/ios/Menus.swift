@@ -520,6 +520,7 @@ enum MainMenu {
       cmd("Auto-Hide Tabs", "toggleSidebar", "s"),
       cmd("Auto-Hide Tabs", "toggleSidebar", "l", [.command, .shift]).hiddenShortcut(),
       cmd("Auto-Hide Tabs", "toggleSidebar", "f", [.command, .shift]).hiddenShortcut(),
+      cmd("Icons-Only Sidebar", "toggleSidebarIconsOnly"),
       .separator(),
       cmd("Open Split Pane", "openSplitPane", "=", [.control, .shift]),
       cmd("Focus Next Split Pane", "focusNextPane", "]", [.control, .shift]),

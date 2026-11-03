@@ -1,3 +1,5 @@
+import { sidebarWidthOf, SIDEBAR_RAIL_WIDTH } from "../store/sidebarRail";
+import { nativeSidebarShell } from "./sidebar/sidebarShell";
 import { cancelDownload, keepDownload, pauseDownload, resumeDownload, type Download } from "@solara/solaracore";
 import { ContextMenuArea, copyText, fileExists, fileIcon, MouseArea, moveToTrash, openFile, PopoverBubble, popoverBubbleAvailable, revealFile, showMenu, Surface, Symbol, VisualEffect, type MenuItem } from "@solara/shell";
 import { memo, useEffect, useRef, useState } from "react";
@@ -9,7 +11,7 @@ import { useBrowser } from "../store/browser";
 import { useSidebarOpen, useWindowId, useWindowUi } from "../store/hooks";
 import { downloadsIn, downloadVisibleIn } from "../store/ui";
 import { SIDEBAR_FOOTER_DOWNLOADS, useAddressBarInSidebar, useTabLayout } from "./layout/windowLayout";
-import { PROFILE_DOTS_HEIGHT } from "./profiles/ProfileDots";
+import { PROFILE_DOTS_HEIGHT, useProfileDotsShown } from "./profiles/ProfileDots";
 import { openInternalPage } from "./pages/urls";
 import { useSidebarWidth } from "./sidebar/tokens";
 import { HoverSlot } from "./HoverSlot";
@@ -625,6 +627,8 @@ export function DownloadMagnet() {
   const sidebarWidth = useSidebarWidth(windowId);
   const topStrip = useTabLayout() === "top";
   const addressBar = useAddressBarInSidebar();
+  const iconsOnly = useBrowser((s) => sidebarWidthOf(s.settings, nativeSidebarShell(windowId)) === SIDEBAR_RAIL_WIDTH);
+  const railDots = useProfileDotsShown();
   const [flight, setFlight] = useState<{ id: string; path: string } | null>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const seen = useRef<Set<string> | null>(null);
@@ -643,7 +647,8 @@ export function DownloadMagnet() {
 
   const sidebar = !topStrip && sidebarOpen ? sidebarWidth : 0;
   const footer = { x: layout.sidebarInset + SIDEBAR_FOOTER_DOWNLOADS.size / 2, y: size.height - SIDEBAR_FOOTER_DOWNLOADS.bottom - SIDEBAR_FOOTER_DOWNLOADS.size / 2 };
-  const target = topStrip ? { x: size.width - 25, y: 21 } : addressBar ? footer : sidebarOpen ? { x: sidebarWidth - 24, y: 27 } : { x: 24, y: 24 };
+  const railFooter = { x: sidebarWidth / 2, y: footer.y - (railDots ? PROFILE_DOTS_HEIGHT : 0) };
+  const target = topStrip ? { x: size.width - 25, y: 21 } : addressBar ? footer : sidebarOpen ? (iconsOnly ? railFooter : { x: sidebarWidth - 24, y: 27 }) : { x: 24, y: 24 };
   const start = { x: sidebar + (size.width - sidebar) / 2, y: size.height * 0.45 };
   const state = JSON.stringify({ flight: flight && size.width > 0 ? { ...flight, start: [start.x, start.y], target: [target.x, target.y] } : null });
   return (

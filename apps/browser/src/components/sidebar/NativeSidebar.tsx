@@ -1,4 +1,4 @@
-import { hostedKinds, hostedSidebarShell, nativeOmniboxAvailable, publishSettingsTopic, sidebarAddressBarAvailable, SolaraHostedView, windowShellActive } from "@solara/settings";
+import { hostedSidebarShell, nativeOmniboxAvailable, publishSettingsTopic, sidebarAddressBarAvailable, SolaraHostedView } from "@solara/settings";
 import type { DroppedItem } from "@solara/shell";
 import { memo, useEffect, useMemo } from "react";
 import { Image, StyleSheet } from "react-native";
@@ -11,6 +11,7 @@ import { sidebarHostProps } from "../nativeHostProps";
 import { useLifecycle } from "../../lib/tabLifecycle";
 import { hex, profileNameColor, profileTheme, selectedTabGlow, spaceLookSource, useSelectedTabGlow, useTheme, type Theme } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
+import { commitSidebarWidth, setSidebarIconsOnly, SIDEBAR_DEFAULT_WIDTH, sidebarWidthOf, SIDEBAR_RAIL_WIDTH } from "../../store/sidebarRail";
 import { engineMark, ENGINE_SYMBOLS } from "../../store/engines";
 import { useSettings } from "../../store/hooks";
 import { activeTabId, isIncognitoProfile } from "../../store/model";
@@ -49,14 +50,13 @@ import { useTabDrag } from "../layout/tabDrag";
 import { SidebarAddressBarState } from "./AddressBar";
 import { closeFolderPanelIn, openTileFolderMenu, toggleFolderPanel } from "./tileFolderUi";
 import { installNativeDragProbe } from "./nativeDrag";
+import { nativeSidebarShell } from "./sidebarShell";
 import { UPDATE_PILL_TEXT, updatePillTooltip, usePendingUpdate } from "../../lib/pendingUpdate";
 
 const SHELL_TOPIC = "sidebar.shell";
 const shellColumns: Record<string, object> = {};
 
-export function nativeSidebarShell(windowId: string): boolean {
-  return hostedKinds().includes(SHELL_TOPIC) && windowShellActive(windowId) && pagerFor(windowId).nativeOwned;
-}
+export { nativeSidebarShell } from "./sidebarShell";
 
 export function shellColumnFitsAddressBar(addressBar: boolean): boolean {
   return !addressBar || (nativeOmniboxAvailable() && sidebarAddressBarAvailable());
@@ -69,7 +69,7 @@ function publishShellColumn(windowId: string, column: object | null) {
   publishSettingsTopic(SHELL_TOPIC, { windows: shellColumns });
 }
 
-type ShellEvent = { items?: DroppedItem[]; placement?: string | null; width?: number | null };
+type ShellEvent = { items?: DroppedItem[]; placement?: string | null; width?: number | null; on?: boolean };
 
 addNativeSettingsHandlers({
   [SHELL_TOPIC]: (windowId: string, event: string, extra: ShellEvent) => {
@@ -88,7 +88,9 @@ addNativeSettingsHandlers({
         return setSidebarUi({ dragWidth: typeof extra.width === "number" ? { ...rest, [windowId]: extra.width } : rest });
       }
       case "commitWidth":
-        return typeof extra.width === "number" ? s.updateSettings({ sidebarWidth: extra.width }) : undefined;
+        return typeof extra.width === "number" ? commitSidebarWidth(extra.width) : undefined;
+      case "iconsOnly":
+        return typeof extra.on === "boolean" ? setSidebarIconsOnly(extra.on) : undefined;
     }
   },
 });
@@ -102,7 +104,8 @@ function useShellChrome(windowId: string, addressBar: boolean, theme: Theme): st
   const downloads = useBrowser((s) => downloadsIn(s, windowId).length > 0);
   const downloadsOpen = useBrowser((s) => !!s.windowUi[windowId]?.downloadsOpen);
   const hint = useShortcutHint("downloads");
-  const savedWidth = useBrowser((s) => s.settings.sidebarWidth ?? 190);
+  const savedWidth = useBrowser((s) => s.settings.sidebarWidth ?? SIDEBAR_DEFAULT_WIDTH);
+  const iconsOnly = useBrowser((s) => sidebarWidthOf(s.settings, nativeSidebarShell(windowId)) === SIDEBAR_RAIL_WIDTH);
   const dotsShown = useProfileDotsShown();
   const order = useBrowser(useShallow((s) => s.profileOrder));
   const names = useBrowser(useShallow((s) => order.map((id) => s.profiles[id]?.name ?? "")));
@@ -126,10 +129,11 @@ function useShellChrome(windowId: string, addressBar: boolean, theme: Theme): st
         theme: { ...themeTokens(theme), panel: theme.panel, panelBorder: theme.panelBorder },
         dots: dotsShown ? order.map((id, i) => ({ id, name: names[i] ?? "", slot: pages.find((p) => p.id === id)?.slot ?? null })) : [],
         savedWidth,
+        iconsOnly,
         dropOver,
         update: pending ? { text: UPDATE_PILL_TEXT, tooltip: updatePillTooltip(pending) } : null,
       }),
-    [incognito, profile, profiles, theme, downloadsOpen, hint, downloads, addressBar, dotsShown, order, names, pages, savedWidth, dropOver, pending],
+    [incognito, profile, profiles, theme, downloadsOpen, hint, downloads, addressBar, dotsShown, order, names, pages, savedWidth, iconsOnly, dropOver, pending],
   );
 }
 

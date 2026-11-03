@@ -99,6 +99,7 @@ public struct CommandShortcutSnapshot: Sendable {
     ("toggleFullUrl", []),
     ("toggleJavaScriptFromAppleEvents", []),
     ("toggleAddressBar", []),
+    ("toggleSidebarIconsOnly", []),
     ("cast", []),
     ("zoomReset", ["⌘0"]),
     ("zoomIn", ["⌘+", "⌘="]),

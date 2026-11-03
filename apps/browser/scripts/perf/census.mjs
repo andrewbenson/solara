@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { evaluate, launch, quit, startServer } from "./js-bench.mjs";
+import { resignForBench } from "./bench-signing.mjs";
 import { buildSeed } from "./seed.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -56,14 +57,6 @@ function writeSession(dir, origin, version, count, probe) {
   for (const [name, value] of Object.entries(files)) writeFileSync(join(dir, name), typeof value === "string" ? value : JSON.stringify(value));
 }
 
-function resign(app, clone) {
-  const info = spawnSync("codesign", ["-dvv", app], { encoding: "utf8" }).stderr;
-  const identity = info.match(/^Authority=(.+)$/m)?.[1] ?? "-";
-  const entitlements = `${clone}.entitlements.plist`;
-  writeFileSync(entitlements, execFileSync("codesign", ["-d", "--entitlements", "-", "--xml", app], { encoding: "utf8" }));
-  execFileSync("codesign", ["--force", "--sign", identity, "--timestamp=none", "--options", "runtime", "--entitlements", entitlements, clone], { stdio: "inherit" });
-}
-
 const SCENARIOS = ["cenStartup", "wake", "cenNewTab", "cenTypeHero", "cenPanel", "cenEnter", "cenSwitch", "cenHover", "cenBgLoad"];
 
 async function run() {
@@ -76,7 +69,7 @@ async function run() {
   mkdirSync(dirname(clone), { recursive: true });
   execFileSync("cp", ["-cR", app, clone]);
   cpSync(jsbundle, join(clone, "Contents/Resources/main.jsbundle"));
-  resign(app, clone);
+  resignForBench(app, clone);
   const version = execFileSync("/usr/libexec/PlistBuddy", ["-c", "Print CFBundleShortVersionString", join(clone, "Contents/Info.plist")], { encoding: "utf8" }).trim();
   const origin = `http://127.0.0.1:${port}`;
   const server = await startServer(Number(port));

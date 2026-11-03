@@ -42,6 +42,7 @@ import { createServer } from "node:http";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { launch } from "../../../../scripts/lib/instance.mjs";
+import { resignForBench } from "./bench-signing.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const [command, ...rest] = process.argv.slice(2);
@@ -80,13 +81,7 @@ function prepare(app, bundle, dir) {
   mkdirSync(dir, { recursive: true });
   execFileSync("cp", ["-Rc", app, copy]);
   cpSync(bundle, join(copy, "Contents/Resources/main.jsbundle"));
-  const identity = spawnSync("codesign", ["-dvv", app], { encoding: "utf8" }).stderr.match(/^Authority=(.+)$/m)?.[1] ?? "-";
-  const granted = execFileSync("codesign", ["-d", "--entitlements", "-", "--xml", app], { encoding: "utf8" });
-  const extra = ["com.apple.security.cs.allow-dyld-environment-variables", "com.apple.security.cs.disable-library-validation"]
-    .filter((key) => !granted.includes(`<key>${key}</key>`)).map((key) => `<key>${key}</key><true/>`).join("");
-  const entitlements = join(dir, "entitlements.plist");
-  writeFileSync(entitlements, granted.replace(/<\/dict>\s*<\/plist>\s*$/, `${extra}</dict></plist>`));
-  execFileSync("codesign", ["--force", "--sign", identity, "--timestamp=none", "--options", "runtime", "--entitlements", entitlements, copy], { stdio: "ignore" });
+  resignForBench(app, copy, { entitlements: join(dir, "entitlements.plist"), extra: ["com.apple.security.cs.allow-dyld-environment-variables"] });
   return copy;
 }
 

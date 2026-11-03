@@ -73,6 +73,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { binaryOf, screenLocked, uiGateLaunching, uiGateWatch } from "../../../../scripts/lib/instance.mjs";
 import { escapeHtml } from "../../../../scripts/lib/fixture-html.mjs";
+import { resignForBench } from "./bench-signing.mjs";
 import { writeSeed } from "./seed.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -351,15 +352,6 @@ function smallSession(dataDir) {
   writeFileSync(file, JSON.stringify(session));
 }
 
-function resign(app, clone) {
-  const info = spawnSync("codesign", ["-dvv", app], { encoding: "utf8" }).stderr;
-  const identity = info.match(/^Authority=(.+)$/m)?.[1] ?? "-";
-  const hardened = /^CodeDirectory .*flags=0x[0-9a-f]+\([^)]*\bruntime\b/m.test(info);
-  const entitlements = `${clone}.entitlements.plist`;
-  writeFileSync(entitlements, execFileSync("codesign", ["-d", "--entitlements", "-", "--xml", app], { encoding: "utf8" }));
-  execFileSync("codesign", ["--force", "--sign", identity, "--timestamp=none", ...(hardened ? ["--options", "runtime"] : []), "--entitlements", entitlements, clone], { stdio: "inherit" });
-}
-
 const ALL = ["startup", "persistence", "idle", "typing", "switchTabs", "openClose", "scroll", "pageLoad", "hover", "profileSwipe", "storeUpdate", "idleLate"];
 
 async function run() {
@@ -371,9 +363,8 @@ async function run() {
   mkdirSync(dirname(clone), { recursive: true });
   execFileSync("cp", ["-cR", app, clone]);
   const swapped = join(clone, "Contents/Resources/main.jsbundle");
-  const same = existsSync(swapped) && readFileSync(jsbundle).equals(readFileSync(swapped));
   cpSync(jsbundle, swapped);
-  if (!same) resign(app, clone);
+  resignForBench(app, clone);
   const version = execFileSync("/usr/libexec/PlistBuddy", ["-c", "Print CFBundleShortVersionString", join(clone, "Contents/Info.plist")], { encoding: "utf8" }).trim();
   const origin = `http://127.0.0.1:${port}`;
   const server = await startServer(Number(port));

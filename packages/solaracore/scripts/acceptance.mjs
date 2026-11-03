@@ -3738,8 +3738,17 @@ try {
       const expected = `${new URL(base).protocol}//${new URL(base).host}`;
       if (!prompt.question.includes(expected)) throw new Error(`the question doesn't name ${expected}: ${prompt.question}`);
       const space = await cef(`devWindow(${prompt.sheetWindow}, "keys:0: :49")`);
-      const afterSpace = await until("Space's answer", async () => ((await answer()) !== "pending" ? answer() : null), 5000);
+      let afterSpace = await until("Space's answer", async () => ((await answer()) !== "pending" ? answer() : null), 5000).catch(() => "pending");
       if (afterSpace === "granted") throw new Error(`Space granted the permission (${space})`);
+      let spaceNote = "Space answered the sheet";
+      if (afterSpace === "pending") {
+        const focused = await cef(`devWindow(${prompt.sheetWindow}, "responder")`);
+        if (/button/i.test(focused)) throw new Error(`Space on the focused ${focused} left the sheet unanswered (${space})`);
+        spaceNote = `no button had focus (${focused}): a hidden instance's sheet never becomes key, so its initial first responder, Don't Allow, isn't applied and Space has nothing to press`;
+        await cef(`devWindow(${prompt.sheetWindow}, "keys:0:\\u001b:53")`);
+        afterSpace = await until("Escape's answer", async () => ((await answer()) !== "pending" ? answer() : null), 5000);
+        if (afterSpace === "granted") throw new Error("Escape granted the permission");
+      }
       await cef(`setSiteSetting("", "${base}", "location", "default")`);
       await until("the sheet gone", async () => ((await shown()) ? null : true), 5000);
 
@@ -3765,7 +3774,9 @@ try {
       await sleep(500);
       const control = await answer();
       if (control === "error:1") throw new Error("a click on Allow once it was enabled was taken as a denial");
-      return { question: prompt.question, afterSpace, pageMoves, rearms, control };
+      const granted = (await cef(`getSiteSettings("", ${JSON.stringify(base)})`)).location;
+      if (granted?.value !== "allow") throw new Error(`a click on Allow once it was enabled didn't grant the site location: ${JSON.stringify(granted)}`);
+      return { question: prompt.question, afterSpace, spaceNote, pageMoves, rearms, control, granted: granted.value };
     } finally {
       await cef(`devWindow(${popup.window}, "alertSheets:0")`).catch(() => {});
       await closeFromPage(t).catch(() => {});

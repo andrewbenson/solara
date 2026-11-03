@@ -1,4 +1,4 @@
-const escapeHTML = (value) => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+import { escapeHtml as escapeHTML } from "../../../scripts/lib/fixture-html.mjs";
 
 export const acceptancePage = (title, body, extra = "") =>
   `<!doctype html><html><head><title>${escapeHTML(title)}</title><link rel="icon" href="/icon.png">${extra}</head><body>${body}</body></html>`;
@@ -9,6 +9,8 @@ export const activationPage = (title, body, script = "") =>
 export const acceptancePathPage = (pathname) => acceptancePage(pathname, escapeHTML(pathname));
 
 export const activationPathPage = (url) => activationPage(url.searchParams.get("t") ?? url.pathname.slice(1), escapeHTML(url.pathname));
+
+const FRAME_LISTENER = `<script>window.__frame = null; addEventListener("message", (e) => (window.__frame = e.data));</script>`;
 
 export function frameHostResponse(url, origins) {
   const src = url.searchParams.get("src");
@@ -21,7 +23,7 @@ export function frameHostResponse(url, origins) {
   }
   return {
     status: 200,
-    html: acceptancePage("Frame host", `<script>window.__frame = null; addEventListener("message", (e) => (window.__frame = e.data));</script><iframe src="${escapeHTML(src)}"></iframe>`),
+    html: acceptancePage("Frame host", `<iframe src="${escapeHTML(src)}"></iframe>`, FRAME_LISTENER),
   };
 }
 

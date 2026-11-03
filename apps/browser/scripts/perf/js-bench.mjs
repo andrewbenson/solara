@@ -72,6 +72,7 @@ import { createServer } from "node:http";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { binaryOf, screenLocked, uiGateLaunching, uiGateWatch } from "../../../../scripts/lib/instance.mjs";
+import { escapeHtml } from "../../../../scripts/lib/fixture-html.mjs";
 import { writeSeed } from "./seed.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -188,7 +189,6 @@ const TONE = (() => {
   return wav;
 })();
 
-const escapeHtml = (value) => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 
 export function startServer(port) {
   let pending = 0;

@@ -82,10 +82,10 @@ test("actual fixture inputs preserve the original HTML bytes", () => {
     ["capturerPage", "/capturer?t=CallB", "cba279efa8e5d3c14eb4bfc55e48a2096eec4271218db9dadda12b58190576c0"],
     ["adFirstPage", "/adfirst?first-personal-123456", "caf09b91455039a9974b8f508677056a1438bc80c47205408c24cbdf29adfeb9"],
     ["adFirstPage", "/adfirst?private-first-123456", "24da120361e1845eebdfba3ab4b96828349f22e69220ceb50c9e5cf07ed12f22"],
-    ["frameHostResponse", "/frame-host?src=https%3A%2F%2Fembed.solara-thirdparty.com%2Fframe-probe%3Fset", "e6b48f3265c02e69e53e05ac315b2b0685c5322052a2914da63c87e683f5ab3c"],
-    ["frameHostResponse", "/frame-host?src=https%3A%2F%2Fs.solara-sitedata.com%2Fframe-probe%3Fset", "4c8b0aa9d58b53d36de77c0f3764bb8ed08df3e3cfec970b1428bce4a607649e"],
-    ["frameHostResponse", "/frame-host?src=https%3A%2F%2Fembed.solara-thirdparty.com%2Fframe-probe", "7e49f4f1849f47a860e57f3c2f7aef847270e862ade8284a0b55f051e5e81dbc"],
-    ["frameHostResponse", "/frame-host?src=https%3A%2F%2Fs.solara-sitedata.com%2Fframe-probe", "b83f69a892c0a9350b0fa05bfb9f54f8f713935780c78915c58c33d6d9dea0dd"],
+    ["frameHostResponse", "/frame-host?src=https%3A%2F%2Fembed.solara-thirdparty.com%2Fframe-probe%3Fset", "e770141fc85fbfe71c7f57fdb7d6c75977498ee8064fe9f068d8707555193c85"],
+    ["frameHostResponse", "/frame-host?src=https%3A%2F%2Fs.solara-sitedata.com%2Fframe-probe%3Fset", "92bc14dd619116337d690303c11e8f47c7db8b2d65a296d070e8968e185fde01"],
+    ["frameHostResponse", "/frame-host?src=https%3A%2F%2Fembed.solara-thirdparty.com%2Fframe-probe", "e27ded9e9526f5f93478d16076bdd0fa8e597218db3b5b7de0a2977d7e1e9e8b"],
+    ["frameHostResponse", "/frame-host?src=https%3A%2F%2Fs.solara-sitedata.com%2Fframe-probe", "382f22a6205da750b30906cf068bafd1d021b3c34e1461a6be4c78531383f13c"],
   ];
   for (const [name, path, hash] of cases) {
     const result = { solidPage, capturerPage, adFirstPage, frameHostResponse }[name](new URL(path, "https://fixture.test"), origins);

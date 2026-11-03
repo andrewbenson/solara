@@ -16,6 +16,7 @@
   },
   "devDependencies": {
     "esbuild": "0.28.2",
+    "escape-html": "1.0.3",
     "turbo": "^2.11.3",
     "typescript": "~5.9.2"
   },

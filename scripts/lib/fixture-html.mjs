@@ -1,5 +1,7 @@
+import escapeHtmlText from "escape-html";
+
 export function escapeHtml(value) {
-  return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+  return escapeHtmlText(String(value));
 }
 
 export function fixturePage(name, { title = name.toUpperCase(), bodyStyle = "", bodyPrefix = "" } = {}) {

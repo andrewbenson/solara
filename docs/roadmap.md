@@ -25,7 +25,7 @@ backlog, and check this file against the release notes.
 
 | Item | Owner | Status |
 |---|---|---|
-| Icons-only sidebar rail, 84 pt: drag-to-snap, View menu and Settings toggle, hover × to close, loading and audio badges, address bar as a magnifier | r14 | drafted (work/r14/rail), not landed |
+| Icons-only sidebar rail, 84 pt: drag-to-snap, View menu and Settings toggle, hover × to close, loading and audio badges, the address bar moves to the toolbar | r14 | drafted (work/r14/rail: rail.patch on be7b9864, NOTES.txt, 7 review findings open), not landed |
 | Folder and group popovers, footer profile switcher, the hidden sidebar's peek in rail mode | — | planned |
 
 ## 0.3.0: the CLI and Raycast, revamped

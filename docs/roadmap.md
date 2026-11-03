@@ -39,9 +39,9 @@ backlog, and check this file against the release notes.
 | A full emoji picker for profile, tab and folder icons (search, categories, symbols), and names that save on click-away; built in Swift, replacing the React Native icon pickers | planned |
 | Little Solara can keep new-tab links inside itself (a setting) | planned |
 | Tabs moved to another window land where a new tab would open | planned |
-| New Window opens on the profile you're in | planned |
-| Closing the last tab keeps the window while it has pinned tiles or a pinned group | planned |
-| A muted tab's or site's notifications make no sound | planned |
+| New Window opens on the profile you're in | landed f0c1b8ae |
+| Closing the last tab keeps the window while it has pinned tiles or a pinned group | landed f0c1b8ae |
+| A muted tab's or site's notifications make no sound | landed f0c1b8ae |
 | The hidden sidebar doesn't peek out while another app is in front (in Swift) | planned |
 | On a WebKit page, the pinned extensions give way to a WebKit pill (extensions, the ad blocker and password autofill don't run there), with Open in Chromium; the icons come back on Chromium tabs. The pill and its popover in Swift | planned |
 

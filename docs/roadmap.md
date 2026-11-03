@@ -24,7 +24,7 @@ backlog, and check this file against the release notes.
 | Item | Status |
 |---|---|
 | Sign-in windows ("Sign in with Google" on claude.ai, Slack's connect flow) open blank and take no input; 0.1.3's Space fix (bd3b6619) didn't cover it | in progress |
-| Remove from Sync…: a profile deleted on every Mac can be removed from sync, so no Mac offers it as "Add to This Mac" again | in progress |
+| Remove from Sync…: a profile deleted on every Mac can be removed from sync, so no Mac offers it as "Add to This Mac" again | landed 292c8a1d (with the journal fix cb6bd318) |
 
 ## 0.2.0: the sidebar your way, and a fresh engine
 

@@ -25,6 +25,13 @@ backlog, and check this file against the release notes.
 |---|---|
 | Sign-in windows ("Sign in with Google" on claude.ai, Slack's connect flow) open blank and take no input; 0.1.3's Space fix (bd3b6619) didn't cover it | landed 4809b2e9 |
 | Remove from Sync…: a profile deleted on every Mac can be removed from sync, so no Mac offers it as "Add to This Mac" again | landed 292c8a1d (with the journal fix cb6bd318) |
+| Update safety: never move or delete staged updates ourselves; drop a staged nightly only through Sparkle's Skip; quit holds 8 s at most. Checked 2026-11-02: nothing deletes or moves in Sparkle's folder and there's no startup sweep; what's left is identity by path in UpdatePrewarm, which finds staged copies by walking Sparkle's Installation folder (it launches one only after a designated-requirement check, suspended, and verifies the started process's code before resuming it). Identity: staged copies are found by descriptor and inode, not path, and the launch is bound to the checked slice's cdhash; a Developer ID prewarm run is on the 0.1.5 release smoke | landed 0f817ff2 |
+| Little Solara can keep new-tab links inside itself (a setting) | landed 98431a78 |
+| Tabs moved to another window land where a new tab would open | landed 98431a78 |
+| New Window opens on the profile you're in | landed f0c1b8ae |
+| Closing the last tab keeps the window while it has pinned tiles or a pinned group | landed f0c1b8ae |
+| A muted tab's or site's notifications make no sound | landed f0c1b8ae |
+| The hidden sidebar doesn't peek out while another app is in front (in Swift) | landed 98431a78 |
 
 ## 0.2.0: the sidebar your way, and a fresh engine
 
@@ -34,15 +41,8 @@ backlog, and check this file against the release notes.
 | Icons-only sidebar rail, 84 pt: drag-to-snap, View menu and Settings toggle, hover × to close, loading and audio badges, the address bar moves to the toolbar | drafted (~/.cache/solara-lead/work/r14/rail: rail.patch on be7b9864, NOTES.txt, 7 review findings open), not landed |
 | Folder and group popovers, footer profile switcher, the hidden sidebar's peek in rail mode | planned |
 | Engine: Chromium 156.0.8078.79 or newer (Chrome stable security updates; we ship .47). Needs a Chromium sync and rebuild: owner approved for 0.2.0 | planned |
-| Update safety: never move or delete staged updates ourselves; drop a staged nightly only through Sparkle's Skip; quit holds 8 s at most. Checked 2026-11-02: nothing deletes or moves in Sparkle's folder and there's no startup sweep; what's left is identity by path in UpdatePrewarm, which finds staged copies by walking Sparkle's Installation folder (it launches one only after a designated-requirement check, suspended, and verifies the started process's code before resuming it). Identity: staged copies are found by descriptor and inode, not path, and the launch is bound to the checked slice's cdhash; a Developer ID prewarm run is on the 0.2.0 release smoke | landed 0f817ff2 |
 | Share… in the page's right-click menu and File › Share (⌥⌘S): selected text, an image, a link with trackers removed, media, the page (engine change) | planned |
 | A full emoji picker for profile, tab and folder icons (search, categories, symbols), and names that save on click-away; built in Swift, replacing the React Native icon pickers | planned |
-| Little Solara can keep new-tab links inside itself (a setting) | landed 98431a78 |
-| Tabs moved to another window land where a new tab would open | landed 98431a78 |
-| New Window opens on the profile you're in | landed f0c1b8ae |
-| Closing the last tab keeps the window while it has pinned tiles or a pinned group | landed f0c1b8ae |
-| A muted tab's or site's notifications make no sound | landed f0c1b8ae |
-| The hidden sidebar doesn't peek out while another app is in front (in Swift) | landed 98431a78 |
 | On a WebKit page, the pinned extensions give way to a WebKit pill (extensions, the ad blocker and password autofill don't run there), with Open in Chromium; the icons come back on Chromium tabs. The pill and its popover in Swift | planned |
 
 ## 0.3.0: the CLI and Raycast revamped, and tabs that cost less

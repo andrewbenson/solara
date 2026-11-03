@@ -7,12 +7,42 @@ const SEARCH_URL = "https://www.google.com/search?q=";
 
 export type ParsedUrl = { scheme: string; host: string; port: string; path: string; query: string; hash: string };
 
-const URL_PARTS = /^([a-z][a-z0-9+.-]*):\/\/(?:[^@/?#]*@)?(\[[^\]]*\]|[^:/?#]*)(?::(\d+))?([^?#]*)(\?[^#]*)?(#.*)?$/i;
-
 function parseUrl(url: string): ParsedUrl | null {
-  const m = URL_PARTS.exec(url.trim());
-  if (!m) return null;
-  return { scheme: m[1]!.toLowerCase(), host: m[2]!.toLowerCase(), port: m[3] ?? "", path: m[4] ?? "", query: m[5] ?? "", hash: m[6] ?? "" };
+  const input = url.trim();
+  const separator = input.indexOf("://");
+  if (separator < 0) return null;
+  const scheme = input.slice(0, separator);
+  if (!/^[a-z][a-z0-9+.-]*$/i.test(scheme)) return null;
+  const rest = input.slice(separator + 3);
+  const boundary = rest.search(/[/?#]/);
+  const at = rest.lastIndexOf("@", boundary < 0 ? rest.length : boundary);
+  const parts = (at < 0 ? null : parseAuthority(rest.slice(at + 1))) ?? parseAuthority(rest);
+  return parts ? { scheme: scheme.toLowerCase(), ...parts } : null;
+}
+
+function parseAuthority(rest: string): Omit<ParsedUrl, "scheme"> | null {
+  const bracket = rest.startsWith("[") ? rest.indexOf("]") : -1;
+  const delimiter = rest.search(/[:/?#]/);
+  const hostEnd = bracket >= 0 ? bracket + 1 : delimiter < 0 ? rest.length : delimiter;
+  const host = rest.slice(0, hostEnd).toLowerCase();
+  rest = rest.slice(hostEnd);
+  let port = "";
+  if (rest.startsWith(":")) {
+    let end = 1;
+    while (end < rest.length && rest.charCodeAt(end) >= 48 && rest.charCodeAt(end) <= 57) end++;
+    if (end > 1) {
+      port = rest.slice(1, end);
+      rest = rest.slice(end);
+    }
+  }
+  const pathEnd = rest.search(/[?#]/);
+  const path = pathEnd < 0 ? rest : rest.slice(0, pathEnd);
+  rest = pathEnd < 0 ? "" : rest.slice(pathEnd);
+  const hashAt = rest.indexOf("#");
+  const query = hashAt < 0 ? rest : rest.slice(0, hashAt);
+  const hash = hashAt < 0 ? "" : rest.slice(hashAt);
+  if (/[\n\r\u2028\u2029]/.test(hash)) return null;
+  return { host, port, path, query, hash };
 }
 
 export function hostOf(url: string): string {

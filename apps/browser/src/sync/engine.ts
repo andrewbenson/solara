@@ -1164,7 +1164,9 @@ async function noteWhatThisMacHas(only?: string) {
       const extraction = await adapter.extract(() => undefined, () => false, Date.now(), () => false, () => undefined, () => undefined, () => false);
       if (extraction) noteBaseline(scope, adapter.prefix, extraction);
     } catch (error) {
-      console.warn(`[sync] ${adapter.prefix} wasn't ready to note what this Mac had`, error);
+      const name = isObject(error) ? error.name : undefined;
+      const code = isObject(error) ? error.code : undefined;
+      console.warn(`[sync] ${adapter.prefix} wasn't ready to note what this Mac had`, { name: typeof name === "string" ? name : "Error", ...(typeof code === "string" || typeof code === "number" ? { code } : {}) });
     }
   }
 }

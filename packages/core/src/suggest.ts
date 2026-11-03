@@ -56,7 +56,11 @@ export function displayUrl(url: string): string {
 }
 
 const DAY = 86_400_000;
-const pageKey = (url: string) => url.replace(/#.*$/, "").replace(/\/$/, "");
+const pageKey = (url: string) => {
+  const hash = url.indexOf("#");
+  const base = hash < 0 ? url : url.slice(0, hash);
+  return base.endsWith("/") ? base.slice(0, -1) : base;
+};
 
 type HistoryRow = SuggestionSource["history"][number];
 type BookmarkRow = NonNullable<SuggestionSource["bookmarks"]>[number];

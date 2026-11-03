@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { inspect } from "node:util";
 import { Clock } from "./hlc.ts";
 import { ApplyRefusal, compact, emptyScope, restoreJournal, syncScope, type Adapter, type Listing, type LogFile, type ScopeOptions, type ScopeState, type Transport } from "./scope.ts";
 
@@ -553,4 +554,94 @@ for (const writtenKeysOnly of [false, true]) {
     assert.equal(state.base["x:unwritten"], writtenKeysOnly ? '"local"' : '"remote"');
     assert.deepEqual(state.unapplied, writtenKeysOnly ? ["x:unwritten"] : []);
   });
+
+  test(`apply refusal warnings omit private records and causes while retrying with writtenKeysOnly=${writtenKeysOnly}`, async (t) => {
+    const warnings: unknown[][] = [];
+    t.mock.method(console, "warn", (...args: unknown[]) => warnings.push(args));
+    const state = emptyScope();
+    const clock = new Clock("local", null, () => 1);
+    const folder = new Folder();
+    const refused = "h:https://private.example/secret";
+    const accepted = "h:https://public.example/accepted";
+    for (const key of [refused, accepted]) {
+      state.records[key] = { h: clock.tick(), v: "sensitive-value", o: ["remote", 1] };
+      state.base[key] = '"local"';
+      state.unapplied.push(key);
+    }
+    const applied = new Map<string, unknown>();
+    const attempts: string[][] = [];
+    let ready = false;
+    const adapter: Adapter = {
+      prefix: "h:",
+      extract: () => null,
+      apply: (visible, changed) => {
+        attempts.push([...changed]);
+        for (const key of changed) if (ready || key !== refused) applied.set(key, visible.get(key));
+        if (!ready) throw new ApplyRefusal(new Set([refused]), new Error("sensitive-sentinel"));
+      },
+    };
+    const cycle = () => syncScope({ scope: "s", state, transport: folder.transport("local"), adapters: [adapter], clock, device: "local", now: () => 1, options: { writtenKeysOnly } });
+    await cycle();
+    assert.deepEqual(state.unapplied, [refused]);
+    assert.equal(state.base[refused], '"local"');
+    assert.equal(state.base[accepted], '"sensitive-value"');
+    assert.equal(applied.get(accepted), "sensitive-value");
+    await cycle();
+    assert.deepEqual(state.unapplied, [refused]);
+    assert.equal(state.base[refused], '"local"');
+    ready = true;
+    await cycle();
+    assert.deepEqual(state.unapplied, []);
+    assert.equal(state.base[refused], '"sensitive-value"');
+    assert.equal(applied.get(refused), "sensitive-value");
+    assert.deepEqual(attempts, [[refused, accepted], [refused], [refused]]);
+    assert.doesNotMatch(inspect(warnings, { depth: null }), /private\.example|public\.example|sensitive-sentinel|sensitive-value/);
+    assert.deepEqual(warnings, [
+      ["[sync]", { prefix: "h:", outcome: "apply-refused", changed: 2, refused: 1 }],
+      ["[sync]", { prefix: "h:", outcome: "apply-refused", changed: 1, refused: 1 }],
+    ]);
+  });
+
+  {
+    const prefix = "h:";
+    test(`apply failure warnings name only the prefix and preserve retries with writtenKeysOnly=${writtenKeysOnly}`, async (t) => {
+      const warnings: unknown[][] = [];
+      t.mock.method(console, "warn", (...args: unknown[]) => warnings.push(args));
+      const state = emptyScope();
+      const clock = new Clock("local", null, () => 1);
+      const folder = new Folder();
+      const keys = [`${prefix}first`, `${prefix}second`];
+      for (const key of keys) {
+        state.records[key] = { h: clock.tick(), v: "sensitive-value", o: ["remote", 1] };
+        state.base[key] = '"local"';
+        state.unapplied.push(key);
+      }
+      const attempts: string[][] = [];
+      let ready = false;
+      const adapter: Adapter = {
+        prefix,
+        extract: () => null,
+        apply: (_visible, changed) => {
+          attempts.push([...changed]);
+          if (!ready) throw new Error("sensitive-sentinel", { cause: new Error("sensitive-cause") });
+        },
+      };
+      const cycle = () => syncScope({ scope: "s", state, transport: folder.transport("local"), adapters: [adapter], clock, device: "local", now: () => 1, options: { writtenKeysOnly } });
+      for (let attempt = 0; attempt < 2; attempt++) {
+        await cycle();
+        assert.deepEqual(state.unapplied, keys);
+        for (const key of keys) assert.equal(state.base[key], '"local"');
+      }
+      ready = true;
+      await cycle();
+      assert.deepEqual(state.unapplied, []);
+      for (const key of keys) assert.equal(state.base[key], '"sensitive-value"');
+      assert.deepEqual(attempts, [keys, keys, keys]);
+      assert.doesNotMatch(inspect(warnings, { depth: null }), /private\.example|sensitive-sentinel|sensitive-cause|sensitive-value/);
+      assert.deepEqual(warnings, [
+        ["[sync]", { prefix, outcome: "apply-failed", changed: 2, refused: 0 }],
+        ["[sync]", { prefix, outcome: "apply-failed", changed: 2, refused: 0 }],
+      ]);
+    });
+  }
 }

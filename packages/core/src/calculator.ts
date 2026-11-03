@@ -304,7 +304,10 @@ function convert(input: string): { value: number; unit: string } | null {
 export type Calculation = { expression: string; value: number; display: string };
 
 export function calculate(raw: string): Calculation | null {
-  const expression = raw.trim().replace(/^=\s*/, "").replace(/\s*=\s*\??$/, "");
+  let expression = raw.trim();
+  if (expression.startsWith("=")) expression = expression.slice(1).trimStart();
+  const suffix = expression.endsWith("?") ? expression.slice(0, -1).trimEnd() : expression;
+  if (suffix.endsWith("=")) expression = suffix.slice(0, -1).trimEnd();
   if (!expression || expression.length > 200 || !/[\dπτ]|\b(pi|e|tau)\b/i.test(expression)) return null;
   if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(expression) || /^\d+(\.\d+){2,}$/.test(expression)) return null;
 

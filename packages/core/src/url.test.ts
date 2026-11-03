@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { execFileSync } from "node:child_process";
 import { PSL_TLDS } from "./tlds.ts";
 import { domainToASCII } from "node:url";
-import { cleanUrl } from "./cleanUrl.ts";
+import { cleanUrl, markdownLink } from "./cleanUrl.ts";
 import { displayHost, hostSpoofReason, punycodeEncode } from "./idn.ts";
-import { breadcrumb, classifyPaste, fixupUrl, resolveInput, urlForDisplay } from "./omnibox.ts";
+import { breadcrumb, classifyPaste, fixupUrl, hostOf, resolveInput, urlForDisplay } from "./omnibox.ts";
 import { displayUrl } from "./suggest.ts";
+import { chooseTextFragment } from "./textFragment.ts";
 
 test("resolveInput turns typed text into a URL", () => {
   assert.equal(resolveInput("apple.com"), "https://apple.com");
@@ -205,4 +207,166 @@ test("Latin lookalikes of finance domains stay punycode", () => {
   assert.equal(shown("fidélity.com"), ascii("fidélity.com"));
   assert.equal(shown("schwáb.com"), ascii("schwáb.com"));
   assert.equal(shown("bücher.de"), "bücher.de");
+});
+
+const runUrlProbe = (body: string): { result: unknown; elapsed: number } => JSON.parse(execFileSync(process.execPath, ["--input-type=module", "--eval", `
+  import { chooseTextFragment } from ${JSON.stringify(new URL("./textFragment.ts", import.meta.url).href)};
+  import { markdownLink } from ${JSON.stringify(new URL("./cleanUrl.ts", import.meta.url).href)};
+  import { breadcrumb, hostOf, urlForDisplay } from ${JSON.stringify(new URL("./omnibox.ts", import.meta.url).href)};
+  const started = performance.now();
+  const result = (() => { ${body} })();
+  process.stdout.write(JSON.stringify({ result, elapsed: performance.now() - started }));
+`], { encoding: "utf8", timeout: 10_000, killSignal: "SIGKILL" }));
+
+test("#166 selection whitespace without a newline completes before the child deadline", (t) => {
+  const probe = runUrlProbe(`
+    return chooseTextFragment({ selected: " ".repeat(400000) + "x", before: "", after: "", pageText: "x" });
+  `);
+  t.diagnostic(`dangerous call: ${probe.elapsed.toFixed(3)} ms`);
+  assert.ok(probe.elapsed < 1000);
+  assert.deepEqual(probe.result, { start: "x" });
+});
+
+test("#165 a nonword after a long selected word completes before the child deadline", (t) => {
+  const probe = runUrlProbe(`
+    const selected = "_".repeat(400000) + "!";
+    const fragment = chooseTextFragment({ selected, before: "", after: "tail", pageText: selected });
+    return { exact: fragment?.start === selected, end: fragment?.end ?? null, suffix: fragment?.suffix ?? null };
+  `);
+  t.diagnostic(`dangerous call: ${probe.elapsed.toFixed(3)} ms`);
+  assert.ok(probe.elapsed < 1000);
+  assert.deepEqual(probe.result, { exact: true, end: null, suffix: null });
+});
+
+test("#164 a nonword after long preceding context completes before the child deadline", (t) => {
+  const probe = runUrlProbe(`
+    return chooseTextFragment({ selected: "x", before: "_".repeat(400000) + "!", after: "", pageText: "x" });
+  `);
+  t.diagnostic(`dangerous call: ${probe.elapsed.toFixed(3)} ms`);
+  assert.ok(probe.elapsed < 1000);
+  assert.deepEqual(probe.result, { start: "x" });
+});
+
+test("a long repetitive selection completes before the child deadline", (t) => {
+  const probe = runUrlProbe(`
+    const selected = "x ".repeat(8000).trimEnd();
+    return chooseTextFragment({ selected, before: "", after: "", pageText: selected });
+  `);
+  t.diagnostic(`dangerous call: ${probe.elapsed.toFixed(3)} ms`);
+  assert.ok(probe.elapsed < 1000);
+  const half = "x ".repeat(4000).trimEnd();
+  assert.deepEqual(probe.result, { start: half, end: half });
+});
+
+test("a long near-miss page text completes before the child deadline", (t) => {
+  const probe = runUrlProbe(`
+    const m = 64000;
+    const selected = "a".repeat(m) + "b" + "a".repeat(m);
+    return chooseTextFragment({ selected, before: "", after: "", pageText: "a".repeat(8 * m) + "\\n\\n" + selected }).start.length;
+  `);
+  t.diagnostic(`dangerous call: ${probe.elapsed.toFixed(3)} ms`);
+  assert.ok(probe.elapsed < 1000);
+  assert.equal(probe.result, 128001);
+});
+
+test("selection word boundaries preserve Unicode code points and underscores", () => {
+  assert.deepEqual(chooseTextFragment({ selected: "𐐀", before: "!_𐐁", after: "_𐐂!", pageText: "_𐐁𐐀_𐐂" }), { start: "_𐐁𐐀_𐐂" });
+  assert.deepEqual(chooseTextFragment({ selected: "x", before: "prefix_", after: "_suffix", pageText: "prefix_x_suffix" }), { start: "prefix_x_suffix" });
+  assert.deepEqual(chooseTextFragment({ selected: "!", before: "prefix_", after: "_suffix", pageText: "prefix_!_suffix" }), { start: "!" });
+  assert.deepEqual(chooseTextFragment({ selected: "x", before: "𐐀!", after: "!𐐁", pageText: "x" }), { start: "x" });
+  assert.deepEqual(chooseTextFragment({ selected: "x\u0301", before: "", after: "tail", pageText: "x\u0301" }), { start: "x\u0301" });
+  assert.deepEqual(chooseTextFragment({ selected: " \talpha \t\n \tbeta \n\n gamma ", before: "", after: "", pageText: "alpha beta gamma" }), { start: "alpha", end: "gamma" });
+});
+
+test("#163 malformed authority and multiline fragment complete before the child deadline", (t) => {
+  const probe = runUrlProbe(`
+    const authority = '"'.repeat(400000);
+    const url = "a://" + authority + "#\\nx";
+    const shown = urlForDisplay(url);
+    const crumb = breadcrumb(url);
+    const host = hostOf(url);
+    return { shown: shown === url.slice(4), crumb: crumb.host === url, host };
+  `);
+  t.diagnostic(`dangerous calls: ${probe.elapsed.toFixed(3)} ms`);
+  assert.ok(probe.elapsed < 1000);
+  assert.deepEqual(probe.result, { shown: true, crumb: true, host: "" });
+});
+
+test("URL parsing preserves userinfo, IPv6, ports and custom schemes", () => {
+  const cases = [
+    ["https://user:pass@WWW.Example.com:8443/a?q=1#part", "example.com", "example.com:8443", "Example.com:8443/a?q=1#part"],
+    ["https://user:pass@[2001:db8::1]:8443/a?q=1#part", "[2001:db8::1]", "[2001:db8::1]:8443", "[2001:db8::1]:8443/a?q=1#part"],
+    ["https://[::1]:443/", "[::1]", "[::1]", "[::1]:443/"],
+    ["my+custom.v1://User@HOST:90/path?x=1#part", "host", "host:90", "HOST:90/path?x=1#part"],
+    ["file:///tmp/a", "", "", "/tmp/a"],
+    ["a://[@8#ab\n:?]0", "[@8#ab\n:?]", "[@8#ab\n:?]", "8#ab\n:?]0"],
+    ["https://a@b@host.example:8080/x", "host.example", "host.example:8080", "host.example:8080/x"],
+    ["https://example.com:80extra/a", "example.com", "example.com:80", "example.com:80extra/a"],
+    ["https://example.com:abc/a", "example.com", "example.com", "example.com:abc/a"],
+    ["mailto:hi@example.com", "", "mailto:hi@example.com", "mailto:hi@example.com"],
+  ];
+  for (const [url, host, crumb, shown] of cases) {
+    assert.equal(hostOf(url!), host, url);
+    assert.equal(breadcrumb(url!).host, crumb, url);
+    assert.equal(urlForDisplay(url!), shown, url);
+  }
+  const multiline = "https://example.com/a?q=1#part\nmore";
+  assert.equal(hostOf(multiline), "");
+  assert.equal(breadcrumb(multiline).host, multiline);
+  assert.equal(urlForDisplay(multiline), "example.com/a?q=1#part\nmore");
+});
+
+test("#160 Markdown titles escape existing backslashes before brackets", () => {
+  const url = "https://example.com/";
+  assert.equal(markdownLink("\\]", url), String.raw`[\\\]](https://example.com/)`);
+  assert.equal(markdownLink("\\\\]", url), String.raw`[\\\\\]](https://example.com/)`);
+  assert.equal(markdownLink(String.raw`x\](https://evil.example/) [fake]`, url), String.raw`[x\\\](https://evil.example/) \[fake\]](https://example.com/)`);
+});
+
+test("long range selections keep the phrases that pick out the selected passage", () => {
+  const a = "alpha bravo charlie delta echo foxtrot golf hotel india juliet";
+  const b = "kilo lima mike november oscar papa quebec romeo sierra tango";
+  const expected = { start: `${a} unique`, end: `last ${b}` };
+  const decoy = `${a} unique middle filler last ${b}`;
+  assert.deepEqual(chooseTextFragment({ selected: decoy, before: "", after: "", pageText: `${a} decoy last ${b}\n\n${decoy}` }), expected);
+  const inner = `${a} unique ${b} middle last ${b}`;
+  const before = "unique surrounding lead ";
+  assert.deepEqual(chooseTextFragment({ selected: inner, before, after: "", pageText: `${a} unrelated heading\n\n${before}${inner}` }), expected);
+});
+
+test("a Markdown link to a URL with a huge host and many parameters completes before the child deadline", (t) => {
+  const probe = runUrlProbe(`
+    const n = 512000;
+    const url = "https://" + "a".repeat(n) + ".example/?" + "x=1&".repeat(n / 4) + "last=1";
+    return markdownLink("T", url) === "[T](" + url.replaceAll("&", "\\\\&") + ")";
+  `);
+  t.diagnostic(`dangerous call: ${probe.elapsed.toFixed(3)} ms`);
+  assert.ok(probe.elapsed < 1000);
+  assert.equal(probe.result, true);
+});
+
+test("#160 Markdown titles stay literal label text", () => {
+  const url = "https://example.com/";
+  assert.equal(markdownLink('<a href="https://evil.example/">Evil</a>', url), String.raw`[\<a href="https://evil.example/"\>Evil\</a\>](https://example.com/)`);
+  assert.equal(markdownLink("safe\n\n<https://evil.example/>", url), String.raw`[safe \<https://evil.example/\>](https://example.com/)`);
+  assert.equal(markdownLink("a\r\n\r\nb", url), "[a b](https://example.com/)");
+  assert.equal(markdownLink("`", "https://example.com/`"), String.raw`[\`](https://example.com/%60)`);
+  assert.equal(markdownLink("Fish &amp; chips", url), String.raw`[Fish \&amp; chips](https://example.com/)`);
+});
+
+test("#160 Markdown destinations are the URL's own href with Markdown delimiters escaped", () => {
+  assert.equal(markdownLink("Title", "https://example.com/a(b)\\c\nd\te\rf\u0000g\u007fh"), String.raw`[Title](https://example.com/a\(b\)/cdef%00g%7Fh)`);
+  assert.equal(markdownLink("T", "https://example.com/a "), "[T](https://example.com/a)");
+  assert.equal(markdownLink("T", "https://example.com/a#fragment\n"), "[T](https://example.com/a#fragment)");
+  assert.equal(markdownLink("T", "https://example.com/?x=1&amp;y=2"), String.raw`[T](https://example.com/?x=1\&amp;y=2)`);
+  assert.equal(markdownLink("x", "not a url (x)"), String.raw`[x](not%20a%20url%20\(x\))`);
+  assert.equal(markdownLink("Title", "https://example.com/a b"), "[Title](https://example.com/a%20b)");
+  assert.equal(markdownLink("Title", "https://example.com/a<b>c"), "[Title](https://example.com/a%3Cb%3Ec)");
+});
+
+test("Markdown links still clean tracking parameters and fall back to the URL", () => {
+  assert.equal(markdownLink("[left]", "https://example.com/"), String.raw`[\[left\]](https://example.com/)`);
+  assert.equal(markdownLink("A title", "https://example.com/a?utm_source=x&keep=1#part"), "[A title](https://example.com/a?keep=1#part)");
+  assert.equal(markdownLink("", "https://example.com/path"), "[https://example.com/path](https://example.com/path)");
+  assert.equal(markdownLink("A [title]", "https://example.com/a%28b%29"), String.raw`[A \[title\]](https://example.com/a%28b%29)`);
 });

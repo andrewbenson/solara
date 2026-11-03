@@ -393,7 +393,12 @@ async function applyAdapter(state: ScopeState, adapter: Adapter, keys: Set<strin
       refused = error.refused;
       ok = true;
     }
-    console.warn(`[sync] applying ${adapter.prefix} failed`, error);
+    console.warn("[sync]", {
+      prefix: adapter.prefix,
+      outcome: refused ? "apply-refused" : "apply-failed",
+      changed: mine.size,
+      refused: refused?.size ?? 0,
+    });
   }
   if (ok === false) return mine;
   applyAs[adapter.prefix] = "joined";

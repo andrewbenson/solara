@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mock, test } from "node:test";
 import { BUILT_IN_ENGINES, engineById } from "./engines.ts";
-import { buildSuggestions, type Suggestion } from "./suggest.ts";
+import { buildSuggestions, suggestionKey, type Suggestion } from "./suggest.ts";
 import { createSuggestFetcher, type FetchLike } from "./suggestFetcher.ts";
+import { calculate } from "./calculator.ts";
 
 const now = Date.UTC(2026, 8, 24);
 const DAY = 86_400_000;
@@ -191,3 +193,57 @@ test("a newer request aborts the one in flight, which never answers", async () =
   }
 });
 
+
+
+test("page suggestion keys strip multiline fragments", () => {
+  const key = (url: string) => suggestionKey({ kind: "page", url, title: "", favicon: null });
+  assert.equal(key("https://safe.example/#" + "#".repeat(20) + "\nx"), key("https://safe.example/"));
+});
+
+test("page suggestion keys preserve query strings and remove one trailing slash", () => {
+  const key = (url: string) => suggestionKey({ kind: "page", url, title: "", favicon: null });
+  assert.equal(key("https://safe.example/path/#fragment"), key("https://safe.example/path"));
+  assert.equal(key("https://safe.example/path//"), "page:https://safe.example/path/");
+  assert.notEqual(key("https://safe.example/?q=1"), key("https://safe.example/?q=2"));
+});
+
+test("page suggestion keys finish malformed fragments within a child deadline", (t) => {
+  const output = execFileSync(process.execPath, ["--input-type=module", "--eval", `
+    import assert from "node:assert/strict";
+    import { suggestionKey } from ${JSON.stringify(new URL("./suggest.ts", import.meta.url).href)};
+    const page = (url) => ({ kind: "page", url, title: "", favicon: null });
+    const url = "https://safe.example/#" + "#".repeat(400000) + "\\nx";
+    const at = performance.now();
+    const result = suggestionKey(page(url));
+    const elapsed = performance.now() - at;
+    assert.equal(result, suggestionKey(page("https://safe.example/")));
+    process.stdout.write(JSON.stringify({ elapsed }));
+  `], { encoding: "utf8", timeout: 10_000, killSignal: "SIGKILL" });
+  t.diagnostic(`pageKey child call: ${JSON.parse(output).elapsed.toFixed(3)} ms`);
+  assert.ok(JSON.parse(output).elapsed < 1000);
+});
+
+test("calculator preserves optional equals and question mark grammar", () => {
+  for (const raw of ["= 1+1", "1+1 = ?", "1+1=", "1+1=?", " = \t1+1 =\n ? ", "1+1 =\n", "1+1"]) {
+    assert.deepEqual(calculate(raw), { expression: "1+1", value: 2, display: "2" }, raw);
+  }
+  assert.deepEqual(calculate("= 1+1  "), { expression: "1+1", value: 2, display: "2" });
+  for (const raw of ["1+1?", "1+1 ?", "1+1 ? ?", "1+1 = ? ?", "==1+1", "1+1==", "=", "=?", "= ?", "1+1 ? ="]) {
+    assert.equal(calculate(raw), null, raw);
+  }
+});
+
+test("calculator rejects a long malformed suffix within a child deadline", (t) => {
+  const output = execFileSync(process.execPath, ["--input-type=module", "--eval", `
+    import assert from "node:assert/strict";
+    import { calculate } from ${JSON.stringify(new URL("./calculator.ts", import.meta.url).href)};
+    const raw = "1" + " ".repeat(400000) + "x";
+    const at = performance.now();
+    const result = calculate(raw);
+    const elapsed = performance.now() - at;
+    assert.equal(result, null);
+    process.stdout.write(JSON.stringify({ elapsed }));
+  `], { encoding: "utf8", timeout: 10_000, killSignal: "SIGKILL" });
+  t.diagnostic(`calculator child call: ${JSON.parse(output).elapsed.toFixed(3)} ms`);
+  assert.ok(JSON.parse(output).elapsed < 1000);
+});

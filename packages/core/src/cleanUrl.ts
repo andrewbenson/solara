@@ -41,10 +41,10 @@ function decodeName(raw: string): string {
   }
 }
 
-function isTrackingParam(name: string, hostname = ""): boolean {
+function isTrackingParam(name: string, rules: ReturnType<typeof siteRules>): boolean {
   const key = name.toLowerCase();
   if (GLOBAL_PARAMS.has(key) || GLOBAL_PREFIXES.some((p) => key.startsWith(p))) return true;
-  return siteRules(hostname).some((r) => r.params.includes(key) || r.prefixes?.some((p) => key.startsWith(p)));
+  return rules.some((r) => r.params.includes(key) || r.prefixes?.some((p) => key.startsWith(p)));
 }
 
 export function cleanUrl(url: string): string {
@@ -60,11 +60,22 @@ export function cleanUrl(url: string): string {
   }
   const [, base = "", query = "", hash = ""] = match;
   const pairs = query.slice(1).split("&");
-  const kept = pairs.filter((pair) => pair && !isTrackingParam(decodeName(pair.split("=")[0]!), hostname));
+  const rules = siteRules(hostname);
+  const kept = pairs.filter((pair) => pair && !isTrackingParam(decodeName(pair.split("=")[0]!), rules));
   if (kept.length === pairs.length) return url;
   return `${base}${kept.length ? `?${kept.join("&")}` : ""}${hash}`;
 }
 
+const escapeMarkdownTitle = (title: string) => title.replace(/[\r\n]+/g, " ").replace(/[\\[\]<>`&]/g, "\\$&");
+
+function markdownDestination(url: string): string {
+  let href = url;
+  try {
+    href = new URL(url).href;
+  } catch {}
+  return href.replace(/[\\()<>&]/g, "\\$&").replace(/[\s\u0000-\u001f\u007f-\u009f]/g, encodeURIComponent);
+}
+
 export function markdownLink(title: string, url: string): string {
-  return `[${(title || url).replace(/([[\]])/g, "\\$1")}](${cleanUrl(url)})`;
+  return `[${escapeMarkdownTitle(title || url)}](${markdownDestination(cleanUrl(url))})`;
 }

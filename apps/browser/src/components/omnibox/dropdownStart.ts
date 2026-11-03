@@ -7,7 +7,10 @@ import { tabTitle } from "../sidebar/actions";
 
 const NO_HISTORY: HistoryEntry[] = [];
 const RECENT = 4;
-const pageKey = (url: string) => url.replace(/#.*$/, "");
+const pageKey = (url: string) => {
+  const hash = url.indexOf("#");
+  return hash < 0 ? url : url.slice(0, hash);
+};
 
 export function useDropdownStart(enabled: boolean, tabId: string, profileId: string): Suggestion[] {
   const url = useBrowser((s) => (enabled ? (s.tabs[tabId]?.url ?? "") : ""));

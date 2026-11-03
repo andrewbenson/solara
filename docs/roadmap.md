@@ -57,8 +57,10 @@ then it's switched off, and only then is it deleted. Settings, onboarding, Impor
 pages, the link bubble and the store are already native (RN removal 01–08). Each milestone ships as its own release;
 feature releases can fit between them. New UI is built in Swift from now on, never in React Native.
 
-Progress, updated at each release: TypeScript lines left in apps/browser/src (55,264 on 2026-11-03) and React Native
-roots left (to be counted by the inventory).
+Progress, updated at each release (from [native/rn-inventory.md](native/rn-inventory.md)): on 2026-11-03, 388 files and
+54,494 lines of TypeScript are left in apps/browser/src: 12,097 draw, 24,435 decide, 13,639 hold data and 4,323 are
+glue. React Native starts from 3 entry points (the main window, panes, and the version-mismatch screen), with one root
+per window plus a root for each visible pane.
 
 ## 0.4.0: React Native draws nothing
 
@@ -66,8 +68,10 @@ Done when no React Native view appears on screen; React Native only arranges nat
 
 | Item | Status |
 |---|---|
-| Inventory every file left in apps/browser/src by what it does (draws, decides, holds data, glue) and the milestone that removes it: docs/native/rn-inventory.md | in progress |
+| Inventory every file left in apps/browser/src by what it does (draws, decides, holds data, glue) and the milestone that removes it: docs/native/rn-inventory.md | landed b1a78d3d |
 | Native bookmarks bar, with the native bookmark coordinator (see backlog) | planned |
+| The New Tab page's remaining React Native parts: Personalize, the feedback check-in and the release postcard | planned |
+| A native frame for extension popups | planned |
 | Native site controls and prompts (permissions, autofill, translate, zoom, developer mode) | planned |
 | Native extensions toolbar, overlays and side panel | planned |
 | Native media: sidebar player, hover player, cast and share pickers, tab badges | planned |

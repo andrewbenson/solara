@@ -77,19 +77,20 @@ public enum ProfileIcons {
     ProfileSymbol(name: "moon.stars.fill", title: "Evenings"),
   ]
 
-  public static let emoji = ["😀", "😎", "🤓", "🧑‍💻", "💼", "🏠", "🎓", "🎨", "🎮", "🎵", "📚", "✈️", "🌱", "🔥", "⭐️", "🚀", "🐶", "🐱", "🦊", "🍀"]
-
   public static func symbol(_ icon: String?) -> String? {
     guard let icon, icon.hasPrefix(symbolPrefix) else { return nil }
     return String(icon.dropFirst(symbolPrefix.count))
   }
 
   public static func title(_ icon: String?) -> String {
-    if let symbol = symbol(icon) { return symbols.first { $0.name == symbol }?.title ?? "Symbol" }
+    if let symbol = symbol(icon) { return symbols.first { $0.name == symbol }?.title ?? spokenName(symbol) }
     return icon ?? "Initial"
   }
 
-  public static func isEmoji(_ icon: String?) -> Bool { icon != nil && symbol(icon) == nil }
+  static func spokenName(_ symbol: String) -> String {
+    let words = symbol.split(separator: ".").filter { $0 != "fill" }.joined(separator: " ")
+    return words.prefix(1).uppercased() + words.dropFirst()
+  }
 }
 
 enum ProfileNames {
@@ -157,34 +158,6 @@ struct ProfileColorStack: View {
           .fill(Color(themeHex: color))
           .overlay(Circle().strokeBorder(scheme == .dark ? Color.black.opacity(0.35) : Color.white, lineWidth: 1))
           .frame(width: size, height: size)
-      }
-    }
-  }
-}
-
-struct ProfileIconMenuItems: View {
-  let current: String?
-  let choose: (String?) -> Void
-
-  var body: some View {
-    Toggle("Initial", isOn: Binding(get: { current == nil }, set: { _ in choose(nil) }))
-    Divider()
-    ForEach(ProfileIcons.symbols, id: \.name) { symbol in
-      let icon = ProfileIcons.symbolPrefix + symbol.name
-      Toggle(isOn: Binding(get: { current == icon }, set: { _ in choose(icon) })) {
-        Label(symbol.title, systemImage: symbol.name)
-      }
-    }
-    Divider()
-    Menu {
-      ForEach(ProfileIcons.emoji, id: \.self) { emoji in
-        Toggle(emoji, isOn: Binding(get: { current == emoji }, set: { _ in choose(emoji) }))
-      }
-    } label: {
-      if ProfileIcons.isEmoji(current) {
-        Label("Emoji", systemImage: "checkmark")
-      } else {
-        Text("Emoji")
       }
     }
   }

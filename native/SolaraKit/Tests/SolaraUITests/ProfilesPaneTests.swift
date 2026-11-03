@@ -255,8 +255,18 @@ struct ProfilesPaneTests {
   @Test func iconTitles() {
     #expect(ProfileIcons.title(nil) == "Initial")
     #expect(ProfileIcons.title("symbol:airplane") == "Travel")
-    #expect(ProfileIcons.title("symbol:unknown") == "Symbol")
+    #expect(ProfileIcons.title("symbol:cup.and.saucer") == "Cup and saucer")
+    #expect(ProfileIcons.title("symbol:checkmark.seal") == "Checkmark seal")
     #expect(ProfileIcons.title("🚀") == "🚀")
+  }
+
+  @Test func theIconPickerOpensAsAProfilePickerThatOffersTheInitial() {
+    let state = ProfileIconPicker.state(profileId: "p1", current: "🚀", dark: true)
+    #expect(state.kind == "profile")
+    #expect(state.id == "p1")
+    #expect(state.dark)
+    #expect(SidebarIconPickerMetrics.showsFooter(state))
+    #expect(!SidebarIconPickerMetrics.showsFooter(ProfileIconPicker.state(profileId: "p1", current: nil, dark: false)))
   }
 
   @Test func detailsTitleIsTheProfileName() {

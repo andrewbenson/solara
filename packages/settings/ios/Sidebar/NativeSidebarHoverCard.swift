@@ -350,7 +350,7 @@ public enum SidebarIconPickerRead {
     return ["panel": source["panel"] ?? NSNull(), "tab": source["tab"] ?? NSNull(),
       "focused": source["focused"] ?? NSNull(), "items": source["items"] ?? NSNull(),
       "first": source["first"] ?? NSNull(), "hovered": source["hovered"] ?? NSNull(),
-      "footer": source["footer"] ?? NSNull()]
+      "footer": source["footer"] ?? NSNull(), "section": source["section"] ?? NSNull()]
   }
 }
 #endif

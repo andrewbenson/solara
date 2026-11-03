@@ -20,6 +20,9 @@ const tabs = ids.map((id) => ({ id, url: `data:text/html,<title>Tab ${id}</title
 const layout = { windows: [{ id: "w1", tabIds: ids, activeTabIds: { default: "t1" }, frame: [60, 60, 1200, 800] }], tabs };
 const CELL = 30;
 const INSET = 8.5;
+const GRID_TOP = INSET + 26 + 8 + 24 + 8;
+const HEIGHT = 263;
+const FOOTER_HEIGHT = 297;
 
 let nativePollDeadline = 0;
 
@@ -88,7 +91,7 @@ try {
       p = await picker();
       const read = nativePicker(state);
       return p?.panel && read && same(read.panel, p.panel) && read.tab === p.tab && read.focused === p.focused &&
-        read.items === p.items && read.first === p.first && same(read.footer, p.footer);
+        read.items === p.items && read.first === p.first && same(read.footer, p.footer) && read.section === p.section;
     });
     return p;
   };
@@ -97,69 +100,110 @@ try {
       (await run(`return ac.sidebarRows.useSidebarUi.getState().iconPicker`)) === null && nativePicker(state) === null);
   };
   const icon = (id) => run(`return ac.store.getState().tabs[${JSON.stringify(id)}].customIcon ?? null`);
-  const cellCenter = (panel, index) => [panel[0] + INSET + (index % 7) * CELL + CELL / 2, panel[1] + INSET + 26 + 8 + Math.floor(index / 7) * CELL + CELL / 2];
+  const cellCenter = (panel, index) => [panel[0] + INSET + (index % 7) * CELL + CELL / 2, panel[1] + GRID_TOP + Math.floor(index / 7) * CELL + CELL / 2];
+  const showSection = async (name) => {
+    await input(`section:${name}`);
+    let p;
+    await untilSnapshot(native.app, `native section ${name}`, async (state) => {
+      p = await picker();
+      return p?.section === name && p.query === "" && nativePicker(state)?.section === name && nativePicker(state)?.items === p.items && nativePicker(state)?.first === p.first;
+    });
+    return p;
+  };
+  const typed = async (text) => {
+    await input(`type:${text}`);
+    let p;
+    await untilSnapshot(native.app, `native search for ${text}`, async (state) => {
+      p = await picker();
+      return p?.query === text && nativePicker(state)?.items === p.items && nativePicker(state)?.first === p.first;
+    });
+    return p;
+  };
+  const GROUPS = ["Smileys & Emotion", "People & Body", "Animals & Nature", "Food & Drink", "Travel & Places", "Activities", "Objects", "Symbols", "Flags"];
   const footerCenter = (panel) => [panel[0] + 128, panel[1] + panel[3] - INSET - 13];
 
-  await rep.check("it opens beside the row at the expected frame, focused", async () => {
-    const p = await open("tab", "t3");
+  await rep.check("it opens beside the row at the expected frame, focused, on the first section", async () => {
+    let p = await open("tab", "t3");
     const anchor = JSON.parse(await run(`return ac.sidebarRows.measureRow("w1", "t3").then((a) => JSON.stringify(a))`));
-    assert.deepEqual(p.panel, [Math.max(8, Math.min(240 + 6, anchor.x + anchor.width + 6)), Math.max(8, anchor.y - 8), 256, 231]);
+    assert.deepEqual(p.panel, [Math.max(8, Math.min(240 + 6, anchor.x + anchor.width + 6)), Math.max(8, anchor.y - 8), 256, HEIGHT]);
     assert.equal(p.tab, "emoji");
     assert.equal(p.focused, true, "the search field has the keys");
-    assert.equal(p.items, 108);
+    assert.deepEqual(p.sections.filter((name) => name !== "Recent"), GROUPS);
+    assert.equal(p.section, p.sections[0]);
     assert.deepEqual(p.footer, []);
+    p = await showSection("Smileys & Emotion");
+    assert.ok(p.items > 150, `Smileys & Emotion holds ${p.items}`);
+    assert.equal(p.first, "😀");
   });
 
-  await rep.check("typing filters, and Return takes the first match and closes", async () => {
-    await input("type:pizza");
-    let p;
-    await untilSnapshot(native.app, "native filtered picker", async (state) => {
-      p = await picker();
-      return p?.items === 1 && nativePicker(state)?.items === p.items && nativePicker(state)?.first === p.first;
-    });
-    assert.equal(p.first, "🍕");
+  await rep.check("searching every section for rocket puts 🚀 first, and Return takes it and closes", async () => {
+    const p = await typed("rocket");
+    assert.equal(p.first, "🚀");
+    assert.ok(p.items > 1);
     await input("return");
     await closed();
-    assert.equal(await icon("t3"), "🍕");
-    await nativeIcon(native.app, "t3", "🍕", icon);
+    assert.equal(await icon("t3"), "🚀");
+    await nativeIcon(native.app, "t3", "🚀", icon);
   });
 
-  await rep.check("Escape closes it without a change, and a typed miss shows No matches", async () => {
+  await rep.check("it reopens on the section holding the icon, and a recent choice opens first elsewhere", async () => {
     let p = await open("tab", "t3");
-    assert.deepEqual(p.footer, ["Reset Icon"], "a custom icon offers Reset Icon");
-    assert.equal(p.panel[3], 265);
-    await input("type:zzzz");
-    await untilSnapshot(native.app, "native no-match picker", async (state) => {
-      p = await picker();
-      return p?.items === 0 && nativePicker(state)?.items === 0 && same(nativePicker(state)?.panel, p.panel);
-    });
-    assert.equal(p.panel[3], 82 + 34);
+    assert.equal(p.section, "Travel & Places");
     await input("escape");
     await closed();
-    assert.equal(await icon("t3"), "🍕");
+    p = await open("tab", "t5");
+    assert.equal(p.section, "Recent");
+    assert.equal(p.first, "🚀");
+    await input("escape");
+    await closed();
+    assert.equal(await icon("t5"), null);
+  });
+
+  await rep.check("Escape closes it without a change, and a typed miss shows No matches at the same height", async () => {
+    let p = await open("tab", "t3");
+    assert.deepEqual(p.footer, ["Reset Icon"], "a custom icon offers Reset Icon");
+    assert.equal(p.panel[3], FOOTER_HEIGHT);
+    p = await typed("zzzz");
+    assert.equal(p.items, 0);
+    assert.equal(p.panel[3], FOOTER_HEIGHT);
+    await input("escape");
+    await closed();
+    assert.equal(await icon("t3"), "🚀");
+  });
+
+  await rep.check("arrow keys move the highlight and Return takes it", async () => {
+    await open("tab", "t3");
+    await showSection("Smileys & Emotion");
+    await input("down");
+    await input("right");
+    await until("the highlight to reach the second face", async () => (await picker())?.hovered === "😃");
+    await input("return");
+    await closed();
+    assert.equal(await icon("t3"), "😃");
   });
 
   await rep.check("a hovered cell lights, and a click on a cell sets that icon", async () => {
-    const p = await open("tab", "t3");
-    const [x, y] = cellCenter(p.panel, 2);
+    let p = await open("tab", "t3");
+    p = await showSection("Smileys & Emotion");
+    const [x, y] = cellCenter(p.panel, 0);
     await point(x, y);
-    await untilSnapshot(native.app, "native hovered icon", async (state) => (await picker())?.hovered === "❤️" && nativePicker(state)?.hovered === "❤️");
+    await untilSnapshot(native.app, "native hovered icon", async (state) => (await picker())?.hovered === "😀" && nativePicker(state)?.hovered === "😀");
     await point(900, 600);
     await until("the hover leaves", async () => (await picker())?.hovered === null);
     await click(x, y);
     await closed();
-    assert.equal(await icon("t3"), "❤️");
-    await nativeIcon(native.app, "t3", "❤️", icon);
+    assert.equal(await icon("t3"), "😀");
+    await nativeIcon(native.app, "t3", "😀", icon);
   });
 
-  await rep.check("the Icons tab lists symbols, a click there sets one, and a symbol icon reopens on it", async () => {
+  await rep.check("the Icons tab lists symbols by section, a click there sets one, and a symbol icon reopens on it", async () => {
     let p = await open("tab", "t4");
     await click(p.panel[0] + 256 - INSET - 14, p.panel[1] + INSET + 13);
     await untilSnapshot(native.app, "native symbols tab", async (state) => {
       p = await picker();
       return p?.tab === "symbols" && nativePicker(state)?.tab === p.tab && nativePicker(state)?.items === p.items && nativePicker(state)?.first === p.first;
     });
-    assert.equal(p.items, 78);
+    p = await showSection("Favorites");
     assert.equal(p.first, "symbol:star");
     const [x, y] = cellCenter(p.panel, 1);
     await click(x, y);
@@ -168,6 +212,7 @@ try {
     await nativeIcon(native.app, "t4", "symbol:heart", icon);
     p = await open("tab", "t4");
     assert.equal(p.tab, "symbols");
+    assert.equal(p.section, "Favorites");
     await input("escape");
     await closed();
   });

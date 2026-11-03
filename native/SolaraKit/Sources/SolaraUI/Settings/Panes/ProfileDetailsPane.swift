@@ -6,6 +6,8 @@ struct ProfileDetailsPane: View {
   let profileId: String
   @State private var name = ""
   @FocusState private var nameFocused: Bool
+  @State private var pickingFromBadge = false
+  @State private var pickingFromRow = false
 
   var body: some View {
     if let profile = model.profile(profileId) {
@@ -22,16 +24,15 @@ struct ProfileDetailsPane: View {
     SettingsForm {
       Section {
         VStack(spacing: 10) {
-          Menu {
-            ProfileIconMenuItems(current: profile.icon) { model.setIcon(profileId, $0) }
-          } label: {
+          Button { pickingFromBadge = true } label: {
             ProfileBadge(profile: profile, size: 64)
           }
-          .menuStyle(.button)
           .buttonStyle(.plain)
-          .menuIndicator(.hidden)
           .fixedSize()
           .help("Change Icon")
+          .popover(isPresented: $pickingFromBadge, arrowEdge: .bottom) {
+            ProfileIconPicker(profileId: profileId, current: profile.icon) { pick($0, from: $pickingFromBadge) }
+          }
           Text(model.services.stats(profileId: profileId).text)
             .font(.system(size: 12))
             .foregroundStyle(.secondary)
@@ -52,10 +53,10 @@ struct ProfileDetailsPane: View {
             .onSubmit(commitName)
         }
         SettingRow(title: "Icon", description: .text(ProfileIcons.title(profile.icon))) {
-          Menu("Change…") {
-            ProfileIconMenuItems(current: profile.icon) { model.setIcon(profileId, $0) }
-          }
-          .settingsMenu()
+          Button("Change…") { pickingFromRow = true }
+            .popover(isPresented: $pickingFromRow, arrowEdge: .bottom) {
+              ProfileIconPicker(profileId: profileId, current: profile.icon) { pick($0, from: $pickingFromRow) }
+            }
         }
       }
 
@@ -108,6 +109,11 @@ struct ProfileDetailsPane: View {
       ClearBrowsingDataSheet(model: model, profileId: clearing.id) { model.clearingProfileId = nil }
     }
     .profileDeleteAlert(model: model)
+  }
+
+  private func pick(_ event: SidebarIconPickerView.Event, from shown: Binding<Bool>) {
+    if case .choose(let icon) = event { model.setIcon(profileId, icon) }
+    shown.wrappedValue = false
   }
 
   private func commitName() {

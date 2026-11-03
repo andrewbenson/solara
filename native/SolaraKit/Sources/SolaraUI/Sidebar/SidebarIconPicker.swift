@@ -10,8 +10,17 @@ public struct SidebarIconPickerState: Decodable, Equatable, Sendable {
   public var dark: Bool
   public var shadowOpacity: Double
   public var theme: [String: String]
-  public var emoji: [[String]]
-  public var symbols: [String]
+
+  public init(id: String, kind: String, current: String?, anchor: [Double]?, sidebarWidth: Double, dark: Bool, shadowOpacity: Double, theme: [String: String]) {
+    self.id = id
+    self.kind = kind
+    self.current = current
+    self.anchor = anchor
+    self.sidebarWidth = sidebarWidth
+    self.dark = dark
+    self.shadowOpacity = shadowOpacity
+    self.theme = theme
+  }
 
   public var anchorRect: CGRect? {
     guard let anchor, anchor.count == 4 else { return nil }
@@ -27,6 +36,8 @@ public enum SidebarIconPickerTab: String, Sendable {
 public enum SidebarIconPickerMetrics {
   public static let symbolPrefix = "symbol:"
   public static let noGroupIcon = "symbol:square.stack.fill"
+  public static let recentSection = "Recent"
+  public static let recentLimit = 21
   public static let width: CGFloat = 256
   static let border: CGFloat = 0.5
   static let padding: CGFloat = 8
@@ -48,11 +59,12 @@ public enum SidebarIconPickerMetrics {
   static let tabGap: CGFloat = 6
   static let tabBox: CGFloat = 16
   static let tabSymbol: CGFloat = 13
+  public static let sectionBar: CGFloat = 24
+  static let sectionSymbol: CGFloat = 12
   public static let cell: CGFloat = 30
   static let cellRadius: CGFloat = 8
   static let gridRows: CGFloat = 6
   static let emojiFont: CGFloat = 18
-  static let cellBox: CGFloat = 20
   static let cellSymbol: CGFloat = 15
   static let footer: CGFloat = 26
   static let footerGap: CGFloat = 6
@@ -75,21 +87,32 @@ public enum SidebarIconPickerMetrics {
     return CGPoint(x: left, y: top)
   }
 
-  public static func items(_ state: SidebarIconPickerState, tab: SidebarIconPickerTab, query: String) -> [String] {
-    let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    switch tab {
-    case .emoji:
-      return state.emoji.compactMap { pair in
-        guard let emoji = pair.first else { return nil }
-        return q.isEmpty || (pair.count > 1 && pair[1].contains(q)) ? emoji : nil
-      }
-    case .symbols:
-      return state.symbols.filter { q.isEmpty || $0.contains(q) }.map { symbolPrefix + $0 }
-    }
-  }
-
   public static func showsFooter(_ state: SidebarIconPickerState) -> Bool {
     state.kind == "group" || state.current != nil
+  }
+
+  public static func isSymbol(_ icon: String) -> Bool { icon.hasPrefix(symbolPrefix) }
+}
+
+@MainActor
+public final class IconPickerRecents {
+  public static let shared = IconPickerRecents(defaults: .standard)
+  static let key = "SolaraIconPickerRecents"
+  private let defaults: UserDefaults
+
+  public init(defaults: UserDefaults) {
+    self.defaults = defaults
+  }
+
+  public func list(_ tab: SidebarIconPickerTab) -> [String] {
+    (defaults.stringArray(forKey: Self.key) ?? []).filter { SidebarIconPickerMetrics.isSymbol($0) == (tab == .symbols) }
+  }
+
+  public func note(_ icon: String) {
+    let kept = (defaults.stringArray(forKey: Self.key) ?? []).filter { $0 != icon }
+    let mine = kept.filter { SidebarIconPickerMetrics.isSymbol($0) == SidebarIconPickerMetrics.isSymbol(icon) }
+    let others = kept.filter { SidebarIconPickerMetrics.isSymbol($0) != SidebarIconPickerMetrics.isSymbol(icon) }
+    defaults.set(Array(([icon] + mine).prefix(SidebarIconPickerMetrics.recentLimit)) + others, forKey: Self.key)
   }
 }
 
@@ -100,8 +123,12 @@ public final class SidebarIconPickerView: NSView, NSTextFieldDelegate {
   }
 
   public var onEvent: ((Event) -> Void)?
+  public var catalog: IconCatalog = .shared
+  public var recents: IconPickerRecents = .shared
+  public var embedded = false { didSet { if embedded != oldValue { panel.frame.origin = .zero; needsLayout = true } } }
   public private(set) var state: SidebarIconPickerState?
   public private(set) var tab: SidebarIconPickerTab = .emoji
+  public private(set) var section: String?
   public private(set) var items: [String] = []
   public let panel = IconPickerPanelView()
   let field = IconPickerField()
@@ -109,6 +136,7 @@ public final class SidebarIconPickerView: NSView, NSTextFieldDelegate {
   private let pill = CALayer()
   private let glass = SymbolView()
   private let tabButtons = [IconPickerTabButton(.emoji), IconPickerTabButton(.symbols)]
+  private let sectionBar = IconPickerSectionBar()
   private let scroll = NSScrollView()
   private let grid = IconPickerGridView()
   private let empty = OnboardingTextNSView()
@@ -141,6 +169,8 @@ public final class SidebarIconPickerView: NSView, NSTextFieldDelegate {
       button.onPress = { [weak self] tab in self?.select(tab) }
       panel.addSubview(button)
     }
+    sectionBar.onPress = { [weak self] name in self?.show(section: name) }
+    panel.addSubview(sectionBar)
     scroll.drawsBackground = false
     scroll.hasVerticalScroller = false
     scroll.hasHorizontalScroller = false
@@ -148,7 +178,7 @@ public final class SidebarIconPickerView: NSView, NSTextFieldDelegate {
     scroll.documentView = grid
     scroll.contentView.postsBoundsChangedNotifications = true
     NotificationCenter.default.addObserver(self, selector: #selector(scrolled), name: NSView.boundsDidChangeNotification, object: scroll.contentView)
-    grid.onChoose = { [weak self] icon in self?.onEvent?(.choose(icon)) }
+    grid.onChoose = { [weak self] icon in self?.choose(icon) }
     panel.addSubview(scroll)
     empty.manager.usesFontLeading = false
     grid.addSubview(empty)
@@ -169,29 +199,42 @@ public final class SidebarIconPickerView: NSView, NSTextFieldDelegate {
     let fresh = state?.id != next.id || state?.kind != next.kind
     state = next
     if fresh {
-      tab = next.current?.hasPrefix(SidebarIconPickerMetrics.symbolPrefix) == true ? .symbols : .emoji
+      tab = next.current.map(SidebarIconPickerMetrics.isSymbol) == true ? .symbols : .emoji
+      section = openingSection(current: next.current)
       field.stringValue = ""
       grid.hovered = nil
     }
     paint()
     refilter(scrollToTop: fresh)
+    if fresh, let current = next.current, let index = items.firstIndex(of: current) { grid.reveal(index) }
   }
 
   public var query: String { field.stringValue }
   public var isEditing: Bool { (window?.firstResponder as? NSTextView)?.delegate === field }
+  public var sectionNames: [String] { sections().map(\.name) }
 
   public func devInput(_ action: String) {
     if action.hasPrefix("type:") {
       focus()
-      field.currentEditor()?.insertText(String(action.dropFirst(5)))
-    } else if action == "escape" || action == "return" {
+      let text = String(action.dropFirst(5))
+      if let editor = field.currentEditor() { editor.insertText(text) } else { field.stringValue += text }
+      controlTextDidChange(Notification(name: NSControl.textDidChangeNotification))
+    } else if action.hasPrefix("section:") {
+      show(section: String(action.dropFirst(8)))
+    } else if let selector = Self.keySelectors[action] {
       focus()
       guard let editor = field.currentEditor() as? NSTextView else { return }
-      _ = control(field, textView: editor, doCommandBy: action == "escape" ? #selector(NSResponder.cancelOperation(_:)) : #selector(NSResponder.insertNewline(_:)))
+      _ = control(field, textView: editor, doCommandBy: selector)
     } else if let next = SidebarIconPickerTab(rawValue: action) {
       select(next)
     }
   }
+
+  static let keySelectors: [String: Selector] = [
+    "escape": #selector(NSResponder.cancelOperation(_:)), "return": #selector(NSResponder.insertNewline(_:)),
+    "up": #selector(NSResponder.moveUp(_:)), "down": #selector(NSResponder.moveDown(_:)),
+    "left": #selector(NSResponder.moveLeft(_:)), "right": #selector(NSResponder.moveRight(_:)),
+  ]
 
   public func focus() {
     window?.makeFirstResponder(field)
@@ -200,8 +243,44 @@ public final class SidebarIconPickerView: NSView, NSTextFieldDelegate {
   func select(_ next: SidebarIconPickerTab) {
     guard next != tab else { return }
     tab = next
+    section = openingSection(current: nil)
+    grid.hovered = nil
     paint()
     refilter(scrollToTop: true)
+  }
+
+  func show(section name: String) {
+    guard sections().contains(where: { $0.name == name }) else { return }
+    section = name
+    if !field.stringValue.isEmpty { field.stringValue = "" }
+    grid.hovered = nil
+    paint()
+    refilter(scrollToTop: true)
+  }
+
+  private func choose(_ icon: String) {
+    recents.note(icon)
+    onEvent?(.choose(icon))
+  }
+
+  private func sections() -> [IconCatalogSection] {
+    let recent = recents.list(tab)
+    let all = catalog.sections(tab)
+    let known = Set(all.flatMap { $0.entries.map(\.icon) })
+    let kept = recent.filter(known.contains)
+    guard !kept.isEmpty else { return all }
+    let words = Dictionary(all.flatMap(\.entries).map { ($0.icon, $0.words) }, uniquingKeysWith: { first, _ in first })
+    let section = IconCatalogSection(name: SidebarIconPickerMetrics.recentSection, symbol: "clock",
+      entries: kept.map { IconCatalogEntry(icon: $0, words: words[$0] ?? "") })
+    return [section] + all
+  }
+
+  private func openingSection(current: String?) -> String? {
+    let all = sections()
+    if let current, let holder = all.first(where: { $0.name != SidebarIconPickerMetrics.recentSection && $0.entries.contains { $0.icon == current } }) {
+      return holder.name
+    }
+    return all.first?.name
   }
 
   private func color(_ key: String) -> NSColor? { state?.theme[key].flatMap { CSSColor($0)?.ns } }
@@ -209,23 +288,26 @@ public final class SidebarIconPickerView: NSView, NSTextFieldDelegate {
   private func paint() {
     guard let state else { return }
     let m = SidebarIconPickerMetrics.self
-    surface.fill = color("panel")
-    surface.borderTint = color("panelBorder")
-    surface.glowOpacity = state.shadowOpacity
-    let hover = color("pickerCellHover")
-    PrimitiveMotion.setInstantly { pill.backgroundColor = color("urlPill")?.cgColor }
+    surface.fill = color("panel") ?? (embedded ? nil : .windowBackgroundColor)
+    surface.borderTint = embedded ? nil : color("panelBorder")
+    surface.glowOpacity = embedded ? 0 : state.shadowOpacity
+    let hover = color("pickerCellHover") ?? NSColor.labelColor.withAlphaComponent(0.1)
+    PrimitiveMotion.setInstantly { pill.backgroundColor = (color("urlPill") ?? NSColor.labelColor.withAlphaComponent(0.06)).cgColor }
     glass.set("magnifyingglass", size: m.glassSymbol, color: color("textSecondary") ?? .secondaryLabelColor)
     field.apply(text: color("textPrimary") ?? .labelColor, placeholder: tab == .emoji ? "Search emoji" : "Search icons", placeholderColor: color("placeholder") ?? .placeholderTextColor)
     field.appearance = NSAppearance(named: state.dark ? .darkAqua : .aqua)
     for button in tabButtons {
       button.set(selected: button.tab == tab, hover: hover, icon: color("icon") ?? .labelColor)
     }
-    grid.palette = IconPickerGridView.Palette(hover: hover?.cgColor, icon: color("icon") ?? .labelColor)
+    let searching = !field.stringValue.trimmingCharacters(in: .whitespaces).isEmpty
+    sectionBar.set(sections().map { ($0.name, $0.symbol) }, selected: searching ? nil : section, hover: hover, icon: color("icon") ?? .labelColor,
+      dim: color("textTertiary") ?? .tertiaryLabelColor)
+    grid.palette = IconPickerGridView.Palette(hover: hover.cgColor, icon: color("icon") ?? .labelColor)
     grid.current = state.current
     let ink = color("noGroupIconInk") ?? .tertiaryLabelColor
     var footer: [(label: String, icon: String?, symbol: String?, selected: Bool)] = []
     if state.kind == "group" { footer.append(("No Icon", m.noGroupIcon, "square.stack.fill", state.current == m.noGroupIcon)) }
-    if state.current != nil { footer.append(("Reset Icon", nil, nil, false)) }
+    if state.current != nil { footer.append((state.kind == "profile" ? "Use Initial" : "Reset Icon", nil, nil, false)) }
     for (index, button) in footerButtons.enumerated() {
       guard index < footer.count else {
         button.isHidden = true
@@ -239,8 +321,14 @@ public final class SidebarIconPickerView: NSView, NSTextFieldDelegate {
   }
 
   private func refilter(scrollToTop: Bool) {
-    guard let state else { return }
-    items = SidebarIconPickerMetrics.items(state, tab: tab, query: field.stringValue)
+    guard state != nil else { return }
+    let query = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    if query.isEmpty {
+      let all = sections()
+      items = (all.first { $0.name == section } ?? all.first)?.entries.map(\.icon) ?? []
+    } else {
+      items = catalog.search(tab, query)
+    }
     grid.items = items
     empty.isHidden = !items.isEmpty
     if items.isEmpty {
@@ -261,12 +349,21 @@ public final class SidebarIconPickerView: NSView, NSTextFieldDelegate {
     return CGFloat(rows) * m.cell
   }
 
+  var gridHeight: CGFloat {
+    let m = SidebarIconPickerMetrics.self
+    return m.gridRows * m.cell
+  }
+
   public var panelHeight: CGFloat {
     guard let state else { return 0 }
     let m = SidebarIconPickerMetrics.self
-    var height = 2 * m.inset + m.search + m.gap + min(m.gridRows * m.cell, gridContentHeight)
+    var height = 2 * m.inset + m.search + m.gap + m.sectionBar + m.gap + gridHeight
     if m.showsFooter(state) { height += m.gap + m.footer }
     return height
+  }
+
+  public override var intrinsicContentSize: NSSize {
+    embedded ? NSSize(width: SidebarIconPickerMetrics.width, height: panelHeight) : NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric)
   }
 
   public override func layout() {
@@ -285,8 +382,10 @@ public final class SidebarIconPickerView: NSView, NSTextFieldDelegate {
   private func layoutPanel() {
     guard let state else { return }
     let m = SidebarIconPickerMetrics.self
-    let origin = m.origin(anchor: state.anchorRect, sidebarWidth: CGFloat(state.sidebarWidth))
-    panel.frame = NSRect(x: origin.x, y: origin.y, width: m.width, height: panelHeight)
+    let origin = embedded ? .zero : m.origin(anchor: state.anchorRect, sidebarWidth: CGFloat(state.sidebarWidth))
+    let height = panelHeight
+    panel.frame = NSRect(x: origin.x, y: origin.y, width: m.width, height: height)
+    if embedded, frame.size != panel.frame.size { invalidateIntrinsicContentSize() }
     PrimitiveMotion.setInstantly { surface.frame = panel.bounds }
     var y = m.inset
     let pillWidth = m.inner - 2 * (m.tabGap + m.tabWidth)
@@ -303,9 +402,10 @@ public final class SidebarIconPickerView: NSView, NSTextFieldDelegate {
       x += m.tabWidth
     }
     y += m.search + m.gap
-    let gridHeight = min(m.gridRows * m.cell, gridContentHeight)
+    sectionBar.frame = NSRect(x: m.inset, y: y, width: m.inner, height: m.sectionBar)
+    y += m.sectionBar + m.gap
     scroll.frame = NSRect(x: m.inset, y: y, width: m.inner, height: gridHeight)
-    grid.frame = NSRect(x: 0, y: 0, width: m.inner, height: gridContentHeight)
+    grid.frame = NSRect(x: 0, y: 0, width: m.inner, height: max(gridHeight, gridContentHeight))
     empty.frame = NSRect(x: m.emptyPadding, y: m.emptyPadding, width: m.inner - 2 * m.emptyPadding, height: emptyHeight)
     y += gridHeight + m.gap
     let shown = footerButtons.filter { !$0.isHidden }
@@ -318,20 +418,42 @@ public final class SidebarIconPickerView: NSView, NSTextFieldDelegate {
 
   public func controlTextDidChange(_ obj: Notification) {
     grid.hovered = nil
+    paint()
     refilter(scrollToTop: true)
   }
 
   public func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+    let columns = SidebarIconPickerMetrics.columns
     switch selector {
     case #selector(NSResponder.cancelOperation(_:)):
       onEvent?(.close)
       return true
     case #selector(NSResponder.insertNewline(_:)):
-      if let first = items.first { onEvent?(.choose(first)) }
+      let index = grid.hovered ?? 0
+      if items.indices.contains(index) { choose(items[index]) }
       return true
+    case #selector(NSResponder.moveDown(_:)):
+      return move(grid.hovered.map { $0 + columns } ?? 0)
+    case #selector(NSResponder.moveUp(_:)):
+      guard let hovered = grid.hovered else { return true }
+      return move(hovered - columns)
+    case #selector(NSResponder.moveRight(_:)):
+      guard let hovered = grid.hovered else { return false }
+      return move(hovered + 1)
+    case #selector(NSResponder.moveLeft(_:)):
+      guard let hovered = grid.hovered else { return false }
+      return move(hovered - 1)
     default:
       return false
     }
+  }
+
+  private func move(_ index: Int) -> Bool {
+    guard !items.isEmpty else { return true }
+    let next = min(max(0, index), items.count - 1)
+    grid.hovered = next
+    grid.reveal(next)
+    return true
   }
 
   @objc private func scrolled() { grid.pointerMoved() }
@@ -345,7 +467,7 @@ public final class SidebarIconPickerView: NSView, NSTextFieldDelegate {
     guard state != nil else { return nil }
     let local = convert(point, from: superview)
     if panel.frame.contains(local) { return super.hitTest(point) }
-    return bounds.contains(local) ? self : nil
+    return !embedded && bounds.contains(local) ? self : nil
   }
 
   public override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -360,7 +482,8 @@ public final class SidebarIconPickerView: NSView, NSTextFieldDelegate {
 
   public func describe() -> [String: Any] {
     [
-      "tab": tab.rawValue, "query": field.stringValue, "items": items.count, "first": items.first ?? NSNull(),
+      "tab": tab.rawValue, "section": section ?? NSNull(), "sections": sectionNames, "query": field.stringValue, "items": items.count,
+      "first": items.first ?? NSNull(),
       "panel": [panel.frame.minX, panel.frame.minY, panel.frame.width, panel.frame.height],
       "focused": isEditing,
       "footer": footerButtons.filter { !$0.isHidden }.map(\.label),
@@ -541,6 +664,95 @@ final class IconPickerFooterButton: NSView {
   }
 }
 
+
+final class IconPickerSectionBar: NSView {
+  var onPress: ((String) -> Void)?
+  private(set) var names: [String] = []
+  private var buttons: [IconPickerSectionButton] = []
+
+  override var isFlipped: Bool { true }
+
+  func set(_ sections: [(name: String, symbol: String)], selected: String?, hover: NSColor?, icon: NSColor, dim: NSColor) {
+    names = sections.map(\.name)
+    while buttons.count < sections.count {
+      let button = IconPickerSectionButton()
+      button.onPress = { [weak self] name in self?.onPress?(name) }
+      addSubview(button)
+      buttons.append(button)
+    }
+    for (index, button) in buttons.enumerated() {
+      button.isHidden = index >= sections.count
+      guard index < sections.count else { continue }
+      let section = sections[index]
+      button.set(title: section.name, glyph: section.symbol, selected: section.name == selected, hover: hover, color: selected == nil ? dim : icon)
+    }
+    needsLayout = true
+  }
+
+  override func layout() {
+    super.layout()
+    let shown = buttons.filter { !$0.isHidden }
+    guard !shown.isEmpty else { return }
+    let width = bounds.width / CGFloat(shown.count)
+    let scale = window?.backingScaleFactor ?? 2
+    for (index, button) in shown.enumerated() {
+      let x = (CGFloat(index) * width * scale).rounded() / scale
+      let next = (CGFloat(index + 1) * width * scale).rounded() / scale
+      button.frame = NSRect(x: x, y: 0, width: next - x, height: bounds.height)
+    }
+  }
+}
+
+final class IconPickerSectionButton: NSView {
+  var onPress: ((String) -> Void)?
+  private(set) var name = ""
+  private let plate = CALayer()
+  private let symbol = SymbolView()
+
+  override var isFlipped: Bool { true }
+
+  override init(frame: NSRect) {
+    super.init(frame: frame)
+    wantsLayer = true
+    plate.actions = SurfaceLayer.noActions
+    plate.cornerRadius = SidebarIconPickerMetrics.cellRadius
+    plate.cornerCurve = .circular
+    layer?.addSublayer(plate)
+    addSubview(symbol)
+    setAccessibilityElement(true)
+    setAccessibilityRole(.button)
+  }
+
+  required init?(coder: NSCoder) { fatalError() }
+
+  func set(title: String, glyph: String, selected: Bool, hover: NSColor?, color: NSColor) {
+    name = title
+    PrimitiveMotion.setInstantly { plate.backgroundColor = selected ? hover?.cgColor : nil }
+    symbol.set(glyph, size: SidebarIconPickerMetrics.sectionSymbol, color: color)
+    setAccessibilityLabel(title)
+    setAccessibilitySelected(selected)
+    toolTip = title
+  }
+
+  override func layout() {
+    super.layout()
+    let box = SidebarIconPickerMetrics.tabBox
+    PrimitiveMotion.setInstantly { plate.frame = bounds.insetBy(dx: 1, dy: 0) }
+    symbol.frame = NSRect(x: (bounds.width - box) / 2, y: (bounds.height - box) / 2, width: box, height: box)
+  }
+
+  override func mouseDown(with event: NSEvent) {}
+
+  override func mouseUp(with event: NSEvent) {
+    if bounds.contains(convert(event.locationInWindow, from: nil)) { onPress?(name) }
+  }
+
+  override func accessibilityPerformPress() -> Bool {
+    onPress?(name)
+    return true
+  }
+}
+
 final class IconPickerGridView: NSView {
   struct Palette {
     var hover: CGColor?
@@ -548,40 +760,87 @@ final class IconPickerGridView: NSView {
   }
 
   var onChoose: ((String) -> Void)?
-  var palette = Palette(hover: nil, icon: .labelColor) { didSet { needsDisplay = true; repaintCells() } }
-  var current: String? { didSet { if current != oldValue { repaintCells() } } }
-  var items: [String] = [] { didSet { if items != oldValue { rebuild() } } }
-  var hovered: Int? { didSet { if hovered != oldValue { repaintCells() } } }
-  private var cells: [IconPickerCellView] = []
+  var palette = Palette(hover: nil, icon: .labelColor) { didSet { symbolImages = [:]; needsDisplay = true } }
+  var current: String? { didSet { if current != oldValue { needsDisplay = true } } }
+  var items: [String] = [] { didSet { if items != oldValue { emojiLines = [:]; needsDisplay = true; elements = nil } } }
+  var hovered: Int? { didSet { if hovered != oldValue { needsDisplay = true } } }
   private var pressed: Int?
   private var tracking: NSTrackingArea?
+  private var emojiLines: [String: (line: CTLine, size: CGSize)] = [:]
+  private var symbolImages: [String: NSImage] = [:]
+  private var elements: [NSAccessibilityElement]?
 
   override var isFlipped: Bool { true }
+  override var isOpaque: Bool { false }
 
-  private func rebuild() {
+  func frame(of index: Int) -> NSRect {
     let m = SidebarIconPickerMetrics.self
-    while cells.count < items.count {
-      let cell = IconPickerCellView()
-      addSubview(cell)
-      cells.append(cell)
-    }
-    for (index, cell) in cells.enumerated() {
-      guard index < items.count else {
-        cell.isHidden = true
-        continue
-      }
-      cell.isHidden = false
-      cell.frame = NSRect(x: CGFloat(index % m.columns) * m.cell, y: CGFloat(index / m.columns) * m.cell, width: m.cell, height: m.cell)
-      cell.set(items[index], icon: palette.icon)
-    }
-    repaintCells()
+    return NSRect(x: CGFloat(index % m.columns) * m.cell, y: CGFloat(index / m.columns) * m.cell, width: m.cell, height: m.cell)
   }
 
-  private func repaintCells() {
-    for (index, cell) in cells.enumerated() where index < items.count {
-      cell.set(items[index], icon: palette.icon)
-      cell.fill = index == hovered || items[index] == current ? palette.hover : nil
+  func reveal(_ index: Int) {
+    guard items.indices.contains(index) else { return }
+    scrollToVisible(frame(of: index))
+  }
+
+  override func draw(_ dirtyRect: NSRect) {
+    let m = SidebarIconPickerMetrics.self
+    guard !items.isEmpty, let context = NSGraphicsContext.current?.cgContext else { return }
+    let first = max(0, Int(dirtyRect.minY / m.cell)) * m.columns
+    let last = min(items.count - 1, (Int(dirtyRect.maxY / m.cell) + 1) * m.columns - 1)
+    guard first <= last else { return }
+    let scale = window?.backingScaleFactor ?? 2
+    for index in first...last {
+      let cell = frame(of: index)
+      let icon = items[index]
+      if let fill = palette.hover, index == hovered || icon == current {
+        context.setFillColor(fill)
+        context.addPath(CGPath(roundedRect: cell, cornerWidth: m.cellRadius, cornerHeight: m.cellRadius, transform: nil))
+        context.fillPath()
+      }
+      if m.isSymbol(icon) {
+        guard let image = symbolImage(icon) else { continue }
+        let size = image.size
+        let x = (cell.minX + (cell.width - size.width) / 2) * scale
+        let y = (cell.minY + (cell.height - size.height) / 2) * scale
+        image.draw(in: NSRect(x: x.rounded() / scale, y: y.rounded() / scale, width: size.width, height: size.height), from: .zero, operation: .sourceOver,
+          fraction: 1, respectFlipped: true, hints: nil)
+      } else {
+        let (line, size) = emojiLine(icon)
+        let x = cell.minX + m.textOffset(box: cell.width, text: size.width, scale: scale)
+        let y = cell.minY + m.textOffset(box: cell.height, text: size.height, scale: scale)
+        var ascent: CGFloat = 0
+        _ = CTLineGetTypographicBounds(line, &ascent, nil, nil)
+        context.saveGState()
+        context.textMatrix = .identity
+        context.translateBy(x: x, y: y + ascent)
+        context.scaleBy(x: 1, y: -1)
+        context.textPosition = .zero
+        CTLineDraw(line, context)
+        context.restoreGState()
+      }
     }
+  }
+
+  private func emojiLine(_ emoji: String) -> (line: CTLine, size: CGSize) {
+    if let known = emojiLines[emoji] { return known }
+    let line = CTLineCreateWithAttributedString(NSAttributedString(string: emoji, attributes: [.font: NSFont.systemFont(ofSize: SidebarIconPickerMetrics.emojiFont)]))
+    var ascent: CGFloat = 0
+    var descent: CGFloat = 0
+    let width = CTLineGetTypographicBounds(line, &ascent, &descent, nil)
+    let made = (line, CGSize(width: width, height: ascent + descent))
+    emojiLines[emoji] = made
+    return made
+  }
+
+  private func symbolImage(_ icon: String) -> NSImage? {
+    if let known = symbolImages[icon] { return known }
+    let name = String(icon.dropFirst(SidebarIconPickerMetrics.symbolPrefix.count))
+    let config = NSImage.SymbolConfiguration(pointSize: SidebarIconPickerMetrics.cellSymbol, weight: .regular)
+      .applying(NSImage.SymbolConfiguration(paletteColors: [palette.icon]))
+    let image = NSImage(systemSymbolName: name, accessibilityDescription: name)?.withSymbolConfiguration(config)
+    symbolImages[icon] = image
+    return image
   }
 
   func index(at point: NSPoint) -> Int? {
@@ -622,6 +881,11 @@ final class IconPickerGridView: NSView {
     if window == nil { hovered = nil }
   }
 
+  override func viewDidChangeBackingProperties() {
+    super.viewDidChangeBackingProperties()
+    needsDisplay = true
+  }
+
   override func mouseDown(with event: NSEvent) { pressed = index(at: convert(event.locationInWindow, from: nil)) }
 
   override func mouseUp(with event: NSEvent) {
@@ -629,62 +893,37 @@ final class IconPickerGridView: NSView {
     guard let pressed, pressed == index(at: convert(event.locationInWindow, from: nil)) else { return }
     onChoose?(items[pressed])
   }
+
+  override func isAccessibilityElement() -> Bool { false }
+
+  override func accessibilityChildren() -> [Any]? {
+    if let elements { return elements }
+    let made = items.enumerated().map { index, icon -> NSAccessibilityElement in
+      let label = SidebarIconPickerMetrics.isSymbol(icon) ? String(icon.dropFirst(SidebarIconPickerMetrics.symbolPrefix.count)) : icon
+      let element = IconPickerCellElement(icon: icon) { [weak self] in self?.onChoose?(icon) }
+      element.setAccessibilityLabel(label)
+      element.setAccessibilityRole(.button)
+      element.setAccessibilityParent(self)
+      element.setAccessibilityFrameInParentSpace(frame(of: index))
+      return element
+    }
+    elements = made
+    return made
+  }
 }
 
-final class IconPickerCellView: NSView {
-  private let plate = CALayer()
-  private let symbol = SymbolView()
-  private let emoji = OnboardingTextNSView()
-  private var shown: String?
-  private var emojiSize: CGSize = .zero
-  var fill: CGColor? { didSet { if fill != oldValue { PrimitiveMotion.setInstantly { plate.backgroundColor = fill } } } }
+final class IconPickerCellElement: NSAccessibilityElement {
+  let icon: String
+  private let press: () -> Void
 
-  override var isFlipped: Bool { true }
-
-  override init(frame: NSRect) {
-    super.init(frame: frame)
-    wantsLayer = true
-    plate.actions = SurfaceLayer.noActions
-    plate.cornerRadius = SidebarIconPickerMetrics.cellRadius
-    plate.cornerCurve = .circular
-    layer?.addSublayer(plate)
-    addSubview(symbol)
-    emoji.manager.usesFontLeading = false
-    addSubview(emoji)
+  init(icon: String, press: @escaping () -> Void) {
+    self.icon = icon
+    self.press = press
+    super.init()
   }
 
-  required init?(coder: NSCoder) { fatalError() }
-
-  override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-  func set(_ icon: String, icon color: NSColor) {
-    let m = SidebarIconPickerMetrics.self
-    if icon.hasPrefix(m.symbolPrefix) {
-      symbol.isHidden = false
-      emoji.isHidden = true
-      symbol.set(String(icon.dropFirst(m.symbolPrefix.count)), size: m.cellSymbol, color: color)
-      if shown != icon { setAccessibilityLabel(String(icon.dropFirst(m.symbolPrefix.count))) }
-    } else {
-      symbol.isHidden = true
-      emoji.isHidden = false
-      if shown != icon {
-        emoji.storage.setAttributedString(NSAttributedString(string: icon, attributes: [.font: NSFont.systemFont(ofSize: m.emojiFont)]))
-        emojiSize = emoji.measure(width: .greatestFiniteMagnitude)
-        emoji.needsDisplay = true
-        setAccessibilityLabel(icon)
-      }
-    }
-    shown = icon
-    needsLayout = true
-  }
-
-  override func layout() {
-    super.layout()
-    let m = SidebarIconPickerMetrics.self
-    PrimitiveMotion.setInstantly { plate.frame = bounds }
-    symbol.frame = NSRect(x: (bounds.width - m.cellBox) / 2, y: (bounds.height - m.cellBox) / 2, width: m.cellBox, height: m.cellBox)
-    let x = SidebarIconPickerMetrics.textOffset(box: bounds.width, text: emojiSize.width, scale: window?.backingScaleFactor ?? 2)
-    let y = SidebarIconPickerMetrics.textOffset(box: bounds.height, text: emojiSize.height, scale: window?.backingScaleFactor ?? 2)
-    emoji.frame = NSRect(x: x, y: y, width: emojiSize.width, height: emojiSize.height)
+  override func accessibilityPerformPress() -> Bool {
+    press()
+    return true
   }
 }

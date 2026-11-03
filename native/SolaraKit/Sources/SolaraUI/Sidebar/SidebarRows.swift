@@ -1445,6 +1445,7 @@ final class IncognitoBadgeView: SidebarRowView {
 
 final class SidebarRenameField: NSTextField, NSTextFieldDelegate {
   private var finished = false
+  private var clickAwayMonitor: Any?
   var onDone: ((String?) -> Void)?
 
   init(initial: String, placeholder: String, font: NSFont, color: NSColor) {
@@ -1470,11 +1471,37 @@ final class SidebarRenameField: NSTextField, NSTextFieldDelegate {
     guard let window else { return }
     window.makeFirstResponder(self)
     currentEditor()?.selectAll(nil)
+    watchClicksAway()
+  }
+
+  private func watchClicksAway() {
+    guard clickAwayMonitor == nil else { return }
+    clickAwayMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
+      self?.clickedAway(event)
+      return event
+    }
+  }
+
+  func clickedAway(_ event: NSEvent) {
+    guard !finished, let window, event.window === window, !bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
+    if let editor = currentEditor(), window.firstResponder === editor { window.makeFirstResponder(nil) }
+    finish(stringValue)
+  }
+
+  private func stopWatchingClicks() {
+    if let clickAwayMonitor { NSEvent.removeMonitor(clickAwayMonitor) }
+    clickAwayMonitor = nil
+  }
+
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    if window == nil { stopWatchingClicks() }
   }
 
   func finish(_ text: String?) {
     guard !finished else { return }
     finished = true
+    stopWatchingClicks()
     onDone?(text)
   }
 

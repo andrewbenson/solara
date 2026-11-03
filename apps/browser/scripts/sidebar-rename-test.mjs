@@ -101,6 +101,20 @@ try {
     await assertNativeRename("t2", "Second", before);
   });
 
+  await rep.check("a click on another row keeps the typed name and selects that row", async () => {
+    const before = await tabCount();
+    const row = await run(`return ac.sidebarRows.measureRow("w1", "t2")`);
+    await startRename("t1");
+    await run(`return ac.shell.devTypeKeys("w1", "Away", 10)`);
+    await sleep(200);
+    await run(`return ac.shell.devClick("w1", { x: ${Math.round(row.x + row.width / 2)}, y: ${Math.round(row.y + row.height / 2)} })`);
+    await until("the field to close", async () => (await renaming()) === null);
+    assert.equal(await run(`return ac.store.getState().tabs.t1.customTitle`), "Away");
+    await until("t2 to be the active tab", async () => await run(`return Object.values(ac.store.getState().windows.w1.activeTabIds).includes("t2")`));
+    assert.equal(await tabCount(), before, "no new tab");
+    await assertNativeRename("t1", "Away", before);
+  });
+
   await rep.check("Esc still cancels", async () => {
     await startRename("t0");
     await run(`return ac.shell.devTypeKeys("w1", "Nope", 10)`);

@@ -19,6 +19,13 @@ backlog, and check this file against the release notes.
 | Alert re-scan, fixes and the approved dismissals (CodeQL: 59 fixed, the rest dismissed with reasons; #102 and #103 left open) | shipped (0.1.4) |
 | Perf ratchet runs again ("dev harness never answered" on 0.1.2 and 0.1.3) | shipped (0.1.4) |
 
+## 0.1.5: sign-in windows that work, and profiles you can remove
+
+| Item | Status |
+|---|---|
+| Sign-in windows ("Sign in with Google" on claude.ai, Slack's connect flow) open blank and take no input; 0.1.3's Space fix (bd3b6619) didn't cover it | in progress |
+| Remove from Sync…: a profile deleted on every Mac can be removed from sync, so no Mac offers it as "Add to This Mac" again | in progress |
+
 ## 0.2.0: the sidebar your way, and a fresh engine
 
 | Item | Status |
@@ -36,6 +43,7 @@ backlog, and check this file against the release notes.
 | Closing the last tab keeps the window while it has pinned tiles or a pinned group | planned |
 | A muted tab's or site's notifications make no sound | planned |
 | The hidden sidebar doesn't peek out while another app is in front (in Swift) | planned |
+| On a WebKit page, the pinned extensions give way to a WebKit pill (extensions, the ad blocker and password autofill don't run there), with Open in Chromium; the icons come back on Chromium tabs. The pill and its popover in Swift | planned |
 
 ## 0.3.0: the CLI and Raycast revamped, and tabs that cost less
 

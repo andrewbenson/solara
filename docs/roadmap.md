@@ -26,37 +26,36 @@ backlog, and check this file against the release notes.
 |---|---|
 | Icons-only sidebar rail, 84 pt: drag-to-snap, View menu and Settings toggle, hover × to close, loading and audio badges, the address bar moves to the toolbar | drafted (~/.cache/solara-lead/work/r14/rail: rail.patch on be7b9864, NOTES.txt, 7 review findings open), not landed |
 | Folder and group popovers, footer profile switcher, the hidden sidebar's peek in rail mode | planned |
-| Sidebar on the right: a Left/Right position in Settings, the View menu and the sidebar's menu; peek, resize, hover cards and drops mirror; the window buttons stay top left (as in Arc and Zen) | planned |
 | Engine: Chromium 156.0.8078.79 or newer (Chrome stable security updates; we ship .47). Needs a Chromium sync and rebuild: owner approved for 0.2.0 | planned |
 | Update safety: never move or delete staged updates ourselves; drop a staged nightly only through Sparkle's Skip; quit holds 8 s at most | planned |
 | Share… in the page's right-click menu and File › Share (⌥⌘S): selected text, an image, a link with trackers removed, media, the page (engine change) | planned |
-| A full emoji picker for profile, tab and folder icons (search, categories, symbols), and names that save on click-away | planned |
+| A full emoji picker for profile, tab and folder icons (search, categories, symbols), and names that save on click-away; built in Swift, replacing the React Native icon pickers | planned |
 | Little Solara can keep new-tab links inside itself (a setting) | planned |
 | Tabs moved to another window land where a new tab would open | planned |
 | New Window opens on the profile you're in | planned |
 | Closing the last tab keeps the window while it has pinned tiles or a pinned group | planned |
 | A muted tab's or site's notifications make no sound | planned |
-| The hidden sidebar doesn't peek out while another app is in front | planned |
+| The hidden sidebar doesn't peek out while another app is in front (in Swift) | planned |
 
 ## 0.3.0: the CLI and Raycast revamped, and tabs that cost less
 
 | Item | Status |
 |---|---|
-| Revamp the `solara` command (apps/cli, docs/cli.md): scope to be set with the owner | planned |
+| Revamp the `solara` command (apps/cli, docs/cli.md): scope to be set with the owner; its connection to the app is built in Swift (settings and keybindings from files, a local control socket, event hooks), not on the JavaScript side | planned |
 | Revamp the Raycast extension (extras/raycast-solara) against the revamped CLI | planned |
 | Publish the extension on the Raycast Store: meet its review guidelines and submit to raycast/extensions (a public PR in another project, so it needs the owner's OK at submission) | planned |
 | Video call pop-out (Google Meet and others: the floating window a call opens, document picture-in-picture): make getting back to the call's tab easy and obvious; first find out what that window lets us change | planned |
 | Tab discarding (highest priority of the performance items): Chromium's memory saver unloads background tabs and wakes them on click, with site exceptions and protection for tabs playing audio, holding a form or in a call; reconcile with Solara's existing sleeping tabs | planned |
-| Heavy tab detection: Chromium's detector flags a tab using too much CPU or memory; Solara badges it and offers to put it to sleep | planned |
+| Heavy tab detection: Chromium's detector flags a tab using too much CPU or memory; Solara badges it (native badges, replacing the React Native tab badges) and offers to put it to sleep | planned |
 | Per-tab CPU and memory attribution: Chromium's resource attribution splits a shared process's cost between its tabs | planned |
-| Memory use per tab on hover cards | planned |
+| Memory use per tab on hover cards (native) | planned |
 
 ## The road to all Swift (0.4.0 to 1.0.0)
 
 React Native leaves one layer at a time: first it stops drawing, then it stops deciding, then it stops holding data,
 then it's switched off, and only then is it deleted. Settings, onboarding, Import, New Tab, the omnibox, the internal
 pages, the link bubble and the store are already native (RN removal 01–08). Each milestone ships as its own release;
-feature releases can fit between them.
+feature releases can fit between them. New UI is built in Swift from now on, never in React Native.
 
 Progress, updated at each release: TypeScript lines left in apps/browser/src (55,264 on 2026-11-03) and React Native
 roots left (to be counted by the inventory).
@@ -74,6 +73,7 @@ Done when no React Native view appears on screen; React Native only arranges nat
 | Native media: sidebar player, hover player, cast and share pickers, tab badges | planned |
 | Native peek, Little Solara, calendar and meeting cards | planned |
 | Native top tab strip, split chrome, swipe overlay and the rest of the layout surfaces | planned |
+| Sidebar on the right: a Left/Right position in Settings, the View menu and the sidebar's menu; peek, resize, hover cards and drops mirror; the window buttons stay top left (as in Arc and Zen); built with the layout port, so it's written once, in Swift | planned |
 
 ## 0.5.0: React Native decides nothing
 

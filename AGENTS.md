@@ -92,6 +92,9 @@ in [docs/agent-brief.md](docs/agent-brief.md): read it before your first change.
 
 ## Building features
 
+- **New UI is native.** Build every new surface, control and behaviour in Swift (SolaraKit, packages/shell,
+  SolaraCore), never in React Native: React Native is on its way out (docs/roadmap.md, 0.4.0 to 1.0.0). A change to
+  an existing React Native surface is fine when it's small; when it's large, port the surface first.
 - **Sources of truth.** [docs/dia-feature-parity.md](docs/dia-feature-parity.md) is the checklist: update its row
   when you ship. [docs/dia-spec.md](docs/dia-spec.md) has Dia's measured values. [docs/roadmap.md](docs/roadmap.md)
   says what ships in which version: update an item's status when it lands.

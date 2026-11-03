@@ -74,6 +74,7 @@ final class SyncAdapter: SyncServices, SyncCreationServices {
   func setProfileSynced(_ profileId: String, _ on: Bool) { SettingsJS.shared.fire("sync.setProfileSynced", profileId, on) }
 
   func addRemoteProfile(_ syncId: String) { SettingsJS.shared.fire("sync.addRemoteProfile", syncId) }
+  func removeRemoteProfile(_ syncId: String, token: String) { SettingsJS.shared.fire("sync.removeRemoteProfile", syncId, token) }
 
   func resolveHeldPasswords(_ profileId: String, restore: Bool) { SettingsJS.shared.fire("sync.resolveHeldPasswords", profileId, restore) }
 
@@ -181,6 +182,9 @@ final class SyncAdapter: SyncServices, SyncCreationServices {
   static func remoteProfile(_ dict: [String: Any]) -> SyncRemoteProfile? {
     guard let syncId = dict.string("syncId") else { return nil }
     let owner = dict.dict("sharesWith").map { SyncRemoteProfile.SharedOwner(name: $0.string("name") ?? "", added: $0.bool("added") ?? false) }
-    return SyncRemoteProfile(syncId: syncId, badge: badge(dict), sharesWith: owner, waiting: dict.bool("waiting") ?? false)
+    let removal = dict.dict("removal").flatMap { removal in
+      removal.string("token").map { SyncRemoteProfile.Removal(ids: removal["ids"] as? [String] ?? [], names: removal["names"] as? [String] ?? [], token: $0) }
+    }
+    return SyncRemoteProfile(syncId: syncId, badge: badge(dict), sharesWith: owner, waiting: dict.bool("waiting") ?? false, removal: removal)
   }
 }

@@ -17,6 +17,7 @@ struct SyncSheetView: View {
         SyncTrustedPairingSheet(model: pairing, useRecovery: { model.sheet = .connectDevice })
       }
     case .separateSync(let id): SyncSeparateChainSheet(model: model, inspectionID: id)
+    case .removeRemoteProfile(let profile): SyncRemoveProfileSheet(model: model, profile: profile)
     }
   }
 }
@@ -425,6 +426,28 @@ struct SyncStopSheet: View {
       Button("Stop Syncing", role: .destructive) { model.sheet = .deleteData }
         .buttonStyle(.borderedProminent)
         .tint(.red)
+    }
+  }
+}
+
+struct SyncRemoveProfileSheet: View {
+  @Environment(\.dismiss) private var dismiss
+  let model: SyncPaneModel
+  let profile: SyncRemoteProfile
+
+  var body: some View {
+    SyncSheetFrame(width: 420) {
+      SyncSheetTitle(SyncText.removalTitle(profile))
+      SyncSheetBody(SyncText.removalMessage(profile))
+    } buttons: {
+      Button("Cancel") { dismiss() }
+        .keyboardShortcut(.cancelAction)
+      Button("Remove from Sync", role: .destructive) {
+        model.removeRemoteProfile(profile)
+        model.sheet = nil
+      }
+      .buttonStyle(.borderedProminent)
+      .tint(.red)
     }
   }
 }

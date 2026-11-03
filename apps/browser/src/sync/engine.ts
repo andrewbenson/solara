@@ -106,7 +106,10 @@ type SyncDoc = {
   seqs?: Record<string, number>;
   retired?: Record<string, number>;
   rebuilding?: string[];
+  removing?: ProfileRemoval[];
 };
+
+type ProfileRemoval = { root: string; ids: string[]; h: Record<string, string> };
 
 const DOC = "sync.json";
 const STATE = "sync-state.nns";
@@ -136,7 +139,7 @@ export type SyncStatus = "off" | "starting" | "updating" | "updated" | "stalled"
 
 type SyncedDevice = { id: string; name: string; lastSeen: number | null; current: boolean };
 export type RemoteTabs = { deviceId: string; name: string; tabs: { url: string; title: string }[] };
-type RemoteProfile = { syncId: string; name: string; color: Profile["color"]; icon: string | null; sharesWith?: { name: string; added: boolean }; waiting?: true };
+type RemoteProfile = { syncId: string; name: string; color: Profile["color"]; icon: string | null; sharesWith?: { name: string; added: boolean }; waiting?: true; removal?: { ids: string[]; names: string[]; token: string } };
 
 type SyncUi = {
   status: SyncStatus;
@@ -267,6 +270,7 @@ function load() {
       const saved = JSON.parse(json) as SyncDoc;
       newerFormat = !isObject(saved) || (saved.v !== 1 && (saved.v !== 2 || !bootstrapValid(saved)));
       if (!newerFormat) doc = { ...emptyDoc(), ...saved, types: { ...defaultTypes(), ...saved.types }, scopes: {} };
+      if (!newerFormat) loadRemovals();
     }
     savedJson = json ?? "";
     metadataLoaded = true;
@@ -690,7 +694,7 @@ function appAdapters(retiring: boolean, everyType = false): Adapter[] {
   return [
     ...(doc.types.settings || everyType ? [inTodaysNames(settingsAdapter)] : []),
     sharedDataAdapter(() => doc.profiles),
-    profilesAdapter(enabledLinks),
+    withProfileRemovals(profilesAdapter(enabledLinks)),
     profileThemesAdapter(enabledLinks, () => doc.scopes[APP_SCOPE]?.records, themeAdopted),
     deviceAdapter(id, deviceName),
   ];
@@ -807,15 +811,26 @@ async function runCycle({ retiring = false } = {}) {
     if (doc.types.settings && !retiring) app.unapplied = [...new Set([...app.unapplied, ...settingsToReapply(app.records)])];
     if (!retiring && !doc.joining) linkProfiles(app);
     const appGuard = guard(APP_SCOPE, app, device, appAdapters(retiring), transport, retiring);
+    const appTransport: Transport = {
+      ...appGuard.transport,
+      read: async (scope, known) => {
+        const started = ++appReadsStarted;
+        const listing = await appGuard.transport.read(scope, known);
+        appReadDoneFrom = Math.max(appReadDoneFrom, started);
+        return listing;
+      },
+    };
+    appReadsAtCycleStart = appReadsStarted;
     await syncScope({
       scope: APP_SCOPE,
       state: app,
-      transport: appGuard.transport,
+      transport: appTransport,
       adapters: appGuard.adapters,
       clock,
       device,
       options: { persist: persistJournal(APP_SCOPE), writtenKeysOnly: syncRedesign.on, ...seenHooks(APP_SCOPE, app) },
     });
+    appReadsAtCycleStart = null;
     appGuard.settle();
     if (app.joined) linkProfiles(app);
     confirmThemes(app);
@@ -1323,8 +1338,9 @@ function summarize(): Pick<SyncUi, "devices" | "remoteTabs" | "remoteProfiles"> 
       .map(({ deviceId, value }) => ({ deviceId, name: names.get(deviceId) || value.n || "Unknown Device", tabs: value.tabs.map((t) => ({ url: t.u, title: t.t })) }));
   }
   const linked = new Set(Object.values(doc.profiles).map((l) => l.syncId));
+  const removing = new Set(doc.removing?.flatMap((r) => r.ids));
   const remoteProfiles = [...visible(app, "prof:")]
-    .filter(([k]) => !linked.has(k.slice(5)))
+    .filter(([k]) => !linked.has(k.slice(5)) && !removing.has(k.slice(5)))
     .map(([k, v]): RemoteProfile => {
       const syncId = k.slice(5);
       const record = v as ProfileRecord;
@@ -1337,6 +1353,7 @@ function summarize(): Pick<SyncUi, "devices" | "remoteTabs" | "remoteProfiles"> 
         icon: record.i,
         ...(ownerName !== undefined ? { sharesWith: { name: ownerName, added: !!adds[1] } } : {}),
         ...(waitingFor ? { waiting: true as const } : {}),
+        ...removalOffer(syncId),
       };
     });
   return { devices, remoteTabs, remoteProfiles };
@@ -1857,7 +1874,8 @@ async function stopPairing() {
   clearTimeout(timer);
   const stopGeneration = Math.max(doc.stopGeneration ?? 0, installed?.stopGeneration ?? request?.stopGeneration ?? 0) + 1;
   const transaction = installed?.transaction ?? doc.joinTransaction;
-  const next: SyncDoc = { ...doc, v: 2, enabled: false, joining: false, stopGeneration, ...(installed ? { installation: installed, joinTransaction: installed.transaction, folder: installed.folder, deviceId: installed.deviceId } : {}), bootstrap: { phase: "stopped", transaction: transaction ?? null, generation: installed?.generation ?? request?.generation ?? doc.bootstrap?.generation ?? 0 } };
+  const { removing: _droppedRemovals, ...kept } = doc;
+  const next: SyncDoc = { ...kept, v: 2, enabled: false, joining: false, stopGeneration, ...(installed ? { installation: installed, joinTransaction: installed.transaction, folder: installed.folder, deviceId: installed.deviceId } : {}), bootstrap: { phase: "stopped", transaction: transaction ?? null, generation: installed?.generation ?? request?.generation ?? doc.bootstrap?.generation ?? 0 } };
   try {
     if (host) await deadline(host.stopInstallation(installed ?? null, stopGeneration));
     await writePairingDoc(next, expected);
@@ -2103,6 +2121,12 @@ export function addRemoteProfile(syncId: string): string | null {
   if (!remoteProfileRecord(syncId) || linkedProfileId(syncId)) return null;
   const { adds, sharesWith, waitingFor } = sharedDataChain(syncId);
   if (waitingFor) return null;
+  if (doc.removing) {
+    const added = new Set(adds);
+    const kept = doc.removing.filter((r) => !r.ids.some((id) => added.has(id)));
+    if (kept.length) doc.removing = kept;
+    else delete doc.removing;
+  }
   let shareWith = sharesWith;
   for (const add of adds.reverse()) shareWith = addLinkedProfile(add, remoteProfileRecord(add)!, shareWith);
   save();
@@ -2123,6 +2147,120 @@ function addLinkedProfile(syncId: string, record: ProfileRecord, shareWith: stri
   }
   doc.scopes[`p:${syncId}`] = freshScope(`p:${syncId}`, { awaitRemote: true });
   return id;
+}
+
+let appReadsStarted = 0;
+let appReadDoneFrom = 0;
+let appReadsAtCycleStart: number | null = null;
+let removalReadsFrom = new WeakMap<ProfileRemoval, number>();
+
+function loadRemovals() {
+  const valid = (r: unknown): r is ProfileRemoval =>
+    isObject(r) && typeof r.root === "string" && Array.isArray(r.ids) && r.ids.includes(r.root) && r.ids.every((id) => typeof id === "string") &&
+    isObject(r.h) && r.ids.every((id) => typeof (r.h as Record<string, unknown>)[id] === "string");
+  const removing = Array.isArray(doc.removing) ? doc.removing.filter(valid) : [];
+  if (removing.length) doc.removing = removing;
+  else delete doc.removing;
+  removalReadsFrom = new WeakMap();
+}
+
+const liveProfileRecord = (syncId: string) => {
+  const record = doc.scopes[APP_SCOPE]?.records[`prof:${syncId}`];
+  return record && record.v !== null ? record : undefined;
+};
+
+function profilesRemovedWith(syncId: string): string[] {
+  const records = doc.scopes[APP_SCOPE]?.records ?? {};
+  const dependents = new Map<string, string[]>();
+  for (const [key, record] of Object.entries(records)) {
+    if (!key.startsWith("share:") || !isObject(record.v)) continue;
+    const id = key.slice(6);
+    const owner = (record.v as ShareRecord).o;
+    if (typeof owner !== "string" || owner === id || !liveProfileRecord(id)) continue;
+    dependents.set(owner, [...(dependents.get(owner) ?? []), id]);
+  }
+  const set = new Set([syncId]);
+  for (const id of set) for (const dependent of dependents.get(id) ?? []) set.add(dependent);
+  return [syncId, ...[...set].filter((id) => id !== syncId).sort()];
+}
+
+function removalOf(syncId: string): ProfileRemoval | null {
+  if (!liveProfileRecord(syncId)) return null;
+  const ids = profilesRemovedWith(syncId);
+  const linked = new Set(Object.values(doc.profiles).map((l) => l.syncId));
+  const h: Record<string, string> = {};
+  for (const id of ids) {
+    const record = liveProfileRecord(id);
+    if (!record || linked.has(id) || (record.v as ProfileRecord).d) return null;
+    h[id] = record.h;
+  }
+  return { root: syncId, ids, h };
+}
+
+const removalToken = (removal: ProfileRemoval) => [removal.root, ...[...removal.ids].sort().map((id) => `${id}@${removal.h[id]}`)].join(",");
+
+function removalOffer(syncId: string): Pick<RemoteProfile, "removal"> {
+  const removal = removalOf(syncId);
+  if (!removal) return {};
+  const names = removal.ids.map((id) => (liveProfileRecord(id)!.v as ProfileRecord).n);
+  return { removal: { ids: removal.ids, names, token: removalToken(removal) } };
+}
+
+const removalsHeld = () => !doc.enabled || doc.joining || newerFormat || !!syncHeld() || pairingPending() || pairingCompleting;
+
+export function removeRemoteProfile(syncId: string, token?: string): boolean {
+  if (!metadataLoaded) load();
+  if (removalsHeld()) return false;
+  const removal = removalOf(syncId);
+  if (!removal || (token !== undefined && removalToken(removal) !== token) || doc.removing?.some((r) => r.ids.some((id) => removal.ids.includes(id)))) {
+    publishUi();
+    return false;
+  }
+  doc.removing = [...(doc.removing ?? []), removal];
+  removalReadsFrom.set(removal, appReadsStarted);
+  save();
+  publishUi();
+  scheduleSync(0);
+  return true;
+}
+
+function dueProfileRemovals(): Pick<Extraction, "remove"> | null {
+  const app = doc.scopes[APP_SCOPE];
+  if (!doc.removing?.length || !app || removalsHeld()) return null;
+  const removedHere = (request: ProfileRemoval) =>
+    request.ids.every((id) => {
+      const record = app.records[`prof:${id}`];
+      return !!record && record.v === null && record.o?.[0] === doc.deviceId;
+    });
+  const sentAll = !app.outbox.length && !app.journal?.length;
+  const standing = doc.removing.filter((request) => {
+    if (removedHere(request)) return !sentAll;
+    const now = removalOf(request.root);
+    return !!now && removalToken(now) === removalToken(request);
+  });
+  if (standing.length !== doc.removing.length) {
+    if (standing.length) doc.removing = standing;
+    else delete doc.removing;
+  }
+  if (appReadsAtCycleStart === null || appReadDoneFrom <= appReadsAtCycleStart || stillDownloading(app)) return null;
+  const due = standing.filter((request) => {
+    if (removedHere(request)) return false;
+    const readsFrom = removalReadsFrom.get(request) ?? (removalReadsFrom.set(request, appReadsAtCycleStart!), appReadsAtCycleStart!);
+    return appReadDoneFrom > readsFrom;
+  });
+  if (!due.length) return null;
+  return { remove: new Set(due.flatMap((r) => r.ids.map((id) => `prof:${id}`))) };
+}
+
+function withProfileRemovals(adapter: Adapter): Adapter {
+  return {
+    ...adapter,
+    extract: async (...args) => {
+      const extraction = await adapter.extract(...args);
+      const due = extraction && dueProfileRemovals();
+      return due ? { ...extraction, ...due } : extraction;
+    },
+  };
 }
 
 let watchingBrowser = false;
@@ -2181,7 +2319,7 @@ export function startSync(host?: PairingNative) {
   }
   if (__DEV__) {
     (globalThis as { acSync?: object }).acSync = {
-      useSync, syncNow, turnOnSync, enterRecoveryPhrase, stopSync, setTypeSynced, setProfileSynced, addRemoteProfile, setSyncFolder, folderInfo,
+      useSync, syncNow, turnOnSync, enterRecoveryPhrase, stopSync, setTypeSynced, setProfileSynced, addRemoteProfile, removeRemoteProfile, setSyncFolder, folderInfo,
       doc: () => doc,
       native: SyncNative,
       sealing: sealingPasswords,

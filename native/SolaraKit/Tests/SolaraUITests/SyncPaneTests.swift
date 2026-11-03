@@ -61,6 +61,7 @@ final class FakeSyncServices: SyncServices {
   func setTypeSynced(_ type: SyncDataType, _ on: Bool) { calls.append("setTypeSynced \(type.rawValue) \(on)") }
   func setProfileSynced(_ profileId: String, _ on: Bool) { calls.append("setProfileSynced \(profileId) \(on)") }
   func addRemoteProfile(_ syncId: String) { calls.append("addRemoteProfile \(syncId)") }
+  func removeRemoteProfile(_ syncId: String, token: String) { calls.append("removeRemoteProfile \(syncId) \(token)") }
 
   func folderInfo(path: String?) async -> SyncFolderInfo? {
     folderInfoRequests.append(path)
@@ -151,8 +152,8 @@ enum SyncFixture {
         SyncLocalProfile(id: "side", badge: SyncProfileBadge(name: "Side Project", accentHex: "#7873AF", icon: "🚀"), sharesDataWith: "Work", synced: nil),
       ],
       remoteProfiles: [
-        SyncRemoteProfile(syncId: "r1", badge: SyncProfileBadge(name: "School", accentHex: "#D37B8B", icon: "symbol:graduationcap.fill")),
-        SyncRemoteProfile(syncId: "r2", badge: SyncProfileBadge(name: "Lab", accentHex: "#5E9E6E", icon: nil), sharesWith: .init(name: "School", added: false)),
+        SyncRemoteProfile(syncId: "r1", badge: SyncProfileBadge(name: "School", accentHex: "#D37B8B", icon: "symbol:graduationcap.fill"), removal: .init(ids: ["r1", "r2"], names: ["School", "Lab"], token: "t1")),
+        SyncRemoteProfile(syncId: "r2", badge: SyncProfileBadge(name: "Lab", accentHex: "#5E9E6E", icon: nil), sharesWith: .init(name: "School", added: false), removal: .init(ids: ["r2"], names: ["Lab"], token: "t2")),
         SyncRemoteProfile(syncId: "r3", badge: SyncProfileBadge(name: "Archive", accentHex: "#8E8E93", icon: nil), waiting: true),
       ]
     )
@@ -297,6 +298,17 @@ struct SyncPaneModelTests {
     #expect(services.calls == ["setTypeSynced history true", "setProfileSynced work true", "setProfileSynced side true"])
   }
 
+  @Test func removingFromSyncSendsTheConfirmedSetAndHidesItsRows() async throws {
+    let (model, services) = await SyncFixture.model(SyncFixture.onState())
+    let school = try #require(model.state?.remoteProfiles.first { $0.syncId == "r1" })
+    model.removeRemoteProfile(school)
+    #expect(services.calls == ["removeRemoteProfile r1 t1"])
+    #expect(model.state?.remoteProfiles.map(\.syncId) == ["r3"])
+    let archive = try #require(model.state?.remoteProfiles.first)
+    model.removeRemoteProfile(archive)
+    #expect(services.calls == ["removeRemoteProfile r1 t1"], "a row without a removal offer can't be removed")
+  }
+
   @Test func stoppingPassesTheDeleteChoiceAndClosesTheSheet() async {
     let (model, services) = await SyncFixture.model(SyncFixture.onState())
     model.sheet = .deleteData
@@ -345,6 +357,16 @@ struct SyncTextTests {
     #expect(SyncText.remoteProfileDescription(SyncRemoteProfile(syncId: "a", badge: badge, waiting: true)) == "On your other devices. Waiting for the profile it shares data with to sync.")
     #expect(SyncText.remoteProfileDescription(SyncRemoteProfile(syncId: "a", badge: badge, sharesWith: .init(name: "School", added: true))) == "On your other devices. Shares data with School, which is added too.")
     #expect(SyncText.remoteProfileDescription(SyncRemoteProfile(syncId: "a", badge: badge, sharesWith: .init(name: "School", added: false))) == "On your other devices. Shares data with School.")
+    let school = SyncRemoteProfile(syncId: "a", badge: SyncProfileBadge(name: "School", accentHex: "#000000", icon: nil), removal: .init(ids: ["a"], names: ["School"], token: "t"))
+    #expect(SyncText.removalTitle(school) == "Remove “School” from Sync?")
+    #expect(SyncText.removalMessage(school) == "Your Macs stop offering “School” under Profiles. Removing it doesn’t erase its other synced data. A Mac that still has “School” with sync on for it adds it back after its next sync or two. Delete it on that Mac first.")
+    var withLab = school
+    withLab.removal = .init(ids: ["a", "b"], names: ["School", "Lab"], token: "t")
+    #expect(SyncText.removalMessage(withLab).contains("“Lab” shares its data, so it’s removed too."))
+    withLab.removal = .init(ids: ["a", "b"], names: ["School", "School"], token: "t")
+    #expect(SyncText.removalMessage(withLab).contains("“School” shares its data, so it’s removed too."), "a dependent with the same name is still named")
+    withLab.removal = .init(ids: ["a", "b", "c"], names: ["School", "Lab", "Club"], token: "t")
+    #expect(SyncText.removalMessage(withLab).contains("“Lab” and “Club” share its data, so they’re removed too."))
     #expect(SyncText.sharedDataDescription("Work") == "Shares data with Work: its tabs sync here, its data syncs with Work.")
     #expect(SyncText.sharedDataDescription(nil) == nil)
     let state = SyncState(status: .updated, enabled: true, folder: nil, lastSyncedAt: now.addingTimeInterval(-120), pending: 4)
@@ -403,6 +425,7 @@ struct SyncSnapshotTests {
       ("connect-device", .connectDevice),
       ("stop", .stop),
       ("delete-data", .deleteData),
+      ("remove-profile", .removeRemoteProfile(SyncFixture.onState().remoteProfiles[0])),
     ]
     for (name, sheet) in sheets {
       for dark in [false, true] {

@@ -8,6 +8,7 @@ import {
   DATA_TYPES,
   enterRecoveryPhrase,
   folderInfo,
+  removeRemoteProfile,
   resolveHeldPasswords,
   setProfileSynced,
   setTypeSynced,
@@ -60,16 +61,17 @@ function syncTopic() {
       icon: p.icon,
       sharesWith: p.sharesWith ?? null,
       waiting: !!p.waiting,
+      removal: p.removal ?? null,
     })),
   };
 }
 
 let lastPublished: string | null = null;
 
-function publishSyncState() {
+function publishSyncState({ force = false } = {}) {
   const topic = syncTopic();
   const json = JSON.stringify(topic);
-  if (json === lastPublished) return;
+  if (json === lastPublished && !force) return;
   lastPublished = json;
   publishSettingsTopic("sync.state", topic);
 }
@@ -93,6 +95,9 @@ export const syncHandlers: Record<string, SettingsHandler> = {
   "sync.setTypeSynced": (type: DataType, on: boolean) => setTypeSynced(type, on),
   "sync.setProfileSynced": (profileId: string, on: boolean) => setProfileSynced(profileId, on),
   "sync.addRemoteProfile": (syncId: string) => void addRemoteProfile(syncId),
+  "sync.removeRemoteProfile": (syncId: string, token: string) => {
+    if (!removeRemoteProfile(syncId, token)) publishSyncState({ force: true });
+  },
   "sync.resolveHeldPasswords": (profileId: string, restore: boolean) => resolveHeldPasswords(profileId, restore ? "restore" : "confirm"),
   "sync.recoveryWords": () => withNative((n) => n.recoveryWords()),
   "sync.phraseUnavailable": () => withNative((n) => n.phraseUnavailable()),
@@ -107,7 +112,7 @@ export const syncHandlers: Record<string, SettingsHandler> = {
 
 export function publishSync(): void {
   publishSyncState();
-  useSync.subscribe(publishSyncState);
+  useSync.subscribe(() => publishSyncState());
   useBrowser.subscribe((s, prev) => {
     if (s.profiles !== prev.profiles || s.profileOrder !== prev.profileOrder) publishSyncState();
   });

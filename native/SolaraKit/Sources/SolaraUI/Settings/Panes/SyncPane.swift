@@ -107,18 +107,32 @@ public struct SyncRemoteProfile: Sendable, Equatable, Identifiable {
     }
   }
 
+  public struct Removal: Sendable, Equatable {
+    public var ids: [String]
+    public var names: [String]
+    public var token: String
+
+    public init(ids: [String], names: [String], token: String) {
+      self.ids = ids
+      self.names = names
+      self.token = token
+    }
+  }
+
   public var syncId: String
   public var badge: SyncProfileBadge
   public var sharesWith: SharedOwner?
   public var waiting: Bool
+  public var removal: Removal?
 
   public var id: String { syncId }
 
-  public init(syncId: String, badge: SyncProfileBadge, sharesWith: SharedOwner? = nil, waiting: Bool = false) {
+  public init(syncId: String, badge: SyncProfileBadge, sharesWith: SharedOwner? = nil, waiting: Bool = false, removal: Removal? = nil) {
     self.syncId = syncId
     self.badge = badge
     self.sharesWith = sharesWith
     self.waiting = waiting
+    self.removal = removal
   }
 }
 
@@ -236,6 +250,7 @@ public protocol SyncServices: AnyObject {
   func setTypeSynced(_ type: SyncDataType, _ on: Bool)
   func setProfileSynced(_ profileId: String, _ on: Bool)
   func addRemoteProfile(_ syncId: String)
+  func removeRemoteProfile(_ syncId: String, token: String)
   func resolveHeldPasswords(_ profileId: String, restore: Bool)
 
   func folderInfo(path: String?) async -> SyncFolderInfo?
@@ -253,6 +268,7 @@ public protocol SyncServices: AnyObject {
 
 public extension SyncServices {
   func resolveHeldPasswords(_ profileId: String, restore: Bool) {}
+  func removeRemoteProfile(_ syncId: String, token: String) {}
 }
 
 public enum SyncSheet: Identifiable, Equatable {
@@ -263,6 +279,7 @@ public enum SyncSheet: Identifiable, Equatable {
   case deleteData
   case trustedPairing(surfaceID: UUID)
   case separateSync(inspectionID: String)
+  case removeRemoteProfile(SyncRemoteProfile)
 
   public var id: String {
     switch self {
@@ -273,6 +290,7 @@ public enum SyncSheet: Identifiable, Equatable {
     case .deleteData: "deleteData"
     case .trustedPairing(let id): "trusted-\(id)"
     case .separateSync(let id): "separate-\(id)"
+    case .removeRemoteProfile(let profile): "remove-\(profile.syncId)"
     }
   }
 }
@@ -485,6 +503,13 @@ public final class SyncPaneModel: SettingsPaneProvider {
     }
     services.setProfileSynced(profileId, on)
   }
+
+  func removeRemoteProfile(_ profile: SyncRemoteProfile) {
+    guard let removal = profile.removal else { return }
+    let removed = Set([profile.syncId] + removal.ids)
+    state?.remoteProfiles.removeAll { removed.contains($0.syncId) }
+    services.removeRemoteProfile(profile.syncId, token: removal.token)
+  }
 }
 
 enum SyncText {
@@ -546,6 +571,22 @@ enum SyncText {
     return owner.added
       ? "On your other devices. Shares data with \(owner.name), which is added too."
       : "On your other devices. Shares data with \(owner.name)."
+  }
+
+  static func removalTitle(_ profile: SyncRemoteProfile) -> String {
+    "Remove “\(profile.badge.name)” from Sync?"
+  }
+
+  static func removalMessage(_ profile: SyncRemoteProfile) -> String {
+    let name = profile.badge.name
+    let others = Array((profile.removal?.names ?? []).dropFirst())
+    var lines = ["Your Macs stop offering “\(name)” under Profiles. Removing it doesn’t erase its other synced data."]
+    if !others.isEmpty {
+      let list = ListFormatter.localizedString(byJoining: others.map { "“\($0)”" })
+      lines.append(others.count == 1 ? "\(list) shares its data, so it’s removed too." : "\(list) share its data, so they’re removed too.")
+    }
+    lines.append("A Mac that still has “\(name)” with sync on for it adds it back after its next sync or two. Delete it on that Mac first.")
+    return lines.joined(separator: " ")
   }
 
   static func sharedDataDescription(_ owner: String?) -> String? {
@@ -773,8 +814,13 @@ struct SyncOnSections: View {
         HStack(spacing: 10) {
           SyncProfileBadgeView(badge: profile.badge, size: 24)
           SettingRow(title: profile.badge.name, description: SyncText.remoteProfileDescription(profile)) {
-            Button("Add to This Mac") { model.services.addRemoteProfile(profile.syncId) }
-              .disabled(profile.waiting)
+            HStack(spacing: 8) {
+              if profile.removal != nil {
+                Button("Remove from Sync…") { model.sheet = .removeRemoteProfile(profile) }
+              }
+              Button("Add to This Mac") { model.services.addRemoteProfile(profile.syncId) }
+                .disabled(profile.waiting)
+            }
           }
         }
       }

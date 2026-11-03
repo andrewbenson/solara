@@ -329,11 +329,47 @@ Profiles).
 - Limit: a profile that shares the data of an owner deleted on its Mac publishes no `share:`; on other Macs it gets
   data of its own, as before 0.2.39. That data group's bookmarks, history and passwords no longer sync from that Mac
   anyway: only a profile without `dataId` syncs data.
+- Remove from Sync (0.1.5). Deleting a profile on a Mac leaves its `prof:` record, so other Macs keep offering it. A
+  row under "On your other devices" has "Remove from Sync…", which asks first and then tombstones `prof:` for that
+  profile and every live profile whose `share:` chain leads to it through live profiles (a sharing cycle goes as one
+  set; a chain through a profile already removed isn't followed, and that dependent waits as below). The alert names
+  them all. Nothing is offered for removal when any profile in the set has a link on this Mac, in any state
+  (syncing, not syncing, being retired), or is the synced default (`d`: a joining Mac's bootstrap needs exactly one).
+  - The request (`removing` in `sync.json`: the profile picked, the set's sync ids and each `prof:` record's stamp
+    `h` at the click) is one-shot. It runs only in a cycle's publish after the app scope's pull, from a read of the
+    folder that started after the click, while no app file is still downloading or damaged (each stops counting
+    after a day, as elsewhere), and only when the set and every stamp still match what was confirmed. A request that
+    no longer matches is dropped on any cycle, complete or not, and the row comes back for a new decision: a rename,
+    a holder republishing, a new dependent, a link here, or another Mac's tombstone all void it. The alert carries a
+    token of the set and stamps, so a row that changed while the alert was open is refused (Settings then gets the
+    engine's rows again). Adding the profile here first drops the request; so does stopping or resetting sync.
+    It's settled only once this Mac's tombstones for the whole set are in its state with nothing left to send, so
+    they're in the folder; a journal lost in a crash (see the backlog) can't lose it, and it runs again. The first look after launch
+    and a rebuild drop removals from their extraction, so the request waits for them to finish.
+  - Only `prof:` is tombstoned. `share:` stays live: every version publishes it only while its key is unknown, and a
+    tombstone counts as known, so a holder that brings `prof:` back could never bring its sharing back. `pth:` stays
+    too, so a profile that comes back keeps its theme. Neither makes a row without a live `prof:`.
+  - A Mac that still has the profile, with sync on for it, publishes `prof:` again after the tombstone reaches it
+    (applying it clears that Mac's base), normally in its next cycle, and every Mac offers it again; the alert says
+    so. A Mac with sync off for it keeps it and publishes nothing until it's turned on. No version deletes or unlinks
+    a local profile on a `prof:` tombstone (its apply skips a missing record; checked in 0.0.1, 0.1.0, 0.1.4 and the
+    native redesign), and older Macs just stop offering it (tested against the 0.1.4 engine and adapters).
+  - A dependent that comes back alone (its holder republished it after its owner was removed) shows as waiting for
+    the profile it shares data with; that row can be removed too.
+  - The profile's data stays in the sync folder after Remove from Sync: its `pth:` theme record in the app scope, and
+    its whole `p:<sync id>` scope (its bookmarks, history, tabs and passwords files). Remove from Sync only stops
+    Macs offering the profile. Why: a Mac that still has the profile keeps writing to that scope and brings the
+    profile back with its theme, so deleting the files would destroy data a Mac is still using, and that can't be
+    undone; and nothing reads a scope no Mac links, so the files cost only folder space. Cleaning up a scope no live
+    `prof:` names is a backlog item.
+  - Residuals: its tombstones are collected like any other (Compaction), so a Mac away longer than that that still
+    has the profile offers it again; a quit before `sync.json` is written loses the request, and the row comes back.
+    Not ported to the native sync redesign yet.
 
 | Key | Scope | What | Notes |
 |---|---|---|---|
 | `set:<name>` | app | the settings that follow the user (`SYNCED_SETTINGS`: search engine and custom engines, appearance, address bar, tab layout and behavior, bookmarks bar, full URL, muted sites, clean-up, keyboard shortcuts…) | not window sizes, battery saver, extension engines or the default profile id. A setting this Mac doesn't follow yet (one added in a newer version, received while it ran an older one, which counted it applied) takes the synced value once it does, unless it was chosen on this Mac: each cycle reapplies any synced setting whose value differs from this Mac's and that this Mac never chose (tested) |
-| `prof:<sync id>` | app | a profile's name, color, icon (`d` for the default) | deleting a profile on one Mac doesn't delete it on another. A `th` field written by development builds of 0.2.40 is read once, as the profile's theme, when it has none |
+| `prof:<sync id>` | app | a profile's name, color, icon (`d` for the default) | deleting a profile on one Mac doesn't delete it on another; Remove from Sync tombstones it (above). A `th` field written by development builds of 0.2.40 is read once, as the profile's theme, when it has none |
 | `pth:<sync id>` | app | a profile's custom theme `{ t }`, or `{ preset: true }` after going back to a preset color | its own record, so a rename and a theme change on two Macs both survive, and Macs before 0.2.40, which rebuild `prof:` from what they know, never strip or republish it (tested with a 0.2.38 adapter). Written once a profile has had a custom theme. A profile paired on joining takes the synced theme (or a legacy `th`) before it can publish its own, and a legacy `th` never applies once a `pth:` record is known (tested). A profile paired on joining or added from sync is adopting (`themeAdopting` on its link in `sync.json`, so a restart keeps it): its theme isn't published, with no time limit, until its `pth:` record is applied (also by an older build: a valid `pth:` already in the base ends it at launch and on each cycle), a pull with nothing downloading, damaged or given up as bad shows there is none, or the user edits its theme or picks a preset on this Mac. Turning the profile's sync off and on keeps it adopting. Other profiles, and links from before this flag, publish edits at once, whatever else is still downloading; none publishes over a `pth:` record that has arrived but isn't applied yet (tested). Older Macs keep showing the preset color, which choosing a custom theme doesn't change |
 | `share:<sync id>` | app | `{ o }`: the sync id of the profile whose data this one shares | its own key, not a field of `prof:`, so Macs before 0.2.39 keep it untouched instead of republishing `prof:` without it on every cycle; written once, while both sync; never deleted |
 | `dev:<device id>` | app | a device's name | removed when it stops syncing |

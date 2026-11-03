@@ -158,6 +158,52 @@ struct ShortcutsPaneTests {
     #expect(ShortcutsPaneModel.pathText(ShortcutsFixture.items[2]) == nil)
   }
 
+  @Test func precedenceDefaultsComeFromTheMenuAndChoicesAreStoredOnlyWhenTheyDiffer() async {
+    let store = FakeSettingsStore()
+    store.values["shortcutPrecedence"] = .object(["findInPage": "solara", "nextTab": "sometimes"])
+    let services = FakeShortcutsServices()
+    let nextTab = MenuShortcutItem(id: "nextTab", title: "Next Tab", path: ["Tabs"], defaultShortcut: KeyShortcut(key: "}", modifiers: [.command]), remappable: true, defaultPrecedence: .solara)
+    let find = MenuShortcutItem(id: "findInPage", title: "Find…", path: ["Edit"], defaultShortcut: KeyShortcut(key: "f", modifiers: [.command]), remappable: true, defaultPrecedence: .both)
+    let quit = MenuShortcutItem(id: "std:quit:", title: "Quit", path: ["Solara"], defaultShortcut: KeyShortcut(key: "q", modifiers: [.command]), remappable: true, defaultPrecedence: .solara, precedenceFixed: true)
+    let emoji = ShortcutsFixture.items[8]
+    services.items = [nextTab, find, quit, emoji]
+    let model = ShortcutsPaneModel(services: services, store: store, recorder: FakeShortcutRecorder())
+    await model.prepare(SettingsPlace(pane: .shortcuts))
+
+    #expect(model.precedences == ["findInPage": .solara])
+    #expect(model.precedence(of: nextTab, in: model.precedences) == .solara)
+    #expect(model.precedence(of: find, in: model.precedences) == .solara)
+    #expect(model.precedence(of: emoji, in: model.precedences) == nil)
+    model.setPrecedence(quit, .website)
+    #expect(model.precedences["std:quit:"] == nil)
+    store.values["shortcutPrecedence"] = .object(["findInPage": "solara", "std:quit:": "website"])
+    #expect(model.precedence(of: quit, in: model.precedences) == .solara)
+    store.values["shortcutPrecedence"] = .object(["findInPage": "solara"])
+
+    model.filter = .customized
+    let resolved = model.resolved(model.overrides)
+    #expect(model.shown(resolved, overrides: model.overrides, precedences: model.precedences).map(\.id) == ["findInPage"])
+
+    model.setPrecedence(nextTab, .website)
+    #expect(model.precedences["nextTab"] == .website)
+    model.setPrecedence(find, .both)
+    #expect(model.precedences["findInPage"] == nil)
+    model.reset(nextTab)
+    #expect(model.precedences.isEmpty)
+
+    model.setPrecedence(nextTab, .both)
+    store.values["shortcuts"] = .object(["nextTab": ["k", "command"]])
+    model.resetAll()
+    #expect(model.precedences.isEmpty)
+    #expect(model.overrides.isEmpty)
+  }
+
+  @Test func precedenceTitlesNameTheApp() {
+    #expect(ShortcutPrecedence.solara.title(app: "Solara Dev") == "Prefer Solara Dev")
+    #expect(ShortcutPrecedence.website.title(app: "Solara") == "Prefer Website")
+    #expect(ShortcutPrecedence.both.title(app: "") == "Use Both")
+  }
+
   @Test func readsKeysLikeTheShellRecorder() {
     #expect(ShortcutKeyReader.outcome(keyCode: 53, flags: [], characters: "\u{1b}") == .cancel)
     #expect(ShortcutKeyReader.outcome(keyCode: 53, flags: [.function], characters: "\u{1b}") == .cancel)

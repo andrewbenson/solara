@@ -10,6 +10,7 @@ import {
   type ExtensionSearchEngine,
   type SearchEngine,
 } from "@solara/core";
+import type { ShortcutPrecedence } from "@solara/shell";
 import type { PageEngine } from "@solara/solaracore";
 import type { StateCreator } from "zustand";
 import type { DeveloperModeState } from "../lib/developerMode";
@@ -82,6 +83,7 @@ export type Settings = {
   defaultProfileId: string;
 
   shortcuts: Record<string, string[]>;
+  shortcutPrecedence: Record<string, ShortcutPrecedence>;
 
   openLinksInLittleSolara: boolean;
   littleSolaraSize: [number, number];
@@ -172,6 +174,7 @@ export const DEFAULT_SETTINGS: Settings = {
   spacesFollowAppearance: true,
   defaultProfileId: DEFAULT_PROFILE_ID,
   shortcuts: {},
+  shortcutPrecedence: {},
   openLinksInLittleSolara: true,
   littleSolaraSize: [900, 640],
   pageEngine: "chromium",

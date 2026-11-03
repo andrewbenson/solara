@@ -279,6 +279,7 @@ export function menuState(s: BrowserState): MenuState {
     undoReopensClosedTab: s.settings.undoReopensClosedTab,
     downloadsInProgress: s.downloads.filter((d) => d.state === "downloading").length,
     shortcuts: s.settings.shortcuts,
+    shortcutPrecedence: s.settings.shortcutPrecedence,
     extensions: extensionMenu(s, windowId),
   };
 }

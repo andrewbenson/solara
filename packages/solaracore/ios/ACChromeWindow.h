@@ -32,6 +32,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 @property(class, nonatomic, copy, nullable) BOOL (^shouldCloseHandler)(NSWindow *window);
 @property(class, nonatomic, copy, nullable) BOOL (^refusesUnhandledKeyHandler)(NSWindow *window, NSEvent *event);
+@property(class, nonatomic, copy, nullable) NSString *_Nullable (^keyPrecedenceHandler)(NSMenuItem *item);
 @property(class, nonatomic, copy, nullable) BOOL (^focusClaimedElsewhereHandler)(NSWindow *window, NSView *view);
 + (BOOL)windowShouldClose:(NSWindow *)window;
 + (BOOL)windowFullScreenIsForPage:(NSWindow *)window;

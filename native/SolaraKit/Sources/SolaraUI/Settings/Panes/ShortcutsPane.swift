@@ -84,6 +84,40 @@ public final class ShortcutsPaneModel: SettingsPaneProvider {
     return result
   }
 
+  var precedences: ShortcutPrecedences {
+    guard let object = store.settingValue("shortcutPrecedence")?.object else { return [:] }
+    var result: ShortcutPrecedences = [:]
+    for (id, value) in object {
+      if let precedence = value.string.flatMap(ShortcutPrecedence.init(rawValue:)) { result[id] = precedence }
+    }
+    return result
+  }
+
+  func precedence(of item: MenuShortcutItem, in precedences: ShortcutPrecedences) -> ShortcutPrecedence? {
+    guard let standard = item.defaultPrecedence else { return nil }
+    if item.precedenceFixed { return .solara }
+    return precedences[item.id] ?? standard
+  }
+
+  func setPrecedence(_ item: MenuShortcutItem, _ precedence: ShortcutPrecedence?) {
+    var next = store.settingValue("shortcutPrecedence")?.object ?? JSONObject()
+    if let precedence, precedence != item.defaultPrecedence, !item.precedenceFixed {
+      next[item.id] = .string(precedence.rawValue)
+    } else {
+      _ = next.removeValue(forKey: item.id)
+    }
+    store.updateSettings(["shortcutPrecedence": .object(next)])
+  }
+
+  func customized(_ item: MenuShortcutItem, overrides: ShortcutOverrides, precedences: ShortcutPrecedences) -> Bool {
+    overrides[item.id] != nil || precedences[item.id] != nil
+  }
+
+  func reset(_ item: MenuShortcutItem) {
+    setShortcut(item.id, nil)
+    setPrecedence(item, nil)
+  }
+
   func resolved(_ overrides: ShortcutOverrides) -> ResolvedShortcuts {
     ResolvedShortcuts((items ?? []).map(ShortcutSource.init), overrides: overrides)
   }
@@ -93,12 +127,12 @@ public final class ShortcutsPaneModel: SettingsPaneProvider {
     return resolved.conflicts(of: item.id).compactMap { byId[$0] }
   }
 
-  func shown(_ resolved: ResolvedShortcuts, overrides: ShortcutOverrides) -> [MenuShortcutItem] {
+  func shown(_ resolved: ResolvedShortcuts, overrides: ShortcutOverrides, precedences: ShortcutPrecedences = [:]) -> [MenuShortcutItem] {
     (items ?? []).filter { item in
       guard ShortcutQuery.matches(query, item.title, item.path.joined(separator: " "), resolved.effective(item.id).formatted) else { return false }
       switch filter {
       case .all: return true
-      case .customized: return overrides[item.id] != nil
+      case .customized: return customized(item, overrides: overrides, precedences: precedences)
       case .conflicts: return !resolved.conflicts(of: item.id).isEmpty
       }
     }
@@ -143,7 +177,7 @@ public final class ShortcutsPaneModel: SettingsPaneProvider {
   }
 
   func resetAll() {
-    store.updateSettings(["shortcuts": .object(JSONObject())])
+    store.updateSettings(["shortcuts": .object(JSONObject()), "shortcutPrecedence": .object(JSONObject())])
   }
 
   func cancelRecording() {
@@ -158,8 +192,9 @@ struct ShortcutsPane: View {
 
   var body: some View {
     let overrides = model.overrides
+    let precedences = model.precedences
     let resolved = model.resolved(overrides)
-    let shown = model.shown(resolved, overrides: overrides)
+    let shown = model.shown(resolved, overrides: overrides, precedences: precedences)
     let app = context?.appName ?? ""
     SettingsForm {
       Section {
@@ -183,7 +218,7 @@ struct ShortcutsPane: View {
               .frame(minWidth: 170)
               .fixedSize()
             Button("Reset All Shortcuts") { model.resetAll() }
-              .disabled(overrides.isEmpty)
+              .disabled(overrides.isEmpty && precedences.isEmpty)
           }
           .font(.body)
           .fontWeight(.regular)
@@ -206,7 +241,9 @@ struct ShortcutsPane: View {
               item: item,
               shortcut: resolved.effective(item.id),
               conflict: ShortcutsPaneModel.conflictText(model.conflicts(of: item, in: resolved)),
-              overridden: overrides[item.id] != nil,
+              overridden: model.customized(item, overrides: overrides, precedences: precedences),
+              precedence: model.precedence(of: item, in: precedences),
+              app: app,
               model: model
             )
           }
@@ -230,6 +267,8 @@ struct ShortcutRow: View {
   let shortcut: KeyShortcut
   let conflict: String?
   let overridden: Bool
+  let precedence: ShortcutPrecedence?
+  let app: String
   let model: ShortcutsPaneModel
 
   var body: some View {
@@ -237,7 +276,7 @@ struct ShortcutRow: View {
       HStack(spacing: 6) {
         if overridden {
           Button {
-            model.setShortcut(item.id, nil)
+            model.reset(item)
           } label: {
             Image(systemName: "arrow.uturn.backward")
               .font(.system(size: 11, weight: .medium))
@@ -246,6 +285,17 @@ struct ShortcutRow: View {
           }
           .buttonStyle(.borderless)
           .help("Reset to Default")
+        }
+        if let precedence, item.precedenceFixed {
+          Text(precedence.title(app: app))
+            .foregroundStyle(.tertiary)
+            .help(ShortcutPrecedence.fixedHelp(app: app))
+        } else if let precedence {
+          SettingsPopUp(
+            ShortcutPrecedence.allCases.map { SettingsPopUpItem($0, $0.title(app: app)) },
+            selection: Binding(get: { precedence }, set: { model.setPrecedence(item, $0) })
+          )
+          .help(precedence.help(app: app))
         }
         ShortcutField(
           shortcut: shortcut,

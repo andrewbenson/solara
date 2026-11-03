@@ -1,6 +1,6 @@
 {
   "Adapters": {
-    "apps/browser/src/sync/adapters.ts": "dfe05dfd1d3f8599f9a772ce1d6aaa9203b629af09795565b24e333adbb066d8",
+    "apps/browser/src/sync/adapters.ts": "399fca7c016c222d73ca0a8fca7950dd84a865dfdacf60c314717ffacf76bdcb",
     "apps/browser/src/sync/pinned.ts": "2d2979d89fbc5bf46a8b7ccadaf38f8b989f15f953862d5c2878326fbec8498c",
     "apps/browser/src/sync/extensions.ts": "cacdd4a017e4abd5ada02e0b9e26a4fd7ccc11aff4c61dcd88231f8e48fbf688"
   },

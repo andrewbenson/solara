@@ -1,6 +1,7 @@
 import { requireNativeViewManager, type EventSubscription } from "expo-modules-core";
 import { processColor, StyleSheet, View, type ColorValue, type ViewProps } from "react-native";
 import { nativeModule, optionalNativeModule } from "./nativeModules";
+import type { ShortcutPrecedence } from "./system";
 
 export * from "./system";
 export * from "./app";
@@ -204,6 +205,7 @@ export type MenuState = {
   downloadsInProgress?: number;
   extensions?: { id: string; title: string; icon?: string | null; enabled: boolean }[];
   shortcuts?: Record<string, string[]>;
+  shortcutPrecedence?: Record<string, ShortcutPrecedence>;
 };
 
 export type ConfirmOptions = {

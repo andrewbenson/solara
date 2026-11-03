@@ -33,6 +33,7 @@ struct MenuState {
   var undoReopensClosedTab = false
   var downloadsInProgress = 0
   var shortcuts: [String: [String]] = [:]
+  var shortcutPrecedence: [String: String] = [:]
   var extensions: [(id: String, title: String, icon: String?)] = []
   var fromApp = false
 
@@ -94,6 +95,7 @@ struct MenuState {
     undoReopensClosedTab = d["undoReopensClosedTab"] as? Bool ?? false
     downloadsInProgress = d["downloadsInProgress"] as? Int ?? 0
     shortcuts = d["shortcuts"] as? [String: [String]] ?? [:]
+    shortcutPrecedence = (d["shortcutPrecedence"] as? [String: Any] ?? [:]).compactMapValues { $0 as? String }
     fromApp = true
     extensions = (d["extensions"] as? [[String: Any]] ?? []).map {
       (id: $0["id"] as? String ?? "", title: $0["title"] as? String ?? "", icon: $0["icon"] as? String)
@@ -958,7 +960,10 @@ enum MainMenu {
     guard MenuState.current.fromApp else { return }
     var bound: [String] = []
     walk(NSApp.mainMenu) { item, _ in
-      if item is Rebindable { bound.append("\(item.identifier?.rawValue ?? "")=\(item.keyEquivalent)|\(item.keyEquivalentModifierMask.rawValue)") }
+      if item is Rebindable {
+        let precedence = precedence(of: item)?.rawValue ?? ""
+        bound.append("\(item.identifier?.rawValue ?? "")=\(item.keyEquivalent)|\(item.keyEquivalentModifierMask.rawValue)|\(precedence)")
+      }
     }
     if bound != announcedShortcuts {
       announcedShortcuts = bound
@@ -994,6 +999,15 @@ enum MainMenu {
     for case let item as CommandItem in profiles.items { item.followPrimaryShortcut(bound: bound) }
   }
 
+  static func precedence(of item: NSMenuItem) -> ShortcutPrecedence? {
+    guard let item = item as? Rebindable else { return nil }
+    return ShortcutPrecedence.resolve(shortcutId: item.shortcutId, command: (item as? CommandItem)?.command, chosen: MenuState.current.shortcutPrecedence)
+  }
+
+  private static func standardPrecedence(of item: Rebindable) -> ShortcutPrecedence {
+    ShortcutPrecedence.standard(shortcutId: item.shortcutId, command: (item as? CommandItem)?.command)
+  }
+
   static func shortcutList() -> [[String: Any]] {
     var list: [[String: Any]] = []
     func names(_ mods: NSEvent.ModifierFlags) -> [String] {
@@ -1016,7 +1030,8 @@ enum MainMenu {
         "id": id, "title": item.defaultTitle, "path": group.path, "key": current.key,
         "modifiers": current.key.isEmpty ? [] : names(current.mods), "defaultKey": item.defaultKey,
         "defaultModifiers": item.defaultKey.isEmpty ? [] : names(item.defaultModifiers), "remappable": true,
-        "aliases": aliases,
+        "aliases": aliases, "precedence": (precedence(of: item) ?? .website).rawValue, "defaultPrecedence": standardPrecedence(of: item).rawValue,
+        "precedenceFixed": ShortcutPrecedence.isFixed(shortcutId: item.shortcutId, command: (item as? CommandItem)?.command),
       ])
     }
     var seen = Set<String>()

@@ -30,7 +30,9 @@ final class ShortcutsAdapter: ShortcutsServices {
       path: dict.strings("path"),
       defaultShortcut: defaultKey.isEmpty ? .empty : KeyShortcut(stored: [defaultKey] + dict.strings("defaultModifiers")),
       remappable: dict.bool("remappable") ?? false,
-      aliases: dict["aliases"] as? [[String]] ?? []
+      aliases: dict["aliases"] as? [[String]] ?? [],
+      defaultPrecedence: dict.string("defaultPrecedence").flatMap(ShortcutPrecedence.init(rawValue:)),
+      precedenceFixed: dict.bool("precedenceFixed") ?? false
     )
   }
 }

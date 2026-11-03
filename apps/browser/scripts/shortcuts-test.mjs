@@ -10,8 +10,8 @@ import { shortcutPage } from "../../../scripts/lib/fixture-html.mjs";
 
 const [appArg, part, port] = process.argv.slice(2);
 const appPath = appArg && resolve(appArg);
-if (!appPath || (part !== "matrix" && part !== "presses")) {
-  console.error("usage: node shortcuts-test.mjs <Debug Solara.app> matrix|presses [cdpPort]");
+if (!appPath || !["matrix", "presses", "precedence"].includes(part)) {
+  console.error("usage: node shortcuts-test.mjs <Debug Solara.app> matrix|presses|precedence [cdpPort]");
   process.exit(2);
 }
 const startedAt = Date.now();
@@ -411,6 +411,118 @@ const menuLive = async () => {
   return false;
 };
 check("the window's menu is live before the real presses", await menuLive(), "Select Tab 1 stayed disabled: the menu state has no focused window");
+if (part === "precedence") {
+  const doubleClickMs = (() => {
+    const value = Number.parseFloat(spawnSync("defaults", ["read", "-g", "com.apple.mouse.doubleClick"], { encoding: "utf8" }).stdout);
+    return Number.isFinite(value) && value > 0 ? value * 1000 : 500;
+  })();
+  const gap = Math.min(120, Math.floor(doubleClickMs / 3));
+  rep.log(`double-click interval ${doubleClickMs} ms; a quick second press comes ${gap} ms after the first`);
+  const sheet = `(() => {
+    window.__keys = [];
+    window.__consumes = true;
+    if (!document.getElementById("grid")) {
+      const grid = Object.assign(document.createElement("div"), { id: "grid", contentEditable: "true", textContent: "A1" });
+      grid.style.cssText = "position:fixed;left:20px;top:200px;width:300px;height:80px;outline:1px solid #888";
+      document.body.append(grid);
+      addEventListener("keydown", (e) => {
+        if (!e.metaKey && !e.ctrlKey) return;
+        window.__keys.push((e.ctrlKey ? "⌃" : "") + (e.altKey ? "⌥" : "") + (e.shiftKey ? "⇧" : "") + (e.metaKey ? "⌘" : "") + e.key);
+        if (window.__consumes) e.preventDefault();
+      }, true);
+    }
+    const grid = document.getElementById("grid");
+    grid.focus();
+    getSelection().selectAllChildren(grid);
+    return document.activeElement === grid;
+  })()`;
+  const windowAction = (action) => ac(`const f = ac.store.getState().windows.w1.frame, C = globalThis.expo.modules.SolaraCEF;
+    return C.chromeWindows().then((ws) => ws.filter((w) => w.hasRoot).find((w) => {
+      const r = w.frame.match(/[-\\d.]+/g).map(Number); return Math.abs(r[0] - f[0]) < 2 && Math.abs(r[2] - f[2]) < 2; }))
+      .then((w) => C.devWindow(w.window, ${JSON.stringify(action)}));`);
+  await windowAction("fakeActiveClicks");
+  const choose = async (chosen) => {
+    await ac(`ac.store.getState().updateSettings({ shortcutPrecedence: ${JSON.stringify(chosen)} }); return 1;`);
+    await sleep(400);
+  };
+  const observe = async () => {
+    const keys = (await cdp("?t3", "window.__keys.join(' ')")) ?? "(no page)";
+    const s = await ac(`const s = ac.store.getState(), w = s.windows.w1, a = w.activeTabIds[w.profileId];
+      return { profile: w.profileId, active: a, find: !!s.find[a]?.open, sidebar: w.sidebarOpen, panel: !!s.windowUi.w1?.panel.open };`);
+    return { keys, ...s };
+  };
+  const ready = async (consumes) => {
+    await ac(`const s = ac.store.getState(), w = s.windows.w1;
+      if (w.profileId !== "default") ac.runCommand({ command: "switchProfile", arg: "default", windowId: "w1" });
+      if (!w.sidebarOpen) s.toggleSidebar("w1");
+      s.closePanel("w1"); s.setFind("t3", { open: false }); s.setFind("t4", { open: false }); s.activate("t3"); return 1;`);
+    await sleep(600);
+    await ac(`return ac.shell.devClick("w1", { in: "page", x: 60, y: 240, wait: 150 });`);
+    const inGrid = await cdp("?t3", sheet);
+    if (!consumes) await cdp("?t3", "(window.__consumes = false, true)");
+    await sleep(doubleClickMs + 100);
+    const responder = String(await windowAction("responder"));
+    return inGrid === true && responder.startsWith("RenderWidgetHostViewCocoa") ? true : `grid ${inGrid}, first responder ${responder}`;
+  };
+  const at = (key, keyCode, modifiers, after = 0) => ({ key, keyCode, modifiers, after });
+  const once = (key, keyCode, modifiers) => [at(key, keyCode, modifiers)];
+  const twice = (key, keyCode, modifiers) => [at(key, keyCode, modifiers), at(key, keyCode, modifiers, gap)];
+  const run = async (label, presses, accept, { consumes = true } = {}) => {
+    const focused = await ready(consumes);
+    const before = await observe();
+    const times = await ac(`return globalThis.expo.modules.SolaraApp.devPostKeys("w1", ${JSON.stringify(presses)});`);
+    await sleep(1200);
+    const after = await observe();
+    const apart = times.length > 1 ? `, ${(times[1] - times[0]).toFixed(0)} ms apart` : "";
+    check(label, focused === true && accept(after, before), `${JSON.stringify(before)} → ${JSON.stringify(after)}${apart}, page focus: ${focused}`);
+  };
+  const ARROW = ["command", "option", "function"];
+  const down = (n) => (n === 2 ? twice : once)(F(0xf701), 125, ARROW);
+  const right = (n = 1) => (n === 2 ? twice : once)(F(0xf703), 124, ARROW);
+  const cmdKey = (key, code, n = 1) => (n === 2 ? twice : once)(key, code, ["command"]);
+  const pageGot = (after, ...keys) => after.keys === keys.join(" ");
+
+  await choose({});
+  await run("⌥⌘↓ in a page that takes it selects the next tab, before the page", down(1), (a) => a.active === "t4" && pageGot(a));
+  await run("⌥⌘→ in a page that takes it switches to the next profile, before the page", right(), (a) => a.profile === "p-work" && pageGot(a));
+  await run("⌘1 in a page that takes it selects the first tab, before the page", cmdKey("1", 18), (a) => a.active === "pin1" && pageGot(a));
+  await run("⇧⌘] in a page that takes it selects the next tab, before the page", once("}", 30, ["command", "shift"]), (a) => a.active === "t4" && pageGot(a));
+  await run("one ⌘F in a page that takes it stays with the page", cmdKey("f", 3), (a) => !a.find && pageGot(a, "⌘f"));
+  await run("two quick ⌘F in a page that takes it open Find on the second", cmdKey("f", 3, 2), (a) => a.find && pageGot(a, "⌘f"));
+  await run("two quick ⌘L in a page that takes it open the command bar on the second", cmdKey("l", 37, 2), (a) => a.panel && pageGot(a, "⌘l"));
+  await run("one ⌘S in a page that takes it stays with the page", cmdKey("s", 1), (a, b) => a.sidebar === b.sidebar && pageGot(a, "⌘s"));
+  await run("two quick ⌘S in a page that takes it toggle the sidebar once", cmdKey("s", 1, 2), (a, b) => a.sidebar !== b.sidebar && pageGot(a, "⌘s"));
+  await run("a single ⌘L in a page's editor that doesn't take it opens the command bar", cmdKey("l", 37), (a) => a.panel && pageGot(a, "⌘l"), { consumes: false });
+  await run("a single ⌘F in a page's editor that doesn't take it opens Find", cmdKey("f", 3), (a) => a.find && pageGot(a, "⌘f"), { consumes: false });
+  await run("one ⌘S in a page's editor that doesn't take it still stays with the page", cmdKey("s", 1), (a, b) => a.sidebar === b.sidebar && pageGot(a, "⌘s"), { consumes: false });
+
+  await choose({ nextTab: "website", closeTab: "website", newWindow: "both" });
+  await run("Next Tab stays Prefer Solara whatever is chosen: ⌥⌘↓ selects the next tab before the page", down(1), (a) => a.active === "t4" && pageGot(a));
+  await choose({ nextProfile: "website" });
+  await run("Prefer Website: ⌥⌘→ goes to a page that takes it, and the profile stays", right(), (a) => a.profile === "default" && pageGot(a, "⌥⌘ArrowRight"));
+  await run("Prefer Website: ⌥⌘→ in a page that doesn't take it still switches the profile", right(), (a) => a.profile === "p-work" && pageGot(a, "⌥⌘ArrowRight"), { consumes: false });
+  await run("Prefer Website: two quick ⌥⌘→ both go to the page", right(2), (a) => a.profile === "default" && pageGot(a, "⌥⌘ArrowRight", "⌥⌘ArrowRight"));
+  await choose({ findInPage: "solara" });
+  await run("Prefer Solara: ⌘F opens Find before a page that takes it", cmdKey("f", 3), (a) => a.find && pageGot(a));
+  await choose({ nextProfile: "both" });
+  await run("Use Both: one ⌥⌘→ goes to a page that takes it", right(), (a) => a.profile === "default" && pageGot(a, "⌥⌘ArrowRight"));
+  await run("Use Both: two quick ⌥⌘→ switch the profile on the second", right(2), (a) => a.profile === "p-work" && pageGot(a, "⌥⌘ArrowRight"));
+  await choose({ toggleSidebar: "website" });
+  await run("Prefer Website: ⌘S in a page's editor that doesn't take it toggles the sidebar", cmdKey("s", 1), (a, b) => a.sidebar !== b.sidebar && pageGot(a, "⌘s"), { consumes: false });
+
+  await choose({ nextTab: "website", nextProfile: "website", findInPage: "solara" });
+  {
+    const listed = await ac(`return ac.shell.menuShortcuts().then((items) => Object.fromEntries(items.filter((i) => ["nextTab", "nextProfile", "selectTab:1", "findInPage", "reload", "std:copy:"].includes(i.id)).map((i) => [i.id, [i.precedence, i.defaultPrecedence, i.precedenceFixed]])));`);
+    const expected = {
+      nextTab: ["solara", "solara", true], nextProfile: ["website", "solara", false], "selectTab:1": ["solara", "solara", false],
+      findInPage: ["solara", "both", false], reload: ["website", "website", false], "std:copy:": ["website", "website", false],
+    };
+    check("the menu tells Settings each shortcut's precedence and its default", isDeepStrictEqual(listed, expected), JSON.stringify(listed));
+  }
+  await choose({});
+  await finish(rep.summary() && !failures ? 0 : 1);
+}
+
 await real("⌘1 in the sidebar", cmd("1", 18), sidebar, "pin1");
 await real("⌘2 in the sidebar", cmd("2", 19), sidebar, "pin2");
 await real("⌘9 in the sidebar", cmd("9", 25), sidebar, "t9");

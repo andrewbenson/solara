@@ -65,6 +65,7 @@ public struct Settings: Sendable, Hashable {
     "spacesFollowAppearance": true,
     "defaultProfileId": .string(defaultProfileID),
     "shortcuts": [:],
+    "shortcutPrecedence": [:],
     "openLinksInLittleSolara": true,
     "littleSolaraSize": [900, 640],
     "pageEngine": "chromium",

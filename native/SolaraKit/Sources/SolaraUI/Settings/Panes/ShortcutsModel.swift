@@ -88,6 +88,33 @@ public struct KeyShortcut: Hashable, Sendable {
   public var stored: [String] { [key] + ShortcutModifier.ordered(modifiers).map(\.rawValue) }
 }
 
+public enum ShortcutPrecedence: String, CaseIterable, Hashable, Sendable {
+  case solara
+  case website
+  case both
+
+  func title(app: String) -> String {
+    switch self {
+    case .solara: "Prefer \(app.isEmpty ? "Solara" : app)"
+    case .website: "Prefer Website"
+    case .both: "Use Both"
+    }
+  }
+
+  func help(app: String) -> String {
+    let name = app.isEmpty ? "Solara" : app
+    switch self {
+    case .solara: return "\(name) acts on this shortcut before the website sees it."
+    case .website: return "The website gets this shortcut first; \(name) acts only when the website doesn't use it."
+    case .both: return "The website gets the first press; press twice quickly for \(name)."
+    }
+  }
+
+  static func fixedHelp(app: String) -> String {
+    "\(app.isEmpty ? "Solara" : app) always acts on this shortcut first, as Chrome does."
+  }
+}
+
 public struct MenuShortcutItem: Hashable, Sendable, Identifiable {
   public let id: String
   public let title: String
@@ -95,20 +122,28 @@ public struct MenuShortcutItem: Hashable, Sendable, Identifiable {
   public let defaultShortcut: KeyShortcut
   public let remappable: Bool
   public let aliases: [[String]]
+  public let defaultPrecedence: ShortcutPrecedence?
+  public let precedenceFixed: Bool
 
-  public init(id: String, title: String, path: [String], defaultShortcut: KeyShortcut, remappable: Bool, aliases: [[String]] = []) {
+  public init(
+    id: String, title: String, path: [String], defaultShortcut: KeyShortcut, remappable: Bool, aliases: [[String]] = [],
+    defaultPrecedence: ShortcutPrecedence? = nil, precedenceFixed: Bool = false
+  ) {
     self.id = id
     self.title = title
     self.path = path
     self.defaultShortcut = defaultShortcut
     self.remappable = remappable
     self.aliases = aliases
+    self.defaultPrecedence = defaultPrecedence
+    self.precedenceFixed = precedenceFixed
   }
 
   var menu: String { path.first ?? "" }
 }
 
 public typealias ShortcutOverrides = [String: [String]]
+public typealias ShortcutPrecedences = [String: ShortcutPrecedence]
 
 struct ShortcutSource {
   let id: String

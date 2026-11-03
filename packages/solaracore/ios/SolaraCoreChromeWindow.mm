@@ -1,6 +1,7 @@
 #import "ACChromeWindow.h"
 #import "SolaraCoreEarlyWindow.h"
 #import "SolaraCoreEscapeKey.h"
+#import "SolaraCoreKeyPrecedence.h"
 #import "SolaraCorePopupSpace.h"
 #import "SolaraCoreInternal.h"
 #import "SolaraCoreWebView.h"
@@ -20,6 +21,7 @@ namespace {
 
 BOOL (^gShouldClose)(NSWindow *);
 BOOL (^gRefusesUnhandledKey)(NSWindow *, NSEvent *);
+NSString *(^gKeyPrecedence)(NSMenuItem *);
 BOOL (^gFocusClaimedElsewhere)(NSWindow *, NSView *);
 void (^gSwapped)(NSWindow *, NSWindow *);
 
@@ -388,76 +390,113 @@ NSSet<NSString *> *ReservedIdentifiers() {
   return reserved;
 }
 
-NSMenuItem *MenuItemWithIdentifier(NSMenu *menu, NSString *key, NSEventModifierFlags mods, NSSet<NSString *> *reserved) {
+NSMenuItem *MenuItemMatching(NSMenu *menu, NSString *key, NSEventModifierFlags mods, BOOL (^accepts)(NSMenuItem *)) {
   const NSEventModifierFlags relevant = NSEventModifierFlagCommand | NSEventModifierFlagShift | NSEventModifierFlagOption | NSEventModifierFlagControl;
   for (NSMenuItem *item in menu.itemArray) {
     if (item.submenu) {
       if (item.submenu == NSApp.servicesMenu) continue;
-      if (NSMenuItem *found = MenuItemWithIdentifier(item.submenu, key, mods, reserved)) return found;
+      if (NSMenuItem *found = MenuItemMatching(item.submenu, key, mods, accepts)) return found;
       continue;
     }
-    if (!item.identifier || ![reserved containsObject:item.identifier] || !item.keyEquivalent.length) continue;
+    if (!item.identifier || !item.keyEquivalent.length) continue;
     if (item.isHidden && !item.allowsKeyEquivalentWhenHidden) continue;
     NSEventModifierFlags itemMods = item.keyEquivalentModifierMask & relevant;
     if (![item.keyEquivalent isEqualToString:item.keyEquivalent.lowercaseString]) itemMods |= NSEventModifierFlagShift;
-    if (itemMods == (mods & relevant) && [item.keyEquivalent.lowercaseString isEqualToString:key]) return item;
+    if (itemMods == (mods & relevant) && [item.keyEquivalent.lowercaseString isEqualToString:key] && accepts(item)) return item;
   }
   return nil;
 }
 
-NSMenuItem *ReservedMenuItem(NSMenu *menu, NSString *key, NSEventModifierFlags mods) {
-  return MenuItemWithIdentifier(menu, key, mods, ReservedIdentifiers());
+using solaracore_keys::KeyPrecedence;
+
+KeyPrecedence StandardKeyPrecedence(NSMenuItem *item) {
+  if ([ReservedIdentifiers() containsObject:item.identifier]) return KeyPrecedence::Solara;
+  if ([item.identifier isEqualToString:@"solara.command.toggleSidebar"]) return KeyPrecedence::Both;
+  return KeyPrecedence::Website;
 }
 
-NSMenuItem *MenuItemForEvent(NSEvent *event, NSSet<NSString *> *identifiers) {
+KeyPrecedence KeyPrecedenceOf(NSMenuItem *item) {
+  if ([ReservedIdentifiers() containsObject:item.identifier]) return KeyPrecedence::Solara;
+  NSString *chosen = gKeyPrecedence ? gKeyPrecedence(item) : nil;
+  return solaracore_keys::KeyPrecedenceNamed(chosen, StandardKeyPrecedence(item));
+}
+
+bool IsSolaraShortcut(NSMenuItem *item) {
+  return [item.identifier hasPrefix:@"solara."];
+}
+
+BOOL (^const kSolaraShortcut)(NSMenuItem *) = ^BOOL(NSMenuItem *item) {
+  return IsSolaraShortcut(item);
+};
+
+BOOL (^const kSolaraFirstShortcut)(NSMenuItem *) = ^BOOL(NSMenuItem *item) {
+  return IsSolaraShortcut(item) && KeyPrecedenceOf(item) == KeyPrecedence::Solara;
+};
+
+NSMenuItem *ReservedMenuItem(NSMenu *menu, NSString *key, NSEventModifierFlags mods) {
+  return MenuItemMatching(menu, key, mods, kSolaraFirstShortcut);
+}
+
+NSMenuItem *MenuItemForEvent(NSEvent *event, BOOL (^accepts)(NSMenuItem *)) {
   const NSEventModifierFlags mods = event.modifierFlags & NSEventModifierFlagDeviceIndependentFlagsMask;
   NSString *key = event.charactersIgnoringModifiers.lowercaseString;
   const unichar first = key.length ? [key characterAtIndex:0] : 0;
   const bool functionKey = first >= NSF1FunctionKey && first <= NSF35FunctionKey;
   if (!functionKey && !(mods & (NSEventModifierFlagCommand | NSEventModifierFlagControl))) return nil;
   if ([key isEqualToString:@"\x19"]) key = @"\t";
-  if (NSMenuItem *item = MenuItemWithIdentifier(NSApp.mainMenu, key, mods, identifiers)) return item;
+  if (NSMenuItem *item = MenuItemMatching(NSApp.mainMenu, key, mods, accepts)) return item;
   NSString *unshifted = [event charactersByApplyingModifiers:0].lowercaseString;
   if (!unshifted.length || [unshifted isEqualToString:key]) return nil;
-  return MenuItemWithIdentifier(NSApp.mainMenu, unshifted, mods, identifiers);
+  return MenuItemMatching(NSApp.mainMenu, unshifted, mods, accepts);
 }
 
 NSMenuItem *ReservedMenuItemForEvent(NSEvent *event) {
-  return MenuItemForEvent(event, ReservedIdentifiers());
+  return MenuItemForEvent(event, kSolaraFirstShortcut);
+}
+
+NSMenuItem *ShortcutMenuItemForEvent(NSEvent *event) {
+  return event.type == NSEventTypeKeyDown ? MenuItemForEvent(event, kSolaraShortcut) : nil;
 }
 
 bool IsReservedKey(NSEvent *event) {
   return ReservedMenuItemForEvent(event) != nil;
 }
 
-struct SidebarKeyPress {
-  NSTimeInterval at = 0;
-  NSInteger window = 0;
-};
-
-SidebarKeyPress gSidebarKeyPressForPage;
-
-bool IsSidebarKey(NSEvent *event) {
-  static NSSet<NSString *> *sidebar = [NSSet setWithObject:@"solara.command.toggleSidebar"];
-  return event.type == NSEventTypeKeyDown && MenuItemForEvent(event, sidebar) != nil;
+NSString *SharedShortcutName(NSMenuItem *item) {
+  return [NSString stringWithFormat:@"%@|%@|%lu", item.identifier, item.keyEquivalent, (unsigned long)item.keyEquivalentModifierMask];
 }
 
-bool IsSecondSidebarKeyPress(NSEvent *event) {
-  if (!IsSidebarKey(event) || event.isARepeat) return false;
-  const SidebarKeyPress first = gSidebarKeyPressForPage;
-  const bool second = first.at > 0 && first.window == event.windowNumber && event.timestamp - first.at <= NSEvent.doubleClickInterval;
-  gSidebarKeyPressForPage = second ? SidebarKeyPress{} : SidebarKeyPress{event.timestamp, event.windowNumber};
-  return second;
+solaracore_keys::SharedShortcutPresses gSharedShortcutPresses;
+
+bool PerformsShortcutBeforePage(NSEvent *event, NSMenuItem *item, BOOL (^perform)(void)) {
+  switch (KeyPrecedenceOf(item)) {
+    case KeyPrecedence::Solara: return perform();
+    case KeyPrecedence::Website: return false;
+    case KeyPrecedence::Both: {
+      const auto first = gSharedShortcutPresses.TakeSecondPress(SharedShortcutName(item), event.windowNumber, event.timestamp,
+                                                                event.isARepeat, NSEvent.doubleClickInterval);
+      if (!first || !perform()) return false;
+      gSharedShortcutPresses.NoteAnswered(*first, event.timestamp);
+      return true;
+    }
+  }
 }
 
-bool KeepsUnhandledSidebarKeyInPage(NSWindow *window, NSEvent *event) {
-  if (!IsSidebarKey(event)) return false;
+bool IsTypingInPage(NSWindow *window) {
   NSResponder *focused = window.firstResponder;
   const SEL textInputType = NSSelectorFromString(@"textInputType");
-  const bool typing = [NSStringFromClass(focused.class) isEqualToString:@"RenderWidgetHostViewCocoa"] && [focused respondsToSelector:textInputType] &&
-                      ((int (*)(id, SEL))objc_msgSend)(focused, textInputType) != 0;
-  if (!typing) gSidebarKeyPressForPage = SidebarKeyPress{};
-  return typing;
+  return [NSStringFromClass(focused.class) isEqualToString:@"RenderWidgetHostViewCocoa"] && [focused respondsToSelector:textInputType] &&
+         ((int (*)(id, SEL))objc_msgSend)(focused, textInputType) != 0;
+}
+
+bool KeepsUnhandledSharedKeyInPage(NSWindow *window, NSEvent *event) {
+  NSMenuItem *item = ShortcutMenuItemForEvent(event);
+  if (!item || KeyPrecedenceOf(item) != KeyPrecedence::Both) return false;
+  NSString *name = SharedShortcutName(item);
+  if (gSharedShortcutPresses.WasAnsweredBySecondPress(name, event.windowNumber, event.timestamp)) return true;
+  if ([item.identifier isEqualToString:@"solara.command.toggleSidebar"] && IsTypingInPage(window)) return true;
+  gSharedShortcutPresses.ForgetFirstPress(name, event.windowNumber, event.timestamp);
+  return false;
 }
 
 }
@@ -1772,11 +1811,14 @@ NSMapTable<SolaraCoreProfile *, SolaraCoreWindowController *> *StandaloneWindows
 }
 
 - (BOOL)window:(SolaraCoreWindow *)window preHandleKeyEvent:(NSEvent *)event {
-  return (IsReservedKey(event) || IsSecondSidebarKeyPress(event)) && [NSApp.mainMenu performKeyEquivalent:event];
+  NSMenuItem *item = ShortcutMenuItemForEvent(event);
+  return item && PerformsShortcutBeforePage(event, item, ^BOOL {
+           return [NSApp.mainMenu performKeyEquivalent:event];
+         });
 }
 
 - (BOOL)window:(SolaraCoreWindow *)window handleKeyEvent:(NSEvent *)event {
-  if (KeepsUnhandledSidebarKeyInPage(window.window, event)) return YES;
+  if (KeepsUnhandledSharedKeyInPage(window.window, event)) return YES;
   if (solaracore_keys::IsPlainEscape(event)) {
     NSResponder *focused = window.window.firstResponder;
     SolaraCoreWebView *target = nil;
@@ -2313,14 +2355,29 @@ NSImage *_Nullable PermissionIcon(NSDictionary *request) {
   dispatch_async(dispatch_get_main_queue(), ^{ [coreWindow close]; });
 }
 
-- (BOOL)window:(SolaraCoreWindow *)window preHandleKeyEvent:(NSEvent *)event {
-  NSMenuItem *reserved = ReservedMenuItemForEvent(event);
-  if (!reserved) return NO;
-  if ([reserved.identifier isEqualToString:@"solara.command.closeTab"]) {
+- (BOOL)performShortcut:(NSMenuItem *)item event:(NSEvent *)event {
+  if ([item.identifier isEqualToString:@"solara.command.closeTab"]) {
     [_coreWindow close];
     return YES;
   }
   return [NSApp.mainMenu performKeyEquivalent:event];
+}
+
+- (BOOL)window:(SolaraCoreWindow *)window preHandleKeyEvent:(NSEvent *)event {
+  NSMenuItem *item = ShortcutMenuItemForEvent(event);
+  __weak SolaraCorePopupWindow *weakSelf = self;
+  return item && PerformsShortcutBeforePage(event, item, ^BOOL {
+           return [weakSelf performShortcut:item event:event];
+         });
+}
+
+- (BOOL)window:(SolaraCoreWindow *)window handleKeyEvent:(NSEvent *)event {
+  NSMenuItem *item = ShortcutMenuItemForEvent(event);
+  if (!item) return NO;
+  if (KeepsUnhandledSharedKeyInPage(window.window, event)) return YES;
+  if (![item.identifier isEqualToString:@"solara.command.closeTab"]) return NO;
+  [_coreWindow close];
+  return YES;
 }
 
 @end
@@ -2567,6 +2624,14 @@ NSView *ACWindowRootView(NSWindow *window) {
 
 + (BOOL (^)(NSWindow *, NSEvent *))refusesUnhandledKeyHandler {
   return gRefusesUnhandledKey;
+}
+
++ (void)setKeyPrecedenceHandler:(NSString *(^)(NSMenuItem *))handler {
+  gKeyPrecedence = [handler copy];
+}
+
++ (NSString *(^)(NSMenuItem *))keyPrecedenceHandler {
+  return gKeyPrecedence;
 }
 
 + (void)setFocusClaimedElsewhereHandler:(BOOL (^)(NSWindow *, NSView *))handler {

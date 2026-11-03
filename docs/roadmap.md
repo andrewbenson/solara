@@ -28,6 +28,14 @@ backlog, and check this file against the release notes.
 | Icons-only sidebar rail, 84 pt: drag-to-snap, View menu and Settings toggle, hover × to close, loading and audio badges, address bar as a magnifier | r14 | drafted (work/r14/rail), not landed |
 | Folder and group popovers, footer profile switcher, the hidden sidebar's peek in rail mode | — | planned |
 
+## 0.3.0: the CLI and Raycast, revamped
+
+| Item | Owner | Status |
+|---|---|---|
+| Revamp the `solara` command (apps/cli, docs/cli.md): scope to be set with the owner | — | planned |
+| Revamp the Raycast extension (extras/raycast-solara) against the revamped CLI | — | planned |
+| Publish the extension on the Raycast Store: meet its review guidelines and submit to raycast/extensions (a public PR in another project, so it needs the owner's OK at submission) | — | planned |
+
 ## 1.0.0: all Swift
 
 React Native and Expo are gone: the app is Swift on SolaraCore, with no JS runtime, no Hermes, no Metro and no

@@ -1,8 +1,8 @@
 # Roadmap
 
 What ships in the next few versions. The owner decides what moves onto it; everything unscheduled stays in
-[backlog.md](backlog.md). Statuses: planned → in progress → landed (hash) → shipped (version). A cut item stays here
-with its reason until the version ships.
+[backlog.md](backlog.md). Statuses: planned → in progress → landed (hash) → shipped (version). An item that moves to
+another version leaves this one; a dropped item goes back to the backlog.
 
 At each release, mark that version's items shipped, move anything unfinished to the next version or back to the
 backlog, and check this file against the release notes.
@@ -19,7 +19,6 @@ backlog, and check this file against the release notes.
 | Alert re-scan and the approved dismissals (#6, #7, #34, #105, #106, #136) | planned |
 | Perf ratchet runs again ("dev harness never answered" on 0.1.2 and 0.1.3) | planned |
 | Fixes from the owner's two-Mac sync-join test of 0.1.3 | waiting on the test |
-| Icons-only sidebar | cut 2026-11-03: too costly for 0.1.4; moved to 0.2.0 |
 
 ## 0.2.0: the sidebar your way, and a fresh engine
 

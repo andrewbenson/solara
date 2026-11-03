@@ -90,6 +90,7 @@ const INSTRUMENT = [
     ['import { searchUrlPrefix } from "./settings";', 'import { searchUrlPrefix as __searchUrlPrefix } from "./settings";\nconst searchUrlPrefix = (settings) => { const out = __searchUrlPrefix(settings); if (globalThis.__replayCalls) globalThis.__replayCalls.prefix = out; return out; };'],
   ]],
   ["/src/store/syncOrigin.ts", "globalThis.__replayOrderChoices = { read: () => remote };"],
+  ["/src/store/pinOrderChoices.ts", "globalThis.__replayNotesOrderChoices = true;"],
   ["/src/sync/redesignSwitch.ts", "globalThis.__replayRedesign = syncRedesign;"],
   ["/src/store/browser.ts", "", [["export const storeTransaction = transactions.transaction;", "export const storeTransaction = (run) => (globalThis.__replayTransaction ? globalThis.__replayTransaction(run, transactions.transaction) : transactions.transaction(run));"]]],
   ["/src/lib/chromeTabs.ts", "globalThis.__replayChromeTabs = { read: () => ({ strips: [...mirror.values()], lastRev, seen: [...seen], inflight: Object.fromEntries(inflight), groups: Object.fromEntries(groups), tried: Object.fromEntries(tried), changedAt: Object.fromEntries(changedAt), madeInFront: Object.fromEntries(madeInFront) }) };\nconst sendTabStripCommand = (command) => { const cmd = __sendTabStripCommand(command); globalThis.__replayCalls?.sent?.push([command, cmd]); return cmd; };\nfunction receive(tx) { return globalThis.__replayCommand ? globalThis.__replayCommand(\"stripTransaction\", [tx], () => __replayReceiveImpl(tx)) : __replayReceiveImpl(tx); }\nfunction project(s) { return globalThis.__replayCommand ? globalThis.__replayCommand(\"projectStrips\", [], () => __replayProjectImpl(s)) : __replayProjectImpl(s); }", [
@@ -188,7 +189,7 @@ function tileFolderMemory() {
 
 function readConfig() {
   const listeners = ["forgetClosedPrivateWindows", "settleNesting", "livePinTable", "settlePeeks", "mirror"];
-  if (globalThis.__replayOrderChoices) listeners.push("noteOrderChoices");
+  if (globalThis.__replayNotesOrderChoices) listeners.push("noteOrderChoices");
   if (globalThis.__replayPersistStarted) listeners.push("forgetClosedIncognito");
   return { handOffPinsImmediately: globalThis.__replayTabs?.immediateHandoff() ?? true, listeners };
 }

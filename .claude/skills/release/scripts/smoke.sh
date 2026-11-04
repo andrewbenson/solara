@@ -31,6 +31,9 @@ cleanup() {
   [ -n "${pid:-}" ] && kill -KILL "$pid" 2>/dev/null || true
   [ -n "$logger" ] && { kill "$logger"; wait "$logger"; } 2>/dev/null || true
   [ -n "$server" ] && { kill "$server"; wait "$server"; } 2>/dev/null || true
+  if [ "${status:-0}" != 0 ] && [ -f "$work/data/app.out.log" ] && [ -d "$dist" ]; then
+    cp "$work/data/app.out.log" "$dist/smoke-app.out.log" && echo "kept the smoke instance's log: $dist/smoke-app.out.log" >&2
+  fi
   rm -rf "$work"
 }
 trap cleanup EXIT

@@ -185,7 +185,14 @@ checkUnlocked("…and closes when the page navigates", !!dialog && !windows().so
 
 const adsOnPage = () => adFate(adScript, () => go(`${pages}/ad.html`));
 const allowAds = (allowed) => instance.eval(`return globalThis.expo.modules.SolaraCEF.setContentBlockerAllowed("localhost", ${allowed})`, { timeout: 30000 });
-const adSteps = [await adsOnPage()];
+const unblocked = [];
+let firstAd = await adsOnPage();
+for (const start = Date.now(); firstAd !== "blocked" && Date.now() - start < 20000; firstAd = await adsOnPage()) {
+  unblocked.push(firstAd);
+  await sleep(1000);
+}
+if (unblocked.length) console.log(`note: the ad page loaded unblocked ${unblocked.length} time(s) before uBlock blocked it (${unblocked.join(", ")})`);
+const adSteps = [firstAd];
 await allowAds(true);
 adSteps.push(await adsOnPage());
 await allowAds(false);

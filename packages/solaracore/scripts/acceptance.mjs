@@ -60,7 +60,7 @@ const usesPageA = [
   "save-page", "activate-request", "extension-popup-and-panel", "print-preview",
   "extension-prompts", "traffic-lights-after-profile-switch", "extension-configure",
   "private-windows-create", "extension-installed-bubble", "popup-window", "popup-window-permission", "popup-origin-strip", "autofill-save-prompts",
-  "settings-services", "download-navigation", "page-events", "page-background", "external-app-answer",
+  "settings-services", "download-navigation", "page-events", "page-background", "appearance-reaches-pages", "external-app-answer",
   "notifications", "now-playing", "media-state", "auto-picture-in-picture", "pip-window", "page-focus", "page-press-split",
   "fullscreen-tab-switch", "fullscreen-native", "escape-in-window-fullscreen", "fullscreen-transition-picture", "fullscreen-hidden-page", "fullscreen-split-sibling",
   "fullscreen-pip", "autofill-suggestions", "images", "extension-surfaces", "frozen", "discard",
@@ -4250,6 +4250,27 @@ try {
     if (!near(darkScheme, [18, 18, 18, 255])) throw new Error(`the color-scheme: dark page isn't on Chrome's dark canvas: ${JSON.stringify(result)}`);
     if (!near(painted, [60, 60, 60, 255])) throw new Error(`the painted page shows ${JSON.stringify(painted)}`);
     return result;
+  });
+
+  await check("appearance-reaches-pages", async () => {
+    const shell = "globalThis.expo.modules.SolaraShell";
+    await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
+    await until("A shown", async () => (await state()).active === first.id);
+    const prefersDark = async () => (await cdp(await pageFor(first.id, `${base}/a`), "Runtime.evaluate", { expression: "matchMedia('(prefers-color-scheme: dark)').matches", returnByValue: true })).result?.value;
+    const seen = [];
+    try {
+      for (const mode of ["light", "dark", "light"]) {
+        const wantDark = mode === "dark";
+        await evalApp(`return ${shell}.setAppearance("${mode}")`);
+        await until(`the app in ${mode}`, async () => (await evalApp(`return ${shell}.isDarkAppearance()`)) === wantDark, 5000);
+        const followed = await until(`the page's prefers-color-scheme to follow ${mode}`, async () => (await prefersDark()) === wantDark, 5000).then(() => true, () => false);
+        seen.push({ mode, pagePrefersDark: await prefersDark() });
+        if (!followed) throw new Error(`the app is ${mode} but the page still answers prefers-color-scheme: dark = ${!wantDark}: ${JSON.stringify(seen)}`);
+      }
+    } finally {
+      await evalApp(`return ${shell}.setAppearance("auto")`).catch(() => null);
+    }
+    return seen;
   });
 
   await check("external-app-answer", async () => {

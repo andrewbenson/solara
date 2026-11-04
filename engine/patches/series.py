@@ -155,6 +155,28 @@ def is_applied(step, tree):
         run(["patch", "-p1", "--dry-run", "-R", "-s", "-f", "-i", step.patch], cwd).returncode == 0
 
 
+def file_paths(step):
+    return {path for path, is_dir in step.paths() if not is_dir}
+
+
+def applied_under_later(steps, index, tree):
+    step = steps[index]
+    paths = file_paths(step)
+    later = []
+    for other in steps[index + 1:]:
+        if other.kind == "chromium" and paths & file_paths(other):
+            later.append(other)
+            paths |= file_paths(other)
+    if not later:
+        return False
+    with tempfile.TemporaryDirectory(prefix="ac-series-applied-") as scratch:
+        for path in paths:
+            copy_path(tree, scratch, path, False)
+        for other in reversed(later):
+            run(["git", "apply", "-R", "--whitespace=nowarn", other.patch], scratch)
+        return is_applied(step, scratch)
+
+
 def phase_of(step):
     return "chromium"
 
@@ -203,10 +225,11 @@ def cmd_files(args):
 
 
 def cmd_apply(args):
-    for step in read_series():
+    steps = read_series()
+    for index, step in enumerate(steps):
         if args.phase and phase_of(step) != args.phase:
             continue
-        if step.kind != "layer" and is_applied(step, SRC):
+        if step.kind != "layer" and (is_applied(step, SRC) or applied_under_later(steps, index, SRC)):
             print(f"already applied {step.name}")
             continue
         error = apply_step(step, SRC, strict=False)

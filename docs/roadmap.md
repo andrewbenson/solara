@@ -62,14 +62,14 @@ backlog, and check this file against the release notes.
 
 | Item | Status |
 |---|---|
-| Fixes from the owner's two-Mac sync-join test of 0.1.3 | waiting on the test |
-| Engine: Chromium 156.0.8078.79 or newer (Chrome stable security updates; we ship .47), built on the Hill Studio's own Chromium checkout. Owner: build there and ship in 0.2.2 (2026-11-03) | planned |
-| GitHub security alerts cleared: Dependabot (image-size, minimatch, deepmerge) bumped, the omnibox quick-create regex no longer slows on crafted input, test-script CodeQL alerts fixed or dismissed | in progress: CodeQL #201 (quick-create regex) and #200 fixed in 1161a442 (shipped in 0.2.1); the build-time Dependabot alerts (no usable fix) and the test-only CodeQL alerts wait on the owner's dismissal |
+| Engine: Chromium 156.0.8078.79 or newer (Chrome stable security updates; we ship .47), built on the Hill Studio's own Chromium checkout. Owner: build there and ship in 0.2.2 (2026-11-03) | shipped (0.2.2): 156.0.8078.79 with Helium 0.20.3, prebuilt engine 464d76967fba (12b9dc82) |
 
 ## 0.3.0: the CLI and Raycast revamped, and tabs that cost less
 
 | Item | Status |
 |---|---|
+| Fixes from the owner's two-Mac sync-join test of 0.1.3 | waiting on the test |
+| GitHub security alerts cleared: Dependabot (image-size, minimatch, deepmerge) bumped, the omnibox quick-create regex no longer slows on crafted input, test-script CodeQL alerts fixed or dismissed | in progress: CodeQL #201 (quick-create regex) and #200 fixed in 1161a442 (shipped in 0.2.1); the build-time Dependabot alerts (no usable fix) and the test-only CodeQL alerts wait on the owner's dismissal |
 | Revamp the `solara` command (apps/cli, docs/cli.md): scope to be set with the owner; its connection to the app is built in Swift (settings and keybindings from files, a local control socket, event hooks), not on the JavaScript side | planned |
 | Revamp the Raycast extension (extras/raycast-solara) against the revamped CLI | planned |
 | Publish the extension on the Raycast Store: meet its review guidelines and submit to raycast/extensions (a public PR in another project, so it needs the owner's OK at submission) | planned |

@@ -1,6 +1,7 @@
 #import "SolaraCoreServices.h"
 #import "SolaraCoreInternal.h"
 #import "SolaraCoreHost.h"
+#import <QuartzCore/QuartzCore.h>
 
 #include <utility>
 
@@ -240,6 +241,7 @@ NSString *const kOffDirective = @"/^(?:solara-blocking-off|)/";
 bool gDefaultSettled = false;
 bool gLaunching = true;
 constexpr double kSettleAfterLaunchSeconds = 1.5;
+constexpr double kHoldDeadlineSeconds = 3;
 
 bool SettleWithoutPage() {
   const char *pagelessSettle = getenv("SOLARA_BLOCKER_PAGELESS_SETTLE");
@@ -614,18 +616,18 @@ void DefaultSettled() {
 
 constexpr int kInheritAttempts = 6;
 
-void Inherit(NSString *profile, int attempt, void (^first)(NSString *error)) {
-  first = [first copy];
+void Inherit(NSString *profile, int attempt, void (^finished)(NSString *error)) {
+  finished = [finished copy];
   FollowDefault(@[ profile ], ^(NSString *error) {
-    if (first) first(error);
     const bool gone = !solaracore_host::LoadedProfile(profile) || solaracore_host::IsDeletedProfile(profile) ||
                       ![LoadedProfiles() containsObject:profile];
     if (!error || gone || attempt + 1 >= kInheritAttempts) {
       if (error && !gone) NSLog(@"[blocker] profile \"%@\" didn't take the default profile's settings: %@", profile, error);
+      if (finished) finished(error);
       return;
     }
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)((1 << attempt) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-      Inherit(profile, attempt + 1, nil);
+      Inherit(profile, attempt + 1, finished);
     });
   });
 }
@@ -634,14 +636,23 @@ void LoadHeld(NSString *profile) {
   SolaraCoreProfile *p = solaracore_host::LoadedProfile(profile);
   const bool isDefault = profile.length == 0;
   const bool firstLoad = p && ![LoadedProfiles() containsObject:profile];
-  const bool hold = firstLoad && [p respondsToSelector:@selector(holdNavigationsUntilRulesetsOf:)] &&
-                    (isDefault ? LiteSettingsPending(p) : !gLaunching);
+  const bool hold = firstLoad && [p respondsToSelector:@selector(holdNavigationsUntilRulesetsOf:)];
   if (hold) [p holdNavigationsUntilRulesetsOf:ExtensionId()];
+  const CFTimeInterval heldSince = CACurrentMediaTime();
+  __block bool released = false;
   void (^release)(NSString *) = ^(NSString *why) {
-    if (!hold) return;
+    if (!hold || released) return;
+    released = true;
+    NSLog(@"[blocker] profile \"%@\" navigation hold released after %.0f ms: %@", profile,
+          (CACurrentMediaTime() - heldSince) * 1000, why ?: @"ready");
     if (!why && [p respondsToSelector:@selector(releaseNavigationHoldReady)]) [p releaseNavigationHoldReady];
-    else [p releaseNavigationHold:why ?: @"uBlock Origin is ready"];
+    else [p releaseNavigationHold:why];
   };
+  if (hold) {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kHoldDeadlineSeconds * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+      release(@"app deadline");
+    });
+  }
   void (^load)(void) = ^{
     LoadIntoProfile(profile, ^(NSString *error) {
       if (error) {

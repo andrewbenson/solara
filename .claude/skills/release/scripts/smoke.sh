@@ -263,9 +263,9 @@ mkdir -p "$work/data"
 printf '{"version":1,"lastVersion":"%s","pending":null}' "$previous" > "$work/data/release-notes.json"
 pages="http://localhost:$pages_port"
 tab() {
-  local pinned="${4:-false}" home=null
+  local pinned="${4:-false}" home=null window="${5:-w-smoke}"
   [ "$pinned" = true ] && home="\"$3\""
-  printf '{"id":"%s","windowId":"w-smoke","profileId":"%s","url":"%s","title":"","favicon":null,"pinned":%s,"muted":false,"zoom":1,"customTitle":null,"customIcon":null,"pinnedUrl":%s,"openerId":null,"createdAt":1,"lastActiveAt":1}' "$1" "$2" "$3" "$pinned" "$home"
+  printf '{"id":"%s","windowId":"%s","profileId":"%s","url":"%s","title":"","favicon":null,"pinned":%s,"muted":false,"zoom":1,"customTitle":null,"customIcon":null,"pinnedUrl":%s,"openerId":null,"createdAt":1,"lastActiveAt":1}' "$1" "$window" "$2" "$3" "$pinned" "$home"
 }
 cat > "$work/data/session.json" <<JSON
 {"version":2,
@@ -336,6 +336,28 @@ fi
 logger=""
 kill -KILL "$pid" 2>/dev/null || true
 pid=""
+cat > "$work/data/session.json" <<JSON
+{"version":2,
+ "profiles":{"default":{"id":"default","name":"Personal","color":"plum","icon":null,"createdAt":0},
+             "p-work":{"id":"p-work","name":"Work","color":"blue","icon":null,"createdAt":1}},
+ "profileOrder":["default","p-work"],
+ "windows":[{"id":"w-smoke","profileId":"p-work","incognito":false,"tabIds":["t-ad-work"],
+             "activeTabIds":{"p-work":"t-ad-work"},"sidebarOpen":true,"frame":[80,80,1280,800],"createdAt":1},
+            {"id":"w-home","profileId":"default","incognito":false,"tabIds":["t-ad-home"],
+             "activeTabIds":{"default":"t-ad-home"},"sidebarOpen":true,"frame":[120,120,1280,800],"createdAt":2}],
+ "windowOrder":["w-smoke","w-home"],"focusedWindowId":"w-smoke",
+ "tabs":[$(tab t-ad-work p-work "$pages/ad.html?restored-work"),$(tab t-ad-home default "$pages/ad.html?restored-home" false w-home)],
+ "groups":[],"splits":[],"closedTabs":[],"closedWindows":[],"closedGroups":[],"cleanedTabs":[]}
+JSON
+relaunched="$("$root/scripts/agent/ac" launch "$run_app" --data "$work/data" --port "$port" --js none --no-wait \
+  --switch --disable-backgrounding-occluded-windows)" || { echo "FAIL  the app starts again on its own data"; status=1; }
+pid="$(sed -n 's/^pid \([0-9]*\) .*/\1/p' <<<"${relaunched:-}")"
+if [ -n "$pid" ]; then
+  SMOKE_DATA="$work/data" node "$here/restored-ad.mjs" "$pages" || status=1
+  AC_KEEP_DATA=1 "$root/scripts/agent/ac" quit "$work/data" >/dev/null 2>&1 || true
+  kill -KILL "$pid" 2>/dev/null || true
+  pid=""
+fi
 node "$root/packages/solaracore/scripts/popup-check.mjs" "$run_app" "$work/popup-check" || status=1
 codesign --verify --deep --strict "$run_app" && echo "PASS  bundle still sealed after running" || { echo "FAIL  running the app changed its bundle"; status=1; }
 if [ "${SOLARA_RELEASE_UNSIGNED:-0}" = 1 ] && [ "$previous" = none ]; then

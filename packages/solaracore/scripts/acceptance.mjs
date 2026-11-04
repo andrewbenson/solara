@@ -2196,7 +2196,7 @@ try {
     const tab = await openTab(`${base}/d?discard`, "Page D", true);
     const browser = await browserOf(tab.id);
     const renderer = async () => (await evalApp(`return globalThis.expo.modules.SolaraCEF.listTasks()`)).some((t) => t.browserIds?.includes(Number(browser)));
-    const flags = () => evalApp(`const l = globalThis.acLifecycle.state(); return { sleeping: !!l.discarded["${tab.id}"], loaded: l.loaded.includes("${tab.id}") }`);
+    const flags = () => evalApp(`const l = globalThis.acLifecycle.state(); return { sleeping: !!ac.store.getState().live["${tab.id}"]?.discarded, loaded: l.loaded.includes("${tab.id}") }`);
     const raw = (opts = "") => evalApp(`return ac.webviews.get("${tab.id}").discard(${opts})`);
     try {
       const out = {};
@@ -2209,7 +2209,7 @@ try {
       const other = await openTab(`${base}/e?refused`, "Page E", true);
       try {
         out.refusedSlept = await evalApp(`const h = ac.webviews.get("${other.id}"); h.discard = () => Promise.resolve("refused"); return globalThis.acLifecycle.sleepTab("${other.id}")`);
-        out.refusedFlags = await evalApp(`return !!globalThis.acLifecycle.state().discarded["${other.id}"]`);
+        out.refusedFlags = await evalApp(`return !!ac.store.getState().live["${other.id}"]?.discarded`);
       } finally {
         await closeTab(other.id);
       }
@@ -2257,7 +2257,7 @@ try {
     const awake = async (id) => {
       await evalApp(`ac.actions.switchToTab("${id}"); return true`);
       await until(`${id} reloaded`, async () => {
-        const l = await evalApp(`const l = globalThis.acLifecycle.state(); return { sleeping: !!l.discarded["${id}"], loaded: l.loaded.includes("${id}") }`);
+        const l = await evalApp(`const l = globalThis.acLifecycle.state(); return { sleeping: !!ac.store.getState().live["${id}"]?.discarded, loaded: l.loaded.includes("${id}") }`);
         const tab = (await state()).tabs.find((t) => t.id === id);
         return !l.sleeping && l.loaded && tab && !tab.loading ? true : null;
       }, 15000);

@@ -43,7 +43,7 @@ backlog, and check this file against the release notes.
 | A full emoji picker for profile, tab and folder icons (search, categories, symbols), and names that save on click-away; built in Swift, replacing the React Native icon pickers | landed 8e7f5d12 |
 | On a WebKit page, the pinned extensions give way to a WebKit pill (extensions, the ad blocker and password autofill don't run there), with Open in Chromium; the icons come back on Chromium tabs. The pill and its popover in Swift | landed 5fb501c6 |
 | Going back to the New Tab page (⌘[ or a two-finger swipe) shows the New Tab page, not the command bar floating over the page you left | planned |
-| Arrowing through command bar suggestions fills the input with the highlighted address or search, editable before Enter; Escape or arrowing back up restores what you typed | planned |
+| Arrowing through command bar suggestions fills the input with the highlighted address or search, editable before Enter; Escape or arrowing back up restores what you typed | landed 6086ad50 |
 | Pinned extensions stay pinned (across quit and updates), and checking one in Pin Extensions pins only that one | planned |
 | The toolbar follows a site's light or dark theme-color when macOS switches appearance (it stayed on the dark colour) | planned |
 

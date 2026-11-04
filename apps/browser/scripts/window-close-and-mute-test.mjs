@@ -20,7 +20,8 @@ const rep = reporter(join(scratch, "window-close-and-mute-test.log"), { name: "w
 const server = createServer((req, res) => {
   const path = req.url.split("?")[0].slice(1) || "page";
   res.writeHead(200, { "content-type": "text/html" });
-  res.end(`<!doctype html><title>${path}</title><p>${path}</p>`);
+  const text = path.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+  res.end(`<!doctype html><title>${text}</title><p>${text}</p>`);
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const origin = `http://127.0.0.1:${server.address().port}`;

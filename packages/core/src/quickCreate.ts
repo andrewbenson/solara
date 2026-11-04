@@ -25,9 +25,12 @@ const QUICK_CREATE: readonly QuickCreate[] = [
 ];
 
 export function matchQuickCreate(query: string, limit = 3): QuickCreate[] {
-  const m = /^(?:new|create)(\s+(.*))?$/i.exec(query.trimStart());
-  if (!m || !m[1]) return [];
-  const rest = (m[2] ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  const text = query.trimStart();
+  const keyword = ["new", "create"].find((word) => text.slice(0, word.length).toLowerCase() === word);
+  if (!keyword || !/\s/.test(text.charAt(keyword.length))) return [];
+  const words = text.slice(keyword.length).trimStart();
+  if (/[\n\r\u2028\u2029]/.test(words)) return [];
+  const rest = words.trim().toLowerCase().replace(/\s+/g, " ");
   if (!rest) return QUICK_CREATE.slice(0, limit);
   const rank = (c: QuickCreate) => (c.aliases.includes(rest) ? 0 : c.aliases.some((a) => a.startsWith(rest)) ? 1 : Infinity);
   return QUICK_CREATE.map((c, order) => ({ c, r: rank(c), order }))

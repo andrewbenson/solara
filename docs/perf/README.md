@@ -74,6 +74,7 @@ before the rename hold `Solara.app` instead, so the commands below find the cont
 4. **Use a quiet machine.** Before starting, check `ps` for other agents' builds, benches and test instances. When
    the timing is what you're measuring, run one bench at a time.
    - Pick your own `--port`.
+   - On a Mac without the Developer ID identity (the Hill Studio), set `BENCH_SIGN_IDENTITY=-`: native-bench re-signs both copies ad hoc, without the team-only entitlements. Say "ad hoc copies on both sides" in the write-up.
    - Keep the display awake (`caffeinate -d`).
    - If the screen locks or the display sleeps, macOS stops giving windows display-link frames. Pages then paint
      about once a second. native-bench leaves those switches and new tabs out and counts them in the "samples

@@ -439,6 +439,18 @@ class Cdp {
   }
 }
 
+function withoutEntitlements(xml, keys) {
+  return keys.reduce((out, key) => {
+    const tag = `<key>${key}</key>`;
+    const start = out.indexOf(tag);
+    if (start < 0) return out;
+    const rest = out.slice(start + tag.length).trimStart();
+    const valueStart = out.length - rest.length;
+    const close = rest.startsWith("<array>") ? "</array>" : rest.startsWith("<string>") ? "</string>" : "/>";
+    return out.slice(0, start) + out.slice(valueStart + rest.indexOf(close) + close.length);
+  }, xml);
+}
+
 function prepareApp(app, out, bundle) {
   const copy = join(out, "Solara.app");
   rmSync(copy, { recursive: true, force: true });
@@ -446,12 +458,13 @@ function prepareApp(app, out, bundle) {
   execFileSync("cp", ["-Rc", app, copy]);
   cpSync(bundle, join(copy, "Contents/Resources/main.jsbundle"));
   const info = spawnSync("codesign", ["-dvv", app], { encoding: "utf8" }).stderr;
-  const identity = info.match(/^Authority=(.+)$/m)?.[1] ?? "-";
+  const identity = process.env.BENCH_SIGN_IDENTITY ?? info.match(/^Authority=(.+)$/m)?.[1] ?? "-";
   const entitlements = join(out, "entitlements.plist");
   const granted = execFileSync("codesign", ["-d", "--entitlements", "-", "--xml", app], { encoding: "utf8" });
   const marker = ["com.apple.security.cs.allow-dyld-environment-variables", "com.apple.security.cs.disable-library-validation"]
     .filter((key) => !granted.includes(`<key>${key}</key>`)).map((key) => `<key>${key}</key><true/>`).join("");
-  writeFileSync(entitlements, granted.replace(/<\/dict>\s*<\/plist>\s*$/, `${marker}</dict></plist>`));
+  const signable = identity === "-" ? withoutEntitlements(granted, ["com.apple.application-identifier", "com.apple.developer.team-identifier", "keychain-access-groups"]) : granted;
+  writeFileSync(entitlements, signable.replace(/<\/dict>\s*<\/plist>\s*$/, `${marker}</dict></plist>`));
   execFileSync("codesign", ["--force", "--sign", identity, "--timestamp=none", "--options", "runtime", "--entitlements", entitlements, copy], { stdio: "inherit" });
   writeFileSync(join(out, "prepared.json"), JSON.stringify({ app, bundle, date: new Date().toISOString() }));
   return copy;

@@ -93,6 +93,15 @@ const nativeWindow = async (name, accept) => {
     (state, end) => state.consistent && accept(state.windows.find((window) => window.id === "w1"), state, end));
   return snapshot;
 };
+const fillOf = (row) => {
+  if (row?.kind === "search") return row.bang ? null : row.query;
+  if (row?.kind !== "page") return null;
+  const scheme = /^https?:\/\//i.exec(row.url);
+  if (!scheme) return row.url;
+  const rest = row.url.slice(scheme[0].length);
+  return rest.indexOf("/") === rest.length - 1 ? rest.slice(0, -1) : rest;
+};
+const shownFor = (state) => (state.selected > 0 && fillOf(state.items[state.selected])) || state.typed + state.completion;
 const plainURL = (url) => typeof url === "string" && /^https?:\/\/[^/@]*\//i.test(url);
 const snapshotRowMatches = (row, item) => row?.kind === item.kind
   && row.tabId === (item.tabId ?? null)
@@ -299,19 +308,27 @@ try {
       let state = await type("Omni Open Fixture", (state) => state.typed === "Omni Open Fixture" && state.items.some((row) => row.tabId === "b"));
       assert.ok(state.items.some((row) => row.tabId === "b"));
       assert.ok(state.items.length > 1, "switch fixture offers multiple keyboard-selectable rows");
+      const typedValue = state.typed + state.completion;
       await key("PageUp");
       await observe("PageUp selects the first row", (state) => state.selected === 0);
       await key("ArrowDown");
-      await observe("Down advances the selected row", (state) => state.selected === 1);
+      const filled = await observe("Down advances the selected row and fills the input", (state) => state.selected === 1 && state.value === shownFor(state));
+      assert.equal(filled.typed, "Omni Open Fixture", "the typed text is kept while arrowing");
+      assert.equal(filled.value, fillOf(filled.items[1]) || typedValue, "the input follows the highlight");
       await key("ArrowUp");
-      state = await observe("Up returns to the first row", (state) => state.selected === 0);
+      state = await observe("Up returns to the first row and restores the typed text", (state) => state.selected === 0 && state.value === typedValue);
+      await key("ArrowDown");
+      await observe("Down fills again", (state) => state.selected === 1 && state.value === shownFor(state));
+      await key("Escape");
+      state = await observe("the first Escape restores the typed text and keeps the bar", (state) => state.selected === 0 && state.value === typedValue);
       const index = state.items.findIndex((row) => row.tabId === "b");
       assert.ok(index >= 0, "switch target remains in the current native list");
       for (let i = 0; i < index; i++) {
         await key("ArrowDown");
         await observe(`Down selects row ${i + 1}`, (state) => state.selected === i + 1);
       }
-      await observe("switch row selected", (state) => state.selected === index && state.items[state.selected]?.tabId === "b");
+      await observe("switch row selected and its address in the input", (state) => state.selected === index && state.items[state.selected]?.tabId === "b"
+        && (index === 0 ? state.value === typedValue : state.value === fillOf(state.items[index])));
       await key("Enter");
       await nativeWindow("switch landed", (window, snapshot) => window?.selectedTabId === "b" && isDeepStrictEqual([...window.tabIds].sort(), ["a", "b"])
         && isDeepStrictEqual(snapshot.tabs.map(({ id, url }) => ({ id, url })).sort((a, b) => a.id.localeCompare(b.id)),
@@ -323,7 +340,15 @@ try {
     });
     await check(`${surface.name}: Enter navigates with the intended tab disposition`, async () => {
       await open(surface);
-      await type(historyPrefix, (state) => state.typed === historyPrefix && state.items.some((row) => row.url === historyUrl && row.visited));
+      const completed = await type(historyPrefix, (state) => state.typed === historyPrefix && state.items.some((row) => row.url === historyUrl && row.visited));
+      const completedValue = completed.typed + completed.completion;
+      assert.notEqual(completedValue, historyPrefix, "the history row completes inline");
+      await key("ArrowDown");
+      const searchRow = await observe("Down fills the search row's query", (state) => state.selected === 1 && state.items[1]?.kind === "search");
+      assert.equal(searchRow.value, searchRow.items[1].query, "the input shows the highlighted search's query, without the inline completion");
+      assert.equal(searchRow.typed, historyPrefix);
+      await key("ArrowUp");
+      await observe("Up restores the typed text and its inline completion", (state) => state.selected === 0 && state.value === completedValue && state.completion === completed.completion);
       await key("Enter");
       await nativeWindow("Enter landed", (window, snapshot) => {
         const tab = snapshot.tabs.find((tab) => tab.id === window?.selectedTabId);

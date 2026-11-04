@@ -129,6 +129,9 @@ public final class HeroBarModel {
   @ObservationIgnored public private(set) var scopeFrom: String
   public private(set) var result = SuggestionResult(items: [], completion: "")
   public private(set) var shown = ""
+  public private(set) var filled: String?
+  @ObservationIgnored private var filledKey: String?
+  @ObservationIgnored private var typedSelection: TextSelection?
   public private(set) var listAway = false
   @ObservationIgnored public private(set) var selection: TextSelection
   @ObservationIgnored private var remote: (text: String, list: [String]) = ("", [])
@@ -200,7 +203,8 @@ public final class HeroBarModel {
     }
     return result.items
   }
-  public var value: String { typed + shown }
+  public var value: String { filled ?? typed + shown }
+  var home: Int { idle ? -1 : 0 }
   public var selectedIndex: Int { selected < 0 && idle ? -1 : min(max(selected, 0), items.count - 1) }
   public var current: SolaraOmnibox.Suggestion? { items.indices.contains(selectedIndex) ? items[selectedIndex] : nil }
 
@@ -304,8 +308,10 @@ public final class HeroBarModel {
   public func textChanged(_ next: String, edit: EditContext?) {
     keyAt = .now
     events.journey(.keystroke)
-    let suppress = InlineRules.preventsInline(typed: typed, shown: shown, next: next, edit: edit)
-    if scope == nil, let bySpace = keywordBySpace(typed, next), let keyword = keywordScope(bySpace.keyword) {
+    let before = filled
+    let suppress = InlineRules.preventsInline(typed: before ?? typed, shown: before == nil ? shown : "", next: next, edit: edit)
+    clearFill()
+    if scope == nil, let bySpace = keywordBySpace(before ?? typed, next), let keyword = keywordScope(bySpace.keyword) {
       enterScope(keyword, from: bySpace.from)
       return
     }
@@ -320,6 +326,7 @@ public final class HeroBarModel {
 
   public func selectionChanged(_ next: TextSelection) {
     selection = next
+    if filled != nil { return }
     if InlineRules.acceptsCompletion(typed: typed, shown: shown, selection: next) {
       typed = value
       shown = ""
@@ -333,6 +340,11 @@ public final class HeroBarModel {
   public func key(_ k: HeroKey) -> Bool {
     switch k.name {
     case .escape:
+      if filled != nil {
+        selected = home
+        restoreTyped()
+        return true
+      }
       if scope != nil {
         leaveScope(nil)
       } else if !hero {
@@ -353,9 +365,11 @@ public final class HeroBarModel {
       return true
     case .pageUp:
       selected = 0
+      followHighlight()
       return true
     case .pageDown:
       selected = max(0, items.count - 1)
+      followHighlight()
       return true
     case .delete:
       guard k.shift, case .page(let url, _, _, let tabId, _, let visited)? = current, visited, tabId == nil else { return false }
@@ -363,7 +377,11 @@ public final class HeroBarModel {
       return true
     case .tab, .backspace:
       if k.name == .tab && k.ctrl { return false }
-      if k.name == .backspace && !asksForBackspace(scope) { return false }
+      if k.name == .backspace && (filled != nil || !asksForBackspace(scope)) { return false }
+      if k.name == .tab && filled != nil {
+        move(k.shift ? -1 : 1)
+        return true
+      }
       let mods = SiteSearchKeyModifiers(shiftKey: k.shift, altKey: k.alt, metaKey: k.meta, ctrlKey: k.ctrl)
       let state = SiteSearchKeyState(typed: typed, completion: shown, scope: scope, offered: tabScope, scopeFrom: scopeFrom)
       switch siteSearchKey(k.name == .tab ? "Tab" : "Backspace", mods, state) {
@@ -374,6 +392,7 @@ public final class HeroBarModel {
         leaveScope(text)
         return true
       case .accept(let text)?:
+        clearFill()
         typed = text
         shown = ""
         suppressCompletion = true
@@ -388,7 +407,7 @@ public final class HeroBarModel {
         return false
       }
     case .enter:
-      let text = jsTrim(typed)
+      let text = jsTrim(filled ?? typed)
       if k.meta && k.shift {
         forceSearch()
         return true
@@ -446,6 +465,7 @@ public final class HeroBarModel {
       if choice == .cut { events.copy(picked) }
       let insert = choice == .paste ? sanitizePaste(events.readClipboard()) : ""
       let next = String(decoding: units[..<lo], as: UTF16.self) + insert + String(decoding: units[hi...], as: UTF16.self)
+      clearFill()
       typed = next
       shown = ""
       edited = true
@@ -462,6 +482,7 @@ public final class HeroBarModel {
   }
 
   public func reset() {
+    clearFill()
     typed = ""
     shown = ""
     edited = false
@@ -486,6 +507,10 @@ public final class HeroBarModel {
 
   func choose(_ s: SolaraOmnibox.Suggestion?, _ disposition: Disposition, byEnter: Bool) {
     invalidateQueryProbe()
+    if byEnter, let filled, s.flatMap(OmniboxFill.text(for:)) != filled {
+      events.chosen(nil)
+      return go(resolveInput(filled, search: engine.url), disposition)
+    }
     if s != nil || scope == nil { events.chosen(s) }
     let typedSearch: Bool = {
       guard let s else { return true }
@@ -517,6 +542,7 @@ public final class HeroBarModel {
     case .calc(_, let result, let url):
       if disposition != .current { return go(url, disposition) }
       events.copy(result)
+      clearFill()
       typed = result
       shown = ""
       suppressCompletion = true
@@ -544,12 +570,13 @@ public final class HeroBarModel {
   }
 
   func forceSearch() {
-    let text = jsTrim(typed)
+    let text = jsTrim(filled ?? typed)
     guard !text.isEmpty else { return }
     go(scope.map { scopedSearchUrl($0, text, engine) } ?? searchUrl(engine, text))
   }
 
   func enterScope(_ next: SearchScope, from: String) {
+    clearFill()
     scopeFrom = from
     scope = next
     typed = ""
@@ -562,6 +589,7 @@ public final class HeroBarModel {
   }
 
   func leaveScope(_ restore: String?) {
+    clearFill()
     scope = nil
     if let restore {
       typed = restore
@@ -582,9 +610,37 @@ public final class HeroBarModel {
     }
     if selectedIndex < 0 {
       selected = delta > 0 ? 0 : n - 1
+    } else {
+      selected = (selectedIndex + delta + n) % n
+    }
+    followHighlight()
+  }
+
+  func followHighlight() {
+    guard let next = OmniboxFill.shown(selected: selectedIndex, home: home, items: items) else {
+      if filled != nil { restoreTyped() }
       return
     }
-    selected = (selectedIndex + delta + n) % n
+    if filled == nil { typedSelection = selection }
+    filled = next
+    filledKey = current.map(suggestionKey)
+    selection = .caret(next.utf16.count)
+    writeField()
+  }
+
+  func restoreTyped() {
+    guard filled != nil else { return }
+    filled = nil
+    filledKey = nil
+    selection = typedSelection ?? .caret(value.utf16.count)
+    typedSelection = nil
+    writeField()
+  }
+
+  func clearFill() {
+    filled = nil
+    filledKey = nil
+    typedSelection = nil
   }
 
   func scopeSources() -> ScopeSources {
@@ -654,6 +710,7 @@ public final class HeroBarModel {
       if idle { _ = items }
       result = SuggestionResult(items: [], completion: "")
       shown = ""
+      refollowHighlight()
       return
     }
     let s = settings()
@@ -676,11 +733,28 @@ public final class HeroBarModel {
       bangs: table)
     result = sources.index(profileId).suggest(typed, tabs: sources.tabs(profileId), options: options)
     shown = suppressCompletion || scope != nil ? "" : result.completion
+    refollowHighlight()
+  }
+
+  private func refollowHighlight() {
+    guard let key = filledKey else { return }
+    if let at = items.firstIndex(where: { suggestionKey($0) == key }) {
+      selected = at
+    } else if let next = OmniboxFill.shown(selected: selectedIndex, home: home, items: items) {
+      filled = next
+      filledKey = current.map(suggestionKey)
+      selection = .caret(next.utf16.count)
+    } else {
+      filled = nil
+      filledKey = nil
+      selection = typedSelection ?? .caret((typed + shown).utf16.count)
+      typedSelection = nil
+    }
   }
 
   private func writeField() {
     let full = value
-    if !shown.isEmpty { selection = TextSelection(start: typed.utf16.count, end: full.utf16.count) }
+    if filled == nil && !shown.isEmpty { selection = TextSelection(start: typed.utf16.count, end: full.utf16.count) }
     let length = full.utf16.count
     selection = TextSelection(start: min(selection.start, length), end: min(selection.end, length))
     field?.show(value: full, selection: selection)

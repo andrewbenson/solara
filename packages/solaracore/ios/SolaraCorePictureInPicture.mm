@@ -344,6 +344,10 @@ typedef NS_ENUM(NSInteger, ACPiPEdge) { ACPiPEdgeNone = 0, ACPiPEdgeLeft = -1, A
                                               object:window
                                                queue:nil
                                           usingBlock:^(NSNotification *) { [weakSelf detach]; }]];
+    [_observers addObject:[center addObserverForName:NSApplicationDidChangeScreenParametersNotification
+                                              object:nil
+                                               queue:nil
+                                          usingBlock:^(NSNotification *) { [weakSelf screensChanged]; }]];
     self.keepOnTop = KeepOnTop();
   }
   return self;
@@ -455,11 +459,10 @@ typedef NS_ENUM(NSInteger, ACPiPEdge) { ACPiPEdgeNone = 0, ACPiPEdgeLeft = -1, A
 }
 
 - (void)rescueIfLost {
-  if (_stashedEdge != ACPiPEdgeNone || _animating || _swiping || !_window.visible) return;
+  if (_stashedEdge != ACPiPEdgeNone || _animating || _swiping || !_window.visible || [self edgeBeyond] != ACPiPEdgeNone) return;
   const auto screens = ThrowScreens();
-  const auto rescued =
-      solaracore_pip_throw::Rescue(ThrowRect(_window.frame), screens.data(), (int)screens.size(), ScreenIndex([self homeScreen]));
-  const NSRect target = NSMakeRect(rescued.x, rescued.y, rescued.w, rescued.h);
+  const auto landed = solaracore_pip_throw::Land(ThrowRect(_window.frame), screens.data(), (int)screens.size());
+  const NSRect target = NSMakeRect(landed.x, landed.y, landed.w, landed.h);
   if (!NSEqualRects(target, _window.frame)) [self animateTo:target];
 }
 
@@ -469,6 +472,16 @@ typedef NS_ENUM(NSInteger, ACPiPEdge) { ACPiPEdgeNone = 0, ACPiPEdgeLeft = -1, A
   frame.origin.x = edge == ACPiPEdgeRight ? NSMaxX(visible) - kPeek : NSMinX(visible) - NSWidth(frame) + kPeek;
   frame.origin.y = MIN(MAX(NSMinY(frame), NSMinY(visible)), NSMaxY(visible) - NSHeight(frame));
   return frame;
+}
+
+- (void)screensChanged {
+  if (_stashedEdge != ACPiPEdgeNone && _stashScreen && [NSScreen.screens containsObject:_stashScreen]) {
+    [self animateTo:[self frameStashedAt:_stashedEdge]];
+    return;
+  }
+  if (_stashedEdge != ACPiPEdgeNone) [self setStashedEdge:ACPiPEdgeNone];
+  [self stopMotion];
+  [self rescueIfLost];
 }
 
 - (void)stashAt:(ACPiPEdge)edge {

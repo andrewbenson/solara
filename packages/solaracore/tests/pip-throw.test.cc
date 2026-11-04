@@ -523,6 +523,47 @@ int main() {
   }
 
   {
+    const Screen owner[] = {{{0, 0, 2304, 1296}, {0, 85, 2304, 1181}},
+                            {{2304, 0, 2304, 1296}, {2304, 0, 2304, 1296}},
+                            {{384, 1296, 1920, 1080}, {384, 1296, 1920, 1080}}};
+    const auto inside = [](Rect r, Rect v) { return r.x >= v.x && r.y >= v.y && r.maxX() <= v.maxX() && r.maxY() <= v.maxY(); };
+    const auto settled = [&](Rect r, const Screen *s, int n) {
+      for (int i = 0; i < n; i++)
+        if (inside(r, s[i].visible)) return true;
+      return false;
+    };
+    Rect up{900, 600, 480, 270};
+    for (int i = 0; i < 300; i++) up = DragStep(up, {0, 10}, owner, 3, 0);
+    CHECK(up.maxY() == 2376 && settled(up, owner, 3));
+    const Rect straddling{900, 1180, 480, 270};
+    const Rect intoAbove = Land(straddling, owner, 3);
+    CHECK(intoAbove.y == 1296 && intoAbove.x == 900 && settled(intoAbove, owner, 3));
+    const Rect intoPrimary = Land({900, 1100, 480, 270}, owner, 3);
+    CHECK(intoPrimary.maxY() == 1266 && settled(intoPrimary, owner, 3));
+    const Rect halfOff = Land({4400, 500, 480, 270}, owner, 3);
+    CHECK(halfOff.x == 4400 && halfOff.y == 500);
+    const Rect offTheBottom = Land({3000, -120, 480, 270}, owner, 3);
+    CHECK(offTheBottom.x == 3000 && offTheBottom.y == -120);
+    const Rect overTheDock = Land({900, 40, 480, 270}, owner, 3);
+    CHECK(overTheDock.y == 85 && overTheDock.x == 900);
+    const Rect mostlyGone = Land({4570, 500, 480, 270}, owner, 3);
+    CHECK(settled(mostlyGone, owner, 3) && mostlyGone.maxX() == 4608);
+    const Rect unplugged = Land({1000, 1800, 480, 270}, owner, 2);
+    const Rect across = Land({2100, 400, 480, 270}, owner, 3);
+    CHECK(across.x == 2100 && across.y == 400);
+    CHECK(settled(unplugged, owner, 2) && unplugged.maxY() == 1266);
+    Random random{11};
+    for (int i = 0; i < 2000; i++) {
+      const Rect r{random.uniform(-600, 5200), random.uniform(-400, 2700), std::round(random.uniform(240, 900)), std::round(random.uniform(135, 506))};
+      const int n = random.chance(0.2) ? 2 : 3;
+      const Rect landed = Land(r, owner, n);
+      const bool stayed = landed.x == r.x && landed.y == r.y;
+      CHECK(stayed ? Reachable(r, owner, n) && !InStrip(r, owner, n) && !StraddlesUnshared(r, owner, n) : settled(landed, owner, n));
+      CHECK(Reachable(landed, owner, n) && !InStrip(landed, owner, n));
+    }
+  }
+
+  {
     SpringState a = SpringAt(500, 0, 0);
     CHECK(Near(a.offset, 500) && Near(a.velocity, 0));
     a = SpringAt(0, 1000, 0);

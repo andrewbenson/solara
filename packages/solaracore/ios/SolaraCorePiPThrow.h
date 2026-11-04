@@ -220,6 +220,50 @@ inline Rect Rescue(Rect p, const Screen *screens, int count, int home = -1) {
   return {std::round(Settle(p.x, p.w, v.x, v.w)), std::round(Settle(p.y, p.h, v.y, v.h)), p.w, p.h};
 }
 
+inline bool Contains(Rect outer, Rect r) {
+  return r.x >= outer.x - 1e-9 && r.y >= outer.y - 1e-9 && r.maxX() <= outer.maxX() + 1e-9 && r.maxY() <= outer.maxY() + 1e-9;
+}
+
+inline double Overlap(Rect a, Rect b) {
+  const double w = std::min(a.maxX(), b.maxX()) - std::max(a.x, b.x), h = std::min(a.maxY(), b.maxY()) - std::max(a.y, b.y);
+  return w > 0 && h > 0 ? w * h : 0;
+}
+
+inline bool InStrip(Rect p, const Screen *screens, int count) {
+  for (int i = 0; i < count; i++) {
+    const Rect &f = screens[i].frame, &v = screens[i].visible;
+    const Rect strips[] = {{f.x, f.y, f.w, v.y - f.y}, {f.x, v.maxY(), f.w, f.maxY() - v.maxY()},
+                           {f.x, f.y, v.x - f.x, f.h}, {v.maxX(), f.y, f.maxX() - v.maxX(), f.h}};
+    for (const Rect &strip : strips)
+      if (strip.w > 0 && strip.h > 0 && Overlap(p, strip) > 0) return true;
+  }
+  return false;
+}
+
+inline bool SharedVisibleEdge(const Rect &a, const Rect &b) {
+  const bool sideways = (std::fabs(a.maxX() - b.x) <= 1 || std::fabs(b.maxX() - a.x) <= 1) &&
+                        std::min(a.maxY(), b.maxY()) > std::max(a.y, b.y);
+  const bool stacked = (std::fabs(a.maxY() - b.y) <= 1 || std::fabs(b.maxY() - a.y) <= 1) &&
+                       std::min(a.maxX(), b.maxX()) > std::max(a.x, b.x);
+  return sideways || stacked;
+}
+
+inline bool StraddlesUnshared(Rect p, const Screen *screens, int count) {
+  for (int i = 0; i < count; i++)
+    for (int j = i + 1; j < count; j++)
+      if (Overlap(p, screens[i].frame) > 0 && Overlap(p, screens[j].frame) > 0 &&
+          !SharedVisibleEdge(screens[i].visible, screens[j].visible))
+        return true;
+  return false;
+}
+
+inline Rect Land(Rect p, const Screen *screens, int count) {
+  if (count <= 0) return p;
+  if (Reachable(p, screens, count) && !InStrip(p, screens, count) && !StraddlesUnshared(p, screens, count)) return p;
+  const Rect &v = screens[LargestOverlap(p, screens, count)].visible;
+  return {std::round(Settle(p.x, p.w, v.x, v.w)), std::round(Settle(p.y, p.h, v.y, v.h)), p.w, p.h};
+}
+
 inline Rect MoveWithin(Rect frame, Point delta, const Screen *screens, int count, int home = -1) {
   return Mover(frame, screens, count, home).move(frame, delta);
 }

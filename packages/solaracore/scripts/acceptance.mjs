@@ -56,7 +56,7 @@ const usesPageA = [
   "context-menu-search", "duplicate-and-reopen", "device-chooser", "bluetooth-chooser",
   "bluetooth-settings", "cast-dialog", "cast-routes", "theme-commit", "theme-modern-colors", "user-selection",
   "password-prompt", "screen-share-picker", "tab-capture", "share-instead-two-captures",
-  "restore-after-close", "discard-outcomes", "sleep-eligibility", "capture-picture", "unresponsive", "permission-dismissed",
+  "restore-after-close", "discard-outcomes", "sleep-eligibility", "capture-picture", "unresponsive", "permission-dismissed", "permission-status-detached",
   "save-page", "activate-request", "extension-popup-and-panel", "print-preview",
   "extension-prompts", "traffic-lights-after-profile-switch", "extension-configure",
   "private-windows-create", "extension-installed-bubble", "popup-window", "popup-window-permission", "popup-origin-strip", "autofill-save-prompts",
@@ -394,6 +394,23 @@ const server = createServer((req, res) => {
   if (url.pathname === "/alpha-header")
     return res.end(page("Alpha header", `<nav style="position: relative; height: 60px; background: color(srgb 1 0 0 / 0.6)"></nav><p>alpha</p>`, "<style>html, body { margin: 0 }</style>"));
   if (url.pathname === "/oklch-painted") return res.end(page("Oklch painted", "oklch", "<style>html, body { background: oklch(0.3 0 0) }</style>"));
+  if (url.pathname === "/perm-inner") return res.end(page("Perm inner", "inner"));
+  if (url.pathname === "/perm-detach")
+    return res.end(page("Perm detach", `<iframe id="f" src="/perm-inner"></iframe><script>
+      window.__r = "idle";
+      window.run = async (mode) => {
+        const f = document.getElementById("f");
+        const status = await f.contentWindow.navigator.permissions.query({ name: "geolocation" });
+        const onChange = () => {};
+        status.addEventListener("change", onChange);
+        if (mode === "navigate") {
+          await new Promise((done) => { f.onload = done; f.src = "about:blank"; });
+        } else f.remove();
+        status.removeEventListener("change", onChange);
+        window.__r = "survived " + mode;
+        return window.__r;
+      };
+    </script>`));
   if (url.pathname === "/red-header")
     return res.end(page("Red header", `<div style="position: fixed; top: 0; left: 0; right: 0; height: 60px; background: rgb(200, 0, 0)"></div><p style="margin-top: 80px">red</p>`));
   if (url.pathname === "/painted") return res.end(page("Painted", "painted", "<style>html, body { background: rgb(60, 60, 60) }</style>"));
@@ -2362,6 +2379,26 @@ try {
       await closeTab(busy.id);
       await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
     }
+  });
+
+  await check("permission-status-detached", async () => {
+    const seen = {};
+    for (const mode of ["remove", "navigate"]) {
+      const tab = await openTab(`${base}/perm-detach?${mode}`, "Perm detach");
+      try {
+        const t = await pageFor(tab.id, `${base}/perm-detach?${mode}`);
+        await cdp(t, "Runtime.evaluate", { expression: `run("${mode}")`, awaitPromise: true, returnByValue: true }).catch(() => null);
+        await sleep(1000);
+        const crashed = await evalApp(`return ac.pageState.getState().pages["${tab.id}"]?.crashed ?? null`);
+        const result = crashed ? null : (await cdp(await pageFor(tab.id, `${base}/perm-detach?${mode}`), "Runtime.evaluate", { expression: "window.__r", returnByValue: true }).catch(() => null))?.result?.value;
+        seen[mode] = { crashed, result };
+        if (crashed || result !== `survived ${mode}`) throw new Error(`removeEventListener on a detached frame's PermissionStatus: ${JSON.stringify(seen)}`);
+      } finally {
+        await closeTab(tab.id);
+      }
+    }
+    await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
+    return seen;
   });
 
   await check("permission-dismissed", async () => {

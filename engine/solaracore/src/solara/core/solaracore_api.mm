@@ -2176,6 +2176,33 @@ const performance_manager::PageNode* PageNodeOf(content::WebContents* contents) 
          _contents && _contents->WasDiscarded();
 }
 
+- (BOOL)sleepIfEligibleWaivingPinned {
+  const performance_manager::PageNode* node = PageNodeOf(_contents);
+  if (!node) {
+    return NO;
+  }
+  auto* policy = performance_manager::policies::DiscardEligibilityPolicy::GetFromGraph(
+      performance_manager::PerformanceManager::GetGraph());
+  if (!policy) {
+    return NO;
+  }
+  std::vector<CannotDiscardReason> reasons;
+  const performance_manager::policies::CanDiscardResult result = policy->CanDiscard(
+      node, ::mojom::LifecycleUnitDiscardReason::PROACTIVE, true, &reasons);
+  if (result == performance_manager::policies::CanDiscardResult::kEligible) {
+    return [self sleepIfEligible];
+  }
+  if (reasons.empty()) {
+    return NO;
+  }
+  for (CannotDiscardReason reason : reasons) {
+    if (reason != CannotDiscardReason::kPinnedTab) {
+      return NO;
+    }
+  }
+  return [self discard] && _contents && _contents->WasDiscarded();
+}
+
 - (BOOL)frozen {
   return _contents && solaracore::TabBridge::GetOrCreate(_contents)->frozen();
 }

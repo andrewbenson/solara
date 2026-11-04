@@ -11,7 +11,7 @@ extern "C" {
 
 #define AC_ENGINE_ABI_VERSION 2
 #define AC_NOTIFICATIONS_PROTOCOL_VERSION 2
-#define AC_NOTIFICATIONS_NATIVE_API_VERSION 36
+#define AC_NOTIFICATIONS_NATIVE_API_VERSION 37
 
 typedef void (*ac_engine_reply_t)(void* context, const char* json);
 typedef void (*ac_engine_call_t)(const char* profile_dir,

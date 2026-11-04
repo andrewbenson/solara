@@ -342,6 +342,7 @@ SOLARACORE_EXPORT
 @property(readonly) BOOL discarded;
 @property(readonly) NSArray<NSString*>* reasonsNotToSleep;
 - (BOOL)sleepIfEligible;
+- (BOOL)sleepIfEligibleWaivingPinned;
 @property(nonatomic) BOOL frozen;
 - (void)resolveUnresponsive:(BOOL)terminate;
 @property(nonatomic, nullable) NSColor* pageBackgroundColor;

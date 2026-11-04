@@ -4,6 +4,7 @@ import {
   onExtensionActionPopup,
   onExtensionActionShortcut,
   onExtensionSidePanel,
+  onEngineEvent,
   onExtensionsChanged,
   onExtensionTabsRequest,
   resolveExtensionInstallPrompt,
@@ -47,6 +48,7 @@ export function startExtensionsBridge() {
   onExtensionTabsRequest(openRequestedTab);
   startExtensionSearchEngines();
   onExtensionsChanged(({ profile }) => void refreshExtensions(profile));
+  onEngineEvent("extensions.changed", ({ profile }) => void refreshExtensionsAfterChange(profile));
 
   const loadProfiles = (s: BrowserState) => {
     for (const id of s.windowOrder) {

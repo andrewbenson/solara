@@ -2,19 +2,24 @@
 
 #include "chrome/browser/solara/ac_extensions.h"
 
+#include <algorithm>
+#include <deque>
 #include <map>
 #include <set>
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "base/files/file_path.h"
 #include "base/functional/callback_helpers.h"
 #include "base/functional/bind.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/scoped_observation.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
+#include "base/time/time.h"
 #include "chrome/browser/solara/ac_product.h"
 #include "chrome/browser/solara/ac_scripts_policy.h"
 #include "chrome/browser/extensions/api/developer_private/extension_info_generator.h"
@@ -127,19 +132,98 @@ content::WebContents* PromptTab(Profile* profile) {
   return tab;
 }
 
-class ExtensionsState : public ProfileState {
+bool PinnedInPrefs(Profile* profile, const std::string& id) {
+  return std::ranges::contains(
+      extensions::ExtensionPrefs::Get(profile)->GetPinnedExtensions(), id);
+}
+
+void SetPinnedInPrefs(Profile* profile, const std::string& id, bool pinned) {
+  extensions::ExtensionPrefs* prefs = extensions::ExtensionPrefs::Get(profile);
+  extensions::ExtensionIdList list = prefs->GetPinnedExtensions();
+  if (std::ranges::contains(list, id) == pinned) {
+    return;
+  }
+  if (pinned) {
+    list.push_back(id);
+  } else {
+    std::erase(list, id);
+  }
+  prefs->SetPinnedExtensions(list);
+}
+
+void Configure(Profile* profile,
+               const std::string& id,
+               const base::DictValue& args,
+               Reply reply,
+               bool toolbar_ready) {
+  if (!Find(profile, id)) {
+    return reply.Error("No such extension");
+  }
+  if (std::optional<bool> pinned = args.FindBool("pinned");
+      pinned && !toolbar_ready) {
+    SetPinnedInPrefs(profile, id, *pinned);
+  } else if (pinned) {
+    ToolbarActionsModel* model = ToolbarActionsModel::Get(profile);
+    if (!model->HasAction(id)) {
+      return reply.Error(
+          "Cannot pin an extension without an action");
+    }
+    if (model->IsActionPinned(id) != *pinned) {
+      model->SetActionVisibility(id, *pinned);
+    }
+  }
+  if (std::optional<bool> allow = args.FindBool("fileAccess")) {
+    extensions::util::SetAllowFileAccess(id, profile, *allow);
+  }
+  if (std::optional<bool> allow = args.FindBool("incognito")) {
+    extensions::util::SetIsIncognitoEnabled(id, profile, *allow);
+  }
+  if (const std::string* access = args.FindString("siteAccess")) {
+    const extensions::Extension* extension = solara::Find(profile, id);
+    extensions::PermissionsManager* manager =
+        extensions::PermissionsManager::Get(profile);
+    if (!extension || !manager->CanAffectExtension(*extension)) {
+      return reply.Error("Can't change this extension's site access");
+    }
+    extensions::ScriptingPermissionsModifier modifier(profile, extension);
+    if (*access == "onClick") {
+      modifier.SetWithholdHostPermissions(true);
+      modifier.RemoveAllGrantedHostPermissions();
+    } else if (*access == "specificSites") {
+      if (manager->HasBroadGrantedHostPermissions(*extension)) {
+        modifier.RemoveBroadGrantedHostPermissions();
+      }
+      modifier.SetWithholdHostPermissions(true);
+    } else if (*access == "allSites") {
+      modifier.SetWithholdHostPermissions(false);
+    } else {
+      return reply.Error("unknown site access");
+    }
+  }
+  reply.Ok();
+}
+
+constexpr base::TimeDelta kToolbarReadyDeadline = base::Seconds(10);
+
+class ExtensionsState : public ProfileState,
+                        public ToolbarActionsModel::Observer {
  public:
-  explicit ExtensionsState(Profile* profile) : ProfileState(profile) {}
+  explicit ExtensionsState(Profile* profile) : ProfileState(profile) {
+    ToolbarActionsModel::Get(profile);
+  }
 
   void List(Reply reply) {
-    auto generator =
-        std::make_unique<extensions::ExtensionInfoGenerator>(profile());
-    extensions::ExtensionInfoGenerator* raw = generator.get();
-    const int key = Keep(std::move(generator));
-    raw->CreateExtensionsInfo(
-        true, true,
-        base::BindOnce(&ExtensionsState::Listed, weak_factory_.GetWeakPtr(),
-                       key, std::move(reply)));
+    WhenToolbarReady(base::BindOnce(&ExtensionsState::ListNow,
+                                    weak_factory_.GetWeakPtr(),
+                                    std::move(reply)));
+  }
+
+  void ConfigureWhenReady(const std::string& id,
+                          base::DictValue args,
+                          Reply reply) {
+    WhenToolbarReady(base::BindOnce(&ExtensionsState::ConfigureNow,
+                                    weak_factory_.GetWeakPtr(), id,
+                                    std::move(args), std::move(reply)));
   }
 
   void Enable(const Extension* extension, Reply reply) {
@@ -159,8 +243,103 @@ class ExtensionsState : public ProfileState {
   }
 
  private:
+  void ListNow(Reply reply, bool toolbar_ready) {
+    auto generator =
+        std::make_unique<extensions::ExtensionInfoGenerator>(profile());
+    extensions::ExtensionInfoGenerator* raw = generator.get();
+    const int key = Keep(std::move(generator));
+    raw->CreateExtensionsInfo(
+        true, true,
+        base::BindOnce(&ExtensionsState::Listed, weak_factory_.GetWeakPtr(),
+                       key, toolbar_ready, std::move(reply)));
+  }
+
+  void OnToolbarActionAdded(const ToolbarActionsModel::ActionId& id) override {}
+  void OnToolbarActionRemoved(const ToolbarActionsModel::ActionId& id) override {}
+  void OnToolbarActionUpdated(const ToolbarActionsModel::ActionId& id) override {}
+  void OnToolbarPinnedActionsChanged() override {}
+
+  void WhenToolbarReady(base::OnceCallback<void(bool)> run) {
+    if (released_) {
+      return;
+    }
+    ToolbarActionsModel* model = ToolbarActionsModel::Get(profile());
+    if (model->actions_initialized()) {
+      if (draining_ || !waiting_for_toolbar_.empty()) {
+        waiting_for_toolbar_.push_back(std::move(run));
+        return;
+      }
+      std::move(run).Run(true);
+      return;
+    }
+    if (!draining_ && waiting_for_toolbar_.empty()) {
+      base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+          FROM_HERE,
+          base::BindOnce(&ExtensionsState::ToolbarWaitTimedOut,
+                         weak_factory_.GetWeakPtr(), toolbar_wait_),
+          kToolbarReadyDeadline);
+    }
+    waiting_for_toolbar_.push_back(std::move(run));
+    if (!toolbar_.IsObserving()) {
+      toolbar_.Observe(model);
+    }
+  }
+
+  void ConfigureNow(const std::string& id,
+                    base::DictValue args,
+                    Reply reply,
+                    bool toolbar_ready) {
+    Configure(profile(), id, args, std::move(reply), toolbar_ready);
+  }
+
+  void OnToolbarModelInitialized() override {
+    toolbar_.Reset();
+    if (answered_from_prefs_) {
+      answered_from_prefs_ = false;
+      Emit("extensions.changed", profile(), base::DictValue());
+    }
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, base::BindOnce(&ExtensionsState::RunWaitingForToolbar,
+                                  weak_factory_.GetWeakPtr(), true));
+  }
+
+  void RunWaitingForToolbar(bool toolbar_ready) {
+    ++toolbar_wait_;
+    base::WeakPtr<ExtensionsState> alive = weak_factory_.GetWeakPtr();
+    draining_ = true;
+    while (alive && !waiting_for_toolbar_.empty()) {
+      base::OnceCallback<void(bool)> run =
+          std::move(waiting_for_toolbar_.front());
+      waiting_for_toolbar_.pop_front();
+      std::move(run).Run(toolbar_ready);
+    }
+    if (alive) {
+      draining_ = false;
+    }
+  }
+
+  void ToolbarWaitTimedOut(int wait) {
+    if (wait != toolbar_wait_ || waiting_for_toolbar_.empty()) {
+      return;
+    }
+    answered_from_prefs_ = true;
+    RunWaitingForToolbar(false);
+  }
+
+  void OnToolbarActionsModelShutdown() override {
+    toolbar_.Reset();
+    ++toolbar_wait_;
+    std::deque<base::OnceCallback<void(bool)>> dropped;
+    dropped.swap(waiting_for_toolbar_);
+  }
+
   void Release() override {
+    released_ = true;
+    toolbar_.Reset();
+    ++toolbar_wait_;
     weak_factory_.InvalidateWeakPtrs();
+    std::deque<base::OnceCallback<void(bool)>> dropped;
+    dropped.swap(waiting_for_toolbar_);
     kept_.clear();
   }
 
@@ -186,6 +365,7 @@ class ExtensionsState : public ProfileState {
   }
 
   void Listed(int key,
+              bool toolbar_ready,
               Reply reply,
               extensions::ExtensionInfoGenerator::ExtensionInfoList infos) {
     Drop(key);
@@ -193,6 +373,9 @@ class ExtensionsState : public ProfileState {
     for (const auto& info : infos) {
       if (info.type == developer::ExtensionType::kExtension) {
         base::DictValue entry = Entry(info);
+        if (!toolbar_ready) {
+          entry.Set("pinned", PinnedInPrefs(profile(), info.id));
+        }
         const Extension* extension = Find(profile(), info.id);
         if (extension && !info.disable_reasons.blocked_by_policy &&
             info.state != developer::ExtensionState::kEnabled &&
@@ -271,6 +454,13 @@ class ExtensionsState : public ProfileState {
   std::map<int, std::unique_ptr<void, void (*)(void*)>> kept_;
   std::set<int> answered_;
   int next_key_ = 0;
+  std::deque<base::OnceCallback<void(bool)>> waiting_for_toolbar_;
+  int toolbar_wait_ = 0;
+  bool released_ = false;
+  bool answered_from_prefs_ = false;
+  bool draining_ = false;
+  base::ScopedObservation<ToolbarActionsModel, ToolbarActionsModel::Observer>
+      toolbar_{this};
   base::WeakPtrFactory<ExtensionsState> weak_factory_{this};
 };
 
@@ -481,50 +671,14 @@ AC_ENGINE_CALL(ac_extensions_reload) {
   call.TakeReply().Ok();
 }
 
+
 AC_ENGINE_CALL(ac_extensions_configure) {
   AC_EXTENSIONS_CALL();
   Profile* profile = call.profile();
   const std::string id = call.String("id");
-  if (!solara::Find(profile, id)) {
-    return call.TakeReply().Error("No such extension");
+  if (!call.args().FindBool("pinned")) {
+    return solara::Configure(profile, id, call.args(), call.TakeReply(), true);
   }
-  if (std::optional<bool> pinned = call.args().FindBool("pinned")) {
-    ToolbarActionsModel* model = ToolbarActionsModel::Get(profile);
-    if (!model->HasAction(id)) {
-      return call.TakeReply().Error(
-          "Cannot pin an extension without an action");
-    }
-    if (model->IsActionPinned(id) != *pinned) {
-      model->SetActionVisibility(id, *pinned);
-    }
-  }
-  if (std::optional<bool> allow = call.args().FindBool("fileAccess")) {
-    extensions::util::SetAllowFileAccess(id, profile, *allow);
-  }
-  if (std::optional<bool> allow = call.args().FindBool("incognito")) {
-    extensions::util::SetIsIncognitoEnabled(id, profile, *allow);
-  }
-  if (const std::string* access = call.args().FindString("siteAccess")) {
-    const extensions::Extension* extension = solara::Find(profile, id);
-    extensions::PermissionsManager* manager =
-        extensions::PermissionsManager::Get(profile);
-    if (!extension || !manager->CanAffectExtension(*extension)) {
-      return call.TakeReply().Error("Can't change this extension's site access");
-    }
-    extensions::ScriptingPermissionsModifier modifier(profile, extension);
-    if (*access == "onClick") {
-      modifier.SetWithholdHostPermissions(true);
-      modifier.RemoveAllGrantedHostPermissions();
-    } else if (*access == "specificSites") {
-      if (manager->HasBroadGrantedHostPermissions(*extension)) {
-        modifier.RemoveBroadGrantedHostPermissions();
-      }
-      modifier.SetWithholdHostPermissions(true);
-    } else if (*access == "allSites") {
-      modifier.SetWithholdHostPermissions(false);
-    } else {
-      return call.TakeReply().Error("unknown site access");
-    }
-  }
-  call.TakeReply().Ok();
+  solara::StateFor<solara::ExtensionsState>(profile).ConfigureWhenReady(
+      id, call.args().Clone(), call.TakeReply());
 }

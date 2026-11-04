@@ -6108,6 +6108,123 @@ try {
     return { pages: pages.length, argv: argv.slice(argv.indexOf("-NS")) };
   });
 
+  await check("extension-pins-owner-shape", async () => {
+    await appUp("app-pins-owner.out.log");
+    mainWindow = await until("a window", async () => (await state()).windowId, 30000);
+    const names = ["Alpha Keeper", "Bravo Notes", "Charlie Helper", "Delta Recorder"];
+    const dirs = names.map((name) => {
+      const dir = join(scratch, `owner-ext-${name.replace(/\W/g, "")}`);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "manifest.json"), JSON.stringify({ manifest_version: 3, name, version: "1.0", action: { default_popup: "popup.html", default_title: name }, background: { service_worker: "worker.js" } }));
+      writeFileSync(join(dir, "popup.html"), `<!doctype html><title>${name}</title><p>${name}</p>`);
+      writeFileSync(join(dir, "worker.js"), "chrome.runtime.onInstalled.addListener(() => {});");
+      return dir;
+    });
+    const work = await evalApp(`return ac.store.getState().createProfile({ name: "Owner Work" })`);
+    const play = await evalApp(`return ac.store.getState().createProfile({ name: "Owner Play" })`);
+    const profiles = { personal: "", work, play };
+    for (const id of [work, play]) await evalApp(`return ac.actions.openWindow({ profileId: ${JSON.stringify(id)}, url: "${base}/b?owner-${id}" })`);
+    const listIn = async (p) => {
+      const result = await exts(`list(${JSON.stringify(p)})`);
+      if (result?.error) throw new Error(`list ${p}: ${result.error}`);
+      return (result?.extensions ?? []).filter((x) => names.includes(x.name));
+    };
+    const pinnedNames = (list) => list.filter((x) => x.pinned).map((x) => x.name).sort();
+    const shownPins = (p) => evalApp(`const list = ac.extensions.useExtensions.getState().lists[${JSON.stringify(p)}]; return list ? list.filter((e) => ${JSON.stringify(names)}.includes(e.name) && e.pinned).map((e) => e.name).sort() : null;`);
+    const want = { personal: names.slice(), work: [names[0], names[2]], play: [names[3]] };
+    const ids = {};
+    for (const [key, p] of Object.entries(profiles)) {
+      ids[key] = {};
+      for (const dir of dirs) {
+        const installed = await exts(`install(${JSON.stringify(dir)}, ${JSON.stringify(p)})`);
+        if (!installed?.id) throw new Error(`install in ${key}: ${JSON.stringify(installed)}`);
+        ids[key][installed.name ?? ""] = installed.id;
+      }
+      const list = await until(`${key}'s fixtures with actions`, async () => {
+        const l = await listIn(p);
+        return l.length === 4 && l.every((x) => x.hasAction !== false) ? l : null;
+      }, 15000);
+      for (const ext of list) if (want[key].includes(ext.name)) await exts(`configure("${ext.id}", ${JSON.stringify(p)}, { pinned: true })`);
+    }
+    const before = {};
+    for (const [key, p] of Object.entries(profiles)) before[key] = pinnedNames(await listIn(p));
+    await stopApp();
+    await launch("app-pins-owner.out.log");
+    await until("the relaunched app", async () => {
+      try {
+        return await evalApp(`return globalThis.expo.modules.SolaraCEF.engineInfo()`, 3000);
+      } catch (e) {
+        if (exited) throw e;
+        return null;
+      }
+    }, 90000);
+    mainWindow = await until("a window", async () => (await state()).windowId, 30000);
+    const windows = await until("all three windows restored", async () => {
+      const w = await evalApp(`return Object.values(ac.store.getState().windows).filter((w) => !w.incognito).map((w) => w.profileId)`);
+      return w.length >= 3 ? w : null;
+    }, 30000).catch(() => null);
+    const firstShown = {};
+    for (const [key, p] of Object.entries(profiles)) firstShown[key] = await until(`${key}'s first list in the app`, () => shownPins(p), 20000).catch(() => "never listed");
+    await sleep(3000);
+    const shownAfter = {};
+    for (const [key, p] of Object.entries(profiles)) shownAfter[key] = await shownPins(p);
+    const engineAfter = {};
+    for (const [key, p] of Object.entries(profiles)) engineAfter[key] = pinnedNames(await listIn(p));
+    const toggled = (await listIn(work)).find((x) => x.name === names[1]);
+    await evalApp(`return ac.extensions.setPinned(${JSON.stringify(work)}, ${JSON.stringify(toggled.id)}, true).then(() => true)`);
+    await sleep(2000);
+    const afterToggle = { work: await shownPins(work), workEngine: pinnedNames(await listIn(work)), personal: await shownPins(""), play: await shownPins(play) };
+    const out = { windows, before, firstShown, shownAfter, engineAfter, afterToggle };
+    const problems = [];
+    for (const key of Object.keys(profiles)) {
+      if (JSON.stringify(before[key]) !== JSON.stringify(want[key].slice().sort())) problems.push(`${key} pins before: ${JSON.stringify(before[key])}`);
+      if (JSON.stringify(firstShown[key]) !== JSON.stringify(want[key].slice().sort())) problems.push(`${key} first list after relaunch: ${JSON.stringify(firstShown[key])}`);
+      if (JSON.stringify(shownAfter[key]) !== JSON.stringify(want[key].slice().sort())) problems.push(`${key} list 3 s later: ${JSON.stringify(shownAfter[key])}`);
+      if (JSON.stringify(engineAfter[key]) !== JSON.stringify(want[key].slice().sort())) problems.push(`${key} engine after relaunch: ${JSON.stringify(engineAfter[key])}`);
+    }
+    const workWant = [names[0], names[1], names[2]].sort();
+    if (JSON.stringify(afterToggle.work) !== JSON.stringify(workWant)) problems.push(`work after pinning ${names[1]}: ${JSON.stringify(afterToggle.work)}`);
+    if (JSON.stringify(afterToggle.personal) !== JSON.stringify(want.personal.slice().sort()) || JSON.stringify(afterToggle.play) !== JSON.stringify(want.play)) problems.push(`other profiles changed by the toggle: ${JSON.stringify(afterToggle)}`);
+    if (problems.length) throw new Error(`${problems.join("; ")} | ${JSON.stringify(out)}`);
+    return out;
+  });
+
+  await check("extension-pins-after-relaunch", async () => {
+    await appUp("app-pins.out.log");
+    const installed = await exts(`install(${JSON.stringify(extPath)}, "")`);
+    const listed = async () => {
+      const result = await exts(`list("")`);
+      if (result?.error) throw new Error(`list: ${result.error}`);
+      return (result?.extensions ?? []).find((x) => x.id === installed.id) ?? null;
+    };
+    try {
+      await until("the fixture listed with its action", async () => ((await listed())?.hasAction ? true : null), 10000);
+      await exts(`configure("${installed.id}", "", { pinned: true })`);
+      const pinnedBefore = (await listed())?.pinned === true;
+      await stopApp();
+      await launch("app-pins.out.log");
+      await until("the relaunched app", async () => {
+        try {
+          return await evalApp(`return globalThis.expo.modules.SolaraCEF.engineInfo()`, 3000);
+        } catch (e) {
+          if (exited) throw e;
+          return null;
+        }
+      }, 90000);
+      mainWindow = await until("a window", async () => (await state()).windowId, 30000);
+      const shown = () => evalApp(`const lists = ac.extensions.useExtensions.getState().lists; for (const list of Object.values(lists)) { const x = list.find((e) => e.id === "${installed.id}"); if (x) return { pinned: !!x.pinned }; } return null;`);
+      await until("the app's first extension list", shown, 20000);
+      await sleep(3000);
+      const afterRelaunch = await shown();
+      const engineAfter = (await listed())?.pinned === true;
+      if (!pinnedBefore) throw new Error("the pin didn't take before the relaunch");
+      if (afterRelaunch?.pinned !== true) throw new Error(`the toolbar's list lost the pin after a relaunch: ${JSON.stringify({ afterRelaunch, engineAfter })}`);
+      return { pinnedBefore, afterRelaunch, engineAfter };
+    } finally {
+      await exts(`uninstall("${installed.id}", "")`).catch(() => null);
+    }
+  });
+
   await check("context-menu-log", async () => {
     const menuLog = join(scratch, "context-menu.json");
     rmSync(menuLog, { force: true });

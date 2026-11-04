@@ -129,13 +129,19 @@ final class TabPoolHost {
     issuer.store.sequence {
       guard let entry = pages[tabId], let binding = entry.token.binding,
         issuer.ensurePageEstablished(binding) else { return }
+      let wasShowingNewTab = binding.context.newTabShownUrl != nil
       if let value = cachedPageProps(tabId), let context = PageHostContext(json: value) {
         _ = issuer.updateContext(binding, context: context)
       }
+      if (binding.context.newTabShownUrl != nil) != wasShowingNewTab { refresh() }
       guard issuer.isCurrent(binding) else { return }
       entry.page.apply(changed)
       follow(entry)
     }
+  }
+
+  private func newTabShown(_ tabId: String) -> Bool {
+    pages[tabId]?.token.binding?.context.newTabShownUrl != nil
   }
 
   func receive(_ next: BrowserState) {
@@ -162,7 +168,7 @@ final class TabPoolHost {
     for key in shellNSWindows.keyEnumerator().allObjects.compactMap({ $0 as? String }) where !shellWindows.contains(key) {
       shellNSWindows.removeObject(forKey: key as NSString)
     }
-    let fresh = TabViewWanted.from(state, windows: shellWindows, isInternal: Self.isInternal, frozen: { _ in false })
+    let fresh = TabViewWanted.from(state, windows: shellWindows, isInternal: Self.isInternal, frozen: { _ in false }, newTabShown: newTabShown)
     let freshIds = Set(fresh.map(\.tabId))
     let absentIds = Set(closing.values.flatMap { $0.restoration.absentTabIds })
     let presentIds = Set(absentIds.filter { state.tabs[$0] != nil })
@@ -323,6 +329,7 @@ final class TabPoolHost {
             payload["tabId"] = tabId
             self.emitEvent(binding, name: "onPageCreated", payload: payload)
           }, onClearNewTabShown: { [weak self] binding, consumed in
+            self?.refresh()
             self?.emitEvent(binding, name: "onPageIssue", payload: ["clearNewTabShown": true,
               "contextRevision": consumed.contextRevision,
               "navigation": PageValue(json: consumed.json["navigation"] ?? .null).foundation])

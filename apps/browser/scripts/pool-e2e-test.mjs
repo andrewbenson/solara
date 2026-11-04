@@ -19,7 +19,8 @@ while another tab is active; a peek opens on its own pooled page and Open as Tab
 in a split, a click in the unfocused pane focuses it and a pane's close button closes its tab; a tab moved to another
 profile, and back, gets a new page each time in the right profile (cookies prove it); and an engine change makes a new
 page whose ready reaches the store, never one revived from an armed WebKit transfer, and that keeps keyboard focus
-when the old page had it; and a switch to a profile showing a New Tab draws no page from the previous profile, WebKit or
+when the old page had it; going back from a page opened in a New Tab shows the New Tab with no page drawn under it, and
+forward draws the page again (⌘[ and the swipe share that back); and a switch to a profile showing a New Tab draws no page from the previous profile, WebKit or
 Chromium, while switching back draws its page again. A build whose pool doesn't serve pages fails every check.`);
   process.exit(2);
 }
@@ -272,6 +273,26 @@ try {
       const probes = ["WKWebView", "SolaraCoreWebView"].flatMap((kind) => [0, 1, 2, 3].map((i) => P.devViewFrame(n, kind + "#" + i)));
       return Promise.all(probes).then((found) => found.map(JSON.parse).filter((v) => v.found && v.alpha > 0).map((v) => v.class));
     });`);
+  await rep.check("back to the New Tab a page came from draws no page, and forward draws it again", async () => {
+    const target = url("from-new-tab");
+    await run(`S().switchProfile("w1", "default"); S().newTab("w1", {}); return true;`);
+    const tab = await until("a New Tab", `const t = S().tabs[active()]; return t && !t.url && !t.navigation ? t.id : null;`);
+    await run(`go(${json(tab)}, ${json(target)}); return true;`);
+    await until("the page opened from the New Tab", `return live(${json(tab)}).then((p) => p?.navigation?.url === ${json(target)} && !p.navigation.isLoading || null);`, 10000);
+    const before = await sleep(300).then(drawnPages);
+    if (before.length !== 1) throw new Error(`before going back the card draws ${json(before)}`);
+    await run(`ac.runCommand({ command: "back", arg: null, windowId: "w1" }); return true;`);
+    await until("the New Tab shown again", `return S().tabs[${json(tab)}].url === "" || null;`);
+    await sleep(500);
+    const after = await drawnPages();
+    if (after.length) throw new Error(`back on the New Tab the card still draws ${json(after)}`);
+    await run(`ac.runCommand({ command: "forward", arg: null, windowId: "w1" }); return true;`);
+    await until("the kept page again", `return S().tabs[${json(tab)}].url === ${json(target)} || null;`);
+    const again = await sleep(500).then(drawnPages);
+    if (again.length !== 1) throw new Error(`forward again draws ${json(again)}`);
+    return { tab, before, after, again };
+  });
+
   for (const engine of ["webkit", "chromium"]) {
     await rep.check(`a switch to a profile showing a New Tab draws no page from the previous profile (${engine})`, async () => {
       await run(`S().switchProfile("w1", "default"); S().activate("b"); go("b", ${json(url(`switch-${engine}`))}, { engine: ${json(engine)} }); return true;`);

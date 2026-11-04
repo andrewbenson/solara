@@ -22,17 +22,17 @@ private final class RailPinDragBridge: SidebarDragBridge {
 @MainActor
 @Suite(.serialized) struct SidebarRailDragMetricsTests {
   @Test func railPinSlotsFollowTheThirtyTwoPointPitchInOneColumn() {
-    let grid = CGRect(x: 6, y: 32, width: 72, height: 126)
+    let grid = CGRect(x: 6, y: 32, width: 30, height: 126)
     for (y, expected) in [(47.0, 0), (79, 1), (111, 2), (143, 3)] {
-      #expect(PinZone.slot(grid: grid, count: 4, x: 42, y: CGFloat(y), balanced: false, rail: true) == expected)
-      #expect(PinZone.slot(grid: grid, count: 4, x: 42, y: CGFloat(y), balanced: true, rail: true) == expected)
+      #expect(PinZone.slot(grid: grid, count: 4, x: 21, y: CGFloat(y), balanced: false, rail: true) == expected)
+      #expect(PinZone.slot(grid: grid, count: 4, x: 21, y: CGFloat(y), balanced: true, rail: true) == expected)
     }
   }
 
   @Test func railPinHeightTracksTheNumberOfThirtyPointTiles() {
-    #expect(PinZone.height(1, 72, false, rail: true) == 30)
-    #expect(PinZone.height(4, 72, false, rail: true) == 126)
-    #expect(PinZone.height(4, 72, true, rail: true) == 126)
+    #expect(PinZone.height(1, 30, false, rail: true) == 30)
+    #expect(PinZone.height(4, 30, false, rail: true) == 126)
+    #expect(PinZone.height(4, 30, true, rail: true) == 126)
   }
 
   @Test(arguments: [true, false]) func draggingTheLastPinBeforeTheFirstUsesTheRailPitch(fixed: Bool) throws {
@@ -46,13 +46,13 @@ private final class RailPinDragBridge: SidebarDragBridge {
       """#).object ?? [:])
     let height: CGFloat = fixed ? 600 : 240
     NSApplication.shared.setActivationPolicy(.prohibited)
-    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 84, height: height), styleMask: [.borderless], backing: .buffered, defer: false)
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 42, height: height), styleMask: [.borderless], backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false
     window.alphaValue = 0
     window.level = NSWindow.Level(rawValue: -1_000_000)
     defer { window.close() }
     let sidebar = SidebarView(windowId: "w")
-    sidebar.frame = NSRect(x: 0, y: 0, width: 84, height: height)
+    sidebar.frame = NSRect(x: 0, y: 0, width: 42, height: height)
     window.contentView?.addSubview(sidebar)
     sidebar.update(state: state, host: SidebarHostState(profileId: "p"))
     sidebar.layoutSubtreeIfNeeded()

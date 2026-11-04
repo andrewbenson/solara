@@ -45,6 +45,20 @@ public enum DockMotion {
     return CGPoint(x: base.x - dx, y: base.y + down)
   }
 
+  public static func sidebarLightsCenter(_ input: DockedLayoutInput, base given: CGPoint? = nil) -> CGPoint? {
+    guard !input.topTabs else { return nil }
+    let base = given ?? (input.addressBarInSidebar ? ShellMetrics.arcLightsCenter : ShellMetrics.lightsCenter)
+    let width = input.sidebarWidth
+    let offset: CGFloat = input.fullscreen ? 0
+      : input.peeking ? (width + 12) * (1 - input.peekSlide) - ShellMetrics.peekOrigin.x : width * (1 - input.dock)
+    let full = lightsCenter(offset: offset, down: input.peeking && !input.fullscreen ? ShellMetrics.peekOrigin.y : 0, base: base)
+    let progress = input.railFraction
+    guard progress > 0 else { return full }
+    let start = full ?? ShellMetrics.lightsCenter
+    let end = ShellMetrics.railLightsCenter
+    return CGPoint(x: start.x + (end.x - start.x) * progress, y: start.y + (end.y - start.y) * progress)
+  }
+
   public static func cardLeft(dock: CGFloat, width: CGFloat, inset: CGFloat) -> CGFloat { inset + (width - inset) * dock }
 
   static func jsRound(_ x: CGFloat) -> CGFloat { (x + 0.5).rounded(.down) }

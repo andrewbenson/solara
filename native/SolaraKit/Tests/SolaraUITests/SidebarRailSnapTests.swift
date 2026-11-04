@@ -17,6 +17,8 @@ import Testing
   }
 
   @Test func theSnapPointSitsInsideTheRubberBand() {
+    #expect(SidebarResizeMath.snapIn == 78)
+    #expect(SidebarResizeMath.snapOut == 68)
     #expect(SidebarResizeMath.snapIn < SidebarChromeMetrics.minWidth)
     #expect(SidebarResizeMath.snapIn > SidebarRail.width)
     #expect(SidebarResizeMath.snapOut > SidebarRail.width)

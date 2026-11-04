@@ -23,6 +23,7 @@ public final class WindowShellView: NSView {
   public private(set) var input: DockedLayoutInput
   public private(set) var frames: DockedLayoutFrames
   public var onFrames: ((DockedLayoutFrames) -> Void)?
+  public var onLightsLayout: (() -> Void)?
   public var onDetach: (() -> Void)?
   public var onWindow: ((NSWindow?) -> Void)?
   public let card = FlippedContainerView()
@@ -34,6 +35,16 @@ public final class WindowShellView: NSView {
   public var cardPageFrame: CGRect? { didSet { if cardPageFrame != oldValue { placeCardPage() } } }
   public var widthDragActive = false
   private var mounted: [Slot: NSView] = [:]
+  private let widthMotion = DockAnimator(value: 0)
+  private var widthRun: (from: CGFloat, to: CGFloat, railFrom: CGFloat, railTo: CGFloat)?
+  private var toolbars: [RailToolbarHome] = []
+  private weak var railToolbar: ToolbarView?
+  private let railToolbarClip = FlippedContainerView()
+
+  public var railFraction: CGFloat { input.railFraction }
+  public var pageArea: CGRect { frames.page.offsetBy(dx: -frames.card.minX, dy: -frames.card.minY) }
+  public var contentArea: CGRect { CGRect(x: pageArea.minX, y: 0, width: pageArea.width, height: frames.card.height) }
+  public var widthMoving: Bool { widthMotion.moving }
   private var pointerLayer: ObjectIdentifier?
   private var pendingPointer: NSPoint??
   private var lastPointer: NSPoint?
@@ -56,6 +67,14 @@ public final class WindowShellView: NSView {
     frames = DockedLayoutFrames.of(input)
     super.init(frame: .zero)
     wantsLayer = true
+    widthMotion.onChange = { [weak self] progress in self?.widthMoved(CGFloat(progress)) }
+    widthMotion.onSettle = { [weak self] _ in
+      guard let self, let run = self.widthRun else { return }
+      self.widthRun = nil
+      self.input.sidebarWidth = run.to
+      self.input.railProgress = nil
+      self.relayout()
+    }
     hiddenPages.isHidden = true
     hiddenPages.autoresizingMask = []
     addSubview(hiddenPages)
@@ -71,6 +90,12 @@ public final class WindowShellView: NSView {
     mount(.card, card)
     mount(.overlay, overlay)
     overlay.onChildrenChanged = { [weak self] in self?.coverChanged() }
+    railToolbarClip.wantsLayer = true
+    railToolbarClip.layer?.masksToBounds = true
+    railToolbarClip.layer?.cornerCurve = .continuous
+    railToolbarClip.layer?.cornerRadius = cardStyle.radius
+    railToolbarClip.isHidden = true
+    overlay.addSubview(railToolbarClip)
     DevPointer.observe(self, #selector(devPointer(_:)))
   }
 
@@ -91,8 +116,8 @@ public final class WindowShellView: NSView {
       return
     }
     if view == nil, ownedContainer(slot) != nil { return }
-    if let current = mounted[slot], current === view, current.superview === self { return }
-    if let current = mounted[slot], current.superview === self, current !== view { current.removeFromSuperview() }
+    if let current = mounted[slot], current === view { return }
+    if let current = mounted[slot], (current.superview === self || current.superview === cardClip), current !== view { current.removeFromSuperview() }
     if let view, let other = mounted.first(where: { $0.key != slot && $0.value === view })?.key { mounted[other] = nil }
     mounted[slot] = view
     defer { coverChanged() }
@@ -117,12 +142,99 @@ public final class WindowShellView: NSView {
 
   public func slot(of view: NSView) -> Slot? { mounted.first { $0.value === view }?.key }
 
+  public func slot(containing view: NSView) -> Slot? {
+    var current: NSView? = view
+    while let at = current, at !== self {
+      if let slot = slot(of: at) { return slot }
+      current = at.superview
+    }
+    return nil
+  }
+
   public func update(_ change: (inout DockedLayoutInput) -> Void) {
     var next = input
     change(&next)
     guard next != input else { return }
+    let width = next.sidebarWidth
+    let changedWidth = width != input.sidebarWidth
+    let target = widthRun?.to ?? input.sidebarWidth
+    let crossing = SidebarRail.contains(width: Double(target)) != SidebarRail.contains(width: Double(width))
+    if changedWidth, widthRun != nil || (crossing && window != nil && !next.topTabs && !next.fullscreen) {
+      next.sidebarWidth = input.sidebarWidth
+      next.railProgress = input.railProgress
+      input = next
+      if width != target { setSidebarWidth(width, animated: true) } else { relayout() }
+      return
+    }
     input = next
     relayout()
+  }
+
+  public func setSidebarWidth(_ width: CGFloat, animated: Bool) {
+    let targetRail: CGFloat = SidebarRail.contains(width: Double(width)) ? 1 : 0
+    guard animated, !input.topTabs, !input.fullscreen, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+      widthMotion.stop()
+      widthRun = nil
+      input.sidebarWidth = width
+      input.railProgress = nil
+      return relayout()
+    }
+    if widthRun?.to == width { return }
+    let from = input.sidebarWidth
+    let railFrom = railFraction
+    widthMotion.stop()
+    widthRun = (from, width, railFrom, targetRail)
+    widthMotion.jump(to: 0)
+    widthMotion.animate(to: 1, curve: .timed(duration: 0.18, ease: .outCubic), in: self)
+  }
+
+  public func stepWidth(by seconds: Double) { widthMotion.step(by: seconds) }
+
+  private func widthMoved(_ progress: CGFloat) {
+    guard let run = widthRun else { return }
+    input.sidebarWidth = run.from + (run.to - run.from) * progress
+    input.railProgress = run.railFrom + (run.railTo - run.railFrom) * progress
+    relayout()
+  }
+
+  public func registerToolbar(_ toolbar: ToolbarView, owner: NSView) {
+    toolbars.removeAll { $0.toolbar == nil || $0.owner == nil }
+    if !toolbars.contains(where: { $0.toolbar === toolbar }) { toolbars.append(RailToolbarHome(toolbar: toolbar, owner: owner)) }
+    placeRailToolbar()
+  }
+
+  public func unregisterToolbar(_ toolbar: ToolbarView) {
+    toolbars.removeAll { $0.toolbar === toolbar }
+    placeRailToolbar()
+  }
+
+  private func placeRailToolbar() {
+    let home = railFraction > 0 ? toolbars.last { $0.toolbar?.state?.focused == true && $0.owner?.windowShell === self && $0.owner?.isHiddenOrHasHiddenAncestor == false } : nil
+    if railToolbar !== home?.toolbar {
+      if let current = railToolbar {
+        current.underColor = nil
+        if let owner = toolbars.first(where: { $0.toolbar === current })?.owner {
+          current.autoresizingMask = [.width, .height]
+          owner.addSubview(current)
+          current.frame = owner.bounds
+        } else {
+          current.removeFromSuperview()
+        }
+      }
+      railToolbar = home?.toolbar
+      if let toolbar = railToolbar {
+        toolbar.autoresizingMask = []
+        railToolbarClip.addSubview(toolbar)
+      }
+    }
+    railToolbarClip.isHidden = railToolbar == nil || modalShown
+    railToolbarClip.frame = frames.card
+    if let toolbar = railToolbar {
+      let height = min(frames.card.height, ShellMetrics.toolbarHeight + ShellMetrics.railToolbarTop * railFraction)
+      toolbar.frame = CGRect(x: 0, y: 0, width: frames.card.width, height: height)
+      toolbar.needsLayout = true
+    }
+    applyCardStyle()
   }
 
   public override func setFrameSize(_ newSize: NSSize) {
@@ -138,7 +250,16 @@ public final class WindowShellView: NSView {
   public override func viewDidMoveToWindow() {
     super.viewDidMoveToWindow()
     if window == nil { TabSlots.shared.remove(.card(windowId), container: cardPage) } else { TabSlots.shared.set(.card(windowId), container: cardPage) }
-    if window == nil { stopPointerLink() }
+    if window == nil {
+      stopPointerLink()
+      widthMotion.stop()
+      if let run = widthRun {
+        widthRun = nil
+        input.sidebarWidth = run.to
+        input.railProgress = nil
+        relayout()
+      }
+    }
     syncTitlebarAccessibility()
     onWindow?(window)
   }
@@ -159,6 +280,7 @@ public final class WindowShellView: NSView {
     let before = modalShown
     if shown { modalOwners.insert(owner) } else { modalOwners.remove(owner) }
     guard modalShown != before else { return }
+    placeRailToolbar()
     syncTitlebarAccessibility()
     NSAccessibility.post(element: self, notification: .layoutChanged)
   }
@@ -229,7 +351,11 @@ public final class WindowShellView: NSView {
     let point = convert(pointInWindow, from: nil)
     for layer in subviews.reversed() where !layer.isHidden {
       if layer === mounted[.react], !reactOnTop { return layer.frame.contains(point) ? layer : nil }
-      if layer.hitTest(point) != nil { return layer }
+      if layer.hitTest(point) != nil {
+        if layer === card, let sidebar = mounted[.sidebar], sidebar.superview === cardClip,
+          sidebar.hitTest(convert(point, to: cardClip)) != nil { return sidebar }
+        return layer
+      }
     }
     return nil
   }
@@ -310,6 +436,10 @@ public final class WindowShellView: NSView {
     for (slot, view) in mounted { place(slot, view) }
     if hiddenPages.frame != frames.card { hiddenPages.frame = frames.card }
     placeCardPage()
+    placeRailToolbar()
+    for view in card.subviews where view is SplitPanesView || view is PaneOverlaysView { view.needsLayout = true }
+    mounted[.splitChrome]?.needsLayout = true
+    onLightsLayout?()
     if changed {
       coverChanged()
       onFrames?(next)
@@ -317,27 +447,60 @@ public final class WindowShellView: NSView {
   }
 
   private func applyCardStyle() {
-    cardClip.layer?.cornerRadius = cardStyle.radius
-    cardClip.layer?.backgroundColor = cardStyle.fill?.cgColor
+    let radius = cardStyle.radius * (1 - railFraction)
+    let fill = cardStyle.fill.map { $0.withAlphaComponent($0.alphaComponent * (1 - railFraction)).cgColor }
+    let underBand = railFraction > 0 ? cardStyle.fill?.cgColor : nil
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    railToolbar?.underColor = underBand
+    if cardClip.layer?.cornerRadius != radius { cardClip.layer?.cornerRadius = radius }
+    if railToolbarClip.layer?.cornerRadius != radius { railToolbarClip.layer?.cornerRadius = radius }
+    if cardClip.layer?.backgroundColor != fill { cardClip.layer?.backgroundColor = fill }
+    CATransaction.commit()
   }
 
   private func placeCardPage() {
     let clip = CGRect(origin: .zero, size: frames.card.size)
     if cardClip.frame != clip { cardClip.frame = clip }
-    let top = min(ShellMetrics.toolbarHeight, frames.card.height)
-    let frame = cardPageFrame ?? CGRect(x: 0, y: top, width: frames.card.width, height: frames.card.height - top)
+    let page = pageArea
+    let frame = railFraction > 0 ? page : cardPageFrame ?? page
     if cardPage.frame != frame { cardPage.frame = frame }
+    if railFraction > 0 { cardPage.wantsLayer = true }
+    guard let layer = cardPage.layer else { return }
+    let radius = ShellMetrics.cardRadius * railFraction
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    if layer.cornerRadius != radius { layer.cornerRadius = radius }
+    layer.cornerCurve = .continuous
+    layer.masksToBounds = radius > 0
+    CATransaction.commit()
   }
 
   private func place(_ slot: Slot, _ view: NSView) {
     let frame: CGRect
     switch slot {
     case .backdrop, .tint, .react, .overlay: frame = bounds
-    case .card, .splitChrome, .peek: frame = frames.card
+    case .card, .splitChrome: frame = frames.card
+    case .peek: frame = railFraction > 0 ? frames.page : frames.card
     case .sidebar: frame = (frames.sidebar ?? .zero).offsetBy(dx: frames.sidebarShift, dy: 0)
     case .topStrip: frame = frames.topStrip ?? .zero
     }
-    if view.frame != frame { view.frame = frame }
+    let local: CGRect
+    if slot == .sidebar {
+      let parent: NSView = railFraction == 1 ? cardClip : self
+      if view.superview !== parent {
+        if parent === self {
+          let above = stack.drop { $0 != slot }.dropFirst().compactMap { mounted[$0] }.first { $0.superview === self }
+          addSubview(view, positioned: .below, relativeTo: above)
+        } else {
+          parent.addSubview(view)
+        }
+      }
+      local = parent === self ? frame : frame.offsetBy(dx: -frames.card.minX, dy: -frames.card.minY)
+    } else {
+      local = frame
+    }
+    if view.frame != local { view.frame = local }
     view.isHidden = (slot == .sidebar && frames.sidebar == nil) || (slot == .topStrip && frames.topStrip == nil)
   }
 }
@@ -430,5 +593,27 @@ private final class OverlayTurn {
         changed()
       }
     }
+  }
+}
+
+@MainActor
+private final class RailToolbarHome {
+  weak var toolbar: ToolbarView?
+  weak var owner: NSView?
+
+  init(toolbar: ToolbarView, owner: NSView) {
+    self.toolbar = toolbar
+    self.owner = owner
+  }
+}
+
+extension NSView {
+  public var windowShell: WindowShellView? {
+    var view: NSView? = self
+    while let current = view {
+      if let shell = current as? WindowShellView { return shell }
+      view = current.superview
+    }
+    return nil
   }
 }

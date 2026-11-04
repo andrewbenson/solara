@@ -10,8 +10,11 @@ public final class ToolbarView: NSView {
   public var onAnchors: ([String: CGRect]) -> Void = { _ in }
   public private(set) var state: ToolbarState?
 
+  private let surface = CALayer()
+  private let under = CALayer()
   private let band = CALayer()
   private let stripes = CALayer()
+  private let surfaceFade = CAGradientLayer()
   private var stripesUri: String?
   private let content = ToolbarContentView()
   private let hairline = CALayer()
@@ -36,10 +39,14 @@ public final class ToolbarView: NSView {
   public override init(frame: NSRect) {
     super.init(frame: frame)
     wantsLayer = true
-    layer?.addSublayer(band)
+    layer?.addSublayer(surface)
+    surface.addSublayer(under)
+    surface.addSublayer(band)
     stripes.anchorPoint = .zero
     stripes.contentsGravity = .topLeft
-    layer?.addSublayer(stripes)
+    surfaceFade.startPoint = CGPoint(x: 0, y: 0.5)
+    surfaceFade.endPoint = CGPoint(x: 1, y: 0.5)
+    surface.addSublayer(stripes)
     addSubview(content)
     content.addSubview(url)
     url.onClick = { [weak self] click in self?.onClick(click) }
@@ -85,8 +92,7 @@ public final class ToolbarView: NSView {
     } else {
       url.isHidden = true
     }
-    applyBand(next.bare ? nil : toolbarColor(next.palette.background)?.cgColor, animated: previous != nil)
-    applyStripes(next.bare ? nil : next.stripes)
+    applySurface(animated: previous != nil)
     if previous?.focused != next.focused {
       let to: CGFloat = next.focused ? 1 : 0.5
       if previous == nil {
@@ -133,6 +139,13 @@ public final class ToolbarView: NSView {
     return out
   }
 
+  private func applySurface(animated: Bool) {
+    guard let state else { return }
+    let shown = !state.bare || (windowShell?.railFraction ?? 0) > 0
+    applyBand(shown ? toolbarColor(state.palette.background)?.cgColor : nil, animated: animated)
+    applyStripes(shown ? state.stripes : nil)
+  }
+
   private func applyBand(_ color: CGColor?, animated: Bool) {
     guard color != bandColor else { return }
     let from = bandColor ?? color?.copy(alpha: 0)
@@ -165,6 +178,29 @@ public final class ToolbarView: NSView {
       stripes.isHidden = true
     }
     CATransaction.commit()
+  }
+
+  public var underColor: CGColor? {
+    didSet {
+      guard underColor != oldValue else { return }
+      CATransaction.begin()
+      CATransaction.setDisableActions(true)
+      under.backgroundColor = underColor
+      CATransaction.commit()
+    }
+  }
+
+  private func fadeSurface(rail: CGFloat) {
+    let width = bounds.width
+    guard rail > 0, width > 0 else {
+      if surface.mask != nil { surface.mask = nil }
+      return
+    }
+    let mask = ShellMetrics.railBandMask(width: width, edge: 1 - rail)
+    surfaceFade.frame = surface.bounds
+    surfaceFade.colors = mask.map { NSColor(white: 0, alpha: $0.alpha).cgColor }
+    surfaceFade.locations = mask.map { NSNumber(value: Double($0.location / width)) }
+    if surface.mask !== surfaceFade { surface.mask = surfaceFade }
   }
 
   static func stripesImage(_ uri: String) -> NSImage? {
@@ -207,24 +243,31 @@ public final class ToolbarView: NSView {
     guard let state else { return }
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    band.frame = bounds
+    surface.frame = bounds
+    under.frame = surface.bounds
+    band.frame = surface.bounds
     stripes.frame = CGRect(x: 0, y: 0, width: 2560, height: 50)
     layer?.masksToBounds = true
     let scale = window?.backingScaleFactor ?? 2
+    let rail = windowShell?.railFraction ?? 0
+    applySurface(animated: false)
     hairline.frame = CGRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1)
+    hairline.opacity = Float(1 - rail)
     progress.position = CGPoint(x: 0, y: bounds.height - 1.5)
     if let shownProgress { progress.bounds.size.width = bounds.width * max(shownProgress, 0.08) }
     CATransaction.commit()
-    content.frame = bounds
+    let contentTop = max(0, bounds.height - ShellMetrics.toolbarHeight)
+    content.frame = CGRect(x: 0, y: contentTop, width: bounds.width, height: bounds.height - contentTop)
     let px = { (v: CGFloat) in (v * scale).rounded() / scale }
     let top = px(ToolbarView.buttonTop)
+    let inset = CGFloat(state.leadingInset ?? 0) + rail * ShellMetrics.railToolbarLeadingInset
     let g = state.geometry
     let centers = [g.sidebarButton, g.back, g.forward, g.reload]
     let ids = ["sidebar", "back", "forward", "reload"]
     for b in left {
       let center = ids.firstIndex(of: b.state.id).flatMap { centers[$0] } ?? nil
       guard let center else { continue }
-      b.frame = CGRect(x: px(CGFloat(center) - 15), y: top, width: 30, height: 30)
+      b.frame = CGRect(x: px(CGFloat(center) + inset - 15), y: top, width: 30, height: 30)
     }
     var x = bounds.width - CGFloat(state.rightInset)
     for b in right.reversed() {
@@ -232,7 +275,7 @@ public final class ToolbarView: NSView {
       b.frame = CGRect(x: px(x), y: top, width: b.box, height: b.box)
       x += 2
     }
-    url.frame = CGRect(x: CGFloat(g.urlLeft), y: ToolbarView.buttonTop, width: max(0, bounds.width - CGFloat(g.urlLeft) - CGFloat(g.urlRight)), height: ToolbarUrlFieldView.height)
+    url.frame = CGRect(x: CGFloat(g.urlLeft) + inset, y: ToolbarView.buttonTop, width: max(0, content.bounds.width - CGFloat(g.urlLeft) - inset - CGFloat(g.urlRight)), height: ToolbarUrlFieldView.height)
     for b in left + right + extensions { b.recheckHover() }
     var anchors: [String: CGRect] = [:]
     var trailingEdge = x
@@ -253,6 +296,10 @@ public final class ToolbarView: NSView {
       }
     }
     layoutUpdatePill(state, trailingEdge: trailingEdge, px: px)
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    fadeSurface(rail: rail)
+    CATransaction.commit()
     if window != nil, anchors != reportedAnchors {
       reportedAnchors = anchors
       onAnchors(anchors)
@@ -300,7 +347,7 @@ public final class ToolbarView: NSView {
 
   private func windowRect(_ local: CGRect) -> CGRect {
     guard let root = window?.contentView else { return local }
-    let r = convert(local, to: root)
+    let r = content.convert(local, to: root)
     return root.isFlipped ? r : CGRect(x: r.minX, y: root.bounds.height - r.maxY, width: r.width, height: r.height)
   }
 

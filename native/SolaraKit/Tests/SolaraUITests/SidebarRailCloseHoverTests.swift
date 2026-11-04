@@ -13,7 +13,7 @@ import Testing
     window.alphaValue = 0
     defer { window.close() }
     let sidebar = SidebarView(windowId: "w")
-    sidebar.frame = NSRect(x: 0, y: 0, width: 84, height: 600)
+    sidebar.frame = NSRect(x: 0, y: 0, width: 42, height: 600)
     window.contentView?.addSubview(sidebar)
     let state = try BrowserState(stateJSON: JSONValue.parse(#"{"windows":{"w":{"id":"w","profileId":"p","tabIds":["a","b"],"activeTabIds":{"p":"a"}}},"windowOrder":["w"],"tabs":{"a":{"id":"a","windowId":"w","profileId":"p","url":"https://a.example/","title":"First","pinned":\#(pinned)},"b":{"id":"b","windowId":"w","profileId":"p","url":"https://b.example/","title":"Second","pinned":\#(pinned)}}}"#).object ?? [:])
     sidebar.update(state: state, host: SidebarHostState(profileId: "p"))

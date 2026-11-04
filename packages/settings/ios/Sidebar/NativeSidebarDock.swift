@@ -1,6 +1,8 @@
 import AppKit
 import SolaraShell
 import Foundation
+import SolaraModel
+import SolaraStore
 import SolaraUI
 
 @MainActor
@@ -22,13 +24,15 @@ enum NativeSidebarDock {
   static func dock(_ windowId: String) -> SidebarDock? { docks[windowId] }
 
   static func setReactPeekRight(_ windowId: String, _ right: CGFloat) {
-    reactPeekRight[windowId] = right > 0 ? right : nil
+    let railRight = NativeWindowShell.host(windowId)?.shell.frames.sidebar?.maxX
+    let rail = NativeWindowShell.host(windowId)?.shell.railFraction == 1
+    reactPeekRight[windowId] = right > 0 ? (rail ? railRight ?? right : right) : nil
   }
 
   static func peekCovers(_ windowId: String, x: CGFloat) -> Bool {
     if let right = reactPeekRight[windowId], x < right { return true }
     guard let dock = docks[windowId], dock.peek.live, !dock.state.open, !dock.state.fullscreen else { return false }
-    return x < ShellMetrics.peekOrigin.x + CGFloat(dock.state.width)
+    return x < (dock.shell.frames.sidebar?.maxX ?? (ShellMetrics.peekOrigin.x + CGFloat(dock.state.width)))
   }
 
   static func describe(_ windowId: String) -> [String: Any]? {
@@ -45,14 +49,20 @@ enum NativeSidebarDock {
     for (windowId, dock) in docks where windows[windowId] == nil { remove(windowId, dock) }
     for (windowId, given) in windows {
       guard let json = given as? String, let data = json.data(using: .utf8),
-        let state = try? JSONDecoder().decode(SidebarDockState.self, from: data)
+        var state = try? JSONDecoder().decode(SidebarDockState.self, from: data)
       else { continue }
+      if railShown(windowId) || state.width == 84 { state.width = SidebarRail.width }
       if let dock = docks[windowId] {
         dock.apply(state)
       } else {
         make(windowId, state)
       }
     }
+  }
+
+  static func railShown(_ windowId: String) -> Bool {
+    guard let state = NativeStoreHandle.store?.state, let window = state.windows[windowId] else { return false }
+    return window.effectiveSidebarIconsOnly(state.settings)
   }
 
   private static func make(_ windowId: String, _ state: SidebarDockState) {

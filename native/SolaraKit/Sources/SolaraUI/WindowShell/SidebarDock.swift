@@ -121,6 +121,10 @@ public final class SidebarDock {
       done?()
     }
     wire(peek)
+    shell.onLightsLayout = { [weak self] in
+      self?.placePanel()
+      self?.sendLights()
+    }
     shell.update {
       $0.dock = CGFloat(dock.value)
       $0.away = toggle.away
@@ -166,6 +170,7 @@ public final class SidebarDock {
   public func stop() {
     guard !stopped else { return }
     stopped = true
+    shell.onLightsLayout = nil
     dock.stop()
     slide.stop()
     peek.stop()
@@ -240,7 +245,8 @@ public final class SidebarDock {
 
   private func peekLive(_ live: Bool) {
     syncPeek()
-    onPeek(live, Double(ShellMetrics.peekOrigin.x) + state.width)
+    let right = shell.frames.sidebar.map { $0.maxX } ?? (ShellMetrics.peekOrigin.x + CGFloat(state.width))
+    onPeek(live, Double(right))
     refresh()
   }
 
@@ -281,6 +287,8 @@ public final class SidebarDock {
   }
 
   private func placePanel() {
+    panel.chrome.isHidden = shell.railFraction == 1
+    panel.clip.layer?.cornerRadius = shell.railFraction == 1 ? 0 : ShellMetrics.peekRadius
     panel.needsLayout = true
     panel.layoutSubtreeIfNeeded()
   }
@@ -288,7 +296,8 @@ public final class SidebarDock {
   private func refresh() {
     peek.setEnabled(!state.open && !toggle.moving && !state.fullscreen && !state.topTabs)
     let watch = !state.open && !state.fullscreen && !toggle.moving && !state.topTabs
-    let hold = peek.live ? ShellMetrics.peekOrigin.x + CGFloat(state.width) + ShellMetrics.holdSlack : ShellMetrics.edgeStripWidth
+    let right = shell.frames.sidebar.map(\.maxX) ?? (ShellMetrics.peekOrigin.x + CGFloat(state.width))
+    let hold = peek.live ? right + ShellMetrics.holdSlack : ShellMetrics.edgeStripWidth
     setWatch(watch ? hold : nil)
     sendLights()
   }
@@ -303,12 +312,13 @@ public final class SidebarDock {
   private func sendLights() {
     guard !state.topTabs else { return sendStripLights() }
     let base = CGPoint(x: state.lights.first ?? Double(ShellMetrics.lightsCenter.x), y: state.lights.last ?? Double(ShellMetrics.lightsCenter.y))
-    let width = CGFloat(state.width)
-    let offset: CGFloat = state.fullscreen
-      ? 0
-      : peeking ? (width + 12) * CGFloat(1 - slide.value) - ShellMetrics.peekOrigin.x : width * CGFloat(1 - dock.value)
-    let center = DockMotion.lightsCenter(offset: offset, down: peeking ? ShellMetrics.peekOrigin.y : 0, base: base)
-    send(center)
+    var input = shell.input
+    input.dock = CGFloat(dock.value)
+    input.fullscreen = state.fullscreen
+    input.topTabs = state.topTabs
+    input.peeking = peeking
+    input.peekSlide = CGFloat(slide.value)
+    send(DockMotion.sidebarLightsCenter(input, base: base))
   }
 
   private func sendStripLights() {

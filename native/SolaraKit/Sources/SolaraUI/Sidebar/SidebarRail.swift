@@ -3,7 +3,7 @@ import SolaraModel
 import SolaraStore
 
 public enum SidebarRail {
-  public static let width: Double = 84
+  public static let width: Double = 42
   static let tile: CGFloat = 30
   static let rowHeight: CGFloat = 30
   static let rowGap: CGFloat = 2
@@ -13,6 +13,12 @@ public enum SidebarRail {
   static let cornerBadge: CGFloat = 12
 
   public static func contains(width given: Double) -> Bool { given <= width + 0.5 }
+
+  public static let listTop: CGFloat = 6
+
+  public static func listLift(addressBar: Bool) -> CGFloat {
+    max(0, SidebarMetrics.glowRoom + SidebarMetrics.listTopGap(addressBar: addressBar) - listTop)
+  }
 
   public static func effectiveWidth(_ window: BrowserWindow, _ settings: Settings) -> Double {
     window.effectiveSidebarIconsOnly(settings) ? width : window.effectiveSidebarWidth(settings)

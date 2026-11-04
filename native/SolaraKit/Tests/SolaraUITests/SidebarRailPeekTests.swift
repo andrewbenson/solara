@@ -23,9 +23,11 @@ import Testing
     rig.shell.layoutSubtreeIfNeeded()
     #expect(rig.dock.peek.live)
     #expect(rig.shell.input.peeking)
-    #expect(rig.dock.panel.frame == CGRect(x: 5, y: 5, width: 84, height: 790))
-    #expect(rig.column.frame.width == 84)
-    #expect(rig.dock.watchingHold == ShellMetrics.peekOrigin.x + 84 + ShellMetrics.holdSlack)
+    #expect(rig.dock.panel.convert(rig.dock.panel.bounds, to: rig.shell) == CGRect(x: 0, y: 47, width: 42, height: 753))
+    #expect(rig.column.frame.width == 42)
+    #expect(rig.dock.watchingHold == 42 + ShellMetrics.holdSlack)
+    #expect(rig.lights.last == ShellMetrics.railLightsCenter)
+    #expect(rig.shell.frames.page.minX == 42)
   }
 
   @Test func dockingThePeekReturnsTheColumnAtRailWidth() {
@@ -38,8 +40,27 @@ import Testing
     rig.shell.layoutSubtreeIfNeeded()
     #expect(!rig.shell.input.peeking)
     #expect(rig.shell.view(in: .sidebar) === rig.column)
-    #expect(rig.column.frame.width == 84)
-    #expect(rig.shell.frames.card.minX == 84)
-    #expect(rig.dock.state.width == 84)
+    #expect(rig.column.frame.width == 42)
+    #expect(rig.shell.frames.card.minX == 0)
+    #expect(rig.dock.state.width == 42)
+    #expect(rig.lights.last == ShellMetrics.railLightsCenter)
+    #expect(rig.shell.frames.page.minX == 42)
+  }
+
+  @Test func dockingAndUndockingNeverMoveRailLightsOutOfTheToolbar() {
+    let rig = hiddenRail()
+    defer { rig.dock.stop() }
+    rig.set { $0.open = true }
+    for _ in 0..<60 {
+      rig.dock.step(by: 1.0 / 60)
+      #expect(rig.lights.last == ShellMetrics.railLightsCenter)
+    }
+    rig.set { $0.open = false }
+    for _ in 0..<60 {
+      rig.dock.step(by: 1.0 / 60)
+      #expect(rig.lights.last == ShellMetrics.railLightsCenter)
+    }
+    #expect(rig.shell.frames.page.minX == 7)
+    #expect(rig.shell.input.away)
   }
 }

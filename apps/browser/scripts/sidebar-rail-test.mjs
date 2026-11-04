@@ -9,7 +9,7 @@ if (!appArg) {
   console.error(`usage: node sidebar-rail-test.mjs <Debug Solara.app> [--keep-data] [--shots <dir>]
 
 The icons-only sidebar rail under the native shell. View › Icons-Only Sidebar (the toggleSidebarIconsOnly command)
-narrows the native column to 84 pt and back to the saved full width, which the rail never overwrites; in the rail the
+narrows the native column to 42 pt and back to the saved full width, which the rail never overwrites; in the rail the
 footer's downloads button and profile dots sit in separate bands inside the column, and a pending update shows as a
 round 34 pt button inside it; dragging a tab out of a group's popover closes the popover and drops the tab below
 a loose tab, out of the group; Settings › Tabs' switch is the same setting. With --shots, snapshots the window in-process (devSnapshotWindow) in the
@@ -82,9 +82,9 @@ try {
     return { width: c.width, shot: await capture("full-dark") };
   });
 
-  await rep.check("View › Icons-Only Sidebar narrows the column to 84 pt and keeps the saved width", async () => {
+  await rep.check("View › Icons-Only Sidebar narrows the column to 42 pt and keeps the saved width", async () => {
     await toggle();
-    const c = await widthIs(84);
+    const c = await widthIs(42);
     const s = await run(`return { iconsOnly: st().settings.sidebarIconsOnly, width: st().settings.sidebarWidth };`);
     if (!s.iconsOnly || s.width !== 240) throw new Error(`settings after entering the rail: ${JSON.stringify(s)}`);
     return { width: c.width, settings: s };
@@ -100,7 +100,7 @@ try {
     const dots = got.chrome.dots.map((d) => d.rect);
     const downloads = got.chrome.footerDownloads;
     if (dots.some((d) => overlap(d, downloads))) throw new Error(`a profile dot overlaps downloads: ${JSON.stringify({ dots, downloads })}`);
-    if (![...dots, downloads].every((r) => inside(r, got.width))) throw new Error(`a footer control leaves the 84 pt column: ${JSON.stringify({ dots, downloads })}`);
+    if (![...dots, downloads].every((r) => inside(r, got.width))) throw new Error(`a footer control leaves the 42 pt column: ${JSON.stringify({ dots, downloads })}`);
     return { dots, downloads, shot: await capture("rail-dark") };
   });
 
@@ -122,7 +122,7 @@ try {
       await sleep(400);
       const fullLight = await capture("full-update-light");
       await toggle();
-      await widthIs(84);
+      await widthIs(42);
       await run(`st().updateSettings({ theme: "dark" }); return true;`);
       return { update: got.update, shots: { dark, light, fullLight } };
     } finally {
@@ -175,7 +175,7 @@ try {
 
   await rep.check("the Settings switch is the same setting", async () => {
     await run(`st().updateSettings({ sidebarIconsOnly: true }); return true;`);
-    await widthIs(84);
+    await widthIs(42);
     await run(`st().updateSettings({ sidebarIconsOnly: false }); return true;`);
     const c = await widthIs(240);
     return { width: c.width };

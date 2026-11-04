@@ -363,7 +363,12 @@ public class WindowShellModule: Module {
         } else if given["sidebarWidth"] != nil {
           NativeSidebarDock.setReactPeekRight(windowId, 0)
         }
-        shell.update { ShellLayoutPush.apply(given, to: &$0, keepWidth: shell.widthDragActive) }
+        var layout = given
+        if !shell.widthDragActive, let width = (given["sidebarWidth"] as? NSNumber)?.doubleValue,
+          NativeSidebarDock.railShown(windowId) || width == 84 {
+          layout["sidebarWidth"] = SidebarRail.width
+        }
+        shell.update { ShellLayoutPush.apply(layout, to: &$0, keepWidth: shell.widthDragActive) }
       }
     }.runOnQueue(.main)
 

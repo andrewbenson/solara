@@ -308,11 +308,11 @@ try {
     if (!(dragged[0] > before[0] + 30)) throw new Error(`the drag in w1 didn't widen it: ${JSON.stringify({ before, dragged })}`);
     const resized = await matchesColumns("w1 wider after its drag, w2 as it was", [dragged[0], 238]);
     await run(`ac.runCommand({ command: "toggleSidebarIconsOnly", arg: null, windowId: "w1" }); return settle(800);`);
-    const iconsOnly = await matchesColumns("w1 icons-only, w2 as it was", [84, 238]);
+    const iconsOnly = await matchesColumns("w1 icons-only, w2 as it was", [42, 238]);
     await inst.quit();
     inst = await twoWindowLaunch(false);
     await sleep(2500);
-    const relaunched = await matchesColumns("each window's sidebar after a relaunch", [84, 238]);
+    const relaunched = await matchesColumns("each window's sidebar after a relaunch", [42, 238]);
     await run(`ac.runCommand({ command: "toggleSidebarIconsOnly", arg: null, windowId: "w1" }); return settle(800);`);
     const back = await matchesColumns("w1 back to its own dragged width", [dragged[0], 238]);
     return { before, dragged, resized, iconsOnly, relaunched, back };

@@ -20,7 +20,7 @@ import Testing
   private func mounted(renaming: String? = nil) throws -> (NSWindow, SidebarView) {
     let browser = try state()
     NSApplication.shared.setActivationPolicy(.prohibited)
-    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 84, height: 600), styleMask: [.borderless], backing: .buffered, defer: false)
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 42, height: 600), styleMask: [.borderless], backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false
     window.alphaValue = 0
     window.level = NSWindow.Level(rawValue: -1_000_000)
@@ -150,12 +150,12 @@ import Testing
       """#))
     context.live = SidebarLiveBlocks(SidebarLive(state: live), state: browser, windowId: "w", profileId: "p")
     NSApplication.shared.setActivationPolicy(.prohibited)
-    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 84, height: 600), styleMask: [.borderless], backing: .buffered, defer: false)
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 42, height: 600), styleMask: [.borderless], backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false
     window.alphaValue = 0
     window.level = NSWindow.Level(rawValue: -1_000_000)
     window.orderBack(nil)
-    let row = RailLiveFolderView(frame: NSRect(x: 6, y: 25, width: 72, height: 30))
+    let row = RailLiveFolderView(frame: NSRect(x: 6, y: 25, width: 30, height: 30))
     defer { row.popover?.close(commitRename: false); window.close() }
     window.contentView?.addSubview(row)
     row.update(SidebarItem(kind: .live("livefolder|f"), frame: row.frame, region: .scroll, groups: [], section: .pinned), context)

@@ -12,10 +12,10 @@ import Testing
   }
 
   @Test func theTileAndIconAreCenteredInTheRailRow() {
-    let row = RailTabView(frame: NSRect(x: 0, y: 0, width: 72, height: 30))
+    let row = RailTabView(frame: NSRect(x: 0, y: 0, width: 30, height: 30))
     row.layoutSubtreeIfNeeded()
-    #expect(row.glass.frame == CGRect(x: 21, y: 0, width: 30, height: 30))
-    #expect(row.icon.frame == CGRect(x: 28, y: 7, width: 16, height: 16))
+    #expect(row.glass.frame == CGRect(x: 0, y: 0, width: 30, height: 30))
+    #expect(row.icon.frame == CGRect(x: 7, y: 7, width: 16, height: 16))
     #expect(row.glass.radius == 8)
   }
 
@@ -23,13 +23,13 @@ import Testing
     let context = try context()
     let pinned = try #require(SidebarRail.make(.tile("a")) as? RailTabView)
     let tab = try #require(SidebarRail.make(.tab("b")) as? RailTabView)
-    let frame = CGRect(x: 0, y: 0, width: 72, height: 30)
+    let frame = CGRect(x: 0, y: 0, width: 30, height: 30)
     for (view, kind) in [(pinned, SidebarItemKind.tile("a")), (tab, SidebarItemKind.tab("b"))] {
       view.frame = frame
       view.update(SidebarItem(kind: kind, frame: frame, region: .scroll, groups: [], section: .list), context)
       view.layoutSubtreeIfNeeded()
-      #expect(view.glass.frame == CGRect(x: 21, y: 0, width: 30, height: 30))
-      #expect(view.icon.frame == CGRect(x: 28, y: 7, width: 16, height: 16))
+      #expect(view.glass.frame == CGRect(x: 0, y: 0, width: 30, height: 30))
+      #expect(view.icon.frame == CGRect(x: 7, y: 7, width: 16, height: 16))
     }
     #expect(pinned.tabId == "a")
     #expect(tab.tabId == "b")
@@ -38,11 +38,11 @@ import Testing
   @Test func pinnedFoldersUseTheSquareRailTileAndKeepFolderActions() throws {
     let context = try context()
     let row = try #require(SidebarRail.make(.folder("f")) as? RailIconView)
-    row.frame = CGRect(x: 0, y: 0, width: 72, height: 30)
+    row.frame = CGRect(x: 0, y: 0, width: 30, height: 30)
     row.update(SidebarItem(kind: .folder("f"), frame: row.frame, region: .fixed, groups: [], section: .tiles), context)
     row.layoutSubtreeIfNeeded()
-    #expect(row.glass.frame == CGRect(x: 21, y: 0, width: 30, height: 30))
-    #expect(row.icon.frame == CGRect(x: 28, y: 7, width: 16, height: 16))
+    #expect(row.glass.frame == CGRect(x: 0, y: 0, width: 30, height: 30))
+    #expect(row.icon.frame == CGRect(x: 7, y: 7, width: 16, height: 16))
     #expect(!row.icon.isHidden)
     var actions: [String] = []
     context.send = {
@@ -55,18 +55,18 @@ import Testing
   }
 
   @Test func theCloseBadgeStraddlesTheTilesTopRightCorner() {
-    #expect(SidebarRail.closeFrame(around: CGRect(x: 21, y: 0, width: 30, height: 30)) == CGRect(x: 42, y: -5, width: 14, height: 14))
+    #expect(SidebarRail.closeFrame(around: CGRect(x: 0, y: 0, width: 30, height: 30)) == CGRect(x: 21, y: -5, width: 14, height: 14))
   }
 
   @Test func hoveringATabPlacesItsCloseBadgeAtTheTileCorner() throws {
     let context = try context()
-    let row = RailTabView(frame: NSRect(x: 0, y: 0, width: 72, height: 30))
+    let row = RailTabView(frame: NSRect(x: 0, y: 0, width: 30, height: 30))
     row.update(SidebarItem(kind: .tab("b"), frame: row.frame, region: .scroll, groups: [], section: .list), context)
     #expect(row.subviews.compactMap { $0 as? SidebarIconButton }.isEmpty)
     row.hovered = true
     row.layoutSubtreeIfNeeded()
     let close = try #require(row.subviews.compactMap { $0 as? SidebarIconButton }.first)
-    #expect(close.frame == CGRect(x: 42, y: -5, width: 14, height: 14))
+    #expect(close.frame == CGRect(x: 21, y: -5, width: 14, height: 14))
     #expect(close.radius == 7)
     var closed: [String] = []
     context.send = { if case .close(let id) = $0 { closed.append(id) } }
@@ -76,23 +76,23 @@ import Testing
 
   @Test func theWholeCloseBadgeReceivesHitsAboveTheRailRow() throws {
     let context = try context()
-    let parent = SidebarLayer(frame: NSRect(x: 0, y: 0, width: 72, height: 100))
-    let row = RailTabView(frame: NSRect(x: 0, y: 32, width: 72, height: 30))
+    let parent = SidebarLayer(frame: NSRect(x: 0, y: 0, width: 30, height: 100))
+    let row = RailTabView(frame: NSRect(x: 0, y: 32, width: 30, height: 30))
     parent.addSubview(row)
     row.update(SidebarItem(kind: .tab("b"), frame: row.frame, region: .scroll, groups: [], section: .list), context)
     row.hovered = true
     row.layoutSubtreeIfNeeded()
     let close = try #require(row.subviews.compactMap { $0 as? SidebarIconButton }.first)
     close.alphaValue = 1
-    #expect(row.hitTest(CGPoint(x: 49, y: 29)) === close)
-    #expect(row.hitTest(CGPoint(x: 49, y: 35)) === close)
+    #expect(row.hitTest(CGPoint(x: 28, y: 29)) === close)
+    #expect(row.hitTest(CGPoint(x: 28, y: 35)) === close)
     row.hovered = false
-    #expect(row.hitTest(CGPoint(x: 49, y: 29)) == nil)
+    #expect(row.hitTest(CGPoint(x: 28, y: 29)) == nil)
   }
 
   @Test func railTabsHaveNoRestingFillAndUseHoverAndPressedFills() throws {
     let context = try context()
-    let row = RailTabView(frame: NSRect(x: 0, y: 0, width: 72, height: 30))
+    let row = RailTabView(frame: NSRect(x: 0, y: 0, width: 30, height: 30))
     row.update(SidebarItem(kind: .tile("a"), frame: row.frame, region: .fixed, groups: [], section: .tiles), context)
     #expect(row.glass.flat)
     #expect(row.glass.tint == NSColor.clear)
@@ -107,7 +107,7 @@ import Testing
 
   @Test func pressedFillOverridesAnActiveTabsGlassSelection() throws {
     let context = try context()
-    let row = RailTabView(frame: NSRect(x: 0, y: 0, width: 72, height: 30))
+    let row = RailTabView(frame: NSRect(x: 0, y: 0, width: 30, height: 30))
     row.update(SidebarItem(kind: .tab("b"), frame: row.frame, region: .scroll, groups: [], section: .list), context)
     #expect(!row.glass.flat)
     #expect(row.glass.raisedSelection)
@@ -119,13 +119,13 @@ import Testing
 
   @Test func theNewTabUsesTheSameSquareTileFrame() throws {
     let context = try context()
-    let row = RailNewTabView(frame: NSRect(x: 0, y: 0, width: 72, height: 30))
+    let row = RailNewTabView(frame: NSRect(x: 0, y: 0, width: 30, height: 30))
     row.update(SidebarItem(kind: .newTab, frame: row.frame, region: .scroll, groups: [], section: .list), context)
     row.layoutSubtreeIfNeeded()
     let plate = try #require(row.body.layer?.sublayers?.first)
-    #expect(plate.frame == CGRect(x: 21, y: 0, width: 30, height: 30))
+    #expect(plate.frame == CGRect(x: 0, y: 0, width: 30, height: 30))
     #expect(plate.cornerRadius == 8)
-    #expect(row.body.subviews.first?.frame == CGRect(x: 28, y: 7, width: 16, height: 16))
+    #expect(row.body.subviews.first?.frame == CGRect(x: 7, y: 7, width: 16, height: 16))
   }
 
   @Test func pinnedRailTilesKeepTheirDoubleClickMiddleClickAndMenuActions() throws {

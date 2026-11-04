@@ -19,7 +19,7 @@ import Testing
   }
 
   func switcher(_ view: SidebarChromeView) -> NSView? {
-    view.subviews.first { !($0 is SidebarProfileDot) && !($0 is StripProfileIndicator) && $0.accessibilityLabel() == "Profile 2" }
+    view.profileSwitcher
   }
 
   func descendants(_ view: NSView) -> [NSView] {
@@ -27,26 +27,26 @@ import Testing
   }
 
   @Test func fittingRailDotsStayInsideFooterInsets() {
-    let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 84, height: 700))
-    view.update(state(count: 6))
+    let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 42, height: 700))
+    view.update(state(count: 2))
     let dots = view.subviews.compactMap { $0 as? SidebarProfileDot }.filter { !$0.isHidden }
-    #expect(dots.count == 6)
-    #expect(dots.allSatisfy { $0.frame.minX >= 6 && $0.frame.maxX <= 78 })
+    #expect(dots.count == 2)
+    #expect(dots.allSatisfy { $0.frame.minX >= 6 && $0.frame.maxX <= 36 })
     #expect(switcher(view) == nil || switcher(view)!.isHidden)
   }
 
   @Test func overflowingRailDotsBecomeACentredAccessibleProfileButton() {
-    let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 84, height: 700))
+    let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 42, height: 700))
     view.update(state(count: 8))
     let dots = view.subviews.compactMap { $0 as? SidebarProfileDot }.filter { !$0.isHidden }
-    #expect(dots.allSatisfy { $0.frame.minX >= 6 && $0.frame.maxX <= 78 })
+    #expect(dots.allSatisfy { $0.frame.minX >= 6 && $0.frame.maxX <= 36 })
     #expect(dots.isEmpty)
     guard let button = switcher(view) else {
       Issue.record("Missing current-profile overflow button")
       return
     }
     #expect(!button.isHidden)
-    #expect(button.frame == NSRect(x: 28, y: 664, width: 28, height: 28))
+    #expect(button.frame == NSRect(x: 7, y: 664, width: 28, height: 28))
     #expect(button.toolTip == "Profile 2")
     #expect(descendants(button).compactMap { $0 as? StripLabel }.contains { $0.stringValue == "🧭" })
     #expect(button.layer?.cornerRadius == 14)
@@ -60,7 +60,7 @@ import Testing
   }
 
   @Test func profilePopoverListsEveryProfileChecksCurrentAndSendsDotAction() {
-    let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 84, height: 700))
+    let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 42, height: 700))
     defer { view.profilePopover.close() }
     var actions: [SidebarChromeAction] = []
     view.onAction = { actions.append($0) }
@@ -87,7 +87,7 @@ import Testing
   }
 
   @Test func profileButtonFallsBackToCurrentInitial() {
-    let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 84, height: 700))
+    let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 42, height: 700))
     view.update(state(count: 8, icon: nil))
     guard let button = switcher(view) else {
       Issue.record("Missing profile switcher")
@@ -97,7 +97,7 @@ import Testing
   }
 
   @Test func profileSymbolIconFallsBackToCurrentInitial() {
-    let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 84, height: 700))
+    let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 42, height: 700))
     let next = state(count: 8, icon: "symbol:briefcase")
     view.update(next)
     let button = switcher(view)!

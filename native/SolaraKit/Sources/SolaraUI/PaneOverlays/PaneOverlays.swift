@@ -162,10 +162,12 @@ public final class PaneOverlaysView: NSView {
       if overlays.mapValues({ $0.isHidden ? CGRect.null : $0.frame }) != before { onCoverChanged() }
       for (tabId, overlay) in overlays where hiddenBefore[tabId].map({ $0 != overlay.isHidden }) == true { PaneOverlays.shared.post(windowId, tabId) }
     }
-    let rects = SplitLayout.panes(split: split, activeId: activeId, fullscreenTab: fullscreenTab, bounds: bounds).panes
+    let area = SplitLayout.bounds(in: self, fullscreenTab: fullscreenTab)
+    let rail = fullscreenTab == nil ? windowShell?.railFraction ?? 0 : 0
+    let rects = SplitLayout.panes(split: split, activeId: activeId, fullscreenTab: fullscreenTab, bounds: area).panes
     for (tabId, rect) in rects {
       let overlay = overlays[tabId] ?? make(tabId)
-      let top = min(max(0, liveTops[tabId] ?? pageTops[tabId] ?? (tabId == fullscreenTab ? 0 : toolbarHeight)), rect.height)
+      let top = min(max(0, (liveTops[tabId] ?? pageTops[tabId] ?? (tabId == fullscreenTab ? 0 : toolbarHeight)) * (1 - rail)), rect.height)
       overlay.frame = CGRect(x: rect.minX, y: rect.minY + top, width: rect.width, height: rect.height - top)
       overlay.isHidden = fullscreenTab != nil && tabId != fullscreenTab
     }

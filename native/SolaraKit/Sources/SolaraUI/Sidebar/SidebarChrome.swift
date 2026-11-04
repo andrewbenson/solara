@@ -64,6 +64,10 @@ public enum SidebarChromeAction: Equatable, Sendable {
 
 public enum SidebarChromeMetrics {
   public static let header: CGFloat = 46
+  public static let railButton: CGFloat = 28
+  public static let railIcon: CGFloat = 20
+  public static let railPadding: CGFloat = 4
+  public static let railHeader: CGFloat = railPadding + railButton + railPadding
   public static let fieldRow: CGFloat = 34
   public static let footer: CGFloat = 41
   public static let indicatorX: CGFloat = 84
@@ -82,6 +86,8 @@ public enum SidebarChromeMetrics {
   public static let defaultWidth: Double = 190
 
   public static func headerHeight(addressBar: Bool) -> CGFloat { addressBar ? header + fieldRow : header }
+
+  public static func railHeaderShown(_ state: SidebarChromeState) -> Bool { state.controls.incognito || state.controls.profiles > 1 }
 
   public static func footerRowHeight(_ state: SidebarChromeState) -> CGFloat {
     if state.rail { return (state.dots.isEmpty ? 0 : footer) + (state.downloads ? footer : 0) }
@@ -135,8 +141,8 @@ public enum SidebarResizeMath {
 
   public static func live(_ width: Double) -> Double { (width * 2).rounded() / 2 }
 
-  public static let snapIn = 120.0
-  public static let snapOut = 110.0
+  public static let snapIn = SidebarRail.width + 36
+  public static let snapOut = SidebarRail.width + 26
 
   public struct Snap: Equatable, Sendable {
     public var width: Double
@@ -161,6 +167,7 @@ public final class SidebarChromeView: NSView {
   public private(set) var state: SidebarChromeState?
 
   let indicator = StripProfileIndicator()
+  let headerProfile = StripIconButton()
   let headerDownloads = StripIconButton()
   let footerDownloads = StripIconButton()
   let resize = SidebarResizeHandle()
@@ -194,6 +201,13 @@ public final class SidebarChromeView: NSView {
       button.onPress = { [weak self] in self?.onAction(.toggleDownloads) }
       addSubview(button)
     }
+    headerProfile.radius = 8
+    headerProfile.isHidden = true
+    headerProfile.onPress = { [weak self] in
+      guard self?.state?.controls.incognito != true else { return }
+      self?.onAction(.profileMenu)
+    }
+    addSubview(headerProfile)
     indicator.onPress = { [weak self] in self?.onAction(.profileMenu) }
     addSubview(indicator)
     profileSwitcher.isHidden = true
@@ -214,7 +228,10 @@ public final class SidebarChromeView: NSView {
 
   required init?(coder: NSCoder) { fatalError() }
 
-  public var headerHeight: CGFloat { SidebarChromeMetrics.headerHeight(addressBar: state?.addressBar ?? false) }
+  public var headerHeight: CGFloat {
+    guard let state, state.rail else { return SidebarChromeMetrics.headerHeight(addressBar: state?.addressBar ?? false) }
+    return SidebarChromeMetrics.railHeaderShown(state) ? SidebarChromeMetrics.railHeader : 0
+  }
   public var footerHeight: CGFloat { state.map(SidebarChromeMetrics.footerHeight) ?? 0 }
 
   public func update(_ next: SidebarChromeState) {
@@ -259,10 +276,20 @@ public final class SidebarChromeView: NSView {
     let width = bounds.width
     let header = headerHeight
     let footer = SidebarChromeMetrics.footerRowHeight(state)
-    addressSlot.isHidden = !state.addressBar
+    addressSlot.isHidden = !state.addressBar || state.rail
     addressSlot.frame = NSRect(x: 0, y: 0, width: width, height: header)
 
     let controls = state.controls
+    headerProfile.isHidden = !state.rail || !SidebarChromeMetrics.railHeaderShown(state)
+    headerProfile.name = controls.title
+    headerProfile.set(
+      "person.fill", size: SidebarChromeMetrics.railIcon, weight: .regular,
+      color: SidebarPalette.parse(controls.nameColor) ?? color("textPrimary"),
+      hover: controls.incognito ? .clear : color("toolbarHover"), pressed: controls.incognito ? .clear : color("toolbarPressed"),
+      tooltip: controls.incognito ? nil : "Switch between profiles")
+    headerProfile.frame = NSRect(
+      x: ((width - SidebarChromeMetrics.railButton) / 2).rounded(), y: SidebarChromeMetrics.railPadding,
+      width: SidebarChromeMetrics.railButton, height: SidebarChromeMetrics.railButton)
     let inHeader = !state.addressBar && !state.rail
     let room = SidebarChromeMetrics.indicatorRoom(width: width, downloads: state.downloads)
     let layout = StripControlsLayout.indicator(
@@ -320,13 +347,15 @@ public final class SidebarChromeView: NSView {
         y: bounds.height - footer - pill.gap - height, width: pillWidth, height: height)
     }
 
+    let resizeTop = state.rail ? header : SidebarChromeMetrics.header
     resize.frame = NSRect(
-      x: width - SidebarChromeMetrics.resizeStrip, y: SidebarChromeMetrics.header, width: SidebarChromeMetrics.resizeStrip,
-      height: max(0, bounds.height - SidebarChromeMetrics.header))
+      x: width - SidebarChromeMetrics.resizeStrip, y: resizeTop, width: SidebarChromeMetrics.resizeStrip,
+      height: max(0, bounds.height - resizeTop))
     tooltip.look(dark: state.dark, panel: color("panel"), border: color("panelBorder"))
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    dropGlow.frame = NSRect(x: 5, y: 44, width: max(0, width - 10), height: max(0, bounds.height - 50))
+    let glowTop = state.rail ? header : 44
+    dropGlow.frame = NSRect(x: 5, y: glowTop, width: max(0, width - 10), height: max(0, bounds.height - glowTop - 6))
     dropGlow.borderColor = color("accent").cgColor
     dropGlow.backgroundColor = NSColor(white: state.dark ? 1 : 0, alpha: state.dark ? 0.06 : 0.04).cgColor
     CATransaction.commit()
@@ -427,6 +456,7 @@ public final class SidebarChromeView: NSView {
   }
 
   private func hover(at point: NSPoint?) {
+    headerProfile.hovered = point.map { !headerProfile.isHidden && headerProfile.frame.contains($0) } ?? false
     indicator.hovered = point.map { !indicator.isHidden && indicator.frame.contains($0) } ?? false
     for button in [headerDownloads, footerDownloads] { button.hovered = point.map { !button.isHidden && button.frame.contains($0) } ?? false }
     updatePill.hovered = point.map { !updatePill.isHidden && updatePill.frame.contains($0) } ?? false
@@ -442,6 +472,7 @@ public final class SidebarChromeView: NSView {
     return [
       "header": headerHeight, "footer": footerHeight,
       "indicator": indicator.isHidden ? NSNull() : rect(indicator),
+      "headerProfile": headerProfile.isHidden ? NSNull() : rect(headerProfile),
       "headerDownloads": headerDownloads.isHidden ? NSNull() : rect(headerDownloads),
       "footerDownloads": footerDownloads.isHidden ? NSNull() : rect(footerDownloads),
       "resize": rect(resize),

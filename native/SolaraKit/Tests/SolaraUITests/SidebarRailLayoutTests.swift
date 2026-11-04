@@ -26,8 +26,9 @@ private func railLayout(_ state: BrowserState, height: CGFloat = 600, divided: B
 }
 
 @Suite struct SidebarRailLayoutTests {
-  @Test func theRailHoldsTheTrafficLightsAndIsNarrowerThanTheMinimumSidebar() {
-    #expect(SidebarRail.width >= 70.75 + 7 + 6)
+  @Test func theToolbarHoldsTheTrafficLightsAboveTheNarrowRail() {
+    #expect(SidebarRail.width == 42)
+    #expect(SidebarRail.width == 6 + 30 + 6)
     #expect(SidebarRail.width < SidebarChromeMetrics.minWidth)
     #expect(SidebarRail.contains(width: SidebarRail.width))
     #expect(!SidebarRail.contains(width: SidebarChromeMetrics.minWidth))

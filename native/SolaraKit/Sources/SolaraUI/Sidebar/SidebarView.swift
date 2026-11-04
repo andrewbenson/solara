@@ -547,9 +547,9 @@ public final class SidebarView: NSView {
   }
 
   private func covered() -> Bool {
-    var layer: NSView = self
-    while let up = layer.superview, !(up is WindowShellView) { layer = up }
-    guard let shell = layer.superview as? WindowShellView, let mine = shell.slot(of: layer) else { return false }
+    var up = superview
+    while let at = up, !(at is WindowShellView) { up = at.superview }
+    guard let shell = up as? WindowShellView, let mine = shell.slot(containing: self) else { return false }
     return shell.pointerSlot != mine
   }
 

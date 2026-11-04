@@ -58,6 +58,7 @@ final class NativeToolbarHostView: ExpoView {
   let onToolbarAnchors = EventDispatcher()
   let toolbar = ToolbarView(frame: .zero)
   private var json = ""
+  private weak var toolbarShell: WindowShellView?
   private static let live = NSHashTable<NativeToolbarHostView>.weakObjects()
 
   static func toolbar(windowId: String, tabId: String) -> ToolbarView? { host(windowId: windowId, tabId: tabId)?.toolbar }
@@ -99,11 +100,42 @@ final class NativeToolbarHostView: ExpoView {
     guard next != json, let state = ToolbarState.decode(next) else { return }
     json = next
     toolbar.update(state)
+    syncToolbarShell()
     AutoHideHost.toolbarReady(tabId: state.tabId)
+  }
+
+  private func syncToolbarShell() {
+    let shell = windowShell
+    if toolbarShell !== shell {
+      toolbarShell?.unregisterToolbar(toolbar)
+      toolbarShell = shell
+    }
+    shell?.registerToolbar(toolbar, owner: self)
+  }
+
+  override func layout() {
+    super.layout()
+    syncToolbarShell()
+  }
+
+  override func viewDidMoveToSuperview() {
+    super.viewDidMoveToSuperview()
+    syncToolbarShell()
+  }
+
+  override func viewDidHide() {
+    super.viewDidHide()
+    syncToolbarShell()
+  }
+
+  override func viewDidUnhide() {
+    super.viewDidUnhide()
+    syncToolbarShell()
   }
 
   override func viewDidMoveToWindow() {
     super.viewDidMoveToWindow()
+    syncToolbarShell()
     if window != nil, let tabId = toolbar.state?.tabId { AutoHideHost.toolbarReady(tabId: tabId) }
   }
 }

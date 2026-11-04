@@ -21,12 +21,12 @@ import Testing
 
   private func mount(_ context: SidebarContext) -> (NSWindow, RailGroupView) {
     NSApplication.shared.setActivationPolicy(.prohibited)
-    let window = NSWindow(contentRect: NSRect(x: 400, y: 300, width: 84, height: 600), styleMask: [.borderless], backing: .buffered, defer: false)
+    let window = NSWindow(contentRect: NSRect(x: 400, y: 300, width: 42, height: 600), styleMask: [.borderless], backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false
     window.alphaValue = 0
     window.level = NSWindow.Level(rawValue: -1_000_000)
     window.orderBack(nil)
-    let row = RailGroupView(frame: NSRect(x: 6, y: 300, width: 72, height: 30))
+    let row = RailGroupView(frame: NSRect(x: 6, y: 300, width: 30, height: 30))
     window.contentView?.addSubview(row)
     row.update(SidebarItem(kind: .groupHeader("g"), frame: row.frame, region: .scroll, groups: [], section: .list), context)
     row.layoutSubtreeIfNeeded()

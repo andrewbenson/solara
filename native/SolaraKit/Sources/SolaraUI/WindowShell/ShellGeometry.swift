@@ -111,10 +111,11 @@ public struct DockedLayoutInput: Equatable, Sendable {
   public var addressBarInSidebar: Bool
   public var away: Bool
   public var sidePanel: CGFloat
+  public var railProgress: CGFloat?
 
   public init(
     size: CGSize, dock: CGFloat, sidebarWidth: CGFloat = ShellMetrics.sidebarWidth, topTabs: Bool = false, fullscreen: Bool = false,
-    peeking: Bool = false, peekSlide: CGFloat = 0, addressBarInSidebar: Bool = false, away: Bool = false, sidePanel: CGFloat = 0
+    peeking: Bool = false, peekSlide: CGFloat = 0, addressBarInSidebar: Bool = false, away: Bool = false, sidePanel: CGFloat = 0, railProgress: CGFloat? = nil
   ) {
     self.size = size
     self.dock = dock
@@ -126,13 +127,20 @@ public struct DockedLayoutInput: Equatable, Sendable {
     self.addressBarInSidebar = addressBarInSidebar
     self.away = away
     self.sidePanel = sidePanel
+    self.railProgress = railProgress
   }
 
   public var inset: ShellInset { topTabs ? .topTabs : .sidebar }
+
+  public var railFraction: CGFloat {
+    guard !topTabs, !fullscreen else { return 0 }
+    return min(1, max(0, railProgress ?? (SidebarRail.contains(width: Double(sidebarWidth)) ? 1 : 0)))
+  }
 }
 
 public struct DockedLayoutFrames: Equatable, Sendable {
   public var card: CGRect
+  public var page: CGRect
   public var sidebar: CGRect?
   public var sidebarShift: CGFloat
   public var topStrip: CGRect?
@@ -142,28 +150,48 @@ public struct DockedLayoutFrames: Equatable, Sendable {
     let size = input.size
     let inset = input.inset
     let dock = input.dock
-    let base = input.addressBarInSidebar && !input.topTabs ? ShellMetrics.arcLightsCenter : ShellMetrics.lightsCenter
+    let rail = input.railFraction
     if input.fullscreen {
-      let lights = input.topTabs ? nil : DockMotion.lightsCenter(offset: 0, base: base)
-      return DockedLayoutFrames(card: CGRect(origin: .zero, size: size), sidebar: nil, sidebarShift: 0, topStrip: nil, lights: lights)
+      let card = CGRect(origin: .zero, size: size)
+      let top = min(ShellMetrics.toolbarHeight, card.height)
+      let page = CGRect(x: 0, y: top, width: card.width, height: max(0, card.height - top))
+      return DockedLayoutFrames(card: card, page: page, sidebar: nil, sidebarShift: 0, topStrip: nil, lights: DockMotion.sidebarLightsCenter(input))
     }
     let top = input.topTabs ? ShellMetrics.cardTop + (inset.top - ShellMetrics.cardTop) * dock : inset.top
-    let left = input.topTabs ? inset.left : inset.left + (input.sidebarWidth - inset.left) * dock
-    let card = CGRect(x: left, y: top, width: max(0, size.width - left - inset.right - max(0, input.sidePanel)), height: max(0, size.height - top - inset.bottom))
+    let left = input.topTabs ? inset.left : inset.left + (input.sidebarWidth - inset.left) * dock * (1 - rail)
+    let insetCard = CGRect(x: left, y: top, width: max(0, size.width - left - inset.right - max(0, input.sidePanel)), height: max(0, size.height - top - inset.bottom))
+    let windowCard = CGRect(x: 0, y: 0, width: max(0, size.width - max(0, input.sidePanel)), height: size.height)
+    let card = input.topTabs ? insetCard : CGRect(
+      x: insetCard.minX + (windowCard.minX - insetCard.minX) * rail,
+      y: insetCard.minY + (windowCard.minY - insetCard.minY) * rail,
+      width: insetCard.width + (windowCard.width - insetCard.width) * rail,
+      height: insetCard.height + (windowCard.height - insetCard.height) * rail)
+    let pageTop = min(ShellMetrics.toolbarHeight + ShellMetrics.railToolbarTop * rail, card.height)
+    let visible = min(1, max(0, input.peeking ? input.peekSlide : dock))
+    let gap = ShellMetrics.railPageGap * rail
+    let pageLeft = min(card.width, max(0, input.sidebarWidth * rail * visible + gap * (1 - visible)))
+    let page = CGRect(x: card.minX + pageLeft, y: card.minY + pageTop, width: max(0, card.width - pageLeft - gap), height: max(0, card.height - pageTop - gap))
     if input.topTabs {
       let strip = CGRect(x: 0, y: -inset.top * (1 - dock), width: size.width, height: inset.top)
-      return DockedLayoutFrames(card: card, sidebar: nil, sidebarShift: 0, topStrip: strip, lights: nil)
+      return DockedLayoutFrames(card: card, page: page, sidebar: nil, sidebarShift: 0, topStrip: strip, lights: nil)
     }
     let width = input.sidebarWidth
-    let sidebar: CGRect
+    let fullSidebar: CGRect
     if input.peeking {
-      sidebar = CGRect(x: ShellMetrics.peekOrigin.x, y: ShellMetrics.peekOrigin.y, width: width, height: max(0, size.height - ShellMetrics.peekOrigin.y - ShellMetrics.peekBottom))
+      fullSidebar = CGRect(x: ShellMetrics.peekOrigin.x, y: ShellMetrics.peekOrigin.y, width: width, height: max(0, size.height - ShellMetrics.peekOrigin.y - ShellMetrics.peekBottom))
     } else {
-      sidebar = CGRect(x: input.away ? -10_000 : 0, y: 0, width: width, height: size.height)
+      fullSidebar = CGRect(x: input.away ? -10_000 : 0, y: 0, width: width, height: size.height)
     }
-    let offset = input.peeking ? (width + 12) * (1 - input.peekSlide) - ShellMetrics.peekOrigin.x : width * (1 - dock)
-    let lights = DockMotion.lightsCenter(offset: offset, down: input.peeking ? ShellMetrics.peekOrigin.y : 0, base: base)
+    let railSidebar = CGRect(x: input.away ? -10_000 : card.minX, y: page.minY, width: width, height: max(0, card.maxY - page.minY))
+    let sidebar = CGRect(
+      x: fullSidebar.minX + (railSidebar.minX - fullSidebar.minX) * rail,
+      y: fullSidebar.minY + (railSidebar.minY - fullSidebar.minY) * rail,
+      width: width, height: fullSidebar.height + (railSidebar.height - fullSidebar.height) * rail)
     let peekIn = input.peeking ? -12 + (width + 12) * input.peekSlide : 0
-    return DockedLayoutFrames(card: card, sidebar: sidebar, sidebarShift: -width * (1 - dock) + peekIn, topStrip: nil, lights: lights)
+    let fullShift = -width * (1 - dock) + peekIn
+    let railShift = -width * (1 - visible)
+    return DockedLayoutFrames(
+      card: card, page: page, sidebar: sidebar, sidebarShift: fullShift + (railShift - fullShift) * rail,
+      topStrip: nil, lights: DockMotion.sidebarLightsCenter(input))
   }
 }

@@ -91,7 +91,8 @@ public final class SplitChromeView: NSView {
   public var panes: [String: CGRect] { SplitSlots.shared.panes(windowId) }
 
   private func relayout() {
-    let laid = SplitLayout.panes(split: split, activeId: activeId, fullscreenTab: fullscreenTab, bounds: bounds)
+    let area = SplitLayout.bounds(in: self, fullscreenTab: fullscreenTab)
+    let laid = SplitLayout.panes(split: split, activeId: activeId, fullscreenTab: fullscreenTab, bounds: area)
     let panes = laid.panes
     let shown = covered ? [] : laid.dividers
     SplitSlots.shared.publish(windowId, panes)
@@ -133,7 +134,8 @@ public final class SplitChromeView: NSView {
 
   private func moved(_ delta: CGFloat) {
     guard let drag else { return }
-    let total = Double(drag.vertical ? bounds.width : bounds.height)
+    let area = SplitLayout.bounds(in: self, fullscreenTab: fullscreenTab)
+    let total = Double(drag.vertical ? area.width : area.height)
     switch drag.kind {
     case .root(let index):
       pending = (drag.splitId, ShellGeometry.resize(drag.sizes, index, delta: Double(delta), total: total), nil)

@@ -16,6 +16,7 @@ import { tabEngine } from "../store/engines";
 import { EngineOfferPrompt } from "./site/EnginePrompt";
 import { webviewRef } from "../lib/webviews";
 import { useBrowser } from "../store/browser";
+import { nativeSidebarRailSupported, sidebarIconsOnlyOf } from "../store/sidebarRail";
 import { setPageProgress } from "../store/pageProgress";
 import { shallowEqual, useProfilesValue, useStoreWhile, useTabValue } from "../store/tabWatch";
 import { useActiveTabId, useWindowId } from "../store/hooks";
@@ -439,6 +440,7 @@ const TabPane = memo(function TabPane({
     if (visible) revealToolbar(tabId);
   }, [visible]);
   const chromeInWindow = hideBar && windowToolbar;
+  const nativeRailChrome = useBrowser((s) => nativeSidebarRailSupported && sidebarIconsOnlyOf(s.windows[windowId], s.settings)) && windowShellActive(windowId);
   useLayoutEffect(() => {
     if (chromeInWindow) publishPaneChrome(windowId, { tabId, mode, bar: motion.bar, fade: motion.fade });
   });
@@ -466,7 +468,7 @@ const TabPane = memo(function TabPane({
         <View pointerEvents="none" style={{ height: layout.toolbarHeight }} />
       ) : visible && !windowToolbar ? (
         <Toolbar tabId={tabId} geometry={geometry} windowId={windowId} inSplit={inSplit} focused={focused || !inSplit} />
-      ) : visible ? (
+      ) : visible && !nativeRailChrome ? (
         <ToolbarBackdrop tabId={tabId} />
       ) : (
         <View style={{ height: layout.toolbarHeight }} />

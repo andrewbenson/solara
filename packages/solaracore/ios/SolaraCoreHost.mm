@@ -682,8 +682,8 @@ static void StartEarlyWindow() {
     return 1;
   };
   if (![SolaraCoreNotifications install]) {
-    fprintf(stderr, "[solaracore] notification protocol 2 / native API 36 preflight failed\n");
-    return notificationFailure(CFSTR("This app and its engine must both support native API 36 and notification protocol 2. Reinstall the complete Solara app."));
+    fprintf(stderr, "[solaracore] notification protocol 2 / native API 37 preflight failed\n");
+    return notificationFailure(CFSTR("This app and its engine must both support native API 37 and notification protocol 2. Reinstall the complete Solara app."));
   }
   struct NotificationStartupLifetime {
     ~NotificationStartupLifetime() { [SolaraCoreNotifications abortStartup]; }

@@ -13,14 +13,16 @@ public final class RNPageAttachment {
 
 public enum RNPageReportDisposition {
   case fallback
-  case reserved(sessionGeneration: String, registrationGeneration: UInt64)
+  case reserved(sessionGeneration: String, registrationGeneration: UInt64, eventSeq: Int? = nil)
   case rejected(sessionGeneration: String?, registrationGeneration: UInt64?)
 
   public var envelope: [String: Any] {
     switch self {
     case .fallback: return ["kind": "fallback"]
-    case .reserved(let session, let registration):
-      return ["kind": "reserved", "sessionGeneration": session, "registrationGeneration": registration]
+    case .reserved(let session, let registration, let eventSeq):
+      var value: [String: Any] = ["kind": "reserved", "sessionGeneration": session, "registrationGeneration": registration]
+      if let eventSeq { value["eventSeq"] = eventSeq }
+      return value
     case .rejected(let session, let registration):
       var value: [String: Any] = ["kind": "rejected"]
       if let session { value["sessionGeneration"] = session }

@@ -156,7 +156,7 @@ public enum PageCalls {
     case "resolveUnresponsive": web.resolveUnresponsive(terminate: try a.bool(required: 0))
     case "discard": return resolve(web.discard(unload: a.bool(0) ?? false))
     case "reasonsNotToSleep": return resolve(web.reasonsNotToSleep())
-    case "sleepIfEligible": return resolve(web.sleepIfEligible())
+    case "sleepIfEligible": return resolve(a.bool(0) == true ? web.sleepIfEligibleWaivingPinned() : web.sleepIfEligible())
     case "setFrozen": web.frozen = try a.bool(required: 0)
     default: break
     }

@@ -38,6 +38,7 @@ enum RNPageReports {
 
   static func install(issuer: PageIssuer?) {
     self.issuer = issuer
+    if let runtimeID { issuer?.beginRuntime(runtimeID) }
     RNPageEventTap.install(RNPageHostHooks(attach: { @MainActor in attach(owner: $0, page: $1, tabId: $2, engine: $3, profile: $4, initialContext: $5, previous: $6, emit: $7) }, start: { @MainActor in start($0, action: $1) }, detach: detach, reserve: reserve, call: call,
       deliver: { @MainActor work in
         if let issuer { issuer.afterSequence(work) }
@@ -46,12 +47,15 @@ enum RNPageReports {
   }
 
   static func beginRuntime(_ id: UUID) {
-    if let old = runtimeID, old != id { endRuntime(old) }
+    guard runtimeID != id else { return }
+    if let old = runtimeID { endRuntime(old) }
     runtimeID = id
+    issuer?.beginRuntime(id)
   }
 
   static func endRuntime(_ id: UUID) {
     guard runtimeID == id else { return }
+    issuer?.endRuntime(id)
     for attachment in attachments.values where attachment.runtimeID == id {
       attachment.detached = true
       if let binding = attachment.binding { issuer?.retire(binding) }
@@ -89,6 +93,7 @@ enum RNPageReports {
       attachment.binding = issuer.attach(tabId: tabId, engine: engine, host: .reactNative, owner: owner,
         runtimeID: runtimeID, context: context,
         onCreated: { binding, reestablished in
+          issuer.noteDelivery(binding)
           var payload = identity(binding)
           payload["generation"] = binding.sessionGeneration
           payload["reestablished"] = reestablished
@@ -163,9 +168,10 @@ enum RNPageReports {
       } else if name == "onPageExecution", let url = payload["url"] as? String {
         let sequence = attachment.execution.executed(url: toAppUrl(url), constructor: payload["constructor"] as? Bool ?? false)
         issuer.noteExecuted(binding, navigationSeq: sequence)
-      } else if PageNativeReport.names.contains(name) {
-        guard let payload = json(payload), let report = PageNativeReport.report(name: name, payload: payload),
-          issuer.report(binding, report: report) else { return rejected(binding) }
+      } else {
+        guard let payload = json(payload), let sequence = issuer.reserveEvent(binding, name: name, payload: payload) else { return rejected(binding) }
+        issuer.noteDelivery(binding)
+        return .reserved(sessionGeneration: binding.sessionGeneration, registrationGeneration: binding.registrationGeneration, eventSeq: sequence)
       }
       guard issuer.isCurrent(binding) else { return rejected(binding) }
       return .reserved(sessionGeneration: binding.sessionGeneration, registrationGeneration: binding.registrationGeneration)
@@ -204,6 +210,12 @@ enum RNPageReports {
     } catch {
       issuer.afterSequence { @MainActor in reject("ERR_PAGE_VALUE", "Invalid page command arguments") }
     }
+  }
+
+  static func protectionKnown(tabId: String, sessionGeneration: String) -> Bool {
+    guard let issuer, let binding = issuer.binding(tabId: tabId),
+      binding.sessionGeneration == sessionGeneration else { return false }
+    return issuer.protectionKnown(binding)
   }
 
   static func isPageCurrent(tabId: String, sessionGeneration: String, registrationGeneration: Double) -> Bool {

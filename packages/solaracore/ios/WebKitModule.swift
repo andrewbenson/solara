@@ -120,7 +120,7 @@ public class WebKitModule: Module {
       AsyncFunction("resolveUnresponsive") { (view: WebKitTabView, terminate: Bool, promise: Promise) in view.call("resolveUnresponsive", [terminate], promise) }.runOnQueue(.main)
       AsyncFunction("discard") { (view: WebKitTabView, unload: Bool?, promise: Promise) in view.call("discard", [unload ?? false], promise) }.runOnQueue(.main)
       AsyncFunction("reasonsNotToSleep") { (view: WebKitTabView, promise: Promise) in view.call("reasonsNotToSleep", [], promise) }.runOnQueue(.main)
-      AsyncFunction("sleepIfEligible") { (view: WebKitTabView, promise: Promise) in view.call("sleepIfEligible", [], promise) }.runOnQueue(.main)
+      AsyncFunction("sleepIfEligible") { (view: WebKitTabView, waivingPinned: Bool, promise: Promise) in view.call("sleepIfEligible", [waivingPinned], promise) }.runOnQueue(.main)
       AsyncFunction("setFrozen") { (view: WebKitTabView, frozen: Bool, promise: Promise) in view.call("setFrozen", [frozen], promise) }.runOnQueue(.main)
 
       OnViewDidUpdateProps { (view: WebKitTabView) in view.propsDidUpdate() }

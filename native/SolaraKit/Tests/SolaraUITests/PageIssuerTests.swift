@@ -114,6 +114,94 @@ private func heldPageAnswer(_ command: PageCommand = .livePage, incognito: Bool,
 
 @MainActor
 @Suite struct PageIssuerTests {
+  @Test func runtimeIdentityIsSharedOnlyByTheSameContext() {
+    let first = NSObject()
+    let second = NSObject()
+    #expect(PageIssuer.runtimeID(for: first) == PageIssuer.runtimeID(for: first))
+    #expect(PageIssuer.runtimeID(for: first) != PageIssuer.runtimeID(for: second))
+  }
+
+  @Test func replacingTheModuleOnOneContextKeepsItsRuntimeThroughTheOldDestroy() throws {
+    let fixture = try IssuerFixture()
+    let lease = PageRuntimeLease()
+    let context = NSObject()
+    let old = NSObject()
+    let replacement = NSObject()
+    let id = PageIssuer.runtimeID(for: context)
+    lease.begin(old, id) { fixture.issuer.beginRuntime($0) }
+    fixture.issuer.noteDelivery(fixture.binding)
+    #expect(fixture.issuer.protectionKnown(fixture.binding))
+    lease.begin(replacement, PageIssuer.runtimeID(for: context)) { fixture.issuer.beginRuntime($0) }
+    lease.end(old, id) { fixture.issuer.endRuntime($0) }
+    #expect(fixture.issuer.protectionKnown(fixture.binding))
+    lease.end(replacement, id) { fixture.issuer.endRuntime($0) }
+    #expect(!fixture.issuer.protectionKnown(fixture.binding))
+  }
+
+  @Test func aLateDestroyAfterAReloadIsIgnoredAndTheNewModuleStillEndsItsRuntime() {
+    let lease = PageRuntimeLease()
+    let old = NSObject()
+    let reloaded = NSObject()
+    let oldID = UUID()
+    let newID = UUID()
+    var stopped: [UUID] = []
+    lease.begin(old, oldID) { _ in }
+    lease.begin(reloaded, newID) { _ in }
+    lease.end(old, oldID) { stopped.append($0) }
+    #expect(stopped.isEmpty)
+    lease.end(reloaded, newID) { stopped.append($0) }
+    #expect(stopped == [newID])
+  }
+
+  @Test func coldDeliveryBeforeRuntimeBeginCanBeClaimedByThatRuntime() throws {
+    let fixture = try IssuerFixture()
+    let runtime = UUID()
+    fixture.issuer.noteDelivery(fixture.binding, runtimeID: runtime)
+    #expect(!fixture.issuer.protectionKnown(fixture.binding))
+    fixture.issuer.beginRuntime(runtime)
+    #expect(fixture.issuer.protectionKnown(fixture.binding))
+    #expect(fixture.issuer.registry.descriptors.first?.protectionKnown == true)
+  }
+
+  @Test func coldBootstrapCanRecoverReadyAndNavigationWithoutLostProtectionFacts() throws {
+    let fixture = try IssuerFixture()
+    for name in ["onPageCreated", "onReady", "onNavigationChange", "onStatus", "onProgress"] {
+      fixture.issuer.noteDelivery(fixture.binding, runtimeID: nil, eventName: name)
+    }
+    fixture.issuer.beginRuntime(UUID())
+    fixture.issuer.noteDelivery(fixture.binding)
+    #expect(fixture.issuer.protectionKnown(fixture.binding))
+  }
+
+  @Test(arguments: ["onNowPlaying", "onPictureInPicture", "onDisplayMediaRequest", "onMediaAccess"])
+  func missingDeliveryCannotBeRecoveredByBootstrapOrLaterEvents(_ name: String) throws {
+    let fixture = try IssuerFixture()
+    let runtime = UUID()
+    fixture.issuer.noteDelivery(fixture.binding, runtimeID: nil, eventName: name)
+    fixture.issuer.beginRuntime(runtime)
+    fixture.issuer.noteDelivery(fixture.binding)
+    fixture.issuer.noteDelivery(fixture.binding, runtimeID: runtime)
+    #expect(!fixture.issuer.protectionKnown(fixture.binding))
+    #expect(fixture.issuer.registry.descriptors.first?.protectionKnown == false)
+  }
+
+  @Test func staleEmitterCannotAuthorizeANewSessionInTheNextRuntime() throws {
+    let fixture = try IssuerFixture()
+    let old = UUID()
+    fixture.issuer.beginRuntime(old)
+    fixture.issuer.endRuntime(old)
+    let current = UUID()
+    fixture.issuer.beginRuntime(current)
+    let owner = IssuerProducer()
+    let replacement = try #require(fixture.issuer.attach(tabId: fixture.id, engine: .chromium, host: .pooled,
+      owner: owner, context: fixture.binding.context, perform: owner.perform))
+    fixture.issuer.noteDelivery(replacement, runtimeID: old)
+    fixture.issuer.noteDelivery(replacement)
+    fixture.issuer.noteDelivery(replacement, runtimeID: current)
+    #expect(!fixture.issuer.protectionKnown(replacement))
+    #expect(fixture.issuer.registry.descriptors.first?.protectionKnown == false)
+  }
+
   @Test func aLivePageResultIsDeliveredWhileItsPageIsLive() throws {
     let results = try heldPageAnswer(incognito: true, closing: false)
     #expect(results.count == 1)
@@ -355,6 +443,41 @@ private func heldPageAnswer(_ command: PageCommand = .livePage, incognito: Bool,
     fixture.issuer.retire(fixture.binding)
     #expect(fixture.store.pageFacts(fixture.id)?.generation == next.sessionGeneration)
     #expect(fixture.issuer.registry.descriptor(next.registration!)?.sessionGeneration == next.sessionGeneration)
+  }
+
+  @Test func TabSleepReservesEventWatermarksBeforeDelivery() throws {
+    let fixture = try IssuerFixture()
+    let revision = fixture.store.rev
+    let first = try #require(fixture.issuer.reserveEvent(fixture.binding, name: "onMediaAccess", payload: ["camera": true]))
+    let second = try #require(fixture.issuer.reserveEvent(fixture.binding, name: "onNowPlaying", payload: [:]))
+    #expect(first == 1)
+    #expect(second == 2)
+    #expect(fixture.store.pageFacts(fixture.id)?.latchedThrough == second)
+    #expect(fixture.store.rev == revision)
+    let envelope = try #require(fixture.issuer.eventEnvelope(fixture.binding, name: "onMediaAccess", payload: ["camera": true], eventSeq: first))
+    #expect(envelope["eventSeq"]?.number == Double(first))
+  }
+
+  @Test func TabSleepStampsNativeReportsAndRejectsRetiredReservations() throws {
+    let fixture = try IssuerFixture()
+    let sequence = try #require(fixture.issuer.reserveEvent(fixture.binding, name: "onMedia", payload: ["playing": true]))
+    #expect(fixture.store.state.live[fixture.id]?.playingAudio == true)
+    #expect(fixture.store.pageFacts(fixture.id)?.newestEventSeq == sequence)
+    #expect(fixture.store.pageFacts(fixture.id)?.latchedThrough == sequence)
+    fixture.issuer.retire(fixture.binding)
+    #expect(fixture.issuer.reserveEvent(fixture.binding, name: "onMediaAccess", payload: ["camera": true]) == nil)
+    #expect(fixture.store.pageFacts(fixture.id) == nil)
+  }
+
+  @Test func TabSleepRecoveryKeepsEventSequenceMonotonic() throws {
+    let fixture = try IssuerFixture()
+    let first = try #require(fixture.issuer.reserveEvent(fixture.binding, name: "onMediaAccess", payload: ["camera": true]))
+    try fixture.store.dispatch(Command("updateTab", [.string(fixture.id), ["unloaded": true]]))
+    #expect(fixture.issuer.reserveEvent(fixture.binding, name: "onNowPlaying", payload: [:]) == nil)
+    try fixture.store.dispatch(Command("updateTab", [.string(fixture.id), ["unloaded": false]]))
+    let next = try #require(fixture.issuer.reserveEvent(fixture.binding, name: "onNowPlaying", payload: [:]))
+    #expect(next == first + 1)
+    #expect(fixture.store.pageFacts(fixture.id)?.latchedThrough == next)
   }
 
   @Test func recoveredPageGetsReestablishedEventAndAcceptsNextSeq() throws {

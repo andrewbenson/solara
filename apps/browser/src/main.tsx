@@ -16,6 +16,7 @@ import { startPersistence } from "./lib/persist";
 import { startNewTabBar } from "./components/omnibox/newTabBar";
 import { startPooledPages } from "./components/pooledPages";
 import { perfMark, perfProbeEnabled, probeStore } from "./lib/perfProbe";
+import { startNativeKeepAlive } from "./lib/nativeKeepAlive";
 import { startTabLifecycle } from "./lib/tabLifecycle";
 import { startTabPages } from "./lib/tabPages";
 import { startTabReveal } from "./lib/tabReveal";
@@ -39,6 +40,7 @@ startAppIntegrationPresentation();
 afterFirstWindow(() => {
   void offerNativeDefaultBrowserAfterFirstWindow().catch((error) => console.warn("[defaultBrowserOffer]", error));
 });
+startNativeKeepAlive();
 startTabLifecycle();
 startTranslate();
 startPairingSync();

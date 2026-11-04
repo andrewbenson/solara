@@ -546,7 +546,7 @@ private final class ControlledPageTimeouts {
       ("discard", [.bool(true)], .discard(true)),
       ("setFrozen", [.bool(true)], .setFrozen(true)),
       ("reasonsNotToSleep", [], .reasonsNotToSleep),
-      ("sleepIfEligible", [], .sleepIfEligible),
+      ("sleepIfEligible", [.bool(true)], .sleepIfEligible(true)),
       ("nativeTag", [], .nativeTag),
       ("livePage", [], .livePage)
     ]

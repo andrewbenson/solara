@@ -68,6 +68,8 @@ public final class PageHostBinding {
   public fileprivate(set) var executedNavigationSeq: Int?
   public fileprivate(set) var retired = false
   public fileprivate(set) var eventSeq = 0
+  fileprivate var firstDeliveryRuntimeID: UUID?
+  fileprivate var protectionHistoryLost = false
   public fileprivate(set) var navigation: JSONValue?
   public fileprivate(set) var establishmentSerial = 0
   fileprivate var windowId: String?
@@ -113,6 +115,21 @@ public final class PageHostBinding {
 @MainActor
 public final class PageIssuer {
   public static var shared: PageIssuer?
+  private struct RuntimeOwner {
+    weak var owner: AnyObject?
+    let id: UUID
+  }
+  private static var runtimeOwners: [ObjectIdentifier: RuntimeOwner] = [:]
+
+  public static func runtimeID(for owner: AnyObject) -> UUID {
+    runtimeOwners = runtimeOwners.filter { $0.value.owner != nil }
+    let key = ObjectIdentifier(owner)
+    if let runtime = runtimeOwners[key], runtime.owner === owner { return runtime.id }
+    let id = UUID()
+    runtimeOwners[key] = RuntimeOwner(owner: owner, id: id)
+    return id
+  }
+
   public let store: Store
   public let registry: PageRegistry
   public private(set) var deliveryConfigured: Bool
@@ -125,6 +142,8 @@ public final class PageIssuer {
   var retainedNativeExecutions: Int { nativeExecutions.count }
   private let deliver: PageRegistry.Deliver
   private var bindings: [String: PageHostBinding] = [:]
+  private var protectionRuntimeID: UUID?
+  private var hasBegunRuntime = false
   private var registrations: [PageRegistration: PageHostBinding] = [:]
 
   public init(store: Store, registry: PageRegistry = .shared, deliver: PageRegistry.Deliver? = nil) {
@@ -150,6 +169,7 @@ public final class PageIssuer {
           guard self.currentInScope(binding, requirePage: true),
             let snapshot = try? self.store.pageHostSnapshotInScope(binding.tabId, generation: binding.sessionGeneration) else { return nil }
           var copy = descriptor
+          copy.protectionKnown = self.protectionKnown(binding)
           copy.ready = snapshot.facts?.ready
           copy.navigation = binding.navigation
           return copy
@@ -167,6 +187,52 @@ public final class PageIssuer {
     deliveryConfigured = deliveryConfigured && snapshotConfigured && callConfigured
     if !callConfigured { NSLog("[store] PageRegistry call configuration failed; page registration refused") }
 
+  }
+
+  public func beginRuntime(_ id: UUID) {
+    store.sequence {
+      guard protectionRuntimeID != id else { return }
+      if let old = protectionRuntimeID { endRuntime(old) }
+      protectionRuntimeID = id
+      hasBegunRuntime = true
+    }
+  }
+
+  public func endRuntime(_ id: UUID) {
+    store.sequence {
+      guard protectionRuntimeID == id else { return }
+      for binding in bindings.values { binding.protectionHistoryLost = true }
+      protectionRuntimeID = nil
+    }
+  }
+
+  public func noteDelivery(_ binding: PageHostBinding) {
+    store.sequence {
+      guard let runtime = protectionRuntimeID else { return }
+      noteDelivery(binding, runtimeID: runtime)
+    }
+  }
+
+  public func noteDelivery(_ binding: PageHostBinding, runtimeID: UUID?, eventName: String? = nil) {
+    store.sequence {
+      guard currentInScope(binding, requirePage: true), !binding.protectionHistoryLost else { return }
+      if runtimeID == nil, let eventName,
+        !["onNowPlaying", "onPictureInPicture", "onDisplayMediaRequest", "onMediaAccess", "onFullscreen",
+          "onCrashed", "onUnresponsive", "onResponsive", "onPageMessage", "onPageIssue"].contains(eventName) { return }
+      guard let runtimeID, binding.host != .reactNative || binding.runtimeID == runtimeID else {
+        binding.protectionHistoryLost = true
+        return
+      }
+      if binding.firstDeliveryRuntimeID == nil { binding.firstDeliveryRuntimeID = runtimeID }
+      if let current = protectionRuntimeID, current != runtimeID { binding.protectionHistoryLost = true }
+    }
+  }
+
+  public func protectionKnown(_ binding: PageHostBinding) -> Bool {
+    store.sequence {
+      currentInScope(binding, requirePage: true) && !binding.protectionHistoryLost &&
+        protectionRuntimeID != nil && binding.firstDeliveryRuntimeID == protectionRuntimeID
+    }
   }
 
   public func afterSequence(_ work: @escaping @MainActor () -> Void) { deliver(work) }
@@ -205,6 +271,7 @@ public final class PageIssuer {
         _ = self.ensurePageEstablished(binding)
         self.issueInScope(tabId: tabId, identity: binding.identity, command: command, completion: finish)
       }
+      binding.protectionHistoryLost = hasBegunRuntime && protectionRuntimeID == nil
       binding.setRegistration(registration)
       bindings[tabId] = binding
       registrations[registration] = binding
@@ -293,11 +360,30 @@ public final class PageIssuer {
     }
   }
 
-  public func eventEnvelope(_ binding: PageHostBinding, name: String, payload: JSONValue) -> JSONValue? {
+  public func reserveEvent(_ binding: PageHostBinding, name: String, payload: JSONValue) -> Int? {
+    store.sequence {
+      guard ensurePageEstablished(binding), currentInScope(binding, requirePage: true),
+        binding.eventSeq < 9_007_199_254_740_991 else { return nil }
+      binding.eventSeq += 1
+      let sequence = binding.eventSeq
+      if var report = PageNativeReport.report(name: name, payload: payload)?.object {
+        report["eventSeq"] = JSONValue(sequence)
+        guard self.report(binding, report: .object(report)) else { return nil }
+      }
+      store.enqueuePageReport(id: binding.tabId, report: ["type": "latch",
+        "generation": .string(binding.sessionGeneration), "eventSeq": JSONValue(sequence)])
+      store.sequence {}
+      guard currentInScope(binding, requirePage: true) else { return nil }
+      return sequence
+    }
+  }
+
+  public func eventEnvelope(_ binding: PageHostBinding, name: String, payload: JSONValue, eventSeq: Int? = nil) -> JSONValue? {
     store.sequence {
       guard currentInScope(binding, requirePage: true) else { return nil }
       return ["tabId": .string(binding.tabId), "registrationGeneration": JSONValue(Double(binding.registrationGeneration)),
-        "sessionGeneration": .string(binding.sessionGeneration), "name": .string(name), "payload": payload]
+        "sessionGeneration": .string(binding.sessionGeneration), "name": .string(name), "payload": payload,
+        "eventSeq": eventSeq.map { JSONValue($0) } ?? .null]
     }
   }
 

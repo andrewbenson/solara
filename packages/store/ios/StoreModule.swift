@@ -3,11 +3,12 @@ import Foundation
 internal import SolaraBridgeCore
 internal import SolaraModel
 internal import SolaraStore
+internal import SolaraUI
 internal import SolaraSyncAdapter
 
 public class StoreModule: Module {
   private var subscription: Int?
-  private let pageRuntimeID = UUID()
+  private var pageRuntimeID: UUID?
 
   public func definition() -> ModuleDefinition {
     Name("SolaraStoreAdapter")
@@ -20,22 +21,30 @@ public class StoreModule: Module {
       }, revision: { NativeStore.pairingRevision() }, projection: { operation, links in
         try NativeStore.pairingCheckpoint(operation: operation, links: links)
       })
-      let id = self.pageRuntimeID
-      pageMain { RNPageReports.beginRuntime(id) }
+      let sink = StoreModuleSink(self)
+      pageMain {
+        guard let module = sink.module, let context = module.appContext else { return }
+        let id = PageIssuer.runtimeID(for: context)
+        module.pageRuntimeID = id
+        PageRuntimeLease.shared.begin(module, id) { RNPageReports.beginRuntime($0) }
+      }
     }
 
     OnDestroy {
-      let id = self.pageRuntimeID
-      pageMain { RNPageReports.endRuntime(id) }
+      let sink = StoreModuleSink(self)
+      pageMain {
+        guard let module = sink.module else { return }
+        PageRuntimeLease.shared.end(module, module.pageRuntimeID) { RNPageReports.endRuntime($0) }
+      }
     }
 
     Function("pageFacts") { (tabId: String) -> String? in
-      NativeStore.shared?.bridge.store.pageFacts(tabId).map { pageFactsJSON($0).text() }
+      NativeStore.shared?.bridge.store.pageFacts(tabId).map { pageFactsJSON(tabId, $0).text() }
     }
 
     Function("livePages") { () -> String? in
       guard let pages = NativeStore.shared?.bridge.store.livePages() else { return nil }
-      return JSONValue.object(JSONObject(pages.map { ($0.key, pageFactsJSON($0.value)) })).text()
+      return JSONValue.object(JSONObject(pages.map { ($0.key, pageFactsJSON($0.key, $0.value)) })).text()
     }
 
     Function("isPageCurrent") { (tabId: String, sessionGeneration: String, registrationGeneration: Double) -> Bool in
@@ -157,13 +166,19 @@ private func needsPagePreparation(_ commandJSON: String) -> Bool {
   return commands.contains { $0["name"]?.string == "pageReport" && $0["args"]?.array?.dropFirst().first?["type"]?.string == "issued" }
 }
 
+private final class StoreModuleSink: @unchecked Sendable {
+  weak var module: StoreModule?
+  init(_ module: StoreModule) { self.module = module }
+}
+
 private func pageMain<T: Sendable>(_ work: @MainActor () -> T) -> T {
   if Thread.isMainThread { return MainActor.assumeIsolated { work() } }
   return DispatchQueue.main.sync { MainActor.assumeIsolated { work() } }
 }
 
-private func pageFactsJSON(_ facts: PageFacts) -> JSONValue {
+private func pageFactsJSON(_ tabId: String, _ facts: PageFacts) -> JSONValue {
   var value: JSONObject = ["generation": .string(facts.generation), "ready": .null,
+    "protectionKnown": .bool(pageMain { RNPageReports.protectionKnown(tabId: tabId, sessionGeneration: facts.generation) }),
     "keepAlive": .null, "latchedThrough": JSONValue(facts.latchedThrough), "newestEventSeq": JSONValue(facts.newestEventSeq)]
   if let ready = facts.ready {
     var readyJSON: JSONObject = ["browserId": JSONValue(ready.browserId)]

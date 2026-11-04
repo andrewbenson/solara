@@ -125,6 +125,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (NSString *)discard:(BOOL)unload NS_SWIFT_NAME(discard(unload:));
 - (nullable NSArray<NSString *> *)reasonsNotToSleep;
 - (NSString *)sleepIfEligible;
+- (NSString *)sleepIfEligibleWaivingPinned;
 - (void)closeBrowser;
 - (void)parentWindowDidChange;
 

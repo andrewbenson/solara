@@ -31,6 +31,7 @@ public struct PageDescriptor: Equatable, Sendable {
   public let host: PageHost
   public let nativeTag: Int?
   public let sessionGeneration: String?
+  public var protectionKnown = false
   public var ready: PageReadyFacts? = nil
   public var navigation: JSONValue? = nil
   public var tabID: String { registration.tabID }

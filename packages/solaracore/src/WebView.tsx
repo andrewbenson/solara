@@ -131,12 +131,13 @@ export type AutofillPromptAnswer = "accept" | "decline" | "dismiss";
 export type ExtensionActionResult = "none" | "popup" | "sidePanel";
 
 export type PageNativeIdentity = { tabId: string; sessionGeneration: string; registrationGeneration: number };
-export type StoreReportDisposition = { kind: "fallback" } | ({ kind: "reserved" } & Omit<PageNativeIdentity, "tabId">) | { kind: "rejected"; sessionGeneration?: string; registrationGeneration?: number };
+export type StoreReportDisposition = { kind: "fallback" } | ({ kind: "reserved"; eventSeq?: number } & Omit<PageNativeIdentity, "tabId">) | { kind: "rejected"; sessionGeneration?: string; registrationGeneration?: number };
 export type PageCreated = PageNativeIdentity & { generation: string; reestablished?: boolean };
 export type PageIssue = PageNativeIdentity & { accepted?: boolean; clearNewTabShown?: boolean; retry?: boolean; contextRevision?: number; navigation?: { seq: number; url: string; userInitiated?: boolean } | null };
 
 export type WebViewProps = ViewProps & {
   acceptStoreReport?: (report: StoreReportDisposition) => boolean;
+  onStoreEventHandled?: (report: StoreReportDisposition) => void;
   onPageCreated?: (page: PageCreated) => void;
   onPageIssue?: (issue: PageIssue) => void;
   engine?: PageEngine;
@@ -236,7 +237,7 @@ export type WebViewHandle = {
   resolveUnresponsive(terminate: boolean): Promise<void>;
   discard(options?: { unload?: boolean }): Promise<DiscardOutcome>;
   reasonsNotToSleep(): Promise<string[] | null>;
-  sleepIfEligible(): Promise<DiscardOutcome>;
+  sleepIfEligible(options?: { waivingPinned: true }): Promise<DiscardOutcome>;
   setFrozen(frozen: boolean): Promise<void>;
 };
 
@@ -323,7 +324,7 @@ const unwrap: { [K in Handlers]: (e: NativeEvents[K]) => Parameters<NonNullable<
 
 type NativeHandle = Omit<
   WebViewHandle,
-  "evaluate" | "loadUrl" | "downloadFavicon" | "resolvePasswordPrompt" | "discard" | "nativeTag" | "requestPictureInPicture" | "takeControlPress"
+  "evaluate" | "loadUrl" | "downloadFavicon" | "resolvePasswordPrompt" | "discard" | "sleepIfEligible" | "nativeTag" | "requestPictureInPicture" | "takeControlPress"
 > & {
   requestPictureInPicture(clickAt: number, control: number): Promise<boolean>;
   takeControlPress(clickAt: number, control: number): Promise<boolean>;
@@ -332,6 +333,7 @@ type NativeHandle = Omit<
   loadUrl(url: string, userInitiated?: boolean): Promise<void>;
   resolvePasswordPrompt(answer: string, username: string | null, password: string | null): Promise<void>;
   discard(unload: boolean): Promise<DiscardOutcome>;
+  sleepIfEligible(waivingPinned: boolean): Promise<DiscardOutcome>;
 };
 
 const NativeWebView = requireNativeViewManager<NativeProps>("SolaraCEF");
@@ -395,7 +397,7 @@ function webViewHandle(call: HandleCall, nativeTag: () => number | null): WebVie
     resolveUnresponsive: (terminate) => call(undefined, (n) => n.resolveUnresponsive(terminate)),
     discard: (options) => call<DiscardOutcome>("refused", (n) => n.discard(options?.unload ?? false)),
     reasonsNotToSleep: () => call<string[] | null>(null, (n) => n.reasonsNotToSleep()),
-    sleepIfEligible: () => call<DiscardOutcome>("refused", (n) => n.sleepIfEligible()),
+    sleepIfEligible: (options) => call<DiscardOutcome>("refused", (n) => n.sleepIfEligible(options?.waivingPinned ?? false)),
     setFrozen: (frozen) => call(undefined, (n) => n.setFrozen(frozen)),
   };
 }
@@ -443,6 +445,7 @@ export function deliverWebViewEvent<K extends Handlers>(props: WebViewProps, nam
   const handler = props[name] as ((...args: unknown[]) => void) | undefined;
   if (!handler) return false;
   handler(...unwrapPageEvent(name, payload));
+  if (report) props.onStoreEventHandled?.(report);
   return true;
 }
 
@@ -467,7 +470,7 @@ export const WebView = forwardRef<WebViewHandle, WebViewProps>(function WebView(
 
   const nativeProps: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(props)) {
-    if (key === "engine" || key === "acceptStoreReport") continue;
+    if (key === "engine" || key === "acceptStoreReport" || key === "onStoreEventHandled") continue;
     if (key === "url" || key === "shownUrl") {
       nativeProps[key] = typeof value === "string" ? toEngineUrl(value) : value;
       continue;

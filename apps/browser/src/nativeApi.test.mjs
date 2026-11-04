@@ -56,10 +56,11 @@ test("legacy bundles and native builds are refused before main can start JS clea
   }
 });
 
-test("creation admission keeps API 36 compatible", () => {
-  assert.equal(jsVersion(), 36);
-  assert.equal(nativeVersion(), 36);
-  assert.deepEqual(boot(36, 36).events, ["main", "legacy-js-cleanup"]);
+test("keep-alive event stamps require the upgraded native bridge", () => {
+  assert.equal(jsVersion(), 37);
+  assert.equal(nativeVersion(), 37);
+  assert.match(boot(jsVersion(), 36).skew, /Native API skew/);
+  assert.deepEqual(boot(37, 37).events, ["main", "legacy-js-cleanup"]);
 });
 
 test("a matching bundle reaches main through the same entry gate", () => {

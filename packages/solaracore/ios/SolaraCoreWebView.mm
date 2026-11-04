@@ -3231,6 +3231,12 @@ static NSString *LinkKeyAction(NSString *key) {
   return [_tab sleepIfEligible] ? @"discarded" : @"refused";
 }
 
+- (NSString *)sleepIfEligibleWaivingPinned {
+  if (!_tab || ![_tab respondsToSelector:@selector(sleepIfEligibleWaivingPinned)]) return @"unsupported";
+  if (_tab.discarded) return @"already";
+  return [_tab sleepIfEligibleWaivingPinned] ? @"discarded" : @"refused";
+}
+
 - (BOOL)discarded {
   return _tab.discarded;
 }

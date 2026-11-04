@@ -56,7 +56,7 @@ const usesPageA = [
   "context-menu-search", "duplicate-and-reopen", "device-chooser", "bluetooth-chooser",
   "bluetooth-settings", "cast-dialog", "cast-routes", "theme-commit", "theme-modern-colors", "user-selection",
   "password-prompt", "screen-share-picker", "tab-capture", "share-instead-two-captures",
-  "restore-after-close", "discard-outcomes", "sleep-eligibility", "capture-picture", "unresponsive", "permission-dismissed", "permission-status-detached",
+  "restore-after-close", "discard-outcomes", "sleep-eligibility", "sleep-pinned-capture", "capture-picture", "unresponsive", "permission-dismissed", "permission-status-detached",
   "save-page", "activate-request", "extension-popup-and-panel", "print-preview",
   "extension-prompts", "traffic-lights-after-profile-switch", "extension-configure",
   "private-windows-create", "extension-installed-bubble", "popup-window", "popup-window-permission", "popup-origin-strip", "autofill-save-prompts",
@@ -2347,6 +2347,73 @@ try {
       for (const id of opened) await closeTab(id).catch(() => null);
       editor.close();
       host.close();
+      await evalApp(`ac.actions.switchToTab("${first.id}"); return true`).catch(() => null);
+    }
+  });
+
+  await check("sleep-pinned-capture", async () => {
+    const opened = [];
+    let capturerPage;
+    let capturedPage;
+    const reasons = (id) => evalApp(`return ac.webviews.get("${id}").reasonsNotToSleep()`);
+    const waive = (id) => evalApp(`return ac.webviews.get("${id}").sleepIfEligible({ waivingPinned: true })`);
+    const pin = async (id) => {
+      await evalApp(`ac.store.getState().pinTabs(["${id}"], true); return true`);
+      return until(`${id} pinned in Chrome's tab strip`, async () =>
+        (await cef(`tabStrips()`)).strips.flatMap((strip) => strip.tabs).find((tab) => tab.key === id && tab.pinned && !tab.active) ?? null, 10000);
+    };
+    const out = {};
+    try {
+      const target = await openTab(`${base}/capture-target?sleep-pinned`, "Capture Target", true);
+      opened.push(target.id);
+      capturedPage = await pageFor(target.id, `${base}/capture-target?sleep-pinned`);
+      const capturer = await openTab(`${base}/b?sleep-pinned-capture`, "Page B");
+      opened.push(capturer.id);
+      capturerPage = await pageFor(capturer.id, `${base}/b?sleep-pinned-capture`);
+      await cef(`setDisplayMediaPicker(false)`);
+      await cdp(capturerPage, "Runtime.evaluate", {
+        expression: "window.__cap = 'pending'; navigator.mediaDevices.getDisplayMedia({ video: true }).then((s) => { window.__stream = s; window.__cap = 'live'; }, (e) => (window.__cap = e.name)); true",
+        userGesture: true,
+      });
+      await until("the pinned candidate's live capture", async () => {
+        const value = (await cdp(capturerPage, "Runtime.evaluate", { expression: "window.__cap", returnByValue: true })).result.value;
+        if (value !== "pending" && value !== "live") throw new Error(`getDisplayMedia: ${value}`);
+        return value === "live" ? true : null;
+      }, 15000);
+      await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
+      await until("A shown", async () => (await state()).active === first.id);
+      out.captureStrip = await pin(target.id);
+      out.captureReasons = await until("pin and capture reasons together", async () => {
+        const value = await reasons(target.id);
+        return value?.includes("pinnedTab") && value.some((reason) => ["capturingVideo", "capturingAudio", "mirrored", "capturingWindow", "capturingDisplay"].includes(reason)) ? value : null;
+      }, 10000);
+      out.captureSleep = await waive(target.id);
+      out.captureStillLive = (await cdp(capturerPage, "Runtime.evaluate", {
+        expression: "window.__stream.getTracks().some((track) => track.readyState === 'live')",
+        returnByValue: true,
+      })).result.value;
+      out.captureDiscarded = (await live(target.id))?.discarded === true;
+      out.capturedRenderer = (await cdp(capturedPage, "Runtime.evaluate", { expression: "document.title", returnByValue: true })).result.value;
+
+      const plain = await openTab(`${base}/b?sleep-pinned-plain`, "Page B", true);
+      opened.push(plain.id);
+      out.plainStrip = await pin(plain.id);
+      out.plainReasons = await until("only Chrome's pin blocks sleep", async () => {
+        const value = await reasons(plain.id);
+        return value?.length === 1 && value[0] === "pinnedTab" ? value : null;
+      }, 10000);
+      out.plainSleep = await waive(plain.id);
+      if (out.captureSleep !== "refused" || out.captureStillLive !== true || out.captureDiscarded || out.capturedRenderer !== "Capture Target")
+        throw new Error(`pin waiver lost capture protection: ${JSON.stringify(out)}`);
+      if (out.plainSleep !== "discarded") throw new Error(`pin waiver did not sleep the plain pinned tab: ${JSON.stringify(out)}`);
+      out.plainDiscarded = await until("the plain pinned tab discarded", async () => (await live(plain.id))?.discarded === true, 10000);
+      return out;
+    } finally {
+      if (capturerPage) await cdp(capturerPage, "Runtime.evaluate", { expression: "window.__stream?.getTracks().forEach((track) => track.stop()); true" }).catch(() => null);
+      for (const id of opened) {
+        await evalApp(`ac.store.getState().pinTabs(["${id}"], false); return true`).catch(() => null);
+        await closeTab(id).catch(() => null);
+      }
       await evalApp(`ac.actions.switchToTab("${first.id}"); return true`).catch(() => null);
     }
   });

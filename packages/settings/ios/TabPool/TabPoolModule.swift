@@ -1,5 +1,6 @@
 import SolaraCore
 import SolaraShell
+import SolaraUI
 import ExpoModulesCore
 
 public class TabPoolModule: Module {
@@ -11,7 +12,13 @@ public class TabPoolModule: Module {
       let sink = TabPoolSink(self)
       DispatchQueue.main.async {
         MainActor.assumeIsolated {
-          TabPoolHost.shared.emit = { name, body in sink.module?.sendEvent(name, body) }
+          guard let context = sink.module?.appContext else { return }
+          let runtimeID = PageIssuer.runtimeID(for: context)
+          TabPoolHost.shared.emit = { name, body in
+            guard let module = sink.module, module.appContext?._runtime != nil else { return nil }
+            module.sendEvent(name, body)
+            return runtimeID
+          }
           TabPoolHost.shared.start()
         }
       }
@@ -40,7 +47,11 @@ public class TabPoolModule: Module {
 
     AsyncFunction("livePages") { (promise: Promise) in
       nonisolated(unsafe) let reply = promise
-      MainActor.assumeIsolated { reply.resolve(TabPoolHost.shared.livePages()) }
+      let sink = TabPoolSink(self)
+      MainActor.assumeIsolated {
+        let runtimeID = sink.module?.appContext.map { PageIssuer.runtimeID(for: $0) }
+        reply.resolve(TabPoolHost.shared.livePages(runtimeID: runtimeID))
+      }
     }.runOnQueue(.main)
 
     AsyncFunction("devPageIds") { () -> [String] in

@@ -1,5 +1,6 @@
 import { unwrapPageEvent, type OpenWindowRequest, type PageEngine, type PageCreated, type PageIssue, type StoreReportDisposition, type ViewEventName, type WebViewProps } from "@solara/solaracore";
 import { finishRNPageIssue, isPageCurrent, pageReport, updatePageContext, type PageContext, type PageIdentity, type PageIssuePreview } from "@solara/store";
+import { keepAliveCreated, keepAliveFailed, keepAliveGone, keepAliveHandled } from "../lib/keepAliveFeed";
 import { nativeOwnsWorkspace } from "../store/nativeStore";
 import { focus, switchToTab } from "../lib/actions";
 import { adoptIconPage, dropOutlivedFavicon, noteFavicon, noteIconPage } from "../lib/favicons";
@@ -134,16 +135,21 @@ export function publishPageContext(tabId: string): PageContext {
   return context;
 }
 
-export function releasePageSession(session: PageSession) {
-  if (sessions.get(session.tabId) === session) sessions.delete(session.tabId);
+export function releasePageSession(session: PageSession, preserveKeepAlive = false) {
+  if (sessions.get(session.tabId) === session) {
+    sessions.delete(session.tabId);
+    if (session.identity && !preserveKeepAlive) keepAliveGone(session.identity);
+  }
 }
 
 export function observePageIdentity(session: PageSession, identity: PageIdentity, navigationOwner: "js" | "native" = "js", nativeContextRevision?: number): boolean {
   if (identity.tabId !== session.tabId || !isPageCurrent(identity)) return false;
-  if (!session.identity || session.identity.sessionGeneration !== identity.sessionGeneration || session.identity.registrationGeneration !== identity.registrationGeneration) session.identity = identity;
+  const changedIdentity = !session.identity || session.identity.sessionGeneration !== identity.sessionGeneration || session.identity.registrationGeneration !== identity.registrationGeneration;
+  if (changedIdentity) session.identity = identity;
   session.factsOwner = "native";
   session.navigationOwner = navigationOwner;
   sessions.set(session.tabId, session);
+  if (changedIdentity) keepAliveCreated(identity, navigationOwner === "native" ? "pool" : "rn");
   if (nativeContextRevision !== undefined && Number.isSafeInteger(nativeContextRevision) && nativeContextRevision >= 0) {
     const context = currentPageContext(session.tabId);
     const contextRevision = Math.max(context.contextRevision, nativeContextRevision + 1);
@@ -159,12 +165,18 @@ export function acceptPageReport(session: PageSession, report: StoreReportDispos
   return observePageIdentity(session, { tabId: session.tabId, sessionGeneration: report.sessionGeneration, registrationGeneration: report.registrationGeneration }, session.navigationOwner);
 }
 
-export function deliverPageEvent(session: PageSession, name: ViewEventName, payload: unknown, identity: PageIdentity): boolean {
+export function notePageEventHandled(session: PageSession, report: StoreReportDisposition) {
+  if (report.kind !== "reserved" || !session.identity || !isPageCurrent(session.identity) || session.identity.sessionGeneration !== report.sessionGeneration || session.identity.registrationGeneration !== report.registrationGeneration) return;
+  keepAliveHandled(session.identity, report.eventSeq);
+}
+
+export function deliverPageEvent(session: PageSession, name: ViewEventName, payload: unknown, identity: PageIdentity, eventSeq?: number): boolean {
   if (!isPageCurrent(identity) || session.identity?.sessionGeneration !== identity.sessionGeneration || session.identity.registrationGeneration !== identity.registrationGeneration) return false;
   const handler = pageEventHandlers(session)[name as PageEventName] as ((...args: unknown[]) => void) | undefined;
   if (!handler) return false;
   const eventPayload = name === "onPageCreated" || name === "onPageIssue" ? { ...(payload as object), ...identity } : payload;
   handler(...unwrapPageEvent(name, eventPayload as never));
+  keepAliveHandled(identity, eventSeq);
   return true;
 }
 
@@ -228,6 +240,7 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
   const handlers: PageEventHandlers = {
     onPageCreated: (created: PageCreated) => {
       if (!observePageIdentity(session, created, session.navigationOwner)) return;
+      keepAliveCreated(created, session.navigationOwner === "native" ? "pool" : "rn");
       publishPageContext(tabId);
       followNavigation(session, tab()?.navigation);
     },
@@ -384,6 +397,11 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
   };
   return Object.fromEntries(Object.entries(handlers).map(([name, handler]) => [name, (...args: unknown[]) => {
     if (name !== "onPageCreated" && session.identity && !isPageCurrent(session.identity)) return;
-    (handler as (...values: unknown[]) => void)(...args);
+    try {
+      (handler as (...values: unknown[]) => void)(...args);
+    } catch (error) {
+      if (session.identity) keepAliveFailed(session.identity);
+      throw error;
+    }
   }])) as PageEventHandlers;
 }

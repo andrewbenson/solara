@@ -56,6 +56,7 @@ let stopListening: (() => void) | null = null;
 
 export const nativeStoreActive = () => active;
 export const nativeOwnsWorkspace = () => active && ownsWorkspace;
+export const nativeTabSleepRunning = () => nativeOwnsWorkspace() && nativeStoreStatus().nativeTabSleep === true;
 export const dataFolderHandedOff = () => handedOff;
 export const nativeSafeMode = () => safeMode !== null;
 export const nativeSafeModeAfterFailedLaunches = () => safeMode === "failedLaunches";

@@ -12,6 +12,7 @@ const webViewSource = read("../../../../packages/solaracore/src/WebView.tsx");
 const holdSource = read("../lib/nativeEvents.ts");
 const pooledSource = read("./pooledPages.ts");
 const lifecycleSource = read("../lib/tabLifecycle.ts");
+const sleepPolicySource = read("../lib/tabSleepPolicy.ts");
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 const navigation = (url = "https://a.test/", more = {}) => ({ url, title: url, isLoading: false, canGoBack: true, canGoForward: false, themeColor: null, ...more });
 
@@ -67,7 +68,7 @@ function harness({ owned = true, pooled = false, finishAccepted = true } = {}) {
     "react/jsx-runtime": { jsx: noop },
     "react-native": {},
     "@solara/store": storeAPI,
-    "../store/nativeStore": { nativeOwnsWorkspace: () => owned },
+    "../store/nativeStore": { nativeOwnsWorkspace: () => owned, nativeTabSleepRunning: () => false },
     "../store/browser": { useBrowser },
     "../store/model": { activeTabId: () => "t", engineProfile: (id) => id, isIncognitoProfile: () => false, navigationTo: (url) => ({ seq: 2, url }) },
     "../store/peek": { peekTabId: () => null },
@@ -94,13 +95,14 @@ function harness({ owned = true, pooled = false, finishAccepted = true } = {}) {
   }
   const webView = load("WebView", webViewSource);
   mocks["@solara/solaracore"] = { ...webView, releaseProfile: spy("releaseProfile") };
+  mocks["./tabSleepPolicy"] = load("tabSleepPolicy", sleepPolicySource);
   const lifecycle = load("tabLifecycle", lifecycleSource);
   mocks["../lib/tabLifecycle"] = lifecycle;
   const events = load("pageEvents", source);
   const session = events.newPageSession("t", "chromium", undefined, null);
   handlers = events.pageEventHandlers(session);
   if (owned) events.observePageIdentity(session, identity, pooled ? "native" : "js");
-  const props = { transferKey: "t", acceptStoreReport: (report) => events.acceptPageReport(session, report), ...handlers };
+  const props = { transferKey: "t", acceptStoreReport: (report) => events.acceptPageReport(session, report), onStoreEventHandled: (report) => events.notePageEventHandled(session, report), ...handlers };
   const report = { kind: "reserved", sessionGeneration: "G", registrationGeneration: 1 };
   const emit = (name, payload, disposition = owned ? report : { kind: "fallback" }) => webView.deliverWebViewEvent(props, name, { ...payload, storeReport: disposition });
   const nativeEvents = load("nativeEvents", holdSource);
@@ -115,6 +117,7 @@ function harness({ owned = true, pooled = false, finishAccepted = true } = {}) {
     const stop = load("pooledPages", pooledSource).startPooledPages(pool);
     return { emit: (event) => listener(event), stop };
   };
+  calls.length = 0;
   return { calls, state, page, events, session, handlers, webView, props, identity, report, emit, hold, startPool, lifecycle, webviews, setAuthority: (value) => { authority = value; }, finishes: () => finishCount };
 }
 
@@ -400,4 +403,80 @@ test("every refused pooled page call is logged with its command and code", async
   } finally {
     console.warn = warn;
   }
+});
+test("sleep eligibility forwards the optional pin waiver as its first boolean argument", async () => {
+  const h = harness();
+  const calls = [];
+  const handle = h.webView.pooledWebViewHandle(async (method, args) => {
+    calls.push([method, [...args]]);
+    return "refused";
+  });
+  assert.equal(await handle.sleepIfEligible(), "refused");
+  assert.equal(await handle.sleepIfEligible({ waivingPinned: true }), "refused");
+  assert.deepEqual(calls, [["sleepIfEligible", [false]], ["sleepIfEligible", [true]]]);
+});
+
+
+test("RN acknowledges the native event stamp after its UI facts handler", () => {
+  const h = harness();
+  h.emit("onMediaAccess", { camera: true, microphone: false, screen: false }, { ...h.report, eventSeq: 7 });
+  const patched = h.calls.findIndex((call) => call.name === "patchPage");
+  const handled = h.calls.findIndex((call) => call.name === "keepAliveHandled");
+  assert.ok(patched >= 0);
+  assert.ok(handled > patched);
+  assert.equal(h.calls[handled].args[1], 7);
+  const count = h.calls.filter((call) => call.name === "keepAliveHandled").length;
+  h.emit("onMediaAccess", { camera: false, microphone: false, screen: false }, { ...h.report, registrationGeneration: 99, eventSeq: 8 });
+  assert.equal(h.calls.filter((call) => call.name === "keepAliveHandled").length, count);
+});
+
+test("pooled created acknowledges its own stamp and requests a complete feed", () => {
+  const h = harness({ pooled: true });
+  const pool = h.startPool();
+  pool.emit({ ...h.identity, name: "onPageCreated", payload: { engine: "chromium", seq: 1 }, eventSeq: 12 });
+  const created = h.calls.findIndex((call) => call.name === "keepAliveCreated");
+  const handled = h.calls.findIndex((call) => call.name === "keepAliveHandled");
+  assert.ok(created >= 0);
+  assert.ok(handled > created);
+  assert.equal(h.calls[handled].args[1], 12);
+  pool.stop();
+});
+
+
+test("a throwing UI handler marks the session protective before a later event can acknowledge it", () => {
+  const h = harness();
+  h.state.updateTab = () => { throw new Error("UI failure"); };
+  assert.throws(() => h.emit("onZoom", { zoom: 1.5 }, { ...h.report, eventSeq: 5 }), /UI failure/);
+  assert.equal(h.calls.filter((call) => call.name === "keepAliveFailed").length, 1);
+  assert.equal(h.calls.filter((call) => call.name === "keepAliveHandled").length, 0);
+});
+
+
+test("a replacement identity begins its feed session before an early media event updates UI facts", () => {
+  const h = harness();
+  const next = { ...h.identity, sessionGeneration: "next", registrationGeneration: 2 };
+  h.setAuthority(next);
+  h.calls.length = 0;
+  h.emit("onMediaAccess", { camera: true, microphone: false, screen: false }, { kind: "reserved", sessionGeneration: "next", registrationGeneration: 2, eventSeq: 1 });
+  const created = h.calls.findIndex((call) => call.name === "keepAliveCreated");
+  const patched = h.calls.findIndex((call) => call.name === "patchPage");
+  assert.ok(created >= 0);
+  assert.ok(patched > created);
+  assert.equal(h.page.mediaAccess.camera, true);
+  h.emit("onPageCreated", { ...next, generation: "next" }, { kind: "reserved", sessionGeneration: "next", registrationGeneration: 2 });
+  assert.equal(h.page.mediaAccess.camera, true);
+  assert.equal(h.calls.filter((call) => call.name === "keepAliveCreated").length, 2);
+});
+
+
+test("a same-identity pool created resend preserves handled feed authority", () => {
+  const h = harness({ pooled: true });
+  const pool = h.startPool();
+  const created = { ...h.identity, name: "onPageCreated", payload: { engine: "chromium", seq: 1 } };
+  pool.emit(created);
+  h.calls.length = 0;
+  pool.emit(created);
+  assert.equal(h.calls.filter((call) => call.name === "keepAliveGone").length, 0);
+  assert.ok(h.calls.some((call) => call.name === "keepAliveCreated"));
+  pool.stop();
 });

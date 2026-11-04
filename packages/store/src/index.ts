@@ -2,7 +2,7 @@ import { requireOptionalNativeModule, type EventSubscription } from "expo-module
 
 export { encodeArgs, encodeCommand, PATCH_COMMANDS } from "./encode";
 
-type StoreStatus = ({ active: true; scope?: "settingsAndDownloads" | "everything" } | { active: false; reason: string; handedOff?: boolean; refusedSession?: string }) & { syncRedesign?: boolean; safeMode?: "option" | "failedLaunches" };
+type StoreStatus = ({ active: true; scope?: "settingsAndDownloads" | "everything" } | { active: false; reason: string; handedOff?: boolean; refusedSession?: string }) & { syncRedesign?: boolean; nativeTabSleep?: boolean; safeMode?: "option" | "failedLaunches" };
 
 type NativeStoreModule = {
   status(): StoreStatus;
@@ -127,7 +127,7 @@ export type KeepAliveKeep = { capturing: boolean; newTabShown: boolean; pip: boo
 export type KeepAliveReveal = { fullscreen: boolean; crashed: boolean; unresponsive: boolean; scrolledDown: boolean; sharing: boolean };
 export type KeepAliveFacts = { epoch: number; seq: number; handled: number; keep: KeepAliveKeep; reveal: KeepAliveReveal };
 export type PageReadyFacts = { browserId: number; tabId: number | null };
-export type PageFacts = { generation: string; ready: PageReadyFacts | null; keepAlive: KeepAliveFacts | null; latchedThrough: number; newestEventSeq: number };
+export type PageFacts = { generation: string; protectionKnown: boolean; ready: PageReadyFacts | null; keepAlive: KeepAliveFacts | null; latchedThrough: number; newestEventSeq: number };
 export type PageReport =
   | ({ type: "created"; generation: string; engine: "chromium" | "webkit"; handoffSeq?: number | null; reestablished?: boolean } & PageContext)
   | ({ type: "context"; generation: string } & PageContext)

@@ -226,7 +226,7 @@ public extension PageRequest where Output == PageExtensionAction? {
 
 public extension PageRequest where Output == PageDiscardOutcome {
   static func discard(_ unload: Bool = false) -> Self { Self(command: .discard(unload)) { try pageDecoded($0) } }
-  static var sleepIfEligible: Self { Self(command: .sleepIfEligible) { try pageDecoded($0) } }
+  static func sleepIfEligible(waivingPinned: Bool = false) -> Self { Self(command: .sleepIfEligible(waivingPinned)) { try pageDecoded($0) } }
 }
 
 public extension PageRequest where Output == [String]? {

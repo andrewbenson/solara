@@ -13,7 +13,7 @@ final class TabPoolHost {
   nonisolated static var available: Bool { NativeSplitChrome.panesEnabled && NativePaneRoots.available && NativeStoreHandle.opened && NativeStoreHandle.ownedWorkspaceAtLaunch
     && ProcessInfo.processInfo.environment["SOLARA_TAB_POOL"] != "0" }
 
-  var emit: (@MainActor (String, [String: Any]) -> Void)?
+  var emit: (@MainActor (String, [String: Any]) -> UUID?)?
   var pageEventObservers: [@MainActor (String, String, [String: Any]) -> Void] = []
   var stateObservers: [@MainActor () -> Void] = []
   private var pool: TabViewPool?
@@ -43,7 +43,7 @@ final class TabPoolHost {
     let pool = TabViewPool(make: { [weak self] tabId, windowId in self?.makePage(tabId, windowId) })
     pool.hiddenContainer = { NativeWindowShell.hiddenPages($0) }
     pool.onPlaced = { [weak self] places in
-      PageIssuer.shared?.afterIngress { [weak self] in self?.emit?("onPlaced", ["places": places]) }
+      PageIssuer.shared?.afterIngress { [weak self] in _ = self?.emit?("onPlaced", ["places": places]) }
     }
     pool.onReplace = { [weak self] tabId in
       guard let entry = self?.pages[tabId] else { return }
@@ -247,13 +247,14 @@ final class TabPoolHost {
 
   func devPageIds() -> [String] { livePages().compactMap { $0["tabId"] as? String } }
 
-  func livePages() -> [[String: Any]] {
+  func livePages(runtimeID: UUID? = nil) -> [[String: Any]] {
     guard let issuer = PageIssuer.shared else { return [] }
     return issuer.store.sequence {
       pages.keys.sorted().compactMap { tabId in
         guard let entry = pages[tabId], let binding = entry.token.binding,
           issuer.ensurePageEstablished(binding), issuer.isCurrent(binding),
           let facts = issuer.store.pageFacts(tabId) else { return nil }
+        if let runtimeID { issuer.noteDelivery(binding, runtimeID: runtimeID) }
         let ready: Any
         if let value = facts.ready {
           var result: [String: Any] = ["browserId": value.browserId]
@@ -412,21 +413,23 @@ final class TabPoolHost {
           constructor: payload["constructor"] as? Bool == true))
         return true
       }
-      if PageNativeReport.names.contains(name) {
-        guard let data = try? JSONSerialization.data(withJSONObject: payload), let value = try? JSONValue.parse(data),
-          let report = PageNativeReport.report(name: name, payload: value),
-          issuer.report(binding, report: report) else { return false }
-      }
-      issuer.afterIngress { [weak self] in self?.emitEvent(binding, name: name, payload: payload) }
+      guard let data = try? JSONSerialization.data(withJSONObject: payload), let value = try? JSONValue.parse(data),
+        let sequence = issuer.reserveEvent(binding, name: name, payload: value) else { return false }
+      issuer.afterIngress { [weak self] in self?.emitEvent(binding, name: name, payload: payload, eventSeq: sequence) }
       return true
     }
   }
 
-  private func emitEvent(_ binding: PageHostBinding, name: String, payload: [String: Any]) {
-    let envelope: [String: Any] = ["tabId": binding.tabId, "name": name, "payload": payload,
+  private func emitEvent(_ binding: PageHostBinding, name: String, payload: [String: Any], eventSeq: Int? = nil) {
+    var envelope: [String: Any] = ["tabId": binding.tabId, "name": name, "payload": payload,
       "generation": binding.sessionGeneration, "sessionGeneration": binding.sessionGeneration,
       "registrationGeneration": binding.registrationGeneration, "contextRevision": binding.context.contextRevision, "factsOwner": "native", "navigationOwner": "native"]
-    emit?("onPageEvent", envelope)
+    if let eventSeq { envelope["eventSeq"] = eventSeq }
+    if let emit {
+      PageIssuer.shared?.noteDelivery(binding, runtimeID: emit("onPageEvent", envelope), eventName: name)
+    } else if eventSeq != nil {
+      PageIssuer.shared?.noteDelivery(binding, runtimeID: nil, eventName: name)
+    }
     pageEventObservers.forEach { $0(binding.tabId, name, payload) }
   }
 

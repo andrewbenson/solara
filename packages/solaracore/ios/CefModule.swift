@@ -332,7 +332,7 @@ public class CefModule: Module {
       AsyncFunction("resolveUnresponsive") { (view: CefWebView, terminate: Bool, promise: Promise) in view.call("resolveUnresponsive", [terminate], promise) }.runOnQueue(.main)
       AsyncFunction("discard") { (view: CefWebView, unload: Bool?, promise: Promise) in view.call("discard", [unload ?? false], promise) }.runOnQueue(.main)
       AsyncFunction("reasonsNotToSleep") { (view: CefWebView, promise: Promise) in view.call("reasonsNotToSleep", [], promise) }.runOnQueue(.main)
-      AsyncFunction("sleepIfEligible") { (view: CefWebView, promise: Promise) in view.call("sleepIfEligible", [], promise) }.runOnQueue(.main)
+      AsyncFunction("sleepIfEligible") { (view: CefWebView, waivingPinned: Bool, promise: Promise) in view.call("sleepIfEligible", [waivingPinned], promise) }.runOnQueue(.main)
       AsyncFunction("setFrozen") { (view: CefWebView, frozen: Bool, promise: Promise) in view.call("setFrozen", [frozen], promise) }.runOnQueue(.main)
 
       OnViewDidUpdateProps { (view: CefWebView) in view.propsDidUpdate() }

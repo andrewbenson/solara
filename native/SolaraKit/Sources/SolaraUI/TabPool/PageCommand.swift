@@ -127,7 +127,7 @@ public enum PageCommand: Equatable, Sendable {
   case discard(Bool)
   case setFrozen(Bool)
   case reasonsNotToSleep
-  case sleepIfEligible
+  case sleepIfEligible(Bool)
   case nativeTag
   case livePage
   case finishPageIssue(PageIssueGuard)
@@ -183,7 +183,8 @@ public enum PageCommand: Equatable, Sendable {
     switch self {
     case .loadUrl(let url, let user): [.string(url), .bool(user)]
     case .goToOffset(let value), .zoomStep(let value): [.number(Double(value))]
-    case .setMuted(let value), .stopFinding(let value), .resolveUnresponsive(let value), .discard(let value), .setFrozen(let value): [.bool(value)]
+    case .setMuted(let value), .stopFinding(let value), .resolveUnresponsive(let value), .discard(let value), .setFrozen(let value),
+      .sleepIfEligible(let value): [.bool(value)]
     case .find(let text, let forward, let next): [.string(text), .bool(forward), .bool(next)]
     case .runPageCommand(let value), .executeJavaScript(let value), .evaluate(let value), .downloadFavicon(let value),
       .executeExtensionAction(let value): [.string(value)]
@@ -396,8 +397,8 @@ public enum PageCommand: Equatable, Sendable {
       try a.limit(0)
       return .reasonsNotToSleep
     case "sleepIfEligible":
-      try a.limit(0)
-      return .sleepIfEligible
+      try a.limit(1)
+      return .sleepIfEligible(try a.bool(0, default: false))
     case "nativeTag":
       try a.limit(0)
       return .nativeTag

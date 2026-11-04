@@ -33,17 +33,23 @@ backlog, and check this file against the release notes.
 | A muted tab's or site's notifications make no sound | shipped (0.1.5) |
 | The hidden sidebar doesn't peek out while another app is in front (in Swift) | shipped (0.1.5) |
 
-## 0.2.0: the sidebar your way, and a fresh engine
+## 0.2.0: the sidebar your way
+
+| Item | Status |
+|---|---|
+| Icons-only sidebar rail, 84 pt: drag-to-snap, View menu and Settings toggle, hover × to close, loading and audio badges, the address bar moves to the toolbar | landed bc695c27 |
+| Folder and group popovers, footer profile switcher, the hidden sidebar's peek in rail mode | landed b19c9f93; dragging a tab out of a group popover landed 610b257f |
+| Share… in the page's right-click menu and File › Share (⌥⌘S): selected text, an image, a link with trackers removed, media, the page (engine change) | planned |
+| A full emoji picker for profile, tab and folder icons (search, categories, symbols), and names that save on click-away; built in Swift, replacing the React Native icon pickers | landed 8e7f5d12 |
+| On a WebKit page, the pinned extensions give way to a WebKit pill (extensions, the ad blocker and password autofill don't run there), with Open in Chromium; the icons come back on Chromium tabs. The pill and its popover in Swift | landed 5fb501c6 |
+| Going back to the New Tab page (⌘[ or a two-finger swipe) shows the New Tab page, not the command bar floating over the page you left | planned |
+
+## 0.2.1: a fresh engine
 
 | Item | Status |
 |---|---|
 | Fixes from the owner's two-Mac sync-join test of 0.1.3 | waiting on the test |
-| Icons-only sidebar rail, 84 pt: drag-to-snap, View menu and Settings toggle, hover × to close, loading and audio badges, the address bar moves to the toolbar | landed bc695c27 |
-| Folder and group popovers, footer profile switcher, the hidden sidebar's peek in rail mode | landed b19c9f93; dragging a tab out of a group popover landed 610b257f |
-| Engine: Chromium 156.0.8078.79 or newer (Chrome stable security updates; we ship .47). Needs a Chromium sync and rebuild: owner approved for 0.2.0 | planned |
-| Share… in the page's right-click menu and File › Share (⌥⌘S): selected text, an image, a link with trackers removed, media, the page (engine change) | planned |
-| A full emoji picker for profile, tab and folder icons (search, categories, symbols), and names that save on click-away; built in Swift, replacing the React Native icon pickers | landed 8e7f5d12 |
-| On a WebKit page, the pinned extensions give way to a WebKit pill (extensions, the ad blocker and password autofill don't run there), with Open in Chromium; the icons come back on Chromium tabs. The pill and its popover in Swift | landed 5fb501c6 |
+| Engine: Chromium 156.0.8078.79 or newer (Chrome stable security updates; we ship .47). Needs a Chromium sync and rebuild: owner approved; moved from 0.2.0 on 2026-11-03 | planned |
 
 ## 0.3.0: the CLI and Raycast revamped, and tabs that cost less
 

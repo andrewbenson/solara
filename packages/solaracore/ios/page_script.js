@@ -724,8 +724,25 @@
   };
   if (!isTop) return receive;
 
+  let colorCanvas;
+  const parseThroughCanvas = (css) => {
+    if (colorCanvas === undefined) {
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 1;
+      colorCanvas = canvas.getContext("2d", { willReadFrequently: true });
+    }
+    if (!colorCanvas) return null;
+    colorCanvas.clearRect(0, 0, 1, 1);
+    colorCanvas.fillStyle = "rgba(0, 0, 0, 0)";
+    colorCanvas.fillStyle = css;
+    colorCanvas.fillRect(0, 0, 1, 1);
+    const d = colorCanvas.getImageData(0, 0, 1, 1).data;
+    return { r: d[0], g: d[1], b: d[2], a: d[3] / 255 };
+  };
   const parse = (css) => {
-    const m = css && css.match(/[\d.]+/g);
+    if (!css) return null;
+    if (!/^rgba?\(/.test(css)) return parseThroughCanvas(css);
+    const m = css.match(/[\d.]+/g);
     if (!m || m.length < 3) return null;
     return { r: +m[0], g: +m[1], b: +m[2], a: m[3] === undefined ? 1 : +m[3] };
   };

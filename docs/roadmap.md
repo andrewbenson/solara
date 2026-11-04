@@ -64,10 +64,17 @@ backlog, and check this file against the release notes.
 |---|---|
 | Engine: Chromium 156.0.8078.79 or newer (Chrome stable security updates; we ship .47), built on the Hill Studio's own Chromium checkout. Owner: build there and ship in 0.2.2 (2026-11-03) | shipped (0.2.2): 156.0.8078.79 with Helium 0.20.3, prebuilt engine 464d76967fba (12b9dc82) |
 
+## 0.2.3: fixes
+
+| Item | Status |
+|---|---|
+| Ad blocking is in force before restored tabs load at launch: each profile's first load waits for uBlock Origin (about 0.3 s), with a 3 s deadline (owner, 2026-11-04) | landed (cb8a5d6b) |
+
 ## 0.3.0: the CLI and Raycast revamped, and tabs that cost less
 
 | Item | Status |
 |---|---|
+| Content blocker hold, per navigation: hold only session-restored and launch tabs (an engine mark set before the navigation starts, primary main frame, http(s)), not every navigation in the profile during the launch window | planned |
 | Fixes from the owner's two-Mac sync-join test of 0.1.3 | waiting on the test |
 | GitHub security alerts cleared: Dependabot (image-size, minimatch, deepmerge) bumped, the omnibox quick-create regex no longer slows on crafted input, test-script CodeQL alerts fixed or dismissed | in progress: CodeQL #201 (quick-create regex) and #200 fixed in 1161a442 (shipped in 0.2.1); the build-time Dependabot alerts (no usable fix) and the test-only CodeQL alerts wait on the owner's dismissal |
 | Revamp the `solara` command (apps/cli, docs/cli.md): scope to be set with the owner; its connection to the app is built in Swift (settings and keybindings from files, a local control socket, event hooks), not on the JavaScript side | planned |

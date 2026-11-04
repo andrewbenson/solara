@@ -63,7 +63,7 @@ const usesPageA = [
   "settings-services", "download-navigation", "page-events", "page-background", "appearance-reaches-pages", "external-app-answer",
   "notifications", "now-playing", "media-state", "auto-picture-in-picture", "pip-window", "page-focus", "page-press-split",
   "fullscreen-tab-switch", "fullscreen-native", "escape-in-window-fullscreen", "fullscreen-transition-picture", "fullscreen-hidden-page", "fullscreen-split-sibling",
-  "fullscreen-pip", "pip-fullscreen-space", "autofill-suggestions", "images", "extension-surfaces", "frozen", "discard",
+  "fullscreen-pip", "pip-fullscreen-space", "pip-keep-on-top-reopen", "autofill-suggestions", "images", "extension-surfaces", "frozen", "discard",
   "permission-prompt", "popup-blocked", "move-tab-slow-mount", "move-last-tab-slow-mount",
   "move-tab-closed-while-parked", "move-tab-to-window", "title-bar-close", "last-used-profile",
 ];
@@ -4822,6 +4822,36 @@ try {
       if ((visible && (!ownOk(out.videoOwn) || !ownOk(out.documentOwn))) || !ok(out.video) || out.videoNotOnTop.flags.level !== 0 || out.videoNotOnTop.flags.activationIndependent !== false || !out.videoNotOnTop.afterExit || !out.videoNotOnTop.stillVisible || !out.keepOnTopRestored || !ok(out.document)) throw new Error(JSON.stringify(out));
       return out;
     } finally {
+      await evalApp(`return ac.webviews.get("${tab.id}").exitPictureInPicture()`).catch(() => null);
+      await closeTab(tab.id).catch(() => null);
+    }
+  });
+
+  await check("pip-keep-on-top-reopen", async () => {
+    const tab = await openTab(`${base}/video?keep-on-top-reopen`, "Video");
+    let unpinned = false;
+    try {
+      await evalApp(`return ac.webviews.get("${tab.id}").setMuted(true)`);
+      const t = await startVideo(tab.id, false);
+      const enter = async () => {
+        const entered = await cdp(t, "Runtime.evaluate", { expression: "document.getElementById('v').requestPictureInPicture().then(() => 'ok', (e) => e.name)", awaitPromise: true, userGesture: true, returnByValue: true });
+        if (entered.result?.value !== "ok") throw new Error(`requestPictureInPicture: ${JSON.stringify(entered.result)}`);
+        return until("the styled PiP window", async () => (await pipWindows())?.find((w) => w.video && w.styled && w.visible) ?? null, 10000);
+      };
+      const opened = await enter();
+      if ((await cef(`devPictureInPictureAction("keepOnTop:0")`)) !== "started") throw new Error("no Keep Window on Top seam");
+      unpinned = true;
+      await evalApp(`return ac.webviews.get("${tab.id}").exitPictureInPicture()`);
+      await until("video PiP closed", async () => lastEvent(tab.id, "pictureInPicture", (p) => p.kind === "video" && !p.active), 5000);
+      const again = await cdp(t, "Runtime.evaluate", { expression: "document.getElementById('v').requestPictureInPicture().then(() => 'ok', (e) => e.name)", awaitPromise: true, userGesture: true, returnByValue: true });
+      if (again.result?.value !== "ok") throw new Error(`reopen requestPictureInPicture: ${JSON.stringify(again.result)}`);
+      await sleep(1000);
+      const after = (await pipWindows())?.find((w) => w.video) ?? {};
+      const out = { sameWindow: after.window === opened.window, visible: after.visible, styled: after.styled, level: after.level, activationIndependent: after.activationIndependent, alive: (await evalApp("return true")) === true };
+      if (!out.alive || out.level !== 0 || out.activationIndependent !== false) throw new Error(JSON.stringify(out));
+      return out;
+    } finally {
+      if (unpinned) await cef(`devPictureInPictureAction("keepOnTop:1")`).catch(() => null);
       await evalApp(`return ac.webviews.get("${tab.id}").exitPictureInPicture()`).catch(() => null);
       await closeTab(tab.id).catch(() => null);
     }

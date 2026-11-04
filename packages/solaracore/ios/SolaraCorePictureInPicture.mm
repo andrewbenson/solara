@@ -1377,7 +1377,7 @@ void VideoEntered(SolaraCoreWebView *view, NSString *host) {
       @"window" : @(window.windowNumber),
       @"class" : NSStringFromClass(window.class),
       @"title" : window.title ?: @"",
-      @"video" : @(IsChromeVideoPictureInPicture(window)),
+      @"video" : @(IsChromeVideoPictureInPicture(window) || (controller && window.visible && !ShowsPage(window.contentView))),
       @"document" : @(IsChromeDocumentPictureInPicture(window)),
       @"fullScreenAuxiliary" : @((window.collectionBehavior & NSWindowCollectionBehaviorFullScreenAuxiliary) != 0),
       @"allSpaces" : @((window.collectionBehavior & NSWindowCollectionBehaviorCanJoinAllSpaces) != 0),

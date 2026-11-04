@@ -545,10 +545,12 @@ private final class ControlledPageTimeouts {
       ("resolveUnresponsive", [.bool(true)], .resolveUnresponsive(true)),
       ("discard", [.bool(true)], .discard(true)),
       ("setFrozen", [.bool(true)], .setFrozen(true)),
+      ("reasonsNotToSleep", [], .reasonsNotToSleep),
+      ("sleepIfEligible", [], .sleepIfEligible),
       ("nativeTag", [], .nativeTag),
       ("livePage", [], .livePage)
     ]
-    #expect(cases.count == 39)
+    #expect(cases.count == 41)
     for (method, arguments, expected) in cases {
       #expect(try PageCommand.decode(method: method, args: arguments) == expected)
       #expect(expected.method == method)

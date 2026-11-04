@@ -118,6 +118,7 @@ SOLARACORE_EXPORT
 @property(readonly) NSArray<NSDictionary<NSString*, id>*>* extensions;
 - (nullable NSNumber*)boolPreference:(NSString*)name;
 - (void)setBoolPreference:(NSString*)name value:(BOOL)value;
+@property(nonatomic, copy) NSArray<NSString*>* sleepExceptions;
 - (void)clearBrowsingData:(NSArray<NSString*>*)types
                     since:(nullable NSDate*)since
                completion:(nullable void (^)(void))completion;
@@ -339,6 +340,8 @@ SOLARACORE_EXPORT
 - (void)openBlockedPopup:(NSString*)popupId always:(BOOL)always;
 - (BOOL)discard;
 @property(readonly) BOOL discarded;
+@property(readonly) NSArray<NSString*>* reasonsNotToSleep;
+- (BOOL)sleepIfEligible;
 @property(nonatomic) BOOL frozen;
 - (void)resolveUnresponsive:(BOOL)terminate;
 @property(nonatomic, nullable) NSColor* pageBackgroundColor;

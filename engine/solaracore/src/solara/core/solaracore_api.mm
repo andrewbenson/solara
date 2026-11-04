@@ -146,6 +146,13 @@
 #include "chrome/browser/extensions/extension_action_runner.h"
 #include "chrome/browser/resource_coordinator/lifecycle_unit_state.mojom.h"
 #include "chrome/browser/resource_coordinator/tab_lifecycle_unit_external.h"
+#include "base/json/values_util.h"
+#include "chrome/browser/performance_manager/policies/cannot_discard_reason.h"
+#include "chrome/browser/performance_manager/policies/discard_eligibility_policy.h"
+#include "chrome/browser/performance_manager/policies/page_discarding_helper.h"
+#include "components/performance_manager/public/graph/page_node.h"
+#include "components/performance_manager/public/performance_manager.h"
+#include "components/performance_manager/public/user_tuning/prefs.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_rep.h"
@@ -1278,6 +1285,38 @@ void WatchTracingStart(std::shared_ptr<TracingStart> start, int checks_left) {
   }
 }
 
+- (NSArray<NSString*>*)sleepExceptions {
+  NSMutableArray<NSString*>* patterns = [NSMutableArray array];
+  if (!_profile) {
+    return patterns;
+  }
+  for (const auto item : _profile->GetPrefs()->GetDict(
+           performance_manager::user_tuning::prefs::kTabDiscardingExceptionsWithTime)) {
+    [patterns addObject:NS(item.first)];
+  }
+  return patterns;
+}
+
+- (void)setSleepExceptions:(NSArray<NSString*>*)patterns {
+  if (!_profile) {
+    return;
+  }
+  PrefService* prefs = _profile->GetPrefs();
+  const char* key =
+      performance_manager::user_tuning::prefs::kTabDiscardingExceptionsWithTime;
+  const base::DictValue& before = prefs->GetDict(key);
+  base::DictValue after;
+  for (NSString* pattern in patterns) {
+    const std::string name = base::SysNSStringToUTF8(pattern);
+    if (name.empty()) {
+      continue;
+    }
+    const base::Value* added = before.Find(name);
+    after.Set(name, added ? added->Clone() : base::TimeToValue(base::Time::Now()));
+  }
+  prefs->SetDict(key, std::move(after));
+}
+
 - (void)clearBrowsingData:(NSArray<NSString*>*)types
                     since:(NSDate*)since
                completion:(void (^)(void))completion {
@@ -1825,6 +1864,86 @@ std::optional<bool> RunPageCommand(content::WebContents* contents, int command) 
 
 @end
 
+namespace {
+
+using performance_manager::policies::CannotDiscardReason;
+
+NSString* SleepBlockerName(CannotDiscardReason reason) {
+  switch (reason) {
+    case CannotDiscardReason::kNotATab:
+      return @"notATab";
+    case CannotDiscardReason::kAlreadyDiscarded:
+      return @"alreadyAsleep";
+    case CannotDiscardReason::kDiscardAttempted:
+      return @"attemptedBefore";
+    case CannotDiscardReason::kNoMainFrame:
+      return @"noMainFrame";
+    case CannotDiscardReason::kVisible:
+      return @"visible";
+    case CannotDiscardReason::kAudible:
+      return @"audible";
+    case CannotDiscardReason::kRecentlyAudible:
+      return @"recentlyAudible";
+    case CannotDiscardReason::kRecentlyVisible:
+      return @"recentlyVisible";
+    case CannotDiscardReason::kPictureInPicture:
+      return @"pictureInPicture";
+    case CannotDiscardReason::kPdf:
+      return @"pdf";
+    case CannotDiscardReason::kNotWebOrInternal:
+      return @"notWeb";
+    case CannotDiscardReason::kInvalidURL:
+      return @"invalidURL";
+    case CannotDiscardReason::kOptedOut:
+      return @"siteException";
+    case CannotDiscardReason::kNotificationsEnabled:
+      return @"notifications";
+    case CannotDiscardReason::kExtensionProtected:
+      return @"extension";
+    case CannotDiscardReason::kCapturingVideo:
+      return @"capturingVideo";
+    case CannotDiscardReason::kCapturingAudio:
+      return @"capturingAudio";
+    case CannotDiscardReason::kBeingMirrored:
+      return @"mirrored";
+    case CannotDiscardReason::kCapturingWindow:
+      return @"capturingWindow";
+    case CannotDiscardReason::kCapturingDisplay:
+      return @"capturingDisplay";
+    case CannotDiscardReason::kConnectedToBluetooth:
+      return @"bluetooth";
+    case CannotDiscardReason::kConnectedToUSB:
+      return @"usb";
+    case CannotDiscardReason::kActiveTab:
+      return @"activeTab";
+    case CannotDiscardReason::kPinnedTab:
+      return @"pinnedTab";
+    case CannotDiscardReason::kDevToolsOpen:
+      return @"devTools";
+    case CannotDiscardReason::kBackgroundActivity:
+      return @"backgroundActivity";
+    case CannotDiscardReason::kFormInteractions:
+      return @"formInteraction";
+    case CannotDiscardReason::kUserEdits:
+      return @"userEdits";
+    case CannotDiscardReason::kGlicShared:
+      return @"shared";
+    case CannotDiscardReason::kWebApp:
+      return @"webApp";
+  }
+  return @"unknown";
+}
+
+const performance_manager::PageNode* PageNodeOf(content::WebContents* contents) {
+  if (!contents || !performance_manager::PerformanceManager::IsAvailable()) {
+    return nullptr;
+  }
+  return performance_manager::PerformanceManager::GetPrimaryPageNodeForWebContents(contents)
+      .get();
+}
+
+}
+
 @implementation SolaraCoreTab {
   raw_ptr<content::WebContents> _contents;
   int _browserId;
@@ -2018,6 +2137,43 @@ std::optional<bool> RunPageCommand(content::WebContents* contents, int command) 
 
 - (BOOL)discarded {
   return _contents && _contents->WasDiscarded();
+}
+
+- (NSArray<NSString*>*)reasonsNotToSleep {
+  const performance_manager::PageNode* node = PageNodeOf(_contents);
+  if (!node) {
+    return @[ @"noPage" ];
+  }
+  auto* policy = performance_manager::policies::DiscardEligibilityPolicy::GetFromGraph(
+      performance_manager::PerformanceManager::GetGraph());
+  if (!policy) {
+    return @[ @"noPage" ];
+  }
+  std::vector<CannotDiscardReason> reasons;
+  const performance_manager::policies::CanDiscardResult result = policy->CanDiscard(
+      node, ::mojom::LifecycleUnitDiscardReason::PROACTIVE, true, &reasons);
+  NSMutableArray<NSString*>* names = [NSMutableArray array];
+  for (CannotDiscardReason reason : reasons) {
+    [names addObject:SleepBlockerName(reason)];
+  }
+  if (result != performance_manager::policies::CanDiscardResult::kEligible &&
+      names.count == 0) {
+    [names addObject:@"protected"];
+  }
+  return names;
+}
+
+- (BOOL)sleepIfEligible {
+  const performance_manager::PageNode* node = PageNodeOf(_contents);
+  if (!node) {
+    return NO;
+  }
+  auto* helper = performance_manager::policies::PageDiscardingHelper::GetFromGraph(
+      performance_manager::PerformanceManager::GetGraph());
+  return helper &&
+         helper->ImmediatelyDiscardMultiplePages(
+             {node}, ::mojom::LifecycleUnitDiscardReason::PROACTIVE, true) &&
+         _contents && _contents->WasDiscarded();
 }
 
 - (BOOL)frozen {

@@ -123,6 +123,8 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (void)resolveUnresponsive:(BOOL)terminate NS_SWIFT_NAME(resolveUnresponsive(terminate:));
 - (NSString *)discard:(BOOL)unload NS_SWIFT_NAME(discard(unload:));
+- (nullable NSArray<NSString *> *)reasonsNotToSleep;
+- (NSString *)sleepIfEligible;
 - (void)closeBrowser;
 - (void)parentWindowDidChange;
 

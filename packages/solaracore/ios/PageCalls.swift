@@ -96,7 +96,8 @@ public enum PageCalls {
     "navigationEntries", "capturePicture", "downloadFavicon", "downloadImage", "mediaCommand",
     "requestPictureInPicture", "takeControlPress", "exitPictureInPicture", "getSecurityInfo", "pageCookies",
     "openBlockedPopup", "clearSiteData", "resolvePasswordPrompt", "resolveAutofillPrompt", "executeExtensionAction",
-    "resolveDisplayMedia", "mediaCaptureSourceId", "resolveUnresponsive", "discard", "setFrozen",
+    "resolveDisplayMedia", "mediaCaptureSourceId", "resolveUnresponsive", "discard", "setFrozen", "reasonsNotToSleep",
+    "sleepIfEligible",
   ]
 
   public static func run(_ page: NSView, _ method: String, _ args: [Any], resolve: @escaping Resolve, reject: @escaping Reject) {
@@ -154,6 +155,8 @@ public enum PageCalls {
     case "mediaCaptureSourceId": return resolve(web.mediaCaptureSourceId)
     case "resolveUnresponsive": web.resolveUnresponsive(terminate: try a.bool(required: 0))
     case "discard": return resolve(web.discard(unload: a.bool(0) ?? false))
+    case "reasonsNotToSleep": return resolve(web.reasonsNotToSleep())
+    case "sleepIfEligible": return resolve(web.sleepIfEligible())
     case "setFrozen": web.frozen = try a.bool(required: 0)
     default: break
     }
@@ -189,6 +192,8 @@ public enum PageCalls {
     case "pageCookies": return resolve([[String: Any]]())
     case "clearSiteData": return tab.clearSiteData { resolve($0) }
     case "discard": return resolve("unsupported")
+    case "reasonsNotToSleep": return resolve(nil)
+    case "sleepIfEligible": return resolve("unsupported")
     default: break
     }
     resolve(nil)

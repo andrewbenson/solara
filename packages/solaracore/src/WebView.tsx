@@ -235,6 +235,8 @@ export type WebViewHandle = {
 
   resolveUnresponsive(terminate: boolean): Promise<void>;
   discard(options?: { unload?: boolean }): Promise<DiscardOutcome>;
+  reasonsNotToSleep(): Promise<string[] | null>;
+  sleepIfEligible(): Promise<DiscardOutcome>;
   setFrozen(frozen: boolean): Promise<void>;
 };
 
@@ -392,6 +394,8 @@ function webViewHandle(call: HandleCall, nativeTag: () => number | null): WebVie
     mediaCaptureSourceId: () => call(null, (n) => n.mediaCaptureSourceId()),
     resolveUnresponsive: (terminate) => call(undefined, (n) => n.resolveUnresponsive(terminate)),
     discard: (options) => call<DiscardOutcome>("refused", (n) => n.discard(options?.unload ?? false)),
+    reasonsNotToSleep: () => call<string[] | null>(null, (n) => n.reasonsNotToSleep()),
+    sleepIfEligible: () => call<DiscardOutcome>("refused", (n) => n.sleepIfEligible()),
     setFrozen: (frozen) => call(undefined, (n) => n.setFrozen(frozen)),
   };
 }

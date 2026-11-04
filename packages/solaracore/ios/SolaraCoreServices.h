@@ -30,6 +30,8 @@ typedef void (^SolaraCoreResult)(NSDictionary<NSString *, id> *result);
 
 + (BOOL)boolPreference:(NSString *)name profile:(NSString *)profile NS_SWIFT_NAME(boolPreference(_:profile:));
 + (void)setBoolPreference:(NSString *)name value:(BOOL)value profile:(NSString *)profile NS_SWIFT_NAME(setBoolPreference(_:value:profile:));
++ (nullable NSArray<NSString *> *)sleepExceptionsForProfile:(NSString *)profile NS_SWIFT_NAME(sleepExceptions(profile:));
++ (BOOL)setSleepExceptions:(NSArray<NSString *> *)patterns profile:(NSString *)profile NS_SWIFT_NAME(setSleepExceptions(_:profile:));
 
 + (void)addresses:(NSString *)profile completion:(SolaraCoreResult)completion NS_SWIFT_NAME(addresses(profile:completion:));
 + (void)saveAddress:(NSDictionary<NSString *, id> *)address profile:(NSString *)profile completion:(SolaraCoreResult)completion

@@ -236,6 +236,12 @@ public class CefModule: Module {
     AsyncFunction("setPasswordAutofill") { (profile: String, enabled: Bool) in
       SolaraCoreServices.setBoolPreference("credentials_enable_service", value: enabled, profile: profile)
     }.runOnQueue(.main)
+    AsyncFunction("sleepExceptions") { (profile: String) in
+      SolaraCoreServices.sleepExceptions(profile: profile)
+    }.runOnQueue(.main)
+    AsyncFunction("setSleepExceptions") { (profile: String, patterns: [String]) in
+      SolaraCoreServices.setSleepExceptions(patterns, profile: profile)
+    }.runOnQueue(.main)
 
     AsyncFunction("getAutofillSettings") { (profile: String) in
       [
@@ -325,6 +331,8 @@ public class CefModule: Module {
       AsyncFunction("mediaCaptureSourceId") { (view: CefWebView, promise: Promise) in view.call("mediaCaptureSourceId", [], promise) }.runOnQueue(.main)
       AsyncFunction("resolveUnresponsive") { (view: CefWebView, terminate: Bool, promise: Promise) in view.call("resolveUnresponsive", [terminate], promise) }.runOnQueue(.main)
       AsyncFunction("discard") { (view: CefWebView, unload: Bool?, promise: Promise) in view.call("discard", [unload ?? false], promise) }.runOnQueue(.main)
+      AsyncFunction("reasonsNotToSleep") { (view: CefWebView, promise: Promise) in view.call("reasonsNotToSleep", [], promise) }.runOnQueue(.main)
+      AsyncFunction("sleepIfEligible") { (view: CefWebView, promise: Promise) in view.call("sleepIfEligible", [], promise) }.runOnQueue(.main)
       AsyncFunction("setFrozen") { (view: CefWebView, frozen: Bool, promise: Promise) in view.call("setFrozen", [frozen], promise) }.runOnQueue(.main)
 
       OnViewDidUpdateProps { (view: CefWebView) in view.propsDidUpdate() }

@@ -93,6 +93,7 @@ source_set("core") {
     "//chrome/browser/apps/platform_apps",
     "//chrome/browser/devtools",
     "//chrome/browser/extensions",
+    "//chrome/browser/performance_manager",
     "//chrome/browser/permissions/system",
     "//chrome/browser/profiles:profile",
     "//chrome/browser/printing",

@@ -223,6 +223,19 @@ NSString *StoreFolder(NSString *profile, NSString *extensionId, id version) {
   if ([p respondsToSelector:@selector(setBoolPreference:value:)]) [p setBoolPreference:name value:value];
 }
 
++ (NSArray<NSString *> *)sleepExceptionsForProfile:(NSString *)profile {
+  SolaraCoreProfile *p = solaracore_host::LoadedProfile(solaracore_host::OriginalProfileName(profile));
+  if (![p respondsToSelector:@selector(sleepExceptions)]) return nil;
+  return p.sleepExceptions;
+}
+
++ (BOOL)setSleepExceptions:(NSArray<NSString *> *)patterns profile:(NSString *)profile {
+  SolaraCoreProfile *p = solaracore_host::LoadedProfile(solaracore_host::OriginalProfileName(profile));
+  if (![p respondsToSelector:@selector(setSleepExceptions:)]) return NO;
+  p.sleepExceptions = patterns;
+  return YES;
+}
+
 + (void)addresses:(NSString *)profile completion:(SolaraCoreResult)completion {
   [self call:@"ac_autofill_addresses" profile:profile args:nil completion:Dated(@"addresses", completion)];
 }

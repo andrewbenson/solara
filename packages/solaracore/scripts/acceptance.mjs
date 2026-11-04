@@ -56,7 +56,7 @@ const usesPageA = [
   "context-menu-search", "duplicate-and-reopen", "device-chooser", "bluetooth-chooser",
   "bluetooth-settings", "cast-dialog", "cast-routes", "theme-commit", "theme-modern-colors", "user-selection",
   "password-prompt", "screen-share-picker", "tab-capture", "share-instead-two-captures",
-  "restore-after-close", "discard-outcomes", "capture-picture", "unresponsive", "permission-dismissed",
+  "restore-after-close", "discard-outcomes", "sleep-eligibility", "capture-picture", "unresponsive", "permission-dismissed",
   "save-page", "activate-request", "extension-popup-and-panel", "print-preview",
   "extension-prompts", "traffic-lights-after-profile-switch", "extension-configure",
   "private-windows-create", "extension-installed-bubble", "popup-window", "popup-window-permission", "popup-origin-strip", "autofill-save-prompts",
@@ -2228,6 +2228,107 @@ try {
       return out;
     } finally {
       await closeTab(tab.id);
+      await evalApp(`ac.actions.switchToTab("${first.id}"); return true`).catch(() => null);
+    }
+  });
+
+  await check("sleep-eligibility", async () => {
+    const editor = createServer((req, res) => {
+      res.writeHead(200, { "content-type": "text/html" });
+      res.end(page("Editor", `<div id="e" contenteditable>draft</div><script>
+        const range = document.createRange();
+        range.selectNodeContents(document.getElementById("e"));
+        getSelection().removeAllRanges();
+        getSelection().addRange(range);
+        document.execCommand("insertText", false, "typed in another origin");
+        parent.postMessage("edited", "*");
+      </script>`));
+    });
+    await new Promise((r) => editor.listen(0, "127.0.0.1", r));
+    const editorUrl = `http://127.0.0.1:${editor.address().port}/`;
+    const host = createServer((req, res) => {
+      res.writeHead(200, { "content-type": "text/html" });
+      res.end(page("Sleep host", `<iframe src="${editorUrl}"></iframe><script>window.__edited = false; addEventListener("message", (e) => { if (e.data === "edited") window.__edited = true; });</script>`));
+    });
+    await new Promise((r) => host.listen(0, "127.0.0.1", r));
+    const hostUrl = `http://127.0.0.1:${host.address().port}/`;
+    const reasons = (id) => evalApp(`return ac.webviews.get("${id}").reasonsNotToSleep()`);
+    const sleepIfEligible = (id) => evalApp(`return ac.webviews.get("${id}").sleepIfEligible()`);
+    const awake = async (id) => {
+      await evalApp(`ac.actions.switchToTab("${id}"); return true`);
+      await until(`${id} reloaded`, async () => {
+        const l = await evalApp(`const l = globalThis.acLifecycle.state(); return { sleeping: !!l.discarded["${id}"], loaded: l.loaded.includes("${id}") }`);
+        const tab = (await state()).tabs.find((t) => t.id === id);
+        return !l.sleeping && l.loaded && tab && !tab.loading ? true : null;
+      }, 15000);
+      await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
+      await until("A shown", async () => (await state()).active === first.id);
+      await until(`${id} eligible again`, async () => ((await reasons(id))?.length === 0 ? true : null), 5000);
+    };
+    const opened = [];
+    const out = {};
+    try {
+      const plain = await openTab(`${base}/b?sleep-plain`, "Page B", true);
+      opened.push(plain.id);
+      out.plainReasons = await reasons(plain.id);
+      out.plainSlept = await sleepIfEligible(plain.id);
+      await awake(plain.id);
+      out.plainSleptAgain = await sleepIfEligible(plain.id);
+
+      const edited = await openTab(hostUrl, "Sleep host", true);
+      opened.push(edited.id);
+      const hostPage = await pageFor(edited.id, hostUrl);
+      out.frameEdited = await until("the frame's edit", async () => ((await cdp(hostPage, "Runtime.evaluate", { expression: "window.__edited", returnByValue: true })).result.value === true ? true : null), 5000).catch(() => false);
+      out.editedReasons = await reasons(edited.id);
+      out.editedSlept = await sleepIfEligible(edited.id);
+      out.editedForced = await evalApp(`return ac.webviews.get("${edited.id}").discard()`);
+
+      const audible = await openTab(`${base}/media?sleep-audible`, "Media", false);
+      opened.push(audible.id);
+      const t = await pageFor(audible.id, `${base}/media?sleep-audible`);
+      await cdp(t, "Runtime.evaluate", { expression: "document.getElementById('tone').play(); true", userGesture: true });
+      await until("live.playingAudio", async () => (await live(audible.id))?.playingAudio === true, 8000);
+      await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
+      await until("A shown", async () => (await state()).active === first.id);
+      out.audibleReasons = await reasons(audible.id);
+      out.audibleSlept = await sleepIfEligible(audible.id);
+
+      const excepted = await openTab(`${base}/b?sleep-excepted`, "Page B", true);
+      opened.push(excepted.id);
+      const before = await cef(`sleepExceptions("")`);
+      try {
+        out.exceptionSet = await cef(`setSleepExceptions("", ${JSON.stringify([...new Set([...(before ?? []), "127.0.0.1"])])})`);
+        out.exceptions = await cef(`sleepExceptions("")`);
+        out.exceptedReasons = await until("the exception applied", async () => {
+          const r = await reasons(excepted.id);
+          return r?.includes("siteException") ? r : null;
+        }, 5000).catch(() => reasons(excepted.id));
+        out.exceptedSlept = await sleepIfEligible(excepted.id);
+      } finally {
+        await cef(`setSleepExceptions("", ${JSON.stringify(before ?? [])})`);
+      }
+      out.exceptionCleared = await cef(`sleepExceptions("")`);
+
+      const problems = [];
+      if (!Array.isArray(out.plainReasons) || out.plainReasons.length) problems.push(`plain reasons: ${JSON.stringify(out.plainReasons)}`);
+      if (out.plainSlept !== "discarded") problems.push(`plain sleep: ${JSON.stringify(out.plainSlept)}`);
+      if (out.plainSleptAgain !== "discarded") problems.push(`plain sleep after a wake: ${JSON.stringify(out.plainSleptAgain)}`);
+      if (out.frameEdited !== true) problems.push("the cross-origin frame never edited");
+      if (!out.editedReasons?.includes("userEdits")) problems.push(`cross-origin edit: ${JSON.stringify(out.editedReasons)}`);
+      if (out.editedSlept !== "refused") problems.push(`edited sleep: ${JSON.stringify(out.editedSlept)}`);
+      if (out.editedForced !== "discarded") problems.push(`forced discard: ${JSON.stringify(out.editedForced)}`);
+      if (!out.audibleReasons?.includes("audible")) problems.push(`audible: ${JSON.stringify(out.audibleReasons)}`);
+      if (out.audibleSlept !== "refused") problems.push(`audible sleep: ${JSON.stringify(out.audibleSlept)}`);
+      if (out.exceptionSet !== true || !out.exceptions?.includes("127.0.0.1")) problems.push(`exceptions: ${JSON.stringify([out.exceptionSet, out.exceptions])}`);
+      if (!out.exceptedReasons?.includes("siteException")) problems.push(`excepted: ${JSON.stringify(out.exceptedReasons)}`);
+      if (out.exceptedSlept !== "refused") problems.push(`excepted sleep: ${JSON.stringify(out.exceptedSlept)}`);
+      if (JSON.stringify(out.exceptionCleared ?? []) !== JSON.stringify(before ?? [])) problems.push(`exceptions not restored: ${JSON.stringify(out.exceptionCleared)}`);
+      if (problems.length) throw new Error(problems.join("; "));
+      return out;
+    } finally {
+      for (const id of opened) await closeTab(id).catch(() => null);
+      editor.close();
+      host.close();
       await evalApp(`ac.actions.switchToTab("${first.id}"); return true`).catch(() => null);
     }
   });

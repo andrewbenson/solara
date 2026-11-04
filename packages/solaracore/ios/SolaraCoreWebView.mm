@@ -3181,6 +3181,17 @@ static NSString *LinkKeyAction(NSString *key) {
   return [_tab discard] && _tab.discarded ? @"discarded" : @"refused";
 }
 
+- (NSArray<NSString *> *)reasonsNotToSleep {
+  if (!_tab || ![_tab respondsToSelector:@selector(reasonsNotToSleep)]) return nil;
+  return _tab.reasonsNotToSleep;
+}
+
+- (NSString *)sleepIfEligible {
+  if (!_tab || ![_tab respondsToSelector:@selector(sleepIfEligible)]) return @"unsupported";
+  if (_tab.discarded) return @"already";
+  return [_tab sleepIfEligible] ? @"discarded" : @"refused";
+}
+
 - (BOOL)discarded {
   return _tab.discarded;
 }

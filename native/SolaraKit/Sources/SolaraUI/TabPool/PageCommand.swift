@@ -75,13 +75,13 @@ public enum PageEngine: String, Sendable {
 public enum PageHost: String, Sendable { case pooled, reactNative }
 
 public enum PageResultKind: Sendable {
-  case none, any, boolean, string, optionalString, object, optionalObject, array, optionalInteger
+  case none, any, boolean, string, optionalString, object, optionalObject, array, optionalArray, optionalInteger
 
   public func accepts(_ value: PageValue) -> Bool {
     switch (self, value) {
     case (.any, _), (.none, .null), (.boolean, .bool), (.string, .string), (.optionalString, .null),
       (.optionalString, .string), (.object, .object), (.optionalObject, .object), (.optionalObject, .null),
-      (.array, .array), (.optionalInteger, .null): true
+      (.array, .array), (.optionalArray, .array), (.optionalArray, .null), (.optionalInteger, .null): true
     case (.optionalInteger, .number(let value)): value.isFinite && value.rounded() == value && Int(exactly: value) != nil
     default: false
     }
@@ -126,6 +126,8 @@ public enum PageCommand: Equatable, Sendable {
   case resolveUnresponsive(Bool)
   case discard(Bool)
   case setFrozen(Bool)
+  case reasonsNotToSleep
+  case sleepIfEligible
   case nativeTag
   case livePage
   case finishPageIssue(PageIssueGuard)
@@ -169,6 +171,8 @@ public enum PageCommand: Equatable, Sendable {
     case .resolveUnresponsive: "resolveUnresponsive"
     case .discard: "discard"
     case .setFrozen: "setFrozen"
+    case .reasonsNotToSleep: "reasonsNotToSleep"
+    case .sleepIfEligible: "sleepIfEligible"
     case .nativeTag: "nativeTag"
     case .livePage: "livePage"
     case .finishPageIssue: "finishPageIssue"
@@ -244,6 +248,8 @@ public enum PageCommand: Equatable, Sendable {
     case .resolveUnresponsive: .none
     case .discard: .string
     case .setFrozen: .none
+    case .reasonsNotToSleep: .optionalArray
+    case .sleepIfEligible: .string
     case .nativeTag: .optionalInteger
     case .livePage: .optionalObject
     case .finishPageIssue: .object
@@ -253,12 +259,12 @@ public enum PageCommand: Equatable, Sendable {
   public var carriesPageData: Bool {
     switch self {
     case .evaluate, .navigationEntries, .capturePicture, .downloadFavicon, .downloadImage, .getSecurityInfo, .pageCookies,
-      .executeExtensionAction, .mediaCaptureSourceId, .livePage: true
+      .executeExtensionAction, .mediaCaptureSourceId, .livePage, .reasonsNotToSleep: true
     case .loadUrl, .goBack, .goForward, .goToOffset, .reload, .forceReload, .stopLoading, .focus, .setMuted, .zoomStep,
       .find, .stopFinding, .print, .runPageCommand, .showDevTools, .executeJavaScript, .mediaCommand,
       .requestPictureInPicture, .takeControlPress, .exitPictureInPicture, .openBlockedPopup, .clearSiteData,
       .resolvePasswordPrompt, .resolveAutofillPrompt, .resolveDisplayMedia, .resolveUnresponsive,
-      .discard, .setFrozen, .nativeTag, .finishPageIssue: false
+      .discard, .setFrozen, .sleepIfEligible, .nativeTag, .finishPageIssue: false
     }
   }
 
@@ -386,6 +392,12 @@ public enum PageCommand: Equatable, Sendable {
     case "setFrozen":
       try a.limit(1)
       return .setFrozen(try a.bool(0))
+    case "reasonsNotToSleep":
+      try a.limit(0)
+      return .reasonsNotToSleep
+    case "sleepIfEligible":
+      try a.limit(0)
+      return .sleepIfEligible
     case "nativeTag":
       try a.limit(0)
       return .nativeTag

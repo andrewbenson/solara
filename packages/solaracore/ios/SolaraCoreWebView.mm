@@ -729,6 +729,33 @@ static BOOL HeldSelector(SEL selector) {
 
 @end
 
+static NSDictionary *SearchMenuItem(NSString *text) {
+  return @{
+    @"id" : @"search",
+    @"title" : [NSString stringWithFormat:@"Search %@ for “%@”", gSearchEngineName, SelectionLabel(text)],
+    @"replaces" : @"search",
+  };
+}
+
+@protocol ACShareMenu <NSObject>
++ (NSDictionary<NSString *, id> *)menuItemForContext:(NSDictionary<NSString *, id> *)context;
++ (void)shareContext:(NSDictionary<NSString *, id> *)context fromView:(NSView *)view;
+@end
+
+static Class<ACShareMenu> ShareMenuClass(SEL selector) {
+  Class share = NSClassFromString(@"SolaraShareMenu");
+  return [share respondsToSelector:selector] ? (Class<ACShareMenu>)share : nil;
+}
+
+static NSDictionary *ShareMenuItem(NSDictionary<NSString *, id> *context) {
+  id item = [ShareMenuClass(@selector(menuItemForContext:)) menuItemForContext:context];
+  return [item isKindOfClass:NSDictionary.class] ? item : nil;
+}
+
+static void ShareFromContext(NSDictionary<NSString *, id> *context, NSView *view) {
+  [ShareMenuClass(@selector(shareContext:fromView:)) shareContext:context fromView:view];
+}
+
 @implementation SolaraCoreWebView {
   SolaraCoreTab *_tab;
   BOOL _loadedOnce;
@@ -3056,19 +3083,34 @@ static NSString *LinkKeyAction(NSString *key) {
 
 - (NSArray<NSDictionary<NSString *, NSString *> *> *)tab:(SolaraCoreTab *)tab
                            contextMenuItemsForSelection:(NSString *)text {
-  return @[ @{
-    @"id" : @"search",
-    @"title" : [NSString stringWithFormat:@"Search %@ for “%@”", gSearchEngineName, SelectionLabel(text)],
-    @"replaces" : @"search",
-  } ];
+  NSDictionary *share = ShareMenuItem(@{@"selection" : text ?: @""});
+  return share ? @[ SearchMenuItem(text), share ] : @[ SearchMenuItem(text) ];
+}
+
+- (NSArray<NSDictionary<NSString *, id> *> *)tab:(SolaraCoreTab *)tab
+                     contextMenuItemsForContext:(NSDictionary<NSString *, id> *)context {
+  NSMutableArray<NSDictionary *> *items = [NSMutableArray array];
+  NSString *selection = Field<NSString>(context, @"selection");
+  if (selection.length && ![Field<NSNumber>(context, @"editable") boolValue]) [items addObject:SearchMenuItem(selection)];
+  NSDictionary *share = ShareMenuItem(context);
+  if (share) [items addObject:share];
+  return items;
 }
 
 - (void)tab:(SolaraCoreTab *)tab
     contextMenuCommand:(NSString *)itemId
                   text:(NSString *)selection
              modifiers:(NSDictionary<NSString *, NSNumber *> *)modifiers {
+  [self tab:tab contextMenuCommand:itemId context:@{@"selection" : selection ?: @"", @"modifiers" : modifiers ?: @{}}];
+}
+
+- (void)tab:(SolaraCoreTab *)tab contextMenuCommand:(NSString *)itemId context:(NSDictionary<NSString *, id> *)context {
+  NSString *selection = Field<NSString>(context, @"selection") ?: @"";
+  NSDictionary *modifiers = Field<NSDictionary>(context, @"modifiers") ?: @{};
   if ([itemId isEqualToString:@"search"])
-    [self emit:@"command" payload:@{@"command" : @"search", @"text" : selection ?: @"", @"modifiers" : modifiers ?: @{}}];
+    [self emit:@"command" payload:@{@"command" : @"search", @"text" : selection, @"modifiers" : modifiers}];
+  else if ([itemId hasPrefix:@"share:"])
+    ShareFromContext(context, self);
 }
 
 - (void)tab:(SolaraCoreTab *)tab didShowAutofillSuggestions:(NSArray<NSDictionary<NSString *, NSString *> *> *)items {

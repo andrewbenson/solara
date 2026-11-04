@@ -62,6 +62,39 @@ enum SharePicker {
     picker.show(relativeTo: rect, of: view, preferredEdge: edge)
   }
 
+  static func show(_ content: ShareContent, imagePath: String?, view: NSView, at point: NSPoint) {
+    guard let window = view.window else { return }
+    var items: [Any] = []
+    var described = ""
+    switch content {
+    case .text(let text):
+      items = [text as NSString]
+      described = "text=\"\(text)\""
+    case .link(let url, let title), .media(let url, let title):
+      items = [NSPreviewRepresentingActivityItem(item: url as NSURL, title: title?.isEmpty == false ? title : url.host, image: nil, icon: nil)]
+      described = describe(url.absoluteString, title)
+    case .image(let source, _):
+      if let imagePath, let size = (try? FileManager.default.attributesOfItem(atPath: imagePath))?[.size] as? NSNumber {
+        items = [URL(fileURLWithPath: imagePath) as NSURL]
+        described = "image=\(imagePath) bytes=\(size.intValue)"
+      } else if let source {
+        items = [source as NSURL]
+        described = "image-link=\(source.absoluteString)"
+      }
+    }
+    guard !items.isEmpty else { return }
+    let rect = NSRect(x: point.x, y: view.isFlipped ? point.y : view.bounds.height - point.y, width: 1, height: 1)
+    if background {
+      return log("share sheet (not shown): \(described) window=#\(window.windowNumber) anchor=\(NSStringFromRect(rect))")
+    }
+    delegate.finish()
+    delegate.window = window
+    let picker = NSSharingServicePicker(items: items)
+    picker.delegate = delegate
+    current = picker
+    picker.show(relativeTo: rect, of: view, preferredEdge: .minY)
+  }
+
   static func perform(service: String, url: String, title: String?, windowId: String?) {
     guard let link = URL(string: url), let match = services().first(where: { $0.title == service }) else { return }
     if background {

@@ -250,6 +250,11 @@ SOLARACORE_EXPORT
     contextMenuCommand:(NSString*)itemId
                   text:(NSString*)selection
              modifiers:(NSDictionary<NSString*, NSNumber*>*)modifiers;
+- (NSArray<NSDictionary<NSString*, id>*>*)tab:(SolaraCoreTab*)tab
+                   contextMenuItemsForContext:(NSDictionary<NSString*, id>*)context;
+- (void)tab:(SolaraCoreTab*)tab
+    contextMenuCommand:(NSString*)itemId
+               context:(NSDictionary<NSString*, id>*)context;
 - (void)tab:(SolaraCoreTab*)tab didShowContextMenu:(NSArray<NSDictionary*>*)items;
 - (nullable NSDictionary<NSString*, id>*)tab:(SolaraCoreTab*)tab
                               runContextMenu:(NSDictionary<NSString*, id>*)menu;

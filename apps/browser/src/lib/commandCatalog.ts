@@ -122,7 +122,7 @@ export const COMMANDS: Readonly<Record<BrowserCommand, CommandSpec>> = {
       backward: { title: "Tab Switcher (backward)", keys: ["⌃⇧⇥"] },
     },
   },
-  share: { title: "Share", symbol: "square.and.arrow.up", ...pageInLittleSolara },
+  share: { title: "Share…", barTitle: "Share", symbol: "square.and.arrow.up", keys: ["⌥⌘S"], ...pageInLittleSolara },
   sendFeedback: { title: "Send Feedback…", keys: ["⌥⇧⌘I"] },
   keyboardShortcuts: { title: "Keyboard Shortcuts", symbol: "keyboard" },
   copyDiagnostics: { title: "Copy Diagnostics" },

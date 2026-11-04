@@ -3,14 +3,23 @@
 #import <AppKit/AppKit.h>
 #include <os/log.h>
 
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
+#include "base/task/thread_pool.h"
+#include "base/time/time.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/common/chrome_render_frame.mojom.h"
+#include "components/lens/lens_metadata.mojom.h"
+#include "mojo/public/cpp/bindings/associated_remote.h"
+#include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
+#include "third_party/blink/public/mojom/context_menu/context_menu.mojom.h"
 #include "chrome/browser/renderer_context_menu/render_view_context_menu.h"
 #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
 #include "chrome/browser/ui/cocoa/renderer_context_menu/render_view_context_menu_mac_cocoa.h"
@@ -23,6 +32,7 @@
 #include "ui/base/data_transfer_policy/data_transfer_endpoint.h"
 #include "chrome/browser/ui/views/tab_contents/chrome_web_contents_view_delegate_views_mac.h"
 #include "chrome/app/chrome_command_ids.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/context_menu_params.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_widget_host_view.h"
@@ -30,6 +40,7 @@
 #include "solara/core/ac_browser.h"
 #import "solara/core/solaracore_internal.h"
 #include "ui/events/event_constants.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/base/window_open_disposition.h"
 
@@ -39,6 +50,50 @@ namespace {
 
 constexpr int kHostFirst = IDC_CONTENT_CONTEXT_CUSTOM_FIRST + 900;
 constexpr int kHostLast = IDC_CONTENT_CONTEXT_CUSTOM_FIRST + 999;
+constexpr int kShareImageMaxSide = 4096;
+constexpr int kShareImageQuality = 90;
+constexpr size_t kShareImageMaxBytes = 64 * 1024 * 1024;
+constexpr base::TimeDelta kShareImageTimeout = base::Seconds(10);
+constexpr NSTimeInterval kShareImageKeptFor = 60 * 60;
+
+struct HostItem {
+  std::string id;
+  bool needs_image = false;
+};
+
+NSString* MediaTypeName(blink::mojom::ContextMenuDataMediaType type) {
+  switch (type) {
+    case blink::mojom::ContextMenuDataMediaType::kImage:
+      return @"image";
+    case blink::mojom::ContextMenuDataMediaType::kVideo:
+      return @"video";
+    case blink::mojom::ContextMenuDataMediaType::kAudio:
+      return @"audio";
+    case blink::mojom::ContextMenuDataMediaType::kCanvas:
+      return @"canvas";
+    case blink::mojom::ContextMenuDataMediaType::kPlugin:
+      return @"plugin";
+    default:
+      return @"";
+  }
+}
+
+std::optional<int> AnchorCommand(NSString* name) {
+  if ([name isEqualToString:@"copy"]) return IDC_CONTENT_CONTEXT_COPY;
+  if ([name isEqualToString:@"copyLink"]) return IDC_CONTENT_CONTEXT_COPYLINKLOCATION;
+  if ([name isEqualToString:@"copyImage"]) return IDC_CONTENT_CONTEXT_COPYIMAGE;
+  if ([name isEqualToString:@"copyImageLink"]) return IDC_CONTENT_CONTEXT_COPYIMAGELOCATION;
+  if ([name isEqualToString:@"copyMediaLink"]) return IDC_CONTENT_CONTEXT_COPYAVLOCATION;
+  if ([name isEqualToString:@"print"]) return IDC_PRINT;
+  return std::nullopt;
+}
+
+NSString* ImageExtension(const std::string& mime_type) {
+  if (mime_type == "image/png") return @"png";
+  if (mime_type == "image/gif") return @"gif";
+  if (mime_type == "image/webp") return @"webp";
+  return @"jpg";
+}
 
 SolaraCoreTab* TabOf(content::WebContents* contents) {
   BrowserWindowInterface* browser =
@@ -48,6 +103,118 @@ SolaraCoreTab* TabOf(content::WebContents* contents) {
              ? TabBridge::GetOrCreate(contents)->tab()
              : nil;
 }
+
+std::string WriteShareImage(std::vector<uint8_t> bytes, std::string mime_type) {
+  @autoreleasepool {
+    NSString* root = [NSTemporaryDirectory() stringByAppendingPathComponent:@"SolaraShare"];
+    NSFileManager* files = NSFileManager.defaultManager;
+    NSDate* stale = [NSDate dateWithTimeIntervalSinceNow:-kShareImageKeptFor];
+    for (NSString* name in [files contentsOfDirectoryAtPath:root error:nil]) {
+      NSString* old = [root stringByAppendingPathComponent:name];
+      NSDate* made = [files attributesOfItemAtPath:old error:nil].fileModificationDate;
+      if (made && [made compare:stale] == NSOrderedAscending) {
+        [files removeItemAtPath:old error:nil];
+      }
+    }
+    NSString* folder = [root stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
+    if (![files createDirectoryAtPath:folder
+            withIntermediateDirectories:YES
+                             attributes:@{NSFilePosixPermissions : @0700}
+                                  error:nil]) {
+      return std::string();
+    }
+    NSString* path = [[folder stringByAppendingPathComponent:@"Image"]
+        stringByAppendingPathExtension:ImageExtension(mime_type)];
+    NSData* data = [NSData dataWithBytes:bytes.data() length:bytes.size()];
+    return [data writeToFile:path atomically:YES] ? base::SysNSStringToUTF8(path) : std::string();
+  }
+}
+
+void RunHostCommand(content::WebContents* contents,
+                    NSString* item_id,
+                    NSDictionary<NSString*, id>* context) {
+  SolaraCoreTab* tab = TabOf(contents);
+  id<SolaraCoreTabDelegate> delegate = tab.delegate;
+  if ([delegate respondsToSelector:@selector(tab:contextMenuCommand:context:)]) {
+    [delegate tab:tab contextMenuCommand:item_id context:context];
+  } else if ([delegate respondsToSelector:@selector(tab:contextMenuCommand:text:modifiers:)]) {
+    [delegate tab:tab
+        contextMenuCommand:item_id
+                      text:context[@"selection"]
+                 modifiers:context[@"modifiers"]];
+  }
+}
+
+class ShareImageRequest : public base::RefCounted<ShareImageRequest> {
+ public:
+  ShareImageRequest(base::WeakPtr<content::WebContents> contents,
+                    NSString* item_id,
+                    NSMutableDictionary<NSString*, id>* context)
+      : contents_(contents), item_id_(item_id), context_(context) {}
+
+  void Start(content::RenderFrameHost* frame) {
+    frame->GetRemoteAssociatedInterfaces()->GetInterface(&remote_);
+    remote_.set_disconnect_handler(base::BindOnce(&ShareImageRequest::GaveUp, base::WrapRefCounted(this)));
+    static const bool stall = getenv("SOLARA_BACKGROUND") && getenv("SOLARA_TEST_SHARE_IMAGE_STALL");
+    if (!stall) {
+      remote_->RequestImageForContextNode(
+          0, gfx::Size(kShareImageMaxSide, kShareImageMaxSide),
+          chrome::mojom::ImageFormat::ORIGINAL, kShareImageQuality,
+          base::BindOnce(&ShareImageRequest::Received, base::WrapRefCounted(this)));
+    }
+    content::GetUIThreadTaskRunner({})->PostDelayedTask(
+        FROM_HERE, base::BindOnce(&ShareImageRequest::GaveUp, base::WrapRefCounted(this)), kShareImageTimeout);
+  }
+
+ private:
+  friend class base::RefCounted<ShareImageRequest>;
+  enum class State { kWaiting, kWriting, kDone };
+  ~ShareImageRequest() = default;
+
+  void GaveUp() { Done(std::string()); }
+
+  void Received(const std::vector<uint8_t>& bytes,
+                const gfx::Size& original_size,
+                const gfx::Size& downscaled_size,
+                const std::string& mime_type,
+                std::vector<lens::mojom::LatencyLogPtr>) {
+    if (state_ != State::kWaiting) {
+      return;
+    }
+    remote_.reset();
+    if (bytes.empty() || bytes.size() > kShareImageMaxBytes) {
+      Done(std::string());
+      return;
+    }
+    state_ = State::kWriting;
+    context_[@"imageWidth"] = @(downscaled_size.width());
+    context_[@"imageHeight"] = @(downscaled_size.height());
+    base::ThreadPool::PostTaskAndReplyWithResult(
+        FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
+        base::BindOnce(&WriteShareImage, bytes, mime_type),
+        base::BindOnce(&ShareImageRequest::Done, base::WrapRefCounted(this)));
+  }
+
+  void Done(std::string path) {
+    if (state_ == State::kDone) {
+      return;
+    }
+    state_ = State::kDone;
+    remote_.reset();
+    if (!path.empty()) {
+      context_[@"imagePath"] = base::SysUTF8ToNSString(path);
+    }
+    if (contents_) {
+      RunHostCommand(contents_.get(), item_id_, context_);
+    }
+  }
+
+  base::WeakPtr<content::WebContents> contents_;
+  NSString* item_id_;
+  NSMutableDictionary<NSString*, id>* context_;
+  mojo::AssociatedRemote<chrome::mojom::ChromeRenderFrame> remote_;
+  State state_ = State::kWaiting;
+};
 
 NSArray* DescribeMenu(ui::MenuModel* model) {
   NSMutableArray* items = [NSMutableArray array];
@@ -141,28 +308,69 @@ class ACContextMenu : public RenderViewContextMenuMacCocoa {
     }
   }
 
+  NSDictionary<NSString*, id>* Context() const {
+    content::WebContents* contents = source_web_contents_;
+    return @{
+      @"selection" : base::SysUTF16ToNSString(params().selection_text),
+      @"link" : base::SysUTF8ToNSString(params().link_url.spec()),
+      @"source" : base::SysUTF8ToNSString(params().src_url.spec()),
+      @"mediaType" : MediaTypeName(params().media_type),
+      @"hasImage" : @(params().has_image_contents),
+      @"page" : base::SysUTF8ToNSString(params().page_url.spec()),
+      @"frame" : base::SysUTF8ToNSString(params().frame_url.spec()),
+      @"title" : contents ? base::SysUTF16ToNSString(contents->GetTitle()) : @"",
+      @"editable" : @(params().is_editable),
+      @"x" : @(params().x),
+      @"y" : @(params().y),
+    };
+  }
+
   void AddHostItems() {
-    const std::u16string& selection = params().selection_text;
     SolaraCoreTab* tab = TabOf(source_web_contents_);
     id<SolaraCoreTabDelegate> delegate = tab.delegate;
-    if (selection.empty() || params().is_editable ||
-        ![delegate respondsToSelector:@selector(tab:contextMenuItemsForSelection:)]) {
-      return;
+    NSArray<NSDictionary*>* items = nil;
+    if ([delegate respondsToSelector:@selector(tab:contextMenuItemsForContext:)]) {
+      items = [delegate tab:tab contextMenuItemsForContext:Context()];
+    } else {
+      const std::u16string& selection = params().selection_text;
+      if (selection.empty() || params().is_editable ||
+          ![delegate respondsToSelector:@selector(tab:contextMenuItemsForSelection:)]) {
+        return;
+      }
+      items = [delegate tab:tab
+          contextMenuItemsForSelection:base::SysUTF16ToNSString(selection)];
     }
-    NSArray<NSDictionary*>* items =
-        [delegate tab:tab
-            contextMenuItemsForSelection:base::SysUTF16ToNSString(selection)];
     std::optional<size_t> copy =
         menu_model_.GetIndexOfCommandId(IDC_CONTENT_CONTEXT_COPY);
     size_t at = copy ? *copy + 1 : menu_model_.GetItemCount();
     for (NSDictionary* item in items) {
+      if (![item isKindOfClass:NSDictionary.class]) {
+        continue;
+      }
       NSString* item_id = [item[@"id"] isKindOfClass:NSString.class] ? item[@"id"] : nil;
       NSString* title = [item[@"title"] isKindOfClass:NSString.class] ? item[@"title"] : nil;
       const int command = kHostFirst + static_cast<int>(host_items_.size());
       if (!item_id || !title || command > kHostLast) {
         continue;
       }
-      host_items_.push_back(base::SysNSStringToUTF8(item_id));
+      host_items_.push_back({base::SysNSStringToUTF8(item_id), [item[@"needs"] isEqual:@"image"]});
+      NSArray* after = [item[@"after"] isKindOfClass:NSArray.class] ? item[@"after"] : nil;
+      if (after) {
+        std::optional<size_t> anchor;
+        for (id name in after) {
+          std::optional<int> anchor_command =
+              [name isKindOfClass:NSString.class] ? AnchorCommand(name) : std::nullopt;
+          if (anchor_command && (anchor = menu_model_.GetIndexOfCommandId(*anchor_command))) {
+            break;
+          }
+        }
+        const size_t place = anchor ? *anchor + 1 : menu_model_.GetItemCount();
+        menu_model_.InsertItemAt(place, command, base::SysNSStringToUTF16(title));
+        if (place <= at) {
+          ++at;
+        }
+        continue;
+      }
       size_t place = at;
       bool replaced = false;
       if ([item[@"replaces"] isEqual:@"search"]) {
@@ -208,18 +416,29 @@ class ACContextMenu : public RenderViewContextMenuMacCocoa {
       RenderViewContextMenuMacCocoa::ExecuteCommand(command_id, event_flags);
       return;
     }
-    SolaraCoreTab* tab = TabOf(source_web_contents_);
-    id<SolaraCoreTabDelegate> delegate = tab.delegate;
-    if ([delegate respondsToSelector:@selector(tab:contextMenuCommand:text:modifiers:)]) {
-      [delegate tab:tab
-          contextMenuCommand:base::SysUTF8ToNSString(host_items_[index])
-                        text:base::SysUTF16ToNSString(params().selection_text)
-                   modifiers:@{
-                     @"metaKey" : @((event_flags & ui::EF_COMMAND_DOWN) != 0),
-                     @"shiftKey" : @((event_flags & ui::EF_SHIFT_DOWN) != 0),
-                     @"altKey" : @((event_flags & ui::EF_ALT_DOWN) != 0),
-                   }];
+    const HostItem& item = host_items_[index];
+    NSMutableDictionary<NSString*, id>* context = [Context() mutableCopy];
+    context[@"modifiers"] = @{
+      @"metaKey" : @((event_flags & ui::EF_COMMAND_DOWN) != 0),
+      @"shiftKey" : @((event_flags & ui::EF_SHIFT_DOWN) != 0),
+      @"altKey" : @((event_flags & ui::EF_ALT_DOWN) != 0),
+    };
+    NSString* item_id = base::SysUTF8ToNSString(item.id);
+    if (item.needs_image) {
+      RequestImageThenRun(item_id, context);
+      return;
     }
+    RunHostCommand(source_web_contents_, item_id, context);
+  }
+
+  void RequestImageThenRun(NSString* item_id, NSMutableDictionary<NSString*, id>* context) {
+    content::RenderFrameHost* frame = GetRenderFrameHost();
+    if (!frame || !source_web_contents_) {
+      RunHostCommand(source_web_contents_, item_id, context);
+      return;
+    }
+    base::MakeRefCounted<ShareImageRequest>(source_web_contents_->GetWeakPtr(), item_id, context)
+        ->Start(frame);
   }
 
  private:
@@ -267,14 +486,16 @@ class ACContextMenu : public RenderViewContextMenuMacCocoa {
       os_log(OS_LOG_DEFAULT, "[solaracore-menu] pick %d: %{public}s", command.intValue,
              where.c_str());
     }
-    MenuClosed(model);
-    if (weak && found && owner->IsEnabledAt(index)) {
+    if (found && owner->IsEnabledAt(index)) {
       owner->ActivatedAt(index, flags.intValue);
+    }
+    if (weak) {
+      MenuClosed(model);
     }
     return true;
   }
 
-  std::vector<std::string> host_items_;
+  std::vector<HostItem> host_items_;
   base::WeakPtrFactory<ACContextMenu> weak_factory_{this};
 };
 

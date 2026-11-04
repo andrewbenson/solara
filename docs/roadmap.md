@@ -57,6 +57,7 @@ backlog, and check this file against the release notes.
 | Sidebar width and icons-only are per window: resizing one window's sidebar no longer resizes every window | planned |
 | Icons-only sidebar: narrower rail with square tiles, a hover × badge, the traffic lights in the toolbar as Chrome does, no tile fill at rest, pinned tabs styled like other tabs | planned |
 | Switching light/dark updates background tabs' toolbar colour, so switching to one shows no old-colour flash | landed 5cb63f15 |
+| Picture in Picture stays on top of full-screen windows, including other apps' full-screen spaces (owner, 2026-11-03) | planned |
 
 ## 0.2.2: a fresh engine
 

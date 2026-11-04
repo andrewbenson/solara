@@ -225,8 +225,10 @@ private final class PopoverDragBridge: SidebarDragBridge {
     try withBridge { bridge in
       let (window, sidebar) = try mounted(width: CGFloat(SidebarRail.width))
       defer { window.close() }
+      let applicationNotifications = NotificationCenter()
+      SidebarDragController.of(sidebar).applicationNotifications = applicationNotifications
       let controller = try startPopoverDrag(sidebar)
-      NotificationCenter.default.post(name: NSApplication.didResignActiveNotification, object: NSApp)
+      applicationNotifications.post(name: NSApplication.didResignActiveNotification, object: NSApp)
       #expect(!controller.active)
       #expect(!controller.followsPopoverDrag)
       #expect(bridge.endings == [false])

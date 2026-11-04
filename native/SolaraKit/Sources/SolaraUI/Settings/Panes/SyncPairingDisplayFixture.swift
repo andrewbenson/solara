@@ -160,7 +160,7 @@ final class SyncPairingDisplayFixture: SyncPairingFixtureSession {
   private static var accessibilityUsers = 0
   private static var previousEnhancedAccessibility: Any?
 
-  init(settings: NSWindow, dataDirectory: String) {
+  init(settings: NSWindow, dataDirectory: String, isolatesWindowEvents: Bool = false) {
     if Self.accessibilityUsers == 0 {
       Self.previousEnhancedAccessibility = NSApp.accessibilityAttributeValue(NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface"))
       NSApp.accessibilitySetValue(true, forAttribute: NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface"))
@@ -173,7 +173,8 @@ final class SyncPairingDisplayFixture: SyncPairingFixtureSession {
     panel.isReleasedWhenClosed = false
     panel.identifier = NSUserInterfaceItemIdentifier("sync-pairing-sensitive")
     panel.title = "Pairing display fixture"
-    panel.contentView = NSHostingView(rootView: SyncTrustedPairingSheet(model: model))
+    panel.contentView = NSHostingView(rootView: SyncTrustedPairingSheet(model: model)
+      .environment(\.syncPairingWindowEventIsolation, isolatesWindowEvents ? SyncPairingWindowEventIsolation() : nil))
     settings.beginSheet(panel)
     panel.contentView?.layoutSubtreeIfNeeded()
     model.attach(to: settings)
@@ -459,8 +460,12 @@ final class SyncPairingDisplayFixture: SyncPairingFixtureSession {
 
 extension SyncPairingFixtureHost {
   public convenience init(environment: [String: String] = ProcessInfo.processInfo.environment) {
+    self.init(environment: environment, isolatesWindowEvents: false)
+  }
+
+  convenience init(environment: [String: String], isolatesWindowEvents: Bool) {
     self.init(environment: environment) { window in
-      SyncPairingDisplayFixture(settings: window, dataDirectory: environment["SOLARA_DATA_DIR"] ?? "")
+      SyncPairingDisplayFixture(settings: window, dataDirectory: environment["SOLARA_DATA_DIR"] ?? "", isolatesWindowEvents: isolatesWindowEvents)
     }
   }
 }

@@ -1183,6 +1183,7 @@ public final class SidebarDragController {
   private var popoverFollow: PopoverDragFollow?
 
   var followsPopoverDrag: Bool { popoverFollow != nil }
+  var applicationNotifications = NotificationCenter.default
 
   func popoverDrag(tabId: String, groupId: String, size: CGSize, at: CGPoint) {
     guard !active, !sourcesEnding else { return }
@@ -1211,7 +1212,8 @@ public final class SidebarDragController {
       }
       return consumed ? nil : event
     }
-    follow.resignObserver = NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: nil) { [weak self] _ in
+    follow.applicationNotifications = applicationNotifications
+    follow.resignObserver = applicationNotifications.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: nil) { [weak self] _ in
       MainActor.assumeIsolated {
         guard let self else { return follow.stop() }
         self.cancelPopoverDrag()
@@ -1339,12 +1341,13 @@ final class PopoverDragFollow {
   let token: Int
   var monitor: Any?
   var resignObserver: NSObjectProtocol?
+  var applicationNotifications = NotificationCenter.default
 
   init(token: Int) { self.token = token }
 
   func stop() {
     if let monitor { NSEvent.removeMonitor(monitor) }
-    if let resignObserver { NotificationCenter.default.removeObserver(resignObserver) }
+    if let resignObserver { applicationNotifications.removeObserver(resignObserver) }
     monitor = nil
     resignObserver = nil
   }

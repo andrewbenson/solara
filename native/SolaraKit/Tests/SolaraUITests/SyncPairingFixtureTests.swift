@@ -171,7 +171,7 @@ struct SyncPairingDisplayFixtureTests {
     defer { try? FileManager.default.removeItem(at: data) }
     try Data().write(to: data.appendingPathComponent(".solara-probe-scratch"))
     let environment = ["SOLARA_BACKGROUND": "1", "SOLARA_DATA_DIR": data.path, "SOLARA_SYNC_PAIRING_FIXTURE": "1"]
-    let host = SyncPairingFixtureHost(environment: environment)
+    let host = SyncPairingFixtureHost(environment: environment, isolatesWindowEvents: true)
     let settings = PairingOffscreenSettingsPanel(contentRect: NSRect(x: -10000, y: -10000, width: 800, height: 600), styleMask: [.nonactivatingPanel], backing: .buffered, defer: false)
     settings.isReleasedWhenClosed = false
     settings.alphaValue = 0
@@ -200,6 +200,30 @@ struct SyncPairingDisplayFixtureTests {
     #expect(presented["allowRequests"] as? Int == 0)
     #expect(presented["realAuthenticationRequests"] as? Int == 0)
     #expect(presented["releaseRequests"] as? Int == 0)
+  }
+
+  @Test(arguments: [true, false])
+  func theFixtureSheetResigningKeyAfterSelectDropsTheSelectionOnlyWithoutIsolation(isolated: Bool) async throws {
+    await configurePairingTestApplication()
+    let data = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("ac-pairing-isolation-key-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: data, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: data) }
+    try Data().write(to: data.appendingPathComponent(".solara-probe-scratch"))
+    let environment = ["SOLARA_BACKGROUND": "1", "SOLARA_DATA_DIR": data.path, "SOLARA_SYNC_PAIRING_FIXTURE": "1"]
+    let host = SyncPairingFixtureHost(environment: environment, isolatesWindowEvents: isolated)
+    let settings = PairingOffscreenSettingsPanel(contentRect: NSRect(x: -10000, y: -10000, width: 800, height: 600), styleMask: [.nonactivatingPanel], backing: .buffered, defer: false)
+    settings.isReleasedWhenClosed = false
+    settings.alphaValue = 0
+    defer { host.destroy(); settings.contentView = nil; settings.orderOut(nil) }
+    func drive(_ action: String) -> [String: Any] { host.drive(action, settingsWindow: settings) }
+    #expect(drive("mount")["error"] == nil)
+    let sheet = try #require(settings.attachedSheet)
+    #expect(sheet.identifier?.rawValue == "sync-pairing-sensitive")
+    #expect(drive("select")["error"] == nil)
+    NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: sheet)
+    await host.waitForPendingActions()
+    #expect(drive("state")["preparing"] as? Bool == isolated)
+    #expect(drive("ready")["comparisonPresent"] as? Bool == isolated)
   }
 
   @Test func interruptedExchangeShowsLocalRetryCopyInSettings() async throws {
@@ -265,7 +289,7 @@ struct SyncPairingDisplayFixtureTests {
     await pane.prepare(SettingsPlace(pane: .sync))
     #expect(pane is SyncPairingFixturePane)
     #expect(pane.isLoaded(SettingsPlace(pane: .sync)))
-    let host = SyncPairingFixtureHost(environment: environment)
+    let host = SyncPairingFixtureHost(environment: environment, isolatesWindowEvents: true)
     func drive(_ action: String, argument: String? = nil, settingsWindow: NSWindow?) -> [String: Any] {
       registered { host.drive(action, argument: argument, settingsWindow: settingsWindow) }
     }

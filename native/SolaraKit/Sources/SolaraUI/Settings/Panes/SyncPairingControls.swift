@@ -297,6 +297,9 @@ struct SyncPairingSurfaceProbe: NSViewRepresentable {
   func makeNSView(context: Context) -> SyncPairingSurfaceView {
     let view = SyncPairingSurfaceView()
     view.sensitive = sensitive
+    #if DEBUG
+    context.environment.syncPairingWindowEventIsolation?.isolate(view)
+    #endif
     view.attach = { [weak model] window in if !sensitive { model?.attach(to: window) } }
     view.changed = sensitive ? model.captureSurfaceChange() : { [weak model] event in model?.surfaceChanged(event) }
     view.deny = model.captureEnd(.deny)
@@ -335,3 +338,28 @@ struct SyncRequestButton: NSViewRepresentable {
   func makeNSView(context: Context) -> SyncRequestNativeButton { SyncRequestNativeButton(request: request, select: select) }
   func updateNSView(_ view: SyncRequestNativeButton, context: Context) {}
 }
+
+#if DEBUG
+struct SyncPairingWindowEventIsolation {
+  let notificationCenter = NotificationCenter()
+  let workspaceNotificationCenter = NotificationCenter()
+  let distributedNotificationCenter = NotificationCenter()
+
+  @MainActor func isolate(_ view: SyncPairingSurfaceView) {
+    view.notificationCenter = notificationCenter
+    view.workspaceNotificationCenter = workspaceNotificationCenter
+    view.distributedNotificationCenter = distributedNotificationCenter
+  }
+}
+
+private struct SyncPairingWindowEventIsolationKey: EnvironmentKey {
+  static let defaultValue: SyncPairingWindowEventIsolation? = nil
+}
+
+extension EnvironmentValues {
+  var syncPairingWindowEventIsolation: SyncPairingWindowEventIsolation? {
+    get { self[SyncPairingWindowEventIsolationKey.self] }
+    set { self[SyncPairingWindowEventIsolationKey.self] = newValue }
+  }
+}
+#endif

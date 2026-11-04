@@ -44,6 +44,7 @@ backlog, and check this file against the release notes.
 | On a WebKit page, the pinned extensions give way to a WebKit pill (extensions, the ad blocker and password autofill don't run there), with Open in Chromium; the icons come back on Chromium tabs. The pill and its popover in Swift | landed 5fb501c6 |
 | Going back to the New Tab page (⌘[ or a two-finger swipe) shows the New Tab page, not the command bar floating over the page you left | landed 66e8716b |
 | Arrowing through command bar suggestions fills the input with the highlighted address or search, editable before Enter; Escape or arrowing back up restores what you typed | landed 6086ad50 |
+| Pinned extensions stay pinned (across quit and updates), and checking one in Pin Extensions pins only that one | planned |
 
 ## 0.2.1: a fresh engine
 
@@ -51,9 +52,7 @@ backlog, and check this file against the release notes.
 |---|---|
 | Fixes from the owner's two-Mac sync-join test of 0.1.3 | waiting on the test |
 | Engine: Chromium 156.0.8078.79 or newer (Chrome stable security updates; we ship .47). Needs a Chromium sync and rebuild: owner approved; moved from 0.2.0 on 2026-11-03 | planned |
-| Pinned extensions stay pinned (across quit and updates), and checking one in Pin Extensions pins only that one | moved from 0.2.0: not reproduced yet (relaunch, update and sync all keep pins in tests); needs the owner's setup |
-| The toolbar follows a site's light or dark theme-color when macOS switches appearance (it stayed on the dark colour) | moved from 0.2.0: diagnosed, an appearance change never reaches renderers (engine) |
-| Solara's own Appearance setting (Light/Dark) reaches web pages' prefers-color-scheme, not only macOS's | planned |
+| The toolbar follows a site's light or dark theme-color when macOS switches appearance (it stayed on the dark colour) | moved from 0.2.0: not reproduced yet; the Appearance setting, relaunch and DevTools emulation all update it |
 | The Share picker opens at the click point when DevTools is docked on the left | planned |
 
 ## 0.3.0: the CLI and Raycast revamped, and tabs that cost less

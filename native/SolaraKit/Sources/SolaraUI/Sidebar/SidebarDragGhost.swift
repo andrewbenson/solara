@@ -14,6 +14,7 @@ final class SidebarDragGhostView: NSView {
   private let badge = NSTextField(labelWithString: "")
   private let badgeBox = CALayer()
   private var tile = false
+  private var rail = false
 
   override var isFlipped: Bool { true }
 
@@ -45,10 +46,12 @@ final class SidebarDragGhostView: NSView {
 
   override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-  func show(_ item: DragItem, count: Int, context: SidebarContext) {
+  func show(_ item: DragItem, count: Int, context: SidebarContext, rail: Bool = false) {
     let palette = context.palette
     let dark = palette.dark
     tile = item.kind == .tile
+    self.rail = rail
+    surface.radius = rail ? SidebarRail.radius : 10
     let folderTile = tile && item.folderId != nil
     surface.fill = dark ? NSColor(srgbRed: 0x0F / 255, green: 0x0F / 255, blue: 0x14 / 255, alpha: 1) : .white
     surface.borderTint = palette.dragBorder
@@ -71,7 +74,7 @@ final class SidebarDragGhostView: NSView {
       icon.favicons = context.favicons
       icon.set(context.iconSpec(tab), palette: palette)
     }
-    label.isHidden = tile
+    label.isHidden = tile || rail
     label.color = palette.textPrimary
     if let live {
       label.text = live.folder.name
@@ -92,13 +95,13 @@ final class SidebarDragGhostView: NSView {
 
   override func layout() {
     super.layout()
-    let height = tile ? SidebarMetrics.tileHeight : bounds.height
+    let height = rail ? SidebarRail.rowHeight : tile ? SidebarMetrics.tileHeight : bounds.height
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    surface.frame = CGRect(x: 0, y: 0, width: bounds.width, height: height)
+    surface.frame = rail ? SidebarRail.tileFrame(in: bounds) : CGRect(x: 0, y: 0, width: bounds.width, height: height)
     let side = FolderMosaicView.side
     mosaic.frame = NSRect(x: (bounds.width - side) / 2, y: (height - side) / 2, width: side, height: side)
-    if tile {
+    if tile || rail {
       icon.frame = NSRect(x: (bounds.width - 16) / 2, y: (height - 16) / 2, width: 16, height: 16)
     } else {
       icon.frame = NSRect(x: 9, y: (height - 16) / 2, width: 16, height: 16)

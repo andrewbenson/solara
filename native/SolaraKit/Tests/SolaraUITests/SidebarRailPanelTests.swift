@@ -26,7 +26,7 @@ import Testing
     window.alphaValue = 0
     window.level = NSWindow.Level(rawValue: -1_000_000)
     window.orderBack(nil)
-    let row = RailGroupView(frame: NSRect(x: 6, y: 300, width: 72, height: 34))
+    let row = RailGroupView(frame: NSRect(x: 6, y: 300, width: 72, height: 30))
     window.contentView?.addSubview(row)
     row.update(SidebarItem(kind: .groupHeader("g"), frame: row.frame, region: .scroll, groups: [], section: .list), context)
     row.layoutSubtreeIfNeeded()

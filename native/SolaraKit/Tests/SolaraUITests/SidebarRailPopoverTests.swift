@@ -155,7 +155,7 @@ import Testing
     window.alphaValue = 0
     window.level = NSWindow.Level(rawValue: -1_000_000)
     window.orderBack(nil)
-    let row = RailLiveFolderView(frame: NSRect(x: 6, y: 25, width: 72, height: 34))
+    let row = RailLiveFolderView(frame: NSRect(x: 6, y: 25, width: 72, height: 30))
     defer { row.popover?.close(commitRename: false); window.close() }
     window.contentView?.addSubview(row)
     row.update(SidebarItem(kind: .live("livefolder|f"), frame: row.frame, region: .scroll, groups: [], section: .pinned), context)

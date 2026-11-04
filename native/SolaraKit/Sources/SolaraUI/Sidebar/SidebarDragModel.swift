@@ -138,8 +138,10 @@ enum PinZone {
   static let slot = SidebarMetrics.tileHeight + SidebarMetrics.tileGap
   static let hysteresis: CGFloat = 6
 
-  static func slot(grid: CGRect, count: Int, x: CGFloat, y: CGFloat, balanced: Bool) -> Int {
-    let g = PinGrid.of(count: count, innerWidth: grid.width, balanced: balanced)
+  static func slot(grid: CGRect, count: Int, x: CGFloat, y: CGFloat, balanced: Bool, rail: Bool = false) -> Int {
+    let g = rail ? PinGrid(columns: 1, width: grid.width) : PinGrid.of(count: count, innerWidth: grid.width, balanced: balanced)
+    let tileGap = rail ? SidebarRail.rowGap : Self.tileGap
+    let tileHeight = rail ? SidebarRail.rowHeight : Self.tileHeight
     let rows = max(1, Int((Double(count) / Double(g.columns)).rounded(.up)))
     let row = clamp(Int(((y - grid.minY + tileGap / 2) / (tileHeight + tileGap)).rounded(.down)), 0, rows - 1)
     let column = clamp(Int(((x - grid.minX + tileGap / 2) / (g.width + tileGap)).rounded(.down)), 0, g.columns - 1)
@@ -150,8 +152,9 @@ enum PinZone {
     y < listTop + (wasOver ? hysteresis : -hysteresis)
   }
 
-  static func height(_ count: Int, _ width: CGFloat, _ balanced: Bool) -> CGFloat {
-    PinGrid.height(count: count, innerWidth: width, balanced: balanced)
+  static func height(_ count: Int, _ width: CGFloat, _ balanced: Bool, rail: Bool = false) -> CGFloat {
+    rail ? CGFloat(max(1, count)) * SidebarRail.rowHeight + CGFloat(max(0, count - 1)) * SidebarRail.rowGap
+      : PinGrid.height(count: count, innerWidth: width, balanced: balanced)
   }
 
   static func clamp(_ v: Int, _ lo: Int, _ hi: Int) -> Int { max(lo, min(hi, v)) }

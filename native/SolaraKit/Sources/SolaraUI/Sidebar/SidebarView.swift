@@ -564,6 +564,9 @@ public final class SidebarView: NSView {
   private func rowAt(_ windowPoint: NSPoint) -> SidebarRowView? {
     if pillShown, pill.bounds.contains(pill.convert(windowPoint, from: nil)) { return nil }
     if panels.hitTest(panels.superview?.convert(windowPoint, from: nil) ?? .zero) != nil { return nil }
+    if let row = hoveredKey.flatMap({ views[$0] as? RailTabView }), !row.isHidden,
+      row.item?.region != .scroll || clip.bounds.contains(clip.convert(windowPoint, from: nil)),
+      row.containsClose(row.convert(windowPoint, from: nil)) { return row }
     for container in [dock, fixed, rows] {
       if container === rows, !clip.bounds.contains(clip.convert(windowPoint, from: nil)) { continue }
       for case let row as SidebarRowView in container.subviews.reversed() where !row.isHidden && !row.retired {

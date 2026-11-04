@@ -4,8 +4,12 @@ import SolaraStore
 
 public enum SidebarRail {
   public static let width: Double = 84
+  static let tile: CGFloat = 30
+  static let rowHeight: CGFloat = 30
+  static let rowGap: CGFloat = 2
+  static let radius: CGFloat = 8
   static let icon: CGFloat = 16
-  static let closeBadge: CGFloat = 16
+  static let closeBadge: CGFloat = 14
   static let cornerBadge: CGFloat = 12
 
   public static func contains(width given: Double) -> Bool { given <= width + 0.5 }
@@ -14,26 +18,31 @@ public enum SidebarRail {
     window.effectiveSidebarIconsOnly(settings) ? width : window.effectiveSidebarWidth(settings)
   }
 
+  static func tileFrame(in bounds: CGRect) -> CGRect {
+    CGRect(x: ((bounds.width - tile) / 2).rounded() + bounds.minX, y: ((bounds.height - tile) / 2).rounded() + bounds.minY, width: tile, height: tile)
+  }
+
   static func iconFrame(in bounds: CGRect) -> CGRect {
-    CGRect(x: ((bounds.width - icon) / 2).rounded(), y: ((bounds.height - icon) / 2).rounded(), width: icon, height: icon)
+    CGRect(x: ((bounds.width - icon) / 2).rounded() + bounds.minX, y: ((bounds.height - icon) / 2).rounded() + bounds.minY, width: icon, height: icon)
   }
 
-  static func closeFrame(around icon: CGRect) -> CGRect {
-    CGRect(x: icon.maxX - closeBadge / 2 + 2, y: icon.minY - closeBadge / 2 - 1, width: closeBadge, height: closeBadge)
+  static func closeFrame(around tile: CGRect) -> CGRect {
+    CGRect(x: tile.maxX - closeBadge / 2 - 2, y: tile.minY - closeBadge / 2 + 2, width: closeBadge, height: closeBadge)
   }
 
-  static func trailingBadgeFrame(around icon: CGRect) -> CGRect {
-    CGRect(x: icon.maxX - cornerBadge / 2 + 2, y: icon.maxY - cornerBadge / 2 + 1, width: cornerBadge, height: cornerBadge)
+  static func trailingBadgeFrame(around tile: CGRect) -> CGRect {
+    CGRect(x: tile.maxX - cornerBadge / 2 - 2, y: tile.maxY - cornerBadge / 2 - 2, width: cornerBadge, height: cornerBadge)
   }
 
-  static func leadingBadgeFrame(around icon: CGRect) -> CGRect {
-    CGRect(x: icon.minX - cornerBadge / 2 - 2, y: icon.maxY - cornerBadge / 2 + 1, width: cornerBadge, height: cornerBadge)
+  static func leadingBadgeFrame(around tile: CGRect) -> CGRect {
+    CGRect(x: tile.minX - cornerBadge / 2 + 2, y: tile.maxY - cornerBadge / 2 - 2, width: cornerBadge, height: cornerBadge)
   }
 
   @MainActor
   static func make(_ kind: SidebarItemKind) -> NSView? {
     switch kind {
-    case .tab: RailTabView()
+    case .tab, .tile: RailTabView()
+    case .folder: RailFolderView()
     case .split: RailSplitView()
     case .groupHeader: RailGroupView()
     case .newTab: RailNewTabView()
@@ -98,6 +107,10 @@ class RailIconView: SidebarRowView {
 
   override init(frame: NSRect) {
     super.init(frame: frame)
+    glass.radius = SidebarRail.radius
+    glass.layer?.cornerRadius = SidebarRail.radius
+    glass.layer?.cornerCurve = .continuous
+    glass.layer?.masksToBounds = true
     body.addSubview(glass)
     body.addSubview(icon)
   }
@@ -109,16 +122,17 @@ class RailIconView: SidebarRowView {
   override func repaint() {
     guard let context else { return }
     let palette = context.palette
-    let fill = active ? palette.pinnedSelectedFill : pressed ? palette.pressed : hovered || selected ? palette.hover : restingFill
+    let fill = pressed ? palette.pressed : active ? palette.pinnedSelectedFill : hovered || selected ? palette.hover : restingFill
     glass.dark = palette.dark
-    glass.tint = palette.glassTint(fill, raised: active && !pressed)
-    glass.raisedSelection = active
+    glass.flat = !active || pressed
+    glass.tint = glass.flat ? fill : palette.glassTint(fill, raised: true)
+    glass.raisedSelection = active && !pressed
     glass.outlineColor = !active && selected ? palette.dragBorder : nil
   }
 
   override func layoutBody() {
-    glass.frame = bounds
-    icon.frame = SidebarRail.iconFrame(in: bounds)
+    glass.frame = SidebarRail.tileFrame(in: bounds)
+    icon.frame = SidebarRail.iconFrame(in: glass.frame)
     if popover?.renameKey != nil { popover?.show(on: self) }
   }
 
@@ -170,12 +184,25 @@ final class RailTabView: RailIconView {
   private var loading = false
   private var closeTooltip = "Close Tab"
   private var closeSymbol = "xmark"
+  private var closeReveal: CGFloat = 0
 
   var tabId: String? { tab?.id }
 
   override var accessibleTitle: String? {
     guard let tab, let context else { return nil }
     return context.title(tab)
+  }
+
+  func containsClose(_ point: NSPoint) -> Bool {
+    hovered && !retired && close?.isHidden == false && close?.frame.contains(point) == true
+  }
+
+  override func hitTest(_ point: NSPoint) -> NSView? {
+    let local = convert(point, from: superview)
+    if containsClose(local) { return close?.hitTest(local) }
+    let hit = super.hitTest(point)
+    if !hovered, let close, hit === close { return self }
+    return hit
   }
 
   override func retiredLook() {
@@ -185,7 +212,13 @@ final class RailTabView: RailIconView {
   }
 
   override func render() {
-    guard let context, case .tab(let id)? = item?.kind, let tab = context.state.tabs[id] else { return }
+    guard let context, let item else { return }
+    let id: String
+    switch item.kind {
+    case .tab(let value), .tile(let value): id = value
+    default: return
+    }
+    guard let tab = context.state.tabs[id] else { return }
     self.tab = tab
     let palette = context.palette
     active = context.activeId == id
@@ -225,7 +258,7 @@ final class RailTabView: RailIconView {
       let button = close ?? attach(makeClose())
       close = button
       let colors = badgeColors(palette)
-      button.set(closeSymbol, size: 8, weight: .bold, color: colors.ink, tooltip: closeTooltip)
+      button.set(closeSymbol, size: 7, weight: .bold, color: colors.ink, tooltip: closeTooltip)
       button.hoverFill = palette.dark ? NSColor(white: 0.32, alpha: 1) : NSColor(white: 0.9, alpha: 1)
       button.pressedFill = palette.toolbarPressed
       button.layer?.backgroundColor = colors.fill.cgColor
@@ -234,8 +267,16 @@ final class RailTabView: RailIconView {
       button.layer?.cornerRadius = SidebarRail.closeBadge / 2
       button.isHidden = false
       button.syncHover()
-    } else {
-      close?.isHidden = true
+    }
+    let target: CGFloat = hovered && tab != nil ? 1 : 0
+    if target != closeReveal {
+      closeReveal = target
+      NSAnimationContext.runAnimationGroup { ctx in
+        ctx.duration = target == 1 ? 0.12 : 0.16
+        ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0.46, 0.45, 0.94)
+        ctx.allowsImplicitAnimation = true
+        close?.animator().alphaValue = target
+      }
     }
     if loading {
       if spinner == nil { spinner = attach(SpinnerView()) }
@@ -249,6 +290,7 @@ final class RailTabView: RailIconView {
   private func makeClose() -> SidebarIconButton {
     let button = SidebarIconButton()
     button.wantsLayer = true
+    button.alphaValue = 0
     button.radius = SidebarRail.closeBadge / 2
     button.onPress = { [weak self] in
       guard let self, let id = self.tab?.id else { return }
@@ -260,15 +302,16 @@ final class RailTabView: RailIconView {
   override func layoutBody() {
     super.layoutBody()
     badges?.frame = icon.frame
-    let iconInSelf = body.convert(icon.frame, to: self)
-    close?.frame = SidebarRail.closeFrame(around: iconInSelf)
-    audio?.frame = SidebarRail.trailingBadgeFrame(around: iconInSelf)
-    spinner?.frame = SidebarRail.leadingBadgeFrame(around: iconInSelf).insetBy(dx: 1, dy: 1)
+    let tileInSelf = body.convert(glass.frame, to: self)
+    close?.frame = SidebarRail.closeFrame(around: tileInSelf)
+    audio?.frame = SidebarRail.trailingBadgeFrame(around: tileInSelf)
+    spinner?.frame = SidebarRail.leadingBadgeFrame(around: tileInSelf).insetBy(dx: 1, dy: 1)
   }
 
   override func click(_ mods: SidebarClickMods, count: Int) {
     guard let context, let id = tab?.id else { return }
     context.send(.click(tabId: id, mods: mods))
+    if count == 2, case .tile? = item?.kind { context.send(.tileDoubleClick(tabId: id)) }
   }
 
   override func middleClick() {
@@ -285,6 +328,58 @@ final class RailTabView: RailIconView {
     guard let id = tab?.id else { return }
     context?.send(.tabMenu(tabId: id))
   }
+}
+
+@MainActor
+final class RailFolderView: RailIconView {
+  private let mark = RailBadge(frame: NSRect(x: 0, y: 0, width: SidebarRail.cornerBadge, height: SidebarRail.cornerBadge))
+  private var folderId = ""
+
+  override var accessibleTitle: String? {
+    guard let context else { return nil }
+    let name = context.query.folderMembers(windowId: context.windowId, folderId).lazy.compactMap { context.state.tabs[$0]?.tileFolder?.name }.first
+    return name.map { $0.isEmpty ? "Folder" : $0 } ?? "Folder"
+  }
+
+  override init(frame: NSRect) {
+    super.init(frame: frame)
+    addSubview(mark)
+  }
+
+  required init?(coder: NSCoder) { fatalError() }
+
+  override func render() {
+    guard let context, case .folder(let id)? = item?.kind else { return }
+    folderId = id
+    let members = context.query.folderMembers(windowId: context.windowId, id)
+    let tab = context.activeId.flatMap { members.contains($0) ? context.state.tabs[$0] : nil }
+    active = tab != nil
+    selected = false
+    icon.favicons = context.favicons
+    if let tab {
+      icon.set(context.iconSpec(tab), palette: context.palette)
+    } else {
+      icon.set(TabIconSpec(url: "", favicon: nil, customIcon: "symbol:folder.fill", profileId: context.host.profileId), palette: context.palette)
+    }
+    let colors = badgeColors(context.palette)
+    mark.set("folder.fill", fill: colors.fill, ink: colors.ink, rim: colors.rim)
+    mark.isHidden = tab == nil
+    toolTip = accessibleTitle
+    repaint()
+  }
+
+  override func layoutBody() {
+    super.layoutBody()
+    mark.frame = SidebarRail.trailingBadgeFrame(around: body.convert(glass.frame, to: self))
+  }
+
+  override func click(_ mods: SidebarClickMods, count: Int) {
+    context?.send(.folder(folderId: folderId))
+  }
+
+  override func contextMenu() { context?.send(.folderMenu(folderId: folderId)) }
+
+  override var hoverTarget: (kind: String, id: String)? { ("folder", folderId) }
 }
 
 @MainActor
@@ -327,7 +422,7 @@ final class RailSplitView: RailIconView {
 
   override func layoutBody() {
     super.layoutBody()
-    mark.frame = SidebarRail.trailingBadgeFrame(around: body.convert(icon.frame, to: self))
+    mark.frame = SidebarRail.trailingBadgeFrame(around: body.convert(glass.frame, to: self))
   }
 
   override func click(_ mods: SidebarClickMods, count: Int) {
@@ -429,7 +524,7 @@ final class RailNewTabView: SidebarRowView {
   override init(frame: NSRect) {
     super.init(frame: frame)
     plate.actions = SurfaceLayer.noActions
-    plate.cornerRadius = SidebarMetrics.rowRadius
+    plate.cornerRadius = SidebarRail.radius
     plate.cornerCurve = .continuous
     body.layer?.addSublayer(plate)
     body.addSubview(plus)
@@ -440,7 +535,7 @@ final class RailNewTabView: SidebarRowView {
 
   override func render() {
     guard let context else { return }
-    plus.set("plus", size: 13, weight: .medium, color: context.palette.newTabIcon)
+    plus.set("plus", size: 16, weight: .medium, color: context.palette.newTabIcon)
     repaint()
   }
 
@@ -455,9 +550,9 @@ final class RailNewTabView: SidebarRowView {
   override func layoutBody() {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    plate.frame = bounds
+    plate.frame = SidebarRail.tileFrame(in: bounds)
     CATransaction.commit()
-    plus.frame = SidebarRail.iconFrame(in: bounds)
+    plus.frame = SidebarRail.iconFrame(in: plate.frame)
   }
 
   override func click(_ mods: SidebarClickMods, count: Int) {
@@ -493,7 +588,7 @@ final class RailDividerView: SidebarRowView {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     let width = (bounds.width * 0.5).rounded()
-    line.frame = CGRect(x: ((bounds.width - width) / 2).rounded(), y: (bounds.height / 2).rounded() - 0.5, width: width, height: 1)
+    line.frame = CGRect(x: ((bounds.width - width) / 2).rounded(), y: ((bounds.height - 1) / 2).rounded(), width: width, height: 1)
     CATransaction.commit()
   }
 }

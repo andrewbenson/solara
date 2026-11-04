@@ -67,9 +67,6 @@ public final class SidebarDragController {
   let windowId: String
 
   static let liveHeaderPrefix = SidebarLiveMetrics.headerKey("")
-  static let rowGap = SidebarMetrics.rowGap
-  static let rowHeight = SidebarMetrics.rowHeight
-  static let pinSlot = PinZone.slot
   static let edge: CGFloat = 28
   static let folderHoldMs = 400
   static let threshold: CGFloat = 4
@@ -145,6 +142,16 @@ public final class SidebarDragController {
   private var bridge: SidebarDragBridge? { SidebarDragHub.bridge }
   private var context: SidebarContext? { view?.context }
   private var state: BrowserState? { context?.state }
+  private var rail: Bool { view.map { SidebarRail.contains(width: Double($0.bounds.width)) } ?? false }
+  private var rowGap: CGFloat { rail ? SidebarRail.rowGap : SidebarMetrics.rowGap }
+  private var rowHeight: CGFloat { rail ? SidebarRail.rowHeight : SidebarMetrics.rowHeight }
+  private var tileGap: CGFloat { rail ? SidebarRail.rowGap : SidebarMetrics.tileGap }
+  private var tileHeight: CGFloat { rail ? SidebarRail.rowHeight : SidebarMetrics.tileHeight }
+  private var pinSlot: CGFloat { tileHeight + tileGap }
+
+  private func pinGrid(count: Int, width: CGFloat, balanced: Bool) -> PinGrid {
+    rail ? PinGrid(columns: 1, width: width) : PinGrid.of(count: count, innerWidth: width, balanced: balanced)
+  }
 
   func press(_ row: SidebarRowView, _ event: NSEvent) {
     press = (row, windowPoint(event))
@@ -359,7 +366,7 @@ public final class SidebarDragController {
     let tiles = order.filter { $0.kind == .tile }
     if let first = tiles.first?.frame {
       let rows = Int((Double(tiles.count) / Double(max(1, layout.grid.columns))).rounded(.up))
-      let height = CGFloat(rows) * SidebarMetrics.tileHeight + CGFloat(max(0, rows - 1)) * SidebarMetrics.tileGap
+      let height = CGFloat(rows) * tileHeight + CGFloat(max(0, rows - 1)) * tileGap
       let grid = CGRect(x: first.minX, y: first.minY, width: width, height: height)
       regionFrames["tiles"] = grid
       let tail = DragItem(key: "tail:tiles", kind: .tail, tabIds: [], section: .tiles)
@@ -385,7 +392,7 @@ public final class SidebarDragController {
     let width = base.width - SidebarMetrics.inset * 2
     if context.host.addressBar { return CGRect(x: x, y: base.minY - 50, width: width, height: 40) }
     let top = base.minY - header
-    return CGRect(x: x, y: top, width: width, height: marks.pins ? SidebarMetrics.pinnedTop + SidebarMetrics.tileHeight : SidebarMetrics.pinnedTop - Self.rowGap)
+    return CGRect(x: x, y: top, width: width, height: marks.pins ? SidebarMetrics.pinnedTop + tileHeight : SidebarMetrics.pinnedTop - rowGap)
   }
 
   func begin(_ key: String, _ at: CGPoint) {
@@ -684,7 +691,7 @@ public final class SidebarDragController {
     for s in sources {
       guard s.kind != .tile, let f = s.frame, s !== item, item.map({ !s.apart($0) }) ?? true else { continue }
       let acrossSections = item.map { Self.pinnedArea(s.section) != Self.pinnedArea($0.section) } ?? false
-      let closed = f.height + (s.parentGroup != nil || acrossSections ? 0 : Self.rowGap)
+      let closed = f.height + (s.parentGroup != nil || acrossSections ? 0 : s.section == .folder ? SidebarMetrics.rowGap : rowGap)
       if f.minY < top { dy -= closed } else if f.minY < bottom { dh -= closed }
     }
     return (dy, dh)
@@ -699,7 +706,7 @@ public final class SidebarDragController {
     let list = at(regionFrames["list"])
     let pinnedArea = at(regionFrames["pinnedGroups"])
     let rows = live.filter { $0.kind != .tail && ($0.section == .pinnedRows || $0.section == .pinnedGroups) }.compactMap { at($0.frame)?.minY }
-    let top = ([list?.minY ?? tiles.maxY + SidebarMetrics.tileGap, pinnedArea?.minY ?? .infinity] + rows).min()!
+    let top = ([list?.minY ?? tiles.maxY + tileGap, pinnedArea?.minY ?? .infinity] + rows).min()!
     return tilesFixed ? max(top, tiles.maxY + gridGrowth + SidebarMetrics.edgeGap + SidebarMetrics.edgeLine) : top
   }
 
@@ -722,18 +729,18 @@ public final class SidebarDragController {
     let total = cells.count + count
     guard total > 0 else { return nil }
     let balanced = state?.settings.bool("balancedTopApps") ?? false
-    let slot = PinZone.slot(grid: tiles, count: total, x: x, y: y, balanced: balanced)
+    let slot = PinZone.slot(grid: tiles, count: total, x: x, y: y, balanced: balanced, rail: rail)
     let found = !marks.pins ? (home ?? cells.count) : marks.pinBefore == "tail:tiles" ? cells.count : (cells.firstIndex { $0.key == marks.pinBefore } ?? -1)
     let gap = found < 0 ? cells.count : found
     let index = slot < gap ? slot : slot >= gap + count ? slot - count : -1
     guard index >= 0, index < cells.count else { return Pointed(cell: nil, index: gap, gap: gap, part: "gap") }
     let cell = cells[index]
-    let grid = PinGrid.of(count: total, innerWidth: tiles.width, balanced: balanced)
-    let mid = tiles.minX + CGFloat(slot % grid.columns) * (grid.width + SidebarMetrics.tileGap) + grid.width / 2
-    let top = tiles.minY + CGFloat(slot / grid.columns) * Self.pinSlot
+    let grid = pinGrid(count: total, width: tiles.width, balanced: balanced)
+    let mid = tiles.minX + CGFloat(slot % grid.columns) * (grid.width + tileGap) + grid.width / 2
+    let top = tiles.minY + CGFloat(slot / grid.columns) * pinSlot
     let reach: CGFloat = holdReady == cell.key ? 0.45 : 0.3
-    let centre = folders && abs(x - mid) < grid.width * reach && abs(y - (top + SidebarMetrics.tileHeight / 2)) <= (SidebarMetrics.tileHeight + SidebarMetrics.tileGap) / 2
-    return Pointed(cell: cell, index: index, gap: gap, part: centre ? "centre" : x < mid ? "before" : "after")
+    let centre = folders && abs(x - mid) < grid.width * reach && abs(y - (top + tileHeight / 2)) <= (tileHeight + tileGap) / 2
+    return Pointed(cell: cell, index: index, gap: gap, part: centre ? "centre" : (rail ? y < top + tileHeight / 2 : x < mid) ? "before" : "after")
   }
 
   private func ontoTarget(_ live: [DragItem], _ y: CGFloat, _ section: DragSection) -> String? {
@@ -767,7 +774,7 @@ public final class SidebarDragController {
     func firstTab(_ i: DragItem?) -> String? { i?.tabIds.first { !dragged.contains($0) } }
     let tabsDrag = source.kind == .row || source.kind == .tile
     let count = external > 0 ? external : (source.folderId != nil ? 1 : dragged.count)
-    let rowPitch = (source.boxed ? (SidebarMetrics.groupBorder * 2 + Self.rowHeight) : Self.rowHeight * CGFloat(source.kind == .split ? 1 : max(1, external > 0 ? external : ghostCount))) + Self.rowGap
+    let rowPitch = (source.boxed ? ((rail ? 0 : SidebarMetrics.groupBorder * 2) + rowHeight) : rowHeight * CGFloat(source.kind == .split ? 1 : max(1, external > 0 ? external : ghostCount))) + rowGap
     let blocks = live.filter(\.pinnedBlock).sorted(by: byY)
     let rest = blocks.map(\.key)
     let moved = sources.filter { $0.frame != nil }.sorted(by: byY).flatMap { s -> [String] in
@@ -796,7 +803,7 @@ public final class SidebarDragController {
     let cells = live.filter { $0.kind == .tile }.sorted(by: byY)
     let overTiles = !away && tabsDrag && tiles != nil && (gridBase != nil ? PinZone.over(y, listTop: pinFloor(live, tiles!), wasOver: pinning) : tiles!.holds(x, y, slop: 6))
     if let base = gridBase {
-      let height = PinZone.height(cells.count + (overTiles ? count : 0), base.width, balanced)
+      let height = PinZone.height(cells.count + (overTiles ? count : 0), base.width, balanced, rail: rail)
       gridGrowth = min(height, tilesFixed ? tilesRoom : .infinity) - base.height
     }
     let list = at(regionFrames["list"])
@@ -813,6 +820,7 @@ public final class SidebarDragController {
     if away {
       aim = nil
     } else if inPanel {
+      if rail { pitch = SidebarMetrics.rowHeight * CGFloat(max(1, count)) + SidebarMetrics.rowGap }
       let members = live.filter { $0.section == .folder && $0.kind != .tail }.sorted(by: byY)
       let before = members.first { cy($0) > y }
       let anchor = members.first { firstTab($0) != nil }
@@ -828,13 +836,13 @@ public final class SidebarDragController {
       if let spot {
         index = spot.part == "after" ? spot.index + 1 : spot.part == "before" ? spot.index : spot.gap
       } else {
-        index = min(cells.count, PinZone.slot(grid: tiles, count: cells.count + count, x: x, y: y, balanced: balanced))
+        index = min(cells.count, PinZone.slot(grid: tiles, count: cells.count + count, x: x, y: y, balanced: balanced, rail: rail))
       }
       let before = gridBase != nil && index < cells.count ? cells[index] : nil
       aim = .tiles(beforeId: firstTab(before))
       sequence = rest
       gapKey = before?.key ?? "tail:tiles"
-      pitch = Self.pinSlot
+      pitch = pinSlot
     } else {
       var hits: [(g: DragItem, into: Bool, h: CGFloat)] = []
       if tabsDrag || source.kind == .group || source.kind == .split {
@@ -911,7 +919,7 @@ public final class SidebarDragController {
   private func makeGhost(_ item: DragItem) {
     guard let view, let context else { return }
     let ghost = SidebarDragGhostView()
-    ghost.show(item, count: ghostCount, context: context)
+    ghost.show(item, count: ghostCount, context: context, rail: rail && item.section != .folder)
     ghost.frame = NSRect(origin: .zero, size: ghostSize)
     view.addSubview(ghost)
     ghost.alphaValue = SidebarDragHub.tabDrag.onPage ? 0 : 1
@@ -997,9 +1005,9 @@ public final class SidebarDragController {
     for (v, dy) in targets { shift(v, dy) }
     shift(view.clip, tilesFixed && gridBase != nil ? gridGrowth : 0)
     renderTiles()
-    pinZone?.alphaValue = noGrid ? min(1, tilesGap / Self.pinSlot) : 0
+    pinZone?.alphaValue = noGrid ? min(1, tilesGap / pinSlot) : 0
     if let zone = pinZone, noGrid, let frame = zoneFrame(), let base = windowRect(view) {
-      zone.frame = NSRect(x: frame.minX - base.minX, y: frame.minY - base.minY + SidebarMetrics.pinnedTop, width: frame.width, height: SidebarMetrics.tileHeight)
+      zone.frame = NSRect(x: frame.minX - base.minX, y: frame.minY - base.minY + SidebarMetrics.pinnedTop, width: frame.width, height: tileHeight)
       regionFrames["tiles"] = frame
     }
   }
@@ -1040,7 +1048,7 @@ public final class SidebarDragController {
       return ay != by ? ay < by : a.frame!.minX < b.frame!.minX
     }
     let count = cells.filter { !marks.sources.contains($0.key) }.count + marks.pinCount
-    let grid = PinGrid.of(count: count, innerWidth: base.width, balanced: balanced)
+    let grid = pinGrid(count: count, width: base.width, balanced: balanced)
     var slot = 0
     for cell in cells {
       if marks.pinBefore == cell.key { slot += marks.pinCount }
@@ -1048,8 +1056,8 @@ public final class SidebarDragController {
       if !marks.sources.contains(cell.key) { slot += 1 }
       guard let v = cell.views.first, let parent = v.superview, let home = cell.frame else { continue }
       if tileHomes[cell.key] == nil { tileHomes[cell.key] = v.frame }
-      let windowX = base.minX + CGFloat(mine % grid.columns) * (grid.width + SidebarMetrics.tileGap)
-      let windowY = base.minY + CGFloat(mine / grid.columns) * Self.pinSlot
+      let windowX = base.minX + CGFloat(mine % grid.columns) * (grid.width + tileGap)
+      let windowY = base.minY + CGFloat(mine / grid.columns) * pinSlot
       let local = tileHomes[cell.key]!
       let next = NSRect(x: local.minX + (windowX - home.minX), y: local.minY + (windowY - home.minY), width: grid.width, height: local.height)
       _ = parent

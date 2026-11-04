@@ -1,12 +1,18 @@
 # Building the engine from source
 
 Solara runs on SolaraCore: Chrome's own framework (`//chrome:chrome_framework`) built from our Chromium tree, with our
-layers linked in (`docs/solaracore-spike.md`). The tree is **Chromium 156.0.8078.47** (`CHROMIUM_VERSION` in
-`env.sh`), plus **Helium** 0.20.1 (helium-chromium) and 0.20.1.1 (helium-macos) minus a short skip list, then our
+layers linked in (`docs/solaracore-spike.md`). The tree is **Chromium 156.0.8078.79** (`CHROMIUM_VERSION` in
+`env.sh`), plus **Helium** 0.20.3 (helium-chromium) and 0.20.3.1 (helium-macos) minus a short skip list, then our
 patch series. Nothing of CEF's is checked out or built. CEF left the tree
 on 2026-10-09: its 117 patches to Chrome are gone, except a few kept as `chromium-cef-carryover.patch`
 ([below](#cefs-117-patches)), and the seams of theirs SolaraCore used are our own hooks H1–H6
 ([below](#our-hooks-in-chromes-code)). The framework is still named "Chromium Framework". Crashpad stays off.
+
+**Where the engine is built.** From 0.2.2 the engine is built on the Hill Studio's Chromium tree, which is at .79:
+engine changes are made and built there, and `scripts/publish-engine.sh` there publishes the framework and its source.
+The owner's Mac keeps its .47 tree and `out/` untouched; `series.py check` fails there and incremental engine builds
+there are off. Builds and releases on that Mac link the published engine:
+`SOLARACORE_FRAMEWORK="$(packages/solaracore/scripts/fetch-engine.sh)"`.
 
 What the build adds:
 
@@ -32,7 +38,7 @@ What the build adds:
 | `chromium-helium-onboarding-off.patch` | Helium's onboarding page (chrome://setup) isn't built: no WebUI target, resources, strings, chrome://chrome-urls entry or first-run opener (the branding patch drops its pak and registration), so Helium's services consent stays off. chrome://credits keeps Helium's GPL-3.0 entry with its license text in `third_party/helium/LICENSE`, and leaves out the onboarding font |
 | `chromium-helium-services-page-off.patch` | Settings has no Helium services page: no route, no view, no "set up services" button opening chrome://setup. Helium services stay off in Solara (the branding patch, which also removes its row), so it only offered switches that do nothing |
 | `chromium-helium-search-assets-off.patch` | Built-in search provider assets are on only for Chrome-branded builds again (Helium turns them on; `enable_builtin_search_provider_assets` in `chrome_build.gni` isn't a GN argument): the build doesn't fetch Helium's non-free search engine assets |
-| `chromium-helium-bangs-off.patch` | Helium's `BangManager` (add-native-bangs) never fetches: `LoadBangs` answers at once with no bangs, so no loader is made and nothing is requested (it made a cache-only request to the services-disabled placeholder at every launch). Chromium's omnibox never uses bangs in Solara; the address bar is the app's own (`packages/core`) |
+| `chromium-helium-bangs-off.patch` | Helium's `BangManager` (add-native-bangs) never fetches: `LoadBangs` answers at once with no bangs, so no loader is made and nothing is requested (it made a cache-only request to the services-disabled placeholder at every launch; Helium 0.20.3 skips the fetch while its services are off, and the patch answers empty whatever the prefs say). Chromium's omnibox never uses bangs in Solara; the address bar is the app's own (`packages/core`) |
 | `chromium-helium-rlz-for-cdm-storage-id.patch` | `enable_rlz` can be true again (`gn_defines.sh` sets it): it reverts the `rlz/buildflags/buildflags.gni` hunk of the `disable-rlz` patch Helium applies, as our ungoogled build did. Widevine's CDM storage id (`enable_cdm_storage_id`) hashes RLZ's machine id on the Mac, so every user's storage ids and licenses stay the same. RLZ itself stays inert: there's no brand code |
 | `chromium-helium-ntp-third-party.patch` | chrome://newtab opens the New Tab page Solara 0.2.39 did: chrome://new-tab-page-third-party unless Google is the default search engine. It reverts the `search.cc` hunks of Helium's `always-use-better-ntp`, which sent every engine to Chrome's WebUI NTP (it needs a BrowserView, which SolaraCore's browsers lack), and puts back the `search.cc` part of ungoogled's `0008-restore-classic-ntp`, which Helium leaves out |
 | `chromium-helium-context-menu-cast.patch` | The page's context menu keeps Cast…, as in 0.2.39: it reverts the `AppendPageItems` hunk of Helium's `degoogle-context-menu`. Cast works through `chromium-cast-dialog-hook.patch`, with mDNS on |
@@ -572,6 +578,19 @@ applied them before Helium): `0005-disable-default-extensions` (without its `web
 leaves out stay out, as before: `disable-download-quarantine` (Chrome quarantines every download itself, with
 `com.apple.quarantine` and its source URL in `kMDItemWhereFroms`), `prefs-always-prompt-for-download-directory`
 (Chrome's default, save to Downloads without asking, is Solara's) and `enable-extra-locales`.
+
+### 0.20.1 → 0.20.3 (Chromium 156.0.8078.79, 2026-11-04)
+
+Built on the Hill Studio. Two of our patches needed work; the rest of the series applied as it was.
+
+- **`chromium-helium-bangs-off`.** Helium rewrote `BangManager` around a shared cache with retry backoff and its own
+  `ShouldFetchBangs` gate; the patch now makes `LoadBangs` answer an empty catalogue at once, so nothing is fetched or
+  retried.
+- **`chromium-extension-omaha-attributes`.** Helium now also strips `should_perform_action_on_omaha_attributes` and
+  its two assignments in `UpdateService::OnCrxStateChange`; the patch restores them with the block it already
+  restored, so the file equals upstream Chromium's. It applied cleanly before and only failed to compile.
+- **Toolchain.** ANGLE's Metal shaders need Xcode's Metal Toolchain component
+  (`xcodebuild -downloadComponent MetalToolchain`).
 
 ### 0.19.4 → 0.20.1 (Chromium 156.0.8078.47, 2026-10-25)
 

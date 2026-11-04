@@ -55,7 +55,7 @@ backlog, and check this file against the release notes.
 | The Share picker opens at the click point when DevTools is docked on the left | landed 0fa6e53e |
 | A tab no longer crashes when a page stops listening for permission changes after the frame it asked from is gone (engine patch; upstream Chromium, .79 included, still crashes) | landed 9bc625fa |
 | Sidebar width and icons-only are per window: resizing one window's sidebar no longer resizes every window | landed 1c3e58ef |
-| Icons-only sidebar: narrower rail with square tiles, a hover × badge, the traffic lights in the toolbar as Chrome does, no tile fill at rest, pinned tabs styled like other tabs | planned |
+| Icons-only sidebar: narrower rail with square tiles, a hover × badge, the traffic lights in the toolbar as Chrome does, no tile fill at rest, pinned tabs styled like other tabs | rail A (Chrome's tile metrics, the hover × badge, no fill at rest, pinned tabs like other tabs) landed 2f9ad743; rail B (the narrow rail, traffic lights in the toolbar) in progress |
 | Switching light/dark updates background tabs' toolbar colour, so switching to one shows no old-colour flash | landed 5cb63f15 |
 | Picture in Picture stays on top of full-screen windows, including other apps' full-screen spaces (owner, 2026-11-03) | planned |
 

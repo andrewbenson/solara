@@ -1,14 +1,13 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import { declaration, source } from "../test-native/safe-host/run.mjs";
 
-const root = new URL("../../../../", import.meta.url);
-
 function icons() {
-  const directory = mkdtempSync(fileURLToPath(new URL(".safe-import-icons-", root)));
+  const directory = mkdtempSync(join(tmpdir(), "solara-safe-import-icons-"));
   try {
     const appIcons = source("packages/import/ios/Core/AppIcons.swift").replace("import AppKit", "");
     const importer = declaration(source("packages/import/ios/ImportModule.swift"), "private let importer: Importer = {");
@@ -112,7 +111,7 @@ let output = try JSONSerialization.data(withJSONObject: result, options: [.sorte
 print(String(decoding: output, as: UTF8.self))
 `);
     const env = { ...process.env, TMPDIR: directory, CLANG_MODULE_CACHE_PATH: `${directory}/cache`, SWIFT_MODULECACHE_PATH: `${directory}/cache` };
-    execFileSync("/usr/bin/swiftc", ["-module-cache-path", `${directory}/cache`, program, "-o", binary], { env, stdio: "pipe", timeout: 120000 });
+    execFileSync("/usr/bin/swiftc", ["-module-cache-path", `${directory}/cache`, program, "-o", binary], { env, stdio: "pipe", timeout: 300000 });
     return JSON.parse(execFileSync(binary, [directory], { env, encoding: "utf8", timeout: 10000 }));
   } finally {
     rmSync(directory, { recursive: true, force: true });

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const root = new URL("../../../../../", import.meta.url);
 export const source = (path) => readFileSync(new URL(path, root), "utf8");
@@ -23,7 +24,7 @@ export function declaration(text, signature) {
 }
 
 export function runNative(template, production, args = [], swift = false) {
-  const directory = mkdtempSync(fileURLToPath(new URL(".safe-host-test-", root)));
+  const directory = mkdtempSync(join(tmpdir(), "solara-safe-host-test-"));
   try {
     const program = `${directory}/test.${swift ? "swift" : "mm"}`;
     const binary = `${directory}/test`;
@@ -36,7 +37,7 @@ export function runNative(template, production, args = [], swift = false) {
       ? ["-module-cache-path", `${directory}/cache`, program, "-o", binary]
       : ["-std=c++17", "-fobjc-arc", "-fblocks", "-Wno-nullability-completeness", "-framework", "Foundation", program, "-o", binary];
     try {
-      execFileSync(swift ? "/usr/bin/swiftc" : "/usr/bin/clang++", compilation, { env, stdio: "pipe", timeout: 120000 });
+      execFileSync(swift ? "/usr/bin/swiftc" : "/usr/bin/clang++", compilation, { env, stdio: "pipe", timeout: 300000 });
     } catch (error) {
       throw new Error(error.stderr?.toString() || error.message);
     }

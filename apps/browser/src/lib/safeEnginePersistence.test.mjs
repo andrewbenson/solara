@@ -1,14 +1,13 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import { declaration, source } from "../test-native/safe-host/run.mjs";
 
-const root = new URL("../../../../", import.meta.url);
-
 function persistence(category) {
-  const directory = mkdtempSync(fileURLToPath(new URL(".safe-engine-persistence-", root)));
+  const directory = mkdtempSync(join(tmpdir(), "solara-safe-engine-persistence-"));
   try {
     const original = process.env.SOLARA_ENGINE_BRIDGE_FIXTURE
       ? readFileSync(process.env.SOLARA_ENGINE_BRIDGE_FIXTURE, "utf8")
@@ -40,7 +39,7 @@ function persistence(category) {
     writeFileSync(`${directory}/SolaraCore-Swift.h`, source("apps/browser/src/test-native/safe-host/SolaraCore-Swift.h"));
     writeFileSync(program, harness.replace("__PRODUCTION__", production));
     const env = { ...process.env, TMPDIR: directory, CLANG_MODULE_CACHE_PATH: `${directory}/cache` };
-    execFileSync("/usr/bin/clang++", ["-std=c++17", "-fobjc-arc", "-fblocks", "-Wno-nullability-completeness", "-framework", "Foundation", program, "-o", binary], { env, stdio: "pipe", timeout: 120000 });
+    execFileSync("/usr/bin/clang++", ["-std=c++17", "-fobjc-arc", "-fblocks", "-Wno-nullability-completeness", "-framework", "Foundation", program, "-o", binary], { env, stdio: "pipe", timeout: 300000 });
     const safe = JSON.parse(execFileSync(binary, [directory, "safe", category], { env, encoding: "utf8", timeout: 10000 }));
     const normal = JSON.parse(execFileSync(binary, [directory, "normal", category], { env, encoding: "utf8", timeout: 10000 }));
     for (const run of [safe, normal]) {

@@ -85,7 +85,7 @@ enum SharePicker {
     guard !items.isEmpty else { return }
     let rect = NSRect(x: point.x, y: view.isFlipped ? point.y : view.bounds.height - point.y, width: 1, height: 1)
     if background {
-      return log("share sheet (not shown): \(described) window=#\(window.windowNumber) anchor=\(NSStringFromRect(rect))")
+      return log("share sheet (not shown): \(described) window=#\(window.windowNumber) anchor=\(NSStringFromRect(rect)) windowAnchor=\(NSStringFromRect(view.convert(rect, to: nil)))")
     }
     delegate.finish()
     delegate.window = window

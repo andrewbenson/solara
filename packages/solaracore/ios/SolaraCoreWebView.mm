@@ -3110,7 +3110,7 @@ static NSString *LinkKeyAction(NSString *key) {
   if ([itemId isEqualToString:@"search"])
     [self emit:@"command" payload:@{@"command" : @"search", @"text" : selection, @"modifiers" : modifiers}];
   else if ([itemId hasPrefix:@"share:"])
-    ShareFromContext(context, self);
+    ShareFromContext(context, _tab.view.superview == self ? _tab.view : self);
 }
 
 - (void)tab:(SolaraCoreTab *)tab didShowAutofillSuggestions:(NSArray<NSDictionary<NSString *, NSString *> *> *)items {

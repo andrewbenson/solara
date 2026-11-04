@@ -5,7 +5,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { deflateSync } from "node:zlib";
-import { launch, reporter, session, sleep } from "../../../scripts/lib/instance.mjs";
+import { devtools, launch, reporter, session, sleep } from "../../../scripts/lib/instance.mjs";
 
 const args = process.argv.slice(2);
 const appArg = args.find((a) => !a.startsWith("--"));
@@ -156,6 +156,39 @@ try {
     await run(`return ac.shell.devKeyEquivalent("w1", ${JSON.stringify({ key: "s", keyCode: 1, modifiers: ["command", "option"] })})`);
     const line = await shareLine(before);
     assert.ok(line.includes(`url=${origin}/page?id=1 title="Share Fixture"`), line);
+  });
+
+  await rep.check("with DevTools docked on the left, the share picker opens at the click point, beside DevTools", async () => {
+    const windowAnchor = (line) => {
+      const [, x, y] = /windowAnchor=\{\{([-\d.]+), ([-\d.]+)\}/.exec(line) ?? [];
+      assert.ok(x !== undefined, line);
+      return { x: Number(x), y: Number(y) };
+    };
+    const fullWidth = await page.eval("innerWidth");
+    const undocked = windowAnchor(await pick("blank", "Share Page…"));
+    await run(`ac.webviews.get("t0").showDevTools(); return true;`);
+    const target = await until("the DevTools front end", async () => (await app.targets()).find((t) => t.url.startsWith("devtools://")) ?? null);
+    const front = await devtools(target);
+    try {
+      await until("DevTools docked on the left", async () => front.eval(`(async () => {
+        const legacy = await import("./ui/legacy/legacy.js");
+        const dock = legacy.DockController.DockController.instance();
+        if (dock.dockSide() !== "left") dock.setDockSide("left");
+        return dock.dockSide() === "left";
+      })()`).catch(() => false));
+      const pageWidth = await until("the page narrowed by DevTools", async () => {
+        const width = await page.eval("innerWidth");
+        return width < fullWidth - 100 && width;
+      });
+      await sleep(300);
+      const docked = windowAnchor(await pick("blank", "Share Page…"));
+      const devToolsWidth = fullWidth - pageWidth;
+      assert.ok(Math.abs(docked.x - undocked.x - devToolsWidth) <= 1,
+        `anchor x ${docked.x} with DevTools ${devToolsWidth} pt wide on the left, ${undocked.x} without: it should move right by the DevTools width`);
+      assert.ok(Math.abs(docked.y - undocked.y) <= 1, `anchor y ${docked.y}, ${undocked.y} without DevTools`);
+    } finally {
+      front.close();
+    }
   });
 } finally {
   page?.close();

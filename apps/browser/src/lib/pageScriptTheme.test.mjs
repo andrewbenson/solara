@@ -13,6 +13,8 @@ function page({ meta = "#fff", bodyBackground = "rgba(0, 0, 0, 0)", htmlBackgrou
   const reports = [];
   const frames = [];
   const observers = [];
+  const listeners = [];
+  const handlers = {};
   const element = (nodeName, parentElement, background, position = "static") => ({
     nodeName,
     parentElement,
@@ -71,6 +73,10 @@ function page({ meta = "#fff", bodyBackground = "rgba(0, 0, 0, 0)", htmlBackgrou
     apply: Reflect.apply,
     raf: (fn) => frames.push(fn),
     guard: (fn) => fn,
+    handlers,
+    listen(type, fn) {
+      listeners.push({ target: this, type, fn });
+    },
     onReady: (fn) => fn(),
     send: (_kind, data) => reports.push(JSON.parse(JSON.stringify(data))),
   };
@@ -84,7 +90,13 @@ function page({ meta = "#fff", bodyBackground = "rgba(0, 0, 0, 0)", htmlBackgrou
       if (observer.targets.get(el)?.attributeFilter?.includes("style")) observer.callback([{ type: "attributes", target: el, attributeName: "style", oldValue }]);
     while (frames.length) frames.shift()();
   };
-  return { last: () => reports.at(-1), body, restyle };
+  const fire = (type) => {
+    for (const l of listeners) if (l.target === context.document && l.type === type) l.fn();
+  };
+  const repaint = (el, background) => {
+    el.background = background;
+  };
+  return { last: () => reports.at(-1), count: () => reports.length, body, restyle, repaint, fire, handlers };
 }
 
 test("the page's painted background wins over theme-color", () => {
@@ -117,4 +129,29 @@ test("restyling the page follows its painted colour, and theme-color returns onc
   assert.deepEqual(p.last(), { color: "#1F1F1F", source: "background" });
   p.restyle(p.body, "rgba(0, 0, 0, 0)");
   assert.deepEqual(p.last(), { color: "#FFFFFF", source: "meta" });
+});
+
+test("themeRecheck re-reads a colour that changed without a mutation, as a hidden page's prefers-color-scheme flip does", () => {
+  const p = page({ bodyBackground: "rgb(28, 28, 28)" });
+  assert.deepEqual(p.last(), { color: "#1C1C1C", source: "background" });
+  p.repaint(p.body, "rgb(246, 246, 247)");
+  p.handlers.themeRecheck();
+  assert.deepEqual(p.last(), { color: "#F6F6F7", source: "background" });
+});
+
+test("themeRecheck sends nothing when the colour is unchanged", () => {
+  const p = page({ bodyBackground: "rgb(28, 28, 28)" });
+  const before = p.count();
+  p.handlers.themeRecheck();
+  assert.equal(p.count(), before);
+});
+
+test("a frozen page ignores themeRecheck and rechecks when it resumes", () => {
+  const p = page({ bodyBackground: "rgb(28, 28, 28)" });
+  p.fire("freeze");
+  p.repaint(p.body, "rgb(246, 246, 247)");
+  p.handlers.themeRecheck();
+  assert.deepEqual(p.last(), { color: "#1C1C1C", source: "background" });
+  p.fire("resume");
+  assert.deepEqual(p.last(), { color: "#F6F6F7", source: "background" });
 });

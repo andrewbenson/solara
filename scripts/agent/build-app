@@ -142,6 +142,10 @@ else
 fi
 stamp_file="$dd/.ac-native-stamp-$config"
 
+engine_source() {
+  "$repo/packages/solaracore/scripts/stage-framework.sh" --source 2>/dev/null || true
+}
+
 native_stamp() {
   (
     cd "$repo" || exit 1
@@ -166,7 +170,7 @@ if os.path.exists(binary):
     st = os.stat(binary)
     h.update(("engine %s %d %d" % (framework, st.st_mtime, st.st_size)).encode())
 print(h.hexdigest())
-' "$repo" "${SOLARACORE_FRAMEWORK:-$HOME/chromium-build/chromium_git/chromium/src/out/Release_GN_arm64/Chromium Framework.framework}"
+' "$repo" "$(engine_source)"
 }
 
 pod_drift() {
@@ -312,7 +316,7 @@ PY
 warnings=$(grep -E '(^|[[:space:]])warning:' "$log" | grep -v MACOSX_DEPLOYMENT_TARGET | sort -u | wc -l | tr -d ' ')
 duration="$((elapsed / 60))m $((elapsed % 60))s"
 engine_uuid() { dwarfdump --uuid "$1/Versions/Current/Chromium Framework" 2>/dev/null | awk 'NR == 1 { print $2 }'; }
-engine_src=${SOLARACORE_FRAMEWORK:-$HOME/chromium-build/chromium_git/chromium/src/out/Release_GN_arm64/Chromium Framework.framework}
+engine_src=$(engine_source)
 if [[ $status -eq 0 && -d "$engine_src" ]]; then
   built_uuid=$(engine_uuid "$app/Contents/Frameworks/Chromium Framework.framework")
   src_uuid=$(engine_uuid "$engine_src")

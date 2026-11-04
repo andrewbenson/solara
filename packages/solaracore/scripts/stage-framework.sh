@@ -14,9 +14,37 @@ if [[ "${1:-}" == --key ]]; then
   exit 0
 fi
 
-src=${SOLARACORE_FRAMEWORK:-$HOME/chromium-build/chromium_git/chromium/src/out/Release_GN_arm64/Chromium Framework.framework}
-if [[ -z "${SOLARACORE_FRAMEWORK:-}" && ! -d "$src" ]]; then
-  src=$("$here/fetch-engine.sh") || exit 1
+built="${CHROMIUM_SRC:-$HOME/chromium-build/chromium_git/chromium/src}/out/Release_GN_arm64/$name.framework"
+resolve_source() {
+  if [[ -n "${SOLARACORE_FRAMEWORK:-}" ]]; then
+    echo "$SOLARACORE_FRAMEWORK"
+    return
+  fi
+  local fetched refusal wanted have= fetch_log
+  fetch_log=$(mktemp -t solaracore-fetch) || return 1
+  if fetched=$("$here/fetch-engine.sh" 2>"$fetch_log"); then
+    cat "$fetch_log" >&2
+    rm -f "$fetch_log"
+    echo "$fetched"
+    return
+  fi
+  refusal=$(grep -v '^ *$' "$fetch_log" | tail -1)
+  rm -f "$fetch_log"
+  wanted=$(sed -n 's/^export CHROMIUM_VERSION=//p' "$repo/engine/patches/build/env.sh")
+  [[ -d "$built" ]] && have=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$built/Versions/Current/Resources/Info.plist" 2>/dev/null || true)
+  if [[ -n "$wanted" && "${have:-}" == "$wanted" ]]; then
+    echo "engine: using the engine built in $built (Chromium $have): no prebuilt engine fits this checkout (${refusal#error: })" >&2
+    echo "$built"
+    return
+  fi
+  local built_state="is missing"
+  [[ -n "${have:-}" ]] && built_state="is Chromium $have, not $wanted"
+  echo "error: no engine for this checkout: no prebuilt engine fits it (${refusal#error: }), and $built $built_state. Build the engine (scripts/agent/engine-build) or set SOLARACORE_FRAMEWORK" >&2
+  return 1
+}
+if [[ "${1:-}" == --source ]]; then
+  resolve_source
+  exit
 fi
 dest=${SOLARACORE_STAGE_DIR:-$repo/apps/browser/build-solaracore/SolaraCoreFramework}
 cache=${SOLARACORE_STAGE_CACHE:-$repo/apps/browser/build-solaracore/staged}
@@ -39,6 +67,7 @@ if [[ "${1:-}" == --publish ]]; then
   exit 0
 fi
 
+src=$(resolve_source) || exit 1
 [[ -n "$product" ]] || { echo "error: no AC_PRODUCT_NAME (run from the app's build, which sets it from the identity)" >&2; exit 1; }
 
 keep_product_helpers() {

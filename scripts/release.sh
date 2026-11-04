@@ -115,6 +115,17 @@ dmg="$dist/$product_name-$version.dmg"
 chromium_src="${CHROMIUM_SRC:-$HOME/chromium-build/chromium_git/chromium/src}"
 framework_src="${SOLARACORE_FRAMEWORK:-$chromium_src/out/Release_GN_arm64/Chromium Framework.framework}"
 framework_engine="${SOLARACORE_FRAMEWORK_ENGINE:-}"
+engine_from_out=0
+if [ "$phase" != sign ] && [ "$phase" != check ] && [ -z "${SOLARACORE_FRAMEWORK:-}" ]; then
+  framework_src="$(CHROMIUM_SRC="$chromium_src" "$root/packages/solaracore/scripts/stage-framework.sh" --source)" \
+    || die "no engine for this release (the reason is above)"
+  if [ "$framework_src" = "$chromium_src/out/Release_GN_arm64/Chromium Framework.framework" ]; then
+    engine_from_out=1
+    echo "release: packing the unpublished engine built in $chromium_src/out: no prebuilt engine matches this commit's engine/" >&2
+  else
+    echo "release: packing the prebuilt engine for this commit's engine/ ($framework_src)" >&2
+  fi
+fi
 provisioning_profile="${RELEASE_PROVISIONING_PROFILE:-}"
 read -r -a extra_build_settings <<<"${RELEASE_BUILD_SETTINGS:-}"
 case "${RELEASE_BUILD_SETTINGS:-}" in
@@ -278,7 +289,7 @@ elif [ -n "$framework_engine" ]; then
   [ "$framework_engine" = "$(git -C "$root" rev-parse HEAD:engine)" ] \
     || die "SOLARACORE_FRAMEWORK_ENGINE is $framework_engine but HEAD's engine tree is $(git -C "$root" rev-parse HEAD:engine): that framework wasn't built from this commit's engine"
 fi
-if [ "$phase" = all ] && [ -z "${SOLARACORE_FRAMEWORK:-}" ]; then
+if [ "$phase" = all ] && [ "$engine_from_out" = 1 ]; then
   "$root/scripts/lib/engine-fresh.sh" "$framework_src" "$chromium_src" || exit 1
 fi
 

@@ -134,14 +134,17 @@ read the product from the app's `CFBundleName` at run time (`solara::ProductName
 
 ## Using it
 
-The app's build (`apps/browser/macos`) stages `out/Release_GN_arm64/Chromium Framework.framework` itself
-(`packages/solaracore/scripts/stage-framework.sh`, under the chromium lock) and embeds it (`embed.sh`). A checkout without a
-Chromium tree downloads the prebuilt engine matching `engine/` instead (`packages/solaracore/scripts/fetch-engine.sh`,
-published with each release whose engine changed; `docs/releasing.md`). It trusts only the SHA-256 committed in
+The app's build (`apps/browser/macos`) stages an engine (`packages/solaracore/scripts/stage-framework.sh`; `--source`
+prints which) and embeds it (`embed.sh`). In order: `SOLARACORE_FRAMEWORK` when it's set; otherwise the prebuilt engine
+matching `engine/` (`packages/solaracore/scripts/fetch-engine.sh`, published with each release whose engine changed;
+`docs/releasing.md`); only when no prebuilt fits (`engine/` has uncommitted or unpublished changes),
+`out/Release_GN_arm64/Chromium Framework.framework`, copied under the chromium lock, if its version is `CHROMIUM_VERSION` in
+`engine/patches/build/env.sh`, with a note saying so; otherwise the build fails and says why. `scripts/release.sh` takes its
+engine the same way and says which one it packs. `fetch-engine.sh` trusts only the SHA-256 committed in
 `packages/solaracore/prebuilt-engines.tsv`: an engine with no entry there isn't fetched, and no table is ever read from
 the network, so every engine the build accepts is a reviewed change in this repo. After an engine change, rebuild incrementally
 (`scripts/agent/engine-build`, or `scripts/agent/locked chromium -- autoninja -C out/Release_GN_arm64 chrome_framework`)
-and the next app build picks it up. `engine-build` copies only the layers (`engine/chromium/apply.sh`, `engine/solaracore/apply.sh`)
+and the next app build picks it up while `engine/` differs from every published engine. `engine-build` copies only the layers (`engine/chromium/apply.sh`, `engine/solaracore/apply.sh`)
 into the tree: a changed chromium patch, or a changed `solara_resources.txt` file, doesn't reach an already-built tree that
 way, and its `series.py check` fails until it does. Bring each changed file to what the series makes (the scratch copy
 `check` keeps, or the resource file itself), under the chromium lock and outside `out/`, then build; step 3 runs only

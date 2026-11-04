@@ -54,8 +54,9 @@ The rules are in `AGENTS.md`; this is the detail behind them. Solara aims at ful
 ## The engine
 - SolaraCore is built outside the repo in `~/chromium-build` (the tree and its patches: `engine/patches`,
   `docs/engine-build.md` › "Rebuilding"; `engine/chromium/apply.sh` and `engine/solaracore/apply.sh` copy our code in).
-  The app's build stages a copy of `out/Release_GN_arm64/Chromium Framework.framework`
-  (`packages/solaracore/scripts/stage-framework.sh`: copied and signed once per engine build into
+  The app's build stages a copy of the engine: `SOLARACORE_FRAMEWORK`, else the published engine for `engine/`, else, when
+  `engine/` has unpublished changes, `out/Release_GN_arm64/Chromium Framework.framework` at the version `env.sh` pins
+  (`packages/solaracore/scripts/stage-framework.sh`, whose `--source` prints which: copied and signed once per engine build into
   `apps/browser/build-solaracore/staged`, then cloned into each build's own derived data, `SOLARACORE_STAGE_DIR`), links it
   and embeds it (`embed.sh`), so every agent's next build picks up a new framework.
 - One agent at a time edits or builds `~/chromium-build`: hold the chromium lock for the whole edit → build cycle

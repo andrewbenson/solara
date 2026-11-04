@@ -37,14 +37,14 @@ backlog, and check this file against the release notes.
 
 | Item | Status |
 |---|---|
-| Icons-only sidebar rail, 84 pt: drag-to-snap, View menu and Settings toggle, hover × to close, loading and audio badges, the address bar moves to the toolbar | landed bc695c27 |
-| Folder and group popovers, footer profile switcher, the hidden sidebar's peek in rail mode | landed b19c9f93; dragging a tab out of a group popover landed 610b257f |
-| Share… in the page's right-click menu and File › Share (⌥⌘S): selected text, an image, a link with trackers removed, media, the page (engine change) | landed 3deeb7e4 |
-| A full emoji picker for profile, tab and folder icons (search, categories, symbols), and names that save on click-away; built in Swift, replacing the React Native icon pickers | landed 8e7f5d12 |
-| On a WebKit page, the pinned extensions give way to a WebKit pill (extensions, the ad blocker and password autofill don't run there), with Open in Chromium; the icons come back on Chromium tabs. The pill and its popover in Swift | landed 5fb501c6 |
-| Going back to the New Tab page (⌘[ or a two-finger swipe) shows the New Tab page, not the command bar floating over the page you left | landed 66e8716b |
-| Arrowing through command bar suggestions fills the input with the highlighted address or search, editable before Enter; Escape or arrowing back up restores what you typed | landed 6086ad50 |
-| Pinned extensions stay pinned (across quit and updates), and checking one in Pin Extensions pins only that one | planned |
+| Icons-only sidebar rail, 84 pt: drag-to-snap, View menu and Settings toggle, hover × to close, loading and audio badges, the address bar moves to the toolbar | shipped (0.2.0) |
+| Folder and group popovers, footer profile switcher, the hidden sidebar's peek in rail mode | shipped (0.2.0) |
+| Share… in the page's right-click menu and File › Share (⌥⌘S): selected text, an image, a link with trackers removed, media, the page (engine change) | shipped (0.2.0) |
+| A full emoji picker for profile, tab and folder icons (search, categories, symbols), and names that save on click-away; built in Swift, replacing the React Native icon pickers | shipped (0.2.0) |
+| On a WebKit page, the pinned extensions give way to a WebKit pill (extensions, the ad blocker and password autofill don't run there), with Open in Chromium; the icons come back on Chromium tabs. The pill and its popover in Swift | shipped (0.2.0) |
+| Going back to the New Tab page (⌘[ or a two-finger swipe) shows the New Tab page, not the command bar floating over the page you left | shipped (0.2.0) |
+| Arrowing through command bar suggestions fills the input with the highlighted address or search, editable before Enter; Escape or arrowing back up restores what you typed | shipped (0.2.0) |
+| Pinned extensions stay pinned (across quit and updates), and checking one in Pin Extensions pins only that one | shipped (0.2.0) |
 
 ## 0.2.1: a fresh engine
 

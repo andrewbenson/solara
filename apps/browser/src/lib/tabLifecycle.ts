@@ -13,11 +13,14 @@ import { restoredLazily } from "../store/pageSession";
 import { peekTabId } from "../store/peek";
 import { holderOf } from "../store/pinShare";
 import { splitOf } from "../store/splits";
-import { nativeOwnsWorkspace } from "../store/nativeStore";
+import { nativeOwnsWorkspace, nativeTabSleepRunning } from "../store/nativeStore";
 import { switchOn } from "./killSwitches";
 import { applyHeldReports } from "./nativeEvents";
 import { everySlowly, reschedule } from "./slowTimers";
 import { webviews } from "./webviews";
+import { tabSleepCandidates, unusedTabSleepProfiles } from "./tabSleepPolicy";
+
+export { tabSleepCandidates, unusedTabSleepProfiles } from "./tabSleepPolicy";
 
 const POLICY = {
   protectedRecent: 10,
@@ -133,12 +136,17 @@ async function hasUnsavedInput(handle: WebViewHandle): Promise<boolean | null> {
 }
 
 export async function sleepTab(id: string): Promise<boolean> {
+  return sleepTabIfSafe(id, false);
+}
+
+async function sleepTabIfSafe(id: string, automatic: boolean): Promise<boolean> {
+  if (automatic && nativeTabSleepRunning()) return false;
   const handle = webviews.get(id);
   if (!handle || isDiscarded(id)) return false;
   if ((await hasUnsavedInput(handle)) !== false) return false;
   applyHeldReports();
   const s = store();
-  if (shownTabIds(s).has(id) || keepAliveReason(s, id) || webviews.get(id) !== handle) return false;
+  if ((automatic && nativeTabSleepRunning()) || shownTabIds(s).has(id) || keepAliveReason(s, id) || webviews.get(id) !== handle) return false;
   return (await handle.discard()) === "discarded";
 }
 
@@ -178,30 +186,32 @@ export async function sweep(overrides: Partial<typeof POLICY> = {}): Promise<str
   sweeping = true;
   const slept: string[] = [];
   try {
+    if (nativeTabSleepRunning()) {
+      releaseUnusedProfiles();
+      return slept;
+    }
     const policy = { ...POLICY, ...overrides };
     const s = store();
     const shown = shownTabIds(s);
     const now = activeClock();
     const pressure = currentSystem()?.memoryPressure ?? "normal";
-    const recent = new Set(
-      Object.values(s.tabs)
-        .filter((t) => t.url)
-        .sort((a, b) => b.lastActiveAt - a.lastActiveAt)
-        .slice(0, pressure === "critical" ? 0 : policy.protectedRecent)
-        .map((t) => t.id),
-    );
     const unused = unusedProfiles(s, now, policy.profileIdleMs);
-    const candidates = [...webviews.keys()].filter((id) => {
-      const tab = s.tabs[id];
-      if (!tab || shown.has(id) || isDiscarded(id)) return false;
-      const idle = now - (hiddenAt.get(id) ?? now);
-      if (!unused.has(tab.profileId) && (recent.has(id) || (pressure === "normal" && idle < policy.idleMs))) return false;
-      return !keepAliveReason(s, id);
+    const loaded = [...webviews.keys()];
+    const candidates = tabSleepCandidates({
+      tabs: Object.values(s.tabs),
+      shownIds: shown,
+      discardedIds: loaded.filter(isDiscarded),
+      loadedIds: loaded,
+      hiddenAt: Object.fromEntries(hiddenAt),
+      now,
+      pressure,
+      unusedProfileIds: unused,
+      policy,
+      keepAliveReasons: Object.fromEntries(loaded.map((id) => [id, keepAliveReason(s, id)])),
     });
-    candidates.sort((a, b) => (hiddenAt.get(a) ?? now) - (hiddenAt.get(b) ?? now));
     for (const id of candidates) {
-      if (slept.length >= policy.perSweep) break;
-      if (await sleepTab(id)) slept.push(id);
+      if (nativeTabSleepRunning() || slept.length >= policy.perSweep) break;
+      if (await sleepTabIfSafe(id, true)) slept.push(id);
     }
     releaseUnusedProfiles();
   } finally {
@@ -211,18 +221,16 @@ export async function sweep(overrides: Partial<typeof POLICY> = {}): Promise<str
 }
 
 function unusedProfiles(s: BrowserState, now: number, idleMs: number): Set<string> {
-  const shownProfiles = new Set(Object.values(s.windows).map((w) => w.profileId));
-  const unused = new Set<string>();
-  for (const id of Object.keys(s.profiles)) {
-    if (shownProfiles.has(id)) {
-      unusedSince.delete(id);
-      continue;
-    }
-    if (!unusedSince.has(id)) unusedSince.set(id, now);
-    if (now - unusedSince.get(id)! >= idleMs) unused.add(id);
-  }
-  for (const id of unusedSince.keys()) if (!s.profiles[id]) unusedSince.delete(id);
-  return unused;
+  const result = unusedTabSleepProfiles({
+    profileIds: Object.keys(s.profiles),
+    shownProfileIds: Object.values(s.windows).map((w) => w.profileId),
+    unusedSince: Object.fromEntries(unusedSince),
+    now,
+    idleMs,
+  });
+  unusedSince.clear();
+  for (const [id, since] of Object.entries(result.unusedSince)) unusedSince.set(id, since);
+  return new Set(result.eligibleIds);
 }
 
 function releaseUnusedProfiles() {

@@ -40,6 +40,7 @@ public final class NativeStore: Sendable {
 
   let profileDataCleanup: NativeProfileDataCleanup
   let privateSessionEffects: NativePrivateSessionEffects
+  let tabSleep: NativeTabSleep
   let host: StoreHost
   var bridge: StoreBridge { host.bridge }
   var writer: PersistenceWriter? { host.writer }
@@ -51,6 +52,7 @@ public final class NativeStore: Sendable {
   init(host: StoreHost, launch: SafeLaunch, folder: URL) {
     profileDataCleanup = NativeProfileDataCleanup(store: host.bridge.store)
     privateSessionEffects = NativePrivateSessionEffects(store: host.bridge.store)
+    tabSleep = NativeTabSleep(store: host.bridge.store)
     self.host = host
     let bridge = host.bridge
     self.launch = launch
@@ -178,6 +180,7 @@ public final class NativeStore: Sendable {
         guard let store = NativeStore.shared else { return }
         store.profileDataCleanup.stop()
         store.privateSessionEffects.stop()
+        store.tabSleep.stop()
         let result = store.host.termination()
         if result != .saved { NSLog("[store] quit flush: %@", result.description) }
       }
@@ -214,12 +217,14 @@ public final class NativeStore: Sendable {
   public func flushForQuit(barrierTimeout: TimeInterval = 0.5, writerTimeout: TimeInterval = 0.5) -> FlushResult {
     profileDataCleanup.stop()
     privateSessionEffects.stop()
+    tabSleep.stop()
     return host.flushForQuit(barrierTimeout: barrierTimeout, writerTimeout: writerTimeout)
   }
 
   public func freeze() {
     profileDataCleanup.stop()
     privateSessionEffects.stop()
+    tabSleep.stop()
     writer?.freeze()
   }
 }

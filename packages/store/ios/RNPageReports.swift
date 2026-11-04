@@ -51,11 +51,13 @@ enum RNPageReports {
     if let old = runtimeID { endRuntime(old) }
     runtimeID = id
     issuer?.beginRuntime(id)
+    if TabSleepRunner.hasActiveRunner { _ = issuer?.store.registerKeepAliveRuntime() }
   }
 
   static func endRuntime(_ id: UUID) {
     guard runtimeID == id else { return }
     issuer?.endRuntime(id)
+    if TabSleepRunner.hasActiveRunner { _ = issuer?.store.registerKeepAliveRuntime() }
     for attachment in attachments.values where attachment.runtimeID == id {
       attachment.detached = true
       if let binding = attachment.binding { issuer?.retire(binding) }

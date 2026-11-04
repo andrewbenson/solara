@@ -1,0 +1,759 @@
+{
+  "candidates": [
+    {
+      "name": "idle threshold is inclusive",
+      "tabs": [
+        {
+          "id": "early",
+          "url": "https://example.com",
+          "profileId": "p",
+          "lastActiveAt": 0
+        },
+        {
+          "id": "due",
+          "url": "https://example.com",
+          "profileId": "p",
+          "lastActiveAt": 0
+        }
+      ],
+      "expected": [
+        "due"
+      ],
+      "shownIds": [],
+      "discardedIds": [],
+      "loadedIds": [
+        "early",
+        "due"
+      ],
+      "hiddenAt": {
+        "early": 1,
+        "due": 0
+      },
+      "now": 1800000,
+      "pressure": "normal",
+      "unusedProfileIds": [],
+      "policy": {
+        "idleMs": 1800000,
+        "protectedRecent": 0,
+        "perSweep": 6
+      },
+      "keepAliveReasons": {}
+    },
+    {
+      "name": "missing hidden time starts at now",
+      "tabs": [
+        {
+          "id": "unknown",
+          "url": "https://example.com",
+          "profileId": "p",
+          "lastActiveAt": 0
+        }
+      ],
+      "expected": [],
+      "shownIds": [],
+      "discardedIds": [],
+      "loadedIds": [
+        "unknown"
+      ],
+      "hiddenAt": {},
+      "now": 1800000,
+      "pressure": "normal",
+      "unusedProfileIds": [],
+      "policy": {
+        "idleMs": 1800000,
+        "protectedRecent": 0,
+        "perSweep": 6
+      },
+      "keepAliveReasons": {}
+    },
+    {
+      "name": "ten globally recent pages are protected",
+      "tabs": [
+        {
+          "id": "0",
+          "url": "https://example.com",
+          "profileId": "p",
+          "lastActiveAt": 0
+        },
+        {
+          "id": "1",
+          "url": "https://example.com",
+          "profileId": "p",
+          "lastActiveAt": 1
+        },
+        {
+          "id": "2",
+          "url": "https://example.com",
+          "profileId": "other",
+          "lastActiveAt": 2
+        },
+        {
+          "id": "3",
+          "url": "https://example.com",
+          "profileId": "other",
+          "lastActiveAt": 3
+        },
+        {
+          "id": "4",
+          "url": "https://example.com",
+          "profileId": "other",
+          "lastActiveAt": 4
+        },
+        {
+          "id": "5",
+          "url": "https://example.com",
+          "profileId": "other",
+          "lastActiveAt": 5
+        },
+        {
+          "id": "6",
+          "url": "https://example.com",
+          "profileId": "other",
+          "lastActiveAt": 6
+        },
+        {
+          "id": "7",
+          "url": "https://example.com",
+          "profileId": "other",
+          "lastActiveAt": 7
+        },
+        {
+          "id": "8",
+          "url": "https://example.com",
+          "profileId": "other",
+          "lastActiveAt": 8
+        },
+        {
+          "id": "9",
+          "url": "https://example.com",
+          "profileId": "other",
+          "lastActiveAt": 9
+        },
+        {
+          "id": "10",
+          "url": "https://example.com",
+          "profileId": "other",
+          "lastActiveAt": 10
+        },
+        {
+          "id": "11",
+          "url": "https://example.com",
+          "profileId": "other",
+          "lastActiveAt": 11
+        }
+      ],
+      "expected": [
+        "0",
+        "1"
+      ],
+      "shownIds": [],
+      "discardedIds": [],
+      "loadedIds": [
+        "0",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11"
+      ],
+      "hiddenAt": {
+        "0": 0,
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0,
+        "6": 0,
+        "7": 0,
+        "8": 0,
+        "9": 0,
+        "10": 0,
+        "11": 0
+      },
+      "now": 1800000,
+      "pressure": "normal",
+      "unusedProfileIds": [],
+      "policy": {
+        "idleMs": 1800000,
+        "protectedRecent": 10,
+        "perSweep": 6
+      },
+      "keepAliveReasons": {}
+    },
+    {
+      "name": "unloaded pages still count toward recent protection",
+      "tabs": [
+        {
+          "id": "loaded",
+          "url": "https://example.com",
+          "profileId": "p",
+          "lastActiveAt": 0
+        },
+        {
+          "id": "unloaded",
+          "url": "https://example.com",
+          "profileId": "p",
+          "lastActiveAt": 1
+        }
+      ],
+      "expected": [
+        "loaded"
+      ],
+      "shownIds": [],
+      "discardedIds": [],
+      "loadedIds": [
+        "loaded"
+      ],
+      "hiddenAt": {
+        "loaded": 0
+      },
+      "now": 1800000,
+      "pressure": "normal",
+      "unusedProfileIds": [],
+      "policy": {
+        "idleMs": 1800000,
+        "protectedRecent": 1,
+        "perSweep": 6
+      },
+      "keepAliveReasons": {}
+    },
+    {
+      "name": "blank urls do not count toward recent protection",
+      "tabs": [
+        {
+          "id": "page",
+          "url": "https://example.com",
+          "profileId": "p",
+          "lastActiveAt": 0
+        },
+        {
+          "id": "blank",
+          "url": "",
+          "profileId": "p",
+          "lastActiveAt": 100
+        }
+      ],
+      "expected": [],
+      "shownIds": [],
+      "discardedIds": [],
+      "loadedIds": [
+        "page"
+      ],
+      "hiddenAt": {
+        "page": 0
+      },
+      "now": 1800000,
+      "pressure": "normal",
+      "unusedProfileIds": [],
+      "policy": {
+        "idleMs": 1800000,
+        "protectedRecent": 1,
+        "perSweep": 6
+      },
+      "keepAliveReasons": {}
+    },
+    {
+      "name": "critical ignores recent and idle protections",
+      "tabs": [
+        {
+          "id": "recent",
+          "url": "https://example.com",
+          "profileId": "p",
+          "lastActiveAt": 100
+        }
+      ],
+      "expected": [
+        "recent"
+      ],
+      "shownIds": [],
+      "discardedIds": [],
+      "loadedIds": [
+        "recent"
+      ],
+      "hiddenAt": {},
+      "now": 1800000,
+      "pressure": "critical",
+      "unusedProfileIds": [],
+      "policy": {
+        "idleMs": 1800000,
+        "protectedRecent": 10,
+        "perSweep": 6
+      },
+      "keepAliveReasons": {}
+    },
+    {
+      "name": "warning bypasses idle timer",
+      "tabs": [
+        {
+          "id": "hidden",
+          "url": "https://example.com",
+          "profileId": "p",
+          "lastActiveAt": 0
+        }
+      ],
+      "expected": [
+        "hidden"
+      ],
+      "shownIds": [],
+      "discardedIds": [],
+      "loadedIds": [
+        "hidden"
+      ],
+      "hiddenAt": {},
+      "now": 1800000,
+      "pressure": "warning",
+      "unusedProfileIds": [],
+      "policy": {
+        "idleMs": 1800000,
+        "protectedRecent": 0,
+        "perSweep": 6
+      },
+      "keepAliveReasons": {}
+    },
+    {
+      "name": "warning retains recent protection",
+      "tabs": [
+        {
+          "id": "recent",
+          "url": "https://example.com",
+          "profileId": "p",
+          "lastActiveAt": 100
+        }
+      ],
+      "expected": [],
+      "shownIds": [],
+      "discardedIds": [],
+      "loadedIds": [
+        "recent"
+      ],
+      "hiddenAt": {},
+      "now": 1800000,
+      "pressure": "warning",
+      "unusedProfileIds": [],
+      "policy": {
+        "idleMs": 1800000,
+        "protectedRecent": 10,
+        "perSweep": 6
+      },
+      "keepAliveReasons": {}
+    },
+    {
+      "name": "unused profiles bypass recent and idle",
+      "tabs": [
+        {
+          "id": "unused",
+          "url": "https://example.com",
+          "profileId": "away",
+          "lastActiveAt": 100
+        },
+        {
+          "id": "used",
+          "url": "https://example.com",
+          "profileId": "p",
+          "lastActiveAt": 0
+        }
+      ],
+      "expected": [
+        "unused"
+      ],
+      "shownIds": [],
+      "discardedIds": [],
+      "loadedIds": [
+        "unused",
+        "used"
+      ],
+      "hiddenAt": {},
+      "now": 1800000,
+      "pressure": "normal",
+      "unusedProfileIds": [
+        "away"
+      ],
+      "policy": {
+        "idleMs": 1800000,
+        "protectedRecent": 10,
+        "perSweep": 6
+      },
+      "keepAliveReasons": {}
+    },
+    {
+      "name": "shown discarded missing and unloaded are excluded",
+      "tabs": [
+        {
+          "id": "shown",
+          "url": "https://example.com",
+          "profileId": "p",
+          "lastActiveAt": 0
+        },
+        {
+          "id": "discarded",
+          "url": "https://example.com",
+          "profileId": "p",
+          "lastActiveAt": 0
+        },
+        {
+          "id": "eligible",
+          "url": "https://example.com",
+          "profileId": "p",
+          "lastActiveAt": 0
+        },
+        {
+          "id": "unloaded",
+          "url": "https://example.com",
+          "profileId": "p",
+          "lastActiveAt": 0
+        }
+      ],
+      "expected": [
+        "eligible"
+      ],
+      "shownIds": [
+        "shown"
+      ],
+      "discardedIds": [
+        "discarded"
+      ],
+      "loadedIds": [
+        "shown",
+        "discarded",
+        "missing",
+        "eligible"
+      ],
+      "hiddenAt": {
+        "shown": 0,
+        "discarded": 0,
+        "eligible": 0
+      },
+      "now": 1800000,
+      "pressure": "normal",
+      "unusedProfileIds": [],
+      "policy": {
+        "idleMs": 1800000,
+        "protectedRecent": 0,
+        "perSweep": 6
+      },
+      "keepAliveReasons": {}
+    },
+    {
+      "name": "keep alive remains protected under critical pressure",
+      "tabs": [
+        {
+          "id": "audio",
+          "url": "https://example.com",
+          "profileId": "p",
+          "lastActiveAt": 0
+        },
+        {
+          "id": "permission",
+          "url": "https://example.com",
+          "profileId": "p",
+          "lastActiveAt": 0
+        },
+        {
+          "id": "split",
+          "url": "https://example.com",
+          "profileId": "p",
+          "lastActiveAt": 0
+        },
+        {
+          "id": "eligible",
+          "url": "https://example.com",
+          "profileId": "p",
+          "lastActiveAt": 0
+        }
+      ],
+      "expected": [
+        "eligible"
+      ],
+      "shownIds": [],
+      "discardedIds": [],
+      "loadedIds": [
+        "audio",
+        "permission",
+        "split",
+        "eligible"
+      ],
+      "hiddenAt": {},
+      "now": 1800000,
+      "pressure": "critical",
+      "unusedProfileIds": [],
+      "policy": {
+        "idleMs": 1800000,
+        "protectedRecent": 0,
+        "perSweep": 6
+      },
+      "keepAliveReasons": {
+        "audio": "playing audio",
+        "permission": "asking for permission",
+        "split": "in a split"
+      }
+    },
+    {
+      "name": "oldest hidden first",
+      "tabs": [
+        {
+          "id": "late",
+          "url": "https://example.com",
+          "profileId": "p",
+          "lastActiveAt": 0
+        },
+        {
+          "id": "early",
+          "url": "https://example.com",
+          "profileId": "p",
+          "lastActiveAt": 0
+        },
+        {
+          "id": "middle",
+          "url": "https://example.com",
+          "profileId": "p",
+          "lastActiveAt": 0
+        }
+      ],
+      "expected": [
+        "early",
+        "middle",
+        "late"
+      ],
+      "shownIds": [],
+      "discardedIds": [],
+      "loadedIds": [
+        "late",
+        "early",
+        "middle"
+      ],
+      "hiddenAt": {
+        "late": 300,
+        "early": 100,
+        "middle": 200
+      },
+      "now": 1800000,
+      "pressure": "warning",
+      "unusedProfileIds": [],
+      "policy": {
+        "idleMs": 1800000,
+        "protectedRecent": 0,
+        "perSweep": 6
+      },
+      "keepAliveReasons": {}
+    },
+    {
+      "name": "equal hidden times retain loaded order",
+      "tabs": [
+        {
+          "id": "a",
+          "url": "https://example.com",
+          "profileId": "p",
+          "lastActiveAt": 0
+        },
+        {
+          "id": "b",
+          "url": "https://example.com",
+          "profileId": "p",
+          "lastActiveAt": 0
+        },
+        {
+          "id": "c",
+          "url": "https://example.com",
+          "profileId": "p",
+          "lastActiveAt": 0
+        }
+      ],
+      "expected": [
+        "c",
+        "a",
+        "b"
+      ],
+      "shownIds": [],
+      "discardedIds": [],
+      "loadedIds": [
+        "c",
+        "a",
+        "b"
+      ],
+      "hiddenAt": {
+        "a": 0,
+        "b": 0,
+        "c": 0
+      },
+      "now": 1800000,
+      "pressure": "normal",
+      "unusedProfileIds": [],
+      "policy": {
+        "idleMs": 1800000,
+        "protectedRecent": 0,
+        "perSweep": 6
+      },
+      "keepAliveReasons": {}
+    },
+    {
+      "name": "equal recent timestamps retain tab order",
+      "tabs": [
+        {
+          "id": "a",
+          "url": "https://example.com",
+          "profileId": "p",
+          "lastActiveAt": 0
+        },
+        {
+          "id": "b",
+          "url": "https://example.com",
+          "profileId": "p",
+          "lastActiveAt": 0
+        },
+        {
+          "id": "c",
+          "url": "https://example.com",
+          "profileId": "p",
+          "lastActiveAt": 0
+        }
+      ],
+      "expected": [
+        "c",
+        "b"
+      ],
+      "shownIds": [],
+      "discardedIds": [],
+      "loadedIds": [
+        "c",
+        "a",
+        "b"
+      ],
+      "hiddenAt": {
+        "a": 0,
+        "b": 0,
+        "c": 0
+      },
+      "now": 1800000,
+      "pressure": "normal",
+      "unusedProfileIds": [],
+      "policy": {
+        "idleMs": 1800000,
+        "protectedRecent": 1,
+        "perSweep": 6
+      },
+      "keepAliveReasons": {}
+    },
+    {
+      "name": "policy returns all attempts beyond success cap",
+      "tabs": [
+        {
+          "id": "a",
+          "url": "https://example.com",
+          "profileId": "p",
+          "lastActiveAt": 0
+        },
+        {
+          "id": "b",
+          "url": "https://example.com",
+          "profileId": "p",
+          "lastActiveAt": 0
+        },
+        {
+          "id": "c",
+          "url": "https://example.com",
+          "profileId": "p",
+          "lastActiveAt": 0
+        }
+      ],
+      "expected": [
+        "a",
+        "b",
+        "c"
+      ],
+      "shownIds": [],
+      "discardedIds": [],
+      "loadedIds": [
+        "a",
+        "b",
+        "c"
+      ],
+      "hiddenAt": {
+        "a": 0,
+        "b": 0,
+        "c": 0
+      },
+      "now": 1800000,
+      "pressure": "normal",
+      "unusedProfileIds": [],
+      "policy": {
+        "idleMs": 1800000,
+        "protectedRecent": 0,
+        "perSweep": 1
+      },
+      "keepAliveReasons": {}
+    }
+  ],
+  "unusedProfiles": [
+    {
+      "name": "new unused clocks start now",
+      "profileIds": [
+        "shown",
+        "new"
+      ],
+      "shownProfileIds": [
+        "shown"
+      ],
+      "unusedSince": {},
+      "now": 600000,
+      "idleMs": 600000,
+      "expectedUnusedSince": {
+        "new": 600000
+      },
+      "expectedEligibleIds": []
+    },
+    {
+      "name": "shown and deleted clocks are removed and threshold is inclusive",
+      "profileIds": [
+        "shown",
+        "due",
+        "early"
+      ],
+      "shownProfileIds": [
+        "shown"
+      ],
+      "unusedSince": {
+        "shown": 0,
+        "due": 0,
+        "early": 1,
+        "deleted": 0
+      },
+      "now": 600000,
+      "idleMs": 600000,
+      "expectedUnusedSince": {
+        "due": 0,
+        "early": 1
+      },
+      "expectedEligibleIds": [
+        "due"
+      ]
+    },
+    {
+      "name": "eligible profiles retain profile order",
+      "profileIds": [
+        "second",
+        "first"
+      ],
+      "shownProfileIds": [],
+      "unusedSince": {
+        "first": 0,
+        "second": 0
+      },
+      "now": 600000,
+      "idleMs": 600000,
+      "expectedUnusedSince": {
+        "first": 0,
+        "second": 0
+      },
+      "expectedEligibleIds": [
+        "second",
+        "first"
+      ]
+    }
+  ]
+}

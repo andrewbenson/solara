@@ -1,5 +1,6 @@
 import ExpoModulesCore
 import Foundation
+import SolaraCore
 internal import SolaraBridgeCore
 internal import SolaraModel
 internal import SolaraStore
@@ -36,6 +37,10 @@ public class StoreModule: Module {
         guard let module = sink.module else { return }
         PageRuntimeLease.shared.end(module, module.pageRuntimeID) { RNPageReports.endRuntime($0) }
       }
+    }
+
+    AsyncFunction("devTabSleep") { (action: String) async -> String in
+      await devTabSleep(action)
     }
 
     Function("pageFacts") { (tabId: String) -> String? in
@@ -80,6 +85,7 @@ public class StoreModule: Module {
         status = ["active": false, "reason": NativeStore.unavailableReason ?? "not launched", "handedOff": NativeStore.handedOff, "syncRedesign": syncRedesign]
         if let refusedSession = NativeStore.refusedSession { status["refusedSession"] = refusedSession }
       }
+      status["nativeTabSleep"] = pageMain { NativeStore.shared?.tabSleep.isRunning == true }
       if NativeStore.safeMode { status["safeMode"] = NativeStore.safeModeAfterFailedLaunches ? "failedLaunches" : "option" }
       return status
     }
@@ -164,6 +170,30 @@ private func needsPagePreparation(_ commandJSON: String) -> Bool {
   guard let parsed = try? JSONValue.parse(commandJSON), parsed["fromSync"]?.truthy != true else { return false }
   let commands = parsed["commands"].map { $0.array ?? [$0] } ?? parsed.array ?? [parsed]
   return commands.contains { $0["name"]?.string == "pageReport" && $0["args"]?.array?.dropFirst().first?["type"]?.string == "issued" }
+}
+
+@MainActor private func devTabSleep(_ action: String) async -> String {
+  guard SolaraCoreTestHooksAllowed(), devTabSleepScratchData() else {
+    return JSONValue.object(["error": .string("test instances only")]).text()
+  }
+  guard let tabSleep = NativeStore.shared?.tabSleep else { return JSONValue.object(["error": .string("no native store")]).text() }
+  if action == "status" { return JSONValue.object(["running": .bool(tabSleep.isRunning)]).text() }
+  if action == "sweep" {
+    let slept = await tabSleep.sweepNow()
+    return JSONValue.object(["running": .bool(tabSleep.isRunning), "slept": .array(slept.map { .string($0) })]).text()
+  }
+  if action.hasPrefix("pressure:"), let pressure = TabSleepPolicy.Pressure(rawValue: String(action.dropFirst("pressure:".count))) {
+    tabSleep.setPressure(pressure)
+    return JSONValue.object(["pressure": .string(pressure.rawValue)]).text()
+  }
+  return JSONValue.object(["error": .string("unknown action \(action)")]).text()
+}
+
+private func devTabSleepScratchData() -> Bool {
+  guard let path = ProcessInfo.processInfo.environment["SOLARA_DATA_DIR"], path.hasPrefix("/"), path != "/" else { return false }
+  let marker = URL(fileURLWithPath: path, isDirectory: true).resolvingSymlinksInPath().appendingPathComponent(".solara-probe-scratch")
+  guard let values = try? marker.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]) else { return false }
+  return values.isRegularFile == true && values.isSymbolicLink != true
 }
 
 private final class StoreModuleSink: @unchecked Sendable {

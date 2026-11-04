@@ -4,6 +4,8 @@ import { test } from "node:test";
 
 globalThis.__DEV__ = false;
 globalThis.lifecycleOwned = false;
+globalThis.nativeTabSleepRunning = false;
+globalThis.releasedProfiles = [];
 
 const solaracore = import.meta.resolve("@solara/solaracore");
 const stubs = {
@@ -11,9 +13,9 @@ const stubs = {
     export const listTasks = async () => [];
     export const onSystemState = () => ({ remove() {} });
     export const systemState = async () => { throw new Error("unavailable"); };
-    export const releaseProfile = async () => {};
+    export const releaseProfile = async (id) => { globalThis.releasedProfiles.push(id); };
     export const setBatterySaver = (mode) => globalThis.batterySaverReply(mode);`,
-  "../store/nativeStore": "export const nativeOwnsWorkspace = () => globalThis.lifecycleOwned;",
+  "../store/nativeStore": "export const nativeOwnsWorkspace = () => globalThis.lifecycleOwned; export const nativeTabSleepRunning = () => globalThis.nativeTabSleepRunning;",
   "./slowTimers": "export const everySlowly = () => {}; export const reschedule = () => {};",
   "../components/layout/splitActions": "export const showToast = () => {};",
   "../components/settings/windows": "export const openSettings = () => {};",
@@ -226,4 +228,74 @@ test("loaded lifecycle enumeration follows native discarded facts and JS fallbac
   globalThis.lifecycleOwned = true;
   useBrowser.setState({ live: { ...S().live, [id]: { ...S().live[id], discarded: false } } });
   assert.equal(loaded().includes(id), true);
+});
+
+test("the native runner gates JS sleeping while profile release stays active", async (t) => {
+  S().hydrate({});
+  const w = S().createWindow({ url: "https://a.com" });
+  const id = S().newTab(w, { url: "https://b.com", background: true });
+  const page = fakePage();
+  webviews.set(id, page.handle);
+  const profile = S().createProfile({ name: "Released" });
+  const loaded = S().newTab(w, { url: "https://profile.com", profileId: profile, background: true });
+  lifecycle.noteReady(loaded);
+  globalThis.releasedProfiles = [];
+  globalThis.nativeTabSleepRunning = true;
+  t.after(() => {
+    webviews.delete(id);
+    globalThis.nativeTabSleepRunning = false;
+  });
+
+  assert.deepEqual(await lifecycle.sweep({ protectedRecent: 0, idleMs: 0 }), []);
+  assert.equal(page.evaluated, 0);
+  assert.equal(page.discarded, 0);
+  assert.deepEqual(globalThis.releasedProfiles, [profile]);
+});
+
+test("the JS sweep caps successful sleeps and continues after refusals", async (t) => {
+  S().hydrate({});
+  const w = S().createWindow({ url: "https://a.com" });
+  const pages = [fakePage(), fakePage(), fakePage()];
+  pages[0].dirty = true;
+  const ids = pages.map((page, index) => {
+    const id = S().newTab(w, { url: `https://page${index}.com`, background: true });
+    webviews.set(id, page.handle);
+    return id;
+  });
+  t.after(() => ids.forEach((id) => webviews.delete(id)));
+
+  assert.deepEqual(await lifecycle.sweep({ protectedRecent: 0, idleMs: 0, perSweep: 1 }), [ids[1]]);
+  assert.deepEqual(pages.map((page) => page.evaluated), [1, 1, 0]);
+  assert.deepEqual(pages.map((page) => page.discarded), [0, 1, 0]);
+});
+
+test("native handoff during the JS input check stops the pending sweep and preserves manual sleep", async (t) => {
+  S().hydrate({});
+  const w = S().createWindow({ url: "https://a.com" });
+  const pages = [fakePage(), fakePage()];
+  const ids = pages.map((page, index) => {
+    const id = S().newTab(w, { url: `https://handoff${index}.com`, background: true });
+    webviews.set(id, page.handle);
+    return id;
+  });
+  let finishInputCheck;
+  pages[0].handle.evaluate = () => {
+    pages[0].evaluated++;
+    return new Promise((resolve) => { finishInputCheck = resolve; });
+  };
+  t.after(() => {
+    ids.forEach((id) => webviews.delete(id));
+    globalThis.nativeTabSleepRunning = false;
+  });
+
+  const sweeping = lifecycle.sweep({ protectedRecent: 0, idleMs: 0 });
+  assert.equal(pages[0].evaluated, 1);
+  globalThis.nativeTabSleepRunning = true;
+  finishInputCheck(false);
+
+  assert.deepEqual(await sweeping, []);
+  assert.deepEqual(pages.map((page) => page.discarded), [0, 0]);
+  assert.deepEqual(pages.map((page) => page.evaluated), [1, 0]);
+  pages[0].handle.evaluate = async () => false;
+  assert.equal(await lifecycle.sleepTab(ids[0]), true);
 });

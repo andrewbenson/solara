@@ -56,7 +56,7 @@ const usesPageA = [
   "context-menu-search", "duplicate-and-reopen", "device-chooser", "bluetooth-chooser",
   "bluetooth-settings", "cast-dialog", "cast-routes", "theme-commit", "theme-modern-colors", "user-selection",
   "password-prompt", "screen-share-picker", "tab-capture", "share-instead-two-captures",
-  "restore-after-close", "discard-outcomes", "sleep-eligibility", "sleep-pinned-capture", "capture-picture", "unresponsive", "permission-dismissed", "permission-status-detached",
+  "restore-after-close", "discard-outcomes", "sleep-eligibility", "sleep-pinned-capture", "native-tab-sleep", "capture-picture", "unresponsive", "permission-dismissed", "permission-status-detached",
   "save-page", "activate-request", "extension-popup-and-panel", "print-preview",
   "extension-prompts", "traffic-lights-after-profile-switch", "extension-configure",
   "private-windows-create", "extension-installed-bubble", "popup-window", "popup-window-permission", "popup-origin-strip", "autofill-save-prompts",
@@ -628,7 +628,7 @@ async function launch(logName = "app.out.log", env = {}, args = [], opts = {}) {
     data, log: join(scratch, logName), args, ready: false,
     env: {
       SOLARA_TEST_REAUTH: "granted", SOLARA_DOWNLOADS_DIR: downloadsDir, SOLARA_ALLOW_AUDIO: "1",
-      ...Object.fromEntries(["SOLARA_ALLOW_OCCLUSION", "SOLARA_TRACE_VISIBILITY", "SOLARA_TRACE_PIP", "SOLARA_NATIVE_SHELL"].filter((k) => process.env[k]).map((k) => [k, process.env[k]])),
+      ...Object.fromEntries(["SOLARA_ALLOW_OCCLUSION", "SOLARA_TRACE_VISIBILITY", "SOLARA_TRACE_PIP", "SOLARA_NATIVE_SHELL", "SOLARA_NATIVE_TAB_SLEEP"].filter((k) => process.env[k]).map((k) => [k, process.env[k]])),
       SOLARA_TRAFFIC_LIGHTS_LOG: lightsLog,
       ...env,
       ...(process.env.SOLARA_ACCEPTANCE_VISIBLE === "1" ? { SOLARA_BACKGROUND: null } : {}),
@@ -2415,6 +2415,104 @@ try {
         await closeTab(id).catch(() => null);
       }
       await evalApp(`ac.actions.switchToTab("${first.id}"); return true`).catch(() => null);
+    }
+  });
+
+  await check("native-tab-sleep", async () => {
+    if (process.env.SOLARA_NATIVE_TAB_SLEEP !== "1") {
+      if (argv.includes("native-tab-sleep")) throw new Error("native-tab-sleep was asked for by name, but the native runner starts only with SOLARA_NATIVE_TAB_SLEEP=1");
+      report.say("native-tab-sleep skipped: the native runner starts only with SOLARA_NATIVE_TAB_SLEEP=1");
+      return { skipped: "SOLARA_NATIVE_TAB_SLEEP is off" };
+    }
+    writeFileSync(join(data, ".solara-probe-scratch"), "");
+    const dev = async (action) => JSON.parse(await evalApp(`return globalThis.expo.modules.SolaraStoreAdapter.devTabSleep(${JSON.stringify(action)})`));
+    const sleeping = async (id) => (await live(id))?.discarded === true;
+    const sweepUntil = async (what, ids) => {
+      const slept = new Set();
+      await until(what, async () => {
+        for (const id of (await dev("sweep")).slept ?? []) slept.add(id);
+        const all = [];
+        for (const id of ids) all.push(slept.has(id) && (await sleeping(id)));
+        return all.every(Boolean) ? true : null;
+      }, 20000).catch(() => null);
+      return slept;
+    };
+    const pin = async (id) => {
+      await evalApp(`ac.store.getState().pinTabs(["${id}"], true); return true`);
+      return until(`${id} pinned in Chrome's tab strip`, async () =>
+        (await cef(`tabStrips()`)).strips.flatMap((strip) => strip.tabs).find((tab) => tab.key === id && tab.pinned && !tab.active) ?? null, 10000);
+    };
+    const opened = [];
+    const out = {};
+    try {
+      out.status = await until("the native runner running", async () => ((await dev("status")).running === true ? true : null), 10000).catch(async () => dev("status"));
+      const plain = await openTab(`${base}/b?native-sleep-plain`, "Page B", true);
+      opened.push(plain.id);
+      const closing = await openTab(`${base}/c?native-sleep-closed`, "Page C", true);
+      opened.push(closing.id);
+      const pinned = await openTab(`${base}/d?native-sleep-pinned`, "Page D", true);
+      opened.push(pinned.id);
+      await pin(pinned.id);
+      const audible = await openTab(`${base}/media?native-sleep-audible`, "Media", false);
+      opened.push(audible.id);
+      const tone = await pageFor(audible.id, `${base}/media?native-sleep-audible`);
+      await cdp(tone, "Runtime.evaluate", { expression: "document.getElementById('tone').play(); true", userGesture: true });
+      await until("live.playingAudio", async () => (await live(audible.id))?.playingAudio === true, 8000);
+      const video = await openTab(`${base}/video?native-sleep-pip`, "Video", false);
+      opened.push(video.id);
+      await evalApp(`return ac.webviews.get("${video.id}").setMuted(true)`);
+      const v = await startVideo(video.id, false);
+      const entered = await cdp(v, "Runtime.evaluate", { expression: "document.getElementById('v').requestPictureInPicture().then(() => 'ok', (e) => e.name)", awaitPromise: true, userGesture: true, returnByValue: true });
+      out.pip = entered.result?.value;
+      await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
+      await until("A shown", async () => (await state()).active === first.id);
+
+      out.normalSweep = (await dev("sweep")).slept ?? [];
+      out.pressure = await dev("pressure:critical");
+      const slept = await sweepUntil("the plain, closing and pinned tabs asleep", [plain.id, closing.id, pinned.id]);
+      out.slept = [...slept];
+      out.asleep = { plain: await sleeping(plain.id), closing: await sleeping(closing.id), pinned: await sleeping(pinned.id) };
+      out.protected = { shown: await sleeping(first.id), audible: await sleeping(audible.id), pip: await sleeping(video.id) };
+      out.pipStillOpen = !!(await pipWindows())?.find((w) => w.video && w.visible);
+
+      await evalApp(`ac.actions.switchToTab("${plain.id}"); return true`);
+      out.woke = await until("the plain tab awake and reloaded", async () => {
+        const tab = (await state()).tabs.find((t) => t.id === plain.id);
+        return !(await sleeping(plain.id)) && tab && !tab.loading && tab.title === "Page B" ? true : null;
+      }, 15000).catch(() => false);
+      out.wokeShownNotReslept = !((await dev("sweep")).slept ?? []).includes(plain.id) && !(await sleeping(plain.id));
+      await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
+      await until("A shown", async () => (await state()).active === first.id);
+
+      const closedUrl = `${base}/c?native-sleep-closed`;
+      await closeTab(closing.id);
+      opened.splice(opened.indexOf(closing.id), 1);
+      for (let i = 0; i < 3; i++) await dev("sweep");
+      await sleep(1500);
+      const after = await state();
+      out.closedGone = !after.tabs.some((t) => t.id === closing.id || t.url === closedUrl);
+
+      const problems = [];
+      if (out.status !== true) problems.push(`runner: ${JSON.stringify(out.status)}`);
+      if (out.normalSweep.some((id) => [plain.id, closing.id, pinned.id].includes(id))) problems.push(`slept at normal pressure inside the idle window: ${JSON.stringify(out.normalSweep)}`);
+      if (![plain.id, closing.id, pinned.id].some((id) => slept.has(id))) problems.push(`no manual sweep reported a tab it slept: ${JSON.stringify(out.slept)}`);
+      if (!out.asleep.plain || !out.asleep.closing) problems.push(`plain tabs not asleep: ${JSON.stringify(out.asleep)}`);
+      if (!out.asleep.pinned) problems.push(`a plain pinned tab not asleep through the waiver: ${JSON.stringify(out.asleep)}`);
+      if (out.protected.shown || out.protected.audible || out.protected.pip) problems.push(`a protected tab slept: ${JSON.stringify(out.protected)}`);
+      if (out.pip !== "ok" || !out.pipStillOpen) problems.push(`PiP: ${JSON.stringify([out.pip, out.pipStillOpen])}`);
+      if (out.woke !== true || !out.wokeShownNotReslept) problems.push(`wake: ${JSON.stringify([out.woke, out.wokeShownNotReslept])}`);
+      if (!out.closedGone) problems.push("a closed slept tab came back");
+      if (problems.length) throw new Error(`${problems.join("; ")}: ${JSON.stringify(out)}`);
+      return out;
+    } finally {
+      const reset = await dev("pressure:normal").catch((e) => ({ error: String(e) }));
+      for (const id of opened) {
+        await evalApp(`return ac.webviews.get("${id}")?.exitPictureInPicture?.()`).catch(() => null);
+        await evalApp(`ac.store.getState().pinTabs(["${id}"], false); return true`).catch(() => null);
+        await closeTab(id).catch(() => null);
+      }
+      await evalApp(`ac.actions.switchToTab("${first.id}"); return true`).catch(() => null);
+      if (reset?.pressure !== "normal") throw new Error(`the runner's pressure wasn't reset: ${JSON.stringify(reset)}`);
     }
   });
 

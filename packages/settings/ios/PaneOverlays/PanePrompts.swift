@@ -3,6 +3,7 @@ import SolaraCore
 import SolaraShell
 import Foundation
 import SolaraModel
+import SolaraStore
 import SolaraUI
 
 @MainActor
@@ -33,6 +34,11 @@ enum PanePrompts {
   static func start() {
     guard NativeWindowShell.enabled, !started else { return }
     started = true
+    TabSleepPermissionFeed.pending = { tabId in
+      guard owns(tabId), let browserId = NativeStoreHandle.store?.pageFacts(tabId)?.ready?.browserId,
+        browsers.tab(browserId) == tabId else { return nil }
+      return !(pages[tabId]?.permissions.isEmpty ?? true)
+    }
     TabPoolHost.shared.pageEventObservers.append { tabId, name, payload in pageEvent(tabId, name, payload) }
     TabPoolHost.shared.stateObservers.append { tabsMoved() }
     SolaraCoreEventTaps.observers.append { name, payload in coreEvent(name, payload) }

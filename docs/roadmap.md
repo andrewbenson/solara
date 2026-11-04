@@ -39,7 +39,7 @@ backlog, and check this file against the release notes.
 |---|---|
 | Icons-only sidebar rail, 84 pt: drag-to-snap, View menu and Settings toggle, hover × to close, loading and audio badges, the address bar moves to the toolbar | landed bc695c27 |
 | Folder and group popovers, footer profile switcher, the hidden sidebar's peek in rail mode | landed b19c9f93; dragging a tab out of a group popover landed 610b257f |
-| Share… in the page's right-click menu and File › Share (⌥⌘S): selected text, an image, a link with trackers removed, media, the page (engine change) | planned |
+| Share… in the page's right-click menu and File › Share (⌥⌘S): selected text, an image, a link with trackers removed, media, the page (engine change) | landed 3deeb7e4 |
 | A full emoji picker for profile, tab and folder icons (search, categories, symbols), and names that save on click-away; built in Swift, replacing the React Native icon pickers | landed 8e7f5d12 |
 | On a WebKit page, the pinned extensions give way to a WebKit pill (extensions, the ad blocker and password autofill don't run there), with Open in Chromium; the icons come back on Chromium tabs. The pill and its popover in Swift | landed 5fb501c6 |
 | Going back to the New Tab page (⌘[ or a two-finger swipe) shows the New Tab page, not the command bar floating over the page you left | landed 66e8716b |

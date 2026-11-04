@@ -46,15 +46,23 @@ backlog, and check this file against the release notes.
 | Arrowing through command bar suggestions fills the input with the highlighted address or search, editable before Enter; Escape or arrowing back up restores what you typed | shipped (0.2.0) |
 | Pinned extensions stay pinned (across quit and updates), and checking one in Pin Extensions pins only that one | shipped (0.2.0) |
 
-## 0.2.1: a fresh engine
+## 0.2.1: fixes and a tidier icons-only sidebar
 
 | Item | Status |
 |---|---|
 | Fixes from the owner's two-Mac sync-join test of 0.1.3 | waiting on the test |
-| Engine: Chromium 156.0.8078.79 or newer (Chrome stable security updates; we ship .47). Needs a Chromium sync and rebuild: owner approved; moved from 0.2.0 on 2026-11-03 | planned |
 | The toolbar takes a page's header colour right when it's made with color-mix(), color() or oklch() (a light page showed a near-black toolbar, in light and dark) | landed a1d6ccda |
 | The Share picker opens at the click point when DevTools is docked on the left | landed 0fa6e53e |
 | A tab no longer crashes when a page stops listening for permission changes after the frame it asked from is gone (engine patch; upstream Chromium, .79 included, still crashes) | landed 9bc625fa |
+| Sidebar width and icons-only are per window: resizing one window's sidebar no longer resizes every window | planned |
+| Icons-only sidebar: narrower rail with square tiles, a hover × badge, the traffic lights in the toolbar as Chrome does, no tile fill at rest, pinned tabs styled like other tabs | planned |
+| Switching light/dark updates background tabs' toolbar colour, so switching to one shows no old-colour flash | planned |
+
+## 0.2.2: a fresh engine
+
+| Item | Status |
+|---|---|
+| Engine: Chromium 156.0.8078.79 or newer (Chrome stable security updates; we ship .47), built on the Hill Studio's own Chromium checkout. Owner: build there and ship in 0.2.2 (2026-11-03) | planned |
 
 ## 0.3.0: the CLI and Raycast revamped, and tabs that cost less
 

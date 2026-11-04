@@ -52,7 +52,7 @@ backlog, and check this file against the release notes.
 |---|---|
 | Fixes from the owner's two-Mac sync-join test of 0.1.3 | waiting on the test |
 | Engine: Chromium 156.0.8078.79 or newer (Chrome stable security updates; we ship .47). Needs a Chromium sync and rebuild: owner approved; moved from 0.2.0 on 2026-11-03 | planned |
-| The toolbar follows a site's light or dark theme-color when macOS switches appearance (it stayed on the dark colour) | moved from 0.2.0: not reproduced yet; the Appearance setting, relaunch and DevTools emulation all update it |
+| The toolbar takes a page's header colour right when it's made with color-mix(), color() or oklch() (a light page showed a near-black toolbar, in light and dark) | landed a1d6ccda |
 | The Share picker opens at the click point when DevTools is docked on the left | planned |
 
 ## 0.3.0: the CLI and Raycast revamped, and tabs that cost less

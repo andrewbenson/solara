@@ -64,6 +64,7 @@ backlog, and check this file against the release notes.
 | Item | Status |
 |---|---|
 | Engine: Chromium 156.0.8078.79 or newer (Chrome stable security updates; we ship .47), built on the Hill Studio's own Chromium checkout. Owner: build there and ship in 0.2.2 (2026-11-03) | planned |
+| GitHub security alerts cleared: Dependabot (image-size, minimatch, deepmerge) bumped, the omnibox quick-create regex no longer slows on crafted input, test-script CodeQL alerts fixed or dismissed | planned |
 
 ## 0.3.0: the CLI and Raycast revamped, and tabs that cost less
 

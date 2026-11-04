@@ -63,7 +63,7 @@ const usesPageA = [
   "settings-services", "download-navigation", "page-events", "page-background", "appearance-reaches-pages", "external-app-answer",
   "notifications", "now-playing", "media-state", "auto-picture-in-picture", "pip-window", "page-focus", "page-press-split",
   "fullscreen-tab-switch", "fullscreen-native", "escape-in-window-fullscreen", "fullscreen-transition-picture", "fullscreen-hidden-page", "fullscreen-split-sibling",
-  "fullscreen-pip", "autofill-suggestions", "images", "extension-surfaces", "frozen", "discard",
+  "fullscreen-pip", "pip-fullscreen-space", "autofill-suggestions", "images", "extension-surfaces", "frozen", "discard",
   "permission-prompt", "popup-blocked", "move-tab-slow-mount", "move-last-tab-slow-mount",
   "move-tab-closed-while-parked", "move-tab-to-window", "title-bar-close", "last-used-profile",
 ];
@@ -631,6 +631,7 @@ async function launch(logName = "app.out.log", env = {}, args = [], opts = {}) {
       ...Object.fromEntries(["SOLARA_ALLOW_OCCLUSION", "SOLARA_TRACE_VISIBILITY", "SOLARA_TRACE_PIP", "SOLARA_NATIVE_SHELL"].filter((k) => process.env[k]).map((k) => [k, process.env[k]])),
       SOLARA_TRAFFIC_LIGHTS_LOG: lightsLog,
       ...env,
+      ...(process.env.SOLARA_ACCEPTANCE_VISIBLE === "1" ? { SOLARA_BACKGROUND: null } : {}),
     },
     switches: `--auto-select-tab-capture-source-by-title=Capture Target --solara-test-external-protocol-no-launch ${process.env.SOLARA_CHROMIUM_SWITCHES ?? ""} ${opts.switches ?? ""}`.trim(),
     meta: { http: server.address().port, https: tlsServer.address().port },
@@ -4639,6 +4640,124 @@ try {
     }
     await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
     return results;
+  });
+
+  await check("pip-fullscreen-space", async () => {
+    const jxa = (code) => JSON.parse(execFileSync("osascript", ["-l", "JavaScript", "-e", `ObjC.import("CoreGraphics"); ${code}`], { timeout: 20000 }).toString());
+    const skip = (why) => {
+      report.say(`pip-fullscreen-space skipped: ${why}`);
+      return { skipped: why };
+    };
+    if (process.env.SOLARA_SPACE_SWITCH_TESTS !== "1")
+      return skip("it switches Spaces and activates a fixture app, so it runs only with SOLARA_SPACE_SWITCH_TESTS=1 on a machine nobody is using");
+    if (jxa(`const d = ObjC.deepUnwrap(ObjC.castRefToObject($.CGSessionCopyCurrentDictionary())); JSON.stringify(!d || !!d.CGSSessionScreenIsLocked || !d.kCGSSessionOnConsoleKey)`))
+      return skip("the screen is locked or this session isn't on the console, so no app can enter a full-screen Space");
+    const fixture = join(scratch, "fullscreen-space-app");
+    if (!existsSync(fixture)) {
+      try {
+        execFileSync("xcrun", ["swiftc", "-O", resolve(new URL(".", import.meta.url).pathname, "fixtures/fullscreen-space-app.swift"), "-o", fixture], { stdio: "ignore", timeout: 180000 });
+      } catch (e) {
+        return skip(`swiftc couldn't build the full-screen fixture app: ${e.message}`);
+      }
+    }
+    const { spawn } = await import("node:child_process");
+    const onScreen = () => jxa(`JSON.stringify(ObjC.deepUnwrap(ObjC.castRefToObject($.CGWindowListCopyWindowInfo($.kCGWindowListOptionOnScreenOnly, 0))).map((w) => w.kCGWindowNumber))`);
+    const throughOtherFullScreen = async (pip) => {
+      const seen = { flags: { level: pip.level, fullScreenAuxiliary: pip.fullScreenAuxiliary, allSpaces: pip.allSpaces, activationIndependent: pip.activationIndependent }, before: onScreen().includes(pip.window) };
+      const child = spawn(fixture, [], { stdio: ["ignore", "pipe", "ignore"] });
+      const exited = new Promise((r) => child.once("exit", r));
+      let full = false, windowed = false;
+      child.stdout.on("data", (d) => {
+        if (String(d).includes("fullscreen")) full = true;
+        if (String(d).includes("windowed")) windowed = true;
+      });
+      try {
+        if (!(await until("the fixture app in its own full-screen Space", async () => (full ? true : null), 15000).catch(() => false))) return null;
+        await sleep(2500);
+        seen.inOtherFullScreen = onScreen().includes(pip.window);
+        child.kill("SIGUSR1");
+        seen.fixtureLeft = await until("the fixture app out of full screen", async () => (windowed ? true : null), 15000).catch(() => false);
+        await sleep(2500);
+        seen.afterExit = onScreen().includes(pip.window);
+        seen.stillVisible = !!(await pipWindows())?.find((w) => w.window === pip.window && w.visible);
+      } finally {
+        jxa(`ObjC.import("AppKit"); const finder = $.NSRunningApplication.runningApplicationsWithBundleIdentifier("com.apple.finder").firstObject; if (finder) finder.activateWithOptions(0); JSON.stringify(true)`);
+        await sleep(1500);
+        child.kill();
+        await exited;
+        await sleep(1000);
+      }
+      return seen;
+    };
+    const throughOwnFullScreen = async (pip) => {
+      const seen = { flags: { level: pip.level, fullScreenAuxiliary: pip.fullScreenAuxiliary, allSpaces: pip.allSpaces, activationIndependent: pip.activationIndependent }, before: onScreen().includes(pip.window) };
+      const filling = () => jxa(`const main = ObjC.deepUnwrap(ObjC.castRefToObject($.CGDisplayBounds($.CGMainDisplayID()))); JSON.stringify(ObjC.deepUnwrap(ObjC.castRefToObject($.CGWindowListCopyWindowInfo($.kCGWindowListOptionOnScreenOnly, 0)))
+        .filter((w) => w.kCGWindowOwnerPID === ${pid} && w.kCGWindowLayer === 0 && w.kCGWindowBounds.Width >= main.size.width && w.kCGWindowBounds.Height >= main.size.height).length > 0)`);
+      const opened = await evalApp(`return ac.actions.openWindow({ url: "${base}/a?own-fullscreen" })`);
+      const id = typeof opened === "string" ? opened : opened?.windowId ?? opened?.id;
+      try {
+        await until("the second Solara window", async () => ((await evalApp(`return Object.keys(ac.store.getState().windows)`)).includes(id) ? true : null), 10000);
+        await sleep(1500);
+        jxa(`ObjC.import("AppKit"); $.NSRunningApplication.runningApplicationWithProcessIdentifier(${pid}).activateWithOptions(0); JSON.stringify(true)`);
+        await evalApp(`globalThis.expo.modules.SolaraShell.restoreFullScreen(["${id}"], "${id}"); return true`);
+        seen.filled = await until("Solara's window in a real full-screen Space", async () => (filling() ? true : null), 20000).catch(() => false);
+        await sleep(2500);
+        seen.inOwnFullScreen = onScreen().includes(pip.window);
+      } finally {
+        await evalApp(`ac.store.getState().closeWindow("${id}"); return true`).catch(() => null);
+      }
+      seen.left = await until("the full-screen window gone", async () => (!filling() ? true : null), 20000).catch(() => false);
+      await sleep(2500);
+      seen.afterExit = onScreen().includes(pip.window);
+      seen.stillVisible = !!(await pipWindows())?.find((w) => w.window === pip.window && w.visible);
+      return seen;
+    };
+    const ownOk = (seen) => seen.flags.fullScreenAuxiliary && seen.flags.allSpaces && seen.filled && seen.left && seen.before && seen.inOwnFullScreen && seen.afterExit && seen.stillVisible;
+    const visible = process.env.SOLARA_ACCEPTANCE_VISIBLE === "1" && process.env.SOLARA_PIP_OWN_FULLSCREEN === "1";
+    if (!visible) report.say("pip-fullscreen-space: Solara's own full screen needs SOLARA_ACCEPTANCE_VISIBLE=1 (a hidden instance only acts full screen out), so only another app's full-screen Space is checked");
+    const ok = (seen) => seen.flags.fullScreenAuxiliary && seen.flags.allSpaces && seen.flags.activationIndependent === (seen.flags.level >= 3) && seen.before && seen.inOtherFullScreen && seen.fixtureLeft && seen.afterExit && seen.stillVisible;
+    const tab = await openTab(`${base}/video?fullscreen-space`, "Video");
+    const out = {};
+    try {
+      await evalApp(`return ac.webviews.get("${tab.id}").setMuted(true)`);
+      const t = await startVideo(tab.id, false);
+      const entered = await cdp(t, "Runtime.evaluate", { expression: "document.getElementById('v').requestPictureInPicture().then(() => 'ok', (e) => e.name)", awaitPromise: true, userGesture: true, returnByValue: true });
+      if (entered.result?.value !== "ok") throw new Error(`requestPictureInPicture: ${JSON.stringify(entered.result)}`);
+      const video = await until("the styled PiP window", async () => (await pipWindows())?.find((w) => w.video && w.styled && w.visible) ?? null, 10000)
+        .catch(async (e) => { throw new Error(`${e.message}: ${JSON.stringify(await cef(`devPictureInPicture()`).catch((x) => String(x)))}`); });
+      if (visible) out.videoOwn = await throughOwnFullScreen(video);
+      await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
+      await until("Page A shown", async () => (await state()).active === first.id);
+      out.video = await throughOtherFullScreen(video);
+      if (!out.video) return skip("the fixture app never entered a full-screen Space in this session");
+      if ((await cef(`devPictureInPictureAction("keepOnTop:0")`)) === "started") {
+        const unpinned = (await pipWindows())?.find((w) => w.window === video.window);
+        out.videoNotOnTop = await throughOtherFullScreen(unpinned);
+        if (!out.videoNotOnTop) return skip("the fixture app never entered a full-screen Space in this session");
+        await cef(`devPictureInPictureAction("keepOnTop:1")`);
+        out.keepOnTopRestored = (await pipWindows())?.find((w) => w.window === video.window)?.level >= 3;
+      } else out.videoNotOnTop = { missing: "no Keep Window on Top seam", flags: {} };
+      await evalApp(`return ac.webviews.get("${tab.id}").exitPictureInPicture()`);
+      await until("video PiP closed", async () => lastEvent(tab.id, "pictureInPicture", (p) => p.kind === "video" && !p.active), 5000);
+      await shownAndMounted(tab.id);
+      const request = await cdp(t, "Runtime.evaluate", {
+        expression: "documentPictureInPicture.requestWindow({ width: 320, height: 180 }).then(() => 'ok', (e) => e.name)",
+        awaitPromise: true, userGesture: true, returnByValue: true,
+      });
+      if (request.result?.value !== "ok") throw new Error(`documentPictureInPicture.requestWindow: ${JSON.stringify(request.result)}`);
+      await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
+      await until("Page A shown", async () => (await state()).active === first.id);
+      const doc = await until("the document PiP window", async () => (await pipWindows())?.find((w) => w.document && w.visible && w.fullScreenAuxiliary !== undefined) ?? null, 5000);
+      await sleep(500);
+      if (visible) out.documentOwn = await throughOwnFullScreen((await pipWindows())?.find((w) => w.window === doc.window) ?? doc);
+      out.document = await throughOtherFullScreen((await pipWindows())?.find((w) => w.window === doc.window) ?? doc);
+      if (!out.document) return skip("the fixture app never entered a full-screen Space in this session");
+      if ((visible && (!ownOk(out.videoOwn) || !ownOk(out.documentOwn))) || !ok(out.video) || out.videoNotOnTop.flags.level !== 0 || out.videoNotOnTop.flags.activationIndependent !== false || !out.videoNotOnTop.afterExit || !out.videoNotOnTop.stillVisible || !out.keepOnTopRestored || !ok(out.document)) throw new Error(JSON.stringify(out));
+      return out;
+    } finally {
+      await evalApp(`return ac.webviews.get("${tab.id}").exitPictureInPicture()`).catch(() => null);
+      await closeTab(tab.id).catch(() => null);
+    }
   });
 
   await check("pip-window", async () => {

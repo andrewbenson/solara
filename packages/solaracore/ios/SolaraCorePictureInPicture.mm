@@ -12,6 +12,8 @@
 
 @interface NSWindow (ACPreventsActivation)
 - (void)_setPreventsActivation:(BOOL)prevents;
+- (void)setActivationIndependence:(BOOL)independence;
+- (bool)activationIndependence;
 - (BOOL)_preventsActivation;
 - (NSInteger)_resizeDirectionForMouseLocation:(NSPoint)location;
 @end
@@ -79,6 +81,15 @@ BOOL ScreenAt(CGFloat x, CGFloat y) {
 
 void PreventActivation(NSWindow *window) {
   if ([window respondsToSelector:@selector(_setPreventsActivation:)]) [window _setPreventsActivation:YES];
+}
+
+void ShowInFullScreenSpaces(NSWindow *window) {
+  NSWindowCollectionBehavior behavior = window.collectionBehavior;
+  behavior &= ~(NSWindowCollectionBehaviorPrimary | NSWindowCollectionBehaviorFullScreenPrimary);
+  behavior |= NSWindowCollectionBehaviorFullScreenAuxiliary;
+  if (behavior != window.collectionBehavior) window.collectionBehavior = behavior;
+  if ([window respondsToSelector:@selector(setActivationIndependence:)])
+    [window setActivationIndependence:window.level >= NSFloatingWindowLevel];
 }
 
 BOOL PreventsActivation(NSWindow *window) {
@@ -371,6 +382,7 @@ typedef NS_ENUM(NSInteger, ACPiPEdge) { ACPiPEdgeNone = 0, ACPiPEdgeLeft = -1, A
 - (void)setKeepOnTop:(BOOL)keepOnTop {
   _keepOnTop = keepOnTop;
   _window.level = keepOnTop ? NSFloatingWindowLevel : NSNormalWindowLevel;
+  ShowInFullScreenSpaces(_window);
 }
 
 - (void)toggleKeepOnTop:(id)sender {
@@ -1276,6 +1288,7 @@ bool Attach(SolaraCoreWebView *view, NSString *host) {
     controller.host = host;
     [controller roundCorners];
     PreventActivation(window);
+    ShowInFullScreenSpaces(window);
     if (solaracore_host::Background()) {
       window.alphaValue = 0;
       window.ignoresMouseEvents = YES;
@@ -1295,6 +1308,25 @@ bool Attach(SolaraCoreWebView *view, NSString *host) {
 }
 
 void WatchZoom() { InstallZoomMonitor(); }
+
+void DocumentEntered() {
+  __block int tries = 0;
+  __block int found = 0;
+  __block void (^look)(void);
+  look = ^{
+    for (NSWindow *window in NSApp.windows) {
+      if (!IsChromeDocumentPictureInPicture(window) || !IsChromeFloatingWindow(window)) continue;
+      ShowInFullScreenSpaces(window);
+      ++found;
+    }
+    if (found || ++tries >= 20) {
+      look = nil;
+      return;
+    }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 50 * NSEC_PER_MSEC), dispatch_get_main_queue(), look);
+  };
+  look();
+}
 
 void TabRequestedActivation(SolaraCoreWebView *view) {
   for (NSWindow *window in NSApp.windows)
@@ -1334,6 +1366,9 @@ void VideoEntered(SolaraCoreWebView *view, NSString *host) {
       @"title" : window.title ?: @"",
       @"video" : @(IsChromeVideoPictureInPicture(window)),
       @"document" : @(IsChromeDocumentPictureInPicture(window)),
+      @"fullScreenAuxiliary" : @((window.collectionBehavior & NSWindowCollectionBehaviorFullScreenAuxiliary) != 0),
+      @"allSpaces" : @((window.collectionBehavior & NSWindowCollectionBehaviorCanJoinAllSpaces) != 0),
+      @"activationIndependent" : @([window respondsToSelector:@selector(activationIndependence)] && [window activationIndependence]),
       @"frame" : NSStringFromRect(window.frame),
       @"visible" : @(window.visible),
       @"alpha" : @(window.alphaValue),
@@ -1362,6 +1397,7 @@ void VideoEntered(SolaraCoreWebView *view, NSString *host) {
   if (!controller) return @"";
   if ([action isEqual:@"selftest"]) [controller runSelfTest];
   else if ([@[ @"close", @"backToTab" ] containsObject:action]) [controller runButtonSelfTest:action];
+  else if ([action hasPrefix:@"keepOnTop:"]) controller.keepOnTop = [[action substringFromIndex:10] boolValue];
   else if ([action isEqual:@"menu"]) return [[controller.menu.itemArray valueForKey:@"title"] componentsJoinedByString:@"|"];
   else if ([action hasPrefix:@"snapshot:"]) return [controller snapshot:[action substringFromIndex:9]];
   else if ([action hasPrefix:@"frame:"]) [controller.window setFrame:NSRectFromString([action substringFromIndex:6]) display:YES];

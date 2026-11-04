@@ -9,6 +9,7 @@ namespace solaracore_pip {
 void WatchZoom();
 
 void VideoEntered(SolaraCoreWebView *view, NSString *host);
+void DocumentEntered();
 
 void TabRequestedActivation(SolaraCoreWebView *view);
 

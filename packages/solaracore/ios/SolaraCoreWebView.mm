@@ -3201,6 +3201,7 @@ static NSString *LinkKeyAction(NSString *key) {
   }
   _inPictureInPicture = [state[@"active"] boolValue];
   [self emit:@"pictureInPicture" payload:@{@"kind" : @"document", @"active" : @([state[@"active"] boolValue])}];
+  if (_inPictureInPicture) solaracore_pip::DocumentEntered();
 }
 
 - (void)tab:(SolaraCoreTab *)tab requestsActivation:(NSString *)reason {

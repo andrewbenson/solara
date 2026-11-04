@@ -56,7 +56,7 @@ backlog, and check this file against the release notes.
 | A tab no longer crashes when a page stops listening for permission changes after the frame it asked from is gone (engine patch; upstream Chromium, .79 included, still crashes) | landed 9bc625fa |
 | Sidebar width and icons-only are per window: resizing one window's sidebar no longer resizes every window | planned |
 | Icons-only sidebar: narrower rail with square tiles, a hover × badge, the traffic lights in the toolbar as Chrome does, no tile fill at rest, pinned tabs styled like other tabs | planned |
-| Switching light/dark updates background tabs' toolbar colour, so switching to one shows no old-colour flash | planned |
+| Switching light/dark updates background tabs' toolbar colour, so switching to one shows no old-colour flash | landed 5cb63f15 |
 
 ## 0.2.2: a fresh engine
 

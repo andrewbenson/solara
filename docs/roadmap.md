@@ -69,6 +69,11 @@ backlog, and check this file against the release notes.
 | Item | Status |
 |---|---|
 | Ad blocking is in force before restored tabs load at launch: each profile's first load waits for uBlock Origin (about 0.3 s), with a 3 s deadline (owner, 2026-11-04) | landed (cb8a5d6b) |
+| Picture in Picture floats over other apps' full-screen Spaces in every mode: the engine sets the full-screen and activation flags itself, video and document PiP alike, with Keep on Top on or off | landed (384a83f6) |
+| Picture in Picture moves freely across displays, including onto a display above the main one | landed (b3b1e575) |
+| Picture in Picture settles on a usable display after a drop into a menu-bar or Dock strip, across a gap between displays, or onto a display that was unplugged | landed (8881dfe1) |
+| The PiP probe finds a styled PiP window with Keep on Top off (test tooling) | landed (d223b40e) |
+| App builds and releases take the published engine for the tree before a local out/ build, so a stale or unlanded engine is never embedded | landed (63480b41) |
 
 ## 0.3.0: the CLI and Raycast revamped, and tabs that cost less
 

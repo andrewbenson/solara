@@ -35,6 +35,34 @@ bool NeighbourPagesAlwaysLive() {
 
 }
 
+void SolaraCoreWebViewsRecheckTheme(void);
+
+@interface ACAppearanceRecheck : NSObject
+@end
+
+@implementation ACAppearanceRecheck {
+  NSUInteger _generation;
+}
+- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context {
+  if (!NSThread.isMainThread) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [self scheduleRecheck];
+    });
+    return;
+  }
+  [self scheduleRecheck];
+}
+- (void)scheduleRecheck {
+  const NSUInteger generation = ++_generation;
+  __weak ACAppearanceRecheck *weakSelf = self;
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 100 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+    ACAppearanceRecheck *strongSelf = weakSelf;
+    if (!strongSelf || strongSelf->_generation != generation) return;
+    SolaraCoreWebViewsRecheckTheme();
+  });
+}
+@end
+
 @interface ACNeighbourWake : NSObject
 @property(nonatomic) CFTimeInterval committedUntil;
 @property(nonatomic) CFTimeInterval speculativeUntil;
@@ -949,6 +977,8 @@ static SolaraCoreTab *StartParkedPage(NSString *url, NSString *profileName, NSSt
 
 + (void)initialize {
   if (self != SolaraCoreWebView.class) return;
+  static ACAppearanceRecheck *appearanceRecheck = [ACAppearanceRecheck new];
+  [NSApp addObserver:appearanceRecheck forKeyPath:@"effectiveAppearance" options:0 context:nullptr];
   [NSNotificationCenter.defaultCenter addObserverForName:@"SolaraPagerActivity"
                                                   object:nil
                                                    queue:nil
@@ -2139,6 +2169,14 @@ static NSView *SharedAncestor(NSView *a, NSView *b) {
   if (_navigationQueued && ![name isEqualToString:@"navigation"]) [self emitNavigation];
   if (_tab) NoteEvent(solaracore_host::BrowserId(_tab), name, payload);
   [self.delegate webView:self event:name payload:payload];
+}
+
+void SolaraCoreWebViewsRecheckTheme(void) {
+  for (SolaraCoreWebView *view in LiveViews().allObjects) {
+    SolaraCoreTab *tab = view->_tab;
+    if (!tab || tab.closed || tab.discarded || tab.frozen || view->_frozen) continue;
+    [view callFrame:@"" kind:@"themeRecheck" json:@"{}"];
+  }
 }
 
 void SolaraCoreWebViewsSetFieldTiming(BOOL on) {

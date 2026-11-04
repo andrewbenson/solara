@@ -883,6 +883,25 @@
     reportTheme();
   };
   addEventListener("pageshow", (e) => e.persisted && resendTheme());
+  const recheckTheme = () => {
+    metaCache = undefined;
+    reportTheme();
+  };
+  let recheckRetry = 0;
+  let pageFrozen = false;
+  apply(listen, document, ["freeze", () => {
+    pageFrozen = true;
+  }]);
+  apply(listen, document, ["resume", guard(() => {
+    pageFrozen = false;
+    recheckTheme();
+  })]);
+  handlers.themeRecheck = () => {
+    if (pageFrozen) return;
+    recheckTheme();
+    apply(clearTimer, window, [recheckRetry]);
+    recheckRetry = after(recheckTheme, 500);
+  };
   document.addEventListener("prerenderingchange", resendTheme);
   addEventListener("load", scheduleTheme);
   let scrollSampleQueued = false;

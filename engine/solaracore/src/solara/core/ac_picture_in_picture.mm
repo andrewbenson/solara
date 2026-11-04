@@ -25,6 +25,7 @@
 #include "chrome/browser/ui/browser_window/public/browser_collection_observer.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
+#include "chrome/browser/solara/pip/ac_pip_mac.h"
 #include "chrome/browser/ui/views/overlay/video_overlay_window_views.h"
 #include "content/public/browser/picture_in_picture_window_controller.h"
 #include "content/public/browser/video_picture_in_picture_window_controller.h"
@@ -118,7 +119,10 @@ class DocumentPipBrowsers : public BrowserCollectionObserver {
         WindowHost::ForBrowser(browser) || !browser->GetWindow()) {
       return;
     }
-    MakeInvisible(browser->GetWindow()->GetNativeWindow().GetNativeNSWindow());
+    if (Background()) {
+      MakeInvisible(browser->GetWindow()->GetNativeWindow().GetNativeNSWindow());
+    }
+    ShowSolaraPictureInPictureInFullScreenSpaces(browser->GetWindow()->GetNativeWindow());
   }
 
  private:
@@ -236,9 +240,7 @@ void TraceAutoPictureInPictureInputs(content::WebContents* contents, const char*
 void StartPictureInPictureObserver() {
   static base::NoDestructor<PictureInPictureObserver> observer;
   PictureInPictureWindowManager::GetInstance()->AddObserver(observer.get());
-  if (Background()) {
-    static base::NoDestructor<DocumentPipBrowsers> documents;
-  }
+  static base::NoDestructor<DocumentPipBrowsers> documents;
 }
 
 }

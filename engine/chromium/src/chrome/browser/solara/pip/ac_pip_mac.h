@@ -15,5 +15,6 @@ void SaveSolaraPictureInPictureBounds(const gfx::Rect& bounds);
 void FadeOutSolaraPictureInPicture(gfx::NativeWindow window,
                                       base::TimeDelta duration);
 void ResetSolaraPictureInPictureFade(gfx::NativeWindow window);
+void ShowSolaraPictureInPictureInFullScreenSpaces(gfx::NativeWindow window);
 
 #endif

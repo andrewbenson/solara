@@ -9,6 +9,7 @@
 #include "base/files/file_path.h"
 #include "base/path_service.h"
 #include "chrome/common/chrome_paths.h"
+#include "components/remote_cocoa/app_shim/native_widget_mac_nswindow.h"
 
 namespace {
 
@@ -94,4 +95,22 @@ void ResetSolaraPictureInPictureFade(gfx::NativeWindow window) {
   layer.opacity = 1;
   [CATransaction commit];
   ns_window.hasShadow = YES;
+}
+
+void ShowSolaraPictureInPictureInFullScreenSpaces(gfx::NativeWindow native) {
+  NSWindow* window = native.GetNativeNSWindow();
+  if (!window) {
+    return;
+  }
+  NSWindowCollectionBehavior behavior = window.collectionBehavior;
+  behavior &= ~(NSWindowCollectionBehaviorPrimary |
+                NSWindowCollectionBehaviorFullScreenPrimary);
+  behavior |= NSWindowCollectionBehaviorFullScreenAuxiliary;
+  if (behavior != window.collectionBehavior) {
+    window.collectionBehavior = behavior;
+  }
+  NativeWidgetMacNSWindow* widget_window =
+      base::apple::ObjCCast<NativeWidgetMacNSWindow>(window);
+  [widget_window
+      setActivationIndependence:window.level >= NSFloatingWindowLevel];
 }

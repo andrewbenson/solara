@@ -125,6 +125,8 @@ case "${RELEASE_BUILD_SETTINGS:-}" in
 esac
 build_input="${RELEASE_BUILD_INPUT:-}"
 if [ "$phase" = sign ] && [ -n "$build_input" ]; then
+  [ "$(cd "$build_input" 2>/dev/null && pwd -P)" != "$(mkdir -p "$dist" && cd "$dist" && pwd -P)" ] \
+    || die "RELEASE_BUILD_INPUT is the release's own dist folder, which the sign phase clears: leave it unset to sign in place"
   archive="$build_input/Solara.xcarchive"
 fi
 if [ "$phase" = sign ] || [ "$phase" = check ]; then

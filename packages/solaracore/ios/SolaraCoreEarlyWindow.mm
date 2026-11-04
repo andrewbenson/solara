@@ -188,8 +188,11 @@ NSString *StateOf(NSDictionary *session, NSString *windowId) {
     if ([w isKindOfClass:NSDictionary.class] && [w[@"id"] isEqual:windowId]) window = w;
   if (!window) return nil;
   NSMutableDictionary *state = [NSMutableDictionary dictionary];
-  for (NSString *key in @[ @"tabLayout", @"addressBar", @"sidebarWidth", @"sidebarIconsOnly", @"bookmarksBar", @"appearance", @"hideToolbarWhileScrolling", @"showFullUrl" ])
-    if (settings[key]) state[[@"s." stringByAppendingString:key]] = settings[key];
+  for (NSString *key in @[ @"tabLayout", @"addressBar", @"sidebarWidth", @"sidebarIconsOnly", @"bookmarksBar", @"appearance", @"hideToolbarWhileScrolling", @"showFullUrl" ]) {
+    id value = settings[key];
+    if ([@[ @"sidebarWidth", @"sidebarIconsOnly" ] containsObject:key] && window[key] && window[key] != NSNull.null) value = window[key];
+    if (value) state[[@"s." stringByAppendingString:key]] = value;
+  }
   for (NSString *key in @[ @"sidebarOpen", @"tabLayout", @"profileId", @"incognito" ])
     if (window[key]) state[[@"w." stringByAppendingString:key]] = window[key];
   NSData *data = [NSJSONSerialization dataWithJSONObject:state options:NSJSONWritingSortedKeys error:nil];

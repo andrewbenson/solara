@@ -27,7 +27,7 @@ function hiddenRail() {
 test("a hidden native rail gives the edge peek an 84 pt width", () => {
   const windowId = hiddenRail();
   assert.equal(S().windows[windowId].sidebarOpen, false);
-  const width = sidebarWidthOf(S().settings, nativeSidebarShell(windowId));
+  const width = sidebarWidthOf(S().windows[windowId], S().settings, nativeSidebarShell(windowId));
   assert.equal(width, 84);
   setPeekShown(windowId, true, PEEK_ORIGIN[0] + width);
   assert.equal(peekShown(windowId), true);
@@ -38,11 +38,11 @@ test("a hidden native rail gives the edge peek an 84 pt width", () => {
 
 test("docking an edge peek keeps the rail and the saved full width", () => {
   const windowId = hiddenRail();
-  setPeekShown(windowId, true, PEEK_ORIGIN[0] + sidebarWidthOf(S().settings, nativeSidebarShell(windowId)));
+  setPeekShown(windowId, true, PEEK_ORIGIN[0] + sidebarWidthOf(S().windows[windowId], S().settings, nativeSidebarShell(windowId)));
   S().toggleSidebar(windowId);
   assert.equal(S().windows[windowId].sidebarOpen, true);
   assert.equal(S().settings.sidebarIconsOnly, true);
   assert.equal(S().settings.sidebarWidth, 260);
-  assert.equal(sidebarWidthOf(S().settings, nativeSidebarShell(windowId)), 84);
+  assert.equal(sidebarWidthOf(S().windows[windowId], S().settings, nativeSidebarShell(windowId)), 84);
   setPeekShown(windowId, false);
 });

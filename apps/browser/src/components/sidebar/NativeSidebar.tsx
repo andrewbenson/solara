@@ -11,7 +11,7 @@ import { sidebarHostProps } from "../nativeHostProps";
 import { useLifecycle } from "../../lib/tabLifecycle";
 import { hex, profileNameColor, profileTheme, selectedTabGlow, spaceLookSource, useSelectedTabGlow, useTheme, type Theme } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
-import { commitSidebarWidth, setSidebarIconsOnly, SIDEBAR_DEFAULT_WIDTH, sidebarWidthOf, SIDEBAR_RAIL_WIDTH } from "../../store/sidebarRail";
+import { commitSidebarWidth, setSidebarIconsOnly, sidebarWidthOf, SIDEBAR_RAIL_WIDTH } from "../../store/sidebarRail";
 import { engineMark, ENGINE_SYMBOLS } from "../../store/engines";
 import { useSettings } from "../../store/hooks";
 import { activeTabId, isIncognitoProfile } from "../../store/model";
@@ -88,9 +88,9 @@ addNativeSettingsHandlers({
         return setSidebarUi({ dragWidth: typeof extra.width === "number" ? { ...rest, [windowId]: extra.width } : rest });
       }
       case "commitWidth":
-        return typeof extra.width === "number" ? commitSidebarWidth(extra.width) : undefined;
+        return typeof extra.width === "number" ? commitSidebarWidth(windowId, extra.width) : undefined;
       case "iconsOnly":
-        return typeof extra.on === "boolean" ? setSidebarIconsOnly(extra.on) : undefined;
+        return typeof extra.on === "boolean" ? setSidebarIconsOnly(windowId, extra.on) : undefined;
     }
   },
 });
@@ -104,8 +104,8 @@ function useShellChrome(windowId: string, addressBar: boolean, theme: Theme): st
   const downloads = useBrowser((s) => downloadsIn(s, windowId).length > 0);
   const downloadsOpen = useBrowser((s) => !!s.windowUi[windowId]?.downloadsOpen);
   const hint = useShortcutHint("downloads");
-  const savedWidth = useBrowser((s) => s.settings.sidebarWidth ?? SIDEBAR_DEFAULT_WIDTH);
-  const iconsOnly = useBrowser((s) => sidebarWidthOf(s.settings, nativeSidebarShell(windowId)) === SIDEBAR_RAIL_WIDTH);
+  const savedWidth = useBrowser((s) => sidebarWidthOf(s.windows[windowId], s.settings, false));
+  const iconsOnly = useBrowser((s) => sidebarWidthOf(s.windows[windowId], s.settings, nativeSidebarShell(windowId)) === SIDEBAR_RAIL_WIDTH);
   const dotsShown = useProfileDotsShown();
   const order = useBrowser(useShallow((s) => s.profileOrder));
   const names = useBrowser(useShallow((s) => order.map((id) => s.profiles[id]?.name ?? "")));

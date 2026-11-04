@@ -10,8 +10,8 @@ public enum SidebarRail {
 
   public static func contains(width given: Double) -> Bool { given <= width + 0.5 }
 
-  public static func effectiveWidth(_ settings: Settings) -> Double {
-    settings.bool("sidebarIconsOnly") ? width : settings.number("sidebarWidth") ?? SidebarChromeMetrics.defaultWidth
+  public static func effectiveWidth(_ window: BrowserWindow, _ settings: Settings) -> Double {
+    window.effectiveSidebarIconsOnly(settings) ? width : window.effectiveSidebarWidth(settings)
   }
 
   static func iconFrame(in bounds: CGRect) -> CGRect {

@@ -138,6 +138,7 @@ extension Session {
         .map { ClosedWindowGroup(group: $0, tabIndexes: $0.tabIds.map { tabIds.jsIndexOf($0) }) }
       var entry = ClosedWindow(
         id: newId("cw"), profileId: w.profileId, sidebarOpen: w.sidebarOpen, frame: w.frame, tabs: entryTabs, groups: groups, closedAt: now)
+      entry.keepPresentation(of: w)
       entry.absent = w.absent.intersection(["frame"])
       closedWindows = Array((closedWindows + [entry]).suffix(maxClosedWindows))
     }
@@ -185,6 +186,41 @@ extension Session {
     }
     w.fullScreen = on ? now : nil
     next.windows[id] = w
+    set(next)
+  }
+
+  public func setWindowSidebar(_ windowId: String, _ patch: JSONObject) throws {
+    guard let window = state.windows[windowId], !window.isSmall else { return }
+    let widths = ["sidebarWidth", "sidePanelWidth"]
+    for key in patch.keys {
+      guard widths.contains(key) ? patch[key]?.number != nil : key == "sidebarIconsOnly" && patch[key]?.bool != nil else {
+        throw CommandError("setWindowSidebar: invalid sidebar patch")
+      }
+    }
+    var next = state
+    var settingsPatch: JSONObject = [:]
+    for (key, value) in patch {
+      let setting = key == "sidePanelWidth" ? "extensionSidePanelWidth" : key
+      settingsPatch[setting] = value
+      for original in state.windows.values where !original.isSmall {
+        var changed = next.windows[original.id]!
+        let target = original.id == windowId
+        switch key {
+        case "sidebarWidth":
+          if target { changed.sidebarWidth = value.number }
+          else if original.sidebarWidth == nil { changed.sidebarWidth = original.effectiveSidebarWidth(state.settings) }
+        case "sidebarIconsOnly":
+          if target { changed.sidebarIconsOnly = value.bool }
+          else if original.sidebarIconsOnly == nil { changed.sidebarIconsOnly = original.effectiveSidebarIconsOnly(state.settings) }
+        case "sidePanelWidth":
+          if target { changed.sidePanelWidth = value.number }
+          else if original.sidePanelWidth == nil { changed.sidePanelWidth = original.effectiveSidePanelWidth(state.settings) }
+        default: break
+        }
+        next.windows[original.id] = changed
+      }
+    }
+    next.settings = next.settings.choosing(settingsPatch)
     set(next)
   }
 
@@ -439,6 +475,11 @@ extension Session {
     func profileOk(_ p: String) -> String { s.profiles[p] != nil ? p : s.settings.defaultProfileId }
     var w = emptyWindow(id, profileOk(entry.profileId), false, entry.frame)
     w.sidebarOpen = entry.sidebarOpen
+    w.tabLayout = entry.tabLayout
+    w.fullScreen = entry.fullScreen
+    w.sidebarWidth = entry.sidebarWidth
+    w.sidebarIconsOnly = entry.sidebarIconsOnly
+    w.sidePanelWidth = entry.sidePanelWidth
     var tabs = s.tabs
     var ids: [String] = []
     for item in entry.tabs {

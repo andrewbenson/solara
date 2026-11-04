@@ -1,3 +1,4 @@
+import { sidebarIconsOnlyOf } from "../store/sidebarRail";
 import { lastTabClosesWindow, onDownload, releaseProfile } from "@solara/solaracore";
 import {
   cancelFocusMove,
@@ -224,7 +225,7 @@ export function menuState(s: BrowserState): MenuState {
   if (s.settings.showFullUrl) checked.push("toggleFullUrl");
   if (s.settings.allowJavaScriptFromAppleEvents) checked.push("toggleJavaScriptFromAppleEvents");
   if (s.settings.addressBar === "sidebar") checked.push("toggleAddressBar");
-  if (s.settings.sidebarIconsOnly) checked.push("toggleSidebarIconsOnly");
+  if (sidebarIconsOnlyOf(w, s.settings)) checked.push("toggleSidebarIconsOnly");
   checked.push(`setBookmarksBar:${s.settings.bookmarksBar}`);
   if ((w?.tabLayout ?? s.settings.tabLayout) === "sidebar") checked.push("toggleTabLayout");
   if (w && !w.sidebarOpen) checked.push("toggleSidebar");

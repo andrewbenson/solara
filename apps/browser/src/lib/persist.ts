@@ -3,7 +3,7 @@ import { readDocumentResult, writeDocument, type DocumentRead } from "@solara/sh
 import { showNotice, showToast } from "../components/layout/toasts";
 import { persistenceRefused, refusePersistence } from "./persistLatch";
 import { useBrowser, type BrowserState, type HydrateData } from "../store/browser";
-import { inPinnedContainer, isIncognitoProfile, newId, privateSession, snapshotTab } from "../store/model";
+import { closedWindowPresentation, inPinnedContainer, isIncognitoProfile, newId, privateSession, snapshotTab } from "../store/model";
 import { earlyLaunchTabOn, launchTab, linkProfile, type LaunchTab } from "../store/launchTab";
 import { launchBackdrop, type LaunchBackdrop } from "./launchBackdrop";
 import { restoreLaunchLook, saveLaunchLook } from "./launchLook";
@@ -214,7 +214,7 @@ export function loadSession(
       ...session.windows.map((w) => ({
         kind: "window" as const,
         id: newId("cw"),
-        window: { profileId: w.profileId, sidebarOpen: w.sidebarOpen, frame: w.frame },
+        window: closedWindowPresentation(w),
         tabs: w.tabIds
           .map((id) => data.tabs?.[id])
           .filter((t): t is Tab => !!t && !inPinnedContainer(pinSource, t.id))

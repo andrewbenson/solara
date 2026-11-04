@@ -10,7 +10,7 @@ import { commandBarFocus, expectFocus } from "../lib/focusClaims";
 
 export const WORKSPACE_COMMANDS: ReadonlySet<string> = new Set([
   "newTab", "closeTab", "closeTabs", "activate", "handOffPin", "activateIndex", "cycle", "navigate", "updateTab", "navigated", "faviconChanged",
-  "duplicateTab", "togglePin", "moveTab", "moveTabBy", "createWindow", "closeWindow", "restoreClosingWindow", "forgetClosedWindow", "setWindowFrame", "setWindowFullScreen", "toggleSidebar",
+  "duplicateTab", "togglePin", "moveTab", "moveTabBy", "createWindow", "closeWindow", "restoreClosingWindow", "forgetClosedWindow", "setWindowFrame", "setWindowFullScreen", "setWindowSidebar", "toggleSidebar",
   "switchProfile", "moveTabsToWindow", "moveTabToProfile", "mergeAllWindows", "reopenClosed", "reopenClosedTab", "reopenClosedWindow",
   "restoreClosed", "createProfile", "updateProfile", "deleteProfile", "reorderProfiles", "setDefaultProfile", "profileDataDeleted",
   "createGroup", "updateGroup", "addTabsToGroup", "removeTabsFromGroup", "ungroup", "newNestedGroup", "closeGroup", "deleteGroup",

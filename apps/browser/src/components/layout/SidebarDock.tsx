@@ -165,8 +165,8 @@ export function DockedLayout({
       (s) =>
         [
           s.windows[windowId]?.sidebarOpen ?? true,
-          sidebarWidthOf(s.settings, nativeSidebarShell(windowId)),
-          s.settings.addressBar === "sidebar" && sidebarWidthOf(s.settings, nativeSidebarShell(windowId)) !== SIDEBAR_RAIL_WIDTH,
+          sidebarWidthOf(s.windows[windowId], s.settings, nativeSidebarShell(windowId)),
+          s.settings.addressBar === "sidebar" && sidebarWidthOf(s.windows[windowId], s.settings, nativeSidebarShell(windowId)) !== SIDEBAR_RAIL_WIDTH,
         ] as const,
     ),
   );

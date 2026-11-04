@@ -1,7 +1,7 @@
 import { appUrlOrigin, displayHost } from "@solara/core";
 import type { BrowserState } from "./browser";
 import { DEFAULT_PROFILE_ID } from "./settings";
-import type { BrowserWindow, Profile, Tab, TabGroup, TabLive, TabSnapshot } from "./types";
+import type { BrowserWindow, ClosedWindow, Profile, Tab, TabGroup, TabLive, TabSnapshot } from "./types";
 
 
 const launch = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -216,4 +216,12 @@ export function windowTitle(s: BrowserState, windowId: string): string {
   const others = viewTabIds(s, windowId).length - 1;
   const label = tab ? tabLabel(tab) : "New Tab";
   return `${profileFor(s, w.profileId).name} — ${label}${others > 0 ? ` & ${plural(others, "Tab")}` : ""}`;
+}
+
+const closedWindowPresentationKeys = ["tabLayout", "fullScreen", "sidebarWidth", "sidebarIconsOnly", "sidePanelWidth"] as const;
+
+export function closedWindowPresentation(w: BrowserWindow): ClosedWindow["window"] {
+  const kept: ClosedWindow["window"] = { profileId: w.profileId, sidebarOpen: w.sidebarOpen, frame: w.frame };
+  for (const key of closedWindowPresentationKeys) if (w[key] !== undefined) Object.assign(kept, { [key]: w[key] });
+  return kept;
 }

@@ -44,6 +44,9 @@ export type BrowserWindow = {
   activeTabIds: Record<string, string>;
   sidebarOpen: boolean;
   tabLayout?: "sidebar" | "top";
+  sidebarWidth?: number;
+  sidebarIconsOnly?: boolean;
+  sidePanelWidth?: number;
   frame: Frame | null;
   fullScreen?: number;
   createdAt: number;
@@ -166,7 +169,7 @@ export type ClosedTab = {
 export type ClosedWindow = {
   kind: "window";
   id: string;
-  window: Pick<BrowserWindow, "profileId" | "sidebarOpen" | "frame">;
+  window: Pick<BrowserWindow, "profileId" | "sidebarOpen" | "frame" | "tabLayout" | "fullScreen" | "sidebarWidth" | "sidebarIconsOnly" | "sidePanelWidth">;
   tabs: (TabSnapshot & { active: boolean; tabId?: string })[];
   groups: (Omit<TabGroup, "tabIds" | "windowId"> & { tabIndexes: number[] })[];
   closedAt: number;

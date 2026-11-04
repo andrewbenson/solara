@@ -9,7 +9,7 @@ import { layout, useTheme } from "../lib/theme";
 import { webviews } from "../lib/webviews";
 import { useBrowser } from "../store/browser";
 import { useIsBookmarked, useSettings, useTabLive } from "../store/hooks";
-import { bookmarkProfileId } from "../store/model";
+import { bookmarkProfileId, tabLayoutOf } from "../store/model";
 import { usePageProgress } from "../store/pageProgress";
 import { openModeFor, openUrl } from "./bookmarks/actions";
 import { showNativePanelNow } from "./CommandPanel";
@@ -112,7 +112,7 @@ export function useNativeToolbarModel({ tabId, geometry, windowId, inSplit, focu
     if (!sidebar) setToolbarExtensionsWidth(windowId, extensionsWidth);
   }, [windowId, extensionsWidth, !sidebar]);
   const showFullUrl = useSettings((s) => s.showFullUrl);
-  const topTabs = useSettings((s) => s.tabLayout === "top");
+  const topTabs = useBrowser((s) => tabLayoutOf(s, windowId) === "top");
   const pending = usePendingUpdate();
   const update = pending && topTabs && !sidebar && (!inSplit || focused) ? { text: UPDATE_PILL_TEXT, short: UPDATE_PILL_SHORT_TEXT, tooltip: updatePillTooltip(pending) } : null;
   const bookmarked = useIsBookmarked(tab?.url ?? "");

@@ -171,6 +171,14 @@ extension Session {
 
   public func updateSettings(_ patch: JSONObject, fromSync: Bool) {
     var next = state
+    let remote = fromSync || fromSyncOrigin || memory.fromSyncDepth > 0
+    if !remote && patch.contains("sidebarIconsOnly") {
+      for original in next.windows.values where original.sidebarIconsOnly != nil {
+        var window = original
+        window.sidebarIconsOnly = nil
+        next.windows[window.id] = window
+      }
+    }
     next.settings = next.settings.updated(patch, fromSync: fromSync)
     set(next)
   }

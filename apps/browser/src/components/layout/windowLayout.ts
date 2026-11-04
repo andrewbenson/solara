@@ -17,7 +17,7 @@ export function addressBarInSidebar(s: BrowserState, windowId: string): boolean 
   return (
     !!w &&
     s.settings.addressBar === "sidebar" &&
-    sidebarWidthOf(s.settings, nativeSidebarShell(windowId)) !== SIDEBAR_RAIL_WIDTH &&
+    sidebarWidthOf(s.windows[windowId], s.settings, nativeSidebarShell(windowId)) !== SIDEBAR_RAIL_WIDTH &&
     (w.sidebarOpen || switchOn("sidebarSlide")) &&
     (w.tabLayout ?? s.settings.tabLayout) === "sidebar"
   );
@@ -37,7 +37,7 @@ export function openingLightsCenter(s: BrowserState, windowId: string): [number,
   if (!w) return null;
   const open = w.sidebarOpen ?? true;
   if ((w.tabLayout ?? s.settings.tabLayout) === "top") return open ? [...TOP_STRIP_LIGHTS_CENTER] : lightsCenter(layout.sidebarWidth);
-  return lightsCenter(open ? 0 : sidebarWidthOf(s.settings, nativeSidebarShell(windowId)), 0, addressBarInSidebar(s, windowId) ? ARC_LIGHTS_CENTER : LIGHTS_CENTER);
+  return lightsCenter(open ? 0 : sidebarWidthOf(s.windows[windowId], s.settings, nativeSidebarShell(windowId)), 0, addressBarInSidebar(s, windowId) ? ARC_LIGHTS_CENTER : LIGHTS_CENTER);
 }
 
 export const SIDEBAR_FIELD = { top: 46, height: layout.rowHeight, radius: 10 } as const;

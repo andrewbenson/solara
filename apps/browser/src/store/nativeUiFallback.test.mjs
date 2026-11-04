@@ -10,6 +10,7 @@ globalThis.acTestNativeModules = {
       sent.push(...[JSON.parse(json)].flat());
       return JSON.stringify({ rev: 0, patches: [] });
     },
+    catchUp: (rev) => JSON.stringify({ rev, patches: [] }),
     addListener: () => ({ remove() {} }),
   },
 };
@@ -59,4 +60,22 @@ test("settingsAndDownloads keeps JS selection, anchors, clicks and window UI red
   assert.deepEqual(S().selection[windowId], [first, third]);
   S().closeWindow(windowId);
   assert.equal(S().windowUi[windowId], undefined);
+});
+
+test("settingsAndDownloads scopes sidebar writes locally and Settings clears the local overrides", () => {
+  const w1 = S().createWindow();
+  const w2 = S().createWindow();
+  sent.length = 0;
+  const oldWidth = S().settings.sidebarWidth;
+  S().setWindowSidebar(w1, { sidebarWidth: 280, sidebarIconsOnly: true, sidePanelWidth: 450 });
+  assert.equal(S().windows[w1].sidebarWidth, 280);
+  assert.equal(S().windows[w2].sidebarWidth, oldWidth);
+  assert.equal(S().windows[w1].sidebarIconsOnly, true);
+  assert.equal(S().windows[w2].sidebarIconsOnly, false);
+  assert.ok(sent.some((c) => c.name === "applyState" && c.args[0].settings.sidebarWidth === 280));
+  S().updateSettings({ sidebarIconsOnly: false }, { fromSync: true });
+  assert.equal(S().windows[w1].sidebarIconsOnly, true);
+  S().updateSettings({ sidebarIconsOnly: true });
+  assert.equal(Object.hasOwn(S().windows[w1], "sidebarIconsOnly"), false);
+  assert.equal(Object.hasOwn(S().windows[w2], "sidebarIconsOnly"), false);
 });

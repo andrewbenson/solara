@@ -301,10 +301,10 @@ final class SidebarShellColumn: NSView, DevDropDestination {
 public enum SidebarChromeRead {
   public static func snapshot(windowId: String) -> [String: Any]? {
     guard let column = NativeSidebarShell.column(windowId) else { return nil }
-    let settings = NativeStoreHandle.store?.state.settings
-    let committed = settings?["sidebarWidth"]?.number ?? SidebarChromeMetrics.defaultWidth
-    let effective = settings.map(SidebarRail.effectiveWidth) ?? committed
-    return ["liveWidth": Double(column.frame.width), "committedWidth": committed, "effectiveWidth": effective, "iconsOnly": settings?.bool("sidebarIconsOnly") ?? false]
+    guard let state = NativeStoreHandle.store?.state, let window = state.windows[windowId] else { return nil }
+    let committed = window.effectiveSidebarWidth(state.settings)
+    let effective = SidebarRail.effectiveWidth(window, state.settings)
+    return ["liveWidth": Double(column.frame.width), "committedWidth": committed, "effectiveWidth": effective, "iconsOnly": window.effectiveSidebarIconsOnly(state.settings)]
   }
 }
 #endif

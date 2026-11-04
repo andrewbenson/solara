@@ -15,7 +15,8 @@ import type { PageEngine } from "@solara/solaracore";
 import type { StateCreator } from "zustand";
 import type { DeveloperModeState } from "../lib/developerMode";
 import type { BrowserState } from "./browser";
-import { nativeStoreActive, nativeWrite } from "./nativeStore";
+import { applyingFromSync } from "./syncOrigin";
+import { nativeOwnsWorkspace, nativeStoreActive, nativeWrite } from "./nativeStore";
 
 export type SearchEngineId = string;
 
@@ -282,8 +283,21 @@ const newEngineId = () => `engine-${Date.now().toString(36)}-${(++engineCounter)
 export const createSettingsSlice: StateCreator<BrowserState, [], [], SettingsSlice> = (set, get) => ({
   settings: DEFAULT_SETTINGS,
   updateSettings(patch, { fromSync = false } = {}) {
-    if (nativeStoreActive()) return void nativeWrite({ name: "updateSettings", args: [patch, { fromSync }] });
-    set((s) => ({ settings: fromSync ? { ...s.settings, ...patch } : choose(s.settings, withLinkKeysApart(s.settings, patch)) }));
+    fromSync = fromSync || applyingFromSync();
+    const resetIconsOnly = !fromSync && "sidebarIconsOnly" in patch;
+    const followingWindows = () => Object.fromEntries(Object.entries(get().windows).map(([id, window]) => {
+      const { sidebarIconsOnly, ...rest } = window;
+      return [id, rest];
+    }));
+    if (nativeStoreActive()) {
+      nativeWrite({ name: "updateSettings", args: [patch, { fromSync }] });
+      if (!nativeOwnsWorkspace() && resetIconsOnly) set({ windows: followingWindows() });
+      return;
+    }
+    set((s) => ({
+      settings: fromSync ? { ...s.settings, ...patch } : choose(s.settings, withLinkKeysApart(s.settings, patch)),
+      ...(resetIconsOnly ? { windows: followingWindows() } : {}),
+    }));
   },
 
   setSearchEngine(id) {

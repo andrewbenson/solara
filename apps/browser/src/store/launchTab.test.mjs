@@ -97,6 +97,23 @@ test("no hint when the next launch won't restore the session", () => {
   assert.equal(JSON.parse(stub.docs.get("session.json")).launchTab, null);
 });
 
+test("starting fresh archives each window with its own sidebar, side panel and layout", () => {
+  hydrate([
+    win("w1", ["a"], "a", { tabLayout: "top", sidebarWidth: 240, sidebarIconsOnly: false, sidePanelWidth: 390 }),
+    win("w2", ["b"], "b", { sidebarWidth: 310, sidebarIconsOnly: true, sidePanelWidth: 480 }),
+  ], [tab("a", "w1", "https://a.com/"), tab("b", "w2", "https://b.com/")], { focusedWindowId: "w1" });
+  S().updateSettings({ restoreSession: false, sidebarWidth: 310, extensionSidePanelWidth: 480 });
+  flushPersistence();
+  S().hydrate(loadSession());
+  assert.deepEqual(S().windows, {});
+  const archived = S().closedWindows.find((c) => c.window.sidebarWidth === 240);
+  assert.deepEqual(
+    { tabLayout: archived?.window.tabLayout, sidebarIconsOnly: archived?.window.sidebarIconsOnly, sidePanelWidth: archived?.window.sidePanelWidth },
+    { tabLayout: "top", sidebarIconsOnly: false, sidePanelWidth: 390 },
+  );
+  S().updateSettings({ restoreSession: true });
+});
+
 const savedHint = () => (flushPersistence(), JSON.parse(stub.docs.get("session.json")).launchTab);
 
 test("staleness: a navigation, a switch, a close and a window change all move the hint", () => {

@@ -627,7 +627,7 @@ export function DownloadMagnet() {
   const sidebarWidth = useSidebarWidth(windowId);
   const topStrip = useTabLayout() === "top";
   const addressBar = useAddressBarInSidebar();
-  const iconsOnly = useBrowser((s) => sidebarWidthOf(s.settings, nativeSidebarShell(windowId)) === SIDEBAR_RAIL_WIDTH);
+  const iconsOnly = useBrowser((s) => sidebarWidthOf(s.windows[windowId], s.settings, nativeSidebarShell(windowId)) === SIDEBAR_RAIL_WIDTH);
   const railDots = useProfileDotsShown();
   const [flight, setFlight] = useState<{ id: string; path: string } | null>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });

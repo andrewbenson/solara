@@ -49,6 +49,7 @@ globalThis.acTestNativeModules = {
 const { useBrowser } = await import("./browser.ts");
 const { startPersistence } = await import("../lib/persist.ts");
 const { writeState } = await import("./nativeStore.ts");
+const { asSyncOrigin } = await import("./syncOrigin.ts");
 const { PATCH_COMMANDS } = await import("@solara/store");
 const { workspaceFromPatch, workspaceFromSnapshot } = await import("./nativeWorkspace.ts");
 const S = () => useBrowser.getState();
@@ -232,4 +233,19 @@ test("mixed UI writes forward only writable focus fields", () => {
   } finally {
     console.warn = warn;
   }
+});
+
+test("owned window sidebar writes send one command without a JS workspace write", () => {
+  const before = S().windows;
+  sent.length = 0;
+  S().setWindowSidebar("w1", { sidebarWidth: 280, sidebarIconsOnly: true, sidePanelWidth: 450 });
+  assert.deepEqual(sent, [{ name: "setWindowSidebar", args: ["w1", { sidebarWidth: 280, sidebarIconsOnly: true, sidePanelWidth: 450 }] }]);
+  assert.equal(S().windows, before);
+});
+
+
+test("owned sync-origin settings carry the explicit sync option", () => {
+  sent.length = 0;
+  asSyncOrigin(() => S().updateSettings({ sidebarIconsOnly: false }));
+  assert.deepEqual(sent, [{ name: "updateSettings", args: [{ sidebarIconsOnly: false }, { fromSync: true }] }]);
 });

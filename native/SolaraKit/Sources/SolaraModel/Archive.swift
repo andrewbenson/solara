@@ -305,6 +305,11 @@ public struct ClosedWindow: JSONConvertible {
   public var profileId: String
   public var sidebarOpen: Bool
   public var frame: [Double]?
+  public var tabLayout: String?
+  public var fullScreen: Double?
+  public var sidebarWidth: Double?
+  public var sidebarIconsOnly: Bool?
+  public var sidePanelWidth: Double?
   public var tabs: [ClosedWindowTab]
   public var groups: [ClosedWindowGroup]
   public var closedAt: Double
@@ -327,10 +332,15 @@ public struct ClosedWindow: JSONConvertible {
   public init(json: JSONObject) throws {
     let f = Fields(json, known: ["kind", "id", "window", "tabs", "groups", "closedAt"])
     id = f.string("id")
-    let w = Fields(f.value("window")?.object ?? [:], known: ["profileId", "sidebarOpen", "frame"])
+    let w = Fields(f.value("window")?.object ?? [:], known: ["profileId", "sidebarOpen", "frame", "tabLayout", "fullScreen", "sidebarWidth", "sidebarIconsOnly", "sidePanelWidth"])
     profileId = w.string("profileId")
     sidebarOpen = w.bool("sidebarOpen")
     frame = w.optionalNumbers("frame")
+    tabLayout = w.optionalString("tabLayout")
+    fullScreen = w.optionalNumber("fullScreen")
+    sidebarWidth = w.optionalNumber("sidebarWidth")
+    sidebarIconsOnly = w.optionalBool("sidebarIconsOnly")
+    sidePanelWidth = w.optionalNumber("sidePanelWidth")
     windowExtra = w.extra
     windowKeyOrder = w.order
     absent = w.absent(["frame"])
@@ -345,6 +355,11 @@ public struct ClosedWindow: JSONConvertible {
     var w = Encoder(extra: windowExtra, order: windowKeyOrder)
     w.set("profileId", profileId)
     w.set("sidebarOpen", sidebarOpen)
+    w.optional("tabLayout", tabLayout)
+    w.optional("fullScreen", fullScreen)
+    w.optional("sidebarWidth", sidebarWidth)
+    w.optional("sidebarIconsOnly", sidebarIconsOnly)
+    w.optional("sidePanelWidth", sidePanelWidth)
     if !absent.contains("frame") { w.nullable("frame", frame) }
     var e = Encoder(extra: extra, order: keyOrder)
     e.set("kind", "window")
@@ -634,5 +649,15 @@ public struct ClosedGroup: JSONConvertible {
     e.set("index", Double(index))
     e.set("closedAt", closedAt)
     return e.object
+  }
+}
+
+extension ClosedWindow {
+  public mutating func keepPresentation(of window: BrowserWindow) {
+    tabLayout = window.tabLayout
+    fullScreen = window.fullScreen
+    sidebarWidth = window.sidebarWidth
+    sidebarIconsOnly = window.sidebarIconsOnly
+    sidePanelWidth = window.sidePanelWidth
   }
 }

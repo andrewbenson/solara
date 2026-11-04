@@ -34,13 +34,24 @@ private func railLayout(_ state: BrowserState, height: CGFloat = 600, divided: B
   }
 
   @Test func theEffectiveWidthIsTheRailOnlyWhileItIsOnAndKeepsTheFullWidth() {
+    let window = BrowserWindow(id: "w1", profileId: "default", incognito: false, frame: nil, createdAt: 0)
     let full = Settings.defaults.merging(["sidebarWidth": 240])
-    #expect(SidebarRail.effectiveWidth(full) == 240)
+    #expect(SidebarRail.effectiveWidth(window, full) == 240)
     let rail = full.merging(["sidebarIconsOnly": true])
-    #expect(SidebarRail.effectiveWidth(rail) == SidebarRail.width)
+    #expect(SidebarRail.effectiveWidth(window, rail) == SidebarRail.width)
     #expect(rail.number("sidebarWidth") == 240)
-    #expect(SidebarRail.effectiveWidth(Settings.defaults) == 190)
+    #expect(SidebarRail.effectiveWidth(window, Settings.defaults) == 190)
     #expect(Settings.defaults.values["sidebarIconsOnly"] == .bool(false))
+  }
+
+  @Test func theRailUsesItsOwnWindowsWidthAndIconsOnlyValue() {
+    var window = BrowserWindow(id: "w1", profileId: "default", incognito: false, frame: nil, createdAt: 0)
+    let settings = Settings.defaults.merging(["sidebarWidth": 240, "sidebarIconsOnly": true])
+    window.sidebarWidth = 280
+    window.sidebarIconsOnly = false
+    #expect(SidebarRail.effectiveWidth(window, settings) == 280)
+    window.sidebarIconsOnly = true
+    #expect(SidebarRail.effectiveWidth(window, settings) == SidebarRail.width)
   }
 
   @Test func topAppsStackInOneColumnAcrossTheRail() throws {

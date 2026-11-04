@@ -37,6 +37,7 @@ extension Session {
           ClosedWindowTab(snapshot: snapshotTab($0), active: active.contains($0.id), tabId: nil)
         }
         var entry = ClosedWindow(id: newId("cw"), profileId: w.profileId, sidebarOpen: w.sidebarOpen, frame: w.frame, tabs: tabs, groups: [], closedAt: now)
+        entry.keepPresentation(of: w)
         entry.absent = w.absent.intersection(["frame"])
         if tabs.contains(where: { !$0.snapshot.url.isEmpty }) { closed.append(entry) }
       }

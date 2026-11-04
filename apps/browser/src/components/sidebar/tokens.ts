@@ -122,7 +122,7 @@ export const SIDEBAR_MIN_WIDTH = 160;
 export const SIDEBAR_MAX_WIDTH = 400;
 
 export function useSidebarWidth(windowId: string): number {
-  const saved = useBrowser((s) => sidebarWidthOf(s.settings, nativeSidebarShell(windowId)));
+  const saved = useBrowser((s) => sidebarWidthOf(s.windows[windowId], s.settings, nativeSidebarShell(windowId)));
   const dragging = useSidebarUi((u) => u.dragWidth[windowId]);
   return dragging ?? saved;
 }

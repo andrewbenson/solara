@@ -1,9 +1,9 @@
+import { setWindowSidebar, type WindowSidebarPatch } from "./sidebarRail";
 import type { StateCreator } from "zustand";
 import type { BrowserState } from "./browser";
 import { rejoinGroups } from "./groups";
 import { closingWindowUndos as closing, remapClosingWindow, undoClosingWindow } from "./closingWindowRestore";
-import {
-  findLast,
+import { findLast,
   IDLE_LIVE,
   incognitoOriginal,
   incognitoProfileId,
@@ -18,8 +18,7 @@ import {
   restoreId,
   snapshotTab,
   viewTabIds,
-  without,
-} from "./model";
+  without, closedWindowPresentation } from "./model";
 import { newTabSlot, nextToActive } from "./openers";
 import { groupWithOpener, nextPinChoice, placeChoiceKey, restoringGroup } from "./organize";
 import { hasLoadedPage, hasPage } from "./pageSession";
@@ -49,6 +48,7 @@ export type WindowsSlice = {
   windows: Record<string, BrowserWindow>;
   windowOrder: string[];
   closedWindows: ClosedWindow[];
+  setWindowSidebar(windowId: string, patch: WindowSidebarPatch): void;
   parkedPins: Record<string, ParkedPins>;
 
   createWindow(options?: CreateWindowOptions): string;
@@ -211,6 +211,10 @@ export const createWindowsSlice: StateCreator<BrowserState, [], [], WindowsSlice
     return id;
   },
 
+  setWindowSidebar(windowId, patch) {
+    setWindowSidebar(windowId, patch);
+  },
+
   closeWindow(id) {
     const before = get();
     const s = returnSharedPages(before, id);
@@ -225,7 +229,7 @@ export const createWindowsSlice: StateCreator<BrowserState, [], [], WindowsSlice
       const entry: ClosedWindow = {
         kind: "window",
         id: newId("cw"),
-        window: { profileId: w.profileId, sidebarOpen: w.sidebarOpen, frame: w.frame },
+        window: closedWindowPresentation(w),
         tabs: tabs.map((t) => ({ ...snapshotTab(t), active: active.has(t.id), ...(hasLoadedPage(t) ? { tabId: t.id } : pendingRestore(t) ? { tabId: pendingRestore(t) } : {}) })),
         groups: Object.values(s.groups)
           .filter((g) => g.windowId === id && !g.pinned && (!sharesTabs(s) || g.tabIds.some((t) => tabIds.includes(t))))
@@ -486,7 +490,7 @@ function restoreWindow(s: BrowserState, entry: ClosedWindow): BrowserState {
   const id = newId("w");
   const profileOk = (p: string) => (s.profiles[p] ? p : s.settings.defaultProfileId);
   const w = emptyWindow(id, profileOk(entry.window.profileId), false, entry.window.frame);
-  w.sidebarOpen = entry.window.sidebarOpen;
+  Object.assign(w, entry.window, { profileId: profileOk(entry.window.profileId) });
   const tabs = { ...s.tabs };
   const live = { ...s.live };
   const ids: string[] = [];

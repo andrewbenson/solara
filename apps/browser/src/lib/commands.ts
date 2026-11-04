@@ -114,7 +114,7 @@ export function runCommand({ command, arg, windowId: requested }: CommandEvent) 
     case "toggleJavaScriptFromAppleEvents":
       return s.updateSettings({ allowJavaScriptFromAppleEvents: !s.settings.allowJavaScriptFromAppleEvents });
     case "toggleSidebarIconsOnly":
-      return toggleSidebarIconsOnly();
+      return toggleSidebarIconsOnly(resolveWindowId(s, requested) ?? "");
     case "toggleAddressBar":
       return s.updateSettings({ addressBar: s.settings.addressBar === "sidebar" ? "toolbar" : "sidebar" });
     case "openSettings":

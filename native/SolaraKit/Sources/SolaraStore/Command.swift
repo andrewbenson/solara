@@ -25,13 +25,13 @@ public struct Command: Sendable, Equatable {
   public var json: JSONValue { ["name": .string(name), "args": .array(args)] }
 
   public static let durable: Set<String> = [
-    "updateSettings", "closeWindow", "restoreClosingWindow", "deleteProfile", "createProfile", "updateProfile", "reorderProfiles", "setDefaultProfile",
+    "updateSettings", "setWindowSidebar", "closeWindow", "restoreClosingWindow", "deleteProfile", "createProfile", "updateProfile", "reorderProfiles", "setDefaultProfile",
   ]
 
   public var isDurable: Bool { Command.durable.contains(name) }
 
   public static let known: Set<String> = [
-    "pageReport", "registerKeepAliveRuntime", "importWorkspace", "setWindowLayout", "newTab", "closeTab", "closeTabs", "activate", "handOffPin", "activateIndex", "cycle", "navigate", "updateTab", "navigated", "faviconChanged",
+    "pageReport", "registerKeepAliveRuntime", "importWorkspace", "setWindowLayout", "setWindowSidebar", "newTab", "closeTab", "closeTabs", "activate", "handOffPin", "activateIndex", "cycle", "navigate", "updateTab", "navigated", "faviconChanged",
     "duplicateTab", "togglePin", "moveTab", "moveTabBy", "createWindow", "closeWindow", "restoreClosingWindow", "forgetClosedWindow", "setWindowFrame", "setWindowFullScreen", "toggleSidebar",
     "switchProfile", "moveTabsToWindow", "moveTabToProfile", "mergeAllWindows", "reopenClosed", "reopenClosedTab", "reopenClosedWindow",
     "restoreClosed", "createProfile", "updateProfile", "deleteProfile", "reorderProfiles", "setDefaultProfile", "profileDataDeleted",
@@ -152,6 +152,7 @@ extension Session {
     case "pageReport": try pageReport(try a.requireString(0), a[1] ?? .null)
     case "registerKeepAliveRuntime": result = JSONValue(try registerKeepAliveRuntime())
     case "importWorkspace": result = try importWorkspace(a[0] ?? .null)
+    case "setWindowSidebar": try setWindowSidebar(try a.requireString(0), a.object(1))
     case "setWindowLayout":
       let id = try a.requireString(0)
       let layout = try a.requireString(1)

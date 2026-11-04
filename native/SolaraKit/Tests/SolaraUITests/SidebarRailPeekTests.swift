@@ -7,8 +7,9 @@ import Testing
 @MainActor
 @Suite struct SidebarRailPeekTests {
   private func hiddenRail() -> SidebarDockTests.Rig {
+    let window = BrowserWindow(id: "w1", profileId: "default", incognito: false, frame: nil, createdAt: 0)
     let settings = Settings.defaults.merging(["sidebarWidth": 260, "sidebarIconsOnly": true])
-    let width = SidebarRail.effectiveWidth(settings)
+    let width = SidebarRail.effectiveWidth(window, settings)
     let rig = SidebarDockTests.Rig(SidebarDockState(open: false, width: width))
     rig.shell.update { $0.sidebarWidth = CGFloat(width) }
     return rig

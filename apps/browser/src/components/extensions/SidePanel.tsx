@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Easing, Image, PanResponder, StyleSheet, Text, View } from "react-native";
 import { layout, useTheme } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
+import { setWindowSidebar, sidePanelWidthOf } from "../../store/sidebarRail";
 import { shownPageId } from "../../store/peek";
 import { useWindowId } from "../../store/hooks";
 import { useWindowShell } from "../layout/ShellBackdrop";
@@ -40,7 +41,7 @@ function refocusActivePageOnPanelLoss() {
 export function ExtensionSidePanel() {
   const windowId = useWindowId();
   const panel = useExtensions((e) => e.sidePanels[windowId]);
-  const savedWidth = useBrowser((s) => s.settings.extensionSidePanelWidth ?? 360);
+  const savedWidth = useBrowser((s) => sidePanelWidthOf(s.windows[windowId], s.settings));
   const [dragWidth, setDragWidth] = useState<number | null>(null);
   const appear = useRef(new Animated.Value(0)).current;
   const [shown, setShown] = useState(panel);
@@ -65,7 +66,7 @@ export function ExtensionSidePanel() {
     () => (raw: number) => {
       const target = clamp(raw);
       const finish = () => {
-        useBrowser.getState().updateSettings({ extensionSidePanelWidth: target });
+        setWindowSidebar(windowId, { sidePanelWidth: target });
         setDragWidth(null);
       };
       if (raw === target) return finish();
@@ -79,7 +80,7 @@ export function ExtensionSidePanel() {
         if (finished) finish();
       });
     },
-    [],
+    [windowId],
   );
   const responder = useMemo(
     () =>
@@ -87,7 +88,7 @@ export function ExtensionSidePanel() {
         onStartShouldSetPanResponder: () => true,
         onPanResponderGrant: () => {
           settling.current?.stop();
-          start.current = useBrowser.getState().settings.extensionSidePanelWidth ?? 360;
+          start.current = sidePanelWidthOf(useBrowser.getState().windows[windowId], useBrowser.getState().settings);
           setDragWidth(start.current);
         },
         onPanResponderMove: (_, g) => setDragWidth(rubberBand(start.current - g.dx)),
@@ -95,7 +96,7 @@ export function ExtensionSidePanel() {
         onPanResponderTerminate: () => setDragWidth(null),
         onPanResponderTerminationRequest: () => false,
       }),
-    [],
+    [windowId],
   );
 
   if (!shown) return null;
@@ -118,7 +119,7 @@ export function ExtensionSidePanel() {
         <PanelCard key={`${shown.extensionId}|${shown.pageProfile}|${shown.url}|${shown.opened}`} windowId={windowId} panel={shown} />
         <View
           {...responder.panHandlers}
-          onDoubleClick={() => useBrowser.getState().updateSettings({ extensionSidePanelWidth: 360 })}
+          onDoubleClick={() => setWindowSidebar(windowId, { sidePanelWidth: 360 })}
           style={{ position: "absolute", top: 0, bottom: 0, left: -3, width: 7, cursor: "col-resize" }}
         />
       </Animated.View>
@@ -163,7 +164,7 @@ function NativePanelCard({ windowId, panel, width, onResize }: { windowId: strin
           const [request] = unwrapPageEvent("onOpenWindow", payload.request as OpenWindowRequest) as [OpenWindowRequest];
           openFromPage(request, { windowId, profileId: pageProfileId(windowId, pageProfile) });
         } else if (name === "resize") live.current.onResize(Number(payload.width), !!payload.ended);
-        else if (name === "resetWidth") useBrowser.getState().updateSettings({ extensionSidePanelWidth: 360 });
+        else if (name === "resetWidth") setWindowSidebar(windowId, { sidePanelWidth: 360 });
       }),
     [windowId, profile, extensionId, pageProfile],
   );

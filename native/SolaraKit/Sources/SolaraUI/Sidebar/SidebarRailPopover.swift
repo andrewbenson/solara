@@ -129,7 +129,7 @@ final class SidebarRailPopover: NSObject, NSPopoverDelegate {
 
   private func render() {
     guard let page = pages.last, let context else { return }
-    let width = CGFloat(min(320, max(200, context.state.settings.number("sidebarWidth") ?? SidebarChromeMetrics.defaultWidth)))
+    let width = CGFloat(min(320, max(200, context.state.windows[context.windowId]?.effectiveSidebarWidth(context.state.settings) ?? SidebarChromeMetrics.defaultWidth)))
     content.set(title: page.title, rows: page.rows, selection: page.selection, back: pages.count > 1, refresh: page.folderId != nil, width: width, context: context)
     popover.appearance = NSAppearance(named: context.palette.dark ? .darkAqua : .aqua)
     popover.contentSize = content.frame.size

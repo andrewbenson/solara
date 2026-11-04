@@ -181,6 +181,25 @@ func replayOnce(_ json: JSONValue) throws -> (JSONValue, JSONValue?, [String]) {
   return (.object(workspace), commit.result, problems)
 }
 
+func expectedReplayStateWithClosedWindowPresentation(_ json: JSONValue) -> JSONObject {
+  var expected = json["after"]!.object!
+  guard json["command"]?["name"] == "closeWindow",
+        let id = json["command"]?["args"]?.array?.first?.string,
+        let window = json["before"]?["windows"]?[id]?.object,
+        let archives = expected["closedWindows"]?.array else { return expected }
+  let previousIds = Set((json["before"]?["closedWindows"]?.array ?? []).compactMap { $0["id"]?.string })
+  expected["closedWindows"] = .array(archives.map { archive in
+    guard let id = archive["id"]?.string, !previousIds.contains(id),
+          var entry = archive.object, var presentation = entry["window"]?.object else { return archive }
+    for key in ["tabLayout", "fullScreen", "sidebarWidth", "sidebarIconsOnly", "sidePanelWidth"] {
+      if presentation[key] == nil, let value = window[key], !value.isNull { presentation[key] = value }
+    }
+    entry["window"] = .object(presentation)
+    return .object(entry)
+  })
+  return expected
+}
+
 @Suite struct Phase1bReplay {
   static let cases = ReplayCases.load(phase: "1b")
 
@@ -206,7 +225,7 @@ func replayOnce(_ json: JSONValue) throws -> (JSONValue, JSONValue?, [String]) {
         var stateObject = replayed.object ?? [:]
         for key in ["selection", "selectionAnchors", "windowUi"] { stateObject.removeValue(forKey: key) }
         let state = JSONValue.object(stateObject)
-        var expectedState = json["after"]!.object!
+        var expectedState = expectedReplayStateWithClosedWindowPresentation(json)
         if expectedState["find"] == nil { expectedState["find"] = [:] }
         var expectedUi = expectedState["ui"]?.object ?? [:]
         if expectedUi["appDark"] == nil { expectedUi["appDark"] = true }

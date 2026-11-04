@@ -15,7 +15,8 @@ in the header's slot, survives toggling it out and back and a reload, and opens 
 footer's downloads buttons open the downloads list; the resize handle drags the width live, keeps it on release and
 resets it on a double-click; the footer's profile dots switch profiles; a drop on the header or the footer opens a tab,
 and a tab dragged over the window lights the native drop glow; with top tabs the column and its chrome go away. A click
-on a profile dot after every check makes sure the check left clicks working.`);
+on a profile dot after every check makes sure the check left clicks working. A fresh two-window session checks that
+committing a width or icons-only in one window keeps the other window's sidebar unchanged.`);
   process.exit(2);
 }
 const keep = args.includes("--keep-data");
@@ -35,7 +36,8 @@ const settle = (ms) => new Promise((r) => setTimeout(r, ms));
 const win = () => C.chromeWindows().then((ws) => ws.find((w) => w.hasRoot).window);
 const act = (a) => win().then((n) => C.devWindow(n, a));
 const frame = () => win().then((n) => C.chromeWindows().then((ws) => ws.find((w) => w.window === n).frame));
-const col = () => H.sidebarShell("w1").then((d) => JSON.parse(d));
+const col = (id = "w1") => H.sidebarShell(id).then((d) => JSON.parse(d));
+const savedWidth = (id = "w1") => st().windows[id].sidebarWidth ?? st().settings.sidebarWidth ?? 190;
 const click = (x, y, n = 1) => act("mouse:down:" + x + "," + y + "," + n).then(() => settle(30)).then(() => act("mouse:up:" + x + "," + y + "," + n)).then(() => settle(60));
 `;
 const centre = (c, r) => [Math.round(c.frame[0] + r[0] + r[2] / 2), Math.round(c.frame[1] + r[1] + r[3] / 2)];
@@ -45,12 +47,12 @@ const run = (body) => {
   if (nativePollDeadline && nativePollDeadline - Date.now() < 1000) throw new Error("native comparison has less than 1000 ms remaining");
   return inst.eval(`${HELPERS}\n${body}`, { timeout: nativePollDeadline ? 1000 : 30000 });
 };
-const untilSnapshot = async (what, accept, ms = 5000) => {
+const untilSnapshot = async (what, accept, ms = 5000, windowId = "w1") => {
   const end = Date.now() + ms;
   let last;
   while (end - Date.now() >= 1000) {
     if (!inst.alive) throw new Error(`${what}: instance exited`);
-    last = await inst.snapshot({ windowId: "w1" }, { timeout: 1000 }).catch((error) => ({ error: error.message }));
+    last = await inst.snapshot(windowId ? { windowId } : {}, { timeout: 1000 }).catch((error) => ({ error: error.message }));
     if (Date.now() >= end) break;
     nativePollDeadline = end;
     try {
@@ -177,7 +179,7 @@ try {
   await rep.check("(d) the resize handle drags the width live, keeps it on release, and a double-click resets it", async () => {
     const c = await run(`return col();`);
     const [x, y] = centre(c, c.chrome.resize);
-    const out = await run(`const o = { saved: st().settings.sidebarWidth ?? 190 };
+    const out = await run(`const o = { saved: savedWidth() };
       return act("mouse:down:${x},${y},1").then(() => act("mouse:dragged:${x + 20},${y}")).then(() => act("mouse:dragged:${x + 40},${y}")).then(() => settle(200))
         .then(() => col()).then((c) => ({ ...o, live: c.frame[2] }));`);
     try {
@@ -191,14 +193,14 @@ try {
       await run(`return act("mouse:up:${x + 40},${y},1").then(() => settle(500));`);
     }
     await untilSnapshot("sidebar resize committed width", async (window) => {
-      Object.assign(out, await run(`const committed = st().settings.sidebarWidth; return col().then((c) => ({ committed, after: c.frame[2] }));`));
+      Object.assign(out, await run(`const committed = savedWidth(); return col().then((c) => ({ committed, after: c.frame[2] }));`));
       return Math.abs(window?.sidebarChromeMetrics?.liveWidth - out.after) <= 0.5 &&
         Math.abs(window?.sidebarChromeMetrics?.committedWidth - out.committed) <= 0.5;
     });
-    out.reset = await run(`return click(${x + 40}, ${y}).then(() => click(${x + 40}, ${y}, 2)).then(() => settle(600)).then(() => st().settings.sidebarWidth);`);
+    out.reset = await run(`return click(${x + 40}, ${y}).then(() => click(${x + 40}, ${y}, 2)).then(() => settle(600)).then(() => savedWidth());`);
     if (!(out.live > out.saved + 30) || !(Math.abs(out.committed - out.after) < 1) || out.reset !== 190) throw new Error(JSON.stringify(out));
     await untilSnapshot("sidebar resize reset", async (window) => {
-      const read = await run(`const committed = st().settings.sidebarWidth; return col().then((c) => ({ committed, after: c.frame[2] }));`);
+      const read = await run(`const committed = savedWidth(); return col().then((c) => ({ committed, after: c.frame[2] }));`);
       return Math.abs(window?.sidebarShell?.frame?.[2] - out.reset) <= 0.5 &&
         Math.abs(window?.sidebarChromeMetrics?.committedWidth - out.reset) <= 0.5 &&
         Math.abs(window?.sidebarShell?.frame?.[2] - read.after) <= 0.5 &&
@@ -264,6 +266,56 @@ try {
     await checkColumn("column restored with sidebar tabs", back);
     if (off !== null || !back?.chrome) throw new Error(JSON.stringify({ off, back: !!back }));
     return { off, back: !!back.chrome };
+  });
+
+  await rep.check("(h) a drag, the icons-only command and a relaunch each keep to their own window", async () => {
+    const twoWindows = session({
+      windows: [{ id: "w1", frame: [80, 80, 1280, 800] }, { id: "w2", frame: [120, 120, 1200, 760] }],
+      tabs: [{ id: "a", windowId: "w1", url: "about:blank", title: "A" }, { id: "b", windowId: "w2", url: "about:blank", title: "B" }],
+      settings: { sidebarWidth: 238, sidebarIconsOnly: false, warnBeforeClosingLastTab: false, warnBeforeClosingWindow: false },
+    });
+    const twoWindowLaunch = (fresh) => launch(resolve(appArg), {
+      data: join(scratch, "two-window-data"),
+      fresh,
+      session: fresh ? twoWindows : undefined,
+      onboarded: true,
+      env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_TOP_STRIP: "1" },
+      ready: "return !!ac.store.getState().windows.w1 && !!ac.store.getState().windows.w2",
+    });
+    await inst.quit();
+    inst = await twoWindowLaunch(true);
+    await sleep(2500);
+    const widths = () => run(`return Promise.all([col("w1"), col("w2")]).then((columns) => columns.map((c) => c?.frame?.[2]));`);
+    const matchesColumns = async (what, expected) => {
+      let columns;
+      await untilSnapshot(what, async (_, snapshot) => {
+        columns = await widths();
+        return expected.every((width, index) => {
+          const native = snapshot.windows.find((window) => window.id === "w" + (index + 1))?.sidebarShell?.frame?.[2];
+          return Math.abs(columns[index] - width) <= 0.5 && Math.abs(native - columns[index]) <= 0.5;
+        });
+      }, 5000, null);
+      return columns;
+    };
+    const before = await matchesColumns("both columns at the saved width", [238, 238]);
+    const c = await run(`return col("w1");`);
+    const [x, y] = centre(c, c.chrome.resize);
+    await run(`const w1 = () => C.chromeWindows().then((ws) => ws.find((w) => w.hasRoot && w.frame.includes("1280")).window);
+      const drag = (a) => w1().then((n) => C.devWindow(n, a));
+      return drag("mouse:down:${x},${y},1").then(() => drag("mouse:dragged:${x + 20},${y}")).then(() => drag("mouse:dragged:${x + 40},${y}"))
+        .then(() => settle(200)).then(() => drag("mouse:up:${x + 40},${y},1")).then(() => settle(800));`);
+    const dragged = await widths();
+    if (!(dragged[0] > before[0] + 30)) throw new Error(`the drag in w1 didn't widen it: ${JSON.stringify({ before, dragged })}`);
+    const resized = await matchesColumns("w1 wider after its drag, w2 as it was", [dragged[0], 238]);
+    await run(`ac.runCommand({ command: "toggleSidebarIconsOnly", arg: null, windowId: "w1" }); return settle(800);`);
+    const iconsOnly = await matchesColumns("w1 icons-only, w2 as it was", [84, 238]);
+    await inst.quit();
+    inst = await twoWindowLaunch(false);
+    await sleep(2500);
+    const relaunched = await matchesColumns("each window's sidebar after a relaunch", [84, 238]);
+    await run(`ac.runCommand({ command: "toggleSidebarIconsOnly", arg: null, windowId: "w1" }); return settle(800);`);
+    const back = await matchesColumns("w1 back to its own dragged width", [dragged[0], 238]);
+    return { before, dragged, resized, iconsOnly, relaunched, back };
   });
 } catch (e) {
   rep.record("run", { error: e });

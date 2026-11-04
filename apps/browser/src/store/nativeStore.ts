@@ -238,6 +238,7 @@ function wrapActions(store: Replica) {
     const prelude = COMMAND_PRELUDES.get(name);
     wrapped[name] = (...args: unknown[]) => {
       if ((name === "deleteProfile" || name === "createProfile" || name === "updateProfile" || name === "reorderProfiles") && nativeSafeMode()) return (s[name] as (...a: unknown[]) => unknown)(...args);
+      if (name === "updateSettings" && applyingFromSync()) args[1] = { ...(args[1] as object | undefined), fromSync: true };
       prelude?.(...args);
       const response = nativeWrite(encodeCommand(name, args));
       return response?.result ?? (name === "restoreClosingWindow" ? null : undefined);

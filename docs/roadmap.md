@@ -63,7 +63,7 @@ backlog, and check this file against the release notes.
 | Revamp the Raycast extension (extras/raycast-solara) against the revamped CLI | planned |
 | Publish the extension on the Raycast Store: meet its review guidelines and submit to raycast/extensions (a public PR in another project, so it needs the owner's OK at submission) | planned |
 | Video call pop-out (Google Meet and others: the floating window a call opens, document picture-in-picture): make getting back to the call's tab easy and obvious; first find out what that window lets us change | planned |
-| Tab discarding (highest priority of the performance items): Chromium's memory saver unloads background tabs and wakes them on click, with site exceptions and protection for tabs playing audio, holding a form or in a call; reconcile with Solara's existing sleeping tabs | planned |
+| Tab discarding (highest priority of the performance items): Chromium's memory saver unloads background tabs and wakes them on click, with site exceptions and protection for tabs playing audio, holding a form or in a call; reconcile with Solara's existing sleeping tabs | in progress: the engine layer landed 838681e6 (Chromium's reasons a tab can't sleep, sleeping only an eligible tab, per-profile site exceptions); the app's use of it is next |
 | Heavy tab detection: Chromium's detector flags a tab using too much CPU or memory; Solara badges it (native badges, replacing the React Native tab badges) and offers to put it to sleep | planned |
 | Per-tab CPU and memory attribution: Chromium's resource attribution splits a shared process's cost between its tabs | planned |
 | Memory use per tab on hover cards (native) | planned |

@@ -50,21 +50,21 @@ backlog, and check this file against the release notes.
 
 | Item | Status |
 |---|---|
-| Fixes from the owner's two-Mac sync-join test of 0.1.3 | waiting on the test |
-| The toolbar takes a page's header colour right when it's made with color-mix(), color() or oklch() (a light page showed a near-black toolbar, in light and dark) | landed a1d6ccda |
-| The Share picker opens at the click point when DevTools is docked on the left | landed 0fa6e53e |
-| A tab no longer crashes when a page stops listening for permission changes after the frame it asked from is gone (engine patch; upstream Chromium, .79 included, still crashes) | landed 9bc625fa |
-| Sidebar width and icons-only are per window: resizing one window's sidebar no longer resizes every window | landed 1c3e58ef |
-| Icons-only sidebar: narrower rail with square tiles, a hover × badge, the traffic lights in the toolbar as Chrome does, no tile fill at rest, pinned tabs styled like other tabs | rail A (Chrome's tile metrics, the hover × badge, no fill at rest, pinned tabs like other tabs) landed 2f9ad743; rail B (the 42 pt rail, traffic lights in the toolbar, the framed page, the toolbar fading into the frame) landed e094ddf8 |
-| Switching light/dark updates background tabs' toolbar colour, so switching to one shows no old-colour flash | landed 5cb63f15 |
-| Picture in Picture stays on top of full-screen windows, including other apps' full-screen spaces (owner, 2026-11-03) | landed in a47166bc (app side; owner hand test: Solara itself full screen, two monitors) |
+| The toolbar takes a page's header colour right when it's made with color-mix(), color() or oklch() (a light page showed a near-black toolbar, in light and dark) | shipped (0.2.1) |
+| The Share picker opens at the click point when DevTools is docked on the left | shipped (0.2.1) |
+| A tab no longer crashes when a page stops listening for permission changes after the frame it asked from is gone (engine patch; upstream Chromium, .79 included, still crashes) | shipped (0.2.1) |
+| Sidebar width and icons-only are per window: resizing one window's sidebar no longer resizes every window | shipped (0.2.1) |
+| Icons-only sidebar: narrower rail with square tiles, a hover × badge, the traffic lights in the toolbar as Chrome does, no tile fill at rest, pinned tabs styled like other tabs | shipped (0.2.1) |
+| Switching light/dark updates background tabs' toolbar colour, so switching to one shows no old-colour flash | shipped (0.2.1) |
+| Picture in Picture stays on top of full-screen windows, including other apps' full-screen spaces (owner, 2026-11-03) | shipped (0.2.1); the owner's hand test of Solara itself in full screen and on two monitors is still to do |
 
 ## 0.2.2: a fresh engine
 
 | Item | Status |
 |---|---|
+| Fixes from the owner's two-Mac sync-join test of 0.1.3 | waiting on the test |
 | Engine: Chromium 156.0.8078.79 or newer (Chrome stable security updates; we ship .47), built on the Hill Studio's own Chromium checkout. Owner: build there and ship in 0.2.2 (2026-11-03) | planned |
-| GitHub security alerts cleared: Dependabot (image-size, minimatch, deepmerge) bumped, the omnibox quick-create regex no longer slows on crafted input, test-script CodeQL alerts fixed or dismissed | in progress: CodeQL #201 (quick-create regex) and #200 fixed in 1161a442; the build-time Dependabot alerts (no usable fix) and the test-only CodeQL alerts wait on the owner's dismissal |
+| GitHub security alerts cleared: Dependabot (image-size, minimatch, deepmerge) bumped, the omnibox quick-create regex no longer slows on crafted input, test-script CodeQL alerts fixed or dismissed | in progress: CodeQL #201 (quick-create regex) and #200 fixed in 1161a442 (shipped in 0.2.1); the build-time Dependabot alerts (no usable fix) and the test-only CodeQL alerts wait on the owner's dismissal |
 
 ## 0.3.0: the CLI and Raycast revamped, and tabs that cost less
 

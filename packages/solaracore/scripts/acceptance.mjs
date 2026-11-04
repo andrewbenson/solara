@@ -54,7 +54,7 @@ const usesPageA = [
   "visibility", "occlusion", "favicon", "navigate-back-forward-reload", "target-blank", "window-open",
   "cmd-click", "evaluate", "tab-strips", "tab-switch", "status-text", "load-error", "chrome-strings",
   "context-menu-search", "duplicate-and-reopen", "device-chooser", "bluetooth-chooser",
-  "bluetooth-settings", "cast-dialog", "cast-routes", "theme-commit", "user-selection",
+  "bluetooth-settings", "cast-dialog", "cast-routes", "theme-commit", "theme-modern-colors", "user-selection",
   "password-prompt", "screen-share-picker", "tab-capture", "share-instead-two-captures",
   "restore-after-close", "discard-outcomes", "capture-picture", "unresponsive", "permission-dismissed",
   "save-page", "activate-request", "extension-popup-and-panel", "print-preview",
@@ -387,6 +387,13 @@ const server = createServer((req, res) => {
     </script>`));
   if (url.pathname === "/ac-ads") return res.end(page("Ads", `<img src="/nnblock-ad.png"><script src="/nnredirect-ad.js"></script>`));
   if (url.pathname === "/a") return res.end(page("Page A", `<a id="next" href="/b">to B</a> <a id="blank" target="_blank" href="/c">blank</a> <a id="cmd" href="/d">cmd</a>`));
+  if (url.pathname === "/mixed-header")
+    return res.end(page("Mixed header", `<nav style="position: relative; height: 60px; background: color-mix(in srgb, #f6f6f7 94%, #000)"></nav><p>mixed</p>`, "<style>html, body { margin: 0; background: #f6f6f7 }</style>"));
+  if (url.pathname === "/clear-mixed-header")
+    return res.end(page("Clear mixed header", `<nav style="position: relative; height: 60px; background: color-mix(in srgb, transparent 100%, #000)"></nav><p>clear</p>`, `<meta name="theme-color" content="#123456"><style>html, body { margin: 0 }</style>`));
+  if (url.pathname === "/alpha-header")
+    return res.end(page("Alpha header", `<nav style="position: relative; height: 60px; background: color(srgb 1 0 0 / 0.6)"></nav><p>alpha</p>`, "<style>html, body { margin: 0 }</style>"));
+  if (url.pathname === "/oklch-painted") return res.end(page("Oklch painted", "oklch", "<style>html, body { background: oklch(0.3 0 0) }</style>"));
   if (url.pathname === "/red-header")
     return res.end(page("Red header", `<div style="position: fixed; top: 0; left: 0; right: 0; height: 60px; background: rgb(200, 0, 0)"></div><p style="margin-top: 80px">red</p>`));
   if (url.pathname === "/painted") return res.end(page("Painted", "painted", "<style>html, body { background: rgb(60, 60, 60) }</style>"));
@@ -1823,6 +1830,23 @@ try {
       await closeTab(tab.id);
       await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
     }
+  });
+
+  await check("theme-modern-colors", async () => {
+    const seen = {};
+    for (const [path, title, want] of [["/mixed-header", "Mixed header", [231, 231, 232]], ["/oklch-painted", "Oklch painted", [46, 46, 46]], ["/clear-mixed-header", "Clear mixed header", [18, 52, 86]], ["/alpha-header", "Alpha header", [255, 102, 102]]]) {
+      const tab = await openTab(`${base}${path}`, title);
+      try {
+        const color = () => evalApp(`return ac.store.getState().live["${tab.id}"]?.themeColor ?? null`);
+        const near = (c) => !!c && want.every((v, i) => Math.abs(parseInt(c.slice(1 + 2 * i, 3 + 2 * i), 16) - v) <= 2);
+        seen[path] = await until(`${title}'s colour`, async () => ((c) => (near(c) ? c : null))(await color()), 5000).catch(color);
+        if (!near(seen[path])) throw new Error(`${title} reports ${seen[path]}, not about rgb(${want.join(", ")}): ${JSON.stringify(seen)}`);
+      } finally {
+        await closeTab(tab.id);
+      }
+    }
+    await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
+    return seen;
   });
 
   await check("user-selection", async () => {

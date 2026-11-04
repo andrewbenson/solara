@@ -114,3 +114,8 @@ void ShowSolaraPictureInPictureInFullScreenSpaces(gfx::NativeWindow native) {
   [widget_window
       setActivationIndependence:window.level >= NSFloatingWindowLevel];
 }
+
+void LetSolaraPictureInPictureMoveFreely(gfx::NativeWindow native) {
+  base::apple::ObjCCast<NativeWidgetMacNSWindow>(native.GetNativeNSWindow())
+      .movesFreelyAcrossDisplays = YES;
+}

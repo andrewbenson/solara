@@ -1,0 +1,56 @@
+Picture in Picture windows move freely between displays.
+
+The app moves a PiP window with setFrameOrigin: while it is dragged or swiped. With "Displays have separate Spaces" on, AppKit
+then adjusts the frame to the screen it is on (constrainFrameRect:toScreen:, _setFrame:fromAdjustmentToScreen:,
+_setFrameAfterMove:), so the window stayed inside that screen's visible frame and could not cross a menu-bar strip to a
+display above. A window with movesFreelyAcrossDisplays set skips those adjustments, as headless windows and tab-drag
+move loops already do; the app settles a dropped PiP inside the usable area of the display it lands on.
+
+--- a/components/remote_cocoa/app_shim/native_widget_mac_nswindow.h
++++ b/components/remote_cocoa/app_shim/native_widget_mac_nswindow.h
+@@ -111,6 +111,8 @@
+ // Whether this window is headless.
+ @property(assign, nonatomic) BOOL isHeadless;
+ 
++@property(assign, nonatomic) BOOL movesFreelyAcrossDisplays;
++
+ // Whether this window is currently being added to and removed from parent for
+ // ordering.
+ @property(assign, nonatomic) BOOL isShufflingForOrdering;
+--- a/components/remote_cocoa/app_shim/native_widget_mac_nswindow.mm
++++ b/components/remote_cocoa/app_shim/native_widget_mac_nswindow.mm
+@@ -232,6 +232,7 @@
+ @synthesize bridgedNativeWidgetId = _bridgedNativeWidgetId;
+ @synthesize bridge = _bridge;
+ @synthesize isTooltip = _isTooltip;
++@synthesize movesFreelyAcrossDisplays = _movesFreelyAcrossDisplays;
+ @synthesize isShufflingForOrdering = _isShufflingForOrdering;
+ @synthesize preventKeyWindow = _preventKeyWindow;
+ @synthesize childWindowAddedHandler = _childWindowAddedHandler;
+@@ -517,7 +518,7 @@
+ // respect the menu bar while avoiding AppKit's horizontal snapping across
+ // display boundaries.
+ - (NSRect)constrainFrameRect:(NSRect)frameRect toScreen:(NSScreen*)screen {
+-  if (self.isHeadless || self.parentWindow) {
++  if (self.isHeadless || self.parentWindow || _movesFreelyAcrossDisplays) {
+     // AppKit's default implementation moves child windows down to avoid
+     // the menu bar. We don't want that behavior, because widgets like the
+     // Omnibox may have a big shadow that could cause invisible menu bar
+@@ -548,7 +549,7 @@
+     fromAdjustmentToScreen:(NSScreen*)screen
+             anchorIfNeeded:(const CGPoint*)anchor
+                    animate:(BOOL)animate {
+-  if (self.isHeadless ||
++  if (self.isHeadless || _movesFreelyAcrossDisplays ||
+       (base::FeatureList::IsEnabled(
+            remote_cocoa::features::
+                kSuppressAppKitFrameAdjustmentsDuringMoveLoop) &&
+@@ -568,7 +569,7 @@
+ }
+ 
+ - (void)_setFrameAfterMove:(NSRect)frameRect {
+-  if (self.isHeadless ||
++  if (self.isHeadless || _movesFreelyAcrossDisplays ||
+       (base::FeatureList::IsEnabled(
+            remote_cocoa::features::
+                kSuppressAppKitFrameAdjustmentsDuringMoveLoop) &&

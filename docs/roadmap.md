@@ -54,6 +54,7 @@ backlog, and check this file against the release notes.
 | Engine: Chromium 156.0.8078.79 or newer (Chrome stable security updates; we ship .47). Needs a Chromium sync and rebuild: owner approved; moved from 0.2.0 on 2026-11-03 | planned |
 | The toolbar takes a page's header colour right when it's made with color-mix(), color() or oklch() (a light page showed a near-black toolbar, in light and dark) | landed a1d6ccda |
 | The Share picker opens at the click point when DevTools is docked on the left | landed 0fa6e53e |
+| A tab no longer crashes when a page stops listening for permission changes after the frame it asked from is gone (engine patch; upstream Chromium, .79 included, still crashes) | landed 9bc625fa |
 
 ## 0.3.0: the CLI and Raycast revamped, and tabs that cost less
 

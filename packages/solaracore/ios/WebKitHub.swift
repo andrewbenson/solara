@@ -257,13 +257,27 @@ final class WebKitHub: NSObject, WKScriptMessageHandler {
     config.mediaTypesRequiringUserActionForPlayback = []
     config.allowsAirPlayForMediaPlayback = true
     config.preferences.isElementFullscreenEnabled = !Self.background
+    Self.allowPictureInPicture(config.preferences)
     config.preferences.javaScriptCanOpenWindowsAutomatically = false
     config.preferences.isFraudulentWebsiteWarningEnabled = false
     config.defaultWebpagePreferences.preferredContentMode = .desktop
     return config
   }
 
+  static func allowPictureInPicture(_ preferences: WKPreferences) {
+    let selector = NSSelectorFromString("_setAllowsPictureInPictureMediaPlayback:")
+    guard let method = class_getInstanceMethod(WKPreferences.self, selector) else { return }
+    typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
+    unsafeBitCast(method_getImplementation(method), to: Setter.self)(preferences, selector, true)
+  }
+
   func register(_ webView: WKWebView, tab: WebKitTab) { owners[ObjectIdentifier(webView)] = WeakTab(tab) }
+
+  #if DEBUG
+  func devReturnFromPictureInPicture(browserId: Int32) -> Bool {
+    owners.values.compactMap(\.tab).first { $0.browserId == browserId }?.devReturnFromPictureInPicture() ?? false
+  }
+  #endif
 
   func unregister(_ webView: WKWebView) { owners.removeValue(forKey: ObjectIdentifier(webView)) }
 

@@ -630,6 +630,20 @@ static void StartEarlyWindow() {
 
 @implementation SolaraCoreHost
 
++ (BOOL)userSeesWindow:(NSWindow *)window {
+  return window && [SolaraCoreWindowController userSees:window];
+}
+
++ (NSNotificationName)windowSeenDidChange {
+  return SolaraCoreWindowSeenDidChange;
+}
+
++ (void)activateForPictureInPicture:(NSString *)why {
+  if (solaracore_host::Background())
+    return solaracore_host::LogActivation([@"activate (skipped in a test instance): " stringByAppendingString:why]);
+  [NSApp activate];
+}
+
 + (BOOL)safeMode { return gSafeMode; }
 + (void)setSafeMode:(BOOL)safeMode { gSafeMode = safeMode; }
 

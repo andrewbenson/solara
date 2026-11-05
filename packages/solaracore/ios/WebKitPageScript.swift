@@ -162,11 +162,11 @@ enum WebKitPageScript {
     true,
   );
   const pip = (on) => post("pip", { active: on });
-  document.addEventListener("enterpictureinpicture", () => pip(true), true);
-  document.addEventListener("leavepictureinpicture", () => pip(false), true);
+  document.addEventListener("enterpictureinpicture", (e) => e.isTrusted && pip(true), true);
+  document.addEventListener("leavepictureinpicture", (e) => e.isTrusted && pip(false), true);
   document.addEventListener(
     "webkitpresentationmodechanged",
-    (e) => e.target instanceof HTMLVideoElement && pip(e.target.webkitPresentationMode === "picture-in-picture"),
+    (e) => e.isTrusted && e.target instanceof HTMLVideoElement && pip(e.target.webkitPresentationMode === "picture-in-picture"),
     true,
   );
 

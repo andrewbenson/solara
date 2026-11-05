@@ -49,6 +49,9 @@ NS_ASSUME_NONNULL_BEGIN
 + (void)releaseProfile:(NSString *)profile;
 + (void)endPrivateSession:(NSString *)engineProfile aliases:(NSArray<NSString *> *)aliases NS_SWIFT_NAME(endPrivateSession(_:aliases:));
 + (int)chromeTabId:(int)browserId NS_SWIFT_NAME(chromeTabId(browserId:));
++ (BOOL)userSeesWindow:(nullable NSWindow *)window NS_SWIFT_NAME(userSees(_:));
+@property(class, readonly) NSNotificationName windowSeenDidChange;
++ (void)activateForPictureInPicture:(NSString *)why NS_SWIFT_NAME(activateForPictureInPicture(_:));
 + (BOOL)stopCapture:(int)browserId NS_SWIFT_NAME(stopCapture(browserId:));
 + (BOOL)showAutofillSuggestions:(int)browserId passwords:(BOOL)passwords NS_SWIFT_NAME(showAutofillSuggestions(browserId:passwords:));
 + (void)resolvePermission:(NSString *)requestId result:(NSString *)result remember:(BOOL)remember

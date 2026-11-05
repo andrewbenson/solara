@@ -69,6 +69,7 @@ public class WebKitModule: Module {
     AsyncFunction("devTouchStore") { (profile: String, promise: Promise) in
       WebKitHub.shared.touchStore(profile) { promise.resolve($0) }
     }.runOnQueue(.main)
+    AsyncFunction("devReturnFromPictureInPicture") { (browserId: Int) in WebKitHub.shared.devReturnFromPictureInPicture(browserId: Int32(browserId)) }.runOnQueue(.main)
     #endif
 
     View(WebKitTabView.self) {

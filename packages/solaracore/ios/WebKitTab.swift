@@ -69,7 +69,7 @@ final class WebKitTab: NSView, WKNavigationDelegate, WKUIDelegate {
   var initialURL: String?
   var adoptId: String?
   var transferKey: String?
-  var visible = true { didSet { updateHidden() } }
+  var visible = true { didSet { updateHidden(); userSightChanged() } }
   var warm = false { didSet { updateHidden() } }
   var pageBackgroundColor: NSColor? { didSet { if let color = pageBackgroundColor { webView?.underPageBackgroundColor = color } } }
   let browserId = WebKitHub.shared.nextBrowserId()
@@ -98,12 +98,62 @@ final class WebKitTab: NSView, WKNavigationDelegate, WKUIDelegate {
   private var findText = ""
   private var findCount = 0
   private var findActive = 0
+  private var inPictureInPicture = false
+  private var seenByUser = false
+  private var sightObserver: NSObjectProtocol?
+  private var pictureInPictureFrame: WKFrameInfo?
 
   override var isFlipped: Bool { true }
 
   override func setFrameSize(_ newSize: NSSize) {
     super.setFrameSize(newSize)
     webView?.frame = bounds
+  }
+
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    if let sightObserver { NotificationCenter.default.removeObserver(sightObserver) }
+    sightObserver = window.map {
+      NotificationCenter.default.addObserver(forName: SolaraCoreHost.windowSeenDidChange, object: $0, queue: .main) { [weak self] _ in
+        self?.userSightChanged()
+      }
+    }
+    userSightChanged()
+  }
+
+  private func userSightChanged() {
+    let seen = visible && SolaraCoreHost.userSees(window)
+    guard seen != seenByUser else { return }
+    seenByUser = seen
+    if seen && inPictureInPicture { setPictureInPicture(false) { _ in } }
+  }
+
+  @objc(_webViewFullscreenMayReturnToInline:)
+  func webViewFullscreenMayReturnToInline(_ webView: WKWebView) {
+    guard webView === self.webView, !closed else { return }
+    SolaraCoreHost.activateForPictureInPicture("Back to Tab (WebKit Picture in Picture)")
+    emit("activateRequest", ["reason": "pictureInPicture"])
+  }
+
+  @objc(_webView:hasVideoInPictureInPictureDidChange:)
+  func webView(_ webView: WKWebView, hasVideoInPictureInPictureDidChange active: Bool) {
+    guard webView === self.webView else { return }
+    pictureInPictureChanged(active, frame: nil)
+  }
+
+  #if DEBUG
+  func devReturnFromPictureInPicture() -> Bool {
+    guard SolaraCoreTestHooksAllowed(), let webView else { return false }
+    let selector = NSSelectorFromString("_webViewFullscreenMayReturnToInline:")
+    guard responds(to: selector) else { return false }
+    perform(selector, with: webView)
+    return true
+  }
+  #endif
+
+  private func pictureInPictureChanged(_ active: Bool, frame: WKFrameInfo?) {
+    if active, let frame { pictureInPictureFrame = frame }
+    inPictureInPicture = active
   }
 
   private func emit(_ name: String, _ payload: [String: Any] = [:]) {
@@ -176,6 +226,9 @@ final class WebKitTab: NSView, WKNavigationDelegate, WKUIDelegate {
     WebKitHub.shared.register(view, tab: self)
     view.navigationDelegate = self
     view.uiDelegate = self
+    inPictureInPicture = view.responds(to: NSSelectorFromString("_isPictureInPictureActive")) && (view.value(forKey: "_isPictureInPictureActive") as? Bool ?? false)
+    seenByUser = false
+    userSightChanged()
     view.allowsBackForwardNavigationGestures = true
     view.allowsMagnification = true
     view.isInspectable = WebKitHub.inspectable && !WebKitHub.isPrivate(profile)
@@ -213,6 +266,10 @@ final class WebKitTab: NSView, WKNavigationDelegate, WKUIDelegate {
   }
 
   func close(parking: Bool = true) {
+    if let sightObserver {
+      NotificationCenter.default.removeObserver(sightObserver)
+      self.sightObserver = nil
+    }
     guard !closed else { return }
     closed = true
     observations = []
@@ -453,9 +510,13 @@ final class WebKitTab: NSView, WKNavigationDelegate, WKUIDelegate {
   }
 
   func setPictureInPicture(_ on: Bool, completion: @escaping (Bool) -> Void) {
-    runInWorld("window.__solara ? window.__solara.pictureInPicture(\(on ? "true" : "false")) : false") { value in
-      completion((value as? NSNumber)?.boolValue ?? false)
+    let code = "window.__solara ? window.__solara.pictureInPicture(\(on ? "true" : "false")) : false"
+    if !on {
+      var frames = mediaFrames.values.filter { !$0.isMainFrame }
+      if let frame = pictureInPictureFrame, !frame.isMainFrame { frames.append(frame) }
+      for frame in frames { runInWorld(code, frame: frame) }
     }
+    runInWorld(code) { value in completion((value as? NSNumber)?.boolValue ?? false) }
   }
 
   func securityInfo() -> [String: Any] {
@@ -534,7 +595,9 @@ final class WebKitTab: NSView, WKNavigationDelegate, WKUIDelegate {
         emit("nowPlaying", ["state": NSNull()])
       }
     case "pip":
-      emit("pictureInPicture", ["kind": "video", "active": dict?["active"] as? Bool ?? false])
+      let active = dict?["active"] as? Bool ?? false
+      emit("pictureInPicture", ["kind": "video", "active": active])
+      pictureInPictureChanged(active, frame: frameInfo)
     case "status":
       emit("status", ["text": data as? String ?? ""])
     case "icons":

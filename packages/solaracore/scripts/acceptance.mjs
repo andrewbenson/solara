@@ -46,7 +46,7 @@ import { createServer as createHttpsServer } from "node:https";
 import { basename, join, resolve } from "node:path";
 import { X509Certificate, createHash, createSign, generateKeyPairSync } from "node:crypto";
 import { crc32, deflateSync, inflateSync } from "node:zlib";
-import { attach as attachInstance, launch as launchInstance, onScreenWindows as windowsOf, reporter, sleep, temporaryData } from "../../../scripts/lib/instance.mjs";
+import { attach as attachInstance, launch as launchInstance, onScreenWindows as windowsOf, reporter, screenLocked, sleep, temporaryData } from "../../../scripts/lib/instance.mjs";
 
 // MARK: What each check needs
 
@@ -63,7 +63,7 @@ const usesPageA = [
   "settings-services", "download-navigation", "page-events", "page-background", "appearance-reaches-pages", "external-app-answer",
   "notifications", "now-playing", "media-state", "auto-picture-in-picture", "pip-window", "page-focus", "page-press-split",
   "fullscreen-tab-switch", "fullscreen-native", "escape-in-window-fullscreen", "fullscreen-transition-picture", "fullscreen-hidden-page", "fullscreen-split-sibling",
-  "fullscreen-pip", "pip-fullscreen-space", "pip-keep-on-top-reopen", "autofill-suggestions", "images", "extension-surfaces", "frozen", "discard",
+  "fullscreen-pip", "pip-fullscreen-space", "pip-keep-on-top-reopen", "webkit-picture-in-picture", "autofill-suggestions", "images", "extension-surfaces", "frozen", "discard",
   "permission-prompt", "popup-blocked", "move-tab-slow-mount", "move-last-tab-slow-mount",
   "move-tab-closed-while-parked", "move-tab-to-window", "title-bar-close", "last-used-profile",
 ];
@@ -4856,6 +4856,103 @@ try {
         docOn: docOn.payload, docWindow: { title: docWindow.title, alpha: docWindow.alpha }, docOff: docOff.payload };
     } finally {
       await closeTab(tab.id);
+    }
+  });
+
+  await check("webkit-picture-in-picture", async () => {
+    const tab = await openTab(`${base}/video?webkit-pip`, "Video");
+    const id = JSON.stringify(tab.id);
+    const page = async (code) => (await evalApp(`return ac.webviews.get(${id})?.evaluate(${JSON.stringify(code)}) ?? null`)) ?? null;
+    const video = () => page(`const v = document.getElementById("v"); post("result", JSON.stringify(v ? { mode: v.webkitPresentationMode ?? null, supports: !!(v.webkitSupportsPresentationMode && v.webkitSupportsPresentationMode("picture-in-picture")), api: document.pictureInPictureEnabled === true, playing: !v.paused, width: v.videoWidth } : null))`);
+    const modeIs = (mode, what, ms = 8000) => until(what, async () => { const v = await video(); return v?.mode === mode ? v : null; }, ms).catch(() => null);
+    const activations = () => (existsSync(join(data, "activation.log")) ? readFileSync(join(data, "activation.log"), "utf8") : "").split("\n");
+    const backToTab = (from) => activations().slice(from).filter((l) => l.includes("Back to Tab (WebKit Picture in Picture)"));
+    const show = (which) => evalApp(`ac.actions.switchToTab(${JSON.stringify(which)}); return true`);
+    const enter = async () => {
+      await evalApp(`return ac.webviews.get(${id}).requestPictureInPicture({ clickAt: 0, control: 0 })`);
+      const v = await modeIs("picture-in-picture", "picture-in-picture mode");
+      if (v) await sleep(1500);
+      return v;
+    };
+    try {
+      const locked = screenLocked();
+      const play = () => page(`const v = document.getElementById("v"); v.muted = true; v.loop = true; if (!v.src) v.src = "/clip.webm"; v.play().then(() => post("result", JSON.stringify("ok")), (e) => post("result", JSON.stringify(e.name)))`);
+      const playing = (what) => until(what, async () => { const v = await video(); return v?.playing && v.width > 0 ? v : null; }, 8000)
+        .catch(async (e) => { throw new Error(`${e.message}: ${JSON.stringify(await video())}`); });
+      const settled = () => page(`post("result", JSON.stringify(document.pictureInPictureElement === null))`);
+      const fresh = async () => {
+        await evalApp(`return ac.webviews.get(${id}).reload()`);
+        await until("the reloaded video", async () => ((await video())?.mode === "inline" ? true : null), 10000);
+        await play();
+        return playing("the reloaded video playing");
+      };
+      await evalApp(`const s = ac.store.getState(); s.activate(${id}); ac.runCommand({ command: "togglePageEngine", arg: null, windowId: s.tabs[${id}].windowId }); return true`);
+      await until("the WebKit engine", async () => ((await evalApp(`return ac.store.getState().tabs[${id}]?.engine ?? null`)) === "webkit" ? true : null), 15000);
+      await until("the video in WebKit", async () => (await video()) ?? null, 10000);
+      await evalApp(`return ac.webviews.get(${id}).setMuted(true)`);
+      const started = await play();
+      const before = await playing("the video playing").catch((e) => { throw new Error(`${e.message}; play ${JSON.stringify(started)}`); });
+      const out = { locked, before, settledExits: [] };
+      const exited = async (what) => {
+        const mode = (await modeIs("inline", what))?.mode ?? null;
+        await sleep(800);
+        out.settledExits.push(await settled());
+        return mode;
+      };
+
+      out.entered = (await enter())?.mode ?? null;
+      const quiet = activations().length - 1;
+      await evalApp(`return ac.webviews.get(${id}).exitPictureInPicture()`);
+      out.left = await exited("inline again");
+      out.exitActivated = backToTab(quiet).length > 0;
+
+      await fresh();
+      out.reentered = (await enter())?.mode ?? null;
+      await show(first.id);
+      await until("another tab shown", async () => ((await state()).active === first.id ? true : null), 5000);
+      await sleep(800);
+      out.whileAway = (await video())?.mode ?? null;
+      await show(tab.id);
+      out.closedOnReturn = await exited("PiP closed on return");
+
+      await fresh();
+      out.thirdEntry = (await enter())?.mode ?? null;
+      await show(first.id);
+      await until("another tab shown", async () => ((await state()).active === first.id ? true : null), 5000);
+      const fromPage = activations().length - 1;
+      out.pageExit = await page(`const v = document.getElementById("v"); v.webkitSetPresentationMode("inline"); v.play().then(() => post("result", JSON.stringify("ok")), (e) => post("result", JSON.stringify(e.name)))`);
+      out.pageExitMode = await exited("inline after the page's own exit");
+      await sleep(700);
+      out.pageExitActivated = backToTab(fromPage).length > 0;
+      out.pageExitStayedAway = (await state()).active === first.id;
+      const fromFake = activations().length - 1;
+      await page(`document.dispatchEvent(new Event("enterpictureinpicture")); document.dispatchEvent(new Event("leavepictureinpicture")); post("result", JSON.stringify("ok"))`);
+      await sleep(1500);
+      out.fakeEventsActivated = backToTab(fromFake).length > 0;
+
+      await show(tab.id);
+      await until("the video's tab shown", async () => ((await state()).active === tab.id ? true : null), 5000);
+      await fresh();
+      out.fourthEntry = (await enter())?.mode ?? null;
+      await show(first.id);
+      await until("another tab shown", async () => ((await state()).active === first.id ? true : null), 5000);
+      const fromReturn = activations().length - 1;
+      out.returnSeam = await evalApp(`return globalThis.expo.modules.SolaraTabPool.livePages().then((live) => globalThis.expo.modules.SolaraWebKit.devReturnFromPictureInPicture(live.find((p) => p.tabId === ${id})?.ready?.browserId ?? -1))`).catch((e) => String(e.message ?? e));
+      out.returnActivated = (await until("the Back to Tab activation", async () => backToTab(fromReturn)[0] ?? null, 5000).catch(() => null)) !== null;
+      out.returnShown = (await until("the video's tab shown", async () => ((await state()).active === tab.id ? true : null), 5000).catch(() => false)) === true;
+      out.returnClosed = await exited("PiP closed once the tab is back");
+      if (locked) report.say("webkit-picture-in-picture: the screen is locked, so WebKit never finishes a PiP exit (PIP.framework restores, WebKit's did-exit never comes); each exit is checked as begun and the page is reloaded before the next entry");
+
+      if (!before.supports || out.entered !== "picture-in-picture" || out.left !== "inline" || out.exitActivated ||
+          out.reentered !== "picture-in-picture" || out.whileAway !== "picture-in-picture" || out.closedOnReturn !== "inline" ||
+          out.thirdEntry !== "picture-in-picture" || out.pageExitMode !== "inline" || out.pageExitActivated || !out.pageExitStayedAway || out.fakeEventsActivated ||
+          out.fourthEntry !== "picture-in-picture" || out.returnSeam !== true || !out.returnActivated || !out.returnShown || out.returnClosed !== "inline" ||
+          (!locked && out.settledExits.some((s) => s !== true)))
+        throw new Error(JSON.stringify(out));
+      return out;
+    } finally {
+      await evalApp(`return ac.webviews.get(${id})?.exitPictureInPicture()`).catch(() => null);
+      await closeTab(tab.id).catch(() => null);
     }
   });
 

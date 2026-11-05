@@ -75,6 +75,12 @@ backlog, and check this file against the release notes.
 | The PiP probe finds a styled PiP window with Keep on Top off (test tooling) | shipped (0.2.3) |
 | App builds and releases take the published engine for the tree before a local out/ build, so a stale or unlanded engine is never embedded | shipped (0.2.3) |
 
+## 0.2.4: fixes
+
+| Item | Status |
+|---|---|
+| The highlight-to-Search bubble over selected text is off by default; Settings turns it back on, and anyone who chose it keeps it (owner, 2026-11-04) | shipped-pending |
+
 ## 0.3.0: tabs that cost less, and the first native bars
 
 | Item | Status |

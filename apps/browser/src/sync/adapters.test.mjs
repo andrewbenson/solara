@@ -191,6 +191,25 @@ test("settings: a session a pre-chosen build saved whole (defaults filled in) do
   assert.equal(b.with(() => S().settings.tabReorderHaptics), false);
 });
 
+test("settings: turning the selection Search bubble off by default doesn't override another Mac's choice", async () => {
+  const folder = new Folder();
+  const a = new Device("A", folder);
+  const b = new Device("B", folder);
+  await syncAll([a, b]);
+  b.with(() => S().updateSettings({ showSelectionSearch: true }));
+  await syncAll([a, b]);
+  assert.equal(a.with(() => S().settings.showSelectionSearch), true);
+  const old = a.with(() => S().settings);
+  relaunch(a, { ...old, showSelectionSearch: true, chosen: [...(old.chosen ?? []), "showSelectionSearch"], inferred: [...(old.inferred ?? []), "showSelectionSearch"], migrations: ["toolbarStaysOnScroll"] });
+  await new Promise((r) => setTimeout(r, 20));
+  await syncAll([a, b]);
+  assert.equal(b.with(() => S().settings.showSelectionSearch), true, "B keeps its choice");
+  assert.equal(a.with(() => S().settings.showSelectionSearch), true, "A follows the group's choice");
+  const untouched = new Device("C", new Folder());
+  relaunch(untouched, { ...old, showSelectionSearch: true, chosen: [], inferred: [], migrations: ["toolbarStaysOnScroll"] });
+  assert.equal(untouched.with(() => S().settings.showSelectionSearch), false, "an untouched Mac gets the new default");
+});
+
 test("settings: a setting from a newer version survives an older Mac's syncs (no deletion)", async () => {
   const folder = new Folder();
   const a = new Device("A", folder);

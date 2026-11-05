@@ -39,8 +39,31 @@ test("the battery saver migration still runs alongside it", () => {
   assert.equal(migrated.batterySaverWhen, "never");
   assert.equal("batterySaver" in migrated, false);
   assert.equal(migrated.hideToolbarWhileScrolling, false);
-  assert.deepEqual(migrated.migrations, ["toolbarStaysOnScroll"]);
+  assert.deepEqual(migrated.migrations, ["toolbarStaysOnScroll", "selectionSearchOff"]);
   assert.equal(migrateSavedSettings(undefined), undefined);
+});
+
+test("the selection Search bubble starts off, and turns off once for profiles that never chose it", () => {
+  S().hydrate({});
+  assert.equal(S().settings.showSelectionSearch, false);
+  const untouched = migrateSavedSettings({ showSelectionSearch: true, chosen: [], inferred: [], migrations: ["toolbarStaysOnScroll"] });
+  assert.equal(untouched.showSelectionSearch, false);
+  assert.deepEqual(untouched.migrations, ["toolbarStaysOnScroll", "selectionSearchOff"]);
+  const inferred = migrateSavedSettings({ showSelectionSearch: true, chosen: ["showSelectionSearch", "sidebarWidth"], inferred: ["showSelectionSearch", "sidebarWidth"], migrations: [] });
+  assert.equal(inferred.showSelectionSearch, false);
+  assert.deepEqual(inferred.chosen, ["sidebarWidth"]);
+  assert.deepEqual(inferred.inferred, ["sidebarWidth"]);
+});
+
+test("someone who chose the selection Search bubble keeps their choice", () => {
+  const chosenOn = migrateSavedSettings({ showSelectionSearch: true, chosen: ["showSelectionSearch"], inferred: [], migrations: ["toolbarStaysOnScroll"] });
+  assert.equal(chosenOn.showSelectionSearch, true);
+  const legacy = migrateSavedSettings({ showSelectionSearch: true });
+  assert.equal(legacy.showSelectionSearch, true);
+  S().hydrate({});
+  S().updateSettings({ showSelectionSearch: true });
+  S().hydrate({ settings: JSON.parse(JSON.stringify(S().settings)) });
+  assert.equal(S().settings.showSelectionSearch, true);
 });
 
 test("pinned tabs stand out unless someone picks the classic look, and that choice survives a relaunch", () => {

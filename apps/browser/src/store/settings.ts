@@ -124,6 +124,7 @@ export function withLinkKeysApart(settings: Settings, patch: Partial<Settings>):
 export const DEFAULT_PROFILE_ID = "default";
 
 const TOOLBAR_STAYS_ON_SCROLL = "toolbarStaysOnScroll";
+const SELECTION_SEARCH_OFF = "selectionSearchOff";
 
 export const DEFAULT_SETTINGS: Settings = {
   warnBeforeQuitting: true,
@@ -134,7 +135,7 @@ export const DEFAULT_SETTINGS: Settings = {
   customSearchEngines: [],
   extensionSearchEngines: [],
   searchSuggestions: true,
-  showSelectionSearch: true,
+  showSelectionSearch: false,
   commandBarPreference: "website",
   tabLayout: "sidebar",
   hideToolbarWhileScrolling: false,
@@ -192,7 +193,7 @@ export const DEFAULT_SETTINGS: Settings = {
   littleSolaraSize: [900, 640],
   pageEngine: "chromium",
   websiteEngines: {},
-  migrations: [TOOLBAR_STAYS_ON_SCROLL],
+  migrations: [TOOLBAR_STAYS_ON_SCROLL, SELECTION_SEARCH_OFF],
   protectedVideoInWebKit: true,
 };
 
@@ -244,12 +245,27 @@ export function choose(settings: Settings, patch: Partial<Settings>): Settings {
 type SavedSettings = Partial<Settings> & { batterySaver?: unknown };
 
 export function migrateSavedSettings(saved: SavedSettings | undefined): Partial<Settings> | undefined {
-  return saved && withNewTabButtonPosition(keepToolbarOnScroll(withoutBatterySaver(saved)));
+  return saved && withNewTabButtonPosition(selectionSearchOff(keepToolbarOnScroll(withoutBatterySaver(saved))));
 }
 
 function keepToolbarOnScroll(saved: Partial<Settings>): Partial<Settings> {
   if (saved.migrations?.includes(TOOLBAR_STAYS_ON_SCROLL)) return saved;
   return { ...saved, hideToolbarWhileScrolling: false, migrations: [...(saved.migrations ?? []), TOOLBAR_STAYS_ON_SCROLL] };
+}
+
+function selectionSearchOff(saved: Partial<Settings>): Partial<Settings> {
+  if (saved.migrations?.includes(SELECTION_SEARCH_OFF)) return saved;
+  const migrations = [...(saved.migrations ?? []), SELECTION_SEARCH_OFF];
+  const picked = !saved.chosen || (saved.chosen.includes("showSelectionSearch") && !saved.inferred?.includes("showSelectionSearch"));
+  if (picked) return { ...saved, migrations };
+  const without = (keys: string[]) => keys.filter((k) => k !== "showSelectionSearch");
+  return {
+    ...saved,
+    showSelectionSearch: false,
+    chosen: without(saved.chosen ?? []),
+    ...(saved.inferred ? { inferred: without(saved.inferred) } : {}),
+    migrations,
+  };
 }
 
 function withNewTabButtonPosition(saved: Partial<Settings>): Partial<Settings> {

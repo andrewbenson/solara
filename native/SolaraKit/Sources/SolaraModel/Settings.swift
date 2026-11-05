@@ -7,6 +7,7 @@ public struct Settings: Sendable, Hashable {
 
   public static let defaultProfileID = "default"
   static let toolbarStaysOnScroll = "toolbarStaysOnScroll"
+  static let selectionSearchOff = "selectionSearchOff"
   public static let bookkeepingKeys: Set<String> = ["chosen", "inferred"]
 
   public static let defaults = Settings(values: [
@@ -18,7 +19,7 @@ public struct Settings: Sendable, Hashable {
     "customSearchEngines": [],
     "extensionSearchEngines": [],
     "searchSuggestions": true,
-    "showSelectionSearch": true,
+    "showSelectionSearch": false,
     "commandBarPreference": "website",
     "tabLayout": "sidebar",
     "hideToolbarWhileScrolling": false,
@@ -76,7 +77,7 @@ public struct Settings: Sendable, Hashable {
     "littleSolaraSize": [900, 640],
     "pageEngine": "chromium",
     "websiteEngines": [:],
-    "migrations": [.string(toolbarStaysOnScroll)],
+    "migrations": [.string(toolbarStaysOnScroll), .string(selectionSearchOff)],
     "protectedVideoInWebKit": true,
   ])
 
@@ -143,7 +144,7 @@ public struct Settings: Sendable, Hashable {
 
   public static func migrateSaved(_ saved: JSONObject?) -> JSONObject? {
     guard let saved else { return nil }
-    return withNewTabButtonPosition(keepToolbarOnScroll(withoutBatterySaver(saved)))
+    return withNewTabButtonPosition(selectionSearchOff(keepToolbarOnScroll(withoutBatterySaver(saved))))
   }
 
   public static func hydrated(from saved: JSONValue?) -> Settings {
@@ -170,6 +171,22 @@ public struct Settings: Sendable, Hashable {
     var next = saved
     next["hideToolbarWhileScrolling"] = false
     next["migrations"] = .array((saved["migrations"]?.array ?? []) + [.string(toolbarStaysOnScroll)])
+    return next
+  }
+
+  static func selectionSearchOff(_ saved: JSONObject) -> JSONObject {
+    let migrations = saved["migrations"]?.array?.compactMap(\.string)
+    if migrations?.contains(selectionSearchOff) == true { return saved }
+    let chosen = saved["chosen"]?.array?.compactMap(\.string)
+    let inferred = saved["inferred"]?.array?.compactMap(\.string)
+    let picked = chosen.map { $0.contains("showSelectionSearch") && inferred?.contains("showSelectionSearch") != true } ?? true
+    var next = saved
+    if !picked {
+      next["showSelectionSearch"] = false
+      next["chosen"] = JSONValue((chosen ?? []).filter { $0 != "showSelectionSearch" })
+      if let inferred { next["inferred"] = JSONValue(inferred.filter { $0 != "showSelectionSearch" }) }
+    }
+    next["migrations"] = .array((saved["migrations"]?.array ?? []) + [.string(selectionSearchOff)])
     return next
   }
 

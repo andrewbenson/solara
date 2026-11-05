@@ -70,7 +70,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -132,7 +132,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -775,7 +776,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -837,7 +838,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -1241,7 +1243,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -1303,7 +1305,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -1722,7 +1725,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -1784,7 +1787,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -2205,7 +2209,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -2267,7 +2271,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -2803,7 +2808,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -2865,7 +2870,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -3513,7 +3519,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -3575,7 +3581,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -4223,7 +4230,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -4285,7 +4292,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -4944,7 +4952,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -5006,7 +5014,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -5665,7 +5674,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -5727,7 +5736,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -6386,7 +6396,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -6448,7 +6458,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -7107,7 +7118,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -7169,7 +7180,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -7828,7 +7840,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -7890,7 +7902,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -8549,7 +8562,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -8611,7 +8624,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -9259,7 +9273,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -9321,7 +9335,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -9969,7 +9984,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -10031,7 +10046,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -10690,7 +10706,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -10752,7 +10768,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -11411,7 +11428,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -11473,7 +11490,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -12133,7 +12151,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -12195,7 +12213,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -12854,7 +12873,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -12916,7 +12935,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -13575,7 +13595,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -13637,7 +13657,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -14296,7 +14317,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -14358,7 +14379,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -14832,7 +14854,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -14894,7 +14916,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -15431,7 +15454,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -15493,7 +15516,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -16029,7 +16053,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -16091,7 +16115,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -16628,7 +16653,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -16690,7 +16715,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -17226,7 +17252,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -17288,7 +17314,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -17825,7 +17852,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -17887,7 +17914,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -18515,7 +18543,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -18577,7 +18605,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -19402,7 +19431,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -19464,7 +19493,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -20146,7 +20176,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -20208,7 +20238,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -20879,7 +20910,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -20941,7 +20972,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -21533,7 +21565,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -21595,7 +21627,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -22201,7 +22234,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -22263,7 +22296,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -22867,7 +22901,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -22929,7 +22963,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -23532,7 +23567,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -23594,7 +23629,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -24267,7 +24303,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -24329,7 +24365,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -24766,7 +24803,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -24828,7 +24865,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -25549,7 +25587,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -25611,7 +25649,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -26308,7 +26347,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -26370,7 +26409,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -26816,7 +26856,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -26878,7 +26918,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -27582,7 +27623,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -27644,7 +27685,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -28330,7 +28372,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -28392,7 +28434,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -29053,7 +29096,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -29115,7 +29158,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -29787,7 +29831,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -29849,7 +29893,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -30521,7 +30566,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -30583,7 +30628,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -31246,7 +31292,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -31308,7 +31354,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -31982,7 +32029,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -32044,7 +32091,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -32734,7 +32782,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -32796,7 +32844,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -33468,7 +33517,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -33530,7 +33579,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -34202,7 +34252,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -34264,7 +34314,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -34936,7 +34987,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -35010,7 +35061,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -35669,7 +35721,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -35745,7 +35797,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -36404,7 +36457,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -36470,7 +36523,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -37129,7 +37183,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -37197,7 +37251,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -37856,7 +37911,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -38926,7 +38981,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -39585,7 +39641,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -40654,7 +40710,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -41314,7 +41371,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -41376,7 +41433,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -42054,7 +42112,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -42116,7 +42174,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -42816,7 +42875,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -42878,7 +42937,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -43578,7 +43638,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -43640,7 +43700,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -44329,7 +44390,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -44391,7 +44452,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -45103,7 +45165,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -45165,7 +45227,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -45895,7 +45958,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -45957,7 +46020,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -46724,7 +46788,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -46786,7 +46850,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -47542,7 +47607,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -47604,7 +47669,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -48372,7 +48438,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -48434,7 +48500,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -49188,7 +49255,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -49250,7 +49317,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -50004,7 +50072,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -50066,7 +50134,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -50794,7 +50863,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -50856,7 +50925,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -51623,7 +51693,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -51685,7 +51755,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -52441,7 +52512,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -52503,7 +52574,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -53271,7 +53343,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -53333,7 +53405,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -54087,7 +54160,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -54149,7 +54222,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -54903,7 +54977,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -54965,7 +55039,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -55676,7 +55751,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -55738,7 +55813,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -56351,7 +56427,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -56413,7 +56489,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -57144,7 +57221,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -57206,7 +57283,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -57820,7 +57898,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -57882,7 +57960,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -58545,7 +58624,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -58607,7 +58686,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -59319,7 +59399,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -59381,7 +59461,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -60129,7 +60210,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -60191,7 +60272,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -60893,7 +60975,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -60955,7 +61037,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -61445,7 +61528,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -61507,7 +61590,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -62183,7 +62267,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -62245,7 +62329,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -62921,7 +63006,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -62983,7 +63068,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -63642,7 +63728,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -63704,7 +63790,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -64521,7 +64608,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -64583,7 +64670,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -65297,7 +65385,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -65359,7 +65447,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -65937,7 +66026,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -65999,7 +66088,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -66950,7 +67040,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -67012,7 +67102,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -67680,7 +67771,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -67742,7 +67833,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -68406,7 +68498,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -68468,7 +68560,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -69144,7 +69237,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -69206,7 +69299,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -69878,7 +69972,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -69940,7 +70034,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -70608,7 +70703,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -70670,7 +70765,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -71342,7 +71438,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -71404,7 +71500,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -72068,7 +72165,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -72130,7 +72227,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -72802,7 +72900,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -72864,7 +72962,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -73532,7 +73631,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -73594,7 +73693,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -74294,7 +74394,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -74356,7 +74456,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -75093,7 +75194,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -75155,7 +75256,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -75814,7 +75916,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -75876,7 +75978,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -76505,7 +76608,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -76567,7 +76670,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -77043,7 +77147,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -77105,7 +77209,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -77841,7 +77946,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -77903,7 +78008,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -78597,7 +78703,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -78659,7 +78765,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -79107,7 +79214,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -79179,7 +79286,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -79864,7 +79972,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -79935,7 +80043,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -80619,7 +80728,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -80681,7 +80790,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -81247,7 +81357,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -81309,7 +81419,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -81953,7 +82064,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -82015,7 +82126,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -82593,7 +82705,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -82669,7 +82781,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -83312,7 +83425,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -83374,7 +83487,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],
@@ -84071,7 +84185,7 @@
           "customSearchEngines": [],
           "extensionSearchEngines": [],
           "searchSuggestions": true,
-          "showSelectionSearch": true,
+          "showSelectionSearch": false,
           "commandBarPreference": "website",
           "tabLayout": "sidebar",
           "hideToolbarWhileScrolling": false,
@@ -84133,7 +84247,8 @@
           "pageEngine": "chromium",
           "websiteEngines": {},
           "migrations": [
-            "toolbarStaysOnScroll"
+            "toolbarStaysOnScroll",
+            "selectionSearchOff"
           ],
           "protectedVideoInWebKit": true,
           "chosen": [],

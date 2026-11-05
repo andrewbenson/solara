@@ -7,7 +7,25 @@ import Testing
     #expect(settings["hideToolbarWhileScrolling"] == false)
     #expect(settings.chosen == [])
     #expect(settings.inferred == [])
-    #expect(settings.migrations == ["toolbarStaysOnScroll"])
+    #expect(settings.migrations == ["toolbarStaysOnScroll", "selectionSearchOff"])
+    #expect(settings["showSelectionSearch"] == false)
+  }
+
+  @Test func selectionSearchTurnsOffOnceUnlessSomeoneChoseIt() {
+    let untouched = Settings.migrateSaved(["showSelectionSearch": true, "chosen": [], "inferred": [], "migrations": ["toolbarStaysOnScroll"]])!
+    #expect(untouched["showSelectionSearch"] == false)
+    #expect(untouched["migrations"] == ["toolbarStaysOnScroll", "selectionSearchOff"])
+    let inferred = Settings.migrateSaved(["showSelectionSearch": true, "chosen": ["showSelectionSearch", "sidebarWidth"], "inferred": ["showSelectionSearch", "sidebarWidth"], "migrations": []])!
+    #expect(inferred["showSelectionSearch"] == false)
+    #expect(inferred["chosen"] == ["sidebarWidth"])
+    #expect(inferred["inferred"] == ["sidebarWidth"])
+    let chosen = Settings.migrateSaved(["showSelectionSearch": true, "chosen": ["showSelectionSearch"], "inferred": [], "migrations": ["toolbarStaysOnScroll"]])!
+    #expect(chosen["showSelectionSearch"] == true)
+    let legacy = Settings.migrateSaved(["showSelectionSearch": true])!
+    #expect(legacy["showSelectionSearch"] == true)
+    let turnedOn = Settings.hydrated(from: nil).updated(["showSelectionSearch": true], fromSync: false)
+    let relaunched = Settings.hydrated(from: try! JSONValue.parse(turnedOn.json.text()))
+    #expect(relaunched["showSelectionSearch"] == true)
   }
 
   @Test func oldDefaultIsTurnedOffOnceAndStaysChosen() {
@@ -51,7 +69,7 @@ import Testing
     #expect(migrated["batterySaverWhen"] == "never")
     #expect(migrated["batterySaver"] == nil)
     #expect(migrated["hideToolbarWhileScrolling"] == false)
-    #expect(migrated["migrations"] == ["toolbarStaysOnScroll"])
+    #expect(migrated["migrations"] == ["toolbarStaysOnScroll", "selectionSearchOff"])
     #expect(migrated["chosen"] == ["batterySaverWhen"])
     #expect(Settings.migrateSaved(nil) == nil)
     let on = Settings.migrateSaved(["batterySaver": true, "chosen": ["batterySaver"], "inferred": []])!

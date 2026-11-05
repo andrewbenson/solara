@@ -31,11 +31,12 @@ const server = createServer((req, res) => {
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const base = `http://127.0.0.1:${server.address().port}`;
-const fixture = session({
+const fixtureWith = (settings) => session({
   windows: [{ id: "w1", frame: [80, 80, 1280, 800], activeTabIds: { default: "a" } }],
   tabs: [{ id: "a", url: `${base}/words`, title: "WORDS" }],
-  settings: { warnBeforeClosingLastTab: false, warnBeforeClosingWindow: false, customSearchUrl: `${base}/search?q=%s`, searchEngine: "custom" },
+  settings: { warnBeforeClosingLastTab: false, warnBeforeClosingWindow: false, customSearchUrl: `${base}/search?q=%s`, searchEngine: "custom", ...settings },
 });
+const fixture = fixtureWith({ showSelectionSearch: true });
 
 const HELPERS = `
 const C = globalThis.expo.modules.SolaraCEF;
@@ -94,6 +95,26 @@ const select = (id) => page.eval(`(() => {
 const got = {};
 
 try {
+  app = await launch(resolve(appArg), {
+    data: join(scratch, "data-default"), fresh: true, session: fixtureWith({}), onboarded: true, probe: true,
+    env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_PAGES_POOL: "0", SOLARA_SHELL_PANES: "0" },
+    ready: "return !!ac.store.getState().windows.w1",
+  });
+  await until("the page", `return ac.store.getState().tabs.a?.title === "WORDS" || null;`, 15000);
+  page = await app.page("/words");
+  await rep.check("default-off", async () => {
+    if (await run(`return ac.store.getState().settings.showSelectionSearch;`) !== false) throw new Error("showSelectionSearch is not off by default");
+    await select("mid");
+    await sleep(1500);
+    const shown = await run(`return native().then((d) => !!(d && d.tabs.a && d.tabs.a.selection) || fibers("SearchButton").length > 0 || !!rnBar());`);
+    if (shown) throw new Error("the Search bubble showed with the setting at its default");
+    return { shown };
+  });
+  page.close();
+  page = null;
+  await app.quit();
+  app = null;
+
   for (const tag of ["rn", "native", "prompts"]) {
     const nativeShell = tag !== "rn";
     app = await launch(resolve(appArg), {

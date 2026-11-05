@@ -415,6 +415,7 @@ final class StripDrag {
 
   private func release(_ at: CGPoint) {
     guard let source else { return }
+    move(at)
     owns = false
     let gdx = at.x - origin.x
     let lifted = self.lifted

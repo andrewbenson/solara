@@ -12,14 +12,14 @@ import { fixturePage } from "../../../scripts/lib/fixture-html.mjs";
 const args = process.argv.slice(2);
 const appArg = args.find((a) => !a.startsWith("--"));
 if (!appArg) {
-  console.error(`usage: node side-panel-test.mjs <Debug Solara.app> [--keep-data] [--legs rn,native,pool]
+  console.error(`usage: node side-panel-test.mjs <Debug Solara.app> [--keep-data] [--legs native,pool]
 
-An extension's side panel drawn by RN and natively (SOLARA_NATIVE_SIDE_PANEL=1), each with the page pool off and on. In
-each leg a fixture MV3 extension with a side_panel opens its panel in window w1 and the test checks: the card sits
-where RN's does and the panel page gets the same size; a drag on the grip resizes it and the width is saved; a
+An extension's side panel, a native card, with the page pool off and on. In each leg a fixture MV3 extension with a
+side_panel opens its panel in window w1 and the test checks: the native card matches the measured card and the panel
+page gets its size; a drag on the grip resizes it and the width is saved; a
 double-click on the grip resets it to 360; the page's window.close() closes it and reopening it at once loads a new page; its window.open() opens a tab; the ✕
 closes it. Focus: with the panel page focused, closing it by the ✕, by the toolbar toggle and by replacing it with
-another extension's panel leaves page A focused (the native panel; RN's legs only record where focus went). Lifetime: twelve open and close cycles leave no panel page alive
+another extension's panel leaves page A focused. Lifetime: twelve open and close cycles leave no panel page alive
 (DevTools targets) and no more renderer processes than before; a replaced panel, a JS reload, a closed window and a
 turned-off extension each leave at most the one panel page that should be there, and no live SolaraCoreWebView with
 extensionHost "sidePanel" once closed (C.devLiveExtensionViews).`);
@@ -78,8 +78,6 @@ const drag = (n, from, dx) => act(n, "mouse:moved:" + at(from)).then(() => settl
 const shown = (w) => ac.extensions.useExtensions.getState().sidePanels[w] || null;
 const width = () => ac.store.getState().settings.extensionSidePanelWidth ?? 360;
 const card = () => {
-  const [rn] = fibers("PanelCard");
-  if (rn) return measure(rn);
   const [nat] = fibers("NativePanelCard");
   return nat ? measure(nat).then((f) => f && [f[0] + f[2] - width(), f[1], width(), f[3]]) : Promise.resolve(null);
 };
@@ -169,18 +167,16 @@ const crossRead = async (what, read, current, accept = () => true) => {
   return { value, snapshot };
 };
 const nativeWindow = (s, id = "w1") => s.windows.find((w) => w.id === id);
-const nativeCard = async (rnPanel) => {
+const nativeCard = async () => {
   let frame, width;
   const s = await untilSnapshot("native side panel frame", async (s, remaining) => {
     const value = await run(`return card().then((frame) => ({ frame, width: width() }));`, remaining());
     ({ frame, width } = value);
     const card = nativeWindow(s)?.sidePanel?.card;
-    return !!frame && (rnPanel || near(card?.frame, frame) && card.width === width);
+    return !!frame && near(card?.frame, frame) && card.width === width;
   });
-  if (!rnPanel) {
-    assert.ok(near(nativeWindow(s).sidePanel.card.frame, frame), "native panel frame matches the measured card within half a point");
-    assert.equal(nativeWindow(s).sidePanel.card.width, width, "native panel width matches the current JS width");
-  }
+  assert.ok(near(nativeWindow(s).sidePanel.card.frame, frame), "native panel frame matches the measured card within half a point");
+  assert.equal(nativeWindow(s).sidePanel.card.width, width, "native panel width matches the current JS width");
   return { frame, panel: nativeWindow(s).sidePanel, width };
 };
 const nativeClosed = async (what, windowId = "w1") => {
@@ -240,10 +236,8 @@ const focused = async (urlPart) => {
 };
 
 const LEGS = [
-  { tag: "rn", env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_SIDE_PANEL: "0" } },
-  { tag: "rn-pool", env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_SIDE_PANEL: "0", SOLARA_NATIVE_PAGES_POOL: "1", SOLARA_SHELL_PANES: "1", SOLARA_TAB_POOL: "1" } },
-  { tag: "native", env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_SIDE_PANEL: "1", SOLARA_NATIVE_PAGES_POOL: "0" } },
-  { tag: "pool", env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_SIDE_PANEL: "1", SOLARA_NATIVE_PAGES_POOL: "1", SOLARA_SHELL_PANES: "1", SOLARA_TAB_POOL: "1" } },
+  { tag: "native", env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_PAGES_POOL: "0" } },
+  { tag: "pool", env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_PAGES_POOL: "1", SOLARA_SHELL_PANES: "1", SOLARA_TAB_POOL: "1" } },
 ].filter((l) => !legsArg || legsArg.split(",").includes(l.tag));
 const measured = {};
 
@@ -259,9 +253,8 @@ try {
     for (const field of ["windows.sidePanel", "sidePanelLiveViews", "settings.extensionSidePanelWidth", "hostedKinds", "haptics"]) assert.ok(identity.capabilities.available.includes(field), field);
     assert.equal(nativeWindow(identity).chromeWindowNumber, number);
     assert.equal(identity.tabs.find((t) => t.id === "a").title, "A");
-    const rnPanel = tag.startsWith("rn");
     const kinds = await run(`return globalThis.expo.modules.SolaraHosted?.kinds?.() ?? [];`);
-    if (!rnPanel !== kinds.includes("extensionSidePanel")) throw new Error(`${tag}: hosted kinds ${JSON.stringify(kinds)}`);
+    if (!kinds.includes("extensionSidePanel")) throw new Error(`${tag}: hosted kinds ${JSON.stringify(kinds)}`);
     assert.deepEqual([...identity.hostedKinds].sort(), [...kinds].sort(), "native hosted registrations match the JS module");
     if (tag.endsWith("pool")) {
       const { value: served, snapshot: pooled } = await crossRead("native pool serves page A",
@@ -320,9 +313,7 @@ try {
     };
     const closedWithFocusOnA = async (how) => {
       await until(`${how}: the panel closes`, `return !shown("w1") || null;`, 4000);
-      const onA = rnPanel
-        ? { pageAFocused: await sleep(600).then(() => focused(`${origin}/a`)) }
-        : await until(`${how}: page A has focus`, async () => (await focused(`${origin}/a`)) || null, 3000);
+      const onA = await until(`${how}: page A has focus`, async () => (await focused(`${origin}/a`)) || null, 3000);
       await nativeClosed(`${how}: native panel closes`);
       return onA;
     };
@@ -342,7 +333,7 @@ try {
     await rep.check(`${tag}-opens`, async () => {
       await run(`ac.store.getState().updateSettings({ extensionSidePanelWidth: 360 }); return true;`);
       await openAndLoad(a.id);
-      const { frame } = await nativeCard(rnPanel);
+      const { frame } = await nativeCard();
       const panel = await app.page(`chrome-extension://${a.id}/panel.html`);
       let page, observed;
       try {
@@ -368,7 +359,7 @@ try {
       if (Math.abs(w - 440) > 1) throw new Error(`width ${w} after an 80 point drag`);
       assert.equal(saved.settings.extensionSidePanelWidth, w);
       await until("the card follows", `return card().then((c) => c && Math.abs(c[2] - ${w}) < 1 || null);`, 3000);
-      const { frame: g } = await nativeCard(rnPanel);
+      const { frame: g } = await nativeCard();
       await run(`return click(${number}, ${JSON.stringify(grip(g))}, 1).then(() => click(${number}, ${JSON.stringify(grip(g))}, 2)).then(() => true);`);
       let resetFrame;
       const { snapshot: reset } = await crossRead("a double-click resets it", (s) => s.settings.extensionSidePanelWidth === 360,
@@ -376,9 +367,9 @@ try {
           const value = await run(`return card().then((frame) => ({ reset: width() === 360 || null, frame }));`, timeout);
           resetFrame = value.frame;
           return value.reset;
-        }, (value, s) => value === true && (rnPanel || nativeWindow(s)?.sidePanel?.card?.width === 360 && near(nativeWindow(s).sidePanel.card.frame, resetFrame)));
+        }, (value, s) => value === true && nativeWindow(s)?.sidePanel?.card?.width === 360 && near(nativeWindow(s).sidePanel.card.frame, resetFrame));
       assert.equal(reset.settings.extensionSidePanelWidth, 360);
-      if (!rnPanel) assert.ok(near(nativeWindow(reset).sidePanel.card.frame, resetFrame), "native reset frame matches the measured card within half a point");
+      assert.ok(near(nativeWindow(reset).sidePanel.card.frame, resetFrame), "native reset frame matches the measured card within half a point");
       return w;
     });
 
@@ -422,9 +413,7 @@ try {
       await focusPanel(a.id);
       await openAndLoad(b.id);
       await until("A's panel page goes", async () => (await panelTargets(a.id)).length === 0 || null, 4000);
-      const onA = rnPanel
-        ? { pageAFocused: await sleep(600).then(() => focused(`${origin}/a`)) }
-        : await until("page A has focus after the replace", async () => (await focused(`${origin}/a`)) || null, 3000);
+      const onA = await until("page A has focus after the replace", async () => (await focused(`${origin}/a`)) || null, 3000);
       let replacementViews;
       const replaced = await untilSnapshot("native replaced panel page and one live view", async (s, remaining) => {
         replacementViews = await liveViews(remaining());

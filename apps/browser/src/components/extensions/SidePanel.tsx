@@ -1,9 +1,8 @@
-import { unwrapPageEvent, WebView, type OpenWindowRequest } from "@solara/solaracore";
+import { unwrapPageEvent, type OpenWindowRequest } from "@solara/solaracore";
 import { toEngineUrl } from "@solara/core";
-import { focusPageIfUnclaimed, hostedKinds, onHostedEvent, setWindowShellLayout, SolaraHostedView } from "@solara/settings";
-import { Hairline } from "@solara/shell";
+import { focusPageIfUnclaimed, onHostedEvent, setWindowShellLayout, SolaraHostedView } from "@solara/settings";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Easing, Image, PanResponder, StyleSheet, Text, View } from "react-native";
+import { Animated, Easing, StyleSheet } from "react-native";
 import { layout, useTheme } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
 import { setWindowSidebar, sidePanelWidthOf } from "../../store/sidebarRail";
@@ -12,19 +11,11 @@ import { useWindowId } from "../../store/hooks";
 import { useWindowShell } from "../layout/ShellBackdrop";
 import { current, nextFrame } from "../layout/shellLayout";
 import { openFromPage, pageProfileId } from "../layout/openFromPage";
-import { IconButton } from "../primitives";
 import { closeSidePanel, findExtension, showExtensionMenu, useExtensions, type SidePanel } from "./state";
 
 const MIN_WIDTH = 320;
 const MAX_WIDTH = 600;
-const HEADER = 40;
 
-function rubberBand(width: number): number {
-  const band = (over: number) => 36 * (1 - Math.exp(-over / 90));
-  if (width > MAX_WIDTH) return MAX_WIDTH + band(width - MAX_WIDTH);
-  if (width < MIN_WIDTH) return MIN_WIDTH - band(MIN_WIDTH - width);
-  return width;
-}
 const clamp = (w: number) => Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, w));
 
 let refocusing = false;
@@ -45,8 +36,7 @@ export function ExtensionSidePanel() {
   const [dragWidth, setDragWidth] = useState<number | null>(null);
   const appear = useRef(new Animated.Value(0)).current;
   const [shown, setShown] = useState(panel);
-  const [native] = useState(() => hostedKinds().includes("extensionSidePanel"));
-  if (native) refocusActivePageOnPanelLoss();
+  refocusActivePageOnPanelLoss();
 
   useEffect(() => {
     if (panel) setShown(panel);
@@ -60,7 +50,6 @@ export function ExtensionSidePanel() {
 
   const width = dragWidth ?? savedWidth;
   useShellRoom(windowId, appear, shown ? width + layout.cardInset - 1 : 0);
-  const start = useRef(width);
   const settling = useRef<Animated.CompositeAnimation | null>(null);
   const settle = useMemo(
     () => (raw: number) => {
@@ -82,46 +71,16 @@ export function ExtensionSidePanel() {
     },
     [windowId],
   );
-  const responder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onPanResponderGrant: () => {
-          settling.current?.stop();
-          start.current = sidePanelWidthOf(useBrowser.getState().windows[windowId], useBrowser.getState().settings);
-          setDragWidth(start.current);
-        },
-        onPanResponderMove: (_, g) => setDragWidth(rubberBand(start.current - g.dx)),
-        onPanResponderRelease: (_, g) => settle(rubberBand(start.current - g.dx)),
-        onPanResponderTerminate: () => setDragWidth(null),
-        onPanResponderTerminationRequest: () => false,
-      }),
-    [windowId],
-  );
-
   if (!shown) return null;
   const room = width + layout.cardInset - 1;
-  if (native)
-    return (
-      <Animated.View style={{ width: appear.interpolate({ inputRange: [0, 1], outputRange: [0, room] }), overflow: "hidden" }}>
-        <Animated.View style={{ position: "absolute", top: 0, bottom: 0, right: 0, width: room, opacity: appear }}>
-          <NativePanelCard windowId={windowId} panel={shown} width={width} onResize={(w, ended) => {
-            if (ended) return settle(w);
-            settling.current?.stop();
-            setDragWidth(w);
-          }} />
-        </Animated.View>
-      </Animated.View>
-    );
   return (
     <Animated.View style={{ width: appear.interpolate({ inputRange: [0, 1], outputRange: [0, room] }), overflow: "hidden" }}>
-      <Animated.View style={{ position: "absolute", top: 0, bottom: 0, right: 0, width: width, opacity: appear }}>
-        <PanelCard key={`${shown.extensionId}|${shown.pageProfile}|${shown.url}|${shown.opened}`} windowId={windowId} panel={shown} />
-        <View
-          {...responder.panHandlers}
-          onDoubleClick={() => setWindowSidebar(windowId, { sidePanelWidth: 360 })}
-          style={{ position: "absolute", top: 0, bottom: 0, left: -3, width: 7, cursor: "col-resize" }}
-        />
+      <Animated.View style={{ position: "absolute", top: 0, bottom: 0, right: 0, width: room, opacity: appear }}>
+        <NativePanelCard windowId={windowId} panel={shown} width={width} onResize={(w, ended) => {
+          if (ended) return settle(w);
+          settling.current?.stop();
+          setDragWidth(w);
+        }} />
       </Animated.View>
     </Animated.View>
   );
@@ -186,45 +145,4 @@ function NativePanelCard({ windowId, panel, width, onResize }: { windowId: strin
     },
   });
   return <SolaraHostedView kind="extensionSidePanel" windowId={windowId} state={state} style={StyleSheet.absoluteFill} />;
-}
-
-function PanelCard({ windowId, panel }: { windowId: string; panel: SidePanel }) {
-  const { extensionId, profile, pageProfile, url } = panel;
-  const theme = useTheme();
-  const ext = useExtensions((e) => e.lists[profile]?.find((x) => x.id === extensionId));
-  const title = ext?.actionTitle || ext?.name || "Extension";
-  const icon = ext?.actionIcon || ext?.icon;
-  return (
-    <View style={{ flex: 1, borderRadius: layout.cardRadius, overflow: "hidden", backgroundColor: theme.card }}>
-      <View style={{ height: HEADER, flexDirection: "row", alignItems: "center", paddingLeft: 12, paddingRight: 5, gap: 8 }}>
-        {icon ? <Image source={{ uri: icon }} style={{ width: 16, height: 16 }} /> : null}
-        <Text numberOfLines={1} style={{ flex: 1, fontSize: 13, fontWeight: "500", color: theme.textPrimary }}>
-          {title}
-        </Text>
-        <IconButton
-          icon="ellipsis"
-          size={13}
-          tooltip="More"
-          onPress={() => {
-            const found = findExtension(profile, extensionId);
-            if (found) void showExtensionMenu(windowId, found);
-          }}
-        />
-        <IconButton icon="xmark" size={12} weight="medium" tooltip="Close Side Panel" onPress={() => closeSidePanel(windowId)} />
-      </View>
-      <Hairline color={theme.dark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.08)"} style={{ height: 1 }} />
-      <View style={{ flex: 1, backgroundColor: "#FFFFFF" }}>
-        <WebView
-          style={StyleSheet.absoluteFill}
-          url={url}
-          profile={pageProfile}
-          standalone
-          extensionHost="sidePanel"
-          pageBackgroundColor="#FFFFFF"
-          onWindowClose={() => closeSidePanel(windowId, extensionId)}
-          onOpenWindow={(request) => openFromPage(request, { windowId, profileId: pageProfileId(windowId, pageProfile) })}
-        />
-      </View>
-    </View>
-  );
 }

@@ -205,7 +205,7 @@ try {
   }
   app = await launch(resolve(appArg), {
     data: join(scratch, `data-pool-${inputRoute}`), fresh: true, session: fixture, onboarded: true, probe: true,
-    env: { SOLARA_NATIVE_SHELL: "1", SOLARA_SHELL_PANES: "1", SOLARA_NATIVE_PAGES_POOL: "1", SOLARA_TAB_POOL: "1", SOLARA_NATIVE_SIDE_PANEL: "1" },
+    env: { SOLARA_NATIVE_SHELL: "1", SOLARA_SHELL_PANES: "1", SOLARA_NATIVE_PAGES_POOL: "1", SOLARA_TAB_POOL: "1" },
     ready: "return !!ac.store.getState().windows.w1 && !!globalThis.acSwipe",
   });
   await until("page ONE", `return title() === "ONE" || null;`, 15000);

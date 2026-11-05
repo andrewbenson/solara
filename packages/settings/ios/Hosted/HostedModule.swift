@@ -8,7 +8,7 @@ public class HostedModule: Module {
     Events("onHostedEvent")
 
     OnCreate {
-      if NativeExtensionSidePanel.enabled { HostedViews.declare(NativeExtensionSidePanel.kind) }
+      HostedViews.declare(NativeExtensionSidePanel.kind)
       if NativeBookmarksBar.enabled { HostedViews.declare(NativeBookmarksBar.kind) }
       HostedViews.declare(PanePrompts.kind)
       if NativeSidebarShell.enabled { HostedViews.declare(NativeSidebarShell.topic) }

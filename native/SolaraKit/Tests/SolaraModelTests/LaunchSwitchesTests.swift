@@ -5,7 +5,7 @@ import Testing
 
 @Suite struct LaunchSwitchesTests {
   static let defaultOn: Set<LaunchSwitch> = [
-    .nativeShell, .nativeTopStrip, .nativeSidePanel,
+    .nativeShell, .nativeTopStrip,
     .shellPanes, .nativePagesPool, .shellMainTop,
   ]
   static let shippedSurfaces = defaultOn.filter { !$0.storable(distribution: true) }
@@ -111,6 +111,25 @@ import Testing
     let invalid = LaunchSwitches(environment: ["SOLARA_NATIVE_SHELL": "yes"], defaults: defaults, distribution: false, skipStored: false)
     #expect(invalid.isOn(.nativeShell, defaultOn: false))
     #expect(!invalid.fromEnvironment(.nativeShell))
+  }
+
+  @Test func aStoredValueForARetiredSwitchIsIgnoredAndClearedOnTheNextWrite() {
+    let defaults = scratchDefaults()
+    defaults.set("0", forKey: "SOLARA_NATIVE_SIDE_PANEL")
+    defaults.set("0", forKey: "SOLARA_NATIVE_SHELL")
+    defaults.set("1", forKey: "SOLARA_NATIVE_BOOKMARKS_BAR")
+    #expect(LaunchSwitch(rawValue: "SOLARA_NATIVE_SIDE_PANEL") == nil)
+    let switches = LaunchSwitches(environment: [:], defaults: defaults, distribution: false, skipStored: false)
+    #expect(!switches.isOn(.nativeShell))
+    #expect(switches.isOn(.nativeTopStrip))
+    #expect(switches.requested(.nativeBookmarksBar, defaultOn: false))
+    let stored = StoredLaunchSwitches(defaults: defaults, distribution: false)
+    #expect(stored.value(.nativeShell) == false)
+    stored.set(.nativeTopStrip, true)
+    #expect(defaults.object(forKey: "SOLARA_NATIVE_SIDE_PANEL") == nil)
+    #expect(stored.value(.nativeShell) == false)
+    #expect(stored.value(.nativeBookmarksBar) == true)
+    #expect(stored.value(.nativeTopStrip) == true)
   }
 
   @Test func storedValuesCountOnlyAsOneOrZero() {

@@ -23,7 +23,7 @@ import Testing
 
   @Test func theRowsAreTheRemainingInterfaceSwitchesWithTheirDependencies() {
     let model = model(defaults: scratchDefaults())
-    #expect(model.rows.map(\.name) == [.nativeShell, .shellPanes, .nativeTopStrip, .nativeSidePanel])
+    #expect(model.rows.map(\.name) == [.nativeShell, .shellPanes, .nativeTopStrip])
     #expect(!model.rows.contains { $0.name == .nativePagesPool || $0.name == .shellMainTop })
     #expect(row(model, .shellPanes).needs == "Needs Native window.")
     #expect(row(model, .nativeShell).needs == nil)

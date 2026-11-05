@@ -20,7 +20,6 @@ public final class ExperimentsModel {
     .nativeShell: ("Native window", "The window's frame, page card and overlays, drawn by Solara's Swift interface."),
     .shellPanes: ("Native page overlays", "Each tab's overlays get their own place in the native window."),
     .nativeTopStrip: ("Native tab strip", "The tab strip at the top of the window."),
-    .nativeSidePanel: ("Native side panel", "An extension's side panel, beside the page."),
   ]
 
   struct Row: Identifiable, Equatable {

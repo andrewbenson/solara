@@ -9,12 +9,7 @@ import SolaraUI
 enum NativeExtensionSidePanel {
   nonisolated static let kind = "extensionSidePanel"
 
-  nonisolated static var enabled: Bool {
-    LaunchSwitches.shared.isOn(.nativeSidePanel)
-  }
-
   static func register() {
-    guard enabled else { return }
     HostedViews.declare(kind)
     HostedViews.register(kind) { windowId in
       let host = SidePanelHost(windowId: windowId)

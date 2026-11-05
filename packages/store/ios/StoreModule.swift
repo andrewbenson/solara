@@ -85,7 +85,7 @@ public class StoreModule: Module {
         status = ["active": false, "reason": NativeStore.unavailableReason ?? "not launched", "handedOff": NativeStore.handedOff, "syncRedesign": syncRedesign]
         if let refusedSession = NativeStore.refusedSession { status["refusedSession"] = refusedSession }
       }
-      status["nativeTabSleep"] = pageMain { NativeStore.shared?.tabSleep.isRunning == true }
+      status["nativeTabSleep"] = NativeStore.shared?.tabSleep.runningNow == true
       if NativeStore.safeMode { status["safeMode"] = NativeStore.safeModeAfterFailedLaunches ? "failedLaunches" : "option" }
       return status
     }

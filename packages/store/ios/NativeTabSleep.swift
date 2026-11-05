@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 internal import SolaraModel
 internal import SolaraStore
 internal import SolaraUI
@@ -8,8 +9,11 @@ final class NativeTabSleep {
   private let store: Store
   private let runner: TabSleepRunner
   private var lifecycle: Int?
+  private nonisolated let running = Mutex(false)
 
   var isRunning: Bool { runner.isRunning }
+
+  nonisolated var runningNow: Bool { running.withLock { $0 } }
 
   func sweepNow() async -> [String] { await runner.sweep() }
 
@@ -22,12 +26,20 @@ final class NativeTabSleep {
   }
 
   private func reconcile() {
-    guard LaunchSwitches.shared.isOn(.nativeTabSleep), !NativeStore.safeMode,
-      NativeStoreHandle.ownsWorkspace, NativeStoreHandle.store === store else {
+    let wanted = LaunchSwitches.shared.isOn(.nativeTabSleep) && !NativeStore.safeMode && NativeStoreHandle.ownsWorkspace
+    guard wanted, NativeStoreHandle.store === store else {
       runner.stop()
+      publishRunning(startPending: wanted && NativeStoreHandle.resolve == nil)
       return
     }
+    running.withLock { $0 = true }
     runner.start()
+    publishRunning()
+  }
+
+  private func publishRunning(startPending: Bool = false) {
+    let now = runner.isRunning || startPending
+    running.withLock { $0 = now }
   }
 
   nonisolated func stop() {
@@ -37,6 +49,7 @@ final class NativeTabSleep {
 
   private func stopOnMain() {
     runner.stop()
+    publishRunning()
     if let lifecycle { NativeStoreHandle.unsubscribeLifecycle(lifecycle) }
     lifecycle = nil
   }

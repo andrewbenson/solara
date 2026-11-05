@@ -185,7 +185,7 @@ final class RailTabView: RailIconView {
   private var close: SidebarIconButton?
   private var audio: RailBadge?
   private var spinner: SpinnerView?
-  private var badges: TabMediaBadgesView?
+  private var badges: TabBadgesView?
   private var tab: Tab?
   private var loading = false
   private var closeTooltip = "Close Tab"
@@ -232,7 +232,7 @@ final class RailTabView: RailIconView {
     loading = context.flags.loading.contains(id)
     icon.favicons = context.favicons
     icon.set(context.iconSpec(tab), palette: palette)
-    TabMediaBadgesView.attach(&badges, to: body, flags: context.flags, tabId: id, host: context.host, palette: palette)
+    TabBadgesView.attach(&badges, to: body, flags: context.flags, tabId: id, host: context.host, palette: palette)
     let colors = badgeColors(palette)
     if context.flags.playing.contains(id) || tab.muted {
       let badge = audio ?? attach(RailBadge(frame: NSRect(x: 0, y: 0, width: SidebarRail.cornerBadge, height: SidebarRail.cornerBadge)))

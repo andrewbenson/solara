@@ -53,18 +53,18 @@ private func all<View: NSView>(_ type: View.Type, in root: NSView) -> [View] {
     host.badge = ["rgba(255,255,255,0.9)", "#1B1618"]
     pager.update(state: try mediaState(), host: host)
     pager.layoutSubtreeIfNeeded()
-    #expect(all(TabMediaBadgesView.self, in: pager).isEmpty)
+    #expect(all(TabBadgesView.self, in: pager).isEmpty)
     host.pip = ["a"]
     host.capture = ["b": .camera]
     pager.update(state: try mediaState(), host: host)
     pager.layoutSubtreeIfNeeded()
-    let shown = all(TabMediaBadgesView.self, in: pager).filter { !$0.isHidden }
+    let shown = all(TabBadgesView.self, in: pager).filter { !$0.isHidden }
     #expect(shown.count == 2)
     #expect(shown.allSatisfy { $0.frame.size == CGSize(width: 16, height: 16) })
     host.pip = []
     host.capture = [:]
     pager.update(state: try mediaState(), host: host)
-    #expect(all(TabMediaBadgesView.self, in: pager).filter { !$0.isHidden }.isEmpty)
+    #expect(all(TabBadgesView.self, in: pager).filter { !$0.isHidden }.isEmpty)
   }
 
   @Test func thePlayerSitsEightAboveTheBottomAndTheListEndsAtItsTop() throws {

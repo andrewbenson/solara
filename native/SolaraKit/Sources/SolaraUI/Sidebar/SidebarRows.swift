@@ -250,7 +250,7 @@ final class TabRowView: SidebarRowView {
   private let label = FadeLabel(fontSize: 13)
   private var back: SymbolView?
   private var audio: SidebarIconButton?
-  private var badges: TabMediaBadgesView?
+  private var badges: TabBadgesView?
   private var closeButton: SidebarIconButton?
   private var spinner: SpinnerView?
   private var subtitle: FadeLabel?
@@ -377,7 +377,7 @@ final class TabRowView: SidebarRowView {
     }
     icon.favicons = context.favicons
     icon.set(context.iconSpec(tab), palette: palette)
-    TabMediaBadgesView.attach(&badges, to: body, flags: context.flags, tabId: id, host: context.host, palette: palette)
+    TabBadgesView.attach(&badges, to: body, flags: context.flags, tabId: id, host: context.host, palette: palette)
     badges?.frame = icon.frame
     label.text = context.host.renaming == "tab:\(id)" ? "" : context.title(tab)
     if (context.host.renaming == "tab:\(id)") != (rename != nil) { needsLayout = true }
@@ -1225,7 +1225,7 @@ final class TileView: SidebarRowView {
   private var active = false
   private var selected = false
   private var showsBadge = false
-  private var badges: TabMediaBadgesView?
+  private var badges: TabBadgesView?
   private var ring: IconRingView?
   private var ringShown = false
   private var ringRequest: SidebarFaviconRequest?
@@ -1283,7 +1283,7 @@ final class TileView: SidebarRowView {
       showsBadge = false
     }
     badge.isHidden = !showsBadge
-    TabMediaBadgesView.attach(&badges, to: body, flags: context.flags, tabId: folderId == nil ? tab?.id : nil, host: context.host, palette: palette)
+    TabBadgesView.attach(&badges, to: body, flags: context.flags, tabId: folderId == nil ? tab?.id : nil, host: context.host, palette: palette)
     badges?.frame = icon.frame
     glass.dark = palette.dark
     renderRing(folderId == nil ? tab : nil, context)

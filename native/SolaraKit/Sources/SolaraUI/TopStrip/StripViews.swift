@@ -255,7 +255,7 @@ final class StripTabChip: StripHoverView, StripDraggable {
   private let ring = StripOntoRing()
   private let row = CALayer()
   private let icon = TabIconView()
-  private var badges: TabMediaBadgesView?
+  private var badges: TabBadgesView?
   private let audio = StripIconButton()
   private let label = FadeLabel(fontSize: 12)
   private let close = StripIconButton()
@@ -329,7 +329,7 @@ final class StripTabChip: StripHoverView, StripDraggable {
     let base = context.base
     icon.favicons = context.sidebar.favicons
     icon.set(context.sidebar.iconSpec(tab), palette: base)
-    TabMediaBadgesView.attach(&badges, to: self, flags: context.sidebar.flags, tabId: tabId, host: context.sidebar.host, palette: base)
+    TabBadgesView.attach(&badges, to: self, flags: context.sidebar.flags, tabId: tabId, host: context.sidebar.host, palette: base)
     label.text = context.title(tab)
     label.color = band?.text ?? (active ? base.selectedText : base.textTab)
     toolTip = context.tooltip(tab)
@@ -430,7 +430,7 @@ final class StripPinnedCell: StripHoverView {
   private var ring: IconRingView?
   private var ringRequest: SidebarFaviconRequest?
   private let icon = TabIconView()
-  private var badges: TabMediaBadgesView?
+  private var badges: TabBadgesView?
   private let mosaic = FolderMosaicView()
   private(set) var cell = ""
   private var active = false
@@ -470,7 +470,7 @@ final class StripPinnedCell: StripHoverView {
       mosaic.isHidden = true
       icon.favicons = context.sidebar.favicons
       icon.set(context.sidebar.iconSpec(tab), palette: context.base)
-      TabMediaBadgesView.attach(&badges, to: self, flags: context.sidebar.flags, tabId: cell, host: context.sidebar.host, palette: context.base)
+      TabBadgesView.attach(&badges, to: self, flags: context.sidebar.flags, tabId: cell, host: context.sidebar.host, palette: context.base)
       active = context.activeId == cell
       renderRing(tab, context)
       let title = (tab.customTitle?.isEmpty == false ? tab.customTitle! : !tab.title.isEmpty ? tab.title : tab.url)

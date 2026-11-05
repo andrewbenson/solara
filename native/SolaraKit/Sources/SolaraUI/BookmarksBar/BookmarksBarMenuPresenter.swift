@@ -2,9 +2,14 @@ import AppKit
 
 @MainActor
 enum BookmarksBarMenuPresenter {
-  static func show(_ items: [BookmarksBarMenuItem], in view: NSView, at point: CGPoint?, choose: @escaping (String) -> Void) {
+  static func show(_ items: [BookmarksBarMenuItem], in view: NSView, at point: CGPoint?, selectFirst: Bool = false, choose: @escaping (String) -> Void) {
     guard view.window != nil else { return }
-    PageMenuTarget.show(make(items, choose: choose), in: view, at: point)
+    let menu = make(items, choose: choose)
+    if selectFirst {
+      menu.popUp(positioning: menu.items.first { $0.isEnabled && !$0.isSeparatorItem }, at: point ?? .zero, in: view)
+    } else {
+      PageMenuTarget.show(menu, in: view, at: point)
+    }
   }
 
   static func make(_ items: [BookmarksBarMenuItem], choose: @escaping (String) -> Void) -> NSMenu {

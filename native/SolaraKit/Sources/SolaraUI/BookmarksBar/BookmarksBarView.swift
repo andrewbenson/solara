@@ -2,9 +2,16 @@ import AppKit
 
 @MainActor
 public final class BookmarksBarView: NSView {
+  public var onFocusPage: () -> Void = {}
   public var onAction: (_ name: String, _ payload: [String: Any]) -> Void = { _, _ in }
   public private(set) var snapshot: BookmarksBarSnapshot?
 
+  private lazy var navigation = BookmarksBarNavigation(view: self)
+  #if DEBUG
+  private var simulatingKey = false
+  private var openedMenu: [String: Any]?
+  private var openedMenuItems: [[String: Any]] = []
+  #endif
   private let favicons: PageFavicons
   private var items: [BookmarksBarButton] = []
   private let overflow = BookmarksBarButton()
@@ -40,7 +47,8 @@ public final class BookmarksBarView: NSView {
     insertion.cornerRadius = 1
     insertion.zPosition = 20
     layer?.addSublayer(insertion)
-    setAccessibilityRole(.group)
+    setAccessibilityElement(true)
+    setAccessibilityRole(.toolbar)
     setAccessibilityLabel("Bookmarks bar")
     hint.font = BookmarksBarButton.font
     hint.lineBreakMode = .byTruncatingTail
@@ -50,26 +58,54 @@ public final class BookmarksBarView: NSView {
       view.isHidden = true
       addSubview(view)
     }
+    overflow.controlId = "overflow"
+    overflow.controlKind = .overflow
+    other.controlId = "other"
+    other.controlKind = .other
+    importButton.controlId = "import"
+    importButton.controlKind = .importButton
+    overflow.onOpenMenu = { [weak self] in
+      guard let self else { return }
+      self.showMenu(trigger: "overflow", anchor: self.overflow, selectFirst: true)
+    }
+    other.onOpenMenu = { [weak self] in
+      guard let self else { return }
+      self.showMenu(trigger: "other", anchor: self.other, selectFirst: true)
+    }
     overflow.onPress = { [weak self] _, _ in
       guard let self else { return }
       self.showMenu(trigger: "overflow", anchor: self.overflow)
     }
-    overflow.onContext = { [weak self] in self?.showMenu(trigger: "blank") }
+    overflow.onContext = { [weak self] in
+      guard let self else { return }
+      self.showMenu(trigger: "blank", anchor: self.overflow)
+    }
     other.onPress = { [weak self] _, _ in
       guard let self else { return }
       self.showMenu(trigger: "other", anchor: self.other)
     }
-    other.onContext = { [weak self] in self?.showMenu(trigger: "blank") }
+    other.onContext = { [weak self] in
+      guard let self else { return }
+      self.showMenu(trigger: "blank", anchor: self.other)
+    }
     importButton.onPress = { [weak self] _, _ in self?.emit("importPress") }
-    importButton.onContext = { [weak self] in self?.showMenu(trigger: "import") }
+    importButton.onContext = { [weak self] in
+      guard let self else { return }
+      self.showMenu(trigger: "import", anchor: self.importButton)
+    }
   }
 
   required init?(coder: NSCoder) { fatalError() }
 
   public func update(_ snapshot: BookmarksBarSnapshot) {
+    navigation.captureFocus()
     cancelDrag()
     self.snapshot = snapshot
-    while items.count > snapshot.items.count { items.removeLast().removeFromSuperview() }
+    while items.count > snapshot.items.count {
+      let button = items.removeLast()
+      navigation.prepareToHide(button)
+      button.removeFromSuperview()
+    }
     for (index, item) in snapshot.items.enumerated() {
       let button: BookmarksBarButton
       if index < items.count {
@@ -79,7 +115,10 @@ public final class BookmarksBarView: NSView {
         items.append(button)
         addSubview(button, positioned: .below, relativeTo: overflow)
       }
+      button.controlId = item.id
+      button.controlKind = item.kind == .folder ? .folder : .link
       button.configure(title: item.displayTitle, symbol: item.kind == .folder ? "folder" : "globe", folder: item.kind == .folder, theme: snapshot.theme)
+      button.setAccessibilityLabel(item.title.isEmpty && item.kind == .url ? item.url.flatMap { URL(string: $0)?.host } ?? item.displayTitle : item.title)
       button.toolTip = item.kind == .url ? [item.title, item.url ?? ""].filter { !$0.isEmpty }.joined(separator: "\n") : item.title
       button.setFavicon(item.kind == .url ? item : nil, profileId: snapshot.profileId, dark: snapshot.dark, favicons: favicons)
       button.onPress = { [weak self, weak button] flags, middle in
@@ -90,7 +129,10 @@ public final class BookmarksBarView: NSView {
         }
         self.emit("press", ["id": item.id, "metaKey": flags.contains(.command), "shiftKey": flags.contains(.shift), "altKey": flags.contains(.option), "ctrlKey": flags.contains(.control), "middle": middle])
       }
-      button.onContext = { [weak self] in self?.showMenu(trigger: "item", id: item.id) }
+      button.onOpenMenu = { [weak self, weak button] in
+        self?.showMenu(trigger: "folder", id: item.id, anchor: button, selectFirst: true)
+      }
+      button.onContext = { [weak self, weak button] in self?.showMenu(trigger: "item", id: item.id, anchor: button) }
       button.onPointerDown = { [weak self] in self?.beginDrag(id: item.id, at: $0) }
       button.onPointerDrag = { [weak self] in self?.moveDrag(to: $0) }
       button.onPointerUp = { [weak self] in self?.endDrag(at: $0) ?? false }
@@ -105,6 +147,7 @@ public final class BookmarksBarView: NSView {
     divider.layer?.backgroundColor = (toolbarColor(snapshot.theme["divider"]) ?? .separatorColor).cgColor
     insertion.backgroundColor = (toolbarColor(snapshot.theme["accent"]) ?? .controlAccentColor).cgColor
     needsLayout = true
+    layoutSubtreeIfNeeded()
   }
 
   public override func setFrameSize(_ newSize: NSSize) {
@@ -116,10 +159,16 @@ public final class BookmarksBarView: NSView {
   public override func layout() {
     super.layout()
     guard let snapshot else { return }
+    navigation.captureFocus()
     let layout = BookmarksBarLayout(itemWidths: items.map(\.measuredWidth), width: bounds.width, hasOther: snapshot.hasOther && snapshot.otherId != nil)
     if let drag, layout.visible.first(where: { $0.index == drag.index })?.frame != drag.frame { cancelDrag() }
     placements = layout.visible
-    for item in items { item.isHidden = true }
+    let visibleIndexes = Set(layout.visible.map(\.index))
+    for (index, item) in items.enumerated() {
+      let hidden = !visibleIndexes.contains(index)
+      if hidden { navigation.prepareToHide(item) }
+      item.isHidden = hidden
+    }
     for placement in layout.visible {
       let offset = drag.flatMap { $0.active && $0.index == placement.index ? $0.offsetX : nil } ?? 0
       items[placement.index].frame = placement.frame.offsetBy(dx: offset, dy: 0)
@@ -130,12 +179,16 @@ public final class BookmarksBarView: NSView {
     place(other, layout.otherFrame.map { CGRect(x: $0.minX, y: $0.minY, width: min($0.width, other.measuredWidth), height: $0.height) })
     place(divider, layout.dividerFrame)
     let empty = items.isEmpty
-    importButton.isHidden = !empty || snapshot.hideBookmarksBarImport
+    let hideImport = !empty || snapshot.hideBookmarksBarImport
+    if hideImport { navigation.prepareToHide(importButton) }
+    importButton.isHidden = hideImport
     importButton.frame = CGRect(x: 8, y: 3, width: min(importButton.measuredWidth, layout.contentFrame.width), height: 24)
     hint.isHidden = !empty || !snapshot.hideBookmarksBarImport
     let height = hint.fittingSize.height
     hint.frame = CGRect(x: 12, y: (30 - height) / 2, width: max(0, layout.contentFrame.width - 4), height: height)
-    setAccessibilityChildren(subviews.filter { !$0.isHidden && $0 !== divider })
+    navigation.update(layout.visible.map { items[$0.index] } + [importButton, overflow, other])
+    setAccessibilityChildren(navigation.controls)
+    setAccessibilityHelp(hint.isHidden ? nil : hint.stringValue)
   }
 
   public override func rightMouseDown(with event: NSEvent) {
@@ -149,21 +202,34 @@ public final class BookmarksBarView: NSView {
   }
 
   public override func viewWillMove(toWindow newWindow: NSWindow?) {
-    if newWindow !== window { cancelDrag() }
+    if newWindow !== window { cancelDrag(); navigation.detach() }
     super.viewWillMove(toWindow: newWindow)
   }
 
-  public override func cancelOperation(_ sender: Any?) { cancelDrag() }
+  public override func cancelOperation(_ sender: Any?) {
+    cancelDrag()
+    if let focused = window?.firstResponder as? BookmarksBarButton, focused.isDescendant(of: self) { navigation.leaveBar() }
+  }
 
-  private func showMenu(trigger: String, id: String? = nil, anchor: NSView? = nil) {
+  public override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    needsLayout = true
+  }
+
+  private func showMenu(trigger: String, id: String? = nil, anchor: NSView? = nil, selectFirst: Bool = false) {
     guard let snapshot else { return }
     layoutSubtreeIfNeeded()
     let model = BookmarksBarMenu(snapshot: snapshot, overflowIds: overflowIds)
     let rows = model.items(trigger: trigger, id: id)
     guard !rows.isEmpty else { return }
+    #if DEBUG
+    openedMenuItems = rows.map(\.json)
+    openedMenu = ["trigger": trigger, "id": id as Any? ?? NSNull(), "items": openedMenuItems, "highlightedId": (selectFirst ? rows.first { $0.enabled && !$0.separator }?.choiceId : nil) as Any? ?? NSNull()]
+    if simulatingKey { return }
+    #endif
     let point = anchor.map { convert(CGPoint(x: $0.bounds.minX, y: $0.bounds.maxY), from: $0) }
       ?? window.map { convert($0.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil) }
-    BookmarksBarMenuPresenter.show(rows, in: self, at: point) { [weak self] choiceId in
+    BookmarksBarMenuPresenter.show(rows, in: self, at: point, selectFirst: selectFirst) { [weak self] choiceId in
       guard let choice = model.choice(trigger: trigger, id: id, choiceId: choiceId) else { return }
       self?.choose(choice, model: model) { string in
         NSPasteboard.general.clearContents()
@@ -256,8 +322,33 @@ public final class BookmarksBarView: NSView {
   }
 
   #if DEBUG
+  public func devKey(key: String, id: String?, flags: NSEvent.ModifierFlags, fullKeyboardAccess: Bool) -> [String: Any] {
+    layoutSubtreeIfNeeded()
+    simulatingKey = true
+    defer { simulatingKey = false }
+    openedMenu = nil
+    openedMenuItems = []
+    var result = navigation.devKey(key: key, id: id, flags: flags, fullKeyboardAccess: fullKeyboardAccess)
+    if let openedMenu { result["menu"] = openedMenu }
+    return result
+  }
+
+  public func devAccessibility() -> [String: Any] {
+    layoutSubtreeIfNeeded()
+    let actions: [(NSAccessibility.Action, Selector)] = [(.press, #selector(accessibilityPerformPress)), (.showMenu, #selector(accessibilityPerformShowMenu))]
+    let children: [[String: Any]] = navigation.controls.map { button in
+      ["id": button.controlId, "role": button.accessibilityRole()?.rawValue as Any? ?? NSNull(),
+       "subrole": button.accessibilitySubrole()?.rawValue as Any? ?? NSNull(),
+       "roleDescription": button.accessibilityRoleDescription() as Any? ?? NSNull(),
+       "label": button.accessibilityLabel() ?? "", "help": button.accessibilityHelp() ?? "",
+       "actions": actions.filter { button.isAccessibilitySelectorAllowed($0.1) }.map { $0.0.rawValue }]
+    }
+    return ["role": accessibilityRole()?.rawValue ?? "", "label": accessibilityLabel() ?? "", "help": accessibilityHelp() ?? "", "children": children]
+  }
+
   public func devMenu(trigger: String, id: String?) -> [[String: Any]] {
     layoutSubtreeIfNeeded()
+    if trigger == "open" { return openedMenuItems }
     guard let snapshot else { return [] }
     return BookmarksBarMenu(snapshot: snapshot, overflowIds: overflowIds).items(trigger: trigger, id: id).map(\.json)
   }
@@ -331,6 +422,7 @@ public final class BookmarksBarView: NSView {
   #endif
 
   private func place(_ view: NSView, _ frame: CGRect?) {
+    if frame == nil, let button = view as? BookmarksBarButton { navigation.prepareToHide(button) }
     view.isHidden = frame == nil
     if let frame { view.frame = frame }
   }

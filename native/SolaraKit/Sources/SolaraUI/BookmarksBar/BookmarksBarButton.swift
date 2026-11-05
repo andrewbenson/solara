@@ -6,6 +6,19 @@ final class BookmarksBarButton: NSView {
   private static let labelInset: CGFloat = 2
   var onPress: (_ flags: NSEvent.ModifierFlags, _ middle: Bool) -> Void = { _, _ in }
   var onContext: () -> Void = {}
+  var onOpenMenu: () -> Void = {}
+  var onKey: (_ key: String, _ flags: NSEvent.ModifierFlags) -> Bool = { _, _ in false }
+  #if DEBUG
+  var devFullKeyboardAccess: Bool?
+  #endif
+  var fullKeyboardAccessEnabled: Bool {
+    #if DEBUG
+    if let devFullKeyboardAccess { return devFullKeyboardAccess }
+    #endif
+    return NSApp?.isFullKeyboardAccessEnabled ?? false
+  }
+  var controlId = ""
+  var controlKind: BookmarksBarKeyboard.Kind = .link
   var onPointerDown: ((CGPoint) -> Void)?
   var onPointerDrag: ((CGPoint) -> Void)?
   var onPointerUp: ((CGPoint) -> Bool)?
@@ -28,6 +41,67 @@ final class BookmarksBarButton: NSView {
 
   override var isFlipped: Bool { true }
   override var mouseDownCanMoveWindow: Bool { false }
+  var isVisibleControl: Bool { !isHiddenOrHasHiddenAncestor && bounds.width > 0 && bounds.height > 0 }
+  override var acceptsFirstResponder: Bool {
+    BookmarksBarKeyboard.acceptsFocus(fullKeyboardAccess: fullKeyboardAccessEnabled, visible: isVisibleControl)
+  }
+  override var canBecomeKeyView: Bool { acceptsFirstResponder && super.canBecomeKeyView }
+  override var focusRingMaskBounds: NSRect { bounds }
+
+  override func drawFocusRingMask() {
+    NSColor.black.setFill()
+    NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6).fill()
+  }
+
+  override func becomeFirstResponder() -> Bool {
+    guard acceptsFirstResponder else { return false }
+    needsDisplay = true
+    noteFocusRingMaskChanged()
+    return true
+  }
+
+  override func resignFirstResponder() -> Bool {
+    needsDisplay = true
+    noteFocusRingMaskChanged()
+    return true
+  }
+
+  override func keyDown(with event: NSEvent) {
+    let key = Self.keyName(event)
+    if onKey(key, event.modifierFlags) { return }
+    let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
+    if key == "Tab", flags.isEmpty || flags == .shift {
+      if flags == .shift { window?.selectPreviousKeyView(self) } else { window?.selectNextKeyView(self) }
+      return
+    }
+    super.keyDown(with: event)
+  }
+
+  override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    if window?.firstResponder === self, onKey(Self.keyName(event), event.modifierFlags) { return true }
+    return super.performKeyEquivalent(with: event)
+  }
+
+  override func showContextMenuForSelection(_ sender: Any?) { onContext() }
+
+  override func accessibilityHelp() -> String? { toolTip }
+
+  private static func keyName(_ event: NSEvent) -> String {
+    switch event.keyCode {
+    case 123: return "Left"
+    case 124: return "Right"
+    case 115: return "Home"
+    case 119: return "End"
+    case 36, 76: return "Return"
+    case 49: return "Space"
+    case 125: return "Down"
+    case 109: return "F10"
+    case 110: return "ContextMenu"
+    case 53: return "Escape"
+    case 48: return "Tab"
+    default: return event.charactersIgnoringModifiers ?? ""
+    }
+  }
 
   var measuredWidth: CGFloat {
     guard !title.stringValue.isEmpty else { return 28 }
@@ -36,6 +110,7 @@ final class BookmarksBarButton: NSView {
 
   init() {
     super.init(frame: .zero)
+    focusRingType = .default
     wantsLayer = true
     layer?.cornerRadius = 6
     layer?.masksToBounds = true
@@ -64,7 +139,8 @@ final class BookmarksBarButton: NSView {
     self.theme = theme
     pressedButton = nil
     iconSize = symbol == "globe" ? 14 : 16
-    setAccessibilityLabel(folder ? "\(title), folder" : title)
+    setAccessibilityLabel(title)
+    setAccessibilityRoleDescription(folder ? "folder" : NSAccessibility.Role.button.description(with: nil))
     toolTip = title
     apply()
     needsLayout = true

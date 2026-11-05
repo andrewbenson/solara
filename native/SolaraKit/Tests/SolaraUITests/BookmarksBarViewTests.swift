@@ -25,7 +25,7 @@ struct BookmarksBarViewTests {
     view.onAction = { events.append(($0, $1)) }
     view.update(snapshot(items))
     view.layoutSubtreeIfNeeded()
-    #expect(buttons(view).map { $0.accessibilityLabel() } == ["Example", "Work, folder"])
+    #expect(buttons(view).map { $0.accessibilityLabel() } == ["Example", "Work"])
     #expect(buttons(view)[0].accessibilityPerformPress())
     #expect(events.last?.0 == "press")
     #expect(events.last?.1["id"] as? String == "a")
@@ -66,7 +66,7 @@ struct BookmarksBarViewTests {
     view.onAction = { events.append(($0, $1)) }
     view.update(snapshot(items, hasOther: true))
     view.layoutSubtreeIfNeeded()
-    #expect(buttons(view).map { $0.accessibilityLabel() } == ["More bookmarks", "Other Bookmarks, folder"])
+    #expect(buttons(view).map { $0.accessibilityLabel() } == ["More bookmarks", "Other Bookmarks"])
     #expect(buttons(view)[0].accessibilityPerformPress())
     #expect(events.isEmpty)
     #if DEBUG
@@ -85,7 +85,7 @@ struct BookmarksBarViewTests {
     view.onAction = { events.append(($0, $1)) }
     view.update(snapshot([], hasOther: true))
     view.layoutSubtreeIfNeeded()
-    let other = try #require(buttons(view).first { $0.accessibilityLabel() == "Other Bookmarks, folder" })
+    let other = try #require(buttons(view).first { $0.accessibilityLabel() == "Other Bookmarks" })
     let event = try #require(NSEvent.mouseEvent(with: .rightMouseDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
     other.rightMouseDown(with: event)
     #expect(events.isEmpty)

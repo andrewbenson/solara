@@ -9,6 +9,7 @@ const sources = {
   "@solara/settings": `
     const f = globalThis.nativeBookmarksBarTest;
     export const hostedKinds = () => f.kinds;
+    export const focusPageIfUnclaimed = (...args) => { f.actions.push(["focusPage", ...args]); return Promise.resolve(true); };
     export const SolaraHostedView = "HostedView";
     export const onHostedEvent = (kind, windowId, fn) => {
       f.listeners.set(windowId, fn);
@@ -27,6 +28,7 @@ const sources = {
   };`,
   "../../store/browser": `const f = globalThis.nativeBookmarksBarTest; export const useBrowser = (fn) => fn(f.state); useBrowser.getState = () => f.state;`,
   "../../store/hooks": `export const useWindowId = () => globalThis.nativeBookmarksBarTest.windowId;`,
+  "../../store/peek": `export const shownPageId = (state, windowId) => state.windows[windowId]?.shownPageId;`,
   "../../store/model": `export const bookmarkProfileId = (_state, window) => window.profileId;`,
   "../settings/windows": `export const openImport = () => globalThis.nativeBookmarksBarTest.actions.push(["import"]);`,
   "./actions": `
@@ -218,5 +220,15 @@ test("menu choices preserve colon-containing IDs and reject unrelated or removed
   event("menuChoice", { action: "delete", id: "missing", profileId: "one" });
   delete f.state.bookmarks.nodes[id];
   event("menuChoice", { action: "addPage", id, profileId: "one" });
+  assert.equal(f.actions.length, 1);
+});
+
+test("Escape returns focus through the existing page host API for its window", () => {
+  mount();
+  f.state.windows.first.shownPageId = "active-page";
+  f.listeners.get("first")("focusPage", {});
+  assert.deepEqual(f.actions, [["focusPage", "first", "active-page"]]);
+  f.state.windows.first.shownPageId = undefined;
+  f.listeners.get("first")("focusPage", {});
   assert.equal(f.actions.length, 1);
 });

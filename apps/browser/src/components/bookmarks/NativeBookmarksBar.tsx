@@ -1,4 +1,4 @@
-import { hostedKinds, onHostedEvent, SolaraHostedView } from "@solara/settings";
+import { focusPageIfUnclaimed, hostedKinds, onHostedEvent, SolaraHostedView } from "@solara/settings";
 import { memo, useEffect } from "react";
 import { View } from "react-native";
 import { addFolderToSidebar } from "../../lib/bookmarkGroups";
@@ -7,6 +7,7 @@ import { folderChildren } from "../../store/bookmarks";
 import { useBrowser } from "../../store/browser";
 import { useWindowId } from "../../store/hooks";
 import { bookmarkProfileId } from "../../store/model";
+import { shownPageId } from "../../store/peek";
 import { openImport } from "../settings/windows";
 import { useSidebarWidth } from "../sidebar/tokens";
 import { openModeFor, openUrl } from "./actions";
@@ -67,6 +68,9 @@ function Bar({ windowId }: { windowId: string }) {
         if (!roots || !s.bookmarks.nodes[id] || !contains([roots.bar, roots.other])) return;
       }
       void handleBookmarksBarMenuChoice(windowId, currentProfileId, payload.action, id);
+    } else if (name === "focusPage") {
+      const tabId = shownPageId(s, windowId);
+      if (tabId) void focusPageIfUnclaimed(windowId, tabId);
     } else if (name === "importPress") openImport();
   }), [windowId]);
   return <SolaraHostedView kind="bookmarksBar" windowId={windowId} state={state} style={{ height: BOOKMARKS_BAR_HEIGHT }} />;

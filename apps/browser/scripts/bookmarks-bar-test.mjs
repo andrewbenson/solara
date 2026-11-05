@@ -83,6 +83,8 @@ const until = async (what, body, accept = (value) => !!value, timeout = 8000) =>
 };
 const layout = () => run('return H.devBookmarksBarLayout("w1").then(JSON.parse);');
 const menu = (trigger, id = null) => run(`return H.devBookmarksBarMenu("w1", ${JSON.stringify(trigger)}, ${JSON.stringify(id)}).then(JSON.parse);`);
+const key = (name, id, modifiers = 0, fullKeyboardAccess = true) => run(`return H.devBookmarksBarKey("w1", ${JSON.stringify(name)}, ${JSON.stringify(id)}, ${modifiers}, ${fullKeyboardAccess}).then(JSON.parse);`);
+const accessibility = () => run('return H.devBookmarksBarAccessibility("w1").then(JSON.parse);');
 const choose = async (trigger, id, choiceId) => {
   const result = await run(`return H.devBookmarksBarChoose("w1", ${JSON.stringify(trigger)}, ${JSON.stringify(id)}, ${JSON.stringify(choiceId)}).then(JSON.parse);`);
   assert.equal(result.accepted, true, `${trigger} accepts ${choiceId}`);
@@ -170,7 +172,7 @@ try {
   await rep.check("launch-switch", async () => {
     const kinds = await run("return H.kinds();");
     assert.equal(kinds.includes("bookmarksBar"), native);
-    if (native) assert.equal(await run('return typeof H.devBookmarksBarInput === "function" && typeof H.devBookmarksBarLayout === "function" && typeof H.devBookmarksBarMenu === "function" && typeof H.devBookmarksBarChoose === "function";'), true, "Debug native hooks available");
+    if (native) assert.equal(await run('return typeof H.devBookmarksBarInput === "function" && typeof H.devBookmarksBarLayout === "function" && typeof H.devBookmarksBarMenu === "function" && typeof H.devBookmarksBarChoose === "function" && typeof H.devBookmarksBarKey === "function" && typeof H.devBookmarksBarAccessibility === "function";'), true, "Debug native hooks available");
     else await until("React Native bar mounted", "return rnBar();");
     return native ? "native" : "React Native";
   });
@@ -193,6 +195,104 @@ try {
     if (native) await visibleItem(ids.first);
     else await until("RN bookmark button", `return rnButtons().some((fiber) => itemId(fiber) === ${JSON.stringify(ids.first)});`);
   };
+  if (native) {
+    await rep.check("native-key-focus-order", async () => {
+      await reset();
+      const state = await layout();
+      const ordered = [...state.visible.map((item) => item.id), "overflow", "other"];
+      for (const [name, from, expected] of [
+        ["Right", ids.first, ids.second],
+        ["Left", ids.second, ids.first],
+        ["Left", ids.first, ids.first],
+        ["Home", ids.folder, ids.first],
+        ["End", ids.first, "other"],
+        ["Right", state.visible.at(-1).id, "overflow"],
+        ["Left", "overflow", state.visible.at(-1).id],
+        ["Left", "other", "overflow"],
+        ["Right", "overflow", "other"],
+        ["Right", "other", "other"],
+      ]) {
+        const result = await key(name, from);
+        assert.equal(result.accepted, true, `${name} accepted from ${from}`);
+        assert.equal(result.focusedId, expected, `${name} from ${from}`);
+        assert.deepEqual(result.keyViews, ordered, "key views follow visual order");
+      }
+    });
+    await rep.check("native-key-full-keyboard-access-gate", async () => {
+      const result = await key("Right", ids.first, 0, false);
+      assert.equal(result.accepted, false);
+      assert.equal(result.focusedId, null);
+      assert.deepEqual(result.keyViews, [], "Tab cannot enter the bar without Full Keyboard Access");
+    });
+    await rep.check("native-key-return-current-tab", async () => {
+      await reset();
+      const count = await run("return S().windows.w1.tabIds.length;");
+      assert.equal((await key("Return", ids.first)).accepted, true);
+      await until("Return navigates current tab", `return active() === "a" && S().tabs.a.url === ${JSON.stringify(destination)};`);
+      assert.equal(await run("return S().windows.w1.tabIds.length;"), count);
+    });
+    await rep.check("native-key-command-return-background-tab", async () => {
+      await reset();
+      const before = await run("return [...S().windows.w1.tabIds];");
+      assert.equal((await key("Return", ids.first, 1 << 20)).accepted, true);
+      const after = await until("Command-Return creates background tab", "return { ids: S().windows.w1.tabIds, active: active(), tabs: S().tabs };", (value) => value.ids.length === before.length + 1);
+      const created = after.ids.find((id) => !before.includes(id));
+      assert.equal(after.tabs[created].url, destination);
+      assert.equal(after.active, "a");
+    });
+    await rep.check("native-key-down-folder-menu", async () => {
+      await reset();
+      const result = await key("Down", ids.folder);
+      assert.equal(result.accepted, true);
+      assert.equal(result.focusedId, ids.folder);
+      assert.equal(result.menu.trigger, "folder");
+      assert.equal(result.menu.id, ids.folder);
+      assert.equal(result.menu.highlightedId, `open:${ids.nested}`);
+      assert.deepEqual(menuRows(await menu("open")), menuRows(await menu("folder", ids.folder)), "Down opens the 3a folder menu");
+    });
+    await rep.check("native-key-context-menu", async () => {
+      const result = await key("F10", ids.first, 1 << 17);
+      assert.equal(result.accepted, true);
+      assert.equal(result.menu.trigger, "item");
+      assert.equal(result.menu.id, ids.first);
+      assert.deepEqual(menuRows(await menu("open")), menuRows(await menu("item", ids.first)), "Shift-F10 opens the 3a item context menu");
+    });
+    await rep.check("native-key-escape-page", async () => {
+      const result = await key("Escape", ids.first);
+      assert.equal(result.accepted, true);
+      assert.equal(result.focusedId, null);
+    });
+    await rep.check("native-accessibility-tree", async () => {
+      const state = await layout();
+      const tree = await accessibility();
+      assert.equal(tree.role, "AXToolbar");
+      assert.equal(tree.label, "Bookmarks bar");
+      assert.deepEqual(tree.children.map((child) => child.id), [...state.visible.map((item) => item.id), "overflow", "other"]);
+      for (const child of tree.children) {
+        assert.equal(child.role, "AXButton");
+        assert.equal(child.subrole, null);
+        assert.deepEqual(child.actions, ["AXPress", "AXShowMenu"]);
+      }
+      const first = tree.children.find((child) => child.id === ids.first);
+      assert.equal(first.label, "A");
+      assert.equal(first.help, `A\n${destination}`);
+      assert.equal(tree.children.find((child) => child.id === ids.second).label, "B");
+      const folder = tree.children.find((child) => child.id === ids.folder);
+      assert.equal(folder.label, "Folder");
+      assert.equal(folder.help, "Folder");
+      assert.equal(folder.roleDescription, "folder");
+      for (const child of tree.children.slice(3, -2)) {
+        const index = ids.overflow.indexOf(child.id);
+        assert.ok(index >= 0);
+        assert.equal(child.label, `Overflow bookmark ${index}`);
+        assert.equal(child.help, `Overflow bookmark ${index}\n${base}/overflow/${index}`);
+      }
+      assert.equal(tree.children.at(-2).label, "More bookmarks");
+      assert.equal(tree.children.at(-2).help, "More bookmarks");
+      assert.equal(tree.children.at(-1).label, "Other Bookmarks");
+      assert.equal(tree.children.at(-1).roleDescription, "folder");
+    });
+  }
   await rep.check("plain-press-current-tab", async () => {
     await reset();
     const count = await run("return S().windows.w1.tabIds.length;");
@@ -499,6 +599,11 @@ try {
     await until("empty bar root", "return barIds().length === 0;");
     if (native) {
       await until("empty import button", 'return H.devBookmarksBarLayout("w1").then(JSON.parse);', (value) => value?.importShown && !value.hintShown && value.otherShown);
+      const tree = await accessibility();
+      assert.deepEqual(tree.children.map((child) => child.id), ["import", "other"]);
+      assert.equal(tree.children[0].label, "Import bookmarks");
+      assert.equal(tree.children[0].role, "AXButton");
+      assert.equal(tree.children[0].help, "Add bookmarks from another browser");
       assert.deepEqual(menuRows(await menu("import")), [row("Hide Import Bookmarks Button", "hide")]);
       await choose("import", null, "hide");
       await until("Hide Import choice updates settings", "return S().settings.hideBookmarksBarImport === true;");

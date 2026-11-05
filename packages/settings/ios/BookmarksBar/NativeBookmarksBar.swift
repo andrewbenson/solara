@@ -34,6 +34,9 @@ private final class BookmarksBarHost {
 
   init(windowId: String) {
     view = BookmarksBarView(favicons: PageNetwork.favicons)
+    view.onFocusPage = {
+      HostedViews.send(NativeBookmarksBar.kind, windowId: windowId, "focusPage", [:])
+    }
     view.onAction = { name, payload in
       HostedViews.send(NativeBookmarksBar.kind, windowId: windowId, name, payload)
     }
@@ -71,6 +74,18 @@ extension NativeBookmarksBar {
   static func devChooseJSON(windowId: String, trigger: String, id: String?, choiceId: String) -> String {
     guard let view = devHosts[windowId]?.value?.view, view.window != nil, !view.isHiddenOrHasHiddenAncestor,
       let data = try? JSONSerialization.data(withJSONObject: view.devChoose(trigger: trigger, id: id, choiceId: choiceId)) else { return #"{"accepted":false}"# }
+    return String(decoding: data, as: UTF8.self)
+  }
+
+  static func devKeyJSON(windowId: String, key: String, id: String?, modifiers: Int, fullKeyboardAccess: Bool) -> String {
+    guard let view = devHosts[windowId]?.value?.view, view.window != nil, !view.isHiddenOrHasHiddenAncestor,
+      let data = try? JSONSerialization.data(withJSONObject: view.devKey(key: key, id: id, flags: NSEvent.ModifierFlags(rawValue: UInt(bitPattern: modifiers)), fullKeyboardAccess: fullKeyboardAccess)) else { return "null" }
+    return String(decoding: data, as: UTF8.self)
+  }
+
+  static func devAccessibilityJSON(windowId: String) -> String {
+    guard let view = devHosts[windowId]?.value?.view, view.window != nil, !view.isHiddenOrHasHiddenAncestor,
+      let data = try? JSONSerialization.data(withJSONObject: view.devAccessibility()) else { return "null" }
     return String(decoding: data, as: UTF8.self)
   }
 

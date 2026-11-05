@@ -154,11 +154,12 @@ A new chromium patch that touches files no earlier patch touched also needs thei
 the patch not yet in the tree, run `series.py capture-base --phase chromium`, then `git -C <src> apply` the patch and
 `series.py check`.
 
-The Hill Studio has no Chromium tree. After an engine build that changes what main ships, copy the framework there and
-point `hill` at it, or its app builds embed the previous engine: `rsync -a "out/Release_GN_arm64/Chromium
-Framework.framework" hill-studio:solara-engine/<uuid16>/` (the first 16 hex digits of `dwarfdump --uuid`, without
-dashes), check the UUID there, then set `SOLARACORE_FRAMEWORK` in `remote_env` and the engine line of
-`~/.cache/solara-lead/bin/hill`'s header to that directory. A pair of app and engine that must ship together (a new
+The Hill Studio has one Chromium tree and one `out/Release_GN_arm64`, shared by every clone there: `engine-build` copies
+the engine layers of the clone that runs it into the tree (`rsync --delete`) and links its own `chrome_framework`, so the
+last build wins, and an engine build with code not on main waits until no release's engine depends on the tree. To put
+the tree back, run `engine-build` from a clone at main (or the release commit): one incremental build, never a hand edit
+in `out/`. App builds there take the published engine for their tree (`fetch-engine.sh`), and `out/` only for
+unpublished engine work; export `SOLARACORE_FRAMEWORK` to force one. A pair of app and engine that must ship together (a new
 native API) lands in one commit, so main never builds an app against an engine it can't start with.
 
 ## Our hooks in Chrome's code

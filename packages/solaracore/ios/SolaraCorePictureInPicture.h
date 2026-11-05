@@ -11,6 +11,6 @@ void WatchZoom();
 void VideoEntered(SolaraCoreWebView *view, NSString *host);
 void DocumentEntered();
 
-void TabRequestedActivation(SolaraCoreWebView *view);
+void TabRequestedActivation(SolaraCoreWebView *view, NSString *reason);
 
 }

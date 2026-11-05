@@ -63,7 +63,7 @@ const usesPageA = [
   "settings-services", "download-navigation", "page-events", "page-background", "appearance-reaches-pages", "external-app-answer",
   "notifications", "now-playing", "media-state", "auto-picture-in-picture", "pip-window", "page-focus", "page-press-split",
   "fullscreen-tab-switch", "fullscreen-native", "escape-in-window-fullscreen", "fullscreen-transition-picture", "fullscreen-hidden-page", "fullscreen-split-sibling",
-  "fullscreen-pip", "pip-fullscreen-space", "pip-keep-on-top-reopen", "webkit-picture-in-picture", "autofill-suggestions", "images", "extension-surfaces", "frozen", "discard",
+  "fullscreen-pip", "pip-fullscreen-space", "pip-keep-on-top-reopen", "webkit-picture-in-picture", "pip-document-back-to-tab", "autofill-suggestions", "images", "extension-surfaces", "frozen", "discard",
   "permission-prompt", "popup-blocked", "move-tab-slow-mount", "move-last-tab-slow-mount",
   "move-tab-closed-while-parked", "move-tab-to-window", "title-bar-close", "last-used-profile",
 ];
@@ -4859,6 +4859,57 @@ try {
     }
   });
 
+  await check("pip-document-back-to-tab", async () => {
+    const tab = await openTab(`${base}/video?document-back-to-tab`, "Video");
+    const logLines = () => (existsSync(join(data, "activation.log")) ? readFileSync(join(data, "activation.log"), "utf8") : "").split("\n");
+    const backToTab = (from) => logLines().slice(from).filter((l) => l.includes("Back to Tab (document Picture in Picture)"));
+    let other = null;
+    try {
+      const t = await pageFor(tab.id, "/video");
+      const doc = await cdp(t, "Runtime.evaluate", {
+        expression: "documentPictureInPicture.requestWindow({ width: 320, height: 180 }).then(() => 'ok', (e) => e.name)",
+        awaitPromise: true, userGesture: true, returnByValue: true,
+      });
+      if (doc.result?.value !== "ok") throw new Error(`documentPictureInPicture.requestWindow: ${JSON.stringify(doc.result)}`);
+      const docWindow = await until("the document PiP window", async () => (await pipWindows())?.find((w) => w.document && w.visible) ?? null, 5000);
+      await sleep(500);
+      const snapshot = await cef(`devPictureInPictureAction("documentSnapshot:document-bar")`);
+      other = await openTab(`${base}/a?document-back-to-tab`, "Page A");
+      const quiet = logLines().length - 1;
+      await cdp(t, "Runtime.evaluate", { expression: "window.focus(); true", userGesture: true });
+      await sleep(1000);
+      const pageFocusActivated = backToTab(quiet).length > 0;
+      const focusShowedTab = (await state()).active === tab.id;
+      if (!(await pipWindows())?.some((w) => w.document && w.visible)) {
+        await evalApp(`ac.actions.switchToTab(${JSON.stringify(tab.id)}); return true`);
+        await until("the call's tab shown again", async () => ((await state()).active === tab.id ? true : null), 5000);
+        const again = await cdp(t, "Runtime.evaluate", {
+          expression: "documentPictureInPicture.requestWindow({ width: 320, height: 180 }).then(() => 'ok', (e) => e.name)",
+          awaitPromise: true, userGesture: true, returnByValue: true,
+        });
+        if (again.result?.value !== "ok") throw new Error(`documentPictureInPicture.requestWindow again: ${JSON.stringify(again.result)}`);
+        await until("the document PiP window again", async () => (await pipWindows())?.find((w) => w.document && w.visible) ?? null, 5000);
+        await evalApp(`ac.actions.switchToTab(${JSON.stringify(other.id)}); return true`);
+        await until("the other tab shown", async () => ((await state()).active === other.id ? true : null), 5000);
+        await sleep(500);
+      }
+      const before = logLines().length - 1;
+      const clicked = await cef(`devPictureInPictureAction("documentBackToTab")`);
+      if (!String(clicked).startsWith("started")) throw new Error(`documentBackToTab: ${clicked}`);
+      const line = await until("the Back to Tab activation", async () => backToTab(before)[0] ?? null, 5000)
+        .catch(() => null);
+      const shown = await until("the call's tab shown", async () => ((await state()).active === tab.id ? true : null), 5000).catch(() => false);
+      const closed = !!(await until("document PiP closed", async () => lastEvent(tab.id, "pictureInPicture", (p) => p.kind === "document" && !p.active), 5000).catch(() => null));
+      const out = { clicked, activated: line, shown, closed, pageFocusActivated, focusShowedTab, frame: docWindow.frame, snapshot };
+      if (!line || !shown || !closed || pageFocusActivated) throw new Error(JSON.stringify(out));
+      return out;
+    } finally {
+      await evalApp(`return ac.webviews.get("${tab.id}").exitPictureInPicture()`).catch(() => null);
+      if (other) await closeTab(other.id).catch(() => null);
+      await closeTab(tab.id).catch(() => null);
+    }
+  });
+
   await check("webkit-picture-in-picture", async () => {
     const tab = await openTab(`${base}/video?webkit-pip`, "Video");
     const id = JSON.stringify(tab.id);
@@ -4941,12 +4992,33 @@ try {
       out.returnActivated = (await until("the Back to Tab activation", async () => backToTab(fromReturn)[0] ?? null, 5000).catch(() => null)) !== null;
       out.returnShown = (await until("the video's tab shown", async () => ((await state()).active === tab.id ? true : null), 5000).catch(() => false)) === true;
       out.returnClosed = await exited("PiP closed once the tab is back");
+
+      const other = await evalApp(`return ac.store.getState().createWindow({ url: "${base}/a?webkit-pip-move", background: true })`);
+      try {
+        const otherTab = await until("the other window's tab", async () => evalApp(`return ac.store.getState().windows[${JSON.stringify(other)}]?.tabIds[0] ?? null`), 10000);
+        await evalApp(`ac.store.getState().moveTabsToWindow([${id}], ${JSON.stringify(other)}); return true`);
+        await until("the video in the other window", async () => ((await evalApp(`return ac.store.getState().tabs[${id}]?.windowId`)) === other ? true : null), 5000);
+        await fresh();
+        out.movedEntry = (await enter())?.mode ?? null;
+        await evalApp(`ac.store.getState().activate(${JSON.stringify(otherTab)}); return true`);
+        await sleep(800);
+        out.movedAway = (await video())?.mode ?? null;
+        await evalApp(`ac.store.getState().moveTabsToWindow([${id}], ${JSON.stringify(mainWindow)}); return true`);
+        out.movedBack = (await until("the video back in the first window", async () => {
+          const s = await evalApp(`const s = ac.store.getState(); return { windowId: s.tabs[${id}]?.windowId, active: Object.values(s.windows[${JSON.stringify(mainWindow)}]?.activeTabIds ?? {}).includes(${id}) }`);
+          return s.windowId === mainWindow && s.active ? true : null;
+        }, 5000).catch(() => false)) === true;
+        out.movedClosed = await exited("PiP closed once the tab is moved into a seen window");
+      } finally {
+        await evalApp(`ac.store.getState().closeWindow(${JSON.stringify(other)}); return true`).catch(() => null);
+      }
       if (locked) report.say("webkit-picture-in-picture: the screen is locked, so WebKit never finishes a PiP exit (PIP.framework restores, WebKit's did-exit never comes); each exit is checked as begun and the page is reloaded before the next entry");
 
       if (!before.supports || out.entered !== "picture-in-picture" || out.left !== "inline" || out.exitActivated ||
           out.reentered !== "picture-in-picture" || out.whileAway !== "picture-in-picture" || out.closedOnReturn !== "inline" ||
           out.thirdEntry !== "picture-in-picture" || out.pageExitMode !== "inline" || out.pageExitActivated || !out.pageExitStayedAway || out.fakeEventsActivated ||
           out.fourthEntry !== "picture-in-picture" || out.returnSeam !== true || !out.returnActivated || !out.returnShown || out.returnClosed !== "inline" ||
+          out.movedEntry !== "picture-in-picture" || out.movedAway !== "picture-in-picture" || !out.movedBack || out.movedClosed !== "inline" ||
           (!locked && out.settledExits.some((s) => s !== true)))
         throw new Error(JSON.stringify(out));
       return out;

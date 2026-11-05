@@ -73,6 +73,24 @@ NSScreen *OverlappingScreen(NSRect frame) {
 
 NSScreen *ScreenFor(NSRect frame) { return OverlappingScreen(frame) ?: NSScreen.mainScreen; }
 
+NSString *SnapshotPictureInPictureWindow(NSWindow *window, NSString *name) {
+  NSString *dir = [NSString stringWithUTF8String:getenv("SOLARA_DATA_DIR") ?: "/tmp"];
+  NSView *content = ACWindowRootView(window);
+  NSSize size = content.bounds.size;
+  NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:nil pixelsWide:size.width * 2 pixelsHigh:size.height * 2
+                                                                bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO
+                                                               colorSpaceName:NSDeviceRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
+  CGContextRef cg = [NSGraphicsContext graphicsContextWithBitmapImageRep:rep].CGContext;
+  CGContextSetRGBFillColor(cg, 0.36, 0.42, 0.5, 1);
+  CGContextFillRect(cg, CGRectMake(0, 0, size.width * 2, size.height * 2));
+  CGContextScaleCTM(cg, 2, 2);
+  if (content.isFlipped) CGContextTranslateCTM(cg, 0, size.height), CGContextScaleCTM(cg, 1, -1);
+  [content.layer renderInContext:cg];
+  NSString *path = [dir stringByAppendingPathComponent:[NSString stringWithFormat:@"pip-%@.png", name]];
+  [[rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:path atomically:YES];
+  return path;
+}
+
 BOOL ScreenAt(CGFloat x, CGFloat y) {
   for (NSScreen *screen in NSScreen.screens)
     if (NSPointInRect(NSMakePoint(x, y), screen.frame)) return YES;
@@ -362,7 +380,6 @@ typedef NS_ENUM(NSInteger, ACPiPEdge) { ACPiPEdgeNone = 0, ACPiPEdgeLeft = -1, A
   [_overlay removeFromSuperview];
   objc_setAssociatedObject(_window, kControllerKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
-
 
 - (void)roundCorners {
   NSView *content = _window.contentView;
@@ -834,22 +851,7 @@ static __weak NSWindow *gSwipeMomentum;
 }
 
 - (NSString *)snapshot:(NSString *)name {
-  NSWindow *window = _window;
-  NSString *dir = [NSString stringWithUTF8String:getenv("SOLARA_DATA_DIR") ?: "/tmp"];
-  NSView *content = ACWindowRootView(window);
-  NSSize size = content.bounds.size;
-  NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:nil pixelsWide:size.width * 2 pixelsHigh:size.height * 2
-                                                                bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO
-                                                               colorSpaceName:NSDeviceRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
-  CGContextRef cg = [NSGraphicsContext graphicsContextWithBitmapImageRep:rep].CGContext;
-  CGContextSetRGBFillColor(cg, 0.36, 0.42, 0.5, 1);
-  CGContextFillRect(cg, CGRectMake(0, 0, size.width * 2, size.height * 2));
-  CGContextScaleCTM(cg, 2, 2);
-  if (content.isFlipped) CGContextTranslateCTM(cg, 0, size.height), CGContextScaleCTM(cg, 1, -1);
-  [content.layer renderInContext:cg];
-  NSString *path = [dir stringByAppendingPathComponent:[NSString stringWithFormat:@"pip-%@.png", name]];
-  [[rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:path atomically:YES];
-  return path;
+  return SnapshotPictureInPictureWindow(_window, name);
 }
 
 - (void)runSelfTest {
@@ -1033,7 +1035,6 @@ static __weak NSWindow *gSwipeMomentum;
 }
 
 @end
-
 
 @interface ACPiPZoom : NSObject
 + (BOOL)handle:(NSEvent *)event;
@@ -1341,10 +1342,22 @@ void DocumentEntered() {
   look();
 }
 
-void TabRequestedActivation(SolaraCoreWebView *view) {
+namespace {
+
+BOOL UserActedOnDocumentPictureInPicture() {
+  NSEvent *event = NSApp.currentEvent;
+  if (event.type != NSEventTypeLeftMouseUp && event.type != NSEventTypeKeyDown) return NO;
+  return event.window && IsChromeDocumentPictureInPicture(event.window);
+}
+
+}
+
+void TabRequestedActivation(SolaraCoreWebView *view, NSString *reason) {
   for (NSWindow *window in NSApp.windows)
     if ([ACPiPController forWindow:window].view == view && window.visible && !window.hasShadow)
       return ActivateApp(@"Back to Tab (Chrome's button)");
+  if ([reason isEqual:@"pictureInPicture"] && UserActedOnDocumentPictureInPicture())
+    ActivateApp(@"Back to Tab (document Picture in Picture)");
 }
 
 void VideoEntered(SolaraCoreWebView *view, NSString *host) {
@@ -1360,6 +1373,44 @@ void VideoEntered(SolaraCoreWebView *view, NSString *host) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 50 * NSEC_PER_MSEC), dispatch_get_main_queue(), look);
   };
   look();
+}
+
+}
+
+namespace {
+
+id FindBackToTabButton(id element, int depth) {
+  if (!element || depth > 12) return nil;
+  if ([element respondsToSelector:@selector(accessibilityRole)] && [[element accessibilityRole] isEqual:NSAccessibilityButtonRole]) {
+    NSString *name = [[NSString stringWithFormat:@"%@ %@ %@", [element accessibilityLabel] ?: @"", [element accessibilityTitle] ?: @"",
+                                                 [element accessibilityHelp] ?: @""] lowercaseString];
+    if ([name containsString:@"back to tab"]) return element;
+  }
+  if (![element respondsToSelector:@selector(accessibilityChildren)]) return nil;
+  for (id child in [element accessibilityChildren])
+    if (id found = FindBackToTabButton(child, depth + 1)) return found;
+  return nil;
+}
+
+NSString *ClickDocumentBackToTab() {
+  NSWindow *window = nil;
+  for (NSWindow *candidate in NSApp.windows)
+    if (candidate.visible && IsChromeDocumentPictureInPicture(candidate)) window = candidate;
+  if (!window) return @"no document window";
+  id button = FindBackToTabButton(window, 0);
+  if (!button) return @"no Back to Tab button";
+  const NSRect frame = [window convertRectFromScreen:[button accessibilityFrame]];
+  const NSPoint point = NSMakePoint(NSMidX(frame), NSMidY(frame));
+  auto event = [=](NSEventType type) {
+    return [NSEvent mouseEventWithType:type location:point modifierFlags:0 timestamp:NSProcessInfo.processInfo.systemUptime
+                          windowNumber:window.windowNumber context:nil eventNumber:0 clickCount:1 pressure:type == NSEventTypeLeftMouseDown];
+  };
+  [window.contentView mouseMoved:event(NSEventTypeMouseMoved)];
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+    [NSApp postEvent:event(NSEventTypeLeftMouseDown) atStart:NO];
+    [NSApp postEvent:event(NSEventTypeLeftMouseUp) atStart:NO];
+  });
+  return [@"started " stringByAppendingString:NSStringFromPoint(point)];
 }
 
 }
@@ -1404,6 +1455,12 @@ void VideoEntered(SolaraCoreWebView *view, NSString *host) {
 }
 
 + (NSString *)devPictureInPictureAction:(NSString *)action {
+  if ([action isEqual:@"documentBackToTab"]) return ClickDocumentBackToTab();
+  if ([action hasPrefix:@"documentSnapshot:"]) {
+    for (NSWindow *window in NSApp.windows)
+      if (window.visible && IsChromeDocumentPictureInPicture(window)) return SnapshotPictureInPictureWindow(window, [action substringFromIndex:17]);
+    return @"";
+  }
   ACPiPController *controller = nil;
   for (NSWindow *window in NSApp.windows)
     if ([ACPiPController forWindow:window] && window.visible) controller = [ACPiPController forWindow:window];

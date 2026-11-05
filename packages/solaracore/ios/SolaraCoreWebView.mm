@@ -3205,7 +3205,7 @@ static NSString *LinkKeyAction(NSString *key) {
 }
 
 - (void)tab:(SolaraCoreTab *)tab requestsActivation:(NSString *)reason {
-  solaracore_pip::TabRequestedActivation(self);
+  solaracore_pip::TabRequestedActivation(self, reason);
   [self emit:@"activateRequest" payload:@{@"reason" : reason ?: @"page"}];
 }
 

@@ -18,6 +18,8 @@ const sources = {
   `,
   react: `export const memo = (fn) => fn; export const useEffect = (fn) => { globalThis.nativeBookmarksBarTest.cleanups.push(fn()); };`,
   "react-native": `export const View = "View";`,
+  "../../lib/bookmarkGroups": `export const addFolderToSidebar = (...args) => globalThis.nativeBookmarksBarTest.actions.push(["sidebar", ...args]);`,
+  "../sidebar/tokens": `export const useSidebarWidth = () => globalThis.nativeBookmarksBarTest.sidebarWidth;`,
   "../../lib/theme": `export const useTheme = () => globalThis.nativeBookmarksBarTest.theme;`,
   "../../store/bookmarks": `export const folderChildren = (bookmarks, id) => {
     const node = bookmarks.nodes[id];
@@ -58,11 +60,12 @@ const mount = () => {
 
 beforeEach(() => {
   Object.assign(f, {
-    kinds: ["bookmarksBar"], windowId: "first", actions: [], subscriptions: [], listeners: new Map(), cleanups: [],
-    theme: { toolbarHover: "h", toolbarPressed: "p", textTab: "t", textTertiary: "q", icon: "i", divider: "d", dark: false },
+    kinds: ["bookmarksBar"], sidebarWidth: 210, windowId: "first", actions: [], subscriptions: [], listeners: new Map(), cleanups: [],
+    theme: { toolbarHover: "h", toolbarPressed: "p", textTab: "t", textTertiary: "q", icon: "i", divider: "d", accent: "a", dark: false },
     state: {
-      settings: { hideBookmarksBarImport: false },
-      windows: { first: { profileId: "one" }, second: { profileId: "two" } },
+      settings: { hideBookmarksBarImport: false, tabLayout: "sidebar" },
+      windows: { first: { profileId: "one", sidebarOpen: true }, second: { profileId: "two" } },
+      moveBookmark: (...args) => f.actions.push(["move", ...args]),
       bookmarks: {
         roots: { one: { bar: "bar", other: "other" }, two: { bar: "secondBar", other: "secondOther" } },
         nodes: { bar: folder("bar", ["a", "folder", "b"]), a: url("a"), b: url("b"), folder: folder("folder", ["child"]), child: url("child"), other: folder("other", ["child"]), secondBar: folder("secondBar", ["second"]), second: url("second"), secondOther: folder("secondOther", []) },
@@ -135,4 +138,67 @@ test("events drawn for a previous profile cannot act on the newly selected profi
   assert.deepEqual(f.actions, []);
   event("press", { id: "second", profileId: "two" });
   assert.equal(f.actions.at(-1)[1], "https://second.example");
+});
+
+
+test("sidebar boundaries follow the current window visibility, layout and live width", () => {
+  assert.equal(JSON.parse(mount().props.state).sidebarEdge, 210);
+  f.sidebarWidth = 84;
+  assert.equal(JSON.parse(mount().props.state).sidebarEdge, 84);
+  f.state.windows.first.sidebarOpen = false;
+  assert.equal(JSON.parse(mount().props.state).sidebarEdge, null);
+  f.state.windows.first.sidebarOpen = true;
+  f.state.settings.tabLayout = "top";
+  assert.equal(JSON.parse(mount().props.state).sidebarEdge, null);
+  f.state.windows.first.tabLayout = "sidebar";
+  assert.equal(JSON.parse(mount().props.state).sidebarEdge, 84);
+});
+
+test("drag events retain native adjusted indexes and reuse the JS bookmark writers", () => {
+  mount();
+  const event = f.listeners.get("first");
+  event("move", { id: "a", index: 2, profileId: "one" });
+  assert.deepEqual(f.actions.at(-1), ["move", "a", "bar", 2]);
+  event("move", { id: "b", index: 0, profileId: "one" });
+  assert.deepEqual(f.actions.at(-1), ["move", "b", "bar", 0]);
+  event("move", { id: "a", into: "folder", profileId: "one" });
+  assert.deepEqual(f.actions.at(-1), ["move", "a", "folder"]);
+  event("folderToSidebar", { id: "folder", profileId: "one" });
+  assert.deepEqual(f.actions.at(-1), ["sidebar", "folder", "first"]);
+});
+
+test("invalid, removed and stale drag sources and targets cannot write", () => {
+  mount();
+  const event = f.listeners.get("first");
+  for (const payload of [
+    { id: "missing", index: 0 },
+    { id: "second", index: 0 },
+    { id: "a", index: -1 },
+    { id: "a", index: 3 },
+    { id: "a", index: 1.5 },
+    { id: "a", index: NaN },
+    { id: "a", index: "1" },
+    { id: "a", into: "a" },
+    { id: "folder", into: "folder" },
+    { id: "a", into: "secondBar" },
+    { id: "a", into: "child" },
+    { id: "a", into: 2, index: 0 },
+  ]) event("move", payload);
+  event("folderToSidebar", { id: "a" });
+  event("folderToSidebar", { id: "secondBar" });
+  f.state.bookmarks.nodes.bar.children = ["folder", "b"];
+  event("move", { id: "a", index: 0 });
+  f.state.windows.first.profileId = "two";
+  event("move", { id: "second", index: 0, profileId: "one" });
+  event("folderToSidebar", { id: "folder", profileId: "one" });
+  assert.deepEqual(f.actions, []);
+});
+
+test("a removed window ignores hosted events", () => {
+  mount();
+  delete f.state.windows.first;
+  const event = f.listeners.get("first");
+  event("move", { id: "a", index: 0, profileId: "one" });
+  event("press", { id: "a", profileId: "one" });
+  assert.deepEqual(f.actions, []);
 });

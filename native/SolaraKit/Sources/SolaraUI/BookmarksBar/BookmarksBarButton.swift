@@ -6,6 +6,11 @@ final class BookmarksBarButton: NSView {
   private static let labelInset: CGFloat = 2
   var onPress: (_ flags: NSEvent.ModifierFlags, _ middle: Bool) -> Void = { _, _ in }
   var onContext: () -> Void = {}
+  var onPointerDown: ((CGPoint) -> Void)?
+  var onPointerDrag: ((CGPoint) -> Void)?
+  var onPointerUp: ((CGPoint) -> Bool)?
+  var highlighted = false { didSet { apply() } }
+  var dragging = false { didSet { apply() } }
 
   private let title = NSTextField(labelWithString: "")
   private let image = NSImageView()
@@ -116,17 +121,14 @@ final class BookmarksBarButton: NSView {
 
   override func mouseDown(with event: NSEvent) {
     guard isHitBy(event) else { return super.mouseDown(with: event) }
-    if event.modifierFlags.contains(.control) {
-      pressedButton = nil
-      apply()
-      onContext()
-      return
-    }
-    pressedButton = 0
-    apply()
+    beginPress(at: event.locationInWindow, flags: event.modifierFlags)
   }
 
-  override func mouseUp(with event: NSEvent) { release(event, button: 0) }
+  override func mouseDragged(with event: NSEvent) { dragPress(to: event.locationInWindow) }
+
+  override func mouseUp(with event: NSEvent) {
+    endPress(at: event.locationInWindow, flags: event.modifierFlags, inside: isHitBy(event) && bounds.contains(convert(event.locationInWindow, from: nil)))
+  }
 
   override func otherMouseDown(with event: NSEvent) {
     guard event.buttonNumber == 2, isHitBy(event) else { return super.otherMouseDown(with: event) }
@@ -147,6 +149,35 @@ final class BookmarksBarButton: NSView {
   }
 
   override func accessibilityPerformPress() -> Bool { onPress([], false); return true }
+  override func accessibilityPerformShowMenu() -> Bool { onContext(); return true }
+
+  func beginPress(at point: CGPoint, flags: NSEvent.ModifierFlags) {
+    if flags.contains(.control) {
+      cancelPress()
+      onContext()
+      return
+    }
+    pressedButton = 0
+    apply()
+    onPointerDown?(point)
+  }
+
+  func dragPress(to point: CGPoint) {
+    guard pressedButton == 0 else { return }
+    onPointerDrag?(point)
+  }
+
+  func endPress(at point: CGPoint, flags: NSEvent.ModifierFlags, inside: Bool) {
+    guard pressedButton == 0 else { return }
+    let dragged = onPointerUp?(point) ?? false
+    cancelPress()
+    if !dragged && inside { onPress(flags, false) }
+  }
+
+  func cancelPress() {
+    pressedButton = nil
+    apply()
+  }
 
   private func release(_ event: NSEvent, button: Int) {
     let wasPressed = pressedButton == button
@@ -157,7 +188,7 @@ final class BookmarksBarButton: NSView {
   }
 
   private func apply() {
-    let background = pressedButton != nil ? theme["toolbarPressed"] : hovered ? theme["toolbarHover"] : nil
+    let background = pressedButton != nil && !dragging ? theme["toolbarPressed"] : hovered || highlighted ? theme["toolbarHover"] : nil
     layer?.backgroundColor = toolbarColor(background)?.cgColor
     title.textColor = toolbarColor(theme["textTab"]) ?? .labelColor
     if let faviconImage {

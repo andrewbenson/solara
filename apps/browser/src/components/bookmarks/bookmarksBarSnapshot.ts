@@ -1,7 +1,7 @@
 import type { Theme } from "../../lib/theme";
 import type { Bookmarks } from "../../store/types";
 
-type BarTheme = Pick<Theme, "toolbarHover" | "toolbarPressed" | "textTab" | "textTertiary" | "icon" | "divider" | "dark">;
+type BarTheme = Pick<Theme, "toolbarHover" | "toolbarPressed" | "textTab" | "textTertiary" | "icon" | "divider" | "accent" | "dark">;
 
 export type BookmarksBarItem = {
   id: string;
@@ -11,7 +11,7 @@ export type BookmarksBarItem = {
   favicon?: string | null;
 };
 
-export function bookmarksBarSnapshot(bookmarks: Bookmarks, profileId: string, hideBookmarksBarImport: boolean, theme: BarTheme) {
+export function bookmarksBarSnapshot(bookmarks: Bookmarks, profileId: string, hideBookmarksBarImport: boolean, theme: BarTheme, sidebarEdge: number | null = null) {
   const roots = bookmarks.roots[profileId];
   const bar = roots ? bookmarks.nodes[roots.bar] : undefined;
   const other = roots ? bookmarks.nodes[roots.other] : undefined;
@@ -31,6 +31,7 @@ export function bookmarksBarSnapshot(bookmarks: Bookmarks, profileId: string, hi
     otherId: roots?.other ?? null,
     hasOther: other?.kind === "folder" && other.children.length > 0,
     hideBookmarksBarImport,
+    sidebarEdge,
     theme: {
       toolbarHover: theme.toolbarHover,
       toolbarPressed: theme.toolbarPressed,
@@ -38,6 +39,7 @@ export function bookmarksBarSnapshot(bookmarks: Bookmarks, profileId: string, hi
       textTertiary: theme.textTertiary,
       icon: theme.icon,
       divider: theme.divider,
+      accent: theme.accent,
     },
     dark: theme.dark,
   };

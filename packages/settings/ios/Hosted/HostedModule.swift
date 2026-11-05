@@ -93,6 +93,16 @@ public class HostedModule: Module {
       OnViewDidUpdateProps { (view: SolaraHostedView) in MainActor.assumeIsolated { view.propsDidUpdate() } }
     }
 
+    #if DEBUG
+    AsyncFunction("devBookmarksBarLayout") { (windowId: String) -> String in
+      MainActor.assumeIsolated { NativeBookmarksBar.devLayoutJSON(windowId: windowId) }
+    }.runOnQueue(.main)
+
+    AsyncFunction("devBookmarksBarInput") { (windowId: String, action: String, id: String?, modifiers: Int, x: Double?) -> Bool in
+      MainActor.assumeIsolated { NativeBookmarksBar.devInput(windowId: windowId, action: action, id: id, modifiers: modifiers, x: x) }
+    }.runOnQueue(.main)
+    #endif
+
     AsyncFunction("devHost") { (kind: String, windowId: String, on: Bool) -> [String: String] in
       MainActor.assumeIsolated { DevHost.toggle(kind: kind, windowId: windowId, on: on) }
     }.runOnQueue(.main)

@@ -15,6 +15,7 @@ struct BookmarksBarSnapshotTests {
     #expect(snapshot.hasOther)
     #expect(!snapshot.hideBookmarksBarImport)
     #expect(!snapshot.dark)
+    #expect(snapshot.sidebarEdge == nil)
     #expect(snapshot.theme["textTab"] == "#112233")
     #expect(snapshot == (try JSONDecoder().decode(BookmarksBarSnapshot.self, from: Data(json.utf8))))
   }
@@ -27,6 +28,15 @@ struct BookmarksBarSnapshotTests {
     #expect(!snapshot.hasOther)
     #expect(snapshot.hideBookmarksBarImport)
     #expect(snapshot.dark)
+  }
+
+  @Test func decodesAccentAndOptionalWindowSidebarEdge() throws {
+    let json = ##"{"profileId":"profile-a","items":[],"hasOther":false,"hideBookmarksBarImport":false,"sidebarEdge":244.5,"theme":{"accent":"#AABBCC"}}"##
+    let snapshot = try JSONDecoder().decode(BookmarksBarSnapshot.self, from: Data(json.utf8))
+    #expect(snapshot.sidebarEdge == 244.5)
+    #expect(snapshot.theme["accent"] == "#AABBCC")
+    let closed = json.replacingOccurrences(of: "244.5", with: "null")
+    #expect(try JSONDecoder().decode(BookmarksBarSnapshot.self, from: Data(closed.utf8)).sidebarEdge == nil)
   }
 
   @Test func rejectsAnUnknownItemKind() {

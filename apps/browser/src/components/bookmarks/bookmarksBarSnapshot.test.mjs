@@ -43,9 +43,10 @@ test("bar snapshots follow the selected profile root order and contain only its 
     otherId: "other",
     hasOther: true,
     hideBookmarksBarImport: false,
+    sidebarEdge: null,
     theme: {
       toolbarHover: "#111111", toolbarPressed: "#222222", textTab: "#333333",
-      textTertiary: "#444444", icon: "#555555", divider: "#666666",
+      textTertiary: "#444444", icon: "#555555", divider: "#666666", accent: "#777777",
     },
     dark: true,
   });
@@ -64,4 +65,13 @@ test("missing or invalid roots produce an empty bar and no Other Bookmarks butto
   assert.deepEqual(invalid.items, []);
   assert.equal(invalid.otherId, "other");
   assert.equal(invalid.hasOther, false);
+});
+
+
+test("snapshots carry the window-local sidebar boundary without changing bookmark data", () => {
+  const bookmarks = { nodes: {}, roots: {} };
+  const snapshot = bookmarksBarSnapshot(bookmarks, "first", false, theme, 246);
+  assert.equal(snapshot.sidebarEdge, 246);
+  assert.equal(snapshot.theme.accent, theme.accent);
+  assert.equal(bookmarksBarSnapshot(bookmarks, "first", false, theme, null).sidebarEdge, null);
 });

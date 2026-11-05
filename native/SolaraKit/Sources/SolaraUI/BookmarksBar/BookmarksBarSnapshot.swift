@@ -30,8 +30,9 @@ public struct BookmarksBarSnapshot: Decodable, Equatable, Sendable {
   public var hideBookmarksBarImport: Bool
   public var theme: [String: String]
   public var dark: Bool
+  public var sidebarEdge: CGFloat?
 
-  public init(profileId: String, items: [BookmarksBarItem], otherId: String? = nil, hasOther: Bool, hideBookmarksBarImport: Bool, theme: [String: String], dark: Bool = false) {
+  public init(profileId: String, items: [BookmarksBarItem], otherId: String? = nil, hasOther: Bool, hideBookmarksBarImport: Bool, theme: [String: String], dark: Bool = false, sidebarEdge: CGFloat? = nil) {
     self.profileId = profileId
     self.items = items
     self.otherId = otherId
@@ -39,10 +40,11 @@ public struct BookmarksBarSnapshot: Decodable, Equatable, Sendable {
     self.hideBookmarksBarImport = hideBookmarksBarImport
     self.theme = theme
     self.dark = dark
+    self.sidebarEdge = sidebarEdge
   }
 
   private enum CodingKeys: String, CodingKey {
-    case profileId, items, otherId, hasOther, hideBookmarksBarImport, theme, dark
+    case profileId, items, otherId, hasOther, hideBookmarksBarImport, theme, dark, sidebarEdge
   }
 
   public init(from decoder: Decoder) throws {
@@ -54,5 +56,6 @@ public struct BookmarksBarSnapshot: Decodable, Equatable, Sendable {
     hideBookmarksBarImport = try values.decode(Bool.self, forKey: .hideBookmarksBarImport)
     theme = try values.decode([String: String].self, forKey: .theme)
     dark = try values.decodeIfPresent(Bool.self, forKey: .dark) ?? false
+    sidebarEdge = try values.decodeIfPresent(CGFloat.self, forKey: .sidebarEdge)
   }
 }

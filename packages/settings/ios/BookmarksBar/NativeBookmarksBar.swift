@@ -16,7 +16,14 @@ enum NativeBookmarksBar {
     HostedViews.register(kind) { windowId, state in
       let host = BookmarksBarHost(windowId: windowId)
       host.apply(state)
+      #if DEBUG
+      devHosts[windowId] = BookmarksBarDevHost(host)
+      return HostedContent(view: host.view, onUnmount: { [weak host] in
+        if devHosts[windowId]?.value === host { devHosts[windowId] = nil }
+      }, takesFocus: false, onState: { host.apply($0) })
+      #else
       return HostedContent(view: host.view, takesFocus: false, onState: { host.apply($0) })
+      #endif
     }
   }
 }
@@ -38,3 +45,34 @@ private final class BookmarksBarHost {
     view.update(snapshot)
   }
 }
+
+#if DEBUG
+@MainActor
+extension NativeBookmarksBar {
+  private static var devHosts: [String: BookmarksBarDevHost] = [:]
+
+  static func devLayout(windowId: String) -> [String: Any]? {
+    guard let view = devHosts[windowId]?.value?.view, view.window != nil, !view.isHiddenOrHasHiddenAncestor else { return nil }
+    view.layoutSubtreeIfNeeded()
+    return view.devLayout()
+  }
+
+  static func devLayoutJSON(windowId: String) -> String {
+    guard let layout = devLayout(windowId: windowId), let data = try? JSONSerialization.data(withJSONObject: layout) else { return "null" }
+    return String(decoding: data, as: UTF8.self)
+  }
+
+  static func devInput(windowId: String, action: String, id: String?, modifiers: Int, x: Double?) -> Bool {
+    guard let view = devHosts[windowId]?.value?.view, view.window != nil, !view.isHiddenOrHasHiddenAncestor else { return false }
+    view.layoutSubtreeIfNeeded()
+    return view.devInput(action: action, id: id, flags: NSEvent.ModifierFlags(rawValue: UInt(bitPattern: modifiers)), x: x.map { CGFloat($0) })
+  }
+}
+
+@MainActor
+private final class BookmarksBarDevHost {
+  weak var value: BookmarksBarHost?
+
+  init(_ value: BookmarksBarHost) { self.value = value }
+}
+#endif

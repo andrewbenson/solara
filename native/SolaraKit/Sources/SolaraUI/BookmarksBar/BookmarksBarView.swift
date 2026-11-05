@@ -13,6 +13,20 @@ public final class BookmarksBarView: NSView {
   private let hint = NSTextField(labelWithString: "For quick access, place your bookmarks here on the bookmarks bar.")
   private let divider = NSView()
   private var overflowIds: [String] = []
+  private var placements: [BookmarksBarLayout.Placement] = []
+  private let insertion = CALayer()
+  private var drag: Drag?
+  private var dragWatch: BookmarksBarDragWatch?
+
+  private struct Drag {
+    var id: String
+    var index: Int
+    var down: CGPoint
+    var frame: CGRect
+    var active = false
+    var offsetX: CGFloat = 0
+    var target: BookmarksBarDropTarget?
+  }
 
   public override var isFlipped: Bool { true }
   public override var mouseDownCanMoveWindow: Bool { false }
@@ -22,6 +36,10 @@ public final class BookmarksBarView: NSView {
     super.init(frame: .zero)
     wantsLayer = true
     layer?.masksToBounds = true
+    insertion.isHidden = true
+    insertion.cornerRadius = 1
+    insertion.zPosition = 20
+    layer?.addSublayer(insertion)
     setAccessibilityRole(.group)
     setAccessibilityLabel("Bookmarks bar")
     hint.font = BookmarksBarButton.font
@@ -46,6 +64,7 @@ public final class BookmarksBarView: NSView {
   required init?(coder: NSCoder) { fatalError() }
 
   public func update(_ snapshot: BookmarksBarSnapshot) {
+    cancelDrag()
     self.snapshot = snapshot
     while items.count > snapshot.items.count { items.removeLast().removeFromSuperview() }
     for (index, item) in snapshot.items.enumerated() {
@@ -64,6 +83,9 @@ public final class BookmarksBarView: NSView {
         self?.emit("press", ["id": item.id, "metaKey": flags.contains(.command), "shiftKey": flags.contains(.shift), "altKey": flags.contains(.option), "ctrlKey": flags.contains(.control), "middle": middle])
       }
       button.onContext = { [weak self] in self?.emit("contextMenu", ["id": item.id]) }
+      button.onPointerDown = { [weak self] in self?.beginDrag(id: item.id, at: $0) }
+      button.onPointerDrag = { [weak self] in self?.moveDrag(to: $0) }
+      button.onPointerUp = { [weak self] in self?.endDrag(at: $0) ?? false }
     }
     overflow.configure(title: "", symbol: "chevron.right.2", folder: false, theme: snapshot.theme)
     overflow.setAccessibilityLabel("More bookmarks")
@@ -73,10 +95,12 @@ public final class BookmarksBarView: NSView {
     importButton.toolTip = "Add bookmarks from another browser"
     hint.textColor = toolbarColor(snapshot.theme["textTertiary"]) ?? .secondaryLabelColor
     divider.layer?.backgroundColor = (toolbarColor(snapshot.theme["divider"]) ?? .separatorColor).cgColor
+    insertion.backgroundColor = (toolbarColor(snapshot.theme["accent"]) ?? .controlAccentColor).cgColor
     needsLayout = true
   }
 
   public override func setFrameSize(_ newSize: NSSize) {
+    if newSize != frame.size { cancelDrag() }
     super.setFrameSize(newSize)
     needsLayout = true
   }
@@ -85,9 +109,12 @@ public final class BookmarksBarView: NSView {
     super.layout()
     guard let snapshot else { return }
     let layout = BookmarksBarLayout(itemWidths: items.map(\.measuredWidth), width: bounds.width, hasOther: snapshot.hasOther && snapshot.otherId != nil)
+    if let drag, layout.visible.first(where: { $0.index == drag.index })?.frame != drag.frame { cancelDrag() }
+    placements = layout.visible
     for item in items { item.isHidden = true }
     for placement in layout.visible {
-      items[placement.index].frame = placement.frame
+      let offset = drag.flatMap { $0.active && $0.index == placement.index ? $0.offsetX : nil } ?? 0
+      items[placement.index].frame = placement.frame.offsetBy(dx: offset, dy: 0)
       items[placement.index].isHidden = false
     }
     overflowIds = layout.overflowIndexes.map { snapshot.items[$0].id }
@@ -112,6 +139,143 @@ public final class BookmarksBarView: NSView {
     guard event.modifierFlags.contains(.control), isHitBy(event) else { return super.mouseDown(with: event) }
     emit("contextMenu")
   }
+
+  public override func viewWillMove(toWindow newWindow: NSWindow?) {
+    if newWindow !== window { cancelDrag() }
+    super.viewWillMove(toWindow: newWindow)
+  }
+
+  public override func cancelOperation(_ sender: Any?) { cancelDrag() }
+
+  private func beginDrag(id: String, at point: CGPoint) {
+    cancelDrag()
+    guard let index = snapshot?.items.firstIndex(where: { $0.id == id }),
+      let placement = placements.first(where: { $0.index == index }) else { return }
+    drag = Drag(id: id, index: index, down: point, frame: placement.frame)
+  }
+
+  private func moveDrag(to point: CGPoint) {
+    guard var drag, let snapshot else { return }
+    let dx = point.x - drag.down.x
+    guard drag.active || abs(dx) > 4 else { return }
+    if !drag.active {
+      drag.active = true
+      if let window { dragWatch = BookmarksBarDragWatch(view: self, window: window) }
+    }
+    drag.target = BookmarksBarDropTarget.resolve(id: drag.id, items: snapshot.items, visible: placements, deltaX: dx, pointerX: point.x, sidebarEdge: snapshot.sidebarEdge)
+    drag.offsetX = drag.target == .sidebar ? 8 - drag.frame.minX : dx
+    self.drag = drag
+    for item in items { item.highlighted = false }
+    let button = items[drag.index]
+    button.dragging = true
+    button.alphaValue = 0.85
+    button.layer?.zPosition = 10
+    button.frame = drag.frame.offsetBy(dx: drag.offsetX, dy: 0)
+    insertion.isHidden = true
+    switch drag.target {
+    case .reorder(_, let x):
+      CATransaction.begin()
+      CATransaction.setDisableActions(true)
+      insertion.frame = CGRect(x: max(8, min(x, bounds.width - 10)), y: 6, width: 2, height: 18)
+      insertion.isHidden = false
+      CATransaction.commit()
+    case .folder(let id):
+      if let index = snapshot.items.firstIndex(where: { $0.id == id }) { items[index].highlighted = true }
+    case .sidebar:
+      button.highlighted = true
+    case nil: break
+    }
+  }
+
+  private func endDrag(at point: CGPoint) -> Bool {
+    guard let starting = drag else { return false }
+    if starting.active { moveDrag(to: point) }
+    let final = drag
+    cancelDrag()
+    guard let final, final.active else { return false }
+    switch final.target {
+    case .reorder(let index, _): emit("move", ["id": final.id, "index": index])
+    case .folder(let id): emit("move", ["id": final.id, "into": id])
+    case .sidebar: emit("folderToSidebar", ["id": final.id])
+    case nil: break
+    }
+    return true
+  }
+
+  private func cancelDrag() {
+    dragWatch?.stop()
+    dragWatch = nil
+    if let drag, items.indices.contains(drag.index) {
+      let button = items[drag.index]
+      button.frame = drag.frame
+      button.dragging = false
+      button.alphaValue = 1
+      button.layer?.zPosition = 0
+      button.cancelPress()
+    }
+    for item in items { item.highlighted = false }
+    insertion.isHidden = true
+    drag = nil
+  }
+
+  #if DEBUG
+  public func devLayout() -> [String: Any] {
+    layoutSubtreeIfNeeded()
+    let visible: [[String: Any]] = placements.compactMap { placement in
+      guard let snapshot, snapshot.items.indices.contains(placement.index) else { return nil }
+      let frame = items[placement.index].frame
+      return ["id": snapshot.items[placement.index].id, "frame": ["x": frame.minX, "y": frame.minY, "width": frame.width, "height": frame.height]]
+    }
+    return ["visible": visible, "overflowIds": overflowIds, "overflowShown": !overflow.isHidden, "otherShown": !other.isHidden, "importShown": !importButton.isHidden, "hintShown": !hint.isHidden]
+  }
+
+  public func devInput(action: String, id: String?, flags: NSEvent.ModifierFlags, x: CGFloat?) -> Bool {
+    layoutSubtreeIfNeeded()
+    let button = id.flatMap { id in snapshot?.items.firstIndex(where: { $0.id == id }) }.flatMap { index in items.indices.contains(index) && !items[index].isHidden ? items[index] : nil }
+    switch action {
+    case "press":
+      guard let button else { return false }
+      let point = convert(CGPoint(x: button.frame.midX, y: button.frame.midY), to: nil)
+      button.beginPress(at: point, flags: flags)
+      button.endPress(at: point, flags: flags, inside: true)
+    case "overflowPress":
+      guard !overflow.isHidden else { return false }
+      press(overflow, flags: flags)
+    case "otherPress":
+      guard !other.isHidden else { return false }
+      press(other, flags: flags)
+    case "importPress":
+      guard !importButton.isHidden else { return false }
+      press(importButton, flags: flags)
+    case "importContextMenu":
+      guard !importButton.isHidden else { return false }
+      importButton.onContext()
+    case "contextMenu":
+      if id != nil {
+        guard let button else { return false }
+        button.onContext()
+      } else {
+        emit("contextMenu")
+      }
+    case "drag", "cancelDrag":
+      guard let button, let x, x.isFinite else { return false }
+      let down = convert(CGPoint(x: button.frame.midX, y: button.frame.midY), to: nil)
+      let end = convert(CGPoint(x: x, y: button.frame.midY), to: nil)
+      button.beginPress(at: down, flags: [])
+      button.dragPress(to: end)
+      if action == "cancelDrag" { cancelOperation(nil) }
+      button.endPress(at: end, flags: [], inside: false)
+    default: return false
+    }
+    return true
+  }
+
+  private func press(_ button: BookmarksBarButton, flags: NSEvent.ModifierFlags) {
+    let point = convert(CGPoint(x: button.frame.midX, y: button.frame.midY), to: nil)
+    button.beginPress(at: point, flags: flags)
+    button.endPress(at: point, flags: flags, inside: true)
+  }
+  #endif
 
   private func place(_ view: NSView, _ frame: CGRect?) {
     view.isHidden = frame == nil

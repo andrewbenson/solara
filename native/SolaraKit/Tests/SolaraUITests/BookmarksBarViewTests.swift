@@ -128,6 +128,161 @@ struct BookmarksBarViewTests {
     #expect(presses.last?.1 == true)
   }
 
+  @Test func voiceOverShowMenuUsesTheItemContextPath() throws {
+    let view = view()
+    var events: [(String, [String: Any])] = []
+    view.onAction = { events.append(($0, $1)) }
+    view.update(snapshot([BookmarksBarItem(id: "folder", kind: .folder, title: "Work")]))
+    view.layoutSubtreeIfNeeded()
+    let button = try #require(buttons(view).first)
+    #expect(button.accessibilityPerformShowMenu())
+    #expect(events.count == 1)
+    #expect(events.first?.0 == "contextMenu")
+    #expect(events.first?.1["id"] as? String == "folder")
+  }
+
+  @Test func draggingBeginsOnlyAfterFourHorizontalPointsAndRestoresTheButton() throws {
+    let view = view()
+    var events: [(String, [String: Any])] = []
+    view.onAction = { events.append(($0, $1)) }
+    view.update(snapshot([BookmarksBarItem(id: "a", kind: .url, title: "Example")]))
+    view.layoutSubtreeIfNeeded()
+    let button = try #require(buttons(view).first as? BookmarksBarButton)
+    let home = button.frame
+    let point = CGPoint(x: home.midX, y: home.midY)
+    button.beginPress(at: point, flags: [])
+    button.dragPress(to: CGPoint(x: point.x + 4, y: point.y + 80))
+    #expect(button.alphaValue == 1)
+    #expect(button.frame == home)
+    button.dragPress(to: CGPoint(x: point.x + 4.1, y: point.y + 80))
+    #expect(button.alphaValue == 0.85)
+    #expect(abs(button.frame.minX - home.minX - 4.1) < 0.001)
+    #expect(button.frame.minY == home.minY)
+    button.endPress(at: CGPoint(x: point.x + 4.1, y: point.y + 80), flags: [], inside: false)
+    #expect(events.count == 1)
+    #expect(events.first?.0 == "move")
+    #expect(events.first?.1["index"] as? Int == 0)
+    #expect(button.alphaValue == 1)
+    #expect(button.frame == home)
+  }
+
+  @Test func layoutPreservesThePointerOffsetDuringAnActiveDrag() throws {
+    let view = view()
+    view.update(snapshot([BookmarksBarItem(id: "a", kind: .url, title: "Example")]))
+    view.layoutSubtreeIfNeeded()
+    let source = try #require(buttons(view).first as? BookmarksBarButton)
+    let down = CGPoint(x: source.frame.midX, y: source.frame.midY)
+    source.beginPress(at: down, flags: [])
+    source.dragPress(to: CGPoint(x: down.x + 50, y: down.y))
+    let moved = source.frame
+    view.needsLayout = true
+    view.layoutSubtreeIfNeeded()
+    #expect(source.frame == moved)
+    #expect(source.alphaValue == 0.85)
+    #if DEBUG
+    let visible = try #require(view.devLayout()["visible"] as? [[String: Any]])
+    let frame = try #require(visible.first?["frame"] as? [String: CGFloat])
+    #expect(frame["x"] == moved.minX)
+    #endif
+    view.cancelOperation(nil)
+  }
+
+  @Test func droppingInTheFolderMiddleHighlightsAndMovesIntoIt() throws {
+    let view = view()
+    var events: [(String, [String: Any])] = []
+    view.onAction = { events.append(($0, $1)) }
+    view.update(snapshot([BookmarksBarItem(id: "a", kind: .url, title: "Example"), BookmarksBarItem(id: "f", kind: .folder, title: "Folder")]))
+    view.layoutSubtreeIfNeeded()
+    let source = try #require(buttons(view).first as? BookmarksBarButton)
+    let target = try #require(buttons(view).last as? BookmarksBarButton)
+    let down = CGPoint(x: source.frame.midX, y: source.frame.midY)
+    let end = CGPoint(x: target.frame.midX, y: target.frame.midY)
+    source.beginPress(at: down, flags: [])
+    source.dragPress(to: end)
+    #expect(target.highlighted)
+    source.endPress(at: end, flags: [], inside: true)
+    #expect(events.count == 1)
+    #expect(events.first?.0 == "move")
+    #expect(events.first?.1["id"] as? String == "a")
+    #expect(events.first?.1["into"] as? String == "f")
+    #expect(!target.highlighted)
+  }
+
+  @Test func aFolderPastTheSidebarEdgeUsesTheSidebarEvent() throws {
+    let view = view()
+    var events: [(String, [String: Any])] = []
+    view.onAction = { events.append(($0, $1)) }
+    var state = snapshot([BookmarksBarItem(id: "f", kind: .folder, title: "Folder")])
+    state.sidebarEdge = 12
+    state.theme = ["toolbarHover": "#00FF00", "toolbarPressed": "#FF0000"]
+    view.update(state)
+    view.layoutSubtreeIfNeeded()
+    let source = try #require(buttons(view).first as? BookmarksBarButton)
+    let down = CGPoint(x: source.frame.midX, y: source.frame.midY)
+    let end = CGPoint(x: 11, y: down.y)
+    source.beginPress(at: down, flags: [])
+    source.dragPress(to: end)
+    #expect(source.highlighted)
+    #expect(source.layer?.backgroundColor == toolbarColor("#00FF00")?.cgColor)
+    source.endPress(at: end, flags: [], inside: false)
+    #expect(events.count == 1)
+    #expect(events.first?.0 == "folderToSidebar")
+    #expect(events.first?.1["id"] as? String == "f")
+  }
+
+  @Test func escapeSnapshotChangesAndResizeCancelWithoutWritingOrClicking() throws {
+    for cancellation in 0..<3 {
+      let view = view()
+      var events: [String] = []
+      view.onAction = { name, _ in events.append(name) }
+      let state = snapshot([BookmarksBarItem(id: "a", kind: .url, title: "Example")])
+      view.update(state)
+      view.layoutSubtreeIfNeeded()
+      let source = try #require(buttons(view).first as? BookmarksBarButton)
+      let home = source.frame
+      let down = CGPoint(x: home.midX, y: home.midY)
+      let end = CGPoint(x: down.x + 50, y: down.y)
+      source.beginPress(at: down, flags: [])
+      source.dragPress(to: end)
+      switch cancellation {
+      case 0: view.cancelOperation(nil)
+      case 1: view.update(state)
+      default: view.setFrameSize(CGSize(width: 500, height: 30))
+      }
+      source.endPress(at: end, flags: [], inside: true)
+      #expect(events.isEmpty)
+      #expect(source.frame == home)
+      #expect(source.alphaValue == 1)
+      #expect(!source.highlighted)
+    }
+  }
+
+  #if DEBUG
+  @Test func debugInputUsesTheSameButtonPathsAndRejectsHiddenItems() throws {
+    let view = view(width: 350)
+    var events: [(String, [String: Any])] = []
+    view.onAction = { events.append(($0, $1)) }
+    let items = (0..<10).map { BookmarksBarItem(id: "\($0)", kind: .url, title: "Example") }
+    view.update(snapshot(items, hasOther: true))
+    let layout = view.devLayout()
+    let visible = try #require(layout["visible"] as? [[String: Any]])
+    let first = try #require(visible.first?["id"] as? String)
+    #expect(view.devInput(action: "press", id: first, flags: [.command, .shift], x: nil))
+    #expect(events.last?.1["metaKey"] as? Bool == true)
+    #expect(events.last?.1["shiftKey"] as? Bool == true)
+    #expect(!view.devInput(action: "press", id: "9", flags: [], x: nil))
+    #expect(view.devInput(action: "overflowPress", id: nil, flags: [], x: nil))
+    #expect(events.last?.0 == "overflowPress")
+    #expect(view.devInput(action: "otherPress", id: nil, flags: [], x: nil))
+    #expect(events.last?.0 == "otherPress")
+    #expect(view.devInput(action: "contextMenu", id: first, flags: [], x: nil))
+    #expect(events.last?.0 == "contextMenu")
+    let count = events.count
+    #expect(view.devInput(action: "cancelDrag", id: first, flags: [], x: 200))
+    #expect(events.count == count)
+  }
+  #endif
+
   private func mouse(_ type: NSEvent.EventType, flags: NSEvent.ModifierFlags) throws -> NSEvent {
     let event = try #require(NSEvent.mouseEvent(with: type, location: CGPoint(x: 20, y: 12), modifierFlags: flags, timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
     guard type == .otherMouseDown || type == .otherMouseUp else { return event }

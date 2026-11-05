@@ -37,6 +37,41 @@ import Testing
     }
   }
 
+  @Test func theNativeBookmarksBarStaysOffUntilRequestedAndRequiresTheNativeWindow() throws {
+    let bar = try #require(LaunchSwitch(rawValue: "SOLARA_NATIVE_BOOKMARKS_BAR"))
+    for distribution in [false, true] {
+      let initial = LaunchSwitches(environment: [:], defaults: nil, distribution: distribution, skipStored: false)
+      #expect(!initial.isOn(bar))
+      let enabled = LaunchSwitches(environment: [bar.rawValue: "1"], defaults: nil, distribution: distribution, skipStored: false)
+      #expect(enabled.isOn(bar))
+    }
+    let noWindow = LaunchSwitches(
+      environment: [bar.rawValue: "1", "SOLARA_NATIVE_SHELL": "0"], defaults: nil, distribution: false, skipStored: false)
+    #expect(noWindow.requested(bar, defaultOn: false))
+    #expect(!noWindow.isOn(bar))
+    #expect(noWindow.unmetNeeds(bar) == [.nativeShell])
+    #expect(noWindow.refusals.contains("SOLARA_NATIVE_BOOKMARKS_BAR is on but stays off: it needs SOLARA_NATIVE_SHELL=1"))
+  }
+
+  @Test func theNativeBookmarksBarCanBeSavedAndTheEnvironmentCanDisableIt() throws {
+    let bar = try #require(LaunchSwitch(rawValue: "SOLARA_NATIVE_BOOKMARKS_BAR"))
+    #expect(!LaunchSwitch.experiments.contains(bar))
+    #expect(!bar.storable(distribution: true))
+    for distribution in [false] {
+      let defaults = scratchDefaults()
+      let stored = StoredLaunchSwitches(defaults: defaults, distribution: distribution)
+      stored.set(bar, true)
+      #expect(stored.value(bar) == true)
+      let saved = LaunchSwitches(environment: [:], defaults: defaults, distribution: distribution, skipStored: false)
+      #expect(saved.isOn(bar))
+      let disabled = LaunchSwitches(environment: [bar.rawValue: "0"], defaults: defaults, distribution: distribution, skipStored: false)
+      #expect(!disabled.isOn(bar))
+      #expect(disabled.fromEnvironment(bar))
+      stored.clear()
+      #expect(defaults.object(forKey: bar.rawValue) == nil)
+    }
+  }
+
   @Test func theSyncRedesignIsReadOnlyByInstancesWithTheirOwnDataFolderOfBuildsNotSignedForDistribution() {
     let on = ["SOLARA_SYNC_REDESIGN": "1", "SOLARA_DATA_DIR": "/tmp/x"]
     #expect(LaunchSwitches(environment: on, defaults: nil, distribution: false, skipStored: false).isOn(.syncRedesign, defaultOn: false))
@@ -173,6 +208,7 @@ import Testing
     #expect(LaunchSwitch.nativePagesPool.needs == [.nativeShell])
     #expect(LaunchSwitch.shellMainTop.needs == [.shellPanes, .nativePagesPool])
     #expect(LaunchSwitch.nativeTopStrip.needs.isEmpty)
+    #expect(LaunchSwitch.nativeBookmarksBar.needs == [.nativeShell])
     #expect(LaunchSwitch.onByDefault == Self.defaultOn)
   }
 

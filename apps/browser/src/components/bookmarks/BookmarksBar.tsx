@@ -314,18 +314,18 @@ function BarButton({
 
 function ImportButton() {
   return (
-    <ContextMenuArea
-      onContextMenu={async () => {
-        const choice = await showMenu([{ id: "hide", title: "Hide Import Bookmarks Button" }]);
-        if (choice === "hide") useBrowser.getState().updateSettings({ hideBookmarksBarImport: true });
-      }}
-    >
+    <ContextMenuArea onContextMenu={() => void openImportMenu()}>
       <BarButton icon="rectangle.portrait.and.arrow.right" title="Import bookmarks" tooltip="Add bookmarks from another browser" onPress={() => openImport()} />
     </ContextMenuArea>
   );
 }
 
-async function openFolderMenu(windowId: string, ids: string[], _e?: ClickMods, folderId?: string) {
+export async function openImportMenu() {
+  const choice = await showMenu([{ id: "hide", title: "Hide Import Bookmarks Button" }]);
+  if (choice === "hide") useBrowser.getState().updateSettings({ hideBookmarksBarImport: true });
+}
+
+export async function openFolderMenu(windowId: string, ids: string[], _e?: ClickMods, folderId?: string) {
   const b = useBrowser.getState().bookmarks;
   const build = (list: string[], parent?: string, depth = 0): MenuItem[] => {
     const items: MenuItem[] = list
@@ -365,7 +365,7 @@ const splitChoice = (choice: string): [string, string] => {
   return i < 0 ? [choice, ""] : [choice.slice(0, i), choice.slice(i + 1)];
 };
 
-async function openBarMenu(windowId: string, profileId: string, node: BookmarkNode | null) {
+export async function openBarMenu(windowId: string, profileId: string, node: BookmarkNode | null) {
   const s = useBrowser.getState();
   const barMode = s.settings.bookmarksBar;
   const items: MenuItem[] = [];

@@ -89,7 +89,7 @@ backlog, and check this file against the release notes.
 
 | Item | Status |
 |---|---|
-| Native bookmarks bar, with the native bookmark coordinator (see backlog) (moved from 0.4.0, owner 2026-11-04) | planned |
+| Native bookmarks bar, with the native bookmark coordinator (see backlog) (moved from 0.4.0, owner 2026-11-04) | in progress: step 1 native host behind default-off `SOLARA_NATIVE_BOOKMARKS_BAR`; JS remains the bookmark writer |
 | A native frame for extension popups (moved from 0.4.0, owner 2026-11-04) | planned |
 | Content blocker hold, per navigation: hold only session-restored and launch tabs (an engine mark set before the navigation starts, primary main frame, http(s)), not every navigation in the profile during the launch window | planned |
 | Fixes from the owner's two-Mac sync-join test of 0.1.3 | waiting on the test |

@@ -25,7 +25,8 @@ import { needsPage } from "../store/pageSession";
 import { removeTabs } from "../store/tabs";
 import { splitOf } from "../store/splits";
 import type { SplitView, Tab } from "../store/types";
-import { BOOKMARKS_BAR_HEIGHT, BookmarksBar, bookmarksBarShown, useBookmarksBarMode, type BookmarksBarMode } from "./bookmarks/BookmarksBar";
+import { BOOKMARKS_BAR_HEIGHT, bookmarksBarShown, useBookmarksBarMode, type BookmarksBarMode } from "./bookmarks/BookmarksBar";
+import { NativeBookmarksBar } from "./bookmarks/NativeBookmarksBar";
 import { CliControlPill } from "./CliControlPill";
 import { FindBar } from "./FindBar";
 import { POPOVER_MARGIN } from "./layout/controls";
@@ -473,9 +474,9 @@ const TabPane = memo(function TabPane({
       ) : (
         <View style={{ height: layout.toolbarHeight }} />
       )}
-      {!autoLayout && bookmarksBar && <BookmarksBar placeholder={!visible} />}
+      {!autoLayout && bookmarksBar && <NativeBookmarksBar placeholder={!visible} />}
       <Animated.View pointerEvents={pooled ? "box-none" : "auto"} style={autoLayout ? motion.groupStyle : { flex: 1 }}>
-        {autoLayout && bookmarksBar && <BookmarksBar placeholder={!visible} />}
+        {autoLayout && bookmarksBar && <NativeBookmarksBar placeholder={!visible} />}
         <View pointerEvents={pooled ? "box-none" : "auto"} style={autoLayout ? { height: motion.pageHeight } : { flex: 1 }}>
           {visible && !fullscreen && <ShareBar tabId={tabId} />}
           <View pointerEvents={pooled ? "box-none" : "auto"} style={{ flex: 1 }}>

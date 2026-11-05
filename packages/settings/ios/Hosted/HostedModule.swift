@@ -9,6 +9,7 @@ public class HostedModule: Module {
 
     OnCreate {
       if NativeExtensionSidePanel.enabled { HostedViews.declare(NativeExtensionSidePanel.kind) }
+      if NativeBookmarksBar.enabled { HostedViews.declare(NativeBookmarksBar.kind) }
       HostedViews.declare(PanePrompts.kind)
       if NativeSidebarShell.enabled { HostedViews.declare(NativeSidebarShell.topic) }
       HostedViews.declare(NativeToolTour.kind)
@@ -19,6 +20,7 @@ public class HostedModule: Module {
           NativeStatusBubble.register(); NativeSidebar.register(); NativeDownloadMagnet.register(); NativeTabPickers.register(); NativeExtensionSidePanel.register()
           NativeSidebarIconPicker.register()
           NativeToolTour.register()
+          if NativeBookmarksBar.enabled { NativeBookmarksBar.register() }
         }
       }
     }

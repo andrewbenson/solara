@@ -40,6 +40,16 @@ const itemId = (fiber) => {
   for (let parent = fiber; parent; parent = parent.return) if (acPerf.nameOf(parent.type) === "BarItem") return parent.memoizedProps?.id;
   return null;
 };
+const editorState = () => acPerf.findFibers("NativeBookmarkEditor", 200).map((fiber) => fiber.memoizedProps?.state).find((state) => state?.windowId === "w1") ?? null;
+const cancelEditor = () => {
+  const form = acPerf.findFibers("NativePage", 2000).find((fiber) => {
+    for (let parent = fiber.return; parent; parent = parent.return) if (acPerf.nameOf(parent.type) === "NativeBookmarkEditor" && parent.memoizedProps?.state?.windowId === "w1") return true;
+    return false;
+  });
+  if (!form?.memoizedProps?.onPageEvent) return false;
+  form.memoizedProps.onPageEvent({ nativeEvent: { kind: "cancel" } });
+  return true;
+};
 const rnButtons = () => acPerf.findFibers("BarButton", 2000).filter(inBar);
 const rnText = (text) => acPerf.findFibers("Text", 2000).some((fiber) => inBar(fiber) && fiber.memoizedProps?.children === text);
 const rnInput = (action, id, modifiers) => {
@@ -72,6 +82,52 @@ const until = async (what, body, accept = (value) => !!value, timeout = 8000) =>
   throw new Error(`${what}: timed out (${JSON.stringify(last)})`);
 };
 const layout = () => run('return H.devBookmarksBarLayout("w1").then(JSON.parse);');
+const menu = (trigger, id = null) => run(`return H.devBookmarksBarMenu("w1", ${JSON.stringify(trigger)}, ${JSON.stringify(id)}).then(JSON.parse);`);
+const choose = async (trigger, id, choiceId) => {
+  const result = await run(`return H.devBookmarksBarChoose("w1", ${JSON.stringify(trigger)}, ${JSON.stringify(id)}, ${JSON.stringify(choiceId)}).then(JSON.parse);`);
+  assert.equal(result.accepted, true, `${trigger} accepts ${choiceId}`);
+  return result;
+};
+const menuRows = (items) => items.map((item) => item.separator ? { separator: true } : {
+  title: item.title,
+  choiceId: item.choiceId ?? item.id ?? null,
+  symbol: item.symbol ?? null,
+  enabled: item.enabled !== false,
+  checked: item.checked === true,
+  children: item.children == null ? [] : menuRows(item.children),
+});
+const row = (title, choiceId, options = {}) => ({ title, choiceId, symbol: null, enabled: true, checked: false, children: [], ...options });
+const separator = { separator: true };
+const barRows = (id = null, mode = "always") => [
+  row("Add Page…", id ? `addPage:${id}` : "addPage"),
+  row("Add Folder…", id ? `addFolder:${id}` : "addFolder"),
+  separator,
+  row("Manage Bookmarks", "manage"),
+  row("Show Bookmarks Bar", "show", { children: [
+    row("Always", "bar:always", { checked: mode === "always" }),
+    row("On New Tab Only", "bar:newTab", { checked: mode === "newTab" }),
+    row("Never", "bar:never", { checked: mode === "never" }),
+  ] }),
+];
+const footerRows = (id, count, enabled = true) => [
+  separator,
+  row(`Open All (${count})`, `openAll:${id}`),
+  row("Open All in New Window", `openAllWindow:${id}`),
+  row("Open All in Incognito Window", `openAllIncognito:${id}`),
+  row("Add to Sidebar as Group", `addGroup:${id}`, { enabled }),
+];
+const folderContextRows = (id, count, arc = false) => [
+  row(`Open All (${count})`, `openAll:${id}`, { enabled: count > 0 }),
+  row("Open All in New Window", `openAllWindow:${id}`, { enabled: count > 0 }),
+  row("Open All in Incognito Window", `openAllIncognito:${id}`, { enabled: count > 0 }),
+  row("Add to Sidebar as Group", `addGroup:${id}`, { enabled: count > 0 }),
+  ...(arc ? [row("Restore Arc Folders as Groups", `restoreArc:${id}`)] : []),
+  separator,
+  row("Rename…", `rename:${id}`),
+  row("Delete", `delete:${id}`),
+  separator,
+  ...barRows(id),
+];
 const input = async (action, id = null, modifiers = 0, x = null) => {
   const body = native ? `return H.devBookmarksBarInput("w1", ${JSON.stringify(action)}, ${JSON.stringify(id)}, ${modifiers}, ${JSON.stringify(x)});`
     : `return rnInput(${JSON.stringify(action)}, ${JSON.stringify(id)}, ${modifiers});`;
@@ -114,7 +170,7 @@ try {
   await rep.check("launch-switch", async () => {
     const kinds = await run("return H.kinds();");
     assert.equal(kinds.includes("bookmarksBar"), native);
-    if (native) assert.equal(await run('return typeof H.devBookmarksBarInput === "function" && typeof H.devBookmarksBarLayout === "function";'), true, "Debug native hooks available");
+    if (native) assert.equal(await run('return typeof H.devBookmarksBarInput === "function" && typeof H.devBookmarksBarLayout === "function" && typeof H.devBookmarksBarMenu === "function" && typeof H.devBookmarksBarChoose === "function";'), true, "Debug native hooks available");
     else await until("React Native bar mounted", "return rnBar();");
     return native ? "native" : "React Native";
   });
@@ -172,7 +228,7 @@ try {
     assert.ok(splits.length > 0);
     await reset();
   });
-  for (const [name, action, id, expected] of [
+  if (!native) for (const [name, action, id, expected] of [
     ["folder-menu", "press", ids.folder, `open:${ids.nested}`],
     ["overflow-menu", "overflowPress", null, null],
     ["other-menu", "otherPress", null, `open:${ids.other}`],
@@ -190,6 +246,220 @@ try {
       if (overflow) assert.deepEqual(menu.filter((item) => item.id?.startsWith("open:")).map((item) => item.id.slice(5)), overflow);
       return menu.map((item) => item.id ?? "separator");
     });
+  }
+  if (native) {
+    await rep.check("native-url-context-menu", async () => {
+      assert.deepEqual(menuRows(await menu("item", ids.first)), [
+        row("Open in New Tab", `tab:${ids.first}`),
+        row("Open in New Window", `window:${ids.first}`),
+        row("Open in Incognito Window", `incognito:${ids.first}`),
+        row("Open in Split View", `split:${ids.first}`),
+        separator,
+        row("Edit…", `edit:${ids.first}`),
+        row("Copy Link", `copy:${ids.first}`),
+        row("Delete", `delete:${ids.first}`),
+        separator,
+        ...barRows(ids.first),
+      ]);
+    });
+    await rep.check("native-folder-context-menu", async () => {
+      assert.deepEqual(menuRows(await menu("item", ids.folder)), folderContextRows(ids.folder, 2));
+    });
+    await rep.check("native-blank-context-menu", async () => {
+      assert.deepEqual(menuRows(await menu("blank")), barRows());
+    });
+    await rep.check("native-folder-tree-menu", async () => {
+      assert.deepEqual(menuRows(await menu("folder", ids.folder)), [
+        row("Nested", `open:${ids.nested}`, { symbol: "globe" }),
+        row("Nested folder", `folder:${ids.nestedFolder}`, { symbol: "folder", children: [
+          row("Deep link", `open:${ids.deepLink}`, { symbol: "globe" }),
+          ...footerRows(ids.nestedFolder, 1),
+        ] }),
+        ...footerRows(ids.folder, 2),
+      ]);
+    });
+    await rep.check("native-overflow-menu", async () => {
+      const overflow = (await layout()).overflowIds;
+      const titles = await run(`return ${JSON.stringify(overflow)}.map((id) => S().bookmarks.nodes[id].title);`);
+      assert.deepEqual(menuRows(await menu("overflow")), overflow.map((id, index) => row(titles[index], `open:${id}`, { symbol: "globe" })));
+    });
+    await rep.check("native-other-menu", async () => {
+      assert.deepEqual(menuRows(await menu("other")), [
+        row("Other entry", `open:${ids.other}`, { symbol: "globe" }),
+        ...footerRows(await run("return S().bookmarks.roots.default.other;"), 1),
+      ]);
+    });
+    const menuFixtures = await run(`
+      const s = S();
+      const empty = s.addBookmarkFolder({ profileId: "default", title: "Empty folder" });
+      const arc = s.addBookmarkFolder({ profileId: "default", title: "Imported (Arc)" });
+      const arcFolder = s.addBookmarkFolder({ profileId: "default", parentId: arc, title: "Arc Work" });
+      const arcLink = s.addBookmark({ profileId: "default", parentId: arcFolder, title: "Arc link", url: ${JSON.stringify(`${base}/arc`)} });
+      const sidebar = s.addBookmarkFolder({ profileId: "default", title: "Menu group" });
+      s.addBookmark({ profileId: "default", parentId: sidebar, title: "Menu group link", url: ${JSON.stringify(`${base}/menu-group`)} });
+      const copy = s.addBookmark({ profileId: "default", title: "Tracked", url: ${JSON.stringify(`${base}/copy?keep=yes&utm_source=fixture&fbclid=fixture#section`)} });
+      const doomed = s.addBookmark({ profileId: "default", title: "Delete me", url: ${JSON.stringify(`${base}/delete`)} });
+      const many = s.addBookmarkFolder({ profileId: "default", title: "Many links" });
+      for (let index = 0; index < 16; index++) s.addBookmark({ profileId: "default", parentId: many, title: "Many " + index, url: ${JSON.stringify(`${base}/many/`)} + index });
+      const shell = globalThis.expo.modules.SolaraShell;
+      bmbar.prompt = shell.prompt;
+      bmbar.confirm = shell.confirm;
+      bmbar.prompts = [];
+      bmbar.confirms = [];
+      shell.prompt = (options) => { bmbar.prompts.push(options); return Promise.resolve("Menu folder"); };
+      shell.confirm = (options) => { bmbar.confirms.push(options); return Promise.resolve({ confirmed: false, suppressed: false }); };
+      return { empty, arc, arcFolder, arcLink, sidebar, copy, doomed, many, otherRoot: s.bookmarks.roots.default.other };
+    `);
+    await until("native menu fixture snapshot", `return H.devBookmarksBarMenu("w1", "item", ${JSON.stringify(menuFixtures.many)}).then(JSON.parse);`, (value) => Array.isArray(value) && value.some((item) => item.title === "Open All (16)"));
+    await rep.check("native-empty-folder-menus", async () => {
+      assert.deepEqual(menuRows(await menu("item", menuFixtures.empty)), folderContextRows(menuFixtures.empty, 0));
+      assert.deepEqual(menuRows(await menu("folder", menuFixtures.empty)), [row("Empty", "empty", { enabled: false })]);
+      const result = await run(`return H.devBookmarksBarChoose("w1", "item", ${JSON.stringify(menuFixtures.empty)}, ${JSON.stringify(`openAll:${menuFixtures.empty}`)}).then(JSON.parse);`);
+      assert.equal(result.accepted, false, "disabled Open All cannot be chosen");
+    });
+    await rep.check("native-arc-folder-menu", async () => {
+      assert.deepEqual(menuRows(await menu("item", menuFixtures.arc)), folderContextRows(menuFixtures.arc, 1, true));
+    });
+    await rep.check("native-copy-clean-link-without-clipboard", async () => {
+      const count = await run("return bmbar.menus.length;");
+      assert.equal((await choose("item", menuFixtures.copy, `copy:${menuFixtures.copy}`)).copyText, `${base}/copy?keep=yes#section`);
+      assert.equal(await run("return bmbar.menus.length;"), count, "native menu choices do not show a JS menu");
+    });
+    await rep.check("native-menu-open-current", async () => {
+      await reset();
+      await choose("folder", ids.folder, `open:${ids.nested}`);
+      await until("tree choice navigates current tab", `return S().tabs.a.url === ${JSON.stringify(`${base}/nested`)};`);
+    });
+    await rep.check("native-menu-open-new-tab", async () => {
+      await reset();
+      const before = await run("return [...S().windows.w1.tabIds];");
+      await choose("item", ids.first, `tab:${ids.first}`);
+      const created = await until("context choice opens foreground tab", "return { ids: S().windows.w1.tabIds, active: active(), tabs: S().tabs };", (value) => value.ids.length === before.length + 1);
+      const added = created.ids.find((id) => !before.includes(id));
+      assert.equal(created.active, added);
+      assert.equal(created.tabs[added].url, destination);
+    });
+    for (const [action, incognito] of [["window", false], ["incognito", true]]) {
+      await rep.check(`native-menu-open-${action}`, async () => {
+        await reset();
+        const before = await run("return Object.keys(S().windows);");
+        await choose("item", ids.first, `${action}:${ids.first}`);
+        const created = await until("context choice creates window", "return Object.values(S().windows).map((window) => ({ id: window.id, incognito: !!window.incognito, urls: window.tabIds.map((id) => S().tabs[id]?.url) }));", (value) => value.some((window) => !before.includes(window.id) && window.urls.includes(destination)));
+        const window = created.find((window) => !before.includes(window.id) && window.urls.includes(destination));
+        assert.equal(window.incognito, incognito);
+        await run(`S().closeWindow(${JSON.stringify(window.id)}); return true;`);
+        await until("menu window closes", `return !S().windows[${JSON.stringify(window.id)}];`);
+      });
+    }
+    await rep.check("native-menu-open-split", async () => {
+      await reset();
+      await choose("item", ids.first, `split:${ids.first}`);
+      await until("context choice opens split", `return Object.values(S().splits).some((split) => split.tabIds.includes("a") && split.tabIds.some((id) => id !== "a" && S().tabs[id]?.url === ${JSON.stringify(destination)}));`);
+      await reset();
+    });
+    for (const [trigger, action, incognito] of [["folder", "openAll", false], ["item", "openAllWindow", false], ["other", "openAllIncognito", true]]) {
+      await rep.check(`native-menu-${action}`, async () => {
+        await reset();
+        const folder = trigger === "other" ? menuFixtures.otherRoot : ids.folder;
+        const urls = trigger === "other" ? [`${base}/other`] : [`${base}/nested`, `${base}/deep`];
+        const before = await run("return { windows: Object.keys(S().windows), tabs: [...S().windows.w1.tabIds], confirms: bmbar.confirms.length }; ");
+        await choose(trigger, trigger === "other" ? null : folder, `${action}:${folder}`);
+        if (action === "openAll") {
+          const tabs = await until("Open All appends links", "return S().windows.w1.tabIds.map((id) => ({ id, url: S().tabs[id]?.url }));", (value) => value.length === before.tabs.length + urls.length);
+          assert.deepEqual(tabs.filter((tab) => !before.tabs.includes(tab.id)).map((tab) => tab.url), urls);
+        } else {
+          const created = await until("Open All creates target window", "return Object.values(S().windows).map((window) => ({ id: window.id, incognito: !!window.incognito, urls: window.tabIds.map((id) => S().tabs[id]?.url) }));", (value) => value.some((window) => !before.windows.includes(window.id) && window.urls.length === urls.length && window.urls[0] === urls[0]));
+          const window = created.find((window) => !before.windows.includes(window.id) && window.urls[0] === urls[0]);
+          assert.deepEqual(window.urls, urls);
+          assert.equal(window.incognito, incognito);
+          await run(`S().closeWindow(${JSON.stringify(window.id)}); return true;`);
+          await until("Open All window closes", `return !S().windows[${JSON.stringify(window.id)}];`);
+        }
+        assert.equal(await run("return bmbar.confirms.length;"), before.confirms, "up to 15 links bypass confirmation");
+      });
+    }
+    await rep.check("native-menu-open-all-confirmation", async () => {
+      const before = await run("return { tabs: [...S().windows.w1.tabIds], confirms: bmbar.confirms.length }; ");
+      await choose("item", menuFixtures.many, `openAll:${menuFixtures.many}`);
+      const prompts = await until("large-folder confirmation", "return bmbar.confirms;", (value) => value.length > before.confirms);
+      assert.deepEqual(prompts.at(-1), { title: "Open 16 tabs?", message: "This folder has a lot of bookmarks.", confirmTitle: "Open All", windowId: "w1" });
+      assert.deepEqual(await run("return S().windows.w1.tabIds;"), before.tabs, "cancelled confirmation opens nothing");
+    });
+    await rep.check("native-menu-add-sidebar-group", async () => {
+      const before = await run("return Object.keys(S().groups);");
+      await choose("folder", menuFixtures.sidebar, `addGroup:${menuFixtures.sidebar}`);
+      const group = await until("menu creates sidebar group", `return Object.values(S().groups).find((group) => group.windowId === "w1" && group.pinned && group.name === "Menu group" && !${JSON.stringify(before)}.includes(group.id)) ?? null;`);
+      assert.equal(group.tabIds.length, 1);
+      assert.equal(await run(`return !!S().bookmarks.nodes[${JSON.stringify(menuFixtures.sidebar)}];`), true);
+    });
+    await rep.check("native-menu-restore-arc-folders", async () => {
+      const before = await run("return Object.keys(S().groups);");
+      await choose("item", menuFixtures.arc, `restoreArc:${menuFixtures.arc}`);
+      const group = await until("Arc folder restored as group", `return Object.values(S().groups).find((group) => group.pinned && group.name === "Arc Work" && !${JSON.stringify(before)}.includes(group.id)) ?? null;`);
+      assert.equal(group.tabIds.length, 1);
+    });
+    for (const [action, id, folder] of [["edit", ids.first, false], ["rename", ids.folder, true]]) {
+      await rep.check(`native-menu-${action}-editor`, async () => {
+        await choose("item", id, `${action}:${id}`);
+        const state = await until("bookmark editor request", "return editorState();");
+        assert.equal(state.bookmarkId, id);
+        assert.equal(state.folder, folder);
+        assert.equal(state.windowId, "w1");
+        assert.equal(await run("return cancelEditor();"), true);
+        await until("bookmark editor closes", "return editorState() === null;");
+      });
+    }
+    for (const [trigger, context] of [["item", ids.first], ["blank", null]]) {
+      await rep.check(`native-menu-add-page-${trigger}`, async () => {
+        const expectedIndex = context ? await run(`return barIds().indexOf(${JSON.stringify(context)}) + 1;`) : null;
+        await choose(trigger, context, context ? `addPage:${context}` : "addPage");
+        const state = await until("Add Page editor request", "return editorState();");
+        assert.equal(state.bookmarkId, null);
+        assert.equal(state.profileId, "default");
+        assert.equal(state.parentId, ids.bar);
+        assert.equal(state.index ?? null, expectedIndex);
+        assert.equal(await run("return cancelEditor();"), true);
+        await until("Add Page editor closes", "return editorState() === null;");
+      });
+      await rep.check(`native-menu-add-folder-${trigger}`, async () => {
+        const before = await run("return { children: [...barIds()], prompts: bmbar.prompts.length }; ");
+        await choose(trigger, context, context ? `addFolder:${context}` : "addFolder");
+        const children = await until("Add Folder prompt creates bookmark", "return barIds();", (value) => value.length === before.children.length + 1);
+        const created = children.find((id) => !before.children.includes(id));
+        const node = await run(`return S().bookmarks.nodes[${JSON.stringify(created)}];`);
+        assert.equal(node.kind, "folder");
+        assert.equal(node.title, "Menu folder");
+        assert.equal(node.parentId, ids.bar);
+        assert.equal(children.indexOf(created), context ? before.children.indexOf(context) + 1 : before.children.length);
+        assert.deepEqual(await run("return bmbar.prompts.at(-1);"), { title: "New Folder", placeholder: "Folder name", confirmTitle: "Create", windowId: "w1" });
+        assert.equal(await run("return bmbar.prompts.length;"), before.prompts + 1);
+        await run(`S().removeBookmark(${JSON.stringify(created)}); return true;`);
+      });
+    }
+    await rep.check("native-menu-delete", async () => {
+      await choose("item", menuFixtures.doomed, `delete:${menuFixtures.doomed}`);
+      await until("Delete removes bookmark", `return !S().bookmarks.nodes[${JSON.stringify(menuFixtures.doomed)}];`);
+    });
+    await rep.check("native-menu-manage-bookmarks", async () => {
+      await choose("blank", null, "manage");
+      await until("Manage opens internal page", 'return S().tabs[active()]?.url === "solara://bookmarks";');
+    });
+    await rep.check("native-menu-bar-modes", async () => {
+      await run('S().newTab("w1"); return true;');
+      for (const mode of ["newTab", "always", "never"]) {
+        await choose("blank", null, `bar:${mode}`);
+        await until("bar mode stored", `return S().settings.bookmarksBar === ${JSON.stringify(mode)};`);
+        if (mode === "never") await until("Never hides bar", 'return H.devBookmarksBarLayout("w1").then(JSON.parse);', (value) => value === null);
+        else await until("mode submenu checkmarks", 'return H.devBookmarksBarMenu("w1", "blank", null).then(JSON.parse);', (value) => Array.isArray(value) && value.at(-1)?.children?.find((item) => item.choiceId === `bar:${mode}`)?.checked);
+        if (mode !== "never") assert.deepEqual(menuRows(await menu("blank")), barRows(null, mode));
+      }
+      await run('S().updateSettings({ bookmarksBar: "always" }); return true;');
+      await until("bar visible again", 'return H.devBookmarksBarLayout("w1").then(JSON.parse);');
+      assert.deepEqual(menuRows(await menu("blank")), barRows());
+    });
+    await run(`S().removeBookmarks(${JSON.stringify([menuFixtures.empty, menuFixtures.sidebar, menuFixtures.copy, menuFixtures.many])}); return true;`);
+    await reset();
+    assert.equal(await run("return bmbar.menus.length;"), 0, "native menu path never invokes RN showMenu");
   }
   if (native) {
     await rep.check("native-drag-cancel", async () => {
@@ -228,11 +498,11 @@ try {
     await until("empty bar root", "return barIds().length === 0;");
     if (native) {
       await until("empty import button", 'return H.devBookmarksBarLayout("w1").then(JSON.parse);', (value) => value?.importShown && !value.hintShown && value.otherShown);
-      const count = await run("return bmbar.menus.length;");
-      await input("importContextMenu");
-      await until("import context menu", "return bmbar.menus;", (value) => value.length > count && value.at(-1).some((item) => item.id === "hide"));
+      assert.deepEqual(menuRows(await menu("import")), [row("Hide Import Bookmarks Button", "hide")]);
+      await choose("import", null, "hide");
+      await until("Hide Import choice updates settings", "return S().settings.hideBookmarksBarImport === true;");
     } else await until("RN import button", 'return acPerf.findFibers("ImportButton", 200).length > 0;');
-    await run("S().updateSettings({ hideBookmarksBarImport: true }); return true;");
+    if (!native) await run("S().updateSettings({ hideBookmarksBarImport: true }); return true;");
     if (native) await until("empty hint", 'return H.devBookmarksBarLayout("w1").then(JSON.parse);', (value) => value?.hintShown && !value.importShown && value.otherShown);
     else await until("RN empty hint", 'return rnText("For quick access, place your bookmarks here on the bookmarks bar.");');
     assert.equal(await run("return S().settings.hideBookmarksBarImport;"), true);
@@ -251,7 +521,13 @@ try {
   rep.record("run", { error });
 } finally {
   if (app) {
-    await run("if (globalThis.bmbar?.showMenu) globalThis.expo.modules.SolaraShell.showMenu = bmbar.showMenu; return true;").catch(() => {});
+    await run(`
+      const shell = globalThis.expo.modules.SolaraShell;
+      if (globalThis.bmbar?.showMenu) shell.showMenu = bmbar.showMenu;
+      if (globalThis.bmbar?.prompt) shell.prompt = bmbar.prompt;
+      if (globalThis.bmbar?.confirm) shell.confirm = bmbar.confirm;
+      return true;
+    `).catch(() => {});
     await app.quit();
   }
   await new Promise((done) => server.close(done));

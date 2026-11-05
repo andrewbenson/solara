@@ -1,5 +1,9 @@
+import { cleanUrl } from "@solara/core";
+import { makesGroup, restorableArcHolder } from "../../lib/bookmarkGroups";
 import type { Theme } from "../../lib/theme";
-import type { Bookmarks } from "../../store/types";
+import { folderLinks } from "../../store/bookmarks";
+import type { Settings } from "../../store/settings";
+import type { BookmarkNode, Bookmarks } from "../../store/types";
 
 type BarTheme = Pick<Theme, "toolbarHover" | "toolbarPressed" | "textTab" | "textTertiary" | "icon" | "divider" | "accent" | "dark">;
 
@@ -8,27 +12,41 @@ export type BookmarksBarItem = {
   kind: "url" | "folder";
   title: string;
   url?: string;
+  cleanUrl?: string;
   favicon?: string | null;
+  children?: BookmarksBarItem[];
+  folderLinks?: number;
+  makesGroup?: boolean;
+  restorableArcHolder?: boolean;
 };
 
-export function bookmarksBarSnapshot(bookmarks: Bookmarks, profileId: string, hideBookmarksBarImport: boolean, theme: BarTheme, sidebarEdge: number | null = null) {
+export function bookmarksBarSnapshot(bookmarks: Bookmarks, profileId: string, hideBookmarksBarImport: boolean, theme: BarTheme, sidebarEdge: number | null = null, bookmarksBar: Settings["bookmarksBar"] = "always") {
   const roots = bookmarks.roots[profileId];
   const bar = roots ? bookmarks.nodes[roots.bar] : undefined;
   const other = roots ? bookmarks.nodes[roots.other] : undefined;
-  const items: BookmarksBarItem[] = [];
-  if (bar?.kind === "folder") {
-    for (const id of bar.children) {
-      const node = bookmarks.nodes[id];
-      if (!node) continue;
-      items.push(node.kind === "url"
-        ? { id: node.id, kind: node.kind, title: node.title, url: node.url, favicon: node.favicon }
-        : { id: node.id, kind: node.kind, title: node.title });
-    }
-  }
+  const state = { bookmarks };
+  const build = (node: BookmarkNode, depth: number): BookmarksBarItem => node.kind === "url"
+    ? { id: node.id, kind: node.kind, title: node.title, url: node.url, cleanUrl: cleanUrl(node.url), favicon: node.favicon }
+    : {
+      id: node.id,
+      kind: node.kind,
+      title: node.title,
+      children: depth < 8 ? children(node.children, depth + 1) : [],
+      folderLinks: folderLinks(bookmarks, node.id).length,
+      makesGroup: makesGroup(state, node.id),
+      restorableArcHolder: restorableArcHolder(state, node.id),
+    };
+  const children = (ids: string[], depth: number): BookmarksBarItem[] => ids.flatMap((id) => {
+    const node = bookmarks.nodes[id];
+    return node ? [build(node, depth)] : [];
+  });
   return {
     profileId,
-    items,
+    barId: roots?.bar ?? null,
+    bookmarksBar,
+    items: bar?.kind === "folder" ? children(bar.children, -1) : [],
     otherId: roots?.other ?? null,
+    otherFolder: other?.kind === "folder" ? build(other, -1) : null,
     hasOther: other?.kind === "folder" && other.children.length > 0,
     hideBookmarksBarImport,
     sidebarEdge,

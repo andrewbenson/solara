@@ -35,8 +35,12 @@ struct BookmarksBarViewTests {
     view.update(snapshot(items, profileId: "next"))
     view.layoutSubtreeIfNeeded()
     #expect(buttons(view)[1].accessibilityPerformPress())
+    #expect(events.count == 1)
+    #if DEBUG
+    #expect(view.devChoose(trigger: "item", id: "b", choiceId: "rename:b")["accepted"] as? Bool == true)
     #expect(events.last?.1["profileId"] as? String == "next")
     #expect(events.last?.1["id"] as? String == "b")
+    #endif
   }
 
   @Test func emptyImportAndHintRespectTheSnapshotPreference() throws {
@@ -64,10 +68,12 @@ struct BookmarksBarViewTests {
     view.layoutSubtreeIfNeeded()
     #expect(buttons(view).map { $0.accessibilityLabel() } == ["More bookmarks", "Other Bookmarks, folder"])
     #expect(buttons(view)[0].accessibilityPerformPress())
-    #expect(events.last?.0 == "overflowPress")
-    #expect(events.last?.1["ids"] as? [String] == ["0", "1", "2", "3", "4"])
+    #expect(events.isEmpty)
+    #if DEBUG
+    #expect(view.devMenu(trigger: "overflow", id: nil).compactMap { $0["choiceId"] as? String } == ["open:0", "open:1", "open:2", "open:3", "open:4"])
+    #endif
     #expect(buttons(view)[1].accessibilityPerformPress())
-    #expect(events.last?.0 == "otherPress")
+    #expect(events.isEmpty)
     view.update(snapshot([]))
     view.layoutSubtreeIfNeeded()
     #expect(buttons(view).map { $0.accessibilityLabel() } == ["Import bookmarks"])
@@ -82,9 +88,10 @@ struct BookmarksBarViewTests {
     let other = try #require(buttons(view).first { $0.accessibilityLabel() == "Other Bookmarks, folder" })
     let event = try #require(NSEvent.mouseEvent(with: .rightMouseDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
     other.rightMouseDown(with: event)
-    #expect(events.last?.0 == "contextMenu")
-    #expect(events.last?.1["id"] == nil)
-    #expect(events.last?.1["profileId"] as? String == "p")
+    #expect(events.isEmpty)
+    #if DEBUG
+    #expect(view.devMenu(trigger: "blank", id: nil).compactMap { $0["title"] as? String } == ["Add Page…", "Add Folder…", "", "Manage Bookmarks", "Show Bookmarks Bar"])
+    #endif
   }
 
   @Test func controlClickOpensTheItemContextWithoutPressingIt() throws {
@@ -106,8 +113,10 @@ struct BookmarksBarViewTests {
     view.onAction = { events.append(($0, $1)) }
     view.update(snapshot([]))
     view.mouseDown(with: try mouse(.leftMouseDown, flags: [.control]))
-    #expect(events.last?.0 == "contextMenu")
-    #expect(events.last?.1["id"] == nil)
+    #expect(events.isEmpty)
+    #if DEBUG
+    #expect(view.devMenu(trigger: "blank", id: nil).first?["choiceId"] as? String == "addPage")
+    #endif
   }
 
   @Test func ordinaryAndMiddleClicksPreserveTheirModifiers() throws {
@@ -136,9 +145,10 @@ struct BookmarksBarViewTests {
     view.layoutSubtreeIfNeeded()
     let button = try #require(buttons(view).first)
     #expect(button.accessibilityPerformShowMenu())
-    #expect(events.count == 1)
-    #expect(events.first?.0 == "contextMenu")
-    #expect(events.first?.1["id"] as? String == "folder")
+    #expect(events.isEmpty)
+    #if DEBUG
+    #expect(view.devMenu(trigger: "item", id: "folder").contains { $0["choiceId"] as? String == "rename:folder" })
+    #endif
   }
 
   @Test func draggingBeginsOnlyAfterFourHorizontalPointsAndRestoresTheButton() throws {
@@ -272,11 +282,13 @@ struct BookmarksBarViewTests {
     #expect(events.last?.1["shiftKey"] as? Bool == true)
     #expect(!view.devInput(action: "press", id: "9", flags: [], x: nil))
     #expect(view.devInput(action: "overflowPress", id: nil, flags: [], x: nil))
-    #expect(events.last?.0 == "overflowPress")
+    #expect(events.count == 1)
+    #expect(!view.devMenu(trigger: "overflow", id: nil).isEmpty)
     #expect(view.devInput(action: "otherPress", id: nil, flags: [], x: nil))
-    #expect(events.last?.0 == "otherPress")
+    #expect(events.count == 1)
     #expect(view.devInput(action: "contextMenu", id: first, flags: [], x: nil))
-    #expect(events.last?.0 == "contextMenu")
+    #expect(events.count == 1)
+    #expect(view.devMenu(trigger: "item", id: first).first?["choiceId"] as? String == "tab:\(first)")
     let count = events.count
     #expect(view.devInput(action: "cancelDrag", id: first, flags: [], x: 200))
     #expect(events.count == count)

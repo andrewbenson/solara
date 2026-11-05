@@ -40,6 +40,7 @@ const sources = {
     export const openBarMenu = (...args) => f.actions.push(["context", ...args]);
     export const openFolderMenu = (...args) => f.actions.push(["folder", ...args]);
     export const openImportMenu = () => f.actions.push(["importMenu"]);
+    export const handleBookmarksBarMenuChoice = (...args) => f.actions.push(["menuChoice", ...args]);
   `,
 };
 const hooks = registerHooks({
@@ -63,7 +64,7 @@ beforeEach(() => {
     kinds: ["bookmarksBar"], sidebarWidth: 210, windowId: "first", actions: [], subscriptions: [], listeners: new Map(), cleanups: [],
     theme: { toolbarHover: "h", toolbarPressed: "p", textTab: "t", textTertiary: "q", icon: "i", divider: "d", accent: "a", dark: false },
     state: {
-      settings: { hideBookmarksBarImport: false, tabLayout: "sidebar" },
+      settings: { hideBookmarksBarImport: false, tabLayout: "sidebar", bookmarksBar: "always" },
       windows: { first: { profileId: "one", sidebarOpen: true }, second: { profileId: "two" } },
       moveBookmark: (...args) => f.actions.push(["move", ...args]),
       bookmarks: {
@@ -100,27 +101,28 @@ test("hosted snapshots and action subscriptions retain their window and current 
   f.state.windows.first.profileId = "two";
   f.listeners.get("first")("press", { id: "a" });
   assert.equal(f.actions.length, 1);
-  f.listeners.get("first")("contextMenu", {});
-  assert.deepEqual(f.actions.at(-1), ["context", "first", "two", null]);
+  f.listeners.get("first")("menuChoice", { action: "manage" });
+  assert.deepEqual(f.actions.at(-1), ["menuChoice", "first", "two", "manage", undefined]);
   f.cleanups.forEach((cleanup) => cleanup());
   assert.equal(f.listeners.size, 0);
 });
 
-test("folder, overflow, Other Bookmarks and import events reuse the existing actions", () => {
+test("native menu choices replace JS menu requests and retain nested bookmark identity", () => {
   mount();
   const event = f.listeners.get("first");
-  event("press", { id: "folder" });
-  assert.deepEqual(f.actions.at(-1), ["folder", "first", ["child"], undefined, "folder"]);
-  event("contextMenu", { id: "a" });
-  assert.deepEqual(f.actions.at(-1), ["context", "first", "one", f.state.bookmarks.nodes.a]);
-  event("overflowPress", { ids: ["b", "second", "a", 5] });
-  assert.deepEqual(f.actions.at(-1), ["folder", "first", ["a", "b"]]);
-  event("otherPress", {});
-  assert.deepEqual(f.actions.at(-1), ["folder", "first", ["child"], undefined, "other"]);
+  for (const [name, payload] of [
+    ["press", { id: "folder" }], ["contextMenu", { id: "a" }],
+    ["overflowPress", { ids: ["a"] }], ["otherPress", {}], ["importContextMenu", {}],
+  ]) event(name, payload);
+  assert.deepEqual(f.actions, []);
+  event("menuChoice", { action: "open", id: "child" });
+  assert.deepEqual(f.actions.at(-1), ["menuChoice", "first", "one", "open", "child"]);
+  event("menuChoice", { action: "bar", id: "newTab" });
+  assert.deepEqual(f.actions.at(-1), ["menuChoice", "first", "one", "bar", "newTab"]);
+  event("menuChoice", { action: "addPage", id: "a" });
+  assert.deepEqual(f.actions.at(-1), ["menuChoice", "first", "one", "addPage", "a"]);
   event("importPress", {});
   assert.deepEqual(f.actions.at(-1), ["import"]);
-  event("importContextMenu", {});
-  assert.deepEqual(f.actions.at(-1), ["importMenu"]);
 });
 
 test("events drawn for a previous profile cannot act on the newly selected profile", () => {
@@ -134,6 +136,7 @@ test("events drawn for a previous profile cannot act on the newly selected profi
     ["otherPress", {}],
     ["importPress", {}],
     ["importContextMenu", {}],
+    ["menuChoice", { action: "delete", id: "second" }],
   ]) event(name, { ...payload, profileId: "one" });
   assert.deepEqual(f.actions, []);
   event("press", { id: "second", profileId: "two" });
@@ -201,4 +204,19 @@ test("a removed window ignores hosted events", () => {
   event("move", { id: "a", index: 0, profileId: "one" });
   event("press", { id: "a", profileId: "one" });
   assert.deepEqual(f.actions, []);
+});
+
+test("menu choices preserve colon-containing IDs and reject unrelated or removed bookmarks", () => {
+  const id = "bookmark:with:colons";
+  f.state.bookmarks.nodes[id] = url(id);
+  f.state.bookmarks.nodes.other.children.push(id);
+  mount();
+  const event = f.listeners.get("first");
+  event("menuChoice", { action: "edit", id, profileId: "one" });
+  assert.deepEqual(f.actions, [["menuChoice", "first", "one", "edit", id]]);
+  event("menuChoice", { action: "delete", id: "second", profileId: "one" });
+  event("menuChoice", { action: "delete", id: "missing", profileId: "one" });
+  delete f.state.bookmarks.nodes[id];
+  event("menuChoice", { action: "addPage", id, profileId: "one" });
+  assert.equal(f.actions.length, 1);
 });

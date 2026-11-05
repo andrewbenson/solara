@@ -322,7 +322,11 @@ function ImportButton() {
 
 export async function openImportMenu() {
   const choice = await showMenu([{ id: "hide", title: "Hide Import Bookmarks Button" }]);
-  if (choice === "hide") useBrowser.getState().updateSettings({ hideBookmarksBarImport: true });
+  if (choice === "hide") hideBookmarksBarImportButton();
+}
+
+export function hideBookmarksBarImportButton() {
+  useBrowser.getState().updateSettings({ hideBookmarksBarImport: true });
 }
 
 export async function openFolderMenu(windowId: string, ids: string[], _e?: ClickMods, folderId?: string) {
@@ -352,12 +356,8 @@ export async function openFolderMenu(windowId: string, ids: string[], _e?: Click
   const choice = await showMenu(build(ids, folderId));
   if (!choice) return;
   const [action, id] = splitChoice(choice);
-  const node = id ? useBrowser.getState().bookmarks.nodes[id] : undefined;
-  if (action === "open" && node?.kind === "url") openUrl(node.url, windowId, "current");
-  if (action === "openAll" && id) void openFolder(id, windowId, "tabs");
-  if (action === "openAllWindow" && id) void openFolder(id, windowId, "window");
-  if (action === "openAllIncognito" && id) void openFolder(id, windowId, "incognito");
-  if (action === "addGroup" && id) addFolderToSidebar(id, windowId);
+  const s = useBrowser.getState();
+  void handleBookmarksBarMenuChoice(windowId, bookmarkProfileId(s, s.windows[windowId]), action, id || undefined);
 }
 
 const splitChoice = (choice: string): [string, string] => {
@@ -412,31 +412,52 @@ export async function openBarMenu(windowId: string, profileId: string, node: Boo
   );
   const choice = await showMenu(items);
   if (!choice) return;
+  const [action, id] = splitChoice(choice);
+  await handleBookmarksBarMenuChoice(windowId, profileId, action, action === "bar" ? id : node?.id);
+}
+
+export async function handleBookmarksBarMenuChoice(windowId: string, profileId: string, action: string, id?: string) {
+  const s = useBrowser.getState();
+  const node = id ? s.bookmarks.nodes[id] : undefined;
   const bar = s.bookmarks.roots[profileId]?.bar;
   if (node?.kind === "url") {
-    if (choice === "tab") openUrl(node.url, windowId, "foreground");
-    if (choice === "window") openUrl(node.url, windowId, "window");
-    if (choice === "incognito") openUrl(node.url, windowId, "incognito");
-    if (choice === "split") openUrl(node.url, windowId, "split");
-    if (choice === "edit") void editBookmark(node.id, windowId);
-    if (choice === "copy") copyText(cleanUrl(node.url));
+    if (action === "open") openUrl(node.url, windowId, "current");
+    if (action === "tab") openUrl(node.url, windowId, "foreground");
+    if (action === "window") openUrl(node.url, windowId, "window");
+    if (action === "incognito") openUrl(node.url, windowId, "incognito");
+    if (action === "split") openUrl(node.url, windowId, "split");
+    if (action === "edit") void editBookmark(node.id, windowId);
+    if (action === "copy") copyText(cleanUrl(node.url));
   }
   if (node?.kind === "folder") {
-    if (choice === "openAll") void openFolder(node.id, windowId, "tabs");
-    if (choice === "openAllWindow") void openFolder(node.id, windowId, "window");
-    if (choice === "openAllIncognito") void openFolder(node.id, windowId, "incognito");
-    if (choice === "rename") void editBookmark(node.id, windowId);
-    if (choice === "addGroup") addFolderToSidebar(node.id, windowId);
-    if (choice === "restoreArc") restoreArcFolders(node.id, windowId);
+    if (action === "openAll") void openFolder(node.id, windowId, "tabs");
+    if (action === "openAllWindow") void openFolder(node.id, windowId, "window");
+    if (action === "openAllIncognito") void openFolder(node.id, windowId, "incognito");
+    if (action === "rename") void editBookmark(node.id, windowId);
+    if (action === "addGroup") addFolderToSidebar(node.id, windowId);
+    if (action === "restoreArc") restoreArcFolders(node.id, windowId);
   }
-  if (choice === "delete" && node) useBrowser.getState().removeBookmark(node.id);
-  const parentId = node?.parentId ?? bar;
-  const index = node && parentId ? (folderChildren(useBrowser.getState().bookmarks, parentId).findIndex((n) => n.id === node.id) + 1) : undefined;
-  if (choice === "addPage") void editBookmark(null, windowId, { profileId, parentId: parentId ?? undefined, index });
-  if (choice === "addFolder") {
-    const title = await prompt({ title: "New Folder", placeholder: "Folder name", confirmTitle: "Create", windowId });
-    if (title) useBrowser.getState().addBookmarkFolder({ profileId, title, parentId: parentId ?? undefined, index });
-  }
-  if (choice === "manage") openInternalPage("bookmarks", windowId);
-  if (choice.startsWith("bar:")) useBrowser.getState().updateSettings({ bookmarksBar: choice.slice(4) as typeof barMode });
+  if (action === "delete" && node) useBrowser.getState().removeBookmark(node.id);
+  if (action === "addPage") addPageFromBookmarksBar(windowId, profileId, node ?? null);
+  if (action === "addFolder") await addFolderFromBookmarksBar(windowId, profileId, node ?? null);
+  if (action === "manage") openInternalPage("bookmarks", windowId);
+  if (action === "bar" && (id === "always" || id === "newTab" || id === "never")) useBrowser.getState().updateSettings({ bookmarksBar: id });
+  if (action === "hide") hideBookmarksBarImportButton();
+}
+
+function bookmarksBarInsertion(profileId: string, node: BookmarkNode | null) {
+  const s = useBrowser.getState();
+  const parentId = node?.parentId ?? s.bookmarks.roots[profileId]?.bar;
+  const index = node && parentId ? folderChildren(s.bookmarks, parentId).findIndex((n) => n.id === node.id) + 1 : undefined;
+  return { parentId: parentId ?? undefined, index };
+}
+
+export function addPageFromBookmarksBar(windowId: string, profileId: string, node: BookmarkNode | null) {
+  void editBookmark(null, windowId, { profileId, ...bookmarksBarInsertion(profileId, node) });
+}
+
+export async function addFolderFromBookmarksBar(windowId: string, profileId: string, node: BookmarkNode | null) {
+  const position = bookmarksBarInsertion(profileId, node);
+  const title = await prompt({ title: "New Folder", placeholder: "Folder name", confirmTitle: "Create", windowId });
+  if (title) useBrowser.getState().addBookmarkFolder({ profileId, title, ...position });
 }

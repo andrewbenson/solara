@@ -89,7 +89,7 @@ backlog, and check this file against the release notes.
 
 | Item | Status |
 |---|---|
-| Native bookmarks bar, with the native bookmark coordinator (see backlog) (moved from 0.4.0, owner 2026-11-04) | in progress: steps 1–2 landed behind default-off `SOLARA_NATIVE_BOOKMARKS_BAR` (the native bar under the toolbar, then dragging, VoiceOver actions and `bookmarks-bar-test`); JS remains the bookmark writer. Next: the native sync writer and the writer migration behind an ownership gate, then the atomic coordinator activation (Task 6) |
+| Native bookmarks bar, with the native bookmark coordinator (see backlog) (moved from 0.4.0, owner 2026-11-04) | in progress: steps 1–2 landed behind default-off `SOLARA_NATIVE_BOOKMARKS_BAR` (the native bar under the toolbar, then dragging, VoiceOver actions and `bookmarks-bar-test`), and step 3a, the bar's menus built natively (item, folder, blank-area, folder trees, overflow, Other Bookmarks, import), with their choices run by the same JS handlers as the React Native bar; JS remains the bookmark writer. Next for the bar: 3b keyboard, 3d drops from tabs and links, then retiring the React Native bar. Next: the native sync writer and the writer migration behind an ownership gate, then the atomic coordinator activation (Task 6) |
 | A native frame for extension popups (moved from 0.4.0, owner 2026-11-04) | planned |
 | Content blocker hold, per navigation: hold only session-restored and launch tabs (an engine mark set before the navigation starts, primary main frame, http(s)), not every navigation in the profile during the launch window | planned |
 | Fixes from the owner's two-Mac sync-join test of 0.1.3 | waiting on the test |

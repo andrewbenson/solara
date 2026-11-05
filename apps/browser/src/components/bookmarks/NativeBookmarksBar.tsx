@@ -10,7 +10,7 @@ import { bookmarkProfileId } from "../../store/model";
 import { openImport } from "../settings/windows";
 import { useSidebarWidth } from "../sidebar/tokens";
 import { openModeFor, openUrl } from "./actions";
-import { BOOKMARKS_BAR_HEIGHT, BookmarksBar, openBarMenu, openFolderMenu, openImportMenu } from "./BookmarksBar";
+import { BOOKMARKS_BAR_HEIGHT, BookmarksBar, handleBookmarksBarMenuChoice } from "./BookmarksBar";
 import { bookmarksBarSnapshot } from "./bookmarksBarSnapshot";
 
 export const NativeBookmarksBar = memo(function NativeBookmarksBar({ placeholder }: { placeholder?: boolean }) {
@@ -24,12 +24,13 @@ function Bar({ windowId }: { windowId: string }) {
   const profileId = useBrowser((s) => bookmarkProfileId(s, s.windows[windowId]));
   const bookmarks = useBrowser((s) => s.bookmarks);
   const hideImport = useBrowser((s) => s.settings.hideBookmarksBarImport);
+  const barMode = useBrowser((s) => s.settings.bookmarksBar);
   const width = useSidebarWidth(windowId);
   const sidebarEdge = useBrowser((s) => {
     const w = s.windows[windowId];
     return w?.sidebarOpen && (w.tabLayout ?? s.settings.tabLayout) !== "top" ? width : null;
   });
-  const state = JSON.stringify(bookmarksBarSnapshot(bookmarks, profileId, hideImport, theme, sidebarEdge));
+  const state = JSON.stringify(bookmarksBarSnapshot(bookmarks, profileId, hideImport, theme, sidebarEdge, barMode));
   useEffect(() => onHostedEvent("bookmarksBar", windowId, (name, payload) => {
     const s = useBrowser.getState();
     const window = s.windows[windowId];
@@ -39,14 +40,13 @@ function Bar({ windowId }: { windowId: string }) {
     const roots = s.bookmarks.roots[currentProfileId];
     const children = roots ? folderChildren(s.bookmarks, roots.bar) : [];
     const node = typeof payload.id === "string" ? children.find((n) => n.id === payload.id) : undefined;
-    if (name === "press" && node) {
-      if (node.kind === "url") openUrl(node.url, windowId, openModeFor({
+    if (name === "press" && node?.kind === "url") {
+      openUrl(node.url, windowId, openModeFor({
         metaKey: payload.metaKey === true,
         shiftKey: payload.shiftKey === true,
         altKey: payload.altKey === true,
         middle: payload.middle === true,
       }));
-      else void openFolderMenu(windowId, node.children, undefined, node.id);
     } else if (name === "move" && node && roots) {
       if (typeof payload.into === "string") {
         const target = children.find((n) => n.id === payload.into);
@@ -56,15 +56,18 @@ function Bar({ windowId }: { windowId: string }) {
       }
     } else if (name === "folderToSidebar" && node?.kind === "folder") {
       addFolderToSidebar(node.id, windowId);
-    } else if (name === "contextMenu" && (node || payload.id === undefined)) {
-      void openBarMenu(windowId, currentProfileId, node ?? null);
-    } else if (name === "overflowPress" && Array.isArray(payload.ids)) {
-      const ids = new Set(payload.ids.filter((id): id is string => typeof id === "string"));
-      void openFolderMenu(windowId, children.filter((n) => ids.has(n.id)).map((n) => n.id));
-    } else if (name === "otherPress" && roots) {
-      void openFolderMenu(windowId, folderChildren(s.bookmarks, roots.other).map((n) => n.id), undefined, roots.other);
+    } else if (name === "menuChoice" && typeof payload.action === "string") {
+      const id = typeof payload.id === "string" ? payload.id : undefined;
+      if (id !== undefined && payload.action !== "bar") {
+        const contains = (ids: string[], depth = 0): boolean => depth < 64 && ids.some((candidate) => {
+          if (candidate === id) return true;
+          const node = s.bookmarks.nodes[candidate];
+          return node?.kind === "folder" && contains(node.children, depth + 1);
+        });
+        if (!roots || !s.bookmarks.nodes[id] || !contains([roots.bar, roots.other])) return;
+      }
+      void handleBookmarksBarMenuChoice(windowId, currentProfileId, payload.action, id);
     } else if (name === "importPress") openImport();
-    else if (name === "importContextMenu") void openImportMenu();
   }), [windowId]);
   return <SolaraHostedView kind="bookmarksBar" windowId={windowId} state={state} style={{ height: BOOKMARKS_BAR_HEIGHT }} />;
 }

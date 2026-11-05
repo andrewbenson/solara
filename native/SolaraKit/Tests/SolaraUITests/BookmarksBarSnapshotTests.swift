@@ -39,6 +39,19 @@ struct BookmarksBarSnapshotTests {
     #expect(try JSONDecoder().decode(BookmarksBarSnapshot.self, from: Data(closed.utf8)).sidebarEdge == nil)
   }
 
+  @Test func decodesRecursiveMenuMetadataAndOtherBookmarks() throws {
+    let json = #"{"profileId":"p","items":[{"id":"f","kind":"folder","title":"Work","folderLinks":32,"makesGroup":false,"restorableArcHolder":true,"children":[{"id":"u","kind":"url","title":"","url":"https://example.test/?utm_source=test","cleanUrl":"https://example.test/"}]}],"barId":"bar","otherId":"other","otherFolder":{"id":"other","kind":"folder","title":"Other Bookmarks","children":[],"folderLinks":0,"makesGroup":false,"restorableArcHolder":false},"bookmarksBar":"newTab","hasOther":false,"hideBookmarksBarImport":false,"theme":{}}"#
+    let snapshot = try JSONDecoder().decode(BookmarksBarSnapshot.self, from: Data(json.utf8))
+    #expect(snapshot.barId == "bar")
+    #expect(snapshot.bookmarksBar == "newTab")
+    #expect(snapshot.items[0].folderLinks == 32)
+    #expect(!snapshot.items[0].makesGroup)
+    #expect(snapshot.items[0].restorableArcHolder)
+    #expect(snapshot.items[0].children[0].cleanUrl == "https://example.test/")
+    #expect(snapshot.otherFolder?.id == "other")
+    #expect(snapshot.otherFolder?.children.isEmpty == true)
+  }
+
   @Test func rejectsAnUnknownItemKind() {
     let json = #"{"profileId":"profile-a","items":[{"id":"a","kind":"separator","title":""}],"hasOther":false,"hideBookmarksBarImport":false,"theme":{}}"#
     #expect(throws: DecodingError.self) {

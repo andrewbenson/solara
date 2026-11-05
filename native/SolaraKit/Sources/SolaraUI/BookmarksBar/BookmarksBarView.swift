@@ -52,13 +52,16 @@ public final class BookmarksBarView: NSView {
     }
     overflow.onPress = { [weak self] _, _ in
       guard let self else { return }
-      self.emit("overflowPress", ["ids": self.overflowIds])
+      self.showMenu(trigger: "overflow", anchor: self.overflow)
     }
-    overflow.onContext = { [weak self] in self?.emit("contextMenu") }
-    other.onPress = { [weak self] _, _ in self?.emit("otherPress") }
-    other.onContext = { [weak self] in self?.emit("contextMenu") }
+    overflow.onContext = { [weak self] in self?.showMenu(trigger: "blank") }
+    other.onPress = { [weak self] _, _ in
+      guard let self else { return }
+      self.showMenu(trigger: "other", anchor: self.other)
+    }
+    other.onContext = { [weak self] in self?.showMenu(trigger: "blank") }
     importButton.onPress = { [weak self] _, _ in self?.emit("importPress") }
-    importButton.onContext = { [weak self] in self?.emit("importContextMenu") }
+    importButton.onContext = { [weak self] in self?.showMenu(trigger: "import") }
   }
 
   required init?(coder: NSCoder) { fatalError() }
@@ -79,10 +82,15 @@ public final class BookmarksBarView: NSView {
       button.configure(title: item.displayTitle, symbol: item.kind == .folder ? "folder" : "globe", folder: item.kind == .folder, theme: snapshot.theme)
       button.toolTip = item.kind == .url ? [item.title, item.url ?? ""].filter { !$0.isEmpty }.joined(separator: "\n") : item.title
       button.setFavicon(item.kind == .url ? item : nil, profileId: snapshot.profileId, dark: snapshot.dark, favicons: favicons)
-      button.onPress = { [weak self] flags, middle in
-        self?.emit("press", ["id": item.id, "metaKey": flags.contains(.command), "shiftKey": flags.contains(.shift), "altKey": flags.contains(.option), "ctrlKey": flags.contains(.control), "middle": middle])
+      button.onPress = { [weak self, weak button] flags, middle in
+        guard let self else { return }
+        if item.kind == .folder {
+          self.showMenu(trigger: "folder", id: item.id, anchor: button)
+          return
+        }
+        self.emit("press", ["id": item.id, "metaKey": flags.contains(.command), "shiftKey": flags.contains(.shift), "altKey": flags.contains(.option), "ctrlKey": flags.contains(.control), "middle": middle])
       }
-      button.onContext = { [weak self] in self?.emit("contextMenu", ["id": item.id]) }
+      button.onContext = { [weak self] in self?.showMenu(trigger: "item", id: item.id) }
       button.onPointerDown = { [weak self] in self?.beginDrag(id: item.id, at: $0) }
       button.onPointerDrag = { [weak self] in self?.moveDrag(to: $0) }
       button.onPointerUp = { [weak self] in self?.endDrag(at: $0) ?? false }
@@ -132,12 +140,12 @@ public final class BookmarksBarView: NSView {
 
   public override func rightMouseDown(with event: NSEvent) {
     guard isHitBy(event) else { return super.rightMouseDown(with: event) }
-    emit("contextMenu")
+    showMenu(trigger: "blank")
   }
 
   public override func mouseDown(with event: NSEvent) {
     guard event.modifierFlags.contains(.control), isHitBy(event) else { return super.mouseDown(with: event) }
-    emit("contextMenu")
+    showMenu(trigger: "blank")
   }
 
   public override func viewWillMove(toWindow newWindow: NSWindow?) {
@@ -146,6 +154,35 @@ public final class BookmarksBarView: NSView {
   }
 
   public override func cancelOperation(_ sender: Any?) { cancelDrag() }
+
+  private func showMenu(trigger: String, id: String? = nil, anchor: NSView? = nil) {
+    guard let snapshot else { return }
+    layoutSubtreeIfNeeded()
+    let model = BookmarksBarMenu(snapshot: snapshot, overflowIds: overflowIds)
+    let rows = model.items(trigger: trigger, id: id)
+    guard !rows.isEmpty else { return }
+    let point = anchor.map { convert(CGPoint(x: $0.bounds.minX, y: $0.bounds.maxY), from: $0) }
+      ?? window.map { convert($0.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil) }
+    BookmarksBarMenuPresenter.show(rows, in: self, at: point) { [weak self] choiceId in
+      guard let choice = model.choice(trigger: trigger, id: id, choiceId: choiceId) else { return }
+      self?.choose(choice, model: model) { string in
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(string, forType: .string)
+      }
+    }
+  }
+
+  private func choose(_ choice: BookmarksBarMenu.Choice, model: BookmarksBarMenu, copy: (String) -> Void) {
+    guard snapshot?.profileId == model.snapshot.profileId else { return }
+    if choice.action == "copy" {
+      guard let id = choice.id, let string = model.find(id)?.cleanUrl else { return }
+      copy(string)
+      return
+    }
+    var payload: [String: Any] = ["action": choice.action]
+    if let id = choice.id { payload["id"] = id }
+    emit("menuChoice", payload)
+  }
 
   private func beginDrag(id: String, at point: CGPoint) {
     cancelDrag()
@@ -219,6 +256,22 @@ public final class BookmarksBarView: NSView {
   }
 
   #if DEBUG
+  public func devMenu(trigger: String, id: String?) -> [[String: Any]] {
+    layoutSubtreeIfNeeded()
+    guard let snapshot else { return [] }
+    return BookmarksBarMenu(snapshot: snapshot, overflowIds: overflowIds).items(trigger: trigger, id: id).map(\.json)
+  }
+
+  public func devChoose(trigger: String, id: String?, choiceId: String) -> [String: Any] {
+    layoutSubtreeIfNeeded()
+    guard let snapshot else { return ["accepted": false] }
+    let model = BookmarksBarMenu(snapshot: snapshot, overflowIds: overflowIds)
+    guard let choice = model.choice(trigger: trigger, id: id, choiceId: choiceId) else { return ["accepted": false] }
+    var result: [String: Any] = ["accepted": true]
+    choose(choice, model: model) { result["copyText"] = $0 }
+    return result
+  }
+
   public func devLayout() -> [String: Any] {
     layoutSubtreeIfNeeded()
     let visible: [[String: Any]] = placements.compactMap { placement in
@@ -255,7 +308,7 @@ public final class BookmarksBarView: NSView {
         guard let button else { return false }
         button.onContext()
       } else {
-        emit("contextMenu")
+        showMenu(trigger: "blank")
       }
     case "drag", "cancelDrag":
       guard let button, let x, x.isFinite else { return false }

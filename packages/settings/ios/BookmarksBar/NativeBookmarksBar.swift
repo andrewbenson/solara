@@ -62,6 +62,18 @@ extension NativeBookmarksBar {
     return String(decoding: data, as: UTF8.self)
   }
 
+  static func devMenuJSON(windowId: String, trigger: String, id: String?) -> String {
+    guard let view = devHosts[windowId]?.value?.view, view.window != nil, !view.isHiddenOrHasHiddenAncestor,
+      let data = try? JSONSerialization.data(withJSONObject: view.devMenu(trigger: trigger, id: id)) else { return "null" }
+    return String(decoding: data, as: UTF8.self)
+  }
+
+  static func devChooseJSON(windowId: String, trigger: String, id: String?, choiceId: String) -> String {
+    guard let view = devHosts[windowId]?.value?.view, view.window != nil, !view.isHiddenOrHasHiddenAncestor,
+      let data = try? JSONSerialization.data(withJSONObject: view.devChoose(trigger: trigger, id: id, choiceId: choiceId)) else { return #"{"accepted":false}"# }
+    return String(decoding: data, as: UTF8.self)
+  }
+
   static func devInput(windowId: String, action: String, id: String?, modifiers: Int, x: Double?) -> Bool {
     guard let view = devHosts[windowId]?.value?.view, view.window != nil, !view.isHiddenOrHasHiddenAncestor else { return false }
     view.layoutSubtreeIfNeeded()

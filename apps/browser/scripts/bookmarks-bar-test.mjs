@@ -397,6 +397,7 @@ try {
       await choose("item", menuFixtures.arc, `restoreArc:${menuFixtures.arc}`);
       const group = await until("Arc folder restored as group", `return Object.values(S().groups).find((group) => group.pinned && group.name === "Arc Work" && !${JSON.stringify(before)}.includes(group.id)) ?? null;`);
       assert.equal(group.tabIds.length, 1);
+      await until("restored Arc bookmarks removed", `return !S().bookmarks.nodes[${JSON.stringify(menuFixtures.arc)}] && !S().bookmarks.nodes[${JSON.stringify(menuFixtures.arcFolder)}] && !S().bookmarks.nodes[${JSON.stringify(menuFixtures.arcLink)}];`);
     });
     for (const [action, id, folder] of [["edit", ids.first, false], ["rename", ids.folder, true]]) {
       await rep.check(`native-menu-${action}-editor`, async () => {

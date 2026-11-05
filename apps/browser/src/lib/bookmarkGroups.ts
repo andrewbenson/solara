@@ -17,7 +17,7 @@ export function addGroupsFromDrafts(profileId: string, drafts: GroupDraft[], nea
   const s = useBrowser.getState();
   const windowId = sidebarWindow(s, profileId, near) ?? s.createWindow({ profileId });
   let result: DraftGroups;
-  if (nativeOwnsWorkspace()) result = nativeWrite(encodeCommand("openDraftGroups", [windowId, profileId, drafts]))?.result as DraftGroups;
+  if (nativeOwnsWorkspace()) result = draftGroupsFromNative(nativeWrite(encodeCommand("openDraftGroups", [windowId, profileId, drafts]))?.result);
   else {
     const [next, made] = withDraftGroups(useBrowser.getState(), windowId, profileId, drafts);
     result = made;
@@ -25,6 +25,11 @@ export function addGroupsFromDrafts(profileId: string, drafts: GroupDraft[], nea
   }
   if (result.skipped) (require("../components/layout/splitActions") as typeof import("../components/layout/splitActions")).showToast(windowId, `${plural(result.skipped, "link")} left out`, `A folder brings up to ${MAX_DRAFT_LINKS.toLocaleString("en-US")} links.`);
   return result;
+}
+
+function draftGroupsFromNative(value: unknown): DraftGroups {
+  const reply = (value ?? {}) as { made?: string[]; carried?: string[]; skipped?: number };
+  return { made: reply.made ?? [], carried: new Set(reply.carried ?? []), skipped: reply.skipped ?? 0 };
 }
 
 export function profileOfWindow(windowId: string | null | undefined): string {

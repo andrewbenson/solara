@@ -85,6 +85,12 @@ backlog, and check this file against the release notes.
 | Sleeping tabs settings: a global switch, a delay (15 or 30 minutes, 1, 2 or 4 hours) and sites kept awake, in Settings › Tabs and the site controls | shipped (0.2.4) |
 | Dependabot image-size alerts (#6, #7) cleared: the metro family moves from 0.83.3 to 0.83.8 | shipped (0.2.4) |
 
+## 0.2.5: fixes
+
+| Item | Status |
+|---|---|
+| Fixed: Restore Arc Folders as Groups removes the restored Arc bookmarks from the bar again; it made the groups but left every Arc bookmark behind whenever the native store owned the workspace | shipped-pending |
+
 ## 0.3.0: tabs that cost less, and the first native bars
 
 | Item | Status |

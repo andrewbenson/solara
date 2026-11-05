@@ -1,10 +1,16 @@
+import AppKit
 import Foundation
 import Testing
 
 @MainActor
 enum SolaraCoreHost {
   static let safeMode = true
+  static let windowSeenDidChange = Notification.Name("SolaraCoreWindowSeenDidChange")
+  static func userSees(_ window: NSWindow?) -> Bool { false }
+  static func activateForPictureInPicture(_ why: String) {}
 }
+
+func SolaraCoreTestHooksAllowed() -> Bool { false }
 
 @MainActor
 enum SolaraCoreEngineBridge {

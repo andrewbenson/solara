@@ -2367,10 +2367,10 @@ try {
       const target = await openTab(`${base}/capture-target?sleep-pinned`, "Capture Target", true);
       opened.push(target.id);
       capturedPage = await pageFor(target.id, `${base}/capture-target?sleep-pinned`);
+      await cef(`setDisplayMediaPicker(false)`);
       const capturer = await openTab(`${base}/b?sleep-pinned-capture`, "Page B");
       opened.push(capturer.id);
       capturerPage = await pageFor(capturer.id, `${base}/b?sleep-pinned-capture`);
-      await cef(`setDisplayMediaPicker(false)`);
       await cdp(capturerPage, "Runtime.evaluate", {
         expression: "window.__cap = 'pending'; navigator.mediaDevices.getDisplayMedia({ video: true }).then((s) => { window.__stream = s; window.__cap = 'live'; }, (e) => (window.__cap = e.name)); true",
         userGesture: true,

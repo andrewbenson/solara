@@ -6627,6 +6627,7 @@ try {
     if (beforeQuit.length) throw new Error(`ads went out before the quit: ${JSON.stringify(beforeQuit)}`);
     await until("the blocker's state", async () => ((await cef(`getContentBlocker()`))?.stats?.ready ? true : null), 30000);
     const racedAtLaunch = adsServedFor(tag).length;
+    if (racedAtLaunch !== 0) throw new Error(`the restored page's ads raced at launch: ${JSON.stringify(adsServedFor(tag))}`);
     if (!(await evalApp(`return !!ac.webviews.get(${JSON.stringify(tab.id)})`))) throw new Error("the restored tab has no page view");
     const again = `${tag}-ready`;
     const pagesBefore = adServed.filter((s) => s.startsWith("adpage.test") && s.endsWith(`?${again}`)).length;

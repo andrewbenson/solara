@@ -1437,6 +1437,20 @@ public class OutsidePressAreaModule: Module {
   }
 }
 
+@MainActor
+public enum OutsidePressPolicy {
+  public static var deferPress: ((NSView, NSEvent, @escaping () -> Void) -> Bool)?
+
+  public static func targetsWindowDrag(_ target: NSView) -> Bool {
+    var view: NSView? = target
+    while let current = view {
+      if current is WindowDragRegion { return true }
+      view = current.superview
+    }
+    return false
+  }
+}
+
 final class OutsidePressArea: ExpoView {
   let onOutsidePress = EventDispatcher()
   fileprivate static let areas = NSHashTable<OutsidePressArea>.weakObjects()
@@ -1461,6 +1475,7 @@ final class OutsidePressArea: ExpoView {
   fileprivate func pressed(_ event: NSEvent) {
     guard let window, event.window === window, !isHiddenOrHasHiddenAncestor else { return }
     if let hit = window.contentView?.superview?.hitTest(event.locationInWindow), hit.isDescendant(of: self) { return }
+    if OutsidePressPolicy.deferPress?(self, event, { [weak self] in self?.onOutsidePress(["timestamp": event.timestamp * 1000]) }) == true { return }
     onOutsidePress(["timestamp": event.timestamp * 1000])
   }
 }

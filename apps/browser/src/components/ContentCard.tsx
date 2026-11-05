@@ -290,6 +290,7 @@ export function ContentCard() {
 
   return (
     <View
+      nativeID="solara-page-content"
       ref={container}
       pointerEvents={pooled ? "box-none" : "auto"}
       style={{ flex: 1 }}

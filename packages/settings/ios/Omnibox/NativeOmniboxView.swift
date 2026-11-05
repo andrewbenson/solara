@@ -70,7 +70,10 @@ final class NativeOmniboxView: ExpoView, FocusHandoffDestination {
     if host == nil {
       bar.removeFromSuperview()
       let made = OmniboxPanelHostView(bar: bar)
-      made.onOutside = { [weak self] in self?.onCancel([:]) }
+      made.onOutside = { [weak self] event in
+        guard let self, !NativeExtensionActionPopup.preserveOmniboxForToolbarPress(windowId: self.windowId, event: event, cancel: { [weak self] in self?.onCancel([:]) }) else { return }
+        self.onCancel([:])
+      }
       made.onHeight = { [weak self] h in self?.onBarLayout(["height": h]) }
       host = made
       placeHost()
@@ -198,10 +201,16 @@ final class NativeOmniboxView: ExpoView, FocusHandoffDestination {
       guard let self else { return }
       FieldTimingMarks.atPresent("bar:\(self.windowId)", "keyShown")
     }
-    e.done = { [weak self] reason in self?.onDone(["reason": reason?.rawValue ?? NSNull()]) }
+    e.done = { [weak self] reason in
+      guard let self else { return }
+      NativeExtensionActionPopup.omniboxSessionEnded(windowId: self.windowId)
+      self.onDone(["reason": reason?.rawValue ?? NSNull()])
+    }
     e.cancel = { [weak self] session in
       guard let self, self.bar.model?.editingSession == session else { return }
-      self.onCancel([:])
+      let preserved = NativeExtensionActionPopup.preservesOmnibox(windowId: self.windowId)
+      NativeExtensionActionPopup.omniboxSessionEnded(windowId: self.windowId)
+      if !preserved { self.onCancel([:]) }
     }
     e.siteControls = { [weak self] in self?.onSiteControls([:]) }
     e.changed = { [weak self] in

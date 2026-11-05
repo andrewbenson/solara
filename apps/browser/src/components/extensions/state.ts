@@ -16,12 +16,14 @@ import {
   type InstalledExtension,
 } from "@solara/solaracore";
 import { confirm, showMenu } from "@solara/shell";
+import { closeNativeExtensionPopup, showNativeExtensionPopup, type ExtensionPopupChange } from "@solara/settings";
 import { openWindow } from "../../lib/actions";
 import { webviews } from "../../lib/webviews";
 import { useBrowser, type BrowserState } from "../../store/browser";
 import { engineProfile } from "../../store/model";
 import { shownPageId } from "../../store/peek";
 import { openSettings } from "../settings/windows";
+import { tabForBrowser } from "../layout/pageState";
 import { closeSidePanelsOf, toggleSidePanel } from "./sidePanels";
 import { browserIdOf, extensionProfile, extensionsProfileId, pageProfile, shownIn, useExtensions, windowExtensions, type Anchor } from "./store";
 
@@ -207,34 +209,103 @@ export async function activateExtension(
   anchor: Anchor,
   state?: ActionState | null,
   tabId = shownPageId(useBrowser.getState(), windowId),
+  { requiresActive = false }: { requiresActive?: boolean } = {},
 ) {
-  const current = useExtensions.getState().popup;
+  const current = pendingPopup ?? useExtensions.getState().popup;
   if (current?.windowId === windowId && current.extensionId === ext.id) return closeExtensionPopup();
+  if (!useBrowser.getState().windows[windowId] || useBrowser.getState().windows[windowId]?.kind === "small") return;
   if (!ext.enabled) return void showExtensionMenu(windowId, ext);
   if (!shownIn(windowId, ext.id)) return;
-  const web = tabId ? webviews.get(tabId) : undefined;
-  const result = web ? await web.executeExtensionAction(ext.id) : null;
-  const browserId = browserIdOf(tabId);
-  if (!state && result === "popup" && browserId) state = (await extensionActionStates(browserId, [ext.id]))[ext.id];
-  const url = state ? state.popup : ext.popup ? `chrome-extension://${ext.id}/${ext.popup.replace(/^\//, "")}` : "";
-  if (result === "none") return;
-  if (result === "sidePanel") return void toggleSidePanel(windowId, ext.id);
-  if (!url) return void (result === null && showExtensionMenu(windowId, ext));
-  useExtensions.setState({ popup: { windowId, pageProfile: pageProfile(useBrowser.getState(), windowId), extensionId: ext.id, url, anchor } });
+  const request = beginPopupRequest(windowId, ext.id, tabId);
+  let shown = false;
+  try {
+    const web = tabId ? webviews.get(tabId) : undefined;
+    const result = web ? await web.executeExtensionAction(ext.id) : null;
+    const browserId = browserIdOf(tabId);
+    if (!state && result === "popup" && browserId) state = (await extensionActionStates(browserId, [ext.id]))[ext.id];
+    if (!popupRequestCurrent(request)) return;
+    const url = state ? state.popup : ext.popup ? `chrome-extension://${ext.id}/${ext.popup.replace(/^\//, "")}` : "";
+    if (result === "none" || result === "sidePanel" || !url) {
+      if (result === "sidePanel") void toggleSidePanel(windowId, ext.id);
+      else if (result === null && !url) void showExtensionMenu(windowId, ext);
+      return;
+    }
+    shown = await showPopupIntent(request, url, anchor, requiresActive);
+  } finally {
+    if (pendingPopup === request) {
+      pendingPopup = null;
+      if (!shown) void closeNativeExtensionPopup(windowId).catch(() => {});
+    }
+  }
 }
 
-export const closeExtensionPopup = () => useExtensions.setState({ popup: null });
+let pendingPopup: { windowId: string; extensionId: string; tabId: string | undefined } | null = null;
 
-let popupRequests = 0;
+function beginPopupRequest(windowId: string, extensionId: string, tabId: string | undefined) {
+  pendingPopup = { windowId, extensionId, tabId };
+  return pendingPopup;
+}
+
+const popupRequestCurrent = (request: NonNullable<typeof pendingPopup>) =>
+  pendingPopup === request && shownPageId(useBrowser.getState(), request.windowId) === request.tabId;
+
+export function closeExtensionPopup(windowId: string | null = null) {
+  if (!windowId || pendingPopup?.windowId === windowId) pendingPopup = null;
+  void closeNativeExtensionPopup(windowId).catch(() => {});
+}
+
+async function showPopupIntent(request: NonNullable<typeof pendingPopup>, popupUrl: string, anchor: Anchor, requiresActive: boolean): Promise<boolean> {
+  if (!popupRequestCurrent(request)) return false;
+  return showNativeExtensionPopup({
+    extensionId: request.extensionId,
+    popupUrl,
+    profile: pageProfile(useBrowser.getState(), request.windowId),
+    tabId: request.tabId ?? "",
+    windowId: request.windowId,
+    anchor,
+    requiresActive,
+  });
+}
+
+export function extensionPopupChanged({ windowId, extensionId, tabId, reason }: ExtensionPopupChange) {
+  const popup = useExtensions.getState().popup;
+  if (extensionId) useExtensions.setState({ popup: { windowId, extensionId, tabId: tabId || undefined } });
+  else {
+    if (reason !== "replacement" && pendingPopup?.windowId === windowId) pendingPopup = null;
+    if (popup?.windowId === windowId) useExtensions.setState({ popup: null });
+  }
+}
+
+export function dismissChangedPopup(s: BrowserState, prev: BrowserState) {
+  for (const popup of [pendingPopup, useExtensions.getState().popup]) {
+    if (!popup) continue;
+    const { windowId, tabId } = popup;
+    if (!s.windows[windowId] || shownPageId(s, windowId) !== tabId ||
+      (tabId && (s.tabs[tabId]?.navigation?.seq !== prev.tabs[tabId]?.navigation?.seq || s.tabs[tabId]?.url !== prev.tabs[tabId]?.url ||
+        s.live[tabId]?.isLoading && !prev.live[tabId]?.isLoading))) closeExtensionPopup(windowId);
+  }
+}
 
 export async function openActionPopup(windowId: string, extensionId: string, anchor: Anchor, browserId: number) {
-  const request = ++popupRequests;
-  const tabId = shownPageId(useBrowser.getState(), windowId);
-  const url = (await extensionActionStates(browserId, [extensionId]))[extensionId]?.popup ?? "";
-  if (request !== popupRequests || shownPageId(useBrowser.getState(), windowId) !== tabId)
-    return console.warn(`action.openPopup for ${extensionId}: the tab changed or another call came first`);
-  if (!url) return console.warn(`action.openPopup for ${extensionId}: no popup for the tab`);
-  useExtensions.setState({ popup: { windowId, pageProfile: pageProfile(useBrowser.getState(), windowId), extensionId, url, anchor, opened: request } });
+  const s = useBrowser.getState();
+  if (!s.windows[windowId] || s.windows[windowId]?.kind === "small") return;
+  const tabId = tabForBrowser(browserId);
+  if (!tabId || s.tabs[tabId]?.windowId !== windowId || shownPageId(s, windowId) !== tabId) return;
+  const request = beginPopupRequest(windowId, extensionId, tabId);
+  let shown = false;
+  try {
+    const url = (await extensionActionStates(browserId, [extensionId]))[extensionId]?.popup ?? "";
+    if (!popupRequestCurrent(request)) return;
+    if (!url) {
+      return console.warn(`action.openPopup for ${extensionId}: no popup for the tab`);
+    }
+    shown = await showPopupIntent(request, url, anchor, true);
+  } finally {
+    if (pendingPopup === request) {
+      pendingPopup = null;
+      if (!shown) void closeNativeExtensionPopup(windowId).catch(() => {});
+    }
+  }
 }
 
 export async function showExtensionMenu(windowId: string, ext: InstalledExtension) {

@@ -35,7 +35,7 @@ public final class OmniboxPanelHostView: NSView {
   static let growCurve = CAMediaTimingFunction(controlPoints: 0.16, 1, 0.3, 1)
 
   public let bar: OmniboxBarView
-  public var onOutside: () -> Void = {}
+  public var onOutside: (NSEvent) -> Void = { _ in }
   public var onHeight: (CGFloat) -> Void = { _ in }
   public private(set) var shown = false
   public private(set) var identity: OmniboxBarIdentity?
@@ -183,7 +183,7 @@ public final class OmniboxPanelHostView: NSView {
       MainActor.assumeIsolated {
         guard let self, self.shown, event.window === self.window else { return }
         let point = self.convert(event.locationInWindow, from: nil)
-        if !self.panelFrame.contains(point) { self.onOutside() }
+        if !self.panelFrame.contains(point) { self.onOutside(event) }
       }
       return event
     }

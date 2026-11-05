@@ -57,7 +57,7 @@ const usesPageA = [
   "bluetooth-settings", "cast-dialog", "cast-routes", "theme-commit", "theme-modern-colors", "user-selection",
   "password-prompt", "screen-share-picker", "tab-capture", "share-instead-two-captures",
   "restore-after-close", "discard-outcomes", "sleep-eligibility", "keep-awake-sites", "sleep-pinned-capture", "native-tab-sleep", "capture-picture", "unresponsive", "permission-dismissed", "permission-status-detached",
-  "save-page", "activate-request", "extension-popup-and-panel", "print-preview",
+  "save-page", "activate-request", "extension-popup-and-panel", "extension-popup-window", "extension-popup-native-frame", "print-preview",
   "extension-prompts", "extension-prompt-closed", "traffic-lights-after-profile-switch", "extension-configure",
   "private-windows-create", "extension-installed-bubble", "popup-window", "popup-window-permission", "popup-origin-strip", "autofill-save-prompts",
   "settings-services", "download-navigation", "page-events", "page-background", "appearance-reaches-pages", "external-app-answer",
@@ -2796,6 +2796,8 @@ try {
 
   // MARK: Chrome services and extensions
 
+  const nativeExtensionPopup = async (windowId = mainWindow) => JSON.parse(await evalApp(`return globalThis.expo.modules.SolaraToolbar.devExtensionPopup(${JSON.stringify(windowId)})`));
+
   await check("extension-popup-and-panel", async () => {
     const installed = await exts(`install(${JSON.stringify(extPath)}, "")`);
     if (installed?.error) throw new Error(installed.error);
@@ -2804,7 +2806,8 @@ try {
       await evalApp(`return ac.extensions.refreshExtensions("").then(() => true)`);
       await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
       await evalApp(`const lists = ac.extensions.useExtensions.getState().lists; const ext = Object.values(lists).flat().find((x) => x.id === "${installed.id}");
-        return ac.extensions.activateExtension(${JSON.stringify(mainWindow)}, ext, { x: 100, y: 40, width: 20, height: 20 }).then(() => !!ac.extensions.useExtensions.getState().popup)`);
+        return ac.extensions.activateExtension(${JSON.stringify(mainWindow)}, ext, { x: 100, y: 40, width: 20, height: 20 }).then(() => true)`);
+      await until("the native popup frame", async () => (await nativeExtensionPopup())?.frame ?? null, 8000);
       const popupTarget = await until("the popup page", async () => (await targets()).find((t) => t.type === "page" && t.url.includes(`${installed.id}/popup.html`)), 10000);
       const strips = await cef(`tabStrips()`);
       const inStrip = strips.strips.some((st) => st.tabs.some((x) => x.key == null));
@@ -3726,9 +3729,9 @@ try {
         const windowsBefore = (await cef(`chromeWindows()`)).length;
         const stripTabs = async () => (await cef(`tabStrips()`)).strips.flatMap((st) => st.tabs.map((x) => ({ strip: st.strip, profile: st.profile, ...x })));
         const browsersBefore = new Set((await stripTabs()).map((x) => x.browser));
-        const opened = await evalApp(`const ext = Object.values(ac.extensions.useExtensions.getState().lists).flat().find((x) => x.id === "${id}");
-          return ac.extensions.activateExtension(${JSON.stringify(mainWindow)}, ext, { x: 100, y: 40, width: 20, height: 20 }).then(() => !!ac.extensions.useExtensions.getState().popup)`);
-        if (!opened) throw new Error("no popup in the app");
+        await evalApp(`const ext = Object.values(ac.extensions.useExtensions.getState().lists).flat().find((x) => x.id === "${id}");
+          return ac.extensions.activateExtension(${JSON.stringify(mainWindow)}, ext, { x: 100, y: 40, width: 20, height: 20 }).then(() => true)`);
+        await until("the native popup frame", async () => (await nativeExtensionPopup())?.frame ?? null, 8000);
         const popup = await until("the popup page", async () => (await targets()).find((t) => t.type === "page" && t.url.includes(`${id}/popup.html`)), 10000);
         const seen = JSON.parse((await cdp(popup, "Runtime.evaluate", {
           expression: `Promise.all([chrome.windows.getCurrent(), chrome.tabs.query({ active: true, currentWindow: true }), chrome.extension.getViews({ type: "popup" }).length])
@@ -3746,10 +3749,205 @@ try {
         if (windowsWith !== windowsBefore) throw new Error(`windows ${windowsBefore} → ${windowsWith} with the popup open`);
         for (const type of ["rawKeyDown", "keyUp"])
           await cdp(popup, "Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 53 }).catch(() => null);
-        await until("Esc closing the popup", async () => (await evalApp(`return ac.extensions.useExtensions.getState().popup === null`)) ? true : null, 8000);
+        await until("Esc closing the native popup", async () => !(await nativeExtensionPopup())?.frame, 8000);
         await until("the popup page gone", async () => !(await targets()).some((t) => t.url.includes(`${id}/popup.html`)), 8000);
         return { window: seen.window, activeTab: seen.tabs[0], popups: seen.popups, windows: windowsWith };
       } finally {
+        await closeTab(tab).catch(() => null);
+      }
+    });
+  });
+
+  await check("extension-popup-native-frame", async () => {
+    return withPopupExtension({}, async (id) => {
+      const tab = await freshTab(`${base}/b?native-popup`);
+      const beforeLayout = await evalApp(`return ac.store.getState().settings.tabLayout`);
+      const windowNumber = await cef(`devWindowNumber(${await browserOf(tab)})`);
+      const act = (action) => cef(`devWindow(${windowNumber}, ${JSON.stringify(action)})`);
+      const snapshot = () => nativeExtensionPopup(mainWindow);
+      const popupTargets = async () => (await targets()).filter((t) => t.type === "page" && t.url.includes(`${id}/popup.html`));
+      const near = (a, b) => Math.abs(a - b) <= 0.5;
+      const click = async ([x, y]) => {
+        await act(`mouse:down:${Math.round(x)},${Math.round(y)},1`);
+        await sleep(40);
+        await act(`mouse:up:${Math.round(x)},${Math.round(y)},1`);
+      };
+      let lastHit = null;
+      const button = () => until("the extension's native toolbar button, uncovered", async () => {
+        const toolbar = JSON.parse(await evalApp(`return globalThis.expo.modules.SolaraToolbar.devToolbar(${JSON.stringify(mainWindow)}, "${tab}")`));
+        const found = toolbar.extensions.find((e) => e.id === `ext:${id}` && e.frame[2] > 0);
+        if (!found) return null;
+        lastHit = String(await act(`hit:${Math.round(found.frame[0] + found.frame[2] / 2)},${Math.round(found.frame[1] + found.frame[3] / 2)}`));
+        return lastHit.startsWith("RCT") ? null : found;
+      }, 8000).catch((error) => { throw new Error(`${error.message}; hit ${lastHit}`); });
+      const open = async () => {
+        const { frame } = await button();
+        await click([frame[0] + frame[2] / 2, frame[1] + frame[3] / 2]);
+        const shown = await until("the native popup under the toolbar button", async () => {
+          const s = await snapshot();
+          return s?.extensionId === id && s.frame?.[2] > 100 ? s : null;
+        }, 8000);
+        const [x, y, width, height] = shown.frame;
+        const [windowWidth, windowHeight] = shown.window;
+        if (!near(x, Math.max(8, Math.min(frame[0] + frame[2] - width, windowWidth - 8 - width))) ||
+          !near(y, Math.max(8, Math.min(frame[1] + frame[3] + 6, windowHeight - 8 - height))))
+          throw new Error(`native frame ${JSON.stringify(shown.frame)} does not follow button ${JSON.stringify(frame)}`);
+        if (x < 8 || y < 8 || x + width > windowWidth - 7.5 || y + height > windowHeight - 7.5)
+          throw new Error(`native popup escaped the window: ${JSON.stringify(shown)}`);
+        const target = await until("the popup renderer", async () => (await popupTargets())[0] ?? null, 8000);
+        return { shown, target };
+      };
+      const closed = async (reason, opened) => {
+        const result = await until(`${reason}: popup frame, page view and renderer released`, async () => {
+          const s = await snapshot();
+          return s && !s.frame && s.liveViews === 0 && !(await popupTargets()).length ? s : null;
+        }, 10000);
+        return result;
+      };
+      const urlEditor = async () => JSON.parse(await evalApp(`return globalThis.expo.modules.SolaraToolbar.devToolbar(${JSON.stringify(mainWindow)}, "${tab}")`)).urlEditor === true;
+      const pageFocus = () => until("focus restored to the page", async () => {
+        const s = await snapshot();
+        return s?.focusedTabId === tab && !s.omniboxFocused ? true : null;
+      }, 5000);
+      const dismissed = [];
+      let closingWindow = null;
+      try {
+        await evalApp(`ac.store.getState().updateSettings({ tabLayout: "top" }); return ac.extensions.setPinned("", "${id}", true)`);
+        await act("fakeActiveClicks");
+        await evalApp(`return ac.webviews.get("${tab}").focus()`);
+        let opened = await open();
+        const resize = async (width, height) => {
+          await cdp(opened.target, "Runtime.evaluate", { expression: `document.body.textContent = ''; document.body.style.cssText = 'margin:0;width:${width}px;height:${height}px'` });
+          return until(`popup preferred size ${width}×${height}`, async () => {
+            const s = await snapshot();
+            const expected = [Math.min(s.window[0] - 16, Math.min(800, Math.max(25, width)) + 1), Math.min(s.window[1] - 16, Math.min(600, Math.max(25, height)) + 1)];
+            if (!s.frame || !near(s.frame[2], expected[0]) || !near(s.frame[3], expected[1])) return null;
+            const [x, y, w, h] = s.frame;
+            const [ax, ay, aw, ah] = s.anchor;
+            if (!near(x, Math.max(8, Math.min(ax + aw - w, s.window[0] - 8 - w))) ||
+              !near(y, Math.max(8, Math.min(ay + ah + 6, s.window[1] - 8 - h))))
+              throw new Error(`resized popup escaped its anchor or window: ${JSON.stringify(s)}`);
+            return s.frame;
+          }, 5000);
+        };
+        const grown = await resize(450, 260);
+        const shrunk = await resize(60, 30);
+        const maximum = await resize(5000, 5000);
+        const minimum = await resize(0, 0);
+        if (grown[2] <= shrunk[2] || grown[3] <= shrunk[3]) throw new Error(`native popup did not shrink: ${grown} → ${shrunk}`);
+        await click([10, 10]);
+        await closed("outside click", opened);
+        await pageFocus();
+        dismissed.push("outside click");
+        opened = await open();
+        let pagePoint = null;
+        for (const point of [[700, 420], [600, 500], [400, 400]]) {
+          if (String(await act(`hit:${point.join(",")}`)).startsWith("RenderWidgetHostViewCocoa")) { pagePoint = point; break; }
+        }
+        if (!pagePoint) throw new Error("no exposed page point for native popup dismissal");
+        await click(pagePoint);
+        await closed("click in page", opened);
+        await pageFocus();
+        dismissed.push("click in page");
+        opened = await open();
+        for (const type of ["rawKeyDown", "keyUp"])
+          await cdp(opened.target, "Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 53 }).catch(() => null);
+        await closed("Esc", opened);
+        await pageFocus();
+        dismissed.push("Esc");
+        opened = await open();
+        const toggle = (await button()).frame;
+        await click([toggle[0] + toggle[2] / 2, toggle[1] + toggle[3] / 2]);
+        await closed("toggle", opened);
+        await pageFocus();
+        dismissed.push("toggle");
+        opened = await open();
+        await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
+        await closed("tab switch", opened);
+        dismissed.push("tab switch");
+        await evalApp(`ac.actions.switchToTab("${tab}"); return true`);
+        await evalApp(`return ac.webviews.get("${tab}").focus()`);
+        opened = await open();
+        await evalApp(`ac.store.getState().navigate("${tab}", "${base}/b?native-popup-navigated", { userInitiated: true }); return true`);
+        await closed("navigation", opened);
+        dismissed.push("navigation");
+        await until("the navigated page", async () => (await state()).tabs.find((t) => t.id === tab && !t.loading), 10000);
+        await evalApp(`return ac.webviews.get("${tab}").focus()`);
+        opened = await open();
+        try {
+          if (await act("fakeAppActive:0") !== "0") throw new Error("app resign hook unavailable");
+          await closed("app resign", opened);
+        } finally {
+          await act("fakeAppActive:1");
+        }
+        dismissed.push("app resign");
+        try {
+          if (await act("fakeAppActive:0") !== "0") throw new Error("app resign hook unavailable");
+          opened = await open();
+          const { frame: inactiveButton } = await button();
+          await click([inactiveButton[0] + inactiveButton[2] / 2, inactiveButton[1] + inactiveButton[3] / 2]);
+          await closed("toolbar toggle while the app is inactive", opened);
+          dismissed.push("toolbar click while inactive");
+          const worker = await until("the extension's worker", async () =>
+            (await targets()).find((t) => t.type === "service_worker" && t.url.includes(`${id}/worker.js`)) ?? null, 10000);
+          const api = (await cdp(worker, "Runtime.evaluate", { expression: "chrome.action.openPopup().then(() => 'ok', (e) => e.message)", awaitPromise: true, returnByValue: true })).result.value;
+          await sleep(1500);
+          const after = await snapshot();
+          if (after?.frame || (await popupTargets()).length) throw new Error(`chrome.action.openPopup (${api}) showed a popup while the app was inactive: ${JSON.stringify(after)}`);
+          dismissed.push("openPopup refused while inactive");
+        } finally {
+          await act("fakeAppActive:1");
+        }
+        await evalApp(`ac.runCommand({ command: "focusCommandBar", arg: null, windowId: ${JSON.stringify(mainWindow)} }); return true`);
+        await until("omnibox focused before opening", async () => (await snapshot())?.omniboxFocused, 5000);
+        opened = await open();
+        for (const type of ["rawKeyDown", "keyUp"])
+          await cdp(opened.target, "Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 53 }).catch(() => null);
+        await closed("Esc from omnibox", opened);
+        await until("focus restored to the omnibox", async () => (await snapshot())?.omniboxFocused, 5000);
+        await until("the held field blur dropped once focus is back in the field", async () => (await snapshot())?.heldFieldBlurs === 0, 3000);
+        if (!(await urlEditor())) throw new Error("the URL edit ended while the popup had focus");
+        const escape = await act("keys:0:\u001b:53");
+        await pageFocus().catch((error) => { throw new Error(`Esc in the restored field did not end its edit (${escape}): ${error.message}`); });
+        await until("the restored field's edit ended by Esc", async () => !(await urlEditor()), 3000);
+        dismissed.push("Esc back to the field, then Esc ends the edit");
+        await evalApp(`ac.runCommand({ command: "focusCommandBar", arg: null, windowId: ${JSON.stringify(mainWindow)} }); return true`);
+        await until("omnibox focused before the page click", async () => (await snapshot())?.omniboxFocused, 5000);
+        opened = await open();
+        await until("the field's blur held while the popup is up", async () => (await snapshot())?.heldFieldBlurs === 1, 3000);
+        await click(pagePoint);
+        await closed("page click from the field", opened);
+        await pageFocus();
+        await until("the held field blur flushed by the page click", async () => (await snapshot())?.heldFieldBlurs === 0, 3000);
+        await until("the URL edit ended by the flushed blur", async () => !(await urlEditor()), 3000);
+        dismissed.push("page click flushes the field blur");
+        closingWindow = await evalApp(`return ac.actions.openWindow({ url: "${base}/b?native-popup-window-close" })`);
+        const closingTab = await until("the popup's closing window", async () => evalApp(`const s = ac.store.getState(); return Object.values(s.tabs).find((t) => t.windowId === ${JSON.stringify(closingWindow)} && t.url?.includes("native-popup-window-close"))?.id ?? null`), 10000);
+        const closingButton = await until("the closing window's extension button", async () => {
+          const toolbar = JSON.parse(await evalApp(`return globalThis.expo.modules.SolaraToolbar.devToolbar(${JSON.stringify(closingWindow)}, ${JSON.stringify(closingTab)})`));
+          return toolbar.extensions.find((e) => e.id === `ext:${id}` && e.frame[2] > 0) ?? null;
+        }, 8000);
+        const closingNumber = await cef(`devWindowNumber(${await browserOf(closingTab)})`);
+        const [cx, cy, cw, ch] = closingButton.frame;
+        await cef(`devWindow(${closingNumber}, "fakeActiveClicks")`);
+        for (const type of ["down", "up"]) {
+          await cef(`devWindow(${closingNumber}, "mouse:${type}:${Math.round(cx + cw / 2)},${Math.round(cy + ch / 2)},1")`);
+          await sleep(40);
+        }
+        const beforeClose = await until("popup in the closing window", async () => {
+          const s = await nativeExtensionPopup(closingWindow);
+          return s?.frame && s.browserId ? s : null;
+        }, 8000);
+        await evalApp(`ac.store.getState().closeWindow(${JSON.stringify(closingWindow)}); return true`);
+        await until("window close releases the native popup and renderer", async () => {
+          const s = await nativeExtensionPopup(closingWindow);
+          return s && !s.frame && s.liveViews === 0 && !(await popupTargets()).length;
+        }, 10000);
+        dismissed.push("window close");
+        return { frame: opened.shown.frame, anchor: opened.shown.anchor, sizes: { grown, shrunk, maximum, minimum }, dismissed, focus: ["page", "omnibox"] };
+      } finally {
+        if (closingWindow) await evalApp(`ac.store.getState().closeWindow(${JSON.stringify(closingWindow)}); return true`).catch(() => null);
+        await evalApp(`ac.extensions.closeExtensionPopup(); ac.store.getState().updateSettings({ tabLayout: ${JSON.stringify(beforeLayout)} }); return true`).catch(() => null);
         await closeTab(tab).catch(() => null);
       }
     });

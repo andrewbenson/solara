@@ -405,6 +405,12 @@ final class DeveloperUrlField: NSTextField, NSTextFieldDelegate {
 
   override var mouseDownCanMoveWindow: Bool { false }
 
+  override func becomeFirstResponder() -> Bool {
+    let became = super.becomeFirstResponder()
+    if became { finished = false }
+    return became
+  }
+
   private var resizing = false
 
   override func setFrameSize(_ newSize: NSSize) {

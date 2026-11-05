@@ -1,7 +1,9 @@
 import AppKit
 import ExpoModulesCore
 import Foundation
+import SolaraCore
 import SolaraModel
+import SolaraShell
 import SolaraStore
 import SolaraUI
 
@@ -11,7 +13,41 @@ public class ToolbarModule: Module {
   public func definition() -> ModuleDefinition {
     Name("SolaraToolbar")
 
+    Events("onExtensionPopupChanged", "onExtensionPopupOpenWindow")
+
+    OnCreate {
+      let sink = ToolbarPopupEventSink(module: self)
+      DispatchQueue.main.async { MainActor.assumeIsolated {
+        NativeExtensionActionPopup.install()
+        NativeExtensionActionPopup.emit = { name, body in sink.module?.sendEvent(name, body) }
+      } }
+    }
+
+    OnDestroy {
+      DispatchQueue.main.async { MainActor.assumeIsolated {
+        NativeExtensionActionPopup.close()
+        NativeExtensionActionPopup.emit = nil
+      } }
+    }
+
     Function("available") { () -> Bool in ToolbarModule.available }
+
+    AsyncFunction("showExtensionPopup") { (json: String) -> Bool in
+      MainActor.assumeIsolated { NativeExtensionActionPopup.show(json) }
+    }.runOnQueue(.main)
+
+    AsyncFunction("closeExtensionPopup") { (windowId: String?) in
+      MainActor.assumeIsolated { NativeExtensionActionPopup.close(windowId: windowId) }
+    }.runOnQueue(.main)
+
+    #if DEBUG
+    AsyncFunction("devExtensionPopup") { (windowId: String) -> String in
+      MainActor.assumeIsolated {
+        guard SolaraCoreTestHooksAllowed(), let snapshot = ExtensionActionPopupRead.snapshot(windowId: windowId) else { return "null" }
+        return (try? JSONSerialization.data(withJSONObject: snapshot)).flatMap { String(data: $0, encoding: .utf8) } ?? "null"
+      }
+    }.runOnQueue(.main)
+    #endif
 
     AsyncFunction("devToolbar") { (windowId: String, tabId: String) -> String in
       MainActor.assumeIsolated {
@@ -21,6 +57,7 @@ public class ToolbarModule: Module {
           "extensions": toolbar?.describeExtensions() ?? [],
           "urlRight": toolbar?.state.map { $0.geometry.urlRight as Any } ?? NSNull(),
           "infoPopover": ToolbarInfoPopover.describe() ?? NSNull(),
+          "urlEditor": toolbar.map { containsDeveloperUrlField($0) } ?? false,
         ]
         return (try? JSONSerialization.data(withJSONObject: out)).flatMap { String(data: $0, encoding: .utf8) } ?? "null"
         #else
@@ -63,6 +100,37 @@ final class NativeToolbarHostView: ExpoView {
 
   static func toolbar(windowId: String, tabId: String) -> ToolbarView? { host(windowId: windowId, tabId: tabId)?.toolbar }
 
+  static func extensionButton(_ event: NSEvent) -> ExtensionPopupButton? {
+    guard let window = event.window, let root = window.contentView,
+      let hit = root.superview?.hitTest(event.locationInWindow) else { return nil }
+    let native = root.convert(event.locationInWindow, from: nil)
+    let point = root.isFlipped ? native : CGPoint(x: native.x, y: root.bounds.height - native.y)
+    for toolbar in toolbars(in: root) where hit.isDescendant(of: toolbar) {
+      for item in toolbar.describeExtensions() {
+        guard let id = item["id"] as? String, id.hasPrefix("ext:"), let frame = item["frame"] as? [CGFloat], frame.count == 4,
+          CGRect(x: frame[0], y: frame[1], width: frame[2], height: frame[3]).contains(point) else { continue }
+        return ExtensionPopupButton(owner: ObjectIdentifier(hit), id: id, tabId: toolbar.state?.tabId)
+      }
+    }
+    return nil
+  }
+
+  static func extensionAnchor(window: NSWindow, tabId: String?, extensionId: String) -> CGRect? {
+    guard let root = window.contentView else { return nil }
+    for toolbar in toolbars(in: root) where toolbar.state?.tabId == tabId {
+      guard let item = toolbar.describeExtensions().first(where: { $0["id"] as? String == "ext:\(extensionId)" }),
+        let frame = item["frame"] as? [CGFloat], frame.count == 4 else { continue }
+      return CGRect(x: frame[0], y: frame[1], width: frame[2], height: frame[3])
+    }
+    return nil
+  }
+
+  private static func toolbars(in view: NSView) -> [ToolbarView] {
+    guard !view.isHiddenOrHasHiddenAncestor, view.alphaValue > 0 else { return [] }
+    if let toolbar = view as? ToolbarView { return [toolbar] }
+    return view.subviews.flatMap { toolbars(in: $0) }
+  }
+
   static func host(windowId: String, tabId: String) -> NativeToolbarHostView? {
     let tabWindow = NativeStoreHandle.store?.state.tabs[tabId]?.windowId
     guard tabWindow == nil || tabWindow == windowId else { return nil }
@@ -77,9 +145,21 @@ final class NativeToolbarHostView: ExpoView {
     toolbar.autoresizingMask = [.width, .height]
     toolbar.frame = bounds
     toolbar.onClick = { [weak self] click in
-      self?.onToolbarClick(["id": click.id, "kind": click.kind.rawValue, "meta": click.meta, "alt": click.alt, "shift": click.shift, "text": click.text ?? NSNull()])
+      MainActor.assumeIsolated {
+        guard let self else { return }
+        let payload: [String: Any] = ["id": click.id, "kind": click.kind.rawValue, "meta": click.meta, "alt": click.alt, "shift": click.shift, "text": click.text ?? NSNull()]
+        if click.id == "urlEdit", click.kind.rawValue == "focus" { NativeExtensionActionPopup.dropHeldFieldBlur(from: self) }
+        if click.id == "urlEdit", click.kind.rawValue == "blur",
+          NativeExtensionActionPopup.holdFieldBlur(from: self, fieldContainer: self.toolbar, flush: { self.onToolbarClick(payload) }) { return }
+        self.onToolbarClick(payload)
+      }
     }
     toolbar.onAnchors = { [weak self] anchors in
+      MainActor.assumeIsolated {
+        if let self, !self.isHiddenOrHasHiddenAncestor {
+          NativeExtensionActionPopup.anchorsChanged(window: self.window, tabId: self.toolbar.state?.tabId, anchors: anchors)
+        }
+      }
       self?.onToolbarAnchors(["anchors": anchors.mapValues { [$0.minX, $0.minY, $0.width, $0.height] }])
     }
     addSubview(toolbar)
@@ -125,7 +205,13 @@ final class NativeToolbarHostView: ExpoView {
 
   override func viewDidHide() {
     super.viewDidHide()
+    NativeExtensionActionPopup.flushHeldFieldBlur(from: self)
     syncToolbarShell()
+  }
+
+  override func viewWillMove(toWindow newWindow: NSWindow?) {
+    if newWindow !== window { NativeExtensionActionPopup.flushHeldFieldBlur(from: self) }
+    super.viewWillMove(toWindow: newWindow)
   }
 
   override func viewDidUnhide() {
@@ -184,6 +270,9 @@ enum SidebarAddressBridge {
       Task { @MainActor in _ = await SettingsAdapters.js("sidebar.addressClick", windowId, payload) }
     }
     SidebarAddressBars.shared.onAnchors = { windowId, anchors in
+      let state = NativeStoreHandle.store?.state
+      let tabId = state?.peeks[windowId]?.tabId ?? state?.activeTabId(windowId)
+      NativeExtensionActionPopup.anchorsChanged(window: ShellDrag.window(windowId), tabId: tabId, anchors: anchors)
       let payload = anchors.mapValues { [$0.minX, $0.minY, $0.width, $0.height] }
       latestAnchors[windowId] = payload
       sendAnchors(windowId, payload)
@@ -197,6 +286,24 @@ enum SidebarAddressBridge {
   private static func sendAnchors(_ windowId: String, _ payload: [String: [CGFloat]]) {
     Task { @MainActor in _ = await SettingsAdapters.js("sidebar.addressAnchors", windowId, payload) }
   }
+
+  static func extensionButton(windowId: String, event: NSEvent) -> ExtensionPopupButton? {
+    guard let bar = SidebarAddressBars.shared.existing(windowId), !bar.isHiddenOrHasHiddenAncestor,
+      let root = event.window?.contentView, bar.window === event.window,
+      let hit = root.superview?.hitTest(event.locationInWindow), hit.isDescendant(of: bar) else { return nil }
+    let native = root.convert(event.locationInWindow, from: nil)
+    let point = root.isFlipped ? native : CGPoint(x: native.x, y: root.bounds.height - native.y)
+    guard let id = (latestAnchors[windowId] ?? [:]).first(where: { key, frame in
+      key != "*" && key != "field" && frame.count == 4 && CGRect(x: frame[0], y: frame[1], width: frame[2], height: frame[3]).contains(point)
+    })?.key else { return nil }
+    return ExtensionPopupButton(owner: ObjectIdentifier(hit), id: "ext:\(id)", tabId: nil)
+  }
+}
+
+private final class ToolbarPopupEventSink: @unchecked Sendable {
+  weak var module: ToolbarModule?
+
+  init(module: ToolbarModule) { self.module = module }
 }
 
 final class NativeSidebarAddressHostView: ExpoView {
@@ -276,5 +383,12 @@ public enum ToolbarRead {
     }
     return rows
   }
+}
+#endif
+
+#if DEBUG
+@MainActor
+private func containsDeveloperUrlField(_ view: NSView) -> Bool {
+  String(describing: type(of: view)).contains("DeveloperUrlField") || view.subviews.contains { containsDeveloperUrlField($0) }
 }
 #endif

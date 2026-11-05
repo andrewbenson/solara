@@ -15,6 +15,7 @@ import {
   type CloseCancelledTab,
 } from "@solara/solaracore";
 import { killSwitchEnvironment } from "@solara/shell";
+import { onNativeExtensionPopupChanged, onNativeExtensionPopupOpenWindow } from "@solara/settings";
 import { AppState } from "react-native";
 import { openWindow } from "../../lib/actions";
 import { webviews } from "../../lib/webviews";
@@ -24,6 +25,7 @@ import type { Tab, TabSnapshot } from "../../store/types";
 import { changedIds } from "../../store/changes";
 import { activeTabId, engineProfile, incognitoOriginal } from "../../store/model";
 import { shownPageId } from "../../store/peek";
+import { openFromPage, pageProfileId } from "../layout/openFromPage";
 import { tabForBrowser, usePages } from "../layout/pageState";
 import { refreshActionStates } from "./actions";
 import { startExtensionSearchEngines } from "./searchEngines";
@@ -33,6 +35,8 @@ import {
   cancelInstall,
   closeExtensionPopup,
   closeInstallPrompt,
+  dismissChangedPopup,
+  extensionPopupChanged,
   closeSidePanel,
   extensionProfile,
   findExtension,
@@ -222,9 +226,9 @@ function moveIntoChromeMadeWindow(request: TabsRequest, chromeWindow: string, ta
   s.createWindow({ profileId: tab.profileId, tabIds: [tabId], chromeWindow, background: request.focused === false });
 }
 
-export function openExtensionFromMenu(windowId: string, extensionId: string, tabId?: string) {
+export function openExtensionFromMenu(windowId: string, extensionId: string, tabId?: string, requiresActive = false) {
   const ext = findExtension(extensionProfile(useBrowser.getState(), windowId), extensionId);
-  if (ext) void activateExtension(windowId, ext, toolbarAnchor(windowId, ext.id, tabId), undefined, tabId);
+  if (ext) void activateExtension(windowId, ext, toolbarAnchor(windowId, ext.id, tabId), undefined, tabId, { requiresActive });
 }
 
 type Anchor = import("./state").Anchor;
@@ -339,6 +343,12 @@ function startActionStates() {
 }
 
 function startActionPopups() {
+  AppState.addEventListener("change", (state) => { if (state !== "active") closeExtensionPopup(); });
+  onNativeExtensionPopupChanged(extensionPopupChanged);
+  onNativeExtensionPopupOpenWindow(({ windowId, profile, request }) => {
+    openFromPage(request, { windowId, profileId: pageProfileId(windowId, profile) });
+  });
+  useBrowser.subscribe(dismissChangedPopup);
   onExtensionActionPopup(({ browserId, extensionId }) => {
     const tabId = tabForBrowser(browserId);
     const windowId = tabId ? useBrowser.getState().tabs[tabId]?.windowId : undefined;
@@ -348,7 +358,7 @@ function startActionPopups() {
   onExtensionActionShortcut(({ browserId, extensionId }) => {
     const tabId = tabForBrowser(browserId);
     const windowId = tabId ? useBrowser.getState().tabs[tabId]?.windowId : undefined;
-    if (windowId) openExtensionFromMenu(windowId, extensionId, tabId);
+    if (windowId) openExtensionFromMenu(windowId, extensionId, tabId, true);
   });
 }
 

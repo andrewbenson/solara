@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import SolaraModel
+import SolaraShell
 import SolaraStore
 import SolaraUI
 
@@ -83,6 +84,7 @@ enum NativeSplitChrome {
       Task { @MainActor in _ = await SettingsAdapters.js("split.toolbarClick", windowId, tabId, payload) }
     }
     view.onToolbarAnchors = { tabId, anchors in
+      NativeExtensionActionPopup.anchorsChanged(window: ShellDrag.window(windowId), tabId: tabId, anchors: anchors)
       let payload = anchors.mapValues { [$0.minX, $0.minY, $0.width, $0.height] }
       Task { @MainActor in _ = await SettingsAdapters.js("split.toolbarAnchors", windowId, tabId, payload) }
     }

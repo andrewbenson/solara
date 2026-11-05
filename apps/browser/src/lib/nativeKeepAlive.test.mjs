@@ -22,13 +22,14 @@ function fixture(running = true) {
   let generation = "G";
   let protectionKnown = true;
   let epoch = 0;
+  let runnerListener = null;
   const browser = createStore(() => ({ tabs: { t: { id: "t", profileId: "p", windowId: "w" } }, live: {} }));
   const pages = createStore(() => ({ pages: { t: { fullscreen: false, crashed: null, unresponsive: false, mediaAccess: null, permission: null, newTabShown: null } } }));
   const media = createStore(() => ({ sessions: {}, pipOpen: {}, pip: {}, dismissed: {}, displayRequests: {}, tabShares: {} }));
   const toolbar = createStore(() => ({ scrolledDown: {} }));
   const events = load("./keepAliveFeed.ts", {});
   const producer = load("./nativeKeepAlive.ts", {
-    "@solara/store": { isPageCurrent: (value) => value.sessionGeneration === authority.sessionGeneration && value.registrationGeneration === authority.registrationGeneration, nativePageFacts: () => ({ generation, protectionKnown }), pageReport: (id, report) => sent.push(JSON.parse(JSON.stringify({ id, ...report }))), registerKeepAliveRuntime: () => ++epoch },
+    "@solara/store": { isPageCurrent: (value) => value.sessionGeneration === authority.sessionGeneration && value.registrationGeneration === authority.registrationGeneration, nativePageFacts: () => ({ generation, protectionKnown }), pageReport: (id, report) => sent.push(JSON.parse(JSON.stringify({ id, ...report }))), registerKeepAliveRuntime: () => ++epoch, onTabSleepRunningChanged: (listener) => { runnerListener = listener; return () => {}; } },
     "../components/layout/pageState": { usePages: pages, pageOf: (id) => pages.getState().pages[id], patchPage: (id, patch) => pages.setState((s) => ({ pages: { ...s.pages, [id]: { ...s.pages[id], ...patch } } })) },
     "../components/layout/toolbarAutoHide": { useToolbarAutoHide: toolbar, revealToolbar: (id) => toolbar.setState((s) => ({ scrolledDown: Object.fromEntries(Object.entries(s.scrolledDown).filter(([key]) => key !== id)) })) },
     "../components/media/state": { useMedia: media },
@@ -41,7 +42,7 @@ function fixture(running = true) {
   producer.startNativeKeepAlive();
   const flush = () => { while (jobs.length) jobs.shift()(); };
   const page = (patch) => pages.setState((s) => ({ pages: { ...s.pages, t: { ...s.pages.t, ...patch } } }));
-  return { producer, events, sent, identity, browser, pages, media, toolbar, flush, page, setProtectionKnown: (value) => { protectionKnown = value; }, epoch: () => epoch, replace: (next) => { authority = next; generation = next.sessionGeneration; events.keepAliveCreated(next, "rn"); } };
+  return { producer, events, sent, identity, browser, pages, media, toolbar, flush, page, setProtectionKnown: (value) => { protectionKnown = value; }, epoch: () => epoch, setRunning: (value) => { running = value; runnerListener?.(value); }, replace: (next) => { authority = next; generation = next.sessionGeneration; events.keepAliveCreated(next, "rn"); } };
 }
 
 test("page and media subscriptions produce every typed keep fact and handled watermark", () => {
@@ -168,6 +169,27 @@ test("reload survivors cannot publish empty facts after a later stamped status e
   assert.equal(f.sent.length, 1);
   assert.equal(f.sent[0].generation, "next");
   assert.equal(f.sent[0].handled, 1);
+});
+
+test("a runner that turns on after launch starts the feed, and turning it off stops sending", () => {
+  const f = fixture(false);
+  f.events.keepAliveCreated(f.identity, "rn");
+  f.flush();
+  assert.equal(f.sent.length, 0);
+  f.setRunning(true);
+  f.events.keepAliveCreated(f.identity, "rn");
+  f.flush();
+  assert.equal(f.epoch(), 1);
+  assert.equal(f.sent.length, 1);
+  f.setRunning(false);
+  f.page({ mediaAccess: {} });
+  f.flush();
+  assert.equal(f.sent.length, 1);
+  f.setRunning(true);
+  f.flush();
+  assert.equal(f.epoch(), 2);
+  assert.equal(f.sent.length, 2);
+  assert.equal(f.sent[1].keep.capturing, true);
 });
 
 test("cold-launch pages publish protective facts held before feed registration", () => {

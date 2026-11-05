@@ -1,4 +1,4 @@
-import { isPageCurrent, nativePageFacts, pageReport, registerKeepAliveRuntime, type PageIdentity } from "@solara/store";
+import { isPageCurrent, nativePageFacts, onTabSleepRunningChanged, pageReport, registerKeepAliveRuntime, type PageIdentity } from "@solara/store";
 import { pageOf, patchPage, usePages } from "../components/layout/pageState";
 import { revealToolbar, useToolbarAutoHide } from "../components/layout/toolbarAutoHide";
 import { useMedia } from "../components/media/state";
@@ -18,7 +18,16 @@ function clearTransientFacts(id: string) {
 }
 
 let started = false;
+let watching = false;
+let nudge: (() => void) | null = null;
 export function startNativeKeepAlive() {
+  if (!watching) {
+    watching = true;
+    onTabSleepRunningChanged((running) => {
+      if (running) startNativeKeepAlive();
+      nudge?.();
+    });
+  }
   if (started || !nativeTabSleepRunning()) return;
   started = true;
   const sessions = new Map<string, string>();
@@ -82,5 +91,6 @@ export function startNativeKeepAlive() {
     }
     feed.changed();
   });
+  nudge = feed.changed;
   feed.changed();
 }

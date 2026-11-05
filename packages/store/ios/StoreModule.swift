@@ -10,11 +10,12 @@ internal import SolaraSyncAdapter
 public class StoreModule: Module {
   private var subscription: Int?
   private var pageRuntimeID: UUID?
+  private var runnerObserver: NSObjectProtocol?
 
   public func definition() -> ModuleDefinition {
     Name("SolaraStoreAdapter")
 
-    Events("onStoreCommit")
+    Events("onStoreCommit", "onTabSleepRunning")
 
     OnCreate {
       PairingServices.shared.registerStore(healthy: {
@@ -32,6 +33,8 @@ public class StoreModule: Module {
     }
 
     OnDestroy {
+      if let observer = self.runnerObserver { NotificationCenter.default.removeObserver(observer) }
+      self.runnerObserver = nil
       let sink = StoreModuleSink(self)
       pageMain {
         guard let module = sink.module else { return }
@@ -144,6 +147,12 @@ public class StoreModule: Module {
     }
 
     OnStartObserving {
+      if self.runnerObserver == nil {
+        let sink = EventSink(module: self)
+        self.runnerObserver = NotificationCenter.default.addObserver(forName: NativeTabSleep.runningChanged, object: nil, queue: nil) { note in
+          sink.module?.sendEvent("onTabSleepRunning", ["running": note.userInfo?["running"] as? Bool ?? false])
+        }
+      }
       guard self.subscription == nil, let bridge = NativeStore.shared?.bridge else { return }
       let sink = EventSink(module: self)
       self.subscription = bridge.observeForeignCommits { event in
@@ -154,6 +163,8 @@ public class StoreModule: Module {
     OnStopObserving {
       if let id = self.subscription { NativeStore.shared?.bridge.store.unsubscribe(id) }
       self.subscription = nil
+      if let observer = self.runnerObserver { NotificationCenter.default.removeObserver(observer) }
+      self.runnerObserver = nil
     }
   }
 }
@@ -212,7 +223,7 @@ private func pageMain<T: Sendable>(_ work: @MainActor () -> T) -> T {
 
 private func pageFactsJSON(_ tabId: String, _ facts: PageFacts) -> JSONValue {
   var value: JSONObject = ["generation": .string(facts.generation), "ready": .null,
-    "protectionKnown": .bool(pageMain { RNPageReports.protectionKnown(tabId: tabId, sessionGeneration: facts.generation) }),
+    "protectionKnown": .bool(RNPageReports.protectionKnownNow(tabId: tabId, sessionGeneration: facts.generation)),
     "keepAlive": .null, "latchedThrough": JSONValue(facts.latchedThrough), "newestEventSeq": JSONValue(facts.newestEventSeq)]
   if let ready = facts.ready {
     var readyJSON: JSONObject = ["browserId": JSONValue(ready.browserId)]

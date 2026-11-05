@@ -1,6 +1,7 @@
 import Foundation
 import SolaraModel
 import SolaraStore
+import Synchronization
 
 public struct PageIdentity: Sendable, Equatable {
   public let tabId: String
@@ -144,6 +145,7 @@ public final class PageIssuer {
   private var bindings: [String: PageHostBinding] = [:]
   private var protectionRuntimeID: UUID?
   private var hasBegunRuntime = false
+  private nonisolated let cleanProtection = Mutex<[String: String]>([:])
   private var registrations: [PageRegistration: PageHostBinding] = [:]
 
   public init(store: Store, registry: PageRegistry = .shared, deliver: PageRegistry.Deliver? = nil) {
@@ -195,6 +197,7 @@ public final class PageIssuer {
       if let old = protectionRuntimeID { endRuntime(old) }
       protectionRuntimeID = id
       hasBegunRuntime = true
+      publishProtectionInScope()
     }
   }
 
@@ -203,6 +206,7 @@ public final class PageIssuer {
       guard protectionRuntimeID == id else { return }
       for binding in bindings.values { binding.protectionHistoryLost = true }
       protectionRuntimeID = nil
+      publishProtectionInScope()
     }
   }
 
@@ -221,11 +225,35 @@ public final class PageIssuer {
           "onCrashed", "onUnresponsive", "onResponsive", "onPageMessage", "onPageIssue"].contains(eventName) { return }
       guard let runtimeID, binding.host != .reactNative || binding.runtimeID == runtimeID else {
         binding.protectionHistoryLost = true
+        publishProtectionInScope(binding)
         return
       }
       if binding.firstDeliveryRuntimeID == nil { binding.firstDeliveryRuntimeID = runtimeID }
       if let current = protectionRuntimeID, current != runtimeID { binding.protectionHistoryLost = true }
+      publishProtectionInScope(binding)
     }
+  }
+
+  public nonisolated func protectionHistoryKnown(tabId: String, sessionGeneration: String) -> Bool {
+    cleanProtection.withLock { $0[tabId] == sessionGeneration }
+  }
+
+  private func protectionHistoryClean(_ binding: PageHostBinding) -> Bool {
+    !binding.retired && bindings[binding.tabId] === binding && !binding.protectionHistoryLost &&
+      protectionRuntimeID != nil && binding.firstDeliveryRuntimeID == protectionRuntimeID
+  }
+
+  private func publishProtectionInScope(_ binding: PageHostBinding) {
+    let clean = protectionHistoryClean(binding)
+    cleanProtection.withLock { table in
+      if clean { table[binding.tabId] = binding.sessionGeneration }
+      else if table[binding.tabId] == binding.sessionGeneration { table[binding.tabId] = nil }
+    }
+  }
+
+  private func publishProtectionInScope() {
+    let table = Dictionary(uniqueKeysWithValues: bindings.values.filter(protectionHistoryClean).map { ($0.tabId, $0.sessionGeneration) })
+    cleanProtection.withLock { $0 = table }
   }
 
   public func protectionKnown(_ binding: PageHostBinding) -> Bool {
@@ -275,6 +303,7 @@ public final class PageIssuer {
       binding.setRegistration(registration)
       bindings[tabId] = binding
       registrations[registration] = binding
+      publishProtectionInScope(binding)
       guard establishInScope(binding, reestablished: false) else {
         retireInScope(binding)
         return nil
@@ -289,6 +318,7 @@ public final class PageIssuer {
     guard !binding.retired else { return }
     binding.retired = true
     if bindings[binding.tabId] === binding { bindings[binding.tabId] = nil }
+    publishProtectionInScope(binding)
     if let registration = binding.registration {
       registrations[registration] = nil
       registry.retire(registration)

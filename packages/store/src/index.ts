@@ -22,6 +22,7 @@ type NativeStoreModule = {
   syncAnchor?(): string | null;
   setSyncAnchor?(anchor: string): boolean;
   addListener(event: "onStoreCommit", listener: (payload: { event: string }) => void): EventSubscription;
+  addListener(event: "onTabSleepRunning", listener: (payload: { running: boolean }) => void): EventSubscription;
 };
 
 export type StoreCommand = { name: string; args: unknown[] };
@@ -108,6 +109,12 @@ export function flushNativeStore(timeoutSeconds = 0.5): string {
 
 export function flushProblem(result: string): boolean {
   return result !== "saved" && !result.startsWith("skipped:");
+}
+
+export function onTabSleepRunningChanged(listener: (running: boolean) => void): () => void {
+  if (!native) return () => {};
+  const subscription = native.addListener("onTabSleepRunning", ({ running }) => listener(running === true));
+  return () => subscription.remove();
 }
 
 export function onForeignCommit(listener: (commit: ForeignCommit) => void): () => void {

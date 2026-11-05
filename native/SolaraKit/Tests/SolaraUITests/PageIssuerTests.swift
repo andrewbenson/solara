@@ -163,6 +163,36 @@ private func heldPageAnswer(_ command: PageCommand = .livePage, incognito: Bool,
     #expect(fixture.issuer.registry.descriptors.first?.protectionKnown == true)
   }
 
+  @Test func theLockFreeProtectionMirrorFollowsTheIssuerThroughRuntimesAndRetirement() throws {
+    let fixture = try IssuerFixture()
+    let binding = fixture.binding
+    let mirrored = { fixture.issuer.protectionHistoryKnown(tabId: binding.tabId, sessionGeneration: binding.sessionGeneration) }
+    #expect(!mirrored())
+    let runtime = UUID()
+    fixture.issuer.beginRuntime(runtime)
+    fixture.issuer.noteDelivery(binding, runtimeID: runtime)
+    #expect(fixture.issuer.protectionKnown(binding))
+    #expect(mirrored())
+    #expect(!fixture.issuer.protectionHistoryKnown(tabId: binding.tabId, sessionGeneration: "other"))
+    fixture.issuer.endRuntime(runtime)
+    #expect(!fixture.issuer.protectionKnown(binding))
+    #expect(!mirrored())
+    fixture.issuer.beginRuntime(UUID())
+    fixture.issuer.noteDelivery(binding)
+    #expect(!fixture.issuer.protectionKnown(binding))
+    #expect(!mirrored())
+  }
+
+  @Test func retiringABindingClearsItsMirroredProtection() throws {
+    let fixture = try IssuerFixture()
+    let runtime = UUID()
+    fixture.issuer.beginRuntime(runtime)
+    fixture.issuer.noteDelivery(fixture.binding, runtimeID: runtime)
+    #expect(fixture.issuer.protectionHistoryKnown(tabId: fixture.binding.tabId, sessionGeneration: fixture.binding.sessionGeneration))
+    fixture.issuer.retire(fixture.binding)
+    #expect(!fixture.issuer.protectionHistoryKnown(tabId: fixture.binding.tabId, sessionGeneration: fixture.binding.sessionGeneration))
+  }
+
   @Test func coldBootstrapCanRecoverReadyAndNavigationWithoutLostProtectionFacts() throws {
     let fixture = try IssuerFixture()
     for name in ["onPageCreated", "onReady", "onNavigationChange", "onStatus", "onProgress"] {

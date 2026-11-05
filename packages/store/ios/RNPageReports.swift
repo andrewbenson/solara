@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import SolaraCore
+import Synchronization
 internal import SolaraModel
 internal import SolaraOmnibox
 internal import SolaraStore
@@ -36,8 +37,15 @@ enum RNPageReports {
   private static var runtimeID: UUID?
   private static var attachments: [ObjectIdentifier: Attachment] = [:]
 
+  private nonisolated static let installedIssuer = Mutex<PageIssuer?>(nil)
+
+  nonisolated static func protectionKnownNow(tabId: String, sessionGeneration: String) -> Bool {
+    installedIssuer.withLock { $0 }?.protectionHistoryKnown(tabId: tabId, sessionGeneration: sessionGeneration) ?? false
+  }
+
   static func install(issuer: PageIssuer?) {
     self.issuer = issuer
+    installedIssuer.withLock { $0 = issuer }
     if let runtimeID { issuer?.beginRuntime(runtimeID) }
     RNPageEventTap.install(RNPageHostHooks(attach: { @MainActor in attach(owner: $0, page: $1, tabId: $2, engine: $3, profile: $4, initialContext: $5, previous: $6, emit: $7) }, start: { @MainActor in start($0, action: $1) }, detach: detach, reserve: reserve, call: call,
       deliver: { @MainActor work in

@@ -13,6 +13,7 @@ final class NativeTabSleep {
   private var stopped = false
   private var configured: (sleeps: Bool, minutes: Int)?
   private nonisolated let running = Mutex(false)
+  nonisolated static let runningChanged = Notification.Name("SolaraNativeTabSleepRunningChanged")
 
   var isRunning: Bool { runner.isRunning }
 
@@ -51,14 +52,22 @@ final class NativeTabSleep {
       publishRunning(startPending: wanted && NativeStoreHandle.resolve == nil)
       return
     }
-    running.withLock { $0 = true }
+    let wasRunning = running.withLock { value in
+      defer { value = true }
+      return value
+    }
     runner.start()
+    if !wasRunning, runner.isRunning { NotificationCenter.default.post(name: Self.runningChanged, object: nil, userInfo: ["running": true]) }
     publishRunning()
   }
 
   private func publishRunning(startPending: Bool = false) {
     let now = runner.isRunning || startPending
-    running.withLock { $0 = now }
+    let changed = running.withLock { value in
+      defer { value = now }
+      return value != now
+    }
+    if changed { NotificationCenter.default.post(name: Self.runningChanged, object: nil, userInfo: ["running": now]) }
   }
 
   nonisolated func stop() {

@@ -75,16 +75,15 @@ backlog, and check this file against the release notes.
 | The PiP probe finds a styled PiP window with Keep on Top off (test tooling) | landed (d223b40e) |
 | App builds and releases take the published engine for the tree before a local out/ build, so a stale or unlanded engine is never embedded | landed (63480b41) |
 
-## 0.3.0: the CLI and Raycast revamped, and tabs that cost less
+## 0.3.0: tabs that cost less, and the first native bars
 
 | Item | Status |
 |---|---|
+| Native bookmarks bar, with the native bookmark coordinator (see backlog) (moved from 0.4.0, owner 2026-11-04) | planned |
+| A native frame for extension popups (moved from 0.4.0, owner 2026-11-04) | planned |
 | Content blocker hold, per navigation: hold only session-restored and launch tabs (an engine mark set before the navigation starts, primary main frame, http(s)), not every navigation in the profile during the launch window | planned |
 | Fixes from the owner's two-Mac sync-join test of 0.1.3 | waiting on the test |
 | GitHub security alerts cleared: Dependabot (image-size, minimatch, deepmerge) bumped, the omnibox quick-create regex no longer slows on crafted input, test-script CodeQL alerts fixed or dismissed | in progress: CodeQL #201 (quick-create regex) and #200 fixed in 1161a442 (shipped in 0.2.1); the build-time Dependabot alerts (no usable fix) and the test-only CodeQL alerts wait on the owner's dismissal |
-| Revamp the `solara` command (apps/cli, docs/cli.md): scope to be set with the owner; its connection to the app is built in Swift (settings and keybindings from files, a local control socket, event hooks), not on the JavaScript side | planned |
-| Revamp the Raycast extension (extras/raycast-solara) against the revamped CLI | planned |
-| Publish the extension on the Raycast Store: meet its review guidelines and submit to raycast/extensions (a public PR in another project, so it needs the owner's OK at submission) | planned |
 | Video call pop-out (Google Meet and others: the floating window a call opens, document picture-in-picture): make getting back to the call's tab easy and obvious; first find out what that window lets us change | planned |
 | Tab discarding (highest priority of the performance items): Chromium's memory saver unloads background tabs and wakes them on click, with site exceptions and protection for tabs playing audio, holding a form or in a call; reconcile with Solara's existing sleeping tabs | in progress: the engine layer landed 838681e6 (Chromium's reasons a tab can't sleep, sleeping only an eligible tab, per-profile site exceptions); the app's keep-alive feed, page stamping and native API 37 in def20e95; the native runner (`TabSleepRunner`, policy, permission feed) in 9467e594, off by default behind `SOLARA_NATIVE_TAB_SLEEP`, and with it off the JS sweep (`lib/tabLifecycle`) still decides. Turning it on needs: the per-profile Settings view (slice 2, owner sign-off on its UI), a soak with the switch on, `native-tab-sleep` and the four sleep checks passing with it on in the release gate, then `nativeTabSleep` in `LaunchSwitch.onByDefault` and the JS sweep retired |
 | Heavy tab detection: Chromium's detector flags a tab using too much CPU or memory; Solara badges it (native badges, replacing the React Native tab badges) and offers to put it to sleep | planned |
@@ -110,9 +109,7 @@ Done when no React Native view appears on screen; React Native only arranges nat
 | Item | Status |
 |---|---|
 | Inventory every file left in apps/browser/src by what it does (draws, decides, holds data, glue) and the milestone that removes it: docs/native/rn-inventory.md | landed b1a78d3d |
-| Native bookmarks bar, with the native bookmark coordinator (see backlog) | planned |
 | The New Tab page's remaining React Native parts: Personalize, the feedback check-in and the release postcard | planned |
-| A native frame for extension popups | planned |
 | Native site controls and prompts (permissions, autofill, translate, zoom, developer mode) | planned |
 | Native extensions toolbar, overlays and side panel | planned |
 | Native media: sidebar player, hover player, cast and share pickers, tab badges | planned |
@@ -158,6 +155,9 @@ Expo modules.
 | Remove Expo, react-native-macos, Hermes and Metro; the Xcode project builds without Pods for JS | planned |
 | Move the repo from pnpm to Bun where JS tooling remains | planned |
 | Perf: the speed comparison against the previous stable, deferred since 0.1.0 | planned |
+| Revamp the `solara` command (apps/cli, docs/cli.md): scope to be set with the owner; its connection to the app is built in Swift (settings and keybindings from files, a local control socket, event hooks), not on the JavaScript side (moved from 0.3.0, owner 2026-11-04: after the port) | planned |
+| Revamp the Raycast extension (extras/raycast-solara) against the revamped CLI (moved from 0.3.0, owner 2026-11-04: after the port) | planned |
+| Publish the extension on the Raycast Store: meet its review guidelines and submit to raycast/extensions (a public PR in another project, so it needs the owner's OK at submission) (moved from 0.3.0, owner 2026-11-04: after the port) | planned |
 
 ## 1.1.0: a VPN per profile
 

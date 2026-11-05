@@ -107,12 +107,15 @@ export type ExtensionInstallPrompt = {
   browserId: number;
 };
 
+export type ExtensionInstallPromptClosed = { requestId: string; reason: "accepted" | "cancelled" | "requesterGone" | "navigated" };
+
 type Result<T> = T | { error: string };
 
 export type NativeExtensions = {
   addListener(name: "onChanged", listener: (e: ExtensionsChange) => void): EventSubscription;
   addListener(name: "onTabs", listener: (e: TabsRequest) => void): EventSubscription;
   addListener(name: "onInstallPrompt", listener: (e: ExtensionInstallPrompt) => void): EventSubscription;
+  addListener(name: "onInstallPromptClosed", listener: (e: ExtensionInstallPromptClosed) => void): EventSubscription;
   resolveInstallPrompt(requestId: string, accepted: boolean): Promise<void>;
   list(profile: string): Promise<Result<{ extensions: InstalledExtension[] }>>;
   inspectUnpacked(path: string): Promise<Result<ExtensionPackage>>;
@@ -218,6 +221,7 @@ export const onExtensionActionChanged = (listener: (e: ExtensionActionChange) =>
   });
 export const onExtensionInstallPrompt = (listener: (e: ExtensionInstallPrompt) => void) => Native.addListener("onInstallPrompt", listener);
 export const resolveExtensionInstallPrompt = (requestId: string, accepted: boolean) => Native.resolveInstallPrompt(requestId, accepted);
+export const onExtensionInstallPromptClosed = (listener: (e: ExtensionInstallPromptClosed) => void) => Native.addListener("onInstallPromptClosed", listener);
 export const onExtensionTabsRequest = (listener: (e: TabsRequest) => void) => Native.addListener("onTabs", listener);
 
 export const chooseExtensionFolder = () => Native.chooseFolder();

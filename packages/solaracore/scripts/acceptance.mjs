@@ -58,7 +58,7 @@ const usesPageA = [
   "password-prompt", "screen-share-picker", "tab-capture", "share-instead-two-captures",
   "restore-after-close", "discard-outcomes", "sleep-eligibility", "keep-awake-sites", "sleep-pinned-capture", "native-tab-sleep", "capture-picture", "unresponsive", "permission-dismissed", "permission-status-detached",
   "save-page", "activate-request", "extension-popup-and-panel", "print-preview",
-  "extension-prompts", "traffic-lights-after-profile-switch", "extension-configure",
+  "extension-prompts", "extension-prompt-closed", "traffic-lights-after-profile-switch", "extension-configure",
   "private-windows-create", "extension-installed-bubble", "popup-window", "popup-window-permission", "popup-origin-strip", "autofill-save-prompts",
   "settings-services", "download-navigation", "page-events", "page-background", "appearance-reaches-pages", "external-app-answer",
   "notifications", "now-playing", "media-state", "auto-picture-in-picture", "pip-window", "page-focus", "page-press-split",
@@ -2885,6 +2885,43 @@ try {
       return { prompt: request.type ?? request.prompt?.type ?? Object.keys(request), granted, panel: !!panel, shown };
     } finally {
       await evalApp(`ac.extensions.closeExtensionPopup(); ac.extensions.closeSidePanel(${JSON.stringify(mainWindow)}); return true`).catch(() => null);
+      await exts(`uninstall("${installed.id}", "")`);
+    }
+  });
+
+  await check("extension-prompt-closed", async () => {
+    const installed = await exts(`install(${JSON.stringify(extPath)}, "")`);
+    if (installed?.error) throw new Error(installed.error);
+    const click = () => evalApp(`return ac.shell.devClick(${JSON.stringify(mainWindow)}, { in: "page", x: 200, y: 200, asKey: false })`);
+    const ask = async () => {
+      await evalApp(`const lists = ac.extensions.useExtensions.getState().lists; const ext = Object.values(lists).flat().find((x) => x.id === "${installed.id}");
+        return ac.extensions.activateExtension(${JSON.stringify(mainWindow)}, ext, { x: 100, y: 40, width: 20, height: 20 }).then(() => true)`);
+      const popup = await until("the popup page", async () => (await targets()).find((t) => t.type === "page" && t.url.includes(`${installed.id}/popup.html`)), 10000);
+      await cdp(popup, "Runtime.evaluate", { expression: "chrome.permissions.remove({ permissions: ['bookmarks'] }).then(() => true)", awaitPromise: true });
+      await cdp(popup, "Runtime.evaluate", { expression: "chrome.permissions.request({ permissions: ['bookmarks'] }); true", userGesture: true });
+      return until("the app's install dialog", async () => evalApp(`return ac.extensions.useExtensions.getState().install?.prompt ?? null`), 10000);
+    };
+    try {
+      await evalApp(`return ac.extensions.refreshExtensions("").then(() => true)`);
+      await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
+      const before = (await click()).hit;
+      const prompt = await ask();
+      const covered = (await click()).hit;
+      await exts(`resolveInstallPrompt(${JSON.stringify(prompt.requestId)}, true)`);
+      await sleep(1000);
+      const left = await evalApp(`return ac.extensions.useExtensions.getState().install?.status ?? null`);
+      await evalApp(`ac.extensions.closeExtensionPopup(); return true`);
+      await sleep(500);
+      const answered = (await click()).hit;
+      if (left !== null || answered !== before) throw new Error(`after the engine-side answer the dialog is ${left ?? "gone"} and a click lands on ${answered}, not ${before} (under the dialog: ${covered})`);
+      const second = await ask();
+      await evalApp(`ac.extensions.closeExtensionPopup(); return true`);
+      await until("the dialog to go when its popup closes", async () => ((await evalApp(`return ac.extensions.useExtensions.getState().install === null`)) === true ? true : null), 5000);
+      const closed = (await click()).hit;
+      if (closed !== before) throw new Error(`after the popup closed a click lands on ${closed}, not ${before}`);
+      return { before, covered, answered, closed, requests: [prompt.requestId, second.requestId] };
+    } finally {
+      await evalApp(`ac.extensions.cancelInstall(); ac.extensions.closeExtensionPopup(); return true`).catch(() => null);
       await exts(`uninstall("${installed.id}", "")`);
     }
   });

@@ -3,11 +3,12 @@ import ExpoModulesCore
 public class ExtensionsModule: Module {
   public func definition() -> ModuleDefinition {
     Name("SolaraExtensions")
-    Events("onChanged", "onTabs", "onInstallPrompt")
+    Events("onChanged", "onTabs", "onInstallPrompt", "onInstallPromptClosed")
 
     OnCreate {
       SolaraCoreHost.extensionsEventHandler = { [weak self] name, payload in
         if name == "installPrompt" { self?.sendEvent("onInstallPrompt", payload) }
+        if name == "installPromptClosed" { self?.sendEvent("onInstallPromptClosed", payload) }
       }
       SolaraCoreServices.extensionsHandler = { [weak self] name, payload in
         switch name {

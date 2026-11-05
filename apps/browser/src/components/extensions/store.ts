@@ -94,3 +94,15 @@ export function browserIdOf(tabId: string | undefined): number {
 }
 
 export const shownBrowserId = (windowId: string) => browserIdOf(shownPageId(useBrowser.getState(), windowId));
+
+export function closeInstallPrompt(requestId: string) {
+  if (useExtensions.getState().install?.prompt?.requestId === requestId) useExtensions.setState({ install: null });
+}
+
+export type InstallRequester = { tabId: string } | { popupOf: string } | null;
+
+export function installRequesterGone(requester: InstallRequester, state: { tabs: Record<string, unknown> }, popup: { extensionId: string } | null) {
+  if (!requester) return false;
+  if ("tabId" in requester) return !state.tabs[requester.tabId];
+  return popup?.extensionId !== requester.popupOf;
+}

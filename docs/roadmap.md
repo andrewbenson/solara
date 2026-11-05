@@ -91,6 +91,7 @@ backlog, and check this file against the release notes.
 |---|---|
 | Fixed: Restore Arc Folders as Groups removes the restored Arc bookmarks from the bar again; it made the groups but left every Arc bookmark behind whenever the native store owned the workspace | shipped-pending |
 | Fixed: on macOS 27.2 the address bar no longer shifts a long address 2 pt when you click into it; the overflow inset is measured instead of fixed | shipped-pending |
+| Fixed: an extension's permission dialog no longer stays stuck over the page when the popup that asked closes; every click hit the dialog's invisible layer until it was dismissed | shipped-pending |
 
 ## 0.3.0: tabs that cost less, and the first native bars
 

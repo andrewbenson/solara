@@ -892,9 +892,12 @@ static void StartEarlyWindow() {
 }
 
 + (void)resolveExtensionInstallPrompt:(NSString *)requestId accepted:(BOOL)accepted {
+  BOOL pending = gInstallPrompts[requestId ?: @""] != nil;
   [gInstallPrompts removeObjectForKey:requestId ?: @""];
   if ([SolaraCoreEngine respondsToSelector:@selector(resolveExtensionInstallPrompt:accepted:)])
     [SolaraCoreEngine resolveExtensionInstallPrompt:requestId accepted:accepted];
+  if (pending && gExtensionsEventHandler)
+    gExtensionsEventHandler(@"installPromptClosed", @{@"requestId" : requestId ?: @"", @"reason" : accepted ? @"accepted" : @"cancelled"});
 }
 
 + (void)beginTracing:(void (^)(BOOL))completion {

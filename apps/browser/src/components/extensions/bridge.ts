@@ -1,5 +1,6 @@
 import {
   onExtensionInstallPrompt,
+  onExtensionInstallPromptClosed,
   onExtensionActionChanged,
   onExtensionActionPopup,
   onExtensionActionShortcut,
@@ -29,10 +30,13 @@ import { startExtensionSearchEngines } from "./searchEngines";
 import * as state from "./state";
 import {
   activateExtension,
+  cancelInstall,
   closeExtensionPopup,
+  closeInstallPrompt,
   closeSidePanel,
   extensionProfile,
   findExtension,
+  installRequesterGone,
   openSidePanel,
   refreshExtensions,
   refreshExtensionsAfterChange,
@@ -41,6 +45,7 @@ import {
   syncSidePanel,
   useExtensions,
   windowExtensions,
+  type InstallRequester,
 } from "./state";
 import { PRODUCT } from "../../lib/productName";
 
@@ -411,12 +416,31 @@ else store.waiting = (id) => post("result", JSON.stringify(id));
 const isStorePage = (url: string | undefined) => !!url && /^https:\/\/chromewebstore\.google\.com\//.test(url);
 
 function startWebStoreIntegration() {
+  let watchRequester: (() => void) | null = null;
+  onExtensionInstallPromptClosed((closed) => closeInstallPrompt(closed.requestId));
   onExtensionInstallPrompt((prompt) => {
     const s = useBrowser.getState();
     const tabId = prompt.browserId ? tabForBrowser(prompt.browserId) : undefined;
     const windowId = (tabId && s.tabs[tabId]?.windowId) || s.ui.focusedWindowId || s.windowOrder[0];
-    if (windowId) showInstallPrompt(windowId, prompt);
-    else void resolveExtensionInstallPrompt(prompt.requestId, false);
+    if (!windowId) return void resolveExtensionInstallPrompt(prompt.requestId, false);
+    showInstallPrompt(windowId, prompt);
+    watchRequester?.();
+    const popup = useExtensions.getState().popup;
+    const requester: InstallRequester = tabId ? { tabId } : popup && popup.extensionId === prompt.id ? { popupOf: popup.extensionId } : null;
+    if (!requester) return void (watchRequester = null);
+    const check = () => {
+      if (useExtensions.getState().install?.prompt?.requestId !== prompt.requestId) return stop();
+      if (installRequesterGone(requester, useBrowser.getState(), useExtensions.getState().popup)) {
+        stop();
+        cancelInstall();
+      }
+    };
+    const unsubscribers = [useBrowser.subscribe(check), useExtensions.subscribe(check)];
+    const stop = () => {
+      unsubscribers.splice(0).forEach((off) => off());
+      if (watchRequester === stop) watchRequester = null;
+    };
+    watchRequester = stop;
   });
   const listening = new Map<string, string>();
   const listen = (tabId: string, url: string) => {

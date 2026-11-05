@@ -89,8 +89,6 @@ final class HeroFieldCoordinator: NSObject, NSTextFieldDelegate, HeroFieldContro
     }
   }
 
-  static let fittingTextLeft: CGFloat = 2.5
-
   static let commandKeys: [Selector: Set<UInt16>] = [
     #selector(NSResponder.cancelOperation(_:)): [53], #selector(NSResponder.moveDown(_:)): [125], #selector(NSResponder.moveUp(_:)): [126],
     #selector(NSResponder.scrollPageUp(_:)): [116], #selector(NSResponder.pageUp(_:)): [116], #selector(NSResponder.scrollPageDown(_:)): [121],
@@ -119,14 +117,33 @@ final class HeroFieldCoordinator: NSObject, NSTextFieldDelegate, HeroFieldContro
     guard let editor = note.object as? NSTextView, let clip = editor.superview as? NSClipView else { return }
     let length = (editor.string as NSString).length
     if length > 0, editor.selectedRange == NSRange(location: 0, length: length) { return HeroFieldCoordinator.scrollToStart(clip) }
-    let inset = NSSize(width: editor.frame.width > clip.bounds.width ? HeroFieldCoordinator.fittingTextLeft : 0, height: editor.textContainerInset.height)
+    let inset = NSSize(width: editor.frame.width > clip.bounds.width ? HeroFieldCoordinator.overflowTextInset(editor, in: clip) : 0, height: editor.textContainerInset.height)
     if editor.textContainerInset != inset { editor.textContainerInset = inset }
+  }
+
+  static func overflowTextInset(_ editor: NSTextView, in clip: NSClipView) -> CGFloat {
+    guard let field = enclosingField(of: clip), let cell = field.cell, let layout = editor.layoutManager, let container = editor.textContainer,
+      layout.numberOfGlyphs > 0 else { return 0 }
+    let restingLeft = cell.drawingRect(forBounds: field.bounds).minX + container.lineFragmentPadding
+    let glyphLeft = layout.boundingRect(forGlyphRange: NSRange(location: 0, length: 1), in: container).minX + editor.textContainerOrigin.x - editor.textContainerInset.width
+    let leftmost = clip.constrainBoundsRect(NSRect(origin: NSPoint(x: -10_000, y: clip.bounds.origin.y), size: clip.bounds.size)).origin.x
+    let editingLeft = field.convert(NSPoint(x: glyphLeft, y: 0), from: editor).x + clip.bounds.origin.x - leftmost
+    return max(0, (restingLeft - editingLeft) * 2).rounded() / 2
+  }
+
+  private static func enclosingField(of view: NSView) -> NSTextField? {
+    var candidate = view.superview
+    while let current = candidate {
+      if let field = current as? NSTextField { return field }
+      candidate = current.superview
+    }
+    return nil
   }
 
   static func scrollToStart(_ clip: NSClipView) {
     if let editor = clip.documentView as? NSTextView {
       let overflows = editor.frame.width > clip.bounds.width
-      let inset = NSSize(width: overflows ? fittingTextLeft : 0, height: editor.textContainerInset.height)
+      let inset = NSSize(width: overflows ? overflowTextInset(editor, in: clip) : 0, height: editor.textContainerInset.height)
       if editor.textContainerInset != inset { editor.textContainerInset = inset }
     }
     let leftmost = clip.constrainBoundsRect(NSRect(origin: NSPoint(x: -10_000, y: clip.bounds.origin.y), size: clip.bounds.size)).origin.x

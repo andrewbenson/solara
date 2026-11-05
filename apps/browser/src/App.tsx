@@ -6,7 +6,7 @@ import { ContentCard } from "./components/ContentCard";
 import { BookmarkDialog } from "./components/bookmarks/BookmarkDialog";
 import { EditBookmarkDialog } from "./components/bookmarks/EditBookmarkDialog";
 import { ExtensionOverlays } from "./components/extensions/ExtensionOverlays";
-import { ExtensionSidePanel } from "./components/extensions/SidePanel";
+import { ExtensionSidePanel, SidePanelRoom } from "./components/extensions/SidePanel";
 import { DownloadMagnet, DownloadsPopover } from "./components/Downloads";
 import { isUtilityWindowId } from "./components/settings/windows";
 import { OnboardingOverlay } from "./components/onboarding";
@@ -52,7 +52,7 @@ function BrowserWindow() {
   const card = (
     <>
       <ContentCard />
-      {!fullscreen && <ExtensionSidePanel />}
+      <SidePanelRoom />
     </>
   );
 
@@ -60,6 +60,7 @@ function BrowserWindow() {
     <View pointerEvents={onTop ? "box-none" : "auto"} style={{ flex: 1, flexDirection: "row" }} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
       <ShellBackdrop shell={shell} />
       <WindowProfile />
+      <ExtensionSidePanel />
       <ProfileTint />
       <DockedLayout
         fullscreen={fullscreen}

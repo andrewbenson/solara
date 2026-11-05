@@ -89,6 +89,10 @@ final class ShellHost {
   private var closing: NSObjectProtocol?
   private var panes: PaneRootsHost?
   private var profilePager: ProfilePagerHost?
+  private var sidePanel: SidePanelHost?
+  #if DEBUG
+  var devSidePanelResizeLinkActive: Bool { sidePanel?.devResizeLinkActive ?? false }
+  #endif
   var onClose: (() -> Void)?
 
   init(windowId: String, root: NSView) {
@@ -110,10 +114,14 @@ final class ShellHost {
     shell.onWindow = { [weak self] window in
       self?.watchClose(of: window)
       self?.profilePager?.windowChanged()
+      self?.sidePanel?.windowChanged(window)
     }
     panes = NativePaneRoots.start(windowId)
     profilePager = NativeProfilePager.start(shell)
-    shell.onFrames = { [weak self] _ in self?.profilePager?.place() }
+    shell.onFrames = { [weak self] _ in
+      self?.profilePager?.place()
+      self?.sidePanel?.place()
+    }
   }
 
   private func watchClose(of window: NSWindow?) {
@@ -126,6 +134,8 @@ final class ShellHost {
   }
 
   func stop() {
+    sidePanel?.stop()
+    sidePanel = nil
     NativePeek.windowEnded(shell.windowId)
     NativeSidebarDock.setReactPeekRight(shell.windowId, 0)
     if let panes { NativePaneRoots.end(shell.windowId, ifHost: panes) }
@@ -156,6 +166,14 @@ final class ShellHost {
         content.needsLayout = true
       }
     }
+  }
+
+  func setSidePanel(_ json: String?) {
+    if sidePanel == nil {
+      guard let json, !json.isEmpty, SidePanelState.decode(json) != nil else { return }
+      sidePanel = SidePanelHost(windowId: shell.windowId, shell: shell)
+    }
+    sidePanel?.apply(json)
   }
 
   func setBackdrop(_ json: String) {
@@ -352,6 +370,10 @@ public class WindowShellModule: Module {
 
     AsyncFunction("setBackdrop") { (windowId: String, json: String) in
       MainActor.assumeIsolated { NativeWindowShell.setBackdrop(windowId, json) }
+    }.runOnQueue(.main)
+
+    AsyncFunction("setSidePanel") { (windowId: String, json: String?) in
+      MainActor.assumeIsolated { NativeWindowShell.host(windowId)?.setSidePanel(json) }
     }.runOnQueue(.main)
 
     AsyncFunction("setLayout") { (windowId: String, layout: [String: Any]) in

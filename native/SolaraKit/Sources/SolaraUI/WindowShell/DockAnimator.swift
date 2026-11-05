@@ -26,6 +26,9 @@ public final class DockAnimator {
   private var running = false
 
   public var moving: Bool { running }
+  #if DEBUG
+  public var devLinkActive: Bool { link != nil || stallTimer != nil }
+  #endif
 
   public init(value: Double) {
     self.value = value

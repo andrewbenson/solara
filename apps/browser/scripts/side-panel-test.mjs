@@ -12,11 +12,12 @@ import { fixturePage } from "../../../scripts/lib/fixture-html.mjs";
 const args = process.argv.slice(2);
 const appArg = args.find((a) => !a.startsWith("--"));
 if (!appArg) {
-  console.error(`usage: node side-panel-test.mjs <Debug Solara.app> [--keep-data] [--legs native,pool]
+  console.error(`usage: node side-panel-test.mjs <Debug Solara.app> [--keep-data] [--legs native,pool,split]
 
-An extension's side panel, a native card, with the page pool off and on. In each leg a fixture MV3 extension with a
-side_panel opens its panel in window w1 and the test checks: the native card matches the measured card and the panel
-page gets its size; a drag on the grip resizes it and the width is saved; a
+An extension's side panel in the native shell, with the page pool off, on and in a split. A fixture MV3 extension
+opens its panel in window w1 and the test checks the native card against the saved width and shell geometry, both
+split panes stay inside the shrunk card, opening moves through an intermediate room unless Reduce Motion is on, and
+the display link stops within one second after opening and closing. The panel page gets its size; a drag saves its width; a
 double-click on the grip resets it to 360; the page's window.close() closes it and reopening it at once loads a new page; its window.open() opens a tab; the ✕
 closes it. Focus: with the panel page focused, closing it by the ✕, by the toolbar toggle and by replacing it with
 another extension's panel leaves page A focused. Lifetime: twelve open and close cycles leave no panel page alive
@@ -65,9 +66,6 @@ const HELPERS = `
 const C = globalThis.expo.modules.SolaraCEF;
 const X = globalThis.expo.modules.SolaraExtensions;
 const settle = (ms) => new Promise((r) => setTimeout(r, ms));
-const fibers = (name) => acPerf.findFibers(name, 500).filter((f) => !!f.child);
-const hostOf = (fiber) => { let f = fiber; while (f && !(f.stateNode && f.stateNode.measureInWindow)) f = f.child; return f && f.stateNode; };
-const measure = (fiber) => new Promise((r) => { const n = hostOf(fiber); return n ? n.measureInWindow((x, y, w, h) => r([x, y, w, h])) : r(null); });
 const act = (n, a) => C.devWindow(n, a);
 const at = (p) => Math.round(p[0]) + "," + Math.round(p[1]);
 const click = (n, p, count) => act(n, "mouse:moved:" + at(p)).then(() => settle(40))
@@ -76,11 +74,7 @@ const drag = (n, from, dx) => act(n, "mouse:moved:" + at(from)).then(() => settl
   .then(() => [1, 2, 3, 4, 5].reduce((p, i) => p.then(() => settle(30)).then(() => act(n, "mouse:dragged:" + at([from[0] + dx * i / 5, from[1]]))), Promise.resolve()))
   .then(() => settle(40)).then(() => act(n, "mouse:up:" + at([from[0] + dx, from[1]])));
 const shown = (w) => ac.extensions.useExtensions.getState().sidePanels[w] || null;
-const width = () => ac.store.getState().settings.extensionSidePanelWidth ?? 360;
-const card = () => {
-  const [nat] = fibers("NativePanelCard");
-  return nat ? measure(nat).then((f) => f && [f[0] + f[2] - width(), f[1], width(), f[3]]) : Promise.resolve(null);
-};
+const width = () => ac.store.getState().windows.w1?.sidePanelWidth ?? ac.store.getState().settings.extensionSidePanelWidth ?? 360;
 `;
 let app = null;
 const run = (body, timeout = 20000) => app.eval(`${HELPERS}\n${body}`, { timeout });
@@ -97,7 +91,7 @@ const until = async (what, test, ms = 8000) => {
   }
   throw new Error(`${what}: never true (last ${JSON.stringify(last)})`);
 };
-const snapshotFields = ["windows.sidePanel", "windows.chromeWindowNumber", "tabs.title", "tabs.live", "tabs.url",
+const snapshotFields = ["windows.sidePanel", "windows.shell", "windows.split", "windows.chromeWindowNumber", "tabs.title", "tabs.live", "tabs.url",
   "root.settings", "root.sidePanelLiveViews", "root.hostedKinds", "root.poolAvailable", "root.haptics"];
 const snapshotURL = (raw) => {
   if (typeof raw !== "string" || !/^[A-Za-z][A-Za-z0-9+.-]*:/.test(raw)) return null;
@@ -167,17 +161,61 @@ const crossRead = async (what, read, current, accept = () => true) => {
   return { value, snapshot };
 };
 const nativeWindow = (s, id = "w1") => s.windows.find((w) => w.id === id);
+const cardInset = 7;
 const nativeCard = async () => {
-  let frame, width;
-  const s = await untilSnapshot("native side panel frame", async (s, remaining) => {
-    const value = await run(`return card().then((frame) => ({ frame, width: width() }));`, remaining());
-    ({ frame, width } = value);
-    const card = nativeWindow(s)?.sidePanel?.card;
-    return !!frame && near(card?.frame, frame) && card.width === width;
+  let width;
+  const s = await untilSnapshot("native side panel geometry and saved width", async (s, remaining) => {
+    width = await run(`return width();`, remaining());
+    const w = nativeWindow(s);
+    const panel = w?.sidePanel;
+    const shell = w?.shell?.card;
+    if (!shell || !panel?.card || panel.moving || Math.abs(panel.room - width - cardInset + 1) > 0.5) return false;
+    const expected = [shell[0] + shell[2] + panel.room - width, shell[1], width, shell[3]];
+    return near(panel.card.frame, expected) && panel.card.width === width;
   });
-  assert.ok(near(nativeWindow(s).sidePanel.card.frame, frame), "native panel frame matches the measured card within half a point");
-  assert.equal(nativeWindow(s).sidePanel.card.width, width, "native panel width matches the current JS width");
-  return { frame, panel: nativeWindow(s).sidePanel, width };
+  const w = nativeWindow(s);
+  const frame = w.sidePanel.card.frame;
+  const shell = w.shell.card;
+  assert.equal(w.sidePanel.card.width, width, "native panel width matches the effective saved width");
+  assert.ok(Math.abs(frame[0] + frame[2] - shell[0] - shell[2] - w.sidePanel.room) <= 0.5,
+    "panel right edge follows the shell card and reserved room");
+  assert.ok(Math.abs(frame[2] - width) <= 0.5, "native panel frame has the saved width");
+  return { frame, panel: w.sidePanel, width, snapshot: s };
+};
+const card = async () => (await nativeCard()).frame;
+const idleLink = async (what, windowId = "w1") => {
+  const end = Date.now() + 1000;
+  let panel;
+  while (Date.now() < end) {
+    assert.ok(app?.alive, `${what}: the owned app exited`);
+    const s = await app.snapshot({ fields: ["windows.sidePanel"] }, { timeout: Math.max(1, end - Date.now()) });
+    panel = nativeWindow(s, windowId)?.sidePanel;
+    if (s.consistent && panel && !panel.moving && panel.linkRunning === false) return panel;
+    if (Date.now() < end) await sleep(Math.min(15, end - Date.now()));
+  }
+  assert.fail(`${what}: side panel display link did not stop within 1s (${JSON.stringify(panel)})`);
+};
+const observeOpening = async () => {
+  const end = Date.now() + 2500;
+  let intermediate = false;
+  let reduced = false;
+  let panel;
+  while (Date.now() < end) {
+    assert.ok(app?.alive, "opening animation: the owned app exited");
+    const s = await app.snapshot({ fields: ["windows.sidePanel", "root.settings"] }, { timeout: Math.max(1, end - Date.now()) });
+    panel = nativeWindow(s)?.sidePanel;
+    if (s.consistent && panel) {
+      reduced ||= panel.reduceMotion === true;
+      const full = (s.settings.extensionSidePanelWidth ?? 360) + cardInset - 1;
+      intermediate ||= panel.room > 0 && panel.room < full;
+      if (panel.card && panel.room >= full - 0.5 && !panel.moving) {
+        assert.ok(reduced || intermediate, `opening never showed an intermediate room (${JSON.stringify(panel)})`);
+        return { intermediate, reduceMotion: reduced };
+      }
+    }
+    if (Date.now() < end) await sleep(Math.min(10, end - Date.now()));
+  }
+  assert.fail(`opening animation did not settle within 2.5s (${JSON.stringify(panel)})`);
 };
 const nativeClosed = async (what, windowId = "w1") => {
   let views;
@@ -190,6 +228,7 @@ const nativeClosed = async (what, windowId = "w1") => {
   assert.equal(nativeWindow(s, windowId)?.sidePanel?.pages.length ?? 0, 0, what);
   assert.equal(views, 0, `${what}: no JS sidePanel webview remains`);
   assert.equal(s.sidePanelLiveViews, 0, `${what}: no native sidePanel webview remains`);
+  if (nativeWindow(s, windowId)) await idleLink(`${what}: settled close`, windowId);
   return s;
 };
 const near = (a, b) => a && b && a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= 0.5);
@@ -238,8 +277,8 @@ const focused = async (urlPart) => {
 const LEGS = [
   { tag: "native", env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_PAGES_POOL: "0" } },
   { tag: "pool", env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_PAGES_POOL: "1", SOLARA_SHELL_PANES: "1", SOLARA_TAB_POOL: "1" } },
+  { tag: "split", env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_PAGES_POOL: "1", SOLARA_SHELL_PANES: "1", SOLARA_TAB_POOL: "1" } },
 ].filter((l) => !legsArg || legsArg.split(",").includes(l.tag));
-const measured = {};
 
 try {
   for (const { tag, env } of LEGS) {
@@ -256,7 +295,7 @@ try {
     const kinds = await run(`return globalThis.expo.modules.SolaraHosted?.kinds?.() ?? [];`);
     if (!kinds.includes("extensionSidePanel")) throw new Error(`${tag}: hosted kinds ${JSON.stringify(kinds)}`);
     assert.deepEqual([...identity.hostedKinds].sort(), [...kinds].sort(), "native hosted registrations match the JS module");
-    if (tag.endsWith("pool")) {
+    if (tag === "pool" || tag === "split") {
       const { value: served, snapshot: pooled } = await crossRead("native pool serves page A",
         (s) => !!s.poolAvailable && !!s.tabs.find((t) => t.id === "a")?.live,
         (timeout) => run(`return !!globalThis.expo.modules.SolaraTabPool?.available?.() && !!ac.webviews.get("a") && !acPerf.findFibers("TabWebView", 5).length;`, timeout));
@@ -318,7 +357,7 @@ try {
       return onA;
     };
     const focusPanel = async (id) => {
-      const f = await run(`return card();`);
+      const f = await card();
       await run(`return click(${number}, ${JSON.stringify(pageCentre(f))}).then(() => true);`);
       await until("the panel page has focus", async () => (await focused(`chrome-extension://${id}/panel.html`)) || null, 3000).catch(async (e) => {
         if (e.crossCheck) throw e;
@@ -329,11 +368,34 @@ try {
       });
     };
     const baseline = renderers();
+    let splitTab;
+    if (tag === "split") {
+      splitTab = await run(`const s = ac.store.getState(); const id = s.newTab("w1", { url: ${JSON.stringify(`${origin}/split`)}, background: true }); s.createSplit(["a", id]); s.activate("a"); return id;`);
+      await untilSnapshot("both split panes before opening", (s) => ["a", splitTab].every((id) => {
+        const pane = nativeWindow(s)?.split?.overlays?.[id];
+        return pane && !pane.hidden && pane.window?.[2] > 0;
+      }));
+    }
+    const beforeOpen = await untilSnapshot("shell card before opening", (s) => !!nativeWindow(s)?.shell?.card);
+    const unshrunkCard = nativeWindow(beforeOpen)?.shell?.card;
+    assert.ok(unshrunkCard, "native shell card before opening");
 
     await rep.check(`${tag}-opens`, async () => {
       await run(`ac.store.getState().updateSettings({ extensionSidePanelWidth: 360 }); return true;`);
-      await openAndLoad(a.id);
+      const [, animation] = await Promise.all([open(a.id), observeOpening()]);
+      await loadedPanel(a.id);
       const { frame } = await nativeCard();
+      await idleLink("settled open");
+      const settled = await untilSnapshot("shrunk shell card", (s) => !!nativeWindow(s)?.shell?.card);
+      const main = await app.page(`${origin}/a`);
+      let mainWidth;
+      try {
+        mainWidth = await main.eval("innerWidth");
+      } finally {
+        main.close();
+      }
+      assert.ok(mainWidth <= nativeWindow(settled).shell.card[2] + 0.5,
+        `page A (${mainWidth}) fits the shrunk shell card (${nativeWindow(settled).shell.card[2]}) and does not run under the panel`);
       const panel = await app.page(`chrome-extension://${a.id}/panel.html`);
       let page, observed;
       try {
@@ -347,29 +409,49 @@ try {
       }
       assert.ok(near(nativeWindow(observed).sidePanel.pages.find((p) => p.extensionId === a.id).frame.slice(2), page));
       assert.equal(observed.settings.extensionSidePanelWidth, 360);
-      measured[tag] = { frame, page };
-      return { frame, page };
+      return { frame, page, animation };
     });
 
+    if (tag === "split") {
+      await rep.check(`${tag}-panes-stay-inside-card`, async () => {
+        const { frame: panel, panel: state, snapshot } = await nativeCard();
+        const w = nativeWindow(snapshot);
+        const shell = w.shell.card;
+        assert.ok(Math.abs(shell[2] - unshrunkCard[2] + state.room) <= 0.5, "side panel room shrinks the shell card");
+        const inside = (frame) => frame[0] >= shell[0] - 0.5 && frame[1] >= shell[1] - 0.5
+          && frame[0] + frame[2] <= shell[0] + shell[2] + 0.5 && frame[1] + frame[3] <= shell[1] + shell[3] + 0.5;
+        const panes = {};
+        for (const id of ["a", splitTab]) {
+          for (const kind of ["overlays", "leaves"]) {
+            const pane = w.split?.[kind]?.[id];
+            assert.ok(pane && !pane.hidden && pane.window?.[2] > 0, `${id}: visible ${kind} frame`);
+            assert.ok(inside(pane.window), `${id}: ${kind} stays inside the shrunk shell card`);
+            assert.ok(pane.window[0] + pane.window[2] <= panel[0] + 0.5, `${id}: ${kind} does not overlap the panel`);
+            panes[`${id}.${kind}`] = pane.window;
+          }
+        }
+        assert.ok(shell[0] + shell[2] <= panel[0] + 0.5, "shell card does not overlap the panel");
+        return { card: shell, panel, panes };
+      });
+      await run(`const s = ac.store.getState(); const split = Object.values(s.splits).find((s) => s.tabIds.includes("a")); if (split) s.separateSplit(split.id); s.closeTab(${JSON.stringify(splitTab)}); s.activate("a"); return true;`);
+    }
+
     await rep.check(`${tag}-grip-resizes`, async () => {
-      const f = await run(`return card();`);
+      const f = await card();
       await run(`return drag(${number}, ${JSON.stringify(grip(f))}, -80).then(() => true);`);
       const { value: w, snapshot: saved } = await crossRead("the width is saved", (s) => s.settings.extensionSidePanelWidth,
         (timeout) => run(`return width() !== 360 ? width() : null;`, timeout), (value) => value !== null);
       if (Math.abs(w - 440) > 1) throw new Error(`width ${w} after an 80 point drag`);
+      await idleLink("settled resize");
       assert.equal(saved.settings.extensionSidePanelWidth, w);
-      await until("the card follows", `return card().then((c) => c && Math.abs(c[2] - ${w}) < 1 || null);`, 3000);
       const { frame: g } = await nativeCard();
       await run(`return click(${number}, ${JSON.stringify(grip(g))}, 1).then(() => click(${number}, ${JSON.stringify(grip(g))}, 2)).then(() => true);`);
-      let resetFrame;
       const { snapshot: reset } = await crossRead("a double-click resets it", (s) => s.settings.extensionSidePanelWidth === 360,
-        async (timeout) => {
-          const value = await run(`return card().then((frame) => ({ reset: width() === 360 || null, frame }));`, timeout);
-          resetFrame = value.frame;
-          return value.reset;
-        }, (value, s) => value === true && nativeWindow(s)?.sidePanel?.card?.width === 360 && near(nativeWindow(s).sidePanel.card.frame, resetFrame));
+        (timeout) => run(`return width() === 360 || null;`, timeout),
+        (value, s) => value === true && nativeWindow(s)?.sidePanel?.card?.width === 360);
       assert.equal(reset.settings.extensionSidePanelWidth, 360);
-      assert.ok(near(nativeWindow(reset).sidePanel.card.frame, resetFrame), "native reset frame matches the measured card within half a point");
+      const resetCard = await nativeCard();
+      assert.equal(resetCard.width, 360);
       return w;
     });
 
@@ -396,7 +478,7 @@ try {
     await rep.check(`${tag}-focus-close-button`, async () => {
       await openAndLoad(a.id);
       await focusPanel(a.id);
-      const f = await run(`return card();`);
+      const f = await card();
       await run(`return click(${number}, ${JSON.stringify(closeButton(f))}).then(() => true);`);
       return closedWithFocusOnA("✕");
     });
@@ -535,15 +617,6 @@ try {
     });
     await app.quit();
     app = null;
-  }
-
-  for (const tag of ["native", "pool"]) {
-    if (!measured.rn || !measured[tag]) continue;
-    await rep.check(`${tag}-matches-rn`, async () => {
-      if (!near(measured[tag].frame, measured.rn.frame)) throw new Error(`card ${measured[tag].frame}, RN ${measured.rn.frame}`);
-      if (!near(measured[tag].page, measured.rn.page)) throw new Error(`panel page ${measured[tag].page}, RN ${measured.rn.page}`);
-      return measured.rn;
-    });
   }
 } catch (e) {
   rep.record("run", { error: e });

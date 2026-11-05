@@ -5,6 +5,9 @@ public enum SidePanelMetrics {
   public static let minWidth: CGFloat = 320
   public static let maxWidth: CGFloat = 600
   public static let defaultWidth: CGFloat = 360
+  public static let appearDuration: Double = 0.2
+  public static let settleDuration: Double = 0.26
+  public static let settleOvershoot: Double = 1.2
   public static let header: CGFloat = 40
   public static let padLeft: CGFloat = 12
   public static let padRight: CGFloat = 5

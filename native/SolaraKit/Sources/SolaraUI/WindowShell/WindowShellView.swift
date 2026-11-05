@@ -7,13 +7,14 @@ public final class WindowShellView: NSView {
     case tint
     case react
     case card
+    case sidePanel
     case splitChrome
     case peek
     case sidebar
     case topStrip
     case overlay
 
-    static let reactOnTop: [Slot] = [.backdrop, .tint, .card, .splitChrome, .peek, .sidebar, .topStrip, .react, .overlay]
+    static let reactOnTop: [Slot] = [.backdrop, .tint, .card, .sidePanel, .splitChrome, .peek, .sidebar, .topStrip, .react, .overlay]
   }
 
   public static let hoverCoverChanged = Notification.Name("SolaraHoverCoverChanged")
@@ -26,7 +27,10 @@ public final class WindowShellView: NSView {
   public var onLightsLayout: (() -> Void)?
   public var onDetach: (() -> Void)?
   public var onWindow: ((NSWindow?) -> Void)?
+  public var onSidePanelChange: ((CGFloat) -> Void)?
+  public var onSidePanelSettle: ((CGFloat) -> Void)?
   public let card = FlippedContainerView()
+  public let sidePanelClip = FlippedContainerView()
   public let overlay = ShellOverlayView()
   public let hiddenPages = FlippedContainerView()
   public let cardPage = FlippedContainerView()
@@ -36,6 +40,9 @@ public final class WindowShellView: NSView {
   public var widthDragActive = false
   private var mounted: [Slot: NSView] = [:]
   private let widthMotion = DockAnimator(value: 0)
+  private let sidePanelMotion = DockAnimator(value: 0)
+  private var sidePanelOpen = false
+  private var sidePanelRoom: CGFloat = 0
   private var widthRun: (from: CGFloat, to: CGFloat, railFrom: CGFloat, railTo: CGFloat)?
   private var toolbars: [RailToolbarHome] = []
   private weak var railToolbar: ToolbarView?
@@ -45,11 +52,13 @@ public final class WindowShellView: NSView {
   public var pageArea: CGRect { frames.page.offsetBy(dx: -frames.card.minX, dy: -frames.card.minY) }
   public var contentArea: CGRect { CGRect(x: pageArea.minX, y: 0, width: pageArea.width, height: frames.card.height) }
   public var widthMoving: Bool { widthMotion.moving }
+  public var sidePanelMoving: Bool { sidePanelMotion.moving }
   private var pointerLayer: ObjectIdentifier?
   private var pendingPointer: NSPoint??
   private var lastPointer: NSPoint?
   private var pointerLink: CADisplayLink?
   #if DEBUG
+  public var devSidePanelLinkRunning: Bool { sidePanelMotion.devLinkActive }
   public var devPointerResolved: ((_ changed: Bool) -> Void)?
   public private(set) var devPointerLookups = 0
   public private(set) var devPointerLookupNanos: UInt64 = 0
@@ -75,6 +84,13 @@ public final class WindowShellView: NSView {
       self.input.railProgress = nil
       self.relayout()
     }
+    sidePanelMotion.onChange = { [weak self] room in
+      guard let self else { return }
+      self.input.sidePanel = CGFloat(room)
+      self.relayout()
+      self.onSidePanelChange?(CGFloat(room))
+    }
+    sidePanelMotion.onSettle = { [weak self] room in self?.onSidePanelSettle?(CGFloat(room)) }
     hiddenPages.isHidden = true
     hiddenPages.autoresizingMask = []
     addSubview(hiddenPages)
@@ -88,6 +104,9 @@ public final class WindowShellView: NSView {
     cardClip.addSubview(cardPage)
     card.addSubview(cardClip)
     mount(.card, card)
+    sidePanelClip.wantsLayer = true
+    sidePanelClip.layer?.masksToBounds = true
+    mount(.sidePanel, sidePanelClip)
     mount(.overlay, overlay)
     overlay.onChildrenChanged = { [weak self] in self?.coverChanged() }
     railToolbarClip.wantsLayer = true
@@ -135,6 +154,7 @@ public final class WindowShellView: NSView {
   private func ownedContainer(_ slot: Slot) -> NSView? {
     switch slot {
     case .card: card
+    case .sidePanel: sidePanelClip
     case .overlay: overlay
     default: nil
     }
@@ -187,6 +207,28 @@ public final class WindowShellView: NSView {
     widthMotion.jump(to: 0)
     widthMotion.animate(to: 1, curve: .timed(duration: 0.18, ease: .outCubic), in: self)
   }
+
+  public func setSidePanelRoom(_ room: CGFloat, open: Bool, animated: Bool) {
+    let room = max(0, room)
+    let wasOpen = sidePanelOpen
+    let changedRoom = room != sidePanelRoom
+    guard open != wasOpen || changedRoom || (!animated && sidePanelMotion.moving) else { return }
+    sidePanelOpen = open
+    sidePanelRoom = room
+    let target = open ? room : 0
+    guard animated, !(open && wasOpen && changedRoom), target != input.sidePanel,
+      !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    else {
+      sidePanelMotion.jump(to: Double(target))
+      onSidePanelSettle?(target)
+      return
+    }
+    sidePanelMotion.animate(to: Double(target), curve: .timed(duration: SidePanelMetrics.appearDuration, ease: .outCubic), in: self)
+  }
+
+  #if DEBUG
+  public func devStepSidePanel(by seconds: Double) { sidePanelMotion.step(by: seconds) }
+  #endif
 
   public func stepWidth(by seconds: Double) { widthMotion.step(by: seconds) }
 
@@ -253,6 +295,11 @@ public final class WindowShellView: NSView {
     if window == nil {
       stopPointerLink()
       widthMotion.stop()
+      if sidePanelMotion.moving {
+        let target = CGFloat(sidePanelMotion.target)
+        sidePanelMotion.jump(to: Double(target))
+        onSidePanelSettle?(target)
+      }
       if let run = widthRun {
         widthRun = nil
         input.sidebarWidth = run.to
@@ -481,6 +528,7 @@ public final class WindowShellView: NSView {
     switch slot {
     case .backdrop, .tint, .react, .overlay: frame = bounds
     case .card, .splitChrome: frame = frames.card
+    case .sidePanel: frame = frames.sidePanel ?? .zero
     case .peek: frame = railFraction > 0 ? frames.page : frames.card
     case .sidebar: frame = (frames.sidebar ?? .zero).offsetBy(dx: frames.sidebarShift, dy: 0)
     case .topStrip: frame = frames.topStrip ?? .zero
@@ -501,7 +549,7 @@ public final class WindowShellView: NSView {
       local = frame
     }
     if view.frame != local { view.frame = local }
-    view.isHidden = (slot == .sidebar && frames.sidebar == nil) || (slot == .topStrip && frames.topStrip == nil)
+    view.isHidden = (slot == .sidePanel && frames.sidePanel == nil) || (slot == .sidebar && frames.sidebar == nil) || (slot == .topStrip && frames.topStrip == nil)
   }
 }
 

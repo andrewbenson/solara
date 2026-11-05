@@ -8,14 +8,6 @@ import SolaraUI
 @MainActor
 enum NativeExtensionSidePanel {
   nonisolated static let kind = "extensionSidePanel"
-
-  static func register() {
-    HostedViews.declare(kind)
-    HostedViews.register(kind) { windowId in
-      let host = SidePanelHost(windowId: windowId)
-      return HostedContent(view: host.view, onUnmount: { host.end() }, takesFocus: false, onState: { host.apply($0) })
-    }
-  }
 }
 
 struct SidePanelState: Decodable {
@@ -35,6 +27,7 @@ struct SidePanelState: Decodable {
   let title: String
   let icon: String?
   let width: Double
+  let room: Double
   let look: Look
 
   static func decode(_ json: String) -> SidePanelState? {
@@ -46,42 +39,169 @@ struct SidePanelState: Decodable {
 final class SidePanelHost: NSObject, SolaraCoreWebViewDelegate {
   let view = ExtensionSidePanelView()
   private let windowId: String
+  private weak var shell: WindowShellView?
+  private let resizeAnimator = DockAnimator(value: Double(SidePanelMetrics.defaultWidth))
+  private static let unacknowledgedWidthLimit = 4
+  private var unacknowledgedWidths: [Double] = []
+  private var dragging = false
+  #if DEBUG
+  var devResizeLinkActive: Bool { resizeAnimator.devLinkActive }
+  #endif
+  private var state: SidePanelState?
+  private var look: SidePanelLook?
+  private var room: CGFloat = 0
+  private var roomInset: CGFloat = 0
+  private var opened = false
+  private var keepsLocalWidth = false
   private var page: SolaraCoreWebView?
   private var key: String?
   private var iconSource: String?
   private var icon: NSImage?
   private var focusedWindowOnLeave: NSWindow?
 
-  init(windowId: String) {
+  init(windowId: String, shell: WindowShellView) {
     self.windowId = windowId
+    self.shell = shell
     super.init()
     view.onMenu = { [weak self] in self?.send("menu") }
     view.onClose = { [weak self] in self?.send("close") }
-    view.onResize = { [weak self] width, ended in self?.send("resize", ["width": width, "ended": ended]) }
-    view.onResetWidth = { [weak self] in self?.send("resetWidth") }
+    view.onResize = { [weak self] width, ended in self?.resize(width, ended: ended) }
+    view.onResetWidth = { [weak self] in self?.resetWidth() }
     view.onWillLeaveWindow = { [weak self] in self?.noteLeaving() }
+    shell.onSidePanelChange = { [weak self] _ in self?.place() }
+    shell.onSidePanelSettle = { [weak self] value in
+      guard let self, !self.opened, value == 0 else { return }
+      self.end()
+    }
+    resizeAnimator.onChange = { [weak self] width in self?.setWidth(CGFloat(width)) }
+    resizeAnimator.onSettle = { [weak self] width in
+      guard let self, self.opened else { return }
+      self.expectEcho(width)
+      self.send("resize", ["width": width, "ended": true])
+    }
   }
 
-  func apply(_ json: String) {
-    guard let state = SidePanelState.decode(json) else { return }
-    if iconSource != state.icon {
-      iconSource = state.icon
-      icon = state.icon.flatMap(Self.dataImage)
+  func apply(_ json: String?) {
+    guard let json, !json.isEmpty else {
+      guard opened else { return }
+      noteLeaving()
+      opened = false
+      keepsLocalWidth = false
+      dragging = false
+      unacknowledgedWidths = []
+      resizeAnimator.stop()
+      shell?.setSidePanelRoom(room, open: false, animated: true)
+      return
     }
-    let l = state.look
-    let look = SidePanelLook(
+    guard let next = SidePanelState.decode(json), next.width.isFinite, next.room.isFinite, next.width > 0, next.room > 0, let shell else { return }
+    let wasOpen = opened
+    if !wasOpen { focusedWindowOnLeave = nil }
+    let changedPage = next.key != key
+    let changedWidth = state?.width != next.width
+    let acknowledged = wasOpen && !changedPage && changedWidth ? unacknowledgedWidths.firstIndex(of: next.width) : nil
+    if let acknowledged { unacknowledgedWidths.removeFirst(acknowledged + 1) }
+    if !wasOpen || changedPage || (changedWidth && acknowledged == nil) {
+      resizeAnimator.stop()
+      keepsLocalWidth = false
+      dragging = false
+      unacknowledgedWidths = []
+    } else if acknowledged != nil, unacknowledgedWidths.isEmpty, !dragging, !resizeAnimator.moving {
+      keepsLocalWidth = false
+    }
+    state = next
+    opened = true
+    roomInset = CGFloat(next.room - next.width)
+    if iconSource != next.icon {
+      iconSource = next.icon
+      icon = next.icon.flatMap(Self.dataImage)
+    }
+    let l = next.look
+    look = SidePanelLook(
       card: Self.color(l.card), text: Self.color(l.text), icon: Self.color(l.icon), hover: Self.color(l.hover),
       pressed: Self.color(l.pressed), hairline: Self.color(l.hairline), radius: l.radius)
-    view.set(title: state.title, icon: icon, width: state.width, look: look)
-    if state.key != key { open(state) }
+    let width = keepsLocalWidth ? view.width : CGFloat(next.width)
+    room = width + roomInset
+    if let look { view.set(title: next.title, icon: icon, width: width, look: look) }
+    if view.superview !== shell.sidePanelClip {
+      shell.sidePanelClip.addSubview(view)
+    }
+    place()
+    if changedPage { open(next) }
+    shell.setSidePanelRoom(room, open: true, animated: true)
   }
 
-  func end() {
+  func place() {
+    guard let shell, view.superview != nil else { return }
+    view.frame = CGRect(x: shell.sidePanelClip.bounds.width - room, y: 0, width: room, height: shell.sidePanelClip.bounds.height)
+    view.alphaValue = room > 0 ? min(1, max(0, shell.input.sidePanel / room)) : 0
+    view.layoutSubtreeIfNeeded()
+  }
+
+  func windowChanged(_ window: NSWindow?) {
+    if window == nil { stop() }
+  }
+
+  func stop() {
+    opened = false
+    resizeAnimator.stop()
+    shell?.setSidePanelRoom(0, open: false, animated: false)
+    end()
+  }
+
+  private func resetWidth() {
+    guard opened else { return }
+    resizeAnimator.stop()
+    keepsLocalWidth = true
+    dragging = false
+    setWidth(SidePanelMetrics.defaultWidth)
+    expectEcho(Double(SidePanelMetrics.defaultWidth))
+    send("resetWidth")
+  }
+
+  private func resize(_ width: CGFloat, ended: Bool) {
+    guard opened else { return }
+    resizeAnimator.stop()
+    keepsLocalWidth = true
+    dragging = !ended
+    setWidth(width)
+    guard ended else { return }
+    let target = SidePanelMetrics.clamp(width)
+    if target == width || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+      setWidth(target)
+      expectEcho(Double(target))
+      send("resize", ["width": Double(target), "ended": true])
+      return
+    }
+    resizeAnimator.jump(to: Double(width))
+    resizeAnimator.animate(to: Double(target), curve: .timed(duration: SidePanelMetrics.settleDuration, ease: .outBack(SidePanelMetrics.settleOvershoot)), in: view)
+  }
+
+  private func expectEcho(_ width: Double) {
+    guard width != (unacknowledgedWidths.last ?? state?.width) else { return }
+    unacknowledgedWidths.append(width)
+    unacknowledgedWidths.removeFirst(max(0, unacknowledgedWidths.count - Self.unacknowledgedWidthLimit))
+  }
+
+  private func setWidth(_ width: CGFloat) {
+    guard opened, let state, let look else { return }
+    room = width + roomInset
+    view.set(title: state.title, icon: icon, width: width, look: look)
+    shell?.setSidePanelRoom(room, open: true, animated: false)
+    place()
+  }
+
+  private func end() {
+    noteLeaving()
+    view.removeFromSuperview()
     let window = focusedWindowOnLeave
     focusedWindowOnLeave = nil
     close()
-    key = nil
     if let window { refocus(window) }
+    key = nil
+    state = nil
+    keepsLocalWidth = false
+    dragging = false
+    unacknowledgedWidths = []
   }
 
   private func noteLeaving() {
@@ -91,9 +211,10 @@ final class SidePanelHost: NSObject, SolaraCoreWebViewDelegate {
 
   private func refocus(_ window: NSWindow) {
     let windowId = windowId
+    let key = key
     DispatchQueue.main.async { [weak window] in
       guard let window, window.isVisible, window.firstResponder === window else { return }
-      HostedViews.send(NativeExtensionSidePanel.kind, windowId: windowId, "focusLost", [:])
+      HostedViews.send(NativeExtensionSidePanel.kind, windowId: windowId, "focusLost", ["key": key ?? ""])
     }
   }
 
@@ -139,9 +260,10 @@ final class SidePanelHost: NSObject, SolaraCoreWebViewDelegate {
   }
 
   nonisolated func webView(_ web: SolaraCoreWebView, event name: String, payload: [String: Any]) {
+    let identity = ObjectIdentifier(web)
     nonisolated(unsafe) let body = payload
     MainActor.assumeIsolated {
-      guard web === page else { return }
+      guard page.map(ObjectIdentifier.init) == identity else { return }
       if name == "windowClose" { send("windowClose") }
       if name == "openWindow" { send("openWindow", ["request": body]) }
     }
@@ -202,8 +324,10 @@ public enum SidePanelRead {
     while !queue.isEmpty {
       let view = queue.removeFirst()
       queue.append(contentsOf: view.subviews)
-      if let panel = view as? ExtensionSidePanelView, let surface = panel.content.superview {
-        card = ["frame": frame(surface), "width": Double(panel.width), "visible": !panel.isHiddenOrHasHiddenAncestor]
+      if let panel = view as? ExtensionSidePanelView {
+        let f = panel.convert(panel.frames.panel, to: nil)
+        card = ["frame": [Double(f.minX), Double(root.bounds.height - f.maxY), Double(f.width), Double(f.height)],
+          "width": Double(panel.width), "visible": !panel.isHiddenOrHasHiddenAncestor]
       }
       guard let web = view as? SolaraCoreWebView else { continue }
       let focused = responder.map { $0 === web || $0.isDescendant(of: web) } ?? false
@@ -213,7 +337,14 @@ public enum SidePanelRead {
       pages.append(["extensionId": extensionId ?? NSNull(), "frame": frame(web),
         "focused": focused, "visible": !web.isHiddenOrHasHiddenAncestor])
     }
-    return ["card": card ?? NSNull(), "pages": pages, "focusedTabIds": focusedTabIds.sorted()]
+    let shell = NativeWindowShell.host(windowId)?.shell
+    var linkRunning = false
+    #if DEBUG
+    linkRunning = (shell?.devSidePanelLinkRunning ?? false) || (NativeWindowShell.host(windowId)?.devSidePanelResizeLinkActive ?? false)
+    #endif
+    return ["card": card ?? NSNull(), "pages": pages, "focusedTabIds": focusedTabIds.sorted(),
+      "room": Double(shell?.input.sidePanel ?? 0), "moving": shell?.sidePanelMoving ?? false,
+      "linkRunning": linkRunning, "reduceMotion": NSWorkspace.shared.accessibilityDisplayShouldReduceMotion]
   }
 }
 #endif

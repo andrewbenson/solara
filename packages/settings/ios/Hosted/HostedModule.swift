@@ -17,7 +17,7 @@ public class HostedModule: Module {
       DispatchQueue.main.async {
         MainActor.assumeIsolated {
           HostedViews.emit = { body in sink.module?.sendEvent("onHostedEvent", body) }
-          NativeStatusBubble.register(); NativeSidebar.register(); NativeDownloadMagnet.register(); NativeTabPickers.register(); NativeExtensionSidePanel.register()
+          NativeStatusBubble.register(); NativeSidebar.register(); NativeDownloadMagnet.register(); NativeTabPickers.register()
           NativeSidebarIconPicker.register()
           NativeToolTour.register()
           if NativeBookmarksBar.enabled { NativeBookmarksBar.register() }

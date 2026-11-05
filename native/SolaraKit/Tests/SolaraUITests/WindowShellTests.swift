@@ -215,7 +215,7 @@ struct WindowShellViewTests {
     shell.mount(.react, react)
     shell.mount(.backdrop, backdrop)
     shell.mount(.sidebar, sidebar)
-    #expect(shell.subviews == [shell.hiddenPages, backdrop, react, shell.card, sidebar, shell.overlay])
+    #expect(shell.subviews == [shell.hiddenPages, backdrop, react, shell.card, shell.sidePanelClip, sidebar, shell.overlay])
     #expect(react.frame == shell.bounds)
     #expect(backdrop.frame == shell.bounds)
     #expect(sidebar.frame == CGRect(x: 0, y: 0, width: 190, height: 700))
@@ -266,11 +266,11 @@ struct WindowShellViewTests {
     shell.mount(.topStrip, strip)
     shell.mount(.peek, peek)
     shell.mount(.splitChrome, split)
-    #expect(shell.subviews == [shell.hiddenPages, backdrop, shell.card, split, peek, sidebar, strip, react, shell.overlay])
+    #expect(shell.subviews == [shell.hiddenPages, backdrop, shell.card, shell.sidePanelClip, split, peek, sidebar, strip, react, shell.overlay])
     shell.mount(.react, nil)
     let replacement = NSView()
     shell.mount(.react, replacement)
-    #expect(shell.subviews == [shell.hiddenPages, backdrop, shell.card, split, peek, sidebar, strip, replacement, shell.overlay])
+    #expect(shell.subviews == [shell.hiddenPages, backdrop, shell.card, shell.sidePanelClip, split, peek, sidebar, strip, replacement, shell.overlay])
   }
 
   @Test func theReactRootStaysAboveTheBackdropOnlyByDefault() {
@@ -282,7 +282,7 @@ struct WindowShellViewTests {
         views[slot] = NSView()
         shell.mount(slot, views[slot])
       }
-      #expect(shell.subviews == [shell.hiddenPages, views[.backdrop]!, views[.react]!, shell.card, views[.splitChrome]!, views[.peek]!, views[.sidebar]!, views[.topStrip]!, shell.overlay])
+      #expect(shell.subviews == [shell.hiddenPages, views[.backdrop]!, views[.react]!, shell.card, shell.sidePanelClip, views[.splitChrome]!, views[.peek]!, views[.sidebar]!, views[.topStrip]!, shell.overlay])
     }
   }
 

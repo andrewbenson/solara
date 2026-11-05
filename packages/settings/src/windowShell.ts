@@ -10,6 +10,7 @@ type WindowShellModule = {
   peekExpand?(windowId: string): Promise<boolean>;
   setBackdrop(windowId: string, json: string): Promise<void>;
   setLayout?(windowId: string, layout: WindowShellLayout): Promise<void>;
+  setSidePanel?(windowId: string, json: string | null): Promise<void>;
   setModal?(windowId: string, owner: string, shown: boolean): Promise<void>;
   accessibilityReach?(windowId: string): Promise<Record<string, number> | null>;
   describe(windowId: string): Promise<string>;
@@ -82,6 +83,29 @@ export type WindowShellLayout = Partial<{
 
 export function setWindowShellLayout(windowId: string, layout: WindowShellLayout) {
   return native?.setLayout?.(windowId, layout) ?? Promise.resolve();
+}
+
+export type WindowSidePanelState = {
+  key: string;
+  pageProfile: string;
+  url: string;
+  title: string;
+  icon: string | null;
+  width: number;
+  room: number;
+  look: {
+    card: string;
+    text: string;
+    icon: string;
+    hover: string;
+    pressed: string;
+    hairline: string;
+    radius: number;
+  };
+};
+
+export function setWindowSidePanel(windowId: string, state: WindowSidePanelState | null) {
+  return native?.setSidePanel?.(windowId, state ? JSON.stringify(state) : null) ?? Promise.resolve();
 }
 
 export function setWindowShellModal(windowId: string, owner: string, shown: boolean) {

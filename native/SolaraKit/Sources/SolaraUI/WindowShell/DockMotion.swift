@@ -111,7 +111,7 @@ public struct TimedRun: Equatable, Sendable {
   public let duration: Double
   public let ease: Ease
 
-  public enum Ease: Sendable { case outCubic, inOutCubic }
+  public enum Ease: Equatable, Sendable { case outCubic, inOutCubic, outBack(Double) }
 
   public init(from: Double, to: Double, duration: Double, ease: Ease) {
     self.from = from
@@ -123,7 +123,14 @@ public struct TimedRun: Equatable, Sendable {
   public func sample(_ t: Double) -> (value: Double, done: Bool) {
     if t >= duration - 1e-9 { return (to, true) }
     let u = max(0, t / duration)
-    let eased = ease == .outCubic ? DockMotion.easeOutCubic(u) : DockMotion.easeInOutCubic(u)
+    let eased: Double
+    switch ease {
+    case .outCubic: eased = DockMotion.easeOutCubic(u)
+    case .inOutCubic: eased = DockMotion.easeInOutCubic(u)
+    case .outBack(let overshoot):
+      let t = 1 - u
+      eased = 1 - t * t * (t + overshoot * (t - 1))
+    }
     return (from + (to - from) * eased, false)
   }
 }

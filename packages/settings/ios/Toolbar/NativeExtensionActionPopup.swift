@@ -148,7 +148,7 @@ enum NativeExtensionActionPopup {
   }
 
   static func holdFieldBlur(from host: NSView, fieldContainer: NSView, flush: @escaping () -> Void) -> Bool {
-    guard let window = host.window, let popup = current, popup.window === window else { return false }
+    guard let window = fieldContainer.window, let popup = current, popup.window === window else { return false }
     let key = ObjectIdentifier(window)
     heldFieldBlurs.removeValue(forKey: key)?.flush()
     heldFieldBlurs[key] = HeldFieldBlur(host: host, fieldContainer: fieldContainer, flush: flush)
@@ -172,15 +172,14 @@ enum NativeExtensionActionPopup {
 
   private static func settleHeldFieldBlurs(window: NSWindow?) {
     for (key, held) in heldFieldBlurs {
-      guard let host = held.host, let hostWindow = host.window else {
+      guard let container = held.fieldContainer ?? held.host, let containerWindow = container.window else {
         heldFieldBlurs.removeValue(forKey: key)
         held.flush()
         continue
       }
-      guard hostWindow === window else { continue }
+      guard containerWindow === window else { continue }
       heldFieldBlurs.removeValue(forKey: key)
-      let editor = hostWindow.firstResponder as? NSTextView
-      let container = held.fieldContainer ?? host
+      let editor = containerWindow.firstResponder as? NSTextView
       let backInField = editor?.isFieldEditor == true && (editor?.delegate as? NSView)?.isDescendant(of: container) == true
       if !backInField { held.flush() }
     }

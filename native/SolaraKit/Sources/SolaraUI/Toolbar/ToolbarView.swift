@@ -8,6 +8,7 @@ public final class ToolbarView: NSView {
 
   public var onClick: (ToolbarClick) -> Void = { _ in }
   public var onAnchors: ([String: CGRect]) -> Void = { _ in }
+  public var onHiddenOrDetached: () -> Void = {}
   public private(set) var state: ToolbarState?
 
   private let surface = CALayer()
@@ -349,6 +350,16 @@ public final class ToolbarView: NSView {
     guard let root = window?.contentView else { return local }
     let r = content.convert(local, to: root)
     return root.isFlipped ? r : CGRect(x: r.minX, y: root.bounds.height - r.maxY, width: r.width, height: r.height)
+  }
+
+  public override func viewDidHide() {
+    super.viewDidHide()
+    onHiddenOrDetached()
+  }
+
+  public override func viewWillMove(toWindow newWindow: NSWindow?) {
+    if newWindow !== window { onHiddenOrDetached() }
+    super.viewWillMove(toWindow: newWindow)
   }
 
   public override func viewDidMoveToWindow() {

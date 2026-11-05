@@ -57,7 +57,7 @@ const usesPageA = [
   "bluetooth-settings", "cast-dialog", "cast-routes", "theme-commit", "theme-modern-colors", "user-selection",
   "password-prompt", "screen-share-picker", "tab-capture", "share-instead-two-captures",
   "restore-after-close", "discard-outcomes", "sleep-eligibility", "keep-awake-sites", "sleep-pinned-capture", "native-tab-sleep", "capture-picture", "unresponsive", "permission-dismissed", "permission-status-detached",
-  "save-page", "activate-request", "extension-popup-and-panel", "extension-popup-window", "extension-popup-native-frame", "print-preview",
+  "save-page", "activate-request", "extension-popup-and-panel", "extension-popup-window", "extension-popup-native-frame", "extension-popup-rail-field", "print-preview",
   "extension-prompts", "extension-prompt-closed", "traffic-lights-after-profile-switch", "extension-configure",
   "private-windows-create", "extension-installed-bubble", "popup-window", "popup-window-permission", "popup-origin-strip", "autofill-save-prompts",
   "settings-services", "download-navigation", "page-events", "page-background", "appearance-reaches-pages", "external-app-answer",
@@ -3948,6 +3948,57 @@ try {
       } finally {
         if (closingWindow) await evalApp(`ac.store.getState().closeWindow(${JSON.stringify(closingWindow)}); return true`).catch(() => null);
         await evalApp(`ac.extensions.closeExtensionPopup(); ac.store.getState().updateSettings({ tabLayout: ${JSON.stringify(beforeLayout)} }); return true`).catch(() => null);
+        await closeTab(tab).catch(() => null);
+      }
+    });
+  });
+
+  await check("extension-popup-rail-field", async () => {
+    if (process.env.SOLARA_NATIVE_SHELL !== "1") return { skipped: "the sidebar rail needs SOLARA_NATIVE_SHELL=1" };
+    return withPopupExtension({}, async (id) => {
+      const tab = await freshTab(`${base}/b?rail-field`);
+      const windowNumber = await cef(`devWindowNumber(${await browserOf(tab)})`);
+      const act = (action) => cef(`devWindow(${windowNumber}, ${JSON.stringify(action)})`);
+      const snapshot = () => nativeExtensionPopup(mainWindow);
+      const toolbar = async () => JSON.parse(await evalApp(`return globalThis.expo.modules.SolaraToolbar.devToolbar(${JSON.stringify(mainWindow)}, "${tab}")`));
+      const before = await evalApp(`const s = ac.store.getState().settings; return { tabLayout: s.tabLayout, iconsOnly: s.sidebarIconsOnly }`);
+      const setRail = async (on) => {
+        const now = await evalApp(`return ac.store.getState().settings.sidebarIconsOnly`);
+        if (now !== on) await evalApp(`ac.runCommand({ command: "toggleSidebarIconsOnly", arg: null, windowId: ${JSON.stringify(mainWindow)} }); return true`);
+        await until(`sidebar rail ${on ? "on" : "off"}`, async () => (await evalApp(`return ac.store.getState().settings.sidebarIconsOnly`)) === on, 5000);
+      };
+      let popup = null;
+      try {
+        await evalApp(`ac.store.getState().updateSettings({ tabLayout: "sidebar" }); return ac.extensions.setPinned("", "${id}", true)`);
+        await setRail(true);
+        await act("fakeActiveClicks");
+        const placed = await until("the toolbar moved into the rail, outside its React Native host", async () => {
+          const button = (await toolbar()).extensions.find((e) => e.id === `ext:${id}` && e.frame[2] > 0);
+          if (!button) return null;
+          const hit = String(await act(`hit:${Math.round(button.frame[0] + button.frame[2] / 2)},${Math.round(button.frame[1] + button.frame[3] / 2)}`));
+          return hit.includes("ToolbarView") && !hit.includes("NativeToolbarHostView") ? { button, hit } : null;
+        }, 8000);
+        await evalApp(`ac.runCommand({ command: "focusCommandBar", arg: null, windowId: ${JSON.stringify(mainWindow)} }); return true`);
+        await until("the toolbar URL field editing", async () => (await snapshot())?.omniboxFocused && (await toolbar()).urlEditor, 5000);
+        await evalApp(`const ext = Object.values(ac.extensions.useExtensions.getState().lists).flat().find((x) => x.id === "${id}");
+          return ac.extensions.activateExtension(${JSON.stringify(mainWindow)}, ext, { x: ${placed.button.frame[0]}, y: ${placed.button.frame[1]}, width: ${placed.button.frame[2]}, height: ${placed.button.frame[3]} }).then(() => true)`);
+        popup = await until("the popup renderer", async () => (await targets()).find((t) => t.type === "page" && t.url.includes(`${id}/popup.html`)) ?? null, 8000);
+        await until("the field's blur held while the popup is up", async () => (await snapshot())?.heldFieldBlurs === 1, 3000);
+        if (!(await toolbar()).urlEditor) throw new Error("the URL edit ended while the popup had focus in the rail");
+        for (const type of ["rawKeyDown", "keyUp"])
+          await cdp(popup, "Input.dispatchKeyEvent", { type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 53 }).catch(() => null);
+        await until("Esc closing the popup", async () => !(await snapshot())?.frame, 5000);
+        await until("focus back in the rail's URL field", async () => (await snapshot())?.omniboxFocused, 5000);
+        await until("the held blur dropped", async () => (await snapshot())?.heldFieldBlurs === 0, 3000);
+        if (!(await toolbar()).urlEditor) throw new Error("Esc from the popup ended the rail's URL edit");
+        const escape = await act("keys:0:\u001b:53");
+        await until("Esc in the restored rail field ending its edit", async () => !(await toolbar()).urlEditor, 3000)
+          .catch((error) => { throw new Error(`${error.message} (${escape})`); });
+        return { hit: placed.hit.split(" < ").slice(0, 4).join(" < ") };
+      } finally {
+        await evalApp(`ac.extensions.closeExtensionPopup(); return true`).catch(() => null);
+        await setRail(before.iconsOnly).catch(() => null);
+        await evalApp(`ac.store.getState().updateSettings({ tabLayout: ${JSON.stringify(before.tabLayout)} }); return true`).catch(() => null);
         await closeTab(tab).catch(() => null);
       }
     });

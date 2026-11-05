@@ -144,6 +144,12 @@ final class NativeToolbarHostView: ExpoView {
     super.init(appContext: appContext)
     toolbar.autoresizingMask = [.width, .height]
     toolbar.frame = bounds
+    toolbar.onHiddenOrDetached = { [weak self] in
+      MainActor.assumeIsolated {
+        guard let self else { return }
+        NativeExtensionActionPopup.flushHeldFieldBlur(from: self)
+      }
+    }
     toolbar.onClick = { [weak self] click in
       MainActor.assumeIsolated {
         guard let self else { return }
@@ -205,13 +211,7 @@ final class NativeToolbarHostView: ExpoView {
 
   override func viewDidHide() {
     super.viewDidHide()
-    NativeExtensionActionPopup.flushHeldFieldBlur(from: self)
     syncToolbarShell()
-  }
-
-  override func viewWillMove(toWindow newWindow: NSWindow?) {
-    if newWindow !== window { NativeExtensionActionPopup.flushHeldFieldBlur(from: self) }
-    super.viewWillMove(toWindow: newWindow)
   }
 
   override func viewDidUnhide() {

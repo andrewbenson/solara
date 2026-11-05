@@ -86,10 +86,10 @@ struct SyncPairingControlTests {
   @Test func V08_nativeClockUsesContinuousBootEpoch() {
     var info = mach_timebase_info_data_t()
     mach_timebase_info(&info)
-    let scale = Double(info.numer) / Double(info.denom) / 1_000_000_000
-    let before = Double(mach_continuous_time()) * scale
+    let seconds = { (ticks: UInt64) in Double(ticks) * Double(info.numer) / Double(info.denom) / 1_000_000_000 }
+    let before = seconds(mach_continuous_time())
     let actual = TrustedPairingClock.now()
-    let after = Double(mach_continuous_time()) * scale
+    let after = seconds(mach_continuous_time())
     #expect(actual >= before)
     #expect(actual <= after)
   }

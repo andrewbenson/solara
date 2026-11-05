@@ -75,6 +75,7 @@ chromium chromium-background-instance-no-default-handlers.patch
 chromium chromium-apple-passwords-host-skipped.patch
 chromium chromium-permission-status-detached-context.patch
 chromium chromium-pip-free-move.patch
+chromium chromium-document-pip-bar.patch
 chromium chromium-solara-layer.patch
 chromium chromium-helper-name.patch
 

@@ -1,0 +1,210 @@
+Document Picture in Picture gets Dia's top bar.
+
+Chrome's bar shows the origin and hides Back to Tab and close until the pointer is over the window, so a call's pop-out
+showed no way back at rest. The bar is now 40 pt, #212123 with a 1 pt white hairline: Back to Tab is the video PiP's
+28 pt corner button, always shown at the top left; the call tab's favicon and title sit in the middle and also go back
+to the tab (hover highlight, pointing hand); close is the same corner button at the top right and still fades in on
+hover. A page that asks for disallowReturnToOpener gets neither the button nor a clickable title. The views live in
+chrome/browser/solara/pip/ac_document_pip_bar.cc.
+
+--- a/chrome/browser/ui/views/frame/picture_in_picture_browser_frame_view.cc
++++ b/chrome/browser/ui/views/frame/picture_in_picture_browser_frame_view.cc
+@@ -82,7 +82,7 @@
+ constexpr int kContentSettingIconSize = 16;
+ 
+ // The height of the controls bar at the top of the window.
+-constexpr int kTopControlsHeight = 34;
++constexpr int kTopControlsHeight = 40;
+ // The vertical margin for IconLabelBubbleView to have 24px height.
+ constexpr int KIconViewVerticalMargin = 5;
+ 
+@@ -186,6 +186,26 @@
+ 
+ }  // namespace
+ 
++// Solara: Dia's document PiP bar, defined in //chrome/browser/solara (pip/).
++// Not a GN dependency: it resolves at link time in the binary we build.
++void StyleSolaraDocumentPipBar(views::View* bar);
++std::unique_ptr<views::Button> NewSolaraDocumentPipBackToTab(
++    views::Button::PressedCallback callback);
++std::unique_ptr<CloseImageButton> NewSolaraDocumentPipClose(
++    views::Button::PressedCallback callback);
++std::unique_ptr<views::Button> NewSolaraDocumentPipTitle(
++    views::Button::PressedCallback callback);
++void ShowSolaraDocumentPipTitle(views::Button* title,
++                                content::WebContents* opener,
++                                const std::u16string& origin,
++                                gfx::ElideBehavior origin_elide);
++void SetSolaraDocumentPipTitleColor(views::Button* title, SkColor color);
++void LayoutSolaraDocumentPipBar(const gfx::Size& bar,
++                                views::View* back_to_tab,
++                                views::View* title,
++                                views::View* indicators,
++                                views::View* close);
++
+ PictureInPictureBrowserFrameView::PictureInPictureBrowserFrameView(
+     BrowserWidget* widget,
+     BrowserView* browser_view)
+@@ -201,15 +221,9 @@
+       this, content::kMaxURLDisplayChars);
+ 
+   // Creates a view for the top bar area.
+-  AddChildView(views::Builder<views::FlexLayoutView>()
+-                   .CopyAddressTo(&top_bar_container_view_)
+-                   .SetOrientation(views::LayoutOrientation::kHorizontal)
+-                   .SetCrossAxisAlignment(views::LayoutAlignment::kCenter)
+-                   .Build());
++  top_bar_container_view_ = AddChildView(std::make_unique<views::View>());
++  StyleSolaraDocumentPipBar(top_bar_container_view_);
+ 
+-  top_bar_container_view_->SetBackground(
+-      views::CreateSolidBackground(kColorPipWindowTopBarBackground));
+-
+   // Creates the window icon.
+   const gfx::FontList& font_list = views::TypographyProvider::Get().GetFont(
+       CONTEXT_OMNIBOX_PRIMARY, views::style::STYLE_PRIMARY);
+@@ -261,6 +275,8 @@
+ 
+   window_title_->SetBackgroundColor(kColorPipWindowTopBarBackground);
+   window_title_->SetEnabledColor(kColorPipWindowForeground);
++  location_icon_view_->SetVisible(false);
++  window_title_->SetVisible(false);
+ 
+   // Creates a container view for the top right buttons to handle the button
+   // animations.
+@@ -302,20 +318,25 @@
+   // button.
+   const std::optional<blink::mojom::PictureInPictureWindowOptions> pip_options =
+       browser_view->GetDocumentPictureInPictureOptions();
+-  if (!pip_options.has_value() || !pip_options->disallow_return_to_opener) {
+-    back_to_tab_button_ = button_container_view_->AddChildView(
+-        std::make_unique<BackToTabButton>(base::BindRepeating(
+-            [](PictureInPictureBrowserFrameView* frame_view) {
+-              DefinitelyExitPictureInPicture(
+-                  *frame_view, PictureInPictureWindowManager::UiBehavior::
+-                                   kCloseWindowAndFocusOpener);
+-            },
+-            base::Unretained(this))));
++  const auto go_back = base::BindRepeating(
++      [](PictureInPictureBrowserFrameView* frame_view) {
++        DefinitelyExitPictureInPicture(
++            *frame_view, PictureInPictureWindowManager::UiBehavior::
++                             kCloseWindowAndFocusOpener);
++      },
++      base::Unretained(this));
++  const bool goes_back =
++      !pip_options.has_value() || !pip_options->disallow_return_to_opener;
++  if (goes_back) {
++    back_to_tab_button_ = top_bar_container_view_->AddChildView(
++        NewSolaraDocumentPipBackToTab(go_back));
+   }
++  solara_title_ = top_bar_container_view_->AddChildView(
++      NewSolaraDocumentPipTitle(goes_back ? views::Button::PressedCallback(go_back)
++                                          : views::Button::PressedCallback()));
+ 
+-  // Creates the close button.
+-  close_image_button_ = button_container_view_->AddChildView(
+-      std::make_unique<CloseImageButton>(base::BindRepeating(
++  close_image_button_ = top_bar_container_view_->AddChildView(
++      NewSolaraDocumentPipClose(base::BindRepeating(
+           [](PictureInPictureBrowserFrameView* frame_view) {
+             DefinitelyExitPictureInPicture(
+                 *frame_view,
+@@ -323,12 +344,8 @@
+           },
+           base::Unretained(this))));
+ 
+-  // Creates the controller that owns and drives the top-bar hover animations,
+-  // now that the buttons and content-setting views it references exist. It
+-  // paints the window-control buttons to layers so their opacity can be
+-  // animated, and starts in the active state. Mirrors DocumentPipFrameView.
+   animation_controller_ = std::make_unique<PipTopBarAnimationController>(
+-      this, back_to_tab_button_, close_image_button_, content_setting_views_);
++      this, nullptr, close_image_button_, content_setting_views_);
+ 
+   // If the window manager wants us to display an overlay, get it.  In practice,
+   // this is the auto-pip Allow / Block content setting UI.
+@@ -455,7 +472,10 @@
+   // Allow interacting with the buttons.
+   if (GetLocationIconViewBounds().Contains(point) ||
+       GetBackToTabControlsBounds().Contains(point) ||
+-      GetCloseControlsBounds().Contains(point)) {
++      GetCloseControlsBounds().Contains(point) ||
++      (solara_title_->GetEnabled() &&
++       ConvertTopBarControlViewBounds(solara_title_, top_bar_container_view_)
++           .Contains(point))) {
+     return HTCLIENT;
+   }
+ 
+@@ -494,6 +514,9 @@
+   // set, so that we can update the icon and title based on WebContents.
+   location_icon_view_->Update(/*suppress_animations=*/false);
+   window_title_->SetText(location_bar_model_->GetURLForDisplay());
++  ShowSolaraDocumentPipTitle(solara_title_, GetWebContents(),
++                             location_bar_model_->GetURLForDisplay(),
++                             window_title_->GetElideBehavior());
+ }
+ 
+ // Minimum size refers to the minimum size for the window inner bounds.
+@@ -530,6 +553,8 @@
+   gfx::Rect top_bar = content_area;
+   top_bar.set_height(kTopControlsHeight);
+   top_bar_container_view_->SetBoundsRect(top_bar);
++  LayoutSolaraDocumentPipBar(top_bar.size(), back_to_tab_button_, solara_title_,
++                             button_container_view_, close_image_button_);
+ #if !BUILDFLAG(IS_ANDROID)
+   if (auto_pip_setting_overlay_) {
+     auto_pip_setting_overlay_->SetBoundsRect(
+@@ -907,6 +932,7 @@
+ void PictureInPictureBrowserFrameView::ApplyTopBarForegroundColor(
+     SkColor color) {
+   window_title_->SetEnabledColor(color);
++  SetSolaraDocumentPipTitleColor(solara_title_, color);
+   for (ContentSettingImageView* view : content_setting_views_) {
+     view->SetIconColor(color);
+   }
+@@ -955,13 +981,13 @@
+     return gfx::Rect();
+   }
+   return ConvertTopBarControlViewBounds(back_to_tab_button_,
+-                                        button_container_view_);
++                                        top_bar_container_view_);
+ }
+ 
+ gfx::Rect PictureInPictureBrowserFrameView::GetCloseControlsBounds() const {
+   DCHECK(close_image_button_);
+   return ConvertTopBarControlViewBounds(close_image_button_,
+-                                        button_container_view_);
++                                        top_bar_container_view_);
+ }
+ 
+ LocationIconView* PictureInPictureBrowserFrameView::GetLocationIconView() {
+@@ -986,6 +1012,7 @@
+         (view->GetVisible() ? kButtonContainerViewWithCameraButtonInsets
+                             : kButtonContainerViewInsets));
+   }
++  InvalidateLayout();
+ }
+ 
+ void PictureInPictureBrowserFrameView::UpdateTopBarView(bool render_active) {
+--- a/chrome/browser/ui/views/frame/picture_in_picture_browser_frame_view.h
++++ b/chrome/browser/ui/views/frame/picture_in_picture_browser_frame_view.h
+@@ -249,7 +249,7 @@
+   // A model required to use LocationIconView.
+   std::unique_ptr<LocationBarModel> location_bar_model_;
+ 
+-  raw_ptr<views::FlexLayoutView> top_bar_container_view_ = nullptr;
++  raw_ptr<views::View> top_bar_container_view_ = nullptr;
+ 
+   // An icon to the left of the window title, which reuses the location icon in
+   // the location bar of a normal browser. Since the web contents to PiP is
+@@ -258,6 +258,9 @@
+ 
+   raw_ptr<views::Label> window_title_ = nullptr;
+ 
++  // Solara: favicon and page title, a second way back to the tab.
++  raw_ptr<views::Button> solara_title_ = nullptr;
++
+   // A container view for the top right buttons.
+   raw_ptr<views::FlexLayoutView> button_container_view_ = nullptr;
+ 

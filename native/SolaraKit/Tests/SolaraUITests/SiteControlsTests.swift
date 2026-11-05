@@ -21,6 +21,21 @@ import SolaraStore
     try #require(SiteControlsLogic.state(context: c, expanded: section, featured: featured, settings: settings, blocker: blocker, cleared: nil)).items
   }
 
+  @Test func sleepRowTogglesExactSitesAndSendsParentsAndOffToSettings() throws {
+    let plain = context(["sleepInactiveTabs": true, "keepAwakeSites": []])
+    #expect(try rows(plain).first { $0.id == "sleep" }?.value == "On")
+    #expect(SiteControlsLogic.action(.press("sleep", .zero), context: plain) == .keepAwake(["example.com"]))
+    let exact = context(["keepAwakeSites": ["example.com", "other.com"]])
+    #expect(try rows(exact).first { $0.id == "sleep" }?.value == "Never")
+    #expect(SiteControlsLogic.action(.press("sleep", .zero), context: exact) == .keepAwake(["other.com"]))
+    let parent = context(["url": "https://chat.example.com/x", "keepAwakeSites": ["example.com"]])
+    #expect(try rows(parent).first { $0.id == "sleep" }?.value == "Never · via example.com")
+    #expect(SiteControlsLogic.action(.press("sleep", .zero), context: parent) == .sleepSettings("keepAwake:example.com"))
+    let off = context(["sleepInactiveTabs": false, "keepAwakeSites": ["example.com"]])
+    #expect(try rows(off).first { $0.id == "sleep" }?.value == "Off")
+    #expect(SiteControlsLogic.action(.press("sleep", .zero), context: off) == .sleepSettings(nil))
+  }
+
   @Test func blockingReportsActualEngineAndAllowedState() throws {
     let enabled: JSONValue = ["enabled": true, "allowed": false]
     #expect(try rows(context(["blocked": 7]), blocker: enabled).first { $0.id == "blocker" }?.value == "On · 7 blocked on this page")

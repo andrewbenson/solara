@@ -467,7 +467,10 @@ static void StartEarlyWindow() {
   if (gScratchDataDir && solaracore_host::Background())
     solaracore_host::InstallTestCrashGuard([gDataDirectory stringByDeletingLastPathComponent]);
   SolaraCoreEngine *engine = SolaraCoreEngine.sharedEngine;
-  if (SolaraCoreProfile *profile = solaracore_host::PersonalIfLoaded(engine)) Profiles()[@""] = profile;
+  if (SolaraCoreProfile *profile = solaracore_host::PersonalIfLoaded(engine)) {
+    Profiles()[@""] = profile;
+    solaracore_host::ApplyKeepAwakeSites(profile);
+  }
   solaracore_host::LoadContentBlocker(@"");
   [SolaraCoreWebView installSwitchPrewarm];
   [SolaraCoreWebView installOutgoingFocusSnapshots];
@@ -1287,6 +1290,7 @@ void WithPrivateProfile(NSString *name, void (^completion)(SolaraCoreProfile *))
         return;
       }
       if (otr && !otr.destroyed) Profiles()[name] = otr;
+      if (otr && !otr.destroyed) solaracore_host::ApplyKeepAwakeSites(otr);
       else NSLog(@"[solaracore] no private profile for %@: %@", name, error ?: @"it went");
       for (void (^waiter)(SolaraCoreProfile *) in pending) waiter(Profiles()[name]);
     };
@@ -1308,6 +1312,7 @@ void WithProfile(NSString *name, void (^completion)(SolaraCoreProfile *)) {
   if (name.length == 0) {
     if (SolaraCoreProfile *personal = PersonalIfLoaded(engine)) {
       Profiles()[@""] = personal;
+      solaracore_host::ApplyKeepAwakeSites(personal);
       return completion(personal);
     }
   }
@@ -1331,6 +1336,7 @@ void WithProfile(NSString *name, void (^completion)(SolaraCoreProfile *)) {
              if (profile) Profiles()[name] = profile;
              if (profile) solaracore_host::LoadContentBlocker(name);
              if (profile) [SolaraCoreServices watchDownloads:name];
+             if (profile) solaracore_host::ApplyKeepAwakeSites(profile);
              for (void (^waiter)(SolaraCoreProfile *) in pending) waiter(profile);
            }];
 }

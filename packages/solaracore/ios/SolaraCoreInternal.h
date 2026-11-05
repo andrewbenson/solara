@@ -87,6 +87,7 @@ extern NSNotificationName const SolaraCoreWindowSeenDidChange;
 
 namespace solaracore_host {
 NSArray<SolaraCoreProfile *> *LoadedProfiles();
+void ApplyKeepAwakeSites(SolaraCoreProfile *profile);
 void LoadContentBlocker(NSString *profile);
 void PrepareContentBlocker();
 bool EngineHasTabModel();

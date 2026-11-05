@@ -209,6 +209,12 @@ final class NativeSiteMenu {
     case .developer(let changed):
       NativeSettingsHandle.model?.update(["developerMode": changed])
     case .blocker: Task { await toggleBlocker() }
+    case .keepAwake(let sites):
+      NativeSettingsHandle.model?.update([KeepAwakeSites.settingKey: sites])
+    case .sleepSettings(let detail):
+      let captured = context
+      dismiss()
+      Task { await shared("sleepSettings", ["detail": detail ?? ""], captured: captured) }
     case .enginePicker: pickEngine()
     case .clear: Task { await clearData() }
     case .permission(let type): pickPermission(type)

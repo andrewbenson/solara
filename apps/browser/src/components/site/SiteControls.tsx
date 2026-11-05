@@ -37,6 +37,7 @@ import { canToggleDeveloperModeFor, setDeveloperModeFor, useDeveloperMode } from
 import { ActionTile, FooterChip, gridColumns, MoreButton, SectionTitle, SettingRow, SITE_PANEL, TileRow } from "./SiteControlsParts";
 import { NativeSiteControls, useNativeSiteControlsShown } from "./NativeSiteControls";
 import { SiteExtensions } from "./SiteExtensions";
+import { KEEP_AWAKE_DETAIL, keepAwakeCover, normalizeSite } from "../../lib/keepAwakeSites";
 import { TranslateRows } from "./TranslateControls";
 import { ZoomStepper } from "./ZoomControls";
 
@@ -111,6 +112,8 @@ function SiteControlsPanel({
   const security = usePage(tabId, (p) => p.security);
   const blocked = usePage(tabId, (p) => p.blocked);
   const showFullUrl = useSettings((s) => s.showFullUrl);
+  const sleepsTabs = useSettings((s) => s.sleepInactiveTabs !== false);
+  const keepAwakeSites = useSettings((s) => s.keepAwakeSites);
   const [settings, setSettings] = useState<SiteSettings | null>(null);
   const [featured, setFeatured] = useState<Set<SiteSettingType> | null>(null);
   const [blocker, setBlocker] = useState<Blocker | null>(null);
@@ -120,6 +123,7 @@ function SiteControlsPanel({
   const url = tab?.url ?? "";
   const origin = originOf(url);
   const host = origin ? new URL(origin).hostname : "";
+  const sleepCover = keepAwakeCover(keepAwakeSites ?? [], host);
   const profile = engineProfile(tab?.profileId ?? "");
   const close = () => setPopover(tabId, null);
   const video = useMedia((m) => !!m.sessions[tabId]?.hasVideo || !!m.pipOpen[tabId]);
@@ -306,6 +310,23 @@ function SiteControlsPanel({
               onPress={developerToggles ? () => setDeveloperModeFor(tabId, !developer) : undefined}
             />
             <SettingRow icon={ENGINE_SYMBOLS[pageEngine]} title="Opens in" value={opensIn} on={!!engineRule} onPress={() => void pickEngine()} />
+            <SettingRow
+              icon="moon.zzz"
+              title="Sleep When Inactive"
+              value={!sleepsTabs ? "Off" : sleepCover.kind === "none" ? "On" : sleepCover.kind === "exact" ? "Never" : `Never · via ${sleepCover.site}`}
+              on={sleepsTabs && sleepCover.kind === "none"}
+              onPress={() => {
+                if (!sleepsTabs || sleepCover.kind === "parent") {
+                  close();
+                  openSettings("tabs", null, sleepCover.kind === "parent" ? `${KEEP_AWAKE_DETAIL}${sleepCover.site}` : null);
+                  return;
+                }
+                const sites = keepAwakeSites ?? [];
+                const site = normalizeSite(host);
+                if (!site) return;
+                useBrowser.getState().updateSettings({ keepAwakeSites: sleepCover.kind === "exact" ? sites.filter((s) => s !== site) : [...sites, site] });
+              }}
+            />
             {shownPermissions.map((p) => (
               <SettingRow
                 key={p.type}

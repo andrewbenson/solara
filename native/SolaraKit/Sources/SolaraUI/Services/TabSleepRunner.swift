@@ -18,7 +18,7 @@ public final class TabSleepRunner {
   private let store: Store
   private let pages: PageRegistry
   private let sleep: TabSleep
-  private let policy: TabSleepPolicy.Configuration
+  public var policy: TabSleepPolicy.Configuration
   private let profileIdleMs: Double
   private let clock: Clock
   private let initiallyActive: Bool?

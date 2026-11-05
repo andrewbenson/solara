@@ -175,6 +175,7 @@ addNativeSettingsHandlers({
     if (action === "engine") return openPageIn(tabId, args.engine, { rule: args.rule });
     if (action === "other-engine") return togglePageEngine(tabId);
     if (action === "privacy") return openSettings("privacy");
+    if (action === "sleepSettings") return openSettings("tabs", null, args.detail || null);
     if (action === "toast") return showToast(snapshot.windowId, args.title, args.detail, { icon: args.icon });
   },
 });

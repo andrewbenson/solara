@@ -19,6 +19,7 @@ import { applyHeldReports } from "./nativeEvents";
 import { everySlowly, reschedule } from "./slowTimers";
 import { webviews } from "./webviews";
 import { tabSleepCandidates, unusedTabSleepProfiles } from "./tabSleepPolicy";
+import { keepAwakeCover, siteHost, sleepAfterMinutes } from "./keepAwakeSites";
 
 export { tabSleepCandidates, unusedTabSleepProfiles } from "./tabSleepPolicy";
 
@@ -88,6 +89,10 @@ function shownTabIds(s: BrowserState): Set<string> {
 
 const loadedTabIds = () => [...webviews.keys()].filter((id) => !isDiscarded(id));
 
+function keptAwakeBySite(s: BrowserState, id: string): string | null {
+  return keepAwakeCover(s.settings?.keepAwakeSites ?? [], siteHost(s.tabs[id]?.url)).kind === "none" ? null : "kept awake by a site setting";
+}
+
 function keepAliveReason(s: BrowserState, id: string): string | null {
   const tab = s.tabs[id];
   if (!tab?.url || isInternalTab(tab)) return "no page";
@@ -146,7 +151,7 @@ async function sleepTabIfSafe(id: string, automatic: boolean): Promise<boolean> 
   if ((await hasUnsavedInput(handle)) !== false) return false;
   applyHeldReports();
   const s = store();
-  if ((automatic && nativeTabSleepRunning()) || shownTabIds(s).has(id) || keepAliveReason(s, id) || webviews.get(id) !== handle) return false;
+  if ((automatic && (nativeTabSleepRunning() || s.settings?.sleepInactiveTabs === false || keptAwakeBySite(s, id))) || shownTabIds(s).has(id) || keepAliveReason(s, id) || webviews.get(id) !== handle) return false;
   return (await handle.discard()) === "discarded";
 }
 
@@ -190,8 +195,12 @@ export async function sweep(overrides: Partial<typeof POLICY> = {}): Promise<str
       releaseUnusedProfiles();
       return slept;
     }
-    const policy = { ...POLICY, ...overrides };
     const s = store();
+    if (s.settings?.sleepInactiveTabs === false) {
+      releaseUnusedProfiles();
+      return slept;
+    }
+    const policy = { ...POLICY, idleMs: sleepAfterMinutes(s.settings?.sleepTabsAfterMinutes) * 60_000, ...overrides };
     const shown = shownTabIds(s);
     const now = activeClock();
     const pressure = currentSystem()?.memoryPressure ?? "normal";
@@ -207,7 +216,7 @@ export async function sweep(overrides: Partial<typeof POLICY> = {}): Promise<str
       pressure,
       unusedProfileIds: unused,
       policy,
-      keepAliveReasons: Object.fromEntries(loaded.map((id) => [id, keepAliveReason(s, id)])),
+      keepAliveReasons: Object.fromEntries(loaded.map((id) => [id, keepAliveReason(s, id) ?? keptAwakeBySite(s, id)])),
     });
     for (const id of candidates) {
       if (nativeTabSleepRunning() || slept.length >= policy.perSweep) break;

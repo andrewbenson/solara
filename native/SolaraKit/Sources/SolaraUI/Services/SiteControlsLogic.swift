@@ -13,6 +13,8 @@ public enum SiteControlsAction: Equatable, Sendable {
   case zoom(Int)
   case permission(String)
   case shared(String)
+  case keepAwake(JSONValue)
+  case sleepSettings(String?)
   case contribution
   case none
 }
@@ -35,6 +37,7 @@ public enum SiteControlsLogic {
     case "blocker": return .blocker
     case "engine": return .enginePicker
     case "clear": return .clear
+    case "sleep": return sleepAction(context: context)
     case "share", "copy", "find", "cast", "pip", "other-engine": return .shared(id)
     default:
       guard id.hasPrefix("perm:") else { return .none }
@@ -75,6 +78,8 @@ public enum SiteControlsLogic {
     c["zoom"] = .number(tab.zoom)
     c["showFullUrl"] = state.settings["showFullUrl"] ?? false
     c["developerMode"] = state.settings["developerMode"] ?? [:]
+    c["sleepInactiveTabs"] = state.settings["sleepInactiveTabs"] ?? true
+    c[KeepAwakeSites.settingKey] = state.settings[KeepAwakeSites.settingKey] ?? []
     let site = origin(tab.url)?.lowercased()
     c["engineRule"] = site.flatMap { state.settings["websiteEngines"]?[$0] } ?? .null
     let protectedSite = site?.hasPrefix("https://") == true && protectedVideoHosts.contains { host(tab.url) == $0 || host(tab.url).hasSuffix("." + $0) }
@@ -87,6 +92,18 @@ public enum SiteControlsLogic {
   public static func origin(_ url: String) -> String? {
     guard let parsed = WhatwgURL(url), ["http:", "https:"].contains(parsed.protocol) else { return nil }
     return parsed.protocol + "//" + parsed.host
+  }
+
+  public static func sleepAction(context: JSONValue) -> SiteControlsAction {
+    guard context["sleepInactiveTabs"]?.bool != false else { return .sleepSettings(nil) }
+    let sites = KeepAwakeSites.sites(context[KeepAwakeSites.settingKey])
+    switch KeepAwakeSites.cover(of: host(context["url"]?.string ?? ""), in: sites) {
+    case .parent(let site): return .sleepSettings(KeepAwakeSites.detailPrefix + site)
+    case .exact(let site): return .keepAwake(JSONValue(sites.filter { $0 != site }))
+    case .none:
+      guard let site = KeepAwakeSites.normalized(host(context["url"]?.string ?? "")) else { return .none }
+      return .keepAwake(JSONValue(KeepAwakeSites.adding(site, to: sites)))
+    }
   }
 
   public static func host(_ url: String) -> String {
@@ -227,6 +244,16 @@ public enum SiteControlsLogic {
       items.append(setting("developer", "hammer.fill", "Developer Mode", developer ? "On" : "Off", developer, c["privatePage"]?.bool != true && developerHost(url) != nil))
       let opensIn = c["privatePage"]?.bool == true ? engineName(engine) : c["engineRule"]?.string.map(engineName) ?? recommendedTitle(c)
       items.append(setting("engine", engineIcon(engine), "Opens in", opensIn, c["engineRule"]?.string != nil, true))
+      let sleeps = c["sleepInactiveTabs"]?.bool != false
+      let cover = KeepAwakeSites.cover(of: host(url), in: KeepAwakeSites.sites(c[KeepAwakeSites.settingKey]))
+      let sleepValue: String
+      switch cover {
+      case _ where !sleeps: sleepValue = "Off"
+      case .none: sleepValue = "On"
+      case .exact: sleepValue = "Never"
+      case .parent(let site): sleepValue = "Never · via \(site)"
+      }
+      items.append(setting("sleep", "moon.zzz", "Sleep When Inactive", sleepValue, sleeps && cover == .none, true))
       for p in shown { items.append(setting("perm:" + p.id, p.badge, p.title, value(p.id), settings?[p.id]?["value"] == "allow", true)) }
     }
     let look = connection(c["security"])

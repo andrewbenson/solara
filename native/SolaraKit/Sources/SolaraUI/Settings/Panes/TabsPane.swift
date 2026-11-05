@@ -11,7 +11,7 @@ public final class TabsPaneModel: SettingsPaneProvider {
 
   public func isLoaded(_ place: SettingsPlace) -> Bool { true }
   public func prepare(_ place: SettingsPlace) async {}
-  public func view(_ place: SettingsPlace) -> AnyView { AnyView(TabsPane(store: store)) }
+  public func view(_ place: SettingsPlace) -> AnyView { AnyView(TabsPane(store: store, detail: place.detail)) }
 
   static let peekModifiers = ["alt", "shift", "off"]
 
@@ -57,11 +57,37 @@ public final class TabsPaneModel: SettingsPaneProvider {
   static func cleanUpHours(_ store: SettingsStoreSource) -> Int? {
     store.settingValue("cleanUpInactiveTabsAfterHours")?.int
   }
+
+  static let sleepAfterChoices = [
+    SettingOption("15", "15 minutes"),
+    SettingOption("30", "30 minutes"),
+    SettingOption("60", "1 hour"),
+    SettingOption("120", "2 hours"),
+    SettingOption("240", "4 hours"),
+  ]
+
+  static func sleepAfterMinutes(_ store: SettingsStoreSource) -> Int {
+    KeepAwakeSites.sleepAfterMinutes(store.settingValue("sleepTabsAfterMinutes"))
+  }
+
+  static func sleepsTabs(_ store: SettingsStoreSource) -> Bool {
+    store.settingValue("sleepInactiveTabs")?.bool != false
+  }
+
+  static func keepAwakeSites(_ store: SettingsStoreSource) -> [String] {
+    KeepAwakeSites.sites(store.settingValue(KeepAwakeSites.settingKey))
+  }
+
+  static func keepAwakeSelection(_ detail: String?) -> String? {
+    guard let detail, detail.hasPrefix(KeepAwakeSites.detailPrefix) else { return nil }
+    return String(detail.dropFirst(KeepAwakeSites.detailPrefix.count))
+  }
 }
 
 struct TabsPane: View {
   @Environment(\.settingsContext) private var context
   let store: SettingsStoreSource
+  var detail: String? = nil
 
   var body: some View {
     let top = store.topTabLayout
@@ -124,6 +150,31 @@ struct TabsPane: View {
       ) {
         CleanUpRow(store: store)
       }
+
+      SettingsSection(
+        "Sleeping tabs",
+        description: "Tabs that are playing sound, sharing your screen, camera or microphone, in Picture in Picture, or holding something you're typing stay awake. Your 10 most recent tabs stay awake too. When your Mac is low on memory, tabs sleep sooner."
+      ) {
+        SettingToggle("tabs.sleepInactiveTabs", key: "sleepInactiveTabs")
+        SettingRow("tabs.sleepTabsAfter", description: RowDescription.none) {
+          SettingPicker(
+            TabsPaneModel.sleepAfterChoices,
+            selection: Binding(
+              get: { String(TabsPaneModel.sleepAfterMinutes(store)) },
+              set: { store.updateSettings(["sleepTabsAfterMinutes": .number(Double($0) ?? 30)]) }
+            )
+          )
+          .disabled(!TabsPaneModel.sleepsTabs(store))
+        }
+      }
+
+      SettingsSection(
+        "Always keep these sites awake",
+        description: "Tabs from these sites never sleep, in any profile, including their subdomains.",
+        anchor: "tabs.keepAwakeSites"
+      ) {
+        KeepAwakeSitesList(store: store, requested: TabsPaneModel.keepAwakeSelection(detail))
+      }
     }
   }
 }
@@ -146,6 +197,111 @@ struct LinkKeys: View {
     ) {
       SettingPicker(TabsPaneModel.splitOptions(peekWith: peekWith), selection: Binding(get: { splitWith }, set: { store.set("splitLinkModifier", $0) }))
     }
+  }
+}
+
+struct KeepAwakeSitesList: View {
+  let store: SettingsStoreSource
+  let requested: String?
+  @State private var selection: String?
+  @State private var adding = false
+
+  var body: some View {
+    let sites = TabsPaneModel.keepAwakeSites(store)
+    Group {
+      if sites.isEmpty {
+        Text("No sites yet. Add one here, or choose Sleep When Inactive in a site's controls.")
+          .foregroundStyle(.secondary)
+      }
+      ForEach(sites, id: \.self) { site in
+        Button {
+          selection = site
+        } label: {
+          Text(site)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(selection == site ? Color.accentColor.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 5))
+        .accessibilityAddTraits(selection == site ? .isSelected : [])
+      }
+      HStack(spacing: 4) {
+        Button {
+          adding = true
+        } label: {
+          Image(systemName: "plus")
+        }
+        .help("Add a Site")
+        .accessibilityLabel("Add a Site")
+        Button {
+          if let selection { remove(selection) }
+        } label: {
+          Image(systemName: "minus")
+        }
+        .help("Remove the Selected Site")
+        .accessibilityLabel("Remove the Selected Site")
+        .disabled(selection.map { sites.contains($0) } != true)
+        Spacer()
+      }
+      .buttonStyle(.borderless)
+    }
+    .onAppear { select(requested) }
+    .onChange(of: requested) { _, next in select(next) }
+    .sheet(isPresented: $adding) {
+      KeepAwakeSiteSheet(store: store) { selection = $0 }
+    }
+  }
+
+  private func select(_ site: String?) {
+    if let site, TabsPaneModel.keepAwakeSites(store).contains(site) { selection = site }
+  }
+
+  private func remove(_ site: String) {
+    store.updateSettings([KeepAwakeSites.settingKey: JSONValue(TabsPaneModel.keepAwakeSites(store).filter { $0 != site })])
+    selection = nil
+  }
+}
+
+struct KeepAwakeSiteSheet: View {
+  let store: SettingsStoreSource
+  let added: (String) -> Void
+  @Environment(\.dismiss) private var dismiss
+  @State private var text = ""
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Text("Keep a Site Awake")
+        .font(.headline)
+      Text("Tabs from this site won't sleep, in any profile.")
+        .foregroundStyle(.secondary)
+      VStack(alignment: .leading, spacing: 4) {
+        TextField("Website", text: $text, prompt: Text("example.com"))
+          .textFieldStyle(.roundedBorder)
+          .onSubmit(add)
+        Text("A site like example.com also covers its subdomains.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+      HStack {
+        Spacer()
+        Button("Cancel", role: .cancel) { dismiss() }
+          .keyboardShortcut(.cancelAction)
+        Button("Add", action: add)
+          .keyboardShortcut(.defaultAction)
+          .disabled(KeepAwakeSites.normalized(text) == nil)
+      }
+    }
+    .padding(20)
+    .frame(width: 380)
+  }
+
+  private func add() {
+    guard let site = KeepAwakeSites.normalized(text) else { return }
+    store.updateSettings([KeepAwakeSites.settingKey: JSONValue(KeepAwakeSites.adding(site, to: TabsPaneModel.keepAwakeSites(store)))])
+    added(site)
+    dismiss()
   }
 }
 

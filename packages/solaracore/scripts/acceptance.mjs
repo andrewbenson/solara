@@ -56,7 +56,7 @@ const usesPageA = [
   "context-menu-search", "duplicate-and-reopen", "device-chooser", "bluetooth-chooser",
   "bluetooth-settings", "cast-dialog", "cast-routes", "theme-commit", "theme-modern-colors", "user-selection",
   "password-prompt", "screen-share-picker", "tab-capture", "share-instead-two-captures",
-  "restore-after-close", "discard-outcomes", "sleep-eligibility", "sleep-pinned-capture", "native-tab-sleep", "capture-picture", "unresponsive", "permission-dismissed", "permission-status-detached",
+  "restore-after-close", "discard-outcomes", "sleep-eligibility", "keep-awake-sites", "sleep-pinned-capture", "native-tab-sleep", "capture-picture", "unresponsive", "permission-dismissed", "permission-status-detached",
   "save-page", "activate-request", "extension-popup-and-panel", "print-preview",
   "extension-prompts", "traffic-lights-after-profile-switch", "extension-configure",
   "private-windows-create", "extension-installed-bubble", "popup-window", "popup-window-permission", "popup-origin-strip", "autofill-save-prompts",
@@ -2347,6 +2347,83 @@ try {
       for (const id of opened) await closeTab(id).catch(() => null);
       editor.close();
       host.close();
+      await evalApp(`ac.actions.switchToTab("${first.id}"); return true`).catch(() => null);
+    }
+  });
+
+  await check("keep-awake-sites", async () => {
+    const setting = () => evalApp(`return ac.store.getState().settings.keepAwakeSites ?? []`);
+    const setSites = (sites) => evalApp(`ac.store.getState().updateSettings({ keepAwakeSites: ${JSON.stringify(sites)} }); return true`);
+    const before = await setting();
+    const adoptedBefore = await evalApp(`return ac.store.getState().settings.keepAwakeAdoptedProfiles ?? []`);
+    const sub = `https://one.${siteDataDomain}/site-data`;
+    const out = {};
+    let tab;
+    try {
+      tab = await openTab(sub, "Site data", true);
+      out.reasonsBefore = await evalApp(`return ac.webviews.get("${tab.id}").reasonsNotToSleep()`);
+      await setSites([siteDataDomain]);
+      out.engineAll = await until("the list in the engine's own exceptions", async () => {
+        const list = await cef(`sleepExceptions("")`);
+        return list?.includes(siteDataDomain) ? list : null;
+      }, 5000).catch(() => cef(`sleepExceptions("")`));
+      out.reasonsKept = await until("a subdomain kept awake by its parent", async () => {
+        const reasons = await evalApp(`return ac.webviews.get("${tab.id}").reasonsNotToSleep()`);
+        return reasons?.includes("siteException") ? reasons : null;
+      }, 5000).catch(() => evalApp(`return ac.webviews.get("${tab.id}").reasonsNotToSleep()`));
+      out.sleptWhileKept = await evalApp(`return ac.webviews.get("${tab.id}").sleepIfEligible()`);
+      await setSites([]);
+      out.engineCleared = await until("the engine's exceptions cleared", async () => {
+        const list = await cef(`sleepExceptions("")`);
+        return list && !list.includes(siteDataDomain) ? list : null;
+      }, 5000).catch(() => cef(`sleepExceptions("")`));
+      out.reasonsCleared = await evalApp(`return ac.webviews.get("${tab.id}").reasonsNotToSleep()`);
+      out.chromeSet = await cef(`setSleepExceptions("", ${JSON.stringify(["[*.]kept.example"])})`);
+      await evalApp(`ac.store.getState().updateSettings({ keepAwakeAdoptedProfiles: [] }); return true`);
+      out.adopted = await until("Chrome's own exception adopted into Settings › Tabs", async () => {
+        const sites = await setting();
+        return sites.includes("kept.example") ? sites : null;
+      }, 5000).catch(setting);
+      out.engineAfterAdopting = await until("the adopted list written back", async () => {
+        const list = await cef(`sleepExceptions("")`);
+        return list?.includes("kept.example") && !list.includes("[*.]kept.example") ? list : null;
+      }, 5000).catch(() => cef(`sleepExceptions("")`));
+      const engineNow = (await cef(`sleepExceptions("")`)) ?? [];
+      out.chromeAddedLater = await cef(`setSleepExceptions("", ${JSON.stringify([...engineNow, "later.example"])})`);
+      await setSites([...(await setting()), "other.example"]);
+      out.adoptedLater = await until("an exception added in Chrome after adoption kept and adopted", async () => {
+        const sites = await setting();
+        return sites.includes("later.example") ? sites : null;
+      }, 5000).catch(setting);
+      out.engineLater = await until("the engine keeping both", async () => {
+        const list = await cef(`sleepExceptions("")`);
+        return list?.includes("later.example") && list.includes("other.example") ? list : null;
+      }, 5000).catch(() => cef(`sleepExceptions("")`));
+      if (process.env.SOLARA_NATIVE_TAB_SLEEP === "1") {
+        writeFileSync(join(data, ".solara-probe-scratch"), "");
+        const running = async () => JSON.parse(await evalApp(`return globalThis.expo.modules.SolaraStoreAdapter.devTabSleep("status")`)).running;
+        await evalApp(`ac.store.getState().updateSettings({ sleepInactiveTabs: false }); return true`);
+        out.runnerWhenOff = await until("the native runner stopped", async () => ((await running()) === false ? false : null), 5000).catch(() => running());
+        await evalApp(`ac.store.getState().updateSettings({ sleepInactiveTabs: true }); return true`);
+        out.runnerWhenOn = await until("the native runner running again", async () => ((await running()) === true ? true : null), 5000).catch(() => running());
+      }
+      const problems = [];
+      if (out.reasonsBefore?.includes("siteException")) problems.push(`a site exception before any was set: ${JSON.stringify(out.reasonsBefore)}`);
+      if (!out.engineAll?.includes(siteDataDomain)) problems.push(`the setting never reached the engine: ${JSON.stringify(out.engineAll)}`);
+      if (!out.reasonsKept?.includes("siteException")) problems.push(`one.${siteDataDomain} wasn't kept awake by ${siteDataDomain}: ${JSON.stringify(out.reasonsKept)}`);
+      if (out.sleptWhileKept !== "refused") problems.push(`slept while kept awake: ${JSON.stringify(out.sleptWhileKept)}`);
+      if (out.chromeSet !== true || !out.adopted?.includes("kept.example")) problems.push(`a Chrome exception wasn't adopted into the setting: ${JSON.stringify([out.chromeSet, out.adopted])}`);
+      if (!out.engineAfterAdopting?.includes("kept.example")) problems.push(`the adopted list didn't reach the engine: ${JSON.stringify(out.engineAfterAdopting)}`);
+      if (out.chromeAddedLater !== true || !out.adoptedLater?.includes("later.example") || !out.engineLater?.includes("later.example") || !out.engineLater?.includes("other.example")) problems.push(`an exception added in Chrome after adoption was lost: ${JSON.stringify([out.chromeAddedLater, out.adoptedLater, out.engineLater])}`);
+      if ("runnerWhenOff" in out && (out.runnerWhenOff !== false || out.runnerWhenOn !== true)) problems.push(`the switch didn't stop and restart the native runner: ${JSON.stringify([out.runnerWhenOff, out.runnerWhenOn])}`);
+      if (out.engineCleared?.includes(siteDataDomain) || out.reasonsCleared?.includes("siteException")) problems.push(`removing the site didn't reach the engine: ${JSON.stringify([out.engineCleared, out.reasonsCleared])}`);
+      if (problems.length) throw new Error(problems.join("; "));
+      return out;
+    } finally {
+      await setSites(before).catch(() => null);
+      await evalApp(`ac.store.getState().updateSettings({ sleepInactiveTabs: true }); return true`).catch(() => null);
+      await evalApp(`ac.store.getState().updateSettings({ keepAwakeAdoptedProfiles: ${JSON.stringify(adoptedBefore)} }); return true`).catch(() => null);
+      if (tab) await closeTab(tab.id).catch(() => null);
       await evalApp(`ac.actions.switchToTab("${first.id}"); return true`).catch(() => null);
     }
   });
@@ -6246,6 +6323,73 @@ try {
     await stopApp();
     if (!cookie.includes("who=personal") || cookie.includes("who=play")) throw new Error(`Personal's page sees "${cookie}"`);
     return { cookie, windows: info.map((w) => w.profile) };
+  });
+
+  await check("keep-awake-relaunch", async () => {
+    await appUp("app-keep-awake.out.log");
+    const setting = () => evalApp(`return ac.store.getState().settings.keepAwakeSites ?? []`);
+    const engine = () => cef(`sleepExceptions("")`);
+    const before = await setting();
+    const out = {};
+    try {
+      await evalApp(`ac.store.getState().updateSettings({ keepAwakeSites: ["first.example"] }); return true`);
+      const wrote = await until("the list in the engine", async () => ((await engine())?.includes("first.example") ? await engine() : null), 5000);
+      out.addedBeforeQuit = await cef(`setSleepExceptions("", ${JSON.stringify([...wrote, "[*.]quit.example"])})`);
+      await sleep(500);
+      await stopApp();
+      await appUp("app-keep-awake-quit.out.log");
+      out.afterQuit = await until("the Chrome exception still in Settings after a quit", async () => {
+        const sites = await setting();
+        return sites.includes("quit.example") ? sites : null;
+      }, 15000).catch(setting);
+      out.engineAfterQuit = await engine();
+      out.addedBeforeCrash = await cef(`setSleepExceptions("", ${JSON.stringify([...(out.engineAfterQuit ?? []), "[*.]crash.example"])})`);
+      await sleep(12000);
+      instance.kill();
+      await until("the app to die", async () => exited || !alive(), 5000);
+      exited ??= { pid };
+      await appUp("app-keep-awake-crash.out.log");
+      out.afterCrash = await until("the Chrome exception adopted when its profile loads after a crash", async () => {
+        const sites = await setting();
+        return sites.includes("crash.example") ? sites : null;
+      }, 15000).catch(setting);
+      out.engineAfterCrash = await engine();
+      const removed = (await setting()).filter((site) => site !== "quit.example" && site !== "crash.example");
+      await evalApp(`ac.store.getState().updateSettings({ keepAwakeSites: ${JSON.stringify(removed)} }); return true`);
+      await until("both removals in the engine", async () => {
+        const list = await engine();
+        return list && !list.some((p) => p.includes("quit.example") || p.includes("crash.example")) ? list : null;
+      }, 5000);
+      await stopApp();
+      await appUp("app-keep-awake-removed.out.log");
+      await sleep(3000);
+      out.afterRemovalQuit = await setting();
+      out.engineAfterRemovalQuit = await engine();
+      await evalApp(`ac.store.getState().updateSettings({ keepAwakeSites: [...${JSON.stringify(removed)}, "late.example"] }); return true`);
+      await until("late.example in the engine", async () => ((await engine())?.includes("late.example") ? true : null), 5000);
+      await evalApp(`ac.store.getState().updateSettings({ keepAwakeSites: ${JSON.stringify(removed)} }); return true`);
+      await until("late.example out of the engine", async () => ((await engine())?.includes("late.example") === false ? true : null), 5000);
+      await sleep(12000);
+      instance.kill();
+      await until("the app to die", async () => exited || !alive(), 5000);
+      exited ??= { pid };
+      await appUp("app-keep-awake-removed-crash.out.log");
+      await sleep(3000);
+      out.afterRemovalCrash = await setting();
+      out.engineAfterRemovalCrash = await engine();
+      const problems = [];
+      if (out.addedBeforeQuit !== true || !out.afterQuit?.includes("quit.example") || !out.engineAfterQuit?.some((p) => p.includes("quit.example"))) problems.push(`an exception added in Chrome didn't survive a quit: ${JSON.stringify([out.afterQuit, out.engineAfterQuit])}`);
+      if (out.addedBeforeCrash !== true || !out.afterCrash?.includes("crash.example") || !out.engineAfterCrash?.some((p) => p.includes("crash.example"))) problems.push(`an exception added in Chrome didn't survive a crash: ${JSON.stringify([out.afterCrash, out.engineAfterCrash])}`);
+      if (!out.afterCrash?.includes("first.example") || !out.afterCrash?.includes("quit.example")) problems.push(`the list lost an entry: ${JSON.stringify(out.afterCrash)}`);
+      const back = (list) => (list ?? []).filter((p) => /quit\.example|crash\.example|late\.example/.test(p));
+      if (back(out.afterRemovalQuit).length || back(out.engineAfterRemovalQuit).length) problems.push(`removed sites came back after a quit: ${JSON.stringify([out.afterRemovalQuit, out.engineAfterRemovalQuit])}`);
+      if (back(out.afterRemovalCrash).length || back(out.engineAfterRemovalCrash).length) problems.push(`removed sites came back after a crash: ${JSON.stringify([out.afterRemovalCrash, out.engineAfterRemovalCrash])}`);
+      if (!out.afterRemovalCrash?.includes("first.example")) problems.push(`first.example was lost: ${JSON.stringify(out.afterRemovalCrash)}`);
+      if (problems.length) throw new Error(problems.join("; "));
+      return out;
+    } finally {
+      await evalApp(`ac.store.getState().updateSettings({ keepAwakeSites: ${JSON.stringify(before)} }); return true`).catch(() => null);
+    }
   });
 
   const pressQuit = (windowId) =>

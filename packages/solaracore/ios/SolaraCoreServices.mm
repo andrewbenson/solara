@@ -236,6 +236,91 @@ NSString *StoreFolder(NSString *profile, NSString *extensionId, id version) {
   return YES;
 }
 
+static NSArray<NSString *> *gKeepAwakeSites;
+static NSSet<NSString *> *gKeepAwakeAdopted;
+static NSMutableDictionary<NSString *, NSArray<NSString *> *> *gKeepAwakeWritten;
+static NSString *_Nullable (^gKeepAwakeNormalize)(NSString *);
+static void (^gKeepAwakeAdopt)(NSString *, NSArray<NSString *> *);
+
++ (void)setKeepAwakeSites:(NSArray<NSString *> *)sites adopted:(NSArray<NSString *> *)adopted {
+  gKeepAwakeSites = [sites copy];
+  gKeepAwakeAdopted = [NSSet setWithArray:adopted];
+  for (SolaraCoreProfile *profile in solaracore_host::LoadedProfiles()) solaracore_host::ApplyKeepAwakeSites(profile);
+}
+
++ (void)setKeepAwakeAdoption:(void (^)(NSString *, NSArray<NSString *> *))adopt {
+  gKeepAwakeAdopt = [adopt copy];
+}
+
+static void (^gKeepAwakeRecord)(NSString *, NSArray<NSString *> *);
+
++ (void)setKeepAwakeRecord:(void (^)(NSString *, NSArray<NSString *> *))record written:(NSDictionary<NSString *, NSArray<NSString *> *> *)written normalize:(NSString *_Nullable (^)(NSString *))normalize {
+  gKeepAwakeRecord = [record copy];
+  gKeepAwakeNormalize = [normalize copy];
+  if (!gKeepAwakeWritten) gKeepAwakeWritten = [NSMutableDictionary dictionary];
+  [written enumerateKeysAndObjectsUsingBlock:^(NSString *name, NSArray<NSString *> *patterns, BOOL *) {
+    NSString *key = [@"profile:" stringByAppendingString:name];
+    if (!gKeepAwakeWritten[key]) gKeepAwakeWritten[key] = [patterns copy];
+  }];
+}
+
+static bool KeepAwakeOffTheRecord(SolaraCoreProfile *profile) {
+  return [profile respondsToSelector:@selector(offTheRecord)] && profile.offTheRecord;
+}
+
+static NSString *KeepAwakeWrittenKey(SolaraCoreProfile *profile) {
+  return [(KeepAwakeOffTheRecord(profile) ? @"otr:" : @"profile:") stringByAppendingString:profile.name ?: @""];
+}
+
+static NSArray<NSString *> *KeepAwakeAddedInChrome(NSArray<NSString *> *current, NSArray<NSString *> *written) {
+  NSMutableArray<NSString *> *added = [NSMutableArray array];
+  for (NSString *pattern in current) {
+    if ([written containsObject:pattern] || [gKeepAwakeSites containsObject:pattern]) continue;
+    NSString *site = gKeepAwakeNormalize ? gKeepAwakeNormalize(pattern) : nil;
+    if (site && [gKeepAwakeSites containsObject:site]) continue;
+    [added addObject:pattern];
+  }
+  return added;
+}
+
++ (NSDictionary<NSString *, NSArray<NSString *> *> *)keepAwakeAdditions {
+  NSMutableDictionary<NSString *, NSArray<NSString *> *> *additions = [NSMutableDictionary dictionary];
+  for (SolaraCoreProfile *profile in solaracore_host::LoadedProfiles()) {
+    if (!profile || profile.destroyed || KeepAwakeOffTheRecord(profile) || !profile.name) continue;
+    if (![profile respondsToSelector:@selector(sleepExceptions)]) continue;
+    NSArray<NSString *> *written = gKeepAwakeWritten[KeepAwakeWrittenKey(profile)];
+    if (!written) continue;
+    NSArray<NSString *> *added = KeepAwakeAddedInChrome(profile.sleepExceptions ?: @[], written);
+    if (added.count) additions[profile.name] = added;
+  }
+  return additions;
+}
+
+void solaracore_host::ApplyKeepAwakeSites(SolaraCoreProfile *profile) {
+  if (!gKeepAwakeSites || !profile || profile.destroyed || ![profile respondsToSelector:@selector(setSleepExceptions:)]) return;
+  const bool offTheRecord = KeepAwakeOffTheRecord(profile);
+  NSArray<NSString *> *current = profile.sleepExceptions ?: @[];
+  if (!offTheRecord && profile.name && ![gKeepAwakeAdopted containsObject:profile.name]) {
+    if (gKeepAwakeAdopt) gKeepAwakeAdopt(profile.name, current);
+    return;
+  }
+  if (!gKeepAwakeWritten) gKeepAwakeWritten = [NSMutableDictionary dictionary];
+  NSString *key = KeepAwakeWrittenKey(profile);
+  NSArray<NSString *> *previous = gKeepAwakeWritten[key] ?: current;
+  NSArray<NSString *> *addedInChrome = KeepAwakeAddedInChrome(current, previous);
+  const bool records = !offTheRecord && profile.name && gKeepAwakeRecord;
+  if (addedInChrome.count && !offTheRecord && profile.name && gKeepAwakeAdopt) gKeepAwakeAdopt(profile.name, addedInChrome);
+  NSArray<NSString *> *next = [gKeepAwakeSites arrayByAddingObjectsFromArray:addedInChrome];
+  if (![current isEqualToArray:next]) {
+    NSMutableOrderedSet<NSString *> *writing = [NSMutableOrderedSet orderedSetWithArray:previous];
+    [writing addObjectsFromArray:gKeepAwakeSites];
+    if (records) gKeepAwakeRecord(profile.name, writing.array);
+    profile.sleepExceptions = next;
+  }
+  gKeepAwakeWritten[key] = gKeepAwakeSites;
+  if (records) gKeepAwakeRecord(profile.name, gKeepAwakeSites);
+}
+
 + (void)addresses:(NSString *)profile completion:(SolaraCoreResult)completion {
   [self call:@"ac_autofill_addresses" profile:profile args:nil completion:Dated(@"addresses", completion)];
 }

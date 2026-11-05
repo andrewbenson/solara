@@ -24,8 +24,8 @@ export type SettingsPane =
   | "calendar"
   | "advanced";
 
-export function openSettings(pane?: SettingsPane, profileId?: string | null) {
-  if (pane) void navigateNativeSettings(pane, profileId ?? null);
+export function openSettings(pane?: SettingsPane, profileId?: string | null, detail?: string | null) {
+  if (pane) void navigateNativeSettings(pane, profileId ?? null, detail ?? null);
   void openWindow(SETTINGS_WINDOW_ID, { kind: "settings", title: "Settings" });
 }
 

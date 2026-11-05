@@ -280,6 +280,29 @@ public struct SettingsIndex: Sendable {
             keywords: ["archive", "auto close", "inactive tabs", "duplicates"]
           ),
         ]),
+        Section(section: "Sleeping tabs", rows: [
+          Row(
+            key: "sleepInactiveTabs",
+            title: "Put inactive tabs to sleep",
+            description: "A tab you haven't used for a while unloads to free memory, and reloads when you open it. Tabs playing sound, sharing your screen, camera or microphone, in Picture in Picture, or holding something you're typing stay awake, and so do your 10 most recent tabs.",
+            caption: "Frees memory. A sleeping tab reloads when you open it.",
+            keywords: ["sleep", "sleeping tabs", "memory saver", "discard", "unload", "inactive tabs", "memory", "performance"]
+          ),
+          Row(
+            key: "sleepTabsAfter",
+            title: "Sleep a tab after",
+            description: "How long a tab stays in the background before it sleeps. Tabs sleep sooner when your Mac is low on memory.",
+            caption: "Tabs sleep sooner when your Mac is low on memory.",
+            keywords: ["sleep", "delay", "minutes", "hours", "inactive", "memory saver"]
+          ),
+          Row(
+            key: "keepAwakeSites",
+            title: "Always keep these sites awake",
+            description: "Tabs from these sites never sleep, in any profile, including their subdomains. A site's controls have Sleep When Inactive too.",
+            caption: "Tabs from these sites and their subdomains never sleep, in every profile.",
+            keywords: ["exceptions", "never sleep", "keep active", "keep awake", "sites", "memory saver", "always active"]
+          ),
+        ]),
       ],
       .appearance: [
         Section(section: "Appearance Theme", rows: [

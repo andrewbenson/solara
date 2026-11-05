@@ -32,6 +32,10 @@ typedef void (^SolaraCoreResult)(NSDictionary<NSString *, id> *result);
 + (void)setBoolPreference:(NSString *)name value:(BOOL)value profile:(NSString *)profile NS_SWIFT_NAME(setBoolPreference(_:value:profile:));
 + (nullable NSArray<NSString *> *)sleepExceptionsForProfile:(NSString *)profile NS_SWIFT_NAME(sleepExceptions(profile:));
 + (BOOL)setSleepExceptions:(NSArray<NSString *> *)patterns profile:(NSString *)profile NS_SWIFT_NAME(setSleepExceptions(_:profile:));
++ (void)setKeepAwakeSites:(NSArray<NSString *> *)sites adopted:(NSArray<NSString *> *)adopted NS_SWIFT_NAME(setKeepAwakeSites(_:adopted:));
++ (void)setKeepAwakeAdoption:(void (^)(NSString *profile, NSArray<NSString *> *existing))adopt NS_SWIFT_NAME(setKeepAwakeAdoption(_:));
++ (NSDictionary<NSString *, NSArray<NSString *> *> *)keepAwakeAdditions NS_SWIFT_NAME(keepAwakeAdditions());
++ (void)setKeepAwakeRecord:(void (^)(NSString *profile, NSArray<NSString *> *patterns))record written:(NSDictionary<NSString *, NSArray<NSString *> *> *)written normalize:(NSString *_Nullable (^)(NSString *pattern))normalize NS_SWIFT_NAME(setKeepAwakeRecord(_:written:normalize:));
 
 + (void)addresses:(NSString *)profile completion:(SolaraCoreResult)completion NS_SWIFT_NAME(addresses(profile:completion:));
 + (void)saveAddress:(NSDictionary<NSString *, id> *)address profile:(NSString *)profile completion:(SolaraCoreResult)completion

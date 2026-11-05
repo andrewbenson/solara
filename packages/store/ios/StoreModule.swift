@@ -190,10 +190,14 @@ private func needsPagePreparation(_ commandJSON: String) -> Bool {
 }
 
 private func devTabSleepScratchData() -> Bool {
+  #if DEBUG
   guard let path = ProcessInfo.processInfo.environment["SOLARA_DATA_DIR"], path.hasPrefix("/"), path != "/" else { return false }
   let marker = URL(fileURLWithPath: path, isDirectory: true).resolvingSymlinksInPath().appendingPathComponent(".solara-probe-scratch")
   guard let values = try? marker.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]) else { return false }
   return values.isRegularFile == true && values.isSymbolicLink != true
+  #else
+  return false
+  #endif
 }
 
 private final class StoreModuleSink: @unchecked Sendable {

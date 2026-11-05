@@ -79,7 +79,11 @@ backlog, and check this file against the release notes.
 
 | Item | Status |
 |---|---|
-| The highlight-to-Search bubble over selected text is off by default; Settings turns it back on, and anyone who chose it keeps it (owner, 2026-11-04) | shipped-pending |
+| The highlight-to-Search bubble over selected text is off by default; Settings turns it back on, and anyone who chose it keeps it (owner, 2026-11-04) | shipped (0.2.4) |
+| WebKit pages get Picture in Picture: WebKit's preference is on, its window's return button brings Solara and the tab forward, and coming back to the tab closes it, as in Chromium (owner, 2026-11-04) | shipped (0.2.4) |
+| Back to Tab in a call's pop-out (document Picture in Picture, such as Google Meet's) brings Solara and the call's tab to the front and closes the pop-out | shipped (0.2.4) |
+| Sleeping tabs settings: a global switch, a delay (15 or 30 minutes, 1, 2 or 4 hours) and sites kept awake, in Settings › Tabs and the site controls | shipped (0.2.4) |
+| Dependabot image-size alerts (#6, #7) cleared: the metro family moves from 0.83.3 to 0.83.8 | shipped (0.2.4) |
 
 ## 0.3.0: tabs that cost less, and the first native bars
 

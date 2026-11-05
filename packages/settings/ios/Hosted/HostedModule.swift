@@ -114,6 +114,10 @@ public class HostedModule: Module {
       MainActor.assumeIsolated { NativeBookmarksBar.devAccessibilityJSON(windowId: windowId) }
     }.runOnQueue(.main)
 
+    AsyncFunction("devBookmarksBarDrop") { (windowId: String, x: Double, folderId: String?, payload: String) -> String in
+      MainActor.assumeIsolated { NativeBookmarksBar.devDropJSON(windowId: windowId, x: x, folderId: folderId, payload: payload) }
+    }.runOnQueue(.main)
+
     AsyncFunction("devBookmarksBarInput") { (windowId: String, action: String, id: String?, modifiers: Int, x: Double?) -> Bool in
       MainActor.assumeIsolated { NativeBookmarksBar.devInput(windowId: windowId, action: action, id: id, modifiers: modifiers, x: x) }
     }.runOnQueue(.main)

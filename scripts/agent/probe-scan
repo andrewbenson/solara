@@ -20,7 +20,7 @@ while IFS= read -r -d '' binary; do
     found=1
   fi
   text=$(strings -a "$binary") || { echo "error: can't read strings from $binary" >&2; exit 1; }
-  if grep -qE 'probe\.hello|state\.snapshot|\[solara-probe\]|\.solara-probe-scratch|SolaraProbeHostMarker|SOLARA_NOTIFICATIONS_SYSTEM|pairing\.trusted\.|PairingProbe|probeSyncRoute|probeSyncCandidates|probeSyncCode|onboarding\.sync|devBookmarksBarLayout|devBookmarksBarInput|devBookmarksBarMenu|devBookmarksBarChoose|devBookmarksBarKey|devBookmarksBarAccessibility|BookmarksBarDevHost' <<<"$text"; then
+  if grep -qE 'probe\.hello|state\.snapshot|\[solara-probe\]|\.solara-probe-scratch|SolaraProbeHostMarker|SOLARA_NOTIFICATIONS_SYSTEM|pairing\.trusted\.|PairingProbe|probeSyncRoute|probeSyncCandidates|probeSyncCode|onboarding\.sync|devBookmarksBarDrop|devBookmarksBarLayout|devBookmarksBarInput|devBookmarksBarMenu|devBookmarksBarChoose|devBookmarksBarKey|devBookmarksBarAccessibility|BookmarksBarDevHost' <<<"$text"; then
     echo "error: probe or Debug notification string in $binary" >&2
     found=1
   fi

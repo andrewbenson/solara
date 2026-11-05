@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import SolaraModel
+import SolaraStore
 import SolaraUI
 
 @MainActor
@@ -34,6 +35,11 @@ private final class BookmarksBarHost {
 
   init(windowId: String) {
     view = BookmarksBarView(favicons: PageNetwork.favicons)
+    view.windowId = windowId
+    view.resolveTab = { id in
+      guard let tab = NativeStoreHandle.store?.state.tabs[id] else { return nil }
+      return BookmarksBarDroppedLink(url: tab.url, title: tab.title)
+    }
     view.onFocusPage = {
       HostedViews.send(NativeBookmarksBar.kind, windowId: windowId, "focusPage", [:])
     }
@@ -86,6 +92,12 @@ extension NativeBookmarksBar {
   static func devAccessibilityJSON(windowId: String) -> String {
     guard let view = devHosts[windowId]?.value?.view, view.window != nil, !view.isHiddenOrHasHiddenAncestor,
       let data = try? JSONSerialization.data(withJSONObject: view.devAccessibility()) else { return "null" }
+    return String(decoding: data, as: UTF8.self)
+  }
+
+  static func devDropJSON(windowId: String, x: Double, folderId: String?, payload: String) -> String {
+    guard let view = devHosts[windowId]?.value?.view, view.window != nil, !view.isHiddenOrHasHiddenAncestor,
+      let data = try? JSONSerialization.data(withJSONObject: view.devDrop(x: CGFloat(x), folderId: folderId, payload: payload)) else { return #"{"accepted":false}"# }
     return String(decoding: data, as: UTF8.self)
   }
 

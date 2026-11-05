@@ -69,6 +69,7 @@ beforeEach(() => {
       settings: { hideBookmarksBarImport: false, tabLayout: "sidebar", bookmarksBar: "always" },
       windows: { first: { profileId: "one", sidebarOpen: true }, second: { profileId: "two" } },
       moveBookmark: (...args) => f.actions.push(["move", ...args]),
+      addBookmark: (options) => f.actions.push(["add", options]),
       bookmarks: {
         roots: { one: { bar: "bar", other: "other" }, two: { bar: "secondBar", other: "secondOther" } },
         nodes: { bar: folder("bar", ["a", "folder", "b"]), a: url("a"), b: url("b"), folder: folder("folder", ["child"]), child: url("child"), other: folder("other", ["child"]), secondBar: folder("secondBar", ["second"]), second: url("second"), secondOther: folder("secondOther", []) },
@@ -231,4 +232,81 @@ test("Escape returns focus through the existing page host API for its window", (
   f.state.windows.first.shownPageId = undefined;
   f.listeners.get("first")("focusPage", {});
   assert.equal(f.actions.length, 1);
+});
+
+
+test("link drops validate each URL and preserve valid item order and insertion indexes", () => {
+  mount();
+  f.listeners.get("first")("dropLinks", {
+    profileId: "one", parentId: "bar", index: 1,
+    items: [
+      { url: "https://first.example/path", title: "First link" },
+      { url: "javascript:alert(1)", title: "Refused" },
+      { url: "http://second.example", title: " Second link " },
+      { url: "file:///tmp/bookmark.html", title: "Refused file" },
+      { url: "https://last.example", title: "" },
+    ],
+  });
+  assert.deepEqual(f.actions, [
+    ["add", { profileId: "one", parentId: "bar", index: 1, url: "https://first.example/path", title: "First link" }],
+    ["add", { profileId: "one", parentId: "bar", index: 2, url: "http://second.example", title: "Second link" }],
+    ["add", { profileId: "one", parentId: "bar", index: 3, url: "https://last.example", title: "https://last.example" }],
+  ]);
+});
+
+test("link drops append into a bar folder and Other Bookmarks for their window profile", () => {
+  mount();
+  const event = f.listeners.get("first");
+  const items = [{ url: "https://dropped.example", title: "Dropped" }];
+  event("dropLinks", { parentId: "folder", index: null, items });
+  event("dropLinks", { parentId: "other", index: null, items });
+  f.state.windows.first.profileId = "two";
+  event("dropLinks", { parentId: "secondOther", index: null, items, profileId: "two" });
+  assert.deepEqual(f.actions, [
+    ["add", { profileId: "one", parentId: "folder", index: undefined, ...items[0] }],
+    ["add", { profileId: "one", parentId: "other", index: undefined, ...items[0] }],
+    ["add", { profileId: "two", parentId: "secondOther", index: undefined, ...items[0] }],
+  ]);
+});
+
+test("invalid link drop payloads, foreign parents, stale profiles and removed windows cannot write", () => {
+  mount();
+  const event = f.listeners.get("first");
+  const items = [{ url: "https://dropped.example", title: "Dropped" }];
+  for (const parentId of ["missing", "secondBar", "secondOther", "a", "child", 1, null]) {
+    event("dropLinks", { parentId, index: null, items });
+  }
+  for (const index of [-1, 4, 1.5, NaN, Infinity, "1", undefined]) {
+    event("dropLinks", { parentId: "bar", index, items });
+  }
+  for (const item of [
+    { url: "javascript:alert(1)" }, { url: "data:text/plain,hello" }, { url: "file:///tmp/link" },
+    { url: "mailto:person@example.com" }, { url: "plain text" }, { url: "example.com" },
+    { url: "https://" }, { url: "https:example.com" }, { url: 1 }, null, "https://example.com",
+  ]) event("dropLinks", { parentId: "bar", index: 0, items: [item] });
+  for (const invalidItems of [undefined, null, {}, "https://example.com", []]) {
+    event("dropLinks", { parentId: "bar", index: 0, items: invalidItems });
+  }
+  delete f.state.bookmarks.nodes.folder;
+  event("dropLinks", { parentId: "folder", index: null, items });
+  f.state.windows.first.profileId = "two";
+  event("dropLinks", { parentId: "secondBar", index: 0, profileId: "one", items });
+  event("dropLinks", { parentId: "bar", index: null, items });
+  delete f.state.windows.first;
+  event("dropLinks", { parentId: "secondBar", index: 0, profileId: "two", items });
+  assert.deepEqual(f.actions, []);
+});
+
+test("link drops accept the end index without changing tabs or their order", () => {
+  f.state.tabs = { source: { url: "https://tab.example", title: "Tab title" } };
+  f.state.windows.first.tabIds = ["source", "second-tab"];
+  const beforeTabs = structuredClone(f.state.tabs);
+  const beforeOrder = [...f.state.windows.first.tabIds];
+  mount();
+  f.listeners.get("first")("dropLinks", {
+    parentId: "bar", index: 3, items: [{ url: "https://tab.example", title: "Tab title" }],
+  });
+  assert.deepEqual(f.actions, [["add", { profileId: "one", parentId: "bar", index: 3, url: "https://tab.example", title: "Tab title" }]]);
+  assert.deepEqual(f.state.tabs, beforeTabs);
+  assert.deepEqual(f.state.windows.first.tabIds, beforeOrder);
 });

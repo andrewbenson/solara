@@ -29,6 +29,13 @@ const fixture = session({
 const helpers = `
 const S = () => ac.store.getState();
 const H = globalThis.expo.modules.SolaraHosted;
+const C = globalThis.expo.modules.SolaraCEF;
+const win = (id) => C.chromeWindows().then((windows) => windows.filter((window) => window.hasRoot).find((window) => {
+  const frame = window.frame.match(/[-\\d.]+/g).map(Number), stored = S().windows[id]?.frame;
+  return !!stored && Math.abs(stored[0] - frame[0]) < 2 && Math.abs(stored[2] - frame[2]) < 2;
+}));
+const act = (id, action) => win(id).then((window) => C.devWindow(window.window, action));
+const settle = (ms) => new Promise((done) => setTimeout(done, ms));
 const active = () => S().windows.w1.activeTabIds.default;
 const barIds = () => S().bookmarks.nodes[bmbar.bar].children;
 const rnBar = () => acPerf.findFibers("BookmarksBar", 200).some((fiber) => !fiber.memoizedProps?.placeholder);
@@ -69,7 +76,7 @@ const rnInput = (action, id, modifiers) => {
 };
 `;
 let app;
-const run = (body) => app.eval(`${helpers}\n${body}`, { timeout: 3000 });
+const run = (body, timeout = 3000) => app.eval(`${helpers}\n${body}`, { timeout });
 const until = async (what, body, accept = (value) => !!value, timeout = 8000) => {
   const deadline = Date.now() + timeout;
   let last;
@@ -81,9 +88,10 @@ const until = async (what, body, accept = (value) => !!value, timeout = 8000) =>
   }
   throw new Error(`${what}: timed out (${JSON.stringify(last)})`);
 };
-const layout = () => run('return H.devBookmarksBarLayout("w1").then(JSON.parse);');
+const layout = (windowId = "w1") => run(`return H.devBookmarksBarLayout(${JSON.stringify(windowId)}).then(JSON.parse);`);
 const menu = (trigger, id = null) => run(`return H.devBookmarksBarMenu("w1", ${JSON.stringify(trigger)}, ${JSON.stringify(id)}).then(JSON.parse);`);
 const key = (name, id, modifiers = 0, fullKeyboardAccess = true) => run(`return H.devBookmarksBarKey("w1", ${JSON.stringify(name)}, ${JSON.stringify(id)}, ${modifiers}, ${fullKeyboardAccess}).then(JSON.parse);`);
+const drop = (payload, x, folderId = null) => run(`return H.devBookmarksBarDrop("w1", ${JSON.stringify(x)}, ${JSON.stringify(folderId)}, ${JSON.stringify(JSON.stringify(payload))}).then(JSON.parse);`);
 const accessibility = () => run('return H.devBookmarksBarAccessibility("w1").then(JSON.parse);');
 const choose = async (trigger, id, choiceId) => {
   const result = await run(`return H.devBookmarksBarChoose("w1", ${JSON.stringify(trigger)}, ${JSON.stringify(id)}, ${JSON.stringify(choiceId)}).then(JSON.parse);`);
@@ -172,7 +180,7 @@ try {
   await rep.check("launch-switch", async () => {
     const kinds = await run("return H.kinds();");
     assert.equal(kinds.includes("bookmarksBar"), native);
-    if (native) assert.equal(await run('return typeof H.devBookmarksBarInput === "function" && typeof H.devBookmarksBarLayout === "function" && typeof H.devBookmarksBarMenu === "function" && typeof H.devBookmarksBarChoose === "function" && typeof H.devBookmarksBarKey === "function" && typeof H.devBookmarksBarAccessibility === "function";'), true, "Debug native hooks available");
+    if (native) assert.equal(await run('return typeof H.devBookmarksBarInput === "function" && typeof H.devBookmarksBarLayout === "function" && typeof H.devBookmarksBarMenu === "function" && typeof H.devBookmarksBarChoose === "function" && typeof H.devBookmarksBarKey === "function" && typeof H.devBookmarksBarAccessibility === "function" && typeof H.devBookmarksBarDrop === "function";'), true, "Debug native hooks available");
     else await until("React Native bar mounted", "return rnBar();");
     return native ? "native" : "React Native";
   });
@@ -561,6 +569,132 @@ try {
     await run(`S().removeBookmarks(${JSON.stringify([menuFixtures.empty, menuFixtures.sidebar, menuFixtures.copy, menuFixtures.many])}); return true;`);
     await reset();
     assert.equal(await run("return bmbar.menus.length;"), 0, "native menu path never invokes RN showMenu");
+  }
+  if (native) {
+    await rep.check("native-drop-link-between-items", async () => {
+      const second = await visibleItem(ids.second);
+      const before = await run("return barIds();");
+      const link = { url: `${base}/dropped-between`, title: "Dropped between" };
+      const result = await drop({ items: [link] }, second.frame.x);
+      assert.equal(result.accepted, true);
+      assert.equal(result.parentId, ids.bar);
+      assert.equal(result.index, 1);
+      assert.deepEqual(result.items, [link]);
+      const created = await until("dropped link inserted at index one", "return barIds().map((id) => S().bookmarks.nodes[id]);", (nodes) => nodes.length === before.length + 1 && nodes[1].url === link.url);
+      assert.equal(created[1].title, link.title);
+      assert.deepEqual(created.filter((node) => node.id !== created[1].id).map((node) => node.id), before);
+      await run(`S().removeBookmark(${JSON.stringify(created[1].id)}); return true;`);
+    });
+    for (const [name, parent] of [["folder", ids.folder], ["other", await run("return S().bookmarks.roots.default.other;")]]) {
+      await rep.check(`native-drop-link-into-${name}`, async () => {
+        await visibleItem(ids.folder);
+        const before = await run(`return [...S().bookmarks.nodes[${JSON.stringify(parent)}].children];`);
+        const link = { url: `${base}/dropped-${name}`, title: `Dropped into ${name}` };
+        const result = await drop({ items: [link] }, 0, parent);
+        assert.equal(result.accepted, true);
+        assert.equal(result.parentId, parent);
+        assert.equal(result.index, null);
+        const children = await until(`dropped link appended to ${name}`, `return S().bookmarks.nodes[${JSON.stringify(parent)}].children.map((id) => S().bookmarks.nodes[id]);`, (nodes) => nodes.length === before.length + 1 && nodes.at(-1).url === link.url);
+        assert.equal(children.at(-1).title, link.title);
+        assert.deepEqual(children.slice(0, -1).map((node) => node.id), before);
+        await run(`S().removeBookmark(${JSON.stringify(children.at(-1).id)}); return true;`);
+      });
+    }
+    const tabDropState = () => run(`
+      const tab = S().tabs.a;
+      return {
+        tab: Object.fromEntries(["id", "url", "title", "profileId", "windowId", "pinned", "groupId"].map((key) => [key, tab[key] ?? null])),
+        index: S().windows.w1.tabIds.indexOf("a"),
+        windows: Object.values(S().windows).map((window) => ({ id: window.id, profileId: window.profileId, incognito: !!window.incognito, tabIds: [...window.tabIds], activeTabIds: { ...window.activeTabIds } })).sort((a, b) => a.id.localeCompare(b.id)),
+      };
+    `);
+    const dragTabToBar = async (windowId, beforeId) => {
+      const target = await until("native tab-drop target bar", `return H.devBookmarksBarLayout(${JSON.stringify(windowId)}).then(JSON.parse);`, (value) => value?.frame?.height > 0 && value.visible.some((item) => item.id === beforeId));
+      const source = await layout();
+      const row = await until("sidebar source row", 'return globalThis.expo.modules.SolaraSidebarDrag.startProbe("w1").then(JSON.parse).then((probe) => probe?.items.find((item) => item.kind === "row" && item.tabIds.length === 1 && item.tabIds[0] === "a") ?? null);', (value) => value?.w > 0 && value.h > 0);
+      const frames = await until("native drag window frames", `return Promise.all([win("w1"), win(${JSON.stringify(windowId)})]).then((windows) => windows.every(Boolean) ? windows.map((window) => window.frame.match(/[-\\d.]+/g).map(Number)) : null);`);
+      const item = target.visible.find((item) => item.id === beforeId);
+      const sx = Math.round(row.x + row.w / 2), sy = Math.round(row.y + row.h / 2 + source.contentOffsetY);
+      const tx = frames[1][0] - frames[0][0] + target.frame.x + item.frame.x;
+      const ty = frames[0][1] + frames[0][3] - frames[1][1] - frames[1][3] + target.frame.y + item.frame.y + item.frame.height / 2;
+      const points = [[sx, sy], [sx + 10, sy + 6], [tx - 4, ty], [tx, ty], [tx, ty], [tx, ty]];
+      const seen = [];
+      let settled = false, failure;
+      const evaluation = run(`return act("w1", "drag:${points.map((point) => point.join(",")).join(";")}").then(() => settle(${points.length * 12 * 16 + 2400}));`, 6000)
+        .then(() => { settled = true; }, (error) => { failure = error; settled = true; });
+      try {
+        while (!settled) {
+          if (!app.alive) throw new Error("tab drop: app exited");
+          const snapshot = await app.snapshot({ tabDrag: true, fields: ["root.tabDrag"] }, { timeout: 1000 });
+          if (snapshot.consistent && snapshot.tabDrag) seen.push(snapshot.tabDrag);
+          await sleep(40);
+        }
+      } finally {
+        await evaluation;
+      }
+      if (failure) throw failure;
+      assert.ok(seen.some((drag) => drag.sourceWindow === "w1" && drag.tabIds.length === 1 && drag.tabIds[0] === "a" && drag.target?.kind === "bookmarks" && (windowId === "w1" || drag.overWindow === windowId)), `real tab drag reaches ${windowId} bookmarks bar: ${JSON.stringify(seen)}`);
+      await until("native tab drag finishes", 'return globalThis.acTabDrag.getState().tabIds.length === 0;');
+    };
+    const copiedTab = async (windowId) => {
+      await reset();
+      await until("source page title ready", `return S().tabs.a.url === ${JSON.stringify(`${base}/initial`)} && S().tabs.a.title === "Bookmark fixture";`);
+      const before = await run("return barIds();");
+      const source = await tabDropState();
+      const profileId = await run(`return S().windows[${JSON.stringify(windowId)}].profileId;`);
+      await dragTabToBar(windowId, ids.second);
+      const nodes = await until("real tab drop creates bookmark between items", "return barIds().map((id) => S().bookmarks.nodes[id]);", (value) => value.length === before.length + 1 && value[1].url === source.tab.url);
+      try {
+        assert.equal(nodes[1].title, source.tab.title);
+        assert.equal(nodes[1].parentId, await run(`return S().bookmarks.roots[${JSON.stringify(profileId)}].bar;`));
+        assert.equal(nodes[1].parentId, ids.bar);
+        assert.deepEqual(nodes.filter((node) => node.id !== nodes[1].id).map((node) => node.id), before);
+        assert.deepEqual(await tabDropState(), source, "source tab, index, window, active tabs and window count stay unchanged");
+      } finally {
+        await run(`S().removeBookmark(${JSON.stringify(nodes[1].id)}); return true;`);
+      }
+    };
+    await rep.check("native-drop-tab-copies-without-moving", () => copiedTab("w1"));
+    await rep.check("native-drop-tab-copies-to-another-window-without-moving", async () => {
+      const w2 = await run(`const [x, y, w] = S().windows.w1.frame; return S().createWindow({ profileId: "default", frame: [x + w + 20, y, 560, 600], url: ${JSON.stringify(`${base}/drop-target`)} });`);
+      try {
+        await until("second regular window bar visible", `return H.devBookmarksBarLayout(${JSON.stringify(w2)}).then(JSON.parse);`, (value) => value?.frame?.height > 0 && value.visible.some((item) => item.id === ids.second));
+        await copiedTab(w2);
+      } finally {
+        await run(`S().closeWindow(${JSON.stringify(w2)}); return true;`);
+        await until("second window closes", `return !S().windows[${JSON.stringify(w2)}];`);
+        await visibleItem(ids.second);
+      }
+    });
+    await rep.check("native-drop-unsupported-tab-keeps-source-and-opens-no-window", async () => {
+      const url = "about:blank";
+      try {
+        await run(`S().activate("a"); S().navigate("a", ${JSON.stringify(url)}); return true;`);
+        await until("unsupported source ready", 'return S().tabs.a.url === "about:blank";');
+        const before = await run("return S().bookmarks;");
+        const source = await tabDropState();
+        await dragTabToBar("w1", ids.second);
+        assert.deepEqual(await run("return S().bookmarks;"), before, "unsupported tab creates no bookmark");
+        assert.deepEqual(await tabDropState(), source, "rejected real tab drop preserves the tab and opens no window");
+      } finally {
+        await reset();
+      }
+    });
+    await rep.check("native-drop-refuses-unsafe-and-non-url-payloads", async () => {
+      const before = await run("return S().bookmarks;");
+      for (const payload of [
+        { items: [{ url: "javascript:alert(1)", title: "Unsafe" }] },
+        { items: [{ url: "file:///tmp/bookmark.html", title: "File" }] },
+        { items: [{ url: "data:text/html,unsafe", title: "Data" }] },
+        { text: "plain non-URL text" },
+        { tabIds: ["missing-tab"] },
+      ]) {
+        const result = await drop(payload, 8);
+        assert.equal(result.accepted, false, JSON.stringify(payload));
+      }
+      await sleep(200);
+      assert.deepEqual(await run("return S().bookmarks;"), before);
+    });
   }
   if (native) {
     await rep.check("native-drag-cancel", async () => {

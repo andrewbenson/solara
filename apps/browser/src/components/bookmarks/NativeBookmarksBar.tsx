@@ -13,6 +13,7 @@ import { useSidebarWidth } from "../sidebar/tokens";
 import { openModeFor, openUrl } from "./actions";
 import { BOOKMARKS_BAR_HEIGHT, BookmarksBar, handleBookmarksBarMenuChoice } from "./BookmarksBar";
 import { bookmarksBarSnapshot } from "./bookmarksBarSnapshot";
+import { dropBookmarksBarLinks } from "./bookmarksBarDrop";
 
 export const NativeBookmarksBar = memo(function NativeBookmarksBar({ placeholder }: { placeholder?: boolean }) {
   const windowId = useWindowId();
@@ -55,6 +56,8 @@ function Bar({ windowId }: { windowId: string }) {
       } else if (payload.into === undefined && typeof payload.index === "number" && Number.isInteger(payload.index) && payload.index >= 0 && payload.index < children.length) {
         s.moveBookmark(node.id, roots.bar, payload.index);
       }
+    } else if (name === "dropLinks") {
+      dropBookmarksBarLinks(s, currentProfileId, payload);
     } else if (name === "folderToSidebar" && node?.kind === "folder") {
       addFolderToSidebar(node.id, windowId);
     } else if (name === "menuChoice" && typeof payload.action === "string") {

@@ -5,6 +5,13 @@ public final class BookmarksBarView: NSView {
   public var onFocusPage: () -> Void = {}
   public var onAction: (_ name: String, _ payload: [String: Any]) -> Void = { _, _ in }
   public private(set) var snapshot: BookmarksBarSnapshot?
+  public var resolveTab: (String) -> BookmarksBarDroppedLink? = { _ in nil }
+  public var windowId = "" {
+    didSet { registerTabDrops() }
+  }
+
+  private lazy var tabDropZone = BookmarksBarTabDropZone(view: self)
+  private var linkDrop: BookmarksBarLinkDrop.Destination?
 
   private lazy var navigation = BookmarksBarNavigation(view: self)
   #if DEBUG
@@ -47,6 +54,7 @@ public final class BookmarksBarView: NSView {
     insertion.cornerRadius = 1
     insertion.zPosition = 20
     layer?.addSublayer(insertion)
+    registerForDraggedTypes(BookmarksBarLinkDrop.types)
     setAccessibilityElement(true)
     setAccessibilityRole(.toolbar)
     setAccessibilityLabel("Bookmarks bar")
@@ -99,6 +107,7 @@ public final class BookmarksBarView: NSView {
 
   public func update(_ snapshot: BookmarksBarSnapshot) {
     navigation.captureFocus()
+    clearLinkDrop()
     cancelDrag()
     self.snapshot = snapshot
     while items.count > snapshot.items.count {
@@ -151,7 +160,7 @@ public final class BookmarksBarView: NSView {
   }
 
   public override func setFrameSize(_ newSize: NSSize) {
-    if newSize != frame.size { cancelDrag() }
+    if newSize != frame.size { cancelDrag(); clearLinkDrop() }
     super.setFrameSize(newSize)
     needsLayout = true
   }
@@ -202,18 +211,88 @@ public final class BookmarksBarView: NSView {
   }
 
   public override func viewWillMove(toWindow newWindow: NSWindow?) {
-    if newWindow !== window { cancelDrag(); navigation.detach() }
+    if newWindow !== window { cancelDrag(); tabDropZone.clear(); TabDragSession.unregister(tabDropZone); navigation.detach() }
     super.viewWillMove(toWindow: newWindow)
   }
 
   public override func cancelOperation(_ sender: Any?) {
     cancelDrag()
+    tabDropZone.clear()
     if let focused = window?.firstResponder as? BookmarksBarButton, focused.isDescendant(of: self) { navigation.leaveBar() }
   }
 
   public override func viewDidMoveToWindow() {
     super.viewDidMoveToWindow()
+    registerTabDrops()
     needsLayout = true
+  }
+
+  private func registerTabDrops() {
+    tabDropZone.clear()
+    TabDragSession.unregister(tabDropZone)
+    if window != nil, !windowId.isEmpty { TabDragSession.register(tabDropZone, windowId: windowId, priority: .bookmarks) }
+  }
+
+  public override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+    draggingUpdated(sender)
+  }
+
+  public override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+    let links = BookmarksBarLinkDrop.links(sender.draggingPasteboard)
+    let point = convert(sender.draggingLocation, from: nil)
+    return showLinkDrop(at: point, links: links) ? .copy : []
+  }
+
+  public override func draggingExited(_ sender: NSDraggingInfo?) { clearLinkDrop() }
+
+  public override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+    draggingUpdated(sender) == .copy
+  }
+
+  public override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+    let links = BookmarksBarLinkDrop.links(sender.draggingPasteboard)
+    guard showLinkDrop(at: convert(sender.draggingLocation, from: nil), links: links) else { return false }
+    return performLinkDrop(links)
+  }
+
+  public override func concludeDragOperation(_ sender: NSDraggingInfo?) { clearLinkDrop() }
+
+  func showLinkDrop(at point: CGPoint, links: [BookmarksBarDroppedLink]) -> Bool {
+    clearLinkDrop()
+    guard drag == nil, !links.isEmpty, !isHiddenOrHasHiddenAncestor, bounds.contains(point), let snapshot else { return false }
+    layoutSubtreeIfNeeded()
+    let folderId = !other.isHidden && other.frame.contains(point) ? snapshot.otherId : nil
+    guard let destination = BookmarksBarLinkDrop.destination(snapshot: snapshot, visible: placements, x: point.x, folderId: folderId) else { return false }
+    linkDrop = destination
+    if let x = destination.insertionX {
+      CATransaction.begin()
+      CATransaction.setDisableActions(true)
+      insertion.frame = CGRect(x: max(8, min(x, bounds.width - 10)), y: 6, width: 2, height: 18)
+      insertion.isHidden = false
+      CATransaction.commit()
+    } else if destination.parentId == snapshot.otherId {
+      other.highlighted = true
+    } else if let index = snapshot.items.firstIndex(where: { $0.id == destination.parentId }) {
+      items[index].highlighted = true
+    }
+    return true
+  }
+
+  func clearLinkDrop() {
+    guard linkDrop != nil else { return }
+    linkDrop = nil
+    for item in items { item.highlighted = false }
+    other.highlighted = false
+    insertion.isHidden = true
+  }
+
+  func performLinkDrop(_ links: [BookmarksBarDroppedLink]) -> Bool {
+    defer { clearLinkDrop() }
+    guard let destination = linkDrop, !links.isEmpty else { return false }
+    var payload = destination.json
+    payload["items"] = links.map(\.json)
+    emit("dropLinks", payload)
+    return true
   }
 
   private func showMenu(trigger: String, id: String? = nil, anchor: NSView? = nil, selectFirst: Bool = false) {
@@ -322,6 +401,27 @@ public final class BookmarksBarView: NSView {
   }
 
   #if DEBUG
+  public func devDrop(x: CGFloat, folderId: String?, payload: String) -> [String: Any] {
+    layoutSubtreeIfNeeded()
+    let links = BookmarksBarLinkDrop.devLinks(payload, resolve: resolveTab)
+    let rejected: [String: Any] = ["accepted": false, "parentId": NSNull(), "index": NSNull(), "items": []]
+    var point = CGPoint(x: x, y: bounds.midY)
+    if let folderId {
+      if folderId == snapshot?.otherId, !other.isHidden {
+        point = CGPoint(x: other.frame.midX, y: other.frame.midY)
+      } else {
+        guard let index = snapshot?.items.firstIndex(where: { $0.id == folderId && $0.kind == .folder }),
+          items.indices.contains(index), !items[index].isHidden else { return rejected }
+        point = CGPoint(x: items[index].frame.midX, y: items[index].frame.midY)
+      }
+    }
+    guard x.isFinite, showLinkDrop(at: point, links: links), let destination = linkDrop else { return rejected }
+    var result = destination.json
+    result["items"] = links.map(\.json)
+    result["accepted"] = performLinkDrop(links)
+    return result
+  }
+
   public func devKey(key: String, id: String?, flags: NSEvent.ModifierFlags, fullKeyboardAccess: Bool) -> [String: Any] {
     layoutSubtreeIfNeeded()
     simulatingKey = true
@@ -365,12 +465,14 @@ public final class BookmarksBarView: NSView {
 
   public func devLayout() -> [String: Any] {
     layoutSubtreeIfNeeded()
+    let frame = convert(bounds, to: nil)
+    let height = window?.contentView?.superview?.bounds.height ?? 0
     let visible: [[String: Any]] = placements.compactMap { placement in
       guard let snapshot, snapshot.items.indices.contains(placement.index) else { return nil }
       let frame = items[placement.index].frame
       return ["id": snapshot.items[placement.index].id, "frame": ["x": frame.minX, "y": frame.minY, "width": frame.width, "height": frame.height]]
     }
-    return ["visible": visible, "overflowIds": overflowIds, "overflowShown": !overflow.isHidden, "otherShown": !other.isHidden, "importShown": !importButton.isHidden, "hintShown": !hint.isHidden]
+    return ["frame": ["x": frame.minX, "y": height - frame.maxY, "width": frame.width, "height": frame.height], "contentOffsetY": height - (window?.contentView?.bounds.height ?? 0), "visible": visible, "overflowIds": overflowIds, "overflowShown": !overflow.isHidden, "otherShown": !other.isHidden, "importShown": !importButton.isHidden, "hintShown": !hint.isHidden]
   }
 
   public func devInput(action: String, id: String?, flags: NSEvent.ModifierFlags, x: CGFloat?) -> Bool {

@@ -5,9 +5,11 @@ public enum TabDropAim: Equatable, Sendable {
   case insert(beforeId: String?)
   case page
   case newWindow
+  case bookmarks
 }
 
 public enum TabDropPriority: Int, Comparable, Sendable {
+  case bookmarks = -1
   case split = 0
   case insert = 1
   case page = 2

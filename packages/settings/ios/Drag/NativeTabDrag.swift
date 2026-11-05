@@ -107,6 +107,7 @@ final class NativeTabDrag {
     let preview: Int? = previewShown ? previewToken : nil
     let tabIds = session?.tabIds ?? []
     let zoned = commit ? session?.end() ?? false : false
+    let bookmarkDrop = commit && session?.endedAim == .bookmarks
     if !commit { session?.cancel() }
     let outside = session?.outside ?? self.outside
     let over = outside ? session?.overWindow : nil
@@ -123,7 +124,7 @@ final class NativeTabDrag {
         self.endPreview(preview, cancel: true)
         return done(false)
       }
-      if zoned || end?["split"] as? Bool == true {
+      if zoned || bookmarkDrop || end?["split"] as? Bool == true {
         self.endPreview(preview)
         if zoned, let over, self.open(over) { self.focus(over) }
         return done(true)
@@ -152,7 +153,7 @@ final class NativeTabDrag {
       }
     }
     let deadline = (Date().timeIntervalSince1970 + Self.endDeadline - Self.replyMargin) * 1000
-    send("tabDrag.end", [windowId, commit && !zoned, deadline]) { result in
+    send("tabDrag.end", [windowId, commit && !zoned && !bookmarkDrop, deadline]) { result in
       guard reply.open() else { return }
       finish(result as? [String: Any])
     }
@@ -178,7 +179,7 @@ final class NativeTabDrag {
   private static func onPage(_ aim: TabDropAim) -> Bool {
     switch aim {
     case .page, .split: true
-    case .insert, .newWindow: false
+    case .insert, .newWindow, .bookmarks: false
     }
   }
 
@@ -297,6 +298,7 @@ extension NativeTabDrag {
       case .insert(let beforeId): target = ["beforeId": beforeId as Any? ?? NSNull()]
       case .page: target = ["kind": "page"]
       case .newWindow: target = ["kind": "newWindow"]
+      case .bookmarks: target = ["kind": "bookmarks"]
       }
     }
     return ["tabIds": session?.tabIds ?? [], "sourceWindow": session?.sourceWindow as Any? ?? NSNull(),

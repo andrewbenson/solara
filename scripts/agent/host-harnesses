@@ -1,0 +1,195 @@
+#!/usr/bin/env python3
+# Run the packages/settings native host harnesses with one shared SolaraKit build.
+#
+#   scripts/agent/host-harnesses [--scratch DIR] [--only NAME,NAME] [--deadline SECS]
+#   scripts/agent/host-harnesses --list
+#   scripts/agent/host-harnesses -h | --help
+#
+# SolaraKit is built once in its own native/SolaraKit/.build, the one swift test uses, so a
+# run adds no second copy of it. Each harness gets its own directory and log under the
+# scratch, by default this clone's .hill/host-harnesses, reused and overwritten by every
+# run; --scratch DIR outside the repo puts it elsewhere. --only selects harnesses by name;
+# the default is all seven. --list checks the registry against tests/*/run.py,
+# then prints the known names without building or requiring scratch.
+#
+# Every subprocess has a timeout: 300 s for the shared build, 30 s to locate its
+# products, and 180 s per harness, each capped by the remaining whole-run deadline
+# (default 540 s; --deadline must be positive and below 600 s). On timeout the
+# subprocess group is killed, including compilers and test children.
+#
+# Prints NAME PASS|FAIL SECONDS LOG for every selected harness. Build failures,
+# harness failures and timeouts exit nonzero; details stay in the scratch logs.
+import argparse
+import math
+import os
+from pathlib import Path
+import shlex
+import signal
+import subprocess
+import sys
+import time
+
+
+HARNESSES = {
+    'onboarding-host': 'host',
+    'side-panel-host': 'host',
+    'pairing-authentication': 'scratch',
+    'pairing-host': 'products',
+    'pairing-joining': 'scratch',
+    'pairing-model': 'scratch',
+    'pairing-service': 'products',
+}
+
+
+def help_text():
+    lines = []
+    for line in Path(__file__).read_text().splitlines()[1:]:
+        if not line.startswith('#'):
+            break
+        lines.append(line[1:].removeprefix(' '))
+    return '\n'.join(lines)
+
+
+def run_step(command, repo, environment, log, deadline, limit, output=None):
+    with log.open('a') as stream:
+        stream.write('$ ' + shlex.join(command) + '\n')
+        stream.flush()
+        remaining = min(limit, deadline - time.monotonic())
+        if remaining <= 0:
+            stream.write('FAIL: whole-run deadline exhausted before this step\n')
+            return False
+        try:
+            process = subprocess.Popen(command, cwd=repo, env=environment, stdout=output or stream,
+                                       stderr=stream, start_new_session=True)
+        except OSError as error:
+            stream.write('FAIL: ' + str(error) + '\n')
+            return False
+        try:
+            status = process.wait(timeout=remaining)
+        except (subprocess.TimeoutExpired, KeyboardInterrupt):
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            try:
+                process.wait(timeout=max(0, min(1, deadline - time.monotonic())))
+            except subprocess.TimeoutExpired:
+                pass
+            stream.write(f'FAIL: interrupted or timed out after {remaining:.1f}s; process group killed\n')
+            return False
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        if status != 0:
+            stream.write(f'FAIL: exited {status}\n')
+        return status == 0
+
+
+def main():
+    started = time.monotonic()
+    if '-h' in sys.argv[1:] or '--help' in sys.argv[1:]:
+        print(help_text())
+        return 0
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('--scratch')
+    parser.add_argument('--only')
+    parser.add_argument('--deadline', type=float, default=540)
+    parser.add_argument('--list', action='store_true')
+    args = parser.parse_args()
+    repo = Path(__file__).resolve().parents[2]
+    tests = repo / 'packages/settings/tests'
+    discovered = {path.parent.name for path in tests.glob('*/run.py')}
+    unknown = discovered - HARNESSES.keys()
+    missing = HARNESSES.keys() - discovered
+    if unknown or missing:
+        details = []
+        if unknown:
+            details.append('unregistered harnesses: ' + ', '.join(sorted(unknown)))
+        if missing:
+            details.append('missing harnesses: ' + ', '.join(sorted(missing)))
+        parser.error('; '.join(details))
+    if args.list:
+        print('\n'.join(HARNESSES))
+        return 0
+    if not math.isfinite(args.deadline) or not 0 < args.deadline < 600:
+        parser.error('--deadline must be positive and below 600 seconds')
+    selected = args.only.split(',') if args.only is not None else list(HARNESSES)
+    if any(name not in HARNESSES for name in selected):
+        parser.error('--only contains an unknown or empty harness name (--list for names)')
+    selected = list(dict.fromkeys(selected))
+    default_scratch = repo / '.hill' / 'host-harnesses'
+    scratch = Path(args.scratch).expanduser().resolve() if args.scratch else default_scratch
+    if scratch != default_scratch and (scratch == repo or repo in scratch.parents):
+        parser.error('--scratch must be outside the repo (the default is .hill/host-harnesses)')
+    paths = [scratch / name for name in ['logs', 'cache'] + selected]
+    for path in paths:
+        if path.is_symlink():
+            parser.error('managed scratch directories cannot be symlinks: ' + str(path))
+        if path.is_dir():
+            for entry in path.rglob('*'):
+                if entry.is_symlink() and path not in entry.resolve().parents:
+                    parser.error('scratch symlinks must stay inside their managed directory: ' + str(entry))
+    paths += [scratch / 'logs' / name for name in ['SolaraKit.log', 'products.log'] +
+              [name + '.log' for name in selected]]
+    for path in paths:
+        resolved = path.resolve()
+        if scratch not in resolved.parents:
+            parser.error('scratch entries must stay inside scratch: ' + str(path))
+    scratch.mkdir(parents=True, exist_ok=True)
+    logs = scratch / 'logs'
+    logs.mkdir(exist_ok=True)
+    for name in selected:
+        (scratch / name).mkdir(exist_ok=True)
+        (logs / (name + '.log')).write_text('')
+    environment = dict(os.environ, SOLARA_BACKGROUND='1', PYTHONUNBUFFERED='1',
+                       CLANG_MODULE_CACHE_PATH=str(scratch / 'cache'),
+                       SWIFTPM_MODULECACHE_OVERRIDE=str(scratch / 'cache'))
+    build_command = ['swift', 'build', '--package-path', str(repo / 'native/SolaraKit')]
+    build_environment = dict(os.environ, SOLARA_BACKGROUND='1')
+    deadline = started + args.deadline
+    build_log = logs / 'SolaraKit.log'
+    build_log.write_text('')
+    built = run_step(build_command, repo, build_environment, build_log, deadline, 300)
+    products = None
+    if built:
+        bin_log = logs / 'products.log'
+        with bin_log.open('w') as output:
+            built = run_step(build_command + ['--show-bin-path'], repo, build_environment,
+                             build_log, deadline, 30, output)
+        if built:
+            value = bin_log.read_text().strip()
+            products = Path(value)
+            built = bool(value) and products.is_absolute() and products.is_dir()
+            if not built:
+                with build_log.open('a') as stream:
+                    stream.write('FAIL: --show-bin-path did not return a products directory\n')
+    failed = False
+    for name in selected:
+        harness_started = time.monotonic()
+        log = logs / (name + '.log')
+        command = [sys.executable, str(tests / name / 'run.py')]
+        harness_environment = dict(environment)
+        if HARNESSES[name] == 'host':
+            harness_environment['SOLARA_HOST_TEST_BUILD'] = str(scratch / name)
+        else:
+            command += ['--scratch', str(scratch / name)]
+        if HARNESSES[name] in ['host', 'products'] and built:
+            command += ['--products', str(products)]
+        if built:
+            passed = run_step(command, repo, harness_environment, log, deadline, 180)
+        else:
+            log.write_text('FAIL: shared SolaraKit build or products lookup failed; see ' + str(build_log) + '\n')
+            passed = False
+        elapsed = time.monotonic() - harness_started
+        print(f'{name} {"PASS" if passed else "FAIL"} {elapsed:.1f}s {log}', flush=True)
+        failed = failed or not passed
+    return 1 if failed else 0
+
+
+if __name__ == '__main__':
+    try:
+        sys.exit(main())
+    except OSError as error:
+        print('host-harnesses: ' + str(error), file=sys.stderr)
+        sys.exit(1)

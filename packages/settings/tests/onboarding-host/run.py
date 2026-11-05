@@ -1,11 +1,15 @@
+import argparse
 import os
 from pathlib import Path
 import subprocess
 import sys
 
+parser = argparse.ArgumentParser()
+parser.add_argument('--products')
+parser.add_argument('cases', nargs='*')
+args = parser.parse_args()
 source = Path(__file__).resolve().parents[4]
 package = source / 'native/SolaraKit'
-build = package / '.build/out/Products/Debug'
 output = Path(os.environ['SOLARA_HOST_TEST_BUILD']).resolve()
 output.mkdir(parents=True, exist_ok=True)
 modules = output / 'Modules'
@@ -17,7 +21,12 @@ empty = output / 'Empty.swift'
 empty.write_text('import Foundation\n')
 for name in ['SolaraShell', 'SolaraShaders']:
     subprocess.run(['swiftc', '-emit-module', '-module-name', name, str(empty), '-emit-module-path', str(modules / (name + '.swiftmodule'))], env=environment, check=True)
-subprocess.run(['swift', 'build', '--package-path', str(package)], env=environment, check=True)
+if args.products:
+    build = Path(args.products).resolve()
+else:
+    build_command = ['swift', 'build', '--package-path', str(package), '--scratch-path', str(output / 'SolaraKit')]
+    subprocess.run(build_command, env=environment, check=True, timeout=540)
+    build = Path(subprocess.check_output(build_command + ['--show-bin-path'], env=environment, text=True, timeout=120).strip())
 objects = []
 for name in ['SolaraUI', 'SolaraModel', 'SolaraStore', 'SolaraOmnibox', 'SolaraEngine', 'SolaraLive', 'SolaraProbes']:
     objects.append(str(build / (name + '.o')))
@@ -26,7 +35,7 @@ files = [host / 'Onboarding/NativeOnboarding.swift', host / 'Onboarding/Onboardi
 command = ['swiftc', '-swift-version', '6', '-parse-as-library', '-I', str(build), '-I', str(modules), '-o', str(output / 'host-tests')] + [str(p) for p in files] + objects
 subprocess.run(command, env=environment, check=True)
 failed = False
-for case in sys.argv[1:] or ['dismissalKeepsOwnPresentationId', 'automaticDismissalHasNoPresentationId', 'pendingBrowserEntryRemount', 'failedBrowserEntryRemount', 'pendingBrowserEntryReload', 'failedBrowserEntryReload', 'pendingInstallRemount', 'failedInstallRemount', 'pendingInstallReload', 'failedInstallReload', 'firstLaunchStartupKeepsIntroAndHostWindow', 'showOnboardingWithOnlySessionForcesIntro', 'savedIntroRestartsIntro', 'folderAdapterAdmitsChangeAfterSelection', 'folderAdapterRejectsStaleSelection', 'recoveryWithoutHostReportsUnavailable', 'importCancellationDrainsThroughProductionAdapter', 'approvedInstallSurvivesHostUnmount', 'launchCommittedJoinWithoutOnboardingMount', 'replacementCommittedInstallDoesNotReuseOldBrowserEntry', 'joinedCompletionWaitsForTheDurableWrite', 'joinedWriteWaitsForSuccessfulAcknowledgment', 'joinedWritePropagatesImmediateFailure', 'failedStagedBrowserEntryCanBeRetried', 'failedStagedInstallIsAcknowledgedOnRecovery', 'silentBrowserEntryRetryRemount', 'silentBrowserEntryRetryReload', 'silentBrowserEntryRetryThenInstalled', 'installedBeforeBrowserEntryRetry', 'showOnboardingAfterFinishedCommittedJoin', 'showOnboardingReroutesClosedWindow', 'automaticMountCannotTakeShowOnboarding', 'nilWindowReplayRequiresPresentation', 'supersededReplayCannotMount', 'disconnectedReplayCannotMount', 'unavailableReplayCannotMount']:
+for case in args.cases or ['dismissalKeepsOwnPresentationId', 'automaticDismissalHasNoPresentationId', 'pendingBrowserEntryRemount', 'failedBrowserEntryRemount', 'pendingBrowserEntryReload', 'failedBrowserEntryReload', 'pendingInstallRemount', 'failedInstallRemount', 'pendingInstallReload', 'failedInstallReload', 'firstLaunchStartupKeepsIntroAndHostWindow', 'showOnboardingWithOnlySessionForcesIntro', 'savedIntroRestartsIntro', 'folderAdapterAdmitsChangeAfterSelection', 'folderAdapterRejectsStaleSelection', 'recoveryWithoutHostReportsUnavailable', 'importCancellationDrainsThroughProductionAdapter', 'approvedInstallSurvivesHostUnmount', 'launchCommittedJoinWithoutOnboardingMount', 'replacementCommittedInstallDoesNotReuseOldBrowserEntry', 'joinedCompletionWaitsForTheDurableWrite', 'joinedWriteWaitsForSuccessfulAcknowledgment', 'joinedWritePropagatesImmediateFailure', 'failedStagedBrowserEntryCanBeRetried', 'failedStagedInstallIsAcknowledgedOnRecovery', 'silentBrowserEntryRetryRemount', 'silentBrowserEntryRetryReload', 'silentBrowserEntryRetryThenInstalled', 'installedBeforeBrowserEntryRetry', 'showOnboardingAfterFinishedCommittedJoin', 'showOnboardingReroutesClosedWindow', 'automaticMountCannotTakeShowOnboarding', 'nilWindowReplayRequiresPresentation', 'supersededReplayCannotMount', 'disconnectedReplayCannotMount', 'unavailableReplayCannotMount']:
     result = subprocess.run([str(output / 'host-tests'), case], env=environment)
     failed = failed or result.returncode != 0
 sys.exit(1 if failed else 0)

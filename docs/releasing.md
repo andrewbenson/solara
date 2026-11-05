@@ -229,6 +229,10 @@ build's data opening in the new one (`carryover.sh`). By hand, check the build t
 `SOLARA_REMOTE_DEBUGGING_PORT`, and load a page over CDP. Afterwards `codesign --verify --deep --strict` must still
 pass on it.
 
+Stable releases also require `scripts/agent/host-harnesses` before publishing (optional for nightly): all seven
+Settings native host harnesses, without `--only`; every harness must print PASS and the runner must exit 0. It shares one SolaraKit build and retains
+separate logs, with a 540-second whole-run deadline by default. See the release skill's step 4d.
+
 To check the after-update tab too: in that data dir, set `lastVersion` in `release-notes.json` to the
 previous version (`{"version":1,"lastVersion":"<previous>","pending":null}`) and relaunch with
 `SOLARA_RELEASE_NOTES=1` added (test instances skip the tab without it). `curl localhost:<port>/json` must

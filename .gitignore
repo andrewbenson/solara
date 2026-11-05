@@ -57,3 +57,4 @@ scripts/.notary.env
 
 __pycache__/
 *.orig
+/.hill/

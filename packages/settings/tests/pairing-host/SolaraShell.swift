@@ -1,4 +1,5 @@
 import AppKit
+@MainActor public enum ShellLiveNotifications { public static var silencesSite: ((_ profileDirectory: String, _ origin: String) -> Bool)? }
 @MainActor public enum WindowHost { public static var makeAuxController: ((String, String) -> NSViewController?)? }
 @MainActor public enum ShellScripting {
   public static var nativeCommand: (([String: Any], @escaping (Any?, String?) -> Void) -> Bool)?

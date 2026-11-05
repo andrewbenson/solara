@@ -93,7 +93,10 @@ struct StoreUnavailableView: View {
 extension Bundle { var productName: String { "Fixture Integration" } }
 @MainActor final class OnboardingTextNSView: NSView { var text = "" }
 @MainActor enum NativeStoreHandle { static let store: StubStore? = nil }
-struct StubStore { let state = 0 }
+struct StubStore {
+  let state = 0
+  func silencesNotifications(profileDirectory: String, origin: String) -> Bool { false }
+}
 enum ScriptState { static func build(_ state: Int, loading: [String]) -> [String: Any] { [:] } }
 
 @MainActor

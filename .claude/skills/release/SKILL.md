@@ -284,6 +284,19 @@ moved (old, new, change) and one sentence naming the biggest win. A release that
 Faster section. (0.2.28 and 0.2.29 were also timed against 0.2.17, the last CEF release, with
 `scripts/release-compare-0.2.17.sh`, now in git history: `docs/perf/README.md`.)
 
+### 4d. Settings native host harnesses (stable only)
+
+Run every Settings native host harness before publishing a stable release; this step is optional for nightly:
+
+```bash
+scripts/agent/host-harnesses
+```
+
+The runner builds SolaraKit once in native/SolaraKit/.build (the one swift test uses), runs all seven harnesses with
+separate scratch directories and logs under the clone's .hill/host-harnesses (reused by every run), and must print PASS for every harness and exit 0. A failure or timeout blocks stable
+publication; fix it and rerun. The default whole-run deadline is 540 seconds (`--deadline SECS`, always under ten
+minutes). `--only` is for focused checks; the stable gate requires the full run.
+
 ## 5. Publish
 
 Both channels publish with `publish.sh` (`docs/releasing.md` › Cutting a release, step 4), to the identity's

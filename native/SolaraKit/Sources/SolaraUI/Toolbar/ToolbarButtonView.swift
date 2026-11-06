@@ -19,7 +19,8 @@ final class ToolbarButtonView: NSView {
   static let labelFont = NSFont.systemFont(ofSize: 12, weight: .medium)
   static let labelPadding: CGFloat = 10
   static let labelGap: CGFloat = 4
-  private var badge: NSView?
+  private var badge: CornerBadge?
+  static let badgeFont = NSFont.systemFont(ofSize: 8.5, weight: .bold)
   private var decoded: (uri: String, image: NSImage?)?
   private var hovered = false
   private var pressed = false
@@ -208,26 +209,18 @@ final class ToolbarButtonView: NSView {
       return
     }
     let chip = badge ?? {
-      let v = NSView()
-      v.wantsLayer = true
-      v.layer?.cornerRadius = 3
-      let label = NSTextField(labelWithString: "")
-      label.isSelectable = false
-      v.addSubview(label)
+      let v = CornerBadge()
       addSubview(v)
       badge = v
       return v
     }()
-    guard let label = chip.subviews.first as? NSTextField else { return }
-    let font = NSFont.systemFont(ofSize: 8.5, weight: .bold)
-    label.attributedStringValue = NSAttributedString(string: String(spec.text.prefix(4)), attributes: [.font: font, .foregroundColor: toolbarColor(spec.textColor) ?? .white])
-    chip.layer?.backgroundColor = toolbarColor(spec.color)?.cgColor
-    let scale = window?.backingScaleFactor ?? 2
-    let textWidth = label.attributedStringValue.size().width
-    let w = max(13, ceil((textWidth + 5) * scale) / scale)
-    chip.frame = CGRect(x: bounds.width - 1 - w, y: bounds.height - 3 - 11, width: w, height: 11)
-    let h = ceil(label.intrinsicContentSize.height)
-    label.frame = CGRect(x: (w - textWidth) / 2 - 2, y: (11 - h) / 2, width: ceil(textWidth) + 5, height: h)
+    chip.show(ToolbarButtonView.badgeSpec(spec, text: toolbarColor(spec.textColor) ?? .white, fill: toolbarColor(spec.color) ?? .clear), in: bounds.size)
+  }
+
+  static func badgeSpec(_ badge: ToolbarBadgeState, text: NSColor, fill: NSColor) -> CornerBadgeSpec {
+    CornerBadgeSpec(
+      shape: .chip(text: badge.text, font: badgeFont, color: text, minWidth: 13, radius: 3),
+      fill: fill, corner: .bottomTrailing, size: 11, outset: CGPoint(x: -1, y: -3))
   }
 
   static func weight(_ name: String?) -> NSFont.Weight {

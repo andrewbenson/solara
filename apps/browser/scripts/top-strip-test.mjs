@@ -43,6 +43,20 @@ const C = globalThis.expo.modules.SolaraCEF;
 const st = () => ac.store.getState();
 const win = (id) => C.chromeWindows().then((ws) => { const f = st().windows[id].frame; const w = ws.filter((w) => w.hasRoot).find((w) => { const r = w.frame.match(/[-\\d.]+/g).map(Number); return Math.abs(r[0] - f[0]) < 2 && Math.abs(r[2] - f[2]) < 2; }); return w && w.window; });
 const act = (id, a) => win(id).then((n) => C.devWindow(n, a));
+const postDrag = (id, path) => {
+  const points = path.split(";").map((p) => p.split(",").map(Number));
+  const steps = [["down", points[0]]];
+  for (let i = 1; i < points.length; i++) {
+    const [ax, ay] = points[i - 1], [bx, by] = points[i];
+    for (let k = 1; k <= 12; k++) steps.push(["dragged", [ax + (bx - ax) * k / 12, ay + (by - ay) * k / 12]]);
+  }
+  steps.push(["up", points.at(-1)]);
+  const start = performance.now();
+  steps.reduce((chain, [type, [x, y]], i) => chain
+    .then(() => new Promise((r) => setTimeout(r, Math.max(0, start + (i ? 150 + i * 16 : 0) - performance.now()))))
+    .then(() => act(id, "mouse:" + type + ":" + Math.round(x * 100) / 100 + "," + Math.round(y * 100) / 100)), Promise.resolve());
+  return Promise.resolve(steps.length + " events posted");
+};
 const runs = (id, y) => win(id).then((n) => { const xs = []; for (let x = 60; x < st().windows[id].frame[2] - 90; x += 0.5) xs.push(x);
   return Promise.all(xs.map((x) => C.devWindow(n, "hit:" + x + "," + y))).then((hits) => { const out = []; let cur = null;
     hits.forEach((h, i) => { const on = /ContextMenuArea|ImageView|Symbol|FadeLabel|Strip(TabChip|PinnedCell|GroupHeader|FolderChip|SplitPart|IconButton|NewTabButton)/.test(h);
@@ -576,7 +590,7 @@ async function measure(native) {
       const trace = ${native ? `() => globalThis.expo.modules.SolaraTopStrip.slotTrace("w1")` : `() => Promise.resolve(globalThis.acStrip.slotTrace(key))`};
       const arm = ${native ? `globalThis.expo.modules.SolaraTopStrip.traceSlot("w1", key)` : `Promise.resolve(globalThis.acStrip.traceSlot(key))`};
       const path = ["222,21", "232,21", "640,21", ...Array(4).fill("640,21")].join(";");
-      return arm.then(() => act("w1", "drag:" + path)).then(() => settle(150 + 74 * 16 + 700)).then(trace).then((samples) => {
+      return arm.then(() => postDrag("w1", path)).then(() => settle(150 + 74 * 16 + 700)).then(trace).then((samples) => {
         const moved = st().windows.w1.tabIds.indexOf("t1") > st().windows.w1.tabIds.indexOf("g1b");
         return { moved, samples, tabIds: st().windows.w1.tabIds.slice() };
       });`);

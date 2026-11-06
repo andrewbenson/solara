@@ -238,6 +238,15 @@ when each held handler actually executes, including its captured registration. J
 RN and UI effects for both hosts (history/favicon/prompts/status/media/overlay); pooled navigation following is native.
 There are no duplicate JS created/gone/navigation/media/download/discard/ready writes on the owned path. Ready still records loaded profiles for resource release. Sleeping hooks read owned live.discarded; internal React pages complete semantic URL/title through updateTab without writing live facts.
 
+Automatic sleeping is native by default (`LaunchSwitch.nativeTabSleep`). `status().nativeTabSleep` is the runner's
+lock-backed running value, not just the launch switch; JS's `nativeTabSleepRunning()` also requires native workspace
+ownership. While it is true, `lib/tabLifecycle` makes no automatic sleep decisions. The runner runs only while
+`TabSleepPermissionFeed.servesPages`: its permission feed knows only pooled pages, so with the pool or the shell off
+it stays off and the JS fallback decides, as it does with `SOLARA_NATIVE_TAB_SLEEP=0` in development or without native
+workspace ownership. The `sleepInactiveTabs` setting is checked by both paths: a saved false stays off. JS still
+feeds transient protections through `lib/nativeKeepAlive`, and retains battery saver, manual sleep and profile resource
+release.
+
 `updateRNPageContext(tabId, sessionGeneration, context): boolean` publishes only to the exact current attachment;
 `isRNPageCurrent(tabId, sessionGeneration): boolean` is nonactivating. The shared RN/pool helpers
 `isPageCurrent(identity): boolean` and `updatePageContext(identity, context): boolean` additionally validate the exact

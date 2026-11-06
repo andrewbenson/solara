@@ -6,7 +6,7 @@ import Testing
 @Suite struct LaunchSwitchesTests {
   static let defaultOn: Set<LaunchSwitch> = [
     .nativeShell, .nativeTopStrip,
-    .shellPanes, .nativePagesPool, .shellMainTop,
+    .shellPanes, .nativePagesPool, .shellMainTop, .nativeTabSleep,
   ]
   static let shippedSurfaces = defaultOn.filter { !$0.storable(distribution: true) }
 
@@ -34,6 +34,17 @@ import Testing
         #expect(expected == old, "\(name.rawValue)=\(text)")
       }
       #expect(LaunchSwitches(environment: [:], defaults: nil, distribution: false, skipStored: false).isOn(name, defaultOn: on) == on)
+    }
+  }
+
+  @Test func nativeTabSleepIsOnByDefaultAndCanBeDisabledInDevelopment() {
+    for distribution in [false, true] {
+      let initial = LaunchSwitches(environment: [:], defaults: nil, distribution: distribution, skipStored: false)
+      #expect(initial.isOn(.nativeTabSleep))
+      let disabled = LaunchSwitches(environment: ["SOLARA_NATIVE_TAB_SLEEP": "0"], defaults: nil, distribution: distribution, skipStored: false)
+      #expect(disabled.isOn(.nativeTabSleep) == distribution)
+      #expect(disabled.fromEnvironment(.nativeTabSleep) == !distribution)
+      #expect(!LaunchSwitch.nativeTabSleep.storable(distribution: distribution))
     }
   }
 
@@ -165,7 +176,10 @@ import Testing
     defaults.set("settingsAndDownloads", forKey: LaunchSwitches.scopeVariable)
     for distribution in [false, true] {
       let switches = LaunchSwitches(environment: [:], defaults: defaults, distribution: distribution, skipStored: false)
-      for name in Self.shippedSurfaces { #expect(switches.isOn(name, defaultOn: true) == distribution, "\(name.rawValue)") }
+      for name in Self.shippedSurfaces {
+        let expected = distribution || !name.storable(distribution: false)
+        #expect(switches.isOn(name, defaultOn: true) == expected, "\(name.rawValue)")
+      }
       #expect(switches.scope == nil)
     }
   }

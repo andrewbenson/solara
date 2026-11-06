@@ -10,6 +10,7 @@ final class NativeTabSleep {
   private let runner: TabSleepRunner
   private var lifecycle: Int?
   private var settingsObserver: Int?
+  private var feedObserver: NSObjectProtocol?
   private var stopped = false
   private var configured: (sleeps: Bool, minutes: Int)?
   private nonisolated let running = Mutex(false)
@@ -27,6 +28,9 @@ final class NativeTabSleep {
     self.store = store
     runner = TabSleepRunner(store: store, pendingPermission: { TabSleepPermissionFeed.pending?($0) != false })
     lifecycle = NativeStoreHandle.subscribeLifecycle { [weak self] in self?.reconcile() }
+    feedObserver = NotificationCenter.default.addObserver(forName: TabSleepPermissionFeed.changed, object: nil, queue: .main) { [weak self] _ in
+      MainActor.assumeIsolated { self?.reconcile() }
+    }
     settingsObserver = store.subscribe { [weak self] commit in
       let settings = commit.state.settings
       let wanted = (sleeps: settings["sleepInactiveTabs"]?.bool != false, minutes: KeepAwakeSites.sleepAfterMinutes(settings["sleepTabsAfterMinutes"]))
@@ -46,7 +50,7 @@ final class NativeTabSleep {
     let minutes = KeepAwakeSites.sleepAfterMinutes(settings["sleepTabsAfterMinutes"])
     configured = (sleeps, minutes)
     runner.policy = TabSleepPolicy.Configuration(idleMs: Double(minutes) * 60_000)
-    let wanted = sleeps && LaunchSwitches.shared.isOn(.nativeTabSleep) && !NativeStore.safeMode && NativeStoreHandle.ownsWorkspace
+    let wanted = sleeps && LaunchSwitches.shared.isOn(.nativeTabSleep) && !NativeStore.safeMode && NativeStoreHandle.ownsWorkspace && TabSleepPermissionFeed.servesPages
     guard wanted, NativeStoreHandle.store === store else {
       runner.stop()
       publishRunning(startPending: wanted && NativeStoreHandle.resolve == nil)
@@ -83,5 +87,7 @@ final class NativeTabSleep {
     lifecycle = nil
     if let settingsObserver { store.unsubscribe(settingsObserver) }
     settingsObserver = nil
+    if let feedObserver { NotificationCenter.default.removeObserver(feedObserver) }
+    feedObserver = nil
   }
 }

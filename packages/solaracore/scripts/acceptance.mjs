@@ -629,7 +629,7 @@ async function launch(logName = "app.out.log", env = {}, args = [], opts = {}) {
     data, log: join(scratch, logName), args, ready: false,
     env: {
       SOLARA_TEST_REAUTH: "granted", SOLARA_DOWNLOADS_DIR: downloadsDir, SOLARA_ALLOW_AUDIO: "1",
-      ...Object.fromEntries(["SOLARA_ALLOW_OCCLUSION", "SOLARA_TRACE_VISIBILITY", "SOLARA_TRACE_PIP", "SOLARA_NATIVE_SHELL", "SOLARA_NATIVE_TAB_SLEEP"].filter((k) => process.env[k]).map((k) => [k, process.env[k]])),
+      ...Object.fromEntries(["SOLARA_ALLOW_OCCLUSION", "SOLARA_TRACE_VISIBILITY", "SOLARA_TRACE_PIP", "SOLARA_NATIVE_SHELL", "SOLARA_NATIVE_TAB_SLEEP", "SOLARA_TAB_POOL"].filter((k) => process.env[k]).map((k) => [k, process.env[k]])),
       SOLARA_TRAFFIC_LIGHTS_LOG: lightsLog,
       ...env,
       ...(process.env.SOLARA_ACCEPTANCE_VISIBLE === "1" ? { SOLARA_BACKGROUND: null } : {}),
@@ -834,6 +834,7 @@ async function pageFor(tabId, urlPart) {
 }
 let mainWindow = null;
 let first;
+const nativeSleepExpected = () => process.env.SOLARA_NATIVE_TAB_SLEEP !== "0" && process.env.SOLARA_TAB_POOL !== "0";
 let personal = null;
 const eventsOf = async (tabId) => {
   const browser = await browserOf(tabId);
@@ -2544,7 +2545,7 @@ try {
         const list = await cef(`sleepExceptions("")`);
         return list?.includes("later.example") && list.includes("other.example") ? list : null;
       }, 5000).catch(() => cef(`sleepExceptions("")`));
-      if (process.env.SOLARA_NATIVE_TAB_SLEEP === "1") {
+      if (nativeSleepExpected()) {
         writeFileSync(join(data, ".solara-probe-scratch"), "");
         const running = async () => JSON.parse(await evalApp(`return globalThis.expo.modules.SolaraStoreAdapter.devTabSleep("status")`)).running;
         await evalApp(`ac.store.getState().updateSettings({ sleepInactiveTabs: false }); return true`);
@@ -2641,13 +2642,27 @@ try {
   });
 
   await check("native-tab-sleep", async () => {
-    if (process.env.SOLARA_NATIVE_TAB_SLEEP !== "1") {
-      if (argv.includes("native-tab-sleep")) throw new Error("native-tab-sleep was asked for by name, but the native runner starts only with SOLARA_NATIVE_TAB_SLEEP=1");
-      report.say("native-tab-sleep skipped: the native runner starts only with SOLARA_NATIVE_TAB_SLEEP=1");
-      return { skipped: "SOLARA_NATIVE_TAB_SLEEP is off" };
-    }
     writeFileSync(join(data, ".solara-probe-scratch"), "");
     const dev = async (action) => JSON.parse(await evalApp(`return globalThis.expo.modules.SolaraStoreAdapter.devTabSleep(${JSON.stringify(action)})`));
+    if (!nativeSleepExpected()) {
+      const runner = await dev("status");
+      const store = await evalApp(`return globalThis.expo.modules.SolaraStoreAdapter.status()`);
+      if (runner.running || store?.nativeTabSleep) throw new Error(`the native runner runs although ${process.env.SOLARA_TAB_POOL === "0" ? "the pool is off and it can't see RN pages' permissions" : "SOLARA_NATIVE_TAB_SLEEP=0"}: ${JSON.stringify({ runner, store })}`);
+      const fallback = await openTab(`${base}/solid?c=00aa00&t=Fallback`, "Fallback", false);
+      try {
+        await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
+        await until("the hidden tab tracked by the JS fallback", () => evalApp(`return "${fallback.id}" in globalThis.acLifecycle.state().hiddenAt || null`), 5000);
+        const slept = await until("the JS sweep sleeping a hidden tab with the native runner off", async () => {
+          const ids = await evalApp(`return globalThis.acLifecycle.sweep({ protectedRecent: 0, idleMs: 0 })`);
+          return (await live(fallback.id))?.discarded === true ? ids : null;
+        }, 20000);
+        return { fallback: true, slept };
+      } finally {
+        await closeTab(fallback.id).catch(() => null);
+      }
+    }
+    const started = await until("the native runner running by default", async () => ((await dev("status")).running ? true : null), 10000).catch(() => false);
+    if (!started) throw new Error(`the native runner isn't running: ${JSON.stringify(await dev("status"))}`);
     const sleeping = async (id) => (await live(id))?.discarded === true;
     const sweepUntil = async (what, ids) => {
       const slept = new Set();

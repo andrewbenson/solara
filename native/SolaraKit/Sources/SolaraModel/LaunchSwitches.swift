@@ -28,7 +28,7 @@ public enum LaunchSwitch: String, CaseIterable, Sendable {
   static let developmentOnly: Set<LaunchSwitch> = [.syncRedesign]
   public static let onByDefault: Set<LaunchSwitch> = [
     .nativeShell, .nativeTopStrip,
-    .shellPanes, .nativePagesPool, .shellMainTop,
+    .shellPanes, .nativePagesPool, .shellMainTop, .nativeTabSleep,
   ]
 
   public var needs: [LaunchSwitch] {

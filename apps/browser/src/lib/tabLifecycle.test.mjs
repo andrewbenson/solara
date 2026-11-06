@@ -6,6 +6,9 @@ globalThis.__DEV__ = false;
 globalThis.lifecycleOwned = false;
 globalThis.nativeTabSleepRunning = false;
 globalThis.releasedProfiles = [];
+globalThis.lifecycleSlowJobs = [];
+globalThis.lifecycleRunningListeners = [];
+globalThis.lifecycleReschedules = 0;
 
 const solaracore = import.meta.resolve("@solara/solaracore");
 const stubs = {
@@ -15,8 +18,9 @@ const stubs = {
     export const systemState = async () => { throw new Error("unavailable"); };
     export const releaseProfile = async (id) => { globalThis.releasedProfiles.push(id); };
     export const setBatterySaver = (mode) => globalThis.batterySaverReply(mode);`,
+  "@solara/store": "export const onTabSleepRunningChanged = (run) => { globalThis.lifecycleRunningListeners.push(run); return () => {}; };",
   "../store/nativeStore": "export const nativeOwnsWorkspace = () => globalThis.lifecycleOwned; export const nativeTabSleepRunning = () => globalThis.nativeTabSleepRunning;",
-  "./slowTimers": "export const everySlowly = () => {}; export const reschedule = () => {};",
+  "./slowTimers": "export const everySlowly = (job) => { globalThis.lifecycleSlowJobs.push(job); return () => {}; }; export const reschedule = () => { globalThis.lifecycleReschedules++; };",
   "../components/layout/splitActions": "export const showToast = () => {};",
   "../components/settings/windows": "export const openSettings = () => {};",
   "../components/pages": "export const isInternalTab = (t) => !/^https?:/.test(t.url ?? '');",
@@ -33,6 +37,13 @@ const { webviews } = await import("./webviews.ts");
 const lifecycle = await import("./tabLifecycle.ts");
 
 const S = () => useBrowser.getState();
+
+function startLifecycle() {
+  const dev = globalThis.__DEV__;
+  globalThis.__DEV__ = true;
+  lifecycle.startTabLifecycle();
+  globalThis.__DEV__ = dev;
+}
 
 function fakePage() {
   const page = { dirty: false, evaluated: 0, discarded: 0, release: () => {} };
@@ -216,9 +227,7 @@ test("manual sleep does not evaluate a native sleeping page", async (t) => {
 
 test("loaded lifecycle enumeration follows native discarded facts and JS fallback", (t) => {
   const { id } = sleepingPage(t);
-  globalThis.__DEV__ = true;
-  lifecycle.startTabLifecycle();
-  globalThis.__DEV__ = false;
+  startLifecycle();
   const loaded = () => globalThis.acLifecycle.state().loaded;
   assert.equal(loaded().includes(id), false);
   globalThis.lifecycleOwned = false;
@@ -230,7 +239,8 @@ test("loaded lifecycle enumeration follows native discarded facts and JS fallbac
   assert.equal(loaded().includes(id), true);
 });
 
-test("the native runner gates JS sleeping while profile release stays active", async (t) => {
+test("the native runner disables the JS sweep while separate profile maintenance stays active", async (t) => {
+  startLifecycle();
   S().hydrate({});
   const w = S().createWindow({ url: "https://a.com" });
   const id = S().newTab(w, { url: "https://b.com", background: true });
@@ -249,6 +259,10 @@ test("the native runner gates JS sleeping while profile release stays active", a
   assert.deepEqual(await lifecycle.sweep({ protectedRecent: 0, idleMs: 0 }), []);
   assert.equal(page.evaluated, 0);
   assert.equal(page.discarded, 0);
+  assert.deepEqual(globalThis.releasedProfiles, [], "sleeping makes no profile decisions");
+  const maintenance = globalThis.lifecycleSlowJobs.find((job) => job.run.name === "releaseUnusedProfiles");
+  assert.ok(maintenance);
+  maintenance.run();
   assert.deepEqual(globalThis.releasedProfiles, [profile]);
 });
 
@@ -298,4 +312,36 @@ test("native handoff during the JS input check stops the pending sweep and prese
   assert.deepEqual(pages.map((page) => page.evaluated), [1, 0]);
   pages[0].handle.evaluate = async () => false;
   assert.equal(await lifecycle.sleepTab(ids[0]), true);
+});
+
+test("automatic JS sleeping resumes only when native sleep is off and the setting is on", (t) => {
+  startLifecycle();
+  S().hydrate({});
+  const w = S().createWindow({ url: "https://a.com" });
+  const id = S().newTab(w, { url: "https://fallback.com", background: true });
+  webviews.set(id, fakePage().handle);
+  const sleepJob = globalThis.lifecycleSlowJobs.find((job) => job.separateEvery === 15_000);
+  const notify = () => globalThis.lifecycleRunningListeners.forEach((run) => run());
+  t.after(() => {
+    webviews.delete(id);
+    globalThis.nativeTabSleepRunning = false;
+  });
+  lifecycle.useLifecycle.setState({ batterySaver: false });
+  globalThis.nativeTabSleepRunning = false;
+  assert.equal(sleepJob.needed(), true, "fallback when the native runner reports off");
+  notify();
+  assert.ok(id in globalThis.acLifecycle.state().hiddenAt);
+  const before = globalThis.lifecycleReschedules;
+  globalThis.nativeTabSleepRunning = true;
+  notify();
+  assert.equal(sleepJob.needed(), false);
+  assert.deepEqual(globalThis.acLifecycle.state().hiddenAt, {});
+  assert.ok(globalThis.lifecycleReschedules > before, "handoff reschedules slow jobs");
+  globalThis.nativeTabSleepRunning = false;
+  notify();
+  assert.equal(sleepJob.needed(), true, "fallback rearms when native stops");
+  S().updateSettings({ sleepInactiveTabs: false });
+  assert.equal(sleepJob.needed(), false, "a user-disabled setting stays off");
+  S().updateSettings({ sleepInactiveTabs: true });
+  assert.equal(sleepJob.needed(), true);
 });

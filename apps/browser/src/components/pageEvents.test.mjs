@@ -327,9 +327,9 @@ test("native ready preserves profile release bookkeeping without changing discar
   assert.deepEqual(semantics(h.calls), []);
   h.webviews.clear();
   h.state.windows = {};
-  await h.lifecycle.sweep();
+  h.lifecycle.releaseUnusedProfiles();
   assert.equal(h.calls.filter(({ name, args }) => name === "releaseProfile" && args[0] === "p").length, 1);
-  await h.lifecycle.sweep();
+  h.lifecycle.releaseUnusedProfiles();
   assert.equal(h.calls.filter(({ name }) => name === "releaseProfile").length, 1);
 });
 

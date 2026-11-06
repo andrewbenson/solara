@@ -39,6 +39,7 @@ enum PanePrompts {
         browsers.tab(browserId) == tabId else { return nil }
       return !(pages[tabId]?.permissions.isEmpty ?? true)
     }
+    TabSleepPermissionFeed.coversPages = { TabPoolHost.available }
     TabPoolHost.shared.pageEventObservers.append { tabId, name, payload in pageEvent(tabId, name, payload) }
     TabPoolHost.shared.stateObservers.append { tabsMoved() }
     SolaraCoreEventTaps.observers.append { name, payload in coreEvent(name, payload) }

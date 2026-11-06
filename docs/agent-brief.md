@@ -89,7 +89,7 @@ Engine files are in `engine/solaracore/src/solara/core`, app files in `packages/
 | Picture in Picture | `ac_picture_in_picture.mm`; Dia's window and controls in `engine/chromium/…/solara/pip/`; the auto-PiP hook in `engine/solaracore/apply.sh` | `SolaraCorePictureInPicture.mm` | `components/media/pip.ts` |
 | Password and autofill bubbles | `ac_password_prompt.mm`, `ac_browser_window.h` (`ACAutofillBubbleHandler`), `ac_autofill_trigger.mm` (dropdown) | `SolaraCoreChromeWindow.mm` (`window:passwordPrompt:forTab:`) → `SolaraCoreWebView` event | `components/site/Prompts.tsx`, `site/Autofill.tsx` |
 | Share tab, screen share | `solaracore_api.mm` (`TabSharingDelegateFor`), `ac_desktop_capture.mm` | `SolaraCoreHost.mm` `shareTabInstead`, `ChromeUIModule.swift` | `components/media/ShareBar.tsx`, `SharePicker.tsx` |
-| Restore, discard | `engine/chromium/…/ac_tab_restore.cc` (closed tabs) | `SolaraCoreWebView.mm` (`discard:`, `transferKey`) | `lib/tabLifecycle.ts`, `store/windows.ts` |
+| Restore, discard | `engine/chromium/…/ac_tab_restore.cc` (closed tabs) | `SolaraCoreWebView.mm` (`discard:`, `transferKey`), `NativeTabSleep`, `SolaraUI/Services/TabSleepRunner` | `lib/nativeKeepAlive.ts`, `lib/tabLifecycle.ts` (sleep fallback and battery saver), `store/windows.ts` |
 | Permissions | `ac_permissions.mm` | `SolaraCoreHost.mm` (`permissionRequest`) | `components/site/permissions.ts`, `Prompts.tsx` |
 | Page script | `ac_page_channel.mm`, `renderer/ac_content_renderer_client.cc` | `page_script.js`, `SolaraCoreWebView.mm` | `onPageMessage` (`packages/solaracore/src/WebView.tsx`) |
 
@@ -116,6 +116,16 @@ Engine files are in `engine/solaracore/src/solara/core`, app files in `packages/
   `SolaraCoreServices.mm`; `ACExtensions.mm` → `ExtensionsModule.swift`; `ACCef.mm` → `SolaraCoreHost.mm`,
   `SolaraCoreStartup.mm`; `ACEngine.mm` → `solaracore_api.mm`; `helper/page_script.js` → `packages/solaracore/ios/`;
   `packages/cef/src` → `packages/solaracore/src`.
+
+Native tab sleep is on by default (`LaunchSwitch.nativeTabSleep`, `SOLARA_NATIVE_TAB_SLEEP`). `TabSleepRunner`
+owns automatic sleep while the workspace is native and its pages are pooled: `NativeTabSleep` runs it only when
+`TabSleepPermissionFeed.servesPages` (the pane prompts' permission feed is installed and `TabPoolHost.available`).
+The JS keep-alive feed still supplies transient page protections; it starts when the runner turns on, even after
+bundle evaluation. The JS sleep sweep in `lib/tabLifecycle` is dormant while the runner runs and takes over when it
+doesn't: development with `SOLARA_NATIVE_TAB_SLEEP=0` or `SOLARA_TAB_POOL=0`, no native shell, safe mode, or no
+native workspace. A distribution build ignores the environment override for shipped default-on switches. Settings ›
+Tabs › Sleeping tabs turns automatic sleep off on both paths. Battery saver, manual sleep and profile resource release
+still have JS callers.
 
 ## Rules
 - **Stay inside the files you own** (listed in your task). If you need a change elsewhere,

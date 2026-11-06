@@ -1,6 +1,7 @@
 import { listTasks, onSystemState, releaseProfile, setBatterySaver, systemState, type SystemState, type WebViewHandle } from "@solara/solaracore";
 import { onAppEvent, onWindowEvent } from "@solara/shell";
 import { create } from "zustand";
+import { onTabSleepRunningChanged } from "@solara/store";
 import { pageOf, usePages } from "../components/layout/pageState";
 import { showToast } from "../components/layout/splitActions";
 import { useMedia } from "../components/media/state";
@@ -33,6 +34,7 @@ const POLICY = {
 };
 
 const SWEEP_MS = 30_000;
+const PROFILE_RELEASE_MS = 30_000;
 const FREEZE_SWEEP_MS = 30_000;
 const EVAL_TIMEOUT_MS = 2_000;
 
@@ -88,6 +90,7 @@ function shownTabIds(s: BrowserState): Set<string> {
 }
 
 const loadedTabIds = () => [...webviews.keys()].filter((id) => !isDiscarded(id));
+const jsSleepWanted = () => !nativeTabSleepRunning() && store().settings?.sleepInactiveTabs !== false;
 
 function keptAwakeBySite(s: BrowserState, id: string): string | null {
   return keepAwakeCover(s.settings?.keepAwakeSites ?? [], siteHost(s.tabs[id]?.url)).kind === "none" ? null : "kept awake by a site setting";
@@ -149,6 +152,7 @@ async function sleepTabIfSafe(id: string, automatic: boolean): Promise<boolean> 
   const handle = webviews.get(id);
   if (!handle || isDiscarded(id)) return false;
   if ((await hasUnsavedInput(handle)) !== false) return false;
+  if (automatic && nativeTabSleepRunning()) return false;
   applyHeldReports();
   const s = store();
   if ((automatic && (nativeTabSleepRunning() || s.settings?.sleepInactiveTabs === false || keptAwakeBySite(s, id))) || shownTabIds(s).has(id) || keepAliveReason(s, id) || webviews.get(id) !== handle) return false;
@@ -187,19 +191,12 @@ function omit<T>(map: Record<string, T>, key: string): Record<string, T> {
 let sweeping = false;
 
 export async function sweep(overrides: Partial<typeof POLICY> = {}): Promise<string[]> {
-  if (sweeping) return [];
+  if (nativeTabSleepRunning() || sweeping) return [];
   sweeping = true;
   const slept: string[] = [];
   try {
-    if (nativeTabSleepRunning()) {
-      releaseUnusedProfiles();
-      return slept;
-    }
     const s = store();
-    if (s.settings?.sleepInactiveTabs === false) {
-      releaseUnusedProfiles();
-      return slept;
-    }
+    if (s.settings?.sleepInactiveTabs === false) return slept;
     const policy = { ...POLICY, idleMs: sleepAfterMinutes(s.settings?.sleepTabsAfterMinutes) * 60_000, ...overrides };
     const shown = shownTabIds(s);
     const now = activeClock();
@@ -222,7 +219,6 @@ export async function sweep(overrides: Partial<typeof POLICY> = {}): Promise<str
       if (nativeTabSleepRunning() || slept.length >= policy.perSweep) break;
       if (await sleepTabIfSafe(id, true)) slept.push(id);
     }
-    releaseUnusedProfiles();
   } finally {
     sweeping = false;
   }
@@ -242,7 +238,7 @@ function unusedProfiles(s: BrowserState, now: number, idleMs: number): Set<strin
   return new Set(result.eligibleIds);
 }
 
-function releaseUnusedProfiles() {
+export function releaseUnusedProfiles() {
   const s = store();
   const inUse = new Set(Object.values(s.windows).map((w) => engineProfile(w.profileId)));
   for (const id of webviews.keys()) {
@@ -389,6 +385,13 @@ export function startTabLifecycle() {
 
   let lastShown = new Set<string>();
   const track = (s: BrowserState) => {
+    const sleeps = jsSleepWanted();
+    if (!sleeps) unusedSince.clear();
+    if (!sleeps && !(useLifecycle.getState().batterySaver && !chromeSaver)) {
+      hiddenAt.clear();
+      lastShown.clear();
+      return;
+    }
     const shown = shownTabIds(s);
     const now = activeClock();
     for (const id of lastShown) if (!shown.has(id)) hiddenAt.set(id, now);
@@ -400,8 +403,16 @@ export function startTabLifecycle() {
     lastShown = shown;
   };
   track(store());
+  onTabSleepRunningChanged(() => {
+    track(store());
+    reschedule();
+  });
   useBrowser.subscribe((s, prev) => {
     if (s.windows !== prev.windows || s.splits !== prev.splits) track(s);
+    if (s.settings.sleepInactiveTabs !== prev.settings.sleepInactiveTabs) {
+      track(s);
+      reschedule();
+    }
     if (s.settings.batterySaverWhen !== prev.settings.batterySaverWhen) {
       lowBatteryHeld = false;
       updateBatterySaver(false);
@@ -412,7 +423,7 @@ export function startTabLifecycle() {
     const pressureRose = state.memoryPressure !== "normal" && state.memoryPressure !== system?.memoryPressure;
     system = state;
     updateBatterySaver(true);
-    if (pressureRose) void sweep();
+    if (pressureRose && jsSleepWanted()) void sweep();
   };
   void Promise.resolve()
     .then(systemState)
@@ -430,14 +441,23 @@ export function startTabLifecycle() {
   everySlowly({
     every: SWEEP_MS,
     separateEvery: 15_000,
+    needed: jsSleepWanted,
     run: () => {
       track(store());
       void sweep();
     },
   });
   everySlowly({
+    every: PROFILE_RELEASE_MS,
+    separateEvery: 15_000,
+    run: releaseUnusedProfiles,
+  });
+  everySlowly({
     every: FREEZE_SWEEP_MS,
-    run: () => void freezeBusyTabs(),
+    run: () => {
+      track(store());
+      void freezeBusyTabs();
+    },
     needed: () => useLifecycle.getState().batterySaver && !chromeSaver,
     watch: (changed) => useLifecycle.subscribe(changed),
   });

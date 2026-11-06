@@ -114,12 +114,6 @@ struct AppearancePane: View {
         }
       }
 
-      SettingsSection("Selected Tab") {
-        SettingRow("appearance.selectedTabGlow") {
-          SettingPicker([SettingOption("full", "Full"), SettingOption("soft", "Soft"), SettingOption("off", "Off")], selection: store.choice("selectedTabGlow"))
-        }
-      }
-
       SettingsSection("Scroll Bars") {
         SettingRow("appearance.pageScrollBars") {
           SettingPicker([SettingOption("system", "Follow macOS"), SettingOption("thin", "Thin")], selection: store.choice("pageScrollBars"))

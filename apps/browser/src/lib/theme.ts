@@ -2,7 +2,6 @@ import type { AreaLightPalette } from "@solara/shaders";
 import { createContext, createElement, useContext, useMemo, type ReactNode } from "react";
 import { useBrowser, type BrowserState } from "../store/browser";
 import { PageProfileContext, WindowContext } from "../store/hooks";
-import type { SelectedTabGlow } from "../store/settings";
 import type { Profile, ProfileColor, ProfileTheme } from "../store/types";
 import { opaqueThemeTint, PRESET_BACKDROP, resolveTheme, requestedDarkFor, rgbToHsl, shownLook, themeAccent, themeBackdrop, themePalette, type LookSource, type ThemeBackdropProps } from "./profileTheme";
 import { backdropTint, opaqueTint, tintForHue, type BackdropTint } from "./windowTint";
@@ -275,21 +274,13 @@ export function useTheme(): Theme {
   return themeOf(useBrowser.getState(), null, null);
 }
 
-const SELECTED_TAB_GLOW: Record<SelectedTabGlow, { opacity: number; radius: number }> = {
-  full: { opacity: 1, radius: 1 },
-  soft: { opacity: 0.45, radius: 0.6 },
-  off: { opacity: 0, radius: 1 },
-};
-
-export function selectedTabGlow(theme: Theme, setting: SelectedTabGlow) {
-  const level = SELECTED_TAB_GLOW[setting] ?? SELECTED_TAB_GLOW.full;
-  return { shadowColor: hex(theme.tabSelectedShadow), shadowOpacity: level.opacity, shadowRadius: theme.tabSelectedShadowRadius * level.radius };
+export function selectedTabGlow(theme: Theme) {
+  return { shadowColor: hex(theme.tabSelectedShadow), shadowOpacity: 1, shadowRadius: theme.tabSelectedShadowRadius };
 }
 
 export function useSelectedTabGlow() {
   const theme = useTheme();
-  const setting = useBrowser((s) => s.settings.selectedTabGlow);
-  return useMemo(() => selectedTabGlow(theme, setting), [theme, setting]);
+  return useMemo(() => selectedTabGlow(theme), [theme]);
 }
 
 export const layout = {

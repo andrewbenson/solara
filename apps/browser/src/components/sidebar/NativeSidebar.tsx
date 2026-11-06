@@ -273,7 +273,6 @@ function usePageLooks(windowId: string) {
   const profiles = useBrowser((s) => s.profiles);
   const appDark = useBrowser((s) => s.ui.appDark);
   const source = useBrowser((s) => spaceLookSource(s.settings));
-  const glowSetting = useBrowser((s) => s.settings.selectedTabGlow);
   const tidy = useBrowser((s) => ids.filter((id) => canTidyPins(s, windowId, id)).join(","));
   const key = ids.join(",");
   return useMemo(() => {
@@ -281,7 +280,7 @@ function usePageLooks(windowId: string) {
     const tidyIds = new Set(split(tidy));
     return key.split(",").map((profileId) => {
       const theme = profileTheme(profiles[profileId], appDark, source);
-      const glow = selectedTabGlow(theme, glowSetting);
+      const glow = selectedTabGlow(theme);
       return {
         profileId,
         dark: theme.dark,
@@ -292,7 +291,7 @@ function usePageLooks(windowId: string) {
         incognito: isIncognitoProfile(profileId),
       };
     });
-  }, [key, profiles, appDark, source, glowSetting, tidy]);
+  }, [key, profiles, appDark, source, tidy]);
 }
 
 function useNativeSidebarPlayer(windowId: string, profileId: string, theme: Theme, groupFill: string, groupStroke: string) {

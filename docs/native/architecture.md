@@ -782,7 +782,7 @@ Timings in frames are measured from 30 fps recordings.
 |---|---|---|---|
 | General | 260 | Simple + system | `SettingsModel`; login item (`SMAppService`), default browser, `Updater.swift` (channel, auto-update), `SolaraCoreEngineBridge` `ac_downloads_settings` / `ac_downloads_set_settings`, default profile |
 | Tabs | 198 | Simple | `SettingsModel` (`tabLayout`, `newTabPosition`, `newTabButtonPosition`, `newTabOpens`, `cleanUpInactiveTabsAfterHours`, sidebar button, haptics, website color, ⌘-click groups, meeting groups) |
-| Appearance | 278 | Simple + app icon | `SettingsModel` (`appearance`, `addressBar`, `commandBarPlacement`, `pageScrollBars`, `selectedTabGlow`, `spacesFollowAppearance`); app icon list from `AppIcon.swift` |
+| Appearance | 278 | Simple + app icon | `SettingsModel` (`appearance`, `addressBar`, `commandBarPlacement`, `pageScrollBars`, `spacesFollowAppearance`); app icon list from `AppIcon.swift` |
 | Search Engine | 165 | Medium | `SettingsModel` + custom engine add/edit sheet (`addCustomEngine` validation from `SolaraOmnibox`); extension-controlled engine from `ac_search_engines` |
 | Engines | 154 | Simple | `SettingsModel` (`pageEngine`, `websiteEngines`, `protectedVideoInWebKit`) |
 | Advanced | 155 | Simple + info | `SettingsModel`; CLI install and control (`CliInstaller.swift`, `ac_cli_control`); `SolaraCoreHost.engineInfo`; Widevine from `SolaraCoreServices.components` |

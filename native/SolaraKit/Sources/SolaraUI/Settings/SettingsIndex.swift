@@ -325,15 +325,6 @@ public struct SettingsIndex: Sendable {
             keywords: ["cmd l", "command bar", "centred", "centered", "arc", "url bar", "location bar"]
           ),
         ]),
-        Section(section: "Selected Tab", rows: [
-          Row(
-            key: "selectedTabGlow",
-            title: "Glow around the selected tab",
-            description: "The soft light around the selected tab in the sidebar. Full is Dia's.",
-            caption: "The soft light around the selected tab in the sidebar.",
-            keywords: ["glow", "shadow", "halo", "highlight", "selected tab", "active tab"]
-          ),
-        ]),
         Section(section: "Scroll Bars", rows: [
           Row(
             key: "pageScrollBars",

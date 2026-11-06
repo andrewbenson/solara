@@ -131,13 +131,12 @@ function usePageLooks(windowId: string) {
   const profiles = useBrowser((s) => s.profiles);
   const appDark = useBrowser((s) => s.ui.appDark);
   const source = useBrowser((s) => spaceLookSource(s.settings));
-  const glowSetting = useBrowser((s) => s.settings.selectedTabGlow);
   const key = ids.join(",");
   return useMemo(() => {
     if (!key) return null;
     return key.split(",").map((profileId) => {
       const theme = profileTheme(profiles[profileId], appDark, source);
-      const glow = selectedTabGlow(theme, glowSetting);
+      const glow = selectedTabGlow(theme);
       return {
         profileId,
         dark: theme.dark,
@@ -148,7 +147,7 @@ function usePageLooks(windowId: string) {
         incognito: false,
       };
     });
-  }, [key, profiles, appDark, source, glowSetting]);
+  }, [key, profiles, appDark, source]);
 }
 
 const split = (ids: string) => (ids ? ids.split(",") : NONE);

@@ -4,7 +4,7 @@ import { test } from "node:test";
 globalThis.__DEV__ = false;
 
 const P = await import("./profileTheme.ts");
-const { profileTheme, PROFILE_COLORS } = await import("./theme.ts");
+const { profileTheme, selectedTabGlow, PROFILE_COLORS } = await import("./theme.ts");
 const { themeArea, themeBackdrop, sanitizeTheme, opaqueThemeTint, mixOklab, resolveTheme, readableDark, padColor, startingTheme } = P;
 
 const color = (r, g, b) => ({ r, g, b, a: 1 });
@@ -117,5 +117,17 @@ test("no theme the old colour pad could make changes appearance in light mode, n
     assert.equal(readableDark(theme, false), false, spec.name);
     assert.equal(readableDark(theme, true), true, spec.name);
     assert.equal(profileTheme({ color: "plum", theme }, true).backdrop.themeAppearance, "auto", spec.name);
+  }
+});
+
+test("selected tabs always render the full glow in every appearance", () => {
+  for (const dark of [false, true]) {
+    const theme = profileTheme({ color: "plum" }, dark);
+    const expected = dark
+      ? { shadowColor: "#FFFFFF26", shadowOpacity: 1, shadowRadius: 15 }
+      : { shadowColor: "#0000001F", shadowOpacity: 1, shadowRadius: 12.5 };
+    for (const legacyValue of ["full", "soft", "off", undefined]) {
+      assert.deepEqual(selectedTabGlow(theme, legacyValue), expected);
+    }
   }
 });

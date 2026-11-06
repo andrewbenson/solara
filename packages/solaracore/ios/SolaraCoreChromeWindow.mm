@@ -3147,6 +3147,14 @@ NSDictionary *ProbeFrame(NSWindow *window, ACWindowFullScreen *state, CFTimeInte
     }
     return Describe((NSView *)window.firstResponder);
   }
+#if DEBUG
+  if ([action hasPrefix:@"sendKey:"]) {
+    NSArray<NSString *> *parts = [action componentsSeparatedByString:@":"];
+    if (parts.count < 3) return @"sendKey:<characters>:<keyCode>";
+    [NSApp sendEvent:Key(window, NSEventTypeKeyDown, 0, parts[1], (unsigned short)parts[2].intValue)];
+    return @"sent";
+  }
+#endif
   if ([action hasPrefix:@"keys:"]) {
     NSArray<NSString *> *parts = [action componentsSeparatedByString:@":"];
     if (parts.count < 3) return @"keys:<flags>:<characters>[:<keyCode>]";

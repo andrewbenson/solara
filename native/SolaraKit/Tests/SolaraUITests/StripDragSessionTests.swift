@@ -55,11 +55,16 @@ private final class StripSessionBridge: StripDragBridge {
     try #require(NSEvent.mouseEvent(with: type, location: CGPoint(x: at.x, y: -at.y), modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 0))
   }
 
+  private func key(_ code: UInt16) throws -> NSEvent {
+    try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, characters: code == 53 ? "\u{1b}" : "a", charactersIgnoringModifiers: code == 53 ? "\u{1b}" : "a", isARepeat: false, keyCode: code))
+  }
+
   private func begin(_ page: StripPageView) throws -> StripTabChip {
     let chip = try chip(in: page)
     page.drag.press(chip, try mouse(.leftMouseDown, CGPoint(x: 70, y: 21)))
     #expect(page.drag.dragged(chip, try mouse(.leftMouseDragged, CGPoint(x: 80, y: 21))))
     #expect(page.drag.owns)
+    #expect(page.drag.keyMonitor != nil)
     return chip
   }
 
@@ -69,6 +74,7 @@ private final class StripSessionBridge: StripDragBridge {
     let chip = try begin(page)
     #expect(page.drag.dragged(chip, try mouse(.leftMouseDragged, CGPoint(x: 200, y: 400))))
     #expect(page.drag.released(chip, try mouse(.leftMouseUp, CGPoint(x: 500, y: 21))))
+    #expect(page.drag.keyMonitor == nil)
     #expect(bridge.ends.count == 1)
     #expect(bridge.ends.first?.commit == true)
     #expect(bridge.ends.first?.at == CGPoint(x: 500, y: 21))
@@ -91,5 +97,62 @@ private final class StripSessionBridge: StripDragBridge {
     #expect(bridge.drops.first?.object?["type"]?.string == "tabs")
     #expect(bridge.drops.first?.object?["placement"]?.object?["beforeId"] == .null)
     #expect(!page.drag.active)
+  }
+
+  @Test func escapeCancelsAndSwallowsTheRemainingDragEvents() throws {
+    let bridge = StripSessionBridge()
+    let page = try page(bridge)
+    let chip = try begin(page)
+    #expect(page.drag.dragged(chip, try mouse(.leftMouseDragged, CGPoint(x: 500, y: 21))))
+    #expect(!page.drag.captureKey(try key(0)))
+    #expect(page.drag.owns)
+    #expect(page.drag.captureKey(try key(53)))
+    #expect(!page.drag.owns && !page.drag.active)
+    #expect(page.drag.keyMonitor == nil)
+    #expect(page.drag.dx.value == 0)
+    #expect(page.drag.fadingView == nil)
+    #expect(bridge.ends.map(\.commit) == [false])
+    #expect(bridge.drops.isEmpty)
+    #expect(page.drag.dragged(chip, try mouse(.leftMouseDragged, CGPoint(x: 600, y: 21))))
+    #expect(page.drag.released(chip, try mouse(.leftMouseUp, CGPoint(x: 600, y: 21))))
+    #expect(bridge.ends.map(\.commit) == [false])
+    #expect(bridge.drops.isEmpty)
+    #expect(!page.drag.captureKey(try key(53)))
+  }
+
+  @Test func escapeAfterMouseUpDoesNotCancelTheLanding() throws {
+    let bridge = StripSessionBridge()
+    let page = try page(bridge)
+    let chip = try begin(page)
+    #expect(page.drag.released(chip, try mouse(.leftMouseUp, CGPoint(x: 800, y: 21))))
+    #expect(page.drag.keyMonitor == nil)
+    #expect(!page.drag.captureKey(try key(53)))
+    let now = StripTicker.now
+    for frame in 1...120 { page.drag.tick(now + Double(frame) / 60) }
+    #expect(bridge.ends.map(\.commit) == [true])
+    #expect(bridge.drops.count == 1)
+  }
+
+  @Test func losingTheWindowCancelsTheDrag() throws {
+    let bridge = StripSessionBridge()
+    let page = try page(bridge)
+    _ = try begin(page)
+    page.viewDidMoveToWindow()
+    #expect(!page.drag.active)
+    #expect(page.drag.keyMonitor == nil)
+    #expect(bridge.ends.map(\.commit) == [false])
+    #expect(bridge.drops.isEmpty)
+    #expect(!page.drag.captureKey(try key(53)))
+  }
+
+  @Test func theKeyMonitorDoesNotRetainTheDrag() throws {
+    let bridge = StripSessionBridge()
+    weak var drag: StripDrag?
+    try autoreleasepool {
+      let page = try page(bridge)
+      _ = try begin(page)
+      drag = page.drag
+    }
+    #expect(drag == nil)
   }
 }

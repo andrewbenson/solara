@@ -93,6 +93,11 @@ public final class StripPageView: NSView {
 
   required init?(coder: NSCoder) { fatalError() }
 
+  public override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    if window == nil { drag.cancel() }
+  }
+
   public override func hitTest(_ point: NSPoint) -> NSView? {
     let hit = super.hitTest(point)
     return hit === self ? nil : hit

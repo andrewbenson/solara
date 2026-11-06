@@ -114,6 +114,7 @@ final class StripDrag {
   private var press: (view: NSView, at: CGPoint, candidates: [StripDragSource])?
   private(set) var owns = false
   private var swallowing = false
+  private(set) var keyMonitor: Any?
   private(set) var dx = StripSpringValue(0)
   private(set) var lift = StripTimedValue(0)
   private(set) var grow = StripSpringValue(0)
@@ -136,6 +137,8 @@ final class StripDrag {
   init(page: StripPageView) {
     self.page = page
   }
+
+  isolated deinit { stopCapturingKeys() }
 
   var active: Bool { source != nil }
   var grabX: CGFloat { grab }
@@ -205,6 +208,7 @@ final class StripDrag {
     self.source = source
     fading = source
     owns = true
+    startCapturingKeys()
     origin = at
     to = -1
     lifted = false
@@ -415,6 +419,7 @@ final class StripDrag {
 
   private func release(_ at: CGPoint) {
     guard let source else { return }
+    stopCapturingKeys()
     move(at)
     owns = false
     let gdx = at.x - origin.x
@@ -505,6 +510,7 @@ final class StripDrag {
   }
 
   private func reset() {
+    stopCapturingKeys()
     landingToken += 1
     owns = false
     setCross(false)
@@ -520,11 +526,30 @@ final class StripDrag {
   }
 
   func cancel() {
+    stopCapturingKeys()
     guard source != nil else { return }
     if owns, let source, !source.local { page.bridge?.dragEnded(windowId: page.windowId, commit: false) { _ in } }
     for lane in Array(shifts.keys) { settleRoom(lane) }
     grow.set(0)
     reset()
+  }
+
+  private func startCapturingKeys() {
+    guard keyMonitor == nil else { return }
+    keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+      self?.captureKey(event) == true ? nil : event
+    }
+  }
+
+  private func stopCapturingKeys() {
+    if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+    keyMonitor = nil
+  }
+
+  func captureKey(_ event: NSEvent) -> Bool {
+    guard owns, event.type == .keyDown, event.keyCode == 53 else { return false }
+    cancel()
+    return true
   }
 
   private func drop(_ source: StripDragSource, _ travelled: CGFloat, ids: [String]? = nil) -> Bool {

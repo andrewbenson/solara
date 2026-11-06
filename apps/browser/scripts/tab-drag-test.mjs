@@ -319,6 +319,45 @@ try {
     assert.deepEqual(await run(`return st().windows.w1.frame;`), frame);
   });
 
+  await check("Escape cancels a lifted strip drag without reordering, detaching or splitting, and the app stays responsive", async () => {
+    const before = await order("w1");
+    const windows = await run(`return Object.keys(st().windows).sort();`);
+    const splits = await run(`return st().splits;`);
+    const groups = await run(`return st().groups;`);
+    const now = await run(`return items("w1");`);
+    const sx = Math.round((now[2][0] + now[2][1]) / 2);
+    const result = await run(`${PREVIEW}
+      const result = {};
+      const drag = () => { const d = globalThis.acTabDrag.getState(); return { ids: d.tabIds, lifted: !!d.lifted }; };
+      const post = (a, ms) => act("w1", a).then(() => settle(ms));
+      return post("mouse:moved:${sx},21", 60)
+        .then(() => post("mouse:down:${sx},21", 100))
+        .then(() => post("mouse:dragged:${sx + 6},21", 60))
+        .then(() => post("mouse:dragged:${sx + 14},21", 60))
+        .then(() => post("mouse:dragged:${sx + 14},120", 60))
+        .then(() => post("mouse:dragged:640,400", 300))
+        .then(() => preview().then((p) => { result.held = { ...drag(), order: st().windows.w1.tabIds, visible: p.visible }; }))
+        .then(() => act("w1", "sendKey:" + String.fromCharCode(27) + ":53"))
+        .then((sent) => { result.posted = sent === "sent"; return settle(300); })
+        .then(() => preview().then((p) => { result.cancelled = { ids: drag().ids, visible: p.visible }; }))
+        .then(() => post("mouse:dragged:640,420", 60))
+        .then(() => post("mouse:dragged:${sx + 200},21", 60))
+        .then(() => post("mouse:up:${sx + 200},21", 1200))
+        .then(() => preview().then((p) => { result.finished = { ids: drag().ids, visible: p.visible }; return result; }));`);
+    assert.deepEqual(result.held, { ids: [before[2]], lifted: true, order: before, visible: true }, "Escape is pressed during the live lifted drag");
+    assert.equal(result.posted, true, "Escape entered the app event queue");
+    assert.deepEqual(result.cancelled, { ids: [], visible: false }, "Escape immediately ends the session and cancels the preview");
+    assert.deepEqual(result.finished, { ids: [], visible: false }, "remaining drag events and mouse-up cannot drop the tab");
+    assert.deepEqual(await order("w1"), before, "the tab returns to its original index");
+    assert.deepEqual(await run(`return Object.keys(st().windows).sort();`), windows, "no new window");
+    assert.deepEqual(await run(`return st().splits;`), splits, "no split");
+    assert.deepEqual(await run(`return st().groups;`), groups, "no grouping or reorder drop");
+    const t0 = Date.now();
+    const capture = await app.probe("view.capture", { windowId: "w1" }, { timeout: 2000 });
+    assert.equal(capture.consistent, true, "a capture right after the cancelled drag is consistent");
+    rep.log(`escape capture ready in ${Date.now() - t0} ms`);
+  });
+
   await check("a tab dragged along the strip changes nothing until the drop: then one store update and one Chrome strip command", async () => {
     const now = await run(`return items("w1");`);
     const before = await order("w1");

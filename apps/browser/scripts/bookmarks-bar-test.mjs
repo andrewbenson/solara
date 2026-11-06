@@ -35,6 +35,20 @@ const win = (id) => C.chromeWindows().then((windows) => windows.filter((window) 
   return !!stored && Math.abs(stored[0] - frame[0]) < 2 && Math.abs(stored[2] - frame[2]) < 2;
 }));
 const act = (id, action) => win(id).then((window) => C.devWindow(window.window, action));
+const postDrag = (id, path) => {
+  const points = path.split(";").map((p) => p.split(",").map(Number));
+  const steps = [["down", points[0]]];
+  for (let i = 1; i < points.length; i++) {
+    const [ax, ay] = points[i - 1], [bx, by] = points[i];
+    for (let k = 1; k <= 12; k++) steps.push(["dragged", [ax + (bx - ax) * k / 12, ay + (by - ay) * k / 12]]);
+  }
+  steps.push(["up", points.at(-1)]);
+  const start = performance.now();
+  steps.reduce((chain, [type, [x, y]], i) => chain
+    .then(() => new Promise((r) => setTimeout(r, Math.max(0, start + (i ? 150 + i * 16 : 0) - performance.now()))))
+    .then(() => act(id, "mouse:" + type + ":" + Math.round(x * 100) / 100 + "," + Math.round(y * 100) / 100)), Promise.resolve());
+  return Promise.resolve(steps.length + " events posted");
+};
 const settle = (ms) => new Promise((done) => setTimeout(done, ms));
 const active = () => S().windows.w1.activeTabIds.default;
 const barIds = () => S().bookmarks.nodes[bmbar.bar].children;
@@ -620,7 +634,7 @@ try {
       const points = [[sx, sy], [sx + 10, sy + 6], [tx - 4, ty], [tx, ty], [tx, ty], [tx, ty]];
       const seen = [];
       let settled = false, failure;
-      const evaluation = run(`return act("w1", "drag:${points.map((point) => point.join(",")).join(";")}").then(() => settle(${points.length * 12 * 16 + 2400}));`, 6000)
+      const evaluation = run(`return postDrag("w1", "${points.map((point) => point.join(",")).join(";")}").then(() => settle(${points.length * 12 * 16 + 2400}));`, 6000)
         .then(() => { settled = true; }, (error) => { failure = error; settled = true; });
       try {
         while (!settled) {

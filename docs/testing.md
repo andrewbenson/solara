@@ -19,6 +19,10 @@ Give a Swift package's tests a deadline with `scripts/agent/swift-test-bounded -
 arguments>`, never `timeout swift test`: `timeout` ends swift-test but leaves its `swiftpm-testing-helper` running a hung
 test, holding the main thread and the UI gate (`--help`).
 
+A test instance holds the uitest lock for as long as it runs, and the UI gate quits one that has held it 60 minutes. A
+longer run (a soak) sets `AC_UITEST_MAX_HOLD=<minutes>` before it launches and runs off-hours, when nobody needs UI
+tests: every other agent's UI test waits for it.
+
 `apps/browser` runs its TypeScript under plain Node, with the real `@solara/shell` and `@solara/solaracore` code:
 `src/test-loader.mjs` swaps only the native side. `expo-modules-core` becomes `src/test-native/expo.ts`, which hands
 each package the fake of every native module it asks for (`src/test-native/shell.ts`, `src/test-native/solaracore.ts`),

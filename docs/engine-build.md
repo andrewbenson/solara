@@ -266,6 +266,10 @@ and `scripts/agent/engine-build` runs `inline.py` itself (it rewrites the file o
 `~/Documents/solara` for the step scripts' copy in `~/chromium-build/scripts`) says where the checkout is. The sprites stay at the art pipeline's 400 px: at the default zoom the front rows already draw them at
 about 1:1 on a 2x screen, so 256 px sprites (about 1 MB) would be visibly soft.
 
+A change to the game alone rebuilds in about 15 s (`inline.py`, then ninja repacks `resources.pak` and copies it into the
+framework bundle) and doesn't relink `Chromium Framework`, so the framework's UUID stays the same: two engines that differ
+only in the game share a UUID. Tell them apart by the pack's SHA-256 (`prebuilt-engines.tsv`), never by the UUID.
+
 ## Nothing writes into the app bundle
 
 The signature seals every file in `Solara.app`, so the app must never write there: one added file and

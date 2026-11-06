@@ -72,6 +72,13 @@ public final class SplitPanesView: NSView {
   private var toolbars: [String: String] = [:]
   private var panes: [String: SplitLeafView] = [:]
   private var liveTops: [String: CGFloat] = [:]
+  public var bandHeights: [String: CGFloat] = [:] {
+    didSet {
+      guard bandHeights != oldValue else { return }
+      needsLayout = true
+      layoutSubtreeIfNeeded()
+    }
+  }
 
   public override var isFlipped: Bool { true }
 
@@ -166,6 +173,7 @@ public final class SplitPanesView: NSView {
       pane.railFraction = rail
       pane.toolbarHeight = tabId == fullscreenTab ? 0 : toolbarHeight * (1 - rail)
       pane.liveTop = liveTops[tabId].map { $0 * (1 - rail) }
+      pane.band = tabId == fullscreenTab ? 0 : bandHeights[tabId] ?? 0
       if rail > 0, tabId == activeId {
         if pane.toolbar.superview !== self {
           addSubview(pane.toolbar)
@@ -254,6 +262,13 @@ final class SplitLeafView: NSView {
   var radius: CGFloat { fullscreen ? 0 : ShellMetrics.cardRadius }
   var hasToolbar: Bool { toolbarJson != nil }
   var toolbarHeight: CGFloat = ShellMetrics.toolbarHeight { didSet { if toolbarHeight != oldValue { needsLayout = true } } }
+  var band: CGFloat = 0 {
+    didSet {
+      guard band != oldValue else { return }
+      needsLayout = true
+      layoutSubtreeIfNeeded()
+    }
+  }
   var liveTop: CGFloat? {
     didSet {
       guard liveTop != oldValue else { return }
@@ -304,7 +319,7 @@ final class SplitLeafView: NSView {
       toolbar.frame = CGRect(x: 0, y: 0, width: bounds.width, height: toolbarHeight)
       toolbar.isHidden = toolbarHeight == 0 || toolbarJson == nil
     }
-    let pageTop = liveTop.map { min(max(0, $0), bounds.height) } ?? toolbarHeight
+    let pageTop = min((liveTop.map { min(max(0, $0), bounds.height) } ?? toolbarHeight) + max(0, band), bounds.height)
     page.frame = CGRect(x: 0, y: pageTop, width: bounds.width, height: max(0, bounds.height - pageTop))
     empty?.frame = page.frame
   }

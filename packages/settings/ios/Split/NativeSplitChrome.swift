@@ -65,6 +65,16 @@ enum NativeSplitChrome {
 
   private static func cardContainer(for window: String) -> NSView? { NativeWindowShell.host(window)?.shell.card }
 
+  static func setShareBands(_ heights: [String: CGFloat], windowId: String) {
+    if let overlay = overlays[windowId], overlay.superview != nil { overlay.bandHeights = heights }
+    if let view = panes[windowId], view.superview != nil { view.bandHeights = heights }
+  }
+
+  static func setShareBandClip(_ clip: NSView?, windowId: String, tabId: String) {
+    guard let overlay = overlays[windowId], overlay.superview != nil else { return }
+    overlay.setBand(clip, tabId: tabId)
+  }
+
   static func setLiveTop(_ top: CGFloat?, windowId: String, tabId: String) {
     guard let view = panes[windowId], view.superview != nil else { return }
     view.setLiveTop(top, tabId: tabId)

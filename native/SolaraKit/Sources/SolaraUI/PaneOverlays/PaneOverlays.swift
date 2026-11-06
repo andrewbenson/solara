@@ -102,6 +102,14 @@ public final class PaneOverlaysView: NSView {
   public let windowId: String
   public var toolbarHeight: CGFloat = ShellMetrics.toolbarHeight { didSet { if toolbarHeight != oldValue { needsLayout = true } } }
   public var pageTops: [String: CGFloat] = [:] { didSet { if pageTops != oldValue { needsLayout = true } } }
+  public var bandHeights: [String: CGFloat] = [:] {
+    didSet {
+      guard bandHeights != oldValue else { return }
+      needsLayout = true
+      layoutSubtreeIfNeeded()
+    }
+  }
+  private var bandViews: [String: NSView] = [:]
   public var onCoverChanged: () -> Void = {}
   private var liveTops: [String: CGFloat] = [:]
   private var split: SplitView?
@@ -154,6 +162,13 @@ public final class PaneOverlaysView: NSView {
 
   public func container(_ tabId: String, layer: PaneOverlayLayer) -> NSView? { overlays[tabId].map { layer == .rn ? $0.rn : $0.native } }
 
+  public func setBand(_ view: NSView?, tabId: String) {
+    if let old = bandViews[tabId], old !== view { old.removeFromSuperview() }
+    bandViews[tabId] = view
+    if let view, view.superview !== self { addSubview(view) }
+    needsLayout = true
+  }
+
   public override func layout() {
     super.layout()
     let before = overlays.mapValues { $0.isHidden ? CGRect.null : $0.frame }
@@ -167,10 +182,17 @@ public final class PaneOverlaysView: NSView {
     let rects = SplitLayout.panes(split: split, activeId: activeId, fullscreenTab: fullscreenTab, bounds: area).panes
     for (tabId, rect) in rects {
       let overlay = overlays[tabId] ?? make(tabId)
-      let top = min(max(0, (liveTops[tabId] ?? pageTops[tabId] ?? (tabId == fullscreenTab ? 0 : toolbarHeight)) * (1 - rail)), rect.height)
+      let base = min(max(0, (liveTops[tabId] ?? pageTops[tabId] ?? (tabId == fullscreenTab ? 0 : toolbarHeight)) * (1 - rail)), rect.height)
+      let band = tabId == fullscreenTab ? 0 : min(max(0, bandHeights[tabId] ?? 0), rect.height - base)
+      let top = base + band
       overlay.frame = CGRect(x: rect.minX, y: rect.minY + top, width: rect.width, height: rect.height - top)
       overlay.isHidden = fullscreenTab != nil && tabId != fullscreenTab
+      if let view = bandViews[tabId] {
+        view.frame = CGRect(x: rect.minX, y: rect.minY + base, width: rect.width, height: band)
+        view.isHidden = band <= 0 || overlay.isHidden
+      }
     }
+    for (tabId, view) in bandViews where rects[tabId] == nil { view.isHidden = true }
     for (tabId, overlay) in overlays where rects[tabId] == nil {
       if liveTabs.contains(tabId), !overlay.rn.subviews.isEmpty {
         overlay.isHidden = true
@@ -192,10 +214,12 @@ public final class PaneOverlaysView: NSView {
 
   public func sample() -> [String: Any] {
     let height = window?.contentView?.bounds.height ?? 0
-    return overlays.mapValues { overlay -> [String: Any] in
+    var rows = overlays.mapValues { overlay -> [String: Any] in
       let r = overlay.convert(overlay.bounds, to: nil)
       return ["window": [r.minX, height - r.maxY, r.width, r.height].map(Double.init), "hidden": overlay.isHiddenOrHasHiddenAncestor, "rn": overlay.rn.subviews.count, "native": overlay.native.subviews.count]
     }
+    for tabId in rows.keys { rows[tabId]?["band"] = Double(bandHeights[tabId] ?? 0) }
+    return rows
   }
 
   public override func viewDidMoveToSuperview() {

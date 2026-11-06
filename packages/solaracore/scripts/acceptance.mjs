@@ -55,7 +55,7 @@ const usesPageA = [
   "cmd-click", "evaluate", "tab-strips", "tab-switch", "status-text", "load-error", "chrome-strings",
   "context-menu-search", "duplicate-and-reopen", "device-chooser", "bluetooth-chooser",
   "bluetooth-settings", "cast-dialog", "cast-routes", "theme-commit", "theme-modern-colors", "user-selection",
-  "password-prompt", "screen-share-picker", "tab-capture", "share-instead-two-captures",
+  "password-prompt", "screen-share-picker", "tab-capture", "share-instead-two-captures", "share-bar-layout",
   "restore-after-close", "discard-outcomes", "sleep-eligibility", "keep-awake-sites", "sleep-pinned-capture", "native-tab-sleep", "capture-picture", "unresponsive", "permission-dismissed", "permission-status-detached",
   "save-page", "activate-request", "extension-popup-and-panel", "extension-popup-window", "extension-popup-native-frame", "extension-popup-rail-field", "print-preview",
   "extension-prompts", "extension-prompt-closed", "traffic-lights-after-profile-switch", "extension-configure",
@@ -2099,6 +2099,99 @@ try {
   });
 
   // MARK: Tab lifecycle
+
+  await check("share-bar-layout", async () => {
+    const shell = await evalApp(`return !!globalThis.expo.modules.SolaraWindowShell?.active(${JSON.stringify(mainWindow)})`);
+    if (!shell) return { skipped: "no native window shell" };
+    const opened = [];
+    let page = null;
+    const out = {};
+    try {
+      await evalApp(`return globalThis.expo.modules.SolaraCEF.setDisplayMediaPicker(true).then(() => true)`);
+      const red = await openTab(`${base}/solid?c=ff0000&t=Red`, "Red", true);
+      opened.push(red);
+      const call = await openTab(`${base}/capturer?t=CallBand`, "CallBand", true);
+      opened.push(call);
+      const other = await openTab(`${base}/solid?c=0000ff&t=Blue`, "Blue", true);
+      opened.push(other);
+      const describe = async () => JSON.parse(await evalApp(`return globalThis.expo.modules.SolaraWindowShell.describe(${JSON.stringify(mainWindow)})`));
+      const slot = async (tabId) => (await describe())?.split?.overlays?.[tabId] ?? null;
+      const shown = async (tabId) => {
+        await evalApp(`ac.actions.switchToTab("${tabId}"); return true`);
+        await until(`${tabId} shown`, async () => (await state()).active === tabId);
+      };
+      await shown(red.id);
+      const before = await until("red's page slot", () => slot(red.id), 5000);
+      await shown(call.id);
+      page = await pageFor(call.id, "/capturer?t=CallBand");
+      await cdp(page, "Runtime.evaluate", { expression: "share()", userGesture: true });
+      await until("the picker", async () => (await eventsOf(call.id)).findLast((x) => x.name === "displayMediaRequest"), 10000);
+      await evalApp(`return globalThis.acSharePicker.shareTab("${call.id}", "${red.id}")`);
+      await until("the call sharing", async () => {
+        const v = (await cdp(page, "Runtime.evaluate", { expression: "window.__cap", returnByValue: true })).result.value;
+        if (v !== "pending" && v !== "live") throw new Error(`getDisplayMedia: ${v}`);
+        return v === "live" ? v : null;
+      }, 15000);
+      await shown(red.id);
+      const barRow = async () => {
+        const rows = JSON.parse(await evalApp(`return globalThis.expo.modules.SolaraMedia.probe("media.shareBar", ${JSON.stringify(mainWindow)})`));
+        return (Array.isArray(rows) ? rows : rows?.rows ?? []).find((row) => row?.frames?.dismiss) ?? null;
+      };
+      const placed = await until("the share bar and the page", async () => {
+        const [bar, page] = [await barRow(), await slot(red.id)];
+        return bar && page ? { bar, page } : null;
+      }, 5000);
+      await sleep(400);
+      const settledBar = await barRow();
+      const settledPage = await slot(red.id);
+      const pageTop = settledPage.window[1];
+      const dismissBottom = settledBar.frames.dismiss[1] + settledBar.frames.dismiss[3];
+      out.cover = { pageTop, dismissBottom, page: settledPage.window, dismiss: settledBar.frames.dismiss, placedAt: placed.page.window };
+      await evalApp(`return ac.shell.devSnapshotWindow(${JSON.stringify(mainWindow)}, ${JSON.stringify(join(data, "share-bar-layout.png"))})`).catch(() => null);
+      if (dismissBottom > pageTop + 0.5) throw new Error(`the share bar draws over the page's top instead of pushing it down: ${JSON.stringify(out.cover)}`);
+      out.shared = await until("the bar over the shared tab, at full height", async () => {
+        const s = await slot(red.id);
+        return s?.band === 38 ? s : null;
+      }, 3000);
+      const [, , , h0] = before.window;
+      const [, , , h1] = out.shared.window;
+      if (Math.abs(h0 - h1 - 38) > 0.5) throw new Error(`the page slot didn't give the bar 38 pt: ${h0} → ${h1}`);
+      out.band = await until("the band settled and its timer stopped", async () => {
+        const band = (await describe()).shareBand;
+        return band && !band.moving && !band.ticking ? band : null;
+      }, 2000).catch(async () => (await describe()).shareBand);
+      if (!out.band?.shown?.includes(red.id)) throw new Error(`the native band doesn't show the bar: ${JSON.stringify(out.band)}`);
+      if (out.band.ticking) throw new Error(`the band's timer kept running after it settled: ${JSON.stringify(out.band)}`);
+      await shown(other.id);
+      out.other = await until("the bar over another tab of the profile", async () => {
+        const s = await slot(other.id);
+        return s?.band === 38 ? s : null;
+      }, 3000);
+      await evalApp(`ac.store.getState().createSplit(["${other.id}", "${red.id}"]); return true`);
+      out.split = await until("the bar in both split panes", async () => {
+        const [a, b] = [await slot(other.id), await slot(red.id)];
+        return a?.band === 38 && b?.band === 38 ? { other: a, red: b } : null;
+      }, 3000);
+      await cdp(page, "Runtime.evaluate", { expression: "window.__stream?.getTracks().forEach((x) => x.stop()); true" });
+      const stopped = Date.now();
+      out.closed = await until("the bar gone after sharing stops", async () => {
+        const s = await slot(red.id);
+        return s && !s.band ? s : null;
+      }, 5000);
+      out.closedMs = Date.now() - stopped;
+      out.idle = await until("the band's timer stopped after closing", async () => {
+        const band = (await describe()).shareBand;
+        return band && !band.ticking ? band : null;
+      }, 2000).catch(async () => (await describe()).shareBand);
+      if (out.idle?.ticking) throw new Error(`the band's timer kept running after the bar closed: ${JSON.stringify(out.idle)}`);
+      if (out.closedMs > 1500 + 180 + 1000) throw new Error(`the bar took ${out.closedMs} ms to close`);
+      return { h0, h1, closedMs: out.closedMs };
+    } finally {
+      if (page) await cdp(page, "Runtime.evaluate", { expression: "window.__stream?.getTracks().forEach((x) => x.stop()); true" }).catch(() => null);
+      for (const t of opened) await closeTab(t.id).catch(() => null);
+      await evalApp(`ac.actions.switchToTab("${first.id}"); return true`).catch(() => null);
+    }
+  });
 
   await check("restore-after-close", async () => {
     const shell = "globalThis.expo.modules.SolaraShell";

@@ -32,6 +32,7 @@ enum NativeWindowShell {
     guard enabled, !installed, let make = WindowHost.makeContentView else { return }
     installed = true
     NativeSplitChrome.start()
+    NativeShareBand.start()
     NativePeek.start()
     if let store = NativeStoreHandle.store {
       let sink = commits
@@ -205,6 +206,7 @@ final class ShellHost {
       "windowFill": shell.window?.backgroundColor.map { String(describing: $0) } ?? NSNull(),
       "appearance": shell.window?.effectiveAppearance.name.rawValue ?? NSNull(),
       "split": NativeSplitChrome.sample(shell.windowId) ?? NSNull(),
+      "shareBand": NativeShareBand.describe(shell.windowId) ?? NSNull(),
       "paneRoots": NativePaneRoots.sample(shell.windowId) ?? NSNull(),
       "reactOnTop": shell.reactOnTop,
       "peek": NativePeek.sample(shell.windowId) ?? NSNull(),

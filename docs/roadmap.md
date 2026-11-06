@@ -133,7 +133,7 @@ Done when no React Native view appears on screen; React Native only arranges nat
 | The New Tab page's remaining React Native parts: Personalize, the feedback check-in and the release postcard | planned |
 | Native site controls and prompts (permissions, autofill, translate, zoom, developer mode) | planned |
 | Native extensions toolbar, overlays and side panel | in progress: popup frame (ea03e788, ee1d3c67) and side panel card and container native; install, permission and pin dialogs, extension menus, the toolbar model and Little Solara popups next |
-| Native media: sidebar player, hover player, cast and share pickers, tab badges | planned |
+| Native media: sidebar player, hover player, cast and share pickers, tab badges | in progress (tab badges, share bar) |
 | Native peek, Little Solara, calendar and meeting cards | planned |
 | Native top tab strip, split chrome, swipe overlay and the rest of the layout surfaces | planned |
 | Sidebar on the right: a Left/Right position in Settings, the View menu and the sidebar's menu; peek, resize, hover cards and drops mirror; the window buttons stay top left (as in Arc and Zen); built with the layout port, so it's written once, in Swift | planned |

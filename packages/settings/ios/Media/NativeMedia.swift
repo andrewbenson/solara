@@ -178,6 +178,7 @@ enum NativeMedia {
     if kind == sidebarPlayer { views += NativeSidebar.players(windowId: windowId) }
     if kind == hoverPlayer { views += NativeSidebarHoverCard.players(windowId: windowId) }
     views += NativePaneOverlays.host(windowId)?.mediaViews(kind) ?? []
+    if kind == shareBar { views += NativeShareBand.bars(windowId) }
     func frames(_ view: NSView, _ controls: [String: CGRect]) -> [String: [Double]] {
       guard let content = view.window?.contentView else { return [:] }
       return controls.mapValues { rect in

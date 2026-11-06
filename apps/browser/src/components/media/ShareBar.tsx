@@ -1,5 +1,6 @@
 import { changeCaptureSource, stopCapture } from "@solara/solaracore";
-import { useEffect, useRef } from "react";
+import { publishSettingsTopic, windowShellActive } from "@solara/settings";
+import { useEffect, useRef, useState } from "react";
 import { Animated, Easing } from "react-native";
 import { useTheme } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
@@ -9,6 +10,7 @@ import { pageOf, usePages } from "../layout/pageState";
 import { addMediaActions, mediaTheme, NativeMediaView } from "./nativeMedia";
 import { useMedia, type TabShare } from "./state";
 import { useWindowId } from "../../store/hooks";
+import { nativeSplitPanes } from "../layout/nativeSplitChrome";
 
 const SHARE_BAR_HEIGHT = 38;
 
@@ -90,9 +92,45 @@ addMediaActions({
   },
 });
 
+const bands: Record<string, Record<string, object>> = {};
+let bandsQueued = false;
+
+function setBand(windowId: string, tabId: string, state: object | null) {
+  const windowBands = (bands[windowId] ??= {});
+  if (state) windowBands[tabId] = state;
+  else delete windowBands[tabId];
+  if (!Object.keys(windowBands).length) delete bands[windowId];
+  if (bandsQueued) return;
+  bandsQueued = true;
+  queueMicrotask(() => {
+    bandsQueued = false;
+    publishSettingsTopic("media.shareBand", { v: 1, windows: bands });
+  });
+}
+
+function shareBarState(tabId: string, capturer: string, share: TabShare, theme: ReturnType<typeof useTheme>) {
+  const host = hostOf(share.origin || pageOf(capturer).security?.origin || useBrowser.getState().tabs[capturer]?.url || "");
+  return { capturer, tabId, shared: share.capturedTabId === tabId, host, theme: mediaTheme(theme) };
+}
+
 export function ShareBar({ tabId }: { tabId: string }) {
-  const theme = useTheme();
   const windowId = useWindowId();
+  const [native] = useState(() => nativeSplitPanes && windowShellActive(windowId));
+  return native ? <NativeShareBand tabId={tabId} windowId={windowId} /> : <HostedShareBar tabId={tabId} windowId={windowId} />;
+}
+
+function NativeShareBand({ tabId, windowId }: { tabId: string; windowId: string }) {
+  const theme = useTheme();
+  const found = useShareFor(tabId);
+  const state = found ? shareBarState(tabId, found[0], found[1], theme) : null;
+  const key = state && JSON.stringify(state);
+  useEffect(() => setBand(windowId, tabId, state), [windowId, tabId, key]);
+  useEffect(() => () => setBand(windowId, tabId, null), [windowId, tabId]);
+  return null;
+}
+
+function HostedShareBar({ tabId, windowId }: { tabId: string; windowId: string }) {
+  const theme = useTheme();
   const found = useShareFor(tabId);
   const height = useRef(new Animated.Value(0)).current;
   const visible = !!found;
@@ -104,11 +142,9 @@ export function ShareBar({ tabId }: { tabId: string }) {
   const shown = found ?? last.current;
   if (!shown) return null;
   const [capturer, share] = shown;
-  const isShared = share.capturedTabId === tabId;
-  const host = hostOf(share.origin || pageOf(capturer).security?.origin || useBrowser.getState().tabs[capturer]?.url || "");
   return (
     <Animated.View style={{ height, overflow: "hidden" }}>
-      <NativeMediaView kind="media.shareBar" windowId={windowId} state={{ capturer, tabId, shared: isShared, host, theme: mediaTheme(theme) }} style={{ height: SHARE_BAR_HEIGHT }} />
+      <NativeMediaView kind="media.shareBar" windowId={windowId} state={shareBarState(tabId, capturer, share, theme)} style={{ height: SHARE_BAR_HEIGHT }} />
     </Animated.View>
   );
 }

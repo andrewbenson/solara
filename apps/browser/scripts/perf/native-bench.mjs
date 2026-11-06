@@ -86,7 +86,9 @@
 //     --port <n>              the instances' CDP port (default: a free one per launch); refused while anything listens on it
 //     --compare <a.json>      print a before/after table against another run's results.json
 //     --report <b.json>       print the table for saved results (with --compare, before/after) without running
-//     Environment: BENCH_ALLOW_APP_NAP=1 leaves App Nap on (the control for the App Nap row); BENCH_DEBUG=1 logs switches;
+//     Environment: BENCH_ALLOW_APP_NAP=1 leaves App Nap on (the control for the App Nap row); BENCH_ALLOW_NETWORK=1 lets
+//                  instances resolve hosts other than 127.0.0.1 and localhost (off by default: uBlock Origin's list mirrors
+//                  differ, so its memory depended on which one it drew); BENCH_DEBUG=1 logs switches;
 //     BENCH_CMD_TIMEOUT_MS=<ms> how long a command to the app may take to answer (default 30000; raise it for a dry run
 //     on a loaded Mac where scripts/agent/cpu-cap pauses the instance. Timings taken meanwhile are invalid).
 //
@@ -217,6 +219,9 @@ if (opt.help) {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const UBO_ID = "fajbdaomknpkicfjcpipdmcpoamdmilh";
+const BLOCKER_SETTLE_MS = 150_000;
+const BLOCKER_STORAGE = [`Local Extension Settings/${UBO_ID}`, `IndexedDB/chrome-extension_${UBO_ID}_0.indexeddb.leveldb`, `IndexedDB/chrome-extension_${UBO_ID}_0.indexeddb.blob`];
 const log = (...a) => console.error(`[bench ${new Date().toISOString().slice(11, 19)}]`, ...a);
 const median = (xs) => {
   const s = xs.filter((x) => Number.isFinite(x)).sort((a, b) => a - b);
@@ -433,6 +438,39 @@ class Cdp {
   async find(substring) {
     return (await this.targets()).find((t) => t.url.endsWith(substring) || t.url.includes(substring + "&"));
   }
+  async blockerTarget() {
+    try {
+      const list = await (await fetch(`http://127.0.0.1:${this.port}/json/list`, { signal: AbortSignal.timeout(3000) })).json();
+      return list.find((t) => t.type === "background_page" && t.url.startsWith(`chrome-extension://${UBO_ID}/`)) ?? null;
+    } catch {
+      return null;
+    }
+  }
+  async blockerEval(expression) {
+    const target = await this.blockerTarget();
+    if (!target) return null;
+    const r = await this.send(target, "Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true }).catch(() => null);
+    return r?.result?.value ?? null;
+  }
+  async blocker() {
+    let list;
+    try {
+      list = await (await fetch(`http://127.0.0.1:${this.port}/json/list`, { signal: AbortSignal.timeout(3000) })).json();
+    } catch {
+      return null;
+    }
+    const target = list.find((t) => t.type === "background_page" && t.url.startsWith(`chrome-extension://${UBO_ID}/`));
+    if (!target) return null;
+    const r = await this.send(target, "Runtime.evaluate", {
+      expression: "JSON.stringify({ ready: self.µBlock?.readyToFilter === true, selfieInvalid: self.µBlock?.selfieIsInvalid, allReadyAfter: self.µBlock?.supportStats?.allReadyAfter ?? null, autoUpdate: self.µBlock?.userSettings?.autoUpdate ?? null, urlhausEntries: self.µBlock?.availableFilterLists?.[\"urlhaus-1\"]?.entryCount ?? null })",
+      returnByValue: true,
+    }).catch(() => null);
+    try {
+      return JSON.parse(r?.result?.value ?? "null");
+    } catch {
+      return null;
+    }
+  }
   close() {
     for (const s of this.sockets.values()) s.close();
     this.sockets.clear();
@@ -538,7 +576,7 @@ class Instance {
         SOLARA_DRAW_WINDOWS: "1", SOLARA_UPDATE_FEED_URL: this.feed, DYLD_INSERT_LIBRARIES: dyld,
         ...Object.fromEntries(extra.map((e) => [e.slice(0, e.indexOf("=")), e.slice(e.indexOf("=") + 1)])),
       },
-      args: ["--mute-audio", ...(process.env.BENCH_ALLOW_APP_NAP ? [] : ["-NSAppSleepDisabled", "YES"])],
+      args: ["--mute-audio", ...(process.env.BENCH_ALLOW_NETWORK ? [] : ["--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost"]), ...(process.env.BENCH_ALLOW_APP_NAP ? [] : ["-NSAppSleepDisabled", "YES"])],
     });
     this.pid = this.instance.pid;
     this.port = this.cdp.port = this.instance.port;
@@ -653,6 +691,46 @@ function writeBigSeed(side) {
   log(`seeded the big session (${side.label}): ${session.tabs.length} tabs, ${files["history.json"].history.default.length} history entries`);
 }
 
+async function awaitBlockerSelfie(app, side) {
+  const start = Date.now();
+  let state = null;
+  for (const end = start + BLOCKER_SETTLE_MS; Date.now() < end; await sleep(1000)) {
+    if (!app.alive()) throw new Error(`the template instance (${side.label}) exited while uBlock Origin settled`);
+    state = await app.cdp.blocker();
+    if (state?.ready && state.selfieInvalid === false) {
+      const autoUpdate = await app.cdp.blockerEval("(async () => { self.µBlock.userSettings.autoUpdate = false; await self.µBlock.saveUserSettings(); return self.µBlock.userSettings.autoUpdate; })()");
+      if (autoUpdate !== false) throw new Error(`template (${side.label}): couldn't turn uBlock Origin's list updates off (${JSON.stringify(autoUpdate)})`);
+      state = await app.cdp.blocker();
+      await sleep(2000);
+      log(`template (${side.label}): uBlock Origin's selfie is on disk after ${Math.round((Date.now() - start) / 1000)} s (${state.allReadyAfter})`);
+      side.results.meta.templateBlocker = { ...state, settledMs: Date.now() - start };
+      return;
+    }
+    if (!state && Date.now() - start > 20_000) {
+      log(`template (${side.label}): no uBlock Origin background page after 20 s; not waiting for its selfie`);
+      side.results.meta.templateBlocker = null;
+      return;
+    }
+  }
+  throw new Error(`template (${side.label}): uBlock Origin's selfie wasn't written within ${BLOCKER_SETTLE_MS / 1000} s (last: ${JSON.stringify(state)})`);
+}
+
+function shareBlockerStorage(sides) {
+  const [first, ...others] = sides;
+  const root = (side) => join(side.template, "Chromium/Default");
+  const present = BLOCKER_STORAGE.filter((part) => existsSync(join(root(first), part)));
+  if (!present.length) {
+    log(`no uBlock Origin storage in ${first.label}'s template: each side keeps its own`);
+    return;
+  }
+  for (const other of others) for (const part of BLOCKER_STORAGE) {
+    rmSync(join(root(other), part), { recursive: true, force: true });
+    if (present.includes(part)) cpSync(join(root(first), part), join(root(other), part), { recursive: true });
+  }
+  for (const side of sides) side.results.meta.blockerStorageFrom = first.label;
+  log(`uBlock Origin's storage (lists, selfie, settings) copied from ${first.label}'s template into ${others.map((o) => o.label).join(", ")}`);
+}
+
 async function makeTemplate(side) {
   const dir = side.template;
   if (opt["fixture-template"]) {
@@ -684,6 +762,7 @@ async function makeTemplate(side) {
       for (const id of s.windowOrder) if (id !== w) ac.store.getState().closeWindow(id);
       ac.store.getState().activate(keep); return keep;`);
     await sleep(4000);
+    await awaitBlockerSelfie(app, side);
   } finally {
     await app.quit();
   }
@@ -1136,6 +1215,8 @@ async function sessionRun(side, i, parts) {
     if (has("idle") || has("memory")) await sleep(30_000);
     if (has("idle")) r.idle.tabs1 = await idleWindow(app, secs);
     if (has("memory")) r.memory.tabs1 = footprint(usage(app.pid));
+    r.blocker = await app.cdp.blocker();
+    if (r.blocker && !String(r.blocker.allReadyAfter ?? "").includes("(selfie)")) log(`${side.tag}session ${i}: uBlock Origin didn't start from its selfie (${r.blocker.allReadyAfter}); its memory and CPU rows aren't comparable`);
     await openTabs(app, 1, 10);
     if (has("memory")) {
       await sleep(10_000);
@@ -1537,6 +1618,7 @@ try {
     process.exit(0);
   }
   for (const side of sides) await makeTemplate(side);
+  if (sides.length > 1) shareBlockerStorage(sides);
   if (only.has("prepare-fixture")) {
     await prepareFixture(candidate);
     process.exitCode = 0;

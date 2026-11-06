@@ -75,6 +75,13 @@ before the rename hold `Solara.app` instead, so the commands below find the cont
    the timing is what you're measuring, run one bench at a time.
    - Pick your own `--port`.
    - On a Mac without the Developer ID identity (the Hill Studio), set `BENCH_SIGN_IDENTITY=-`: native-bench re-signs both copies ad hoc, without the team-only entitlements. Say "ad hoc copies on both sides" in the write-up.
+   - From js-bench's bench revision 7 on, both benches run their instances offline: they resolve only 127.0.0.1 and
+     localhost (`BENCH_ALLOW_NETWORK=1` lifts it), so uBlock Origin keeps its bundled lists. native-bench's
+     templates wait for uBO's selfie and turn its list updates off, and both sides start from one template's uBO
+     storage; each session records uBO's `allReadyAfter` and `urlhausEntries`. Online, uBO drew its urlhaus list
+     from a random mirror (122,620 or 548,835 entries), and the extension process came out 75 or 118 MB with it.
+     Numbers from before revision 7 aren't comparable for memory, idle or js-bench startup (which also stopped
+     counting the UI gate's wait).
    - Keep the display awake (`caffeinate -d`).
    - If the screen locks or the display sleeps, macOS stops giving windows display-link frames. Pages then paint
      about once a second. native-bench leaves those switches and new tabs out and counts them in the "samples

@@ -53,9 +53,12 @@
 //   { label, version (the app's CFBundleShortVersionString), bundle, bundleSize (bytes), when,
 //     probeRevision   acPerf.revision of the bundle (PERF_PROBE_REVISION in perfProbe.ts; inferred for bundles from
 //                     before it existed: 2 if the probe counts commitTasks, else 1). Mixed after --append: an array.
-//     benchRevision   BENCH_REVISION below: this script's seed and scenarios
-//     results: [{ run, launchedAt (epoch ms before `open`), probeRevision, <scenario>: what acBench.run returned,
-//                 screenLocked: the scenarios that ran while the screen was locked, if any }]
+//     benchRevision   BENCH_REVISION below: this script's seed, scenarios, launch timing and network
+//     results: [{ run, launchedAt (epoch ms before `open`, after the UI gate's wait), probeRevision, <scenario>: what
+//                 acBench.run returned, screenLocked: the scenarios that ran while the screen was locked, if any,
+//                 blocker: uBlock Origin's { allReadyAfter, urlhausEntries } at the end of the run, or null }]
+//     Instances resolve only 127.0.0.1 and localhost (BENCH_ALLOW_NETWORK=1 lifts it): uBlock Origin then keeps its
+//     bundled lists, where online it drew a urlhaus list of 122,620 or 548,835 entries by mirror and its memory followed.
 //       startup      { marks: { bundleStart, bundleEnd, firstCommit, firstWindow, processStart }, stats }
 //       idle, idleLate   { settled, stats }               scroll   { stats }
 //       typing       { keys: [ms per key], items, stats }       switchTabs, hover, storeUpdate   { steps: [ms], stats }
@@ -71,7 +74,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, stat
 import { createServer } from "node:http";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { binaryOf, screenLocked, uiGateLaunching, uiGateWatch } from "../../../../scripts/lib/instance.mjs";
+import { binaryOf, devtools, screenLocked, uiGateLaunching, uiGateWatch } from "../../../../scripts/lib/instance.mjs";
 import { escapeHtml } from "../../../../scripts/lib/fixture-html.mjs";
 import { resignForBench } from "./bench-signing.mjs";
 import { writeSeed } from "./seed.mjs";
@@ -80,7 +83,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const appDir = resolve(here, "../..");
 const repo = resolve(appDir, "../..");
 const defaultOut = process.env.AC_PERF_OUT ?? "/tmp/ac-perf-js";
-const BENCH_REVISION = 6;
+const BENCH_REVISION = 7;
 
 const [command, ...rest] = process.argv.slice(2);
 const flags = {};
@@ -288,14 +291,15 @@ export async function launch(app, dataDir, port) {
   const binary = binaryOf(realpathSync(app));
   writeSwitches(dataDir, process.env.SOLARA_SWITCHES);
   if (pidsOf(binary).length) throw new Error(`an instance of ${app} is already running`);
-  const launchedAt = Date.now();
   const env = {
     SOLARA_BACKGROUND: "1", SOLARA_DRAW_WINDOWS: "1", SOLARA_DATA_DIR: dataDir, SOLARA_REMOTE_DEBUGGING_PORT: String(port),
     ...(process.env.SOLARA_SWITCHES ? { SOLARA_SWITCHES: process.env.SOLARA_SWITCHES } : {}),
     ...Object.fromEntries(Object.entries(process.env).filter(([k]) => ["SOLARA_NATIVE_SHELL", "SOLARA_NATIVE_PAGES_POOL", "SOLARA_NATIVE_TOP_STRIP", "SOLARA_NATIVE_BOOKMARKS_BAR", "SOLARA_NATIVE_SERVICES", "SOLARA_NATIVE_SIDEBAR_ADDRESS", "SOLARA_NATIVE_SCOPE"].includes(k))),
   };
   await uiGateLaunching(binary);
-  execFileSync("open", ["-g", "-n", ...Object.entries(env).flatMap(([k, v]) => ["--env", `${k}=${v}`]), app]);
+  const launchedAt = Date.now();
+  execFileSync("open", ["-g", "-n", ...Object.entries(env).flatMap(([k, v]) => ["--env", `${k}=${v}`]), app,
+    ...(process.env.BENCH_ALLOW_NETWORK ? [] : ["--args", "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost"])]);
   for (let i = 0; i < 200; i++) {
     const [pid] = pidsOf(binary);
     if (pid) {
@@ -305,6 +309,23 @@ export async function launch(app, dataDir, port) {
     await sleep(50);
   }
   throw new Error("app did not start");
+}
+
+const UBO_ID = "fajbdaomknpkicfjcpipdmcpoamdmilh";
+
+export async function blockerState(port) {
+  let session;
+  try {
+    const list = await (await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(3000) })).json();
+    const target = list.find((t) => t.type === "background_page" && t.url.startsWith(`chrome-extension://${UBO_ID}/`));
+    if (!target) return null;
+    session = await devtools(target);
+    return JSON.parse(await session.eval(`JSON.stringify({ allReadyAfter: self.µBlock?.supportStats?.allReadyAfter ?? null, urlhausEntries: self.µBlock?.availableFilterLists?.["urlhaus-1"]?.entryCount ?? null })`, { timeout: 5000 }));
+  } catch {
+    return null;
+  } finally {
+    session?.close();
+  }
 }
 
 export async function quit(pid) {
@@ -377,7 +398,8 @@ async function run() {
       writeSeed(dataDir, origin, version);
       if (flags.seed === "small") smallSession(dataDir);
       if (flags.probe) writeFileSync(join(dataDir, "perf-probe"), flags.probe);
-      const { pid, launchedAt } = await launch(clone, dataDir, 9500 + r + (label.length % 50) * 10);
+      const cdpPort = 9500 + r + (label.length % 50) * 10;
+      const { pid, launchedAt } = await launch(clone, dataDir, cdpPort);
       const result = { run: r, launchedAt };
       try {
         let ready = false;
@@ -395,6 +417,7 @@ async function run() {
           if (lockedBefore || screenLocked()) (result.screenLocked ??= []).push(name);
         }
         result.probeRevision = await evaluate(dataDir, pid, `return acPerf.revision ?? ("commitTasks" in acPerf.read() ? 2 : 1);`);
+        result.blocker = await blockerState(cdpPort);
       } finally {
         await quit(pid);
       }

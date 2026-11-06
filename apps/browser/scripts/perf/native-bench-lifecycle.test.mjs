@@ -111,7 +111,7 @@ test("J2 uses the shared registered instance and retains benchmark data", async 
   assert.equal(options.ready, false);
   assert.equal(options.keepData, true);
   assert.equal(options.scratchMarker, false);
-  assert.deepEqual(Array.from(options.args), ["--mute-audio", "-NSAppSleepDisabled", "YES"]);
+  assert.deepEqual(Array.from(options.args), ["--mute-audio", "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost", "-NSAppSleepDisabled", "YES"]);
   assert.equal(options.env.SOLARA_DRAW_WINDOWS, "1");
   assert.equal(options.env.DYLD_INSERT_LIBRARIES, "/tools/acmark.dylib");
   assert.equal(bench.app.t0, 1000);

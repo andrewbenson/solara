@@ -1,7 +1,7 @@
 {
   "about": "Ceilings for apps/browser/scripts/perf/ratchet.mjs (policy in its header and docs/perf/README.md). Lower them with `ratchet.mjs lower`; raise one only by hand, with the reason in the commit.",
   "baseline": {"commit":"dcd3ce1f","runs":8,"scenarios":["hover","idle","launch","openClose","pageLoad","scroll","small.launch","switchTabs","typing"],"when":"2026-10-06"},
-  "revisions": {"probe":"3","bench":"6"},
+  "revisions": {"probe":"3","bench":"7"},
   "exact": {
     "close.mounts.SolaraContextMenuArea": 0,
     "close.mounts.SolaraFileDrag": 0,

@@ -243,7 +243,23 @@ let pendingPopup: { windowId: string; extensionId: string; tabId: string | undef
 
 function beginPopupRequest(windowId: string, extensionId: string, tabId: string | undefined) {
   pendingPopup = { windowId, extensionId, tabId };
+  watchPopupTab();
   return pendingPopup;
+}
+
+let stopWatchingPopupTab: (() => void) | null = null;
+
+function watchPopupTab() {
+  const wanted = !!(pendingPopup || useExtensions.getState().popup);
+  if (wanted && !stopWatchingPopupTab) {
+    stopWatchingPopupTab = useBrowser.subscribe((s, prev) => {
+      dismissChangedPopup(s, prev);
+      watchPopupTab();
+    });
+  } else if (!wanted && stopWatchingPopupTab) {
+    stopWatchingPopupTab();
+    stopWatchingPopupTab = null;
+  }
 }
 
 const popupRequestCurrent = (request: NonNullable<typeof pendingPopup>) =>
@@ -251,6 +267,7 @@ const popupRequestCurrent = (request: NonNullable<typeof pendingPopup>) =>
 
 export function closeExtensionPopup(windowId: string | null = null) {
   if (!windowId || pendingPopup?.windowId === windowId) pendingPopup = null;
+  watchPopupTab();
   void closeNativeExtensionPopup(windowId).catch(() => {});
 }
 
@@ -274,9 +291,10 @@ export function extensionPopupChanged({ windowId, extensionId, tabId, reason }: 
     if (reason !== "replacement" && pendingPopup?.windowId === windowId) pendingPopup = null;
     if (popup?.windowId === windowId) useExtensions.setState({ popup: null });
   }
+  watchPopupTab();
 }
 
-export function dismissChangedPopup(s: BrowserState, prev: BrowserState) {
+function dismissChangedPopup(s: BrowserState, prev: BrowserState) {
   for (const popup of [pendingPopup, useExtensions.getState().popup]) {
     if (!popup) continue;
     const { windowId, tabId } = popup;

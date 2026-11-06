@@ -8,9 +8,9 @@ import { useBrowser } from "../../store/browser";
 import { setWindowSidebar, sidePanelWidthOf } from "../../store/sidebarRail";
 import { shownPageId } from "../../store/peek";
 import { useWindowId } from "../../store/hooks";
-import { useFullscreenTab } from "../layout/pageState";
 import { openFromPage, pageProfileId } from "../layout/openFromPage";
 import { closeSidePanel, findExtension, showExtensionMenu, useExtensions } from "./state";
+import type { SidePanel } from "./store";
 
 let refocusing = false;
 function refocusActivePageOnPanelLoss() {
@@ -23,30 +23,44 @@ function refocusActivePageOnPanelLoss() {
   });
 }
 
-export function SidePanelRoom() {
-  const windowId = useWindowId();
-  const open = useExtensions((e) => !!e.sidePanels[windowId]);
-  const width = useBrowser((s) => sidePanelWidthOf(s.windows[windowId], s.settings));
-  const fullscreen = !!useFullscreenTab(windowId);
-  return open && !fullscreen ? <View pointerEvents="none" style={{ width: width + layout.cardInset - 1 }} /> : null;
+function useSidePanelWidth(windowId: string) {
+  return useBrowser((s) => sidePanelWidthOf(s.windows[windowId], s.settings));
 }
 
-export function ExtensionSidePanel() {
+export function SidePanelRoom({ fullscreen }: { fullscreen: boolean }) {
+  const windowId = useWindowId();
+  const open = useExtensions((e) => !!e.sidePanels[windowId]);
+  return open && !fullscreen ? <SidePanelSpacer windowId={windowId} /> : null;
+}
+
+function SidePanelSpacer({ windowId }: { windowId: string }) {
+  const width = useSidePanelWidth(windowId);
+  return <View pointerEvents="none" style={{ width: width + layout.cardInset - 1 }} />;
+}
+
+export function ExtensionSidePanel({ fullscreen }: { fullscreen: boolean }) {
   const windowId = useWindowId();
   const panel = useExtensions((e) => e.sidePanels[windowId]);
-  const width = useBrowser((s) => sidePanelWidthOf(s.windows[windowId], s.settings));
-  const fullscreen = !!useFullscreenTab(windowId);
+  refocusActivePageOnPanelLoss();
+  useEffect(() => {
+    if (!panel) void setWindowSidePanel(windowId, null);
+  }, [windowId, !!panel]);
+  useEffect(() => () => { void setWindowSidePanel(windowId, null); }, [windowId]);
+  return panel ? <OpenSidePanel windowId={windowId} panel={panel} fullscreen={fullscreen} /> : null;
+}
+
+function OpenSidePanel({ windowId, panel, fullscreen }: { windowId: string; panel: SidePanel; fullscreen: boolean }) {
+  const width = useSidePanelWidth(windowId);
   const theme = useTheme();
-  const ext = useExtensions((e) => panel ? e.lists[panel.profile]?.find((x) => x.id === panel.extensionId) : undefined);
-  const key = panel ? `${panel.extensionId}|${panel.pageProfile}|${panel.url}|${panel.opened}` : null;
+  const ext = useExtensions((e) => e.lists[panel.profile]?.find((x) => x.id === panel.extensionId));
+  const key = `${panel.extensionId}|${panel.pageProfile}|${panel.url}|${panel.opened}`;
   const live = useRef({ key, panel });
   live.current = { key, panel };
-  refocusActivePageOnPanelLoss();
 
   useEffect(
     () => onHostedEvent("extensionSidePanel", windowId, (name, payload) => {
       const { key, panel } = live.current;
-      if (!panel || payload.key !== key) return;
+      if (payload.key !== key) return;
       const { profile, extensionId, pageProfile } = panel;
       if (name === "menu") {
         const found = findExtension(profile, extensionId);
@@ -61,8 +75,8 @@ export function ExtensionSidePanel() {
     }),
     [windowId],
   );
-  const state = useMemo(() => panel && !fullscreen ? {
-    key: key!,
+  const state = useMemo(() => fullscreen ? null : {
+    key,
     pageProfile: panel.pageProfile,
     url: toEngineUrl(panel.url),
     title: ext?.actionTitle || ext?.name || "Extension",
@@ -78,10 +92,9 @@ export function ExtensionSidePanel() {
       hairline: theme.dark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.08)",
       radius: layout.cardRadius,
     },
-  } : null, [panel, fullscreen, key, ext, width, theme]);
+  }, [panel, fullscreen, key, ext, width, theme]);
   useEffect(() => {
     void setWindowSidePanel(windowId, state);
   }, [windowId, state]);
-  useEffect(() => () => { void setWindowSidePanel(windowId, null); }, [windowId]);
   return null;
 }

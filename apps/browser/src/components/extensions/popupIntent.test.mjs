@@ -21,10 +21,18 @@ globalThis.acTestNativeModules = {
 
 const native = await import("../../test-native/index.ts");
 const { useBrowser } = await import("../../store/browser.ts");
+const liveBrowserSubscribers = new Set();
+const subscribeBrowser = useBrowser.subscribe;
+useBrowser.subscribe = (listener) => {
+  const unsubscribe = subscribeBrowser(listener);
+  const handle = {};
+  liveBrowserSubscribers.add(handle);
+  return () => { liveBrowserSubscribers.delete(handle); unsubscribe(); };
+};
 const { usePages } = await import("../layout/pageState.ts");
 const { webviews } = await import("../../lib/webviews.ts");
 const { useExtensions } = await import("./store.ts");
-const { activateExtension, closeExtensionPopup, dismissChangedPopup, extensionPopupChanged, openActionPopup } = await import("./state.ts");
+const { activateExtension, closeExtensionPopup, extensionPopupChanged, openActionPopup } = await import("./state.ts");
 
 const EXT = { id: "ext", name: "Ext", enabled: true, pinned: true, hasAction: true, incognito: false, popup: "popup.html" };
 const ANCHOR = { x: 700, y: 20, width: 24, height: 24 };
@@ -65,18 +73,13 @@ test("a tab switch and return cannot revive an earlier popup action", async () =
   const { windowId, tabId } = setup();
   const other = S().newTab(windowId, { url: "b.com", background: true });
   const answer = delayedAction(tabId);
-  const unsubscribe = useBrowser.subscribe(dismissChangedPopup);
-  try {
-    const opening = activateExtension(windowId, EXT, ANCHOR, { popup: "chrome-extension://ext/popup.html" });
-    S().activate(other);
-    S().activate(tabId);
-    answer();
-    await opening;
-    assert.equal(shown.length, 0);
-    assert.deepEqual(closed, [windowId]);
-  } finally {
-    unsubscribe();
-  }
+  const opening = activateExtension(windowId, EXT, ANCHOR, { popup: "chrome-extension://ext/popup.html" });
+  S().activate(other);
+  S().activate(tabId);
+  answer();
+  await opening;
+  assert.equal(shown.length, 0);
+  assert.deepEqual(closed, [windowId]);
 });
 
 test("closing while action.openPopup resolves prevents a late native show", async () => {
@@ -96,9 +99,7 @@ test("native owns visibility while JS sends the popup intent and dismissal", asy
   assert.deepEqual(shown, [{ extensionId: "ext", popupUrl: "chrome-extension://ext/popup.html", profile: "", tabId, windowId, anchor: ANCHOR, requiresActive: false }]);
   assert.equal(useExtensions.getState().popup, null);
   extensionPopupChanged({ windowId, extensionId: "ext", tabId });
-  const prev = S();
   S().navigate(tabId, "c.com");
-  dismissChangedPopup(S(), prev);
   assert.deepEqual(closed, [windowId]);
   extensionPopupChanged({ windowId, extensionId: null });
   assert.equal(useExtensions.getState().popup, null);
@@ -108,34 +109,24 @@ test("replacing a tab with equal navigation keeps its extension popup open", asy
   const { windowId, tabId } = setup();
   await activateExtension(windowId, EXT, ANCHOR);
   extensionPopupChanged({ windowId, extensionId: "ext", tabId });
-  const unsubscribe = useBrowser.subscribe(dismissChangedPopup);
-  try {
-    useBrowser.setState((s) => ({ tabs: { ...s.tabs, [tabId]: {
-      ...s.tabs[tabId],
-      title: "Updated title",
-      favicon: "https://a.com/icon.png",
-      navigation: { ...s.tabs[tabId].navigation },
-    } } }));
-    assert.deepEqual(closed, []);
-    assert.deepEqual(useExtensions.getState().popup, { windowId, extensionId: "ext", tabId });
-  } finally {
-    unsubscribe();
-  }
+  useBrowser.setState((s) => ({ tabs: { ...s.tabs, [tabId]: {
+    ...s.tabs[tabId],
+    title: "Updated title",
+    favicon: "https://a.com/icon.png",
+    navigation: { ...s.tabs[tabId].navigation },
+  } } }));
+  assert.deepEqual(closed, []);
+  assert.deepEqual(useExtensions.getState().popup, { windowId, extensionId: "ext", tabId });
 });
 
 test("a new navigation sequence at the same URL dismisses its extension popup", () => {
   const { windowId, tabId } = setup();
   extensionPopupChanged({ windowId, extensionId: "ext", tabId });
-  const unsubscribe = useBrowser.subscribe(dismissChangedPopup);
-  try {
-    useBrowser.setState((s) => ({ tabs: { ...s.tabs, [tabId]: {
-      ...s.tabs[tabId],
-      navigation: { ...s.tabs[tabId].navigation, seq: s.tabs[tabId].navigation.seq + 1 },
-    } } }));
-    assert.deepEqual(closed, [windowId]);
-  } finally {
-    unsubscribe();
-  }
+  useBrowser.setState((s) => ({ tabs: { ...s.tabs, [tabId]: {
+    ...s.tabs[tabId],
+    navigation: { ...s.tabs[tabId].navigation, seq: s.tabs[tabId].navigation.seq + 1 },
+  } } }));
+  assert.deepEqual(closed, [windowId]);
 });
 
 test("Little Solara does not request an extension popup", async () => {
@@ -227,4 +218,22 @@ test("a rejected extension action does not swallow the next popup click", async 
   webviews.clear();
   await activateExtension(windowId, EXT, ANCHOR);
   assert.equal(shown.length, 1);
+});
+
+test("the popup's tab watch subscribes to the browser store only while a popup is pending or shown", async () => {
+  const { windowId, tabId } = setup();
+  const idle = liveBrowserSubscribers.size;
+  const answer = delayedAction(tabId);
+  const opening = activateExtension(windowId, EXT, ANCHOR, { popup: "chrome-extension://ext/popup.html" });
+  assert.equal(liveBrowserSubscribers.size, idle + 1);
+  answer();
+  await opening;
+  extensionPopupChanged({ windowId, extensionId: "ext", tabId });
+  assert.equal(liveBrowserSubscribers.size, idle + 1);
+  S().navigate(tabId, "c.com");
+  assert.deepEqual(closed, [windowId]);
+  extensionPopupChanged({ windowId, extensionId: null });
+  assert.equal(liveBrowserSubscribers.size, idle);
+  S().navigate(tabId, "d.com");
+  assert.deepEqual(closed, [windowId]);
 });

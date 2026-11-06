@@ -52,7 +52,7 @@ function BrowserWindow() {
   const card = (
     <>
       <ContentCard />
-      <SidePanelRoom />
+      <SidePanelRoom fullscreen={fullscreen} />
     </>
   );
 
@@ -60,7 +60,7 @@ function BrowserWindow() {
     <View pointerEvents={onTop ? "box-none" : "auto"} style={{ flex: 1, flexDirection: "row" }} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
       <ShellBackdrop shell={shell} />
       <WindowProfile />
-      <ExtensionSidePanel />
+      <ExtensionSidePanel fullscreen={fullscreen} />
       <ProfileTint />
       <DockedLayout
         fullscreen={fullscreen}

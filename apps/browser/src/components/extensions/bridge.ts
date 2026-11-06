@@ -35,7 +35,6 @@ import {
   cancelInstall,
   closeExtensionPopup,
   closeInstallPrompt,
-  dismissChangedPopup,
   extensionPopupChanged,
   closeSidePanel,
   extensionProfile,
@@ -348,7 +347,6 @@ function startActionPopups() {
   onNativeExtensionPopupOpenWindow(({ windowId, profile, request }) => {
     openFromPage(request, { windowId, profileId: pageProfileId(windowId, profile) });
   });
-  useBrowser.subscribe(dismissChangedPopup);
   onExtensionActionPopup(({ browserId, extensionId }) => {
     const tabId = tabForBrowser(browserId);
     const windowId = tabId ? useBrowser.getState().tabs[tabId]?.windowId : undefined;

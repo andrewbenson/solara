@@ -358,6 +358,42 @@ try {
     rep.log(`escape capture ready in ${Date.now() - t0} ms`);
   });
 
+  await check("a strip drag released back on the strip follows the mouse-up, not the last page drag event", async () => {
+    const before = await order("w1");
+    const windows = await run(`return Object.keys(st().windows).sort();`);
+    const splits = await run(`return st().splits;`);
+    const now = await run(`return items("w1");`);
+    const sx = Math.round((now[2][0] + now[2][1]) / 2);
+    const releaseX = now.at(-1)[1] - 4;
+    try {
+      const result = await run(`${PREVIEW}
+        const result = {};
+        const drag = () => { const d = globalThis.acTabDrag.getState(); return { ids: d.tabIds, lifted: !!d.lifted, onPage: !!d.onPage }; };
+        const post = (a, ms) => act("w1", a).then(() => settle(ms));
+        return post("mouse:moved:${sx},21", 60)
+          .then(() => post("mouse:down:${sx},21", 100))
+          .then(() => post("mouse:dragged:${sx + 6},21", 60))
+          .then(() => post("mouse:dragged:${sx + 14},21", 60))
+          .then(() => post("mouse:dragged:${sx + 14},120", 60))
+          .then(() => post("mouse:dragged:640,400", 300))
+          .then(() => preview().then((p) => { result.held = { ...drag(), visible: p.visible, shape: p.shape }; }))
+          .then(() => post("mouse:up:${releaseX},21", 2200))
+          .then(() => preview().then((p) => { result.finished = { ids: drag().ids, visible: p.visible }; return result; }));`);
+      assert.deepEqual(result.held, { ids: [before[2]], lifted: true, onPage: true, visible: true, shape: "card" }, "the last drag event lifts the tab onto the page");
+      assert.deepEqual(result.finished, { ids: [], visible: false }, "the mouse-up ends the drag and the preview is gone");
+      assert.deepEqual(await order("w1"), [...before.slice(0, 2), ...before.slice(3), before[2]], "the mouse-up reorders at the strip's last index");
+      assert.deepEqual(await run(`return Object.keys(st().windows).sort();`), windows, "no detached window from the stale page point");
+      assert.deepEqual(await run(`return st().splits;`), splits, "no split at the stale page point");
+      const capture = await app.probe("view.capture", { windowId: "w1" }, { timeout: 2000 });
+      assert.equal(capture.consistent, true, "a capture right after the release is consistent");
+    } finally {
+      await run(`const id = ${JSON.stringify(before[2])};
+        if (st().tabs[id].windowId !== "w1") st().moveTabsToWindow([id], "w1");
+        st().removeTabFromSplit(id); st().moveTab(id, 0); return settle(600);`);
+    }
+    assert.deepEqual(await order("w1"), before);
+  });
+
   await check("a tab dragged along the strip changes nothing until the drop: then one store update and one Chrome strip command", async () => {
     const now = await run(`return items("w1");`);
     const before = await order("w1");

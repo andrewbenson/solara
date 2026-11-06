@@ -59,6 +59,20 @@ const C = globalThis.expo.modules.SolaraCEF;
 const st = () => ac.store.getState();
 const win = (id) => C.chromeWindows().then((ws) => { const f = st().windows[id].frame; const w = ws.filter((w) => w.hasRoot).find((w) => { const r = w.frame.match(/[-\\d.]+/g).map(Number); return Math.abs(r[0] - f[0]) < 2 && Math.abs(r[2] - f[2]) < 2; }); return w && w.window; });
 const act = (id, a) => win(id).then((n) => C.devWindow(n, a));
+const postDrag = (id, path) => {
+  const points = path.split(";").map((p) => p.split(",").map(Number));
+  const steps = [["down", points[0]]];
+  for (let i = 1; i < points.length; i++) {
+    const [ax, ay] = points[i - 1], [bx, by] = points[i];
+    for (let k = 1; k <= 12; k++) steps.push(["dragged", [ax + (bx - ax) * k / 12, ay + (by - ay) * k / 12]]);
+  }
+  steps.push(["up", points.at(-1)]);
+  const start = performance.now();
+  steps.reduce((chain, [type, [x, y]], i) => chain
+    .then(() => new Promise((r) => setTimeout(r, Math.max(0, start + (i ? 150 + i * 16 : 0) - performance.now()))))
+    .then(() => act(id, "mouse:" + type + ":" + Math.round(x * 100) / 100 + "," + Math.round(y * 100) / 100)), Promise.resolve());
+  return Promise.resolve(steps.length + " events posted");
+};
 const items = (id) => win(id).then((n) => { const xs = []; for (let x = 70; x < st().windows[id].frame[2] - 100; x += 1) xs.push(x);
   return Promise.all(xs.map((x) => C.devWindow(n, "hit:" + x + ",21"))).then((hits) => { const runs = []; let cur = null;
     hits.forEach((h, i) => { const on = /ContextMenuArea|ImageView|Symbol|FadeLabel|Strip(TabChip|PinnedCell|GroupHeader|FolderChip|SplitChip)/.test(h); if (on && !cur) cur = [xs[i], xs[i]]; else if (on) cur[1] = xs[i]; else if (cur) { runs.push(cur); cur = null; } });
@@ -240,7 +254,7 @@ const tabsOf = async (w) => {
 };
 const drag = async (w, points) => {
   const before = await nativeSnapshot();
-  const count = await run(`return act("${w}", "windowDrags").then(() => act("${w}", "drag:${points.map((p) => p.join(",")).join(";")}")).then(() => settle(${points.length * 12 * 16 + 700})).then(() => act("${w}", "windowDrags")).then((t) => Number(t.split("\\n")[0]));`);
+  const count = await run(`return act("${w}", "windowDrags").then(() => postDrag("${w}", "${points.map((p) => p.join(",")).join(";")}")).then(() => settle(${points.length * 12 * 16 + 700})).then(() => act("${w}", "windowDrags")).then((t) => Number(t.split("\\n")[0]));`);
   const after = await nativeSnapshot();
   assert.equal(after.windowDragCount - before.windowDragCount, count, "native window drag count beside JS");
   return count;
@@ -308,7 +322,7 @@ try {
   const watch = (w, path, ms) => run(`${PREVIEW}
     const seen = [];
     const iv = setInterval(() => preview().then((p) => seen.push(p)), 30);
-    return act("${w}", "drag:${path}").then(() => settle(${ms})).then(() => { clearInterval(iv); return seen; });`);
+    return postDrag("${w}", "${path}").then(() => settle(${ms})).then(() => { clearInterval(iv); return seen; });`);
 
   await check("a tab dragged along the strip reorders and doesn't move the window", async () => {
     const frame = await run(`return st().windows.w1.frame;`);
@@ -421,7 +435,7 @@ try {
         let initial;
         return Promise.resolve().then(probe).then((n) => {
           initial = n;
-          return act("w1", "drag:${path.map((p) => p.join(",")).join(";")}").then(() => settle(${path.length * 12 * 16 + 1200}));
+          return postDrag("w1", "${path.map((p) => p.join(",")).join(";")}").then(() => settle(${path.length * 12 * 16 + 1200}));
         }).then(probe).then((n) => {
           log.sentCommands = n.sent - initial.sent;
           log.sentWhileHeld = n.held - initial.held;
@@ -551,7 +565,7 @@ try {
       const seen = await run(`${PREVIEW}
         const seen = [];
         const iv = setInterval(() => preview().then((p) => { const d = globalThis.acTabDrag.getState(); seen.push({ shape: p.shape, insert: d.insert, over: d.overWindow }); }), 30);
-        return act("w5", "drag:${a1},21;${a1},-20;${dx - 30},-20;${between - 3},21;${between - 1},22;${between},21").then(() => settle(1400)).then(() => { clearInterval(iv); return seen; });`);
+        return postDrag("w5", "${a1},21;${a1},-20;${dx - 30},-20;${between - 3},21;${between - 1},22;${between},21").then(() => settle(1400)).then(() => { clearInterval(iv); return seen; });`);
       const overW6 = seen.filter((s) => s.over === "w6");
       assert.ok(seen.some((s) => s.over === "w6" && s.insert?.windowId === "w6" && s.insert.beforeId === "b2"), JSON.stringify({ overW6: overW6.slice(-4), samples: seen.length, w6: await tabsOf("w6") }));
       assert.ok(seen.some((s) => s.insert && s.shape === "pill"), "the pill over the strip");
@@ -569,7 +583,7 @@ try {
       const x = Math.round((now[i][0] + now[i][1]) / 2);
       return run(`${PREVIEW}
         const out = {};
-        act("w1", "drag:${x},21;${x},220;640,560;640,600;640,640;${x},100;${x},21");
+        postDrag("w1", "${x},21;${x},220;640,560;640,600;640,640;${x},100;${x},21");
         setTimeout(() => preview().then((p) => (out.p = p)), 760);
         return settle(2200).then(() => out.p);`);
     };
@@ -592,7 +606,7 @@ try {
     const state = await run(`
       const seen = [];
       const iv = setInterval(() => { const d = globalThis.acTabDrag.getState(); seen.push({ lifted: d.lifted, onPage: d.onPage, target: d.target }); }, 60);
-      return act("w1", "drag:${x},21;${x},120;${width - 260},380;${width - 255},390;${width - 250},400;${width - 250},402").then(() => settle(1700)).then(() => { clearInterval(iv); return seen; });`);
+      return postDrag("w1", "${x},21;${x},120;${width - 260},380;${width - 255},390;${width - 250},400;${width - 250},402").then(() => settle(1700)).then(() => { clearInterval(iv); return seen; });`);
     assert.ok(state.some((s) => s.lifted && s.onPage), "lifted onto the page");
     assert.ok(state.some((s) => s.target?.side === "right"), `right target ${JSON.stringify(state.slice(-6))}`);
     const splits = await run(`return Object.values(st().splits).map((v) => v.tabIds);`);
@@ -694,7 +708,7 @@ try {
       const tx = 90 - 600;
       const seen = await run(`const seen = [];
         const iv = setInterval(() => seen.push(globalThis.acTabDrag.getState().overWindow ?? null), 40);
-        return act(${JSON.stringify(wb)}, "drag:${sx},${sy};${sx + 10},${sy + 6};-60,${sy};${tx},${sy};${tx + 2},${sy + 2};${tx},${sy}").then(() => settle(1600)).then(() => { clearInterval(iv); return seen; });`);
+        return postDrag(${JSON.stringify(wb)}, "${sx},${sy};${sx + 10},${sy + 6};-60,${sy};${tx},${sy};${tx + 2},${sy + 2};${tx},${sy}").then(() => settle(1600)).then(() => { clearInterval(iv); return seen; });`);
       assert.ok(seen.includes(wa), `over the other window during the drag: ${JSON.stringify([...new Set(seen)])}`);
       const after = await run(`return [st().windows[${JSON.stringify(wa)}]?.tabIds ?? [], st().windows[${JSON.stringify(wb)}]?.tabIds ?? []];`);
       assert.ok(after[0].includes(id), `${id} moved: ${JSON.stringify(after)}`);
@@ -755,7 +769,7 @@ try {
       const row = await rowIn(wa, ia);
       assert.ok(row && row.w > 0, `a row for ${ia}`);
       const sx = Math.round(row.x + row.w / 2), sy = Math.round(row.y + row.h / 2);
-      await run(`return act(${JSON.stringify(wa)}, "drag:${sx},${sy};${sx + 10},${sy + 6};400,200;450,200;452,202;450,200").then(() => settle(1600));`);
+      await run(`return postDrag(${JSON.stringify(wa)}, "${sx},${sy};${sx + 10},${sy + 6};400,200;450,200;452,202;450,200").then(() => settle(1600));`);
       const after = await live();
       assert.equal(after.tabs[ia], wb, `${ia} moved into the covering window: ${JSON.stringify(after.tabs)}`);
     } finally {
@@ -771,7 +785,7 @@ try {
       const sx = Math.round(row.x + row.w / 2), sy = Math.round(row.y + row.h / 2);
       const tx = 90 - 600;
       await run(`setTimeout(() => st().closeWindow(${JSON.stringify(wa)}), 900);
-        return act(${JSON.stringify(wb)}, "drag:${sx},${sy};${sx + 10},${sy + 6};-60,${sy};${tx},${sy};${tx + 2},${sy + 2};${tx},${sy};${tx + 1},${sy}").then(() => settle(1800));`);
+        return postDrag(${JSON.stringify(wb)}, "${sx},${sy};${sx + 10},${sy + 6};-60,${sy};${tx},${sy};${tx + 2},${sy + 2};${tx},${sy};${tx + 1},${sy}").then(() => settle(1800));`);
       const after = await live();
       assert.ok(!after.windows.includes(wa), "the target closed");
       assert.ok(after.windows.includes(after.tabs[ib]), `${ib} is in a live window: ${JSON.stringify(after)}`);
@@ -789,7 +803,7 @@ try {
       assert.ok(row && row.w > 0, `a row for ${ib}`);
       const sx = Math.round(row.x + row.w / 2), sy = Math.round(row.y + row.h / 2);
       await run(`setTimeout(() => st().closeWindow(${JSON.stringify(wb)}), 500);
-        act(${JSON.stringify(wb)}, "drag:${sx},${sy};${sx + 10},${sy + 6};${sx + 10},${sy + 60};${sx + 10},${sy + 120};${sx + 10},${sy + 180}").catch(() => {});
+        postDrag(${JSON.stringify(wb)}, "${sx},${sy};${sx + 10},${sy + 6};${sx + 10},${sy + 60};${sx + 10},${sy + 120};${sx + 10},${sy + 180}").catch(() => {});
         return settle(2200);`);
       const after = await live();
       assert.ok(!after.windows.includes(wb), "the source closed");
@@ -816,7 +830,7 @@ try {
     const sx = Math.round(row.x + row.w / 2), sy = Math.round(row.y + row.h / 2);
     const page = Math.round(row.x + row.w + 200), back = Math.round(row.x + row.w - 10);
     const seen = await run(`const seen = []; const iv = setInterval(() => { const d = globalThis.acTabDrag.getState(); seen.push([Math.round(d.x), Math.round(d.y), d.outside, d.overWindow, d.onPage].join()); }, 20);
-      return act("w1", "drag:${sx},${sy};${sx + 10},${sy + 6};${page},400;${page + 2},404;${page},406;${back},${sy}").then(() => settle(1600)).then(() => { clearInterval(iv); return [...new Set(seen)]; });`);
+      return postDrag("w1", "${sx},${sy};${sx + 10},${sy + 6};${page},400;${page + 2},404;${page},406;${back},${sy}").then(() => settle(1600)).then(() => { clearInterval(iv); return [...new Set(seen)]; });`);
     const after = await live();
     const lastDrop = (await nativeProbe("w1"))?.lastDrop ?? null;
     await closeAll();
@@ -839,7 +853,7 @@ try {
       const sx = Math.round(row.x + row.w / 2), sy = Math.round(row.y + row.h / 2);
       const left = Math.round(row.x + row.w + 140);
       await run(`globalThis.acTabDragEndDelay = ${delay};
-        return act("w1", "drag:${sx},${sy};${sx + 40},${sy + 20};${left},380;${left + 4},390;${left + 6},396;${left + 6},398").then(() => settle(${Math.max(2800, delay + 1200)})).finally(() => { globalThis.acTabDragEndDelay = 0; });`);
+        return postDrag("w1", "${sx},${sy};${sx + 40},${sy + 20};${left},380;${left + 4},390;${left + 6},396;${left + 6},398").then(() => settle(${Math.max(2800, delay + 1200)})).finally(() => { globalThis.acTabDragEndDelay = 0; });`);
       const after = await live();
       const splits = await run(`return Object.values(st().splits).filter((v) => v.tabIds.includes(${JSON.stringify(row.tabIds[0])})).length;`);
       const lastDrop = (await nativeProbe("w1"))?.lastDrop ?? null;
@@ -871,7 +885,7 @@ try {
     const ax = Math.round(a.x + a.w / 2), ay = Math.round(a.y + a.h / 2);
     const to = Math.round(b.y + b.h * 0.8);
     await run(`setTimeout(() => ac.shell.devTypeKeys("key", "\\u001b", 0), ${150 + 16 * 12 * 2});
-      return act("w1", "drag:${ax},${ay};${ax},${ay + 10};${ax},${to}").then(() => settle(1600));`);
+      return postDrag("w1", "${ax},${ay};${ax},${ay + 10};${ax},${to}").then(() => settle(1600));`);
     const after = await live();
     assert.equal(after.windows.length, before.windows.length, "no new window");
     assert.equal(after.dragging, 0, "no drag left");
@@ -884,7 +898,7 @@ try {
     const fresh = await run(`return Promise.all([...globalThis.sidebarDrags.w1.items.values()].filter((i) => i.kind === "row" && !i.parentGroup && i.view).map((i) => new Promise((r) => i.view.measureInWindow((x, y, w, h) => r({ id: i.tabIds[0], ids: i.tabIds, x, y, w, h })))));`);
     const [c, d] = fresh.filter((r) => r.ids.length === 1).sort((x, y) => x.y - y.y);
     const cx = Math.round(c.x + c.w / 2), cy = Math.round(c.y + c.h / 2);
-    await run(`return act("w1", "drag:${cx},${cy};${cx},${cy + 10};${cx},${Math.round(d.y + d.h * 0.8)}").then(() => settle(1600));`);
+    await run(`return postDrag("w1", "${cx},${cy};${cx},${cy + 10};${cx},${Math.round(d.y + d.h * 0.8)}").then(() => settle(1600));`);
     assert.notDeepEqual(await run(`return st().windows.w1.tabIds;`), order, "the next drag reordered");
   });
 
@@ -941,7 +955,7 @@ try {
     const state = await run(`
       const seen = [];
       const iv = setInterval(() => { const d = globalThis.acTabDrag.getState(); seen.push(d.target); }, 60);
-      return act("w1", "drag:${sx},${sy};${sx + 40},${sy + 20};${left},380;${left + 4},390;${left + 6},396;${left + 6},398").then(() => settle(1700)).then(() => { clearInterval(iv); return seen; });`);
+      return postDrag("w1", "${sx},${sy};${sx + 40},${sy + 20};${left},380;${left + 4},390;${left + 6},396;${left + 6},398").then(() => settle(1700)).then(() => { clearInterval(iv); return seen; });`);
     assert.ok(state.some((t) => t?.side === "left"), `left target ${JSON.stringify(state.slice(-5))}`);
     const splits = await run(`return Object.values(st().splits).map((v) => v.tabIds);`);
     assert.ok(splits.some((ids) => ids[0] === row.id), JSON.stringify(splits));
@@ -954,7 +968,7 @@ try {
     assert.ok(top, JSON.stringify(start));
     const [key, x, y, w, h] = top;
     const sx = Math.round(x + w / 2), sy = Math.round(y + h / 2);
-    const during = await run(`act("w1", "drag:${sx},${sy};${sx},${sy + 8};${sx},${sy + 8};${sx},${sy + 8};${sx},${sy + 8}");
+    const during = await run(`postDrag("w1", "${sx},${sy};${sx},${sy + 8};${sx},${sy + 8};${sx},${sy + 8};${sx},${sy + 8}");
       return settle(150 + 12 * 16 * 2 + 150).then(() => Promise.all([...globalThis.sidebarDrag.items.values()].filter((i) => (i.kind === "row" || i.kind === "group") && i.view && i.key !== ${JSON.stringify(key)}).map((i) => new Promise((r) => i.view.measureInWindow((x, y, w, h) => r([i.key, x, y, w, h]))))))
         .then((rows) => ({ rows, ghost: !!globalThis.sidebarDrag.active, zone: !!globalThis.sidebarDrag.regions.get("tiles") }));`);
     await run(`return settle(1500);`);
@@ -980,7 +994,7 @@ try {
     const sx = Math.round(row.x + row.w / 2), sy = Math.round(row.y + row.h / 2);
     const to = Math.round(rows[1].y + rows[1].h * 0.8);
     const out = await run(`const c = globalThis.sidebarDrag; c.landed = null;
-      return act("w1", "drag:${sx},${sy};${sx},${sy + 10};${sx},${to}").then(() => settle(1500)).then(() => {
+      return postDrag("w1", "${sx},${sy};${sx},${sy + 10};${sx},${to}").then(() => settle(1500)).then(() => {
         const l = c.landed; const it = l && c.items.get(l.key);
         return new Promise((r) => (it ? it.view.measureInWindow((x, y) => r({ landed: l, row: { x, y } })) : r({ landed: l })));
       });`);
@@ -1002,7 +1016,7 @@ try {
       const sx = Math.round(a.x + a.w / 2), sy = Math.round(a.y + a.h / 2), to = Math.round(c.y + c.h * 0.85);
       const before = await order("w1");
       const seen = await run(`const seen = []; const iv = setInterval(() => { const d = globalThis.acTabDrag.getState(); if (d.tabIds.length) seen.push([d.onPage, d.target]); }, 40);
-        return act("w1", "drag:${sx},${sy};${sx},${sy + 10};${sx},${to};${sx},${to}").then(() => settle(1600)).then(() => { clearInterval(iv); return seen; });`);
+        return postDrag("w1", "${sx},${sy};${sx},${sy + 10};${sx},${to};${sx},${to}").then(() => settle(1600)).then(() => { clearInterval(iv); return seen; });`);
       assert.deepEqual(await run(`return Object.values(st().splits).map((v) => v.tabIds);`), [], "no split");
       assert.ok(seen.every(([onPage, target]) => !onPage && !target), `no page target under the sidebar: ${JSON.stringify(seen.slice(-3))}`);
       const after = await order("w1");
@@ -1012,7 +1026,7 @@ try {
       const cancelled = await run(`setTimeout(() => ac.shell.devTypeKeys("key", "\\u001b", 0), ${150 + 16 * 12 * 2 + 200});
         let ended = null; const t0 = performance.now();
         const stop = globalThis.acTabDrag.subscribe((d, was) => { if (was.tabIds.length && !d.tabIds.length && ended === null) ended = performance.now() - t0; });
-        return act("w1", "drag:${sx},${sy};${sx},${sy + 10};${sx},${to};${hold}").then(() => settle(${150 + 16 * 12 * 8 + 600})).then(() => { stop(); return { ended, order: st().windows.w1.tabIds }; });`);
+        return postDrag("w1", "${sx},${sy};${sx},${sy + 10};${sx},${to};${hold}").then(() => settle(${150 + 16 * 12 * 8 + 600})).then(() => { stop(); return { ended, order: st().windows.w1.tabIds }; });`);
       assert.deepEqual(cancelled.order, after, "Esc: nothing moved");
       assert.ok(cancelled.ended !== null && cancelled.ended < 150 + 16 * 12 * 7, `Esc ended the drag before the release: ${cancelled.ended}`);
       assert.equal(await edge({ x: 800, y: 400 }), false, "it hides once the pointer leaves");
@@ -1064,7 +1078,7 @@ try {
     assert.ok(from && onto, JSON.stringify(tiles));
     const order = tiles.filter((t) => t.id !== a).map((t) => (t.id === cc ? "folder" : t.key));
     const passing = await run(`${FOLDERS} const seen = []; const iv = setInterval(() => seen.push(c.marks.getState().folderTarget), 40);
-      return act("w1", "windowDrags").then(() => act("w1", "drag:${held([centre(from), [centre(from)[0] + 10, centre(from)[1]], [centre(onto)[0] - 14, centre(onto)[1]], centre(onto)], 5).map((p) => p.join(",")).join(";")}"))
+      return act("w1", "windowDrags").then(() => postDrag("w1", "${held([centre(from), [centre(from)[0] + 10, centre(from)[1]], [centre(onto)[0] - 14, centre(onto)[1]], centre(onto)], 5).map((p) => p.join(",")).join(";")}"))
         .then(() => settle(2400)).then(() => { clearInterval(iv); return seen; });`);
     assert.ok(passing.includes(`t:${cc}`), `the target is marked while held: ${JSON.stringify([...new Set(passing)])}`);
     const [fa, fc] = await run(`${FOLDERS} return [folderOf(${JSON.stringify(a)}), folderOf(${JSON.stringify(cc)})];`);
@@ -1123,7 +1137,7 @@ try {
       const last = tiles.at(-1);
       const seen = await run(`${FOLDERS} const seen = []; const grid = () => new Promise((r) => c.regions.get("tiles").measureInWindow((x, y, w, h) => r(h)));
         const iv = setInterval(() => Promise.all([cells(), grid()]).then(([l, h]) => seen.push({ count: c.marks.getState().pinCount, h, ys: l.filter((t) => t.section === "tiles" && !c.marks.getState().sources.has(t.key)).map((t) => t.y) })), 30);
-        return act("w1", "windowDrags").then(() => act("w1", "drag:${[centre(folder), [centre(folder)[0] + 8, centre(folder)[1]], [last.x + last.w - 4, centre(folder)[1]], [last.x + last.w - 3, centre(folder)[1]]].map((p) => p.join(",")).join(";")}"))
+        return act("w1", "windowDrags").then(() => postDrag("w1", "${[centre(folder), [centre(folder)[0] + 8, centre(folder)[1]], [last.x + last.w - 4, centre(folder)[1]], [last.x + last.w - 3, centre(folder)[1]]].map((p) => p.join(",")).join(";")}"))
           .then(() => settle(1400)).then(() => { clearInterval(iv); return seen; });`);
       const during = seen.filter((x) => x.count > 0);
       assert.ok(during.length, "the drag reserved a slot");
@@ -1308,7 +1322,7 @@ try {
         return Promise.all(pts.map(([x, y]) => C.devWindow(n, "hit:" + x + "," + y).then((h) => (/FileDragView|DownloadRowView/.test(h) ? [x, y] : null)))).then((hits) => hits.filter(Boolean)); });`);
       assert.ok(spot.length, "a download row in the popover");
       const [sx, sy] = spot[Math.floor(spot.length / 2)];
-      dragged = await run(`return act("w1", "drag:${sx},${sy};${sx + 8},${sy + 6};${sx + 60},${sy + 160}").then(() => settle(900)).then(() => Promise.all([ac.shell.devFileDrag.lastFileDrag(), globalThis.expo.modules.SolaraDownloads?.devLastFileDrag?.() ?? []])).then(([rn, native]) => [...rn, ...native]);`);
+      dragged = await run(`return postDrag("w1", "${sx},${sy};${sx + 8},${sy + 6};${sx + 60},${sy + 160}").then(() => settle(900)).then(() => Promise.all([ac.shell.devFileDrag.lastFileDrag(), globalThis.expo.modules.SolaraDownloads?.devLastFileDrag?.() ?? []])).then(([rn, native]) => [...rn, ...native]);`);
       assert.deepEqual(dragged, [download], "the row starts a file drag");
       const nativeFiles = await untilSnapshot("native download file drag", (s) => isDeepStrictEqual(s.fileDragURLs, dragged.map((path) => normalizeURL(fileUrl(path)))), 5000, { fields: ["root.fileDragURLs"] });
       assert.deepEqual(nativeFiles.fileDragURLs, dragged.map((path) => normalizeURL(fileUrl(path))));

@@ -510,7 +510,8 @@ public final class WindowShellView: NSView {
     let clip = CGRect(origin: .zero, size: frames.card.size)
     if cardClip.frame != clip { cardClip.frame = clip }
     let page = pageArea
-    let frame = railFraction > 0 ? page : cardPageFrame ?? page
+    let top = min(max(cardPageFrame?.minY ?? page.minY, page.minY), page.maxY)
+    let frame = railFraction > 0 ? CGRect(x: page.minX, y: top, width: page.width, height: page.maxY - top) : cardPageFrame ?? page
     if cardPage.frame != frame { cardPage.frame = frame }
     if railFraction > 0 { cardPage.wantsLayer = true }
     guard let layer = cardPage.layer else { return }

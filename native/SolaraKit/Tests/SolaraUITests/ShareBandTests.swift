@@ -51,6 +51,19 @@ private final class ShareBandClock {
     #expect(seen.last == [:])
   }
 
+  @Test func releasingTheBandMidAnimationStopsItsTimer() throws {
+    var band: ShareBand? = ShareBand()
+    band?.target("a", shown: true)
+    let timer = try #require(band?.scheduledTimer)
+    defer { timer.invalidate() }
+    weak var released = band
+    band = nil
+    #expect(released == nil)
+    #expect(timer.isValid)
+    timer.fire()
+    #expect(!timer.isValid)
+  }
+
   @Test func reversingMidwayStartsFromWhereTheBandIsNow() {
     let clock = ShareBandClock()
     let band = ShareBand(clock: { clock.now }, ticks: false)
@@ -105,6 +118,17 @@ private final class ShareBandClock {
     let slot = try #require(PaneOverlays.shared.container(windowId: "wb", tabId: "a", layer: .native)?.superview)
     #expect(slot.frame.minY == 0)
     #expect(clip.isHidden)
+  }
+
+  @Test func theRailPageStartsBelowTheBandButNeverCoversTheRail() {
+    let shell = WindowShellView(windowId: "w")
+    shell.frame = CGRect(x: 0, y: 0, width: 1200, height: 800)
+    shell.update { $0.sidebarWidth = 42 }
+    let page = shell.pageArea
+    shell.cardPageFrame = CGRect(x: 0, y: page.minY + 38, width: shell.frames.card.width, height: page.height - 38)
+    #expect(shell.cardPage.convert(shell.cardPage.bounds, to: shell) == CGRect(x: 42, y: 85, width: 1151, height: 708))
+    shell.cardPageFrame = CGRect(x: 0, y: page.minY - 10, width: shell.frames.card.width, height: page.height)
+    #expect(shell.cardPage.convert(shell.cardPage.bounds, to: shell) == CGRect(x: 42, y: 47, width: 1151, height: 746))
   }
 
   @Test func aSplitPaneMovesItsPageDownByTheBand() throws {

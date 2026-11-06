@@ -17,6 +17,7 @@ public final class ShareBand {
 
   public var isMoving: Bool { !moves.isEmpty }
   public var isTicking: Bool { timer != nil }
+  var scheduledTimer: Timer? { timer }
 
   public func target(_ tabId: String, shown: Bool) {
     let to: CGFloat = shown ? ShareBarView.height : 0
@@ -27,8 +28,13 @@ public final class ShareBand {
     }
     moves[tabId] = (heights[tabId] ?? 0, to, clock())
     if ticks, timer == nil {
-      let made = Timer(timeInterval: 1.0 / 120, repeats: true) { [weak self] _ in
-        MainActor.assumeIsolated { self?.step() }
+      let made = Timer(timeInterval: 1.0 / 120, repeats: true) { [weak self] timer in
+        let alive = MainActor.assumeIsolated { () -> Bool in
+          guard let self else { return false }
+          self.step()
+          return true
+        }
+        if !alive { timer.invalidate() }
       }
       RunLoop.main.add(made, forMode: .common)
       timer = made

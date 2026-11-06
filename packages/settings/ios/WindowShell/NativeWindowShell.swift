@@ -13,7 +13,10 @@ enum NativeWindowShell {
   private static var installed = false
   private static var storeListener: Int?
   private static let lifetimes: ShellLifetimes<ShellHost> = {
-    let lifetimes = ShellLifetimes<ShellHost> { $0.stop() }
+    let lifetimes = ShellLifetimes<ShellHost> { host in
+      host.stop()
+      if NativeWindowShell.lifetimes.host(host.shell.windowId) == nil { NativeShareBand.windowEnded(host.shell.windowId) }
+    }
     lifetimes.onIds = { ids in activeIds.withLock { $0 = ids } }
     return lifetimes
   }()
@@ -207,6 +210,7 @@ final class ShellHost {
       "appearance": shell.window?.effectiveAppearance.name.rawValue ?? NSNull(),
       "split": NativeSplitChrome.sample(shell.windowId) ?? NSNull(),
       "shareBand": NativeShareBand.describe(shell.windowId) ?? NSNull(),
+      "shareBandWindows": NativeShareBand.windowIds,
       "paneRoots": NativePaneRoots.sample(shell.windowId) ?? NSNull(),
       "reactOnTop": shell.reactOnTop,
       "peek": NativePeek.sample(shell.windowId) ?? NSNull(),

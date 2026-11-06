@@ -54,6 +54,16 @@ enum NativeShareBand {
       }
     }
 
+    func end() {
+      band.stop()
+      NativeSplitChrome.setShareBands([:], windowId: windowId)
+      for clip in clips.values { clip.removeFromSuperview() }
+      for tabId in clips.keys { NativeSplitChrome.setShareBandClip(nil, windowId: windowId, tabId: tabId) }
+      clips = [:]
+      targets = [:]
+      shown = []
+    }
+
     func describe() -> [String: Any] {
       ["heights": band.heights.mapValues(Double.init), "shown": shown.sorted(), "moving": band.isMoving, "ticking": band.isTicking]
     }
@@ -74,6 +84,7 @@ enum NativeShareBand {
         guard let data = try? JSONSerialization.data(withJSONObject: raw), let json = String(data: data, encoding: .utf8), let state = ShareBarState.decode(json) else { continue }
         states[tabId] = state
       }
+      if windows[windowId] == nil, states.isEmpty || NativeWindowShell.host(windowId) == nil { continue }
       let window = windows[windowId] ?? {
         let made = WindowBand(windowId: windowId)
         windows[windowId] = made
@@ -83,6 +94,12 @@ enum NativeShareBand {
     }
     for (windowId, window) in windows where all[windowId] == nil { window.update([:]) }
   }
+
+  static func windowEnded(_ windowId: String) {
+    windows.removeValue(forKey: windowId)?.end()
+  }
+
+  static var windowIds: [String] { windows.keys.sorted() }
 
   static func describe(_ windowId: String) -> [String: Any]? { windows[windowId]?.describe() }
 

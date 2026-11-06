@@ -1,7 +1,8 @@
 import { changeCaptureSource, stopCapture } from "@solara/solaracore";
-import { publishSettingsTopic, windowShellActive } from "@solara/settings";
+import { publishSettingsTopic } from "@solara/settings";
 import { useEffect, useRef, useState } from "react";
 import { Animated, Easing } from "react-native";
+import { pagesPooledIn } from "../../lib/pagesPool";
 import { useTheme } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
 import { engineProfile } from "../../store/model";
@@ -115,7 +116,7 @@ function shareBarState(tabId: string, capturer: string, share: TabShare, theme: 
 
 export function ShareBar({ tabId }: { tabId: string }) {
   const windowId = useWindowId();
-  const [native] = useState(() => nativeSplitPanes && windowShellActive(windowId));
+  const [native] = useState(() => nativeSplitPanes && pagesPooledIn(windowId));
   return native ? <NativeShareBand tabId={tabId} windowId={windowId} /> : <HostedShareBar tabId={tabId} windowId={windowId} />;
 }
 

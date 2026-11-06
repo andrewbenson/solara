@@ -2105,6 +2105,8 @@ try {
     if (!shell) return { skipped: "no native window shell" };
     const opened = [];
     let page = null;
+    let second = null;
+    let restoreRail = null;
     const out = {};
     try {
       await evalApp(`return globalThis.expo.modules.SolaraCEF.setDisplayMediaPicker(true).then(() => true)`);
@@ -2121,7 +2123,30 @@ try {
         await until(`${tabId} shown`, async () => (await state()).active === tabId);
       };
       await shown(red.id);
+      const redPage = await pageFor(red.id, "/solid?c=ff0000&t=Red");
+      const inner = async () => (await cdp(redPage, "Runtime.evaluate", { expression: "innerHeight", returnByValue: true })).result.value;
+      const iconsOnly = () => evalApp(`const s = ac.store.getState(); return s.windows[${JSON.stringify(mainWindow)}]?.sidebarIconsOnly ?? s.settings.sidebarIconsOnly ?? false`);
+      const railBefore = await iconsOnly();
+      restoreRail = async () => { if ((await iconsOnly()) !== railBefore) await evalApp(`ac.runCommand({ command: "toggleSidebarIconsOnly", arg: null, windowId: ${JSON.stringify(mainWindow)} }); return true`); };
+      const rail = async (on) => {
+        if ((await iconsOnly()) !== on) await evalApp(`ac.runCommand({ command: "toggleSidebarIconsOnly", arg: null, windowId: ${JSON.stringify(mainWindow)} }); return true`);
+        await until(`the window ${on ? "in" : "out of"} the icons-only rail`, async () => (await iconsOnly()) === on, 3000);
+        let last = null;
+        return until(`the page settled ${on ? "in" : "out of"} the rail`, async () => {
+          const h = await inner();
+          const same = h === last;
+          last = h;
+          return same && (await describe())?.shareBand?.ticking !== true ? h : null;
+        }, 5000);
+      };
+      const pushed = (what, without, withBar) => {
+        if (Math.abs(without - withBar - 38) > 1) throw new Error(`${what}: the page is ${withBar} px tall with the bar and ${without} without, not 38 px shorter`);
+      };
+      await rail(false);
       const before = await until("red's page slot", () => slot(red.id), 5000);
+      out.inner = { full: await inner() };
+      out.inner.fullRail = await rail(true);
+      await rail(false);
       await shown(call.id);
       page = await pageFor(call.id, "/capturer?t=CallBand");
       await cdp(page, "Runtime.evaluate", { expression: "share()", userGesture: true });
@@ -2153,6 +2178,12 @@ try {
         const s = await slot(red.id);
         return s?.band === 38 ? s : null;
       }, 3000);
+      out.inner.bar = await rail(false);
+      pushed("the page under the bar", out.inner.full, out.inner.bar);
+      out.inner.barRail = await rail(true);
+      await evalApp(`return ac.shell.devSnapshotWindow(${JSON.stringify(mainWindow)}, ${JSON.stringify(join(data, "share-bar-rail.png"))})`).catch(() => null);
+      pushed("the page under the bar in the icons-only rail", out.inner.fullRail, out.inner.barRail);
+      await rail(false);
       const [, , , h0] = before.window;
       const [, , , h1] = out.shared.window;
       if (Math.abs(h0 - h1 - 38) > 0.5) throw new Error(`the page slot didn't give the bar 38 pt: ${h0} → ${h1}`);
@@ -2172,6 +2203,22 @@ try {
         const [a, b] = [await slot(other.id), await slot(red.id)];
         return a?.band === 38 && b?.band === 38 ? { other: a, red: b } : null;
       }, 3000);
+      out.inner.splitBar = await rail(false);
+      const profileId = await evalApp(`return ac.store.getState().windows[${JSON.stringify(mainWindow)}].profileId`);
+      second = await evalApp(`return ac.store.getState().createWindow({ url: "${base}/solid?c=00ff00&t=Green", profileId: ${JSON.stringify(profileId)}, background: true })`);
+      const describeOf = async (w) => JSON.parse(await evalApp(`return globalThis.expo.modules.SolaraWindowShell.describe(${JSON.stringify(w)})`));
+      const greenTab = await until("the second window's tab", () => evalApp(`const s = ac.store.getState(); const w = s.windows[${JSON.stringify(second)}]; return w?.profileId === ${JSON.stringify(profileId)} ? w.tabIds[0] ?? null : null`), 5000);
+      await until("the bar in a second window of the profile", async () => (await describeOf(second))?.shareBand?.shown?.includes(greenTab), 5000);
+      const closed = second;
+      await evalApp(`ac.store.getState().closeWindow(${JSON.stringify(closed)}); return true`);
+      second = null;
+      const dropped = async () => {
+        const ids = (await describe())?.shareBandWindows;
+        return Array.isArray(ids) && !ids.includes(closed) ? ids : null;
+      };
+      out.windowEnded = await until("the closed window's share band dropped", dropped, 5000);
+      await sleep(1000);
+      if (!(await dropped())) throw new Error(`the closed window ${closed} got its share band back: ${JSON.stringify((await describe())?.shareBandWindows)}`);
       await cdp(page, "Runtime.evaluate", { expression: "window.__stream?.getTracks().forEach((x) => x.stop()); true" });
       const stopped = Date.now();
       out.closed = await until("the bar gone after sharing stops", async () => {
@@ -2185,9 +2232,13 @@ try {
       }, 2000).catch(async () => (await describe()).shareBand);
       if (out.idle?.ticking) throw new Error(`the band's timer kept running after the bar closed: ${JSON.stringify(out.idle)}`);
       if (out.closedMs > 1500 + 180 + 1000) throw new Error(`the bar took ${out.closedMs} ms to close`);
-      return { h0, h1, closedMs: out.closedMs };
+      out.inner.after = await rail(false);
+      pushed("the split page after sharing stopped", out.inner.after, out.inner.splitBar);
+      return { h0, h1, closedMs: out.closedMs, inner: out.inner };
     } finally {
       if (page) await cdp(page, "Runtime.evaluate", { expression: "window.__stream?.getTracks().forEach((x) => x.stop()); true" }).catch(() => null);
+      if (second) await evalApp(`ac.store.getState().closeWindow(${JSON.stringify(second)}); return true`).catch(() => null);
+      if (restoreRail) await restoreRail().catch(() => null);
       for (const t of opened) await closeTab(t.id).catch(() => null);
       await evalApp(`ac.actions.switchToTab("${first.id}"); return true`).catch(() => null);
     }

@@ -42,7 +42,17 @@ public class TranslateModule: Module {
 
     AsyncFunction("prepare") { (source: String, target: String) async throws in
       guard #available(macOS 26.0, *) else { throw TranslateError.unavailable }
-      try await DownloadPrompt.run(source: Locale.Language(identifier: source), target: Locale.Language(identifier: target))
+      let from = Locale.Language(identifier: source), to = Locale.Language(identifier: target)
+      do {
+        try await DownloadPrompt.run(source: from, target: to)
+      } catch {
+        throw TranslateError.explained(error)
+      }
+      let deadline = Date().addingTimeInterval(180)
+      while await LanguageAvailability().status(from: from, to: to) != .installed {
+        guard Date() < deadline else { throw TranslateError.notDownloaded(Locale.current.localizedString(forLanguageCode: source) ?? source) }
+        try await Task.sleep(for: .milliseconds(500))
+      }
     }
 
     AsyncFunction("translateBlocks") { (source: String, target: String, blocks: [[String]]) async -> [[String]?] in
@@ -52,7 +62,11 @@ public class TranslateModule: Module {
 
     AsyncFunction("translate") { (source: String, target: String, texts: [String]) async throws -> [String?] in
       guard #available(macOS 26.0, *) else { throw TranslateError.unavailable }
-      return try await TranslationSessions.translate(source: source, target: target, texts)
+      do {
+        return try await TranslationSessions.translate(source: source, target: target, texts)
+      } catch {
+        throw TranslateError.explained(error)
+      }
     }
   }
 }
@@ -249,12 +263,24 @@ extension TranslateModule {
 }
 
 enum TranslateError: LocalizedError {
-  case unavailable, noWindow
+  case unavailable, noWindow, notDownloaded(String), apple(String)
   var errorDescription: String? {
     switch self {
     case .unavailable: return "needs macOS 26"
     case .noWindow: return "no window to ask in"
+    case .notDownloaded(let language): return "the \(language) language didn't finish downloading"
+    case .apple(let reason): return reason
     }
+  }
+
+  static func explained(_ error: Error) -> Error {
+    if error is TranslateError { return error }
+    let described = error as? LocalizedError
+    let title = (described?.errorDescription ?? error.localizedDescription).trimmingCharacters(in: .whitespacesAndNewlines)
+    let reason = (described?.failureReason ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    let code = (error as NSError).code
+    if reason.isEmpty { return apple("\(title), code \(code)") }
+    return apple("\(title): \(reason.trimmingCharacters(in: CharacterSet(charactersIn: ". "))), code \(code)")
   }
 }
 

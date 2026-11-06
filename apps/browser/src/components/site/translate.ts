@@ -106,10 +106,33 @@ async function translatePassages(source: string, target: string, passages: Passa
     else loose.push(...pieces);
   });
   if (loose.length) {
-    const texts = await translation!.translate(source, target, loose.map(([, text]) => text));
+    const texts = await translateLoose(source, target, loose.map(([, text]) => text));
     loose.forEach(([id], i) => out.push([id, texts[i] ?? null]));
   }
   return out;
+}
+
+async function translateLoose(source: string, target: string, texts: string[]): Promise<(string | null)[]> {
+  const out: (string | null)[] = texts.map((text) => (text.trim() ? null : text));
+  const asked = texts.flatMap((text, i) => (text.trim() ? [i] : []));
+  if (!asked.length) return out;
+  try {
+    const translated = await translation!.translate(source, target, asked.map((i) => texts[i]!));
+    asked.forEach((i, j) => (out[i] = translated[j] ?? null));
+    return out;
+  } catch (error) {
+    if (asked.length === 1) throw error;
+    let failures = 0;
+    for (const i of asked) {
+      try {
+        out[i] = (await translation!.translate(source, target, [texts[i]!]))[0] ?? null;
+      } catch {
+        failures += 1;
+      }
+    }
+    if (failures === asked.length) throw error;
+    return out;
+  }
 }
 
 async function drain(tabId: string, token: string, onProgress?: (done: number, total: number) => void): Promise<boolean> {

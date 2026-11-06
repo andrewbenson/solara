@@ -93,6 +93,7 @@ backlog, and check this file against the release notes.
 | Fixed: on macOS 27.2 the address bar no longer shifts a long address 2 pt when you click into it; the overflow inset is measured instead of fixed | shipped-pending |
 | Smaller: The selected tab's glow is always on at full; its setting is gone (owner, 2026-11-05). Settings › Appearance › Selected Tab is removed and every reader draws Full; the stored and synced `selectedTabGlow` key stays as a retired key nothing reads, so older Macs are unaffected | shipped-pending |
 | Fixed: an extension's permission dialog no longer stays stuck over the page when the popup that asked closes; every click hit the dialog's invisible layer until it was dismissed | shipped-pending |
+| New: the offline game is "Where's the raccoon?" at night: new crowd, decoys and four moonlit backgrounds, the moon keeping its silver in every profile colour, the lamb's best score carried over (owner, 2026-11-05). Ships with the 0.2.5 engine, whose offline page packs it | shipped-pending |
 
 ## 0.3.0: tabs that cost less, and the first native bars
 

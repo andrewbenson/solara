@@ -205,7 +205,7 @@ check("chrome://version", (await evaluate("document.body.innerText")).includes(`
 await send("Network.enable");
 await send("Network.emulateNetworkConditions", { offline: true, latency: 0, downloadThroughput: 0, uploadThroughput: 0 });
 await go("https://example.org/");
-check("offline page is Where's the lamb?", /No internet/.test(await evaluate("document.title")));
+check("offline page is Where's the raccoon?", /No internet/.test(await evaluate("document.title")) && /raccoon/.test(await evaluate("document.getElementById('offline-sub')?.textContent ?? ''")));
 await send("Network.emulateNetworkConditions", { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
 await go(`${pages}/form.html`);
 

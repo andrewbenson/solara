@@ -4,7 +4,7 @@ name=$1
 raw=${2:A}
 here=${0:A:h}
 codex=${CODEX:-/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex}
-refs=($here/../offline-game/assets/bg/bg-meadow.webp(:A) ${@[3,-1]:A})
+refs=($here/style-reference.webp(:A) ${@[3,-1]:A})
 mkdir -p $raw
 prompt=$(<$here/prompts/$name.txt)
 timeout 1500 $codex exec -m gpt-6.1-sol -c model_reasoning_effort='"high"' -c service_tier='"priority"' \

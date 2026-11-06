@@ -122,15 +122,15 @@
     for (let i = 0; i < d.length; i += 4) {
       const r = d[i], gr = d[i + 1], b = d[i + 2];
       const l = ((r * 13933 + gr * 46871 + b * 4732) >> 16) * 3;
-      const s = sun[i];
-      if (s === 0) {
+      const s = sun[i], m = sun[i + 1];
+      if (s === 0 && m === 0) {
         d[i] = ramp[l]; d[i + 1] = ramp[l + 1]; d[i + 2] = ramp[l + 2];
       } else {
-        const a = s / 255, keep = 1 - a;
+        const a = s / 255, moon = m / 255, keep = Math.max(0, 1 - a - moon);
         const sr = sunRamp ? sunRamp[l] : r, sg = sunRamp ? sunRamp[l + 1] : gr, sb = sunRamp ? sunRamp[l + 2] : b;
-        d[i] = ramp[l] * keep + sr * a;
-        d[i + 1] = ramp[l + 1] * keep + sg * a;
-        d[i + 2] = ramp[l + 2] * keep + sb * a;
+        d[i] = ramp[l] * keep + sr * a + r * moon;
+        d[i + 1] = ramp[l + 1] * keep + sg * a + gr * moon;
+        d[i + 2] = ramp[l + 2] * keep + sb * a + b * moon;
       }
     }
     g.putImageData(image, 0, 0);
@@ -162,9 +162,9 @@
     document.title = failedHost ? `${failedHost} · No internet` : "No internet";
   } else {
     document.body.classList.add("standalone");
-    document.title = "Where's the lamb?";
-    $("offline-title").textContent = "Where's the lamb?";
-    $("offline-sub").textContent = "One lamb, one yellow bell, a hillside of look-alikes. Find her before the sun goes down.";
+    document.title = "Where's the raccoon?";
+    $("offline-title").textContent = "Where's the raccoon?";
+    $("offline-sub").textContent = "One raccoon, one yellow bell, a moonlit yard of look-alikes. Find her before the sun comes up.";
   }
 
   function retry() {
@@ -182,9 +182,12 @@
   addEventListener("online", () => { if (errorCode || failedUrl) $("online").hidden = false; });
   addEventListener("offline", () => { $("online").hidden = true; });
 
-  const BEST_KEY = "solara.lamb.best";
+  const BEST_KEY = "solara.raccoon.best";
+  const BEST_KEYS_BEFORE = ["solara.lamb.best"];
   function loadBest() {
-    try { return Math.max(0, parseInt(localStorage.getItem(BEST_KEY) || "0", 10) || 0); } catch (_) { return 0; }
+    try {
+      return Math.max(0, ...[BEST_KEY, ...BEST_KEYS_BEFORE].map((k) => parseInt(localStorage.getItem(k) || "0", 10) || 0));
+    } catch (_) { return 0; }
   }
   function saveBest(v) {
     try { localStorage.setItem(BEST_KEY, String(v)); } catch (_) {}
@@ -230,33 +233,33 @@
   }
 
   const CAPTIONS = [
-    "Found her. The flock didn't even look up.",
+    "Found her. Nobody else looked up from the bins.",
     "Lost and found, in that order.",
-    "Back with the flock. Your Wi‑Fi, sadly, is still out.",
+    "Back with the night shift. Your Wi‑Fi, sadly, is still out.",
     "The bell was a clue. You're welcome.",
-    "She wasn't lost. Everyone else was in the wrong field.",
-    "Found. The goats are claiming they helped.",
-    "The sheepdog would like partial credit.",
-    "No signal up here, and you found her anyway.",
-    "You counted every sheep and stayed awake. Impressive.",
-    "Somewhere, a shepherd exhales.",
+    "She wasn't lost. Everyone else was in the wrong yard.",
+    "Found. The foxes are claiming they helped.",
+    "The cat would like partial credit. The cat always would.",
+    "No signal out here, and you found her anyway.",
+    "Every face had a mask. Only one had a bell.",
+    "Somewhere, a porch light clicks off in relief.",
     "She heard you were offline and came to keep you company.",
-    "One lamb, accounted for. Ninety-nine sheep, unbothered.",
-    "Spotted between two ewes who saw nothing.",
-    "Pasture: green. Signal: none. Lamb: found.",
+    "One raccoon, accounted for. Several possums, unbothered.",
+    "Spotted between two skunks who saw nothing.",
+    "Moon: full. Signal: none. Raccoon: found.",
   ];
   const TIMEOUT_LINES = [
-    "Sundown. She found her own way home.",
-    "Time's up. The dog found her first.",
-    "Too slow. She's three fields over by now.",
+    "Sunrise. She found her own way home.",
+    "Time's up. The cat found her first.",
+    "Too slow. She's three yards over by now.",
   ];
   const MISS = {
     crowd: [
-      "Not her.", "Wrong woolly.", "That's someone else's sheep.", "Same field, wrong animal.",
-      "Nice fleece. Wrong one.", "Just the flock.", "No bell on that one.", "Keep looking. She jingles.",
+      "Not her.", "Wrong mask.", "That's someone else's raccoon.", "Same yard, wrong animal.",
+      "Nice tail. Wrong one.", "Just the night shift.", "No bell on that one.", "Keep looking. She jingles.",
     ],
-    lamb: ["Right lamb, no yellow bell.", "A lamb, just not the lost one.", "Close. Look for the yellow bell."],
-    bell: ["Right bell, wrong animal.", "Yellow bell, not a lamb.", "Somebody borrowed her bell."],
+    raccoon: ["Right raccoon, no yellow bell.", "A raccoon, just not the lost one.", "Close. Look for the yellow bell."],
+    bell: ["Right bell, wrong animal.", "Yellow bell, not a raccoon.", "Somebody borrowed her bell."],
   };
   function makeBag(list) {
     let bag = [];
@@ -267,9 +270,9 @@
   }
   const nextCaption = makeBag(CAPTIONS);
   const nextTimeout = makeBag(TIMEOUT_LINES);
-  const nextMiss = { crowd: makeBag(MISS.crowd), lamb: makeBag(MISS.lamb), bell: makeBag(MISS.bell) };
+  const nextMiss = { crowd: makeBag(MISS.crowd), raccoon: makeBag(MISS.raccoon), bell: makeBag(MISS.bell) };
 
-  const sprites = { crowd: [], decoy: [], lamb: [] };
+  const sprites = { crowd: [], decoy: [], raccoon: [] };
   const backgrounds = [];
   function parseMask(rows) {
     return Uint32Array.from(rows, (h) => parseInt(h, 16) >>> 0);
@@ -362,7 +365,7 @@
       y += h * rowK;
     }
 
-    const decoyPool = sprites.decoy.filter((s) => n >= 3 || s.trait === "lamb");
+    const decoyPool = sprites.decoy.filter((s) => n >= 3 || s.trait === "raccoon");
     const decoyCount = Math.round(lerp(2, 16, t));
     const nextDecoy = makeBag(decoyPool.length ? decoyPool : sprites.decoy);
     for (const p of shuffle(people).slice(0, decoyCount)) {
@@ -374,30 +377,30 @@
 
     const minVis = lerp(0.95, 0.55, t);
     const wantOccluded = n >= 3;
-    const pose = pick(sprites.lamb);
+    const pose = pick(sprites.raccoon);
     const candidates = people.filter((p) => {
       const top = p.y - p.h;
       return p.x > W * 0.07 && p.x < W * 0.93 && top > H * 0.03 && p.y - p.h * 0.45 < H * 0.95 &&
         (t < 0.15 || p.depth < lerp(1, 0.7, t));
     });
     for (const p of candidates) p.rot *= 0.5;
-    let lamb = null;
+    let raccoon = null;
     let fallback = null;
     for (let i = 0; i < 80 && candidates.length; i++) {
       const p = pick(candidates);
       const prev = { sprite: p.sprite, kind: p.kind };
       p.sprite = pose; p.kind = "target";
       const vis = visibility(p, people);
-      if (vis >= minVis && (!wantOccluded || i > 50 || vis <= 0.9)) { lamb = p; break; }
+      if (vis >= minVis && (!wantOccluded || i > 50 || vis <= 0.9)) { raccoon = p; break; }
       if (!fallback || vis > fallback.vis) fallback = { p, vis };
       p.sprite = prev.sprite; p.kind = prev.kind;
     }
-    if (!lamb) {
-      lamb = fallback ? fallback.p : pick(people);
-      lamb.sprite = pose; lamb.kind = "target";
-      for (let guard = 0; guard < 24 && visibility(lamb, people) < minVis; guard++) {
-        const idx = people.indexOf(lamb);
-        const blocker = people.slice(idx + 1).find((q) => blocksFace(lamb, q));
+    if (!raccoon) {
+      raccoon = fallback ? fallback.p : pick(people);
+      raccoon.sprite = pose; raccoon.kind = "target";
+      for (let guard = 0; guard < 24 && visibility(raccoon, people) < minVis; guard++) {
+        const idx = people.indexOf(raccoon);
+        const blocker = people.slice(idx + 1).find((q) => blocksFace(raccoon, q));
         if (!blocker) break;
         people.splice(people.indexOf(blocker), 1);
       }
@@ -405,15 +408,15 @@
 
     if (n >= 4) {
       const near = people
-        .filter((p) => p !== lamb && p.kind === "crowd" && Math.abs(p.y - lamb.y) < lamb.h * 0.6)
-        .sort((a, b) => Math.abs(a.x - lamb.x) - Math.abs(b.x - lamb.x))
+        .filter((p) => p !== raccoon && p.kind === "crowd" && Math.abs(p.y - raccoon.y) < raccoon.h * 0.6)
+        .sort((a, b) => Math.abs(a.x - raccoon.x) - Math.abs(b.x - raccoon.x))
         .slice(0, n >= 7 ? 2 : 1);
       const saved = near.map((p) => ({ p, sprite: p.sprite, kind: p.kind }));
       for (const p of near) { p.sprite = nextDecoy(); p.kind = p.sprite.trait; }
-      if (visibility(lamb, people) < minVis) for (const r of saved) { r.p.sprite = r.sprite; r.p.kind = r.kind; }
+      if (visibility(raccoon, people) < minVis) for (const r of saved) { r.p.sprite = r.sprite; r.p.kind = r.kind; }
     }
 
-    return { n, t, bg, W, H, people, lamb, time: Math.max(35, 60 - (n - 1) * 2.5) };
+    return { n, t, bg, W, H, people, raccoon, time: Math.max(35, 60 - (n - 1) * 2.5) };
   }
 
   function faceSamples(p) {
@@ -552,7 +555,7 @@
 
     const view = { x0: -cam.x / cam.k, y0: -cam.y / cam.k, x1: (vw - cam.x) / cam.k, y1: (vh - cam.y) / cam.k };
     for (const p of L.people) {
-      if (revealing && p === L.lamb) continue;
+      if (revealing && p === L.raccoon) continue;
       const r = p.h * 0.8;
       if (p.x + r < view.x0 || p.x - r > view.x1 || p.y - p.h > view.y1 || p.y < view.y0) continue;
       drawPerson(g, p);
@@ -612,7 +615,7 @@
 
     if (reveal) {
       const t = (now - reveal.start) / 1000;
-      const Y = L.lamb;
+      const Y = L.raccoon;
       if (state === "found") {
         ctx.fillStyle = css(paint.scrim, 0.55 * Math.min(1, t * 3));
         ctx.fillRect(0, 0, vw, vh);
@@ -743,7 +746,7 @@
     });
     setHud(hud.score, String(score), (v) => { hud.score.textContent = v; });
     setHud(hud.best, String(best), (v) => { hud.best.textContent = v; });
-    setHud(hud.level, level ? `Level ${level.n} · ${level.people.length} in the flock` : "Level 1", (v) => { hud.level.textContent = v; });
+    setHud(hud.level, level ? `Level ${level.n} · ${level.people.length} out tonight` : "Level 1", (v) => { hud.level.textContent = v; });
     setHud(hud.hint, state !== "playing" || hintsUsed >= 3, (v) => { hud.hint.disabled = v; });
     setHud(hud.pause, !(state === "playing" || state === "paused"), (v) => { hud.pause.disabled = v; });
   }
@@ -769,14 +772,14 @@
     stage.classList.remove("paused");
     last = performance.now();
     updateHud();
-    toast(n === 1 ? "Find the lamb with the yellow bell." : `Level ${n}: ${level.people.length} in the flock`);
+    toast(n === 1 ? "Find the raccoon with the yellow bell." : `Level ${n}: ${level.people.length} out tonight`);
   }
 
   function pause() {
     if (state !== "playing") return;
     state = "paused";
     stage.classList.add("paused");
-    showCard({ title: "Paused", body: "The flock will wait. The sun won't.", action: "Resume" });
+    showCard({ title: "Paused", body: "The yard will wait. The sunrise won't.", action: "Resume" });
     updateHud();
   }
   function resume() {
@@ -792,7 +795,7 @@
     if (state !== "playing" || hintsUsed >= 3) return;
     hintsUsed++;
     timeLeft -= 8;
-    const Y = level.lamb;
+    const Y = level.raccoon;
     const hc = headCenter(Y);
     const r1 = Y.h * [2.4, 1.4, 0.75][hintsUsed - 1];
     const off = r1 * (hintsUsed === 3 ? 0.15 : 0.5) * Math.sqrt(rng());
@@ -810,7 +813,7 @@
 
   function found() {
     state = "found";
-    const Y = level.lamb;
+    const Y = level.raccoon;
     const bonus = misses === 0 ? 150 : 0;
     const points = 100 * level.n + Math.round(Math.max(0, timeLeft) * 10) + bonus;
     score += points;
@@ -843,7 +846,7 @@
     timeLeft = 0;
     reveal = { start: performance.now() };
     hint = null;
-    const Y = level.lamb;
+    const Y = level.raccoon;
     const hc = headCenter(Y);
     tweenCam(camToShow(hc.x, hc.y, 0.42, Y.h), 700);
     const newBest = score > 0 && score >= best;
@@ -876,11 +879,11 @@
       const p = L.people[i];
       if (Math.abs(p.x - w.x) > p.h || w.y > p.y || w.y < p.y - p.h * 1.2) continue;
       if (!hits(p, w.x, w.y)) continue;
-      if (p === L.lamb) return found();
+      if (p === L.raccoon) return found();
       misses++;
       timeLeft -= 5;
       effects.push({ wx: w.x, wy: w.y, start: performance.now(), ms: 600 });
-      toast(`−5s · ${nextMiss[p.kind === "lamb" || p.kind === "bell" ? p.kind : "crowd"]()}`, true);
+      toast(`−5s · ${nextMiss[p.kind === "raccoon" || p.kind === "bell" ? p.kind : "crowd"]()}`, true);
       return;
     }
     effects.push({ wx: w.x, wy: w.y, start: performance.now(), ms: 400 });
@@ -1025,13 +1028,13 @@
     try {
       await loadAssets();
     } catch (err) {
-      $("loading").textContent = "The flock didn't show up. (Assets failed to load.)";
+      $("loading").textContent = "Nobody came out tonight. (Assets failed to load.)";
       console.error(err);
       return;
     }
     painted = true;
     tintBackgrounds();
-    const face = sprites.lamb[0];
+    const face = sprites.raccoon[0];
     if (face) {
       $("wanted").src = face.img.src;
       card.portrait.src = face.img.src;
@@ -1043,8 +1046,8 @@
     state = "title";
     $("loading").classList.add("done");
     showCard({
-      title: "Where's the lamb?",
-      body: "She's wandered into a flock of sheep, goats and very helpful dogs. Look for the yellow bell. Wrong guesses cost 5 seconds.",
+      title: "Where's the raccoon?",
+      body: "She's slipped into a crowd of foxes, possums, skunks and very curious cats. Look for the yellow bell. Wrong guesses cost 5 seconds.",
       action: "Start",
     });
     updateHud();
@@ -1058,12 +1061,12 @@
       get score() { return score; },
       get timeLeft() { return timeLeft; },
       set timeLeft(v) { timeLeft = v; },
-      lambScreen() {
-        const c = headCenter(level.lamb);
+      raccoonScreen() {
+        const c = headCenter(level.raccoon);
         return toScreen(c.x, c.y);
       },
-      lambVisiblePage() {
-        const Y = level.lamb;
+      raccoonVisiblePage() {
+        const Y = level.raccoon;
         const r = canvas.getBoundingClientRect();
         const ps = level.people;
         const pts = faceSamples(Y).sort((a, b) => Math.hypot(a.x - Y.x, a.y - Y.y + Y.h * 0.64) - Math.hypot(b.x - Y.x, b.y - Y.y + Y.h * 0.64));
@@ -1081,7 +1084,7 @@
         const ps = level.people;
         for (let i = ps.length - 1; i >= 0; i--) {
           const p = ps[i];
-          if (p === level.lamb || (kind && p.kind !== kind)) continue;
+          if (p === level.raccoon || (kind && p.kind !== kind)) continue;
           const c = headCenter(p);
           const top = ps.slice().reverse().find((q) => hits(q, c.x, c.y));
           const s = toScreen(c.x, c.y);
@@ -1089,7 +1092,7 @@
         }
         return null;
       },
-      visibility: () => visibility(level.lamb, level.people),
+      visibility: () => visibility(level.raccoon, level.people),
       renderCost(frames = 60) {
         const t0 = performance.now();
         for (let i = 0; i < frames; i++) render(performance.now());

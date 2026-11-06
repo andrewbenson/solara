@@ -164,7 +164,7 @@
     document.body.classList.add("standalone");
     document.title = "Where's the raccoon?";
     $("offline-title").textContent = "Where's the raccoon?";
-    $("offline-sub").textContent = "One raccoon, one yellow bell, a moonlit yard of look-alikes. Find her before the sun comes up.";
+    $("offline-sub").textContent = "One raccoon, one yellow bell, a moonlit yard of look-alikes. Find him before the sun comes up.";
   }
 
   function retry() {
@@ -233,33 +233,33 @@
   }
 
   const CAPTIONS = [
-    "Found her. Nobody else looked up from the bins.",
+    "Found him. Nobody else looked up from the bins.",
     "Lost and found, in that order.",
     "Back with the night shift. Your Wi‑Fi, sadly, is still out.",
     "The bell was a clue. You're welcome.",
-    "She wasn't lost. Everyone else was in the wrong yard.",
+    "He wasn't lost. Everyone else was in the wrong yard.",
     "Found. The foxes are claiming they helped.",
     "The cat would like partial credit. The cat always would.",
-    "No signal out here, and you found her anyway.",
+    "No signal out here, and you found him anyway.",
     "Every face had a mask. Only one had a bell.",
     "Somewhere, a porch light clicks off in relief.",
-    "She heard you were offline and came to keep you company.",
+    "He heard you were offline and came to keep you company.",
     "One raccoon, accounted for. Several possums, unbothered.",
     "Spotted between two skunks who saw nothing.",
     "Moon: full. Signal: none. Raccoon: found.",
   ];
   const TIMEOUT_LINES = [
-    "Sunrise. She found her own way home.",
-    "Time's up. The cat found her first.",
-    "Too slow. She's three yards over by now.",
+    "Sunrise. He found his own way home.",
+    "Time's up. The cat found him first.",
+    "Too slow. He's three yards over by now.",
   ];
   const MISS = {
     crowd: [
-      "Not her.", "Wrong mask.", "That's someone else's raccoon.", "Same yard, wrong animal.",
-      "Nice tail. Wrong one.", "Just the night shift.", "No bell on that one.", "Keep looking. She jingles.",
+      "Not him.", "Wrong mask.", "That's someone else's raccoon.", "Same yard, wrong animal.",
+      "Nice tail. Wrong one.", "Just the night shift.", "No bell on that one.", "Keep looking. He jingles.",
     ],
     raccoon: ["Right raccoon, no yellow bell.", "A raccoon, just not the lost one.", "Close. Look for the yellow bell."],
-    bell: ["Right bell, wrong animal.", "Yellow bell, not a raccoon.", "Somebody borrowed her bell."],
+    bell: ["Right bell, wrong animal.", "Yellow bell, not a raccoon.", "Somebody borrowed his bell."],
   };
   function makeBag(list) {
     let bag = [];
@@ -830,7 +830,7 @@
     const bits = [`Found in ${secs}s`, `+${points}`];
     if (bonus) bits.push("clean sweep +150");
     showCard({
-      title: "Found her!",
+      title: "Found him!",
       body: bits.join(" · "),
       quote: nextCaption(),
       action: `Next level`,
@@ -1047,7 +1047,7 @@
     $("loading").classList.add("done");
     showCard({
       title: "Where's the raccoon?",
-      body: "She's slipped into a crowd of foxes, possums, skunks and very curious cats. Look for the yellow bell. Wrong guesses cost 5 seconds.",
+      body: "He's slipped into a crowd of foxes, possums, skunks and very curious cats. Look for the yellow bell. Wrong guesses cost 5 seconds.",
       action: "Start",
     });
     updateHud();

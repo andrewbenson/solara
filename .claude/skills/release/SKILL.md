@@ -11,7 +11,9 @@ opens the identity's `AC_NOTES_URL`: for Solara that's the GitHub releases page 
 release's notes must be on its GitHub release.
 
 Solara releases from this Mac: `scripts/release.sh`, then `publish.sh`, to `andrewbenson/solara` (the
-`AC_RELEASE_REPO` in `apps/browser/macos/Identity.xcconfig`). It has no site, no Homebrew tap and no telemetry.
+`AC_RELEASE_REPO` in `apps/browser/macos/Identity.xcconfig`). It has no site and no telemetry.
+The Homebrew cask (`brew install --cask andrewbenson/solara/solara`, in the `andrewbenson/homebrew-solara` tap) is bumped
+by `publish.sh` for every stable release: version and the DMG's sha256, checked on the tap after the push.
 
 Versions start at **0.0.1**, then add **0.0.1** each owner-only release. All 0.0.x releases are unsigned
 (ad hoc code signing, no Developer ID/notarization). **0.1.0 is the first Developer ID signed and notarized release**.

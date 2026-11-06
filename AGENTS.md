@@ -111,8 +111,9 @@ in [docs/agent-brief.md](docs/agent-brief.md): read it before your first change.
 - Releases use the `release` skill ([.claude/skills/release/SKILL.md](.claude/skills/release/SKILL.md)); the machinery
   is in [docs/releasing.md](docs/releasing.md). Two channels in one app: **nightly** (a GitHub prerelease, focused
   checks only) and **stable** (smoke, update test, perf ratchet and perf gate against the previous stable).
-- Solara releases from this Mac to `andrewbenson/solara`'s GitHub releases; Sparkle reads the appcast there. It has no
-  site, no Homebrew tap and no telemetry. The owner has authorized releases to go all the way through.
+- Solara releases from this Mac to `andrewbenson/solara`'s GitHub releases; Sparkle reads the appcast there. Its Homebrew
+  cask lives in the `andrewbenson/homebrew-solara` tap, which `publish.sh` bumps with each stable release. It has no
+  site and no telemetry. The owner has authorized releases to go all the way through.
 - No announcement or tweet drafts. Any other public action (posting anywhere, a PR or issue in another project)
   needs the owner's OK.
 

@@ -238,6 +238,27 @@ previous version (`{"version":1,"lastVersion":"<previous>","pending":null}`) and
 `SOLARA_RELEASE_NOTES=1` added (test instances skip the tab without it). `curl localhost:<port>/json` must
 list one `…/release-notes#<version>` page; a second launch opens none.
 
+## Homebrew
+
+Solara's cask is `Casks/solara.rb` in the `andrewbenson/homebrew-solara` tap (created 2026-11-05 with the owner's OK).
+People install it with `brew tap andrewbenson/solara`, `brew trust andrewbenson/solara` (Homebrew 7 asks before it
+loads a third-party tap's casks) and `brew install --cask solara`.
+
+- The cask downloads the stable release's DMG from GitHub and declares `auto_updates true`, so Sparkle updates an
+  installed copy and `brew upgrade` leaves it alone. It requires arm64 and macOS 26 (`depends_on macos: :tahoe`), and
+  its `livecheck` reads the Sparkle appcast.
+- `publish.sh` bumps it after each stable release: it clones the tap, sets `version` and the DMG's `sha256`, commits
+  "Solara <version>", pushes, and checks the tap's copy through the GitHub API. Nightlies don't touch it. A dry run
+  says what it would bump.
+- `zap` removes the data an installed copy keeps: `~/Library/Application Support/network.benson.solara` and `Solara`
+  (the CLI), its Caches, HTTPStorages, Preferences plist and Saved Application State. Check the list again whenever
+  the bundle id or a data location changes.
+- Before changing the cask by hand: `brew audit --cask --strict --online andrewbenson/solara/solara` and
+  `brew livecheck --cask andrewbenson/solara/solara`. 0.2.5 passed both and installed on the Hill Studio with
+  `--appdir` into a scratch folder (signature valid, Gatekeeper: Notarized Developer ID).
+- The official homebrew/cask repository needs a notable project; when Solara qualifies, the same file goes there as a
+  pull request (a public action: owner's OK first).
+
 ## The app's identity
 
 Everything that names the app comes from one file, `apps/browser/macos/Identity.xcconfig`. It's the base

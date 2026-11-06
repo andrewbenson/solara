@@ -156,6 +156,11 @@ if [ "$channel" = nightly ]; then
   run gh release upload "$stable_tag" -R "$repo" --clobber "$feed"
 fi
 
+cask_name="$(tr '[:upper:]' '[:lower:]' <<<"$product")"
+tap="${repo%%/*}/homebrew-$cask_name"
+if [ "$channel" = stable ] && [ "$dry" = 1 ]; then
+  gh repo view "$tap" >/dev/null 2>&1 && echo "+ bump $tap Casks/$cask_name.rb to $version" || echo "note: no $tap, so no Homebrew cask to bump"
+fi
 [ "$dry" = 1 ] && { echo "dry run: nothing published"; exit 0; }
 status=0
 url="$latest_url/appcast.xml"
@@ -171,5 +176,24 @@ if [ "$channel" = nightly ]; then
   size="$(curl -fsSLI --max-time 30 "$url" | awk 'tolower($1) == "content-length:" { n = $2 } END { print n + 0 }')"
   [ "$size" = "$(stat -f %z "$dmg")" ] && echo "PASS  $url is $version's DMG" \
     || { echo "FAIL  $url is $version's DMG (size $size, expected $(stat -f %z "$dmg"))"; status=1; }
+fi
+if [ "$channel" = stable ]; then
+  if gh repo view "$tap" >/dev/null 2>&1; then
+    dmg_sha="$(shasum -a 256 "$dmg" | awk '{ print $1 }')"
+    git clone -q --depth 1 "https://github.com/$tap.git" "$work/tap"
+    cask="$work/tap/Casks/$cask_name.rb"
+    [ -f "$cask" ] || die "$tap has no Casks/$cask_name.rb"
+    sed -i '' -E "s/^  version \"[^\"]+\"/  version \"$version\"/; s/^  sha256 \"[0-9a-f]+\"/  sha256 \"$dmg_sha\"/" "$cask"
+    if ! git -C "$work/tap" diff --quiet; then
+      git -C "$work/tap" commit -qam "$product $version"
+      git -C "$work/tap" push -q origin HEAD
+    fi
+    published_cask="$(gh api "repos/$tap/contents/Casks/$cask_name.rb" -q .content 2>/dev/null | base64 -d 2>/dev/null || true)"
+    grep -q "^  version \"$version\"" <<<"$published_cask" && grep -q "^  sha256 \"$dmg_sha\"" <<<"$published_cask" \
+      && echo "PASS  $tap's $cask_name cask is $version (sha256 $dmg_sha)" \
+      || { echo "FAIL  $tap's $cask_name cask is $version"; status=1; }
+  else
+    echo "note: no $tap, so no Homebrew cask to bump"
+  fi
 fi
 exit $status

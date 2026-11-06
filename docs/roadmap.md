@@ -132,7 +132,7 @@ Done when no React Native view appears on screen; React Native only arranges nat
 | Inventory every file left in apps/browser/src by what it does (draws, decides, holds data, glue) and the milestone that removes it: docs/native/rn-inventory.md | landed b1a78d3d |
 | The New Tab page's remaining React Native parts: Personalize, the feedback check-in and the release postcard | planned |
 | Native site controls and prompts (permissions, autofill, translate, zoom, developer mode) | planned |
-| Native extensions toolbar, overlays and side panel | in progress: popup frame (ea03e788, ee1d3c67) and side panel card and container native; install, permission and pin dialogs, extension menus, the toolbar model and Little Solara popups next |
+| Native extensions toolbar, overlays and side panel | in progress: popup frame (ea03e788, ee1d3c67), side panel card and container, and native dialog sheet for install, permission and pin dialogs; extension menus, the toolbar model and Little Solara popups next |
 | Native media: sidebar player, hover player, cast and share pickers, tab badges | in progress (tab badges, share bar) |
 | Native peek, Little Solara, calendar and meeting cards | planned |
 | Native top tab strip, split chrome, swipe overlay and the rest of the layout surfaces | planned |

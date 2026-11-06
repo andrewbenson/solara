@@ -100,6 +100,29 @@ struct SheetViewTests {
     #expect(dismissed == 1)
   }
 
+  @Test func aScrimPressThatSpansABodyReplacementDoesNotDismissTheNewBody() throws {
+    let (window, root, _, sheet) = Self.window()
+    defer { window.close() }
+    Self.present(sheet, body: NSView())
+    var dismissed = 0
+    sheet.onDismiss = { dismissed += 1 }
+    let point = CGPoint(x: 10, y: 10)
+    let target = try #require(root.hitTest(point))
+    let down = try #require(NSEvent.mouseEvent(
+      with: .leftMouseDown, location: root.convert(point, to: nil), modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+      context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+    let up = try #require(NSEvent.mouseEvent(
+      with: .leftMouseUp, location: root.convert(point, to: nil), modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+      context: nil, eventNumber: 0, clickCount: 1, pressure: 0))
+    target.mouseDown(with: down)
+    Self.present(sheet, body: NSView())
+    target.mouseUp(with: up)
+    #expect(dismissed == 0)
+    target.mouseDown(with: down)
+    target.mouseUp(with: up)
+    #expect(dismissed == 1)
+  }
+
   @Test func everyPointOutsideTheCardStillHitsTheSheet() throws {
     let (window, root, page, sheet) = Self.window()
     defer { window.close() }

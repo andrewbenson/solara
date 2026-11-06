@@ -58,7 +58,7 @@ const usesPageA = [
   "password-prompt", "screen-share-picker", "tab-capture", "share-instead-two-captures", "share-bar-layout",
   "restore-after-close", "discard-outcomes", "sleep-eligibility", "keep-awake-sites", "sleep-pinned-capture", "native-tab-sleep", "capture-picture", "unresponsive", "permission-dismissed", "permission-status-detached",
   "save-page", "activate-request", "extension-popup-and-panel", "extension-popup-window", "extension-popup-native-frame", "extension-popup-rail-field", "print-preview",
-  "extension-prompts", "extension-prompt-closed", "traffic-lights-after-profile-switch", "extension-configure",
+  "extension-prompts", "extension-prompt-closed", "extension-sheet-native", "traffic-lights-after-profile-switch", "extension-configure",
   "private-windows-create", "extension-installed-bubble", "popup-window", "popup-window-permission", "popup-origin-strip", "autofill-save-prompts",
   "settings-services", "download-navigation", "page-events", "page-background", "appearance-reaches-pages", "external-app-answer",
   "notifications", "now-playing", "media-state", "auto-picture-in-picture", "pip-window", "page-focus", "page-press-split",
@@ -207,7 +207,8 @@ if (!kept) {
 }
 rmSync(downloadsDir, { recursive: true, force: true });
 mkdirSync(downloadsDir, { recursive: true });
-mkdirSync(data, { recursive: true });
+mkdirSync(data, { recursive: true, mode: 0o700 });
+if (!kept) writeFileSync(join(data, ".solara-probe-scratch"), "", { mode: 0o600 });
 
 const results = [];
 const report = reporter(notificationOnly ? join(notificationEvidence, "notification-acceptance.log") : join(data, "acceptance.log"), { name: `acceptance ${kept ? `attached to pid ${kept.pid}` : app}` });
@@ -3069,6 +3070,93 @@ try {
       return { before, covered, answered, closed, requests: [prompt.requestId, second.requestId] };
     } finally {
       await evalApp(`ac.extensions.cancelInstall(); ac.extensions.closeExtensionPopup(); return true`).catch(() => null);
+      await exts(`uninstall("${installed.id}", "")`);
+    }
+  });
+
+  await check("extension-sheet-native", async () => {
+    const installed = await exts(`install(${JSON.stringify(extPath)}, "")`);
+    if (installed?.error) throw new Error(installed.error);
+    let tab = null;
+    const snapshot = async () => {
+      const value = await instance.snapshot({ fields: ["windows.sheet"] });
+      assert.ok(value.capabilities?.available?.includes("windows.sheet"));
+      const window = value.windows.find((w) => w.id === mainWindow);
+      assert.ok(window, "the sheet's window is in the native snapshot");
+      return window.sheet;
+    };
+    const pageFocus = () => until("focus restored to the shown page", async () => {
+      const value = await nativeExtensionPopup(mainWindow);
+      return value?.focusedTabId === tab && !value.omniboxFocused ? true : null;
+    }, 5000);
+    const clickScrim = async (sheet) => {
+      const x = sheet.scrim[0] + 20;
+      const y = sheet.scrim[1] + sheet.scrim[3] / 2;
+      assert.ok(x < sheet.card[0] - 30, "the scrim click is well outside the card");
+      const result = await evalApp(`return ac.shell.devClick(${JSON.stringify(mainWindow)}, { x: ${x}, y: ${y}, asKey: false })`);
+      if (result.error) throw new Error(result.error);
+      return result.hit;
+    };
+    const gone = async () => {
+      await until("the native sheet removed", async () => (await snapshot()) === null, 5000);
+      await pageFocus();
+    };
+    try {
+      await evalApp(`return ac.extensions.refreshExtensions("").then(() => true)`);
+      tab = await freshTab(`chrome-extension://${installed.id}/popup.html`);
+      const page = await until("the extension page", () => pageFor(tab, `${installed.id}/popup.html`), 10000);
+      await cdp(page, "Runtime.evaluate", { expression: "chrome.permissions.remove({ permissions: ['bookmarks'] }).then(() => true)", awaitPromise: true });
+      await evalApp(`return ac.webviews.get(${JSON.stringify(tab)}).focus()`);
+      const ask = async () => {
+        await cdp(page, "Runtime.evaluate", {
+          expression: "window.__perm = 'pending'; chrome.permissions.request({ permissions: ['bookmarks'] }).then((granted) => (window.__perm = String(granted)), (error) => (window.__perm = String(error))); true",
+          userGesture: true,
+        });
+        const prompt = await until("the permission request", () => evalApp(`return ac.extensions.useExtensions.getState().install?.prompt ?? null`), 10000);
+        const sheet = await until("the native permission sheet", async () => {
+          const value = await snapshot();
+          return value?.kind === "install" ? value : null;
+        }, 5000);
+        assert.equal(sheet.key, prompt.requestId);
+        assert.equal(sheet.busy, false);
+        assert.equal(sheet.focusInSheet, true);
+        assert.ok(Math.abs(sheet.card[2] - 380) <= 0.5, `card width ${sheet.card[2]}`);
+        const window = (await nativeExtensionPopup(mainWindow)).window;
+        assert.ok(Math.abs(sheet.card[0] + sheet.card[2] / 2 - window[0] / 2) <= 0.5, "the card is horizontally centred in the window");
+        return { prompt, sheet };
+      };
+      const cancelled = async () => {
+        await until("install state cleared", () => evalApp(`return ac.extensions.useExtensions.getState().install === null`), 5000);
+        const answer = await until("the page's permission answer", async () => {
+          const value = (await cdp(page, "Runtime.evaluate", { expression: "window.__perm", returnByValue: true })).result.value;
+          return value !== "pending" ? value : null;
+        }, 5000);
+        assert.equal(answer, "false");
+        await gone();
+        return answer;
+      };
+      const firstPrompt = await ask();
+      const installHit = await clickScrim(firstPrompt.sheet);
+      const scrimAnswer = await cancelled();
+      const second = await ask();
+      assert.notEqual(second.prompt.requestId, firstPrompt.prompt.requestId);
+      const escape = await evalApp(`return ac.shell.devKeyEquivalent(${JSON.stringify(mainWindow)}, { key: "\\u001b", keyCode: 53, modifiers: [] })`);
+      if (escape.error) throw new Error(escape.error);
+      const escapeAnswer = await cancelled();
+      await evalApp(`ac.extensions.useExtensions.setState({ pinDialog: { windowId: ${JSON.stringify(mainWindow)} } }); return true`);
+      const pins = await until("the native pin sheet", async () => {
+        const value = await snapshot();
+        return value?.kind === "pins" ? value : null;
+      }, 5000);
+      assert.equal(pins.key, "pins");
+      const pinsHit = await clickScrim(pins);
+      await until("the pin dialog closed", () => evalApp(`return ac.extensions.useExtensions.getState().pinDialog === null`), 5000);
+      await gone();
+      return { card: firstPrompt.sheet.card, scrimAnswer, escapeAnswer, installHit, pinsHit, requests: [firstPrompt.prompt.requestId, second.prompt.requestId] };
+    } finally {
+      await evalApp(`ac.extensions.cancelInstall(); ac.extensions.useExtensions.setState({ pinDialog: null }); return true`).catch(() => null);
+      if (tab) await closeTab(tab).catch(() => null);
+      await evalApp(`ac.actions.switchToTab(${JSON.stringify(first.id)}); return true`).catch(() => null);
       await exts(`uninstall("${installed.id}", "")`);
     }
   });

@@ -11,6 +11,7 @@ type WindowShellModule = {
   setBackdrop(windowId: string, json: string): Promise<void>;
   setLayout?(windowId: string, layout: WindowShellLayout): Promise<void>;
   setSidePanel?(windowId: string, json: string | null): Promise<void>;
+  setSheet?(windowId: string, json: string | null): Promise<void>;
   setModal?(windowId: string, owner: string, shown: boolean): Promise<void>;
   accessibilityReach?(windowId: string): Promise<Record<string, number> | null>;
   describe(windowId: string): Promise<string>;
@@ -106,6 +107,48 @@ export type WindowSidePanelState = {
 
 export function setWindowSidePanel(windowId: string, state: WindowSidePanelState | null) {
   return native?.setSidePanel?.(windowId, state ? JSON.stringify(state) : null) ?? Promise.resolve();
+}
+
+export type WindowSheetState = {
+  key: string;
+  title: string;
+  busy: boolean;
+  style: {
+    dark: boolean;
+    panel: string;
+    panelBorder: string;
+    panelShadowOpacity: number;
+  };
+} & ({
+  kind: "install";
+  install: {
+    status: "ready" | "installing" | "error";
+    title: string;
+    error: string | null;
+    icon: string | null;
+    warnings: string[];
+    loadedFrom: string | null;
+    action: string;
+    dark: boolean;
+    theme: { textPrimary: string; textSecondary: string; textTertiary: string };
+    goButton: string;
+    goButtonText: string;
+  };
+} | {
+  kind: "pins";
+  pins: {
+    extensions: { id: string; name: string; icon: string | null; pinned: boolean }[];
+    dark: boolean;
+    theme: { textPrimary: string; textSecondary: string; textTertiary: string; accent: string };
+    control: string;
+    controlBorder: string;
+    goButton: string;
+    goButtonText: string;
+  };
+});
+
+export function setWindowSheet(windowId: string, state: WindowSheetState | null) {
+  return native?.setSheet?.(windowId, state ? JSON.stringify(state) : null) ?? Promise.resolve();
 }
 
 export function setWindowShellModal(windowId: string, owner: string, shown: boolean) {

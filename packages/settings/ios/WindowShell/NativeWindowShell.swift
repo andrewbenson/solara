@@ -382,6 +382,10 @@ public class WindowShellModule: Module {
       MainActor.assumeIsolated { NativeWindowShell.host(windowId)?.setSidePanel(json) }
     }.runOnQueue(.main)
 
+    AsyncFunction("setSheet") { (windowId: String, json: String?) in
+      MainActor.assumeIsolated { NativeSheets.set(windowId, json) }
+    }.runOnQueue(.main)
+
     AsyncFunction("setLayout") { (windowId: String, layout: [String: Any]) in
       nonisolated(unsafe) let given = layout
       MainActor.assumeIsolated {

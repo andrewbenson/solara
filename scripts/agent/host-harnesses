@@ -9,7 +9,7 @@
 # run adds no second copy of it. Each harness gets its own directory and log under the
 # scratch, by default this clone's .hill/host-harnesses, reused and overwritten by every
 # run; --scratch DIR outside the repo puts it elsewhere. --only selects harnesses by name;
-# the default is all seven. --list checks the registry against tests/*/run.py,
+# the default is all eight. --list checks the registry against tests/*/run.py,
 # then prints the known names without building or requiring scratch.
 #
 # Every subprocess has a timeout: 300 s for the shared build, 30 s to locate its
@@ -33,6 +33,7 @@ import time
 HARNESSES = {
     'onboarding-host': 'host',
     'side-panel-host': 'host',
+    'sheet-host': 'host',
     'pairing-authentication': 'scratch',
     'pairing-host': 'products',
     'pairing-joining': 'scratch',

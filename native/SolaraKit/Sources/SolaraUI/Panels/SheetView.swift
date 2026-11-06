@@ -55,6 +55,7 @@ public final class SheetView: NSView {
 
   public func present(body: NSView, bodyHeight: CGFloat, style: SheetStyle, accessibilityTitle: String, animated: Bool) {
     let first = !presented
+    if self.body !== body { scrimPressed = false }
     presented = true
     if self.body !== body {
       self.body?.removeFromSuperview()

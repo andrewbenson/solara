@@ -66,6 +66,12 @@ final class NativeTabSleep {
   }
 
   private func publishRunning(startPending: Bool = false) {
+    let runner = runner
+    if runner.isRunning {
+      HeavyTabs.sleep = { (id: String) async -> Bool in await runner.sleepOnRequest(id) }
+    } else {
+      HeavyTabs.sleep = nil
+    }
     let now = runner.isRunning || startPending
     let changed = running.withLock { value in
       defer { value = now }

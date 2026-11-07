@@ -100,9 +100,11 @@ public struct SidebarFlags: Equatable, Sendable {
   public var developer: Set<String> = []
   public var pip: Set<String> = []
   public var capture: [String: TabCapture] = [:]
+  public var heavy: [String: HeavyTabReason] = [:]
 
   public init() {}
 
+  @MainActor
   init(_ state: SidebarHostState, live: [String: PageLiveFacts]? = nil) {
     selection = Set(state.selection)
     if let live {
@@ -115,6 +117,8 @@ public struct SidebarFlags: Equatable, Sendable {
       sleeping = Set(state.sleeping)
     }
     developer = Set(state.developer)
+    let asleep = sleeping
+    heavy = HeavyTabs.current.filter { !asleep.contains($0.key) }
     pip = Set(state.pip ?? [])
     capture = state.capture ?? [:]
   }

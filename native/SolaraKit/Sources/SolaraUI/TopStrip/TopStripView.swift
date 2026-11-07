@@ -24,9 +24,15 @@ public final class TopStripView: NSView {
     super.init(frame: .zero)
     wantsLayer = true
     layer?.masksToBounds = true
+    NotificationCenter.default.addObserver(self, selector: #selector(heavyChanged), name: HeavyTabs.changed, object: nil)
   }
 
   required init?(coder: NSCoder) { fatalError() }
+
+  @objc private func heavyChanged() {
+    guard let state, let host else { return }
+    update(state: state, host: host)
+  }
 
   public override func hitTest(_ point: NSPoint) -> NSView? {
     let hit = super.hitTest(point)

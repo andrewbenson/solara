@@ -8,7 +8,8 @@ public enum TabCapture: String, Decodable, Equatable, Sendable {
 public final class TabBadgesView: NSView {
   private let pip = CornerBadge()
   private let capture = CornerBadge()
-  private var shown: (pip: Bool, capture: TabCapture?, size: CGFloat, badge: NSColor, glyph: NSColor)?
+  private let heavy = CornerBadge()
+  private var shown: (pip: Bool, capture: TabCapture?, heavy: HeavyTabReason?, size: CGFloat, badge: NSColor, glyph: NSColor)?
 
   public override var isFlipped: Bool { true }
 
@@ -18,15 +19,29 @@ public final class TabBadgesView: NSView {
     layer?.masksToBounds = false
     pip.isHidden = true
     capture.isHidden = true
+    heavy.isHidden = true
     addSubview(pip)
     addSubview(capture)
+    addSubview(heavy)
   }
 
   required init?(coder: NSCoder) { fatalError() }
 
   public override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-  public var isEmpty: Bool { shown.map { !$0.pip && $0.capture == nil } ?? true }
+  public var isEmpty: Bool { shown.map { !$0.pip && $0.capture == nil && heavyCorner($0) == nil } ?? true }
+
+  public private(set) var heavyShown: HeavyTabReason?
+
+  static func heavySpec(corner: CornerBadgeCorner, iconSize size: CGFloat) -> CornerBadgeSpec {
+    .circle(.glyph(symbol: "gauge.with.dots.needle.67percent", scale: 0.55, color: .white), fill: .systemOrange, corner: corner, diameter: (size * 0.72).rounded(), overhang: 1.0 / 3)
+  }
+
+  private func heavyCorner(_ shown: (pip: Bool, capture: TabCapture?, heavy: HeavyTabReason?, size: CGFloat, badge: NSColor, glyph: NSColor)) -> CornerBadgeCorner? {
+    guard shown.heavy != nil else { return nil }
+    if shown.capture == nil { return .bottomTrailing }
+    return shown.pip ? nil : .topTrailing
+  }
 
   static func pipSpec(iconSize size: CGFloat, badge: NSColor, glyph: NSColor) -> CornerBadgeSpec {
     .circle(.glyph(symbol: "pip.fill", scale: 0.55, color: glyph), fill: badge, corner: .topTrailing, diameter: (size * 0.72).rounded(), overhang: 1.0 / 3)
@@ -41,8 +56,13 @@ public final class TabBadgesView: NSView {
     }
   }
 
-  public func set(pip showsPip: Bool, capture kind: TabCapture?, iconSize size: CGFloat, badge: NSColor, badgeGlyph: NSColor) {
-    shown = (showsPip, kind, size, badge, badgeGlyph)
+  public func set(pip showsPip: Bool, capture kind: TabCapture?, heavy reason: HeavyTabReason? = nil, iconSize size: CGFloat, badge: NSColor, badgeGlyph: NSColor) {
+    let next = (pip: showsPip, capture: kind, heavy: reason, size: size, badge: badge, glyph: badgeGlyph)
+    shown = next
+    let corner = heavyCorner(next)
+    heavyShown = corner == nil ? nil : reason
+    heavy.isHidden = corner == nil
+    if let corner { heavy.show(Self.heavySpec(corner: corner, iconSize: size), in: bounds.size) }
     pip.isHidden = !showsPip
     if showsPip { pip.show(Self.pipSpec(iconSize: size, badge: badge, glyph: badgeGlyph), in: bounds.size) }
     capture.isHidden = kind == nil
@@ -51,7 +71,7 @@ public final class TabBadgesView: NSView {
 
   public override func setFrameSize(_ newSize: NSSize) {
     super.setFrameSize(newSize)
-    if let shown { set(pip: shown.pip, capture: shown.capture, iconSize: shown.size, badge: shown.badge, badgeGlyph: shown.glyph) }
+    if let shown { set(pip: shown.pip, capture: shown.capture, heavy: shown.heavy, iconSize: shown.size, badge: shown.badge, badgeGlyph: shown.glyph) }
   }
 }
 
@@ -60,7 +80,8 @@ extension TabBadgesView {
   static func attach(_ view: inout TabBadgesView?, to parent: NSView, flags: SidebarFlags, tabId: String?, host: SidebarHostState, palette: SidebarPalette) {
     let pip = tabId.map { flags.pip.contains($0) } ?? false
     let capture = tabId.flatMap { flags.capture[$0] }
-    guard pip || capture != nil else {
+    let heavy = tabId.flatMap { flags.heavy[$0] }
+    guard pip || capture != nil || heavy != nil else {
       view?.isHidden = true
       return
     }
@@ -74,6 +95,6 @@ extension TabBadgesView {
     badges.isHidden = false
     let fill = host.badge?.first.flatMap { CSSColor($0)?.ns } ?? palette.textSecondary
     let glyph = host.badge.flatMap { $0.count > 1 ? CSSColor($0[1])?.ns : nil } ?? .white
-    badges.set(pip: pip, capture: capture, iconSize: 16, badge: fill, badgeGlyph: glyph)
+    badges.set(pip: pip, capture: capture, heavy: heavy, iconSize: 16, badge: fill, badgeGlyph: glyph)
   }
 }

@@ -6,6 +6,22 @@ public struct SidebarTabCardState: Decodable, Equatable, Sendable {
     public var action: String
     public var icon: String
     public var label: String
+
+    public init(action: String, icon: String, label: String) {
+      self.action = action
+      self.icon = icon
+      self.label = label
+    }
+
+    public static let sleepHeavy = Button(action: "sleepHeavy", icon: "moon.zzz", label: "Put to Sleep")
+  }
+
+  @MainActor
+  public func offeringSleep(heavy: HeavyTabReason?, canSleep: Bool) -> SidebarTabCardState {
+    guard heavy != nil, canSleep, !sleeping, !buttons.contains(.sleepHeavy) else { return self }
+    var out = self
+    out.buttons.append(.sleepHeavy)
+    return out
   }
 
   public struct Look: Decodable, Equatable, Sendable {

@@ -13,6 +13,7 @@ enum NativeSidebarHoverCard {
   static func start() {
     guard NativeWindowShell.enabled, observer == nil else { return }
     NativeTabMemory.installEngineQuery()
+    NativeHeavyTabs.start()
     observer = SettingsJS.shared.observe(topic) { value in receive(value) }
     receive(SettingsJS.shared.latestValue(topic))
   }
@@ -101,6 +102,10 @@ final class SidebarHoverCardHost {
     let card = SidebarTabCardView()
     card.onAction = { [weak self, weak card] action in
       guard let self, let id = card?.state?.tabId else { return }
+      if action == SidebarTabCardState.Button.sleepHeavy.action {
+        Task { @MainActor in _ = await HeavyTabs.sleep?(id) }
+        return
+      }
       NativeSidebarHoverCard.send(self.windowId, id, action)
     }
     card.onPointer = { [weak self] inside in self?.pointer(inside) }
@@ -222,7 +227,8 @@ final class SidebarHoverCardHost {
   private func place(_ kind: String, _ card: [String: Any]) -> (view: NSView, origin: CGPoint)? {
     switch kind {
     case "tab":
-      guard let state = SidebarTabCardState.decode(card) else { return nil }
+      guard let decoded = SidebarTabCardState.decode(card) else { return nil }
+      let state = decoded.offeringSleep(heavy: HeavyTabs.current[decoded.tabId], canSleep: HeavyTabs.sleep != nil)
       let memoryEnabled = NativeTabMemory.enabled
       let memoryKey = TabMemoryKey.key(tabId: state.tabId, document: NativeTabMemory.document(state.tabId) ?? "")
       let fresh = motion.phase == .hidden || motion.phase == .leaving || self.kind != "tab" || tabCardId != memoryKey

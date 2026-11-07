@@ -69,6 +69,7 @@ public final class SidebarView: NSView {
     DevPointer.observe(self, #selector(devPointer(_:)))
     NotificationCenter.default.addObserver(self, selector: #selector(coverChanged(_:)), name: WindowShellView.hoverCoverChanged, object: nil)
     NotificationCenter.default.addObserver(self, selector: #selector(liveChanged), name: SidebarLiveFeed.changed, object: nil)
+    NotificationCenter.default.addObserver(self, selector: #selector(heavyChanged), name: HeavyTabs.changed, object: nil)
   }
 
   required init?(coder: NSCoder) { fatalError() }
@@ -444,6 +445,11 @@ public final class SidebarView: NSView {
     case .upsell: CleanUpUpsellView()
     case .live(let key): SidebarLiveViews.make(key)
     }
+  }
+
+  @objc private func heavyChanged() {
+    guard let context else { return }
+    update(state: context.state, host: context.host)
   }
 
   @objc private func liveChanged() {

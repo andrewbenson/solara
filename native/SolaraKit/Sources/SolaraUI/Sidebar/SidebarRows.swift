@@ -336,6 +336,7 @@ final class TabRowView: SidebarRowView {
     let tab: Tab
     let active, selected, loading, playing, developer, sleeping, renaming, resettable, faded, pip: Bool
     let capture: TabCapture?
+    let heavy: HeavyTabReason?
     let closeKind: String
     let engine, closeHint: String?
     let palette: Int
@@ -352,7 +353,7 @@ final class TabRowView: SidebarRowView {
       playing: flags.playing.contains(id), developer: flags.developer.contains(id), sleeping: flags.sleeping.contains(id),
       renaming: context.host.renaming == "tab:\(id)", resettable: context.query.awayFromPinnedUrl(id),
       faded: context.state.settings.bool("fadeUnloadedTabs") && context.query.pageUnloaded(id),
-      pip: flags.pip.contains(id), capture: flags.capture[id],
+      pip: flags.pip.contains(id), capture: flags.capture[id], heavy: flags.heavy[id],
       closeKind: "\(context.query.closeKind(id))", engine: context.host.engines[id], closeHint: context.host.closeHint,
       palette: context.paletteGeneration, mark: context.favicons.newTabMark.map(ObjectIdentifier.init))
   }

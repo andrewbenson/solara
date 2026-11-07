@@ -421,4 +421,55 @@ import Testing
     first.stop()
     #expect(second.start())
   }
+
+  @Test func sleepOnRequestSleepsAPlainBackgroundTabWithoutWaitingForTheIdleTimer() async throws {
+    let fixture = try Fixture()
+    let runner = fixture.runner(idleMs: 36_000_000)
+    #expect(runner.start())
+    defer { runner.stop() }
+    #expect(await runner.sweep().isEmpty)
+    #expect(fixture.commands.isEmpty)
+    #expect(await runner.sleepOnRequest("target0"))
+    #expect(fixture.commands["target0"] == [.reasonsNotToSleep, .sleepIfEligible(false)])
+  }
+
+  @Test func sleepOnRequestRefusesAProtectedTabWithoutAskingChrome() async throws {
+    let fixture = try Fixture()
+    try fixture.feed("target0", handled: 1, keep: ["capturing": true, "newTabShown": false, "pip": false, "displayRequest": false, "media": "none"])
+    let runner = fixture.runner()
+    #expect(runner.start())
+    defer { runner.stop() }
+    #expect(!(await runner.sleepOnRequest("target0")))
+    #expect(!(await runner.sleepOnRequest("active")))
+    #expect(fixture.commands.isEmpty)
+  }
+
+  @Test func sleepOnRequestRefusesATabAskingForPermission() async throws {
+    let fixture = try Fixture()
+    fixture.pendingPermission = ["target0"]
+    let runner = fixture.runner()
+    #expect(runner.start())
+    defer { runner.stop() }
+    #expect(!(await runner.sleepOnRequest("target0")))
+    #expect(fixture.commands.isEmpty)
+  }
+
+  @Test(arguments: [["siteException"], ["audible"], ["pinnedTab", "audible"]])
+  func sleepOnRequestHonoursChromesReasonsIncludingSiteExceptions(_ reasons: [String]) async throws {
+    let fixture = try Fixture()
+    fixture.replies["target0"] = .success(.array(reasons.map(PageValue.string)))
+    let runner = fixture.runner()
+    #expect(runner.start())
+    defer { runner.stop() }
+    #expect(!(await runner.sleepOnRequest("target0")))
+    #expect(fixture.commands["target0"] == [.reasonsNotToSleep])
+    #expect(runner.lastChromeReasons["target0"] == reasons)
+  }
+
+  @Test func sleepOnRequestDoesNothingWhileTheRunnerIsStopped() async throws {
+    let fixture = try Fixture()
+    let runner = fixture.runner()
+    #expect(!(await runner.sleepOnRequest("target0")))
+    #expect(fixture.commands.isEmpty)
+  }
 }

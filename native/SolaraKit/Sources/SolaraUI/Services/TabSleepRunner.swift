@@ -188,13 +188,34 @@ public final class TabSleepRunner {
     return slept
   }
 
-  private func request<Output>(_ descriptor: PageDescriptor, _ request: PageRequest<Output>, run: UUID) async throws -> Output {
+  public func sleepOnRequest(_ id: String) async -> Bool {
+    guard isRunning, Self.activeRunner === self else { return false }
+    let run = runID
+    guard let descriptor = store.sequence({ requestable(id) ? eligibleDescriptor(id) : nil }) else { return false }
+    do {
+      guard let reasons = try await request(descriptor, .reasonsNotToSleep, run: run, candidate: false), isCurrent(run) else { return false }
+      lastChromeReasons[id] = reasons
+      guard reasons.allSatisfy({ $0 == "pinnedTab" }) else { return false }
+      let command: PageRequest<PageDiscardOutcome> = .sleepIfEligible(waivingPinned: reasons.contains("pinnedTab"))
+      let outcome = try await request(descriptor, command, run: run, candidate: false)
+      return outcome == .discarded
+    } catch {
+      return false
+    }
+  }
+
+  private func requestable(_ id: String) -> Bool {
+    let state = store.state
+    return state.tabs[id] != nil && !shownIDs(state).contains(id) && state.live[id]?.discarded != true
+  }
+
+  private func request<Output>(_ descriptor: PageDescriptor, _ request: PageRequest<Output>, run: UUID, candidate: Bool = true) async throws -> Output {
     let value: PageValue = try await withCheckedThrowingContinuation { continuation in
       store.sequence {
         guard isCurrent(run), !Task.isCancelled,
           pages.descriptor(descriptor.registration) == descriptor,
           eligibleDescriptor(descriptor.tabID)?.registration == descriptor.registration,
-          candidateIDs().contains(descriptor.tabID) else {
+          candidate ? candidateIDs().contains(descriptor.tabID) : requestable(descriptor.tabID) else {
           continuation.resume(throwing: PageRegistryError.cancelled(descriptor.registration))
           return
         }

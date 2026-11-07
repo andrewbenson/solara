@@ -1,7 +1,7 @@
 import { deletePassword, savePassword } from "@solara/solaracore";
-import { nativeAddHistoryVisits, nativeDeleteHistoryUrls } from "@solara/settings";
+import { bookmarkWriterSnapshot, bookmarkWriterState, nativeAddHistoryVisits, nativeDeleteHistoryUrls, replaceBookmarkDocument } from "@solara/settings";
 import { ApplyRefusal, assignPositions, canonical, SyncNative, type Adapter, type SavedLogin, type SyncRecord } from "@solara/sync";
-import { bookmarkUuidFor, ensureRoots, isBookmarkUuid } from "../store/bookmarks";
+import { bookmarkUuidFor, ensureRoots, isBookmarkUuid, rootIdsFor } from "../store/bookmarks";
 import { MAX_HISTORY, MAX_VISIT_TIMES } from "../store/history";
 import { useBrowser } from "../store/browser";
 import { engineProfile } from "../store/model";
@@ -12,7 +12,7 @@ import { DEFAULT_PROFILE_ID, DEFAULT_SETTINGS, type Settings } from "../store/se
 import { sanitizeTheme } from "../lib/profileTheme";
 import { developerModeOf } from "../lib/developerMode";
 import { fromLegacy } from "../legacy";
-import type { BookmarkNode, HistoryEntry, Profile, ProfileTheme } from "../store/types";
+import type { BookmarkNode, Bookmarks, HistoryEntry, Profile, ProfileTheme } from "../store/types";
 import { syncRedesign } from "./redesignSwitch";
 
 const store = () => useBrowser.getState();
@@ -292,7 +292,104 @@ export function deviceAdapter(deviceId: string, name: () => string, retired = fa
 
 type BookmarkValue = { k: "u" | "f"; p: string; t: string; u?: string; a: number; pos: string };
 
+function bookmarkValues(b: Bookmarks, roots: { bar: string; other: string }, base: (key: string) => unknown): Map<string, unknown> {
+  const values = new Map<string, unknown>();
+  const keyOf = (id: string) => {
+    if (id === roots.bar) return "bar";
+    if (id === roots.other) return "other";
+    const key = b.nodes[id]?.syncKey;
+    return key && bookmarkUuidFor(key) === id ? key : id;
+  };
+  const seen = new Set<string>();
+  const walk = (folderId: string) => {
+    const folder = b.nodes[folderId];
+    if (folder?.kind !== "folder" || seen.has(folderId)) return;
+    seen.add(folderId);
+    const parent = keyOf(folderId);
+    const children = folder.children.filter((id) => b.nodes[id]);
+    const positions = assignPositions(
+      children.map((id) => {
+        const known = base(`bm:${keyOf(id)}`) as BookmarkValue | undefined;
+        return known?.p === parent && typeof known.pos === "string" ? known.pos : undefined;
+      }),
+    );
+    children.forEach((id, i) => {
+      const node = b.nodes[id]!;
+      values.set(`bm:${keyOf(id)}`, {
+        k: node.kind === "url" ? "u" : "f",
+        p: parent,
+        t: node.title,
+        ...(node.kind === "url" ? { u: node.url } : {}),
+        a: node.addedAt,
+        pos: positions[i]!,
+      } satisfies BookmarkValue);
+      if (node.kind === "folder") walk(id);
+    });
+  };
+  walk(roots.bar);
+  walk(roots.other);
+  return values;
+}
+
+function syncedBookmarkNodes(b: Bookmarks, roots: { bar: string; other: string }, visible: Map<string, unknown>): Record<string, BookmarkNode> {
+  const values = new Map([...visible].map(([k, v]) => [bookmarkUuidFor(k.slice(3)), v as BookmarkValue]));
+  const keys = new Map([...visible.keys()].map((k) => [bookmarkUuidFor(k.slice(3)), k.slice(3)]));
+  const rootOf = (key: string) => (key === "bar" ? roots.bar : key === "other" ? roots.other : null);
+  const parentOf = new Map<string, string>();
+  for (const [id, v] of values) {
+    const root = rootOf(v.p);
+    const parent = root ? null : bookmarkUuidFor(v.p);
+    parentOf.set(id, root ?? (parent && values.get(parent)?.k === "f" ? parent : roots.other));
+  }
+  for (const id of [...values.keys()].sort()) {
+    const seen = new Set<string>([id]);
+    for (let at = parentOf.get(id)!; parentOf.has(at); at = parentOf.get(at)!) {
+      if (seen.has(at)) {
+        parentOf.set(id, roots.other);
+        break;
+      }
+      seen.add(at);
+    }
+  }
+  const children = new Map<string, string[]>([[roots.bar, []], [roots.other, []]]);
+  for (const id of values.keys()) children.set(parentOf.get(id)!, [...(children.get(parentOf.get(id)!) ?? []), id]);
+  const byPosition = (a: string, z: string) => {
+    const pa: unknown = values.get(a)!.pos;
+    const pz: unknown = values.get(z)!.pos;
+    const placedA = typeof pa === "string";
+    const placedZ = typeof pz === "string";
+    if (placedA !== placedZ) return placedA ? -1 : 1;
+    if (placedA && placedZ && pa !== pz) return (pa as string) < (pz as string) ? -1 : 1;
+    const ka = keys.get(a)!;
+    const kz = keys.get(z)!;
+    return ka < kz ? -1 : ka > kz ? 1 : 0;
+  };
+  const nodes: Record<string, BookmarkNode> = { ...b.nodes };
+  const drop = (id: string) => {
+    const node = nodes[id];
+    if (node?.kind === "folder") node.children.forEach(drop);
+    if (id !== roots.bar && id !== roots.other) delete nodes[id];
+  };
+  drop(roots.bar);
+  drop(roots.other);
+  for (const [id, v] of values) {
+    const old = b.nodes[id];
+    const key = keys.get(id)!;
+    const syncKey = isBookmarkUuid(key) ? {} : { syncKey: key };
+    nodes[id] =
+      v.k === "u"
+        ? { kind: "url", id, parentId: parentOf.get(id)!, title: v.t, url: v.u ?? "", favicon: old?.kind === "url" ? old.favicon : null, addedAt: v.a, ...syncKey }
+        : { kind: "folder", id, parentId: parentOf.get(id)!, title: v.t, children: [], addedAt: v.a, ...syncKey };
+  }
+  for (const [parent, ids] of children) {
+    const folder = nodes[parent];
+    if (folder?.kind === "folder") nodes[parent] = { ...folder, children: ids.sort(byPosition) };
+  }
+  return nodes;
+}
+
 export function bookmarksAdapter(profileId: string): Adapter {
+  if (bookmarkWriterState().state === "owned") return nativeBookmarksAdapter(profileId);
   const ready = () => !!store().bookmarksReady[profileId];
   return {
     prefix: "bm:",
@@ -300,102 +397,42 @@ export function bookmarksAdapter(profileId: string): Adapter {
       if (!ready()) return null;
       const b = store().bookmarks;
       const roots = b.roots[profileId];
-      const values = new Map<string, unknown>();
-      if (!roots) return { values };
-      const keyOf = (id: string) => {
-        if (id === roots.bar) return "bar";
-        if (id === roots.other) return "other";
-        const key = b.nodes[id]?.syncKey;
-        return key && bookmarkUuidFor(key) === id ? key : id;
-      };
-      const seen = new Set<string>();
-      const walk = (folderId: string) => {
-        const folder = b.nodes[folderId];
-        if (folder?.kind !== "folder" || seen.has(folderId)) return;
-        seen.add(folderId);
-        const parent = keyOf(folderId);
-        const children = folder.children.filter((id) => b.nodes[id]);
-        const positions = assignPositions(
-          children.map((id) => {
-            const known = base(`bm:${keyOf(id)}`) as BookmarkValue | undefined;
-            return known?.p === parent && typeof known.pos === "string" ? known.pos : undefined;
-          }),
-        );
-        children.forEach((id, i) => {
-          const node = b.nodes[id]!;
-          values.set(`bm:${keyOf(id)}`, {
-            k: node.kind === "url" ? "u" : "f",
-            p: parent,
-            t: node.title,
-            ...(node.kind === "url" ? { u: node.url } : {}),
-            a: node.addedAt,
-            pos: positions[i]!,
-          } satisfies BookmarkValue);
-          if (node.kind === "folder") walk(id);
-        });
-      };
-      walk(roots.bar);
-      walk(roots.other);
-      return { values };
+      return { values: roots ? bookmarkValues(b, roots, base) : new Map<string, unknown>() };
     },
     apply: (visible) => {
       if (!ready()) return false;
-      const s = store();
-      const [b, roots] = ensureRoots(s.bookmarks, profileId);
-      const values = new Map([...visible].map(([k, v]) => [bookmarkUuidFor(k.slice(3)), v as BookmarkValue]));
-      const keys = new Map([...visible.keys()].map((k) => [bookmarkUuidFor(k.slice(3)), k.slice(3)]));
-      const rootOf = (key: string) => (key === "bar" ? roots.bar : key === "other" ? roots.other : null);
-      const parentOf = new Map<string, string>();
-      for (const [id, v] of values) {
-        const root = rootOf(v.p);
-        const parent = root ? null : bookmarkUuidFor(v.p);
-        parentOf.set(id, root ?? (parent && values.get(parent)?.k === "f" ? parent : roots.other));
-      }
-      for (const id of [...values.keys()].sort()) {
-        const seen = new Set<string>([id]);
-        for (let at = parentOf.get(id)!; parentOf.has(at); at = parentOf.get(at)!) {
-          if (seen.has(at)) {
-            parentOf.set(id, roots.other);
-            break;
-          }
-          seen.add(at);
-        }
-      }
-      const children = new Map<string, string[]>([[roots.bar, []], [roots.other, []]]);
-      for (const id of values.keys()) children.set(parentOf.get(id)!, [...(children.get(parentOf.get(id)!) ?? []), id]);
-      const byPosition = (a: string, z: string) => {
-        const pa: unknown = values.get(a)!.pos;
-        const pz: unknown = values.get(z)!.pos;
-        const placedA = typeof pa === "string";
-        const placedZ = typeof pz === "string";
-        if (placedA !== placedZ) return placedA ? -1 : 1;
-        if (placedA && placedZ && pa !== pz) return (pa as string) < (pz as string) ? -1 : 1;
-        const ka = keys.get(a)!;
-        const kz = keys.get(z)!;
-        return ka < kz ? -1 : ka > kz ? 1 : 0;
-      };
-      const nodes: Record<string, BookmarkNode> = { ...b.nodes };
-      const drop = (id: string) => {
-        const node = nodes[id];
-        if (node?.kind === "folder") node.children.forEach(drop);
-        if (id !== roots.bar && id !== roots.other) delete nodes[id];
-      };
-      drop(roots.bar);
-      drop(roots.other);
-      for (const [id, v] of values) {
-        const old = b.nodes[id];
-        const key = keys.get(id)!;
-        const syncKey = isBookmarkUuid(key) ? {} : { syncKey: key };
-        nodes[id] =
-          v.k === "u"
-            ? { kind: "url", id, parentId: parentOf.get(id)!, title: v.t, url: v.u ?? "", favicon: old?.kind === "url" ? old.favicon : null, addedAt: v.a, ...syncKey }
-            : { kind: "folder", id, parentId: parentOf.get(id)!, title: v.t, children: [], addedAt: v.a, ...syncKey };
-      }
-      for (const [parent, ids] of children) {
-        const folder = nodes[parent];
-        if (folder?.kind === "folder") nodes[parent] = { ...folder, children: ids.sort(byPosition) };
-      }
+      const [b, roots] = ensureRoots(store().bookmarks, profileId);
+      const nodes = syncedBookmarkNodes(b, roots, visible);
       asSyncApply(() => useBrowser.setState({ bookmarks: { ...b, nodes } }));
+    },
+  };
+}
+
+function nativeBookmarksAdapter(profileId: string): Adapter {
+  const opened = bookmarkWriterSnapshot(profileId);
+  const binding = { engine: opened.engine, generation: opened.generation };
+  const current = () => {
+    const snapshot = bookmarkWriterSnapshot(profileId);
+    if (snapshot.engine !== binding.engine || snapshot.generation !== binding.generation) throw new Error("the native bookmark owner changed during this sync");
+    return { snapshot, document: JSON.parse(snapshot.document) as Bookmarks };
+  };
+  const rootsOf = (b: Bookmarks) => b.roots[profileId] ?? rootIdsFor(binding.engine);
+  return {
+    prefix: "bm:",
+    extract: (base) => {
+      const { snapshot, document } = current();
+      if (!snapshot.ready) return null;
+      const roots = rootsOf(document);
+      if (document.nodes[roots.bar]?.kind !== "folder" || document.nodes[roots.other]?.kind !== "folder") return null;
+      return { values: bookmarkValues(document, roots, base) };
+    },
+    apply: (visible) => {
+      const { snapshot, document } = current();
+      if (!snapshot.ready) return false;
+      const roots = rootsOf(document);
+      if (document.nodes[roots.bar]?.kind !== "folder" || document.nodes[roots.other]?.kind !== "folder") throw new Error("the native bookmark document has no roots for this profile");
+      replaceBookmarkDocument(profileId, { ...document, nodes: syncedBookmarkNodes(document, roots, visible) }, snapshot.revision, binding);
+      return true;
     },
   };
 }

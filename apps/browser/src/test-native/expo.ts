@@ -18,7 +18,17 @@ let liveRevision = 0;
 let liveCounter = 0;
 const publishLive = () => liveListeners.get("onLiveReplica")?.({ revision: ++liveRevision, replicaJSON: JSON.stringify(testLive) });
 
+type TestBookmarkWriter = { state(): unknown; snapshot(profileId: string): unknown; replace(...args: unknown[]): unknown };
+const testBookmarkWriter = (): TestBookmarkWriter => {
+  const writer = (globalThis as { acTestBookmarkWriter?: TestBookmarkWriter }).acTestBookmarkWriter;
+  if (!writer) throw new Error("native bookmarks are not owned by this launch");
+  return writer;
+};
+
 const settingsModule = {
+  bookmarkWriterState: () => ((globalThis as { acTestBookmarkWriter?: TestBookmarkWriter }).acTestBookmarkWriter?.state() ?? { state: "legacy" }),
+  bookmarkWriterSnapshot: (profileId: string) => testBookmarkWriter().snapshot(profileId),
+  replaceBookmarkDocument: (...args: unknown[]) => testBookmarkWriter().replace(...args),
   liveInitialReplica: () => ({ revision: liveRevision, replicaJSON: JSON.stringify(testLive) }),
   addListener: (name: string, listener: (value: unknown) => void) => {
     liveListeners.set(name, listener);

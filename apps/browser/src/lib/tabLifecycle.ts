@@ -17,6 +17,7 @@ import { splitOf } from "../store/splits";
 import { nativeOwnsWorkspace, nativeTabSleepRunning } from "../store/nativeStore";
 import { switchOn } from "./killSwitches";
 import { applyHeldReports } from "./nativeEvents";
+import { keepAliveBrowserChanged } from "./nativeKeepAlive";
 import { everySlowly, reschedule } from "./slowTimers";
 import { webviews } from "./webviews";
 import { tabSleepCandidates, unusedTabSleepProfiles } from "./tabSleepPolicy";
@@ -408,6 +409,7 @@ export function startTabLifecycle() {
     reschedule();
   });
   useBrowser.subscribe((s, prev) => {
+    keepAliveBrowserChanged(s, prev);
     if (s.windows !== prev.windows || s.splits !== prev.splits) track(s);
     if (s.settings.sleepInactiveTabs !== prev.settings.sleepInactiveTabs) {
       track(s);

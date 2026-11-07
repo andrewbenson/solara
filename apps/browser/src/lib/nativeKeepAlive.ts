@@ -2,7 +2,7 @@ import { isPageCurrent, nativePageFacts, onTabSleepRunningChanged, pageReport, r
 import { pageOf, patchPage, usePages } from "../components/layout/pageState";
 import { revealToolbar, useToolbarAutoHide } from "../components/layout/toolbarAutoHide";
 import { useMedia } from "../components/media/state";
-import { useBrowser } from "../store/browser";
+import { useBrowser, type BrowserState } from "../store/browser";
 import { nativeTabSleepRunning } from "../store/nativeStore";
 import { hasPage } from "../store/pageSession";
 import { createKeepAliveFeed, keepAliveGone, observeKeepAlive } from "./keepAliveFeed";
@@ -20,6 +20,8 @@ function clearTransientFacts(id: string) {
 let started = false;
 let watching = false;
 let nudge: (() => void) | null = null;
+let followBrowser: ((s: BrowserState, prev: BrowserState) => void) | null = null;
+export const keepAliveBrowserChanged = (s: BrowserState, prev: BrowserState) => followBrowser?.(s, prev);
 export function startNativeKeepAlive() {
   if (!watching) {
     watching = true;
@@ -77,7 +79,7 @@ export function startNativeKeepAlive() {
   usePages.subscribe(feed.changed);
   useMedia.subscribe(feed.changed);
   useToolbarAutoHide.subscribe(feed.changed);
-  useBrowser.subscribe((s, prev) => {
+  followBrowser = (s, prev) => {
     for (const [id] of sessions) {
       const tab = s.tabs[id];
       if (tab && s.live[id]?.discarded && !prev.live[id]?.discarded) clearTransientFacts(id);
@@ -90,7 +92,7 @@ export function startNativeKeepAlive() {
       }
     }
     feed.changed();
-  });
+  };
   nudge = feed.changed;
   feed.changed();
 }

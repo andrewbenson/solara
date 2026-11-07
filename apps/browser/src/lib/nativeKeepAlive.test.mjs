@@ -24,6 +24,9 @@ function fixture(running = true) {
   let epoch = 0;
   let runnerListener = null;
   const browser = createStore(() => ({ tabs: { t: { id: "t", profileId: "p", windowId: "w" } }, live: {} }));
+  const followBrowser = browser.subscribe;
+  let browserListeners = 0;
+  browser.subscribe = (listener) => { browserListeners++; return followBrowser(listener); };
   const pages = createStore(() => ({ pages: { t: { fullscreen: false, crashed: null, unresponsive: false, mediaAccess: null, permission: null, newTabShown: null } } }));
   const media = createStore(() => ({ sessions: {}, pipOpen: {}, pip: {}, dismissed: {}, displayRequests: {}, tabShares: {} }));
   const toolbar = createStore(() => ({ scrolledDown: {} }));
@@ -40,9 +43,11 @@ function fixture(running = true) {
     "./nativeEvents": { applyHeldReports: () => {} },
   }, { queueMicrotask: (run) => jobs.push(run) });
   producer.startNativeKeepAlive();
+  const producerListeners = browserListeners;
+  followBrowser((s, prev) => producer.keepAliveBrowserChanged(s, prev));
   const flush = () => { while (jobs.length) jobs.shift()(); };
   const page = (patch) => pages.setState((s) => ({ pages: { ...s.pages, t: { ...s.pages.t, ...patch } } }));
-  return { producer, events, sent, identity, browser, pages, media, toolbar, flush, page, setProtectionKnown: (value) => { protectionKnown = value; }, epoch: () => epoch, setRunning: (value) => { running = value; runnerListener?.(value); }, replace: (next) => { authority = next; generation = next.sessionGeneration; events.keepAliveCreated(next, "rn"); } };
+  return { producerListeners, producer, events, sent, identity, browser, pages, media, toolbar, flush, page, setProtectionKnown: (value) => { protectionKnown = value; }, epoch: () => epoch, setRunning: (value) => { running = value; runnerListener?.(value); }, replace: (next) => { authority = next; generation = next.sessionGeneration; events.keepAliveCreated(next, "rn"); } };
 }
 
 test("page and media subscriptions produce every typed keep fact and handled watermark", () => {
@@ -201,4 +206,15 @@ test("cold-launch pages publish protective facts held before feed registration",
   assert.equal(f.sent.length, 1);
   assert.equal(f.sent[0].keep.media, "present");
   assert.equal(f.sent[0].handled, 8);
+});
+
+test("the feed adds no browser-store listener and follows the store through tab lifecycle's", () => {
+  const f = fixture();
+  assert.equal(f.producerListeners, 0);
+  f.events.keepAliveCreated(f.identity, "rn");
+  f.flush();
+  f.browser.setState({ tabs: { t: { id: "t", profileId: "p", windowId: "w2" } } });
+  f.flush();
+  assert.equal(f.sent.length, 2);
+  assert.equal(f.sent.at(-1).generation, "G");
 });

@@ -72,16 +72,20 @@ public final class BookmarkPump {
   private let client: BookmarkEngineClient
   private let clock: BookmarkPumpClock
   private let scheduler: BookmarkPumpScheduler
-  private let epoch: UInt64
+  let epoch: UInt64
   private var lanes: JSMap<Lane> = [:]
   private var stopped = false
 
-  public init(coordinator: BookmarkCoordinator, client: BookmarkEngineClient, clock: BookmarkPumpClock, scheduler: BookmarkPumpScheduler) {
+  public convenience init(coordinator: BookmarkCoordinator, client: BookmarkEngineClient, clock: BookmarkPumpClock, scheduler: BookmarkPumpScheduler) {
+    self.init(coordinator: coordinator, client: client, clock: clock, scheduler: scheduler, epoch: coordinator.claimPump())
+  }
+
+  init(coordinator: BookmarkCoordinator, client: BookmarkEngineClient, clock: BookmarkPumpClock, scheduler: BookmarkPumpScheduler, epoch: UInt64) {
     self.coordinator = coordinator
     self.client = client
     self.clock = clock
     self.scheduler = scheduler
-    epoch = coordinator.claimPump()
+    self.epoch = epoch
   }
 
   @discardableResult
@@ -125,10 +129,12 @@ public final class BookmarkPump {
     while let task = lanes[engine]?.task { await task.value }
   }
 
-  public func stop() {
+  public func stop() { stop(invalidate: true) }
+
+  func stop(invalidate: Bool) {
     guard !stopped else { return }
     stopped = true
-    coordinator.invalidatePump(epoch: epoch)
+    if invalidate { coordinator.invalidatePump(epoch: epoch) }
     for (_, lane) in lanes { lane.cancel?(); lane.cancel = nil }
   }
 
@@ -192,7 +198,13 @@ public final class BookmarkPump {
   }
 
   private func run(_ engine: String, _ lane: Lane) async {
-    defer { lane.task = nil }
+    defer {
+      lane.task = nil
+      if !coordinator.ownsPump(engine: engine, epoch: epoch) {
+        lane.cancel?()
+        lanes.removeValue(forKey: engine)
+      }
+    }
     while !stopped, let (view, base) = coordinator.pumpInput(engine: engine, epoch: epoch) {
       updateDeadline(lane, view)
       let waiting = due(lane).map { $0 > clock.monotonicTimeMs() } ?? false

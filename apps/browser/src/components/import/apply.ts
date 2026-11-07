@@ -104,7 +104,7 @@ async function importBookmarksOrReport(profileId: string, root: ImportedNode | u
   try {
     return await importBookmarks(profileId, root, browserName, cancelled);
   } catch (error) {
-    reportBookmarkFailure(error);
+    reportBookmarkFailure(error, { toast: false });
     onFailed?.("bookmarks");
     return 0;
   }

@@ -1,5 +1,6 @@
 import ExpoModulesCore
 import Foundation
+import SolaraEngine
 import SolaraLive
 import SolaraSyncAdapter
 
@@ -178,15 +179,15 @@ public class SettingsModule: Module {
     Function("bookmarkWriterState") { () -> [String: Any] in NativeBookmarkWriter.state() }
 
     Function("bookmarkWriterSnapshot") { (profileId: String) throws -> [String: Any] in
-      try NativeBookmarkWriter.snapshot(profile: profileId)
+      try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.snapshot(profile: profileId) }
     }
 
     AsyncFunction("submitBookmarkMutations") { (profileId: String, mutationsJSON: String, engine: String, generation: String, requestId: String?) throws -> [String: Any] in
-      try NativeBookmarkWriter.submit(profile: profileId, mutationsJSON: mutationsJSON, engine: engine, generation: generation, requestID: requestId)
+      try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.submit(profile: profileId, mutationsJSON: mutationsJSON, engine: engine, generation: generation, requestID: requestId) }
     }
 
     Function("replaceBookmarkDocument") { (profileId: String, documentJSON: String, expectedRevision: String, engine: String, generation: String, requestId: String?) throws -> [String: Any] in
-      try NativeBookmarkWriter.replace(profile: profileId, documentJSON: documentJSON, expectedRevision: expectedRevision, engine: engine, generation: generation, requestID: requestId)
+      try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.replace(profile: profileId, documentJSON: documentJSON, expectedRevision: expectedRevision, engine: engine, generation: generation, requestID: requestId) }
     }
 
     AsyncFunction("liveCommand") { (name: String, payloadJSON: String, promise: Promise) in
@@ -266,6 +267,15 @@ public class SettingsModule: Module {
           SettingsJS.shared.failAll("JS stopped listening for Settings calls")
         }
       }
+    }
+  }
+}
+
+extension NativeBookmarkWriter {
+  static func bridge<T>(_ body: () throws -> T) throws -> T {
+    do { return try body() }
+    catch let error as BookmarkWriterError {
+      throw Exception(name: "BookmarkWriterError", description: error.description, code: error.code)
     }
   }
 }

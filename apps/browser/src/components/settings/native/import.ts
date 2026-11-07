@@ -354,7 +354,7 @@ async function bookmarksHtml(target: string, sessionId: number | undefined) {
     if (cancelled()) return { cancelled: true };
     return { counts: { ...emptyCounts(), bookmarks }, failed: [] };
   } catch (error) {
-    reportBookmarkFailure(error);
+    reportBookmarkFailure(error, { toast: false });
     if (cancelled()) return { cancelled: true };
     return { counts: emptyCounts(), failed: ["bookmarks"] };
   }

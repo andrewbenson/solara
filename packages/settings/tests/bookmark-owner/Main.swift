@@ -94,20 +94,20 @@ struct BookmarkOwnerTests {
   static func replaceIsDurableBeforeItReturns() {
     let fixture = Fixture()
     defer { fixture.stop() }
-    let before = fixture.owner.snapshot(profile: "p")
+    let before = try! fixture.owner.snapshot(profile: "p")
     let document = Fixture.document(["https://a.test", "https://b.test"])
     let revision = try? fixture.owner.replace(profile: "p", document: document, expectedRevision: before.revision, binding: before.binding, requestID: "remote-1")
     let log = fixture.recorder.log
     expect(revision == before.revision + 1, "an accepted replacement advances the revision")
     expect(Array(log.suffix(4)) == ["writeNew", "syncFile", "rename", "syncDirectory"], "the journal is written, synced, renamed and its directory synced before replace returns: \(log)")
-    let reopened = fixture.reopen().snapshot(profile: "p")
+    let reopened = try! fixture.reopen().snapshot(profile: "p")
     expect(reopened.document == document && reopened.revision == revision, "a fresh owner on the same folder sees the accepted document")
   }
 
   static func replaceRunsOnTheCallingThread() {
     let fixture = Fixture()
     defer { fixture.stop() }
-    let before = fixture.owner.snapshot(profile: "p")
+    let before = try! fixture.owner.snapshot(profile: "p")
     let owner = fixture.owner
     let done = DispatchSemaphore(value: 0)
     nonisolated(unsafe) var caller = ""
@@ -127,23 +127,23 @@ struct BookmarkOwnerTests {
   static func aRemapRefusesTheOldBindingAndWritesNothing() {
     let fixture = Fixture()
     defer { fixture.stop() }
-    let before = fixture.owner.snapshot(profile: "p")
+    let before = try! fixture.owner.snapshot(profile: "p")
     fixture.owner.remap(profiles: ["p": "other", "alias": ""], defaultProfile: "p")
     fixture.recorder.clear()
     let error = refusal { try fixture.owner.replace(profile: "p", document: Fixture.document(["https://a.test"]), expectedRevision: before.revision, binding: before.binding) }
     expect(error == .staleBinding, "a binding from before the remap is refused, got \(String(describing: error))")
     expect(fixture.recorder.log.isEmpty, "a refused replacement writes no journal")
     expect(fixture.wakes.log.isEmpty, "a refused replacement wakes nothing")
-    let same = fixture.owner.snapshot(profile: "alias")
+    let same = try! fixture.owner.snapshot(profile: "alias")
     fixture.owner.remap(profiles: ["p": "other", "alias": "", "extra": ""], defaultProfile: "p")
     let sameEngine = refusal { try fixture.owner.replace(profile: "alias", document: Fixture.document(["https://a.test"]), expectedRevision: same.revision, binding: same.binding) }
-    expect(sameEngine == .staleBinding, "a remap that keeps the profile on the same engine still refuses the older generation, got \(String(describing: sameEngine))")
+    expect(sameEngine == nil, "a remap that keeps the profile on the same engine accepts the older generation, got \(String(describing: sameEngine))")
   }
 
   static func aBindingForAnotherEngineIsRefused() {
     let fixture = Fixture()
     defer { fixture.stop() }
-    let before = fixture.owner.snapshot(profile: "p")
+    let before = try! fixture.owner.snapshot(profile: "p")
     fixture.recorder.clear()
     let wrong = BookmarkWriterBinding(engine: "Profile 2", generation: before.binding.generation)
     let error = refusal { try fixture.owner.replace(profile: "p", document: Fixture.document(["https://a.test"]), expectedRevision: before.revision, binding: wrong) }
@@ -154,9 +154,9 @@ struct BookmarkOwnerTests {
   static func aStaleRevisionIsRefused() {
     let fixture = Fixture()
     defer { fixture.stop() }
-    let before = fixture.owner.snapshot(profile: "p")
+    let before = try! fixture.owner.snapshot(profile: "p")
     let setup = try? fixture.owner.replace(profile: "p", document: Fixture.document(["https://a.test"]), expectedRevision: before.revision, binding: before.binding)
-    let accepted = fixture.owner.snapshot(profile: "p")
+    let accepted = try! fixture.owner.snapshot(profile: "p")
     guard setup == before.revision + 1, accepted.revision == before.revision + 1 else {
       failures.append("the setup replacement must be accepted before a stale revision can be tested")
       return
@@ -165,7 +165,7 @@ struct BookmarkOwnerTests {
     fixture.recorder.clear()
     let error = refusal { try fixture.owner.replace(profile: "p", document: Fixture.document(["https://b.test"]), expectedRevision: before.revision, binding: before.binding) }
     if case .refused = error {} else { failures.append("a replacement against an old revision is refused, got \(String(describing: error))") }
-    expect(fixture.owner.snapshot(profile: "p").document == accepted.document, "the refused document is not taken")
+    expect(try! fixture.owner.snapshot(profile: "p").document == accepted.document, "the refused document is not taken")
     expect(fixture.wakes.log.isEmpty, "a stale revision wakes nothing")
     expect(fixture.recorder.log.isEmpty, "a stale revision is refused before any journal write")
   }
@@ -173,7 +173,7 @@ struct BookmarkOwnerTests {
   static func theWakeComesOnlyAfterTheDirectorySync() {
     let fixture = Fixture()
     defer { fixture.stop() }
-    let before = fixture.owner.snapshot(profile: "p")
+    let before = try! fixture.owner.snapshot(profile: "p")
     fixture.recorder.clear()
     _ = try? fixture.owner.replace(profile: "p", document: Fixture.document(["https://a.test"]), expectedRevision: before.revision, binding: before.binding)
     expect(fixture.wakes.log == ["wake: after 1 directory syncs"], "one wake, after the journal directory sync: \(fixture.wakes.log)")
@@ -182,11 +182,11 @@ struct BookmarkOwnerTests {
   static func aJournalFailureThrowsAndKeepsTheOldDocument() {
     let fixture = Fixture()
     defer { fixture.stop() }
-    let before = fixture.owner.snapshot(profile: "p")
+    let before = try! fixture.owner.snapshot(profile: "p")
     fixture.recorder.failSyncDirectory = true
     let error = refusal { try fixture.owner.replace(profile: "p", document: Fixture.document(["https://a.test"]), expectedRevision: before.revision, binding: before.binding) }
     if case .refused = error {} else { failures.append("a journal failure throws, got \(String(describing: error))") }
-    let after = fixture.owner.snapshot(profile: "p")
+    let after = try! fixture.owner.snapshot(profile: "p")
     expect(after.revision == before.revision && after.document == before.document, "a failed journal write leaves the old document and revision")
     expect(fixture.wakes.log.isEmpty, "a failed journal write wakes nothing")
   }
@@ -213,9 +213,9 @@ struct BookmarkOwnerTests {
   static func submitIsDurableAndReturnsTheReducerResults() {
     let fixture = Fixture()
     defer { fixture.stop() }
-    let before = fixture.owner.snapshot(profile: "p")
+    let before = try! fixture.owner.snapshot(profile: "p")
     _ = try? fixture.owner.replace(profile: "p", document: Fixture.document(["https://a.test"]), expectedRevision: before.revision, binding: before.binding)
-    let opened = fixture.owner.snapshot(profile: "p")
+    let opened = try! fixture.owner.snapshot(profile: "p")
     fixture.recorder.clear()
     fixture.wakes.clear()
     let mutations = [BookmarkMutation(method: "addBookmark", args: [["profileId": "p", "title": "New", "url": "https://new.test"]]), BookmarkMutation(method: "updateBookmark", args: ["b0", ["title": "Renamed"]])]
@@ -229,15 +229,15 @@ struct BookmarkOwnerTests {
     let id = receipt.results[0].string ?? ""
     expect(receipt.view.document["nodes"]?[id]?["title"] == "New" && receipt.view.document["nodes"]?["b0"]?["title"] == "Renamed", "the receipt's view holds both edits")
     expect(fixture.wakes.log.count == 1, "one wake after the accepted edit")
-    let reopened = fixture.reopen().snapshot(profile: "p")
+    let reopened = try! fixture.reopen().snapshot(profile: "p")
     expect(reopened.document == receipt.view.document && reopened.revision == receipt.view.revision, "a fresh owner on the same folder sees the accepted edit")
   }
 
   static func submitRefusesAStaleBindingAndWritesNothing() {
     let fixture = Fixture()
     defer { fixture.stop() }
-    let before = fixture.owner.snapshot(profile: "p")
-    fixture.owner.remap(profiles: ["p": "", "alias": "", "extra": ""], defaultProfile: "p")
+    let before = try! fixture.owner.snapshot(profile: "p")
+    fixture.owner.remap(profiles: ["p": "other", "alias": "", "extra": ""], defaultProfile: "p")
     fixture.recorder.clear()
     let error = refusal { _ = try fixture.owner.submit(profile: "p", mutations: [BookmarkMutation(method: "addBookmarkFolder", args: [["profileId": "p", "title": "F"]])], binding: before.binding) }
     expect(error == .staleBinding, "an edit opened before a remap is refused, got \(String(describing: error))")
@@ -248,7 +248,7 @@ struct BookmarkOwnerTests {
     let fixture = Fixture()
     defer { fixture.stop(); NativeBookmarkOwner.current = nil }
     NativeBookmarkOwner.current = fixture.owner
-    let snapshot = fixture.owner.snapshot(profile: "p")
+    let snapshot = try! fixture.owner.snapshot(profile: "p")
     let reply = try? NativeBookmarkWriter.submit(profile: "p", mutationsJSON: #"[{"method":"addBookmarkFolder","args":[{"profileId":"p","title":"Folder"}]}]"#, engine: snapshot.binding.engine, generation: String(snapshot.binding.generation), requestID: "r")
     guard let reply, let results = reply["results"] as? String, let document = reply["document"] as? String, let revision = reply["revision"] as? String,
       let ids = try? JSONValue.parse(results).array, let id = ids.first?.string, let parsed = try? JSONValue.parse(document) else {

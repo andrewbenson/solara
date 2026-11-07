@@ -4,6 +4,7 @@ import { afterEach, beforeEach, test } from "node:test";
 const { useBrowser } = await import("../../store/browser.ts");
 const { applyResult, applySafari, emptyCounts } = await import("./apply.ts");
 const { isBookmarkConditionFailure, projectNativeBookmarks } = await import("../../lib/bookmarkWriter.ts");
+const { useToasts } = await import("../layout/toasts.ts");
 
 const S = () => useBrowser.getState();
 const folder = (id, title, children = []) => ({ kind: "folder", id, parentId: null, title, children, addedAt: 0 });
@@ -108,6 +109,8 @@ test("an owned import into a bar that has bookmarks goes in an Imported folder",
 
 test("a refused import counts nothing, changes nothing and reports bookmarks as failed", async () => {
   const owner = own();
+  const windowId = S().createWindow();
+  S().setFocusedWindow(windowId);
   owner.refuse = new Error("journal write failed");
   const failed = [];
   const counts = await applyResult("default", result, "Chrome", ["bookmarks"], (kind) => failed.push(kind));
@@ -117,6 +120,7 @@ test("a refused import counts nothing, changes nothing and reports bookmarks as 
   const safariFailed = [];
   const safariCounts = await applySafari("default", safari, false, (kind) => safariFailed.push(kind));
   assert.deepEqual([safariCounts.bookmarks, safariFailed], [0, ["bookmarks"]]);
+  assert.equal(useToasts.getState().toasts[windowId] ?? null, null, "the Import window reports the failure; no second toast");
 });
 
 test("a legacy import still fills empty roots directly and counts every link", async () => {

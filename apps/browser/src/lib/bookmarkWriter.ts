@@ -1,5 +1,6 @@
-import { bookmarkWriterSnapshot, bookmarkWriterState, submitBookmarkMutations } from "@solara/settings";
+import { bookmarkWriterErrorCode, bookmarkWriterSnapshot, bookmarkWriterState, submitBookmarkMutations, whileBookmarkEngineHolds } from "@solara/settings";
 import type { BookmarkDraft, RemovedBookmarks } from "../store/bookmarks";
+import { showToast } from "../components/layout/toasts";
 import { useBrowser } from "../store/browser";
 import type { BookmarkNode, Bookmarks } from "../store/types";
 
@@ -22,7 +23,7 @@ let requests = 0;
 
 export class BookmarkConditionFailed extends Error {}
 
-export const isBookmarkConditionFailure = (error: unknown) => /bookmark replacement refused: conditionFailed\("/.test(error instanceof Error ? error.message : String(error));
+export const isBookmarkConditionFailure = (error: unknown) => bookmarkWriterErrorCode(error) === "conditionFailed" || /bookmark replacement refused: conditionFailed\("/.test(error instanceof Error ? error.message : String(error));
 
 function legacy(mutation: BookmarkMutation): unknown {
   if (mutation.method === "expectChildren") {
@@ -76,10 +77,10 @@ export async function submitBookmarks(profileId: string, mutations: BookmarkMuta
     for (const mutation of mutations) if (mutation.method === "expectChildren") legacy(mutation);
     return mutations.map(legacy);
   }
-  const snapshot = bookmarkWriterSnapshot(profileId);
+  const first = bookmarkWriterSnapshot(profileId);
   let receipt: Awaited<ReturnType<typeof submitBookmarkMutations>>;
   try {
-    receipt = await submitBookmarkMutations(profileId, mutations, { engine: snapshot.engine, generation: snapshot.generation }, requestId);
+    receipt = await whileBookmarkEngineHolds(profileId, { engine: first.engine, generation: first.generation }, (binding) => submitBookmarkMutations(profileId, mutations, binding, requestId));
   } catch (error) {
     if (!isBookmarkConditionFailure(error)) throw error;
     const fresh = bookmarkWriterSnapshot(profileId);
@@ -96,7 +97,14 @@ const trimmed = (args: unknown[]) => {
   return out;
 };
 
-export const reportBookmarkFailure = (error: unknown) => console.warn("[bookmarks] the edit was not saved", error);
+export const reportBookmarkFailure = (error: unknown, { toast = true }: { toast?: boolean } = {}) => {
+  console.warn("[bookmarks] the edit was not saved", error);
+  if (!toast) return;
+  try {
+    const windowId = useBrowser.getState().ui.focusedWindowId;
+    if (windowId) showToast(windowId, "Bookmark not saved", "Solara couldn't save that bookmark change. Try it again.");
+  } catch {}
+};
 
 const toggling = new Map<string, Promise<boolean | undefined>>();
 

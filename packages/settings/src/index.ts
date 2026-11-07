@@ -132,9 +132,33 @@ export async function submitBookmarkMutations(profileId: string, mutations: { me
   return { engine: reply.engine, revision: reply.revision, results: JSON.parse(reply.results) as unknown[], document: reply.document };
 }
 
-export function replaceBookmarkDocument(profileId: string, document: unknown, expectedRevision: string, binding: BookmarkWriterBinding, requestId: string | null = null): string {
-  if (!native?.replaceBookmarkDocument) throw new Error("native bookmarks are not owned by this launch");
-  return native.replaceBookmarkDocument(profileId, JSON.stringify(document), expectedRevision, binding.engine, binding.generation, requestId).revision;
+let bookmarkReplacements = 0;
+
+export const BOOKMARK_REMAP_RETRY_MS = 10_000;
+
+export const bookmarkWriterErrorCode = (error: unknown): string | undefined =>
+  error && typeof error === "object" && "code" in error && typeof error.code === "string" ? error.code : undefined;
+
+export async function whileBookmarkEngineHolds<T>(profileId: string, binding: BookmarkWriterBinding, attempt: (binding: BookmarkWriterBinding) => T | Promise<T>, now: () => number = Date.now): Promise<T> {
+  const started = now();
+  for (let tries = 0; ; tries += 1) {
+    try {
+      return await attempt(binding);
+    } catch (error) {
+      if (bookmarkWriterErrorCode(error) !== "staleBinding" || now() - started >= BOOKMARK_REMAP_RETRY_MS) throw error;
+      await new Promise<void>((resolve) => setTimeout(resolve, Math.min(400, 25 * 2 ** tries)));
+      const snapshot = bookmarkWriterSnapshot(profileId);
+      if (snapshot.engine !== binding.engine) throw error;
+      binding = { engine: snapshot.engine, generation: snapshot.generation };
+    }
+  }
+}
+
+export async function replaceBookmarkDocument(profileId: string, document: unknown, expectedRevision: string, binding: BookmarkWriterBinding, requestId: string | null = `bookmark-replace-${Date.now()}-${++bookmarkReplacements}`): Promise<string> {
+  const replace = native?.replaceBookmarkDocument;
+  if (!replace) throw new Error("native bookmarks are not owned by this launch");
+  const documentJSON = JSON.stringify(document);
+  return whileBookmarkEngineHolds(profileId, binding, (current) => replace.call(native, profileId, documentJSON, expectedRevision, current.engine, current.generation, requestId).revision);
 }
 
 export const liveInitialReplica = (): LiveReplica => {

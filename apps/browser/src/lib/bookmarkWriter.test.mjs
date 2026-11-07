@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, test } from "node:test";
 const { useBrowser } = await import("../store/browser.ts");
-const { bookmarkWriter, projectNativeBookmarks, submitBookmarks } = await import("./bookmarkWriter.ts");
+const { bookmarkWriter, projectNativeBookmarks, reportBookmarkFailure, submitBookmarks } = await import("./bookmarkWriter.ts");
+const { BOOKMARK_REMAP_RETRY_MS, replaceBookmarkDocument } = await import("@solara/settings");
+const { useToasts } = await import("../components/layout/toasts.ts");
 
 const S = () => useBrowser.getState();
 const folder = (id, title, children = []) => ({ kind: "folder", id, parentId: null, title, children, addedAt: 0 });
@@ -17,6 +19,7 @@ class FakeOwner {
     this.revision = 10;
     this.document = document();
     this.submitted = [];
+    this.replaced = [];
     this.refuse = null;
     this.ids = 0;
   }
@@ -26,11 +29,20 @@ class FakeOwner {
   snapshot() {
     return { engine: this.engine, generation: this.generation, revision: String(this.revision), ready: true, document: JSON.stringify(this.document) };
   }
+  replace(profileId, documentJSON, expectedRevision, engine, generation, requestId) {
+    this.replaced.push({ profileId, documentJSON, expectedRevision, engine, generation, requestId });
+    if (this.refuse) throw this.refuse;
+    if (engine !== this.engine) throw Object.assign(new Error("the bookmark owner changed since this binding was taken"), { code: "staleBinding" });
+    if (expectedRevision !== String(this.revision)) throw Object.assign(new Error("revision changed"), { code: "refused" });
+    this.document = JSON.parse(documentJSON);
+    this.revision += 1;
+    return { revision: String(this.revision) };
+  }
   async submit(profileId, mutationsJSON, engine, generation, requestId) {
     const mutations = JSON.parse(mutationsJSON);
     this.submitted.push({ profileId, mutations, engine, generation, requestId });
     if (this.refuse) throw this.refuse;
-    if (engine !== this.engine || generation !== this.generation) throw new Error("the bookmark owner changed since this binding was taken");
+    if (engine !== this.engine) throw Object.assign(new Error("the bookmark owner changed since this binding was taken"), { code: "staleBinding" });
     const results = mutations.map((mutation) => {
       if (mutation.method !== "addBookmark") return null;
       const id = `n${++this.ids}`;
@@ -84,15 +96,15 @@ test("a refused native edit rejects, changes nothing in the store and never fall
   assert.equal(JSON.stringify(S().bookmarks), before);
 });
 
-test("the binding is taken when the edit starts, so an owner change before it lands is refused", async () => {
+test("a same-engine owner generation change does not refuse the edit", async () => {
   const owner = (globalThis.acTestBookmarkWriter = new FakeOwner());
   const realSubmit = owner.submit.bind(owner);
   owner.submit = (...args) => {
     owner.generation = "2";
     return realSubmit(...args);
   };
-  await assert.rejects(bookmarkWriter.addBookmark({ profileId: "p", title: "Late", url: "https://late.example/" }), /changed/);
-  assert.equal(S().bookmarks.nodes.n1, undefined);
+  assert.equal(await bookmarkWriter.addBookmark({ profileId: "p", title: "Late", url: "https://late.example/" }), "n1");
+  assert.equal(owner.submitted.length, 1);
 });
 
 test("an older receipt never rolls the projection back over a newer one", () => {
@@ -136,3 +148,96 @@ test("legacy results are exactly what the store methods return", async () => {
   assert.equal(await bookmarkWriter.toggleBookmark("default", { url: "https://a.example/", title: "B", favicon: null }), false);
 });
 
+const staleBinding = () => Object.assign(new Error("the bookmark owner changed since this binding was taken"), { code: "staleBinding" });
+
+for (const operation of ["submit", "replace"]) {
+  const fakeClock = (t) => {
+    let now = 1_000_000;
+    const delays = [];
+    t.mock.method(Date, "now", () => now);
+    t.mock.method(globalThis, "setTimeout", (run, delay) => { delays.push(delay); now += delay; queueMicrotask(run); return 0; });
+    return { delays, elapsed: () => now - 1_000_000 };
+  };
+  const perform = (owner, operation, requestId, mutation = { method: "addBookmark", args: [{ profileId: "p", title: "Retried", url: "https://retry.example/" }] }) =>
+    operation === "submit"
+      ? submitBookmarks("p", [mutation], requestId)
+      : replaceBookmarkDocument("p", owner.document, "10", { engine: owner.engine, generation: owner.generation }, requestId);
+
+  test(`${operation} keeps retrying a stale binding while the profile's engine is unchanged, past the old six tries`, async (t) => {
+    const clock = fakeClock(t);
+    const owner = (globalThis.acTestBookmarkWriter = new FakeOwner());
+    const calls = operation === "submit" ? owner.submitted : owner.replaced;
+    const real = owner[operation].bind(owner);
+    owner[operation] = (...args) => {
+      if (calls.length < 8) {
+        calls.push({ refused: true, requestId: args.at(-1) });
+        owner.generation = String(Number(owner.generation) + 1);
+        throw staleBinding();
+      }
+      return real(...args);
+    };
+    const saved = await perform(owner, operation, "retry-1");
+    assert.deepEqual(saved, operation === "submit" ? ["n1"] : "11");
+    assert.deepEqual(clock.delays, [25, 50, 100, 200, 400, 400, 400, 400]);
+    assert.deepEqual([...new Set(calls.map((call) => call.requestId))], ["retry-1"]);
+    assert.equal(owner.revision, 11);
+  });
+
+  test(`${operation} never rebinds onto a different engine: it rejects so the caller re-plans`, async (t) => {
+    fakeClock(t);
+    const owner = (globalThis.acTestBookmarkWriter = new FakeOwner());
+    owner.engine = "first-engine";
+    const calls = operation === "submit" ? owner.submitted : owner.replaced;
+    const real = owner[operation].bind(owner);
+    let refused;
+    owner[operation] = (...args) => {
+      if (!refused) {
+        calls.push({ refused: true });
+        owner.engine = "second-engine";
+        throw (refused = staleBinding());
+      }
+      return real(...args);
+    };
+    const before = JSON.stringify(S().bookmarks);
+    await assert.rejects(perform(owner, operation, "moved-1"), (caught) => caught === refused);
+    assert.equal(calls.length, 1, "nothing was sent with the new engine");
+    assert.equal(owner.revision, 10);
+    assert.equal(JSON.stringify(S().bookmarks), before);
+  });
+
+  test(`${operation} gives up at the remap deadline and never falls back to the JS store`, async (t) => {
+    const clock = fakeClock(t);
+    const owner = (globalThis.acTestBookmarkWriter = new FakeOwner());
+    const error = (owner.refuse = staleBinding());
+    const before = JSON.stringify(S().bookmarks);
+    await assert.rejects(perform(owner, operation, "exhausted-1", { method: "removeBookmark", args: ["n1"] }), (caught) => caught === error && caught.code === "staleBinding");
+    const calls = operation === "submit" ? owner.submitted : owner.replaced;
+    assert.ok(clock.elapsed() >= BOOKMARK_REMAP_RETRY_MS, `waited ${clock.elapsed()} ms`);
+    assert.ok(clock.elapsed() < BOOKMARK_REMAP_RETRY_MS + 500);
+    assert.deepEqual([...new Set(calls.map((call) => call.requestId))], ["exhausted-1"]);
+    assert.equal(JSON.stringify(S().bookmarks), before);
+    assert.equal(owner.revision, 10);
+  });
+
+  for (const code of ["notOwned", "unknownProfile", "invalidDocument", "refused"]) {
+    test(`${operation} does not retry ${code}`, async (t) => {
+      const delays = [];
+      t.mock.method(globalThis, "setTimeout", (run, delay) => { delays.push(delay); queueMicrotask(run); return 0; });
+      const owner = (globalThis.acTestBookmarkWriter = new FakeOwner());
+      const error = (owner.refuse = Object.assign(new Error(code), { code }));
+      await assert.rejects(async () => operation === "submit"
+        ? submitBookmarks("p", [{ method: "removeBookmark", args: ["n1"] }], "refused-1")
+        : replaceBookmarkDocument("p", owner.document, "10", { engine: owner.engine, generation: owner.generation }, "refused-1"), (caught) => caught === error);
+      assert.equal((operation === "submit" ? owner.submitted : owner.replaced).length, 1);
+      assert.deepEqual(delays, []);
+    });
+  }
+}
+
+test("a bookmark edit that wasn't saved tells the user in the focused window", (t) => {
+  t.mock.method(console, "warn", () => {});
+  const windowId = S().createWindow();
+  S().setFocusedWindow(windowId);
+  reportBookmarkFailure(Object.assign(new Error("gave up"), { code: "staleBinding" }));
+  assert.equal(useToasts.getState().toasts[windowId]?.title, "Bookmark not saved");
+});

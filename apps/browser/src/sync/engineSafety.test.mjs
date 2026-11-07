@@ -779,3 +779,36 @@ test("B29: stopping while the saved state is still loading waits for it and reti
   const ops = files().filter(({ scope }) => scope === "app").flatMap(({ file }) => file.ops ?? []).filter((op) => op.k === `dev:${device}`);
   assert.equal(ops.at(-1)?.v ?? null, null, "the other Macs hear this Mac left");
 });
+
+test("bookmark records live in the scope of the profile's sync link, never one named by its local profile id", async () => {
+  reset();
+  const engine = await launch();
+  engine.startSync();
+  const work = S().createProfile({ name: "Work" });
+  useBrowser.setState({ bookmarksReady: { ...S().bookmarksReady, [work]: true } });
+  assert.ok("ok" in (await engine.turnOnSync("/sync")));
+  await engine.syncNow();
+  S().addBookmark({ profileId: work, url: "https://scoped.example/", title: "Scoped" });
+  await engine.syncNow();
+  await settle();
+  const syncId = engine.useSync.getState().profiles[work].syncId;
+  assert.notEqual(syncId, work, "the fixture needs a sync link that differs from the profile id");
+  const carrying = (scope) => files().filter((f) => f.scope === scope && (f.file.ops ?? []).some((op) => op.k.startsWith("bm:") && op.v?.u === "https://scoped.example/"));
+  assert.ok(carrying(`p:${syncId}`).length > 0, "the bookmark is published under p:<syncId>");
+  assert.deepEqual(files().filter((f) => f.scope === `p:${work}`), [], "nothing is written under p:<profileId>");
+  S().deleteProfile(work);
+  await engine.syncNow();
+  await engine.syncNow();
+  await settle();
+  const back = engine.addRemoteProfile(syncId);
+  assert.ok(back && back !== work, "added back under a new local id");
+  useBrowser.setState({ bookmarksReady: { ...S().bookmarksReady, [back]: true } });
+  await engine.syncNow();
+  await engine.syncNow();
+  await settle();
+  S().addBookmark({ profileId: back, url: "https://again.example/", title: "Again" });
+  await engine.syncNow();
+  await settle();
+  assert.ok(files().some((f) => f.scope === `p:${syncId}` && (f.file.ops ?? []).some((op) => op.v?.u === "https://again.example/")), "the new local id publishes into the same link's scope");
+  assert.deepEqual(files().filter((f) => f.scope === `p:${back}`), []);
+});

@@ -432,8 +432,7 @@ function nativeBookmarksAdapter(profileId: string): Adapter {
       if (!snapshot.ready) return false;
       const roots = rootsOf(document);
       if (document.nodes[roots.bar]?.kind !== "folder" || document.nodes[roots.other]?.kind !== "folder") throw new Error("the native bookmark document has no roots for this profile");
-      replaceBookmarkDocument(profileId, { ...document, nodes: syncedBookmarkNodes(document, roots, visible) }, snapshot.revision, binding);
-      return true;
+      return replaceBookmarkDocument(profileId, { ...document, nodes: syncedBookmarkNodes(document, roots, visible) }, snapshot.revision, binding).then(() => true);
     },
   };
 }

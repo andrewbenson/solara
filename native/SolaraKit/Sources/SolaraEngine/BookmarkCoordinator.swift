@@ -14,6 +14,7 @@ public enum BookmarkCoordinatorError: Error, Equatable {
   case unknownMutation(String)
   case ownershipUnavailable
   case invalidOperation(String)
+  case conditionFailed(String)
 }
 
 public struct BookmarkEditStamp: Equatable, Sendable {
@@ -405,7 +406,7 @@ public final class BookmarkCoordinator: @unchecked Sendable {
         let target: String?
         switch mutation.method {
         case "addBookmark", "addBookmarkFolder": target = mutation.args.first?["profileId"]?.string
-        case "addBookmarkTree", "toggleBookmark": target = mutation.args.first?.string
+        case "addBookmarkTree", "toggleBookmark", "expectChildren": target = mutation.args.first?.string
         default: target = nil
         }
         if let target, !BookmarkReconcile.same(self.engine(profile: target), engine) { throw BookmarkCoordinatorError.invalidProfileScope }
@@ -777,6 +778,12 @@ private struct BookmarkReducer {
       let ids = subtree([roots?["bar"]?.string, roots?["other"]?.string].compactMap { $0 }).filter { nodes[$0]?["kind"] == "url" && nodes[$0]?["url"] == .string(url) }
       if !ids.isEmpty { remove(ids); return false }
       _ = try apply(BookmarkMutation(method: "addBookmark", args: [["profileId": .string(profile), "url": .string(url), "title": page["title"] ?? "", "favicon": page["favicon"] ?? .null]]))
+      return true
+    case "expectChildren":
+      let folder = arg(1).string ?? ""
+      guard nodes[folder]?["kind"] == "folder", nodes[folder]?["children"]?.array?.compactMap(\.string) == arg(2).array?.compactMap(\.string) else {
+        throw BookmarkCoordinatorError.conditionFailed(folder)
+      }
       return true
     case "addBookmarkTree":
       let roots = ensureRoots(arg(0).string ?? "")

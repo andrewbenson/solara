@@ -84,6 +84,33 @@ struct BookmarkCoordinatorTests {
     #expect(owner.desiredView(engine: "") == before)
   }
 
+  @Test func expectChildrenRefusesTheWholeSubmissionWhenTheFolderChanged() throws {
+    let owner = coordinator([page])
+    let before = owner.desiredView(engine: "")
+    let tree: JSONValue = [["title": "Imported", "url": "https://imported.test/"]]
+    #expect(throws: BookmarkCoordinatorError.conditionFailed("bar@default")) {
+      try owner.submit(profile: "p", mutations: [.init(method: "expectChildren", args: ["p", "bar@default", []]), .init(method: "addBookmarkTree", args: ["p", tree, "bar@default"])], requestID: "import-1")
+    }
+    #expect(owner.desiredView(engine: "") == before)
+    let receipt = try owner.submit(profile: "p", mutations: [.init(method: "addBookmarkTree", args: ["p", [["title": "Imported from Test", "children": tree]], "bar@default"])], requestID: "import-1")
+    #expect(receipt.view.document["nodes"]?["bar@default"]?["children"]?.array?.count == 2)
+  }
+
+  @Test func expectChildrenPassesWhenTheFolderIsAsSeen() throws {
+    let owner = coordinator([])
+    let tree: JSONValue = [["title": "Imported", "url": "https://imported.test/"]]
+    let receipt = try owner.submit(profile: "p", mutations: [.init(method: "expectChildren", args: ["p", "bar@default", []]), .init(method: "addBookmarkTree", args: ["p", tree, "bar@default"])])
+    #expect(receipt.results.first == true)
+    #expect(receipt.view.document["nodes"]?["bar@default"]?["children"] == ["new"])
+    #expect(throws: BookmarkCoordinatorError.conditionFailed("missing")) {
+      try owner.submit(profile: "p", mutations: [.init(method: "expectChildren", args: ["p", "missing", []])])
+    }
+  }
+
+  @Test func conditionFailedDescribesItselfAsTheJSWriterMatchesIt() {
+    #expect(String(describing: BookmarkCoordinatorError.conditionFailed("bar@default")) == #"conditionFailed("bar@default")"#)
+  }
+
   @Test func exactIdentityIncludesTitlesAndIDs() throws {
     let owner = coordinator([page])
     try owner.submit(profile: "p", mutations: [.init(method: "updateBookmark", args: ["b0", ["title": "é"]])])

@@ -12,14 +12,25 @@ export type BookmarkMethod =
   | "toggleBookmark"
   | "addBookmarkTree"
   | "removeBookmarks"
-  | "restoreBookmarks";
+  | "restoreBookmarks"
+  | "expectChildren";
 
 export type BookmarkMutation = { method: BookmarkMethod; args: unknown[] };
 
 const projected = new Map<string, bigint>();
 let requests = 0;
 
+export class BookmarkConditionFailed extends Error {}
+
+export const isBookmarkConditionFailure = (error: unknown) => /bookmark replacement refused: conditionFailed\("/.test(error instanceof Error ? error.message : String(error));
+
 function legacy(mutation: BookmarkMutation): unknown {
+  if (mutation.method === "expectChildren") {
+    const [, folderId, children] = mutation.args as [string, string, string[]];
+    const node = useBrowser.getState().bookmarks.nodes[folderId];
+    if (node?.kind !== "folder" || JSON.stringify(node.children) !== JSON.stringify(children)) throw new BookmarkConditionFailed(`conditionFailed("${folderId}")`);
+    return true;
+  }
   const store = useBrowser.getState() as unknown as Record<BookmarkMethod, (...args: unknown[]) => unknown>;
   return store[mutation.method](...mutation.args);
 }
@@ -61,9 +72,20 @@ export function projectNativeBookmarks(engine: string, revision: string, documen
 }
 
 export async function submitBookmarks(profileId: string, mutations: BookmarkMutation[], requestId = `bookmarks-${Date.now()}-${++requests}`): Promise<unknown[]> {
-  if (bookmarkWriterState().state !== "owned") return mutations.map(legacy);
+  if (bookmarkWriterState().state !== "owned") {
+    for (const mutation of mutations) if (mutation.method === "expectChildren") legacy(mutation);
+    return mutations.map(legacy);
+  }
   const snapshot = bookmarkWriterSnapshot(profileId);
-  const receipt = await submitBookmarkMutations(profileId, mutations, { engine: snapshot.engine, generation: snapshot.generation }, requestId);
+  let receipt: Awaited<ReturnType<typeof submitBookmarkMutations>>;
+  try {
+    receipt = await submitBookmarkMutations(profileId, mutations, { engine: snapshot.engine, generation: snapshot.generation }, requestId);
+  } catch (error) {
+    if (!isBookmarkConditionFailure(error)) throw error;
+    const fresh = bookmarkWriterSnapshot(profileId);
+    projectNativeBookmarks(fresh.engine, fresh.revision, fresh.document);
+    throw new BookmarkConditionFailed(error instanceof Error ? error.message : String(error));
+  }
   projectNativeBookmarks(receipt.engine, receipt.revision, receipt.document);
   return receipt.results;
 }

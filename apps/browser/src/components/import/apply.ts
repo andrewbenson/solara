@@ -2,7 +2,7 @@ import { confirm } from "@solara/shell";
 import { savePassword } from "@solara/solaracore";
 import type { BookmarkNode as ImportedNode, Credential, DiaTabsProfile, ImportedFavicon, ImportedTab, ImportKind, ImportResult, SafariExport, SpaceSuggestion } from "@solara/import";
 import { addGroupsFromDrafts } from "../../lib/bookmarkGroups";
-import { bookmarkWriter, reportBookmarkFailure, submitBookmarks, type BookmarkMutation } from "../../lib/bookmarkWriter";
+import { BookmarkConditionFailed, bookmarkWriter, reportBookmarkFailure, submitBookmarks, type BookmarkMutation } from "../../lib/bookmarkWriter";
 import { adoptFavicons, pageKey as faviconPage } from "../../lib/favicons";
 import type { BookmarkDraft } from "../../store/bookmarks";
 import type { GroupDraft } from "../../store/draftGroups";
@@ -71,8 +71,6 @@ async function placeImportedBookmarks(profileId: string, root: ImportedNode | un
   if (!root?.children?.length || cancelled?.()) return 0;
   if (!useBrowser.getState().bookmarks.roots[profileId]) await bookmarkWriter.addBookmarkTree(profileId, []);
   if (cancelled?.()) return 0;
-  const roots = useBrowser.getState().bookmarks.roots[profileId];
-  if (!roots) throw new Error(`no bookmark roots for ${profileId}`);
   const toolbar = root.children.filter((c) => c.role === "toolbar").flatMap((c) => c.children ?? []);
   const rest = root.children.filter((c) => c.role !== "toolbar");
   const other = rest.flatMap((c) => (c.role === "other" || !c.role ? (c.type === "folder" ? (c.children ?? []) : [c]) : [c]));
@@ -82,10 +80,23 @@ async function placeImportedBookmarks(profileId: string, root: ImportedNode | un
     const parent = useBrowser.getState().bookmarks.nodes[parentId];
     const empty = parent?.kind === "folder" && parent.children.length === 0;
     const drafts = nodes.map(toDraft);
-    return [{ method: "addBookmarkTree", args: [profileId, empty ? drafts : [{ title, children: drafts }], parentId] }];
+    if (!empty) return [{ method: "addBookmarkTree", args: [profileId, [{ title, children: drafts }], parentId] }];
+    return [{ method: "expectChildren", args: [profileId, parentId, []] }, { method: "addBookmarkTree", args: [profileId, drafts, parentId] }];
   };
-  const edits = [...place(toolbar, roots.bar), ...place(other, roots.other)];
-  if (edits.length) await submitBookmarks(profileId, edits);
+  for (let attempt = 1; ; attempt++) {
+    const roots = useBrowser.getState().bookmarks.roots[profileId];
+    if (!roots) throw new Error(`no bookmark roots for ${profileId}`);
+    const planned = [...place(toolbar, roots.bar), ...place(other, roots.other)];
+    const edits = [...planned.filter((m) => m.method === "expectChildren"), ...planned.filter((m) => m.method !== "expectChildren")];
+    if (!edits.length) break;
+    try {
+      await submitBookmarks(profileId, edits);
+      break;
+    } catch (error) {
+      if (!(error instanceof BookmarkConditionFailed) || attempt >= 3) throw error;
+      if (cancelled?.()) return 0;
+    }
+  }
   return linkCount([...toolbar, ...other]);
 }
 

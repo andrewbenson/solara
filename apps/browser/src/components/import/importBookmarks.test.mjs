@@ -3,7 +3,7 @@ import { afterEach, beforeEach, test } from "node:test";
 
 const { useBrowser } = await import("../../store/browser.ts");
 const { applyResult, applySafari, emptyCounts } = await import("./apply.ts");
-const { projectNativeBookmarks } = await import("../../lib/bookmarkWriter.ts");
+const { isBookmarkConditionFailure, projectNativeBookmarks } = await import("../../lib/bookmarkWriter.ts");
 
 const S = () => useBrowser.getState();
 const folder = (id, title, children = []) => ({ kind: "folder", id, parentId: null, title, children, addedAt: 0 });
@@ -30,7 +30,13 @@ class FakeOwner {
     const mutations = JSON.parse(mutationsJSON);
     this.submitted.push(mutations);
     if (this.refuse) throw this.refuse;
+    this.beforeAccept?.();
     const nodes = this.document.nodes;
+    for (const { method, args } of mutations) {
+      if (method !== "expectChildren") continue;
+      const [, folderId, children] = args;
+      if (JSON.stringify(nodes[folderId]?.children) !== JSON.stringify(children)) throw new Error(`bookmark replacement refused: conditionFailed("${folderId}")`);
+    }
     const build = (draft, parentId) => {
       const id = `n${++this.ids}`;
       nodes[id] = draft.children ? { ...folder(id, draft.title), parentId } : { kind: "url", id, parentId, title: draft.title, url: draft.url, favicon: null, addedAt: 1 };
@@ -38,6 +44,7 @@ class FakeOwner {
       return id;
     };
     const results = mutations.map(({ method, args }) => {
+      if (method === "expectChildren") return true;
       assert.equal(method, "addBookmarkTree");
       const [, drafts, parentId = this.bar] = args;
       const ids = drafts.map((draft) => build(draft, parentId));
@@ -81,7 +88,7 @@ test("an owned import is one submission, and the accepted tree is what the store
   const owner = own();
   const counts = await applyResult("default", result, "Chrome", ["bookmarks"]);
   assert.equal(counts.bookmarks, 2);
-  assert.deepEqual(owner.submitted.map((batch) => batch.map((m) => [m.method, m.args[2]])), [[["addBookmarkTree", owner.bar], ["addBookmarkTree", owner.other]]]);
+  assert.deepEqual(owner.submitted.map((batch) => batch.map((m) => [m.method, m.method === "expectChildren" ? m.args[1] : m.args[2]])), [[["expectChildren", owner.bar], ["expectChildren", owner.other], ["addBookmarkTree", owner.bar], ["addBookmarkTree", owner.other]]]);
   assert.deepEqual(titles(S().bookmarks.nodes[owner.bar].children), ["Bar link"]);
   assert.deepEqual(titles(S().bookmarks.nodes[owner.other].children), ["Reading"]);
 });
@@ -137,4 +144,29 @@ test("two owned imports started together still put the second in an Imported fol
   release();
   await Promise.all([first, second]);
   assert.deepEqual(titles(S().bookmarks.nodes[owner.bar].children), ["Bar link", "Imported from Safari"]);
+});
+
+test("a native edit landing between the choice and acceptance sends the import into an Imported folder", async () => {
+  const owner = own();
+  owner.beforeAccept = () => {
+    owner.beforeAccept = null;
+    owner.document.nodes.seed = { kind: "url", id: "seed", parentId: owner.bar, title: "Seed", url: "https://seed.example/", favicon: null, addedAt: 0 };
+    owner.document.nodes[owner.bar].children.push("seed");
+    owner.revision += 1;
+  };
+  const counts = await applyResult("default", result, "Chrome", ["bookmarks"]);
+  assert.equal(counts.bookmarks, 2);
+  assert.deepEqual(titles(S().bookmarks.nodes[owner.bar].children), ["Seed", "Imported from Chrome"]);
+  assert.deepEqual(titles(S().bookmarks.nodes[owner.other].children), ["Reading"]);
+  assert.equal(owner.submitted.length, 2, "refused once, then re-planned");
+  assert.deepEqual(owner.submitted[0].filter((m) => m.method === "expectChildren").map((m) => m.args.slice(1)), [[owner.bar, []], [owner.other, []]]);
+});
+
+
+test("the writer recognises exactly the pod's wording of a failed condition", () => {
+  assert.equal(isBookmarkConditionFailure(new Error('bookmark replacement refused: conditionFailed("bar@default")')), true);
+  assert.equal(isBookmarkConditionFailure(new Error("Call to function 'SolaraBookmarks.submit' has been rejected.\n→ Caused by: bookmark replacement refused: conditionFailed(\"bar@default\")")), true);
+  assert.equal(isBookmarkConditionFailure(new Error("bookmark replacement refused: staleRevision")), false);
+  assert.equal(isBookmarkConditionFailure(new Error('bookmark replacement refused: invalidOperation("conditionFailed")')), false);
+  assert.equal(isBookmarkConditionFailure(new Error("the bookmark owner changed since this binding was taken")), false);
 });

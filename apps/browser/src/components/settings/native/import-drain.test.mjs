@@ -106,6 +106,7 @@ function bridge({ browsers, importData, importSafariDirect, importSafariExport, 
   });
   const module = { importModule: () => api };
   const writer = {
+    BookmarkConditionFailed: class extends Error {},
     submitBookmarks: async (profileId, mutations) => {
       bookmarkWrites.push([profileId, mutations]);
       await bookmarkWrite?.(profileId, mutations);
@@ -338,7 +339,7 @@ test("a bookmarks HTML import goes through the writer, and a refused write is a 
   const opened = fixture.handlers["import.open"]();
   const done = await fixture.handlers["import.bookmarksHtml"]("existing", opened.session);
   assert.equal(done.counts.bookmarks, 1);
-  assert.deepEqual(JSON.parse(JSON.stringify(fixture.bookmarkWrites.map(([profileId, mutations]) => [profileId, mutations.map((m) => m.method)]))), [["existing", ["addBookmarkTree"]]]);
+  assert.deepEqual(JSON.parse(JSON.stringify(fixture.bookmarkWrites.map(([profileId, mutations]) => [profileId, mutations.map((m) => m.method)]))), [["existing", ["expectChildren", "addBookmarkTree"]]]);
   refuse = true;
   const refused = await fixture.handlers["import.bookmarksHtml"]("existing", opened.session);
   assert.equal(refused.error, undefined);

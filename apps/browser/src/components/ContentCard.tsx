@@ -25,7 +25,7 @@ import { needsPage } from "../store/pageSession";
 import { removeTabs } from "../store/tabs";
 import { splitOf } from "../store/splits";
 import type { SplitView, Tab } from "../store/types";
-import { BOOKMARKS_BAR_HEIGHT, bookmarksBarShown, useBookmarksBarMode, type BookmarksBarMode } from "./bookmarks/BookmarksBar";
+import { BOOKMARKS_BAR_HEIGHT, bookmarksBarShown, useBookmarksBarMode, type BookmarksBarMode } from "./bookmarks/bookmarksBarPolicy";
 import { NativeBookmarksBar } from "./bookmarks/NativeBookmarksBar";
 import { CliControlPill } from "./CliControlPill";
 import { FindBar } from "./FindBar";

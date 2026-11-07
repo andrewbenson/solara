@@ -27,7 +27,7 @@ Theme resolution, ranking, geometry, and gesture thresholds count as behavior. T
 
 ## Findings that set the order
 
-1. The New Tab extras and bookmarks bar still draw RN pixels on the normal native path. Extension popup frames also remain in RN.
+1. The New Tab extras still draw RN pixels on the normal native path. The React Native bookmarks bar remains a development fallback until A2 retires it. Extension popup frames also remain in RN.
 2. Native controls still depend on JS actions, menus, focus, navigation, import, media, and window orchestration.
 3. Native workspace ownership is already the default. It does not remove JS sync, library reconciliation, caches, or migration work.
 4. A native window shell still wraps an RN main root. Browser pane roots add more RN roots. Native UI switches do not disable the RN runtime.
@@ -39,7 +39,7 @@ Native counterparts below prove that code exists. They do not establish complete
 
 | Gate | Checked source | Meaning |
 | --- | --- | --- |
-| Shipped UI defaults | `native/SolaraKit/Sources/SolaraModel/LaunchSwitches.swift:28`, `:71`, `:199` | Native shell, top strip, side panel, shell panes, pages pool, and main-on-top default on. Distribution ignores their environment and stored overrides. Distribution is signing-derived or `SOLARA_RELEASE_LAUNCH=1`; it is not every Xcode Release build. |
+| Shipped UI defaults | `native/SolaraKit/Sources/SolaraModel/LaunchSwitches.swift:28`, `:71`, `:199` | Native shell, top strip, bookmarks bar, side panel, shell panes, pages pool, and main-on-top default on. Distribution ignores their environment and stored overrides. Distribution is signing-derived or `SOLARA_RELEASE_LAUNCH=1`; it is not every Xcode Release build. |
 | Safe mode | Same file, `:159`, `:223`; `packages/store/ios/NativeStore.swift:149` | Safe mode keeps native UI. Full in-memory ownership can remain native while persistence narrows to settings/downloads. It holds sync and unsafe operations. |
 | Workspace ownership | `packages/store/ios/NativeStore.swift:15`; `src/store/nativeStore.ts:40`, `:65` | Default scope is everything. `nativeOwnsWorkspace()` requires active native store plus full scope. `SOLARA_NATIVE_SCOPE=settingsAndDownloads` remains a separate escape hatch, including distribution. |
 | Native settings, toolbar, pages, hero | `packages/store/ios/NativeStore.swift:165`; `packages/settings/ios/{NativeSettingsWindow,Toolbar/ToolbarModule,Pages/PagesModule,NewTab/NewTabModule}.swift` | Availability follows the opened native settings handle. These are release paths, not debug-only implementations. Store failure can show native `StoreUnavailableView`. |

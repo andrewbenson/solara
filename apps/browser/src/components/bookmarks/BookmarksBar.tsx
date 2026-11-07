@@ -1,23 +1,20 @@
-import { cleanUrl } from "@solara/core";
-import { ContextMenuArea, copyText, MouseArea, prompt, showMenu, Symbol, type MenuItem } from "@solara/shell";
+import { ContextMenuArea, MouseArea, showMenu, Symbol, type MenuItem } from "@solara/shell";
 import { memo, useMemo, useRef, useState } from "react";
 import { Animated, PanResponder, Pressable, StyleSheet, Text, View, type LayoutRectangle } from "react-native";
-import { addFolderToSidebar, restorableArcHolder, makesGroup, restoreArcFolders } from "../../lib/bookmarkGroups";
+import { addFolderToSidebar, restorableArcHolder, makesGroup } from "../../lib/bookmarkGroups";
 import { useTheme } from "../../lib/theme";
 import { folderChildren, folderLinks } from "../../store/bookmarks";
 import { useBrowser } from "../../store/browser";
 import { useWindowId } from "../../store/hooks";
 import { bookmarkProfileId } from "../../store/model";
-import type { Settings } from "../../store/settings";
 import type { BookmarkNode } from "../../store/types";
-import { openInternalPage } from "../pages/urls";
 import { Favicon, useHover } from "../primitives";
 import { openImport } from "../settings/windows";
 import { useSidebarWidth } from "../sidebar/tokens";
-import { openFolder, openModeFor, openUrl } from "./actions";
-import { editBookmark } from "./edit";
+import { openModeFor, openUrl } from "./actions";
+import { handleBookmarksBarMenuChoice, openImportMenu } from "./bookmarksBarActions";
+import { BOOKMARKS_BAR_HEIGHT } from "./bookmarksBarPolicy";
 
-export const BOOKMARKS_BAR_HEIGHT = 30;
 const ITEM_HEIGHT = 24;
 const OVERFLOW_WIDTH = 28;
 
@@ -25,17 +22,6 @@ export const BookmarksBar = memo(function BookmarksBar({ placeholder }: { placeh
   const windowId = useWindowId();
   return placeholder ? <View style={{ height: BOOKMARKS_BAR_HEIGHT }} /> : <Bar windowId={windowId} />;
 });
-
-export function bookmarksBarShown(mode: BookmarksBarMode, tab: { url: string } | undefined): boolean {
-  if (!tab || mode === "never") return false;
-  return mode === "always" || !tab.url;
-}
-
-export type BookmarksBarMode = Settings["bookmarksBar"];
-
-export function useBookmarksBarMode(windowId: string): BookmarksBarMode {
-  return useBrowser((s) => (s.windows[windowId]?.incognito ? "never" : s.settings.bookmarksBar));
-}
 
 function Bar({ windowId }: { windowId: string }) {
   const theme = useTheme();
@@ -320,15 +306,6 @@ function ImportButton() {
   );
 }
 
-export async function openImportMenu() {
-  const choice = await showMenu([{ id: "hide", title: "Hide Import Bookmarks Button" }]);
-  if (choice === "hide") hideBookmarksBarImportButton();
-}
-
-export function hideBookmarksBarImportButton() {
-  useBrowser.getState().updateSettings({ hideBookmarksBarImport: true });
-}
-
 export async function openFolderMenu(windowId: string, ids: string[], _e?: ClickMods, folderId?: string) {
   const b = useBrowser.getState().bookmarks;
   const build = (list: string[], parent?: string, depth = 0): MenuItem[] => {
@@ -414,50 +391,4 @@ export async function openBarMenu(windowId: string, profileId: string, node: Boo
   if (!choice) return;
   const [action, id] = splitChoice(choice);
   await handleBookmarksBarMenuChoice(windowId, profileId, action, action === "bar" ? id : node?.id);
-}
-
-export async function handleBookmarksBarMenuChoice(windowId: string, profileId: string, action: string, id?: string) {
-  const s = useBrowser.getState();
-  const node = id ? s.bookmarks.nodes[id] : undefined;
-  const bar = s.bookmarks.roots[profileId]?.bar;
-  if (node?.kind === "url") {
-    if (action === "open") openUrl(node.url, windowId, "current");
-    if (action === "tab") openUrl(node.url, windowId, "foreground");
-    if (action === "window") openUrl(node.url, windowId, "window");
-    if (action === "incognito") openUrl(node.url, windowId, "incognito");
-    if (action === "split") openUrl(node.url, windowId, "split");
-    if (action === "edit") void editBookmark(node.id, windowId);
-    if (action === "copy") copyText(cleanUrl(node.url));
-  }
-  if (node?.kind === "folder") {
-    if (action === "openAll") void openFolder(node.id, windowId, "tabs");
-    if (action === "openAllWindow") void openFolder(node.id, windowId, "window");
-    if (action === "openAllIncognito") void openFolder(node.id, windowId, "incognito");
-    if (action === "rename") void editBookmark(node.id, windowId);
-    if (action === "addGroup") addFolderToSidebar(node.id, windowId);
-    if (action === "restoreArc") restoreArcFolders(node.id, windowId);
-  }
-  if (action === "delete" && node) useBrowser.getState().removeBookmark(node.id);
-  if (action === "addPage") addPageFromBookmarksBar(windowId, profileId, node ?? null);
-  if (action === "addFolder") await addFolderFromBookmarksBar(windowId, profileId, node ?? null);
-  if (action === "manage") openInternalPage("bookmarks", windowId);
-  if (action === "bar" && (id === "always" || id === "newTab" || id === "never")) useBrowser.getState().updateSettings({ bookmarksBar: id });
-  if (action === "hide") hideBookmarksBarImportButton();
-}
-
-function bookmarksBarInsertion(profileId: string, node: BookmarkNode | null) {
-  const s = useBrowser.getState();
-  const parentId = node?.parentId ?? s.bookmarks.roots[profileId]?.bar;
-  const index = node && parentId ? folderChildren(s.bookmarks, parentId).findIndex((n) => n.id === node.id) + 1 : undefined;
-  return { parentId: parentId ?? undefined, index };
-}
-
-export function addPageFromBookmarksBar(windowId: string, profileId: string, node: BookmarkNode | null) {
-  void editBookmark(null, windowId, { profileId, ...bookmarksBarInsertion(profileId, node) });
-}
-
-export async function addFolderFromBookmarksBar(windowId: string, profileId: string, node: BookmarkNode | null) {
-  const position = bookmarksBarInsertion(profileId, node);
-  const title = await prompt({ title: "New Folder", placeholder: "Folder name", confirmTitle: "Create", windowId });
-  if (title) useBrowser.getState().addBookmarkFolder({ profileId, title, ...position });
 }

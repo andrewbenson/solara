@@ -11,7 +11,9 @@ import { shownPageId } from "../../store/peek";
 import { openImport } from "../settings/windows";
 import { useSidebarWidth } from "../sidebar/tokens";
 import { openModeFor, openUrl } from "./actions";
-import { BOOKMARKS_BAR_HEIGHT, BookmarksBar, handleBookmarksBarMenuChoice } from "./BookmarksBar";
+import { BookmarksBar } from "./BookmarksBar";
+import { handleBookmarksBarMenuChoice } from "./bookmarksBarActions";
+import { BOOKMARKS_BAR_HEIGHT } from "./bookmarksBarPolicy";
 import { bookmarksBarSnapshot } from "./bookmarksBarSnapshot";
 import { dropBookmarksBarLinks } from "./bookmarksBarDrop";
 

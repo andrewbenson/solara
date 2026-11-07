@@ -5,7 +5,7 @@ import Testing
 
 @Suite struct LaunchSwitchesTests {
   static let defaultOn: Set<LaunchSwitch> = [
-    .nativeShell, .nativeTopStrip,
+    .nativeShell, .nativeTopStrip, .nativeBookmarksBar,
     .shellPanes, .nativePagesPool, .shellMainTop, .nativeTabSleep,
   ]
   static let shippedSurfaces = defaultOn.filter { !$0.storable(distribution: true) }
@@ -48,39 +48,51 @@ import Testing
     }
   }
 
-  @Test func theNativeBookmarksBarStaysOffUntilRequestedAndRequiresTheNativeWindow() throws {
-    let bar = try #require(LaunchSwitch(rawValue: "SOLARA_NATIVE_BOOKMARKS_BAR"))
+  @Test func theNativeBookmarksBarIsOnByDefaultInDevelopmentAndDistribution() {
     for distribution in [false, true] {
       let initial = LaunchSwitches(environment: [:], defaults: nil, distribution: distribution, skipStored: false)
-      #expect(!initial.isOn(bar))
-      let enabled = LaunchSwitches(environment: [bar.rawValue: "1"], defaults: nil, distribution: distribution, skipStored: false)
-      #expect(enabled.isOn(bar))
+      #expect(initial.isOn(.nativeBookmarksBar))
     }
+    let defaults = scratchDefaults()
+    defaults.set("0", forKey: "SOLARA_NATIVE_BOOKMARKS_BAR")
+    let shipped = LaunchSwitches(
+      environment: ["SOLARA_NATIVE_BOOKMARKS_BAR": "0"], defaults: defaults, distribution: true, skipStored: false)
+    #expect(shipped.isOn(.nativeBookmarksBar))
+    #expect(!shipped.fromEnvironment(.nativeBookmarksBar))
+    #expect(!LaunchSwitch.nativeBookmarksBar.storable(distribution: true))
+  }
+
+  @Test func theNativeBookmarksBarStillRequiresTheNativeWindow() {
     let noWindow = LaunchSwitches(
-      environment: [bar.rawValue: "1", "SOLARA_NATIVE_SHELL": "0"], defaults: nil, distribution: false, skipStored: false)
-    #expect(noWindow.requested(bar, defaultOn: false))
-    #expect(!noWindow.isOn(bar))
-    #expect(noWindow.unmetNeeds(bar) == [.nativeShell])
+      environment: ["SOLARA_NATIVE_SHELL": "0"], defaults: nil, distribution: false, skipStored: false)
+    #expect(noWindow.requested(.nativeBookmarksBar, defaultOn: true))
+    #expect(!noWindow.isOn(.nativeBookmarksBar))
+    #expect(noWindow.unmetNeeds(.nativeBookmarksBar) == [.nativeShell])
     #expect(noWindow.refusals.contains("SOLARA_NATIVE_BOOKMARKS_BAR is on but stays off: it needs SOLARA_NATIVE_SHELL=1"))
   }
 
-  @Test func theNativeBookmarksBarCanBeSavedAndTheEnvironmentCanDisableIt() throws {
-    let bar = try #require(LaunchSwitch(rawValue: "SOLARA_NATIVE_BOOKMARKS_BAR"))
+  @Test func theNativeBookmarksBarCanBeSavedAndTheEnvironmentCanDisableItInDevelopment() {
+    let bar = LaunchSwitch.nativeBookmarksBar
     #expect(!LaunchSwitch.experiments.contains(bar))
-    #expect(!bar.storable(distribution: true))
-    for distribution in [false] {
-      let defaults = scratchDefaults()
-      let stored = StoredLaunchSwitches(defaults: defaults, distribution: distribution)
-      stored.set(bar, true)
-      #expect(stored.value(bar) == true)
-      let saved = LaunchSwitches(environment: [:], defaults: defaults, distribution: distribution, skipStored: false)
-      #expect(saved.isOn(bar))
-      let disabled = LaunchSwitches(environment: [bar.rawValue: "0"], defaults: defaults, distribution: distribution, skipStored: false)
-      #expect(!disabled.isOn(bar))
-      #expect(disabled.fromEnvironment(bar))
-      stored.clear()
-      #expect(defaults.object(forKey: bar.rawValue) == nil)
-    }
+    let defaults = scratchDefaults()
+    let stored = StoredLaunchSwitches(defaults: defaults, distribution: false)
+    stored.set(bar, false)
+    #expect(stored.value(bar) == false)
+    let savedOff = LaunchSwitches(environment: [:], defaults: defaults, distribution: false, skipStored: false)
+    #expect(!savedOff.isOn(bar))
+    let enabled = LaunchSwitches(environment: [bar.rawValue: "1"], defaults: defaults, distribution: false, skipStored: false)
+    #expect(enabled.isOn(bar))
+    #expect(enabled.fromEnvironment(bar))
+    stored.set(bar, true)
+    #expect(stored.value(bar) == true)
+    let savedOn = LaunchSwitches(environment: [:], defaults: defaults, distribution: false, skipStored: false)
+    #expect(savedOn.isOn(bar))
+    let disabled = LaunchSwitches(environment: [bar.rawValue: "0"], defaults: defaults, distribution: false, skipStored: false)
+    #expect(!disabled.isOn(bar))
+    #expect(disabled.fromEnvironment(bar))
+    stored.clear()
+    #expect(defaults.object(forKey: bar.rawValue) == nil)
+    #expect(LaunchSwitches(environment: [:], defaults: defaults, distribution: false, skipStored: false).isOn(bar))
   }
 
   @Test func theSyncRedesignIsReadOnlyByInstancesWithTheirOwnDataFolderOfBuildsNotSignedForDistribution() {
@@ -268,9 +280,9 @@ import Testing
       environment: ["SOLARA_NATIVE_SHELL": "0", "SOLARA_SHELL_MAIN_TOP": "1", "SOLARA_SHELL_PANES": "1", "SOLARA_NATIVE_PAGES_POOL": "1"], defaults: nil, distribution: false, skipStored: false)
     #expect(!noShell.isOn(.shellMainTop, defaultOn: false))
     #expect(noShell.unmetNeeds(.shellMainTop) == [.shellPanes, .nativePagesPool])
-    #expect(noShell.refusals.count == 3)
+    #expect(noShell.refusals.count == 4)
     #expect(LaunchSwitches(environment: [:], defaults: nil, distribution: false, skipStored: false).refusals.isEmpty)
-    #expect(LaunchSwitches(environment: ["SOLARA_NATIVE_SHELL": "0", "SOLARA_SHELL_PANES": "0", "SOLARA_NATIVE_PAGES_POOL": "0", "SOLARA_SHELL_MAIN_TOP": "0"], defaults: nil, distribution: false, skipStored: false).refusals.isEmpty)
+    #expect(LaunchSwitches(environment: ["SOLARA_NATIVE_SHELL": "0", "SOLARA_SHELL_PANES": "0", "SOLARA_NATIVE_PAGES_POOL": "0", "SOLARA_SHELL_MAIN_TOP": "0", "SOLARA_NATIVE_BOOKMARKS_BAR": "0"], defaults: nil, distribution: false, skipStored: false).refusals.isEmpty)
   }
 
   @Test func theOneArgumentReadUsesTheSwitchsOwnDefault() {
@@ -297,7 +309,7 @@ import Testing
     defaults.set("1", forKey: "SOLARA_SHELL_PANES")
     let switches = LaunchSwitches(environment: [:], defaults: defaults, distribution: false, skipStored: false)
     #expect(!switches.isOn(.shellPanes, defaultOn: false))
-    #expect(switches.refusals.count == 3)
+    #expect(switches.refusals.count == 4)
     defaults.set("1", forKey: "SOLARA_NATIVE_SHELL")
     let withShell = LaunchSwitches(environment: [:], defaults: defaults, distribution: false, skipStored: false)
     #expect(withShell.isOn(.shellPanes, defaultOn: false))

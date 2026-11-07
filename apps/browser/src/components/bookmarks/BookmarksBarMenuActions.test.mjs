@@ -22,7 +22,8 @@ const hooks = registerHooks({
     return resolved;
   },
 });
-const { handleBookmarksBarMenuChoice, openBarMenu, openFolderMenu, openImportMenu } = await import("./BookmarksBar.tsx");
+const { handleBookmarksBarMenuChoice, openImportMenu } = await import("./bookmarksBarActions.ts");
+const { openBarMenu, openFolderMenu } = await import("./BookmarksBar.tsx");
 after(() => hooks.deregister());
 const S = () => useBrowser.getState();
 const shell = shellNativeModules.SolaraShell;

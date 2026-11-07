@@ -35,15 +35,9 @@ const sources = {
     export const openModeFor = (mods) => mods;
     export const openUrl = (...args) => globalThis.nativeBookmarksBarTest.actions.push(["url", ...args]);
   `,
-  "./BookmarksBar": `
-    const f = globalThis.nativeBookmarksBarTest;
-    export const BOOKMARKS_BAR_HEIGHT = 30;
-    export const BookmarksBar = "FallbackBar";
-    export const openBarMenu = (...args) => f.actions.push(["context", ...args]);
-    export const openFolderMenu = (...args) => f.actions.push(["folder", ...args]);
-    export const openImportMenu = () => f.actions.push(["importMenu"]);
-    export const handleBookmarksBarMenuChoice = (...args) => f.actions.push(["menuChoice", ...args]);
-  `,
+  "./BookmarksBar": `export const BookmarksBar = "FallbackBar";`,
+  "./bookmarksBarPolicy": `export const BOOKMARKS_BAR_HEIGHT = 30;`,
+  "./bookmarksBarActions": `export const handleBookmarksBarMenuChoice = (...args) => globalThis.nativeBookmarksBarTest.actions.push(["menuChoice", ...args]);`,
 };
 const hooks = registerHooks({
   resolve(specifier, context, next) {

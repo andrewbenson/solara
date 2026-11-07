@@ -9,10 +9,11 @@ import { launch, reporter, session, sleep } from "../../../scripts/lib/instance.
 const args = process.argv.slice(2);
 const appArg = args.find((arg) => !arg.startsWith("--"));
 if (!appArg || resolve(appArg).startsWith("/Applications/")) {
-  console.error("usage: SOLARA_NATIVE_BOOKMARKS_BAR=1 METRO_PORT=8081 node apps/browser/scripts/bookmarks-bar-test.mjs <Debug Solara.app> [--keep-data]");
+  console.error("usage: METRO_PORT=8081 node apps/browser/scripts/bookmarks-bar-test.mjs <Debug Solara.app> [--keep-data]");
+  console.error("Native by default with SOLARA_NATIVE_BOOKMARKS_BAR unset; set SOLARA_NATIVE_BOOKMARKS_BAR=0 for the React Native fallback.");
   process.exit(2);
 }
-const native = process.env.SOLARA_NATIVE_BOOKMARKS_BAR === "1";
+const native = process.env.SOLARA_NATIVE_BOOKMARKS_BAR !== "0";
 const scratch = mkdtempSync(join(tmpdir(), "ac-bookmarks-bar-"));
 const rep = reporter(join(scratch, "bookmarks-bar-test.log"), { name: "bookmarks-bar-test" });
 const server = createServer((request, response) => {
@@ -167,7 +168,7 @@ try {
   app = await launch(resolve(appArg), {
     data: join(scratch, "data"), fresh: true, onboarded: true, session: fixture, probe: true,
     keepData: args.includes("--keep-data"), metroPort: Number(process.env.METRO_PORT ?? 8081),
-    env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_BOOKMARKS_BAR: native ? "1" : "0" },
+    env: { SOLARA_NATIVE_SHELL: "1", ...(native ? {} : { SOLARA_NATIVE_BOOKMARKS_BAR: "0" }) },
     ready: "return !!ac.store.getState().windows.w1 && !!globalThis.acPerf && !!globalThis.expo?.modules?.SolaraHosted;",
   });
   await until("Chrome bookmark roots ready", "return S().bookmarksReady.default === true;", undefined, 20000);
@@ -193,7 +194,7 @@ try {
   `);
   await rep.check("launch-switch", async () => {
     const kinds = await run("return H.kinds();");
-    assert.equal(kinds.includes("bookmarksBar"), native);
+    assert.equal(kinds.includes("bookmarksBar"), native, native ? "native bookmarks bar registered by default" : "React Native fallback requested");
     if (native) assert.equal(await run('return typeof H.devBookmarksBarInput === "function" && typeof H.devBookmarksBarLayout === "function" && typeof H.devBookmarksBarMenu === "function" && typeof H.devBookmarksBarChoose === "function" && typeof H.devBookmarksBarKey === "function" && typeof H.devBookmarksBarAccessibility === "function" && typeof H.devBookmarksBarDrop === "function";'), true, "Debug native hooks available");
     else await until("React Native bar mounted", "return rnBar();");
     return native ? "native" : "React Native";

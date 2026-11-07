@@ -483,7 +483,7 @@ own sign-ins instead.
 |---|---|---|---|
 | Bookmark page ⌘D (Solara: ⌥⇧⌘D since 2026-10-24; ⌘D is Move to Pinned, as in Arc) | ✓ | ✅ | save dialog with name + folder tree; "Edit Bookmark…" when already saved |
 | Bookmark all tabs; add to folder; folder‑tree save dialog | ✓ | ✅ | |
-| Bookmarks bar (Always / New Tab only / Never, ⇧⌘B) | ✓ | ✅ | |
+| Bookmarks bar (Always / New Tab only / Never, ⇧⌘B) | ✓ | ✅ | Native (AppKit) by default since A1: layout, menus, keyboard navigation, VoiceOver and drops; the React Native bar remains only as a development fallback until it is retired |
 | Bookmark manager (⌥⌘B, `dia://bookmarks`) | ✓ | ✅ | `solara://bookmarks` (our page), over Chrome's own bookmarks, so extensions' `chrome.bookmarks` sees the same tree (Findings 10) The page is native (SwiftUI, `SolaraUI/Pages`). |
 | Bookmarks menu + Recent Bookmarks | ✓ | ✅ | |
 | ⌘/middle‑click bg, ⌥‑click split, open folder | ✓ | ✅ | |

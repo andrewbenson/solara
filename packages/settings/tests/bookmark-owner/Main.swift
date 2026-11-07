@@ -210,6 +210,56 @@ struct BookmarkOwnerTests {
     expect(refusal { _ = try NativeBookmarkWriter.replace(profile: "p", documentJSON: "{", expectedRevision: revision, engine: engine, generation: generation, requestID: nil) }.map { if case .invalidDocument = $0 { true } else { false } } == true, "malformed JSON is refused as an invalid document")
   }
 
+  static func submitIsDurableAndReturnsTheReducerResults() {
+    let fixture = Fixture()
+    defer { fixture.stop() }
+    let before = fixture.owner.snapshot(profile: "p")
+    _ = try? fixture.owner.replace(profile: "p", document: Fixture.document(["https://a.test"]), expectedRevision: before.revision, binding: before.binding)
+    let opened = fixture.owner.snapshot(profile: "p")
+    fixture.recorder.clear()
+    fixture.wakes.clear()
+    let mutations = [BookmarkMutation(method: "addBookmark", args: [["profileId": "p", "title": "New", "url": "https://new.test"]]), BookmarkMutation(method: "updateBookmark", args: ["b0", ["title": "Renamed"]])]
+    guard let receipt = try? fixture.owner.submit(profile: "p", mutations: mutations, binding: opened.binding, requestID: "edit-1") else {
+      failures.append("an edit against the current binding is accepted")
+      return
+    }
+    let log = fixture.recorder.log
+    expect(Array(log.suffix(4)) == ["writeNew", "syncFile", "rename", "syncDirectory"], "the edit is journaled durably before submit returns: \(log)")
+    expect(receipt.results.count == 2 && receipt.results[0].string != nil, "the receipt carries each mutation's result, the new id first: \(receipt.results)")
+    let id = receipt.results[0].string ?? ""
+    expect(receipt.view.document["nodes"]?[id]?["title"] == "New" && receipt.view.document["nodes"]?["b0"]?["title"] == "Renamed", "the receipt's view holds both edits")
+    expect(fixture.wakes.log.count == 1, "one wake after the accepted edit")
+    let reopened = fixture.reopen().snapshot(profile: "p")
+    expect(reopened.document == receipt.view.document && reopened.revision == receipt.view.revision, "a fresh owner on the same folder sees the accepted edit")
+  }
+
+  static func submitRefusesAStaleBindingAndWritesNothing() {
+    let fixture = Fixture()
+    defer { fixture.stop() }
+    let before = fixture.owner.snapshot(profile: "p")
+    fixture.owner.remap(profiles: ["p": "", "alias": "", "extra": ""], defaultProfile: "p")
+    fixture.recorder.clear()
+    let error = refusal { _ = try fixture.owner.submit(profile: "p", mutations: [BookmarkMutation(method: "addBookmarkFolder", args: [["profileId": "p", "title": "F"]])], binding: before.binding) }
+    expect(error == .staleBinding, "an edit opened before a remap is refused, got \(String(describing: error))")
+    expect(fixture.recorder.log.isEmpty && fixture.wakes.log.isEmpty, "a refused edit writes and wakes nothing")
+  }
+
+  static func theBridgeSubmitsMutationsGivenAsJSON() {
+    let fixture = Fixture()
+    defer { fixture.stop(); NativeBookmarkOwner.current = nil }
+    NativeBookmarkOwner.current = fixture.owner
+    let snapshot = fixture.owner.snapshot(profile: "p")
+    let reply = try? NativeBookmarkWriter.submit(profile: "p", mutationsJSON: #"[{"method":"addBookmarkFolder","args":[{"profileId":"p","title":"Folder"}]}]"#, engine: snapshot.binding.engine, generation: String(snapshot.binding.generation), requestID: "r")
+    guard let reply, let results = reply["results"] as? String, let document = reply["document"] as? String, let revision = reply["revision"] as? String,
+      let ids = try? JSONValue.parse(results).array, let id = ids.first?.string, let parsed = try? JSONValue.parse(document) else {
+      failures.append("the bridge answers with revision, results and document as JSON text: \(String(describing: reply))")
+      return
+    }
+    expect(parsed["nodes"]?[id]?["kind"] == "folder", "the reply's document holds the new folder")
+    expect(revision == String(snapshot.revision + 1), "the reply's revision is the accepted one")
+    expect(refusal { _ = try NativeBookmarkWriter.submit(profile: "p", mutationsJSON: #"[{"method":"addBookmarkFolder"}]"#, engine: snapshot.binding.engine, generation: String(snapshot.binding.generation), requestID: nil) }.map { if case .invalidDocument = $0 { true } else { false } } == true, "a mutation without args is refused before it reaches the coordinator")
+  }
+
   static func main() {
     guard CommandLine.arguments.count == 2 else {
       print("FAIL: expected one case name")
@@ -225,6 +275,9 @@ struct BookmarkOwnerTests {
       "theWakeComesOnlyAfterTheDirectorySync": theWakeComesOnlyAfterTheDirectorySync,
       "aJournalFailureThrowsAndKeepsTheOldDocument": aJournalFailureThrowsAndKeepsTheOldDocument,
       "theWriterIsLegacyUntilAnOwnerIsInstalled": theWriterIsLegacyUntilAnOwnerIsInstalled,
+      "submitIsDurableAndReturnsTheReducerResults": submitIsDurableAndReturnsTheReducerResults,
+      "submitRefusesAStaleBindingAndWritesNothing": submitRefusesAStaleBindingAndWritesNothing,
+      "theBridgeSubmitsMutationsGivenAsJSON": theBridgeSubmitsMutationsGivenAsJSON,
     ]
     guard let run = cases[test] else {
       print("FAIL \(test): unknown test")

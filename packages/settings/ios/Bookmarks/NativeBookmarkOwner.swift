@@ -85,6 +85,22 @@ final class NativeBookmarkOwner: @unchecked Sendable {
     wake(binding.engine)
     return revision
   }
+
+  func submit(profile: String, mutations: [BookmarkMutation], binding: BookmarkWriterBinding, requestID: String? = nil) throws -> BookmarkReceipt {
+    let receipt: BookmarkReceipt
+    do {
+      fence.lock()
+      defer { fence.unlock() }
+      guard binding.generation == generation, JSKey(coordinator.engine(profile: profile)) == JSKey(binding.engine) else { throw BookmarkWriterError.staleBinding }
+      do {
+        receipt = try coordinator.submit(profile: profile, mutations: mutations, requestID: requestID)
+      } catch {
+        throw BookmarkWriterError.refused(String(describing: error))
+      }
+    }
+    wake(binding.engine)
+    return receipt
+  }
 }
 
 enum NativeBookmarkWriter {
@@ -109,5 +125,19 @@ enum NativeBookmarkWriter {
     do { document = try JSONValue.parse(documentJSON) } catch { throw BookmarkWriterError.invalidDocument(String(describing: error)) }
     let revision = try owner.replace(profile: profile, document: document, expectedRevision: expected, binding: BookmarkWriterBinding(engine: engine, generation: generation), requestID: requestID)
     return ["revision": String(revision)]
+  }
+
+  static func submit(profile: String, mutationsJSON: String, engine: String, generation: String, requestID: String?) throws -> [String: Any] {
+    guard let owner = NativeBookmarkOwner.current else { throw BookmarkWriterError.notOwned }
+    guard let generation = UInt64(generation) else { throw BookmarkWriterError.invalidDocument("generation must be a decimal string") }
+    let parsed: JSONValue
+    do { parsed = try JSONValue.parse(mutationsJSON) } catch { throw BookmarkWriterError.invalidDocument(String(describing: error)) }
+    guard let list = parsed.array else { throw BookmarkWriterError.invalidDocument("mutations must be an array") }
+    let mutations = try list.map { item -> BookmarkMutation in
+      guard let method = item["method"]?.string, let args = item["args"]?.array else { throw BookmarkWriterError.invalidDocument("each mutation needs a method and args") }
+      return BookmarkMutation(method: method, args: args)
+    }
+    let receipt = try owner.submit(profile: profile, mutations: mutations, binding: BookmarkWriterBinding(engine: engine, generation: generation), requestID: requestID)
+    return ["engine": receipt.view.engine, "revision": String(receipt.view.revision), "results": JSONValue.array(receipt.results).text(), "document": receipt.view.document.text()]
   }
 }

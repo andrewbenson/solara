@@ -21,6 +21,7 @@ type NativeSettingsModule = {
   liveInitialReplica(): LiveReplica;
   bookmarkWriterState?(): BookmarkWriterState;
   bookmarkWriterSnapshot?(profileId: string): BookmarkWriterSnapshot;
+  submitBookmarkMutations?(profileId: string, mutationsJSON: string, engine: string, generation: string, requestId: string | null): Promise<{ engine: string; revision: string; results: string; document: string }>;
   replaceBookmarkDocument?(profileId: string, documentJSON: string, expectedRevision: string, engine: string, generation: string, requestId: string | null): { revision: string };
   liveCommand(name: string, payloadJSON: string): Promise<string>;
   liveStart(): Promise<void>;
@@ -121,6 +122,14 @@ export const bookmarkWriterState = (): BookmarkWriterState => native?.bookmarkWr
 export function bookmarkWriterSnapshot(profileId: string): BookmarkWriterSnapshot {
   if (!native?.bookmarkWriterSnapshot) throw new Error("native bookmarks are not owned by this launch");
   return native.bookmarkWriterSnapshot(profileId);
+}
+
+export type BookmarkWriterReceipt = { engine: string; revision: string; results: unknown[]; document: string };
+
+export async function submitBookmarkMutations(profileId: string, mutations: { method: string; args: unknown[] }[], binding: BookmarkWriterBinding, requestId: string | null): Promise<BookmarkWriterReceipt> {
+  if (!native?.submitBookmarkMutations) throw new Error("native bookmarks are not owned by this launch");
+  const reply = await native.submitBookmarkMutations(profileId, JSON.stringify(mutations), binding.engine, binding.generation, requestId);
+  return { engine: reply.engine, revision: reply.revision, results: JSON.parse(reply.results) as unknown[], document: reply.document };
 }
 
 export function replaceBookmarkDocument(profileId: string, document: unknown, expectedRevision: string, binding: BookmarkWriterBinding, requestId: string | null = null): string {

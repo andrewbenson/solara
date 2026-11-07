@@ -31,6 +31,7 @@ globalThis.acTestNativeModules = {
 const { useBrowser } = await import("./browser.ts");
 const { attachReplica, nativeForwardedWrites, startNativeStore, withApplier } = await import("./nativeStore.ts");
 const { applyResult, importArcSpace, importDiaProfile, importTabs } = await import("../components/import/apply.ts");
+const { moveGroupToBookmarksBar } = await import("../lib/bookmarkGroups.ts");
 const { setWindowLayout } = await import("../components/onboarding/state.ts");
 const { pagesDrivers } = await import("../components/pages/devDrivers.ts");
 const S = () => useBrowser.getState();
@@ -54,12 +55,12 @@ afterEach(() => {
   assert.equal(globalThis.__nativeStoreForwards?.length ?? 0, 0);
 });
 
-test("filing a group creates bookmarks before sending its close command", () => {
+test("filing a group creates bookmarks before sending its close command", async () => {
   let filed;
   onDispatch = ({ name }) => {
     if (name === "closeGroup") filed = Object.values(S().bookmarks.nodes).filter((node) => node.kind === "url").map((node) => node.url);
   };
-  S().moveGroupToBookmarksBar(groupId);
+  await moveGroupToBookmarksBar(groupId);
   assert.deepEqual(sent.map((command) => command.name), ["closeGroup"]);
   assert.deepEqual(filed, ["https://one.example/", "https://two.example/"]);
 });

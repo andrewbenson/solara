@@ -1,7 +1,7 @@
 import type { BrowserSource, DiaAutomationStatus, DiaTabsResult, ImportedExtension, ImportKind, ImportResult } from "@solara/import";
 import { closeWindow, confirm } from "@solara/shell";
 import { publishSettingsTopic, type SettingsHandler } from "@solara/settings";
-import { allArcHolders, restoreArcFolders } from "../../../lib/bookmarkGroups";
+import { allArcHolders, restoreArcFoldersSettled } from "../../../lib/bookmarkGroups";
 import { reportBookmarkFailure } from "../../../lib/bookmarkWriter";
 import { nativeSafeMode } from "../../../store/nativeStore";
 import { useBrowser } from "../../../store/browser";
@@ -411,9 +411,9 @@ export const importHandlers: Record<string, SettingsHandler> = {
     return openInWebStore(profileId, urls);
   },
   "import.arcHolders": () => allArcHolders(useBrowser.getState()).length,
-  "import.restoreArcFolders": (sessionId?: number) => {
+  "import.restoreArcFolders": async (sessionId?: number) => {
     if (!admitted(sessionId) || transientImportRefused()) return allArcHolders(useBrowser.getState()).length;
-    for (const id of allArcHolders(useBrowser.getState())) restoreArcFolders(id, null);
+    await trackPending(Promise.all(allArcHolders(useBrowser.getState()).map((id) => restoreArcFoldersSettled(id, null))));
     return allArcHolders(useBrowser.getState()).length;
   },
   "import.onboarding": () => useOnboarding.getState().windowId !== null,

@@ -1,5 +1,7 @@
 import { showMenu, type MenuItem } from "@solara/shell";
 import { closeGroup, closeTab, closeTabs, moveTabToProfile, moveTabToWindow, switchToTab, toggleMute } from "../../lib/actions";
+import { moveGroupToBookmarksBar } from "../../lib/bookmarkGroups";
+import { reportBookmarkFailure } from "../../lib/bookmarkWriter";
 import { menuShortcut } from "../../lib/commandShortcuts";
 import { folderChildren } from "../../store/bookmarks";
 import { useBrowser } from "../../store/browser";
@@ -304,7 +306,7 @@ export async function openGroupMenu(windowId: string, groupId: string) {
   else if (choice === "copy") copyUrls(g.tabIds, false);
   else if (choice === "copyMd") copyUrls(g.tabIds, true);
   else if (choice === "ungroup") s.ungroup(groupId);
-  else if (choice === "bookmarkBar") s.moveGroupToBookmarksBar(groupId);
+  else if (choice === "bookmarkBar") void moveGroupToBookmarksBar(groupId).catch(reportBookmarkFailure);
   else if (choice === "close") void closeGroup(groupId);
   else if (choice === "delete") s.deleteGroup(groupId);
 }

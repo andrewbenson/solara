@@ -953,7 +953,7 @@ async function phases(name) {
         "restoreClosed", "createProfile", "updateProfile", "deleteProfile", "reorderProfiles", "setDefaultProfile", "profileDataDeleted",
         "createGroup", "updateGroup", "addTabsToGroup", "removeTabsFromGroup", "ungroup", "newNestedGroup", "closeGroup", "deleteGroup",
         "placeTabs", "dropTabs", "pinTabs", "returnToPinnedUrl", "setPinnedUrl", "setMuted", "setSiteMuted", "groupTabs", "groupOnto", "moveGroup",
-        "duplicateGroup", "newTabInGroup", "moveGroupToBookmarksBar", "cleanUpTabs", "restoreCleaned", "clearUnpinnedTabs", "undoClearTabs",
+        "duplicateGroup", "newTabInGroup", "cleanUpTabs", "restoreCleaned", "clearUnpinnedTabs", "undoClearTabs",
         "removeClosedPin", "closeAbandonedNewTabs", "createSplit", "openSplitPane", "replaceSplitPane", "removeTabFromSplit", "separateSplit",
         "updateSplit", "flipSplit", "toggleSplitOrientation", "movePane", "focusPane", "toggleTabLayout", "openPeek", "closePeek", "peekToTab",
         "updateSettings", "setFocusedWindow", "upsertDownload", "removeDownload", "clearDownloads", "forgetDownloads", "hydrate",
@@ -966,7 +966,6 @@ async function phases(name) {
       project: (s) => projectState(s),
       before: (s) => ({ ...projectState(s), caches: projectCaches(s) }),
       command(name, callArgs) {
-        if (name === "moveGroupToBookmarksBar") return { name: "closeGroup", args: [callArgs[0]] };
         if (name === "updateTab" || name === "navigated") callArgs = callArgs.slice(0, 2);
         if (name === "hydrate") {
           const { history: _h, bookmarks: _b, ...data } = callArgs[0] ?? {};

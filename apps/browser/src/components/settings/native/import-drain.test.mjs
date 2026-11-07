@@ -134,7 +134,7 @@ function bridge({ browsers, importData, importSafariDirect, importSafariExport, 
   const handlers = load(new URL("./import.ts", import.meta.url), {
     "@solara/shell": shell,
     "@solara/settings": settings,
-    "../../../lib/bookmarkGroups": { allArcHolders: () => ["holder"], restoreArcFolders: (...args) => restored.push(args) },
+    "../../../lib/bookmarkGroups": { allArcHolders: () => ["holder"], restoreArcFoldersSettled: async (...args) => { restored.push(args); return []; } },
     "../../../lib/bookmarkWriter": writer,
     "../../../store/nativeStore": nativeStore,
     "../../../store/browser": { useBrowser },

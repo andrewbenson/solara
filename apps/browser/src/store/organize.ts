@@ -2,7 +2,7 @@ import type { StateCreator } from "zustand";
 import type { BrowserState } from "./browser";
 import { autoGroupName } from "./groupNames";
 import { ancestorIds, canNest, closedGroupInfo, commonGroup, descendantIds, innermostGroupOf, insertAll, leaveGroups, nestGroups, orderSections, placeBlock, placeGroups, rejoinGroups, reparent, syncGroupOrder, withGroupsPlaced, withParent } from "./groups";
-import { activeTabId, bookmarkProfileId, inPinnedContainer, isIncognitoProfile, isPinnedRow, newId, pendingRestore, pinSection, restoreId, snapshotTab, viewTabIds, without } from "./model";
+import { activeTabId, inPinnedContainer, isIncognitoProfile, isPinnedRow, newId, pendingRestore, pinSection, restoreId, snapshotTab, viewTabIds, without } from "./model";
 import { hasPage } from "./pageSession";
 import { holderOf } from "./pinShare";
 import { splitOf, splitRowHead, splitRowPanes, withSplitRows } from "./splits";
@@ -102,7 +102,6 @@ export type OrganizeSlice = {
   moveGroup(groupId: string, placement: GroupPlacement): void;
   duplicateGroup(groupId: string): string;
   newTabInGroup(groupId: string): string;
-  moveGroupToBookmarksBar(groupId: string): void;
 
   cleanUpTabs(windowId: string, options?: { inactiveForMs?: number }): number;
   restoreCleaned(entryId?: string, windowId?: string): void;
@@ -919,31 +918,6 @@ export const createOrganizeSlice: StateCreator<BrowserState, [], [], OrganizeSli
     const groups = nestGroups({ ...next.groups, [groupId]: { ...g, collapsed: false, tabIds: [...g.tabIds, id] } });
     set(withGroupsPlaced(next, w.id, groups));
     return id;
-  },
-
-  moveGroupToBookmarksBar(groupId) {
-    const s = get();
-    const g = s.groups[groupId];
-    if (!g) return;
-    const profileId = bookmarkProfileId(s, s.windows[g.windowId]);
-    const file = (group: TabGroup, parentId?: string) => {
-      const folder = get().addBookmarkFolder({ profileId, title: groupLabel(s, group), ...(parentId ? { parentId } : {}) });
-      const children = Object.values(s.groups).filter((c) => c.parentId === group.id);
-      const filed = new Set<string>();
-      for (const id of group.tabIds) {
-        const child = children.find((c) => c.tabIds.includes(id));
-        if (child) {
-          if (filed.has(child.id)) continue;
-          filed.add(child.id);
-          file(child, folder);
-          continue;
-        }
-        const t = s.tabs[id];
-        if (t?.url) get().addBookmark({ profileId, url: t.url, title: t.customTitle || t.title || t.url, favicon: t.favicon, parentId: folder });
-      }
-    };
-    file(g);
-    get().closeGroup(groupId);
   },
 
   cleanUpTabs(windowId, options = {}) {

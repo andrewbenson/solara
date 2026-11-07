@@ -1,5 +1,6 @@
 import { notificationConsume, notificationWatch, onNotificationEvent } from "@solara/solaracore";
 
+const SUPERSEDED = "stale notification envelope";
 let started = false;
 
 export function startNotifications() {
@@ -9,7 +10,9 @@ export function startNotifications() {
   onNotificationEvent((event) => {
     sequence = sequence.then(async () => {
       const result = await notificationConsume(event);
-      if (result.ok !== true) console.warn("[notifications] envelope rejected", result.error);
+      if (result.ok === true) return;
+      if (result.error === SUPERSEDED) console.debug("[notifications] envelope from an earlier watch", event.kind);
+      else console.warn("[notifications] envelope rejected", result.error);
     }).catch((error) => {
       console.error("[notifications] native consumer failed", error);
     });

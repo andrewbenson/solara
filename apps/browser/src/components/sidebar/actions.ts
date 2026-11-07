@@ -1,5 +1,6 @@
 import { cleanUrl, markdownLink } from "@solara/core";
 import { copyText, prompt } from "@solara/shell";
+import { bookmarkWriter, reportBookmarkFailure, submitBookmarks } from "../../lib/bookmarkWriter";
 import { updateFolder } from "../../live/store";
 import { useBrowser } from "../../store/browser";
 import { ancestorIds } from "../../store/groups";
@@ -103,12 +104,14 @@ export async function bookmarkTabs(windowId: string, ids: string[], folder: stri
   if (folder === "new") {
     const title = await prompt({ title: "New Folder", placeholder: "Folder name", confirmTitle: "Create", windowId });
     if (!title) return;
-    parentId = store().addBookmarkFolder({ profileId, title });
+    try {
+      parentId = await bookmarkWriter.addBookmarkFolder({ profileId, title });
+    } catch (error) {
+      return reportBookmarkFailure(error);
+    }
   }
-  for (const id of ids) {
-    const t = store().tabs[id];
-    if (t?.url) store().addBookmark({ profileId, url: t.url, title: tabTitle(t), favicon: t.favicon, parentId });
-  }
+  const pages = ids.map((id) => store().tabs[id]).filter((t): t is Tab => !!t?.url);
+  if (pages.length) await submitBookmarks(profileId, pages.map((t) => ({ method: "addBookmark", args: [{ profileId, url: t.url, title: tabTitle(t), favicon: t.favicon, parentId }] }))).catch(reportBookmarkFailure);
 }
 
 export async function editPinnedPage(windowId: string, tabId: string) {

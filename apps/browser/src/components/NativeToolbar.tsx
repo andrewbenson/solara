@@ -10,6 +10,7 @@ import { webviews } from "../lib/webviews";
 import { useBrowser } from "../store/browser";
 import { useIsBookmarked, useSettings, useTabLive } from "../store/hooks";
 import { bookmarkProfileId, tabLayoutOf } from "../store/model";
+import { toggleBookmarkFromUI } from "../lib/bookmarkWriter";
 import { usePageProgress } from "../store/pageProgress";
 import { openModeFor, openUrl } from "./bookmarks/actions";
 import { showNativePanelNow } from "./CommandPanel";
@@ -289,7 +290,7 @@ export function useNativeToolbarModel({ tabId, geometry, windowId, inSplit, focu
       case "bookmark": {
         const s = useBrowser.getState();
         const page = s.tabs[tabId];
-        if (page) s.toggleBookmark(bookmarkProfileId(s, s.windows[windowId]), page);
+        if (page) void toggleBookmarkFromUI(bookmarkProfileId(s, s.windows[windowId]), { url: page.url, title: page.title, favicon: page.favicon });
         return;
       }
       case "split":

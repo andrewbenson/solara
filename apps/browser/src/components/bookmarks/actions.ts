@@ -1,6 +1,7 @@
 import { confirm } from "@solara/shell";
 import { create } from "zustand";
 import { focus, openWindow } from "../../lib/actions";
+import { bookmarkWriter, reportBookmarkFailure } from "../../lib/bookmarkWriter";
 import { folderLinks } from "../../store/bookmarks";
 import { useBrowser } from "../../store/browser";
 import { activeTabId, bookmarkProfileId, resolveWindowId, viewTabIds } from "../../store/model";
@@ -76,7 +77,7 @@ export const useBookmarkDialog = create<{ open: BookmarkDialogState | null; set(
   set: (open) => set({ open }),
 }));
 
-export function bookmarkTab(windowId: string, tabId: string) {
+export async function bookmarkTab(windowId: string, tabId: string) {
   const s = useBrowser.getState();
   const id = windowId;
   const tab = s.tabs[tabId];
@@ -86,8 +87,12 @@ export function bookmarkTab(windowId: string, tabId: string) {
   const existing = Object.values(s.bookmarks.nodes).find(
     (n) => n.kind === "url" && n.url === tab.url && roots && isUnder(n.id, [roots.bar, roots.other]),
   );
-  const bookmarkId =
-    existing?.id ?? s.addBookmark({ profileId, url: tab.url, title: tab.customTitle || tab.title || tab.url, favicon: tab.favicon });
+  let bookmarkId = existing?.id;
+  try {
+    bookmarkId ??= await bookmarkWriter.addBookmark({ profileId, url: tab.url, title: tab.customTitle || tab.title || tab.url, favicon: tab.favicon });
+  } catch (error) {
+    return reportBookmarkFailure(error);
+  }
   useBookmarkDialog.getState().set({ kind: "page", windowId: id, bookmarkId });
 }
 

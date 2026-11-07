@@ -9,6 +9,7 @@ import { webviews } from "../lib/webviews";
 import { useBrowser } from "../store/browser";
 import { useIsBookmarked, useSettings, useTabLive } from "../store/hooks";
 import { bookmarkProfileId } from "../store/model";
+import { toggleBookmarkFromUI } from "../lib/bookmarkWriter";
 import { usePageProgress } from "../store/pageProgress";
 import type { Tab } from "../store/types";
 import { ToolbarButton, type ButtonHit, type ClickModifiers } from "./layout/controls";
@@ -309,7 +310,7 @@ export const UrlField = memo(function UrlField({
   const toggleBookmark = () => {
     const s = useBrowser.getState();
     const page = s.tabs[tab.id];
-    if (page) s.toggleBookmark(bookmarkProfileId(s, s.windows[windowId]), page);
+    if (page) void toggleBookmarkFromUI(bookmarkProfileId(s, s.windows[windowId]), { url: page.url, title: page.title, favicon: page.favicon });
   };
   const toggleSiteControls = () => {
     onFocus();

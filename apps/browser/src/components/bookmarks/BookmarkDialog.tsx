@@ -1,4 +1,5 @@
 import { prompt } from "@solara/shell";
+import { bookmarkWriter, submitBookmarks, type BookmarkMutation } from "../../lib/bookmarkWriter";
 import { layout } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
 import { useWindowId } from "../../store/hooks";
@@ -14,30 +15,34 @@ export function BookmarkDialog() {
   return <NativeBookmarkDialog key={key} state={open} />;
 }
 
-export function finishBookmarkDialog(state: BookmarkDialogState, name: string, folderId: string | null) {
+export async function finishBookmarkDialog(state: BookmarkDialogState, name: string, folderId: string | null) {
   const s = useBrowser.getState();
   const close = () => useBookmarkDialog.getState().set(null);
   if (state.kind === "page") {
     const bookmark = s.bookmarks.nodes[state.bookmarkId];
-    if (!bookmark) return close();
-    if (name.trim() && name !== bookmark.title) s.updateBookmark(state.bookmarkId, { title: name.trim() });
-    if (folderId && folderId !== bookmark.parentId) s.moveBookmark(state.bookmarkId, folderId);
+    const profileId = profileOfNode(state.bookmarkId);
+    if (!bookmark || !profileId) return close();
+    const edits: BookmarkMutation[] = [];
+    if (name.trim() && name !== bookmark.title) edits.push({ method: "updateBookmark", args: [state.bookmarkId, { title: name.trim() }] });
+    if (folderId && folderId !== bookmark.parentId) edits.push({ method: "moveBookmark", args: [state.bookmarkId, folderId] });
+    if (edits.length) await submitBookmarks(profileId, edits);
   } else {
     const title = name.trim() || "Tabs";
-    s.addBookmarkTree(state.profileId, [{ title, children: state.tabs.map((t) => ({ title: t.title, url: t.url })) }], folderId ?? undefined);
+    await bookmarkWriter.addBookmarkTree(state.profileId, [{ title, children: state.tabs.map((t) => ({ title: t.title, url: t.url })) }], folderId ?? undefined);
   }
   close();
 }
 
-export function removeDialogBookmark(state: BookmarkDialogState) {
-  if (state.kind === "page") useBrowser.getState().removeBookmark(state.bookmarkId);
+export async function removeDialogBookmark(state: BookmarkDialogState) {
+  const profileId = state.kind === "page" ? profileOfNode(state.bookmarkId) : null;
+  if (state.kind === "page" && profileId) await bookmarkWriter.removeBookmark(profileId, state.bookmarkId);
   useBookmarkDialog.getState().set(null);
 }
 
 export async function newDialogFolder(state: BookmarkDialogState, profileId: string | null, folderId: string | null) {
   const title = await prompt({ title: "New Folder", placeholder: "Folder name", confirmTitle: "Create", windowId: state.windowId });
   if (!title || !profileId) return null;
-  return useBrowser.getState().addBookmarkFolder({ profileId, title, parentId: folderId ?? undefined });
+  return bookmarkWriter.addBookmarkFolder({ profileId, title, parentId: folderId ?? undefined });
 }
 
 export function bookmarkDialogPlacement(addressBar: boolean) {

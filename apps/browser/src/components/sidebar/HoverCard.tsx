@@ -7,6 +7,7 @@ import { useBrowser } from "../../store/browser";
 import { useStoreWhile } from "../../store/tabWatch";
 import { useIsBookmarked } from "../../store/hooks";
 import { activeTabId, bookmarkProfileId, plural } from "../../store/model";
+import { toggleBookmarkFromUI } from "../../lib/bookmarkWriter";
 import { folderIn, folderLabel, folderMembers } from "../../store/tileFolders";
 import { useShallow } from "zustand/react/shallow";
 import { useFolderPanel } from "./tileFolderUi";
@@ -107,7 +108,7 @@ function DiaTabCard({ tabId, windowId, origin, onHeight }: { tabId: string; wind
     actions.push({
       icon: bookmarked ? "bookmark.fill" : "bookmark",
       label: bookmarked ? "Remove Bookmark" : "Bookmark",
-      onPress: () => s().toggleBookmark(bookmarkProfileId(s(), s().windows[windowId]), { url: tab.url, title: tabTitle(tab), favicon: tab.favicon }),
+      onPress: () => void toggleBookmarkFromUI(bookmarkProfileId(s(), s().windows[windowId]), { url: tab.url, title: tabTitle(tab), favicon: tab.favicon }),
     });
   if (!isActive && !tab.pinned)
     actions.push({
@@ -258,7 +259,7 @@ function TabCard({ tabId, windowId, anchor }: { tabId: string; windowId: string;
           <Action
             icon={bookmarked ? "bookmark.fill" : "bookmark"}
             label={bookmarked ? "Bookmarked" : "Bookmark"}
-            onPress={() => s().toggleBookmark(bookmarkProfileId(s(), s().windows[windowId]), { url: tab.url, title: tabTitle(tab), favicon: tab.favicon })}
+            onPress={() => void toggleBookmarkFromUI(bookmarkProfileId(s(), s().windows[windowId]), { url: tab.url, title: tabTitle(tab), favicon: tab.favicon })}
           />
         ) : null}
         {!isActive && !tab.pinned ? (

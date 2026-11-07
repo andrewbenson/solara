@@ -7,6 +7,7 @@ import { useIsSleeping } from "../../lib/tabLifecycle";
 import { useBrowser } from "../../store/browser";
 import { useIsBookmarked, useTab } from "../../store/hooks";
 import { activeTabId, bookmarkProfileId, plural } from "../../store/model";
+import { toggleBookmarkFromUI } from "../../lib/bookmarkWriter";
 import { folderIn, folderLabel, folderMembers } from "../../store/tileFolders";
 import { useShallow } from "zustand/react/shallow";
 import { awayFromPin } from "../../store/organize";
@@ -282,7 +283,7 @@ addNativeSettingsHandlers({
       case "pin":
         return s.togglePin(id);
       case "bookmark":
-        return s.toggleBookmark(bookmarkProfileId(s, s.windows[windowId]), { url: tab.url, title: tabTitle(tab), favicon: tab.favicon });
+        return void toggleBookmarkFromUI(bookmarkProfileId(s, s.windows[windowId]), { url: tab.url, title: tabTitle(tab), favicon: tab.favicon });
       case "split":
         dismissHover();
         return openInSplit(id);

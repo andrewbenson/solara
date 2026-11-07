@@ -1,6 +1,7 @@
 import { cleanUrl } from "@solara/core";
 import { copyText, prompt } from "@solara/shell";
 import { addFolderToSidebar, restoreArcFolders } from "../../lib/bookmarkGroups";
+import { bookmarkWriter, reportBookmarkFailure } from "../../lib/bookmarkWriter";
 import { folderChildren } from "../../store/bookmarks";
 import { useBrowser } from "../../store/browser";
 import type { BookmarkNode } from "../../store/types";
@@ -29,7 +30,7 @@ export async function handleBookmarksBarMenuChoice(windowId: string, profileId: 
     if (action === "addGroup") addFolderToSidebar(node.id, windowId);
     if (action === "restoreArc") restoreArcFolders(node.id, windowId);
   }
-  if (action === "delete" && node) useBrowser.getState().removeBookmark(node.id);
+  if (action === "delete" && node) await bookmarkWriter.removeBookmark(profileId, node.id).catch(reportBookmarkFailure);
   if (action === "addPage") addPageFromBookmarksBar(windowId, profileId, node ?? null);
   if (action === "addFolder") await addFolderFromBookmarksBar(windowId, profileId, node ?? null);
   if (action === "manage") openInternalPage("bookmarks", windowId);
@@ -51,5 +52,5 @@ function addPageFromBookmarksBar(windowId: string, profileId: string, node: Book
 async function addFolderFromBookmarksBar(windowId: string, profileId: string, node: BookmarkNode | null) {
   const position = bookmarksBarInsertion(profileId, node);
   const title = await prompt({ title: "New Folder", placeholder: "Folder name", confirmTitle: "Create", windowId });
-  if (title) useBrowser.getState().addBookmarkFolder({ profileId, title, ...position });
+  if (title) await bookmarkWriter.addBookmarkFolder({ profileId, title, ...position }).catch(reportBookmarkFailure);
 }

@@ -74,6 +74,25 @@ const trimmed = (args: unknown[]) => {
   return out;
 };
 
+export const reportBookmarkFailure = (error: unknown) => console.warn("[bookmarks] the edit was not saved", error);
+
+const toggling = new Map<string, Promise<boolean | undefined>>();
+
+export function toggleBookmarkFromUI(profileId: string, page: { url: string; title: string; favicon: string | null }): Promise<boolean | undefined> {
+  const key = `${profileId}\n${page.url}`;
+  const pending = toggling.get(key);
+  if (pending) return pending;
+  const run = bookmarkWriter
+    .toggleBookmark(profileId, page)
+    .catch((error: unknown) => {
+      reportBookmarkFailure(error);
+      return undefined;
+    })
+    .finally(() => toggling.delete(key));
+  toggling.set(key, run);
+  return run;
+}
+
 const one = async <T>(profileId: string, mutation: BookmarkMutation): Promise<T> => (await submitBookmarks(profileId, [mutation]))[0] as T;
 
 type AddBookmark = { profileId: string; url: string; title: string; favicon?: string | null; parentId?: string; index?: number };

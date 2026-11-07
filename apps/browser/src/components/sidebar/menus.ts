@@ -194,7 +194,7 @@ export async function openTabMenu(windowId: string, tab: Tab) {
   else if (choice === "engine") void togglePageEngine(tab.id);
   else if (choice === "copy") copyUrls([tab.id], false);
   else if (choice.startsWith("share:via:")) void shareTab(tab, windowId, choice.slice(10));
-  else if (choice === "bookmark") bookmarkTab(windowId, tab.id);
+  else if (choice === "bookmark") void bookmarkTab(windowId, tab.id);
   else if (choice.startsWith("profile:")) void moveTabToProfile(tab.id, choice.slice(8));
   else if (choice.startsWith("window:")) moveTabToWindow(tab.id, choice.slice(7));
   else if (choice === "close") void closeTab(tab.id);

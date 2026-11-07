@@ -36,6 +36,7 @@ import { closeNewTabBar, isEmptyCardTab, showNewTabBar, toggleNewTabBar } from "
 import { NEW_TAB_BAR_POLICY } from "../store/newTabBar";
 import { addressBarInSidebar, commandBarCentred } from "../components/layout/windowLayout";
 import { addFolderToSidebar, restoreArcFolders } from "./bookmarkGroups";
+import { bookmarkWriter, reportBookmarkFailure } from "./bookmarkWriter";
 import { withLivePage } from "./livePage";
 import { webviews } from "./webviews";
 import { togglePageEngine } from "./engines";
@@ -392,9 +393,13 @@ async function addBookmarkToFolder(windowId: string, tabId: string, folder: stri
   if (folder === "new") {
     const title = await prompt({ title: "New Folder", placeholder: "Folder name", confirmTitle: "Create", windowId });
     if (!title) return;
-    parentId = useBrowser.getState().addBookmarkFolder({ profileId, title });
+    try {
+      parentId = await bookmarkWriter.addBookmarkFolder({ profileId, title });
+    } catch (error) {
+      return reportBookmarkFailure(error);
+    }
   }
-  useBrowser.getState().addBookmark({ profileId, url: tab.url, title: tab.title, favicon: tab.favicon, parentId });
+  await bookmarkWriter.addBookmark({ profileId, url: tab.url, title: tab.title, favicon: tab.favicon, parentId }).catch(reportBookmarkFailure);
 }
 
 async function openFiles(windowId: string | null) {

@@ -1,5 +1,5 @@
 import { NativePage, type NativePageEvent } from "@solara/settings";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet } from "react-native";
 import { useTheme } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
@@ -8,6 +8,7 @@ import { useAddressBarInSidebar } from "../layout/windowLayout";
 import { useBookmarkDialog, type BookmarkDialogState } from "./actions";
 import { bookmarkDialogPlacement, finishBookmarkDialog, newDialogFolder, profileOfNode, removeDialogBookmark } from "./BookmarkDialog";
 import { useBookmarkEditor, type EditorState } from "./edit";
+import { formGate } from "./formGate";
 import { saveBookmarkEditor } from "./EditBookmarkDialog";
 
 function useFolders(profileId: string | null) {
@@ -56,17 +57,20 @@ export function NativeBookmarkDialog({ state }: { state: BookmarkDialogState }) 
     selectRev: select?.rev ?? null,
     dark: !!theme.dark,
   });
-  const onEvent = async (e: NativePageEvent) => {
-    if (e.kind === "done") finishBookmarkDialog(state, String(e.name ?? ""), (e.folderId as string | null) ?? null);
-    else if (e.kind === "remove") removeDialogBookmark(state);
+  const gate = useRef(formGate()).current;
+  const onEvent = (e: NativePageEvent) => gate(e.kind === "done" || e.kind === "remove" || e.kind === "newFolder", async () => {
+    if (e.kind === "done") await finishBookmarkDialog(state, String(e.name ?? ""), (e.folderId as string | null) ?? null);
+    else if (e.kind === "remove") await removeDialogBookmark(state);
     else if (e.kind === "cancel") useBookmarkDialog.getState().set(null);
     else if (e.kind === "newFolder") {
       const id = await newDialogFolder(state, profileId, (e.parentId as string | null) ?? null);
       if (id) setSelect((prev) => ({ id, rev: (prev?.rev ?? 0) + 1 }));
     }
-  };
-  return <NativePage kind="bookmarkForm" state={json} style={StyleSheet.absoluteFill} onPageEvent={(e) => void onEvent(e.nativeEvent)} />;
+  });
+  return <NativePage kind="bookmarkForm" state={json} style={StyleSheet.absoluteFill} onPageEvent={(e) => void onEvent(e.nativeEvent).catch(keepFormOpen)} />;
 }
+
+const keepFormOpen = (error: unknown) => console.warn("[bookmarks] the edit was not saved; the form stays open", error);
 
 export function NativeBookmarkEditor({ state }: { state: EditorState }) {
   const theme = useTheme();
@@ -92,9 +96,10 @@ export function NativeBookmarkEditor({ state }: { state: EditorState }) {
     roots,
     dark: !!theme.dark,
   });
-  const onEvent = (e: NativePageEvent) => {
-    if (e.kind === "save") saveBookmarkEditor(state, String(e.name ?? ""), String(e.url ?? ""), (e.parentId as string | null) ?? null);
+  const gate = useRef(formGate()).current;
+  const onEvent = (e: NativePageEvent) => gate(e.kind === "save", async () => {
+    if (e.kind === "save") await saveBookmarkEditor(state, String(e.name ?? ""), String(e.url ?? ""), (e.parentId as string | null) ?? null);
     else if (e.kind === "cancel") useBookmarkEditor.getState().set(null);
-  };
-  return <NativePage kind="bookmarkForm" state={json} style={StyleSheet.absoluteFill} onPageEvent={(e) => onEvent(e.nativeEvent)} />;
+  });
+  return <NativePage kind="bookmarkForm" state={json} style={StyleSheet.absoluteFill} onPageEvent={(e) => void onEvent(e.nativeEvent).catch(keepFormOpen)} />;
 }

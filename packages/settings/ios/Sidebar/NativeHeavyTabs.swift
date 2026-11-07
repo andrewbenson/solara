@@ -45,20 +45,21 @@ enum NativeHeavyTabs {
     var answers = 0
   }
 
-  private static func sample(_ tabIds: [String], _ reply: @escaping @MainActor (HeavyTabSamples?) -> Void) {
+  private static func sample(_ tabIds: [String], _ withMemory: Bool, _ reply: @escaping @MainActor (HeavyTabSamples?) -> Void) {
     let asked = sessionIds(tabIds)
     let documents = Dictionary(uniqueKeysWithValues: asked.keys.map { ($0, NativeTabMemory.document($0)) })
     let ids = Set(asked.values).sorted()
-    guard !ids.isEmpty else { return reply(HeavyTabSamples(cpu: [:], memoryBytes: [:])) }
+    guard !ids.isEmpty else { return reply(HeavyTabSamples(cpu: [:], memoryBytes: withMemory ? [:] : nil)) }
     let gathering = Gathering()
+    let expected = withMemory ? 2 : 1
     let finish: @MainActor () -> Void = {
       gathering.answers += 1
-      guard gathering.answers == 2 else { return }
+      guard gathering.answers == expected else { return }
       guard gathering.cpu != nil || gathering.memory != nil else { return reply(nil) }
-      var samples = HeavyTabSamples(cpu: [:], memoryBytes: [:])
+      var samples = HeavyTabSamples(cpu: [:], memoryBytes: withMemory ? [:] : nil)
       for (tabId, sessionId) in asked where NativeTabMemory.document(tabId) == documents[tabId] {
         samples.cpu[tabId] = gathering.cpu?[sessionId]
-        samples.memoryBytes[tabId] = gathering.memory?[sessionId]?.bytes
+        if withMemory { samples.memoryBytes?[tabId] = gathering.memory?[sessionId]?.bytes }
       }
       reply(samples)
     }
@@ -69,6 +70,7 @@ enum NativeHeavyTabs {
         finish()
       }
     }
+    guard withMemory else { return }
     SolaraCoreServices.call("ac_tabs_memory", profile: "", args: ["tabIds": ids]) { @Sendable json in
       let decoded = TabMemoryReply.decode(json)
       Task { @MainActor in

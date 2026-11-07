@@ -96,6 +96,23 @@ import Testing
     #expect(policy.heavy["a"] == nil)
   }
 
+  @Test func aSkippedMemorySampleChangesNothingAndAStaleGapKeepsTheBadge() {
+    var policy = HeavyTabPolicy()
+    let high = SidebarTabMemory.highBytes + 1
+    policy.ingest("a", cpu: nil, memory: .sampled(high))
+    policy.ingest("a", cpu: nil, memory: .skipped)
+    policy.ingest("a", cpu: nil, memory: .sampled(high))
+    #expect(policy.heavy["a"] == .memory)
+    policy.ingest("a", cpu: nil, memory: .skipped)
+    #expect(policy.heavy["a"] == .memory)
+    var cpuPolicy = HeavyTabPolicy()
+    cpuPolicy.ingest("a", cpu: cpu(0, at: 0), memoryBytes: nil)
+    let (elapsed, used) = feed(&cpuPolicy, percents: [80, 80, 80, 80])
+    #expect(cpuPolicy.heavy["a"] == .cpu)
+    cpuPolicy.ingest("a", cpu: cpu(used + 100_000, at: elapsed + 600_000), memoryBytes: nil)
+    #expect(cpuPolicy.heavy["a"] == .cpu)
+  }
+
   @Test func retainingDropsTabsThatAreGone() {
     var policy = HeavyTabPolicy()
     let high = SidebarTabMemory.highBytes + 1
@@ -126,44 +143,77 @@ import Testing
 
 @MainActor
 @Suite(.serialized) struct HeavyTabMonitorTests {
-  @Test func oneSampleAtATimeAndAHeavyTabIsPublished() {
+  private final class Rig {
     var tick: (@MainActor () -> Void)?
     var replies: [@MainActor (HeavyTabSamples?) -> Void] = []
-    var asked: [[String]] = []
-    let monitor = HeavyTabMonitor(
-      sample: { ids, reply in asked.append(ids); replies.append(reply) },
-      candidates: { ["a", "b"] },
+    var asked: [(ids: [String], memory: Bool)] = []
+    let center = NotificationCenter()
+  }
+
+  private func monitor(_ rig: Rig, active: Bool = true, candidates: @escaping @MainActor () -> [String] = { ["a", "b"] }) -> HeavyTabMonitor {
+    HeavyTabMonitor(
+      sample: { ids, memory, reply in rig.asked.append((ids, memory)); rig.replies.append(reply) },
+      candidates: candidates,
       schedule: { interval, fire in
         #expect(interval == HeavyTabPolicy.intervalMs)
-        tick = fire
-        return { tick = nil }
-      })
-    monitor.start()
-    tick?()
-    tick?()
-    #expect(asked == [["a", "b"]])
+        rig.tick = fire
+        return { rig.tick = nil }
+      },
+      initiallyActive: active, notificationCenter: rig.center)
+  }
+
+  @Test func oneSampleAtATimeAndMemoryOnlyEveryFourthTick() {
+    defer { HeavyTabs.publish([:]) }
+    let rig = Rig()
+    let heavy = monitor(rig)
+    heavy.start()
+    rig.tick?()
+    rig.tick?()
+    #expect(rig.asked.map(\.memory) == [true])
     let high = HeavyTabSamples(cpu: [:], memoryBytes: ["a": SidebarTabMemory.highBytes + 1])
-    replies[0](high)
-    tick?()
-    #expect(asked.count == 2)
-    replies[1](high)
-    #expect(HeavyTabs.current == ["a": .memory])
-    monitor.stop()
+    rig.replies[0](high)
+    for index in 1..<4 {
+      rig.tick?()
+      rig.replies[index](HeavyTabSamples(cpu: [:], memoryBytes: nil))
+    }
+    #expect(rig.asked.map(\.memory) == [true, false, false, false])
     #expect(HeavyTabs.current.isEmpty)
-    #expect(tick == nil)
+    rig.tick?()
+    #expect(rig.asked.last?.memory == true)
+    rig.replies[4](high)
+    #expect(HeavyTabs.current == ["a": .memory])
+    heavy.stop()
+    #expect(HeavyTabs.current.isEmpty)
+    #expect(rig.tick == nil)
+  }
+
+  @Test func nothingIsSampledWhileSolaraIsInTheBackgroundAndActivationSamplesAtOnce() {
+    defer { HeavyTabs.publish([:]) }
+    let rig = Rig()
+    let heavy = monitor(rig, active: false)
+    heavy.start()
+    rig.tick?()
+    rig.tick?()
+    #expect(rig.asked.isEmpty)
+    rig.center.post(name: NSApplication.didBecomeActiveNotification, object: nil)
+    #expect(rig.asked.count == 1)
+    #expect(rig.asked.first?.memory == true)
+    rig.replies[0](nil)
+    rig.center.post(name: NSApplication.didResignActiveNotification, object: nil)
+    rig.tick?()
+    #expect(rig.asked.count == 1)
+    heavy.stop()
+    rig.center.post(name: NSApplication.didBecomeActiveNotification, object: nil)
+    #expect(rig.asked.count == 1)
   }
 
   @Test func capsHowManyTabsOneSampleAsksFor() {
-    var tick: (@MainActor () -> Void)?
-    var asked: [[String]] = []
-    let monitor = HeavyTabMonitor(
-      sample: { ids, reply in asked.append(ids); reply(nil) },
-      candidates: { (0..<100).map { "t\($0)" } },
-      schedule: { _, fire in tick = fire; return {} })
-    monitor.start()
-    tick?()
-    #expect(asked.first?.count == HeavyTabMonitor.maxTabs)
-    monitor.stop()
+    let rig = Rig()
+    let heavy = monitor(rig, candidates: { (0..<100).map { "t\($0)" } })
+    heavy.start()
+    rig.tick?()
+    #expect(rig.asked.first?.ids.count == HeavyTabMonitor.maxTabs)
+    heavy.stop()
   }
 }
 

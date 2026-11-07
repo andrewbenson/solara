@@ -52,6 +52,7 @@ public enum TabCPUReply {
 
 public struct HeavyTabPolicy: Sendable {
   public static let intervalMs: Double = 15_000
+  public static let memoryEvery = 4
   public static let cpuPercent: Double = 50
   public static let cpuIntervals = 4
   public static let memoryIntervals = 2
@@ -79,9 +80,18 @@ public struct HeavyTabPolicy: Sendable {
   }
 
   public mutating func ingest(_ tabId: String, cpu: TabCPUSample?, memoryBytes: Double?) {
+    ingest(tabId, cpu: cpu, memory: .sampled(memoryBytes))
+  }
+
+  public enum Memory: Sendable {
+    case skipped
+    case sampled(Double?)
+  }
+
+  public mutating func ingest(_ tabId: String, cpu: TabCPUSample?, memory: Memory) {
     var tab = tabs[tabId] ?? Tab()
     Self.cpu(&tab, cpu)
-    Self.memory(&tab, memoryBytes)
+    if case .sampled(let bytes) = memory { Self.memory(&tab, bytes) }
     tabs[tabId] = tab
   }
 
@@ -104,7 +114,8 @@ public struct HeavyTabPolicy: Sendable {
     guard interval > 0 else { return }
     tab.baseline = sample
     guard interval <= staleIntervalMs else {
-      resetCPU(&tab)
+      tab.cpuHigh = 0
+      tab.cpuLow = 0
       return
     }
     let percent = 100 * (sample.cpuMs - base.cpuMs) / interval
@@ -146,9 +157,9 @@ public struct HeavyTabPolicy: Sendable {
 
 public struct HeavyTabSamples: Sendable {
   public var cpu: [String: TabCPUSample]
-  public var memoryBytes: [String: Double]
+  public var memoryBytes: [String: Double]?
 
-  public init(cpu: [String: TabCPUSample], memoryBytes: [String: Double]) {
+  public init(cpu: [String: TabCPUSample], memoryBytes: [String: Double]?) {
     self.cpu = cpu
     self.memoryBytes = memoryBytes
   }
@@ -169,7 +180,7 @@ public enum HeavyTabs {
 
 @MainActor
 public final class HeavyTabMonitor {
-  public typealias Sample = @MainActor (_ tabIds: [String], _ reply: @escaping @MainActor (HeavyTabSamples?) -> Void) -> Void
+  public typealias Sample = @MainActor (_ tabIds: [String], _ memory: Bool, _ reply: @escaping @MainActor (HeavyTabSamples?) -> Void) -> Void
   public typealias Candidates = @MainActor () -> [String]
   public typealias Schedule = @MainActor (Double, @escaping @MainActor () -> Void) -> (@MainActor () -> Void)
 
@@ -179,13 +190,20 @@ public final class HeavyTabMonitor {
   private let candidates: Candidates
   private let schedule: Schedule
   private var policy = HeavyTabPolicy()
+  private let notificationCenter: NotificationCenter
   private var cancel: (@MainActor () -> Void)?
   private var inFlight: UUID?
+  private var ticks = 0
+  private var active: Bool
+  private var observers: [NSObjectProtocol] = []
 
-  public init(sample: @escaping Sample, candidates: @escaping Candidates, schedule: @escaping Schedule = TabSleepRunner.scheduleTicks) {
+  public init(sample: @escaping Sample, candidates: @escaping Candidates, schedule: @escaping Schedule = TabSleepRunner.scheduleTicks,
+    initiallyActive: Bool? = nil, notificationCenter: NotificationCenter = .default) {
     self.sample = sample
     self.candidates = candidates
     self.schedule = schedule
+    self.notificationCenter = notificationCenter
+    active = initiallyActive ?? NSApplication.shared.isActive
   }
 
   public var isRunning: Bool { cancel != nil }
@@ -193,31 +211,52 @@ public final class HeavyTabMonitor {
   public func start() {
     guard cancel == nil else { return }
     cancel = schedule(HeavyTabPolicy.intervalMs) { [weak self] in self?.tick() }
+    for (name, on) in [(NSApplication.didBecomeActiveNotification, true), (NSApplication.didResignActiveNotification, false)] {
+      observers.append(notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+        MainActor.assumeIsolated { self?.setActive(on) }
+      })
+    }
   }
 
   public func stop() {
     cancel?()
     cancel = nil
     inFlight = nil
+    ticks = 0
+    for observer in observers { notificationCenter.removeObserver(observer) }
+    observers.removeAll()
     policy = HeavyTabPolicy()
     HeavyTabs.publish([:])
   }
 
+  public func setActive(_ on: Bool) {
+    guard on != active else { return }
+    active = on
+    guard on, cancel != nil else { return }
+    ticks = 0
+    tick()
+  }
+
   public func tick() {
-    guard cancel != nil, inFlight == nil else { return }
+    guard cancel != nil, active, inFlight == nil else { return }
     let ids = Array(candidates().prefix(Self.maxTabs))
     guard !ids.isEmpty else {
       policy.retain([])
       HeavyTabs.publish(policy.heavy)
       return
     }
+    let memory = ticks % HeavyTabPolicy.memoryEvery == 0
+    ticks += 1
     let ticket = UUID()
     inFlight = ticket
-    sample(ids) { [weak self] samples in
+    sample(ids, memory) { [weak self] samples in
       guard let self, self.inFlight == ticket else { return }
       self.inFlight = nil
       self.policy.retain(Set(ids))
-      for id in ids { self.policy.ingest(id, cpu: samples?.cpu[id], memoryBytes: samples?.memoryBytes[id]) }
+      for id in ids {
+        let reading: HeavyTabPolicy.Memory = memory ? .sampled(samples?.memoryBytes?[id]) : .skipped
+        self.policy.ingest(id, cpu: samples?.cpu[id], memory: reading)
+      }
       HeavyTabs.publish(self.policy.heavy)
     }
   }

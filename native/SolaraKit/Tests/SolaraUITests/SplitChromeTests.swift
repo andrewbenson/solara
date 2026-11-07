@@ -182,10 +182,10 @@ private func splitState(sizes: [Double] = [0.5, 0.5]) throws -> BrowserState {
     view.pagesPooled = true
     #expect(styles.last == CardStyle(fill: card, radius: 10))
     view.setFullscreenTab("a")
-    #expect(styles.last == CardStyle(fill: nil, radius: 0))
+    #expect(styles.last == CardStyle(fill: nil, radius: 0, edge: false))
     view.setFullscreenTab(nil)
     view.update(state: try splitState())
-    #expect(styles.last == CardStyle(fill: nil, radius: 10))
+    #expect(styles.last == CardStyle(fill: nil, radius: 10, edge: false), "each split pane draws its own edge")
     let count = styles.count
     view.update(state: try splitState())
     #expect(styles.count == count)

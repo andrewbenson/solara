@@ -35,6 +35,16 @@ public final class WindowShellView: NSView {
   public let hiddenPages = FlippedContainerView()
   public let cardPage = FlippedContainerView()
   public let cardClip = FlippedContainerView()
+  public let cardShadow = CardEdgeView(part: .shadow)
+  public let cardRim = CardEdgeView(part: .rim)
+  public var cardEdgeTint: NSColor? {
+    didSet {
+      guard cardEdgeTint != oldValue else { return }
+      cardShadow.tint = cardEdgeTint
+      cardRim.tint = cardEdgeTint
+      mounted[.splitChrome]?.needsLayout = true
+    }
+  }
   public var cardStyle = CardStyle.resting { didSet { if cardStyle != oldValue { applyCardStyle() } } }
   public var cardPageFrame: CGRect? { didSet { if cardPageFrame != oldValue { placeCardPage() } } }
   public var widthDragActive = false
@@ -102,7 +112,9 @@ public final class WindowShellView: NSView {
     cardClip.layer?.cornerCurve = .continuous
     applyCardStyle()
     cardClip.addSubview(cardPage)
+    card.addSubview(cardShadow)
     card.addSubview(cardClip)
+    card.addSubview(cardRim)
     mount(.card, card)
     sidePanelClip.wantsLayer = true
     sidePanelClip.layer?.masksToBounds = true
@@ -504,11 +516,21 @@ public final class WindowShellView: NSView {
     if railToolbarClip.layer?.cornerRadius != radius { railToolbarClip.layer?.cornerRadius = radius }
     if cardClip.layer?.backgroundColor != fill { cardClip.layer?.backgroundColor = fill }
     CATransaction.commit()
+    placeCardEdge()
+  }
+
+  private func placeCardEdge() {
+    let rect = CGRect(origin: .zero, size: frames.card.size)
+    let strength = cardStyle.edge && !input.fullscreen && cardStyle.radius > 0 ? 1 - railFraction : 0
+    let radius = cardStyle.radius * (1 - railFraction)
+    cardShadow.place(rect, radius: radius, strength: strength)
+    cardRim.place(rect, radius: radius, strength: strength)
   }
 
   private func placeCardPage() {
     let clip = CGRect(origin: .zero, size: frames.card.size)
     if cardClip.frame != clip { cardClip.frame = clip }
+    placeCardEdge()
     let page = pageArea
     let top = min(max(cardPageFrame?.minY ?? page.minY, page.minY), page.maxY)
     let frame = railFraction > 0 ? CGRect(x: page.minX, y: top, width: page.width, height: page.maxY - top) : cardPageFrame ?? page
@@ -557,13 +579,128 @@ public final class WindowShellView: NSView {
 public struct CardStyle: Equatable {
   public var fill: NSColor?
   public var radius: CGFloat
+  public var edge: Bool
 
-  public init(fill: NSColor?, radius: CGFloat) {
+  public init(fill: NSColor?, radius: CGFloat, edge: Bool = true) {
     self.fill = fill
     self.radius = radius
+    self.edge = edge
   }
 
   public static var resting: CardStyle { CardStyle(fill: nil, radius: ShellMetrics.cardRadius) }
+}
+
+public struct CardShadowLayer: Equatable, Sendable {
+  public var lightOpacity: Double
+  public var darkOpacity: Double
+  public var radius: CGFloat
+  public var drop: CGFloat
+}
+
+public enum CardEdgeMetrics {
+  public static let rimWidth: CGFloat = 0.5
+  public static let lightRim = 0.05
+  public static let darkRim = 0.07
+  public static let contact = CardShadowLayer(lightOpacity: 0.06, darkOpacity: 0.45, radius: 1.5, drop: 0.5)
+  public static let ambient = CardShadowLayer(lightOpacity: 0.07, darkOpacity: 0.32, radius: 18, drop: 6)
+  public static let shadows = [contact, ambient]
+  public static let lightRimTinted = 0.10
+
+  public static func shadowColor(under tint: NSColor?) -> NSColor {
+    guard let base = tint?.usingColorSpace(.sRGB) else { return .black }
+    let tinted = min(1, base.saturationComponent / 0.15)
+    return NSColor(hue: base.hueComponent, saturation: 0.55 * tinted, brightness: 0.42, alpha: 1)
+  }
+
+  public static func rimColor(over tint: NSColor?) -> NSColor {
+    guard let base = tint?.usingColorSpace(.sRGB) else { return NSColor.black.withAlphaComponent(lightRim) }
+    let tinted = min(1, base.saturationComponent / 0.15)
+    return NSColor(hue: base.hueComponent, saturation: 0.35 * tinted, brightness: 0.45, alpha: lightRim + (lightRimTinted - lightRim) * tinted)
+  }
+}
+
+@MainActor
+public final class CardEdgeView: NSView {
+  public enum Part { case shadow, rim }
+  public let part: Part
+  public private(set) var edgeRect = CGRect.zero
+  public private(set) var radius: CGFloat = 0
+  public private(set) var strength: CGFloat = 0
+  public var tint: NSColor? { didSet { if tint != oldValue { redraw() } } }
+  private let shades = CardEdgeMetrics.shadows.map { _ in CALayer() }
+  private let shadowMask = CAShapeLayer()
+  private let shadeGroup = CALayer()
+
+  public override var isFlipped: Bool { true }
+
+  public init(part: Part) {
+    self.part = part
+    super.init(frame: .zero)
+    autoresizingMask = []
+    wantsLayer = true
+    layer?.masksToBounds = false
+    shadowMask.fillRule = .evenOdd
+    shadeGroup.mask = shadowMask
+    let still: [String: CAAction] = ["bounds": NSNull(), "position": NSNull(), "shadowPath": NSNull(), "shadowOpacity": NSNull(), "path": NSNull(), "frame": NSNull()]
+    for each in shades + [shadowMask, shadeGroup] { each.actions = still }
+    shades.forEach { shadeGroup.addSublayer($0) }
+    if part == .shadow { layer?.addSublayer(shadeGroup) }
+    isHidden = true
+  }
+
+  required init?(coder: NSCoder) { fatalError() }
+
+  public override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+  public override func viewDidChangeEffectiveAppearance() {
+    super.viewDidChangeEffectiveAppearance()
+    redraw()
+  }
+
+  public func place(_ rect: CGRect, radius: CGFloat, strength: CGFloat) {
+    guard rect != edgeRect || radius != self.radius || strength != self.strength else { return }
+    edgeRect = rect
+    self.radius = radius
+    self.strength = strength
+    redraw()
+  }
+
+  private func redraw() {
+    let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    isHidden = strength <= 0 || edgeRect.isEmpty
+    if frame != edgeRect { frame = edgeRect }
+    let bounds = CGRect(origin: .zero, size: edgeRect.size)
+    let corner = max(0, min(radius, bounds.width / 2, bounds.height / 2))
+    switch part {
+    case .shadow:
+      let shape = CGPath(roundedRect: bounds, cornerWidth: corner, cornerHeight: corner, transform: nil)
+      shadeGroup.frame = bounds
+      for (shade, look) in zip(shades, CardEdgeMetrics.shadows) {
+        shade.frame = bounds
+        shade.shadowPath = shape
+        shade.shadowColor = (dark ? NSColor.black : CardEdgeMetrics.shadowColor(under: tint)).cgColor
+        shade.shadowOpacity = Float((dark ? look.darkOpacity : look.lightOpacity) * strength)
+        shade.shadowRadius = look.radius
+        shade.shadowOffset = CGSize(width: 0, height: look.drop)
+      }
+      let outset = (CardEdgeMetrics.shadows.map { $0.radius * 3 + abs($0.drop) }.max() ?? 0) + 4
+      let mask = CGMutablePath()
+      mask.addRect(bounds.insetBy(dx: -outset, dy: -outset))
+      mask.addPath(shape)
+      shadowMask.frame = bounds
+      shadowMask.path = mask
+    case .rim:
+      guard let layer else { break }
+      layer.cornerRadius = corner
+      layer.cornerCurve = .continuous
+      layer.borderWidth = CardEdgeMetrics.rimWidth
+      let light = CardEdgeMetrics.rimColor(over: tint)
+      layer.borderColor = (dark ? NSColor.white.withAlphaComponent(CardEdgeMetrics.darkRim * strength) : light.withAlphaComponent(light.alphaComponent * strength)).cgColor
+    }
+    CATransaction.commit()
+  }
 }
 
 @MainActor

@@ -55,7 +55,9 @@ public final class SplitPanesView: NSView {
   }
   public var pagesPooled = false { didSet { if pagesPooled != oldValue { publishCardStyle() } } }
   public var cardStyle: CardStyle {
-    CardStyle(fill: pagesPooled && split == nil && fullscreenTab == nil ? cardColor : nil, radius: fullscreenTab == nil ? ShellMetrics.cardRadius : 0)
+    CardStyle(
+      fill: pagesPooled && split == nil && fullscreenTab == nil ? cardColor : nil, radius: fullscreenTab == nil ? ShellMetrics.cardRadius : 0,
+      edge: split == nil && fullscreenTab == nil)
   }
   private var publishedCardStyle: CardStyle?
   public var small = false { didSet { if small != oldValue { refreshEmpty() } } }
@@ -187,6 +189,11 @@ public final class SplitPanesView: NSView {
         }
         pane.toolbar.alphaValue = 1 - rail
       }
+      let edge: CGFloat = fullscreenTab == nil && window?.styleMask.contains(.fullScreen) != true ? 1 : 0
+      pane.edgeShadow.tint = windowShell?.cardEdgeTint
+      pane.edgeRim.tint = windowShell?.cardEdgeTint
+      pane.edgeShadow.place(rect, radius: pane.radius, strength: edge)
+      pane.edgeRim.place(rect, radius: pane.radius, strength: edge)
       pane.needsLayout = true
     }
     for (tabId, pane) in panes where rects[tabId] == nil { drop(tabId, pane) }
@@ -230,7 +237,9 @@ public final class SplitPanesView: NSView {
     pane.toolbar.onAnchors = { [weak self] anchors in self?.onToolbarAnchors(tabId, anchors) }
     pane.setToolbar(toolbars[tabId])
     panes[tabId] = pane
+    addSubview(pane.edgeShadow)
     addSubview(pane)
+    addSubview(pane.edgeRim)
     TabSlots.shared.set(.pane(windowId, tabId), container: pane.page)
     return pane
   }
@@ -239,6 +248,8 @@ public final class SplitPanesView: NSView {
     TabSlots.shared.remove(.pane(windowId, tabId), container: pane.page)
     panes[tabId] = nil
     pane.toolbar.removeFromSuperview()
+    pane.edgeShadow.removeFromSuperview()
+    pane.edgeRim.removeFromSuperview()
     pane.removeFromSuperview()
   }
 }
@@ -246,6 +257,8 @@ public final class SplitPanesView: NSView {
 @MainActor
 final class SplitLeafView: NSView {
   let page = SplitPageContainer()
+  let edgeShadow = CardEdgeView(part: .shadow)
+  let edgeRim = CardEdgeView(part: .rim)
   let toolbar = ToolbarView(frame: .zero)
   private(set) var empty: SplitEmptyStateView?
   private var toolbarJson: String?

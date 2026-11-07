@@ -264,6 +264,12 @@ final class ProfilePagerHost {
     guard let w = window, let index = w.index else { return tint.show(nil) }
     tint.show(w.order.map { ($0, NativeProfilePager.looks[$0]) })
     tint.position = (ACPager.snapshot(windowId)?["position"] as? Double) ?? Double(index)
+    shell?.cardEdgeTint = w.order.indices.contains(index) ? Self.frameColor(NativeProfilePager.looks[w.order[index]]) : nil
+  }
+
+  static func frameColor(_ look: NSDictionary?) -> NSColor? {
+    let hex = look?["tintColor"] as? String ?? (look?["colors"] as? [String])?.first
+    return hex.flatMap { CSSColor($0)?.ns }
   }
 
   private func scheduleSwap() {

@@ -496,7 +496,8 @@ class Instance {
       }
       await sleep(100);
     }
-    throw new Error(`the app's dev harness never answered (is Metro running on :${this.js?.metroPort ?? 8081}?); last: ${last}`);
+    const source = this.js?.mode === "none" ? "its bundled JS" : this.js?.mode === "pinned" || this.js?.mode === "live" ? `Metro on :${this.js.metroPort}` : `JS from ${this.js?.mode}`;
+    throw new Error(`the app's dev harness never answered (JS source: ${source}); last: ${last}`);
   }
 
   async targets() { return (await fetch(`http://127.0.0.1:${this.port}/json/list`)).json(); }
@@ -567,6 +568,11 @@ class Instance {
   }
 }
 
+export function bundledJsRefusal(app, { js = "pinned", ready } = {}) {
+  if (js !== "none" || ready === false || existsSync(join(app, "Contents/Resources/main.jsbundle"))) return null;
+  return `${app} has no bundled JS, so with js: "none" nothing would answer ready(): use a Release build, or drop js: "none" to load JS from Metro on METRO_PORT`;
+}
+
 export async function launch(app, opts = {}) {
   app = resolve(app);
   const installed = (path) => /^\/Applications\/[^/]+\.app(\/|$)/.test(path);
@@ -575,6 +581,8 @@ export async function launch(app, opts = {}) {
   if (opts.urls?.length && (opts.env?.SOLARA_ACCEPT_EXTERNAL_URLS ?? "1") !== "1")
     throw new Error("refusing to hand URLs to a hidden instance without SOLARA_ACCEPT_EXTERNAL_URLS=1: it would forward them to the owner's running app");
   app = realPath(app);
+  const jsRefusal = bundledJsRefusal(opts.runsFrom ? realPath(resolve(opts.runsFrom)) : app, opts);
+  if (jsRefusal) throw new Error(jsRefusal);
   const gate = await holdUiGate(uiGateKey(app));
   const data = resolve(opts.data ?? join(process.env.TMPDIR ?? "/tmp", `ac-instance-${process.pid}-${Date.now()}`));
   quitData.delete(data);

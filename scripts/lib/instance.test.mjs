@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { binaryPids, binaryOf, commandIsBinary, isAlive, keepCrashReports, launch, realPath, reporter } from "./instance.mjs";
+import { binaryPids, binaryOf, bundledJsRefusal, commandIsBinary, isAlive, keepCrashReports, launch, realPath, reporter } from "./instance.mjs";
 
 const lowerHome = (path) => path.replace(/^\/Users\/([^/]+)\/Developer\/Personal\//, "/Users/$1/Developer/personal/");
 
@@ -73,6 +73,23 @@ test("a run's scratch is disposable only once a check has run and every check pa
     assert.equal(rep.disposable, true);
     await rep.check("fails", () => { throw new Error("no"); });
     assert.equal(rep.disposable, false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("js: \"none\" refuses a build with no bundled JS before it takes the UI gate or launches", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "instance-bundle-"));
+  try {
+    const app = join(dir, "Solara.app");
+    mkdirSync(join(app, "Contents/Resources"), { recursive: true });
+    await assert.rejects(launch(app, { js: "none", data: join(dir, "data") }), /has no bundled JS/);
+    assert.ok(!readdirSync(dir).includes("data"));
+    assert.equal(bundledJsRefusal(app, { js: "none", ready: false }), null);
+    assert.equal(bundledJsRefusal(app, {}), null);
+    assert.equal(bundledJsRefusal(app, { js: "live" }), null);
+    writeFileSync(join(app, "Contents/Resources/main.jsbundle"), "");
+    assert.equal(bundledJsRefusal(app, { js: "none" }), null);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

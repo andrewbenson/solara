@@ -34,6 +34,7 @@ HARNESSES = {
     'onboarding-host': 'host',
     'side-panel-host': 'host',
     'sheet-host': 'host',
+    'bookmark-owner': 'host',
     'pairing-authentication': 'scratch',
     'pairing-host': 'products',
     'pairing-joining': 'scratch',

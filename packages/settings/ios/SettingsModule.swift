@@ -175,6 +175,16 @@ public class SettingsModule: Module {
 
     Function("liveInitialReplica") { () -> [String: Any] in NativeLiveEngine.shared.initialReplica() }
 
+    Function("bookmarkWriterState") { () -> [String: Any] in NativeBookmarkWriter.state() }
+
+    Function("bookmarkWriterSnapshot") { (profileId: String) throws -> [String: Any] in
+      try NativeBookmarkWriter.snapshot(profile: profileId)
+    }
+
+    Function("replaceBookmarkDocument") { (profileId: String, documentJSON: String, expectedRevision: String, engine: String, generation: String, requestId: String?) throws -> [String: Any] in
+      try NativeBookmarkWriter.replace(profile: profileId, documentJSON: documentJSON, expectedRevision: expectedRevision, engine: engine, generation: generation, requestID: requestId)
+    }
+
     AsyncFunction("liveCommand") { (name: String, payloadJSON: String, promise: Promise) in
       nonisolated(unsafe) let reply = promise
       MainActor.assumeIsolated {

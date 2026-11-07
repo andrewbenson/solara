@@ -19,6 +19,9 @@ type NativeSettingsModule = {
   devBookmarksSnapshot?(profile: string): Promise<{ count: number; ready: boolean; revision: number }>;
   devFaviconLookup?(page: string, engineProfile: string): Promise<{ bytes: number; source: string }>;
   liveInitialReplica(): LiveReplica;
+  bookmarkWriterState?(): BookmarkWriterState;
+  bookmarkWriterSnapshot?(profileId: string): BookmarkWriterSnapshot;
+  replaceBookmarkDocument?(profileId: string, documentJSON: string, expectedRevision: string, engine: string, generation: string, requestId: string | null): { revision: string };
   liveCommand(name: string, payloadJSON: string): Promise<string>;
   liveStart(): Promise<void>;
   liveMeetingBrowser(snapshotJSON: string): Promise<void>;
@@ -33,6 +36,10 @@ type NativeSettingsModule = {
   addListener(event: "onLiveAuthRequest", listener: (request: LiveAuthRequest) => void): EventSubscription;
   addListener(event: "onLiveCloseGroup", listener: (value: { groupId: string }) => void): EventSubscription;
 };
+
+export type BookmarkWriterState = { state: "legacy" } | { state: "owned"; generation: string };
+export type BookmarkWriterBinding = { engine: string; generation: string };
+export type BookmarkWriterSnapshot = BookmarkWriterBinding & { revision: string; ready: boolean; document: string };
 
 export type LiveReplica = { revision: number; replicaJSON: string; calendarJSON?: string; meetingAlertJSON?: string; error?: string };
 export type LiveCommandResult = { revision: number; folderId?: string; deviceFlow?: { id: string; userCode: string; verificationUri: string; expiresAt: number }; boolean?: boolean };
@@ -108,6 +115,18 @@ export const navigateNativeSettings = (pane: string | null, profileId: string | 
 export const focusNativeSettingsSearch = () => native?.focusSearch().catch(() => {});
 
 export const startNativeHistoryCatalog = (profiles: string[]) => native?.startHistoryCatalog?.(profiles).catch(() => {});
+
+export const bookmarkWriterState = (): BookmarkWriterState => native?.bookmarkWriterState?.() ?? { state: "legacy" };
+
+export function bookmarkWriterSnapshot(profileId: string): BookmarkWriterSnapshot {
+  if (!native?.bookmarkWriterSnapshot) throw new Error("native bookmarks are not owned by this launch");
+  return native.bookmarkWriterSnapshot(profileId);
+}
+
+export function replaceBookmarkDocument(profileId: string, document: unknown, expectedRevision: string, binding: BookmarkWriterBinding, requestId: string | null = null): string {
+  if (!native?.replaceBookmarkDocument) throw new Error("native bookmarks are not owned by this launch");
+  return native.replaceBookmarkDocument(profileId, JSON.stringify(document), expectedRevision, binding.engine, binding.generation, requestId).revision;
+}
 
 export const liveInitialReplica = (): LiveReplica => {
   if (!native) throw new Error("native Live Folders unavailable");

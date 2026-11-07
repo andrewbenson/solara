@@ -2,6 +2,7 @@ import { confirm } from "@solara/shell";
 import { savePassword } from "@solara/solaracore";
 import type { BookmarkNode as ImportedNode, Credential, DiaTabsProfile, ImportedFavicon, ImportedTab, ImportKind, ImportResult, SafariExport, SpaceSuggestion } from "@solara/import";
 import { addGroupsFromDrafts } from "../../lib/bookmarkGroups";
+import { bookmarkWriter, reportBookmarkFailure, submitBookmarks, type BookmarkMutation } from "../../lib/bookmarkWriter";
 import { adoptFavicons, pageKey as faviconPage } from "../../lib/favicons";
 import type { BookmarkDraft } from "../../store/bookmarks";
 import type { GroupDraft } from "../../store/draftGroups";
@@ -58,28 +59,44 @@ function importFavicons(profileId: string, favicons: ImportedFavicon[] | undefin
 
 const linkCount = (nodes: ImportedNode[]): number => nodes.reduce((n, c) => n + (c.type === "url" ? 1 : linkCount(c.children ?? [])), 0);
 
-export function importBookmarks(profileId: string, root: ImportedNode | undefined, browserName: string): number {
-  if (!root?.children?.length) return 0;
-  if (!useBrowser.getState().bookmarks.roots[profileId]) useBrowser.getState().addBookmarkTree(profileId, []);
-  const roots = useBrowser.getState().bookmarks.roots[profileId]!;
+let importingBookmarks: Promise<unknown> = Promise.resolve();
+
+export function importBookmarks(profileId: string, root: ImportedNode | undefined, browserName: string, cancelled?: () => boolean): Promise<number> {
+  const run = importingBookmarks.then(() => placeImportedBookmarks(profileId, root, browserName, cancelled));
+  importingBookmarks = run.catch(() => {});
+  return run;
+}
+
+async function placeImportedBookmarks(profileId: string, root: ImportedNode | undefined, browserName: string, cancelled?: () => boolean): Promise<number> {
+  if (!root?.children?.length || cancelled?.()) return 0;
+  if (!useBrowser.getState().bookmarks.roots[profileId]) await bookmarkWriter.addBookmarkTree(profileId, []);
+  if (cancelled?.()) return 0;
+  const roots = useBrowser.getState().bookmarks.roots[profileId];
+  if (!roots) throw new Error(`no bookmark roots for ${profileId}`);
   const toolbar = root.children.filter((c) => c.role === "toolbar").flatMap((c) => c.children ?? []);
   const rest = root.children.filter((c) => c.role !== "toolbar");
   const other = rest.flatMap((c) => (c.role === "other" || !c.role ? (c.type === "folder" ? (c.children ?? []) : [c]) : [c]));
   const title = `Imported from ${browserName}`;
-  const place = (nodes: ImportedNode[], parentId: string) => {
-    if (!nodes.length) return;
+  const place = (nodes: ImportedNode[], parentId: string): BookmarkMutation[] => {
+    if (!nodes.length) return [];
     const parent = useBrowser.getState().bookmarks.nodes[parentId];
     const empty = parent?.kind === "folder" && parent.children.length === 0;
     const drafts = nodes.map(toDraft);
-    useBrowser.getState().addBookmarkTree(profileId, empty ? drafts : [{ title, children: drafts }], parentId);
+    return [{ method: "addBookmarkTree", args: [profileId, empty ? drafts : [{ title, children: drafts }], parentId] }];
   };
-  place(toolbar, roots.bar);
-  place(other, roots.other);
+  const edits = [...place(toolbar, roots.bar), ...place(other, roots.other)];
+  if (edits.length) await submitBookmarks(profileId, edits);
   return linkCount([...toolbar, ...other]);
 }
 
-function importSafariBookmarks(profileId: string, root: ImportedNode | undefined): number {
-  return importBookmarks(profileId, root, "Safari");
+async function importBookmarksOrReport(profileId: string, root: ImportedNode | undefined, browserName: string, onFailed?: (kind: ImportKind) => void, cancelled?: () => boolean): Promise<number> {
+  try {
+    return await importBookmarks(profileId, root, browserName, cancelled);
+  } catch (error) {
+    reportBookmarkFailure(error);
+    onFailed?.("bookmarks");
+    return 0;
+  }
 }
 
 export function importHistory(profileId: string, entries: { url: string; title: string; visits: number; lastVisit: number }[], onPending?: (pending: Promise<unknown>) => void): number {
@@ -247,11 +264,13 @@ export async function applyResult(
   requested: ImportKind[],
   onFailed?: (kind: ImportKind) => void,
   onPending?: (pending: Promise<unknown>) => void,
+  cancelled?: () => boolean,
 ): Promise<ImportCounts> {
   const toolbar = (result.bookmarks?.children ?? []).filter((c) => c.role === "toolbar");
   importFavicons(profileId, result.favicons, [...result.favorites.map((t) => t.url), ...(result.spaces.length ? [] : result.tabs.map((t) => t.url)), ...linksOf(toolbar)], onPending);
   const counts = emptyCounts();
-  counts.bookmarks += importBookmarks(profileId, result.bookmarks, browserName);
+  counts.bookmarks += await importBookmarksOrReport(profileId, result.bookmarks, browserName, onFailed, cancelled);
+  if (cancelled?.()) return discardUnapplied(result.vaultToken, counts);
   if (result.history.length) counts.history += importHistory(profileId, result.history, onPending);
   const native = (["cookies", "autofill"] as const).filter((k) => requested.includes(k));
   Object.assign(counts, await importNative(profileId, result.vaultToken, native, onFailed));
@@ -274,9 +293,15 @@ export async function applyResult(
   return counts;
 }
 
-export async function applySafari(profileId: string, data: SafariExport, cookies = true, onFailed?: (kind: ImportKind) => void, onPending?: (pending: Promise<unknown>) => void): Promise<ImportCounts> {
+async function discardUnapplied(vaultToken: string | undefined, counts: ImportCounts): Promise<ImportCounts> {
+  if (vaultToken) await importModule()?.discardImported(vaultToken);
+  return counts;
+}
+
+export async function applySafari(profileId: string, data: SafariExport, cookies = true, onFailed?: (kind: ImportKind) => void, onPending?: (pending: Promise<unknown>) => void, cancelled?: () => boolean): Promise<ImportCounts> {
   const counts = emptyCounts();
-  counts.bookmarks = importSafariBookmarks(profileId, data.bookmarks);
+  counts.bookmarks = await importBookmarksOrReport(profileId, data.bookmarks, "Safari", onFailed, cancelled);
+  if (cancelled?.()) return discardUnapplied(data.vaultToken, counts);
   const history = data.profiles.find((p) => !p.name)?.history ?? data.profiles[0]?.history ?? [];
   counts.history = importHistory(profileId, history, onPending);
   Object.assign(counts, await importNative(profileId, data.vaultToken, cookies ? ["cookies", "autofill"] : ["autofill"], onFailed));

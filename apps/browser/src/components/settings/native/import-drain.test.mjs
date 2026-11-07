@@ -32,10 +32,13 @@ function load(url, imports, globals = {}) {
   return module.exports;
 }
 
+const htmlBookmarks = { type: "folder", title: "", children: [{ type: "folder", role: "toolbar", title: "Bar", children: [{ type: "url", title: "Link", url: "https://link.example/" }] }] };
 const emptyResult = (over = {}) => ({ failed: [], warnings: [], spaces: [], history: [], favorites: [], tabs: [], credentials: [], ...over });
 
-function bridge({ browsers, importData, importSafariDirect, importSafariExport, liveCommand, confirm, discardImported, chooseImportFile, importBookmarksHTML, readDiaTabs, historyWrite, faviconWrite, profiles = [] }) {
+function bridge({ browsers, importData, importSafariDirect, importSafariExport, liveCommand, confirm, discardImported, chooseImportFile, importBookmarksHTML, readDiaTabs, historyWrite, faviconWrite, bookmarkWrite, profiles = [] }) {
   const created = [];
+  const bookmarkWrites = [];
+  const bookmarkFailures = [];
   const discarded = [];
   const written = [];
   const nativeWrites = [];
@@ -50,7 +53,7 @@ function bridge({ browsers, importData, importSafariDirect, importSafariExport, 
     windows: {},
     windowOrder: [],
     settings: { defaultProfileId: "existing" },
-    bookmarks: { roots: {}, nodes: {} },
+    bookmarks: { roots: { existing: { bar: "bar", other: "other" } }, nodes: { bar: { kind: "folder", id: "bar", children: [] }, other: { kind: "folder", id: "other", children: [] } } },
     history: {},
     createProfile: (p) => { created.push(p.name); const id = `new-${created.length}`; state.profiles[id] = { id, name: p.name }; state.profileOrder.push(id); return id; },
     createWindow: () => "window",
@@ -102,10 +105,20 @@ function bridge({ browsers, importData, importSafariDirect, importSafariExport, 
     "./webviews": {},
   });
   const module = { importModule: () => api };
+  const writer = {
+    submitBookmarks: async (profileId, mutations) => {
+      bookmarkWrites.push([profileId, mutations]);
+      await bookmarkWrite?.(profileId, mutations);
+      return mutations.map(() => null);
+    },
+    bookmarkWriter: { addBookmarkTree: async () => [] },
+    reportBookmarkFailure: (error) => bookmarkFailures.push(String(error)),
+  };
   const apply = load(new URL("../../import/apply.ts", import.meta.url), {
     "@solara/shell": shell,
     "@solara/solaracore": { savePassword: async () => true },
     "../../lib/bookmarkGroups": { addGroupsFromDrafts: () => ({ made: [], skipped: 0 }) },
+    "../../lib/bookmarkWriter": writer,
     "../../lib/favicons": favicons,
     "../../store/browser": { useBrowser },
     "../../store/model": { engineProfile: (id) => id, isIncognitoProfile: () => false },
@@ -122,6 +135,7 @@ function bridge({ browsers, importData, importSafariDirect, importSafariExport, 
     "@solara/shell": shell,
     "@solara/settings": settings,
     "../../../lib/bookmarkGroups": { allArcHolders: () => ["holder"], restoreArcFolders: (...args) => restored.push(args) },
+    "../../../lib/bookmarkWriter": writer,
     "../../../store/nativeStore": nativeStore,
     "../../../store/browser": { useBrowser },
     "../../../store/draftGroups": { MAX_DRAFT_LINKS: 500 },
@@ -131,7 +145,7 @@ function bridge({ browsers, importData, importSafariDirect, importSafariExport, 
     "../../import/module": module,
     "../windows": { takePreferredImportSource: () => null },
   }).importHandlers;
-  return { handlers, created, discarded, written, nativeWrites, historyWrites, faviconWrites, openedTabs, restored, state };
+  return { handlers, created, discarded, written, nativeWrites, historyWrites, faviconWrites, openedTabs, restored, state, bookmarkWrites, bookmarkFailures };
 }
 
 const runRequest = (over = {}) => ({ runId: "run", browserId: "chrome", profileIds: ["first"], spaceIds: [], kinds: ["bookmarks", "cookies"], target: "existing", withoutKey: false, ...over });
@@ -281,7 +295,7 @@ for (const phase of ["dialog", "read"]) {
     const fixture = bridge({
       browsers: [chrome],
       chooseImportFile: async () => { if (phase === "dialog") { entered.resolve(); await release.promise; } return "/bookmarks.html"; },
-      importBookmarksHTML: async () => { reads++; if (phase === "read") { entered.resolve(); await release.promise; } return { children: [] }; },
+      importBookmarksHTML: async () => { reads++; if (phase === "read") { entered.resolve(); await release.promise; } return htmlBookmarks; },
     });
     const opened = fixture.handlers["import.open"]();
     const pending = fixture.handlers["import.bookmarksHtml"]("existing", opened.session);
@@ -293,8 +307,44 @@ for (const phase of ["dialog", "read"]) {
     await drain;
     assert.equal(reads, phase === "dialog" ? 0 : 1);
     assert.deepEqual(fixture.nativeWrites, []);
+    assert.deepEqual(fixture.bookmarkWrites, []);
   });
 }
+
+for (const outcome of ["accepted", "refused"]) {
+  test(`a bookmarks HTML import cancelled while its write is pending reports cancelled when the write is ${outcome}`, async () => {
+    const held = deferred();
+    const fixture = bridge({ browsers: [chrome], chooseImportFile: async () => "/bookmarks.html", importBookmarksHTML: async () => htmlBookmarks, bookmarkWrite: () => held.promise });
+    const opened = fixture.handlers["import.open"]();
+    const pending = fixture.handlers["import.bookmarksHtml"]("existing", opened.session);
+    for (let i = 0; i < 50 && !fixture.bookmarkWrites.length; i++) await ticks(1);
+    assert.equal(fixture.bookmarkWrites.length, 1);
+    const drain = fixture.handlers["import.cancelAndDrain"]();
+    if (outcome === "accepted") held.resolve();
+    else held.reject(new Error("journal write failed"));
+    await drain;
+    assert.equal((await pending).cancelled, true);
+  });
+}
+
+test("a bookmarks HTML import goes through the writer, and a refused write is a bookmarks failure, not an invalid file", async () => {
+  let refuse = false;
+  const fixture = bridge({
+    browsers: [chrome],
+    chooseImportFile: async () => "/bookmarks.html",
+    importBookmarksHTML: async () => htmlBookmarks,
+    bookmarkWrite: async () => { if (refuse) throw new Error("journal write failed"); },
+  });
+  const opened = fixture.handlers["import.open"]();
+  const done = await fixture.handlers["import.bookmarksHtml"]("existing", opened.session);
+  assert.equal(done.counts.bookmarks, 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(fixture.bookmarkWrites.map(([profileId, mutations]) => [profileId, mutations.map((m) => m.method)]))), [["existing", ["addBookmarkTree"]]]);
+  refuse = true;
+  const refused = await fixture.handlers["import.bookmarksHtml"]("existing", opened.session);
+  assert.equal(refused.error, undefined);
+  assert.deepEqual([refused.counts.bookmarks, [...refused.failed]], [0, ["bookmarks"]]);
+  assert.deepEqual(fixture.bookmarkFailures, ["Error: journal write failed"]);
+});
 
 test("a rejected live folder command does not fail the Arc import or drain", async () => {
   const arc = { id: "arc", name: "Arc", family: "arc", sidebar: "arc", profiles: [{ id: "p", name: "P", spaces: [{ id: "s1", name: "Work" }] }] };
@@ -393,6 +443,34 @@ for (const entry of ["run", "safariExport", "safariDirect"]) {
       }
     });
   }
+}
+
+for (const entry of ["run", "safariExport", "safariDirect"]) {
+  test(`${entry} cancelled while its bookmarks are being written applies nothing after them and discards its vault`, async () => {
+    const held = deferred();
+    const history = [{ url: "https://history.test/", title: "History", visits: 2, lastVisit: 100 }];
+    const safari = { bookmarks: htmlBookmarks, profiles: [{ name: "", history }], tabs: [], credentials: [], vaultToken: `vault-${entry}` };
+    const fixture = bridge({
+      browsers: [chrome],
+      importData: async () => emptyResult({ history, bookmarks: htmlBookmarks, vaultToken: `vault-${entry}` }),
+      importSafariExport: async () => safari,
+      importSafariDirect: async () => safari,
+      bookmarkWrite: () => held.promise,
+    });
+    await fixture.handlers["import.listBrowsers"]();
+    const pending = entry === "run"
+      ? fixture.handlers["import.run"](runRequest({ kinds: ["bookmarks", "history"] }))
+      : entry === "safariExport" ? fixture.handlers["import.safariExport"]("/export.zip", "existing")
+      : fixture.handlers["import.safariDirect"]("existing", false);
+    for (let i = 0; i < 50 && !fixture.bookmarkWrites.length; i++) await ticks(1);
+    assert.equal(fixture.bookmarkWrites.length, 1, "the bookmark write started");
+    const drain = fixture.handlers["import.cancelAndDrain"]();
+    held.resolve();
+    await drain;
+    assert.equal((await pending).cancelled, true);
+    assert.equal(fixture.historyWrites.length, 0, "no history after the cancel");
+    assert.deepEqual([...fixture.discarded], [`vault-${entry}`]);
+  });
 }
 
 for (const entry of ["run", "arc", "runDia"]) {

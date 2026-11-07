@@ -26,6 +26,7 @@ function handlerFixture(options = {}) {
     "@solara/shell": {},
     "@solara/settings": { publishSettingsTopic: () => {} },
     "../../../lib/bookmarkGroups": {},
+    "../../../lib/bookmarkWriter": { reportBookmarkFailure: () => {} },
     "../../../store/nativeStore": { nativeSafeMode: () => false },
     "../../../store/browser": { useBrowser: { getState: () => ({ profileOrder: [], profiles: {}, ui: {}, windows: {}, settings: { defaultProfileId: "existing" }, createProfile: () => { throw new Error("Profile data is deleted"); } }) } },
     "../../../store/draftGroups": {},

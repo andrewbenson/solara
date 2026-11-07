@@ -2,6 +2,7 @@ import type { BrowserSource, DiaAutomationStatus, DiaTabsResult, ImportedExtensi
 import { closeWindow, confirm } from "@solara/shell";
 import { publishSettingsTopic, type SettingsHandler } from "@solara/settings";
 import { allArcHolders, restoreArcFolders } from "../../../lib/bookmarkGroups";
+import { reportBookmarkFailure } from "../../../lib/bookmarkWriter";
 import { nativeSafeMode } from "../../../store/nativeStore";
 import { useBrowser } from "../../../store/browser";
 import { MAX_DRAFT_LINKS } from "../../../store/draftGroups";
@@ -194,13 +195,13 @@ async function run(req: RunRequest, sessionId: number | undefined) {
         }
         const dest = first ?? (await destination(req.target, destinationIndex++, result.profile?.name ?? profile.name, cancelled, result.profile?.color));
         if (dest === null || cancelled()) return discardImported(result);
-        add(await applyResult(dest, result, source.name, profileKinds, refused, trackPending));
+        add(await applyResult(dest, result, source.name, profileKinds, refused, trackPending, cancelled));
         if (cancelled()) return { cancelled: true };
         extensionsProfile ||= dest;
       } else {
         const dest = await destination(req.target, destinationIndex++, result.profile?.name ?? profile.name, cancelled, result.profile?.color ?? profile.color);
         if (dest === null || cancelled()) return discardImported(result);
-        add(await applyResult(dest, result, source.name, profileKinds, refused, trackPending));
+        add(await applyResult(dest, result, source.name, profileKinds, refused, trackPending, cancelled));
         if (cancelled()) return { cancelled: true };
         extensionsProfile ||= dest;
       }
@@ -306,7 +307,7 @@ async function safariExport(path: string, target: string, sessionId: number | un
     const data = await api.importSafariExport(path);
     if (cancelled()) return discardImported(data);
     const failed: ImportKind[] = [];
-    const counts = await applySafari(target, data, false, (k) => failed.push(k), trackPending);
+    const counts = await applySafari(target, data, false, (k) => failed.push(k), trackPending, cancelled);
     if (cancelled()) return { cancelled: true };
     return { counts, failed };
   } catch (e) {
@@ -327,7 +328,7 @@ async function safariDirect(target: string, cookies: boolean, sessionId: number 
     const data = await api.importSafariDirect({ signal: abort.signal });
     if (cancelled()) return discardImported(data);
     const failed: ImportKind[] = [];
-    const counts = await applySafari(target, data, cookies, (k) => failed.push(k), trackPending);
+    const counts = await applySafari(target, data, cookies, (k) => failed.push(k), trackPending, cancelled);
     if (cancelled()) return { cancelled: true };
     return { counts, failed };
   } catch (e) {
@@ -345,13 +346,17 @@ async function bookmarksHtml(target: string, sessionId: number | undefined) {
   if (!api) return { cancelled: true };
   const path = await api.chooseImportFile("bookmarksHTML");
   if (!path || cancelled()) return { cancelled: true };
+  const read = await api.importBookmarksHTML(path).then((root) => ({ root }), () => null);
+  if (cancelled()) return { cancelled: true };
+  if (!read) return { error: "invalid" };
   try {
-    const root = await api.importBookmarksHTML(path);
+    const bookmarks = await importBookmarks(target, read.root, "HTML File", cancelled);
     if (cancelled()) return { cancelled: true };
-    return { counts: { ...emptyCounts(), bookmarks: importBookmarks(target, root, "HTML File") }, failed: [] };
-  } catch {
+    return { counts: { ...emptyCounts(), bookmarks }, failed: [] };
+  } catch (error) {
+    reportBookmarkFailure(error);
     if (cancelled()) return { cancelled: true };
-    return { error: "invalid" };
+    return { counts: emptyCounts(), failed: ["bookmarks"] };
   }
 }
 

@@ -64,7 +64,7 @@ public final class TabSleepRunner {
   ) {
     self.store = store
     self.pages = pages
-    sleep = TabSleep(store: store, pages: pages)
+    sleep = TabSleep(store: store)
     self.policy = policy
     self.profileIdleMs = profileIdleMs
     self.clock = clock

@@ -45,57 +45,16 @@ import Testing
 
   @Test(arguments: ["shown", "split", "peek", "held", "shared"])
   func protectsEverySolaraPresentation(_ reason: String) {
-    let sleep = TabSleep(store: Store(state: fixture(reason)), pages: PageRegistry())
+    let sleep = TabSleep(store: Store(state: fixture(reason)))
     #expect(sleep.solaraReasonNotToSleep("target") == reason)
   }
 
-  @Test(arguments: ["shown", "split", "peek", "held", "shared"])
-  func protectedTabsNeverReachTheEngine(_ reason: String) {
-    let pages = PageRegistry()
-    var commands: [PageCommand] = []
-    pages.register(tabID: "target", engine: .chromium, host: .pooled) { command, finish in
-      commands.append(command)
-      finish(.success(.string("discarded")))
-    }
-    let store = Store(state: fixture(reason))
-    let before = store.state
-    let sleep = TabSleep(store: store, pages: pages)
-    #expect(!sleep.sleepNow("target"))
-    #expect(commands.isEmpty)
-    #expect(store.state == before)
-  }
-
-  @Test func eligibleBackgroundTabRequestsExternalDiscardExactlyOnce() {
+  @Test func theReasonFollowsTheCurrentSelection() throws {
     let store = Store(state: fixture())
-    let pages = PageRegistry()
-    var commands: [PageCommand] = []
-    pages.register(tabID: "target", engine: .chromium, host: .reactNative) { command, finish in
-      commands.append(command)
-      finish(.success(.string("refused")))
-    }
-    let before = store.state
-    let sleep = TabSleep(store: store, pages: pages)
-    #expect(sleep.solaraReasonNotToSleep("target") == nil)
-    #expect(sleep.sleepNow("target"))
-    #expect(commands == [.discard(false)])
-    #expect(store.state == before)
-    #expect(store.state.live["target"]?.discarded == false)
-  }
-
-  @Test func sleepRechecksTheCurrentSelection() throws {
-    let store = Store(state: fixture())
-    let pages = PageRegistry()
-    var calls = 0
-    pages.register(tabID: "target", engine: .chromium, host: .pooled) { _, finish in
-      calls += 1
-      finish(.success(.string("discarded")))
-    }
-    let sleep = TabSleep(store: store, pages: pages)
+    let sleep = TabSleep(store: store)
     #expect(sleep.solaraReasonNotToSleep("target") == nil)
     try store.dispatch(Command("activate", ["target"]))
     #expect(sleep.solaraReasonNotToSleep("target") == "shown")
-    #expect(!sleep.sleepNow("target"))
-    #expect(calls == 0)
   }
 
   @Test func sharedBackgroundCopiesDoNotProtectTheirOwner() {
@@ -110,7 +69,7 @@ import Testing
     state.tabs[copy.id] = copy
     state.windows["first"]!.tabIds.append(copy.id)
     state.tabs["target"]!.pinned = true
-    let sleep = TabSleep(store: Store(state: state), pages: PageRegistry())
+    let sleep = TabSleep(store: Store(state: state))
     #expect(sleep.solaraReasonNotToSleep("copy") == "shared")
     #expect(sleep.solaraReasonNotToSleep("target") == nil)
   }
@@ -122,9 +81,9 @@ import Testing
     state.tabs[other.id] = other
     state.windows["second"]!.tabIds.append(other.id)
     state.splits["background"] = SplitView(id: "background", windowId: "second", tabIds: ["target", "other"], orientation: "horizontal", sizes: [0.5, 0.5])
-    let sleep = TabSleep(store: Store(state: state), pages: PageRegistry())
+    let sleep = TabSleep(store: Store(state: state))
     #expect(sleep.solaraReasonNotToSleep("target") == nil)
-    let shown = TabSleep(store: Store(state: fixture("split")), pages: PageRegistry())
+    let shown = TabSleep(store: Store(state: fixture("split")))
     #expect(shown.solaraReasonNotToSleep("second-active") == "shown")
   }
 
@@ -142,37 +101,7 @@ import Testing
       state.tabs["target"]!.navigation = nil
       state.tabs["target"]!.adoptId = "adopted"
     }
-    let pages = PageRegistry()
-    var calls = 0
-    pages.register(tabID: "target", engine: .chromium, host: .pooled) { _, finish in
-      calls += 1
-      finish(.success(.string("discarded")))
-    }
-    let sleep = TabSleep(store: Store(state: state), pages: pages)
+    let sleep = TabSleep(store: Store(state: state))
     #expect(sleep.solaraReasonNotToSleep("target") == "no page")
-    #expect(!sleep.sleepNow("target"))
-    #expect(calls == 0)
-  }
-
-  @Test func missingWebKitAndAlreadyDiscardedPagesAreNotRequested() {
-    let state = fixture()
-    let store = Store(state: state)
-    let pages = PageRegistry()
-    let sleep = TabSleep(store: store, pages: pages)
-    #expect(!sleep.sleepNow("target"))
-    var calls = 0
-    pages.register(tabID: "target", engine: .webKit, host: .pooled) { _, finish in
-      calls += 1
-      finish(.success(.string("discarded")))
-    }
-    #expect(!sleep.sleepNow("target"))
-    var discarded = state
-    discarded.live["target"] = PageLiveFacts(discarded: true)
-    pages.register(tabID: "target", engine: .chromium, host: .pooled) { _, finish in
-      calls += 1
-      finish(.success(.string("discarded")))
-    }
-    #expect(!TabSleep(store: Store(state: discarded), pages: pages).sleepNow("target"))
-    #expect(calls == 0)
   }
 }

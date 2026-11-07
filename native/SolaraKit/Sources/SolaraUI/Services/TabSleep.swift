@@ -6,11 +6,9 @@ import SolaraStore
 @MainActor
 public final class TabSleep {
   private let store: Store
-  private let pages: PageRegistry
 
-  public init(store: Store, pages: PageRegistry = .shared) {
+  public init(store: Store) {
     self.store = store
-    self.pages = pages
   }
 
   public func solaraReasonNotToSleep(_ tabId: String) -> String? {
@@ -26,16 +24,6 @@ public final class TabSleep {
     if let holder = tab.pageIn, !holder.isEmpty { return "shared" }
     if tab.url.isEmpty || tab.unloaded == true || !hasPage(tab) || Self.isInternal(tab) { return "no page" }
     return nil
-  }
-
-  @discardableResult
-  public func sleepNow(_ tabId: String) -> Bool {
-    store.sequence {
-      guard solaraReasonNotToSleep(tabId) == nil, store.state.live[tabId]?.discarded != true,
-        let page = pages.descriptors.first(where: { $0.tabID == tabId }), page.engine == .chromium else { return false }
-      pages.call(page.registration, command: .discard(false)) { _ in }
-      return true
-    }
   }
 
   private static func isInternal(_ tab: Tab) -> Bool {

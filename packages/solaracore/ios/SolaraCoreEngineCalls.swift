@@ -5,7 +5,7 @@ extension CefModule {
     "ac_bookmarks_tree", "ac_bookmarks_apply", "ac_bookmarks_watch",
     "ac_passwords_mark",
     "ac_omnibox_opened",
-    "ac_tabs_last_tab_policy",
+    "ac_tabs_last_tab_policy", "ac_tabs_memory", "ac_tabs_cpu",
     "ac_task_manager_open", "ac_battery_saver", "ac_memory_trim",
     "ac_cli_control",
     "ac_extensions_watch_actions", "ac_extensions_sync_state", "ac_extensions_sync_apply",

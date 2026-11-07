@@ -56,10 +56,15 @@ test("legacy bundles and native builds are refused before main can start JS clea
   }
 });
 
-test("keep-alive event stamps require the upgraded native bridge", () => {
-  assert.equal(jsVersion(), 37);
-  assert.equal(nativeVersion(), 37);
-  assert.match(boot(jsVersion(), 36).skew, /Native API skew/);
+test("tab resource calls require the upgraded native bridge", () => {
+  assert.equal(jsVersion(), 38);
+  assert.equal(nativeVersion(), 38);
+  assert.match(boot(jsVersion(), 37).skew, /Native API skew/);
+  assert.deepEqual(boot(38, 38).events, ["main", "legacy-js-cleanup"]);
+});
+
+test("keep-alive event stamps retain the API 37 historical gate", () => {
+  assert.match(boot(37, 36).skew, /Native API skew/);
   assert.deepEqual(boot(37, 37).events, ["main", "legacy-js-cleanup"]);
 });
 

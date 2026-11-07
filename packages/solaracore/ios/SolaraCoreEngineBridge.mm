@@ -141,6 +141,14 @@ void InstallSink() {
   if (RefusesSafeModeCall(name)) return completion(JSON(@{@"error" : @"disabled in safe mode"}));
   auto call = (ac_engine_call_t)Symbol(name.UTF8String);
   if (!call) return completion(JSON(@{@"error" : [NSString stringWithFormat:@"the engine has no %@", name]}));
+  if ([name isEqualToString:@"ac_tabs_memory"] || [name isEqualToString:@"ac_tabs_cpu"]) {
+    if (!SolaraCoreHost.isStarted) return completion(JSON(@{@"error" : @"engine not started"}));
+    if (profile.length) return completion(JSON(@{@"error" : [NSString stringWithFormat:@"%@ requires an empty profile", name]}));
+    void (^done)(NSString *) = [completion copy];
+    NSString *argsCopy = [args copy];
+    call("", argsCopy.UTF8String, Replied, (__bridge_retained void *)done);
+    return;
+  }
   if (solaracore_host::IsIncognito(profile)) {
     static NSSet<NSString *> *session = [NSSet setWithArray:@[
       @"ac_site_settings_get", @"ac_site_settings_origins", @"ac_site_settings_set", @"ac_site_settings_reset",

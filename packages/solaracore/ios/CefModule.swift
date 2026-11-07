@@ -99,6 +99,10 @@ public class CefModule: Module {
     }
       .runOnQueue(.main)
     AsyncFunction("tabStrips") { SolaraCoreTabStrip.allStrips }.runOnQueue(.main)
+    AsyncFunction("chromeTabId") { (browserId: Int) -> Int in
+      guard let bridgeId = Int32(exactly: browserId) else { return -1 }
+      return Int(SolaraCoreHost.chromeTabId(browserId: bridgeId))
+    }.runOnQueue(.main)
     AsyncFunction("components") { (promise: Promise) in SolaraCoreServices.components { promise.resolve($0) } }.runOnQueue(.main)
 
     AsyncFunction("beginTracing") { (promise: Promise) in SolaraCoreHost.beginTracing { promise.resolve($0) } }.runOnQueue(.main)

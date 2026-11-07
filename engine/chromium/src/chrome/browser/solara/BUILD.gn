@@ -51,6 +51,7 @@ source_set("solara") {
     "ac_sensitive_args.h",
     "ac_site_settings.cc",
     "ac_site_settings.h",
+    "ac_tab_resources.cc",
     "ac_tab_restore.cc",
     "ac_tab_restore.h",
     "ac_tabs.cc",

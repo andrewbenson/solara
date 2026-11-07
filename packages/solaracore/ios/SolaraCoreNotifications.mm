@@ -204,7 +204,7 @@ void Retire(void *context) {
       ![SolaraCoreEngine instancesRespondToSelector:@selector(fenceNotificationsForProfileDeletionAtPath:completion:)] ||
       ![SolaraCoreEngine instancesRespondToSelector:@selector(fenceNotificationsForPrivateProfile:)] ||
       [values[@"abi"] intValue] != 2 ||
-      [values[@"notifications"] intValue] != 2 || [values[@"nativeApi"] intValue] != 37) return NO;
+      [values[@"notifications"] intValue] != 2 || [values[@"nativeApi"] intValue] != 38) return NO;
   for (NSString *key in requirements) if (![values[key] isEqual:@YES]) return NO;
   Class hub = NSClassFromString(@"SolaraNotificationHub");
   SEL install = NSSelectorFromString(@"installTransportWithAuthorizationQuery:");

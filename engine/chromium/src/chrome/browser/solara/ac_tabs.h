@@ -7,5 +7,7 @@
 
 AC_ENGINE_CALL(ac_tabs_watch);
 AC_ENGINE_CALL(ac_tabs_group);
+AC_ENGINE_CALL(ac_tabs_memory);
+AC_ENGINE_CALL(ac_tabs_cpu);
 
 #endif

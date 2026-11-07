@@ -53,7 +53,7 @@ import { attach as attachInstance, launch as launchInstance, onScreenWindows as 
 const usesPageA = [
   "visibility", "occlusion", "favicon", "navigate-back-forward-reload", "target-blank", "window-open",
   "cmd-click", "evaluate", "tab-strips", "tab-switch", "status-text", "load-error", "chrome-strings",
-  "context-menu-search", "duplicate-and-reopen", "device-chooser", "bluetooth-chooser",
+  "tab-memory", "tab-cpu", "context-menu-search", "duplicate-and-reopen", "device-chooser", "bluetooth-chooser",
   "bluetooth-settings", "cast-dialog", "cast-routes", "theme-commit", "theme-modern-colors", "user-selection",
   "password-prompt", "screen-share-picker", "tab-capture", "share-instead-two-captures", "share-bar-layout",
   "restore-after-close", "discard-outcomes", "sleep-eligibility", "keep-awake-sites", "sleep-pinned-capture", "native-tab-sleep", "capture-picture", "unresponsive", "permission-dismissed", "permission-status-detached",
@@ -2838,6 +2838,135 @@ try {
     } finally {
       await call(JSON.stringify({ hide: true })).catch(() => null);
       await closeTab(tab.id);
+    }
+  });
+
+  const resourceCall = async (name, args, profile = "") => {
+    const started = Date.now();
+    const value = JSON.parse(await evalApp(`return globalThis.expo.modules.SolaraCEF.engineCall(${JSON.stringify(name)}, ${JSON.stringify(profile)}, ${JSON.stringify(typeof args === "string" ? args : JSON.stringify(args))})`, 15000));
+    return { value, started, ended: Date.now() };
+  };
+  const resourceRace = async (name, id, action) => {
+    const started = Date.now();
+    const value = JSON.parse(await evalApp(`const pending = globalThis.expo.modules.SolaraCEF.engineCall(${JSON.stringify(name)}, "", ${JSON.stringify(JSON.stringify({ tabIds: [id] }))}); ${action}; return pending`, 15000));
+    return { value, started, ended: Date.now() };
+  };
+  const resourceRows = (reply, ids, kind) => {
+    assert.deepEqual(Object.keys(reply.value), ["tabs"]);
+    assert.ok(Array.isArray(reply.value.tabs));
+    const seen = [];
+    for (const row of reply.value.tabs) {
+      assert.deepEqual(Object.keys(row).sort(), (kind === "memory" ? ["tabId", "bytes", "source", "at"] : ["tabId", "cpuMs", "elapsedMs", "measurementId", "source", "at"]).sort());
+      assert.ok(Number.isInteger(row.tabId) && ids.includes(row.tabId));
+      assert.ok(Number.isFinite(row.at) && row.at >= reply.started - 5000 && row.at <= reply.ended + 5000);
+      if (kind === "memory") {
+        assert.ok(Number.isFinite(row.bytes) && row.bytes >= 0);
+        assert.ok(["attribution", "footprint"].includes(row.source));
+      } else {
+        assert.equal(row.source, "attribution");
+        assert.ok(Number.isFinite(row.cpuMs) && row.cpuMs >= 0);
+        assert.ok(Number.isFinite(row.elapsedMs) && row.elapsedMs >= 0);
+        assert.ok(typeof row.measurementId === "string" && row.measurementId.length > 0);
+      }
+      seen.push(row.tabId);
+    }
+    assert.deepEqual(seen, [...new Set(seen)].sort((a, b) => a - b));
+    return reply.value.tabs;
+  };
+  const resourceSessionId = (tab) => until("the scratch tab's session ID", async () => {
+    const browser = Number(await browserOf(tab));
+    if (!Number.isInteger(browser) || browser <= 0) return null;
+    const id = await cef(`chromeTabId(${browser})`);
+    return Number.isInteger(id) && id >= 0 ? id : null;
+  }, 10000);
+  const resourceArguments = async (name) => {
+    assert.deepEqual((await resourceCall(name, { tabIds: [] })).value, { tabs: [] });
+    for (const args of [{}, { tabIds: null }, { tabIds: "1" }, { tabIds: [true] }, { tabIds: [1.5] }, { tabIds: ["1"] }, { tabIds: [2147483648] }]) {
+      assert.deepEqual((await resourceCall(name, args)).value, { error: "tabIds must be a list of integer tab ids" });
+    }
+    assert.deepEqual(resourceRows(await resourceCall(name, { tabIds: [-1, 0, 2147483647] }), [-1, 0, 2147483647], name === "ac_tabs_memory" ? "memory" : "cpu"), []);
+    const refused = await resourceCall(name, { tabIds: [] }, "api38-unloaded-profile");
+    assert.equal(refused.value.error, `${name} requires an empty profile`);
+  };
+
+  await check("tab-memory", async () => {
+    const opened = [];
+    let privateWindow = null;
+    const profiles = (await state()).profiles;
+    try {
+      const tab = await evalApp(`return ac.store.getState().newTab(${JSON.stringify(mainWindow)}, { url: "${base}/c?api38-memory" })`);
+      opened.push(tab);
+      await shownAndMounted(tab);
+      await until("the scratch memory page", () => evalApp(`const s = ac.store.getState(); return s.tabs[${JSON.stringify(tab)}]?.title === "Page C" && !s.live[${JSON.stringify(tab)}]?.isLoading`), 15000);
+      const id = await resourceSessionId(tab);
+      await resourceArguments("ac_tabs_memory");
+      const sample = await until("the live tab's memory attribution", async () => resourceRows(await resourceCall("ac_tabs_memory", `{"tabIds":[${id}.0,${id},-1]}`), [id, -1], "memory").find((row) => row.tabId === id) ?? null, 30000);
+      privateWindow = await evalApp(`return ac.actions.openWindow({ incognito: true, url: "${base}/c?api38-private-memory" })`);
+      const privateTab = await until("the scratch private page", () => evalApp(`const s = ac.store.getState(); const w = s.windows[${JSON.stringify(privateWindow)}]; return w?.tabIds.find((id) => s.tabs[id]?.title === "Page C" && !s.live[id]?.isLoading) ?? null`), 15000);
+      const privateId = await resourceSessionId(privateTab);
+      const paired = await until("regular and private memory attribution", async () => {
+        const rows = resourceRows(await resourceCall("ac_tabs_memory", { tabIds: [privateId, id, privateId] }), [privateId, id], "memory");
+        return rows.length === 2 ? rows : null;
+      }, 30000);
+      resourceRows(await resourceRace("ac_tabs_memory", id, `ac.store.getState().navigate(${JSON.stringify(tab)}, "${base}/c?api38-memory-next", { userInitiated: true })`), [id], "memory");
+      await until("the scratch memory navigation", () => evalApp(`const s = ac.store.getState(); return s.tabs[${JSON.stringify(tab)}]?.url === "${base}/c?api38-memory-next" && !s.live[${JSON.stringify(tab)}]?.isLoading`), 15000);
+      await evalApp(`ac.actions.switchToTab(${JSON.stringify(first.id)}); return true`);
+      await until("the scratch memory tab in the background", async () => (await state()).active === first.id, 5000);
+      assert.equal(await evalApp(`return ac.webviews.get(${JSON.stringify(tab)})?.discard()`), "discarded");
+      await until("the scratch memory page discarded", async () => (await eventsOf(tab)).some((event) => event.name === "discarded"), 10000);
+      assert.deepEqual(resourceRows(await resourceCall("ac_tabs_memory", { tabIds: [id] }), [id], "memory"), []);
+      resourceRows(await resourceRace("ac_tabs_memory", privateId, `ac.store.getState().closeWindow(${JSON.stringify(privateWindow)})`), [privateId], "memory");
+      privateWindow = null;
+      await until("the closed private page omitted from memory", async () => resourceRows(await resourceCall("ac_tabs_memory", { tabIds: [privateId] }), [privateId], "memory").length === 0, 15000);
+      assert.deepEqual((await state()).profiles, profiles);
+      return { sample, paired, discardedOmitted: true, closedOmitted: true };
+    } finally {
+      if (privateWindow) await evalApp(`ac.store.getState().closeWindow(${JSON.stringify(privateWindow)}); return true`).catch(() => null);
+      for (const tab of opened) await closeTab(tab).catch(() => null);
+      await evalApp(`ac.actions.switchToTab(${JSON.stringify(first.id)}); return true`).catch(() => null);
+    }
+  });
+
+  await check("tab-cpu", async () => {
+    let tab = null;
+    const profiles = (await state()).profiles;
+    try {
+      tab = await evalApp(`return ac.store.getState().newTab(${JSON.stringify(mainWindow)}, { url: "${base}/c?api38-cpu" })`);
+      await shownAndMounted(tab);
+      await until("the scratch CPU page", () => evalApp(`const s = ac.store.getState(); return s.tabs[${JSON.stringify(tab)}]?.title === "Page C" && !s.live[${JSON.stringify(tab)}]?.isLoading`), 15000);
+      const id = await resourceSessionId(tab);
+      await resourceArguments("ac_tabs_cpu");
+      const sample = async () => resourceRows(await resourceCall("ac_tabs_cpu", { tabIds: [id, id] }), [id], "cpu").find((row) => row.tabId === id) ?? null;
+      const baseline = await until("the production attribution CPU monitor with default health sampling disabled", sample, 15000);
+      await sleep(2000);
+      const idle = await sample();
+      assert.ok(idle, "the idle sample is available");
+      assert.equal(idle.measurementId, baseline.measurementId);
+      assert.ok(idle.elapsedMs > baseline.elapsedMs && idle.cpuMs >= baseline.cpuMs);
+      const idlePercent = 100 * (idle.cpuMs - baseline.cpuMs) / (idle.elapsedMs - baseline.elapsedMs);
+      const code = `window.__api38Busy = true; window.__api38BusyEnd = performance.now() + 10000; const tick = () => { if (!window.__api38Busy || performance.now() >= window.__api38BusyEnd) return; const end = performance.now() + 35; while (performance.now() < end) Math.sqrt(Math.random()); window.__api38BusyTimer = setTimeout(tick, 0); }; window.__api38BusyTimer = setTimeout(tick, 0); true`;
+      await evalApp(`return ac.webviews.get(${JSON.stringify(tab)}).executeJavaScript(${JSON.stringify(code)})`, 5000);
+      await sleep(3500);
+      const busy = await sample();
+      assert.ok(busy, "the busy sample is available");
+      assert.equal(busy.measurementId, idle.measurementId);
+      assert.ok(busy.elapsedMs > idle.elapsedMs && busy.cpuMs > idle.cpuMs + 10);
+      const busyPercent = 100 * (busy.cpuMs - idle.cpuMs) / (busy.elapsedMs - idle.elapsedMs);
+      assert.ok(busyPercent > idlePercent * 1.25 + 1, `same-tab busy CPU ${busyPercent}% did not exceed idle ${idlePercent}%`);
+      await evalApp(`return ac.webviews.get(${JSON.stringify(tab)}).executeJavaScript("window.__api38Busy = false; clearTimeout(window.__api38BusyTimer); true")`, 5000);
+      resourceRows(await resourceRace("ac_tabs_cpu", id, `ac.store.getState().navigate(${JSON.stringify(tab)}, "${base}/c?api38-cpu-next", { userInitiated: true })`), [id], "cpu");
+      await until("the scratch CPU navigation", () => evalApp(`const s = ac.store.getState(); return s.tabs[${JSON.stringify(tab)}]?.url === "${base}/c?api38-cpu-next" && !s.live[${JSON.stringify(tab)}]?.isLoading`), 15000);
+      await closeTab(tab);
+      tab = null;
+      await until("the closed scratch page omitted from CPU", async () => resourceRows(await resourceCall("ac_tabs_cpu", { tabIds: [id] }), [id], "cpu").length === 0, 10000);
+      assert.deepEqual((await state()).profiles, profiles);
+      return { baseline, idle, busy, idlePercent, busyPercent, comparison: "same-tab idle and busy intervals", closedOmitted: true };
+    } finally {
+      if (tab) {
+        await evalApp(`return ac.webviews.get(${JSON.stringify(tab)})?.executeJavaScript("window.__api38Busy = false; clearTimeout(window.__api38BusyTimer); true")`, 5000).catch(() => null);
+        await closeTab(tab).catch(() => null);
+      }
+      await evalApp(`ac.actions.switchToTab(${JSON.stringify(first.id)}); return true`).catch(() => null);
     }
   });
 

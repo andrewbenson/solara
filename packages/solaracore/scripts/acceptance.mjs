@@ -1870,6 +1870,8 @@ try {
   });
 
   await check("user-selection", async () => {
+    const searchBefore = await evalApp(`return ac.store.getState().settings.showSelectionSearch === true`);
+    await evalApp(`ac.store.getState().updateSettings({ showSelectionSearch: true }); return true`);
     await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
     await evalApp(`ac.store.getState().navigate("${first.id}", "${base}/text", { userInitiated: true }); return true`);
     await until("the text page", async () => (await state()).tabs.find((t) => t.id === first.id && t.title === "Text" && !t.loading));
@@ -1886,6 +1888,7 @@ try {
         (await eventsOf(first.id)).findLast((x) => x.name === "pageMessage" && x.payload?.kind === "selection" && x.payload?.data), 6000);
       return { text: String(JSON.stringify(e.payload.data)).slice(0, 80) };
     } finally {
+      await evalApp(`ac.store.getState().updateSettings({ showSelectionSearch: ${searchBefore} }); return true`).catch(() => null);
       await backToA();
     }
   });
@@ -3693,6 +3696,7 @@ try {
             const probe = await evalApp(`const s = ac.store.getState(); const pool = globalThis.expo.modules.SolaraTabPool; return Promise.all([pool.devClosingWindows(), pool.devPageIds()]).then(([holds, pages]) => ({ holds, pages, open: !!s.windows[${JSON.stringify(appWindow)}], survivor: s.tabs[${JSON.stringify(ids[0])}]?.windowId }))`);
             if (probe.open || !probe.survivor || probe.survivor === appWindow) throw new Error(`Leave did not exercise a shared pinned survivor: ${JSON.stringify(probe)}`);
             if (!Object.values(probe.holds).includes(windowNumber) || !probe.pages.includes(ids[1])) throw new Error(`the pool released its hold before Leave finished the close: ${JSON.stringify(probe)}`);
+            if (!(await pages(marks)).includes(marks[1])) throw new Error(`the held page's engine page closed before Leave: ${JSON.stringify(probe)}`);
             await sleep(50);
           }
           leaving = true;
@@ -5201,20 +5205,20 @@ try {
     await until("the profile loaded", async () => existsSync(folder), 10000);
     await webKit(`devTouchStore("scratch-delete")`);
     if (!(await webKit(`devStoreExists("scratch-delete")`))) throw new Error("the profile's WebKit store wasn't made");
+    const pending = JSON.stringify(["Chromium deletion pending restart"]);
     const result = await cef(`deleteProfileData("scratch-delete")`);
-    if (result.remaining.length) throw new Error(`remaining ${JSON.stringify(result)}`);
+    if (JSON.stringify(result.remaining) !== pending) throw new Error(`a loaded profile's Chromium data should wait for the next launch: ${JSON.stringify(result)}`);
+    const again = await cef(`deleteProfileData("scratch-delete")`);
+    if (JSON.stringify(again.remaining) !== pending) throw new Error(`a second delete while one is pending: ${JSON.stringify(again)}`);
     if (!(await webKit(`deleteProfileData("scratch-delete")`))) throw new Error("the profile's WebKit store wasn't removed");
     if (await webKit(`devStoreExists("scratch-delete")`)) throw new Error("the profile's WebKit store is still on disk");
     await webKit(`devTouchStore("scratch-held")`);
     await webKit(`devHoldStore("scratch-held")`);
     if (await webKit(`deleteProfileData("scratch-held")`)) throw new Error("a held WebKit store reported removed");
     if (!(await webKit(`devStoreExists("scratch-held")`))) throw new Error("a held WebKit store went missing");
-    const gone = await until("the folder gone", async () => !existsSync(folder), 15000).catch(() => false);
-    if (!gone) throw new Error("the profile's folder is still there");
-    await sleep(3000);
-    if (existsSync(folder)) throw new Error("the profile's folder came back");
     const shown = (await cef(`chromeWindows()`)).filter((w) => w.visible || w.alpha >= 0).map((w) => w.profile);
-    return { ...result, folderGone: true, windowProfiles: shown };
+    if (shown.includes("scratch-delete")) throw new Error(`a window still shows the deleted profile: ${JSON.stringify(shown)}`);
+    return { ...result, pendingRestart: true, windowProfiles: shown };
   });
 
   // MARK: Page events
@@ -5986,7 +5990,10 @@ try {
         await sleep(30);
       }
       await until("dragstart", async () => (await events()).some((e) => e[0] === "dragstart"), 5000);
-      await act(`mouse:up:${x + 240},${y + 120}`);
+      await sleep(300);
+      await act(`mouse:dragged:${x + 250},${y + 125}`);
+      await sleep(100);
+      await act(`mouse:up:${x + 250},${y + 125}`);
       await until("dragend: the drag the page started reached AppKit and ended", async () => (await events()).some((e) => e[0] === "dragend"), 8000);
       const clickerClicks = async () => (await events()).filter((e) => e[0] === "click" && e[1] === "clicker").length;
       const clicksBefore = await clickerClicks();

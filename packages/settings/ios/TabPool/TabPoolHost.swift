@@ -245,7 +245,9 @@ final class TabPoolHost {
     return state.windows[tab.windowId] != nil
   }
 
-  func devPageIds() -> [String] { livePages().compactMap { $0["tabId"] as? String } }
+  #if DEBUG
+  func devPageIds() -> [String] { pages.keys.sorted() }
+  #endif
 
   func livePages(runtimeID: UUID? = nil) -> [[String: Any]] {
     guard let issuer = PageIssuer.shared else { return [] }

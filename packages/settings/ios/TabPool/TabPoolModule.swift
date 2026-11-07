@@ -54,9 +54,11 @@ public class TabPoolModule: Module {
       }
     }.runOnQueue(.main)
 
+    #if DEBUG
     AsyncFunction("devPageIds") { () -> [String] in
       MainActor.assumeIsolated { TabPoolHost.shared.devPageIds() }
     }.runOnQueue(.main)
+    #endif
 
     AsyncFunction("devClosingWindows") { () -> [String: Int] in
       MainActor.assumeIsolated { TabPoolHost.shared.devClosingWindows() }

@@ -117,31 +117,26 @@ function shareBarState(tabId: string, capturer: string, share: TabShare, theme: 
 export function ShareBar({ tabId }: { tabId: string }) {
   const windowId = useWindowId();
   const [native] = useState(() => nativeSplitPanes && pagesPooledIn(windowId));
-  return native ? <NativeShareBand tabId={tabId} windowId={windowId} /> : <HostedShareBar tabId={tabId} windowId={windowId} />;
-}
-
-function NativeShareBand({ tabId, windowId }: { tabId: string; windowId: string }) {
   const theme = useTheme();
   const found = useShareFor(tabId);
-  const state = found ? shareBarState(tabId, found[0], found[1], theme) : null;
-  const key = state && JSON.stringify(state);
-  useEffect(() => setBand(windowId, tabId, state), [windowId, tabId, key]);
-  useEffect(() => () => setBand(windowId, tabId, null), [windowId, tabId]);
-  return null;
-}
-
-function HostedShareBar({ tabId, windowId }: { tabId: string; windowId: string }) {
-  const theme = useTheme();
-  const found = useShareFor(tabId);
-  const height = useRef(new Animated.Value(0)).current;
+  const band = native && found ? shareBarState(tabId, found[0], found[1], theme) : null;
+  const bandKey = band && JSON.stringify(band);
+  useEffect(() => {
+    if (native) setBand(windowId, tabId, band);
+  }, [native, windowId, tabId, bandKey]);
+  useEffect(() => () => {
+    if (native) setBand(windowId, tabId, null);
+  }, [native, windowId, tabId]);
+  const heightRef = useRef<Animated.Value | null>(null);
+  const height = native ? null : (heightRef.current ??= new Animated.Value(0));
   const visible = !!found;
   useEffect(() => {
-    Animated.timing(height, { toValue: visible ? SHARE_BAR_HEIGHT : 0, duration: 180, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
+    if (height) Animated.timing(height, { toValue: visible ? SHARE_BAR_HEIGHT : 0, duration: 180, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
   }, [visible]);
   const last = useRef(found);
   if (found) last.current = found;
   const shown = found ?? last.current;
-  if (!shown) return null;
+  if (!height || !shown) return null;
   const [capturer, share] = shown;
   return (
     <Animated.View style={{ height, overflow: "hidden" }}>

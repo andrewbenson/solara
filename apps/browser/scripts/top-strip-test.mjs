@@ -811,8 +811,18 @@ try {
       const peak = (samples) => Math.max(...samples.map(([, x]) => x));
       const cutRn = rn.glowMotion.cut, cutNative = native.glowMotion.cut;
       rep.log(`glow cut peaks: RN ${peak(cutRn).toFixed(3)} native ${peak(cutNative).toFixed(3)}`);
-      assert.ok(peak(cutRn) < 0.98 && peak(cutNative) < 0.98, "both turned back before reaching full");
-      assert.ok(Math.abs(peak(cutRn) - peak(cutNative)) <= 0.12, `the glow turns back at ${peak(cutNative).toFixed(3)}, RN's at ${peak(cutRn).toFixed(3)}`);
+      assert.ok(peak(cutRn) > 0.05 && peak(cutRn) < 0.98 && peak(cutNative) > 0.05 && peak(cutNative) < 0.98, "both turned back mid-fade");
+      const first = cutNative.findIndex(([, x]) => x > 0);
+      const top = peak(cutNative);
+      const turn = cutNative.findLastIndex(([, x]) => x === top);
+      assert.ok(first > 0 && turn >= first && turn < cutNative.length - 1, `native's cut trace has an enter and a turn: ${show(cutNative)}`);
+      const enter = cutNative[first - 1][0], leave = cutNative[turn][0];
+      const rise = Math.max(...cutNative.slice(first - 1, turn + 1).map(([t, x]) => Math.abs(x - quad((t - enter) / 140))));
+      const fall = Math.max(...cutNative.slice(turn).map(([t, x]) => Math.abs(x - top * (1 - quad((t - leave) / 140)))));
+      rep.log(`glow cut: native entered at 0, turned at ${(leave - enter).toFixed(1)} ms and ${top.toFixed(3)}; rise within ${rise.toFixed(3)}, fall within ${fall.toFixed(3)}`);
+      assert.ok(Math.abs(top - quad((leave - enter) / 140)) <= 0.02, `native turns back at ${top.toFixed(3)}, where the out-quad is ${quad((leave - enter) / 140).toFixed(3)} after ${(leave - enter).toFixed(1)} ms`);
+      assert.ok(rise <= 0.02, `native's cut rises ${rise.toFixed(3)} off the 140 ms out-quad`);
+      assert.ok(fall <= 0.02, `native's cut falls ${fall.toFixed(3)} off a 140 ms out-quad from where it turned`);
       assert.equal(cutNative.at(-1)[1], 0, "native's glow ends hidden");
     });
     await rep.check("the peek slides in and out on RN's 180 ms out-cubic, frame for frame at 30 fps", async () => {

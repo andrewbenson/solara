@@ -666,12 +666,31 @@ const alive = () => { try { process.kill(pid, 0); return true; } catch { return 
 setInterval(() => { if (!exited && !alive()) exited = { pid }; }, 300).unref();
 const appLog = { join: () => (existsSync(stdout) ? readFileSync(stdout, "utf8") : "") };
 
+let currentCheck = "";
+const sampledHangs = new Set();
+function sampleHang() {
+  const name = (currentCheck || "launch").replace(/[^\w.-]+/g, "_");
+  if (exited || sampledHangs.has(name) || !instance?.stillOwned()) return null;
+  sampledHangs.add(name);
+  const file = join(scratch, `hang-${name}.txt`);
+  try {
+    execFileSync("/usr/bin/sample", [String(pid), "3", "-file", file], { timeout: 20000, stdio: "ignore" });
+    return file;
+  } catch {
+    return null;
+  }
+}
+
 async function evalApp(body, timeoutMs = 20000) {
   if (exited) throw new Error(`app exited ${JSON.stringify(exited)}`);
   try {
     return await instance.eval(body, { timeout: timeoutMs });
   } catch (e) {
     if (e.appDied) throw new Error(`app exited ${JSON.stringify(exited ?? { pid })}`);
+    if (/^eval timed out/.test(e.message)) {
+      const sampled = sampleHang();
+      if (sampled) e.message += ` (the app's threads, sampled for 3 s at the timeout: ${sampled})`;
+    }
     throw e;
   }
 }
@@ -909,7 +928,6 @@ const appUp = async (logName) => {
   return (mainWindow = await until("a window", async () => (await state()).windowId, 30000));
 };
 
-let currentCheck = "";
 let visibilityWatch = null;
 function watchVisibility(target) {
   const ws = new WebSocket(target.webSocketDebuggerUrl);

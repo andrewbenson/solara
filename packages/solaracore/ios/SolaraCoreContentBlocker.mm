@@ -650,6 +650,8 @@ void LoadHeld(NSString *profile) {
   };
   if (hold) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kHoldDeadlineSeconds * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+      const double late = CACurrentMediaTime() - heldSince - kHoldDeadlineSeconds;
+      if (late > 2) NSLog(@"[blocker] profile \"%@\": the app deadline ran %.0f ms late, so the main queue was blocked that long", profile, late * 1000);
       release(@"app deadline");
     });
   }

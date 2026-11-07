@@ -169,6 +169,11 @@ const ROWS: Record<SettingsPane, Section[]> = {
           description: "When a tab you're not looking at plays sound, a player appears at the bottom of the sidebar. Pinned tabs that are playing show one when you hover them.",
           keywords: ["music", "player", "audio", "now playing"],
         },
+        hoverCardMemoryUsage: {
+          title: "Show memory usage on tab hover cards",
+          description: "Hovering a tab shows how much memory it uses. Above 800 MB the card says High memory usage. Sleeping tabs show none.",
+          keywords: ["memory", "ram", "hover card", "performance", "heavy tab", "task manager", "usage"],
+        },
         autoPictureInPicture: {
           title: "Automatic Picture in Picture",
           description: "A video or call you're watching pops out when you switch tabs or leave the window, and returns when you come back.",

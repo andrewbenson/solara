@@ -129,6 +129,9 @@ struct TabsPane: View {
         SettingToggle("tabs.tabReorderHaptics", key: "tabReorderHaptics")
         SettingToggle("tabs.extendWebsiteColor", key: "extendWebsiteColor")
         SettingToggle("tabs.sidebarMediaControls", key: "sidebarMediaControls")
+        if !top {
+          SettingToggle("tabs.hoverCardMemoryUsage", key: "hoverCardMemoryUsage")
+        }
         SettingToggle("tabs.autoPictureInPicture", key: "autoPictureInPicture")
         SettingToggle("tabs.videoUpscaling", key: "videoUpscaling")
       }

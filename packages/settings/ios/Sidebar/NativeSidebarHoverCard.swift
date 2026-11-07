@@ -12,6 +12,7 @@ enum NativeSidebarHoverCard {
 
   static func start() {
     guard NativeWindowShell.enabled, observer == nil else { return }
+    NativeTabMemory.installEngineQuery()
     observer = SettingsJS.shared.observe(topic) { value in receive(value) }
     receive(SettingsJS.shared.latestValue(topic))
   }
@@ -168,6 +169,8 @@ final class SidebarHoverCardHost {
     return card
   }()
   private var kind: String?
+  private var tabCardId: String?
+  private var tabCardInput: [String: Any]?
 
   var shownPlayers: [NSView] { kind == "player" && motion.phase != .hidden ? [playerCard.player] : [] }
   private var liveCardInput: [String: Any]?
@@ -194,6 +197,7 @@ final class SidebarHoverCardHost {
   func show(_ card: [String: Any]?) {
     guard let card, let kind = card["kind"] as? String else {
       if kind == "group" { groupCard.live = false }
+      tabCardInput = nil
       motion.hide()
       return coverChanged()
     }
@@ -207,6 +211,7 @@ final class SidebarHoverCardHost {
       return coverChanged()
     }
     if self.kind == "group", kind != "group" { groupCard.live = false }
+    if kind != "tab" { tabCardInput = nil }
     self.kind = kind
     motion.show(placed.view, origin: placed.origin)
     NativeSidebarHoverCard.send(windowId, "", "layout", ["frame": [placed.origin.x, placed.origin.y, placed.view.frame.width, placed.view.frame.height]])
@@ -218,7 +223,23 @@ final class SidebarHoverCardHost {
     switch kind {
     case "tab":
       guard let state = SidebarTabCardState.decode(card) else { return nil }
+      let memoryEnabled = NativeTabMemory.enabled
+      let memoryKey = TabMemoryKey.key(tabId: state.tabId, document: NativeTabMemory.document(state.tabId) ?? "")
+      let fresh = motion.phase == .hidden || motion.phase == .leaving || self.kind != "tab" || tabCardId != memoryKey
+      tabCardId = memoryKey
+      tabCardInput = card
       tabCard.set(state)
+      if fresh && memoryEnabled {
+        NativeTabMemory.cache.ask(memoryKey) { [weak self] key in
+          Task { @MainActor [weak self] in
+            guard let self, self.kind == "tab", self.motion.phase != .leaving, self.motion.phase != .hidden,
+              self.tabCardId == key, let input = self.tabCardInput
+            else { return }
+            self.show(input)
+          }
+        }
+      }
+      tabCard.setMemory(memoryEnabled ? NativeTabMemory.cache.row(memoryKey, sleeping: state.sleeping) : .absent)
       return (tabCard, SidebarTabCardMetrics.origin(anchor: state.anchorRect, sidebarWidth: state.sidebarWidth, cardHeight: tabCard.height, windowHeight: state.windowHeight))
     case "group":
       guard let state = Self.decode(SidebarGroupCardState.self, card) else { return nil }
@@ -291,6 +312,7 @@ final class SidebarHoverCardHost {
       if kind == "tab", let look = tabCard.state?.look {
         info["fill"] = look.fill
         info["titleShown"] = tabCard.titleShown
+        info["memory"] = tabCard.memoryShown ?? NSNull()
       }
       if kind == "group" { info["rows"] = groupCard.state?.rows.map(\.id) ?? [] }
       if kind == "folder" { info["title"] = folderPeek.state?.title ?? ""; info["more"] = folderPeek.state?.more ?? NSNull() }
@@ -433,7 +455,7 @@ public enum SidebarHoverCardRead {
     guard let data = NativeSidebarHoverCard.describe(windowId).data(using: .utf8) else { return nil }
     guard let source = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
     var result: [String: Any] = [:]
-    for key in ["kind", "phase", "opacity", "scale", "frame", "inWindow", "onScreen", "typingInCard", "buttons", "titleShown", "rows", "title", "more", "events"] { result[key] = source[key] }
+    for key in ["kind", "phase", "opacity", "scale", "frame", "inWindow", "onScreen", "typingInCard", "buttons", "titleShown", "memory", "rows", "title", "more", "events"] { result[key] = source[key] }
     return result
   }
 

@@ -95,6 +95,10 @@ public class HostedModule: Module {
     }
 
     #if DEBUG
+    AsyncFunction("devTabMemory") { (spec: String?) in
+      MainActor.assumeIsolated { NativeTabMemory.devSet(spec) }
+    }.runOnQueue(.main)
+
     AsyncFunction("devBookmarksBarLayout") { (windowId: String) -> String in
       MainActor.assumeIsolated { NativeBookmarksBar.devLayoutJSON(windowId: windowId) }
     }.runOnQueue(.main)

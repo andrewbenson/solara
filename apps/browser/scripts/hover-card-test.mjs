@@ -73,14 +73,14 @@ const crossCard = async (js) => {
 
     const n = s.windows[0]?.hoverCard;
     const same = js === null ? n === null : n && ["shown", "hidden"].includes(js.phase) && n.phase === js.phase && n.kind === js.kind && (!js.frame || near(n.frame, js.frame)) &&
-      ["inWindow", "onScreen", "typingInCard", "titleShown", "title", "more", "rows"].every((key) => !(key in js) || isDeepStrictEqual(n[key], js[key])) &&
+      ["inWindow", "onScreen", "typingInCard", "titleShown", "memory", "title", "more", "rows"].every((key) => !(key in js) || isDeepStrictEqual(n[key], js[key])) &&
       ["buttons", "events"].every((key) => !js[key] || n[key] && isDeepStrictEqual(Object.keys(n[key]).sort(), Object.keys(js[key]).sort()) && Object.keys(js[key]).every((label) => near(n[key][label], js[key][label])));
     if (same) return true;
     return false;
   });
   const native = snapshot.windows[0].hoverCard;
   if (!js) { assert.equal(native, js); return js; }
-  for (const key of ["kind", "phase", "inWindow", "onScreen", "typingInCard", "titleShown", "title", "more", "rows"]) if (key in js) assert.deepEqual(native[key], js[key], `native hover card ${key}`);
+  for (const key of ["kind", "phase", "inWindow", "onScreen", "typingInCard", "titleShown", "memory", "title", "more", "rows"]) if (key in js) assert.deepEqual(native[key], js[key], `native hover card ${key}`);
   for (const key of ["opacity", "scale"]) if (key in js) assert.ok(Math.abs(native[key] - js[key]) <= 0.02, `native hover card ${key}`);
   if (js.frame) assert.ok(near(native.frame, js.frame), "native hover card frame");
   for (const key of ["buttons", "events"]) if (js[key]) {
@@ -148,6 +148,42 @@ try {
     await until("the card to show Unpin", async () => !!(await card())?.buttons?.Unpin);
     assert.equal((await card()).phase, "shown");
     await run(`ac.store.getState().togglePin("t3"); return true`);
+  });
+
+  await rep.check("tab memory is absent without a query and follows the Debug readings", async () => {
+    const reopen = async () => {
+      await point(900, 600);
+      await gone("hover away");
+      await onRow("t1");
+      return shown("t1");
+    };
+    try {
+      await run('return globalThis.expo.modules.SolaraHosted.devTabMemory("disabled")');
+      const before = await reopen();
+      const absentHeight = before.frame[3];
+      const absent = await card();
+      assert.equal(absent.memory, null, "no memory row without a query");
+      assert.equal(absent.frame[3], absentHeight, "an absent row adds no height");
+      await untilSnapshot("no native memory row without a query", (s) => s.windows[0]?.hoverCard?.kind === "tab" && s.windows[0]?.hoverCard?.phase === "shown" && s.windows[0]?.hoverCard?.memory === null);
+      await run('return globalThis.expo.modules.SolaraHosted.devTabMemory("327155712")');
+      const regular = await reopen();
+      assert.equal(regular.memory, "Memory usage: 312 MB");
+      assert.ok(regular.frame[3] > absentHeight, "a reading reserves a line");
+      await run('return globalThis.expo.modules.SolaraHosted.devTabMemory("2147483648")');
+      const high = await reopen();
+      assert.equal(high.memory, "High memory usage · 2 GB");
+      assert.equal(high.frame[3], regular.frame[3], "high memory uses the same line");
+      await run('return globalThis.expo.modules.SolaraHosted.devTabMemory("none")');
+      const unknown = await reopen();
+      assert.equal(unknown.memory, "Memory usage: —");
+      assert.equal(unknown.frame[3], regular.frame[3], "unknown memory reserves the same line");
+      await run('return globalThis.expo.modules.SolaraHosted.devTabMemory("disabled")');
+      const cleared = await reopen();
+      assert.equal(cleared.memory, null, "disabling the query removes the row");
+      assert.equal(cleared.frame[3], absentHeight, "the card returns to its original height");
+    } finally {
+      await run('return globalThis.expo.modules.SolaraHosted.devTabMemory("off")');
+    }
   });
 
   await rep.check("hovering away hides it after the 160 ms delay and the 100 ms fade", async () => {

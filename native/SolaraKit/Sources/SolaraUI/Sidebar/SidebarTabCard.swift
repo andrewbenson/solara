@@ -76,6 +76,8 @@ public final class SidebarTabCardView: NSView {
   private let title = OnboardingTextNSView()
   private let host = OnboardingTextNSView()
   private let note = NSTextField(labelWithString: "This tab needs to reload")
+  private let memory = NSTextField(labelWithString: "")
+  private var memoryRow = SidebarTabMemoryRow.absent
   private var buttons: [SidebarIconButton] = []
   private var titleLines = 1
   private var tracking: NSTrackingArea?
@@ -102,8 +104,12 @@ public final class SidebarTabCardView: NSView {
     note.lineBreakMode = .byTruncatingTail
     note.font = .systemFont(ofSize: 11.5)
     note.setAccessibilityLabel("Web content has been discarded")
+    memory.lineBreakMode = .byTruncatingTail
+    memory.maximumNumberOfLines = 1
+    memory.isHidden = true
     addSubview(title)
     addSubview(host)
+    addSubview(memory)
     addSubview(note)
     DevPointer.observe(self, #selector(devPointer(_:)))
   }
@@ -111,6 +117,7 @@ public final class SidebarTabCardView: NSView {
   required init?(coder: NSCoder) { fatalError() }
 
   public func set(_ next: SidebarTabCardState) {
+    if next.tabId != state?.tabId { memoryRow = .absent }
     state = next
     let look = next.look
     func color(_ text: String) -> NSColor { CSSColor(text)?.ns ?? .clear }
@@ -125,6 +132,7 @@ public final class SidebarTabCardView: NSView {
     host.needsDisplay = true
     note.isHidden = !next.sleeping
     note.textColor = color(look.tertiary)
+    styleMemory()
     while buttons.count < next.buttons.count {
       let button = SidebarIconButton()
       button.radius = 7
@@ -152,6 +160,7 @@ public final class SidebarTabCardView: NSView {
     let m = SidebarTabCardMetrics.self
     var h = m.border + m.top + CGFloat(titleLines) * m.line
     if state.host != nil { h += m.line }
+    if !memory.isHidden { h += 2 + Self.lineHeight(memory.font ?? .systemFont(ofSize: 11.5)) }
     if state.sleeping { h += 2 + Self.lineHeight(note.font ?? .systemFont(ofSize: 11.5)) }
     return h + m.actionsGap + m.button + m.bottom + m.border
   }
@@ -171,6 +180,11 @@ public final class SidebarTabCardView: NSView {
     if !host.isHidden {
       host.frame = NSRect(x: m.inset + m.border, y: y, width: m.titleWidth, height: m.line)
       y += m.line
+    }
+    if !memory.isHidden {
+      let line = Self.lineHeight(memory.font ?? .systemFont(ofSize: 11.5))
+      memory.frame = NSRect(x: textX, y: y + 2, width: textWidth, height: line)
+      y += 2 + line
     }
     if !note.isHidden {
       let line = Self.lineHeight(note.font ?? .systemFont(ofSize: 11.5))
@@ -212,10 +226,30 @@ public final class SidebarTabCardView: NSView {
 
   public override func hitTest(_ point: NSPoint) -> NSView? {
     let hit = super.hitTest(point)
-    return hit === title || hit === host || hit === note ? self : hit
+    return hit === title || hit === host || hit === memory || hit === note ? self : hit
   }
 
   public override func mouseDown(with event: NSEvent) {}
+
+  public func setMemory(_ row: SidebarTabMemoryRow) {
+    memoryRow = row
+    styleMemory()
+    if state != nil { setFrameSize(NSSize(width: SidebarTabCardMetrics.width, height: height)) }
+    needsLayout = true
+  }
+
+  public var memoryShown: String? { memory.isHidden ? nil : memory.stringValue }
+
+  private func styleMemory() {
+    memory.isHidden = memoryRow == .absent || state?.sleeping != false
+    guard !memory.isHidden, let look = state?.look else { return }
+    let bytes: Double?
+    if case .bytes(let value) = memoryRow { bytes = value } else { bytes = nil }
+    let high = bytes.map { SidebarTabMemory.isHigh($0) } ?? false
+    memory.stringValue = SidebarTabMemory.text(bytes)
+    memory.font = .systemFont(ofSize: 11.5, weight: high ? .medium : .regular)
+    memory.textColor = CSSColor(high ? look.primary : look.tertiary)?.ns ?? .clear
+  }
 
   public var titleShown: String { title.shownText(width: SidebarTabCardMetrics.titleWidth) }
 

@@ -44,6 +44,7 @@ public struct Settings: Sendable, Hashable {
     "autoPictureInPicture": true,
     "videoUpscaling": true,
     "sidebarMediaControls": true,
+    "hoverCardMemoryUsage": true,
     "sidebarWidth": 190,
     "sidebarIconsOnly": false,
     "showSidebarButton": true,

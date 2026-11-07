@@ -69,6 +69,7 @@ export const SYNCED_SETTINGS = [
   "autoPictureInPicture",
   "videoUpscaling",
   "sidebarMediaControls",
+  "hoverCardMemoryUsage",
   "showFullUrl",
   "bookmarksBar",
   "appearance",

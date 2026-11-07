@@ -57,6 +57,7 @@ export type Settings = {
   autoPictureInPicture: boolean;
   videoUpscaling: boolean;
   sidebarMediaControls: boolean;
+  hoverCardMemoryUsage: boolean;
   sidebarWidth: number;
   sidebarIconsOnly: boolean;
   showSidebarButton: boolean;
@@ -160,6 +161,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoPictureInPicture: true,
   videoUpscaling: true,
   sidebarMediaControls: true,
+  hoverCardMemoryUsage: true,
   sidebarWidth: 190,
   sidebarIconsOnly: false,
   showSidebarButton: true,

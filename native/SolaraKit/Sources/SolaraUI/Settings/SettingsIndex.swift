@@ -223,6 +223,13 @@ public struct SettingsIndex: Sendable {
             keywords: ["music", "player", "audio", "now playing"]
           ),
           Row(
+            key: "hoverCardMemoryUsage",
+            title: "Show memory usage on tab hover cards",
+            description: "Hovering a tab shows how much memory it uses. Above 800 MB the card says High memory usage. Sleeping tabs show none.",
+            caption: "Hovering a tab shows how much memory it uses.",
+            keywords: ["memory", "ram", "hover card", "performance", "heavy tab", "task manager", "usage"]
+          ),
+          Row(
             key: "autoPictureInPicture",
             title: "Automatic Picture in Picture",
             description: "A video or call you're watching pops out when you switch tabs or leave the window, and returns when you come back.",

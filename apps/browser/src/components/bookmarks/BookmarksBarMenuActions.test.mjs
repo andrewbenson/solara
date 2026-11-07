@@ -5,25 +5,17 @@ import { useBrowser } from "../../store/browser.ts";
 import { shellNativeModules } from "../../test-native/shell.ts";
 import { useBookmarkEditor } from "./edit.ts";
 
-const barURL = new URL("./BookmarksBar.tsx", import.meta.url).href;
 const actionsURL = new URL("../../lib/actions.ts", import.meta.url).href;
 const browserURL = new URL("../../store/browser.ts", import.meta.url).href;
 const fake = (source) => ({ url: `data:text/javascript,${encodeURIComponent(source)}`, shortCircuit: true });
 const hooks = registerHooks({
   resolve(specifier, context, next) {
-    if (context.parentURL === barURL) {
-      if (specifier === "react-native") return fake('export const Animated = {}; export const PanResponder = {}; export const Pressable = () => null; export const StyleSheet = {}; export const Text = () => null; export const View = () => null;');
-      if (specifier === "../primitives") return fake('export const Favicon = () => null; export const useHover = () => ({});');
-      if (specifier === "../settings/windows") return fake('export const openImport = () => {};');
-      if (specifier === "../sidebar/tokens") return fake('export const useSidebarWidth = () => 0;');
-    }
     const resolved = next(specifier, context);
     if (resolved.url === actionsURL) return fake(`import { useBrowser } from ${JSON.stringify(browserURL)}; export const focus = (id) => useBrowser.getState().setFocusedWindow(id); export const openWindow = (options) => useBrowser.getState().createWindow(options);`);
     return resolved;
   },
 });
-const { handleBookmarksBarMenuChoice, openImportMenu } = await import("./bookmarksBarActions.ts");
-const { openBarMenu, openFolderMenu } = await import("./BookmarksBar.tsx");
+const { handleBookmarksBarMenuChoice } = await import("./bookmarksBarActions.ts");
 after(() => hooks.deregister());
 const S = () => useBrowser.getState();
 const shell = shellNativeModules.SolaraShell;
@@ -120,7 +112,7 @@ test("group and Arc restoration choices keep their existing store transformation
   assert.equal(S().bookmarks.nodes[holder], undefined);
 });
 
-test("manage, bar modes, hidden import and RN Copy Link retain their actions", async () => {
+test("manage, bar modes, hidden import and Copy Link retain their actions", async () => {
   await choice("manage");
   assert.ok(Object.values(S().tabs).some((tab) => tab.url === "solara://bookmarks"));
   for (const mode of ["always", "newTab", "never"]) {
@@ -134,16 +126,4 @@ test("manage, bar modes, hidden import and RN Copy Link retain their actions", a
   shell.copyText = (text) => requests.push(text);
   await choice("copy", first);
   assert.deepEqual(requests, ["https://example.com/?keep=1"]);
-});
-
-test("RN menus still dispatch selections through the shared action implementation", async () => {
-  shell.showMenu = () => Promise.resolve("edit");
-  await openBarMenu(windowId, "default", S().bookmarks.nodes[first]);
-  assert.equal(useBookmarkEditor.getState().open.bookmarkId, first);
-  shell.showMenu = () => Promise.resolve(`open:${nested}`);
-  await openFolderMenu(windowId, [nested], undefined, folder);
-  assert.equal(S().tabs[S().windows[windowId].activeTabIds.default].url, "https://nested.example/");
-  shell.showMenu = () => Promise.resolve("hide");
-  await openImportMenu();
-  assert.equal(S().settings.hideBookmarksBarImport, true);
 });

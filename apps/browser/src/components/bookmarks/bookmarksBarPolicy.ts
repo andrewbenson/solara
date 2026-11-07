@@ -1,3 +1,4 @@
+import { hostedKinds } from "@solara/settings";
 import { useBrowser } from "../../store/browser";
 import type { Settings } from "../../store/settings";
 
@@ -10,6 +11,11 @@ export function bookmarksBarShown(mode: BookmarksBarMode, tab: { url: string } |
 
 export type BookmarksBarMode = Settings["bookmarksBar"];
 
+export function nativeBookmarksBarAvailable(): boolean {
+  return hostedKinds().includes("bookmarksBar");
+}
+
 export function useBookmarksBarMode(windowId: string): BookmarksBarMode {
-  return useBrowser((s) => (s.windows[windowId]?.incognito ? "never" : s.settings.bookmarksBar));
+  const available = nativeBookmarksBarAvailable();
+  return useBrowser((s) => (!available || s.windows[windowId]?.incognito ? "never" : s.settings.bookmarksBar));
 }

@@ -1,5 +1,5 @@
 import { cleanUrl } from "@solara/core";
-import { copyText, prompt, showMenu } from "@solara/shell";
+import { copyText, prompt } from "@solara/shell";
 import { addFolderToSidebar, restoreArcFolders } from "../../lib/bookmarkGroups";
 import { folderChildren } from "../../store/bookmarks";
 import { useBrowser } from "../../store/browser";
@@ -7,15 +7,6 @@ import type { BookmarkNode } from "../../store/types";
 import { openInternalPage } from "../pages/urls";
 import { openFolder, openUrl } from "./actions";
 import { editBookmark } from "./edit";
-
-export async function openImportMenu() {
-  const choice = await showMenu([{ id: "hide", title: "Hide Import Bookmarks Button" }]);
-  if (choice === "hide") hideBookmarksBarImportButton();
-}
-
-export function hideBookmarksBarImportButton() {
-  useBrowser.getState().updateSettings({ hideBookmarksBarImport: true });
-}
 
 export async function handleBookmarksBarMenuChoice(windowId: string, profileId: string, action: string, id?: string) {
   const s = useBrowser.getState();
@@ -43,7 +34,7 @@ export async function handleBookmarksBarMenuChoice(windowId: string, profileId: 
   if (action === "addFolder") await addFolderFromBookmarksBar(windowId, profileId, node ?? null);
   if (action === "manage") openInternalPage("bookmarks", windowId);
   if (action === "bar" && (id === "always" || id === "newTab" || id === "never")) useBrowser.getState().updateSettings({ bookmarksBar: id });
-  if (action === "hide") hideBookmarksBarImportButton();
+  if (action === "hide") useBrowser.getState().updateSettings({ hideBookmarksBarImport: true });
 }
 
 function bookmarksBarInsertion(profileId: string, node: BookmarkNode | null) {
@@ -53,11 +44,11 @@ function bookmarksBarInsertion(profileId: string, node: BookmarkNode | null) {
   return { parentId: parentId ?? undefined, index };
 }
 
-export function addPageFromBookmarksBar(windowId: string, profileId: string, node: BookmarkNode | null) {
+function addPageFromBookmarksBar(windowId: string, profileId: string, node: BookmarkNode | null) {
   void editBookmark(null, windowId, { profileId, ...bookmarksBarInsertion(profileId, node) });
 }
 
-export async function addFolderFromBookmarksBar(windowId: string, profileId: string, node: BookmarkNode | null) {
+async function addFolderFromBookmarksBar(windowId: string, profileId: string, node: BookmarkNode | null) {
   const position = bookmarksBarInsertion(profileId, node);
   const title = await prompt({ title: "New Folder", placeholder: "Folder name", confirmTitle: "Create", windowId });
   if (title) useBrowser.getState().addBookmarkFolder({ profileId, title, ...position });

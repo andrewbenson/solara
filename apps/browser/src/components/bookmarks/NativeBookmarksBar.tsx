@@ -1,4 +1,4 @@
-import { focusPageIfUnclaimed, hostedKinds, onHostedEvent, SolaraHostedView } from "@solara/settings";
+import { focusPageIfUnclaimed, onHostedEvent, SolaraHostedView } from "@solara/settings";
 import { memo, useEffect } from "react";
 import { View } from "react-native";
 import { addFolderToSidebar } from "../../lib/bookmarkGroups";
@@ -11,15 +11,14 @@ import { shownPageId } from "../../store/peek";
 import { openImport } from "../settings/windows";
 import { useSidebarWidth } from "../sidebar/tokens";
 import { openModeFor, openUrl } from "./actions";
-import { BookmarksBar } from "./BookmarksBar";
 import { handleBookmarksBarMenuChoice } from "./bookmarksBarActions";
-import { BOOKMARKS_BAR_HEIGHT } from "./bookmarksBarPolicy";
+import { BOOKMARKS_BAR_HEIGHT, nativeBookmarksBarAvailable } from "./bookmarksBarPolicy";
 import { bookmarksBarSnapshot } from "./bookmarksBarSnapshot";
 import { dropBookmarksBarLinks } from "./bookmarksBarDrop";
 
 export const NativeBookmarksBar = memo(function NativeBookmarksBar({ placeholder }: { placeholder?: boolean }) {
   const windowId = useWindowId();
-  if (!hostedKinds().includes("bookmarksBar")) return <BookmarksBar placeholder={placeholder} />;
+  if (!nativeBookmarksBarAvailable()) return null;
   return placeholder ? <View style={{ height: BOOKMARKS_BAR_HEIGHT }} /> : <Bar windowId={windowId} />;
 });
 

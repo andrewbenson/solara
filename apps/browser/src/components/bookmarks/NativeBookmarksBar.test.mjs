@@ -35,8 +35,7 @@ const sources = {
     export const openModeFor = (mods) => mods;
     export const openUrl = (...args) => globalThis.nativeBookmarksBarTest.actions.push(["url", ...args]);
   `,
-  "./BookmarksBar": `export const BookmarksBar = "FallbackBar";`,
-  "./bookmarksBarPolicy": `export const BOOKMARKS_BAR_HEIGHT = 30;`,
+  "./bookmarksBarPolicy": `export const BOOKMARKS_BAR_HEIGHT = 30; export const nativeBookmarksBarAvailable = () => globalThis.nativeBookmarksBarTest.kinds.includes("bookmarksBar");`,
   "./bookmarksBarActions": `export const handleBookmarksBarMenuChoice = (...args) => globalThis.nativeBookmarksBarTest.actions.push(["menuChoice", ...args]);`,
 };
 const hooks = registerHooks({
@@ -72,11 +71,10 @@ beforeEach(() => {
   });
 });
 
-test("the off leg retains the React bar and inactive panes reserve height without publishing", () => {
+test("without the native bar nothing mounts, and inactive panes reserve height without publishing", () => {
   f.kinds = [];
-  const fallback = NativeBookmarksBar({ placeholder: true });
-  assert.equal(fallback.type, "FallbackBar");
-  assert.equal(fallback.props.placeholder, true);
+  assert.equal(NativeBookmarksBar({ placeholder: true }), null);
+  assert.equal(NativeBookmarksBar({}), null);
   f.kinds = ["bookmarksBar"];
   const placeholder = NativeBookmarksBar({ placeholder: true });
   assert.equal(placeholder.type, "View");

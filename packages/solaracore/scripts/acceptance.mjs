@@ -756,6 +756,7 @@ const cef = (call) => evalApp(`return globalThis.expo.modules.SolaraCEF.${call}`
 const webKit = (call) => evalApp(`return globalThis.expo.modules.SolaraWebKit.${call}`);
 const exts = (call) => evalApp(`return globalThis.expo.modules.SolaraExtensions.${call}`);
 const extPath = join(scratch, "fixture-ext");
+const extensionPagesOpenedAsTabs = new Set();
 cpSync(resolve(new URL(".", import.meta.url).pathname, "fixtures/ext"), extPath, { recursive: true });
 const extPopupPath = join(scratch, "fixture-ext-popup");
 function writePopupExtension({ welcome = false } = {}) {
@@ -3250,6 +3251,7 @@ try {
     };
     try {
       await evalApp(`return ac.extensions.refreshExtensions("").then(() => true)`);
+      extensionPagesOpenedAsTabs.add(`chrome-extension://${installed.id}/popup.html`);
       tab = await freshTab(`chrome-extension://${installed.id}/popup.html`);
       const page = await until("the extension page", () => pageFor(tab, `${installed.id}/popup.html`), 10000);
       await cdp(page, "Runtime.evaluate", { expression: "chrome.permissions.remove({ permissions: ['bookmarks'] }).then(() => true)", awaitPromise: true });
@@ -4695,7 +4697,7 @@ try {
   // MARK: Data, downloads and crashes
 
   await check("internal-pages-not-history", async () => {
-    const userOpened = (u) => /^chrome-extension:\/\/[a-p]{32}\/options\.html/.test(u);
+    const userOpened = (u) => /^chrome-extension:\/\/[a-p]{32}\/options\.html/.test(u) || extensionPagesOpenedAsTabs.has(u.split(/[?#]/)[0]);
     const profiles = ["", ...(await evalApp(`return ac.store.getState().profileOrder.filter((p) => p !== "default")`))];
     await sleep(1500);
     const found = {};
@@ -5249,13 +5251,15 @@ try {
     const securityEvent = (await eventsOf(first.id)).some((x) => x.name === "security");
     if (!securityEvent) throw new Error("no onSecurity");
     const focused = (await eventsOf(first.id)).some((x) => x.name === "focus");
-    const other = (await state()).tabs.find((x) => x.id !== first.id && x.url?.startsWith(`${base}/d`));
+    const other = await openTab(`${base}/d?page-events`, "Page D", true);
     let activate = null;
-    if (other) {
-      const ot = await pageTarget(`${base}/d`);
+    try {
+      const ot = await until("the background page", () => pageTarget(`${base}/d?page-events`), 10000);
       await cdp(ot, "Runtime.evaluate", { expression: "window.focus()", userGesture: true });
       activate = await until("onActivateRequest", async () => (await eventsOf(other.id)).find((x) => x.name === "activateRequest"), 3000).catch(() => null);
       await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
+    } finally {
+      await closeTab(other.id).catch(() => null);
     }
     return { zoom: zoom.payload.zoom, security: security?.level, securityEvent, focused, activate: activate?.payload?.reason ?? null,
       external: { scheme: external.scheme, app: external.app }, escape: escape.payload.command };

@@ -2,6 +2,7 @@ import { focusPageIfUnclaimed, onHostedEvent, SolaraHostedView } from "@solara/s
 import { memo, useEffect } from "react";
 import { View } from "react-native";
 import { addFolderToSidebar } from "../../lib/bookmarkGroups";
+import { reportBookmarkFailure, submitBookmarks } from "../../lib/bookmarkWriter";
 import { useTheme } from "../../lib/theme";
 import { folderChildren } from "../../store/bookmarks";
 import { useBrowser } from "../../store/browser";
@@ -14,7 +15,7 @@ import { openModeFor, openUrl } from "./actions";
 import { handleBookmarksBarMenuChoice } from "./bookmarksBarActions";
 import { BOOKMARKS_BAR_HEIGHT, nativeBookmarksBarAvailable } from "./bookmarksBarPolicy";
 import { bookmarksBarSnapshot } from "./bookmarksBarSnapshot";
-import { dropBookmarksBarLinks } from "./bookmarksBarDrop";
+import { bookmarksBarDropMutations } from "./bookmarksBarDrop";
 
 export const NativeBookmarksBar = memo(function NativeBookmarksBar({ placeholder }: { placeholder?: boolean }) {
   const windowId = useWindowId();
@@ -53,12 +54,13 @@ function Bar({ windowId }: { windowId: string }) {
     } else if (name === "move" && node && roots) {
       if (typeof payload.into === "string") {
         const target = children.find((n) => n.id === payload.into);
-        if (target?.kind === "folder" && target.id !== node.id) s.moveBookmark(node.id, target.id);
+        if (target?.kind === "folder" && target.id !== node.id) void submitBookmarks(currentProfileId, [{ method: "moveBookmark", args: [node.id, target.id] }]).catch(reportBookmarkFailure);
       } else if (payload.into === undefined && typeof payload.index === "number" && Number.isInteger(payload.index) && payload.index >= 0 && payload.index < children.length) {
-        s.moveBookmark(node.id, roots.bar, payload.index);
+        void submitBookmarks(currentProfileId, [{ method: "moveBookmark", args: [node.id, roots.bar, payload.index] }]).catch(reportBookmarkFailure);
       }
     } else if (name === "dropLinks") {
-      dropBookmarksBarLinks(s, currentProfileId, payload);
+      const edits = bookmarksBarDropMutations(s, currentProfileId, payload);
+      if (edits.length) void submitBookmarks(currentProfileId, edits).catch(reportBookmarkFailure);
     } else if (name === "folderToSidebar" && node?.kind === "folder") {
       addFolderToSidebar(node.id, windowId);
     } else if (name === "menuChoice" && typeof payload.action === "string") {

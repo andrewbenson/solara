@@ -1,7 +1,8 @@
 import { NativePage, type NativePageEvent } from "@solara/settings";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet } from "react-native";
 import { addFolderToSidebar, makesGroup, restorableArcHolder, restoreArcFolders } from "../../lib/bookmarkGroups";
+import { bookmarkWriter, reportBookmarkFailure, submitBookmarks, type BookmarkMutation } from "../../lib/bookmarkWriter";
 import { useTheme } from "../../lib/theme";
 import type { RemovedBookmarks } from "../../store/bookmarks";
 import { useBrowser } from "../../store/browser";
@@ -39,9 +40,10 @@ export function NativeBookmarksPage({ tabId, profileId }: { tabId: string; profi
   const bookmarks = useBrowser((s) => s.bookmarks);
   const roots = bookmarks.roots[profileId];
   const [undo, setUndo] = useState<{ removed: RemovedBookmarks; count: number } | null>(null);
+  const restoring = useRef<{ removed: RemovedBookmarks; count: number } | null>(null);
   useEffect(() => {
     if (!undo) return;
-    const timer = setTimeout(() => setUndo(null), 8000);
+    const timer = setTimeout(() => setUndo((current) => (current && restoring.current === current ? current : null)), 8000);
     return () => clearTimeout(timer);
   }, [undo]);
 
@@ -54,8 +56,7 @@ export function NativeBookmarksPage({ tabId, profileId }: { tabId: string; profi
   }, [bookmarks, roots]);
   const state = JSON.stringify({ ...pageThemeState(theme), profileId, engineProfile: engineProfile(profileId), undoCount: undo?.count ?? null, ...actionFlags });
 
-  const onEvent = (e: NativePageEvent) => {
-    const s = useBrowser.getState();
+  const onEvent = async (e: NativePageEvent) => {
     const id = String(e.id ?? "");
     if (e.kind === "open") openUrl(String(e.url), windowId, e.mode as OpenMode);
     else if (e.kind === "openAll") void openFolder(id, windowId, e.newWindow ? "window" : "tabs");
@@ -63,24 +64,37 @@ export function NativeBookmarksPage({ tabId, profileId }: { tabId: string; profi
     else if (e.kind === "addGroup") addFolderToSidebar(id, windowId);
     else if (e.kind === "restoreArc") restoreArcFolders(id, windowId);
     else if (e.kind === "delete") {
-      const removed = s.removeBookmarks(e.ids as string[]);
+      const removed = await bookmarkWriter.removeBookmarks(profileId, e.ids as string[]);
       setUndo({ removed, count: removed.places.length });
     } else if (e.kind === "undo") {
-      if (undo) s.restoreBookmarks(undo.removed);
-      setUndo(null);
-    } else if (e.kind === "move") {
-      const moving = e.ids as string[];
-      if (typeof e.into === "string") return moving.forEach((m) => s.moveBookmark(m, e.into as string));
-      const listed = e.listed as string[];
-      let index = e.index as number;
-      for (const m of moving) {
-        const from = listed.indexOf(m);
-        if (from >= 0 && from < (e.index as number)) index--;
+      if (!undo || restoring.current) return;
+      restoring.current = undo;
+      try {
+        await bookmarkWriter.restoreBookmarks(profileId, undo.removed);
+        setUndo((current) => (current === undo ? null : current));
+      } catch (error) {
+        setUndo((current) => (current === undo || !current ? { ...undo } : current));
+        throw error;
+      } finally {
+        restoring.current = null;
       }
-      moving.forEach((m, i) => useBrowser.getState().moveBookmark(m, String(e.parentId), index + i));
+    } else if (e.kind === "move") {
+      await submitBookmarks(profileId, bookmarksPageMoves(e));
     } else if (e.kind === "addBookmark") editBookmark(null, windowId, { profileId, parentId: (e.parentId as string | null) ?? undefined });
     else if (e.kind === "addFolder") editBookmark(null, windowId, { profileId, parentId: (e.parentId as string | null) ?? undefined, folder: true });
     else if (e.kind === "import") openImport();
   };
-  return <NativePage kind="bookmarks" state={state} style={StyleSheet.absoluteFill} onPageEvent={(e) => onEvent(e.nativeEvent)} />;
+  return <NativePage kind="bookmarks" state={state} style={StyleSheet.absoluteFill} onPageEvent={(e) => void onEvent(e.nativeEvent).catch(reportBookmarkFailure)} />;
+}
+
+export function bookmarksPageMoves(e: NativePageEvent): BookmarkMutation[] {
+  const moving = e.ids as string[];
+  if (typeof e.into === "string") return moving.map((m) => ({ method: "moveBookmark", args: [m, e.into] }));
+  const listed = e.listed as string[];
+  let index = e.index as number;
+  for (const m of moving) {
+    const from = listed.indexOf(m);
+    if (from >= 0 && from < (e.index as number)) index--;
+  }
+  return moving.map((m, i) => ({ method: "moveBookmark", args: [m, String(e.parentId), index + i] }));
 }

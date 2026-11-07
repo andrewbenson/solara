@@ -36,6 +36,15 @@ const sources = {
     export const openUrl = (...args) => globalThis.nativeBookmarksBarTest.actions.push(["url", ...args]);
   `,
   "./bookmarksBarPolicy": `export const BOOKMARKS_BAR_HEIGHT = 30; export const nativeBookmarksBarAvailable = () => globalThis.nativeBookmarksBarTest.kinds.includes("bookmarksBar");`,
+  "../../lib/bookmarkWriter": `
+    export const reportBookmarkFailure = (error) => globalThis.nativeBookmarksBarTest.actions.push(["failure", String(error)]);
+    export const submitBookmarks = (profileId, mutations) => {
+      const f = globalThis.nativeBookmarksBarTest;
+      f.batches.push([profileId, mutations.length]);
+      for (const m of mutations) f.actions.push(m.method === "addBookmark" ? ["add", m.args[0]] : ["move", ...m.args]);
+      return Promise.resolve(mutations.map(() => null));
+    };
+  `,
   "./bookmarksBarActions": `export const handleBookmarksBarMenuChoice = (...args) => globalThis.nativeBookmarksBarTest.actions.push(["menuChoice", ...args]);`,
 };
 const hooks = registerHooks({
@@ -56,13 +65,13 @@ const mount = () => {
 
 beforeEach(() => {
   Object.assign(f, {
-    kinds: ["bookmarksBar"], sidebarWidth: 210, windowId: "first", actions: [], subscriptions: [], listeners: new Map(), cleanups: [],
+    kinds: ["bookmarksBar"], sidebarWidth: 210, windowId: "first", actions: [], batches: [], subscriptions: [], listeners: new Map(), cleanups: [],
     theme: { toolbarHover: "h", toolbarPressed: "p", textTab: "t", textTertiary: "q", icon: "i", divider: "d", accent: "a", dark: false },
     state: {
       settings: { hideBookmarksBarImport: false, tabLayout: "sidebar", bookmarksBar: "always" },
       windows: { first: { profileId: "one", sidebarOpen: true }, second: { profileId: "two" } },
-      moveBookmark: (...args) => f.actions.push(["move", ...args]),
-      addBookmark: (options) => f.actions.push(["add", options]),
+      moveBookmark: () => { throw new Error("the bar wrote to the store directly"); },
+      addBookmark: () => { throw new Error("the bar wrote to the store directly"); },
       bookmarks: {
         roots: { one: { bar: "bar", other: "other" }, two: { bar: "secondBar", other: "secondOther" } },
         nodes: { bar: folder("bar", ["a", "folder", "b"]), a: url("a"), b: url("b"), folder: folder("folder", ["child"]), child: url("child"), other: folder("other", ["child"]), secondBar: folder("secondBar", ["second"]), second: url("second"), secondOther: folder("secondOther", []) },
@@ -244,6 +253,7 @@ test("link drops validate each URL and preserve valid item order and insertion i
     ["add", { profileId: "one", parentId: "bar", index: 2, url: "http://second.example", title: "Second link" }],
     ["add", { profileId: "one", parentId: "bar", index: 3, url: "https://last.example", title: "https://last.example" }],
   ]);
+  assert.deepEqual(f.batches, [["one", 3]], "one drop is one submission");
 });
 
 test("link drops append into a bar folder and Other Bookmarks for their window profile", () => {

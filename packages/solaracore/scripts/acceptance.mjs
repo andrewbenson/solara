@@ -44,9 +44,9 @@ import { createServer } from "node:http";
 import { networkInterfaces, tmpdir } from "node:os";
 import { createServer as createHttpsServer } from "node:https";
 import { basename, join, resolve } from "node:path";
-import { X509Certificate, createHash, createSign, generateKeyPairSync } from "node:crypto";
+import { X509Certificate, createHash, createSign, generateKeyPairSync, randomUUID } from "node:crypto";
 import { crc32, deflateSync, inflateSync } from "node:zlib";
-import { attach as attachInstance, launch as launchInstance, onScreenWindows as windowsOf, reporter, screenLocked, sleep, temporaryData } from "../../../scripts/lib/instance.mjs";
+import { attach as attachInstance, crashReportsForInstance, launch as launchInstance, onScreenWindows as windowsOf, reporter, screenLocked, sleep, temporaryData } from "../../../scripts/lib/instance.mjs";
 
 // MARK: What each check needs
 
@@ -1019,6 +1019,111 @@ try {
     const native = await evalApp(`return ac.shell.windowIds()`);
     if (native.length !== 1) throw new Error(`windows ${JSON.stringify(native)} (a second JS runtime?)`);
     return { chromium: info.chromiumVersion, windows: s.windows, tabs: s.tabs.length, pid: child.pid };
+  });
+
+  await check("bookmark-url-canonicalization", async () => {
+    const available = await evalApp(`return typeof globalThis.expo.modules.SolaraCEF.devCanonicalBookmarkURL === "function"`);
+    assert.equal(available, true, "missing native bookmark URL acceptance adapter; rebuild the Debug app with source-v2.patch");
+    const canonicalize = (input) => cef(`devCanonicalBookmarkURL(${JSON.stringify(JSON.stringify(input))})`);
+    const profile = (await state()).profileId;
+    assert.equal(typeof profile, "string", "a regular profile is loaded");
+    assert.equal(profile.startsWith("incognito"), false, "bookmark fixtures use a regular profile");
+    const engine = async (name, args = {}) => {
+      const value = JSON.parse(await cef(`engineCall(${JSON.stringify(name)}, ${JSON.stringify(profile)}, ${JSON.stringify(JSON.stringify(args))})`));
+      assert.equal(value.error, undefined, `${name}: ${JSON.stringify(value)}`);
+      return value;
+    };
+    const apply = (ops) => engine("ac_bookmarks_apply", { ops });
+    const tree = () => engine("ac_bookmarks_tree");
+    const find = (roots, id) => {
+      const pending = [roots.bar, roots.other];
+      while (pending.length) {
+        const node = pending.pop();
+        if (node?.id === id) return node;
+        pending.push(...(node?.c ?? []));
+      }
+      return null;
+    };
+    const folder = randomUUID();
+    const changing = randomUUID();
+    const rawNul = "https://example.com/a\u0000z";
+    const valid = [
+      ["trailing-slash", "https://example.com", "https://example.com/"],
+      ["host-case", "HTTP://EXAMPLE.COM/A", "http://example.com/A"],
+      ["idn", "https://bücher.de/", "https://xn--bcher-kva.de/"],
+      ["https-default-port", "https://example.com:443/a", "https://example.com/a"],
+      ["http-default-port", "http://example.com:80", "http://example.com/"],
+      ["file", "file:///tmp/a b", "file:///tmp/a%20b"],
+      ["chrome-internal", "chrome://VERSION"],
+      ["solara-internal", "solara://VERSION"],
+      ["solara-bookmarks", "solara://bookmarks"],
+      ["about", "about:blank"],
+      ["data", "data:text/plain,a b"],
+      ["javascript", "javascript:alert(1)"],
+      ["mailto", "mailto:a@example.com"],
+      ["extension", "chrome-extension://abcdefghijklmnop/options.html"],
+      ["credentials-path-query-fragment", "https://user:pass@EXAMPLE.COM/a/../b?x=%2f#part"],
+      ["percent-escape", "https://example.com/%7e"],
+      ["escaped-nul", "https://example.com/a%00z", "https://example.com/a%00z"],
+    ];
+    const invalid = ["", "relative/path", "http://", "http://[bad]", "https://example.com:99999/", rawNul];
+    const evidence = [];
+    const probe = await canonicalize(valid[0][1]);
+    assert.equal(probe.ok, true, `canonicalizer unavailable or failed: ${JSON.stringify(probe)}`);
+    try {
+      assert.deepEqual(await apply([
+        { op: "add", id: folder, parent: "other", k: "f", t: "Bookmark URL acceptance" },
+        { op: "add", id: changing, parent: folder, k: "u", t: "Updated", u: "https://initial.test/" },
+      ]), { applied: 2, skipped: 0, invalid: [] });
+      for (const [name, input, expected] of valid) {
+        const canonical = await canonicalize(input);
+        assert.equal(canonical.ok, true, `${name}: ${JSON.stringify(canonical)}`);
+        assert.equal(typeof canonical.url, "string", `${name}: canonical URL`);
+        assert.equal(canonical.mainThread, false, `${name}: runs on the native worker queue`);
+        if (expected !== undefined) assert.equal(canonical.url, expected, `${name}: known GURL spelling`);
+        const id = randomUUID();
+        assert.deepEqual(await apply([
+          { op: "add", id, parent: folder, k: "u", t: name, u: input },
+          { op: "update", id: changing, u: input },
+        ]), { applied: 2, skipped: 0, invalid: [] }, `${name}: add and update raw input`);
+        const stored = await tree();
+        const added = find(stored, id);
+        const updated = find(stored, changing);
+        assert.ok(added, `${name}: actual model node added`);
+        assert.ok(updated, `${name}: actual model node updated`);
+        assert.equal(canonical.url, added.u, `${name}: canonicalizer equals BookmarkModel AddURL output`);
+        assert.equal(canonical.url, updated.u, `${name}: canonicalizer equals BookmarkModel SetURL output`);
+        const repeated = await canonicalize(canonical.url);
+        assert.equal(repeated.ok, true, `${name}: canonical output remains valid`);
+        assert.equal(repeated.url, canonical.url, `${name}: idempotent`);
+        evidence.push({ name, input, canonical: canonical.url, added: added.u, updated: updated.u });
+      }
+      for (const input of invalid) {
+        const canonical = await canonicalize(input);
+        assert.equal(canonical.ok, false, `invalid ${JSON.stringify(input)}: ${JSON.stringify(canonical)}`);
+        assert.equal(canonical.domain, "SolaraCoreBookmarkURL", "native invalid-input error domain");
+        assert.equal(canonical.code, 2, "invalid input is distinct from unavailable support or a malformed reply");
+        assert.equal(canonical.url, undefined, "invalid input has no replacement URL");
+        const id = randomUUID();
+        assert.deepEqual(await apply([{ op: "add", id, parent: folder, k: "u", t: "Invalid", u: input }]),
+          { applied: 0, skipped: 0, invalid: [id] }, `model also refuses ${JSON.stringify(input)}`);
+        assert.equal(find(await tree(), id), null, "invalid input did not create a bookmark");
+        evidence.push({ input, invalid: true, domain: canonical.domain, code: canonical.code });
+      }
+      const beforeNul = await tree();
+      assert.deepEqual(await apply([
+        { op: "update", id: changing, t: "Refused update", u: rawNul },
+        { op: "add", id: changing, parent: "other", k: "u", t: "Refused add", u: rawNul },
+      ]), { applied: 0, skipped: 0, invalid: [changing, changing] }, "raw NUL edits are refused");
+      assert.deepEqual(await tree(), beforeNul, "raw NUL edits preserve title, URL and parent");
+      return { profile, cases: evidence };
+    } finally {
+      const remaining = find(await tree(), folder);
+      if (remaining) {
+        assert.deepEqual(await apply([{ op: "remove", id: folder }]), { applied: 1, skipped: 0, invalid: [] });
+        assert.equal(find(await tree(), folder), null, "removed every acceptance bookmark");
+      }
+    }
   });
 
   await check("notifications-one-requester", async () => {
@@ -7155,7 +7260,8 @@ try {
       }
     });
     const crashes = ours.filter((f) => !f.startsWith("ExcUserFault_"));
-    if (crashes.length) throw new Error(`crash report: ${crashes}`);
+    const scratchCrashes = crashReportsForInstance(data, child.pid, launchedAt);
+    if (crashes.length || scratchCrashes.length) throw new Error(`crash report: ${JSON.stringify({ diagnosticReports: crashes, scratch: scratchCrashes })}`);
     return { exitedAfterMs: Date.now() - started, sessionSaved: saved, faults: ours.filter((f) => f.startsWith("ExcUserFault_")) };
   });
 

@@ -396,6 +396,7 @@ Plain Chromium code over Chrome's services (`engine/chromium/src/chrome/browser/
 | `ac_tasks_list`, `ac_components_list` | `listTasks` (memory telemetry, the dev harness), `components` |
 | `ac_task_manager_open`, `ac_battery_saver` | `openTaskManager` (Chrome's Views Task Manager), `setBatterySaver` (Chrome's battery saver mode pref) |
 | `ac_history_*`, `ac_favicons_*`, `ac_bookmarks_*` | `history.ts`, `favicons.ts`, `bookmarks.ts` (through `engineCall`) |
+| `ac_bookmarks_canonicalize_url_v1` | Dormant native-only synchronous GURL utility through `SolaraCoreEngineBridge.canonicalBookmarkURL`; UTF-16 input with explicit length, copied UTF-8 result, no profile or JS hop. Generic ABI 2 plus versioned-symbol guard; no production caller or activation. Debug-only `bookmark-url-canonicalization` acceptance compares against real engine bookmark readback; drafted, not run. Contract and engine landing steps: `docs/engine-build.md`. |
 | `ac_tab_restore_tag`, `_take`, `_load` | native: the WebView's attach (and close) and `restore:` |
 | `ac_tabs_watch`, `ac_tabs_group` | tab groups in strip transactions |
 | `ac_tabs_memory`, `ac_tabs_cpu` | Trusted app-wide diagnostics through `engineCall`, with empty profile and explicit Chromium session tab IDs; one-shot memory private footprint and cumulative CPU attribution. Native API 38 engine/app pair; `tab-memory` and `tab-cpu` acceptance checks are registered but have not been run for this patch. |

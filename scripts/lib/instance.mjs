@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { appendFileSync, chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer, request as httpRequest } from "node:http";
 import { createServer as createNetServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
@@ -89,15 +89,39 @@ export function removeTemporaryData(data) {
   }
 }
 const crashReports = [["crashes", (name) => /^crash-\d+\.txt$/.test(basename(name))], ["Crashpad", (name) => name.endsWith(".dmp")]];
-export function keepCrashReports(data, pid, root = tmpdir()) {
-  const found = crashReports.filter(([folder, isReport]) => {
-    try { return readdirSync(join(data, folder), { recursive: true }).map(String).some(isReport); } catch { return false; }
-  });
+export function crashReportsForInstance(data, pid, launchedAt = null) {
+  const found = [];
+  for (const [folder, isReport] of crashReports) {
+    let names = [];
+    try { names = readdirSync(join(data, folder), { recursive: true }).map(String).filter(isReport); } catch {}
+    for (const name of names) {
+      if (folder === "crashes" && basename(name) !== `crash-${pid}.txt`) continue;
+      if (folder === "Crashpad" && !Number.isFinite(launchedAt)) continue;
+      const path = join(folder, name);
+      try {
+        const stat = statSync(join(data, path));
+        if (stat.isFile() && (!Number.isFinite(launchedAt) || stat.mtimeMs >= launchedAt)) found.push(path);
+      } catch {}
+    }
+  }
+  return found;
+}
+const collectedCrashReports = new Set();
+export function keepCrashReports(data, pid, root = tmpdir(), launchedAt = null) {
+  const found = crashReportsForInstance(data, pid, launchedAt).map((path) => {
+    const file = realPath(join(data, path));
+    const stat = statSync(file);
+    return { path, file, identity: JSON.stringify([file, stat.mtimeMs, stat.size]) };
+  }).filter(({ identity }) => !collectedCrashReports.has(identity));
   if (!found.length) return null;
   const kept = mkdtempSync(join(root, `solara-crash-${pid}-`));
-  for (const [folder] of found) cpSync(join(data, folder), join(kept, folder), { recursive: true });
-  for (const [folder] of found) for (const name of readdirSync(join(kept, folder), { recursive: true }).map(String))
-    if (/^crash-\d+\.txt$/.test(basename(name))) process.stderr.write(`${readFileSync(join(kept, folder, name), "utf8")}\n`);
+  for (const { path, file, identity } of found) {
+    const target = join(kept, path);
+    mkdirSync(dirname(target), { recursive: true });
+    cpSync(file, target);
+    collectedCrashReports.add(identity);
+    if (/^crash-\d+\.txt$/.test(basename(path))) process.stderr.write(`${readFileSync(target, "utf8")}\n`);
+  }
   process.stderr.write(`the app (pid ${pid}) left crash reports; kept them in ${kept}\n`);
   return kept;
 }
@@ -261,10 +285,9 @@ export function reportSuppressedSecureInput(data, when) {
 }
 process.on("exit", (code) => {
   try { rmSync(ownWaiter, { force: true }); } catch {}
-  for (const [pid, data] of launched) if (isAlive(pid)) reportSuppressedSecureInput(data, "as the test run exits");
+  for (const [pid, instance] of launched) if (isAlive(pid)) reportSuppressedSecureInput(instance.data, "as the test run exits");
   if (code !== 0) {
-    for (const [pid, data] of launched) if (!isAlive(pid)) keepCrashReports(data, pid);
-    for (const data of quitData) keepCrashReports(data, "quit");
+    for (const [pid, instance] of [...launched].reverse()) if (!isAlive(pid)) keepCrashReports(instance.data, pid, tmpdir(), instance.launchedAt);
     return;
   }
   for (const data of quitData) removeTemporaryData(data);
@@ -529,10 +552,8 @@ class Instance {
     const gateLog = join(this.data, "ui-gate-violation.log");
     if (existsSync(gateLog)) process.stderr.write(readFileSync(gateLog, "utf8"));
     const how = await this.#quit(opts);
-    if (how.how === "gone") {
-      diedInstances.add(this.pid);
-      keepCrashReports(this.data, this.pid);
-    }
+    if (how.how === "gone") diedInstances.add(this.pid);
+    if (!isAlive(this.pid)) keepCrashReports(this.data, this.pid, tmpdir(), this.launchedAt);
     if (!isAlive(this.pid) && state && existsSync(state)) gateNote(state, { unwatch: this.pid });
     launched.delete(this.pid);
     if (this.exited && quitEnded(how) && !this.keepData) quitData.add(this.data);
@@ -653,7 +674,7 @@ export async function launch(app, opts = {}) {
   try {
     gateNote(gate.state, { watch: owned.pid, data, ...holdNote(gate.key) });
     instance.save();
-    launched.set(instance.pid, data);
+    launched.set(instance.pid, instance);
     if (opts.ready !== false)
       await instance.ready(typeof opts.ready === "string" ? { test: opts.ready } : typeof opts.ready === "object" ? opts.ready : {});
     return instance;

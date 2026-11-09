@@ -3,6 +3,9 @@
 #ifndef CHROME_BROWSER_SOLARA_PUBLIC_AC_ENGINE_H_
 #define CHROME_BROWSER_SOLARA_PUBLIC_AC_ENGINE_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -88,6 +91,26 @@ AC_ENGINE_EXPORT void ac_notifications_debug_displayed(
     void* context,
     ac_notifications_context_lifetime_t retain,
     ac_notifications_context_lifetime_t release);
+
+enum ac_bookmark_url_status {
+  AC_BOOKMARK_URL_INVALID = 0,
+  AC_BOOKMARK_URL_VALID = 1,
+};
+
+typedef void (*ac_bookmark_url_reply_t)(void* context,
+                                       const char* utf8,
+                                       size_t length);
+typedef int (*ac_bookmarks_canonicalize_url_v1_t)(
+    const uint16_t* utf16,
+    size_t length,
+    ac_bookmark_url_reply_t reply,
+    void* context);
+
+AC_ENGINE_EXPORT int ac_bookmarks_canonicalize_url_v1(
+    const uint16_t* utf16,
+    size_t length,
+    ac_bookmark_url_reply_t reply,
+    void* context);
 
 typedef int (*ac_engine_abi_version_t)(void);
 typedef void (*ac_engine_set_event_sink_t)(ac_engine_event_t sink,

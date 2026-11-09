@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { binaryPids, binaryOf, bundledJsRefusal, commandIsBinary, isAlive, keepCrashReports, launch, realPath, reporter } from "./instance.mjs";
+import { binaryPids, binaryOf, bundledJsRefusal, commandIsBinary, crashReportsForInstance, isAlive, keepCrashReports, launch, realPath, reporter } from "./instance.mjs";
 
 const lowerHome = (path) => path.replace(/^\/Users\/([^/]+)\/Developer\/Personal\//, "/Users/$1/Developer/personal/");
 
@@ -50,15 +50,41 @@ test("crash reports outlive the instance's data dir, and folders without one kee
     mkdirSync(join(data, "Crashpad", "pending"), { recursive: true });
     mkdirSync(join(data, "crashes"), { recursive: true });
     writeFileSync(join(data, "Crashpad", "settings.dat"), "");
-    assert.equal(keepCrashReports(data, 7, root), null);
+    assert.equal(keepCrashReports(data, 7, root, 0), null);
     writeFileSync(join(data, "Crashpad", "pending", "a.dmp"), "dump");
     writeFileSync(join(data, "crashes", "crash-7.txt"), "signal 11 (segv)\n");
-    const kept = keepCrashReports(data, 7, root);
+    const kept = keepCrashReports(data, 7, root, 0);
     assert.ok(kept?.startsWith(join(root, "solara-crash-7-")));
     rmSync(data, { recursive: true, force: true });
     assert.deepEqual(readdirSync(join(kept, "Crashpad", "pending")), ["a.dmp"]);
     assert.deepEqual(readdirSync(join(kept, "crashes")), ["crash-7.txt"]);
-    assert.equal(keepCrashReports(join(root, "missing"), 8, root), null);
+    assert.equal(keepCrashReports(join(root, "missing"), 8, root, 0), null);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("collection excludes prior launches and copies each unchanged report once", () => {
+  const root = mkdtempSync(join(tmpdir(), "instance-crash-scope-"));
+  try {
+    const data = join(root, "data");
+    mkdirSync(join(data, "crashes"), { recursive: true });
+    mkdirSync(join(data, "Crashpad", "pending"), { recursive: true });
+    const launchedAt = Date.now() - 10000;
+    for (const [name, at] of [["crashes/crash-7.txt", launchedAt - 10000], ["crashes/crash-8.txt", launchedAt + 1000],
+      ["crashes/crash-9.txt", launchedAt + 1000], ["Crashpad/pending/old.dmp", launchedAt - 10000], ["Crashpad/pending/new.dmp", launchedAt + 1000]]) {
+      writeFileSync(join(data, name), "report");
+      utimesSync(join(data, name), at / 1000, at / 1000);
+    }
+    assert.deepEqual(crashReportsForInstance(data, 8, launchedAt).sort(), ["Crashpad/pending/new.dmp", "crashes/crash-8.txt"]);
+    const kept = keepCrashReports(data, 8, root, launchedAt);
+    assert.deepEqual(readdirSync(join(kept, "crashes")), ["crash-8.txt"]);
+    assert.deepEqual(readdirSync(join(kept, "Crashpad", "pending")), ["new.dmp"]);
+    assert.equal(keepCrashReports(data, 8, root, launchedAt), null);
+    const prior = keepCrashReports(data, 7, root, launchedAt - 20000);
+    assert.deepEqual(readdirSync(join(prior, "crashes")), ["crash-7.txt"]);
+    assert.deepEqual(readdirSync(join(prior, "Crashpad", "pending")), ["old.dmp"]);
+    assert.deepEqual(crashReportsForInstance(data, 10, Date.now()), []);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

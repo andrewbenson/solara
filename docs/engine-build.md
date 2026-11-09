@@ -333,6 +333,62 @@ framework.
   framework (`packages/solaracore/ios/SolaraCoreEngineBridge.mm`). A missing export aborts: the app bundles an engine it wasn't built
   for. Add each new call to `docs/solaracore-parity.md`.
 
+## Dormant bookmark URL canonicalizer
+
+`ac_bookmarks_canonicalize_url_v1` is an exception to the generic JSON/UI-thread C surface above.
+It synchronously consumes a pointer to `length` UTF-16 code units and uses Chromium's `GURL` directly.
+Raw NUL code units are refused before parsing; other input, including unpaired surrogates, reaches GURL.
+The input is borrowed for the duration of the call.
+A valid GURL returns `AC_BOOKMARK_URL_VALID` and calls the supplied callback exactly once on the calling
+thread with borrowed UTF-8 `spec()` bytes and their length; the callback must copy them before returning.
+An invalid URL or missing input/callback returns `AC_BOOKMARK_URL_INVALID` without calling back. No
+pointer, callback or context is retained. Calls can run concurrently after Chromium has registered its
+URL schemes, before any bookmark profile/model exists. Calling GURL during scheme registration is not
+supported; later ownership installation must wait for normal engine initialization.
+
+Admission requires no raw NUL and `GURL(input).is_valid()`: no search fixup, scheme allowlist, Foundation
+URL parser, JS normalization, filesystem access or network access. HTTP(S) hosts, slash, IDN and default
+ports use GURL spelling. File, about, data, javascript, extension and custom schemes are accepted when GURL accepts
+them; empty, relative, missing-host and malformed-port inputs are refused. This utility validates a
+bookmark URL, not whether a particular UI permits opening or dropping it.
+
+Bookmark add/update refuse raw NUL before any mutation and otherwise use `GURL(raw)` too. This seam
+preserves that rule for `solara://` and `chrome://`; it does not apply navigation's `solara://` → `chrome://`
+mapping or convert returned Chrome schemes to display schemes. In particular, custom-scheme and Chrome-scheme parsing can differ. The app
+must keep the desired bookmark spelling equal to the model spelling; `docs/store-api.md`'s blanket
+app-form statement does not describe this raw bookmark engine boundary. Navigation/display mapping
+remains the caller's separate operation. This step does not activate canonicalization or change any
+existing bookmark, provenance, edit stamp or sync path. GURL's canonical URL output is distinct from
+lossless original bookmark-wire text; the original wire representation belongs to the coordinator.
+
+The app calls `SolaraCoreEngineBridge.canonicalBookmarkURL` synchronously from native code. The wrapper
+copies NSString's actual UTF-16 units and copies the borrowed reply before return. Its NSError codes
+separate invalid input, missing/version-skewed framework support, and malformed engine replies. It
+requires generic ABI 2 plus the versioned export; ABI 2 itself is unchanged. Missing support has no
+normalization or legacy fallback. `_ac_*` in `ac_engine.exports` already exports the new symbol.
+Generic `call` and `callWithSecret` refuse its name before casting symbols to the JSON call signature.
+The production utility has no JS export, profile resolution, main-queue hop, event sink, or owner installation.
+
+The implementation belongs to the existing `layer engine/chromium`; no new Chromium patch or test
+build target is required. Keep `engine/patches/series` and the owned `BUILD.gn` unchanged. Under the
+chromium lock run both owned layers' `apply.sh` and `apply.sh --check`, then
+`python3 engine/patches/series.py check`. Build incrementally with
+`scripts/agent/engine-build --as bookmark-url chrome_framework`; the wrapper repeats the layer and
+series checks. No upstream test hook or base capture is needed.
+
+`packages/solaracore/scripts/acceptance.mjs` registers `bookmark-url-canonicalization`. Run it against
+a hidden Debug app paired with the built framework. It calls the public native wrapper through a
+Debug-only diagnostic adapter with JSON string transport to preserve embedded NUL across Expo, adds each
+raw valid input through the existing bookmark engine API, and compares the canonical result to a separate
+tree readback. Invalid input must return the native Invalid error and add no bookmark; raw-NUL updates
+and existing-ID adds must leave the model unchanged. The adapter is available only with
+`SOLARA_BACKGROUND=1` and a nonempty `SOLARA_DATA_DIR`; it is absent from Release builds and the typed
+production JS API.
+The package's standalone Foundation/AppKit tests do not load the Chromium framework and cannot prove
+GURL/model equivalence. No stub-based spelling test substitutes for this acceptance check. The v2
+handoff documents the red missing-adapter check before source and green paired-framework run after
+source; runtime and compilation verification remain pending.
+
 ## Per-tab resource measurements and API 38
 
 `ac_tabs_memory` and `ac_tabs_cpu` live in our `//chrome/browser/solara` layer and ship with the native API 38 app/engine pair. No `engine/patches` change is needed: the layer copy and existing `_ac_*` export rule include them. Engine JSON ABI 2 and notification protocol 2 are unchanged. The trusted app bridge invokes these exact names with an empty profile and explicit session tab IDs, bypassing profile loading. The engine reports estimated private footprint and cumulative attributed CPU samples; SolaraKit owns interval CPU rates and heavy-tab policy. The full payload and omission rules are in [SolaraCore parity](solaracore-parity.md#engine-c-exports-chromebrowsersolara).

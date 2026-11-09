@@ -2,7 +2,17 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+FOUNDATION_EXPORT NSErrorDomain const SolaraCoreBookmarkURLErrorDomain;
+
+typedef NS_ERROR_ENUM(SolaraCoreBookmarkURLErrorDomain, SolaraCoreBookmarkURLError) {
+  SolaraCoreBookmarkURLUnavailable = 1,
+  SolaraCoreBookmarkURLInvalid = 2,
+  SolaraCoreBookmarkURLBadReply = 3,
+};
+
 @interface SolaraCoreEngineBridge : NSObject
++ (nullable NSString *)canonicalBookmarkURL:(NSString *)url
+                                     error:(NSError * _Nullable * _Nullable)error NS_SWIFT_NAME(canonicalBookmarkURL(_:));
 + (void)call:(NSString *)name
        profile:(NSString *)profile
           args:(nullable NSString *)args

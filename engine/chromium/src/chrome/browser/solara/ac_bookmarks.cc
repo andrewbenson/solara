@@ -255,6 +255,11 @@ Result Apply(BookmarkModel* model, const base::DictValue& op) {
   if (!kind || !id) {
     return Result::kFailed;
   }
+  if (const std::string* url = op.FindString("u");
+      (*kind == "add" || *kind == "update") && url &&
+      url->find('\0') != std::string::npos) {
+    return Result::kInvalid;
+  }
   const BookmarkNode* node = Find(model, *id);
   if (*kind == "remove") {
     if (!node || model->is_permanent_node(node)) {
@@ -349,6 +354,31 @@ Result Apply(BookmarkModel* model, const base::DictValue& op) {
 
 using solara::Call;
 using solara::Reply;
+
+extern "C" AC_ENGINE_EXPORT int ac_bookmarks_canonicalize_url_v1(
+    const uint16_t* utf16,
+    size_t length,
+    ac_bookmark_url_reply_t reply,
+    void* context) {
+  if (!utf16 || !length || !reply) {
+    return AC_BOOKMARK_URL_INVALID;
+  }
+  std::u16string input;
+  input.reserve(length);
+  for (size_t i = 0; i < length; ++i) {
+    if (utf16[i] == 0) {
+      return AC_BOOKMARK_URL_INVALID;
+    }
+    input.push_back(static_cast<char16_t>(utf16[i]));
+  }
+  const GURL url(input);
+  if (!url.is_valid()) {
+    return AC_BOOKMARK_URL_INVALID;
+  }
+  const std::string& spec = url.spec();
+  reply(context, spec.data(), spec.size());
+  return AC_BOOKMARK_URL_VALID;
+}
 
 AC_ENGINE_CALL(ac_bookmarks_tree) {
   Call call(profile_dir, args_json, reply, context);

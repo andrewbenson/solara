@@ -1,0 +1,21 @@
+Disable segmentation and its separately initialized UKM database by default.
+
+--- a/components/segmentation_platform/public/features.cc
++++ b/components/segmentation_platform/public/features.cc
+@@ -13,14 +13,14 @@
+ 
+ BASE_FEATURE(kSegmentationPlatformFeature,
+              "SegmentationPlatform",
+-             base::FEATURE_ENABLED_BY_DEFAULT);
++             base::FEATURE_DISABLED_BY_DEFAULT);
+ 
+ BASE_FEATURE(kSegmentationPlatformUkmEngine,
+ 
+ #if BUILDFLAG(IS_CHROMEOS)
+              base::FEATURE_DISABLED_BY_DEFAULT);
+ #else
+-             base::FEATURE_ENABLED_BY_DEFAULT);
++             base::FEATURE_DISABLED_BY_DEFAULT);
+ #endif
+ 
+ BASE_FEATURE(kSegmentationPlatformAdaptiveToolbarV2Feature,

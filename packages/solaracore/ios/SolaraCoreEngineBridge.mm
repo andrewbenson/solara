@@ -1,4 +1,5 @@
 #import "SolaraCoreEngineBridge.h"
+#import "SolaraCoreBookmarkURL.h"
 
 #import "SolaraCoreInternal.h"
 #import "SolaraCore-Swift.h"
@@ -137,7 +138,13 @@ void InstallSink() {
 
 @implementation SolaraCoreEngineBridge
 
++ (NSString *)canonicalBookmarkURL:(NSString *)url error:(NSError **)error {
+  return SolaraCanonicalBookmarkURL(url, error);
+}
+
 + (void)call:(NSString *)name profile:(NSString *)profile args:(NSString *)args completion:(void (^)(NSString *))completion {
+  if ([name isEqualToString:@"ac_bookmarks_canonicalize_url_v1"])
+    return completion(JSON(@{@"error" : @"use canonicalBookmarkURL for this synchronous utility"}));
   if (RefusesSafeModeCall(name)) return completion(JSON(@{@"error" : @"disabled in safe mode"}));
   auto call = (ac_engine_call_t)Symbol(name.UTF8String);
   if (!call) return completion(JSON(@{@"error" : [NSString stringWithFormat:@"the engine has no %@", name]}));
@@ -183,6 +190,10 @@ void InstallSink() {
     volatile unsigned char *bytes = (volatile unsigned char *)secret.mutableBytes;
     for (NSUInteger i = 0; i < secret.length; i++) bytes[i] = 0;
   };
+  if ([name isEqualToString:@"ac_bookmarks_canonicalize_url_v1"]) {
+    wipe();
+    return completion(JSON(@{@"error" : @"use canonicalBookmarkURL for this synchronous utility"}));
+  }
   if (RefusesSafeModeCall(name)) {
     wipe();
     return completion(JSON(@{@"error" : @"disabled in safe mode"}));

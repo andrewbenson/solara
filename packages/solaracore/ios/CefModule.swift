@@ -158,6 +158,25 @@ public class CefModule: Module {
     AsyncFunction("fetchFavicon") { (url: String, profile: String, promise: Promise) in
       SolaraCoreFavicons.fetch(url, profile: profile, name: nil) { promise.resolve($0) }
     }.runOnQueue(.main)
+    #if DEBUG
+    AsyncFunction("devCanonicalBookmarkURL") { (draftJSON: String) -> [String: Any] in
+      let environment = ProcessInfo.processInfo.environment
+      guard environment["SOLARA_BACKGROUND"] == "1", !(environment["SOLARA_DATA_DIR"] ?? "").isEmpty else {
+        return ["ok": false, "domain": "SolaraCoreBookmarkURLAcceptance", "code": 1]
+      }
+      do {
+        let draft = try JSONDecoder().decode(String.self, from: Data(draftJSON.utf8))
+        let value: String? = try SolaraCoreEngineBridge.canonicalBookmarkURL(draft)
+        guard let value else {
+          return ["ok": false, "domain": "SolaraCoreBookmarkURL", "code": 3]
+        }
+        return ["ok": true, "url": value, "mainThread": Thread.isMainThread]
+      } catch {
+        let failure = error as NSError
+        return ["ok": false, "domain": failure.domain, "code": failure.code, "mainThread": Thread.isMainThread]
+      }
+    }.runOnQueue(DispatchQueue.global(qos: .userInitiated))
+    #endif
     AsyncFunction("engineCall") { (name: String, profile: String, args: String?, promise: Promise) in
       if !CefModule.engineCalls.contains(name) { return promise.resolve(#"{"error":"not an engine call: \#(name)"}"#) }
       if profile.hasPrefix("incognito") { return promise.resolve(#"{"error":"no engine data for a private profile"}"#) }

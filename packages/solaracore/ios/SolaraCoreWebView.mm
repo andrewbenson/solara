@@ -1354,8 +1354,9 @@ static SolaraCoreTab *StartParkedPage(NSString *url, NSString *profileName, NSSt
   [SolaraCoreTabParking tookTransfer:_transferKey];
   _adoptId = nil;
   SolaraCoreLaunchTabHolder *launch = (SolaraCoreLaunchTabHolder *)[SolaraCoreTabParking takeHolderOfTab:tab];
-  _transferredURL = launch.url ?: tab.url;
-  if (SamePage(_pendingURL, _transferredURL)) _pendingURL = nil;
+  NSString *transferred = launch.url ?: tab.url;
+  _transferredURL = _pendingURL.length ? nil : transferred;
+  if (SamePage(_pendingURL, transferred)) _pendingURL = nil;
   [self attach:tab];
   if (launch) {
     _loadedOnce = YES;

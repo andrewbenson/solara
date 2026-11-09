@@ -24,6 +24,109 @@ import SolaraStore
     #expect(f.catalog.bookmarks(engineProfile: "").nodes["b0"]?.title == "Fresh")
   }
 
+  @Test(arguments: [false, true]) func readOnlyRecoveryStartsOwnerAndRefreshesCachedBookmarks(preservationFails: Bool) async throws {
+    let bytes = Data((preservationFails ? "unreadable journal" : "{\"version\":999,\"future\":\"intent\"}").utf8)
+    var operations: BookmarkPendingFileOperations?
+    if preservationFails {
+      var failing = BookmarkPendingFileOperations.live
+      failing.rename = { _, _ in throw BookmarkPendingStoreError.unavailable }
+      operations = failing
+    }
+    var cachedNodes = try #require(BookmarkCoordinatorTests().document(["https://cached.test"])["nodes"]?.object)
+    var cachedPage = try #require(cachedNodes["b0"]?.object)
+    cachedPage["title"] = "A"
+    cachedNodes["b0"] = .object(cachedPage)
+    let cache: JSONValue = ["version": 1, "trees": ["": .array(cachedNodes.values)]]
+    let f = try await OwnerLifecycleFixture.make(journalBytes: bytes, cache: cache, fileOperations: operations)
+    defer { f.stop() }
+    let journal = f.directory.appendingPathComponent(BookmarkPendingStore.journalName)
+    let expectedKind: BookmarkRecoveryNotice.Kind = preservationFails ? .unreadableJournal : .newerJournalVersion
+    #expect(f.owner.coordinator.recoveryNotice?.kind == expectedKind)
+    #expect(f.owner.coordinator.recoveryNotice?.preservedPath == journal.path)
+    let before = try f.owner.snapshot(profile: "default")
+    #expect(!before.ready)
+    #expect(before.document["nodes"]?["b0"]?["title"] == "A")
+    #expect(before.document["nodes"]?["b0"]?["url"] == "https://cached.test")
+    f.client.pageID = "b1"
+    f.client.title = "B"
+    let scheduler = OwnerLifecycleScheduler()
+    try await f.start(scheduler: scheduler.scheduler)
+    let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+    while ContinuousClock.now < deadline {
+      let snapshot = try f.owner.snapshot(profile: "default")
+      let catalog = f.catalog.bookmarks(engineProfile: "")
+      if !f.client.reads.isEmpty && snapshot.ready && catalog.readyForSync && catalog.nodes["b1"]?.title == "B" { break }
+      await Task.yield()
+    }
+    #expect(f.owner.runtimeIsActiveForTesting)
+    #expect(f.catalog.bookmarkClaim?.coordinator === f.owner.coordinator)
+    #expect(f.client.reads == [""])
+    #expect(scheduler.delays.isEmpty)
+    let snapshot = try f.owner.snapshot(profile: "default")
+    #expect(snapshot.ready)
+    #expect(snapshot.document["nodes"]?["b0"] == nil)
+    #expect(snapshot.document["nodes"]?["b1"]?["title"] == "B")
+    #expect(snapshot.document["nodes"]?["b1"]?["url"] == "https://page.test")
+    let catalog = f.catalog.bookmarks(engineProfile: "")
+    #expect(catalog.hasView)
+    #expect(catalog.readyForSync)
+    #expect(catalog.nodes["b0"] == nil)
+    #expect(catalog.nodes["b1"]?.title == "B")
+    #expect(catalog.nodes["b1"]?.url == "https://page.test")
+    #expect(catalog.revision == Int(clamping: snapshot.revision))
+    let refusal = BookmarkWriterError.refused(String(describing: BookmarkPendingStoreError.unavailable))
+    #expect(throws: refusal) {
+      try f.owner.submit(profile: "default", mutations: [.init(method: "updateBookmark", args: ["b1", ["title": "Refused"]])], binding: snapshot.binding)
+    }
+    var replacementNodes = try #require(snapshot.document["nodes"]?.object)
+    var replacementPage = try #require(replacementNodes["b1"]?.object)
+    replacementPage["title"] = "Refused"
+    replacementNodes["b1"] = .object(replacementPage)
+    let replacement: JSONValue = ["nodes": .object(replacementNodes), "roots": snapshot.document["roots"]!]
+    #expect(throws: refusal) {
+      try f.owner.replace(profile: "default", document: replacement, expectedRevision: snapshot.revision, binding: snapshot.binding)
+    }
+    let unchanged = try f.owner.snapshot(profile: "default")
+    #expect(unchanged.document == snapshot.document)
+    #expect(unchanged.revision == snapshot.revision)
+    #expect(try Data(contentsOf: journal) == bytes)
+    #expect(try journal.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate == Date(timeIntervalSince1970: 12))
+    #expect(try FileManager.default.contentsOfDirectory(atPath: f.directory.path).sorted() == ["bookmarks-cache.json", BookmarkPendingStore.journalName].sorted())
+    f.state.profiles["default"]?.dataId = "recovery-engine"
+    try await f.owner.remap(state: f.state)
+    let remapDeadline = ContinuousClock.now.advanced(by: .seconds(5))
+    while ContinuousClock.now < remapDeadline {
+      let remapped = try f.owner.snapshot(profile: "default")
+      let catalog = f.catalog.bookmarks(engineProfile: "recovery-engine")
+      if remapped.binding.engine == "recovery-engine" && remapped.ready && catalog.readyForSync && catalog.nodes["b1"]?.title == "B" { break }
+      await Task.yield()
+    }
+    let remapped = try f.owner.snapshot(profile: "default")
+    #expect(remapped.binding.engine == "recovery-engine")
+    #expect(remapped.ready)
+    #expect(f.owner.coordinator.engine(profile: "default") == "recovery-engine")
+    #expect(remapped.document["nodes"]?["b1"]?["title"] == "B")
+    let remappedCatalog = f.catalog.bookmarks(engineProfile: "recovery-engine")
+    #expect(remappedCatalog.hasView)
+    #expect(remappedCatalog.readyForSync)
+    #expect(remappedCatalog.nodes["b1"]?.title == "B")
+    #expect(f.client.reads == ["", "recovery-engine"])
+    #expect(f.owner.runtimeIsActiveForTesting)
+    #expect(scheduler.delays.isEmpty)
+    #expect(throws: BookmarkWriterError.staleBinding) {
+      try f.owner.submit(profile: "default", mutations: [], binding: snapshot.binding)
+    }
+    #expect(throws: refusal) {
+      try f.owner.submit(profile: "default", mutations: [.init(method: "updateBookmark", args: ["b1", ["title": "Refused"]])], binding: remapped.binding)
+    }
+    #expect(f.client.appliedEngines.isEmpty)
+    #expect(f.client.rawReads == 0)
+    #expect(f.client.rawApplies == 0)
+    #expect(try Data(contentsOf: journal) == bytes)
+    #expect(try journal.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate == Date(timeIntervalSince1970: 12))
+    #expect(try FileManager.default.contentsOfDirectory(atPath: f.directory.path).sorted() == ["bookmarks-cache.json", BookmarkPendingStore.journalName].sorted())
+  }
+
   @Test func remapReclaimsSameCatalogAndReadsEveryOwnedEngine() async throws {
     let f = try await OwnerLifecycleFixture.make()
     defer { f.stop() }
@@ -472,19 +575,6 @@ import SolaraStore
     #expect(entry?["ownerProfile"] == "a")
   }
 
-  @Test func launchObservesRecoveredStampsForTheCurrentOwner() async throws {
-    let f = try await OwnerLifecycleFixture.make()
-    defer { f.stop() }
-    let pending = BookmarkPendingStore(directory: f.directory)
-    let source = BookmarkCoordinator(profiles: ["z": "E"], defaultProfile: "z", owningProfiles: ["E": "z"], stampProviders: .init(mintEditStamp: { _ in BookmarkEditStamp(hlc: "1", origin: "z") }), stampsEnabled: true, pendingStore: pending)
-    source.seed(engine: "E", document: document(engine: "E", profile: "z"), ready: true)
-    try source.submit(profile: "z", mutations: [.init(method: "updateBookmark", args: ["b0", ["title": "Pending"]])])
-    var observed: [String] = []
-    let restored = BookmarkCoordinator(profiles: ["a": "E"], defaultProfile: "a", owningProfiles: ["E": "a"], stampProviders: .init(observeEditStamp: { owner, _ in observed.append(owner) }), stampsEnabled: true, pendingStore: BookmarkPendingStore(directory: f.directory))
-    #expect(restored.ownerProfileForTesting(engine: "E") == "a")
-    #expect(observed == ["a"])
-  }
-
   @Test func replacementPumpDrainsAnEngineAfterItsLastAliasLeaves() async throws {
     var state = BrowserState()
     state.profiles["p"] = profile("p", data: "E1")
@@ -580,10 +670,23 @@ import SolaraStore
     catalog = LibraryCatalog(client: client)
   }
 
-  static func make(state: BrowserState = BrowserState()) async throws -> OwnerLifecycleFixture {
+  static func make(state: BrowserState = BrowserState(), journalBytes: Data? = nil, cache: JSONValue? = nil, fileOperations: BookmarkPendingFileOperations? = nil) async throws -> OwnerLifecycleFixture {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("owner-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    let owner = await NativeBookmarkOwner.prepare(directory: directory, state: state)
+    if let journalBytes {
+      let journal = directory.appendingPathComponent(BookmarkPendingStore.journalName)
+      try journalBytes.write(to: journal)
+      try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 12)], ofItemAtPath: journal.path)
+    }
+    if let cache { try Data(cache.text().utf8).write(to: directory.appendingPathComponent("bookmarks-cache.json")) }
+    let owner: NativeBookmarkOwner
+    if let fileOperations {
+      let mapping = BookmarkProfileMap(state: state)
+      let launch = BookmarkLaunchCache(directory: directory).load(profiles: mapping.profiles, defaultProfile: mapping.defaultProfile)
+      owner = NativeBookmarkOwner(store: BookmarkPendingStore(directory: directory, fileOperations: fileOperations), profiles: mapping.profiles, defaultProfile: mapping.defaultProfile, launchInput: launch, wake: { _ in })
+    } else {
+      owner = await NativeBookmarkOwner.prepare(directory: directory, state: state, cacheDirectory: cache == nil ? nil : directory)
+    }
     return OwnerLifecycleFixture(directory: directory, owner: owner, state: state)
   }
 
@@ -608,6 +711,7 @@ import SolaraStore
 }
 
 @MainActor private final class OwnerLifecycleClient: EngineClient {
+  var pageID = "b0"
   var title = "Page"
   var reads: [String] = []
   var rawReads = 0
@@ -617,7 +721,7 @@ import SolaraStore
 
   func read(_ engine: String) -> EngineBookmarkTree {
     reads.append(engine)
-    return EngineBookmarkTree(bar: .init(id: "bar", kind: "f", title: "Bar", children: [.init(id: "b0", kind: "u", title: title, url: "https://page.test", addedAt: 1)]), other: .init(id: "other", kind: "f", title: "Other", children: []))
+    return EngineBookmarkTree(bar: .init(id: "bar", kind: "f", title: "Bar", children: [.init(id: pageID, kind: "u", title: title, url: "https://page.test", addedAt: 1)]), other: .init(id: "other", kind: "f", title: "Other", children: []))
   }
 
   func apply(_ engine: String, _ ops: [BookmarkOperation]) -> BookmarkApplyResult {

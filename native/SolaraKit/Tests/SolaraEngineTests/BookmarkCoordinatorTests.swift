@@ -206,69 +206,9 @@ extension BookmarkCoordinatorTests {
     #expect(await second.next() == updated)
   }
 
-  @Test func stampAckAndSupersedeUseExactOpaqueStrings() throws {
-    var serial = 0
-    var mintedProfiles: [String] = []
-    let owner = BookmarkCoordinator(profiles: ["p": "", "alias": ""], defaultProfile: "p", stampProviders: .init(mintEditStamp: { profile in mintedProfiles.append(profile); serial += 1; return BookmarkEditStamp(hlc: "00\(serial)-é", origin: "opaque origin") }), stampsEnabled: true)
-    owner.seed(engine: "", document: document([page]), ready: true)
-    try owner.submit(profile: "alias", mutations: [.init(method: "updateBookmark", args: ["b0", ["title": "Local"]])])
-    let first = try #require(owner.pendingEditStamp(profileId: "p", nodeId: "b0"))
-    #expect(mintedProfiles == ["p"])
-    owner.ackPendingEditStamp(profileId: "p", nodeId: "b0", hlc: "001-e\u{301}")
-    #expect(owner.pendingEditStamp(profileId: "p", nodeId: "b0") == first)
-    owner.supersedePendingEditStamp(profileId: "p", nodeId: "b0", remoteHlc: first.hlc)
-    #expect(owner.pendingEditStamp(profileId: "p", nodeId: "b0") == first)
-    owner.supersedePendingEditStamp(profileId: "p", nodeId: "b0", remoteHlc: "000-z")
-    #expect(owner.pendingEditStamp(profileId: "p", nodeId: "b0") == first)
-    try owner.submit(profile: "p", mutations: [.init(method: "removeBookmark", args: ["b0"])])
-    let removed = try #require(owner.pendingEditStamp(profileId: "p", nodeId: "b0"))
-    #expect(removed != first)
-    owner.ackPendingEditStamp(profileId: "p", nodeId: "b0", hlc: first.hlc)
-    #expect(owner.pendingEditStamp(profileId: "p", nodeId: "b0") == removed)
-    owner.supersedePendingEditStamp(profileId: "p", nodeId: "b0", remoteHlc: "999")
-    #expect(owner.pendingEditStamp(profileId: "p", nodeId: "b0") == nil)
-  }
-
-  @Test func replayObservesBeforeReadinessAndSyncNeverMints() throws {
-    var observations: [String] = []
-    var mints = 0
-    let owner = BookmarkCoordinator(profiles: ["p": ""], defaultProfile: "p", stampProviders: .init(mintEditStamp: { _ in mints += 1; return .init(hlc: "new", origin: "local") }, observeEditStamp: { profile, hlc in observations.append("\(profile):\(hlc)") }), stampsEnabled: true)
-    owner.seed(engine: "", document: document([page]), ready: false)
-    owner.replayPendingStamps(profileId: "p", stamps: ["deleted": .init(hlc: "old", origin: "verbatim")])
-    owner.replayPendingStamps(profileId: "p", stamps: ["other": .init(hlc: "second", origin: "verbatim")])
-    #expect(observations == ["p:old", "p:second"])
-    #expect(!owner.desiredView(engine: "").readyForSync)
-    try owner.submit(profile: "p", mutations: [.init(method: "updateBookmark", args: ["b0", ["title": "Remote"]])], fromSync: true)
-    #expect(mints == 0)
-    #expect(owner.pendingEditStamp(profileId: "p", nodeId: "deleted") == .init(hlc: "old", origin: "verbatim"))
-    owner.ackPendingEditStamp(profileId: "p", nodeId: "deleted", hlc: "old")
-    #expect(owner.pendingEditStamp(profileId: "p", nodeId: "deleted") == nil)
-  }
-
-  @Test func inactiveStampContractIsEntirelyNoOp() throws {
-    var calls = 0
-    let owner = BookmarkCoordinator(profiles: ["p": ""], defaultProfile: "p", stampProviders: .init(mintEditStamp: { _ in calls += 1; return .init(hlc: "x", origin: "x") }, observeEditStamp: { _, _ in calls += 1 }))
-    owner.seed(engine: "", document: document([page]), ready: true)
-    try owner.submit(profile: "p", mutations: [.init(method: "removeBookmark", args: ["b0"])])
-    owner.replayPendingStamps(profileId: "p", stamps: ["b0": .init(hlc: "x", origin: "x")])
-    owner.ackPendingEditStamp(profileId: "p", nodeId: "b0", hlc: "x")
-    owner.supersedePendingEditStamp(profileId: "p", nodeId: "b0", remoteHlc: "z")
-    #expect(owner.pendingEditStamp(profileId: "p", nodeId: "b0") == nil)
-    #expect(calls == 0)
-  }
 }
 
 extension BookmarkCoordinatorTests {
-  @Test func reorderStampsMovedNodeAndNeverSyntheticRoots() throws {
-    var mintedProfiles: [String] = []
-    let owner = BookmarkCoordinator(profiles: ["alias": "engine-owner", "engine-owner": "engine-owner"], defaultProfile: "alias", stampProviders: .init(mintEditStamp: { profile in mintedProfiles.append(profile); return .init(hlc: "001", origin: "x") }), stampsEnabled: true)
-    let renamed = document(["a", "b"]).text().replacingOccurrences(of: "bar@default", with: "bar@engine-owner").replacingOccurrences(of: "other@default", with: "other@engine-owner")
-    owner.seed(engine: "engine-owner", document: try JSONValue.parse(renamed), ready: true)
-    try owner.submit(profile: "alias", mutations: [.init(method: "moveBookmark", args: ["b1", "bar@engine-owner", 0])])
-    #expect(mintedProfiles == ["engine-owner"])
-    #expect(owner.pendingEditStamp(profileId: "alias", nodeId: "b1") != nil)
-    #expect(owner.pendingEditStamp(profileId: "alias", nodeId: "bar@engine-owner") == nil)
-  }
 
   @Test func exactNodeIDsRemainDistinctInFlatChildren() {
     let nodes: [JSONValue] = [["id": "bar@default", "kind": "folder", "parent": nil, "title": "Bar", "addedAt": 0, "children": ["é", "e\u{301}"]], ["id": "é", "kind": "url", "parent": "bar@default", "title": "A", "url": "x:a", "addedAt": 0], ["id": "e\u{301}", "kind": "url", "parent": "bar@default", "title": "B", "url": "x:b", "addedAt": 0]]
@@ -361,87 +301,10 @@ extension BookmarkCoordinatorTests {
 }
 
 extension BookmarkCoordinatorTests {
-  @Test func replayNeverReplacesANewerLocalStamp() throws {
-    var observations: [String] = []
-    let owner = BookmarkCoordinator(profiles: ["p": ""], defaultProfile: "p", stampProviders: .init(mintEditStamp: { _ in .init(hlc: "H2", origin: "local") }, observeEditStamp: { _, hlc in observations.append(hlc) }), stampsEnabled: true)
-    owner.seed(engine: "", document: document([page, page]), ready: false)
-    try owner.submit(profile: "p", mutations: [.init(method: "updateBookmark", args: ["b0", ["title": "Local"]])])
-    owner.replayPendingStamps(profileId: "p", stamps: ["b0": .init(hlc: "H1", origin: "replayed"), "b1": .init(hlc: "H1", origin: "replayed")])
-    #expect(owner.pendingEditStamp(profileId: "p", nodeId: "b0") == .init(hlc: "H2", origin: "local"))
-    #expect(owner.pendingEditStamp(profileId: "p", nodeId: "b1") == .init(hlc: "H1", origin: "replayed"))
-    owner.replayPendingStamps(profileId: "p", stamps: ["b1": .init(hlc: "H3", origin: "newer")])
-    #expect(owner.pendingEditStamp(profileId: "p", nodeId: "b1") == .init(hlc: "H3", origin: "newer"))
-    #expect(observations == ["H1", "H1", "H3"])
-  }
 
-  @Test func replayAfterReadinessIsRefusedAndLogged() throws {
-    var observations: [String] = []
-    var logged: [String] = []
-    let owner = BookmarkCoordinator(profiles: ["p": ""], defaultProfile: "p", stampProviders: .init(observeEditStamp: { _, hlc in observations.append(hlc) }), stampsEnabled: true, log: { logged.append($0) })
-    owner.seed(engine: "", document: document([page]), ready: true)
-    owner.replayPendingStamps(profileId: "p", stamps: ["b0": .init(hlc: "H1", origin: "late")])
-    #expect(owner.pendingEditStamp(profileId: "p", nodeId: "b0") == nil)
-    #expect(observations.isEmpty)
-    #expect(logged.count == 1)
-  }
-
-  @Test func failedMintLeavesAnUnconfirmedEditNoOldAckCanClear() throws {
-    var next: BookmarkEditStamp? = .init(hlc: "H1", origin: "local")
-    let owner = BookmarkCoordinator(profiles: ["p": ""], defaultProfile: "p", stampProviders: .init(mintEditStamp: { _ in next }), stampsEnabled: true)
-    owner.seed(engine: "", document: document([page]), ready: true)
-    try owner.submit(profile: "p", mutations: [.init(method: "updateBookmark", args: ["b0", ["title": "One"]])])
-    #expect(!owner.hasUnconfirmedEdit(profileId: "p", nodeId: "b0"))
-    next = nil
-    try owner.submit(profile: "p", mutations: [.init(method: "updateBookmark", args: ["b0", ["title": "Two"]])])
-    #expect(owner.pendingEditStamp(profileId: "p", nodeId: "b0") == nil)
-    #expect(owner.hasUnconfirmedEdit(profileId: "p", nodeId: "b0"))
-    owner.ackPendingEditStamp(profileId: "p", nodeId: "b0", hlc: "H1")
-    owner.supersedePendingEditStamp(profileId: "p", nodeId: "b0", remoteHlc: "H9")
-    #expect(owner.hasUnconfirmedEdit(profileId: "p", nodeId: "b0"))
-    next = .init(hlc: "H3", origin: "local")
-    try owner.submit(profile: "p", mutations: [.init(method: "updateBookmark", args: ["b0", ["title": "Three"]])])
-    #expect(owner.hasUnconfirmedEdit(profileId: "p", nodeId: "b0"))
-    owner.supersedePendingEditStamp(profileId: "p", nodeId: "b0", remoteHlc: "H4")
-    #expect(owner.pendingEditStamp(profileId: "p", nodeId: "b0") == nil)
-    #expect(owner.hasUnconfirmedEdit(profileId: "p", nodeId: "b0"))
-    next = .init(hlc: "H5", origin: "local")
-    try owner.submit(profile: "p", mutations: [.init(method: "updateBookmark", args: ["b0", ["title": "Four"]])])
-    owner.ackPendingEditStamp(profileId: "p", nodeId: "b0", hlc: "H3")
-    #expect(owner.hasUnconfirmedEdit(profileId: "p", nodeId: "b0"))
-    #expect(owner.pendingEditStamp(profileId: "p", nodeId: "b0") == .init(hlc: "H5", origin: "local"))
-    owner.ackPendingEditStamp(profileId: "p", nodeId: "b0", hlc: "H5")
-    #expect(owner.pendingEditStamp(profileId: "p", nodeId: "b0") == nil)
-    #expect(!owner.hasUnconfirmedEdit(profileId: "p", nodeId: "b0"))
-  }
 }
 
 extension BookmarkCoordinatorTests {
-  @Test func restampOnLinkMintsEachUnconfirmedNodeSoItsAckClearsIt() throws {
-    var linked = false
-    var serial = 0
-    let owner = BookmarkCoordinator(profiles: ["p": ""], defaultProfile: "p", stampProviders: .init(mintEditStamp: { _ in
-      guard linked else { return nil }
-      serial += 1
-      return .init(hlc: "H\(serial)", origin: "local")
-    }), stampsEnabled: true)
-    owner.seed(engine: "", document: document([page, page, page]), ready: true)
-    try owner.submit(profile: "p", mutations: [.init(method: "updateBookmark", args: ["b0", ["title": "A"]]), .init(method: "removeBookmark", args: ["b2"])])
-    #expect(owner.hasUnconfirmedEdit(profileId: "p", nodeId: "b0") && owner.hasUnconfirmedEdit(profileId: "p", nodeId: "b2"))
-    owner.restampUnconfirmed(profileId: "p")
-    #expect(owner.pendingEditStamp(profileId: "p", nodeId: "b0") == nil)
-    linked = true
-    owner.restampUnconfirmed(profileId: "p")
-    let b0 = try #require(owner.pendingEditStamp(profileId: "p", nodeId: "b0"))
-    let b2 = try #require(owner.pendingEditStamp(profileId: "p", nodeId: "b2"))
-    #expect(owner.pendingEditStamp(profileId: "p", nodeId: "b1") == nil)
-    #expect(Set([b0.hlc, b2.hlc]) == ["H1", "H2"])
-    owner.restampUnconfirmed(profileId: "p")
-    #expect(owner.pendingEditStamp(profileId: "p", nodeId: "b0") == b0)
-    #expect(serial == 2)
-    owner.ackPendingEditStamp(profileId: "p", nodeId: "b0", hlc: b0.hlc)
-    owner.ackPendingEditStamp(profileId: "p", nodeId: "b2", hlc: b2.hlc)
-    #expect(!owner.hasUnconfirmedEdit(profileId: "p", nodeId: "b0") && !owner.hasUnconfirmedEdit(profileId: "p", nodeId: "b2"))
-  }
 }
 
 extension BookmarkCoordinatorTests {

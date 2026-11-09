@@ -18,7 +18,7 @@ let liveRevision = 0;
 let liveCounter = 0;
 const publishLive = () => liveListeners.get("onLiveReplica")?.({ revision: ++liveRevision, replicaJSON: JSON.stringify(testLive) });
 
-type TestBookmarkWriter = { state(): unknown; snapshot(profileId: string): unknown; replace(...args: unknown[]): unknown; submit(...args: unknown[]): Promise<unknown> };
+type TestBookmarkWriter = { state(): unknown; snapshot(profileId: string): unknown; replace(...args: unknown[]): unknown; submit(...args: unknown[]): Promise<unknown>; ackBookmarkFacts(...args: unknown[]): unknown; observeBookmarkRecords(...args: unknown[]): unknown; clearBookmarkFacts(...args: unknown[]): unknown; setBookmarkSyncLinks(...args: unknown[]): unknown };
 const testBookmarkWriter = (): TestBookmarkWriter => {
   const writer = (globalThis as { acTestBookmarkWriter?: TestBookmarkWriter }).acTestBookmarkWriter;
   if (!writer) throw new Error("native bookmarks are not owned by this launch");
@@ -28,6 +28,10 @@ const testBookmarkWriter = (): TestBookmarkWriter => {
 const settingsModule = {
   bookmarkWriterState: () => ((globalThis as { acTestBookmarkWriter?: TestBookmarkWriter }).acTestBookmarkWriter?.state() ?? { state: "legacy" }),
   bookmarkWriterSnapshot: (profileId: string) => testBookmarkWriter().snapshot(profileId),
+  ackBookmarkFacts: (...args: unknown[]) => testBookmarkWriter().ackBookmarkFacts(...args),
+  observeBookmarkRecords: (...args: unknown[]) => testBookmarkWriter().observeBookmarkRecords(...args),
+  clearBookmarkFacts: (...args: unknown[]) => testBookmarkWriter().clearBookmarkFacts(...args),
+  setBookmarkSyncLinks: (...args: unknown[]) => testBookmarkWriter().setBookmarkSyncLinks(...args),
   replaceBookmarkDocument: (...args: unknown[]) => testBookmarkWriter().replace(...args),
   submitBookmarkMutations: async (...args: unknown[]) => testBookmarkWriter().submit(...args),
   liveInitialReplica: () => ({ revision: liveRevision, replicaJSON: JSON.stringify(testLive) }),

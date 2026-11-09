@@ -14,15 +14,14 @@ struct BookmarkPendingStoreTests {
     BookmarkCoordinatorTests().document(urls)
   }
 
-  private func owner(_ dir: URL, operations: BookmarkPendingFileOperations = .live, input: BookmarkLaunchInput = .init(), stamps: BookmarkStampProviders = .init(), makeID: @escaping () -> String = { "new-id" }) -> BookmarkCoordinator {
-    BookmarkCoordinator(profiles: ["p": "", "alias": ""], defaultProfile: "p", owningProfiles: ["": "p"], makeID: makeID, now: { 123 }, stampProviders: stamps, stampsEnabled: true, pendingStore: BookmarkPendingStore(directory: dir, fileOperations: operations), launchInput: input)
+  private func owner(_ dir: URL, operations: BookmarkPendingFileOperations = .live, input: BookmarkLaunchInput = .init(), makeID: @escaping () -> String = { "new-id" }) -> BookmarkCoordinator {
+    BookmarkCoordinator(profiles: ["p": "", "alias": ""], defaultProfile: "p", owningProfiles: ["": "p"], makeID: makeID, now: { 123 }, stampsEnabled: true, pendingStore: BookmarkPendingStore(directory: dir, fileOperations: operations), launchInput: input)
   }
 
   @Test func pendingEditsSurviveRelaunch() throws {
     let dir = try directory()
     defer { try? FileManager.default.removeItem(at: dir) }
-    let clock = BookmarkStampClock()
-    var first: BookmarkCoordinator? = owner(dir, stamps: clock.providers)
+    var first: BookmarkCoordinator? = owner(dir)
     first!.seed(engine: "", document: document(), ready: true)
     try first!.submit(profile: "p", mutations: [
       .init(method: "addBookmark", args: [["profileId": "p", "title": "New", "url": "https://new.test", "favicon": "new-icon"]]),
@@ -31,16 +30,14 @@ struct BookmarkPendingStoreTests {
       .init(method: "removeBookmark", args: ["b1"])
     ], requestID: "all-edits")
     let accepted = first!.desiredView(engine: "")
-    #expect(accepted.pendingStamps["b1"] != nil)
+    #expect(accepted.facts["bm:b1"] != nil)
     first = nil
-    let observed = BookmarkStampClock()
-    let second = owner(dir, stamps: observed.providers)
+    let second = owner(dir)
     let replayed = second.desiredView(engine: "")
     #expect(replayed.document == accepted.document)
     #expect(replayed.revision == accepted.revision)
-    #expect(replayed.pendingStamps == accepted.pendingStamps)
+    #expect(replayed.facts == accepted.facts)
     #expect(!replayed.readyForSync)
-    #expect(observed.observations.count == accepted.pendingStamps.count)
     #expect(second.membership(profile: "alias", url: "https://new.test"))
     #expect(!second.membership(profile: "p", url: "https://b.test"))
     second.completeRead(engine: "", document: document(), capturedRevision: replayed.revision)
@@ -51,8 +48,7 @@ struct BookmarkPendingStoreTests {
     #expect(fetched.document["nodes"]?["new-id"]?["addedAt"] == 123)
     #expect(fetched.document["nodes"]?["new-id"]?["favicon"] == "new-icon")
     #expect(fetched.document["nodes"]?["b1"] == nil)
-    #expect(fetched.pendingStamps == accepted.pendingStamps)
-    #expect(observed.minted == 0)
+    #expect(fetched.facts == accepted.facts)
   }
 
   @Test func journalWriteFailureRejectsWithoutPublication() async throws {
@@ -83,7 +79,7 @@ struct BookmarkPendingStoreTests {
       defer { try? FileManager.default.removeItem(at: dir) }
       let path = dir.appendingPathComponent(BookmarkPendingStore.journalName)
       try bytes.write(to: path)
-      let log = BookmarkStampClock()
+      let log = BookmarkTestLog()
       let store = BookmarkPendingStore(directory: dir, clock: { 456 }, logger: { log.messages.append($0) })
       let coordinator = BookmarkCoordinator(profiles: ["p": ""], defaultProfile: "p", pendingStore: store, launchInput: .init(documents: ["": document()]))
       #expect(coordinator.membership(profile: "p", url: "https://a.test"))
@@ -104,20 +100,17 @@ struct BookmarkPendingStoreTests {
   @Test func lostReceiptRequestIsIdempotent() throws {
     let dir = try directory()
     defer { try? FileManager.default.removeItem(at: dir) }
-    let stamps = BookmarkStampClock()
-    var first: BookmarkCoordinator? = owner(dir, stamps: stamps.providers)
+    var first: BookmarkCoordinator? = owner(dir)
     first!.seed(engine: "", document: document([]), ready: true)
     let edit = BookmarkMutation(method: "addBookmark", args: [["profileId": "p", "url": "https://new.test", "title": "New"]])
     let accepted = try first!.submit(profile: "p", mutations: [edit], requestID: "request-1")
     first = nil
-    let replayClock = BookmarkStampClock()
-    let second = owner(dir, stamps: replayClock.providers, makeID: { Issue.record("Retried durable request allocated a second ID"); return "wrong" })
+    let second = owner(dir, makeID: { Issue.record("Retried durable request allocated a second ID"); return "wrong" })
     let retried = try second.submit(profile: "p", mutations: [edit], requestID: "request-1")
     #expect(retried.results == accepted.results)
     #expect(!retried.view.readyForSync)
     #expect(retried.view.document == accepted.view.document)
     #expect(retried.view.revision == accepted.view.revision)
-    #expect(replayClock.minted == 0)
     #expect(throws: (any Error).self) {
       try second.submit(profile: "p", mutations: [.init(method: "removeBookmark", args: ["new-id"])], requestID: "request-1")
     }
@@ -127,13 +120,12 @@ struct BookmarkPendingStoreTests {
   @Test func acceptedRemoteReplacementSurvivesCrashBeforePush() throws {
     let dir = try directory()
     defer { try? FileManager.default.removeItem(at: dir) }
-    let stamps = BookmarkStampClock()
-    var first: BookmarkCoordinator? = owner(dir, stamps: stamps.providers)
+    var first: BookmarkCoordinator? = owner(dir)
     first!.seed(engine: "", document: document(), ready: true)
     let replacement = document(["https://remote.test"])
     let accepted = try first!.replaceDocument(engine: "", document: replacement, expectedRevision: first!.desiredView(engine: "").revision, requestID: "remote-1")
     first = nil
-    let second = owner(dir, stamps: stamps.providers)
+    let second = owner(dir)
     #expect(second.desiredView(engine: "").document == replacement)
     #expect(!second.desiredView(engine: "").readyForSync)
     let retried = try second.replaceDocument(engine: "", document: replacement, expectedRevision: accepted.view.revision - 1, requestID: "remote-1")
@@ -141,7 +133,6 @@ struct BookmarkPendingStoreTests {
     second.completeRead(engine: "", document: document(), capturedRevision: 0)
     #expect(second.desiredView(engine: "").document["nodes"]?["b0"]?["url"] == "https://remote.test")
     #expect(second.desiredView(engine: "").document["nodes"]?["b1"] == nil)
-    #expect(stamps.minted == 0)
   }
 
   @Test func cacheAloneDoesNotResurrectStaleBookmark() throws {
@@ -176,48 +167,6 @@ struct BookmarkPendingStoreTests {
     coordinator.completeRead(engine: "", document: document(), capturedRevision: 0)
     #expect(coordinator.desiredView(engine: "").hasView)
     #expect(!coordinator.desiredView(engine: "").readyForSync)
-  }
-
-  @Test func replayObservesEveryStampIncludingDeletedNodesBeforeReady() throws {
-    let dir = try directory()
-    defer { try? FileManager.default.removeItem(at: dir) }
-    let minted = BookmarkStampClock()
-    var first: BookmarkCoordinator? = owner(dir, stamps: minted.providers)
-    first!.seed(engine: "", document: document(), ready: true)
-    try first!.submit(profile: "p", mutations: [.init(method: "removeBookmark", args: ["b0"])])
-    let stamp = try #require(first!.pendingEditStamp(profileId: "p", nodeId: "b0"))
-    first = nil
-    let observed = BookmarkStampClock()
-    let second = owner(dir, stamps: observed.providers)
-    #expect(observed.observations == [["p", "hlc-1"], ["p", "hlc-2"], ["p", "hlc-3"]])
-    #expect(second.pendingEditStamp(profileId: "p", nodeId: "b0") == stamp)
-    #expect(!second.desiredView(engine: "").readyForSync)
-    second.completeRead(engine: "", document: document(), capturedRevision: 0)
-    #expect(second.pendingEditStamp(profileId: "p", nodeId: "b0") == stamp)
-    #expect(observed.minted == 0)
-  }
-
-  @Test func ackAndSupersedeAreDurableAndNeverInferFromTree() throws {
-    let dir = try directory()
-    defer { try? FileManager.default.removeItem(at: dir) }
-    let stamps = BookmarkStampClock()
-    var first: BookmarkCoordinator? = owner(dir, stamps: stamps.providers)
-    first!.seed(engine: "", document: document(), ready: true)
-    try first!.submit(profile: "p", mutations: [.init(method: "removeBookmark", args: ["b0"])])
-    let stamp = try #require(first!.pendingEditStamp(profileId: "p", nodeId: "b0"))
-    first!.ackPendingEditStamp(profileId: "p", nodeId: "b0", hlc: "wrong")
-    first!.supersedePendingEditStamp(profileId: "p", nodeId: "b0", remoteHlc: stamp.hlc)
-    first = nil
-    var second: BookmarkCoordinator? = owner(dir, stamps: stamps.providers)
-    #expect(second!.pendingEditStamp(profileId: "p", nodeId: "b0") == stamp)
-    second!.ackPendingEditStamp(profileId: "p", nodeId: "b0", hlc: stamp.hlc)
-    second = nil
-    var third: BookmarkCoordinator? = owner(dir, stamps: stamps.providers)
-    #expect(third!.pendingEditStamp(profileId: "p", nodeId: "b0") == nil)
-    try third!.submit(profile: "p", mutations: [.init(method: "updateBookmark", args: ["b1", ["title": "Another"]])])
-    third!.supersedePendingEditStamp(profileId: "p", nodeId: "b1", remoteHlc: "zzzz")
-    third = nil
-    #expect(owner(dir, stamps: stamps.providers).pendingEditStamp(profileId: "p", nodeId: "b1") == nil)
   }
 
   @Test func crashBoundariesConstructFreshStoreAndCoordinator() throws {
@@ -264,26 +213,6 @@ struct BookmarkPendingStoreTests {
     #expect(fresh.desiredView(engine: "").document["nodes"]?["new-id"]?["addedAt"] == 123)
   }
 
-  @Test func failedStampAcknowledgementRetainsDurableSlot() throws {
-    let dir = try directory()
-    defer { try? FileManager.default.removeItem(at: dir) }
-    let stamps = BookmarkStampClock()
-    var first: BookmarkCoordinator? = owner(dir, stamps: stamps.providers)
-    first!.seed(engine: "", document: document(), ready: true)
-    try first!.submit(profile: "p", mutations: [.init(method: "removeBookmark", args: ["b0"])])
-    let stamp = try #require(first!.pendingEditStamp(profileId: "p", nodeId: "b0"))
-    first = nil
-    var operations = BookmarkPendingFileOperations.live
-    operations.syncFile = { _ in throw BookmarkDurabilityFailure.injected }
-    let failing = owner(dir, operations: operations, stamps: stamps.providers)
-    #expect(!failing.ackPendingEditStamp(profileId: "p", nodeId: "b0", hlc: stamp.hlc))
-    #expect(failing.recoveryNotice?.kind == .unavailableJournal)
-    #expect(failing.pendingEditStamp(profileId: "p", nodeId: "b0") == stamp)
-    failing.supersedePendingEditStamp(profileId: "p", nodeId: "b0", remoteHlc: "zzzz")
-    #expect(failing.pendingEditStamp(profileId: "p", nodeId: "b0") == stamp)
-    #expect(owner(dir, stamps: stamps.providers).pendingEditStamp(profileId: "p", nodeId: "b0") == stamp)
-  }
-
   @Test func failedReplacementDoesNotPublishOrAdvanceRevision() throws {
     let dir = try directory()
     defer { try? FileManager.default.removeItem(at: dir) }
@@ -325,53 +254,6 @@ struct BookmarkPendingStoreTests {
     let orphanDocument: JSONValue = ["nodes": .object(orphaned), "roots": document()["roots"]!]
     #expect(throws: (any Error).self) { try coordinator.replaceDocument(engine: "", document: orphanDocument, expectedRevision: coordinator.desiredView(engine: "").revision) }
     #expect(coordinator.desiredView(engine: "") == before)
-  }
-
-  @Test(arguments: ["rename", "reorder", "delete"])
-  func neverPublishedIntentWithIntactStateDoesNotOutrankNewerRemote(_ change: String) throws {
-    try recoveredStampOrdering(change: change, covered: false)
-  }
-
-  @Test(arguments: ["rename", "reorder", "delete"])
-  func publishedIntentWithLostOrRolledBackStateKeepsOrdering(_ change: String) throws {
-    try recoveredStampOrdering(change: change, covered: false)
-  }
-
-  @Test(arguments: ["rename", "reorder", "delete"])
-  func coveredIntentWithIntactStateDoesNotRepublish(_ change: String) throws {
-    try recoveredStampOrdering(change: change, covered: true)
-  }
-
-  private func recoveredStampOrdering(change: String, covered: Bool) throws {
-    let dir = try directory()
-    defer { try? FileManager.default.removeItem(at: dir) }
-    let clock = BookmarkStampClock()
-    var first: BookmarkCoordinator? = owner(dir, stamps: clock.providers)
-    first!.seed(engine: "", document: document(), ready: true)
-    let mutation: BookmarkMutation
-    if change == "rename" { mutation = .init(method: "updateBookmark", args: ["b0", ["title": "Older local"]]) }
-    else if change == "reorder" { mutation = .init(method: "moveBookmark", args: ["b2", "bar@default", 0]) }
-    else { mutation = .init(method: "removeBookmark", args: ["b0"]) }
-    let target = change == "reorder" ? "b2" : "b0"
-    try first!.submit(profile: "p", mutations: [mutation])
-    let oldStamp = try #require(first!.pendingEditStamp(profileId: "p", nodeId: target))
-    if covered { first!.ackPendingEditStamp(profileId: "p", nodeId: target, hlc: oldStamp.hlc) }
-    first = nil
-    let rolledBackClock = BookmarkStampClock()
-    let second = owner(dir, stamps: rolledBackClock.providers)
-    #expect(!second.desiredView(engine: "").readyForSync)
-    #expect(second.pendingEditStamp(profileId: "p", nodeId: target) == (covered ? nil : oldStamp))
-    if !covered { #expect(rolledBackClock.observations.contains(["p", oldStamp.hlc])) }
-    #expect(rolledBackClock.minted == 0)
-    second.completeRead(engine: "", document: document(), capturedRevision: 0)
-    #expect(rolledBackClock.minted == 0)
-    if !covered {
-      second.supersedePendingEditStamp(profileId: "p", nodeId: target, remoteHlc: "zzzz-newer-remote")
-      #expect(second.pendingEditStamp(profileId: "p", nodeId: target) == nil)
-      try second.replaceDocument(engine: "", document: document(["https://remote.test"]), expectedRevision: second.desiredView(engine: "").revision)
-      #expect(rolledBackClock.minted == 0)
-      #expect(second.membership(profile: "p", url: "https://remote.test"))
-    }
   }
 
   @Test func validChecksumWithUnreadableCheckpointIsPreserved() throws {
@@ -449,13 +331,8 @@ struct BookmarkPendingStoreTests {
   }
 }
 
-private final class BookmarkStampClock {
-  var minted = 0
-  var observations: [[String]] = []
+private final class BookmarkTestLog {
   var messages: [String] = []
-  var providers: BookmarkStampProviders {
-    .init(mintEditStamp: { profile in self.minted += 1; return .init(hlc: "hlc-\(self.minted)", origin: "origin-e\u{301}-\(profile)") }, observeEditStamp: { self.observations.append([$0, $1]) })
-  }
 }
 
 private enum BookmarkDurabilityFailure: Error {

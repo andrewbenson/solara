@@ -182,6 +182,22 @@ public class SettingsModule: Module {
       try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.snapshot(profile: profileId) }
     }
 
+    Function("ackBookmarkFacts") { (profileId: String, engine: String, recordsJSON: String) throws -> Bool in
+      try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.ackBookmarkFacts(profile: profileId, engine: engine, recordsJSON: recordsJSON) }
+    }
+
+    Function("observeBookmarkRecords") { (profileId: String, engine: String, recordsJSON: String) throws -> Bool in
+      try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.observeBookmarkRecords(profile: profileId, engine: engine, recordsJSON: recordsJSON) }
+    }
+
+    Function("clearBookmarkFacts") { (profileId: String, engine: String, recordsJSON: String) throws -> Bool in
+      try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.clearBookmarkFacts(profile: profileId, engine: engine, recordsJSON: recordsJSON) }
+    }
+
+    Function("setBookmarkSyncLinks") { (linksJSON: String) throws -> Bool in
+      try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.setBookmarkSyncLinks(linksJSON: linksJSON) }
+    }
+
     AsyncFunction("submitBookmarkMutations") { (profileId: String, mutationsJSON: String, engine: String, generation: String, requestId: String?) throws -> [String: Any] in
       try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.submit(profile: profileId, mutationsJSON: mutationsJSON, engine: engine, generation: generation, requestID: requestId) }
     }

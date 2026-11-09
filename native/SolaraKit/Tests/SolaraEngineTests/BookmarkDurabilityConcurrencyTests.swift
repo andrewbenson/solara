@@ -13,12 +13,110 @@ struct BookmarkDurabilityConcurrencyTests {
 
   private func document() -> JSONValue { BookmarkCoordinatorTests().document(["https://a.test", "https://b.test"]) }
 
-  private func owner(_ directory: URL, operations: BookmarkPendingFileOperations = .live, provider: DurabilityStampProvider = .init()) -> BookmarkCoordinator {
-    BookmarkCoordinator(profiles: ["p": "", "alias": ""], defaultProfile: "p", owningProfiles: ["": "p"], stampProviders: provider.providers, stampsEnabled: true, pendingStore: BookmarkPendingStore(directory: directory, fileOperations: operations))
+  private func owner(_ directory: URL, operations: BookmarkPendingFileOperations = .live) -> BookmarkCoordinator {
+    BookmarkCoordinator(profiles: ["p": "", "alias": ""], defaultProfile: "p", owningProfiles: ["": "p"], stampsEnabled: true, pendingStore: BookmarkPendingStore(directory: directory, fileOperations: operations))
   }
 
   private func rename(_ id: String, _ title: String) -> BookmarkMutation {
     .init(method: "updateBookmark", args: [.string(id), ["title": .string(title)]])
+  }
+
+  private func factRaceOwner(_ directory: URL, operations: BookmarkPendingFileOperations = .live, moved: Bool = false) -> BookmarkCoordinator {
+    BookmarkCoordinator(profiles: ["p": moved ? "E2" : "E1", "alias": "E1", "q": "E2"], defaultProfile: "p", owningProfiles: ["E1": moved ? "alias" : "p", "E2": "q"], stampsEnabled: true, pendingStore: BookmarkPendingStore(directory: directory, fileOperations: operations))
+  }
+
+  private func factRaceDocument(_ engine: String) -> JSONValue {
+    let roots = BookmarkFlat.roots(engine)
+    return ["nodes": .object([
+      roots.bar: ["id": .string(roots.bar), "kind": "folder", "parentId": nil, "title": "Bookmarks Bar", "children": ["b0"], "addedAt": 0],
+      roots.other: ["id": .string(roots.other), "kind": "folder", "parentId": nil, "title": "Other Bookmarks", "children": [], "addedAt": 0],
+      "b0": ["id": "b0", "kind": "url", "parentId": .string(roots.bar), "title": "Page", "url": "https://a.test", "addedAt": 10]
+    ]), "roots": ["p": ["bar": .string(roots.bar), "other": .string(roots.other)]]]
+  }
+
+  private func mutateFact(_ mutation: String, coordinator: BookmarkCoordinator, seq: UInt64) throws -> Bool {
+    switch mutation {
+    case "ack": return try coordinator.ackBookmarkFacts(profileId: "p", expectedEngine: "E1", records: [(key: "bm:b0", seq: seq, mintedHLC: "00000003f.0001.device")])
+    case "clear": return try coordinator.clearBookmarkFacts(profileId: "p", expectedEngine: "E1", records: [(key: "bm:b0", seq: seq)])
+    default: return try coordinator.observeRemoteRecords(profileId: "p", expectedEngine: "E1", records: [(key: "bm:b0", hlc: "00000003f.0002.remote")])
+    }
+  }
+
+  @Test(arguments: ["ack", "clear", "observe"], [false, true])
+  func remapAndFactWritesSerializeWithoutCrossingEngines(_ mutation: String, factFirst: Bool) throws {
+    let directory = try directory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let setup = factRaceOwner(directory)
+    setup.seed(engine: "E1", document: factRaceDocument("E1"), ready: true)
+    setup.seed(engine: "E2", document: factRaceDocument("E2"), ready: true)
+    try setup.submit(profile: "q", mutations: [rename("b0", "Pending on E2")])
+    try setup.submit(profile: "p", mutations: [rename("b0", "Publishing from E1")])
+    let gate = DurabilityWriteGate()
+    let coordinator = factRaceOwner(directory, operations: gate.operations)
+    let beforeFirst = coordinator.desiredView(engine: "E1")
+    let beforeSecond = coordinator.desiredView(engine: "E2")
+    let publishing = try #require(beforeFirst.facts["bm:b0"])
+    let other = try #require(beforeSecond.facts["bm:b0"])
+    #expect(publishing.seq > other.seq)
+    let probe = DurabilityWorkProbe()
+    let firstDone = DispatchSemaphore(value: 0)
+    let secondStarted = DispatchSemaphore(value: 0)
+    let secondDone = DispatchSemaphore(value: 0)
+    let factWrite: @Sendable () -> Void = {
+      do { probe.finish("fact", try self.mutateFact(mutation, coordinator: coordinator, seq: publishing.seq)) }
+      catch BookmarkWriterError.staleBinding { probe.rejectStale("fact") }
+      catch { probe.fail(error) }
+    }
+    let remapWrite: @Sendable () -> Void = {
+      probe.finish("remap", coordinator.remap(profiles: ["p": "E2", "alias": "E1", "q": "E2"], defaultProfile: "p", owningProfiles: ["E1": "alias", "E2": "q"]))
+    }
+    Thread.detachNewThread {
+      defer { firstDone.signal() }
+      if factFirst { factWrite() } else { remapWrite() }
+    }
+    #expect(gate.entered.wait(timeout: .now() + 5) == .success)
+    Thread.detachNewThread {
+      secondStarted.signal()
+      defer { secondDone.signal() }
+      if factFirst { remapWrite() } else { factWrite() }
+    }
+    #expect(secondStarted.wait(timeout: .now() + 5) == .success)
+    let prematureSecond = secondDone.wait(timeout: .now() + 0.1)
+    gate.release.signal()
+    #expect(prematureSecond == .timedOut)
+    #expect(firstDone.wait(timeout: .now() + 5) == .success)
+    if prematureSecond != .success { #expect(secondDone.wait(timeout: .now() + 5) == .success) }
+    #expect(probe.errors.isEmpty)
+    #expect(probe.result("remap") == true)
+    #expect(probe.result("fact") == (factFirst ? true : nil))
+    #expect(probe.wasStale("fact") == !factFirst)
+    var expectedFirst = beforeFirst
+    if factFirst {
+      switch mutation {
+      case "ack":
+        expectedFirst.facts.removeValue(forKey: "bm:b0")
+        expectedFirst.lastSeen["bm:b0"] = "00000003f.0001.device"
+      case "clear": expectedFirst.facts.removeValue(forKey: "bm:b0")
+      default: expectedFirst.lastSeen["bm:b0"] = "00000003f.0002.remote"
+      }
+    }
+    #expect(coordinator.engine(profile: "p") == "E2")
+    #expect(coordinator.engine(profile: "alias") == "E1")
+    #expect(coordinator.desiredView(engine: "E1") == expectedFirst)
+    #expect(coordinator.desiredView(engine: "E2") == beforeSecond)
+    #expect(coordinator.bookmarkFacts(profileId: "p") == beforeSecond.facts)
+    #expect(coordinator.bookmarkFacts(profileId: "alias") == expectedFirst.facts)
+    let restored = factRaceOwner(directory, moved: true)
+    #expect(restored.recoveryNotice == nil)
+    for expected in [expectedFirst, beforeSecond] {
+      let view = restored.desiredView(engine: expected.engine)
+      #expect(view.document == expected.document)
+      #expect(view.revision == expected.revision)
+      #expect(view.facts == expected.facts)
+      #expect(view.lastSeen == expected.lastSeen)
+    }
+    #expect(restored.bookmarkFacts(profileId: "p") == beforeSecond.facts)
+    #expect(restored.bookmarkFacts(profileId: "alias") == expectedFirst.facts)
   }
 
   @Test func readersCompleteWhileDurableWriteIsHeldOpen() throws {
@@ -39,7 +137,7 @@ struct BookmarkDurabilityConcurrencyTests {
     let entered = gate.entered.wait(timeout: .now() + 5)
     #expect(entered == .success)
     Thread.detachNewThread {
-      probe.read(view: coordinator.desiredView(engine: ""), member: coordinator.membership(profile: "alias", url: "https://a.test"), stamp: coordinator.pendingEditStamp(profileId: "p", nodeId: "b0"))
+      probe.read(view: coordinator.desiredView(engine: ""), member: coordinator.membership(profile: "alias", url: "https://a.test"), fact: coordinator.bookmarkFacts(profileId: "p")["bm:b0"])
       readerDone.signal()
     }
     let readerResult = readerDone.wait(timeout: .now() + 1)
@@ -50,7 +148,7 @@ struct BookmarkDurabilityConcurrencyTests {
     #expect(probe.errors.isEmpty)
     #expect(probe.readView == before)
     #expect(probe.readMember == true)
-    #expect(probe.readStamp == nil)
+    #expect(probe.readFact == nil)
     #expect(!coordinator.membership(profile: "p", url: "https://a.test"))
   }
 
@@ -96,138 +194,9 @@ struct BookmarkDurabilityConcurrencyTests {
     #expect(restored.revision == second.view.revision)
   }
 
-  @Test func crashRelaunchObservesEveryJournaledStampBeforeFirstMint() throws {
-    let directory = try directory()
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let firstProvider = DurabilityStampProvider()
-    var first: BookmarkCoordinator? = owner(directory, provider: firstProvider)
-    first!.seed(engine: "", document: document(), ready: false)
-    try first!.submit(profile: "p", mutations: [rename("b0", "First stamped title")], requestID: "before-crash-1")
-    try first!.submit(profile: "p", mutations: [rename("b0", "Renamed"), .init(method: "removeBookmark", args: ["b1"])], requestID: "before-crash-2")
-    let accepted = first!.desiredView(engine: "")
-    #expect(accepted.pendingStamps["b0"] != nil)
-    #expect(accepted.pendingStamps["b1"] != nil)
-    first = nil
-    let provider = DurabilityStampProvider()
-    let relaunched = owner(directory, provider: provider)
-    #expect(provider.events.allSatisfy { $0.hasPrefix("observe:p:") })
-    #expect(!relaunched.desiredView(engine: "").readyForSync)
-    try relaunched.submit(profile: "p", mutations: [rename("b0", "After crash")])
-    let events = provider.events
-    let firstMint = try #require(events.firstIndex(where: { $0.hasPrefix("mint:") }))
-    let observations = Array(events[..<firstMint])
-    #expect(Set(observations) == [
-      "observe:p:0000000000001-000000-device",
-      "observe:p:0000000000002-000000-device",
-      "observe:p:0000000000003-000000-device"
-    ])
-    for (_, stamp) in accepted.pendingStamps { #expect(observations.contains("observe:p:\(stamp.hlc)")) }
-    #expect(events[firstMint] == "mint:p")
-    #expect(relaunched.pendingEditStamp(profileId: "p", nodeId: "b0")?.hlc != accepted.pendingStamps["b0"]?.hlc)
-  }
-
-  @Test func unconfirmedEditSurvivesCrashRelaunch() throws {
-    let directory = try directory()
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let provider = DurabilityStampProvider()
-    var first: BookmarkCoordinator? = owner(directory, provider: provider)
-    first!.seed(engine: "", document: document(), ready: false)
-    try first!.submit(profile: "p", mutations: [rename("b0", "Stamped")])
-    #expect(first!.pendingEditStamp(profileId: "p", nodeId: "b0") != nil)
-    provider.linked = false
-    try first!.submit(profile: "p", mutations: [rename("b0", "Unconfirmed")])
-    #expect(first!.hasUnconfirmedEdit(profileId: "p", nodeId: "b0"))
-    #expect(first!.pendingEditStamp(profileId: "p", nodeId: "b0") == nil)
-    first = nil
-    let restored = owner(directory)
-    #expect(restored.hasUnconfirmedEdit(profileId: "alias", nodeId: "b0"))
-    #expect(restored.pendingEditStamp(profileId: "p", nodeId: "b0") == nil)
-    #expect(restored.desiredView(engine: "").document["nodes"]?["b0"]?["title"] == "Unconfirmed")
-  }
-
-  @Test func restampIsJournaledAndOnlyItsExactAckClearsUnconfirmedAfterRelaunch() throws {
-    let directory = try directory()
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let provider = DurabilityStampProvider()
-    provider.linked = false
-    var first: BookmarkCoordinator? = owner(directory, provider: provider)
-    first!.seed(engine: "", document: document(), ready: false)
-    try first!.submit(profile: "p", mutations: [rename("b0", "Unconfirmed")])
-    provider.linked = true
-    first!.restampUnconfirmed(profileId: "p")
-    let stamp = try #require(first!.pendingEditStamp(profileId: "p", nodeId: "b0"))
-    #expect(first!.hasUnconfirmedEdit(profileId: "p", nodeId: "b0"))
-    first = nil
-    var restored: BookmarkCoordinator? = owner(directory)
-    #expect(restored!.pendingEditStamp(profileId: "p", nodeId: "b0") == stamp)
-    #expect(restored!.hasUnconfirmedEdit(profileId: "p", nodeId: "b0"))
-    restored!.ackPendingEditStamp(profileId: "p", nodeId: "b0", hlc: "wrong")
-    #expect(restored!.hasUnconfirmedEdit(profileId: "p", nodeId: "b0"))
-    restored!.supersedePendingEditStamp(profileId: "p", nodeId: "b0", remoteHlc: "9999999999999-999999-remote")
-    #expect(restored!.hasUnconfirmedEdit(profileId: "p", nodeId: "b0"))
-    restored!.restampUnconfirmed(profileId: "p")
-    let finalStamp = try #require(restored!.pendingEditStamp(profileId: "p", nodeId: "b0"))
-    restored!.ackPendingEditStamp(profileId: "p", nodeId: "b0", hlc: finalStamp.hlc)
-    restored = nil
-    let acknowledged = owner(directory)
-    #expect(!acknowledged.hasUnconfirmedEdit(profileId: "p", nodeId: "b0"))
-    #expect(acknowledged.pendingEditStamp(profileId: "p", nodeId: "b0") == nil)
-  }
-
-  @Test func failedRestampKeepsMemoryAndJournalUnchangedAcrossRelaunch() throws {
-    let directory = try directory()
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let provider = DurabilityStampProvider()
-    provider.linked = false
-    let failure = DurabilityWriteFailure()
-    var operations = BookmarkPendingFileOperations.live
-    let liveSync = operations.syncFile
-    operations.syncFile = { url in
-      if failure.enabled { throw DurabilityTestFailure.injected }
-      try liveSync(url)
-    }
-    let coordinator = owner(directory, operations: operations, provider: provider)
-    coordinator.seed(engine: "", document: document(), ready: false)
-    try coordinator.submit(profile: "p", mutations: [rename("b0", "Unconfirmed")])
-    let before = coordinator.desiredView(engine: "")
-    let journal = directory.appendingPathComponent(BookmarkPendingStore.journalName)
-    let bytes = try Data(contentsOf: journal)
-    provider.linked = true
-    failure.enabled = true
-    coordinator.restampUnconfirmed(profileId: "p")
-    #expect(coordinator.desiredView(engine: "") == before)
-    #expect(coordinator.pendingEditStamp(profileId: "p", nodeId: "b0") == nil)
-    #expect(coordinator.hasUnconfirmedEdit(profileId: "p", nodeId: "b0"))
-    #expect(try Data(contentsOf: journal) == bytes)
-    let restored = owner(directory)
-    #expect(restored.desiredView(engine: "") == before)
-    #expect(restored.hasUnconfirmedEdit(profileId: "p", nodeId: "b0"))
-    #expect(restored.pendingEditStamp(profileId: "p", nodeId: "b0") == nil)
-  }
 }
 
 private enum DurabilityTestFailure: Error { case injected }
-
-private final class DurabilityWriteFailure {
-  var enabled = false
-}
-
-private final class DurabilityStampProvider {
-  var linked = true
-  private var tick = 0
-  private(set) var events: [String] = []
-  var providers: BookmarkStampProviders {
-    .init(mintEditStamp: { profile in
-      self.events.append("mint:\(profile)")
-      guard self.linked else { return nil }
-      self.tick += 1
-      return BookmarkEditStamp(hlc: String(format: "%013d-000000-device", self.tick), origin: "device")
-    }, observeEditStamp: { profile, hlc in
-      self.events.append("observe:\(profile):\(hlc)")
-      self.tick = max(self.tick, Int(hlc.prefix(13)) ?? 0)
-    })
-  }
-}
 
 private final class DurabilityWriteGate: @unchecked Sendable {
   let entered = DispatchSemaphore(value: 0)
@@ -256,18 +225,24 @@ private final class DurabilityWorkProbe: @unchecked Sendable {
   private let lock = NSLock()
   private var storedReceipts: [String: BookmarkReceipt] = [:]
   private var storedErrors: [String] = []
+  private var storedResults: [String: Bool] = [:]
+  private var staleBindings: Set<String> = []
   private var storedReadView: BookmarkDesiredView?
   private var storedReadMember: Bool?
-  private var storedReadStamp: BookmarkEditStamp?
+  private var storedReadFact: BookmarkEditFact?
   var errors: [String] { lock.withLock { storedErrors } }
   var readView: BookmarkDesiredView? { lock.withLock { storedReadView } }
   var readMember: Bool? { lock.withLock { storedReadMember } }
-  var readStamp: BookmarkEditStamp? { lock.withLock { storedReadStamp } }
+  var readFact: BookmarkEditFact? { lock.withLock { storedReadFact } }
   func accept(_ key: String, _ receipt: BookmarkReceipt) { lock.withLock { storedReceipts[key] = receipt } }
   func receipt(_ key: String) -> BookmarkReceipt? { lock.withLock { storedReceipts[key] } }
+  func finish(_ key: String, _ result: Bool) { lock.withLock { storedResults[key] = result } }
+  func result(_ key: String) -> Bool? { lock.withLock { storedResults[key] } }
+  func rejectStale(_ key: String) { lock.withLock { _ = staleBindings.insert(key) } }
+  func wasStale(_ key: String) -> Bool { lock.withLock { staleBindings.contains(key) } }
   func fail(_ error: any Error) { lock.withLock { storedErrors.append(String(describing: error)) } }
-  func read(view: BookmarkDesiredView, member: Bool, stamp: BookmarkEditStamp?) {
-    lock.withLock { storedReadView = view; storedReadMember = member; storedReadStamp = stamp }
+  func read(view: BookmarkDesiredView, member: Bool, fact: BookmarkEditFact?) {
+    lock.withLock { storedReadView = view; storedReadMember = member; storedReadFact = fact }
   }
 }
 

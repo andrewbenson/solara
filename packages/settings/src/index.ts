@@ -20,7 +20,11 @@ type NativeSettingsModule = {
   devFaviconLookup?(page: string, engineProfile: string): Promise<{ bytes: number; source: string }>;
   liveInitialReplica(): LiveReplica;
   bookmarkWriterState?(): BookmarkWriterState;
-  bookmarkWriterSnapshot?(profileId: string): BookmarkWriterSnapshot;
+  bookmarkWriterSnapshot?(profileId: string): Omit<BookmarkWriterSnapshot, "facts"> & { facts?: string };
+  ackBookmarkFacts?(profileId: string, engine: string, recordsJSON: string): boolean;
+  observeBookmarkRecords?(profileId: string, engine: string, recordsJSON: string): boolean;
+  clearBookmarkFacts?(profileId: string, engine: string, recordsJSON: string): boolean;
+  setBookmarkSyncLinks?(linksJSON: string): boolean;
   submitBookmarkMutations?(profileId: string, mutationsJSON: string, engine: string, generation: string, requestId: string | null): Promise<{ engine: string; revision: string; results: string; document: string }>;
   replaceBookmarkDocument?(profileId: string, documentJSON: string, expectedRevision: string, engine: string, generation: string, requestId: string | null): { revision: string };
   liveCommand(name: string, payloadJSON: string): Promise<string>;
@@ -40,7 +44,11 @@ type NativeSettingsModule = {
 
 export type BookmarkWriterState = { state: "legacy" } | { state: "owned"; generation: string };
 export type BookmarkWriterBinding = { engine: string; generation: string };
-export type BookmarkWriterSnapshot = BookmarkWriterBinding & { revision: string; ready: boolean; document: string };
+export type BookmarkEditFact = { at: number; seq: string; after: string | null; link: string };
+export type BookmarkFactAck = { key: string; seq: string; mintedHLC: string };
+export type BookmarkRecordObservation = { key: string; hlc: string };
+export type BookmarkFactClear = { key: string; seq: string };
+export type BookmarkWriterSnapshot = BookmarkWriterBinding & { revision: string; ready: boolean; document: string; facts: Record<string, BookmarkEditFact> };
 
 export type LiveReplica = { revision: number; replicaJSON: string; calendarJSON?: string; meetingAlertJSON?: string; error?: string };
 export type LiveCommandResult = { revision: number; folderId?: string; deviceFlow?: { id: string; userCode: string; verificationUri: string; expiresAt: number }; boolean?: boolean };
@@ -121,7 +129,28 @@ export const bookmarkWriterState = (): BookmarkWriterState => native?.bookmarkWr
 
 export function bookmarkWriterSnapshot(profileId: string): BookmarkWriterSnapshot {
   if (!native?.bookmarkWriterSnapshot) throw new Error("native bookmarks are not owned by this launch");
-  return native.bookmarkWriterSnapshot(profileId);
+  const snapshot = native.bookmarkWriterSnapshot(profileId);
+  return { ...snapshot, facts: JSON.parse(snapshot.facts ?? "{}") as Record<string, BookmarkEditFact> };
+}
+
+export function ackBookmarkFacts(profileId: string, binding: BookmarkWriterBinding, records: BookmarkFactAck[]): boolean {
+  if (!native?.ackBookmarkFacts) throw new Error("native bookmarks are not owned by this launch");
+  return native.ackBookmarkFacts(profileId, binding.engine, JSON.stringify(records));
+}
+
+export function observeBookmarkRecords(profileId: string, binding: BookmarkWriterBinding, records: BookmarkRecordObservation[]): boolean {
+  if (!native?.observeBookmarkRecords) throw new Error("native bookmarks are not owned by this launch");
+  return native.observeBookmarkRecords(profileId, binding.engine, JSON.stringify(records));
+}
+
+export function clearBookmarkFacts(profileId: string, binding: BookmarkWriterBinding, records: BookmarkFactClear[]): boolean {
+  if (!native?.clearBookmarkFacts) throw new Error("native bookmarks are not owned by this launch");
+  return native.clearBookmarkFacts(profileId, binding.engine, JSON.stringify(records));
+}
+
+export function setBookmarkSyncLinks(links: Record<string, string>): boolean {
+  if (!native?.setBookmarkSyncLinks) throw new Error("native bookmarks are not owned by this launch");
+  return native.setBookmarkSyncLinks(JSON.stringify(links));
 }
 
 export type BookmarkWriterReceipt = { engine: string; revision: string; results: unknown[]; document: string };

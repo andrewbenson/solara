@@ -121,14 +121,14 @@ public final class BookmarkPendingStore {
     }
     do {
       let envelope = try JSONValue.parse(operations.read(journalURL))
-      if let version = envelope.object?["version"], version != 1 {
+      if let version = envelope.object?["version"], version != 1 && version != 2 {
         let notice = BookmarkRecoveryNotice(kind: .newerJournalVersion, message: "Bookmark changes were saved in a format this version of Solara can't read, so they were left untouched.", preservedPath: journalURL.path)
-        logger("Bookmark journal has format \(version.text()), not 1, left untouched: \(journalURL.path)")
+        logger("Bookmark journal has format \(version.text()), not 1 or 2, left untouched: \(journalURL.path)")
         let result = BookmarkPendingLoad(payload: nil, recoveryNotice: notice, writable: false)
         loaded = result
         return result
       }
-      guard envelope["version"]?.number == 1, let payload = envelope["payload"], let checksum = envelope["checksum"]?.string, Self.checksum(payload) == checksum else { throw BookmarkPendingStoreError.invalidEnvelope }
+      guard envelope["version"]?.number == 1 || envelope["version"]?.number == 2, let payload = envelope["payload"], let checksum = envelope["checksum"]?.string, Self.checksum(payload) == checksum else { throw BookmarkPendingStoreError.invalidEnvelope }
       let result = BookmarkPendingLoad(payload: payload, recoveryNotice: nil, writable: true)
       loaded = result
       return result
@@ -169,7 +169,7 @@ public final class BookmarkPendingStore {
     lock.lock()
     defer { lock.unlock() }
     guard load().writable else { throw BookmarkPendingStoreError.unavailable }
-    let envelope: JSONValue = ["version": 1, "payload": payload, "checksum": .string(Self.checksum(payload))]
+    let envelope: JSONValue = ["version": 2, "payload": payload, "checksum": .string(Self.checksum(payload))]
     let bytes = Data(envelope.text().utf8)
     let temporary = directory.appendingPathComponent("\(Self.journalName).tmp-\(UUID().uuidString.lowercased())")
     var renamed = false

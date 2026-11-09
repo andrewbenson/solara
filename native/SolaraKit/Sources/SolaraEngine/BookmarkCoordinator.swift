@@ -17,19 +17,14 @@ public enum BookmarkCoordinatorError: Error, Equatable {
   case conditionFailed(String)
 }
 
-public struct BookmarkEditStamp: Equatable, Sendable {
-  public let hlc: String
-  public let origin: String
-  public init(hlc: String, origin: String) { self.hlc = hlc; self.origin = origin }
-  public static func == (lhs: Self, rhs: Self) -> Bool { JSKey(lhs.hlc) == JSKey(rhs.hlc) && JSKey(lhs.origin) == JSKey(rhs.origin) }
-}
-
-public struct BookmarkStampProviders {
-  public var mintEditStamp: (String) -> BookmarkEditStamp?
-  public var observeEditStamp: (String, String) -> Void
-  public init(mintEditStamp: @escaping (String) -> BookmarkEditStamp? = { _ in nil }, observeEditStamp: @escaping (String, String) -> Void = { _, _ in }) {
-    self.mintEditStamp = mintEditStamp
-    self.observeEditStamp = observeEditStamp
+public struct BookmarkEditFact: Equatable, Sendable {
+  public let at: Double
+  public let seq: UInt64
+  public let after: String?
+  public let link: String
+  public init(at: Double, seq: UInt64, after: String?, link: String) { self.at = at; self.seq = seq; self.after = after; self.link = link }
+  public static func == (lhs: Self, rhs: Self) -> Bool {
+    lhs.at == rhs.at && lhs.seq == rhs.seq && lhs.after.map(JSKey.init) == rhs.after.map(JSKey.init) && JSKey(lhs.link) == JSKey(rhs.link)
   }
 }
 
@@ -44,10 +39,10 @@ public struct BookmarkDesiredView: Equatable, Sendable {
   public var retryNotBeforeMs: Double?
   public var requiresRead = false
   public var inFlightTarget: JSONValue?
-  public var pendingStamps: JSMap<BookmarkEditStamp> = [:]
-  public var unconfirmedEdits: Set<JSKey> = []
+  public var facts: JSMap<BookmarkEditFact> = [:]
+  public var lastSeen: JSMap<String> = [:]
   public static func == (lhs: Self, rhs: Self) -> Bool {
-    JSKey(lhs.engine) == JSKey(rhs.engine) && lhs.document == rhs.document && lhs.revision == rhs.revision && lhs.hasView == rhs.hasView && lhs.readyForSync == rhs.readyForSync && lhs.structuralBreak == rhs.structuralBreak && lhs.failedPushes == rhs.failedPushes && lhs.retryNotBeforeMs == rhs.retryNotBeforeMs && lhs.requiresRead == rhs.requiresRead && lhs.inFlightTarget == rhs.inFlightTarget && lhs.pendingStamps == rhs.pendingStamps && lhs.unconfirmedEdits == rhs.unconfirmedEdits
+    JSKey(lhs.engine) == JSKey(rhs.engine) && lhs.document == rhs.document && lhs.revision == rhs.revision && lhs.hasView == rhs.hasView && lhs.readyForSync == rhs.readyForSync && lhs.structuralBreak == rhs.structuralBreak && lhs.failedPushes == rhs.failedPushes && lhs.retryNotBeforeMs == rhs.retryNotBeforeMs && lhs.requiresRead == rhs.requiresRead && lhs.inFlightTarget == rhs.inFlightTarget && lhs.facts == rhs.facts && lhs.lastSeen.mapValues(JSKey.init) == rhs.lastSeen.mapValues(JSKey.init)
   }
 }
 
@@ -89,25 +84,21 @@ public final class BookmarkCoordinator: @unchecked Sendable {
   private var owningProfiles: JSMap<String>
   private let makeID: () -> String
   private let now: () -> Double
-  private let stampProviders: BookmarkStampProviders
   private let stampsEnabled: Bool
-  private let log: (String) -> Void
-  private var runningStampProvider = false
+  private var lastOwningProfiles: JSMap<String> = [:]
   private var views: JSMap<BookmarkDesiredView> = [:]
   private var bases: JSMap<BookmarkFlat> = [:]
   private let durability: BookmarkDurability
   private var streams: [UUID: (JSKey, BookmarkMembershipObserver)] = [:]
   private var viewStreams: [UUID: (JSKey, BookmarkViewObserver)] = [:]
 
-  public init(profiles: JSMap<String>, defaultProfile: String, owningProfiles: JSMap<String> = [:], makeID: @escaping () -> String = { UUID().uuidString.lowercased() }, now: @escaping () -> Double = { (Date().timeIntervalSince1970 * 1000).rounded(.down) }, stampProviders: BookmarkStampProviders = .init(), stampsEnabled: Bool = false, pendingStore: BookmarkPendingStore? = nil, launchInput: BookmarkLaunchInput = .init(), log: @escaping (String) -> Void = { NSLog("%@", $0) }) {
+  public init(profiles: JSMap<String>, defaultProfile: String, owningProfiles: JSMap<String> = [:], makeID: @escaping () -> String = { UUID().uuidString.lowercased() }, now: @escaping () -> Double = { (Date().timeIntervalSince1970 * 1000).rounded(.down) }, stampsEnabled: Bool = false, pendingStore: BookmarkPendingStore? = nil, launchInput: BookmarkLaunchInput = .init()) {
     self.profiles = profiles
     self.defaultProfile = defaultProfile
     self.owningProfiles = owningProfiles
     self.makeID = makeID
     self.now = now
-    self.stampProviders = stampProviders
     self.stampsEnabled = stampsEnabled
-    self.log = log
     durability = BookmarkDurability(store: pendingStore)
     durability.legacyPendingEngines.formUnion(launchInput.legacyPendingEngines)
     for (engine, document) in launchInput.documents {
@@ -118,21 +109,7 @@ public final class BookmarkCoordinator: @unchecked Sendable {
       views[engine] = restored
       bases[engine] = durability.restoredBases[engine]
     }
-    locked {
-      guard stampsEnabled else { return }
-      var observed: JSMap<Set<JSKey>> = [:]
-      func observe(_ view: BookmarkDesiredView) {
-        let owner = ownerProfile(view.engine)
-        for (_, stamp) in view.pendingStamps {
-          var seen = observed[owner] ?? []
-          guard seen.insert(JSKey(stamp.hlc)).inserted else { continue }
-          observed[owner] = seen
-          runStampProvider { stampProviders.observeEditStamp(owner, stamp.hlc) }
-        }
-      }
-      for (_, view) in views { observe(view) }
-      for (_, request) in durability.requests { observe(request.receipt.view) }
-    }
+    lastOwningProfiles = durability.owners
   }
 
   public var recoveryNotice: BookmarkRecoveryNotice? { locked { durability.notice } }
@@ -143,14 +120,11 @@ public final class BookmarkCoordinator: @unchecked Sendable {
     views.mapValues { ownerProfile($0.engine) }
   }
 
-  private func checkpoint(views: JSMap<BookmarkDesiredView>, bases: JSMap<BookmarkFlat>, requestID: String? = nil, payload: JSONValue = .null, receipt: BookmarkReceipt? = nil, conflicts: [JSONValue]? = nil) -> BookmarkCheckpointInput {
-    BookmarkCheckpointInput(views: views, bases: bases, owners: owners(for: views), requestID: requestID, payload: payload, receipt: receipt, conflicts: conflicts)
+  private func checkpoint(views: JSMap<BookmarkDesiredView>, bases: JSMap<BookmarkFlat>, factSequence: UInt64? = nil, syncLinks: JSMap<String>? = nil, requestID: String? = nil, payload: JSONValue = .null, receipt: BookmarkReceipt? = nil, conflicts: [JSONValue]? = nil) -> BookmarkCheckpointInput {
+    BookmarkCheckpointInput(views: views, bases: bases, owners: owners(for: views), requestID: requestID, payload: payload, receipt: receipt, conflicts: conflicts, factSequence: factSequence ?? durability.factSequence, syncLinks: syncLinks ?? durability.syncLinks)
   }
 
-  private func refuseStampProviderReentry() { locked {} }
-
   private func writing<T>(_ body: () throws -> T) rethrows -> T {
-    refuseStampProviderReentry()
     writerLock.lock()
     defer { writerLock.unlock() }
     return try body()
@@ -181,14 +155,7 @@ public final class BookmarkCoordinator: @unchecked Sendable {
   private func locked<T>(_ body: () throws -> T) rethrows -> T {
     lock.lock()
     defer { lock.unlock() }
-    precondition(!runningStampProvider, "Stamp providers run under the bookmark coordinator lock: they must not call back into the coordinator, do disk I/O, or block on sync")
     return try body()
-  }
-
-  private func runStampProvider<T>(_ body: () -> T) -> T {
-    runningStampProvider = true
-    defer { runningStampProvider = false }
-    return body()
   }
 
   public func engine(profile: String, originalProfile: String? = nil) -> String {
@@ -206,25 +173,38 @@ public final class BookmarkCoordinator: @unchecked Sendable {
     guard let mapped = profiles[regular], BookmarkReconcile.same(mapped, expectedEngine) else { throw BookmarkWriterError.staleBinding }
   }
 
-  public func remap(profiles: JSMap<String>, defaultProfile: String, owningProfiles: JSMap<String>? = nil) {
-    writing {
-      locked {
-        self.profiles = profiles
-        self.defaultProfile = defaultProfile
-        if let owningProfiles { self.owningProfiles = owningProfiles }
-        ownerGeneration += 1
-        pumpEpoch += 1
+  @discardableResult
+  public func remap(profiles: JSMap<String>, defaultProfile: String, owningProfiles: JSMap<String>? = nil) -> Bool {
+    do {
+      return try transact {
+        var previous = lastOwningProfiles
+        for engine in views.keys { previous[engine] = ownerProfile(engine) }
+        let nextOwning = owningProfiles ?? self.owningProfiles
+        let nextOwners = views.mapValues { ownerProfile($0.engine, profiles: profiles, owningProfiles: nextOwning, previous: previous) }
+        let checkpoint = durability.writable ? BookmarkCheckpointInput(views: views, bases: bases, owners: nextOwners, requestID: nil, payload: .null, receipt: nil, conflicts: nil, factSequence: durability.factSequence, syncLinks: durability.syncLinks) : nil
+        return (checkpoint, {
+          self.profiles = profiles
+          self.defaultProfile = defaultProfile
+          self.owningProfiles = nextOwning
+          self.lastOwningProfiles = previous
+          self.ownerGeneration += 1
+          self.pumpEpoch += 1
+          return true
+        })
       }
-    }
+    } catch { return false }
   }
 
   var currentOwnerGeneration: UInt64 { locked { ownerGeneration } }
 
   func writerSnapshot(profile: String) -> BookmarkWriterSnapshot {
+    locked { writerSnapshot(engine: engine(profile: profile)) }
+  }
+
+  func writerSnapshot(engine: String) -> BookmarkWriterSnapshot {
     locked {
-      let engine = engine(profile: profile)
       let view = desiredView(engine: engine)
-      return BookmarkWriterSnapshot(binding: BookmarkWriterBinding(engine: engine, generation: ownerGeneration), revision: view.revision, ready: view.readyForSync, document: view.document)
+      return BookmarkWriterSnapshot(binding: BookmarkWriterBinding(engine: engine, generation: ownerGeneration), revision: view.revision, ready: view.readyForSync, document: view.document, facts: stampsEnabled ? view.facts : [:])
     }
   }
 
@@ -234,10 +214,16 @@ public final class BookmarkCoordinator: @unchecked Sendable {
 
   private func aliases(_ engine: String) -> [String] { profiles.filter { BookmarkReconcile.same($1, engine) }.keys }
   private func ownerProfile(_ engine: String) -> String {
-    if let owner = owningProfiles[engine] { return owner }
+    ownerProfile(engine, profiles: profiles, owningProfiles: owningProfiles, previous: lastOwningProfiles)
+  }
+
+  private func ownerProfile(_ engine: String, profiles: JSMap<String>, owningProfiles: JSMap<String>, previous: JSMap<String>) -> String {
+    if let owner = owningProfiles[engine], BookmarkReconcile.same(profiles[owner], engine) { return owner }
     let conventional = engine.isEmpty ? "default" : engine
     if BookmarkReconcile.same(profiles[conventional], engine) { return conventional }
-    return aliases(engine).first ?? conventional
+    if let alias = profiles.filter({ BookmarkReconcile.same($1, engine) }).keys.first { return alias }
+    if hasPendingEdits(engine), let owner = previous[engine] ?? durability.owners[engine] { return owner }
+    return conventional
   }
 
   #if DEBUG
@@ -331,7 +317,7 @@ public final class BookmarkCoordinator: @unchecked Sendable {
     locked {
       var seen = Set<JSKey>()
       let mapped = Set(profiles.values.map(JSKey.init))
-      return (profiles.values + views.keys.filter { !mapped.contains(JSKey($0)) && hasPendingEdits($0) }).filter { !$0.hasPrefix("incognito:") && seen.insert(JSKey($0)).inserted }
+      return (profiles.values + views.keys.filter { !mapped.contains(JSKey($0)) && chromePushPending($0) }).filter { !$0.hasPrefix("incognito:") && seen.insert(JSKey($0)).inserted }
     }
   }
 
@@ -345,82 +331,75 @@ public final class BookmarkCoordinator: @unchecked Sendable {
     }
   }
 
-  public func pendingEditStamp(profileId: String, nodeId: String) -> BookmarkEditStamp? {
-    locked { stampsEnabled ? views[engine(profile: profileId)]?.pendingStamps[nodeId] : nil }
-  }
-
-  public func hasUnconfirmedEdit(profileId: String, nodeId: String) -> Bool {
-    locked { stampsEnabled && views[engine(profile: profileId)]?.unconfirmedEdits.contains(JSKey(nodeId)) == true }
+  public func bookmarkFacts(profileId: String) -> JSMap<BookmarkEditFact> {
+    locked { stampsEnabled ? views[engine(profile: profileId)]?.facts ?? [:] : [:] }
   }
 
   @discardableResult
-  public func ackPendingEditStamp(profileId: String, nodeId: String, hlc: String) -> Bool {
-    clearPendingEditStamp(profileId: profileId, nodeId: nodeId, acknowledged: true) { JSKey($0.hlc) == JSKey(hlc) }
-  }
-
-  @discardableResult
-  public func supersedePendingEditStamp(profileId: String, nodeId: String, remoteHlc: String) -> Bool {
-    clearPendingEditStamp(profileId: profileId, nodeId: nodeId) { jsKeyPrecedes($0.hlc, remoteHlc) }
-  }
-
-  private func clearPendingEditStamp(profileId: String, nodeId: String, acknowledged: Bool = false, matches: (BookmarkEditStamp) -> Bool) -> Bool {
-    do {
-      return try transact {
-        guard stampsEnabled else { return (nil, { true }) }
-        let engine = engine(profile: profileId)
-        guard var view = views[engine], let stamp = view.pendingStamps[nodeId], matches(stamp) else { return (nil, { true }) }
-        view.pendingStamps.removeValue(forKey: nodeId)
-        if acknowledged { view.unconfirmedEdits.remove(JSKey(nodeId)) }
-        var next = views
-        next[engine] = view
-        let checkpoint = checkpoint(views: next, bases: bases)
-        return (checkpoint, { self.views = next; return true })
+  public func ackBookmarkFacts(profileId: String, expectedEngine: String, records: [(key: String, seq: UInt64, mintedHLC: String)]) throws -> Bool {
+    guard records.allSatisfy({ $0.key.hasPrefix("bm:") }) else { return false }
+    return try updateBookmarkFacts(profileId: profileId, expectedEngine: expectedEngine) { view in
+      for record in records {
+        if let fact = view.facts[record.key] {
+          if fact.seq <= record.seq {
+            view.facts.removeValue(forKey: record.key)
+          } else if fact.after.map({ jsKeyPrecedes($0, record.mintedHLC) }) ?? true {
+            view.facts[record.key] = BookmarkEditFact(at: fact.at, seq: fact.seq, after: record.mintedHLC, link: fact.link)
+          }
+        }
+        if view.lastSeen[record.key].map({ jsKeyPrecedes($0, record.mintedHLC) }) ?? true { view.lastSeen[record.key] = record.mintedHLC }
       }
-    } catch { return false }
+    }
   }
 
   @discardableResult
-  public func restampUnconfirmed(profileId: String) -> Bool {
+  public func observeRemoteRecords(profileId: String, expectedEngine: String, records: [(key: String, hlc: String)]) throws -> Bool {
+    guard records.allSatisfy({ $0.key.hasPrefix("bm:") }) else { return false }
+    return try updateBookmarkFacts(profileId: profileId, expectedEngine: expectedEngine) { view in
+      for record in records where view.lastSeen[record.key].map({ jsKeyPrecedes($0, record.hlc) }) ?? true {
+        view.lastSeen[record.key] = record.hlc
+      }
+    }
+  }
+
+  @discardableResult
+  public func clearBookmarkFacts(profileId: String, expectedEngine: String, records: [(key: String, seq: UInt64)]) throws -> Bool {
+    guard records.allSatisfy({ $0.key.hasPrefix("bm:") }) else { return false }
+    return try updateBookmarkFacts(profileId: profileId, expectedEngine: expectedEngine) { view in
+      for record in records {
+        if let fact = view.facts[record.key], fact.seq <= record.seq { view.facts.removeValue(forKey: record.key) }
+      }
+    }
+  }
+
+  private func updateBookmarkFacts(profileId: String, expectedEngine: String, update: (inout BookmarkDesiredView) -> Void) throws -> Bool {
     do {
       return try transact {
         guard stampsEnabled else { return (nil, { true }) }
-        let engine = engine(profile: profileId)
+        let regular = Ids.isIncognitoProfile(profileId) ? Ids.incognitoOriginal(profileId) : profileId
+        guard let engine = profiles[regular] else { throw BookmarkWriterError.unknownProfile }
+        try validateBinding(profile: profileId, expectedEngine: expectedEngine)
         guard var view = views[engine] else { return (nil, { true }) }
-        let owner = ownerProfile(engine)
-        let waiting = view.unconfirmedEdits.filter { view.pendingStamps[$0.text] == nil }.map(\.text).sorted(by: jsKeyPrecedes)
-        var changed = false
-        for id in waiting {
-          guard let stamp = runStampProvider({ stampProviders.mintEditStamp(owner) }) else { break }
-          view.pendingStamps[id] = stamp
-          changed = true
-        }
-        guard changed else { return (nil, { true }) }
+        let before = view
+        update(&view)
+        guard view != before else { return (nil, { true }) }
         var next = views
         next[engine] = view
         let checkpoint = checkpoint(views: next, bases: bases)
         return (checkpoint, { self.views = next; return true })
       }
+    } catch let error as BookmarkWriterError {
+      throw error
     } catch { return false }
   }
 
   @discardableResult
-  public func replayPendingStamps(profileId: String, stamps: JSMap<BookmarkEditStamp>) -> Bool {
+  public func setBookmarkSyncLinks(_ links: JSMap<String>) -> Bool {
     do {
       return try transact {
-        guard stampsEnabled else { return (nil, { true }) }
-        let engine = engine(profile: profileId)
-        var view = desiredView(engine: engine)
-        guard !view.readyForSync else {
-          log("Bookmark stamp replay for \(profileId) refused: \(stamps.count) stamps arrived after bookmarks were ready for sync")
-          return (nil, { false })
-        }
-        let owner = ownerProfile(engine)
-        for (_, stamp) in stamps { runStampProvider { stampProviders.observeEditStamp(owner, stamp.hlc) } }
-        for (id, stamp) in stamps where view.pendingStamps[id].map({ jsKeyPrecedes($0.hlc, stamp.hlc) }) ?? true { view.pendingStamps[id] = stamp }
-        var next = views
-        next[engine] = view
-        let checkpoint = checkpoint(views: next, bases: bases)
-        return (checkpoint, { self.views = next; return true })
+        guard stampsEnabled, links != durability.syncLinks else { return (nil, { true }) }
+        let checkpoint = checkpoint(views: views, bases: bases, syncLinks: links)
+        return (checkpoint, { true })
       }
     } catch { return false }
   }
@@ -436,6 +415,7 @@ public final class BookmarkCoordinator: @unchecked Sendable {
       guard durability.writable else { throw BookmarkPendingStoreError.unavailable }
       var view = desiredView(engine: engine)
       let before = view.document
+      var factSequence = durability.factSequence
       for mutation in mutations {
         let target: String?
         switch mutation.method {
@@ -469,25 +449,27 @@ public final class BookmarkCoordinator: @unchecked Sendable {
             oldFields?.removeValue(forKey: "children")
             newFields?.removeValue(forKey: "children")
             if oldFields != newFields { touch(id) }
+            if old?["children"] != new?["children"] {
+              for child in (old?["children"]?.array ?? []) + (new?["children"]?.array ?? []) {
+                if let id = child.string { touch(id) }
+              }
+            }
           }
-          let delta = BookmarkReconcile.operations(from: BookmarkFlat(document: before, engine: engine), to: BookmarkFlat(document: view.document, engine: engine), engine: engine)
-          for operation in delta { if let id = operation["id"]?.string { touch(id) } }
+          let acceptedAt = now()
           for id in orderedChanges {
             let node = newNodes[id] ?? oldNodes[id]
             guard node?["parentId"]?.string != nil else { continue }
-            if let stamp = runStampProvider({ stampProviders.mintEditStamp(ownerProfile(engine)) }) {
-              view.pendingStamps[id] = stamp
-            } else {
-              view.pendingStamps.removeValue(forKey: id)
-              view.unconfirmedEdits.insert(JSKey(id))
-            }
+            guard factSequence < UInt64.max else { throw BookmarkCoordinatorError.invalidOperation("Bookmark fact sequence exhausted") }
+            factSequence += 1
+            let key = BookmarkRecordIdentity.key(id: id, node: node)
+            view.facts[key] = BookmarkEditFact(at: acceptedAt, seq: factSequence, after: view.lastSeen[key], link: durability.syncLinks[profile] ?? "none")
           }
         }
       }
       let receipt = BookmarkReceipt(view: view, results: results)
       var next = views
       next[engine] = view
-      let checkpoint = checkpoint(views: next, bases: bases, requestID: requestID, payload: payload, receipt: receipt)
+      let checkpoint = checkpoint(views: next, bases: bases, factSequence: factSequence, requestID: requestID, payload: payload, receipt: receipt)
       return (checkpoint, {
         self.views = next
         return (receipt, self.notifications(engine))
@@ -585,6 +567,10 @@ public final class BookmarkCoordinator: @unchecked Sendable {
   }
 
   private func hasPendingEdits(_ engine: String) -> Bool {
+    chromePushPending(engine) || !(views[engine]?.facts.isEmpty ?? true)
+  }
+
+  private func chromePushPending(_ engine: String) -> Bool {
     guard let view = views[engine] else { return false }
     if view.inFlightTarget != nil { return true }
     let base = bases[engine] ?? BookmarkFlat(records: [])
@@ -592,7 +578,7 @@ public final class BookmarkCoordinator: @unchecked Sendable {
   }
 
   func ownsPump(engine: String, epoch: UInt64) -> Bool {
-    locked { pumpEpoch == epoch && !engine.hasPrefix("incognito:") && (profiles.values.contains { BookmarkReconcile.same($0, engine) } || hasPendingEdits(engine)) }
+    locked { pumpEpoch == epoch && !engine.hasPrefix("incognito:") && (profiles.values.contains { BookmarkReconcile.same($0, engine) } || chromePushPending(engine)) }
   }
 
   func pumpInput(engine: String, epoch: UInt64) -> (BookmarkDesiredView, BookmarkFlat)? {
@@ -932,4 +918,54 @@ private final class BookmarkViewObserver {
   }
 
   func finish() { continuation.finish() }
+}
+
+enum BookmarkRecordIdentity {
+  static func key(id: String, node: JSONValue?) -> String {
+    if let key = node?["syncKey"]?.string, !key.isEmpty, JSKey(bookmarkUuidFor(key)) == JSKey(id) { return "bm:\(key)" }
+    return "bm:\(id)"
+  }
+
+  private static func isBookmarkUuid(_ id: String) -> Bool {
+    let units = Array(id.utf8)
+    guard units.count == 36 else { return false }
+    for (i, u) in units.enumerated() {
+      if i == 8 || i == 13 || i == 18 || i == 23 {
+        if u != UInt8(ascii: "-") { return false }
+      } else if !((u >= 0x30 && u <= 0x39) || (u >= 0x61 && u <= 0x66)) {
+        return false
+      }
+    }
+    return true
+  }
+
+  private static func uuidFrom(_ words: [UInt32]) -> String {
+    let hex = words.map { String(repeating: "0", count: 8 - String($0, radix: 16).count) + String($0, radix: 16) }.joined()
+    let units = Array(hex.utf8)
+    let digit = Int(String(UnicodeScalar(units[16])), radix: 16)!
+    let variant = String((digit & 0x3) | 0x8, radix: 16)
+    func part(_ a: Int, _ b: Int) -> String { String(decoding: units[a..<b], as: UTF8.self) }
+    return "\(part(0, 8))-\(part(8, 12))-4\(part(13, 16))-\(variant)\(part(17, 20))-\(part(20, 32))"
+  }
+
+  static func bookmarkUuidFor(_ id: String) -> String {
+    if isBookmarkUuid(id) { return id }
+    var h1: UInt32 = 1779033703, h2: UInt32 = 3144134277, h3: UInt32 = 1013904242, h4: UInt32 = 2773480762
+    for k in ("netnyahoo-bookmark:" + id).utf16.map(UInt32.init) {
+      h1 = h2 ^ ((h1 ^ k) &* 597399067)
+      h2 = h3 ^ ((h2 ^ k) &* 2869860233)
+      h3 = h4 ^ ((h3 ^ k) &* 951274213)
+      h4 = h1 ^ ((h4 ^ k) &* 2716044179)
+    }
+    h1 = (h3 ^ (h1 >> 18)) &* 597399067
+    h2 = (h4 ^ (h2 >> 22)) &* 2869860233
+    h3 = (h1 ^ (h3 >> 17)) &* 951274213
+    h4 = (h2 ^ (h4 >> 19)) &* 2716044179
+    h1 ^= h2 ^ h3 ^ h4
+    h2 ^= h1
+    h3 ^= h1
+    h4 ^= h1
+    return uuidFrom([h1, h2, h3, h4])
+  }
+
 }

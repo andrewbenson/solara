@@ -44,6 +44,7 @@ public struct BookmarkWriterSnapshot: Sendable {
   public let revision: UInt64
   public let ready: Bool
   public let document: JSONValue
+  public let facts: JSMap<BookmarkEditFact>
 }
 
 public final class NativeBookmarkOwner: @unchecked Sendable {
@@ -102,8 +103,28 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
     fence.lock()
     defer { fence.unlock() }
     let engine = try mappedEngine(profile)
-    let view = coordinator.desiredView(engine: engine)
-    return BookmarkWriterSnapshot(binding: BookmarkWriterBinding(engine: engine, generation: lifecycleGeneration), revision: view.revision, ready: view.readyForSync && installedGeneration == lifecycleGeneration, document: view.document)
+    let snapshot = coordinator.writerSnapshot(engine: engine)
+    return BookmarkWriterSnapshot(binding: BookmarkWriterBinding(engine: engine, generation: lifecycleGeneration), revision: snapshot.revision, ready: snapshot.ready && installedGeneration == lifecycleGeneration, document: snapshot.document, facts: snapshot.facts)
+  }
+
+  @discardableResult
+  public func ackBookmarkFacts(profileId: String, expectedEngine: String, records: [(key: String, seq: UInt64, mintedHLC: String)]) throws -> Bool {
+    try coordinator.ackBookmarkFacts(profileId: profileId, expectedEngine: expectedEngine, records: records)
+  }
+
+  @discardableResult
+  public func observeRemoteRecords(profileId: String, expectedEngine: String, records: [(key: String, hlc: String)]) throws -> Bool {
+    try coordinator.observeRemoteRecords(profileId: profileId, expectedEngine: expectedEngine, records: records)
+  }
+
+  @discardableResult
+  public func clearBookmarkFacts(profileId: String, expectedEngine: String, records: [(key: String, seq: UInt64)]) throws -> Bool {
+    try coordinator.clearBookmarkFacts(profileId: profileId, expectedEngine: expectedEngine, records: records)
+  }
+
+  @discardableResult
+  public func setBookmarkSyncLinks(_ links: JSMap<String>) -> Bool {
+    coordinator.setBookmarkSyncLinks(links)
   }
 
   private func mappedEngine(_ profile: String) throws -> String {
@@ -210,7 +231,7 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
     guard lifecycleGeneration == ticket else { fence.unlock(); return false }
     let mapping = self.mapping
     fence.unlock()
-    coordinator.remap(profiles: mapping.profiles, defaultProfile: mapping.defaultProfile, owningProfiles: mapping.owningProfiles)
+    guard coordinator.remap(profiles: mapping.profiles, defaultProfile: mapping.defaultProfile, owningProfiles: mapping.owningProfiles) else { return false }
     fence.lock()
     defer { fence.unlock() }
     guard lifecycleGeneration == ticket else { return false }
@@ -352,8 +373,11 @@ public struct BookmarkProfileMap: Equatable, Sendable {
     #if DEBUG
       try? await owner.beforeInstallForTesting?()
     #endif
-    guard await coordinator.offMain({ owner.installMapping(ticket) }) else { return }
     do {
+      guard await coordinator.offMain({ owner.installMapping(ticket) }) else {
+        guard owner.isCurrent(ticket) else { return }
+        throw BookmarkCoordinatorError.ownershipUnavailable
+      }
       #if DEBUG
         try await owner.beforeClaimForTesting?()
       #endif

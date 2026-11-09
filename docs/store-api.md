@@ -291,6 +291,8 @@ max(newestEventSeq, eventSeq). Feed/latch/runtime registration change Store memo
 persistence, effects or live listeners. Step 6 owns feed production and lifecycle policy; RN stays exempt from that
 policy. 5b adds no JS lifecycle runner or download-started policy.
 
+A keep fact the runner relies on must be set inside a page-event handler, before that event's `handled` is acknowledged, or be native. The runner refuses a page until `handled` reaches `newestEventSeq`, which native bumps when the event is emitted, so a fact set that way protects from the moment the page emits it. A fact set anywhere else can lag behind a sweep. `lib/nativeKeepAlive` flushes only when a tracked page's own inputs change, and retries pages still waiting on native facts (1 s, backing off to 30 s).
+
 Unload/hydrate clears active page memory and live presentation; normalization restores idle entries and holder facts.
 Nonretired producer fences and same-session watermarks survive retained ids; tab removal drops them, except bounded
 close-held authority. Model serials remain monotonic across resets. Before refresh/following/facts, a trusted native

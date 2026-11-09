@@ -17,9 +17,15 @@ function clearTransientFacts(id: string) {
   });
 }
 
+const PENDING_RETRY_MS = 1000;
+const PENDING_RETRY_MAX_MS = 30_000;
+
 let started = false;
 let watching = false;
 let nudge: (() => void) | null = null;
+type PagesState = ReturnType<typeof usePages.getState>;
+let followPages: ((s: PagesState, prev: PagesState) => void) | null = null;
+export const keepAlivePagesChanged = (s: PagesState, prev: PagesState) => followPages?.(s, prev);
 let followBrowser: ((s: BrowserState, prev: BrowserState) => void) | null = null;
 export const keepAliveBrowserChanged = (s: BrowserState, prev: BrowserState) => followBrowser?.(s, prev);
 export function startNativeKeepAlive() {
@@ -37,9 +43,10 @@ export function startNativeKeepAlive() {
   const read = (identity: PageIdentity) => {
     const s = useBrowser.getState();
     const tab = s.tabs[identity.tabId];
-    if (!tab || !hasPage(tab) || s.live[tab.id]?.discarded || !isPageCurrent(identity)) return null;
+    if (!tab || !hasPage(tab) || s.live[tab.id]?.discarded) return null;
+    if (!isPageCurrent(identity)) return "pending" as const;
     const native = nativePageFacts(tab.id);
-    if (native?.generation !== identity.sessionGeneration || native.protectionKnown !== true) return null;
+    if (native?.generation !== identity.sessionGeneration || native.protectionKnown !== true) return "pending" as const;
     const page = pageOf(tab.id);
     const media = useMedia.getState();
     const session = media.sessions[tab.id];
@@ -61,13 +68,64 @@ export function startNativeKeepAlive() {
       },
     };
   };
-  const feed = createKeepAliveFeed({ running: nativeTabSleepRunning, register: registerKeepAliveRuntime, read, send: pageReport, schedule: (run) => queueMicrotask(() => { applyHeldReports(); run(); }) });
+  let retry: ReturnType<typeof setTimeout> | null = null;
+  let retryMs = PENDING_RETRY_MS;
+  const resetRetry = () => {
+    if (retry) clearTimeout(retry);
+    retry = null;
+    retryMs = PENDING_RETRY_MS;
+  };
+  const waiting = (pending: boolean) => {
+    if (!pending) return resetRetry();
+    if (retry) return;
+    const delay = retryMs;
+    retryMs = Math.min(PENDING_RETRY_MAX_MS, retryMs * 2);
+    retry = setTimeout(() => {
+      retry = null;
+      feed.changed();
+    }, delay);
+  };
+  const feed = createKeepAliveFeed({ running: nativeTabSleepRunning, register: registerKeepAliveRuntime, read, send: pageReport, schedule: (run) => queueMicrotask(() => { applyHeldReports(); run(); }), waiting });
+  const tracked = (ids: Iterable<string>) => { for (const id of ids) if (identities.has(id)) return true; return false; };
+  followPages = (s, prev) => {
+    if (s.pages === prev.pages) return;
+    for (const id of identities.keys()) {
+      const now = s.pages[id];
+      const before = prev.pages[id];
+      if (now === before) continue;
+      if (!now || !before || now.mediaAccess !== before.mediaAccess || now.permission !== before.permission || now.newTabShown !== before.newTabShown || now.fullscreen !== before.fullscreen || now.crashed !== before.crashed || now.unresponsive !== before.unresponsive) return feed.changed();
+    }
+  };
+  const mediaChanged = (s: ReturnType<typeof useMedia.getState>, prev: ReturnType<typeof useMedia.getState>) => {
+    for (const id of identities.keys()) {
+      if (s.sessions[id] !== prev.sessions[id] || s.pipOpen[id] !== prev.pipOpen[id] || s.displayRequests[id] !== prev.displayRequests[id]) return feed.changed();
+    }
+    if (s.tabShares === prev.tabShares) return;
+    const shares = (all: typeof s.tabShares) => Object.entries(all).flatMap(([id, share]) => [id, (share as { capturedTabId?: string }).capturedTabId ?? ""]);
+    if (tracked(shares(s.tabShares)) || tracked(shares(prev.tabShares))) feed.changed();
+  };
+  const toolbarChanged = (s: ReturnType<typeof useToolbarAutoHide.getState>, prev: ReturnType<typeof useToolbarAutoHide.getState>) => {
+    if (s.scrolledDown === prev.scrolledDown) return;
+    for (const id of identities.keys()) if (s.scrolledDown[id] !== prev.scrolledDown[id]) return feed.changed();
+  };
+  let listening: (() => void)[] = [];
+  const listen = () => {
+    if (listening.length || !identities.size) return;
+    listening = [useMedia.subscribe(mediaChanged), useToolbarAutoHide.subscribe(toolbarChanged)];
+  };
+  const unlisten = () => {
+    if (identities.size) return;
+    for (const stop of listening) stop();
+    listening = [];
+  };
   observeKeepAlive({
     created(identity, host) {
       const previous = identities.get(identity.tabId);
       if (previous && (previous.sessionGeneration !== identity.sessionGeneration || previous.registrationGeneration !== identity.registrationGeneration)) clearTransientFacts(identity.tabId);
       sessions.set(identity.tabId, identity.sessionGeneration);
       identities.set(identity.tabId, identity);
+      listen();
+      resetRetry();
       feed.created(identity, host);
     },
     handled: feed.handled,
@@ -76,12 +134,12 @@ export function startNativeKeepAlive() {
       feed.gone(identity);
     },
   });
-  usePages.subscribe(feed.changed);
-  useMedia.subscribe(feed.changed);
-  useToolbarAutoHide.subscribe(feed.changed);
   followBrowser = (s, prev) => {
+    if (s.tabs === prev.tabs && s.live === prev.live) return;
+    let changed = false;
     for (const [id] of sessions) {
       const tab = s.tabs[id];
+      if (tab !== prev.tabs[id] || !!s.live[id]?.discarded !== !!prev.live[id]?.discarded) changed = true;
       if (tab && s.live[id]?.discarded && !prev.live[id]?.discarded) clearTransientFacts(id);
       if (!tab) {
         clearTransientFacts(id);
@@ -91,8 +149,10 @@ export function startNativeKeepAlive() {
         sessions.delete(id);
       }
     }
-    feed.changed();
+    if (changed) feed.changed();
+    unlisten();
   };
   nudge = feed.changed;
+  listen();
   feed.changed();
 }

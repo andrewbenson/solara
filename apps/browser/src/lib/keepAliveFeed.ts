@@ -5,9 +5,10 @@ type Host = "rn" | "pool";
 type Options = {
   running(): boolean;
   register(): number;
-  read(identity: PageIdentity): Snapshot | null;
+  read(identity: PageIdentity): Snapshot | "pending" | null;
   send(id: string, report: Extract<PageReport, { type: "keepAlive" }>): void;
   schedule(run: () => void): void;
+  waiting?(pending: boolean): void;
 };
 type Page = { identity: PageIdentity; host: Host; handled: number; route: string | null; sent: string | null; resend: boolean; failed: boolean };
 const sameIdentity = (a: PageIdentity, b: PageIdentity) => a.tabId === b.tabId && a.sessionGeneration === b.sessionGeneration && a.registrationGeneration === b.registrationGeneration;
@@ -28,6 +29,7 @@ export function createKeepAliveFeed(options: Options) {
     scheduled = false;
     if (!options.running()) {
       epoch = 0;
+      options.waiting?.(false);
       return;
     }
     if (!epoch || renew) {
@@ -36,10 +38,12 @@ export function createKeepAliveFeed(options: Options) {
       renew = false;
       for (const page of pages.values()) page.resend = true;
     }
+    let pending = false;
     for (const [id, page] of pages) {
       if (page.failed) continue;
       const snapshot = options.read(page.identity);
-      if (!snapshot) {
+      if (!snapshot || snapshot === "pending") {
+        if (snapshot === "pending") pending = true;
         page.sent = null;
         page.route = null;
         page.resend = true;
@@ -55,9 +59,11 @@ export function createKeepAliveFeed(options: Options) {
       page.sent = value;
       page.resend = false;
     }
+    options.waiting?.(pending);
   };
   return {
     changed,
+    tracks: () => pages.size > 0,
     created(identity: PageIdentity, host: Host) {
       const previous = pages.get(identity.tabId);
       const registration = registrations.get(identity.tabId);

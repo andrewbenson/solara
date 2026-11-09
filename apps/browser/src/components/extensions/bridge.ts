@@ -19,6 +19,7 @@ import { onNativeExtensionPopupChanged, onNativeExtensionPopupOpenWindow } from 
 import { AppState } from "react-native";
 import { openWindow } from "../../lib/actions";
 import { webviews } from "../../lib/webviews";
+import { keepAlivePagesChanged } from "../../lib/nativeKeepAlive";
 import { storeTransaction, useBrowser, type BrowserState } from "../../store/browser";
 import { snapshotTabId, takeCloseSnapshot } from "../../lib/windowClose";
 import type { Tab, TabSnapshot } from "../../store/types";
@@ -330,6 +331,7 @@ function startActionStates() {
     if (e.lists !== prev.lists || e.popup !== prev.popup) void refreshActionStates();
   });
   usePages.subscribe((p, prev) => {
+    keepAlivePagesChanged(p, prev);
     if (p.browsers === prev.browsers) return;
     void refreshActionStates();
     const actions = useExtensions.getState().actions;

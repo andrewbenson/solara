@@ -28,8 +28,22 @@ function fixture(running = true) {
   let browserListeners = 0;
   browser.subscribe = (listener) => { browserListeners++; return followBrowser(listener); };
   const pages = createStore(() => ({ pages: { t: { fullscreen: false, crashed: null, unresponsive: false, mediaAccess: null, permission: null, newTabShown: null } } }));
+  const followPages = pages.subscribe;
+  let pagesListeners = 0;
   const media = createStore(() => ({ sessions: {}, pipOpen: {}, pip: {}, dismissed: {}, displayRequests: {}, tabShares: {} }));
   const toolbar = createStore(() => ({ scrolledDown: {} }));
+  let listeners = 0;
+  for (const store of [pages, media, toolbar]) {
+    const subscribe = store.subscribe;
+    store.subscribe = (listener) => {
+      listeners += 1;
+      if (store === pages) pagesListeners += 1;
+      const stop = subscribe(listener);
+      let stopped = false;
+      return () => { if (!stopped) { stopped = true; listeners -= 1; stop(); } };
+    };
+  }
+  const timers = [];
   const events = load("./keepAliveFeed.ts", {});
   const producer = load("./nativeKeepAlive.ts", {
     "@solara/store": { isPageCurrent: (value) => value.sessionGeneration === authority.sessionGeneration && value.registrationGeneration === authority.registrationGeneration, nativePageFacts: () => ({ generation, protectionKnown }), pageReport: (id, report) => sent.push(JSON.parse(JSON.stringify({ id, ...report }))), registerKeepAliveRuntime: () => ++epoch, onTabSleepRunningChanged: (listener) => { runnerListener = listener; return () => {}; } },
@@ -41,13 +55,16 @@ function fixture(running = true) {
     "../store/pageSession": { hasPage: () => true },
     "./keepAliveFeed": events,
     "./nativeEvents": { applyHeldReports: () => {} },
-  }, { queueMicrotask: (run) => jobs.push(run) });
+  }, { queueMicrotask: (run) => jobs.push(run), setTimeout: (run, ms) => { const timer = { run, ms, live: true }; timers.push(timer); return timer; }, clearTimeout: (timer) => { if (timer) timer.live = false; } });
   producer.startNativeKeepAlive();
   const producerListeners = browserListeners;
   followBrowser((s, prev) => producer.keepAliveBrowserChanged(s, prev));
+  followPages((s, prev) => producer.keepAlivePagesChanged(s, prev));
   const flush = () => { while (jobs.length) jobs.shift()(); };
   const page = (patch) => pages.setState((s) => ({ pages: { ...s.pages, t: { ...s.pages.t, ...patch } } }));
-  return { producerListeners, producer, events, sent, identity, browser, pages, media, toolbar, flush, page, setProtectionKnown: (value) => { protectionKnown = value; }, epoch: () => epoch, setRunning: (value) => { running = value; runnerListener?.(value); }, replace: (next) => { authority = next; generation = next.sessionGeneration; events.keepAliveCreated(next, "rn"); } };
+  const pendingTimers = () => timers.filter((timer) => timer.live);
+  const fire = () => { const due = pendingTimers(); for (const timer of due) { timer.live = false; timer.run(); } return due.map((timer) => timer.ms); };
+  return { jobs, pagesListeners: () => pagesListeners, listeners: () => listeners, pendingTimers, fire, producerListeners, producer, events, sent, identity, browser, pages, media, toolbar, flush, page, setProtectionKnown: (value) => { protectionKnown = value; }, epoch: () => epoch, setRunning: (value) => { running = value; runnerListener?.(value); }, replace: (next) => { authority = next; generation = next.sessionGeneration; events.keepAliveCreated(next, "rn"); } };
 }
 
 test("page and media subscriptions produce every typed keep fact and handled watermark", () => {
@@ -217,4 +234,166 @@ test("the feed adds no browser-store listener and follows the store through tab 
   f.flush();
   assert.equal(f.sent.length, 2);
   assert.equal(f.sent.at(-1).generation, "G");
+});
+
+test("the feed adds no pages-store listener and follows the store through the extension bridge's", () => {
+  for (const running of [true, false]) {
+    const f = fixture(running);
+    assert.equal(f.pagesListeners(), 0);
+    f.events.keepAliveCreated(f.identity, "rn");
+    f.flush();
+    assert.equal(f.pagesListeners(), 0);
+    if (!running) f.setRunning(true);
+    f.flush();
+    assert.equal(f.pagesListeners(), 0);
+    const before = f.sent.length;
+    f.page({ permission: {} });
+    assert.equal(f.jobs.length, 1);
+    f.flush();
+    assert.equal(f.sent.length, before + 1);
+    assert.equal(f.sent.at(-1).keep.capturing, true);
+    f.browser.setState({ tabs: {} });
+    f.flush();
+    assert.equal(f.pagesListeners(), 0);
+  }
+});
+
+test("updates for untracked tabs or untracked fields queue no flush", () => {
+  const f = fixture();
+  f.events.keepAliveCreated(f.identity, "rn");
+  f.flush();
+  const before = f.sent.length;
+  f.browser.setState((s) => ({ tabs: { ...s.tabs, other: { id: "other", profileId: "p", windowId: "w" } }, live: { ...s.live, other: { discarded: true } } }));
+  f.pages.setState((s) => ({ pages: { ...s.pages, other: { fullscreen: true }, t: { ...s.pages.t, title: "renamed" } } }));
+  f.media.setState({ sessions: { other: { playbackState: "playing" } }, pipOpen: { other: "video" } });
+  f.toolbar.setState({ scrolledDown: { other: true } });
+  assert.equal(f.jobs.length, 0);
+  f.flush();
+  assert.equal(f.sent.length, before);
+});
+
+test("each tracked keep and reveal input queues one flush and reaches native", () => {
+  const f = fixture();
+  f.events.keepAliveCreated(f.identity, "rn");
+  f.flush();
+  const inputs = [
+    [() => f.page({ mediaAccess: {} }), (r) => r.keep.capturing],
+    [() => f.page({ newTabShown: {} }), (r) => r.keep.newTabShown],
+    [() => f.page({ fullscreen: true }), (r) => r.reveal.fullscreen],
+    [() => f.page({ crashed: {} }), (r) => r.reveal.crashed],
+    [() => f.page({ unresponsive: true }), (r) => r.reveal.unresponsive],
+    [() => f.media.setState({ sessions: { t: { playbackState: "playing" } } }), (r) => r.keep.media === "playing"],
+    [() => f.media.setState({ pipOpen: { t: "video" } }), (r) => r.keep.pip],
+    [() => f.media.setState({ displayRequests: { t: {} } }), (r) => r.keep.displayRequest],
+    [() => f.media.setState({ tabShares: { other: { capturedTabId: "t" } } }), (r) => r.reveal.sharing],
+    [() => f.toolbar.setState({ scrolledDown: { t: true } }), (r) => r.reveal.scrolledDown],
+  ];
+  for (const [change, holds] of inputs) {
+    change();
+    assert.equal(f.jobs.length, 1);
+    f.flush();
+    assert.ok(holds(f.sent.at(-1)), String(change));
+  }
+});
+
+test("a tracked tab's move and discard still reach the feed", () => {
+  const f = fixture();
+  f.events.keepAliveCreated(f.identity, "rn");
+  f.flush();
+  const before = f.sent.length;
+  f.browser.setState((s) => ({ tabs: { ...s.tabs, t: { ...s.tabs.t, windowId: "w2" } } }));
+  assert.equal(f.jobs.length, 1);
+  f.flush();
+  assert.equal(f.sent.length, before + 1);
+  f.browser.setState((s) => ({ live: { ...s.live, t: { discarded: true } } }));
+  assert.equal(f.jobs.length, 1);
+});
+
+test("protection that becomes known without any store update reaches native on the pending retry, and the retry stops", () => {
+  const f = fixture();
+  f.setProtectionKnown(false);
+  f.events.keepAliveCreated(f.identity, "rn");
+  f.flush();
+  assert.equal(f.sent.length, 0);
+  assert.deepEqual(f.pendingTimers().map((timer) => timer.ms), [1000]);
+  assert.deepEqual(f.fire(), [1000]);
+  f.flush();
+  assert.equal(f.sent.length, 0);
+  assert.deepEqual(f.pendingTimers().map((timer) => timer.ms), [2000]);
+  f.setProtectionKnown(true);
+  f.fire();
+  f.flush();
+  assert.equal(f.sent.length, 1);
+  assert.equal(f.pendingTimers().length, 0);
+});
+
+test("a retry backed off behind a stale page restarts at one second for a new page", () => {
+  const f = fixture();
+  f.setProtectionKnown(false);
+  f.events.keepAliveCreated(f.identity, "rn");
+  f.flush();
+  for (let i = 0; i < 6; i++) { f.fire(); f.flush(); }
+  assert.deepEqual(f.pendingTimers().map((timer) => timer.ms), [30000]);
+  f.replace({ tabId: "t", sessionGeneration: "G2", registrationGeneration: 1 });
+  f.flush();
+  assert.deepEqual(f.pendingTimers().map((timer) => timer.ms), [1000]);
+});
+
+test("no listeners before the first page, and none after the last page closes", () => {
+  const f = fixture();
+  f.flush();
+  assert.equal(f.listeners(), 0);
+  f.browser.setState((s) => ({ live: { ...s.live, x: {} } }));
+  assert.equal(f.jobs.length, 0);
+  f.events.keepAliveCreated(f.identity, "rn");
+  assert.equal(f.listeners(), 2);
+  f.flush();
+  f.browser.setState({ tabs: {} });
+  assert.equal(f.listeners(), 0);
+  f.flush();
+  f.pages.setState({ pages: {} });
+  f.media.setState({ sessions: { t: { playbackState: "playing" } } });
+  assert.equal(f.jobs.length, 0);
+});
+
+test("a protect flip on a tracked tab queues its flush in the same turn, ahead of later noise, and the flush carries the protection", () => {
+  const protects = [
+    [() => f.page({ mediaAccess: { camera: true } }), (r) => r.keep.capturing],
+    [() => f.page({ permission: {} }), (r) => r.keep.capturing],
+    [() => f.page({ newTabShown: {} }), (r) => r.keep.newTabShown],
+    [() => f.media.setState({ sessions: { t: { playbackState: "playing" } } }), (r) => r.keep.media === "playing"],
+    [() => f.media.setState({ sessions: { t: { playbackState: "paused" } } }), (r) => r.keep.media === "present"],
+    [() => f.media.setState({ pipOpen: { t: "video" } }), (r) => r.keep.pip],
+    [() => f.media.setState({ displayRequests: { t: {} } }), (r) => r.keep.displayRequest],
+  ];
+  let f;
+  for (const [flip, protects_] of protects) {
+    f = fixture();
+    f.events.keepAliveCreated(f.identity, "rn");
+    f.events.keepAliveHandled(f.identity, 3);
+    f.flush();
+    const handled = f.sent.at(-1).handled;
+    flip();
+    assert.equal(f.jobs.length, 1, String(flip));
+    f.browser.setState((s) => ({ tabs: { ...s.tabs, other: { id: "other", profileId: "p", windowId: "w" } } }));
+    f.toolbar.setState({ scrolledDown: { other: true } });
+    assert.equal(f.jobs.length, 1, String(flip));
+    f.flush();
+    const report = f.sent.at(-1);
+    assert.ok(protects_(report), String(flip));
+    assert.ok(report.handled >= handled);
+  }
+});
+
+test("a page that stays pending settles at the slowest retry, and turning the runner off stops the retry", () => {
+  const f = fixture();
+  f.setProtectionKnown(false);
+  f.events.keepAliveCreated(f.identity, "rn");
+  f.flush();
+  const delays = [];
+  for (let i = 0; i < 8; i++) { delays.push(...f.fire()); f.flush(); }
+  assert.deepEqual(delays, [1000, 2000, 4000, 8000, 16000, 30000, 30000, 30000]);
+  f.setRunning(false);
+  f.flush();
+  assert.equal(f.pendingTimers().length, 0);
 });

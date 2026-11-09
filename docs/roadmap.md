@@ -89,12 +89,12 @@ backlog, and check this file against the release notes.
 
 | Item | Status |
 |---|---|
-| Fixed: Restore Arc Folders as Groups removes the restored Arc bookmarks from the bar again; it made the groups but left every Arc bookmark behind whenever the native store owned the workspace | shipped-pending |
-| Fixed: on macOS 27.2 the address bar no longer shifts a long address 2 pt when you click into it; the overflow inset is measured instead of fixed | shipped-pending |
-| Smaller: The selected tab's glow is always on at full; its setting is gone (owner, 2026-11-05). Settings › Appearance › Selected Tab is removed and every reader draws Full; the stored and synced `selectedTabGlow` key stays as a retired key nothing reads, so older Macs are unaffected | shipped-pending |
-| Fixed: an extension's permission dialog no longer stays stuck over the page when the popup that asked closes; every click hit the dialog's invisible layer until it was dismissed | shipped-pending |
-| New: the offline game is "Where's the raccoon?" at night: new crowd, decoys and four moonlit backgrounds, the moon keeping its silver in every profile colour, the lamb's best score carried over (owner, 2026-11-05). Ships with the 0.2.5 engine, whose offline page packs it | shipped-pending |
-| Fixed: Esc cancels a tab drag in the top tab strip, as it does in the sidebar: the tab goes back where it was, and the rest of the gesture drops nothing | shipped-pending |
+| Fixed: Restore Arc Folders as Groups removes the restored Arc bookmarks from the bar again; it made the groups but left every Arc bookmark behind whenever the native store owned the workspace | shipped (0.2.5) |
+| Fixed: on macOS 27.2 the address bar no longer shifts a long address 2 pt when you click into it; the overflow inset is measured instead of fixed | shipped (0.2.5) |
+| Smaller: The selected tab's glow is always on at full; its setting is gone (owner, 2026-11-05). Settings › Appearance › Selected Tab is removed and every reader draws Full; the stored and synced `selectedTabGlow` key stays as a retired key nothing reads, so older Macs are unaffected | shipped (0.2.5) |
+| Fixed: an extension's permission dialog no longer stays stuck over the page when the popup that asked closes; every click hit the dialog's invisible layer until it was dismissed | shipped (0.2.5) |
+| New: the offline game is "Where's the raccoon?" at night: new crowd, decoys and four moonlit backgrounds, the moon keeping its silver in every profile colour, the lamb's best score carried over (owner, 2026-11-05). Ships with the 0.2.5 engine, whose offline page packs it | shipped (0.2.5) |
+| Fixed: Esc cancels a tab drag in the top tab strip, as it does in the sidebar: the tab goes back where it was, and the rest of the gesture drops nothing | shipped (0.2.5) |
 
 ## 0.3.0: tabs that cost less, and the first native bars
 

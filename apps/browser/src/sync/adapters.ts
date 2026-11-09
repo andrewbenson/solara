@@ -1,6 +1,6 @@
 import { deletePassword, savePassword } from "@solara/solaracore";
-import { bookmarkWriterSnapshot, bookmarkWriterState, nativeAddHistoryVisits, nativeDeleteHistoryUrls, replaceBookmarkDocument } from "@solara/settings";
-import { ApplyRefusal, assignPositions, canonical, SyncNative, type Adapter, type SavedLogin, type SyncRecord } from "@solara/sync";
+import { ackBookmarkFacts, bookmarkWriterSnapshot, bookmarkWriterState, clearBookmarkFacts, nativeAddHistoryVisits, nativeDeleteHistoryUrls, observeBookmarkRecords, replaceBookmarkDocumentWithRecords, type BookmarkFactClear } from "@solara/settings";
+import { ApplyRefusal, assignPositions, canonical, editHLC, hlcDevice, SyncNative, type Adapter, type SavedLogin, type SyncRecord } from "@solara/sync";
 import { bookmarkUuidFor, ensureRoots, isBookmarkUuid, rootIdsFor } from "../store/bookmarks";
 import { MAX_HISTORY, MAX_VISIT_TIMES } from "../store/history";
 import { useBrowser } from "../store/browser";
@@ -389,8 +389,10 @@ function syncedBookmarkNodes(b: Bookmarks, roots: { bar: string; other: string }
   return nodes;
 }
 
-export function bookmarksAdapter(profileId: string): Adapter {
-  if (bookmarkWriterState().state === "owned") return nativeBookmarksAdapter(profileId);
+type BookmarkSyncContext = { device: string; link: () => string | null; opened?: () => void };
+
+export function bookmarksAdapter(profileId: string, sync?: BookmarkSyncContext): Adapter {
+  if (bookmarkWriterState().state === "owned") return nativeBookmarksAdapter(profileId, sync);
   const ready = () => !!store().bookmarksReady[profileId];
   return {
     prefix: "bm:",
@@ -409,9 +411,13 @@ export function bookmarksAdapter(profileId: string): Adapter {
   };
 }
 
-function nativeBookmarksAdapter(profileId: string): Adapter {
+function nativeBookmarksAdapter(profileId: string, sync?: BookmarkSyncContext): Adapter {
+  sync?.opened?.();
+  const link = sync?.link() ?? null;
   const opened = bookmarkWriterSnapshot(profileId);
   const binding = { engine: opened.engine, generation: opened.generation };
+  let extractedRevision: string | undefined;
+  let replacementClears: BookmarkFactClear[] = [];
   const current = () => {
     const snapshot = bookmarkWriterSnapshot(profileId);
     if (snapshot.engine !== binding.engine || snapshot.generation !== binding.generation) throw new Error("the native bookmark owner changed during this sync");
@@ -420,19 +426,95 @@ function nativeBookmarksAdapter(profileId: string): Adapter {
   const rootsOf = (b: Bookmarks) => b.roots[profileId] ?? rootIdsFor(binding.engine);
   return {
     prefix: "bm:",
-    extract: (base) => {
+    publishOnlyAfterPull: true,
+    originalEditTime: true,
+    extract: (base, _queued, _now, _known, _remote, stamp, _downloading, _agreed, unapplied) => {
+      replacementClears = [];
+      if ((sync?.link() ?? null) !== link) return null;
       const { snapshot, document } = current();
       if (!snapshot.ready) return null;
       const roots = rootsOf(document);
       if (document.nodes[roots.bar]?.kind !== "folder" || document.nodes[roots.other]?.kind !== "folder") return null;
-      return { values: bookmarkValues(document, roots, base) };
+      extractedRevision = snapshot.revision;
+      const values = bookmarkValues(document, roots, base);
+      if (!link && (sync || Object.keys(snapshot.facts).length)) return { values: new Map(), ignore: () => true };
+      const cleared: BookmarkFactClear[] = [];
+      const observed: { key: string; hlc: string }[] = [];
+      const reapply = new Set<string>();
+      const claims = new Map<string, { at: number; after: string | null }>();
+      const remove = new Set<string>();
+      const ignored = new Set<string>();
+      for (const key of values.keys()) if (!snapshot.facts[key] && unapplied?.(key)) {
+        values.delete(key);
+        ignored.add(key);
+      }
+      for (const [key, fact] of Object.entries(snapshot.facts)) {
+        if (!key.startsWith("bm:")) continue;
+        const value = values.get(key);
+        const previous = base(key);
+        const same = canonical(value ?? null) === canonical(previous ?? null) && (value !== undefined || previous !== undefined || !_known?.(key) || _remote?.(key) == null);
+        const known = stamp?.(key);
+        let after = fact.link === link ? fact.after : null;
+        if (fact.link === link && known && sync && hlcDevice(known) === sync.device && (!after || after < known)) after = known;
+        const stamped = { at: fact.at, after };
+        const lost = !same && !!known && !!sync && known >= editHLC(stamped, sync.device);
+        if (same || lost) {
+          values.delete(key);
+          ignored.add(key);
+          if (lost || canonical(value ?? null) !== canonical(_remote?.(key) ?? null)) {
+            replacementClears.push({ key, seq: fact.seq });
+            reapply.add(key);
+          } else {
+            cleared.push({ key, seq: fact.seq });
+            if (known) observed.push({ key, hlc: known });
+          }
+          continue;
+        }
+        claims.set(key, stamped);
+        if (!values.has(key)) remove.add(key);
+      }
+      return {
+        values,
+        ignore: (key) => ignored.has(key) || (!snapshot.facts[key] && !!unapplied?.(key)),
+        remove,
+        reapply,
+        republish: (key) => claims.has(key),
+        stamp: (key) => claims.get(key),
+        published: (keys, stamps) => {
+          const records = [...keys].flatMap((key) => {
+            const fact = snapshot.facts[key];
+            const mintedHLC = stamps.get(key);
+            return fact && mintedHLC ? [{ key, seq: fact.seq, mintedHLC }] : [];
+          });
+          if (!records.length || (sync?.link() ?? null) !== link) return;
+          try { ackBookmarkFacts(profileId, binding, records, link ?? "none"); } catch {}
+        },
+        committed: cleared.length ? () => {
+          try {
+            if ((sync?.link() ?? null) !== link) return;
+            if (observed.length && !observeBookmarkRecords(profileId, binding, observed, link ?? "none")) return;
+            clearBookmarkFacts(profileId, binding, cleared);
+          } catch {}
+        } : undefined,
+      };
     },
-    apply: (visible) => {
+    apply: (visible, changed, _base, records) => {
       const { snapshot, document } = current();
-      if (!snapshot.ready) return false;
+      if ((sync?.link() ?? null) !== link || (sync && !link) || !snapshot.ready || (extractedRevision !== undefined && snapshot.revision !== extractedRevision)) return false;
       const roots = rootsOf(document);
       if (document.nodes[roots.bar]?.kind !== "folder" || document.nodes[roots.other]?.kind !== "folder") throw new Error("the native bookmark document has no roots for this profile");
-      return replaceBookmarkDocument(profileId, { ...document, nodes: syncedBookmarkNodes(document, roots, visible) }, snapshot.revision, binding).then(() => true);
+      const observed = [...new Set([...visible.keys(), ...changed])].flatMap((key) => {
+        const hlc = records.stamp?.(key);
+        return hlc ? [{ key, hlc }] : [];
+      });
+      const clears = replacementClears;
+      return replaceBookmarkDocumentWithRecords(profileId, { ...document, nodes: syncedBookmarkNodes(document, roots, visible) }, snapshot.revision, binding, observed, link ?? "none").then(() => {
+        if ((sync?.link() ?? null) !== link) return false;
+        if (clears.length) {
+          try { clearBookmarkFacts(profileId, binding, clears); } catch {}
+        }
+        return true;
+      });
     },
   };
 }

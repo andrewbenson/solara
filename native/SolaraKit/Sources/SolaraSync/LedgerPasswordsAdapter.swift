@@ -285,7 +285,7 @@ public final class LedgerPasswordsAdapter: SyncAdapter, Sendable {
       values: claims.values.compactMap { c in c.v.map { (c.key, $0.json) } },
       ignore: { claims[$0] == nil },
       republish: { claims[$0] != nil },
-      published: { keys in
+      published: { keys, _ in
         self.state.withLock { s in for key in keys { s.memory.claimed.remove(JSKey(key)) } }
         self.write(here, records, keys, 0)
       },

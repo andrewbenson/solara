@@ -20,22 +20,22 @@ enum NativeBookmarkWriter {
     ]
   }
 
-  static func ackBookmarkFacts(profile: String, engine: String, recordsJSON: String) throws -> Bool {
+  static func ackBookmarkFacts(profile: String, engine: String, recordsJSON: String, link: String? = nil) throws -> Bool {
     guard let owner = NativeBookmarkOwner.current else { throw BookmarkWriterError.notOwned }
     let records = try factRecords(recordsJSON).map { item -> (key: String, seq: UInt64, mintedHLC: String) in
       guard let key = item["key"]?.string, let seq = item["seq"]?.string.flatMap(UInt64.init), let hlc = item["mintedHLC"]?.string else { throw BookmarkWriterError.invalidDocument("each ack needs key, decimal-string seq and mintedHLC") }
       return (key, seq, hlc)
     }
-    return try owner.ackBookmarkFacts(profileId: profile, expectedEngine: engine, records: records)
+    return try owner.ackBookmarkFacts(profileId: profile, expectedEngine: engine, records: records, expectedLink: link)
   }
 
-  static func observeBookmarkRecords(profile: String, engine: String, recordsJSON: String) throws -> Bool {
+  static func observeBookmarkRecords(profile: String, engine: String, recordsJSON: String, link: String? = nil) throws -> Bool {
     guard let owner = NativeBookmarkOwner.current else { throw BookmarkWriterError.notOwned }
     let records = try factRecords(recordsJSON).map { item -> (key: String, hlc: String) in
       guard let key = item["key"]?.string, let hlc = item["hlc"]?.string else { throw BookmarkWriterError.invalidDocument("each observation needs key and hlc") }
       return (key, hlc)
     }
-    return try owner.observeRemoteRecords(profileId: profile, expectedEngine: engine, records: records)
+    return try owner.observeRemoteRecords(profileId: profile, expectedEngine: engine, records: records, expectedLink: link)
   }
 
   static func clearBookmarkFacts(profile: String, engine: String, recordsJSON: String) throws -> Bool {
@@ -66,12 +66,16 @@ enum NativeBookmarkWriter {
     return records
   }
 
-  static func replace(profile: String, documentJSON: String, expectedRevision: String, engine: String, generation: String, requestID: String?) throws -> [String: Any] {
+  static func replace(profile: String, documentJSON: String, expectedRevision: String, engine: String, generation: String, requestID: String?, recordsJSON: String = "[]", link: String? = nil) throws -> [String: Any] {
     guard let owner = NativeBookmarkOwner.current else { throw BookmarkWriterError.notOwned }
     guard let expected = UInt64(expectedRevision), let generation = UInt64(generation) else { throw BookmarkWriterError.invalidDocument("revision and generation must be decimal strings") }
     let document: JSONValue
     do { document = try JSONValue.parse(documentJSON) } catch { throw BookmarkWriterError.invalidDocument(String(describing: error)) }
-    let revision = try owner.replace(profile: profile, document: document, expectedRevision: expected, binding: BookmarkWriterBinding(engine: engine, generation: generation), requestID: requestID)
+    let records = try factRecords(recordsJSON).map { item -> (key: String, hlc: String) in
+      guard let key = item["key"]?.string, let hlc = item["hlc"]?.string else { throw BookmarkWriterError.invalidDocument("each observation needs key and hlc") }
+      return (key, hlc)
+    }
+    let revision = try owner.replace(profile: profile, document: document, expectedRevision: expected, binding: BookmarkWriterBinding(engine: engine, generation: generation), requestID: requestID, records: records, expectedLink: link)
     return ["revision": String(revision)]
   }
 

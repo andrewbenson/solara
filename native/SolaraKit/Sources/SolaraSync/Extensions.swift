@@ -258,7 +258,7 @@ public final class ExtensionsAdapter: SyncAdapter {
       values: values.map { ($0.key, $0.value) },
       ignore: { values[$0] == nil },
       republish: { key in isStateKey(key) && captured.contains(extensionIdOf(key)) && !queued(key) },
-      published: { keys in
+      published: { keys, _ in
         var settled = JSMap<Double>()
         for key in keys where isStateKey(key) {
           let id = extensionIdOf(key)

@@ -23,6 +23,7 @@ import {
   type Transport,
   hlcWall,
 } from "@solara/sync";
+import { bookmarkWriterState, setBookmarkSyncLinks } from "@solara/settings";
 import { create } from "zustand";
 import { useBrowser } from "../store/browser";
 import { nativeBusyWrites, nativeOwnsWorkspace, nativeSafeMode } from "../store/nativeStore";
@@ -536,6 +537,7 @@ const compactionDue = () =>
 
 function save() {
   if (!metadataLoaded) load();
+  pushBookmarkSyncLinks();
   if (newerFormat || syncHeld()) return;
   if (doc.v === 2 && (pairingAdmission || pairingRecovery)) return;
   if (doc.v === 2 && pairingPending()) {
@@ -608,6 +610,7 @@ function save() {
 }
 
 function publishUi(patch: Partial<SyncUi> = {}) {
+  pushBookmarkSyncLinks();
   useSync.setState({
     enabled: doc.enabled,
     folder: doc.folder,
@@ -667,6 +670,24 @@ function pruneSeenKeys(scopes: Record<string, ScopeState>, now: number) {
 const ledgerScopes = () => Object.fromEntries(Object.entries(doc.profiles).map(([profileId, link]) => [engineProfile(profileId), `p:${link.syncId}`]));
 
 export const ledgerScopeOf = (profileId: string) => `${doc.folder}\n${doc.deviceId}@${doc.setupAt ?? 0}\n${doc.profiles[profileId]?.syncId ?? ""}`;
+
+const bookmarkSyncLinkOf = (profileId: string) => doc.enabled && doc.folder && doc.deviceId && doc.profiles[profileId]?.enabled && !doc.profiles[profileId]?.retire ? ledgerScopeOf(profileId) : null;
+let sentBookmarkLinks: string | undefined;
+
+function pushBookmarkSyncLinks(force = false) {
+  if (!metadataLoaded || newerFormat) return;
+  const writer = bookmarkWriterState();
+  if (writer.state !== "owned") return;
+  const links = Object.fromEntries(Object.keys(doc.profiles).flatMap((id) => {
+    const link = bookmarkSyncLinkOf(id);
+    return link ? [[id, link]] : [];
+  }));
+  const signature = JSON.stringify([writer.generation, links]);
+  if (!force && signature === sentBookmarkLinks) return;
+  try {
+    if (setBookmarkSyncLinks(links)) sentBookmarkLinks = signature;
+  } catch {}
+}
 
 function heldPasswordsByProfile(): Record<string, number> {
   const out: Record<string, number> = {};
@@ -735,7 +756,7 @@ function profileAdapters(profileId: string, retiring: boolean, everyType = false
   }
   return [
     ...(t.pinned ? pinnedAreaAdapters(profileId) : []),
-    ...(t.bookmarks && ownsData ? [inTodaysNames(bookmarksAdapter(profileId))] : []),
+    ...(t.bookmarks && ownsData ? [inTodaysNames(bookmarksAdapter(profileId, { device: id, link: () => bookmarkSyncLinkOf(profileId), opened: () => pushBookmarkSyncLinks(true) }))] : []),
     ...(t.history && ownsData ? [inTodaysNames(historyAdapter(profileId))] : []),
     inTodaysNames(deviceTabsAdapter(profileId, id, deviceName, !t.tabs)),
     ...(t.passwords && ownsData && !passwordsRefused() ? [passwords] : []),
@@ -1106,6 +1127,7 @@ function guardedExtraction(
   };
   const changedHere = (key: string, value: unknown) => kept.has(key) && kept.get(key) !== choice(value);
   const publishes = (key: string, value: unknown) => {
+    if (extraction.stamp?.(key)) return !downloading;
     if (!known(key)) return !downloading;
     if (!rebuilding) return edited(key, value) || !fromFolder(key, value);
     return !recorded(key, value) && (changedHere(key, value) || (edited(key, value) && !fromFolder(key, value)));
@@ -1130,7 +1152,9 @@ function guardedExtraction(
   for (const key of extraction.values.keys()) if (known(key) && !values.has(key)) heldBack.add(key);
   const deferred = (key: string) => rebuilding || fromFolder(key, extraction.values.get(key) ?? null);
   return {
+    ...extraction,
     values,
+    remove: extraction.remove ? new Set([...extraction.remove].filter((key) => publishes(key, null))) : undefined,
     ignore: (key) => (extraction.ignore?.(key) ?? false) || (!values.has(key) && !deleted.has(key) && deferred(key)),
     republish: (key) => backToBase.has(key) || (extraction.republish?.(key) ?? false),
     published: extraction.published,
@@ -1828,7 +1852,7 @@ async function runBootstrapCycle() {
       if (operation.disposition === "applied" && canonical(current) !== canonical(operation.desired)) {
         const adapter = adapters.find((a) => operation.key.startsWith(a.prefix));
         if (!adapter) throw new Error(PAIRING_RECOVERY);
-        const result = await deadline(Promise.resolve(adapter.apply(visible(replica.app, adapter.prefix), new Set([operation.key]), (key) => replica.app.base[key] ? JSON.parse(replica.app.base[key]!) as unknown : undefined, { known: (key) => key in replica.app.records, now: Date.now(), horizon: 90 * 86_400_000, joined: false })));
+        const result = await deadline(Promise.resolve(adapter.apply(visible(replica.app, adapter.prefix), new Set([operation.key]), (key) => replica.app.base[key] ? JSON.parse(replica.app.base[key]!) as unknown : undefined, { known: (key) => key in replica.app.records, stamp: (key) => replica.app.records[key]?.h, now: Date.now(), horizon: 90 * 86_400_000, joined: false })));
         if (expected !== generation) return;
         if (result === false || (result instanceof Set && !result.has(operation.key))) throw new Error("A required synced setting could not be applied.");
       }

@@ -22,6 +22,9 @@ type NativeSettingsModule = {
   bookmarkWriterState?(): BookmarkWriterState;
   bookmarkWriterSnapshot?(profileId: string): Omit<BookmarkWriterSnapshot, "facts"> & { facts?: string };
   ackBookmarkFacts?(profileId: string, engine: string, recordsJSON: string): boolean;
+  ackBookmarkFactsForLink?(profileId: string, engine: string, recordsJSON: string, link: string): boolean;
+  observeBookmarkRecordsForLink?(profileId: string, engine: string, recordsJSON: string, link: string): boolean;
+  replaceBookmarkDocumentWithRecords?(profileId: string, documentJSON: string, expectedRevision: string, engine: string, generation: string, requestId: string | null, recordsJSON: string, link: string): { revision: string };
   observeBookmarkRecords?(profileId: string, engine: string, recordsJSON: string): boolean;
   clearBookmarkFacts?(profileId: string, engine: string, recordsJSON: string): boolean;
   setBookmarkSyncLinks?(linksJSON: string): boolean;
@@ -133,12 +136,20 @@ export function bookmarkWriterSnapshot(profileId: string): BookmarkWriterSnapsho
   return { ...snapshot, facts: JSON.parse(snapshot.facts ?? "{}") as Record<string, BookmarkEditFact> };
 }
 
-export function ackBookmarkFacts(profileId: string, binding: BookmarkWriterBinding, records: BookmarkFactAck[]): boolean {
+export function ackBookmarkFacts(profileId: string, binding: BookmarkWriterBinding, records: BookmarkFactAck[], link?: string): boolean {
+  if (link !== undefined) {
+    if (!native?.ackBookmarkFactsForLink) throw new Error("native bookmark link acknowledgements are unavailable");
+    return native.ackBookmarkFactsForLink(profileId, binding.engine, JSON.stringify(records), link);
+  }
   if (!native?.ackBookmarkFacts) throw new Error("native bookmarks are not owned by this launch");
   return native.ackBookmarkFacts(profileId, binding.engine, JSON.stringify(records));
 }
 
-export function observeBookmarkRecords(profileId: string, binding: BookmarkWriterBinding, records: BookmarkRecordObservation[]): boolean {
+export function observeBookmarkRecords(profileId: string, binding: BookmarkWriterBinding, records: BookmarkRecordObservation[], link?: string): boolean {
+  if (link !== undefined) {
+    if (!native?.observeBookmarkRecordsForLink) throw new Error("native bookmark link observations are unavailable");
+    return native.observeBookmarkRecordsForLink(profileId, binding.engine, JSON.stringify(records), link);
+  }
   if (!native?.observeBookmarkRecords) throw new Error("native bookmarks are not owned by this launch");
   return native.observeBookmarkRecords(profileId, binding.engine, JSON.stringify(records));
 }
@@ -188,6 +199,14 @@ export async function replaceBookmarkDocument(profileId: string, document: unkno
   if (!replace) throw new Error("native bookmarks are not owned by this launch");
   const documentJSON = JSON.stringify(document);
   return whileBookmarkEngineHolds(profileId, binding, (current) => replace.call(native, profileId, documentJSON, expectedRevision, current.engine, current.generation, requestId).revision);
+}
+
+export async function replaceBookmarkDocumentWithRecords(profileId: string, document: unknown, expectedRevision: string, binding: BookmarkWriterBinding, records: BookmarkRecordObservation[], link: string, requestId: string | null = `bookmark-replace-${Date.now()}-${++bookmarkReplacements}`): Promise<string> {
+  const replace = native?.replaceBookmarkDocumentWithRecords;
+  if (!replace) throw new Error("atomic native bookmark replacement is unavailable");
+  const documentJSON = JSON.stringify(document);
+  const recordsJSON = JSON.stringify(records);
+  return whileBookmarkEngineHolds(profileId, binding, (current) => replace.call(native, profileId, documentJSON, expectedRevision, current.engine, current.generation, requestId, recordsJSON, link).revision);
 }
 
 export const liveInitialReplica = (): LiveReplica => {

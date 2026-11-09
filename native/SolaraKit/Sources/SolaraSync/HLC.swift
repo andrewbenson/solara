@@ -1,4 +1,5 @@
 import Foundation
+import SolaraModel
 
 public typealias HLC = String
 
@@ -65,6 +66,14 @@ func parseHLC(_ h: HLC) -> (wall: Double, counter: Double, device: String) {
 public func hlcAfter(_ h: HLC, _ device: String) -> HLC {
   let (wall, counter, _) = parseHLC(h)
   return counter + 1 >= pow(36, Double(counterDigits)) ? formatHLC(wall + 1, 0, device) : formatHLC(wall, counter + 1, device)
+}
+
+public func hlcDevice(_ h: HLC) -> String { parseHLC(h).device }
+
+public func editHLC(_ stamped: Stamped, _ device: String) -> HLC {
+  let at = formatHLC(stamped.at, 0, device)
+  let after = stamped.after.flatMap { $0.isEmpty ? nil : hlcAfter($0, device) }
+  return if let after, jsKeyPrecedes(at, after) { after } else { at }
 }
 
 public func hlcWall(_ h: HLC) -> Double {

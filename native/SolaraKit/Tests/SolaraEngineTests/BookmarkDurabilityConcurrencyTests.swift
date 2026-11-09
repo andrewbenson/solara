@@ -95,9 +95,9 @@ struct BookmarkDurabilityConcurrencyTests {
       switch mutation {
       case "ack":
         expectedFirst.facts.removeValue(forKey: "bm:b0")
-        expectedFirst.lastSeen["bm:b0"] = "00000003f.0001.device"
+        expectedFirst.lastSeen["bm:" + JSONValue.array(["none", "bm:b0"]).canonical] = "00000003f.0001.device"
       case "clear": expectedFirst.facts.removeValue(forKey: "bm:b0")
-      default: expectedFirst.lastSeen["bm:b0"] = "00000003f.0002.remote"
+      default: expectedFirst.lastSeen["bm:" + JSONValue.array(["none", "bm:b0"]).canonical] = "00000003f.0002.remote"
       }
     }
     #expect(coordinator.engine(profile: "p") == "E2")

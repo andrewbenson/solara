@@ -231,10 +231,10 @@ func replayAdapterCase(_ json: JSONObject) async throws -> String?? {
       if let published = json["published"]?.array?.compactMap(\.string) {
         if let choices = json["publishedChoices"] {
           try store.dispatch(Command("applyState", [["pinChoices": choices["before"] ?? .null]]))
-          extraction.published?(published)
+          extraction.published?(published, JSMap())
           if let d = adapterDifference(store.state.stateJSON["pinChoices"] ?? .null, choices["after"] ?? .null) { problems.append("pin choices after published: \(d)") }
         } else {
-          extraction.published?(published)
+          extraction.published?(published, JSMap())
         }
       }
       if let recorded = json["memoryAfter"]?["tileFolders"]?.object {

@@ -330,8 +330,8 @@ struct BookmarkFactTests {
     let coordinator = owner(dir)
     let after = "00000003f.0009.remote"
     let link = "chain:test/profile:scope"
-    #expect(try coordinator.observeRemoteRecords(profileId: "p", expectedEngine: "", records: [(key: "bm:A", hlc: after)]))
     #expect(coordinator.setBookmarkSyncLinks(["p": link]))
+    #expect(try coordinator.observeRemoteRecords(profileId: "p", expectedEngine: "", records: [(key: "bm:A", hlc: after)]))
     let host = FactBookmarksHost(coordinator.desiredView(engine: "").document)
     let adapter = BookmarksAdapter(host: host, profileId: "p")
     let positions: JSMap<JSONValue> = [
@@ -488,8 +488,8 @@ struct BookmarkFactTests {
     }
     let coordinator = owner(dir, operations: operations)
     coordinator.seed(engine: "", document: document(), ready: true)
-    #expect(try coordinator.observeRemoteRecords(profileId: "p", expectedEngine: "", records: [(key: "bm:b0", hlc: "00000003f.0005.remote")]))
     #expect(coordinator.setBookmarkSyncLinks(["p": "link"]))
+    #expect(try coordinator.observeRemoteRecords(profileId: "p", expectedEngine: "", records: [(key: "bm:b0", hlc: "00000003f.0005.remote")]))
     let settled = writes.count
     #expect(try coordinator.observeRemoteRecords(profileId: "p", expectedEngine: "", records: [(key: "bm:b0", hlc: "00000003f.0005.remote"), (key: "bm:b0", hlc: "00000003f.0001.remote")]))
     #expect(coordinator.setBookmarkSyncLinks(["p": "link"]))

@@ -108,13 +108,13 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
   }
 
   @discardableResult
-  public func ackBookmarkFacts(profileId: String, expectedEngine: String, records: [(key: String, seq: UInt64, mintedHLC: String)]) throws -> Bool {
-    try coordinator.ackBookmarkFacts(profileId: profileId, expectedEngine: expectedEngine, records: records)
+  public func ackBookmarkFacts(profileId: String, expectedEngine: String, records: [(key: String, seq: UInt64, mintedHLC: String)], expectedLink: String? = nil) throws -> Bool {
+    try coordinator.ackBookmarkFacts(profileId: profileId, expectedEngine: expectedEngine, records: records, expectedLink: expectedLink)
   }
 
   @discardableResult
-  public func observeRemoteRecords(profileId: String, expectedEngine: String, records: [(key: String, hlc: String)]) throws -> Bool {
-    try coordinator.observeRemoteRecords(profileId: profileId, expectedEngine: expectedEngine, records: records)
+  public func observeRemoteRecords(profileId: String, expectedEngine: String, records: [(key: String, hlc: String)], expectedLink: String? = nil) throws -> Bool {
+    try coordinator.observeRemoteRecords(profileId: profileId, expectedEngine: expectedEngine, records: records, expectedLink: expectedLink)
   }
 
   @discardableResult
@@ -143,11 +143,11 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
   }
 
   @discardableResult
-  public func replace(profile: String, document: JSONValue, expectedRevision: UInt64, binding: BookmarkWriterBinding, requestID: String? = nil) throws -> UInt64 {
+  public func replace(profile: String, document: JSONValue, expectedRevision: UInt64, binding: BookmarkWriterBinding, requestID: String? = nil, records: [(key: String, hlc: String)] = [], expectedLink: String? = nil) throws -> UInt64 {
     try validate(profile: profile, binding: binding)
     let revision: UInt64
     do {
-      revision = try coordinator.replaceDocument(engine: binding.engine, profile: profile, document: document, expectedRevision: expectedRevision, requestID: requestID, expectedEngine: binding.engine).view.revision
+      revision = try coordinator.replaceDocument(engine: binding.engine, profile: profile, document: document, expectedRevision: expectedRevision, requestID: requestID, expectedEngine: binding.engine, records: records, expectedLink: expectedLink).view.revision
     } catch let error as BookmarkWriterError {
       throw error
     } catch let error as BookmarkCoordinatorError {

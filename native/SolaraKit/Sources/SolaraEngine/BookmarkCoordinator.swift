@@ -336,52 +336,64 @@ public final class BookmarkCoordinator: @unchecked Sendable {
   }
 
   @discardableResult
-  public func ackBookmarkFacts(profileId: String, expectedEngine: String, records: [(key: String, seq: UInt64, mintedHLC: String)]) throws -> Bool {
+  public func ackBookmarkFacts(profileId: String, expectedEngine: String, records: [(key: String, seq: UInt64, mintedHLC: String)], expectedLink: String? = nil) throws -> Bool {
     guard records.allSatisfy({ $0.key.hasPrefix("bm:") }) else { return false }
-    return try updateBookmarkFacts(profileId: profileId, expectedEngine: expectedEngine) { view in
+    return try updateBookmarkFacts(profileId: profileId, expectedEngine: expectedEngine, expectedLink: expectedLink) { view, link in
       for record in records {
         if let fact = view.facts[record.key] {
           if fact.seq <= record.seq {
             view.facts.removeValue(forKey: record.key)
-          } else if fact.after.map({ jsKeyPrecedes($0, record.mintedHLC) }) ?? true {
+          } else if JSKey(fact.link) == JSKey(link), fact.after.map({ jsKeyPrecedes($0, record.mintedHLC) }) ?? true {
             view.facts[record.key] = BookmarkEditFact(at: fact.at, seq: fact.seq, after: record.mintedHLC, link: fact.link)
           }
         }
-        if view.lastSeen[record.key].map({ jsKeyPrecedes($0, record.mintedHLC) }) ?? true { view.lastSeen[record.key] = record.mintedHLC }
+        let key = Self.seenKey(link: link, key: record.key)
+        if view.lastSeen[key].map({ jsKeyPrecedes($0, record.mintedHLC) }) ?? true { view.lastSeen[key] = record.mintedHLC }
       }
     }
   }
 
   @discardableResult
-  public func observeRemoteRecords(profileId: String, expectedEngine: String, records: [(key: String, hlc: String)]) throws -> Bool {
+  public func observeRemoteRecords(profileId: String, expectedEngine: String, records: [(key: String, hlc: String)], expectedLink: String? = nil) throws -> Bool {
     guard records.allSatisfy({ $0.key.hasPrefix("bm:") }) else { return false }
-    return try updateBookmarkFacts(profileId: profileId, expectedEngine: expectedEngine) { view in
-      for record in records where view.lastSeen[record.key].map({ jsKeyPrecedes($0, record.hlc) }) ?? true {
-        view.lastSeen[record.key] = record.hlc
-      }
+    return try updateBookmarkFacts(profileId: profileId, expectedEngine: expectedEngine, expectedLink: expectedLink) { view, link in
+      Self.observe(records, link: link, view: &view)
     }
   }
 
   @discardableResult
   public func clearBookmarkFacts(profileId: String, expectedEngine: String, records: [(key: String, seq: UInt64)]) throws -> Bool {
     guard records.allSatisfy({ $0.key.hasPrefix("bm:") }) else { return false }
-    return try updateBookmarkFacts(profileId: profileId, expectedEngine: expectedEngine) { view in
+    return try updateBookmarkFacts(profileId: profileId, expectedEngine: expectedEngine) { view, _ in
       for record in records {
         if let fact = view.facts[record.key], fact.seq <= record.seq { view.facts.removeValue(forKey: record.key) }
       }
     }
   }
 
-  private func updateBookmarkFacts(profileId: String, expectedEngine: String, update: (inout BookmarkDesiredView) -> Void) throws -> Bool {
+  private static func seenKey(link: String, key: String) -> String {
+    "bm:" + JSONValue.array([.string(link), .string(key)]).canonical
+  }
+
+  private static func observe(_ records: [(key: String, hlc: String)], link: String, view: inout BookmarkDesiredView) {
+    for record in records {
+      let key = seenKey(link: link, key: record.key)
+      if view.lastSeen[key].map({ jsKeyPrecedes($0, record.hlc) }) ?? true { view.lastSeen[key] = record.hlc }
+    }
+  }
+
+  private func updateBookmarkFacts(profileId: String, expectedEngine: String, expectedLink: String? = nil, update: (inout BookmarkDesiredView, String) -> Void) throws -> Bool {
     do {
       return try transact {
         guard stampsEnabled else { return (nil, { true }) }
         let regular = Ids.isIncognitoProfile(profileId) ? Ids.incognitoOriginal(profileId) : profileId
         guard let engine = profiles[regular] else { throw BookmarkWriterError.unknownProfile }
         try validateBinding(profile: profileId, expectedEngine: expectedEngine)
+        let link = durability.syncLinks[regular] ?? "none"
+        if let expectedLink, JSKey(expectedLink) != JSKey(link) { throw BookmarkWriterError.staleBinding }
         guard var view = views[engine] else { return (nil, { true }) }
         let before = view
-        update(&view)
+        update(&view, link)
         guard view != before else { return (nil, { true }) }
         var next = views
         next[engine] = view
@@ -462,7 +474,8 @@ public final class BookmarkCoordinator: @unchecked Sendable {
             guard factSequence < UInt64.max else { throw BookmarkCoordinatorError.invalidOperation("Bookmark fact sequence exhausted") }
             factSequence += 1
             let key = BookmarkRecordIdentity.key(id: id, node: node)
-            view.facts[key] = BookmarkEditFact(at: acceptedAt, seq: factSequence, after: view.lastSeen[key], link: durability.syncLinks[profile] ?? "none")
+            let link = durability.syncLinks[profile] ?? "none"
+            view.facts[key] = BookmarkEditFact(at: acceptedAt, seq: factSequence, after: view.lastSeen[Self.seenKey(link: link, key: key)], link: link)
           }
         }
       }
@@ -480,19 +493,29 @@ public final class BookmarkCoordinator: @unchecked Sendable {
   }
 
   @discardableResult
-  public func replaceDocument(engine: String, profile: String? = nil, document: JSONValue, expectedRevision: UInt64, requestID: String? = nil, expectedEngine: String? = nil) throws -> BookmarkReceipt {
+  public func replaceDocument(engine: String, profile: String? = nil, document: JSONValue, expectedRevision: UInt64, requestID: String? = nil, expectedEngine: String? = nil, records: [(key: String, hlc: String)] = [], expectedLink: String? = nil) throws -> BookmarkReceipt {
     let result = try transact { () throws -> (BookmarkCheckpointInput?, () -> (BookmarkReceipt, BookmarkPublication)) in
       if let expectedEngine {
         guard let profile, BookmarkReconcile.same(engine, expectedEngine) else { throw BookmarkWriterError.staleBinding }
         try validateBinding(profile: profile, expectedEngine: expectedEngine)
       }
-      let payload: JSONValue = ["kind": "replace", "engine": .string(engine), "document": document, "expectedRevision": .string(String(expectedRevision))]
+      guard records.allSatisfy({ $0.key.hasPrefix("bm:") }) else { throw BookmarkWriterError.invalidDocument("observations need bookmark record keys") }
+      if stampsEnabled, let expectedLink {
+        guard let profile, JSKey(durability.syncLinks[profile] ?? "none") == JSKey(expectedLink) else { throw BookmarkWriterError.staleBinding }
+      }
+      var fields: JSONObject = ["kind": "replace", "engine": .string(engine), "document": document, "expectedRevision": .string(String(expectedRevision))]
+      if expectedLink != nil || !records.isEmpty {
+        fields["records"] = .array(records.map { ["key": .string($0.key), "hlc": .string($0.hlc)] })
+        fields["link"] = JSONValue(expectedLink)
+      }
+      let payload = JSONValue.object(fields)
       if let receipt = try durability.receipt(requestID: requestID, payload: payload) { return (nil, { (receipt, self.silentPublication(self.desiredView(engine: engine))) }) }
       guard durability.writable else { throw BookmarkPendingStoreError.unavailable }
       var view = desiredView(engine: engine)
       guard view.revision == expectedRevision else { throw BookmarkCoordinatorError.staleRevision }
       try durability.validateAcceptance(document, engine: engine)
       if view.document != document { view.document = document; view.revision += 1; view.hasView = true }
+      if stampsEnabled, let expectedLink { Self.observe(records, link: expectedLink, view: &view) }
       let receipt = BookmarkReceipt(view: view, results: [])
       var next = views
       next[engine] = view

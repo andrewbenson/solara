@@ -113,19 +113,21 @@ public struct Extraction {
   public var values: [(key: String, value: JSONValue?)]
   public var ignore: ((String) -> Bool)?
   public var republish: ((String) -> Bool)?
-  public var published: (([String]) -> Void)?
+  public var published: (([String], JSMap<HLC>) -> Void)?
+  public var committed: (() -> Void)?
   public var stamp: ((String) -> Stamped?)?
   public var remove: [String]
   public var reapply: [String]
 
   public init(
     values: [(key: String, value: JSONValue?)], ignore: ((String) -> Bool)? = nil, republish: ((String) -> Bool)? = nil,
-    published: (([String]) -> Void)? = nil, stamp: ((String) -> Stamped?)? = nil, remove: [String] = [], reapply: [String] = []
+    published: (([String], JSMap<HLC>) -> Void)? = nil, committed: (() -> Void)? = nil, stamp: ((String) -> Stamped?)? = nil, remove: [String] = [], reapply: [String] = []
   ) {
     self.values = values
     self.ignore = ignore
     self.republish = republish
     self.published = published
+    self.committed = committed
     self.stamp = stamp
     self.remove = remove
     self.reapply = reapply
@@ -162,12 +164,14 @@ public struct ExtractContext {
 
 public struct ApplyRecords {
   public let known: (String) -> Bool
+  public let stamp: (String) -> HLC?
   public let now: Double
   public let horizon: Double
   public let joined: Bool
 
-  public init(known: @escaping (String) -> Bool, now: Double, horizon: Double, joined: Bool) {
+  public init(known: @escaping (String) -> Bool, stamp: @escaping (String) -> HLC? = { _ in nil }, now: Double, horizon: Double, joined: Bool) {
     self.known = known
+    self.stamp = stamp
     self.now = now
     self.horizon = horizon
     self.joined = joined
@@ -194,6 +198,7 @@ public protocol SyncAdapter: AnyObject {
   var publishAfterPull: Bool { get }
   var publishOnlyAfterPull: Bool { get }
   var ownsItsChanges: Bool { get }
+  var originalEditTime: Bool { get }
   func extract(_ context: ExtractContext) async throws -> Extraction?
   func apply(_ visible: [(key: String, value: JSONValue)], _ changed: [String], _ base: (String) -> JSONValue?, _ records: ApplyRecords) async throws -> Bool?
   func applyKeys(_ visible: [(key: String, value: JSONValue)], _ changed: [String], _ base: (String) -> JSONValue?, _ records: ApplyRecords) async throws -> ApplyOutcome
@@ -205,6 +210,7 @@ public extension SyncAdapter {
   var publishAfterPull: Bool { false }
   var publishOnlyAfterPull: Bool { false }
   var ownsItsChanges: Bool { false }
+  var originalEditTime: Bool { false }
   func editedAt(_ value: JSONValue) -> Double? { nil }
 
   func applyKeys(_ visible: [(key: String, value: JSONValue)], _ changed: [String], _ base: (String) -> JSONValue?, _ records: ApplyRecords) async throws -> ApplyOutcome {
@@ -318,10 +324,8 @@ func settleDurable(_ state: ScopeState) {
   for settle in queue { settle() }
 }
 
-func stampedHLC(_ clock: Clock, _ device: String, _ stamped: Stamped) -> HLC {
-  let at = clock.at(stamped.at)
-  let after = stamped.after.map { hlcAfter($0, device) }
-  let h = if let after, jsKeyPrecedes(at, after) { after } else { at }
+func stampedHLC(_ clock: Clock, _ device: String, _ stamped: Stamped, _ originalTime: Bool = false) -> HLC {
+  let h = editHLC(originalTime ? stamped : Stamped(at: hlcWall(clock.at(stamped.at)), after: stamped.after), device)
   clock.observe(h)
   return h
 }
@@ -349,15 +353,18 @@ func publishAdapter(_ state: ScopeState, _ adapter: SyncAdapter, _ clock: Clock,
     for (key, _) in extraction.values { keys.insert(key) }
     hook(adapter.prefix, keys.elements) { extraction.ignore?($0) ?? false }
   }
-  func put(_ key: String, _ value: JSONValue) {
+  var stamps = JSMap<HLC>()
+  func put(_ key: String, _ value: JSONValue) -> Bool {
     let known = state.records[key]
     let stamped = extraction.stamp?(key)
     let editedAt = known == nil && !value.isNull ? adapter.editedAt(value) : nil
-    let h = if let stamped { stampedHLC(clock, device, stamped) } else { editedAt.map(clock.at) ?? clock.tick() }
-    if let known, !jsKeyPrecedes(known.h, h) { return }
+    let h = if let stamped { stampedHLC(clock, device, stamped, adapter.originalEditTime) } else { editedAt.map(clock.at) ?? clock.tick() }
+    if let known, !jsKeyPrecedes(known.h, h) { return false }
     state.records[key] = SyncRecord(h: h, v: value, o: Origin(device, state.seq + 1))
     state.outbox.append(Op(k: key, h: h, v: value))
     published.insert(key)
+    stamps[key] = h
+    return true
   }
   var extracted = Set<JSKey>()
   for (key, value) in extraction.values {
@@ -365,29 +372,28 @@ func publishAdapter(_ state: ScopeState, _ adapter: SyncAdapter, _ clock: Clock,
     extracted.insert(JSKey(key))
     let json = syncCanonical(value)
     if state.base[key] == json && !(extraction.republish?(key) ?? false) { continue }
-    state.base[key] = json
-    put(key, value)
+    if put(key, value) { state.base[key] = json }
   }
   for key in state.base.keys {
     if !key.jsStartsWith(adapter.prefix) || extracted.contains(JSKey(key)) || (extraction.ignore?(key) ?? false) { continue }
-    state.base.removeValue(forKey: key)
-    put(key, .null)
+    if put(key, .null) { state.base.removeValue(forKey: key) }
   }
   var removing = OrderedSet<String>()
   for key in extraction.remove { removing.insert(key) }
   for key in removing.elements {
     if !key.jsStartsWith(adapter.prefix) || extracted.contains(JSKey(key)) { continue }
     guard let record = state.records[key], !record.v.isNull else { continue }
-    state.base.removeValue(forKey: key)
-    put(key, .null)
+    if put(key, .null) { state.base.removeValue(forKey: key) }
   }
   var reapplying = OrderedSet<String>()
   for key in extraction.reapply { reapplying.insert(key) }
   for key in reapplying.elements where key.jsStartsWith(adapter.prefix) && !state.unapplied.contains(where: { $0.jsEquals(key) }) { state.unapplied.append(key) }
   if let settle = extraction.published, !published.isEmpty {
     let keys = published.elements
-    settleWhenDurable(state) { settle(keys) }
+    let minted = stamps
+    settleWhenDurable(state) { settle(keys, minted) }
   }
+  if let committed = extraction.committed { settleWhenDurable(state, committed) }
   return published
 }
 
@@ -404,7 +410,13 @@ public func flush(_ state: ScopeState, _ transport: SyncTransport, _ scope: Stri
     state.journal!.append(LogFile(device: device, seq: state.seq, at: now, ops: state.outbox))
     state.outbox = []
   }
-  guard let journal = state.journal, !journal.isEmpty else { return }
+  guard let journal = state.journal, !journal.isEmpty else {
+    if state.settling != nil {
+      try await options.persist?([])
+      settleDurable(state)
+    }
+    return
+  }
   if let persist = options.persist {
     try await persist(journal)
     settleDurable(state)
@@ -511,7 +523,7 @@ func applyAdapter(
   let view = visible(state, adapter.prefix)
   if state.applyAs == nil { state.applyAs = JSMap() }
   if state.applyAs![adapter.prefix] == nil { state.applyAs![adapter.prefix] = state.joined ? "joined" : "joining" }
-  let records = ApplyRecords(known: { state.records.contains($0) }, now: now, horizon: horizon, joined: state.applyAs![adapter.prefix] == "joined")
+  let records = ApplyRecords(known: { state.records.contains($0) }, stamp: { state.records[$0]?.h }, now: now, horizon: horizon, joined: state.applyAs![adapter.prefix] == "joined")
   beforeApply?(mine)
   let outcome: ApplyOutcome
   var refused = Set<JSKey>()

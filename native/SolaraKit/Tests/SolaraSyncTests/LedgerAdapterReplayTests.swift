@@ -156,7 +156,7 @@ func ledgerMemoryJSON(_ m: LedgerPasswordsMemory) -> JSONValue {
           result = ["throw": .string("\(error)")]
         }
       case "published":
-        last?.published?(op["keys"]?.array?.compactMap(\.string) ?? [])
+        last?.published?(op["keys"]?.array?.compactMap(\.string) ?? [], JSMap())
       case "resolveHeld":
         adapter.resolveHeld(op["choice"] == .string("confirm") ? .confirm : .restore)
       default:

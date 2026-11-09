@@ -190,6 +190,14 @@ public class SettingsModule: Module {
       try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.observeBookmarkRecords(profile: profileId, engine: engine, recordsJSON: recordsJSON) }
     }
 
+    Function("ackBookmarkFactsForLink") { (profileId: String, engine: String, recordsJSON: String, link: String) throws -> Bool in
+      try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.ackBookmarkFacts(profile: profileId, engine: engine, recordsJSON: recordsJSON, link: link) }
+    }
+
+    Function("observeBookmarkRecordsForLink") { (profileId: String, engine: String, recordsJSON: String, link: String) throws -> Bool in
+      try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.observeBookmarkRecords(profile: profileId, engine: engine, recordsJSON: recordsJSON, link: link) }
+    }
+
     Function("clearBookmarkFacts") { (profileId: String, engine: String, recordsJSON: String) throws -> Bool in
       try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.clearBookmarkFacts(profile: profileId, engine: engine, recordsJSON: recordsJSON) }
     }
@@ -204,6 +212,10 @@ public class SettingsModule: Module {
 
     Function("replaceBookmarkDocument") { (profileId: String, documentJSON: String, expectedRevision: String, engine: String, generation: String, requestId: String?) throws -> [String: Any] in
       try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.replace(profile: profileId, documentJSON: documentJSON, expectedRevision: expectedRevision, engine: engine, generation: generation, requestID: requestId) }
+    }
+
+    Function("replaceBookmarkDocumentWithRecords") { (profileId: String, documentJSON: String, expectedRevision: String, engine: String, generation: String, requestId: String?, recordsJSON: String, link: String) throws -> [String: Any] in
+      try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.replace(profile: profileId, documentJSON: documentJSON, expectedRevision: expectedRevision, engine: engine, generation: generation, requestID: requestId, recordsJSON: recordsJSON, link: link) }
     }
 
     AsyncFunction("liveCommand") { (name: String, payloadJSON: String, promise: Promise) in

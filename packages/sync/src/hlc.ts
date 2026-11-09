@@ -11,11 +11,19 @@ function parseHLC(h: HLC): { wall: number; counter: number; device: string } {
   return { wall: parseInt(wall, 36), counter: parseInt(counter, 36), device: device.join(".") };
 }
 
+export const hlcDevice = (h: HLC) => parseHLC(h).device;
+
 export const hlcWall = (h: HLC) => parseInt(h.slice(0, WALL_DIGITS), 36);
 
 export const hlcAfter = (h: HLC, device: string): HLC => {
   const { wall, counter } = parseHLC(h);
   return counter + 1 >= 36 ** COUNTER_DIGITS ? formatHLC(wall + 1, 0, device) : formatHLC(wall, counter + 1, device);
+};
+
+export const editHLC = (stamped: { at: number; after?: HLC | null }, device: string): HLC => {
+  const at = formatHLC(stamped.at, 0, device);
+  const after = stamped.after ? hlcAfter(stamped.after, device) : null;
+  return after && after > at ? after : at;
 };
 
 export class Clock {

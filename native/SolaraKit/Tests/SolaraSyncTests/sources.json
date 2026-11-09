@@ -1,6 +1,6 @@
 {
   "Adapters": {
-    "apps/browser/src/sync/adapters.ts": "ea0c6a821c298d25a7e71d4c2392d7c8f157f2b6526afe7a0fe177d21d82318d",
+    "apps/browser/src/sync/adapters.ts": "9070d1305b46dc4321fe049b899029b079526cd56781f14d96ceeb0cec9275db",
     "apps/browser/src/sync/pinned.ts": "2d2979d89fbc5bf46a8b7ccadaf38f8b989f15f953862d5c2878326fbec8498c",
     "apps/browser/src/sync/extensions.ts": "cacdd4a017e4abd5ada02e0b9e26a4fd7ccc11aff4c61dcd88231f8e48fbf688"
   },
@@ -30,14 +30,14 @@
     "packages/sync/src/extensions.ts": "45fc934056f519406ed37a984b7cd290326830ea2fd9808b401d772063063058"
   },
   "Scenarios/scope-redesign.json.deflate": {
-    "packages/sync/src/scope.ts": "c2f743ee28c1a02658e7ac6ca24fbe051aa7cab6a732edfdc144f012387cb9b7",
-    "packages/sync/src/hlc.ts": "ecb926f03ea07f95e35d26b1bafafc2c79b9fddcf2f87c09dfb346b06f3ed751",
+    "packages/sync/src/scope.ts": "a4c282a2cde809e65f2107cff54f27895b36bebdefdc852a144a5ac77ef6d395",
+    "packages/sync/src/hlc.ts": "f0baa7066d9fd9a7d771f285875159264b2d63d572c5aa5783a3a1acebc02fd8",
     "packages/sync/src/canon.ts": "8f5059064d488bdca755b53fef5a3220b06a7cd24327022d7abe420e310fab20",
     "packages/sync/src/order.ts": "ea8f6b6eb0aba00682ccd04961fc73430499f1806250a606dac1faafb2f17471"
   },
   "Scenarios/scope.json.deflate": {
-    "packages/sync/src/scope.ts": "c2f743ee28c1a02658e7ac6ca24fbe051aa7cab6a732edfdc144f012387cb9b7",
-    "packages/sync/src/hlc.ts": "ecb926f03ea07f95e35d26b1bafafc2c79b9fddcf2f87c09dfb346b06f3ed751",
+    "packages/sync/src/scope.ts": "a4c282a2cde809e65f2107cff54f27895b36bebdefdc852a144a5ac77ef6d395",
+    "packages/sync/src/hlc.ts": "f0baa7066d9fd9a7d771f285875159264b2d63d572c5aa5783a3a1acebc02fd8",
     "packages/sync/src/canon.ts": "8f5059064d488bdca755b53fef5a3220b06a7cd24327022d7abe420e310fab20",
     "packages/sync/src/order.ts": "ea8f6b6eb0aba00682ccd04961fc73430499f1806250a606dac1faafb2f17471"
   },

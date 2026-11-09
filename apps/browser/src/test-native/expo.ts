@@ -18,7 +18,7 @@ let liveRevision = 0;
 let liveCounter = 0;
 const publishLive = () => liveListeners.get("onLiveReplica")?.({ revision: ++liveRevision, replicaJSON: JSON.stringify(testLive) });
 
-type TestBookmarkWriter = { state(): unknown; snapshot(profileId: string): unknown; replace(...args: unknown[]): unknown; submit(...args: unknown[]): Promise<unknown>; ackBookmarkFacts(...args: unknown[]): unknown; observeBookmarkRecords(...args: unknown[]): unknown; clearBookmarkFacts(...args: unknown[]): unknown; setBookmarkSyncLinks(...args: unknown[]): unknown };
+type TestBookmarkWriter = { state(): unknown; snapshot(profileId: string): unknown; replace(...args: unknown[]): unknown; replaceWithRecords(...args: unknown[]): unknown; submit(...args: unknown[]): Promise<unknown>; ackBookmarkFacts(...args: unknown[]): unknown; observeBookmarkRecords(...args: unknown[]): unknown; clearBookmarkFacts(...args: unknown[]): unknown; setBookmarkSyncLinks(...args: unknown[]): unknown };
 const testBookmarkWriter = (): TestBookmarkWriter => {
   const writer = (globalThis as { acTestBookmarkWriter?: TestBookmarkWriter }).acTestBookmarkWriter;
   if (!writer) throw new Error("native bookmarks are not owned by this launch");
@@ -29,6 +29,9 @@ const settingsModule = {
   bookmarkWriterState: () => ((globalThis as { acTestBookmarkWriter?: TestBookmarkWriter }).acTestBookmarkWriter?.state() ?? { state: "legacy" }),
   bookmarkWriterSnapshot: (profileId: string) => testBookmarkWriter().snapshot(profileId),
   ackBookmarkFacts: (...args: unknown[]) => testBookmarkWriter().ackBookmarkFacts(...args),
+  ackBookmarkFactsForLink: (...args: unknown[]) => testBookmarkWriter().ackBookmarkFacts(...args),
+  observeBookmarkRecordsForLink: (...args: unknown[]) => testBookmarkWriter().observeBookmarkRecords(...args),
+  replaceBookmarkDocumentWithRecords: (...args: unknown[]) => testBookmarkWriter().replaceWithRecords(...args),
   observeBookmarkRecords: (...args: unknown[]) => testBookmarkWriter().observeBookmarkRecords(...args),
   clearBookmarkFacts: (...args: unknown[]) => testBookmarkWriter().clearBookmarkFacts(...args),
   setBookmarkSyncLinks: (...args: unknown[]) => testBookmarkWriter().setBookmarkSyncLinks(...args),

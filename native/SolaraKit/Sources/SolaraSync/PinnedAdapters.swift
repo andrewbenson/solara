@@ -80,7 +80,7 @@ public class PinnedAreaAdapter {
     return Extraction(
       values: e.values.map { ($0.key, Optional($0.value)) }, ignore: e.ignore, republish: e.republish,
       published: e.settled.map { settled in
-        { keys in
+        { keys, _ in
           let published = settled(keys)
           try? store.runPinnedWhenFree { $0.settlePinChoices(profileId, published) }
         }

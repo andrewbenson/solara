@@ -1,5 +1,5 @@
 import { canonical } from "./canon.ts";
-import { hlcAfter, hlcWall, type Clock, type HLC } from "./hlc.ts";
+import { editHLC, hlcWall, type Clock, type HLC } from "./hlc.ts";
 
 export type Origin = [device: string, seq: number];
 export type SyncRecord = { h: HLC; v: unknown; o: Origin };
@@ -72,7 +72,8 @@ export type Extraction = {
   values: Map<string, unknown>;
   ignore?: (key: string) => boolean;
   republish?: (key: string) => boolean;
-  published?: (keys: Set<string>) => void;
+  published?: (keys: Set<string>, stamps: ReadonlyMap<string, HLC>) => void;
+  committed?: () => void;
   stamp?: (key: string) => { at: number; after?: HLC | null } | undefined;
   remove?: Set<string>;
   reapply?: Set<string>;
@@ -80,6 +81,7 @@ export type Extraction = {
 
 export type ApplyRecords = {
   known(key: string): boolean;
+  stamp?(key: string): HLC | undefined;
   now: number;
   horizon: number;
   joined: boolean;
@@ -116,6 +118,7 @@ export interface Adapter {
   publishAfterPull?: boolean;
   publishOnlyAfterPull?: boolean;
   ownsItsChanges?: boolean;
+  originalEditTime?: boolean;
 }
 
 export type ScopeOptions = {
@@ -231,10 +234,8 @@ function settleDurable(state: ScopeState) {
   for (const settle of queue) settle();
 }
 
-function stampedHLC(clock: Clock, device: string, stamped: { at: number; after?: HLC | null }): HLC {
-  const at = clock.at(stamped.at);
-  const after = stamped.after ? hlcAfter(stamped.after, device) : null;
-  const h = after && after > at ? after : at;
+function stampedHLC(clock: Clock, device: string, stamped: { at: number; after?: HLC | null }, originalTime = false): HLC {
+  const h = editHLC(originalTime ? stamped : { ...stamped, at: hlcWall(clock.at(stamped.at)) }, device);
   clock.observe(h);
   return h;
 }
@@ -249,36 +250,37 @@ async function publishAdapter(state: ScopeState, adapter: Adapter, clock: Clock,
   const extraction = await adapter.extract((key) => parseBase(state.base[key]), queued, now, (key) => key in state.records, (key) => state.records[key]?.v, (key) => state.records[key]?.h, () => downloadingRecently.get(state) !== false, () => Object.keys(state.base).filter((key) => key.startsWith(adapter.prefix) && !state.unapplied.includes(key)), (key) => state.unapplied.includes(key));
   if (!extraction) return published;
   extractedHook.get(state)?.(adapter.prefix, new Set(extraction.values.keys()), (key) => !!extraction.ignore?.(key));
+  const stamps = new Map<string, HLC>();
   const put = (key: string, value: unknown) => {
     const known = state.records[key];
     const stamped = extraction.stamp?.(key);
     const editedAt = !known && value !== null ? adapter.editedAt?.(value) : undefined;
-    const h = stamped ? stampedHLC(clock, device, stamped) : editedAt !== undefined ? clock.at(editedAt) : clock.tick();
-    if (known && known.h >= h) return;
+    const h = stamped ? stampedHLC(clock, device, stamped, adapter.originalEditTime) : editedAt !== undefined ? clock.at(editedAt) : clock.tick();
+    if (known && known.h >= h) return false;
     state.records[key] = { h, v: value, o: [device, state.seq + 1] };
     state.outbox.push({ k: key, h, v: value });
     published.add(key);
+    stamps.set(key, h);
+    return true;
   };
   for (const [key, value] of extraction.values) {
     if (value === null || value === undefined) throw new Error(`[sync] ${key}: a live value can't be null`);
     const json = canonical(value);
     if (state.base[key] === json && !extraction.republish?.(key)) continue;
-    state.base[key] = json;
-    put(key, value);
+    if (put(key, value)) state.base[key] = json;
   }
   for (const key of Object.keys(state.base)) {
     if (!key.startsWith(adapter.prefix) || extraction.values.has(key) || extraction.ignore?.(key)) continue;
-    delete state.base[key];
-    put(key, null);
+    if (put(key, null)) delete state.base[key];
   }
   for (const key of extraction.remove ?? []) {
     if (!key.startsWith(adapter.prefix) || extraction.values.has(key) || !state.records[key] || state.records[key]!.v === null) continue;
-    delete state.base[key];
-    put(key, null);
+    if (put(key, null)) delete state.base[key];
   }
   for (const key of extraction.reapply ?? []) if (key.startsWith(adapter.prefix) && !state.unapplied.includes(key)) state.unapplied.push(key);
   const { published: settle } = extraction;
-  if (settle && published.size) settleWhenDurable(state, () => settle(published));
+  if (settle && published.size) settleWhenDurable(state, () => settle(published, stamps));
+  if (extraction.committed) settleWhenDurable(state, extraction.committed);
   return published;
 }
 
@@ -294,7 +296,13 @@ export async function flush(state: ScopeState, transport: Transport, scope: stri
     (state.journal ??= []).push({ v: 1, kind: "log", device, seq: state.seq, at: now, ops: state.outbox });
     state.outbox = [];
   }
-  if (!state.journal?.length) return;
+  if (!state.journal?.length) {
+    if (settling.has(state)) {
+      await options.persist?.([]);
+      settleDurable(state);
+    }
+    return;
+  }
   if (options.persist) {
     await options.persist(state.journal);
     settleDurable(state);
@@ -387,7 +395,7 @@ async function applyAdapter(state: ScopeState, adapter: Adapter, keys: Set<strin
   let refused: Set<string> | undefined;
   beforeApply?.(mine);
   try {
-    ok = await adapter.apply(view, mine, (key) => parseBase(state.base[key]), { known: (key) => key in state.records, now, horizon, joined: applyAs[adapter.prefix] === "joined" });
+    ok = await adapter.apply(view, mine, (key) => parseBase(state.base[key]), { known: (key) => key in state.records, stamp: (key) => state.records[key]?.h, now, horizon, joined: applyAs[adapter.prefix] === "joined" });
   } catch (error) {
     if (error instanceof ApplyRefusal) {
       refused = error.refused;

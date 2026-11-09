@@ -279,7 +279,7 @@ public final class LibraryCatalog {
     let roots = BookmarkFlat.roots(view.engine)
     var nodes: [String: BookmarkNode] = [:]
     for (id, value) in view.document["nodes"]?.object ?? [:] {
-      nodes[id] = BookmarkNode(id: id, kind: value["kind"]?.string ?? "folder", parentId: value["parentId"]?.string, title: value["title"]?.string ?? "", url: value["url"]?.string, addedAt: value["addedAt"]?.number ?? 0, syncKey: value["syncKey"]?.string, children: value["children"]?.array?.compactMap(\.string))
+      nodes[id] = BookmarkNode(id: id, kind: value["kind"]?.string ?? "folder", parentId: value["parentId"]?.string, title: BookmarkString.display(value["title"]?.string ?? ""), url: value["url"]?.string.map(BookmarkString.display), addedAt: value["addedAt"]?.number ?? 0, syncKey: value["syncKey"]?.string, children: value["children"]?.array?.compactMap(\.string))
     }
     publishBookmarks(BookmarkSnapshot(roots: view.hasView ? roots : nil, nodes: nodes, ready: view.hasView, revision: Int(clamping: view.revision), readyForSync: view.readyForSync), engine: view.engine)
   }

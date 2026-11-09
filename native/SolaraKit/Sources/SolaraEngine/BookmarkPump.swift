@@ -107,8 +107,15 @@ public final class BookmarkPump {
 
   func submit(operations: [BookmarkOperation], engine: String) async throws -> (BookmarkReceipt, BookmarkApplyResult) {
     guard let profile = coordinator.catalogProfile(engine: engine) else { throw BookmarkCoordinatorError.invalidProfileScope }
-    let values = try JSONValue.parse(JSONEncoder().encode(operations))
-    let receipt = try await submit(profile: profile, mutations: [.init(method: "applyBookmarkOperations", args: [values])])
+    let raw = try JSONValue.parse(JSONEncoder().encode(operations))
+    let values = JSONValue.array((raw.array ?? []).map { value in
+      var operation = value.object ?? [:]
+      for key in ["t", "u", "key"] {
+        if let text = operation[key]?.string { operation[key] = .string(BookmarkString.encode(text)) }
+      }
+      return .object(operation)
+    })
+    let receipt = try await submit(profile: profile, mutations: [.init(method: "applyBookmarkOperations", args: [values, true])])
     let result = receipt.results.first
     return (receipt, BookmarkApplyResult(applied: Int(result?["applied"]?.number ?? 0), skipped: Int(result?["skipped"]?.number ?? 0), invalid: result?["invalid"]?.array?.compactMap(\.string) ?? []))
   }

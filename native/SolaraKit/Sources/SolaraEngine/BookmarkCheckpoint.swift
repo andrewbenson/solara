@@ -133,12 +133,12 @@ final class BookmarkDurability {
         ["id": .string(id), "payload": request.payload, "view": Self.encodeView(request.receipt.view), "results": .array(request.receipt.results)]
       }),
       "conflicts": .array(nextConflicts),
-      "legacyPendingEngines": .array(nextLegacy.sorted { jsKeyPrecedes($0.text, $1.text) }.map { .string($0.text) })
+      "legacyPendingEngines": .array(nextLegacy.sorted { BookmarkString.precedes($0.text, $1.text) }.map { .string($0.text) })
     ]
     if store != nil {
       for (_, view) in views { try Self.validateDocument(view.document, engine: view.engine) }
       for (engine, base) in bases { try Self.validateRecords(base.records, engine: engine) }
-      guard try JSONValue.parse(checkpoint.text()) == checkpoint else { throw BookmarkPendingStoreError.invalidEnvelope }
+      guard try JSONValue.parseBookmark(checkpoint.bookmarkText()) == checkpoint else { throw BookmarkPendingStoreError.invalidEnvelope }
     }
     return BookmarkCheckpoint(payload: checkpoint, requests: nextRequests, conflicts: nextConflicts, legacyPendingEngines: nextLegacy, owners: owners, factSequence: nextSequence, syncLinks: nextLinks)
   }

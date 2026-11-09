@@ -147,9 +147,8 @@ struct BookmarkReconcileScaleTests {
 
   @Test func crossFolderDiffMatchesJavaScriptOracleRecords() throws {
     let path = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/bookmark-desired.json")
-    let oracle = try JSONValue.parse(Data(contentsOf: path))
+    let oracle = try BookmarkWireFixture.parse(String(contentsOf: path, encoding: .utf8), checksum: "eb4271f5877e517372e512ebf17d891705ee5cd36abf1bfeac8bc7d70ad9d00c")
     for record in oracle["pure"]?.array ?? [] {
-      if record["name"] == "unpaired-surrogate-exact-update" { continue }
       let engine = record["engine"]?.string ?? ""
       let before = BookmarkFlat(records: record["before"]?.array ?? [])
       let after = BookmarkFlat(records: record["after"]?.array ?? [])

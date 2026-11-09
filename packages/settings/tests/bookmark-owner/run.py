@@ -28,7 +28,7 @@ objects = [build / (name + '.o') for name in ['SolaraModel', 'SolaraStore', 'Sol
 files = [source / 'packages/settings/ios/Bookmarks/NativeBookmarkOwner.swift', here / 'Main.swift']
 subprocess.run(base + ['-o', str(output / 'bookmark-owner-tests')] + [str(item) for item in files + objects], env=environment, check=True, timeout=180)
 failed = False
-for case in args.cases or ['replaceIsDurableBeforeItReturns', 'replaceRunsOnTheCallingThread', 'aRemapRefusesTheOldBindingAndWritesNothing', 'aBindingForAnotherEngineIsRefused', 'aStaleRevisionIsRefused', 'theWakeComesOnlyAfterTheDirectorySync', 'aJournalFailureThrowsAndKeepsTheOldDocument', 'theWriterIsLegacyUntilAnOwnerIsInstalled', 'submitIsDurableAndReturnsTheReducerResults', 'submitRefusesAStaleBindingAndWritesNothing', 'theBridgeSubmitsMutationsGivenAsJSON']:
+for case in args.cases or ['bookmarkBridgePreservesUTF16AcrossReplaceSubmitAndRestart', 'replaceIsDurableBeforeItReturns', 'replaceRunsOnTheCallingThread', 'aRemapRefusesTheOldBindingAndWritesNothing', 'aBindingForAnotherEngineIsRefused', 'aStaleRevisionIsRefused', 'theWakeComesOnlyAfterTheDirectorySync', 'aJournalFailureThrowsAndKeepsTheOldDocument', 'theWriterIsLegacyUntilAnOwnerIsInstalled', 'submitIsDurableAndReturnsTheReducerResults', 'submitRefusesAStaleBindingAndWritesNothing', 'theBridgeSubmitsMutationsGivenAsJSON']:
     try:
         result = subprocess.run([str(output / 'bookmark-owner-tests'), case], env=environment, timeout=20)
         failed = failed or result.returncode != 0

@@ -68,7 +68,7 @@ public struct BookmarkLaunchCache {
   private func read(_ path: URL) -> JSONValue? {
     guard let data = try? Data(contentsOf: path) else { return nil }
     if data.isEmpty { return .null }
-    return try? JSONValue.parse(data)
+    return try? JSONValue.parseBookmark(data)
   }
 
   private static func legacyUUID(_ id: String) -> String {
@@ -77,7 +77,7 @@ public struct BookmarkLaunchCache {
       [8, 13, 18, 23].contains(index) ? unit == 45 : (48...57).contains(unit) || (97...102).contains(unit)
     }) { return id }
     var h1: UInt32 = 1779033703, h2: UInt32 = 3144134277, h3: UInt32 = 1013904242, h4: UInt32 = 2773480762
-    for unit in ("netnyahoo-bookmark:" + id).utf16.map(UInt32.init) {
+    for unit in BookmarkString.units("netnyahoo-bookmark:" + id).map(UInt32.init) {
       h1 = h2 ^ ((h1 ^ unit) &* 597399067)
       h2 = h3 ^ ((h2 ^ unit) &* 2869860233)
       h3 = h4 ^ ((h3 ^ unit) &* 951274213)

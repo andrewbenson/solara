@@ -343,12 +343,12 @@ public final class BookmarkCoordinator: @unchecked Sendable {
         if let fact = view.facts[record.key] {
           if fact.seq <= record.seq {
             view.facts.removeValue(forKey: record.key)
-          } else if JSKey(fact.link) == JSKey(link), fact.after.map({ jsKeyPrecedes($0, record.mintedHLC) }) ?? true {
+          } else if JSKey(fact.link) == JSKey(link), fact.after.map({ BookmarkString.precedes($0, record.mintedHLC) }) ?? true {
             view.facts[record.key] = BookmarkEditFact(at: fact.at, seq: fact.seq, after: record.mintedHLC, link: fact.link)
           }
         }
         let key = Self.seenKey(link: link, key: record.key)
-        if view.lastSeen[key].map({ jsKeyPrecedes($0, record.mintedHLC) }) ?? true { view.lastSeen[key] = record.mintedHLC }
+        if view.lastSeen[key].map({ BookmarkString.precedes($0, record.mintedHLC) }) ?? true { view.lastSeen[key] = record.mintedHLC }
       }
     }
   }
@@ -372,13 +372,13 @@ public final class BookmarkCoordinator: @unchecked Sendable {
   }
 
   private static func seenKey(link: String, key: String) -> String {
-    "bm:" + JSONValue.array([.string(link), .string(key)]).canonical
+    BookmarkString.encode("bm:" + JSONValue.array([.string(link), .string(key)]).bookmarkText(sortedKeys: true))
   }
 
   private static func observe(_ records: [(key: String, hlc: String)], link: String, view: inout BookmarkDesiredView) {
     for record in records {
       let key = seenKey(link: link, key: record.key)
-      if view.lastSeen[key].map({ jsKeyPrecedes($0, record.hlc) }) ?? true { view.lastSeen[key] = record.hlc }
+      if view.lastSeen[key].map({ BookmarkString.precedes($0, record.hlc) }) ?? true { view.lastSeen[key] = record.hlc }
     }
   }
 
@@ -538,10 +538,21 @@ public final class BookmarkCoordinator: @unchecked Sendable {
         var view = desiredView(engine: engine)
         let requiredRead = view.requiresRead || view.inFlightTarget != nil
         view.requiresRead = false
-        let fetched = BookmarkFlat(document: document, engine: engine)
+        var fetched = BookmarkFlat(document: document, engine: engine)
         let base = bases[engine] ?? BookmarkFlat(records: [])
+        let attempted = view.inFlightTarget.map { BookmarkFlat(document: $0, engine: engine) }
+        for id in fetched.order {
+          guard var node = fetched.nodes[id]?.object, let original = base.nodes[id] ?? attempted?.nodes[id] else { continue }
+          for field in ["title", "key"] {
+            if let wire = original[field]?.string {
+              let display = JSONValue.string(BookmarkString.encode(BookmarkString.display(wire)))
+              if original[field] != display, node[field] == display { node[field] = original[field] }
+            }
+          }
+          fetched.nodes[id] = .object(node)
+        }
         let desired = BookmarkFlat(document: view.document, engine: engine)
-        let intended = view.inFlightTarget.map { BookmarkFlat(document: $0, engine: engine) } ?? desired
+        let intended = attempted ?? desired
         var delta = BookmarkReconcile.operations(from: base, to: intended, engine: engine)
         var replay = BookmarkReconcile.replayPending(fetched, operations: delta, engine: engine)
         if view.inFlightTarget != nil, replay.structuralBreak == nil {
@@ -771,6 +782,16 @@ private struct BookmarkReducer {
         guard ["add", "update", "move", "remove"].contains(kind) else { break }
         let id = operation["id"]?.string ?? ""
         let existing = flat.nodes[id]
+        if arg(1).bool == true, let existing {
+          var fields = operation.object ?? [:]
+          for (key, field) in [("t", "title"), ("u", "url"), ("key", "key")] {
+            if let original = existing[field]?.string,
+              fields[key] == .string(BookmarkString.encode(BookmarkString.display(original))) {
+              fields[key] = .string(original)
+            }
+          }
+          operation = .object(fields)
+        }
         if kind == "add", existing == nil {
           let roots = BookmarkFlat.roots(engine)
           let parent = operation["parent"]?.string ?? ""
@@ -974,7 +995,7 @@ enum BookmarkRecordIdentity {
   static func bookmarkUuidFor(_ id: String) -> String {
     if isBookmarkUuid(id) { return id }
     var h1: UInt32 = 1779033703, h2: UInt32 = 3144134277, h3: UInt32 = 1013904242, h4: UInt32 = 2773480762
-    for k in ("netnyahoo-bookmark:" + id).utf16.map(UInt32.init) {
+    for k in BookmarkString.units("netnyahoo-bookmark:" + id).map(UInt32.init) {
       h1 = h2 ^ ((h1 ^ k) &* 597399067)
       h2 = h3 ^ ((h2 ^ k) &* 2869860233)
       h3 = h4 ^ ((h3 ^ k) &* 951274213)

@@ -260,6 +260,39 @@ struct BookmarkOwnerTests {
     expect(refusal { _ = try NativeBookmarkWriter.submit(profile: "p", mutationsJSON: #"[{"method":"addBookmarkFolder"}]"#, engine: snapshot.binding.engine, generation: String(snapshot.binding.generation), requestID: nil) }.map { if case .invalidDocument = $0 { true } else { false } } == true, "a mutation without args is refused before it reaches the coordinator")
   }
 
+  static func bookmarkBridgePreservesUTF16AcrossReplaceSubmitAndRestart() {
+    let fixture = Fixture()
+    defer { fixture.stop(); NativeBookmarkOwner.current = nil }
+    NativeBookmarkOwner.current = fixture.owner
+    let before = try! fixture.owner.snapshot(profile: "p")
+    let document = Fixture.document(["https://x.test/a", "https://x.test/b"]).text()
+      .replacingOccurrences(of: #""b0""#, with: #""\ud800""#)
+      .replacingOccurrences(of: #""b1""#, with: #""\udfff""#)
+      .replacingOccurrences(of: "https://x.test/a", with: #"https://x.test/\ud800"#)
+      .replacingOccurrences(of: "https://x.test/b", with: #"https://x.test/\udfff"#)
+    guard (try? NativeBookmarkWriter.replace(profile: "p", documentJSON: document, expectedRevision: String(before.revision), engine: "", generation: String(before.binding.generation), requestID: "wire-replace")) != nil else {
+      failures.append("the wire document is accepted")
+      return
+    }
+    let mutations = #"[{"method":"updateBookmark","args":["\ud800",{"title":"\ud801"}]}]"#
+    guard let reply = try? NativeBookmarkWriter.submit(profile: "p", mutationsJSON: mutations, engine: "", generation: String(before.binding.generation), requestID: "󰀀󰀁"), let source = reply["document"] as? String else {
+      failures.append("wire mutation returns a document")
+      return
+    }
+    expect(source.contains(#""id":"\ud800""#), "the high-surrogate id survives the bridge")
+    expect(source.contains(#""id":"\udfff""#), "the low-surrogate id remains distinct")
+    expect(source.contains(#""title":"\ud801""#), "the updated title retains its original UTF-16 unit")
+    expect(source.contains(#""url":"https://x.test/\ud800""#), "title-only edits preserve the wire URL")
+    expect(source.contains(#""children":["\ud800","\udfff"]"#), "the child order retains both exact identities")
+    let journal = try? String(contentsOf: fixture.directory.appendingPathComponent(BookmarkPendingStore.journalName), encoding: .utf8)
+    expect(journal?.contains(#""id":"󰀀󰀁""#) == true, "a direct request id containing the marker is stored literally")
+    NativeBookmarkOwner.current = fixture.reopen()
+    let reopened = try? NativeBookmarkWriter.snapshot(profile: "p")
+    expect(reopened?["document"] as? String == source, "restart returns the same wire document")
+    let retried = try? NativeBookmarkWriter.submit(profile: "p", mutationsJSON: mutations, engine: "", generation: String(before.binding.generation), requestID: "󰀀󰀁")
+    expect(retried?["document"] as? String == source, "a saved receipt returns the same UTF-16 document")
+  }
+
   static func main() {
     guard CommandLine.arguments.count == 2 else {
       print("FAIL: expected one case name")
@@ -267,6 +300,7 @@ struct BookmarkOwnerTests {
     }
     let test = CommandLine.arguments[1]
     let cases: [String: () -> Void] = [
+      "bookmarkBridgePreservesUTF16AcrossReplaceSubmitAndRestart": bookmarkBridgePreservesUTF16AcrossReplaceSubmitAndRestart,
       "replaceIsDurableBeforeItReturns": replaceIsDurableBeforeItReturns,
       "replaceRunsOnTheCallingThread": replaceRunsOnTheCallingThread,
       "aRemapRefusesTheOldBindingAndWritesNothing": aRemapRefusesTheOldBindingAndWritesNothing,

@@ -124,14 +124,13 @@ struct BookmarkCoordinatorTests {
 extension BookmarkCoordinatorTests {
   private func oracle() throws -> JSONValue {
     let path = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/bookmark-desired.json")
-    return try JSONValue.parse(Data(contentsOf: path))
+    return try BookmarkWireFixture.parse(String(contentsOf: path, encoding: .utf8), checksum: "eb4271f5877e517372e512ebf17d891705ee5cd36abf1bfeac8bc7d70ad9d00c")
   }
 
   private func sameJSON(_ actual: JSONValue, _ expected: JSONValue) -> Bool { JSKey(actual.canonical) == JSKey(expected.canonical) }
 
   @Test func pureDiffAndReplayMatchEveryOracleRecord() throws {
     for record in try oracle()["pure"]?.array ?? [] {
-      if record["name"] == "unpaired-surrogate-exact-update" { continue }
       let engine = record["engine"]?.string ?? ""
       let before = BookmarkFlat(records: record["before"]?.array ?? [])
       let after = BookmarkFlat(records: record["after"]?.array ?? [])
@@ -168,13 +167,12 @@ extension BookmarkCoordinatorTests {
     }
   }
 
-  @Test func exactMembershipMatchesAllRepresentableOracleStrings() throws {
+  @Test func exactMembershipMatchesEveryOracleString() throws {
     let fixture = try oracle()
     let owner = BookmarkCoordinator(profiles: ["default": ""], defaultProfile: "default")
     owner.seed(engine: "", document: fixture["membershipDocument"] ?? [:], ready: false)
     for record in fixture["membership"]?.array ?? [] {
       let url = record["url"]?.string ?? ""
-      if url.contains("\u{FFFD}") { continue }
       #expect(owner.membership(profile: "default", url: url) == record["member"]?.bool)
       #expect(JSONValue(owner.membershipSnapshot.nodeIDsByURL[url] ?? []) == record["ids"])
     }
@@ -219,11 +217,12 @@ extension BookmarkCoordinatorTests {
     #expect(BookmarkReconcile.operations(from: first, to: second, engine: "").first?["id"] == "e\u{301}")
   }
 
-  @Test(.disabled("SolaraModel JSONValue stores Swift String and replaces unpaired UTF-16 surrogates; the oracle record remains an activation gate"))
+  @Test
   func unpairedSurrogateOracleCannotYetMatch() throws {
     let record = try #require(oracle()["pure"]?.array?.first { $0["name"] == "unpaired-surrogate-exact-update" })
     let ops = BookmarkReconcile.operations(from: BookmarkFlat(records: record["before"]?.array ?? []), to: BookmarkFlat(records: record["after"]?.array ?? []), engine: "")
     #expect(sameJSON(.array(ops), record["ops"] ?? []))
+    #expect(try BookmarkWireFixture.text(.array(ops)) == #"[{"op":"update","id":"00000000-0000-4000-8000-000000000001","t":"\ud801","u":"https://x.example/\ud801"}]"#)
   }
 }
 

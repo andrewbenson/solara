@@ -120,7 +120,7 @@ public final class BookmarkPendingStore {
       return result
     }
     do {
-      let envelope = try JSONValue.parse(operations.read(journalURL))
+      let envelope = try JSONValue.parseBookmark(operations.read(journalURL))
       if let version = envelope.object?["version"], version != 1 && version != 2 {
         let notice = BookmarkRecoveryNotice(kind: .newerJournalVersion, message: "Bookmark changes were saved in a format this version of Solara can't read, so they were left untouched.", preservedPath: journalURL.path)
         logger("Bookmark journal has format \(version.text()), not 1 or 2, left untouched: \(journalURL.path)")
@@ -170,7 +170,7 @@ public final class BookmarkPendingStore {
     defer { lock.unlock() }
     guard load().writable else { throw BookmarkPendingStoreError.unavailable }
     let envelope: JSONValue = ["version": 2, "payload": payload, "checksum": .string(Self.checksum(payload))]
-    let bytes = Data(envelope.text().utf8)
+    let bytes = Data(envelope.bookmarkText().utf8)
     let temporary = directory.appendingPathComponent("\(Self.journalName).tmp-\(UUID().uuidString.lowercased())")
     var renamed = false
     do {
@@ -193,6 +193,6 @@ public final class BookmarkPendingStore {
   }
 
   private static func checksum(_ payload: JSONValue) -> String {
-    SHA256.hash(data: Data(payload.canonical.utf8)).map { String(format: "%02x", $0) }.joined()
+    SHA256.hash(data: Data(payload.bookmarkText(sortedKeys: true).utf8)).map { String(format: "%02x", $0) }.joined()
   }
 }

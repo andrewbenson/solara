@@ -2,6 +2,7 @@ import AppKit
 import SolaraCore
 import Foundation
 import SolaraEngine
+import SolaraModel
 import SolaraStore
 import SolaraUI
 
@@ -78,6 +79,19 @@ final class SolaraHistoryClient: EngineClient {
   }
 
   func applyBookmarks(ops: [BookmarkOperation], engineProfile: String) async throws -> BookmarkApplyResult {
+    if NativeBookmarkOwner.current != nil {
+      let values = try JSONValue.parse(JSONEncoder().encode(ops))
+      let projected = (values.array ?? []).map { value -> JSONValue in
+        var operation = value.object ?? [:]
+        for key in ["t", "u", "key"] {
+          if let text = operation[key]?.string { operation[key] = .string(BookmarkString.display(text)) }
+        }
+        return .object(operation)
+      }
+      let args: JSONValue = ["ops": .array(projected)]
+      let reply = try await bookmarkCall("ac_bookmarks_apply", profile: engineProfile, args: args.text())
+      return try JSONDecoder().decode(BookmarkApplyResult.self, from: Data(reply.text().utf8))
+    }
     let values = try JSONSerialization.jsonObject(with: JSONEncoder().encode(ops))
     let data = try await call("ac_bookmarks_apply", profile: engineProfile, args: ["ops": values])
     return try JSONDecoder().decode(BookmarkApplyResult.self, from: data)
@@ -88,6 +102,10 @@ final class SolaraHistoryClient: EngineClient {
   }
 
   func readBookmarks(engineProfile: String) async throws -> EngineBookmarkTree {
+    if NativeBookmarkOwner.current != nil {
+      let reply = try await bookmarkCall("ac_bookmarks_tree", profile: engineProfile)
+      return try JSONDecoder().decode(EngineBookmarkTree.self, from: Data(reply.text().utf8))
+    }
     let data = try await call("ac_bookmarks_tree", profile: engineProfile)
     return try JSONDecoder().decode(EngineBookmarkTree.self, from: data)
   }
@@ -145,6 +163,21 @@ final class SolaraHistoryClient: EngineClient {
 
   func storeFavicon(page: String, source: String, data: Data, engineProfile: String) async throws {
     _ = try await call("ac_favicons_set", profile: engineProfile, args: ["page": page, "icon": source, "png": data.base64EncodedString()])
+  }
+
+  private func bookmarkCall(_ name: String, profile: String, args: String = "{}") async throws -> JSONValue {
+    try await withCheckedThrowingContinuation { continuation in
+      SolaraCoreEngineBridge.call(name, profile: profile, args: args) { json in
+        do {
+          let reply = try JSONValue.parseBookmark(json)
+          guard reply.object != nil else { throw Failure.invalidReply }
+          if let error = reply["error"]?.string { throw Failure.engine(BookmarkString.display(error)) }
+          continuation.resume(returning: reply)
+        } catch {
+          continuation.resume(throwing: error)
+        }
+      }
+    }
   }
 
   private func call(_ name: String, profile: String, args: [String: Any] = [:]) async throws -> Data {

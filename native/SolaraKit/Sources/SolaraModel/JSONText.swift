@@ -34,6 +34,29 @@ public extension JSONValue {
     return out
   }
 
+  static func parseBookmark(_ text: String) throws -> JSONValue {
+    try parseBookmark(Data(text.utf8))
+  }
+
+  static func parseBookmark(_ data: Data) throws -> JSONValue {
+    try data.withUnsafeBytes { raw in
+      let bytes = UnsafeBufferPointer(start: raw.baseAddress?.assumingMemoryBound(to: UInt8.self), count: raw.count)
+      var parser = JSONParser(bytes: bytes, bookmarkStrings: true)
+      parser.skipSpace()
+      let value = try parser.value(depth: 0)
+      parser.skipSpace()
+      if parser.at < bytes.count { throw parser.error("trailing characters") }
+      return value
+    }
+  }
+
+  func bookmarkText(sortedKeys: Bool = false) -> String {
+    var out = ""
+    out.reserveCapacity(256)
+    JSONWriter.write(self, sortedKeys: sortedKeys, bookmarkStrings: true, into: &out)
+    return out
+  }
+
   var canonical: String { text(sortedKeys: true) }
 }
 
@@ -46,31 +69,32 @@ public func jsNumberText(_ value: Double) -> String {
 }
 
 enum JSONWriter {
-  static func write(_ value: JSONValue, sortedKeys: Bool, into out: inout String) {
+  static func write(_ value: JSONValue, sortedKeys: Bool, bookmarkStrings: Bool = false, into out: inout String) {
     switch value {
     case .null: out += "null"
     case .bool(let b): out += b ? "true" : "false"
     case .number(let n): out += number(n)
-    case .string(let s): string(s, into: &out)
+    case .string(let s):
+      if bookmarkStrings { BookmarkString.write(s, into: &out) } else { string(s, into: &out) }
     case .array(let items):
       out += "["
       var first = true
       for item in items {
         if !first { out += "," }
         first = false
-        write(item, sortedKeys: sortedKeys, into: &out)
+        write(item, sortedKeys: sortedKeys, bookmarkStrings: bookmarkStrings, into: &out)
       }
       out += "]"
     case .object(let object):
       out += "{"
       var first = true
-      let keys = sortedKeys ? object.keys.sorted(by: jsKeyPrecedes) : object.keys
+      let keys = sortedKeys ? object.keys.sorted(by: bookmarkStrings ? BookmarkString.precedes : jsKeyPrecedes) : object.keys
       for key in keys {
         if !first { out += "," }
         first = false
-        string(key, into: &out)
+        if bookmarkStrings { BookmarkString.write(key, into: &out) } else { string(key, into: &out) }
         out += ":"
-        write(object[key]!, sortedKeys: sortedKeys, into: &out)
+        write(object[key]!, sortedKeys: sortedKeys, bookmarkStrings: bookmarkStrings, into: &out)
       }
       out += "}"
     }
@@ -165,9 +189,11 @@ enum JSONWriter {
 struct JSONParser {
   let bytes: UnsafeBufferPointer<UInt8>
   var at = 0
+  let bookmarkStrings: Bool
 
-  init(bytes: UnsafeBufferPointer<UInt8>) {
+  init(bytes: UnsafeBufferPointer<UInt8>, bookmarkStrings: Bool = false) {
     self.bytes = bytes
+    self.bookmarkStrings = bookmarkStrings
   }
 
   func error(_ reason: String) -> JSONParseError {
@@ -302,7 +328,41 @@ struct JSONParser {
     return value
   }
 
+  mutating func bookmarkString() throws -> String {
+    at += 1
+    var units: [UInt16] = []
+    var start = at
+    while at < bytes.count {
+      let byte = bytes[at]
+      if byte == UInt8(ascii: "\"") || byte == UInt8(ascii: "\\") {
+        units.append(contentsOf: String(decoding: UnsafeBufferPointer(rebasing: bytes[start..<at]), as: UTF8.self).utf16)
+        at += 1
+        if byte == UInt8(ascii: "\"") { return BookmarkString.encode(units: units) }
+        guard at < bytes.count else { throw error("bad escape") }
+        let escaped = bytes[at]
+        at += 1
+        switch escaped {
+        case UInt8(ascii: "\""): units.append(0x22)
+        case UInt8(ascii: "\\"): units.append(0x5C)
+        case UInt8(ascii: "/"): units.append(0x2F)
+        case UInt8(ascii: "b"): units.append(0x08)
+        case UInt8(ascii: "f"): units.append(0x0C)
+        case UInt8(ascii: "n"): units.append(0x0A)
+        case UInt8(ascii: "r"): units.append(0x0D)
+        case UInt8(ascii: "t"): units.append(0x09)
+        case UInt8(ascii: "u"): units.append(UInt16(try hex4()))
+        default: throw error("bad escape")
+        }
+        start = at
+      } else {
+        at += 1
+      }
+    }
+    throw error("unterminated string")
+  }
+
   mutating func string() throws -> String {
+    if bookmarkStrings { return try bookmarkString() }
     at += 1
     let start = at
     while at < bytes.count {

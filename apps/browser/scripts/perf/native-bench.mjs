@@ -717,6 +717,15 @@ async function awaitBlockerSelfie(app, side) {
 
 function shareBlockerStorage(sides) {
   const [first, ...others] = sides;
+  const fingerprints = sides.map((side) => {
+    try { return readFileSync(join(side.app, "Contents/Resources/Extensions/ublock.fingerprint"), "utf8").trim(); }
+    catch { return ""; }
+  });
+  if (!fingerprints[0] || fingerprints.some((fingerprint) => fingerprint !== fingerprints[0])) {
+    for (const side of sides) side.results.meta.blockerStorageFrom = side.label;
+    log("uBlock Origin fingerprints differ or are missing: each side keeps its own storage");
+    return;
+  }
   const root = (side) => join(side.template, "Chromium/Default");
   const present = BLOCKER_STORAGE.filter((part) => existsSync(join(root(first), part)));
   if (!present.length) {

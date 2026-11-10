@@ -137,6 +137,7 @@ Owner, 2026-11-09: these follow 0.3.0 rather than joining it, so the bookmark ha
 | Links from pinned tabs and Top Apps to other sites open in a Peek, with Gmail, Slack and Outlook redirect wrappers unwrapped; Settings › Tabs picks New tab, Peek or Little Solara (Ardia) | planned |
 | WebKit tabs block ads and trackers with uBlock Origin Lite's lists, following the same blocking switch, lists and trusted sites as Chromium tabs (Ardia) | planned |
 | Full screen: the whole window slides down with the menu bar and nothing is covered (owner's target, backlog 2026-11-01); Ardia's version, macOS's own title bar sliding down with the window buttons, is a reference, not the target | planned |
+| Battery benchmark: energy per scenario from macOS's own `powermetrics` (an idle session, typing and tab switching, video playback), recorded in the perf gate against the previous stable so every release and each step toward 1.0.0 shows real energy numbers (owner, 2026-11-10) | planned |
 
 ## 0.3.3: colour and control
 

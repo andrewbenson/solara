@@ -5,6 +5,7 @@ import { AutoHideToolbar } from "./AutoHideToolbar";
 import type { ToolbarGeometry } from "./layout/geometry";
 import type { ToolbarMode } from "./layout/toolbarAutoHide";
 import { Toolbar } from "./Toolbar";
+import { nativeToolbarAvailable, windowShellActive } from "@solara/settings";
 
 type PaneChrome = { tabId: string; mode: ToolbarMode; bar: Animated.Value; fade: Animated.Value };
 
@@ -28,9 +29,10 @@ export function WindowToolbar({ windowId, tabId, geometry, autoHide }: { windowI
   const chrome = useSyncExternalStore(subscribe, () => chromes.get(windowId));
   useEffect(() => () => void chromes.delete(windowId), [windowId]);
   if (!autoHide) {
+    const nativeStatic = windowShellActive(windowId) && nativeToolbarAvailable();
     return (
       <View pointerEvents="box-none" style={FRAME}>
-        <Toolbar tabId={tabId} geometry={geometry} windowId={windowId} inSplit={false} focused bare />
+        <Toolbar tabId={tabId} geometry={geometry} windowId={windowId} inSplit={false} focused bare={!nativeStatic} windowToolbar={nativeStatic} />
       </View>
     );
   }

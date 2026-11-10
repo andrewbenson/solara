@@ -58,6 +58,7 @@ type ToolbarProps = {
   inSplit: boolean;
   focused: boolean;
   bare?: boolean;
+  windowToolbar?: boolean;
 };
 
 export function Toolbar(props: ToolbarProps) {

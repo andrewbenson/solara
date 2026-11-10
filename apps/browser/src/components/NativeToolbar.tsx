@@ -73,6 +73,7 @@ type NativeToolbarProps = {
   inSplit: boolean;
   focused: boolean;
   bare?: boolean;
+  windowToolbar?: boolean;
   sidebar?: { extensionLimit: number };
 };
 
@@ -97,7 +98,7 @@ export function NativeToolbar(props: NativeToolbarProps) {
   );
 }
 
-export function useNativeToolbarModel({ tabId, geometry, windowId, inSplit, focused, bare, sidebar }: NativeToolbarProps, focusHandle: () => number | null) {
+export function useNativeToolbarModel({ tabId, geometry, windowId, inSplit, focused, bare, windowToolbar, sidebar }: NativeToolbarProps, focusHandle: () => number | null) {
   const theme = useTheme();
   const tab = useToolbarTab(tabId);
   const isLoading = useTabLive(tabId, (l) => l.isLoading);
@@ -190,6 +191,8 @@ export function useNativeToolbarModel({ tabId, geometry, windowId, inSplit, focu
       tabId,
       height: layout.toolbarHeight,
       bare: !!bare,
+      inSplit,
+      windowToolbar: !!windowToolbar,
       focused,
       palette: sidebar ? palette : { ...palette, ...DIA_INK[(palette.background ? /^#FFFFFF/i.test(palette.text) : !!theme.dark) ? "dark" : "light"] },
       accent: theme.accent,
@@ -238,7 +241,7 @@ export function useNativeToolbarModel({ tabId, geometry, windowId, inSplit, focu
       progress: isLoading ? progress : null,
       stripes: developer ? stripesUri(palette) : null,
     };
-  }, [tab, tabId, bare, focused, palette, theme, geometry, inSplit, !sidebar, extensionsWidth, showFullUrl, bookmarked, insecure, popups, capture, popover, progress, translate, isLoading, history, developer, editing, editRequest, hints.sidebar, hints.back, hints.forward, hints.reload, hints.bookmark, hints.split, extensionsJson, update?.tooltip]);
+  }, [tab, tabId, bare, windowToolbar, focused, palette, theme, geometry, inSplit, !sidebar, extensionsWidth, showFullUrl, bookmarked, insecure, popups, capture, popover, progress, translate, isLoading, history, developer, editing, editRequest, hints.sidebar, hints.back, hints.forward, hints.reload, hints.bookmark, hints.split, extensionsJson, update?.tooltip]);
   const json = useMemo(() => (state ? JSON.stringify(state) : null), [state]);
 
   const focus = () => {

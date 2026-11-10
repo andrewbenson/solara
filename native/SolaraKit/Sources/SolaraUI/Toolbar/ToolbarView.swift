@@ -9,6 +9,7 @@ public final class ToolbarView: NSView {
   public var onClick: (ToolbarClick) -> Void = { _ in }
   public var onAnchors: ([String: CGRect]) -> Void = { _ in }
   public var onHiddenOrDetached: () -> Void = {}
+  public var onGeometryChange: () -> Void = {}
   public private(set) var state: ToolbarState?
 
   private let surface = CALayer()
@@ -34,6 +35,8 @@ public final class ToolbarView: NSView {
   private var bandColor: CGColor?
   private var shownProgress: Double?
   private var interactive = true
+  private var autoHideScale: CGFloat = 1
+  private var autoHideLift: CGFloat = 0
 
   public override var isFlipped: Bool { true }
 
@@ -64,15 +67,38 @@ public final class ToolbarView: NSView {
   public func setAutoHide(opacity: CGFloat, scale: CGFloat, lift: CGFloat, interactive: Bool) {
     self.interactive = interactive
     alphaValue = opacity
+    autoHideScale = scale
+    autoHideLift = lift
+    applyAutoHideTransform()
+  }
+
+  private func applyAutoHideTransform() {
     guard let layer else { return }
     let cx = bounds.midX, cy = bounds.midY
-    var t = CATransform3DMakeTranslation(cx, cy - lift, 0)
-    t = CATransform3DScale(t, scale, scale, 1)
+    var t = CATransform3DMakeTranslation(cx, cy - autoHideLift, 0)
+    t = CATransform3DScale(t, autoHideScale, autoHideScale, 1)
     t = CATransform3DTranslate(t, -cx, -cy, 0)
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    layer.sublayerTransform = scale == 1 && lift == 0 ? CATransform3DIdentity : t
+    layer.sublayerTransform = autoHideScale == 1 && autoHideLift == 0 ? CATransform3DIdentity : t
     CATransaction.commit()
+  }
+
+  public func placeBackdrop(_ backdrop: NSView) {
+    guard let parent = superview else { return }
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    defer { CATransaction.commit() }
+    let height = min(frame.height, ShellMetrics.toolbarHeight)
+    backdrop.frame = CGRect(x: frame.minX, y: frame.maxY - height, width: frame.width, height: height)
+    backdrop.autoresizingMask = autoresizingMask.contains(.width) ? [.width] : []
+    let index = parent.subviews.firstIndex(of: self)
+    let belowToolbar = index.flatMap { $0 > 0 ? parent.subviews[$0 - 1] : nil }
+    if backdrop.superview !== parent || belowToolbar !== backdrop {
+      parent.addSubview(backdrop, positioned: .below, relativeTo: self)
+    }
+    backdrop.needsLayout = true
+    backdrop.layoutSubtreeIfNeeded()
   }
 
   public override func hitTest(_ point: NSPoint) -> NSView? {
@@ -242,6 +268,7 @@ public final class ToolbarView: NSView {
   public override func layout() {
     super.layout()
     guard let state else { return }
+    applyAutoHideTransform()
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     surface.frame = bounds

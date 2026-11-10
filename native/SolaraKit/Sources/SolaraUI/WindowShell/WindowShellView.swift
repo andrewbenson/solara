@@ -258,22 +258,43 @@ public final class WindowShellView: NSView {
   }
 
   public func unregisterToolbar(_ toolbar: ToolbarView) {
+    if railToolbar === toolbar {
+      restoreToolbar(toolbar, owner: toolbars.first { $0.toolbar === toolbar }?.owner)
+      railToolbar = nil
+    }
     toolbars.removeAll { $0.toolbar === toolbar }
     placeRailToolbar()
   }
 
+  private func restoreToolbar(_ toolbar: ToolbarView, owner: NSView?) {
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    defer { CATransaction.commit() }
+    toolbar.underColor = nil
+    if let owner {
+      toolbar.autoresizingMask = [.width, .height]
+      owner.addSubview(toolbar)
+      toolbar.frame = owner.bounds
+      toolbar.needsLayout = true
+      toolbar.layoutSubtreeIfNeeded()
+    } else {
+      toolbar.removeFromSuperview()
+    }
+    toolbar.onGeometryChange()
+  }
+
   private func placeRailToolbar() {
-    let home = railFraction > 0 ? toolbars.last { $0.toolbar?.state?.focused == true && $0.owner?.windowShell === self && $0.owner?.isHiddenOrHasHiddenAncestor == false } : nil
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    defer { CATransaction.commit() }
+    let home = toolbars.last {
+      $0.toolbar?.state?.focused == true
+        && (railFraction > 0 || $0.toolbar?.state?.windowToolbar == true || ($0.toolbar?.state?.bare == true && $0.toolbar?.state?.inSplit != true))
+        && $0.toolbar?.isHidden == false && $0.owner?.windowShell === self && $0.owner?.isHiddenOrHasHiddenAncestor == false
+    }
     if railToolbar !== home?.toolbar {
       if let current = railToolbar {
-        current.underColor = nil
-        if let owner = toolbars.first(where: { $0.toolbar === current })?.owner {
-          current.autoresizingMask = [.width, .height]
-          owner.addSubview(current)
-          current.frame = owner.bounds
-        } else {
-          current.removeFromSuperview()
-        }
+        restoreToolbar(current, owner: toolbars.first { $0.toolbar === current }?.owner)
       }
       railToolbar = home?.toolbar
       if let toolbar = railToolbar {
@@ -281,12 +302,23 @@ public final class WindowShellView: NSView {
         railToolbarClip.addSubview(toolbar)
       }
     }
+    if railToolbar != nil, railFraction == 0, !reactOnTop {
+      if let above = [Slot.peek, .sidebar, .topStrip, .overlay].compactMap({ mounted[$0] }).first(where: { $0.superview === self }) {
+        let index = subviews.firstIndex(of: above)
+        let below = index.flatMap { $0 > 0 ? subviews[$0 - 1] : nil }
+        if below !== railToolbarClip { addSubview(railToolbarClip, positioned: .below, relativeTo: above) }
+      }
+    } else if railToolbarClip.superview !== overlay {
+      overlay.addSubview(railToolbarClip)
+    }
     railToolbarClip.isHidden = railToolbar == nil || modalShown
     railToolbarClip.frame = frames.card
     if let toolbar = railToolbar {
       let height = min(frames.card.height, ShellMetrics.toolbarHeight + ShellMetrics.railToolbarTop * railFraction)
       toolbar.frame = CGRect(x: 0, y: 0, width: frames.card.width, height: height)
       toolbar.needsLayout = true
+      toolbar.layoutSubtreeIfNeeded()
+      toolbar.onGeometryChange()
     }
     applyCardStyle()
   }

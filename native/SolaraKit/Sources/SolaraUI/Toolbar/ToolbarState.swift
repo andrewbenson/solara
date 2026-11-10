@@ -103,6 +103,8 @@ public struct ToolbarState: Decodable, Equatable, Sendable {
   public var progress: Double?
   public var stripes: String?
   public var leadingInset: Double? = nil
+  public var inSplit: Bool? = nil
+  public var windowToolbar: Bool? = nil
 
   public static func decode(_ json: String) -> ToolbarState? {
     guard let data = json.data(using: .utf8) else { return nil }

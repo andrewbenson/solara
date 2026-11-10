@@ -90,20 +90,19 @@ enum AutoHideHost {
     NativeSplitChrome.setLiveTop(top, windowId: windowId, tabId: tabId)
   }
 
-  static func toolbarReady(tabId: String) {
+  static func toolbarReady(windowId: String? = nil, tabId: String, toolbar: ToolbarView? = nil) {
     for (key, strip) in strips {
       let parts = key.split(separator: "\u{1}", maxSplits: 1).map(String.init)
       guard parts.count == 2, parts[1] == tabId else { continue }
-      keepUnderToolbar(strip, windowId: parts[0], tabId: tabId)
+      if let windowId, parts[0] != windowId { continue }
+      keepUnderToolbar(strip, windowId: parts[0], tabId: tabId, toolbar: toolbar)
     }
   }
 
-  private static func keepUnderToolbar(_ strip: AutoHideStripView, windowId: String, tabId: String) {
-    guard let host = NativeToolbarHostView.host(windowId: windowId, tabId: tabId) else { return }
-    strip.frame = CGRect(x: 0, y: 0, width: host.bounds.width, height: Double(ToolbarAutoHideMetrics.toolbarHeight))
-    strip.autoresizingMask = [.width]
-    guard strip.superview !== host || host.subviews.first !== strip else { return }
-    host.addSubview(strip, positioned: .below, relativeTo: nil)
+  private static func keepUnderToolbar(_ strip: AutoHideStripView, windowId: String, tabId: String, toolbar supplied: ToolbarView? = nil) {
+    guard let toolbar = supplied ?? NativeToolbarHostView.host(windowId: windowId, tabId: tabId)?.toolbar,
+      toolbar.superview != nil else { return }
+    toolbar.placeBackdrop(strip)
   }
 
   static func remove(windowId: String, tabId: String) {

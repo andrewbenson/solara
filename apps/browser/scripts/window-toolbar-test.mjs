@@ -66,7 +66,7 @@ const untilSnapshot = async (what, accept, ms = 5000) => {
   let last;
   while (Date.now() < end) {
     last = await instance.snapshot({ windowId: "w1" }).catch((error) => ({ error: error.message }));
-    if (!last.error && accept(last)) return last;
+    if (!last.error && await accept(last)) return last;
     await sleep(50);
   }
   throw new Error(`${what}: native snapshot never matched (${JSON.stringify(last)})`);
@@ -74,11 +74,12 @@ const untilSnapshot = async (what, accept, ms = 5000) => {
 const snapshotURL = (url) => url === "" ? null : url?.startsWith("data:") ? "data:" : url;
 const sortedBars = (bars) => bars.map((bar) => [bar.tabId, bar.bare, bar.urlHost]).sort((a, b) => a[0].localeCompare(b[0]));
 const nativeState = async (state) => {
-  await untilSnapshot("toolbar tab ids, addresses and native host state", (snapshot) => {
+  await untilSnapshot("toolbar tab ids, addresses and native host state", async (snapshot) => {
     const window = snapshot.windows[0];
     if (!window || window.selectedTabId !== state.active || JSON.stringify(window.tabIds) !== JSON.stringify(state.tabIds)) return false;
+    const tabUrls = await ac(`return Object.fromEntries(${JSON.stringify(state.tabIds)}.map((id) => [id, ac.store.getState().tabs[id]?.url]));`);
     if (state.tabIds.some((id) => snapshot.tabs.find((tab) => tab.id === id)?.url !==
-      snapshotURL(state.tabUrls[id]))) return false;
+      snapshotURL(tabUrls[id]))) return false;
     return JSON.stringify(sortedBars(window.toolbarHosts)) === JSON.stringify(sortedBars(state.nativeToolbars));
   });
 };
@@ -97,15 +98,15 @@ try {
       fibers: (name) => acPerf.findFibers(name, 500).filter((f) => f.memoizedProps),
       inPane: (f) => { for (let p = f.return; p; p = p.return) if (p.type?.type?.name === "TabPane" || p.type?.name === "TabPane" || p.elementType?.type?.name === "TabPane") return p.memoizedProps.tabId; return null; },
       state: () => {
-        const toolbars = wt.fibers("Toolbar").map((f) => ({ tabId: f.memoizedProps.tabId, bare: !!f.memoizedProps.bare, pane: wt.inPane(f) }));
+        const toolbars = wt.fibers("Toolbar").map((f) => ({ tabId: f.memoizedProps.tabId, bare: !!f.memoizedProps.bare, windowToolbar: !!f.memoizedProps.windowToolbar, pane: wt.inPane(f) }));
         const auto = wt.fibers("AutoHideToolbar").map((f) => ({ tabId: f.memoizedProps.tabId, mode: f.memoizedProps.mode, pane: wt.inPane(f) }));
-        const backdrops = [...wt.fibers("AutoHideBackdrop"), ...wt.fibers("ToolbarBackdrop")].map((f) => ({ tabId: f.memoizedProps.tabId, pane: wt.inPane(f) }));
+        const backdrops = [...wt.fibers("AutoHideBackdrop"), ...wt.fibers("ToolbarBackdrop"), ...wt.fibers("NativeAutoHide")].map((f) => ({ tabId: f.memoizedProps.tabId, pane: wt.inPane(f) }));
         const native = acPerf.findFibers("NativeToolbarView", 500).map((f) => { try { return JSON.parse(f.memoizedProps?.state ?? "null"); } catch { return null; } }).filter((n) => n?.tabId);
         const hosts = [...wt.fibers("UrlField").map((f) => f.memoizedProps.tab?.url), ...native.filter((n) => n.url?.host).map((n) => ac.store.getState().tabs[n.tabId]?.url)];
         const w = ac.store.getState().windows.w1;
-        return { active: w.activeTabIds[w.profileId], toolbars, auto, backdrops, hosts,
+        return { active: w.activeTabIds[w.profileId], hideToolbarWhileScrolling: ac.store.getState().settings.hideToolbarWhileScrolling, toolbars, auto, backdrops, hosts,
           tabIds: [...w.tabIds], tabUrls: Object.fromEntries(w.tabIds.map((id) => [id, ac.store.getState().tabs[id]?.url])),
-          nativeToolbars: native.map((n) => ({ tabId: n.tabId, bare: !!n.bare, urlHost: n.url?.host ?? null })) };
+          nativeToolbars: native.map((n) => ({ tabId: n.tabId, bare: !!n.bare, windowToolbar: !!n.windowToolbar, urlHost: n.url?.host ?? null })) };
       },
       until: (test, ms) => new Promise((r) => { const end = Date.now() + (ms || 15000); const poll = () => (test() ? r(true) : Date.now() > end ? r(false) : setTimeout(poll, 50)); poll(); }),
     };
@@ -118,16 +119,21 @@ try {
   };
 
   for (const mode of ["auto-hide", "always shown"]) {
-    if (mode === "always shown") await ac(`${S} S().updateSettings({ hideToolbarWhileScrolling: false }); return wt.frames(4).then(() => true);`);
+    const autoHide = mode === "auto-hide";
+    await ac(`${S} S().updateSettings({ hideToolbarWhileScrolling: ${autoHide} }); return wt.frames(4).then(() => true);`);
     await switchTo("a");
     for (const id of ["b", "c", "d", "a"]) {
       const st = await switchTo(id);
       const windowBars = st.toolbars.filter((t) => !t.pane);
-      check(`${mode}: switching to ${id}, the window's one toolbar shows ${id}`, windowBars.length === 1 && windowBars[0].tabId === id && st.toolbars.length === 1 && windowBars[0].bare, JSON.stringify(st.toolbars));
+      const nativeStatic = mode === "always shown" && windowBars[0]?.windowToolbar === true;
+      const surface = nativeStatic ? !windowBars[0].bare && st.nativeToolbars.some((n) => n.tabId === id && n.windowToolbar && !n.bare) : windowBars[0]?.bare;
+      const selectedMode = st.hideToolbarWhileScrolling === autoHide && (autoHide ? st.auto.length === 1 && st.auto[0].tabId === id && !st.auto[0].pane && st.auto[0].mode === "shown" : st.auto.length === 0);
+      check(`${mode}: switching to ${id}, the window's one toolbar shows ${id}`, selectedMode && windowBars.length === 1 && windowBars[0].tabId === id && st.toolbars.length === 1 && surface, JSON.stringify({ hideToolbarWhileScrolling: st.hideToolbarWhileScrolling, auto: st.auto, toolbars: st.toolbars }));
       check(`${mode}: switching to ${id}, the toolbar is kept, not mounted again`, st.mounted === 0, `Toolbar mounts ${st.mounted}`);
       const url = await ac(`${S} return S().tabs[${JSON.stringify(id)}].url;`);
       check(`${mode}: switching to ${id}, the address field shows ${id}'s address`, st.hosts.length === 1 && st.hosts[0] === url, JSON.stringify(st.hosts));
-      check(`${mode}: switching to ${id}, the band behind it is ${id}'s pane's`, st.backdrops.length === 1 && st.backdrops[0].tabId === id && st.backdrops[0].pane === id, JSON.stringify(st.backdrops));
+      const backdrop = nativeStatic ? st.backdrops.length === 0 : st.backdrops.length === 1 && st.backdrops[0].tabId === id && st.backdrops[0].pane === id;
+      check(`${mode}: switching to ${id}, the band follows ${id}'s toolbar`, backdrop, JSON.stringify(st.backdrops));
     }
   }
   await ac(`${S} S().updateSettings({ hideToolbarWhileScrolling: true }); return wt.frames(4).then(() => true);`);

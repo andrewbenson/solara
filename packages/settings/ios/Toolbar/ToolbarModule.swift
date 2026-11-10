@@ -144,6 +144,10 @@ final class NativeToolbarHostView: ExpoView {
     super.init(appContext: appContext)
     toolbar.autoresizingMask = [.width, .height]
     toolbar.frame = bounds
+    toolbar.onGeometryChange = { [weak self] in
+      guard let self, let tabId = toolbar.state?.tabId, let windowId = toolbarShell?.windowId else { return }
+      AutoHideHost.toolbarReady(windowId: windowId, tabId: tabId, toolbar: toolbar)
+    }
     toolbar.onHiddenOrDetached = { [weak self] in
       MainActor.assumeIsolated {
         guard let self else { return }

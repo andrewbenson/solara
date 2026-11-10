@@ -320,7 +320,7 @@ public final class HeroBarModel {
     shown = ""
     suppressCompletion = suppress
     selected = opensTab && jsTrim(next).isEmpty ? -1 : 0
-    selection = edit?.after ?? .caret(next.utf16.count)
+    selection = edit?.after ?? field?.fieldSelection ?? .caret(next.utf16.count)
     update()
   }
 

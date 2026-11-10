@@ -728,3 +728,20 @@ test("reorderSiblingFactsPublishOnlyTheRecordWhosePositionChanges", async () => 
   assert.deepEqual(owner.facts, {});
   assert.deepEqual(owner.document.nodes["bar@default"].children, ["B", "C", "A"]);
 });
+
+test("migration baseline without native edit facts cannot beat newer remote titles or deletes", async () => {
+  for (const remote of [value("Newer remote"), null]) {
+    const owner = linkedOwner();
+    owner.edit("Legacy", 42);
+    owner.facts = {};
+    const state = agreedState("Legacy", 10);
+    state.records["bm:k1"] = { h: h(200, "remote"), v: remote, o: ["remote", 2] };
+    state.unapplied = ["bm:k1"];
+    const folder = new Folder();
+    await runFacts(owner, state, folder);
+    assert.deepEqual(titlesIn(owner.document), remote ? ["Newer remote"] : []);
+    assert.equal(state.records["bm:k1"].h, h(200, "remote"));
+    assert.deepEqual(owner.facts, {});
+    assert.deepEqual(owner.acks, []);
+  }
+});

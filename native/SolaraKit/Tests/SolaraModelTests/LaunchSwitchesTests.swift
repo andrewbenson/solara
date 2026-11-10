@@ -37,6 +37,36 @@ import Testing
     }
   }
 
+  @Test func nativeBookmarkOwnershipRequiresAnIsolatedDevelopmentOptIn() {
+    let flag = "SOLARA_NATIVE_BOOKMARKS"
+    let own = [flag: "1", "SOLARA_DATA_DIR": "/tmp/bookmark-owner"]
+    let selected = LaunchSwitches(environment: own, defaults: nil, distribution: false, skipStored: false)
+    #expect(selected.isOn(.nativeBookmarks))
+    #expect(!LaunchSwitches(environment: own, defaults: nil, distribution: true, skipStored: false).isOn(.nativeBookmarks))
+    for env in [[:], [flag: "1"], [flag: "1", "SOLARA_BACKGROUND": "1"], [flag: "1", "SOLARA_DATA_DIR": ""]] {
+      #expect(!LaunchSwitches(environment: env, defaults: nil, distribution: false, skipStored: false).isOn(.nativeBookmarks))
+    }
+    for distribution in [false, true] {
+      let defaults = scratchDefaults()
+      defaults.set("1", forKey: flag)
+      #expect(!LaunchSwitches(environment: [:], defaults: defaults, distribution: distribution, skipStored: false).isOn(.nativeBookmarks))
+      StoredLaunchSwitches(defaults: defaults, distribution: distribution).set(.nativeBookmarks, true)
+      #expect(!LaunchSwitch.nativeBookmarks.storable(distribution: distribution))
+    }
+  }
+
+  @Test func nativeBookmarkOwnershipIsIndependentOfBarShellAndSyncSwitches() {
+    let enabled = LaunchSwitches(environment: [
+      "SOLARA_NATIVE_BOOKMARKS": "1", "SOLARA_DATA_DIR": "/tmp/bookmark-owner",
+      "SOLARA_NATIVE_BOOKMARKS_BAR": "0", "SOLARA_NATIVE_SHELL": "0", "SOLARA_SYNC_REDESIGN": "0",
+    ], defaults: nil, distribution: false, skipStored: false)
+    #expect(enabled.isOn(.nativeBookmarks))
+    #expect(!enabled.isOn(.nativeBookmarksBar))
+    #expect(!enabled.isOn(.syncRedesign))
+    let old = LaunchSwitches(environment: ["SOLARA_SYNC_REDESIGN": "1", "SOLARA_DATA_DIR": "/tmp/bookmark-owner"], defaults: nil, distribution: false, skipStored: false)
+    #expect(!old.isOn(.nativeBookmarks))
+  }
+
   @Test func nativeTabSleepIsOnByDefaultAndCanBeDisabledInDevelopment() {
     for distribution in [false, true] {
       let initial = LaunchSwitches(environment: [:], defaults: nil, distribution: distribution, skipStored: false)

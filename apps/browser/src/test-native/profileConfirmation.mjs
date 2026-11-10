@@ -9,6 +9,7 @@ export async function startProfileConfirmation() {
   const imports = {
     "@solara/shell": await import("@solara/shell"),
     "./bookmarks": await import("../store/bookmarks.ts"),
+    "./bookmarkProjection": await import("../store/bookmarkProjection.ts"),
     "./model": await import("../store/model.ts"),
     "./settings": await import("../store/settings.ts"),
     "./nativeStore": { ...await import("../store/nativeStore.ts"), confirmNativeProfileDeletion: () => {} },

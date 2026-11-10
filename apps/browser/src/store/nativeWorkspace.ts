@@ -1,3 +1,4 @@
+import { nativeBookmarksSelected } from "./bookmarkProjection";
 import type { StorePatch, StoreEffect } from "@solara/store";
 import { cancelDownload, endWebKitPrivateSession } from "@solara/solaracore";
 import type { BrowserState, HydrateData } from "./browser";
@@ -93,6 +94,10 @@ export function runEffects(effects: StoreEffect[] | undefined, get: () => Browse
       case "profileCreated": {
         const id = effect.profileId as string;
         const source = effect.sharedWith as string | null;
+        if (nativeBookmarksSelected()) {
+          if (source && s.history[source]) set({ history: { ...s.history, [id]: s.history[source]! } });
+          break;
+        }
         if (source) {
           const [withRoots, roots] = ensureRoots(s.bookmarks, source);
           set({
@@ -109,7 +114,7 @@ export function runEffects(effects: StoreEffect[] | undefined, get: () => Browse
           history: without(s.history, [id]),
           historyReady: without(s.historyReady, [id]),
           historyFloor: without(s.historyFloor, [id]),
-          bookmarks: roots && !effect.shared ? removeBookmarkTree(s.bookmarks, [roots.bar, roots.other], id) : { ...s.bookmarks, roots: without(s.bookmarks.roots, [id]) },
+          ...(!nativeBookmarksSelected() ? { bookmarks: roots && !effect.shared ? removeBookmarkTree(s.bookmarks, [roots.bar, roots.other], id) : { ...s.bookmarks, roots: without(s.bookmarks.roots, [id]) } } : {}),
         });
         break;
       }
@@ -145,13 +150,13 @@ function retainingJSON(previous: unknown, value: unknown): unknown {
 }
 
 export function workspaceHydration(s: BrowserState, data: HydrateData): Partial<BrowserState> {
+  const nativeBookmarks = nativeBookmarksSelected();
   let bookmarks = data.bookmarks ?? s.bookmarks;
-  for (const id of s.profileOrder) bookmarks = ensureRoots(bookmarks, id)[0];
+  if (!nativeBookmarks) for (const id of s.profileOrder) bookmarks = ensureRoots(bookmarks, id)[0];
   return {
     history: Object.fromEntries(Object.entries(data.history ?? {}).filter(([id]) => s.profiles[id])),
     historyReady: Object.fromEntries(Object.keys(data.history ?? {}).filter((id) => s.profiles[id]).map((id) => [id, true as const])),
-    bookmarks,
-    bookmarksReady: Object.fromEntries(Object.keys(data.bookmarks?.roots ?? {}).filter((id) => s.profiles[id]).map((id) => [id, true as const])),
+    ...(!nativeBookmarks ? { bookmarks, bookmarksReady: Object.fromEntries(Object.keys(data.bookmarks?.roots ?? {}).filter((id) => s.profiles[id]).map((id) => [id, true as const])) } : {}),
   };
 }
 
@@ -163,7 +168,9 @@ export function workspaceFromSnapshot(s: BrowserState, data: Record<string, unkn
   next.live = retainingJSON(s.live, data.live ?? {});
   for (const name of ["find", "selection", "selectionAnchors", "windowUi"] as const) next[name] = retainingJSON(s[name], data[name] ?? {});
   let bookmarks = s.bookmarks;
-  for (const id of (next.profileOrder ?? []) as string[]) bookmarks = ensureRoots(bookmarks, id)[0];
-  next.bookmarks = bookmarks;
+  if (!nativeBookmarksSelected()) {
+    for (const id of (next.profileOrder ?? []) as string[]) bookmarks = ensureRoots(bookmarks, id)[0];
+    next.bookmarks = bookmarks;
+  }
   return next as Partial<BrowserState>;
 }

@@ -9,8 +9,8 @@ js_api=$(sed -n 's/^export const NATIVE_API_VERSION = \([0-9]*\);$/\1/p' "$repo/
 app_api=$(sed -n 's/.*Constant("apiVersion") { () -> Int in \([0-9]*\) }.*/\1/p' "$repo/packages/shell/ios/AppModule.swift")
 engine_api=$(sed -n 's/^#define AC_NOTIFICATIONS_NATIVE_API_VERSION \([0-9]*\)$/\1/p' "$repo/engine/chromium/src/chrome/browser/solara/public/ac_engine.h")
 protocol=$(sed -n 's/^#define AC_NOTIFICATIONS_PROTOCOL_VERSION \([0-9]*\)$/\1/p' "$repo/engine/chromium/src/chrome/browser/solara/public/ac_engine.h")
-[[ "$js_api" == 38 && "$app_api" == "$js_api" && "$engine_api" == "$js_api" && "$protocol" == 2 ]] || {
-  echo "error: the notification artifact requires the matching API 38 / protocol 2 sources" >&2
+[[ "$js_api" == 39 && "$app_api" == "$js_api" && "$engine_api" == "$js_api" && "$protocol" == 2 ]] || {
+  echo "error: the notification artifact requires the matching API 39 / protocol 2 sources" >&2
   exit 1
 }
 [[ -f "$framework" ]] || { echo "error: no embedded Chromium framework" >&2; exit 1; }

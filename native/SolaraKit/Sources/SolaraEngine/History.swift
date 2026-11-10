@@ -225,11 +225,25 @@ public final class LibraryCatalog {
   public private(set) var histories = JSMap<HistorySnapshot>()
   public private(set) var bookmarkSnapshots: [String: BookmarkSnapshot] = [:]
   @ObservationIgnored let client: any EngineClient
+  @ObservationIgnored let bookmarkAdmission: (@MainActor () async throws -> Void)?
   @ObservationIgnored public private(set) var favicons: FaviconLibrary?
   @ObservationIgnored private var libraries = JSMap<HistoryLibrary>()
   @ObservationIgnored private var retiredHistoryEngines: Set<JSKey> = []
   @ObservationIgnored var bookmarkClaim: BookmarkCatalogClaim?
   @ObservationIgnored var admittedRawBookmarkCommand = false
+  @ObservationIgnored private let bookmarkSelection: @MainActor () -> Bool
+  @ObservationIgnored private var selectedBookmarks = false
+  @ObservationIgnored private var claimedBookmarks = false
+
+  var rawBookmarksAvailable: Bool {
+    if bookmarkSelection() { selectedBookmarks = true }
+    return !selectedBookmarks && !claimedBookmarks
+  }
+
+  var externalBookmarkCommandsAvailable: Bool {
+    if bookmarkSelection() { selectedBookmarks = true }
+    return !selectedBookmarks
+  }
   @ObservationIgnored private var bookmarkTasks: [String: Task<Void, Never>] = [:]
   @ObservationIgnored var bookmarkLibraries: [String: BookmarkLibrary] = [:]
   @ObservationIgnored private var bookmarkObservers: [String: [UUID: AsyncStream<BookmarkSnapshot>.Continuation]] = [:]
@@ -238,8 +252,10 @@ public final class LibraryCatalog {
   @ObservationIgnored private var observing = false
   @ObservationIgnored private var observers = JSMap<[UUID: AsyncStream<HistorySnapshot>.Continuation]>()
 
-  public init(client: any EngineClient) {
+  public init(client: any EngineClient, bookmarkAdmission: (@MainActor () async throws -> Void)? = nil, bookmarkSelection: @escaping @MainActor () -> Bool = { NativeBookmarkOwner.bookmarksSelected }) {
     self.client = client
+    self.bookmarkAdmission = bookmarkAdmission
+    self.bookmarkSelection = bookmarkSelection
     favicons = FaviconLibrary(client: client)
   }
 
@@ -255,6 +271,14 @@ public final class LibraryCatalog {
     for task in bookmarkTasks.values { task.cancel() }
     bookmarkTasks.removeAll()
     bookmarkClaim = claim
+    claimedBookmarks = true
+    bookmarkLibraries.removeAll()
+    let live = Set(coordinator.catalogEngines.map(JSKey.init))
+    for engine in Array(bookmarkSnapshots.keys) where !live.contains(JSKey(engine)) {
+      publishBookmarks(BookmarkSnapshot(), engine: engine)
+      bookmarkSnapshots.removeValue(forKey: engine)
+    }
+    bookmarkSnapshots.removeAll()
     for engine in coordinator.catalogEngines {
       guard (try? claim.validate(engine: engine)) != nil else { continue }
       publishDesired(coordinator.desiredView(engine: engine))
@@ -281,7 +305,7 @@ public final class LibraryCatalog {
     for (id, value) in view.document["nodes"]?.object ?? [:] {
       nodes[id] = BookmarkNode(id: id, kind: value["kind"]?.string ?? "folder", parentId: value["parentId"]?.string, title: BookmarkString.display(value["title"]?.string ?? ""), url: value["url"]?.string.map(BookmarkString.display), addedAt: value["addedAt"]?.number ?? 0, syncKey: value["syncKey"]?.string, children: value["children"]?.array?.compactMap(\.string))
     }
-    publishBookmarks(BookmarkSnapshot(roots: view.hasView ? roots : nil, nodes: nodes, ready: view.hasView, revision: Int(clamping: view.revision), readyForSync: view.readyForSync), engine: view.engine)
+    publishBookmarks(BookmarkSnapshot(roots: view.hasView ? roots : nil, nodes: nodes, ready: view.hasView, revision: Int(clamping: view.revision), readyForSync: view.readyForSync, recoveryMessage: bookmarkClaim?.coordinator.recoveryNotice?.message, editsPaused: bookmarkClaim?.coordinator.bookmarkEditsPaused(engine: view.engine) ?? false, recoveryConflictCount: bookmarkClaim?.coordinator.recoveryConflicts.count ?? 0), engine: view.engine)
   }
 
   private func publishBookmarks(_ snapshot: BookmarkSnapshot, engine: String) {
@@ -339,6 +363,7 @@ public final class LibraryCatalog {
   }
 
   public func start(engineProfiles: [String]) async {
+    do { try await bookmarkAdmission?() } catch { return }
     if !observing {
       observing = true
       client.observeHistory { [weak self] change in self?.receive(change) }
@@ -364,9 +389,10 @@ public final class LibraryCatalog {
         }
         continue
       }
+      guard rawBookmarksAvailable else { continue }
       if bookmarkLibraries[profile] == nil {
-        bookmarkLibraries[profile] = BookmarkLibrary(engineProfile: profile, client: client) { [weak self] snapshot in
-          guard let self, self.bookmarkClaim == nil else { return }
+        bookmarkLibraries[profile] = BookmarkLibrary(engineProfile: profile, client: client, admission: { [weak self] in self?.rawBookmarksAvailable == true }) { [weak self] snapshot in
+          guard let self, self.rawBookmarksAvailable else { return }
           self.publishBookmarks(snapshot, engine: profile)
         }
       }
@@ -375,6 +401,7 @@ public final class LibraryCatalog {
   }
 
   public func reloadBookmarks(engineProfile: String) async {
+    do { try await bookmarkAdmission?() } catch { return }
     if let claim = bookmarkClaim {
       guard (try? claim.validate(engine: engineProfile)) != nil else { return }
       claim.pump.requestRead(engine: engineProfile)
@@ -383,6 +410,7 @@ public final class LibraryCatalog {
       publishDesired(claim.coordinator.desiredView(engine: engineProfile))
       return
     }
+    guard rawBookmarksAvailable else { return }
     await bookmarkLibraries[engineProfile]?.reload()
   }
 
@@ -392,7 +420,7 @@ public final class LibraryCatalog {
       claim.pump.requestRead(engine: engineProfile)
       return
     }
-    guard let library = bookmarkLibraries[engineProfile] else { return }
+    guard rawBookmarksAvailable, let library = bookmarkLibraries[engineProfile] else { return }
     Task { await library.reload() }
   }
 

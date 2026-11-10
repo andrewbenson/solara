@@ -34,7 +34,7 @@ final class FakeBookmarkClient: EngineClient {
 
   @Test func staysUnreadyUntilChromeTreeIsRead() async {
     let client = FakeBookmarkClient()
-    let catalog = LibraryCatalog(client: client)
+    let catalog = LibraryCatalog(client: client, bookmarkSelection: { false })
     client.onRead = { #expect(!catalog.bookmarks(engineProfile: "p").ready) }
     await catalog.start(engineProfiles: ["p"])
     #expect(!catalog.bookmarks(engineProfile: "p").ready)
@@ -52,7 +52,7 @@ final class FakeBookmarkClient: EngineClient {
   @Test func changeEventRereadsAndRevisionsOnlyWhenTreeChanges() async throws {
     let client = FakeBookmarkClient()
     client.trees["p"] = tree("A")
-    let catalog = LibraryCatalog(client: client)
+    let catalog = LibraryCatalog(client: client, bookmarkSelection: { false })
     await catalog.start(engineProfiles: ["p"])
     var updates = catalog.observeBookmarks(engineProfile: "p").makeAsyncIterator()
     #expect(await updates.next()?.revision == 1)
@@ -71,7 +71,7 @@ final class FakeBookmarkClient: EngineClient {
     let client = FakeBookmarkClient()
     client.trees["p"] = tree("P")
     client.trees["q"] = tree("Q", id: "q")
-    let catalog = LibraryCatalog(client: client)
+    let catalog = LibraryCatalog(client: client, bookmarkSelection: { false })
     await catalog.start(engineProfiles: ["p", "q", "incognito:w@p"])
     #expect(catalog.bookmarks(engineProfile: "p").nodes["a"]?.title == "P")
     #expect(catalog.bookmarks(engineProfile: "q").nodes["q"]?.title == "Q")
@@ -85,7 +85,7 @@ final class FakeBookmarkClient: EngineClient {
   @Test func explicitWriteSignalRereadsPartialApplyResult() async {
     let client = FakeBookmarkClient()
     client.trees["p"] = tree("First")
-    let catalog = LibraryCatalog(client: client)
+    let catalog = LibraryCatalog(client: client, bookmarkSelection: { false })
     await catalog.start(engineProfiles: ["p"])
     client.trees["p"] = tree("Applied")
     await catalog.reloadBookmarks(engineProfile: "p")

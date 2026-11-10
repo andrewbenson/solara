@@ -6,6 +6,7 @@ import { runInNewContext } from "node:vm";
 import { declaration, runNative, source } from "../test-native/safe-host/run.mjs";
 
 const ts = createRequire(import.meta.url)("typescript");
+const bookmarkProjection = await import("./bookmarkProjection.ts");
 const compile = (text) => ts.transpileModule(text, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
 const load = (path, imports) => {
   const module = { exports: {} };
@@ -20,6 +21,7 @@ const refused = ["P-mgg8w000-1", "p-mgg8W000-1", "p-01234567-89AB-cdef-0123-4567
 
 function profiles(generated = accepted[1]) {
   const api = load("./profiles.ts", {
+    "./bookmarkProjection": bookmarkProjection,
     "@solara/shell": { confirm() {} },
     "./bookmarks": { ensureRoots: (bookmarks) => [bookmarks, {}] },
     "./model": { newId: () => generated },

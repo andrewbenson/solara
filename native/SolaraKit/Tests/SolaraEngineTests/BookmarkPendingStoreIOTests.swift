@@ -39,7 +39,7 @@ struct BookmarkPendingStoreIOTests {
       let events = BookmarkIOEvents()
       let loaded = BookmarkPendingStore(directory: dir, clock: { 1234 }, logger: { events.values.append($0) }).load()
       #expect(loaded.payload == nil)
-      #expect(loaded.writable)
+      #expect(!loaded.writable)
       let notice = try #require(loaded.recoveryNotice)
       #expect(notice.kind == .unreadableJournal)
       let preserved = try #require(notice.preservedPath)
@@ -129,7 +129,7 @@ struct BookmarkPendingStoreIOTests {
     let original = try Data(contentsOf: store.journalURL)
     let loaded = store.recoverUnreadable(reason: "invalid checkpoint")
     #expect(loaded.payload == nil)
-    #expect(loaded.writable)
+    #expect(!loaded.writable)
     let preserved = try #require(loaded.recoveryNotice?.preservedPath)
     #expect(try Data(contentsOf: URL(fileURLWithPath: preserved)) == original)
   }

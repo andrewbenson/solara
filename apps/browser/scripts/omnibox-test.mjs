@@ -231,7 +231,7 @@ try {
   await check("fixture native catalogs are ready", async () => {
     await until("fixture bookmark root", () => run(`return !!ac.store.getState().bookmarks.roots.default?.bar;`));
     await run(`const s = ac.store.getState(); s.importHistory("default", [{ url: ${JSON.stringify(historyUrl)}, title: "Omni History Fixture", visits: 30, lastVisit: Date.now() }]);
-      s.addBookmark({ profileId: "default", url: ${JSON.stringify(bookmarkUrl)}, title: "Omni Bookmark Fixture", parentId: s.bookmarks.roots.default.bar }); return true;`);
+      return ac.bookmarks.addBookmark({ profileId: "default", url: ${JSON.stringify(bookmarkUrl)}, title: "Omni Bookmark Fixture", parentId: s.bookmarks.roots.default.bar }).then(() => true);`);
     const counts = await until("native fixture catalogs", () => run(`const n = globalThis.expo.modules.SolaraSettings;
       return Promise.all([n.devHistorySnapshot(""), n.devBookmarksSnapshot("")]);`),
     ([history, bookmarks]) => history.ready && history.count >= 1 && bookmarks.ready && bookmarks.count >= 1, 7000);

@@ -36,7 +36,7 @@ function reset() {
   launch(true);
 }
 
-test("safe bookmark edits/imports reach the engine; a normal launch replaces stale display cache without replaying it", async () => {
+test("safe bookmark display refreshes without writes; normal-launch edits persist without stale-cache replay", async () => {
   reset();
   stub.docs.set("bookmarks-cache.json", JSON.stringify({ version: 1, trees: { "": [
     { id: "bar@default", kind: "folder", parentId: null, title: "Bar", children: [nodeId], addedAt: 0 },
@@ -49,6 +49,10 @@ test("safe bookmark edits/imports reach the engine; a normal launch replaces sta
   try {
     await settle(); await reloadBookmarks();
     assert.equal(S().bookmarks.nodes[nodeId].title, "Engine");
+    assert.equal(stub.bookmarkOpsSent.length, 0);
+    assert.equal(stub.docs.get("bookmarks-cache.json"), cache);
+    stop(); launch(false); stop = startBookmarks();
+    await settle(); await reloadBookmarks();
     S().updateBookmark(nodeId, { title: "Safe edit", url: "https://edited.example/" });
     const folder = S().addBookmarkFolder({ profileId: "default", title: "Safe folder" });
     const [imported] = S().addBookmarkTree("default", [{ title: "Imported", url: "https://imported.example/" }], folder);
@@ -60,7 +64,6 @@ test("safe bookmark edits/imports reach the engine; a normal launch replaces sta
     assert.equal(stub.chromeBookmarks("").get(nodeId).parent, folder);
     assert.equal(stub.chromeBookmarks("").has(removed), false);
     assert.equal(stub.chromeBookmarks("").get(imported).u, "https://imported.example/");
-    assert.equal(stub.docs.get("bookmarks-cache.json"), cache);
     stop(); const callsBeforeNormal = stub.bookmarkOpsSent.length; launch(false); stop = startBookmarks();
     await settle(); await reloadBookmarks();
     assert.equal(S().bookmarks.nodes[nodeId].title, "Safe edit");

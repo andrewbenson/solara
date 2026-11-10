@@ -83,7 +83,7 @@ struct BookmarkLaunchCacheTests {
     #expect(restored["nodes"]?[mapped]?["addedAt"] == 0)
     #expect(restored["nodes"]?[mapped]?["url"] == "https://legacy.test/e\u{301}")
     #expect(restored["nodes"]?[mapped]?["favicon"] == "icon")
-    #expect(restored["nodes"]?[mapped]?["syncKey"] == nil)
+    #expect(restored["nodes"]?[mapped]?["syncKey"] == "legacy-é")
     #expect(restored["roots"]?["alias"] == restored["roots"]?["p"])
     #expect(launch.documents["private"] == nil)
     #expect(launch.legacyPendingEngines == [JSKey("")])

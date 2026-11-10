@@ -56,10 +56,15 @@ test("legacy bundles and native builds are refused before main can start JS clea
   }
 });
 
-test("tab resource calls require the upgraded native bridge", () => {
-  assert.equal(jsVersion(), 38);
-  assert.equal(nativeVersion(), 38);
-  assert.match(boot(jsVersion(), 37).skew, /Native API skew/);
+test("the native bookmark projection feed requires the upgraded native bridge", () => {
+  assert.equal(jsVersion(), 39);
+  assert.equal(nativeVersion(), 39);
+  assert.match(boot(jsVersion(), 38).skew, /Native API skew/);
+  assert.deepEqual(boot(39, 39).events, ["main", "legacy-js-cleanup"]);
+});
+
+test("tab resource calls retain the API 38 historical gate", () => {
+  assert.match(boot(38, 37).skew, /Native API skew/);
   assert.deepEqual(boot(38, 38).events, ["main", "legacy-js-cleanup"]);
 });
 

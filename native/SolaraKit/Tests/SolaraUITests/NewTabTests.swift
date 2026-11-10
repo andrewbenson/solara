@@ -433,7 +433,7 @@ struct NewTabCatalogTests {
     let client = NewTabHistoryClient()
     client.rows[""] = [.init(url: "https://personal.example/", title: "Personal", visits: 3, visitTimes: [10, 20])]
     client.rows["shared"] = [.init(url: "https://shared.example/", title: "Shared", visits: 5, visitTimes: [30])]
-    let catalog = LibraryCatalog(client: client)
+    let catalog = LibraryCatalog(client: client, bookmarkSelection: { false })
     let sources = NewTabSources()
     sources.useHistoryCatalog(catalog)
     sources.setEngineProfile("", profileId: "default")
@@ -461,7 +461,7 @@ struct NewTabCatalogTests {
         other: EngineBookmarkNode(id: "other", kind: "f", title: "Other", children: []))
     }
     client.bookmarkTrees["shared"] = tree("First")
-    let catalog = LibraryCatalog(client: client)
+    let catalog = LibraryCatalog(client: client, bookmarkSelection: { false })
     let sources = NewTabSources()
     sources.useBookmarkCatalog(catalog)
     sources.setBookmarkIcons(["https://a.example/": "data:image/png;base64,a"], engineProfile: "shared", profileId: "private")
@@ -488,7 +488,7 @@ struct NewTabCatalogTests {
   @Test func deletionUpdatesEverySharedViewAndChangingMappingDropsOldRows() async throws {
     let client = NewTabHistoryClient()
     client.rows["shared"] = [.init(url: "https://shared.example/", title: "Shared", visits: 2, visitTimes: [10])]
-    let catalog = LibraryCatalog(client: client)
+    let catalog = LibraryCatalog(client: client, bookmarkSelection: { false })
     await catalog.start(engineProfiles: ["shared", "other"])
     let sources = NewTabSources()
     sources.useHistoryCatalog(catalog)

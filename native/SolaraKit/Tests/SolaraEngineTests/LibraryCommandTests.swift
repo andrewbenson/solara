@@ -43,7 +43,7 @@ final class CommandClient: EngineClient {
 @Suite @MainActor struct LibraryCommandTests {
   @Test func routesHistoryCommandsWithTheirArguments() async throws {
     let client = CommandClient()
-    let catalog = LibraryCatalog(client: client)
+    let catalog = LibraryCatalog(client: client, bookmarkSelection: { false })
     try await catalog.deleteHistory(urls: ["https://a", "https://b"], engineProfile: "p")
     try await catalog.importHistory(rows: [.init(url: "https://a", title: "A", visits: 4, lastVisit: 12)], engineProfile: "p")
     let count = try await catalog.addHistoryVisits(pages: [.init(url: "https://b", title: "B", visitTimes: [15])], toleranceMs: 60_000, engineProfile: "p")
@@ -54,7 +54,7 @@ final class CommandClient: EngineClient {
   @Test func bookmarkApplyReturnsPartialResultAndRefreshesWithoutWatcher() async throws {
     let client = CommandClient()
     client.result = BookmarkApplyResult(applied: 1, skipped: 1, invalid: ["bad"])
-    let catalog = LibraryCatalog(client: client)
+    let catalog = LibraryCatalog(client: client, bookmarkSelection: { false })
     await catalog.start(engineProfiles: ["p"])
     let before = catalog.bookmarks(engineProfile: "p").revision
     let result = try await catalog.applyBookmarks(ops: [.init(op: "add", id: "new", kind: "u", title: "New", url: "https://new", addedAt: 1, parent: "bar")], engineProfile: "p")
@@ -66,7 +66,7 @@ final class CommandClient: EngineClient {
 
   @Test func applyWaitsForAnOngoingReload() async throws {
     let client = CommandClient()
-    let catalog = LibraryCatalog(client: client)
+    let catalog = LibraryCatalog(client: client, bookmarkSelection: { false })
     await catalog.start(engineProfiles: ["p"])
     client.holdRead = true
     let reload = Task { await catalog.reloadBookmarks(engineProfile: "p") }
@@ -89,14 +89,14 @@ final class CommandClient: EngineClient {
 
   @Test func storesFaviconThroughClient() async throws {
     let client = CommandClient()
-    let catalog = LibraryCatalog(client: client)
+    let catalog = LibraryCatalog(client: client, bookmarkSelection: { false })
     try await catalog.storeFavicon(page: "https://a", source: "https://a/icon.png", data: Data([1, 2]), engineProfile: "p")
     #expect(client.calls == ["favicon:p:https://a:https://a/icon.png:2"])
   }
 
   @Test func refusesPrivateProfilesWithoutCallingClient() async {
     let client = CommandClient()
-    let catalog = LibraryCatalog(client: client)
+    let catalog = LibraryCatalog(client: client, bookmarkSelection: { false })
     var refused = 0
     do { try await catalog.deleteHistory(urls: ["https://a"], engineProfile: "incognito:p") } catch LibraryCommandError.privateProfile { refused += 1 } catch {}
     do { try await catalog.importHistory(rows: [], engineProfile: "incognito:p") } catch LibraryCommandError.privateProfile { refused += 1 } catch {}

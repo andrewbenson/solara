@@ -1,3 +1,4 @@
+import { nativeBookmarksSelected } from "./bookmarkProjection";
 import { create, type StateCreator } from "zustand";
 import { createBookmarksSlice, ensureRoots, type BookmarksSlice } from "./bookmarks";
 import { changedIds } from "./changes";
@@ -151,8 +152,9 @@ export const useBrowser = create<BrowserState>()(transactions.middleware(batched
         .map((g) => [g.id, g]),
     );
     const splits = sanitizeSplits(data.splits ?? {}, tabs);
-    let bookmarks = data.bookmarks ?? s.bookmarks;
-    for (const id of profileOrder) bookmarks = ensureRoots(bookmarks, id)[0];
+    const nativeBookmarks = nativeBookmarksSelected();
+    let bookmarks = nativeBookmarks ? s.bookmarks : data.bookmarks ?? s.bookmarks;
+    if (!nativeBookmarks) for (const id of profileOrder) bookmarks = ensureRoots(bookmarks, id)[0];
     const focused = data.focusedWindowId && windows[data.focusedWindowId] ? data.focusedWindowId : (windowOrder.at(-1) ?? null);
 
     const engines = new Set(Object.values(profiles).map(engineIdOf));
@@ -183,7 +185,7 @@ export const useBrowser = create<BrowserState>()(transactions.middleware(batched
       history: Object.fromEntries(Object.entries(data.history ?? {}).filter(([p]) => profiles[p])),
       historyReady: Object.fromEntries(Object.keys(data.history ?? {}).filter((p) => profiles[p]).map((p) => [p, true as const])),
       bookmarks,
-      bookmarksReady: Object.fromEntries(Object.keys(data.bookmarks?.roots ?? {}).filter((p) => profiles[p]).map((p) => [p, true as const])),
+      bookmarksReady: nativeBookmarks ? s.bookmarksReady : Object.fromEntries(Object.keys(data.bookmarks?.roots ?? {}).filter((p) => profiles[p]).map((p) => [p, true as const])),
       downloads: data.downloads ?? [],
       windowUi: nativeOwnsWorkspace() ? s.windowUi : {},
       peeks: {},

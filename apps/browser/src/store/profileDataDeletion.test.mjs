@@ -6,6 +6,7 @@ import { runInNewContext } from "node:vm";
 import { declaration, runNative, source } from "../test-native/safe-host/run.mjs";
 
 const ts = createRequire(import.meta.url)("typescript");
+const bookmarkProjection = await import("./bookmarkProjection.ts");
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const compile = (source) => ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
 const warnings = [];
@@ -32,6 +33,7 @@ const scope = load("../../../../packages/sync/src/scope.ts", { "./canon.ts": can
 function bridge(dispatch, redesign) {
   const origins = load("./syncOrigin.ts");
   const native = load("./nativeStore.ts", {
+    "./bookmarkProjection": bookmarkProjection,
     "@solara/store": {
       nativeStoreStatus: () => ({ active: true, scope: "everything", syncRedesign: redesign }),
       nativeStoreModulePresent: () => true,

@@ -8,6 +8,8 @@ public struct BookmarkRecoveryNotice: Equatable, Sendable {
     case unreadableJournal
     case newerJournalVersion
     case unavailableJournal
+    case safeMode
+    case legacyMigration
   }
   public let kind: Kind
   public let message: String
@@ -95,6 +97,7 @@ public enum BookmarkPendingStoreError: Error, Equatable {
 public final class BookmarkPendingStore {
   public static let journalName = "bookmarks-pending-native-v1.json"
   public let journalURL: URL
+  public let readOnly: Bool
   private let directory: URL
   private let clock: () -> Double
   private let logger: (String) -> Void
@@ -103,8 +106,9 @@ public final class BookmarkPendingStore {
   private var loaded: BookmarkPendingLoad?
   private var defersRecovery: Bool
 
-  public init(directory: URL, clock: @escaping () -> Double = { (Date().timeIntervalSince1970 * 1000).rounded(.down) }, logger: @escaping (String) -> Void = { _ in }, fileOperations: BookmarkPendingFileOperations = .live, defersRecovery: Bool = false) {
+  public init(directory: URL, clock: @escaping () -> Double = { (Date().timeIntervalSince1970 * 1000).rounded(.down) }, logger: @escaping (String) -> Void = { _ in }, fileOperations: BookmarkPendingFileOperations = .live, defersRecovery: Bool = false, readOnly: Bool = false) {
     self.directory = directory
+    self.readOnly = readOnly
     self.defersRecovery = defersRecovery
     self.clock = clock
     self.logger = logger
@@ -124,21 +128,28 @@ public final class BookmarkPendingStore {
     defer { lock.unlock() }
     if let loaded { return loaded }
     guard operations.exists(journalURL) else {
-      let result = BookmarkPendingLoad(payload: nil, recoveryNotice: nil, writable: true)
+      if let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path),
+        let name = names.sorted().last(where: { $0.hasPrefix(Self.journalName + ".unreadable-") }) {
+        let notice = BookmarkRecoveryNotice(kind: .unreadableJournal, message: "Pending bookmark changes are preserved for recovery. Bookmark edits and sync remain paused.", preservedPath: directory.appendingPathComponent(name).path)
+        let result = BookmarkPendingLoad(payload: nil, recoveryNotice: notice, writable: false)
+        loaded = result
+        return result
+      }
+      let result = BookmarkPendingLoad(payload: nil, recoveryNotice: nil, writable: !readOnly)
       loaded = result
       return result
     }
     do {
       let envelope = try JSONValue.parseBookmark(operations.read(journalURL))
       if let version = envelope.object?["version"], version != 1 && version != 2 {
-        let notice = BookmarkRecoveryNotice(kind: .newerJournalVersion, message: "Bookmark changes were saved in a format this version of Solara can't read, so they were left untouched.", preservedPath: journalURL.path)
+        let notice = BookmarkRecoveryNotice(kind: .newerJournalVersion, message: "Bookmark changes were saved in a format this version of Solara can't read. They were left untouched; bookmark edits and sync are paused.", preservedPath: journalURL.path)
         logger("Bookmark journal has format \(version.text()), not 1 or 2, left untouched: \(journalURL.path)")
         let result = BookmarkPendingLoad(payload: nil, recoveryNotice: notice, writable: false)
         loaded = result
         return result
       }
       guard envelope["version"]?.number == 1 || envelope["version"]?.number == 2, let payload = envelope["payload"], let checksum = envelope["checksum"]?.string, Self.checksum(payload) == checksum else { throw BookmarkPendingStoreError.invalidEnvelope }
-      let result = BookmarkPendingLoad(payload: payload, recoveryNotice: nil, writable: true)
+      let result = BookmarkPendingLoad(payload: payload, recoveryNotice: nil, writable: !readOnly)
       loaded = result
       return result
     } catch {
@@ -150,11 +161,17 @@ public final class BookmarkPendingStore {
     lock.lock()
     defer { lock.unlock() }
     let current = load()
-    guard current.writable, current.payload != nil else { return current }
+    guard current.payload != nil else { return current }
     return preserveUnreadable(reason: reason)
   }
 
   private func preserveUnreadable(reason: String) -> BookmarkPendingLoad {
+    if readOnly {
+      let notice = BookmarkRecoveryNotice(kind: .unreadableJournal, message: "Pending bookmark changes could not be read. Bookmark edits and sync are paused; the journal was left untouched.", preservedPath: journalURL.path)
+      let result = BookmarkPendingLoad(payload: nil, recoveryNotice: notice, writable: false)
+      loaded = result
+      return result
+    }
     if defersRecovery {
       let notice = BookmarkRecoveryNotice(kind: .unreadableJournal, message: "Pending bookmark journal recovery awaits exclusive ownership.", preservedPath: journalURL.path)
       let result = BookmarkPendingLoad(payload: nil, recoveryNotice: notice, writable: false)
@@ -164,17 +181,16 @@ public final class BookmarkPendingStore {
     let timestamp = String(format: "%.0f", clock())
     let target = directory.appendingPathComponent("\(Self.journalName).unreadable-\(timestamp)-\(UUID().uuidString.lowercased())")
     var preservedPath: String?
-    var writable = false
+    let writable = false
     do {
       try operations.rename(journalURL, target)
       preservedPath = target.path
       try operations.syncDirectory(directory)
-      writable = true
     } catch {
       logger("Could not durably preserve unreadable bookmark journal: \(error)")
     }
     logger("Unreadable bookmark journal preserved at \(preservedPath ?? journalURL.path): \(reason)")
-    let notice = BookmarkRecoveryNotice(kind: .unreadableJournal, message: "Some pending bookmark changes could not be read. The journal was preserved for recovery.", preservedPath: preservedPath ?? journalURL.path)
+    let notice = BookmarkRecoveryNotice(kind: .unreadableJournal, message: "Some pending bookmark changes could not be read. The journal was preserved for recovery; bookmark edits and sync are paused.", preservedPath: preservedPath ?? journalURL.path)
     let result = BookmarkPendingLoad(payload: nil, recoveryNotice: notice, writable: writable)
     loaded = result
     return result

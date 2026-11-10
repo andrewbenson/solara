@@ -9,7 +9,9 @@ const S = () => useBrowser.getState();
 const folder = (id, title, children = [], parentId = null) => ({ kind: "folder", id, parentId, title, children, addedAt: 0 });
 let engines = 0;
 
+let projectionOwner = 0;
 class FakeOwner {
+  projectionOwner = String(++projectionOwner);
   constructor() {
     this.engine = `compound-${++engines}`;
     this.revision = 1;
@@ -20,6 +22,10 @@ class FakeOwner {
     this.refuse = null;
     this.hold = null;
     this.ids = 0;
+  }
+  projection() {
+    const snapshot = this.snapshot();
+    return { owner: this.projectionOwner, generation: snapshot.generation, profiles: { default: { engine: snapshot.engine, generation: snapshot.generation } }, views: { [snapshot.engine]: { revision: snapshot.revision, hasView: true, readyForSync: snapshot.ready, document: JSON.parse(snapshot.document) } } };
   }
   state() {
     return { state: "owned", generation: "1" };
@@ -79,8 +85,8 @@ beforeEach(() => {
   delete globalThis.acTestBookmarkWriter;
   S().hydrate({ bookmarks: { nodes: {}, roots: {} } });
   windowId = S().createWindow({ url: "https://home.example/" });
-  owner = globalThis.acTestBookmarkWriter = new FakeOwner();
   useBrowser.setState({ bookmarks: { nodes: {}, roots: {} } });
+  owner = globalThis.acTestBookmarkWriter = new FakeOwner();
   const snapshot = owner.snapshot();
   projectNativeBookmarks(snapshot.engine, snapshot.revision, snapshot.document);
 });

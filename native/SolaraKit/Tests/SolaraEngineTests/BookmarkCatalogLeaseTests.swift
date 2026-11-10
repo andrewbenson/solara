@@ -31,7 +31,7 @@ import Testing
     let f = CatalogLeaseFixture()
     try f.claim()
     let replacement = f.makePump()
-    let otherCatalog = LibraryCatalog(client: f.client)
+    let otherCatalog = LibraryCatalog(client: f.client, bookmarkSelection: { false })
     #expect(throws: BookmarkCoordinatorError.ownershipUnavailable) { try otherCatalog.claimBookmarks(coordinator: f.owner, pump: replacement) }
     #expect(throws: BookmarkCoordinatorError.ownershipUnavailable) { try f.claim() }
     let foreign = CatalogLeaseFixture()
@@ -260,7 +260,7 @@ import Testing
   @Test func claimsAreColdAndOneTime() async throws {
     let f = CatalogLeaseFixture()
     try f.claim()
-    let other = LibraryCatalog(client: f.client)
+    let other = LibraryCatalog(client: f.client, bookmarkSelection: { false })
     #expect(throws: BookmarkCoordinatorError.ownershipUnavailable) { try other.claimBookmarks(coordinator: f.owner, pump: f.pump) }
     #expect(throws: BookmarkCoordinatorError.ownershipUnavailable) { try f.claim() }
     let started = CatalogLeaseFixture()
@@ -430,7 +430,7 @@ import Testing
     ], "roots": ["p": ["bar": "bar@default", "other": "other@default"], "alias": ["bar": "bar@default", "other": "other@default"]]], ready: ready) }
     let transport = transport
     pump = BookmarkPump(coordinator: owner, client: BookmarkEngineClient(readTree: { _ in await transport.read() }, apply: { _, ops in await transport.apply(ops) }), clock: .init(wallTimeMs: { 0 }, monotonicTimeMs: { 0 }), scheduler: .init(schedule: { _, _ in {} }))
-    catalog = LibraryCatalog(client: client)
+    catalog = LibraryCatalog(client: client, bookmarkSelection: { false })
   }
 
   func makePump() -> BookmarkPump {

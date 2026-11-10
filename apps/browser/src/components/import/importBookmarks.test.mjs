@@ -13,6 +13,7 @@ let engines = 0;
 class FakeOwner {
   constructor() {
     this.engine = `import-${++engines}`;
+    this.projectionOwner = String(engines);
     this.revision = 1;
     this.bar = `bar@${this.engine}`;
     this.other = `other@${this.engine}`;
@@ -20,6 +21,10 @@ class FakeOwner {
     this.submitted = [];
     this.refuse = null;
     this.ids = 0;
+  }
+  projection() {
+    const snapshot = this.snapshot();
+    return { owner: this.projectionOwner, generation: snapshot.generation, profiles: { default: { engine: snapshot.engine, generation: snapshot.generation } }, views: { [snapshot.engine]: { revision: snapshot.revision, hasView: true, readyForSync: snapshot.ready, document: JSON.parse(snapshot.document) } } };
   }
   state() {
     return { state: "owned", generation: "1" };

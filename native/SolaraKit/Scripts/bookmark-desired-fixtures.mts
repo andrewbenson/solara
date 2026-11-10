@@ -10,7 +10,7 @@ registerHooks({
   load(url, context, next) {
     if (url === bridgeURL) {
       const original = readFileSync(new URL(url), "utf8");
-      const exports = "\nexport { applyOps, flatFromStore, flatFromEngine, launchTrees, adopt, readTree, pushTree, pushFailed, sendOps };\n";
+      const exports = "\nexport { applyOps, flatFromStore, flatFromEngine, launchTrees, adopt, readTree, pushTree, pushFailed, sendOps, stateOf, engines };\n";
       return { format: "module", source: stripTypeScriptTypes(original + exports), shortCircuit: true };
     }
     return next(url, context);
@@ -46,6 +46,7 @@ function document(records) {
   return { nodes: Object.fromEntries(records.map(({ parent, key, ...n }) => [n.id, { ...n, parentId: parent, ...(n.kind === "url" ? { favicon: null } : {}), ...(key ? { syncKey: key } : {}) }])), roots: { default: { bar: "bar@default", other: "other@default" } } };
 }
 function reset(bookmarks = document(roots()), ready = false) {
+  bridge.engines.clear();
   S().hydrate({ bookmarks });
   useBrowser.setState({ bookmarks, bookmarksReady: ready ? { default: true } : {} });
   stub.docs.clear();
@@ -193,7 +194,7 @@ async function wireRecords(getNow, setNow) {
   const cycles = [];
   const clock = new Clock("oracle-A", null, getNow);
   const enginePushes = [];
-  const engineState = { shadow: toFlat(roots()), shown: null, busy: false, needRead: false, needPush: false, failedPushes: 0, retryTimer: null, retryPending: false };
+  const engineState = Object.assign(bridge.stateOf(""), { shadow: toFlat(roots()), shown: null, busy: false, needRead: false, needPush: false, failedPushes: 0, retryTimer: null, retryPending: false });
   async function failPush() {
     const cef = solaraCoreNativeModules.SolaraCEF;
     const originalCall = cef.engineCall;
@@ -287,7 +288,7 @@ async function serviceRecords() {
   const cef = solaraCoreNativeModules.SolaraCEF;
   const engineCall = cef.engineCall;
   const calls = [];
-  const failure = { shadow: toFlat(roots()), shown: null, busy: false, needRead: false, needPush: false, failedPushes: 0, retryTimer: null, retryPending: false };
+  const failure = Object.assign(bridge.stateOf(""), { shadow: toFlat(roots()), shown: null, busy: false, needRead: false, needPush: false, failedPushes: 0, retryTimer: null, retryPending: false });
   globalThis.setTimeout = (fn, ms) => { timers.push(ms); return 0; };
   const schedules = [];
   for (let i = 0; i < 9; i++) {
@@ -302,7 +303,7 @@ async function serviceRecords() {
   bridge.adopt("", launched[""], { ready: false });
   const beforeRead = { desired: clone(S().bookmarks), ready: clone(S().bookmarksReady) };
   S().addBookmark({ profileId: "default", title: "Cache edit", url: "https://cache-edit.example/" });
-  const pending = { ...failure, shadow: null, shown: launched[""], failedPushes: 0, retryPending: false };
+  const pending = Object.assign(bridge.stateOf(""), { ...failure, shadow: null, shown: launched[""], failedPushes: 0, retryPending: false });
   cef.engineCall = async (name, profile, json) => {
     if (name === "ac_bookmarks_apply") calls.push(JSON.parse(json).ops);
     return engineCall(name, profile, json);
@@ -352,7 +353,7 @@ async function partialBatchRecord() {
   db.get("bar").children = db.get("bar").children.filter(child => child !== id(2));
   db.delete(id(2));
   useBrowser.setState({ bookmarks: document(roots()) });
-  const pending = { shadow: toFlat(before), shown: null, busy: false, needRead: false, needPush: false, failedPushes: 0, retryTimer: null, retryPending: false };
+  const pending = Object.assign(bridge.stateOf(""), { shadow: toFlat(before), shown: null, busy: false, needRead: false, needPush: false, failedPushes: 0, retryTimer: null, retryPending: false });
   const cef = solaraCoreNativeModules.SolaraCEF;
   const originalCall = cef.engineCall;
   const originalTimeout = globalThis.setTimeout;

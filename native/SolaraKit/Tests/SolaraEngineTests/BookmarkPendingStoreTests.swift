@@ -91,9 +91,9 @@ struct BookmarkPendingStoreTests {
       #expect(try Data(contentsOf: URL(fileURLWithPath: preserved)) == bytes)
       #expect(log.messages.count == 1)
       coordinator.completeRead(engine: "", document: document(), capturedRevision: 0)
-      #expect(coordinator.desiredView(engine: "").readyForSync)
+      #expect(!coordinator.desiredView(engine: "").readyForSync)
       coordinator.dismissRecoveryNotice()
-      #expect(coordinator.recoveryNotice == nil)
+      #expect(coordinator.recoveryNotice != nil)
     }
   }
 

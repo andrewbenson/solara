@@ -1,3 +1,4 @@
+import { nativeBookmarksSelected, refreshBookmarkProjection } from "../store/bookmarkProjection";
 import { bookmarkWriterErrorCode, bookmarkWriterSnapshot, bookmarkWriterState, submitBookmarkMutations, whileBookmarkEngineHolds } from "@solara/settings";
 import type { BookmarkDraft, RemovedBookmarks } from "../store/bookmarks";
 import { showToast } from "../components/layout/toasts";
@@ -52,6 +53,7 @@ function engineNodes(b: Bookmarks, roots: { bar: string; other: string }[]): Set
 }
 
 export function projectNativeBookmarks(engine: string, revision: string, documentJSON: string): boolean {
+  if (nativeBookmarksSelected()) return refreshBookmarkProjection(useBrowser);
   const next = BigInt(revision);
   const last = projected.get(engine);
   if (last !== undefined && last >= next) return false;
@@ -73,21 +75,22 @@ export function projectNativeBookmarks(engine: string, revision: string, documen
 }
 
 export async function submitBookmarks(profileId: string, mutations: BookmarkMutation[], requestId = `bookmarks-${Date.now()}-${++requests}`): Promise<unknown[]> {
-  if (bookmarkWriterState().state !== "owned") {
+  const ownership = bookmarkWriterState();
+  if (ownership.state === "legacy") {
     for (const mutation of mutations) if (mutation.method === "expectChildren") legacy(mutation);
     return mutations.map(legacy);
   }
+  if (ownership.state !== "owned") throw new Error("Bookmark editing is paused while native ownership is unavailable");
   const first = bookmarkWriterSnapshot(profileId);
   let receipt: Awaited<ReturnType<typeof submitBookmarkMutations>>;
   try {
     receipt = await whileBookmarkEngineHolds(profileId, { engine: first.engine, generation: first.generation }, (binding) => submitBookmarkMutations(profileId, mutations, binding, requestId));
   } catch (error) {
     if (!isBookmarkConditionFailure(error)) throw error;
-    const fresh = bookmarkWriterSnapshot(profileId);
-    projectNativeBookmarks(fresh.engine, fresh.revision, fresh.document);
+    refreshBookmarkProjection(useBrowser);
     throw new BookmarkConditionFailed(error instanceof Error ? error.message : String(error));
   }
-  projectNativeBookmarks(receipt.engine, receipt.revision, receipt.document);
+  refreshBookmarkProjection(useBrowser);
   return receipt.results;
 }
 
@@ -98,11 +101,13 @@ const trimmed = (args: unknown[]) => {
 };
 
 export const reportBookmarkFailure = (error: unknown, { toast = true }: { toast?: boolean } = {}) => {
-  console.warn("[bookmarks] the edit was not saved", error);
+  const message = error instanceof Error ? error.message : String(error);
+  const uncertain = bookmarkWriterErrorCode(error) === "savedUnconfirmed" || /savedUnconfirmed|may have been saved/.test(message);
+  console.warn(uncertain ? "[bookmarks] the edit may have been saved; changes are paused" : "[bookmarks] the edit was not saved", error);
   if (!toast) return;
   try {
     const windowId = useBrowser.getState().ui.focusedWindowId;
-    if (windowId) showToast(windowId, "Bookmark not saved", "Solara couldn't save that bookmark change. Try it again.");
+    if (windowId) showToast(windowId, uncertain ? "Bookmark save unconfirmed" : "Bookmark not saved", uncertain ? "This change may have been saved. Bookmark edits and sync are paused until Solara restarts." : "Solara couldn't save that bookmark change. Try it again.");
   } catch {}
 };
 

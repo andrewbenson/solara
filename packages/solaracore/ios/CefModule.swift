@@ -1,3 +1,4 @@
+import SolaraEngine
 import ExpoModulesCore
 import React
 import AppKit
@@ -178,6 +179,9 @@ public class CefModule: Module {
     }.runOnQueue(DispatchQueue.global(qos: .userInitiated))
     #endif
     AsyncFunction("engineCall") { (name: String, profile: String, args: String?, promise: Promise) in
+      if ["ac_bookmarks_tree", "ac_bookmarks_apply", "ac_bookmarks_watch"].contains(name), NativeBookmarkOwner.bookmarksSelected {
+        return promise.resolve(#"{"error":"bookmarks are owned by the native coordinator"}"#)
+      }
       if !CefModule.engineCalls.contains(name) { return promise.resolve(#"{"error":"not an engine call: \#(name)"}"#) }
       if profile.hasPrefix("incognito") { return promise.resolve(#"{"error":"no engine data for a private profile"}"#) }
       SolaraCoreEngineBridge.call(name, profile: profile, args: args) { promise.resolve($0) }

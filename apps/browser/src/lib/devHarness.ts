@@ -33,6 +33,9 @@ export function startDevHarness() {
     store: useBrowser, actions, runCommand, webviews, shell, omnibox: omniboxDrivers, pages: pagesDrivers,
     pageState: usePages,
     panelFrameMarks: () => require("./perfMarks").panelFrameMarks() as [string, number][],
+    get bookmarks(): typeof import("./bookmarkWriter").bookmarkWriter {
+      return require("./bookmarkWriter").bookmarkWriter;
+    },
     get historyMenu(): typeof import("../components/layout/history") {
       return require("../components/layout/history");
     },

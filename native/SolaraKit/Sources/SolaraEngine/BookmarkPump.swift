@@ -217,8 +217,9 @@ public final class BookmarkPump {
         lanes.removeValue(forKey: engine)
       }
     }
-    while !stopped, let (view, delta) = coordinator.pumpInput(engine: engine, epoch: epoch) {
-      if coordinator.catalogProfile(engine: engine) == nil, view.document["nodes"]?.object?.isEmpty == true {
+    while !stopped, let (view, pendingDelta) = coordinator.pumpInput(engine: engine, epoch: epoch) {
+      let delta = coordinator.chromeOperations(pendingDelta, engine: engine, document: view.document)
+      if coordinator.catalogProfile(engine: engine) == nil, view.document["nodes"]?.object?.isEmpty == true, !coordinator.legacyImportPending(engine: engine) {
         let coordinator = coordinator
         let epoch = epoch
         let terminated = await coordinator.offMain { coordinator.terminalizeEmptyAliaslessEngine(engine: engine, epoch: epoch) }
@@ -282,10 +283,11 @@ public final class BookmarkPump {
         waitForDeadline(engine, lane)
         return
       }
+      guard !coordinator.bookmarkEditsPaused(engine: engine) else { return }
       guard lane.push else { return }
       lane.push = false
       guard !BookmarkFlat(document: view.document, engine: engine).nodes.isEmpty else { return }
-      if delta.isEmpty {
+      if delta.isEmpty && !coordinator.migrationNeedsPush(engine: engine) {
         if view.failedPushes != 0 || view.retryNotBeforeMs != nil {
           let coordinator = coordinator
           let epoch = epoch
@@ -328,7 +330,7 @@ public final class BookmarkPump {
       }
       journaled(lane)
       lane.push = true
-      if !succeeded { lane.read = true }
+      if !succeeded || coordinator.migrationNeedsConfirmation(engine: engine) { lane.read = true }
     }
   }
 

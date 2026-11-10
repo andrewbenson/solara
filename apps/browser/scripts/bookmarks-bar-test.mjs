@@ -63,7 +63,17 @@ const cancelEditor = () => {
 };
 `;
 let app;
-const run = (body, timeout = 3000) => app.eval(`${helpers}\n${body}`, { timeout });
+const coroutine = `const runSteps = (steps) => new Promise((resolve, reject) => {
+  const it = steps();
+  const step = (method, value) => {
+    let result;
+    try { result = it[method](value); } catch (error) { return reject(error); }
+    if (result.done) return resolve(result.value);
+    Promise.resolve(result.value).then((next) => step("next", next), (error) => step("throw", error));
+  };
+  step("next");
+});`;
+const run = (body, timeout = 3000) => app.eval(/\bawait\s/.test(body) ? `${coroutine}\nreturn runSteps(function* () { ${helpers}\n${body.replace(/\bawait\s/g, "yield ")} });` : `${helpers}\n${body}`, { timeout });
 const until = async (what, body, accept = (value) => !!value, timeout = 8000) => {
   const deadline = Date.now() + timeout;
   let last;
@@ -145,15 +155,15 @@ try {
     const s = S();
     s.updateSettings({ bookmarksBar: "always", hideBookmarksBarImport: false });
     const roots = S().bookmarks.roots.default;
-    s.removeBookmarks([...S().bookmarks.nodes[roots.bar].children, ...S().bookmarks.nodes[roots.other].children]);
-    const first = s.addBookmark({ profileId: "default", title: "A", url: ${JSON.stringify(`${base}/first`)} });
-    const second = s.addBookmark({ profileId: "default", title: "B", url: ${JSON.stringify(`${base}/second`)} });
-    const folder = s.addBookmarkFolder({ profileId: "default", title: "Folder" });
-    const nested = s.addBookmark({ profileId: "default", parentId: folder, title: "Nested", url: ${JSON.stringify(`${base}/nested`)} });
-    const nestedFolder = s.addBookmarkFolder({ profileId: "default", parentId: folder, title: "Nested folder" });
-    const deepLink = s.addBookmark({ profileId: "default", parentId: nestedFolder, title: "Deep link", url: ${JSON.stringify(`${base}/deep`)} });
-    const overflow = Array.from({ length: 30 }, (_, index) => s.addBookmark({ profileId: "default", title: "Overflow bookmark " + index, url: ${JSON.stringify(`${base}/overflow/`)} + index }));
-    const other = s.addBookmark({ profileId: "default", parentId: roots.other, title: "Other entry", url: ${JSON.stringify(`${base}/other`)} });
+    await ac.bookmarks.removeBookmarks("default", [...S().bookmarks.nodes[roots.bar].children, ...S().bookmarks.nodes[roots.other].children]);
+    const first = await ac.bookmarks.addBookmark({ profileId: "default", title: "A", url: ${JSON.stringify(`${base}/first`)} });
+    const second = await ac.bookmarks.addBookmark({ profileId: "default", title: "B", url: ${JSON.stringify(`${base}/second`)} });
+    const folder = await ac.bookmarks.addBookmarkFolder({ profileId: "default", title: "Folder" });
+    const nested = await ac.bookmarks.addBookmark({ profileId: "default", parentId: folder, title: "Nested", url: ${JSON.stringify(`${base}/nested`)} });
+    const nestedFolder = await ac.bookmarks.addBookmarkFolder({ profileId: "default", parentId: folder, title: "Nested folder" });
+    const deepLink = await ac.bookmarks.addBookmark({ profileId: "default", parentId: nestedFolder, title: "Deep link", url: ${JSON.stringify(`${base}/deep`)} });
+    const overflow = await Promise.all(Array.from({ length: 30 }, (_, index) => ac.bookmarks.addBookmark({ profileId: "default", title: "Overflow bookmark " + index, url: ${JSON.stringify(`${base}/overflow/`)} + index })));
+    const other = await ac.bookmarks.addBookmark({ profileId: "default", parentId: roots.other, title: "Other entry", url: ${JSON.stringify(`${base}/other`)} });
     globalThis.bmbar = { ...roots, first, second, folder, nested, nestedFolder, deepLink, overflow, other };
     const shell = globalThis.expo.modules.SolaraShell;
     bmbar.showMenu = shell.showMenu;
@@ -358,16 +368,16 @@ try {
   });
   const menuFixtures = await run(`
     const s = S();
-    const empty = s.addBookmarkFolder({ profileId: "default", title: "Empty folder" });
-    const arc = s.addBookmarkFolder({ profileId: "default", title: "Imported (Arc)" });
-    const arcFolder = s.addBookmarkFolder({ profileId: "default", parentId: arc, title: "Arc Work" });
-    const arcLink = s.addBookmark({ profileId: "default", parentId: arcFolder, title: "Arc link", url: ${JSON.stringify(`${base}/arc`)} });
-    const sidebar = s.addBookmarkFolder({ profileId: "default", title: "Menu group" });
-    s.addBookmark({ profileId: "default", parentId: sidebar, title: "Menu group link", url: ${JSON.stringify(`${base}/menu-group`)} });
-    const copy = s.addBookmark({ profileId: "default", title: "Tracked", url: ${JSON.stringify(`${base}/copy?keep=yes&utm_source=fixture&fbclid=fixture#section`)} });
-    const doomed = s.addBookmark({ profileId: "default", title: "Delete me", url: ${JSON.stringify(`${base}/delete`)} });
-    const many = s.addBookmarkFolder({ profileId: "default", title: "Many links" });
-    for (let index = 0; index < 16; index++) s.addBookmark({ profileId: "default", parentId: many, title: "Many " + index, url: ${JSON.stringify(`${base}/many/`)} + index });
+    const empty = await ac.bookmarks.addBookmarkFolder({ profileId: "default", title: "Empty folder" });
+    const arc = await ac.bookmarks.addBookmarkFolder({ profileId: "default", title: "Imported (Arc)" });
+    const arcFolder = await ac.bookmarks.addBookmarkFolder({ profileId: "default", parentId: arc, title: "Arc Work" });
+    const arcLink = await ac.bookmarks.addBookmark({ profileId: "default", parentId: arcFolder, title: "Arc link", url: ${JSON.stringify(`${base}/arc`)} });
+    const sidebar = await ac.bookmarks.addBookmarkFolder({ profileId: "default", title: "Menu group" });
+    await ac.bookmarks.addBookmark({ profileId: "default", parentId: sidebar, title: "Menu group link", url: ${JSON.stringify(`${base}/menu-group`)} });
+    const copy = await ac.bookmarks.addBookmark({ profileId: "default", title: "Tracked", url: ${JSON.stringify(`${base}/copy?keep=yes&utm_source=fixture&fbclid=fixture#section`)} });
+    const doomed = await ac.bookmarks.addBookmark({ profileId: "default", title: "Delete me", url: ${JSON.stringify(`${base}/delete`)} });
+    const many = await ac.bookmarks.addBookmarkFolder({ profileId: "default", title: "Many links" });
+    for (let index = 0; index < 16; index++) await ac.bookmarks.addBookmark({ profileId: "default", parentId: many, title: "Many " + index, url: ${JSON.stringify(`${base}/many/`)} + index });
     const shell = globalThis.expo.modules.SolaraShell;
     bmbar.prompt = shell.prompt;
     bmbar.confirm = shell.confirm;
@@ -501,7 +511,7 @@ try {
       assert.equal(children.indexOf(created), context ? before.children.indexOf(context) + 1 : before.children.length);
       assert.deepEqual(await run("return bmbar.prompts.at(-1);"), { title: "New Folder", placeholder: "Folder name", confirmTitle: "Create", windowId: "w1" });
       assert.equal(await run("return bmbar.prompts.length;"), before.prompts + 1);
-      await run(`S().removeBookmark(${JSON.stringify(created)}); return true;`);
+      await run(`await ac.bookmarks.removeBookmark("default", ${JSON.stringify(created)}); return true;`);
     });
   }
   await rep.check("native-menu-delete", async () => {
@@ -525,7 +535,7 @@ try {
     await until("bar visible again", 'return H.devBookmarksBarLayout("w1").then(JSON.parse);');
     assert.deepEqual(menuRows(await menu("blank")), barRows());
   });
-  await run(`S().removeBookmarks(${JSON.stringify([menuFixtures.empty, menuFixtures.sidebar, menuFixtures.copy, menuFixtures.many])}); return true;`);
+  await run(`await ac.bookmarks.removeBookmarks("default", ${JSON.stringify([menuFixtures.empty, menuFixtures.sidebar, menuFixtures.copy, menuFixtures.many])}); return true;`);
   await reset();
   assert.equal(await run("return bmbar.menus.length;"), 0, "native menu path never invokes RN showMenu");
   await rep.check("native-drop-link-between-items", async () => {
@@ -540,7 +550,7 @@ try {
     const created = await until("dropped link inserted at index one", "return barIds().map((id) => S().bookmarks.nodes[id]);", (nodes) => nodes.length === before.length + 1 && nodes[1].url === link.url);
     assert.equal(created[1].title, link.title);
     assert.deepEqual(created.filter((node) => node.id !== created[1].id).map((node) => node.id), before);
-    await run(`S().removeBookmark(${JSON.stringify(created[1].id)}); return true;`);
+    await run(`await ac.bookmarks.removeBookmark("default", ${JSON.stringify(created[1].id)}); return true;`);
   });
   for (const [name, parent] of [["folder", ids.folder], ["other", await run("return S().bookmarks.roots.default.other;")]]) {
     await rep.check(`native-drop-link-into-${name}`, async () => {
@@ -554,7 +564,7 @@ try {
       const children = await until(`dropped link appended to ${name}`, `return S().bookmarks.nodes[${JSON.stringify(parent)}].children.map((id) => S().bookmarks.nodes[id]);`, (nodes) => nodes.length === before.length + 1 && nodes.at(-1).url === link.url);
       assert.equal(children.at(-1).title, link.title);
       assert.deepEqual(children.slice(0, -1).map((node) => node.id), before);
-      await run(`S().removeBookmark(${JSON.stringify(children.at(-1).id)}); return true;`);
+      await run(`await ac.bookmarks.removeBookmark("default", ${JSON.stringify(children.at(-1).id)}); return true;`);
     });
   }
   const tabDropState = () => run(`
@@ -608,7 +618,7 @@ try {
       assert.deepEqual(nodes.filter((node) => node.id !== nodes[1].id).map((node) => node.id), before);
       assert.deepEqual(await tabDropState(), source, "source tab, index, window, active tabs and window count stay unchanged");
     } finally {
-      await run(`S().removeBookmark(${JSON.stringify(nodes[1].id)}); return true;`);
+      await run(`await ac.bookmarks.removeBookmark("default", ${JSON.stringify(nodes[1].id)}); return true;`);
     }
   };
   await rep.check("native-drop-tab-copies-without-moving", () => copiedTab("w1"));
@@ -677,7 +687,7 @@ try {
     assert.ok(await run(`return barIds().includes(${JSON.stringify(ids.folder)});`));
   });
   await rep.check("empty-import-and-hint", async () => {
-    await run("S().removeBookmarks([...barIds()]); S().updateSettings({ hideBookmarksBarImport: false }); return true;");
+    await run("await ac.bookmarks.removeBookmarks('default', [...barIds()]); S().updateSettings({ hideBookmarksBarImport: false }); return true;");
     await until("empty bar root", "return barIds().length === 0;");
     await until("empty import button", 'return H.devBookmarksBarLayout("w1").then(JSON.parse);', (value) => value?.importShown && !value.hintShown && value.otherShown);
     const tree = await accessibility();

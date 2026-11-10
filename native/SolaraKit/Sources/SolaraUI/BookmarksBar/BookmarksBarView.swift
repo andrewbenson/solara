@@ -1,4 +1,5 @@
 import AppKit
+import SolaraEngine
 
 @MainActor
 public final class BookmarksBarView: NSView {
@@ -24,6 +25,8 @@ public final class BookmarksBarView: NSView {
   private let overflow = BookmarksBarButton()
   private let other = BookmarksBarButton()
   private let importButton = BookmarksBarButton()
+  private let recoveryButton = BookmarksBarButton()
+  private var recoveryMessage: String?
   private let hint = NSTextField(labelWithString: "For quick access, place your bookmarks here on the bookmarks bar.")
   private let divider = NSView()
   private var overflowIds: [String] = []
@@ -62,7 +65,7 @@ public final class BookmarksBarView: NSView {
     hint.lineBreakMode = .byTruncatingTail
     divider.wantsLayer = true
     divider.setAccessibilityElement(false)
-    for view in [overflow, other, importButton, hint, divider] {
+    for view in [overflow, other, importButton, recoveryButton, hint, divider] {
       view.isHidden = true
       addSubview(view)
     }
@@ -70,6 +73,16 @@ public final class BookmarksBarView: NSView {
     overflow.controlKind = .overflow
     other.controlId = "other"
     other.controlKind = .other
+    recoveryButton.controlId = "recovery"
+    recoveryButton.controlKind = .importButton
+    recoveryButton.onPress = { [weak self] _, _ in
+      guard let self, let message = self.recoveryMessage, let window = self.window else { return }
+      let alert = NSAlert()
+      alert.messageText = "Bookmark recovery"
+      alert.informativeText = message
+      alert.addButton(withTitle: "OK")
+      alert.beginSheetModal(for: window)
+    }
     importButton.controlId = "import"
     importButton.controlKind = .importButton
     overflow.onOpenMenu = { [weak self] in
@@ -105,7 +118,9 @@ public final class BookmarksBarView: NSView {
 
   required init?(coder: NSCoder) { fatalError() }
 
-  public func update(_ snapshot: BookmarksBarSnapshot) {
+  public func update(_ snapshot: BookmarksBarSnapshot, recoveryMessage: String? = nil) {
+    let coordinator = NativeBookmarkOwner.current?.coordinator
+    self.recoveryMessage = recoveryMessage ?? coordinator?.recoveryNotice?.message ?? ((coordinator?.recoveryConflicts.isEmpty == false) ? "Some bookmark changes need recovery. Their saved source has been retained." : nil)
     navigation.captureFocus()
     clearLinkDrop()
     cancelDrag()
@@ -146,6 +161,9 @@ public final class BookmarksBarView: NSView {
       button.onPointerDrag = { [weak self] in self?.moveDrag(to: $0) }
       button.onPointerUp = { [weak self] in self?.endDrag(at: $0) ?? false }
     }
+    recoveryButton.configure(title: "Bookmark recovery", symbol: "exclamationmark.circle", folder: false, theme: snapshot.theme)
+    recoveryButton.setAccessibilityLabel("Bookmark recovery")
+    recoveryButton.toolTip = self.recoveryMessage
     overflow.configure(title: "", symbol: "chevron.right.2", folder: false, theme: snapshot.theme)
     overflow.setAccessibilityLabel("More bookmarks")
     overflow.toolTip = "More bookmarks"
@@ -169,7 +187,8 @@ public final class BookmarksBarView: NSView {
     super.layout()
     guard let snapshot else { return }
     navigation.captureFocus()
-    let layout = BookmarksBarLayout(itemWidths: items.map(\.measuredWidth), width: bounds.width, hasOther: snapshot.hasOther && snapshot.otherId != nil)
+    let recoveryWidth = recoveryMessage == nil ? 0 : min(bounds.width, recoveryButton.measuredWidth + 8)
+    let layout = BookmarksBarLayout(itemWidths: items.map(\.measuredWidth), width: max(0, bounds.width - recoveryWidth), hasOther: snapshot.hasOther && snapshot.otherId != nil)
     if let drag, layout.visible.first(where: { $0.index == drag.index })?.frame != drag.frame { cancelDrag() }
     placements = layout.visible
     let visibleIndexes = Set(layout.visible.map(\.index))
@@ -195,9 +214,11 @@ public final class BookmarksBarView: NSView {
     hint.isHidden = !empty || !snapshot.hideBookmarksBarImport
     let height = hint.fittingSize.height
     hint.frame = CGRect(x: 12, y: (30 - height) / 2, width: max(0, layout.contentFrame.width - 4), height: height)
-    navigation.update(layout.visible.map { items[$0.index] } + [importButton, overflow, other])
+    recoveryButton.isHidden = recoveryMessage == nil
+    recoveryButton.frame = CGRect(x: max(0, bounds.width - recoveryWidth), y: 3, width: max(0, recoveryWidth - 8), height: 24)
+    navigation.update(layout.visible.map { items[$0.index] } + [importButton, overflow, other, recoveryButton])
     setAccessibilityChildren(navigation.controls)
-    setAccessibilityHelp(hint.isHidden ? nil : hint.stringValue)
+    setAccessibilityHelp(recoveryMessage ?? (hint.isHidden ? nil : hint.stringValue))
   }
 
   public override func rightMouseDown(with event: NSEvent) {

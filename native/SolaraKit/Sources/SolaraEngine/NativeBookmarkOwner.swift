@@ -43,8 +43,21 @@ public struct BookmarkWriterSnapshot: Sendable {
   public let binding: BookmarkWriterBinding
   public let revision: UInt64
   public let ready: Bool
+  public let hasView: Bool
   public let document: JSONValue
   public let facts: JSMap<BookmarkEditFact>
+}
+
+public struct BookmarkOwnershipState: Equatable, Sendable {
+  public enum Phase: String, Sendable {
+    case legacy
+    case starting
+    case owned
+    case readOnlyUnavailable = "read-only-unavailable"
+    case stopped
+  }
+  public let phase: Phase
+  public let reason: String?
 }
 
 public final class NativeBookmarkOwner: @unchecked Sendable {
@@ -52,14 +65,32 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
     var owner: NativeBookmarkOwner?
     var previousCoordinator: BookmarkCoordinator?
     var selected = false
+    var managed = false
+    var state = BookmarkOwnershipState(phase: .legacy, reason: nil)
+    var listeners: [UUID: AsyncStream<BookmarkOwnershipState>.Continuation] = [:]
+
+    mutating func publish(_ phase: BookmarkOwnershipState.Phase, reason: String? = nil) {
+      state = BookmarkOwnershipState(phase: phase, reason: reason)
+      for listener in listeners.values { listener.yield(state) }
+    }
   }
 
   private static let slot = Mutex(Selection())
+  public static var bookmarksSelected: Bool { slot.withLock { $0.selected } }
+  public static let projectionChanged = Notification.Name("SolaraBookmarkProjectionChanged")
+
+  static func invalidateProjection() {
+    DispatchQueue.main.async { NotificationCenter.default.post(name: projectionChanged, object: nil) }
+  }
+
   public static var current: NativeBookmarkOwner? {
     get { slot.withLock { $0.owner } }
     set {
       slot.withLock { selection in
         if selection.owner !== newValue {
+          if selection.managed, selection.owner != nil, newValue != nil {
+            selection.publish(.readOnlyUnavailable, reason: "The native bookmark owner was replaced. Editing and sync are paused.")
+          }
           let previous = selection.owner
           previous?.revokeAdmissions()
           if let coordinator = previous?.coordinator ?? selection.previousCoordinator {
@@ -70,12 +101,65 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
         }
         if newValue != nil { selection.selected = true }
         selection.owner = newValue
+        if newValue == nil && selection.selected && selection.state.phase != .readOnlyUnavailable { selection.publish(.stopped) }
+        else if newValue != nil && !selection.managed { selection.publish(.owned) }
       }
+      invalidateProjection()
+    }
+  }
+
+  public static var ownershipState: BookmarkOwnershipState { slot.withLock { $0.state } }
+
+  public static var writableCurrent: NativeBookmarkOwner? {
+    slot.withLock { $0.state.phase == .owned ? $0.owner : nil }
+  }
+
+  public static func ownershipStates() -> AsyncStream<BookmarkOwnershipState> {
+    let id = UUID()
+    let (stream, continuation) = AsyncStream<BookmarkOwnershipState>.makeStream(bufferingPolicy: .bufferingNewest(1))
+    continuation.onTermination = { _ in _ = slot.withLock { $0.listeners.removeValue(forKey: id) } }
+    slot.withLock { selection in
+      selection.listeners[id] = continuation
+      continuation.yield(selection.state)
+    }
+    return stream
+  }
+
+  @discardableResult public static func selectOwnership() -> Bool {
+    slot.withLock { selection in
+      guard !selection.selected else { return false }
+      selection.selected = true
+      selection.managed = true
+      selection.publish(.starting)
+      return true
+    }
+  }
+
+  public static func failOwnership(reason: String) {
+    slot.withLock { selection in
+      guard selection.selected, selection.state.phase != .stopped else { return }
+      selection.publish(.readOnlyUnavailable, reason: reason)
+    }
+  }
+
+  @MainActor @discardableResult public static func completeOwnership(_ owner: NativeBookmarkOwner) -> Bool {
+    guard let catalog = owner.runtime?.catalog, owner.installationIsUsable(catalog: catalog), !owner.coordinator.bookmarkWritesPaused else { return false }
+    return slot.withLock { selection in
+      guard selection.owner === owner, selection.state.phase == .starting else { return false }
+      selection.publish(.owned)
+      return true
+    }
+  }
+
+  private static func ownerStopped(_ owner: NativeBookmarkOwner) {
+    slot.withLock { selection in
+      guard selection.owner === owner, selection.state.phase == .owned || selection.state.phase == .starting else { return }
+      selection.publish(.stopped)
     }
   }
 
   public static func retireBookmarksForCleanup(engine: String) throws {
-    let selection = slot.withLock { ($0.owner, $0.selected) }
+    let selection = slot.withLock { ($0.state.phase == .owned ? $0.owner : nil, $0.selected) }
     if let owner = selection.0 { try owner.retireBookmarks(engine: engine) }
     else if selection.1 { throw BookmarkCoordinatorError.ownershipUnavailable }
   }
@@ -119,9 +203,9 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
     var beforeMappingAdmissionForTesting: (@Sendable () -> Void)?
   #endif
 
-  private init(store: BookmarkPendingStore, profiles: JSMap<String>, defaultProfile: String, owningProfiles: JSMap<String> = [:], launchInput: BookmarkLaunchInput = .init()) {
+  private init(store: BookmarkPendingStore, profiles: JSMap<String>, defaultProfile: String, owningProfiles: JSMap<String> = [:], launchInput: BookmarkLaunchInput = .init(), stampsEnabled: Bool = false) {
     mapping = BookmarkProfileMap(profiles: profiles, defaultProfile: defaultProfile, owningProfiles: owningProfiles)
-    coordinator = BookmarkCoordinator(profiles: profiles, defaultProfile: defaultProfile, owningProfiles: owningProfiles, pendingStore: store, launchInput: launchInput)
+    coordinator = BookmarkCoordinator(profiles: profiles, defaultProfile: defaultProfile, owningProfiles: owningProfiles, stampsEnabled: stampsEnabled, pendingStore: store, launchInput: launchInput)
     updateRoutes(mapping)
   }
 
@@ -146,6 +230,7 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
       lifecycleGeneration += 1
       let ticket = lifecycleGeneration
       fence.unlock()
+      Self.invalidateProjection()
       _ = installMapping(ticket)
     }
   #endif
@@ -171,7 +256,49 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
       let unchanged = generation == lifecycleGeneration && routes[regularProfile(profile)]?.generation == binding.generation
       let ready = snapshot.ready && installedGeneration == lifecycleGeneration && accepting && !prepared && !retiredEngines.contains(JSKey(engine))
       fence.unlock()
-      if unchanged { return BookmarkWriterSnapshot(binding: binding, revision: snapshot.revision, ready: ready, document: snapshot.document, facts: snapshot.facts) }
+      if unchanged { return BookmarkWriterSnapshot(binding: binding, revision: snapshot.revision, ready: ready, hasView: snapshot.hasView, document: snapshot.document, facts: snapshot.facts) }
+    }
+    throw BookmarkWriterError.staleBinding
+  }
+
+  public func projection() throws -> JSONValue {
+    for _ in 0..<8 {
+      fence.lock()
+      guard accepting else { fence.unlock(); throw BookmarkWriterError.notOwned }
+      let incarnation = ownerIncarnation
+      let generation = lifecycleGeneration
+      let installed = installedGeneration == generation
+      let currentMapping = mapping
+      let currentRoutes = routes
+      let retired = retiredEngines
+      fence.unlock()
+      var profiles: JSONObject = [:]
+      var views: JSONObject = [:]
+      for (profile, engine) in currentMapping.profiles where !retired.contains(JSKey(engine)) {
+        guard let route = currentRoutes[profile] else { continue }
+        profiles[profile] = .object(["engine": .string(engine), "generation": .string(String(route.generation))])
+        guard views[engine] == nil else { continue }
+        let view = coordinator.desiredView(engine: engine)
+        var document = view.document.object ?? [:]
+        var roots: JSONObject = [:]
+        if view.hasView {
+          let ids = BookmarkFlat.roots(engine)
+          for (alias, mapped) in currentMapping.profiles where JSKey(mapped) == JSKey(engine) {
+            roots[alias] = .object(["bar": .string(ids.bar), "other": .string(ids.other)])
+          }
+        }
+        document["roots"] = .object(roots)
+        views[engine] = .object([
+          "revision": .string(String(view.revision)), "hasView": .bool(view.hasView),
+          "readyForSync": .bool(view.readyForSync && installed), "document": .object(document)
+        ])
+      }
+      fence.lock()
+      let valid = accepting && ownerIncarnation == incarnation && lifecycleGeneration == generation && mapping == currentMapping && retiredEngines == retired
+      fence.unlock()
+      if valid {
+        return .object(["owner": .string(String(incarnation)), "generation": .string(String(generation)), "profiles": .object(profiles), "views": .object(views)])
+      }
     }
     throw BookmarkWriterError.staleBinding
   }
@@ -250,6 +377,7 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
     ownerIncarnation = Self.nextBinding()
     updateRoutes(mapping)
     fence.unlock()
+    Self.invalidateProjection()
     coordinator.fencePumpAdmissions()
     Task { @MainActor [weak self] in self?.finishRevocation() }
   }
@@ -273,6 +401,7 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
       routes[profile] = Route(owner: ownerIncarnation, generation: Self.nextBinding())
     }
     fence.unlock()
+    Self.invalidateProjection()
     coordinator.fencePumpAdmissions()
     try coordinator.retire(engine: engine, admission: {
       guard self.isCurrent(ticket) else { throw BookmarkWriterError.staleBinding }
@@ -346,26 +475,26 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
     return receipt
   }
 
-  public static func prepare(directory: URL, state: BrowserState, cacheDirectory: URL? = nil) async -> NativeBookmarkOwner {
-    await prepare(directory: directory, state: state, cacheDirectory: cacheDirectory, afterLoad: {})
+  public static func prepare(directory: URL, state: BrowserState, cacheDirectory: URL? = nil, readOnly: Bool = false, stampsEnabled: Bool = false) async -> NativeBookmarkOwner {
+    await prepare(directory: directory, state: state, cacheDirectory: cacheDirectory, readOnly: readOnly, stampsEnabled: stampsEnabled, afterLoad: {})
   }
 
   #if DEBUG
     static func prepareForTesting(directory: URL, state: BrowserState, afterLoad: @escaping @Sendable () async -> Void) async -> NativeBookmarkOwner {
-      await prepare(directory: directory, state: state, cacheDirectory: nil, afterLoad: afterLoad)
+      await prepare(directory: directory, state: state, cacheDirectory: nil, readOnly: false, stampsEnabled: false, afterLoad: afterLoad)
     }
   #endif
 
-  private static func prepare(directory: URL, state: BrowserState, cacheDirectory: URL?, afterLoad: @escaping @Sendable () async -> Void) async -> NativeBookmarkOwner {
+  private static func prepare(directory: URL, state: BrowserState, cacheDirectory: URL?, readOnly: Bool, stampsEnabled: Bool, afterLoad: @escaping @Sendable () async -> Void) async -> NativeBookmarkOwner {
     await Task.detached {
-      let store = BookmarkPendingStore(directory: directory, defersRecovery: true)
+      let store = BookmarkPendingStore(directory: directory, defersRecovery: true, readOnly: readOnly)
       let map = BookmarkProfileMap(state: state, previousOwners: BookmarkDurability(store: store).owners)
       let launch = cacheDirectory.map { BookmarkLaunchCache(directory: $0).load(profiles: map.profiles, defaultProfile: map.defaultProfile) } ?? BookmarkLaunchInput()
-      let owner = NativeBookmarkOwner(store: store, profiles: map.profiles, defaultProfile: map.defaultProfile, owningProfiles: map.owningProfiles, launchInput: launch)
+      let owner = NativeBookmarkOwner(store: store, profiles: map.profiles, defaultProfile: map.defaultProfile, owningProfiles: map.owningProfiles, launchInput: launch, stampsEnabled: stampsEnabled)
       owner.prepared = true
       owner.accepting = false
       owner.installedGeneration = nil
-      owner.stageMapping(map, pendingDeletion: Set(state.orphanedProfileData.map(JSKey.init)))
+      owner.stageMapping(map, pendingDeletion: readOnly ? [] : Set(state.orphanedProfileData.map(JSKey.init)))
       await afterLoad()
       return owner
     }.value
@@ -426,6 +555,7 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
     guard force || next != mapping || !unreferencedDeletion.isSubset(of: retiredEngines) else { return nil }
     stageMapping(next, pendingDeletion: pendingDeletion)
     lifecycleGeneration += 1
+    Self.invalidateProjection()
     return lifecycleGeneration
   }
 
@@ -438,6 +568,7 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
     }
     storeToken = token
     observedRevision = -1
+    Self.invalidateProjection()
   }
 
   fileprivate func installMapping(_ ticket: UInt64) -> Bool {
@@ -468,6 +599,7 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
     pendingReactivations.subtract(reactivations)
     retiredEngines.subtract(permittedReactivations)
     installedGeneration = ticket
+    Self.invalidateProjection()
     return true
   }
 
@@ -503,7 +635,25 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
     (runtime ?? startingRuntime)?.subscribeToStoreCommits()
   }
 
+  @MainActor public func installationIsUsable(catalog: LibraryCatalog) -> Bool {
+    guard let runtime, runtime.catalog === catalog, let pump = runtime.pump,
+      catalog.bookmarkClaim?.coordinator === coordinator, catalog.bookmarkClaim?.epoch == pump.epoch else { return false }
+    fence.lock()
+    defer { fence.unlock() }
+    return accepting && installedGeneration == lifecycleGeneration
+  }
+
+  @MainActor public func settleStoreSubscription() async {
+    guard let active = runtime ?? startingRuntime else { return }
+    while true {
+      let version = active.pendingVersion
+      await active.pending?.value
+      if version == active.pendingVersion { return }
+    }
+  }
+
   @MainActor public func stop() {
+    Self.ownerStopped(self)
     revokeAdmissions()
     finishRevocation()
   }
@@ -561,6 +711,7 @@ public struct BookmarkProfileMap: Equatable, Sendable {
   let scheduler: BookmarkPumpScheduler
   var pump: BookmarkPump?
   var pending: Task<Void, Never>?
+  var pendingVersion: UInt64 = 0
   private var lifecycle: Int?
   private var store: Store?
   private var hasBoundStore = false
@@ -673,6 +824,7 @@ public struct BookmarkProfileMap: Equatable, Sendable {
 
   fileprivate func schedule(_ ticket: UInt64) {
     guard owner?.isCurrent(ticket) == true else { return }
+    pendingVersion += 1
     pending = Task { [weak self] in
       guard let self else { return }
       await self.replacePump(ticket)

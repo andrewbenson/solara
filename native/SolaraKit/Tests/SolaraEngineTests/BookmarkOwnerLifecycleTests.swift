@@ -430,7 +430,7 @@ import SolaraStore
     while ContinuousClock.now < deadline {
       let snapshot = try f.owner.snapshot(profile: "default")
       let catalog = f.catalog.bookmarks(engineProfile: "")
-      if !f.client.reads.isEmpty && snapshot.ready && catalog.readyForSync && catalog.nodes["b1"]?.title == "B" { break }
+      if !f.client.reads.isEmpty && !snapshot.ready && !catalog.readyForSync && catalog.nodes["b1"]?.title == "B" { break }
       await Task.yield()
     }
     #expect(f.owner.runtimeIsActiveForTesting)
@@ -438,13 +438,13 @@ import SolaraStore
     #expect(f.client.reads == [""])
     #expect(scheduler.delays.isEmpty)
     let snapshot = try f.owner.snapshot(profile: "default")
-    #expect(snapshot.ready)
+    #expect(!snapshot.ready)
     #expect(snapshot.document["nodes"]?["b0"] == nil)
     #expect(snapshot.document["nodes"]?["b1"]?["title"] == "B")
     #expect(snapshot.document["nodes"]?["b1"]?["url"] == "https://page.test")
     let catalog = f.catalog.bookmarks(engineProfile: "")
     #expect(catalog.hasView)
-    #expect(catalog.readyForSync)
+    #expect(!catalog.readyForSync)
     #expect(catalog.nodes["b0"] == nil)
     #expect(catalog.nodes["b1"]?.title == "B")
     #expect(catalog.nodes["b1"]?.url == "https://page.test")
@@ -473,17 +473,17 @@ import SolaraStore
     while ContinuousClock.now < remapDeadline {
       let remapped = try f.owner.snapshot(profile: "default")
       let catalog = f.catalog.bookmarks(engineProfile: "recovery-engine")
-      if remapped.binding.engine == "recovery-engine" && remapped.ready && catalog.readyForSync && catalog.nodes["b1"]?.title == "B" { break }
+      if remapped.binding.engine == "recovery-engine" && !remapped.ready && !catalog.readyForSync && catalog.nodes["b1"]?.title == "B" { break }
       await Task.yield()
     }
     let remapped = try f.owner.snapshot(profile: "default")
     #expect(remapped.binding.engine == "recovery-engine")
-    #expect(remapped.ready)
+    #expect(!remapped.ready)
     #expect(f.owner.coordinator.engine(profile: "default") == "recovery-engine")
     #expect(remapped.document["nodes"]?["b1"]?["title"] == "B")
     let remappedCatalog = f.catalog.bookmarks(engineProfile: "recovery-engine")
     #expect(remappedCatalog.hasView)
-    #expect(remappedCatalog.readyForSync)
+    #expect(!remappedCatalog.readyForSync)
     #expect(remappedCatalog.nodes["b1"]?.title == "B")
     #expect(f.client.reads == ["", "recovery-engine"])
     #expect(f.owner.runtimeIsActiveForTesting)
@@ -1049,7 +1049,7 @@ import SolaraStore
     self.directory = directory
     self.owner = owner
     self.state = state
-    catalog = LibraryCatalog(client: client)
+    catalog = LibraryCatalog(client: client, bookmarkSelection: { false })
   }
 
   static func make(state: BrowserState = BrowserState(), journalBytes: Data? = nil, cache: JSONValue? = nil, fileOperations: BookmarkPendingFileOperations? = nil) async throws -> OwnerLifecycleFixture {

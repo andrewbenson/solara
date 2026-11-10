@@ -85,6 +85,8 @@ public final class BookmarkCoordinator: @unchecked Sendable {
   private let makeID: () -> String
   private let now: () -> Double
   private let stampsEnabled: Bool
+  private let legacySource: BookmarkLegacyMigration?
+  private let launchLegacyProfiles: JSMap<String>
   private var lastOwningProfiles: JSMap<String> = [:]
   private var views: JSMap<BookmarkDesiredView> = [:]
   private var bases: JSMap<BookmarkFlat> = [:]
@@ -115,8 +117,10 @@ public final class BookmarkCoordinator: @unchecked Sendable {
     self.stampsEnabled = stampsEnabled
     launchLegacyPendingEngines = launchInput.legacyPendingEngines
     durability = BookmarkDurability(store: pendingStore)
-    durability.legacyPendingEngines.formUnion(launchLegacyPendingEngines.filter { durability.terminalEngines[$0.text] == nil })
-    for (engine, document) in launchInput.documents where durability.terminalEngines[engine] == nil {
+    legacySource = launchInput.legacyMigration ?? BookmarkLegacyMigration.recover(directory: launchInput.directory, sourceID: durability.legacyMigration?.source)
+    launchLegacyProfiles = profiles
+    reconcileLegacyLaunch()
+    for (engine, document) in launchInput.documents where durability.terminalEngines[engine] == nil && durability.legacyMigration?.engines[engine]?.stage != "discarded" {
       views[engine] = BookmarkDesiredView(engine: engine, document: document, hasView: true)
       bases[engine] = BookmarkFlat(document: document, engine: engine)
     }
@@ -127,8 +131,42 @@ public final class BookmarkCoordinator: @unchecked Sendable {
     lastOwningProfiles = durability.owners
   }
 
-  public var recoveryNotice: BookmarkRecoveryNotice? { locked { durability.notice } }
-  public func dismissRecoveryNotice() { locked { durability.notice = nil } }
+  private func reconcileLegacyLaunch() {
+    if durability.legacyMigration == nil, let legacySource {
+      var progress = BookmarkLegacyProgress(source: legacySource.sourceID, engines: launchLegacyPendingEngines.map(\.text), profiles: launchLegacyProfiles)
+      for (engine, reason) in durability.terminalEngines where reason == "retired" {
+        progress.engines[engine] = BookmarkLegacyEngineProgress(stage: "discarded", ids: [], target: nil)
+      }
+      durability.legacyMigration = progress
+    }
+    let changed = legacySource.map { source in durability.legacyMigration.map { $0.source != source.sourceID } ?? false } ?? false
+    durability.legacyPendingEngines.formUnion(launchLegacyPendingEngines.filter { engine in
+      let stage = durability.legacyMigration?.engines[engine.text]?.stage
+      return durability.terminalEngines[engine.text] == nil && (changed || (stage != "confirmed" && stage != "discarded"))
+    })
+    if changed {
+      durability.notice = BookmarkRecoveryNotice(kind: .legacyMigration, message: "The legacy bookmark source changed after migration started. Its data is preserved and bookmark sync is paused.", preservedPath: legacySource?.sourceURL.path)
+    }
+  }
+
+  public var bookmarkWritesPaused: Bool { locked { !durability.writable } }
+  public func bookmarkEditsPaused(engine: String) -> Bool {
+    locked { !durability.writable || durability.legacyMigration?.engines[engine]?.stage == "blocked" }
+  }
+
+  public var recoveryNotice: BookmarkRecoveryNotice? {
+    locked {
+      if let notice = durability.notice { return notice }
+      if durability.store?.readOnly == true {
+        return BookmarkRecoveryNotice(kind: .safeMode, message: "Bookmarks are read-only in Safe Mode. You can open bookmarks; edits and sync are paused.")
+      }
+      if !durability.legacyPendingEngines.isEmpty {
+        return BookmarkRecoveryNotice(kind: .legacyMigration, message: "Bookmarks are being recovered. Sync is paused until every bookmark library is confirmed.", preservedPath: legacySource?.sourceURL.path)
+      }
+      return nil
+    }
+  }
+  public func dismissRecoveryNotice() { locked { if durability.writable { durability.notice = nil } } }
   public var recoveryConflicts: [JSONValue] { locked { durability.conflicts } }
 
   private func owners(for views: JSMap<BookmarkDesiredView>) -> JSMap<String> {
@@ -153,7 +191,17 @@ public final class BookmarkCoordinator: @unchecked Sendable {
       do {
         if let checkpoint { try durability.store?.write(checkpoint.payload) }
       } catch {
-        locked { durability.recordWriteFailure(error) }
+        let publications = locked {
+          durability.recordWriteFailure(error)
+          for engine in views.keys {
+            if !durability.writable, views[engine]?.readyForSync == true {
+              views[engine]?.readyForSync = false
+              views[engine]?.revision += 1
+            }
+          }
+          return views.keys.map { notifications($0) }
+        }
+        for publication in publications { deliver(publication) }
         throw error
       }
       return locked {
@@ -220,7 +268,7 @@ public final class BookmarkCoordinator: @unchecked Sendable {
   func writerSnapshot(engine: String) -> BookmarkWriterSnapshot {
     locked {
       let view = desiredView(engine: engine)
-      return BookmarkWriterSnapshot(binding: BookmarkWriterBinding(engine: engine, generation: ownerGeneration), revision: view.revision, ready: view.readyForSync, document: view.document, facts: stampsEnabled ? view.facts : [:])
+      return BookmarkWriterSnapshot(binding: BookmarkWriterBinding(engine: engine, generation: ownerGeneration), revision: view.revision, ready: view.readyForSync, hasView: view.hasView, document: view.document, facts: stampsEnabled ? view.facts : [:])
     }
   }
 
@@ -232,7 +280,6 @@ public final class BookmarkCoordinator: @unchecked Sendable {
         guard let store = durability.store else { return }
         store.invalidateLoadedForOwnerReplacement()
         let restored = BookmarkDurability(store: store)
-        restored.legacyPendingEngines.formUnion(launchLegacyPendingEngines.filter { restored.terminalEngines[$0.text] == nil })
         for engine in durability.restoredViews.keys + restored.terminalEngines.keys {
           views.removeValue(forKey: engine)
           bases.removeValue(forKey: engine)
@@ -242,6 +289,7 @@ public final class BookmarkCoordinator: @unchecked Sendable {
           bases[engine] = restored.restoredBases[engine]
         }
         durability = restored
+        reconcileLegacyLaunch()
         lastOwningProfiles = restored.owners
         pendingChromeDeltas.removeAll()
         desiredVersions.removeAll()
@@ -357,6 +405,7 @@ public final class BookmarkCoordinator: @unchecked Sendable {
     return BookmarkPublication(membership: snapshot(view), membershipObservers: streams.values.filter { $0.0 == JSKey(engine) }.map { $0.1 }, view: view, viewObservers: viewStreams.values.filter { $0.0 == JSKey(engine) }.map { $0.1 })
   }
   private func deliver(_ publication: BookmarkPublication) {
+    NativeBookmarkOwner.invalidateProjection()
     for stream in publication.membershipObservers { stream.yield(publication.membership) }
     for stream in publication.viewObservers { stream.yield(publication.view) }
   }
@@ -365,7 +414,7 @@ public final class BookmarkCoordinator: @unchecked Sendable {
     locked {
       var seen = Set<JSKey>()
       let mapped = Set(profiles.values.map(JSKey.init))
-      return (profiles.values + views.keys.filter { !$0.hasPrefix("incognito:") && !blockedEngines.contains(JSKey($0)) && durability.terminalEngines[$0] == nil && !mapped.contains(JSKey($0)) && needsPump($0) }).filter { !$0.hasPrefix("incognito:") && !blockedEngines.contains(JSKey($0)) && durability.terminalEngines[$0] == nil && seen.insert(JSKey($0)).inserted }
+      return (profiles.values + durability.legacyPendingEngines.map(\.text) + views.keys.filter { !$0.hasPrefix("incognito:") && !blockedEngines.contains(JSKey($0)) && durability.terminalEngines[$0] == nil && !mapped.contains(JSKey($0)) && needsPump($0) }).filter { !$0.hasPrefix("incognito:") && !blockedEngines.contains(JSKey($0)) && durability.terminalEngines[$0] == nil && seen.insert(JSKey($0)).inserted }
     }
   }
 
@@ -433,12 +482,16 @@ public final class BookmarkCoordinator: @unchecked Sendable {
   private func updateBookmarkFacts(profileId: String, expectedEngine: String, expectedLink: String? = nil, admission: (() throws -> Void)? = nil, update: (inout BookmarkDesiredView, String) -> Void) throws -> Bool {
     do {
       return try transact(admission: admission) {
-        guard stampsEnabled else { return (nil, { true }) }
+        guard stampsEnabled else {
+          guard durability.writable else { throw BookmarkPendingStoreError.unavailable }
+          return (nil, { true })
+        }
         let regular = Ids.isIncognitoProfile(profileId) ? Ids.incognitoOriginal(profileId) : profileId
         guard let engine = profiles[regular] else { throw BookmarkWriterError.unknownProfile }
         try validateBinding(profile: profileId, expectedEngine: expectedEngine)
         let link = durability.syncLinks[regular] ?? "none"
         if let expectedLink, JSKey(expectedLink) != JSKey(link) { throw BookmarkWriterError.staleBinding }
+        guard durability.writable else { throw BookmarkPendingStoreError.unavailable }
         guard var view = views[engine] else { return (nil, { true }) }
         let before = view
         update(&view, link)
@@ -457,6 +510,7 @@ public final class BookmarkCoordinator: @unchecked Sendable {
   public func setBookmarkSyncLinks(_ links: JSMap<String>, admission: (() throws -> Void)? = nil) -> Bool {
     do {
       return try transact(admission: admission) {
+        guard durability.writable else { throw BookmarkPendingStoreError.unavailable }
         guard stampsEnabled, links != durability.syncLinks else { return (nil, { true }) }
         let checkpoint = checkpoint(views: views, bases: bases, syncLinks: links)
         return (checkpoint, { true })
@@ -472,8 +526,8 @@ public final class BookmarkCoordinator: @unchecked Sendable {
       guard !blockedEngines.contains(JSKey(engine)), durability.terminalEngines[engine] == nil else { throw BookmarkWriterError.staleBinding }
       if let expectedEngine { try validateBinding(profile: profile, expectedEngine: expectedEngine) }
       let payload: JSONValue = ["kind": "submit", "profile": .string(profile), "engine": .string(engine), "fromSync": .bool(fromSync), "mutations": .array(mutations.map { ["method": .string($0.method), "args": .array($0.args)] })]
+      guard !bookmarkEditsPaused(engine: engine) else { throw BookmarkPendingStoreError.unavailable }
       if let receipt = try durability.receipt(requestID: requestID, payload: payload) { return (nil, { (receipt, self.silentPublication(self.desiredView(engine: engine))) }) }
-      guard durability.writable else { throw BookmarkPendingStoreError.unavailable }
       var view = desiredView(engine: engine)
       let before = view.document
       var factSequence = durability.factSequence
@@ -560,8 +614,8 @@ public final class BookmarkCoordinator: @unchecked Sendable {
         fields["link"] = JSONValue(expectedLink)
       }
       let payload = JSONValue.object(fields)
+      guard !bookmarkEditsPaused(engine: engine) else { throw BookmarkPendingStoreError.unavailable }
       if let receipt = try durability.receipt(requestID: requestID, payload: payload) { return (nil, { (receipt, self.silentPublication(self.desiredView(engine: engine))) }) }
-      guard durability.writable else { throw BookmarkPendingStoreError.unavailable }
       var view = desiredView(engine: engine)
       guard view.revision == expectedRevision else { throw BookmarkCoordinatorError.staleRevision }
       try durability.validateAcceptance(document, engine: engine)
@@ -584,6 +638,10 @@ public final class BookmarkCoordinator: @unchecked Sendable {
   @discardableResult
   public func completeRead(engine: String, document: JSONValue, capturedRevision: UInt64, epoch: UInt64? = nil) -> Bool {
     let result: BookmarkPublication
+    var backupFailure: String?
+    if let legacySource, locked({ durability.writable && !durability.legacyPendingEngines.isEmpty }) {
+      do { try legacySource.backup() } catch { backupFailure = String(describing: error) }
+    }
     do {
       result = try transact { () throws -> (BookmarkCheckpointInput?, () -> BookmarkPublication) in
         guard !blockedEngines.contains(JSKey(engine)), durability.terminalEngines[engine] == nil, epoch == nil || epoch == pumpEpoch else { throw BookmarkCoordinatorError.staleRevision }
@@ -605,7 +663,7 @@ public final class BookmarkCoordinator: @unchecked Sendable {
         }
         let desired = BookmarkFlat(document: view.document, engine: engine)
         let intended = attempted ?? desired
-        var delta = BookmarkReconcile.operations(from: base, to: intended, engine: engine)
+        var delta = migrationOperations(BookmarkReconcile.operations(from: base, to: intended, engine: engine), engine: engine, desired: desired)
         var replay = BookmarkReconcile.replayPending(fetched, operations: delta, engine: engine)
         if view.inFlightTarget != nil, replay.structuralBreak == nil {
           let later = BookmarkReconcile.operations(from: intended, to: desired, engine: engine)
@@ -614,13 +672,73 @@ public final class BookmarkCoordinator: @unchecked Sendable {
           delta.append(contentsOf: later)
         }
         view.inFlightTarget = nil
-        let merged = replay.tree.document(profiles: aliases(engine), preserving: view.document)
+        var merged = replay.tree.document(profiles: aliases(engine), preserving: view.document)
         var conflicts = durability.conflicts
         if let offset = replay.structuralBreak {
           let conflict: JSONValue = ["engine": .string(engine), "revision": .string(String(view.revision)), "base": .array(base.records), "desired": view.document, "operations": .array(delta), "structuralBreak": JSONValue(offset)]
           if !conflicts.contains(conflict) { conflicts.append(conflict) }
         }
-        let ready = !durability.legacyPendingEngines.contains(JSKey(engine))
+        var progress = durability.legacyMigration
+        var pending = durability.legacyPendingEngines
+        if durability.writable, pending.contains(JSKey(engine)) {
+          do {
+            guard let legacySource else { throw BookmarkCoordinatorError.invalidOperation("Legacy bookmark source could not be read") }
+            if let backupFailure { throw BookmarkCoordinatorError.invalidOperation(backupFailure) }
+            if progress == nil {
+              progress = BookmarkLegacyProgress(source: legacySource.sourceID, engines: pending.map(\.text), profiles: launchLegacyProfiles)
+            }
+            guard progress?.source == legacySource.sourceID else { throw BookmarkCoordinatorError.invalidOperation("Legacy bookmark source changed during migration") }
+            var entry = progress?.engines[engine] ?? BookmarkLegacyEngineProgress(stage: "pending", ids: [], target: nil)
+            if entry.stage == "pending" {
+              let operations = try legacySource.importOperations(engine: engine, profiles: progress?.profiles ?? launchLegacyProfiles)
+              let deleted = Set(base.order.filter { desired.nodes[$0] == nil }.map(JSKey.init))
+              var excluded = deleted
+              let admitted = operations.filter { operation in
+                guard let id = operation["id"]?.string else { return false }
+                if operation["parent"]?.string.map({ excluded.contains(JSKey($0)) }) == true { excluded.insert(JSKey(id)) }
+                return !excluded.contains(JSKey(id))
+              }
+              let imported = BookmarkReconcile.replay(replay.tree, operations: admitted, engine: engine)
+              guard imported.structuralBreak == nil, admitted.allSatisfy({ operation in
+                operation["id"]?.string.map { imported.tree.nodes[$0] != nil } == true
+              }) else { throw BookmarkCoordinatorError.invalidOperation("Legacy bookmark import was refused") }
+              merged = imported.tree.document(profiles: aliases(engine), preserving: view.document)
+              try durability.validateAcceptance(merged, engine: engine)
+              let sourceIDs = operations.compactMap { $0["id"]?.string }
+              let sourceKeys = Set(sourceIDs.map(JSKey.init))
+              entry = BookmarkLegacyEngineProgress(stage: "accepted", ids: sourceIDs, target: nil, imported: imported.tree.nodes.filter { id, _ in sourceKeys.contains(JSKey(id)) })
+            } else if entry.stage == "pushed" || entry.stage == "blocked", let target = entry.target {
+              var expected = BookmarkFlat(document: target, engine: engine)
+              for id in entry.ids {
+                guard let baseline = entry.imported[id], expected.nodes[id] == baseline,
+                  var original = expected.nodes[id]?.object, var confirmed = fetched.nodes[id]?.object,
+                  original["kind"] == "url", let url = confirmed["url"]?.string else { continue }
+                original.removeValue(forKey: "url")
+                confirmed.removeValue(forKey: "url")
+                if original == confirmed {
+                  var adopted = expected.nodes[id]?.object ?? [:]
+                  adopted["url"] = .string(url)
+                  expected.nodes[id] = .object(adopted)
+                }
+              }
+              if BookmarkReconcile.operations(from: expected, to: fetched, engine: engine).isEmpty {
+                entry.stage = "confirmed"
+                entry.target = nil
+                pending.remove(JSKey(engine))
+                conflicts.removeAll { $0["kind"] == "legacyBookmarkMigration" && BookmarkReconcile.same($0["engine"]?.string, engine) }
+              } else {
+                entry.stage = "blocked"
+                progress?.engines[engine] = entry
+                throw BookmarkCoordinatorError.invalidOperation("Legacy bookmark apply could not be confirmed; bookmark edits are paused for recovery")
+              }
+            }
+            progress?.engines[engine] = entry
+          } catch {
+            let conflict: JSONValue = ["kind": "legacyBookmarkMigration", "engine": .string(engine), "source": JSONValue(legacySource?.sourceID), "message": .string(String(describing: error))]
+            if !conflicts.contains(conflict) { conflicts.append(conflict) }
+          }
+        }
+        let ready = durability.writable && !pending.contains(JSKey(engine)) && replay.structuralBreak == nil
         if view.document != merged || view.readyForSync != ready || view.structuralBreak != replay.structuralBreak || requiredRead {
           view.document = merged
           view.hasView = true
@@ -632,8 +750,10 @@ public final class BookmarkCoordinator: @unchecked Sendable {
         var nextBases = bases
         nextViews[engine] = view
         nextBases[engine] = fetched
-        let checkpoint = durability.writable ? checkpoint(views: nextViews, bases: nextBases, conflicts: conflicts) : nil
-        return (checkpoint, {
+        var input = durability.writable ? checkpoint(views: nextViews, bases: nextBases, conflicts: conflicts) : nil
+        input?.legacyPendingEngines = pending
+        input?.legacyMigration = progress
+        return (input, {
           self.views = nextViews
           self.bases = nextBases
           self.invalidatePending(engine, desired: true, base: true)
@@ -642,7 +762,59 @@ public final class BookmarkCoordinator: @unchecked Sendable {
       }
     } catch { return false }
     deliver(result)
+    finishLegacySource()
     return true
+  }
+
+  private func migrationOperations(_ operations: [JSONValue], engine: String, desired: BookmarkFlat) -> [JSONValue] {
+    guard let entry = durability.legacyMigration?.engines[engine], entry.stage == "accepted" || entry.stage == "pushed" else { return operations }
+    return operations.map { operation in
+      guard operation["op"] == "add", let id = operation["id"]?.string,
+        let imported = entry.imported[id], desired.nodes[id] == imported else { return operation }
+      var value = operation.object ?? [:]
+      value["ifAbsent"] = true
+      return .object(value)
+    }
+  }
+
+  func chromeOperations(_ operations: [JSONValue], engine: String, document: JSONValue) -> [JSONValue] {
+    locked {
+      guard let stage = durability.legacyMigration?.engines[engine]?.stage, stage == "accepted" || stage == "pushed" else { return operations }
+      return migrationOperations(operations, engine: engine, desired: BookmarkFlat(document: document, engine: engine))
+    }
+  }
+
+  func legacyImportPending(engine: String) -> Bool {
+    locked { durability.legacyPendingEngines.contains(JSKey(engine)) }
+  }
+
+  public func migrationNeedsPush(engine: String) -> Bool {
+    locked { durability.writable && durability.legacyMigration?.engines[engine]?.stage == "accepted" }
+  }
+
+  func migrationNeedsConfirmation(engine: String) -> Bool {
+    locked { durability.writable && durability.legacyMigration?.engines[engine]?.stage == "pushed" }
+  }
+
+  private func finishLegacySource() {
+    writing {
+      let complete = locked {
+        durability.writable && durability.legacyPendingEngines.isEmpty && durability.legacyMigration?.source == legacySource?.sourceID &&
+          durability.legacyMigration?.engines.values.allSatisfy { $0.stage == "confirmed" || $0.stage == "discarded" } == true
+      }
+      guard complete, let legacySource, FileManager.default.fileExists(atPath: legacySource.sourceURL.path) else { return }
+      do {
+        let documents = locked { views.mapValues(\.document) }
+        try BookmarkLaunchCache(directory: legacySource.sourceURL.deletingLastPathComponent()).save(documents: documents)
+        try legacySource.retire()
+      } catch {
+        let publications = locked {
+          durability.notice = BookmarkRecoveryNotice(kind: .legacyMigration, message: "Bookmarks were imported, but the legacy source could not be retired. Its recovery copy is retained.", preservedPath: legacySource.sourceURL.path)
+          return views.keys.map { notifications($0) }
+        }
+        for publication in publications { deliver(publication) }
+      }
+    }
   }
 
   func claimPump() -> UInt64 {
@@ -686,7 +858,7 @@ public final class BookmarkCoordinator: @unchecked Sendable {
   }
 
   func ownsPump(engine: String, epoch: UInt64) -> Bool {
-    locked { pumpEpoch == epoch && !engine.hasPrefix("incognito:") && !blockedEngines.contains(JSKey(engine)) && durability.terminalEngines[engine] == nil && (profiles.values.contains { BookmarkReconcile.same($0, engine) } || needsPump(engine)) }
+    locked { pumpEpoch == epoch && !engine.hasPrefix("incognito:") && !blockedEngines.contains(JSKey(engine)) && durability.terminalEngines[engine] == nil && (profiles.values.contains { BookmarkReconcile.same($0, engine) } || durability.legacyPendingEngines.contains(JSKey(engine)) || needsPump(engine)) }
   }
 
   func pumpInput(engine: String, epoch: UInt64) -> (BookmarkDesiredView, [JSONValue])? {
@@ -733,6 +905,7 @@ public final class BookmarkCoordinator: @unchecked Sendable {
 
   private func terminate(engine: String, reason: String, epoch: UInt64?, admission: (() throws -> Void)? = nil) throws {
     let publication = try transact(admission: admission) { () throws -> (BookmarkCheckpointInput?, () -> BookmarkPublication) in
+      guard durability.writable else { throw BookmarkPendingStoreError.unavailable }
       if durability.terminalEngines[engine] == reason { return (nil, { self.silentPublication(self.desiredView(engine: engine)) }) }
       if reason == "retired" {
         blockedEngines.insert(JSKey(engine))
@@ -760,6 +933,10 @@ public final class BookmarkCoordinator: @unchecked Sendable {
       incarnations[engine] = incarnation + 1
       var input = checkpoint(views: nextViews, bases: nextBases, conflicts: conflicts)
       input.legacyPendingEngines = durability.legacyPendingEngines.subtracting([JSKey(engine)])
+      if reason == "retired", var progress = durability.legacyMigration {
+        progress.engines[engine] = BookmarkLegacyEngineProgress(stage: "discarded", ids: [], target: nil)
+        input.legacyMigration = progress
+      }
       input.terminalEngines = terminals
       input.incarnations = incarnations
       input.retainedRequests = durability.requests.filter { !BookmarkReconcile.same($1.receipt.view.engine, engine) }
@@ -778,6 +955,7 @@ public final class BookmarkCoordinator: @unchecked Sendable {
   func beginPush(engine: String, captured: BookmarkDesiredView, epoch: UInt64) -> Bool {
     do {
       let notification = try transact {
+        guard !bookmarkEditsPaused(engine: engine) else { throw BookmarkPendingStoreError.unavailable }
         guard ownsPump(engine: engine, epoch: epoch) else { throw BookmarkCoordinatorError.staleRevision }
         var view = desiredView(engine: engine)
         guard view.inFlightTarget == nil else { throw BookmarkCoordinatorError.staleRevision }
@@ -815,8 +993,23 @@ public final class BookmarkCoordinator: @unchecked Sendable {
         if view != before { view.revision += 1 }
         var nextViews = views
         nextViews[engine] = view
-        let checkpoint = checkpoint(views: nextViews, bases: nextBases)
-        return (checkpoint, { self.views = nextViews; self.bases = nextBases; self.invalidatePending(engine, desired: false, base: true); return self.notifications(engine) })
+        var conflicts = durability.conflicts
+        var progress = durability.legacyMigration
+        if var entry = progress?.engines[engine], entry.stage == "accepted" || entry.stage == "pushed" {
+          entry.stage = succeeded ? "pushed" : "accepted"
+          entry.target = succeeded ? captured.document : nil
+          progress?.engines[engine] = entry
+          view.readyForSync = false
+          view.requiresRead = true
+          nextViews[engine] = view
+          if !succeeded {
+            let conflict: JSONValue = ["kind": "legacyBookmarkMigration", "engine": .string(engine), "message": "Legacy bookmarks could not be applied. Source and pending intent are retained; sync is paused."]
+            if !conflicts.contains(conflict) { conflicts.append(conflict) }
+          }
+        }
+        var input = checkpoint(views: nextViews, bases: nextBases, conflicts: conflicts)
+        input.legacyMigration = progress
+        return (input, { self.views = nextViews; self.bases = nextBases; self.invalidatePending(engine, desired: false, base: true); return self.notifications(engine) })
       }
       deliver(notification)
       return true

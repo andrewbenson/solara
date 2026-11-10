@@ -5,17 +5,28 @@ import SolaraLive
 import SolaraSyncAdapter
 
 public class SettingsModule: Module {
+  private var bookmarkProjectionObserver: NSObjectProtocol?
+  private var bookmarkStateTask: Task<Void, Never>?
   public func definition() -> ModuleDefinition {
     Name("SolaraSettings")
 
-    Events("onAppIntegrationPresentation", "onSettingsCall", "onLiveReplica", "onLiveAuthRequest", "onLiveCloseGroup")
+    Events("onBookmarkProjectionChanged", "onAppIntegrationPresentation", "onSettingsCall", "onLiveReplica", "onLiveAuthRequest", "onLiveCloseGroup", "onBookmarkWriterState")
 
     OnCreate {
+      let projectionSink = SettingsEventSink(module: self)
+      self.bookmarkProjectionObserver = NotificationCenter.default.addObserver(forName: NativeBookmarkOwner.projectionChanged, object: nil, queue: nil) { _ in
+        projectionSink.module?.sendEvent("onBookmarkProjectionChanged", [:])
+      }
       _ = NativeLiveEngine.shared
       DispatchQueue.main.async { MainActor.assumeIsolated {
         PairingAdapter.install()
         NativeSettingsWindow.install()
       } }
+    }
+
+    OnDestroy {
+      if let observer = self.bookmarkProjectionObserver { NotificationCenter.default.removeObserver(observer) }
+      self.bookmarkProjectionObserver = nil
     }
 
     Function("available") { () -> Bool in
@@ -176,7 +187,30 @@ public class SettingsModule: Module {
 
     Function("liveInitialReplica") { () -> [String: Any] in NativeLiveEngine.shared.initialReplica() }
 
+    Function("bookmarkWriterAPIVersion") { () -> Int in 2 }
+
     Function("bookmarkWriterState") { () -> [String: Any] in NativeBookmarkWriter.state() }
+
+    Function("bookmarkProjection") { () throws -> String in
+      try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.projection() }
+    }
+
+    AsyncFunction("reloadBookmarkProjection") { (promise: Promise) in
+      nonisolated(unsafe) let reply = promise
+      MainActor.assumeIsolated {
+        Task { @MainActor in
+          do {
+            guard let owner = NativeBookmarkOwner.writableCurrent else { throw BookmarkWriterError.notOwned }
+            let projection = try owner.projection()
+            for engine in (projection["views"]?.object ?? [:]).keys {
+              guard NativeBookmarkOwner.current === owner else { throw BookmarkWriterError.staleBinding }
+              await NativeHistoryCatalog.catalog.reloadBookmarks(engineProfile: engine)
+            }
+            reply.resolve(nil)
+          } catch { reply.reject("ERR_BOOKMARK_PROJECTION", String(describing: error)) }
+        }
+      }
+    }.runOnQueue(.main)
 
     Function("bookmarkWriterSnapshot") { (profileId: String) throws -> [String: Any] in
       try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.snapshot(profile: profileId) }
@@ -266,6 +300,13 @@ public class SettingsModule: Module {
 
     OnStartObserving {
       let sink = SettingsEventSink(module: self)
+      self.bookmarkStateTask?.cancel()
+      self.bookmarkStateTask = Task {
+        for await _ in NativeBookmarkOwner.ownershipStates() {
+          if Task.isCancelled { return }
+          sink.module?.sendEvent("onBookmarkWriterState", NativeBookmarkWriter.state())
+        }
+      }
       NativeLiveEngine.shared.setEvent { revision, replicaJSON, calendarJSON, meetingAlertJSON in
         DispatchQueue.main.async { sink.module?.sendEvent("onLiveReplica", ["revision": revision, "replicaJSON": replicaJSON, "calendarJSON": calendarJSON, "meetingAlertJSON": meetingAlertJSON]) }
       }
@@ -285,6 +326,8 @@ public class SettingsModule: Module {
     }
 
     OnStopObserving {
+      self.bookmarkStateTask?.cancel()
+      self.bookmarkStateTask = nil
       DispatchQueue.main.async {
         MainActor.assumeIsolated {
           NativeLiveEngine.shared.setEvent(nil)

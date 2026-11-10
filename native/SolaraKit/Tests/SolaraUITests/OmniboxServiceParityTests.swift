@@ -184,7 +184,7 @@ struct OmniboxServiceParityTests {
     #expect(Set(defaults.map { $0["text"]!.string! }).count >= 200)
     #expect(fixture.expected.count == fixture.cases.count)
     let client = try ServiceParityClient(fixture.source)
-    let catalog = LibraryCatalog(client: client)
+    let catalog = LibraryCatalog(client: client, bookmarkSelection: { false })
     await catalog.start(engineProfiles: fixture.source["profiles"]!.array!.map { $0["engineProfile"]!.string! })
     let warm = fixture.sources(catalog, workspaceTabs: workspaceTabs)
     for profile in fixture.source["profiles"]!.array! {
@@ -224,7 +224,7 @@ struct OmniboxServiceParityTests {
     let query = try #require(fixture.cases.first { $0["context"]?.string == "default" && $0["text"]?.string == "g" })
     let expected = try #require(fixture.expected.first { $0["context"] == query["context"] && $0["text"] == query["text"] })
     let context = fixture.context(query)
-    let catalog = LibraryCatalog(client: try ServiceParityClient(fixture.source))
+    let catalog = LibraryCatalog(client: try ServiceParityClient(fixture.source), bookmarkSelection: { false })
     await catalog.start(engineProfiles: fixture.source["profiles"]!.array!.map { $0["engineProfile"]!.string! })
     let sources = fixture.sources(catalog)
     var clockReads = 0

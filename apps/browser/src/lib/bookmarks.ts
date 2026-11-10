@@ -1,3 +1,5 @@
+import { nativeBookmarksSelected, refreshBookmarkProjection } from "../store/bookmarkProjection";
+import { onBookmarkProjectionChanged, reloadBookmarkProjection } from "@solara/settings";
 import { nativeSafeMode } from "../store/nativeStore";
 import { bookmarkTree, onBookmarksChanged, watchBookmarks, type BookmarkOp, type EngineBookmark } from "@solara/solaracore";
 import { readDocument, removeDocument, writeDocument } from "@solara/shell";
@@ -210,6 +212,9 @@ const stateOf = (engine: string) => {
   return state;
 };
 let legacyMoved = false;
+let legacyRun = 0;
+const migrationTimers = new Set<ReturnType<typeof setTimeout>>();
+const legacyCurrent = (engine: string, state: EngineState) => !nativeBookmarksSelected() && engines.get(engine) === state;
 
 const engineProfiles = (s: Pick<BrowserState, "profiles">) =>
   [...new Set(Object.keys(s.profiles).filter((id) => !isIncognitoProfile(id)).map(engineProfile))];
@@ -217,6 +222,7 @@ const profilesUsing = (s: Pick<BrowserState, "profiles">, engine: string) =>
   Object.keys(s.profiles).filter((id) => !isIncognitoProfile(id) && engineProfile(id) === engine);
 
 function adopt(engine: string, flat: Flat, { ready = legacyMoved } = {}) {
+  if (nativeBookmarksSelected()) return;
   useBrowser.setState((s) => {
     const roots = rootIdsFor(engine);
     const old = flatFromStore(s.bookmarks, engine);
@@ -241,6 +247,7 @@ function adopt(engine: string, flat: Flat, { ready = legacyMoved } = {}) {
 }
 
 async function sendOps(engine: string, ops: BookmarkOp[]): Promise<boolean> {
+  if (nativeBookmarksSelected()) return false;
   try {
     const result = await nativeApplyBookmarkOps(engine, ops);
     return !result.skipped && !result.invalid.length;
@@ -251,8 +258,11 @@ async function sendOps(engine: string, ops: BookmarkOp[]): Promise<boolean> {
 }
 
 async function readTree(engine: string, state: EngineState) {
+  if (!legacyCurrent(engine, state)) return;
   await watchBookmarks(engine);
+  if (!legacyCurrent(engine, state)) return;
   const fetched = flatFromEngine(await bookmarkTree(engine), engine);
+  if (!legacyCurrent(engine, state)) return;
   const base = state.shadow ?? state.shown ?? flatFromStore({ nodes: {}, roots: {} }, engine);
   const edits = bookmarkOps(base, flatFromStore(store().bookmarks, engine), engine);
   const merged = edits.length ? applyOps(fetched, edits, engine) : fetched;
@@ -260,13 +270,16 @@ async function readTree(engine: string, state: EngineState) {
   state.shown = null;
   adopt(engine, merged);
   if (!edits.length || state.retryPending) return;
-  if (await sendOps(engine, edits)) {
+  const saved = await sendOps(engine, edits);
+  if (!legacyCurrent(engine, state)) return;
+  if (saved) {
     state.shadow = merged;
     state.failedPushes = 0;
   } else pushFailed(engine, state);
 }
 
 function pushFailed(engine: string, state: EngineState) {
+  if (!legacyCurrent(engine, state)) return;
   state.failedPushes++;
   if (state.failedPushes === 1) {
     state.needRead = true;
@@ -278,29 +291,32 @@ function pushFailed(engine: string, state: EngineState) {
   state.retryTimer = setTimeout(() => {
     state.retryTimer = null;
     state.retryPending = false;
-    if (engines.get(engine) === state) read(engine);
+    if (legacyCurrent(engine, state)) read(engine);
   }, delay);
 }
 
 async function pushTree(engine: string, state: EngineState) {
-  if (!state.shadow || state.retryPending) return;
+  if (!legacyCurrent(engine, state) || !state.shadow || state.retryPending) return;
   const desired = flatFromStore(store().bookmarks, engine);
   if (!desired.nodes.size) return;
   const ops = bookmarkOps(state.shadow, desired, engine);
   if (!ops.length) return;
-  if (await sendOps(engine, ops)) {
+  const saved = await sendOps(engine, ops);
+  if (!legacyCurrent(engine, state)) return;
+  if (saved) {
     state.shadow = desired;
     state.failedPushes = 0;
   } else pushFailed(engine, state);
 }
 
 function work(engine: string) {
+  if (nativeBookmarksSelected()) return;
   const state = stateOf(engine);
   if (state.busy) return;
   state.busy = true;
   void (async () => {
     try {
-      while (state.needRead || state.needPush) {
+      while (legacyCurrent(engine, state) && (state.needRead || state.needPush)) {
         if (state.needRead) {
           state.needRead = false;
           state.needPush = false;
@@ -319,6 +335,7 @@ function work(engine: string) {
 }
 
 function read(engine: string) {
+  if (nativeBookmarksSelected()) return;
   stateOf(engine).needRead = true;
   work(engine);
 }
@@ -382,7 +399,7 @@ let cacheTimer: ReturnType<typeof setTimeout> | undefined;
 
 function saveCache() {
   cacheTimer = undefined;
-  if (nativeSafeMode()) return;
+  if (nativeSafeMode() || nativeBookmarksSelected()) return;
   const s = store();
   const trees: CacheDoc["trees"] = {};
   for (const [engine, state] of engines) {
@@ -397,7 +414,8 @@ function saveCache() {
 }
 
 export async function migrateBookmarksFile({ keepMs = LEGACY_KEPT_MS } = {}): Promise<"none" | "moved" | "kept"> {
-  if (nativeSafeMode()) return "kept";
+  if (nativeSafeMode() || nativeBookmarksSelected()) return "kept";
+  const run = legacyRun;
   let file: { bookmarks?: Bookmarks } | null = null;
   try {
     const json = readDocument(LEGACY_FILE);
@@ -435,55 +453,98 @@ export async function migrateBookmarksFile({ keepMs = LEGACY_KEPT_MS } = {}): Pr
       walk(roots.bar, "bar");
       walk(roots.other, "other");
       if (!ops.length) continue;
+      if (nativeBookmarksSelected() || legacyRun !== run) return "kept";
       const result = await nativeApplyBookmarkOps(engine, ops);
+      if (nativeBookmarksSelected() || legacyRun !== run) return "kept";
       if (result.skipped) throw new Error(`${result.skipped} of ${ops.length} bookmarks couldn't be added`);
     }
   } catch (error) {
     console.warn(`[bookmarks] moving ${LEGACY_FILE} into Chrome failed; trying again next launch`, error);
     return "kept";
   }
-  if (keepMs) setTimeout(() => removeDocument(LEGACY_FILE), keepMs);
-  else removeDocument(LEGACY_FILE);
+  if (nativeBookmarksSelected() || legacyRun !== run) return "kept";
+  if (keepMs) {
+    const timer = setTimeout(() => {
+      migrationTimers.delete(timer);
+      if (!nativeBookmarksSelected() && legacyRun === run) removeDocument(LEGACY_FILE);
+    }, keepMs);
+    migrationTimers.add(timer);
+  } else removeDocument(LEGACY_FILE);
   return "moved";
 }
 
 export function startBookmarks() {
-  for (const [engine, flat] of Object.entries(launchTrees())) {
-    if (!engineProfiles(store()).includes(engine)) continue;
-    stateOf(engine).shown = flat;
-    adopt(engine, flat, { ready: false });
-  }
-  const changes = onBookmarksChanged((engine) => {
-    if (stateOf(engine).shadow) read(engine);
-  });
   let stopped = false;
-  void migrateBookmarksFile().then((result) => {
-    legacyMoved = result !== "kept";
-    if (!stopped) for (const engine of engineProfiles(store())) read(engine);
-  });
-  const stop = useBrowser.subscribe((s, prev) => {
-    if (s.profiles !== prev.profiles) {
-      for (const engine of engineProfiles(s)) if (!stateOf(engine).shadow && !stateOf(engine).busy) read(engine);
+  let selected = false;
+  let stopLegacy = () => {};
+  const selectNative = () => {
+    if (stopped || !nativeBookmarksSelected()) return;
+    if (!selected) {
+      selected = true;
+      stopLegacy();
+      clearTimeout(cacheTimer);
+      cacheTimer = undefined;
+      for (const timer of migrationTimers) clearTimeout(timer);
+      migrationTimers.clear();
+      for (const state of engines.values()) if (state.retryTimer) clearTimeout(state.retryTimer);
+      engines.clear();
+      legacyMoved = false;
+      legacyRun++;
+      void reloadBookmarkProjection().catch((error: unknown) => console.warn("[bookmarks] native reload unavailable", error));
     }
-    if (s.bookmarks !== prev.bookmarks) {
-      push(s);
-      if ([...engines.values()].some((e) => e.shadow)) cacheTimer ??= setTimeout(saveCache, CACHE_SAVE_MS);
+    refreshBookmarkProjection(useBrowser);
+  };
+  const projection = onBookmarkProjectionChanged(selectNative);
+  if (nativeBookmarksSelected()) selectNative();
+  else {
+    const run = ++legacyRun;
+    for (const [engine, flat] of Object.entries(launchTrees())) {
+      if (!engineProfiles(store()).includes(engine)) continue;
+      stateOf(engine).shown = flat;
+      adopt(engine, flat, { ready: false });
     }
-  });
+    const changes = onBookmarksChanged((engine) => {
+      if (!nativeBookmarksSelected() && stateOf(engine).shadow) read(engine);
+    });
+    void migrateBookmarksFile().then((result) => {
+      if (stopped || selected || nativeBookmarksSelected() || run !== legacyRun) return;
+      legacyMoved = result !== "kept";
+      for (const engine of engineProfiles(store())) read(engine);
+    });
+    const stop = useBrowser.subscribe((s, prev) => {
+      if (nativeBookmarksSelected()) { selectNative(); return; }
+      if (s.profiles !== prev.profiles) {
+        for (const engine of engineProfiles(s)) if (!stateOf(engine).shadow && !stateOf(engine).busy) read(engine);
+      }
+      if (s.bookmarks !== prev.bookmarks) {
+        push(s);
+        if ([...engines.values()].some((e) => e.shadow)) cacheTimer ??= setTimeout(saveCache, CACHE_SAVE_MS);
+      }
+    });
+    stopLegacy = () => { changes.remove(); stop(); };
+  }
   return () => {
     stopped = true;
+    projection.remove();
+    stopLegacy();
     clearTimeout(cacheTimer);
-    if (cacheTimer) saveCache();
+    if (cacheTimer && !nativeBookmarksSelected()) saveCache();
     cacheTimer = undefined;
-    changes.remove();
-    stop();
+    for (const timer of migrationTimers) clearTimeout(timer);
+    migrationTimers.clear();
     for (const state of engines.values()) if (state.retryTimer) clearTimeout(state.retryTimer);
     engines.clear();
     legacyMoved = false;
+    legacyRun++;
   };
 }
 
 export async function reloadBookmarks() {
+  if (nativeBookmarksSelected()) {
+    await reloadBookmarkProjection();
+    refreshBookmarkProjection(useBrowser);
+    return;
+  }
   for (const engine of engineProfiles(store())) read(engine);
   for (let i = 0; i < 200 && [...engines.values()].some((e) => e.busy); i++) await new Promise((r) => setTimeout(r, 5));
 }

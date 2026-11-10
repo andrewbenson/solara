@@ -78,6 +78,9 @@ public struct BookmarkSnapshot: Sendable, Equatable {
   public var nodes: [String: BookmarkNode]
   public var hasView: Bool
   public var readyForSync: Bool
+  public var recoveryMessage: String?
+  public var editsPaused: Bool
+  public var recoveryConflictCount: Int
   public var ready: Bool {
     get { hasView }
     set { hasView = newValue }
@@ -85,11 +88,14 @@ public struct BookmarkSnapshot: Sendable, Equatable {
   public var revision: Int
   public var urlCount: Int { nodes.values.filter { !$0.isFolder }.count }
 
-  public init(roots: BookmarkRoots? = nil, nodes: [String: BookmarkNode] = [:], ready: Bool = false, revision: Int = 0, readyForSync: Bool? = nil) {
+  public init(roots: BookmarkRoots? = nil, nodes: [String: BookmarkNode] = [:], ready: Bool = false, revision: Int = 0, readyForSync: Bool? = nil, recoveryMessage: String? = nil, editsPaused: Bool = false, recoveryConflictCount: Int = 0) {
     self.roots = roots
     self.nodes = nodes
     hasView = ready
     self.readyForSync = readyForSync ?? ready
+    self.recoveryMessage = recoveryMessage
+    self.editsPaused = editsPaused
+    self.recoveryConflictCount = recoveryConflictCount
     self.revision = revision
   }
 }
@@ -109,18 +115,21 @@ final class BookmarkLibrary {
   let engineProfile: String
   let client: any EngineClient
   let publish: @MainActor (BookmarkSnapshot) -> Void
+  let admission: @MainActor () -> Bool
   private(set) var snapshot = BookmarkSnapshot()
   private var loading = false
   private var again = false
   private var reloadWaiters: [CheckedContinuation<Void, Never>] = []
 
-  init(engineProfile: String, client: any EngineClient, publish: @escaping @MainActor (BookmarkSnapshot) -> Void) {
+  init(engineProfile: String, client: any EngineClient, admission: @escaping @MainActor () -> Bool = { true }, publish: @escaping @MainActor (BookmarkSnapshot) -> Void) {
     self.engineProfile = engineProfile
     self.client = client
     self.publish = publish
+    self.admission = admission
   }
 
   func reload() async {
+    guard admission() else { return }
     if loading {
       again = true
       await withCheckedContinuation { reloadWaiters.append($0) }
@@ -136,8 +145,11 @@ final class BookmarkLibrary {
     repeat {
       again = false
       do {
+        guard admission() else { break }
         try await client.watchBookmarks(engineProfile: engineProfile)
+        guard admission() else { break }
         let tree = try await client.readBookmarks(engineProfile: engineProfile)
+        guard admission() else { break }
         let roots = BookmarkRoots(bar: "bar@\(engineProfile.isEmpty ? "default" : engineProfile)", other: "other@\(engineProfile.isEmpty ? "default" : engineProfile)")
         var nodes: [String: BookmarkNode] = [:]
         func add(_ source: EngineBookmarkNode, id: String, parentId: String?, depth: Int) throws {
@@ -151,6 +163,7 @@ final class BookmarkLibrary {
         }
         try add(tree.bar, id: roots.bar, parentId: nil, depth: 0)
         try add(tree.other, id: roots.other, parentId: nil, depth: 0)
+        guard admission() else { break }
         guard !again else { continue }
         if snapshot.roots != roots || snapshot.nodes != nodes || !snapshot.ready {
           snapshot = BookmarkSnapshot(roots: roots, nodes: nodes, ready: true, revision: snapshot.revision + 1)

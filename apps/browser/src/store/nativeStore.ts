@@ -1,3 +1,4 @@
+import { guardBookmarkWrite, protectBookmarkReplica } from "./bookmarkProjection";
 import {
   encodeCommand,
   installPageReportWriter,
@@ -349,7 +350,9 @@ const OWNED_KEYS: ReadonlySet<string> = new Set([...WORKSPACE_SLICES, "settings"
 
 export function writeState(store: Replica, update: Partial<BrowserState> | ((s: BrowserState) => Partial<BrowserState>)) {
   const s = store.getState();
+  protectBookmarkReplica(s);
   const partial = typeof update === "function" ? update(s) : update;
+  guardBookmarkWrite(partial, s);
   if (!active || applying) return store.setState(partial);
   refuseLiveWrite(partial);
   const ownedKeys = ownsWorkspace ? OWNED_KEYS : new Set(["settings", "downloads"]);
@@ -419,7 +422,9 @@ export function guardNativeSet(
   set: (update: Partial<BrowserState>, replace?: boolean) => void,
 ) {
   const s = get();
+  protectBookmarkReplica(s);
   const partial = typeof update === "function" ? update(s) : update;
+  guardBookmarkWrite(partial, s, replace);
   if (applying) {
     const held = applying;
     applying = 0;

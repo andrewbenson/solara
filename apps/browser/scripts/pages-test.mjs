@@ -448,11 +448,13 @@ try {
     assert.deepEqual(cleared.now.shown, history.slice(1).map((h) => h.url), "the last hour's visit is gone");
   });
   const seeded = await app.eval(`const s = ac.store.getState(); const w = Object.keys(s.windows)[0]; const profileId = s.windows[w].profileId; const bar = s.bookmarks.roots[profileId].bar;
-    const work = s.addBookmarkFolder({ profileId, title: "Work", parentId: bar });
-    const ids = ["alpha", "beta", "gamma", "delta"].map((t) => s.addBookmark({ profileId, url: "https://" + t + ".example.com/", title: t[0].toUpperCase() + t.slice(1), parentId: bar }));
-    const inner = s.addBookmark({ profileId, url: "https://reports.example.org/q4", title: "Q4 Report", parentId: work });
-    ac.pages.openInternalPage("bookmarks", w);
-    return JSON.stringify({ bar, work, ids, inner })`);
+    const add = (t) => ac.bookmarks.addBookmark({ profileId, url: "https://" + t + ".example.com/", title: t[0].toUpperCase() + t.slice(1), parentId: bar });
+    return ac.bookmarks.addBookmarkFolder({ profileId, title: "Work", parentId: bar }).then((work) =>
+      ["alpha", "beta", "gamma", "delta"].reduce((done, t) => done.then((ids) => add(t).then((id) => [...ids, id])), Promise.resolve([])).then((ids) =>
+        ac.bookmarks.addBookmark({ profileId, url: "https://reports.example.org/q4", title: "Q4 Report", parentId: work }).then((inner) => {
+          ac.pages.openInternalPage("bookmarks", w);
+          return JSON.stringify({ bar, work, ids, inner });
+        })));`);
   const marks = JSON.parse(seeded);
   const barIds = () => crossRead(app, "bookmark bar order", (snapshot) => snapshot.windows.flatMap((window) => window.bookmarks).find((node) => node.id === marks.bar)?.children.join(",") ?? null,
     (timeout) => app.eval(`const s = ac.store.getState(); return s.bookmarks.nodes[${JSON.stringify(marks.bar)}].children.join(",")`, { timeout }));

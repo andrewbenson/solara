@@ -39,8 +39,14 @@ struct BookmarkAtomicRemapTests {
     #expect(throws: BookmarkPendingStoreError.savedUnconfirmed("fsync journal directory", EIO)) {
       try coordinator.replaceDocument(engine: "E1", profile: "p", document: self.document("E1", title: "Remote winner"), expectedRevision: beforeFirst.revision, expectedEngine: "E1", records: [(key: "bm:b0", hlc: "00000005k.0007.remote")], expectedLink: "old")
     }
+    var pausedFirst = beforeFirst
+    pausedFirst.readyForSync = false
+    pausedFirst.revision += 1
+    var pausedSecond = beforeSecond
+    pausedSecond.readyForSync = false
+    pausedSecond.revision += 1
     #expect(coordinator.recoveryNotice?.kind == .unavailableJournal)
-    #expect(coordinator.desiredView(engine: "E1") == beforeFirst)
+    #expect(coordinator.desiredView(engine: "E1") == pausedFirst)
     let journal = directory.appendingPathComponent(BookmarkPendingStore.journalName)
     let bytes = try Data(contentsOf: journal)
     let writesBeforeRemap = writes
@@ -59,8 +65,8 @@ struct BookmarkAtomicRemapTests {
     #expect(throws: BookmarkWriterError.staleBinding) {
       try coordinator.replaceDocument(engine: "E1", profile: "p", document: self.document("E1", title: "Delayed old work"), expectedRevision: beforeFirst.revision, expectedEngine: "E1", records: [(key: "bm:b0", hlc: "0000003uw.0000.old")], expectedLink: "old")
     }
-    #expect(coordinator.desiredView(engine: "E1") == beforeFirst)
-    #expect(coordinator.desiredView(engine: "E2") == beforeSecond)
+    #expect(coordinator.desiredView(engine: "E1") == pausedFirst)
+    #expect(coordinator.desiredView(engine: "E2") == pausedSecond)
     #expect(writes == writesBeforeRemap)
     #expect(try Data(contentsOf: journal) == bytes)
     let recovered = BookmarkCoordinator(profiles: ["p": "E2", "alias": "E1", "q": "E2"], defaultProfile: "p", now: { 200 }, stampsEnabled: true, pendingStore: BookmarkPendingStore(directory: directory))

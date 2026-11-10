@@ -190,6 +190,10 @@ public enum DocumentStore {
     beforeQuitFlush = callback
   }
 
+  public static func directoryURL() throws -> URL {
+    try ShellModule.documentURL("bookmarks-pending-native-v1.json").deletingLastPathComponent()
+  }
+
   public static func read(_ name: String) -> String? {
     guard let url = try? ShellModule.documentURL(name) else { return nil }
     let pending = writes.pendingContents(for: url)

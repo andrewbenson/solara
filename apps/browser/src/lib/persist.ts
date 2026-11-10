@@ -394,8 +394,8 @@ function failClosed(reason?: string) {
 
 function startDerivedServices({ forgetsIncognito }: { forgetsIncognito: boolean }) {
   const stopFavicons = startFavicons();
-  const stopHistory = startHistory();
   const stopBookmarks = startBookmarks();
+  const stopHistory = startHistory();
   const stopProfileData = nativeOwnsWorkspace() ? () => {} : startProfileDataCleanup();
   const stopIncognito = forgetsIncognito
     ? useBrowser.subscribe((s, prev) => {

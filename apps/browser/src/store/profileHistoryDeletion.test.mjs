@@ -5,6 +5,7 @@ import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 
 const ts = createRequire(import.meta.url)("typescript");
+const bookmarkProjection = await import("./bookmarkProjection.ts");
 function load(path, imports) {
   const module = { exports: {} };
   const source = readFileSync(new URL(path, import.meta.url), "utf8");
@@ -31,6 +32,7 @@ function fixture({ shared = false, record = () => {} } = {}) {
     history: { default: ["kept"], [id]: ["gone"] }, historyReady: { default: true, [id]: true }, historyFloor: { default: 7, [id]: 8 },
   };
   const profiles = load("./profiles.ts", {
+    "./bookmarkProjection": bookmarkProjection,
     "@solara/shell": {}, "./bookmarks": bookmarks, "./model": model, "./settings": { DEFAULT_PROFILE_ID: "default" },
     "./nativeStore": { nativeSafeMode: () => false, confirmNativeProfileDeletion: record }, "./tabs": { removeTabs: (s) => s },
   });
@@ -55,6 +57,7 @@ for (const shared of [false, true]) test(`JS deletion prunes only the removed al
 
 test("native profileDeleted effect prunes only the alias, preserving the common state", () => {
   const workspace = load("./nativeWorkspace.ts", {
+    "./bookmarkProjection": bookmarkProjection,
     "@solara/solaracore": {}, "./bookmarks": bookmarks, "./model": model, "./closingWindowRestore": {}, "./tabs": {},
     "../lib/earlyNavigate": {}, "../lib/focusClaims": {}, "./nativeStore": { nativeOwnsWorkspace: () => true },
   });
@@ -90,6 +93,7 @@ test("fallback ledger refusal leaves every slice and the cleanup queue unchanged
 
 function nativeBridge({ present = true, active = true, dispatch = () => ({ rev: 1, effects: [{ type: "profileDeleted", profileId: "p-work-1" }] }) } = {}) {
   const native = load("./nativeStore.ts", {
+    "./bookmarkProjection": bookmarkProjection,
     "@solara/store": {
       nativeStoreModulePresent: () => present,
       nativeStoreStatus: () => ({ active, scope: "settingsAndDownloads" }),

@@ -12,7 +12,9 @@ const document = (extra = {}) => ({
   roots: { p: { bar: "bar@native", other: "other@native" } },
 });
 
+let projectionOwner = 0;
 class FakeOwner {
+  projectionOwner = String(++projectionOwner);
   constructor() {
     this.engine = "native";
     this.generation = "1";
@@ -22,6 +24,13 @@ class FakeOwner {
     this.replaced = [];
     this.refuse = null;
     this.ids = 0;
+  }
+  projection() {
+    const defaultDocument = { nodes: { "bar@default": folder("bar@default", "Bookmarks Bar"), "other@default": folder("other@default", "Other Bookmarks") }, roots: { default: { bar: "bar@default", other: "other@default" } } };
+    return { owner: this.projectionOwner, generation: this.generation, profiles: { p: { engine: this.engine, generation: this.generation }, default: { engine: "", generation: "1" } }, views: {
+      [this.engine]: { revision: String(this.revision), hasView: true, readyForSync: true, document: this.document },
+      "": { revision: "1", hasView: true, readyForSync: true, document: defaultDocument },
+    } };
   }
   state() {
     return { state: "owned", generation: this.lifecycleGeneration ?? this.generation };
@@ -191,7 +200,7 @@ for (const operation of ["submit", "replace"]) {
     owner[operation] = (...args) => {
       if (!refused) {
         calls.push({ refused: true });
-        owner.generation = "retired-incarnation";
+        owner.generation = "2";
         throw (refused = staleBinding());
       }
       return real(...args);
@@ -258,4 +267,16 @@ test("a bookmark edit that wasn't saved tells the user in the focused window", (
   S().setFocusedWindow(windowId);
   reportBookmarkFailure(Object.assign(new Error("gave up"), { code: "staleBinding" }));
   assert.equal(useToasts.getState().toasts[windowId]?.title, "Bookmark not saved");
+});
+
+
+test("saved-unconfirmed failure says it may be saved and never invites a duplicate retry", (t) => {
+  t.mock.method(console, "warn", () => {});
+  const windowId = S().createWindow();
+  S().setFocusedWindow(windowId);
+  reportBookmarkFailure(Object.assign(new Error('bookmark replacement refused: savedUnconfirmed("directory sync", 5)'), { code: "refused" }));
+  const toast = useToasts.getState().toasts[windowId];
+  assert.equal(toast?.title, "Bookmark save unconfirmed");
+  assert.match(JSON.stringify(toast), /may have been saved/);
+  assert.doesNotMatch(JSON.stringify(toast), /Try it again/);
 });

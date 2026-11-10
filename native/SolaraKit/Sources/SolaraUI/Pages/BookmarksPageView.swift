@@ -48,6 +48,9 @@ public final class BookmarksPageModel {
   public var groupable: Set<String> = []
   public var arcRestorable: Set<String> = []
   public var bookmarkIcons: [String: String] = [:]
+  public private(set) var recoveryMessage: String?
+  public private(set) var editsPaused = false
+  public private(set) var recoveryConflictCount = 0
   public var undoCount: Int?
   public var theme = PageTheme.fallbackLight
   public var profileId = ""
@@ -69,6 +72,17 @@ public final class BookmarksPageModel {
   @ObservationIgnored private var bookmarkObserver: Task<Void, Never>?
 
   public init(catalog: LibraryCatalog? = nil) { self.catalog = catalog }
+
+  public func emit(_ event: BookmarksPageEvent) {
+    if editsPaused {
+      switch event {
+      case .open, .openAll: break
+      default: return
+      }
+    }
+    onEvent(event)
+  }
+
 
   deinit { bookmarkObserver?.cancel() }
 
@@ -153,7 +167,7 @@ public final class BookmarksPageModel {
   func remove(_ list: [String]) {
     guard !list.isEmpty else { return }
     selected = []
-    onEvent(.delete(list))
+    emit(.delete(list))
   }
 
   func beginDrag(_ id: String) {
@@ -180,7 +194,7 @@ public final class BookmarksPageModel {
     let moving = dragging
     dragging = []
     guard let target, !moving.isEmpty else { return }
-    onEvent(.move(moving, target, listed: ids))
+    emit(.move(moving, target, listed: ids))
   }
 
   func menu(for node: PageBookmark) {
@@ -196,23 +210,23 @@ public final class BookmarksPageModel {
     }
     let id = node.id
     if let url = node.url, !node.isFolder {
-      item("Open in New Tab") { [weak self] in self?.onEvent(.open(url, .foreground)) }
-      item("Open in New Window") { [weak self] in self?.onEvent(.open(url, .window)) }
-      item("Open in Incognito Window") { [weak self] in self?.onEvent(.open(url, .incognito)) }
-      item("Open in Split View") { [weak self] in self?.onEvent(.open(url, .split)) }
+      item("Open in New Tab") { [weak self] in self?.emit(.open(url, .foreground)) }
+      item("Open in New Window") { [weak self] in self?.emit(.open(url, .window)) }
+      item("Open in Incognito Window") { [weak self] in self?.emit(.open(url, .incognito)) }
+      item("Open in Split View") { [weak self] in self?.emit(.open(url, .split)) }
       menu.addItem(.separator())
-      item("Edit…") { [weak self] in self?.onEvent(.edit(id)) }
+      item("Edit…") { [weak self] in self?.emit(.edit(id)) }
       item("Copy Link") {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(cleanUrl(url), forType: .string)
       }
     } else {
-      item("Open All (\(links(id).count))") { [weak self] in self?.onEvent(.openAll(id, newWindow: false)) }
-      item("Open All in New Window") { [weak self] in self?.onEvent(.openAll(id, newWindow: true)) }
-      item("Add to Sidebar as Group", enabled: groupable.contains(id)) { [weak self] in self?.onEvent(.addGroup(id)) }
-      if arcRestorable.contains(id) { item("Restore Arc Folders as Groups") { [weak self] in self?.onEvent(.restoreArc(id)) } }
+      item("Open All (\(links(id).count))") { [weak self] in self?.emit(.openAll(id, newWindow: false)) }
+      item("Open All in New Window") { [weak self] in self?.emit(.openAll(id, newWindow: true)) }
+      item("Add to Sidebar as Group", enabled: groupable.contains(id)) { [weak self] in self?.emit(.addGroup(id)) }
+      if arcRestorable.contains(id) { item("Restore Arc Folders as Groups") { [weak self] in self?.emit(.restoreArc(id)) } }
       menu.addItem(.separator())
-      item("Rename…") { [weak self] in self?.onEvent(.edit(id)) }
+      item("Rename…") { [weak self] in self?.emit(.edit(id)) }
     }
     if searching, let parentId = node.parentId { item("Show in Folder") { [weak self] in self?.choose(folder: parentId) } }
     menu.addItem(.separator())
@@ -234,10 +248,10 @@ public final class BookmarksPageModel {
       menu.addItem(made)
     }
     let parent = folderId
-    item("Add New Bookmark…") { [weak self] in self?.onEvent(.addBookmark(parent)) }
-    item("Add New Folder…") { [weak self] in self?.onEvent(.addFolder(parent)) }
+    item("Add New Bookmark…") { [weak self] in self?.emit(.addBookmark(parent)) }
+    item("Add New Folder…") { [weak self] in self?.emit(.addFolder(parent)) }
     menu.addItem(.separator())
-    item("Import Bookmarks…") { [weak self] in self?.onEvent(.importBookmarks) }
+    item("Import Bookmarks…") { [weak self] in self?.emit(.importBookmarks) }
     objc_setAssociatedObject(menu, &PageMenuTarget.key, target, .OBJC_ASSOCIATION_RETAIN)
     PageMenuTarget.show(menu, in: nil, at: nil)
   }
@@ -255,6 +269,9 @@ public final class BookmarksPageModel {
   }
 
   public func apply(snapshot: BookmarkSnapshot) {
+    recoveryMessage = snapshot.recoveryMessage
+    editsPaused = snapshot.editsPaused
+    recoveryConflictCount = snapshot.recoveryConflictCount
     let next: [String: PageBookmark] = snapshot.ready ? snapshot.nodes.mapValues { node in
       PageBookmark(id: node.id, kind: node.kind, parentId: node.parentId, title: node.title,
         url: node.url, favicon: bookmarkIcons[node.id], children: node.children)
@@ -331,6 +348,12 @@ public struct BookmarksPageView: View {
             PageIconButton(icon: "ellipsis.circle", size: 15, box: 30, radius: 7, nudge: 0, tooltip: "Organize") { model.organizeMenu() }
           }
         }
+        if let message = model.recoveryMessage {
+          Text(message).font(.system(size: 12)).foregroundStyle(theme.textSecondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.bottom, 8)
+        }
+        if model.recoveryConflictCount > 0 {
+          Text("Some bookmark changes need recovery. Their saved source has been retained.").font(.system(size: 12)).foregroundStyle(theme.textSecondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.bottom, 8)
+        }
         HStack(alignment: .top, spacing: 16) {
           ScrollView {
             VStack(spacing: 0) {
@@ -348,7 +371,7 @@ public struct BookmarksPageView: View {
                 .offset(y: -0.5)
                 .frame(maxWidth: .infinity, alignment: .leading)
               if !searching, let folderId = model.folderId {
-                PageButton(title: "Open All", disabled: ids.isEmpty) { model.onEvent(.openAll(folderId, newWindow: false)) }
+                PageButton(title: "Open All", disabled: ids.isEmpty) { model.emit(.openAll(folderId, newWindow: false)) }
               }
             }
             .padding(.horizontal, 15)
@@ -370,7 +393,7 @@ public struct BookmarksPageView: View {
         .padding(.bottom, 16)
       }
       if let count = model.undoCount {
-        BookmarksUndoToast(message: "\(count) item\(count == 1 ? "" : "s") deleted") { model.onEvent(.undo) }
+        BookmarksUndoToast(message: "\(count) item\(count == 1 ? "" : "s") deleted") { model.emit(.undo) }
           .padding(.bottom, 24)
       }
     }
@@ -476,7 +499,7 @@ struct BookmarkRowView: View {
     .background(RoundedRectangle(cornerRadius: 7, style: .circular).fill(fill))
     .contentShape(Rectangle())
     .onHover { hovered = $0 }
-    .onTapGesture(count: 2) { node.isFolder ? model.choose(folder: node.id) : model.onEvent(.open(node.url ?? "", .current)) }
+    .onTapGesture(count: 2) { node.isFolder ? model.choose(folder: node.id) : model.emit(.open(node.url ?? "", .current)) }
     .simultaneousGesture(TapGesture().onEnded {
       onFocus()
       let flags = (NSApp.currentEvent?.modifierFlags ?? NSEvent.modifierFlags)
@@ -514,23 +537,23 @@ struct BookmarkRowMenuProxy: View {
 
   var body: some View {
     if let url = node.url, !node.isFolder {
-      Button("Open in New Tab") { model.onEvent(.open(url, .foreground)) }
-      Button("Open in New Window") { model.onEvent(.open(url, .window)) }
-      Button("Open in Incognito Window") { model.onEvent(.open(url, .incognito)) }
-      Button("Open in Split View") { model.onEvent(.open(url, .split)) }
+      Button("Open in New Tab") { model.emit(.open(url, .foreground)) }
+      Button("Open in New Window") { model.emit(.open(url, .window)) }
+      Button("Open in Incognito Window") { model.emit(.open(url, .incognito)) }
+      Button("Open in Split View") { model.emit(.open(url, .split)) }
       Divider()
-      Button("Edit…") { model.onEvent(.edit(node.id)) }
+      Button("Edit…") { model.emit(.edit(node.id)) }
       Button("Copy Link") {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(cleanUrl(url), forType: .string)
       }
     } else {
-      Button("Open All (\(model.links(node.id).count))") { model.onEvent(.openAll(node.id, newWindow: false)) }
-      Button("Open All in New Window") { model.onEvent(.openAll(node.id, newWindow: true)) }
-      Button("Add to Sidebar as Group") { model.onEvent(.addGroup(node.id)) }.disabled(!model.groupable.contains(node.id))
-      if model.arcRestorable.contains(node.id) { Button("Restore Arc Folders as Groups") { model.onEvent(.restoreArc(node.id)) } }
+      Button("Open All (\(model.links(node.id).count))") { model.emit(.openAll(node.id, newWindow: false)) }
+      Button("Open All in New Window") { model.emit(.openAll(node.id, newWindow: true)) }
+      Button("Add to Sidebar as Group") { model.emit(.addGroup(node.id)) }.disabled(!model.groupable.contains(node.id))
+      if model.arcRestorable.contains(node.id) { Button("Restore Arc Folders as Groups") { model.emit(.restoreArc(node.id)) } }
       Divider()
-      Button("Rename…") { model.onEvent(.edit(node.id)) }
+      Button("Rename…") { model.emit(.edit(node.id)) }
     }
     if model.searching, let parentId = node.parentId { Button("Show in Folder") { model.choose(folder: parentId) } }
     Divider()

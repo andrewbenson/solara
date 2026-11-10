@@ -1,5 +1,6 @@
 import { deletePassword, savePassword } from "@solara/solaracore";
-import { ackBookmarkFacts, bookmarkWriterSnapshot, bookmarkWriterState, clearBookmarkFacts, nativeAddHistoryVisits, nativeDeleteHistoryUrls, observeBookmarkRecords, replaceBookmarkDocumentWithRecords, type BookmarkFactClear } from "@solara/settings";
+import { ackBookmarkFacts, bookmarkWriterSnapshot, bookmarkWriterState, clearBookmarkFacts, observeBookmarkRecords, replaceBookmarkDocumentWithRecords, type BookmarkFactClear } from "@solara/settings";
+import { nativeAddHistoryVisits, nativeDeleteHistoryUrls } from "@solara/settings";
 import { ApplyRefusal, assignPositions, canonical, editHLC, hlcDevice, SyncNative, type Adapter, type SavedLogin, type SyncRecord } from "@solara/sync";
 import { bookmarkUuidFor, ensureRoots, isBookmarkUuid, rootIdsFor } from "../store/bookmarks";
 import { MAX_HISTORY, MAX_VISIT_TIMES } from "../store/history";
@@ -392,8 +393,10 @@ function syncedBookmarkNodes(b: Bookmarks, roots: { bar: string; other: string }
 type BookmarkSyncContext = { device: string; link: () => string | null; opened?: () => void };
 
 export function bookmarksAdapter(profileId: string, sync?: BookmarkSyncContext): Adapter {
-  if (bookmarkWriterState().state === "owned") return nativeBookmarksAdapter(profileId, sync);
-  const ready = () => !!store().bookmarksReady[profileId];
+  const ownership = bookmarkWriterState();
+  if (ownership.state === "owned") return nativeBookmarksAdapter(profileId, sync);
+  if (ownership.state !== "legacy") return { prefix: "bm:", extract: () => null, apply: () => false };
+  const ready = () => bookmarkWriterState().state === "legacy" && !!store().bookmarksReady[profileId];
   return {
     prefix: "bm:",
     extract: (base) => {
@@ -419,6 +422,7 @@ function nativeBookmarksAdapter(profileId: string, sync?: BookmarkSyncContext): 
   let extractedRevision: string | undefined;
   let replacementClears: BookmarkFactClear[] = [];
   const current = () => {
+    if (bookmarkWriterState().state !== "owned") throw new Error("native bookmark sync is paused");
     const snapshot = bookmarkWriterSnapshot(profileId);
     if (snapshot.engine !== binding.engine || snapshot.generation !== binding.generation) throw new Error("the native bookmark owner changed during this sync");
     return { snapshot, document: JSON.parse(snapshot.document) as Bookmarks };
@@ -432,7 +436,7 @@ function nativeBookmarksAdapter(profileId: string, sync?: BookmarkSyncContext): 
       replacementClears = [];
       if ((sync?.link() ?? null) !== link) return null;
       const { snapshot, document } = current();
-      if (!snapshot.ready) return null;
+      if (!(snapshot.readyForSync ?? snapshot.ready)) return null;
       const roots = rootsOf(document);
       if (document.nodes[roots.bar]?.kind !== "folder" || document.nodes[roots.other]?.kind !== "folder") return null;
       extractedRevision = snapshot.revision;
@@ -500,7 +504,7 @@ function nativeBookmarksAdapter(profileId: string, sync?: BookmarkSyncContext): 
     },
     apply: (visible, changed, _base, records) => {
       const { snapshot, document } = current();
-      if ((sync?.link() ?? null) !== link || (sync && !link) || !snapshot.ready || (extractedRevision !== undefined && snapshot.revision !== extractedRevision)) return false;
+      if ((sync?.link() ?? null) !== link || (sync && !link) || !(snapshot.readyForSync ?? snapshot.ready) || (extractedRevision !== undefined && snapshot.revision !== extractedRevision)) return false;
       const roots = rootsOf(document);
       if (document.nodes[roots.bar]?.kind !== "folder" || document.nodes[roots.other]?.kind !== "folder") throw new Error("the native bookmark document has no roots for this profile");
       const observed = [...new Set([...visible.keys(), ...changed])].flatMap((key) => {

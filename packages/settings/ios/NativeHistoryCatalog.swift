@@ -201,7 +201,8 @@ final class SolaraHistoryClient: EngineClient {
 
 @MainActor
 enum NativeHistoryCatalog {
-  static let catalog = LibraryCatalog(client: SolaraHistoryClient())
+  static let client = SolaraHistoryClient()
+  static let catalog = LibraryCatalog(client: client, bookmarkAdmission: { try await NativeBookmarkLaunch.ensureReady() })
   private static var lifecycle: Int?
   private static weak var boundStore: Store?
   private static var profileLifetimes: HistoryProfileLifetimes?
@@ -230,6 +231,7 @@ enum NativeHistoryCatalog {
   }
 
   static func start(engineProfiles: [String]) async {
+    do { try await NativeBookmarkLaunch.ensureReady() } catch { return }
     bindProfileLifetimes()
     NativeHistoryHints.start(catalog: catalog)
     NewTabSources.shared.useHistoryCatalog(catalog)

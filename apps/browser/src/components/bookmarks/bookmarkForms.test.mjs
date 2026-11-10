@@ -30,6 +30,7 @@ let engines = 0;
 class FakeOwner {
   constructor() {
     this.engine = `forms-${++engines}`;
+    this.projectionOwner = String(engines);
     this.generation = "1";
     this.revision = 1;
     this.document = { nodes: { [`bar@${this.engine}`]: folder(`bar@${this.engine}`, "Bookmarks Bar"), [`other@${this.engine}`]: folder(`other@${this.engine}`, "Other Bookmarks") }, roots: { default: { bar: `bar@${this.engine}`, other: `other@${this.engine}` } } };
@@ -40,6 +41,10 @@ class FakeOwner {
   }
   get bar() {
     return `bar@${this.engine}`;
+  }
+  projection() {
+    const snapshot = this.snapshot();
+    return { owner: this.projectionOwner, generation: snapshot.generation, profiles: { default: { engine: snapshot.engine, generation: snapshot.generation } }, views: { [snapshot.engine]: { revision: snapshot.revision, hasView: true, readyForSync: snapshot.ready, document: JSON.parse(snapshot.document) } } };
   }
   state() {
     return { state: "owned", generation: this.generation };

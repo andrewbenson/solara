@@ -130,7 +130,7 @@ ac_solara_kit = lambda do |installer|
     dependency.product_name = name
     target.package_product_dependencies << dependency
   end
-  project.targets.select { |t| %w[SolaraStoreAdapter SolaraSettingsAdapter].include?(t.name) }.each do |t|
+  project.targets.select { |t| %w[SolaraStoreAdapter SolaraSettingsAdapter SolaraImportAdapter SolaraSyncAdapter SolaraCore].include?(t.name) }.each do |t|
     t.build_configurations.each do |c|
       paths = Array(c.build_settings['SWIFT_INCLUDE_PATHS'] || ['$(inherited)'])
       built = '${SYMROOT}/${CONFIGURATION}${EFFECTIVE_PLATFORM_NAME}/'

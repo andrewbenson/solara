@@ -4,9 +4,13 @@ import SolaraModel
 public struct BookmarkLaunchInput: Sendable {
   public let documents: JSMap<JSONValue>
   public let legacyPendingEngines: Set<JSKey>
-  public init(documents: JSMap<JSONValue> = [:], legacyPendingEngines: Set<JSKey> = []) {
+  public let legacyMigration: BookmarkLegacyMigration?
+  public let directory: URL?
+  public init(documents: JSMap<JSONValue> = [:], legacyPendingEngines: Set<JSKey> = [], legacyMigration: BookmarkLegacyMigration? = nil, directory: URL? = nil) {
     self.documents = documents
     self.legacyPendingEngines = legacyPendingEngines
+    self.legacyMigration = legacyMigration
+    self.directory = directory
   }
 }
 
@@ -20,6 +24,7 @@ public struct BookmarkLaunchCache {
     let legacyPath = directory.appendingPathComponent("bookmarks.json")
     let legacyExists = FileManager.default.fileExists(atPath: legacyPath.path)
     let legacy = read(legacyPath)
+    let migration = legacyExists && legacy?.truthy != false ? (try? Data(contentsOf: legacyPath)).map { BookmarkLegacyMigration(directory: directory, bytes: $0) } : nil
     let legacyPending = legacyExists && legacy?.truthy != false ? activeEngines : []
     func aliases(_ engine: String) -> [String] { regularProfiles.filter { _, mapped in JSKey(mapped) == JSKey(engine) }.keys }
     var cached: JSMap<JSONValue> = [:]
@@ -37,7 +42,7 @@ public struct BookmarkLaunchCache {
       }
     }
     if !cached.isEmpty {
-      return BookmarkLaunchInput(documents: cached.filter { engine, _ in activeEngines.contains(JSKey(engine)) }, legacyPendingEngines: legacyPending)
+      return BookmarkLaunchInput(documents: cached.filter { engine, _ in activeEngines.contains(JSKey(engine)) }, legacyPendingEngines: legacyPending, legacyMigration: migration, directory: directory)
     }
     var documents: JSMap<JSONValue> = [:]
     let legacyNodes = legacy?["bookmarks"]?["nodes"]?.object ?? [:]
@@ -55,6 +60,10 @@ public struct BookmarkLaunchCache {
         guard var value = node.object, let oldID = node["id"]?.string else { continue }
         let id = mappedID(oldID)
         value["id"] = .string(id)
+        if JSKey(oldID) != JSKey(oldBar), JSKey(oldID) != JSKey(oldOther), (value["syncKey"] == nil || value["syncKey"]?.isNull == true) {
+          if let key = value["ac_sync_key"].flatMap({ $0.isNull ? nil : $0 }) { value["syncKey"] = key }
+          else if JSKey(id) != JSKey(oldID) { value["syncKey"] = .string(oldID) }
+        }
         value["parentId"] = node["parentId"]?.string.map { .string(mappedID($0)) } ?? .null
         if node["kind"] == "folder" { value["children"] = JSONValue((node["children"]?.array?.compactMap(\.string) ?? []).map(mappedID)) }
         nodes[id] = .object(value)
@@ -62,7 +71,17 @@ public struct BookmarkLaunchCache {
       let source: JSONValue = ["nodes": .object(nodes), "roots": [:]]
       documents[engine] = BookmarkFlat(document: source, engine: engine).document(profiles: aliases(engine), preserving: source)
     }
-    return BookmarkLaunchInput(documents: documents, legacyPendingEngines: legacyPending)
+    return BookmarkLaunchInput(documents: documents, legacyPendingEngines: legacyPending, legacyMigration: migration, directory: directory)
+  }
+
+  public func save(documents: JSMap<JSONValue>, readOnly: Bool = false) throws {
+    guard !readOnly else { return }
+    let trees = documents.filter { engine, _ in !engine.hasPrefix("incognito:") }.mapValues { document in
+      JSONValue.array(document["nodes"]?.object?.values ?? [])
+    }
+    let cache: JSONValue = ["version": 1, "trees": .object(trees)]
+    let bytes = Data(cache.bookmarkText().utf8)
+    try bytes.write(to: directory.appendingPathComponent("bookmarks-cache.json"), options: .atomic)
   }
 
   private func read(_ path: URL) -> JSONValue? {
@@ -71,7 +90,7 @@ public struct BookmarkLaunchCache {
     return try? JSONValue.parseBookmark(data)
   }
 
-  private static func legacyUUID(_ id: String) -> String {
+  static func legacyUUID(_ id: String) -> String {
     let units = Array(id.utf8)
     if units.count == 36 && units.enumerated().allSatisfy({ index, unit in
       [8, 13, 18, 23].contains(index) ? unit == 45 : (48...57).contains(unit) || (97...102).contains(unit)

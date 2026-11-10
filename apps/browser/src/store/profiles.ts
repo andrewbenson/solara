@@ -1,3 +1,4 @@
+import { nativeBookmarksSelected } from "./bookmarkProjection";
 import { confirm } from "@solara/shell";
 import type { StateCreator } from "zustand";
 import type { BrowserState } from "./browser";
@@ -77,7 +78,7 @@ function syncSharedData(s: BrowserState, prev: BrowserState): Partial<BrowserSta
     const changed = profileIds.find((id) => s.history[id] !== prev.history[id]);
     const list = s.history[changed ?? profileIds.find((id) => s.history[id]) ?? ""];
     if (list) for (const id of profileIds) if (history[id] !== list) history = { ...history, [id]: list };
-    const shared = roots[dataId] ?? roots[profileIds.find((id) => roots[id]) ?? ""];
+    const shared = !nativeBookmarksSelected() && (roots[dataId] ?? roots[profileIds.find((id) => roots[id]) ?? ""]);
     if (shared) for (const id of profileIds) if (roots[id]?.bar !== shared.bar || roots[id]?.other !== shared.other) roots = { ...roots, [id]: shared };
   }
   if (history === s.history && roots === s.bookmarks.roots) return null;
@@ -119,10 +120,12 @@ export const createProfilesSlice: StateCreator<BrowserState, [], [], ProfilesSli
       let bookmarks = s.bookmarks;
       let history = s.history;
       if (source) {
-        const [withRoots, roots] = ensureRoots(bookmarks, source.id);
-        bookmarks = { ...withRoots, roots: { ...withRoots.roots, [profile.id]: roots } };
+        if (!nativeBookmarksSelected()) {
+          const [withRoots, roots] = ensureRoots(bookmarks, source.id);
+          bookmarks = { ...withRoots, roots: { ...withRoots.roots, [profile.id]: roots } };
+        }
         if (s.history[source.id]) history = { ...history, [profile.id]: s.history[source.id]! };
-      } else {
+      } else if (!nativeBookmarksSelected()) {
         bookmarks = ensureRoots(bookmarks, profile.id)[0];
       }
       set({ profiles: { ...s.profiles, [profile.id]: profile }, profileOrder: [...s.profileOrder, profile.id], bookmarks, history });
@@ -196,7 +199,7 @@ export const createProfilesSlice: StateCreator<BrowserState, [], [], ProfilesSli
         history: without(s.history, [id]),
         historyReady: without(s.historyReady, [id]),
         historyFloor: without(s.historyFloor, [id]),
-        bookmarks: roots && !shared ? removeBookmarkTree(s.bookmarks, [roots.bar, roots.other], id) : { ...s.bookmarks, roots: without(s.bookmarks.roots, [id]) },
+        bookmarks: nativeBookmarksSelected() ? s.bookmarks : roots && !shared ? removeBookmarkTree(s.bookmarks, [roots.bar, roots.other], id) : { ...s.bookmarks, roots: without(s.bookmarks.roots, [id]) },
         groups: Object.fromEntries(Object.entries(s.groups).filter(([, g]) => g.profileId !== id)),
         closedTabs: s.closedTabs.filter((c) => c.tab.profileId !== id),
         cleanedTabs: s.cleanedTabs.filter((c) => c.tab.profileId !== id),

@@ -1,7 +1,8 @@
-import { startProfileConfirmation } from "../test-native/profileConfirmation.mjs";
+import "../../../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs";
+const { startProfileConfirmation } = await import('../test-native/profileConfirmation.mjs');
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { sealedState } from "./sealedState.mjs";
+const { sealedState } = await import('./sealedState.mjs');
 
 const realSetTimeout = globalThis.setTimeout;
 globalThis.setTimeout = () => 0;

@@ -1,3 +1,4 @@
+import "../../../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 const { useBrowser } = await import("../store/browser.ts");

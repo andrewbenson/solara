@@ -27,8 +27,8 @@ async function start(name) {
   const { dir } = DEV[name];
   const app = (apps[name] = await launch(APP, {
     data: dir,
-    env: { SOLARA_SYNC_DEFAULT_FOLDER: FOLDER, SOLARA_TEST_REAUTH: "granted" },
-    ready: { timeout: 120_000, test: "return !!globalThis.acSync && Object.keys(ac.store.getState().windows).length > 0" },
+    env: { SOLARA_SYNC_DEFAULT_FOLDER: FOLDER, SOLARA_TEST_REAUTH: "granted", ...(process.env.SOLARA_NATIVE_BOOKMARKS ? { SOLARA_NATIVE_BOOKMARKS: process.env.SOLARA_NATIVE_BOOKMARKS } : {}) },
+    ready: { timeout: 120_000, test: 'const native=globalThis.expo.modules.SolaraSettings; const s=ac.store.getState(); return !!globalThis.acSync && Object.keys(s.windows).length > 0 && native.bookmarkWriterState().state === "owned" && !!s.bookmarksReady.default' },
   }));
   note(`${name}: pid ${app.pid}, DevTools ${app.port}, log ${app.log}`);
 }
@@ -146,14 +146,16 @@ try {
     "A",
     `
     const s = ac.store.getState();
-    const f = s.addBookmarkFolder({ profileId: "default", title: "ACE2E Folder" });
-    s.addBookmark({ profileId: "default", url: "${W}/alpha.html?nne2e=bm1", title: "ACE2E Bookmark Alpha", parentId: f });
-    s.addBookmark({ profileId: "default", url: "${W}/beta.html?nne2e=bm2", title: "ACE2E Bookmark Beta" });
-    s.updateSettings({ appearance: "dark", searchEngine: "duckduckgo" });
-    const w = ac.store.getState().windowOrder[0];
-    ac.store.getState().pinTabs([s.newTab(w, { url: "${W}/pinned.html?nne2e=pin1" })], true);
-    s.newTab(w, { url: "${W}/open.html?nne2e=tab1" });
-    return true;`,
+    return ac.bookmarks.addBookmarkFolder({ profileId: "default", title: "ACE2E Folder" })
+      .then((f) => ac.bookmarks.addBookmark({ profileId: "default", url: "${W}/alpha.html?nne2e=bm1", title: "ACE2E Bookmark Alpha", parentId: f }))
+      .then(() => ac.bookmarks.addBookmark({ profileId: "default", url: "${W}/beta.html?nne2e=bm2", title: "ACE2E Bookmark Beta" }))
+      .then(() => {
+        s.updateSettings({ appearance: "dark", searchEngine: "duckduckgo" });
+        const w = ac.store.getState().windowOrder[0];
+        ac.store.getState().pinTabs([s.newTab(w, { url: "${W}/pinned.html?nne2e=pin1" })], true);
+        s.newTab(w, { url: "${W}/open.html?nne2e=tab1" });
+        return true;
+      });`,
   );
   await visit("A", `${W}/visited.html?nne2e=hist1`);
   await ev("A", savePassword("https://nne2e-bank.example", "nne2e-alice", "ACE2E-hunter2-secret"));
@@ -179,10 +181,11 @@ try {
     "B",
     `
     const s = ac.store.getState();
-    s.addBookmark({ profileId: "default", url: "${W}/gamma.html?nne2e=bmB", title: "ACE2E Bookmark Gamma from B" });
-    s.updateSettings({ appearance: "light" });
-    s.newTab(ac.store.getState().windowOrder[0], { url: "${W}/openb.html?nne2e=tabB" });
-    return true;`,
+    return ac.bookmarks.addBookmark({ profileId: "default", url: "${W}/gamma.html?nne2e=bmB", title: "ACE2E Bookmark Gamma from B" }).then(() => {
+        s.updateSettings({ appearance: "light" });
+        s.newTab(ac.store.getState().windowOrder[0], { url: "${W}/openb.html?nne2e=tabB" });
+        return true;
+      });`,
   );
   await ev("B", savePassword("https://nne2e-shop.example", "nne2e-bob", "ACE2E-B-shop-pass"));
   const typed = words.map((w, i) => `${i + 1}. ${w.toUpperCase()}`).join("\n");
@@ -203,12 +206,14 @@ try {
     `
     const s = ac.store.getState();
     const nodes = Object.values(s.bookmarks.nodes);
-    s.updateBookmark(nodes.find((n) => n.title === "ACE2E Bookmark Beta").id, { title: "ACE2E Beta Renamed on B" });
-    s.removeBookmark(nodes.find((n) => n.title === "ACE2E Bookmark Gamma from B").id);
-    s.addBookmark({ profileId: "default", url: "${W}/delta.html?nne2e=bmD", title: "ACE2E Bookmark Delta from B" });
-    s.removeHistory("default", ["${W}/visited.html?nne2e=hist1"]);
-    s.updateSettings({ showFullUrl: true, cleanUpInactiveTabsAfterHours: 24 });
-    return globalThis.expo.modules.SolaraCEF.deletePassword("", "https://nne2e-shop.example", "nne2e-bob");`,
+    return ac.bookmarks.updateBookmark("default", nodes.find((n) => n.title === "ACE2E Bookmark Beta").id, { title: "ACE2E Beta Renamed on B" })
+      .then(() => ac.bookmarks.removeBookmark("default", nodes.find((n) => n.title === "ACE2E Bookmark Gamma from B").id))
+      .then(() => ac.bookmarks.addBookmark({ profileId: "default", url: "${W}/delta.html?nne2e=bmD", title: "ACE2E Bookmark Delta from B" }))
+      .then(() => {
+        s.removeHistory("default", ["${W}/visited.html?nne2e=hist1"]);
+        s.updateSettings({ showFullUrl: true, cleanUpInactiveTabsAfterHours: 24 });
+        return globalThis.expo.modules.SolaraCEF.deletePassword("", "https://nne2e-shop.example", "nne2e-bob");
+      });`,
   );
   await visit("B", `${W}/visited2.html?nne2e=hist2`);
   await ev("B", savePassword("https://nne2e-bank.example", "nne2e-alice", "ACE2E-changed-on-B"));
@@ -224,15 +229,17 @@ try {
     `
     const s = ac.store.getState();
     const nodes = Object.values(s.bookmarks.nodes);
-    s.moveBookmark(nodes.find((n) => n.title === "ACE2E Bookmark Alpha").id, s.bookmarks.roots.default.bar, 0);
-    s.removeBookmark(nodes.find((n) => n.title === "ACE2E Folder").id);
-    s.addBookmark({ profileId: "default", url: "${W}/alpha.html?nne2e=bmA2", title: "ACE2E Second from A", parentId: s.bookmarks.roots.default.other });
-    s.updateSettings({ appearance: "light", cleanUpInactiveTabsAfterHours: null });
-    const w = ac.store.getState().windowOrder[0];
-    ac.store.getState().pinTabs([s.newTab(w, { url: "${W}/beta.html?nne2e=pin2" })], true);
-    ac.store.getState().pinTabs([s.newTab(w, { url: "${W}/row.html?nne2e=row1" })], true, true);
-    ac.store.getState().groupTabs([s.newTab(w, { url: "${W}/member.html?nne2e=grp1" })], { pinned: true, name: "ACE2E Pinned Group" });
-    return true;`,
+    return ac.bookmarks.moveBookmark("default", nodes.find((n) => n.title === "ACE2E Bookmark Alpha").id, s.bookmarks.roots.default.bar, 0)
+      .then(() => ac.bookmarks.removeBookmark("default", nodes.find((n) => n.title === "ACE2E Folder").id))
+      .then(() => ac.bookmarks.addBookmark({ profileId: "default", url: "${W}/alpha.html?nne2e=bmA2", title: "ACE2E Second from A", parentId: s.bookmarks.roots.default.other }))
+      .then(() => {
+        s.updateSettings({ appearance: "light", cleanUpInactiveTabsAfterHours: null });
+        const w = ac.store.getState().windowOrder[0];
+        ac.store.getState().pinTabs([s.newTab(w, { url: "${W}/beta.html?nne2e=pin2" })], true);
+        ac.store.getState().pinTabs([s.newTab(w, { url: "${W}/row.html?nne2e=row1" })], true, true);
+        ac.store.getState().groupTabs([s.newTab(w, { url: "${W}/member.html?nne2e=grp1" })], { pinned: true, name: "ACE2E Pinned Group" });
+        return true;
+      });`,
   );
   await ev("A", savePassword("https://nne2e-mail.example", "nne2e-carol", "ACE2E-mail-from-A"));
   await sync("A", "B", "A", "B");
@@ -248,10 +255,10 @@ try {
   b = await state("B");
   check("A's unpinned tab leaves B's pinned tabs", !b.pinned.some((u) => u.includes("pin2")) && b.rows.length === 1 && b.groups.length === 1, text({ pinned: b.pinned, rows: b.rows, groups: b.groups }));
 
-  await ev("A", `const s = ac.store.getState(); s.updateBookmark(Object.values(s.bookmarks.nodes).find((n) => n.title === "ACE2E Beta Renamed on B").id, { title: "ACE2E Concurrent A" }); s.updateSettings({ searchEngine: "bing" }); return true;`);
+  await ev("A", `const s = ac.store.getState(); return ac.bookmarks.updateBookmark("default", Object.values(s.bookmarks.nodes).find((n) => n.title === "ACE2E Beta Renamed on B").id, { title: "ACE2E Concurrent A" }).then(() => { s.updateSettings({ searchEngine: "bing" }); return true; });`);
   await ev("A", savePassword("https://nne2e-bank.example", "nne2e-alice", "ACE2E-concurrent-A"));
   await sleep(20);
-  await ev("B", `const s = ac.store.getState(); s.updateBookmark(Object.values(s.bookmarks.nodes).find((n) => n.title === "ACE2E Beta Renamed on B").id, { title: "ACE2E Concurrent B" }); s.updateSettings({ searchEngine: "google" }); return true;`);
+  await ev("B", `const s = ac.store.getState(); return ac.bookmarks.updateBookmark("default", Object.values(s.bookmarks.nodes).find((n) => n.title === "ACE2E Beta Renamed on B").id, { title: "ACE2E Concurrent B" }).then(() => { s.updateSettings({ searchEngine: "google" }); return true; });`);
   await ev("B", savePassword("https://nne2e-bank.example", "nne2e-alice", "ACE2E-concurrent-B"));
   await sync("A", "B", "A", "B", "A", "B");
   [a, b] = [await state("A"), await state("B")];
@@ -339,12 +346,14 @@ try {
     "A",
     `
     const s = ac.store.getState();
-    s.addBookmark({ profileId: "default", url: "${W}/alpha.html?nne2e=whileQuit", title: "ACE2E Made While B Was Quit" });
-    s.removeBookmark(Object.values(s.bookmarks.nodes).find((n) => n.title === "ACE2E Second from A").id);
-    s.placeTabs(Object.values(s.tabs).filter((t) => t.pinned && t.pinnedAsRow).map((t) => t.id), { pinned: true, row: false });
-    const g = Object.values(s.groups).find((x) => x.pinned && x.name === "ACE2E Pinned Group");
-    s.updateGroup(g.id, { name: "ACE2E Group Renamed", color: "green" });
-    return true;`,
+    return ac.bookmarks.addBookmark({ profileId: "default", url: "${W}/alpha.html?nne2e=whileQuit", title: "ACE2E Made While B Was Quit" })
+      .then(() => ac.bookmarks.removeBookmark("default", Object.values(s.bookmarks.nodes).find((n) => n.title === "ACE2E Second from A").id))
+      .then(() => {
+        s.placeTabs(Object.values(s.tabs).filter((t) => t.pinned && t.pinnedAsRow).map((t) => t.id), { pinned: true, row: false });
+        const g = Object.values(s.groups).find((x) => x.pinned && x.name === "ACE2E Pinned Group");
+        s.updateGroup(g.id, { name: "ACE2E Group Renamed", color: "green" });
+        return true;
+      });`,
   );
   await sync("A");
   await sleep(5000);
@@ -383,7 +392,7 @@ try {
   await sync("A");
   a = await state("A");
   check("A drops B from its devices and its tabs", !a.devices.includes(b.deviceId) && !text(a.remoteTabs).includes(b.deviceId));
-  await ev("B", `ac.store.getState().addBookmark({ profileId: "default", url: "${W}/delta.html?nne2e=off", title: "ACE2E Made While Off" }); return true`);
+  await ev("B", `return ac.bookmarks.addBookmark({ profileId: "default", url: "${W}/delta.html?nne2e=off", title: "ACE2E Made While Off" }).then(() => true)`);
   await sync("A");
   check("what B does while off stays on B", !text((await state("A")).bookmarks).includes("Made While Off"));
 

@@ -1,7 +1,8 @@
+import "../../../../../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fixedBy } from "../switchOn.mjs";
-import { world, onAndSynced, passwordMac, loginKey, syncKey, login, SITE, native, folder } from "./world.mjs";
+const { fixedBy } = await import('../switchOn.mjs');
+const { world, onAndSynced, passwordMac, loginKey, syncKey, login, SITE, native, folder } = await import('./world.mjs');
 
 test("PENDING-delete: a deletion noticed while B's newer edit is still downloading doesn't beat that edit", fixedBy("step 3"), () =>
   world(async (w) => {

@@ -1,9 +1,10 @@
+import "../../../../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs";
 import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
 import { after, beforeEach, test } from "node:test";
-import { useBrowser } from "../../store/browser.ts";
-import { shellNativeModules } from "../../test-native/shell.ts";
-import { useBookmarkEditor } from "./edit.ts";
+const { useBrowser } = await import('../../store/browser.ts');
+const { shellNativeModules } = await import('../../test-native/shell.ts');
+const { useBookmarkEditor } = await import('./edit.ts');
 
 const actionsURL = new URL("../../lib/actions.ts", import.meta.url).href;
 const browserURL = new URL("../../store/browser.ts", import.meta.url).href;

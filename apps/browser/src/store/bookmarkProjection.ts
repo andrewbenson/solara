@@ -7,7 +7,7 @@ const authorized = new WeakSet<object>();
 const frozenBookmarks = new WeakSet<Bookmarks>();
 const projected = new WeakMap<Replica, BookmarkProjection>();
 
-export const nativeBookmarksSelected = () => bookmarkWriterState().state !== "legacy";
+export const nativeBookmarksSelected = () => true;
 
 function freezeReplica(bookmarks: Bookmarks, ready: Record<string, true>) {
   if (!frozenBookmarks.has(bookmarks)) {

@@ -6,13 +6,21 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const root = process.env.SOLARA_REPO_ROOT ? pathToFileURL(`${process.env.SOLARA_REPO_ROOT}/`) : new URL("../../../", import.meta.url);
 const source = new URL("apps/browser/src/", root);
 const bridgeURL = new URL("lib/bookmarks.ts", source).href;
+const legacyModules = new Map([
+  "apps/browser/src/lib/bookmarks.ts",
+  "apps/browser/src/store/bookmarks.ts",
+  "apps/browser/src/sync/adapters.ts",
+  "packages/settings/src/index.ts",
+  "apps/browser/src/store/bookmarkProjection.ts",
+].map(path => [new URL(path, root).href, new URL(`legacy-bookmarks/${path}`, import.meta.url)]));
 registerHooks({
   load(url, context, next) {
     if (url === bridgeURL) {
-      const original = readFileSync(new URL(url), "utf8");
+      const original = readFileSync(legacyModules.get(url), "utf8");
       const exports = "\nexport { applyOps, flatFromStore, flatFromEngine, launchTrees, adopt, readTree, pushTree, pushFailed, sendOps, stateOf, engines };\n";
       return { format: "module", source: stripTypeScriptTypes(original + exports), shortCircuit: true };
     }
+    if (legacyModules.has(url)) return { format: "module", source: stripTypeScriptTypes(readFileSync(legacyModules.get(url), "utf8")), shortCircuit: true };
     return next(url, context);
   },
 });

@@ -12,7 +12,7 @@ enum NativeBookmarkWriter {
   }
 
   static func projection() throws -> String {
-    let owner = try admittedOwner()
+    guard let owner = NativeBookmarkOwner.displayCurrent else { throw BookmarkWriterError.notOwned }
     return try owner.projection().bookmarkText()
   }
 

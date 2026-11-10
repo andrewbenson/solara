@@ -179,7 +179,7 @@ public class CefModule: Module {
     }.runOnQueue(DispatchQueue.global(qos: .userInitiated))
     #endif
     AsyncFunction("engineCall") { (name: String, profile: String, args: String?, promise: Promise) in
-      if ["ac_bookmarks_tree", "ac_bookmarks_apply", "ac_bookmarks_watch"].contains(name), NativeBookmarkOwner.bookmarksSelected {
+      if ["ac_bookmarks_tree", "ac_bookmarks_apply", "ac_bookmarks_watch"].contains(name) {
         return promise.resolve(#"{"error":"bookmarks are owned by the native coordinator"}"#)
       }
       if !CefModule.engineCalls.contains(name) { return promise.resolve(#"{"error":"not an engine call: \#(name)"}"#) }

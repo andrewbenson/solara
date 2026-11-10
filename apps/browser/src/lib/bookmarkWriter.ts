@@ -1,9 +1,8 @@
-import { nativeBookmarksSelected, refreshBookmarkProjection } from "../store/bookmarkProjection";
+import { refreshBookmarkProjection } from "../store/bookmarkProjection";
 import { bookmarkWriterErrorCode, bookmarkWriterSnapshot, bookmarkWriterState, submitBookmarkMutations, whileBookmarkEngineHolds } from "@solara/settings";
 import type { BookmarkDraft, RemovedBookmarks } from "../store/bookmarks";
 import { showToast } from "../components/layout/toasts";
 import { useBrowser } from "../store/browser";
-import type { BookmarkNode, Bookmarks } from "../store/types";
 
 export type BookmarkMethod =
   | "addBookmark"
@@ -19,67 +18,18 @@ export type BookmarkMethod =
 
 export type BookmarkMutation = { method: BookmarkMethod; args: unknown[] };
 
-const projected = new Map<string, bigint>();
 let requests = 0;
 
 export class BookmarkConditionFailed extends Error {}
 
 export const isBookmarkConditionFailure = (error: unknown) => bookmarkWriterErrorCode(error) === "conditionFailed" || /bookmark replacement refused: conditionFailed\("/.test(error instanceof Error ? error.message : String(error));
 
-function legacy(mutation: BookmarkMutation): unknown {
-  if (mutation.method === "expectChildren") {
-    const [, folderId, children] = mutation.args as [string, string, string[]];
-    const node = useBrowser.getState().bookmarks.nodes[folderId];
-    if (node?.kind !== "folder" || JSON.stringify(node.children) !== JSON.stringify(children)) throw new BookmarkConditionFailed(`conditionFailed("${folderId}")`);
-    return true;
-  }
-  const store = useBrowser.getState() as unknown as Record<BookmarkMethod, (...args: unknown[]) => unknown>;
-  return store[mutation.method](...mutation.args);
-}
-
-function engineNodes(b: Bookmarks, roots: { bar: string; other: string }[]): Set<string> {
-  const out = new Set<string>();
-  const walk = (id: string) => {
-    if (out.has(id)) return;
-    out.add(id);
-    const node = b.nodes[id];
-    if (node?.kind === "folder") node.children.forEach(walk);
-  };
-  for (const root of roots) {
-    walk(root.bar);
-    walk(root.other);
-  }
-  return out;
-}
-
-export function projectNativeBookmarks(engine: string, revision: string, documentJSON: string): boolean {
-  if (nativeBookmarksSelected()) return refreshBookmarkProjection(useBrowser);
-  const next = BigInt(revision);
-  const last = projected.get(engine);
-  if (last !== undefined && last >= next) return false;
-  projected.set(engine, next);
-  const document = JSON.parse(documentJSON) as Bookmarks;
-  const current = useBrowser.getState().bookmarks;
-  const engineRoots = [...new Map(Object.values(document.roots).map((roots) => [roots.bar, roots])).values()];
-  const stale = engineNodes(current, engineRoots);
-  const nodes: Record<string, BookmarkNode> = {};
-  for (const [id, node] of Object.entries(current.nodes)) if (!stale.has(id)) nodes[id] = node;
-  Object.assign(nodes, document.nodes);
-  const roots = { ...current.roots };
-  for (const [profile, own] of Object.entries(document.roots)) {
-    const mapped = current.roots[profile];
-    if (!mapped || (mapped.bar === own.bar && mapped.other === own.other)) roots[profile] = own;
-  }
-  useBrowser.setState({ bookmarks: { nodes, roots } });
-  return true;
+export function projectNativeBookmarks(_engine: string, _revision: string, _documentJSON: string): boolean {
+  return refreshBookmarkProjection(useBrowser);
 }
 
 export async function submitBookmarks(profileId: string, mutations: BookmarkMutation[], requestId = `bookmarks-${Date.now()}-${++requests}`): Promise<unknown[]> {
   const ownership = bookmarkWriterState();
-  if (ownership.state === "legacy") {
-    for (const mutation of mutations) if (mutation.method === "expectChildren") legacy(mutation);
-    return mutations.map(legacy);
-  }
   if (ownership.state !== "owned") throw new Error("Bookmark editing is paused while native ownership is unavailable");
   const first = bookmarkWriterSnapshot(profileId);
   let receipt: Awaited<ReturnType<typeof submitBookmarkMutations>>;

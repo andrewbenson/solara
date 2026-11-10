@@ -125,14 +125,21 @@ modules before using them — this is a summary from the agent that built it.
   Shared data: `profile.dataId` names the data a profile uses; `engineProfile(id)` resolves it, bookmark roots are the same
   folders, and store/profiles keeps history lists identical (`dataGroups`, `sharingProfiles`). The Create Profile dialog is
   components/profiles/CreateProfile.tsx (`lib/actions.createProfile`).
-- Bookmarks: `addBookmark`, `addBookmarkFolder`, `moveBookmark`, `removeBookmark`, `toggleBookmark`,
-  `addBookmarkTree` (imports, Bookmark All Tabs), `removeBookmarks` → `restoreBookmarks` (bulk delete + undo).
-  They're Chrome's (BookmarkModel, so `chrome.bookmarks` sees them): lib/bookmarks.ts reads each engine profile's tree,
-  sends each store change to Chrome as ops (`bookmarkOps`), takes back what extensions change, and moved the old
-  `bookmarks.json` in once. Node ids are Chrome UUIDs (`newBookmarkId`); an engine profile's roots are
-  `bar@<engine>` / `other@<engine>` (`rootIdsFor`); `bookmarksReady[profileId]` once read; `syncKey` (sync/adapters.ts).
-  Until Chrome's tree is read at launch the store shows the last one read (`bookmarks-cache.json`), which is display
-  only: it's never sent to Chrome, and edits made meanwhile are replayed on Chrome's tree.
+- Bookmarks: UI callers await `bookmarkWriter` (`addBookmark`, `addBookmarkFolder`, `updateBookmark`,
+  `moveBookmark`, `removeBookmark`, `toggleBookmark`, `addBookmarkTree`, `removeBookmarks`, `restoreBookmarks`).
+  Receipts resolve after durable native acceptance; callers refresh the current native projection rather than
+  installing a receipt's old document. Synchronous JS slice methods refuse bookmark authoring.
+  `NativeBookmarkOwner` owns desired documents, edit facts and engine/profile route lifetimes; `BookmarkPump`
+  alone reads and applies Chrome trees. JS subscribes to the aggregate native projection. Shared aliases display
+  one engine revision; removed routes cannot retain old roots. `hasView` permits display; `readyForSync` alone
+  releases bookmark sync. Roots remain `bar@<engine>` / `other@<engine>` and nodes retain Chrome UUIDs and sync keys.
+  The native journal outranks the display cache. Migration preserves the legacy source and keys until every
+  engine has successfully pushed and confirmed a read; reopening 0.3.0 resumes the checkpoint without reimporting
+  consumed source identities. Safe mode uses the read-only decoder, keeps show/open available and pauses
+  bookmark edits, migration, cache saves and sync. Evidence is never cleared by a recovery launch.
+  Distribution always selects native ownership. Development opt-in requires an explicit isolated data folder;
+  ownership-off, partial native workspace scope and missing capabilities mean unavailable bookmarks with no JS writer.
+  Downgrading to 0.2.5 is unsupported; there is no handback or downgrade marker.
 - History (Chrome's; lib/history.ts reads it and follows its `history.changed` events, and moved the old `history.json`
   into it once): `removeHistory` (deletes from Chrome too), `clearHistory(profileId, since?)` (the view; Clear Browsing
   Data deletes from Chrome), `importHistory` (Chrome's importer path). Favicons are Chrome's too: lib/favicons.ts is
@@ -447,8 +454,9 @@ ordered transaction that names its cause. There are no echo windows, timers or "
 - End-to-end-encrypted sync through a folder the user picks; design in `docs/sync.md`. `sync/engine.ts` owns the
   state (`useSync`: status, devices, other devices' tabs), the setup flows and the cycle; `sync/adapters.ts` maps the
   store to synced records (bookmarks, history, open tabs, pinned tabs and pinned groups, settings, passwords).
-  Adapters rebuild or patch store state with `useBrowser.setState`, so store invariants they touch (group contiguity,
-  pinned-first order) are kept there.
+  Non-bookmark adapters rebuild or patch store state with `useBrowser.setState`. The bookmark adapter synchronously
+  and durably accepts native replacements with record stamps before returning; refusal leaves the whole bookmark
+  prefix and sync base unapplied. JS Cycle, transport, encryption and stamp minting remain in JS.
 - Record keys use store ids (`bm:<id>`, `pin:t:<tab id>`), so ids must stay unique across Macs: `newId` has a random part.
 - Tests: `src/sync/adapters.test.mjs` (two devices swap the one store; `docs/testing.md`).
   DEV: `acSync` (`turnOnSync`, `enterRecoveryPhrase`, `syncNow`, `stopSync`, `useSync`, `menu`, `sheets`).

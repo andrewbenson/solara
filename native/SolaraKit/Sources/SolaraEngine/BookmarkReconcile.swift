@@ -23,24 +23,41 @@ public struct BookmarkFlat: Equatable, Sendable {
   public init(document: JSONValue, engine: String) {
     self.init(records: [])
     let source = document["nodes"]?.object ?? [:]
-    func walk(_ id: String, parent: String?) {
-      guard nodes[id] == nil, let node = source[id] else { return }
+    struct Frame {
+      let id: String
+      let sourceChildren: [String]
+      var cursor = 0
+      var acceptedChildren: [String] = []
+    }
+    var stack: [Frame] = []
+    func enter(_ id: String, parent: String?) -> Bool {
+      guard nodes[id] == nil, let node = source[id] else { return false }
       var flat: JSONObject = ["kind": node["kind"] ?? "folder", "parent": JSONValue(parent), "title": node["title"] ?? "", "addedAt": node["addedAt"] ?? 0]
       if node["kind"] == "url" { flat["url"] = node["url"] ?? "" }
       if node["syncKey"]?.truthy == true { flat["key"] = node["syncKey"] }
       nodes[id] = .object(flat)
       order.append(id)
-      guard node["kind"] == "folder" else { return }
-      var kids: [String] = []
-      for child in node["children"]?.array?.compactMap(\.string) ?? [] where source[child] != nil && nodes[child] == nil {
-        walk(child, parent: id)
-        kids.append(child)
+      if node["kind"] == "folder" {
+        stack.append(Frame(id: id, sourceChildren: node["children"]?.array?.compactMap(\.string) ?? []))
       }
-      children[id] = kids
+      return true
     }
     let roots = Self.roots(engine)
-    walk(roots.bar, parent: nil)
-    walk(roots.other, parent: nil)
+    for root in [roots.bar, roots.other] {
+      _ = enter(root, parent: nil)
+      while !stack.isEmpty {
+        let index = stack.count - 1
+        guard stack[index].cursor < stack[index].sourceChildren.count else {
+          let frame = stack.removeLast()
+          children[frame.id] = frame.acceptedChildren
+          continue
+        }
+        let child = stack[index].sourceChildren[stack[index].cursor]
+        let parent = stack[index].id
+        stack[index].cursor += 1
+        if enter(child, parent: parent) { stack[index].acceptedChildren.append(child) }
+      }
+    }
   }
 
   public var records: [JSONValue] {

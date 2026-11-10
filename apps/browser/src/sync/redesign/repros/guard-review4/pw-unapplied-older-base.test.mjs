@@ -1,8 +1,9 @@
+import "../../../../../../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fixedBy } from "../../switchOn.mjs";
-import { plainOf } from "../../fakeSeal.mjs";
-import { sealedState } from "../../../sealedState.mjs";
+const { fixedBy } = await import('../../switchOn.mjs');
+const { plainOf } = await import('../../fakeSeal.mjs');
+const { sealedState } = await import('../../../sealedState.mjs');
 
 const realSetTimeout = globalThis.setTimeout;
 globalThis.setTimeout = () => 0;

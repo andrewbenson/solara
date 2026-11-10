@@ -1,7 +1,8 @@
+import "../../../../../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fixedBy } from "../switchOn.mjs";
-import { world, onAndSynced, passwordMac, loginKey, syncKey, login, SITE, loginDataMark, launch, settle } from "./world.mjs";
+const { fixedBy } = await import('../switchOn.mjs');
+const { world, onAndSynced, passwordMac, loginKey, syncKey, login, SITE, loginDataMark, launch, settle } = await import('./world.mjs');
 
 async function restoredLoginData(w) {
   for (let i = 0; i < 40; i++) w.here.set(loginKey(`old${i}`), login(`old${i}`, `p${i}`, Date.now()));

@@ -1,7 +1,8 @@
+import "../../../../../../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import "../../switchOn.mjs";
-import { reset, onAndSynced, settle, launch, native, S, otherMac, titles } from "./harness.mjs";
+const { reset, onAndSynced, settle, launch, native, S, otherMac, titles } = await import('./harness.mjs');
 
 const realNow = Date.now;
 

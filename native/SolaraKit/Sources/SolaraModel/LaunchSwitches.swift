@@ -28,7 +28,7 @@ public enum LaunchSwitch: String, CaseIterable, Sendable {
   ]
   static let developmentOnly: Set<LaunchSwitch> = [.syncRedesign, .nativeBookmarks]
   public static let onByDefault: Set<LaunchSwitch> = [
-    .nativeShell, .nativeTopStrip, .nativeBookmarksBar,
+    .nativeShell, .nativeTopStrip, .nativeBookmarksBar, .nativeBookmarks,
     .shellPanes, .nativePagesPool, .shellMainTop, .nativeTabSleep,
   ]
 
@@ -122,7 +122,8 @@ public struct LaunchSwitches: Sendable {
   }
 
   public func requested(_ name: LaunchSwitch, defaultOn: Bool) -> Bool {
-    environment[name] ?? stored[name] ?? defaultOn
+    if name == .nativeBookmarks { return distribution || environment[name] == true }
+    return environment[name] ?? stored[name] ?? defaultOn
   }
 
   public func unmetNeeds(_ name: LaunchSwitch) -> [LaunchSwitch] {
@@ -225,7 +226,7 @@ public struct LaunchSwitches: Sendable {
   public static func safeModeQuestion() -> (title: String, message: String) {
     (
       "Open Solara in safe mode?",
-      "Option was held while Solara opened. Safe mode keeps the native interface on, skips restoring the saved session, and disables extensions for this launch. The saved session returns on the next normal launch."
+      "Option was held while Solara opened. Safe mode keeps the native interface on, skips restoring the saved session, and disables extensions for this launch. The saved session returns on the next normal launch. Bookmarks remain available to open; bookmark edits and sync are paused."
     )
   }
 

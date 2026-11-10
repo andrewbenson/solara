@@ -5,13 +5,13 @@ const { useBrowser } = await import("../store/browser.ts");
 const { bookmarkWriter, projectNativeBookmarks } = await import("./bookmarkWriter.ts");
 const { moveGroupToBookmarksBar, restoreArcFolders } = await import("./bookmarkGroups.ts");
 
+const { seedBookmarkProjection, nextBookmarkProjectionOwner } = await import("../test-native/bookmarkProjection.ts");
 const S = () => useBrowser.getState();
 const folder = (id, title, children = [], parentId = null) => ({ kind: "folder", id, parentId, title, children, addedAt: 0 });
 let engines = 0;
 
-let projectionOwner = 0;
 class FakeOwner {
-  projectionOwner = String(++projectionOwner);
+  projectionOwner = nextBookmarkProjectionOwner();
   constructor() {
     this.engine = `compound-${++engines}`;
     this.revision = 1;
@@ -83,9 +83,9 @@ let windowId;
 let owner;
 beforeEach(() => {
   delete globalThis.acTestBookmarkWriter;
-  S().hydrate({ bookmarks: { nodes: {}, roots: {} } });
+  seedBookmarkProjection(useBrowser);
+  S().hydrate({});
   windowId = S().createWindow({ url: "https://home.example/" });
-  useBrowser.setState({ bookmarks: { nodes: {}, roots: {} } });
   owner = globalThis.acTestBookmarkWriter = new FakeOwner();
   const snapshot = owner.snapshot();
   projectNativeBookmarks(snapshot.engine, snapshot.revision, snapshot.document);

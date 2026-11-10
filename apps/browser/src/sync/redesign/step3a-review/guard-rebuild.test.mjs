@@ -1,7 +1,8 @@
+import "../../../../../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { world, onAndSynced, passwordMac, loginKey, syncKey, login, SITE, launch, settle, S, shell } from "./world.mjs";
-import { sealedState } from "../../sealedState.mjs";
+const { world, onAndSynced, passwordMac, loginKey, syncKey, login, SITE, launch, settle, S, shell } = await import('./world.mjs');
+const { sealedState } = await import('../../sealedState.mjs');
 
 test("GUARD-rebuild-settles: a sync-state rollback rebuild ends once passwords are read and applied", () =>
   world(async (w) => {

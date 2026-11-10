@@ -622,7 +622,7 @@ try {
     await dev("type:delta.example.net");
     await dev("keys:0:\r:36");
     assert.ok((await closed()).ok, "closed after Return");
-    assert.equal(await app.eval(`return ac.store.getState().bookmarks.nodes[${JSON.stringify(id)}]?.url`), "https://delta.example.net");
+    assert.equal(await app.eval(`return ac.store.getState().bookmarks.nodes[${JSON.stringify(id)}]?.url`), "https://delta.example.net/");
     const savedURL = await crossRead(app, "saved bookmark URL", (snapshot) => canonicalURL(snapshot.windows.flatMap((window) => window.bookmarks).find((node) => node.id === id)?.url),
       async (timeout) => canonicalURL(await app.eval(`return ac.store.getState().bookmarks.nodes[${JSON.stringify(id)}]?.url`, { timeout })));
     assert.equal(savedURL, "https://delta.example.net/");

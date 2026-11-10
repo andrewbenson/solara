@@ -1,7 +1,8 @@
+import "../../../../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fixedBy } from "./switchOn.mjs";
-import { shell, S, settle, launch, reset, onAndSynced, passwordMac, appMac, native, realReadPasswords, realSetTimeout, assertNoSeqReused, restoreDocs, useBrowser, files , loginDataMark } from "./harness.mjs";
+const { fixedBy } = await import('./switchOn.mjs');
+const { shell, S, settle, launch, reset, onAndSynced, passwordMac, appMac, native, realReadPasswords, realSetTimeout, assertNoSeqReused, restoreDocs, useBrowser, files , loginDataMark } = await import('./harness.mjs');
 
 const SITE = "https://site.example";
 const loginKey = (user) => `${SITE}\n${user}`;

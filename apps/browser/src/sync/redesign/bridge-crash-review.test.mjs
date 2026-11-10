@@ -1,7 +1,8 @@
+import "../../../../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import "./switchOn.mjs";
-import { S, settle, launch, reset, onAndSynced, otherMac, realSetTimeout, files } from "./harness.mjs";
+const { S, settle, launch, reset, onAndSynced, otherMac, realSetTimeout, files } = await import('./harness.mjs');
 
 const stub = await import("../../test-native/index.ts");
 const { solaraCoreNativeModules } = await import("../../test-native/solaracore.ts");

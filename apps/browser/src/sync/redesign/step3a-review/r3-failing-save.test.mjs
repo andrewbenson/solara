@@ -1,8 +1,9 @@
+import "../../../../../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fixedBy } from "../switchOn.mjs";
-import { world, onAndSynced, passwordMac, loginKey, syncKey, login, SITE, shell } from "./world.mjs";
-import { sealedState } from "../../sealedState.mjs";
+const { fixedBy } = await import('../switchOn.mjs');
+const { world, onAndSynced, passwordMac, loginKey, syncKey, login, SITE, shell } = await import('./world.mjs');
+const { sealedState } = await import('../../sealedState.mjs');
 
 test("V-failing-save: one login Chrome refuses to save doesn't keep the others unapplied", fixedBy("step 3"), () =>
   world(async (w) => {

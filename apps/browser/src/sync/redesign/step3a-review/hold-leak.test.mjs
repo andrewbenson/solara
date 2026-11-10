@@ -1,7 +1,8 @@
+import "../../../../../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fixedBy } from "../switchOn.mjs";
-import { world, onAndSynced, passwordMac, loginKey, syncKey, login, SITE } from "./world.mjs";
+const { fixedBy } = await import('../switchOn.mjs');
+const { world, onAndSynced, passwordMac, loginKey, syncKey, login, SITE } = await import('./world.mjs');
 
 test("HOLD-leak: held mass deletions go out once B adds a few logins and the ledger grows", fixedBy("step 3b"), () =>
   world(async (w) => {

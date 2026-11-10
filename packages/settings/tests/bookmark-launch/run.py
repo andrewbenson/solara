@@ -28,7 +28,7 @@ objects = [build / (name + '.o') for name in ['SolaraModel', 'SolaraStore', 'Sol
 files = [source / 'packages/settings/ios/Bookmarks/NativeBookmarkInstallation.swift', source / 'packages/settings/ios/Bookmarks/NativeBookmarkOwner.swift', here / 'Main.swift']
 binary = output / 'bookmark-launch-tests'
 subprocess.run(base + ['-o', str(binary)] + [str(item) for item in files + objects], env=environment, check=True, timeout=180)
-cases = ['historyStartupCannotPreemptClaim', 'concurrentEarlyCommandsShareOneBootstrap', 'realOwnerRecordsFacts', 'claimFailureNeverSelectsLegacy', 'safeModeRefusesAllBookmarkWritesAndSync', 'reloadKeepsOneNativeOwner', 'stoppedOwnerCannotAdvertiseOwned', 'stopDuringPreparationCannotResurrect', 'latestStoreMappingBeforeOwned', 'managedReplacementCannotInheritOwned', 'ownershipStateFeedSurvivesReattachment']
+cases = ['historyStartupCannotPreemptClaim', 'concurrentEarlyCommandsShareOneBootstrap', 'realOwnerRecordsFacts', 'claimFailureNeverSelectsLegacy', 'safeModeRefusesAllBookmarkWritesAndSync', 'reloadKeepsOneNativeOwner', 'stoppedOwnerCannotAdvertiseOwned', 'stopDuringPreparationCannotResurrect', 'latestStoreMappingBeforeOwned', 'managedReplacementCannotInheritOwned', 'ownershipStateFeedSurvivesReattachment', 'partialScopeNeverStartsLegacyWriter', 'safeModeKeepsNativeUIReadOnly', 'migrationNoticeKeepsInstalledOwnerAlive', 'unavailableBookmarksKeepHistoryAvailable']
 failed = False
 for case in args.cases or cases:
     try:

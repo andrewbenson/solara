@@ -1,3 +1,4 @@
+import "../../../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs";
 import assert from "node:assert/strict";
 import { test, beforeEach } from "node:test";
 import { spawnSync } from "node:child_process";
@@ -426,6 +427,7 @@ test("discarded follows native patches and clears with the next native lifetime"
 
 test("native live refusal begins before replica attachment", () => {
   const script = `
+  await import("../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs");
     import assert from "node:assert/strict";
     globalThis.__DEV__ = false;
     globalThis.acTestNativeModules = { SolaraStoreAdapter: { status: () => ({ active: true, scope: "everything" }) } };

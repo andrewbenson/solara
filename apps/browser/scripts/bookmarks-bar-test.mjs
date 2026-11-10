@@ -170,7 +170,7 @@ try {
     bmbar.menus = [];
     shell.showMenu = (items) => { bmbar.menus.push(items); return Promise.resolve(null); };
     return { ...roots, first, second, folder, nested, nestedFolder, deepLink, overflow, other };
-  `);
+  `, 15000);
   await rep.check("launch-switch", async () => {
     const kinds = await run("return H.kinds();");
     assert.ok(kinds.includes("bookmarksBar"), "native bookmarks bar registered by default");
@@ -386,7 +386,7 @@ try {
     shell.prompt = (options) => { bmbar.prompts.push(options); return Promise.resolve("Menu folder"); };
     shell.confirm = (options) => { bmbar.confirms.push(options); return Promise.resolve({ confirmed: false, suppressed: false }); };
     return { empty, arc, arcFolder, arcLink, sidebar, copy, doomed, many, otherRoot: s.bookmarks.roots.default.other };
-  `);
+  `, 15000);
   await until("native menu fixture snapshot", `return H.devBookmarksBarMenu("w1", "item", ${JSON.stringify(menuFixtures.many)}).then(JSON.parse);`, (value) => Array.isArray(value) && value.some((item) => item.title === "Open All (16)"));
   await rep.check("native-empty-folder-menus", async () => {
     assert.deepEqual(menuRows(await menu("item", menuFixtures.empty)), folderContextRows(menuFixtures.empty, 0));

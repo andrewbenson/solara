@@ -1838,7 +1838,7 @@ class Coordinator {
   }
   base::DictValue Debug() {
     auto value = Envelope().Set("state", State(consumer_))
-        .Set("protocol", 2).Set("nativeApi", 39).Set("abi", 2)
+        .Set("protocol", 2).Set("nativeApi", 40).Set("abi", 2)
         .Set("queryCount", static_cast<int>(queries_.size()))
         .Set("nativeOperationCount", static_cast<int>(native_ops_.size()))
         .Set("bootstrapCount", static_cast<int>(bootstrap_))
@@ -2012,7 +2012,7 @@ void RecordNotificationProviderAttempt(const char* kind) {
 }
 
 extern "C" AC_ENGINE_EXPORT const char* ac_notifications_capabilities() {
-  return R"({"abi":2,"notifications":2,"nativeApi":39,"customBridge":true,"allHandlerTypes":true,"featureFlagIndependent":true,"childRefusal":true,"directControls":true,"directDrain":true,"scopeFences":true,"profileFree":true,"requiresMatchingApp":true,"processLifetimeOnly":true,"contextLifetime":true,"startupAbort":true,"trustedAuthorizationEligibility":true,"synchronousAuthorizationEligibility":true})";
+  return R"({"abi":2,"notifications":2,"nativeApi":40,"customBridge":true,"allHandlerTypes":true,"featureFlagIndependent":true,"childRefusal":true,"directControls":true,"directDrain":true,"scopeFences":true,"profileFree":true,"requiresMatchingApp":true,"processLifetimeOnly":true,"contextLifetime":true,"startupAbort":true,"trustedAuthorizationEligibility":true,"synchronousAuthorizationEligibility":true})";
 }
 extern "C" AC_ENGINE_EXPORT int ac_notifications_register_transport(
     int protocol, ac_notifications_control_t control, ac_engine_event_t event,

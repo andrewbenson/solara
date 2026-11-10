@@ -1,4 +1,5 @@
-import { startProfileConfirmation } from "../test-native/profileConfirmation.mjs";
+import "../../../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs";
+const { startProfileConfirmation } = await import('../test-native/profileConfirmation.mjs');
 import assert from "node:assert/strict";
 import { test } from "node:test";
 const { useBrowser } = await import("./browser.ts");

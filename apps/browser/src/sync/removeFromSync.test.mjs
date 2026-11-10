@@ -1,9 +1,10 @@
+import "../../../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { registerHooks, stripTypeScriptTypes } from "node:module";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { startProfileConfirmation } from "../test-native/profileConfirmation.mjs";
+const { startProfileConfirmation } = await import('../test-native/profileConfirmation.mjs');
 
 const shippedBlobs = { engine: "d0c180436941e9246ee5a6fbae091d4aabf484ea", adapters: "bcf6b449c7dd3659145c2e632671bf09ba4ec5ce" };
 const shippedSource = (blob) =>

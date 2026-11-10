@@ -79,6 +79,9 @@ final class SolaraHistoryClient: EngineClient {
   }
 
   func applyBookmarks(ops: [BookmarkOperation], engineProfile: String) async throws -> BookmarkApplyResult {
+    #if DEBUG
+      try await NativeBookmarkFaults.beforeApply(engine: engineProfile, ops: ops)
+    #endif
     if NativeBookmarkOwner.current != nil {
       let values = try JSONValue.parse(JSONEncoder().encode(ops))
       let projected = (values.array ?? []).map { value -> JSONValue in
@@ -90,7 +93,11 @@ final class SolaraHistoryClient: EngineClient {
       }
       let args: JSONValue = ["ops": .array(projected)]
       let reply = try await bookmarkCall("ac_bookmarks_apply", profile: engineProfile, args: args.text())
-      return try JSONDecoder().decode(BookmarkApplyResult.self, from: Data(reply.text().utf8))
+      let result = try JSONDecoder().decode(BookmarkApplyResult.self, from: Data(reply.text().utf8))
+      #if DEBUG
+        NativeBookmarkFaults.afterApply(engine: engineProfile, result: result)
+      #endif
+      return result
     }
     let values = try JSONSerialization.jsonObject(with: JSONEncoder().encode(ops))
     let data = try await call("ac_bookmarks_apply", profile: engineProfile, args: ["ops": values])
@@ -102,6 +109,9 @@ final class SolaraHistoryClient: EngineClient {
   }
 
   func readBookmarks(engineProfile: String) async throws -> EngineBookmarkTree {
+    #if DEBUG
+      try await NativeBookmarkFaults.beforeRead(engine: engineProfile)
+    #endif
     if NativeBookmarkOwner.current != nil {
       let reply = try await bookmarkCall("ac_bookmarks_tree", profile: engineProfile)
       return try JSONDecoder().decode(EngineBookmarkTree.self, from: Data(reply.text().utf8))
@@ -202,7 +212,12 @@ final class SolaraHistoryClient: EngineClient {
 @MainActor
 enum NativeHistoryCatalog {
   static let client = SolaraHistoryClient()
-  static let catalog = LibraryCatalog(client: client, bookmarkAdmission: { try await NativeBookmarkLaunch.ensureReady() })
+  static let catalog: LibraryCatalog = makeCatalog()
+
+  private static func makeCatalog() -> LibraryCatalog {
+    NativeBookmarkLaunch.select()
+    return LibraryCatalog(client: client, bookmarkAdmission: { try await NativeBookmarkLaunch.ensureReady() })
+  }
   private static var lifecycle: Int?
   private static weak var boundStore: Store?
   private static var profileLifetimes: HistoryProfileLifetimes?
@@ -231,7 +246,9 @@ enum NativeHistoryCatalog {
   }
 
   static func start(engineProfiles: [String]) async {
-    do { try await NativeBookmarkLaunch.ensureReady() } catch { return }
+    do { try await NativeBookmarkLaunch.ensureReady() } catch {
+      guard NativeBookmarkOwner.bookmarksSelected else { return }
+    }
     bindProfileLifetimes()
     NativeHistoryHints.start(catalog: catalog)
     NewTabSources.shared.useHistoryCatalog(catalog)
@@ -259,9 +276,7 @@ enum NativeHistoryCatalog {
       let input = try JSONDecoder().decode(HistoryVisitsPayload.self, from: data)
       return try await catalog.addHistoryVisits(pages: input.pages, toleranceMs: input.toleranceMs, engineProfile: engineProfile)
     case "applyBookmarks":
-      let ops = try JSONDecoder().decode(BookmarkOpsPayload.self, from: data).ops
-      let result = try await catalog.applyBookmarks(ops: ops, engineProfile: engineProfile)
-      return ["applied": result.applied, "skipped": result.skipped, "invalid": result.invalid]
+      throw BookmarkCoordinatorError.ownershipUnavailable
     case "storeFavicon":
       guard let page = payload["page"] as? String, let source = payload["icon"] as? String,
         let png = payload["png"] as? String, let bytes = Data(base64Encoded: png) else { throw SolaraHistoryClient.Failure.invalidReply }

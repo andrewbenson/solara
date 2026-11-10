@@ -6,6 +6,7 @@ const { applyResult, applySafari, emptyCounts } = await import("./apply.ts");
 const { isBookmarkConditionFailure, projectNativeBookmarks } = await import("../../lib/bookmarkWriter.ts");
 const { useToasts } = await import("../layout/toasts.ts");
 
+const { seedBookmarkProjection, nextBookmarkProjectionOwner } = await import("../../test-native/bookmarkProjection.ts");
 const S = () => useBrowser.getState();
 const folder = (id, title, children = []) => ({ kind: "folder", id, parentId: null, title, children, addedAt: 0 });
 let engines = 0;
@@ -13,7 +14,7 @@ let engines = 0;
 class FakeOwner {
   constructor() {
     this.engine = `import-${++engines}`;
-    this.projectionOwner = String(engines);
+    this.projectionOwner = nextBookmarkProjectionOwner();
     this.revision = 1;
     this.bar = `bar@${this.engine}`;
     this.other = `other@${this.engine}`;
@@ -74,7 +75,7 @@ const result = { bookmarks: imported, favorites: [], tabs: [], spaces: [], histo
 const safari = { bookmarks: imported, profiles: [], tabs: [], credentials: [] };
 
 const own = () => {
-  useBrowser.setState({ bookmarks: { nodes: {}, roots: {} } });
+  seedBookmarkProjection(useBrowser);
   const owner = (globalThis.acTestBookmarkWriter = new FakeOwner());
   const snapshot = owner.snapshot();
   projectNativeBookmarks(snapshot.engine, snapshot.revision, snapshot.document);
@@ -84,7 +85,8 @@ const titles = (ids) => ids.map((id) => S().bookmarks.nodes[id]?.title);
 
 beforeEach(() => {
   delete globalThis.acTestBookmarkWriter;
-  S().hydrate({ bookmarks: { nodes: {}, roots: {} } });
+  seedBookmarkProjection(useBrowser);
+  S().hydrate({});
 });
 afterEach(() => {
   delete globalThis.acTestBookmarkWriter;
@@ -104,7 +106,6 @@ test("an owned import into a bar that has bookmarks goes in an Imported folder",
   const owner = new FakeOwner();
   owner.document.nodes.seed = { kind: "url", id: "seed", parentId: owner.bar, title: "Seed", url: "https://seed.example/", favicon: null, addedAt: 0 };
   owner.document.nodes[owner.bar].children.push("seed");
-  useBrowser.setState({ bookmarks: { nodes: {}, roots: {} } });
   globalThis.acTestBookmarkWriter = owner;
   projectNativeBookmarks(owner.engine, String(owner.revision), JSON.stringify(owner.document));
   await applySafari("default", safari, false);
@@ -128,14 +129,13 @@ test("a refused import counts nothing, changes nothing and reports bookmarks as 
   assert.equal(useToasts.getState().toasts[windowId] ?? null, null, "the Import window reports the failure; no second toast");
 });
 
-test("a legacy import still fills empty roots directly and counts every link", async () => {
-  const counts = await applyResult("default", result, "Chrome", ["bookmarks"]);
-  assert.deepEqual({ ...emptyCounts(), bookmarks: 2 }, { ...counts, history: 0 });
-  const roots = S().bookmarks.roots.default;
-  assert.deepEqual(titles(S().bookmarks.nodes[roots.bar].children), ["Bar link"]);
-  assert.deepEqual(titles(S().bookmarks.nodes[roots.other].children), ["Reading"]);
-  await applyResult("default", result, "Chrome", ["bookmarks"]);
-  assert.deepEqual(titles(S().bookmarks.nodes[roots.bar].children), ["Bar link", "Imported from Chrome"]);
+test("an import without native authority is refused and never falls back", async () => {
+  const before = S().bookmarks;
+  const failed = [];
+  const counts = await applyResult("default", result, "Chrome", ["bookmarks"], (kind) => failed.push(kind));
+  assert.equal(counts.bookmarks, 0);
+  assert.deepEqual(failed, ["bookmarks"]);
+  assert.equal(S().bookmarks, before);
 });
 
 test("two owned imports started together still put the second in an Imported folder", async () => {

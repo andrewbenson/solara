@@ -36,6 +36,9 @@ export function startDevHarness() {
     get bookmarks(): typeof import("./bookmarkWriter").bookmarkWriter {
       return require("./bookmarkWriter").bookmarkWriter;
     },
+    get bookmarkSyncAcceptance(): typeof import("../test-native/bookmarkSyncAcceptance") {
+      return require("../test-native/bookmarkSyncAcceptance");
+    },
     get historyMenu(): typeof import("../components/layout/history") {
       return require("../components/layout/history");
     },

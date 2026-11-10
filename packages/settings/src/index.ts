@@ -141,21 +141,21 @@ const unavailableBookmarks = (reason: string): BookmarkWriterState => ({ state: 
 function checkedBookmarkState(value: unknown): BookmarkWriterState {
   if (!value || typeof value !== "object" || !("state" in value)) return unavailableBookmarks("Invalid native bookmark ownership state");
   const state = value as BookmarkWriterState;
-  if (state.state === "legacy") return state;
+  if (state.state === "legacy") return unavailableBookmarks("Native bookmark ownership is required");
   if (!["starting", "owned", "read-only-unavailable", "stopped"].includes(state.state)) return unavailableBookmarks("Unknown native bookmark ownership state");
   const methods = [
     "bookmarkWriterSnapshot", "submitBookmarkMutations", "replaceBookmarkDocument", "replaceBookmarkDocumentWithRecords",
     "ackBookmarkFacts", "ackBookmarkFactsForLink", "observeBookmarkRecords", "observeBookmarkRecordsForLink",
     "clearBookmarkFacts", "setBookmarkSyncLinks", "bookmarkProjection", "reloadBookmarkProjection", "addListener",
   ] as const;
-  if (native?.bookmarkWriterAPIVersion?.() !== 2 || !methods.every((method) => typeof native?.[method] === "function")) return unavailableBookmarks("Native bookmark API mismatch");
+  if (native?.bookmarkWriterAPIVersion?.() !== 3 || !methods.every((method) => typeof native?.[method] === "function")) return unavailableBookmarks("Native bookmark API mismatch");
   if (state.state === "owned" && (typeof state.generation !== "string" || !/^[0-9]+$/.test(state.generation))) return unavailableBookmarks("Invalid native bookmark generation");
   return state;
 }
 
 export function bookmarkWriterState(): BookmarkWriterState {
   try {
-    if (!native?.bookmarkWriterState) return { state: "legacy" };
+    if (!native?.bookmarkWriterState) return unavailableBookmarks("Native bookmark ownership is unavailable");
     return checkedBookmarkState(native.bookmarkWriterState());
   } catch {
     return unavailableBookmarks("Native bookmark ownership is unavailable");
@@ -182,8 +182,13 @@ export type BookmarkProjection = {
   views: Record<string, { revision: string; hasView: boolean; readyForSync: boolean; document: { nodes: Record<string, { kind?: string }>; roots: Record<string, { bar: string; other: string }> } }>;
 };
 
+function requireBookmarkDisplay(): void {
+  const state = bookmarkWriterState().state;
+  if (state !== "owned" && state !== "read-only-unavailable") throw new Error("native bookmark display is not ready");
+}
+
 export function bookmarkProjection(): BookmarkProjection {
-  requireBookmarkAuthority();
+  requireBookmarkDisplay();
   if (!native?.bookmarkProjection) throw new Error("native bookmark projection unavailable");
   return JSON.parse(native.bookmarkProjection()) as BookmarkProjection;
 }
@@ -192,7 +197,6 @@ export const onBookmarkProjectionChanged = (listener: () => void): EventSubscrip
   native?.addListener("onBookmarkProjectionChanged", listener) ?? { remove() {} };
 
 export const reloadBookmarkProjection = (): Promise<void> => {
-  requireBookmarkAuthority();
   return native?.reloadBookmarkProjection?.() ?? Promise.reject(new Error("native bookmark reload unavailable"));
 };
 
@@ -337,8 +341,8 @@ export type LibraryBookmarkOp =
   | { op: "update"; id: string; t?: string; u?: string }
   | { op: "remove"; id: string };
 
-export const nativeApplyBookmarkOps = (engineProfile: string, ops: LibraryBookmarkOp[]): Promise<{ applied: number; skipped: number; invalid: string[] }> =>
-  libraryCommand("applyBookmarks", engineProfile, { ops });
+export const nativeApplyBookmarkOps = (_engineProfile: string, _ops: LibraryBookmarkOp[]): Promise<{ applied: number; skipped: number; invalid: string[] }> =>
+  Promise.reject(new Error("Raw bookmark writes are retired; use the native bookmark writer"));
 
 export const nativeStoreFavicon = (engineProfile: string, page: string, icon: string, png: string): Promise<void> =>
   libraryCommand("storeFavicon", engineProfile, { page, icon, png });

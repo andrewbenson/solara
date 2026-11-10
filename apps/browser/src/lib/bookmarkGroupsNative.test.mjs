@@ -1,8 +1,10 @@
+import "../../../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 
 const restoreUnderNativeStore = `
+  await import("../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs");
   import assert from "node:assert/strict";
   globalThis.__DEV__ = false;
   const tab = { id: "t1", windowId: "w1", profileId: "default", url: "https://a.example/", title: "A", favicon: null, pinned: false, muted: false, zoom: 1, customTitle: null, customIcon: null, pinnedUrl: null, openerId: null, createdAt: 1, lastActiveAt: 1 };

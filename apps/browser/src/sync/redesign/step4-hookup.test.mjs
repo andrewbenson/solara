@@ -1,7 +1,8 @@
+import "../../../../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fixedBy } from "./switchOn.mjs";
-import { shell, settle, reset, onAndSynced, S, otherMac } from "./harness.mjs";
+const { fixedBy } = await import('./switchOn.mjs');
+const { shell, settle, reset, onAndSynced, S, otherMac } = await import('./harness.mjs');
 const host = await import("../journalHost.ts");
 
 test("HOOK-in-step: a clean cycle records the last in-step time and every scope's vv in sync-edits.gen", fixedBy("step 4"), async () => {

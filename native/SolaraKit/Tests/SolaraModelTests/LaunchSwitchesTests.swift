@@ -5,10 +5,10 @@ import Testing
 
 @Suite struct LaunchSwitchesTests {
   static let defaultOn: Set<LaunchSwitch> = [
-    .nativeShell, .nativeTopStrip, .nativeBookmarksBar,
+    .nativeShell, .nativeTopStrip, .nativeBookmarksBar, .nativeBookmarks,
     .shellPanes, .nativePagesPool, .shellMainTop, .nativeTabSleep,
   ]
-  static let shippedSurfaces = defaultOn.filter { !$0.storable(distribution: true) }
+  static let shippedSurfaces = defaultOn.filter { !$0.storable(distribution: true) && $0 != .nativeBookmarks }
 
   func scratchDefaults() -> UserDefaults {
     let name = "LaunchSwitchesTests.\(UUID().uuidString)"
@@ -37,19 +37,35 @@ import Testing
     }
   }
 
+  @Test func distributionOwnsBookmarksWithoutFlags() {
+    let switches = LaunchSwitches(environment: [:], defaults: nil, distribution: true, skipStored: false)
+    #expect(switches.isOn(.nativeBookmarks))
+  }
+
+  @Test func distributionOffOverridesCannotReviveJS() {
+    let defaults = scratchDefaults()
+    defaults.set("0", forKey: "SOLARA_NATIVE_BOOKMARKS")
+    for environment in [[:], ["SOLARA_NATIVE_BOOKMARKS": "0"], ["SOLARA_NATIVE_BOOKMARKS": "1", "SOLARA_NATIVE_SCOPE": "settings"]] {
+      let switches = LaunchSwitches(environment: environment, defaults: defaults, distribution: true, skipStored: false)
+      #expect(switches.isOn(.nativeBookmarks))
+      #expect(!switches.fromEnvironment(.nativeBookmarks))
+      #expect(!LaunchSwitch.nativeBookmarks.storable(distribution: true))
+    }
+  }
+
   @Test func nativeBookmarkOwnershipRequiresAnIsolatedDevelopmentOptIn() {
     let flag = "SOLARA_NATIVE_BOOKMARKS"
     let own = [flag: "1", "SOLARA_DATA_DIR": "/tmp/bookmark-owner"]
     let selected = LaunchSwitches(environment: own, defaults: nil, distribution: false, skipStored: false)
     #expect(selected.isOn(.nativeBookmarks))
-    #expect(!LaunchSwitches(environment: own, defaults: nil, distribution: true, skipStored: false).isOn(.nativeBookmarks))
+    #expect(LaunchSwitches(environment: own, defaults: nil, distribution: true, skipStored: false).isOn(.nativeBookmarks))
     for env in [[:], [flag: "1"], [flag: "1", "SOLARA_BACKGROUND": "1"], [flag: "1", "SOLARA_DATA_DIR": ""]] {
       #expect(!LaunchSwitches(environment: env, defaults: nil, distribution: false, skipStored: false).isOn(.nativeBookmarks))
     }
     for distribution in [false, true] {
       let defaults = scratchDefaults()
       defaults.set("1", forKey: flag)
-      #expect(!LaunchSwitches(environment: [:], defaults: defaults, distribution: distribution, skipStored: false).isOn(.nativeBookmarks))
+      #expect(LaunchSwitches(environment: [:], defaults: defaults, distribution: distribution, skipStored: false).isOn(.nativeBookmarks) == distribution)
       StoredLaunchSwitches(defaults: defaults, distribution: distribution).set(.nativeBookmarks, true)
       #expect(!LaunchSwitch.nativeBookmarks.storable(distribution: distribution))
     }

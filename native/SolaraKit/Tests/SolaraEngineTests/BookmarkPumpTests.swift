@@ -131,6 +131,82 @@ extension BookmarkPumpTests {
     #expect(f.engine.document["nodes"]?["b0"]?["title"] == "Pending")
   }
 
+  @Test func unreadableDeepTreeStillAcceptsEditsAgainstTheSuccessfulBase() async throws {
+    let f = PumpFixture()
+    let ids = (0..<513).map { String(format: "00000000-0000-4000-8000-%012x", $0) }
+    let operations: [JSONValue] = ids.indices.map { index in
+      ["op": "add", "id": .string(ids[index]), "parent": .string(index == 0 ? "bar" : ids[index - 1]), "k": "f", "t": .string("Deep \(index)")]
+    }
+    try await f.pump.submit(profile: "p", mutations: [.init(method: "applyBookmarkOperations", args: [.array(operations)])])
+    await f.pump.settle(engine: "")
+    #expect(f.engine.document["nodes"]?[ids[512]]?["parentId"] == .string(ids[511]))
+    #expect(f.owner.desiredView(engine: "").inFlightTarget == nil)
+    f.engine.rejectRead = true
+    f.pump.requestRead(engine: "")
+    await f.pump.settle(engine: "")
+    #expect(f.owner.desiredView(engine: "").requiresRead)
+    try await f.rename("Readable edit")
+    await f.pump.settle(engine: "")
+    try #require(f.engine.document["nodes"]?["b0"]?["title"] == "Readable edit")
+    #expect(f.owner.desiredView(engine: "").inFlightTarget == nil)
+    #expect(f.owner.desiredView(engine: "").requiresRead)
+    try await f.pump.submit(profile: "p", mutations: [.init(method: "removeBookmark", args: [.string(ids[0])])])
+    await f.pump.settle(engine: "")
+    #expect(f.engine.document["nodes"]?[ids[0]] == nil)
+    #expect(f.engine.document["nodes"]?[ids[512]] == nil)
+    #expect(f.engine.document["nodes"]?["bar@default"]?["children"] == ["b0"])
+    #expect(f.engine.batches.count == 3)
+    let reads = f.engine.events.filter { $0 == "read" }.count
+    #expect(reads > 1)
+    f.time.advance(to: 1500)
+    await f.pump.settle(engine: "")
+    #expect(f.engine.events.filter { $0 == "read" }.count == reads)
+    f.time.advance(to: 60000)
+    await f.pump.settle(engine: "")
+    #expect(f.engine.events.filter { $0 == "read" }.count == reads + 1)
+    f.engine.rejectRead = false
+    f.time.advance(to: 120000)
+    await f.pump.settle(engine: "")
+    #expect(!f.owner.desiredView(engine: "").requiresRead)
+    #expect(f.owner.desiredView(engine: "").retryNotBeforeMs == nil)
+  }
+
+  @Test func unreadableInitialTreeStillRequiresABaselineBeforePushing() async throws {
+    let f = PumpFixture()
+    f.owner.seed(engine: "", document: f.engine.document, ready: false)
+    f.engine.rejectRead = true
+    try await f.rename("Pending baseline")
+    await f.pump.settle(engine: "")
+    f.time.advance(to: 1500)
+    await f.pump.settle(engine: "")
+    #expect(f.engine.batches.isEmpty)
+    #expect(f.engine.document["nodes"]?["b0"]?["title"] != "Pending baseline")
+    f.engine.rejectRead = false
+    f.time.advance(to: 4500)
+    await f.pump.settle(engine: "")
+    #expect(f.engine.document["nodes"]?["b0"]?["title"] == "Pending baseline")
+  }
+
+  @Test func unreadablePartialApplyStillRequiresRecoveryBeforeLaterEdits() async throws {
+    let f = PumpFixture(urls: ["https://a.test", "https://b.test", "https://c.test"])
+    f.engine.loseBeforeApply = "b1"
+    f.engine.rejectRead = true
+    try await f.pump.submit(profile: "p", mutations: [.init(method: "removeBookmarks", args: [["b0", "b1"]])])
+    await f.pump.settle(engine: "")
+    #expect(f.owner.desiredView(engine: "").inFlightTarget != nil)
+    try await f.pump.submit(profile: "p", mutations: [.init(method: "updateBookmark", args: ["b2", ["title": "After uncertain apply"]])])
+    await f.pump.settle(engine: "")
+    f.time.advance(to: 1500)
+    await f.pump.settle(engine: "")
+    #expect(f.engine.batches.count == 1)
+    #expect(f.engine.document["nodes"]?["b2"]?["title"] != "After uncertain apply")
+    f.engine.rejectRead = false
+    f.time.advance(to: 4500)
+    await f.pump.settle(engine: "")
+    #expect(f.engine.document["nodes"]?["b2"]?["title"] == "After uncertain apply")
+    #expect(f.owner.desiredView(engine: "").inFlightTarget == nil)
+  }
+
   @Test func oldEpochTimerAndCompletionIgnored() async throws {
     let f = PumpFixture()
     f.engine.reject = true

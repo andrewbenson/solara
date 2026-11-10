@@ -2,7 +2,7 @@ import { deletePassword, savePassword } from "@solara/solaracore";
 import { ackBookmarkFacts, bookmarkWriterSnapshot, bookmarkWriterState, clearBookmarkFacts, observeBookmarkRecords, replaceBookmarkDocumentWithRecords, type BookmarkFactClear } from "@solara/settings";
 import { nativeAddHistoryVisits, nativeDeleteHistoryUrls } from "@solara/settings";
 import { ApplyRefusal, assignPositions, canonical, editHLC, hlcDevice, SyncNative, type Adapter, type SavedLogin, type SyncRecord } from "@solara/sync";
-import { bookmarkUuidFor, ensureRoots, isBookmarkUuid, rootIdsFor } from "../store/bookmarks";
+import { bookmarkUuidFor, isBookmarkUuid, rootIdsFor } from "../store/bookmarks";
 import { MAX_HISTORY, MAX_VISIT_TIMES } from "../store/history";
 import { useBrowser } from "../store/browser";
 import { engineProfile } from "../store/model";
@@ -393,25 +393,8 @@ function syncedBookmarkNodes(b: Bookmarks, roots: { bar: string; other: string }
 type BookmarkSyncContext = { device: string; link: () => string | null; opened?: () => void };
 
 export function bookmarksAdapter(profileId: string, sync?: BookmarkSyncContext): Adapter {
-  const ownership = bookmarkWriterState();
-  if (ownership.state === "owned") return nativeBookmarksAdapter(profileId, sync);
-  if (ownership.state !== "legacy") return { prefix: "bm:", extract: () => null, apply: () => false };
-  const ready = () => bookmarkWriterState().state === "legacy" && !!store().bookmarksReady[profileId];
-  return {
-    prefix: "bm:",
-    extract: (base) => {
-      if (!ready()) return null;
-      const b = store().bookmarks;
-      const roots = b.roots[profileId];
-      return { values: roots ? bookmarkValues(b, roots, base) : new Map<string, unknown>() };
-    },
-    apply: (visible) => {
-      if (!ready()) return false;
-      const [b, roots] = ensureRoots(store().bookmarks, profileId);
-      const nodes = syncedBookmarkNodes(b, roots, visible);
-      asSyncApply(() => useBrowser.setState({ bookmarks: { ...b, nodes } }));
-    },
-  };
+  if (bookmarkWriterState().state === "owned") return nativeBookmarksAdapter(profileId, sync);
+  return { prefix: "bm:", extract: () => null, apply: () => false };
 }
 
 function nativeBookmarksAdapter(profileId: string, sync?: BookmarkSyncContext): Adapter {

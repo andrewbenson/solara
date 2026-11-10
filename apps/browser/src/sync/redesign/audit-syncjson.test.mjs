@@ -1,7 +1,8 @@
+import "../../../../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import "./switchOn.mjs";
-import { S, shell, settle, launch, reset, onAndSynced, files } from "./harness.mjs";
+const { S, shell, settle, launch, reset, onAndSynced, files } = await import('./harness.mjs');
 
 const relaunchWith = async (syncJson) => {
   shell.docs.set("sync.json", syncJson);

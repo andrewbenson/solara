@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseChecks, retiredEngines, webkitIdentifier, waitFor, pendingRestartLogged, assertRetired, deletionScenario, reportLeftovers, assertPendingCrash, crashBeforeRelaunch, Run } from "./profile-delete-e2e.mjs";
+import { parseChecks, retiredEngines, webkitIdentifier, waitFor, pendingRestartLogged, assertRetired, deletionScenario, reportLeftovers, assertPendingCrash, crashBeforeRelaunch, bookmarkChainApplied, Run } from "./profile-delete-e2e.mjs";
 
 test("check selection rejects mistakes before a launch and keeps independent cases", () => {
-  assert.deepEqual(parseChecks([]), ["delete-loaded", "delete-unloaded", "crash-before-relaunch", "crash-after-tombstone", "default"]);
+  assert.deepEqual(parseChecks([]), ["delete-loaded", "delete-unloaded", "crash-before-relaunch", "crash-after-tombstone", "default", "default-write-failure"]);
   assert.deepEqual(parseChecks(["delete-unloaded", "delete-unloaded", "delete-loaded"]), ["delete-unloaded", "delete-loaded"]);
   assert.throws(() => parseChecks(["--keep-data"]), /unknown check/);
   assert.throws(() => parseChecks(["delete"]), /unknown check/);
@@ -204,4 +204,92 @@ test("native snapshots track Default and newly created identities before profile
   const replacementIdentifier = webkitIdentifier(run.data, "replacement-data");
   assert.equal([...run.webkitPaths].filter((path) => path.endsWith(`/${replacementIdentifier}`)).length, 2);
   assert.equal(run.webkitPaths.size, 4, "repeated snapshots deduplicate paths and retain earlier identities");
+});
+
+
+test("bookmark fixtures use the native writer's current binding and preserve all 513 operations", async () => {
+  const run = new Run({}, "/private/tmp/ac-profile-delete/check");
+  const ops = Array.from({ length: 513 }, (_, index) => ({ op: "add", id: `folder-${index}`, parent: index ? `folder-${index - 1}` : "bar", k: "f", t: `Deep Default ${index}` }));
+  const expected = { applied: 513, skipped: 0, invalid: [] };
+  let snapshots = 0;
+  let submitted = 0;
+  const B = {
+    bookmarkWriterState: () => ({ state: "owned" }),
+    bookmarkWriterSnapshot(profile) {
+      assert.equal(profile, "default");
+      return { engine: "", generation: String(++snapshots), readyForSync: true };
+    },
+    submitBookmarkMutations(profile, mutations, engine, generation, request) {
+      assert.equal(profile, "default");
+      assert.equal(engine, "");
+      assert.equal(generation, "2", "submission binds to the snapshot taken after readiness polling");
+      assert.match(request, /^profile-delete-/);
+      assert.deepEqual(JSON.parse(mutations), [{ method: "applyBookmarkOperations", args: [ops] }]);
+      submitted++;
+      return Promise.resolve({ results: JSON.stringify([expected]) });
+    },
+  };
+  run.app = {
+    alive: true,
+    eval(body) {
+      assert.doesNotMatch(body, /\basync\b|\bawait\s/, "Hermes evaluates ordinary functions and promise chains");
+      const globals = { expo: { modules: { SolaraSettings: B, SolaraCEF: { engineCall() { assert.fail("raw bookmark engine calls are refused"); } } } } };
+      return new Function("ac", "globalThis", body)({ store: { getState: () => ({}) } }, globals);
+    },
+  };
+  assert.deepEqual(await run.applyBookmarks("default", ops), expected);
+  assert.equal(submitted, 1);
+});
+
+test("bookmark snapshot reads the native owner's document and the serializer oracle retains native errors", async () => {
+  const run = new Run({}, "/private/tmp/ac-profile-delete/check");
+  const document = { nodes: { kept: { id: "kept" } }, roots: {} };
+  const B = {
+    bookmarkWriterSnapshot(profile) {
+      assert.equal(profile, "default");
+      return { engine: "", generation: "3", document: JSON.stringify(document) };
+    },
+    devBookmarkFault(input) {
+      assert.deepEqual(JSON.parse(input), { operation: "tree", engine: "" });
+      return Promise.reject(new Error('{"error":"bookmarks nested too deep"}'));
+    },
+  };
+  run.app = {
+    alive: true,
+    eval(body) {
+      assert.doesNotMatch(body, /\basync\b|\bawait\s/);
+      return new Function("ac", "globalThis", body)({ store: { getState: () => ({}) } }, { expo: { modules: { SolaraSettings: B } } });
+    },
+  };
+  assert.deepEqual(await run.bookmarkSnapshot("default"), { engine: "", generation: "3", document });
+  await assert.rejects(run.bookmarkTree(""), /bookmarks nested too deep/);
+});
+
+
+test("deep fixture waits for the applied base rather than accepted desired state", () => {
+  const ops = [
+    { op: "add", id: "outer", parent: "bar", k: "f", t: "Outer" },
+    { op: "add", id: "inner", parent: "outer", k: "f", t: "Inner" },
+  ];
+  const base = [
+    { id: "bar@default", kind: "folder", parent: null, children: ["outer"] },
+    { id: "outer", kind: "folder", parent: "bar@default", title: "Outer", children: ["inner"] },
+    { id: "inner", kind: "folder", parent: "outer", title: "Inner", children: [] },
+  ];
+  const entry = { view: { engine: "", failedPushes: 0, inFlightTarget: null, document: { nodes: { accepted: true } } }, base };
+  const payload = { engines: [entry] };
+  assert.equal(bookmarkChainApplied(payload, "", ops), true);
+  assert.equal(bookmarkChainApplied(payload, "other", ops), false);
+  for (const missing of base) {
+    assert.equal(bookmarkChainApplied({ engines: [{ ...entry, base: base.filter((node) => node !== missing) }] }, "", ops), false);
+  }
+  for (const field of ["parent", "title", "kind"]) {
+    const wrong = base.map((node) => node.id === "inner" ? { ...node, [field]: "wrong" } : node);
+    assert.equal(bookmarkChainApplied({ engines: [{ ...entry, base: wrong }] }, "", ops), false);
+  }
+  const unlinked = base.map((node) => node.id === "outer" ? { ...node, children: [] } : node);
+  assert.equal(bookmarkChainApplied({ engines: [{ ...entry, base: unlinked }] }, "", ops), false);
+  assert.equal(bookmarkChainApplied({ engines: [{ ...entry, base: [] }] }, "", ops), false);
+  assert.equal(bookmarkChainApplied({ engines: [{ ...entry, view: { ...entry.view, inFlightTarget: {} } }] }, "", ops), false);
+  assert.equal(bookmarkChainApplied({ engines: [{ ...entry, view: { ...entry.view, failedPushes: 1 } }] }, "", ops), false);
 });

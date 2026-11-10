@@ -5,21 +5,32 @@ import SolaraModel
 import SolaraShell
 import SolaraStore
 
-@MainActor
 enum NativeBookmarkLaunch {
-  private static let productionInstallationEnabled = false
-  private static let installation: NativeBookmarkInstallation = makeInstallation()
+  private static let selection = makeSelection()
 
-  private static func makeInstallation() -> NativeBookmarkInstallation {
+  private static func makeSelection() -> Bool {
+    let owned = NativeBookmarkOwner.selectOwnership()
+    if owned, !LaunchSwitches.shared.isOn(.nativeBookmarks) {
+      NativeBookmarkOwner.failOwnership(reason: "Native bookmarks are disabled for this development launch. Editing and sync are paused.")
+    }
+    return owned
+  }
+
+  static func select() { _ = selection }
+
+  @MainActor private static let installation: NativeBookmarkInstallation = makeInstallation()
+
+  @MainActor private static func makeInstallation() -> NativeBookmarkInstallation {
     NativeBookmarkInstallation(
-      selected: productionInstallationEnabled && LaunchSwitches.shared.isOn(.nativeBookmarks),
+      selected: LaunchSwitches.shared.isOn(.nativeBookmarks),
       safeMode: LaunchSwitches.shared.safeMode || DocumentStore.safeMode,
+      selectionAlreadyLatched: selection,
       prepare: {
         guard NativeStoreHandle.ownsWorkspace,
           ["ac_bookmarks_tree", "ac_bookmarks_apply", "ac_bookmarks_watch", "ac_bookmarks_canonicalize_url_v1"].allSatisfy({ SolaraCoreEngineBridge.exports($0) }),
           let state = NativeStoreHandle.store?.state else { throw BookmarkWriterError.notOwned }
         let directory = try await Task.detached { try DocumentStore.directoryURL() }.value
-        return await NativeBookmarkWriter.prepare(directory: directory, state: state, cacheDirectory: directory, stampsEnabled: true)
+        return await NativeBookmarkWriter.prepare(directory: directory, state: state, cacheDirectory: directory, readOnly: LaunchSwitches.shared.safeMode || DocumentStore.safeMode, stampsEnabled: true)
       },
       attach: { owner in
         guard NativeStoreHandle.ownsWorkspace, NativeStoreHandle.store != nil else { throw BookmarkWriterError.notOwned }
@@ -42,7 +53,7 @@ enum NativeBookmarkLaunch {
       })
   }
 
-  static func ensureReady() async throws {
+  @MainActor static func ensureReady() async throws {
     try await installation.ensureReady()
   }
 }

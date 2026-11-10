@@ -1,7 +1,8 @@
+import "../../../../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fixedBy } from "./switchOn.mjs";
-import { shell, settle, reset, onAndSynced, launch, folder, S, native, realReadPasswords } from "./harness.mjs";
+const { fixedBy } = await import('./switchOn.mjs');
+const { shell, settle, reset, onAndSynced, launch, folder, S, native, realReadPasswords } = await import('./harness.mjs');
 
 const JOURNAL = "sync-journal.nns";
 const LEDGER = "sync-pw-ledger.json";

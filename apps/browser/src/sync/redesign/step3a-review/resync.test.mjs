@@ -1,7 +1,8 @@
+import "../../../../../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fixedBy } from "../switchOn.mjs";
-import { world, onAndSynced, passwordMac, loginKey, syncKey, login, shell, LEDGER, folder, SITE } from "./world.mjs";
+const { fixedBy } = await import('../switchOn.mjs');
+const { world, onAndSynced, passwordMac, loginKey, syncKey, login, shell, LEDGER, folder, SITE } = await import('./world.mjs');
 
 for (const how of ["applied from B", "edited here"]) {
   test(`RESYNC (${how}): a login is published to a new folder when sync is turned back on`, fixedBy("step 3"), () =>

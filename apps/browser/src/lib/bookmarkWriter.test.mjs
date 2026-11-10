@@ -5,6 +5,8 @@ const { bookmarkWriter, projectNativeBookmarks, reportBookmarkFailure, submitBoo
 const { BOOKMARK_REMAP_RETRY_MS, replaceBookmarkDocument } = await import("@solara/settings");
 const { useToasts } = await import("../components/layout/toasts.ts");
 
+const { seedBookmarkProjection, nextBookmarkProjectionOwner } = await import("../test-native/bookmarkProjection.ts");
+
 const S = () => useBrowser.getState();
 const folder = (id, title, children = []) => ({ kind: "folder", id, parentId: null, title, children, addedAt: 0 });
 const document = (extra = {}) => ({
@@ -12,9 +14,8 @@ const document = (extra = {}) => ({
   roots: { p: { bar: "bar@native", other: "other@native" } },
 });
 
-let projectionOwner = 0;
 class FakeOwner {
-  projectionOwner = String(++projectionOwner);
+  projectionOwner = nextBookmarkProjectionOwner();
   constructor() {
     this.engine = "native";
     this.generation = "1";
@@ -65,25 +66,21 @@ class FakeOwner {
 }
 
 beforeEach(() => {
-  useBrowser.setState({ bookmarks: { nodes: {}, roots: {} } });
+  delete globalThis.acTestBookmarkWriter;
+  seedBookmarkProjection(useBrowser);
   S().hydrate({});
-  useBrowser.setState({ bookmarksReady: { default: true } });
 });
 
 afterEach(() => {
   delete globalThis.acTestBookmarkWriter;
 });
 
-test("without a native owner the facade runs the JS reducers and resolves their results", async () => {
-  const id = await bookmarkWriter.addBookmark({ profileId: "default", title: "Alpha", url: "https://alpha.example/" });
-  assert.equal(S().bookmarks.nodes[id].title, "Alpha");
-  await bookmarkWriter.updateBookmark("default", id, { title: "Renamed" });
-  assert.equal(S().bookmarks.nodes[id].title, "Renamed");
-  const removed = await bookmarkWriter.removeBookmarks("default", [id]);
-  assert.equal(S().bookmarks.nodes[id], undefined);
-  assert.deepEqual(removed.nodes.map((node) => node.id), [id]);
-  await bookmarkWriter.restoreBookmarks("default", removed);
-  assert.equal(S().bookmarks.nodes[id].title, "Renamed");
+test("without a native owner the facade refuses edits and preserves its draft", async () => {
+  const draft = { profileId: "default", title: "Alpha", url: "https://alpha.example/" };
+  const before = S().bookmarks;
+  await assert.rejects(bookmarkWriter.addBookmark(draft), /native|unavailable|paused/i);
+  assert.equal(S().bookmarks, before);
+  assert.equal(draft.title, "Alpha");
 });
 
 test("under a native owner an edit is submitted with the snapshot's binding, its id comes from the receipt, and the store projects the accepted document", async () => {
@@ -117,10 +114,13 @@ test("a harmless runtime remap preserves the same-engine route binding", async (
 });
 
 test("an older receipt never rolls the projection back over a newer one", () => {
-  const newer = document({ a: { kind: "url", id: "a", parentId: "bar@native", title: "Newer", url: "https://a.example/", favicon: null, addedAt: 1 } });
-  const older = document({ a: { kind: "url", id: "a", parentId: "bar@native", title: "Older", url: "https://a.example/", favicon: null, addedAt: 1 } });
-  assert.equal(projectNativeBookmarks("rollback", "21", JSON.stringify({ ...newer, roots: { q: newer.roots.p } })), true);
-  assert.equal(projectNativeBookmarks("rollback", "20", JSON.stringify({ ...older, roots: { q: older.roots.p } })), false);
+  const owner = (globalThis.acTestBookmarkWriter = new FakeOwner());
+  owner.revision = 21;
+  owner.document = document({ a: { kind: "url", id: "a", parentId: "bar@native", title: "Newer", url: "https://a.example/", favicon: null, addedAt: 1 } });
+  assert.equal(projectNativeBookmarks("native", "21", JSON.stringify(owner.document)), true);
+  owner.revision = 20;
+  owner.document = document({ a: { kind: "url", id: "a", parentId: "bar@native", title: "Older", url: "https://a.example/", favicon: null, addedAt: 1 } });
+  assert.equal(projectNativeBookmarks("native", "20", JSON.stringify(owner.document)), false);
   assert.equal(S().bookmarks.nodes.a.title, "Newer");
 });
 
@@ -133,28 +133,26 @@ test("one request id per call, kept across the mutations of a batch", async () =
   assert.deepEqual(S().bookmarks.nodes["bar@native"].children, ["n1", "n2", "n3"]);
 });
 
-test("a receipt for an engine the profile has since left keeps the other engine's nodes and the profile's new roots", () => {
-  S().addBookmark({ profileId: "default", title: "Default page", url: "https://default.example/" });
-  const defaultRoots = S().bookmarks.roots.default;
-  const stale = { nodes: { "bar@gone": folder("bar@gone", "Bookmarks Bar"), "other@gone": folder("other@gone", "Other Bookmarks") }, roots: { default: { bar: "bar@gone", other: "other@gone" } } };
-  assert.equal(projectNativeBookmarks("gone", "1", JSON.stringify(stale)), true);
-  assert.deepEqual(S().bookmarks.roots.default, defaultRoots, "the profile keeps the roots it maps to now");
-  assert.deepEqual(S().bookmarks.nodes[defaultRoots.bar].children.map((id) => S().bookmarks.nodes[id].title), ["Default page"]);
+test("a receipt for an engine the profile has since left keeps the current native roots", () => {
+  const owner = (globalThis.acTestBookmarkWriter = new FakeOwner());
+  owner.document = document({ a: { kind: "url", id: "a", parentId: "bar@native", title: "Current", url: "https://current.example/", favicon: null, addedAt: 1 } });
+  projectNativeBookmarks("native", "10", JSON.stringify(owner.document));
+  const current = S().bookmarks;
+  const stale = { nodes: {}, roots: { p: { bar: "bar@gone", other: "other@gone" } } };
+  assert.equal(projectNativeBookmarks("gone", "999", JSON.stringify(stale)), false);
+  assert.equal(S().bookmarks, current);
+  assert.equal(S().bookmarks.nodes.a.title, "Current");
 });
 
-test("addBookmarkTree passes an index even without a parent, in both modes", async () => {
-  const first = await bookmarkWriter.addBookmark({ profileId: "default", title: "First", url: "https://first.example/" });
-  const [tree] = await bookmarkWriter.addBookmarkTree("default", [{ title: "Front", url: "https://front.example/" }], undefined, 0);
-  assert.deepEqual(S().bookmarks.nodes[S().bookmarks.roots.default.bar].children, [tree, first]);
+test("addBookmarkTree passes an index even without a parent", async () => {
   const owner = (globalThis.acTestBookmarkWriter = new FakeOwner());
   await bookmarkWriter.addBookmarkTree("p", [{ title: "Front", url: "https://front.example/" }], undefined, 0);
   assert.deepEqual(owner.submitted[0].mutations[0].args.slice(2), [null, 0]);
 });
 
-test("legacy results are exactly what the store methods return", async () => {
-  const id = await bookmarkWriter.addBookmark({ profileId: "default", title: "A", url: "https://a.example/" });
-  assert.equal(await bookmarkWriter.updateBookmark("default", id, { title: "B" }), undefined);
-  assert.equal(await bookmarkWriter.toggleBookmark("default", { url: "https://a.example/", title: "B", favicon: null }), false);
+test("retired JS reducer entry points refuse instead of returning legacy results", () => {
+  assert.throws(() => S().addBookmark({ profileId: "default", title: "A", url: "https://a.example/" }), /native|owned/i);
+  assert.throws(() => S().toggleBookmark("default", { url: "https://a.example/", title: "A", favicon: null }), /native|owned/i);
 });
 
 const staleBinding = () => Object.assign(new Error("the bookmark owner changed since this binding was taken"), { code: "staleBinding" });

@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, test } from "node:test";
 const { useBrowser } = await import("../store/browser.ts");
+const { seedBookmarkProjection } = await import("../test-native/bookmarkProjection.ts");
 const { bookmarkWriter } = await import("./bookmarkWriter.ts");
 
 beforeEach(() => {
-  useBrowser.setState({ bookmarks: { nodes: {}, roots: {} } });
+  seedBookmarkProjection(useBrowser);
   useBrowser.getState().hydrate({});
 });
 afterEach(() => { delete globalThis.acTestBookmarkWriter; });
@@ -21,7 +22,6 @@ for (const state of ["starting", "read-only-unavailable", "stopped", "future"]) 
 const { bookmarksAdapter } = await import("../sync/adapters.ts");
 for (const state of ["starting", "read-only-unavailable", "stopped", "future"]) {
   test(`${state} native authority holds legacy sync extraction and application`, async () => {
-    useBrowser.setState({ bookmarksReady: { default: true } });
     globalThis.acTestBookmarkWriter = { state: () => ({ state }) };
     const before = JSON.stringify(useBrowser.getState().bookmarks);
     const adapter = bookmarksAdapter("default");
@@ -31,10 +31,9 @@ for (const state of ["starting", "read-only-unavailable", "stopped", "future"]) 
   });
 }
 
-test("a legacy adapter opened before native selection stops publishing and applying", async () => {
-  useBrowser.setState({ bookmarksReady: { default: true } });
+test("a retired legacy adapter never starts publishing or applying", async () => {
   const adapter = bookmarksAdapter("default");
-  assert.notEqual(adapter.extract(() => undefined), null);
+  assert.equal(adapter.extract(() => undefined), null);
   globalThis.acTestBookmarkWriter = { state: () => ({ state: "starting" }) };
   assert.equal(adapter.extract(() => undefined), null);
   assert.equal(await adapter.apply(new Map()), false);

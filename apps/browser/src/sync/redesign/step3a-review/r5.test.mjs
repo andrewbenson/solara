@@ -1,7 +1,8 @@
+import "../../../../../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fixedBy } from "../switchOn.mjs";
-import { world, onAndSynced, passwordMac, loginKey, syncKey, login, SITE, native, shell } from "./world.mjs";
+const { fixedBy } = await import('../switchOn.mjs');
+const { world, onAndSynced, passwordMac, loginKey, syncKey, login, SITE, native, shell } = await import('./world.mjs');
 
 const gatedAt = () => JSON.parse(shell.docs.get("sync-pw-ledger.json")).profiles[""].gated?.[syncKey("me")];
 async function trickle(w, run) {

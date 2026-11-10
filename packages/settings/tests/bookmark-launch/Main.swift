@@ -55,6 +55,7 @@ enum TestFailure: Error { case timedOut, claimUnavailable }
   let gate = Gate()
   var selected = true
   var safeMode = false
+  var cacheDirectory: URL?
   var held = false
   var preparations = 0
   var attachments = 0
@@ -72,7 +73,7 @@ enum TestFailure: Error { case timedOut, claimUnavailable }
         preparations += 1
         let initial = state
         if held { await gate.hold() }
-        let next = await NativeBookmarkOwner.prepare(directory: directory, state: initial, stampsEnabled: true)
+        let next = await NativeBookmarkOwner.prepare(directory: directory, state: initial, cacheDirectory: cacheDirectory, readOnly: safeMode, stampsEnabled: true)
         owner = next
         return next
       },
@@ -185,7 +186,7 @@ enum TestFailure: Error { case timedOut, claimUnavailable }
     let sentinel = f.directory.appendingPathComponent(BookmarkPendingStore.journalName)
     let bytes = Data("unreadable evidence".utf8)
     try bytes.write(to: sentinel)
-    do { try await f.installation.ensureReady(); failures.append("safe mode installed a writer") } catch {}
+    try await f.installation.ensureReady()
     await f.catalog.start(engineProfiles: [""])
     do { _ = try await f.catalog.applyBookmarks(ops: [.init(op: "remove", id: "b0")], engineProfile: ""); failures.append("safe mode admitted catalog writes") } catch {}
     let commands: [() throws -> Void] = [
@@ -197,7 +198,7 @@ enum TestFailure: Error { case timedOut, claimUnavailable }
       { _ = try NativeBookmarkWriter.setBookmarkSyncLinks(linksJSON: "{}") },
     ]
     for command in commands { do { try command(); failures.append("safe mode admitted a bridge write or sync mutation") } catch {} }
-    expect(f.preparations == 0 && f.attachments == 0, "safe mode never runs the mutating recovery/attach path")
+    expect(f.preparations == 1 && f.attachments == 1, "safe mode installs the read-only recovery/attach path")
     expect(f.client.rawReads == 0 && f.client.rawApplies == 0 && f.client.pumpApplies == 0, "safe mode cannot touch Chrome bookmarks through either client")
     expect(try! Data(contentsOf: sentinel) == bytes, "safe mode preserves journal evidence byte for byte")
     expect(try! FileManager.default.contentsOfDirectory(atPath: f.directory.path) == [BookmarkPendingStore.journalName], "safe mode does not rename evidence or create journals")
@@ -317,6 +318,79 @@ enum TestFailure: Error { case timedOut, claimUnavailable }
     expect(NativeBookmarkWriter.state()["state"] as? String == "stopped", "teardown query agrees with the feed")
   }
 
+  @MainActor static func partialScopeNeverStartsLegacyWriter() async throws {
+    let f = try Fixture()
+    defer { f.stop() }
+    f.selected = false
+    do { try await f.installation.ensureReady(); failures.append("disabled ownership admitted bookmarks") } catch {}
+    expect(NativeBookmarkOwner.bookmarksSelected, "disabled editing still permanently selects native authority")
+    expect(NativeBookmarkWriter.state()["state"] as? String == "read-only-unavailable", "disabled editing is explicitly unavailable")
+    expect(f.preparations == 0 && f.attachments == 0, "disabled selection does not bootstrap a writer")
+    await f.catalog.start(engineProfiles: [""])
+    do { _ = try await f.catalog.applyBookmarks(ops: [], engineProfile: ""); failures.append("disabled selection reopened raw apply") } catch {}
+    expect(f.client.rawReads == 0 && f.client.rawApplies == 0, "disabled selection never uses the raw client")
+  }
+
+  @MainActor static func safeModeKeepsNativeUIReadOnly() async throws {
+    let f = try Fixture()
+    defer { f.stop() }
+    f.state.orphanedProfileData = ["orphaned-engine"]
+    let sentinel = f.directory.appendingPathComponent(BookmarkPendingStore.journalName)
+    let bytes = Data("unreadable evidence".utf8)
+    try bytes.write(to: sentinel)
+    let installation = NativeBookmarkInstallation(selected: true, safeMode: true, prepare: {
+      await NativeBookmarkOwner.prepare(directory: f.directory, state: f.state, cacheDirectory: f.directory, readOnly: true, stampsEnabled: true)
+    }, attach: { owner in
+      f.owner = owner
+      try await owner.start(catalog: f.catalog, client: BookmarkEngineClient(
+        readTree: { _ in await MainActor.run { f.client.pumpReads += 1; return f.client.tree() } },
+        apply: { _, ops in await MainActor.run { f.client.pumpApplies += 1; return .init(applied: ops.count, skipped: 0, invalid: []) } }),
+        clock: .init(wallTimeMs: { 1 }, monotonicTimeMs: { 1 }), scheduler: .init(schedule: { _, _ in {} }))
+    })
+    try await installation.ensureReady()
+    let readOnlyStore = Store(state: f.state)
+    NativeStoreHandle.resolve = { readOnlyStore }
+    f.owner?.subscribeToStoreCommits()
+    await f.owner?.settleStoreSubscription()
+    expect(f.owner?.installationIsUsable(catalog: f.catalog) == true, "safe store tombstones cannot revoke the read-only claim")
+    try await waitUntil { f.catalog.bookmarks(engineProfile: "").nodes["b0"] != nil }
+    expect(NativeBookmarkWriter.state()["state"] as? String == "read-only-unavailable", "safe mode retains display-only authority")
+    expect(f.catalog.bookmarks(engineProfile: "").editsPaused, "native pages and bar retain the paused-edit notice")
+    expect(f.catalog.bookmarks(engineProfile: "").recoveryMessage != nil, "native display explains recovery")
+    expect(!f.catalog.bookmarks(engineProfile: "").readyForSync, "safe display is not sync readiness")
+    expect((try? NativeBookmarkWriter.projection()) != nil, "read-only display has an aggregate projection")
+    do { _ = try NativeBookmarkWriter.snapshot(profile: "default"); failures.append("safe mode advertised a writable sync snapshot") } catch {}
+    do { _ = try NativeBookmarkWriter.submit(profile: "default", mutationsJSON: "[]", engine: "", generation: "1", requestID: nil); failures.append("safe mode accepted an edit") } catch {}
+    expect(f.client.pumpReads > 0 && f.client.pumpApplies == 0 && f.client.rawReads == 0, "safe mode refreshes only through the pump")
+    expect(try! Data(contentsOf: sentinel) == bytes, "safe mode keeps unreadable evidence unchanged")
+    expect(try! FileManager.default.contentsOfDirectory(atPath: f.directory.path) == [BookmarkPendingStore.journalName], "safe mode writes no recovery or cache artifact")
+    installation.stop()
+  }
+
+  @MainActor static func migrationNoticeKeepsInstalledOwnerAlive() async throws {
+    let f = try Fixture()
+    defer { f.stop() }
+    let source = "{\"bookmarks\":{\"roots\":{\"default\":{\"bar\":\"old-bar\",\"other\":\"old-other\"}},\"nodes\":{\"old-bar\":{\"id\":\"old-bar\",\"kind\":\"folder\",\"parentId\":null,\"title\":\"Bar\",\"addedAt\":0,\"children\":[\"legacy\"]},\"old-other\":{\"id\":\"old-other\",\"kind\":\"folder\",\"parentId\":null,\"title\":\"Other\",\"addedAt\":0,\"children\":[]},\"legacy\":{\"id\":\"legacy\",\"kind\":\"url\",\"parentId\":\"old-bar\",\"title\":\"Legacy\",\"url\":\"https://legacy.test/\",\"addedAt\":42}}}}"
+    try Data(source.utf8).write(to: f.directory.appendingPathComponent("bookmarks.json"))
+    f.cacheDirectory = f.directory
+    try await f.installation.ensureReady()
+    expect(f.owner?.installationIsUsable(catalog: f.catalog) == true, "migration notice cannot revoke the installed catalog lease")
+    expect(f.preparations == 1 && f.attachments == 1, "migration starts one real owner")
+    expect(NativeBookmarkWriter.state()["state"] as? String == "owned", "migration owns authority while per-engine readiness holds sync")
+    expect(f.owner?.coordinator.recoveryNotice != nil, "fixture really entered migration")
+    expect(f.owner?.coordinator.desiredView(engine: "").readyForSync == false, "unconfirmed migration stays sync-held")
+  }
+
+  @MainActor static func unavailableBookmarksKeepHistoryAvailable() async throws {
+    let f = try Fixture()
+    defer { f.stop() }
+    f.selected = false
+    await f.catalog.start(engineProfiles: [""])
+    expect(f.client.historyObservers == 1, "a terminal bookmark refusal cannot disable native history")
+    expect(f.client.rawReads == 0 && f.client.rawApplies == 0, "history-only startup cannot reopen bookmark raw routes")
+    expect(NativeBookmarkOwner.bookmarksSelected, "history-only startup preserves permanent native bookmark selection")
+  }
+
   @MainActor static func main() async {
     let name = CommandLine.arguments.dropFirst().first ?? ""
     do {
@@ -332,6 +406,10 @@ enum TestFailure: Error { case timedOut, claimUnavailable }
       case "latestStoreMappingBeforeOwned": try await latestStoreMappingBeforeOwned()
       case "managedReplacementCannotInheritOwned": try await managedReplacementCannotInheritOwned()
       case "ownershipStateFeedSurvivesReattachment": try await ownershipStateFeedSurvivesReattachment()
+      case "partialScopeNeverStartsLegacyWriter": try await partialScopeNeverStartsLegacyWriter()
+      case "safeModeKeepsNativeUIReadOnly": try await safeModeKeepsNativeUIReadOnly()
+      case "migrationNoticeKeepsInstalledOwnerAlive": try await migrationNoticeKeepsInstalledOwnerAlive()
+      case "unavailableBookmarksKeepHistoryAvailable": try await unavailableBookmarksKeepHistoryAvailable()
       default: failures.append("unknown case: \(name)")
       }
     } catch { failures.append("unexpected error: \(error)") }

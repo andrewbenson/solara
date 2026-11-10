@@ -1,7 +1,8 @@
+import "../../../../../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fixedBy } from "../switchOn.mjs";
-import { world, onAndSynced, passwordMac, loginKey, syncKey, login, SITE, native, folder, shell, settle, loginDataMark } from "./world.mjs";
+const { fixedBy } = await import('../switchOn.mjs');
+const { world, onAndSynced, passwordMac, loginKey, syncKey, login, SITE, native, folder, shell, settle, loginDataMark } = await import('./world.mjs');
 
 test("R4-unforced-is-unforced: timer cycles read Login Data about every other 15 s cycle, not every cycle", () =>
   world(async (w) => {

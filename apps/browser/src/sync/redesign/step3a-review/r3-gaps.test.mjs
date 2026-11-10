@@ -1,7 +1,8 @@
+import "../../../../../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fixedBy } from "../switchOn.mjs";
-import { world, onAndSynced, passwordMac, loginKey, syncKey, login, SITE, native, folder, shell, launch, settle } from "./world.mjs";
+const { fixedBy } = await import('../switchOn.mjs');
+const { world, onAndSynced, passwordMac, loginKey, syncKey, login, SITE, native, folder, shell, launch, settle } = await import('./world.mjs');
 
 test("UNFORCED-edit: with only timer cycles 15 s apart, an edit here is published within a few cycles", fixedBy("step 3"), () =>
   world(async (w) => {

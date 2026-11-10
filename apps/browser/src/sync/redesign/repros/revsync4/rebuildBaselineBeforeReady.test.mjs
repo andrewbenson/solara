@@ -1,7 +1,8 @@
+import "../../../../../../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import "../../switchOn.mjs";
-import { fake, folder, shell, S, settle, launch, reset, files, otherMac, useBrowser, onAndSynced } from "./harness.mjs";
+const { fake, folder, shell, S, settle, launch, reset, files, otherMac, useBrowser, onAndSynced } = await import('./harness.mjs');
 
 test("R-baseline: a rebuild whose baseline is taken before bookmarks are ready republishes every stale bookmark over newer remote edits", async () => {
   reset();

@@ -1,8 +1,9 @@
+import "../../../../../../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fixedBy } from "../../switchOn.mjs";
-import { reset, onAndSynced, S, shell, settle, launch, native, sync, rawTransport, realSetTimeout, files } from "./harness.mjs";
-import { sealedState } from "../../../sealedState.mjs";
+const { fixedBy } = await import('../../switchOn.mjs');
+const { reset, onAndSynced, S, shell, settle, launch, native, sync, rawTransport, realSetTimeout, files } = await import('./harness.mjs');
+const { sealedState } = await import('../../../sealedState.mjs');
 
 function passwordMac(scope) {
   const store = new Map();

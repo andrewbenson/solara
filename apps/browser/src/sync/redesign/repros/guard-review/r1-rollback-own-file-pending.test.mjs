@@ -1,7 +1,8 @@
+import "../../../../../../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import "../../switchOn.mjs";
-import { reset, onAndSynced, shell, S, settle, launch, native, assertNoSeqReused, files, otherMac } from "./harness.mjs";
+const { reset, onAndSynced, shell, S, settle, launch, native, assertNoSeqReused, files, otherMac } = await import('./harness.mjs');
 
 async function scenario(pendingOwn) {
   reset();

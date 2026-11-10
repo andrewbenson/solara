@@ -651,7 +651,8 @@ static void StartEarlyWindow() {
   static dispatch_once_t once;
   dispatch_once(&once, ^{
     if (TestBuild()) {
-      unsetenv("SOLARA_RELEASE_LAUNCH");
+      const char *scratch = getenv("SOLARA_DATA_DIR");
+      if (!scratch || !*scratch) unsetenv("SOLARA_RELEASE_LAUNCH");
       return;
     }
     const std::set<std::string> runtime = {
@@ -699,8 +700,8 @@ static void StartEarlyWindow() {
     return 1;
   };
   if (![SolaraCoreNotifications install]) {
-    fprintf(stderr, "[solaracore] notification protocol 2 / native API 39 preflight failed\n");
-    return notificationFailure(CFSTR("This app and its engine must both support native API 39 and notification protocol 2. Reinstall the complete Solara app."));
+    fprintf(stderr, "[solaracore] notification protocol 2 / native API 40 preflight failed\n");
+    return notificationFailure(CFSTR("This app and its engine must both support native API 40 and notification protocol 2. Reinstall the complete Solara app."));
   }
   struct NotificationStartupLifetime {
     ~NotificationStartupLifetime() { [SolaraCoreNotifications abortStartup]; }

@@ -27,6 +27,7 @@ const stub = await import("../test-native/index.ts");
 
 const { bookmarkUuidFor } = await import("../store/bookmarks.ts");
 
+const { seedBookmarkProjection } = await import("../test-native/bookmarkProjection.ts");
 const S = () => useBrowser.getState();
 
 class Folder {
@@ -158,12 +159,8 @@ afterEach(() => {
 
 async function publishFromALegacyMac(folder, titles) {
   stub.current.device = "legacy";
-  useBrowser.setState({ bookmarks: { nodes: {}, roots: {} } });
-  S().hydrate({});
-  useBrowser.setState({ bookmarksReady: { default: true } });
-  const bar = S().bookmarks.roots.default?.bar;
-  for (const title of titles) S().addBookmark({ profileId: "default", title, url: `https://${title.toLowerCase()}.example/`, ...(bar ? { parentId: bar } : {}) });
-  await syncScope({ scope: "p", state: emptyScope(), transport: folder.transport(), adapters: [adapters.bookmarksAdapter("default")], clock: new Clock("legacy"), device: "legacy" });
+  const values = new Map(titles.map((title, index) => [`bm:legacy-${index}`, { k: "u", p: "bar", t: title, u: `https://${title.toLowerCase()}.example/`, a: 1, pos: String.fromCharCode(97 + index) }]));
+  await syncScope({ scope: "p", state: emptyScope(), transport: folder.transport(), adapters: [{ prefix: "bm:", extract: () => ({ values }), apply: () => {} }], clock: new Clock("legacy"), device: "legacy" });
 }
 
 async function syncOwned(folder, state, clock) {
@@ -178,7 +175,6 @@ test("an owned apply hands the folder's bookmarks to the native writer with the 
   const folder = new Folder();
   await publishFromALegacyMac(folder, ["Alpha", "Beta"]);
   S().hydrate({});
-  useBrowser.setState({ bookmarksReady: { default: true } });
   const before = JSON.stringify(S().bookmarks);
   const owner = (globalThis.acTestBookmarkWriter = new FakeOwner());
   const state = emptyScope();
@@ -233,8 +229,10 @@ test("an owner that is not ready yet neither publishes nor applies", () => {
 
 test("owned extract reads the native document, and a document without its roots is not ready rather than empty", () => {
   S().hydrate({});
-  useBrowser.setState({ bookmarksReady: { default: true } });
-  S().addBookmark({ profileId: "default", title: "Only in JS", url: "https://js.example/" });
+  const stale = emptyDocument();
+  stale.nodes.stale = { kind: "url", id: "stale", parentId: "bar@default", title: "Only in JS", url: "https://js.example/", favicon: null, addedAt: 1 };
+  stale.nodes["bar@default"].children = ["stale"];
+  seedBookmarkProjection(useBrowser, stale, true);
   const document = emptyDocument();
   document.nodes.n1 = { kind: "url", id: "n1", parentId: "bar@default", title: "Native", url: "https://native.example/", favicon: null, addedAt: 5 };
   document.nodes["bar@default"].children = ["n1"];
@@ -245,14 +243,14 @@ test("owned extract reads the native document, and a document without its roots 
   assert.equal(adapters.bookmarksAdapter("default").extract(() => undefined), null);
 });
 
-test("without a native owner the adapter stays the JS writer", async () => {
-  S().hydrate({});
-  useBrowser.setState({ bookmarksReady: { default: true } });
+test("without a native owner the adapter holds extraction and application", async () => {
+  delete globalThis.acTestBookmarkWriter;
+  const before = S().bookmarks;
   const adapter = adapters.bookmarksAdapter("default");
   const visible = new Map([["bm:k1", { k: "u", p: "bar", t: "Alpha", u: "https://alpha.example/", a: 1, pos: "a" }]]);
-  adapter.apply(visible, new Set(visible.keys()), () => undefined, { known: () => true, now: 0, horizon: 0, joined: true });
-  const bar = S().bookmarks.roots.default.bar;
-  assert.deepEqual(S().bookmarks.nodes[bar].children.map((id) => S().bookmarks.nodes[id].title), ["Alpha"]);
+  assert.equal(adapter.extract(() => undefined), null);
+  assert.equal(adapter.apply(visible, new Set(visible.keys()), () => undefined, { known: () => true, now: 0, horizon: 0, joined: true }), false);
+  assert.equal(S().bookmarks, before);
 });
 
 const h = (at, device = "native", counter = 0) => `${at.toString(36).padStart(9, "0")}.${counter.toString(36).padStart(4, "0")}.${device}`;

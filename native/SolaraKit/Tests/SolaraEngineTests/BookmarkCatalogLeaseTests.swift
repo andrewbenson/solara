@@ -15,7 +15,7 @@ import Testing
     for engine in f.owner.catalogEngines { replacement.requestRead(engine: engine) }
     await replacement.settle(engine: "")
     await replacement.settle(engine: "extra")
-    let result = try await f.catalog.applyBookmarks(ops: [.init(op: "update", id: "b0", title: "After remap")], engineProfile: "")
+    let result = try await f.catalog.historicalApplyBookmarks(ops: [.init(op: "update", id: "b0", title: "After remap")], engineProfile: "")
     #expect(result == BookmarkApplyResult(applied: 1, skipped: 0, invalid: []))
     #expect(f.catalog.bookmarks(engineProfile: "").nodes["b0"]?.title == "After remap")
     try f.owner.submit(profile: "p", mutations: [.init(method: "updateBookmark", args: ["b0", ["title": "Stream after remap"]])])
@@ -110,7 +110,7 @@ import Testing
       }
       defer { stopAfterAccept.cancel() }
       let command = Task(priority: .low) {
-        let result = try await f.catalog.applyBookmarks(ops: [.init(op: "update", id: "b0", title: "Durable")], engineProfile: "")
+        let result = try await f.catalog.historicalApplyBookmarks(ops: [.init(op: "update", id: "b0", title: "Durable")], engineProfile: "")
         return (result, stoppedAfterAccept)
       }
       for _ in 0..<2000 where !gate.holding { try await Task.sleep(nanoseconds: 1_000_000) }
@@ -186,7 +186,7 @@ import Testing
     await f.catalog.start(engineProfiles: [""])
     f.client.change?("")
     for _ in 0..<100 where f.client.reads < 2 { await Task.yield() }
-    let result = try await f.catalog.applyBookmarks(ops: [.init(op: "update", id: "b0", title: "Raw")], engineProfile: "")
+    let result = try await f.catalog.historicalApplyBookmarks(ops: [.init(op: "update", id: "b0", title: "Raw")], engineProfile: "")
     await f.catalog.reloadBookmarks(engineProfile: "")
     await f.catalog.reload(engineProfile: "")
     await f.pump.settle(engine: "")
@@ -202,7 +202,7 @@ import Testing
   @Test func claimedBookmarkCommandSubmitsToThePumpNotRawApply() async throws {
     let f = CatalogLeaseFixture()
     try f.claim()
-    let result = try await f.catalog.applyBookmarks(ops: [.init(op: "update", id: "b0", title: "Accepted")], engineProfile: "")
+    let result = try await f.catalog.historicalApplyBookmarks(ops: [.init(op: "update", id: "b0", title: "Accepted")], engineProfile: "")
     #expect(result == BookmarkApplyResult(applied: 1, skipped: 0, invalid: []))
     #expect(f.owner.desiredView(engine: "").document["nodes"]?["b0"]?["title"] == "Accepted")
     #expect(f.catalog.bookmarks(engineProfile: "").nodes["b0"]?.title == "Accepted")
@@ -219,7 +219,7 @@ import Testing
     await f.catalog.start(engineProfiles: [""])
     let ops = [BookmarkOperation(op: "update", id: "b0", title: "Committed")]
     f.client.result = .init(applied: 1, skipped: 2, invalid: ["invalid"])
-    let result = try await f.catalog.applyBookmarks(ops: ops, engineProfile: "")
+    let result = try await f.catalog.historicalApplyBookmarks(ops: ops, engineProfile: "")
     #expect(result == f.client.result)
     #expect(f.client.rawBatches == [ops])
     #expect(f.client.reads == 2)
@@ -236,7 +236,7 @@ import Testing
     try f.claim()
     var finished = false
     let command = Task {
-      let result = try await f.catalog.applyBookmarks(ops: [.init(op: "update", id: "b0", title: "Durable")], engineProfile: "")
+      let result = try await f.catalog.historicalApplyBookmarks(ops: [.init(op: "update", id: "b0", title: "Durable")], engineProfile: "")
       finished = true
       return result
     }
@@ -267,7 +267,7 @@ import Testing
     await started.catalog.start(engineProfiles: [""])
     #expect(throws: BookmarkCoordinatorError.ownershipUnavailable) { try started.claim() }
     let admitted = CatalogLeaseFixture()
-    _ = try await admitted.catalog.applyBookmarks(ops: [], engineProfile: "")
+    _ = try await admitted.catalog.historicalApplyBookmarks(ops: [], engineProfile: "")
     #expect(throws: BookmarkCoordinatorError.ownershipUnavailable) { try admitted.claim() }
   }
 
@@ -278,7 +278,7 @@ import Testing
       if remap { f.owner.remap(profiles: ["p": "other"], defaultProfile: "p") }
       else { f.pump.stop() }
       await #expect(throws: BookmarkCoordinatorError.staleRevision) {
-        try await f.catalog.applyBookmarks(ops: [.init(op: "update", id: "b0", title: "Rejected")], engineProfile: "")
+        try await f.catalog.historicalApplyBookmarks(ops: [.init(op: "update", id: "b0", title: "Rejected")], engineProfile: "")
       }
       await f.catalog.reloadBookmarks(engineProfile: "")
       #expect(f.catalog.bookmarks(engineProfile: "").nodes["b0"]?.title == "Page")
@@ -290,7 +290,7 @@ import Testing
   @Test func claimedApplyPreservesIDsOrderAndIfAbsent() async throws {
     let f = CatalogLeaseFixture()
     try f.claim()
-    let result = try await f.catalog.applyBookmarks(ops: [
+    let result = try await f.catalog.historicalApplyBookmarks(ops: [
       .init(op: "add", id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", kind: "f", title: "Folder", addedAt: 123, parent: "bar", index: 0),
       .init(op: "add", id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", kind: "u", title: "Given", url: "https://given.test", addedAt: 456, syncKey: "legacy", parent: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", index: 0),
       .init(op: "move", id: "b0", parent: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", index: 0),
@@ -311,7 +311,7 @@ import Testing
   @Test func claimedApplyReportsDesiredPartialAcceptance() async throws {
     let f = CatalogLeaseFixture()
     try f.claim()
-    let result = try await f.catalog.applyBookmarks(ops: [
+    let result = try await f.catalog.historicalApplyBookmarks(ops: [
       .init(op: "add", id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", kind: "u", url: "", parent: "bar"),
       .init(op: "update", id: "b0", title: "Accepted"),
       .init(op: "remove", id: "missing"),
@@ -327,7 +327,7 @@ import Testing
   @Test func claimedUnknownOperationDoesNotBecomeAnAddition() async throws {
     let f = CatalogLeaseFixture()
     try f.claim()
-    let result = try await f.catalog.applyBookmarks(ops: [.init(op: "unknown", id: "oops", parent: "bar")], engineProfile: "")
+    let result = try await f.catalog.historicalApplyBookmarks(ops: [.init(op: "unknown", id: "oops", parent: "bar")], engineProfile: "")
     #expect(result == BookmarkApplyResult(applied: 0, skipped: 1, invalid: []))
     #expect(f.owner.desiredView(engine: "").document["nodes"]?["oops"] == nil)
     #expect(f.client.rawBatches.isEmpty)
@@ -369,7 +369,7 @@ import Testing
     let f = CatalogLeaseFixture(directory: directory, operations: operations)
     try f.claim()
     await #expect(throws: BookmarkPendingStoreError.unavailable) {
-      try await f.catalog.applyBookmarks(ops: [.init(op: "update", id: "b0", title: "Rejected")], engineProfile: "")
+      try await f.catalog.historicalApplyBookmarks(ops: [.init(op: "update", id: "b0", title: "Rejected")], engineProfile: "")
     }
     #expect(f.owner.desiredView(engine: "").document["nodes"]?["b0"]?["title"] == "Page")
     #expect(f.catalog.bookmarks(engineProfile: "").nodes["b0"]?.title == "Page")
@@ -381,7 +381,7 @@ import Testing
   @Test func firstClaimedAddCreatesDisplayRootsBeforeReadiness() async throws {
     let f = CatalogLeaseFixture(seed: false)
     try f.claim()
-    let result = try await f.catalog.applyBookmarks(ops: [.init(op: "add", id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", kind: "u", title: "First", url: "https://first.test", parent: "bar")], engineProfile: "")
+    let result = try await f.catalog.historicalApplyBookmarks(ops: [.init(op: "add", id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", kind: "u", title: "First", url: "https://first.test", parent: "bar")], engineProfile: "")
     #expect(result == BookmarkApplyResult(applied: 1, skipped: 0, invalid: []))
     #expect(f.catalog.bookmarks(engineProfile: "").nodes["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"]?.title == "First")
     #expect(f.owner.desiredView(profile: "p").document["roots"]?["p"]?["bar"] == "bar@default")
@@ -393,7 +393,7 @@ import Testing
   @Test func claimedAddDefaultsUnknownKindToURL() async throws {
     let f = CatalogLeaseFixture()
     try f.claim()
-    let result = try await f.catalog.applyBookmarks(ops: [.init(op: "add", id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", kind: "unknown", title: "URL", url: "https://kind.test", parent: "bar")], engineProfile: "")
+    let result = try await f.catalog.historicalApplyBookmarks(ops: [.init(op: "add", id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", kind: "unknown", title: "URL", url: "https://kind.test", parent: "bar")], engineProfile: "")
     #expect(result == BookmarkApplyResult(applied: 1, skipped: 0, invalid: []))
     #expect(f.catalog.bookmarks(engineProfile: "").nodes["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"]?.kind == "url")
     #expect(f.catalog.bookmarks(engineProfile: "").nodes["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"]?.url == "https://kind.test")
@@ -404,7 +404,7 @@ import Testing
   @Test func claimedAddStopsAtAnIDChromeCannotCreate() async throws {
     let f = CatalogLeaseFixture()
     try f.claim()
-    let result = try await f.catalog.applyBookmarks(ops: [.init(op: "add", id: "not-a-uuid", kind: "f", title: "Invalid", parent: "bar"), .init(op: "update", id: "b0", title: "Not reached")], engineProfile: "")
+    let result = try await f.catalog.historicalApplyBookmarks(ops: [.init(op: "add", id: "not-a-uuid", kind: "f", title: "Invalid", parent: "bar"), .init(op: "update", id: "b0", title: "Not reached")], engineProfile: "")
     #expect(result == BookmarkApplyResult(applied: 0, skipped: 2, invalid: []))
     #expect(f.catalog.bookmarks(engineProfile: "").nodes["not-a-uuid"] == nil)
     #expect(f.catalog.bookmarks(engineProfile: "").nodes["b0"]?.title == "Page")

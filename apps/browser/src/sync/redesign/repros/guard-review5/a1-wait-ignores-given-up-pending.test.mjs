@@ -1,8 +1,9 @@
+import "../../../../../../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import "../../switchOn.mjs";
-import { reset, onAndSynced, shell, settle, launch, native, files, S, otherMac, titles } from "./harness.mjs";
-import { sealedState } from "../../../sealedState.mjs";
+const { reset, onAndSynced, shell, settle, launch, native, files, S, otherMac, titles } = await import('./harness.mjs');
+const { sealedState } = await import('../../../sealedState.mjs');
 
 async function scenario(stuckFile) {
   reset();

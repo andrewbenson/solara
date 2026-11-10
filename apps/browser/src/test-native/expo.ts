@@ -28,7 +28,7 @@ const testBookmarkWriter = (): TestBookmarkWriter => {
 };
 
 const settingsModule = {
-  bookmarkWriterAPIVersion: () => 2,
+  bookmarkWriterAPIVersion: () => 3,
   bookmarkWriterState: () => ((globalThis as { acTestBookmarkWriter?: TestBookmarkWriter }).acTestBookmarkWriter?.state() ?? { state: "legacy" }),
   bookmarkWriterSnapshot: (profileId: string) => testBookmarkWriter().snapshot(profileId),
   bookmarkProjection: () => JSON.stringify(testBookmarkWriter().projection?.()),

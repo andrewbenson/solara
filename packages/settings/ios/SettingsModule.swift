@@ -13,6 +13,7 @@ public class SettingsModule: Module {
     Events("onBookmarkProjectionChanged", "onAppIntegrationPresentation", "onSettingsCall", "onLiveReplica", "onLiveAuthRequest", "onLiveCloseGroup", "onBookmarkWriterState")
 
     OnCreate {
+      NativeBookmarkLaunch.select()
       let projectionSink = SettingsEventSink(module: self)
       self.bookmarkProjectionObserver = NotificationCenter.default.addObserver(forName: NativeBookmarkOwner.projectionChanged, object: nil, queue: nil) { _ in
         projectionSink.module?.sendEvent("onBookmarkProjectionChanged", [:])
@@ -187,9 +188,24 @@ public class SettingsModule: Module {
 
     Function("liveInitialReplica") { () -> [String: Any] in NativeLiveEngine.shared.initialReplica() }
 
-    Function("bookmarkWriterAPIVersion") { () -> Int in 2 }
+    #if DEBUG
+    AsyncFunction("devBookmarkFault") { (input: String, promise: Promise) in
+      nonisolated(unsafe) let reply = promise
+      MainActor.assumeIsolated {
+        Task { @MainActor in
+          do { reply.resolve(try await NativeBookmarkFaults.command(input)) }
+          catch { reply.reject("ERR_BOOKMARK_FAULT", String(describing: error)) }
+        }
+      }
+    }.runOnQueue(.main)
+    #endif
 
-    Function("bookmarkWriterState") { () -> [String: Any] in NativeBookmarkWriter.state() }
+    Function("bookmarkWriterAPIVersion") { () -> Int in 3 }
+
+    Function("bookmarkWriterState") { () -> [String: Any] in
+      NativeBookmarkLaunch.select()
+      return NativeBookmarkWriter.state()
+    }
 
     Function("bookmarkProjection") { () throws -> String in
       try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.projection() }
@@ -200,7 +216,8 @@ public class SettingsModule: Module {
       MainActor.assumeIsolated {
         Task { @MainActor in
           do {
-            guard let owner = NativeBookmarkOwner.writableCurrent else { throw BookmarkWriterError.notOwned }
+            try await NativeBookmarkLaunch.ensureReady()
+            guard let owner = NativeBookmarkOwner.current else { throw BookmarkWriterError.notOwned }
             let projection = try owner.projection()
             for engine in (projection["views"]?.object ?? [:]).keys {
               guard NativeBookmarkOwner.current === owner else { throw BookmarkWriterError.staleBinding }

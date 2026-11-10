@@ -1,7 +1,8 @@
+import "../../../../../../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import "../../switchOn.mjs";
-import { fake, folder, shell, sync, S, settle, launch, reset, files, otherMac, useBrowser, onAndSynced, rawTransport, realSetTimeout } from "./harness.mjs";
+const { fake, folder, shell, sync, S, settle, launch, reset, files, otherMac, useBrowser, onAndSynced, rawTransport, realSetTimeout } = await import('./harness.mjs');
 
 const native = globalThis.acTestNativeModules.SolaraSyncAdapter;
 const realReadPasswords = native.readPasswords;

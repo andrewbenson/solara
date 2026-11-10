@@ -1,6 +1,7 @@
+import "../../../../../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { world, onAndSynced, passwordMac, loginKey, syncKey, login } from "./world.mjs";
+const { world, onAndSynced, passwordMac, loginKey, syncKey, login } = await import('./world.mjs');
 
 test("READD: a login saved again right after B deleted it is published, even with B's clock 10 minutes ahead", () =>
   world(async (w) => {

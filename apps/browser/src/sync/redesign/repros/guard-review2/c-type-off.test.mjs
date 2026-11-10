@@ -1,7 +1,8 @@
+import "../../../../../../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import "../../switchOn.mjs";
-import { sealedState as sealedDocs } from "../../../sealedState.mjs";
+const { sealedState : sealedDocs } = await import('../../../sealedState.mjs');
 
 const realSetTimeout = globalThis.setTimeout;
 globalThis.setTimeout = () => 0;

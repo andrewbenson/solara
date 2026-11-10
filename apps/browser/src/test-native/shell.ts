@@ -95,7 +95,7 @@ const shell: Modules["SolaraShell"] = {
 
 const appEvents = nativeEvents();
 const app: Modules["SolaraApp"] & { apiVersion: number } = {
-  apiVersion: 39,
+  apiVersion: 40,
   addListener: appEvents.addListener,
   updaterState: () => Promise.resolve({ available: false }),
   checkForUpdates: () => Promise.resolve(),

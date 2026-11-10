@@ -51,20 +51,22 @@ final class CommandClient: EngineClient {
     #expect(client.calls == ["delete:p:https://a,https://b", "import:p:1:4", "add:p:15.0:60000.0"])
   }
 
-  @Test func bookmarkApplyReturnsPartialResultAndRefreshesWithoutWatcher() async throws {
+  @Test func retiredRawBookmarkApplyRefusesWithoutCallingClient() async throws {
     let client = CommandClient()
     client.result = BookmarkApplyResult(applied: 1, skipped: 1, invalid: ["bad"])
     let catalog = LibraryCatalog(client: client, bookmarkSelection: { false })
     await catalog.start(engineProfiles: ["p"])
     let before = catalog.bookmarks(engineProfile: "p").revision
-    let result = try await catalog.applyBookmarks(ops: [.init(op: "add", id: "new", kind: "u", title: "New", url: "https://new", addedAt: 1, parent: "bar")], engineProfile: "p")
-    #expect(result == client.result)
-    #expect(client.calls == ["bookmark:p:new"])
-    #expect(catalog.bookmarks(engineProfile: "p").revision == before + 1)
-    #expect(catalog.bookmarks(engineProfile: "p").nodes["new"]?.title == "New")
+    do {
+      _ = try await catalog.applyBookmarks(ops: [.init(op: "add", id: "new", kind: "u", title: "New", url: "https://new", addedAt: 1, parent: "bar")], engineProfile: "p")
+      Issue.record("retired raw bookmark command was accepted")
+    } catch BookmarkCoordinatorError.ownershipUnavailable {}
+    #expect(client.calls.isEmpty)
+    #expect(catalog.bookmarks(engineProfile: "p").revision == before)
+    #expect(catalog.bookmarks(engineProfile: "p").nodes["new"] == nil)
   }
 
-  @Test func applyWaitsForAnOngoingReload() async throws {
+  @Test func retiredApplyNeverWaitsForOrMutatesAnOngoingReload() async throws {
     let client = CommandClient()
     let catalog = LibraryCatalog(client: client, bookmarkSelection: { false })
     await catalog.start(engineProfiles: ["p"])
@@ -72,19 +74,14 @@ final class CommandClient: EngineClient {
     let reload = Task { await catalog.reloadBookmarks(engineProfile: "p") }
     for _ in 0..<100 where client.readGate == nil { await Task.yield() }
     #expect(client.readGate != nil)
-    var finished = false
-    let apply = Task {
-      let result = try await catalog.applyBookmarks(ops: [.init(op: "add", id: "new")], engineProfile: "p")
-      finished = true
-      return result
-    }
-    for _ in 0..<100 where !client.calls.contains("bookmark:p:new") { await Task.yield() }
-    await Task.yield()
-    #expect(!finished)
+    do {
+      _ = try await catalog.applyBookmarks(ops: [.init(op: "add", id: "new")], engineProfile: "p")
+      Issue.record("retired raw bookmark command was accepted during reload")
+    } catch BookmarkCoordinatorError.ownershipUnavailable {}
+    #expect(client.calls.isEmpty)
     client.readGate?.resume()
-    try await apply.value
     await reload.value
-    #expect(catalog.bookmarks(engineProfile: "p").nodes["new"]?.title == "New")
+    #expect(catalog.bookmarks(engineProfile: "p").nodes["new"] == nil)
   }
 
   @Test func storesFaviconThroughClient() async throws {

@@ -1,3 +1,4 @@
+import "./legacy-bookmark-harness.mjs";
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { registerHooks } from "node:module";

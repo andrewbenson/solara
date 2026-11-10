@@ -35,6 +35,7 @@
 //   pipByHand(tabId)               Site Controls › Picture in Picture, clicked as the user does (manual PiP needs the click)
 //   launch(log, env, args, opts) · appUp(log)   (re)start the app on the run's data dir; `exited` is set once it's gone
 //   onScreenWindows() · firstPixel(png) · writePopupExtension(opts) · fixtureCrx()
+import { bookmarkOwnershipAcceptance } from "./bookmark-ownership-acceptance.mjs";
 import { acceptancePage as page, acceptancePathPage, adFirstPage, capturerPage, frameHostResponse, solidPage } from "./fixture-pages.mjs";
 import { execFile, execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
@@ -109,7 +110,8 @@ function selection(asked) {
     console.error(`no such check: ${unknown.join(", ")} (--list shows them)`);
     process.exit(64);
   }
-  if (!asked.length) return { run: new Set(index.filter((name) => name !== "notifications-one-requester")), deps: new Map() };
+  if (!asked.length) return { run: new Set(index.filter((name) => !["notifications-one-requester", "bookmarks-distribution-default"].includes(name))), deps: new Map() };
+  if (asked.includes("bookmarks-distribution-default") && asked.some((name) => name !== "bookmarks-distribution-default" && name !== "boot")) throw new Error("bookmarks-distribution-default requires its own fresh distribution-policy run");
   const run = new Set(["boot", ...asked]);
   const deps = new Map();
   const add = (name, by) => {
@@ -136,6 +138,8 @@ if (flag("--list")) listChecks();
 const attaching = argv[0] === "--attach";
 if (attaching) argv.shift();
 const keep = flag("--keep") || attaching;
+if (argv.includes("bookmarks-distribution-default") && attaching)
+  throw new Error("bookmarks-distribution-default requires a fresh distribution-policy process");
 if (argv.includes("notifications-one-requester") && (attaching || keep))
   throw new Error("notifications-one-requester requires a fresh owned instance without --attach or --keep");
 const audioOutputOf = (browserPid) => {
@@ -629,8 +633,9 @@ async function launch(logName = "app.out.log", env = {}, args = [], opts = {}) {
     data, log: join(scratch, logName), args, ready: false,
     env: {
       SOLARA_TEST_REAUTH: "granted", SOLARA_DOWNLOADS_DIR: downloadsDir, SOLARA_ALLOW_AUDIO: "1",
-      ...Object.fromEntries(["SOLARA_ALLOW_OCCLUSION", "SOLARA_TRACE_VISIBILITY", "SOLARA_TRACE_PIP", "SOLARA_NATIVE_SHELL", "SOLARA_NATIVE_TAB_SLEEP", "SOLARA_TAB_POOL"].filter((k) => process.env[k]).map((k) => [k, process.env[k]])),
+      ...Object.fromEntries(["SOLARA_ALLOW_OCCLUSION", "SOLARA_TRACE_VISIBILITY", "SOLARA_TRACE_PIP", "SOLARA_NATIVE_SHELL", "SOLARA_NATIVE_BOOKMARKS", "SOLARA_NATIVE_TAB_SLEEP", "SOLARA_TAB_POOL"].filter((k) => process.env[k]).map((k) => [k, process.env[k]])),
       SOLARA_TRAFFIC_LIGHTS_LOG: lightsLog,
+      ...(selected.has("bookmarks-distribution-default") ? { SOLARA_RELEASE_LAUNCH: "1", SOLARA_NATIVE_BOOKMARKS: null } : {}),
       ...env,
       ...(process.env.SOLARA_ACCEPTANCE_VISIBLE === "1" ? { SOLARA_BACKGROUND: null } : {}),
     },
@@ -1021,6 +1026,145 @@ try {
     return { chromium: info.chromiumVersion, windows: s.windows, tabs: s.tabs.length, pid: child.pid };
   });
 
+  const bookmarkOwner = bookmarkOwnershipAcceptance({
+    evalApp, until, scratch, data, stopApp, appUp, exts, extensionWorker, cdp,
+    crashApp: async () => {
+      instance.kill();
+      await until("the bookmark fixture app to die", async () => exited || !alive(), 5000);
+      exited ??= { pid };
+    },
+  });
+
+  await check("bookmarks-no-js-writer", bookmarkOwner.noJSWriter);
+  await check("bookmarks-owner-remap", bookmarkOwner.ownerRemap);
+  await check("bookmarks-durable-crash", bookmarkOwner.durableCrash);
+  await check("bookmarks-partial-push", bookmarkOwner.partialPush);
+  await check("bookmarks-legacy-upgrade", bookmarkOwner.legacyUpgrade);
+  await check("bookmarks-relaunch-idempotence", bookmarkOwner.relaunchIdempotence);
+
+  await check("bookmarks-native-sync-failures", async () => {
+    const result = await evalApp("return ac.bookmarkSyncAcceptance.run()", 90000);
+    assert.equal(result.sameMillisecondFailedAck.rejectedAck, true);
+    assert.ok(result.sameMillisecondFailedAck.publishedHLC > result.sameMillisecondFailedAck.previousHLC);
+    assert.equal(result.zeroPublicationAndAtomicReplacement.zeroPublication, true);
+    assert.equal(result.zeroPublicationAndAtomicReplacement.refusedNativeTransactions, 1);
+    assert.equal(result.zeroPublicationAndAtomicReplacement.foreignWinner, true);
+    assert.equal(result.linkLifetime.staleApplyRefused, true);
+    return result;
+  });
+
+  await check("bookmarks-distribution-default", async () => {
+    const native = "globalThis.expo.modules.SolaraSettings";
+    const ownSnapshot = async () => {
+      const value = await evalApp(`return ${native}.bookmarkWriterSnapshot("default")`);
+      return { ...value, document: JSON.parse(value.document), facts: JSON.parse(value.facts ?? "{}") };
+    };
+    const waitOwned = () => until("default distribution native bookmark authority", async () => {
+      const value = await evalApp(`return ${native}.bookmarkWriterState()`);
+      let observed;
+      try { observed = await ownSnapshot(); } catch (error) { observed = { error: String(error) }; }
+      report.say("distribution bookmark authority", { at: new Date().toISOString(), state: value, snapshot: observed });
+      assert.notEqual(value.state, "legacy", "distribution cannot select a legacy writer");
+      if (value.state !== "owned") return null;
+      const snapshot = await ownSnapshot();
+      return (snapshot.readyForSync ?? snapshot.ready) ? snapshot : null;
+    }, 30000);
+    await waitOwned();
+    const url = `https://bookmark-distribution.example/${randomUUID()}`;
+    const title = "Distribution native bookmark";
+    const id = await evalApp(`return ac.bookmarks.addBookmark(${JSON.stringify({ profileId: "default", title, url })})`);
+    const saved = await ownSnapshot();
+    assert.ok(saved.document.nodes[id], "default distribution uses the actual native desired document");
+    assert.ok(saved.facts[`bm:${id}`], "default distribution uses native edit facts");
+    const directory = join(scratch, "bookmark-distribution-extension");
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(join(directory, "manifest.json"), JSON.stringify({ manifest_version: 3, name: "Bookmark distribution acceptance", version: "1.0", permissions: ["bookmarks"], background: { service_worker: "worker.js" } }));
+    writeFileSync(join(directory, "worker.js"), 'chrome.runtime.onMessage.addListener(() => false); chrome.bookmarks.getTree().then(() => {});\n');
+    const installed = await exts(`install(${JSON.stringify(directory)}, "")`);
+    assert.ok(installed.id, JSON.stringify(installed));
+    const scopeURL = `chrome-extension://${installed.id}/`;
+    const wakeWorker = async () => {
+      const target = (await targets()).find((value) => value.type === "page");
+      assert.ok(target, "default profile page for the extension worker wake");
+      const ws = new WebSocket(target.webSocketDebuggerUrl);
+      let timer;
+      try {
+        await new Promise((resolve, reject) => {
+          timer = setTimeout(() => reject(new Error(`extension worker wake timed out: ${scopeURL}`)), 10000);
+          ws.onerror = () => reject(new Error(`extension worker wake connection failed: ${scopeURL}`));
+          ws.onclose = () => reject(new Error(`extension worker wake connection closed: ${scopeURL}`));
+          ws.onopen = () => ws.send(JSON.stringify({ id: 1, method: "ServiceWorker.enable" }));
+          ws.onmessage = (event) => {
+            const reply = JSON.parse(event.data);
+            if (reply.id !== 1 && reply.id !== 2) return;
+            if (reply.error) return reject(new Error(`extension worker wake failed: ${JSON.stringify(reply.error)}`));
+            if (reply.id === 1) ws.send(JSON.stringify({ id: 2, method: "ServiceWorker.startWorker", params: { scopeURL } }));
+            else resolve();
+          };
+        });
+      } finally {
+        clearTimeout(timer);
+        ws.close();
+      }
+    };
+    const chromeMatches = async () => {
+      await wakeWorker();
+      const worker = await extensionWorker(installed.id, "bookmarks.search");
+      const result = await cdp(worker, "Runtime.evaluate", { expression: `chrome.bookmarks.search({url:${JSON.stringify(url)}})`, awaitPromise: true, returnByValue: true });
+      assert.equal(result.exceptionDetails, undefined, JSON.stringify(result));
+      const matches = result.result?.value ?? [];
+      report.say("distribution extension bookmark readback", { scopeURL, worker: worker.id, matches });
+      return matches;
+    };
+    const rawRefusals = () => evalApp(`
+      const out = [];
+      return ["ac_bookmarks_tree", "ac_bookmarks_apply", "ac_bookmarks_watch"].reduce((previous, name) => previous.then(() =>
+        Promise.resolve().then(() => globalThis.expo.modules.SolaraCEF.engineCall(name, "", '{"ops":[]}'))
+          .then((reply) => { const value = JSON.parse(reply); out.push(typeof value.error === "string"); })
+          .catch(() => { out.push(true); })
+      ), Promise.resolve()).then(() =>
+        Promise.resolve().then(() => ${native}.libraryCommand("applyBookmarks", "", {ops:[]}))
+          .then(() => { out.push(false); }, () => { out.push(true); })
+      ).then(() => {
+        const before=ac.store.getState().bookmarks;
+        let notified=0;
+        const unsubscribe=ac.store.subscribe(() => notified++);
+        try { ac.store.setState({bookmarks:{nodes:{},roots:{}}}); out.push(false); } catch { out.push(true); }
+        unsubscribe();
+        return {out,notified,same:ac.store.getState().bookmarks===before};
+      });`);
+    try {
+      await until("native default bookmark reaches Chrome", async () => (await chromeMatches()).length === 1);
+      let refusal = await rawRefusals();
+      assert.ok(refusal.out.every(Boolean), JSON.stringify(refusal));
+      assert.equal(refusal.notified, 0);
+      assert.equal(refusal.same, true);
+      const migration = JSON.parse(readFileSync(join(data, "bookmarks-pending-native-v1.json"), "utf8")).payload.legacyMigration;
+      await stopApp();
+      await appUp("bookmarks-distribution-default-relaunch.out.log");
+      await waitOwned();
+      assert.equal((await ownSnapshot()).document.nodes[id]?.url, url);
+      assert.deepEqual(JSON.parse(readFileSync(join(data, "bookmarks-pending-native-v1.json"), "utf8")).payload.legacyMigration, migration);
+      assert.equal((await chromeMatches()).length, 1, "relaunch does not duplicate the bookmark");
+      await stopApp();
+      await launch("bookmarks-distribution-off-override.out.log", { SOLARA_NATIVE_BOOKMARKS: "0" });
+      await appUp("bookmarks-distribution-off-override-ready.out.log");
+      await waitOwned();
+      refusal = await rawRefusals();
+      assert.ok(refusal.out.every(Boolean), JSON.stringify(refusal));
+      assert.equal(refusal.notified, 0);
+      assert.equal(refusal.same, true);
+      assert.equal((await ownSnapshot()).document.nodes[id]?.url, url);
+      return { policy: "distribution launch policy with no initial writer override", overrideRefused: true, nativeFactRecorded: true, chromeMatches: (await chromeMatches()).length, relaunchIdempotent: true };
+    } finally {
+      await evalApp(`return ac.bookmarks.removeBookmark("default", ${JSON.stringify(id)})`).catch(() => null);
+      await exts(`uninstall(${JSON.stringify(installed.id)}, "")`).catch(() => null);
+      await stopApp();
+      await appUp("bookmarks-distribution-restored-default.out.log");
+      await waitOwned();
+    }
+  });
+
   await check("bookmark-url-canonicalization", async () => {
     const available = await evalApp(`return typeof globalThis.expo.modules.SolaraCEF.devCanonicalBookmarkURL === "function"`);
     assert.equal(available, true, "missing native bookmark URL acceptance adapter; rebuild the Debug app with source-v2.patch");
@@ -1028,8 +1172,11 @@ try {
     const profile = (await state()).profileId;
     assert.equal(typeof profile, "string", "a regular profile is loaded");
     assert.equal(profile.startsWith("incognito"), false, "bookmark fixtures use a regular profile");
+    const engineProfile = await evalApp(`return globalThis.expo.modules.SolaraSettings.bookmarkWriterSnapshot(${JSON.stringify(profile)}).engine`);
     const engine = async (name, args = {}) => {
-      const value = JSON.parse(await cef(`engineCall(${JSON.stringify(name)}, ${JSON.stringify(profile)}, ${JSON.stringify(JSON.stringify(args))})`));
+      const operation = name === "ac_bookmarks_apply" ? "apply" : "tree";
+      const input = JSON.stringify({ operation, engine: engineProfile, ...args });
+      const value = JSON.parse(await evalApp(`return globalThis.expo.modules.SolaraSettings.devBookmarkFault(${JSON.stringify(input)})`));
       assert.equal(value.error, undefined, `${name}: ${JSON.stringify(value)}`);
       return value;
     };

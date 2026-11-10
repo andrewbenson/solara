@@ -3,7 +3,6 @@ import { LEGACY_BOOKMARK_SEED } from "../legacy";
 import type { BrowserState } from "./browser";
 import { engineProfile, without } from "./model";
 import type { BookmarkFolder, BookmarkNode, Bookmarks } from "./types";
-import { refuseSafeLegacyDeletion } from "./safeLibraryEdits";
 
 export type BookmarksSlice = {
   bookmarks: Bookmarks;
@@ -122,14 +121,6 @@ export function folderChildren(b: Bookmarks, folderId: string): BookmarkNode[] {
   return folder?.kind === "folder" ? folder.children.map((id) => b.nodes[id]).filter((n): n is BookmarkNode => !!n) : [];
 }
 
-function insertChild(b: Bookmarks, node: BookmarkNode, parentId: string, index?: number): Bookmarks {
-  const parent = b.nodes[parentId];
-  if (parent?.kind !== "folder") return b;
-  const children = parent.children.filter((c) => c !== node.id);
-  children.splice(Math.min(index ?? children.length, children.length), 0, node.id);
-  return { ...b, nodes: { ...b.nodes, [node.id]: { ...node, parentId } as BookmarkNode, [parentId]: { ...parent, children } } };
-}
-
 export function bookmarkAncestors(b: Bookmarks, id: string): BookmarkFolder[] {
   const out: BookmarkFolder[] = [];
   let node = b.nodes[id];
@@ -146,130 +137,18 @@ export function folderLinks(b: Bookmarks, folderId: string): Extract<BookmarkNod
   return folderChildren(b, folderId).flatMap((n) => (n.kind === "url" ? [n] : folderLinks(b, n.id)));
 }
 
-function refuseSafeBookmarkDeletion(bookmarks: Bookmarks, ids: string[]): boolean {
-  const removed = new Set(subtree(bookmarks, ids));
-  return refuseSafeLegacyDeletion("bookmarks", (contents) => {
-    const document = JSON.parse(contents) as { bookmarks?: Bookmarks };
-    return Object.keys(document.bookmarks?.nodes ?? {}).some((id) => removed.has(bookmarkUuidFor(id)));
-  });
-}
+const nativeBookmarkWriteRequired = (): never => { throw new Error("Bookmarks are owned by the native coordinator; JS reducers are retired"); };
 
-export const createBookmarksSlice: StateCreator<BrowserState, [], [], BookmarksSlice> = (set, get) => ({
+export const createBookmarksSlice: StateCreator<BrowserState, [], [], BookmarksSlice> = () => ({
   bookmarks: EMPTY_BOOKMARKS,
   bookmarksReady: {},
-
-  addBookmark({ profileId, url, title, favicon = null, parentId, index }) {
-    const [b, roots] = ensureRoots(get().bookmarks, profileId);
-    const node: BookmarkNode = { kind: "url", id: newBookmarkId(), parentId: parentId ?? roots.bar, title, url, favicon, addedAt: Date.now() };
-    set({ bookmarks: insertChild(b, node, node.parentId, index) });
-    return node.id;
-  },
-
-  addBookmarkFolder({ profileId, title, parentId, index }) {
-    const [b, roots] = ensureRoots(get().bookmarks, profileId);
-    const node: BookmarkNode = { kind: "folder", id: newBookmarkId(), parentId: parentId ?? roots.bar, title, children: [], addedAt: Date.now() };
-    set({ bookmarks: insertChild(b, node, node.parentId!, index) });
-    return node.id;
-  },
-
-  updateBookmark(id, patch) {
-    set((s) => {
-      const node = s.bookmarks.nodes[id];
-      if (!node) return {};
-      const next = node.kind === "url" ? { ...node, ...patch } : { ...node, ...(patch.title !== undefined ? { title: patch.title } : {}) };
-      return { bookmarks: { ...s.bookmarks, nodes: { ...s.bookmarks.nodes, [id]: next } } };
-    });
-  },
-
-  moveBookmark(id, parentId, index) {
-    set((s) => {
-      const node = s.bookmarks.nodes[id];
-      if (!node || node.parentId === null || subtree(s.bookmarks, [id]).includes(parentId)) return {};
-      const oldParent = s.bookmarks.nodes[node.parentId];
-      let b = s.bookmarks;
-      if (oldParent?.kind === "folder") {
-        b = { ...b, nodes: { ...b.nodes, [oldParent.id]: { ...oldParent, children: oldParent.children.filter((c) => c !== id) } } };
-      }
-      return { bookmarks: insertChild(b, node, parentId, index) };
-    });
-  },
-
-  removeBookmark(id) {
-    if (refuseSafeBookmarkDeletion(get().bookmarks, [id])) return;
-    set((s) => {
-      const node = s.bookmarks.nodes[id];
-      if (!node || node.parentId === null) return {};
-      return { bookmarks: removeBookmarkTree(s.bookmarks, [id]) };
-    });
-  },
-
-  addBookmarkTree(profileId, drafts, parentId, index) {
-    let [b, roots] = ensureRoots(get().bookmarks, profileId);
-    const nodes = { ...b.nodes };
-    const build = (d: BookmarkDraft, parent: string): string => {
-      const id = newBookmarkId();
-      const addedAt = d.addedAt ?? Date.now();
-      if (d.url !== undefined && !d.children) {
-        nodes[id] = { kind: "url", id, parentId: parent, title: d.title, url: d.url, favicon: null, addedAt };
-      } else {
-        nodes[id] = { kind: "folder", id, parentId: parent, title: d.title, children: [], addedAt };
-        (nodes[id] as BookmarkFolder).children = (d.children ?? []).map((c) => build(c, id));
-      }
-      return id;
-    };
-    const target = parentId && b.nodes[parentId]?.kind === "folder" ? parentId : roots.bar;
-    const ids = drafts.map((d) => build(d, target));
-    const parent = nodes[target] as BookmarkFolder;
-    const children = [...parent.children];
-    children.splice(Math.min(index ?? children.length, children.length), 0, ...ids);
-    nodes[target] = { ...parent, children };
-    set({ bookmarks: { ...b, nodes } });
-    return ids;
-  },
-
-  removeBookmarks(ids) {
-    if (refuseSafeBookmarkDeletion(get().bookmarks, ids)) return { nodes: [], places: [] };
-    const b = get().bookmarks;
-    const removable = ids.filter((id) => b.nodes[id]?.parentId);
-    const tops = removable.filter((id) => !bookmarkAncestors(b, id).some((a) => removable.includes(a.id)));
-    const places = tops.map((id) => {
-      const parentId = b.nodes[id]!.parentId!;
-      const parent = b.nodes[parentId];
-      return { id, parentId, index: parent?.kind === "folder" ? parent.children.indexOf(id) : 0 };
-    });
-    const nodes = subtree(b, tops).map((id) => b.nodes[id]!);
-    if (tops.length) set({ bookmarks: removeBookmarkTree(b, tops) });
-    return { nodes, places };
-  },
-
-  restoreBookmarks({ nodes, places }) {
-    set((s) => {
-      const next = { ...s.bookmarks.nodes };
-      for (const n of nodes) next[n.id] = n;
-      for (const p of [...places].sort((a, b) => a.index - b.index)) {
-        const parent = next[p.parentId];
-        if (parent?.kind !== "folder") {
-          delete next[p.id];
-          continue;
-        }
-        const children = parent.children.filter((c) => c !== p.id);
-        children.splice(Math.min(p.index, children.length), 0, p.id);
-        next[p.parentId] = { ...parent, children };
-      }
-      return { bookmarks: { ...s.bookmarks, nodes: next } };
-    });
-  },
-
-  toggleBookmark(profileId, page) {
-    const s = get();
-    if (!page.url) return false;
-    const existing = bookmarksByUrl(s.bookmarks, profileId).get(page.url);
-    if (existing?.length) {
-      if (refuseSafeBookmarkDeletion(s.bookmarks, existing)) return true;
-      set({ bookmarks: removeBookmarkTree(s.bookmarks, existing) });
-      return false;
-    }
-    get().addBookmark({ profileId, url: page.url, title: page.title, favicon: page.favicon });
-    return true;
-  },
+  addBookmark: nativeBookmarkWriteRequired,
+  addBookmarkFolder: nativeBookmarkWriteRequired,
+  updateBookmark: nativeBookmarkWriteRequired,
+  moveBookmark: nativeBookmarkWriteRequired,
+  removeBookmark: nativeBookmarkWriteRequired,
+  toggleBookmark: nativeBookmarkWriteRequired,
+  addBookmarkTree: nativeBookmarkWriteRequired,
+  removeBookmarks: nativeBookmarkWriteRequired,
+  restoreBookmarks: nativeBookmarkWriteRequired,
 });

@@ -23,6 +23,7 @@ const { bookmarkTab, useBookmarkDialog } = await import("./actions.ts");
 const { useBookmarkEditor } = await import("./edit.ts");
 const { bookmarkTabs } = await import("../sidebar/actions.ts");
 
+const { seedBookmarkProjection, nextBookmarkProjectionOwner } = await import("../../test-native/bookmarkProjection.ts");
 const S = () => useBrowser.getState();
 const folder = (id, title, children = []) => ({ kind: "folder", id, parentId: null, title, children, addedAt: 0 });
 let engines = 0;
@@ -30,7 +31,7 @@ let engines = 0;
 class FakeOwner {
   constructor() {
     this.engine = `forms-${++engines}`;
-    this.projectionOwner = String(engines);
+    this.projectionOwner = nextBookmarkProjectionOwner();
     this.generation = "1";
     this.revision = 1;
     this.document = { nodes: { [`bar@${this.engine}`]: folder(`bar@${this.engine}`, "Bookmarks Bar"), [`other@${this.engine}`]: folder(`other@${this.engine}`, "Other Bookmarks") }, roots: { default: { bar: `bar@${this.engine}`, other: `other@${this.engine}` } } };
@@ -89,9 +90,8 @@ class FakeOwner {
 let windowId;
 beforeEach(() => {
   delete globalThis.acTestBookmarkWriter;
-  useBrowser.setState({ bookmarks: { nodes: {}, roots: {} } });
+  seedBookmarkProjection(useBrowser);
   S().hydrate({ groups: {}, windows: {}, tabs: {}, splits: {} });
-  useBrowser.setState({ bookmarksReady: { default: true } });
   windowId = S().createWindow();
   useBookmarkDialog.getState().set(null);
   useBookmarkEditor.getState().set(null);
@@ -101,7 +101,7 @@ afterEach(() => {
 });
 
 const own = () => {
-  useBrowser.setState({ bookmarks: { nodes: {}, roots: {} } });
+  seedBookmarkProjection(useBrowser);
   return (globalThis.acTestBookmarkWriter = new FakeOwner());
 };
 
@@ -179,10 +179,14 @@ test("removing from the dialog goes through the writer before the dialog closes"
   assert.equal(useBookmarkDialog.getState().open, null);
 });
 
-test("without a native owner the forms still edit the JS store", async () => {
-  const id = S().addBookmark({ profileId: "default", title: "Page", url: "https://page.example/" });
-  await saveBookmarkEditor({ windowId, bookmarkId: id, folder: false, profileId: "default" }, "Renamed", "https://page.example/", null);
-  assert.equal(S().bookmarks.nodes[id].title, "Renamed");
+test("without native authority the editor keeps its draft and refuses the save", async () => {
+  const owner = own();
+  const id = await bookmarkWriter.addBookmark({ profileId: "default", title: "Page", url: "https://page.example/" });
+  const before = JSON.stringify(S().bookmarks);
+  delete globalThis.acTestBookmarkWriter;
+  await assert.rejects(saveBookmarkEditor({ windowId, bookmarkId: id, folder: false, profileId: "default" }, "Renamed", "https://page.example/", null));
+  assert.equal(JSON.stringify(S().bookmarks), before);
+  assert.equal(owner.submitted.length, 1);
 });
 
 test("a second bookmark toggle while the first is pending is the same toggle, not an undo", async () => {

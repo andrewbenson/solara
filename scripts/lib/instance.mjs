@@ -643,6 +643,7 @@ export async function launch(app, opts = {}) {
   const switches = [opts.switches].flat().filter(Boolean).join(" ");
   const env = {
     SOLARA_BACKGROUND: "1", SOLARA_DATA_DIR: canonicalData, SOLARA_REMOTE_DEBUGGING_PORT: String(port),
+    SOLARA_NATIVE_BOOKMARKS: process.env.SOLARA_NATIVE_BOOKMARKS ?? "1",
     ...(location ? { SOLARA_JS_LOCATION: location } : {}),
     ...(switches ? { SOLARA_CHROMIUM_SWITCHES: switches } : {}),
     ...Object.fromEntries(Object.entries(process.env).filter(([k]) => ["SOLARA_NATIVE_SHELL", "SOLARA_NATIVE_PAGES_POOL", "SOLARA_NATIVE_TOP_STRIP", "SOLARA_NATIVE_BOOKMARKS_BAR", "SOLARA_NATIVE_SERVICES", "SOLARA_NATIVE_SIDEBAR_ADDRESS", "SOLARA_NATIVE_SCOPE"].includes(k) || k.startsWith("SOLARA_SHELL_") || k.startsWith("SOLARA_SYNC_"))),

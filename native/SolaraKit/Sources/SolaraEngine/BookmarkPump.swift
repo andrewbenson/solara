@@ -279,7 +279,9 @@ public final class BookmarkPump {
         }
         continue
       }
-      if waiting {
+      let canPushDuringDeferredRead = lane.readDeferred && lane.push && !delta.isEmpty && view.readyForSync
+        && view.inFlightTarget == nil && view.failedPushes == 0 && lane.writeDeadline == nil
+      if waiting && !canPushDuringDeferredRead {
         waitForDeadline(engine, lane)
         return
       }

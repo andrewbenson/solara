@@ -72,6 +72,20 @@ export function assertRetired(state, record) {
   assert.ok(!Object.values(state.profiles).some((p) => p.id === record.profile.id || engineOf(p) === record.dirs.engine), "no live profile reuses retired profile or data identity");
 }
 
+export function bookmarkChainApplied(payload, engine, operations) {
+  const entry = payload.engines.find((item) => item.view.engine === engine);
+  if (!entry || entry.view.inFlightTarget != null || entry.view.failedPushes !== 0) return false;
+  const nodes = new Map(entry.base.map((node) => [node.id, node]));
+  for (const operation of operations) {
+    const parent = operation.parent === "bar" || operation.parent === "other"
+      ? `${operation.parent}@${engine || "default"}` : operation.parent;
+    const node = nodes.get(operation.id);
+    if (node?.kind !== "folder" || node.title !== operation.t || node.parent !== parent
+      || !nodes.get(parent)?.children?.includes(operation.id)) return false;
+  }
+  return nodes.get(operations.at(-1)?.id)?.children?.length === 0;
+}
+
 export async function waitFor(what, read, { timeout = 10000, alive = () => true } = {}) {
   const deadline = Date.now() + timeout;
   let last;
@@ -128,7 +142,7 @@ export class Run {
       startTimeout: this.time(20000), js: "live",
       switches: "--enable-features=EncryptBookmarks:stage/write_both_read_prefer_encrypted",
       ...(fresh ? { session: this.session({ windows: [{ id: "w1" }], settings: { warnBeforeClosingLastTab: false, warnBeforeClosingWindow: false } }) } : {}),
-      env: { SOLARA_NATIVE_SCOPE: "everything", SOLARA_NATIVE_SHELL: "1", SOLARA_SHELL_PANES: "1", SOLARA_NATIVE_PAGES_POOL: "1", SOLARA_TAB_POOL: "1", SOLARA_TEST_KEYCHAIN: "file", SOLARA_TEST_REKEY: "1", SOLARA_TEST_PROFILE_DELETE_CRASH: crashPoint, SOLARA_TEST_PROFILE_DELETE_UNLOADED: deleteUnloaded, SOLARA_TEST_REKEY_CRASH: "", SOLARA_TEST_REKEY_FAIL_AFTER_KEY: "", SOLARA_TEST_KEYCHAIN_FAIL: "" },
+      env: { SOLARA_NATIVE_BOOKMARKS: "1", SOLARA_NATIVE_SCOPE: "everything", SOLARA_NATIVE_SHELL: "1", SOLARA_SHELL_PANES: "1", SOLARA_NATIVE_PAGES_POOL: "1", SOLARA_TAB_POOL: "1", SOLARA_TEST_KEYCHAIN: "file", SOLARA_TEST_REKEY: "1", SOLARA_TEST_PROFILE_DELETE_CRASH: crashPoint, SOLARA_TEST_PROFILE_DELETE_UNLOADED: deleteUnloaded, SOLARA_TEST_REKEY_CRASH: "", SOLARA_TEST_REKEY_FAIL_AFTER_KEY: "", SOLARA_TEST_KEYCHAIN_FAIL: "" },
     });
     this.data = realpathSync(this.data);
     await this.wait("native workspace and UI harness", (timeout) => this.eval(`return typeof ac !== "undefined" && !!ac.store && !!N;`, timeout), 20000);
@@ -141,10 +155,25 @@ export class Run {
     assert.equal(await this.eval(`return globalThis.expo.modules.SolaraTabPool.available();`), true, "native pool serves both engines");
     this.window = await this.wait("main window", (timeout) => this.eval(`return Object.keys(S().windows).find((id) => !S().windows[id].incognito) ?? false;`, timeout));
   }
-  async bookmarkCall(name, engine, args = {}) {
-    const result = await this.eval(`return globalThis.expo.modules.SolaraCEF.engineCall(${json(name)}, ${json(engine)}, ${json(json(args))}).then(JSON.parse);`);
-    assert.ok(!result.error, `${name}: ${json(result)}`);
-    return result;
+  async bookmarkSnapshot(profileId) {
+    return this.eval(`const snapshot = globalThis.expo.modules.SolaraSettings.bookmarkWriterSnapshot(${json(profileId)});
+      return { ...snapshot, document: JSON.parse(snapshot.document) };`);
+  }
+  async applyBookmarks(profileId, ops) {
+    await this.wait(`${profileId} native bookmark writer ready`, (timeout) => this.eval(`const B = globalThis.expo.modules.SolaraSettings;
+      if (B.bookmarkWriterState().state !== "owned") return false;
+      const snapshot = B.bookmarkWriterSnapshot(${json(profileId)}); return snapshot.readyForSync ?? snapshot.ready;`, timeout), 20000);
+    const mutations = [{ method: "applyBookmarkOperations", args: [ops] }];
+    return this.eval(`const B = globalThis.expo.modules.SolaraSettings;
+      const binding = B.bookmarkWriterSnapshot(${json(profileId)});
+      return B.submitBookmarkMutations(${json(profileId)}, ${json(json(mutations))}, binding.engine, binding.generation, ${json(`profile-delete-${randomUUID()}`)})
+        .then((receipt) => JSON.parse(receipt.results)[0]);`, 10000);
+  }
+  bookmarkTree(engine) {
+    return this.eval(`return globalThis.expo.modules.SolaraSettings.devBookmarkFault(${json(json({ operation: "tree", engine }))}).then(JSON.parse);`);
+  }
+  persistedBookmarks(record) {
+    return JSON.parse(readFileSync(join(record.dirs.chromium, "Bookmarks"), "utf8"));
   }
   async native() {
     const snapshot = await this.eval(`return JSON.parse(N.snapshot());`);
@@ -412,12 +441,12 @@ async function check(run, name) {
     await run.unused(fixture.A);
   } else {
     const bookmarkIds = [randomUUID(), randomUUID(), randomUUID()];
-    const seeded = await run.bookmarkCall("ac_bookmarks_apply", "", { ops: [
+    const seeded = await run.applyBookmarks("default", [
       { op: "add", id: bookmarkIds[0], parent: "bar", index: 0, k: "u", t: "Default bar", u: `${run.origin}/default-bookmark` },
       { op: "add", id: bookmarkIds[1], parent: "other", index: 0, k: "f", t: "Default folder" },
       { op: "add", id: bookmarkIds[2], parent: bookmarkIds[1], index: 0, k: "u", t: "Nested Default", u: `${run.origin}/default-nested` },
-    ] });
-    assert.equal(seeded.applied, 3, "Default bookmark fixtures accepted by Chrome");
+    ]);
+    assert.equal(seeded.applied, 3, "Default bookmark fixtures accepted by the native writer");
     assert.equal(seeded.skipped, 0);
     assert.deepEqual(seeded.invalid, []);
     const shared = await run.create("Shared Default", "default");
@@ -428,14 +457,16 @@ async function check(run, name) {
     assert.ok(!existsSync(join(run.data, "profile-data-tombstones.json")) || !run.ledger().includes(""), "shared Default not retired");
     await run.intact(fixture.Default);
     await run.intact(fixture.B);
-    const retainedBookmarks = await run.bookmarkCall("ac_bookmarks_tree", "");
-    assert.ok(retainedBookmarks.bar.c.some((node) => node.id === bookmarkIds[0]), "shared Default deletion retains bar bookmarks");
-    assert.ok(retainedBookmarks.other.c.some((node) => node.id === bookmarkIds[1] && node.c.some((child) => child.id === bookmarkIds[2])), "shared Default deletion retains nested bookmarks");
+    const retainedBookmarks = (await run.bookmarkSnapshot("default")).document;
+    const roots = retainedBookmarks.roots.default;
+    assert.ok(retainedBookmarks.nodes[roots.bar].children.includes(bookmarkIds[0]), "shared Default deletion retains bar bookmarks");
+    assert.ok(retainedBookmarks.nodes[roots.other].children.includes(bookmarkIds[1]) && retainedBookmarks.nodes[bookmarkIds[1]].children.includes(bookmarkIds[2]), "shared Default deletion retains nested bookmarks");
     const bookmarkFiles = ["Bookmarks", "EncryptedBookmarks2"].map((name) => join(fixture.Default.dirs.chromium, name));
     await run.wait("Default bookmark fixtures persisted in both storage formats", async () => {
       if (!bookmarkFiles.every((path) => existsSync(path) && statSync(path).isFile())) return false;
       const stored = JSON.parse(readFileSync(bookmarkFiles[0], "utf8"));
-      return stored.roots.bookmark_bar.children.some((node) => node.guid === bookmarkIds[0]);
+      return stored.roots.bookmark_bar.children.some((node) => node.guid === bookmarkIds[0])
+        && stored.roots.other.children.some((node) => node.guid === bookmarkIds[1] && node.children.some((child) => child.guid === bookmarkIds[2]));
     });
     const encryptedBefore = readFileSync(bookmarkFiles[1]);
     if (name === "default-write-failure") {
@@ -481,12 +512,15 @@ async function check(run, name) {
       deepParent = id;
       return operation;
     });
-    const deepSeeded = await run.bookmarkCall("ac_bookmarks_apply", "", { ops: deepOperations });
-    assert.equal(deepSeeded.applied, 513, "Chrome accepts a bookmark tree beyond the read depth limit");
+    const deepSeeded = await run.applyBookmarks("default", deepOperations);
+    assert.equal(deepSeeded.applied, 513, "native writer accepts a bookmark tree beyond the Chrome read depth limit");
     assert.equal(deepSeeded.skipped, 0);
     assert.deepEqual(deepSeeded.invalid, []);
-    const deepTree = await run.eval(`return globalThis.expo.modules.SolaraCEF.engineCall("ac_bookmarks_tree", "", "{}").then(JSON.parse);`);
-    assert.equal(deepTree.error, "bookmarks nested too deep", "fixture exceeds the tree serializer depth limit");
+    await run.wait("all 513 deep bookmark folders applied to Chrome", () => {
+      const pending = JSON.parse(readFileSync(join(run.data, "bookmarks-pending-native-v1.json"), "utf8"));
+      return bookmarkChainApplied(pending.payload, "", deepOperations);
+    }, 20000);
+    await assert.rejects(run.bookmarkTree(""), /bookmarks nested too deep/, "fixture exceeds the tree serializer depth limit");
     const before = statSync(fixture.Default.dirs.chromium);
     await run.remove(fixture.Default.profile);
     await run.drained("");
@@ -497,7 +531,7 @@ async function check(run, name) {
     const persistedBookmarks = JSON.parse(readFileSync(bookmarkFiles[0], "utf8"));
     for (const root of Object.values(persistedBookmarks.roots)) assert.deepEqual(root.children, [], "Default acknowledgement has empty bookmark roots on disk before quit");
     assert.notDeepEqual(readFileSync(bookmarkFiles[1]), encryptedBefore, "Default acknowledgement has replaced the encrypted primary file before quit");
-    const clearedBookmarks = await run.bookmarkCall("ac_bookmarks_tree", "");
+    const clearedBookmarks = await run.bookmarkTree("");
     assert.deepEqual(clearedBookmarks.bar.c, [], "last Default reference clears bar bookmarks");
     assert.deepEqual(clearedBookmarks.other.c, [], "last Default reference clears other and nested bookmarks");
     const after = statSync(fixture.Default.dirs.chromium);
@@ -517,7 +551,10 @@ async function check(run, name) {
     await run.flush();
     await run.quit();
     await run.start();
-    const reloadedBookmarks = await run.bookmarkCall("ac_bookmarks_tree", "");
+    const reloadedBookmarkFile = run.persistedBookmarks(fixture.Default);
+    assert.deepEqual(reloadedBookmarkFile.roots.bookmark_bar.children, [], "reloaded Default bookmark file keeps bar bookmarks empty");
+    assert.deepEqual(reloadedBookmarkFile.roots.other.children, [], "reloaded Default bookmark file keeps other bookmarks empty");
+    const reloadedBookmarks = await run.bookmarkTree("");
     assert.deepEqual(reloadedBookmarks.bar.c, [], "encrypted primary reload keeps bar bookmarks empty");
     assert.deepEqual(reloadedBookmarks.other.c, [], "encrypted primary reload keeps other bookmarks empty");
   }

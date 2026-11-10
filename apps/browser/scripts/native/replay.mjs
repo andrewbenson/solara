@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import "../../../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";

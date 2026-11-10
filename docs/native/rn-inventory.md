@@ -129,7 +129,7 @@ Brace lists name separate files. All listed native filenames end in `.swift` unl
 ## Data ownership that still matters for 0.6.0
 
 - `src/store/nativeStore.ts:253,288,400` forwards wrapped commands, applies revision commits, and guards writes to owned state. `store/browser.ts:204` disables several JS normalization/mirror observers under full ownership. This is real native ownership.
-- `src/lib/persist.ts:395` starts bookmark/history/favicon services in the native branch too. `lib/bookmarks.ts:219,337,399` owns Chrome tree reconciliation, `bookmarks-cache.json`, and legacy bookmark retirement. `lib/history.ts:199,242,326` retains legacy history redaction/migration and tombstone handling.
+- `src/lib/persist.ts` starts bookmark/history/favicon services in the native branch too. `lib/bookmarks.ts` subscribes to native projection and requests catalog reloads; it owns no Chrome writes, cache saves or migration. NativeBookmarkOwner and BookmarkPump own those bookmark lifetimes. `lib/history.ts` retains legacy history redaction/migration and tombstone handling.
 - `src/lib/favicons.ts` still owns a JS cache and extraction/lookup work. `lib/launchLook.ts:31` still writes `launch-look.json` during final flush. Native image storage or a native history catalog does not eliminate these JS copies.
 - `src/sync/engine.ts:526,679,749,2133` retains durable sync metadata, adapter construction, cycles, and startup. `sync/pinned.ts:70` delegates native apply under workspace ownership. Other data flows remain JS-coordinated.
 - `src/components/settings/native/resources.ts`, page state, media state/artwork, extension state, sidebar state, and other local caches also remain. “The data layer is native” needs native owners or deletion of these replicas, not only a native session writer.
@@ -181,7 +181,7 @@ Each cell lists the largest dependencies first. These are proposed work boundari
 | --- | --- | --- |
 | 0.4.0: draws nothing in RN | Port NTP extras and their shared onboarding/settings controls; port bookmarks bar; replace RN extension popup/frame and remaining supported fallback pixels. Cover error/skew, nonpooled peek/prompts, toolbar/find/site/download, and small-window paths. Transfer RN-driven layout/animation where native content still depends on it. Secondary a work inside b/d files also counts. | Every supported release surface and recovery path draws native pixels. Exercise unavailable-capability and handoff paths. Retained development fallbacks must be outside the milestone's supported release lane. |
 | 0.5.0: decides nothing in RN | Move command/menu/window/focus/navigation orchestration; omnibox action/disposition/clipboard policy; import and settings RPC actions; sidebar/top-strip drag/selection/close/rename; live auth/meeting integration; media/extension/prompt/translation lifecycle. Retire TS workspace fallback reducers after native parity is demonstrated. | Native views and commands work with JS action/RPC handlers disabled. Native UI has no required JS decision round trip. |
-| 0.6.0: data layer is native | Move the JS sync coordinator/adapters/durable metadata and legacy library reconciliation/migrations first. Remove JS bookmark/history/favicon/launch caches and unwrapped Zustand stores. Replace or delete UI/page/media/extension replicas. Keep native writer/ownership safeguards during the transition. | Full persistence, restart, import, sync, privacy deletion, and recovery work without JS data services. Native SolaraSync must be wired into the app, not merely present in the library. |
+| 0.6.0: data layer is native | Move the JS sync coordinator/adapters/durable metadata and remaining history reconciliation/migrations first. Bookmark reconciliation, migration and caches moved in 0.3.0. Remove remaining JS history/favicon/launch caches and unwrapped Zustand stores. Replace or delete UI/page/media/extension replicas. Keep native writer/ownership safeguards during the transition. | Full persistence, restart, import, sync, privacy deletion, and recovery work without JS data services. Native SolaraSync must be wired into the app, not merely present in the library. |
 | 0.7.0: RN off by default | Remove mandatory `AppDelegate` main/pane root creation and `main.tsx` startup dependency. Give native app startup, window/menu binding, settings services, page props, and root handoff independent lifetimes. Default to no RN host/bridge; any compatibility switch must explicitly opt in. | Signed distribution starts, opens windows/tabs/settings, syncs, quits, and restores with no RN runtime or roots. UI switches being on is insufficient evidence. |
 | 1.0.0: RN deleted | Delete retained RN roots, JS UI/decision/data fallbacks, JSON/RPC topics, test doubles, and skew plumbing. Remove Expo/RN native bindings, package dependencies, Metro/bundle phases, Pod integration, RN patches, and tests/harnesses that require RN. Audit package TS wrappers beyond this appendix before deleting shared pure TS. | Dependency/source/build audit finds no RN/Expo host or required bundle. Native-only release and recovery acceptance pass. Preserve engine/native APIs still used by the app. |
 
@@ -583,3 +583,14 @@ Each path appears once. Notes name secondary work where it materially affects re
 | `apps/browser/src/sync/readable.ts` | 33 | c | Readable sync state serialization |
 | `apps/browser/src/sync/redesignSwitch.ts` | 1 | d | Native sync-launch gate mirror |
 | `apps/browser/src/sync/stateDeltas.ts` | 129 | c | Sync delta generation/replay |
+
+### Bookmark ownership cutover (0.3.0)
+
+NativeBookmarkLaunch installs one process owner before catalog observation. BookmarkCoordinator owns durable
+desired state and edit facts; BookmarkPump alone reads/applies Chrome. The JS bookmark service subscribes to
+native projection and refreshes after receipts. Its watcher, push/retry, migration and cache writer are retired,
+as are the production JS bookmark reducers and sync replacement fallback. Pure mapping/readers and historical
+test oracles remain. Cycle, transport, encryption and HLC minting stay in JS.
+
+Safe mode retains the claimed native display with a notice, read-only journal decoding and no edits or sync.
+Development-off/partial scope fails closed. API 40 and bookmark bridge version 3 require a rebuilt native host.

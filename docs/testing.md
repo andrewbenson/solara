@@ -262,3 +262,23 @@ lose or leak data, or when the bug is invisible by eye and has shipped before.
 | `profile-pager-race-test.mjs` | Loaded the pager's source with its dependencies mocked; `profile-swipe-test.mjs` runs the same races against the real app |
 | `profile-motion-stall-test.mjs`, `profile-swipe-replay.mjs` (and the owner's trackpad recording) | One-off investigation harnesses for the native pager, done in 0.2.18 |
 | `packages/import/src/index.test.ts`, Swift tests for Dia tabs, file imports, Firefox and Chromium parsing | The JS wrapper is a thin bridge; parsing failures show in the importer's own result |
+
+## Native bookmark cutover gates (0.3.0)
+
+Use a scratch `SOLARA_DATA_DIR` and hidden instance. The first integration leg opts in with
+`SOLARA_NATIVE_BOOKMARKS=1` and keeps `SOLARA_SYNC_REDESIGN=0`. Repeat ownership, remap, migration,
+partial-push, crash/relaunch and safe-mode checks on a distribution-policy candidate with no writer override.
+A signing-derived distribution decision must ignore environment/stored ownership-off settings; a Debug
+configuration alone is not a distribution-policy test.
+
+Run LaunchSwitchesTests and the bookmark-launch settings host harness, including partial-scope refusal,
+read-only native UI and migration-notice survival. Run bookmarkCutover.test.mjs with the actual production
+modules. Existing coordinator/pump/facts/migration/projection/lifecycle and B3b adapter suites remain gates.
+Keep the historical legacy resurrection oracle unchanged in its test-only harness.
+
+App acceptance must observe native writer authority, facts and actual Chrome state, not only pixels.
+Use the isolated Debug fault bridge to hold the actual native apply, remove B immediately before the A/B/C
+batch, verify C remains deleted in desired state while Chrome retains it, crash, then relaunch twice and
+confirm C disappears without reimport or a JS writer. Fault commands are absent from release builds and
+refused without isolated development data. Complete the release smoke/update and performance gates after
+these checks; no drafted test constitutes a recorded pass.

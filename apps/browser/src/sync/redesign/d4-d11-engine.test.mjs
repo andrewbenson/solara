@@ -1,7 +1,8 @@
+import "../../../../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import "./switchOn.mjs";
-import { fake, folder, shell, S, settle, launch, reset, files, assertNoSeqReused, onAndSynced, otherMac, appMac, native, titles, bookmarkOps, restoreDocs, useBrowser } from "./harness.mjs";
+const { fake, folder, shell, S, settle, launch, reset, files, assertNoSeqReused, onAndSynced, otherMac, appMac, native, titles, bookmarkOps, restoreDocs, useBrowser } = await import('./harness.mjs');
 
 const realNow = Date.now;
 const at = (ms) => (Date.now = () => realNow() + ms);

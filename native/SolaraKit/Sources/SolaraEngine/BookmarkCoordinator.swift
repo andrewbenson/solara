@@ -954,6 +954,20 @@ public final class BookmarkCoordinator: @unchecked Sendable {
     locked { Set(durability.terminalEngines.filter { $1 == "retired" }.keys.map(JSKey.init)) }
   }
 
+  func reactivateForDisplay(engine: String, admission: (() throws -> Void)? = nil) throws {
+    try transact(admission: admission) {
+      guard !durability.writable else { throw BookmarkCoordinatorError.ownershipUnavailable }
+      guard let reason = durability.terminalEngines[engine], reason == "gone" || reason == "emptyAliasless" else { return (nil, {}) }
+      return (nil, {
+        self.durability.terminalEngines.removeValue(forKey: engine)
+        self.blockedEngines.remove(JSKey(engine))
+        self.pumpEpoch += 1
+        self.ownerGeneration += 1
+        self.invalidatePending(engine, desired: true, base: true)
+      })
+    }
+  }
+
   public func reactivate(engine: String, admission: (() throws -> Void)? = nil) throws {
     try transact(admission: admission) {
       guard durability.terminalEngines[engine] != nil else { return (nil, {}) }
@@ -1140,13 +1154,19 @@ private struct BookmarkReducer {
   func subtree(_ ids: [String]) -> [String] {
     var out: [String] = []
     var visited = Set<JSKey>()
-    func walk(_ id: String) {
-      guard let node = nodes[id], visited.insert(JSKey(id)).inserted else { return }
-      defer { visited.remove(JSKey(id)) }
-      out.append(id)
-      if node["kind"] == "folder" { for child in node["children"]?.array?.compactMap(\.string) ?? [] { walk(child) } }
+    var stack = ids.reversed().map { (id: $0, exiting: false) }
+    while let frame = stack.popLast() {
+      if frame.exiting {
+        visited.remove(JSKey(frame.id))
+        continue
+      }
+      guard let node = nodes[frame.id], visited.insert(JSKey(frame.id)).inserted else { continue }
+      out.append(frame.id)
+      stack.append((id: frame.id, exiting: true))
+      if node["kind"] == "folder" {
+        for child in (node["children"]?.array?.compactMap(\.string) ?? []).reversed() { stack.append((id: child, exiting: false)) }
+      }
     }
-    for id in ids { walk(id) }
     return out
   }
   func ancestors(_ id: String) -> [String] {

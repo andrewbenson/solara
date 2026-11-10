@@ -363,7 +363,9 @@ public final class LibraryCatalog {
   }
 
   public func start(engineProfiles: [String]) async {
-    do { try await bookmarkAdmission?() } catch { return }
+    do { try await bookmarkAdmission?() } catch {
+      guard !rawBookmarksAvailable else { return }
+    }
     if !observing {
       observing = true
       client.observeHistory { [weak self] change in self?.receive(change) }
@@ -401,7 +403,9 @@ public final class LibraryCatalog {
   }
 
   public func reloadBookmarks(engineProfile: String) async {
-    do { try await bookmarkAdmission?() } catch { return }
+    do { try await bookmarkAdmission?() } catch {
+      guard !rawBookmarksAvailable else { return }
+    }
     if let claim = bookmarkClaim {
       guard (try? claim.validate(engine: engineProfile)) != nil else { return }
       claim.pump.requestRead(engine: engineProfile)

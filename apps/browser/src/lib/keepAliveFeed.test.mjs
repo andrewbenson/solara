@@ -15,6 +15,128 @@ function fixture() {
   return { feed, sent, flush, epoch: () => epoch, setRunning: (value) => { running = value; }, setSnapshot: (value) => { snapshot = value; }, snapshot: () => snapshot };
 }
 
+function guardedFixture() {
+  let running = true;
+  let epoch = 0;
+  const snapshots = new Map([["t", facts()], ["other", facts()]]);
+  const blocked = new Set();
+  const validated = [];
+  const waiting = [];
+  const jobs = [];
+  const sent = [];
+  const feed = createKeepAliveFeed({
+    running: () => running,
+    register: () => ++epoch,
+    read: (value) => snapshots.get(value.tabId) ?? null,
+    ready: (value) => { validated.push({ ...value }); return !blocked.has(value.tabId); },
+    send: (id, report) => sent.push(JSON.parse(JSON.stringify({ id, ...report }))),
+    schedule: (job) => jobs.push(job),
+    waiting: (pending) => waiting.push(pending),
+  });
+  const flush = () => { while (jobs.length) jobs.shift()(); };
+  return { feed, sent, flush, validated, waiting, blocked, snapshots, setRunning: (value) => { running = value; } };
+}
+
+test("unchanged pages skip native validation while a changed acknowledgement validates only its page", () => {
+  const f = guardedFixture();
+  f.feed.created(identity, "pool");
+  f.feed.created({ ...identity, tabId: "other" }, "pool");
+  f.flush();
+  assert.deepEqual(f.validated.map((value) => value.tabId), ["t", "other"]);
+  f.validated.length = 0;
+  f.feed.changed();
+  f.flush();
+  assert.equal(f.validated.length, 0);
+  assert.equal(f.sent.length, 2);
+  f.feed.handled(identity, 7);
+  f.flush();
+  assert.deepEqual(f.validated.map((value) => value.tabId), ["t"]);
+  assert.equal(f.sent.length, 3);
+  assert.equal(f.sent.at(-1).handled, 7);
+  assert.equal(f.sent.at(-1).id, "t");
+});
+
+test("readiness pending cannot publish changed facts and retries the same snapshot until it can send", () => {
+  const f = guardedFixture();
+  f.feed.created(identity, "pool");
+  f.flush();
+  f.blocked.add("t");
+  f.snapshots.get("t").keep.capturing = true;
+  f.feed.handled(identity, 9);
+  f.flush();
+  assert.equal(f.sent.length, 1);
+  assert.equal(f.waiting.at(-1), true);
+  f.feed.changed();
+  f.flush();
+  assert.equal(f.sent.length, 1);
+  assert.equal(f.waiting.at(-1), true);
+  f.blocked.delete("t");
+  f.feed.changed();
+  f.flush();
+  assert.equal(f.sent.length, 2);
+  assert.equal(f.sent.at(-1).keep.capturing, true);
+  assert.equal(f.sent.at(-1).handled, 9);
+  assert.equal(f.waiting.at(-1), false);
+});
+
+test("readiness that stops the runner cannot send a report", () => {
+  let running = true;
+  const jobs = [];
+  const sent = [];
+  const feed = createKeepAliveFeed({
+    running: () => running,
+    register: () => 1,
+    read: facts,
+    ready: () => { running = false; return true; },
+    send: (id, report) => sent.push({ id, ...report }),
+    schedule: (job) => jobs.push(job),
+  });
+  feed.created(identity, "pool");
+  while (jobs.length) jobs.shift()();
+  assert.equal(sent.length, 0);
+});
+
+test("same-value route changes validate before resending", () => {
+  const f = guardedFixture();
+  f.feed.created(identity, "pool");
+  f.flush();
+  f.validated.length = 0;
+  f.blocked.add("t");
+  f.snapshots.get("t").route = "p/second-window";
+  f.feed.changed();
+  f.flush();
+  assert.deepEqual(f.validated, [identity]);
+  assert.equal(f.sent.length, 1);
+  f.blocked.delete("t");
+  f.feed.changed();
+  f.flush();
+  assert.equal(f.sent.length, 2);
+  assert.equal(f.sent.at(-1).seq, 2);
+});
+
+test("runtime renewal and runner restart validate every page even when their JS facts are unchanged", () => {
+  const f = guardedFixture();
+  f.feed.created(identity, "rn");
+  f.feed.created({ ...identity, tabId: "other" }, "pool");
+  f.flush();
+  f.validated.length = 0;
+  f.feed.created({ ...identity, registrationGeneration: 2 }, "rn");
+  f.feed.handled(identity, 99);
+  f.flush();
+  assert.deepEqual(f.validated, [{ ...identity, registrationGeneration: 2 }, { ...identity, tabId: "other" }]);
+  assert.deepEqual(f.sent.slice(-2).map((value) => [value.epoch, value.seq, value.handled]), [[2, 1, 0], [2, 2, 0]]);
+  f.validated.length = 0;
+  f.setRunning(false);
+  f.feed.changed();
+  f.flush();
+  assert.equal(f.validated.length, 0);
+  f.setRunning(true);
+  f.feed.changed();
+  f.flush();
+  assert.deepEqual(f.validated.map((value) => value.tabId), ["t", "other"]);
+  assert.deepEqual(f.sent.slice(-2).map((value) => value.epoch), [3, 3]);
+});
+
 test("changes coalesce into full typed feeds with increasing sequence and only handled UI events", () => {
   const f = fixture();
   f.feed.created(identity, "pool");

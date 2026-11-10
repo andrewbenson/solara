@@ -44,9 +44,6 @@ export function startNativeKeepAlive() {
     const s = useBrowser.getState();
     const tab = s.tabs[identity.tabId];
     if (!tab || !hasPage(tab) || s.live[tab.id]?.discarded) return null;
-    if (!isPageCurrent(identity)) return "pending" as const;
-    const native = nativePageFacts(tab.id);
-    if (native?.generation !== identity.sessionGeneration || native.protectionKnown !== true) return "pending" as const;
     const page = pageOf(tab.id);
     const media = useMedia.getState();
     const session = media.sessions[tab.id];
@@ -68,6 +65,11 @@ export function startNativeKeepAlive() {
       },
     };
   };
+  const ready = (identity: PageIdentity) => {
+    if (!isPageCurrent(identity)) return false;
+    const native = nativePageFacts(identity.tabId);
+    return native?.generation === identity.sessionGeneration && native.protectionKnown === true;
+  };
   let retry: ReturnType<typeof setTimeout> | null = null;
   let retryMs = PENDING_RETRY_MS;
   const resetRetry = () => {
@@ -85,7 +87,7 @@ export function startNativeKeepAlive() {
       feed.changed();
     }, delay);
   };
-  const feed = createKeepAliveFeed({ running: nativeTabSleepRunning, register: registerKeepAliveRuntime, read, send: pageReport, schedule: (run) => queueMicrotask(() => { applyHeldReports(); run(); }), waiting });
+  const feed = createKeepAliveFeed({ running: nativeTabSleepRunning, register: registerKeepAliveRuntime, read, ready, send: pageReport, schedule: (run) => queueMicrotask(() => { applyHeldReports(); run(); }), waiting });
   const tracked = (ids: Iterable<string>) => { for (const id of ids) if (identities.has(id)) return true; return false; };
   followPages = (s, prev) => {
     if (s.pages === prev.pages) return;

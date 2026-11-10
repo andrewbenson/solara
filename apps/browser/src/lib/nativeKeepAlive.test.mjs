@@ -44,9 +44,10 @@ function fixture(running = true) {
     };
   }
   const timers = [];
+  const nativeReads = [];
   const events = load("./keepAliveFeed.ts", {});
   const producer = load("./nativeKeepAlive.ts", {
-    "@solara/store": { isPageCurrent: (value) => value.sessionGeneration === authority.sessionGeneration && value.registrationGeneration === authority.registrationGeneration, nativePageFacts: () => ({ generation, protectionKnown }), pageReport: (id, report) => sent.push(JSON.parse(JSON.stringify({ id, ...report }))), registerKeepAliveRuntime: () => ++epoch, onTabSleepRunningChanged: (listener) => { runnerListener = listener; return () => {}; } },
+    "@solara/store": { isPageCurrent: (value) => { nativeReads.push(["current", value.tabId]); return value.sessionGeneration === authority.sessionGeneration && value.registrationGeneration === authority.registrationGeneration; }, nativePageFacts: (id) => { nativeReads.push(["facts", id]); return { generation, protectionKnown }; }, pageReport: (id, report) => sent.push(JSON.parse(JSON.stringify({ id, ...report }))), registerKeepAliveRuntime: () => ++epoch, onTabSleepRunningChanged: (listener) => { runnerListener = listener; return () => {}; } },
     "../components/layout/pageState": { usePages: pages, pageOf: (id) => pages.getState().pages[id], patchPage: (id, patch) => pages.setState((s) => ({ pages: { ...s.pages, [id]: { ...s.pages[id], ...patch } } })) },
     "../components/layout/toolbarAutoHide": { useToolbarAutoHide: toolbar, revealToolbar: (id) => toolbar.setState((s) => ({ scrolledDown: Object.fromEntries(Object.entries(s.scrolledDown).filter(([key]) => key !== id)) })) },
     "../components/media/state": { useMedia: media },
@@ -64,8 +65,39 @@ function fixture(running = true) {
   const page = (patch) => pages.setState((s) => ({ pages: { ...s.pages, t: { ...s.pages.t, ...patch } } }));
   const pendingTimers = () => timers.filter((timer) => timer.live);
   const fire = () => { const due = pendingTimers(); for (const timer of due) { timer.live = false; timer.run(); } return due.map((timer) => timer.ms); };
-  return { jobs, pagesListeners: () => pagesListeners, listeners: () => listeners, pendingTimers, fire, producerListeners, producer, events, sent, identity, browser, pages, media, toolbar, flush, page, setProtectionKnown: (value) => { protectionKnown = value; }, epoch: () => epoch, setRunning: (value) => { running = value; runnerListener?.(value); }, replace: (next) => { authority = next; generation = next.sessionGeneration; events.keepAliveCreated(next, "rn"); } };
+  return { jobs, nativeReads, pagesListeners: () => pagesListeners, listeners: () => listeners, pendingTimers, fire, producerListeners, producer, events, sent, identity, browser, pages, media, toolbar, flush, page, setProtectionKnown: (value) => { protectionKnown = value; }, epoch: () => epoch, setRunning: (value) => { running = value; runnerListener?.(value); }, replace: (next) => { authority = next; generation = next.sessionGeneration; events.keepAliveCreated(next, "rn"); } };
 }
+
+test("a tracked tab edit with unchanged keepalive facts performs no native validation", () => {
+  const f = fixture();
+  f.events.keepAliveCreated(f.identity, "pool");
+  f.flush();
+  assert.deepEqual(f.nativeReads, [["current", "t"], ["facts", "t"]]);
+  f.nativeReads.length = 0;
+  f.browser.setState((s) => ({ tabs: { ...s.tabs, t: { ...s.tabs.t, title: "new title" } } }));
+  f.flush();
+  assert.deepEqual(f.nativeReads, []);
+  assert.equal(f.sent.length, 1);
+});
+
+test("changing one page's protection avoids native reads for unchanged tracked pages", () => {
+  const f = fixture();
+  f.browser.setState((s) => ({ tabs: { ...s.tabs, other: { id: "other", profileId: "p", windowId: "w" } } }));
+  f.pages.setState((s) => ({ pages: { ...s.pages, other: { ...s.pages.t } } }));
+  f.events.keepAliveCreated(f.identity, "pool");
+  f.events.keepAliveCreated({ ...f.identity, tabId: "other" }, "pool");
+  f.flush();
+  assert.equal(f.sent.length, 2);
+  f.nativeReads.length = 0;
+  f.page({ permission: { kind: "camera" } });
+  f.events.keepAliveHandled(f.identity, 8);
+  f.flush();
+  assert.deepEqual(f.nativeReads, [["current", "t"], ["facts", "t"]]);
+  assert.equal(f.sent.length, 3);
+  assert.equal(f.sent.at(-1).id, "t");
+  assert.equal(f.sent.at(-1).keep.capturing, true);
+  assert.equal(f.sent.at(-1).handled, 8);
+});
 
 test("page and media subscriptions produce every typed keep fact and handled watermark", () => {
   const f = fixture();

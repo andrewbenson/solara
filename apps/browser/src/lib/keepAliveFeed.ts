@@ -6,6 +6,7 @@ type Options = {
   running(): boolean;
   register(): number;
   read(identity: PageIdentity): Snapshot | "pending" | null;
+  ready?(identity: PageIdentity): boolean;
   send(id: string, report: Extract<PageReport, { type: "keepAlive" }>): void;
   schedule(run: () => void): void;
   waiting?(pending: boolean): void;
@@ -53,6 +54,13 @@ export function createKeepAliveFeed(options: Options) {
       page.route = snapshot.route;
       const value = JSON.stringify({ keep: snapshot.keep, reveal: snapshot.reveal, handled: page.handled });
       if (!page.resend && value === page.sent) continue;
+      if (options.ready && !options.ready(page.identity)) {
+        pending = true;
+        page.sent = null;
+        page.route = null;
+        page.resend = true;
+        continue;
+      }
       if (!options.running()) return;
       if (!Number.isSafeInteger(seq + 1)) throw new Error("keepalive sequence exhausted");
       options.send(id, { type: "keepAlive", generation: page.identity.sessionGeneration, epoch, seq: ++seq, handled: page.handled, keep: snapshot.keep, reveal: snapshot.reveal });

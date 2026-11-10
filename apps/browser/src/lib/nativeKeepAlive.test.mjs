@@ -14,7 +14,7 @@ function load(name, modules, globals = {}) {
   new vm.Script(code).runInNewContext({ module, exports: module.exports, require: (id) => modules[id], ...globals });
   return module.exports;
 }
-function fixture(running = true) {
+function fixture(running = true, hasPage = () => true) {
   const jobs = [];
   const sent = [];
   const identity = { tabId: "t", sessionGeneration: "G", registrationGeneration: 1 };
@@ -46,14 +46,16 @@ function fixture(running = true) {
   const timers = [];
   const nativeReads = [];
   const events = load("./keepAliveFeed.ts", {});
+  const changes = load("../store/changes.ts", {});
   const producer = load("./nativeKeepAlive.ts", {
     "@solara/store": { isPageCurrent: (value) => { nativeReads.push(["current", value.tabId]); return value.sessionGeneration === authority.sessionGeneration && value.registrationGeneration === authority.registrationGeneration; }, nativePageFacts: (id) => { nativeReads.push(["facts", id]); return { generation, protectionKnown }; }, pageReport: (id, report) => sent.push(JSON.parse(JSON.stringify({ id, ...report }))), registerKeepAliveRuntime: () => ++epoch, onTabSleepRunningChanged: (listener) => { runnerListener = listener; return () => {}; } },
     "../components/layout/pageState": { usePages: pages, pageOf: (id) => pages.getState().pages[id], patchPage: (id, patch) => pages.setState((s) => ({ pages: { ...s.pages, [id]: { ...s.pages[id], ...patch } } })) },
     "../components/layout/toolbarAutoHide": { useToolbarAutoHide: toolbar, revealToolbar: (id) => toolbar.setState((s) => ({ scrolledDown: Object.fromEntries(Object.entries(s.scrolledDown).filter(([key]) => key !== id)) })) },
     "../components/media/state": { useMedia: media },
     "../store/browser": { useBrowser: browser },
+    "../store/changes": changes,
     "../store/nativeStore": { nativeTabSleepRunning: () => running },
-    "../store/pageSession": { hasPage: () => true },
+    "../store/pageSession": { hasPage },
     "./keepAliveFeed": events,
     "./nativeEvents": { applyHeldReports: () => {} },
   }, { queueMicrotask: (run) => jobs.push(run), setTimeout: (run, ms) => { const timer = { run, ms, live: true }; timers.push(timer); return timer; }, clearTimeout: (timer) => { if (timer) timer.live = false; } });
@@ -65,7 +67,7 @@ function fixture(running = true) {
   const page = (patch) => pages.setState((s) => ({ pages: { ...s.pages, t: { ...s.pages.t, ...patch } } }));
   const pendingTimers = () => timers.filter((timer) => timer.live);
   const fire = () => { const due = pendingTimers(); for (const timer of due) { timer.live = false; timer.run(); } return due.map((timer) => timer.ms); };
-  return { jobs, nativeReads, pagesListeners: () => pagesListeners, listeners: () => listeners, pendingTimers, fire, producerListeners, producer, events, sent, identity, browser, pages, media, toolbar, flush, page, setProtectionKnown: (value) => { protectionKnown = value; }, epoch: () => epoch, setRunning: (value) => { running = value; runnerListener?.(value); }, replace: (next) => { authority = next; generation = next.sessionGeneration; events.keepAliveCreated(next, "rn"); } };
+  return { jobs, changedIds: changes.changedIds, nativeReads, pagesListeners: () => pagesListeners, listeners: () => listeners, pendingTimers, fire, producerListeners, producer, events, sent, identity, browser, pages, media, toolbar, flush, page, setProtectionKnown: (value) => { protectionKnown = value; }, epoch: () => epoch, setRunning: (value) => { running = value; runnerListener?.(value); }, replace: (next) => { authority = next; generation = next.sessionGeneration; events.keepAliveCreated(next, "rn"); } };
 }
 
 test("a tracked tab edit with unchanged keepalive facts performs no native validation", () => {
@@ -428,4 +430,62 @@ test("a page that stays pending settles at the slowest retry, and turning the ru
   f.setRunning(false);
   f.flush();
   assert.equal(f.pendingTimers().length, 0);
+});
+
+
+test("tracked switch metadata with an equal decoded navigation queues no feed", () => {
+  const f = fixture();
+  f.browser.setState((s) => ({ tabs: { ...s.tabs, t: { ...s.tabs.t, navigation: { url: "https://a.test", seq: 1, userInitiated: true } } } }));
+  f.events.keepAliveCreated(f.identity, "pool");
+  f.flush();
+  for (const patch of [{ lastActiveAt: 123 }, { title: "new title" }, { pinned: true }]) {
+    f.browser.setState((s) => ({ tabs: { ...s.tabs, t: { ...s.tabs.t, ...patch, navigation: { ...s.tabs.t.navigation } } } }));
+    assert.equal(f.jobs.length, 0, JSON.stringify(patch));
+  }
+  f.browser.setState({ live: { t: { isLoading: true, playingAudio: true } } });
+  assert.equal(f.jobs.length, 0);
+  assert.equal(f.sent.length, 1);
+});
+
+test("the browser follower reuses the tab delta without reading untouched tracked tabs", () => {
+  const f = fixture();
+  f.browser.setState((s) => ({ tabs: { ...s.tabs, other: { id: "other", profileId: "p", windowId: "w" } } }));
+  f.pages.setState((s) => ({ pages: { ...s.pages, other: { ...s.pages.t } } }));
+  f.events.keepAliveCreated(f.identity, "pool");
+  f.events.keepAliveCreated({ ...f.identity, tabId: "other" }, "pool");
+  f.flush();
+  const prev = f.browser.getState();
+  const tabs = { ...prev.tabs, t: { ...prev.tabs.t, title: "new title" } };
+  let reads = 0;
+  Object.defineProperty(tabs, "other", { enumerable: true, get: () => { reads++; return prev.tabs.other; } });
+  f.changedIds(tabs, prev.tabs);
+  reads = 0;
+  f.producer.keepAliveBrowserChanged({ ...prev, tabs }, prev);
+  assert.equal(reads, 0);
+  assert.equal(f.jobs.length, 0);
+});
+
+test("navigation and adoption changes recheck page availability", () => {
+  const f = fixture(true, load("../store/pageSession.ts", {}).hasPage);
+  f.browser.setState((s) => ({ tabs: { ...s.tabs, t: { ...s.tabs.t, navigation: { url: "https://a.test", seq: 1 } } } }));
+  f.events.keepAliveCreated(f.identity, "pool");
+  f.flush();
+  for (const patch of [
+    { navigation: { url: "https://b.test", seq: 1 } },
+    { navigation: { url: "https://b.test", seq: 2 } },
+    { navigation: { url: "https://b.test", seq: 2, userInitiated: true } },
+    { adoptId: "clone:other" },
+    { navigation: null },
+    { adoptId: undefined },
+  ]) {
+    f.browser.setState((s) => ({ tabs: { ...s.tabs, t: { ...s.tabs.t, ...patch } } }));
+    assert.equal(f.jobs.length, 1, JSON.stringify(patch));
+    f.flush();
+  }
+  const before = f.sent.length;
+  f.browser.setState((s) => ({ tabs: { ...s.tabs, t: { ...s.tabs.t, adoptId: "restore:other" } } }));
+  assert.equal(f.jobs.length, 1);
+  f.flush();
+  assert.equal(f.sent.length, before + 1);
+  assert.equal(f.sent.at(-1).generation, "G");
 });

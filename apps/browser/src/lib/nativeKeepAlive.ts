@@ -3,6 +3,7 @@ import { pageOf, patchPage, usePages } from "../components/layout/pageState";
 import { revealToolbar, useToolbarAutoHide } from "../components/layout/toolbarAutoHide";
 import { useMedia } from "../components/media/state";
 import { useBrowser, type BrowserState } from "../store/browser";
+import { changedIds } from "../store/changes";
 import { nativeTabSleepRunning } from "../store/nativeStore";
 import { hasPage } from "../store/pageSession";
 import { createKeepAliveFeed, keepAliveGone, observeKeepAlive } from "./keepAliveFeed";
@@ -139,9 +140,13 @@ export function startNativeKeepAlive() {
   followBrowser = (s, prev) => {
     if (s.tabs === prev.tabs && s.live === prev.live) return;
     let changed = false;
-    for (const [id] of sessions) {
+    for (const id of new Set([...changedIds(s.tabs, prev.tabs), ...changedIds(s.live, prev.live)])) {
+      if (!sessions.has(id)) continue;
       const tab = s.tabs[id];
-      if (tab !== prev.tabs[id] || !!s.live[id]?.discarded !== !!prev.live[id]?.discarded) changed = true;
+      const before = prev.tabs[id];
+      if (!tab || !before || tab.profileId !== before.profileId || tab.windowId !== before.windowId || tab.adoptId !== before.adoptId
+        || tab.navigation?.url !== before.navigation?.url || tab.navigation?.seq !== before.navigation?.seq
+        || tab.navigation?.userInitiated !== before.navigation?.userInitiated || !!s.live[id]?.discarded !== !!prev.live[id]?.discarded) changed = true;
       if (tab && s.live[id]?.discarded && !prev.live[id]?.discarded) clearTransientFacts(id);
       if (!tab) {
         clearTransientFacts(id);

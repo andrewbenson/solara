@@ -9,6 +9,7 @@ globalThis.releasedProfiles = [];
 globalThis.lifecycleSlowJobs = [];
 globalThis.lifecycleRunningListeners = [];
 globalThis.lifecycleReschedules = 0;
+globalThis.lifecycleStatusReads = 0;
 
 const solaracore = import.meta.resolve("@solara/solaracore");
 const stubs = {
@@ -19,7 +20,7 @@ const stubs = {
     export const releaseProfile = async (id) => { globalThis.releasedProfiles.push(id); };
     export const setBatterySaver = (mode) => globalThis.batterySaverReply(mode);`,
   "@solara/store": "export const onTabSleepRunningChanged = (run) => { globalThis.lifecycleRunningListeners.push(run); return () => {}; };",
-  "../store/nativeStore": "export const nativeOwnsWorkspace = () => globalThis.lifecycleOwned; export const nativeTabSleepRunning = () => globalThis.nativeTabSleepRunning;",
+  "../store/nativeStore": "export const nativeOwnsWorkspace = () => globalThis.lifecycleOwned; export const nativeTabSleepRunning = () => { globalThis.lifecycleStatusReads++; return globalThis.nativeTabSleepRunning; };",
   "./slowTimers": "export const everySlowly = (job) => { globalThis.lifecycleSlowJobs.push(job); return () => {}; }; export const reschedule = () => { globalThis.lifecycleReschedules++; };",
   "../components/layout/splitActions": "export const showToast = () => {};",
   "../components/settings/windows": "export const openSettings = () => {};",
@@ -344,4 +345,71 @@ test("automatic JS sleeping resumes only when native sleep is off and the settin
   assert.equal(sleepJob.needed(), false, "a user-disabled setting stays off");
   S().updateSettings({ sleepInactiveTabs: true });
   assert.equal(sleepJob.needed(), true);
+});
+
+
+test("tab switches use runner notifications without polling native status", (t) => {
+  startLifecycle();
+  S().hydrate({});
+  const w = S().createWindow({ url: "https://a.com" });
+  const a = S().windows[w].tabIds[0];
+  const b = S().newTab(w, { url: "https://b.com", background: true });
+  globalThis.lifecycleOwned = true;
+  globalThis.nativeTabSleepRunning = true;
+  lifecycle.useLifecycle.setState({ batterySaver: false });
+  globalThis.lifecycleRunningListeners.forEach((run) => run(false));
+  t.after(() => {
+    globalThis.lifecycleOwned = false;
+    globalThis.nativeTabSleepRunning = false;
+    globalThis.lifecycleRunningListeners.forEach((run) => run(false));
+  });
+
+  globalThis.lifecycleStatusReads = 0;
+  S().activate(b);
+  S().activate(a);
+  assert.equal(globalThis.lifecycleStatusReads, 0);
+  assert.deepEqual(globalThis.acLifecycle.state().hiddenAt, {});
+
+  const sleepJob = globalThis.lifecycleSlowJobs.find((job) => job.separateEvery === 15_000);
+  sleepJob.run();
+  assert.ok(globalThis.lifecycleStatusReads > 0, "scheduled decisions still read the runner now");
+});
+
+test("runner handoff refreshes status and ownership loss resumes hidden tracking", (t) => {
+  startLifecycle();
+  S().hydrate({});
+  const w = S().createWindow({ url: "https://a.com" });
+  const a = S().windows[w].tabIds[0];
+  const b = S().newTab(w, { url: "https://b.com", background: true });
+  webviews.set(a, fakePage().handle);
+  webviews.set(b, fakePage().handle);
+  lifecycle.useLifecycle.setState({ batterySaver: false });
+  const notify = (value) => globalThis.lifecycleRunningListeners.forEach((run) => run(value));
+  t.after(() => {
+    webviews.delete(a);
+    webviews.delete(b);
+    globalThis.lifecycleOwned = false;
+    globalThis.nativeTabSleepRunning = false;
+    notify(false);
+  });
+
+  globalThis.lifecycleOwned = true;
+  globalThis.nativeTabSleepRunning = false;
+  notify(true);
+  assert.ok(b in globalThis.acLifecycle.state().hiddenAt, "a queued start event reads the current stopped runner");
+  S().activate(b);
+  assert.ok(a in globalThis.acLifecycle.state().hiddenAt);
+  assert.equal(b in globalThis.acLifecycle.state().hiddenAt, false);
+
+  globalThis.nativeTabSleepRunning = true;
+  notify(false);
+  assert.deepEqual(globalThis.acLifecycle.state().hiddenAt, {}, "a queued stop event reads the current running runner");
+  S().activate(a);
+  assert.deepEqual(globalThis.acLifecycle.state().hiddenAt, {});
+
+  globalThis.lifecycleOwned = false;
+  globalThis.nativeTabSleepRunning = false;
+  S().activate(b);
+  assert.ok(a in globalThis.acLifecycle.state().hiddenAt, "ownership can end before a runner notification arrives");
+  assert.equal(b in globalThis.acLifecycle.state().hiddenAt, false);
 });

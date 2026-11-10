@@ -385,8 +385,9 @@ export function startTabLifecycle() {
   onAppEvent((e) => (e.type === "resignActive" || e.type === "screenLocked") && setAppActive(false));
 
   let lastShown = new Set<string>();
-  const track = (s: BrowserState) => {
-    const sleeps = jsSleepWanted();
+  let nativeSleeping = false;
+  const track = (s: BrowserState, running = nativeTabSleepRunning()) => {
+    const sleeps = !running && s.settings.sleepInactiveTabs !== false;
     if (!sleeps) unusedSince.clear();
     if (!sleeps && !(useLifecycle.getState().batterySaver && !chromeSaver)) {
       hiddenAt.clear();
@@ -403,16 +404,18 @@ export function startTabLifecycle() {
     for (const id of webviews.keys()) if (!shown.has(id) && !hiddenAt.has(id)) hiddenAt.set(id, now);
     lastShown = shown;
   };
-  track(store());
   onTabSleepRunningChanged(() => {
-    track(store());
+    nativeSleeping = nativeTabSleepRunning();
+    track(store(), nativeSleeping);
     reschedule();
   });
+  nativeSleeping = nativeTabSleepRunning();
+  track(store(), nativeSleeping);
   useBrowser.subscribe((s, prev) => {
     keepAliveBrowserChanged(s, prev);
-    if (s.windows !== prev.windows || s.splits !== prev.splits) track(s);
+    if (s.windows !== prev.windows || s.splits !== prev.splits) track(s, nativeOwnsWorkspace() && nativeSleeping);
     if (s.settings.sleepInactiveTabs !== prev.settings.sleepInactiveTabs) {
-      track(s);
+      track(s, nativeOwnsWorkspace() && nativeSleeping);
       reschedule();
     }
     if (s.settings.batterySaverWhen !== prev.settings.batterySaverWhen) {

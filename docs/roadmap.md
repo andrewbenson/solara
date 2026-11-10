@@ -138,6 +138,8 @@ Owner, 2026-11-09: these follow 0.3.0 rather than joining it, so the bookmark ha
 | WebKit tabs block ads and trackers with uBlock Origin Lite's lists, following the same blocking switch, lists and trusted sites as Chromium tabs (Ardia) | planned |
 | Full screen: the whole window slides down with the menu bar and nothing is covered (owner's target, backlog 2026-11-01); Ardia's version, macOS's own title bar sliding down with the window buttons, is a reference, not the target | planned |
 | Battery benchmark: energy per scenario from macOS's own `powermetrics` (an idle session, typing and tab switching, video playback), recorded in the perf gate against the previous stable so every release and each step toward 1.0.0 shows real energy numbers (owner, 2026-11-10) | planned |
+| Main-thread stall watchdog: Debug and perf-bench builds record every main-thread stall over 8 ms with its stack (kept local, never sent), and the perf ratchet counts stalls per scenario. Chromium's browser UI thread is AppKit's main thread in Solara, so every stall delays the browser too (owner, 2026-11-10) | planned |
+| Durable writes off the main thread: the bookmark journal's fsync/F_FULLFSYNC checkpoints, SQLite's fullfsync commits and session saves go to serial background writers; the main thread only hands data over and never waits on the disk except at quit (owner, 2026-11-10) | planned |
 
 ## 0.3.3: colour and control
 
@@ -149,6 +151,9 @@ Owner, 2026-11-09: these follow 0.3.0 rather than joining it, so the bookmark ha
 | A same-site page swap and a tab switch keep the old page up until the new one draws: no white flash (Ardia) | planned |
 | Set Solara up from files: settings, keybindings and themes in `~/.config/solara/config.json` and `themes/<name>.json`, applied at launch and on every save, never written back (Ardia) | planned |
 | Hooks in `~/.config/solara/hooks.json`: rewrite or block links before they open, send links from an app to a profile, file finished downloads, deny camera or microphone, run a command on an event; anything reaching outside the page waits for approval in Settings (Ardia) | planned |
+| Search and decoding off the main thread: omnibox suggestions on a background actor that drops queries typed past (2.8 ms a keystroke at 5,000 history entries today, growing with history); favicons and images decoded and resized off the main thread; session and store snapshots encoded there too (owner, 2026-11-10) | planned |
+| One UI update per frame: several store changes in the same frame merge into one view update instead of a layout each; live gestures (resizing, dragging) still apply their geometry in the same event (owner, 2026-11-10) | planned |
+| Fewer, coalesced timers: repeating timers on the main thread (the tab-sleep sweep, the pairing observer) get tolerance, merge, or give way to notifications instead of polling; good for battery too (owner, 2026-11-10) | planned |
 
 ## The road to all Swift (0.4.0 to 1.0.0)
 
@@ -176,6 +181,8 @@ Done when no React Native view appears on screen; React Native only arranges nat
 | Native peek, Little Solara, calendar and meeting cards | planned |
 | Native top tab strip, split chrome, swipe overlay and the rest of the layout surfaces | planned |
 | Sidebar on the right: a Left/Right position in Settings, the View menu and the sidebar's menu; peek, resize, hover cards and drops mirror; the window buttons stay top left (as in Arc and Zen); built with the layout port, so it's written once, in Swift | planned |
+| Only build what's visible: sidebar rows exist only for what's on screen, and row views are reused instead of one view per tab (a 200-tab session spent ~480 ms of launch building rows) (owner, 2026-11-10) | planned |
+| Launch in a smarter order: the window chrome first; invisible work (the extensions toolbar, sync, history hints, tab-sleep sweeps, pairing timers) when the main thread is idle, with lower priority classes for import, sync and cleanup (owner, 2026-11-10) | planned |
 
 ## 0.5.0: React Native decides nothing
 

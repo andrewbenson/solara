@@ -70,6 +70,7 @@ backlog, and check this file against the release notes.
 |---|---|
 | Ad blocking is in force before restored tabs load at launch: each profile's first load waits for uBlock Origin (about 0.3 s), with a 3 s deadline (owner, 2026-11-04) | shipped (0.2.3) |
 | Picture in Picture floats over other apps' full-screen Spaces in every mode: the engine sets the full-screen and activation flags itself, video and document PiP alike, with Keep on Top on or off | shipped (0.2.3) |
+| The toolbar has no background of its own where it sits on the window frame (icons-only sidebar, toolbar above the card): the frame's gradient shows through, as in Dia and Arc; the address field and buttons keep their fills (owner, 2026-11-10) | planned |
 | Picture in Picture moves freely across displays, including onto a display above the main one | shipped (0.2.3) |
 | Picture in Picture settles on a usable display after a drop into a menu-bar or Dock strip, across a gap between displays, or onto a display that was unplugged | shipped (0.2.3) |
 | The PiP probe finds a styled PiP window with Keep on Top off (test tooling) | shipped (0.2.3) |
@@ -111,7 +112,6 @@ backlog, and check this file against the release notes.
 | Per-tab CPU and memory attribution: Chromium's resource attribution splits a shared process's cost between its tabs | engine calls landed: API 38 `ac_tabs_memory` and `ac_tabs_cpu`, trusted profile-free bridge and registered `tab-memory` / `tab-cpu` checks. Memory reports estimated private footprint; CPU reports cumulative samples for app-owned interval rates. Build and acceptance validation pending |
 | Memory use per tab on hover cards (native) | done: the native sidebar tab card shows "Memory usage: 152 MB", or "High memory usage · 1.2 GB" above 800 MiB (Chrome's per-tab line, `SidebarTabMemory.highBytes`), from one `ac_tabs_memory` call per card show, cached per tab and page; none for sleeping tabs, "—" when no value comes back, nothing at all without the export. Settings › Tabs › Show memory usage on tab hover cards (on, synced) |
 | The toolbar keeps up with a sidebar resize: during a live drag the page follows the new width at once but the native toolbar lags behind it, leaving a gap (owner report on 0.2.6-nightly.1, 2026-11-09) | in progress: diagnosis |
-| The toolbar has no background of its own where it sits on the window frame (icons-only sidebar, toolbar above the card): the frame's gradient shows through, as in Dia and Arc; the address field and buttons keep their fills (owner, 2026-11-10) | in progress |
 
 ## 0.3.1: Chromium 157, and sites that work
 

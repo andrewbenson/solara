@@ -14,6 +14,7 @@ function persistence(category) {
       : source("packages/solaracore/ios/SolaraCoreEngineBridge.mm");
     const bridge = original
       .replace('#import "SolaraCoreEngineBridge.h"', "")
+      .replace('#import "SolaraCoreBookmarkURL.h"', "static NSString *SolaraCanonicalBookmarkURL(NSString *url, NSError **error) { return nil; }")
       .replace('#import "SolaraCoreInternal.h"', "")
       .replace('#include "../../../engine/chromium/src/chrome/browser/solara/public/ac_engine.h"', "");
     const services = source("packages/solaracore/ios/SolaraCoreServices.mm");

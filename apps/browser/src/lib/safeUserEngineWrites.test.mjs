@@ -24,6 +24,7 @@ function bridge(name, args) {
   const abi = source("engine/chromium/src/chrome/browser/solara/public/ac_engine.h");
   const implementation = source("packages/solaracore/ios/SolaraCoreEngineBridge.mm")
     .replace('#import "SolaraCoreEngineBridge.h"', "")
+    .replace('#import "SolaraCoreBookmarkURL.h"', "static NSString *SolaraCanonicalBookmarkURL(NSString *url, NSError **error) { return nil; }")
     .replace('#import "SolaraCoreInternal.h"', "")
     .replace('#include "../../../engine/chromium/src/chrome/browser/solara/public/ac_engine.h"', "");
   return runNative("Engine.mm", `${abi}\n${header}\n${implementation}`, [name, JSON.stringify(args)]);

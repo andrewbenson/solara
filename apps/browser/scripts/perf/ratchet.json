@@ -1018,7 +1018,7 @@
     "pageLoad.writeBytes": 557990,
     "pageLoad.writes": 8,
     "scroll.timers": 868,
-    "small.launch.listenerCalls": 509,
+    "small.launch.listenerCalls": 590,
     "small.launch.storeUpdates": 19,
     "small.launch.tasks": 219,
     "small.launch.timers": 354,

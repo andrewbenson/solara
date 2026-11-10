@@ -78,6 +78,11 @@ const O = ${JSON.stringify(origin)};
 const seq = (items, f) => items.reduce((p, x) => p.then(() => f(x)), Promise.resolve());
 const safe = (p, f) => Promise.resolve().then(() => p).then(f, (e) => "error: " + e);
 const flat = (n, acc) => { acc = acc || []; if (!n) return acc; if (n.u) acc.push(n.t + " " + n.u); (n.c || []).forEach((c) => flat(c, acc)); return acc; };
+const projected = (id) => { const b = ac.store.getState().bookmarks, root = b && b.roots[id]; if (!root) return null;
+  const walk = (nid, acc) => { const n = b.nodes[nid]; if (!n) return acc; if (n.kind === "url") acc.push(n.title + " " + n.url); else n.children.forEach((c) => walk(c, acc)); return acc; };
+  return walk(root.bar, []).concat(walk(root.other, [])); };
+const ownedBookmarks = (id) => new Promise((done) => { const until = Date.now() + 30000;
+  const poll = () => { const list = projected(id); if ((list && list.length) || Date.now() > until) done(list || "no native bookmark projection"); else setTimeout(poll, 500); }; poll(); });
 const r = { profiles: s.profileOrder.map((id) => s.profiles[id].name), tabs: [] };
 for (const t of Object.values(s.tabs)) if (t.url) r.tabs.push(s.profiles[t.profileId].name + " " + t.url);
 r.tabs.sort();
@@ -85,7 +90,7 @@ return safe(C.engineInfo(), (i) => { r.dataDirectory = i && i.dataDirectory; }).
   const p = id === "default" ? "" : id, name = s.profiles[id].name, put = (k, v) => { r[name + " " + k] = v; };
   return C.unlockPasswords(p).then(() => C.listPasswords(p))
     .then((list) => { const pw = []; put("passwords", pw); return seq((list && list.passwords) || [], (e) => C.getPassword(p, e.origin, e.username).then((v) => { pw.push(e.username + " " + (v && v.password)); })); })
-    .then(() => safe(C.engineCall("ac_bookmarks_tree", p, null), (t) => { t = JSON.parse(t); put("bookmarks", flat(t.bar).concat(flat(t.other))); }))
+    .then(() => safe(C.engineCall("ac_bookmarks_tree", p, null), (t) => { t = JSON.parse(t); return t.error ? ownedBookmarks(id).then((b) => put("bookmarks", b)) : put("bookmarks", flat(t.bar).concat(flat(t.other))); }))
     .then(() => safe(C.engineCall("ac_history_query", p, JSON.stringify({ maxUrls: 100, maxVisits: 5 })), (h) => put("history", (JSON.parse(h).entries || []).map((e) => e.u).sort())))
     .then(() => safe(C.listAddresses(p), (a) => put("addresses", ((a && a.addresses) || []).map((x) => x.name + ", " + x.city))))
     .then(() => safe(C.getSiteSettings(p, O), (v) => put("notifications", v && v.notifications && v.notifications.value)))

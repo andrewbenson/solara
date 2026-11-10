@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -13,7 +13,8 @@ const CHECKS = {
   "delete-unloaded": "Materialize A, quit, pre-JS production delete without loading A: queue drains in-session; relaunch keeps A gone",
   "crash-before-relaunch": "Crash with loaded Chromium pending restart; first unarmed launch drains the durable orphan and preserves survivors",
   "crash-after-tombstone": "Crash after reserve, recover the durable orphan on an unarmed launch",
-  default: "Shared Default remains live; its final reference clears data but retains Chromium/Default",
+  default: "Shared Default remains live; its final reference durably clears a 513-deep bookmark tree and retains Chromium/Default",
+  "default-write-failure": "A real bookmark-file replacement failure retains the durable Default orphan; relaunch retries the clear",
 };
 const pause = (ms) => new Promise((done) => setTimeout(done, ms));
 const json = JSON.stringify;
@@ -125,6 +126,7 @@ export class Run {
     this.app = await this.launch(this.appPath, {
       data: this.data, keepData: true, onboarded: true, probe: true, ready: false,
       startTimeout: this.time(20000), js: "live",
+      switches: "--enable-features=EncryptBookmarks:stage/write_both_read_prefer_encrypted",
       ...(fresh ? { session: this.session({ windows: [{ id: "w1" }], settings: { warnBeforeClosingLastTab: false, warnBeforeClosingWindow: false } }) } : {}),
       env: { SOLARA_NATIVE_SCOPE: "everything", SOLARA_NATIVE_SHELL: "1", SOLARA_SHELL_PANES: "1", SOLARA_NATIVE_PAGES_POOL: "1", SOLARA_TAB_POOL: "1", SOLARA_TEST_KEYCHAIN: "file", SOLARA_TEST_REKEY: "1", SOLARA_TEST_PROFILE_DELETE_CRASH: crashPoint, SOLARA_TEST_PROFILE_DELETE_UNLOADED: deleteUnloaded, SOLARA_TEST_REKEY_CRASH: "", SOLARA_TEST_REKEY_FAIL_AFTER_KEY: "", SOLARA_TEST_KEYCHAIN_FAIL: "" },
     });
@@ -138,6 +140,11 @@ export class Run {
     await this.native();
     assert.equal(await this.eval(`return globalThis.expo.modules.SolaraTabPool.available();`), true, "native pool serves both engines");
     this.window = await this.wait("main window", (timeout) => this.eval(`return Object.keys(S().windows).find((id) => !S().windows[id].incognito) ?? false;`, timeout));
+  }
+  async bookmarkCall(name, engine, args = {}) {
+    const result = await this.eval(`return globalThis.expo.modules.SolaraCEF.engineCall(${json(name)}, ${json(engine)}, ${json(json(args))}).then(JSON.parse);`);
+    assert.ok(!result.error, `${name}: ${json(result)}`);
+    return result;
   }
   async native() {
     const snapshot = await this.eval(`return JSON.parse(N.snapshot());`);
@@ -404,6 +411,15 @@ async function check(run, name) {
     await run.intact(fixture.Default);
     await run.unused(fixture.A);
   } else {
+    const bookmarkIds = [randomUUID(), randomUUID(), randomUUID()];
+    const seeded = await run.bookmarkCall("ac_bookmarks_apply", "", { ops: [
+      { op: "add", id: bookmarkIds[0], parent: "bar", index: 0, k: "u", t: "Default bar", u: `${run.origin}/default-bookmark` },
+      { op: "add", id: bookmarkIds[1], parent: "other", index: 0, k: "f", t: "Default folder" },
+      { op: "add", id: bookmarkIds[2], parent: bookmarkIds[1], index: 0, k: "u", t: "Nested Default", u: `${run.origin}/default-nested` },
+    ] });
+    assert.equal(seeded.applied, 3, "Default bookmark fixtures accepted by Chrome");
+    assert.equal(seeded.skipped, 0);
+    assert.deepEqual(seeded.invalid, []);
     const shared = await run.create("Shared Default", "default");
     assert.equal(engineOf(shared), "");
     await run.remove(shared);
@@ -412,6 +428,65 @@ async function check(run, name) {
     assert.ok(!existsSync(join(run.data, "profile-data-tombstones.json")) || !run.ledger().includes(""), "shared Default not retired");
     await run.intact(fixture.Default);
     await run.intact(fixture.B);
+    const retainedBookmarks = await run.bookmarkCall("ac_bookmarks_tree", "");
+    assert.ok(retainedBookmarks.bar.c.some((node) => node.id === bookmarkIds[0]), "shared Default deletion retains bar bookmarks");
+    assert.ok(retainedBookmarks.other.c.some((node) => node.id === bookmarkIds[1] && node.c.some((child) => child.id === bookmarkIds[2])), "shared Default deletion retains nested bookmarks");
+    const bookmarkFiles = ["Bookmarks", "EncryptedBookmarks2"].map((name) => join(fixture.Default.dirs.chromium, name));
+    await run.wait("Default bookmark fixtures persisted in both storage formats", async () => {
+      if (!bookmarkFiles.every((path) => existsSync(path) && statSync(path).isFile())) return false;
+      const stored = JSON.parse(readFileSync(bookmarkFiles[0], "utf8"));
+      return stored.roots.bookmark_bar.children.some((node) => node.guid === bookmarkIds[0]);
+    });
+    const encryptedBefore = readFileSync(bookmarkFiles[1]);
+    if (name === "default-write-failure") {
+      const blocked = [];
+      try {
+        for (const path of bookmarkFiles) {
+          renameSync(path, `${path}.solara-test-original`);
+          blocked.push(path);
+          mkdirSync(path);
+        }
+        await run.remove(fixture.Default.profile);
+        await run.wait("bookmark persistence failure reported", async () => run.app.output().split("\n").some((line) => line.includes("[store] couldn't delete profile data (): ") && line.includes("bookmarks")), 15000);
+        await run.queued(fixture.Default);
+        await run.flush();
+        const { DatabaseSync } = await import("node:sqlite");
+        const db = new DatabaseSync(join(run.data, "solara.sqlite"), { readOnly: true });
+        try {
+          const queue = JSON.parse(db.prepare("SELECT value FROM workspace WHERE key = 'orphanedProfileData'").get().value);
+          assert.ok(queue.includes(""), "failed bookmark commit retains the durable Default cleanup obligation");
+        } finally { db.close(); }
+        for (const path of bookmarkFiles) assert.ok(statSync(path).isDirectory(), "failed replacement cannot be acknowledged as persisted");
+      } finally {
+        for (const path of blocked) {
+          rmSync(path, { recursive: true, force: true });
+          renameSync(`${path}.solara-test-original`, path);
+        }
+      }
+      await run.flush();
+      await run.quit();
+      await run.start();
+      await run.drained("");
+      const persisted = JSON.parse(readFileSync(bookmarkFiles[0], "utf8"));
+      for (const root of Object.values(persisted.roots)) assert.deepEqual(root.children, [], "recovered Default cleanup persists empty bookmark roots");
+      assert.notDeepEqual(readFileSync(bookmarkFiles[1]), encryptedBefore, "recovery replaces the encrypted primary file before acknowledgement");
+      await run.intact(fixture.B);
+      await run.intact(fixture.A);
+      return { failedCommitRetried: true, directories: fixture.Default.dirs };
+    }
+    let deepParent = "bar";
+    const deepOperations = Array.from({ length: 513 }, (_, index) => {
+      const id = randomUUID();
+      const operation = { op: "add", id, parent: deepParent, index: 0, k: "f", t: `Deep Default ${index}` };
+      deepParent = id;
+      return operation;
+    });
+    const deepSeeded = await run.bookmarkCall("ac_bookmarks_apply", "", { ops: deepOperations });
+    assert.equal(deepSeeded.applied, 513, "Chrome accepts a bookmark tree beyond the read depth limit");
+    assert.equal(deepSeeded.skipped, 0);
+    assert.deepEqual(deepSeeded.invalid, []);
+    const deepTree = await run.eval(`return globalThis.expo.modules.SolaraCEF.engineCall("ac_bookmarks_tree", "", "{}").then(JSON.parse);`);
+    assert.equal(deepTree.error, "bookmarks nested too deep", "fixture exceeds the tree serializer depth limit");
     const before = statSync(fixture.Default.dirs.chromium);
     await run.remove(fixture.Default.profile);
     await run.drained("");
@@ -419,6 +494,12 @@ async function check(run, name) {
     assert.ok(!state.profiles.default, "last Default-backed profile deleted");
     assert.ok(!Object.values(state.profiles).some((p) => engineOf(p) === ""));
     assert.ok(run.ledger().includes(""), "Default engine identity retired");
+    const persistedBookmarks = JSON.parse(readFileSync(bookmarkFiles[0], "utf8"));
+    for (const root of Object.values(persistedBookmarks.roots)) assert.deepEqual(root.children, [], "Default acknowledgement has empty bookmark roots on disk before quit");
+    assert.notDeepEqual(readFileSync(bookmarkFiles[1]), encryptedBefore, "Default acknowledgement has replaced the encrypted primary file before quit");
+    const clearedBookmarks = await run.bookmarkCall("ac_bookmarks_tree", "");
+    assert.deepEqual(clearedBookmarks.bar.c, [], "last Default reference clears bar bookmarks");
+    assert.deepEqual(clearedBookmarks.other.c, [], "last Default reference clears other and nested bookmarks");
     const after = statSync(fixture.Default.dirs.chromium);
     assert.equal(after.ino, before.ino, "deleteDefault clears Chromium data in place");
     assert.equal(after.dev, before.dev, "Default directory retained");
@@ -433,6 +514,12 @@ async function check(run, name) {
     await run.intact(fixture.B);
     await run.intact(fixture.A);
     assert.deepEqual(state.orphanedProfileData, []);
+    await run.flush();
+    await run.quit();
+    await run.start();
+    const reloadedBookmarks = await run.bookmarkCall("ac_bookmarks_tree", "");
+    assert.deepEqual(reloadedBookmarks.bar.c, [], "encrypted primary reload keeps bar bookmarks empty");
+    assert.deepEqual(reloadedBookmarks.other.c, [], "encrypted primary reload keeps other bookmarks empty");
   }
   await run.flush();
   return { deleted: fixture.A.profile.id, B: fixture.B.profile.id, directories: fixture.A.dirs };

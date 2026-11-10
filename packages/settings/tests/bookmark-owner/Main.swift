@@ -289,8 +289,29 @@ struct BookmarkOwnerTests {
     NativeBookmarkOwner.current = fixture.reopen()
     let reopened = try? NativeBookmarkWriter.snapshot(profile: "p")
     expect(reopened?["document"] as? String == source, "restart returns the same wire document")
-    let retried = try? NativeBookmarkWriter.submit(profile: "p", mutationsJSON: mutations, engine: "", generation: String(before.binding.generation), requestID: "󰀀󰀁")
+    guard let generation = reopened?["generation"] as? String else {
+      failures.append("the reopened owner returns a fresh binding")
+      return
+    }
+    let retried = try? NativeBookmarkWriter.submit(profile: "p", mutationsJSON: mutations, engine: "", generation: generation, requestID: "󰀀󰀁")
     expect(retried?["document"] as? String == source, "a saved receipt returns the same UTF-16 document")
+  }
+
+  static func theBridgeRejectsABAAndLateFacts() {
+    let fixture = Fixture()
+    defer { fixture.stop(); NativeBookmarkOwner.current = nil }
+    NativeBookmarkOwner.current = fixture.owner
+    let snapshot = try! NativeBookmarkWriter.snapshot(profile: "p")
+    let engine = snapshot["engine"] as! String
+    let generation = snapshot["generation"] as! String
+    fixture.owner.remap(profiles: ["p": "other", "alias": ""], defaultProfile: "p")
+    fixture.owner.remap(profiles: ["p": "", "alias": ""], defaultProfile: "p")
+    fixture.recorder.clear()
+    expect(refusal { _ = try NativeBookmarkWriter.submit(profile: "p", mutationsJSON: "[]", engine: engine, generation: generation, requestID: "old-bridge") } == .staleBinding, "the roundtripped binding cannot cross A-B-A")
+    expect(refusal { _ = try NativeBookmarkWriter.ackBookmarkFacts(profile: "p", engine: engine, recordsJSON: "[]", generation: generation) } == .staleBinding, "late fact acks cannot cross A-B-A")
+    expect(refusal { _ = try NativeBookmarkWriter.observeBookmarkRecords(profile: "p", engine: engine, recordsJSON: "[]", generation: generation) } == .staleBinding, "late observations cannot cross A-B-A")
+    expect(refusal { _ = try NativeBookmarkWriter.clearBookmarkFacts(profile: "p", engine: engine, recordsJSON: "[]", generation: generation) } == .staleBinding, "late clears cannot cross A-B-A")
+    expect(fixture.recorder.log.isEmpty, "stale bridge callbacks write no checkpoint")
   }
 
   static func main() {
@@ -312,6 +333,7 @@ struct BookmarkOwnerTests {
       "submitIsDurableAndReturnsTheReducerResults": submitIsDurableAndReturnsTheReducerResults,
       "submitRefusesAStaleBindingAndWritesNothing": submitRefusesAStaleBindingAndWritesNothing,
       "theBridgeSubmitsMutationsGivenAsJSON": theBridgeSubmitsMutationsGivenAsJSON,
+      "theBridgeRejectsABAAndLateFacts": theBridgeRejectsABAAndLateFacts,
     ]
     guard let run = cases[test] else {
       print("FAIL \(test): unknown test")

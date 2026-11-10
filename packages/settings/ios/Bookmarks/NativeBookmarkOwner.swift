@@ -20,31 +20,34 @@ enum NativeBookmarkWriter {
     ]
   }
 
-  static func ackBookmarkFacts(profile: String, engine: String, recordsJSON: String, link: String? = nil) throws -> Bool {
+  static func ackBookmarkFacts(profile: String, engine: String, recordsJSON: String, link: String? = nil, generation: String) throws -> Bool {
     guard let owner = NativeBookmarkOwner.current else { throw BookmarkWriterError.notOwned }
+    guard let generation = UInt64(generation) else { throw BookmarkWriterError.invalidDocument("generation must be a decimal string") }
     let records = try factRecords(recordsJSON).map { item -> (key: String, seq: UInt64, mintedHLC: String) in
       guard let key = item["key"]?.string, let seq = item["seq"]?.string.flatMap(UInt64.init), let hlc = item["mintedHLC"]?.string else { throw BookmarkWriterError.invalidDocument("each ack needs key, decimal-string seq and mintedHLC") }
       return (key, seq, hlc)
     }
-    return try owner.ackBookmarkFacts(profileId: profile, expectedEngine: engine, records: records, expectedLink: link.map(BookmarkString.encode))
+    return try owner.ackBookmarkFacts(profileId: profile, expectedEngine: engine, records: records, expectedLink: link.map(BookmarkString.encode), generation: generation)
   }
 
-  static func observeBookmarkRecords(profile: String, engine: String, recordsJSON: String, link: String? = nil) throws -> Bool {
+  static func observeBookmarkRecords(profile: String, engine: String, recordsJSON: String, link: String? = nil, generation: String) throws -> Bool {
     guard let owner = NativeBookmarkOwner.current else { throw BookmarkWriterError.notOwned }
+    guard let generation = UInt64(generation) else { throw BookmarkWriterError.invalidDocument("generation must be a decimal string") }
     let records = try factRecords(recordsJSON).map { item -> (key: String, hlc: String) in
       guard let key = item["key"]?.string, let hlc = item["hlc"]?.string else { throw BookmarkWriterError.invalidDocument("each observation needs key and hlc") }
       return (key, hlc)
     }
-    return try owner.observeRemoteRecords(profileId: profile, expectedEngine: engine, records: records, expectedLink: link.map(BookmarkString.encode))
+    return try owner.observeRemoteRecords(profileId: profile, expectedEngine: engine, records: records, expectedLink: link.map(BookmarkString.encode), generation: generation)
   }
 
-  static func clearBookmarkFacts(profile: String, engine: String, recordsJSON: String) throws -> Bool {
+  static func clearBookmarkFacts(profile: String, engine: String, recordsJSON: String, generation: String) throws -> Bool {
     guard let owner = NativeBookmarkOwner.current else { throw BookmarkWriterError.notOwned }
+    guard let generation = UInt64(generation) else { throw BookmarkWriterError.invalidDocument("generation must be a decimal string") }
     let records = try factRecords(recordsJSON).map { item -> (key: String, seq: UInt64) in
       guard let key = item["key"]?.string, let seq = item["seq"]?.string.flatMap(UInt64.init) else { throw BookmarkWriterError.invalidDocument("each clear needs key and decimal-string seq") }
       return (key, seq)
     }
-    return try owner.clearBookmarkFacts(profileId: profile, expectedEngine: engine, records: records)
+    return try owner.clearBookmarkFacts(profileId: profile, expectedEngine: engine, records: records, generation: generation)
   }
 
   static func setBookmarkSyncLinks(linksJSON: String) throws -> Bool {

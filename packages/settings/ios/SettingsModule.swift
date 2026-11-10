@@ -182,24 +182,24 @@ public class SettingsModule: Module {
       try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.snapshot(profile: profileId) }
     }
 
-    Function("ackBookmarkFacts") { (profileId: String, engine: String, recordsJSON: String) throws -> Bool in
-      try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.ackBookmarkFacts(profile: profileId, engine: engine, recordsJSON: recordsJSON) }
+    Function("ackBookmarkFacts") { (profileId: String, engine: String, recordsJSON: String, generation: String) throws -> Bool in
+      try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.ackBookmarkFacts(profile: profileId, engine: engine, recordsJSON: recordsJSON, generation: generation) }
     }
 
-    Function("observeBookmarkRecords") { (profileId: String, engine: String, recordsJSON: String) throws -> Bool in
-      try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.observeBookmarkRecords(profile: profileId, engine: engine, recordsJSON: recordsJSON) }
+    Function("observeBookmarkRecords") { (profileId: String, engine: String, recordsJSON: String, generation: String) throws -> Bool in
+      try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.observeBookmarkRecords(profile: profileId, engine: engine, recordsJSON: recordsJSON, generation: generation) }
     }
 
-    Function("ackBookmarkFactsForLink") { (profileId: String, engine: String, recordsJSON: String, link: String) throws -> Bool in
-      try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.ackBookmarkFacts(profile: profileId, engine: engine, recordsJSON: recordsJSON, link: link) }
+    Function("ackBookmarkFactsForLink") { (profileId: String, engine: String, recordsJSON: String, link: String, generation: String) throws -> Bool in
+      try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.ackBookmarkFacts(profile: profileId, engine: engine, recordsJSON: recordsJSON, link: link, generation: generation) }
     }
 
-    Function("observeBookmarkRecordsForLink") { (profileId: String, engine: String, recordsJSON: String, link: String) throws -> Bool in
-      try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.observeBookmarkRecords(profile: profileId, engine: engine, recordsJSON: recordsJSON, link: link) }
+    Function("observeBookmarkRecordsForLink") { (profileId: String, engine: String, recordsJSON: String, link: String, generation: String) throws -> Bool in
+      try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.observeBookmarkRecords(profile: profileId, engine: engine, recordsJSON: recordsJSON, link: link, generation: generation) }
     }
 
-    Function("clearBookmarkFacts") { (profileId: String, engine: String, recordsJSON: String) throws -> Bool in
-      try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.clearBookmarkFacts(profile: profileId, engine: engine, recordsJSON: recordsJSON) }
+    Function("clearBookmarkFacts") { (profileId: String, engine: String, recordsJSON: String, generation: String) throws -> Bool in
+      try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.clearBookmarkFacts(profile: profileId, engine: engine, recordsJSON: recordsJSON, generation: generation) }
     }
 
     Function("setBookmarkSyncLinks") { (linksJSON: String) throws -> Bool in

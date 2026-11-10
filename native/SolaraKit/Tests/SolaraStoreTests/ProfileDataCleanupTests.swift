@@ -518,4 +518,126 @@ private func cleanupStore(_ state: BrowserState = BrowserState(settings: Setting
     #expect(resumed == ["kept"])
     #expect(nextLaunch.state.orphanedProfileData.isEmpty)
   }
+
+  @Test func bookmarkRetirementReservesThenSettlesBeforePhysicalDeletion() async throws {
+    var state = BrowserState(settings: Settings.hydrated(from: nil))
+    state.orphanedProfileData = ["retired"]
+    let store = cleanupStore(state)
+    let settlement = ProfileCleanupGate()
+    defer { settlement.cancel() }
+    var events: [String] = []
+    let service = ProfileDataCleanup(store: store, delete: { engine, done in
+      events.append("delete:\(engine)")
+      done([])
+    }, retireBookmarks: { engine in
+      #expect(ProfileDataCleanup.inFlight(engine, launch: store.memory.ids.launch))
+      events.append("retire:\(engine)")
+    }, settleBookmarks: { engine in
+      events.append("settle:\(engine)")
+      await settlement.wait()
+    }, grace: {})
+    service.start()
+    defer { service.stop() }
+    let draining = try #require(service.task)
+    try #require(await settlement.entered(producer: draining))
+    #expect(events == ["retire:retired", "settle:retired"])
+    #expect(store.state.orphanedProfileData == ["retired"])
+    settlement.release()
+    await draining.value
+    #expect(events == ["retire:retired", "settle:retired", "delete:retired"])
+    #expect(store.state.orphanedProfileData.isEmpty)
+    #expect(!ProfileDataCleanup.inFlight("retired", launch: store.memory.ids.launch))
+  }
+
+  @Test func failedBookmarkRetirementPreventsPhysicalDeletionAndCanRetry() async throws {
+    var state = BrowserState(settings: Settings.hydrated(from: nil))
+    state.orphanedProfileData = ["retired"]
+    let store = cleanupStore(state)
+    var attempts = 0
+    var settled = false
+    var deleted: [String] = []
+    let service = ProfileDataCleanup(store: store, delete: { engine, done in
+      #expect(settled)
+      deleted.append(engine)
+      done([])
+    }, retireBookmarks: { _ in
+      attempts += 1
+      if attempts == 1 { throw CancellationError() }
+    }, settleBookmarks: { _ in settled = true }, grace: {})
+    service.start()
+    defer { service.stop() }
+    await service.task?.value
+    #expect(attempts == 1)
+    #expect(!settled)
+    #expect(deleted.isEmpty)
+    #expect(store.state.orphanedProfileData == ["retired"])
+    service.retry()
+    await service.task?.value
+    #expect(attempts == 2)
+    #expect(deleted == ["retired"])
+    #expect(store.state.orphanedProfileData.isEmpty)
+  }
+
+  @Test func sharedBookmarkEngineIsNeverRetiredOrSettled() async throws {
+    var state = BrowserState(settings: Settings.hydrated(from: nil))
+    state.orphanedProfileData = [""]
+    let store = cleanupStore(state)
+    var retired: [String] = []
+    var settled: [String] = []
+    var deleted: [String] = []
+    let service = ProfileDataCleanup(store: store, delete: { engine, done in deleted.append(engine); done([]) }, retireBookmarks: { retired.append($0) }, settleBookmarks: { settled.append($0) }, grace: {})
+    service.start()
+    defer { service.stop() }
+    await service.task?.value
+    #expect(retired.isEmpty)
+    #expect(settled.isEmpty)
+    #expect(deleted.isEmpty)
+    #expect(store.state.orphanedProfileData.isEmpty)
+  }
+
+  @Test func stopWhileBookmarkApplyDrainsLeavesRetiredDataQueued() async throws {
+    var state = BrowserState(settings: Settings.hydrated(from: nil))
+    state.orphanedProfileData = ["retired"]
+    let store = cleanupStore(state)
+    let settlement = ProfileCleanupGate()
+    defer { settlement.cancel() }
+    var retired = false
+    var deleted = false
+    let service = ProfileDataCleanup(store: store, delete: { _, done in deleted = true; done([]) }, retireBookmarks: { _ in retired = true }, settleBookmarks: { _ in await settlement.wait() }, grace: {})
+    service.start()
+    let draining = try #require(service.task)
+    try #require(await settlement.entered(producer: draining))
+    service.stop()
+    settlement.release()
+    await draining.value
+    #expect(retired)
+    #expect(!deleted)
+    #expect(store.state.orphanedProfileData == ["retired"])
+  }
+
+
+  @Test func failedBookmarkDrainPreventsPhysicalDeletionAndCanRetry() async throws {
+    var state = BrowserState(settings: Settings.hydrated(from: nil))
+    state.orphanedProfileData = ["retired"]
+    let store = cleanupStore(state)
+    var attempts = 0
+    var deleted: [String] = []
+    let service = ProfileDataCleanup(store: store, delete: { engine, done in deleted.append(engine); done([]) }, retireBookmarks: { _ in }, settleBookmarks: { _ in
+      attempts += 1
+      if attempts == 1 { throw CancellationError() }
+    }, grace: {})
+    service.start()
+    defer { service.stop() }
+    await service.task?.value
+    #expect(attempts == 1)
+    #expect(deleted.isEmpty)
+    #expect(store.state.orphanedProfileData == ["retired"])
+    #expect(ProfileDataCleanup.inFlight("retired", launch: store.memory.ids.launch))
+    service.retry()
+    await service.task?.value
+    #expect(attempts == 2)
+    #expect(deleted == ["retired"])
+    #expect(store.state.orphanedProfileData.isEmpty)
+  }
+
 }

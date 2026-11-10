@@ -6,6 +6,381 @@ import SolaraStore
 @testable import SolaraEngine
 
 @Suite(.serialized) @MainActor struct BookmarkOwnerLifecycleTests {
+  @Test(arguments: [false, true]) func preparedOwnerKeepsLegacyMigrationUnreadyAfterJournalAcquisition(existingJournal: Bool) async throws {
+    let nodes = try #require(document(engine: "", profile: "default")["nodes"]?.object)
+    let cache: JSONValue = ["version": 1, "trees": ["": .array(nodes.values)]]
+    let f = try await OwnerLifecycleFixture.make(cache: cache)
+    defer { f.stop() }
+    if existingJournal {
+      _ = try f.owner.submit(profile: "default", mutations: [], binding: f.owner.snapshot(profile: "default").binding)
+      #expect(BookmarkPendingStore(directory: f.directory).load().payload?["legacyPendingEngines"] == [])
+    }
+    try Data("{\"kept\":true}".utf8).write(to: f.directory.appendingPathComponent("bookmarks.json"))
+    let replacement = await NativeBookmarkOwner.prepare(directory: f.directory, state: f.state, cacheDirectory: f.directory)
+    defer { replacement.stop() }
+    #expect(try replacement.snapshot(profile: "default").document["nodes"]?["b0"]?["url"] == "https://page.test")
+    NativeBookmarkOwner.current = replacement
+    f.client.empty = true
+    try await replacement.start(catalog: f.catalog, client: BookmarkEngineClient(readTree: { engine in await f.client.read(engine) }, apply: { engine, ops in await f.client.apply(engine, ops) }), clock: .init(wallTimeMs: { 0 }, monotonicTimeMs: { 0 }), scheduler: .init(schedule: { _, _ in {} }))
+    let claim = try #require(f.catalog.bookmarkClaim)
+    await claim.pump.settle(engine: "")
+    #expect(f.client.reads == [""])
+    let snapshot = try replacement.snapshot(profile: "default")
+    #expect(snapshot.document["nodes"]?["b0"] == nil)
+    #expect(!snapshot.ready)
+    let pending = try #require(BookmarkPendingStore(directory: f.directory).load().payload?["legacyPendingEngines"]?.array)
+    #expect(pending.contains(""))
+    #expect(FileManager.default.fileExists(atPath: f.directory.appendingPathComponent("bookmarks.json").path))
+  }
+
+  @Test(arguments: ["gone", "emptyAliasless", "retired"]) func acquisitionLaunchMarkerDoesNotReviveNewTerminal(reason: String) async throws {
+    let f = try await OwnerLifecycleFixture.make()
+    defer { f.stop() }
+    let prepared = BookmarkCoordinator(profiles: ["default": ""], defaultProfile: "default", pendingStore: BookmarkPendingStore(directory: f.directory), launchInput: .init(documents: ["": document(engine: "", profile: "default")], legacyPendingEngines: [JSKey("")]))
+    f.owner.coordinator.seed(engine: "", document: ["nodes": [:], "roots": [:]], ready: true)
+    #expect(f.owner.coordinator.remap(profiles: ["default": "away"], defaultProfile: "default"))
+    if reason == "retired" { try f.owner.coordinator.retire(engine: "") }
+    else if reason == "gone" { #expect(f.owner.coordinator.terminalizeGoneEngine(engine: "", epoch: f.owner.coordinator.claimPump())) }
+    else { #expect(f.owner.coordinator.terminalizeEmptyAliaslessEngine(engine: "", epoch: f.owner.coordinator.claimPump())) }
+    let terminalLaunch = BookmarkCoordinator(profiles: ["default": "away"], defaultProfile: "default", pendingStore: BookmarkPendingStore(directory: f.directory), launchInput: .init(legacyPendingEngines: [JSKey("")]))
+    #expect(terminalLaunch.remap(profiles: ["default": "away"], defaultProfile: "default"))
+    #expect(BookmarkPendingStore(directory: f.directory).load().payload?["legacyPendingEngines"] == [])
+    prepared.reloadJournalForOwnerReplacement()
+    #expect(!prepared.catalogEngines.contains(""))
+    #expect(!prepared.desiredView(engine: "").hasView)
+    #expect(prepared.remap(profiles: ["default": "away"], defaultProfile: "default"))
+    let payload = try #require(BookmarkPendingStore(directory: f.directory).load().payload)
+    #expect(payload["terminalEngines"]?[""] == .string(reason))
+    #expect(payload["legacyPendingEngines"] == [])
+  }
+
+  @Test func acquisitionDoesNotKeepStaleDiskMigrationMarker() async throws {
+    let f = try await OwnerLifecycleFixture.make()
+    defer { f.stop() }
+    let initial = BookmarkCoordinator(profiles: ["default": ""], defaultProfile: "default", pendingStore: BookmarkPendingStore(directory: f.directory), launchInput: .init(legacyPendingEngines: [JSKey("")]))
+    #expect(initial.remap(profiles: ["default": ""], defaultProfile: "default"))
+    let prepared = BookmarkCoordinator(profiles: ["default": ""], defaultProfile: "default", pendingStore: BookmarkPendingStore(directory: f.directory))
+    try BookmarkPendingStore(directory: f.directory).write(["kind": "bookmarkCoordinator", "formatVersion": 2, "factSequence": "0", "syncLinks": [:], "engines": [], "requests": [], "conflicts": [], "legacyPendingEngines": []])
+    prepared.reloadJournalForOwnerReplacement()
+    prepared.completeRead(engine: "", document: document(engine: "", profile: "default"), capturedRevision: 0)
+    #expect(prepared.desiredView(engine: "").readyForSync)
+    #expect(BookmarkPendingStore(directory: f.directory).load().payload?["legacyPendingEngines"] == [])
+  }
+
+  @Test func replacementOrphanRetirementKeepsLateAcceptedSurvivorEdit() async throws {
+    var state = BrowserState()
+    state.profiles["survivor"] = profile("survivor", data: "E1")
+    state.profiles["orphan"] = profile("orphan", data: "E0")
+    let f = try await OwnerLifecycleFixture.make(state: state)
+    defer { f.stop() }
+    f.owner.coordinator.seed(engine: "E1", document: document(engine: "E1", profile: "survivor"), ready: true)
+    f.owner.coordinator.seed(engine: "E0", document: document(engine: "E0", profile: "orphan"), ready: true)
+    let initial = try f.owner.snapshot(profile: "survivor")
+    _ = try f.owner.submit(profile: "survivor", mutations: [], binding: initial.binding, requestID: "seed")
+    state.profiles["orphan"] = nil
+    state.orphanedProfileData = ["E0"]
+    let before = try Data(contentsOf: f.directory.appendingPathComponent(BookmarkPendingStore.journalName))
+    let gate = OwnerClaimGate()
+    let replacementTask = Task {
+      await NativeBookmarkOwner.prepareForTesting(directory: f.directory, state: state, afterLoad: { await gate.hold() })
+    }
+    try await gate.waitUntilHeld()
+    let mutations: [BookmarkMutation] = [.init(method: "updateBookmark", args: ["b0", ["title": "Accepted late"]])]
+    #expect(try Data(contentsOf: f.directory.appendingPathComponent(BookmarkPendingStore.journalName)) == before)
+    let receipt = try f.owner.submit(profile: "survivor", mutations: mutations, binding: initial.binding, requestID: "late")
+    let acceptedBytes = try Data(contentsOf: f.directory.appendingPathComponent(BookmarkPendingStore.journalName))
+    gate.open()
+    let replacement = await replacementTask.value
+    #expect(try Data(contentsOf: f.directory.appendingPathComponent(BookmarkPendingStore.journalName)) == acceptedBytes)
+    #expect(throws: BookmarkWriterError.staleBinding) {
+      try replacement.submit(profile: "survivor", mutations: [], binding: replacement.snapshot(profile: "survivor").binding)
+    }
+    NativeBookmarkOwner.current = replacement
+    let reopened = await NativeBookmarkOwner.prepare(directory: f.directory, state: state)
+    #expect(reopened.coordinator.desiredView(engine: "E1").document["nodes"]?["b0"]?["title"] == "Accepted late")
+    #expect(!reopened.coordinator.catalogEngines.contains("E0"))
+    NativeBookmarkOwner.current = reopened
+    let binding = try reopened.snapshot(profile: "survivor").binding
+    let replay = try reopened.submit(profile: "survivor", mutations: mutations, binding: binding, requestID: "late")
+    #expect(replay.view.revision == receipt.view.revision)
+    #expect(replay.results == receipt.results)
+    #expect(BookmarkPendingStore(directory: f.directory).load().payload?["terminalEngines"]?["E0"] == "retired")
+  }
+
+  @Test func restoredTerminalRouteSurvivesCrashBeforeReactivation() async throws {
+    for reason in ["gone", "emptyAliasless", "retired"] {
+      let f = try await OwnerLifecycleFixture.make()
+      defer { f.stop() }
+      let coordinator = f.owner.coordinator
+      if reason != "emptyAliasless" { coordinator.seed(engine: "", document: document(engine: "", profile: "default"), ready: true) }
+      let initial = try f.owner.snapshot(profile: "default")
+      let oldMutations: [BookmarkMutation] = reason == "gone" ? [.init(method: "updateBookmark", args: ["b0", ["title": "Retired pending intent"]])] : []
+      _ = try f.owner.submit(profile: "default", mutations: oldMutations, binding: initial.binding, requestID: "old")
+      #expect(coordinator.remap(profiles: ["default": "away"], defaultProfile: "default"))
+      if reason == "retired" { try coordinator.retire(engine: "") }
+      else if reason == "gone" { #expect(coordinator.terminalizeGoneEngine(engine: "", epoch: coordinator.claimPump())) }
+      else { #expect(coordinator.terminalizeEmptyAliaslessEngine(engine: "", epoch: coordinator.claimPump())) }
+      let restored = await NativeBookmarkOwner.prepare(directory: f.directory, state: f.state)
+      NativeBookmarkOwner.current = restored
+      let snapshot = try restored.snapshot(profile: "default")
+      #expect(snapshot.document["nodes"]?["b0"] == nil)
+      if reason == "retired" {
+        restored.remap(profiles: ["default": "away"], defaultProfile: "default")
+        restored.remap(profiles: ["default": ""], defaultProfile: "default")
+        #expect(!restored.coordinator.catalogEngines.contains(""))
+        #expect(throws: BookmarkWriterError.staleBinding) {
+          try restored.submit(profile: "default", mutations: [], binding: restored.snapshot(profile: "default").binding)
+        }
+      } else {
+        #expect(restored.coordinator.catalogEngines.contains(""))
+        _ = try restored.submit(profile: "default", mutations: [.init(method: "addBookmark", args: [["profileId": "default", "url": "https://fresh.test", "title": "Fresh"]])], binding: snapshot.binding, requestID: "old")
+        #expect(restored.coordinator.membership(profile: "default", url: "https://fresh.test"))
+      }
+      restored.stop()
+    }
+  }
+
+  @Test func oldOwnerBindingAndRouteABAAreRefused() async throws {
+    let f = try await OwnerLifecycleFixture.make()
+    defer { f.stop() }
+    let original = try f.owner.snapshot(profile: "default")
+    f.owner.remap(profiles: ["default": "other"], defaultProfile: "default")
+    f.owner.remap(profiles: ["default": ""], defaultProfile: "default")
+    #expect(throws: BookmarkWriterError.staleBinding) {
+      try f.owner.submit(profile: "default", mutations: [], binding: original.binding, requestID: "old-route")
+    }
+    #expect(throws: BookmarkWriterError.staleBinding) {
+      try f.owner.replace(profile: "default", document: original.document, expectedRevision: original.revision, binding: original.binding)
+    }
+    let replacement = await NativeBookmarkOwner.prepare(directory: f.directory, state: f.state)
+    #expect(throws: BookmarkWriterError.staleBinding) {
+      try replacement.submit(profile: "default", mutations: [], binding: original.binding)
+    }
+  }
+
+  @Test func sameEngineStoreReplacementRevokesOldBindings() async throws {
+    let f = try await OwnerLifecycleFixture.make()
+    defer { f.stop() }
+    try await f.start()
+    let old = Store(state: f.state, checksInvariants: false)
+    f.owner.bindStore(old)
+    await f.owner.settleLifecycleForTesting()
+    let original = try f.owner.snapshot(profile: "default")
+    f.owner.bindStore(Store(state: f.state, checksInvariants: false))
+    #expect(throws: BookmarkWriterError.staleBinding) {
+      try f.owner.submit(profile: "default", mutations: [], binding: original.binding)
+    }
+    await f.owner.settleLifecycleForTesting()
+    let current = try f.owner.snapshot(profile: "default")
+    _ = try f.owner.submit(profile: "default", mutations: [], binding: current.binding)
+    f.owner.stop()
+    #expect(throws: BookmarkWriterError.staleBinding) {
+      try f.owner.submit(profile: "default", mutations: [], binding: current.binding)
+    }
+  }
+
+  @Test func profileRemovalRevokesSameEngineRoute() async throws {
+    let f = try await OwnerLifecycleFixture.make()
+    defer { f.stop() }
+    f.owner.remap(profiles: ["default": "", "alias": ""], defaultProfile: "default")
+    let old = try f.owner.snapshot(profile: "alias")
+    f.owner.remap(profiles: ["default": ""], defaultProfile: "default")
+    f.owner.remap(profiles: ["default": "", "alias": ""], defaultProfile: "default")
+    #expect(throws: BookmarkWriterError.staleBinding) {
+      try f.owner.submit(profile: "alias", mutations: [], binding: old.binding)
+    }
+    let current = try f.owner.snapshot(profile: "default")
+    f.owner.remap(profiles: ["default": "", "alias": "", "work": "work"], defaultProfile: "default")
+    _ = try f.owner.submit(profile: "default", mutations: [], binding: current.binding)
+  }
+
+  @Test func retiredRouteRefusesLateFactCallbacks() async throws {
+    let f = try await OwnerLifecycleFixture.make()
+    defer { f.stop() }
+    let old = try f.owner.snapshot(profile: "default")
+    f.owner.remap(profiles: ["default": "away"], defaultProfile: "default")
+    f.owner.remap(profiles: ["default": ""], defaultProfile: "default")
+    #expect(throws: BookmarkWriterError.staleBinding) {
+      try f.owner.ackBookmarkFacts(profileId: "default", expectedEngine: "", records: [], generation: old.binding.generation)
+    }
+    #expect(throws: BookmarkWriterError.staleBinding) {
+      try f.owner.observeRemoteRecords(profileId: "default", expectedEngine: "", records: [("bm:old", "late")], generation: old.binding.generation)
+    }
+    #expect(throws: BookmarkWriterError.staleBinding) {
+      try f.owner.clearBookmarkFacts(profileId: "default", expectedEngine: "", records: [], generation: old.binding.generation)
+    }
+  }
+
+  @Test func replacingProcessOwnerRevokesOldOwnerReferences() async throws {
+    let f = try await OwnerLifecycleFixture.make()
+    defer { f.stop() }
+    let previous = NativeBookmarkOwner.current
+    defer { NativeBookmarkOwner.current = previous }
+    NativeBookmarkOwner.current = f.owner
+    let old = try f.owner.snapshot(profile: "default")
+    NativeBookmarkOwner.current = await NativeBookmarkOwner.prepare(directory: f.directory, state: f.state)
+    #expect(throws: BookmarkWriterError.staleBinding) {
+      try f.owner.submit(profile: "default", mutations: [], binding: old.binding)
+    }
+  }
+
+  @Test func supersededMappingCannotReactivateRetiredEngine() async throws {
+    let f = try await OwnerLifecycleFixture.make()
+    defer { f.stop() }
+    var next = f.state
+    next.profiles["default"]?.dataId = "next"
+    let ticket = try #require(f.owner.stageForTesting(state: next))
+    let captured = DispatchSemaphore(value: 0)
+    let release = DispatchSemaphore(value: 0)
+    let once = Mutex(false)
+    f.owner.beforeMappingAdmissionForTesting = {
+      let hold = once.withLock { value in if value { return false }; value = true; return true }
+      if hold { captured.signal(); _ = release.wait(timeout: .now() + 5) }
+    }
+    let owner = f.owner
+    let install = Task.detached { await owner.installMappingForTesting(ticket) }
+    let held = await Task.detached { blockingWait(captured, seconds: 5) }.value
+    guard held else { release.signal(); _ = await install.value; Issue.record("mapping admission gate was not reached"); return }
+    try f.owner.retireBookmarks(engine: "next")
+    release.signal()
+    #expect(!(await install.value))
+    #expect(!f.owner.coordinator.catalogEngines.contains("next"))
+    let current = try f.owner.snapshot(profile: "default")
+    #expect(throws: BookmarkWriterError.staleBinding) {
+      try f.owner.submit(profile: "default", mutations: [], binding: current.binding)
+    }
+  }
+
+  @Test func retiringOneEngineKeepsSurvivingEngineReady() async throws {
+    var state = BrowserState()
+    state.profiles["work"] = profile("work", data: "work")
+    let f = try await OwnerLifecycleFixture.make(state: state)
+    defer { f.stop() }
+    try await f.start()
+    await f.settle()
+    f.state.profiles.remove(["default"])
+    f.state.settings.values["defaultProfileId"] = "work"
+    try await f.owner.remap(state: f.state)
+    await f.settle()
+    let previousEpoch = try #require(f.catalog.bookmarkClaim).epoch
+    try f.owner.retireBookmarks(engine: "")
+    let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+    while ContinuousClock.now < deadline {
+      if let claim = f.catalog.bookmarkClaim, claim.epoch > previousEpoch, try f.owner.snapshot(profile: "work").ready { break }
+      await Task.yield()
+    }
+    #expect(try f.owner.snapshot(profile: "work").ready)
+    #expect(f.catalog.bookmarkClaim.map { $0.epoch > previousEpoch } == true)
+    #expect(f.owner.coordinator.catalogEngines == ["work"])
+  }
+
+  @Test func retirementWaitsForHeldApplyFromPreviousOwner() async throws {
+    let f = try await OwnerLifecycleFixture.make()
+    defer { f.stop() }
+    let previous = NativeBookmarkOwner.current
+    defer { NativeBookmarkOwner.current = previous }
+    NativeBookmarkOwner.current = f.owner
+    let gate = OwnerClaimGate()
+    defer { gate.open() }
+    let operation = Task { try await f.owner.coordinator.engineQueue.perform(engine: "") { await gate.hold(); return true } }
+    try await gate.waitUntilHeld()
+    let replacement = await NativeBookmarkOwner.prepare(directory: f.directory, state: f.state)
+    NativeBookmarkOwner.current = replacement
+    try replacement.retireBookmarks(engine: "")
+    let drained = Mutex(false)
+    let drain = Task { try await replacement.settleRetiredBookmarks(engine: ""); drained.withLock { $0 = true } }
+    for _ in 0..<1000 { await Task.yield() }
+    #expect(!drained.withLock { $0 })
+    gate.open()
+    _ = try await operation.value
+    try await drain.value
+    #expect(drained.withLock { $0 })
+  }
+
+  @Test func replacedOwnerCannotResumeHeldCatalogClaim() async throws {
+    let f = try await OwnerLifecycleFixture.make()
+    defer { f.stop() }
+    let previous = NativeBookmarkOwner.current
+    defer { NativeBookmarkOwner.current = previous }
+    NativeBookmarkOwner.current = f.owner
+    let gate = OwnerClaimGate()
+    defer { gate.open() }
+    f.owner.beforeClaimForTesting = { await gate.hold() }
+    let start = Task { try await f.start() }
+    try await gate.waitUntilHeld()
+    NativeBookmarkOwner.current = await NativeBookmarkOwner.prepare(directory: f.directory, state: f.state)
+    gate.open()
+    try await start.value
+    #expect(f.catalog.bookmarkClaim == nil)
+    #expect(!f.owner.runtimeIsActiveForTesting)
+    #expect(f.client.reads.isEmpty)
+  }
+
+  @Test func replacedOwnerCannotPersistSyncLinks() async throws {
+    let f = try await OwnerLifecycleFixture.make()
+    defer { f.stop() }
+    let previous = NativeBookmarkOwner.current
+    defer { NativeBookmarkOwner.current = previous }
+    NativeBookmarkOwner.current = f.owner
+    NativeBookmarkOwner.current = await NativeBookmarkOwner.prepare(directory: f.directory, state: f.state)
+    let journal = f.directory.appendingPathComponent(BookmarkPendingStore.journalName)
+    let before = try? Data(contentsOf: journal)
+    #expect(!f.owner.setBookmarkSyncLinks(["default": "obsolete-link"]))
+    #expect((try? Data(contentsOf: journal)) == before)
+  }
+
+  @Test func removedNativeOwnerCannotFallBackDuringCleanup() async throws {
+    let f = try await OwnerLifecycleFixture.make()
+    defer { f.stop() }
+    let previous = NativeBookmarkOwner.current
+    defer { NativeBookmarkOwner.current = previous }
+    NativeBookmarkOwner.current = f.owner
+    NativeBookmarkOwner.current = nil
+    #expect(throws: BookmarkCoordinatorError.ownershipUnavailable) {
+      try NativeBookmarkOwner.retireBookmarksForCleanup(engine: "")
+    }
+  }
+
+  @Test func revokedOwnerCannotRetireReplacementJournal() async throws {
+    let f = try await OwnerLifecycleFixture.make()
+    defer { f.stop() }
+    let previous = NativeBookmarkOwner.current
+    defer { NativeBookmarkOwner.current = previous }
+    NativeBookmarkOwner.current = f.owner
+    NativeBookmarkOwner.current = await NativeBookmarkOwner.prepare(directory: f.directory, state: f.state)
+    let journal = f.directory.appendingPathComponent(BookmarkPendingStore.journalName)
+    let before = try? Data(contentsOf: journal)
+    #expect(throws: BookmarkWriterError.staleBinding) { try f.owner.retireBookmarks(engine: "") }
+    #expect((try? Data(contentsOf: journal)) == before)
+  }
+
+  @Test(arguments: [false, true]) func ownerReplacementReloadsLastAcceptedJournal(nilGap: Bool) async throws {
+    let entered = DispatchSemaphore(value: 0)
+    let release = DispatchSemaphore(value: 0)
+    let armed = JournalGateFlag()
+    let f = try await OwnerLifecycleFixture.make(fileOperations: gatedJournalOperations(armed: armed, entered: entered, release: release))
+    defer { f.stop() }
+    let previous = NativeBookmarkOwner.current
+    defer { NativeBookmarkOwner.current = previous }
+    NativeBookmarkOwner.current = f.owner
+    f.owner.coordinator.seed(engine: "", document: BookmarkCoordinatorTests().document(["https://page.test"]), ready: true)
+    let binding = try f.owner.snapshot(profile: "default").binding
+    armed.set()
+    let owner = f.owner
+    let writer = Task.detached { try owner.submit(profile: "default", mutations: [.init(method: "updateBookmark", args: ["b0", ["title": "Accepted before replacement"]])], binding: binding) }
+    let held = await Task.detached { blockingWait(entered, seconds: 5) }.value
+    guard held else { release.signal(); _ = try await writer.value; Issue.record("journal gate was not reached"); return }
+    let replacement = await NativeBookmarkOwner.prepare(directory: f.directory, state: f.state)
+    let setter = Task.detached {
+      if nilGap { NativeBookmarkOwner.current = nil }
+      NativeBookmarkOwner.current = replacement
+    }
+    release.signal()
+    _ = try await writer.value
+    await setter.value
+    #expect(try replacement.snapshot(profile: "default").document["nodes"]?["b0"]?["title"] == "Accepted before replacement")
+  }
+
   @Test func nativeOwnerClaimsCatalogBeforeFirstStart() async throws {
     let f = try await OwnerLifecycleFixture.make()
     defer { f.stop() }
@@ -280,7 +655,13 @@ import SolaraStore
     #expect(!f.client.reads.contains("must-not-return"))
     let live = try f.owner.snapshot(profile: "default")
     NativeStoreHandle.resolve = nil
-    _ = try f.owner.submit(profile: "default", mutations: [], binding: live.binding)
+    #expect(throws: BookmarkWriterError.staleBinding) {
+      try f.owner.submit(profile: "default", mutations: [], binding: live.binding)
+    }
+    let disconnected = try f.owner.snapshot(profile: "default")
+    #expect(disconnected.binding != live.binding)
+    #expect(!disconnected.ready)
+    _ = try f.owner.submit(profile: "default", mutations: [], binding: disconnected.binding)
     await #expect(throws: BookmarkCoordinatorError.staleRevision) {
       try await f.catalog.applyBookmarks(ops: [], engineProfile: "replacement")
     }
@@ -568,6 +949,7 @@ import SolaraStore
     state.profiles["z"] = nil
     let surviving = await NativeBookmarkOwner.prepare(directory: f.directory, state: state)
     #expect(surviving.coordinator.ownerProfileForTesting(engine: "E") == "a")
+    NativeBookmarkOwner.current = surviving
     let selected = try surviving.snapshot(profile: "a")
     _ = try surviving.submit(profile: "a", mutations: [], binding: selected.binding)
     let loaded = BookmarkPendingStore(directory: f.directory).load().payload
@@ -687,6 +1069,7 @@ import SolaraStore
     } else {
       owner = await NativeBookmarkOwner.prepare(directory: directory, state: state, cacheDirectory: cache == nil ? nil : directory)
     }
+    NativeBookmarkOwner.current = owner
     return OwnerLifecycleFixture(directory: directory, owner: owner, state: state)
   }
 
@@ -711,6 +1094,7 @@ import SolaraStore
 }
 
 @MainActor private final class OwnerLifecycleClient: EngineClient {
+  var empty = false
   var pageID = "b0"
   var title = "Page"
   var reads: [String] = []
@@ -721,7 +1105,7 @@ import SolaraStore
 
   func read(_ engine: String) -> EngineBookmarkTree {
     reads.append(engine)
-    return EngineBookmarkTree(bar: .init(id: "bar", kind: "f", title: "Bar", children: [.init(id: pageID, kind: "u", title: title, url: "https://page.test", addedAt: 1)]), other: .init(id: "other", kind: "f", title: "Other", children: []))
+    return EngineBookmarkTree(bar: .init(id: "bar", kind: "f", title: "Bar", children: empty ? [] : [.init(id: pageID, kind: "u", title: title, url: "https://page.test", addedAt: 1)]), other: .init(id: "other", kind: "f", title: "Other", children: []))
   }
 
   func apply(_ engine: String, _ ops: [BookmarkOperation]) -> BookmarkApplyResult {

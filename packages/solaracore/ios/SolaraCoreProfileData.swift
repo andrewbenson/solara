@@ -14,6 +14,10 @@ enum SolaraCoreProfileData {
   static func deleteDefault(deletionAllowed: @escaping () -> Bool = { true }, _ done: @escaping Done) {
     guard !SolaraCoreHost.safeMode else { return done(["safe mode"]) }
     let steps: [Step] = [
+      ("extensions", { ok in clearEach(deletionAllowed: deletionAllowed, list: runningExtensions, key: "extensions", done: ok) {
+        item, next in SolaraCoreServices.setExtension(item["id"] as? String ?? "", enabled: false, profile: "") { _ in next() }
+      } }),
+      ("bookmarks", { deleteBookmarks(deletionAllowed: deletionAllowed, $0) }),
       ("history, cookies and cache", { ok in
         SolaraCoreServices.clearBrowsingData(profile: "", types: ["history", "siteData", "cache", "downloads"], since: 0) { ok(true) }
       }),
@@ -27,11 +31,9 @@ enum SolaraCoreProfileData {
       ("cards", { ok in clearEach(deletionAllowed: deletionAllowed, list: { SolaraCoreServices.cards(profile: "", completion: $0) }, key: "cards", done: ok) {
         item, next in SolaraCoreServices.deleteAutofillEntry(item["id"] as? String ?? "", profile: "") { _ in next() }
       } }),
-      ("extensions", { ok in clearEach(deletionAllowed: deletionAllowed, list: runningExtensions, key: "extensions", done: ok) {
-        item, next in SolaraCoreServices.setExtension(item["id"] as? String ?? "", enabled: false, profile: "") { _ in next() }
-      } }),
       ("site settings", { resetSiteSettings(deletionAllowed: deletionAllowed, $0) }),
       ("zoom levels", { resetZoom(deletionAllowed: deletionAllowed, $0) }),
+      ("bookmarks", { deleteBookmarks(deletionAllowed: deletionAllowed, $0) }),
     ]
     var remaining: [String] = []
     func run(_ i: Int) {
@@ -39,10 +41,18 @@ enum SolaraCoreProfileData {
       guard deletionAllowed() else { return done(remaining + ["live profile filesystem identity"]) }
       steps[i].run { ok in
         if !ok { remaining.append(steps[i].label) }
+        if !ok && steps[i].label == "extensions" { return done(remaining) }
         run(i + 1)
       }
     }
     run(0)
+  }
+
+  private static func deleteBookmarks(deletionAllowed: @escaping () -> Bool, _ ok: @escaping (Bool) -> Void) {
+    guard deletionAllowed() else { return ok(false) }
+    SolaraCoreServices.call("ac_bookmarks_clear", profile: "", args: nil) { result in
+      ok(deletionAllowed() && result["ok"] as? Bool == true)
+    }
   }
 
   private static func deletePasswords(deletionAllowed: @escaping () -> Bool, _ ok: @escaping (Bool) -> Void) {

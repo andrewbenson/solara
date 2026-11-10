@@ -316,3 +316,165 @@ extension BookmarkCoordinatorTests {
     #expect(legacy.tree.records.filter { $0["kind"] == "url" }.count == 1)
   }
 }
+
+
+extension BookmarkCoordinatorTests {
+  @Test func checkpointOwnerLookupReusesPendingDelta() throws {
+    let owner = BookmarkCoordinator(profiles: ["p": ""], defaultProfile: "p", stampsEnabled: true)
+    owner.seed(engine: "", document: document((0..<2000).map { "https://large.test/\($0)" }), ready: true)
+    try owner.submit(profile: "p", mutations: [.init(method: "updateBookmark", args: ["b0", ["title": "Pending"]])])
+    #expect(owner.remap(profiles: ["p": "new-engine"], defaultProfile: "p"))
+    let count = owner.pendingDiffCountForTesting
+    for index in 0..<100 {
+      #expect(owner.setBookmarkSyncLinks(["p": "link-\(index)"]))
+      #expect(owner.ownerProfileForTesting(engine: "") == "p")
+      #expect(owner.catalogEngines.contains(""))
+    }
+    #expect(owner.pendingDiffCountForTesting == count)
+  }
+
+  @Test func privateViewsNeverEnterPendingDiff() {
+    let owner = coordinator([])
+    owner.seed(engine: "incognito:private", document: document((0..<2000).map { "https://private.test/\($0)" }), ready: true)
+    let count = owner.pendingDiffCountForTesting
+    #expect(owner.remap(profiles: ["p": ""], defaultProfile: "p"))
+    #expect(!owner.catalogEngines.contains("incognito:private"))
+    _ = owner.ownerProfileForTesting(engine: "incognito:private")
+    #expect(owner.pendingDiffCountForTesting == count)
+  }
+
+  @Test func baseChangeInvalidatesPendingCache() throws {
+    let owner = coordinator([page])
+    try owner.submit(profile: "p", mutations: [.init(method: "updateBookmark", args: ["b0", ["title": "Pending"]])])
+    #expect(owner.remap(profiles: ["p": "new-engine"], defaultProfile: "p"))
+    #expect(owner.catalogEngines.contains(""))
+    let count = owner.pendingDiffCountForTesting
+    let epoch = owner.claimPump()
+    let captured = owner.desiredView(engine: "")
+    #expect(owner.completePush(engine: "", captured: captured, epoch: epoch, succeeded: true, nowMs: 0))
+    #expect(!owner.catalogEngines.contains(""))
+    #expect(owner.pendingDiffCountForTesting > count)
+  }
+
+
+  @Test func aliaslessGoneEngineRecordsConflictAndStops() throws {
+    let owner = coordinator([page])
+    try owner.submit(profile: "p", mutations: [.init(method: "updateBookmark", args: ["b0", ["title": "Recover me"]])])
+    let desired = owner.desiredView(engine: "").document
+    #expect(owner.remap(profiles: ["p": "new-engine"], defaultProfile: "p"))
+    let epoch = owner.claimPump()
+    #expect(owner.terminalizeGoneEngine(engine: "", epoch: epoch))
+    #expect(!owner.catalogEngines.contains(""))
+    #expect(!owner.ownsPump(engine: "", epoch: epoch))
+    #expect(owner.recoveryConflicts.last?["kind"] == "goneBookmarkEngine")
+    #expect(owner.recoveryConflicts.last?["desired"] == desired)
+  }
+
+  @Test func terminalLaneRemainsStoppedAfterRestart() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("terminal-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = BookmarkPendingStore(directory: directory)
+    let owner = BookmarkCoordinator(profiles: ["p": ""], defaultProfile: "p", pendingStore: store)
+    owner.seed(engine: "", document: document([page]), ready: true)
+    try owner.submit(profile: "p", mutations: [.init(method: "removeBookmark", args: ["b0"])])
+    #expect(owner.remap(profiles: ["p": "new-engine"], defaultProfile: "p"))
+    #expect(owner.terminalizeGoneEngine(engine: "", epoch: owner.claimPump()))
+    let restarted = BookmarkCoordinator(profiles: ["p": "new-engine"], defaultProfile: "p", pendingStore: BookmarkPendingStore(directory: directory))
+    #expect(!restarted.catalogEngines.contains(""))
+    #expect(restarted.recoveryConflicts.last?["kind"] == "goneBookmarkEngine")
+    #expect(!restarted.ownsPump(engine: "", epoch: restarted.claimPump()))
+  }
+
+  @Test func lastOwnerRetirementSurvivesCrash() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("retirement-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let owner = BookmarkCoordinator(profiles: ["p": ""], defaultProfile: "p", stampsEnabled: true, pendingStore: BookmarkPendingStore(directory: directory))
+    owner.seed(engine: "", document: document([page]), ready: true)
+    try owner.submit(profile: "p", mutations: [.init(method: "updateBookmark", args: ["b0", ["title": "Discard me"]])], requestID: "old")
+    let oldEpoch = owner.claimPump()
+    let old = owner.desiredView(engine: "")
+    try owner.retire(engine: "")
+    #expect(!owner.completePush(engine: "", captured: old, epoch: oldEpoch, succeeded: true, nowMs: 0))
+    let restarted = BookmarkCoordinator(profiles: ["p": ""], defaultProfile: "p", pendingStore: BookmarkPendingStore(directory: directory))
+    #expect(!restarted.catalogEngines.contains(""))
+    #expect(!restarted.desiredView(engine: "").hasView)
+    #expect(restarted.desiredView(engine: "").facts.isEmpty)
+    #expect(restarted.recoveryConflicts.isEmpty)
+    #expect(throws: BookmarkWriterError.staleBinding) {
+      try restarted.submit(profile: "p", mutations: [], requestID: "old", expectedEngine: "")
+    }
+  }
+
+  @Test func reusedDefaultEngineCannotReplayOldIntent() throws {
+    let owner = coordinator([page])
+    try owner.submit(profile: "p", mutations: [.init(method: "updateBookmark", args: ["b0", ["title": "Discard me"]])], requestID: "old")
+    let old = owner.engineIncarnation(engine: "")
+    try owner.retire(engine: "")
+    #expect(owner.remap(profiles: ["p": "new-engine"], defaultProfile: "p"))
+    try owner.reactivate(engine: "")
+    #expect(owner.remap(profiles: ["p": ""], defaultProfile: "p"))
+    #expect(owner.engineIncarnation(engine: "") > old)
+    #expect(!owner.desiredView(engine: "").hasView)
+    let receipt = try owner.submit(profile: "p", mutations: [.init(method: "addBookmark", args: [["profileId": "p", "url": "https://fresh.test/", "title": "Fresh"]])], requestID: "old")
+    #expect(receipt.view.document["nodes"]?["b0"] == nil)
+    #expect(owner.membership(profile: "p", url: "https://fresh.test/"))
+  }
+}
+
+
+extension BookmarkCoordinatorTests {
+  @Test func reactivationRejectsOldGoneReadCompletion() throws {
+    let owner = coordinator([page])
+    try owner.submit(profile: "p", mutations: [.init(method: "removeBookmark", args: ["b0"])])
+    #expect(owner.remap(profiles: ["p": "new-engine"], defaultProfile: "p"))
+    let oldEpoch = owner.claimPump()
+    #expect(owner.terminalizeGoneEngine(engine: "", epoch: oldEpoch))
+    try owner.reactivate(engine: "")
+    #expect(!owner.completeRead(engine: "", document: document([page]), capturedRevision: 0, epoch: oldEpoch))
+    #expect(!owner.desiredView(engine: "").hasView)
+  }
+
+  @Test func retirementWriteFailureFencesChromeAdmissions() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("retire-failed-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    var fail = false
+    var operations = BookmarkPendingFileOperations.live
+    let write = operations.writeNew
+    operations.writeNew = { url, data in
+      if fail { throw BookmarkPendingStoreError.unavailable }
+      try write(url, data)
+    }
+    let owner = BookmarkCoordinator(profiles: ["p": ""], defaultProfile: "p", pendingStore: BookmarkPendingStore(directory: directory, fileOperations: operations))
+    owner.seed(engine: "", document: document([page]), ready: true)
+    try owner.submit(profile: "p", mutations: [.init(method: "updateBookmark", args: ["b0", ["title": "Pending"]])])
+    fail = true
+    #expect(throws: BookmarkPendingStoreError.unavailable) { try owner.retire(engine: "") }
+    #expect(!owner.ownsPump(engine: "", epoch: owner.claimPump()))
+    #expect(throws: BookmarkWriterError.staleBinding) { try owner.submit(profile: "p", mutations: []) }
+    let restarted = BookmarkCoordinator(profiles: ["p": ""], defaultProfile: "p", pendingStore: BookmarkPendingStore(directory: directory))
+    #expect(restarted.desiredView(engine: "").document["nodes"]?["b0"]?["title"] == "Pending")
+  }
+}
+
+
+extension BookmarkCoordinatorTests {
+  @Test func ownerReplacementReloadsLateAcceptedJournal() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("replace-journal-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let old = BookmarkCoordinator(profiles: ["p": ""], defaultProfile: "p", pendingStore: BookmarkPendingStore(directory: directory))
+    old.seed(engine: "", document: document([page]), ready: true)
+    try old.submit(profile: "p", mutations: [.init(method: "updateBookmark", args: ["b0", ["title": "Before preparation"]])])
+    let next = BookmarkCoordinator(profiles: ["p": ""], defaultProfile: "p", pendingStore: BookmarkPendingStore(directory: directory))
+    try old.submit(profile: "p", mutations: [.init(method: "updateBookmark", args: ["b0", ["title": "Accepted after preparation"]])], requestID: "late")
+    old.fencePumpAdmissions()
+    old.settleJournalForOwnerReplacement()
+    next.reloadJournalForOwnerReplacement(previous: old)
+    #expect(next.desiredView(engine: "").document["nodes"]?["b0"]?["title"] == "Accepted after preparation")
+    let receipt = try next.submit(profile: "p", mutations: [.init(method: "updateBookmark", args: ["b0", ["title": "Accepted after preparation"]])], requestID: "late")
+    #expect(receipt.view.document["nodes"]?["b0"]?["title"] == "Accepted after preparation")
+  }
+}

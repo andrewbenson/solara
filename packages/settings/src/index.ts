@@ -21,12 +21,12 @@ type NativeSettingsModule = {
   liveInitialReplica(): LiveReplica;
   bookmarkWriterState?(): BookmarkWriterState;
   bookmarkWriterSnapshot?(profileId: string): Omit<BookmarkWriterSnapshot, "facts"> & { facts?: string };
-  ackBookmarkFacts?(profileId: string, engine: string, recordsJSON: string): boolean;
-  ackBookmarkFactsForLink?(profileId: string, engine: string, recordsJSON: string, link: string): boolean;
-  observeBookmarkRecordsForLink?(profileId: string, engine: string, recordsJSON: string, link: string): boolean;
+  ackBookmarkFacts?(profileId: string, engine: string, recordsJSON: string, generation: string): boolean;
+  ackBookmarkFactsForLink?(profileId: string, engine: string, recordsJSON: string, link: string, generation: string): boolean;
+  observeBookmarkRecordsForLink?(profileId: string, engine: string, recordsJSON: string, link: string, generation: string): boolean;
   replaceBookmarkDocumentWithRecords?(profileId: string, documentJSON: string, expectedRevision: string, engine: string, generation: string, requestId: string | null, recordsJSON: string, link: string): { revision: string };
-  observeBookmarkRecords?(profileId: string, engine: string, recordsJSON: string): boolean;
-  clearBookmarkFacts?(profileId: string, engine: string, recordsJSON: string): boolean;
+  observeBookmarkRecords?(profileId: string, engine: string, recordsJSON: string, generation: string): boolean;
+  clearBookmarkFacts?(profileId: string, engine: string, recordsJSON: string, generation: string): boolean;
   setBookmarkSyncLinks?(linksJSON: string): boolean;
   submitBookmarkMutations?(profileId: string, mutationsJSON: string, engine: string, generation: string, requestId: string | null): Promise<{ engine: string; revision: string; results: string; document: string }>;
   replaceBookmarkDocument?(profileId: string, documentJSON: string, expectedRevision: string, engine: string, generation: string, requestId: string | null): { revision: string };
@@ -139,24 +139,24 @@ export function bookmarkWriterSnapshot(profileId: string): BookmarkWriterSnapsho
 export function ackBookmarkFacts(profileId: string, binding: BookmarkWriterBinding, records: BookmarkFactAck[], link?: string): boolean {
   if (link !== undefined) {
     if (!native?.ackBookmarkFactsForLink) throw new Error("native bookmark link acknowledgements are unavailable");
-    return native.ackBookmarkFactsForLink(profileId, binding.engine, JSON.stringify(records), link);
+    return native.ackBookmarkFactsForLink(profileId, binding.engine, JSON.stringify(records), link, binding.generation);
   }
   if (!native?.ackBookmarkFacts) throw new Error("native bookmarks are not owned by this launch");
-  return native.ackBookmarkFacts(profileId, binding.engine, JSON.stringify(records));
+  return native.ackBookmarkFacts(profileId, binding.engine, JSON.stringify(records), binding.generation);
 }
 
 export function observeBookmarkRecords(profileId: string, binding: BookmarkWriterBinding, records: BookmarkRecordObservation[], link?: string): boolean {
   if (link !== undefined) {
     if (!native?.observeBookmarkRecordsForLink) throw new Error("native bookmark link observations are unavailable");
-    return native.observeBookmarkRecordsForLink(profileId, binding.engine, JSON.stringify(records), link);
+    return native.observeBookmarkRecordsForLink(profileId, binding.engine, JSON.stringify(records), link, binding.generation);
   }
   if (!native?.observeBookmarkRecords) throw new Error("native bookmarks are not owned by this launch");
-  return native.observeBookmarkRecords(profileId, binding.engine, JSON.stringify(records));
+  return native.observeBookmarkRecords(profileId, binding.engine, JSON.stringify(records), binding.generation);
 }
 
 export function clearBookmarkFacts(profileId: string, binding: BookmarkWriterBinding, records: BookmarkFactClear[]): boolean {
   if (!native?.clearBookmarkFacts) throw new Error("native bookmarks are not owned by this launch");
-  return native.clearBookmarkFacts(profileId, binding.engine, JSON.stringify(records));
+  return native.clearBookmarkFacts(profileId, binding.engine, JSON.stringify(records), binding.generation);
 }
 
 export function setBookmarkSyncLinks(links: Record<string, string>): boolean {
@@ -188,7 +188,7 @@ export async function whileBookmarkEngineHolds<T>(profileId: string, binding: Bo
       if (bookmarkWriterErrorCode(error) !== "staleBinding" || now() - started >= BOOKMARK_REMAP_RETRY_MS) throw error;
       await new Promise<void>((resolve) => setTimeout(resolve, Math.min(400, 25 * 2 ** tries)));
       const snapshot = bookmarkWriterSnapshot(profileId);
-      if (snapshot.engine !== binding.engine) throw error;
+      if (snapshot.engine !== binding.engine || snapshot.generation !== binding.generation) throw error;
       binding = { engine: snapshot.engine, generation: snapshot.generation };
     }
   }

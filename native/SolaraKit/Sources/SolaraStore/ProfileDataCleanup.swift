@@ -41,6 +41,8 @@ public final class ProfileDataCleanup {
 
   private let store: Store
   private let delete: @MainActor (String, @escaping Completion) -> Void
+  private let retireBookmarks: @MainActor (String) throws -> Void
+  private let settleBookmarks: @MainActor (String) async throws -> Void
   private let grace: @MainActor () async throws -> Void
   private let trouble: @MainActor (String, [String]) -> Void
   private nonisolated let stopped = Atomic(false)
@@ -56,11 +58,15 @@ public final class ProfileDataCleanup {
   public init(
     store: Store,
     delete: @escaping @MainActor (String, @escaping Completion) -> Void,
+    retireBookmarks: @escaping @MainActor (String) throws -> Void = { _ in },
+    settleBookmarks: @escaping @MainActor (String) async throws -> Void = { _ in },
     grace: @escaping @MainActor () async throws -> Void = { try await Task.sleep(for: .milliseconds(1500)) },
     trouble: @escaping @MainActor (String, [String]) -> Void = { _, _ in }
   ) {
     self.store = store
     self.delete = delete
+    self.retireBookmarks = retireBookmarks
+    self.settleBookmarks = settleBookmarks
     self.grace = grace
     self.trouble = trouble
   }
@@ -194,29 +200,43 @@ public final class ProfileDataCleanup {
       }
       do { try await grace() } catch { return }
       let launch = store.memory.ids.launch
+      let reserved: Bool
+      do {
+        reserved = try store.sequence {
+          reconcile()
+          guard !isStopped, !Task.isCancelled, isCurrent(item) else { return false }
+          guard Self.validEngine(item.engine), !isReferenced(item.engine) else {
+            try removeQueued(item)
+            return false
+          }
+          try ProfileDataTombstones.reserve(item.engine, at: store.config.profileDataTombstones, pending: store.state.orphanedProfileData, live: store.state.profiles.values.map(engineIdOf))
+          let token = UUID()
+          Self.reservations.withLock { $0[token] = (launch: launch, engine: item.engine) }
+          try retireBookmarks(item.engine)
+          return true
+        }
+      } catch {
+        failed.insert(item.generation)
+        trouble(item.engine, ["Profile retirement: \(error)"])
+        continue
+      }
+      guard reserved else { continue }
+      do {
+        try await settleBookmarks(item.engine)
+      } catch {
+        failed.insert(item.generation)
+        trouble(item.engine, ["Bookmark retirement drain: \(error)"])
+        continue
+      }
       let remaining: [String]? = await withCheckedContinuation { continuation in
         store.sequence {
           reconcile()
           guard !isStopped, !Task.isCancelled, isCurrent(item) else { continuation.resume(returning: nil); return }
-          guard Self.validEngine(item.engine) else {
-            NSLog("[store] dropping invalid profile data id at execution: %@", item.engine)
+          guard Self.validEngine(item.engine), !isReferenced(item.engine) else {
             do { try removeQueued(item) } catch { failed.insert(item.generation); trouble(item.engine, [String(describing: error)]) }
             continuation.resume(returning: nil)
             return
           }
-          guard !isReferenced(item.engine) else {
-            do { try removeQueued(item) } catch { failed.insert(item.generation); trouble(item.engine, [String(describing: error)]) }
-            continuation.resume(returning: nil)
-            return
-          }
-          do {
-            try ProfileDataTombstones.reserve(item.engine, at: store.config.profileDataTombstones, pending: store.state.orphanedProfileData, live: store.state.profiles.values.map(engineIdOf))
-          } catch {
-            continuation.resume(returning: ["Profile deletion history: \(error)"])
-            return
-          }
-          let token = UUID()
-          Self.reservations.withLock { $0[token] = (launch: launch, engine: item.engine) }
           delete(item.engine) { continuation.resume(returning: $0) }
         }
       }

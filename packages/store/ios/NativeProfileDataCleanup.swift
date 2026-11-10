@@ -2,6 +2,7 @@ import AppKit
 import Darwin
 import SolaraCore
 internal import SolaraStore
+internal import SolaraEngine
 
 @MainActor
 final class NativeProfileDataCleanup {
@@ -20,7 +21,11 @@ final class NativeProfileDataCleanup {
         FileHandle.standardError.write(Data("[profile-delete] point after-ledger\n".utf8))
         _exit(86)
       }
-      SolaraProfileData.delete(engine, liveProfiles: { store.snapshot.state.profiles.values.map { ($0.dataId ?? $0.id) == "default" ? "" : ($0.dataId ?? $0.id) } }, completion: done) }, trouble: { engine, remaining in
+      SolaraProfileData.delete(engine, liveProfiles: { store.snapshot.state.profiles.values.map { ($0.dataId ?? $0.id) == "default" ? "" : ($0.dataId ?? $0.id) } }, completion: done) }, retireBookmarks: { engine in
+      try NativeBookmarkOwner.retireBookmarksForCleanup(engine: engine)
+    }, settleBookmarks: { engine in
+      try await NativeBookmarkOwner.settleBookmarkEngine(engine: engine)
+    }, trouble: { engine, remaining in
       NSLog("[store] couldn't delete profile data (%@): %@", engine, remaining.joined(separator: ", "))
       let env = ProcessInfo.processInfo.environment
       if remaining == ["Chromium deletion pending restart"], env["SOLARA_TEST_PROFILE_DELETE_CRASH"] == "pending-restart", NativeProfileDataCleanup.testHooksAllowed(env) {

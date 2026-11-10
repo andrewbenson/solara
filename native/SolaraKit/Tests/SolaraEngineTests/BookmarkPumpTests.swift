@@ -675,3 +675,68 @@ extension BookmarkPumpTests {
     #expect(f.engine.document["nodes"]?["b0"]?["title"] == later.view.document["nodes"]?["b0"]?["title"])
   }
 }
+
+
+@MainActor
+extension BookmarkPumpTests {
+  @Test func emptyAliaslessDesiredDoesNotPumpForever() async throws {
+    let f = PumpFixture()
+    try f.owner.replaceDocument(engine: "", document: ["nodes": [:], "roots": [:]], expectedRevision: f.owner.desiredView(engine: "").revision)
+    #expect(f.owner.remap(profiles: ["p": "new-engine"], defaultProfile: "p"))
+    #expect(f.owner.catalogEngines.contains(""))
+    let pump = BookmarkPump(coordinator: f.owner, client: f.engine.client, clock: f.time.clock, scheduler: f.time.scheduler)
+    pump.requestPush(engine: "")
+    await pump.settle(engine: "")
+    #expect(f.owner.recoveryConflicts.last?["kind"] == "emptyAliaslessBookmarkEngine")
+    #expect(!f.owner.catalogEngines.contains(""))
+    pump.requestPush(engine: "")
+    await pump.settle(engine: "")
+    #expect(f.engine.batches.isEmpty)
+    #expect(f.engine.events.isEmpty)
+  }
+
+
+
+  @Test func confirmedGoneReadStopsAliaslessLane() async throws {
+    let f = PumpFixture()
+    try f.owner.submit(profile: "p", mutations: [.init(method: "updateBookmark", args: ["b0", ["title": "Recover me"]])])
+    #expect(f.owner.remap(profiles: ["p": "new-engine"], defaultProfile: "p"))
+    let client = BookmarkEngineClient(readTree: { _ in throw BookmarkEngineAvailabilityError.permanentlyGone }, apply: f.engine.client.apply)
+    let pump = BookmarkPump(coordinator: f.owner, client: client, clock: f.time.clock, scheduler: f.time.scheduler)
+    pump.requestRead(engine: "")
+    await pump.settle(engine: "")
+    #expect(!f.owner.catalogEngines.contains(""))
+    #expect(f.owner.recoveryConflicts.last?["desired"]?["nodes"]?["b0"]?["title"] == "Recover me")
+    f.time.advance(to: 60_000, includingCancelled: true)
+    await pump.settle(engine: "")
+    #expect(f.engine.batches.isEmpty)
+  }
+}
+
+
+@MainActor
+extension BookmarkPumpTests {
+  @Test func retirementDrainWaitsForPreviousCoordinatorFlight() async throws {
+    let f = PumpFixture()
+    f.engine.hold = true
+    try await f.rename("Old coordinator")
+    await f.engine.entered()
+    f.owner.fencePumpAdmissions()
+    let replacement = BookmarkCoordinator(profiles: ["p": ""], defaultProfile: "p")
+    try replacement.retire(engine: "")
+    var drained = false
+    let drain = Task {
+      try await replacement.engineQueue.perform(engine: "") {
+        #expect(f.engine.active == 0)
+        drained = true
+      }
+    }
+    await Task.yield()
+    #expect(!drained)
+    f.engine.release()
+    try await drain.value
+    await f.pump.settle(engine: "")
+    #expect(drained)
+    #expect(!replacement.desiredView(engine: "").hasView)
+  }
+}

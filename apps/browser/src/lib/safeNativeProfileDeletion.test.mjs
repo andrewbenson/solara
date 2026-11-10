@@ -71,8 +71,10 @@ test("SolaraCoreProfileData refuses default-profile deletion with a reason befor
   assert.deepEqual(results[1].remaining, []);
   assert.equal(results[1].callbacks, 1);
   assert.deepEqual(results[1].calls, [
+    "listExtensions", "listExtensions", "ac_bookmarks_clear",
     "clearBrowsingData", "ac_browsing_data_clear", "listPasswords", "listPasswords", "neverSaveOrigins", "neverSaveOrigins",
-    "addresses", "addresses", "cards", "cards", "listExtensions", "listExtensions", "siteSettingsOrigins", "siteSettingsOrigins", "zoomLevels", "zoomLevels",
+    "addresses", "addresses", "cards", "cards", "siteSettingsOrigins", "siteSettingsOrigins", "zoomLevels", "zoomLevels",
+    "ac_bookmarks_clear",
   ]);
 });
 

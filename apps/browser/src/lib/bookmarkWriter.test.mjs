@@ -24,7 +24,7 @@ class FakeOwner {
     this.ids = 0;
   }
   state() {
-    return { state: "owned", generation: this.generation };
+    return { state: "owned", generation: this.lifecycleGeneration ?? this.generation };
   }
   snapshot() {
     return { engine: this.engine, generation: this.generation, revision: String(this.revision), ready: true, document: JSON.stringify(this.document) };
@@ -32,7 +32,7 @@ class FakeOwner {
   replace(profileId, documentJSON, expectedRevision, engine, generation, requestId) {
     this.replaced.push({ profileId, documentJSON, expectedRevision, engine, generation, requestId });
     if (this.refuse) throw this.refuse;
-    if (engine !== this.engine) throw Object.assign(new Error("the bookmark owner changed since this binding was taken"), { code: "staleBinding" });
+    if (engine !== this.engine || generation !== this.generation) throw Object.assign(new Error("the bookmark owner changed since this binding was taken"), { code: "staleBinding" });
     if (expectedRevision !== String(this.revision)) throw Object.assign(new Error("revision changed"), { code: "refused" });
     this.document = JSON.parse(documentJSON);
     this.revision += 1;
@@ -42,7 +42,7 @@ class FakeOwner {
     const mutations = JSON.parse(mutationsJSON);
     this.submitted.push({ profileId, mutations, engine, generation, requestId });
     if (this.refuse) throw this.refuse;
-    if (engine !== this.engine) throw Object.assign(new Error("the bookmark owner changed since this binding was taken"), { code: "staleBinding" });
+    if (engine !== this.engine || generation !== this.generation) throw Object.assign(new Error("the bookmark owner changed since this binding was taken"), { code: "staleBinding" });
     const results = mutations.map((mutation) => {
       if (mutation.method !== "addBookmark") return null;
       const id = `n${++this.ids}`;
@@ -96,11 +96,11 @@ test("a refused native edit rejects, changes nothing in the store and never fall
   assert.equal(JSON.stringify(S().bookmarks), before);
 });
 
-test("a same-engine owner generation change does not refuse the edit", async () => {
+test("a harmless runtime remap preserves the same-engine route binding", async () => {
   const owner = (globalThis.acTestBookmarkWriter = new FakeOwner());
   const realSubmit = owner.submit.bind(owner);
   owner.submit = (...args) => {
-    owner.generation = "2";
+    owner.lifecycleGeneration = "2";
     return realSubmit(...args);
   };
   assert.equal(await bookmarkWriter.addBookmark({ profileId: "p", title: "Late", url: "https://late.example/" }), "n1");
@@ -171,7 +171,6 @@ for (const operation of ["submit", "replace"]) {
     owner[operation] = (...args) => {
       if (calls.length < 8) {
         calls.push({ refused: true, requestId: args.at(-1) });
-        owner.generation = String(Number(owner.generation) + 1);
         throw staleBinding();
       }
       return real(...args);
@@ -181,6 +180,25 @@ for (const operation of ["submit", "replace"]) {
     assert.deepEqual(clock.delays, [25, 50, 100, 200, 400, 400, 400, 400]);
     assert.deepEqual([...new Set(calls.map((call) => call.requestId))], ["retry-1"]);
     assert.equal(owner.revision, 11);
+  });
+
+  test(`${operation} refuses a revoked incarnation even when the engine string is reused`, async (t) => {
+    fakeClock(t);
+    const owner = (globalThis.acTestBookmarkWriter = new FakeOwner());
+    const calls = operation === "submit" ? owner.submitted : owner.replaced;
+    const real = owner[operation].bind(owner);
+    let refused;
+    owner[operation] = (...args) => {
+      if (!refused) {
+        calls.push({ refused: true });
+        owner.generation = "retired-incarnation";
+        throw (refused = staleBinding());
+      }
+      return real(...args);
+    };
+    await assert.rejects(perform(owner, operation, "retired-request"), (caught) => caught === refused);
+    assert.equal(calls.length, 1);
+    assert.equal(owner.revision, 10);
   });
 
   test(`${operation} never rebinds onto a different engine: it rejects so the caller re-plans`, async (t) => {

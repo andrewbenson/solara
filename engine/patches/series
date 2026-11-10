@@ -80,5 +80,7 @@ chromium chromium-document-pip-bar.patch
 chromium chromium-solara-layer.patch
 chromium chromium-helper-name.patch
 
+chromium chromium-bookmark-confirmed-save.patch
+
 layer engine/chromium
 layer engine/solaracore

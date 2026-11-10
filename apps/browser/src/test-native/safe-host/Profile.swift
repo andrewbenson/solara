@@ -8,7 +8,7 @@ enum SolaraCoreHost {
 enum SolaraCoreServices {
   static var calls: [String] = []
   static func clearBrowsingData(profile: String, types: [String], since: Int, completion: () -> Void) { calls.append("clearBrowsingData"); completion() }
-  static func call(_ name: String, profile: String, args: [String: Any], completion: ([String: Any]) -> Void) { calls.append(name); completion(["ok": true]) }
+  static func call(_ name: String, profile: String, args: [String: Any]?, completion: ([String: Any]) -> Void) { calls.append(name); completion(["ok": true]) }
   static func addresses(profile: String, completion: ([String: Any]) -> Void) { calls.append("addresses"); completion(["addresses": []]) }
   static func cards(profile: String, completion: ([String: Any]) -> Void) { calls.append("cards"); completion(["cards": []]) }
   static func deleteAutofillEntry(_ id: String, profile: String, completion: (Bool) -> Void) { calls.append("deleteAutofillEntry"); completion(true) }

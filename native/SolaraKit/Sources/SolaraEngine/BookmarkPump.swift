@@ -1,6 +1,10 @@
 import Foundation
 import SolaraModel
 
+public enum BookmarkEngineAvailabilityError: Error, Sendable {
+  case permanentlyGone
+}
+
 public struct BookmarkEngineClient: Sendable {
   public var readTree: @Sendable (String) async throws -> EngineBookmarkTree
   public var apply: @Sendable (String, [BookmarkOperation]) async throws -> BookmarkApplyResult
@@ -38,6 +42,7 @@ public struct BookmarkPumpScheduler {
 
 @MainActor
 final class BookmarkEngineQueue {
+  nonisolated static let shared = BookmarkEngineQueue()
   private var tails: JSMap<Task<Void, Never>> = [:]
   nonisolated init() {}
 
@@ -212,7 +217,16 @@ public final class BookmarkPump {
         lanes.removeValue(forKey: engine)
       }
     }
-    while !stopped, let (view, base) = coordinator.pumpInput(engine: engine, epoch: epoch) {
+    while !stopped, let (view, delta) = coordinator.pumpInput(engine: engine, epoch: epoch) {
+      if coordinator.catalogProfile(engine: engine) == nil, view.document["nodes"]?.object?.isEmpty == true {
+        let coordinator = coordinator
+        let epoch = epoch
+        let terminated = await coordinator.offMain { coordinator.terminalizeEmptyAliaslessEngine(engine: engine, epoch: epoch) }
+        if terminated { return }
+        guard journalFailed(engine, lane) else { return }
+        waitForDeadline(engine, lane)
+        return
+      }
       updateDeadline(lane, view)
       let waiting = due(lane).map { $0 > clock.monotonicTimeMs() } ?? false
       if lane.read && !(lane.readDeferred && waiting) {
@@ -239,6 +253,15 @@ public final class BookmarkPump {
           lane.push = true
         } catch {
           guard !stopped, coordinator.ownsPump(engine: engine, epoch: epoch) else { return }
+          if case BookmarkEngineAvailabilityError.permanentlyGone = error, coordinator.catalogProfile(engine: engine) == nil {
+            let coordinator = coordinator
+            let epoch = epoch
+            let terminated = await coordinator.offMain { coordinator.terminalizeGoneEngine(engine: engine, epoch: epoch) }
+            if terminated { return }
+            guard journalFailed(engine, lane) else { return }
+            waitForDeadline(engine, lane)
+            return
+          }
           let coordinator = coordinator
           let epoch = epoch
           let now = clock.wallTimeMs()
@@ -262,7 +285,6 @@ public final class BookmarkPump {
       guard lane.push else { return }
       lane.push = false
       guard !BookmarkFlat(document: view.document, engine: engine).nodes.isEmpty else { return }
-      let delta = BookmarkReconcile.operations(from: base, to: BookmarkFlat(document: view.document, engine: engine), engine: engine)
       if delta.isEmpty {
         if view.failedPushes != 0 || view.retryNotBeforeMs != nil {
           let coordinator = coordinator

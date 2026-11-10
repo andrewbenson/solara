@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cerrno>
 #include <cstdint>
 #include <deque>
 #include <initializer_list>
@@ -974,10 +975,18 @@ class Coordinator {
     }
     const auto actual = Identify(path);
     const auto root = Identify(Manager()->user_data_dir());
-    if (!actual || !root || actual->path != path ||
-        actual->path.DirName() != root->path) {
+    if (!root || path.DirName() != root->path ||
+        (actual && actual->path != path)) {
       std::move(callback).Run(false);
       return;
+    }
+    if (!actual) {
+      struct stat info;
+      if (lstat(path.value().c_str(), &info) == 0 || errno != ENOENT ||
+          Manager()->GetProfileByPath(path)) {
+        std::move(callback).Run(false);
+        return;
+      }
     }
     admitted_deletions_.insert(path);
     deleted_paths_.insert(path);

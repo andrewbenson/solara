@@ -20,11 +20,15 @@
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/solara/ac_engine.h"
 #include "chrome/browser/profiles/profile.h"
+#include "components/bookmarks/browser/bookmark_client.h"
 #include "components/bookmarks/browser/bookmark_model.h"
 #include "components/bookmarks/browser/bookmark_model_observer.h"
 #include "components/bookmarks/browser/bookmark_node.h"
 #include "components/bookmarks/browser/scoped_group_bookmark_actions.h"
 #include "components/bookmarks/common/bookmark_metrics.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "url/gurl.h"
 
 namespace solara {
@@ -36,6 +40,16 @@ constexpr int kMaxDepth = 512;
 
 using bookmarks::BookmarkModel;
 using bookmarks::BookmarkNode;
+
+bool HasBookmarkExtensionWriter(Profile* profile) {
+  auto* registry = extensions::ExtensionRegistry::Get(profile);
+  for (const auto& extension : registry->enabled_extensions()) {
+    if (extension->permissions_data()->HasAPIPermission("bookmarks")) {
+      return true;
+    }
+  }
+  return false;
+}
 
 BookmarkModel* ModelFor(Profile* profile) {
   return profile && !profile->IsOffTheRecord()
@@ -405,6 +419,49 @@ AC_ENGINE_CALL(ac_bookmarks_tree) {
             reply.Send(base::DictValue()
                            .Set("bar", std::move(*bar))
                            .Set("other", std::move(*other)));
+          },
+          call.profile()->GetWeakPtr(), call.TakeReply()));
+}
+
+AC_ENGINE_CALL(ac_bookmarks_clear) {
+  Call call(profile_dir, args_json, reply, context);
+  if (!call) {
+    return;
+  }
+  auto* model = solara::ModelFor(call.profile());
+  if (!model) {
+    return call.TakeReply().Error("no bookmarks");
+  }
+  solara::WhenLoaded::Run(
+      model,
+      base::BindOnce(
+          [](base::WeakPtr<Profile> profile, Reply reply) {
+            auto* model = profile ? solara::ModelFor(profile.get()) : nullptr;
+            if (!model) {
+              return reply.Error("profile went away");
+            }
+            if (solara::HasBookmarkExtensionWriter(profile.get())) {
+              return reply.Error("bookmark extension writers remain active");
+            }
+            model->RemoveAllUserBookmarks(FROM_HERE);
+            model->SaveBookmarks(base::BindOnce(
+                [](base::WeakPtr<Profile> profile, Reply reply, bool saved) {
+                  auto* model = profile ? solara::ModelFor(profile.get()) : nullptr;
+                  if (!saved || !model) {
+                    return reply.Error("bookmark persistence failed");
+                  }
+                  if (solara::HasBookmarkExtensionWriter(profile.get())) {
+                    return reply.Error("bookmark extension writers became active");
+                  }
+                  for (const auto& root : model->root_node()->children()) {
+                    if (!model->client()->IsNodeManaged(root.get()) &&
+                        !root->children().empty()) {
+                      return reply.Error("bookmarks changed during cleanup");
+                    }
+                  }
+                  reply.Ok();
+                },
+                profile, std::move(reply)));
           },
           call.profile()->GetWeakPtr(), call.TakeReply()));
 }

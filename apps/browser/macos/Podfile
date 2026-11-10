@@ -123,7 +123,7 @@ ac_solara_kit = lambda do |installer|
     package.relative_path = kit
     project.root_object.package_references << package
   end
-  %w[SolaraBridgeCore SolaraLive SolaraModel SolaraOmnibox SolaraPersistence SolaraProbes SolaraStore SolaraUI].each do |name|
+  %w[SolaraBridgeCore SolaraEngine SolaraLive SolaraModel SolaraOmnibox SolaraPersistence SolaraProbes SolaraStore SolaraUI].each do |name|
     next if target.package_product_dependencies.any? { |d| d.product_name == name }
     dependency = ac_new_object.call(project, Xcodeproj::Project::Object::XCSwiftPackageProductDependency)
     dependency.package = package

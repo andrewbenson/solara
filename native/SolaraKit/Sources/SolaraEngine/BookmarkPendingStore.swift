@@ -101,13 +101,22 @@ public final class BookmarkPendingStore {
   private let operations: BookmarkPendingFileOperations
   private let lock = NSRecursiveLock()
   private var loaded: BookmarkPendingLoad?
+  private var defersRecovery: Bool
 
-  public init(directory: URL, clock: @escaping () -> Double = { (Date().timeIntervalSince1970 * 1000).rounded(.down) }, logger: @escaping (String) -> Void = { _ in }, fileOperations: BookmarkPendingFileOperations = .live) {
+  public init(directory: URL, clock: @escaping () -> Double = { (Date().timeIntervalSince1970 * 1000).rounded(.down) }, logger: @escaping (String) -> Void = { _ in }, fileOperations: BookmarkPendingFileOperations = .live, defersRecovery: Bool = false) {
     self.directory = directory
+    self.defersRecovery = defersRecovery
     self.clock = clock
     self.logger = logger
     operations = fileOperations
     journalURL = directory.appendingPathComponent(Self.journalName)
+  }
+
+  func invalidateLoadedForOwnerReplacement() {
+    lock.lock()
+    loaded = nil
+    defersRecovery = false
+    lock.unlock()
   }
 
   public func load() -> BookmarkPendingLoad {
@@ -146,6 +155,12 @@ public final class BookmarkPendingStore {
   }
 
   private func preserveUnreadable(reason: String) -> BookmarkPendingLoad {
+    if defersRecovery {
+      let notice = BookmarkRecoveryNotice(kind: .unreadableJournal, message: "Pending bookmark journal recovery awaits exclusive ownership.", preservedPath: journalURL.path)
+      let result = BookmarkPendingLoad(payload: nil, recoveryNotice: notice, writable: false)
+      loaded = result
+      return result
+    }
     let timestamp = String(format: "%.0f", clock())
     let target = directory.appendingPathComponent("\(Self.journalName).unreadable-\(timestamp)-\(UUID().uuidString.lowercased())")
     var preservedPath: String?

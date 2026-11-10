@@ -112,6 +112,42 @@ backlog, and check this file against the release notes.
 | Memory use per tab on hover cards (native) | done: the native sidebar tab card shows "Memory usage: 152 MB", or "High memory usage · 1.2 GB" above 800 MiB (Chrome's per-tab line, `SidebarTabMemory.highBytes`), from one `ac_tabs_memory` call per card show, cached per tab and page; none for sleeping tabs, "—" when no value comes back, nothing at all without the export. Settings › Tabs › Show memory usage on tab hover cards (on, synced) |
 | The toolbar keeps up with a sidebar resize: during a live drag the page follows the new width at once but the native toolbar lags behind it, leaving a gap (owner report on 0.2.6-nightly.1, 2026-11-09) | in progress: diagnosis |
 
+## 0.3.1: Chromium 157, and sites that work
+
+Owner, 2026-11-09: these follow 0.3.0 rather than joining it, so the bookmark handover ships on its own. Items marked
+"(Ardia)" were seen in Ardia 0.2.43 to 0.2.46-nightly.1; Solara builds its own version, never a merge.
+
+| Item | Status |
+|---|---|
+| Chromium 157 on Helium 0.21.1 (from 156.0.8078.79; Chrome stable for Mac is 157.0.8103.51 as of 2026-11-09): re-sync the patch series, keep both Safe Storage patches unchanged, publish the engine; Ardia's 157 series is a reference for the rebase (Ardia) | planned |
+| Sites with fraud checks work: YNAB showed "Something went wrong" on every load and Apple's guest checkout ended on "Page Not Found" in Ardia; check both in Solara and fix what fails; no page can open the screen-sharing picker without a click (Ardia) | planned |
+| The address bar never stalls on dotted, dashed text such as `my-post.another-post.x:` (Ardia froze for seconds per keystroke); check the native omnibox and add the case to its tests (Ardia) | planned |
+| Thousands of bookmarks stay fast: a 2,500-bookmark import, a large bar set to Always, the » menu and a folder of a few thousand on the bookmarks page, against the native bookmark owner (Ardia) | planned |
+| macOS 27: the green button's Move & Resize and Fill & Arrange menus don't crash, and a window dragged to another display stays where it's dropped (Ardia) | planned |
+| Picture in Picture floats over other apps' full-screen Spaces and stays on the display it's put on, tiling window managers included (Ardia) | planned |
+
+## 0.3.2: lighter launches, Arc's windows
+
+| Item | Status |
+|---|---|
+| Profiles load when opened: at launch only the profiles the windows show start, the rest and their extensions start on first switch; a setting turns it off (Ardia measured 1.5 GB → 390 MB at launch with eight profiles) (Ardia) | planned |
+| Closing the last window keeps it, as in Arc: no "Close N tabs?", the Dock brings back the same window with its tabs, groups and selection, and so does reopening after quitting with no window (Ardia) | planned |
+| Unread counts on tabs, pinned tabs and Top Apps, from the page title, the Badging API or a favicon dot (Ardia) | planned |
+| Links from pinned tabs and Top Apps to other sites open in a Peek, with Gmail, Slack and Outlook redirect wrappers unwrapped; Settings › Tabs picks New tab, Peek or Little Solara (Ardia) | planned |
+| WebKit tabs block ads and trackers with uBlock Origin Lite's lists, following the same blocking switch, lists and trusted sites as Chromium tabs (Ardia) | planned |
+| Full screen: the whole window slides down with the menu bar and nothing is covered (owner's target, backlog 2026-11-01); Ardia's version, macOS's own title bar sliding down with the window buttons, is a reference, not the target | planned |
+
+## 0.3.3: colour and control
+
+| Item | Status |
+|---|---|
+| A light custom colour gets dark sidebar and tab-strip text, as Arc draws it, with a setting to turn it off; a dark colour keeps the selected tab's title white (Ardia) | planned |
+| A coloured group shows its colour at rest; neutral groups show their box on hover only, as in Dia (Ardia) | planned |
+| Arrowing through the command bar shows the highlighted suggestion in the field, as Chrome and Dia do, and Esc brings back what was typed (Ardia) | planned |
+| A same-site page swap and a tab switch keep the old page up until the new one draws: no white flash (Ardia) | planned |
+| Set Solara up from files: settings, keybindings and themes in `~/.config/solara/config.json` and `themes/<name>.json`, applied at launch and on every save, never written back (Ardia) | planned |
+| Hooks in `~/.config/solara/hooks.json`: rewrite or block links before they open, send links from an app to a profile, file finished downloads, deny camera or microphone, run a command on an event; anything reaching outside the page waits for approval in Settings (Ardia) | planned |
+
 ## The road to all Swift (0.4.0 to 1.0.0)
 
 React Native leaves one layer at a time: first it stops drawing, then it stops deciding, then it stops holding data,

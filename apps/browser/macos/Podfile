@@ -139,8 +139,13 @@ ac_solara_kit = lambda do |installer|
   project.targets.select { |t| %w[SolaraStoreAdapter SolaraSettingsAdapter SolaraImportAdapter SolaraSyncAdapter SolaraCore].include?(t.name) }.each do |t|
     t.build_configurations.each do |c|
       paths = Array(c.build_settings['SWIFT_INCLUDE_PATHS'] || ['$(inherited)'])
-      built = '${SYMROOT}/${CONFIGURATION}${EFFECTIVE_PLATFORM_NAME}/'
-      c.build_settings['SWIFT_INCLUDE_PATHS'] = paths.include?(built) ? paths : paths + [built]
+      grdb_sqlite = 'SourcePackages/checkouts/GRDB.swift/Sources/GRDBSQLite'
+      wanted = [
+        '${SYMROOT}/${CONFIGURATION}${EFFECTIVE_PLATFORM_NAME}/',
+        "${BUILD_DIR}/../../#{grdb_sqlite}",
+        "${BUILD_DIR}/../../../../../#{grdb_sqlite}",
+      ]
+      c.build_settings['SWIFT_INCLUDE_PATHS'] = paths + wanted.reject { |w| paths.include?(w) }
     end
   end
 end

@@ -208,7 +208,8 @@ final class BookmarkDurability {
   static func encodeView(_ view: BookmarkDesiredView) -> JSONValue {
     ["engine": .string(view.engine), "document": view.document, "revision": .string(String(view.revision)), "hasView": .bool(view.hasView), "failedPushes": JSONValue(view.failedPushes), "retryNotBeforeMs": view.retryNotBeforeMs.map(JSONValue.number) ?? .null, "requiresRead": .bool(view.requiresRead), "inFlightTarget": view.inFlightTarget ?? .null, "structuralBreak": view.structuralBreak.map { JSONValue($0) } ?? .null,
      "facts": .object(view.facts.mapValues { fact in ["at": .number(fact.at), "seq": .string(String(fact.seq)), "after": fact.after.map(JSONValue.string) ?? .null, "link": .string(fact.link)] }),
-     "lastSeen": .object(view.lastSeen.mapValues(JSONValue.string))]
+     "lastSeen": .object(view.lastSeen.mapValues(JSONValue.string)),
+     "wireURLs": .object(view.wireURLs.mapValues { ["wire": .string($0.wire), "canonical": .string($0.canonical), "conversionOnly": .bool($0.conversionOnly)] })]
   }
 
   private static func decodeView(_ value: JSONValue, oldFormat: Bool, factSequence: UInt64) throws -> BookmarkDesiredView {
@@ -233,6 +234,17 @@ final class BookmarkDurability {
         lastSeen[key] = hlc
       }
     }
+    var wireURLs: JSMap<BookmarkWireURL> = [:]
+    if let stored = value["wireURLs"] {
+      guard let entries = stored.object else { throw BookmarkPendingStoreError.invalidEnvelope }
+      for (id, saved) in entries {
+        guard let wire = saved["wire"]?.string, let canonical = saved["canonical"]?.string,
+          document["nodes"]?[id]?["kind"] == "url", document["nodes"]?[id]?["url"] == .string(canonical) else { throw BookmarkPendingStoreError.invalidEnvelope }
+        let conversionOnly = saved["conversionOnly"] ?? true
+        guard let isConversionOnly = conversionOnly.bool else { throw BookmarkPendingStoreError.invalidEnvelope }
+        wireURLs[id] = BookmarkWireURL(wire: wire, canonical: canonical, conversionOnly: isConversionOnly)
+      }
+    }
     let failures = value["failedPushes"] ?? 0
     let deadline = value["retryNotBeforeMs"] ?? .null
     let requiresRead = value["requiresRead"] ?? false
@@ -240,7 +252,7 @@ final class BookmarkDurability {
       deadline.isNull || deadline.number?.isFinite == true, let needsRead = requiresRead.bool else { throw BookmarkPendingStoreError.invalidEnvelope }
     let target = value["inFlightTarget"].flatMap { value -> JSONValue? in value.isNull ? Optional<JSONValue>.none : Optional.some(value) }
     if let target { try validateDocument(target, engine: engine) }
-    return BookmarkDesiredView(engine: engine, document: document, revision: revision, hasView: hasView, readyForSync: false, structuralBreak: structuralBreak.int, failedPushes: failureCount, retryNotBeforeMs: deadline.number, requiresRead: needsRead, inFlightTarget: target, facts: facts, lastSeen: lastSeen)
+    return BookmarkDesiredView(engine: engine, document: document, revision: revision, hasView: hasView, readyForSync: false, structuralBreak: structuralBreak.int, failedPushes: failureCount, retryNotBeforeMs: deadline.number, requiresRead: needsRead, inFlightTarget: target, facts: facts, lastSeen: lastSeen, wireURLs: wireURLs)
   }
 
   func validateAcceptance(_ document: JSONValue, engine: String) throws {

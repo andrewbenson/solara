@@ -46,6 +46,19 @@ public struct BookmarkWriterSnapshot: Sendable {
   public let hasView: Bool
   public let document: JSONValue
   public let facts: JSMap<BookmarkEditFact>
+  public let wireDocument: JSONValue
+  public let wireBaselineKeys: [String]
+
+  public init(binding: BookmarkWriterBinding, revision: UInt64, ready: Bool, hasView: Bool, document: JSONValue, facts: JSMap<BookmarkEditFact>, wireDocument: JSONValue? = nil, wireBaselineKeys: [String] = []) {
+    self.binding = binding
+    self.revision = revision
+    self.ready = ready
+    self.hasView = hasView
+    self.document = document
+    self.facts = facts
+    self.wireDocument = wireDocument ?? document
+    self.wireBaselineKeys = wireBaselineKeys
+  }
 }
 
 public struct BookmarkOwnershipState: Equatable, Sendable {
@@ -203,15 +216,15 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
     var beforeMappingAdmissionForTesting: (@Sendable () -> Void)?
   #endif
 
-  private init(store: BookmarkPendingStore, profiles: JSMap<String>, defaultProfile: String, owningProfiles: JSMap<String> = [:], launchInput: BookmarkLaunchInput = .init(), stampsEnabled: Bool = false) {
+  private init(store: BookmarkPendingStore, profiles: JSMap<String>, defaultProfile: String, owningProfiles: JSMap<String> = [:], launchInput: BookmarkLaunchInput = .init(), stampsEnabled: Bool = false, canonicalURL: @escaping @Sendable (String) throws -> String = { $0 }) {
     mapping = BookmarkProfileMap(profiles: profiles, defaultProfile: defaultProfile, owningProfiles: owningProfiles)
-    coordinator = BookmarkCoordinator(profiles: profiles, defaultProfile: defaultProfile, owningProfiles: owningProfiles, stampsEnabled: stampsEnabled, pendingStore: store, launchInput: launchInput)
+    coordinator = BookmarkCoordinator(profiles: profiles, defaultProfile: defaultProfile, owningProfiles: owningProfiles, stampsEnabled: stampsEnabled, pendingStore: store, launchInput: launchInput, canonicalURL: canonicalURL)
     updateRoutes(mapping)
   }
 
   #if DEBUG
-    public convenience init(store: BookmarkPendingStore, profiles: JSMap<String>, defaultProfile: String, launchInput: BookmarkLaunchInput = .init(), wake: @escaping @Sendable (String) -> Void) {
-      self.init(store: store, profiles: profiles, defaultProfile: defaultProfile, launchInput: launchInput)
+    public convenience init(store: BookmarkPendingStore, profiles: JSMap<String>, defaultProfile: String, launchInput: BookmarkLaunchInput = .init(), canonicalURL: @escaping @Sendable (String) throws -> String = { $0 }, wake: @escaping @Sendable (String) -> Void) {
+      self.init(store: store, profiles: profiles, defaultProfile: defaultProfile, launchInput: launchInput, canonicalURL: canonicalURL)
       self.wake = wake
     }
   #endif
@@ -256,7 +269,7 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
       let unchanged = generation == lifecycleGeneration && routes[regularProfile(profile)]?.generation == binding.generation
       let ready = snapshot.ready && installedGeneration == lifecycleGeneration && accepting && !prepared && !retiredEngines.contains(JSKey(engine))
       fence.unlock()
-      if unchanged { return BookmarkWriterSnapshot(binding: binding, revision: snapshot.revision, ready: ready, hasView: snapshot.hasView, document: snapshot.document, facts: snapshot.facts) }
+      if unchanged { return BookmarkWriterSnapshot(binding: binding, revision: snapshot.revision, ready: ready, hasView: snapshot.hasView, document: snapshot.document, facts: snapshot.facts, wireDocument: snapshot.wireDocument, wireBaselineKeys: snapshot.wireBaselineKeys) }
     }
     throw BookmarkWriterError.staleBinding
   }
@@ -475,8 +488,8 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
     return receipt
   }
 
-  public static func prepare(directory: URL, state: BrowserState, cacheDirectory: URL? = nil, readOnly: Bool = false, stampsEnabled: Bool = false) async -> NativeBookmarkOwner {
-    await prepare(directory: directory, state: state, cacheDirectory: cacheDirectory, readOnly: readOnly, stampsEnabled: stampsEnabled, afterLoad: {})
+  public static func prepare(directory: URL, state: BrowserState, cacheDirectory: URL? = nil, readOnly: Bool = false, stampsEnabled: Bool = false, canonicalURL: @escaping @Sendable (String) throws -> String = { $0 }) async -> NativeBookmarkOwner {
+    await prepare(directory: directory, state: state, cacheDirectory: cacheDirectory, readOnly: readOnly, stampsEnabled: stampsEnabled, canonicalURL: canonicalURL, afterLoad: {})
   }
 
   #if DEBUG
@@ -485,12 +498,12 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
     }
   #endif
 
-  private static func prepare(directory: URL, state: BrowserState, cacheDirectory: URL?, readOnly: Bool, stampsEnabled: Bool, afterLoad: @escaping @Sendable () async -> Void) async -> NativeBookmarkOwner {
+  private static func prepare(directory: URL, state: BrowserState, cacheDirectory: URL?, readOnly: Bool, stampsEnabled: Bool, canonicalURL: @escaping @Sendable (String) throws -> String = { $0 }, afterLoad: @escaping @Sendable () async -> Void) async -> NativeBookmarkOwner {
     await Task.detached {
       let store = BookmarkPendingStore(directory: directory, defersRecovery: true, readOnly: readOnly)
       let map = BookmarkProfileMap(state: state, previousOwners: BookmarkDurability(store: store).owners)
       let launch = cacheDirectory.map { BookmarkLaunchCache(directory: $0).load(profiles: map.profiles, defaultProfile: map.defaultProfile) } ?? BookmarkLaunchInput()
-      let owner = NativeBookmarkOwner(store: store, profiles: map.profiles, defaultProfile: map.defaultProfile, owningProfiles: map.owningProfiles, launchInput: launch, stampsEnabled: stampsEnabled)
+      let owner = NativeBookmarkOwner(store: store, profiles: map.profiles, defaultProfile: map.defaultProfile, owningProfiles: map.owningProfiles, launchInput: launch, stampsEnabled: stampsEnabled, canonicalURL: canonicalURL)
       owner.prepared = true
       owner.accepting = false
       owner.installedGeneration = nil

@@ -16,10 +16,10 @@ enum NativeBookmarkLaunch {
       safeMode: LaunchSwitches.shared.safeMode || DocumentStore.safeMode,
       prepare: {
         guard NativeStoreHandle.ownsWorkspace,
-          ["ac_bookmarks_tree", "ac_bookmarks_apply", "ac_bookmarks_watch"].allSatisfy({ SolaraCoreEngineBridge.exports($0) }),
+          ["ac_bookmarks_tree", "ac_bookmarks_apply", "ac_bookmarks_watch", "ac_bookmarks_canonicalize_url_v1"].allSatisfy({ SolaraCoreEngineBridge.exports($0) }),
           let state = NativeStoreHandle.store?.state else { throw BookmarkWriterError.notOwned }
         let directory = try await Task.detached { try DocumentStore.directoryURL() }.value
-        return await NativeBookmarkOwner.prepare(directory: directory, state: state, cacheDirectory: directory, stampsEnabled: true)
+        return await NativeBookmarkWriter.prepare(directory: directory, state: state, cacheDirectory: directory, stampsEnabled: true)
       },
       attach: { owner in
         guard NativeStoreHandle.ownsWorkspace, NativeStoreHandle.store != nil else { throw BookmarkWriterError.notOwned }

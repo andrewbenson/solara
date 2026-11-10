@@ -142,6 +142,10 @@ void InstallSink() {
   return SolaraCanonicalBookmarkURL(url, error);
 }
 
++ (NSString *)canonicalBookmarkURLUTF16:(NSData *)units error:(NSError **)error {
+  return SolaraCanonicalBookmarkURLUTF16(units, error);
+}
+
 + (void)call:(NSString *)name profile:(NSString *)profile args:(NSString *)args completion:(void (^)(NSString *))completion {
   if ([name isEqualToString:@"ac_bookmarks_canonicalize_url_v1"])
     return completion(JSON(@{@"error" : @"use canonicalBookmarkURL for this synchronous utility"}));

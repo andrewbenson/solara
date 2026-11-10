@@ -48,3 +48,12 @@ NSString *SolaraCanonicalBookmarkURL(NSString *url, NSError **error) {
     return Failed(error, SolaraCoreBookmarkURLBadReply, @"The engine returned an invalid bookmark URL result.");
   return reply.value;
 }
+
+NSString *SolaraCanonicalBookmarkURLUTF16(NSData *bytes, NSError **error) {
+  if (bytes.length % sizeof(uint16_t))
+    return Failed(error, SolaraCoreBookmarkURLInvalid, @"The bookmark URL has incomplete UTF-16 code units.");
+  std::vector<uint16_t> units(bytes.length / sizeof(uint16_t));
+  if (!units.empty()) [bytes getBytes:units.data() length:bytes.length];
+  NSString *url = [[NSString alloc] initWithCharacters:units.data() length:units.size()];
+  return SolaraCanonicalBookmarkURL(url, error);
+}

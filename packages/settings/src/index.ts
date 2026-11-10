@@ -23,7 +23,7 @@ type NativeSettingsModule = {
   bookmarkWriterState?(): BookmarkWriterState;
   bookmarkProjection?(): string;
   reloadBookmarkProjection?(): Promise<void>;
-  bookmarkWriterSnapshot?(profileId: string): Omit<BookmarkWriterSnapshot, "facts"> & { facts?: string };
+  bookmarkWriterSnapshot?(profileId: string): Omit<BookmarkWriterSnapshot, "facts" | "wireBaselineKeys"> & { facts?: string; wireBaselineKeys?: string };
   ackBookmarkFacts?(profileId: string, engine: string, recordsJSON: string, generation: string): boolean;
   ackBookmarkFactsForLink?(profileId: string, engine: string, recordsJSON: string, link: string, generation: string): boolean;
   observeBookmarkRecordsForLink?(profileId: string, engine: string, recordsJSON: string, link: string, generation: string): boolean;
@@ -59,7 +59,7 @@ export type BookmarkEditFact = { at: number; seq: string; after: string | null; 
 export type BookmarkFactAck = { key: string; seq: string; mintedHLC: string };
 export type BookmarkRecordObservation = { key: string; hlc: string };
 export type BookmarkFactClear = { key: string; seq: string };
-export type BookmarkWriterSnapshot = BookmarkWriterBinding & { revision: string; hasView?: boolean; readyForSync?: boolean; ready: boolean; document: string; facts: Record<string, BookmarkEditFact> };
+export type BookmarkWriterSnapshot = BookmarkWriterBinding & { revision: string; hasView?: boolean; readyForSync?: boolean; ready: boolean; document: string; wireDocument?: string; wireBaselineKeys?: string[]; facts: Record<string, BookmarkEditFact> };
 
 export type LiveReplica = { revision: number; replicaJSON: string; calendarJSON?: string; meetingAlertJSON?: string; error?: string };
 export type LiveCommandResult = { revision: number; folderId?: string; deviceFlow?: { id: string; userCode: string; verificationUri: string; expiresAt: number }; boolean?: boolean };
@@ -200,7 +200,7 @@ export function bookmarkWriterSnapshot(profileId: string): BookmarkWriterSnapsho
   requireBookmarkAuthority();
   if (!native?.bookmarkWriterSnapshot) throw new Error("native bookmarks are not owned by this launch");
   const snapshot = native.bookmarkWriterSnapshot(profileId);
-  return { ...snapshot, facts: JSON.parse(snapshot.facts ?? "{}") as Record<string, BookmarkEditFact> };
+  return { ...snapshot, facts: JSON.parse(snapshot.facts ?? "{}") as Record<string, BookmarkEditFact>, wireBaselineKeys: JSON.parse(snapshot.wireBaselineKeys ?? "[]") as string[] };
 }
 
 export function ackBookmarkFacts(profileId: string, binding: BookmarkWriterBinding, records: BookmarkFactAck[], link?: string): boolean {

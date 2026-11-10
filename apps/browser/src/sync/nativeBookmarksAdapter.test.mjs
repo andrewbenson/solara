@@ -76,7 +76,7 @@ class FakeOwner {
     return { state: "owned", generation: this.generation };
   }
   snapshot() {
-    return { engine: this.engine, generation: this.generation, revision: String(this.revision), ready: this.ready, document: JSON.stringify(this.document), facts: JSON.stringify(this.facts) };
+    return { engine: this.engine, generation: this.generation, revision: String(this.revision), ready: this.ready, document: JSON.stringify(this.document), wireDocument: this.wireDocument ? JSON.stringify(this.wireDocument) : undefined, wireBaselineKeys: this.wireBaselineKeys ? JSON.stringify(this.wireBaselineKeys) : undefined, facts: JSON.stringify(this.facts) };
   }
   edit(title, at) {
     const id = bookmarkUuidFor("k1");
@@ -144,6 +144,8 @@ class FakeOwner {
     if (engine !== this.engine || generation !== this.generation) throw new Error("stale binding");
     if (expected !== String(this.revision)) throw new Error("stale revision");
     this.document = JSON.parse(json);
+    this.wireDocument = undefined;
+    this.wireBaselineKeys = undefined;
     this.revision += 1;
     this.afterReplacement?.();
     return { revision: String(this.revision) };
@@ -744,4 +746,110 @@ test("migration baseline without native edit facts cannot beat newer remote titl
     assert.deepEqual(owner.facts, {});
     assert.deepEqual(owner.acks, []);
   }
+});
+
+
+const canonicalFixtureOwner = (wireURL, title = "Base") => {
+  const owner = linkedOwner();
+  const id = bookmarkUuidFor("k1");
+  owner.document.nodes[id] = { kind: "url", id, syncKey: "k1", parentId: "bar@default", title, url: "https://alpha.example/", favicon: null, addedAt: 1 };
+  owner.document.nodes["bar@default"].children = [id];
+  owner.wireDocument = structuredClone(owner.document);
+  owner.wireDocument.nodes[id].url = wireURL;
+  owner.wireBaselineKeys = ["bm:k1"];
+  return owner;
+};
+
+test("wireProjectionUsesOriginalRemoteURLSpelling", () => {
+  const wireURL = "https://ALPHA.example:443";
+  const owner = canonicalFixtureOwner(wireURL);
+  const extraction = ownedAdapter().extract(() => ({ ...value("Base"), u: wireURL }));
+  assert.equal(extraction.values.get("bm:k1").u, wireURL);
+  assert.equal(owner.document.nodes[bookmarkUuidFor("k1")].url, "https://alpha.example/");
+  assert.deepEqual(owner.facts, {});
+});
+
+test("wireProvenanceSurvivesRestartWithoutRepublish", async () => {
+  for (const wireURL of ["https://ALPHA.example:443", "https://alpha.example/\ud800"]) {
+    const owner = canonicalFixtureOwner(wireURL);
+    const saved = JSON.stringify({ document: owner.document, wireDocument: owner.wireDocument, wireBaselineKeys: owner.wireBaselineKeys, links: owner.links });
+    const recovered = new FakeOwner();
+    Object.assign(recovered, JSON.parse(saved));
+    globalThis.acTestBookmarkWriter = recovered;
+    const state = agreedState();
+    state.records["bm:k1"].v = { ...value("Base"), u: wireURL };
+    state.base["bm:k1"] = canonical(state.records["bm:k1"].v);
+    const result = await runFacts(recovered, state);
+    assert.equal(result.published, 0);
+    assert.equal(state.records["bm:k1"].h, h(10, "remote"));
+    assert.equal(state.records["bm:k1"].v.u, wireURL);
+    assert.deepEqual(recovered.replaced, []);
+    assert.deepEqual(recovered.facts, {});
+  }
+});
+
+test("canonicalizationCannotOutrankRemoteDeleteOrRename", async () => {
+  for (const recovery of ["intact", "lost", "rolledBack"]) {
+    for (const remoteValue of [null, { ...value("Remote title"), u: "https://alpha.example" }]) {
+      const wireURL = "https://ALPHA.example:443";
+      const owner = canonicalFixtureOwner(wireURL);
+      const state = recovery === "lost" ? emptyScope() : agreedState();
+      if (recovery === "intact") state.base["bm:k1"] = canonical({ ...value("Base"), u: wireURL });
+      const folder = new Folder();
+      const file = await folder.transport().write("p", JSON.stringify({ v: 1, kind: "log", device: "old-mac", seq: 1, at: 200, ops: [{ k: "bm:k1", h: h(200, "old-mac"), v: remoteValue }] }));
+      if (recovery === "rolledBack") {
+        state.records["bm:k1"] = { h: h(200, "old-mac"), v: remoteValue, o: ["old-mac", 1] };
+        state.files[file] = { d: "old-mac", k: "log", s: 1, at: 200 };
+        state.vv["old-mac"] = 1;
+      }
+      const result = await runFacts(owner, state, folder);
+      assert.equal(result.published, 0, `${recovery}: canonical spelling is not a new edit`);
+      assert.equal(state.records["bm:k1"].h, h(200, "old-mac"));
+      assert.deepEqual(state.records["bm:k1"].v, remoteValue);
+      assert.deepEqual(titlesIn(owner.document), remoteValue ? ["Remote title"] : []);
+      const published = [...folder.files.values()].flatMap(({ payload }) => {
+        const file = JSON.parse(payload);
+        return file.device === "native" ? file.ops ?? [] : [];
+      });
+      assert.deepEqual(published, []);
+      assert.deepEqual(owner.facts, {});
+    }
+  }
+  for (const edit of ["title", "delete"]) {
+    const wireURL = "https://ALPHA.example:443";
+    const owner = canonicalFixtureOwner(wireURL);
+    const state = agreedState();
+    state.records["bm:k1"].v = { ...value("Base"), u: wireURL };
+    state.base["bm:k1"] = canonical(state.records["bm:k1"].v);
+    owner.wireBaselineKeys = [];
+    const id = bookmarkUuidFor("k1");
+    if (edit === "title") {
+      owner.document.nodes[id].title = "Extension title";
+      owner.wireDocument.nodes[id].title = "Extension title";
+    } else {
+      delete owner.document.nodes[id];
+      delete owner.wireDocument.nodes[id];
+      owner.document.nodes["bar@default"].children = [];
+      owner.wireDocument.nodes["bar@default"].children = [];
+    }
+    const result = await runFacts(owner, state);
+    assert.equal(result.published, 1, "a real Chrome edit without conversion provenance keeps its existing publication path");
+    assert.equal(state.records["bm:k1"].v?.t ?? null, edit === "title" ? "Extension title" : null);
+    assert.equal(state.records["bm:k1"].h, h(1000));
+  }
+});
+
+test("titleOnlyNativeFactPublishesOriginalWireURLAtOriginalEditTime", async () => {
+  const wireURL = "https://ALPHA.example:443";
+  const owner = canonicalFixtureOwner(wireURL, "Local title");
+  owner.facts["bm:k1"] = { at: 100, seq: "1", after: h(10, "remote"), link: "chain" };
+  owner.seq = 1n;
+  const state = agreedState();
+  state.records["bm:k1"].v = { ...value("Base"), u: wireURL };
+  state.base["bm:k1"] = canonical(state.records["bm:k1"].v);
+  const result = await runFacts(owner, state);
+  assert.equal(result.published, 1);
+  assert.deepEqual(state.records["bm:k1"].v, { ...value("Local title"), u: wireURL });
+  assert.equal(state.records["bm:k1"].h, h(100));
+  assert.deepEqual(owner.facts, {});
 });

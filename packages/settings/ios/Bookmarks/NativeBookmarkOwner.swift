@@ -22,6 +22,8 @@ enum NativeBookmarkWriter {
     return [
       "engine": snapshot.binding.engine, "generation": String(snapshot.binding.generation),
       "revision": String(snapshot.revision), "ready": snapshot.ready, "hasView": snapshot.hasView, "readyForSync": snapshot.ready, "document": snapshot.document.bookmarkText(),
+      "wireDocument": snapshot.wireDocument.bookmarkText(),
+      "wireBaselineKeys": JSONValue(snapshot.wireBaselineKeys).bookmarkText(),
       "facts": JSONValue.object(snapshot.facts.mapValues { fact in
         .object(["at": .number(fact.at), "seq": .string(String(fact.seq)), "after": JSONValue(fact.after), "link": .string(fact.link)])
       }).bookmarkText(),

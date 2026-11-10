@@ -5,7 +5,7 @@ import { declaration, runNative, source } from "../test-native/safe-host/run.mjs
 function downloadBridge() {
   const bridge = source("packages/solaracore/ios/SolaraCoreEngineBridge.mm")
     .replace('#import "SolaraCoreEngineBridge.h"', "")
-    .replace('#import "SolaraCoreBookmarkURL.h"', "static NSString *SolaraCanonicalBookmarkURL(NSString *url, NSError **error) { return nil; }")
+    .replace('#import "SolaraCoreBookmarkURL.h"', "static NSString *SolaraCanonicalBookmarkURL(NSString *url, NSError **error) { return nil; }\nstatic NSString *SolaraCanonicalBookmarkURLUTF16(NSData *units, NSError **error) { return nil; }")
     .replace('#import "SolaraCoreInternal.h"', "")
     .replace('#include "../../../engine/chromium/src/chrome/browser/solara/public/ac_engine.h"', "");
   const services = source("packages/solaracore/ios/SolaraCoreServices.mm");

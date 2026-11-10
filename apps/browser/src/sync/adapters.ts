@@ -440,7 +440,8 @@ function nativeBookmarksAdapter(profileId: string, sync?: BookmarkSyncContext): 
       const roots = rootsOf(document);
       if (document.nodes[roots.bar]?.kind !== "folder" || document.nodes[roots.other]?.kind !== "folder") return null;
       extractedRevision = snapshot.revision;
-      const values = bookmarkValues(document, roots, base);
+      const wireDocument = JSON.parse(snapshot.wireDocument ?? snapshot.document) as Bookmarks;
+      const values = bookmarkValues(wireDocument, roots, base);
       if (!link && (sync || Object.keys(snapshot.facts).length)) return { values: new Map(), ignore: () => true };
       const cleared: BookmarkFactClear[] = [];
       const observed: { key: string; hlc: string }[] = [];
@@ -448,9 +449,16 @@ function nativeBookmarksAdapter(profileId: string, sync?: BookmarkSyncContext): 
       const claims = new Map<string, { at: number; after: string | null }>();
       const remove = new Set<string>();
       const ignored = new Set<string>();
-      for (const key of values.keys()) if (!snapshot.facts[key] && unapplied?.(key)) {
+      const canonicalBaselines = new Set(snapshot.wireBaselineKeys ?? []);
+      for (const key of new Set([...values.keys(), ...(_agreed?.() ?? [])])) {
+        if (snapshot.facts[key]) continue;
+        const local = canonical(values.get(key) ?? null);
+        const known = !!_known?.(key);
+        const needsRemote = canonicalBaselines.has(key) && known && (local !== canonical(base(key) ?? null) || local !== canonical(_remote?.(key) ?? null));
+        if (!needsRemote && !unapplied?.(key)) continue;
         values.delete(key);
         ignored.add(key);
+        if (needsRemote) reapply.add(key);
       }
       for (const [key, fact] of Object.entries(snapshot.facts)) {
         if (!key.startsWith("bm:")) continue;

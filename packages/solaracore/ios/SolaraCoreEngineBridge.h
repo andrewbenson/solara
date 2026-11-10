@@ -13,6 +13,8 @@ typedef NS_ERROR_ENUM(SolaraCoreBookmarkURLErrorDomain, SolaraCoreBookmarkURLErr
 @interface SolaraCoreEngineBridge : NSObject
 + (nullable NSString *)canonicalBookmarkURL:(NSString *)url
                                      error:(NSError * _Nullable * _Nullable)error NS_SWIFT_NAME(canonicalBookmarkURL(_:));
++ (nullable NSString *)canonicalBookmarkURLUTF16:(NSData *)units
+                                          error:(NSError * _Nullable * _Nullable)error NS_SWIFT_NAME(canonicalBookmarkURLUTF16(_:));
 + (void)call:(NSString *)name
        profile:(NSString *)profile
           args:(nullable NSString *)args

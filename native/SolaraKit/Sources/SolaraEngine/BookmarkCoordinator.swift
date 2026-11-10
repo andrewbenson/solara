@@ -41,8 +41,11 @@ public struct BookmarkDesiredView: Equatable, Sendable {
   public var inFlightTarget: JSONValue?
   public var facts: JSMap<BookmarkEditFact> = [:]
   public var lastSeen: JSMap<String> = [:]
+  public var wireURLs: JSMap<BookmarkWireURL> = [:]
+  public var wireDocument: JSONValue { BookmarkURLProjection.wireDocument(document, urls: wireURLs) }
+  public var wireBaselineKeys: [String] { BookmarkURLProjection.retaining(wireURLs, in: document).filter { $1.conversionOnly }.map { BookmarkRecordIdentity.key(id: $0.key, node: document["nodes"]?[$0.key]) } }
   public static func == (lhs: Self, rhs: Self) -> Bool {
-    JSKey(lhs.engine) == JSKey(rhs.engine) && lhs.document == rhs.document && lhs.revision == rhs.revision && lhs.hasView == rhs.hasView && lhs.readyForSync == rhs.readyForSync && lhs.structuralBreak == rhs.structuralBreak && lhs.failedPushes == rhs.failedPushes && lhs.retryNotBeforeMs == rhs.retryNotBeforeMs && lhs.requiresRead == rhs.requiresRead && lhs.inFlightTarget == rhs.inFlightTarget && lhs.facts == rhs.facts && lhs.lastSeen.mapValues(JSKey.init) == rhs.lastSeen.mapValues(JSKey.init)
+    JSKey(lhs.engine) == JSKey(rhs.engine) && lhs.document == rhs.document && lhs.revision == rhs.revision && lhs.hasView == rhs.hasView && lhs.readyForSync == rhs.readyForSync && lhs.structuralBreak == rhs.structuralBreak && lhs.failedPushes == rhs.failedPushes && lhs.retryNotBeforeMs == rhs.retryNotBeforeMs && lhs.requiresRead == rhs.requiresRead && lhs.inFlightTarget == rhs.inFlightTarget && lhs.facts == rhs.facts && lhs.wireURLs == rhs.wireURLs && lhs.lastSeen.mapValues(JSKey.init) == rhs.lastSeen.mapValues(JSKey.init)
   }
 }
 
@@ -85,6 +88,8 @@ public final class BookmarkCoordinator: @unchecked Sendable {
   private let makeID: () -> String
   private let now: () -> Double
   private let stampsEnabled: Bool
+  private let canonicalURL: (String) throws -> String
+  private var urlRecoveryHeld = false
   private let legacySource: BookmarkLegacyMigration?
   private let launchLegacyProfiles: JSMap<String>
   private var lastOwningProfiles: JSMap<String> = [:]
@@ -108,13 +113,14 @@ public final class BookmarkCoordinator: @unchecked Sendable {
   private var streams: [UUID: (JSKey, BookmarkMembershipObserver)] = [:]
   private var viewStreams: [UUID: (JSKey, BookmarkViewObserver)] = [:]
 
-  public init(profiles: JSMap<String>, defaultProfile: String, owningProfiles: JSMap<String> = [:], makeID: @escaping () -> String = { UUID().uuidString.lowercased() }, now: @escaping () -> Double = { (Date().timeIntervalSince1970 * 1000).rounded(.down) }, stampsEnabled: Bool = false, pendingStore: BookmarkPendingStore? = nil, launchInput: BookmarkLaunchInput = .init()) {
+  public init(profiles: JSMap<String>, defaultProfile: String, owningProfiles: JSMap<String> = [:], makeID: @escaping () -> String = { UUID().uuidString.lowercased() }, now: @escaping () -> Double = { (Date().timeIntervalSince1970 * 1000).rounded(.down) }, stampsEnabled: Bool = false, pendingStore: BookmarkPendingStore? = nil, launchInput: BookmarkLaunchInput = .init(), canonicalURL: @escaping (String) throws -> String = { $0 }) {
     self.profiles = profiles
     self.defaultProfile = defaultProfile
     self.owningProfiles = owningProfiles
     self.makeID = makeID
     self.now = now
     self.stampsEnabled = stampsEnabled
+    self.canonicalURL = canonicalURL
     launchLegacyPendingEngines = launchInput.legacyPendingEngines
     durability = BookmarkDurability(store: pendingStore)
     legacySource = launchInput.legacyMigration ?? BookmarkLegacyMigration.recover(directory: launchInput.directory, sourceID: durability.legacyMigration?.source)
@@ -129,6 +135,57 @@ public final class BookmarkCoordinator: @unchecked Sendable {
       bases[engine] = durability.restoredBases[engine]
     }
     lastOwningProfiles = durability.owners
+    normalizeRetainedURLs()
+  }
+
+  private func normalizedView(_ source: BookmarkDesiredView) throws -> BookmarkDesiredView {
+    var view = source
+    let normalized = try BookmarkURLProjection.normalize(view.wireDocument, preserving: view.wireURLs, captureWire: true, canonicalURL: canonicalURL)
+    view.document = normalized.document
+    view.wireURLs = normalized.wireURLs
+    if let target = view.inFlightTarget {
+      view.inFlightTarget = try BookmarkURLProjection.normalize(target, captureWire: false, canonicalURL: canonicalURL).document
+    }
+    if view.document != source.document || view.inFlightTarget != source.inFlightTarget || view.wireURLs != source.wireURLs { view.revision += 1 }
+    return view
+  }
+
+  private func holdURLRecovery() {
+    urlRecoveryHeld = true
+    durability.writable = false
+    durability.notice = BookmarkRecoveryNotice(kind: .unavailableJournal, message: "Some saved bookmark URLs could not be read by Chrome. Bookmark changes and sync are paused; the saved data was kept.", preservedPath: durability.store?.journalURL.path)
+    for (engine, source) in views { var view = source; view.readyForSync = false; views[engine] = view }
+  }
+
+  private func normalizedLegacyRecords(_ records: JSONObject) throws -> JSONObject {
+    try BookmarkURLProjection.normalize(["nodes": .object(records)], captureWire: false, canonicalURL: canonicalURL).document["nodes"]?.object ?? [:]
+  }
+
+  private func normalizeRetainedURLs() {
+    do {
+      let nextViews = try views.mapValues(normalizedView)
+      let nextBases = try JSMap(bases.map { engine, base in
+        let document = base.document(profiles: aliases(engine))
+        return (engine, BookmarkFlat(document: try BookmarkURLProjection.normalize(document, captureWire: false, canonicalURL: canonicalURL).document, engine: engine))
+      })
+      let requests = try durability.requests.mapValues { stored in
+        BookmarkStoredRequest(payload: stored.payload, receipt: BookmarkReceipt(view: try normalizedView(stored.receipt.view), results: stored.receipt.results))
+      }
+      var migration = durability.legacyMigration
+      if let progress = migration {
+        for (engine, source) in progress.engines {
+          var entry = source
+          if let target = entry.target { entry.target = try BookmarkURLProjection.normalize(target, captureWire: false, canonicalURL: canonicalURL).document }
+          entry.imported = try normalizedLegacyRecords(entry.imported)
+          migration?.engines[engine] = entry
+        }
+      }
+      views = nextViews
+      bases = nextBases
+      durability.requests = requests
+      durability.legacyMigration = migration
+      urlRecoveryHeld = false
+    } catch { holdURLRecovery() }
   }
 
   private func reconcileLegacyLaunch() {
@@ -268,7 +325,7 @@ public final class BookmarkCoordinator: @unchecked Sendable {
   func writerSnapshot(engine: String) -> BookmarkWriterSnapshot {
     locked {
       let view = desiredView(engine: engine)
-      return BookmarkWriterSnapshot(binding: BookmarkWriterBinding(engine: engine, generation: ownerGeneration), revision: view.revision, ready: view.readyForSync, hasView: view.hasView, document: view.document, facts: stampsEnabled ? view.facts : [:])
+      return BookmarkWriterSnapshot(binding: BookmarkWriterBinding(engine: engine, generation: ownerGeneration), revision: view.revision, ready: view.readyForSync, hasView: view.hasView, document: view.document, facts: stampsEnabled ? view.facts : [:], wireDocument: view.wireDocument, wireBaselineKeys: view.wireBaselineKeys)
     }
   }
 
@@ -291,6 +348,7 @@ public final class BookmarkCoordinator: @unchecked Sendable {
         durability = restored
         reconcileLegacyLaunch()
         lastOwningProfiles = restored.owners
+        normalizeRetainedURLs()
         pendingChromeDeltas.removeAll()
         desiredVersions.removeAll()
         baseVersions.removeAll()
@@ -335,12 +393,16 @@ public final class BookmarkCoordinator: @unchecked Sendable {
     let notification = writing {
       locked { () -> BookmarkPublication in
         var view = desiredView(engine: engine)
-        view.document = document
+        do {
+          let normalized = try BookmarkURLProjection.normalize(document, captureWire: true, canonicalURL: canonicalURL)
+          view.document = normalized.document
+          view.wireURLs = normalized.wireURLs
+        } catch { holdURLRecovery(); return silentPublication(desiredView(engine: engine)) }
         view.hasView = true
         view.readyForSync = ready
         view.revision += 1
         views[engine] = view
-        bases[engine] = BookmarkFlat(document: document, engine: engine)
+        bases[engine] = BookmarkFlat(document: view.document, engine: engine)
         invalidatePending(engine, desired: true, base: true)
         return notifications(engine)
       }
@@ -362,7 +424,8 @@ public final class BookmarkCoordinator: @unchecked Sendable {
   public var membershipSnapshot: BookmarkMembershipSnapshot { locked { snapshot(desiredView(engine: engine(profile: defaultProfile))) } }
   public func membershipSnapshot(engine: String) -> BookmarkMembershipSnapshot { locked { snapshot(desiredView(engine: engine)) } }
   public func membership(profile: String, originalProfile: String? = nil, url: String) -> Bool {
-    membershipSnapshot(engine: engine(profile: profile, originalProfile: originalProfile)).contains(url)
+    guard let canonical = try? canonicalURL(url) else { return false }
+    return membershipSnapshot(engine: engine(profile: profile, originalProfile: originalProfile)).contains(canonical)
   }
 
   public func membershipSnapshots() -> AsyncStream<BookmarkMembershipSnapshot> {
@@ -540,10 +603,12 @@ public final class BookmarkCoordinator: @unchecked Sendable {
         }
         if let target, !BookmarkReconcile.same(self.engine(profile: target), engine) { throw BookmarkCoordinatorError.invalidProfileScope }
       }
-      var reducer = BookmarkReducer(document: before, engine: engine, profiles: aliases(engine), makeID: makeID, now: now)
+      var reducer = BookmarkReducer(document: before, engine: engine, profiles: aliases(engine), makeID: makeID, now: now, canonicalURL: canonicalURL, captureWire: fromSync, wireURLs: view.wireURLs)
       let results = try mutations.map { try reducer.apply($0) }
       view.document = reducer.document
+      view.wireURLs = BookmarkURLProjection.retaining(reducer.wireURLs, in: view.document)
       try durability.validateAcceptance(view.document, engine: engine)
+      if view.document == before, view.wireURLs != desiredView(engine: engine).wireURLs { view.revision += 1 }
       if view.document != before {
         view.revision += 1
         view.hasView = true
@@ -619,7 +684,13 @@ public final class BookmarkCoordinator: @unchecked Sendable {
       var view = desiredView(engine: engine)
       guard view.revision == expectedRevision else { throw BookmarkCoordinatorError.staleRevision }
       try durability.validateAcceptance(document, engine: engine)
-      if view.document != document { view.document = document; view.revision += 1; view.hasView = true }
+      let normalized = try BookmarkURLProjection.normalize(document, captureWire: true, canonicalURL: canonicalURL)
+      if view.document != normalized.document || view.wireURLs != normalized.wireURLs {
+        view.document = normalized.document
+        view.wireURLs = normalized.wireURLs
+        view.revision += 1
+        view.hasView = true
+      }
       if stampsEnabled, let expectedLink { Self.observe(records, link: expectedLink, view: &view) }
       let receipt = BookmarkReceipt(view: view, results: [])
       var next = views
@@ -644,11 +715,12 @@ public final class BookmarkCoordinator: @unchecked Sendable {
     }
     do {
       result = try transact { () throws -> (BookmarkCheckpointInput?, () -> BookmarkPublication) in
-        guard !blockedEngines.contains(JSKey(engine)), durability.terminalEngines[engine] == nil, epoch == nil || epoch == pumpEpoch else { throw BookmarkCoordinatorError.staleRevision }
+        guard !urlRecoveryHeld, !blockedEngines.contains(JSKey(engine)), durability.terminalEngines[engine] == nil, epoch == nil || epoch == pumpEpoch else { throw BookmarkCoordinatorError.staleRevision }
         var view = desiredView(engine: engine)
         let requiredRead = view.requiresRead || view.inFlightTarget != nil
         view.requiresRead = false
-        var fetched = BookmarkFlat(document: document, engine: engine)
+        let normalizedRead = try BookmarkURLProjection.normalize(document, captureWire: false, canonicalURL: canonicalURL).document
+        var fetched = BookmarkFlat(document: normalizedRead, engine: engine)
         let base = bases[engine] ?? BookmarkFlat(records: [])
         let attempted = view.inFlightTarget.map { BookmarkFlat(document: $0, engine: engine) }
         for id in fetched.order {
@@ -678,6 +750,7 @@ public final class BookmarkCoordinator: @unchecked Sendable {
           let conflict: JSONValue = ["engine": .string(engine), "revision": .string(String(view.revision)), "base": .array(base.records), "desired": view.document, "operations": .array(delta), "structuralBreak": JSONValue(offset)]
           if !conflicts.contains(conflict) { conflicts.append(conflict) }
         }
+        let observedURLs = BookmarkURLProjection.markingEdits(view.wireURLs, before: view.document, after: merged)
         var progress = durability.legacyMigration
         var pending = durability.legacyPendingEngines
         if durability.writable, pending.contains(JSKey(engine)) {
@@ -706,7 +779,7 @@ public final class BookmarkCoordinator: @unchecked Sendable {
               try durability.validateAcceptance(merged, engine: engine)
               let sourceIDs = operations.compactMap { $0["id"]?.string }
               let sourceKeys = Set(sourceIDs.map(JSKey.init))
-              entry = BookmarkLegacyEngineProgress(stage: "accepted", ids: sourceIDs, target: nil, imported: imported.tree.nodes.filter { id, _ in sourceKeys.contains(JSKey(id)) })
+              entry = BookmarkLegacyEngineProgress(stage: "accepted", ids: sourceIDs, target: nil, imported: try normalizedLegacyRecords(imported.tree.nodes.filter { id, _ in sourceKeys.contains(JSKey(id)) }))
             } else if entry.stage == "pushed" || entry.stage == "blocked", let target = entry.target {
               var expected = BookmarkFlat(document: target, engine: engine)
               for id in entry.ids {
@@ -738,6 +811,9 @@ public final class BookmarkCoordinator: @unchecked Sendable {
             if !conflicts.contains(conflict) { conflicts.append(conflict) }
           }
         }
+        let normalizedMerged = try BookmarkURLProjection.normalize(merged, preserving: observedURLs, captureWire: true, canonicalURL: canonicalURL)
+        merged = normalizedMerged.document
+        view.wireURLs = normalizedMerged.wireURLs
         let ready = durability.writable && !pending.contains(JSKey(engine)) && replay.structuralBreak == nil
         if view.document != merged || view.readyForSync != ready || view.structuralBreak != replay.structuralBreak || requiredRead {
           view.document = merged
@@ -858,7 +934,7 @@ public final class BookmarkCoordinator: @unchecked Sendable {
   }
 
   func ownsPump(engine: String, epoch: UInt64) -> Bool {
-    locked { pumpEpoch == epoch && !engine.hasPrefix("incognito:") && !blockedEngines.contains(JSKey(engine)) && durability.terminalEngines[engine] == nil && (profiles.values.contains { BookmarkReconcile.same($0, engine) } || durability.legacyPendingEngines.contains(JSKey(engine)) || needsPump(engine)) }
+    locked { !urlRecoveryHeld && pumpEpoch == epoch && !engine.hasPrefix("incognito:") && !blockedEngines.contains(JSKey(engine)) && durability.terminalEngines[engine] == nil && (profiles.values.contains { BookmarkReconcile.same($0, engine) } || durability.legacyPendingEngines.contains(JSKey(engine)) || needsPump(engine)) }
   }
 
   func pumpInput(engine: String, epoch: UInt64) -> (BookmarkDesiredView, [JSONValue])? {
@@ -1045,7 +1121,20 @@ private struct BookmarkReducer {
   let profiles: [String]
   let makeID: () -> String
   let now: () -> Double
+  let canonicalURL: (String) throws -> String
+  let captureWire: Bool
+  var wireURLs: JSMap<BookmarkWireURL>
   var nodes: JSONObject { document["nodes"]?.object ?? [:] }
+
+  mutating func normalizedURL(_ raw: String, id: String) throws -> String {
+    let canonical = try canonicalURL(raw)
+    guard !canonical.isEmpty else { throw BookmarkCoordinatorError.invalidOperation("A bookmark URL cannot be empty") }
+    if !captureWire, let saved = wireURLs[id], JSKey(saved.canonical) == JSKey(canonical), nodes[id]?["url"] == .string(canonical) {
+      return canonical
+    }
+    wireURLs[id] = captureWire && JSKey(raw) != JSKey(canonical) ? BookmarkWireURL(wire: raw, canonical: canonical) : nil
+    return canonical
+  }
 
   mutating func setNodes(_ nodes: JSONObject) { var value = document.object ?? [:]; value["nodes"] = .object(nodes); document = .object(value) }
   func subtree(_ ids: [String]) -> [String] {
@@ -1150,6 +1239,12 @@ private struct BookmarkReducer {
             continue
           }
         }
+        if (kind == "add" && operation["k"] == "u") || (kind == "update" && existing?["kind"] == "url" && operation["u"] != nil) {
+          guard let raw = operation["u"]?.string else { throw BookmarkCoordinatorError.invalidOperation("A bookmark URL must be a string") }
+          var fields = operation.object ?? [:]
+          fields["u"] = .string(try normalizedURL(raw, id: id))
+          operation = .object(fields)
+        }
         let replay = BookmarkReconcile.replay(flat, operations: [operation], engine: engine)
         guard replay.structuralBreak == nil else { break }
         flat = replay.tree
@@ -1164,14 +1259,19 @@ private struct BookmarkReducer {
       let id = makeID()
       let parent = options["parentId"]?.string ?? roots.bar
       var node: JSONObject = ["kind": mutation.method == "addBookmark" ? "url" : "folder", "id": .string(id), "parentId": .string(parent), "title": options["title"] ?? "", "addedAt": .number(now())]
-      if mutation.method == "addBookmark" { node["url"] = options["url"] ?? ""; node["favicon"] = options["favicon"] ?? .null }
+      if mutation.method == "addBookmark" { node["url"] = .string(try normalizedURL(options["url"]?.string ?? "", id: id)); node["favicon"] = options["favicon"] ?? .null }
       else { node["children"] = [] }
       insert(.object(node), parent: parent, index: options["index"]?.number)
       return .string(id)
     case "updateBookmark":
       guard let id = arg(0).string, var node = nodes[id]?.object else { return .null }
       let patch = arg(1).object ?? [:]
-      for (key, value) in patch where node["kind"] == "url" || key == "title" { node[key] = value }
+      for (key, value) in patch where node["kind"] == "url" || key == "title" {
+        if key == "url" {
+          guard let raw = value.string else { throw BookmarkCoordinatorError.invalidOperation("A bookmark URL must be a string") }
+          node[key] = .string(try normalizedURL(raw, id: id))
+        } else { node[key] = value }
+      }
       var next = nodes
       next[id] = .object(node)
       setNodes(next)
@@ -1192,8 +1292,9 @@ private struct BookmarkReducer {
     case "toggleBookmark":
       let profile = arg(0).string ?? ""
       let page = arg(1)
-      let url = page["url"]?.string ?? ""
-      guard !url.isEmpty else { return false }
+      let rawURL = page["url"]?.string ?? ""
+      guard !rawURL.isEmpty else { return false }
+      let url = try canonicalURL(rawURL)
       let roots = document["roots"]?[profile]
       let ids = subtree([roots?["bar"]?.string, roots?["other"]?.string].compactMap { $0 }).filter { nodes[$0]?["kind"] == "url" && nodes[$0]?["url"] == .string(url) }
       if !ids.isEmpty { remove(ids); return false }
@@ -1209,21 +1310,21 @@ private struct BookmarkReducer {
       let roots = ensureRoots(arg(0).string ?? "")
       let target = arg(2).string.flatMap { nodes[$0]?["kind"] == "folder" ? $0 : nil } ?? roots.bar
       var next = nodes
-      func build(_ draft: JSONValue, parent: String) -> String {
+      func build(_ draft: JSONValue, parent: String) throws -> String {
         let id = makeID()
         var node: JSONObject = ["id": .string(id), "parentId": .string(parent), "title": draft["title"] ?? "", "addedAt": draft["addedAt"].flatMap { $0.isNull ? nil : $0 } ?? .number(now())]
         if draft["url"] != nil && draft["children"]?.truthy != true {
-          node["kind"] = "url"; node["url"] = draft["url"]; node["favicon"] = .null
+          node["kind"] = "url"; node["url"] = .string(try normalizedURL(draft["url"]?.string ?? "", id: id)); node["favicon"] = .null
           next[id] = .object(node)
         } else {
           node["kind"] = "folder"; node["children"] = []
           next[id] = .object(node)
-          node["children"] = JSONValue((draft["children"]?.array ?? []).map { build($0, parent: id) })
+          node["children"] = JSONValue(try (draft["children"]?.array ?? []).map { try build($0, parent: id) })
           next[id] = .object(node)
         }
         return id
       }
-      let ids = (arg(1).array ?? []).map { build($0, parent: target) }
+      let ids = try (arg(1).array ?? []).map { try build($0, parent: target) }
       var folder = next[target]?.object ?? [:]
       var children = folder["children"]?.array?.compactMap(\.string) ?? []
       children.insert(contentsOf: ids, at: BookmarkReconcile.spliceIndex(arg(3).number, count: children.count))
@@ -1245,7 +1346,13 @@ private struct BookmarkReducer {
       return ["nodes": .array(removed), "places": .array(places)]
     case "restoreBookmarks":
       var next = nodes
-      for node in arg(0)["nodes"]?.array ?? [] { if let id = node["id"]?.string { next[id] = node } }
+      for source in arg(0)["nodes"]?.array ?? [] {
+        if let id = source["id"]?.string {
+          var node = source.object ?? [:]
+          if source["kind"] == "url" { node["url"] = .string(try normalizedURL(source["url"]?.string ?? "", id: id)) }
+          next[id] = .object(node)
+        }
+      }
       let places = (arg(0)["places"]?.array ?? []).enumerated().sorted { a, b in
         let av = a.element["index"]?.number ?? 0
         let bv = b.element["index"]?.number ?? 0

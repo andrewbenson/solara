@@ -91,6 +91,31 @@ func refusal(_ body: () throws -> Void) -> BookmarkWriterError? {
 
 @main
 struct BookmarkOwnerTests {
+  static func canonicalWireSnapshotSurvivesBridgeAndRestart() {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("canonical-wire-\(UUID().uuidString)")
+    try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { NativeBookmarkOwner.current = nil; try? FileManager.default.removeItem(at: directory) }
+    let canonicalize: @Sendable (String) throws -> String = { value in
+      value == "https://EXAMPLE.test:443" ? "https://example.test/" : value
+    }
+    let owner = NativeBookmarkOwner(store: BookmarkPendingStore(directory: directory), profiles: ["p": ""], defaultProfile: "p", canonicalURL: canonicalize, wake: { _ in })
+    NativeBookmarkOwner.current = owner
+    let before = try! NativeBookmarkWriter.snapshot(profile: "p")
+    let raw = Fixture.document(["https://EXAMPLE.test:443"])
+    let result = try? NativeBookmarkWriter.replace(profile: "p", documentJSON: raw.bookmarkText(), expectedRevision: before["revision"] as! String, engine: "", generation: before["generation"] as! String, requestID: "wire-remote")
+    expect(result != nil, "the raw remote replacement is accepted")
+    let snapshot = try! NativeBookmarkWriter.snapshot(profile: "p")
+    let shown = try? JSONValue.parseBookmark(snapshot["document"] as! String)
+    expect(shown?["nodes"]?["b0"]?["url"] == "https://example.test/", "the bridge displays Chrome spelling")
+    expect(snapshot["wireDocument"] as? String == raw.bookmarkText(), "the bridge exposes original remote spelling to sync")
+    expect(snapshot["wireBaselineKeys"] as? String == #"["bm:b0"]"#, "the bridge marks the unchanged URL conversion baseline")
+    NativeBookmarkOwner.current = NativeBookmarkOwner(store: BookmarkPendingStore(directory: directory), profiles: ["p": ""], defaultProfile: "p", canonicalURL: canonicalize, wake: { _ in })
+    let restored = try! NativeBookmarkWriter.snapshot(profile: "p")
+    expect(restored["wireDocument"] as? String == raw.bookmarkText(), "a new owner preserves sync spelling after restart")
+    expect(restored["wireBaselineKeys"] as? String == #"["bm:b0"]"#, "restart retains the conversion guard")
+    expect(restored["document"] as? String == snapshot["document"] as? String, "restart keeps the canonical display document")
+  }
+
   static func replaceIsDurableBeforeItReturns() {
     let fixture = Fixture()
     defer { fixture.stop() }
@@ -321,6 +346,7 @@ struct BookmarkOwnerTests {
     }
     let test = CommandLine.arguments[1]
     let cases: [String: () -> Void] = [
+      "canonicalWireSnapshotSurvivesBridgeAndRestart": canonicalWireSnapshotSurvivesBridgeAndRestart,
       "bookmarkBridgePreservesUTF16AcrossReplaceSubmitAndRestart": bookmarkBridgePreservesUTF16AcrossReplaceSubmitAndRestart,
       "replaceIsDurableBeforeItReturns": replaceIsDurableBeforeItReturns,
       "replaceRunsOnTheCallingThread": replaceRunsOnTheCallingThread,

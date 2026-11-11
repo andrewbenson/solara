@@ -9,10 +9,14 @@ enum NativeTabMemory {
   static var enabled: Bool { NativeStoreHandle.store?.state.settings["hoverCardMemoryUsage"]?.bool != false }
   private static var installed = false
   private static var queryVersion = UUID()
+  private static var lifecycle: Int?
 
   static func installEngineQuery() {
     guard !installed else { return }
     installed = true
+    lifecycle = NativeStoreHandle.subscribeLifecycle {
+      cache.observeDocuments(in: NativeStoreHandle.store)
+    }
     #if DEBUG
     guard !devOverride else { return }
     #endif

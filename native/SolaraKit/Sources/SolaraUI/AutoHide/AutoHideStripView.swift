@@ -41,6 +41,9 @@ public final class AutoHideStripView: NSView {
   public var onEvent: (AutoHideStripEvent) -> Void = { _ in }
   public var onFrame: (AutoHideFrame) -> Void = { _ in }
   public var onMotion: (Bool) -> Void = { _ in }
+  public var frameSurface = false {
+    didSet { if frameSurface != oldValue { applySurface(animated: false) } }
+  }
 
   private let cardCorners = CALayer()
   private let backdrop = CALayer()
@@ -113,13 +116,7 @@ public final class AutoHideStripView: NSView {
     let first = style == nil
     style = next
     shownTop = top
-    PrimitiveMotion.setInstantly {
-      backdrop.backgroundColor = next.card.cg
-      divider.backgroundColor = next.divider.cg
-      divider.isHidden = !next.hasPage
-    }
-    applyBand(next.band?.cg, animated: !first)
-    applyStripes(next.stripes)
+    applySurface(animated: !first)
     label.stringValue = next.host
     label.textColor = next.secondary.ns.withAlphaComponent(1)
     labelInk = next.secondary.ns.alphaComponent
@@ -130,6 +127,24 @@ public final class AutoHideStripView: NSView {
       transition(to: nextMode)
     }
     needsLayout = true
+  }
+
+  private func applySurface(animated: Bool) {
+    guard let style else { return }
+    PrimitiveMotion.setInstantly {
+      backdrop.backgroundColor = frameSurface ? nil : style.card.cg
+      divider.backgroundColor = frameSurface ? nil : style.divider.cg
+      divider.isHidden = frameSurface || !style.hasPage
+    }
+    if frameSurface {
+      band.removeAnimation(forKey: "backgroundColor")
+      applyBand(nil, animated: false)
+      PrimitiveMotion.setInstantly { band.backgroundColor = nil }
+      applyStripes(nil)
+    } else {
+      applyBand(style.band?.cg, animated: animated)
+      applyStripes(style.stripes)
+    }
   }
 
   private func applyBand(_ color: CGColor?, animated: Bool) {

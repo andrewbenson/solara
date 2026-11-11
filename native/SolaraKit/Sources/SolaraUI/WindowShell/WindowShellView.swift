@@ -257,10 +257,14 @@ public final class WindowShellView: NSView {
     placeRailToolbar()
   }
 
+  public func toolbarSitsOnFrame(_ toolbar: ToolbarView) -> Bool {
+    railToolbar === toolbar && railFraction > 0
+  }
+
   public func unregisterToolbar(_ toolbar: ToolbarView) {
     if railToolbar === toolbar {
-      restoreToolbar(toolbar, owner: toolbars.first { $0.toolbar === toolbar }?.owner)
       railToolbar = nil
+      restoreToolbar(toolbar, owner: toolbars.first { $0.toolbar === toolbar }?.owner)
     }
     toolbars.removeAll { $0.toolbar === toolbar }
     placeRailToolbar()
@@ -294,6 +298,7 @@ public final class WindowShellView: NSView {
     }
     if railToolbar !== home?.toolbar {
       if let current = railToolbar {
+        railToolbar = nil
         restoreToolbar(current, owner: toolbars.first { $0.toolbar === current }?.owner)
       }
       railToolbar = home?.toolbar
@@ -540,19 +545,31 @@ public final class WindowShellView: NSView {
   private func applyCardStyle() {
     let radius = cardStyle.radius * (1 - railFraction)
     let fill = cardStyle.fill.map { $0.withAlphaComponent($0.alphaComponent * (1 - railFraction)).cgColor }
-    let underBand = railFraction > 0 ? cardStyle.fill?.cgColor : nil
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    railToolbar?.underColor = underBand
+    railToolbar?.underColor = nil
     if cardClip.layer?.cornerRadius != radius { cardClip.layer?.cornerRadius = radius }
     if railToolbarClip.layer?.cornerRadius != radius { railToolbarClip.layer?.cornerRadius = radius }
     if cardClip.layer?.backgroundColor != fill { cardClip.layer?.backgroundColor = fill }
     CATransaction.commit()
+    placeCardSurface()
+  }
+
+  private var cardSurfaceRect: CGRect {
+    let exposed = railToolbar?.sitsOnWindowFrame == true && railFraction < 1 && !input.fullscreen
+    let top = exposed ? min(max(0, cardPage.frame.minY), frames.card.height) : 0
+    return CGRect(x: 0, y: top, width: frames.card.width, height: max(0, frames.card.height - top))
+  }
+
+  private func placeCardSurface() {
+    let rect = cardSurfaceRect
+    if cardClip.frame != rect { cardClip.frame = rect }
+    if cardClip.bounds != rect { cardClip.bounds = rect }
     placeCardEdge()
   }
 
   private func placeCardEdge() {
-    let rect = CGRect(origin: .zero, size: frames.card.size)
+    let rect = cardSurfaceRect
     let strength = cardStyle.edge && !input.fullscreen && cardStyle.radius > 0 ? 1 - railFraction : 0
     let radius = cardStyle.radius * (1 - railFraction)
     cardShadow.place(rect, radius: radius, strength: strength)
@@ -560,13 +577,11 @@ public final class WindowShellView: NSView {
   }
 
   private func placeCardPage() {
-    let clip = CGRect(origin: .zero, size: frames.card.size)
-    if cardClip.frame != clip { cardClip.frame = clip }
-    placeCardEdge()
     let page = pageArea
     let top = min(max(cardPageFrame?.minY ?? page.minY, page.minY), page.maxY)
     let frame = railFraction > 0 ? CGRect(x: page.minX, y: top, width: page.width, height: page.maxY - top) : cardPageFrame ?? page
     if cardPage.frame != frame { cardPage.frame = frame }
+    placeCardSurface()
     if railFraction > 0 { cardPage.wantsLayer = true }
     guard let layer = cardPage.layer else { return }
     let radius = ShellMetrics.cardRadius * railFraction

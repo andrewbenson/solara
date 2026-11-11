@@ -143,7 +143,7 @@ export function useToolbarMotion({
   };
 }
 
-export function AutoHideBackdrop({ tabId, mode, motion }: { tabId: string; mode: ToolbarMode; motion: Pick<ToolbarMotion, "bar"> }) {
+export function AutoHideBackdrop({ tabId, mode, motion, windowToolbar = false }: { tabId: string; mode: ToolbarMode; motion: Pick<ToolbarMotion, "bar">; windowToolbar?: boolean }) {
   const theme = useTheme();
   const url = useBrowser((s) => s.tabs[tabId]?.url ?? "");
   const palette = toolbarPalette(theme, useToolbarSiteColor(tabId));
@@ -162,6 +162,7 @@ export function AutoHideBackdrop({ tabId, mode, motion }: { tabId: string; mode:
       },
     [moved, bar, H],
   );
+  if (windowToolbar) return null;
   return (
     <View pointerEvents="none" style={{ position: "absolute", left: 0, right: 0, top: 0, height: H }}>
       <Animated.View
@@ -199,13 +200,13 @@ export function AutoHideToolbar({
   if (windowShellActive(windowId) && nativeToolbarAvailable()) {
     return (
       <View pointerEvents="box-none" style={{ position: "absolute", left: 0, right: 0, top: 0, height: layout.toolbarHeight }}>
-        <Toolbar tabId={tabId} geometry={geometry} windowId={windowId} inSplit={inSplit} focused={focused} bare />
+        <Toolbar tabId={tabId} geometry={geometry} windowId={windowId} inSplit={inSplit} focused={focused} bare windowToolbar={!inSplit} />
       </View>
     );
   }
   const theme = useTheme();
   const url = useBrowser((s) => s.tabs[tabId]?.url ?? "");
-  const palette = toolbarPalette(theme, useToolbarSiteColor(tabId));
+  const palette = toolbarPalette(theme, useToolbarSiteColor(tabId), !inSplit);
   const collapsed = mode === "collapsed";
   const modeNow = useRef(mode);
   modeNow.current = mode;
@@ -243,7 +244,7 @@ export function AutoHideToolbar({
         onMouseLeave={() => modeNow.current === "peek" && peekLater(false, UNPEEK_DELAY)}
         style={{ position: "absolute", left: 0, right: 0, top: 0, height: H, opacity: anim ? anim.controls : 1, transform: anim ? anim.shrink : undefined }}
       >
-        <Toolbar tabId={tabId} geometry={geometry} windowId={windowId} inSplit={inSplit} focused={focused} bare />
+        <Toolbar tabId={tabId} geometry={geometry} windowId={windowId} inSplit={inSplit} focused={focused} bare windowToolbar={!inSplit} />
       </Animated.View>
       {anim && (
         <Animated.View pointerEvents={collapsed ? "auto" : "none"} style={{ position: "absolute", left: 0, right: 0, top: 0, height: STRIP_HEIGHT, opacity: anim.label }}>

@@ -149,6 +149,41 @@ private func splitState(sizes: [Double] = [0.5, 0.5]) throws -> BrowserState {
     #expect(view.container("a")?.superview?.layer?.backgroundColor == nil)
   }
 
+  @Test func aRailPromotionClearsOnlyTheActiveToolbarBeforeAnyModelRefeed() throws {
+    let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1000, height: 700), styleMask: [.borderless], backing: .buffered, defer: true)
+    window.isReleasedWhenClosed = false
+    let shell = WindowShellView(windowId: "w1")
+    window.contentView = shell
+    let view = SplitPanesView(windowId: "w1")
+    shell.card.addSubview(view)
+    view.frame = shell.card.bounds
+    view.autoresizingMask = [.width, .height]
+    view.update(state: try splitState())
+    let withBand = { (tabId: String) in
+      paneToolbar(tabId)
+        .replacingOccurrences(of: "\"palette\": {", with: "\"palette\": {\"background\": \"#202030\",")
+        .replacingOccurrences(of: "\"bare\": false", with: "\"bare\": false, \"inSplit\": true")
+    }
+    view.setToolbars(["a": withBand("a"), "b": withBand("b")])
+    view.layoutSubtreeIfNeeded()
+    let a = try #require(view.toolbar("a"))
+    let b = try #require(view.toolbar("b"))
+    #expect(ToolbarFrameTests.surfaceLayers(a).contains { $0.backgroundColor?.alpha ?? 0 > 0 })
+    shell.setSidebarWidth(CGFloat(SidebarRail.width), animated: false)
+    view.needsLayout = true
+    view.layoutSubtreeIfNeeded()
+    #expect(a.superview === view)
+    #expect(a.state?.palette.background == "#202030")
+    for layer in ToolbarFrameTests.surfaceLayers(a) { #expect(layer.backgroundColor == nil || layer.backgroundColor?.alpha == 0) }
+    #expect(b.superview !== view)
+    #expect(ToolbarFrameTests.surfaceLayers(b).contains { $0.backgroundColor?.alpha ?? 0 > 0 })
+    shell.setSidebarWidth(190, animated: false)
+    view.needsLayout = true
+    view.layoutSubtreeIfNeeded()
+    #expect(a.superview !== view)
+    #expect(ToolbarFrameTests.surfaceLayers(a).contains { $0.backgroundColor?.alpha ?? 0 > 0 })
+  }
+
   @Test func aFullscreenPaneCoversItsSiblingWhichStaysShown() throws {
     let view = SplitPanesView(windowId: "w1")
     view.frame = CGRect(x: 0, y: 0, width: 1007, height: 700)

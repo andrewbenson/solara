@@ -65,13 +65,14 @@ export function Toolbar(props: ToolbarProps) {
   return nativeToolbarAvailable() ? <NativeToolbar {...props} /> : <ReactToolbar {...props} />;
 }
 
-function ReactToolbar({ tabId, geometry, windowId, inSplit, focused, bare }: ToolbarProps) {
+function ReactToolbar({ tabId, geometry, windowId, inSplit, focused, bare, windowToolbar }: ToolbarProps) {
   const theme = useTheme();
   const sidebarHint = useShortcutHint("toggleSidebar");
   const tab = useToolbarTab(tabId);
   const isLoading = useTabLive(tabId, (l) => l.isLoading);
-  const palette = toolbarPalette(theme, useToolbarSiteColor(tabId));
-  const band = useEasedColor(bare ? null : palette.background);
+  const onFrame = !!windowToolbar || (!!bare && !inSplit);
+  const palette = toolbarPalette(theme, useToolbarSiteColor(tabId), onFrame);
+  const band = useEasedColor(bare || onFrame ? null : palette.background);
   const developer = useTabDeveloperMode(tabId);
   const history = useHistoryAvailability(tabId);
   const extensionsWidth = useToolbarExtensionsWidth(windowId);
@@ -98,8 +99,8 @@ function ReactToolbar({ tabId, geometry, windowId, inSplit, focused, bare }: Too
 
   return (
     <View style={{ height: layout.toolbarHeight }}>
-      {!bare && <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: band }]} />}
-      {!bare && developer && <DeveloperStripes palette={palette} />}
+      {!bare && !onFrame && <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: band }]} />}
+      {!bare && !onFrame && developer && <DeveloperStripes palette={palette} />}
       <WindowDragRegion style={StyleSheet.absoluteFill} />
       <Animated.View style={[StyleSheet.absoluteFill, { opacity: dim }]} pointerEvents="box-none">
         {geometry.sidebarButton !== null && (
@@ -127,7 +128,7 @@ function ReactToolbar({ tabId, geometry, windowId, inSplit, focused, bare }: Too
         )}
       </Animated.View>
 
-      {tab.url && !bare ? <Hairline color={palette.divider} thickness={TOOLBAR_DIVIDER_THICKNESS} style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 1 }} /> : null}
+      {tab.url && !bare && !onFrame ? <Hairline color={palette.divider} thickness={TOOLBAR_DIVIDER_THICKNESS} style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 1 }} /> : null}
       {isLoading && <TabProgressBar key={tabId} tabId={tabId} color={palette.background ? palette.icon : theme.accent} />}
     </View>
   );

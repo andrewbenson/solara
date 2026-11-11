@@ -35,10 +35,15 @@ const LIGHT_SITE_DIVIDER = "rgba(0,0,0,0.05)";
 const DARK_SITE_DIVIDER = "rgba(255,255,255,0.025)";
 export const TOOLBAR_DIVIDER_THICKNESS = 1;
 
+export function railToolbarOnFrame(iconsOnly: boolean, focused: boolean, topTabs: boolean, fullscreen: boolean): boolean {
+  return iconsOnly && focused && !topTabs && !fullscreen;
+}
+
 const cache = new Map<string, ToolbarPalette>();
 
-export function toolbarPalette(theme: Theme, websiteColor: string | null): ToolbarPalette {
-  const key = `${theme.dark}|${theme.textPrimary}|${websiteColor ?? ""}`;
+export function toolbarPalette(theme: Theme, websiteColor: string | null, onFrame = false): ToolbarPalette {
+  if (onFrame) websiteColor = null;
+  const key = JSON.stringify([theme.dark, theme.textPrimary, theme.textSecondary, theme.icon, theme.iconDisabled, theme.toolbarHover, theme.toolbarPressed, theme.urlPill, websiteColor]);
   let palette = cache.get(key);
   if (palette) return palette;
   if (!websiteColor || !channels(websiteColor)) {

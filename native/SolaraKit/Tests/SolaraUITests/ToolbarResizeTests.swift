@@ -246,18 +246,30 @@ struct ToolbarResizeTests {
     #expect(!f.toolbar.isHiddenOrHasHiddenAncestor)
   }
 
-  @Test func aStaticWindowToolbarMovesItsNativeSurfaceWithItsControls() {
+  @Test func aStaticWindowToolbarMovesItsNativeSurfaceWithItsControls() throws {
     let f = Fixture(bare: false)
-    let json = """
-      {"tabId":"t1","height":41,"bare":false,"windowToolbar":true,"inSplit":false,"focused":true,"palette":\(ToolbarWebKitPillTests.palette),"accent":"#0A84FF",
-       "geometry":{"back":40,"forward":70,"reload":100,"urlLeft":130,"urlRight":40},"left":[],"right":[],"rightInset":8,"hairline":true}
-      """
-    f.toolbar.update(ToolbarState.decode(json)!)
+    var state = ToolbarFrameTests.state(windowToolbar: true)
+    state.height = 41
+    f.toolbar.update(state)
     f.shell.registerToolbar(f.toolbar, owner: f.owner)
     f.shell.update { $0.sidebarWidth = 270 }
     #expect(f.toolbar.superview !== f.owner)
     #expect(f.toolbarRect == CGRect(x: 270, y: 6, width: 723, height: 41))
     #expect(f.toolbar.layer?.sublayers?.first?.frame.width == 723)
+    try ToolbarFrameTests.expectFrameIsClear(f.toolbar)
+    f.owner.frame = CGRect(x: 270, y: 6, width: 723, height: 41)
+    f.handle.savedWidth = { 270 }
+    f.handle.mouseDown(with: f.mouse(.leftMouseDown, x: 270))
+    for width: CGFloat in [250, 210, 190] {
+      f.handle.mouseDragged(with: f.mouse(.leftMouseDragged, x: width))
+      #expect(f.owner.frame.width == 723)
+      #expect(f.toolbarRect == CGRect(x: width, y: 6, width: 993 - width, height: 41))
+      #expect(f.toolbar.layer?.sublayers?.first?.frame.width == 993 - width)
+      #expect(f.shell.cardClip.convert(f.shell.cardClip.bounds, to: f.shell).minX == width)
+      #expect(f.shell.cardPage.convert(f.shell.cardPage.bounds, to: f.shell).minX == width)
+      try ToolbarFrameTests.expectFrameIsClear(f.toolbar)
+    }
+    f.handle.mouseUp(with: f.mouse(.leftMouseUp, x: 190))
   }
 
   @Test func shellToolbarLayeringMatchesTheReactRootAndRailRoundTrip() throws {

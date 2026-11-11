@@ -1,10 +1,14 @@
 import { breadcrumb } from "@solara/core";
+import { windowShellActive } from "@solara/settings";
 import { requireOptionalNativeModule, type EventSubscription } from "expo-modules-core";
 import { useEffect } from "react";
 import { layout, useTheme } from "../lib/theme";
 import { useBrowser } from "../store/browser";
+import { tabLayoutOf } from "../store/model";
+import { nativeSidebarRailSupported, sidebarIconsOnlyOf } from "../store/sidebarRail";
 import { revealToolbar, setToolbarPeek, type ToolbarMode } from "./layout/toolbarAutoHide";
-import { toolbarPalette } from "./layout/toolbarColors";
+import { railToolbarOnFrame, toolbarPalette } from "./layout/toolbarColors";
+import { useFullscreenTab } from "./layout/pageState";
 import { stripesUri } from "./NativeToolbar";
 import { useTabDeveloperMode, useToolbarSiteColor } from "./site/developerMode";
 
@@ -16,10 +20,13 @@ type AutoHideNative = {
 
 const native = requireOptionalNativeModule<AutoHideNative>("SolaraAutoHide");
 
-export function NativeAutoHide({ windowId, tabId, mode, pane, extra }: { windowId: string; tabId: string; mode: ToolbarMode; pane: { x: number; y: number; width: number; height: number }; extra: number }) {
+export function NativeAutoHide({ windowId, tabId, mode, pane, extra, windowToolbar, focused }: { windowId: string; tabId: string; mode: ToolbarMode; pane: { x: number; y: number; width: number; height: number }; extra: number; windowToolbar: boolean; focused: boolean }) {
   const theme = useTheme();
   const url = useBrowser((s) => s.tabs[tabId]?.url ?? "");
-  const palette = toolbarPalette(theme, useToolbarSiteColor(tabId));
+  const rail = useBrowser((s) => nativeSidebarRailSupported && sidebarIconsOnlyOf(s.windows[windowId], s.settings));
+  const topTabs = useBrowser((s) => tabLayoutOf(s, windowId) === "top");
+  const fullscreen = !!useFullscreenTab(windowId);
+  const palette = toolbarPalette(theme, useToolbarSiteColor(tabId), windowToolbar || (railToolbarOnFrame(rail, focused, topTabs, fullscreen) && windowShellActive(windowId)));
   const developer = useTabDeveloperMode(tabId);
   const host = url.startsWith("file:") ? "File" : breadcrumb(url).host;
   const json = JSON.stringify({

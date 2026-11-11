@@ -1,5 +1,5 @@
 import { appUrlOrigin, breadcrumb, urlForDisplay } from "@solara/core";
-import { NativeToolbarView, type ToolbarClick } from "@solara/settings";
+import { NativeToolbarView, windowShellActive, type ToolbarClick } from "@solara/settings";
 import { translation, WindowDragRegion } from "@solara/shell";
 import { useEffect, useMemo } from "react";
 import { StyleSheet, View } from "react-native";
@@ -8,6 +8,7 @@ import { withLivePage } from "../lib/livePage";
 import { layout, useTheme } from "../lib/theme";
 import { webviews } from "../lib/webviews";
 import { useBrowser } from "../store/browser";
+import { nativeSidebarRailSupported, sidebarIconsOnlyOf } from "../store/sidebarRail";
 import { useIsBookmarked, useSettings, useTabLive } from "../store/hooks";
 import { bookmarkProfileId, tabLayoutOf } from "../store/model";
 import { toggleBookmarkFromUI } from "../lib/bookmarkWriter";
@@ -20,9 +21,9 @@ import { openPageIn } from "../lib/engines";
 import { tabEngine } from "../store/engines";
 import { type ToolbarGeometry } from "./layout/geometry";
 import { closeHistoryMenu, goBack, goForward, historyItems, openHistoryMenu, useHistoryAvailability, useHistoryMenu } from "./layout/history";
-import { setPopover, usePage, usePages } from "./layout/pageState";
+import { setPopover, useFullscreenTab, usePage, usePages } from "./layout/pageState";
 import { closePane, openSplitPane, showSplitMenu } from "./layout/splitActions";
-import { toolbarPalette } from "./layout/toolbarColors";
+import { railToolbarOnFrame, toolbarPalette } from "./layout/toolbarColors";
 import { setToolbarExtensionsWidth } from "./layout/windowLayout";
 import { showUrlBarMenu } from "./omnibox/paste";
 import { endUrlEdit, startUrlEdit, submitUrlEdit, useTabDeveloperMode, useToolbarSiteColor, useUrlEdit } from "./site/developerMode";
@@ -103,7 +104,11 @@ export function useNativeToolbarModel({ tabId, geometry, windowId, inSplit, focu
   const tab = useToolbarTab(tabId);
   const isLoading = useTabLive(tabId, (l) => l.isLoading);
   const siteColor = useToolbarSiteColor(tabId);
-  const palette = toolbarPalette(theme, sidebar ? null : siteColor);
+  const rail = useBrowser((s) => nativeSidebarRailSupported && sidebarIconsOnlyOf(s.windows[windowId], s.settings));
+  const topTabs = useBrowser((s) => tabLayoutOf(s, windowId) === "top");
+  const fullscreen = !!useFullscreenTab(windowId);
+  const onFrame = !sidebar && (!!windowToolbar || (!!bare && !inSplit) || (railToolbarOnFrame(rail, focused, topTabs, fullscreen) && windowShellActive(windowId)));
+  const palette = toolbarPalette(theme, sidebar ? null : siteColor, onFrame);
   const history = useHistoryAvailability(tabId);
   const extensionLimit = sidebar?.extensionLimit ?? Infinity;
   const engine = useBrowser((s) => tabEngine(s, tabId));
@@ -114,7 +119,6 @@ export function useNativeToolbarModel({ tabId, geometry, windowId, inSplit, focu
     if (!sidebar) setToolbarExtensionsWidth(windowId, extensionsWidth);
   }, [windowId, extensionsWidth, !sidebar]);
   const showFullUrl = useSettings((s) => s.showFullUrl);
-  const topTabs = useBrowser((s) => tabLayoutOf(s, windowId) === "top");
   const pending = usePendingUpdate();
   const update = pending && topTabs && !sidebar && (!inSplit || focused) ? { text: UPDATE_PILL_TEXT, short: UPDATE_PILL_SHORT_TEXT, tooltip: updatePillTooltip(pending) } : null;
   const bookmarked = useIsBookmarked(tab?.url ?? "");
@@ -194,7 +198,7 @@ export function useNativeToolbarModel({ tabId, geometry, windowId, inSplit, focu
       inSplit,
       windowToolbar: !!windowToolbar,
       focused,
-      palette: sidebar ? palette : { ...palette, ...DIA_INK[(palette.background ? /^#FFFFFF/i.test(palette.text) : !!theme.dark) ? "dark" : "light"] },
+      palette: sidebar || onFrame ? palette : { ...palette, ...DIA_INK[(palette.background ? /^#FFFFFF/i.test(palette.text) : !!theme.dark) ? "dark" : "light"] },
       accent: theme.accent,
       geometry: { ...geometry, urlRight: urlFieldRight(inSplit, extensionsWidth) },
       left: [
@@ -237,11 +241,11 @@ export function useNativeToolbarModel({ tabId, geometry, windowId, inSplit, focu
       extensions: JSON.parse(extensionsJson),
       extensionsRight: inSplit ? 8 + 60 : 8,
       update,
-      hairline: !!url && !bare,
+      hairline: !!url && !bare && !onFrame,
       progress: isLoading ? progress : null,
-      stripes: developer ? stripesUri(palette) : null,
+      stripes: developer && !onFrame ? stripesUri(palette) : null,
     };
-  }, [tab, tabId, bare, windowToolbar, focused, palette, theme, geometry, inSplit, !sidebar, extensionsWidth, showFullUrl, bookmarked, insecure, popups, capture, popover, progress, translate, isLoading, history, developer, editing, editRequest, hints.sidebar, hints.back, hints.forward, hints.reload, hints.bookmark, hints.split, extensionsJson, update?.tooltip]);
+  }, [tab, tabId, bare, windowToolbar, onFrame, focused, palette, theme, geometry, inSplit, !sidebar, extensionsWidth, showFullUrl, bookmarked, insecure, popups, capture, popover, progress, translate, isLoading, history, developer, editing, editRequest, hints.sidebar, hints.back, hints.forward, hints.reload, hints.bookmark, hints.split, extensionsJson, update?.tooltip]);
   const json = useMemo(() => (state ? JSON.stringify(state) : null), [state]);
 
   const focus = () => {

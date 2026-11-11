@@ -40,6 +40,12 @@ public final class ToolbarView: NSView {
 
   public override var isFlipped: Bool { true }
 
+  public var sitsOnWindowFrame: Bool {
+    guard let state else { return false }
+    let promotedSplit = superview is SplitPanesView && (windowShell?.railFraction ?? 0) > 0
+    return state.windowToolbar == true || (state.bare && state.inSplit != true) || promotedSplit || windowShell?.toolbarSitsOnFrame(self) == true
+  }
+
   public override init(frame: NSRect) {
     super.init(frame: frame)
     wantsLayer = true
@@ -85,6 +91,7 @@ public final class ToolbarView: NSView {
   }
 
   public func placeBackdrop(_ backdrop: NSView) {
+    if let strip = backdrop as? AutoHideStripView { strip.frameSurface = sitsOnWindowFrame }
     guard let parent = superview else { return }
     CATransaction.begin()
     CATransaction.setDisableActions(true)
@@ -132,11 +139,6 @@ public final class ToolbarView: NSView {
         }
       }
     }
-    CATransaction.begin()
-    CATransaction.setDisableActions(true)
-    hairline.isHidden = !next.hairline
-    hairline.backgroundColor = toolbarColor(next.palette.divider)?.cgColor
-    CATransaction.commit()
     applyProgress(next.progress, color: toolbarColor(next.palette.background != nil ? next.palette.icon : next.accent))
     needsLayout = true
   }
@@ -168,8 +170,16 @@ public final class ToolbarView: NSView {
 
   private func applySurface(animated: Bool) {
     guard let state else { return }
-    let shown = !state.bare || (windowShell?.railFraction ?? 0) > 0
-    applyBand(shown ? toolbarColor(state.palette.background)?.cgColor : nil, animated: animated)
+    let frame = sitsOnWindowFrame
+    let shown = !state.bare && !frame
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    under.backgroundColor = frame ? nil : underColor
+    hairline.isHidden = frame || !state.hairline
+    hairline.backgroundColor = frame ? nil : toolbarColor(state.palette.divider)?.cgColor
+    if frame { band.removeAnimation(forKey: "backgroundColor") }
+    CATransaction.commit()
+    applyBand(shown ? toolbarColor(state.palette.background)?.cgColor : nil, animated: animated && !frame)
     applyStripes(shown ? state.stripes : nil)
   }
 
@@ -180,7 +190,7 @@ public final class ToolbarView: NSView {
     bandColor = color
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    band.backgroundColor = to
+    band.backgroundColor = color
     CATransaction.commit()
     guard animated, let from, let to else { return }
     let animation = CABasicAnimation(keyPath: "backgroundColor")
@@ -212,7 +222,7 @@ public final class ToolbarView: NSView {
       guard underColor != oldValue else { return }
       CATransaction.begin()
       CATransaction.setDisableActions(true)
-      under.backgroundColor = underColor
+      under.backgroundColor = sitsOnWindowFrame ? nil : underColor
       CATransaction.commit()
     }
   }

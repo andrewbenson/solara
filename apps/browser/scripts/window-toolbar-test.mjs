@@ -106,7 +106,7 @@ try {
         const w = ac.store.getState().windows.w1;
         return { active: w.activeTabIds[w.profileId], hideToolbarWhileScrolling: ac.store.getState().settings.hideToolbarWhileScrolling, toolbars, auto, backdrops, hosts,
           tabIds: [...w.tabIds], tabUrls: Object.fromEntries(w.tabIds.map((id) => [id, ac.store.getState().tabs[id]?.url])),
-          nativeToolbars: native.map((n) => ({ tabId: n.tabId, bare: !!n.bare, windowToolbar: !!n.windowToolbar, urlHost: n.url?.host ?? null })) };
+          nativeToolbars: native.map((n) => ({ tabId: n.tabId, bare: !!n.bare, windowToolbar: !!n.windowToolbar, background: n.palette.background, hairline: n.hairline, stripes: n.stripes, urlHost: n.url?.host ?? null })) };
       },
       until: (test, ms) => new Promise((r) => { const end = Date.now() + (ms || 15000); const poll = () => (test() ? r(true) : Date.now() > end ? r(false) : setTimeout(poll, 50)); poll(); }),
     };
@@ -126,14 +126,14 @@ try {
       const st = await switchTo(id);
       const windowBars = st.toolbars.filter((t) => !t.pane);
       const nativeStatic = mode === "always shown" && windowBars[0]?.windowToolbar === true;
-      const surface = nativeStatic ? !windowBars[0].bare && st.nativeToolbars.some((n) => n.tabId === id && n.windowToolbar && !n.bare) : windowBars[0]?.bare;
+      const surface = nativeStatic ? !windowBars[0].bare && st.nativeToolbars.some((n) => n.tabId === id && n.windowToolbar && !n.bare && n.background === null && n.hairline === false && n.stripes === null) : windowBars[0]?.bare;
       const selectedMode = st.hideToolbarWhileScrolling === autoHide && (autoHide ? st.auto.length === 1 && st.auto[0].tabId === id && !st.auto[0].pane && st.auto[0].mode === "shown" : st.auto.length === 0);
       check(`${mode}: switching to ${id}, the window's one toolbar shows ${id}`, selectedMode && windowBars.length === 1 && windowBars[0].tabId === id && st.toolbars.length === 1 && surface, JSON.stringify({ hideToolbarWhileScrolling: st.hideToolbarWhileScrolling, auto: st.auto, toolbars: st.toolbars }));
       check(`${mode}: switching to ${id}, the toolbar is kept, not mounted again`, st.mounted === 0, `Toolbar mounts ${st.mounted}`);
       const url = await ac(`${S} return S().tabs[${JSON.stringify(id)}].url;`);
       check(`${mode}: switching to ${id}, the address field shows ${id}'s address`, st.hosts.length === 1 && st.hosts[0] === url, JSON.stringify(st.hosts));
-      const backdrop = nativeStatic ? st.backdrops.length === 0 : st.backdrops.length === 1 && st.backdrops[0].tabId === id && st.backdrops[0].pane === id;
-      check(`${mode}: switching to ${id}, the band follows ${id}'s toolbar`, backdrop, JSON.stringify(st.backdrops));
+      const backdrop = autoHide ? st.backdrops.length === 1 && st.backdrops[0].tabId === id && st.backdrops[0].pane === id : st.backdrops.length === 0;
+      check(`${mode}: switching to ${id}, the frame surface belongs to ${id}'s toolbar`, backdrop, JSON.stringify(st.backdrops));
     }
   }
   await ac(`${S} S().updateSettings({ hideToolbarWhileScrolling: true }); return wt.frames(4).then(() => true);`);

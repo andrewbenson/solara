@@ -311,7 +311,7 @@ bool IsWebProcess(content::RenderProcessHost* process) {
   }
   const int id = process->GetDeprecatedID();
   if (content::ChildProcessSecurityPolicy::GetInstance()->HasWebUIBindings(
-          id)) {
+          process->GetID())) {
     return false;
   }
   extensions::ProcessMap* extension_processes =

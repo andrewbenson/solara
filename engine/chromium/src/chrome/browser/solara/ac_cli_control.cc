@@ -6,14 +6,17 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
 #include "solara/core/ac_content_hooks.h"  // nogncheck
+#include "solara/core/ac_hooks.h"  // nogncheck
 #include "base/base64url.h"
 #include "base/command_line.h"
 #include "base/containers/span.h"
@@ -23,6 +26,7 @@
 #include "base/functional/callback.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
+#include "base/memory/weak_ptr.h"
 #include "base/no_destructor.h"
 #include "base/path_service.h"
 #include "base/posix/eintr_wrapper.h"
@@ -31,6 +35,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/lock.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/single_thread_task_runner.h"
@@ -40,6 +45,7 @@
 #include "chrome/browser/solara/ac_cli_token_policy.h"
 #include "chrome/browser/solara/ac_engine.h"
 #include "chrome/browser/solara/ac_product.h"
+#include "chrome/browser/solara/ac_tabs.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/lifetime/termination_notification.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
@@ -50,6 +56,7 @@
 #include "components/prefs/pref_change_registrar.h"
 #include "components/prefs/pref_service.h"
 #include "components/sessions/content/session_tab_helper.h"
+#include "components/sessions/core/session_id.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/devtools_socket_factory.h"
@@ -164,6 +171,80 @@ bool ServerStartedBySwitch() {
       ::switches::kRemoteDebuggingPort);
 }
 
+struct ControlTab {
+  base::WeakPtr<content::WebContents> contents;
+  std::string profile;
+};
+
+std::vector<ControlTab> ControlTabs() {
+  std::vector<ControlTab> tabs;
+  GlobalBrowserCollection::GetInstance()->ForEach(
+      [&](BrowserWindowInterface* browser) {
+        Profile* profile = browser->GetProfile();
+        if (!profile || !profile->IsRegularProfile() ||
+            profile->IsOffTheRecord() || profile->ShutdownStarted() ||
+            (g_solara_hidden_from_extensions &&
+             g_solara_hidden_from_extensions(browser))) {
+          return true;
+        }
+        std::string name = profile->GetPrefs()->GetString(prefs::kProfileName);
+        if (name.empty()) {
+          name = profile->GetPath().BaseName().AsUTF8Unsafe();
+        }
+        TabStripModel* model = browser->GetTabStripModel();
+        for (int i = 0; model && i < model->count(); ++i) {
+          content::WebContents* contents = model->GetWebContentsAt(i);
+          if (contents && !contents->IsBeingDestroyed()) {
+            tabs.push_back({contents->GetWeakPtr(), name});
+          }
+        }
+        return true;
+      });
+  return tabs;
+}
+
+using ControlTabProfiles =
+    std::map<int, std::pair<base::WeakPtr<content::WebContents>, std::string>>;
+
+base::ListValue ControlTabRows(const base::ListValue& measurements,
+                               const ControlTabProfiles& profiles) {
+  std::map<int, double> bytes;
+  for (const auto& measurement : measurements) {
+    const auto& row = measurement.GetDict();
+    const auto id = row.FindInt("tabId");
+    const auto value = row.FindDouble("bytes");
+    if (id && value) {
+      bytes.emplace(*id, *value);
+    }
+  }
+  base::ListValue rows;
+  for (const auto& tab : ControlTabs()) {
+    content::WebContents* contents = tab.contents.get();
+    if (!contents || contents->IsBeingDestroyed()) {
+      continue;
+    }
+    const int id = sessions::SessionTabHelper::IdForTab(contents).id();
+    const bool discarded = contents->WasDiscarded();
+    base::DictValue row;
+    row.Set("targetId",
+            content::DevToolsAgentHost::GetOrCreateFor(contents)->GetId());
+    row.Set("title", base::UTF16ToUTF8(contents->GetTitle()));
+    row.Set("url", contents->GetVisibleURL().spec());
+    const auto profile = profiles.find(id);
+    row.Set("profile", profile != profiles.end() &&
+                               profile->second.first.get() == contents
+                           ? profile->second.second
+                           : tab.profile);
+    row.Set("discarded", discarded);
+    const auto measured = bytes.find(id);
+    row.Set("bytes", !discarded && measured != bytes.end()
+                         ? base::Value(measured->second)
+                         : base::Value());
+    rows.Append(std::move(row));
+  }
+  return rows;
+}
+
 class ControlServer {
  public:
   enum class State { kStopped, kStarting, kPublishing, kRunning, kStopping };
@@ -178,6 +259,7 @@ class ControlServer {
     g_solara_devtools_token_accepts = &Accepts;
     g_solara_devtools_token_server = &ServerChanged;
     g_solara_devtools_active_target = &ActiveTarget;
+    g_solara_devtools_tabs = &Tabs;
     g_solara_devtools_token_client = &TokenClientFor;
     g_solara_devtools_may_attach = &TokenClientMayAttach;
     g_solara_devtools_may_input = &TokenClientMayInput;
@@ -233,6 +315,7 @@ class ControlServer {
   }
 
   void Disable() {
+    tab_profiles_.clear();
     if (ServerStartedBySwitch()) {
       return;
     }
@@ -318,6 +401,33 @@ class ControlServer {
   }
 
  public:
+  bool SetTabProfiles(const base::DictValue& profiles) {
+    std::map<int, std::string> requested;
+    for (const auto [key, value] : profiles) {
+      int id;
+      if (!base::StringToInt(key, &id) || id < 0 ||
+          base::NumberToString(id) != key || !value.is_string()) {
+        return false;
+      }
+      requested.emplace(id, value.GetString());
+    }
+    ControlTabProfiles projection;
+    for (const auto& tab : ControlTabs()) {
+      content::WebContents* contents = tab.contents.get();
+      if (!contents || contents->IsBeingDestroyed()) {
+        continue;
+      }
+      const SessionID id = sessions::SessionTabHelper::IdForTab(contents);
+      const auto label = requested.find(id.id());
+      if (id.is_valid() && label != requested.end()) {
+        projection.emplace(id.id(),
+                           std::make_pair(contents->GetWeakPtr(), label->second));
+      }
+    }
+    tab_profiles_ = std::move(projection);
+    return true;
+  }
+
   void SetActiveTab(std::optional<int> tab_id) {
     active_.reset();
     if (!tab_id) {
@@ -349,6 +459,44 @@ class ControlServer {
       *target_id =
           content::DevToolsAgentHost::GetOrCreateFor(contents)->GetId();
     }
+    return true;
+  }
+
+  static bool Tabs(
+      const content::DevToolsSocketFactory* factory,
+      std::string_view token,
+      base::OnceCallback<void(std::optional<base::ListValue>)> callback) {
+    if (!Accepts(factory, token)) {
+      return false;
+    }
+    std::set<int> wanted;
+    for (const auto& tab : ControlTabs()) {
+      content::WebContents* contents = tab.contents.get();
+      if (!contents || contents->IsBeingDestroyed()) {
+        continue;
+      }
+      const SessionID id = sessions::SessionTabHelper::IdForTab(contents);
+      if (id.is_valid() && !contents->WasDiscarded()) {
+        wanted.insert(id.id());
+      }
+    }
+    const uint64_t generation = Get().generation_;
+    QueryTabMemory(
+        wanted,
+        base::BindOnce(
+            [](uint64_t generation,
+               base::OnceCallback<void(std::optional<base::ListValue>)> callback,
+               base::ListValue measurements) {
+              ControlServer& self = Get();
+              if (self.state_ != State::kRunning ||
+                  self.generation_ != generation) {
+                std::move(callback).Run(std::nullopt);
+                return;
+              }
+              std::move(callback).Run(
+                  ControlTabRows(measurements, self.tab_profiles_));
+            },
+            generation, std::move(callback)));
     return true;
   }
 
@@ -433,6 +581,7 @@ class ControlServer {
   void Reset() {
     deadline_.Stop();
     state_ = State::kStopped;
+    tab_profiles_.clear();
     token_.clear();
     factory_ = nullptr;
     SetLiveGeneration(0);
@@ -509,6 +658,7 @@ class ControlServer {
   std::vector<Reply> pending_;
   base::OneShotTimer deadline_;
   base::WeakPtr<content::WebContents> active_;
+  ControlTabProfiles tab_profiles_;
   PrefChangeRegistrar policy_;
   base::CallbackListSubscription terminating_;
   scoped_refptr<base::SequencedTaskRunner> file_runner_;
@@ -530,6 +680,12 @@ AC_ENGINE_CALL(ac_cli_control) {
     args = std::move(*parsed).TakeDict();
   }
   solara::ControlServer& server = solara::ControlServer::Get();
+  if (const base::Value* profiles = args.Find("tabProfiles")) {
+    if (!profiles->is_dict() || !server.SetTabProfiles(profiles->GetDict())) {
+      return out.Error(
+          "tabProfiles must map nonnegative integer tab ids to profile names");
+    }
+  }
   if (const base::Value* active = args.Find("active")) {
     server.SetActiveTab(active->is_int() && active->GetInt() >= 0
                             ? std::optional<int>(active->GetInt())

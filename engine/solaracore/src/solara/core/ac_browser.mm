@@ -1302,7 +1302,12 @@ void ACWebContentsDelegate::CloseContents(content::WebContents* source) {
   }
   BrowserWindowInterface* browser =
       GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(source);
-  if (!browser || !UnloadController::From(browser)->CanCloseContents(source)) {
+  if (!browser) {
+    return;
+  }
+  UnloadController* controller = UnloadController::From(browser);
+  if (!controller->CanCloseContents(source)) {
+    controller->CloseContents(source);
     return;
   }
   DeleteTabClosedByHost(source);

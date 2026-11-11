@@ -33,7 +33,7 @@
      // We must notify scheduler and increase |pending_swaps_| before calling
 --- a/components/viz/service/display/display.h
 +++ b/components/viz/service/display/display.h
-@@ -147,6 +147,9 @@
+@@ -149,6 +149,9 @@
    void SetDisplayColorSpaces(
        const gfx::DisplayColorSpaces& display_color_spaces);
    void SetOutputIsSecure(bool secure);
@@ -43,9 +43,9 @@
    void NotifyMinSupportedVsyncInterval(base::TimeDelta min_vsync_interval);
  
    const SurfaceId& CurrentSurfaceId() const;
-@@ -305,6 +308,9 @@
+@@ -309,6 +312,9 @@
    gfx::DisplayColorSpaces display_color_spaces_;
-   bool visible_ = false;
+   mojom::DisplayVisibility visibility_ = mojom::DisplayVisibility::kInvisible;
    bool output_is_secure_ = false;
 +#if BUILDFLAG(IS_MAC)
 +  bool video_super_resolution_allowed_ = false;

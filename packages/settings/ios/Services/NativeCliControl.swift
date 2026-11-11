@@ -45,6 +45,8 @@ final class NativeCliControl {
   @ObservationIgnored private var sync = CliControlSync()
   @ObservationIgnored private var activeTabSync = CliActiveTabSync()
   @ObservationIgnored private var activeBrowsers = CliActiveTabBrowsers()
+  @ObservationIgnored private var sentTabProfiles: [String: String]?
+  @ObservationIgnored private var profileGeneration: Int?
   @ObservationIgnored private var model: SettingsModel?
   @ObservationIgnored private var started = false
   @ObservationIgnored private var indicatorHide: DispatchWorkItem?
@@ -142,12 +144,29 @@ final class NativeCliControl {
     if serving, let store = NativeStoreHandle.store {
       let memory = store.memory.chromeTabs
       let browsers = activeBrowsers.map(memory)
+      var sessionIds: [String: Int] = [:]
+      if SolaraCoreHost.responds(to: #selector(SolaraCoreHost.chromeTabId(browserId:))) {
+        for (key, browser) in browsers {
+          guard let bridgeId = Int32(exactly: browser) else { continue }
+          let id = Int(SolaraCoreHost.chromeTabId(browserId: bridgeId))
+          if id >= 0 { sessionIds[key] = id }
+        }
+      }
+      let names = cliTabProfileNames(store.state, sessionIds: sessionIds)
+      if sentTabProfiles != names || profileGeneration != server?.generation {
+        sentTabProfiles = names
+        profileGeneration = server?.generation
+        SolaraCoreServices.call("ac_cli_control", profile: "", args: ["tabProfiles": names]) { @Sendable _ in }
+      }
       if let browserId = cliActiveBrowserId(store.state, browsers: browsers), let bridgeId = Int32(exactly: browserId),
         SolaraCoreHost.responds(to: #selector(SolaraCoreHost.chromeTabId(browserId:)))
       {
         let id = Int(SolaraCoreHost.chromeTabId(browserId: bridgeId))
         if id >= 0 { chromeId = id }
       }
+    } else {
+      sentTabProfiles = nil
+      profileGeneration = nil
     }
     guard let args = activeTabSync.update(serverState: server?.state, chromeId: chromeId) else { return }
     SolaraCoreServices.call("ac_cli_control", profile: "", args: args) { @Sendable _ in }

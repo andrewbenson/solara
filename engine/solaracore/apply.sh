@@ -193,23 +193,20 @@ hook(["  // Solara: SolaraCore's Browsers have no BrowserView, so no pinned tab 
 PY
 
 hook "$src/chrome/browser/ui/webui/settings/settings_clear_browsing_data_handler.cc" "ClearBrowsingDataHandler" <<'PY'
-old = """    CHECK(browser_element);
-    ui::ElementTracker::GetFrameworkDelegate()->NotifyCustomEvent(
-        browser_element,
-        browsing_data_important_sites_util::kClearBrowsingDataHistoryEventId);
-  }"""
-new = """    // Solara: SolaraCore's Browsers have no BrowserView element.
-    CHECK(browser_element || g_solara_viewless_browsers);
-    if (browser_element) {
-      ui::ElementTracker::GetFrameworkDelegate()->NotifyCustomEvent(
-          browser_element,
-          browsing_data_important_sites_util::kClearBrowsingDataHistoryEventId);
-    }
-  }"""
+old = """  CHECK(browser_element);
+  ui::ElementTracker::GetFrameworkDelegate()->NotifyCustomEvent(browser_element,
+                                                                event_type);
+"""
+new = """  CHECK(browser_element || g_solara_viewless_browsers);
+  if (browser_element) {
+    ui::ElementTracker::GetFrameworkDelegate()->NotifyCustomEvent(browser_element,
+                                                                  event_type);
+  }
+"""
 def edit(s):
     assert s.count(old) == 1
     return s.replace(old, new)
-hook(["    // Solara: SolaraCore's Browsers have no BrowserView element.\n"], edit, HOOKS)
+hook(["  CHECK(browser_element || g_solara_viewless_browsers);\n"], edit, HOOKS)
 PY
 
 hook "$src/chrome/browser/ui/browser.cc" "Browser window creation" <<'PY'
@@ -299,16 +296,18 @@ reps = [
 #endif
 """),
 ]
-start1 = "  crash_reporter::InitializeCrashKeys();\n"
+start0 = "  crash_reporter::InitializeCrashKeys();\n"
+start1 = "#if BUILDFLAG(IS_POSIX)\n  ChromeCrashReporterClient::Create();\n"
 end1 = "#endif  // !defined(BUILDING_CHROME_RENDERER)\n"
 start2 = "#if BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_MAC)\n  // Zygote needs to call InitCrashReporter() in RunZygote().\n"
 end2 = "  crash_keys::SetCrashKeysFromCommandLine(command_line);\n"
 def edit(s):
-    assert s.count(decl_at) == 1 and s.count(start1) == 1 and s.count(start2) == 1 and s.count(end2) == 1
+    assert s.count(decl_at) == 1 and s.count(start0) == 1 and s.count(start1) == 1 and s.count(start2) == 1 and s.count(end2) == 1
     s = s.replace(decl_at, decl + decl_at)
     for old, new in reps:
         assert s.count(old) == 1, old
         s = s.replace(old, new)
+    s = gate(s, start0, start0, "has no crash keys.")
     s = gate(s, start1, end1, "has no crash reporter, and sets up its data dir itself.")
     return gate(s, start2, end2, "has no crash reporter.")
 hook(["bool g_solara_embedder = false;\n",
@@ -316,6 +315,7 @@ hook(["bool g_solara_embedder = false;\n",
       "            locale, g_solara_resource_bundle_delegate,  // Solara: SolaraCore\n",
       "  bool record = !g_solara_embedder;\n",
       "  // Solara: SolaraCore has no crash reporter, and sets up its data dir itself.\n",
+      "  // Solara: SolaraCore has no crash keys.\n",
       "  // Solara: SolaraCore has no crash reporter.\n"], edit, HOOKS)
 PY
 
@@ -523,10 +523,10 @@ bool (*g_solara_external_protocol_dialog)(
     content::WeakDocumentPtr initiator_document,
     const std::u16string& program_name) = nullptr;
 """
-old = """  DCHECK(web_contents);
+old = """  CHECK(web_contents, base::NotFatalUntil::M161);
   if (delegate) {
     delegate->RunExternalProtocolDialog(url, web_contents, page_transition,"""
-new = """  DCHECK(web_contents);
+new = """  CHECK(web_contents, base::NotFatalUntil::M161);
   // Solara: SolaraCore
   if (!delegate && g_solara_external_protocol_dialog &&
       g_solara_external_protocol_dialog(url, web_contents, initiating_origin,

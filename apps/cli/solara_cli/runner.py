@@ -275,6 +275,12 @@ def build_namespace(session: Session, filename: str, data_root=None) -> dict:
     async def history(days: float = 1, limit: int | None = 200, profile: str | None = None, domains: bool = False):
         return await browsing.run_bounded(browsing.history, data_root, days=days, limit=limit, profile=profile, domains=domains)
 
+    from solara_cli import tab_memory
+
+    async def memory():
+        return await tab_memory.read(session.endpoint)
+
+    namespace["tab_memory"] = memory
     namespace["js"] = js
     namespace["pinned"] = pinned
     namespace["history"] = history

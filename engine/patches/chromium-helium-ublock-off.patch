@@ -48,9 +48,9 @@ resources. Its id is no longer pinned by default either, so no profile pins (and
  
  #if BUILDFLAG(IS_CHROMEOS)
  #include "ash/constants/ash_extension_constants.h"
-@@ -106,7 +105,6 @@
+@@ -104,7 +103,6 @@
+     case IDR_NETWORK_SPEECH_SYNTHESIS_MANIFEST:
      case IDR_NETWORK_SPEECH_SYNTHESIS_MANIFEST_MV3:
-     case IDR_READING_MODE_GDOCS_HELPER_MANIFEST:
      case IDR_WEBSTORE_MANIFEST:
 -    case IDR_UBLOCK_MANIFEST_JSON:
      case IDR_EXTSTORE_FIXUPS_MANIFEST_JSON:

@@ -1,16 +1,16 @@
 --- a/chrome/browser/ui/extensions/extension_side_panel_utils.cc
 +++ b/chrome/browser/ui/extensions/extension_side_panel_utils.cc
-@@ -4,6 +4,8 @@
+@@ -3,6 +3,8 @@
+ // found in the LICENSE file.
  
  #include "chrome/browser/ui/extensions/extension_side_panel_utils.h"
- 
-+#include "solara/core/ac_hooks.h"  // nogncheck
 +
++#include "solara/core/ac_hooks.h"  // nogncheck
+ 
  #include "chrome/browser/tab_list/tab_list_interface.h"
  #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
- #include "chrome/browser/ui/side_panel/side_panel_entry.h"
 @@ -20,6 +22,14 @@
- #include "chrome/browser/ui/views/tabs/organizer/organizer_panel_utils.h"
+ #include "chrome/browser/ui/tabs/organizer/organizer_panel_utils.h"
  #endif
  
 +// Solara: SolaraCore (engine/solaracore) shows extension side panels in its own
@@ -66,20 +66,20 @@
  #if BUILDFLAG(ENABLE_EXTENSIONS)
    auto* organizer_controller =
        organizer_panel::IsShowExtensionsSidePanelUiInOrganizerPanelEnabled()
-@@ -214,6 +245,13 @@
-     return;
-   }
- 
+@@ -211,6 +242,13 @@
+ void CloseGlobalExtensionSidePanel(BrowserWindowInterface* browser_window,
+                                    const ExtensionId& extension_id) {
+   if (!browser_window) {
++    return;
++  }
++
 +  // Solara: SolaraCore may draw extension side panels itself.
 +  if (g_solara_extension_side_panel &&
 +      g_solara_extension_side_panel(browser_window, nullptr, extension_id,
 +                                       /*open=*/false)) {
-+    return;
-+  }
-+
- #if BUILDFLAG(ENABLE_EXTENSIONS)
-   auto* organizer_controller =
-       organizer_panel::IsShowExtensionsSidePanelUiInOrganizerPanelEnabled()
+     return;
+   }
+ 
 @@ -262,6 +300,13 @@
      return;
    }

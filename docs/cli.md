@@ -30,6 +30,16 @@ the pins into `pyproject.toml`).
   `asyncio`, pydoll's exports and its common exceptions. It prints the last expression's value. Exit 0 done, 1 the
   code raised or timed out (default 300 s), 2 Solara can't be reached or closed the browser socket (it watches the
   socket, so turning the setting off ends an idle run at once), 130 interrupted.
+- `solara tabs [--data-dir DIR] [--full] [--json]` lists every open tab in every normal profile and
+  window, including sleeping tabs. The table sorts by memory, largest first, and shows memory in decimal MB/GB,
+  title, a host-first address, and profile name. Columns shorten to the terminal width; `--full` keeps whole URLs.
+  A sleeping tab shows `—`; an awake tab whose attribution is not available shows `?`. The footer gives the sum
+  of measured memory, the tab count and how many are asleep; it labels the sum "Known total" when any awake tab
+  has no reading. Querying does not wake sleeping tabs. Private, guest and system profiles are excluded.
+  `--json` returns the endpoint's list in its original order with unrounded bytes. `await tab_memory()` in `exec`
+  returns the same list. Both require the token control path; `--port`, `--ws` and `$SOLARA_CDP_URL` are refused
+  for this operation. Exit codes follow `exec`: 0 success, 1 processing error, 2 connection/control-file
+  or endpoint error (including its 10 s request deadline), 130 interrupted. The endpoint requires the Chromium 157 engine with `/solara/tabs` support.
 - `solara skills install --target general|codex|claude-code|cursor|opencode [--target …] [--project]` installs the
   agent skill (`solara_cli/skill`: `SKILL.md` and `references/pydoll.md`) into `~/.agents/skills` (general, codex),
   `~/.claude/skills`, `~/.cursor/skills` or `~/.config/opencode/skills`; with `--project`, into `./.agents/skills`,
@@ -187,6 +197,21 @@ The data dir is `--data-dir`, else `$SOLARA_DATA_DIR`, else `~/Library/Applicati
 The active-page route is `GET http://127.0.0.1:P/solara/active?token=<token>`: `{"targetId": "<id>"}`, or `null` when
 New Tab or a Solara view is showing; anything else is a 404. The CLI calls it directly (no proxy, no Origin header)
 with the token redacted like everywhere else, and falls back to the visibility check if it fails.
+
+The tabs route is `GET http://127.0.0.1:P/solara/tabs?token=<token>`. It returns a JSON list; each entry has
+`targetId` (DevTools target ID), `title`, `url`, `profile` (display name), `discarded` (boolean), and `bytes`
+(private footprint in bytes, or null for a sleeping tab or an unavailable reading). It uses the same resource
+attribution and exclusive-process fallback as the sidebar hover card's `ac_tabs_memory`, rather than JS heap
+size or a renderer-process total assigned to every tab. Shared resources and missing readings mean the footer is
+the sum of tab readings, not the whole browser's memory. Measurements can change between requests.
+
+This route has the same token, GET-only, no-Origin and loopback restrictions as `/solara/active` and is unavailable
+on a plain DevTools server. It exposes metadata for every actual normal-profile tab, including file and Chrome
+pages, without granting script access to those pages. It does not enumerate extension workers, subframes or
+internal helper windows. The CLI sends no Origin, bypasses proxies, refuses redirects, validates responses, and
+redacts the token; an error never falls back to another inventory. `--json` and `tab_memory()` preserve complete
+titles and URLs, which can contain sensitive page information, while the text table removes terminal control
+characters and shortens fields for display.
 
 The app writes `SolaraControl.json` when the setting is on:
 `{"port":P,"browser":"/devtools/browser/<guid>","token":"…","pid":…,"generation":N}`. The CLI opens it without

@@ -5,9 +5,11 @@
 #include <algorithm>
 #include <memory>
 #include <optional>
+#include <string_view>
 #include <utility>
 #include <vector>
 
+#include "base/containers/span.h"
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -32,6 +34,7 @@
 #include "components/password_manager/core/browser/ui/credential_ui_entry.h"
 #include "components/password_manager/core/browser/ui/saved_passwords_presenter.h"
 #include "components/password_manager/core/common/password_manager_constants.h"
+#include "crypto/secure_util.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace solara {
@@ -278,10 +281,12 @@ Check Saved(std::string origin, std::string username, Secret password) {
         if (!credential) {
           return false;
         }
-        std::string saved = base::UTF16ToUTF8(credential->password);
+        auto plaintext = credential->password.secure_value();
+        std::string saved = base::UTF16ToUTF8(std::u16string_view(plaintext));
         const bool same = saved == password.value();
         Cleanse(saved);
-        Cleanse(credential->password);
+        crypto::SecureZeroBuffer(base::as_writable_byte_span(plaintext));
+        credential->password.secure_clear();
         return same;
       },
       std::move(origin), std::move(username), std::move(password));
@@ -394,7 +399,11 @@ AC_ENGINE_CALL(ac_passwords_reveal) {
                       }
                       base::DictValue result;
                       if (credential) {
-                        result.Set("password", credential->password);
+                        auto plaintext = credential->password.secure_value();
+                        result.Set("password", std::u16string_view(plaintext));
+                        crypto::SecureZeroBuffer(
+                            base::as_writable_byte_span(plaintext));
+                        credential->password.secure_clear();
                       } else {
                         result.Set("password", base::Value());
                       }

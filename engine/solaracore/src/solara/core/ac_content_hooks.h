@@ -4,10 +4,12 @@
 #include <stddef.h>
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 
 #include "base/functional/callback_forward.h"
+#include "base/values.h"
 #include "extensions/common/extension_id.h"
 
 class GURL;
@@ -108,6 +110,11 @@ extern bool (*g_solara_devtools_active_target)(
     const content::DevToolsSocketFactory* factory,
     std::string_view token,
     std::string* target_id);
+
+extern bool (*g_solara_devtools_tabs)(
+    const content::DevToolsSocketFactory* factory,
+    std::string_view token,
+    base::OnceCallback<void(std::optional<base::ListValue>)> callback);
 
 class SolaraDevToolsTokenClient {
  public:

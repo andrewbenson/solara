@@ -301,6 +301,33 @@ base::ListValue CpuTabs(const std::vector<TabTarget>& targets,
   return tabs;
 }
 
+void MeasureTabs(const std::set<int>& wanted,
+                 ResourceType type,
+                 base::OnceCallback<void(base::ListValue)> callback) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (wanted.empty() || !PerformanceManager::IsAvailable()) {
+    std::move(callback).Run(base::ListValue());
+    return;
+  }
+  auto targets = CaptureTargets(wanted, type == ResourceType::kMemorySummary);
+  QueryBuilder builder;
+  builder.AddResourceType(type).AddAllContextsOfType<PageContext>();
+  if (type == ResourceType::kMemorySummary) {
+    builder.AddAllContextsOfType<ProcessContext>();
+  }
+  builder.QueryOnce(base::BindOnce(
+      [](base::OnceCallback<void(base::ListValue)> callback,
+         std::vector<TabTarget> targets, ResourceType type,
+         const QueryResultMap& results) {
+        DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+        base::ListValue tabs = type == ResourceType::kMemorySummary
+                                   ? MemoryTabs(targets, results)
+                                   : CpuTabs(targets, results);
+        std::move(callback).Run(std::move(tabs));
+      },
+      std::move(callback), std::move(targets), type));
+}
+
 void QueryTabs(const char* args_json,
                ac_engine_reply_t reply,
                void* context,
@@ -319,25 +346,22 @@ void QueryTabs(const char* args_json,
     out.Error("performance manager unavailable");
     return;
   }
-  auto targets = CaptureTargets(*wanted, type == ResourceType::kMemorySummary);
-  QueryBuilder builder;
-  builder.AddResourceType(type).AddAllContextsOfType<PageContext>();
-  if (type == ResourceType::kMemorySummary) {
-    builder.AddAllContextsOfType<ProcessContext>();
-  }
-  builder.QueryOnce(base::BindOnce(
-      [](Reply out, std::vector<TabTarget> targets, ResourceType type,
-         const QueryResultMap& results) {
-        DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-        base::ListValue tabs = type == ResourceType::kMemorySummary
-                                   ? MemoryTabs(targets, results)
-                                   : CpuTabs(targets, results);
-        out.Send(base::DictValue().Set("tabs", std::move(tabs)));
-      },
-      std::move(out), std::move(targets), type));
+  MeasureTabs(
+      *wanted, type,
+      base::BindOnce(
+          [](Reply out, base::ListValue tabs) {
+            out.Send(base::DictValue().Set("tabs", std::move(tabs)));
+          },
+          std::move(out)));
 }
 
 }
+
+void QueryTabMemory(const std::set<int>& tab_ids,
+                    base::OnceCallback<void(base::ListValue)> callback) {
+  MeasureTabs(tab_ids, ResourceType::kMemorySummary, std::move(callback));
+}
+
 }
 
 AC_ENGINE_CALL(ac_tabs_memory) {

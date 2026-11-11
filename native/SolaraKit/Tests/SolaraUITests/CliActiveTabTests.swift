@@ -6,6 +6,19 @@ import Testing
 @testable import SolaraUI
 
 @Suite struct CliActiveTabTests {
+  @Test func tabProfileNamesFollowTheTabAndExcludePrivateWindows() {
+    var state = fixture()
+    state.profiles["p"]?.dataId = "shared"
+    state.profiles["q"]?.dataId = "shared"
+    state.windows["x"]?.incognito = true
+    let ids = ["a": 101, "b": 102, "c": 103, "missing": 104]
+    #expect(cliTabProfileNames(state, sessionIds: ids) == ["101": "Personal", "103": "Work"])
+    state.profiles["q"]?.name = "Renamed"
+    #expect(cliTabProfileNames(state, sessionIds: ids)["103"] == "Renamed")
+    state.tabs["a"] = nil
+    #expect(cliTabProfileNames(state, sessionIds: ids) == ["103": "Renamed"])
+  }
+
   private func fixture() -> BrowserState {
     var state = BrowserState()
     state.profiles["p"] = Profile(id: "p", name: "Personal", color: "plum", icon: nil, createdAt: 0)

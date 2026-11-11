@@ -115,7 +115,7 @@ font, which isn't shipped.
 @@ -47,7 +47,6 @@
  #include "chrome/browser/ui/webui/notebooks_internals/notebooks_internals_ui_config.h"
  #include "chrome/browser/ui/webui/ntp_tiles_internals_ui.h"
- #include "chrome/browser/ui/webui/omnibox/omnibox_ui.h"
+ #include "chrome/browser/ui/webui/omnibox_internals/omnibox_internals_ui.h"
 -#include "chrome/browser/ui/webui/onboarding/onboarding_page_ui.h"
  #include "chrome/browser/ui/webui/policy/policy_ui.h"
  #include "chrome/browser/ui/webui/predictors/predictors_ui.h"

@@ -41,9 +41,9 @@
  #include "chrome/browser/extensions/api/tabs/tabs_event_router.h"
 +#include "solara/core/ac_hooks.h"  // nogncheck
  
+ #include <algorithm>
  #include <memory>
- #include <set>
-@@ -232,7 +233,9 @@
+@@ -234,7 +235,9 @@
  
  bool TabsEventRouter::ShouldTrackBrowser(BrowserWindowInterface& browser) {
    return profile_->IsSameOrParent(browser.GetProfile()) &&
@@ -88,9 +88,10 @@
    EventRouter* event_router = EventRouter::Get(profile);
    if (profile && event_router) {
 @@ -56,6 +62,15 @@
+ }
  
  }  // namespace
- 
++
 +bool IsHiddenFromExtensions(content::WebContents* web_contents) {
 +  if (!web_contents || !g_solara_hidden_from_extensions) {
 +    return false;
@@ -99,11 +100,10 @@
 +      GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(web_contents);
 +  return browser && g_solara_hidden_from_extensions(browser);
 +}
-+
+ 
  // Constructs an onBeforeNavigate event.
  std::unique_ptr<Event> CreateOnBeforeNavigateEvent(
-     content::NavigationHandle* navigation_handle) {
-@@ -169,7 +184,7 @@
+@@ -170,7 +185,7 @@
        navigation_handle->GetWebContents()->GetBrowserContext();
    auto event = std::make_unique<Event>(histogram_value, event_name,
                                         std::move(args), browser_context);
@@ -112,7 +112,7 @@
  }
  
  // Constructs and dispatches an onDOMContentLoaded event.
-@@ -201,7 +216,7 @@
+@@ -202,7 +217,7 @@
        events::WEB_NAVIGATION_ON_DOM_CONTENT_LOADED,
        web_navigation::OnDOMContentLoaded::kEventName,
        web_navigation::OnDOMContentLoaded::Create(details), browser_context);
@@ -121,7 +121,7 @@
  }
  
  // Constructs and dispatches an onCompleted event.
-@@ -233,7 +248,7 @@
+@@ -234,7 +249,7 @@
        events::WEB_NAVIGATION_ON_COMPLETED,
        web_navigation::OnCompleted::kEventName,
        web_navigation::OnCompleted::Create(details), browser_context);
@@ -130,7 +130,7 @@
  }
  
  // Constructs and dispatches an onCreatedNavigationTarget event.
-@@ -244,6 +259,9 @@
+@@ -245,6 +260,9 @@
      content::BrowserContext* browser_context,
      content::WebContents* target_web_contents,
      const GURL& target_url) {
@@ -139,8 +139,8 @@
 +  }
    // Check that the tab is already inserted into a tab strip model. This code
    // path is exercised by ExtensionApiTest.WebNavigationRequestOpenTab.
-   DCHECK(ExtensionTabUtil::GetTabById(
-@@ -264,7 +282,7 @@
+   // TODO(crbug.com/575114966): CHECK-exclusion: Convert to a CHECK once we are
+@@ -267,7 +285,7 @@
        web_navigation::OnCreatedNavigationTarget::kEventName,
        web_navigation::OnCreatedNavigationTarget::Create(details),
        browser_context);
@@ -149,7 +149,7 @@
  
    // If the target WebContents already received the onBeforeNavigate event,
    // send it immediately after the onCreatedNavigationTarget above.
-@@ -305,7 +323,7 @@
+@@ -308,7 +326,7 @@
                                web_navigation::OnErrorOccurred::kEventName,
                                web_navigation::OnErrorOccurred::Create(details),
                                web_contents->GetBrowserContext());
@@ -158,7 +158,7 @@
  }
  
  void DispatchOnErrorOccurred(content::NavigationHandle* navigation_handle) {
-@@ -339,7 +357,7 @@
+@@ -342,7 +360,7 @@
        events::WEB_NAVIGATION_ON_ERROR_OCCURRED,
        web_navigation::OnErrorOccurred::kEventName,
        web_navigation::OnErrorOccurred::Create(details), browser_context);
@@ -167,7 +167,7 @@
  }
  
  // Constructs and dispatches an onTabReplaced event.
-@@ -347,6 +365,9 @@
+@@ -350,6 +368,9 @@
      content::WebContents* old_web_contents,
      content::BrowserContext* browser_context,
      content::WebContents* new_web_contents) {
@@ -177,7 +177,7 @@
    web_navigation::OnTabReplaced::Details details;
    details.replaced_tab_id = ExtensionTabUtil::GetTabId(old_web_contents);
    details.tab_id = ExtensionTabUtil::GetTabId(new_web_contents);
-@@ -356,7 +377,7 @@
+@@ -359,7 +380,7 @@
        events::WEB_NAVIGATION_ON_TAB_REPLACED,
        web_navigation::OnTabReplaced::kEventName,
        web_navigation::OnTabReplaced::Create(details), browser_context);

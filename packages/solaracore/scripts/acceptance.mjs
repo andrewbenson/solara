@@ -47,14 +47,14 @@ import { createServer as createHttpsServer } from "node:https";
 import { basename, join, resolve } from "node:path";
 import { X509Certificate, createHash, createSign, generateKeyPairSync, randomUUID } from "node:crypto";
 import { crc32, deflateSync, inflateSync } from "node:zlib";
-import { attach as attachInstance, crashReportsForInstance, launch as launchInstance, onScreenWindows as windowsOf, reporter, screenLocked, sleep, temporaryData } from "../../../scripts/lib/instance.mjs";
+import { attach as attachInstance, crashReportsForInstance, launch as launchInstance, onScreenWindows as windowsOf, reporter, screenLocked, session as fixtureSession, sleep, temporaryData } from "../../../scripts/lib/instance.mjs";
 
 // MARK: What each check needs
 
 const usesPageA = [
   "visibility", "occlusion", "favicon", "navigate-back-forward-reload", "target-blank", "window-open",
   "cmd-click", "evaluate", "tab-strips", "tab-switch", "status-text", "load-error", "chrome-strings",
-  "tab-memory", "tab-cpu", "context-menu-search", "duplicate-and-reopen", "device-chooser", "bluetooth-chooser",
+  "tab-memory", "tab-cpu", "cli-tabs-memory", "context-menu-search", "duplicate-and-reopen", "device-chooser", "bluetooth-chooser",
   "bluetooth-settings", "cast-dialog", "cast-routes", "theme-commit", "theme-modern-colors", "user-selection",
   "password-prompt", "screen-share-picker", "tab-capture", "share-instead-two-captures", "share-bar-layout",
   "restore-after-close", "discard-outcomes", "sleep-eligibility", "keep-awake-sites", "sleep-pinned-capture", "native-tab-sleep", "capture-picture", "unresponsive", "permission-dismissed", "permission-status-detached",
@@ -3162,6 +3162,84 @@ try {
     const refused = await resourceCall(name, { tabIds: [] }, "api38-unloaded-profile");
     assert.equal(refused.value.error, `${name} requires an empty profile`);
   };
+
+  await check("cli-tabs-memory", async () => {
+    const tokenData = mkdtempSync(join(scratch, "cli-tabs-"));
+    const marker = randomUUID();
+    const normalUrl = `${base}/c?cli-tabs-${marker}`;
+    const privateUrl = `${base}/c?cli-tabs-private-${marker}`;
+    let controlled = null;
+    let privateWindow = null;
+    try {
+      controlled = await launchInstance(app, {
+        data: tokenData, control: true, onboarded: true,
+        log: join(scratch, "cli-tabs.out.log"),
+        session: fixtureSession({ settings: { cliControl: true }, tabs: [{ id: "cli-memory", url: normalUrl }] }),
+        switches: "--disable-audio-output",
+        env: { SOLARA_ALLOW_AUDIO: "0", SOLARA_CLI_HOME: join(tokenData, "cli-home"), SOLARA_CLI_BIN_DIR: join(tokenData, "cli-bin") },
+      });
+      const evaluate = (code) => controlled.eval(code, { timeout: 15000 });
+      const call = async (name, args) => JSON.parse(await evaluate(`return globalThis.expo.modules.SolaraCEF.engineCall(${JSON.stringify(name)}, "", ${JSON.stringify(JSON.stringify(args))})`));
+      const control = JSON.parse(readFileSync(join(tokenData, "Chromium", "SolaraControl.json"), "utf8"));
+      assert.equal(control.pid, controlled.pid);
+      assert.equal(control.port, controlled.port);
+      const url = `http://127.0.0.1:${control.port}/solara/tabs`;
+      const request = (token = control.token, options = {}) => fetch(`${url}?token=${encodeURIComponent(token)}`, { ...options, redirect: "error", signal: AbortSignal.timeout(15000) });
+      const inventory = async () => {
+        const response = await request();
+        assert.equal(response.status, 200, "the token inventory is available");
+        const rows = await response.json();
+        assert.ok(Array.isArray(rows));
+        assert.equal(new Set(rows.map((row) => row.targetId)).size, rows.length);
+        for (const row of rows) {
+          assert.deepEqual(Object.keys(row).sort(), ["bytes", "discarded", "profile", "targetId", "title", "url"]);
+          for (const key of ["targetId", "title", "url", "profile"]) assert.equal(typeof row[key], "string");
+          assert.equal(typeof row.discarded, "boolean");
+          assert.ok(row.bytes === null || (Number.isSafeInteger(row.bytes) && row.bytes >= 0));
+          if (row.discarded) assert.equal(row.bytes, null);
+          assert.notEqual(row.url, privateUrl, "private URL omitted");
+        }
+        return rows;
+      };
+      await until("the token fixture tab loaded", () => evaluate('const s = ac.store.getState(); return s.tabs["cli-memory"]?.title === "Page C" && !s.live["cli-memory"]?.isLoading'), 30000);
+      const sessionId = await until("the token fixture session ID", async () => {
+        const id = await evaluate('const browser = Object.entries(ac.pageState.getState().browsers ?? {}).find(([, id]) => id === "cli-memory")?.[0]; return browser ? globalThis.expo.modules.SolaraCEF.chromeTabId(Number(browser)) : null');
+        return Number.isInteger(id) && id >= 0 ? { id } : null;
+      }, 10000);
+      privateWindow = await evaluate(`return ac.actions.openWindow({ incognito: true, url: ${JSON.stringify(privateUrl)} })`);
+      await until("the token private fixture loaded", () => evaluate(`const s = ac.store.getState(); const w = s.windows[${JSON.stringify(privateWindow)}]; return w?.tabIds.some((id) => s.tabs[id]?.url === ${JSON.stringify(privateUrl)} && s.tabs[id]?.title === "Page C" && !s.live[id]?.isLoading)`), 15000);
+      assert.equal((await request(`${control.token}-wrong`)).status, 404, "a bad token is refused");
+      assert.equal((await request(control.token, { headers: { Origin: base } })).status, 404, "an Origin is refused");
+      assert.equal((await request(control.token, { method: "POST" })).status, 404, "non-GET is refused");
+      assert.equal((await fetch(url, { signal: AbortSignal.timeout(5000) })).status, 404, "a missing token is refused");
+      assert.equal((await fetch(`http://127.0.0.1:${port}/solara/tabs?token=wrong`, { signal: AbortSignal.timeout(5000) })).status, 404, "the plain DevTools server exposes no inventory");
+      const sample = await until("exact equality with ac_tabs_memory", async () => {
+        const before = (await call("ac_tabs_memory", { tabIds: [sessionId.id] })).tabs?.find((row) => row.tabId === sessionId.id);
+        const row = (await inventory()).find((row) => row.url === normalUrl);
+        const after = (await call("ac_tabs_memory", { tabIds: [sessionId.id] })).tabs?.find((row) => row.tabId === sessionId.id);
+        return before && row && after && row.profile === "Personal" && before.bytes === row.bytes && row.bytes === after.bytes && row.bytes > 0 ? row : null;
+      }, 30000);
+      assert.equal(sample.discarded, false);
+      assert.ok(sample.targetId.length > 0);
+      assert.equal(sample.profile, "Personal");
+      await evaluate('ac.store.getState().updateProfile("default", { name: "CLI renamed" }); return true');
+      await until("the renamed profile in the token inventory", async () => (await inventory()).find((row) => row.targetId === sample.targetId)?.profile === "CLI renamed", 10000);
+      const foreground = await evaluate(`const s = ac.store.getState(); return s.newTab(s.tabs["cli-memory"].windowId, { url: ${JSON.stringify(`${base}/c?cli-tabs-foreground-${marker}`)} })`);
+      await evaluate(`ac.actions.switchToTab(${JSON.stringify(foreground)}); return true`);
+      await until("the token fixture in the background", () => evaluate(`const s = ac.store.getState(); const w = s.windows[s.tabs["cli-memory"].windowId]; return w.activeTabIds[w.profileId] === ${JSON.stringify(foreground)} && !!ac.webviews.get(${JSON.stringify(foreground)})`), 15000);
+      assert.equal(await evaluate('return ac.webviews.get("cli-memory")?.discard()'), "discarded");
+      await until("the sleeping tab retained with null memory", async () => {
+        const row = (await inventory()).find((row) => row.url === normalUrl);
+        return row?.discarded === true && row.bytes === null;
+      }, 10000);
+      return { bytes: sample.bytes, targetId: sample.targetId, privateExcluded: true, badTokenRefused: true, originRefused: true, renamedProfile: true, sleepingRetained: true };
+    } finally {
+      if (controlled) {
+        if (privateWindow) await controlled.eval(`ac.store.getState().closeWindow(${JSON.stringify(privateWindow)}); return true`, { timeout: 5000 }).catch(() => null);
+        await controlled.quit();
+      }
+    }
+  });
 
   await check("tab-memory", async () => {
     const opened = [];
@@ -7592,8 +7670,19 @@ try {
     const windowId = await evalApp(`return ac.store.getState().createWindow({ url: "${base}/a?doomed", background: true })`);
     const id = await until("the window's tab", async () => s(`s.windows["${windowId}"]?.tabIds.length === 1 && s.tabs[s.windows["${windowId}"].tabIds[0]]?.title === "Page A" && !s.live[s.windows["${windowId}"].tabIds[0]]?.isLoading ? s.windows["${windowId}"].tabIds[0] : null`), 15000);
     const browser = await until("its browser", () => browserOf(id), 10000);
+    const target = await pageFor(id, "/a?doomed");
+    await cdp(target, "Page.navigate", { url: "about:blank" });
+    await until("the fixture's blank document", async () => {
+      try {
+        return (await cdp(target, "Runtime.evaluate", { expression: "location.href === 'about:blank' && document.readyState === 'complete'", returnByValue: true })).result.value;
+      } catch {
+        return false;
+      }
+    }, 10000);
+    if (await browserOf(id) !== browser) throw new Error("the blank navigation replaced the fixture's browser");
     const out = await cef(`devCloseBrowserKeepingWindow(${browser})`);
     if (out?.error) throw new Error(out.error);
+    if (out.tabsBefore !== 1) throw new Error(`the fixture did not retain one native tab: ${JSON.stringify(out)}`);
     if (!out.scheduled || !out.cachedIsScheduled) throw new Error(`the close left no Browser scheduled for deletion in the cache: ${JSON.stringify(out)}`);
     if (out.acquiredIsScheduled || (out.windowOpen && !out.acquired)) throw new Error(`BrowserFor answered with a Browser scheduled for deletion: ${JSON.stringify(out)}`);
     await sleep(1500);
@@ -7899,7 +7988,7 @@ try {
         const l = await listIn(p);
         return l.length === 4 && l.every((x) => x.hasAction !== false) ? l : null;
       }, 15000);
-      for (const ext of list) if (want[key].includes(ext.name)) await exts(`configure("${ext.id}", ${JSON.stringify(p)}, { pinned: true })`);
+      for (const ext of list) await exts(`configure("${ext.id}", ${JSON.stringify(p)}, { pinned: ${want[key].includes(ext.name)} })`);
     }
     const before = {};
     for (const [key, p] of Object.entries(profiles)) before[key] = pinnedNames(await listIn(p));

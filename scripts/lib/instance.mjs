@@ -10,6 +10,14 @@ import { fileURLToPath } from "node:url";
 import { joinWouldExtend, parseFront, prune, readState, suppressedLog, waitingOthers } from "./ui-guard.mjs";
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+export function controlPort(data) {
+  try {
+    const value = JSON.parse(readFileSync(join(data, "Chromium", "SolaraControl.json"), "utf8"));
+    return Number.isInteger(value?.port) && value.port > 0 && value.port < 65536 ? value.port : null;
+  } catch {
+    return null;
+  }
+}
 export const screenLocked = () => {
   try {
     return /<key>CGSSessionScreenIsLocked<\/key>\s*<true\/>/.test(execFileSync("/usr/sbin/ioreg", ["-n", "Root", "-d1", "-a"], { encoding: "utf8", timeout: 5000 }));
@@ -628,7 +636,7 @@ export async function launch(app, opts = {}) {
   for (const [name, text] of Object.entries(opts.files ?? {})) writeFileSync(join(data, name), typeof text === "string" ? text : JSON.stringify(text));
   const runsFrom = opts.runsFrom ? realPath(resolve(opts.runsFrom)) : app;
   const binary = join(runsFrom, "Contents/MacOS", basename(binaryOf(app)));
-  const port = opts.port ? parsePort(opts.port) : await freePort();
+  let port = opts.port ? parsePort(opts.port) : await freePort();
   const busy = listenerPids(port);
   if (busy.length) throw new Error(`DevTools port ${port} is already in use by pid ${busy.join(", ")}`);
   const metroPort = Number(opts.metroPort ?? process.env.METRO_PORT ?? 8081);
@@ -642,7 +650,7 @@ export async function launch(app, opts = {}) {
   const location = jsMode === "pinned" ? `localhost:${js.port}` : jsMode === "live" ? `localhost:${metroPort}` : jsMode === "none" ? null : jsMode;
   const switches = [opts.switches].flat().filter(Boolean).join(" ");
   const env = {
-    SOLARA_BACKGROUND: "1", SOLARA_DATA_DIR: canonicalData, SOLARA_REMOTE_DEBUGGING_PORT: String(port),
+    SOLARA_BACKGROUND: "1", SOLARA_DATA_DIR: canonicalData, SOLARA_REMOTE_DEBUGGING_PORT: opts.control ? null : String(port),
     SOLARA_NATIVE_BOOKMARKS: process.env.SOLARA_NATIVE_BOOKMARKS ?? "1",
     ...(location ? { SOLARA_JS_LOCATION: location } : {}),
     ...(switches ? { SOLARA_CHROMIUM_SWITCHES: switches } : {}),
@@ -659,11 +667,16 @@ export async function launch(app, opts = {}) {
   let owned = null;
   try {
     for (const end = Date.now() + (opts.startTimeout ?? 60000); !owned && Date.now() < end; await sleep(100)) {
+      if (opts.control) {
+        const published = controlPort(data);
+        if (!published) continue;
+        port = published;
+      }
       let info;
       const pid = ownedCandidate(listenerPids(port), before, (p) => (info = processInfo(p))?.command, binary);
       if (pid && info) owned = { pid, started: info.started };
     }
-    if (!owned) throw new Error(`the app didn't listen on DevTools port ${port} within ${(opts.startTimeout ?? 60000) / 1000} s (log: ${log})`);
+    if (!owned) throw new Error(`the app didn't listen on ${opts.control ? "its token-control port" : `DevTools port ${port}`} within ${(opts.startTimeout ?? 60000) / 1000} s (log: ${log})`);
   } catch (e) {
     const dirs = [...new Set([data, realPath(data)])];
     let spawned = [];

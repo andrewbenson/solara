@@ -120,3 +120,21 @@ test("js: \"none\" refuses a build with no bundled JS before it takes the UI gat
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("token-control discovery reads only a valid port from its scratch control file", async () => {
+  const { controlPort } = await import("./instance.mjs");
+  const data = mkdtempSync(join(tmpdir(), "instance-control-"));
+  try {
+    assert.equal(controlPort(data), null);
+    mkdirSync(join(data, "Chromium"));
+    const file = join(data, "Chromium", "SolaraControl.json");
+    for (const value of ["{", "null", "{}", '{"port":0}', '{"port":"9222"}', '{"port":65536}']) {
+      writeFileSync(file, value);
+      assert.equal(controlPort(data), null);
+    }
+    writeFileSync(file, '{"port":9222,"token":"secret"}');
+    assert.equal(controlPort(data), 9222);
+  } finally {
+    rmSync(data, { recursive: true, force: true });
+  }
+});

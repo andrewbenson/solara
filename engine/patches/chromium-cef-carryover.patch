@@ -133,14 +133,14 @@ Windows-only parts and comments:
 +      return;
 +    }
 +    const auto& children = modal->child_windows_;
-+    auto it = std::find_if(children.rbegin(), children.rend(), [](auto* child) {
++    auto it = std::find_if(children.rbegin(), children.rend(), [](const auto& child) {
 +      return child->modal_type_ != ui::mojom::ModalType::kNone &&
 +             child->window_.visible;
 +    });
 +    if (it == children.rend()) {
 +      break;
 +    }
-+    modal = *it;
++    modal = it->get();
 +    if (modal->modal_type_ != ui::mojom::ModalType::kChild) {
 +      return;
 +    }

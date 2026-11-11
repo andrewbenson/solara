@@ -78,7 +78,6 @@ index f1d6d60..2c62008 100644
    }
    if (!base::FeatureList::IsEnabled(
 diff --git a/chrome/browser/apps/app_shim/app_shim_manager_mac.cc b/chrome/browser/apps/app_shim/app_shim_manager_mac.cc
-index 029fec0..43e4f6c 100644
 --- a/chrome/browser/apps/app_shim/app_shim_manager_mac.cc
 +++ b/chrome/browser/apps/app_shim/app_shim_manager_mac.cc
 @@ -44,6 +44,7 @@
@@ -89,9 +88,9 @@ index 029fec0..43e4f6c 100644
  #include "chrome/browser/profiles/avatar_menu.h"
  #include "chrome/browser/profiles/profile.h"
  #include "chrome/browser/profiles/profile_attributes_entry.h"
-@@ -1651,9 +1652,11 @@ void AppShimManager::OnShimWillTerminate(AppShimHost* host) {
+@@ -1655,9 +1656,11 @@
    AppState* app_state = found_app->second.get();
-   DCHECK(app_state);
+   CHECK(app_state, base::NotFatalUntil::M161);
  
 -  auto* notification_bridge = static_cast<NotificationPlatformBridgeMac*>(
 -      g_browser_process->notification_platform_bridge());
@@ -102,8 +101,8 @@ index 029fec0..43e4f6c 100644
 +    notification_bridge->AppShimWillTerminate(host->GetAppId());
 +  }
  
-   DCHECK(!app_state->did_save_last_active_profiles_on_terminate);
-   app_state->MaybeSaveLastActiveProfiles();
+   CHECK(!app_state->did_save_last_active_profiles_on_terminate,
+         base::NotFatalUntil::M161);
 diff --git a/chrome/browser/browser_process_impl.cc b/chrome/browser/browser_process_impl.cc
 index 5f5e54c..fcd4267 100644
 --- a/chrome/browser/browser_process_impl.cc
@@ -378,7 +377,6 @@ index aa154c5..36a984a 100644
  
    BrowserContextDependencyManager::GetInstance()->CreateBrowserContextServices(
 diff --git a/chrome/browser/profiles/profile_impl.cc b/chrome/browser/profiles/profile_impl.cc
-index 1f64ea2..b0ee914 100644
 --- a/chrome/browser/profiles/profile_impl.cc
 +++ b/chrome/browser/profiles/profile_impl.cc
 @@ -39,6 +39,9 @@
@@ -389,9 +387,9 @@ index 1f64ea2..b0ee914 100644
 +#include "solara/core/ac_hooks.h"  // nogncheck
 +#endif
  #include "build/chromeos_buildflags.h"
- #include "chrome/browser/background/background_contents_service_factory.h"
- #include "chrome/browser/background_fetch/background_fetch_delegate_factory.h"
-@@ -1145,6 +1148,11 @@ ExtensionSpecialStoragePolicy* ProfileImpl::GetExtensionSpecialStoragePolicy() {
+ #include "chrome/browser/after_startup_task_utils.h"
+ #include "chrome/browser/autocomplete/autocomplete_scoring_model_service_factory.h"
+@@ -1151,6 +1154,11 @@
  
  void ProfileImpl::OnLocaleReady(CreateMode create_mode) {
    TRACE_EVENT0("browser", "ProfileImpl::OnLocaleReady");

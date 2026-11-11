@@ -14,6 +14,7 @@ In scope:
   js(expression, tab=None)        evaluate JavaScript in tab (else the user's tab, else the last new_tab) and return its value
   await pinned() the user's favorites and pinned tabs from {identity.PRODUCT}'s saved session, as dicts
                  (title, url, pinned_url, kind favorite|pinned, folder, profile, parked); no incognito
+  await tab_memory() live tab memory as dicts (targetId, title, url, profile, discarded, bytes); token path only
   await history(days=1, limit=200, profile=None, domains=False)
                  recent history per URL, newest first: url, title, visits (in the window), total_visits,
                  last_visit (ISO, local time), profile; domains=True rolls it up per domain.
@@ -71,6 +72,17 @@ def build_parser():
     run.add_argument("--timeout", type=float, default=300, metavar="SECONDS", help="stop the code after this long (default 300, 0 for none)")
     run.add_argument("--json", action="store_true", help="print the last value as JSON")
 
+    tabs = commands.add_parser(
+        "tabs",
+        help=f"list {identity.PRODUCT} tabs by memory use",
+        description=f"List {identity.PRODUCT} tabs by memory use, largest first. — means asleep; ? means unavailable. Requires control on and SolaraControl.json; plain DevTools endpoints are not supported.",
+    )
+    tabs.add_argument("--data-dir", metavar="DIR", help=f"the {identity.PRODUCT} data dir (default: $SOLARA_DATA_DIR, else the installed app's)")
+    tabs.add_argument("--json", action="store_true", help="print the endpoint list in its original order with exact bytes")
+    tabs.add_argument("--full", action="store_true", help="show whole URLs without shortening")
+    tabs.add_argument("--port", type=int, metavar="N", help="unsupported: tab memory requires SolaraControl.json")
+    tabs.add_argument("--ws", metavar="URL", help="unsupported: tab memory requires SolaraControl.json")
+
     skills = commands.add_parser("skills", help=f"install the {identity.COMMAND} agent skill")
     skill_commands = skills.add_subparsers(dest="skills_command", metavar="<command>")
     install = skill_commands.add_parser(
@@ -99,6 +111,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "exec":
         return run_exec(args, parser)
+    if args.command == "tabs":
+        from solara_cli import tab_memory
+
+        return tab_memory.run(args)
     if args.command == "skills":
         if args.skills_command != "install":
             parser.parse_args(["skills", "--help"])

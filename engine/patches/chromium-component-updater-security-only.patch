@@ -522,20 +522,18 @@
  }
 --- a/components/component_updater/component_updater_service_unittest.cc
 +++ b/components/component_updater/component_updater_service_unittest.cc
-@@ -21,6 +21,7 @@
+@@ -20,6 +20,7 @@
  #include "base/memory/ref_counted.h"
  #include "base/run_loop.h"
  #include "base/task/sequenced_task_runner.h"
 +#include "base/test/bind.h"
  #include "base/test/metrics/histogram_tester.h"
  #include "base/test/task_environment.h"
- #include "base/time/time.h"
-@@ -704,6 +705,59 @@
- 
-   EXPECT_TRUE(component_updater().GetComponentDetails(id, &item));
+ #include "base/test/test_future.h"
+@@ -757,4 +758,57 @@
    EXPECT_TRUE(item.component);
-+}
-+
+ }
+ 
 +TEST_F(ComponentUpdaterTest, OnlySecurityComponentsReachUpdateClient) {
 +  ON_CALL(scheduler(), Schedule(_, _, _, _)).WillByDefault(Return());
 +  EXPECT_CALL(scheduler(), Schedule(_, _, _, _));
@@ -587,8 +585,8 @@
 +  EXPECT_FALSE(crxs[4]);
 +  ASSERT_TRUE(crxs[5]);
 +  EXPECT_EQ(ssl_error_assistant, crxs[5]->app_id);
- }
- 
++}
++
  }  // namespace component_updater
 --- a/components/update_client/net/network_chromium.h
 +++ b/components/update_client/net/network_chromium.h

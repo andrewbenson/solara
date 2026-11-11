@@ -118,6 +118,7 @@ Owner, 2026-11-09: these follow 0.3.0 rather than joining it, so the bookmark ha
 
 | Item | Status |
 |---|---|
+| `solara tabs`: every open tab with its memory, from the engine's per-tab attribution (the hover card's figure): a table sorted by memory with each tab's title, its address (host first, so tabs are easy to tell apart), profile and asleep state, and a total; `--json` for scripts and `await tab_memory()` in `solara exec`, each entry with its DevTools target id. Served by a token-checked `/solara/tabs` beside `/solara/active` in the engine's DevTools handler, so it rides the Chromium 157 rebuild; only while "Let the solara command control Solara" is on (owner, 2026-11-10) | planned |
 | Fixes from the owner's two-Mac sync-join test of 0.1.3 | waiting on the test |
 | GitHub security alerts cleared: Dependabot (image-size, minimatch, deepmerge) bumped, the omnibox quick-create regex no longer slows on crafted input, test-script CodeQL alerts fixed or dismissed | in progress: CodeQL #201 (quick-create regex) and #200 fixed in 1161a442 (shipped in 0.2.1); the build-time Dependabot alerts (no usable fix) and the test-only CodeQL alerts wait on the owner's dismissal |
 | Memory follow-ups from the 0.3.0 gate (mem30): hover-card memory readings are never forgotten (keyed by tab and URL), and bookmark request receipts keep their payloads until the engine terminalizes them; stress both and bound them | planned |

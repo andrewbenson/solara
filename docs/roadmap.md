@@ -119,16 +119,23 @@ Owner, 2026-11-09: these follow 0.3.0 rather than joining it, so the bookmark ha
 | Item | Status |
 |---|---|
 | `solara tabs`: every open tab with its memory, from the engine's per-tab attribution (the hover card's figure): a table sorted by memory with each tab's title, its address (host first, so tabs are easy to tell apart), profile and asleep state, and a total; `--json` for scripts and `await tab_memory()` in `solara exec`, each entry with its DevTools target id. Served by a token-checked `/solara/tabs` beside `/solara/active` in the engine's DevTools handler, so it rides the Chromium 157 rebuild; only while "Let the solara command control Solara" is on (owner, 2026-11-10) | shipped |
-| With the icons-only sidebar the window toolbar sits on the window frame with no band or gradient of its own (owner, 2026-11-10) | shipped, but 0.3.1 applied it to every layout; the fix rides 0.3.2 |
+| With the icons-only sidebar the window toolbar sits on the window frame with no band or gradient of its own (owner, 2026-11-10) | shipped, but 0.3.1 applied it to every layout; fixed in 0.3.2 |
 | A page gets focus back when shown again after a native New Tab closes (Chromium 157 refuses fullscreen to an unfocused page), and a rare quit crash in late profile cleanup | shipped |
 | Hover-card memory readings are bounded: forgotten when a tab closes or changes document, capped at 128 keys (mem30 follow-up) | shipped |
 | Chromium 157.0.8103.50 on Helium 0.21.2 (from 156.0.8078.79; Chrome stable for Mac is 157.0.8103.51 as of 2026-11-09): re-sync the patch series, keep both Safe Storage patches unchanged, publish the engine; Ardia's 157 series is a reference for the rebase (Ardia) | shipped: engine 574046ecf2af |
 
-## 0.3.2: lighter launches, Arc's windows
+## 0.3.2: the toolbar comes back
+
+A fix-only release for 0.3.1, out as soon as it's gated (owner, 2026-11-11); the releases planned as 0.3.2 and 0.3.3 move up one.
 
 | Item | Status |
 |---|---|
-| The toolbar sits on the window frame only with the icons-only sidebar; with the full sidebar and every other layout it has its band, gradient and hairline as in 0.3.0 (0.3.1 dropped them everywhere; owner, 2026-11-11) | landed (d8f2ead5) |
+| The toolbar sits on the window frame only with the icons-only sidebar; with the full sidebar and every other layout it has its band, gradient and hairline as in 0.3.0 (0.3.1 dropped them everywhere; owner, 2026-11-11) | shipped |
+
+## 0.3.3: lighter launches, Arc's windows
+
+| Item | Status |
+|---|---|
 | Fixes from the owner's two-Mac sync-join test of 0.1.3 | waiting on the test |
 | GitHub security alerts cleared: Dependabot (image-size, minimatch, deepmerge) bumped, the omnibox quick-create regex no longer slows on crafted input, test-script CodeQL alerts fixed or dismissed | in progress: CodeQL #201 (quick-create regex) and #200 fixed in 1161a442 (shipped in 0.2.1); the build-time Dependabot alerts (no usable fix) and the test-only CodeQL alerts wait on the owner's dismissal |
 | Bookmark request receipts expire (mem30 follow-up; owner chose option 1, 2026-11-10): a receipt expires 300 s after verified completion, the newest 32 per engine kept, and a retry of an expired ID gets "expired". Moved from 0.3.1: review rounds rcpt3 and rcpt4 found and fixed a synchronous checkpoint per acknowledgment, main-actor blocking on receipt reads, remap pruning during an active read and an O(n) acknowledgment scan; explain the intermittent profile-delete cleanup latency before landing | in progress |
@@ -147,7 +154,7 @@ Owner, 2026-11-09: these follow 0.3.0 rather than joining it, so the bookmark ha
 | Main-thread stall watchdog: Debug and perf-bench builds record every main-thread stall over 8 ms with its stack (kept local, never sent), and the perf ratchet counts stalls per scenario. Chromium's browser UI thread is AppKit's main thread in Solara, so every stall delays the browser too (owner, 2026-11-10) | planned |
 | Durable writes off the main thread: the bookmark journal's fsync/F_FULLFSYNC checkpoints, SQLite's fullfsync commits and session saves go to serial background writers; the main thread only hands data over and never waits on the disk except at quit (owner, 2026-11-10) | planned |
 
-## 0.3.3: colour and control
+## 0.3.4: colour and control
 
 | Item | Status |
 |---|---|

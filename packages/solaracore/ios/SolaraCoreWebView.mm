@@ -847,6 +847,7 @@ static void ShareFromContext(NSDictionary<NSString *, id> *context, NSView *view
   __weak NSView *_focusedDevTools;
   __weak NSView *_focusedElsewhere;
   BOOL _focusOnActivate;
+  BOOL _focusRestoreScheduled;
   BOOL _keepsOutgoingFocus;
   CFTimeInterval _focusActivatedAt;
   __weak NSWindow *_focusActivatedIn;
@@ -1955,7 +1956,23 @@ static BOOL InTabPage(NSView *view) {
   _focusActivatedAt = CACurrentMediaTime();
   _focusActivatedIn = window;
   [self restoreFocusIfDue];
-  if (_focusOnActivate) [self schedulePainting];
+  if (_focusOnActivate) {
+    [self schedulePainting];
+    [self scheduleFocusRestore];
+  }
+}
+
+- (void)scheduleFocusRestore {
+  if (!_focusOnActivate || _focusRestoreScheduled) return;
+  _focusRestoreScheduled = YES;
+  __weak SolaraCoreWebView *weakSelf = self;
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 16 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+    SolaraCoreWebView *view = weakSelf;
+    if (!view) return;
+    view->_focusRestoreScheduled = NO;
+    [view restoreFocusIfDue];
+    [view scheduleFocusRestore];
+  });
 }
 
 - (void)restoreFocusIfDue {
@@ -1974,20 +1991,23 @@ static BOOL InTabPage(NSView *view) {
     _focusOnActivate = NO;
     return;
   }
-  if (!_visible || page.isHiddenOrHasHiddenAncestor) return;
-  _focusOnActivate = NO;
+  if (!_visible || page.isHiddenOrHasHiddenAncestor || !window.isKeyWindow) return;
   NSResponder *responder = window.firstResponder;
   NSView *view = [responder isKindOfClass:NSView.class] ? (NSView *)responder : nil;
-  if (view && [view isDescendantOf:self]) return;
+  if (view && [view isDescendantOf:self]) {
+    _focusOnActivate = NO;
+    return;
+  }
   if (responder && responder != window && !(view && InTabPage(view))) return;
+  BOOL (^claimedElsewhere)(NSWindow *, NSView *) = ACChromeWindowHost.focusClaimedElsewhereHandler;
+  if (claimedElsewhere && claimedElsewhere(window, self)) return;
   NSView *devTools = _focusedDevTools;
   if (_pageFocus == ACPageFocus::DevTools && devTools.window == window && _devtoolsView && [devTools isDescendantOf:_devtoolsView]) {
-    [window makeFirstResponder:devTools];
-  } else if (_pageFocus != ACPageFocus::Elsewhere) {
+    if ([window makeFirstResponder:devTools]) _focusOnActivate = NO;
+  } else if (_pageFocus != ACPageFocus::Elsewhere || !ShowsIn(_focusedElsewhere, window)) {
     [self focusPage];
-  } else if (!ShowsIn(_focusedElsewhere, window)) {
-    BOOL (^claimedElsewhere)(NSWindow *, NSView *) = ACChromeWindowHost.focusClaimedElsewhereHandler;
-    if (!claimedElsewhere || !claimedElsewhere(window, self)) [self focusPage];
+    NSResponder *focused = window.firstResponder;
+    if ([focused isKindOfClass:NSView.class] && [(NSView *)focused isDescendantOf:self]) _focusOnActivate = NO;
   }
 }
 

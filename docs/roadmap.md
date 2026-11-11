@@ -228,7 +228,7 @@ Expo modules.
 | Revamp the Raycast extension (extras/raycast-solara) against the revamped CLI (moved from 0.3.0, owner 2026-11-04: after the port) | planned |
 | Publish the extension on the Raycast Store: meet its review guidelines and submit to raycast/extensions (a public PR in another project, so it needs the owner's OK at submission) (moved from 0.3.0, owner 2026-11-04: after the port) | planned |
 
-## 1.1.0: a VPN per profile
+## 1.1.0: a VPN per profile, and Safari extensions in WebKit mode
 
 | Item | Status |
 |---|---|
@@ -237,3 +237,5 @@ Expo modules.
 | Route all of the profile's traffic through it: Chromium's per-profile proxy (pages, extensions, downloads, service workers) and WebKit's per-data-store proxy; Solara's own requests for that profile go through it too | planned |
 | No leaks: DNS resolves through the tunnel, WebRTC is forced through the proxy, HTTP/3 falls back to TCP, and a tunnel that drops stops the profile's traffic rather than letting it out; leak tests for DNS, WebRTC and the visible IP | planned |
 | A connected / connecting / failed indicator in the profile's sidebar | planned |
+| Safari web extensions in WebKit mode, for password managers first (owner, 2026-11-11: 1Password is the motivation). Prototype first, 1 to 2 weeks: load a Safari web extension from an installed app's `.appex` with WebKit's `WKWebExtensionController` (macOS 15.4 and later) into WebKit-mode tabs, and find out whether native messaging reaches the extension's own handler so 1Password and Bitwarden can talk to their apps; that answer decides the rest | planned |
+| If the prototype works: Solara's tabs and windows exposed through `WKWebExtensionTab` / `WKWebExtensionWindow`, native toolbar buttons, popups and permission prompts (SolaraKit, like the 0.3.0 popup frame), an extensions list per profile, and discovery of installed apps that carry Safari extensions. Limits: WebKit tabs only (Chromium tabs keep Chrome extensions), Safari's API subset, and apps that only expect Safari | planned |

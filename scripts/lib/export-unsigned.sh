@@ -28,6 +28,12 @@ while IFS= read -r -d '' code; do
     file -b "$code" | grep -q 'Mach-O' || continue
   fi
   case "$code" in
+    */Chromium\ Framework.framework/Versions/*/Helpers/*"(Aperitif Renderer).app")
+      "$here/sign-unsigned.sh" --options kill,runtime --entitlements "$here/../../packages/solaracore/scripts/signing/renderer.entitlements" "$code" ;;
+    */Chromium\ Framework.framework/Versions/*/Helpers/*"(Aperitif GPU).app")
+      "$here/sign-unsigned.sh" --options kill,runtime --entitlements "$here/../../packages/solaracore/scripts/signing/gpu.entitlements" "$code" ;;
+    */Chromium\ Framework.framework/Versions/*/Helpers/*"(Aperitif"*").app")
+      "$here/sign-unsigned.sh" --options kill,runtime "$code" ;;
     */Chromium\ Framework.framework/Versions/*/Helpers/*"Renderer).app")
       "$here/sign-unsigned.sh" --options restrict,kill,runtime --entitlements "$here/../../packages/solaracore/scripts/signing/renderer.entitlements" "$code" ;;
     */Chromium\ Framework.framework/Versions/*/Helpers/*"GPU).app")

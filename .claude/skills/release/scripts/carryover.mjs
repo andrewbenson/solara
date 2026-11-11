@@ -114,9 +114,10 @@ try {
     report.setWork = await inPage("work.html", `document.cookie = "w_persist=yes; max-age=31536000; path=/"; document.cookie = "w_session=yes; path=/"; localStorage.setItem("w_ls", "yes"); document.cookie`);
     report.made = await inApp(`
       const s = ac.store.getState(), C = globalThis.expo.modules.SolaraCEF, O = ${JSON.stringify(origin)}, work = ${JSON.stringify(work)};
-      s.addBookmark({ profileId: "default", url: O + "/page2.html", title: "Carryover bookmark" });
-      s.addBookmark({ profileId: work, url: O + "/work.html", title: "Work bookmark" });
-      return C.savePassword("", O, "alice", "pw-personal-123")
+      const addBookmark = (b) => (ac.bookmarks && ac.bookmarks.addBookmark ? ac.bookmarks.addBookmark(b) : Promise.resolve(s.addBookmark(b)));
+      return addBookmark({ profileId: "default", url: O + "/page2.html", title: "Carryover bookmark" })
+        .then(() => addBookmark({ profileId: work, url: O + "/work.html", title: "Work bookmark" }))
+        .then(() => C.savePassword("", O, "alice", "pw-personal-123"))
         .then(() => C.savePassword(work, O, "bob", "pw-work-456"))
         .then(() => C.saveAddress("", { name: "Ada Lovelace", city: "London", street: "12 St James's Square", postalCode: "SW1Y 4JH", country: "GB" }))
         .then(() => C.setSiteSetting("", O, "notifications", "allow"))
@@ -134,8 +135,9 @@ try {
     report.setNew = await inPage("page3.html", `document.cookie = "n_persist=yes; max-age=31536000; path=/"; document.cookie = "n_session=yes; path=/"; localStorage.setItem("n_ls", "yes"); document.cookie`);
     report.made = await inApp(`
       const s = ac.store.getState(), C = globalThis.expo.modules.SolaraCEF, X = globalThis.expo.modules.SolaraExtensions, O = ${JSON.stringify(origin)};
-      s.addBookmark({ profileId: "default", url: O + "/page3.html", title: "New build bookmark" });
-      return C.savePassword("", O, "carol", "pw-new-789")
+      const addBookmark = (b) => (ac.bookmarks && ac.bookmarks.addBookmark ? ac.bookmarks.addBookmark(b) : Promise.resolve(s.addBookmark(b)));
+      return addBookmark({ profileId: "default", url: O + "/page3.html", title: "New build bookmark" })
+        .then(() => C.savePassword("", O, "carol", "pw-new-789"))
         .then(() => C.setZoom("", "localhost", 0.9))
         .then(() => X.list(""))
         .then((l) => { const e = ((l && l.extensions) || []).find((e) => e.name === "SolaraCore spike extension"); return e ? X.setEnabled(e.id, "", false) : "no extension"; });`, 60_000);

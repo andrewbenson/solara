@@ -1321,6 +1321,7 @@ void WithPrivateProfile(NSString *name, void (^completion)(SolaraCoreProfile *))
 }
 
 void WithProfile(NSString *name, void (^completion)(SolaraCoreProfile *)) {
+  if (!gStarted) return completion(nil);
   name = name ?: @"";
   if ([DeletedProfiles() containsObject:name]) return completion(nil);
   if (SolaraCoreProfile *profile = LoadedProfile(name)) return completion(profile);

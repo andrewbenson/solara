@@ -1821,6 +1821,7 @@ static SolaraCoreTab *StartParkedPage(NSString *url, NSString *profileName, NSSt
   if (visible) ACFieldMarkAtCommit(_transferKey, @"view");
   if (visible) [SolaraCoreEarlyWindow noteLayoutChangeIn:self.window];
   [self userSightChanged];
+  if (visible) [self requestFocusRestore];
 }
 
 - (BOOL)seenByUser {
@@ -1963,6 +1964,13 @@ static BOOL InTabPage(NSView *view) {
   NSView *page = _tab.view;
   if (!window || window != _focusActivatedIn || !page || _standalone || page.superview != self ||
       CACurrentMediaTime() - _focusActivatedAt > kFocusRestoreWindow) {
+    _focusOnActivate = NO;
+    return;
+  }
+  SolaraCoreWindowController *controller = self.controller;
+  SolaraCoreProfile *profile = _tab.profile;
+  if (!controller || controller.coreWindow.activeProfile != profile ||
+      [SolaraCoreTabStrip activeTabInWindow:controller profile:profile] != _tab) {
     _focusOnActivate = NO;
     return;
   }

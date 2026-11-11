@@ -51,6 +51,7 @@ public final class AutoHideStripView: NSView {
   private let stripes = CALayer()
   private var bandColor: CGColor?
   private var stripesUri: String?
+  private var stripesTask: Task<Void, Never>?
   private var labelInk: CGFloat = 1
   private let divider = CALayer()
   private let label = NSTextField(labelWithString: "")
@@ -164,8 +165,19 @@ public final class AutoHideStripView: NSView {
 
   private func applyStripes(_ uri: String?) {
     guard uri != stripesUri else { return }
+    stripesTask?.cancel()
     stripesUri = uri
-    let image = uri.flatMap(ToolbarView.stripesImage)
+    let image = uri.flatMap(ToolbarView.localStripesImage)
+    setStripes(image)
+    guard let uri, image == nil else { return }
+    stripesTask = Task { [weak self] in
+      let image = await ToolbarView.stripesImage(uri)
+      guard let self, !Task.isCancelled, self.stripesUri == uri else { return }
+      self.setStripes(image)
+    }
+  }
+
+  private func setStripes(_ image: NSImage?) {
     PrimitiveMotion.setInstantly {
       stripes.contents = image
       stripes.contentsScale = window?.backingScaleFactor ?? 2

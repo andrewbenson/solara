@@ -18,6 +18,7 @@ public final class ToolbarView: NSView {
   private let stripes = CALayer()
   private let surfaceFade = CAGradientLayer()
   private var stripesUri: String?
+  private var stripesTask: Task<Void, Never>?
   private let content = ToolbarContentView()
   private let hairline = CALayer()
   private let progress = CALayer()
@@ -203,17 +204,24 @@ public final class ToolbarView: NSView {
 
   private func applyStripes(_ uri: String?) {
     guard uri != stripesUri else { return }
+    stripesTask?.cancel()
     stripesUri = uri
+    let image = uri.flatMap(ToolbarView.localStripesImage)
+    setStripes(image)
+    guard let uri, image == nil else { return }
+    stripesTask = Task { [weak self] in
+      let image = await ToolbarView.stripesImage(uri)
+      guard let self, !Task.isCancelled, self.stripesUri == uri else { return }
+      self.setStripes(image)
+    }
+  }
+
+  private func setStripes(_ image: NSImage?) {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    if let uri, let image = ToolbarView.stripesImage(uri) {
-      stripes.contents = image
-      stripes.contentsScale = window?.backingScaleFactor ?? 2
-      stripes.isHidden = false
-    } else {
-      stripes.contents = nil
-      stripes.isHidden = true
-    }
+    stripes.contents = image
+    stripes.contentsScale = window?.backingScaleFactor ?? 2
+    stripes.isHidden = image == nil
     CATransaction.commit()
   }
 
@@ -240,9 +248,25 @@ public final class ToolbarView: NSView {
     if surface.mask !== surfaceFade { surface.mask = surfaceFade }
   }
 
-  static func stripesImage(_ uri: String) -> NSImage? {
+  private static let stripesSession: URLSession = {
+    let configuration = URLSessionConfiguration.default
+    configuration.timeoutIntervalForRequest = 10
+    configuration.timeoutIntervalForResource = 10
+    return URLSession(configuration: configuration)
+  }()
+
+  static func localStripesImage(_ uri: String) -> NSImage? {
     let url = uri.hasPrefix("/") ? URL(fileURLWithPath: uri) : URL(string: uri)
-    guard let url, let data = try? Data(contentsOf: url), let image = NSImage(data: data) else { return nil }
+    guard let url, url.isFileURL, let data = try? Data(contentsOf: url), let image = NSImage(data: data) else { return nil }
+    image.size = NSSize(width: 2560, height: 50)
+    return image
+  }
+
+  static func stripesImage(_ uri: String) async -> NSImage? {
+    if let image = localStripesImage(uri) { return image }
+    guard let url = URL(string: uri), url.scheme == "http" || url.scheme == "https" else { return nil }
+    let request = URLRequest(url: url, timeoutInterval: 10)
+    guard let (data, _) = try? await stripesSession.data(for: request), !Task.isCancelled, let image = NSImage(data: data) else { return nil }
     image.size = NSSize(width: 2560, height: 50)
     return image
   }

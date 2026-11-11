@@ -8,17 +8,18 @@ import { withLivePage } from "../lib/livePage";
 import { webviews } from "../lib/webviews";
 import { useBrowser } from "../store/browser";
 import { useIsBookmarked, useSettings, useTabLive } from "../store/hooks";
-import { bookmarkProfileId } from "../store/model";
+import { bookmarkProfileId, tabLayoutOf } from "../store/model";
+import { nativeSidebarRailSupported, sidebarIconsOnlyOf } from "../store/sidebarRail";
 import { toggleBookmarkFromUI } from "../lib/bookmarkWriter";
 import { usePageProgress } from "../store/pageProgress";
 import type { Tab } from "../store/types";
 import { ToolbarButton, type ButtonHit, type ClickModifiers } from "./layout/controls";
 import { type ToolbarGeometry } from "./layout/geometry";
-import { setPopover, usePage, usePages, type PageState } from "./layout/pageState";
+import { setPopover, useFullscreenTab, usePage, usePages, type PageState } from "./layout/pageState";
 import { closeHistoryMenu, goBack, goForward, historyItems, openHistoryMenu, useHistoryAvailability, useHistoryMenu } from "./layout/history";
 import { openModeFor, openUrl } from "./bookmarks/actions";
 import { closePane, openSplitPane, showSplitMenu } from "./layout/splitActions";
-import { TOOLBAR_DIVIDER_THICKNESS, toolbarPalette, useEasedColor, type ToolbarPalette } from "./layout/toolbarColors";
+import { TOOLBAR_DIVIDER_THICKNESS, railToolbarOnFrame, toolbarPalette, useEasedColor, type ToolbarPalette } from "./layout/toolbarColors";
 import { setToolbarExtensionsWidth, SIDEBAR_FIELD } from "./layout/windowLayout";
 import { showUrlBarMenu } from "./omnibox/paste";
 import { useHover } from "./primitives";
@@ -30,7 +31,7 @@ import { DeveloperUrlInput } from "./site/DeveloperUrlInput";
 import { TranslateButton } from "./site/TranslateControls";
 import { ZoomIndicator } from "./site/ZoomControls";
 import { useShortcutHint, withShortcut } from "../lib/commandShortcuts";
-import { nativeToolbarAvailable } from "@solara/settings";
+import { nativeToolbarAvailable, windowShellActive } from "@solara/settings";
 import { NativeToolbar } from "./NativeToolbar";
 
 type ToolbarTab = Pick<Tab, "id" | "url" | "title" | "windowId" | "zoom">;
@@ -65,12 +66,16 @@ export function Toolbar(props: ToolbarProps) {
   return nativeToolbarAvailable() ? <NativeToolbar {...props} /> : <ReactToolbar {...props} />;
 }
 
-function ReactToolbar({ tabId, geometry, windowId, inSplit, focused, bare, windowToolbar }: ToolbarProps) {
+function ReactToolbar({ tabId, geometry, windowId, inSplit, focused, bare }: ToolbarProps) {
   const theme = useTheme();
   const sidebarHint = useShortcutHint("toggleSidebar");
   const tab = useToolbarTab(tabId);
   const isLoading = useTabLive(tabId, (l) => l.isLoading);
-  const onFrame = !!windowToolbar || (!!bare && !inSplit);
+  const rail = useBrowser((s) => nativeSidebarRailSupported && sidebarIconsOnlyOf(s.windows[windowId], s.settings));
+  const topTabs = useBrowser((s) => tabLayoutOf(s, windowId) === "top");
+  const fullscreen = !!useFullscreenTab(windowId);
+  const sidebarVisible = useBrowser((s) => s.windows[windowId]?.sidebarOpen ?? true);
+  const onFrame = railToolbarOnFrame(rail, focused, topTabs, fullscreen, sidebarVisible) && windowShellActive(windowId);
   const palette = toolbarPalette(theme, useToolbarSiteColor(tabId), onFrame);
   const band = useEasedColor(bare || onFrame ? null : palette.background);
   const developer = useTabDeveloperMode(tabId);

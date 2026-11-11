@@ -256,7 +256,7 @@ struct ToolbarResizeTests {
     #expect(f.toolbar.superview !== f.owner)
     #expect(f.toolbarRect == CGRect(x: 270, y: 6, width: 723, height: 41))
     #expect(f.toolbar.layer?.sublayers?.first?.frame.width == 723)
-    try ToolbarFrameTests.expectFrameIsClear(f.toolbar)
+    try ToolbarFrameTests.expectBand(f.toolbar)
     f.owner.frame = CGRect(x: 270, y: 6, width: 723, height: 41)
     f.handle.savedWidth = { 270 }
     f.handle.mouseDown(with: f.mouse(.leftMouseDown, x: 270))
@@ -267,7 +267,7 @@ struct ToolbarResizeTests {
       #expect(f.toolbar.layer?.sublayers?.first?.frame.width == 993 - width)
       #expect(f.shell.cardClip.convert(f.shell.cardClip.bounds, to: f.shell).minX == width)
       #expect(f.shell.cardPage.convert(f.shell.cardPage.bounds, to: f.shell).minX == width)
-      try ToolbarFrameTests.expectFrameIsClear(f.toolbar)
+      try ToolbarFrameTests.expectBand(f.toolbar)
     }
     f.handle.mouseUp(with: f.mouse(.leftMouseUp, x: 190))
   }

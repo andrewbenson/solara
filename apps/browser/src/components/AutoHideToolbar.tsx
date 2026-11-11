@@ -5,11 +5,13 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, Animated, Easing, Pressable, StyleSheet, Text, View, type ViewStyle } from "react-native";
 import { layout, useTheme } from "../lib/theme";
 import { useBrowser } from "../store/browser";
+import { tabLayoutOf } from "../store/model";
+import { nativeSidebarRailSupported, sidebarIconsOnlyOf } from "../store/sidebarRail";
 import { useStoreWhile } from "../store/tabWatch";
 import type { ToolbarGeometry } from "./layout/geometry";
-import { TOOLBAR_DIVIDER_THICKNESS, toolbarPalette, useEasedColor } from "./layout/toolbarColors";
+import { TOOLBAR_DIVIDER_THICKNESS, railToolbarOnFrame, toolbarPalette, useEasedColor } from "./layout/toolbarColors";
 import { useHistoryMenu } from "./layout/history";
-import { usePages } from "./layout/pageState";
+import { useFullscreenTab, usePages } from "./layout/pageState";
 import { useExtensions } from "./extensions/store";
 import { needsBar, revealToolbar, setToolbarPeek, STRIP_HEIGHT, toolbarMode, useToolbarAutoHide, type ToolbarMode } from "./layout/toolbarAutoHide";
 import { Toolbar } from "./Toolbar";
@@ -143,7 +145,7 @@ export function useToolbarMotion({
   };
 }
 
-export function AutoHideBackdrop({ tabId, mode, motion, windowToolbar = false }: { tabId: string; mode: ToolbarMode; motion: Pick<ToolbarMotion, "bar">; windowToolbar?: boolean }) {
+export function AutoHideBackdrop({ tabId, mode, motion, onFrame = false }: { tabId: string; mode: ToolbarMode; motion: Pick<ToolbarMotion, "bar">; onFrame?: boolean }) {
   const theme = useTheme();
   const url = useBrowser((s) => s.tabs[tabId]?.url ?? "");
   const palette = toolbarPalette(theme, useToolbarSiteColor(tabId));
@@ -162,7 +164,7 @@ export function AutoHideBackdrop({ tabId, mode, motion, windowToolbar = false }:
       },
     [moved, bar, H],
   );
-  if (windowToolbar) return null;
+  if (onFrame) return null;
   return (
     <View pointerEvents="none" style={{ position: "absolute", left: 0, right: 0, top: 0, height: H }}>
       <Animated.View
@@ -206,7 +208,11 @@ export function AutoHideToolbar({
   }
   const theme = useTheme();
   const url = useBrowser((s) => s.tabs[tabId]?.url ?? "");
-  const palette = toolbarPalette(theme, useToolbarSiteColor(tabId), !inSplit);
+  const rail = useBrowser((s) => nativeSidebarRailSupported && sidebarIconsOnlyOf(s.windows[windowId], s.settings));
+  const topTabs = useBrowser((s) => tabLayoutOf(s, windowId) === "top");
+  const fullscreen = !!useFullscreenTab(windowId);
+  const sidebarVisible = useBrowser((s) => s.windows[windowId]?.sidebarOpen ?? true);
+  const palette = toolbarPalette(theme, useToolbarSiteColor(tabId), railToolbarOnFrame(rail, focused, topTabs, fullscreen, sidebarVisible) && windowShellActive(windowId));
   const collapsed = mode === "collapsed";
   const modeNow = useRef(mode);
   modeNow.current = mode;

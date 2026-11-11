@@ -161,6 +161,7 @@ private func splitState(sizes: [Double] = [0.5, 0.5]) throws -> BrowserState {
     view.update(state: try splitState())
     let withBand = { (tabId: String) in
       paneToolbar(tabId)
+        .replacingOccurrences(of: "\"hairline\": false", with: "\"hairline\": true")
         .replacingOccurrences(of: "\"palette\": {", with: "\"palette\": {\"background\": \"#202030\",")
         .replacingOccurrences(of: "\"bare\": false", with: "\"bare\": false, \"inSplit\": true")
     }
@@ -169,18 +170,23 @@ private func splitState(sizes: [Double] = [0.5, 0.5]) throws -> BrowserState {
     let a = try #require(view.toolbar("a"))
     let b = try #require(view.toolbar("b"))
     #expect(ToolbarFrameTests.surfaceLayers(a).contains { $0.backgroundColor?.alpha ?? 0 > 0 })
+    #expect(a.layer?.sublayers?[1].isHidden == false)
+    #expect(b.layer?.sublayers?[1].isHidden == false)
     shell.setSidebarWidth(CGFloat(SidebarRail.width), animated: false)
     view.needsLayout = true
     view.layoutSubtreeIfNeeded()
     #expect(a.superview === view)
     #expect(a.state?.palette.background == "#202030")
     for layer in ToolbarFrameTests.surfaceLayers(a) { #expect(layer.backgroundColor == nil || layer.backgroundColor?.alpha == 0) }
+    #expect(a.layer?.sublayers?[1].isHidden == true)
+    #expect(b.layer?.sublayers?[1].isHidden == false)
     #expect(b.superview !== view)
     #expect(ToolbarFrameTests.surfaceLayers(b).contains { $0.backgroundColor?.alpha ?? 0 > 0 })
     shell.setSidebarWidth(190, animated: false)
     view.needsLayout = true
     view.layoutSubtreeIfNeeded()
     #expect(a.superview !== view)
+    #expect(a.layer?.sublayers?[1].isHidden == false)
     #expect(ToolbarFrameTests.surfaceLayers(a).contains { $0.backgroundColor?.alpha ?? 0 > 0 })
   }
 

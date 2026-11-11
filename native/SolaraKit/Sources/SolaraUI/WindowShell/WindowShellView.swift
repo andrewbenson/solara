@@ -543,8 +543,9 @@ public final class WindowShellView: NSView {
   }
 
   private func applyCardStyle() {
-    let radius = cardStyle.radius * (1 - railFraction)
-    let fill = cardStyle.fill.map { $0.withAlphaComponent($0.alphaComponent * (1 - railFraction)).cgColor }
+    let rail = input.dock > 0 ? railFraction : 0
+    let radius = cardStyle.radius * (1 - rail)
+    let fill = cardStyle.fill.map { $0.withAlphaComponent($0.alphaComponent * (1 - rail)).cgColor }
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     railToolbar?.underColor = nil
@@ -570,8 +571,9 @@ public final class WindowShellView: NSView {
 
   private func placeCardEdge() {
     let rect = cardSurfaceRect
-    let strength = cardStyle.edge && !input.fullscreen && cardStyle.radius > 0 ? 1 - railFraction : 0
-    let radius = cardStyle.radius * (1 - railFraction)
+    let rail = input.dock > 0 ? railFraction : 0
+    let strength = cardStyle.edge && !input.fullscreen && cardStyle.radius > 0 ? 1 - rail : 0
+    let radius = cardStyle.radius * (1 - rail)
     cardShadow.place(rect, radius: radius, strength: strength)
     cardRim.place(rect, radius: radius, strength: strength)
   }

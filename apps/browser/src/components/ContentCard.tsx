@@ -16,10 +16,11 @@ import { tabEngine } from "../store/engines";
 import { EngineOfferPrompt } from "./site/EnginePrompt";
 import { webviewRef } from "../lib/webviews";
 import { useBrowser } from "../store/browser";
+import { nativeSidebarRailSupported, sidebarIconsOnlyOf } from "../store/sidebarRail";
 import { setPageProgress } from "../store/pageProgress";
 import { shallowEqual, useProfilesValue, useStoreWhile, useTabValue } from "../store/tabWatch";
 import { useActiveTabId, useWindowId } from "../store/hooks";
-import { activeTabId, engineProfile, isIncognitoProfile, wake } from "../store/model";
+import { activeTabId, engineProfile, isIncognitoProfile, tabLayoutOf, wake } from "../store/model";
 import { needsPage } from "../store/pageSession";
 import { removeTabs } from "../store/tabs";
 import { splitOf } from "../store/splits";
@@ -63,11 +64,12 @@ import { SharePicker } from "./media/SharePicker";
 import { ShareBar } from "./media/ShareBar";
 import { CastPicker } from "./media/CastPicker";
 import { DeviceChooser } from "./site/DeviceChooser";
-import { Toolbar, urlFieldRight } from "./Toolbar";
+import { Toolbar, ToolbarBackdrop, urlFieldRight } from "./Toolbar";
 import { AutoHideBackdrop, AutoHideToolbar, useToolbarMode, useToolbarMotion } from "./AutoHideToolbar";
 import { NativeAutoHide } from "./NativeAutoHide";
 import { publishPaneChrome, WindowToolbar } from "./WindowToolbar";
 import { revealToolbar } from "./layout/toolbarAutoHide";
+import { railToolbarOnFrame } from "./layout/toolbarColors";
 import { NavigationOverlays } from "./layout/SwipeOverlay";
 import "./layout/devExpose";
 import { isSmallWindow } from "../store/small";
@@ -441,6 +443,7 @@ const TabPane = memo(function TabPane({
     if (visible) revealToolbar(tabId);
   }, [visible]);
   const chromeInWindow = hideBar && windowToolbar;
+  const nativeRailChrome = useBrowser((s) => railToolbarOnFrame(nativeSidebarRailSupported && sidebarIconsOnlyOf(s.windows[windowId], s.settings), focused || !inSplit, tabLayoutOf(s, windowId) === "top", fullscreen, s.windows[windowId]?.sidebarOpen ?? true)) && windowShellActive(windowId);
   useLayoutEffect(() => {
     if (chromeInWindow) publishPaneChrome(windowId, { tabId, mode, bar: motion.bar, fade: motion.fade });
   });
@@ -461,19 +464,21 @@ const TabPane = memo(function TabPane({
         borderRadius: fullscreen ? 0 : layout.cardRadius,
         overflow: "hidden",
         opacity: covered ? 0 : 1,
-        backgroundColor: visible && !fullscreen && !nativePane && !pooled && !windowToolbar ? theme.card : undefined,
+        backgroundColor: visible && !fullscreen && !nativePane && !pooled && !(windowToolbar && nativeRailChrome) ? theme.card : undefined,
       }}
     >
       {!toolbar || fullscreen || autoLayout ? null : nativePane ? (
         <View pointerEvents="none" style={{ height: layout.toolbarHeight }} />
       ) : visible && !windowToolbar ? (
         <Toolbar tabId={tabId} geometry={geometry} windowId={windowId} inSplit={inSplit} focused={focused || !inSplit} />
+      ) : visible && !nativeRailChrome ? (
+        windowToolbar && windowShellActive(windowId) && nativeToolbarAvailable() ? <View pointerEvents="none" style={{ height: layout.toolbarHeight }} /> : <ToolbarBackdrop tabId={tabId} />
       ) : (
         <View style={{ height: layout.toolbarHeight }} />
       )}
-      {windowToolbar && visible && !nativePane && !pooled && !autoLayout && <View pointerEvents="none" style={{ position: "absolute", left: 0, right: 0, bottom: 0, top: layout.toolbarHeight, backgroundColor: theme.card, borderRadius: layout.cardRadius }} />}
+      {windowToolbar && nativeRailChrome && visible && !nativePane && !pooled && !autoLayout && <View pointerEvents="none" style={{ position: "absolute", left: 0, right: 0, bottom: 0, top: layout.toolbarHeight, backgroundColor: theme.card, borderRadius: layout.cardRadius }} />}
       {!autoLayout && bookmarksBar && <NativeBookmarksBar placeholder={!visible} />}
-      <Animated.View pointerEvents={pooled ? "box-none" : "auto"} style={[autoLayout ? motion.groupStyle : { flex: 1 }, windowToolbar && visible && !nativePane && !pooled && autoLayout ? { backgroundColor: theme.card, borderRadius: layout.cardRadius } : null]}>
+      <Animated.View pointerEvents={pooled ? "box-none" : "auto"} style={[autoLayout ? motion.groupStyle : { flex: 1 }, windowToolbar && nativeRailChrome && visible && !nativePane && !pooled && autoLayout ? { backgroundColor: theme.card, borderRadius: layout.cardRadius } : null]}>
         {autoLayout && bookmarksBar && <NativeBookmarksBar placeholder={!visible} />}
         <View pointerEvents={pooled ? "box-none" : "auto"} style={autoLayout ? { height: motion.pageHeight } : { flex: 1 }}>
           {visible && !fullscreen && <ShareBar tabId={tabId} />}
@@ -500,9 +505,9 @@ const TabPane = memo(function TabPane({
         </View>
       </Animated.View>
       {hideBar && (windowShellActive(windowId) && nativeToolbarAvailable() ? (
-        <NativeAutoHide windowId={windowId} tabId={tabId} mode={mode} pane={frame} extra={bookmarksBar ? BOOKMARKS_BAR_HEIGHT : 0} windowToolbar={windowToolbar} focused={focused} />
+        <NativeAutoHide windowId={windowId} tabId={tabId} mode={mode} pane={frame} extra={bookmarksBar ? BOOKMARKS_BAR_HEIGHT : 0} focused={focused || !inSplit} />
       ) : (
-        <AutoHideBackdrop tabId={tabId} mode={mode} motion={motion} windowToolbar={windowToolbar} />
+        <AutoHideBackdrop tabId={tabId} mode={mode} motion={motion} onFrame={nativeRailChrome} />
       ))}
       {hideBar && !windowToolbar && <AutoHideToolbar tabId={tabId} geometry={geometry} windowId={windowId} inSplit={inSplit} focused={focused || !inSplit} mode={mode} motion={motion} />}
     </View>

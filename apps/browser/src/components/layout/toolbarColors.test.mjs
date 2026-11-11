@@ -56,3 +56,41 @@ test("a split pane uses frame ink only while focused in the visible sidebar rail
     assert.equal(toolbarPalette(themeFor("purple:light"), "#000000", onFrame).background, expected ? null : "#000000");
   }
 });
+
+
+test("full sidebar and other card layouts preserve site bands and dividers in light and dark", () => {
+  for (const dark of [false, true]) {
+    const theme = themeFor(`purple:${dark ? "dark" : "light"}`);
+    for (const [iconsOnly, focused, topTabs, fullscreen, sidebarVisible] of [
+      [false, true, false, false, true],
+      [true, true, true, false, true],
+      [true, false, false, false, true],
+      [true, true, false, true, true],
+      [true, true, false, false, false],
+    ]) {
+      const onFrame = railToolbarOnFrame(iconsOnly, focused, topTabs, fullscreen, sidebarVisible);
+      assert.equal(onFrame, false, JSON.stringify({ iconsOnly, focused, topTabs, fullscreen, sidebarVisible }));
+      for (const site of ["#000000", "#FFFFFF", "#A83E64"]) {
+        const expected = toolbarPalette(theme, site);
+        const actual = toolbarPalette(theme, site, onFrame);
+        assert.equal(actual.background, site);
+        assert.equal(actual.divider, expected.divider);
+        assert.equal(actual.text, expected.text);
+        toolbarPalette(theme, site, true);
+        assert.deepEqual(toolbarPalette(theme, site, onFrame), expected);
+      }
+    }
+  }
+});
+
+test("switching a visible rail to full sidebar restores the site palette immediately", () => {
+  for (const mode of ["light", "dark"]) {
+    const theme = themeFor(`purple:${mode}`);
+    for (const iconsOnly of [false, true, false]) {
+      const onFrame = railToolbarOnFrame(iconsOnly, true, false, false, true);
+      const palette = toolbarPalette(theme, "#A83E64", onFrame);
+      assert.equal(palette.background, iconsOnly ? null : "#A83E64");
+      assert.equal(palette.divider, iconsOnly ? toolbarPalette(theme, null).divider : "rgba(255,255,255,0.025)");
+    }
+  }
+});

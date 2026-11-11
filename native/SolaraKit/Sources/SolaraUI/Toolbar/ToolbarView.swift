@@ -42,9 +42,8 @@ public final class ToolbarView: NSView {
   public override var isFlipped: Bool { true }
 
   public var sitsOnWindowFrame: Bool {
-    guard let state else { return false }
-    let promotedSplit = superview is SplitPanesView && (windowShell?.railFraction ?? 0) > 0
-    return state.windowToolbar == true || (state.bare && state.inSplit != true) || promotedSplit || windowShell?.toolbarSitsOnFrame(self) == true
+    guard let shell = windowShell, shell.input.dock > 0, shell.railFraction > 0 else { return false }
+    return superview is SplitPanesView || shell.toolbarSitsOnFrame(self)
   }
 
   public override init(frame: NSRect) {
@@ -311,7 +310,7 @@ public final class ToolbarView: NSView {
     stripes.frame = CGRect(x: 0, y: 0, width: 2560, height: 50)
     layer?.masksToBounds = true
     let scale = window?.backingScaleFactor ?? 2
-    let rail = windowShell?.railFraction ?? 0
+    let rail = (windowShell?.input.dock ?? 0) > 0 ? windowShell?.railFraction ?? 0 : 0
     applySurface(animated: false)
     hairline.frame = CGRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1)
     hairline.opacity = Float(1 - rail)

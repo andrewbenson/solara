@@ -50,20 +50,31 @@ struct ToolbarFrameTests {
     #expect(f.toolbarRect.minX == f.shell.frames.card.minX)
   }
 
-  @Test func aWindowToolbarClearsThePageBandImmediatelyAndStaysClearAcrossLayouts() throws {
+  static func expectBand(_ toolbar: ToolbarView) throws {
+    let surface = try #require(toolbar.layer?.sublayers?.first)
+    let band = try #require(surface.sublayers?[1])
+    #expect(band.backgroundColor == CSSColor("#202030")!.cg)
+    #expect(toolbar.layer?.sublayers?[1].isHidden == false)
+    #expect(toolbar.layer?.sublayers?[1].backgroundColor == toolbarColor(toolbar.state!.palette.divider)?.cgColor)
+    #expect(surface.sublayers?[2].contents != nil)
+  }
+
+  @Test func aWindowToolbarKeepsTheBandAcrossNonRailLayoutsAndTogglesLive() throws {
     let f = ToolbarResizeTests.Fixture(bare: false)
-    f.toolbar.update(Self.state())
-    f.toolbar.layoutSubtreeIfNeeded()
-    #expect(Self.surfaceLayers(f.toolbar).contains { $0.backgroundColor?.alpha ?? 0 > 0 })
     f.toolbar.update(Self.state(windowToolbar: true))
     f.shell.registerToolbar(f.toolbar, owner: f.owner)
+    try Self.expectBand(f.toolbar)
+    f.shell.setSidebarWidth(42, animated: false)
     try Self.expectFrameIsClear(f.toolbar)
+    f.shell.setSidebarWidth(190, animated: false)
+    try Self.expectBand(f.toolbar)
+    f.shell.setSidebarWidth(42, animated: false)
     f.shell.update { $0.topTabs = true }
-    try Self.expectFrameIsClear(f.toolbar)
+    try Self.expectBand(f.toolbar)
     f.shell.update { $0.fullscreen = true }
-    try Self.expectFrameIsClear(f.toolbar)
-    f.shell.update { $0.sidebarWidth = 270 }
-    try Self.expectFrameIsClear(f.toolbar)
+    try Self.expectBand(f.toolbar)
+    f.shell.update { $0.fullscreen = false; $0.topTabs = false; $0.dock = 0 }
+    try Self.expectBand(f.toolbar)
     #expect(f.toolbarRect.minX == f.shell.frames.card.minX)
   }
 

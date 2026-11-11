@@ -20,13 +20,14 @@ type AutoHideNative = {
 
 const native = requireOptionalNativeModule<AutoHideNative>("SolaraAutoHide");
 
-export function NativeAutoHide({ windowId, tabId, mode, pane, extra, windowToolbar, focused }: { windowId: string; tabId: string; mode: ToolbarMode; pane: { x: number; y: number; width: number; height: number }; extra: number; windowToolbar: boolean; focused: boolean }) {
+export function NativeAutoHide({ windowId, tabId, mode, pane, extra, focused }: { windowId: string; tabId: string; mode: ToolbarMode; pane: { x: number; y: number; width: number; height: number }; extra: number; focused: boolean }) {
   const theme = useTheme();
   const url = useBrowser((s) => s.tabs[tabId]?.url ?? "");
   const rail = useBrowser((s) => nativeSidebarRailSupported && sidebarIconsOnlyOf(s.windows[windowId], s.settings));
   const topTabs = useBrowser((s) => tabLayoutOf(s, windowId) === "top");
   const fullscreen = !!useFullscreenTab(windowId);
-  const palette = toolbarPalette(theme, useToolbarSiteColor(tabId), windowToolbar || (railToolbarOnFrame(rail, focused, topTabs, fullscreen) && windowShellActive(windowId)));
+  const sidebarVisible = useBrowser((s) => s.windows[windowId]?.sidebarOpen ?? true);
+  const palette = toolbarPalette(theme, useToolbarSiteColor(tabId), railToolbarOnFrame(rail, focused, topTabs, fullscreen, sidebarVisible) && windowShellActive(windowId));
   const developer = useTabDeveloperMode(tabId);
   const host = url.startsWith("file:") ? "File" : breadcrumb(url).host;
   const json = JSON.stringify({

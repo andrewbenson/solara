@@ -107,7 +107,8 @@ export function useNativeToolbarModel({ tabId, geometry, windowId, inSplit, focu
   const rail = useBrowser((s) => nativeSidebarRailSupported && sidebarIconsOnlyOf(s.windows[windowId], s.settings));
   const topTabs = useBrowser((s) => tabLayoutOf(s, windowId) === "top");
   const fullscreen = !!useFullscreenTab(windowId);
-  const onFrame = !sidebar && (!!windowToolbar || (!!bare && !inSplit) || (railToolbarOnFrame(rail, focused, topTabs, fullscreen) && windowShellActive(windowId)));
+  const sidebarVisible = useBrowser((s) => s.windows[windowId]?.sidebarOpen ?? true);
+  const onFrame = !sidebar && railToolbarOnFrame(rail, focused, topTabs, fullscreen, sidebarVisible) && windowShellActive(windowId);
   const palette = toolbarPalette(theme, sidebar ? null : siteColor, onFrame);
   const history = useHistoryAvailability(tabId);
   const extensionLimit = sidebar?.extensionLimit ?? Infinity;

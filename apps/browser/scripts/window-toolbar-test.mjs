@@ -28,7 +28,7 @@ if (flags.bundle) {
 
 const data = join(out, "data");
 rmSync(data, { recursive: true, force: true });
-const page = (name, color) => `data:text/html,<title>${name}</title><meta name="theme-color" content="${color}"><p>${name}</p>`;
+const page = (name, color) => `data:text/html,${encodeURIComponent(`<title>${name}</title><meta name="theme-color" content="${color}"><p>${name}</p>`)}`;
 const tab = (id, url) => ({ id, url, title: id, favicon: null, pinned: false, muted: false, zoom: 1, customTitle: null, customIcon: null, pinnedUrl: null, navigation: null, openerId: null, createdAt: Date.now(), lastActiveAt: Date.now() });
 const pages = { a: page("Tab-a", "#C0392B"), b: page("Tab-b", "#2471A3"), c: "https://example.com/c", d: "https://example.org/d" };
 const ids = Object.keys(pages);
@@ -37,7 +37,7 @@ const fixture = {
     profiles: { default: { id: "default", name: "Personal", color: "plum", icon: null, createdAt: 0 } },
     profileOrder: ["default"],
     orphanedProfileData: [],
-    settings: { searchSuggestions: false, warnBeforeClosingLastTab: false, warnBeforeClosingWindow: false },
+    settings: { searchSuggestions: false, warnBeforeClosingLastTab: false, warnBeforeClosingWindow: false, extendWebsiteColor: true, sidebarIconsOnly: false, hideToolbarWhileScrolling: false },
     windows: [{ id: "w1", profileId: "default", incognito: false, tabIds: ids, activeTabIds: { default: "a" }, sidebarOpen: true, frame: [100, 100, 1200, 800], createdAt: 0 }],
     windowOrder: ["w1"],
     focusedWindowId: "w1",
@@ -115,6 +115,9 @@ try {
   const switchTo = async (id) => {
     const state = await ac(`${S} acPerf.reset(); S().activate(${JSON.stringify(id)}); return wt.frames(4).then(() => ({ ...wt.state(), mounted: acPerf.read().mounts.Toolbar ?? 0 }));`);
     await nativeState(state);
+    if (id === "a" || id === "b") {
+      return ac(`${S} const id = ${JSON.stringify(id)}, tab = S().tabs[id], facts = ac.nativePages.facts(id); ac.nativePages.report(id, { type: "navigation", generation: facts.generation, url: tab.url, title: tab.title, isLoading: false, canGoBack: false, canGoForward: false, themeColor: id === "a" ? "#C0392B" : "#2471A3", eventSeq: facts.newestEventSeq + 1 }); return wt.frames(4).then(() => ({ ...wt.state(), mounted: ${state.mounted} }));`);
+    }
     return state;
   };
 
@@ -126,14 +129,26 @@ try {
       const st = await switchTo(id);
       const windowBars = st.toolbars.filter((t) => !t.pane);
       const nativeStatic = mode === "always shown" && windowBars[0]?.windowToolbar === true;
-      const surface = nativeStatic ? !windowBars[0].bare && st.nativeToolbars.some((n) => n.tabId === id && n.windowToolbar && !n.bare && n.background === null && n.hairline === false && n.stripes === null) : windowBars[0]?.bare;
+      const surface = nativeStatic ? !windowBars[0].bare && st.nativeToolbars.some((n) => n.tabId === id && n.windowToolbar && !n.bare && n.hairline === true && (id !== "a" && id !== "b" || n.background === (id === "a" ? "#C0392B" : "#2471A3"))) : windowBars[0]?.bare;
       const selectedMode = st.hideToolbarWhileScrolling === autoHide && (autoHide ? st.auto.length === 1 && st.auto[0].tabId === id && !st.auto[0].pane && st.auto[0].mode === "shown" : st.auto.length === 0);
       check(`${mode}: switching to ${id}, the window's one toolbar shows ${id}`, selectedMode && windowBars.length === 1 && windowBars[0].tabId === id && st.toolbars.length === 1 && surface, JSON.stringify({ hideToolbarWhileScrolling: st.hideToolbarWhileScrolling, auto: st.auto, toolbars: st.toolbars }));
       check(`${mode}: switching to ${id}, the toolbar is kept, not mounted again`, st.mounted === 0, `Toolbar mounts ${st.mounted}`);
       const url = await ac(`${S} return S().tabs[${JSON.stringify(id)}].url;`);
       check(`${mode}: switching to ${id}, the address field shows ${id}'s address`, st.hosts.length === 1 && st.hosts[0] === url, JSON.stringify(st.hosts));
       const backdrop = autoHide ? st.backdrops.length === 1 && st.backdrops[0].tabId === id && st.backdrops[0].pane === id : st.backdrops.length === 0;
-      check(`${mode}: switching to ${id}, the frame surface belongs to ${id}'s toolbar`, backdrop, JSON.stringify(st.backdrops));
+      check(`${mode}: switching to ${id}, the band belongs to ${id}'s toolbar`, backdrop, JSON.stringify(st.backdrops));
+    }
+  }
+  for (const appearance of ["light", "dark"]) {
+    await ac(`${S} S().updateSettings({ appearance: ${JSON.stringify(appearance)}, hideToolbarWhileScrolling: false }); return wt.frames(4).then(() => true);`);
+    await switchTo("a");
+    for (const rail of [true, false]) {
+      await ac(`ac.runCommand({ command: "toggleSidebarIconsOnly", windowId: "w1" }); return wt.frames(8).then(() => new Promise((r) => setTimeout(r, 250))).then(() => true);`);
+      const st = await switchTo("a");
+      const bar = st.nativeToolbars.find((n) => n.tabId === "a");
+      check(`${appearance}: ${rail ? "rail" : "full sidebar"} switches the live native surface`, !!bar && !bar.bare && bar.windowToolbar && bar.hairline === !rail && (rail ? bar.background === null && bar.stripes === null : bar.background === "#C0392B"), JSON.stringify(bar));
+      const path = join(out, `${appearance}-${rail ? "rail" : "full"}.png`);
+      check(`${appearance}: ${rail ? "rail" : "full sidebar"} in-process snapshot`, await ac(`return ac.shell.devSnapshotWindow("w1", ${JSON.stringify(path)});`), path);
     }
   }
   await ac(`${S} S().updateSettings({ hideToolbarWhileScrolling: true }); return wt.frames(4).then(() => true);`);

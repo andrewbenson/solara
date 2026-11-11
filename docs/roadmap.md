@@ -111,28 +111,31 @@ backlog, and check this file against the release notes.
 | Memory use per tab on hover cards (native) | shipped (0.3.0): done: the native sidebar tab card shows "Memory usage: 152 MB", or "High memory usage · 1.2 GB" above 800 MiB (Chrome's per-tab line, `SidebarTabMemory.highBytes`), from one `ac_tabs_memory` call per card show, cached per tab and page; none for sleeping tabs, "—" when no value comes back, nothing at all without the export. Settings › Tabs › Show memory usage on tab hover cards (on, synced) |
 | The toolbar keeps up with a sidebar resize: during a live drag the page follows the new width at once but the native toolbar lags behind it, leaving a gap (owner report on 0.2.6-nightly.1, 2026-11-09) | shipped (0.3.0): landed (7b4ac09b): the native window shell lays out the toolbar's frame and painted surface in the same pass as the page, and places the auto-hide strip under it; React Native no longer drives that geometry |
 
-## 0.3.1: Chromium 157, and sites that work
+## 0.3.1: Chromium 157, and every tab's memory
 
 Owner, 2026-11-09: these follow 0.3.0 rather than joining it, so the bookmark handover ships on its own. Items marked
 "(Ardia)" were seen in Ardia 0.2.43 to 0.2.46-nightly.1; Solara builds its own version, never a merge.
 
 | Item | Status |
 |---|---|
-| `solara tabs`: every open tab with its memory, from the engine's per-tab attribution (the hover card's figure): a table sorted by memory with each tab's title, its address (host first, so tabs are easy to tell apart), profile and asleep state, and a total; `--json` for scripts and `await tab_memory()` in `solara exec`, each entry with its DevTools target id. Served by a token-checked `/solara/tabs` beside `/solara/active` in the engine's DevTools handler, so it rides the Chromium 157 rebuild; only while "Let the solara command control Solara" is on (owner, 2026-11-10) | planned |
-| Fixes from the owner's two-Mac sync-join test of 0.1.3 | waiting on the test |
-| GitHub security alerts cleared: Dependabot (image-size, minimatch, deepmerge) bumped, the omnibox quick-create regex no longer slows on crafted input, test-script CodeQL alerts fixed or dismissed | in progress: CodeQL #201 (quick-create regex) and #200 fixed in 1161a442 (shipped in 0.2.1); the build-time Dependabot alerts (no usable fix) and the test-only CodeQL alerts wait on the owner's dismissal |
-| Memory follow-ups from the 0.3.0 gate (mem30): hover-card memory readings are never forgotten (keyed by tab and URL), and bookmark request receipts keep their payloads until the engine terminalizes them; stress both and bound them | planned |
-| Chromium 157 on Helium 0.21.1 (from 156.0.8078.79; Chrome stable for Mac is 157.0.8103.51 as of 2026-11-09): re-sync the patch series, keep both Safe Storage patches unchanged, publish the engine; Ardia's 157 series is a reference for the rebase (Ardia) | planned |
-| Sites with fraud checks work: YNAB showed "Something went wrong" on every load and Apple's guest checkout ended on "Page Not Found" in Ardia; check both in Solara and fix what fails; no page can open the screen-sharing picker without a click (Ardia) | planned |
-| The address bar never stalls on dotted, dashed text such as `my-post.another-post.x:` (Ardia froze for seconds per keystroke); check the native omnibox and add the case to its tests (Ardia) | planned |
-| Thousands of bookmarks stay fast: a 2,500-bookmark import, a large bar set to Always, the » menu and a folder of a few thousand on the bookmarks page, against the native bookmark owner (Ardia) | planned |
-| macOS 27: the green button's Move & Resize and Fill & Arrange menus don't crash, and a window dragged to another display stays where it's dropped (Ardia) | planned |
-| Picture in Picture floats over other apps' full-screen Spaces and stays on the display it's put on, tiling window managers included (Ardia) | planned |
+| `solara tabs`: every open tab with its memory, from the engine's per-tab attribution (the hover card's figure): a table sorted by memory with each tab's title, its address (host first, so tabs are easy to tell apart), profile and asleep state, and a total; `--json` for scripts and `await tab_memory()` in `solara exec`, each entry with its DevTools target id. Served by a token-checked `/solara/tabs` beside `/solara/active` in the engine's DevTools handler, so it rides the Chromium 157 rebuild; only while "Let the solara command control Solara" is on (owner, 2026-11-10) | shipped |
+| The window toolbar sits on the window frame with no band or gradient of its own, in split panes, auto-hide, the icons-only rail and full screen (owner, 2026-11-10) | shipped |
+| A page gets focus back when shown again after a native New Tab closes (Chromium 157 refuses fullscreen to an unfocused page), and a rare quit crash in late profile cleanup | shipped |
+| Hover-card memory readings are bounded: forgotten when a tab closes or changes document, capped at 128 keys (mem30 follow-up) | shipped |
+| Chromium 157.0.8103.50 on Helium 0.21.2 (from 156.0.8078.79; Chrome stable for Mac is 157.0.8103.51 as of 2026-11-09): re-sync the patch series, keep both Safe Storage patches unchanged, publish the engine; Ardia's 157 series is a reference for the rebase (Ardia) | shipped: engine 574046ecf2af |
 
 ## 0.3.2: lighter launches, Arc's windows
 
 | Item | Status |
 |---|---|
+| Fixes from the owner's two-Mac sync-join test of 0.1.3 | waiting on the test |
+| GitHub security alerts cleared: Dependabot (image-size, minimatch, deepmerge) bumped, the omnibox quick-create regex no longer slows on crafted input, test-script CodeQL alerts fixed or dismissed | in progress: CodeQL #201 (quick-create regex) and #200 fixed in 1161a442 (shipped in 0.2.1); the build-time Dependabot alerts (no usable fix) and the test-only CodeQL alerts wait on the owner's dismissal |
+| Bookmark request receipts expire (mem30 follow-up; owner chose option 1, 2026-11-10): a receipt expires 300 s after verified completion, the newest 32 per engine kept, and a retry of an expired ID gets "expired". Moved from 0.3.1: review rounds rcpt3 and rcpt4 found and fixed a synchronous checkpoint per acknowledgment, main-actor blocking on receipt reads, remap pruning during an active read and an O(n) acknowledgment scan; explain the intermittent profile-delete cleanup latency before landing | in progress |
+| Sites with fraud checks work: YNAB showed "Something went wrong" on every load and Apple's guest checkout ended on "Page Not Found" in Ardia; check both in Solara and fix what fails; no page can open the screen-sharing picker without a click (Ardia) | planned |
+| The address bar never stalls on dotted, dashed text such as `my-post.another-post.x:` (Ardia froze for seconds per keystroke); check the native omnibox and add the case to its tests (Ardia) | planned |
+| Thousands of bookmarks stay fast: a 2,500-bookmark import, a large bar set to Always, the » menu and a folder of a few thousand on the bookmarks page, against the native bookmark owner (Ardia) | planned |
+| macOS 27: the green button's Move & Resize and Fill & Arrange menus don't crash, and a window dragged to another display stays where it's dropped (Ardia) | planned |
+| Picture in Picture floats over other apps' full-screen Spaces and stays on the display it's put on, tiling window managers included (Ardia) | planned |
 | Profiles load when opened: at launch only the profiles the windows show start, the rest and their extensions start on first switch; a setting turns it off (Ardia measured 1.5 GB → 390 MB at launch with eight profiles) (Ardia) | planned |
 | Closing the last window keeps it, as in Arc: no "Close N tabs?", the Dock brings back the same window with its tabs, groups and selection, and so does reopening after quitting with no window (Ardia) | planned |
 | Unread counts on tabs, pinned tabs and Top Apps, from the page title, the Badging API or a favicon dot (Ardia) | planned |

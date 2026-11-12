@@ -27,6 +27,7 @@ import SolaraUI
   func isLoaded(_ place: SettingsPlace) -> Bool { true }
   func prepare(_ place: SettingsPlace) async {}
   func view(_ place: SettingsPlace) -> AnyView { AnyView(EmptyView()) }
+  func devSetFilterList(_ id: String, on: Bool) async -> Bool { false }
 }
 typealias GeneralPaneModel = StubPane
 typealias TabsPaneModel = StubPane

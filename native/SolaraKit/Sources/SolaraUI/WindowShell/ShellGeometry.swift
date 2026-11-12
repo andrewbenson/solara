@@ -136,6 +136,18 @@ public struct DockedLayoutInput: Equatable, Sendable {
     guard !topTabs, !fullscreen else { return 0 }
     return min(1, max(0, railProgress ?? (SidebarRail.contains(width: Double(sidebarWidth)) ? 1 : 0)))
   }
+
+  var wholePointFrames: Bool {
+    let rail = railFraction
+    return fullscreen || ((dock == 0 || dock == 1) && (rail == 0 || rail == 1) && (!peeking || peekSlide == 0 || peekSlide == 1))
+  }
+
+  func alignFrame(_ rect: CGRect) -> CGRect {
+    guard wholePointFrames else { return rect }
+    let left = rect.minX.rounded()
+    let top = rect.minY.rounded()
+    return CGRect(x: left, y: top, width: max(0, rect.maxX.rounded() - left), height: max(0, rect.maxY.rounded() - top))
+  }
 }
 
 public struct DockedLayoutFrames: Equatable, Sendable {
@@ -153,31 +165,32 @@ public struct DockedLayoutFrames: Equatable, Sendable {
     let dock = input.dock
     let rail = input.railFraction
     if input.fullscreen {
-      let card = CGRect(origin: .zero, size: size)
+      let card = input.alignFrame(CGRect(origin: .zero, size: size))
       let top = min(ShellMetrics.toolbarHeight, card.height)
       let page = CGRect(x: 0, y: top, width: card.width, height: max(0, card.height - top))
       return DockedLayoutFrames(card: card, page: page, sidePanel: nil, sidebar: nil, sidebarShift: 0, topStrip: nil, lights: DockMotion.sidebarLightsCenter(input))
     }
+    let width = input.wholePointFrames && rail == 1 ? min(input.sidebarWidth.rounded(), CGFloat(SidebarRail.width)) : input.sidebarWidth
     let top = input.topTabs ? ShellMetrics.cardTop + (inset.top - ShellMetrics.cardTop) * dock : inset.top
     let left = input.topTabs ? inset.left : inset.left + (input.sidebarWidth - inset.left) * dock * (1 - rail)
     let insetCard = CGRect(x: left, y: top, width: max(0, size.width - left - inset.right - max(0, input.sidePanel)), height: max(0, size.height - top - inset.bottom))
     let windowCard = CGRect(x: 0, y: 0, width: max(0, size.width - max(0, input.sidePanel)), height: size.height)
-    let card = input.topTabs ? insetCard : CGRect(
+    let rawCard = input.topTabs ? insetCard : CGRect(
       x: insetCard.minX + (windowCard.minX - insetCard.minX) * rail,
       y: insetCard.minY + (windowCard.minY - insetCard.minY) * rail,
       width: insetCard.width + (windowCard.width - insetCard.width) * rail,
       height: insetCard.height + (windowCard.height - insetCard.height) * rail)
+    let card = input.alignFrame(rawCard)
     let pageTop = min(ShellMetrics.toolbarHeight + ShellMetrics.railToolbarTop * rail, card.height)
     let visible = min(1, max(0, input.peeking ? input.peekSlide : dock))
     let gap = ShellMetrics.railPageGap * rail
-    let pageLeft = min(card.width, max(0, input.sidebarWidth * rail * visible + gap * (1 - visible)))
-    let page = CGRect(x: card.minX + pageLeft, y: card.minY + pageTop, width: max(0, card.width - pageLeft - gap), height: max(0, card.height - pageTop - gap))
-    let sidePanel = input.sidePanel > 0 ? CGRect(x: card.maxX, y: card.minY, width: input.sidePanel, height: card.height) : nil
+    let pageLeft = min(card.width, max(0, width * rail * visible + gap * (1 - visible)))
+    let page = input.alignFrame(CGRect(x: card.minX + pageLeft, y: card.minY + pageTop, width: max(0, card.width - pageLeft - gap), height: max(0, card.height - pageTop - gap)))
+    let sidePanel = input.sidePanel > 0 ? input.alignFrame(CGRect(x: rawCard.maxX, y: rawCard.minY, width: input.sidePanel, height: rawCard.height)) : nil
     if input.topTabs {
-      let strip = CGRect(x: 0, y: -inset.top * (1 - dock), width: size.width, height: inset.top)
+      let strip = input.alignFrame(CGRect(x: 0, y: -inset.top * (1 - dock), width: size.width, height: inset.top))
       return DockedLayoutFrames(card: card, page: page, sidePanel: sidePanel, sidebar: nil, sidebarShift: 0, topStrip: strip, lights: nil)
     }
-    let width = input.sidebarWidth
     let fullSidebar: CGRect
     if input.peeking {
       fullSidebar = CGRect(x: ShellMetrics.peekOrigin.x, y: ShellMetrics.peekOrigin.y, width: width, height: max(0, size.height - ShellMetrics.peekOrigin.y - ShellMetrics.peekBottom))
@@ -185,15 +198,17 @@ public struct DockedLayoutFrames: Equatable, Sendable {
       fullSidebar = CGRect(x: input.away ? -10_000 : 0, y: 0, width: width, height: size.height)
     }
     let railSidebar = CGRect(x: input.away ? -10_000 : card.minX, y: page.minY, width: width, height: max(0, card.maxY - page.minY))
-    let sidebar = CGRect(
+    let sidebar = input.alignFrame(CGRect(
       x: fullSidebar.minX + (railSidebar.minX - fullSidebar.minX) * rail,
       y: fullSidebar.minY + (railSidebar.minY - fullSidebar.minY) * rail,
-      width: width, height: fullSidebar.height + (railSidebar.height - fullSidebar.height) * rail)
+      width: width, height: fullSidebar.height + (railSidebar.height - fullSidebar.height) * rail))
     let peekIn = input.peeking ? -12 + (width + 12) * input.peekSlide : 0
     let fullShift = -width * (1 - dock) + peekIn
     let railShift = -width * (1 - visible)
+    let shift = fullShift + (railShift - fullShift) * rail
     return DockedLayoutFrames(
-      card: card, page: page, sidePanel: sidePanel, sidebar: sidebar, sidebarShift: fullShift + (railShift - fullShift) * rail,
+      card: card, page: page, sidePanel: sidePanel, sidebar: sidebar,
+      sidebarShift: input.wholePointFrames ? shift.rounded() : shift,
       topStrip: nil, lights: DockMotion.sidebarLightsCenter(input))
   }
 }

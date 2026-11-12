@@ -168,6 +168,70 @@ struct WindowShellGeometryTests {
     #expect(half.lights == CGPoint(x: 25 - 120, y: 27))
   }
 
+  @Test(arguments: [197.25, 197.5, 197.75], [1.0, 2.0])
+  func fractionalSidebarWidthsLeaveWholePointPageFrames(width: Double, scale: Double) {
+    let size = CGSize(width: 1710, height: 1100)
+    for dock: CGFloat in [0, 1] {
+      let frames = DockedLayoutFrames.of(DockedLayoutInput(size: size, dock: dock, sidebarWidth: CGFloat(width)))
+      for rect in [frames.card, frames.page] {
+        for value in [rect.minX, rect.minY, rect.width, rect.height] {
+          #expect(value == value.rounded())
+          #expect(value * CGFloat(scale) == (value * CGFloat(scale)).rounded())
+        }
+      }
+      #expect(frames.card.minX == (dock == 1 ? CGFloat(width).rounded() : 7))
+      #expect(frames.page.minX == frames.card.minX)
+      #expect(frames.page.maxX == frames.card.maxX)
+      #expect(frames.card.maxX == 1703)
+      #expect(frames.sidebar?.width == CGFloat(width).rounded())
+    }
+  }
+
+  @Test func restingModesKeepWholePointEdgesWithFractionalAvailableRoom() {
+    let size = CGSize(width: 1200.5, height: 800.5)
+    let inputs = [
+      DockedLayoutInput(size: size, dock: 1, sidebarWidth: 197.5, sidePanel: 280.25),
+      DockedLayoutInput(size: size, dock: 1, sidebarWidth: 197.5, topTabs: true),
+      DockedLayoutInput(size: size, dock: 1, sidebarWidth: 197.5, fullscreen: true),
+      DockedLayoutInput(size: size, dock: 1, sidebarWidth: 42.5),
+      DockedLayoutInput(size: size, dock: 0, sidebarWidth: 197.5, peeking: true, peekSlide: 1),
+    ]
+    for input in inputs {
+      let frames = DockedLayoutFrames.of(input)
+      for rect in [frames.card, frames.page] + [frames.sidePanel, frames.sidebar, frames.topStrip].compactMap({ $0 }) {
+        #expect(rect.minX == rect.minX.rounded())
+        #expect(rect.minY == rect.minY.rounded())
+        #expect(rect.width == rect.width.rounded())
+        #expect(rect.height == rect.height.rounded())
+        #expect(rect.width >= 0 && rect.height >= 0)
+      }
+      #expect(frames.page.maxX == frames.card.maxX - ShellMetrics.railPageGap * input.railFraction)
+    }
+    let panel = DockedLayoutFrames.of(inputs[0])
+    #expect(panel.sidePanel?.minX == panel.card.maxX)
+    #expect(panel.sidePanel?.maxX == (size.width - inputs[0].inset.right).rounded())
+    let rail = DockedLayoutFrames.of(inputs[3])
+    #expect(rail.card.minX == 0)
+    #expect(rail.page.minX == 42)
+    #expect(rail.sidebar?.width == 42)
+    let full = DockedLayoutFrames.of(DockedLayoutInput(size: size, dock: 1, sidebarWidth: 42.51))
+    #expect(full.card.minX == 43)
+    #expect(full.sidebar?.width == 43)
+    let small = DockedLayoutFrames.of(DockedLayoutInput(size: CGSize(width: 100.5, height: 20.5), dock: 1, sidebarWidth: 197.75))
+    #expect(small.page.width == 0 && small.page.height == 0)
+  }
+
+  @Test func movingDockRailAndPeekFramesKeepTheirFractionalMotion() {
+    let size = CGSize(width: 1200, height: 800)
+    let dock = DockedLayoutFrames.of(DockedLayoutInput(size: size, dock: 0.5, sidebarWidth: 197.5))
+    #expect(dock.card.minX == 102.25)
+    #expect(dock.page.width == 1090.75)
+    let rail = DockedLayoutFrames.of(DockedLayoutInput(size: size, dock: 1, sidebarWidth: 197.5, railProgress: 0.5))
+    #expect(rail.card.minX == 51.125)
+    let peek = DockedLayoutFrames.of(DockedLayoutInput(size: size, dock: 0, sidebarWidth: 42.5, peeking: true, peekSlide: 0.5))
+    #expect(peek.page.minX == 24.75)
+  }
+
   @Test func theAddressBarInTheSidebarRaisesTheLights() {
     let size = CGSize(width: 1360, height: 860)
     #expect(DockedLayoutFrames.of(DockedLayoutInput(size: size, dock: 1, addressBarInSidebar: true)).lights == CGPoint(x: 25, y: 24))

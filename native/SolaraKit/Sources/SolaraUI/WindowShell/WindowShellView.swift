@@ -581,7 +581,10 @@ public final class WindowShellView: NSView {
   private func placeCardPage() {
     let page = pageArea
     let top = min(max(cardPageFrame?.minY ?? page.minY, page.minY), page.maxY)
-    let frame = railFraction > 0 ? CGRect(x: page.minX, y: top, width: page.width, height: page.maxY - top) : cardPageFrame ?? page
+    let vertical = cardPageFrame ?? page
+    let frame = input.alignFrame(CGRect(
+      x: page.minX, y: railFraction > 0 ? top : vertical.minY, width: page.width,
+      height: railFraction > 0 ? page.maxY - top : vertical.height))
     if cardPage.frame != frame { cardPage.frame = frame }
     placeCardSurface()
     if railFraction > 0 { cardPage.wantsLayer = true }

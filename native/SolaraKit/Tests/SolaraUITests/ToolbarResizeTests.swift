@@ -65,6 +65,44 @@ struct ToolbarResizeTests {
     #expect(f.toolbar.layer?.animationKeys()?.isEmpty != false)
   }
 
+  @Test(arguments: [197.25, 197.5, 197.75])
+  func fractionalResizePlacesToolbarAndPageOnTheSameWholePointEdges(width: Double) throws {
+    let f = Fixture()
+    f.handle.mouseDown(with: f.mouse(.leftMouseDown, x: 190))
+    f.handle.mouseDragged(with: f.mouse(.leftMouseDragged, x: CGFloat(width)))
+    let page = f.shell.cardPage.convert(f.shell.cardPage.bounds, to: f.shell)
+    #expect(f.toolbarRect.minX == CGFloat(SidebarResizeMath.live(width)).rounded())
+    #expect(page.minX == f.toolbarRect.minX)
+    #expect(page.maxX == f.toolbarRect.maxX)
+    #expect(page.width == page.width.rounded())
+    f.handle.mouseUp(with: f.mouse(.leftMouseUp, x: CGFloat(width)))
+    let committed = try #require(f.committed)
+    #expect(committed == width)
+    f.shell.update { $0.sidebarWidth = CGFloat(committed) }
+    let settled = f.shell.cardPage.convert(f.shell.cardPage.bounds, to: f.shell)
+    #expect(settled.minX == CGFloat(width).rounded())
+    #expect(settled.width == settled.width.rounded())
+    #expect(f.toolbarRect.minX == settled.minX)
+    #expect(f.toolbarRect.maxX == settled.maxX)
+  }
+
+  @Test func aDelayedPageOverrideOnlySuppliesVerticalGeometry() {
+    let f = Fixture()
+    f.shell.update { $0.sidebarWidth = 197.5 }
+    f.shell.cardPageFrame = CGRect(x: -7.5, y: 20.25, width: 803, height: 666.75)
+    let page = f.shell.cardPage.convert(f.shell.cardPage.bounds, to: f.shell)
+    #expect(page == CGRect(x: 198, y: 26, width: 795, height: 667))
+    #expect(page.minX == f.toolbarRect.minX)
+    #expect(page.maxX == f.toolbarRect.maxX)
+    f.shell.cardPageFrame = CGRect(x: -0.5, y: 20.25, width: 795.5, height: 666.75)
+    #expect(f.shell.cardPage.convert(f.shell.cardPage.bounds, to: f.shell) == page)
+    f.shell.update { $0.sidebarWidth = 220.75 }
+    let resized = f.shell.cardPage.convert(f.shell.cardPage.bounds, to: f.shell)
+    #expect(resized == CGRect(x: 221, y: 26, width: 772, height: 667))
+    #expect(resized.minX == f.toolbarRect.minX)
+    #expect(resized.maxX == f.toolbarRect.maxX)
+  }
+
   @Test func delayedOwnerLayoutCannotMoveTheToolbarAndMouseUpKeepsTheFinalGeometry() {
     let f = Fixture()
     f.handle.mouseDown(with: f.mouse(.leftMouseDown, x: 190))

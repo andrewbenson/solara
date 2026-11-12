@@ -136,7 +136,7 @@ A fix-only release for 0.3.1, out as soon as it's gated (owner, 2026-11-11); the
 
 | Item | Status |
 |---|---|
-| No 1 px line down the page's right edge at some sidebar widths: the card's fill showed through one device pixel because the page was laid out at a fractional width that the engine floors to whole points (owner, 2026-11-11) | planned |
+| No 1 px line down the page's right edge at some sidebar widths: the card's fill showed through one device pixel because the page was laid out at a fractional width that the engine floors to whole points (owner, 2026-11-11) | done: the page and card are laid out on whole points at every sidebar width; no exposed fill at 197.5, 233.25, 260.75 or 240 pt in single, split and icons-only snapshots |
 | Fixes from the owner's two-Mac sync-join test of 0.1.3 | waiting on the test |
 | GitHub security alerts cleared: Dependabot (image-size, minimatch, deepmerge) bumped, the omnibox quick-create regex no longer slows on crafted input, test-script CodeQL alerts fixed or dismissed | in progress: CodeQL #201 (quick-create regex) and #200 fixed in 1161a442 (shipped in 0.2.1); the build-time Dependabot alerts (no usable fix) and the test-only CodeQL alerts wait on the owner's dismissal |
 | Bookmark request receipts expire (mem30 follow-up; owner chose option 1, 2026-11-10): a receipt expires 300 s after verified completion, the newest 32 per engine kept, and a retry of an expired ID gets "expired". Moved from 0.3.1: review rounds rcpt3 and rcpt4 found and fixed a synchronous checkpoint per acknowledgment, main-actor blocking on receipt reads, remap pruning during an active read and an O(n) acknowledgment scan; explain the intermittent profile-delete cleanup latency before landing | landed |

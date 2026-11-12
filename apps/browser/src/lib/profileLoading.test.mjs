@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { profileLaunchTargets, regularEngineFor } from "./profileLoading.ts";
+import { profileLaunchTargets, profilePageTargets, regularEngineFor } from "./profileLoading.ts";
 
 const profile = (id, dataId) => ({ id, ...(dataId ? { dataId } : {}) });
 const state = () => ({
@@ -47,4 +47,22 @@ test("a switch requests the new profile without requiring its tabs or metadata f
   const s = state();
   s.windows.first.profileId = "p6";
   assert.deepEqual(profileLaunchTargets(s), ["p6", "p5"]);
+});
+
+test("page targets only ask about tabs that changed since the previous state", () => {
+  const s = state();
+  const open = { profileId: "p3", url: "https://a.test/", navigation: { url: "https://a.test/", seq: 1 } };
+  s.tabs = Object.fromEntries(Array.from({ length: 200 }, (_, i) => [`t${i}`, { ...open, profileId: `p${1 + (i % 7)}` }]));
+  const asked = [];
+  const needsProfile = (id) => { asked.push(id); return true; };
+  assert.deepEqual(profilePageTargets(s, undefined, needsProfile).sort(), ["p1", "p2", "p3", "p4", "p5", "p6", "p7"]);
+  assert.equal(asked.length, 200);
+  asked.length = 0;
+  const next = { ...s, tabs: { ...s.tabs, t5: { ...s.tabs.t5, title: "renamed" }, fresh: { ...open, profileId: "p2" } } };
+  assert.deepEqual(profilePageTargets(next, s, needsProfile), ["p2"]);
+  assert.deepEqual(asked, ["fresh"]);
+  asked.length = 0;
+  const realiased = { ...next, profiles: { ...next.profiles, p2: { id: "p2", dataId: "p4" } } };
+  assert.deepEqual(profilePageTargets(realiased, next, needsProfile), ["p4"]);
+  assert.equal(asked.length, 30);
 });

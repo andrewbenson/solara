@@ -32,14 +32,20 @@ export function profileLaunchTargets(state: ProfileState): string[] {
 
 export function profilePageTargets(state: ProfileState, previous?: ProfileState, needsProfile: (id: string) => boolean = () => true): string[] {
   const targets = new Set<string>();
-  for (const [id, tab] of Object.entries(state.tabs ?? {})) {
-    if (tab.unloaded || (!tab.navigation?.url && !tab.adoptId) || !needsProfile(id)) continue;
+  const tabs = state.tabs ?? {};
+  const previousTabs = previous?.tabs;
+  const sameProfiles = previous?.profiles === state.profiles;
+  for (const id in tabs) {
+    const tab = tabs[id]!;
+    const before = previousTabs?.[id];
+    if (before === tab && sameProfiles) continue;
+    if (tab.unloaded || (!tab.navigation?.url && !tab.adoptId)) continue;
     const engine = regularEngineFor(state, tab.profileId);
     if (engine === null) continue;
-    const before = previous?.tabs?.[id];
     if (before && !before.unloaded && previous && regularEngineFor(previous, before.profileId) === engine &&
       before.navigation?.seq === tab.navigation?.seq && before.navigation?.url === tab.navigation?.url &&
       before.adoptId === tab.adoptId && before.engine === tab.engine) continue;
+    if (!needsProfile(id)) continue;
     targets.add(engine);
   }
   return [...targets];

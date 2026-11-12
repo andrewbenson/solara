@@ -178,6 +178,12 @@ public final class NativeStore: Sendable {
           if NativeStore.ownsWorkspace { NativeStore.shared?.strips.start() }
         }
       }
+      NotificationCenter.default.addObserver(forName: Notification.Name("SolaraWindowKeptOnCloseChanged"), object: nil, queue: nil) { note in
+        guard NativeStore.ownsWorkspace, let store = NativeStore.shared,
+          let id = note.userInfo?["id"] as? String, let on = note.userInfo?["on"] as? Bool else { return }
+        do { _ = try store.bridge.store.dispatch(Command("setWindowKeptOnClose", [.string(id), .bool(on)]), origin: .native) }
+        catch { NSLog("[store] couldn't save retained window: %@", "\(error)") }
+      }
       NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: nil) { _ in
         guard let store = NativeStore.shared else { return }
         store.profileDataCleanup.stop()

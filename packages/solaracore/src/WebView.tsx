@@ -88,7 +88,7 @@ export type DownloadNavigation = { url: string; committedUrl: string; skipped: b
 
 export type PictureInPictureState = { kind: "video" | "document"; active: boolean };
 export type ControlPress = { clickAt: number; control: number };
-export type ActivateRequest = { reason: "pictureInPicture" };
+export type ActivateRequest = { reason: "page" | "window" | "pictureInPicture" };
 export type DisplayMediaSource = {
   id: string;
   kind: "screen" | "window";

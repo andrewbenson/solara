@@ -8,6 +8,7 @@ public enum WindowHost {
 
   #if SOLARA_PROBES
   @MainActor public static func window(id: String) -> NSWindow? { WindowManager.shared.windows[id] }
+  @MainActor public static var retainedWindowId: String? { WindowManager.shared.retainedWindowId }
   #endif
 
   static func makeContent(_ make: (String) -> NSView, id: String, kind: String) -> NSView {
@@ -29,6 +30,110 @@ final class WindowManager: NSObject, NSWindowDelegate {
   private var lastFrame = UserDefaults.standard.string(forKey: WindowManager.lastFrameKey) ?? UserDefaults.standard.string(forKey: "NSWindow Frame BrowserWindow")
   private(set) var auxKinds: [String: String] = [:]
   private(set) var smallIds = Set<String>()
+  private var privateIds = Set<String>()
+  private var retention = LastWindowRetention()
+  private var closingIntents = Set<String>()
+  private var termination = WindowTerminationLifecycle()
+  private var retainedPresentation: LastWindowPresentation?
+  var retainedWindowId: String? { retention.id }
+
+  func isRetained(_ id: String) -> Bool { retention.id == id }
+
+  @discardableResult
+  func retainLastWindow(id: String, committingClose: Bool = false) -> Bool {
+    guard let window = windows[id] else { return false }
+    let pendingBrowserIds = pendingOrder.filter { pendingOpens[$0]?.kind == "browser" }
+    let browserIds = Set(windows.keys.filter { auxKinds[$0] == nil }).union(pendingBrowserIds)
+    let privateIds = self.privateIds.union(pendingBrowserIds.filter { pendingOpens[$0]?.incognito == true })
+    guard retention.retain(id, browserIds: browserIds, privateIds: privateIds, smallIds: smallIds, closingIds: closingIntents, terminating: termination.isTerminating) else {
+      if committingClose, !termination.isTerminating { closingIntents.insert(id) }
+      return false
+    }
+    if retainedPresentation == nil {
+      let presentation = LastWindowPresentation(collection: window.collectionBehavior, excluded: window.isExcludedFromWindowsMenu)
+      retainedPresentation = presentation
+      window.isExcludedFromWindowsMenu = presentation.retainedExcluded
+      window.collectionBehavior = presentation.retainedCollection
+      NSApp.removeWindowsItem(window)
+      reportKeptOnClose(id: id, on: true)
+    }
+    if keyOnReveal === window { keyOnReveal = nil }
+    if typeAhead?.window === window { endTypeAhead(send: false) }
+    window.orderOut(nil)
+    CATransaction.flush()
+    return true
+  }
+
+  private func revealRetained(id: String) {
+    guard retention.reveal(id), let window = windows[id] else { return }
+    if let presentation = retainedPresentation {
+      window.collectionBehavior = presentation.collection
+      window.isExcludedFromWindowsMenu = presentation.excluded
+      if !presentation.excluded { NSApp.addWindowsItem(window, title: window.title, filename: false) }
+    }
+    retainedPresentation = nil
+    if termination.publishesWindowTeardown { reportKeptOnClose(id: id, on: false) }
+  }
+
+  private func reportKeptOnClose(id: String, on: Bool) {
+    let info: [String: Any] = ["id": id, "on": on]
+    NotificationCenter.default.post(name: Notification.Name("SolaraWindowKeptOnCloseChanged"), object: nil, userInfo: info)
+    emit?("onWindowEvent", ["type": "keptOnClose", "id": id, "on": on])
+  }
+
+  private var hasVisibleBrowserWindow: Bool {
+    windows.contains { auxKinds[$0.key] == nil && $0.value.isVisible && !isRetained($0.key) }
+  }
+
+  func restoreRetainedWindow() -> Bool {
+    guard retention.shouldReopen(hasVisibleBrowser: hasVisibleBrowserWindow, terminating: termination.isTerminating, background: retentionBackground),
+      let id = retention.id, windows[id] != nil else { return false }
+    focus(id: id)
+    return true
+  }
+
+  private var retentionBackground: Bool {
+    #if DEBUG
+    return background && !devForegroundLifecycle
+    #else
+    return background
+    #endif
+  }
+
+  #if DEBUG
+  private var devForegroundLifecycle = false
+
+  func devWindowLifecycle(_ action: String, foregroundPolicy: Bool) -> [String: Any] {
+    guard background else { return ["error": "background instances only"] }
+    devForegroundLifecycle = foregroundPolicy
+    defer { devForegroundLifecycle = false }
+    switch action {
+    case "dock":
+      _ = NSApp.delegate?.applicationShouldHandleReopen?(NSApp, hasVisibleWindows: false)
+    case "activation":
+      NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: NSApp)
+    case "inventory": break
+    default: return ["error": "unknown action"]
+    }
+    let listed = NSApp.windowsMenu?.items.compactMap { item in
+      (item.target as? NSWindow ?? item.representedObject as? NSWindow)?.windowNumber
+    } ?? []
+    return [
+      "retained": retainedWindowId as Any? ?? NSNull(),
+      "windowsMenu": listed,
+      "scriptingCount": ShellScripting.windows.count,
+      "windows": windows.map { id, window in
+        ["id": id, "number": window.windowNumber, "visible": window.isVisible,
+         "excluded": window.isExcludedFromWindowsMenu, "collection": window.collectionBehavior.rawValue,
+         "frame": [window.frame.origin.x, window.frame.origin.y, window.frame.width, window.frame.height]] as [String: Any]
+      },
+    ]
+  }
+  #endif
+
+  func becameActive() {
+    _ = restoreRetainedWindow()
+  }
 
   private func isBrowserWindow(_ window: NSWindow?) -> Bool {
     guard let id = id(of: window) else { return false }
@@ -85,7 +190,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
     animated: Bool = false
   ) {
     if let existing = windows[id] {
-      if focus { existing.makeKeyAndOrderFront(nil) }
+      if focus { self.focus(id: id) }
       return
     }
     if kind == "small" { ChromeWindows.noteLittleWindowOpening() }
@@ -110,6 +215,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
       emit?("onWindowEvent", ["type": "close", "id": id])
       return
     }
+    if incognito { privateIds.insert(id) }
     if small { smallIds.insert(id) }
     if let chromeWindow = ChromeWindows.makeWindow(profile: profile, chromeWindow: chromeWindow, appWindow: small ? claim : id) {
       if incognito { chromeWindow.appearance = NSAppearance(named: .darkAqua) }
@@ -230,7 +336,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
   }
 
   private func endFullScreenRestore() {
-    let focus = fullScreenFocus.flatMap { windows[$0] }
+    let focus = fullScreenFocus.flatMap { isRetained($0) ? nil : windows[$0] }
     fullScreenFocus = nil
     guard fullScreenToggled, let focus, !background, NSApp.isActive else { return }
     fullScreenToggled = false
@@ -428,6 +534,12 @@ final class WindowManager: NSObject, NSWindowDelegate {
     guard let id = id(of: from) else { return }
     NotificationCenter.default.removeObserver(self, name: nil, object: from)
     windows[id] = to
+    if isRetained(id), let presentation = retainedPresentation {
+      to.isExcludedFromWindowsMenu = presentation.retainedExcluded
+      to.collectionBehavior = presentation.retainedCollection
+      to.orderOut(nil)
+      NSApp.removeWindowsItem(to)
+    }
     if lastPlaced === from { lastPlaced = to }
     observeDelegateNotifications(to)
     observeFrame(to)
@@ -502,6 +614,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
   }
 
   func animateClose(id: String, after replacement: String?, done: @escaping () -> Void) {
+    closingIntents.insert(id)
     if exits[id] != nil { return exits[id]!.append(done) }
     guard let window = windows[id], isBrowserWindow(window), window.isVisible, !window.isMiniaturized, !window.styleMask.contains(.fullScreen),
       unrevealed[id] == nil
@@ -532,6 +645,9 @@ final class WindowManager: NSObject, NSWindowDelegate {
   }
 
   func close(id: String) {
+    closingIntents.remove(id)
+    revealRetained(id: id)
+    privateIds.remove(id)
     if pendingOpens.removeValue(forKey: id) != nil {
       pendingOrder.removeAll { $0 == id }
       NotificationCenter.default.post(name: Notification.Name("SolaraPrivateWindowClosed"), object: nil, userInfo: ["id": id])
@@ -561,13 +677,16 @@ final class WindowManager: NSObject, NSWindowDelegate {
     window.close()
   }
 
-  func focus(id: String) {
+  func focus(id: String, cancellingClose: Bool = false) {
+    if cancellingClose { closingIntents.remove(id) }
+    if isRetained(id), termination.isTerminating { return }
     if let o = pendingOpens.removeValue(forKey: id) {
       pendingOrder.removeAll { $0 == id }
       return open(
         id: id, frame: o.frame, incognito: o.incognito, title: o.title, focus: true, kind: o.kind, profile: o.profile, size: o.size,
         pointer: o.pointer)
     }
+    revealRetained(id: id)
     windows[id]?.makeKeyAndOrderFront(nil)
   }
 
@@ -578,6 +697,12 @@ final class WindowManager: NSObject, NSWindowDelegate {
   }
 
   func windowShouldClose(_ sender: NSWindow) -> Bool {
+    switch termination.userCloseDisposition {
+    case .physicalTeardown: return true
+    case .deferUntilSaved: return false
+    case .userRequest: break
+    }
+    if let id = id(of: sender), retainLastWindow(id: id) { return false }
     guard let id = id(of: sender), auxKinds[id] == nil, appEventsObserved, let emit else { return true }
     emit("onWindowEvent", ["type": "closeRequest", "id": id])
     return false
@@ -591,6 +716,9 @@ final class WindowManager: NSObject, NSWindowDelegate {
 
   func windowWillClose(_ notification: Notification) {
     guard let window = notification.object as? NSWindow, let id = id(of: window) else { return }
+    closingIntents.remove(id)
+    revealRetained(id: id)
+    privateIds.remove(id)
     NotificationCenter.default.post(name: Notification.Name("SolaraPrivateWindowClosed"), object: nil, userInfo: ["id": id])
     NotificationCenter.default.removeObserver(self, name: nil, object: window)
     windows[id] = nil
@@ -688,6 +816,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
   func runtimeGone(_ gone: ObjectIdentifier) {
     guard runtime == gone else { return }
     runtime = nil
+    closingIntents.removeAll()
     pendingOpens = [:]
     pendingOrder = []
     emit = nil
@@ -712,14 +841,20 @@ final class WindowManager: NSObject, NSWindowDelegate {
   }
 
   func shouldTerminate() -> NSApplication.TerminateReply {
+    if termination.approved { return .terminateNow }
     guard appEventsObserved, let emit else {
-      guard AppUpdater.shared.holdsQuitForStagedUpdate else { return .terminateNow }
+      guard AppUpdater.shared.holdsQuitForStagedUpdate else {
+        termination.approve()
+        return .terminateNow
+      }
+      termination.begin()
       quitAfterUpdaterSettles()
       return .terminateLater
     }
     guard UpdateQuitApproval.consume() || confirmActiveDownloads() else { return .terminateCancel }
     quitAttempt += 1
     quitStep = .saving
+    termination.begin()
     emit("onAppEvent", ["type": "willQuit"])
     waitForSave()
     return .terminateLater
@@ -780,11 +915,12 @@ final class WindowManager: NSObject, NSWindowDelegate {
   }
 
   func replyToTerminate(_ ok: Bool) {
-    guard quitStep != .waitingForUpdater else { return }
+    guard !termination.approved, quitStep != .waitingForUpdater else { return }
     saveWait?.invalidate()
     saveWait = nil
     if lateSaveAlert != nil { NSApp.stopModal(withCode: .abort) }
     guard ok else {
+      termination.cancel()
       quitStep = .none
       quitAttempt += 1
       return NSApp.reply(toApplicationShouldTerminate: false)
@@ -803,12 +939,21 @@ final class WindowManager: NSObject, NSWindowDelegate {
     let attempt = quitAttempt
     AppUpdater.shared.dropOffChannelStagedUpdateBeforeQuit { [weak self] in
       guard let self, self.quitAttempt == attempt, self.quitStep == .waitingForUpdater else { return }
+      self.termination.approve()
       self.quitStep = .none
       NSApp.reply(toApplicationShouldTerminate: true)
     }
   }
 
+  func terminationWasCancelled() {
+    termination.cancel()
+    quitStep = .none
+    quitAttempt += 1
+  }
+
   func reopen() {
+    if restoreRetainedWindow() { return }
+    guard retention.shouldCreateWindow(hasVisibleBrowser: hasVisibleBrowserWindow, terminating: termination.isTerminating) else { return }
     emit?("onAppEvent", ["type": "reopen"])
   }
 }

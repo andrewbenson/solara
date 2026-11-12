@@ -27,11 +27,14 @@ extension Session {
       pinSource.splits = Table(data.splits ?? JSMap())
       pinSource.windows = Table()
       let rawWindows = (session["windows"]?.array ?? []).compactMap { try? BrowserWindow(value: $0) }
+      let keptIds = Set(rawWindows.filter { $0.keptOnClose == true && !$0.incognito && !$0.isSmall }.map(\.id))
+      let closing = rawWindows.filter { !keptIds.contains($0.id) }
+      pinSource.windows = Table((data.windows ?? JSMap()).filter { id, _ in keptIds.contains(id) })
       var parked = Table(data.parkedPins ?? JSMap())
-      for w in rawWindows { parked = parkWindowPins(parked, w, pinSource, otherWindows: false, history: false) }
+      for w in closing { parked = parkWindowPins(parked, w, pinSource, history: false) }
       data.parkedPins = parked.map
       var closed = data.closedWindows ?? []
-      for w in rawWindows {
+      for w in closing {
         let active = Set(w.activeTabIds.values)
         let tabs = w.tabIds.compactMap { tabsById[$0] }.filter { !pinSource.inPinnedContainer($0.id) }.map {
           ClosedWindowTab(snapshot: snapshotTab($0), active: active.contains($0.id), tabId: nil)
@@ -42,9 +45,16 @@ extension Session {
         if tabs.contains(where: { !$0.snapshot.url.isEmpty }) { closed.append(entry) }
       }
       data.closedWindows = Array(closed.suffix(10))
-      data.windows = JSMap()
-      data.windowOrder = []
-      data.tabs = []
+      data.windows = data.windows?.filter { id, _ in keptIds.contains(id) }
+      data.windowOrder = data.windowOrder?.filter { keptIds.contains($0) }
+      data.tabs = data.tabs?.filter { keptIds.contains($0.windowId) }
+      data.groups = data.groups?.filter { _, group in keptIds.contains(group.windowId) }
+      data.splits = data.splits?.filter { _, split in keptIds.contains(split.windowId) }
+    }
+    data.windows = data.windows?.mapValues { window in
+      var shown = window
+      shown.keptOnClose = nil
+      return shown
     }
     return data
   }

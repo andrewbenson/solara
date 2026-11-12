@@ -1,4 +1,5 @@
 #include "../ios/SolaraCoreTabInsertion.h"
+#include "../ios/SolaraCoreWindowRecovery.h"
 
 #include <cstdio>
 
@@ -15,6 +16,11 @@ static int failures = 0;
 
 int main() {
   @autoreleasepool {
+    CHECK(!solaracore_windows::ShouldRecoverCancelledClose(false, false, false, true));
+    CHECK(solaracore_windows::ShouldRecoverCancelledClose(false, false, false, false));
+    CHECK(!solaracore_windows::ShouldRecoverCancelledClose(true, false, false, false));
+    CHECK(!solaracore_windows::ShouldRecoverCancelledClose(false, true, false, false));
+    CHECK(!solaracore_windows::ShouldRecoverCancelledClose(false, false, true, false));
     CHECK(!ShouldAnnounceInsertedTab(true, @"popup"));
     CHECK(!ShouldAnnounceInsertedTab(false, @"popup"));
     CHECK(ShouldAnnounceInsertedTab(true, @"foreground_tab"));

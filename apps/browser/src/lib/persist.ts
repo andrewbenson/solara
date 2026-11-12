@@ -207,11 +207,14 @@ export function loadSession(
   };
   if (session.settings && session.settings.restoreSession === false) {
     const now = Date.now();
-    const pinSource = { tabs: data.tabs ?? {}, groups: data.groups ?? {}, splits: data.splits ?? {}, history: {} };
-    for (const w of session.windows) data.parkedPins = parkWindowPins(data.parkedPins ?? {}, w, pinSource);
+    const kept = session.windows.filter((w) => w.keptOnClose && !w.incognito && w.kind !== "small");
+    const keptIds = new Set(kept.map((w) => w.id));
+    const closing = session.windows.filter((w) => !keptIds.has(w.id));
+    const pinSource = { windows: Object.fromEntries(kept.map((w) => [w.id, w])), tabs: data.tabs ?? {}, groups: data.groups ?? {}, splits: data.splits ?? {}, history: {} };
+    for (const w of closing) data.parkedPins = parkWindowPins(data.parkedPins ?? {}, w, pinSource);
     data.closedWindows = [
       ...(data.closedWindows ?? []),
-      ...session.windows.map((w) => ({
+      ...closing.map((w) => ({
         kind: "window" as const,
         id: newId("cw"),
         window: closedWindowPresentation(w),
@@ -223,10 +226,13 @@ export function loadSession(
         closedAt: now,
       })).filter((c) => c.tabs.some((t) => t.url)),
     ].slice(-10);
-    data.windows = {};
-    data.windowOrder = [];
-    data.tabs = {};
+    data.windows = Object.fromEntries(kept.map((w) => [w.id, w]));
+    data.windowOrder = (data.windowOrder ?? []).filter((id) => keptIds.has(id));
+    data.tabs = Object.fromEntries(Object.entries(data.tabs ?? {}).filter(([, t]) => keptIds.has(t.windowId)));
+    data.groups = Object.fromEntries(Object.entries(data.groups ?? {}).filter(([, g]) => keptIds.has(g.windowId)));
+    data.splits = Object.fromEntries(Object.entries(data.splits ?? {}).filter(([, v]) => keptIds.has(v.windowId)));
   }
+  data.windows = Object.fromEntries(Object.entries(data.windows ?? {}).map(([id, { keptOnClose: _, ...w }]) => [id, w]));
   return data;
 }
 

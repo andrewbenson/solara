@@ -11,7 +11,7 @@ public class AppModule: Module {
 
   public func definition() -> ModuleDefinition {
     Name("SolaraApp")
-    Constant("apiVersion") { () -> Int in 40 }
+    Constant("apiVersion") { () -> Int in 41 }
     Constant("sidebarRail") { true }
     Events("onNotificationResponse", "onPendingUpdate")
 
@@ -171,6 +171,14 @@ public class AppModule: Module {
     Function("killSwitchEnvironment") { (name: String) -> String? in
       AppModule.killSwitchNames.contains(name) ? ProcessInfo.processInfo.environment[name] : nil
     }
+
+    AsyncFunction("devWindowLifecycle") { (action: String, foregroundPolicy: Bool) -> [String: Any] in
+      #if DEBUG
+      return WindowManager.shared.devWindowLifecycle(action, foregroundPolicy: foregroundPolicy)
+      #else
+      return ["error": "DEV builds only"]
+      #endif
+    }.runOnQueue(.main)
 
     AsyncFunction("devMenuCommand") { (command: String, arg: String?) in
       #if DEBUG

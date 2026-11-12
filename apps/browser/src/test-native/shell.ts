@@ -63,6 +63,7 @@ const shell: Modules["SolaraShell"] = {
     if (options.focus !== false) windows.focused = id;
     return Promise.resolve();
   },
+  retainLastWindow: async () => false,
   closeWindow: (id) => {
     windows.open.delete(id);
     windows.closed.push(id);
@@ -95,7 +96,7 @@ const shell: Modules["SolaraShell"] = {
 
 const appEvents = nativeEvents();
 const app: Modules["SolaraApp"] & { apiVersion: number } = {
-  apiVersion: 40,
+  apiVersion: 41,
   addListener: appEvents.addListener,
   updaterState: () => Promise.resolve({ available: false }),
   checkForUpdates: () => Promise.resolve(),

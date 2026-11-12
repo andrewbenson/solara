@@ -5,7 +5,7 @@ modules before using them — this is a summary from the agent that built it.
 
 ## State
 - `profiles` + `profileOrder`; default profile id is `"default"`.
-- `windows`: `{ profileId, incognito, tabIds (sidebar order, pinned first), activeTabIds[profileId], sidebarOpen, frame, tabLayout?, fullScreen?, sidebarWidth?, sidebarIconsOnly?, sidePanelWidth? }` + `windowOrder`.
+- `windows`: `{ profileId, incognito, tabIds (sidebar order, pinned first), activeTabIds[profileId], sidebarOpen, frame, tabLayout?, fullScreen?, sidebarWidth?, sidebarIconsOnly?, sidePanelWidth?, keptOnClose? }` + `windowOrder`.
   A private window's `profileId` is `incognito:<window id>@<originalProfileId>` (`incognitoProfileId`, store/model.ts),
   `originalProfileId` the regular profile it was opened from (`createWindow({ incognito: true, profileId })`, default
   `lastActiveProfile`). Its engine profile (`engineProfile`) is that profile's off-the-record one: private windows of one
@@ -51,12 +51,17 @@ modules before using them — this is a summary from the agent that built it.
   download opens the focused window's popover in the same commit.
 
 ## Actions
-- Windows: `createWindow`, `closeWindow`, `switchProfile`, `moveTabsToWindow`, `moveTabToProfile`,
+- Windows: `createWindow`, `closeWindow`, `setWindowKeptOnClose`, `switchProfile`, `moveTabsToWindow`, `moveTabToProfile`,
   `mergeAllWindows`, `reopenClosed` / `reopenClosedTab` / `reopenClosedWindow`, `restoreClosed`.
   Little Solara (Little Arc): `createWindow({ small: true, url })` makes a `kind: "small"` window with one tab (store/small.ts),
   in `lastActiveProfile(s)` unless `profileId` says otherwise; never private.
   `newTab` into it goes to `mainWindowFor(s, profileId)`; `resolveWindowId(s, null)` never picks it; closing it records a
   `ClosedTab` with `small: true` that reopens in a new Little Solara; it isn't saved with the session.
+- Last-window retention (0.3.3 draft): Swift hides the last regular full window before the close-request bridge.
+  The window, pages and local selection remain live; no destructive `closeWindow` acknowledgement occurs.
+  `setWindowKeptOnClose(id, true)` marks that regular window for session restoration, including with ordinary
+  restore off; false omits the marker. Load clears it and opens visibly. Private and Little windows reject it.
+  Shell-owned visibility excludes the retained window from presentation lists; internal `windowIds` retains it.
 - Tabs: `newTab(windowId, { url, background, adoptId, openerId, profileId, pinned, index })`, `closeTabs(ids, { lastClosesWindow })`
   and `closeTab(id)` (the same path with `lastClosesWindow`, for ⌘W and ✕), `activate`, `navigate`, `updateTab(id, patch)`,
   `togglePin`, `moveTab`, `moveTabBy(id, ±1)` (both within the tab's pin section), `duplicateTab`, and

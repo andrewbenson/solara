@@ -33,7 +33,7 @@ public enum ShellScripting {
   static var windowInfos: [WindowInfo] {
     guard requireReady() else { return [] }
     refresh?()
-    return pushedWindows
+    return pushedWindows.filter { !WindowManager.shared.isRetained($0.id) }
   }
 
   static var profileInfos: [ProfileInfo] {
@@ -123,6 +123,7 @@ public enum ShellScripting {
     if !Thread.isMainThread { NSLog("\(Bundle.main.productName): an Apple event is being handled off the main thread") }
     #endif
     guard requireReady() else { return nil }
+    if body["command"] as? String == "closeWindow", let id = body["windowId"] as? String, WindowManager.shared.retainLastWindow(id: id) { return nil }
     guard let nativeCommand else {
       NSScriptCommand.current()?.setError("\(Bundle.main.productName) isn't ready yet.")
       return nil

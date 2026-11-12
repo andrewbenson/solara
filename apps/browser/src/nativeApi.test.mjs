@@ -57,8 +57,8 @@ test("legacy bundles and native builds are refused before main can start JS clea
 });
 
 test("the native bookmark projection feed requires the upgraded native bridge", () => {
-  assert.equal(jsVersion(), 40);
-  assert.equal(nativeVersion(), 40);
+  assert.ok(jsVersion() >= 40);
+  assert.ok(nativeVersion() >= 40);
   assert.match(boot(jsVersion(), 39).skew, /Native API skew/);
   assert.deepEqual(boot(40, 40).events, ["main", "legacy-js-cleanup"]);
 });

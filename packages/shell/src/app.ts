@@ -118,6 +118,7 @@ export type AppModule = {
   devLeftEdgeAppActive?(active: boolean, on: boolean): Promise<boolean>;
   devLeftEdgeStats?(reset: boolean): Promise<LeftEdgeStats>;
   devHoverStats(reset: boolean): Promise<{ passes?: number; log?: [string, number, number][]; registered?: number }>;
+  devWindowLifecycle?(action: string, foregroundPolicy: boolean): Promise<Record<string, unknown>>;
   devMenuCommand(command: string, arg: string | null): Promise<void>;
   devTypeKeys(windowId: string, text: string, interval: number): Promise<KeyTiming[]>;
   devKeyEquivalent(windowId: string, press: KeyPress): Promise<KeyPressResult>;

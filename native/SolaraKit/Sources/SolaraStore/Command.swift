@@ -25,14 +25,14 @@ public struct Command: Sendable, Equatable {
   public var json: JSONValue { ["name": .string(name), "args": .array(args)] }
 
   public static let durable: Set<String> = [
-    "updateSettings", "setWindowSidebar", "closeWindow", "restoreClosingWindow", "deleteProfile", "createProfile", "updateProfile", "reorderProfiles", "setDefaultProfile",
+    "updateSettings", "setWindowSidebar", "setWindowKeptOnClose", "closeWindow", "restoreClosingWindow", "deleteProfile", "createProfile", "updateProfile", "reorderProfiles", "setDefaultProfile",
   ]
 
   public var isDurable: Bool { Command.durable.contains(name) }
 
   public static let known: Set<String> = [
     "pageReport", "registerKeepAliveRuntime", "importWorkspace", "setWindowLayout", "setWindowSidebar", "newTab", "closeTab", "closeTabs", "activate", "handOffPin", "activateIndex", "cycle", "navigate", "updateTab", "navigated", "faviconChanged",
-    "duplicateTab", "togglePin", "moveTab", "moveTabBy", "createWindow", "closeWindow", "restoreClosingWindow", "forgetClosedWindow", "setWindowFrame", "setWindowFullScreen", "toggleSidebar",
+    "duplicateTab", "togglePin", "moveTab", "moveTabBy", "createWindow", "closeWindow", "restoreClosingWindow", "forgetClosedWindow", "setWindowKeptOnClose", "setWindowFrame", "setWindowFullScreen", "toggleSidebar",
     "switchProfile", "moveTabsToWindow", "moveTabToProfile", "mergeAllWindows", "reopenClosed", "reopenClosedTab", "reopenClosedWindow",
     "restoreClosed", "createProfile", "updateProfile", "deleteProfile", "reorderProfiles", "setDefaultProfile", "profileDataDeleted",
     "createGroup", "updateGroup", "addTabsToGroup", "removeTabsFromGroup", "ungroup", "newNestedGroup", "closeGroup", "deleteGroup",
@@ -200,6 +200,7 @@ extension Session {
       let splits = try (snapshot["splits"]?.array ?? []).map { try SplitView(value: $0) }
       result = JSONValue(restoreClosingWindow(window, tabs, groups, splits, chromeWindow: try a.requireString(1), liveTabIds: a.strings(2)))
     case "forgetClosedWindow": forgetClosedWindow(try a.requireString(0))
+    case "setWindowKeptOnClose": setWindowKeptOnClose(try a.requireString(0), a.bool(1))
     case "setWindowFrame": setWindowFrame(try a.requireString(0), a[1]?.array?.compactMap(\.number) ?? [])
     case "setWindowFullScreen": setWindowFullScreen(try a.requireString(0), a.bool(1))
     case "toggleSidebar": toggleSidebar(try a.requireString(0))

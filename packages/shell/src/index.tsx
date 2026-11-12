@@ -131,6 +131,7 @@ export type WindowEvent =
   | { type: "close"; id: string }
   | { type: "frame"; id: string; frame: [number, number, number, number] }
   | { type: "fullScreen"; id: string; on: boolean }
+  | { type: "keptOnClose"; id: string; on: boolean }
   | { type: "leftEdge"; id: string; over: boolean; point: [number, number] }
   | { type: "closeRequest"; id: string };
 
@@ -251,9 +252,10 @@ export type ShellNative = {
   listDocuments?(prefix: string): string[];
   fetchBangList?(etag: string | null): Promise<BangListReply>;
   openWindow(id: string, options: OpenWindowOptions): Promise<void>;
+  retainLastWindow(id: string, committingClose?: boolean): Promise<boolean>;
   closeWindow(id: string): Promise<void>;
   animateWindowClose?(id: string, after: string | null): Promise<void>;
-  focusWindow(id: string): Promise<void>;
+  focusWindow(id: string, cancellingClose?: boolean): Promise<void>;
   restoreFullScreen?(ids: string[], focus: string | null): Promise<void>;
   setTrafficLightsCenter(id: string, center: [number, number] | null): Promise<void>;
   watchLeftEdge?(id: string, on: boolean, hold: number): Promise<void>;
@@ -344,10 +346,11 @@ export type WindowProfileProps = ViewProps & {
 };
 export const WindowProfile = requireNativeViewManager<WindowProfileProps>("SolaraWindowProfile");
 
+export const retainLastWindow = (id: string, committingClose = false) => Shell.retainLastWindow(id, committingClose);
 export const closeWindow = (id: string) => Shell.closeWindow(id);
 export const animateWindowClose = (id: string, after: string | null = null) => Shell.animateWindowClose?.(id, after) ?? Promise.resolve();
 export const restoreFullScreen = (ids: string[], focus: string | null) => Shell.restoreFullScreen?.(ids, focus) ?? Promise.resolve();
-export const focusWindow = (id: string) => Shell.focusWindow(id);
+export const focusWindow = (id: string, cancellingClose = false) => Shell.focusWindow(id, cancellingClose);
 export const setWindowTitle = (id: string, title: string) => Shell.setWindowTitle(id, title);
 export const setTrafficLightsCenter = (id: string, center: [number, number] | null) =>
   Shell.setTrafficLightsCenter(id, center);

@@ -16,7 +16,7 @@ const sleepPolicySource = read("../lib/tabSleepPolicy.ts");
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 const navigation = (url = "https://a.test/", more = {}) => ({ url, title: url, isLoading: false, canGoBack: true, canGoForward: false, themeColor: null, ...more });
 
-function harness({ owned = true, pooled = false, finishAccepted = true } = {}) {
+function harness({ owned = true, pooled = false, finishAccepted = true, quitting = false } = {}) {
   const calls = [];
   const page = { wasNewTab: true, newTabShown: null, backToNewTab: false, popups: [], status: "" };
   const state = { profiles: { p: {} }, peeks: {}, tabs: { t: { id: "t", url: "https://a.test/", title: "A", profileId: "p", windowId: "w", muted: true, navigation: { seq: 1, url: "https://a.test/" } }, other: { profileId: "p" } }, live: { t: { isLoading: false, canGoBack: true, discarded: false } }, windows: { w: { id: "w", profileId: "p", tabIds: ["t", "other"], activeTabIds: { p: "t" } } } };
@@ -77,7 +77,7 @@ function harness({ owned = true, pooled = false, finishAccepted = true } = {}) {
       return Object.assign((selector) => selector(store.getState()), store);
     } },
     "../store/splits": { splitOf: () => undefined },
-    "../lib/native": { isQuitting: () => false },
+    "../lib/native": { isQuitting: () => quitting },
     "../lib/launchLook": { restoredThemeColor: (_id, _url, color) => color },
     "../lib/earlyNavigate": { takeStartedNavigation: () => false },
     "../lib/pageHandoff": { handoffLoaded: () => false },
@@ -118,7 +118,7 @@ function harness({ owned = true, pooled = false, finishAccepted = true } = {}) {
     return { emit: (event) => listener(event), stop };
   };
   calls.length = 0;
-  return { calls, state, page, events, session, handlers, webView, props, identity, report, emit, hold, startPool, lifecycle, webviews, setAuthority: (value) => { authority = value; }, finishes: () => finishCount };
+  return { calls, state, page, events, session, handlers, webView, props, identity, report, emit, hold, startPool, lifecycle, webviews, setAuthority: (value) => { authority = value; }, setQuitting: (value) => { quitting = value; }, finishes: () => finishCount };
 }
 
 const semantics = (calls) => calls.filter(({ name }) => ["updateTab", "updateLive", "navigated", "closeTab"].includes(name));
@@ -479,4 +479,44 @@ test("a same-identity pool created resend preserves handled feed authority", () 
   assert.equal(h.calls.filter((call) => call.name === "keepAliveGone").length, 0);
   assert.ok(h.calls.some((call) => call.name === "keepAliveCreated"));
   pool.stop();
+});
+
+
+test("engine activation preserves a retained workspace before and after cancelled quit", () => {
+  const h = harness();
+  h.state.windows.w.keptOnClose = true;
+  h.state.windows.w.activeTabIds.p = "other";
+  for (const quitting of [false, true, false]) {
+    h.setQuitting(quitting);
+    for (const reason of ["page", "window"]) h.handlers.onActivateRequest({ reason });
+  }
+  assert.deepEqual(h.calls, []);
+  assert.equal(h.state.windows.w.keptOnClose, true);
+  assert.equal(h.state.windows.w.activeTabIds.p, "other");
+});
+
+test("explicit picture in picture return still reveals a retained workspace", () => {
+  const h = harness();
+  h.state.windows.w.keptOnClose = true;
+  h.handlers.onActivateRequest({ reason: "pictureInPicture" });
+  assert.deepEqual(h.calls, [{ name: "switchToTab", args: ["t"] }, { name: "focus", args: ["w"] }]);
+});
+
+test("engine activation still focuses ordinary and physically recovered windows", () => {
+  for (const reason of ["page", "window", "pictureInPicture"]) {
+    const h = harness();
+    h.handlers.onActivateRequest({ reason });
+    assert.deepEqual(h.calls, [{ name: "switchToTab", args: ["t"] }, { name: "focus", args: ["w"] }]);
+  }
+});
+
+test("page activation cannot change selection or focus while quitting", () => {
+  for (const retained of [false, true]) {
+    const h = harness({ quitting: true });
+    h.state.windows.w.keptOnClose = retained;
+    h.state.windows.w.activeTabIds.p = "other";
+    for (const reason of ["page", "window", "pictureInPicture"]) h.handlers.onActivateRequest({ reason });
+    assert.deepEqual(h.calls, []);
+    assert.equal(h.state.windows.w.activeTabIds.p, "other");
+  }
 });

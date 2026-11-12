@@ -15,7 +15,7 @@ export function closeWindowAnimated(windowId: string, replacedBy: string | null 
     stopClosingWindow(windowId);
     const now = useBrowser.getState().windows[windowId];
     if (!now) return;
-    if (now.tabIds.some((id) => !leaving.has(id))) return void focusWindow(windowId);
+    if (now.tabIds.some((id) => !leaving.has(id))) return void focusWindow(windowId, true);
     useBrowser.getState().closeWindow(windowId);
     then?.();
   };

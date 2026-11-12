@@ -55,6 +55,7 @@ export type WindowsSlice = {
   closeWindow(id: string): void;
   restoreClosingWindow(snapshot: ClosingWindowSnapshot, chromeWindow: string, liveTabIds: string[]): string | null;
   forgetClosedWindow(id: string): void;
+  setWindowKeptOnClose(id: string, on: boolean): void;
   setWindowFrame(id: string, frame: Frame): void;
   setWindowFullScreen(id: string, on: boolean): void;
   toggleSidebar(windowId: string): void;
@@ -261,6 +262,15 @@ export const createWindowsSlice: StateCreator<BrowserState, [], [], WindowsSlice
 
   forgetClosedWindow(id) {
     set((s) => ({ closedWindows: s.closedWindows.filter((entry) => entry.id !== id) }));
+  },
+
+  setWindowKeptOnClose(id, on) {
+    set((s) => {
+      const w = s.windows[id];
+      if (!w || w.incognito || isSmallWindow(w) || !!w.keptOnClose === on) return {};
+      const { keptOnClose: _, ...rest } = w;
+      return { windows: { ...s.windows, [id]: on ? { ...rest, keptOnClose: true } : rest } };
+    });
   },
 
   setWindowFrame(id, frame) {

@@ -54,6 +54,7 @@ export type BrowserWindow = {
   linkPointer?: [number, number];
   originalProfileId?: string;
   chromeWindow?: string;
+  keptOnClose?: true;
 };
 
 export type Tab = {

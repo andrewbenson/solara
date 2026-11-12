@@ -162,6 +162,15 @@ extension Session {
     set(next)
   }
 
+  public func setWindowKeptOnClose(_ id: String, _ on: Bool) {
+    guard let window = state.windows[id], !window.incognito, !window.isSmall else { return }
+    let value: Bool? = on ? true : nil
+    guard window.keptOnClose != value else { return }
+    var next = state
+    next.windows[id]!.keptOnClose = value
+    set(next)
+  }
+
   public func setWindowFrame(_ id: String, _ frame: [Double]) {
     var next = state
     guard var w = next.windows[id], w.frame != frame else {

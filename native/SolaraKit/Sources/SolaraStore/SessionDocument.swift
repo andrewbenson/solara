@@ -57,7 +57,7 @@ public func persistedTabJSON(_ t: Tab) -> JSONValue {
 
 extension Session {
   func launchTab(_ s: BrowserState, _ windowId: String?) -> JSONValue {
-    guard let windowId, let w = s.windows[windowId], !w.incognito, !w.isSmall, s.settings["restoreSession"] != .bool(false) else { return .null }
+    guard let windowId, let w = s.windows[windowId], !w.incognito, !w.isSmall, s.settings["restoreSession"] != .bool(false) || w.keptOnClose == true else { return .null }
     guard let t = s.tabs[w.activeTabIds[w.profileId] ?? ""], t.windowId == w.id, t.profileId == w.profileId else { return .null }
     let lower = t.url.lowercased()
     guard lower.hasPrefix("http://") || lower.hasPrefix("https://") else { return .null }

@@ -388,9 +388,10 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
       setPageProgress(tabId, 0);
       if (session.factsOwner === "js") noteDiscarded(tabId);
     },
-    onActivateRequest: () => {
+    onActivateRequest: ({ reason }) => {
       const t = tab();
-      if (!t) return;
+      if (!t || isQuitting()) return;
+      if (store().windows[t.windowId]?.keptOnClose && reason !== "pictureInPicture") return;
       switchToTab(tabId);
       focus(t.windowId);
     },

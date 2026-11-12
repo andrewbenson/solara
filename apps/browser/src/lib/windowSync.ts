@@ -1,5 +1,6 @@
 import type { OpenWindowOptions, WindowEvent } from "@solara/shell";
 import type { BrowserState } from "../store/browser";
+import { nativeOwnsWorkspace } from "../store/nativeStore";
 import { engineProfile, windowTitle } from "../store/model";
 import { windowOpens } from "./windowOpenOrder";
 import { hasPendingCloseSnapshot } from "./closeSnapshots";
@@ -41,6 +42,7 @@ export function createWindowSync({ port, getState, isQuitting, lightsCenter, isU
   const listen = () =>
     port.onEvent((e) => {
       const s = getState();
+      if (e.type === "keptOnClose" && !nativeOwnsWorkspace()) s.setWindowKeptOnClose(e.id, e.on);
       if (e.type === "focus") s.setFocusedWindow(e.id);
       if (e.type === "frame") s.setWindowFrame(e.id, e.frame);
       if (e.type === "fullScreen" && !isQuitting()) s.setWindowFullScreen(e.id, e.on);

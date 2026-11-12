@@ -185,6 +185,29 @@ import Testing
     #expect(runner.lastChromeReasons["target0"] == reasons)
   }
 
+  @Test(arguments: [false, true])
+  func retainedWindowKeepsItsSelectionAndSplitWhileEligibleBackgroundPagesSleep(criticalPressure: Bool) async throws {
+    let fixture = try Fixture(count: 3, backgroundSplit: true)
+    try fixture.store.dispatch(Command("setWindowKeptOnClose", ["window", true]))
+    let before = fixture.store.state
+    let runner = fixture.runner()
+    #expect(runner.start())
+    defer { runner.stop() }
+    if criticalPressure { runner.setMemoryPressure(.critical) }
+    #expect(await runner.sweep() == ["target2"])
+    #expect(!(await runner.sleepOnRequest("active")))
+    #expect(!(await runner.sleepOnRequest("target0")))
+    #expect(!(await runner.sleepOnRequest("target1")))
+    #expect(fixture.commands["active"] == nil)
+    #expect(fixture.commands["target0"] == nil)
+    #expect(fixture.commands["target1"] == nil)
+    #expect(fixture.commands["target2"] == [.reasonsNotToSleep, .sleepIfEligible(false)])
+    #expect(fixture.store.state.windows["window"]?.keptOnClose == true)
+    #expect(fixture.store.state.windows["window"]?.activeTabIds == before.windows["window"]?.activeTabIds)
+    #expect(fixture.store.state.splits["background"] == before.splits["background"])
+    #expect(fixture.store.state == before)
+  }
+
   @Test func backgroundSplitNeverReachesChrome() async throws {
     let fixture = try Fixture(count: 2, backgroundSplit: true)
     let runner = fixture.runner()

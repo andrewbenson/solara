@@ -298,13 +298,20 @@ public class ShellModule: Module {
         LeftEdgeWatcher.shared.emit = { name, body in self?.sendEvent(name, body) }
         WindowManager.shared.runtime = self.map(ObjectIdentifier.init)
         NSApp.mainMenu = MainMenu.build()
+        let activation = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+          WindowManager.shared.becameActive()
+        }
+        self?.sidebarObservers.append((NotificationCenter.default, activation))
         self?.appearanceObservation = NSApp.observe(\.effectiveAppearance) { _, _ in
           self?.sendEvent("onAppEvent", ["type": "appearance", "dark": ShellModule.isDark])
         }
         self?.observeForSidebar()
         let quitCancelled = NotificationCenter.default.addObserver(
           forName: Notification.Name("SolaraCoreQuitCancelled"), object: nil, queue: .main
-        ) { _ in self?.sendEvent("onAppEvent", ["type": "quitCancelled"]) }
+        ) { _ in
+          WindowManager.shared.terminationWasCancelled()
+          self?.sendEvent("onAppEvent", ["type": "quitCancelled"])
+        }
         self?.sidebarObservers.append((NotificationCenter.default, quitCancelled))
       }
     }
@@ -358,6 +365,7 @@ public class ShellModule: Module {
         animated: options["animated"] as? Bool ?? false)
     }.runOnQueue(.main)
 
+    AsyncFunction("retainLastWindow") { (id: String, committingClose: Bool?) -> Bool in WindowManager.shared.retainLastWindow(id: id, committingClose: committingClose ?? false) }.runOnQueue(.main)
     AsyncFunction("closeWindow") { (id: String) in WindowManager.shared.close(id: id) }.runOnQueue(.main)
     AsyncFunction("animateWindowClose") { (id: String, after: String?, promise: Promise) in
       WindowManager.shared.animateClose(id: id, after: after) { promise.resolve(nil) }
@@ -368,7 +376,7 @@ public class ShellModule: Module {
     AsyncFunction("watchLeftEdge") { (id: String, on: Bool, hold: Double) in
       LeftEdgeWatcher.shared.watch(id: id, on: on, hold: CGFloat(hold))
     }.runOnQueue(.main)
-    AsyncFunction("focusWindow") { (id: String) in WindowManager.shared.focus(id: id) }.runOnQueue(.main)
+    AsyncFunction("focusWindow") { (id: String, cancellingClose: Bool?) in WindowManager.shared.focus(id: id, cancellingClose: cancellingClose ?? false) }.runOnQueue(.main)
     AsyncFunction("restoreFullScreen") { (ids: [String], focus: String?) in
       WindowManager.shared.restoreFullScreen(ids: ids, focus: focus)
     }.runOnQueue(.main)
@@ -717,6 +725,7 @@ public enum ShellApp {
     return reply
   }
   public static func reopen(hasVisibleWindows: Bool) -> Bool {
+    if WindowManager.shared.restoreRetainedWindow() { return true }
     if !hasVisibleWindows { WindowManager.shared.reopen() }
     return true
   }

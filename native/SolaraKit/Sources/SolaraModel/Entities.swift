@@ -183,6 +183,13 @@ public struct BrowserWindow: JSONConvertible, @unchecked Sendable {
       box.value.originalProfileId = newValue
     }
   }
+  public var keptOnClose: Bool? {
+    get { box.value.keptOnClose }
+    set {
+      if !isKnownUniquelyReferenced(&box) { box = Box(box.value) }
+      box.value.keptOnClose = newValue
+    }
+  }
   public var chromeWindow: String? {
     get { box.value.chromeWindow }
     set {
@@ -224,6 +231,7 @@ public struct BrowserWindowFields: Sendable, Equatable {
   public var linkPointer: [Double]?
   public var originalProfileId: String?
   public var chromeWindow: String?
+  public var keptOnClose: Bool?
   public var extra: JSONObject = [:]
   public var keyOrder: [String]? = nil
   public internal(set) var absent: Set<String> = []
@@ -243,7 +251,7 @@ public struct BrowserWindowFields: Sendable, Equatable {
 
   static let keys: Set<String> = [
     "id", "profileId", "incognito", "tabIds", "activeTabIds", "sidebarOpen", "tabLayout", "frame", "fullScreen", "createdAt", "kind",
-    "linkPointer", "originalProfileId", "chromeWindow", "sidebarWidth", "sidebarIconsOnly", "sidePanelWidth",
+    "linkPointer", "originalProfileId", "chromeWindow", "keptOnClose", "sidebarWidth", "sidebarIconsOnly", "sidePanelWidth",
   ]
 
   public init(json: JSONObject) throws {
@@ -265,6 +273,7 @@ public struct BrowserWindowFields: Sendable, Equatable {
     linkPointer = f.optionalNumbers("linkPointer")
     originalProfileId = f.optionalString("originalProfileId")
     chromeWindow = f.optionalString("chromeWindow")
+    keptOnClose = !incognito && kind != "small" && f.optionalBool("keptOnClose") == true ? true : nil
     extra = f.extra
     keyOrder = f.order
     absent = f.absent(["frame"])
@@ -289,6 +298,7 @@ public struct BrowserWindowFields: Sendable, Equatable {
     e.optional("linkPointer", linkPointer)
     e.optional("originalProfileId", originalProfileId)
     e.optional("chromeWindow", chromeWindow)
+    e.optional("keptOnClose", keptOnClose)
     return e.object
   }
 

@@ -9,6 +9,7 @@
 #import "SolaraCoreServices.h"
 #import "SolaraCoreTabParking.h"
 #import "SolaraCoreTabInsertion.h"
+#import "SolaraCoreWindowRecovery.h"
 
 #import <QuartzCore/QuartzCore.h>
 #import <objc/message.h>
@@ -1761,7 +1762,8 @@ NSMapTable<SolaraCoreProfile *, SolaraCoreWindowController *> *StandaloneWindows
     SolaraCoreWindowController *controller = weakSelf;
     SolaraCoreWindow *coreWindow = controller.coreWindow;
     NSWindow *nsWindow = coreWindow.window;
-    if (!controller || !coreWindow || !nsWindow || nsWindow.isVisible || coreWindow.closing || controller->_awaitingApp) return;
+    if (!controller || !coreWindow || !nsWindow) return;
+    if (!solaracore_windows::ShouldRecoverCancelledClose(nsWindow.isVisible, coreWindow.closing, controller->_awaitingApp, controller.root != nil)) return;
     NSMutableArray<NSDictionary<NSString *, id> *> *tabs = [NSMutableArray array];
     for (SolaraCoreProfile *profile in solaracore_host::LoadedProfiles()) {
       for (SolaraCoreTab *tab in [coreWindow tabsForProfile:profile]) {

@@ -1,4 +1,4 @@
-import { confirm, onWindowEvent } from "@solara/shell";
+import { confirm, onWindowEvent, retainLastWindow } from "@solara/shell";
 import { useBrowser } from "../store/browser";
 import { tabsClosingWithWindow } from "../store/model";
 import type { Tab } from "../store/types";
@@ -51,7 +51,7 @@ export function startWindowCloseGuard() {
   });
 }
 
-async function requestClose(windowId: string) {
+export async function requestClose(windowId: string) {
   const s = useBrowser.getState();
   const w = s.windows[windowId];
   if (!w) return;
@@ -59,12 +59,15 @@ async function requestClose(windowId: string) {
     rememberClose(windowId);
     return closeLittleSolara(windowId);
   }
+  if (await retainLastWindow(windowId)) return;
+  if (!useBrowser.getState().windows[windowId]) return;
   const count = closingTabs(windowId).length;
   if (s.settings.warnBeforeClosingWindow && count >= MIN_TABS) {
     const { confirmed, suppressed } = await confirm({ ...closeWindowDialog(windowId), suppression: "Don’t ask me again", windowId });
     if (suppressed) useBrowser.getState().updateSettings({ warnBeforeClosingWindow: false });
     if (!confirmed) return;
   }
+  if (await retainLastWindow(windowId, true)) return;
   rememberClose(windowId);
   closeWindowAnimated(windowId);
 }

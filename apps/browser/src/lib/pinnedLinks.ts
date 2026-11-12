@@ -3,6 +3,7 @@ import { useBrowser, type BrowserState } from "../store/browser";
 import { isWindowClosing } from "../store/closingWindows";
 import { activeTabId, isPinnedRow } from "../store/model";
 import { isSmall } from "../store/small";
+import { splitOf } from "../store/splits";
 import { pinnedLinkController } from "./pinnedLinkController";
 
 let started = false;
@@ -45,7 +46,8 @@ export function startPinnedLinks() {
     source(id) {
       const s = useBrowser.getState();
       const live = liveSourceWindow(s, id);
-      if (!live || live.w.profileId !== live.t.profileId || activeTabId(s, live.w.id) !== id) return null;
+      const active = live ? activeTabId(s, live.w.id) : undefined;
+      if (!live || live.w.profileId !== live.t.profileId || !active || (active !== id && !splitOf(s, active)?.tabIds.includes(id))) return null;
       const { t, w } = live;
       return {
         id,

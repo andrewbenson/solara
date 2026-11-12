@@ -257,7 +257,7 @@ static void (^gPinnedLinkHandler)(NSDictionary<NSString *, id> *);
 static NSMutableDictionary<NSString *, void (^)(BOOL)> *gPinnedLinkDecisions;
 static NSSet<NSString *> *gPinnedLinkSources;
 static BOOL gPinnedLinkGestureValid = NO;
-static NSMutableDictionary<NSString *, NSString *> *gPinnedLinkRouted;
+static NSMutableDictionary<NSString *, NSDictionary<NSString *, NSString *> *> *gPinnedLinkRouted;
 static NSUInteger gPinnedLinkUsedSeq = 0;
 static NSUInteger gPinnedLinkGatedSeq = 0;
 static NSPoint gPeekUpPoint;
@@ -801,6 +801,7 @@ static void ShareFromContext(NSDictionary<NSString *, id> *context, NSView *view
   SolaraCoreTab *_tab;
   BOOL _loadedOnce;
   BOOL _temporaryEmptyReported;
+  BOOL _temporaryStopped;
   BOOL _pendingUserInitiated;
   NSString *_requestedURL;
   BOOL _creating;
@@ -1805,7 +1806,7 @@ static SolaraCoreTab *StartParkedPage(NSString *url, NSString *profileName, NSSt
 }
 
 - (void)setTemporary:(BOOL)temporary {
-  if (temporary != _temporary) _temporaryEmptyReported = NO;
+  if (temporary != _temporary) _temporaryEmptyReported = _temporaryStopped = NO;
   _temporary = temporary;
   [self markTemporary];
 }
@@ -2270,6 +2271,7 @@ void SolaraCoreWebViewsSetFieldTiming(BOOL on) {
   if (![owner isEqualToString:gPinnedLinkHandlerOwner]) return;
   gPinnedLinkHandler = nil;
   gPinnedLinkHandlerOwner = nil;
+  gPinnedLinkSources = nil;
 }
 
 + (void)setPinnedLinkHandler:(void (^)(NSDictionary<NSString *, id> *))handler owner:(NSString *)owner {
@@ -2373,7 +2375,7 @@ static BOOL PinnedLinkGestureBypassed() {
     PeekTrace(@{@"event" : @"pinnedLinkAnswer", @"request" : requestId, @"app" : @(intercept), @"route" : @(route)});
     if (route) {
       gPinnedLinkUsedSeq = MAX(gPinnedLinkUsedSeq, gPinnedLinkGatedSeq);
-      gPinnedLinkRouted[requestId] = sourceId;
+      gPinnedLinkRouted[requestId] = @{@"source" : sourceId, @"owner" : gPinnedLinkHandlerOwner ?: @""};
       dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
         [gPinnedLinkRouted removeObjectForKey:requestId];
       });
@@ -2392,10 +2394,12 @@ static BOOL PinnedLinkGestureBypassed() {
 
 - (BOOL)tab:(SolaraCoreTab *)tab shouldInterceptPinnedLink:(NSDictionary<NSString *, id> *)request {
   NSString *requestId = [request[@"requestId"] isKindOfClass:NSString.class] ? request[@"requestId"] : @"";
-  NSString *sourceId = gPinnedLinkRouted[requestId];
+  NSDictionary<NSString *, NSString *> *routed = gPinnedLinkRouted[requestId];
   [gPinnedLinkRouted removeObjectForKey:requestId];
-  const BOOL take = NSThread.isMainThread && gPinnedLinkHandler && sourceId.length && !tab.closed;
-  PeekTrace(@{@"event" : @"pinnedLinkIntercepted", @"request" : requestId, @"url" : request[@"url"] ?: @"", @"source" : sourceId ?: NSNull.null, @"taken" : @(take)});
+  NSString *sourceId = routed[@"source"];
+  const BOOL sameOwner = gPinnedLinkHandlerOwner.length && [routed[@"owner"] isEqualToString:gPinnedLinkHandlerOwner];
+  const BOOL take = NSThread.isMainThread && gPinnedLinkHandler && sameOwner && sourceId.length && !tab.closed;
+  PeekTrace(@{@"event" : @"pinnedLinkIntercepted", @"request" : requestId, @"url" : request[@"url"] ?: @"", @"source" : sourceId ?: NSNull.null, @"sameOwner" : @(sameOwner), @"taken" : @(take)});
   if (!take) return NO;
   NSMutableDictionary *event = [request mutableCopy];
   event[@"sourceId"] = sourceId;
@@ -2555,7 +2559,7 @@ static BOOL PinnedLinkGestureBypassed() {
 }
 
 - (void)tabDidChangeLoading:(SolaraCoreTab *)tab {
-  if (_temporary && !tab.loading && !_temporaryEmptyReported && tab.url.length && ![tab.url hasPrefix:@"about:"] && [tab respondsToSelector:@selector(committedInitial)] && tab.committedInitial) {
+  if (_temporary && !tab.loading && !_temporaryEmptyReported && !_temporaryStopped && tab.url.length && ![tab.url hasPrefix:@"about:"] && [tab respondsToSelector:@selector(committedInitial)] && tab.committedInitial) {
     _temporaryEmptyReported = YES;
     PeekTrace(@{@"event" : @"peekEmpty", @"url" : tab.url});
     [self emit:@"downloadNavigation" payload:@{@"url" : tab.url ?: @"", @"committedUrl" : @"", @"skipped" : @NO}];
@@ -2971,6 +2975,7 @@ static NSString *LinkKeyAction(NSString *key) {
 }
 
 - (void)tab:(SolaraCoreTab *)tab didFailLoad:(NSString *)url code:(int)code description:(NSString *)text {
+  if (_temporary) PeekTrace(@{@"event" : @"peekLoadFailed", @"url" : url ?: @"", @"code" : @(code), @"stopped" : @(_temporaryStopped)});
   [self emit:@"loadError" payload:@{@"url" : url ?: @"", @"code" : @(code), @"text" : text ?: @""}];
 }
 
@@ -2991,6 +2996,7 @@ static NSString *LinkKeyAction(NSString *key) {
 }
 
 - (void)loadURL:(NSString *)url userInitiated:(BOOL)userInitiated {
+  _temporaryStopped = NO;
   if (!url.length) return;
   NSString *transferred = _transferredURL;
   _transferredURL = nil;
@@ -3053,6 +3059,7 @@ static NSString *LinkKeyAction(NSString *key) {
 }
 
 - (void)stopLoading {
+  if (_temporary && _tab.loading) _temporaryStopped = YES;
   [_tab stop];
 }
 
@@ -3344,7 +3351,9 @@ static NSString *LinkKeyAction(NSString *key) {
   solaracore_host::NoteNavigationDownload(url, _profile);
   if (_requestedURL && ![_requestedURL isEqualToString:url]) solaracore_host::NoteNavigationDownload(_requestedURL, _profile);
   _requestedURL = nil;
-  [self emit:@"downloadNavigation" payload:@{@"url" : url ?: @"", @"committedUrl" : tab.url ?: @"", @"skipped" : @NO}];
+  const BOOL nothingCommitted = [tab respondsToSelector:@selector(committedInitial)] && tab.committedInitial;
+  if (_temporary && nothingCommitted) _temporaryEmptyReported = YES;
+  [self emit:@"downloadNavigation" payload:@{@"url" : url ?: @"", @"committedUrl" : _temporary && nothingCommitted ? @"" : tab.url ?: @"", @"skipped" : @NO}];
 }
 
 - (NSArray<NSDictionary<NSString *, NSString *> *> *)tab:(SolaraCoreTab *)tab

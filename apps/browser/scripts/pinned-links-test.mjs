@@ -15,7 +15,7 @@ noopener links peek; downloads, prevented clicks and script navigations keep Chr
 the same page; closing a Peek records nothing; the New tab and Little Solara choices; closing the pinned tab or its
 window while a Peek is open or a link is parked leaves no tab behind and no crash; with SOLARA_PEEK_STRICT a click
 without a native mouse-up is not routed; a page with a beforeunload handler (observed: whether it asks before a link that
-opens in a Peek). Groups: main, lifetimes, strict, beforeunload.`);
+opens in a Peek). Groups: main, lifetimes, beforeunload, split, strict.`);
   process.exit(2);
 }
 const evidence = resolve(process.argv[3] ?? ".pinned-links-evidence");
@@ -83,7 +83,7 @@ const state = (instance) => instance.eval(`const s = ac.store.getState();
 const pagesAt = async (instance, prefix) => (await instance.targets()).filter((t) => t.type === "page" && t.url.startsWith(prefix));
 
 async function click(instance, id, { from = source } = {}) {
-  const page = await instance.page((t) => t.url.startsWith(from));
+  const page = await instance.page(typeof from === "function" ? from : (t) => t.url.startsWith(from));
   try {
     const rect = await page.eval(`(() => { const r = document.getElementById(${JSON.stringify(id)}).getBoundingClientRect(); return { x: r.left + 10, y: r.top + r.height / 2 }; })()`);
     for (const type of ["mousePressed", "mouseReleased"])
@@ -229,6 +229,16 @@ const groups = {
         assert(s.peeks?.w1, "the Peek is still open after its page loaded");
         await closePeek(instance);
         return r;
+      });
+      out["Stop before the first commit keeps the Peek"] = await check(async () => {
+        await click(instance, "slow");
+        const peek = await until("the slow link opens a Peek", () => peekOf(instance, "/slow"));
+        await sleep(800);
+        await instance.eval(`return ac.webviews.get(${JSON.stringify(peek.tabId)})?.stopLoading().then(() => true);`);
+        await sleep(6500);
+        assert((await state(instance)).peeks?.w1?.tabId === peek.tabId, "the Peek stays after Stop");
+        await closePeek(instance);
+        return true;
       });
       out["a download from inside a Peek downloads and the Peek stays"] = await check(async () => {
         await peeks(instance, "peekdl", "/peekdl");
@@ -400,6 +410,30 @@ const groups = {
     return out;
   },
 
+  async split() {
+    const instance = await start("split", {}, {
+      splits: [{ id: "sp", windowId: "w1", tabIds: ["pin", "plain"], orientation: "horizontal", sizes: [0.5, 0.5] }],
+      activeTabIds: { default: "plain" },
+    });
+    const out = {};
+    try {
+      out["a pinned tab's link peeks from the split pane that isn't the active one"] = await check(async () => {
+        const s0 = await state(instance);
+        const inSplit = await instance.eval(`return Object.values(ac.store.getState().splits).map((v) => v.tabIds);`);
+        if (!JSON.stringify(inSplit).includes("pin")) return { skipped: `the session's split didn't hold the pinned tab: ${JSON.stringify(inSplit)}` };
+        assert.equal(s0.windows.w1.active, "plain", "the other pane is active");
+        await until("both panes' pages are up", async () => (await pagesAt(instance, source)).length >= 2, 15000);
+        await click(instance, "out", { from: (t) => t.url === source });
+        const peek = await until("the pinned pane's link opens a Peek", async () => { const s = await state(instance); return s.peeks?.w1?.sourceId === "pin" ? s.peeks.w1 : null; });
+        assert.equal((await state(instance)).tabs.pin.url, source);
+        return { peek, split: inSplit };
+      });
+    } finally {
+      await stop(instance, "split", out);
+    }
+    return out;
+  },
+
   async strict() {
     const instance = await start("strict", { SOLARA_PEEK_STRICT: "1" });
     const out = {};
@@ -454,20 +488,21 @@ async function check(run) {
   }
 }
 
-async function start(name, env = {}) {
+async function start(name, env = {}, layout = {}) {
   const downloads = join(evidence, name, "downloads");
   mkdirSync(downloads, { recursive: true });
   const instance = await launch(app, {
     data: join(evidence, name, "data"),
     env: { SOLARA_DOWNLOADS_DIR: downloads, ...env },
     session: session({
-      windows: [{ id: "w1", frame: [80, 80, 1100, 760], activeTabIds: { default: "pin" } }],
+      windows: [{ id: "w1", frame: [80, 80, 1100, 760], activeTabIds: layout.activeTabIds ?? { default: "pin" } }],
       tabs: [
         { id: "pin", windowId: "w1", url: source, title: "Source", pinned: true },
-        { id: "row", windowId: "w1", url: source, title: "Source row", pinned: true, pinnedAsRow: true },
-        { id: "plain", windowId: "w1", url: source, title: "Source plain" },
+        { id: "row", windowId: "w1", url: layout.splits ? `${source}?row` : source, title: "Source row", pinned: true, pinnedAsRow: true },
+        { id: "plain", windowId: "w1", url: layout.splits ? `${source}?plain` : source, title: "Source plain" },
       ],
       settings: { warnBeforeClosingLastTab: false, warnBeforeClosingWindow: false, warnBeforeQuitting: false },
+      ...(layout.splits ? { splits: layout.splits } : {}),
     }),
   });
   await instance.ready();

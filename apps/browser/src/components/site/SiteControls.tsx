@@ -1,5 +1,6 @@
 import {
   getContentBlocker,
+  getWebKitContentBlocker,
   getSiteSettings,
   getWebKitSiteSettings,
   setWebKitSiteSetting,
@@ -56,7 +57,7 @@ const choiceTitle = (type: SiteSettingType, value: SiteSettingValue) =>
   type === "sound" ? (value === "block" ? "Muted" : "Allowed") : value === "allow" ? "Allowed" : value === "block" ? "Blocked" : "Ask";
 
 type Expanded = "connection" | "more" | null;
-type Blocker = { enabled: boolean; allowed: boolean };
+type Blocker = { enabled: boolean; allowed: boolean; ready?: boolean; preparing?: boolean; error?: string | null; unsupportedLists?: string[] };
 
 function originOf(url: string): string | null {
   try {
@@ -147,10 +148,18 @@ function SiteControlsPanel({
       setSettings(s);
       setFeatured((f) => f ?? featuredPermissions(tabId, s, permissionList));
     });
-    void Promise.all([getContentBlocker(), isContentBlockerAllowed(host)]).then(([state, allowed]) => live && setBlocker({ enabled: state.enabled, allowed }));
+    const readBlocker = async () => {
+      const state = webkitPage
+        ? await getWebKitContentBlocker(host)
+        : await Promise.all([getContentBlocker(), isContentBlockerAllowed(host)]).then(([value, allowed]) => ({ enabled: value.enabled, allowed }));
+      if (live) setBlocker(state);
+    };
+    void readBlocker().catch(() => live && setBlocker({ enabled: false, allowed: false, error: "Unavailable" }));
+    const refresh = webkitPage ? setInterval(() => void readBlocker().catch(() => {}), 1000) : undefined;
     void webviews.get(tabId)?.getSecurityInfo().then((info) => live && info && patchPage(tabId, { security: info }));
     return () => {
       live = false;
+      if (refresh) clearInterval(refresh);
     };
   }, [origin, profile, webkitPage]);
 
@@ -172,8 +181,11 @@ function SiteControlsPanel({
   };
   const toggleBlocker = async (on: boolean) => {
     const failed = await setContentBlockerAllowed(host, !on).then(() => false, () => true);
-    const allowed = await isContentBlockerAllowed(host);
-    setBlocker((b) => (b ? { ...b, allowed } : b));
+    if (webkitPage) setBlocker(await getWebKitContentBlocker(host));
+    else {
+      const allowed = await isContentBlockerAllowed(host);
+      setBlocker((b) => (b ? { ...b, allowed } : b));
+    }
     if (failed) return showToast(tab.windowId, "Couldn't Change the Ad Blocker", `Blocking on ${host} is as it was. Try again.`, { icon: "exclamationmark.triangle" });
     void webviews.get(tabId)?.reload();
   };
@@ -260,17 +272,21 @@ function SiteControlsPanel({
     ) : null,
   ].filter(Boolean);
 
-  const blockerValue = pageEngine === "webkit"
-    ? "Chromium only for now"
-    : !blocker
+  const blockerValue = !blocker
     ? "…"
-    : !blocker.enabled
+    : blocker.preparing
+      ? "Preparing…"
+      : blocker.error
+        ? "Unavailable · reload to retry"
+        : webkitPage && !blocker.ready
+          ? "Preparing…"
+          : !blocker.enabled
       ? "Off in Settings"
       : blocker.allowed
         ? "Off for this site"
-        : blocked > 0
+        : pageEngine !== "webkit" && blocked > 0
           ? `On · ${blocked} blocked on this page`
-          : "On";
+          : webkitPage && blocker.unsupportedLists?.length ? "On · some lists unavailable" : "On";
   const shownPermissions = featured ? permissionList.filter((p) => featured.has(p.type)) : [];
   const otherPermissions = permissionList.filter((p) => !featured?.has(p.type));
   const value = (p: Permission) => (settings ? choiceTitle(p.type, settings[p.type]?.value ?? "ask") : "…");
@@ -290,9 +306,9 @@ function SiteControlsPanel({
               icon="shield.lefthalf.filled"
               title="Block Ads & Trackers"
               value={blockerValue}
-              on={pageEngine !== "webkit" && !!blocker?.enabled && !blocker.allowed}
+              on={!!blocker?.enabled && !blocker.allowed && !blocker.preparing && !blocker.error}
               onPress={
-                !blocker || pageEngine === "webkit"
+                !blocker || blocker.preparing || !!blocker.error || (webkitPage && !blocker.ready)
                   ? undefined
                   : blocker.enabled
                     ? () => void toggleBlocker(blocker.allowed)

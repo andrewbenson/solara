@@ -13,6 +13,7 @@ enum SettingsDev {
   private static var awaiting: (pane: String, asked: Date, done: (String) -> Void)?
   static private(set) var lastSwitch: [String: Any]?
   #if DEBUG
+  private static var filterListChange: [String: Any] = [:]
   private static var pairingFixtureHost: SyncPairingFixtureHost?
 
   static func destroyPairingFixture() {
@@ -169,6 +170,22 @@ enum SettingsDev {
     case "sendFeedback":
       NativeAppIntegration.shared.sendFeedback(argument)
     #if DEBUG
+    case "filterList":
+      let env = ProcessInfo.processInfo.environment
+      guard env["SOLARA_BACKGROUND"] == "1", env["SOLARA_DATA_DIR"]?.isEmpty == false else { return #"{"error":"test instances only"}"# }
+      guard let data = argument?.data(using: .utf8),
+        let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+        let id = body["id"] as? String, let on = body["on"] as? Bool,
+        let model = NativeSettingsWindow.makeContext()?.panes[.privacy] as? PrivacyPaneModel
+      else { return #"{"error":"invalid filter list action or no privacy model"}"# }
+      filterListChange = ["id": id, "on": on, "pending": true]
+      Task {
+        let applied = await model.devSetFilterList(id, on: on)
+        filterListChange = ["id": id, "on": on, "pending": false, "applied": applied]
+      }
+      return json(filterListChange)
+    case "filterListResult":
+      return json(filterListChange)
     case "pairingFixture":
       guard SettingsDevActionAdmission.admits(action, environment: ProcessInfo.processInfo.environment) else {
         destroyPairingFixture()

@@ -1,4 +1,4 @@
-import { cancelDownload, endWebKitPrivateSession, leftDownloadStaging, removeLeftDownloadStaging, type Download } from "@solara/solaracore";
+import { cancelDownload, endWebKitPrivateSession, leftDownloadStaging, prepareWebKitContentBlocker, removeLeftDownloadStaging, type Download } from "@solara/solaracore";
 import { readDocumentResult, writeDocument, type DocumentRead } from "@solara/shell";
 import { showNotice, showToast } from "../components/layout/toasts";
 import { persistenceRefused, refusePersistence } from "./persistLatch";
@@ -9,6 +9,7 @@ import { launchBackdrop, type LaunchBackdrop } from "./launchBackdrop";
 import { restoreLaunchLook, saveLaunchLook } from "./launchLook";
 import { parkWindowPins } from "../store/parkedPins";
 import { isPeekTab } from "../store/peek";
+import { tabEngine } from "../store/engines";
 import type { BrowserWindow, ClosedTab, Tab } from "../store/types";
 import { downloadSession } from "../store/ui";
 import { startFavicons } from "./favicons";
@@ -256,6 +257,11 @@ export function resumePersistence() {
   resume();
 }
 
+function prepareWebKitBlocker() {
+  const s = useBrowser.getState();
+  if (Object.keys(s.tabs).some((id) => tabEngine(s, id) === "webkit")) void prepareWebKitContentBlocker().catch(() => {});
+}
+
 export function startPersistence() {
   const store = startNativeStore();
   if (dataFolderHandedOff()) {
@@ -269,7 +275,10 @@ export function startPersistence() {
   if (nativeOwnsWorkspace()) {
     if (!hydrateFromNative(useBrowser)) return failClosed();
     attachReplica(useBrowser);
-    if (!nativeSafeMode()) restoreLaunchLook();
+    if (!nativeSafeMode()) {
+      restoreLaunchLook();
+      prepareWebKitBlocker();
+    }
     cleanStaging(useBrowser.getState().downloads);
     tellSafeModeAfterFailedLaunches();
     return startDerivedServices({ forgetsIncognito: false });
@@ -294,7 +303,10 @@ export function startPersistence() {
     adoptRepairs(useBrowser.getState(), owned);
     cleanStaging(useBrowser.getState().downloads);
   }
-  if (!nativeSafeMode()) restoreLaunchLook();
+  if (!nativeSafeMode()) {
+    restoreLaunchLook();
+    prepareWebKitBlocker();
+  }
   tellSafeModeAfterFailedLaunches();
 
   const lastSources = new Map<string, unknown[]>();

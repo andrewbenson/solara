@@ -727,6 +727,7 @@ NSString *const kState =
      "    cosmeticFilters: l.cosmeticFilterCount || 0,"
      "    enabled: !t.whitelist.includes(offDirective),"
      "    allowedHosts: t.whitelist.filter((d) => !d.includes('/') && !d.startsWith('#') && !(t.whitelistDefault || []).includes(d)),"
+     "    trustedDirectives: t.whitelist.filter((d) => d.includes('/') && d !== offDirective && !d.startsWith('#') && !(t.whitelistDefault || []).includes(d)),"
      "  };"
      "})";
 
@@ -756,12 +757,16 @@ void State(void (^completion)(NSDictionary *state)) {
     NSMutableArray *allowed = [NSMutableArray array];
     for (NSString *host in [read[@"allowedHosts"] isKindOfClass:NSArray.class] ? read[@"allowedHosts"] : @[])
       if ([host isKindOfClass:NSString.class]) [allowed addObject:host];
+    NSMutableArray *directives = [NSMutableArray array];
+    for (NSString *directive in [read[@"trustedDirectives"] isKindOfClass:NSArray.class] ? read[@"trustedDirectives"] : @[])
+      if ([directive isKindOfClass:NSString.class]) [directives addObject:directive];
     const BOOL on = [read[@"enabled"] boolValue];
     completion(@{
       @"enabled" : @(on),
       @"version" : BundledVersion(),
       @"lists" : lists,
       @"allowedHosts" : allowed,
+      @"trustedDirectives" : directives,
       @"stats" : @{
         @"ready" : @YES, @"enabled" : @(on), @"networkFilters" : @(Count(read[@"networkFilters"])),
         @"cosmeticFilters" : @(Count(read[@"cosmeticFilters"])), @"parseMs" : @0, @"lookups" : @0,
@@ -778,8 +783,8 @@ void Changed(NSString *error, void (^completion)(NSString *error)) {
     State(^(NSDictionary *state) {
       if (SolaraCoreHost.eventHandler) SolaraCoreHost.eventHandler(@"contentBlocker", state[@"stats"]);
       [NSNotificationCenter.defaultCenter postNotificationName:@"SolaraCoreContentBlockerChanged" object:nil];
+      completion(followError);
     });
-    completion(followError);
   });
 }
 

@@ -26,3 +26,10 @@ enum SolaraCoreFavicons {
     Issue.record("Unexpected favicon fetch: \(url)")
   }
 }
+
+@MainActor
+enum SolaraCoreContentBlocker {
+  static func state(_ completion: @escaping ([String: Any]) -> Void) {
+    Issue.record("Unexpected content blocker settings fetch")
+  }
+}

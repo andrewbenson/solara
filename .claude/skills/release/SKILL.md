@@ -174,6 +174,18 @@ pinned `UBO_VERSION` followed by ubo.sh's patch level as a fourth part (`1.75.0.
 scriptlets when that version changes, so our patches reach existing profiles), and the smoke test's "uBlock blocks an ad script" check passes. An error means
 the release is odd (no digest, a version mismatch): keep the old pin and say so in the report.
 
+WebKit tabs block with uBlock Origin Lite's lists, converted to WebKit content rules at build time. Move their pin the same way:
+
+```bash
+scripts/update-ubol.sh    # "uBOL <x> is the latest release", or "uBOL <old> -> <new> (sha256 …)"
+git add packages/solaracore/scripts/ubol-converter.mjs && git commit -m "WebKit content blocker: uBlock Origin Lite <new>"   # only if it moved
+```
+
+Every move recompiles the WebKit rules once per user after the update (about 35 s on the Hill Studio); WebKit pages wait at
+most 2 s once it has started, load unblocked meanwhile, and are blocked from the next navigation once it finishes.
+Verify after release.sh that `dist/<version>/export/Solara.app/Contents/Resources/WebKitBlocker/manifest.json` has the
+pinned version (`node packages/solaracore/scripts/ubol-verify.mjs` on that folder exits 0).
+
 ```bash
 sed -i '' 's/MARKETING_VERSION = <previous>;/MARKETING_VERSION = <version>;/; s/CURRENT_PROJECT_VERSION = <n>;/CURRENT_PROJECT_VERSION = <n+1>;/' \
   apps/browser/macos/Solara.xcodeproj/project.pbxproj

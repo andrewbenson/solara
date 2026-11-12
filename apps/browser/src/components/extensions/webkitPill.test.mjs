@@ -11,7 +11,7 @@ test("a WebKit page swaps every toolbar extension, cast included, for the WebKit
   assert.equal(pill.label, "WebKit");
   assert.equal(pill.icon, "safari");
   assert.equal(pill.info.title, "This page is open in WebKit");
-  assert.match(pill.info.message, /^Extensions, the ad blocker, password autofill and casting don't run here\.$/);
+  assert.match(pill.info.message, /^Extensions, password autofill and casting don't run here\.$/);
   assert.equal(pill.info.action, "Open Page in Chromium");
   assert.equal(pill.info.actionId, WEBKIT_PILL_ACTION);
   assert.equal(pageExtensionsWidth("webkit", 0), WEBKIT_PILL_WIDTH);

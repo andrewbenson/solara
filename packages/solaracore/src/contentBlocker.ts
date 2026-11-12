@@ -31,6 +31,17 @@ export type ContentBlockerState = {
   stats: ContentBlockerStats;
 };
 
+export type WebKitContentBlockerState = {
+  enabled: boolean;
+  allowed: boolean;
+  ready: boolean;
+  preparing: boolean;
+  error: string | null;
+  appliedGroups: string[];
+  unsupportedLists: string[];
+};
+
+export const getWebKitContentBlocker = (host: string) => Cef.getWebKitContentBlocker(host);
 export const getContentBlocker = () => Cef.getContentBlocker();
 export const setContentBlockerEnabled = (enabled: boolean) => Cef.setContentBlockerEnabled(enabled);
 export const setFilterListEnabled = (id: string, enabled: boolean) => Cef.setFilterListEnabled(id, enabled);

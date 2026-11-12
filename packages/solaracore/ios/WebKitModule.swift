@@ -12,6 +12,7 @@ public class WebKitModule: Module {
       WebKitHub.shared.events = { [weak self] name, payload in self?.sendEvent(name, payload) }
     }
 
+    AsyncFunction("prepareContentBlocker") { MainActor.assumeIsolated { WebKitHub.shared.contentBlocker.start() } }.runOnQueue(.main)
     Function("prepareTransfer") { (key: String) in WebKitHub.shared.prepareTransfer(key) }
     Function("releaseTransfer") { (key: String) in WebKitHub.shared.releaseTransfer(key) }
     AsyncFunction("resolvePermission") { (id: String, result: String, remember: Bool?) in

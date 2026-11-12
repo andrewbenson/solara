@@ -344,6 +344,8 @@ if [ "$phase" != sign ]; then
   echo "==> Content blocker"
   "$solaracore/scripts/ubo.sh"
   [ -f "$solaracore/vendor/ubo/ext/manifest.json" ] || die "uBlock Origin isn't installed ($solaracore/scripts/ubo.sh)"
+  "$solaracore/scripts/ubol.sh"
+  [ -f "$solaracore/vendor/ubol/bundle/manifest.json" ] || die "uBlock Origin Lite's WebKit lists aren't installed ($solaracore/scripts/ubol.sh)"
 
   if [ "$unsigned" = 1 ] || [ -n "$provisioning_profile" ] || [ "$phase" = build ]; then
     archive_signing=(-xcconfig macos/AdHoc.xcconfig)

@@ -276,6 +276,16 @@ public final class PrivacyPaneModel: SettingsPaneProvider {
     await reloadBlocker()
   }
 
+  #if DEBUG
+  public func devSetFilterList(_ id: String, on: Bool) async -> Bool {
+    await reloadBlocker()
+    guard let list = blocker?.lists.first(where: { $0.id == id }) else { return false }
+    sheet = .filterLists
+    await setList(list, on: on)
+    return blocker?.lists.first(where: { $0.id == id })?.enabled == on
+  }
+  #endif
+
   func blockAgain(_ host: String) async {
     try? await services.setContentBlockerAllowed(host: host, allowed: false)
     await reloadBlocker()

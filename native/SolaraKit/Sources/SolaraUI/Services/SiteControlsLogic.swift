@@ -237,9 +237,12 @@ public enum SiteControlsLogic {
       let enabled = blocker?["enabled"]?.bool == true
       let allowed = blocker?["allowed"]?.bool == true
       let blocked = c["blocked"]?.int ?? 0
-      let blockerValue = webkit ? "Chromium only for now" : blocker == nil ? "…" : !enabled ? "Off in Settings" : allowed ? "Off for this site" : blocked > 0 ? "On · \(blocked) blocked on this page" : "On"
+      let unavailable = webkit && blocker?["error"]?.string != nil
+      let partial = webkit && blocker?["unsupportedLists"]?.array?.isEmpty == false
+      let preparing = webkit && blocker?["preparing"]?.bool == true
+      let blockerValue = unavailable ? "Unavailable · reload to retry" : preparing ? "Preparing…" : webkit && blocker?["ready"]?.bool != true ? "Preparing…" : blocker == nil ? "…" : !enabled ? "Off in Settings" : allowed ? "Off for this site" : !webkit && blocked > 0 ? "On · \(blocked) blocked on this page" : partial ? "On · some lists unavailable" : "On"
       items.append(["kind": "section", "title": "Settings", "tight": true])
-      items.append(setting("blocker", "shield.lefthalf.filled", "Block Ads & Trackers", blockerValue, !webkit && enabled && !allowed, !webkit && blocker != nil))
+      items.append(setting("blocker", "shield.lefthalf.filled", "Block Ads & Trackers", blockerValue, enabled && !allowed && !unavailable && !preparing, blocker != nil && !unavailable && !preparing && (!webkit || blocker?["ready"]?.bool == true)))
       let developer = developerEnabled(context: c)
       items.append(setting("developer", "hammer.fill", "Developer Mode", developer ? "On" : "Off", developer, c["privatePage"]?.bool != true && developerHost(url) != nil))
       let opensIn = c["privatePage"]?.bool == true ? engineName(engine) : c["engineRule"]?.string.map(engineName) ?? recommendedTitle(c)

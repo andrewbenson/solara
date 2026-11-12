@@ -4,7 +4,7 @@ import Testing
 
 @MainActor
 struct ToolbarWebKitPillTests {
-  static let pill = #"{"id":"webkit","icon":"safari","label":"WebKit","size":12,"box":24,"tooltip":"This page is open in WebKit","info":{"title":"This page is open in WebKit","message":"Extensions, the ad blocker, password autofill and casting don't run here.","action":"Open Page in Chromium","actionId":"webkit:openInChromium"}}"#
+  static let pill = #"{"id":"webkit","icon":"safari","label":"WebKit","size":12,"box":24,"tooltip":"This page is open in WebKit","info":{"title":"This page is open in WebKit","message":"Extensions, password autofill and casting don't run here.","action":"Open Page in Chromium","actionId":"webkit:openInChromium"}}"#
   static let palette = ##"{"text":"#000000CC","secondary":"#00000080","icon":"#000000D4","iconDisabled":"#0000006E","hover":"#0000000F","pressed":"#0000001A","pill":"#0000000A","divider":"#0000001A"}"##
 
   static func state(extensions: String) -> ToolbarState {
@@ -83,7 +83,7 @@ struct ToolbarWebKitPillTests {
     let content = ToolbarInfoContent(info: info) {}
     _ = content.view
     #expect(content.titleField.stringValue == "This page is open in WebKit")
-    #expect(content.messageField.stringValue.contains("Extensions, the ad blocker, password autofill and casting"))
+    #expect(content.messageField.stringValue.contains("Extensions, password autofill and casting"))
     #expect(content.button.title == "Open Page in Chromium")
     #expect(content.preferredContentSize.width == ToolbarInfoPopover.width)
   }

@@ -197,7 +197,7 @@ struct FilterListsSheet: View {
       .formStyle(.grouped)
       .frame(height: 420)
       PrivacySheetFooter(
-        note: (model.blocker?.version).flatMap { $0.isEmpty ? nil : "Blocking by uBlock Origin \($0), included with \(app). Its lists update on their own." } ?? ""
+        note: (model.blocker?.version).flatMap { $0.isEmpty ? nil : "Blocking by uBlock Origin \($0), included with \(app). Chromium lists update automatically. WebKit lists update with \(app)." } ?? ""
       ) { dismiss() }
     }
     .frame(width: 500)

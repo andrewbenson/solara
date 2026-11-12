@@ -632,13 +632,24 @@ final class WebKitTab: NSView, WKNavigationDelegate, WKUIDelegate {
       }
       if flags.contains(.option) { return decisionHandler(.download) }
     }
-    decisionHandler(action.shouldPerformDownload ? .download : .allow)
+    WebKitHub.shared.contentBlocker.prepare(webView.configuration.userContentController, url: action.targetFrame?.isMainFrame == true && !action.shouldPerformDownload ? url : nil) { [weak self, weak webView] error in
+      guard let self, let webView, self.webView === webView, !self.closed else { return decisionHandler(.cancel) }
+      if let error {
+        decisionHandler(.cancel)
+        NSLog("[webkit-blocker] navigation blocked: %@", error.localizedDescription)
+        self.emit("loadError", ["url": url.absoluteString, "code": NSURLErrorCannotLoadFromNetwork, "text": error.localizedDescription])
+        return
+      }
+      decisionHandler(action.shouldPerformDownload ? .download : .allow)
+    }
   }
 
   func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
     let disposition = (response.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Disposition")?.lowercased() ?? ""
     let attachment = disposition.hasPrefix("attachment")
-    decisionHandler(!response.canShowMIMEType || (attachment && response.isForMainFrame) ? .download : .allow)
+    let download = !response.canShowMIMEType || (attachment && response.isForMainFrame)
+    if response.isForMainFrame { WebKitHub.shared.contentBlocker.sync(webView, url: download ? webView.backForwardList.currentItem?.url : response.response.url) }
+    decisionHandler(download ? .download : .allow)
   }
 
   func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
@@ -656,6 +667,7 @@ final class WebKitTab: NSView, WKNavigationDelegate, WKUIDelegate {
   }
 
   func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+    WebKitHub.shared.contentBlocker.sync(webView, url: webView.backForwardList.currentItem?.url ?? webView.url)
     if !showingError { errorURL = nil }
     playingFrames.removeAll()
     mediaFrames.removeAll()
@@ -682,6 +694,7 @@ final class WebKitTab: NSView, WKNavigationDelegate, WKUIDelegate {
   }
 
   func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+    WebKitHub.shared.contentBlocker.sync(webView, url: webView.backForwardList.currentItem?.url)
     failed(webView, error)
   }
 
@@ -721,7 +734,10 @@ final class WebKitTab: NSView, WKNavigationDelegate, WKUIDelegate {
 
   func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for action: WKNavigationAction,
                windowFeatures: WKWindowFeatures) -> WKWebView? {
+    configuration.userContentController = WebKitHub.shared.makeUserContentController()
     let child = SolaraWKWebView(frame: .zero, configuration: configuration)
+    child.navigationDelegate = WebKitHub.shared.contentBlocker
+    WebKitHub.shared.contentBlocker.bind(child)
     let id = WebKitHub.shared.offer(child)
     let flags = action.modifierFlags
     let popup = windowFeatures.width != nil || windowFeatures.height != nil

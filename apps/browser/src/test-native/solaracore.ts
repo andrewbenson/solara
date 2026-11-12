@@ -300,6 +300,7 @@ const cef: Modules["SolaraCEF"] = {
   engineCall,
   releaseProfile: () => Promise.resolve(),
   deleteProfileData: (profile) => (deletedProfileData.push(profile), Promise.resolve({ remaining: profileDataLeft.get(profile) ?? [] })),
+  getWebKitContentBlocker: () => unfaked("SolaraCEF", "getWebKitContentBlocker"),
   getContentBlocker: () => unfaked("SolaraCEF", "getContentBlocker"),
   setContentBlockerEnabled: () => Promise.resolve(),
   setFilterListEnabled: () => Promise.resolve(),

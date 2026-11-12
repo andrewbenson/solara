@@ -13,7 +13,7 @@ export const webkitPill = () => ({
   tooltip: `This page is open in ${ENGINE_NAMES.webkit}`,
   info: {
     title: `This page is open in ${ENGINE_NAMES.webkit}`,
-    message: "Extensions, the ad blocker, password autofill and casting don't run here.",
+    message: "Extensions, password autofill and casting don't run here.",
     action: openPageInTitle("chromium"),
     actionId: WEBKIT_PILL_ACTION,
   },

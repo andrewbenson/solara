@@ -500,8 +500,8 @@ public struct SettingsIndex: Sendable {
           Row(
             key: "recommendedDefault",
             title: "Use Recommended Default",
-            description: "Chromium runs extensions and the ad blocker. Sites that need protected video can still open in WebKit.",
-            caption: "Chromium runs extensions and the ad blocker.",
+            description: "Chromium runs extensions. Both engines follow the ad blocking settings. Sites that need protected video can still open in WebKit.",
+            caption: "Chromium runs extensions. Both engines follow the ad blocking settings.",
             keywords: ["reset", "recommended", "chromium"]
           ),
           Row(
@@ -531,8 +531,9 @@ public struct SettingsIndex: Sendable {
           ),
           Row(
             key: "chromiumOnly",
-            title: "Extensions and ad blocking are Chromium only",
-            description: "WebKit pages run without extensions or the ad blocker for now.",
+            title: "Extensions are Chromium only",
+            description: "WebKit blocks ads and trackers using the shared blocking settings. Browser extensions run in Chromium.",
+            caption: "Both engines block ads and trackers. Extensions run in Chromium.",
             keywords: ["extensions", "ad blocker", "ublock", "content blocker"]
           ),
           Row(

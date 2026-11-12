@@ -98,7 +98,7 @@ try {
     await run(`return click(${Math.round(x + w / 2)}, ${Math.round(y + h / 2)});`);
     const shown = await until("the popover", `return bar();`, (b) => b?.infoPopover?.title, 5000);
     const p = shown.infoPopover;
-    if (p.title !== "This page is open in WebKit" || !/^Extensions, the ad blocker, password autofill and casting don't run here\.$/.test(p.message) || p.action !== "Open Page in Chromium")
+    if (p.title !== "This page is open in WebKit" || !/^Extensions, password autofill and casting don't run here\.$/.test(p.message) || p.action !== "Open Page in Chromium")
       throw new Error(JSON.stringify(p));
     return p;
   });

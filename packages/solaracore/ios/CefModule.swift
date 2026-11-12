@@ -134,6 +134,9 @@ public class CefModule: Module {
     AsyncFunction("videoUpscalingState") { SolaraCoreWebView.videoUpscalingState() }.runOnQueue(.main)
     AsyncFunction("displayMediaSources") { SolaraCoreHost.displayMediaSources }.runOnQueue(.main)
     AsyncFunction("listTasks") { (promise: Promise) in SolaraCoreServices.tasks { promise.resolve($0) } }.runOnQueue(.main)
+    AsyncFunction("getWebKitContentBlocker") { (host: String) -> [String: Any] in
+      MainActor.assumeIsolated { SolaraCoreSiteControlsBridge.webKitBlockerStatus(host: host) }
+    }.runOnQueue(.main)
     AsyncFunction("systemState") { SystemState.shared.snapshot }.runOnQueue(.main)
     Function("inputIdleSeconds") { () -> Double in
       guard NSRunningApplication.current.isActive else { return 3600 }
@@ -170,6 +173,11 @@ public class CefModule: Module {
       SolaraCoreFavicons.fetch(url, profile: profile, name: nil) { promise.resolve($0) }
     }.runOnQueue(.main)
     #if DEBUG
+    AsyncFunction("devWebKitBlockerStatus") { (host: String) -> [String: Any] in
+      let environment = ProcessInfo.processInfo.environment
+      guard environment["SOLARA_BACKGROUND"] == "1", !(environment["SOLARA_DATA_DIR"] ?? "").isEmpty else { return [:] }
+      return MainActor.assumeIsolated { SolaraCoreSiteControlsBridge.webKitBlockerStatus(host: host) }
+    }.runOnQueue(.main)
     AsyncFunction("devCanonicalBookmarkURL") { (draftJSON: String) -> [String: Any] in
       let environment = ProcessInfo.processInfo.environment
       guard environment["SOLARA_BACKGROUND"] == "1", !(environment["SOLARA_DATA_DIR"] ?? "").isEmpty else {

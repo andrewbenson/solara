@@ -19,6 +19,7 @@ final class NativeSiteControls {
   var translate: NativeSiteControlsContribution? { didSet { refresh() } }
   private var menus: [WeakSiteMenu] = []
   private var started = false
+  private var blockerObserver: NSObjectProtocol?
 
   private init() {}
 
@@ -30,6 +31,9 @@ final class NativeSiteControls {
       return
     }
     started = true
+    blockerObserver = NotificationCenter.default.addObserver(forName: Notification.Name("SolaraWebKitContentBlockerApplied"), object: nil, queue: .main) { [weak self] _ in
+      Task { @MainActor in self?.refreshBlockerStatus() }
+    }
     store.subscribe { _ in Task { @MainActor in NativeSiteControls.shared.refresh() } }
     refresh()
   }
@@ -37,6 +41,11 @@ final class NativeSiteControls {
   func register(_ menu: NativeSiteMenu) {
     menus.append(WeakSiteMenu(menu))
     startWhenReady()
+  }
+
+  private func refreshBlockerStatus() {
+    menus.removeAll { $0.value == nil }
+    for menu in menus { menu.value?.refreshBlockerStatus() }
   }
 
   func refresh() {
@@ -151,11 +160,23 @@ final class NativeSiteMenu {
     render()
   }
 
+  func refreshBlockerStatus() {
+    guard !closed, context["pageEngine"] == "webkit" else { return }
+    let host = SiteControlsLogic.host(context["url"]?.string ?? "")
+    blocker = NativeSiteControls.json(SolaraCoreSiteControlsBridge.webKitBlockerStatus(host: host))
+    render()
+  }
+
   private func readBlocker(_ c: JSONValue, token: Int) async {
     let host = SiteControlsLogic.host(c["url"]?.string ?? "")
-    let state = await EngineCalls.result({ done in SolaraCoreContentBlocker.state(done) }, NativeSiteControls.json)
-    let allowed = await EngineCalls.result({ done in SolaraCoreContentBlocker.isAllowed(host: host) { done(["allowed": $0]) } }, { $0["allowed"] as? Bool == true })
-    let result: JSONValue = ["enabled": .bool(state["enabled"]?.bool == true), "allowed": .bool(allowed)]
+    let result: JSONValue
+    if c["pageEngine"] == "webkit" {
+      result = NativeSiteControls.json(SolaraCoreSiteControlsBridge.webKitBlockerStatus(host: host))
+    } else {
+      let state = await EngineCalls.result({ done in SolaraCoreContentBlocker.state(done) }, NativeSiteControls.json)
+      let allowed = await EngineCalls.result({ done in SolaraCoreContentBlocker.isAllowed(host: host) { done(["allowed": $0]) } }, { $0["allowed"] as? Bool == true })
+      result = ["enabled": .bool(state["enabled"]?.bool == true), "allowed": .bool(allowed)]
+    }
     guard session.accepts(token: token) else { return }
     blocker = result
     render()
@@ -265,7 +286,7 @@ final class NativeSiteMenu {
   }
 
   private func toggleBlocker() async {
-    guard context["pageEngine"] != "webkit", let blocker else { return }
+    guard let blocker else { return }
     if blocker["enabled"]?.bool != true {
       let captured = context
       dismiss()
@@ -280,7 +301,9 @@ final class NativeSiteMenu {
     let allowed: Bool = await withCheckedContinuation { continuation in
       SolaraCoreContentBlocker.isAllowed(host: host) { continuation.resume(returning: $0) }
     }
-    self.blocker = ["enabled": blocker["enabled"] ?? false, "allowed": .bool(allowed)]
+    self.blocker = captured["pageEngine"] == "webkit"
+      ? NativeSiteControls.json(SolaraCoreSiteControlsBridge.webKitBlockerStatus(host: host))
+      : ["enabled": blocker["enabled"] ?? false, "allowed": .bool(allowed)]
     render()
     if error != nil {
       await shared("toast", ["title": "Couldn't Change the Ad Blocker", "detail": "Blocking on \(host) is as it was. Try again.", "icon": "exclamationmark.triangle"], captured: captured)

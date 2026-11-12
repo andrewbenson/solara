@@ -30,6 +30,7 @@ final class WKWebsiteDataStore {
 
 struct Configuration {
   let websiteDataStore: WKWebsiteDataStore
+  let userContentController = NSObject()
 }
 
 struct Frame { static let zero = Frame() }
@@ -37,6 +38,7 @@ struct Frame { static let zero = Frame() }
 final class WKWebView {
   let configuration: Configuration
   var closed = false
+  var navigationDelegate: AnyObject?
   init(frame: Frame, configuration: Configuration) { self.configuration = configuration }
 }
 
@@ -52,11 +54,16 @@ enum WebKitStoreRemovals {
   }
 }
 
+final class ProfileContentBlocker {
+  func bind(_ view: WKWebView) {}
+}
+
 func alwaysAllowDeletion() -> Bool { true }
 
 __PRODUCTION__
 
 extension WebKitHub {
+  var contentBlocker: ProfileContentBlocker { ProfileContentBlocker() }
   static func directory(_ identifier: UUID) -> URL { URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(identifier.uuidString) }
   static func profileDirectories(_ profile: String) -> [URL] { [directory(storeIdentifier(profile))] }
   struct PrivateSession { let store: WKWebsiteDataStore }

@@ -153,6 +153,7 @@ native_stamp() {
       apps/browser/macos apps/browser/app.json apps/browser/react-native.config.js \
       'packages/*/ios/*' 'packages/*/expo-module.config.json' packages/shell/docktile \
       packages/solaracore/scripts/embed.sh packages/solaracore/scripts/stage-framework.sh packages/solaracore/scripts/ubo.sh \
+      packages/solaracore/scripts/ubol.sh packages/solaracore/scripts/embed-ubol.sh 'packages/solaracore/scripts/ubol-*.mjs' \
       packages/solaracore/extensions \
       packages/solaracore/scripts/signing engine/solaracore/src/solara/core/public patches pnpm-lock.yaml \
       native/SolaraKit/Package.swift native/SolaraKit/Package.resolved native/SolaraKit/Sources

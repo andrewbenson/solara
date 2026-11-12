@@ -45,3 +45,8 @@ if [ -n "${UNLOCALIZED_RESOURCES_FOLDER_PATH:-}" ] && [ -f "$ubo/manifest.json" 
     | xargs -0 shasum -a 256 | shasum -a 256 | cut -d' ' -f1) > "$extensions/ublock.fingerprint"
   rsync -a --delete "$repo/packages/solaracore/extensions/ublock-lite-settings/" "$extensions/ublock-lite-settings/"
 fi
+
+if [ -n "${UNLOCALIZED_RESOURCES_FOLDER_PATH:-}" ]; then
+  "$here/ubol.sh"
+  "$here/embed-ubol.sh" "$repo/packages/solaracore/vendor/ubol/bundle" "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/WebKitBlocker"
+fi

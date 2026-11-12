@@ -40,9 +40,15 @@ import SolaraStore
     let enabled: JSONValue = ["enabled": true, "allowed": false]
     #expect(try rows(context(["blocked": 7]), blocker: enabled).first { $0.id == "blocker" }?.value == "On · 7 blocked on this page")
     #expect(try rows(context(), blocker: ["enabled": true, "allowed": true]).first { $0.id == "blocker" }?.value == "Off for this site")
-    let webkit = try #require(rows(context(["pageEngine": "webkit"]), blocker: enabled).first { $0.id == "blocker" })
-    #expect(webkit.value == "Chromium only for now")
-    #expect(webkit.on == false && webkit.pressable == false)
+    let webkit = try #require(rows(context(["pageEngine": "webkit"]), blocker: ["enabled": true, "allowed": false, "ready": true]).first { $0.id == "blocker" })
+    #expect(webkit.value == "On")
+    #expect(webkit.on == true && webkit.pressable == true)
+  }
+
+  @Test func webKitReportsPartialListCoverage() throws {
+    let item = try #require(rows(context(["pageEngine": "webkit"]), blocker: ["enabled": true, "allowed": false, "ready": true, "unsupportedLists": ["unknown"]]).first { $0.id == "blocker" })
+    #expect(item.value == "On · some lists unavailable")
+    #expect(item.on == true && item.pressable == true)
   }
 
   @Test func missingPermissionsAndActiveCaptureRemainFeatured() {

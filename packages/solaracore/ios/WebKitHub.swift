@@ -11,6 +11,7 @@ final class WebKitHub: NSObject, WKScriptMessageHandler {
 
   var events: ((String, [String: Any]) -> Void)?
   lazy var downloads = WebKitDownloads(hub: self)
+  let contentBlocker = WebKitContentBlocker()
   private let externalApplication: (URL) -> URL?
   private let openExternal: ((URL) -> Void)?
 
@@ -242,9 +243,7 @@ final class WebKitHub: NSObject, WKScriptMessageHandler {
     })();
     """
 
-  func configuration(profile: String) -> WKWebViewConfiguration {
-    let config = WKWebViewConfiguration()
-    config.websiteDataStore = dataStore(for: profile)
+  func makeUserContentController() -> WKUserContentController {
     let controller = WKUserContentController()
     controller.addUserScript(WKUserScript(source: WebKitPageScript.source, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: Self.world))
     controller.add(self, contentWorld: Self.world, name: "solara")
@@ -252,13 +251,25 @@ final class WebKitHub: NSObject, WKScriptMessageHandler {
     if !Self.passkeysEntitled {
       controller.addUserScript(WKUserScript(source: Self.hidePasskeys, injectionTime: .atDocumentStart, forMainFrameOnly: false, in: .page))
     }
-    config.userContentController = controller
+    contentBlocker.register(controller)
+    return controller
+  }
+
+  func configuration(profile: String) -> WKWebViewConfiguration {
+    let config = WKWebViewConfiguration()
+    config.websiteDataStore = dataStore(for: profile)
+    config.userContentController = makeUserContentController()
     config.applicationNameForUserAgent = "Version/\(Self.safariVersion) Safari/605.1.15"
     config.mediaTypesRequiringUserActionForPlayback = []
     config.allowsAirPlayForMediaPlayback = true
     config.preferences.isElementFullscreenEnabled = !Self.background
     Self.allowPictureInPicture(config.preferences)
     config.preferences.javaScriptCanOpenWindowsAutomatically = false
+    #if DEBUG
+    if Self.background, ProcessInfo.processInfo.environment["SOLARA_TEST_SCRIPT_POPUPS"] == "1" {
+      config.preferences.javaScriptCanOpenWindowsAutomatically = true
+    }
+    #endif
     config.preferences.isFraudulentWebsiteWarningEnabled = false
     config.defaultWebpagePreferences.preferredContentMode = .desktop
     return config
@@ -271,7 +282,10 @@ final class WebKitHub: NSObject, WKScriptMessageHandler {
     unsafeBitCast(method_getImplementation(method), to: Setter.self)(preferences, selector, true)
   }
 
-  func register(_ webView: WKWebView, tab: WebKitTab) { owners[ObjectIdentifier(webView)] = WeakTab(tab) }
+  func register(_ webView: WKWebView, tab: WebKitTab) {
+    contentBlocker.bind(webView)
+    owners[ObjectIdentifier(webView)] = WeakTab(tab)
+  }
 
   #if DEBUG
   func devReturnFromPictureInPicture(browserId: Int32) -> Bool {
@@ -357,6 +371,8 @@ final class WebKitHub: NSObject, WKScriptMessageHandler {
     let key = Data(storeKey(profile).utf8)
     if let host = resumeHosts[key] { return host }
     let host = WKWebView(frame: .zero, configuration: configuration(profile: profile))
+    host.navigationDelegate = contentBlocker
+    contentBlocker.bind(host)
     resumeHosts[key] = host
     return host
   }
@@ -1021,7 +1037,18 @@ final class WebKitDownloads: NSObject, WKDownloadDelegate {
       }
       if let restartDownload { return restartDownload(item.webView, item.profile, data, request, resumed) }
       let host = item.webView ?? hub.resumeHost(for: item.profile)
-      if let data { host.resumeDownload(fromResumeData: data) { resumed($0) } } else if let request { host.startDownload(using: request) { resumed($0) } }
+      hub.contentBlocker.prepare(host.configuration.userContentController) { [weak self, weak item, weak host] error in
+        guard let self, let item, let host, self.items[item.id] === item, item.phase == .resuming else { return }
+        if let error {
+          item.phase = .paused
+          item.resumeData = data
+          NSLog("[webkit-blocker] download restart blocked: %@", error.localizedDescription)
+          self.report(item)
+          return
+        }
+        if let data { host.resumeDownload(fromResumeData: data) { resumed($0) } }
+        else if let request { host.startDownload(using: request) { resumed($0) } }
+      }
     default: break
     }
   }

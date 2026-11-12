@@ -1,5 +1,5 @@
 import type { EventSubscription } from "expo-modules-core";
-import type { ContentBlockerState, ContentBlockerStats } from "./contentBlocker";
+import type { ContentBlockerState, ContentBlockerStats, WebKitContentBlockerState } from "./contentBlocker";
 import type { DisplayMediaSource } from "./WebView";
 import type { ExternalAppAllowance } from "./externalApps";
 import type { FaviconImage } from "./favicons";
@@ -83,6 +83,7 @@ export type CefNative = {
   releaseProfile(profile: string): Promise<void>;
   deleteProfileData(profile: string): Promise<{ remaining: string[] }>;
 
+  getWebKitContentBlocker(host: string): Promise<WebKitContentBlockerState>;
   getContentBlocker(): Promise<ContentBlockerState>;
   setContentBlockerEnabled(enabled: boolean): Promise<void>;
   setFilterListEnabled(id: string, enabled: boolean): Promise<void>;

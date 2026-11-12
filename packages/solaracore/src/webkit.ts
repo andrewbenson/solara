@@ -42,6 +42,7 @@ export type WebKitNative = {
   info(): Promise<{ safariVersion: string; userAgentSuffix: string; passkeys: boolean }>;
   passkeyAccess(): Promise<PasskeyAccess>;
   requestPasskeyAccess(): Promise<PasskeyAccess>;
+  prepareContentBlocker?(): Promise<void>;
 };
 
 export type PasskeyAccessStatus = "entitlementRequired" | "deviceNotConfigured" | "notDetermined" | "authorized" | "denied";
@@ -79,6 +80,7 @@ export const getWebKitSiteSettings = async (profile: string, origin: string): Pr
 export const setWebKitSiteSetting = (profile: string, origin: string, type: SiteSettingType, value: SiteSettingValue) =>
   WebKit?.setSitePermission(profile, origin, type, value) ?? Promise.resolve();
 export const webKitInfo = () => WebKit?.info() ?? Promise.resolve(null);
+export const prepareWebKitContentBlocker = () => WebKit?.prepareContentBlocker?.() ?? Promise.resolve();
 export const webKitCookieStoreKey = (profile: string) => WebKit?.cookieStoreKey(profile) ?? Promise.resolve(null);
 export const importWebKitCookies = (profile: string, storeKey: string, cookies: PageCookie[]) =>
   WebKit?.importCookies(profile, storeKey, cookies) ?? Promise.resolve(0);

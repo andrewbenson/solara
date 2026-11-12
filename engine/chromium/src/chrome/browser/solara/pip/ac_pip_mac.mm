@@ -4,6 +4,7 @@
 
 #import <Cocoa/Cocoa.h>
 #import <QuartzCore/QuartzCore.h>
+#import <objc/message.h>
 
 #include "base/apple/foundation_util.h"
 #include "base/files/file_path.h"
@@ -104,10 +105,32 @@ void ShowSolaraPictureInPictureInFullScreenSpaces(gfx::NativeWindow native) {
   }
   NSWindowCollectionBehavior behavior = window.collectionBehavior;
   behavior &= ~(NSWindowCollectionBehaviorPrimary |
-                NSWindowCollectionBehaviorFullScreenPrimary);
-  behavior |= NSWindowCollectionBehaviorFullScreenAuxiliary;
+                NSWindowCollectionBehaviorAuxiliary |
+                NSWindowCollectionBehaviorMoveToActiveSpace |
+                NSWindowCollectionBehaviorManaged |
+                NSWindowCollectionBehaviorTransient |
+                NSWindowCollectionBehaviorParticipatesInCycle |
+                NSWindowCollectionBehaviorFullScreenPrimary |
+                NSWindowCollectionBehaviorFullScreenNone |
+                NSWindowCollectionBehaviorFullScreenAllowsTiling);
+  behavior |= NSWindowCollectionBehaviorCanJoinAllSpaces |
+              NSWindowCollectionBehaviorCanJoinAllApplications |
+              NSWindowCollectionBehaviorFullScreenAuxiliary |
+              NSWindowCollectionBehaviorStationary |
+              NSWindowCollectionBehaviorIgnoresCycle |
+              NSWindowCollectionBehaviorFullScreenDisallowsTiling;
   if (behavior != window.collectionBehavior) {
     window.collectionBehavior = behavior;
+  }
+  window.excludedFromWindowsMenu = YES;
+  window.hidesOnDeactivate = NO;
+  window.accessibilityRole = NSAccessibilityWindowRole;
+  window.accessibilitySubrole = NSAccessibilityFloatingWindowSubrole;
+  Class policy = NSClassFromString(@"SolaraPictureInPictureWindow");
+  SEL configure = NSSelectorFromString(@"configure:keepOnTop:");
+  if ([policy respondsToSelector:configure]) {
+    reinterpret_cast<void (*)(id, SEL, NSWindow*, BOOL)>(objc_msgSend)(
+        policy, configure, window, window.level >= NSFloatingWindowLevel);
   }
   NativeWidgetMacNSWindow* widget_window =
       base::apple::ObjCCast<NativeWidgetMacNSWindow>(window);

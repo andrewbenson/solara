@@ -268,6 +268,10 @@ class TabBridge : public content::WebContentsObserver,
   }
   std::optional<WindowOpenDisposition> TakeOpenDisposition();
   content::WebContents* open_source() const { return open_source_.get(); }
+  bool created_from_link() const { return created_from_link_; }
+  void set_created_from_link(bool value) { created_from_link_ = value; }
+  bool pinned_link_checked() const { return pinned_link_checked_; }
+  void set_pinned_link_checked() { pinned_link_checked_ = true; }
   void set_popup_features(NSDictionary* features) { popup_features_ = features; }
   NSDictionary* popup_features() const { return popup_features_; }
   void EnsureFaviconObserved();
@@ -304,6 +308,9 @@ class TabBridge : public content::WebContentsObserver,
   bool closing_with_window() const { return closing_with_window_; }
   void set_closing_with_window(bool closing) { closing_with_window_ = closing; }
   const GURL& favicon_url() const { return favicon_url_; }
+  NSDictionary* app_badge() const { return app_badge_; }
+  void SetAppBadge(NSDictionary* badge);
+  void PrimaryPageChanged(content::Page& page) override;
 
   void PrimaryMainFrameRenderProcessGone(base::TerminationStatus status) override;
   void DidChangeVisibleSecurityState() override;
@@ -353,6 +360,7 @@ class TabBridge : public content::WebContentsObserver,
 
   SolaraCoreTab* __strong tab_;
   GURL favicon_url_;
+  NSDictionary* __strong app_badge_ = nil;
   NSDictionary* __strong security_;
   raw_ptr<zoom::ZoomController> zoom_ = nullptr;
   raw_ptr<blocked_content::PopupBlockerTabHelper> popups_ = nullptr;
@@ -380,6 +388,8 @@ class TabBridge : public content::WebContentsObserver,
   bool closing_with_window_ = false;
   std::optional<WindowOpenDisposition> open_disposition_;
   base::WeakPtr<content::WebContents> open_source_;
+  bool created_from_link_ = false;
+  bool pinned_link_checked_ = false;
   NSDictionary* __strong popup_features_ = nil;
   bool observing_favicon_ = false;
   raw_ptr<find_in_page::FindTabHelper> find_helper_ = nullptr;

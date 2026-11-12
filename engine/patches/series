@@ -82,6 +82,7 @@ chromium chromium-solara-layer.patch
 chromium chromium-helper-name.patch
 
 chromium chromium-bookmark-confirmed-save.patch
+chromium chromium-tab-app-badge-hook.patch
 
 layer engine/chromium
 layer engine/solaracore

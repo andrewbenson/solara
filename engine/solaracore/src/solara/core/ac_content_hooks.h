@@ -57,6 +57,9 @@ extern void (*g_solara_safe_storage_unreadable)(int status,
 
 extern crypto::apple::KeychainV2* (*g_solara_test_keychain)();
 
+extern void (*g_solara_created_window_link)(content::WebContents* contents,
+                                             bool link);
+
 extern bool g_solara_lazy_storage_usage;
 
 extern bool g_solara_script_loader_ready_at_once;

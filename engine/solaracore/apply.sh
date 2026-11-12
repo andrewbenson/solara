@@ -1641,6 +1641,47 @@ hook(["bool g_solara_scripts_wait_at_response = false;\n",
       "  ThrottleCheckResult WillProcessResponse() override {\n    if (should_defer_ && g_solara_scripts_wait_at_response) {\n"], edit, CONTENT_HOOKS)
 PY
 
+hook "$src/content/common/frame.mojom" "created window link classification" <<'PYHOOK'
+old = "  bool is_form_submission;\n"
+new = old + "  bool was_initiated_by_link_click = false;\n"
+def edit(s):
+    assert s.count(old) == 1
+    return s.replace(old, new)
+hook(["  bool was_initiated_by_link_click = false;\n"], edit)
+PYHOOK
+
+hook "$src/content/renderer/render_frame_impl.cc" "created window hyperlink context" <<'PYHOOK'
+old = "  params->is_form_submission = request.IsFormSubmission();\n"
+new = old + """  params->was_initiated_by_link_click =
+      request.GetRequestContext() == blink::mojom::RequestContextType::HYPERLINK;
+"""
+def edit(s):
+    assert s.count(old) == 1
+    return s.replace(old, new)
+hook(["  params->was_initiated_by_link_click =\n"], edit)
+PYHOOK
+
+hook "$src/content/browser/web_contents/web_contents_impl.cc" "created window link bridge" <<'PYHOOK'
+old_namespace = "\nnamespace content {\n"
+decl = """
+void (*g_solara_created_window_link)(content::WebContents* contents,
+                                     bool link) = nullptr;
+"""
+old = """  if (delegate_) {
+    delegate_->WebContentsCreated(
+"""
+new = """  if (g_solara_created_window_link) {
+    g_solara_created_window_link(new_contents_impl,
+                                 params.was_initiated_by_link_click);
+  }
+""" + old
+def edit(s):
+    assert s.count(old_namespace) == 1 and s.count(old) == 1
+    return s.replace(old_namespace, decl + old_namespace).replace(old, new)
+hook(["void (*g_solara_created_window_link)(content::WebContents* contents,\n",
+      "    g_solara_created_window_link(new_contents_impl,\n"], edit, CONTENT_HOOKS)
+PYHOOK
+
 if [[ $mode == check ]]; then
   exit "$drift"
 fi

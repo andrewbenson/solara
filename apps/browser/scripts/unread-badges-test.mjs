@@ -35,7 +35,7 @@ const tabs = [
   { id: "year", url: pageURL("year", "(2024) Annual report") },
   { id: "dot", url: pageURL("dot", "Messages", "dot") },
   { id: "plain", url: pageURL("plain", "Messages") },
-  { id: "api", url: pageURL("api", "(5) API fallback", "plain", true) },
+  { id: "api", url: pageURL("api", "(5) API wins", "plain", true) },
 ];
 let instance;
 const run = (body) => instance.eval(body, { timeout: 8000 });
@@ -65,7 +65,7 @@ const until = async (name, probe, ms = 10000) => {
 };
 const capture = async (name) => assert.equal(await run(`return ac.shell.devSnapshotWindow("w1", ${JSON.stringify(join(evidence, name + ".png"))});`), true);
 try {
-  instance = await launch(app, { data: join(evidence, "data"), session: session({ windows: [{ id: "w1", frame: [80, 80, 1280, 800], activeTabIds: { default: "idle" } }], tabs, settings: { warnBeforeClosingLastTab: false, warnBeforeClosingWindow: false, sidebarWidth: 270, showUnreadBadges: true } }), metroPort: 8108, probe: true, onboarded: true, env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_TOP_STRIP: "0" }, ready: "return !!ac.store" });
+  instance = await launch(app, { data: join(evidence, "data"), session: session({ windows: [{ id: "w1", frame: [80, 80, 1280, 800], activeTabIds: { default: "idle" } }], tabs, settings: { warnBeforeClosingLastTab: false, warnBeforeClosingWindow: false, sidebarWidth: 270, showUnreadBadges: true } }), metroPort: Number(process.env.METRO_PORT ?? 8081), probe: true, onboarded: true, env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_TOP_STRIP: "0" }, ready: "return !!ac.store" });
   records.push({ instance: { pid: instance.pid, port: instance.port } });
   for (const tab of tabs.slice(1)) {
     await run(`ac.store.getState().activate(${JSON.stringify(tab.id)}); return true;`);
@@ -78,13 +78,13 @@ try {
   const all = await until("title and favicon badges", async () => {
     const s = await snapshot();
     const shown = badges(s).filter((b) => b.visible);
-    return shown.some((b) => b.key === "t:pin" && b.text === "3") && shown.some((b) => b.key === "tile:top" && b.text === "12") && shown.some((b) => b.key === "t:row" && b.text === "99+") && shown.some((b) => b.key === "t:dot" && b.status === "Unread activity") && shown.some((b) => b.key === "t:api" && b.text === "5") ? s : null;
+    return shown.some((b) => b.key === "t:pin" && b.text === "3") && shown.some((b) => b.key === "tile:top" && b.text === "12") && shown.some((b) => b.key === "t:row" && b.text === "99+") && shown.some((b) => b.key === "t:dot" && b.status === "Unread activity") && shown.some((b) => b.key === "t:api" && b.text === "7") ? s : null;
   });
   assertTileCorners(all);
   const shown = badges(all).filter((b) => b.visible);
   assert(!shown.some((b) => /year|plain/.test(b.key)));
-  assert(shown.some((b) => b.key === "t:api" && b.text === "5"));
-  records.push({ check: "pin 3, Top App 12, row 99+, favicon dot, year/plain clear, old-engine API title fallback", badges: shown });
+  assert(shown.some((b) => b.key === "t:api" && b.text === "7"));
+  records.push({ check: "pin 3, Top App 12, row 99+, favicon dot, year/plain clear, page badge over title", badges: shown });
   await snapshot("all-badges");
   await capture("all-badges");
   await run('ac.store.getState().pinTabs(["pin"], true, false); return true;');

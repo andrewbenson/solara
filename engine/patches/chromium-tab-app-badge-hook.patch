@@ -1,0 +1,24 @@
+--- a/chrome/browser/badging/badge_manager.cc
++++ b/chrome/browser/badging/badge_manager.cc
+@@ -37,6 +37,10 @@
+ #endif
+ 
+ using web_app::WebAppProvider;
++
++bool (*g_solara_bind_tab_badge)(
++    content::RenderFrameHost*,
++    mojo::PendingReceiver<blink::mojom::BadgeService>*) = nullptr;
+ 
+ namespace {
+ 
+@@ -94,6 +98,10 @@
+     return;
+   }
+ 
++  if (g_solara_bind_tab_badge && g_solara_bind_tab_badge(frame, &receiver)) {
++    return;
++  }
++
+   auto* profile = Profile::FromBrowserContext(frame->GetBrowserContext());
+ 
+   auto* badge_manager =

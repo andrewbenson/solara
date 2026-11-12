@@ -14,6 +14,7 @@ NS_ASSUME_NONNULL_BEGIN
 @optional
 - (void)engineWillShutDown;
 - (void)engineQuitCancelled;
+- (void)engine:(SolaraCoreEngine*)engine didLoadProfile:(SolaraCoreProfile*)profile;
 - (nullable SolaraCoreWindow*)engineWindowForNewBrowserOfProfile:(SolaraCoreProfile*)profile
                                                         type:(NSString*)type;
 - (void)engine:(SolaraCoreEngine*)engine
@@ -55,6 +56,7 @@ SOLARACORE_EXPORT
 @property(class, readonly, nullable) SolaraCoreEngine* sharedEngine;
 
 @property(readonly) SolaraCoreProfile* defaultProfile;
+@property(readonly) NSArray<SolaraCoreProfile*>* loadedProfiles;
 - (void)loadProfile:(NSString*)directoryName
          completion:(void (^)(SolaraCoreProfile* _Nullable profile))completion;
 - (void)quit;
@@ -208,11 +210,19 @@ SOLARACORE_EXPORT
 
 @protocol SolaraCoreTabDelegate <NSObject>
 @optional
+- (BOOL)tabWantsPinnedLinkPolicy:(SolaraCoreTab*)tab;
+- (BOOL)tabHasPlainLinkGesture:(SolaraCoreTab*)tab;
+- (void)tab:(SolaraCoreTab*)tab
+    decidePinnedLink:(NSDictionary<NSString*, id>*)request
+          completion:(void (^)(BOOL intercept))completion;
+- (BOOL)tab:(SolaraCoreTab*)tab
+    shouldInterceptPinnedLink:(NSDictionary<NSString*, id>*)request;
 - (void)tabDidChangeTitle:(SolaraCoreTab*)tab;
 - (void)tabDidChangeURL:(SolaraCoreTab*)tab;
 - (void)tabDidChangeLoading:(SolaraCoreTab*)tab;
 - (void)tabDidChangeProgress:(SolaraCoreTab*)tab;
 - (void)tabDidChangeFavicon:(SolaraCoreTab*)tab;
+- (void)tabDidChangeAppBadge:(SolaraCoreTab*)tab;
 - (void)tabDidChangeNavigationState:(SolaraCoreTab*)tab;
 - (void)tab:(SolaraCoreTab*)tab didFindMatches:(int)count active:(int)active final:(BOOL)final;
 - (void)tab:(SolaraCoreTab*)tab didReceivePageMessage:(NSString*)kind json:(NSString*)json;
@@ -305,6 +315,7 @@ SOLARACORE_EXPORT
 - (void)resolveAutofillPrompt:(NSInteger)promptId action:(NSString*)action;
 
 @property(readonly, nullable) NSString* faviconURL;
+@property(readonly, nullable) NSDictionary* appBadge;
 @property(readonly, nullable) NSString* themeColor;
 @property(readonly) BOOL audible;
 @property(nonatomic) BOOL muted;
@@ -357,6 +368,7 @@ SOLARACORE_EXPORT
 @property(readonly) BOOL autoPictureInPictureIsChromes;
 - (void)noteShownByHost:(BOOL)shown;
 - (void)exitFullscreen;
+- (void)refreshAncestorGeometry;
 - (void)exitExclusiveAccess;
 - (void)tracePictureInPicture:(NSString*)line withInputs:(BOOL)withInputs;
 - (void)devToolsCall:(NSString*)method

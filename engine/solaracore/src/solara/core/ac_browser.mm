@@ -51,7 +51,12 @@
 #include "content/public/browser/render_frame_host.h"
 #include "third_party/blink/public/common/loader/resource_type_util.h"
 #include "third_party/blink/public/mojom/loader/resource_load_info.mojom.h"
+#include "chrome/browser/tab_contents/tab_util.h"
+#include "third_party/blink/public/mojom/frame/triggering_event_info.mojom.h"
+#include "third_party/blink/public/mojom/window_features/window_features.mojom.h"
+#include "ui/base/page_transition_types.h"
 #include "solara/core/ac_hooks.h"
+#include "solara/core/ac_pinned_links.h"
 #include "solara/core/ac_contents_background.h"
 #include "solara/core/ac_desktop_capture.h"
 #include "solara/core/ac_extension_shortcuts.h"
@@ -1190,6 +1195,29 @@ content::WebContents* ACWebContentsDelegate::OpenURLFromTab(
     return BrowserWebContentsDelegate::OpenURLFromTab(
         source, params, std::move(navigation_handle_callback));
   }
+  if (source && WantsPinnedLinkPolicy(source) &&
+      HasPlainPinnedLinkGesture(source) && params.user_gesture &&
+      params.url.SchemeIsHTTPOrHTTPS() && !params.post_data && !params.has_rel_opener &&
+      params.triggering_event_info ==
+          blink::mojom::TriggeringEventInfo::kFromTrustedEvent &&
+      ui::PageTransitionCoreTypeIs(params.transition, ui::PAGE_TRANSITION_LINK) &&
+      params.disposition == WindowOpenDisposition::NEW_FOREGROUND_TAB) {
+    auto* profile = Profile::FromBrowserContext(source->GetBrowserContext());
+    content::WebContents::CreateParams create(
+        profile, tab_util::GetSiteInstanceForNewTab(profile, params.url));
+    create.initially_hidden = true;
+    auto contents = content::WebContents::Create(create);
+    TabBridge::GetOrCreate(contents.get())->set_created_from_link(true);
+    content::WebContents* parked = ParkPinnedLink(
+        source, std::move(contents), params.url, params.disposition,
+        blink::mojom::WindowFeatures());
+    content::NavigationController::LoadURLParams load(params);
+    auto navigation = parked->GetController().LoadURLWithParams(load);
+    if (navigation_handle_callback && navigation) {
+      std::move(navigation_handle_callback).Run(*navigation);
+    }
+    return parked;
+  }
   content::OpenURLParams tab_params(params);
   WindowHost::PendingOpen open{params.disposition,
                               source ? source->GetWeakPtr() : nullptr};
@@ -1217,6 +1245,15 @@ content::WebContents* ACWebContentsDelegate::AddNewContents(
       ReportAppURLRequest(source, target_url, user_gesture);
     }
     return nullptr;
+  }
+  if (host_ && new_contents && source && user_gesture &&
+      target_url.SchemeIsHTTPOrHTTPS() &&
+      disposition == WindowOpenDisposition::NEW_FOREGROUND_TAB &&
+      TabBridge::GetOrCreate(new_contents.get())->created_from_link() &&
+      !TabBridge::GetOrCreate(new_contents.get())->pinned_link_checked() &&
+      WantsPinnedLinkPolicy(source) && HasPlainPinnedLinkGesture(source)) {
+    return ParkPinnedLink(source, std::move(new_contents), target_url,
+                          disposition, window_features);
   }
   if (host_ && new_contents) {
     TabBridge* bridge = TabBridge::GetOrCreate(new_contents.get());
@@ -1386,6 +1423,18 @@ TabBridge* TabBridge::GetOrCreate(content::WebContents* contents) {
   return FromWebContents(contents);
 }
 
+void TabBridge::SetAppBadge(NSDictionary* badge) {
+  if (app_badge_ == badge || [app_badge_ isEqualToDictionary:badge]) {
+    return;
+  }
+  app_badge_ = [badge copy];
+  [tab_ notify:@selector(tabDidChangeAppBadge:)];
+}
+
+void TabBridge::PrimaryPageChanged(content::Page& page) {
+  SetAppBadge(nil);
+}
+
 void TabBridge::EnsureFaviconObserved() {
   if (observing_favicon_) {
     return;
@@ -1523,6 +1572,11 @@ void TabBridge::PrimaryMainFrameRenderProcessGone(
       status == base::TERMINATION_STATUS_STILL_RUNNING) {
     return;
   }
+  base::WeakPtr<TabBridge> alive = weak_factory_.GetWeakPtr();
+  SetAppBadge(nil);
+  if (!alive) {
+    return;
+  }
   SolaraCoreTab* tab = tab_;
   id<SolaraCoreTabDelegate> delegate = tab.delegate;
   if ([delegate respondsToSelector:@selector(tab:rendererGone:code:)]) {
@@ -1639,6 +1693,11 @@ void TabBridge::ResolveUnresponsive(bool terminate) {
 }
 
 void TabBridge::WasDiscarded() {
+  base::WeakPtr<TabBridge> alive = weak_factory_.GetWeakPtr();
+  SetAppBadge(nil);
+  if (!alive) {
+    return;
+  }
   discarded_ = true;
   [tab_ notify:@selector(tabDidChangeDiscarded:)];
 }

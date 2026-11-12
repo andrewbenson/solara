@@ -1,13 +1,19 @@
 #include "solara/core/ac_seams.h"
 
+#import <Foundation/Foundation.h>
+
 #include <memory>
 
 #include "base/check.h"
 #include "base/functional/callback.h"
 #include "chrome/browser/lifetime/browser_shutdown.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/solara/ac_notifications.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
+#include "chrome/browser/web_applications/web_app_filter.h"
+#include "chrome/browser/web_applications/web_app_provider.h"
+#include "chrome/browser/web_applications/web_app_registrar.h"
 #include "components/permissions/chooser_controller.h"
 #include "components/sessions/core/live_tab.h"
 #include "components/sessions/core/session_id.h"
@@ -15,7 +21,12 @@
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_install_prompt_client.h"
 #include "extensions/common/extension_id.h"
+#include "content/public/browser/document_service.h"
+#include "content/public/browser/render_frame_host.h"
+#include "third_party/blink/public/common/storage_key/storage_key.h"
+#include "third_party/blink/public/mojom/badging/badging.mojom.h"
 #include "solara/core/ac_hooks.h"
+#include "solara/core/ac_pinned_links.h"
 #include "solara/core/ac_browser.h"
 #include "solara/core/ac_cast_dialog.h"
 #include "solara/core/ac_browser_window.h"
@@ -24,6 +35,70 @@
 namespace solaracore {
 
 namespace {
+
+content::WebContents* OwnedBadgeContents(content::RenderFrameHost* frame) {
+  if (!frame || !frame->IsInPrimaryMainFrame() ||
+      frame->IsNestedWithinFencedFrame() ||
+      frame->GetStorageKey().IsThirdPartyContext()) {
+    return nullptr;
+  }
+  content::WebContents* contents = content::WebContents::FromRenderFrameHost(frame);
+  BrowserWindowInterface* browser =
+      contents ? GlobalBrowserCollection::GetInstance()->FindBrowserWithTab(contents) : nullptr;
+  if (!browser || (browser->GetType() != BrowserWindowInterface::TYPE_NORMAL &&
+                   browser->GetType() != BrowserWindowInterface::TYPE_POPUP)) {
+    return nullptr;
+  }
+  WindowHost* host = WindowHost::ForBrowser(browser);
+  return host && !host->internal() ? contents : nullptr;
+}
+
+bool BadgesAnInstalledApp(content::RenderFrameHost* frame) {
+  const web_app::WebAppProvider* provider = web_app::WebAppProvider::GetForLocalAppsUnchecked(
+      Profile::FromBrowserContext(frame->GetBrowserContext()));
+  return provider && provider->registrar_unsafe()
+                         .FindBestAppWithUrlInScope(frame->GetLastCommittedURL(),
+                                                    web_app::WebAppFilter::DisplaysBadgeOnOs())
+                         .has_value();
+}
+
+class TabBadgeService final
+    : public content::DocumentService<blink::mojom::BadgeService> {
+ public:
+  TabBadgeService(content::RenderFrameHost& frame,
+                  mojo::PendingReceiver<blink::mojom::BadgeService> receiver)
+      : DocumentService(frame, std::move(receiver)) {}
+
+  void SetBadge(blink::mojom::BadgeValuePtr value) override {
+    if (!value || (value->is_number() && value->get_number() == 0)) {
+      ReportBadMessageAndDeleteThis("Invalid numeric badge");
+      return;
+    }
+    content::WebContents* contents = OwnedBadgeContents(&render_frame_host());
+    if (!contents) {
+      return;
+    }
+    NSDictionary* badge = value->is_flag()
+        ? @{ @"kind" : @"dot" }
+        : @{ @"kind" : @"count", @"count" : [@(value->get_number()) stringValue] };
+    TabBridge::GetOrCreate(contents)->SetAppBadge(badge);
+  }
+
+  void ClearBadge() override {
+    if (content::WebContents* contents = OwnedBadgeContents(&render_frame_host())) {
+      TabBridge::GetOrCreate(contents)->SetAppBadge(@{ @"kind" : @"clear" });
+    }
+  }
+};
+
+bool BindTabBadge(content::RenderFrameHost* frame,
+                  mojo::PendingReceiver<blink::mojom::BadgeService>* receiver) {
+  if (!OwnedBadgeContents(frame) || BadgesAnInstalledApp(frame)) {
+    return false;
+  }
+  new TabBadgeService(*frame, std::move(*receiver));
+  return true;
+}
 
 bool HandlePasswordBubble(content::WebContents* web_contents) {
   WindowHost* host = WindowHost::ForBrowser(
@@ -127,6 +202,8 @@ void DevToolsDockChanged(BrowserWindowInterface* browser,
 }
 
 void InstallChromeHooks() {
+  g_solara_bind_tab_badge = &BindTabBadge;
+  InstallPinnedLinkHooks();
   CHECK(solara::NotificationBridgeConfigured());
   CHECK(!g_solara_notification_bridge_factory);
   g_solara_notification_bridge_factory = &solara::CreateNotificationPlatformBridge;

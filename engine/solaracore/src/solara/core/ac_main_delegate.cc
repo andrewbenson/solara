@@ -53,6 +53,7 @@
 #include "solara/core/ac_lifetime.h"
 #include "solara/core/ac_context_menu.h"
 #include "solara/core/ac_navigation_hold.h"
+#include "solara/core/ac_pinned_links.h"
 #include "solara/core/ac_page_channel.h"
 #include "solara/core/ac_safe_storage.h"
 #include "solara/core/ac_seams.h"
@@ -248,6 +249,7 @@ class ACContentBrowserClient : public ChromeContentBrowserClient {
       content::NavigationThrottleRegistry& registry) override {
     ChromeContentBrowserClient::CreateThrottlesForNavigation(registry);
     AddAppSchemeThrottle(registry);
+    AddPinnedLinkThrottle(registry);
     MaybeAddNavigationHoldThrottle(registry);
     solara::AddScriptsPagesThrottle(registry);
   }

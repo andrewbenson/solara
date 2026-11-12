@@ -233,14 +233,15 @@ void SolaraVideoOverlayWindow::ShowInactive() {
   ResetSolaraPictureInPictureFade(GetNativeWindow());
   SetVisibilityChangedAnimationsEnabled(false);
   SetOpacity(1.0f);
-  views::Widget::ShowInactive();
   ShowSolaraPictureInPictureInFullScreenSpaces(GetNativeWindow());
   LetSolaraPictureInPictureMoveFreely(GetNativeWindow());
+  views::Widget::ShowInactive();
   VideoOverlayWindowViews::ShowInactive();
   if (fade_animator_) {
     fade_animator_->CancelAndReset();
   }
   SetOpacity(1.0f);
+  ShowSolaraPictureInPictureInFullScreenSpaces(GetNativeWindow());
 }
 
 void SolaraVideoOverlayWindow::Hide() {

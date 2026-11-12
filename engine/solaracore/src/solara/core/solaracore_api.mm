@@ -86,6 +86,8 @@
 #include "url/scheme_host_port.h"
 #include "url/url_constants.h"
 #include "content/public/browser/render_widget_host_view.h"
+#include "content/browser/renderer_host/render_widget_host_impl.h"  // nogncheck
+#include "content/browser/renderer_host/render_widget_host_view_mac.h"  // nogncheck
 #include "content/public/browser/spare_render_process_host_manager.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_action.h"
@@ -320,12 +322,34 @@ void PrepareProfilePrefs(Profile* profile) {
   ApplyAutoPictureInPicture(profile);
 }
 
+bool IsRegularLoadedProfile(Profile* profile) {
+  return profile && !profile->IsOffTheRecord() && !profile->IsGuestSession() &&
+         !profile->IsSystemProfile() && !solaracore::IsProfileDying(profile) &&
+         !solaracore::IsProfileDeleting(profile) &&
+         !IsProfileDirectoryMarkedForDeletion(profile->GetPath());
+}
+
+void NotifyProfileLoaded(const base::FilePath& path) {
+  ProfileManager* manager = g_browser_process ? g_browser_process->profile_manager() : nullptr;
+  Profile* profile = manager ? manager->GetProfileByPath(path) : nullptr;
+  if (IsRegularLoadedProfile(profile) &&
+      [g_delegate respondsToSelector:@selector(engine:didLoadProfile:)]) {
+    [g_delegate engine:g_engine didLoadProfile:[SolaraCoreProfile wrapperFor:profile]];
+  }
+}
+
 class ProfilePrefsApplier : public ProfileManagerObserver {
  public:
   explicit ProfilePrefsApplier(ProfileManager* manager) {
     observation_.Observe(manager);
   }
-  void OnProfileAdded(Profile* profile) override { PrepareProfilePrefs(profile); }
+  void OnProfileAdded(Profile* profile) override {
+    PrepareProfilePrefs(profile);
+    if (!profile->IsOffTheRecord()) {
+      base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+          FROM_HERE, base::BindOnce(&NotifyProfileLoaded, profile->GetPath()));
+    }
+  }
   void OnProfileManagerDestroying() override { observation_.Reset(); }
 
  private:
@@ -754,6 +778,20 @@ extern "C" __attribute__((visibility("default"))) int SolaraCoreMain(
 - (SolaraCoreProfile*)defaultProfile {
   Profile* profile = ProfileManager::GetLastUsedProfileIfLoaded();
   return profile ? [SolaraCoreProfile wrapperFor:profile] : nil;
+}
+
+- (NSArray<SolaraCoreProfile*>*)loadedProfiles {
+  NSMutableArray<SolaraCoreProfile*>* profiles = [NSMutableArray array];
+  ProfileManager* manager = g_browser_process ? g_browser_process->profile_manager() : nullptr;
+  if (!manager) {
+    return profiles;
+  }
+  for (Profile* profile : manager->GetLoadedProfiles()) {
+    if (IsRegularLoadedProfile(profile)) {
+      [profiles addObject:[SolaraCoreProfile wrapperFor:profile]];
+    }
+  }
+  return profiles;
 }
 
 - (void)loadProfile:(NSString*)directoryName
@@ -2004,6 +2042,10 @@ const performance_manager::PageNode* PageNodeOf(content::WebContents* contents) 
   return _contents ? [[SolaraCoreInputSuppression alloc] initWithContents:_contents] : nil;
 }
 
+- (NSDictionary*)appBadge {
+  return _contents ? solaracore::TabBridge::GetOrCreate(_contents)->app_badge() : nil;
+}
+
 - (NSString*)faviconURL {
   if (!_contents) {
     return nil;
@@ -2527,6 +2569,25 @@ const performance_manager::PageNode* PageNodeOf(content::WebContents* contents) 
 - (void)noteShownByHost:(BOOL)shown {
   if (_contents) {
     solaracore::NoteTabShownByHost(_contents, shown);
+  }
+}
+
+- (void)refreshAncestorGeometry {
+  if (!_contents) return;
+  content::WebContents* contents[] = {
+    _contents, DevToolsWindow::GetInTabWebContents(_contents, nullptr)
+  };
+  for (content::WebContents* page : contents) {
+    content::RenderWidgetHostView* view =
+        page && !page->GetOuterWebContents() ? page->GetRenderWidgetHostView() : nullptr;
+    NSView* native = view ? view->GetNativeView().GetNativeNSView() : nil;
+    if (!native.window || native.isHiddenOrHasHiddenAncestor) continue;
+    [native setFrameOrigin:native.frame.origin];
+    NSRect rect = [native convertRect:native.bounds toView:nil];
+    gfx::Rect bounds(rect);
+    bounds.set_y(NSHeight(native.window.frame) - NSMaxY(rect));
+    static_cast<content::RenderWidgetHostViewMac*>(view)->OnBoundsInWindowChanged(bounds, true);
+    content::RenderWidgetHostImpl::From(view->GetRenderWidgetHost())->SendScreenRects();
   }
 }
 

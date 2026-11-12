@@ -7,6 +7,8 @@
 
 #include "solara/core/ac_content_hooks.h"
 #include "base/containers/span.h"
+#include "mojo/public/cpp/bindings/pending_receiver.h"
+#include "third_party/blink/public/mojom/badging/badging.mojom-forward.h"
 #include "base/functional/callback_forward.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/scoped_refptr.h"
@@ -70,6 +72,10 @@ class AppBrowserController;
 }
 
 extern bool g_solara_embedder;
+
+extern bool (*g_solara_bind_tab_badge)(
+    content::RenderFrameHost*,
+    mojo::PendingReceiver<blink::mojom::BadgeService>*);
 
 extern std::unique_ptr<NotificationPlatformBridge> (
     *g_solara_notification_bridge_factory)();

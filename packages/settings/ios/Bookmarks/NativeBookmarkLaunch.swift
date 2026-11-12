@@ -9,6 +9,14 @@ enum NativeBookmarkLaunch {
   private static let selection = makeSelection()
 
   private static func makeSelection() -> Bool {
+    DocumentStore.registerBookmarkQuitBarrier(flush: { completion in
+      Task { @MainActor in
+        do {
+          try await NativeBookmarkOwner.flushJournalForQuit()
+          completion(true)
+        } catch { completion(false) }
+      }
+    }, cancel: { NativeBookmarkOwner.cancelJournalQuit() })
     let owned = NativeBookmarkOwner.selectOwnership()
     if owned, !LaunchSwitches.shared.isOn(.nativeBookmarks) {
       NativeBookmarkOwner.failOwnership(reason: "Native bookmarks are disabled for this development launch. Editing and sync are paused.")

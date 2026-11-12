@@ -103,9 +103,11 @@ final class BookmarksBarButton: NSView {
     }
   }
 
-  var measuredWidth: CGFloat {
-    guard !title.stringValue.isEmpty else { return 28 }
-    return min(190, ceil((title.stringValue as NSString).size(withAttributes: [.font: Self.font]).width) + iconSize + 6 + 14)
+  var measuredWidth: CGFloat { Self.width(forTitle: title.stringValue, iconSize: iconSize) }
+
+  static func width(forTitle title: String, iconSize: CGFloat) -> CGFloat {
+    guard !title.isEmpty else { return 28 }
+    return min(190, ceil((title as NSString).size(withAttributes: [.font: Self.font]).width) + iconSize + 6 + 14)
   }
 
   init() {

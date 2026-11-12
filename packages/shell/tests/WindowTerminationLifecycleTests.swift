@@ -57,6 +57,38 @@ final class WindowTerminationLifecycleTests: XCTestCase {
     XCTAssertTrue(retention.shouldReopen(hasVisibleBrowser: false, terminating: lifecycle.isTerminating, background: false))
   }
 
+  func testCancelledQuitWithoutSavingAsksToReopenDocumentsOnce() {
+    var lifecycle = WindowTerminationLifecycle()
+    lifecycle.begin()
+    lifecycle.closeDocumentsForQuit()
+    XCTAssertTrue(lifecycle.documentsClosedForQuit)
+    XCTAssertTrue(lifecycle.isTerminating)
+    XCTAssertTrue(lifecycle.cancel())
+    XCTAssertFalse(lifecycle.documentsClosedForQuit)
+    XCTAssertFalse(lifecycle.isTerminating)
+    XCTAssertTrue(lifecycle.publishesWindowTeardown)
+    XCTAssertFalse(lifecycle.cancel())
+  }
+
+  func testQuitCancelledAfterApprovalStillReopensClosedDocuments() {
+    var lifecycle = WindowTerminationLifecycle()
+    lifecycle.begin()
+    lifecycle.closeDocumentsForQuit()
+    lifecycle.approve()
+    XCTAssertTrue(lifecycle.documentsClosedForQuit)
+    XCTAssertTrue(lifecycle.cancel())
+    XCTAssertFalse(lifecycle.isTerminating)
+  }
+
+  func testCancelledQuitThatKeptDocumentsOpenDoesNotReopen() {
+    var lifecycle = WindowTerminationLifecycle()
+    lifecycle.begin()
+    XCTAssertFalse(lifecycle.cancel())
+    lifecycle.begin()
+    lifecycle.approve()
+    XCTAssertFalse(lifecycle.cancel())
+  }
+
   func testAbortedSaveRestoresWindowLifecycleBeforeApproval() {
     var lifecycle = WindowTerminationLifecycle()
     lifecycle.begin()

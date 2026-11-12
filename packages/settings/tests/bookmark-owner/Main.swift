@@ -81,17 +81,21 @@ final class Fixture {
 }
 
 nonisolated(unsafe) var failures: [String] = []
-func expect(_ condition: @autoclosure () -> Bool, _ message: String) {
-  if !condition() { failures.append(message) }
+func expect(_ condition: Bool, _ message: String) {
+  if !condition { failures.append(message) }
 }
 
 func refusal(_ body: () throws -> Void) -> BookmarkWriterError? {
   do { try body(); return nil } catch let error as BookmarkWriterError { return error } catch { return .refused("unexpected \(error)") }
 }
 
+func asyncRefusal(_ body: () async throws -> Void) async -> BookmarkWriterError? {
+  do { try await body(); return nil } catch let error as BookmarkWriterError { return error } catch { return .refused("unexpected \(error)") }
+}
+
 @main
 struct BookmarkOwnerTests {
-  static func canonicalWireSnapshotSurvivesBridgeAndRestart() {
+  static func canonicalWireSnapshotSurvivesBridgeAndRestart() async {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("canonical-wire-\(UUID().uuidString)")
     try! FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { NativeBookmarkOwner.current = nil; try? FileManager.default.removeItem(at: directory) }
@@ -102,7 +106,7 @@ struct BookmarkOwnerTests {
     NativeBookmarkOwner.current = owner
     let before = try! NativeBookmarkWriter.snapshot(profile: "p")
     let raw = Fixture.document(["https://EXAMPLE.test:443"])
-    let result = try? NativeBookmarkWriter.replace(profile: "p", documentJSON: raw.bookmarkText(), expectedRevision: before["revision"] as! String, engine: "", generation: before["generation"] as! String, requestID: "wire-remote")
+    let result = try? await NativeBookmarkWriter.replace(profile: "p", documentJSON: raw.bookmarkText(), expectedRevision: before["revision"] as! String, engine: "", generation: before["generation"] as! String, requestID: "wire-remote")
     expect(result != nil, "the raw remote replacement is accepted")
     let snapshot = try! NativeBookmarkWriter.snapshot(profile: "p")
     let shown = try? JSONValue.parseBookmark(snapshot["document"] as! String)
@@ -216,13 +220,13 @@ struct BookmarkOwnerTests {
     expect(fixture.wakes.log.isEmpty, "a failed journal write wakes nothing")
   }
 
-  static func theWriterIsLegacyUntilAnOwnerIsInstalled() {
+  static func theWriterIsLegacyUntilAnOwnerIsInstalled() async {
     let fixture = Fixture()
     defer { fixture.stop(); NativeBookmarkOwner.current = nil }
     NativeBookmarkOwner.current = nil
     expect(NativeBookmarkWriter.state()["state"] as? String == "legacy", "no owner means the JS writer")
     expect((try? NativeBookmarkWriter.snapshot(profile: "p")) == nil, "no snapshot without an owner")
-    expect(refusal { _ = try NativeBookmarkWriter.replace(profile: "p", documentJSON: "{}", expectedRevision: "0", engine: "", generation: "1", requestID: nil) } == .notOwned, "no replacement without an owner")
+    expect(await asyncRefusal { _ = try await NativeBookmarkWriter.replace(profile: "p", documentJSON: "{}", expectedRevision: "0", engine: "", generation: "1", requestID: nil) } == .notOwned, "no replacement without an owner")
     NativeBookmarkOwner.current = fixture.owner
     let state = NativeBookmarkWriter.state()
     expect(state["state"] as? String == "owned" && state["generation"] as? String == "1", "an installed owner reports owned and its generation: \(state)")
@@ -230,9 +234,9 @@ struct BookmarkOwnerTests {
       failures.append("an installed owner gives a snapshot")
       return
     }
-    let reply = try? NativeBookmarkWriter.replace(profile: "p", documentJSON: Fixture.document(["https://a.test"]).text(), expectedRevision: revision, engine: engine, generation: generation, requestID: "r")
+    let reply = try? await NativeBookmarkWriter.replace(profile: "p", documentJSON: Fixture.document(["https://a.test"]).text(), expectedRevision: revision, engine: engine, generation: generation, requestID: "r")
     expect(reply?["revision"] as? String == String(UInt64(revision)! + 1), "the bridge accepts a document given as JSON text with decimal-string revisions: \(String(describing: reply))")
-    expect(refusal { _ = try NativeBookmarkWriter.replace(profile: "p", documentJSON: "{", expectedRevision: revision, engine: engine, generation: generation, requestID: nil) }.map { if case .invalidDocument = $0 { true } else { false } } == true, "malformed JSON is refused as an invalid document")
+    expect(await asyncRefusal { _ = try await NativeBookmarkWriter.replace(profile: "p", documentJSON: "{", expectedRevision: revision, engine: engine, generation: generation, requestID: nil) }.map { if case .invalidDocument = $0 { true } else { false } } == true, "malformed JSON is refused as an invalid document")
   }
 
   static func submitIsDurableAndReturnsTheReducerResults() {
@@ -269,12 +273,12 @@ struct BookmarkOwnerTests {
     expect(fixture.recorder.log.isEmpty && fixture.wakes.log.isEmpty, "a refused edit writes and wakes nothing")
   }
 
-  static func theBridgeSubmitsMutationsGivenAsJSON() {
+  static func theBridgeSubmitsMutationsGivenAsJSON() async {
     let fixture = Fixture()
     defer { fixture.stop(); NativeBookmarkOwner.current = nil }
     NativeBookmarkOwner.current = fixture.owner
     let snapshot = try! fixture.owner.snapshot(profile: "p")
-    let reply = try? NativeBookmarkWriter.submit(profile: "p", mutationsJSON: #"[{"method":"addBookmarkFolder","args":[{"profileId":"p","title":"Folder"}]}]"#, engine: snapshot.binding.engine, generation: String(snapshot.binding.generation), requestID: "r")
+    let reply = try? await NativeBookmarkWriter.submit(profile: "p", mutationsJSON: #"[{"method":"addBookmarkFolder","args":[{"profileId":"p","title":"Folder"}]}]"#, engine: snapshot.binding.engine, generation: String(snapshot.binding.generation), requestID: "r")
     guard let reply, let results = reply["results"] as? String, let document = reply["document"] as? String, let revision = reply["revision"] as? String,
       let ids = try? JSONValue.parse(results).array, let id = ids.first?.string, let parsed = try? JSONValue.parse(document) else {
       failures.append("the bridge answers with revision, results and document as JSON text: \(String(describing: reply))")
@@ -282,10 +286,10 @@ struct BookmarkOwnerTests {
     }
     expect(parsed["nodes"]?[id]?["kind"] == "folder", "the reply's document holds the new folder")
     expect(revision == String(snapshot.revision + 1), "the reply's revision is the accepted one")
-    expect(refusal { _ = try NativeBookmarkWriter.submit(profile: "p", mutationsJSON: #"[{"method":"addBookmarkFolder"}]"#, engine: snapshot.binding.engine, generation: String(snapshot.binding.generation), requestID: nil) }.map { if case .invalidDocument = $0 { true } else { false } } == true, "a mutation without args is refused before it reaches the coordinator")
+    expect(await asyncRefusal { _ = try await NativeBookmarkWriter.submit(profile: "p", mutationsJSON: #"[{"method":"addBookmarkFolder"}]"#, engine: snapshot.binding.engine, generation: String(snapshot.binding.generation), requestID: nil) }.map { if case .invalidDocument = $0 { true } else { false } } == true, "a mutation without args is refused before it reaches the coordinator")
   }
 
-  static func bookmarkBridgePreservesUTF16AcrossReplaceSubmitAndRestart() {
+  static func bookmarkBridgePreservesUTF16AcrossReplaceSubmitAndRestart() async {
     let fixture = Fixture()
     defer { fixture.stop(); NativeBookmarkOwner.current = nil }
     NativeBookmarkOwner.current = fixture.owner
@@ -295,12 +299,12 @@ struct BookmarkOwnerTests {
       .replacingOccurrences(of: #""b1""#, with: #""\udfff""#)
       .replacingOccurrences(of: "https://x.test/a", with: #"https://x.test/\ud800"#)
       .replacingOccurrences(of: "https://x.test/b", with: #"https://x.test/\udfff"#)
-    guard (try? NativeBookmarkWriter.replace(profile: "p", documentJSON: document, expectedRevision: String(before.revision), engine: "", generation: String(before.binding.generation), requestID: "wire-replace")) != nil else {
+    guard (try? await NativeBookmarkWriter.replace(profile: "p", documentJSON: document, expectedRevision: String(before.revision), engine: "", generation: String(before.binding.generation), requestID: "wire-replace")) != nil else {
       failures.append("the wire document is accepted")
       return
     }
     let mutations = #"[{"method":"updateBookmark","args":["\ud800",{"title":"\ud801"}]}]"#
-    guard let reply = try? NativeBookmarkWriter.submit(profile: "p", mutationsJSON: mutations, engine: "", generation: String(before.binding.generation), requestID: "󰀀󰀁"), let source = reply["document"] as? String else {
+    guard let reply = try? await NativeBookmarkWriter.submit(profile: "p", mutationsJSON: mutations, engine: "", generation: String(before.binding.generation), requestID: "󰀀󰀁"), let source = reply["document"] as? String else {
       failures.append("wire mutation returns a document")
       return
     }
@@ -318,11 +322,11 @@ struct BookmarkOwnerTests {
       failures.append("the reopened owner returns a fresh binding")
       return
     }
-    let retried = try? NativeBookmarkWriter.submit(profile: "p", mutationsJSON: mutations, engine: "", generation: generation, requestID: "󰀀󰀁")
+    let retried = try? await NativeBookmarkWriter.submit(profile: "p", mutationsJSON: mutations, engine: "", generation: generation, requestID: "󰀀󰀁")
     expect(retried?["document"] as? String == source, "a saved receipt returns the same UTF-16 document")
   }
 
-  static func theBridgeRejectsABAAndLateFacts() {
+  static func theBridgeRejectsABAAndLateFacts() async {
     let fixture = Fixture()
     defer { fixture.stop(); NativeBookmarkOwner.current = nil }
     NativeBookmarkOwner.current = fixture.owner
@@ -332,20 +336,20 @@ struct BookmarkOwnerTests {
     fixture.owner.remap(profiles: ["p": "other", "alias": ""], defaultProfile: "p")
     fixture.owner.remap(profiles: ["p": "", "alias": ""], defaultProfile: "p")
     fixture.recorder.clear()
-    expect(refusal { _ = try NativeBookmarkWriter.submit(profile: "p", mutationsJSON: "[]", engine: engine, generation: generation, requestID: "old-bridge") } == .staleBinding, "the roundtripped binding cannot cross A-B-A")
-    expect(refusal { _ = try NativeBookmarkWriter.ackBookmarkFacts(profile: "p", engine: engine, recordsJSON: "[]", generation: generation) } == .staleBinding, "late fact acks cannot cross A-B-A")
-    expect(refusal { _ = try NativeBookmarkWriter.observeBookmarkRecords(profile: "p", engine: engine, recordsJSON: "[]", generation: generation) } == .staleBinding, "late observations cannot cross A-B-A")
-    expect(refusal { _ = try NativeBookmarkWriter.clearBookmarkFacts(profile: "p", engine: engine, recordsJSON: "[]", generation: generation) } == .staleBinding, "late clears cannot cross A-B-A")
+    expect(await asyncRefusal { _ = try await NativeBookmarkWriter.submit(profile: "p", mutationsJSON: "[]", engine: engine, generation: generation, requestID: "old-bridge") } == .staleBinding, "the roundtripped binding cannot cross A-B-A")
+    expect(await asyncRefusal { _ = try await NativeBookmarkWriter.ackBookmarkFacts(profile: "p", engine: engine, recordsJSON: "[]", generation: generation) } == .staleBinding, "late fact acks cannot cross A-B-A")
+    expect(await asyncRefusal { _ = try await NativeBookmarkWriter.observeBookmarkRecords(profile: "p", engine: engine, recordsJSON: "[]", generation: generation) } == .staleBinding, "late observations cannot cross A-B-A")
+    expect(await asyncRefusal { _ = try await NativeBookmarkWriter.clearBookmarkFacts(profile: "p", engine: engine, recordsJSON: "[]", generation: generation) } == .staleBinding, "late clears cannot cross A-B-A")
     expect(fixture.recorder.log.isEmpty, "stale bridge callbacks write no checkpoint")
   }
 
-  static func main() {
+  static func main() async {
     guard CommandLine.arguments.count == 2 else {
       print("FAIL: expected one case name")
       exit(1)
     }
     let test = CommandLine.arguments[1]
-    let cases: [String: () -> Void] = [
+    let cases: [String: () async -> Void] = [
       "canonicalWireSnapshotSurvivesBridgeAndRestart": canonicalWireSnapshotSurvivesBridgeAndRestart,
       "bookmarkBridgePreservesUTF16AcrossReplaceSubmitAndRestart": bookmarkBridgePreservesUTF16AcrossReplaceSubmitAndRestart,
       "replaceIsDurableBeforeItReturns": replaceIsDurableBeforeItReturns,
@@ -365,7 +369,7 @@ struct BookmarkOwnerTests {
       print("FAIL \(test): unknown test")
       exit(1)
     }
-    run()
+    await run()
     for failure in failures { print("FAIL \(test): \(failure)") }
     if failures.isEmpty { print("PASS \(test)") }
     exit(failures.isEmpty ? 0 : 1)

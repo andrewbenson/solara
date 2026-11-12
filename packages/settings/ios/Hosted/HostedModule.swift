@@ -1,5 +1,6 @@
 import AppKit
 import ExpoModulesCore
+import SolaraModel
 import SolaraUI
 import SolaraShell
 
@@ -8,6 +9,8 @@ public class HostedModule: Module {
     Name("SolaraHosted")
 
     Events("onHostedEvent")
+
+    Function("bookmarkNativeSourceVersion") { 1 }
 
     OnCreate {
       HostedViews.declare(NativeExtensionSidePanel.kind)
@@ -20,6 +23,7 @@ public class HostedModule: Module {
       DispatchQueue.main.async {
         MainActor.assumeIsolated {
           HostedViews.emit = { body in sink.module?.sendEvent("onHostedEvent", body) }
+          NativeBookmarksBar.registerMenuSource()
           NativeStatusBubble.register(); NativeSidebar.register(); NativeDownloadMagnet.register(); NativeTabPickers.register()
           NativeSidebarIconPicker.register()
           NativeToolTour.register()
@@ -27,6 +31,15 @@ public class HostedModule: Module {
         }
       }
     }
+
+    AsyncFunction("bookmarkScale") { (windowId: String, operation: String, value: String?) -> String in
+      MainActor.assumeIsolated {
+        let environment = ProcessInfo.processInfo.environment
+        guard !LaunchSwitches.shared.distribution, environment["AC_BENCH_BOOKMARKS"] == "1",
+          environment["SOLARA_BACKGROUND"] == "1", environment["SOLARA_DATA_DIR"]?.isEmpty == false else { return "null" }
+        return NativeBookmarksBar.scaleJSON(windowId: windowId, operation: operation, value: value)
+      }
+    }.runOnQueue(.main)
 
     AsyncFunction("focusPageIfUnclaimed") { (windowId: String, tabId: String) -> Bool in
       MainActor.assumeIsolated { SidePanelFocus.focus(windowId: windowId, tabId: tabId) }

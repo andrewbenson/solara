@@ -8,6 +8,7 @@ const fake = (source) => ({ url: `data:text/javascript,${encodeURIComponent(sour
 const sources = {
   "@solara/settings": `
     const f = globalThis.nativeBookmarksBarTest;
+    export const nativeBookmarksBarSourceAvailable = () => f.nativeSource;
     export const hostedKinds = () => f.kinds;
     export const focusPageIfUnclaimed = (...args) => { f.actions.push(["focusPage", ...args]); return Promise.resolve(true); };
     export const SolaraHostedView = "HostedView";
@@ -17,7 +18,16 @@ const sources = {
       return () => f.listeners.delete(windowId);
     };
   `,
-  react: `export const memo = (fn) => fn; export const useEffect = (fn) => { globalThis.nativeBookmarksBarTest.cleanups.push(fn()); };`,
+  react: `export const memo = (fn) => fn;
+    export const useMemo = (fn, deps) => {
+      const f = globalThis.nativeBookmarksBarTest;
+      const previous = f.memos.get(f.windowId);
+      if (previous && deps.every((value, index) => Object.is(value, previous.deps[index]))) return previous.value;
+      const value = fn();
+      f.memos.set(f.windowId, { deps, value });
+      return value;
+    };
+    export const useEffect = (fn) => { globalThis.nativeBookmarksBarTest.cleanups.push(fn()); };`,
   "react-native": `export const View = "View";`,
   "../../lib/bookmarkGroups": `export const addFolderToSidebar = (...args) => globalThis.nativeBookmarksBarTest.actions.push(["sidebar", ...args]);`,
   "../sidebar/tokens": `export const useSidebarWidth = () => globalThis.nativeBookmarksBarTest.sidebarWidth;`,
@@ -29,7 +39,7 @@ const sources = {
   "../../store/browser": `const f = globalThis.nativeBookmarksBarTest; export const useBrowser = (fn) => fn(f.state); useBrowser.getState = () => f.state;`,
   "../../store/hooks": `export const useWindowId = () => globalThis.nativeBookmarksBarTest.windowId;`,
   "../../store/peek": `export const shownPageId = (state, windowId) => state.windows[windowId]?.shownPageId;`,
-  "../../store/model": `export const bookmarkProfileId = (_state, window) => window.profileId;`,
+  "../../store/model": `export const bookmarkProfileId = (_state, window) => window.profileId; export const engineProfile = (profileId) => profileId;`,
   "../settings/windows": `export const openImport = () => globalThis.nativeBookmarksBarTest.actions.push(["import"]);`,
   "./actions": `
     export const openModeFor = (mods) => mods;
@@ -65,7 +75,7 @@ const mount = () => {
 
 beforeEach(() => {
   Object.assign(f, {
-    kinds: ["bookmarksBar"], sidebarWidth: 210, windowId: "first", actions: [], batches: [], subscriptions: [], listeners: new Map(), cleanups: [],
+    kinds: ["bookmarksBar"], nativeSource: true, sidebarWidth: 210, windowId: "first", actions: [], batches: [], subscriptions: [], listeners: new Map(), cleanups: [], memos: new Map(),
     theme: { toolbarHover: "h", toolbarPressed: "p", textTab: "t", textTertiary: "q", icon: "i", divider: "d", accent: "a", dark: false },
     state: {
       settings: { hideBookmarksBarImport: false, tabLayout: "sidebar", bookmarksBar: "always" },
@@ -97,8 +107,9 @@ test("hosted snapshots and action subscriptions retain their window and current 
   const second = mount();
   assert.equal(first.props.windowId, "first");
   assert.equal(second.props.windowId, "second");
-  assert.deepEqual(JSON.parse(first.props.state).items.map((n) => n.id), ["a", "folder", "b"]);
-  assert.deepEqual(JSON.parse(second.props.state).items.map((n) => n.id), ["second"]);
+  assert.equal(JSON.parse(first.props.state).profileId, "one");
+  assert.equal(JSON.parse(first.props.state).nativeSource, true);
+  assert.equal(JSON.parse(second.props.state).profileId, "two");
   assert.deepEqual(f.subscriptions, [["bookmarksBar", "first"], ["bookmarksBar", "second"]]);
   f.listeners.get("second")("press", { id: "second", metaKey: true, shiftKey: true, altKey: false, ctrlKey: true, middle: true });
   assert.deepEqual(f.actions, [["url", "https://second.example", "second", { metaKey: true, shiftKey: true, altKey: false, middle: true }]]);
@@ -311,4 +322,32 @@ test("link drops accept the end index without changing tabs or their order", () 
   assert.deepEqual(f.actions, [["add", { profileId: "one", parentId: "bar", index: 3, url: "https://tab.example", title: "Tab title" }]]);
   assert.deepEqual(f.state.tabs, beforeTabs);
   assert.deepEqual(f.state.windows.first.tabIds, beforeOrder);
+});
+
+
+test("bar state carries native metadata without reading or serializing bookmark nodes", () => {
+  let reads = 0;
+  f.state.bookmarks.nodes = new Proxy(f.state.bookmarks.nodes, {
+    get(target, key) { reads++; return Reflect.get(target, key); },
+  });
+  const first = mount();
+  assert.equal(reads, 0);
+  reads = 0;
+  f.state.windows.first = { ...f.state.windows.first, activeTabId: "another-tab" };
+  const second = mount();
+  assert.equal(second.props.state, first.props.state);
+  assert.equal(reads, 0);
+  f.state.bookmarks = { ...f.state.bookmarks, nodes: { ...f.state.bookmarks.nodes, a: { ...f.state.bookmarks.nodes.a, title: "Renamed" } } };
+  const edited = mount();
+  assert.equal(edited.props.state, first.props.state);
+  assert.equal(JSON.parse(edited.props.state).nativeSource, true);
+  assert.deepEqual(JSON.parse(edited.props.state).items, []);
+});
+
+test("older native hosts retain their full snapshot fallback", () => {
+  f.nativeSource = false;
+  const first = mount();
+  assert.deepEqual(JSON.parse(first.props.state).items.map((node) => node.id), ["a", "folder", "b"]);
+  f.state.bookmarks = { ...f.state.bookmarks, nodes: { ...f.state.bookmarks.nodes, a: { ...f.state.bookmarks.nodes.a, title: "Renamed" } } };
+  assert.equal(JSON.parse(mount().props.state).items[0].title, "Renamed");
 });

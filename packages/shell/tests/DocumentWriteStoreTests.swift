@@ -136,4 +136,26 @@ final class DocumentWriteStoreTests: XCTestCase {
     XCTAssertEqual(try String(contentsOf: history, encoding: .utf8), "redacted")
     XCTAssertTrue(writes.flush())
   }
+
+  func testReopenedStoreAcceptsWritesRefusedWhileClosed() throws {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let writes = DocumentWriteStore()
+    let session = folder.appendingPathComponent("session.json")
+    let refused = DispatchSemaphore(value: 0), saved = DispatchSemaphore(value: 0)
+    let closedResult = SaveResult(), reopenedResult = SaveResult()
+    writes.close()
+    writes.write(session, contents: "while closed") { error in closedResult.first(error); refused.signal() }
+    XCTAssertEqual(refused.wait(timeout: .now() + 1), .success)
+    XCTAssertTrue(closedResult.failed)
+    XCTAssertNil(writes.pendingContents(for: session))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: session.path))
+    writes.reopen()
+    writes.write(session, contents: "after reopen") { error in reopenedResult.first(error); saved.signal() }
+    XCTAssertEqual(saved.wait(timeout: .now() + 2), .success)
+    XCTAssertFalse(reopenedResult.failed)
+    XCTAssertTrue(writes.flush())
+    XCTAssertEqual(try String(contentsOf: session, encoding: .utf8), "after reopen")
+  }
 }

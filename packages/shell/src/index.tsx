@@ -195,6 +195,7 @@ export type MenuState = {
   titles: Record<string, string>;
   profiles: MenuEntry[];
   windows: MenuEntry[];
+  bookmarkNative?: { profileId: string; revision: number };
   bookmarkFolders: MenuEntry[];
   recentBookmarks: MenuBookmark[];
   bookmarksBar: MenuBookmark[];
@@ -271,6 +272,7 @@ export type ShellNative = {
   windowIds(): Promise<string[]>;
   setAppearance(mode: "auto" | "light" | "dark"): Promise<void>;
   isDarkAppearance(): Promise<boolean>;
+  bookmarkNativeSourceVersion?(): number;
   setMenuState(state: Omit<MenuState, MenuBookmarkKey>): Promise<void>;
   setMenuBookmarks(bookmarks: Pick<MenuState, MenuBookmarkKey>): Promise<void>;
   replyToTerminate(ok: boolean): Promise<void>;
@@ -374,10 +376,12 @@ export const windowIds = () => Shell.windowIds();
 export const setAppearance = (mode: "auto" | "light" | "dark") => Shell.setAppearance(mode);
 export const isDarkAppearance = () => Shell.isDarkAppearance();
 
-type MenuBookmarkKey = "bookmarkFolders" | "recentBookmarks" | "bookmarksBar" | "otherBookmarks";
+export const nativeBookmarkMenuSourceAvailable = () => Shell.bookmarkNativeSourceVersion?.() === 1;
+
+type MenuBookmarkKey = "bookmarkNative" | "bookmarkFolders" | "recentBookmarks" | "bookmarksBar" | "otherBookmarks";
 export function setMenuStateParts(state: MenuState, bookmarksChanged: boolean) {
-  const { bookmarkFolders, recentBookmarks, bookmarksBar, otherBookmarks, ...rest } = state;
-  if (bookmarksChanged) void Shell.setMenuBookmarks({ bookmarkFolders, recentBookmarks, bookmarksBar, otherBookmarks });
+  const { bookmarkNative, bookmarkFolders, recentBookmarks, bookmarksBar, otherBookmarks, ...rest } = state;
+  if (bookmarksChanged) void Shell.setMenuBookmarks(bookmarkNative ? { bookmarkNative, bookmarkFolders: [], recentBookmarks: [], bookmarksBar: [], otherBookmarks: [] } : { bookmarkFolders, recentBookmarks, bookmarksBar, otherBookmarks });
   return Shell.setMenuState(rest);
 }
 export const replyToTerminate = (ok: boolean) => Shell.replyToTerminate(ok);

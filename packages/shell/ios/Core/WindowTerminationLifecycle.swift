@@ -9,6 +9,7 @@ public enum WindowCloseDisposition: Equatable {
 public struct WindowTerminationLifecycle {
   public private(set) var awaitingReply = false
   public private(set) var approved = false
+  public private(set) var documentsClosedForQuit = false
 
   public init() {}
 
@@ -28,8 +29,16 @@ public struct WindowTerminationLifecycle {
     approved = true
   }
 
-  public mutating func cancel() {
+  public mutating func closeDocumentsForQuit() {
+    documentsClosedForQuit = true
+  }
+
+  @discardableResult
+  public mutating func cancel() -> Bool {
+    let documentsNeedReopening = documentsClosedForQuit
     awaitingReply = false
     approved = false
+    documentsClosedForQuit = false
+    return documentsNeedReopening
   }
 }

@@ -6,6 +6,7 @@ import {
   closeWindow,
   isDarkAppearance,
   menuShortcuts,
+  nativeBookmarkMenuSourceAvailable,
   onAppEvent,
   onCommand,
   onOpenURLs,
@@ -23,6 +24,7 @@ import {
   type MenuState,
 } from "@solara/shell";
 import { Appearance } from "react-native";
+import { cancelBookmarkQuit, flushBookmarkJournal } from "@solara/settings";
 import { nativeOwnsWorkspace } from "../store/nativeStore";
 import { folderChildren, isBookmarked } from "../store/bookmarks";
 import { useBrowser, type BrowserState } from "../store/browser";
@@ -56,6 +58,7 @@ import { PRODUCT } from "./productName";
 import { canToggleDeveloperModeFor, tabInDeveloperMode } from "../components/site/developerMode";
 
 let quitting = false;
+let quitAttempt = 0;
 export const isQuitting = () => quitting;
 
 export const shellWindowPort: WindowPort = {
@@ -97,13 +100,27 @@ export function startNativeSync() {
     if (e.type === "reopen") createWindow();
     if (e.type === "quitWarningSuppressed") s.updateSettings({ warnBeforeQuitting: false });
     if (e.type === "willQuit") {
+      if (quitting) return;
       quitting = true;
+      const attempt = ++quitAttempt;
       finishAnimatedCloses();
       flushPersistence({ final: true });
-      void replyToTerminate(true);
+      void (async () => {
+        let durable = false;
+        try { durable = await flushBookmarkJournal(); } catch {}
+        if (attempt !== quitAttempt || !quitting) return;
+        if (!durable) {
+          quitting = false;
+          cancelBookmarkQuit();
+          resumePersistence();
+        }
+        await replyToTerminate(durable);
+      })();
     }
     if (e.type === "quitCancelled") {
+      quitAttempt++;
       quitting = false;
+      cancelBookmarkQuit();
       resumePersistence();
     }
   });
@@ -124,8 +141,8 @@ export function startNativeSync() {
   const syncMenu = () => {
     menuTimer = undefined;
     const state = menuState(store.getState());
-    const { bookmarkFolders, recentBookmarks, bookmarksBar, otherBookmarks, ...rest } = state;
-    const bookmarkMenus = [bookmarkFolders, recentBookmarks, bookmarksBar, otherBookmarks];
+    const { bookmarkNative, bookmarkFolders, recentBookmarks, bookmarksBar, otherBookmarks, ...rest } = state;
+    const bookmarkMenus = [bookmarkNative, bookmarkFolders, recentBookmarks, bookmarksBar, otherBookmarks];
     const json = JSON.stringify(rest);
     const bookmarksChanged = !bookmarkMenus.every((menu, i) => menu === lastBookmarkMenus[i]);
     if (json === lastMenu && !bookmarksChanged) return;
@@ -163,7 +180,8 @@ function menuBookmarks(b: Bookmarks, folderId: string, depth = 0): MenuBookmark[
   );
 }
 
-type BookmarkMenus = Pick<MenuState, "bookmarkFolders" | "recentBookmarks" | "bookmarksBar" | "otherBookmarks">;
+type BookmarkMenus = Pick<MenuState, "bookmarkNative" | "bookmarkFolders" | "recentBookmarks" | "bookmarksBar" | "otherBookmarks">;
+let bookmarkMenuRevision = 0;
 const bookmarkMenuCache = new WeakMap<Bookmarks, Map<string, BookmarkMenus>>();
 
 function bookmarkMenus(b: Bookmarks, profileId: string): BookmarkMenus {
@@ -171,6 +189,11 @@ function bookmarkMenus(b: Bookmarks, profileId: string): BookmarkMenus {
   if (!perProfile) bookmarkMenuCache.set(b, (perProfile = new Map()));
   const cached = perProfile.get(profileId);
   if (cached) return cached;
+  if (nativeBookmarkMenuSourceAvailable()) {
+    const menus: BookmarkMenus = { bookmarkNative: { profileId, revision: ++bookmarkMenuRevision }, bookmarkFolders: [], recentBookmarks: [], bookmarksBar: [], otherBookmarks: [] };
+    perProfile.set(profileId, menus);
+    return menus;
+  }
   const roots = b.roots[profileId];
   const menus: BookmarkMenus = roots
     ? {

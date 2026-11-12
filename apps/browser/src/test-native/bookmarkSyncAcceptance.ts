@@ -50,8 +50,8 @@ async function fixture(name: string) {
   const profile = useBrowser.getState().createProfile({ name: `Bookmark sync ${name}` });
   await ready(profile);
   let link = `acceptance-${profile}`;
-  const links = () => expect(setBookmarkSyncLinks({ [profile]: link }), "Native sync link checkpoint refused");
-  links();
+  const links = async () => expect(await setBookmarkSyncLinks({ [profile]: link }), "Native sync link checkpoint refused");
+  await links();
   const id = await bookmarkWriter.addBookmark({ profileId: profile, title: "Base", url: `https://bookmark-sync-acceptance.example/${profile}` });
   const key = `bm:${id}`;
   const device = "native-acceptance";
@@ -65,11 +65,11 @@ async function fixture(name: string) {
   expect(state.records[key]?.v != null, "Baseline did not publish through the real adapter");
   return {
     profile, id, key, device, adapter, folder, state, cycle,
-    changeLink(next: string) { link = next; links(); },
-    nativeLink(next: string) { expect(setBookmarkSyncLinks({ [profile]: next }), "Native link change refused"); },
+    async changeLink(next: string) { link = next; await links(); },
+    async nativeLink(next: string) { expect(await setBookmarkSyncLinks({ [profile]: next }), "Native link change refused"); },
     link: () => link,
     async edit(title: string) { await bookmarkWriter.updateBookmark(profile, id, { title }); return snapshot(profile); },
-    cleanup() { setBookmarkSyncLinks({}); useBrowser.getState().deleteProfile(profile); },
+    async cleanup() { await setBookmarkSyncLinks({}); useBrowser.getState().deleteProfile(profile); },
   };
 }
 
@@ -84,14 +84,14 @@ async function failedAckAtSameMillisecond() {
     const adapter = f.adapter();
     const extraction = await adapter.extract(() => base, () => false, Date.now(), () => true, () => base, () => known, () => false);
     expect(extraction?.stamp?.(f.key), "Pending local fact must compete with the same-ms self record");
-    f.nativeLink(`${f.link()}-unavailable`);
+    await f.nativeLink(`${f.link()}-unavailable`);
     let rejected = false;
-    try { rejected = ackBookmarkFacts(f.profile, edited, [{ key: f.key, seq: fact!.seq, mintedHLC: known }], f.link()) === false; }
+    try { rejected = await ackBookmarkFacts(f.profile, edited, [{ key: f.key, seq: fact!.seq, mintedHLC: known }], f.link()) === false; }
     catch { rejected = true; }
     expect(rejected, "Changed native link must reject the actual ack transaction");
-    extraction?.published?.(new Set([f.key]), new Map([[f.key, known]]));
+    await extraction?.published?.(new Set([f.key]), new Map([[f.key, known]]));
     expect(snapshot(f.profile).facts[f.key]?.seq === fact!.seq, "A refused published callback must keep native intent");
-    f.nativeLink(f.link());
+    await f.nativeLink(f.link());
     f.state.records[f.key] = { h: known, v: base, o: [f.device, 1] };
     const result = await f.cycle();
     const record = f.state.records[f.key]!;
@@ -100,7 +100,7 @@ async function failedAckAtSameMillisecond() {
     expect((record.v as { t: string }).t === "Pending after rejected ack", "Republished native value was lost");
     expect(!snapshot(f.profile).facts[f.key], "Successful durable publication must settle the accepted sequence");
     return { nativeAt: fact!.at, rejectedAck: rejected, previousHLC: known, publishedHLC: record.h, published: result.published };
-  } finally { f.cleanup(); }
+  } finally { await f.cleanup(); }
 }
 
 async function zeroPublicationRefusalAndAtomicReplacement() {
@@ -129,7 +129,7 @@ async function zeroPublicationRefusalAndAtomicReplacement() {
       const scheduled: Adapter = {
         ...adapter,
         apply: async (...args) => {
-          f.nativeLink(`${f.link()}-changed-before-acceptance`);
+          await f.nativeLink(`${f.link()}-changed-before-acceptance`);
           try {
             const applied = await adapter.apply(...args);
             if (applied === false) { preflightHeld = true; preflightHolds++; }
@@ -138,7 +138,7 @@ async function zeroPublicationRefusalAndAtomicReplacement() {
             if (bookmarkWriterErrorCode(error) === "staleBinding") refusals++;
             else unexpected = { error };
             throw error;
-          } finally { f.nativeLink(f.link()); }
+          } finally { await f.nativeLink(f.link()); }
         },
       };
       const result = await f.cycle(scheduled);
@@ -163,7 +163,7 @@ async function zeroPublicationRefusalAndAtomicReplacement() {
     const later = await f.edit("After atomic remote acceptance");
     expect(later.facts[f.key]?.after === remoteHLC, "The first postreplacement native edit must already observe the remote record stamp");
     return { refusedNativeTransactions: refusals, preflightHolds, zeroPublication, heldPrefixKeys: [f.key, other], foreignWinner: true, atomicRecordPredecessor: later.facts[f.key]?.after };
-  } finally { f.cleanup(); }
+  } finally { await f.cleanup(); }
 }
 
 async function oldLinkCannotApplyOrAck() {
@@ -175,8 +175,8 @@ async function oldLinkCannotApplyOrAck() {
     const base = JSON.parse(f.state.base[f.key]!);
     const extraction = await adapter.extract(() => base, () => false, Date.now(), () => true, () => base, () => f.state.records[f.key]!.h, () => false);
     expect(extraction?.published, "The actual adapter must capture a pending native publication callback");
-    f.changeLink(`${f.link()}-new`);
-    extraction?.published?.(new Set([f.key]), new Map([[f.key, h(fact.at + 10000, f.device)]]));
+    await f.changeLink(`${f.link()}-new`);
+    await extraction?.published?.(new Set([f.key]), new Map([[f.key, h(fact.at + 10000, f.device)]]));
     const applied = await adapter.apply(new Map([[f.key, { ...base, t: "Old link remote" }]]), new Set([f.key]), () => base, { known: () => true, stamp: () => h(fact.at + 10000, "old-chain"), now: Date.now(), horizon: 0, joined: true });
     expect(applied === false, "A revoked link must refuse old-scope document application");
     expect(await adapter.extract(() => base, () => false, Date.now(), () => true, () => base, () => f.state.records[f.key]!.h, () => false) === null, "A revoked link must hold extraction");
@@ -184,7 +184,7 @@ async function oldLinkCannotApplyOrAck() {
     expect(after.document.nodes[f.id]?.title === "Current local", "Old link replaced the current native document");
     expect(after.facts[f.key]?.seq === fact.seq, "Old link acknowledged the current native fact");
     return { staleApplyRefused: applied === false, factSequenceRetained: fact.seq };
-  } finally { f.cleanup(); }
+  } finally { await f.cleanup(); }
 }
 
 export async function run() {

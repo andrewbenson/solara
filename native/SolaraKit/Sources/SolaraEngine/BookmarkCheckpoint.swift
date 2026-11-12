@@ -191,6 +191,27 @@ final class BookmarkDurability {
     }
   }
 
+  init(copying source: BookmarkDurability) {
+    store = source.store
+    now = source.now
+    requestSequence = source.requestSequence
+    expiredRequests = source.expiredRequests
+    requiresRetentionMigration = source.requiresRetentionMigration
+    notice = source.notice
+    writable = source.writable
+    restoredViews = source.restoredViews
+    restoredBases = source.restoredBases
+    owners = source.owners
+    factSequence = source.factSequence
+    syncLinks = source.syncLinks
+    terminalEngines = source.terminalEngines
+    incarnations = source.incarnations
+    requests = source.requests
+    conflicts = source.conflicts
+    legacyPendingEngines = source.legacyPendingEngines
+    legacyMigration = source.legacyMigration
+  }
+
   func receipt(requestID: String?, payload: JSONValue) throws -> BookmarkReceipt? {
     guard let requestID else { return nil }
     if expiredRequests[requestID] != nil { throw BookmarkCoordinatorError.expiredRequest }
@@ -199,7 +220,7 @@ final class BookmarkDurability {
     return stored.receipt
   }
 
-  func prepare(_ input: BookmarkCheckpointInput, maintenanceOnly: Bool = false) throws -> BookmarkCheckpoint? {
+  func prepare(_ input: BookmarkCheckpointInput, maintenanceOnly: Bool = false, metadataOnly: Bool = false) throws -> BookmarkCheckpoint? {
     guard writable else { throw BookmarkPendingStoreError.unavailable }
     let retention = try retention(input)
     if maintenanceOnly && !retention.changed { return nil }
@@ -209,7 +230,7 @@ final class BookmarkDurability {
     let nextTerminals = input.terminalEngines ?? terminalEngines
     let nextIncarnations = input.incarnations ?? incarnations
     let nextMigration = input.legacyMigration ?? legacyMigration
-    let checkpoint: JSONValue = [
+    let checkpoint: JSONValue = metadataOnly ? .null : [
       "formatVersion": 3,
       "requestSequence": .string(String(retention.sequence)),
       "expiredRequests": .object(retention.expired.mapValues(JSONValue.string)),
@@ -228,7 +249,7 @@ final class BookmarkDurability {
       "conflicts": .array(nextConflicts),
       "legacyPendingEngines": .array(nextLegacy.sorted { BookmarkString.precedes($0.text, $1.text) }.map { .string($0.text) })
     ]
-    if store != nil {
+    if store != nil && !metadataOnly {
       for (_, view) in input.views { try Self.validateDocument(view.document, engine: view.engine) }
       for (engine, base) in input.bases { try Self.validateRecords(base.records, engine: engine) }
       guard try JSONValue.parseBookmark(checkpoint.bookmarkText()) == checkpoint else { throw BookmarkPendingStoreError.invalidEnvelope }

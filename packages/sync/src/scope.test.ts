@@ -4,6 +4,42 @@ import { inspect } from "node:util";
 import { Clock } from "./hlc.ts";
 import { ApplyRefusal, compact, emptyScope, restoreJournal, syncScope, type Adapter, type Listing, type LogFile, type ScopeOptions, type ScopeState, type Transport } from "./scope.ts";
 
+test("durable publication waits for asynchronous acknowledgements before synchronous settlement", async () => {
+  for (const persistLocal of [false, true]) {
+    const events: string[] = [];
+    let release!: () => void;
+    let started!: () => void;
+    const barrier = new Promise<void>((resolve) => { release = resolve; });
+    const observing = new Promise<void>((resolve) => { started = resolve; });
+    const adapter: Adapter = {
+      prefix: "item:",
+      extract: () => ({
+        values: new Map([["item:one", { title: "Local" }]]),
+        published: async () => { events.push("ack"); started(); await barrier; events.push("ack-durable"); },
+        committed: () => { events.push("committed"); },
+      }),
+      apply: () => {},
+    };
+    const transport: Transport = {
+      write: async () => { events.push("remote-durable"); return "log"; },
+      read: async () => ({ files: [], pending: [], damaged: [], present: ["log"] }),
+      remove: async () => {},
+    };
+    let finished = false;
+    const cycle = syncScope({
+      state: { ...emptyScope(), joined: true }, scope: "s", device: "local", clock: new Clock("local"), transport, adapters: [adapter],
+      options: persistLocal ? { persist: async () => { events.push("local-durable"); } } : {},
+    }).then(() => { finished = true; });
+    await observing;
+    assert.equal(finished, false);
+    assert.deepEqual(events, [persistLocal ? "local-durable" : "remote-durable", "ack"]);
+    release();
+    await cycle;
+    assert.ok(events.indexOf("ack-durable") < events.indexOf("committed"));
+    assert.equal(finished, true);
+  }
+});
+
 type Entry = { payload: string; hiddenFrom: Set<string>; partialFor: Set<string>; at: number };
 class Folder {
   scopes = new Map<string, Map<string, Entry>>();

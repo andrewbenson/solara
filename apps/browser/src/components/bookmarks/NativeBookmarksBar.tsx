@@ -1,5 +1,5 @@
-import { focusPageIfUnclaimed, onHostedEvent, SolaraHostedView } from "@solara/settings";
-import { memo, useEffect } from "react";
+import { nativeBookmarksBarSourceAvailable, focusPageIfUnclaimed, onHostedEvent, SolaraHostedView } from "@solara/settings";
+import { memo, useEffect, useMemo } from "react";
 import { View } from "react-native";
 import { addFolderToSidebar } from "../../lib/bookmarkGroups";
 import { reportBookmarkFailure, submitBookmarks } from "../../lib/bookmarkWriter";
@@ -7,7 +7,7 @@ import { useTheme } from "../../lib/theme";
 import { folderChildren } from "../../store/bookmarks";
 import { useBrowser } from "../../store/browser";
 import { useWindowId } from "../../store/hooks";
-import { bookmarkProfileId } from "../../store/model";
+import { bookmarkProfileId, engineProfile } from "../../store/model";
 import { shownPageId } from "../../store/peek";
 import { openImport } from "../settings/windows";
 import { useSidebarWidth } from "../sidebar/tokens";
@@ -27,6 +27,7 @@ function Bar({ windowId }: { windowId: string }) {
   const theme = useTheme();
   const profileId = useBrowser((s) => bookmarkProfileId(s, s.windows[windowId]));
   const bookmarks = useBrowser((s) => s.bookmarks);
+  const nativeSource = nativeBookmarksBarSourceAvailable();
   const hideImport = useBrowser((s) => s.settings.hideBookmarksBarImport);
   const barMode = useBrowser((s) => s.settings.bookmarksBar);
   const width = useSidebarWidth(windowId);
@@ -34,7 +35,7 @@ function Bar({ windowId }: { windowId: string }) {
     const w = s.windows[windowId];
     return w?.sidebarOpen && (w.tabLayout ?? s.settings.tabLayout) !== "top" ? width : null;
   });
-  const state = JSON.stringify(bookmarksBarSnapshot(bookmarks, profileId, hideImport, theme, sidebarEdge, barMode));
+  const state = useMemo(() => JSON.stringify(nativeSource ? { nativeSource: true, profileId, engineProfile: engineProfile(profileId), items: [], hasOther: false, hideBookmarksBarImport: hideImport, theme: { toolbarHover: theme.toolbarHover, toolbarPressed: theme.toolbarPressed, textTab: theme.textTab, textTertiary: theme.textTertiary, icon: theme.icon, divider: theme.divider, accent: theme.accent }, dark: theme.dark, sidebarEdge, bookmarksBar: barMode } : bookmarksBarSnapshot(bookmarks, profileId, hideImport, theme, sidebarEdge, barMode)), [nativeSource, bookmarks, profileId, hideImport, theme, sidebarEdge, barMode]);
   useEffect(() => onHostedEvent("bookmarksBar", windowId, (name, payload) => {
     const s = useBrowser.getState();
     const window = s.windows[windowId];

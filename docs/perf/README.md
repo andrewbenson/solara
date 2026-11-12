@@ -11,6 +11,7 @@ All of them are in `apps/browser/scripts/perf/`.
 | File | Bench | What it is |
 |---|---|---|
 | `native-bench.mjs` | native | Launch, idle CPU and wakeups, memory, tab and window latency, throttling, on a Release app in hidden instances. Its header maps every section and output row to the function that measures it. |
+| `../bookmarks-scale-bench.mjs` | bookmarks | Fixture HTML import (2,500), an Always bar (300), overflow menu, a 3,000-item folder and add/rename/move at 5,000 links. Native model/layout observations, main/JS run-loop stalls, footprint and optional process samples. |
 | `acperf.swift` | native | Process probes (rusage, phys_footprint, window on screen, quit) and `postkeys` (real key events posted to one pid with `CGEventPostToPid`), built on demand with swiftc. |
 | `acmark.m` | native | Injected into the bench's copy of the app: marks when a window's React content commits, and (`AC_BENCH_KEYLOG=1`) every key down the app's event loop sees. |
 | `acframes.m`, `frames-phase.mjs`, `frames-phase.test.mjs` | native | The frame rig (`native-bench.mjs --only frames`, `framecounts`): `acframes.m` is injected like `acmark.m` and records display-link ticks, main- and JS-thread run-loop busy time and layout counters; `frames-phase.mjs` drives the interactions and reads them; the test checks the window arithmetic. Rows: [What the frame rows measure](#what-the-frame-rows-measure). |

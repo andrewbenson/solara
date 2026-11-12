@@ -119,6 +119,12 @@ final class DocumentWriteStore: @unchecked Sendable {
     lock.unlock()
   }
 
+  func reopen() {
+    lock.lock()
+    closed = false
+    lock.unlock()
+  }
+
   @discardableResult
   func flush() -> Bool {
     queue.sync {

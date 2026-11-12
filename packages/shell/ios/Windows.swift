@@ -843,10 +843,6 @@ final class WindowManager: NSObject, NSWindowDelegate {
   func shouldTerminate() -> NSApplication.TerminateReply {
     if termination.approved { return .terminateNow }
     guard appEventsObserved, let emit else {
-      guard AppUpdater.shared.holdsQuitForStagedUpdate else {
-        termination.approve()
-        return .terminateNow
-      }
       termination.begin()
       quitAfterUpdaterSettles()
       return .terminateLater
@@ -855,17 +851,31 @@ final class WindowManager: NSObject, NSWindowDelegate {
     quitAttempt += 1
     quitStep = .saving
     termination.begin()
+    let attempt = quitAttempt
+    let finishBookmarks: (Bool) -> Void = { [weak self] saved in
+      guard let self, self.quitAttempt == attempt, self.quitStep == .saving else { return }
+      self.bookmarkQuitWait?.invalidate()
+      self.bookmarkQuitWait = nil
+      guard !saved else { return }
+      self.replyToTerminate(false)
+      self.emit?("onAppEvent", ["type": "quitCancelled"])
+    }
+    let bookmarkTimer = Timer(timeInterval: 30, repeats: false) { _ in finishBookmarks(false) }
+    bookmarkQuitWait = bookmarkTimer
+    RunLoop.main.add(bookmarkTimer, forMode: .common)
+    DocumentStore.flushBookmarksForQuit(finishBookmarks)
     emit("onAppEvent", ["type": "willQuit"])
     waitForSave()
     return .terminateLater
   }
 
-  private enum QuitStep { case none, saving, waitingForUpdater }
+  private enum QuitStep { case none, saving, waitingForBookmarks, waitingForUpdater }
   private var quitStep = QuitStep.none
   private var quitAttempt = 0
 
   private var saveWait: Timer?
   private var lateSaveAlert: NSAlert?
+  private var bookmarkQuitWait: Timer?
   private let background = ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] == "1"
 
   private func waitForSave() {
@@ -891,12 +901,16 @@ final class WindowManager: NSObject, NSWindowDelegate {
     lateSaveAlert = nil
     switch response {
     case .alertFirstButtonReturn: waitForSave()
-    case .alertSecondButtonReturn:
-      guard quitStep == .saving else { return }
-      DocumentStore.close()
-      quitAfterUpdaterSettles()
+    case .alertSecondButtonReturn: quitWithoutSaving()
     default: break
     }
+  }
+
+  private func quitWithoutSaving() {
+    guard quitStep == .saving else { return }
+    termination.closeDocumentsForQuit()
+    DocumentStore.close()
+    quitAfterUpdaterSettles()
   }
 
   fileprivate static func confirmActiveDownloads() -> Bool { shared.confirmActiveDownloads() }
@@ -915,12 +929,14 @@ final class WindowManager: NSObject, NSWindowDelegate {
   }
 
   func replyToTerminate(_ ok: Bool) {
-    guard !termination.approved, quitStep != .waitingForUpdater else { return }
+    guard !termination.approved, quitStep != .waitingForUpdater && quitStep != .waitingForBookmarks else { return }
     saveWait?.invalidate()
     saveWait = nil
+    bookmarkQuitWait?.invalidate()
+    bookmarkQuitWait = nil
     if lateSaveAlert != nil { NSApp.stopModal(withCode: .abort) }
     guard ok else {
-      termination.cancel()
+      cancelTermination()
       quitStep = .none
       quitAttempt += 1
       return NSApp.reply(toApplicationShouldTerminate: false)
@@ -935,20 +951,47 @@ final class WindowManager: NSObject, NSWindowDelegate {
 
   private func quitAfterUpdaterSettles() {
     if quitStep == .none { quitAttempt += 1 }
-    quitStep = .waitingForUpdater
+    quitStep = .waitingForBookmarks
     let attempt = quitAttempt
-    AppUpdater.shared.dropOffChannelStagedUpdateBeforeQuit { [weak self] in
-      guard let self, self.quitAttempt == attempt, self.quitStep == .waitingForUpdater else { return }
-      self.termination.approve()
-      self.quitStep = .none
-      NSApp.reply(toApplicationShouldTerminate: true)
+    let finish: (Bool) -> Void = { [weak self] saved in
+      guard let self, self.quitAttempt == attempt, self.quitStep == .waitingForBookmarks else { return }
+      self.bookmarkQuitWait?.invalidate()
+      self.bookmarkQuitWait = nil
+      guard saved else {
+        self.cancelTermination()
+        self.quitStep = .none
+        self.quitAttempt += 1
+        self.emit?("onAppEvent", ["type": "quitCancelled"])
+        NSApp.reply(toApplicationShouldTerminate: false)
+        return
+      }
+      self.quitStep = .waitingForUpdater
+      AppUpdater.shared.dropOffChannelStagedUpdateBeforeQuit { [weak self] in
+        guard let self, self.quitAttempt == attempt, self.quitStep == .waitingForUpdater else { return }
+        self.termination.approve()
+        self.quitStep = .none
+        NSApp.reply(toApplicationShouldTerminate: true)
+      }
     }
+    let timer = Timer(timeInterval: 30, repeats: false) { _ in finish(false) }
+    bookmarkQuitWait = timer
+    RunLoop.main.add(timer, forMode: .common)
+    DocumentStore.flushBookmarksForQuit(finish)
   }
 
   func terminationWasCancelled() {
-    termination.cancel()
+    saveWait?.invalidate()
+    saveWait = nil
+    bookmarkQuitWait?.invalidate()
+    bookmarkQuitWait = nil
+    cancelTermination()
     quitStep = .none
     quitAttempt += 1
+  }
+
+  private func cancelTermination() {
+    DocumentStore.cancelBookmarkQuit()
+    if termination.cancel() { DocumentStore.reopen() }
   }
 
   func reopen() {

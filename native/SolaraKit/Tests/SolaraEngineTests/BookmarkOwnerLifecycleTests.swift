@@ -6,6 +6,168 @@ import SolaraStore
 @testable import SolaraEngine
 
 @Suite(.serialized) @MainActor struct BookmarkOwnerLifecycleTests {
+  @Test func retirementCleanupHandsOffBeforeBlockedJournalAndWaitsBeforeDeletion() async throws {
+    let directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("RetirementWriterScratch-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let entered = DispatchSemaphore(value: 0)
+    let release = DispatchSemaphore(value: 0)
+    let handedOff = DispatchSemaphore(value: 0)
+    let watchdogDone = DispatchSemaphore(value: 0)
+    let watchdog = Mutex(false)
+    var operations = BookmarkPendingFileOperations.live
+    let sync = operations.syncFile
+    operations.syncFile = { url in
+      entered.signal()
+      guard release.wait(timeout: .now() + 8) == .success else { throw BookmarkPendingStoreError.unavailable }
+      try sync(url)
+    }
+    let owner = NativeBookmarkOwner(store: BookmarkPendingStore(directory: directory, fileOperations: operations), profiles: ["p": ""], defaultProfile: "p", wake: { _ in })
+    NativeBookmarkOwner.current = owner
+    defer { owner.stop(); NativeBookmarkOwner.current = nil }
+    owner.coordinator.seed(engine: "", document: BookmarkCoordinatorTests().document(["https://a.test"]), ready: true)
+    let done = DispatchSemaphore(value: 0)
+    owner.coordinator.enqueueJournalWrite({ staged in try staged.submit(profile: "p", mutations: [], requestID: "before-retirement") }) { _ in done.signal() }
+    #expect(blockingWait(entered, seconds: 5))
+    let worker = Thread {
+      let returned = handedOff.wait(timeout: .now() + 5) == .success
+      watchdog.withLock { $0 = !returned }
+      release.signal()
+      release.signal()
+      watchdogDone.signal()
+    }
+    worker.start()
+    try NativeBookmarkOwner.retireBookmarksForCleanup(engine: "")
+    handedOff.signal()
+    #expect(blockingWait(watchdogDone, seconds: 6))
+    #expect(!watchdog.withLock { $0 })
+    #expect(blockingWait(done, seconds: 5))
+    try await NativeBookmarkOwner.settleBookmarkEngine(engine: "")
+    #expect(BookmarkPendingStore(directory: directory).load().payload?["terminalEngines"]?[""] == "retired")
+    #expect(throws: BookmarkWriterError.staleBinding) { try owner.submit(profile: "p", mutations: [], binding: owner.binding(profile: "p")) }
+  }
+
+  @Test(arguments: [false, true], [false, true]) func replacementDrainsBlockedWriterWithoutHoldingSelectionLock(cancelReplacement: Bool, cancelQuit: Bool) async throws {
+    let directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("ReplacementWriterScratch-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let entered = DispatchSemaphore(value: 0)
+    let release = DispatchSemaphore(value: 0)
+    let readSelection = DispatchSemaphore(value: 0)
+    let replacementDone = DispatchSemaphore(value: 0)
+    let watchdogDone = DispatchSemaphore(value: 0)
+    let watchdog = Mutex(false)
+    var operations = BookmarkPendingFileOperations.live
+    let sync = operations.syncFile
+    operations.syncFile = { url in entered.signal(); guard release.wait(timeout: .now() + 8) == .success else { throw BookmarkPendingStoreError.unavailable }; try sync(url) }
+    let owner = NativeBookmarkOwner(store: BookmarkPendingStore(directory: directory, fileOperations: operations), profiles: ["default": ""], defaultProfile: "default", wake: { _ in })
+    NativeBookmarkOwner.current = owner
+    defer { NativeBookmarkOwner.cancelJournalQuit(); owner.stop(); NativeBookmarkOwner.current?.stop(); NativeBookmarkOwner.current = nil }
+    owner.coordinator.seed(engine: "", document: BookmarkCoordinatorTests().document(["https://a.test"]), ready: true)
+    let binding = try owner.binding(profile: "default")
+    let replacement = await NativeBookmarkOwner.prepare(directory: directory, state: BrowserState())
+    let writeDone = DispatchSemaphore(value: 0)
+    owner.coordinator.enqueueJournalWrite({ staged in try staged.submit(profile: "default", mutations: [], requestID: "before-replacement") }) { _ in writeDone.signal() }
+    #expect(blockingWait(entered, seconds: 5))
+    let replacer = Thread { NativeBookmarkOwner.current = replacement; replacementDone.signal() }
+    replacer.start()
+    let deadline = ContinuousClock.now + .seconds(5)
+    while (try? owner.snapshot(profile: "default").binding) == binding, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(1)) }
+    #expect((try? owner.snapshot(profile: "default").binding) != binding)
+    let quitStarted = Mutex(false)
+    let quitFinished = Mutex(false)
+    let quitTask = Task {
+      quitStarted.withLock { $0 = true }
+      try await NativeBookmarkOwner.flushJournalForQuit()
+      quitFinished.withLock { $0 = true }
+    }
+    let quitDeadline = ContinuousClock.now + .seconds(5)
+    while !quitStarted.withLock({ $0 }), ContinuousClock.now < quitDeadline { await Task.yield() }
+    #expect(quitStarted.withLock { $0 })
+    #expect(!quitFinished.withLock { $0 })
+    let worker = Thread {
+      let returned = readSelection.wait(timeout: .now() + 5) == .success
+      watchdog.withLock { $0 = !returned }
+      release.signal()
+      watchdogDone.signal()
+    }
+    worker.start()
+    _ = NativeBookmarkOwner.current
+    _ = NativeBookmarkOwner.ownershipState
+    if cancelReplacement { NativeBookmarkOwner.current = nil }
+    if cancelQuit { NativeBookmarkOwner.cancelJournalQuit() }
+    readSelection.signal()
+    #expect(blockingWait(watchdogDone, seconds: 6))
+    #expect(!watchdog.withLock { $0 })
+    #expect(blockingWait(writeDone, seconds: 5))
+    #expect(blockingWait(replacementDone, seconds: 5))
+    try await quitTask.value
+    #expect(quitFinished.withLock { $0 })
+    if cancelQuit && !cancelReplacement {
+      #expect(NativeBookmarkOwner.writableCurrent === replacement)
+      _ = try await replacement.coordinator.performJournalWrite { try $0.submit(profile: "default", mutations: [], requestID: "after-cancelled-quit") }
+    } else { #expect(NativeBookmarkOwner.writableCurrent == nil) }
+    #expect(cancelReplacement ? NativeBookmarkOwner.current == nil : NativeBookmarkOwner.current === replacement)
+    #expect(BookmarkPendingStore(directory: directory).load().payload?["requests"]?.array?.contains { $0["id"] == "before-replacement" } == true)
+    #expect(throws: BookmarkWriterError.staleBinding) { try owner.submit(profile: "default", mutations: [], binding: binding) }
+  }
+
+  @Test func projectionDeltaSendsChangedNodesAndRemovalWithoutTheUnchangedTree() throws {
+    var nodes: JSONObject = [:]
+    for index in 0..<5000 { nodes["b\(index)"] = .object(["title": .string("Page \(index)"), "id": .string("b\(index)")]) }
+    func projection(_ nodes: JSONObject, revision: String, owner: String = "1", ready: Bool = true) -> JSONValue {
+      .object(["owner": .string(owner), "generation": "1", "profiles": .object(["default": .object(["engine": "", "generation": "1"])]), "views": .object(["": .object(["revision": .string(revision), "hasView": true, "readyForSync": .bool(ready), "document": .object(["nodes": .object(nodes), "roots": .object(["default": .object(["bar": "bar", "other": "other"])])])])])])
+    }
+    let before = projection(nodes, revision: "1")
+    nodes["b0"] = .object(["title": "Renamed", "id": "b0"])
+    nodes.removeValue(forKey: "b1")
+    nodes["__proto__"] = .object(["title": "Special", "id": "__proto__"])
+    let next = projection(nodes, revision: "2")
+    let delta = NativeBookmarkOwner.projectionDelta(next, previous: before)
+    #expect(delta["full"] == false)
+    let document = try #require(delta["projection"]?["views"]?[""]?["document"])
+    #expect(document["nodes"]?.object?.count == 2)
+    #expect(document["nodes"]?["b0"]?["title"] == "Renamed")
+    #expect(document["nodes"]?["__proto__"]?["title"] == "Special")
+    #expect(document["removed"] == .array(["b1"]))
+    #expect(delta.bookmarkText().utf8.count < 1000)
+    let unchanged = NativeBookmarkOwner.projectionDelta(projection(nodes, revision: "2", ready: false), previous: next)
+    #expect(unchanged["projection"]?["views"]?[""]?["document"] == nil)
+    #expect(unchanged["projection"]?["views"]?[""]?["readyForSync"] == false)
+    #expect(NativeBookmarkOwner.projectionDelta(next, previous: nil)["full"] == true)
+    #expect(NativeBookmarkOwner.projectionDelta(projection(nodes, revision: "2", owner: "2"), previous: next)["full"] == true)
+  }
+
+  @Test func compactBindingMatchesSnapshotAcrossPrivateAliasesRemapsAndRetirement() async throws {
+    let f = try await OwnerLifecycleFixture.make()
+    defer { f.stop() }
+    #expect(try !f.owner.snapshot(profile: "default").ready)
+    #expect(try f.owner.binding(profile: "default") == f.owner.snapshot(profile: "default").binding)
+    try await f.start()
+    f.owner.remap(profiles: ["default": "", "alias": "", "work": "work"], defaultProfile: "default")
+    for profile in ["default", "alias", "work", "incognito:private@default"] {
+      #expect(try f.owner.binding(profile: profile) == f.owner.snapshot(profile: profile).binding)
+    }
+    let before = try f.owner.binding(profile: "alias")
+    f.owner.remap(profiles: ["default": "", "work": "work"], defaultProfile: "default")
+    #expect(throws: BookmarkWriterError.unknownProfile) { try f.owner.binding(profile: "alias") }
+    f.owner.remap(profiles: ["default": "", "alias": "", "work": "work"], defaultProfile: "default")
+    let restored = try f.owner.binding(profile: "alias")
+    #expect(restored != before)
+    #expect(try restored == f.owner.snapshot(profile: "alias").binding)
+    try f.owner.retireBookmarks(engine: "work")
+    let retired = try f.owner.binding(profile: "work")
+    #expect(try retired == f.owner.snapshot(profile: "work").binding)
+    #expect(throws: BookmarkWriterError.staleBinding) {
+      try f.owner.submit(profile: "work", mutations: [], binding: retired)
+    }
+    let directory = try FileManager.default.contentsOfDirectory(atPath: f.directory.path).sorted()
+    let projection = try f.owner.projection()
+    for _ in 0..<10 { _ = try f.owner.binding(profile: "default") }
+    #expect(try f.owner.projection() == projection)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: f.directory.path).sorted() == directory)
+  }
+
   @Test func safeModeRestorableTerminalRefreshesDisplayWithoutJournalWrites() async throws {
     let f = try await OwnerLifecycleFixture.make()
     defer { f.stop() }

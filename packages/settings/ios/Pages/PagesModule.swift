@@ -26,6 +26,10 @@ public class PagesModule: Module {
       MainActor.assumeIsolated { MeetingAlertHost.hide(windowId: windowId) }
     }.runOnQueue(.main)
 
+    AsyncFunction("bookmarkScale") { (operation: String, value: String?) -> String in
+      MainActor.assumeIsolated { NativePageView.bookmarkScale(operation, value) }
+    }.runOnQueue(.main)
+
     AsyncFunction("devPages") { () -> String in
       MainActor.assumeIsolated { NativePageView.devState() }
     }.runOnQueue(.main)
@@ -88,6 +92,51 @@ final class NativePageView: ExpoView {
     liveCard.onEvent = { [weak self] event in self?.send(event) }
     Self.live.add(self)
     PageProbe.enabled = ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] == "1"
+  }
+
+  static func bookmarkScale(_ operation: String, _ value: String?) -> String {
+    let environment = ProcessInfo.processInfo.environment
+    guard !LaunchSwitches.shared.distribution, environment["AC_BENCH_BOOKMARKS"] == "1",
+      environment["SOLARA_BACKGROUND"] == "1", environment["SOLARA_DATA_DIR"]?.isEmpty == false,
+      let view = live.allObjects.first(where: { $0.window != nil && $0.kind == "bookmarks" }) else { return "null" }
+    let model = view.bookmarks
+    switch operation {
+    case "folder": if let value { model.query = ""; model.folderId = value }
+    case "query": model.query = value ?? ""
+    case "selectAll": model.selected = model.ids
+    case "delete":
+      let selected = model.selected
+      model.selected = []
+      if !selected.isEmpty { model.emit(.delete(selected)) }
+    case "scroll":
+      func scrollViews(_ root: NSView) -> [NSScrollView] {
+        (root as? NSScrollView).map { [$0] } ?? root.subviews.flatMap(scrollViews)
+      }
+      if let scroll = view.host.flatMap({ scrollViews($0).max(by: { $0.bounds.width < $1.bounds.width }) }), let document = scroll.documentView {
+        let y = min(max(CGFloat(Double(value ?? "0") ?? 0), 0), max(0, document.bounds.height - scroll.contentView.bounds.height))
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: y))
+        scroll.reflectScrolledClipView(scroll.contentView)
+      }
+    default: break
+    }
+    let ids = model.ids
+    func scrollViews(_ root: NSView) -> [NSScrollView] {
+      (root as? NSScrollView).map { [$0] } ?? root.subviews.flatMap(scrollViews)
+    }
+    let listScroll = view.host.flatMap { scrollViews($0).max(by: { $0.bounds.width < $1.bounds.width }) }
+    let frameItems = PageProbe.items.values.filter { $0.label.hasPrefix("bookmark:") || $0.label.hasPrefix("folder:") || $0.label == "Search bookmarks" }
+    let wanted = Set(ids.prefix(6).map { "bookmark:\($0)" })
+    let visible = frameItems.filter { $0.frame.maxY > 0 && $0.frame.minY < (view.window?.frame.height ?? 0) }
+    let frames: [[String: Any]] = visible.filter { wanted.contains($0.label) || !$0.label.hasPrefix("bookmark:") }.prefix(12).map { ["label": $0.label, "x": $0.frame.minX, "y": $0.frame.minY, "width": $0.frame.width, "height": $0.frame.height] }
+    let node = value.flatMap { model.nodes[$0] }
+    let output: [String: Any] = ["count": ids.count, "first": ids.first as Any? ?? NSNull(), "folder": model.folderId as Any? ?? NSNull(),
+      "query": model.query, "selected": model.selected.count, "frames": frames, "materialized": frameItems.count,
+      "scrollY": listScroll?.contentView.bounds.minY as Any? ?? NSNull(),
+      "visibleIds": visible.filter { $0.label.hasPrefix("bookmark:") }.map { String($0.label.dropFirst(9)) },
+      "firstMaterialized": ids.first.map { id in visible.contains { $0.label == "bookmark:\(id)" } } ?? false,
+      "item": node.map { ["id": $0.id, "title": $0.title, "parentId": $0.parentId as Any? ?? NSNull()] } as Any? ?? NSNull()]
+    guard let data = try? JSONSerialization.data(withJSONObject: output) else { return "null" }
+    return String(decoding: data, as: UTF8.self)
   }
 
   static func devState() -> String {

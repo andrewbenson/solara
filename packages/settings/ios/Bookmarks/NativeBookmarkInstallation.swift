@@ -34,13 +34,15 @@ final class NativeBookmarkInstallation {
         let owner = try await prepare()
         prepared = owner
         guard lifetime == ticket, !Task.isCancelled, NativeBookmarkOwner.ownershipState.phase == .starting else { throw BookmarkWriterError.notOwned }
-        NativeBookmarkOwner.current = owner
+        await NativeBookmarkOwner.setCurrent(owner)
+        guard lifetime == ticket, !Task.isCancelled, NativeBookmarkOwner.ownershipState.phase == .starting else { throw BookmarkWriterError.notOwned }
         try await attach(owner)
         guard lifetime == ticket, !Task.isCancelled, NativeBookmarkOwner.completeOwnership(owner, readOnly: safeMode) else { throw BookmarkWriterError.notOwned }
         installedOwner = owner
       } catch {
         if lifetime == ticket { NativeBookmarkOwner.failOwnership(reason: String(describing: error)) }
         prepared?.stop(preservingUnavailable: lifetime == ticket)
+        if lifetime != ticket, let prepared, NativeBookmarkOwner.current === prepared { NativeBookmarkOwner.current = nil }
         throw error
       }
     }

@@ -82,6 +82,9 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
     var previousCoordinator: BookmarkCoordinator?
     var selected = false
     var managed = false
+    var assignmentGeneration: UInt64 = 0
+    var quitting = false
+    var quitGeneration: UInt64 = 0
     var state = BookmarkOwnershipState(phase: .legacy, reason: nil)
     var listeners: [UUID: AsyncStream<BookmarkOwnershipState>.Continuation] = [:]
 
@@ -92,6 +95,7 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
   }
 
   private static let slot = Mutex(Selection())
+  private static let installationLock = NSLock()
   public static var bookmarksSelected: Bool { slot.withLock { $0.selected } }
   public static let projectionChanged = Notification.Name("SolaraBookmarkProjectionChanged")
 
@@ -102,32 +106,80 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
   public static var current: NativeBookmarkOwner? {
     get { slot.withLock { $0.owner } }
     set {
-      slot.withLock { selection in
-        if selection.owner !== newValue {
-          if selection.managed, selection.owner != nil, newValue != nil {
-            selection.publish(.readOnlyUnavailable, reason: "The native bookmark owner was replaced. Editing and sync are paused.")
-          }
-          let previous = selection.owner
-          previous?.revokeAdmissions()
-          if let coordinator = previous?.coordinator ?? selection.previousCoordinator {
-            coordinator.settleJournalForOwnerReplacement()
-          }
-          newValue?.acquirePreparedJournal()
-          if let previous { selection.previousCoordinator = previous.coordinator }
+      let assignment = slot.withLock { selection -> (UInt64, NativeBookmarkOwner?, BookmarkCoordinator?)? in
+        if let newValue, selection.owner === newValue { return nil }
+        selection.assignmentGeneration &+= 1
+        let previous = selection.owner
+        if selection.managed, previous != nil, newValue != nil {
+          selection.publish(.readOnlyUnavailable, reason: "The native bookmark owner was replaced. Editing and sync are paused.")
         }
+        if let previous { selection.previousCoordinator = previous.coordinator }
+        selection.owner = nil
         if newValue != nil { selection.selected = true }
-        selection.owner = newValue
         if newValue == nil && selection.selected && selection.state.phase != .readOnlyUnavailable { selection.publish(.stopped) }
-        else if newValue != nil && !selection.managed { selection.publish(.owned) }
+        return (selection.assignmentGeneration, previous, selection.previousCoordinator)
       }
+      guard let assignment else { return }
+      assignment.1?.revokeAdmissions()
+      guard let newValue else { invalidateProjection(); return }
+      installationLock.lock()
+      defer { installationLock.unlock() }
+      guard slot.withLock({ $0.assignmentGeneration == assignment.0 }) else { newValue.revokeAdmissions(); return }
+      assignment.2?.settleJournalForOwnerReplacement()
+      newValue.acquirePreparedJournal()
+      let installed = slot.withLock { selection in
+        guard selection.assignmentGeneration == assignment.0 else { return false }
+        if selection.quitting { newValue.coordinator.beginJournalQuit { _ in } }
+        selection.owner = newValue
+        if !selection.managed { selection.publish(.owned) }
+        return true
+      }
+      if !installed { newValue.revokeAdmissions() }
       invalidateProjection()
+    }
+  }
+
+  public static func flushJournalForQuit() async throws {
+    let initial = slot.withLock { selection in
+      if !selection.quitting { selection.quitGeneration &+= 1 }
+      selection.quitting = true
+      let coordinators = [selection.owner?.coordinator, selection.previousCoordinator].compactMap { $0 }
+      return (selection.quitGeneration, beginQuitBarriers(coordinators), Set(coordinators.map(ObjectIdentifier.init)))
+    }
+    for barrier in initial.1 { try await barrier.wait() }
+    await Task.detached { settleInstallations() }.value
+    let installed = slot.withLock { selection -> [BookmarkJournalBarrier] in
+      guard selection.quitting, selection.quitGeneration == initial.0 else { return [] }
+      let coordinators = [selection.owner?.coordinator, selection.previousCoordinator].compactMap { $0 }.filter { !initial.2.contains(ObjectIdentifier($0)) }
+      return beginQuitBarriers(coordinators)
+    }
+    for barrier in installed { try await barrier.wait() }
+  }
+
+  private static func beginQuitBarriers(_ coordinators: [BookmarkCoordinator]) -> [BookmarkJournalBarrier] {
+    var seen = Set<ObjectIdentifier>()
+    return coordinators.filter { seen.insert(ObjectIdentifier($0)).inserted }.map { coordinator in
+      let barrier = BookmarkJournalBarrier()
+      coordinator.beginJournalQuit { barrier.complete($0) }
+      return barrier
+    }
+  }
+
+  private static func settleInstallations() { installationLock.lock(); installationLock.unlock() }
+
+  public static func cancelJournalQuit() {
+    slot.withLock { selection in
+      selection.quitting = false
+      selection.quitGeneration &+= 1
+      let coordinators = [selection.owner?.coordinator, selection.previousCoordinator].compactMap { $0 }
+      for coordinator in coordinators { coordinator.cancelJournalQuit() }
     }
   }
 
   public static var ownershipState: BookmarkOwnershipState { slot.withLock { $0.state } }
 
   public static var writableCurrent: NativeBookmarkOwner? {
-    slot.withLock { $0.state.phase == .owned ? $0.owner : nil }
+    slot.withLock { $0.state.phase == .owned && !$0.quitting ? $0.owner : nil }
   }
 
   public static var displayCurrent: NativeBookmarkOwner? {
@@ -189,12 +241,15 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
 
   public static func retireBookmarksForCleanup(engine: String) throws {
     let selection = slot.withLock { ($0.state.phase == .owned ? $0.owner : nil, $0.selected) }
-    if let owner = selection.0 { try owner.retireBookmarks(engine: engine) }
+    if let owner = selection.0 { try owner.enqueueRetirement(engine: engine) }
     else if selection.1 { throw BookmarkCoordinatorError.ownershipUnavailable }
   }
 
   @MainActor public static func settleBookmarkEngine(engine: String) async throws {
-    try await settle(queue: BookmarkEngineQueue.shared, engine: engine)
+    let selection = slot.withLock { ($0.owner, $0.selected) }
+    if let owner = selection.0 { try await owner.settleRetiredBookmarks(engine: engine) }
+    else if selection.1 { throw BookmarkCoordinatorError.ownershipUnavailable }
+    else { try await settle(queue: BookmarkEngineQueue.shared, engine: engine) }
   }
 
   private static let bindingSequence = Mutex<UInt64>(0)
@@ -266,6 +321,14 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
     }
   #endif
 
+  public func binding(profile: String) throws -> BookmarkWriterBinding {
+    fence.lock()
+    defer { fence.unlock() }
+    let engine = try mappedEngine(profile)
+    guard let route = routes[regularProfile(profile)] else { throw BookmarkWriterError.unknownProfile }
+    return BookmarkWriterBinding(engine: engine, generation: route.generation)
+  }
+
   public func snapshot(profile: String) throws -> BookmarkWriterSnapshot {
     for _ in 0..<8 {
       fence.lock()
@@ -332,6 +395,34 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
       }
     }
     throw BookmarkWriterError.staleBinding
+  }
+
+  public static func projectionDelta(_ next: JSONValue, previous: JSONValue?) -> JSONValue {
+    guard let previous, previous["owner"] == next["owner"], previous["generation"] == next["generation"] else {
+      return .object(["full": .bool(true), "projection": next])
+    }
+    var result = next.object ?? [:]
+    var views: JSONObject = [:]
+    for (engine, view) in next["views"]?.object ?? [:] {
+      guard let before = previous["views"]?[engine] else {
+        views[engine] = view
+        continue
+      }
+      var delta = view.object ?? [:]
+      if view["revision"] == before["revision"], view["hasView"] == before["hasView"] {
+        delta.removeValue(forKey: "document")
+      } else {
+        let oldNodes = before["document"]?["nodes"]?.object ?? [:]
+        let newNodes = view["document"]?["nodes"]?.object ?? [:]
+        var nodes: JSONObject = [:]
+        for (id, node) in newNodes where oldNodes[id] != node { nodes[id] = node }
+        let removed = oldNodes.keys.filter { newNodes[$0] == nil }
+        delta["document"] = .object(["nodes": .object(nodes), "removed": JSONValue(removed), "roots": view["document"]?["roots"] ?? .object([:])])
+      }
+      views[engine] = .object(delta)
+    }
+    result["views"] = .object(views)
+    return .object(["full": .bool(false), "projection": .object(result)])
   }
 
   @discardableResult
@@ -420,7 +511,9 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
     bind(token: nil)
   }
 
-  public func retireBookmarks(engine: String) throws {
+  private let retirementTasks = Mutex<JSMap<Task<Void, Error>>>([:])
+
+  private func prepareRetirement(engine: String) throws -> UInt64 {
     fence.lock()
     guard accepting, !prepared else { fence.unlock(); throw BookmarkWriterError.staleBinding }
     retiredEngines.insert(JSKey(engine))
@@ -434,6 +527,10 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
     fence.unlock()
     Self.invalidateProjection()
     coordinator.fencePumpAdmissions()
+    return ticket
+  }
+
+  private func finishRetirement(engine: String, ticket: UInt64) throws {
     try coordinator.retire(engine: engine, admission: {
       guard self.isCurrent(ticket) else { throw BookmarkWriterError.staleBinding }
     })
@@ -446,7 +543,21 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
     }
   }
 
+  public func retireBookmarks(engine: String) throws {
+    try finishRetirement(engine: engine, ticket: prepareRetirement(engine: engine))
+  }
+
+  private func enqueueRetirement(engine: String) throws {
+    let ticket = try prepareRetirement(engine: engine)
+    retirementTasks.withLock { tasks in
+      tasks[engine] = Task {
+        try await self.coordinator.offMain { try self.finishRetirement(engine: engine, ticket: ticket) }
+      }
+    }
+  }
+
   @MainActor public func settleRetiredBookmarks(engine: String) async throws {
+    if let retirement = retirementTasks.withLock({ $0[engine] }) { try await retirement.value }
     try await Self.settle(queue: coordinator.engineQueue, engine: engine)
   }
 
@@ -469,6 +580,73 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
       }
     }
     guard settled else { throw BookmarkCoordinatorError.ownershipUnavailable }
+  }
+
+  private func journalWrite<T: Sendable>(profile: String, binding: BookmarkWriterBinding, _ operation: @escaping @Sendable (BookmarkCoordinator) throws -> T) async throws -> T {
+    try validate(profile: profile, binding: binding)
+    do {
+      return try await coordinator.performJournalWrite { staged in
+        try self.validate(profile: profile, binding: binding)
+        return try operation(staged)
+      }
+    } catch let error as BookmarkWriterError { throw error }
+    catch let error as BookmarkCoordinatorError {
+      if case .expiredRequest = error { throw BookmarkWriterError.expired }
+      if case .conditionFailed = error { throw BookmarkWriterError.conditionFailed(String(describing: error)) }
+      throw BookmarkWriterError.refused(String(describing: error))
+    } catch { throw BookmarkWriterError.refused(String(describing: error)) }
+  }
+
+  public func submitAsync(profile: String, mutations: [BookmarkMutation], binding: BookmarkWriterBinding, requestID: String? = nil) async throws -> BookmarkReceipt {
+    let receipt = try await journalWrite(profile: profile, binding: binding) { staged in
+      try staged.submit(profile: profile, mutations: mutations, requestID: requestID, expectedEngine: binding.engine, admission: { try self.validate(profile: profile, binding: binding) })
+    }
+    dispatchWake(binding)
+    return receipt
+  }
+
+  public func replaceAsync(profile: String, document: JSONValue, expectedRevision: UInt64, binding: BookmarkWriterBinding, requestID: String? = nil, records: [(key: String, hlc: String)] = [], expectedLink: String? = nil) async throws -> UInt64 {
+    let receipt = try await journalWrite(profile: profile, binding: binding) { staged in
+      try staged.replaceDocument(engine: binding.engine, profile: profile, document: document, expectedRevision: expectedRevision, requestID: requestID, expectedEngine: binding.engine, records: records, expectedLink: expectedLink, admission: { try self.validate(profile: profile, binding: binding) })
+    }
+    dispatchWake(binding)
+    return receipt.view.revision
+  }
+
+  public func ackBookmarkFactsAsync(profileId: String, expectedEngine: String, records: [(key: String, seq: UInt64, mintedHLC: String)], expectedLink: String? = nil, generation: UInt64) async throws -> Bool {
+    let binding = BookmarkWriterBinding(engine: expectedEngine, generation: generation)
+    return try await journalWrite(profile: profileId, binding: binding) { staged in
+      try staged.ackBookmarkFacts(profileId: profileId, expectedEngine: expectedEngine, records: records, expectedLink: expectedLink, admission: { try self.validate(profile: profileId, binding: binding) })
+    }
+  }
+
+  public func observeRemoteRecordsAsync(profileId: String, expectedEngine: String, records: [(key: String, hlc: String)], expectedLink: String? = nil, generation: UInt64) async throws -> Bool {
+    let binding = BookmarkWriterBinding(engine: expectedEngine, generation: generation)
+    return try await journalWrite(profile: profileId, binding: binding) { staged in
+      try staged.observeRemoteRecords(profileId: profileId, expectedEngine: expectedEngine, records: records, expectedLink: expectedLink, admission: { try self.validate(profile: profileId, binding: binding) })
+    }
+  }
+
+  public func clearBookmarkFactsAsync(profileId: String, expectedEngine: String, records: [(key: String, seq: UInt64)], generation: UInt64) async throws -> Bool {
+    let binding = BookmarkWriterBinding(engine: expectedEngine, generation: generation)
+    return try await journalWrite(profile: profileId, binding: binding) { staged in
+      try staged.clearBookmarkFacts(profileId: profileId, expectedEngine: expectedEngine, records: records, admission: { try self.validate(profile: profileId, binding: binding) })
+    }
+  }
+
+  public func setBookmarkSyncLinksAsync(_ links: JSMap<String>) async throws -> Bool {
+    let incarnation = fence.withLock { ownerIncarnation }
+    return try await coordinator.performJournalWrite { staged in
+      staged.setBookmarkSyncLinks(links, admission: {
+        try self.fence.withLock {
+          guard self.accepting, !self.prepared, self.ownerIncarnation == incarnation else { throw BookmarkWriterError.staleBinding }
+        }
+      })
+    }
+  }
+
+  public static func setCurrent(_ owner: NativeBookmarkOwner?) async {
+    await Task.detached { Self.current = owner }.value
   }
 
   @discardableResult
@@ -664,7 +842,7 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
   }
 
   @MainActor public func start(catalog: LibraryCatalog, client: BookmarkEngineClient, clock: BookmarkPumpClock, scheduler: BookmarkPumpScheduler) async throws {
-    if prepared { Self.current = self }
+    if prepared { await Self.setCurrent(self) }
     guard isCurrent(currentGeneration), runtime == nil, startingRuntime == nil else { throw BookmarkCoordinatorError.ownershipUnavailable }
     let runtime = NativeBookmarkRuntime(owner: self, catalog: catalog, client: client, clock: clock, scheduler: scheduler)
     startingRuntime = runtime

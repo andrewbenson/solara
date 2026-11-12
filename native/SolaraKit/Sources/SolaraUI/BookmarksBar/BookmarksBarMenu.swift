@@ -41,7 +41,10 @@ public struct BookmarksBarMenu: Sendable {
     case "folder":
       guard let id, let folder = find(id), folder.kind == .folder else { return [] }
       return tree(folder.children, parent: folder)
-    case "overflow": return tree(overflowIds.compactMap { id in snapshot.items.first { $0.id == id } })
+    case "overflow":
+      var byId: [String: BookmarksBarItem] = [:]
+      for item in snapshot.items where byId[item.id] == nil { byId[item.id] = item }
+      return tree(overflowIds.compactMap { byId[$0] })
     case "other":
       guard let folder = snapshot.otherFolder else { return [] }
       return tree(folder.children, parent: folder)

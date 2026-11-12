@@ -152,7 +152,7 @@ enum TestFailure: Error { case timedOut, claimUnavailable }
     try await waitUntil { f.owner?.coordinator.desiredView(engine: "").hasView == true }
     guard let owner = f.owner else { throw TestFailure.claimUnavailable }
     let before = try owner.snapshot(profile: "default")
-    _ = try NativeBookmarkWriter.submit(profile: "default", mutationsJSON: "[{\"method\":\"updateBookmark\",\"args\":[\"b0\",{\"title\":\"Accepted\"}]}]", engine: before.binding.engine, generation: String(before.binding.generation), requestID: "fact")
+    _ = try await NativeBookmarkWriter.submit(profile: "default", mutationsJSON: "[{\"method\":\"updateBookmark\",\"args\":[\"b0\",{\"title\":\"Accepted\"}]}]", engine: before.binding.engine, generation: String(before.binding.generation), requestID: "fact")
     let after = try owner.snapshot(profile: "default")
     expect(after.document["nodes"]?["b0"]?["title"] == "Accepted", "the real bridge durably accepts the edit")
     expect(after.facts.count == 1 && (after.facts.values.first?.at ?? 0) > 0, "the production-prepared owner records a fact with a real timestamp")
@@ -189,15 +189,15 @@ enum TestFailure: Error { case timedOut, claimUnavailable }
     try await f.installation.ensureReady()
     await f.catalog.start(engineProfiles: [""])
     do { _ = try await f.catalog.applyBookmarks(ops: [.init(op: "remove", id: "b0")], engineProfile: ""); failures.append("safe mode admitted catalog writes") } catch {}
-    let commands: [() throws -> Void] = [
-      { _ = try NativeBookmarkWriter.submit(profile: "default", mutationsJSON: "[]", engine: "", generation: "1", requestID: nil) },
-      { _ = try NativeBookmarkWriter.replace(profile: "default", documentJSON: "{}", expectedRevision: "0", engine: "", generation: "1", requestID: nil) },
-      { _ = try NativeBookmarkWriter.ackBookmarkFacts(profile: "default", engine: "", recordsJSON: "[]", generation: "1") },
-      { _ = try NativeBookmarkWriter.observeBookmarkRecords(profile: "default", engine: "", recordsJSON: "[]", generation: "1") },
-      { _ = try NativeBookmarkWriter.clearBookmarkFacts(profile: "default", engine: "", recordsJSON: "[]", generation: "1") },
-      { _ = try NativeBookmarkWriter.setBookmarkSyncLinks(linksJSON: "{}") },
+    let commands: [() async throws -> Void] = [
+      { _ = try await NativeBookmarkWriter.submit(profile: "default", mutationsJSON: "[]", engine: "", generation: "1", requestID: nil) },
+      { _ = try await NativeBookmarkWriter.replace(profile: "default", documentJSON: "{}", expectedRevision: "0", engine: "", generation: "1", requestID: nil) },
+      { _ = try await NativeBookmarkWriter.ackBookmarkFacts(profile: "default", engine: "", recordsJSON: "[]", generation: "1") },
+      { _ = try await NativeBookmarkWriter.observeBookmarkRecords(profile: "default", engine: "", recordsJSON: "[]", generation: "1") },
+      { _ = try await NativeBookmarkWriter.clearBookmarkFacts(profile: "default", engine: "", recordsJSON: "[]", generation: "1") },
+      { _ = try await NativeBookmarkWriter.setBookmarkSyncLinks(linksJSON: "{}") },
     ]
-    for command in commands { do { try command(); failures.append("safe mode admitted a bridge write or sync mutation") } catch {} }
+    for command in commands { do { try await command(); failures.append("safe mode admitted a bridge write or sync mutation") } catch {} }
     expect(f.preparations == 1 && f.attachments == 1, "safe mode installs the read-only recovery/attach path")
     expect(f.client.rawReads == 0 && f.client.rawApplies == 0 && f.client.pumpApplies == 0, "safe mode cannot touch Chrome bookmarks through either client")
     expect(try! Data(contentsOf: sentinel) == bytes, "safe mode preserves journal evidence byte for byte")
@@ -280,7 +280,7 @@ enum TestFailure: Error { case timedOut, claimUnavailable }
     expect(original !== replacement, "the fixture installs a distinct unstarted replacement")
     expect(NativeBookmarkWriter.state()["state"] as? String == "read-only-unavailable", "an unclaimed replacement cannot inherit managed ownership")
     do { _ = try NativeBookmarkWriter.snapshot(profile: "default"); failures.append("an unstarted replacement advertised a writable snapshot") } catch {}
-    do { _ = try NativeBookmarkWriter.submit(profile: "default", mutationsJSON: "[]", engine: "", generation: "1", requestID: nil); failures.append("an unstarted replacement admitted a bridge write") } catch {}
+    do { _ = try await NativeBookmarkWriter.submit(profile: "default", mutationsJSON: "[]", engine: "", generation: "1", requestID: nil); failures.append("an unstarted replacement admitted a bridge write") } catch {}
     do { try await f.installation.ensureReady(); failures.append("a replacement reused the completed bootstrap task") } catch {}
     let raw = f.client.rawApplies
     do { _ = try await f.catalog.applyBookmarks(ops: [], engineProfile: ""); failures.append("an unclaimed replacement admitted a raw catalog command") } catch {}
@@ -360,7 +360,7 @@ enum TestFailure: Error { case timedOut, claimUnavailable }
     expect(!f.catalog.bookmarks(engineProfile: "").readyForSync, "safe display is not sync readiness")
     expect((try? NativeBookmarkWriter.projection()) != nil, "read-only display has an aggregate projection")
     do { _ = try NativeBookmarkWriter.snapshot(profile: "default"); failures.append("safe mode advertised a writable sync snapshot") } catch {}
-    do { _ = try NativeBookmarkWriter.submit(profile: "default", mutationsJSON: "[]", engine: "", generation: "1", requestID: nil); failures.append("safe mode accepted an edit") } catch {}
+    do { _ = try await NativeBookmarkWriter.submit(profile: "default", mutationsJSON: "[]", engine: "", generation: "1", requestID: nil); failures.append("safe mode accepted an edit") } catch {}
     expect(f.client.pumpReads > 0 && f.client.pumpApplies == 0 && f.client.rawReads == 0, "safe mode refreshes only through the pump")
     expect(try! Data(contentsOf: sentinel) == bytes, "safe mode keeps unreadable evidence unchanged")
     expect(try! FileManager.default.contentsOfDirectory(atPath: f.directory.path) == [BookmarkPendingStore.journalName], "safe mode writes no recovery or cache artifact")

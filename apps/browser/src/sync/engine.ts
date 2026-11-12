@@ -537,7 +537,7 @@ const compactionDue = () =>
 
 function save() {
   if (!metadataLoaded) load();
-  pushBookmarkSyncLinks();
+  void pushBookmarkSyncLinks();
   if (newerFormat || syncHeld()) return;
   if (doc.v === 2 && (pairingAdmission || pairingRecovery)) return;
   if (doc.v === 2 && pairingPending()) {
@@ -610,7 +610,7 @@ function save() {
 }
 
 function publishUi(patch: Partial<SyncUi> = {}) {
-  pushBookmarkSyncLinks();
+  void pushBookmarkSyncLinks();
   useSync.setState({
     enabled: doc.enabled,
     folder: doc.folder,
@@ -673,20 +673,35 @@ export const ledgerScopeOf = (profileId: string) => `${doc.folder}\n${doc.device
 
 const bookmarkSyncLinkOf = (profileId: string) => doc.enabled && doc.folder && doc.deviceId && doc.profiles[profileId]?.enabled && !doc.profiles[profileId]?.retire ? ledgerScopeOf(profileId) : null;
 let sentBookmarkLinks: string | undefined;
+let pendingBookmarkLinks: { signature: string; promise: Promise<boolean> } | undefined;
+let bookmarkLinksQueue = Promise.resolve();
 
-function pushBookmarkSyncLinks(force = false) {
-  if (!metadataLoaded || newerFormat) return;
+function pushBookmarkSyncLinks(): Promise<boolean> {
+  if (!metadataLoaded || newerFormat) return Promise.resolve(true);
   const writer = bookmarkWriterState();
-  if (writer.state !== "owned") return;
+  if (writer.state !== "owned") return Promise.resolve(true);
   const links = Object.fromEntries(Object.keys(doc.profiles).flatMap((id) => {
     const link = bookmarkSyncLinkOf(id);
     return link ? [[id, link]] : [];
   }));
   const signature = JSON.stringify([writer.generation, links]);
-  if (!force && signature === sentBookmarkLinks) return;
-  try {
-    if (setBookmarkSyncLinks(links)) sentBookmarkLinks = signature;
-  } catch {}
+  if (pendingBookmarkLinks?.signature === signature) return pendingBookmarkLinks.promise;
+  if (!pendingBookmarkLinks && signature === sentBookmarkLinks) return Promise.resolve(true);
+  const promise = bookmarkLinksQueue.then(async () => {
+    if (signature === sentBookmarkLinks) return true;
+    try {
+      if (await setBookmarkSyncLinks(links)) {
+        sentBookmarkLinks = signature;
+        return true;
+      }
+    } catch {}
+    return false;
+  });
+  pendingBookmarkLinks = { signature, promise };
+  bookmarkLinksQueue = promise.then(() => {
+    if (pendingBookmarkLinks?.promise === promise) pendingBookmarkLinks = undefined;
+  });
+  return promise;
 }
 
 function heldPasswordsByProfile(): Record<string, number> {
@@ -756,7 +771,7 @@ function profileAdapters(profileId: string, retiring: boolean, everyType = false
   }
   return [
     ...(t.pinned ? pinnedAreaAdapters(profileId) : []),
-    ...(t.bookmarks && ownsData ? [inTodaysNames(bookmarksAdapter(profileId, { device: id, link: () => bookmarkSyncLinkOf(profileId), opened: () => pushBookmarkSyncLinks(true) }))] : []),
+    ...(t.bookmarks && ownsData ? [inTodaysNames(bookmarksAdapter(profileId, { device: id, link: () => bookmarkSyncLinkOf(profileId) }))] : []),
     ...(t.history && ownsData ? [inTodaysNames(historyAdapter(profileId))] : []),
     inTodaysNames(deviceTabsAdapter(profileId, id, deviceName, !t.tabs)),
     ...(t.passwords && ownsData && !passwordsRefused() ? [passwords] : []),
@@ -863,6 +878,11 @@ async function runCycle({ retiring = false } = {}) {
       if (!retire && !link.enabled) continue;
       const scope = `p:${link.syncId}`;
       const state = (doc.scopes[scope] ??= freshScope(scope));
+      if (!await pushBookmarkSyncLinks()) throw new Error("Native bookmark sync link checkpoint refused");
+      if (doc !== cycleDoc || cycleGeneration !== generation || doc.profiles[profileId] !== link) {
+        again = true;
+        return;
+      }
       const scopeGuard = guard(scope, state, device, profileAdapters(profileId, retire), transport, retire);
       await syncScope({
         scope,
@@ -1196,6 +1216,7 @@ function resendRevival(scope: string, state: ScopeState, device: string) {
 }
 
 async function noteWhatThisMacHas(only?: string) {
+  if (!await pushBookmarkSyncLinks()) throw new Error("Native bookmark sync link checkpoint refused");
   if (only === undefined) baselines = new Map();
   const scopes = [[APP_SCOPE, null] as const, ...Object.entries(doc.profiles).map(([id, link]) => [`p:${link.syncId}`, id] as const)];
   const toNote = scopes.flatMap(([scope, profileId]) =>
@@ -2106,6 +2127,7 @@ export function setProfileSynced(profileId: string, enabled: boolean) {
   save();
   publishUi();
   scheduleSync(0);
+  return pushBookmarkSyncLinks();
 }
 
 const remoteProfileRecord = (syncId: string) => (doc.scopes[APP_SCOPE]?.records[`prof:${syncId}`]?.v ?? undefined) as ProfileRecord | undefined;

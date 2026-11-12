@@ -185,6 +185,21 @@ public enum DocumentStore {
     flush()
   }
 
+  private static var bookmarkQuitBarrier: ((@escaping @Sendable (Bool) -> Void) -> Void)?
+  private static var bookmarkQuitCancellation: (() -> Void)?
+
+  public static func registerBookmarkQuitBarrier(flush: @escaping (@escaping @Sendable (Bool) -> Void) -> Void, cancel: @escaping () -> Void) {
+    bookmarkQuitBarrier = flush
+    bookmarkQuitCancellation = cancel
+  }
+
+  static func flushBookmarksForQuit(_ completion: @escaping @Sendable (Bool) -> Void) {
+    if let bookmarkQuitBarrier { bookmarkQuitBarrier(completion) }
+    else { completion(true) }
+  }
+
+  static func cancelBookmarkQuit() { bookmarkQuitCancellation?() }
+
   public static func registerBeforeQuitFlush(_ callback: @escaping () -> Void) {
     _ = flushOnQuit
     beforeQuitFlush = callback
@@ -244,6 +259,10 @@ public enum DocumentStore {
 
   static func close() {
     writes.close()
+  }
+
+  static func reopen() {
+    writes.reopen()
   }
 
   @discardableResult
@@ -456,6 +475,8 @@ public class ShellModule: Module {
       MenuState.current = MenuState(state)
       MainMenu.refresh()
     }.runOnQueue(.main)
+    Function("bookmarkNativeSourceVersion") { 1 }
+
     AsyncFunction("setMenuBookmarks") { (bookmarks: [String: Any]) in
       MenuState.setBookmarks(bookmarks)
       MainMenu.refresh()

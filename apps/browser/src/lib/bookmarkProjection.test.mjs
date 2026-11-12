@@ -10,6 +10,7 @@ const { emitBookmarkProjection } = await import("../test-native/expo.ts");
 const { docs, documentWrites } = await import("../test-native/shell.ts");
 const { engineEvent, solaraCoreNativeModules } = await import("../test-native/solaracore.ts");
 const { seedBookmarkProjection, nextBookmarkProjectionOwner } = await import("../test-native/bookmarkProjection.ts");
+const { refreshBookmarkProjection } = await import("../store/bookmarkProjection.ts");
 const S = () => useBrowser.getState();
 const tree = (engine, title = "Native", profile = "default") => {
   const bar = `bar@${engine || "default"}`, other = `other@${engine || "default"}`;
@@ -52,6 +53,73 @@ afterEach(() => {
 const select = () => globalThis.acTestBookmarkWriter = new Owner();
 const drain = async () => { for (let n = 0; n < 20; n++) await Promise.resolve(); };
 const mockEngineCall = (t, handler) => t.mock.method(solaraCoreNativeModules.SolaraCEF, "engineCall", async (name) => JSON.stringify(await handler(name)));
+
+test("unchanged projection metadata skips whole bookmark comparisons without hiding edits", (t) => {
+  const owner = select();
+  refreshBookmarkProjection(useBrowser);
+  const before = S().bookmarks;
+  const stringify = JSON.stringify;
+  let comparisons = 0;
+  t.mock.method(JSON, "stringify", function(value, ...args) {
+    if (value?.nodes?.page && value?.roots?.default) comparisons++;
+    return stringify.call(this, value, ...args);
+  });
+  assert.equal(refreshBookmarkProjection(useBrowser), false);
+  assert.equal(comparisons, 0);
+  assert.equal(S().bookmarks, before);
+  owner.document = tree("", "Changed"); owner.revision = "2";
+  assert.equal(refreshBookmarkProjection(useBrowser), true);
+  assert.equal(S().bookmarks.nodes.page.title, "Changed");
+});
+
+test("projection deltas preserve untouched nodes and apply removals without serializing the tree", (t) => {
+  const owner = select();
+  let calls = 0;
+  owner.projectionDelta = (token) => {
+    calls++;
+    const projection = owner.projection();
+    if (calls === 1) return { token: "delta-one", full: true, projection };
+    assert.equal(token, "delta-one");
+    const view = projection.views[""];
+    view.document = { roots: view.document.roots, nodes: { page: owner.document.nodes.page }, removed: ["removed"] };
+    return { token: "delta-two", full: false, projection };
+  };
+  owner.document.nodes.removed = { ...owner.document.nodes.page, id: "removed" };
+  refreshBookmarkProjection(useBrowser);
+  const before = S().bookmarks;
+  const stringify = JSON.stringify;
+  let wholeTrees = 0;
+  t.mock.method(JSON, "stringify", function(value, ...args) {
+    if (value?.nodes?.["bar@default"]) wholeTrees++;
+    return stringify.call(this, value, ...args);
+  });
+  owner.document = tree("", "Delta edit"); owner.revision = "2";
+  refreshBookmarkProjection(useBrowser);
+  assert.equal(calls, 2);
+  assert.equal(wholeTrees, 0);
+  assert.equal(S().bookmarks.nodes.page.title, "Delta edit");
+  assert.equal(S().bookmarks.nodes.removed, undefined);
+  assert.equal(S().bookmarks.nodes["bar@default"], before.nodes["bar@default"]);
+  assert.ok(before.nodes.removed);
+});
+
+test("unchanged revision restores readiness after projection failure or ownership downgrade", () => {
+  const owner = select();
+  refreshBookmarkProjection(useBrowser);
+  const projection = owner.projection;
+  owner.projection = () => { throw new Error("temporarily unavailable"); };
+  assert.equal(refreshBookmarkProjection(useBrowser), false);
+  assert.deepEqual(S().bookmarksReady, {});
+  owner.projection = projection;
+  refreshBookmarkProjection(useBrowser);
+  assert.equal(S().bookmarksReady.default, true);
+  owner.mode = "read-only-unavailable";
+  refreshBookmarkProjection(useBrowser);
+  assert.deepEqual(S().bookmarksReady, {});
+  owner.mode = "owned";
+  refreshBookmarkProjection(useBrowser);
+  assert.equal(S().bookmarksReady.default, true);
+});
 
 test("starting ownership bootstraps native bookmarks before projecting them", async () => {
   const owner = select();

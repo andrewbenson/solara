@@ -5,6 +5,7 @@ import SolaraLive
 import SolaraSyncAdapter
 
 public class SettingsModule: Module {
+  private let bookmarkProjectionFeed = NativeBookmarkProjectionFeed()
   private var bookmarkProjectionObserver: NSObjectProtocol?
   private var bookmarkStateTask: Task<Void, Never>?
   public func definition() -> ModuleDefinition {
@@ -200,7 +201,16 @@ public class SettingsModule: Module {
     }.runOnQueue(.main)
     #endif
 
-    Function("bookmarkWriterAPIVersion") { () -> Int in 4 }
+    Function("bookmarkWriterAPIVersion") { () -> Int in 5 }
+
+    AsyncFunction("flushBookmarkJournal") { () async throws -> Bool in
+      try await NativeBookmarkOwner.flushJournalForQuit()
+      return true
+    }
+
+    Function("cancelBookmarkQuit") { () in
+      NativeBookmarkOwner.cancelJournalQuit()
+    }
 
     Function("bookmarkWriterState") { () -> [String: Any] in
       NativeBookmarkLaunch.select()
@@ -209,6 +219,10 @@ public class SettingsModule: Module {
 
     Function("bookmarkProjection") { () throws -> String in
       try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.projection() }
+    }
+
+    Function("bookmarkProjectionDelta") { [feed = bookmarkProjectionFeed] (token: String?) throws -> String in
+      try NativeBookmarkWriter.bridge { try feed.read(token: token) }
     }
 
     AsyncFunction("reloadBookmarkProjection") { (promise: Promise) in
@@ -229,6 +243,10 @@ public class SettingsModule: Module {
       }
     }.runOnQueue(.main)
 
+    Function("bookmarkWriterBinding") { (profileId: String) throws -> [String: Any] in
+      try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.binding(profile: profileId) }
+    }
+
     Function("bookmarkWriterSnapshot") { (profileId: String) throws -> [String: Any] in
       try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.snapshot(profile: profileId) }
     }
@@ -237,40 +255,44 @@ public class SettingsModule: Module {
       try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.acknowledgeReceipt(profile: profileId, engine: engine, generation: generation, requestID: requestId) }
     }
 
-    Function("ackBookmarkFacts") { (profileId: String, engine: String, recordsJSON: String, generation: String) throws -> Bool in
-      try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.ackBookmarkFacts(profile: profileId, engine: engine, recordsJSON: recordsJSON, generation: generation) }
+    AsyncFunction("ackBookmarkFacts") { (profileId: String, engine: String, recordsJSON: String, generation: String) async throws -> Bool in
+      try await NativeBookmarkWriter.bridge { try await NativeBookmarkWriter.ackBookmarkFacts(profile: profileId, engine: engine, recordsJSON: recordsJSON, generation: generation) }
     }
 
-    Function("observeBookmarkRecords") { (profileId: String, engine: String, recordsJSON: String, generation: String) throws -> Bool in
-      try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.observeBookmarkRecords(profile: profileId, engine: engine, recordsJSON: recordsJSON, generation: generation) }
+    AsyncFunction("observeBookmarkRecords") { (profileId: String, engine: String, recordsJSON: String, generation: String) async throws -> Bool in
+      try await NativeBookmarkWriter.bridge { try await NativeBookmarkWriter.observeBookmarkRecords(profile: profileId, engine: engine, recordsJSON: recordsJSON, generation: generation) }
     }
 
-    Function("ackBookmarkFactsForLink") { (profileId: String, engine: String, recordsJSON: String, link: String, generation: String) throws -> Bool in
-      try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.ackBookmarkFacts(profile: profileId, engine: engine, recordsJSON: recordsJSON, link: link, generation: generation) }
+    AsyncFunction("ackBookmarkFactsForLink") { (profileId: String, engine: String, recordsJSON: String, link: String, generation: String) async throws -> Bool in
+      try await NativeBookmarkWriter.bridge { try await NativeBookmarkWriter.ackBookmarkFacts(profile: profileId, engine: engine, recordsJSON: recordsJSON, link: link, generation: generation) }
     }
 
-    Function("observeBookmarkRecordsForLink") { (profileId: String, engine: String, recordsJSON: String, link: String, generation: String) throws -> Bool in
-      try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.observeBookmarkRecords(profile: profileId, engine: engine, recordsJSON: recordsJSON, link: link, generation: generation) }
+    AsyncFunction("observeBookmarkRecordsForLink") { (profileId: String, engine: String, recordsJSON: String, link: String, generation: String) async throws -> Bool in
+      try await NativeBookmarkWriter.bridge { try await NativeBookmarkWriter.observeBookmarkRecords(profile: profileId, engine: engine, recordsJSON: recordsJSON, link: link, generation: generation) }
     }
 
-    Function("clearBookmarkFacts") { (profileId: String, engine: String, recordsJSON: String, generation: String) throws -> Bool in
-      try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.clearBookmarkFacts(profile: profileId, engine: engine, recordsJSON: recordsJSON, generation: generation) }
+    AsyncFunction("clearBookmarkFacts") { (profileId: String, engine: String, recordsJSON: String, generation: String) async throws -> Bool in
+      try await NativeBookmarkWriter.bridge { try await NativeBookmarkWriter.clearBookmarkFacts(profile: profileId, engine: engine, recordsJSON: recordsJSON, generation: generation) }
     }
 
-    Function("setBookmarkSyncLinks") { (linksJSON: String) throws -> Bool in
-      try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.setBookmarkSyncLinks(linksJSON: linksJSON) }
+    AsyncFunction("setBookmarkSyncLinks") { (linksJSON: String) async throws -> Bool in
+      try await NativeBookmarkWriter.bridge { try await NativeBookmarkWriter.setBookmarkSyncLinks(linksJSON: linksJSON) }
     }
 
-    AsyncFunction("submitBookmarkMutations") { (profileId: String, mutationsJSON: String, engine: String, generation: String, requestId: String?) throws -> [String: Any] in
-      try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.submit(profile: profileId, mutationsJSON: mutationsJSON, engine: engine, generation: generation, requestID: requestId) }
+    AsyncFunction("submitBookmarkCommands") { (profileId: String, mutationsJSON: String, engine: String, generation: String, requestId: String?) async throws -> [String: Any] in
+      try await NativeBookmarkWriter.bridge { try await NativeBookmarkWriter.submit(profile: profileId, mutationsJSON: mutationsJSON, engine: engine, generation: generation, requestID: requestId, includeDocument: false) }
     }
 
-    Function("replaceBookmarkDocument") { (profileId: String, documentJSON: String, expectedRevision: String, engine: String, generation: String, requestId: String?) throws -> [String: Any] in
-      try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.replace(profile: profileId, documentJSON: documentJSON, expectedRevision: expectedRevision, engine: engine, generation: generation, requestID: requestId) }
+    AsyncFunction("submitBookmarkMutations") { (profileId: String, mutationsJSON: String, engine: String, generation: String, requestId: String?) async throws -> [String: Any] in
+      try await NativeBookmarkWriter.bridge { try await NativeBookmarkWriter.submit(profile: profileId, mutationsJSON: mutationsJSON, engine: engine, generation: generation, requestID: requestId) }
     }
 
-    Function("replaceBookmarkDocumentWithRecords") { (profileId: String, documentJSON: String, expectedRevision: String, engine: String, generation: String, requestId: String?, recordsJSON: String, link: String) throws -> [String: Any] in
-      try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.replace(profile: profileId, documentJSON: documentJSON, expectedRevision: expectedRevision, engine: engine, generation: generation, requestID: requestId, recordsJSON: recordsJSON, link: link) }
+    AsyncFunction("replaceBookmarkDocument") { (profileId: String, documentJSON: String, expectedRevision: String, engine: String, generation: String, requestId: String?) async throws -> [String: Any] in
+      try await NativeBookmarkWriter.bridge { try await NativeBookmarkWriter.replace(profile: profileId, documentJSON: documentJSON, expectedRevision: expectedRevision, engine: engine, generation: generation, requestID: requestId) }
+    }
+
+    AsyncFunction("replaceBookmarkDocumentWithRecords") { (profileId: String, documentJSON: String, expectedRevision: String, engine: String, generation: String, requestId: String?, recordsJSON: String, link: String) async throws -> [String: Any] in
+      try await NativeBookmarkWriter.bridge { try await NativeBookmarkWriter.replace(profile: profileId, documentJSON: documentJSON, expectedRevision: expectedRevision, engine: engine, generation: generation, requestID: requestId, recordsJSON: recordsJSON, link: link) }
     }
 
     AsyncFunction("liveCommand") { (name: String, payloadJSON: String, promise: Promise) in
@@ -364,6 +386,13 @@ public class SettingsModule: Module {
 }
 
 extension NativeBookmarkWriter {
+  static func bridge<T>(_ operation: () async throws -> T) async throws -> T {
+    do { return try await operation() }
+    catch let error as BookmarkWriterError {
+      throw Exception(name: "BookmarkWriterError", description: error.description, code: error.code)
+    }
+  }
+
   static func bridge<T>(_ body: () throws -> T) throws -> T {
     do { return try body() }
     catch let error as BookmarkWriterError {

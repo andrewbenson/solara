@@ -120,39 +120,65 @@ static StallCounts gStallMain, gStallJS;
 static double gStallBegan;
 static char gStallScenario[256];
 
-static void StallRecord(char th, double a, double d) {
+static void StallRecordLocked(char th, double started, double ended) {
+  if (!gStallOpen || started <= 0) return;
+  double a = fmax(started, gStallBegan);
+  double d = ended - a;
+  if (d <= 0) return;
+  StallCounts *c = th == 'm' ? &gStallMain : &gStallJS;
+  c->n++;
+  c->busy += d;
+  if (d > c->worst) c->worst = d;
+  for (int i = STALL_BUCKETS - 1; i >= 0; i--)
+    if (d >= kStallEdges[i]) {
+      c->buckets[i]++;
+      break;
+    }
+  if (d >= 50 && c->longCount < STALL_LONG) {
+    c->longs[c->longCount][0] = a;
+    c->longs[c->longCount][1] = d;
+    c->longCount++;
+  }
+}
+
+static void StallAfterWaiting(LoopState *st, double now) {
   if (!gStallsOn) return;
   pthread_mutex_lock(&gStallLock);
-  if (gStallOpen && a >= gStallBegan) {
-    StallCounts *c = th == 'm' ? &gStallMain : &gStallJS;
-    c->n++;
-    c->busy += d;
-    if (d > c->worst) c->worst = d;
-    for (int i = STALL_BUCKETS - 1; i >= 0; i--)
-      if (d >= kStallEdges[i]) {
-        c->buckets[i]++;
-        break;
-      }
-    if (d >= 50 && c->longCount < STALL_LONG) {
-      c->longs[c->longCount][0] = a;
-      c->longs[c->longCount][1] = d;
-      c->longCount++;
-    }
-  }
+  st->iterStart = now;
   pthread_mutex_unlock(&gStallLock);
+}
+
+static void StallBeforeWaiting(LoopState *st, double now) {
+  if (!gStallsOn) return;
+  pthread_mutex_lock(&gStallLock);
+  StallRecordLocked(st->th, st->iterStart, now);
+  st->iterStart = 0;
+  pthread_mutex_unlock(&gStallLock);
+}
+
+static void StallBeginLocked(double began) {
+  memset(&gStallMain, 0, sizeof gStallMain);
+  memset(&gStallJS, 0, sizeof gStallJS);
+  gStallBegan = began;
+  gStallOpen = YES;
+}
+
+static void StallEndLocked(double ended) {
+  StallRecordLocked('m', gMainLoop.iterStart, ended);
+  StallRecordLocked('j', gJSLoop.iterStart, ended);
+  gStallOpen = NO;
 }
 
 static void LoopActivity(CFRunLoopObserverRef observer, CFRunLoopActivity activity, void *info) {
   LoopState *st = info;
   if (activity == kCFRunLoopAfterWaiting) {
     st->start = EpochMs();
-    st->iterStart = st->start;
+    StallAfterWaiting(st, st->start);
   } else {
     double end = EpochMs();
     if (st->start > 0 && end - st->start >= 0.05) Push('r', st->th, st->start, end - st->start, 0, 0, 0);
     st->start = 0;
-    if (st->iterStart > 0) StallRecord(st->th, st->iterStart, end - st->iterStart);
-    st->iterStart = 0;
+    StallBeforeWaiting(st, end);
   }
 }
 
@@ -397,11 +423,8 @@ static void FindJSThread(void) {
   if ([action isEqualToString:@"begin"]) {
     NSString *scenario = cmd[@"scenario"] ?: @"";
     pthread_mutex_lock(&gStallLock);
-    memset(&gStallMain, 0, sizeof gStallMain);
-    memset(&gStallJS, 0, sizeof gStallJS);
-    gStallBegan = EpochMs();
+    StallBeginLocked(EpochMs());
     snprintf(gStallScenario, sizeof gStallScenario, "%s", scenario.UTF8String);
-    gStallOpen = YES;
     pthread_mutex_unlock(&gStallLock);
     [self armSampler:scenario];
     return @{@"ok": @YES, @"op": @"stalls", @"began": @(gStallBegan)};
@@ -409,8 +432,8 @@ static void FindJSThread(void) {
   if ([action isEqualToString:@"end"]) {
     [self armSampler:nil];
     pthread_mutex_lock(&gStallLock);
-    gStallOpen = NO;
     double ended = EpochMs();
+    StallEndLocked(ended);
     NSDictionary *window = @{@"scenario": @(gStallScenario), @"from": @(gStallBegan), @"to": @(ended), @"edgesMs": @[@8, @16, @33, @50, @100, @250],
                              @"main": [self stallJSON:&gStallMain], @"js": [self stallJSON:&gStallJS]};
     pthread_mutex_unlock(&gStallLock);

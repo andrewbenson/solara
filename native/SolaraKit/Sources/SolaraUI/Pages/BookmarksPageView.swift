@@ -64,7 +64,9 @@ public final class BookmarksPageModel {
   var drop: BookmarkDrop?
   var dragging: [String] = []
   @ObservationIgnored var anchor: String?
+  @ObservationIgnored private var draggedRowId: String?
   @ObservationIgnored var rowFrames: [String: CGRect] = [:]
+  @ObservationIgnored var rowFrameOwners: [String: UUID] = [:]
   @ObservationIgnored var treeFrames: [String: CGRect] = [:]
   @ObservationIgnored public var onEvent: (BookmarksPageEvent) -> Void = { _ in }
   @ObservationIgnored private var seen: State?
@@ -171,7 +173,9 @@ public final class BookmarksPageModel {
   }
 
   func beginDrag(_ id: String) {
+    draggedRowId = id
     let ids = ids
+    let selected = Set(selected)
     dragging = selected.contains(id) ? ids.filter { selected.contains($0) } : [id]
   }
 
@@ -181,7 +185,7 @@ public final class BookmarksPageModel {
       return dragging.contains(id) ? nil : .into(id)
     }
     let ids = ids
-    guard let (id, frame) = rowFrames.first(where: { $0.value.contains(point) && ids.contains($0.key) }), let index = ids.firstIndex(of: id) else { return nil }
+    guard let (id, frame) = rowFrames.first(where: { $0.key != draggedRowId && $0.value.contains(point) && ids.contains($0.key) }), let index = ids.firstIndex(of: id) else { return nil }
     let fraction = (point.y - frame.minY) / max(frame.height, 1)
     if nodes[id]?.isFolder == true, fraction > 0.25, fraction < 0.75, !dragging.contains(id) { return .into(id) }
     if searching { return nil }
@@ -193,6 +197,7 @@ public final class BookmarksPageModel {
     drop = nil
     let moving = dragging
     dragging = []
+    draggedRowId = nil
     guard let target, !moving.isEmpty else { return }
     emit(.move(moving, target, listed: ids))
   }
@@ -424,7 +429,7 @@ struct BookmarksList: View {
   var body: some View {
     let indicator: Int? = if case .at(_, let index) = model.drop { index } else { nil }
     ScrollView {
-      VStack(spacing: 0) {
+      LazyVStack(spacing: 0) {
         ForEach(Array(ids.enumerated()), id: \.element) { index, id in
           if indicator == index { BookmarkDropLine() }
           if let node = model.nodes[id] {
@@ -467,6 +472,8 @@ struct BookmarkRowView: View {
   let onFocus: () -> Void
   @State private var hovered = false
   @State private var dy: CGFloat = 0
+  @State private var frameId = UUID()
+  @State private var rowFrame: CGRect?
 
   var body: some View {
     let selected = model.selected.contains(node.id)
@@ -521,8 +528,23 @@ struct BookmarkRowView: View {
     .offset(y: dragging ? dy : 0)
     .opacity(dragging ? 0.85 : 1)
     .zIndex(dragging ? 10 : 0)
-    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { model.rowFrames[node.id] = $0 }
-    .onDisappear { model.rowFrames[node.id] = nil }
+    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { next in
+      rowFrame = next
+      model.rowFrames[node.id] = next
+      model.rowFrameOwners[node.id] = frameId
+    }
+    .onAppear {
+      if let rowFrame {
+        model.rowFrames[node.id] = rowFrame
+        model.rowFrameOwners[node.id] = frameId
+      }
+    }
+    .onDisappear {
+      if model.rowFrameOwners[node.id] == frameId {
+        model.rowFrames[node.id] = nil
+        model.rowFrameOwners[node.id] = nil
+      }
+    }
     .contextMenu { BookmarkRowMenuProxy(node: node, model: model) }
     .accessibilityElement(children: .combine)
     .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)

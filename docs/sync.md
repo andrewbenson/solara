@@ -750,11 +750,12 @@ pairing finishing inside five minutes. The tests use a temporary folder, never i
 The application selects native bookmark authority once per process, before catalog observation or raw admission.
 Distribution ignores environment and stored attempts to disable ownership. An isolated development launch can
 opt in with `SOLARA_NATIVE_BOOKMARKS=1`; off, partial scope, API skew, failed claim and teardown never choose a
-JS writer. Reload subscribes to the same native lifetime. API version 4 requires ownership, projection feeds and explicit receipt-delivery acknowledgment.
+JS writer. Reload subscribes to the same native lifetime. API version 5 requires ownership, projection feeds,
+explicit receipt-delivery acknowledgment, asynchronous durable edit/fact/link checkpoints, and a quit flush barrier.
 
 The coordinator journals local edit facts; the existing JS Cycle mints HLCs and owns transport and publication.
-The native bookmark adapter synchronously accepts the document and remote record observations in one durable
-transaction. Refusal does not advance the bm prefix/base. A visible view is not sync readiness: migration and
+The native bookmark adapter awaits the document and remote record observations in one atomic durable
+transaction on the serial journal writer. Refusal does not advance the bm prefix/base. A visible view is not sync readiness: migration and
 read-only recovery hold `readyForSync`, including the existing full-prefix rebuild/download hold.
 
 The legacy source is a baseline, not a newly timed local edit. Journal intent and original consumed identities

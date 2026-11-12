@@ -70,13 +70,15 @@ public struct BookmarkReceipt: Equatable, Sendable {
 
 public final class BookmarkCoordinator: @unchecked Sendable {
   let engineQueue = BookmarkEngineQueue.shared
-  private let journalQueue = DispatchQueue(label: "app.solara.bookmarks.journal")
+  private let journalWriter = BookmarkJournalWriter()
+  private var stagingJournal = false
+  private var stagedJournalDirty = false
 
   func offMain<T: Sendable>(_ body: @escaping @Sendable () -> T) async -> T {
-    await withCheckedContinuation { continuation in journalQueue.async { continuation.resume(returning: body()) } }
+    await withCheckedContinuation { continuation in journalWriter.schedule { continuation.resume(returning: body()) } }
   }
   func offMain<T: Sendable>(_ body: @escaping @Sendable () throws -> T) async throws -> T {
-    try await withCheckedThrowingContinuation { continuation in journalQueue.async { continuation.resume(with: Result { try body() }) } }
+    try await withCheckedThrowingContinuation { continuation in journalWriter.schedule { continuation.resume(with: Result { try body() }) } }
   }
   private var pumpEpoch: UInt64 = 0
   private var ownerGeneration: UInt64 = 1
@@ -144,6 +146,103 @@ public final class BookmarkCoordinator: @unchecked Sendable {
     }
     lastOwningProfiles = durability.owners
     normalizeRetainedURLs()
+  }
+
+  private init(staging source: BookmarkCoordinator) {
+    profiles = source.profiles
+    defaultProfile = source.defaultProfile
+    owningProfiles = source.owningProfiles
+    makeID = source.makeID
+    now = source.now
+    stampsEnabled = source.stampsEnabled
+    canonicalURL = source.canonicalURL
+    legacySource = source.legacySource
+    launchLegacyProfiles = source.launchLegacyProfiles
+    launchLegacyPendingEngines = source.launchLegacyPendingEngines
+    durability = BookmarkDurability(copying: source.durability)
+    pumpEpoch = source.pumpEpoch
+    ownerGeneration = source.ownerGeneration
+    catalogClaimEpoch = source.catalogClaimEpoch
+    urlRecoveryHeld = source.urlRecoveryHeld
+    lastOwningProfiles = source.lastOwningProfiles
+    views = source.views
+    bases = source.bases
+    desiredVersions = source.desiredVersions
+    baseVersions = source.baseVersions
+    blockedEngines = source.blockedEngines
+    pendingChromeDeltas = source.pendingChromeDeltas
+    receiptReads = source.receiptReads
+    pendingReceiptDeliveries = source.pendingReceiptDeliveries
+    receiptMaintenanceEnabled = false
+    stagingJournal = true
+  }
+
+  public func enqueueJournalWrite<T: Sendable>(_ operation: @escaping @Sendable (BookmarkCoordinator) throws -> T, completion: @escaping @Sendable (Result<T, Error>) -> Void) {
+    journalWriter.enqueue(operation, process: { [self] in processJournalBatch($0) }, completion: completion)
+  }
+
+  public func performJournalWrite<T: Sendable>(_ operation: @escaping @Sendable (BookmarkCoordinator) throws -> T) async throws -> T {
+    try await withCheckedThrowingContinuation { continuation in
+      enqueueJournalWrite(operation) { continuation.resume(with: $0) }
+    }
+  }
+
+  private func processJournalBatch(_ operations: [BookmarkJournalWriter.Operation]) {
+    var completions: [BookmarkJournalWriter.Completion] = []
+    var failure: Error?
+    do {
+      try writing {
+        let staged = locked { BookmarkCoordinator(staging: self) }
+        let capturedDeliveries = staged.pendingReceiptDeliveries
+        for operation in operations { completions.append(operation(staged)) }
+        guard staged.stagedJournalDirty else { return }
+        var input = staged.checkpoint(views: staged.views, bases: staged.bases)
+        input.acknowledgedRequestIDs = capturedDeliveries
+        guard let checkpoint = try staged.durability.prepare(input) else { return }
+        try persist(checkpoint)
+        let publications = locked {
+          views = staged.views
+          bases = staged.bases
+          desiredVersions = staged.desiredVersions
+          baseVersions = staged.baseVersions
+          pendingChromeDeltas = staged.pendingChromeDeltas
+          if ownerGeneration != staged.ownerGeneration {
+            for engine in views.keys { views[engine]?.readyForSync = false }
+          }
+          installCheckpoint(checkpoint)
+          armReceiptMaintenance()
+          return views.keys.map { notifications($0) }
+        }
+        for publication in publications { deliver(publication) }
+      }
+    } catch { failure = error }
+    for completion in completions { completion(failure) }
+  }
+
+  func beginJournalQuit(completion: @escaping @Sendable (Result<Void, Error>) -> Void) {
+    journalWriter.beginQuit(flush: { [self] active in
+      try writing {
+        let shouldFlush = try locked {
+          guard active() else { return false }
+          if !durability.writable && durability.store?.readOnly != true { throw BookmarkPendingStoreError.unavailable }
+          stopReceiptMaintenance()
+          return true
+        }
+        guard shouldFlush else { return }
+        if locked({ durability.writable }) { _ = try maintainReceiptsWhileWriting() }
+      }
+    }, completion: completion)
+  }
+
+  public func flushJournalForQuit() async throws {
+    try await withCheckedThrowingContinuation { continuation in
+      beginJournalQuit { continuation.resume(with: $0) }
+    }
+  }
+
+  public func cancelJournalQuit() {
+    journalWriter.cancelQuit()
+    locked { receiptMaintenanceEnabled = true; armReceiptMaintenance() }
   }
 
   private func normalizedView(_ source: BookmarkDesiredView) throws -> BookmarkDesiredView {
@@ -255,10 +354,11 @@ public final class BookmarkCoordinator: @unchecked Sendable {
 
   private func transact<T>(admission: (() throws -> Void)? = nil, maintainReceipts: Bool = false, _ prepare: () throws -> (BookmarkCheckpointInput?, () -> T)) throws -> T {
     try writing {
+      guard stagingJournal || !journalWriter.admissionsClosed else { throw BookmarkPendingStoreError.unavailable }
       try admission?()
       if maintainReceipts { _ = try maintainReceiptsWhileWriting(includePendingDeliveries: false) }
       let (input, install) = try locked(prepare)
-      let checkpoint = try input.flatMap { try durability.prepare($0) }
+      let checkpoint = try input.flatMap { try durability.prepare($0, metadataOnly: stagingJournal) }
       if let checkpoint { try persist(checkpoint) }
       return locked {
         if let checkpoint { installCheckpoint(checkpoint); armReceiptMaintenance() }
@@ -268,6 +368,7 @@ public final class BookmarkCoordinator: @unchecked Sendable {
   }
 
   private func persist(_ checkpoint: BookmarkCheckpoint) throws {
+    if stagingJournal { stagedJournalDirty = true; return }
     do {
       try durability.store?.write(checkpoint.payload)
     } catch {
@@ -297,7 +398,7 @@ public final class BookmarkCoordinator: @unchecked Sendable {
   private func maintainReceiptsWhileWriting(includePendingDeliveries: Bool = true) throws -> Bool {
     defer { locked { armReceiptMaintenance() } }
     let input = locked { durability.writable ? checkpoint(views: views, bases: bases, includePendingDeliveries: includePendingDeliveries) : nil }
-    guard let input, let checkpoint = try durability.prepare(input, maintenanceOnly: true) else { return false }
+    guard let input, let checkpoint = try durability.prepare(input, maintenanceOnly: true, metadataOnly: stagingJournal) else { return false }
     try persist(checkpoint)
     locked { installCheckpoint(checkpoint) }
     return true
@@ -351,6 +452,7 @@ public final class BookmarkCoordinator: @unchecked Sendable {
   }
 
   private func armReceiptMaintenance(deliveryOnly: Bool = false) {
+    guard !stagingJournal else { return }
     if deliveryOnly, receiptMaintenanceEnabled, durability.writable, let deadline = receiptMaintenanceDeadline, deadline <= .now() + .milliseconds(100) { return }
     receiptMaintenance?.cancel()
     receiptMaintenance = nil
@@ -370,7 +472,7 @@ public final class BookmarkCoordinator: @unchecked Sendable {
     receiptMaintenance = work
     let deadline = DispatchTime.now() + max(0.001, delay / 1000)
     receiptMaintenanceDeadline = deadline
-    journalQueue.asyncAfter(deadline: deadline, execute: work)
+    journalWriter.queue.asyncAfter(deadline: deadline, execute: work)
   }
 
   private func stopReceiptMaintenance() {
@@ -443,7 +545,7 @@ public final class BookmarkCoordinator: @unchecked Sendable {
     }
   }
 
-  func settleJournalForOwnerReplacement() { writing {} }
+  func settleJournalForOwnerReplacement() { journalWriter.settle(); writing {} }
 
   func reloadJournalForOwnerReplacement(previous: BookmarkCoordinator? = nil) {
     writing {
@@ -1494,9 +1596,23 @@ private struct BookmarkReducer {
       let removable = (arg(0).array?.compactMap(\.string) ?? []).filter { nodes[$0]?["parentId"]?.truthy == true }
       let set = Set(removable.map(JSKey.init))
       let tops = removable.filter { !ancestors($0).contains(where: { set.contains(JSKey($0)) }) }
+      var positions: [JSKey: [JSKey: Int]] = [:]
       let places: [JSONValue] = tops.map { id in
         let parent = nodes[id]?["parentId"]?.string ?? ""
-        let index = nodes[parent]?["kind"] == "folder" ? nodes[parent]?["children"]?.array?.firstIndex(of: .string(id)) ?? -1 : 0
+        let parentKey = JSKey(parent)
+        let index: Int
+        if nodes[parent]?["kind"] == "folder" {
+          if positions[parentKey] == nil {
+            var first: [JSKey: Int] = [:]
+            for (index, child) in (nodes[parent]?["children"]?.array ?? []).enumerated() {
+              if let id = child.string, first[JSKey(id)] == nil { first[JSKey(id)] = index }
+            }
+            positions[parentKey] = first
+          }
+          index = positions[parentKey]?[JSKey(id)] ?? -1
+        } else {
+          index = 0
+        }
         return ["id": .string(id), "parentId": .string(parent), "index": JSONValue(index)]
       }
       let removed = subtree(tops).compactMap { nodes[$0] }

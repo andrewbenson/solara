@@ -72,8 +72,8 @@ export type Extraction = {
   values: Map<string, unknown>;
   ignore?: (key: string) => boolean;
   republish?: (key: string) => boolean;
-  published?: (keys: Set<string>, stamps: ReadonlyMap<string, HLC>) => void;
-  committed?: () => void;
+  published?: (keys: Set<string>, stamps: ReadonlyMap<string, HLC>) => void | Promise<void>;
+  committed?: () => void | Promise<void>;
   stamp?: (key: string) => { at: number; after?: HLC | null } | undefined;
   remove?: Set<string>;
   reapply?: Set<string>;
@@ -215,23 +215,23 @@ export function visible(state: ScopeState, prefix: string): Map<string, unknown>
 
 const parseBase = (json: string | undefined) => (json === undefined ? undefined : (JSON.parse(json) as unknown));
 
-const settling = new WeakMap<ScopeState, (() => void)[]>();
+const settling = new WeakMap<ScopeState, (() => void | Promise<void>)[]>();
 const waitingAfterPull = new WeakMap<ScopeState, boolean>();
 const downloadingRecently = new WeakMap<ScopeState, boolean>();
 const extractedHook = new WeakMap<ScopeState, (prefix: string, keys: Set<string>, ignore: (key: string) => boolean) => void>();
 export const DOWNLOAD_HOLD_MS = 10 * 60_000;
 
-function settleWhenDurable(state: ScopeState, settle: () => void) {
+function settleWhenDurable(state: ScopeState, settle: () => void | Promise<void>) {
   const queue = settling.get(state);
   if (queue) queue.push(settle);
   else settling.set(state, [settle]);
 }
 
-function settleDurable(state: ScopeState) {
+async function settleDurable(state: ScopeState) {
   const queue = settling.get(state);
   if (!queue) return;
   settling.delete(state);
-  for (const settle of queue) settle();
+  for (const settle of queue) await settle();
 }
 
 function stampedHLC(clock: Clock, device: string, stamped: { at: number; after?: HLC | null }, originalTime = false): HLC {
@@ -299,13 +299,13 @@ export async function flush(state: ScopeState, transport: Transport, scope: stri
   if (!state.journal?.length) {
     if (settling.has(state)) {
       await options.persist?.([]);
-      settleDurable(state);
+      await settleDurable(state);
     }
     return;
   }
   if (options.persist) {
     await options.persist(state.journal);
-    settleDurable(state);
+    await settleDurable(state);
   }
   while (state.journal.length) {
     const file = state.journal[0]!;
@@ -316,7 +316,7 @@ export async function flush(state: ScopeState, transport: Transport, scope: stri
     see(state, file.device, now);
   }
   delete state.journal;
-  settleDurable(state);
+  await settleDurable(state);
 }
 
 export function restoreJournal(state: ScopeState, batches: LogFile[], clock: Clock, written = 0) {

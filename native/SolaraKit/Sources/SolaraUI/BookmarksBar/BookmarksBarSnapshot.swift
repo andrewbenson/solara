@@ -1,4 +1,7 @@
 import Foundation
+import SolaraEngine
+import SolaraModel
+import SolaraOmnibox
 
 public struct BookmarksBarItem: Decodable, Equatable, Sendable {
   public enum Kind: String, Decodable, Sendable {
@@ -94,5 +97,53 @@ public struct BookmarksBarSnapshot: Decodable, Equatable, Sendable {
     barId = try values.decodeIfPresent(String.self, forKey: .barId)
     otherFolder = try values.decodeIfPresent(BookmarksBarItem.self, forKey: .otherFolder)
     bookmarksBar = try values.decodeIfPresent(String.self, forKey: .bookmarksBar) ?? "always"
+  }
+}
+
+public extension BookmarksBarSnapshot {
+  func reading(_ document: JSONValue, engine: String) -> Self {
+    let nodes = document["nodes"]?.object ?? [:]
+    let roots = BookmarkFlat.roots(engine)
+    let bar = document["roots"]?[profileId]?["bar"]?.string ?? roots.bar
+    let other = document["roots"]?[profileId]?["other"]?.string ?? roots.other
+    var summaries: [JSKey: (links: Int, groupable: Bool)] = [:]
+    var visiting = Set<JSKey>()
+    func summary(_ id: String) -> (links: Int, groupable: Bool) {
+      let key = JSKey(id)
+      if let cached = summaries[key] { return cached }
+      guard !visiting.contains(key), let node = nodes[id] else { return (0, false) }
+      if node["kind"] == "url" {
+        let url = node["url"]?.string?.lowercased() ?? ""
+        return (1, url.hasPrefix("http:") || url.hasPrefix("https:") || url.hasPrefix("file:"))
+      }
+      visiting.insert(key)
+      var result = (links: 0, groupable: false)
+      for child in node["children"]?.array?.compactMap(\.string) ?? [] {
+        let value = summary(child)
+        result.links += value.links
+        result.groupable = result.groupable || value.groupable
+      }
+      visiting.remove(key)
+      summaries[key] = result
+      return result
+    }
+    func build(_ id: String, depth: Int) -> BookmarksBarItem? {
+      guard let node = nodes[id], let kind = node["kind"]?.string.flatMap(BookmarksBarItem.Kind.init(rawValue:)) else { return nil }
+      let title = node["title"]?.string ?? ""
+      let url = node["url"]?.string
+      if kind == .url { return BookmarksBarItem(id: id, kind: kind, title: title, url: url, favicon: node["favicon"]?.string, cleanUrl: url.map(cleanUrl)) }
+      let ids = node["children"]?.array?.compactMap(\.string) ?? []
+      let info = summary(id)
+      let restorable = title.hasSuffix(" (Arc)") && node["parentId"]?.string.map(JSKey.init) == JSKey(bar)
+        && ids.contains { nodes[$0]?["kind"] == "folder" && summary($0).groupable }
+      return BookmarksBarItem(id: id, kind: kind, title: title, children: depth < 8 ? ids.compactMap { build($0, depth: depth + 1) } : [], folderLinks: info.links, makesGroup: info.groupable, restorableArcHolder: restorable)
+    }
+    var result = self
+    result.barId = nodes[bar]?["kind"] == "folder" ? bar : nil
+    result.items = result.barId == nil ? [] : (nodes[bar]?["children"]?.array?.compactMap(\.string) ?? []).compactMap { build($0, depth: -1) }
+    result.otherId = nodes[other]?["kind"] == "folder" ? other : nil
+    result.otherFolder = result.otherId.flatMap { build($0, depth: -1) }
+    result.hasOther = result.otherId != nil && !(nodes[other]?["children"]?.array?.isEmpty ?? true)
+    return result
   }
 }

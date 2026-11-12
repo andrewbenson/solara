@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, test } from "node:test";
 const { useBrowser } = await import("../store/browser.ts");
 const { bookmarkWriter, projectNativeBookmarks, reportBookmarkFailure, submitBookmarks } = await import("./bookmarkWriter.ts");
-const { BOOKMARK_REMAP_RETRY_MS, replaceBookmarkDocument, replaceBookmarkDocumentWithRecords } = await import("@solara/settings");
+const { BOOKMARK_REMAP_RETRY_MS, replaceBookmarkDocument, replaceBookmarkDocumentWithRecords, submitBookmarkMutations } = await import("@solara/settings");
 const { useToasts } = await import("../components/layout/toasts.ts");
 
 const { seedBookmarkProjection, nextBookmarkProjectionOwner } = await import("../test-native/bookmarkProjection.ts");
@@ -92,6 +92,44 @@ test("under a native owner an edit is submitted with the snapshot's binding, its
   assert.equal(S().bookmarks.nodes.n1?.title, "Native");
   assert.deepEqual(S().bookmarks.roots.p, { bar: "bar@native", other: "other@native" });
   assert.ok(S().bookmarks.roots.default, "another engine's bookmarks stay in the store");
+});
+
+test("UI edits use lightweight bindings and compact receipts without reading a full writer snapshot", async (t) => {
+  const owner = (globalThis.acTestBookmarkWriter = new FakeOwner());
+  let bindings = 0;
+  let attempts = 0;
+  owner.binding = () => { bindings++; return { engine: owner.engine, generation: owner.generation }; };
+  owner.snapshot = () => { throw new Error("full writer snapshot must not be read"); };
+  owner.submit = () => { throw new Error("full writer receipt must not be produced"); };
+  owner.submitCompact = async (profileId, mutationsJSON, engine, generation, requestId) => {
+    attempts++;
+    if (attempts === 1) throw Object.assign(new Error("retry"), { code: "staleBinding" });
+    owner.submitted.push({ profileId, mutations: JSON.parse(mutationsJSON), engine, generation, requestId });
+    owner.document.nodes.compact = { kind: "url", id: "compact", parentId: "bar@native", title: "Compact", url: "https://compact.example/", favicon: null, addedAt: 1 };
+    owner.document.nodes["bar@native"].children.push("compact");
+    owner.revision++;
+    return { engine, revision: String(owner.revision), results: '["compact"]' };
+  };
+  t.mock.method(globalThis, "setTimeout", (run) => { queueMicrotask(run); return 0; });
+  assert.equal(await bookmarkWriter.addBookmark({ profileId: "p", title: "Compact", url: "https://compact.example/" }), "compact");
+  assert.equal(bindings, 2);
+  assert.equal(attempts, 2);
+  assert.equal(S().bookmarks.nodes.compact.title, "Compact");
+});
+
+test("UI edits fall back on older optional APIs and full receipts retain their document", async (t) => {
+  const { requireNativeModule } = await import("expo-modules-core");
+  const native = requireNativeModule("SolaraSettings");
+  const binding = native.bookmarkWriterBinding;
+  const compact = native.submitBookmarkCommands;
+  delete native.bookmarkWriterBinding;
+  delete native.submitBookmarkCommands;
+  t.after(() => { native.bookmarkWriterBinding = binding; native.submitBookmarkCommands = compact; });
+  const owner = (globalThis.acTestBookmarkWriter = new FakeOwner());
+  assert.equal(await bookmarkWriter.addBookmark({ profileId: "p", title: "Fallback", url: "https://fallback.example/" }), "n1");
+  const full = await submitBookmarkMutations("p", [{ method: "addBookmark", args: [{ profileId: "p", title: "Full", url: "https://full.example/" }] }], { engine: owner.engine, generation: owner.generation }, "full-contract");
+  assert.equal(JSON.parse(full.document).nodes.n2.title, "Full");
+  assert.deepEqual(full.results, ["n2"]);
 });
 
 test("a refused native edit rejects, changes nothing in the store and never falls back to the JS reducers", async () => {
@@ -291,6 +329,56 @@ test("successful submit and replacement acknowledge only the receipt the caller 
   ]);
 });
 
+for (const records of [false, true]) {
+  test(`asynchronous replacement${records ? " with record stamps" : ""} withholds delivery acknowledgement until the receipt arrives`, async () => {
+    const owner = (globalThis.acTestBookmarkWriter = new FakeOwner());
+    let release;
+    const barrier = new Promise((resolve) => { release = resolve; });
+    const delivered = [];
+    const replace = owner.replace.bind(owner);
+    const pending = async (...args) => { await barrier; return replace(...args); };
+    owner.replace = pending;
+    owner.replaceWithRecords = pending;
+    owner.acknowledgeReceipt = (...args) => { delivered.push(args); return true; };
+    let finished = false;
+    const result = (records
+      ? replaceBookmarkDocumentWithRecords("p", owner.document, "10", { engine: "native", generation: "1" }, [], "chain", "delayed")
+      : replaceBookmarkDocument("p", owner.document, "10", { engine: "native", generation: "1" }, "delayed")
+    ).then((revision) => { finished = true; return revision; });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(finished, false);
+    assert.deepEqual(delivered, []);
+    release();
+    assert.equal(await result, "11");
+    assert.deepEqual(delivered, [["p", "native", "1", "delayed"]]);
+  });
+}
+
+test("bookmark quit flush explicitly handles absent owners, incompatible owners and native failures", async () => {
+  const previous = globalThis.acTestNativeModules;
+  try {
+    let index = 0;
+    for (const [state, expected] of [["legacy", true], ["stopped", true], ["starting", false], ["owned", false], ["read-only-unavailable", false]]) {
+      globalThis.acTestNativeModules = { SolaraSettings: { bookmarkWriterState: () => ({ state }) } };
+      const settings = await import(`../../../../packages/settings/src/index.ts?quit-state-${++index}`);
+      assert.equal(await settings.flushBookmarkJournal(), expected, state);
+      settings.cancelBookmarkQuit();
+    }
+    let resumed = 0;
+    globalThis.acTestNativeModules = { SolaraSettings: {
+      bookmarkWriterState: () => ({ state: "read-only-unavailable" }),
+      flushBookmarkJournal: async () => false,
+      cancelBookmarkQuit: () => { resumed++; },
+    } };
+    const settings = await import("../../../../packages/settings/src/index.ts?quit-native-failure");
+    assert.equal(await settings.flushBookmarkJournal(), false);
+    settings.cancelBookmarkQuit();
+    assert.equal(resumed, 1);
+  } finally {
+    globalThis.acTestNativeModules = previous;
+  }
+});
+
 test("an acknowledgement failure preserves a successfully received submit and replacement", async () => {
   const owner = (globalThis.acTestBookmarkWriter = new FakeOwner());
   let acknowledgements = 0;
@@ -382,23 +470,23 @@ test("automatic replacement IDs stay fresh across a JS reload with the same wall
 });
 
 
-test("API 4 requires delivery acknowledgment and every receipt-producing bridge method", async () => {
+test("API 5 requires delivery acknowledgment and every receipt-producing bridge method", async () => {
   const methods = [
     "bookmarkWriterSnapshot", "submitBookmarkMutations", "replaceBookmarkDocument", "replaceBookmarkDocumentWithRecords", "acknowledgeBookmarkReceipt",
     "ackBookmarkFacts", "ackBookmarkFactsForLink", "observeBookmarkRecords", "observeBookmarkRecordsForLink",
-    "clearBookmarkFacts", "setBookmarkSyncLinks", "bookmarkProjection", "reloadBookmarkProjection", "addListener",
+    "clearBookmarkFacts", "setBookmarkSyncLinks", "flushBookmarkJournal", "cancelBookmarkQuit", "bookmarkProjection", "reloadBookmarkProjection", "addListener",
   ];
   const native = Object.fromEntries(methods.map((method) => [method, () => {}]));
-  native.bookmarkWriterAPIVersion = () => 4;
+  native.bookmarkWriterAPIVersion = () => 5;
   native.bookmarkWriterState = () => ({ state: "owned", generation: "1" });
   const previous = globalThis.acTestNativeModules;
   globalThis.acTestNativeModules = { SolaraSettings: native };
   try {
     const settings = await import("../../../../packages/settings/src/index.ts?receipt-api-capabilities");
     assert.equal(settings.bookmarkWriterState().state, "owned");
-    native.bookmarkWriterAPIVersion = () => 3;
-    assert.equal(settings.bookmarkWriterState().state, "read-only-unavailable");
     native.bookmarkWriterAPIVersion = () => 4;
+    assert.equal(settings.bookmarkWriterState().state, "read-only-unavailable");
+    native.bookmarkWriterAPIVersion = () => 5;
     for (const method of methods) {
       const saved = native[method];
       delete native[method];
@@ -409,4 +497,19 @@ test("API 4 requires delivery acknowledgment and every receipt-producing bridge 
   } finally {
     globalThis.acTestNativeModules = previous;
   }
+});
+
+
+test("compact command replies validate shape before delivery acknowledgement", async () => {
+  const owner = (globalThis.acTestBookmarkWriter = new FakeOwner());
+  const delivered = [];
+  owner.acknowledgeReceipt = (...args) => { delivered.push(args); return true; };
+  for (const malformed of [{ revision: "invalid" }, { results: "{}" }, { engine: null }]) {
+    owner.submitCompact = async () => ({ engine: "native", revision: "11", results: "[]", ...malformed });
+    await assert.rejects(submitBookmarks("p", [], "malformed-compact"), /invalid.*receipt/i);
+  }
+  assert.deepEqual(delivered, []);
+  owner.submitCompact = async () => ({ engine: "native", revision: "11", results: "[]" });
+  assert.deepEqual(await submitBookmarks("p", [], "valid-compact"), []);
+  assert.deepEqual(delivered, [["p", "native", "1", "valid-compact"]]);
 });

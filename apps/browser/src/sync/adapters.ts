@@ -391,7 +391,7 @@ function syncedBookmarkNodes(b: Bookmarks, roots: { bar: string; other: string }
   return nodes;
 }
 
-type BookmarkSyncContext = { device: string; link: () => string | null; opened?: () => void };
+type BookmarkSyncContext = { device: string; link: () => string | null };
 
 export function bookmarksAdapter(profileId: string, sync?: BookmarkSyncContext): Adapter {
   if (bookmarkWriterState().state === "owned") return nativeBookmarksAdapter(profileId, sync);
@@ -399,7 +399,6 @@ export function bookmarksAdapter(profileId: string, sync?: BookmarkSyncContext):
 }
 
 function nativeBookmarksAdapter(profileId: string, sync?: BookmarkSyncContext): Adapter {
-  sync?.opened?.();
   const link = sync?.link() ?? null;
   const opened = bookmarkWriterSnapshot(profileId);
   const binding = { engine: opened.engine, generation: opened.generation };
@@ -476,20 +475,21 @@ function nativeBookmarksAdapter(profileId: string, sync?: BookmarkSyncContext): 
         reapply,
         republish: (key) => claims.has(key),
         stamp: (key) => claims.get(key),
-        published: (keys, stamps) => {
+        published: async (keys, stamps) => {
           const records = [...keys].flatMap((key) => {
             const fact = snapshot.facts[key];
             const mintedHLC = stamps.get(key);
             return fact && mintedHLC ? [{ key, seq: fact.seq, mintedHLC }] : [];
           });
           if (!records.length || (sync?.link() ?? null) !== link) return;
-          try { ackBookmarkFacts(profileId, binding, records, link ?? "none"); } catch {}
+          try { await ackBookmarkFacts(profileId, binding, records, link ?? "none"); } catch {}
         },
-        committed: cleared.length ? () => {
+        committed: cleared.length ? async () => {
           try {
             if ((sync?.link() ?? null) !== link) return;
-            if (observed.length && !observeBookmarkRecords(profileId, binding, observed, link ?? "none")) return;
-            clearBookmarkFacts(profileId, binding, cleared);
+            if (observed.length && !await observeBookmarkRecords(profileId, binding, observed, link ?? "none")) return;
+            if ((sync?.link() ?? null) !== link) return;
+            await clearBookmarkFacts(profileId, binding, cleared);
           } catch {}
         } : undefined,
       };
@@ -504,10 +504,10 @@ function nativeBookmarksAdapter(profileId: string, sync?: BookmarkSyncContext): 
         return hlc ? [{ key, hlc }] : [];
       });
       const clears = replacementClears;
-      return replaceBookmarkDocumentWithRecords(profileId, { ...document, nodes: syncedBookmarkNodes(document, roots, visible) }, snapshot.revision, binding, observed, link ?? "none").then(() => {
+      return replaceBookmarkDocumentWithRecords(profileId, { ...document, nodes: syncedBookmarkNodes(document, roots, visible) }, snapshot.revision, binding, observed, link ?? "none").then(async () => {
         if ((sync?.link() ?? null) !== link) return false;
         if (clears.length) {
-          try { clearBookmarkFacts(profileId, binding, clears); } catch {}
+          try { await clearBookmarkFacts(profileId, binding, clears); } catch {}
         }
         return true;
       }, (error: unknown) => {

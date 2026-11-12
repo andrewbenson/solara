@@ -1,5 +1,9 @@
 import AppKit
 
+public enum NativeBookmarkMenuSource {
+  nonisolated(unsafe) public static var read: ((String) -> [String: Any]?)?
+}
+
 struct MenuState {
   struct Entry: Equatable {
     let id: String
@@ -49,7 +53,11 @@ struct MenuState {
 
   private(set) static var sentBookmarks: (state: MenuState, revision: Int)?
 
-  static func setBookmarks(_ d: [String: Any]) {
+  static func setBookmarks(_ source: [String: Any]) {
+    let d: [String: Any]
+    if let metadata = source["bookmarkNative"] as? [String: Any], let profile = metadata["profileId"] as? String {
+      d = NativeBookmarkMenuSource.read?(profile) ?? [:]
+    } else { d = source }
     var state = MenuState()
     state.bookmarkFolders = (d["bookmarkFolders"] as? [[String: Any]] ?? []).map {
       Entry(id: $0["id"] as? String ?? "", title: $0["title"] as? String ?? "", current: $0["current"] as? Bool ?? false)
@@ -851,23 +859,28 @@ enum MainMenu {
     moveToWindow.addItem(CommandItem("New Window", "moveTabToWindow", arg: "new"))
   }
 
-  private static func buildBookmarkMenus(_ state: MenuState) {
-    bookmarkToFolder.removeAllItems()
-    for f in state.bookmarkFolders { bookmarkToFolder.addItem(CommandItem(f.title, "addBookmarkToFolder", arg: f.id)) }
-    bookmarkToFolder.addItem(.separator())
-    bookmarkToFolder.addItem(CommandItem("New Folder…", "addBookmarkToFolder", arg: "new"))
-
-    while bookmarks.items.count > bookmarksFixedCount { bookmarks.removeItem(at: bookmarksFixedCount) }
-    bookmarks.addItem(.separator())
-    if !state.recentBookmarks.isEmpty {
-      let header = NSMenuItem(title: "Recent Bookmarks", action: nil, keyEquivalent: "")
-      header.isEnabled = false
-      bookmarks.addItem(header)
-      addBookmarks(state.recentBookmarks, to: bookmarks)
-      bookmarks.addItem(.separator())
+  private static func buildBookmarkMenus(_: MenuState) {
+    deferBookmarkMenu(bookmarkToFolder) { menu in
+      let state = MenuState.current
+      menu.removeAllItems()
+      for f in state.bookmarkFolders { menu.addItem(CommandItem(f.title, "addBookmarkToFolder", arg: f.id)) }
+      menu.addItem(.separator())
+      menu.addItem(CommandItem("New Folder…", "addBookmarkToFolder", arg: "new"))
     }
-    bookmarks.addItem(folderItem("Bookmarks Bar", state.bookmarksBar, holdsArcHolders: true))
-    bookmarks.addItem(folderItem("Other Bookmarks", state.otherBookmarks))
+    deferBookmarkMenu(bookmarks) { menu in
+      let state = MenuState.current
+      while menu.items.count > bookmarksFixedCount { menu.removeItem(at: bookmarksFixedCount) }
+      menu.addItem(.separator())
+      if !state.recentBookmarks.isEmpty {
+        let header = NSMenuItem(title: "Recent Bookmarks", action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        menu.addItem(header)
+        addBookmarks(state.recentBookmarks, to: menu)
+        menu.addItem(.separator())
+      }
+      menu.addItem(folderItem("Bookmarks Bar", state.bookmarksBar, holdsArcHolders: true))
+      menu.addItem(folderItem("Other Bookmarks", state.otherBookmarks))
+    }
   }
 
   private static func buildExtensions(_ state: MenuState) {
@@ -1073,16 +1086,24 @@ enum MainMenu {
     return item
   }
 
+  private static func deferBookmarkMenu(_ menu: NSMenu, populate: @escaping (NSMenu) -> Void) {
+    let delegate = BookmarkMenuUpdate(populate)
+    menu.delegate = delegate
+    objc_setAssociatedObject(menu, &BookmarkMenuUpdate.key, delegate, .OBJC_ASSOCIATION_RETAIN)
+  }
+
   private static func folderItem(_ title: String, _ children: [MenuState.Bookmark], id: String? = nil, holdsArcHolders: Bool = false, arcHolder: Bool = false) -> NSMenuItem {
     let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
     let menu = NSMenu(title: title)
-    addBookmarks(children, to: menu, holdsArcHolders: holdsArcHolders)
-    if children.isEmpty { menu.addItem(emptyItem()) }
-    if let id, hasGroupLinks(children) {
-      menu.addItem(.separator())
-      menu.addItem(CommandItem("Add to Sidebar as Group", "addFolderToSidebar", arg: id))
-      if arcHolder && children.contains(where: { $0.children.map(hasGroupLinks) ?? false }) {
-        menu.addItem(CommandItem("Restore Arc Folders as Groups", "restoreArcFolders", arg: id))
+    deferBookmarkMenu(menu) { menu in
+      addBookmarks(children, to: menu, holdsArcHolders: holdsArcHolders)
+      if children.isEmpty { menu.addItem(emptyItem()) }
+      if let id, hasGroupLinks(children) {
+        menu.addItem(.separator())
+        menu.addItem(CommandItem("Add to Sidebar as Group", "addFolderToSidebar", arg: id))
+        if arcHolder && children.contains(where: { $0.children.map(hasGroupLinks) ?? false }) {
+          menu.addItem(CommandItem("Restore Arc Folders as Groups", "restoreArcFolders", arg: id))
+        }
       }
     }
     item.submenu = menu
@@ -1140,5 +1161,18 @@ enum MainMenu {
       menu.addItem(root)
     }
     return menu
+  }
+}
+
+private final class BookmarkMenuUpdate: NSObject, NSMenuDelegate {
+  static var key = 0
+  private var populate: ((NSMenu) -> Void)?
+
+  init(_ populate: @escaping (NSMenu) -> Void) { self.populate = populate }
+
+  func menuNeedsUpdate(_ menu: NSMenu) {
+    guard let populate else { return }
+    self.populate = nil
+    populate(menu)
   }
 }

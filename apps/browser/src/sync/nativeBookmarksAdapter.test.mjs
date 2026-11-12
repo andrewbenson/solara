@@ -270,6 +270,66 @@ const agreedState = (title = "Base", at = 10) => ({
 const runFacts = (owner, state, folder = new Folder(), adapter = ownedAdapter(), options) =>
   syncScope({ scope: "p", state, transport: folder.transport(), adapters: [adapter], clock: new Clock("native", null, () => 1000), device: "native", now: () => 1000, options });
 
+const deferredCheckpoint = () => {
+  let resolve;
+  const promise = new Promise((yes) => { resolve = yes; });
+  return { promise, resolve };
+};
+
+test("native fact publication holds the cycle until its asynchronous checkpoint settles", async () => {
+  const owner = linkedOwner();
+  owner.edit("Edited", 100);
+  const barrier = deferredCheckpoint();
+  const started = deferredCheckpoint();
+  const ack = owner.ackBookmarkFacts.bind(owner);
+  owner.ackBookmarkFacts = async (...args) => { started.resolve(); await barrier.promise; return ack(...args); };
+  let finished = false;
+  const cycle = runFacts(owner, agreedState()).then(() => { finished = true; });
+  await started.promise;
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(finished, false);
+  assert.ok(owner.facts["bm:k1"]);
+  barrier.resolve();
+  await cycle;
+  assert.deepEqual(owner.facts, {});
+});
+
+test("native fact clearing waits for a durable observation and preserves intent on refusal", async () => {
+  for (const accepted of [true, false]) {
+    const owner = linkedOwner();
+    owner.edit("Changed", 90);
+    owner.edit("Base", 100);
+    const barrier = deferredCheckpoint();
+    const calls = [];
+    owner.observeBookmarkRecords = async () => { calls.push("observe"); return await barrier.promise; };
+    const clear = owner.clearBookmarkFacts.bind(owner);
+    owner.clearBookmarkFacts = async (...args) => { calls.push("clear"); return clear(...args); };
+    const extraction = ownedAdapter().extract(() => value("Base"), () => false, 1000, () => true, () => value("Base"), () => h(10, "remote"), () => false);
+    const committed = extraction.committed();
+    assert.deepEqual(calls, ["observe"]);
+    assert.ok(owner.facts["bm:k1"]);
+    barrier.resolve(accepted);
+    await committed;
+    assert.deepEqual(calls, accepted ? ["observe", "clear"] : ["observe"]);
+    assert.equal(!!owner.facts["bm:k1"], !accepted);
+  }
+});
+
+test("changing the sync link during an observation preserves the captured native fact", async () => {
+  const owner = linkedOwner();
+  owner.edit("Changed", 90);
+  owner.edit("Base", 100);
+  let link = "chain";
+  const barrier = deferredCheckpoint();
+  owner.observeBookmarkRecords = async () => await barrier.promise;
+  const extraction = ownedAdapter(() => link).extract(() => value("Base"), () => false, 1000, () => true, () => value("Base"), () => h(10, "remote"), () => false);
+  const committed = extraction.committed();
+  link = "replacement-chain";
+  barrier.resolve(true);
+  await committed;
+  assert.ok(owner.facts["bm:k1"]);
+});
+
 test("recoveredBookmarkEditKeepsOriginalSyncOrder", async () => {
   const owner = linkedOwner();
   owner.edit("Recovered", 100);
@@ -562,7 +622,7 @@ test("oldChainIntentLosesToNewerRemoteInNewLink", async () => {
         assert.equal(local[0].h, h(300));
         assert.equal(local[0].v.t, "Old intent");
       }
-      engine.setProfileSynced("default", false);
+      await engine.setProfileSynced("default", false);
       assert.equal(owner.links.default, undefined);
     } finally {
       if (engine) await engine.stopSync();

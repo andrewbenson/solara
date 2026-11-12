@@ -10,6 +10,31 @@ struct BookmarksBarMenuTests {
     BookmarksBarSnapshot(profileId: "p", items: items, otherId: other?.id, hasOther: other != nil, hideBookmarksBarImport: false, theme: [:], barId: "bar", otherFolder: other, bookmarksBar: mode)
   }
 
+  @Test func overflowPreservesRequestedOrderMissingIdsAndTheFirstDuplicate() {
+    let duplicate = BookmarksBarItem(id: link.id, kind: .url, title: "Later duplicate", url: "https://later.example/")
+    let other = BookmarksBarItem(id: "other", kind: .url, title: "Other", url: "https://other.example/")
+    let model = BookmarksBarMenu(snapshot: snapshot([link, duplicate, other]), overflowIds: ["other", "missing", link.id, link.id])
+    #expect(model.items(trigger: "overflow", id: nil).map(\.title) == ["Other", "Example", "Example"])
+  }
+
+  @Test func overflowLookupGrowsLinearlyWithTheBar() {
+    func fastest(_ count: Int) -> Double {
+      let items = (0..<count).map { BookmarksBarItem(id: "n\($0)", kind: .url, title: "Bookmark \($0)", url: "https://fixture.example/\($0)") }
+      let model = BookmarksBarMenu(snapshot: snapshot(items), overflowIds: items.map(\.id))
+      var fastest = Double.infinity
+      for _ in 0..<3 {
+        let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
+        let rows = model.items(trigger: "overflow", id: nil)
+        fastest = min(fastest, Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - start) / 1_000_000)
+        #expect(rows.count == count)
+      }
+      return fastest
+    }
+    let small = fastest(1000)
+    let large = fastest(4000)
+    #expect(large / max(small, 0.1) < 7, "Four times the bookmarks took \(large / max(small, 0.1)) times as long")
+  }
+
   @Test func urlAndBlankMenusMatchTheReactNativeDefinitions() {
     let model = BookmarksBarMenu(snapshot: snapshot([link]), overflowIds: [])
     let items = model.items(trigger: "item", id: link.id)
@@ -93,6 +118,35 @@ struct BookmarksBarMenuTests {
     }
   }
 
+  @Test @MainActor func submenusMaterializeOnDemandOnceAndRetainNestedActions() throws {
+    let nested = BookmarksBarItem(id: "nested", kind: .folder, title: "Nested", children: [link], folderLinks: 1, makesGroup: true)
+    let many = (0..<3000).map { BookmarksBarItem(id: "large-\($0)", kind: .url, title: "Bookmark \($0)", url: "https://fixture.example/\($0)") }
+    let folder = BookmarksBarItem(id: "large", kind: .folder, title: "Large", children: [nested] + many, folderLinks: 3001, makesGroup: true)
+    let rows = BookmarksBarMenu(snapshot: snapshot([folder]), overflowIds: [folder.id]).items(trigger: "overflow", id: nil)
+    var choices: [String] = []
+    var menu: NSMenu? = BookmarksBarMenuPresenter.make(rows) { choices.append($0) }
+    let submenu = try #require(menu?.items.first?.submenu)
+    #expect(submenu.numberOfItems == 0)
+    let delegate = try #require(submenu.delegate)
+    delegate.menuNeedsUpdate?(submenu)
+    #expect(submenu.numberOfItems == 3006)
+    #expect(submenu.items.first?.title == "Nested")
+    #expect(submenu.items.last?.title == "Add to Sidebar as Group")
+    delegate.menuNeedsUpdate?(submenu)
+    #expect(submenu.numberOfItems == 3006)
+    let child = try #require(submenu.items.first?.submenu)
+    #expect(child.numberOfItems == 0)
+    menu = nil
+    let childDelegate = try #require(child.delegate)
+    childDelegate.menuNeedsUpdate?(child)
+    #expect(child.items.map(\.title) == ["Example", "", "Open All (1)", "Open All in New Window", "Open All in Incognito Window", "Add to Sidebar as Group"])
+    let item = try #require(child.items.first)
+    let target = try #require(item.target as? NSObject)
+    let action = try #require(item.action)
+    _ = target.perform(action, with: item)
+    #expect(choices == ["open:url:one"])
+  }
+
   @Test @MainActor func appKitMenuPreservesFlagsSymbolsAndUsesTheChoiceSelector() throws {
     let folder = BookmarksBarItem(id: "f", kind: .folder, title: "Folder", children: [link], folderLinks: 1, makesGroup: false)
     let model = BookmarksBarMenu(snapshot: snapshot([folder]), overflowIds: [folder.id])
@@ -103,6 +157,7 @@ struct BookmarksBarMenuTests {
     #expect(parent.title == "Folder")
     #expect(parent.image != nil)
     let submenu = try #require(parent.submenu)
+    submenu.delegate?.menuNeedsUpdate?(submenu)
     #expect(submenu.items.map(\.title) == ["Example", "", "Open All (1)", "Open All in New Window", "Open All in Incognito Window", "Add to Sidebar as Group"])
     #expect(submenu.items[0].image != nil)
     #expect(submenu.items[1].isSeparatorItem)
@@ -112,7 +167,9 @@ struct BookmarksBarMenuTests {
     _ = target.perform(action, with: submenu.items[0])
     #expect(choices == ["open:url:one"])
     let blank = BookmarksBarMenuPresenter.make(model.items(trigger: "blank", id: nil)) { _ in }
-    #expect(blank.items.last?.submenu?.items.map(\.state) == [.off, .on, .off])
+    let modes = try #require(blank.items.last?.submenu)
+    modes.delegate?.menuNeedsUpdate?(modes)
+    #expect(modes.items.map(\.state) == [.off, .on, .off])
   }
 
   @Test @MainActor func debugChoicesEmitTheSameActionAndCaptureCopyWithoutAPasteboard() throws {

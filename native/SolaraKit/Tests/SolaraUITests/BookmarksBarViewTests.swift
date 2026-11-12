@@ -18,6 +18,43 @@ struct BookmarksBarViewTests {
     view.subviews.filter { !$0.isHidden && $0.accessibilityRole() == .button }
   }
 
+  @Test func largeBarMaterializesOnlyVisibleButtonsAndKeepsTheOverflowSuffix() {
+    let view = view(width: 800)
+    let items = (0..<2500).map { BookmarksBarItem(id: "item-\($0)", kind: .url, title: "Bookmark \($0)", url: "https://fixture.example/\($0)") }
+    view.update(snapshot(items))
+    view.layoutSubtreeIfNeeded()
+    #expect(view.subviews.compactMap { $0 as? BookmarksBarButton }.count < 30)
+    let initial = view.benchmarkLayout()
+    let visible = initial["visible"] as? Int ?? 0
+    #expect(visible > 0)
+    #expect(initial["overflowCount"] as? Int == items.count - visible)
+    #if DEBUG
+    #expect(view.devLayout()["overflowIds"] as? [String] == items.dropFirst(visible).map(\.id))
+    #endif
+    view.setFrameSize(NSSize(width: 1200, height: 30))
+    view.layoutSubtreeIfNeeded()
+    let wider = view.benchmarkLayout()
+    #expect((wider["visible"] as? Int ?? 0) > visible)
+    #expect(view.subviews.compactMap { $0 as? BookmarksBarButton }.count < 30)
+    #expect(wider["overflowCount"] as? Int == items.count - (wider["visible"] as? Int ?? 0))
+    #if DEBUG
+    #expect(view.devLayout()["overflowIds"] as? [String] == items.dropFirst(wider["visible"] as? Int ?? 0).map(\.id))
+    #endif
+    let fullWidths = items.map { BookmarksBarButton.width(forTitle: $0.displayTitle, iconSize: 14) }
+    for width in [CGFloat.zero, fullWidths[0] + 44, fullWidths[0] + 43] {
+      view.setFrameSize(NSSize(width: width, height: 30))
+      view.layoutSubtreeIfNeeded()
+      let expected = BookmarksBarLayout(itemWidths: fullWidths, width: width, hasOther: false)
+      let state = view.benchmarkLayout()
+      #expect(state["visible"] as? Int == expected.visible.count)
+      #expect(state["overflowCount"] as? Int == expected.overflowIndexes.count)
+      #expect(state["overflowShown"] as? Bool == (expected.overflowFrame != nil))
+      #if DEBUG
+      #expect(view.devLayout()["overflowIds"] as? [String] == expected.overflowIndexes.map { items[$0].id })
+      #endif
+    }
+  }
+
   @Test func buttonsExposeTitlesAndFolderSemanticsAndSendCurrentProfile() throws {
     let view = view()
     let items = [BookmarksBarItem(id: "a", kind: .url, title: "Example", url: "https://example.test/"), BookmarksBarItem(id: "b", kind: .folder, title: "Work")]

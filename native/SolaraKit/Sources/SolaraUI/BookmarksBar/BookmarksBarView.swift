@@ -22,6 +22,7 @@ public final class BookmarksBarView: NSView {
   #endif
   private let favicons: PageFavicons
   private var items: [BookmarksBarButton] = []
+  private var itemsNeedUpdate = true
   private let overflow = BookmarksBarButton()
   private let other = BookmarksBarButton()
   private let importButton = BookmarksBarButton()
@@ -125,12 +126,31 @@ public final class BookmarksBarView: NSView {
     clearLinkDrop()
     cancelDrag()
     self.snapshot = snapshot
-    while items.count > snapshot.items.count {
+    itemsNeedUpdate = true
+    recoveryButton.configure(title: "Bookmark recovery", symbol: "exclamationmark.circle", folder: false, theme: snapshot.theme)
+    recoveryButton.setAccessibilityLabel("Bookmark recovery")
+    recoveryButton.toolTip = self.recoveryMessage
+    overflow.configure(title: "", symbol: "chevron.right.2", folder: false, theme: snapshot.theme)
+    overflow.setAccessibilityLabel("More bookmarks")
+    overflow.toolTip = "More bookmarks"
+    other.configure(title: "Other Bookmarks", symbol: "folder", folder: true, theme: snapshot.theme)
+    importButton.configure(title: "Import bookmarks", symbol: "rectangle.portrait.and.arrow.right", folder: false, theme: snapshot.theme)
+    importButton.toolTip = "Add bookmarks from another browser"
+    hint.textColor = toolbarColor(snapshot.theme["textTertiary"]) ?? .secondaryLabelColor
+    divider.layer?.backgroundColor = (toolbarColor(snapshot.theme["divider"]) ?? .separatorColor).cgColor
+    insertion.backgroundColor = (toolbarColor(snapshot.theme["accent"]) ?? .controlAccentColor).cgColor
+    needsLayout = true
+    layoutSubtreeIfNeeded()
+  }
+
+  private func updateItems(_ count: Int) {
+    guard let snapshot else { return }
+    while items.count > count {
       let button = items.removeLast()
       navigation.prepareToHide(button)
       button.removeFromSuperview()
     }
-    for (index, item) in snapshot.items.enumerated() {
+    for (index, item) in snapshot.items.prefix(count).enumerated() {
       let button: BookmarksBarButton
       if index < items.count {
         button = items[index]
@@ -161,20 +181,7 @@ public final class BookmarksBarView: NSView {
       button.onPointerDrag = { [weak self] in self?.moveDrag(to: $0) }
       button.onPointerUp = { [weak self] in self?.endDrag(at: $0) ?? false }
     }
-    recoveryButton.configure(title: "Bookmark recovery", symbol: "exclamationmark.circle", folder: false, theme: snapshot.theme)
-    recoveryButton.setAccessibilityLabel("Bookmark recovery")
-    recoveryButton.toolTip = self.recoveryMessage
-    overflow.configure(title: "", symbol: "chevron.right.2", folder: false, theme: snapshot.theme)
-    overflow.setAccessibilityLabel("More bookmarks")
-    overflow.toolTip = "More bookmarks"
-    other.configure(title: "Other Bookmarks", symbol: "folder", folder: true, theme: snapshot.theme)
-    importButton.configure(title: "Import bookmarks", symbol: "rectangle.portrait.and.arrow.right", folder: false, theme: snapshot.theme)
-    importButton.toolTip = "Add bookmarks from another browser"
-    hint.textColor = toolbarColor(snapshot.theme["textTertiary"]) ?? .secondaryLabelColor
-    divider.layer?.backgroundColor = (toolbarColor(snapshot.theme["divider"]) ?? .separatorColor).cgColor
-    insertion.backgroundColor = (toolbarColor(snapshot.theme["accent"]) ?? .controlAccentColor).cgColor
-    needsLayout = true
-    layoutSubtreeIfNeeded()
+    itemsNeedUpdate = false
   }
 
   public override func setFrameSize(_ newSize: NSSize) {
@@ -188,15 +195,18 @@ public final class BookmarksBarView: NSView {
     guard let snapshot else { return }
     navigation.captureFocus()
     let recoveryWidth = recoveryMessage == nil ? 0 : min(bounds.width, recoveryButton.measuredWidth + 8)
-    let layout = BookmarksBarLayout(itemWidths: items.map(\.measuredWidth), width: max(0, bounds.width - recoveryWidth), hasOther: snapshot.hasOther && snapshot.otherId != nil)
-    if let drag, layout.visible.first(where: { $0.index == drag.index })?.frame != drag.frame { cancelDrag() }
-    placements = layout.visible
-    let visibleIndexes = Set(layout.visible.map(\.index))
-    for (index, item) in items.enumerated() {
-      let hidden = !visibleIndexes.contains(index)
-      if hidden { navigation.prepareToHide(item) }
-      item.isHidden = hidden
+    var widths = Array(repeating: CGFloat.zero, count: snapshot.items.count)
+    var measured: CGFloat = 0
+    for index in snapshot.items.indices {
+      let item = snapshot.items[index]
+      widths[index] = BookmarksBarButton.width(forTitle: item.displayTitle, iconSize: item.kind == .folder ? 16 : 14)
+      measured += widths[index]
+      if measured > max(0, bounds.width) { break }
     }
+    let layout = BookmarksBarLayout(itemWidths: widths, width: max(0, bounds.width - recoveryWidth), hasOther: snapshot.hasOther && snapshot.otherId != nil)
+    if let drag, layout.visible.first(where: { $0.index == drag.index })?.frame != drag.frame { cancelDrag() }
+    if itemsNeedUpdate || items.count != layout.visible.count { updateItems(layout.visible.count) }
+    placements = layout.visible
     for placement in layout.visible {
       let offset = drag.flatMap { $0.active && $0.index == placement.index ? $0.offsetX : nil } ?? 0
       items[placement.index].frame = placement.frame.offsetBy(dx: offset, dy: 0)
@@ -206,7 +216,7 @@ public final class BookmarksBarView: NSView {
     place(overflow, layout.overflowFrame)
     place(other, layout.otherFrame.map { CGRect(x: $0.minX, y: $0.minY, width: min($0.width, other.measuredWidth), height: $0.height) })
     place(divider, layout.dividerFrame)
-    let empty = items.isEmpty
+    let empty = snapshot.items.isEmpty
     let hideImport = !empty || snapshot.hideBookmarksBarImport
     if hideImport { navigation.prepareToHide(importButton) }
     importButton.isHidden = hideImport
@@ -293,7 +303,7 @@ public final class BookmarksBarView: NSView {
       CATransaction.commit()
     } else if destination.parentId == snapshot.otherId {
       other.highlighted = true
-    } else if let index = snapshot.items.firstIndex(where: { $0.id == destination.parentId }) {
+    } else if let index = snapshot.items.firstIndex(where: { $0.id == destination.parentId }), items.indices.contains(index) {
       items[index].highlighted = true
     }
     return true
@@ -358,7 +368,7 @@ public final class BookmarksBarView: NSView {
   }
 
   private func moveDrag(to point: CGPoint) {
-    guard var drag, let snapshot else { return }
+    guard var drag, let snapshot, items.indices.contains(drag.index) else { return }
     let dx = point.x - drag.down.x
     guard drag.active || abs(dx) > 4 else { return }
     if !drag.active {
@@ -383,7 +393,7 @@ public final class BookmarksBarView: NSView {
       insertion.isHidden = false
       CATransaction.commit()
     case .folder(let id):
-      if let index = snapshot.items.firstIndex(where: { $0.id == id }) { items[index].highlighted = true }
+      if let index = snapshot.items.firstIndex(where: { $0.id == id }), items.indices.contains(index) { items[index].highlighted = true }
     case .sidebar:
       button.highlighted = true
     case nil: break
@@ -419,6 +429,20 @@ public final class BookmarksBarView: NSView {
     for item in items { item.highlighted = false }
     insertion.isHidden = true
     drag = nil
+  }
+
+  public func benchmarkMenu(trigger: String, id: String?) -> [String: Any] {
+    layoutSubtreeIfNeeded()
+    guard let snapshot else { return [:] }
+    let started = CFAbsoluteTimeGetCurrent()
+    let rows = BookmarksBarMenu(snapshot: snapshot, overflowIds: overflowIds).items(trigger: trigger, id: id)
+    let menu = BookmarksBarMenuPresenter.make(rows) { _ in }
+    return ["elapsedMs": (CFAbsoluteTimeGetCurrent() - started) * 1000, "items": menu.items.count]
+  }
+
+  public func benchmarkLayout() -> [String: Any] {
+    layoutSubtreeIfNeeded()
+    return ["items": snapshot?.items.count ?? 0, "firstId": snapshot?.items.first?.id as Any? ?? NSNull(), "firstTitle": snapshot?.items.first?.title as Any? ?? NSNull(), "overflowCount": overflowIds.count, "overflowShown": !overflow.isHidden, "visible": placements.count]
   }
 
   #if DEBUG

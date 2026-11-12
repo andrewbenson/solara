@@ -1,5 +1,5 @@
 import { refreshBookmarkProjection } from "../store/bookmarkProjection";
-import { bookmarkWriterErrorCode, bookmarkWriterSnapshot, bookmarkWriterState, newBookmarkRequestID, submitBookmarkMutations, whileBookmarkEngineHolds } from "@solara/settings";
+import { bookmarkWriterErrorCode, bookmarkWriterBinding, bookmarkWriterState, newBookmarkRequestID, submitBookmarkCommands, whileBookmarkEngineHolds } from "@solara/settings";
 import type { BookmarkDraft, RemovedBookmarks } from "../store/bookmarks";
 import { showToast } from "../components/layout/toasts";
 import { useBrowser } from "../store/browser";
@@ -29,10 +29,10 @@ export function projectNativeBookmarks(_engine: string, _revision: string, _docu
 export async function submitBookmarks(profileId: string, mutations: BookmarkMutation[], requestId = newBookmarkRequestID("bookmarks")): Promise<unknown[]> {
   const ownership = bookmarkWriterState();
   if (ownership.state !== "owned") throw new Error("Bookmark editing is paused while native ownership is unavailable");
-  const first = bookmarkWriterSnapshot(profileId);
-  let receipt: Awaited<ReturnType<typeof submitBookmarkMutations>>;
+  const first = bookmarkWriterBinding(profileId);
+  let receipt: Awaited<ReturnType<typeof submitBookmarkCommands>>;
   try {
-    receipt = await whileBookmarkEngineHolds(profileId, { engine: first.engine, generation: first.generation }, (binding) => submitBookmarkMutations(profileId, mutations, binding, requestId));
+    receipt = await whileBookmarkEngineHolds(profileId, { engine: first.engine, generation: first.generation }, (binding) => submitBookmarkCommands(profileId, mutations, binding, requestId));
   } catch (error) {
     if (bookmarkWriterErrorCode(error) === "expired") {
       refreshBookmarkProjection(useBrowser);

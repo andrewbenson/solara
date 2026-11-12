@@ -42,6 +42,20 @@ final class FakeEngineClient: EngineClient {
 struct HistoryRetirementTimeout: Error {}
 
 @Suite @MainActor struct HistoryTests {
+  @Test func dormantHistoryWaitsForEngineAdmission() async {
+    let client = FakeEngineClient()
+    var loaded: Set<String> = [""]
+    let catalog = LibraryCatalog(client: client, engineAdmission: { loaded.contains($0) })
+    await catalog.start(engineProfiles: ["", "work"])
+    #expect(catalog.history(engineProfile: "").ready)
+    #expect(!catalog.history(engineProfile: "work").ready)
+    #expect(!client.calls.contains("watch:work"))
+    loaded.insert("work")
+    await catalog.start(engineProfiles: ["work"])
+    #expect(catalog.history(engineProfile: "work").ready)
+    #expect(client.calls.contains("watch:work"))
+  }
+
   @Test func confirmedDeletionRetiresOnlyTheFinalReference() async throws {
     let client = FakeEngineClient()
     let catalog = LibraryCatalog(client: client)

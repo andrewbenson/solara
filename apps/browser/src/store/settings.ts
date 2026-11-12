@@ -27,6 +27,7 @@ export type Settings = {
   warnBeforeQuitting: boolean;
   warnBeforeClosingWindow: boolean;
   restoreSession: boolean;
+  loadAllProfilesAtLaunch: boolean;
   searchEngine: SearchEngineId;
   customSearchUrl: string;
   customSearchEngines: CustomSearchEngine[];
@@ -134,6 +135,7 @@ export const DEFAULT_SETTINGS: Settings = {
   warnBeforeQuitting: true,
   warnBeforeClosingWindow: true,
   restoreSession: true,
+  loadAllProfilesAtLaunch: false,
   searchEngine: "google",
   customSearchUrl: "",
   customSearchEngines: [],

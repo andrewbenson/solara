@@ -20,6 +20,7 @@ final class TabPoolHost {
   private var listener: Int?
   private var slotObserver: NSObjectProtocol?
   private var overlaysObserver: NSObjectProtocol?
+  private var profileObserver: NSObjectProtocol?
   private var cardPageFollows: [String: (slot: NSView, observer: NSObjectProtocol)] = [:]
   private let commits = TabPoolCommits()
   private var state: BrowserState?
@@ -59,6 +60,9 @@ final class TabPoolHost {
     }
     overlaysObserver = NotificationCenter.default.addObserver(forName: PaneOverlays.changed, object: PaneOverlays.shared, queue: nil) { [weak self] _ in
       MainActor.assumeIsolated { self?.followCardPages() }
+    }
+    profileObserver = NotificationCenter.default.addObserver(forName: SolaraCoreHost.profileDidLoad, object: nil, queue: .main) { [weak self] _ in
+      DispatchQueue.main.async { MainActor.assumeIsolated { self?.refresh() } }
     }
     SolaraCoreWebView.setOwnedTabStillWanted { view in MainActor.assumeIsolated { TabPoolHost.shared.stillWants(view) } }
     receive(store.state)
@@ -169,6 +173,10 @@ final class TabPoolHost {
       shellNSWindows.removeObject(forKey: key as NSString)
     }
     let fresh = TabViewWanted.from(state, windows: shellWindows, isInternal: Self.isInternal, frozen: { _ in false }, newTabShown: newTabShown)
+      .filter { entry in
+        guard let tab = state.tabs[entry.tabId] else { return false }
+        return entry.shown != .none || pages[entry.tabId] != nil || NativeProfileLoading.isLoaded(state.engineProfile(tab.profileId))
+      }
     let freshIds = Set(fresh.map(\.tabId))
     let absentIds = Set(closing.values.flatMap { $0.restoration.absentTabIds })
     let presentIds = Set(absentIds.filter { state.tabs[$0] != nil })
@@ -314,6 +322,8 @@ final class TabPoolHost {
       let state = issuer.store.state
       guard let tab = state.tabs[tabId], tab.unloaded != true, (tab.pageIn ?? "").isEmpty,
         state.windows[tab.windowId] != nil else { return nil }
+      let profile = state.engineProfile(tab.profileId)
+      guard NativeProfileLoading.isLoaded(profile) || wanted.contains(where: { $0.tabId == tabId && $0.shown != .none }) else { return nil }
       let peek = state.peeks[windowId]
       let url = tab.navigation?.url ?? (tab.adoptId != nil ? tab.url : nil)
       let spec = PooledPageSpec(

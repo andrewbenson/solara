@@ -27,6 +27,15 @@ import Testing
     await replacement.settle(engine: "")
   }
 
+  @Test func anUnloadedEnginesBookmarksPublishWhileItsHistoryWaits() async throws {
+    let f = CatalogLeaseFixture(admission: { _ in false })
+    try f.claim()
+    await f.catalog.start(engineProfiles: [""])
+    #expect(f.catalog.bookmarks(engineProfile: "").hasView)
+    #expect(f.catalog.bookmarks(engineProfile: "").nodes["b0"]?.title == "Page")
+    #expect(!f.catalog.history(engineProfile: "").ready)
+  }
+
   @Test func reclaimByAnOlderOrForeignPumpIsRefused() async throws {
     let f = CatalogLeaseFixture()
     try f.claim()
@@ -421,7 +430,7 @@ import Testing
   let pump: BookmarkPump
   let catalog: LibraryCatalog
 
-  init(ready: Bool = true, seed: Bool = true, directory: URL? = nil, operations: BookmarkPendingFileOperations = .live) {
+  init(ready: Bool = true, seed: Bool = true, directory: URL? = nil, operations: BookmarkPendingFileOperations = .live, admission: @escaping @MainActor (String) -> Bool = { _ in true }) {
     owner = BookmarkCoordinator(profiles: ["p": "", "alias": ""], defaultProfile: "p", pendingStore: directory.map { BookmarkPendingStore(directory: $0, fileOperations: operations) })
     if seed { owner.seed(engine: "", document: ["nodes": [
       "bar@default": ["id": "bar@default", "kind": "folder", "parentId": nil, "title": "Bookmarks Bar", "children": ["b0"], "addedAt": 0],
@@ -430,7 +439,7 @@ import Testing
     ], "roots": ["p": ["bar": "bar@default", "other": "other@default"], "alias": ["bar": "bar@default", "other": "other@default"]]], ready: ready) }
     let transport = transport
     pump = BookmarkPump(coordinator: owner, client: BookmarkEngineClient(readTree: { _ in await transport.read() }, apply: { _, ops in await transport.apply(ops) }), clock: .init(wallTimeMs: { 0 }, monotonicTimeMs: { 0 }), scheduler: .init(schedule: { _, _ in {} }))
-    catalog = LibraryCatalog(client: client, bookmarkSelection: { false })
+    catalog = LibraryCatalog(client: client, bookmarkSelection: { false }, engineAdmission: admission)
   }
 
   func makePump() -> BookmarkPump {

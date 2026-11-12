@@ -63,6 +63,13 @@ test("the native bookmark projection feed requires the upgraded native bridge", 
   assert.deepEqual(boot(40, 40).events, ["main", "legacy-js-cleanup"]);
 });
 
+test("lazy profile admission requires the API 42 native bridge", () => {
+  assert.ok(jsVersion() >= 42);
+  assert.ok(nativeVersion() >= 42);
+  assert.match(boot(42, 41).skew, /Native API skew/);
+  assert.deepEqual(boot(42, 42).events, ["main", "legacy-js-cleanup"]);
+});
+
 test("tab resource calls retain the API 38 historical gate", () => {
   assert.match(boot(38, 37).skew, /Native API skew/);
   assert.deepEqual(boot(38, 38).events, ["main", "legacy-js-cleanup"]);

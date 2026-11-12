@@ -6,7 +6,11 @@ enum SolaraCoreHost {
 
 struct Setting { var bool: Bool }
 struct BrowserState { var settings: [String: Setting] }
-struct UserScriptsTarget {}
+struct UserScriptsTarget { var engine = "" }
+
+enum NativeProfileLoading {
+  static func isLoaded(_ engine: String) -> Bool { true }
+}
 
 enum NativeStoreHandle {
   static var subscriptions = 0

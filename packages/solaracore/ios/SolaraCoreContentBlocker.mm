@@ -218,19 +218,18 @@ void LoadIntoProfile(NSString *profile, void (^then)(NSString *error)) {
   then = [then copy];
   StartPreparing();
   void (^load)(void) = ^{
+    if (!SolaraCoreHost.isStarted) return then(@"unavailable");
+    SolaraCoreProfile *p = solaracore_host::IsDeletedProfile(profile) ? nil : solaracore_host::LoadedProfile(profile);
+    NSString *path = gExtensionPath;
+    if (!p || !path || ![p respondsToSelector:@selector(loadComponentExtension:)]) return then(@"not loaded");
     if ([LoadedProfiles() containsObject:profile]) return then(nil);
-    solaracore_host::WithProfile(profile, ^(SolaraCoreProfile *p) {
-      if ([LoadedProfiles() containsObject:profile]) return then(nil);
-      NSString *path = gExtensionPath;
-      if (!p || !path || ![p respondsToSelector:@selector(loadComponentExtension:)]) return then(@"not loaded");
-      NSString *loaded = [p loadComponentExtension:path];
-      if (![loaded isEqualToString:ExtensionId()]) {
-        NSLog(@"[blocker] component load failed (%@)", loaded);
-        return then(@"not loaded");
-      }
-      [LoadedProfiles() addObject:profile];
-      then(nil);
-    });
+    NSString *loaded = [p loadComponentExtension:path];
+    if (![loaded isEqualToString:ExtensionId()]) {
+      NSLog(@"[blocker] component load failed (%@)", loaded);
+      return then(@"not loaded");
+    }
+    [LoadedProfiles() addObject:profile];
+    then(nil);
   };
   if (NSThread.isMainThread) load();
   else dispatch_async(dispatch_get_main_queue(), load);

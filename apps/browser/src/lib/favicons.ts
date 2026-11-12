@@ -1,5 +1,5 @@
 import { nativeSafeMode } from "../store/nativeStore";
-import { faviconsFor, fetchFavicon, onHistoryChanged } from "@solara/solaracore";
+import { ensureProfile, faviconsFor, fetchFavicon, onHistoryChanged } from "@solara/solaracore";
 import { nativeStoreFavicon } from "@solara/settings";
 import { iconTheme, readDocument, removeDocument, type IconTheme } from "@solara/shell";
 import { useEffect } from "react";
@@ -8,6 +8,7 @@ import { pageOf, patchPage } from "../components/layout/pageState";
 import { batchStoreUpdates, useBrowser, type BrowserState } from "../store/browser";
 import { engineProfile, isIncognitoProfile } from "../store/model";
 import { DEFAULT_PROFILE_ID } from "../store/settings";
+import { engineProfileLoaded, onLoadedProfilesChanged } from "./lazyProfiles";
 import { webviews } from "./webviews";
 
 type Icons = {
@@ -90,7 +91,7 @@ const asked = new Set<string>();
 let lookupTimer: ReturnType<typeof setTimeout> | undefined;
 
 function ask(key: string, page: string) {
-  if (isIncognitoProfile(key) || asked.has(`${key}|${page}`)) return;
+  if (!engineProfileLoaded(key) || isIncognitoProfile(key) || asked.has(`${key}|${page}`)) return;
   asked.add(`${key}|${page}`);
   if (!queued.has(key)) queued.set(key, new Set());
   queued.get(key)!.add(page);
@@ -108,6 +109,10 @@ function lookUp() {
 }
 
 function lookUpPages(key: string, list: string[]) {
+  if (!engineProfileLoaded(key)) {
+    for (const page of list) asked.delete(`${key}|${page}`);
+    return;
+  }
   const started = list.map((page) => writes.get(`${key}|${page}`));
   lookupsInFlight++;
   void faviconsFor(key, list)
@@ -197,6 +202,7 @@ export function adoptFavicons(profileId: string, known: KnownFavicon[], onPendin
     return { ...icons, pages };
   }, true);
   const pending = (async () => {
+    if (!engineProfileLoaded(key) && !(await ensureProfile(key))) return;
     for (const [page, f] of found) await nativeStoreFavicon(key, page, f.icon, f.png).catch(() => null);
   })();
   onPending?.(pending);
@@ -206,7 +212,7 @@ const failedFetches = new Set<string>();
 
 function fetchMissing(profileId: string, url: string, src: string) {
   const key = cacheKey(profileId);
-  if (isIncognitoProfile(profileId) || !/^https?:/i.test(src)) return;
+  if (!engineProfileLoaded(key) || isIncognitoProfile(profileId) || !/^https?:/i.test(src)) return;
   const id = `${key}|${src}`;
   if (inflight.has(id) || failedFetches.has(id)) return;
   const pending = fetchFavicon(src, key)
@@ -453,6 +459,9 @@ function removeLegacyFiles(s: Pick<BrowserState, "profiles">) {
 
 export function startFavicons() {
   removeLegacyFiles(useBrowser.getState());
+  const stopLoads = onLoadedProfilesChanged(() => {
+    for (const set of watchers.values()) for (const watcher of set) { watcher.known = undefined; check(watcher); }
+  });
   const history = onHistoryChanged((change) => {
     if (change.kind !== "deleted") return;
     if (change.all) return forget(change.profile);
@@ -479,6 +488,7 @@ export function startFavicons() {
   });
   return () => {
     history.remove();
+    stopLoads();
     stop();
   };
 }

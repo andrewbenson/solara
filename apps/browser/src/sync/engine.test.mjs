@@ -159,3 +159,63 @@ test("a batch whose journal save failed is saved again before it's published", a
 test("a batch whose journal save failed after a state save replaced the journal list is saved again too", async () => {
   await journalSaveRejectedOnce("Replaced", { replaceList: true });
 });
+
+
+test("with only passwords and tabs synced, sync still never touches an unloaded profile", async () => {
+  reset();
+  shell.docs.clear();
+  folder.clear();
+  onWrite = null;
+  const cold = S().createProfile({ name: "Cold passwords", color: "green" });
+  const { startProfileLoading } = await import("../lib/lazyProfiles.ts");
+  const { profileLoadRequests, loadedEngineProfiles, loadEngineProfile } = await import("../test-native/solaracore.ts");
+  loadedEngineProfiles.delete(cold);
+  const stopProfiles = startProfileLoading();
+  const calls = [];
+  const previous = globalThis.acTestEngineCall;
+  globalThis.acTestEngineCall = (name, profile, args) => { calls.push({ name, profile }); return previous?.(name, profile, args); };
+  const native = globalThis.acTestNativeModules.SolaraSyncAdapter;
+  const readPasswords = native.readPasswords;
+  native.readPasswords = async (profile) => { calls.push({ name: "readPasswords", profile }); return []; };
+  const engine = await import("./engine.ts?lazy-passwords");
+  engine.startSync();
+  try {
+    assert.ok("ok" in (await engine.turnOnSync("/lazy-passwords")));
+    for (const type of ["bookmarks", "history", "extensions"]) engine.setTypeSynced(type, false);
+    profileLoadRequests.length = 0;
+    calls.length = 0;
+    await engine.syncNow();
+    assert.equal(profileLoadRequests.includes(cold), false, "password sync doesn't load the profile");
+    assert.deepEqual(calls.filter((call) => call.profile === cold), [], "no engine call reaches the unloaded profile");
+    loadEngineProfile(cold);
+    await engine.syncNow();
+    assert.ok(calls.some((call) => call.profile === cold), "its passwords are read once it loads");
+    assert.equal(profileLoadRequests.includes(cold), false);
+  } finally { globalThis.acTestEngineCall = previous; native.readPasswords = readPasswords; stopProfiles(); }
+});
+
+test("sync leaves an unloaded profile pending and syncs it once it loads", async () => {
+  reset();
+  shell.docs.clear();
+  folder.clear();
+  onWrite = null;
+  const cold = S().createProfile({ name: "Cold sync", color: "blue" });
+  const { startProfileLoading } = await import("../lib/lazyProfiles.ts");
+  const { profileLoadRequests, loadedEngineProfiles, loadEngineProfile } = await import("../test-native/solaracore.ts");
+  loadedEngineProfiles.delete(cold);
+  const stopProfiles = startProfileLoading();
+  const engine = await import("./engine.ts?lazy-pending");
+  engine.startSync();
+  try {
+    assert.ok("ok" in (await engine.turnOnSync("/lazy-pending")));
+    profileLoadRequests.length = 0;
+    await engine.syncNow();
+    const before = new Set([...folder.values()].map((file) => file.scope));
+    assert.equal(profileLoadRequests.includes(cold), false, "sync never loads a profile by itself");
+    loadEngineProfile(cold);
+    await engine.syncNow();
+    const after = new Set([...folder.values()].map((file) => file.scope));
+    assert.ok([...after].some((scope) => !before.has(scope)), "the profile's scope syncs once it loads");
+    assert.equal(profileLoadRequests.includes(cold), false);
+  } finally { stopProfiles(); }
+});

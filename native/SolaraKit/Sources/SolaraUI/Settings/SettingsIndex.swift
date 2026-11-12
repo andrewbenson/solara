@@ -116,6 +116,9 @@ public struct SettingsIndex: Sendable {
         ]),
       ],
       .profiles: [
+        Section(section: "Launch", rows: [
+          Row(key: "loadAllProfilesAtLaunch", title: "Load all profiles at launch", description: "Keep every profile ready when Solara opens. Otherwise profiles load when needed.", keywords: ["startup", "memory", "background", "lazy"]),
+        ]),
         Section(section: "New windows open with", rows: [
           Row(key: "defaultProfile", title: "Default profile", description: "Used for new windows. Links from other apps open in the profile you used last.", keywords: ["new window"]),
         ]),

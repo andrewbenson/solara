@@ -30,11 +30,17 @@ test("native workspace action wrapping keeps the safe profile-deletion explanati
 
 test("SolaraCoreHost refuses loaded and unloaded profile deletion with a reason before engine or disk access", () => {
   const host = source("packages/solaracore/ios/SolaraCoreHost.mm");
-  const helpers = ["NSMutableSet<NSString *> *ScheduledProfileDeletions()", "NSDictionary *DeletionLocation(NSString *profile)"].map((signature) => declaration(host, signature));
+  const helpers = ["NSMutableSet<NSString *> *ScheduledProfileDeletions()", "SolaraCoreProfile *ChromeProfileAtPath(SolaraCoreEngine *engine, NSString *path)", "NSDictionary *DeletionLocation(NSString *profile)"].map((signature) => declaration(host, signature));
   const method = declaration(host, "+ (void)deleteProfileData:");
   const results = runNative("Profile.mm", [...helpers, "@implementation SolaraCoreHost", method, "@end"].join("\n"));
-  assert.equal(results.length, 6);
-  for (const result of results.slice(4)) {
+  assert.equal(results.length, 7);
+  const chromeHeld = results[6];
+  assert.equal(chromeHeld.chromeHeld, true);
+  assert.equal(chromeHeld.callbacks, 1);
+  assert.deepEqual(chromeHeld.remaining, ["Chromium deletion pending restart"], "a profile Chrome holds goes through Chrome's deletion");
+  assert.equal(chromeHeld.engineCalls, 1);
+  assert.equal(chromeHeld.sentinelKept, true, "its directory is never removed while Chrome holds it");
+  for (const result of results.slice(4, 6)) {
     assert.equal(result.callbacks, 1);
     assert.deepEqual(result.remaining, ["live profile filesystem identity"]);
     assert.equal(result.sentinelKept, true);
@@ -56,7 +62,7 @@ test("SolaraCoreHost refuses loaded and unloaded profile deletion with a reason 
       assert.equal(result.profileLookups, 2);
       assert.equal(result.fenceCalls, 1);
       assert.equal(result.engineCalls, result.loaded ? 1 : 0);
-      assert.equal(result.deletedProfiles, result.loaded ? 1 : 0);
+      assert.equal(result.deletedProfiles, 1);
       assert.equal(result.directoryExists, result.loaded);
       assert.equal(result.bookmarksKept, result.loaded);
       assert.equal(result.historyKept, result.loaded);

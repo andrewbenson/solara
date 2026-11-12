@@ -15,6 +15,10 @@ NS_ASSUME_NONNULL_BEGIN
 @property(class, nonatomic) BOOL safeMode;
 @property(class, readonly) BOOL testBuild;
 @property(class, readonly) BOOL isStarted;
+@property(class, readonly) NSArray<NSString *> *loadedProfileNames;
++ (BOOL)isProfileLoaded:(NSString *)profile NS_SWIFT_NAME(isProfileLoaded(_:));
+@property(class, readonly) NSNotificationName profileDidLoad;
++ (void)ensureProfile:(NSString *)profile completion:(void (^)(BOOL loaded))completion NS_SWIFT_NAME(ensureProfile(_:completion:));
 @property(class, readonly) BOOL chromeUsesRealKeychain;
 @property(class, readonly) NSString *installedDataDirectory;
 @property(class, readonly) NSString *dataDirectory;

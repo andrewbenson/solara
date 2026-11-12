@@ -21,6 +21,10 @@ registerHooks({
 const { adoptFavicons, adoptIconPage, dropOutlivedFavicon, faviconOutlived, noteIconPage, resolveFavicon, useFavicon } = await import("./favicons.ts");
 const { useBrowser } = await import("../store/browser.ts");
 const { engineProfile } = await import("../store/model.ts");
+const { refreshLoadedProfiles, startProfileLoading } = await import("./lazyProfiles.ts");
+const { startFavicons } = await import("./favicons.ts");
+const { loadedEngineProfiles, loadEngineProfile, profileLoadRequests } = await import("../test-native/solaracore.ts");
+await refreshLoadedProfiles();
 
 const waitFor = async (check) => {
   for (let i = 0; i < 200 && !check(); i++) await new Promise((resolve) => setTimeout(resolve, 5));
@@ -92,4 +96,48 @@ test("an icon stays when the tab finishes loading another page on the icon's sit
   S().navigated(tabId, { url: "https://www.netflix.com/title/1", title: "" }, { isLoading: false });
   dropOutlivedFavicon(tabId, "https://www.netflix.com/title/1", false);
   assert.equal(S().tabs[tabId].favicon, "https://assets.nflxext.com/favicon.ico");
+});
+
+
+test("passive icons for an unopened profile query only after its load event", async () => {
+  const S = () => useBrowser.getState();
+  S().hydrate({});
+  const id = S().createProfile({ name: "Cold", color: "blue" });
+  const page = "https://cold.test/";
+  const lookups = [];
+  loadedEngineProfiles.delete(engineProfile(id));
+  globalThis.faviconsForTest = (profile, pages) => {
+    lookups.push({ profile, pages });
+    return Promise.resolve({ pages: new Map(), icons: new Map() });
+  };
+  const stopProfiles = startProfileLoading();
+  const stopFavicons = startFavicons();
+  const row = mount(() => useFavicon(page, null, id));
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    assert.equal(lookups.length, 0);
+    loadEngineProfile(engineProfile(id));
+    await waitFor(() => lookups.some((lookup) => lookup.profile === engineProfile(id)));
+  } finally {
+    row.unmount();
+    stopFavicons();
+    stopProfiles();
+    delete globalThis.faviconsForTest;
+  }
+});
+
+
+test("explicit favicon import loads its cold target before writing imported image data", async () => {
+  useBrowser.getState().hydrate({});
+  const id = useBrowser.getState().createProfile({ name: "Import target", color: "green" });
+  const key = engineProfile(id);
+  loadedEngineProfiles.delete(key);
+  profileLoadRequests.length = 0;
+  globalThis.storedFavicons = [];
+  let pending;
+  adoptFavicons(id, [{ page: "https://import-cold.test/", icon: "https://import-cold.test/icon.png", png: "AAAA" }], (write) => { pending = write; });
+  await pending;
+  assert.deepEqual(profileLoadRequests, [key]);
+  assert.equal(loadedEngineProfiles.has(key), true);
+  assert.deepEqual(globalThis.storedFavicons, [[key, "https://import-cold.test/", "https://import-cold.test/icon.png", "AAAA"]]);
 });

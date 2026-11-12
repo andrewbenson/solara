@@ -225,6 +225,7 @@ public final class LibraryCatalog {
   public private(set) var histories = JSMap<HistorySnapshot>()
   public private(set) var bookmarkSnapshots: [String: BookmarkSnapshot] = [:]
   @ObservationIgnored let client: any EngineClient
+  @ObservationIgnored let engineAdmission: @MainActor (String) -> Bool
   @ObservationIgnored let bookmarkAdmission: (@MainActor () async throws -> Void)?
   @ObservationIgnored public private(set) var favicons: FaviconLibrary?
   @ObservationIgnored private var libraries = JSMap<HistoryLibrary>()
@@ -252,10 +253,11 @@ public final class LibraryCatalog {
   @ObservationIgnored private var observing = false
   @ObservationIgnored private var observers = JSMap<[UUID: AsyncStream<HistorySnapshot>.Continuation]>()
 
-  public init(client: any EngineClient, bookmarkAdmission: (@MainActor () async throws -> Void)? = nil, bookmarkSelection: @escaping @MainActor () -> Bool = { NativeBookmarkOwner.bookmarksSelected }) {
+  public init(client: any EngineClient, bookmarkAdmission: (@MainActor () async throws -> Void)? = nil, bookmarkSelection: @escaping @MainActor () -> Bool = { NativeBookmarkOwner.bookmarksSelected }, engineAdmission: @escaping @MainActor (String) -> Bool = { _ in true }) {
     self.client = client
     self.bookmarkAdmission = bookmarkAdmission
     self.bookmarkSelection = bookmarkSelection
+    self.engineAdmission = engineAdmission
     favicons = FaviconLibrary(client: client)
   }
 
@@ -372,7 +374,8 @@ public final class LibraryCatalog {
       client.observeBookmarks { [weak self] profile in self?.bookmarkChanged(engineProfile: profile) }
     }
     for profile in Set(engineProfiles.map(JSKey.init)).map(\.text).sorted() where !profile.hasPrefix("incognito:") && !retiredHistoryEngines.contains(JSKey(profile)) {
-      if libraries[profile] == nil {
+      let admitted = engineAdmission(profile)
+      if admitted, libraries[profile] == nil {
         libraries[profile] = HistoryLibrary(engineProfile: profile, client: client) { [weak self] snapshot in
           guard let self, !self.retiredHistoryEngines.contains(JSKey(profile)) else { return }
           self.histories[profile] = snapshot
@@ -381,7 +384,7 @@ public final class LibraryCatalog {
           }
         }
       }
-      if libraries[profile]?.snapshot.ready != true { await libraries[profile]?.reload() }
+      if admitted, libraries[profile]?.snapshot.ready != true { await libraries[profile]?.reload() }
       guard !retiredHistoryEngines.contains(JSKey(profile)) else { continue }
       if let claim = bookmarkClaim {
         if (try? claim.validate(engine: profile)) != nil {
@@ -391,7 +394,7 @@ public final class LibraryCatalog {
         }
         continue
       }
-      guard rawBookmarksAvailable else { continue }
+      guard admitted, rawBookmarksAvailable else { continue }
       if bookmarkLibraries[profile] == nil {
         bookmarkLibraries[profile] = BookmarkLibrary(engineProfile: profile, client: client, admission: { [weak self] in self?.rawBookmarksAvailable == true }) { [weak self] snapshot in
           guard let self, self.rawBookmarksAvailable else { return }

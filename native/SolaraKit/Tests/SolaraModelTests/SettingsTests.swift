@@ -2,6 +2,15 @@ import SolaraModel
 import Testing
 
 @Suite struct SettingsTests {
+  @Test func profileLaunchLoadingDefaultsToLazyAndKeepsAnExplicitChoice() {
+    #expect(!Settings.defaults.loadAllProfilesAtLaunch)
+    #expect(!Settings.hydrated(from: [:]).loadAllProfilesAtLaunch)
+    let chosen = Settings.defaults.choosing(["loadAllProfilesAtLaunch": true])
+    let restored = Settings.hydrated(from: chosen.json)
+    #expect(restored.loadAllProfilesAtLaunch)
+    #expect(restored.chosen?.contains("loadAllProfilesAtLaunch") == true)
+  }
+
   @Test func freshProfileGetsDefaultsWithEmptyBookkeeping() {
     let settings = Settings.hydrated(from: nil)
     #expect(settings["hideToolbarWhileScrolling"] == false)

@@ -54,14 +54,37 @@ enum NativeBookmarkLaunch {
               action()
             }
             return { task.cancel() }
-          }))
+          }),
+          engineAdmission: { NativeProfileLoading.isLoaded($0) },
+          requestEngine: { engine in
+            SolaraCoreHost.ensureProfile(engine) { _ in }
+          })
         owner.subscribeToStoreCommits()
         await owner.settleStoreSubscription()
         guard NativeStoreHandle.ownsWorkspace, NativeStoreHandle.store != nil, owner.installationIsUsable(catalog: catalog) else { throw BookmarkWriterError.notOwned }
       })
   }
 
+  @MainActor private static var profileObserver: NSObjectProtocol?
+
   @MainActor static func ensureReady() async throws {
+    if profileObserver == nil {
+      profileObserver = NotificationCenter.default.addObserver(forName: SolaraCoreHost.profileDidLoad, object: nil, queue: .main) { note in
+        guard let engine = note.userInfo?["profile"] as? String else { return }
+        MainActor.assumeIsolated {
+          NativeBookmarkOwner.current?.engineDidLoad(engine: engine)
+          NativeHistoryCatalog.catalog.favicons?.invalidate(engineProfile: engine)
+          Task { @MainActor in await NativeHistoryCatalog.start(engineProfiles: [engine]) }
+        }
+      }
+    }
     try await installation.ensureReady()
+  }
+}
+
+@MainActor
+enum NativeProfileLoading {
+  static func isLoaded(_ engine: String) -> Bool {
+    SolaraCoreHost.isProfileLoaded(engine)
   }
 }

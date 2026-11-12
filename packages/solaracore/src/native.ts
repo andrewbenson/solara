@@ -37,6 +37,9 @@ export type CefNative = {
   addListener(name: "onPinnedLink", listener: (event: PinnedLinkEvent) => void): EventSubscription;
   setPinnedLinkSources?(keys: string[]): Promise<void>;
   resolvePinnedLink?(requestId: string, intercept: boolean): Promise<boolean>;
+  loadedProfiles(): Promise<string[]>;
+  ensureProfile(profile: string): Promise<boolean>;
+  addListener(name: "onProfileLoaded", listener: (event: { profile: string }) => void): EventSubscription;
   engineInfo(): Promise<EngineInfo>;
   chromeWindows(): Promise<ChromeWindowState[]>;
   prepareTransfer(key: string): void;

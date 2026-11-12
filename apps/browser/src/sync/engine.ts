@@ -28,6 +28,7 @@ import { create } from "zustand";
 import { useBrowser } from "../store/browser";
 import { nativeBusyWrites, nativeOwnsWorkspace, nativeSafeMode } from "../store/nativeStore";
 import { persistenceRefused } from "../lib/persistLatch";
+import { engineProfileLoaded, onLoadedProfilesChanged } from "../lib/lazyProfiles";
 import { engineProfile, isIncognitoProfile } from "../store/model";
 import { DEFAULT_PROFILE_ID, DEFAULT_SETTINGS } from "../store/settings";
 import type { Profile } from "../store/types";
@@ -783,7 +784,7 @@ function profileAdapters(profileId: string, retiring: boolean, everyType = false
 async function watchExtensions() {
   if (!doc.enabled || pairingPending() || !doc.types.extensions) return;
   const s = useBrowser.getState();
-  const profiles = [...new Set(Object.entries(doc.profiles).filter(([id, l]) => l.enabled && s.profiles[id] && !s.profiles[id]!.dataId).map(([id]) => engineProfile(id)))];
+  const profiles = [...new Set(Object.entries(doc.profiles).filter(([id, l]) => l.enabled && s.profiles[id] && !s.profiles[id]!.dataId).map(([id]) => engineProfile(id)))].filter(engineProfileLoaded);
   if (profiles.length && (await probeExtensionSync(profiles[0]!))) watchExtensionIntents(profiles);
 }
 
@@ -791,6 +792,18 @@ function extensionsOf(profileId: string): ExtensionsAdapter {
   let adapter = extensionAdapters.get(profileId);
   if (!adapter) extensionAdapters.set(profileId, (adapter = extensionsAdapterFor(profileId)));
   return adapter;
+}
+
+const waitingForLoad = new Set<string>();
+let stopLoadWatch: (() => void) | null = null;
+
+function watchProfileLoads() {
+  stopLoadWatch ??= onLoadedProfilesChanged(() => {
+    const ready = [...waitingForLoad].filter(engineProfileLoaded);
+    if (!ready.length) return;
+    for (const engine of ready) waitingForLoad.delete(engine);
+    scheduleSync(500);
+  });
 }
 
 function scheduleSync(delay = AFTER_EDIT_MS) {
@@ -871,11 +884,15 @@ async function runCycle({ retiring = false } = {}) {
     if (app.joined) linkProfiles(app);
     confirmThemes(app);
     let pending = app.pending;
-    const s = useBrowser.getState();
     for (const [profileId, link] of Object.entries(doc.profiles)) {
+      const s = useBrowser.getState();
       const exists = !!s.profiles[profileId];
       const retire = retiring || !!link.retire || !exists;
       if (!retire && !link.enabled) continue;
+      if (!retire && !engineProfileLoaded(engineProfile(profileId))) {
+        waitingForLoad.add(engineProfile(profileId));
+        continue;
+      }
       const scope = `p:${link.syncId}`;
       const state = (doc.scopes[scope] ??= freshScope(scope));
       if (!await pushBookmarkSyncLinks()) throw new Error("Native bookmark sync link checkpoint refused");
@@ -2330,6 +2347,7 @@ export function startSync(host?: PairingNative) {
   if (newerFormat) return publishUi({ status: "unavailable", error: NEWER_FORMAT });
   pairingNative = host ?? pairingNative;
   watchBrowserChanges();
+  watchProfileLoads();
   if (doc.v === 2 || host) {
     const recovery = recoverPairing(host ?? null);
     const recovering = generation;

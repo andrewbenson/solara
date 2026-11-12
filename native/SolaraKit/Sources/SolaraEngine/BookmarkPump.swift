@@ -80,17 +80,21 @@ public final class BookmarkPump {
   let epoch: UInt64
   private var lanes: JSMap<Lane> = [:]
   private var stopped = false
+  private let engineAdmission: @MainActor (String) -> Bool
+  private let requestEngine: @MainActor (String) -> Void
 
   public convenience init(coordinator: BookmarkCoordinator, client: BookmarkEngineClient, clock: BookmarkPumpClock, scheduler: BookmarkPumpScheduler) {
     self.init(coordinator: coordinator, client: client, clock: clock, scheduler: scheduler, epoch: coordinator.claimPump())
   }
 
-  init(coordinator: BookmarkCoordinator, client: BookmarkEngineClient, clock: BookmarkPumpClock, scheduler: BookmarkPumpScheduler, epoch: UInt64) {
+  init(coordinator: BookmarkCoordinator, client: BookmarkEngineClient, clock: BookmarkPumpClock, scheduler: BookmarkPumpScheduler, epoch: UInt64, engineAdmission: @escaping @MainActor (String) -> Bool = { _ in true }, requestEngine: @escaping @MainActor (String) -> Void = { _ in }) {
     self.coordinator = coordinator
     self.client = client
     self.clock = clock
     self.scheduler = scheduler
     self.epoch = epoch
+    self.engineAdmission = engineAdmission
+    self.requestEngine = requestEngine
   }
 
   @discardableResult
@@ -132,6 +136,8 @@ public final class BookmarkPump {
   }
 
   public func requestPush(engine: String) {
+    guard !stopped, coordinator.ownsPump(engine: engine, epoch: epoch) else { return }
+    guard engineAdmission(engine) else { requestEngine(engine); return }
     guard let lane = lane(engine) else { return }
     lane.push = true
     start(engine, lane)
@@ -151,7 +157,7 @@ public final class BookmarkPump {
   }
 
   private func lane(_ engine: String) -> Lane? {
-    guard !stopped, coordinator.ownsPump(engine: engine, epoch: epoch) else { return nil }
+    guard !stopped, engineAdmission(engine), coordinator.ownsPump(engine: engine, epoch: epoch) else { return nil }
     if let lane = lanes[engine] { return lane.halted ? nil : lane }
     let lane = Lane()
     let view = coordinator.desiredView(engine: engine)
@@ -217,7 +223,7 @@ public final class BookmarkPump {
         lanes.removeValue(forKey: engine)
       }
     }
-    while !stopped, let (view, pendingDelta) = coordinator.pumpInput(engine: engine, epoch: epoch) {
+    while !stopped, engineAdmission(engine), let (view, pendingDelta) = coordinator.pumpInput(engine: engine, epoch: epoch) {
       let delta = coordinator.chromeOperations(pendingDelta, engine: engine, document: view.document)
       if coordinator.catalogProfile(engine: engine) == nil, view.document["nodes"]?.object?.isEmpty == true, !coordinator.legacyImportPending(engine: engine) {
         let coordinator = coordinator

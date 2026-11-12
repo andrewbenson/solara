@@ -3,6 +3,7 @@ import { onHistoryChanged, queryHistory, watchHistory, type EngineHistoryEntry, 
 import { readDocument, readDocumentResult, removeDocument, saveDocument } from "@solara/shell";
 import { nativeAddHistoryVisits, startNativeHistoryCatalog } from "@solara/settings";
 import { useBrowser, type BrowserState } from "../store/browser";
+import { engineProfileLoaded, onLoadedProfilesChanged, refreshLoadedProfiles } from "./lazyProfiles";
 import { afterFirstWindow } from "./afterFirstWindow";
 import { MAX_HISTORY, MAX_VISIT_TIMES } from "../store/history";
 import { engineProfile, isIncognitoProfile } from "../store/model";
@@ -41,6 +42,7 @@ function viewOf(engine: string): HistoryEntry[] {
 }
 
 let legacyMoved = false;
+const legacyMigratedEngines = new Set<string>();
 
 function setView(engine: string, list: HistoryEntry[], floor?: number) {
   useBrowser.setState((s) => {
@@ -48,7 +50,7 @@ function setView(engine: string, list: HistoryEntry[], floor?: number) {
     const was = ids.map((id) => s.historyFloor[id] ?? -Infinity).reduce((a, b) => Math.max(a, b), -Infinity);
     const full = list.length >= MAX_HISTORY ? list[list.length - 1]!.lastVisit : -Infinity;
     const next = Math.max(floor ?? was, full);
-    const ready = legacyMoved;
+    const ready = legacyMoved || legacyMigratedEngines.has(engine);
     const sameList = ids.every((id) => s.history[id] === list);
     const sameFloor = ids.every((id) => (s.historyFloor[id] ?? -Infinity) === next);
     const sameReady = !ready || ids.every((id) => s.historyReady[id]);
@@ -251,6 +253,35 @@ function redactLegacyHistoryFile(): Promise<void> {
   });
 }
 
+const legacyDropsPending = new Map<string, string>();
+const legacyImportedPass = new Set<string>();
+const legacyRowsOf = (sources: { profileId: string; list: HistoryEntry[] }[]) => JSON.stringify(sources.map((source) => [source.profileId, source.list]));
+
+async function dropImportedLegacyRows(imported: Map<string, string>) {
+  const current = imported.size ? await readRedactedLegacy() : null;
+  const history = current?.file.history;
+  const unchanged = (id: string) => imported.has(id) && JSON.stringify(history?.[id]) === imported.get(id);
+  if (!history || !Object.keys(history).some(unchanged)) return;
+  await saveDocument(LEGACY_FILE, JSON.stringify({ ...current!.file, history: Object.fromEntries(Object.entries(history).filter(([id]) => !unchanged(id))) }));
+}
+
+async function scheduleLegacyDrop(perEngine: Map<string, { profileId: string; list: HistoryEntry[] }[]>, engines: string[], keepMs: number) {
+  if (!engines.length) return;
+  const imported = new Map(engines.flatMap((engine) => perEngine.get(engine)!.map((source) => [source.profileId, JSON.stringify(source.list)] as const)));
+  if (!keepMs) return dropImportedLegacyRows(imported);
+  const rows = new Map(engines.map((engine) => [engine, legacyRowsOf(perEngine.get(engine)!)]));
+  for (const [engine, json] of rows) legacyDropsPending.set(engine, json);
+  setTimeout(() => void queueLegacy(async () => {
+    try {
+      if (!nativeSafeMode()) await dropImportedLegacyRows(imported);
+    } catch (error) {
+      console.warn(`[history] keeping migrated rows in ${LEGACY_FILE} for now`, error);
+    } finally {
+      for (const [engine, json] of rows) if (legacyDropsPending.get(engine) === json) legacyDropsPending.delete(engine);
+    }
+  }), keepMs);
+}
+
 async function moveLegacyHistory(now: number, keepMs: number): Promise<"none" | "moved" | "kept"> {
   if (nativeSafeMode()) return "kept";
   let legacy: LegacyRead | null;
@@ -271,9 +302,14 @@ async function moveLegacyHistory(now: number, keepMs: number): Promise<"none" | 
     if (legacy.retired.aliases.has(profileId) || legacy.retired.engines.has(engine)) continue;
     perEngine.set(engine, [...(perEngine.get(engine) ?? []), { profileId, list }]);
   }
-  for (const engine of perEngine.keys()) migrating.add(engine);
+  for (const engine of engineProfiles(s)) if (!perEngine.has(engine)) legacyMigratedEngines.add(engine);
+  const deferred = [...perEngine.keys()].some((engine) => !engineProfileLoaded(engine));
+  const importing = [...perEngine.keys()].filter((engine) => engineProfileLoaded(engine) && legacyDropsPending.get(engine) !== legacyRowsOf(perEngine.get(engine)!));
+  legacyImportedPass.clear();
+  for (const engine of importing) migrating.add(engine);
   try {
     for (const [engine, sources] of perEngine) {
+      if (!importing.includes(engine)) continue;
       for (const { profileId, list } of sources) {
         const admitted = () => {
           const retired = retiredLegacyIds();
@@ -293,17 +329,19 @@ async function moveLegacyHistory(now: number, keepMs: number): Promise<"none" | 
           if (!admitted()) break;
           await nativeAddHistoryVisits(engine, pages.slice(i, i + CHUNK), LEGACY_TOLERANCE_MS);
         }
-        if (admitted()) break;
+        if (admitted()) { legacyMigratedEngines.add(engine); legacyImportedPass.add(engine); break; }
       }
     }
+    if (deferred) await scheduleLegacyDrop(perEngine, importing.filter((engine) => legacyImportedPass.has(engine)), keepMs);
     legacy = await readRedactedLegacy();
   } catch (error) {
     console.warn(`[history] moving ${LEGACY_FILE} into Chrome failed; trying again next launch`, error);
     return "kept";
   } finally {
-    for (const engine of perEngine.keys()) migrating.delete(engine);
+    for (const engine of importing) migrating.delete(engine);
   }
   if (!legacy) return "none";
+  if (deferred) return "kept";
   const completed = redactedLegacyFile(source.file, legacy.retired);
   const migrated = completed === source.file ? source.json : JSON.stringify(completed);
   if (legacy.json !== migrated) return "kept";
@@ -330,26 +368,43 @@ export function migrateHistoryFile(now = Date.now(), { keepMs = LEGACY_KEPT_MS }
 export function startHistory() {
   const events = onHistoryChanged(changed);
   const loadAll = (s: Pick<BrowserState, "profiles">) => {
-    const engines = engineProfiles(s);
-    void startNativeHistoryCatalog(engines);
-    for (const engine of engines) if (!loaded.has(engine) && !loads.has(engine)) void load(engine);
+    void startNativeHistoryCatalog(engineProfiles(s));
+    for (const engine of engineProfiles(s).filter(engineProfileLoaded)) if (!loaded.has(engine) && !loads.has(engine)) void load(engine);
   };
   let moving = readDocument(LEGACY_FILE) !== null;
   let stopped = false;
-  if (!moving) loadAll(store());
+  let migrationEnabled = !moving;
+  let legacySettled = false;
+  if (!moving) {
+    loadAll(store());
+    void refreshLoadedProfiles().then(() => { if (!stopped) loadAll(store()); });
+  }
   const migrate = () => {
     if (stopped) return;
+    migrationEnabled = true;
     void migrateHistoryFile().then((result) => {
+      if (stopped) return;
       legacyMoved = result !== "kept";
+      legacySettled = legacyMoved;
       if (moving) {
         moving = false;
         loadAll(store());
       } else if (result === "moved") void reloadHistory();
-      else if (legacyMoved) for (const engine of loaded) setView(engine, viewOf(engine));
+      else {
+        loadAll(store());
+        for (const engine of loaded) {
+          if (legacyImportedPass.has(engine)) void load(engine);
+          else setView(engine, viewOf(engine));
+        }
+      }
     });
   };
-  if (moving) afterFirstWindow(migrate);
+  if (moving) afterFirstWindow(() => { void refreshLoadedProfiles().then(migrate); });
   else migrate();
+  const stopLoads = onLoadedProfilesChanged(() => {
+    if (legacySettled) loadAll(store());
+    else if (migrationEnabled) migrate();
+  });
   const stop = useBrowser.subscribe((s, prev) => {
     if (s.profiles === prev.profiles) return;
     void redactLegacyHistoryFile();
@@ -364,12 +419,19 @@ export function startHistory() {
     stopped = true;
     events.remove();
     stop();
+    stopLoads();
     pending = [];
     loaded.clear();
     legacyMoved = false;
+    legacyMigratedEngines.clear();
+    legacyDropsPending.clear();
+    legacyImportedPass.clear();
     if (legacyRetry) clearTimeout(legacyRetry);
     legacyRetry = null;
   };
 }
 
-export const reloadHistory = () => Promise.all(engineProfiles(store()).map(load));
+export const reloadHistory = async () => {
+  await refreshLoadedProfiles();
+  return Promise.all(engineProfiles(store()).filter(engineProfileLoaded).map(load));
+};

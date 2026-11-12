@@ -228,6 +228,7 @@ func expectedReplayStateWithClosedWindowPresentation(_ json: JSONValue) -> JSONO
         var expectedState = expectedReplayStateWithClosedWindowPresentation(json)
         if name == "hydrate", var settings = expectedState["settings"]?.object {
           if settings["showTabNumberHints"] == nil { settings["showTabNumberHints"] = true }
+          if settings["loadAllProfilesAtLaunch"] == nil { settings["loadAllProfilesAtLaunch"] = false }
           expectedState["settings"] = .object(settings)
         }
         if expectedState["find"] == nil { expectedState["find"] = [:] }

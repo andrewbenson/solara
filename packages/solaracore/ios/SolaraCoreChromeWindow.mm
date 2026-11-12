@@ -45,6 +45,8 @@ constexpr CGFloat kTrafficLightInsetX = 18;
 constexpr CGFloat kTrafficLightTop = 20;
 const void *kInsetLightsKey = &kInsetLightsKey;
 const void *kLightsCenterKey = &kLightsCenterKey;
+const void *kProfileSelectionKey = &kProfileSelectionKey;
+const void *kProfileSelectionClosedKey = &kProfileSelectionClosedKey;
 
 const void *kLoggedKey = &kLoggedKey;
 NSFileHandle *gLightsLog;
@@ -1627,7 +1629,11 @@ NSMapTable<SolaraCoreProfile *, SolaraCoreWindowController *> *StandaloneWindows
                                                     object:coreWindow.window
                                                      queue:nil
                                                 usingBlock:^(NSNotification *) {
-                                                  if (SolaraCoreWindowController *c = weakSelf) [SolaraCoreTabStrip windowClosed:c];
+                                                  if (SolaraCoreWindowController *c = weakSelf) {
+                                                    objc_setAssociatedObject(c, kProfileSelectionClosedKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                                                    objc_setAssociatedObject(c, kProfileSelectionKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                                                    [SolaraCoreTabStrip windowClosed:c];
+                                                  }
                                                 }];
   }
   return self;
@@ -2545,29 +2551,44 @@ NSView *ACWindowRootView(NSWindow *window) {
 
 + (void)showProfile:(NSString *)profile inWindow:(NSWindow *)window {
   SolaraCoreWindowController *controller = [SolaraCoreWindowController forNSWindow:window];
-  if (!controller) return;
+  if (!controller || [objc_getAssociatedObject(controller, kProfileSelectionClosedKey) boolValue]) return;
+  NSString *name = profile ?: @"";
+  NSDictionary *previous = objc_getAssociatedObject(controller, kProfileSelectionKey);
+  if ([previous[@"pending"] boolValue] && [previous[@"profile"] isEqualToString:name]) return;
+  NSMutableDictionary *selection = [@{@"profile": name, @"pending": @YES} mutableCopy];
+  objc_setAssociatedObject(controller, kProfileSelectionKey, selection, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
   __weak SolaraCoreWindow *coreWindow = controller.coreWindow;
+  __weak NSWindow *requestedWindow = window;
   __weak SolaraCoreWindowController *weakController = controller;
-  solaracore_host::WithProfile(profile ?: @"", ^(SolaraCoreProfile *p) {
+  solaracore_host::WithProfile(name, ^(SolaraCoreProfile *p) {
     SolaraCoreWindowController *shown = weakController;
-    if (!p || !coreWindow || !shown) return;
-    coreWindow.activeProfile = p;
+    SolaraCoreWindow *shownCore = coreWindow;
+    NSWindow *shownWindow = requestedWindow;
+    if (!shown || objc_getAssociatedObject(shown, kProfileSelectionKey) != selection) return;
+    selection[@"pending"] = @NO;
+    if (!SolaraCoreHost.isStarted || !p || p.destroyed || !shownCore || !shownWindow ||
+        shown.coreWindow != shownCore || shownCore.window != shownWindow ||
+        [SolaraCoreWindowController forNSWindow:shownWindow] != shown ||
+        [objc_getAssociatedObject(shown, kProfileSelectionClosedKey) boolValue] ||
+        solaracore_host::IsDeletedProfile(name) || solaracore_host::IsDeletedProfile(solaracore_host::OriginalProfileName(name))) return;
+    shownCore.activeProfile = p;
+    if (objc_getAssociatedObject(shown, kProfileSelectionKey) != selection || p.destroyed) return;
     SolaraCoreTab *tab = [SolaraCoreTabStrip activeTabInWindow:shown profile:p];
     SolaraCoreWebView *view = tab ? [SolaraCoreTabs viewForTab:tab] : nil;
-    NSWindow *shownWindow = coreWindow.window;
-    if (view && shownWindow && view.window == shownWindow && [[coreWindow tabsForProfile:p] containsObject:tab])
+    if (view && view.window == shownWindow && [[shownCore tabsForProfile:p] containsObject:tab])
       [view requestFocusRestoreIn:shownWindow];
   });
 }
 
 + (void)prepareProfiles:(NSArray<NSString *> *)profiles forWindow:(NSWindow *)window {
+  if (!SolaraCoreHost.isStarted) return;
   SolaraCoreWindowController *controller = [SolaraCoreWindowController forNSWindow:window];
   if (!controller || ![controller.coreWindow respondsToSelector:@selector(prepareProfile:)]) return;
   __weak SolaraCoreWindow *coreWindow = controller.coreWindow;
-  for (NSString *profile in profiles)
-    solaracore_host::WithProfile(profile, ^(SolaraCoreProfile *p) {
-      if (p && coreWindow) [coreWindow prepareProfile:p];
-    });
+  for (NSString *profile in profiles) {
+    SolaraCoreProfile *p = solaracore_host::IsDeletedProfile(profile) ? nil : solaracore_host::LoadedProfile(profile);
+    if (p && coreWindow) [coreWindow prepareProfile:p];
+  }
 }
 
 + (void)setTrafficLightsCenter:(NSValue *)center inWindow:(NSWindow *)window {

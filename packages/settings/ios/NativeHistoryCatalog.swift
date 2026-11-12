@@ -1,8 +1,10 @@
 import AppKit
 import SolaraCore
 import Foundation
+import ImageIO
 import SolaraEngine
 import SolaraModel
+import SolaraShell
 import SolaraStore
 import SolaraUI
 
@@ -10,6 +12,7 @@ import SolaraUI
 final class SolaraHistoryClient: EngineClient {
   enum Failure: Error {
     case invalidReply
+    case profileNotLoaded
     case engine(String)
   }
 
@@ -148,7 +151,7 @@ final class SolaraHistoryClient: EngineClient {
     }
     if source.hasPrefix("file:"), let url = URL(string: source), url.isFileURL { return validImageData(try? Data(contentsOf: url)) }
     if source.hasPrefix("/") { return validImageData(try? Data(contentsOf: URL(fileURLWithPath: source))) }
-    guard source.hasPrefix("https://") || source.hasPrefix("http://") else { return nil }
+    guard NativeProfileLoading.isLoaded(engineProfile), source.hasPrefix("https://") || source.hasPrefix("http://") else { return nil }
     return await withCheckedContinuation { continuation in
       SolaraCoreFavicons.fetch(source, profile: engineProfile, name: nil) { result in
         guard let uri = result?["uri"] as? String, let comma = uri.firstIndex(of: ",") else {
@@ -176,7 +179,8 @@ final class SolaraHistoryClient: EngineClient {
   }
 
   private func bookmarkCall(_ name: String, profile: String, args: String = "{}") async throws -> JSONValue {
-    try await withCheckedThrowingContinuation { continuation in
+    guard NativeProfileLoading.isLoaded(profile) else { throw Failure.profileNotLoaded }
+    return try await withCheckedThrowingContinuation { continuation in
       SolaraCoreEngineBridge.call(name, profile: profile, args: args) { json in
         do {
           let reply = try JSONValue.parseBookmark(json)
@@ -191,6 +195,7 @@ final class SolaraHistoryClient: EngineClient {
   }
 
   private func call(_ name: String, profile: String, args: [String: Any] = [:]) async throws -> Data {
+    guard NativeProfileLoading.isLoaded(profile) else { throw Failure.profileNotLoaded }
     let body = String(decoding: try JSONSerialization.data(withJSONObject: args), as: UTF8.self)
     return try await withCheckedThrowingContinuation { continuation in
       SolaraCoreEngineBridge.call(name, profile: profile, args: body) { json in
@@ -216,7 +221,7 @@ enum NativeHistoryCatalog {
 
   private static func makeCatalog() -> LibraryCatalog {
     NativeBookmarkLaunch.select()
-    return LibraryCatalog(client: client, bookmarkAdmission: { try await NativeBookmarkLaunch.ensureReady() })
+    return LibraryCatalog(client: client, bookmarkAdmission: { try await NativeBookmarkLaunch.ensureReady() }, engineAdmission: { NativeProfileLoading.isLoaded($0) })
   }
   private static var lifecycle: Int?
   private static weak var boundStore: Store?
@@ -235,6 +240,12 @@ enum NativeHistoryCatalog {
   }
 
   static func favicon(page: String, source: String? = nil, profileId: String, dark: Bool) async -> NSImage? {
+    if let state = NativeStoreHandle.store?.state, state.profiles[profileId] != nil, !Ids.isIncognitoProfile(profileId) {
+      let engine = state.engineProfile(profileId)
+      if !NativeProfileLoading.isLoaded(engine), let image = await NativeLaunchFavicons.image(page: page, source: source, engine: engine),
+        let current = NativeStoreHandle.store?.state, current.profiles[profileId] != nil,
+        current.engineProfile(profileId).utf16.elementsEqual(engine.utf16), !NativeProfileLoading.isLoaded(engine) { return image }
+    }
     let profile = NativeStoreHandle.store?.state.engineProfile(profileId) ?? (profileId == "default" ? "" : profileId)
     guard let result = await catalog.favicons?.favicon(page: page, source: source, engineProfile: profile, appearance: dark) else { return nil }
     return NSImage(data: result.data)
@@ -262,29 +273,44 @@ enum NativeHistoryCatalog {
   }
 
   static func command(kind: String, engineProfile: String, payload: [String: Any]) async throws -> Any {
+    guard !engineProfile.hasPrefix("incognito:") else { throw SolaraHistoryClient.Failure.invalidReply }
     let data = try JSONSerialization.data(withJSONObject: payload)
     switch kind {
     case "deleteHistory":
       guard let urls = payload["urls"] as? [String] else { throw SolaraHistoryClient.Failure.invalidReply }
+      guard !urls.isEmpty else { return NSNull() }
+      try await ensureEngine(engineProfile)
       try await catalog.deleteHistory(urls: urls, engineProfile: engineProfile)
       return NSNull()
     case "importHistory":
       let rows = try JSONDecoder().decode(HistoryRowsPayload.self, from: data).rows
+      guard !rows.isEmpty else { return NSNull() }
+      try await ensureEngine(engineProfile)
       try await catalog.importHistory(rows: rows, engineProfile: engineProfile)
       return NSNull()
     case "addHistoryVisits":
       let input = try JSONDecoder().decode(HistoryVisitsPayload.self, from: data)
+      guard !input.pages.isEmpty else { return 0 }
+      try await ensureEngine(engineProfile)
       return try await catalog.addHistoryVisits(pages: input.pages, toleranceMs: input.toleranceMs, engineProfile: engineProfile)
     case "applyBookmarks":
       throw BookmarkCoordinatorError.ownershipUnavailable
     case "storeFavicon":
       guard let page = payload["page"] as? String, let source = payload["icon"] as? String,
         let png = payload["png"] as? String, let bytes = Data(base64Encoded: png) else { throw SolaraHistoryClient.Failure.invalidReply }
+      guard NativeProfileLoading.isLoaded(engineProfile) else { return ["stored": false] }
       try await catalog.storeFavicon(page: page, source: source, data: bytes, engineProfile: engineProfile)
       return ["stored": true]
     default:
       throw SolaraHistoryClient.Failure.invalidReply
     }
+  }
+
+  private static func ensureEngine(_ engine: String) async throws {
+    let loaded = await withCheckedContinuation { continuation in
+      SolaraCoreHost.ensureProfile(engine) { continuation.resume(returning: $0) }
+    }
+    guard loaded else { throw SolaraHistoryClient.Failure.profileNotLoaded }
   }
 
   private struct HistoryRowsPayload: Decodable { var rows: [HistoryImportRow] }
@@ -304,6 +330,58 @@ enum NativeHistoryCatalog {
       "floor": history.floor.isFinite ? history.floor as Any : "-Infinity",
       "revision": history.revision,
     ]
+  }
+}
+
+
+@MainActor
+private enum NativeLaunchFavicons {
+  nonisolated private static let documentLimit = 1100 * 1024
+  nonisolated private static let imageLimit = 241
+  nonisolated private static let uriLimit = 16 * 1024
+  nonisolated private static let rowLimit = 240
+  private static var decoded: [Int: NSImage] = [:]
+  private static let saved = Task.detached { () -> JSONValue? in
+    guard let directory = try? DocumentStore.directoryURL(),
+      let file = try? FileHandle(forReadingFrom: directory.appending(path: "launch-look.json")) else { return nil }
+    defer { try? file.close() }
+    guard let data = try? file.read(upToCount: documentLimit + 1), data.count <= documentLimit,
+      let look = try? JSONValue.parse(data), look["version"] == 2,
+      let favicons = look["favicons"], let images = favicons["images"]?.array, images.count <= imageLimit,
+      let profiles = favicons["profiles"]?.object, profiles.count <= rowLimit else { return nil }
+    return favicons
+  }
+
+  static func image(page: String, source: String?, engine: String) async -> NSImage? {
+    guard !Ids.isIncognitoProfile(engine), let saved = await saved.value,
+      let profile = saved["profiles"]?[engine]?.object,
+      let pages = profile["pages"]?.object, pages.count <= rowLimit,
+      let sources = profile["srcs"]?.object, sources.count <= rowLimit,
+      let images = saved["images"]?.array else { return nil }
+    let page = String(page.prefix { $0 != "#" })
+    guard page.utf16.count <= 16 * 1024, (source?.utf16.count ?? 0) <= 16 * 1024 else { return nil }
+    let candidates = [source.flatMap { sources[$0] }, pages[page]]
+    for candidate in candidates {
+      guard let value = candidate?.number, value.isFinite, value.rounded(.towardZero) == value,
+        value >= 0, value < Double(images.count) else { continue }
+      let index = Int(value)
+      if let image = decoded[index] { return image }
+      guard let uri = images[index].string, uri.utf16.count <= uriLimit,
+        uri.hasPrefix("data:image/png;base64,"),
+        let data = Data(base64Encoded: String(uri.dropFirst("data:image/png;base64,".count))),
+        data.starts(with: [137, 80, 78, 71, 13, 10, 26, 10]),
+        let imageSource = CGImageSourceCreateWithData(data as CFData, nil),
+        let type = CGImageSourceGetType(imageSource), type as String == "public.png",
+        let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any],
+        let width = properties[kCGImagePropertyPixelWidth] as? Int,
+        let height = properties[kCGImagePropertyPixelHeight] as? Int,
+        width > 0, width <= 256, height > 0, height <= 256,
+        let decodedImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else { continue }
+      let image = NSImage(cgImage: decodedImage, size: NSSize(width: CGFloat(width), height: CGFloat(height)))
+      decoded[index] = image
+      return image
+    }
+    return nil
   }
 }
 

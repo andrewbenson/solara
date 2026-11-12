@@ -18,7 +18,7 @@ public class CefModule: Module {
   private let notificationConsumer = UUID().uuidString
   public func definition() -> ModuleDefinition {
     Name("SolaraCEF")
-    Events("onDownload", "onPermission", "onPermissionDismissed", "onContentBlocker", "onSystemState", "onEngineEvent", "onTabStrip", "onNotificationEvent", "onPinnedLink")
+    Events("onDownload", "onPermission", "onPermissionDismissed", "onContentBlocker", "onSystemState", "onEngineEvent", "onTabStrip", "onNotificationEvent", "onPinnedLink", "onProfileLoaded")
 
     OnCreate {
       DispatchQueue.main.async {
@@ -33,6 +33,7 @@ public class CefModule: Module {
       SolaraCoreHost.eventHandler = { [weak self] name, payload in
         SolaraCoreEventTaps.send(name, payload)
         switch name {
+        case "profileLoaded": self?.sendEvent("onProfileLoaded", payload)
         case "permission": self?.sendEvent("onPermission", payload)
         case "permissionDismissed": self?.sendEvent("onPermissionDismissed", payload)
         case "download": self?.sendEvent("onDownload", payload)
@@ -72,6 +73,10 @@ public class CefModule: Module {
 
     AsyncFunction("engineInfo") { SolaraCoreHost.engineInfo }.runOnQueue(.main)
     AsyncFunction("forwardEngineTopics") { (topics: [String]) in SolaraCoreEngineBridge.forwardTopics(topics) }.runOnQueue(.main)
+    AsyncFunction("loadedProfiles") { SolaraCoreHost.loadedProfileNames }.runOnQueue(.main)
+    AsyncFunction("ensureProfile") { (profile: String, promise: Promise) in
+      SolaraCoreHost.ensureProfile(profile) { promise.resolve($0) }
+    }.runOnQueue(.main)
     AsyncFunction("chromeWindows") { SolaraCoreHost.chromeWindows }.runOnQueue(.main)
     AsyncFunction("devExternalLaunches") { SolaraCoreHost.testExternalLaunches() }.runOnQueue(.main)
     AsyncFunction("devEvents") { (browserId: Int) in SolaraCoreWebView.devEvents(browserId: Int32(browserId)) }.runOnQueue(.main)

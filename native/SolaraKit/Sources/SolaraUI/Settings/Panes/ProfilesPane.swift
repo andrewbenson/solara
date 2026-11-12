@@ -318,6 +318,14 @@ struct ProfilesPane: View {
           .fixedSize(horizontal: false, vertical: true)
       }
 
+      SettingsSection("Launch") {
+        SettingRow("profiles.loadAllProfilesAtLaunch") {
+          Toggle("", isOn: Binding(get: { model.store.bool("loadAllProfilesAtLaunch") }, set: { model.store.set("loadAllProfilesAtLaunch", $0) }))
+            .labelsHidden()
+            .toggleStyle(.checkbox)
+        }
+      }
+
       SettingsSection("New windows open with") {
         SettingRow("profiles.defaultProfile") {
           SettingPicker(

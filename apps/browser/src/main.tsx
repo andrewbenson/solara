@@ -13,6 +13,7 @@ import { jsErrorsSurvivable } from "./lib/jsErrors";
 import { offerNativeDefaultBrowserAfterFirstWindow, startAppIntegrationPresentation, startScriptLoading } from "./lib/appIntegration";
 import { startNativeSync } from "./lib/native";
 import { startPersistence } from "./lib/persist";
+import { startProfileLoading } from "./lib/lazyProfiles";
 import { startNewTabBar } from "./components/omnibox/newTabBar";
 import { startPooledPages } from "./components/pooledPages";
 import { perfMark, perfProbeEnabled, probeStore } from "./lib/perfProbe";
@@ -28,6 +29,7 @@ import { startNativeSettings } from "./components/settings/nativeSettings";
 
 probeStore("browser", useBrowser);
 setStoreBatching(unstable_batchedUpdates);
+startProfileLoading();
 startNotifications();
 startPersistence();
 startNewTabBar();

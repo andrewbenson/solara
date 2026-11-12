@@ -24,6 +24,7 @@ type TabStripHost = {
 type EngineArgs = Record<string, unknown> | undefined;
 
 const testGlobals = globalThis as {
+  acTestProfileEnsure?: (profile: string) => boolean | Promise<boolean>;
   acTestEngineCall?: (name: string, profile: string, args: EngineArgs) => unknown;
   acTestTabStrip?: TabStripHost;
   acTestCliControl?: (on: boolean | null) => Promise<CliControlStatus> | undefined;
@@ -258,7 +259,21 @@ export const extensionAnswers = {
 const tabStripHost = () => testGlobals.acTestTabStrip!;
 let autofillIds = 0;
 
+export const loadedEngineProfiles = new Set<string>([""]);
+export const profileLoadRequests: string[] = [];
+export function loadEngineProfile(profile: string) {
+  loadedEngineProfiles.add(profile);
+  cefEvents.emit("onProfileLoaded", { profile });
+}
+
 const cef: Modules["SolaraCEF"] = {
+  loadedProfiles: async () => [...loadedEngineProfiles],
+  ensureProfile: async (profile: string) => {
+    profileLoadRequests.push(profile);
+    const result = await (testGlobals.acTestProfileEnsure?.(profile) ?? true);
+    if (result) loadEngineProfile(profile);
+    return result;
+  },
   addListener: (name: string, listener: (payload: never) => void) =>
     name === "onTabStrip" ? tabStripHost().listen(listener as (tx: TabStripTransaction) => void) : cefEvents.addListener(name, listener),
   notificationWatch: async () => unfaked("SolaraCEF", "notificationWatch"),

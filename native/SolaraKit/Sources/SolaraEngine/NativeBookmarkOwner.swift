@@ -841,12 +841,17 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
     startingRuntime = nil
   }
 
-  @MainActor public func start(catalog: LibraryCatalog, client: BookmarkEngineClient, clock: BookmarkPumpClock, scheduler: BookmarkPumpScheduler) async throws {
+  @MainActor public func start(catalog: LibraryCatalog, client: BookmarkEngineClient, clock: BookmarkPumpClock, scheduler: BookmarkPumpScheduler, engineAdmission: @escaping @MainActor (String) -> Bool = { _ in true }, requestEngine: @escaping @MainActor (String) -> Void = { _ in }) async throws {
     if prepared { await Self.setCurrent(self) }
     guard isCurrent(currentGeneration), runtime == nil, startingRuntime == nil else { throw BookmarkCoordinatorError.ownershipUnavailable }
-    let runtime = NativeBookmarkRuntime(owner: self, catalog: catalog, client: client, clock: clock, scheduler: scheduler)
+    let runtime = NativeBookmarkRuntime(owner: self, catalog: catalog, client: client, clock: clock, scheduler: scheduler, engineAdmission: engineAdmission, requestEngine: requestEngine)
     startingRuntime = runtime
     if let ticket = stage() { await runtime.replacePump(ticket) }
+  }
+
+  @MainActor public func engineDidLoad(engine: String) {
+    runtime?.pump?.requestRead(engine: engine)
+    runtime?.pump?.requestPush(engine: engine)
   }
 
   @MainActor public func remap(state: BrowserState) async throws {
@@ -937,6 +942,8 @@ public struct BookmarkProfileMap: Equatable, Sendable {
   let client: BookmarkEngineClient
   let clock: BookmarkPumpClock
   let scheduler: BookmarkPumpScheduler
+  let engineAdmission: @MainActor (String) -> Bool
+  let requestEngine: @MainActor (String) -> Void
   var pump: BookmarkPump?
   var pending: Task<Void, Never>?
   var pendingVersion: UInt64 = 0
@@ -948,12 +955,14 @@ public struct BookmarkProfileMap: Equatable, Sendable {
   private var retryFailures = 0
   private var cancelRetry: (@MainActor () -> Void)?
 
-  init(owner: NativeBookmarkOwner, catalog: LibraryCatalog, client: BookmarkEngineClient, clock: BookmarkPumpClock, scheduler: BookmarkPumpScheduler) {
+  init(owner: NativeBookmarkOwner, catalog: LibraryCatalog, client: BookmarkEngineClient, clock: BookmarkPumpClock, scheduler: BookmarkPumpScheduler, engineAdmission: @escaping @MainActor (String) -> Bool, requestEngine: @escaping @MainActor (String) -> Void) {
     self.owner = owner
     self.catalog = catalog
     self.client = client
     self.clock = clock
     self.scheduler = scheduler
+    self.engineAdmission = engineAdmission
+    self.requestEngine = requestEngine
   }
 
   isolated deinit {
@@ -996,7 +1005,7 @@ public struct BookmarkProfileMap: Equatable, Sendable {
           guard owner.isCurrent(ticket) else { throw BookmarkCoordinatorError.staleRevision }
         })
       }
-      let next = BookmarkPump(coordinator: coordinator, client: client, clock: clock, scheduler: scheduler, epoch: epoch)
+      let next = BookmarkPump(coordinator: coordinator, client: client, clock: clock, scheduler: scheduler, epoch: epoch, engineAdmission: engineAdmission, requestEngine: requestEngine)
       do {
         let activated = try owner.activate(ticket) {
           #if DEBUG

@@ -23,6 +23,33 @@ struct BookmarkPumpTests {
 
 @MainActor
 extension BookmarkPumpTests {
+  @Test func unloadedEngineKeepsIntentUntilExplicitAdmission() async throws {
+    let f = PumpFixture()
+    var loaded = false
+    var requests: [String] = []
+    let pump = BookmarkPump(coordinator: f.owner, client: f.engine.client, clock: f.time.clock, scheduler: f.time.scheduler,
+      epoch: f.owner.claimPump(), engineAdmission: { _ in loaded }, requestEngine: { requests.append($0) })
+    defer { pump.stop() }
+    pump.requestRead(engine: "")
+    await pump.settle(engine: "")
+    #expect(f.engine.events.isEmpty)
+    #expect(requests.isEmpty)
+    try await pump.submit(profile: "p", mutations: [.init(method: "updateBookmark", args: ["b0", ["title": "Deferred"]])])
+    #expect(requests == [""])
+    #expect(f.engine.events.isEmpty)
+    #expect(f.owner.desiredView(engine: "").document["nodes"]?["b0"]?["title"] == "Deferred")
+    loaded = true
+    pump.requestRead(engine: "")
+    pump.requestPush(engine: "")
+    await pump.settle(engine: "")
+    #expect(f.engine.document["nodes"]?["b0"]?["title"] == "Deferred")
+    #expect(f.owner.catalogProfile(engine: "") == "p")
+    pump.stop()
+    loaded = false
+    pump.requestPush(engine: "")
+    #expect(requests == [""])
+  }
+
   @Test func failedPushRetriesWithBackoff() async throws {
     let f = PumpFixture()
     f.engine.reject = true

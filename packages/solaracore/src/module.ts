@@ -172,6 +172,9 @@ export const resolvePermission = (id: string, result: PermissionResult, remember
 export type BrowsingDataType = "history" | "siteData" | "cache" | "downloads";
 export const clearBrowsingData = (profile: string, types: BrowsingDataType[], since?: number) =>
   Promise.all([Cef.clearBrowsingData(profile, types, since ?? null), WebKit?.clearBrowsingData(profile, types, since ?? null).catch(() => {})]).then(() => {});
+export const loadedProfiles = (): Promise<string[]> => Cef.loadedProfiles();
+export const ensureProfile = (profile: string): Promise<boolean> => Cef.ensureProfile(profile);
+export const onProfileLoaded = (listener: (event: { profile: string }) => void) => Cef.addListener("onProfileLoaded", listener);
 export const releaseProfile = (profile: string) => Cef.releaseProfile(profile);
 export const deleteProfileData = async (profile: string): Promise<string[]> => {
   const [chromium, webkit] = await Promise.all([Cef.deleteProfileData(profile), WebKit?.deleteProfileData(profile).catch(() => false) ?? true]);

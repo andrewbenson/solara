@@ -103,6 +103,7 @@ function bridge({ browsers, importData, importSafariDirect, importSafariExport, 
     "../store/model": model,
     "../store/settings": { DEFAULT_PROFILE_ID: "existing" },
     "./webviews": {},
+    "./lazyProfiles": { engineProfileLoaded: () => true, onLoadedProfilesChanged: () => () => {} },
   });
   const module = { importModule: () => api };
   const writer = {

@@ -90,8 +90,8 @@ struct SettingsSearchTests {
     #expect(SettingsSearch.normalize("--") == "")
   }
 
-  @Test func theIndexHas120RowsWithUniqueIds() {
-    #expect(index.entries.count == 120)
+  @Test func theIndexHas121RowsWithUniqueIds() {
+    #expect(index.entries.count == 121)
     #expect(Set(index.entries.map(\.id)).count == index.entries.count)
   }
 

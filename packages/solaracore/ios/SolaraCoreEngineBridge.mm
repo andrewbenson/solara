@@ -152,7 +152,10 @@ void InstallSink() {
   if (RefusesSafeModeCall(name)) return completion(JSON(@{@"error" : @"disabled in safe mode"}));
   auto call = (ac_engine_call_t)Symbol(name.UTF8String);
   if (!call) return completion(JSON(@{@"error" : [NSString stringWithFormat:@"the engine has no %@", name]}));
-  if ([name isEqualToString:@"ac_tabs_memory"] || [name isEqualToString:@"ac_tabs_cpu"]) {
+  static NSSet<NSString *> *processCalls = [NSSet setWithArray:@[
+    @"ac_tabs_memory", @"ac_tabs_cpu", @"ac_tasks_list", @"ac_components_list", @"ac_task_manager_open", @"ac_battery_saver"
+  ]];
+  if ([processCalls containsObject:name]) {
     if (!SolaraCoreHost.isStarted) return completion(JSON(@{@"error" : @"engine not started"}));
     if (profile.length) return completion(JSON(@{@"error" : [NSString stringWithFormat:@"%@ requires an empty profile", name]}));
     void (^done)(NSString *) = [completion copy];

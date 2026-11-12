@@ -79,8 +79,7 @@ void Download(NSString *url, NSString *profileName, void (^done)(NSData *_Nullab
     if (!profile || profile.destroyed || ![profile respondsToSelector:@selector(fetchIcon:maxBytes:completion:)]) return done(nil);
     [profile fetchIcon:url maxBytes:kMaxBytes completion:done];
   };
-  if (solaracore_host::IsIncognito(profileName)) return fetch(solaracore_host::LoadedProfile(profileName));
-  solaracore_host::WithProfile(profileName, fetch);
+  fetch(!SolaraCoreHost.isStarted || solaracore_host::IsDeletedProfile(profileName) ? nil : solaracore_host::LoadedProfile(profileName));
 }
 
 }

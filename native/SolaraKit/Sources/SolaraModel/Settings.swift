@@ -14,6 +14,7 @@ public struct Settings: Sendable, Hashable {
     "warnBeforeQuitting": true,
     "warnBeforeClosingWindow": true,
     "restoreSession": true,
+    "loadAllProfilesAtLaunch": false,
     "searchEngine": "google",
     "customSearchUrl": "",
     "customSearchEngines": [],
@@ -99,6 +100,7 @@ public struct Settings: Sendable, Hashable {
   public var inferred: [String]? { strings("inferred") }
   public var migrations: [String]? { strings("migrations") }
 
+  public var loadAllProfilesAtLaunch: Bool { values["loadAllProfilesAtLaunch"]?.bool ?? false }
   public var restoreSession: Bool { values["restoreSession"]?.bool ?? true }
   public var defaultProfileId: String { string("defaultProfileId") ?? Self.defaultProfileID }
   public var peekModifier: String {

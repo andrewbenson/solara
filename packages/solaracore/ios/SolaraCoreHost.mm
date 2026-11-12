@@ -84,6 +84,13 @@ NSString *DirectoryName(NSString *name) {
   return [@"Profile " stringByAppendingString:name];
 }
 
+SolaraCoreProfile *ChromeProfileAtPath(SolaraCoreEngine *engine, NSString *path) {
+  if (![engine respondsToSelector:@selector(loadedProfiles)]) return nil;
+  for (SolaraCoreProfile *profile in engine.loadedProfiles)
+    if (!profile.destroyed && [profile.path.stringByStandardizingPath.stringByResolvingSymlinksInPath isEqualToString:path]) return profile;
+  return nil;
+}
+
 NSDictionary *DeletionLocation(NSString *profile) {
   if (!gDataDirectory.length || !profile || [profile isEqualToString:@"."] || [profile isEqualToString:@".."] ||
       [profile containsString:@"/"] || [profile containsString:@"\\"] ||
@@ -175,6 +182,50 @@ void (^gEventHandler)(NSString *, NSDictionary *);
 void (^gChromeUIHandler)(NSString *, NSDictionary *);
 void (^gExtensionsEventHandler)(NSString *, NSDictionary *);
 NSMutableDictionary<NSString *, NSDictionary *> *gInstallPrompts = [NSMutableDictionary dictionary];
+
+NSString *RegularProfileName(SolaraCoreProfile *profile) {
+  if (!profile || profile.destroyed || profile.offTheRecord) return nil;
+  NSString *directory = profile.name;
+  NSString *name = [directory isEqualToString:@"Default"] ? @"" :
+      [directory hasPrefix:@"Profile "] ? [directory substringFromIndex:8] : nil;
+  return name && !solaracore_host::IsIncognito(name) && [DirectoryName(name) isEqualToString:directory] ? name : nil;
+}
+
+void PrepareLoadedProfile(SolaraCoreProfile *profile) {
+  NSString *name = RegularProfileName(profile);
+  if (!gStarted || !name || solaracore_host::IsDeletedProfile(name)) return;
+  static NSHashTable<SolaraCoreProfile *> *prepared = [NSHashTable weakObjectsHashTable];
+  Profiles()[name] = profile;
+  if ([prepared containsObject:profile]) return;
+  [prepared addObject:profile];
+  solaracore_host::LoadContentBlocker(name);
+  [SolaraCoreServices watchDownloads:name];
+  solaracore_host::ApplyKeepAwakeSites(profile);
+  NSDictionary *payload = @{@"profile": name};
+  dispatch_async(dispatch_get_main_queue(), ^{
+    if (!gStarted || profile.destroyed || solaracore_host::IsDeletedProfile(name)) return;
+    [NSNotificationCenter.defaultCenter postNotificationName:@"SolaraCoreProfileDidLoad" object:nil userInfo:payload];
+    if (gEventHandler) gEventHandler(@"profileLoaded", payload);
+  });
+}
+
+void PrepareEngineProfile(SolaraCoreProfile *profile) {
+  if (!profile || profile.destroyed) return;
+  if (!profile.offTheRecord) return PrepareLoadedProfile(profile);
+  SolaraCoreProfile *original = ChromeProfileAtPath(SolaraCoreEngine.sharedEngine, profile.path.stringByStandardizingPath.stringByResolvingSymlinksInPath);
+  if (original && !original.offTheRecord) PrepareLoadedProfile(original);
+}
+
+void RememberLoadedProfiles() {
+  if (!gStarted) return;
+  SolaraCoreEngine *engine = SolaraCoreEngine.sharedEngine;
+  NSArray<SolaraCoreProfile *> *loaded = [engine respondsToSelector:@selector(loadedProfiles)] ? engine.loadedProfiles : @[];
+  for (SolaraCoreProfile *profile in loaded) PrepareLoadedProfile(profile);
+  if (!Profiles()[@""] && !solaracore_host::IsDeletedProfile(@"")) {
+    SolaraCoreProfile *personal = solaracore_host::PersonalIfLoaded(engine);
+    if (personal) PrepareLoadedProfile(personal);
+  }
+}
 }
 
 static bool LaunchTabSwitchedOff(NSString *dir) {
@@ -467,14 +518,13 @@ static void StartEarlyWindow() {
   if (gScratchDataDir && solaracore_host::Background())
     solaracore_host::InstallTestCrashGuard([gDataDirectory stringByDeletingLastPathComponent]);
   SolaraCoreEngine *engine = SolaraCoreEngine.sharedEngine;
-  if (SolaraCoreProfile *profile = solaracore_host::PersonalIfLoaded(engine)) {
-    Profiles()[@""] = profile;
-    solaracore_host::ApplyKeepAwakeSites(profile);
-  }
-  solaracore_host::LoadContentBlocker(@"");
+  RememberLoadedProfiles();
+  solaracore_host::WithProfile(@"", ^(SolaraCoreProfile *profile) {
+    if (!profile) solaracore_host::LoadContentBlocker(@"");
+  });
+  for (SolaraCoreProfile *profile in solaracore_host::LoadedProfiles()) PrepareLoadedProfile(profile);
   [SolaraCoreWebView installSwitchPrewarm];
   [SolaraCoreWebView installOutgoingFocusSnapshots];
-  [SolaraCoreServices watchDownloads:@""];
 
   NSBundle *bundle = [NSBundle bundleForClass:SolaraCoreHostEngineDelegate.class];
   NSString *path = [bundle pathForResource:@"page_script" ofType:@"js"];
@@ -531,6 +581,10 @@ static void StartEarlyWindow() {
     [gAppDelegate application:NSApp openURLs:launchURLs];
 }
 
+- (void)engine:(SolaraCoreEngine *)engine didLoadProfile:(SolaraCoreProfile *)profile {
+  PrepareLoadedProfile(profile);
+}
+
 - (void)engineWillShutDown {
   gStarted = NO;
 }
@@ -564,6 +618,7 @@ static void StartEarlyWindow() {
 }
 
 - (void)engine:(SolaraCoreEngine *)engine castRoutes:(NSArray *)routes profile:(SolaraCoreProfile *)profile {
+  PrepareEngineProfile(profile);
   if (!gChromeUIHandler) return;
   NSMutableArray<NSString *> *names = [NSMutableArray array];
   if (profile.offTheRecord)
@@ -620,6 +675,7 @@ static void StartEarlyWindow() {
 }
 
 - (SolaraCoreWindow *)engineWindowForNewBrowserOfProfile:(SolaraCoreProfile *)profile type:(NSString *)type {
+  PrepareEngineProfile(profile);
   if (![type isEqualToString:@"normal"] && ![type isEqualToString:@"popup"]) return nil;
   if ([type isEqualToString:@"normal"] && !profile.offTheRecord)
     if (SolaraCoreWindowController *made = [SolaraCoreWindowController chromeMadeWindowForProfile:profile]) return made.coreWindow;
@@ -915,6 +971,34 @@ static void StartEarlyWindow() {
   return [SolaraCoreEngine respondsToSelector:@selector(isTracing)] && SolaraCoreEngine.isTracing;
 }
 
++ (NSArray<NSString *> *)loadedProfileNames {
+  NSAssert(NSThread.isMainThread, @"loadedProfileNames off main");
+  if (!gStarted) return @[];
+  RememberLoadedProfiles();
+  NSMutableArray<NSString *> *names = [NSMutableArray array];
+  for (NSString *name in solaracore_host::LoadedProfileNames())
+    if (!solaracore_host::IsIncognito(name) && !solaracore_host::IsDeletedProfile(name)) [names addObject:name];
+  return [names sortedArrayUsingSelector:@selector(compare:)];
+}
+
++ (BOOL)isProfileLoaded:(NSString *)profile {
+  NSAssert(NSThread.isMainThread, @"isProfileLoaded off main");
+  if (!gStarted || solaracore_host::IsDeletedProfile(profile) ||
+      solaracore_host::IsDeletedProfile(solaracore_host::OriginalProfileName(profile))) return NO;
+  if (solaracore_host::LoadedProfile(profile)) return YES;
+  RememberLoadedProfiles();
+  return solaracore_host::LoadedProfile(profile) != nil;
+}
+
++ (NSNotificationName)profileDidLoad {
+  return @"SolaraCoreProfileDidLoad";
+}
+
++ (void)ensureProfile:(NSString *)profile completion:(void (^)(BOOL))completion {
+  NSAssert(NSThread.isMainThread, @"ensureProfile off main");
+  solaracore_host::WithProfile(profile, ^(SolaraCoreProfile *loaded) { completion(loaded != nil); });
+}
+
 + (void)deleteProfileData:(NSString *)profile deletionAllowed:(BOOL (^)(void))deletionAllowed completion:(void (^)(NSArray<NSString *> *))completion {
   if (gSafeMode) return completion(@[ @"safe mode" ]);
   if ([ScheduledProfileDeletions() containsObject:profile]) return completion(@[ @"Chromium deletion pending restart" ]);
@@ -942,13 +1026,13 @@ static void StartEarlyWindow() {
       return completion(@[ @"live profile filesystem identity" ]);
     }
     NSString *path = location[@"path"];
+    if (!loaded) loaded = ChromeProfileAtPath(engine, path);
     if (!loaded) {
       [NSFileManager.defaultManager removeItemAtPath:path error:nil];
       NSError *inspectionError = nil;
       NSDictionary *remaining = [NSFileManager.defaultManager attributesOfItemAtPath:path error:&inspectionError];
       BOOL removed = !remaining && [inspectionError.domain isEqual:NSCocoaErrorDomain] &&
           (inspectionError.code == NSFileNoSuchFileError || inspectionError.code == NSFileReadNoSuchFileError);
-      if (removed) [DeletedProfiles() removeObject:profile];
       return completion(removed ? @[] : @[ @"files" ]);
     }
     if (![loaded.path.stringByStandardizingPath.stringByResolvingSymlinksInPath isEqualToString:path]) {
@@ -1324,15 +1408,17 @@ void WithProfile(NSString *name, void (^completion)(SolaraCoreProfile *)) {
   if (!gStarted) return completion(nil);
   name = name ?: @"";
   if ([DeletedProfiles() containsObject:name]) return completion(nil);
-  if (SolaraCoreProfile *profile = LoadedProfile(name)) return completion(profile);
+  if (SolaraCoreProfile *profile = LoadedProfile(name)) {
+    PrepareLoadedProfile(profile);
+    return completion(gStarted && !IsDeletedProfile(name) && !profile.destroyed ? profile : nil);
+  }
   SolaraCoreEngine *engine = SolaraCoreEngine.sharedEngine;
   if (!engine) return completion(nil);
   if (IsIncognito(name)) return WithPrivateProfile(name, [completion copy]);
   if (name.length == 0) {
     if (SolaraCoreProfile *personal = PersonalIfLoaded(engine)) {
-      Profiles()[@""] = personal;
-      solaracore_host::ApplyKeepAwakeSites(personal);
-      return completion(personal);
+      PrepareLoadedProfile(personal);
+      return completion(gStarted && !IsDeletedProfile(name) && !personal.destroyed ? personal : nil);
     }
   }
   NSString *directory = DirectoryName(name);
@@ -1351,12 +1437,10 @@ void WithProfile(NSString *name, void (^completion)(SolaraCoreProfile *)) {
                [DeletionsAfterLoad() removeObjectForKey:name];
                deletion(loaded);
              }
-             SolaraCoreProfile *profile = [DeletedProfiles() containsObject:name] ? nil : loaded;
-             if (profile) Profiles()[name] = profile;
-             if (profile) solaracore_host::LoadContentBlocker(name);
-             if (profile) [SolaraCoreServices watchDownloads:name];
-             if (profile) solaracore_host::ApplyKeepAwakeSites(profile);
-             for (void (^waiter)(SolaraCoreProfile *) in pending) waiter(profile);
+             SolaraCoreProfile *profile = !gStarted || [DeletedProfiles() containsObject:name] || loaded.destroyed ? nil : loaded;
+             if (profile) PrepareLoadedProfile(profile);
+             for (void (^waiter)(SolaraCoreProfile *) in pending)
+               waiter(gStarted && !IsDeletedProfile(name) && !profile.destroyed ? profile : nil);
            }];
 }
 

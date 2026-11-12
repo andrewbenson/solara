@@ -13,6 +13,7 @@ final class NativeUserScripts: UserScriptsHost {
   private var started = false
   private var lifecycle: Int?
   private var subscription: Int?
+  private var profileObserver: NSObjectProtocol?
   private lazy var sync = UserScriptsSync(host: self, product: Bundle.main.productName)
 
   private init() {}
@@ -32,12 +33,17 @@ final class NativeUserScripts: UserScriptsHost {
     subscription = store.subscribe { commit in
       DispatchQueue.main.async { MainActor.assumeIsolated { NativeUserScripts.shared.stateChanged(commit.state) } }
     }
+    profileObserver = NotificationCenter.default.addObserver(forName: SolaraCoreHost.profileDidLoad, object: nil, queue: .main) { _ in
+      MainActor.assumeIsolated {
+        if let state = NativeStoreHandle.store?.state { NativeUserScripts.shared.stateChanged(state) }
+      }
+    }
     stateChanged(store.state)
   }
 
   private func stateChanged(_ state: BrowserState) {
     guard !SolaraCoreHost.safeMode else { return }
-    sync.sync(enabled: state.settings["cliControl"]?.bool ?? false, targets: UserScriptsSync.targets(state))
+    sync.sync(enabled: state.settings["cliControl"]?.bool ?? false, targets: UserScriptsSync.targets(state).filter { NativeProfileLoading.isLoaded($0.engine) })
   }
 
   func watch(_ on: Bool) {

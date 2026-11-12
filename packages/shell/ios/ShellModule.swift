@@ -420,6 +420,12 @@ public class ShellModule: Module {
       guard let f = WindowManager.shared.windows[id]?.frame else { return nil }
       return [f.minX, f.minY, f.width, f.height]
     }.runOnQueue(.main)
+    #if DEBUG
+    AsyncFunction("devMainThreadStall") { (milliseconds: Double) in
+      guard milliseconds.isFinite else { return }
+      Thread.sleep(forTimeInterval: max(0, min(milliseconds, 5000)) / 1000)
+    }.runOnQueue(.main)
+    #endif
     AsyncFunction("devDragPreviewState") { () -> [String: Any] in
       #if DEBUG
       return DragPreview.shared.debugState

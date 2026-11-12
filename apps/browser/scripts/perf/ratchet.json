@@ -1060,5 +1060,37 @@
   },
   "instr": {
     "micro.instrPerRound": 229385072
+  },
+  "stallBaseline": {
+    "status": "pending",
+    "runs": 0,
+    "diagnosticSamplesPerScenario": 2,
+    "configuration": "Debug",
+    "commit": "6ba726c2b306f0f7542972e83c22753be733ef82",
+    "reason": "Two Debug counter windows per scenario were screen-locked. Ceilings are provisional max x 1.1, rounded up; missing checkpoint windows were excluded, never treated as zero. Remeasure unlocked before commissioning."
+  },
+  "stalls": {
+    "startup.stallCount": 71,
+    "startup.stallMs": 2088,
+    "launch.stallCount": 115,
+    "launch.stallMs": 4050,
+    "idle.stallCount": 44,
+    "idle.stallMs": 1309,
+    "typing.stallCount": 15,
+    "typing.stallMs": 236,
+    "switchTabs.stallCount": 275,
+    "switchTabs.stallMs": 13654,
+    "scroll.stallCount": 7,
+    "scroll.stallMs": 62,
+    "hover.stallCount": 0,
+    "hover.stallMs": 0,
+    "pageLoad.stallCount": 71,
+    "pageLoad.stallMs": 5841,
+    "openClose.stallCount": 335,
+    "openClose.stallMs": 30904,
+    "small.startup.stallCount": 69,
+    "small.startup.stallMs": 1325,
+    "small.launch.stallCount": 57,
+    "small.launch.stallMs": 6755
   }
 }

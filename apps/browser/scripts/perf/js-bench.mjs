@@ -77,6 +77,7 @@ import { fileURLToPath } from "node:url";
 import { binaryOf, devtools, screenLocked, uiGateLaunching, uiGateWatch } from "../../../../scripts/lib/instance.mjs";
 import { escapeHtml } from "../../../../scripts/lib/fixture-html.mjs";
 import { resignForBench } from "./bench-signing.mjs";
+import { stallLibrary, stallCheckpoint, measureStalls } from "./stall-watchdog.mjs";
 import { writeSeed } from "./seed.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -287,19 +288,22 @@ export function writeSwitches(dataDir, text) {
   writeFileSync(join(dataDir, "switches-cache.json"), JSON.stringify({ version: 1, switches }));
 }
 
-export async function launch(app, dataDir, port) {
+export async function launch(app, dataDir, port, instrumentation = {}) {
   const binary = binaryOf(realpathSync(app));
   writeSwitches(dataDir, process.env.SOLARA_SWITCHES);
   if (pidsOf(binary).length) throw new Error(`an instance of ${app} is already running`);
   const env = {
+    ...instrumentation,
     SOLARA_BACKGROUND: "1", SOLARA_DRAW_WINDOWS: "1", SOLARA_DATA_DIR: dataDir, SOLARA_REMOTE_DEBUGGING_PORT: String(port),
+    SOLARA_JS_LOCATION: `localhost:${process.env.METRO_PORT ?? 8081}`,
     ...(process.env.SOLARA_SWITCHES ? { SOLARA_SWITCHES: process.env.SOLARA_SWITCHES } : {}),
     ...Object.fromEntries(Object.entries(process.env).filter(([k]) => ["SOLARA_NATIVE_SHELL", "SOLARA_NATIVE_PAGES_POOL", "SOLARA_NATIVE_TOP_STRIP", "SOLARA_NATIVE_BOOKMARKS_BAR", "SOLARA_NATIVE_BOOKMARKS", "SOLARA_NATIVE_SERVICES", "SOLARA_NATIVE_SIDEBAR_ADDRESS", "SOLARA_NATIVE_SCOPE"].includes(k))),
   };
   await uiGateLaunching(binary);
   const launchedAt = Date.now();
-  execFileSync("open", ["-g", "-n", ...Object.entries(env).flatMap(([k, v]) => ["--env", `${k}=${v}`]), app,
-    ...(process.env.BENCH_ALLOW_NETWORK ? [] : ["--args", "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost"])]);
+  execFileSync("open", ["-g", "-n", ...Object.entries(env).flatMap(([k, v]) => ["--env", `${k}=${v}`]), app, "--args",
+    ...(process.env.BENCH_ALLOW_NETWORK ? [] : ["--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost"]),
+    ...(process.env.BENCH_ALLOW_APP_NAP ? [] : ["-NSAppSleepDisabled", "YES"])]);
   for (let i = 0; i < 200; i++) {
     const [pid] = pidsOf(binary);
     if (pid) {
@@ -385,7 +389,8 @@ async function run() {
   execFileSync("cp", ["-cR", app, clone]);
   const swapped = join(clone, "Contents/Resources/main.jsbundle");
   cpSync(jsbundle, swapped);
-  resignForBench(app, clone);
+  resignForBench(app, clone, { extra: ["com.apple.security.cs.allow-dyld-environment-variables"] });
+  const watchdog = stallLibrary(join(out, "tools"));
   const version = execFileSync("/usr/libexec/PlistBuddy", ["-c", "Print CFBundleShortVersionString", join(clone, "Contents/Info.plist")], { encoding: "utf8" }).trim();
   const origin = `http://127.0.0.1:${port}`;
   const server = await startServer(Number(port));
@@ -399,8 +404,9 @@ async function run() {
       if (flags.seed === "small") smallSession(dataDir);
       if (flags.probe) writeFileSync(join(dataDir, "perf-probe"), flags.probe);
       const cdpPort = 9500 + r + (label.length % 50) * 10;
-      const { pid, launchedAt } = await launch(clone, dataDir, cdpPort);
-      const result = { run: r, launchedAt };
+      const lockedAtLaunch = screenLocked();
+      const { pid, launchedAt } = await launch(clone, dataDir, cdpPort, { DYLD_INSERT_LIBRARIES: watchdog });
+      const result = { run: r, launchedAt, stalls: {} };
       try {
         let ready = false;
         for (let i = 0; i < 30 && !ready; i++) ready = await evaluate(dataDir, pid, "return 1;", 2000).then(() => true, (e) => (String(e).includes("exited") ? Promise.reject(e) : false));
@@ -413,7 +419,9 @@ async function run() {
           const options = JSON.stringify({ ...(flags.options ? JSON.parse(flags.options) : {}), origin, scenario: name });
           const entry = flags.trace && name !== "startup" ? "traced" : name;
           const lockedBefore = screenLocked();
-          result[name] = await evaluate(dataDir, pid, `return acBench.run(${JSON.stringify(entry)}, ${options});`);
+          const measured = await measureStalls({ checkpoint: () => stallCheckpoint(dataDir, pid, { alive: () => alive(pid) }), locked: () => screenLocked() || (lockedAtLaunch && (name === "startup" || name === "launch")), cumulative: name === "startup" || name === "launch" }, () => evaluate(dataDir, pid, `return acBench.run(${JSON.stringify(entry)}, ${options});`));
+          result[name] = measured.value;
+          result.stalls[name] = measured.stalls;
           if (lockedBefore || screenLocked()) (result.screenLocked ??= []).push(name);
         }
         result.probeRevision = await evaluate(dataDir, pid, `return acPerf.revision ?? ("commitTasks" in acPerf.read() ? 2 : 1);`);
@@ -433,7 +441,7 @@ async function run() {
   if (revisions.length > 1) console.log(`WARNING: these runs mix probe revisions ${revisions.join(", ")}; their numbers don't compare`);
   const report = {
     label, version, seed: flags.seed ?? "big", bundle: jsbundle, bundleSize, when: new Date().toISOString(),
-    probeRevision: revisions.length > 1 ? revisions : revisions[0], benchRevision: BENCH_REVISION,
+    probeRevision: revisions.length > 1 ? revisions : revisions[0], benchRevision: BENCH_REVISION, stallRevision: 1,
     results, summary: summarize(results, bundleSize),
   };
   writeFileSync(file, JSON.stringify(report, null, 2));
@@ -487,6 +495,9 @@ function summarize(results, bundleSize) {
     for (const k of ["commits", "renders", "hostUpdates", "storeUpdates", "listenerMs", "taskMs", "writes", "writeKB"]) add(`${key}.${k}`, (r) => statLine(fn(r))[k]);
   };
   lines["bundle.hbcKB"] = { median: bundleSize / 1024, min: bundleSize / 1024, max: bundleSize / 1024, n: 1 };
+  for (const name of new Set(results.flatMap((r) => Object.keys(r.stalls ?? {})))) {
+    for (const metric of ["count", "totalMs"]) add(`${name}.stalls.${metric}`, (r) => r.stalls?.[name]?.status === "ok" ? r.stalls[name][metric] : null);
+  }
   add("startup.launchToBundleMs", (r) => r.startup.marks.bundleStart - r.launchedAt);
   add("startup.bundleEvalMs", (r) => r.startup.marks.bundleEnd - r.startup.marks.bundleStart);
   add("startup.bundleToFirstCommitMs", (r) => r.startup.marks.firstCommit - r.startup.marks.bundleStart);

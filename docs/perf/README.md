@@ -502,3 +502,81 @@ The JS reports stamp `probeRevision` (from `PERF_PROBE_REVISION` in `perfProbe.t
 and `benchRevision` (the seed and scenarios). `js-bench.mjs compare` prints a warning line when either differs
 between the two reports. The native bench bundles also differ across a native API bump, so on those rows some of
 the difference is the JS.
+
+
+## Main-thread watchdog (0.3.3)
+
+`packages/shell/ios/MainThreadStallWatchdog.m` is compiled only with `DEBUG` or the standalone
+`SOLARA_STALL_BENCH` define. The latter is supplied only when `stall-watchdog.mjs` builds its optimized,
+universal ad hoc signed bench dylib. Both benches inject it into their signed scratch copies; distribution
+exports carry no watchdog. Debug apps install it automatically. Run `scripts/agent/probe-scan` on the actual
+Release export to prove the binary boundary. After adding the pod source, refresh Pods before the next app build.
+
+Records live beside the instance documents (`SOLARA_DATA_DIR`, otherwise Application Support / bundle ID):
+
+| File | Contents |
+| --- | --- |
+| `main-thread-stalls.jsonl` and `.1`–`.3` | Local diagnostics, rotated at 16 MiB each; session metadata, completed `stall` records and immediate long-span `sample` records |
+| `main-thread-stalls-state.json` | Atomic diagnostic snapshot, at most one second old while idle |
+| `main-thread-stalls-request.json` | Driver checkpoint request `{ "id": "unique-id", "pid": 123 }` |
+| `main-thread-stalls-response.json` | Atomic response with the same ID and the counter snapshot at a natural main run-loop boundary |
+
+Each completed active run-loop span strictly longer than 8 ms increments `count` and adds its **full** duration to
+`totalMs`. Main run-loop waits are excluded. Nested loops preserve continuous work and partition around actual
+waits. The display link does not reset this detector, and `acframes.m` retains its independent frame/stall probe.
+`kind: sample` records diagnose an ongoing hang and do not increment completed counters a second time.
+
+Records include epoch start, monotonic duration, sample time/kind, up to 32 frames, image UUID, image-relative
+address, and available symbol names. At 8 ms the watcher tries one full bounded stack capture per active span. A watcher that misses a completed span uses a stack taken at its completion observer, explicitly labeled
+`completion`. That fallback identifies the boundary, not necessarily the offending function. Scheduling, debugger
+stops, symbolication contention and custom modes outside the common run-loop modes can limit attribution.
+No logs or stacks are uploaded by this feature.
+
+Drivers should call `stallCheckpoint(dataDir, pid, { alive })` from `stall-watchdog.mjs`. It writes a unique request,
+waits at most three seconds for the correlated response, and rejects mismatched processes, incomplete files and
+unready collectors. The main observer publishes a marker only after its active span ends naturally; the writer drains
+earlier records before responding. Drivers must serialize checkpoint requests per instance. A hung main thread
+cannot acknowledge a boundary; inspect the local long-span sample log in that case.
+
+JS raw results contain `stalls[scenario] = { status, count, totalMs, fromMs, toMs }`; a failed or ineligible window
+has `status: pending` and `reason`. Startup and launch are overlapping cumulative windows from `startedMs`
+(observer installation), which occurs after the main queue first runs; they do not cover process bootstrap before
+installation. Every other scenario uses checkpoint deltas. Boundaries include checkpoint latency and the natural
+run-loop tail; a crossing span is assigned by completion. `openClose` has one combined stall window. Summary rows
+are `<scenario>.stalls.count` and `<scenario>.stalls.totalMs`. Pending windows are not summarized as zeros.
+
+Native raw runs retain `stalls` maps with startup, launch (launch phase), and named session/journey windows.
+Repeated interactions add their delta metrics. `results.stalls[]` also retains cumulative `instance` totals for every
+measured instance, including frames, memory slope, throttle, churn and sample phases, before optional `--hold` and
+quit. Those instance totals include startup/settling; they are not per-action frame metrics. Existing `acframes`
+per-interaction buckets remain available. Instance totals are not added to the JS scenario ratchet.
+
+Both benches disable App Nap by default. `BENCH_ALLOW_APP_NAP=1` is an investigative override; do not commission
+ceilings from those runs. Screen state is checked at both boundaries and startup remembers launch state; locked or
+sleeping-display windows remain pending. A lock/unlock cycle wholly between checks, machine sleep, debugger
+suspension, or CPU contention still needs manual rejection from a baseline. Monotonic stall duration excludes system
+sleep, but epoch correlation is anchored at installation and can drift after sleep or a wall-clock change.
+
+`ratchet.json` adds the separate `stalls` tier (`<scenario>.stallCount`, `<scenario>.stallMs`) without named-count
+slack. Initial provisional ceilings use two Debug counter windows per scenario: maximum × 1.1, rounded up.
+Those diagnostic runs were screen-locked, so `stallBaseline.status` remains `pending` and the stall gate fails.
+Two small-session checkpoint windows timed out; their missing counts were excluded rather than treated as zero,
+using a replacement small launch where available. The raw reports retain every attempt. These values are not an
+eligible application baseline. Existing React/Node ceilings retain their values, and older reports without native
+telemetry remain pending.
+
+The later measurement job must collect at least six valid unlocked big-session runs and six small startup/launch
+runs on a quiet awake Mac, using the same app/bundle, scenario order and options as the existing ratchet. Use
+`ratchet.mjs baseline --measure-only`, then `ratchet.mjs init <big-report> <small-report> --micro <micro-counts>
+--no-instr --adopt` (or supply the matching instruction count). Commissioning requires every placeholder scenario.
+Initial stall ceilings are the maximum observed value plus 10%, rounded up. Subsequent adoption/lowering never
+raises a measured ceiling; stall lowering requires six complete valid runs. Keep raw reports and the baseline commit
+with the rationale. A later ceiling increase needs an explicit explanation, just like other ratchet tiers.
+
+Pure Node checks: `node --test apps/browser/scripts/perf/{stall-watchdog,js-bench-stalls,ratchet-stalls}.test.mjs`.
+The native synthetic busy-loop harness is `packages/shell/tests-native/MainThreadStallWatchdogTests.m`:
+compile it with `clang -std=c11 -O2 -fobjc-arc -framework AppKit <test-source> -o <scratch>/stall-tests`,
+then run it with `TMPDIR=<scratch>`. It opens no window and does not initialize NSApp. The Debug-only
+`SolaraShell.devMainThreadStall(milliseconds)` seam sleeps the main thread for a bounded 0–5000 ms.
+`SOLARA_STALL_WATCHDOG=0` skips embedded Debug installation for interleaved overhead measurements;
+Release contains neither control. Debug benchmark launches use `METRO_PORT` to select their own Metro server.

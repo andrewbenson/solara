@@ -26,6 +26,9 @@ const COUNTERS = ["renders", "mounts", "storeUpdates", "storeKeys", "listenerCal
 const FAN_OUT = ["subNotified", "selectorCalls"];
 const SCALARS = ["commits", "hostUpdates"];
 const TOTALS = new Set([...COUNTERS, ...SCALARS, ...FAN_OUT, "firstCommitMounts"]);
+const STALL_SCENARIOS = new Set([...JOURNEYS, "idleLate", "profileSwipe", "storeUpdate", "persistence"]);
+const validStalls = (s) => s?.status === "ok" && Number.isSafeInteger(s.count) && s.count >= 0 && Number.isFinite(s.totalMs) && s.totalMs >= 0 && (s.count === 0 ? s.totalMs === 0 : s.totalMs > s.count * 8);
+const isStallKey = (key) => /\.stall(Count|Ms)$/.test(key);
 
 const add = (into, key, value) => {
   into[key] = (into[key] ?? 0) + value;
@@ -68,6 +71,11 @@ export function flatten(result, prefix = "") {
     }
     out[`${prefix}launch.firstCommitMounts`] = total;
   }
+  for (const [name, stalls] of Object.entries(result.stalls ?? {})) {
+    if (!STALL_SCENARIOS.has(name) || !result[name] || !validStalls(stalls) || result.screenLocked?.includes(name)) continue;
+    out[`${prefix}${name}.stallCount`] = stalls.count;
+    out[`${prefix}${name}.stallMs`] = stalls.totalMs;
+  }
   if (prefix) return { counts: out, ran };
   if (result.openClose) {
     ran.add("openClose");
@@ -96,6 +104,31 @@ const isTotal = (key) => {
 };
 
 const readJson = (file) => JSON.parse(readFileSync(file, "utf8"));
+
+function collectStalls(reports) {
+  const values = {};
+  const pending = [];
+  const ran = new Set();
+  const samples = {};
+  for (const seed of ["big", "small"]) {
+    const results = reports.filter((r) => (r.seed ?? "big") === seed).flatMap((r) => r.results);
+    const prefix = seed === "small" ? "small." : "";
+    const names = new Set(results.flatMap((r) => [...STALL_SCENARIOS].filter((name) => r[name])));
+    for (const name of names) {
+      const scenario = `${prefix}${name}`;
+      ran.add(scenario);
+      const bad = results.find((r) => !r[name] || !validStalls(r.stalls?.[name]) || r.screenLocked?.includes(name));
+      if (bad) {
+        pending.push(`pending: stalls ${scenario} (${bad.stalls?.[name]?.reason ?? "missing, invalid or locked-screen telemetry"})`);
+        continue;
+      }
+      samples[scenario] = results.length;
+      values[`${scenario}.stallCount`] = results.map((r) => r.stalls[name].count);
+      values[`${scenario}.stallMs`] = results.map((r) => r.stalls[name].totalMs);
+    }
+  }
+  return { values, pending, ran, samples };
+}
 
 function collect(reports) {
   const values = {};
@@ -179,6 +212,7 @@ function evaluate(ceilings, { files = [], micro = null, instr = null }) {
   let ran = null;
   let counts = null;
   let runs = 0;
+  let stallPending = false;
   if (files.length) {
     const reports = files.map(readJson);
     const rev = reportRevisions(reports);
@@ -195,27 +229,53 @@ function evaluate(ceilings, { files = [], micro = null, instr = null }) {
     runs = c.runs;
     counts = Object.fromEntries(Object.entries(c.values).map(([k, v]) => [k, lowerMedian(v)]));
     rows.push(...judge("exact", ceilings.exact, counts, ran), ...judge("noisy", ceilings.noisy, counts, ran));
+    const stalls = collectStalls(reports);
+    notes.push(...stalls.pending);
+    stallPending = stalls.pending.length > 0;
+    if (!stalls.ran.size) {
+      notes.push("pending: stalls (no scenarios in the reports)");
+      stallPending = true;
+    }
+    if (stalls.ran.size && ceilings.stallBaseline?.status !== "measured") {
+      notes.push("pending: stalls baseline (no native census has commissioned these ceilings)");
+      stallPending = true;
+    }
+    for (const scenario of stalls.ran) {
+      for (const metric of ["stallCount", "stallMs"]) {
+        const key = `${scenario}.${metric}`;
+        const values = stalls.values[key];
+        const ceiling = ceilings.stalls?.[key];
+        if (!values) continue;
+        if (!Number.isFinite(ceiling) || ceiling < 0) {
+          notes.push(`pending: stalls ${scenario} (no ceiling for ${metric})`);
+          stallPending = true;
+          continue;
+        }
+        const value = lowerMedian(values);
+        rows.push({ tier: "stalls", key, ceiling, value, kind: value > ceiling ? "over" : value < ceiling ? "under" : "same" });
+      }
+    }
   }
   if (micro) rows.push(...judge("micro", ceilings.micro, micro, null));
   if (instr !== null) rows.push(...judge("instr", ceilings.instr, { "micro.instrPerRound": instr }, null));
-  return { rows, notes, ran, counts, runs };
+  return { rows, notes, ran, counts, runs, stallPending };
 }
 
-function printCheck({ rows, notes, ran, counts, runs }, ceilings, { quiet = false } = {}) {
+function printCheck({ rows, notes, ran, counts, runs, stallPending }, ceilings, { quiet = false } = {}) {
   const lines = [...notes];
   const over = rows.filter((r) => r.kind === "over");
   const under = rows.filter((r) => r.kind === "under");
-  const tiers = ["exact", "noisy", "micro", "instr"].map((t) => [t, rows.filter((r) => r.tier === t)]).filter(([, rs]) => rs.length);
+  const tiers = ["exact", "noisy", "micro", "instr", "stalls"].map((t) => [t, rows.filter((r) => r.tier === t)]).filter(([, rs]) => rs.length);
   lines.push(`checked ${tiers.map(([t, rs]) => `${rs.length} ${t}`).join(", ")}${ran ? ` (${[...ran].join(", ")}; ${runs} run${runs === 1 ? "" : "s"})` : ""}: ${over.length} over, ${under.length} below their ceiling`);
   if (over.length) lines.push("", "OVER THE CEILING", table(over));
   if (under.length && !quiet) lines.push("", "below the ceiling (`ratchet.mjs lower` locks the exact ones in)", table(under.slice(0, 30)), under.length > 30 ? `… and ${under.length - 30} more` : "");
   if (counts && !quiet) {
     const known = new Set([...Object.keys(ceilings.exact), ...Object.keys(ceilings.noisy)]);
-    const fresh = Object.entries(counts).filter(([k, v]) => !known.has(k) && v > 0 && ran.has(scenarioOf(k)) && !isTotal(k));
+    const fresh = Object.entries(counts).filter(([k, v]) => !known.has(k) && !isStallKey(k) && v > 0 && ran.has(scenarioOf(k)) && !isTotal(k));
     const named = fresh.filter(([k]) => !/\.(storeKeys|listenerCalls)\./.test(k)).sort((a, b) => b[1] - a[1]).slice(0, 10);
     if (named.length) lines.push("", `${fresh.length} counts have no ceiling (a new component, task or timer, or one that wobbles); the biggest:`, ...named.map(([k, v]) => `  ${k}  ${v}`));
   }
-  const failed = over.length > 0;
+  const failed = over.length > 0 || stallPending;
   lines.push("", failed ? "ratchet: FAIL" : "ratchet: ok");
   console.log(lines.join("\n"));
   return !failed;
@@ -227,8 +287,8 @@ function check(files, micro, instr) {
 }
 
 const serialize = (c) => {
-  const section = (o) => (Object.keys(o).length ? `{\n${Object.keys(o).sort().map((k) => `    ${JSON.stringify(k)}: ${o[k]}`).join(",\n")}\n  }` : "{}");
-  return `{\n  "about": ${JSON.stringify(c.about)},\n  "baseline": ${JSON.stringify(c.baseline)},\n  "revisions": ${JSON.stringify(c.revisions)},\n  "exact": ${section(c.exact)},\n  "noisy": ${section(c.noisy)},\n  "micro": ${section(c.micro)},\n  "instr": ${section(c.instr)}\n}`;
+  const section = (o = {}) => (Object.keys(o).length ? `{\n${Object.keys(o).sort().map((k) => `    ${JSON.stringify(k)}: ${o[k]}`).join(",\n")}\n  }` : "{}");
+  return `{\n  "about": ${JSON.stringify(c.about)},\n  "baseline": ${JSON.stringify(c.baseline)},\n  "revisions": ${JSON.stringify(c.revisions)},\n  "exact": ${section(c.exact)},\n  "noisy": ${section(c.noisy)},\n  "micro": ${section(c.micro)},\n  "instr": ${section(c.instr)},\n  "stallBaseline": ${JSON.stringify(c.stallBaseline)},\n  "stalls": ${section(c.stalls)}\n}`;
 };
 
 function lower(files, micro, instr) {
@@ -239,11 +299,19 @@ function lower(files, micro, instr) {
     diff.push({ tier, key, ceiling, value });
   };
   if (files.length) {
-    const { values, ran } = collect(files.map(readJson));
+    const reports = files.map(readJson);
+    const { values, ran } = collect(reports);
     for (const [key, ceiling] of Object.entries(ceilings.exact)) {
       if (!ran.has(scenarioOf(key))) continue;
       const worst = Math.max(...(values[key] ?? [0]));
       if (worst < ceiling) set("exact", key, ceiling, worst);
+    }
+    const stalls = collectStalls(reports);
+    for (const [key, ceiling] of Object.entries(ceilings.stalls ?? {})) {
+      const values = stalls.values[key];
+      if (ceilings.stallBaseline?.status !== "measured" || !values || values.length < MIN_RUNS) continue;
+      const worst = Math.ceil(Math.max(...values) * (1 + NOISY_MARGIN));
+      if (worst < ceiling) set("stalls", key, ceiling, worst);
     }
   }
   if (micro) for (const [key, ceiling] of Object.entries(ceilings.micro)) if ((micro[key] ?? 0) < ceiling) set("micro", key, ceiling, micro[key] ?? 0);
@@ -258,12 +326,16 @@ function init(files, microRuns, instr, { adopt = false } = {}) {
   const reports = files.map(readJson);
   const { values, runs, ran } = collect(reports);
   if (runs < MIN_RUNS) throw new Error(`init needs at least ${MIN_RUNS} runs to tell a steady count from a wobbling one; got ${runs}`);
+  const measuredStalls = collectStalls(reports);
+  if (measuredStalls.pending.length) throw new Error(measuredStalls.pending.join("\n"));
+  for (const [scenario, n] of Object.entries(measuredStalls.samples)) if (n < MIN_RUNS) throw new Error(`stalls ${scenario} needs at least ${MIN_RUNS} complete runs; got ${n}`);
+  const stalls = Object.fromEntries(Object.entries(measuredStalls.values).map(([key, v]) => [key, Math.ceil(Math.max(...v) * (1 + NOISY_MARGIN))]));
   const rev = reportRevisions(reports);
   const exact = {};
   const noisy = {};
   const dropped = [];
   for (const [key, v] of Object.entries(values)) {
-    if (!ran.has(scenarioOf(key))) continue;
+    if (isStallKey(key) || !ran.has(scenarioOf(key))) continue;
     const max = Math.max(...v);
     if (max === 0 && !isTotal(key)) continue;
     const mode = modeOf(v);
@@ -290,6 +362,8 @@ function init(files, microRuns, instr, { adopt = false } = {}) {
     noisy,
     micro,
     instr: instr === null ? {} : { "micro.instrPerRound": instr },
+    stalls,
+    stallBaseline: { status: measuredStalls.ran.size ? "measured" : "pending", runs: measuredStalls.samples, when: new Date().toISOString().slice(0, 10), commit },
   };
   if (adopt) return adoptCeilings(ceilings, dropped);
   writeFileSync(ceilingsFile, `${serialize(ceilings)}\n`);
@@ -299,11 +373,15 @@ function init(files, microRuns, instr, { adopt = false } = {}) {
 
 function adoptCeilings(next, dropped) {
   const old = readCeilings();
-  const merged = { ...next, exact: {}, noisy: {}, micro: {}, instr: {} };
+  if (old.stallBaseline?.status !== "measured") {
+    for (const key of Object.keys(old.stalls ?? {})) if (next.stalls[key] === undefined) throw new Error(`cannot commission stalls without a census for ${key}`);
+  }
+  const merged = { ...next, exact: {}, noisy: {}, micro: {}, instr: {}, stalls: {} };
+  if (old.stallBaseline?.status === "measured") merged.stallBaseline = { ...next.stallBaseline, status: "measured", runs: { ...old.stallBaseline.runs, ...next.stallBaseline.runs } };
   const report = { added: [], lowered: [], higher: [] };
-  for (const tier of ["exact", "noisy", "micro", "instr"]) {
-    for (const key of new Set([...Object.keys(old[tier]), ...Object.keys(next[tier])])) {
-      const was = old[tier][key];
+  for (const tier of ["exact", "noisy", "micro", "instr", "stalls"]) {
+    for (const key of new Set([...Object.keys(old[tier] ?? {}), ...Object.keys(next[tier] ?? {})])) {
+      const was = tier === "stalls" && old.stallBaseline?.status !== "measured" ? undefined : old[tier]?.[key];
       const now = next[tier][key];
       if (was === undefined) {
         merged[tier][key] = now;
@@ -320,7 +398,7 @@ function adoptCeilings(next, dropped) {
   for (const key of Object.keys(merged.exact)) delete merged.noisy[key];
   writeFileSync(ceilingsFile, `${serialize(merged)}\n`);
   const counts = (tier, rows) => rows.filter((r) => r.tier === tier).length;
-  console.log(`adopted into ${ceilingsFile}: ${report.added.length} added (${["exact", "noisy", "micro", "instr"].map((t) => `${counts(t, report.added)} ${t}`).join(", ")}), ${report.lowered.length} lowered, ${report.higher.length} kept above what the baseline measured`);
+  console.log(`adopted into ${ceilingsFile}: ${report.added.length} added (${["exact", "noisy", "micro", "instr", "stalls"].map((t) => `${counts(t, report.added)} ${t}`).join(", ")}), ${report.lowered.length} lowered, ${report.higher.length} kept above what the baseline measured`);
   if (report.lowered.length) console.log(`\nLOWERED\n${table(report.lowered)}`);
   if (report.higher.length) console.log(`\nHIGHER IN THE BASELINE (ceiling kept; a regression or a change to accept by hand)\n${table(report.higher.map((r) => ({ ...r })))}`);
 }
@@ -402,7 +480,7 @@ async function run(flags) {
   mark("checking");
   const reports = () => (setup ? [setup.report, setup.smallReport] : []);
   let result = evaluate(ceilings, { files: reports(), micro, instr });
-  if (setup && result.rows.some((r) => r.kind === "over" && ["exact", "noisy"].includes(r.tier))) {
+  if (setup && result.rows.some((r) => r.kind === "over" && ["exact", "noisy", "stalls"].includes(r.tier))) {
     mark("some counts are over: running the scenarios once more (only a count over in both runs fails)");
     sh(process.execPath, setup.args(1, true), { stdio: ["ignore", "ignore", "inherit"] });
     sh(process.execPath, setup.args(1, true, true), { stdio: ["ignore", "ignore", "inherit"] });

@@ -170,6 +170,7 @@ import { buildSeed } from "./seed.mjs";
 import { fixtureReady, querySample, validateFixtureManifest } from "./omnibox-gate.mjs";
 import { writeSwitches } from "./js-bench.mjs";
 import { frameRows, frameTable, framesLibrary, framesRun, stallTable } from "./frames-phase.mjs";
+import { measureStalls, stallCheckpoint, stallLibrary } from "./stall-watchdog.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const appRoot = resolve(here, "../..");
@@ -544,10 +545,12 @@ class Instance {
     this.cdp = new Cdp(this.port);
     this.seq = 0;
     this.env = [];
+    this.stalls = {};
   }
   async launch() {
     if (stopping) throw new Error("the bench is stopping");
     live.add(this);
+    this.stallLockedAtLaunch = this.stallLocked();
     this.starting = this.acquire();
     try {
       await this.starting;
@@ -557,6 +560,7 @@ class Instance {
       const boot = await this.waitFile("bench-boot.json", 60_000);
       if (stopping) throw new Error("the bench is stopping");
       this.jsStart = boot?.jsStart ?? NaN;
+      await this.measureStalls("startup", async () => {}, { cumulative: true });
       return this;
     } catch (error) {
       await this.quit();
@@ -569,7 +573,7 @@ class Instance {
     if (spawnSync("pgrep", ["-f", main]).status === 0) throw new Error("a bench instance is still running");
     const extra = [...opt.env, ...this.side.env, ...this.env].filter((e) => !e.startsWith("DYLD_INSERT_LIBRARIES="));
     writeSwitches(this.dataDir, extra.find((e) => e.startsWith("SOLARA_SWITCHES="))?.slice(19));
-    const dyld = [markerLibrary(), ...(this.frames ? [framesLibrary(toolDir, here)] : []), ...opt.env.filter((e) => e.startsWith("DYLD_INSERT_LIBRARIES=")).map((e) => e.slice(22))].join(":");
+    const dyld = [markerLibrary(), stallLibrary(toolDir), ...(this.frames ? [framesLibrary(toolDir, here)] : []), ...opt.env.filter((e) => e.startsWith("DYLD_INSERT_LIBRARIES=")).map((e) => e.slice(22))].join(":");
     this.instance = await launchInstance(this.app, {
       data: this.dataDir, port: this.port || undefined, js: "none", ready: false, scratchMarker: false, keepData: true,
       env: {
@@ -634,7 +638,39 @@ class Instance {
     }
     return null;
   }
+  stallLocked() {
+    const state = displayState();
+    return !!(state.locked || state.asleep);
+  }
+  async measureStalls(name, run, { cumulative = false } = {}) {
+    try {
+      const { value, stalls } = await measureStalls({
+        checkpoint: () => stallCheckpoint(this.dataDir, this.pid, { alive: () => this.alive() }),
+        locked: () => this.stallLocked() || (cumulative && this.stallLockedAtLaunch),
+        cumulative,
+      }, run);
+      const old = this.stalls[name];
+      this.stalls[name] = old && !cumulative ? {
+        ...stalls,
+        status: old.status === "ok" && stalls.status === "ok" ? "ok" : "pending",
+        ...(old.reason || stalls.reason ? { reason: old.reason ?? stalls.reason } : {}),
+        count: Number.isFinite(old.count) && Number.isFinite(stalls.count) ? old.count + stalls.count : undefined,
+        totalMs: Number.isFinite(old.totalMs) && Number.isFinite(stalls.totalMs) ? old.totalMs + stalls.totalMs : undefined,
+        fromMs: old.fromMs,
+      } : stalls;
+      return value;
+    } catch (error) {
+      this.stalls[name] = { status: "pending", reason: String(error?.message ?? error) };
+      throw error;
+    }
+  }
   async done() {
+    if (!this.stallsRecorded && this.pid) {
+      this.stallsRecorded = true;
+      if (!stopping && this.alive()) await this.measureStalls("instance", async () => {}, { cumulative: true });
+      else this.stalls.instance = { status: "pending", reason: "instance exited before final checkpoint" };
+      if (this.side.results) (this.side.results.stalls ??= []).push({ scenario: basename(this.dataDir), metrics: this.stalls });
+    }
     const secs = +opt.hold;
     if (!stopping && secs > 0 && this.pid && this.alive()) {
       log(`holding ${this.side.label} pid ${this.pid} for ${secs} s (data ${this.dataDir}): lldb -p ${this.pid}, heap ${this.pid}, vmmap --summary ${this.pid}`);
@@ -861,8 +897,10 @@ async function launchRun(side, i) {
       firstPaint: (page?.fcp ?? NaN) - app.t0,
       firstFrame: (page?.frame ?? NaN) - app.t0,
       load: Math.round(loadavg()[0] * 10) / 10,
+      stalls: app.stalls,
       display,
     };
+    await app.measureStalls("launch", async () => {}, { cumulative: true });
     if (opt.seed) r.pageTargets = (await app.cdp.targets()).length;
     if (opt["trace-startup"]) {
       const trace = await app.waitFile("startup-trace.json", 15_000, (v) => Array.isArray(v.traceEvents));
@@ -953,12 +991,12 @@ async function newWindow(app, id) {
 
 async function windowsRun(side, i) {
   const app = new Instance(side, freshDir(side, `windows-${i}`));
-  const r = { newWindow: [], display: { before: displayState() } };
+  const r = { newWindow: [], stalls: app.stalls, display: { before: displayState() } };
   try {
     await app.launch();
     await app.pageState("id=seed", 30_000, (s) => s.fcp);
     await sleep(10_000);
-    for (let k = 0; k < 8; k++) r.newWindow.push(await newWindow(app, `w${k}`));
+    for (let k = 0; k < 8; k++) r.newWindow.push(await app.measureStalls("newwindow", () => newWindow(app, `w${k}`)));
     log(`${side.tag}windows ${i}:`, JSON.stringify(r.newWindow));
     side.results.windows.push(r);
   } finally {
@@ -1125,7 +1163,7 @@ async function journeyRun(side, i, parts) {
   const n = +opt["journey-n"];
   const app = new Instance(side, dir);
   app.env.push("AC_BENCH_KEYLOG=1");
-  const r = { j2: [], j4new: [], j4page: [], lost: { j2: [], j4new: [], j4page: [] }, load: [Math.round(loadavg()[0])], display: { before: displayState() } };
+  const r = { stalls: app.stalls, j2: [], j4new: [], j4page: [], lost: { j2: [], j4new: [], j4page: [] }, load: [Math.round(loadavg()[0])], display: { before: displayState() } };
   const note = async (kind, x, k) => {
     if (!x.lost) return void r[kind].push(x);
     r.lost[kind].push(x.lost);
@@ -1142,7 +1180,7 @@ async function journeyRun(side, i, parts) {
     const closeTab = (tab) => tab && app.run(`ac.store.getState().closeTab(${JSON.stringify(tab)}); return true;`);
     if (parts.has("newtabkey")) {
       for (let k = 0; k < n; k++) {
-        const x = await newTabKey(app, side, i, k);
+        const x = await app.measureStalls("newtabkey", () => newTabKey(app, side, i, k));
         await note("j2", x, k);
         await sleep(1200);
         await closeTab(x.tab);
@@ -1154,14 +1192,14 @@ async function journeyRun(side, i, parts) {
     }
     if (parts.has("navigate")) {
       for (let k = 0; k < n; k++) {
-        const x = await navigateByEnter(app, side, `j${i}n${pad2(k)}`, "newtab");
+        const x = await app.measureStalls("navigate.newtab", () => navigateByEnter(app, side, `j${i}n${pad2(k)}`, "newtab"));
         await note("j4new", x, k);
         await sleep(1500);
         await closeTab(x.tab);
         await sleep(1000);
       }
       for (let k = 0; k < n; k++) {
-        const x = await navigateByEnter(app, side, `j${i}p${pad2(k)}`, "page");
+        const x = await app.measureStalls("navigate.page", () => navigateByEnter(app, side, `j${i}p${pad2(k)}`, "page"));
         await note("j4page", x, k);
         await sleep(1800);
       }
@@ -1215,67 +1253,72 @@ async function sessionRun(side, i, parts) {
   const has = (part) => parts.has(part);
   const secs = +opt.idle;
   const app = new Instance(side, freshDir(side, `session-${i}`));
-  const r = { memory: {}, idle: {}, tabSwitch: [], tabVisible: [], newTab: [], newTabFrame: [], newTabDom: [], newWindow: [], processes: {}, throttled: { tabSwitch: 0, newTab: 0 } };
+  const r = { stalls: app.stalls, memory: {}, idle: {}, tabSwitch: [], tabVisible: [], newTab: [], newTabFrame: [], newTabDom: [], newWindow: [], processes: {}, throttled: { tabSwitch: 0, newTab: 0 } };
   if (parts.size < SESSION_PARTS.length) r.parts = [...parts];
   r.display = { before: displayState() };
   try {
     await app.launch();
     await app.pageState("id=seed", 30_000, (s) => s.fcp);
     if (has("idle") || has("memory")) await sleep(30_000);
-    if (has("idle")) r.idle.tabs1 = await idleWindow(app, secs);
-    if (has("memory")) r.memory.tabs1 = footprint(usage(app.pid));
+    if (has("idle")) r.idle.tabs1 = await app.measureStalls("idle.tabs1", () => idleWindow(app, secs));
+    if (has("memory")) r.memory.tabs1 = await app.measureStalls("memory.tabs1", async () => footprint(usage(app.pid)));
     r.blocker = await app.cdp.blocker();
     if (r.blocker && !String(r.blocker.allReadyAfter ?? "").includes("(selfie)")) log(`${side.tag}session ${i}: uBlock Origin didn't start from its selfie (${r.blocker.allReadyAfter}); its memory and CPU rows aren't comparable`);
     await openTabs(app, 1, 10);
     if (has("memory")) {
       await sleep(10_000);
-      r.memory.tabs10 = footprint(usage(app.pid));
+      r.memory.tabs10 = await app.measureStalls("memory.tabs10", async () => footprint(usage(app.pid)));
     }
     await openTabs(app, 10, 20);
     await sleep(15_000);
-    if (has("memory")) r.memory.tabs20 = footprint(usage(app.pid));
-    if (has("idle")) r.idle.tabs20 = await idleWindow(app, secs);
+    if (has("memory")) r.memory.tabs20 = await app.measureStalls("memory.tabs20", async () => footprint(usage(app.pid)));
+    if (has("idle")) r.idle.tabs20 = await app.measureStalls("idle.tabs20", () => idleWindow(app, secs));
 
     const tabs = has("switch") ? (await tabIds(app)).filter(([, url]) => url.includes("/static?id=t")) : [];
-    for (let k = 0; k < (has("switch") ? 16 : 0); k++) {
-      const [id, url] = tabs[(k * 7 + 3) % tabs.length];
-      const marker = url.match(/id=(t\d+)/)[1];
-      const target = await app.cdp.find(`id=${marker}`);
-      const before = (await app.cdp.state(target))?.shown?.length ?? 0;
-      const hidden = await throttled(app);
-      const at = await app.run(`const t = ac.now(); ac.actions.switchToTab(${JSON.stringify(id)}); return t;`);
-      const s = await app.pageState(`id=${marker}`, 5000, (st) => (st.shown?.length ?? 0) > before);
-      const shown = s?.shown.at(-1);
-      if (hidden) r.throttled.tabSwitch++;
-      r.tabSwitch.push(shown && !hidden ? shown[1] - at : NaN);
-      const visible = (s ?? (await app.cdp.state(target)))?.vis?.findLast(([t, state]) => state === "visible" && t >= at);
-      r.tabVisible.push(visible ? visible[0] - at : NaN);
-      if (process.env.BENCH_DEBUG) log("switch", marker, "before", before, "at", at - Date.now(), "state", JSON.stringify((await app.cdp.state(target)) ?? null)?.slice(0, 300));
-      await sleep(400);
-    }
+    if (has("switch")) await app.measureStalls("switch", async () => {
+      for (let k = 0; k < 16; k++) {
+        const [id, url] = tabs[(k * 7 + 3) % tabs.length];
+        const marker = url.match(/id=(t\d+)/)[1];
+        const target = await app.cdp.find(`id=${marker}`);
+        const before = (await app.cdp.state(target))?.shown?.length ?? 0;
+        const hidden = await throttled(app);
+        const at = await app.run(`const t = ac.now(); ac.actions.switchToTab(${JSON.stringify(id)}); return t;`);
+        const s = await app.pageState(`id=${marker}`, 5000, (st) => (st.shown?.length ?? 0) > before);
+        const shown = s?.shown.at(-1);
+        if (hidden) r.throttled.tabSwitch++;
+        r.tabSwitch.push(shown && !hidden ? shown[1] - at : NaN);
+        const visible = (s ?? (await app.cdp.state(target)))?.vis?.findLast(([t, state]) => state === "visible" && t >= at);
+        r.tabVisible.push(visible ? visible[0] - at : NaN);
+        if (process.env.BENCH_DEBUG) log("switch", marker, "before", before, "at", at - Date.now(), "state", JSON.stringify((await app.cdp.state(target)) ?? null)?.slice(0, 300));
+        await sleep(400);
+      }
 
-    for (let k = 0; k < (has("newtab") ? 5 : 0); k++) {
-      const hidden = await throttled(app);
-      const at = await app.run(`const t = ac.now(); ac.store.getState().newTab(${WINDOW}, { url: "${base()}/static?id=n${k}" }); return t;`);
-      const s = await app.pageState(`id=n${k}`, 20_000, (st) => st.fcp);
-      if (hidden) r.throttled.newTab++;
-      r.newTab.push(s && !hidden ? s.fcp - at : NaN);
-      r.newTabFrame.push(s?.frame && !hidden ? s.frame - at : NaN);
-      const loaded = s ?? (await app.pageState(`id=n${k}`, 2000, (st) => st.dom));
-      r.newTabDom.push(loaded?.dom ? loaded.dom - at : NaN);
-      await sleep(800);
-    }
+    });
+
+    if (has("newtab")) await app.measureStalls("newtab", async () => {
+      for (let k = 0; k < 5; k++) {
+        const hidden = await throttled(app);
+        const at = await app.run(`const t = ac.now(); ac.store.getState().newTab(${WINDOW}, { url: "${base()}/static?id=n${k}" }); return t;`);
+        const s = await app.pageState(`id=n${k}`, 20_000, (st) => st.fcp);
+        if (hidden) r.throttled.newTab++;
+        r.newTab.push(s && !hidden ? s.fcp - at : NaN);
+        r.newTabFrame.push(s?.frame && !hidden ? s.frame - at : NaN);
+        const loaded = s ?? (await app.pageState(`id=n${k}`, 2000, (st) => st.dom));
+        r.newTabDom.push(loaded?.dom ? loaded.dom - at : NaN);
+        await sleep(800);
+      }
+    });
     if (has("newtab"))
       await app.run(`const s = ac.store.getState(); for (const id of Object.keys(s.tabs)) if (s.tabs[id].url.includes("id=n")) ac.store.getState().closeTab(id); return true;`);
 
-    for (let k = 0; k < (has("newwindow") ? 3 : 0); k++) r.newWindow.push(await newWindow(app, `w${k}`));
+    for (let k = 0; k < (has("newwindow") ? 3 : 0); k++) r.newWindow.push(await app.measureStalls("newwindow", () => newWindow(app, `w${k}`)));
 
     if (has("memory")) {
       r.processes.tabs20 = usage(app.pid).length;
       await app.run(`const s = ac.store.getState(); const w = ${WINDOW}; const keep = s.windows[w].tabIds.find((id) => s.tabs[id].url.includes("id=seed"));
         ac.store.getState().activate(keep); for (const id of s.windows[w].tabIds) if (id !== keep) ac.store.getState().closeTab(id); return true;`);
       await sleep(30_000);
-      r.memory.closed = footprint(usage(app.pid));
+      r.memory.closed = await app.measureStalls("memory.closed", async () => footprint(usage(app.pid)));
       r.processes.closed = r.memory.closed.processes;
     }
   } finally {
@@ -1545,7 +1588,7 @@ function makeSide(app, label, role) {
   mkdirSync(dir, { recursive: true });
   return { role, label, sourceMode: role === "control" ? opt["control-source-mode"] : opt["source-mode"], tag: "", src: resolve(app), dir, template: join(dir, "template"), app: null, bundle: null,
     env: role === "control" ? opt["control-env"] : opt["candidate-env"],
-    results: { meta: {}, launch: [], session: [], windows: [], memslope: [], journeys: [], frames: [], throttle: [], sample: [] } };
+    results: { meta: { stallRevision: 1 }, stalls: [], launch: [], session: [], windows: [], memslope: [], journeys: [], frames: [], throttle: [], sample: [] } };
 }
 const candidate = makeSide(opt.app, opt.label ?? labelOf(opt.app), "candidate");
 let control = null;

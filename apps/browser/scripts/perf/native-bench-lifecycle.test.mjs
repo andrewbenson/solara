@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
+import { measureStalls } from "./stall-watchdog.mjs";
 import test from "node:test";
 import vm from "node:vm";
 
@@ -20,7 +21,7 @@ const deferred = () => {
 };
 const settle = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); };
 
-function driver({ pendingLaunch, pendingQuit, bootError, quitError } = {}) {
+function driver({ pendingLaunch, pendingQuit, bootError, quitError, stallError = false, locked = false, stallStep = 0 } = {}) {
   const handlers = new Map();
   const registry = new Map();
   const exits = [];
@@ -28,12 +29,21 @@ function driver({ pendingLaunch, pendingQuit, bootError, quitError } = {}) {
   const quits = [];
   let running = false;
   let serverClosed = 0;
+  let stallReads = 0;
   const context = vm.createContext({
     FatalError: class FatalError extends Error {},
     opt: { port: undefined, env: [], hold: "0" },
     base: () => "http://127.0.0.1:1234",
     Cdp: class { close() {} },
     join,
+    basename,
+    measureStalls,
+    stallLibrary: () => "/tools/main-thread-stalls.dylib",
+    stallCheckpoint: async () => {
+      if (stallError) throw Error("watchdog unavailable");
+      return { schema: 1, ready: true, pid: 62068, session: "session", count: 2 + stallReads++ * stallStep, totalMs: 100 + (stallReads - 1) * stallStep * 20, dropped: 0, updatedMs: 1200, completedThroughMs: 1200, startedMs: 1000 };
+    },
+    displayState: () => ({ locked, asleep: false }),
     realpathSync: (path) => path,
     execFileSync: (command) => { if (command === "open") running = true; return "Solara\n"; },
     spawnSync: () => ({ status: running ? 0 : 1, stdout: running ? "62068\n" : "" }),
@@ -113,7 +123,7 @@ test("J2 uses the shared registered instance and retains benchmark data", async 
   assert.equal(options.scratchMarker, false);
   assert.deepEqual(Array.from(options.args), ["--mute-audio", "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1, EXCLUDE localhost", "-NSAppSleepDisabled", "YES"]);
   assert.equal(options.env.SOLARA_DRAW_WINDOWS, "1");
-  assert.equal(options.env.DYLD_INSERT_LIBRARIES, "/tools/acmark.dylib");
+  assert.equal(options.env.DYLD_INSERT_LIBRARIES, "/tools/acmark.dylib:/tools/main-thread-stalls.dylib");
   assert.equal(bench.app.t0, 1000);
   assert.equal(bench.app.cdp.port, 9222);
   await bench.cleanup();
@@ -192,11 +202,12 @@ test("shared quit keeps benchmark artifacts and retains default cleanup for ordi
       reportSuppressedSecureInput: () => {}, uiGateKey: () => null, existsSync: () => false,
       process: { env: {} }, quitData, launched: new Map(), join,
       isAlive: () => running,
+      keepCrashReports: () => [], tmpdir: () => "/scratch",
       spawnSync: () => { running = false; },
       quitEnded: ({ how }) => how === "quit",
       sleep: async () => {},
     });
-    vm.runInContext(between(library, "class Instance {", "export async function launch(") + "globalThis.SharedInstance = Instance;", context);
+    vm.runInContext(between(library, "class Instance {", "export function bundledJsRefusal(") + "globalThis.SharedInstance = Instance;", context);
     const instance = new context.SharedInstance({ pid: 62068, data: "/bench/data", keepData });
     instance.stillOwned = () => running;
     instance.jsErrors = () => "";
@@ -260,13 +271,14 @@ function sharedDriver({ failRegistry = false } = {}) {
     isAlive: () => running,
     commandIsBinary: (command, expected) => command === expected,
     reportSuppressedSecureInput: () => {},
+    keepCrashReports: () => [], tmpdir: () => "/scratch",
     spawnSync: () => { running = false; },
     quitEnded: ({ how }) => ["quit", "SIGTERM", "SIGKILL"].includes(how),
     sleep: async () => {},
     dirname: (path) => path.slice(0, path.lastIndexOf("/")),
   });
   vm.runInContext([
-    between(library, "class Instance {", "export async function launch("),
+    between(library, "class Instance {", "export async function launch(").replaceAll("export ", ""),
     between(library, "export async function launch(", "export function reporter(").replaceAll("export ", ""),
     "globalThis.shared = { launch, attach };",
   ].join("\n"), context);
@@ -320,4 +332,58 @@ test("cleanup failure reports failure and retains the instance handle", async ()
   assert.deepEqual(bench.exits, [1]);
   assert.equal(bench.live.size, 1);
   await assert.rejects(bench.cleanup(), /could not quit every bench instance/);
+});
+
+
+test("native scenarios retain per-scenario stalls and a cumulative instance record before quit", async () => {
+  const bench = driver();
+  bench.app.side.results = {};
+  await bench.app.launch();
+  const value = await bench.app.measureStalls("typing", async () => "typed");
+  assert.equal(value, "typed");
+  assert.equal(bench.app.stalls.startup.count, 2);
+  assert.equal(bench.app.stalls.typing.status, "ok");
+  assert.equal(bench.app.stalls.typing.count, 0);
+  await bench.app.done();
+  const record = bench.app.side.results.stalls[0];
+  assert.equal(record.scenario, "journeys-0");
+  assert.equal(record.metrics.instance.count, 2);
+  assert.equal(record.metrics.instance.totalMs, 100);
+  assert.equal(bench.quits.length, 1);
+});
+
+test("watchdog failure and locked screens preserve native scenario work and cleanup with pending counts", async () => {
+  for (const options of [{ stallError: true }, { locked: true }]) {
+    const bench = driver(options);
+    bench.app.side.results = {};
+    await bench.app.launch();
+    let ran = false;
+    await bench.app.measureStalls("switch", async () => { ran = true; });
+    assert.equal(ran, true);
+    assert.equal(bench.app.stalls.switch.status, "pending");
+    await bench.app.done();
+    assert.equal(bench.app.side.results.stalls[0].metrics.instance.status, "pending");
+    assert.equal(bench.quits.length, 1);
+  }
+});
+
+test("a failed native scenario is marked pending and retains the original error", async () => {
+  const bench = driver();
+  await bench.app.launch();
+  await assert.rejects(bench.app.measureStalls("switch", async () => { throw Error("native action failed"); }), /native action failed/);
+  assert.equal(bench.app.stalls.switch.status, "pending");
+  await bench.app.done();
+  assert.equal(bench.quits.length, 1);
+});
+
+
+test("repeated native interactions add their stall deltas without double-counting startup", async () => {
+  const bench = driver({ stallStep: 1 });
+  await bench.app.launch();
+  await bench.app.measureStalls("newwindow", async () => {});
+  await bench.app.measureStalls("newwindow", async () => {});
+  assert.equal(bench.app.stalls.newwindow.count, 2);
+  assert.equal(bench.app.stalls.newwindow.totalMs, 40);
+  assert.equal(bench.app.stalls.newwindow.status, "ok");
+  await bench.app.done();
 });

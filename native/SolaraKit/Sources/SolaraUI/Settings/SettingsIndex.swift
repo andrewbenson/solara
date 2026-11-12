@@ -436,6 +436,12 @@ public struct SettingsIndex: Sendable {
             caption: "Outside text fields, reopens closed tabs; in text fields, undoes typing.",
             keywords: ["undo", "undo close tab", "reopen", "restore tab", "arc", "cmd z"]
           ),
+          Row(
+            key: "showTabNumberHints",
+            title: "Show tab numbers while holding ⌘",
+            description: "Hold Command by itself for a second to see each tab’s current shortcut.",
+            keywords: ["tab numbers", "command", "keycaps", "hints", "cmd"]
+          ),
           Row(key: "actions", title: "Customize keyboard shortcuts", keywords: ["hotkeys", "keybindings", "remap", "menu shortcuts"]),
         ]),
         Section(section: "Extensions", rows: [

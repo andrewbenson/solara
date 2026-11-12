@@ -55,6 +55,9 @@ final class SidebarContext {
   var activeId: String?
   let showClear: Bool
   let favicons: SidebarFavicons
+  let tabNumberActions: [String: [String]]
+  let tabNumberRowKeys: [String: String]
+  let showsTabNumberHints: Bool
   var live: SidebarLiveBlocks?
   var send: (SidebarAction) -> Void = { _ in }
 
@@ -63,7 +66,13 @@ final class SidebarContext {
   init(state: BrowserState, host: SidebarHostState, windowId: String, favicons: SidebarFavicons, previous: SidebarContext? = nil,
     ownsWorkspace: Bool = NativeStoreHandle.ownsWorkspace) {
     self.state = state
-    query = SidebarQuery(state)
+    let sidebarQuery = SidebarQuery(state)
+    query = sidebarQuery
+    let numbered = sidebarQuery.numberedRows(windowId: windowId, profileId: host.profileId)
+    tabNumberActions = TabNumberHintActions.mapping(rowKeys: numbered.map(\.key))
+    tabNumberRowKeys = Dictionary(uniqueKeysWithValues: numbered.map { ($0.tabId, $0.key) })
+    showsTabNumberHints = state.settings["showTabNumberHints"]?.bool != false && state.windows[windowId]?.kind != "small"
+      && state.windows[windowId]?.profileId == host.profileId
     self.host = host
     flags = SidebarFlags(host, live: ownsWorkspace ? state.live : nil)
     if let previous, previous.host.dark == host.dark, previous.host.theme == host.theme, previous.host.border == host.border, previous.host.glow == host.glow {
@@ -115,6 +124,7 @@ class SidebarRowView: NSView {
   var item: SidebarItem?
   weak var context: SidebarContext?
   let body = NSView()
+  private let numberHint = TabNumberHintView()
   var hovered = false { didSet { if hovered != oldValue { repaint() } } }
   var pressed = false { didSet { if pressed != oldValue { pressChanged() } } }
   var hoverKey: String { item?.key ?? "" }
@@ -128,6 +138,7 @@ class SidebarRowView: NSView {
     wantsLayer = true
     body.wantsLayer = true
     addSubview(body)
+    addSubview(numberHint)
   }
 
   required init?(coder: NSCoder) { fatalError() }
@@ -146,6 +157,7 @@ class SidebarRowView: NSView {
 
   func retire() {
     retired = true
+    numberHint.configure(actions: [], enabled: false)
     retiredLook()
   }
 
@@ -164,11 +176,19 @@ class SidebarRowView: NSView {
     super.layout()
     body.frame = bounds
     layoutBody()
+    numberHint.place()
   }
 
   private var rendered: AnyHashable?
 
   func update(_ item: SidebarItem, _ context: SidebarContext) {
+    let hintKey: String
+    switch item.kind {
+    case .tile(let id): hintKey = "t:\(id)"
+    case .tab, .split: hintKey = item.key
+    default: hintKey = ""
+    }
+    numberHint.configure(actions: context.tabNumberActions[hintKey] ?? [], enabled: context.showsTabNumberHints, compact: SidebarRail.contains(width: Double(item.frame.width)) || item.section == .tiles)
     let key = renderKey(item, context)
     if let key, key == rendered, item == self.item {
       self.context = context

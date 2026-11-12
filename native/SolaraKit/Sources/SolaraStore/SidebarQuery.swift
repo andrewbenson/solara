@@ -14,6 +14,16 @@ public struct SidebarEntries: Sendable, Equatable {
   }
 }
 
+public struct NumberedTabRow: Sendable, Equatable {
+  public let key: String
+  public let tabId: String
+
+  public init(key: String, tabId: String) {
+    self.key = key
+    self.tabId = tabId
+  }
+}
+
 public enum SidebarCloseKind: String, Sendable {
   case close, unload, removePin
 }
@@ -66,6 +76,39 @@ public struct SidebarQuery {
     }
     out.cells = tileCells(out.tiles)
     return out
+  }
+
+  public func numberedRows(windowId: String, profileId: String? = nil) -> [NumberedTabRow] {
+    guard let window = state.windows[windowId], window.kind != "small" else { return [] }
+    let entries = entries(windowId: windowId, profileId: profileId)
+    let active = state.activeTabId(windowId, profileId)
+    var ancestors = Set<String>()
+    func rows(_ entry: String) -> [NumberedTabRow] {
+      let id = String(entry.dropFirst(2))
+      if entry.hasPrefix("g:") {
+        guard ancestors.insert(id).inserted else { return [] }
+        defer { ancestors.remove(id) }
+        return groupEntries(id).flatMap(rows)
+      }
+      guard entry.hasPrefix("s:") else {
+        return state.tabs[id] == nil ? [] : [NumberedTabRow(key: entry, tabId: id)]
+      }
+      let panes = splitPanes(id)
+      if let active, panes.contains(active) { return [NumberedTabRow(key: entry, tabId: active)] }
+      let recent = panes.reduce(nil as String?) { previous, candidate in
+        guard let previous else { return candidate }
+        return (state.tabs[candidate]?.lastActiveAt ?? 0) > (state.tabs[previous]?.lastActiveAt ?? 0) ? candidate : previous
+      }
+      return recent.map { [NumberedTabRow(key: entry, tabId: $0)] } ?? []
+    }
+    return entries.tiles.map { NumberedTabRow(key: "t:\($0)", tabId: $0) }
+      + (entries.pinned + entries.list).flatMap(rows)
+  }
+
+  public func numberedTab(windowId: String, number: Int) -> String? {
+    guard (1...9).contains(number) else { return nil }
+    let rows = numberedRows(windowId: windowId)
+    return number == 9 ? rows.last?.tabId : rows.indices.contains(number - 1) ? rows[number - 1].tabId : nil
   }
 
   public func tileCells(_ tiles: [String]) -> [String] {

@@ -225,6 +225,7 @@ enum SwitcherHold {
 
 public enum NativeMenuCommands {
   nonisolated(unsafe) public static var handlers: [String: (String?) -> Void] = [:]
+  nonisolated(unsafe) public static var argumentHandlers: [String: (String?, String?) -> Bool] = [:]
 }
 
 final class MenuTarget: NSObject, NSMenuItemValidation {
@@ -235,6 +236,10 @@ final class MenuTarget: NSObject, NSMenuItemValidation {
 
   @objc(commandDispatch:) func performCommand(_ sender: NSMenuItem) {
     guard let item = sender as? CommandItem else { return }
+    if let run = NativeMenuCommands.argumentHandlers[item.command] {
+      guard !MenuState.current.disabled.contains(item.stateKey), !MenuState.current.disabled.contains(item.command) else { return }
+      if run(item.arg, item.windowless ? nil : WindowManager.shared.keyWindowId) { return }
+    }
     if let run = NativeMenuCommands.handlers[item.command] {
       return run(item.windowless ? nil : WindowManager.shared.keyWindowId)
     }
@@ -1008,6 +1013,17 @@ enum MainMenu {
 
   private static func standardPrecedence(of item: Rebindable) -> ShortcutPrecedence {
     ShortcutPrecedence.standard(shortcutId: item.shortcutId, command: (item as? CommandItem)?.command)
+  }
+
+  static func tabNumberHintBindings() -> [String: String] {
+    var bindings: [String: String] = [:]
+    for (id, group) in shortcutGroups() where id.hasPrefix("selectTab:") || id == "selectLastTab" {
+      let item = group.primary
+      let current = shortcut(of: item)
+      let names = modifierNames.filter { current.mods.contains($0.1) }.map(\.0)
+      bindings[id] = TabNumberShortcut.formatted(key: current.key, modifiers: names)
+    }
+    return bindings
   }
 
   static func shortcutList() -> [[String: Any]] {

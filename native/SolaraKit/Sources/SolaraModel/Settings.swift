@@ -28,6 +28,7 @@ public struct Settings: Sendable, Hashable {
     "newTabOpens": "page",
     "warnBeforeClosingLastTab": true,
     "undoReopensClosedTab": false,
+    "showTabNumberHints": true,
     "warnBeforeMovingTabsToProfile": true,
     "shareTabsAcrossWindows": false,
     "tabReorderHaptics": true,

@@ -83,7 +83,9 @@ public final class SidebarView: NSView {
     next.send = { [weak self] action in self?.onAction(action) }
     let previous = context
     let moved = previous != nil && previous?.activeId != next.activeId
+    if moved, let window { TabNumberHintFeed.shared.cancel(in: window) }
     context = next
+    SidebarFolderPanelHost.refreshHints(on: self)
     let resting = motion
     if let previous, SidebarMotion.folding(previous.state, next.state, windowId: windowId) { motion = .fold }
     reconcile(animated: previous != nil && canAnimate && SidebarDragController.existing(self)?.suppressesMotion != true)

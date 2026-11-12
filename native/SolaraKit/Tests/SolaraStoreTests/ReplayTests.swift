@@ -226,6 +226,10 @@ func expectedReplayStateWithClosedWindowPresentation(_ json: JSONValue) -> JSONO
         for key in ["selection", "selectionAnchors", "windowUi"] { stateObject.removeValue(forKey: key) }
         let state = JSONValue.object(stateObject)
         var expectedState = expectedReplayStateWithClosedWindowPresentation(json)
+        if name == "hydrate", var settings = expectedState["settings"]?.object {
+          if settings["showTabNumberHints"] == nil { settings["showTabNumberHints"] = true }
+          expectedState["settings"] = .object(settings)
+        }
         if expectedState["find"] == nil { expectedState["find"] = [:] }
         var expectedUi = expectedState["ui"]?.object ?? [:]
         if expectedUi["appDark"] == nil { expectedUi["appDark"] = true }

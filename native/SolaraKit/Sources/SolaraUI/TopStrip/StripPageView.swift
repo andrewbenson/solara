@@ -109,6 +109,7 @@ public final class StripPageView: NSView {
     let next = StripContext(state: state, host: host, windowId: windowId, favicons: favicons, previous: context)
     next.send = { [weak self] action in self?.onAction(action) }
     let first = context == nil
+    if let context, context.activeId != next.activeId, let window { TabNumberHintFeed.shared.cancel(in: window) }
     context = next
     reconcile(next)
     if first {

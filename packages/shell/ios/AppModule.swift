@@ -703,6 +703,7 @@ enum KeyEquivalents {
   private static var pressing = 0, dryPressing = 0
   private static var handler: ((String, String?, String?) -> Void)?
   private static var nativeHandlers: [String: (String?) -> Void] = [:]
+  private static var nativeArgumentHandlers: [String: (String?, String?) -> Bool] = [:]
   private static var menuKeyIMP: IMP?
   private static var awaitingDry: [TimeInterval: String] = [:]
   private static var lateDry: [TimeInterval: String] = [:]
@@ -889,10 +890,12 @@ enum KeyEquivalents {
       if dryPressing == 0 {
         handler = MenuTarget.shared.handler
         nativeHandlers = NativeMenuCommands.handlers
+        nativeArgumentHandlers = NativeMenuCommands.argumentHandlers
       }
       dryPressing += 1
       MenuTarget.shared.handler = { _, _, _ in }
       NativeMenuCommands.handlers = [:]
+      NativeMenuCommands.argumentHandlers = [:]
     }
   }
 
@@ -902,6 +905,7 @@ enum KeyEquivalents {
       if dryPressing == 0 {
         MenuTarget.shared.handler = handler
         NativeMenuCommands.handlers = nativeHandlers
+        NativeMenuCommands.argumentHandlers = nativeArgumentHandlers
       }
     }
     pressing -= 1

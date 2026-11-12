@@ -109,6 +109,7 @@ enum NativeTopStrip {
   }
 
   static func register() {
+    NativeNumberedTabs.register()
     guard enabled else { return }
     HostedViews.register(kind) { windowId in
       let host = TopStripHost(windowId: windowId)

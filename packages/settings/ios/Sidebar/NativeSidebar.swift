@@ -10,6 +10,7 @@ enum NativeSidebar {
   static var hosts: [String: SidebarHost] = [:]
 
   static func register() {
+    NativeNumberedTabs.register()
     NativeSidebarLive.start()
     NativeSidebarHoverCard.start()
     NativeSidebarShell.register()

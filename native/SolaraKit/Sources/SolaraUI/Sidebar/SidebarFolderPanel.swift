@@ -98,6 +98,8 @@ public final class SidebarFolderPanelView: NSView {
   public var onDropZone: (FolderPanelDropZone?) -> Void = { _ in }
   public var makeIcon: (String) -> NSView = { _ in NSView() }
   public var folderId = ""
+  public var hintActions: [String: [String]] = [:]
+  public var showsTabNumberHints = true
 
   private let motion = FolderPanelFlipped()
   private let card = FolderPanelFlipped()
@@ -154,9 +156,20 @@ public final class SidebarFolderPanelView: NSView {
         return row
       }
     }
-    for (row, member) in zip(rows, members) { row.set(member, colors: colors) }
+    for (row, member) in zip(rows, members) {
+      row.set(member, colors: colors)
+      row.numberHint.configure(actions: hintActions[member.tabId] ?? [], enabled: showsTabNumberHints)
+    }
     self.members = members
     needsLayout = true
+  }
+
+  func updateHintActions(_ actions: [String: [String]], enabled: Bool) {
+    hintActions = actions
+    showsTabNumberHints = enabled
+    for (row, member) in zip(rows, members) {
+      row.numberHint.configure(actions: actions[member.tabId] ?? [], enabled: enabled)
+    }
   }
 
   public override func layout() {
@@ -243,6 +256,7 @@ final class FolderPanelRow: NSView {
   private let fill = CALayer()
   private let icon: NSView
   private let title = FadeLabel(fontSize: FolderPanelMetrics.labelSize)
+  let numberHint = TabNumberHintView()
   private var member: FolderPanelMember
   private var colors = FolderPanelColors(dark: true, tokens: [:])
   private var hovered = false
@@ -263,6 +277,7 @@ final class FolderPanelRow: NSView {
     layer?.addSublayer(fill)
     addSubview(icon)
     addSubview(title)
+    addSubview(numberHint)
     setAccessibilityElement(true)
     setAccessibilityRole(.button)
     addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
@@ -291,6 +306,7 @@ final class FolderPanelRow: NSView {
     icon.frame = CGRect(x: m.rowPadding, y: (bounds.height - m.icon) / 2, width: m.icon, height: m.icon)
     let x = m.rowPadding + m.icon + m.labelGap
     title.frame = CGRect(x: x, y: (bounds.height - m.labelHeight) / 2, width: max(0, bounds.width - x - m.rowPadding), height: m.labelHeight)
+    numberHint.place()
   }
 
   override func mouseEntered(with event: NSEvent) {
@@ -393,6 +409,7 @@ public enum SidebarFolderPanelHost {
       panels.setObject(made, forKey: page)
       return made
     }()
+    refreshHints(on: page)
     panel.folderId = request.folderId
     panel.onEvent = { [weak page] event in
       if case .drag(let phase, let tabId, let point) = event {
@@ -420,6 +437,14 @@ public enum SidebarFolderPanelHost {
       members: request.members.map { FolderPanelMember(tabId: $0.tabId, title: $0.title, active: $0.active) },
       colors: colors, anchor: anchor, width: width)
     watchOutside(page, panel: panel, send: send)
+  }
+
+  static func refreshHints(on page: SidebarView) {
+    guard let panel = panels.object(forKey: page), let context = page.context else { return }
+    let actions = Dictionary(uniqueKeysWithValues: context.tabNumberActions.compactMap { key, actions in
+      key.hasPrefix("t:") ? (String(key.dropFirst(2)), actions) : nil
+    })
+    panel.updateHintActions(actions, enabled: context.showsTabNumberHints)
   }
 
   public static func hide(on page: SidebarView) {

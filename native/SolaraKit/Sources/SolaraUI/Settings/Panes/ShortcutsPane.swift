@@ -199,6 +199,7 @@ struct ShortcutsPane: View {
     SettingsForm {
       Section {
         SettingToggle("shortcuts.undoReopensClosedTab", key: "undoReopensClosedTab")
+        SettingToggle("shortcuts.showTabNumberHints", key: "showTabNumberHints")
       } header: {
         Text("Perform common actions in \(app) faster and from anywhere. Select an action to customize its keyboard shortcut.")
           .font(.callout)

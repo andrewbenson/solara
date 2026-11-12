@@ -306,6 +306,7 @@ public class ShellModule: Module {
           self?.sendEvent("onAppEvent", ["type": "appearance", "dark": ShellModule.isDark])
         }
         self?.observeForSidebar()
+        if let self { TabNumberHintMonitor.shared.start(owner: ObjectIdentifier(self)) }
         let quitCancelled = NotificationCenter.default.addObserver(
           forName: Notification.Name("SolaraCoreQuitCancelled"), object: nil, queue: .main
         ) { _ in
@@ -328,6 +329,7 @@ public class ShellModule: Module {
       self.dragEscapeMonitor = nil
       let gone = ObjectIdentifier(self)
       DispatchQueue.main.async {
+        TabNumberHintMonitor.shared.stop(owner: gone)
         WindowManager.shared.runtimeGone(gone)
         if WindowManager.shared.runtime == nil { LeftEdgeWatcher.shared.reset() }
       }
@@ -424,6 +426,9 @@ public class ShellModule: Module {
     AsyncFunction("devMainThreadStall") { (milliseconds: Double) in
       guard milliseconds.isFinite else { return }
       Thread.sleep(forTimeInterval: max(0, min(milliseconds, 5000)) / 1000)
+    }.runOnQueue(.main)
+    AsyncFunction("devTabNumberHints") { (windowId: String, action: String, modifiers: UInt) -> [String: Any] in
+      MainActor.assumeIsolated { TabNumberHintMonitor.shared.devInput(windowId: windowId, action: action, modifiers: modifiers) }
     }.runOnQueue(.main)
     #endif
     AsyncFunction("devDragPreviewState") { () -> [String: Any] in

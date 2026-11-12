@@ -33,7 +33,6 @@ const H = globalThis.expo.modules.SolaraHosted;
 const A = globalThis.expo.modules.SolaraApp;
 const st = () => ac.store.getState();
 const col = () => H.sidebarShell("w1").then((d) => JSON.parse(d));
-const C = globalThis.expo.modules.SolaraCEF;
 const S = globalThis.expo.modules.SolaraSettings;
 const D = globalThis.expo.modules.SolaraSidebarDrag;
 const win = (id) => C.chromeWindows().then((ws) => { const f = st().windows[id].frame; const w = ws.filter((w) => w.hasRoot).find((w) => { const r = w.frame.match(/[-\\d.]+/g).map(Number); return Math.abs(r[0] - f[0]) < 2 && Math.abs(r[2] - f[2]) < 2; }); return w && w.window; });

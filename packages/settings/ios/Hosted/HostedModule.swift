@@ -1,6 +1,7 @@
 import AppKit
 import ExpoModulesCore
 import SolaraUI
+import SolaraShell
 
 public class HostedModule: Module {
   public func definition() -> ModuleDefinition {
@@ -58,6 +59,17 @@ public class HostedModule: Module {
     AsyncFunction("sidebarIconPickerInput") { (windowId: String, action: String) in
       MainActor.assumeIsolated { NativeSidebarIconPicker.devInput(windowId, action) }
     }.runOnQueue(.main)
+
+    #if DEBUG
+    AsyncFunction("devTabNumberHintViews") { (windowId: String) -> String in
+      MainActor.assumeIsolated {
+        guard let root = ShellDrag.window(windowId)?.contentView,
+          let data = try? JSONSerialization.data(withJSONObject: TabNumberHintInspection.views(in: root))
+        else { return "[]" }
+        return String(data: data, encoding: .utf8) ?? "[]"
+      }
+    }.runOnQueue(.main)
+    #endif
 
     AsyncFunction("sidebarShell") { (windowId: String) -> String in
       MainActor.assumeIsolated { NativeSidebarShell.describe(windowId) }

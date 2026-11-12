@@ -31,7 +31,7 @@ public struct Command: Sendable, Equatable {
   public var isDurable: Bool { Command.durable.contains(name) }
 
   public static let known: Set<String> = [
-    "pageReport", "registerKeepAliveRuntime", "importWorkspace", "setWindowLayout", "setWindowSidebar", "newTab", "closeTab", "closeTabs", "activate", "handOffPin", "activateIndex", "cycle", "navigate", "updateTab", "navigated", "faviconChanged",
+    "pageReport", "registerKeepAliveRuntime", "importWorkspace", "setWindowLayout", "setWindowSidebar", "newTab", "closeTab", "closeTabs", "activate", "activateNumberedTab", "handOffPin", "activateIndex", "cycle", "navigate", "updateTab", "navigated", "faviconChanged",
     "duplicateTab", "togglePin", "moveTab", "moveTabBy", "createWindow", "closeWindow", "restoreClosingWindow", "forgetClosedWindow", "setWindowKeptOnClose", "setWindowFrame", "setWindowFullScreen", "toggleSidebar",
     "switchProfile", "moveTabsToWindow", "moveTabToProfile", "mergeAllWindows", "reopenClosed", "reopenClosedTab", "reopenClosedWindow",
     "restoreClosed", "createProfile", "updateProfile", "deleteProfile", "reorderProfiles", "setDefaultProfile", "profileDataDeleted",
@@ -166,6 +166,8 @@ extension Session {
       closeTabs(a.strings(0), lastClosesWindow: a[1]?["lastClosesWindow"]?.truthy ?? false,
                 windowClosedByChrome: a[1]?["windowClosedByChrome"]?.truthy ?? false)
     case "activate": activate(try a.requireString(0))
+    case "activateNumberedTab":
+      if let tabId = SidebarQuery(state).numberedTab(windowId: try a.requireString(0), number: a.int(1)) { activate(tabId) }
     case "handOffPin": handOffPin(try a.requireString(0))
     case "activateIndex": activateIndex(try a.requireString(0), a.int(1))
     case "cycle": cycle(try a.requireString(0), a.int(1))

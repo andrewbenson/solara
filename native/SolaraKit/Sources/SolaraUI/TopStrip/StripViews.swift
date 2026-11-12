@@ -48,6 +48,7 @@ class StripHoverView: NSView {
   var pressed = false { didSet { if pressed != oldValue { repaint() } } }
   var context: StripContext?
   var passive = false
+  let numberHint = TabNumberHintView()
 
   override var isFlipped: Bool { true }
   override var mouseDownCanMoveWindow: Bool { false }
@@ -56,9 +57,19 @@ class StripHoverView: NSView {
   override init(frame: NSRect) {
     super.init(frame: frame)
     wantsLayer = true
+    addSubview(numberHint)
   }
 
   required init?(coder: NSCoder) { fatalError() }
+
+  override func layout() {
+    super.layout()
+    numberHint.place()
+  }
+
+  func setNumberHint(_ key: String, _ context: StripContext, compact: Bool = false) {
+    numberHint.configure(actions: context.sidebar.tabNumberActions[key] ?? [], enabled: context.sidebar.showsTabNumberHints, compact: compact)
+  }
 
   override func hitTest(_ point: NSPoint) -> NSView? { passive ? nil : super.hitTest(point) }
 
@@ -316,6 +327,7 @@ final class StripTabChip: StripHoverView, StripDraggable {
 
   func update(_ tabId: String, _ context: StripContext) {
     self.context = context
+    setNumberHint("t:\(tabId)", context)
     guard let tab = context.state.tabs[tabId] else { return }
     if self.tab?.id != tabId { self.band = nil }
     self.tab = tab
@@ -456,6 +468,7 @@ final class StripPinnedCell: StripHoverView {
   func update(_ cell: String, members: [String], _ context: StripContext) {
     self.context = context
     self.cell = cell
+    setNumberHint(context.sidebar.tabNumberRowKeys[cell] ?? "", context, compact: true)
     if let folderId {
       icon.isHidden = true
       mosaic.isHidden = false
@@ -956,6 +969,8 @@ final class StripSplitChip: StripHoverView, StripDraggable {
   func update(_ tabIds: [String], _ context: StripContext) {
     self.context = context
     self.tabIds = tabIds
+    let key = tabIds.lazy.compactMap { context.sidebar.tabNumberRowKeys[$0] }.first
+    setNumberHint(key ?? "", context)
     active = tabIds.contains(context.activeId)
     let band = context.band(active ? context.activeId : tabIds.first ?? "")
     let ink = active ? band : nil

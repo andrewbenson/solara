@@ -1,4 +1,5 @@
 #import "SolaraCorePictureInPicture.h"
+#import "SolaraCore-Swift.h"
 
 #import "ACChromeWindow.h"
 #import "SolaraCorePiPThrow.h"
@@ -102,10 +103,7 @@ void PreventActivation(NSWindow *window) {
 }
 
 void ShowInFullScreenSpaces(NSWindow *window) {
-  NSWindowCollectionBehavior behavior = window.collectionBehavior;
-  behavior &= ~(NSWindowCollectionBehaviorPrimary | NSWindowCollectionBehaviorFullScreenPrimary);
-  behavior |= NSWindowCollectionBehaviorFullScreenAuxiliary;
-  if (behavior != window.collectionBehavior) window.collectionBehavior = behavior;
+  [SolaraPictureInPictureWindow configure:window keepOnTop:window.level >= NSFloatingWindowLevel];
   if ([window respondsToSelector:@selector(setActivationIndependence:)])
     [window setActivationIndependence:window.level >= NSFloatingWindowLevel];
 }
@@ -327,6 +325,7 @@ typedef NS_ENUM(NSInteger, ACPiPEdge) { ACPiPEdgeNone = 0, ACPiPEdgeLeft = -1, A
   __weak NSScreen *_lastScreen;
   __weak NSScreen *_swipeHome;
   __weak NSScreen *_stashScreen;
+  NSNumber *_stashDisplayID;
 }
 
 + (instancetype)forWindow:(NSWindow *)window {
@@ -336,6 +335,7 @@ typedef NS_ENUM(NSInteger, ACPiPEdge) { ACPiPEdgeNone = 0, ACPiPEdgeLeft = -1, A
 - (instancetype)initWithWindow:(NSWindow *)window {
   if ((self = [super init])) {
     _window = window;
+    [SolaraPictureInPictureWindow configure:window keepOnTop:KeepOnTop()];
     NSView *root = ACWindowRootView(window);
     _overlay = [[ACPiPOverlay alloc] initWithFrame:root.bounds];
     __weak ACPiPController *weakSelf = self;
@@ -485,24 +485,29 @@ typedef NS_ENUM(NSInteger, ACPiPEdge) { ACPiPEdgeNone = 0, ACPiPEdgeLeft = -1, A
 
 - (NSRect)frameStashedAt:(ACPiPEdge)edge {
   NSRect frame = _window.frame;
-  NSRect visible = [self homeScreen].visibleFrame;
+  NSRect visible = (_stashScreen ?: [self homeScreen]).visibleFrame;
   frame.origin.x = edge == ACPiPEdgeRight ? NSMaxX(visible) - kPeek : NSMinX(visible) - NSWidth(frame) + kPeek;
   frame.origin.y = MIN(MAX(NSMinY(frame), NSMinY(visible)), NSMaxY(visible) - NSHeight(frame));
   return frame;
 }
 
 - (void)screensChanged {
-  if (_stashedEdge != ACPiPEdgeNone && _stashScreen && [NSScreen.screens containsObject:_stashScreen]) {
+  [self stopMotion];
+  [SolaraPictureInPictureWindow reconcileDisplay:_window];
+  _stashScreen = nil;
+  for (NSScreen *screen in NSScreen.screens)
+    if ([screen.deviceDescription[@"NSScreenNumber"] isEqual:_stashDisplayID]) _stashScreen = screen;
+  if (_stashedEdge != ACPiPEdgeNone && _stashScreen) {
     [self animateTo:[self frameStashedAt:_stashedEdge]];
     return;
   }
   if (_stashedEdge != ACPiPEdgeNone) [self setStashedEdge:ACPiPEdgeNone];
-  [self stopMotion];
   [self rescueIfLost];
 }
 
 - (void)stashAt:(ACPiPEdge)edge {
   _stashScreen = [self homeScreen];
+  _stashDisplayID = _stashScreen.deviceDescription[@"NSScreenNumber"];
   [self setStashedEdge:edge];
   [self animateTo:[self frameStashedAt:edge]];
 }
@@ -1392,6 +1397,44 @@ id FindBackToTabButton(id element, int depth) {
   return nil;
 }
 
+NSDictionary *CheckPictureInPicturePlacement(NSWindow *window) {
+  NSMutableArray *steps = [NSMutableArray array];
+  NSArray<NSScreen *> *screens = NSScreen.screens;
+  NSScreen *target = screens.count > 1 ? screens[1] : screens.firstObject;
+  if (!target) return @{@"steps" : @[@{@"step" : @"connected display", @"pass" : @NO}], @"secondDisplay" : @NO};
+  const NSRect initial = window.frame;
+  NSRect placed = initial;
+  placed.origin = NSMakePoint(NSMidX(target.visibleFrame) - NSWidth(placed) / 2,
+                             NSMidY(target.visibleFrame) - NSHeight(placed) / 2);
+  [window setFrame:placed display:NO];
+  placed = window.frame;
+  const NSNumber *displayID = target.deviceDescription[@"NSScreenNumber"];
+  const NSInteger level = window.level;
+  const NSWindowCollectionBehavior behavior = window.collectionBehavior;
+  const NSInteger activations = gActivations;
+  auto record = [&](NSString *name) {
+    NSNumber *actual = ScreenFor(window.frame).deviceDescription[@"NSScreenNumber"];
+    const BOOL pass = NSEqualRects(window.frame, placed) && [actual isEqual:displayID] &&
+                      window.level == level && window.collectionBehavior == behavior &&
+                      !NSRunningApplication.currentApplication.active && activations == gActivations;
+    [steps addObject:@{@"step" : name, @"pass" : @(pass), @"frame" : NSStringFromRect(window.frame),
+                       @"screenID" : actual ?: @0, @"level" : @(window.level),
+                       @"systemAppActive" : @(NSRunningApplication.currentApplication.active),
+                       @"activationAttempts" : @(gActivations - activations),
+                       @"collectionBehavior" : @(window.collectionBehavior)}];
+  };
+  record(@"moved to chosen display");
+  [NSWorkspace.sharedWorkspace.notificationCenter postNotificationName:NSWorkspaceActiveSpaceDidChangeNotification object:nil];
+  record(@"simulated Space change");
+  [NSNotificationCenter.defaultCenter postNotificationName:NSApplicationDidBecomeActiveNotification object:NSApp];
+  record(@"simulated application activation notification");
+  [NSNotificationCenter.defaultCenter postNotificationName:NSApplicationDidChangeScreenParametersNotification object:NSApp];
+  record(@"unchanged display configuration notification");
+  return @{@"steps" : steps, @"secondDisplay" : @(screens.count > 1), @"displayCount" : @(screens.count),
+           @"chosenScreenID" : displayID ?: @0, @"initialFrame" : NSStringFromRect(initial),
+           @"placedFrame" : NSStringFromRect(placed), @"simulationOnly" : @YES};
+}
+
 NSString *ClickDocumentBackToTab() {
   NSWindow *window = nil;
   for (NSWindow *candidate in NSApp.windows)
@@ -1433,6 +1476,17 @@ NSString *ClickDocumentBackToTab() {
       @"fullScreenAuxiliary" : @((window.collectionBehavior & NSWindowCollectionBehaviorFullScreenAuxiliary) != 0),
       @"allSpaces" : @((window.collectionBehavior & NSWindowCollectionBehaviorCanJoinAllSpaces) != 0),
       @"activationIndependent" : @([window respondsToSelector:@selector(activationIndependence)] && [window activationIndependence]),
+      @"canJoinAllApplications" : @((window.collectionBehavior & NSWindowCollectionBehaviorCanJoinAllApplications) != 0),
+      @"stationary" : @((window.collectionBehavior & NSWindowCollectionBehaviorStationary) != 0),
+      @"disallowsTiling" : @((window.collectionBehavior & NSWindowCollectionBehaviorFullScreenDisallowsTiling) != 0),
+      @"collectionBehavior" : @(window.collectionBehavior),
+      @"excludesWindowsMenu" : @(window.excludedFromWindowsMenu),
+      @"role" : window.accessibilityRole ?: @"",
+      @"subrole" : window.accessibilitySubrole ?: @"",
+      @"positionWritable" : @([window accessibilityIsAttributeSettable:NSAccessibilityPositionAttribute]),
+      @"sizeWritable" : @([window accessibilityIsAttributeSettable:NSAccessibilitySizeAttribute]),
+      @"screenID" : ScreenFor(window.frame).deviceDescription[@"NSScreenNumber"] ?: @0,
+      @"screenFrame" : NSStringFromRect(ScreenFor(window.frame).frame),
       @"frame" : NSStringFromRect(window.frame),
       @"visible" : @(window.visible),
       @"alpha" : @(window.alphaValue),
@@ -1455,6 +1509,15 @@ NSString *ClickDocumentBackToTab() {
 }
 
 + (NSString *)devPictureInPictureAction:(NSString *)action {
+  if ([action hasPrefix:@"placement:"]) {
+    const BOOL document = [[action substringFromIndex:10] isEqual:@"document"];
+    for (NSWindow *window in NSApp.windows) {
+      if (!window.visible || (document ? !IsChromeDocumentPictureInPicture(window) : ![ACPiPController forWindow:window])) continue;
+      NSData *json = [NSJSONSerialization dataWithJSONObject:CheckPictureInPicturePlacement(window) options:0 error:nil];
+      return json ? [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding] : @"";
+    }
+    return @"";
+  }
   if ([action isEqual:@"documentBackToTab"]) return ClickDocumentBackToTab();
   if ([action hasPrefix:@"documentSnapshot:"]) {
     for (NSWindow *window in NSApp.windows)

@@ -20,7 +20,7 @@ const publishLive = () => liveListeners.get("onLiveReplica")?.({ revision: ++liv
 
 export const emitBookmarkProjection = () => liveListeners.get("onBookmarkProjectionChanged")?.({});
 
-type TestBookmarkWriter = { projection?(): unknown; reload?(): Promise<void>; state(): unknown; snapshot(profileId: string): unknown; replace(...args: unknown[]): unknown; replaceWithRecords(...args: unknown[]): unknown; submit(...args: unknown[]): Promise<unknown>; ackBookmarkFacts(...args: unknown[]): unknown; observeBookmarkRecords(...args: unknown[]): unknown; clearBookmarkFacts(...args: unknown[]): unknown; setBookmarkSyncLinks(...args: unknown[]): unknown };
+type TestBookmarkWriter = { acknowledgeReceipt?(...args: unknown[]): unknown; projection?(): unknown; reload?(): Promise<void>; state(): unknown; snapshot(profileId: string): unknown; replace(...args: unknown[]): unknown; replaceWithRecords(...args: unknown[]): unknown; submit(...args: unknown[]): Promise<unknown>; ackBookmarkFacts(...args: unknown[]): unknown; observeBookmarkRecords(...args: unknown[]): unknown; clearBookmarkFacts(...args: unknown[]): unknown; setBookmarkSyncLinks(...args: unknown[]): unknown };
 const testBookmarkWriter = (): TestBookmarkWriter => {
   const writer = (globalThis as { acTestBookmarkWriter?: TestBookmarkWriter }).acTestBookmarkWriter;
   if (!writer) throw new Error("native bookmarks are not owned by this launch");
@@ -28,11 +28,12 @@ const testBookmarkWriter = (): TestBookmarkWriter => {
 };
 
 const settingsModule = {
-  bookmarkWriterAPIVersion: () => 3,
+  bookmarkWriterAPIVersion: () => 4,
   bookmarkWriterState: () => ((globalThis as { acTestBookmarkWriter?: TestBookmarkWriter }).acTestBookmarkWriter?.state() ?? { state: "legacy" }),
   bookmarkWriterSnapshot: (profileId: string) => testBookmarkWriter().snapshot(profileId),
   bookmarkProjection: () => JSON.stringify(testBookmarkWriter().projection?.()),
   reloadBookmarkProjection: async () => testBookmarkWriter().reload?.(),
+  acknowledgeBookmarkReceipt: (...args: unknown[]) => testBookmarkWriter().acknowledgeReceipt?.(...args) ?? false,
   ackBookmarkFacts: (...args: unknown[]) => testBookmarkWriter().ackBookmarkFacts(...args),
   ackBookmarkFactsForLink: (...args: unknown[]) => testBookmarkWriter().ackBookmarkFacts(...args),
   observeBookmarkRecordsForLink: (...args: unknown[]) => testBookmarkWriter().observeBookmarkRecords(...args),

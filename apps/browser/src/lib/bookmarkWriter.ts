@@ -1,5 +1,5 @@
 import { refreshBookmarkProjection } from "../store/bookmarkProjection";
-import { bookmarkWriterErrorCode, bookmarkWriterSnapshot, bookmarkWriterState, submitBookmarkMutations, whileBookmarkEngineHolds } from "@solara/settings";
+import { bookmarkWriterErrorCode, bookmarkWriterSnapshot, bookmarkWriterState, newBookmarkRequestID, submitBookmarkMutations, whileBookmarkEngineHolds } from "@solara/settings";
 import type { BookmarkDraft, RemovedBookmarks } from "../store/bookmarks";
 import { showToast } from "../components/layout/toasts";
 import { useBrowser } from "../store/browser";
@@ -18,8 +18,6 @@ export type BookmarkMethod =
 
 export type BookmarkMutation = { method: BookmarkMethod; args: unknown[] };
 
-let requests = 0;
-
 export class BookmarkConditionFailed extends Error {}
 
 export const isBookmarkConditionFailure = (error: unknown) => bookmarkWriterErrorCode(error) === "conditionFailed" || /bookmark replacement refused: conditionFailed\("/.test(error instanceof Error ? error.message : String(error));
@@ -28,7 +26,7 @@ export function projectNativeBookmarks(_engine: string, _revision: string, _docu
   return refreshBookmarkProjection(useBrowser);
 }
 
-export async function submitBookmarks(profileId: string, mutations: BookmarkMutation[], requestId = `bookmarks-${Date.now()}-${++requests}`): Promise<unknown[]> {
+export async function submitBookmarks(profileId: string, mutations: BookmarkMutation[], requestId = newBookmarkRequestID("bookmarks")): Promise<unknown[]> {
   const ownership = bookmarkWriterState();
   if (ownership.state !== "owned") throw new Error("Bookmark editing is paused while native ownership is unavailable");
   const first = bookmarkWriterSnapshot(profileId);
@@ -36,6 +34,10 @@ export async function submitBookmarks(profileId: string, mutations: BookmarkMuta
   try {
     receipt = await whileBookmarkEngineHolds(profileId, { engine: first.engine, generation: first.generation }, (binding) => submitBookmarkMutations(profileId, mutations, binding, requestId));
   } catch (error) {
+    if (bookmarkWriterErrorCode(error) === "expired") {
+      refreshBookmarkProjection(useBrowser);
+      throw error;
+    }
     if (!isBookmarkConditionFailure(error)) throw error;
     refreshBookmarkProjection(useBrowser);
     throw new BookmarkConditionFailed(error instanceof Error ? error.message : String(error));
@@ -51,6 +53,7 @@ const trimmed = (args: unknown[]) => {
 };
 
 export const reportBookmarkFailure = (error: unknown, { toast = true }: { toast?: boolean } = {}) => {
+  if (bookmarkWriterErrorCode(error) === "expired") return;
   const message = error instanceof Error ? error.message : String(error);
   const uncertain = bookmarkWriterErrorCode(error) === "savedUnconfirmed" || /savedUnconfirmed|may have been saved/.test(message);
   console.warn(uncertain ? "[bookmarks] the edit may have been saved; changes are paused" : "[bookmarks] the edit was not saved", error);

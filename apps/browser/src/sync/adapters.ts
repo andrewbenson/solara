@@ -1,5 +1,5 @@
 import { deletePassword, savePassword } from "@solara/solaracore";
-import { ackBookmarkFacts, bookmarkWriterSnapshot, bookmarkWriterState, clearBookmarkFacts, observeBookmarkRecords, replaceBookmarkDocumentWithRecords, type BookmarkFactClear } from "@solara/settings";
+import { ackBookmarkFacts, bookmarkWriterErrorCode, bookmarkWriterSnapshot, bookmarkWriterState, clearBookmarkFacts, observeBookmarkRecords, replaceBookmarkDocumentWithRecords, type BookmarkFactClear } from "@solara/settings";
 import { nativeAddHistoryVisits, nativeDeleteHistoryUrls } from "@solara/settings";
 import { ApplyRefusal, assignPositions, canonical, editHLC, hlcDevice, SyncNative, type Adapter, type SavedLogin, type SyncRecord } from "@solara/sync";
 import { bookmarkUuidFor, isBookmarkUuid, rootIdsFor } from "../store/bookmarks";
@@ -509,6 +509,9 @@ function nativeBookmarksAdapter(profileId: string, sync?: BookmarkSyncContext): 
           try { clearBookmarkFacts(profileId, binding, clears); } catch {}
         }
         return true;
+      }, (error: unknown) => {
+        if (bookmarkWriterErrorCode(error) === "expired") return false;
+        throw error;
       });
     },
   };

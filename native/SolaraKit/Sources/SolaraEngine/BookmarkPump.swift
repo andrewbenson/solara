@@ -236,14 +236,19 @@ public final class BookmarkPump {
           let client = client
           let coordinator = coordinator
           let epoch = epoch
-          let tree = try await coordinator.engineQueue.perform(engine: engine) {
-            guard coordinator.ownsPump(engine: engine, epoch: epoch) else { throw BookmarkCoordinatorError.staleRevision }
-            return try await client.readTree(engine)
+          let fetched = try await coordinator.engineQueue.perform(engine: engine) {
+            guard let read = await coordinator.offMain({ coordinator.beginReceiptRead(engine: engine, epoch: epoch) }) else { throw BookmarkCoordinatorError.staleRevision }
+            guard coordinator.ownsPump(engine: engine, epoch: epoch) else { coordinator.endReceiptRead(read); throw BookmarkCoordinatorError.staleRevision }
+            do { return (try await client.readTree(engine), read) }
+            catch { coordinator.endReceiptRead(read); throw error }
           }
+          let tree = fetched.0
+          let receiptRead = fetched.1
+          defer { coordinator.endReceiptRead(receiptRead) }
           guard !stopped, coordinator.ownsPump(engine: engine, epoch: epoch) else { return }
           let document = try Self.document(tree, engine: engine)
           let revision = view.revision
-          let read = await coordinator.offMain { coordinator.completeRead(engine: engine, document: document, capturedRevision: revision, epoch: epoch) }
+          let read = await coordinator.offMain { coordinator.completeRead(engine: engine, document: document, capturedRevision: revision, epoch: epoch, receiptRead: receiptRead) }
           guard read else {
             guard journalFailed(engine, lane) else { return }
             continue
@@ -301,6 +306,10 @@ public final class BookmarkPump {
           }
           journaled(lane)
         }
+        if coordinator.needsReceiptConfirmation(engine: engine) {
+          lane.read = true
+          continue
+        }
         return
       }
       let coordinator = coordinator
@@ -332,7 +341,7 @@ public final class BookmarkPump {
       }
       journaled(lane)
       lane.push = true
-      if !succeeded || coordinator.migrationNeedsConfirmation(engine: engine) { lane.read = true }
+      if !succeeded || coordinator.migrationNeedsConfirmation(engine: engine) || coordinator.needsReceiptConfirmation(engine: engine) { lane.read = true }
     }
   }
 

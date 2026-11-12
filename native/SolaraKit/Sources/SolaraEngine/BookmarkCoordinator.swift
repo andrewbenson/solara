@@ -9,6 +9,7 @@ public struct BookmarkMutation: Equatable, Sendable {
 
 public enum BookmarkCoordinatorError: Error, Equatable {
   case conflictingRequest
+  case expiredRequest
   case staleRevision
   case invalidProfileScope
   case unknownMutation(String)
@@ -106,10 +107,17 @@ public final class BookmarkCoordinator: @unchecked Sendable {
   private var pendingChromeDeltas: JSMap<PendingChromeDelta> = [:]
   #if DEBUG
     private var pendingDiffCount = 0
+    var receiptReadAdmissionForTesting: (() -> Void)?
     var pendingDiffCountForTesting: Int { locked { pendingDiffCount } }
   #endif
   private let launchLegacyPendingEngines: Set<JSKey>
   private var durability: BookmarkDurability
+  private var receiptReads: JSMap<BookmarkReceiptRead> = [:]
+  private var pendingReceiptDeliveries = Set<JSKey>()
+  private var receiptMaintenance: DispatchWorkItem?
+  private var receiptMaintenanceDeadline: DispatchTime?
+  private var receiptMaintenanceGeneration: UInt64 = 0
+  private var receiptMaintenanceEnabled = true
   private var streams: [UUID: (JSKey, BookmarkMembershipObserver)] = [:]
   private var viewStreams: [UUID: (JSKey, BookmarkViewObserver)] = [:]
 
@@ -122,7 +130,7 @@ public final class BookmarkCoordinator: @unchecked Sendable {
     self.stampsEnabled = stampsEnabled
     self.canonicalURL = canonicalURL
     launchLegacyPendingEngines = launchInput.legacyPendingEngines
-    durability = BookmarkDurability(store: pendingStore)
+    durability = BookmarkDurability(store: pendingStore, now: now)
     legacySource = launchInput.legacyMigration ?? BookmarkLegacyMigration.recover(directory: launchInput.directory, sourceID: durability.legacyMigration?.source)
     launchLegacyProfiles = profiles
     reconcileLegacyLaunch()
@@ -169,7 +177,9 @@ public final class BookmarkCoordinator: @unchecked Sendable {
         return (engine, BookmarkFlat(document: try BookmarkURLProjection.normalize(document, captureWire: false, canonicalURL: canonicalURL).document, engine: engine))
       })
       let requests = try durability.requests.mapValues { stored in
-        BookmarkStoredRequest(payload: stored.payload, receipt: BookmarkReceipt(view: try normalizedView(stored.receipt.view), results: stored.receipt.results))
+        var normalized = stored
+        normalized.receipt = BookmarkReceipt(view: try normalizedView(stored.receipt.view), results: stored.receipt.results)
+        return normalized
       }
       var migration = durability.legacyMigration
       if let progress = migration {
@@ -230,8 +240,11 @@ public final class BookmarkCoordinator: @unchecked Sendable {
     views.mapValues { ownerProfile($0.engine) }
   }
 
-  private func checkpoint(views: JSMap<BookmarkDesiredView>, bases: JSMap<BookmarkFlat>, factSequence: UInt64? = nil, syncLinks: JSMap<String>? = nil, requestID: String? = nil, payload: JSONValue = .null, receipt: BookmarkReceipt? = nil, conflicts: [JSONValue]? = nil) -> BookmarkCheckpointInput {
-    BookmarkCheckpointInput(views: views, bases: bases, owners: owners(for: views), requestID: requestID, payload: payload, receipt: receipt, conflicts: conflicts, factSequence: factSequence ?? durability.factSequence, syncLinks: syncLinks ?? durability.syncLinks)
+  private func checkpoint(views: JSMap<BookmarkDesiredView>, bases: JSMap<BookmarkFlat>, ownerProfiles: JSMap<String>? = nil, factSequence: UInt64? = nil, syncLinks: JSMap<String>? = nil, requestID: String? = nil, payload: JSONValue = .null, receipt: BookmarkReceipt? = nil, conflicts: [JSONValue]? = nil, includePendingDeliveries: Bool = true) -> BookmarkCheckpointInput {
+    var input = BookmarkCheckpointInput(views: views, bases: bases, owners: ownerProfiles ?? owners(for: views), requestID: requestID, payload: payload, receipt: receipt, conflicts: conflicts, factSequence: factSequence ?? durability.factSequence, syncLinks: syncLinks ?? durability.syncLinks)
+    input.activeReceiptReads = Set(receiptReads.values.map { JSKey($0.engine) })
+    if includePendingDeliveries { input.acknowledgedRequestIDs = pendingReceiptDeliveries }
+    return input
   }
 
   private func writing<T>(_ body: () throws -> T) rethrows -> T {
@@ -240,14 +253,24 @@ public final class BookmarkCoordinator: @unchecked Sendable {
     return try body()
   }
 
-  private func transact<T>(admission: (() throws -> Void)? = nil, _ prepare: () throws -> (BookmarkCheckpointInput?, () -> T)) throws -> T {
+  private func transact<T>(admission: (() throws -> Void)? = nil, maintainReceipts: Bool = false, _ prepare: () throws -> (BookmarkCheckpointInput?, () -> T)) throws -> T {
     try writing {
       try admission?()
+      if maintainReceipts { _ = try maintainReceiptsWhileWriting(includePendingDeliveries: false) }
       let (input, install) = try locked(prepare)
-      let checkpoint = try input.map { try durability.prepare($0) }
-      do {
-        if let checkpoint { try durability.store?.write(checkpoint.payload) }
-      } catch {
+      let checkpoint = try input.flatMap { try durability.prepare($0) }
+      if let checkpoint { try persist(checkpoint) }
+      return locked {
+        if let checkpoint { installCheckpoint(checkpoint); armReceiptMaintenance() }
+        return install()
+      }
+    }
+  }
+
+  private func persist(_ checkpoint: BookmarkCheckpoint) throws {
+    do {
+      try durability.store?.write(checkpoint.payload)
+    } catch {
         let publications = locked {
           durability.recordWriteFailure(error)
           for engine in views.keys {
@@ -259,16 +282,107 @@ public final class BookmarkCoordinator: @unchecked Sendable {
           return views.keys.map { notifications($0) }
         }
         for publication in publications { deliver(publication) }
-        throw error
-      }
+      throw error
+    }
+  }
+
+  @discardableResult
+  public func maintainReceipts(admission: (() throws -> Void)? = nil) throws -> Bool {
+    try writing {
+      try admission?()
+      return try maintainReceiptsWhileWriting()
+    }
+  }
+
+  private func maintainReceiptsWhileWriting(includePendingDeliveries: Bool = true) throws -> Bool {
+    defer { locked { armReceiptMaintenance() } }
+    let input = locked { durability.writable ? checkpoint(views: views, bases: bases, includePendingDeliveries: includePendingDeliveries) : nil }
+    guard let input, let checkpoint = try durability.prepare(input, maintenanceOnly: true) else { return false }
+    try persist(checkpoint)
+    locked { installCheckpoint(checkpoint) }
+    return true
+  }
+
+  private func installCheckpoint(_ checkpoint: BookmarkCheckpoint) {
+    durability.install(checkpoint)
+    pendingReceiptDeliveries.subtract(checkpoint.acknowledgedRequestIDs)
+    pendingReceiptDeliveries = pendingReceiptDeliveries.filter { checkpoint.requests[$0.text] != nil }
+  }
+
+  @discardableResult
+  public func acknowledgeReceipt(requestID: String, engine: String, admission: (() throws -> Void)? = nil) throws -> Bool {
+    try admission?()
+    return try locked {
+      guard durability.writable else { throw BookmarkPendingStoreError.unavailable }
+      guard let request = durability.requests[requestID] else { return durability.expiredRequests[requestID].map { JSKey($0) == JSKey(engine) } ?? false }
+      guard JSKey(request.receipt.view.engine) == JSKey(engine), !blockedEngines.contains(JSKey(engine)), durability.terminalEngines[engine] == nil else { throw BookmarkWriterError.staleBinding }
+      guard !request.delivered else { return true }
+      if pendingReceiptDeliveries.insert(JSKey(requestID)).inserted { armReceiptMaintenance(deliveryOnly: true) }
+      return true
+    }
+  }
+
+  func needsReceiptConfirmation(engine: String) -> Bool {
+    locked {
+      let view = desiredView(engine: engine)
+      guard durability.writable, view.readyForSync, view.structuralBreak == nil,
+        !durability.legacyPendingEngines.contains(JSKey(engine)),
+        !durability.conflicts.contains(where: { $0["engine"]?.string.map { JSKey($0) == JSKey(engine) } ?? true }) else { return false }
+      return durability.requests.values.contains { JSKey($0.receipt.view.engine) == JSKey(engine) && !$0.confirmed }
+    }
+  }
+
+  func beginReceiptRead(engine: String, epoch: UInt64) -> BookmarkReceiptRead? {
+    writing {
+      #if DEBUG
+        receiptReadAdmissionForTesting?()
+      #endif
       return locked {
-        if let checkpoint { durability.install(checkpoint) }
-        return install()
+        guard ownsPump(engine: engine, epoch: epoch), receiptReads[engine] == nil else { return nil }
+        let read = BookmarkReceiptRead(id: UUID(), engine: engine, epoch: epoch, watermark: durability.requestSequence)
+        receiptReads[engine] = read
+        return read
       }
     }
   }
 
+  func endReceiptRead(_ read: BookmarkReceiptRead) {
+    locked { if receiptReads[read.engine]?.id == read.id { receiptReads.removeValue(forKey: read.engine) } }
+  }
+
+  private func armReceiptMaintenance(deliveryOnly: Bool = false) {
+    if deliveryOnly, receiptMaintenanceEnabled, durability.writable, let deadline = receiptMaintenanceDeadline, deadline <= .now() + .milliseconds(100) { return }
+    receiptMaintenance?.cancel()
+    receiptMaintenance = nil
+    receiptMaintenanceDeadline = nil
+    receiptMaintenanceGeneration &+= 1
+    guard receiptMaintenanceEnabled, durability.writable else { return }
+    let delays = [deliveryOnly ? 100 : durability.receiptMaintenanceDelay(), pendingReceiptDeliveries.isEmpty ? nil : 100].compactMap { $0 }
+    guard let delay = delays.min() else { return }
+    let generation = receiptMaintenanceGeneration
+    let work = DispatchWorkItem { [weak self] in
+      guard let self else { return }
+      self.writing {
+        guard self.locked({ self.receiptMaintenanceEnabled && self.receiptMaintenanceGeneration == generation }) else { return }
+        _ = try? self.maintainReceiptsWhileWriting()
+      }
+    }
+    receiptMaintenance = work
+    let deadline = DispatchTime.now() + max(0.001, delay / 1000)
+    receiptMaintenanceDeadline = deadline
+    journalQueue.asyncAfter(deadline: deadline, execute: work)
+  }
+
+  private func stopReceiptMaintenance() {
+    receiptMaintenanceEnabled = false
+    receiptMaintenanceGeneration &+= 1
+    receiptMaintenance?.cancel()
+    receiptMaintenance = nil
+    receiptMaintenanceDeadline = nil
+  }
+
   deinit {
+    receiptMaintenance?.cancel()
     for stream in streams.values { stream.1.finish() }
     for stream in viewStreams.values { stream.1.finish() }
   }
@@ -302,7 +416,7 @@ public final class BookmarkCoordinator: @unchecked Sendable {
         for engine in views.keys { previous[engine] = ownerProfile(engine) }
         let nextOwning = owningProfiles ?? self.owningProfiles
         let nextOwners = views.mapValues { ownerProfile($0.engine, profiles: profiles, owningProfiles: nextOwning, previous: previous) }
-        let checkpoint = durability.writable ? BookmarkCheckpointInput(views: views, bases: bases, owners: nextOwners, requestID: nil, payload: .null, receipt: nil, conflicts: nil, factSequence: durability.factSequence, syncLinks: durability.syncLinks) : nil
+        let checkpoint = durability.writable ? checkpoint(views: views, bases: bases, ownerProfiles: nextOwners) : nil
         return (checkpoint, {
           self.profiles = profiles
           self.defaultProfile = defaultProfile
@@ -336,7 +450,7 @@ public final class BookmarkCoordinator: @unchecked Sendable {
       locked {
         guard let store = durability.store else { return }
         store.invalidateLoadedForOwnerReplacement()
-        let restored = BookmarkDurability(store: store)
+        let restored = BookmarkDurability(store: store, now: now)
         for engine in durability.restoredViews.keys + restored.terminalEngines.keys {
           views.removeValue(forKey: engine)
           bases.removeValue(forKey: engine)
@@ -346,6 +460,8 @@ public final class BookmarkCoordinator: @unchecked Sendable {
           bases[engine] = restored.restoredBases[engine]
         }
         durability = restored
+        pendingReceiptDeliveries.removeAll()
+        receiptMaintenanceEnabled = true
         reconcileLegacyLaunch()
         lastOwningProfiles = restored.owners
         normalizeRetainedURLs()
@@ -358,10 +474,10 @@ public final class BookmarkCoordinator: @unchecked Sendable {
     }
   }
 
-  func fencePumpAdmissions() { locked { ownerGeneration += 1; pumpEpoch += 1 } }
+  func fencePumpAdmissions() { locked { ownerGeneration += 1; pumpEpoch += 1; receiptReads.removeAll(); stopReceiptMaintenance() } }
 
   func invalidatePumps() {
-    writing { locked { ownerGeneration += 1; pumpEpoch += 1 } }
+    writing { locked { ownerGeneration += 1; pumpEpoch += 1; receiptReads.removeAll(); stopReceiptMaintenance() } }
   }
 
   private func aliases(_ engine: String) -> [String] { profiles.filter { BookmarkReconcile.same($1, engine) }.keys }
@@ -583,12 +699,13 @@ public final class BookmarkCoordinator: @unchecked Sendable {
 
   @discardableResult
   public func submit(profile: String, mutations: [BookmarkMutation], fromSync: Bool = false, requestID: String? = nil, expectedPumpEpoch: UInt64? = nil, expectedEngine: String? = nil, admission: (() throws -> Void)? = nil) throws -> BookmarkReceipt {
-    let result = try transact(admission: admission) { () throws -> (BookmarkCheckpointInput?, () -> (BookmarkReceipt, BookmarkPublication)) in
+    let result = try transact(admission: admission, maintainReceipts: true) { () throws -> (BookmarkCheckpointInput?, () -> (BookmarkReceipt, BookmarkPublication)) in
       if let expectedPumpEpoch, expectedPumpEpoch != pumpEpoch { throw BookmarkCoordinatorError.staleRevision }
       let engine = engine(profile: profile)
       guard !blockedEngines.contains(JSKey(engine)), durability.terminalEngines[engine] == nil else { throw BookmarkWriterError.staleBinding }
       if let expectedEngine { try validateBinding(profile: profile, expectedEngine: expectedEngine) }
       let payload: JSONValue = ["kind": "submit", "profile": .string(profile), "engine": .string(engine), "fromSync": .bool(fromSync), "mutations": .array(mutations.map { ["method": .string($0.method), "args": .array($0.args)] })]
+      if let requestID, durability.expiredRequests[requestID] != nil { throw BookmarkCoordinatorError.expiredRequest }
       guard !bookmarkEditsPaused(engine: engine) else { throw BookmarkPendingStoreError.unavailable }
       if let receipt = try durability.receipt(requestID: requestID, payload: payload) { return (nil, { (receipt, self.silentPublication(self.desiredView(engine: engine))) }) }
       var view = desiredView(engine: engine)
@@ -663,12 +780,13 @@ public final class BookmarkCoordinator: @unchecked Sendable {
 
   @discardableResult
   public func replaceDocument(engine: String, profile: String? = nil, document: JSONValue, expectedRevision: UInt64, requestID: String? = nil, expectedEngine: String? = nil, records: [(key: String, hlc: String)] = [], expectedLink: String? = nil, admission: (() throws -> Void)? = nil) throws -> BookmarkReceipt {
-    let result = try transact(admission: admission) { () throws -> (BookmarkCheckpointInput?, () -> (BookmarkReceipt, BookmarkPublication)) in
+    let result = try transact(admission: admission, maintainReceipts: true) { () throws -> (BookmarkCheckpointInput?, () -> (BookmarkReceipt, BookmarkPublication)) in
       guard !blockedEngines.contains(JSKey(engine)), durability.terminalEngines[engine] == nil else { throw BookmarkWriterError.staleBinding }
       if let expectedEngine {
         guard let profile, BookmarkReconcile.same(engine, expectedEngine) else { throw BookmarkWriterError.staleBinding }
         try validateBinding(profile: profile, expectedEngine: expectedEngine)
       }
+      if let requestID, durability.expiredRequests[requestID] != nil { throw BookmarkCoordinatorError.expiredRequest }
       guard records.allSatisfy({ $0.key.hasPrefix("bm:") }) else { throw BookmarkWriterError.invalidDocument("observations need bookmark record keys") }
       if stampsEnabled, let expectedLink {
         guard let profile, JSKey(durability.syncLinks[profile] ?? "none") == JSKey(expectedLink) else { throw BookmarkWriterError.staleBinding }
@@ -707,7 +825,8 @@ public final class BookmarkCoordinator: @unchecked Sendable {
   }
 
   @discardableResult
-  public func completeRead(engine: String, document: JSONValue, capturedRevision: UInt64, epoch: UInt64? = nil) -> Bool {
+  public func completeRead(engine: String, document: JSONValue, capturedRevision: UInt64, epoch: UInt64? = nil, receiptRead: BookmarkReceiptRead? = nil) -> Bool {
+    defer { if let receiptRead { endReceiptRead(receiptRead) } }
     let result: BookmarkPublication
     var backupFailure: String?
     if let legacySource, locked({ durability.writable && !durability.legacyPendingEngines.isEmpty }) {
@@ -716,6 +835,9 @@ public final class BookmarkCoordinator: @unchecked Sendable {
     do {
       result = try transact { () throws -> (BookmarkCheckpointInput?, () -> BookmarkPublication) in
         guard !urlRecoveryHeld, !blockedEngines.contains(JSKey(engine)), durability.terminalEngines[engine] == nil, epoch == nil || epoch == pumpEpoch else { throw BookmarkCoordinatorError.staleRevision }
+        if let receiptRead {
+          guard JSKey(receiptRead.engine) == JSKey(engine), receiptRead.epoch == pumpEpoch, receiptReads[engine]?.id == receiptRead.id else { throw BookmarkCoordinatorError.staleRevision }
+        }
         var view = desiredView(engine: engine)
         let requiredRead = view.requiresRead || view.inFlightTarget != nil
         view.requiresRead = false
@@ -829,6 +951,8 @@ public final class BookmarkCoordinator: @unchecked Sendable {
         var input = durability.writable ? checkpoint(views: nextViews, bases: nextBases, conflicts: conflicts) : nil
         input?.legacyPendingEngines = pending
         input?.legacyMigration = progress
+        input?.receiptRead = receiptRead
+        if let receiptRead { input?.activeReceiptReads.remove(JSKey(receiptRead.engine)) }
         return (input, {
           self.views = nextViews
           self.bases = nextBases
@@ -897,8 +1021,22 @@ public final class BookmarkCoordinator: @unchecked Sendable {
     writing { locked { pumpEpoch += 1; return pumpEpoch } }
   }
 
+  func claimPump(admission: () throws -> Void) throws -> UInt64 {
+    try writing {
+      let generation = locked { ownerGeneration }
+      try admission()
+      return try locked {
+        guard generation == ownerGeneration else { throw BookmarkCoordinatorError.staleRevision }
+        pumpEpoch += 1
+        receiptMaintenanceEnabled = true
+        armReceiptMaintenance()
+        return pumpEpoch
+      }
+    }
+  }
+
   func invalidatePump(epoch: UInt64) {
-    writing { locked { if pumpEpoch == epoch { pumpEpoch += 1 } } }
+    writing { locked { if pumpEpoch == epoch { pumpEpoch += 1; receiptReads.removeAll() } } }
   }
 
   private func hasPendingEdits(_ engine: String) -> Bool {

@@ -490,8 +490,8 @@ private final class PumpFixture {
   let time: PumpTime
   let engine: PumpEngine
   let pump: BookmarkPump
-  init(urls: [String] = ["https://a.test"], directory: URL? = nil, time: Double = 0, seed: Bool = true, fileOperations: BookmarkPendingFileOperations = .live) {
-    owner = BookmarkCoordinator(profiles: ["p": ""], defaultProfile: "p", makeID: { "new" }, pendingStore: directory.map { BookmarkPendingStore(directory: $0, fileOperations: fileOperations) })
+  init(urls: [String] = ["https://a.test"], directory: URL? = nil, time: Double = 0, seed: Bool = true, fileOperations: BookmarkPendingFileOperations = .live, stampsEnabled: Bool = false) {
+    owner = BookmarkCoordinator(profiles: ["p": ""], defaultProfile: "p", makeID: { "new" }, stampsEnabled: stampsEnabled, pendingStore: directory.map { BookmarkPendingStore(directory: $0, fileOperations: fileOperations) })
     self.time = PumpTime(time)
     engine = PumpEngine(document: BookmarkCoordinatorTests().document(urls))
     if seed { owner.seed(engine: "", document: engine.document, ready: true) }
@@ -508,6 +508,7 @@ private final class PumpEngine {
   var throwAfterApply = false
   var reject = false
   var rejectRead = false
+  var rejectAfterReads: Int?
   var loseBeforeApply: String?
   var hold = false
   var holdRead = false
@@ -526,7 +527,7 @@ private final class PumpEngine {
     maximumActive = max(maximumActive, active)
     defer { active -= 1 }
     if holdRead { await withCheckedContinuation { held = $0; arrival?.resume(); arrival = nil } }
-    if rejectRead { throw BookmarkReadUnavailable.unsupported }
+    if rejectRead || rejectAfterReads.map({ events.filter { $0 == "read" }.count > $0 }) == true { throw BookmarkReadUnavailable.unsupported }
     let nodes = document["nodes"]?.object ?? [:]
     func node(_ id: String) -> EngineBookmarkNode {
       let value = nodes[id]!
@@ -815,4 +816,72 @@ extension BookmarkPumpTests {
     #expect(drained)
     #expect(!replacement.desiredView(engine: "").hasView)
   }
+}
+
+@MainActor
+extension BookmarkPumpTests {
+  @Test func successfulRequestPushSchedulesAConfirmingRead() async throws {
+    let f = PumpFixture()
+    try await f.pump.submit(profile: "p", mutations: [.init(method: "updateBookmark", args: ["b0", ["title": "Receipted"]])], requestID: "confirm-push")
+    await f.pump.settle(engine: "")
+    #expect(f.engine.events == ["apply", "read"])
+    #expect(f.engine.document["nodes"]?["b0"]?["title"] == "Receipted")
+  }
+
+  @Test func noOpRequestSchedulesAConfirmingRead() async throws {
+    let f = PumpFixture()
+    try await f.pump.submit(profile: "p", mutations: [], requestID: "confirm-noop")
+    await f.pump.settle(engine: "")
+    #expect(f.engine.events == ["read"])
+  }
+}
+
+@MainActor
+extension BookmarkPumpTests {
+  @Test func requestAcceptedDuringAReadGetsItsOwnConfirmingRead() async throws {
+    let f = PumpFixture()
+    f.engine.holdRead = true
+    f.pump.requestRead(engine: "")
+    await f.engine.entered()
+    try await f.pump.submit(profile: "p", mutations: [], requestID: "after-read-start")
+    f.engine.release()
+    await f.pump.settle(engine: "")
+    #expect(f.engine.events == ["read", "read"])
+  }
+}
+
+@MainActor
+extension BookmarkPumpTests {
+  @Test func pendingFactsDoNotCauseRepeatedConfirmationReads() async throws {
+    let f = PumpFixture(stampsEnabled: true)
+    f.engine.rejectAfterReads = 1
+    try await f.pump.submit(profile: "p", mutations: [.init(method: "updateBookmark", args: ["b0", ["title": "Pending facts"]])], requestID: "facts-confirm")
+    await f.pump.settle(engine: "")
+    #expect(f.engine.events == ["apply", "read"])
+    #expect(!f.owner.bookmarkFacts(profileId: "p").isEmpty)
+    #expect(!f.owner.needsReceiptConfirmation(engine: ""))
+  }
+}
+
+@MainActor
+extension BookmarkPumpTests {
+  @Test func receiptReadAdmissionRunsOffMain() async {
+    let f = PumpFixture()
+    let observation = ReceiptReadAdmissionThread()
+    f.owner.receiptReadAdmissionForTesting = { observation.record() }
+    f.pump.requestRead(engine: "")
+    await f.pump.settle(engine: "")
+    #expect(observation.wasOffMain)
+    f.pump.stop()
+  }
+}
+
+private final class ReceiptReadAdmissionThread: @unchecked Sendable {
+  private let lock = NSLock()
+  private var admitted = false
+  private var usedMainThread = false
+  func record() {
+    lock.withLock { admitted = true; usedMainThread = usedMainThread || Thread.isMainThread }
+  }
+  var wasOffMain: Bool { lock.withLock { admitted && !usedMainThread } }
 }

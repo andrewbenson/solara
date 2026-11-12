@@ -1,4 +1,4 @@
-import { NativePage, type NativePageEvent } from "@solara/settings";
+import { bookmarkWriterErrorCode, NativePage, type NativePageEvent } from "@solara/settings";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet } from "react-native";
 import { useTheme } from "../../lib/theme";
@@ -70,7 +70,10 @@ export function NativeBookmarkDialog({ state }: { state: BookmarkDialogState }) 
   return <NativePage kind="bookmarkForm" state={json} style={StyleSheet.absoluteFill} onPageEvent={(e) => void onEvent(e.nativeEvent).catch(keepFormOpen)} />;
 }
 
-const keepFormOpen = (error: unknown) => console.warn("[bookmarks] the edit was not saved; the form stays open", error);
+const keepFormOpen = (error: unknown) => {
+  if (bookmarkWriterErrorCode(error) === "expired") return;
+  console.warn("[bookmarks] the edit was not saved; the form stays open", error);
+};
 
 export function NativeBookmarkEditor({ state }: { state: EditorState }) {
   const theme = useTheme();

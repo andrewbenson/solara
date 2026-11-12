@@ -129,6 +129,14 @@ modules before using them — this is a summary from the agent that built it.
   `moveBookmark`, `removeBookmark`, `toggleBookmark`, `addBookmarkTree`, `removeBookmarks`, `restoreBookmarks`).
   Receipts resolve after durable native acceptance; callers refresh the current native projection rather than
   installing a receipt's old document. Synchronous JS slice methods refuse bookmark authoring.
+  Request receipts have a finite retry lifetime. Identical live IDs replay their original receipt;
+  conflicting live payload reuse is refused. After explicit caller delivery acknowledgment, a covering Chrome
+  confirming read and fact acknowledgment, keep the receipt for five minutes and always keep the newest 32 per
+  engine. Later engine activity holds pruning while unsafe without restarting an established completion time.
+  Expired IDs refuse with `expired` for every payload and never apply again within that engine lifetime.
+  Small durable ID markers remain after full receipt removal. JS refreshes the projection on `expired` and stops
+  dependent work without a save-failure toast; it never automatically resubmits that mutation with a new ID.
+  API 4 requires post-delivery receipt acknowledgment. Acknowledgment failure safely retains history.
   `NativeBookmarkOwner` owns desired documents, edit facts and engine/profile route lifetimes; `BookmarkPump`
   alone reads and applies Chrome trees. JS subscribes to the aggregate native projection. Shared aliases display
   one engine revision; removed routes cannot retain old roots. `hasView` permits display; `readyForSync` alone

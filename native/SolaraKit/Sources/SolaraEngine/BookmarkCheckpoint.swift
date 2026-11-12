@@ -3,7 +3,12 @@ import SolaraModel
 
 struct BookmarkStoredRequest {
   let payload: JSONValue
-  let receipt: BookmarkReceipt
+  var receipt: BookmarkReceipt
+  var order: UInt64 = 0
+  var delivered = false
+  var confirmed = false
+  var settledAtMs: Double?
+  var legacy = false
 }
 
 struct BookmarkCheckpointInput {
@@ -21,6 +26,9 @@ struct BookmarkCheckpointInput {
   var incarnations: JSMap<UInt64>? = nil
   var retainedRequests: JSMap<BookmarkStoredRequest>? = nil
   var legacyMigration: BookmarkLegacyProgress? = nil
+  var acknowledgedRequestIDs = Set<JSKey>()
+  var receiptRead: BookmarkReceiptRead? = nil
+  var activeReceiptReads = Set<JSKey>()
 }
 
 struct BookmarkCheckpoint {
@@ -34,10 +42,17 @@ struct BookmarkCheckpoint {
   let terminalEngines: JSMap<String>
   let incarnations: JSMap<UInt64>
   let legacyMigration: BookmarkLegacyProgress?
+  let requestSequence: UInt64
+  let expiredRequests: JSMap<String>
+  let acknowledgedRequestIDs: Set<JSKey>
 }
 
 final class BookmarkDurability {
   let store: BookmarkPendingStore?
+  let now: () -> Double
+  var requestSequence: UInt64 = 0
+  var expiredRequests: JSMap<String> = [:]
+  var requiresRetentionMigration = false
   var notice: BookmarkRecoveryNotice?
   var writable = true
   var restoredViews: JSMap<BookmarkDesiredView> = [:]
@@ -52,8 +67,9 @@ final class BookmarkDurability {
   var legacyPendingEngines = Set<JSKey>()
   var legacyMigration: BookmarkLegacyProgress?
 
-  init(store: BookmarkPendingStore?) {
+  init(store: BookmarkPendingStore?, now: @escaping () -> Double = { Date().timeIntervalSince1970 * 1000 }) {
     self.store = store
+    self.now = now
     guard let store else { return }
     let loaded = store.load()
     notice = loaded.recoveryNotice
@@ -67,7 +83,8 @@ final class BookmarkDurability {
         let legacy = payload["legacyPendingEngines"]?.array,
         legacy.allSatisfy({ $0.string != nil }) else { throw BookmarkPendingStoreError.invalidEnvelope }
       let oldFormat = payload["formatVersion"] == nil
-      guard oldFormat || payload["formatVersion"] == 2 else { throw BookmarkPendingStoreError.invalidEnvelope }
+      let retentionFormat = payload["formatVersion"] == 3
+      guard oldFormat || payload["formatVersion"] == 2 || retentionFormat else { throw BookmarkPendingStoreError.invalidEnvelope }
       var sequence: UInt64 = 0
       var links: JSMap<String> = [:]
       if !oldFormat {
@@ -92,11 +109,44 @@ final class BookmarkDurability {
         bases[view.engine] = BookmarkFlat(records: records)
         owners[view.engine] = owner
       }
+      var requestSequence: UInt64 = 0
+      var expiredRequests: JSMap<String> = [:]
+      var orders = Set<UInt64>()
+      if retentionFormat {
+        guard let text = payload["requestSequence"]?.string, let sequence = UInt64(text), let expired = payload["expiredRequests"]?.object else { throw BookmarkPendingStoreError.invalidEnvelope }
+        requestSequence = sequence
+        for (id, value) in expired {
+          guard let engine = value.string, views[engine] != nil else { throw BookmarkPendingStoreError.invalidEnvelope }
+          expiredRequests[id] = engine
+        }
+      }
       for entry in receipts {
         guard let id = entry["id"]?.string, requests[id] == nil, let request = entry["payload"],
           let results = entry["results"]?.array else { throw BookmarkPendingStoreError.invalidEnvelope }
         let view = try Self.decodeView(entry["view"] ?? .null, oldFormat: oldFormat, factSequence: sequence)
-        requests[id] = BookmarkStoredRequest(payload: request, receipt: BookmarkReceipt(view: view, results: results))
+        var stored = BookmarkStoredRequest(payload: request, receipt: BookmarkReceipt(view: view, results: results))
+        if retentionFormat {
+          guard let text = entry["order"]?.string, let order = UInt64(text), order > 0, order <= requestSequence, orders.insert(order).inserted,
+            let delivered = entry["delivered"]?.bool, let confirmed = entry["confirmed"]?.bool, let legacy = entry["legacy"]?.bool,
+            let settled = entry["settledAtMs"], settled.isNull || settled.number.map({ $0.isFinite && $0 >= 0 }) == true,
+            settled.isNull || (delivered && confirmed), expiredRequests[id] == nil, views[view.engine] != nil else { throw BookmarkPendingStoreError.invalidEnvelope }
+          stored.order = order
+          stored.delivered = delivered
+          stored.confirmed = confirmed
+          stored.settledAtMs = settled.number
+          stored.legacy = legacy
+        } else {
+          guard requestSequence < UInt64.max else { throw BookmarkPendingStoreError.invalidEnvelope }
+          requestSequence += 1
+          stored.order = requestSequence
+          stored.legacy = true
+        }
+        if stored.legacy {
+          stored.delivered = true
+          stored.confirmed = false
+          stored.settledAtMs = nil
+        }
+        requests[id] = stored
       }
       var terminals: JSMap<String> = [:]
       var incarnations: JSMap<UInt64> = [:]
@@ -126,6 +176,9 @@ final class BookmarkDurability {
       restoredBases = bases
       self.owners = owners
       self.requests = requests
+      self.requestSequence = requestSequence
+      self.expiredRequests = expiredRequests
+      requiresRetentionMigration = !retentionFormat
       self.conflicts = conflicts
       if oldFormat { self.conflicts.append(["kind": "oldBookmarkStampFormat"]) }
       factSequence = sequence
@@ -139,53 +192,55 @@ final class BookmarkDurability {
   }
 
   func receipt(requestID: String?, payload: JSONValue) throws -> BookmarkReceipt? {
-    guard let requestID, let stored = requests[requestID] else { return nil }
+    guard let requestID else { return nil }
+    if expiredRequests[requestID] != nil { throw BookmarkCoordinatorError.expiredRequest }
+    guard let stored = requests[requestID] else { return nil }
     guard stored.payload == payload else { throw BookmarkCoordinatorError.conflictingRequest }
     return stored.receipt
   }
 
-  func prepare(_ input: BookmarkCheckpointInput) throws -> BookmarkCheckpoint {
-    try prepare(views: input.views, bases: input.bases, owners: input.owners, requestID: input.requestID, payload: input.payload, receipt: input.receipt, conflicts: input.conflicts, legacyPendingEngines: input.legacyPendingEngines, factSequence: input.factSequence, syncLinks: input.syncLinks, terminalEngines: input.terminalEngines, incarnations: input.incarnations, retainedRequests: input.retainedRequests, legacyMigration: input.legacyMigration)
-  }
-
-  func prepare(views: JSMap<BookmarkDesiredView>, bases: JSMap<BookmarkFlat>, owners: JSMap<String>, requestID: String? = nil, payload: JSONValue = .null, receipt: BookmarkReceipt? = nil, conflicts: [JSONValue]? = nil, legacyPendingEngines: Set<JSKey>? = nil, factSequence: UInt64? = nil, syncLinks: JSMap<String>? = nil, terminalEngines: JSMap<String>? = nil, incarnations: JSMap<UInt64>? = nil, retainedRequests: JSMap<BookmarkStoredRequest>? = nil, legacyMigration: BookmarkLegacyProgress? = nil) throws -> BookmarkCheckpoint {
+  func prepare(_ input: BookmarkCheckpointInput, maintenanceOnly: Bool = false) throws -> BookmarkCheckpoint? {
     guard writable else { throw BookmarkPendingStoreError.unavailable }
-    var nextRequests = retainedRequests ?? requests
-    if let requestID, let receipt { nextRequests[requestID] = BookmarkStoredRequest(payload: payload, receipt: receipt) }
-    let nextConflicts = conflicts ?? self.conflicts
-    let nextLegacy = legacyPendingEngines ?? self.legacyPendingEngines
-    let nextSequence = factSequence ?? self.factSequence
-    let nextLinks = syncLinks ?? self.syncLinks
-    let nextTerminals = terminalEngines ?? self.terminalEngines
-    let nextIncarnations = incarnations ?? self.incarnations
-    let nextMigration = legacyMigration ?? self.legacyMigration
+    let retention = try retention(input)
+    if maintenanceOnly && !retention.changed { return nil }
+    let nextRequests = retention.requests
+    let nextConflicts = input.conflicts ?? conflicts
+    let nextLegacy = input.legacyPendingEngines ?? legacyPendingEngines
+    let nextTerminals = input.terminalEngines ?? terminalEngines
+    let nextIncarnations = input.incarnations ?? incarnations
+    let nextMigration = input.legacyMigration ?? legacyMigration
     let checkpoint: JSONValue = [
-      "formatVersion": 2,
+      "formatVersion": 3,
+      "requestSequence": .string(String(retention.sequence)),
+      "expiredRequests": .object(retention.expired.mapValues(JSONValue.string)),
       "legacyMigration": nextMigration?.value ?? .null,
-      "factSequence": .string(String(nextSequence)),
-      "syncLinks": .object(nextLinks.mapValues(JSONValue.string)),
+      "factSequence": .string(String(input.factSequence)),
+      "syncLinks": .object(input.syncLinks.mapValues(JSONValue.string)),
       "terminalEngines": .object(nextTerminals.mapValues(JSONValue.string)),
       "incarnations": .object(nextIncarnations.mapValues { .string(String($0)) }),
       "kind": "bookmarkCoordinator",
-      "engines": .array(views.map { engine, view in
-        ["ownerProfile": .string(owners[engine] ?? self.owners[engine] ?? engine), "view": Self.encodeView(view), "base": .array(bases[engine]?.records ?? [])]
+      "engines": .array(input.views.map { engine, view in
+        ["ownerProfile": .string(input.owners[engine] ?? self.owners[engine] ?? engine), "view": Self.encodeView(view), "base": .array(input.bases[engine]?.records ?? [])]
       }),
       "requests": .array(nextRequests.map { id, request in
-        ["id": .string(id), "payload": request.payload, "view": Self.encodeView(request.receipt.view), "results": .array(request.receipt.results)]
+        ["id": .string(id), "payload": request.payload, "view": Self.encodeView(request.receipt.view), "results": .array(request.receipt.results), "order": .string(String(request.order)), "delivered": .bool(request.delivered), "confirmed": .bool(request.confirmed), "settledAtMs": request.settledAtMs.map(JSONValue.number) ?? .null, "legacy": .bool(request.legacy)]
       }),
       "conflicts": .array(nextConflicts),
       "legacyPendingEngines": .array(nextLegacy.sorted { BookmarkString.precedes($0.text, $1.text) }.map { .string($0.text) })
     ]
     if store != nil {
-      for (_, view) in views { try Self.validateDocument(view.document, engine: view.engine) }
-      for (engine, base) in bases { try Self.validateRecords(base.records, engine: engine) }
+      for (_, view) in input.views { try Self.validateDocument(view.document, engine: view.engine) }
+      for (engine, base) in input.bases { try Self.validateRecords(base.records, engine: engine) }
       guard try JSONValue.parseBookmark(checkpoint.bookmarkText()) == checkpoint else { throw BookmarkPendingStoreError.invalidEnvelope }
     }
-    return BookmarkCheckpoint(payload: checkpoint, requests: nextRequests, conflicts: nextConflicts, legacyPendingEngines: nextLegacy, owners: owners, factSequence: nextSequence, syncLinks: nextLinks, terminalEngines: nextTerminals, incarnations: nextIncarnations, legacyMigration: nextMigration)
+    return BookmarkCheckpoint(payload: checkpoint, requests: nextRequests, conflicts: nextConflicts, legacyPendingEngines: nextLegacy, owners: input.owners, factSequence: input.factSequence, syncLinks: input.syncLinks, terminalEngines: nextTerminals, incarnations: nextIncarnations, legacyMigration: nextMigration, requestSequence: retention.sequence, expiredRequests: retention.expired, acknowledgedRequestIDs: input.acknowledgedRequestIDs)
   }
 
   func install(_ checkpoint: BookmarkCheckpoint) {
     requests = checkpoint.requests
+    requestSequence = checkpoint.requestSequence
+    expiredRequests = checkpoint.expiredRequests
+    requiresRetentionMigration = false
     conflicts = checkpoint.conflicts
     legacyPendingEngines = checkpoint.legacyPendingEngines
     owners = checkpoint.owners

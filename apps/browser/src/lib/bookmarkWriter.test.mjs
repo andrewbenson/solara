@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, test } from "node:test";
 const { useBrowser } = await import("../store/browser.ts");
 const { bookmarkWriter, projectNativeBookmarks, reportBookmarkFailure, submitBookmarks } = await import("./bookmarkWriter.ts");
-const { BOOKMARK_REMAP_RETRY_MS, replaceBookmarkDocument } = await import("@solara/settings");
+const { BOOKMARK_REMAP_RETRY_MS, replaceBookmarkDocument, replaceBookmarkDocumentWithRecords } = await import("@solara/settings");
 const { useToasts } = await import("../components/layout/toasts.ts");
 
 const { seedBookmarkProjection, nextBookmarkProjectionOwner } = await import("../test-native/bookmarkProjection.ts");
@@ -277,4 +277,136 @@ test("saved-unconfirmed failure says it may be saved and never invites a duplica
   assert.equal(toast?.title, "Bookmark save unconfirmed");
   assert.match(JSON.stringify(toast), /may have been saved/);
   assert.doesNotMatch(JSON.stringify(toast), /Try it again/);
+});
+
+test("successful submit and replacement acknowledge only the receipt the caller received", async () => {
+  const owner = (globalThis.acTestBookmarkWriter = new FakeOwner());
+  const delivered = [];
+  owner.acknowledgeReceipt = (...args) => { delivered.push({ args, revision: owner.revision }); return true; };
+  assert.deepEqual(await submitBookmarks("p", [{ method: "addBookmark", args: [{ profileId: "p", title: "Received", url: "https://received.example/" }] }], "received-submit"), ["n1"]);
+  assert.equal(await replaceBookmarkDocument("p", owner.document, "11", { engine: "native", generation: "1" }, "received-replace"), "12");
+  assert.deepEqual(delivered, [
+    { args: ["p", "native", "1", "received-submit"], revision: 11 },
+    { args: ["p", "native", "1", "received-replace"], revision: 12 },
+  ]);
+});
+
+test("an acknowledgement failure preserves a successfully received submit and replacement", async () => {
+  const owner = (globalThis.acTestBookmarkWriter = new FakeOwner());
+  let acknowledgements = 0;
+  owner.acknowledgeReceipt = () => { acknowledgements++; throw new Error("ack checkpoint failed"); };
+  assert.deepEqual(await submitBookmarks("p", [{ method: "addBookmark", args: [{ profileId: "p", title: "Accepted", url: "https://accepted.example/" }] }], "ack-failure-submit"), ["n1"]);
+  assert.equal(await replaceBookmarkDocument("p", owner.document, "11", { engine: "native", generation: "1" }, "ack-failure-replace"), "12");
+  assert.equal(acknowledgements, 2);
+  assert.equal(owner.revision, 12);
+});
+
+test("a malformed submit reply is never acknowledged as delivered", async () => {
+  const owner = (globalThis.acTestBookmarkWriter = new FakeOwner());
+  const delivered = [];
+  owner.acknowledgeReceipt = (...args) => { delivered.push(args); return true; };
+  owner.submit = async () => ({ engine: "native", revision: "11", results: "invalid-json", document: JSON.stringify(owner.document) });
+  await assert.rejects(submitBookmarks("p", [], "malformed-reply"), SyntaxError);
+  assert.deepEqual(delivered, []);
+});
+
+test("an expired retry refreshes the current projection without applying, retrying or reporting a save failure", async (t) => {
+  const owner = (globalThis.acTestBookmarkWriter = new FakeOwner());
+  const accepted = { kind: "url", id: "n1", parentId: "bar@native", title: "Already accepted", url: "https://accepted.example/", favicon: null, addedAt: 1 };
+  owner.document = document({ n1: accepted });
+  const error = (owner.refuse = Object.assign(new Error("bookmark request receipt expired"), { code: "expired" }));
+  const delivered = [];
+  owner.acknowledgeReceipt = (...args) => { delivered.push(args); return true; };
+  const delays = [];
+  const warnings = [];
+  t.mock.method(globalThis, "setTimeout", (run, delay) => { delays.push(delay); queueMicrotask(run); return 0; });
+  t.mock.method(console, "warn", (...args) => warnings.push(args));
+  const windowId = S().createWindow();
+  S().setFocusedWindow(windowId);
+  await assert.rejects(submitBookmarks("p", [{ method: "toggleBookmark", args: ["p", { title: "Again", url: accepted.url, favicon: null }] }], "expired-id"), (caught) => caught === error);
+  reportBookmarkFailure(error);
+  assert.equal(owner.revision, 10);
+  assert.equal(owner.submitted.length, 1);
+  assert.equal(owner.submitted[0].requestId, "expired-id");
+  assert.deepEqual(delivered, []);
+  assert.deepEqual(delays, []);
+  assert.deepEqual(warnings, []);
+  assert.equal(useToasts.getState().toasts[windowId], undefined);
+  assert.equal(S().bookmarks.nodes.n1?.title, "Already accepted");
+});
+
+for (const operation of ["submit", "replace"]) {
+  test(`${operation} treats expired as terminal and never remints an ID`, async (t) => {
+    const owner = (globalThis.acTestBookmarkWriter = new FakeOwner());
+    const error = (owner.refuse = Object.assign(new Error("expired"), { code: "expired" }));
+    const delays = [];
+    t.mock.method(globalThis, "setTimeout", (run, delay) => { delays.push(delay); queueMicrotask(run); return 0; });
+    await assert.rejects(operation === "submit"
+      ? submitBookmarks("p", [], "terminal-id")
+      : replaceBookmarkDocument("p", owner.document, "10", { engine: "native", generation: "1" }, "terminal-id"), (caught) => caught === error);
+    assert.deepEqual((operation === "submit" ? owner.submitted : owner.replaced).map((call) => call.requestId), ["terminal-id"]);
+    assert.deepEqual(delays, []);
+  });
+}
+
+test("malformed replacement replies are not acknowledged as delivered", async () => {
+  const owner = (globalThis.acTestBookmarkWriter = new FakeOwner());
+  const delivered = [];
+  owner.acknowledgeReceipt = (...args) => { delivered.push(args); return true; };
+  for (const revision of [undefined, null, 12, "not-a-revision"]) {
+    owner.replace = owner.replaceWithRecords = () => ({ revision });
+    await assert.rejects(replaceBookmarkDocument("p", owner.document, "10", { engine: "native", generation: "1" }, "malformed-replace"), /invalid.*receipt/i);
+    await assert.rejects(replaceBookmarkDocumentWithRecords("p", owner.document, "10", { engine: "native", generation: "1" }, [], "none", "malformed-replace-records"), /invalid.*receipt/i);
+  }
+  assert.deepEqual(delivered, []);
+});
+
+test("automatic mutation IDs stay fresh across a JS reload with the same wall clock", async (t) => {
+  const owner = (globalThis.acTestBookmarkWriter = new FakeOwner());
+  t.mock.method(Date, "now", () => 1_000_000);
+  const first = await import("./bookmarkWriter.ts?receipt-session-a");
+  const next = await import("./bookmarkWriter.ts?receipt-session-b");
+  await first.submitBookmarks("p", []);
+  await next.submitBookmarks("p", []);
+  assert.notEqual(owner.submitted[0].requestId, owner.submitted[1].requestId);
+});
+
+test("automatic replacement IDs stay fresh across a JS reload with the same wall clock", async (t) => {
+  const owner = (globalThis.acTestBookmarkWriter = new FakeOwner());
+  t.mock.method(Date, "now", () => 1_000_000);
+  const first = await import("../../../../packages/settings/src/index.ts?receipt-session-a");
+  const next = await import("../../../../packages/settings/src/index.ts?receipt-session-b");
+  await first.replaceBookmarkDocument("p", owner.document, "10", { engine: "native", generation: "1" });
+  await next.replaceBookmarkDocument("p", owner.document, "11", { engine: "native", generation: "1" });
+  assert.notEqual(owner.replaced[0].requestId, owner.replaced[1].requestId);
+});
+
+
+test("API 4 requires delivery acknowledgment and every receipt-producing bridge method", async () => {
+  const methods = [
+    "bookmarkWriterSnapshot", "submitBookmarkMutations", "replaceBookmarkDocument", "replaceBookmarkDocumentWithRecords", "acknowledgeBookmarkReceipt",
+    "ackBookmarkFacts", "ackBookmarkFactsForLink", "observeBookmarkRecords", "observeBookmarkRecordsForLink",
+    "clearBookmarkFacts", "setBookmarkSyncLinks", "bookmarkProjection", "reloadBookmarkProjection", "addListener",
+  ];
+  const native = Object.fromEntries(methods.map((method) => [method, () => {}]));
+  native.bookmarkWriterAPIVersion = () => 4;
+  native.bookmarkWriterState = () => ({ state: "owned", generation: "1" });
+  const previous = globalThis.acTestNativeModules;
+  globalThis.acTestNativeModules = { SolaraSettings: native };
+  try {
+    const settings = await import("../../../../packages/settings/src/index.ts?receipt-api-capabilities");
+    assert.equal(settings.bookmarkWriterState().state, "owned");
+    native.bookmarkWriterAPIVersion = () => 3;
+    assert.equal(settings.bookmarkWriterState().state, "read-only-unavailable");
+    native.bookmarkWriterAPIVersion = () => 4;
+    for (const method of methods) {
+      const saved = native[method];
+      delete native[method];
+      assert.equal(settings.bookmarkWriterState().state, "read-only-unavailable", method);
+      native[method] = saved;
+    }
+    assert.equal(settings.bookmarkWriterState().state, "owned");
+  } finally {
+    globalThis.acTestNativeModules = previous;
+  }
 });

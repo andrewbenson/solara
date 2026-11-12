@@ -851,3 +851,37 @@ test("titleOnlyNativeFactPublishesOriginalWireURLAtOriginalEditTime", async () =
   assert.equal(state.records["bm:k1"].h, h(100));
   assert.deepEqual(owner.facts, {});
 });
+
+test("an expired native replacement explicitly refuses the prefix without surfacing a write error", async () => {
+  const owner = (globalThis.acTestBookmarkWriter = new FakeOwner());
+  const adapter = adapters.bookmarksAdapter("default");
+  owner.failNext = Object.assign(new Error("receipt expired"), { code: "expired" });
+  const visible = new Map([["bm:k1", { k: "u", p: "bar", t: "Alpha", u: "https://alpha.example/", a: 1, pos: "a" }]]);
+  const before = JSON.stringify(owner.document);
+  assert.equal(await adapter.apply(visible, new Set(visible.keys()), () => undefined, { known: () => true, now: 0, horizon: 0, joined: true }), false);
+  assert.equal(JSON.stringify(owner.document), before);
+  assert.equal(owner.replaced.length, 1);
+});
+
+test("after an expired replacement the next sync cycle replans with a fresh ID and acknowledges its receipt", async () => {
+  const folder = new Folder();
+  await publishFromALegacyMac(folder, ["Alpha", "Beta"]);
+  const owner = (globalThis.acTestBookmarkWriter = new FakeOwner());
+  const delivered = [];
+  owner.acknowledgeReceipt = (...args) => { delivered.push(args); return true; };
+  owner.failNext = Object.assign(new Error("receipt expired"), { code: "expired" });
+  const state = emptyScope();
+  const clock = new Clock("native");
+  await syncOwned(folder, state, clock);
+  assert.deepEqual(bmKeys(state.base), []);
+  assert.equal(state.unapplied.filter((key) => key.startsWith("bm:")).length, 2);
+  assert.deepEqual(titlesIn(owner.document), []);
+  assert.deepEqual(delivered, []);
+  await syncOwned(folder, state, clock);
+  assert.deepEqual(titlesIn(owner.document), ["Alpha", "Beta"]);
+  assert.equal(bmKeys(state.base).length, 2);
+  assert.deepEqual(state.unapplied.filter((key) => key.startsWith("bm:")), []);
+  assert.equal(owner.replaced.length, 2);
+  assert.notEqual(owner.replaced[0].requestId, owner.replaced[1].requestId);
+  assert.deepEqual(delivered, [["default", "", "1", owner.replaced[1].requestId]]);
+});

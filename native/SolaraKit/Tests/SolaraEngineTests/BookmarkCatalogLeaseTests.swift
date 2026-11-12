@@ -113,8 +113,8 @@ import Testing
         let result = try await f.catalog.historicalApplyBookmarks(ops: [.init(op: "update", id: "b0", title: "Durable")], engineProfile: "")
         return (result, stoppedAfterAccept)
       }
-      for _ in 0..<2000 where !gate.holding { try await Task.sleep(nanoseconds: 1_000_000) }
-      #expect(gate.holding)
+      for _ in 0..<2000 where !gate.hasHeld { try await Task.sleep(nanoseconds: 1_000_000) }
+      #expect(gate.hasHeld)
       gate.release()
       let (result, stoppedBeforeReturn) = try await command.value
       await stopAfterAccept.value
@@ -481,7 +481,9 @@ private final class CatalogJournalGate: @unchecked Sendable {
   private let signal = DispatchSemaphore(value: 0)
   private var count = 0
   private var isHolding = false
+  private var didHold = false
   var holding: Bool { lock.lock(); defer { lock.unlock() }; return isHolding }
+  var hasHeld: Bool { lock.lock(); defer { lock.unlock() }; return didHold }
   func release() { signal.signal() }
   var operations: BookmarkPendingFileOperations {
     var operations = BookmarkPendingFileOperations.live
@@ -491,6 +493,7 @@ private final class CatalogJournalGate: @unchecked Sendable {
       self.count += 1
       let hold = self.count == 1
       self.isHolding = hold
+      self.didHold = self.didHold || hold
       self.lock.unlock()
       if hold { _ = self.signal.wait(timeout: .now() + 5) }
       self.lock.lock()

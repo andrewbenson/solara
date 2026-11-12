@@ -11,6 +11,7 @@ public struct BookmarkWriterBinding: Equatable, Sendable {
 
 public enum BookmarkWriterError: Error, Equatable, CustomStringConvertible {
   case notOwned
+  case expired
   case staleBinding
   case unknownProfile
   case invalidDocument(String)
@@ -19,6 +20,7 @@ public enum BookmarkWriterError: Error, Equatable, CustomStringConvertible {
 
   public var code: String {
     switch self {
+    case .expired: "expired"
     case .notOwned: "notOwned"
     case .staleBinding: "staleBinding"
     case .unknownProfile: "unknownProfile"
@@ -30,6 +32,7 @@ public enum BookmarkWriterError: Error, Equatable, CustomStringConvertible {
 
   public var description: String {
     switch self {
+    case .expired: "the bookmark request retry lifetime expired"
     case .notOwned: "native bookmarks are not owned by this launch"
     case .staleBinding: "the bookmark owner changed since this binding was taken"
     case .unknownProfile: "the bookmark profile is unknown"
@@ -477,6 +480,7 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
     } catch let error as BookmarkWriterError {
       throw error
     } catch let error as BookmarkCoordinatorError {
+      if case .expiredRequest = error { throw BookmarkWriterError.expired }
       if case .conditionFailed = error { throw BookmarkWriterError.conditionFailed(String(describing: error)) }
       throw BookmarkWriterError.refused(String(describing: error))
     } catch {
@@ -494,6 +498,7 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
     } catch let error as BookmarkWriterError {
       throw error
     } catch let error as BookmarkCoordinatorError {
+      if case .expiredRequest = error { throw BookmarkWriterError.expired }
       if case .conditionFailed = error { throw BookmarkWriterError.conditionFailed(String(describing: error)) }
       throw BookmarkWriterError.refused(String(describing: error))
     } catch {
@@ -501,6 +506,12 @@ public final class NativeBookmarkOwner: @unchecked Sendable {
     }
     dispatchWake(binding)
     return receipt
+  }
+
+  @discardableResult
+  public func acknowledgeReceipt(profile: String, requestID: String, binding: BookmarkWriterBinding) throws -> Bool {
+    try validate(profile: profile, binding: binding)
+    return try coordinator.acknowledgeReceipt(requestID: requestID, engine: binding.engine, admission: { try self.validate(profile: profile, binding: binding) })
   }
 
   public static func prepare(directory: URL, state: BrowserState, cacheDirectory: URL? = nil, readOnly: Bool = false, stampsEnabled: Bool = false, canonicalURL: @escaping @Sendable (String) throws -> String = { $0 }) async -> NativeBookmarkOwner {
@@ -802,7 +813,11 @@ public struct BookmarkProfileMap: Equatable, Sendable {
         try await owner.beforeClaimForTesting?()
       #endif
       guard owner.isCurrent(ticket) else { return }
-      let epoch = await coordinator.offMain { coordinator.claimPump() }
+      let epoch = try await coordinator.offMain {
+        try coordinator.claimPump(admission: {
+          guard owner.isCurrent(ticket) else { throw BookmarkCoordinatorError.staleRevision }
+        })
+      }
       let next = BookmarkPump(coordinator: coordinator, client: client, clock: clock, scheduler: scheduler, epoch: epoch)
       do {
         let activated = try owner.activate(ticket) {

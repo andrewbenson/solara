@@ -200,7 +200,7 @@ public class SettingsModule: Module {
     }.runOnQueue(.main)
     #endif
 
-    Function("bookmarkWriterAPIVersion") { () -> Int in 3 }
+    Function("bookmarkWriterAPIVersion") { () -> Int in 4 }
 
     Function("bookmarkWriterState") { () -> [String: Any] in
       NativeBookmarkLaunch.select()
@@ -231,6 +231,10 @@ public class SettingsModule: Module {
 
     Function("bookmarkWriterSnapshot") { (profileId: String) throws -> [String: Any] in
       try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.snapshot(profile: profileId) }
+    }
+
+    Function("acknowledgeBookmarkReceipt") { (profileId: String, engine: String, generation: String, requestId: String) throws -> Bool in
+      try NativeBookmarkWriter.bridge { try NativeBookmarkWriter.acknowledgeReceipt(profile: profileId, engine: engine, generation: generation, requestID: requestId) }
     }
 
     Function("ackBookmarkFacts") { (profileId: String, engine: String, recordsJSON: String, generation: String) throws -> Bool in

@@ -750,7 +750,7 @@ pairing finishing inside five minutes. The tests use a temporary folder, never i
 The application selects native bookmark authority once per process, before catalog observation or raw admission.
 Distribution ignores environment and stored attempts to disable ownership. An isolated development launch can
 opt in with `SOLARA_NATIVE_BOOKMARKS=1`; off, partial scope, API skew, failed claim and teardown never choose a
-JS writer. Reload subscribes to the same native lifetime. API version 3 requires ownership and projection feeds.
+JS writer. Reload subscribes to the same native lifetime. API version 4 requires ownership, projection feeds and explicit receipt-delivery acknowledgment.
 
 The coordinator journals local edit facts; the existing JS Cycle mints HLCs and owns transport and publication.
 The native bookmark adapter synchronously accepts the document and remote record observations in one durable
@@ -767,5 +767,23 @@ URLs use Chrome's GURL spelling with preserved wire provenance and no new sync e
 wire strings retain arbitrary JavaScript UTF-16 code units. Last-profile deletion/reset discards the engine's
 unsynced edits; a surviving alias remap still preserves and drains pending intent.
 
-Returning to 0.3.0 resumes native journal authority idempotently. Downgrading to 0.2.5 is unsupported. There is
-no handback protocol, downgrade marker or attempt to make an older binary understand pending native intent.
+After a version 3 bookmark journal is written, returning to 0.3.0 preserves that newer journal and pauses
+bookmark edits and sync. Downgrading to 0.2.5 is unsupported. There is no handback protocol or attempt to make an
+older binary understand pending native intent.
+
+Full request receipts expire five minutes after caller delivery acknowledgment, a covering confirming
+Chrome read and fact acknowledgment, while the newest 32 per engine remain replayable. Exact-ID markers refuse
+expired retries with `expired`, including changed payloads. Native replacement expiry refuses the current
+bookmark prefix/base; the next cycle re-extracts current state and plans a replacement with a fresh ID. It never
+replays the expired replacement document under another ID. Pruning shares the atomic native checkpoint and
+safe mode never prunes. Current and legacy cohorts each protect their newest 32 receipts, with legacy revision
+ties kept together, so mixed or tied history can retain more than 32 receipts per engine.
+
+A 0.3.0 journal has no caller-delivery or read-confirmation evidence. No production caller persists its receipt
+request ID across process restart, so restoration infers delivery only for pre-retention receipts or format-3
+receipts retaining `legacy: true`. Every restored legacy receipt loses any prior confirmation and settled time;
+a fresh covering Chrome read, acknowledged facts and all ordinary settlement gates start the full five-minute
+grace. Current format-3 receipts with `legacy: false` still require explicit delivery acknowledgment, including
+after an owner handover. Legacy history keeps every receipt tied at the 32nd-newest revision because the old
+journal has no reliable acceptance order. Thus 1,000 completed receipts with distinct revisions reach 32 after
+confirmation and grace, while an ambiguous revision cohort can retain more.

@@ -30,6 +30,12 @@ enum NativeBookmarkWriter {
     ]
   }
 
+  static func acknowledgeReceipt(profile: String, engine: String, generation: String, requestID: String) throws -> Bool {
+    let owner = try admittedOwner()
+    guard let generation = UInt64(generation) else { throw BookmarkWriterError.invalidDocument("generation must be a decimal string") }
+    return try owner.acknowledgeReceipt(profile: profile, requestID: BookmarkString.encode(requestID), binding: BookmarkWriterBinding(engine: engine, generation: generation))
+  }
+
   static func ackBookmarkFacts(profile: String, engine: String, recordsJSON: String, link: String? = nil, generation: String) throws -> Bool {
     let owner = try admittedOwner()
     guard let generation = UInt64(generation) else { throw BookmarkWriterError.invalidDocument("generation must be a decimal string") }

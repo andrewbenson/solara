@@ -253,6 +253,17 @@ BOOL gDisplayMediaPicker = NO;
 NSString *gPeekModifier = @"shift";
 NSString *gSplitLinkModifier = @"altShift";
 static BOOL gSelectionPopover = YES;
+static void (^gPinnedLinkHandler)(NSDictionary<NSString *, id> *);
+static NSMutableDictionary<NSString *, void (^)(BOOL)> *gPinnedLinkDecisions;
+static NSSet<NSString *> *gPinnedLinkSources;
+static BOOL gPinnedLinkGestureValid = NO;
+static NSMutableDictionary<NSString *, NSString *> *gPinnedLinkRouted;
+static NSUInteger gPinnedLinkUsedSeq = 0;
+static NSUInteger gPinnedLinkGatedSeq = 0;
+static NSPoint gPeekUpPoint;
+static const CFTimeInterval kPinnedLinkGestureLifetime = 2;
+static NSString *gPinnedLinkHandlerOwner;
+static const int64_t kPinnedLinkDecisionTimeoutMs = 1500;
 static BOOL (^gOwnedTabStillWanted)(SolaraCoreWebView *);
 static const NSEventModifierFlags kPeekKeyMask = NSEventModifierFlagOption | NSEventModifierFlagShift | NSEventModifierFlagCommand | NSEventModifierFlagControl;
 static NSEventModifierFlags gPeekUpKeys = 0;
@@ -371,9 +382,11 @@ static void InstallPeekMonitor() {
                                                       gPeekPressedSinceUp = YES;
                                                       return event;
                                                     }
+                                                    gPinnedLinkGestureValid = YES;
                                                     gPeekUpKeys = event.modifierFlags & kPeekKeyMask;
                                                     gPeekUpAt = CACurrentMediaTime();
                                                     gPeekUpView = PageViewUnder(event);
+                                                    gPeekUpPoint = NSMakePoint(event.locationInWindow.x, NSHeight(event.window.contentView.frame) - event.locationInWindow.y);
                                                     gPeekPressedSinceUp = NO;
                                                     gPeekUpSeq++;
                                                     return event;
@@ -787,6 +800,7 @@ static void ShareFromContext(NSDictionary<NSString *, id> *context, NSView *view
 @implementation SolaraCoreWebView {
   SolaraCoreTab *_tab;
   BOOL _loadedOnce;
+  BOOL _temporaryEmptyReported;
   BOOL _pendingUserInitiated;
   NSString *_requestedURL;
   BOOL _creating;
@@ -1791,6 +1805,7 @@ static SolaraCoreTab *StartParkedPage(NSString *url, NSString *profileName, NSSt
 }
 
 - (void)setTemporary:(BOOL)temporary {
+  if (temporary != _temporary) _temporaryEmptyReported = NO;
   _temporary = temporary;
   [self markTemporary];
 }
@@ -2251,6 +2266,146 @@ void SolaraCoreWebViewsSetFieldTiming(BOOL on) {
   return YES;
 }
 
++ (void)clearPinnedLinkHandler:(NSString *)owner {
+  if (![owner isEqualToString:gPinnedLinkHandlerOwner]) return;
+  gPinnedLinkHandler = nil;
+  gPinnedLinkHandlerOwner = nil;
+}
+
++ (void)setPinnedLinkHandler:(void (^)(NSDictionary<NSString *, id> *))handler owner:(NSString *)owner {
+  gPinnedLinkHandlerOwner = [owner copy];
+  InstallPeekMonitor();
+  static id monitor;
+  if (!monitor) {
+    monitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown | NSEventMaskRightMouseDown | NSEventMaskOtherMouseDown
+                                                   handler:^NSEvent *(NSEvent *event) {
+                                                     gPinnedLinkGestureValid = NO;
+                                                     return event;
+                                                   }];
+  }
+  gPinnedLinkHandler = [handler copy];
+}
+
++ (void)setPinnedLinkSources:(NSArray<NSString *> *)keys {
+  gPinnedLinkSources = [NSSet setWithArray:keys];
+}
+
+- (BOOL)tabWantsPinnedLinkPolicy:(SolaraCoreTab *)tab {
+  return gPinnedLinkHandler && tab == _tab && !tab.closed && !_temporary && !_standalone && [gPinnedLinkSources containsObject:_transferKey ?: @""];
+}
+
+static NSString *WithoutFragment(NSString *url) {
+  const NSRange hash = [url rangeOfString:@"#"];
+  return hash.location == NSNotFound ? url : [url substringToIndex:hash.location];
+}
+
+static BOOL SameHostWithoutRedirect(id url, NSString *sourceURL) {
+  if (![url isKindOfClass:NSString.class]) return NO;
+  NSString *host = [NSURL URLWithString:url].host.lowercaseString;
+  NSString *sourceHost = [NSURL URLWithString:sourceURL].host.lowercaseString;
+  if (!host.length || ![host isEqualToString:sourceHost]) return NO;
+  static NSSet<NSString *> *redirectHosts = [NSSet setWithArray:@[
+    @"google.com", @"www.google.com", @"slack-redir.net", @"facebook.com", @"www.facebook.com", @"l.facebook.com", @"lm.facebook.com",
+    @"m.facebook.com", @"linkedin.com", @"www.linkedin.com"
+  ]];
+  return ![redirectHosts containsObject:host] && ![host hasSuffix:@".safelinks.protection.outlook.com"];
+}
+
+static BOOL PinnedLinkGestureBypassed() {
+#if DEBUG
+  static const BOOL strict = getenv("SOLARA_PEEK_STRICT") != nullptr;
+  return PeekTestHooks() && !strict;
+#else
+  return NO;
+#endif
+}
+
+- (BOOL)tabHasPlainLinkGesture:(SolaraCoreTab *)tab {
+  if (![self tabWantsPinnedLinkPolicy:tab]) return NO;
+  const BOOL bypassed = PinnedLinkGestureBypassed();
+  const CFTimeInterval sinceUp = gPeekUpAt < 0 ? -1 : CACurrentMediaTime() - gPeekUpAt;
+  NSString *refused = nil;
+  if (bypassed) refused = nil;
+  else if (!gPinnedLinkGestureValid) refused = @"a key or another button was pressed since the mouse-up";
+  else if (gPeekUpSeq == gPinnedLinkUsedSeq) refused = @"that mouse-up already routed a pinned link";
+  else if (gPeekPressedSinceUp) refused = @"the mouse was pressed again since that mouse-up";
+  else if (sinceUp < 0 || sinceUp > kPinnedLinkGestureLifetime) refused = @"no recent mouse-up";
+  else if (gPeekUpView != self) refused = @"the mouse-up wasn't over this page";
+  else if (gPeekUpKeys != 0) refused = @"the mouse-up had modifier keys";
+  if (!refused) gPinnedLinkGatedSeq = gPeekUpSeq;
+  PeekTrace(@{@"event" : @"pinnedLinkGesture", @"page" : _transferKey ?: @"", @"refused" : refused ?: NSNull.null, @"sinceMouseUp" : @(sinceUp), @"bypassed" : @(bypassed)});
+  return !refused;
+}
+
++ (BOOL)resolvePinnedLink:(NSString *)requestId intercept:(BOOL)intercept {
+  void (^answer)(BOOL) = gPinnedLinkDecisions[requestId];
+  if (!answer) return NO;
+  [gPinnedLinkDecisions removeObjectForKey:requestId];
+  answer(intercept);
+  return YES;
+}
+
+- (void)tab:(SolaraCoreTab *)tab decidePinnedLink:(NSDictionary<NSString *, id> *)request completion:(void (^)(BOOL))completion {
+  NSString *requestId = [request[@"requestId"] isKindOfClass:NSString.class] ? request[@"requestId"] : nil;
+  NSString *sourceURL = [request[@"sourceURL"] isKindOfClass:NSString.class] ? [request[@"sourceURL"] copy] : nil;
+  if (!NSThread.isMainThread || !gPinnedLinkHandler || !requestId.length || !sourceURL.length || !_transferKey.length || tab != _tab || _temporary || _standalone) {
+    PeekTrace(@{@"event" : @"pinnedLinkDecide", @"refused" : @"not a live pinned page"});
+    return completion(NO);
+  }
+  if ([request[@"redirect"] isKindOfClass:NSNumber.class] && [request[@"redirect"] boolValue]) {
+    PeekTrace(@{@"event" : @"pinnedLinkDecide", @"request" : requestId, @"url" : request[@"url"] ?: @"", @"refused" : @"a redirect: links are decided on the URL clicked"});
+    return completion(NO);
+  }
+  if (SameHostWithoutRedirect(request[@"url"], sourceURL)) {
+    PeekTrace(@{@"event" : @"pinnedLinkDecide", @"request" : requestId, @"refused" : @"same host"});
+    return completion(NO);
+  }
+  if (!gPinnedLinkDecisions) gPinnedLinkDecisions = [NSMutableDictionary dictionary];
+  if (!gPinnedLinkRouted) gPinnedLinkRouted = [NSMutableDictionary dictionary];
+  if (gPinnedLinkDecisions[requestId]) return completion(NO);
+  __weak SolaraCoreWebView *weakSelf = self;
+  __weak SolaraCoreTab *weakTab = tab;
+  NSString *sourceId = [_transferKey copy];
+  gPinnedLinkDecisions[requestId] = ^(BOOL intercept) {
+    SolaraCoreWebView *view = weakSelf;
+    SolaraCoreTab *live = weakTab;
+    const BOOL route = intercept && view && live && view->_tab == live && !live.closed && [view.transferKey isEqualToString:sourceId] && [WithoutFragment(live.url) isEqualToString:WithoutFragment(sourceURL)];
+    PeekTrace(@{@"event" : @"pinnedLinkAnswer", @"request" : requestId, @"app" : @(intercept), @"route" : @(route)});
+    if (route) {
+      gPinnedLinkUsedSeq = MAX(gPinnedLinkUsedSeq, gPinnedLinkGatedSeq);
+      gPinnedLinkRouted[requestId] = sourceId;
+      dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        [gPinnedLinkRouted removeObjectForKey:requestId];
+      });
+    }
+    completion(route);
+  };
+  NSMutableDictionary *event = [request mutableCopy];
+  event[@"sourceId"] = sourceId;
+  event[@"phase"] = @"decide";
+  PeekTrace(@{@"event" : @"pinnedLinkDecide", @"request" : requestId, @"url" : request[@"url"] ?: @"", @"newWindow" : request[@"newWindow"] ?: @NO});
+  gPinnedLinkHandler(event);
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, kPinnedLinkDecisionTimeoutMs * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+    [SolaraCoreWebView resolvePinnedLink:requestId intercept:NO];
+  });
+}
+
+- (BOOL)tab:(SolaraCoreTab *)tab shouldInterceptPinnedLink:(NSDictionary<NSString *, id> *)request {
+  NSString *requestId = [request[@"requestId"] isKindOfClass:NSString.class] ? request[@"requestId"] : @"";
+  NSString *sourceId = gPinnedLinkRouted[requestId];
+  [gPinnedLinkRouted removeObjectForKey:requestId];
+  const BOOL take = NSThread.isMainThread && gPinnedLinkHandler && sourceId.length && !tab.closed;
+  PeekTrace(@{@"event" : @"pinnedLinkIntercepted", @"request" : requestId, @"url" : request[@"url"] ?: @"", @"source" : sourceId ?: NSNull.null, @"taken" : @(take)});
+  if (!take) return NO;
+  NSMutableDictionary *event = [request mutableCopy];
+  event[@"sourceId"] = sourceId;
+  event[@"phase"] = @"intercepted";
+  if (gPeekUpView == self && gPeekUpAt >= 0 && CACurrentMediaTime() - gPeekUpAt <= kPinnedLinkGestureLifetime)
+    event[@"point"] = @{@"x" : @(gPeekUpPoint.x), @"y" : @(gPeekUpPoint.y)};
+  gPinnedLinkHandler(event);
+  return YES;
+}
+
 + (void)setPeekModifier:(NSString *)modifier {
   InstallPeekMonitor();
   NSString *next = [@[ @"alt", @"shift" ] containsObject:modifier ?: @""] ? modifier : @"off";
@@ -2400,6 +2555,11 @@ void SolaraCoreWebViewsSetFieldTiming(BOOL on) {
 }
 
 - (void)tabDidChangeLoading:(SolaraCoreTab *)tab {
+  if (_temporary && !tab.loading && !_temporaryEmptyReported && tab.url.length && ![tab.url hasPrefix:@"about:"] && [tab respondsToSelector:@selector(committedInitial)] && tab.committedInitial) {
+    _temporaryEmptyReported = YES;
+    PeekTrace(@{@"event" : @"peekEmpty", @"url" : tab.url});
+    [self emit:@"downloadNavigation" payload:@{@"url" : tab.url ?: @"", @"committedUrl" : @"", @"skipped" : @NO}];
+  }
   if (!tab.loading && tab.url.length && ![tab.url hasPrefix:@"about:"]) [self revealLittlePage:YES];
   if (tab.loading) [self resetBlocked:YES];
   if (tab.loading) ACFieldMarkNow(_transferKey, @"start");

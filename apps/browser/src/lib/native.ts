@@ -1,3 +1,4 @@
+import { startPinnedLinks } from "./pinnedLinks";
 import { sidebarIconsOnlyOf } from "../store/sidebarRail";
 import { lastTabClosesWindow, onDownload, releaseProfile } from "@solara/solaracore";
 import {
@@ -83,6 +84,7 @@ export function startNativeSync() {
   onCommand((e) => settlingCommandFocus(e, runCommand));
   startWindowCloseGuard();
   startExtensionsBridge();
+  startPinnedLinks();
   onOpenURLs((urls, pointer) => openExternalUrls(urls, pointer));
   void lastTabClosesWindow().then((closes) => setLastTabKeepsWindow(!closes));
   onDownload((d) => store.getState().upsertDownload(d));

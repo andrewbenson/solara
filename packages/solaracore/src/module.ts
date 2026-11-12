@@ -177,3 +177,19 @@ export const deleteProfileData = async (profile: string): Promise<string[]> => {
   const [chromium, webkit] = await Promise.all([Cef.deleteProfileData(profile), WebKit?.deleteProfileData(profile).catch(() => false) ?? true]);
   return [...(chromium?.remaining ?? ["data"]), ...(webkit ? [] : ["WebKit data"])];
 };
+
+export type PinnedLinkEvent = {
+  phase: "decide" | "intercepted";
+  requestId: string;
+  sourceId: string;
+  sourceURL: string;
+  url: string;
+  newWindow: boolean;
+  point?: { x: number; y: number };
+};
+
+export const onPinnedLink = (listener: (event: PinnedLinkEvent) => void) => Cef.addListener("onPinnedLink", listener);
+export const resolvePinnedLink = (requestId: string, intercept: boolean): Promise<boolean> =>
+  Cef.resolvePinnedLink?.(requestId, intercept) ?? Promise.resolve(false);
+
+export const setPinnedLinkSources = (keys: string[]) => Cef.setPinnedLinkSources?.(keys) ?? Promise.resolve();

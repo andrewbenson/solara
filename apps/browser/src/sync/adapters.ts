@@ -64,6 +64,7 @@ export const SYNCED_SETTINGS = [
   "cmdClickCreatesTabGroup",
   "optShiftClickOpensInGroup",
   "peekModifier",
+  "pinnedLinkTarget",
   "splitLinkModifier",
   "autoGroupMeetingTabs",
   "cleanUpInactiveTabsAfterHours",

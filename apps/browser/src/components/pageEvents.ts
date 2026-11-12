@@ -310,6 +310,10 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
       session.pending = null;
       const t = tab();
       if (!t) return;
+      if (session.peekOf !== undefined && (!committedUrl || isBlank(committedUrl))) {
+        if (store().peeks[t.windowId]?.tabId === tabId) store().closePeek(t.windowId);
+        return;
+      }
       const s = store();
       if (session.factsOwner === "js") store().updateLive(tabId, { isLoading: false });
       if (committedUrl) {

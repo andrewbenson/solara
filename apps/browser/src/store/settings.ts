@@ -9,6 +9,7 @@ import {
   type EngineInput,
   type ExtensionSearchEngine,
   type SearchEngine,
+  type PinnedLinkTarget,
 } from "@solara/core";
 import type { ShortcutPrecedence } from "@solara/shell";
 import type { PageEngine } from "@solara/solaracore";
@@ -48,6 +49,7 @@ export type Settings = {
   cmdClickCreatesTabGroup: boolean;
   optShiftClickOpensInGroup: boolean;
   peekModifier: PeekModifier;
+  pinnedLinkTarget: PinnedLinkTarget;
   splitLinkModifier: SplitLinkModifier;
   autoGroupMeetingTabs: boolean;
   cleanUpInactiveTabsAfterHours: number | null;
@@ -153,6 +155,7 @@ export const DEFAULT_SETTINGS: Settings = {
   cmdClickCreatesTabGroup: true,
   optShiftClickOpensInGroup: true,
   peekModifier: "shift",
+  pinnedLinkTarget: "peek",
   splitLinkModifier: "altShift",
   autoGroupMeetingTabs: true,
   cleanUpInactiveTabsAfterHours: null,

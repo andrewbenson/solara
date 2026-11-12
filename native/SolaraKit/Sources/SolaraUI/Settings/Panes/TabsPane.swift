@@ -13,6 +13,15 @@ public final class TabsPaneModel: SettingsPaneProvider {
   public func prepare(_ place: SettingsPlace) async {}
   public func view(_ place: SettingsPlace) -> AnyView { AnyView(TabsPane(store: store, detail: place.detail)) }
 
+  static func pinnedLinkTargets(app: String) -> [SettingOption] {
+    [SettingOption("tab", "New tab"), SettingOption("peek", "Peek"), SettingOption("littleSolara", "Little \(app)")]
+  }
+
+  static func pinnedLinkTarget(_ store: SettingsStoreSource) -> String {
+    let value = store.string("pinnedLinkTarget")
+    return ["tab", "peek", "littleSolara"].contains(value) ? value : "peek"
+  }
+
   static let peekModifiers = ["alt", "shift", "off"]
 
   static func peekModifier(_ store: SettingsStoreSource) -> String {
@@ -138,6 +147,12 @@ struct TabsPane: View {
       }
 
       SettingsSection("Links") {
+        SettingRow("tabs.pinnedLinkTarget") {
+          SettingPicker(
+            TabsPaneModel.pinnedLinkTargets(app: context?.appName ?? ""),
+            selection: Binding(get: { TabsPaneModel.pinnedLinkTarget(store) }, set: { store.set("pinnedLinkTarget", $0) })
+          )
+        }
         LinkKeys(store: store)
       }
 

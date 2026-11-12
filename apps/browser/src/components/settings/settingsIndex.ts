@@ -194,6 +194,11 @@ const ROWS: Record<SettingsPane, Section[]> = {
     {
       section: "Links",
       rows: {
+        pinnedLinkTarget: {
+          title: "Links from pinned tabs and Top Apps open in",
+          description: "Links to another site open here, keeping your pinned page in place.",
+          keywords: ["pinned", "top apps", "favorites", "peek", "new tab", "little solara", "links", "arc"],
+        },
         peekModifier: {
           title: "Peek a link with",
           description: "Opens the link in a preview over the page. Open as Tab or Split View keeps it; Esc closes it.",

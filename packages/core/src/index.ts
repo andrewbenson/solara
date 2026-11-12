@@ -13,3 +13,5 @@ export * from "./siteSearch.ts";
 export * from "./suggest.ts";
 export * from "./suggestFetcher.ts";
 export * from "./textFragment.ts";
+
+export * from "./pinnedLinks.ts";

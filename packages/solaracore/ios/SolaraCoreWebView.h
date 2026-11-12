@@ -46,6 +46,10 @@ NS_ASSUME_NONNULL_BEGIN
 + (void)installSwitchPrewarm;
 + (void)installOutgoingFocusSnapshots;
 + (void)setDisplayMediaPicker:(BOOL)enabled;
++ (void)setPinnedLinkHandler:(void (^)(NSDictionary<NSString *, id> *event))handler owner:(NSString *)owner NS_SWIFT_NAME(setPinnedLinkHandler(_:owner:));
++ (void)clearPinnedLinkHandler:(NSString *)owner NS_SWIFT_NAME(clearPinnedLinkHandler(_:));
++ (void)setPinnedLinkSources:(NSArray<NSString *> *)keys NS_SWIFT_NAME(setPinnedLinkSources(_:));
++ (BOOL)resolvePinnedLink:(NSString *)requestId intercept:(BOOL)intercept NS_SWIFT_NAME(resolvePinnedLink(_:intercept:));
 + (void)setPeekModifier:(NSString *)modifier;
 + (void)setSplitLinkModifier:(NSString *)modifier;
 + (void)setSelectionPopoverEnabled:(BOOL)enabled NS_SWIFT_NAME(setSelectionPopoverEnabled(_:));

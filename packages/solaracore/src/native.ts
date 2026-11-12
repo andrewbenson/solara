@@ -3,7 +3,7 @@ import type { ContentBlockerState, ContentBlockerStats } from "./contentBlocker"
 import type { DisplayMediaSource } from "./WebView";
 import type { ExternalAppAllowance } from "./externalApps";
 import type { FaviconImage } from "./favicons";
-import type { BrowsingDataType, Download, EngineComponent, EngineInfo, EngineTask, ChromeWindowState, PermissionRequest, PermissionResult, SystemState } from "./module";
+import type { BrowsingDataType, Download, EngineComponent, EngineInfo, EngineTask, ChromeWindowState, PermissionRequest, PermissionResult, SystemState, PinnedLinkEvent } from "./module";
 import type { PasswordExportStatus, SavedPassword } from "./passwords";
 import type { TabStripCommand, TabStripTransaction } from "./tabStrip";
 import type { AddressInput, CardInput, SavedAddress, SavedCard } from "./autofill";
@@ -34,6 +34,9 @@ export type CefNative = {
   addListener(name: "onSystemState", listener: (s: SystemState) => void): EventSubscription;
   addListener(name: "onEngineEvent", listener: (e: { topic: string; payload: string }) => void): EventSubscription;
 
+  addListener(name: "onPinnedLink", listener: (event: PinnedLinkEvent) => void): EventSubscription;
+  setPinnedLinkSources?(keys: string[]): Promise<void>;
+  resolvePinnedLink?(requestId: string, intercept: boolean): Promise<boolean>;
   engineInfo(): Promise<EngineInfo>;
   chromeWindows(): Promise<ChromeWindowState[]>;
   prepareTransfer(key: string): void;

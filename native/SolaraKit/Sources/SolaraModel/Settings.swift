@@ -36,6 +36,7 @@ public struct Settings: Sendable, Hashable {
     "cmdClickCreatesTabGroup": true,
     "optShiftClickOpensInGroup": true,
     "peekModifier": "shift",
+    "pinnedLinkTarget": "peek",
     "splitLinkModifier": "altShift",
     "autoGroupMeetingTabs": true,
     "cleanUpInactiveTabsAfterHours": nil,

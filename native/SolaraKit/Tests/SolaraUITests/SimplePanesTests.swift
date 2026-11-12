@@ -109,6 +109,19 @@ struct SimplePanesTests {
     #expect(TabsPaneModel.splitOptions(peekWith: "alt")[1].title == "⌥-click (Peek moves to ⇧-click)")
   }
 
+  @Test func pinnedLinkTargetFallsBackToPeek() {
+    let store = FakeSettingsStore()
+    #expect(TabsPaneModel.pinnedLinkTarget(store) == "peek")
+    store.values["pinnedLinkTarget"] = "bogus"
+    #expect(TabsPaneModel.pinnedLinkTarget(store) == "peek")
+    store.values["pinnedLinkTarget"] = "tab"
+    #expect(TabsPaneModel.pinnedLinkTarget(store) == "tab")
+    store.values["pinnedLinkTarget"] = "littleSolara"
+    #expect(TabsPaneModel.pinnedLinkTarget(store) == "littleSolara")
+    #expect(TabsPaneModel.pinnedLinkTargets(app: "Solara").map(\.value) == ["tab", "peek", "littleSolara"])
+    #expect(TabsPaneModel.pinnedLinkTargets(app: "Solara").last?.title == "Little Solara")
+  }
+
   @Test func staticPaneCaptionsStayShort() {
     for (mode, caption) in AdvancedPaneModel.batterySaverDescriptions {
       #expect(caption.count <= 90, "Battery Saver \(mode): \(caption.count) characters")

@@ -379,7 +379,7 @@
     const isActive = activationState && activationState.get;
     const policy = document.featurePolicy;
     const allowsFeature = policy && policy.allowsFeature;
-    const getDisplayMedia = function getDisplayMedia(constraints) {
+    const getDisplayMedia = { getDisplayMedia(constraints) {
       if (policy && allowsFeature && !apply(allowsFeature, policy, ["display-capture"]))
         return Promise.reject(new DOMException('Access to the feature "display-capture" is disallowed by permissions policy.', "NotAllowedError"));
       if (activation && isActive && !apply(isActive, activation, []))
@@ -392,7 +392,7 @@
         const windowAudio = options.windowAudio === "exclude" || options.windowAudio === "window" ? options.windowAudio : "system";
         send("displayMedia", { id, audio: !!options.audio, systemAudio: options.systemAudio !== "exclude", windowAudio });
       });
-    };
+    } }.getDisplayMedia;
     Object.defineProperty(getDisplayMedia, "__ac", { value: true });
     proto.getDisplayMedia = getDisplayMedia;
     handlers.displayMedia = ({ id, sourceId, audio }) => {

@@ -56,7 +56,7 @@ const usesPageA = [
   "cmd-click", "evaluate", "tab-strips", "tab-switch", "status-text", "load-error", "chrome-strings",
   "tab-memory", "tab-cpu", "cli-tabs-memory", "context-menu-search", "duplicate-and-reopen", "device-chooser", "bluetooth-chooser",
   "bluetooth-settings", "cast-dialog", "cast-routes", "theme-commit", "theme-modern-colors", "user-selection",
-  "password-prompt", "screen-share-picker", "tab-capture", "share-instead-two-captures", "share-bar-layout",
+  "password-prompt", "screen-share-activation", "screen-share-picker", "tab-capture", "share-instead-two-captures", "share-bar-layout",
   "restore-after-close", "discard-outcomes", "sleep-eligibility", "keep-awake-sites", "sleep-pinned-capture", "native-tab-sleep", "capture-picture", "unresponsive", "permission-dismissed", "permission-status-detached",
   "save-page", "activate-request", "extension-popup-and-panel", "extension-popup-window", "extension-popup-native-frame", "extension-popup-rail-field", "print-preview",
   "extension-prompts", "extension-prompt-closed", "extension-sheet-native", "traffic-lights-after-profile-switch", "extension-configure",
@@ -346,6 +346,64 @@ const server = createServer((req, res) => {
       <div id="clicker" style="position: absolute; left: 300px; top: 40px; width: 120px; height: 60px; background: #dcc">click</div>
       <script>window.__events = []; for (const t of ["mousedown", "click", "dragstart", "dragend"]) addEventListener(t, (e) => __events.push([t, e.target.id || "", e.clientX, e.clientY]), true);
       card.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/plain", "card"));</script>`));
+  if (url.pathname === "/display-activation") {
+    const mode = url.searchParams.get("mode");
+    const inner = url.searchParams.has("inner");
+    const framed = !inner && (mode === "delegated" || mode === "denied");
+    const child = `http://localhost:${server.address().port}/display-activation?inner=1`;
+    return res.end(page("Display activation", framed
+      ? `<iframe id="capture" src="${child}" ${mode === "delegated" ? 'allow="display-capture"' : ""} style="position:absolute;left:0;top:100px;width:400px;height:200px;border:0"></iframe><script>
+        window.__shareState = null;
+        addEventListener("message", (e) => {
+          if (e.source === capture.contentWindow && e.origin === new URL(capture.src).origin && e.data?.fixture === "display-activation") window.__shareState = e.data.state;
+        });
+        window.shareCommand = (command) => capture.contentWindow.postMessage(command, new URL(capture.src).origin);
+      </script>`
+      : `<button id="share" style="position:absolute;left:20px;top:20px;width:200px;height:50px">Share</button><script>
+        const activation = navigator.userActivation;
+        const active = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(activation), "isActive").get;
+        let serial = 0;
+        let outcome = "idle";
+        let requestedActive = null;
+        let construction = null;
+        const report = () => {
+          const state = { serial, outcome, requestedActive, construction, active: Reflect.apply(active, activation, []), policy: document.featurePolicy.allowsFeature("display-capture"), wrapper: !!navigator.mediaDevices.getDisplayMedia.__ac };
+          if (parent === window) window.__shareState = state;
+          else parent.postMessage({ fixture: "display-activation", state }, "*");
+        };
+        const ask = () => {
+          serial++;
+          outcome = "pending";
+          requestedActive = Reflect.apply(active, activation, []);
+          navigator.mediaDevices.getDisplayMedia({ video: true }).then((stream) => {
+            stream.getTracks().forEach((track) => track.stop()); outcome = "unexpected-stream"; report();
+          }, (error) => { outcome = error.name; report(); });
+          report();
+        };
+        share.addEventListener("click", ask);
+        window.shareCommand = (command) => {
+          if (command === "ask") ask();
+          else if (command === "synthetic") share.click();
+          else if (command === "construct") {
+            serial++;
+            outcome = "constructed";
+            construction = { prototype: Object.hasOwn(navigator.mediaDevices.getDisplayMedia, "prototype"), result: "returned" };
+            try {
+              const value = new navigator.mediaDevices.getDisplayMedia({ video: true });
+              if (value && typeof value.catch === "function") value.catch(() => {});
+            } catch (error) {
+              construction.result = error.name;
+            }
+            report();
+          } else if (command === "tamper") {
+            Object.defineProperty(activation, "isActive", { configurable: true, value: true });
+            ask();
+          } else report();
+        };
+        addEventListener("message", (event) => { if (event.source === parent) shareCommand(event.data); });
+        report();
+      </script>`));
+  }
   if (url.pathname === "/capture-target") return res.end(page("Capture Target", "the tab that tab capture picks"));
   if (url.pathname === "/solid")
     return res.end(solidPage(url));
@@ -2221,6 +2279,90 @@ try {
   });
 
   // MARK: Screen and tab capture
+
+  await check("screen-share-activation", async () => {
+    const results = [];
+    await cef("setDisplayMediaPicker(true)");
+    for (const mode of ["top", "delegated", "denied"]) {
+      const url = `${base}/display-activation?mode=${mode}`;
+      const tab = await openTab(url, "Display activation");
+      let target;
+      try {
+        target = await pageFor(tab.id, url);
+        const run = async (expression) => {
+          const result = await cdp(target, "Runtime.evaluate", { expression, userGesture: false, returnByValue: true });
+          if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
+          return result.result?.value;
+        };
+        const probe = async () => {
+          await run('shareCommand("probe"); true');
+          await sleep(50);
+          return run("window.__shareState");
+        };
+        const ready = await until(`${mode} display-capture wrapper`, async () => {
+          const value = await probe();
+          return value?.wrapper ? value : null;
+        }, 10000);
+        assert.equal(ready.policy, mode !== "denied", `${mode} permissions policy`);
+        const requests = async () => (await eventsOf(tab.id)).filter((event) => event.name === "displayMediaRequest");
+        const beforeConstruction = (await requests()).length;
+        await run('shareCommand("construct"); true');
+        const constructed = await until(`${mode} constructor probe`, async () => {
+          const value = await probe();
+          return value?.construction ? value : null;
+        }, 3000);
+        assert.deepEqual(constructed.construction, { prototype: false, result: "TypeError" }, `${mode} getDisplayMedia constructor parity`);
+        await sleep(250);
+        assert.equal((await requests()).length, beforeConstruction, `${mode} constructor opened a picker`);
+        results.push({ mode, command: "construct", ...constructed, picker: false });
+        const refused = async (command, expected) => {
+          const before = (await requests()).length;
+          const serial = (await probe()).serial;
+          await run(`shareCommand(${JSON.stringify(command)}); true`);
+          const result = await until(`${mode} ${command} refusal`, async () => {
+            const value = await probe();
+            return value?.serial > serial && value.outcome !== "pending" ? value : null;
+          }, 3000);
+          assert.equal(result.outcome, expected, `${mode} ${command}`);
+          assert.equal(result.requestedActive, false, `${mode} ${command} had no activation`);
+          await sleep(250);
+          assert.equal((await requests()).length, before, `${mode} ${command} opened a picker`);
+          results.push({ mode, command, ...result, picker: false });
+        };
+        await refused("ask", mode === "denied" ? "NotAllowedError" : "InvalidStateError");
+        await refused("synthetic", mode === "denied" ? "NotAllowedError" : "InvalidStateError");
+        await refused("tamper", mode === "denied" ? "NotAllowedError" : "InvalidStateError");
+        const before = (await requests()).length;
+        const click = { x: 80, y: mode === "top" ? 45 : 145, button: "left", clickCount: 1 };
+        await cdp(target, "Input.dispatchMouseEvent", { ...click, type: "mousePressed" });
+        await cdp(target, "Input.dispatchMouseEvent", { ...click, type: "mouseReleased" });
+        if (mode === "denied") {
+          const result = await until("activated policy refusal", async () => {
+            const value = await probe();
+            return value?.requestedActive && value.outcome === "NotAllowedError" ? value : null;
+          }, 3000);
+          await sleep(250);
+          assert.equal((await requests()).length, before, "denied frame opened a picker");
+          results.push({ mode, command: "trusted-click", ...result, picker: false });
+        } else {
+          await until(`${mode} trusted click picker`, async () => (await requests()).length > before, 5000);
+          const pending = await probe();
+          assert.equal(pending.requestedActive, true, `${mode} click activation`);
+          assert.equal(pending.outcome, "pending", `${mode} picker pending`);
+          assert.equal((await requests()).length, before + 1, `${mode} one picker`);
+          await evalApp(`globalThis.acSharePicker.answerDisplayMedia(${JSON.stringify(tab.id)}, null); return true`);
+          await until(`${mode} picker canceled`, async () => (await probe())?.outcome === "NotAllowedError", 3000);
+          results.push({ mode, command: "trusted-click", ...pending, picker: true, canceled: true });
+        }
+        await until(`${mode} activation expired`, async () => !(await probe())?.active, 8000);
+        await refused("ask", mode === "denied" ? "NotAllowedError" : "InvalidStateError");
+      } finally {
+        await evalApp(`globalThis.acSharePicker.answerDisplayMedia(${JSON.stringify(tab.id)}, null); return true`).catch(() => null);
+        await closeTab(tab.id);
+      }
+    }
+    return results;
+  });
 
   await check("screen-share-picker", async () => {
     const target = await openTab(`${base}/capture-target?picker`, "Capture Target", true);

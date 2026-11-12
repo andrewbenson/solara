@@ -102,6 +102,7 @@ struct TabsPane: View {
         }
         SettingToggle("tabs.classicPinnedTabs", key: "classicPinnedTabs", inverted: true)
         SettingToggle("tabs.fadeUnloadedTabs", key: "fadeUnloadedTabs")
+        SettingToggle("tabs.showUnreadBadges", key: "showUnreadBadges")
       } header: {
         VStack(alignment: .leading, spacing: 14) {
           SettingsSectionHeader(anchor: "tabs.layout")

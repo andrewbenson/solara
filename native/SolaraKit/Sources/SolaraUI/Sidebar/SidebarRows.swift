@@ -79,6 +79,19 @@ final class SidebarContext {
     self.favicons = favicons
   }
 
+  func unread(_ tab: Tab) -> TabUnreadStatus? {
+    guard state.settings["showUnreadBadges"]?.bool != false, activeId != tab.id else { return nil }
+    return UnreadBadges.status(tab: tab)
+  }
+
+  func unreadLabel(_ tab: Tab) -> String {
+    guard let status = unread(tab) else { return title(tab) }
+    switch status {
+    case .count(let count): return "\(title(tab)), \(count > 99 ? "99+" : String(count)) unread"
+    case .dot: return "\(title(tab)), unread"
+    }
+  }
+
   func title(_ tab: Tab) -> String {
     if let custom = tab.customTitle, !custom.isEmpty { return custom }
     if !tab.title.isEmpty { return tab.title }
@@ -254,10 +267,12 @@ final class TabRowView: SidebarRowView {
   private var closeButton: SidebarIconButton?
   private var spinner: SpinnerView?
   private var subtitle: FadeLabel?
+  private let unreadBadge = UnreadBadgeView()
+  private var unreadStatus: TabUnreadStatus?
 
   override var accessibleTitle: String? {
     guard let tab, let context else { return nil }
-    let title = context.title(tab)
+    let title = context.unreadLabel(tab)
     return TabIconSpec.engineName(context.host.engines[tab.id]).map { "\(title), Opens in \($0)" } ?? title
   }
   private var developerRing: (gap: CAShapeLayer, dash: CAShapeLayer)?
@@ -276,7 +291,7 @@ final class TabRowView: SidebarRowView {
     super.init(frame: frame)
     body.layer?.addSublayer(surface)
     surface.radius = SidebarMetrics.rowRadius
-    for view in [icon, label] as [NSView] { body.addSubview(view) }
+    for view in [icon, label, unreadBadge] as [NSView] { body.addSubview(view) }
   }
 
   required init?(coder: NSCoder) { fatalError() }
@@ -337,6 +352,7 @@ final class TabRowView: SidebarRowView {
     let active, selected, loading, playing, developer, sleeping, renaming, resettable, faded, pip: Bool
     let capture: TabCapture?
     let heavy: HeavyTabReason?
+    let unread: TabUnreadStatus?
     let closeKind: String
     let engine, closeHint: String?
     let palette: Int
@@ -353,7 +369,7 @@ final class TabRowView: SidebarRowView {
       playing: flags.playing.contains(id), developer: flags.developer.contains(id), sleeping: flags.sleeping.contains(id),
       renaming: context.host.renaming == "tab:\(id)", resettable: context.query.awayFromPinnedUrl(id),
       faded: context.state.settings.bool("fadeUnloadedTabs") && context.query.pageUnloaded(id),
-      pip: flags.pip.contains(id), capture: flags.capture[id], heavy: flags.heavy[id],
+      pip: flags.pip.contains(id), capture: flags.capture[id], heavy: flags.heavy[id], unread: context.unread(tab),
       closeKind: "\(context.query.closeKind(id))", engine: context.host.engines[id], closeHint: context.host.closeHint,
       palette: context.paletteGeneration, mark: context.favicons.newTabMark.map(ObjectIdentifier.init))
   }
@@ -365,6 +381,9 @@ final class TabRowView: SidebarRowView {
     selected = context.flags.selection.contains(id)
     loading = context.flags.loading.contains(id)
     showsAudio = context.flags.playing.contains(id) || tab.muted
+    unreadStatus = context.unread(tab)
+    unreadBadge.set(unreadStatus)
+    needsLayout = true
     resettable = context.query.awayFromPinnedUrl(id)
     developer = context.flags.developer.contains(id)
     let palette = context.palette
@@ -425,6 +444,7 @@ final class TabRowView: SidebarRowView {
     } else {
       closeButton?.isHidden = true
     }
+    unreadBadge.isHidden = unreadStatus == nil || closeShown || loading || renaming
     if loading && !closeShown {
       attached(&spinner) { SpinnerView() }.isHidden = false
     } else if let spinner {
@@ -476,7 +496,8 @@ final class TabRowView: SidebarRowView {
     x += 5
     let right = bounds.width - 6
     let closeShown = closeButton.map { !$0.isHidden } ?? false
-    let slot: CGFloat = closeShown ? 22 : (loading ? 14 : 0)
+    let slot = UnreadBadgeLayout.rowSlot(unreadStatus, affordance: closeShown ? 22 : (loading ? 14 : 0))
+    if let unreadStatus { unreadBadge.frame = UnreadBadgeLayout.trailingFrame(unreadStatus, in: bounds) }
     closeButton?.frame = NSRect(x: right - 22, y: (h - 22) / 2, width: 22, height: 22)
     spinner?.frame = NSRect(x: right - 14, y: (h - 12) / 2, width: 12, height: 12)
     let titleWidth = max(0, right - slot - x)
@@ -540,6 +561,8 @@ final class SplitPaneView: NSView {
   private let plate = CALayer()
   private let icon = TabIconView()
   private let label = FadeLabel(fontSize: 12)
+  private let unreadBadge = UnreadBadgeView()
+  private var unreadStatus: TabUnreadStatus?
   var hovered = false
   var pressed = false
 
@@ -555,6 +578,7 @@ final class SplitPaneView: NSView {
     layer?.addSublayer(plate)
     addSubview(icon)
     addSubview(label)
+    addSubview(unreadBadge)
   }
 
   required init?(coder: NSCoder) { fatalError() }
@@ -564,6 +588,9 @@ final class SplitPaneView: NSView {
   func render(_ context: SidebarContext) {
     guard let tab = context.state.tabs[tabId] else { return }
     let active = context.activeId == tabId
+    unreadStatus = context.unread(tab)
+    unreadBadge.set(unreadStatus)
+    needsLayout = true
     icon.favicons = context.favicons
     icon.set(context.iconSpec(tab, size: 14), palette: context.palette)
     label.text = context.title(tab)
@@ -582,7 +609,9 @@ final class SplitPaneView: NSView {
     CATransaction.commit()
     let h = bounds.height
     icon.frame = NSRect(x: 6, y: (h - 14) / 2, width: 14, height: 14)
-    label.frame = NSRect(x: 25, y: (h - 16) / 2, width: max(0, bounds.width - 25), height: 16)
+    let slot = unreadStatus.map { UnreadBadgeLayout.size($0).width + 10 } ?? 0
+    if let unreadStatus { unreadBadge.frame = UnreadBadgeLayout.trailingFrame(unreadStatus, in: bounds) }
+    label.frame = NSRect(x: 25, y: (h - 16) / 2, width: max(0, bounds.width - 25 - slot), height: 16)
   }
 }
 
@@ -1230,6 +1259,8 @@ final class TileView: SidebarRowView {
   private var ring: IconRingView?
   private var ringShown = false
   private var ringRequest: SidebarFaviconRequest?
+  private let unreadBadge = UnreadBadgeView()
+  private var unreadStatus: TabUnreadStatus?
 
   override var accessibleTitle: String? {
     guard let context else { return nil }
@@ -1237,7 +1268,7 @@ final class TileView: SidebarRowView {
       let name = context.query.folderMembers(windowId: context.windowId, folderId).lazy.compactMap { context.state.tabs[$0]?.tileFolder?.name }.first
       return name.map { $0.isEmpty ? "Folder" : $0 } ?? "Folder"
     }
-    return tabId.flatMap { context.state.tabs[$0] }.map(context.title)
+    return tabId.flatMap { context.state.tabs[$0] }.map(context.unreadLabel)
   }
 
   override init(frame: NSRect) {
@@ -1246,6 +1277,7 @@ final class TileView: SidebarRowView {
     body.addSubview(icon)
     body.addSubview(mosaic)
     addSubview(badge)
+    body.addSubview(unreadBadge)
   }
 
   required init?(coder: NSCoder) { fatalError() }
@@ -1284,6 +1316,10 @@ final class TileView: SidebarRowView {
       showsBadge = false
     }
     badge.isHidden = !showsBadge
+    unreadStatus = folderId == nil ? tab.flatMap(context.unread) : nil
+    unreadBadge.set(unreadStatus)
+    unreadBadge.isHidden = unreadStatus == nil || tab.map { context.flags.pip.contains($0.id) } == true
+    needsLayout = true
     TabBadgesView.attach(&badges, to: body, flags: context.flags, tabId: folderId == nil ? tab?.id : nil, host: context.host, palette: palette)
     badges?.frame = icon.frame
     glass.dark = palette.dark
@@ -1366,6 +1402,7 @@ final class TileView: SidebarRowView {
 
   override func layoutBody() {
     glass.frame = bounds
+    if let unreadStatus { unreadBadge.frame = body.convert(UnreadBadgeLayout.cornerFrame(unreadStatus, in: bounds), from: self) }
     ring?.frame = bounds
     icon.frame = NSRect(x: (bounds.width - 16) / 2, y: (bounds.height - 16) / 2, width: 16, height: 16)
     badges?.frame = icon.frame

@@ -147,7 +147,7 @@ A fix-only release for 0.3.1, out as soon as it's gated (owner, 2026-11-11); the
 | Picture in Picture floats over other apps' full-screen Spaces and stays on the display it's put on, tiling window managers included (Ardia) | planned |
 | Profiles load when opened: at launch only the profiles the windows show start, the rest and their extensions start on first switch; a setting turns it off (Ardia measured 1.5 GB → 390 MB at launch with eight profiles) (Ardia) | planned |
 | Closing the last window keeps it, as in Arc: no "Close N tabs?", the Dock brings back the same window with its tabs, groups and selection, and so does reopening after quitting with no window (Ardia) | planned |
-| Unread counts on tabs, pinned tabs and Top Apps, from the page title, the Badging API or a favicon dot (Ardia) | planned |
+| Unread counts on tabs, pinned tabs and Top Apps, from the page title, the Badging API or a favicon dot (Ardia) | Native sidebar title/favicon support implemented; optional Badging API engine hook proposed separately |
 | Links from pinned tabs and Top Apps to other sites open in a Peek, with Gmail, Slack and Outlook redirect wrappers unwrapped; Settings › Tabs picks New tab, Peek or Little Solara (Ardia) | planned |
 | WebKit tabs block ads and trackers with uBlock Origin Lite's lists, following the same blocking switch, lists and trusted sites as Chromium tabs (Ardia) | planned |
 | Full screen: the whole window slides down with the menu bar and nothing is covered (owner's target, backlog 2026-11-01); Ardia's version, macOS's own title bar sliding down with the window buttons, is a reference, not the target | planned |

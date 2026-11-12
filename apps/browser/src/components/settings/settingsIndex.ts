@@ -132,6 +132,11 @@ const ROWS: Record<SettingsPane, Section[]> = {
           description: "The Top App you're on is raised, with a faint tint and ring in its icon's colors, and the others sit flat. Off, every Top App is raised glass, as before.",
           keywords: ["dia", "liquid glass", "top apps", "pinned tabs", "favicon", "colour", "color", "icon ring", "tint", "selected tile", "active", "flat", "raised"],
         },
+        showUnreadBadges: {
+          title: "Show unread badges on tabs",
+          description: "Shows unread counts from a page badge or title, or a dot from its favicon, on tabs and Top Apps. The tab you are on stays clear.",
+          keywords: ["notifications", "unread", "count", "badge", "dot", "pinned", "top apps"],
+        },
         fadeUnloadedTabs: {
           title: "Fade icons of unloaded tabs",
           description: "A tab whose page isn't loaded, like a closed pinned tab or one restored after a relaunch, shows its icon faded, as sleeping tabs do. Clicking it loads the page.",

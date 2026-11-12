@@ -25,7 +25,7 @@ func extraction(_ values: OrderedDict<String, JSONValue>, ignoring: Bool = true)
 public let syncedSettings = [
   "warnBeforeQuitting", "warnBeforeClosingWindow", "searchEngine", "customSearchUrl", "customSearchEngines", "searchSuggestions",
   "showSelectionSearch", "commandBarPreference", "tabLayout", "hideToolbarWhileScrolling", "showSidebarButton", "showClearButton",
-  "balancedTopApps", "pinnedTabIconRing", "selectedTabGlow", "pageScrollBars", "fadeUnloadedTabs", "sleepInactiveTabs", "sleepTabsAfterMinutes", "keepAwakeSites", "warnBeforeClosingTabGroup",
+  "balancedTopApps", "pinnedTabIconRing", "selectedTabGlow", "pageScrollBars", "fadeUnloadedTabs", "showUnreadBadges", "sleepInactiveTabs", "sleepTabsAfterMinutes", "keepAwakeSites", "warnBeforeClosingTabGroup",
   "newTabPosition", "newTabButtonPosition", "newTabOpens", "warnBeforeClosingLastTab", "undoReopensClosedTab", "warnBeforeMovingTabsToProfile",
   "tabReorderHaptics", "extendWebsiteColor", "cmdClickCreatesTabGroup", "optShiftClickOpensInGroup", "peekModifier", "splitLinkModifier",
   "autoGroupMeetingTabs", "cleanUpInactiveTabsAfterHours", "mutedSites", "autoPictureInPicture", "videoUpscaling", "sidebarMediaControls", "hoverCardMemoryUsage",

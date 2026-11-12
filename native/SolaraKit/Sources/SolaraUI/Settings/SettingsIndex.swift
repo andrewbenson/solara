@@ -177,6 +177,13 @@ public struct SettingsIndex: Sendable {
             keywords: ["dia", "liquid glass", "top apps", "pinned tabs", "favicon", "colour", "color", "icon ring", "tint", "selected tile", "active", "flat", "raised"]
           ),
           Row(
+            key: "showUnreadBadges",
+            title: "Show unread badges on tabs",
+            description: "Shows unread counts from a page badge or title, or a dot from its favicon, on tabs and Top Apps. The tab you are on stays clear.",
+            caption: "Shows unread counts or dots on tabs and Top Apps.",
+            keywords: ["notifications", "unread", "count", "badge", "dot", "pinned", "top apps"]
+          ),
+          Row(
             key: "fadeUnloadedTabs",
             title: "Fade icons of unloaded tabs",
             description: "A tab whose page isn't loaded, like a closed pinned tab or one restored after a relaunch, shows its icon faded, as sleeping tabs do. Clicking it loads the page.",

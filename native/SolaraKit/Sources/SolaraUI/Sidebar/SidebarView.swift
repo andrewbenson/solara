@@ -66,6 +66,8 @@ public final class SidebarView: NSView {
     addSubview(pill)
     addSubview(panels)
     NotificationCenter.default.addObserver(self, selector: #selector(scrolled), name: NSView.boundsDidChangeNotification, object: scroll.contentView)
+    UnreadBadges.start()
+    NotificationCenter.default.addObserver(self, selector: #selector(heavyChanged), name: UnreadBadges.changed, object: nil)
     DevPointer.observe(self, #selector(devPointer(_:)))
     NotificationCenter.default.addObserver(self, selector: #selector(coverChanged(_:)), name: WindowShellView.hoverCoverChanged, object: nil)
     NotificationCenter.default.addObserver(self, selector: #selector(liveChanged), name: SidebarLiveFeed.changed, object: nil)
@@ -75,6 +77,8 @@ public final class SidebarView: NSView {
   required init?(coder: NSCoder) { fatalError() }
 
   public func update(state: BrowserState, host: SidebarHostState) {
+    UnreadBadges.retain(tabIds: Set(state.tabs.keys))
+    UnreadBadges.setEnabled(state.settings["showUnreadBadges"]?.bool != false)
     let next = SidebarContext(state: state, host: host, windowId: windowId, favicons: favicons, previous: context)
     next.send = { [weak self] action in self?.onAction(action) }
     let previous = context
@@ -168,6 +172,22 @@ public final class SidebarView: NSView {
   }
 
   #if SOLARA_PROBES
+  public func probeUnreadBadges() -> [[String: Any]] {
+    func badges(_ view: NSView) -> [UnreadBadgeView] {
+      if let badge = view as? UnreadBadgeView { return [badge] }
+      return view.subviews.flatMap(badges)
+    }
+    return views.keys.sorted().flatMap { key -> [[String: Any]] in
+      guard let view = views[key] else { return [] }
+      return badges(view).map { badge in
+        let rect = badge.convert(badge.bounds, to: self)
+        return ["key": key, "visible": !badge.isHiddenOrHasHiddenAncestor,
+          "status": badge.status?.accessibilityLabel ?? "", "text": badge.label.stringValue,
+          "frame": [rect.minX, rect.minY, rect.width, rect.height]]
+      }
+    }
+  }
+
   public func probeHoverTargets() -> [String] {
     views.values.compactMap { $0 as? SidebarRowView }.filter { $0.window != nil && !$0.isHidden }.compactMap { $0.item?.key }.sorted()
   }

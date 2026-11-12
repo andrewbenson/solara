@@ -1,5 +1,6 @@
 import AppKit
 import ExpoModulesCore
+import SolaraUI
 
 public class HostedModule: Module {
   public func definition() -> ModuleDefinition {
@@ -95,6 +96,10 @@ public class HostedModule: Module {
     }
 
     #if DEBUG
+    AsyncFunction("devUnreadBadgeStats") { () async -> [String: Int] in
+      await UnreadBadges.diagnostics()
+    }
+
     AsyncFunction("devTabMemory") { (spec: String?) in
       MainActor.assumeIsolated { NativeTabMemory.devSet(spec) }
     }.runOnQueue(.main)
@@ -266,7 +271,7 @@ public enum HoverLayoutRead {
     switch area {
     case "sidebar":
       guard let page = NativeSidebar.hosts[windowId]?.view.current else { return nil }
-      return ["area": area, "targets": page.probeHoverTargets(), "frames": page.probeHoverFrames()]
+      return ["area": area, "targets": page.probeHoverTargets(), "frames": page.probeHoverFrames(), "unreadBadges": page.probeUnreadBadges()]
     case "topStrip":
       guard let page = NativeTopStrip.hosts[windowId]?.view.current else { return nil }
       return ["area": area, "targets": page.probeHoverTargets(), "frames": page.probeHoverFrames()]

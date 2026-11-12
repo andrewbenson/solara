@@ -8,7 +8,7 @@ public enum PairingProjection {
     "warnBeforeQuitting", "warnBeforeClosingWindow", "searchEngine", "customSearchUrl", "customSearchEngines",
     "searchSuggestions", "showSelectionSearch", "commandBarPreference", "tabLayout", "hideToolbarWhileScrolling",
     "showSidebarButton", "showClearButton", "balancedTopApps", "pinnedTabIconRing", "selectedTabGlow", "pageScrollBars",
-    "fadeUnloadedTabs", "sleepInactiveTabs", "sleepTabsAfterMinutes", "keepAwakeSites", "warnBeforeClosingTabGroup", "newTabPosition", "newTabButtonPosition", "newTabOpens",
+    "fadeUnloadedTabs", "showUnreadBadges", "sleepInactiveTabs", "sleepTabsAfterMinutes", "keepAwakeSites", "warnBeforeClosingTabGroup", "newTabPosition", "newTabButtonPosition", "newTabOpens",
     "warnBeforeClosingLastTab", "undoReopensClosedTab", "warnBeforeMovingTabsToProfile", "tabReorderHaptics",
     "extendWebsiteColor", "cmdClickCreatesTabGroup", "optShiftClickOpensInGroup", "peekModifier", "splitLinkModifier",
     "autoGroupMeetingTabs", "cleanUpInactiveTabsAfterHours", "mutedSites", "autoPictureInPicture", "videoUpscaling",

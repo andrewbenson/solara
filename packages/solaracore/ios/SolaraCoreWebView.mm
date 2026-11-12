@@ -815,6 +815,8 @@ static void ShareFromContext(NSDictionary<NSString *, id> *context, NSView *view
   BOOL _blockedEmitQueued;
   NSDictionary *_sentNavigation;
   NSString *_lastFavicon;
+  NSString *_unreadDocument;
+  NSInteger _unreadTabId;
   CFTimeInterval _sentProgressAt;
   double _sentProgress;
   BOOL _progressQueued;
@@ -1419,6 +1421,8 @@ static SolaraCoreTab *StartParkedPage(NSString *url, NSString *profileName, NSSt
     [self loadNow:_pendingURL userInitiated:_pendingUserInitiated];
     _pendingURL = nil;
   }
+  [self resetUnreadSignals];
+  [self tabDidChangeAppBadge:tab];
   [self emit:@"ready" payload:@{@"browserId" : @(solaracore_host::BrowserId(tab)), @"tabId" : @(tab.tabId)}];
   [self emitNavigation];
   if (_extensionHost.length && tab && tab.preferredSize.width > 0)
@@ -2420,6 +2424,7 @@ void SolaraCoreWebViewsSetFieldTiming(BOOL on) {
 }
 
 - (void)tabDidCommitDocument:(SolaraCoreTab *)tab {
+  [self resetUnreadSignals];
   ACFieldMarkNow(_transferKey, @"commit");
   [SolaraCoreEarlyWindow pageCommitted:tab shownURL:_shownURL];
   _pageTheme = nil;
@@ -2454,8 +2459,40 @@ void SolaraCoreWebViewsSetFieldTiming(BOOL on) {
   [self emit:@"openWindow" payload:@{@"url" : url ?: @"", @"disposition" : @"current", @"userGesture" : @(userGesture)}];
 }
 
+- (void)postUnreadEvent:(NSString *)event payload:(NSDictionary *)payload {
+  if (!_tab || !_transferKey.length || !_unreadDocument.length) return;
+  NSMutableDictionary *info = [payload mutableCopy];
+  info[@"key"] = _transferKey;
+  info[@"document"] = _unreadDocument;
+  info[@"event"] = event;
+  info[@"profile"] = _profile ?: @"";
+  [NSNotificationCenter.defaultCenter postNotificationName:@"SolaraTabUnreadSignal" object:nil userInfo:info];
+}
+
+- (void)resetUnreadSignals {
+  _unreadDocument = NSUUID.UUID.UUIDString;
+  _unreadTabId = _tab.tabId;
+  [self postUnreadEvent:@"reset" payload:@{}];
+}
+
+- (void)tabDidChangeAppBadge:(SolaraCoreTab *)tab {
+  if (tab != _tab) return;
+  SEL getter = NSSelectorFromString(@"appBadge");
+  if (![tab respondsToSelector:getter]) return;
+  if (!_unreadDocument.length || _unreadTabId != tab.tabId) [self resetUnreadSignals];
+  id value = ((id (*)(id, SEL))objc_msgSend)(tab, getter);
+  NSDictionary *badge = [value isKindOfClass:NSDictionary.class] ? value : @{@"kind" : @"unset"};
+  [self postUnreadEvent:@"badge" payload:@{@"badge" : badge}];
+}
+
 - (void)tabDidChangeFavicon:(SolaraCoreTab *)tab {
+  if (tab != _tab) return;
+  if (!_unreadDocument.length || _unreadTabId != tab.tabId) [self resetUnreadSignals];
   NSImage *image = tab.favicon;
+  if (image) {
+    CGImageRef snapshot = [image CGImageForProposedRect:nullptr context:nil hints:nil];
+    if (snapshot) [self postUnreadEvent:@"favicon" payload:@{@"source" : tab.faviconURL ?: @"", @"image" : (__bridge id)snapshot}];
+  }
   if (!image) return;
   NSString *url = tab.faviconURL;
   if (url.length) [SolaraCoreFavicons noteImage:image forURL:url profile:_profile];
@@ -2751,6 +2788,7 @@ static NSString *LinkKeyAction(NSString *key) {
 }
 
 - (void)tabWillClose:(SolaraCoreTab *)tab {
+  if (tab == _tab) [self postUnreadEvent:@"closed" payload:@{}];
   [SolaraCoreEarlyWindow dropPage:tab];
   if (_closing || tab != _tab) return;
   const BOOL withWindow = [tab respondsToSelector:@selector(closingWithWindow)] && tab.closingWithWindow;
@@ -2767,6 +2805,7 @@ static NSString *LinkKeyAction(NSString *key) {
 
 - (void)tab:(SolaraCoreTab *)tab rendererGone:(NSString *)status code:(int)code {
   _crashed = YES;
+  [self postUnreadEvent:@"closed" payload:@{}];
   [self resetPageMedia];
   [self emit:@"crashed" payload:@{@"status" : @(code), @"reason" : status ?: @"unknown", @"code" : @(code)}];
 }
@@ -3271,6 +3310,11 @@ static NSString *LinkKeyAction(NSString *key) {
 }
 
 - (void)tabDidChangeDiscarded:(SolaraCoreTab *)tab {
+  if (tab.discarded) [self postUnreadEvent:@"closed" payload:@{}];
+  else {
+    [self resetUnreadSignals];
+    [self tabDidChangeAppBadge:tab];
+  }
   if (tab.discarded) [self emit:@"discarded" payload:@{@"url" : tab.url ?: @""}];
   else [self emit:@"ready" payload:@{@"browserId" : @(solaracore_host::BrowserId(tab)), @"tabId" : @(tab.tabId)}];
 }

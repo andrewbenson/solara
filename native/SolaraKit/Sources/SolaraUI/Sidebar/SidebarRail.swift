@@ -191,12 +191,14 @@ final class RailTabView: RailIconView {
   private var closeTooltip = "Close Tab"
   private var closeSymbol = "xmark"
   private var closeReveal: CGFloat = 0
+  private let unreadBadge = UnreadBadgeView()
+  private var unreadStatus: TabUnreadStatus?
 
   var tabId: String? { tab?.id }
 
   override var accessibleTitle: String? {
     guard let tab, let context else { return nil }
-    return context.title(tab)
+    return context.unreadLabel(tab)
   }
 
   func containsClose(_ point: NSPoint) -> Bool {
@@ -226,6 +228,10 @@ final class RailTabView: RailIconView {
     }
     guard let tab = context.state.tabs[id] else { return }
     self.tab = tab
+    unreadStatus = context.unread(tab)
+    unreadBadge.set(unreadStatus)
+    if unreadBadge.superview == nil { addSubview(unreadBadge) }
+    needsLayout = true
     let palette = context.palette
     active = context.activeId == id
     selected = context.flags.selection.contains(id)
@@ -260,6 +266,7 @@ final class RailTabView: RailIconView {
     super.repaint()
     guard let context else { return }
     let palette = context.palette
+    unreadBadge.isHidden = unreadStatus == nil || hovered || loading || tab.map { context.flags.pip.contains($0.id) } == true
     if hovered && tab != nil {
       let button = close ?? attach(makeClose())
       close = button
@@ -309,6 +316,7 @@ final class RailTabView: RailIconView {
     super.layoutBody()
     badges?.frame = icon.frame
     let tileInSelf = body.convert(glass.frame, to: self)
+    if let unreadStatus { unreadBadge.frame = UnreadBadgeLayout.cornerFrame(unreadStatus, in: tileInSelf, leading: true) }
     close?.frame = SidebarRail.closeFrame(around: tileInSelf)
     audio?.frame = SidebarRail.trailingBadgeFrame(around: tileInSelf)
     spinner?.frame = SidebarRail.leadingBadgeFrame(around: tileInSelf).insetBy(dx: 1, dy: 1)

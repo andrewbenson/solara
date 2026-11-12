@@ -68,6 +68,7 @@ export type Settings = {
   selectedTabGlow: SelectedTabGlow;
   pageScrollBars: "system" | "thin";
   fadeUnloadedTabs: boolean;
+  showUnreadBadges: boolean;
   sleepInactiveTabs: boolean;
   sleepTabsAfterMinutes: number;
   keepAwakeSites: string[];
@@ -171,6 +172,7 @@ export const DEFAULT_SETTINGS: Settings = {
   selectedTabGlow: "full",
   pageScrollBars: "system",
   fadeUnloadedTabs: false,
+  showUnreadBadges: true,
   sleepInactiveTabs: true,
   sleepTabsAfterMinutes: 30,
   keepAwakeSites: [],

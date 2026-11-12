@@ -54,6 +54,7 @@ public struct Settings: Sendable, Hashable {
     "selectedTabGlow": "full",
     "pageScrollBars": "system",
     "fadeUnloadedTabs": false,
+    "showUnreadBadges": true,
     "sleepInactiveTabs": true,
     "sleepTabsAfterMinutes": 30,
     "keepAwakeSites": [],

@@ -48,6 +48,7 @@ export const SYNCED_SETTINGS = [
   "selectedTabGlow",
   "pageScrollBars",
   "fadeUnloadedTabs",
+  "showUnreadBadges",
   "sleepInactiveTabs",
   "sleepTabsAfterMinutes",
   "keepAwakeSites",

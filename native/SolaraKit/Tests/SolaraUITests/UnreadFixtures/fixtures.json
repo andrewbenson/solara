@@ -1,0 +1,18 @@
+{
+  "positive": [
+    "red-top-right",
+    "blue-bottom-left",
+    "orange-top-left",
+    "green-bottom-right",
+    "dot-with-center"
+  ],
+  "negative": [
+    "plain",
+    "gray-dot",
+    "large-disc",
+    "center-dot",
+    "tiny-pixel",
+    "gmail-chevron",
+    "slack-cross"
+  ]
+}

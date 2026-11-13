@@ -364,6 +364,7 @@ SOLARACORE_EXPORT
 - (nullable NSString*)sidePanelURLForExtension:(NSString*)extensionId;
 @property(readonly, nullable) NSString* mediaCaptureSourceId;
 - (void)copyPicture:(NSTimeInterval)timeout completion:(void (^)(CGImageRef _Nullable picture))completion;
+- (void)whenFrameDrawn:(void (^)(BOOL drawn))completion;
 - (BOOL)stopCapture;
 @property(readonly) BOOL autoPictureInPictureIsChromes;
 - (void)noteShownByHost:(BOOL)shown;

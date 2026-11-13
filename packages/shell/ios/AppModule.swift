@@ -315,6 +315,28 @@ public class AppModule: Module {
       #endif
     }.runOnQueue(.main)
 
+    AsyncFunction("devPageLayers") { (windowId: String) -> [[String: Any]] in
+      #if DEBUG
+      return MainActor.assumeIsolated {
+        guard let root = WindowManager.shared.windows[windowId]?.contentView else { return [] }
+        return PageFrameProbe.describe(root)
+      }
+      #else
+      return []
+      #endif
+    }.runOnQueue(.main)
+
+    AsyncFunction("devPageFrameTrace") { (windowId: String, seconds: Double, promise: Promise) in
+      #if DEBUG
+      MainActor.assumeIsolated {
+        guard let window = WindowManager.shared.windows[windowId] else { return promise.resolve([]) }
+        PageFrameProbe.trace(window, seconds: min(max(seconds, 0.05), 5)) { promise.resolve($0) }
+      }
+      #else
+      promise.resolve([])
+      #endif
+    }.runOnQueue(.main)
+
     AsyncFunction("devSetPointer") { (windowId: String, x: Double, y: Double, on: Bool) -> Bool in
       guard Self.testFacilities else { return false }
       let pointer: NSValue?

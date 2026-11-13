@@ -222,7 +222,7 @@ final class TabPoolHost {
     let tabs = wanted.filter { $0.windowId == windowId }
     let window = shellNSWindows.object(forKey: windowId as NSString) ?? tabs.lazy.compactMap({ self.pages[$0.tabId]?.page.view.window }).first
     guard let window else { return }
-    let hold = ClosingWindow(tabs: tabs.map { TabViewWanted(tabId: $0.tabId, windowId: $0.windowId, shown: $0.shown) },
+    let hold = ClosingWindow(tabs: tabs.map { TabViewWanted(tabId: $0.tabId, windowId: $0.windowId, shown: $0.shown, profileId: $0.profileId) },
       restoration: TabViewCloseHold(tabIds: Set(tabs.map(\.tabId)), presentTabIds: Set(state.tabs.keys)), window: window)
     hold.observer = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: nil) {
       [weak self, weak hold] _ in
@@ -549,6 +549,12 @@ final class PoolPage: TabPoolPage {
     onRetire()
     page.retire()
   }
+
+  var holdsUntilDrawn: Bool { page.holdsUntilDrawn }
+
+  func hold(_ held: Bool) { page.setHeld(held) }
+
+  func whenDrawn(_ done: @escaping @MainActor (_ drawn: Bool) -> Void) { page.whenDrawn(done) }
 
   private func apply() {
     guard let issuer = PageIssuer.shared, let binding = token.binding else { return }

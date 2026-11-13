@@ -2552,6 +2552,18 @@ const performance_manager::PageNode* PageNodeOf(content::WebContents* contents) 
       }));
 }
 
+- (void)whenFrameDrawn:(void (^)(BOOL drawn))completion {
+  content::RenderFrameHost* frame = _contents ? _contents->GetPrimaryMainFrame() : nullptr;
+  if (!frame || !frame->IsRenderFrameLive()) {
+    completion(NO);
+    return;
+  }
+  void (^done)(BOOL) = [completion copy];
+  frame->InsertVisualStateCallback(base::BindOnce(^(bool drawn) {
+    done(drawn);
+  }));
+}
+
 - (BOOL)stopCapture {
   if (!_contents) {
     return NO;

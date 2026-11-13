@@ -25,6 +25,8 @@ bool TraceVisibility() {
 }
 
 constexpr CFTimeInterval kLeaveScreenDelay = 0.1;
+constexpr CFTimeInterval kDrawnFallbackDelay = 6.0 / 60;
+constexpr CFTimeInterval kDrawnSettleDelay = 2.0 / 60;
 constexpr CFTimeInterval kRevealBackstopSeconds = 5;
 constexpr CFTimeInterval kNeighbourPagesAwakeSeconds = 10;
 
@@ -554,6 +556,10 @@ void AcceptDrops(NSView *root, BOOL accept) {
 @interface SolaraCoreWebView () <SolaraCoreTabDelegate>
 @end
 
+@protocol ACFrameDrawnTab
+- (void)whenFrameDrawn:(void (^)(BOOL drawn))completion;
+@end
+
 static NSDictionary *DisplayMediaAudioOffer(NSDictionary *message) {
   if (!Flag(message, @"audio")) return nil;
   NSDictionary *support = [SolaraCoreEngine respondsToSelector:@selector(desktopCaptureAudio)] ? SolaraCoreEngine.desktopCaptureAudio : @{};
@@ -850,6 +856,10 @@ static void (^gPageLoadHook)(NSDictionary<NSString *, id> *);
   BOOL _capturing;
   BOOL _crashed;
   BOOL _leaving;
+  BOOL _held;
+#if DEBUG
+  NSString *_drawnReport;
+#endif
   NSUInteger _leaveGeneration;
   BOOL _handingOff;
   BOOL _devKeptOnClose;
@@ -1677,7 +1687,7 @@ static SolaraCoreTab *StartParkedPage(NSString *url, NSString *profileName, NSSt
 }
 
 - (BOOL)paints {
-  return _visible || (_warm && !self.neighbourPageAsleep) || _leaving || _revealed;
+  return _visible || (_warm && !self.neighbourPageAsleep) || _leaving || _revealed || _held;
 }
 
 - (BOOL)neighbourPageAsleep {
@@ -1775,7 +1785,7 @@ static SolaraCoreTab *StartParkedPage(NSString *url, NSString *profileName, NSSt
 - (void)applyPainting {
   [CATransaction begin];
   [CATransaction setDisableActions:YES];
-  self.alphaValue = _visible || _revealed || !(_warm || _leaving) ? 1 : 0;
+  self.alphaValue = _visible || _revealed || _held || !(_warm || _leaving) ? 1 : 0;
   const BOOL shown = self.paints;
   for (NSView *sub in self.subviews) {
     sub.hidden = !shown;
@@ -1787,6 +1797,52 @@ static SolaraCoreTab *StartParkedPage(NSString *url, NSString *profileName, NSSt
           _visible, _warm, _tab ? (int)_tab.tabId : -1, _tab.view.superview == self ? @"here" : @"elsewhere",
           (long)self.window.windowNumber, _tab.view.isHiddenOrHasHiddenAncestor);
 }
+
+- (void)setHeld:(BOOL)held {
+  if (_held == held) return;
+  _held = held;
+  [self schedulePainting];
+}
+
+- (NSView *)hitTest:(NSPoint)point {
+  return _held && !_visible ? nil : [super hitTest:point];
+}
+
+- (void)whenDrawn:(void (^)(BOOL drawn))done {
+  SolaraCoreTab *tab = _tab;
+#if DEBUG
+  const CFTimeInterval asked = CACurrentMediaTime();
+  __weak SolaraCoreWebView *weakSelf = self;
+  void (^report)(NSString *) = ^(NSString *how) {
+    SolaraCoreWebView *strongSelf = weakSelf;
+    if (strongSelf) strongSelf->_drawnReport = [NSString stringWithFormat:@"%@ %.0f", how, (CACurrentMediaTime() - asked) * 1000];
+  };
+#endif
+  if (tab && [tab respondsToSelector:@selector(whenFrameDrawn:)]) {
+    [(id<ACFrameDrawnTab>)tab whenFrameDrawn:^(BOOL drawn) {
+#if DEBUG
+      report(drawn ? @"engine" : @"engine-none");
+#endif
+      const CFTimeInterval delay = drawn ? kDrawnSettleDelay : kDrawnFallbackDelay;
+      dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        done(drawn);
+      });
+    }];
+    return;
+  }
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kDrawnFallbackDelay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+#if DEBUG
+    report(@"fallback");
+#endif
+    done(YES);
+  });
+}
+
+#if DEBUG
+- (NSString *)drawnReport {
+  return _drawnReport ?: @"";
+}
+#endif
 
 - (void)setWarm:(BOOL)warm {
   if (_warm == warm) return;

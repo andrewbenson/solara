@@ -26,6 +26,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic) BOOL visible;
 @property (nonatomic) BOOL warm;
 @property (nonatomic) BOOL neighbour;
+@property (nonatomic) BOOL held;
+- (void)whenDrawn:(void (^)(BOOL drawn))done;
 @property (nonatomic) BOOL autoPictureInPicture;
 @property (nonatomic, readonly) BOOL discarded;
 @property (nonatomic) BOOL frozen;

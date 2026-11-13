@@ -14,10 +14,10 @@ extension TabViewWanted {
         guard let tab = state.tabs[id], ((tab.navigation != nil || tab.adoptId != nil) && !isInternal(tab)) else { continue }
         let shown: Shown
         if newTabShown(id) { shown = .none } else if let split, split.tabIds.contains(id) { shown = .pane } else if id == active { shown = .card } else { shown = .none }
-        out[id] = TabViewWanted(tabId: id, windowId: windowId, shown: shown, warm: warm.contains(id), frozen: frozen(id))
+        out[id] = TabViewWanted(tabId: id, windowId: windowId, shown: shown, warm: warm.contains(id), frozen: frozen(id), profileId: tab.profileId)
       }
       if let peek = state.peeks[windowId], let tab = state.tabs[peek.tabId], ((tab.navigation != nil || tab.adoptId != nil) && !isInternal(tab)) {
-        out[peek.tabId] = TabViewWanted(tabId: peek.tabId, windowId: windowId, shown: newTabShown(peek.tabId) ? .none : .peek, frozen: frozen(peek.tabId))
+        out[peek.tabId] = TabViewWanted(tabId: peek.tabId, windowId: windowId, shown: newTabShown(peek.tabId) ? .none : .peek, frozen: frozen(peek.tabId), profileId: tab.profileId)
       }
     }
     return out.keys.sorted().map { out[$0]! }
@@ -34,7 +34,7 @@ public struct TabViewPark: Sendable {
     since = Dictionary(moving.map { ($0.tabId, since[$0.tabId] ?? now) }, uniquingKeysWith: { first, _ in first })
     return moving
       .filter { now.timeIntervalSince(since[$0.tabId] ?? now) < limit }
-      .map { TabViewWanted(tabId: $0.tabId, windowId: $0.windowId, shown: .none) }
+      .map { TabViewWanted(tabId: $0.tabId, windowId: $0.windowId, shown: .none, profileId: $0.profileId) }
   }
 
   public func nextExpiry(after now: Date, limit: TimeInterval = Self.limit) -> Date? {

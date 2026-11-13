@@ -264,6 +264,17 @@ public final class PooledPage {
     }
   }
 
+  public var holdsUntilDrawn: Bool { view is SolaraCoreWebView }
+
+  public func setHeld(_ held: Bool) {
+    (view as? SolaraCoreWebView)?.held = held
+  }
+
+  public func whenDrawn(_ done: @escaping @MainActor (_ drawn: Bool) -> Void) {
+    guard let web = view as? SolaraCoreWebView else { return done(true) }
+    web.whenDrawn { drawn in MainActor.assumeIsolated { done(drawn) } }
+  }
+
   public func apply(_ props: [String: Any]) {
     guard let web = view as? SolaraCoreWebView else { return }
     for (key, value) in props {

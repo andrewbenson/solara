@@ -355,6 +355,36 @@ struct TabViewPoolHoldTests {
     #expect(!rig.pool.isDroppingAGesture)
   }
 
+  @Test func aDroppedPressStopsAfterItsDeadline() throws {
+    let rig = Rig()
+    _ = try rig.showDrawn("a", others: ["b"])
+    rig.show("b", others: ["a"])
+    #expect(rig.pool.inputArrived(.leftMouseDown, window: rig.window, at: NSPoint(x: 250, y: 50)))
+    #expect(rig.pool.isDroppingAGesture)
+    #expect(rig.timers.contains { $0.0 == TabViewPool.droppingLimit })
+    rig.fireTimers()
+    #expect(!rig.pool.isDroppingAGesture)
+    #expect(!rig.pool.inputArrived(.leftMouseUp, window: rig.window, at: NSPoint(x: 250, y: 50)))
+  }
+
+  @Test func theDeferredFocusGoesToThePageShownNowWhenTheIncomingTabClosed() throws {
+    let rig = Rig()
+    let a = try rig.showDrawn("a", others: ["b", "c"])
+    let b = try #require(rig.made["b"]), c = try #require(rig.made["c"])
+    #expect(rig.window.makeFirstResponder(a.view))
+    rig.pool.update([rig.wanted("b", .card), rig.wanted("a", .none), rig.wanted("c", .none)])
+    let pending = rig.pending
+    rig.pending = []
+    pending.forEach { $0() }
+    rig.pool.update([rig.wanted("c", .card), rig.wanted("a", .none)])
+    rig.pool.reconcile()
+    rig.turn()
+    rig.turn()
+    #expect(b.retired)
+    #expect(b.focused == 0)
+    #expect(c.focused == 1)
+  }
+
   @Test func theDeferredFocusSkipsAPageThatIsNoLongerShown() throws {
     let rig = Rig()
     let a = try rig.showDrawn("a", others: ["b", "c"])
@@ -370,6 +400,7 @@ struct TabViewPoolHoldTests {
     rig.turn()
     rig.turn()
     #expect(b.focused == 0)
+    #expect(rig.made["c"]?.focused == 1)
   }
 
   @Test func aPressThatStartedBeforeTheHoldNeitherEndsItNorIsDropped() throws {

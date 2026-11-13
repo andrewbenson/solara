@@ -50,8 +50,11 @@ public final class TabViewPool {
   static let gestureMoves: Set<NSEvent.EventType> = [.leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
   static let gestureStarts: Set<NSEvent.EventType> = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
   enum DroppedGesture { case mouse, scroll }
+  static let droppingLimit: TimeInterval = 1
   private var dropping: DroppedGesture?
   private weak var droppingWindow: NSWindow?
+  private var droppingWindowNumber = 0
+  private var droppingGeneration = 0
   private var droppingObserver: NSObjectProtocol?
   private let after: After
   private var scheduled = false
@@ -228,10 +231,9 @@ public final class TabViewPool {
     page.hold(true)
     if hadFocus, let window {
       window.makeFirstResponder(nil)
-      schedule { [weak self, weak incoming, weak window] in
-        guard let self, let incoming, let window, window.firstResponder === window, self.pages[next] === incoming,
-          self.places[next] == .slot(key), incoming.view.window === window, !incoming.view.isHiddenOrHasHiddenAncestor else { return }
-        incoming.focus()
+      schedule { [weak self, weak window] in
+        guard let self, let window, window.firstResponder === window else { return }
+        self.focusShownPage(in: key, window: window)
       }
     }
     let release: @MainActor () -> Void = { [weak self] in self?.release(id, generation: generation) }
@@ -258,7 +260,7 @@ public final class TabViewPool {
   }
 
   func inputArrived(_ type: NSEvent.EventType, window: NSWindow?, at point: NSPoint, phase: NSEvent.Phase = [], momentum: NSEvent.Phase = []) -> Bool {
-    if dropping != nil, droppingWindow == nil || droppingWindow !== window { stopDropping() }
+    if dropping != nil, droppingWindow == nil || droppingWindow !== window || window?.windowNumber != droppingWindowNumber { stopDropping() }
     guard let window else { return false }
     if let dropping {
       switch dropping {
@@ -294,10 +296,23 @@ public final class TabViewPool {
     return swallow
   }
 
+  private func focusShownPage(in key: TabSlotKey, window: NSWindow) {
+    guard let id = places.filter({ $0.value == .slot(key) }).keys.sorted().first, let page = pages[id], page.view.window === window,
+      !page.view.isHiddenOrHasHiddenAncestor else { return }
+    page.focus()
+  }
+
   private func startDropping(_ gesture: DroppedGesture, in window: NSWindow) {
     stopDropping()
     dropping = gesture
     droppingWindow = window
+    droppingWindowNumber = window.windowNumber
+    droppingGeneration += 1
+    let generation = droppingGeneration
+    after(Self.droppingLimit) { [weak self] in
+      guard let self, self.dropping != nil, self.droppingGeneration == generation else { return }
+      self.stopDropping()
+    }
     droppingObserver = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: nil) { [weak self] _ in
       MainActor.assumeIsolated { self?.stopDropping() }
     }

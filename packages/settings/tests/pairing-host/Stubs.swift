@@ -23,7 +23,7 @@ import SolaraUI
   func invoke(_ name: String, _ arguments: [Any]) async throws -> Any? { nil }
 }
 @MainActor final class StubPane: SettingsPaneProvider {
-  init(services: Any? = nil, store: Any? = nil, safeMode: Bool = false, experiments: Any? = nil) {}
+  init(services: Any? = nil, store: Any? = nil, safeMode: Bool = false, experiments: Any? = nil, hooks: Any? = nil) {}
   func isLoaded(_ place: SettingsPlace) -> Bool { true }
   func prepare(_ place: SettingsPlace) async {}
   func view(_ place: SettingsPlace) -> AnyView { AnyView(EmptyView()) }
@@ -35,6 +35,10 @@ typealias AppearancePaneModel = StubPane
 typealias SearchEnginePaneModel = StubPane
 typealias EnginesPaneModel = StubPane
 typealias AdvancedPaneModel = StubPane
+@MainActor final class NativeHooks {
+  static let shared = NativeHooks()
+  func sectionModel() -> Any? { nil }
+}
 typealias AboutPaneModel = StubPane
 typealias PrivacyPaneModel = StubPane
 typealias PasswordsPaneModel = StubPane

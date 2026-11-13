@@ -269,6 +269,11 @@ const ROWS: Record<SettingsPane, Section[]> = {
           description: "Every profile goes light or dark with this choice, even when its theme (like one imported from an Arc space) says Light. In dark mode a light theme's colours are darkened so white text reads.",
           keywords: ["space", "profile theme", "arc theme", "follow system"],
         },
+        lightColorsKeepWhiteText: {
+          title: "Readable text on light colours",
+          description: "In dark mode, a light profile colour gets dark text in the sidebar and the tab strip, as in Arc, while the selected tab keeps the text that reads on it. Off, the text stays white.",
+          keywords: ["text colour", "text color", "contrast", "readable", "light theme", "profile colour", "arc", "sidebar text"],
+        },
       },
     },
     {

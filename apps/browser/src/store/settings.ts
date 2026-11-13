@@ -90,6 +90,7 @@ export type Settings = {
   addressBar: "toolbar" | "sidebar";
   commandBarPlacement: "field" | "centred";
   spacesFollowAppearance: boolean;
+  lightColorsKeepWhiteText?: boolean;
 
   defaultProfileId: string;
 

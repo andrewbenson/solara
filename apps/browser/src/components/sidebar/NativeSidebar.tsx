@@ -9,7 +9,7 @@ import { PRODUCT } from "../../lib/productName";
 import { nativeOwnsWorkspace } from "../../store/nativeStore";
 import { sidebarHostProps } from "../nativeHostProps";
 import { useLifecycle } from "../../lib/tabLifecycle";
-import { hex, profileNameColor, profileTheme, selectedTabGlow, spaceLookSource, useSelectedTabGlow, useTheme, type Theme } from "../../lib/theme";
+import { hex, inkedTokens, profileNameColor, profileTheme, selectedTabGlow, spaceLookSource, useAdjustedInk, useSelectedTabGlow, useTheme, type Theme } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
 import { commitSidebarWidth, setSidebarIconsOnly, sidebarWidthOf, SIDEBAR_RAIL_WIDTH } from "../../store/sidebarRail";
 import { engineMark, ENGINE_SYMBOLS } from "../../store/engines";
@@ -113,6 +113,7 @@ function useShellChrome(windowId: string, addressBar: boolean, theme: Theme): st
   const { pages } = usePagerPages(windowId);
   const dropOver = useTabDrag((d) => d.overWindow === windowId);
   const pending = usePendingUpdate();
+  const adjustInk = useAdjustedInk();
   return useMemo(
     () =>
       JSON.stringify({
@@ -120,14 +121,14 @@ function useShellChrome(windowId: string, addressBar: boolean, theme: Theme): st
           title: incognito ? "Incognito" : (profile?.name ?? ""),
           incognito,
           profiles,
-          nameColor: incognito || !profile ? theme.textPrimary : profileNameColor(profile, theme.dark),
+          nameColor: incognito || !profile ? inkedTokens({ textPrimary: theme.textPrimary }, theme.sidebarInk, adjustInk).textPrimary! : profileNameColor(profile, theme.dark && !(adjustInk && theme.sidebarInk?.ink)),
           downloadsOpen,
           downloadsTooltip: withShortcut("Downloads", hint),
         },
         downloads,
         addressBar,
         dark: theme.dark,
-        theme: { ...themeTokens(theme), panel: theme.panel, panelBorder: theme.panelBorder },
+        theme: { ...themeTokens(theme, adjustInk), panel: theme.panel, panelBorder: theme.panelBorder },
         dots: dotsShown ? order.map((id, i) => ({ id, name: names[i] ?? "", icon: icons[i] ?? null, slot: pages.find((p) => p.id === id)?.slot ?? null })) : [],
         savedWidth,
         currentProfileId: profile?.id ?? null,
@@ -135,7 +136,7 @@ function useShellChrome(windowId: string, addressBar: boolean, theme: Theme): st
         dropOver,
         update: pending ? { text: UPDATE_PILL_TEXT, tooltip: updatePillTooltip(pending) } : null,
       }),
-    [incognito, profile, profiles, theme, downloadsOpen, hint, downloads, addressBar, dotsShown, order, names, icons, pages, savedWidth, iconsOnly, dropOver, pending],
+    [incognito, profile, profiles, theme, downloadsOpen, hint, downloads, addressBar, dotsShown, order, names, icons, pages, savedWidth, iconsOnly, dropOver, pending, adjustInk],
   );
 }
 
@@ -260,11 +261,11 @@ function liveIds(s: ReturnType<typeof useBrowser.getState>, windowId: string, ke
 
 const split = (ids: string) => (ids ? ids.split(",") : NONE);
 
-function themeTokens(theme: Theme): Record<string, string> {
+function themeTokens(theme: Theme, adjustInk: boolean): Record<string, string> {
   const tokens: Record<string, string> = {};
   for (const key of THEME_KEYS) tokens[key] = theme[key];
   tokens.backdropTint = theme.backdrop.tintColor;
-  return tokens;
+  return inkedTokens(tokens, theme.sidebarInk, adjustInk);
 }
 
 function usePageLooks(windowId: string) {
@@ -274,6 +275,7 @@ function usePageLooks(windowId: string) {
   const appDark = useBrowser((s) => s.ui.appDark);
   const source = useBrowser((s) => spaceLookSource(s.settings));
   const tidy = useBrowser((s) => ids.filter((id) => canTidyPins(s, windowId, id)).join(","));
+  const adjustInk = useAdjustedInk();
   const key = ids.join(",");
   return useMemo(() => {
     if (!key) return null;
@@ -284,14 +286,14 @@ function usePageLooks(windowId: string) {
       return {
         profileId,
         dark: theme.dark,
-        theme: themeTokens(theme),
+        theme: themeTokens(theme, adjustInk),
         border: theme.tabSelectedBorder.map(hex),
         glow: { color: glow.shadowColor, opacity: glow.shadowOpacity, radius: glow.shadowRadius },
         tidy: tidyIds.has(profileId),
         incognito: isIncognitoProfile(profileId),
       };
     });
-  }, [key, profiles, appDark, source, tidy]);
+  }, [key, profiles, appDark, source, tidy, adjustInk]);
 }
 
 function useNativeSidebarPlayer(windowId: string, profileId: string, theme: Theme, groupFill: string, groupStroke: string) {
@@ -321,6 +323,7 @@ export const NativeSidebar = memo(function NativeSidebar({ windowId, profileId, 
   const tidy = useBrowser((s) => canTidyPins(s, windowId, profileId));
   const newTabAtTop = useSettings((s) => s.newTabButtonPosition === "top");
   const iconRing = useSettings((s) => !s.classicPinnedTabs);
+  const adjustInk = useAdjustedInk();
   const cleaned = useBrowser((s) => cleanedTabsFor(s, windowId).length);
   const upsell = useCleanUpUpsellCount(windowId, true);
   const closeHint = useBrowser((s) => shortcutHint("closeTab", s) ?? null);
@@ -362,7 +365,7 @@ export const NativeSidebar = memo(function NativeSidebar({ windowId, profileId, 
     return JSON.stringify(sidebarHostProps({
       profileId,
       dark: theme.dark,
-      theme: themeTokens(theme),
+      theme: themeTokens(theme, adjustInk),
       border: theme.tabSelectedBorder.map(hex),
       glow: { color: glow.shadowColor, opacity: glow.shadowOpacity, radius: glow.shadowRadius },
       selection,
@@ -389,7 +392,7 @@ export const NativeSidebar = memo(function NativeSidebar({ windowId, profileId, 
       capture,
       badge: [tokens.badge, tokens.badgeGlyph],
     }));
-  }, [player, pip, capture, tokens.badge, tokens.badgeGlyph, pages, theme, glow.shadowColor, glow.shadowOpacity, glow.shadowRadius, profileId, selection, loading, playing, sleeping, closeHint, renaming, addressBar, tidy, clear, iconRing, newTabAtTop, cleaned, upsell, engines, developer]);
+  }, [player, pip, capture, tokens.badge, tokens.badgeGlyph, pages, theme, glow.shadowColor, glow.shadowOpacity, glow.shadowRadius, profileId, selection, loading, playing, sleeping, closeHint, renaming, addressBar, tidy, clear, iconRing, newTabAtTop, cleaned, upsell, engines, developer, adjustInk]);
 
   const chrome = useShellChrome(windowId, addressBar, theme);
   if (column) return <ShellColumnState windowId={windowId} state={state} chrome={chrome} addressWidth={addressBar && width ? width : null} {...column} />;

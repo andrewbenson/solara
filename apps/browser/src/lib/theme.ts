@@ -3,7 +3,7 @@ import { createContext, createElement, useContext, useMemo, type ReactNode } fro
 import { useBrowser, type BrowserState } from "../store/browser";
 import { PageProfileContext, WindowContext } from "../store/hooks";
 import type { Profile, ProfileColor, ProfileTheme } from "../store/types";
-import { opaqueThemeTint, PRESET_BACKDROP, resolveTheme, requestedDarkFor, rgbToHsl, shownLook, themeAccent, themeBackdrop, themePalette, type LookSource, type ThemeBackdropProps } from "./profileTheme";
+import { opaqueThemeTint, PRESET_BACKDROP, resolveTheme, requestedDarkFor, rgbToHsl, shownLook, textInk, themeAccent, themeBackdrop, themePalette, type LookSource, type TextInkArea, type ThemeBackdropProps } from "./profileTheme";
 import { backdropTint, opaqueTint, tintForHue, type BackdropTint } from "./windowTint";
 
 export type Theme = typeof dark & {
@@ -13,7 +13,11 @@ export type Theme = typeof dark & {
   powerUpColor: string | null;
   powerUpPalette: string[] | null;
   custom: ProfileTheme | null;
+  sidebarInk: InkTokens | null;
+  stripInk: InkTokens | null;
 };
+
+export type InkTokens = Record<string, string>;
 
 const dark = {
   dark: true,
@@ -185,6 +189,8 @@ export function themeFor(key: string): Theme {
       powerUpColor,
       powerUpPalette: powerUpColor ? [powerUpColor] : null,
       custom: null,
+      sidebarInk: null,
+      stripInk: null,
     };
     cache.set(key, theme);
   }
@@ -205,6 +211,32 @@ export function nearestPreset(hexColor: string): ProfileColor {
     if (d < distance) [best, distance] = [name, d];
   }
   return best;
+}
+
+const INK_KEYS = ["textPrimary", "textTab", "textSecondary", "textTertiary", "icon", "iconDisabled"] as const;
+
+function fillComponents(color: string): number[] {
+  const m = hex(color).match(/^#([0-9A-F]{2})([0-9A-F]{2})([0-9A-F]{2})([0-9A-F]{2})?$/i);
+  if (!m) return [0, 0, 0, 0];
+  return [m[1]!, m[2]!, m[3]!, m[4] ?? "FF"].map((h) => parseInt(h, 16) / 255);
+}
+
+function inkTokens(look: ProfileTheme, area: TextInkArea): InkTokens | null {
+  const ink = textInk(look, true, area, fillComponents(dark.tabSelected));
+  if (!ink.dark && !ink.selectedDark) return null;
+  const tokens: InkTokens = { tabSelectedText: ink.selectedDark ? light.tabSelectedText : dark.tabSelectedText };
+  if (ink.dark) {
+    tokens.ink = "dark";
+    for (const key of INK_KEYS) tokens[key] = light[key];
+  }
+  return tokens;
+}
+
+export function inkedTokens(tokens: Record<string, string>, ink: InkTokens | null, adjust: boolean): Record<string, string> {
+  if (!adjust || !ink) return tokens;
+  const out = { ...tokens };
+  for (const key of Object.keys(ink)) if (key === "ink" || key in out) out[key] = ink[key]!;
+  return out;
 }
 
 const customCache = new WeakMap<ProfileTheme, Map<string, Theme>>();
@@ -231,10 +263,16 @@ function customTheme(custom: ProfileTheme, color: ProfileColor, appDark: boolean
       powerUpColor: accent,
       powerUpPalette: palette.length > 1 ? palette : [palette[0] ?? accent],
       custom,
+      sidebarInk: dark ? inkTokens(look, "sidebar") : null,
+      stripInk: dark ? inkTokens(look, "strip") : null,
     };
     byKey.set(key, theme);
   }
   return theme;
+}
+
+export function useAdjustedInk(): boolean {
+  return useBrowser((s) => !s.settings.lightColorsKeepWhiteText);
 }
 
 export function spaceLookSource(settings: Pick<BrowserState["settings"], "spacesFollowAppearance">): LookSource {

@@ -322,7 +322,7 @@ public final class SidebarChromeView: NSView {
     let rowTop = bounds.height - (state.rail ? SidebarChromeMetrics.footer : footer) + (SidebarChromeMetrics.footer - 3 - SidebarChromeMetrics.dotBand) / 2
     for (index, dot) in dots.enumerated() {
       dot.frame = NSRect(x: rowLeft + cell * CGFloat(index), y: rowTop, width: cell, height: SidebarChromeMetrics.dotBand)
-      dot.ink = state.dark ? .white : .black
+      dot.ink = state.dark && state.theme["ink"] != "dark" ? .white : .black
       dot.isHidden = overflow
       if overflow { dot.setHovered(false) }
     }

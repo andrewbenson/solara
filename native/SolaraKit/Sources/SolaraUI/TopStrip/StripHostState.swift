@@ -100,8 +100,8 @@ struct StripPalette {
     dark = host.dark
     card = SidebarPalette.parse(host.theme["card"]) ?? (host.dark ? NSColor(white: 0.12, alpha: 1) : .white)
     windowTint = SidebarPalette.parse(host.theme["windowTint"]) ?? card
-    neutralSwatch = SidebarPalette.parse(host.dark ? "#FFFFFF4D" : "#0000004D")!
-    groupDivider = SidebarPalette.parse(host.dark ? "rgba(255,255,255,0.16)" : "rgba(0,0,0,0.12)")!
+    neutralSwatch = SidebarPalette.parse(base.lightInk ? "#FFFFFF4D" : "#0000004D")!
+    groupDivider = SidebarPalette.parse(base.lightInk ? "rgba(255,255,255,0.16)" : "rgba(0,0,0,0.12)")!
     floatingCardBorder = SidebarPalette.parse(host.dark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.08)")!
     rimTop = SidebarPalette.parse(host.dark ? "#FFFFFF3B" : "#FFFFFFFA")!
   }

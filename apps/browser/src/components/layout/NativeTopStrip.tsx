@@ -9,7 +9,7 @@ import { shortcutHint, useShortcutHint, withShortcut } from "../../lib/commandSh
 import { nativeOwnsWorkspace } from "../../store/nativeStore";
 import { stripHostProps } from "../nativeHostProps";
 import { useLifecycle } from "../../lib/tabLifecycle";
-import { hex, profileNameColor, profileTheme, selectedTabGlow, spaceLookSource, useSelectedTabGlow, useTheme, type Theme } from "../../lib/theme";
+import { hex, inkedTokens, profileNameColor, profileTheme, selectedTabGlow, spaceLookSource, useAdjustedInk, useSelectedTabGlow, useTheme, type Theme } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
 import { useIsIncognito, useProfiles, useWindowProfile } from "../../store/hooks";
 import { engineMark, ENGINE_SYMBOLS } from "../../store/engines";
@@ -117,12 +117,12 @@ addNativeSettingsHandlers({
   },
 });
 
-function themeTokens(theme: Theme): Record<string, string> {
+function themeTokens(theme: Theme, adjustInk: boolean): Record<string, string> {
   const tokens: Record<string, string> = {};
   for (const key of THEME_KEYS) tokens[key] = theme[key];
   tokens.windowTint = theme.windowTint[0]!;
   tokens.backdropTint = theme.backdrop.tintColor;
-  return tokens;
+  return inkedTokens(tokens, theme.stripInk, adjustInk);
 }
 
 function usePageLooks(windowId: string) {
@@ -131,6 +131,7 @@ function usePageLooks(windowId: string) {
   const profiles = useBrowser((s) => s.profiles);
   const appDark = useBrowser((s) => s.ui.appDark);
   const source = useBrowser((s) => spaceLookSource(s.settings));
+  const adjustInk = useAdjustedInk();
   const key = ids.join(",");
   return useMemo(() => {
     if (!key) return null;
@@ -140,14 +141,14 @@ function usePageLooks(windowId: string) {
       return {
         profileId,
         dark: theme.dark,
-        theme: themeTokens(theme),
+        theme: themeTokens(theme, adjustInk),
         border: theme.tabSelectedBorder.map(hex),
         glow: { color: glow.shadowColor, opacity: glow.shadowOpacity, radius: glow.shadowRadius },
         tidy: false,
         incognito: false,
       };
     });
-  }, [key, profiles, appDark, source]);
+  }, [key, profiles, appDark, source, adjustInk]);
 }
 
 const split = (ids: string) => (ids ? ids.split(",") : NONE);
@@ -227,13 +228,14 @@ function useTopStripState(windowId: string, profileId: string, floating: boolean
   );
   useIncomingFile(windowId);
   const iconRing = useBrowser((s) => !s.settings.classicPinnedTabs);
+  const adjustInk = useAdjustedInk();
 
   const state = useMemo(
     () =>
       JSON.stringify(stripHostProps({
         profileId,
         dark: theme.dark,
-        theme: themeTokens(theme),
+        theme: themeTokens(theme, adjustInk),
         border: theme.tabSelectedBorder.map(hex),
         glow: { color: glow.shadowColor, opacity: glow.shadowOpacity, radius: glow.shadowRadius },
         floating,
@@ -249,7 +251,7 @@ function useTopStripState(windowId: string, profileId: string, floating: boolean
         selection,
         iconRing,
       })),
-    [iconRing, pages, selection, theme, glow.shadowColor, glow.shadowOpacity, glow.shadowRadius, profileId, floating, pageWidth, playing, sleeping, engines, capture, bands, closeHint],
+    [iconRing, pages, selection, theme, glow.shadowColor, glow.shadowOpacity, glow.shadowRadius, profileId, floating, pageWidth, playing, sleeping, engines, capture, bands, closeHint, adjustInk],
   );
 
   return state;
@@ -292,6 +294,7 @@ export const NativeStripPeek = memo(function NativeStripPeek({
   const profile = useWindowProfile();
   const downloadsOpen = useBrowser((s) => !!s.windowUi[windowId]?.downloadsOpen);
   const hint = useShortcutHint("downloads");
+  const adjustInk = useAdjustedInk();
   const latestLive = useRef(onLive);
   latestLive.current = onLive;
 
@@ -318,17 +321,17 @@ export const NativeStripPeek = memo(function NativeStripPeek({
           title: incognito ? "Incognito" : profile.name,
           incognito,
           profiles,
-          nameColor: incognito ? theme.textPrimary : profileNameColor(profile, theme.dark),
+          nameColor: incognito ? inkedTokens({ textPrimary: theme.textPrimary }, theme.stripInk, adjustInk).textPrimary! : profileNameColor(profile, theme.dark && !(adjustInk && theme.stripInk?.ink)),
           downloadsOpen,
           downloadsTooltip: withShortcut("Downloads", hint),
         },
-        theme: themeTokens(theme),
+        theme: themeTokens(theme, adjustInk),
         enabled,
         held: downloadsOpen,
         bandLeft,
         look: { fill: hex(theme.windowTint[0]!), border: hex(theme.panelBorder), shadowOpacity: theme.panelShadowOpacity },
       }),
-    [strip, incognito, profile, profiles, theme, downloadsOpen, hint, enabled, bandLeft],
+    [strip, incognito, profile, profiles, theme, downloadsOpen, hint, enabled, bandLeft, adjustInk],
   );
   return <SolaraHostedView kind="topStripPeek" windowId={windowId} state={state} style={style} />;
 });

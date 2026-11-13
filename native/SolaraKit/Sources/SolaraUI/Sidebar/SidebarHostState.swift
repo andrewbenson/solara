@@ -127,6 +127,7 @@ public struct SidebarFlags: Equatable, Sendable {
 @MainActor
 public struct SidebarPalette {
   public let dark: Bool
+  public let lightInk: Bool
   let tokens: [String: String]
   public let textTab: NSColor
   public let selectedText: NSColor
@@ -170,6 +171,8 @@ public struct SidebarPalette {
     tokens = state.theme
     func color(_ key: String, _ fallback: String) -> NSColor { Self.parse(state.theme[key]) ?? Self.parse(fallback)! }
     let d = state.dark
+    let ink = d && state.theme["ink"] != "dark"
+    lightInk = ink
     textTab = color("textTab", d ? "#FFFFFFC7" : "#000000AD")
     selectedText = color("tabSelectedText", d ? "#FFFFFF" : "#000000")
     hover = color("tabHover", d ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.55)")
@@ -199,14 +202,14 @@ public struct SidebarPalette {
     groupFill = Self.parse(d ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.05)")!
     groupHeaderHover = Self.parse(d ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.4)")!
     groupStroke = Self.parse(d ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)")!
-    groupTitle = Self.parse(d ? "#FFFFFF" : "#000000D9")!
+    groupTitle = Self.parse(ink ? "#FFFFFF" : "#000000D9")!
     multiSelected = Self.parse(d ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)")!
     multiSelectedStroke = Self.parse(d ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.08)")!
     dragBorder = Self.parse(d ? "rgba(255,255,255,0.33)" : "rgba(0,0,0,0.28)")!
     scrollEdge = Self.parse(d ? "rgba(255,255,255,0.09)" : "rgba(0,0,0,0.09)")!
-    newTabLabel = Self.parse(d ? "#FFFFFF8C" : "#00000080")!
-    newTabIcon = Self.parse(d ? "#FFFFFF40" : "#00000042")!
-    noGroupIcon = Self.parse(d ? "#FFFFFF40" : "#00000040")!
+    newTabLabel = Self.parse(ink ? "#FFFFFF8C" : "#00000080")!
+    newTabIcon = Self.parse(ink ? "#FFFFFF40" : "#00000042")!
+    noGroupIcon = Self.parse(ink ? "#FFFFFF40" : "#00000040")!
   }
 
   static func parse(_ text: String?) -> NSColor? {

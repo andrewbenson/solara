@@ -337,6 +337,13 @@ public struct SettingsIndex: Sendable {
             caption: "Every profile goes light or dark with this choice, even if its theme says Light.",
             keywords: ["space", "profile theme", "arc theme", "follow system"]
           ),
+          Row(
+            key: "lightColorsKeepWhiteText",
+            title: "Readable text on light colours",
+            description: "In dark mode, a light profile colour gets dark text in the sidebar and the tab strip, as in Arc, while the selected tab keeps the text that reads on it. Off, the text stays white.",
+            caption: "In dark mode, a light profile colour gets dark sidebar and tab strip text.",
+            keywords: ["text colour", "text color", "contrast", "readable", "light theme", "profile colour", "arc", "sidebar text"]
+          ),
         ]),
         Section(section: "Address Bar", rows: [
           Row(key: "addressBar", title: "Address Bar", description: "In the toolbar or in the sidebar.", keywords: ["url bar", "location bar", "toolbar"]),

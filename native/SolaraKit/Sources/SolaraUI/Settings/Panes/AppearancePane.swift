@@ -81,6 +81,7 @@ struct AppearancePane: View {
     SettingsForm {
       Section {
         SettingToggle("appearance.spacesFollowAppearance", key: "spacesFollowAppearance")
+        SettingToggle("appearance.lightColorsKeepWhiteText", key: "lightColorsKeepWhiteText", inverted: true)
       } header: {
         VStack(alignment: .leading, spacing: 14) {
           SettingsSectionHeader(description: "Also in View › Appearance. Incognito windows are always dark.", anchor: "appearance.theme")

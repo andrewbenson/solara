@@ -255,6 +255,24 @@ export function readableDark(theme: ProfileTheme, dark: boolean): boolean {
   return blackText < MIN_BLACK_TEXT_CONTRAST && whiteText > blackText;
 }
 
+export type TextInkArea = "sidebar" | "strip";
+export type TextInk = { dark: boolean; selectedDark: boolean };
+
+const INK_SAMPLES: Record<TextInkArea, [number, number][]> = {
+  sidebar: [[0.06, 0.1], [0.06, 0.5], [0.06, 0.9]],
+  strip: [[0.1, 0.03], [0.5, 0.03], [0.9, 0.03]],
+};
+
+const blackReadsBetter = (y: number) => (y + 0.05) / 0.05 > 1.05 / (y + 0.05);
+
+export function textInk(theme: ProfileTheme, dark: boolean, area: TextInkArea, selectedFill: number[]): TextInk {
+  const under = INK_SAMPLES[area].map(([x, y]) => composite(theme, dark, x, y));
+  const [r = 0, g = 0, b = 0, a = 0] = selectedFill;
+  const selected = under.map((c) => c.map((v, i) => clamp01(v) * (1 - a) + [r, g, b][i]! * a));
+  const mean = (colors: number[][]) => colors.reduce((sum, c) => sum + relativeLuminance(c), 0) / colors.length;
+  return { dark: blackReadsBetter(mean(under)), selectedDark: blackReadsBetter(mean(selected)) };
+}
+
 export function stopLightness(stop: ThemeStop): number {
   return rgbToHsl(clamp01(stop.color.r), clamp01(stop.color.g), clamp01(stop.color.b))[2];
 }

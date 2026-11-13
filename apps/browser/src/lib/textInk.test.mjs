@@ -38,6 +38,18 @@ test("a dark colour keeps white text and a white selected title", () => {
   assert.equal(profileTheme(profile(look("#2D3A8C", 1)), true, "own").sidebarInk, null);
 });
 
+test("a dark colour in light mode gets light text by the same rule, the selected tab keeps dark text on its white pill", () => {
+  const theme = profileTheme(profile(look("#2D3A8C", 1, "light")), false, "own");
+  assert.equal(theme.dark, false);
+  for (const ink of [theme.sidebarInk, theme.stripInk]) {
+    assert.equal(ink?.ink, "light");
+    assert.equal(ink.textPrimary, "#FFFFFF");
+    assert.equal(ink.textTab, "#FFFFFFC7");
+    assert.equal(ink.tabSelectedText, "#000000");
+  }
+  assert.equal(profileTheme(profile(look("#2D3A8C", 0.3, "light")), false, "own").sidebarInk, null);
+});
+
 test("ink follows contrast against the band it sits on, not a fixed lightness", () => {
   const mid = look("#C0C0C0", 0.6);
   const ink = textInk(mid, true, "sidebar", DARK_SELECTED);

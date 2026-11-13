@@ -23,11 +23,15 @@ struct SidebarInkTests {
     #expect(inked.groupFill == plain.groupFill)
   }
 
-  @Test func inkOnlyMattersInDarkMode() {
+  @Test func lightInkTurnsALightModeSidebarsGlyphsLight() {
     var host = SidebarHostState(profileId: "p", dark: false)
-    host.theme = ["ink": "dark"]
+    #expect(!SidebarPalette(host).lightInk)
+    host.theme = ["ink": "light"]
     let palette = SidebarPalette(host)
-    #expect(!palette.lightInk)
-    #expect(!Self.white(palette.groupTitle))
+    #expect(!palette.dark)
+    #expect(palette.lightInk)
+    #expect([palette.groupTitle, palette.newTabLabel, palette.newTabIcon, palette.noGroupIcon].allSatisfy(Self.white))
+    host.theme = ["ink": "dark"]
+    #expect(!SidebarPalette(host).lightInk)
   }
 }

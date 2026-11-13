@@ -171,7 +171,7 @@ public struct SidebarPalette {
     tokens = state.theme
     func color(_ key: String, _ fallback: String) -> NSColor { Self.parse(state.theme[key]) ?? Self.parse(fallback)! }
     let d = state.dark
-    let ink = d && state.theme["ink"] != "dark"
+    let ink = Self.lightInk(dark: d, ink: state.theme["ink"])
     lightInk = ink
     textTab = color("textTab", d ? "#FFFFFFC7" : "#000000AD")
     selectedText = color("tabSelectedText", d ? "#FFFFFF" : "#000000")
@@ -210,6 +210,14 @@ public struct SidebarPalette {
     newTabLabel = Self.parse(ink ? "#FFFFFF8C" : "#00000080")!
     newTabIcon = Self.parse(ink ? "#FFFFFF40" : "#00000042")!
     noGroupIcon = Self.parse(ink ? "#FFFFFF40" : "#00000040")!
+  }
+
+  static func lightInk(dark: Bool, ink: String?) -> Bool {
+    switch ink {
+    case "dark": false
+    case "light": true
+    default: dark
+    }
   }
 
   static func parse(_ text: String?) -> NSColor? {

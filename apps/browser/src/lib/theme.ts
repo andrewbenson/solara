@@ -221,15 +221,22 @@ function fillComponents(color: string): number[] {
   return [m[1]!, m[2]!, m[3]!, m[4] ?? "FF"].map((h) => parseInt(h, 16) / 255);
 }
 
-function inkTokens(look: ProfileTheme, area: TextInkArea): InkTokens | null {
-  const ink = textInk(look, true, area, fillComponents(dark.tabSelected));
-  if (!ink.dark && !ink.selectedDark) return null;
-  const tokens: InkTokens = { tabSelectedText: ink.selectedDark ? light.tabSelectedText : dark.tabSelectedText };
-  if (ink.dark) {
-    tokens.ink = "dark";
-    for (const key of INK_KEYS) tokens[key] = light[key];
+function inkTokens(look: ProfileTheme, area: TextInkArea, shownDark: boolean): InkTokens | null {
+  const from = shownDark ? dark : light, to = shownDark ? light : dark;
+  const ink = textInk(look, shownDark, area, fillComponents(from.tabSelected));
+  const flips = ink.dark === shownDark, selectedFlips = ink.selectedDark === shownDark;
+  if (!flips && !selectedFlips) return null;
+  const tokens: InkTokens = { tabSelectedText: selectedFlips ? to.tabSelectedText : from.tabSelectedText };
+  if (flips) {
+    tokens.ink = shownDark ? "dark" : "light";
+    for (const key of INK_KEYS) tokens[key] = to[key];
   }
   return tokens;
+}
+
+export function inkIsLight(theme: Theme, ink: InkTokens | null, adjust: boolean): boolean {
+  const chosen = adjust ? ink?.ink : undefined;
+  return chosen === "dark" ? false : chosen === "light" ? true : theme.dark;
 }
 
 export function inkedTokens(tokens: Record<string, string>, ink: InkTokens | null, adjust: boolean): Record<string, string> {
@@ -263,8 +270,8 @@ function customTheme(custom: ProfileTheme, color: ProfileColor, appDark: boolean
       powerUpColor: accent,
       powerUpPalette: palette.length > 1 ? palette : [palette[0] ?? accent],
       custom,
-      sidebarInk: dark ? inkTokens(look, "sidebar") : null,
-      stripInk: dark ? inkTokens(look, "strip") : null,
+      sidebarInk: inkTokens(look, "sidebar", dark),
+      stripInk: inkTokens(look, "strip", dark),
     };
     byKey.set(key, theme);
   }

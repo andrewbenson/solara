@@ -9,7 +9,7 @@ import { PRODUCT } from "../../lib/productName";
 import { nativeOwnsWorkspace } from "../../store/nativeStore";
 import { sidebarHostProps } from "../nativeHostProps";
 import { useLifecycle } from "../../lib/tabLifecycle";
-import { hex, inkedTokens, profileNameColor, profileTheme, selectedTabGlow, spaceLookSource, useAdjustedInk, useSelectedTabGlow, useTheme, type Theme } from "../../lib/theme";
+import { hex, inkedTokens, inkIsLight, profileNameColor, profileTheme, selectedTabGlow, spaceLookSource, useAdjustedInk, useSelectedTabGlow, useTheme, type Theme } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
 import { commitSidebarWidth, setSidebarIconsOnly, sidebarWidthOf, SIDEBAR_RAIL_WIDTH } from "../../store/sidebarRail";
 import { engineMark, ENGINE_SYMBOLS } from "../../store/engines";
@@ -121,7 +121,7 @@ function useShellChrome(windowId: string, addressBar: boolean, theme: Theme): st
           title: incognito ? "Incognito" : (profile?.name ?? ""),
           incognito,
           profiles,
-          nameColor: incognito || !profile ? inkedTokens({ textPrimary: theme.textPrimary }, theme.sidebarInk, adjustInk).textPrimary! : profileNameColor(profile, theme.dark && !(adjustInk && theme.sidebarInk?.ink)),
+          nameColor: incognito || !profile ? inkedTokens({ textPrimary: theme.textPrimary }, theme.sidebarInk, adjustInk).textPrimary! : profileNameColor(profile, inkIsLight(theme, theme.sidebarInk, adjustInk)),
           downloadsOpen,
           downloadsTooltip: withShortcut("Downloads", hint),
         },

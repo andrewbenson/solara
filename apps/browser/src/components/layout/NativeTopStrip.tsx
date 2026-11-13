@@ -9,7 +9,7 @@ import { shortcutHint, useShortcutHint, withShortcut } from "../../lib/commandSh
 import { nativeOwnsWorkspace } from "../../store/nativeStore";
 import { stripHostProps } from "../nativeHostProps";
 import { useLifecycle } from "../../lib/tabLifecycle";
-import { hex, inkedTokens, profileNameColor, profileTheme, selectedTabGlow, spaceLookSource, useAdjustedInk, useSelectedTabGlow, useTheme, type Theme } from "../../lib/theme";
+import { hex, inkedTokens, inkIsLight, profileNameColor, profileTheme, selectedTabGlow, spaceLookSource, useAdjustedInk, useSelectedTabGlow, useTheme, type Theme } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
 import { useIsIncognito, useProfiles, useWindowProfile } from "../../store/hooks";
 import { engineMark, ENGINE_SYMBOLS } from "../../store/engines";
@@ -321,7 +321,7 @@ export const NativeStripPeek = memo(function NativeStripPeek({
           title: incognito ? "Incognito" : profile.name,
           incognito,
           profiles,
-          nameColor: incognito ? inkedTokens({ textPrimary: theme.textPrimary }, theme.stripInk, adjustInk).textPrimary! : profileNameColor(profile, theme.dark && !(adjustInk && theme.stripInk?.ink)),
+          nameColor: incognito ? inkedTokens({ textPrimary: theme.textPrimary }, theme.stripInk, adjustInk).textPrimary! : profileNameColor(profile, inkIsLight(theme, theme.stripInk, adjustInk)),
           downloadsOpen,
           downloadsTooltip: withShortcut("Downloads", hint),
         },

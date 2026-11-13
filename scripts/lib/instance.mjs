@@ -654,7 +654,7 @@ export async function launch(app, opts = {}) {
     SOLARA_NATIVE_BOOKMARKS: process.env.SOLARA_NATIVE_BOOKMARKS ?? "1",
     ...(location ? { SOLARA_JS_LOCATION: location } : {}),
     ...(switches ? { SOLARA_CHROMIUM_SWITCHES: switches } : {}),
-    ...Object.fromEntries(Object.entries(process.env).filter(([k]) => ["SOLARA_NATIVE_SHELL", "SOLARA_NATIVE_PAGES_POOL", "SOLARA_NATIVE_TOP_STRIP", "SOLARA_NATIVE_BOOKMARKS_BAR", "SOLARA_NATIVE_SERVICES", "SOLARA_NATIVE_SIDEBAR_ADDRESS", "SOLARA_NATIVE_SCOPE"].includes(k) || k.startsWith("SOLARA_SHELL_") || k.startsWith("SOLARA_SYNC_"))),
+    ...Object.fromEntries(Object.entries(process.env).filter(([k]) => ["SOLARA_NATIVE_SHELL", "SOLARA_NATIVE_PAGES_POOL", "SOLARA_NATIVE_TOP_STRIP", "SOLARA_NATIVE_BOOKMARKS_BAR", "SOLARA_NATIVE_SERVICES", "SOLARA_NATIVE_SIDEBAR_ADDRESS", "SOLARA_NATIVE_SCOPE"].includes(k) || k.startsWith("SOLARA_SHELL_") || k.startsWith("SOLARA_SYNC_") || k === "SOLARA_PROFILE_WARMUP")),
     ...(opts.urls?.length ? { SOLARA_ACCEPT_EXTERNAL_URLS: "1" } : {}),
     ...opts.env,
   };

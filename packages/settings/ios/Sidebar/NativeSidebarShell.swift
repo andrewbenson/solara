@@ -251,6 +251,7 @@ final class SidebarShellColumn: NSView, DevDropDestination {
     case .toggleDownloads: NativeSidebarShell.send(windowId, "toggleDownloads")
     case .switchProfile(let id):
       _ = try? NativeStoreHandle.store?.dispatch(Command("switchProfile", [.string(windowId), .string(id)]), origin: .native)
+    case .profileIntent(let id): NativeProfileWarmup.shared.hover(id, source: "footer")
     case .liveWidth(let width):
       shell?.widthDragActive = width != nil
       if let width { shell?.update { $0.sidebarWidth = CGFloat(width) } }

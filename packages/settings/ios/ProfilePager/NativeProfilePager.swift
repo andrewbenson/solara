@@ -97,6 +97,7 @@ final class ProfilePagerHost {
   private var listener: Int?
   private let commits = ProfilePagerCommits()
   private var positionObserver: NSObjectProtocol?
+  private var loadObserver: NSObjectProtocol?
   private var window: PagerWindow?
   private var ack = 0
   private var pager: ACPager?
@@ -127,6 +128,11 @@ final class ProfilePagerHost {
         NativeProfilePager.moved(windowId, position)
       }
     }
+    loadObserver = NotificationCenter.default.addObserver(forName: Notification.Name("SolaraCoreProfileDidLoad"), object: nil, queue: .main) {
+      [weak self] note in
+      guard let profile = note.userInfo?["profile"] as? String else { return }
+      MainActor.assumeIsolated { self?.neighbourLoaded(profile) }
+    }
     if let store = NativeStoreHandle.store {
       let sink = commits
       listener = store.subscribe { commit in sink.receive(commit.state) }
@@ -141,6 +147,8 @@ final class ProfilePagerHost {
     listener = nil
     if let positionObserver { NotificationCenter.default.removeObserver(positionObserver) }
     positionObserver = nil
+    if let loadObserver { NotificationCenter.default.removeObserver(loadObserver) }
+    loadObserver = nil
     if let swap { CFRunLoopRemoveObserver(CFRunLoopGetMain(), swap, .commonModes) }
     swap = nil
     sidebarTarget.use(nil)
@@ -228,6 +236,12 @@ final class ProfilePagerHost {
       _ = try? store.dispatch(Command("switchProfile", [.string(windowId), .string(id)]), origin: .native)
     }
     commit(store.state)
+  }
+
+  private func neighbourLoaded(_ profile: String) {
+    guard !stopped, let w = window, w.neighbours.contains(profile), let applied, applied.neighbours.contains(profile) else { return }
+    self.applied = (applied.profile, [], applied.selection)
+    scheduleSwap()
   }
 
   private func swiped(_ event: [String: Any]) {
@@ -416,6 +430,14 @@ public class ProfilePagerModule: Module {
 
     AsyncFunction("describe") { (windowId: String) -> String in
       MainActor.assumeIsolated { NativeProfilePager.describe(windowId) }
+    }.runOnQueue(.main)
+
+    AsyncFunction("devProfileWarmup") { (action: String) -> String in
+      #if DEBUG
+      return MainActor.assumeIsolated { NativeProfileWarmup.shared.dev(action) }
+      #else
+      return "null"
+      #endif
     }.runOnQueue(.main)
 
     AsyncFunction("devTrace") { (windowId: String, on: Bool) -> String in

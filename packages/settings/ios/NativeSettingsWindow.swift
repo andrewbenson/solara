@@ -87,6 +87,7 @@ enum NativeSettingsWindow {
     NativeCliControl.shared.startWhenReady()
     NativeAppIntegration.shared.startWhenReady()
     NativeMemoryTrim.shared.startWhenReady()
+    NativeProfileWarmup.shared.startWhenReady()
     NativeUserScripts.shared.startWhenReady()
     NativeSiteControls.shared.startWhenReady()
     WindowHost.makeAuxController = { id, kind in

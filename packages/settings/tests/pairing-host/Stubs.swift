@@ -72,6 +72,7 @@ typealias LiveAdapter = StubAdapter
 typealias NativeAppStartup = StubStartup
 typealias NativeCliControl = StubStartup
 typealias NativeMemoryTrim = StubStartup
+typealias NativeProfileWarmup = StubStartup
 typealias NativeUserScripts = StubStartup
 typealias NativeSiteControls = StubStartup
 @MainActor final class NativeAppIntegration {

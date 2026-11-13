@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 const help = `usage: METRO_PORT=<port> node lazy-profiles-test.mjs <Debug Solara.app> [--runs 2] [--settle-ms 8000] [--usage-bin <acperf>] [--out <file>]
+                                    [--only measure,sync,checks,webkit,warmup]
 
 Profiles load when opened, end to end, in hidden scratch instances. Eight profiles (Default and seven more), each
 with a pinned tab, a regular tab, a bookmark and the same unpacked MV3 extension, are made once in a fixture launch
@@ -31,14 +32,24 @@ with every profile loaded. Each run then starts from a copy of that fixture.
            no page until its window shows it; after the switch, the WebKit blocker (its state read from Default,
            which always loads) blocks an ad script while the page's own script loads (whether the switch loaded the
            profile in Chromium is recorded)
+  warmup   the warm-ups, with no switch history at first: a lazy launch left idle past the idle delay loads nothing;
+           a sidebar swipe that begins toward the next profile and is cancelled loads nothing (a gesture is never a
+           trigger: loading during one made its events late); the pointer passing over two footer dots and coming back
+           left to rest between them loads only that one. After a switch to
+           a profile and back, a relaunch on that data loads only Default until the app has been idle, then exactly
+           that profile (source "idle"). --runs pairs of launches with that history, warm-up off then on
+           (SOLARA_PROFILE_WARMUP=0), sample the process tree after the idle delay and --settle-ms. The other parts
+           run with the warm-up off, so they keep measuring lazy loading alone.
 
 Writes JSON evidence to --out (default <scratch>/lazy-profiles.json). Scratch data is kept; the last line names it.
 `;
 
 const { values, positionals } = parseArgs({ allowPositionals: true, options: {
   help: { type: "boolean" }, runs: { type: "string", default: "2" }, "settle-ms": { type: "string", default: "8000" },
-  "usage-bin": { type: "string" }, out: { type: "string" },
+  "usage-bin": { type: "string" }, out: { type: "string" }, only: { type: "string" },
 } });
+const parts = new Set((values.only ?? "measure,sync,checks,webkit,warmup").split(",").map((part) => part.trim()));
+assert.ok([...parts].every((part) => ["measure", "sync", "checks", "webkit", "warmup"].includes(part)), "--only takes measure, sync, checks, webkit, warmup");
 if (values.help || positionals.length !== 1) {
   process.stdout.write(help);
   process.exit(values.help ? 0 : 2);
@@ -103,13 +114,15 @@ const fixtureSession = (eager) => session({
   settings: { loadAllProfilesAtLaunch: eager, warnBeforeClosingLastTab: false, warnBeforeClosingWindow: false, cliControl: false },
 });
 
-const env = { SOLARA_NATIVE_SCOPE: "everything", SOLARA_NATIVE_SHELL: "1", SOLARA_SHELL_PANES: "1", SOLARA_NATIVE_PAGES_POOL: "1", SOLARA_TAB_POOL: "1" };
+const warmupEnv = { SOLARA_NATIVE_SCOPE: "everything", SOLARA_NATIVE_SHELL: "1", SOLARA_SHELL_PANES: "1", SOLARA_NATIVE_PAGES_POOL: "1", SOLARA_TAB_POOL: "1" };
+const env = { ...warmupEnv, SOLARA_PROFILE_WARMUP: "0" };
 let app = null;
 
-async function start(data, eager, { fresh = true, folder = null } = {}) {
+async function start(data, eager, { fresh = true, folder = null, warmup = false } = {}) {
   const startedAt = Date.now();
+  const base = warmup ? warmupEnv : env;
   app = await launch(appPath, { data, ...(fresh ? { session: fixtureSession(eager) } : {}), onboarded: true, probe: true, keepData: true, startTimeout: 60000,
-    env: folder ? { ...env, SOLARA_SYNC_DEFAULT_FOLDER: folder } : env,
+    env: folder ? { ...base, SOLARA_SYNC_DEFAULT_FOLDER: folder } : base,
     ready: { timeout: 180000, test: "return !!ac.store && !!ac.store.getState().windows.w1;" } });
   return { pid: app.pid, readyMs: Date.now() - startedAt };
 }
@@ -530,13 +543,134 @@ async function webkitInUnloadedProfile(from) {
   app = null;
 }
 
+const warmupState = async () => JSON.parse(await evaluate(`return globalThis.expo.modules.SolaraProfilePager.devProfileWarmup("describe");`));
+
+async function warmups(from) {
+  const data = join(root, "warmup");
+  copyFixture(from, data);
+  rmSync(join(data, "profile-warmup.json"), { force: true });
+  await start(data, false, { warmup: true });
+  report.warmupInstance = { data };
+  const expected = new Set([""]);
+  const expectOnly = async (what) => {
+    const loaded = await loadedNow();
+    assert.deepEqual(loaded, sorted([...expected]), `${what}: loaded ${JSON.stringify(loaded)}, expected ${JSON.stringify(sorted([...expected]))}`);
+    return loaded;
+  };
+  const loads = (engine, what, timeout = 10000) => until(what, async () => (await loadedNow()).includes(engine), timeout, 50);
+
+  await step("warm-up: with no switch history, an idle launch loads nothing more", async () => {
+    await until("launch loads Default", async () => same(await loadedNow(), [""]), 60000, 250);
+    const idle = await until("idle check done", async () => { const s = await warmupState(); return s.idleDone ? s : null; }, 30000, 250);
+    await sleep(2000);
+    assert.deepEqual(idle.warmed, []);
+    return { state: idle, loaded: await expectOnly("after the idle delay") };
+  });
+
+  await step("warm-up: a swipe that begins toward a profile and is cancelled loads nothing", async () => {
+    const target = profileIds[1];
+    const window = await until("Chrome window", async () => (await evaluate(`return globalThis.expo.modules.SolaraCEF.chromeWindows();`)).find((w) => w.hasRoot && w.profile === ""), 10000, 100);
+    const steps = [{ phase: "began", dx: 0, dy: 0 }, { phase: "changed", dx: -8, dy: 0 }, { phase: "changed", dx: -6, dy: 0 }, { phase: "cancelled", dx: 0, dy: 0 }]
+      .map((s, i) => ({ ...s, atMs: i * 16, timestampMs: i * 16 }));
+    const simulated = await evaluate(`return globalThis.expo.modules.SolaraSwipe.devSimulate(120, 400, ${window.window}, ${JSON.stringify(steps)}, true);`, 15000);
+    await sleep(2000);
+    const shown = await evaluate(`return ac.store.getState().windows.w1.profileId;`);
+    assert.equal(shown, "default", "a cancelled swipe switches nothing");
+    const state = await warmupState();
+    assert.deepEqual(state.warmed, []);
+    return { target, simulated: { events: simulated?.events?.length ?? null, error: simulated?.error ?? null }, state, loaded: await expectOnly("after the swipe") };
+  });
+
+  await step("warm-up: resting on a footer dot loads that profile, passing over others loads nothing", async () => {
+    const passed = profileIds[2];
+    const rested = profileIds[3];
+    const passedAfter = profileIds[4];
+    const column = await until("sidebar footer dots", async () => {
+      const c = JSON.parse(await evaluate(`return globalThis.expo.modules.SolaraHosted.sidebarShell("w1");`));
+      return c?.chrome?.dots?.length ? c : null;
+    }, 10000, 200);
+    const center = (id) => {
+      const dot = column.chrome.dots.find((d) => d.id === id);
+      assert.ok(dot, `dot for ${id}`);
+      return { x: column.frame[0] + dot.rect[0] + dot.rect[2] / 2, y: column.frame[1] + dot.rect[1] + dot.rect[3] / 2 };
+    };
+    const point = (p) => evaluate(`return ac.shell.devSetPointer("w1", ${JSON.stringify(p)});`);
+    const before = await warmupState();
+    assert.equal(await point(center(passed)), true, "devSetPointer");
+    await sleep(60);
+    await point(center(passedAfter));
+    await sleep(60);
+    await point(center(rested));
+    const t0 = Date.now();
+    expected.add(engineOf(rested));
+    await loads(engineOf(rested), "the rested-on profile loads");
+    const loadedMs = Date.now() - t0;
+    await point(null);
+    await sleep(1500);
+    const state = await warmupState();
+    assert.deepEqual(state.warmed.slice(before.warmed.length).map((w) => [w.engine, w.source]), [[engineOf(rested), "footer"]]);
+    return { loadedMs, dots: column.chrome.dots.map((d) => d.id), state, loaded: await expectOnly("after the footer hover") };
+  });
+
+  const recent = profileIds[6];
+  await step("warm-up: a switch is remembered, and a relaunch warms exactly that profile once idle", async () => {
+    await evaluate(`ac.store.getState().switchProfile("w1", ${JSON.stringify(recent)}); return true;`);
+    await loads(engineOf(recent), "the switched-to profile loads", 30000);
+    await evaluate(`ac.store.getState().switchProfile("w1", "default"); return true;`);
+    await sleep(1000);
+    const remembered = (await warmupState()).recent;
+    assert.deepEqual(remembered.slice(0, 2), ["default", recent]);
+    const result = await app.quit({ timeout: 30000, graceful: true });
+    assert.equal(result?.how, "quit");
+    app = null;
+    await start(data, false, { fresh: false, warmup: true });
+    const t0 = Date.now();
+    await until("relaunch loads Default", async () => (await loadedNow()).includes(""), 60000, 250);
+    await loads(engineOf(recent), "the most recent other profile warms", 40000);
+    const warmedAfterMs = Date.now() - t0;
+    await sleep(2000);
+    const state = await warmupState();
+    const loaded = await loadedNow();
+    assert.deepEqual(loaded, sorted(["", engineOf(recent)]));
+    assert.deepEqual(state.warmed.map((w) => [w.engine, w.source]), [[engineOf(recent), "idle"]]);
+    const afterLaunchS = state.warmed[0].at - state.startedAt;
+    assert.ok(afterLaunchS >= 10, `the idle warm-up started ${afterLaunchS.toFixed(1)} s after the warm-up started, before the idle delay`);
+    await app.quit({ timeout: 30000, graceful: true });
+    app = null;
+    return { remembered, warmedAfterMs, afterLaunchS, state, loaded };
+  });
+
+  report.warmupMemory = [];
+  for (let run = 0; run < runs; run++) {
+    for (const on of [false, true]) {
+      const copy = join(root, `warmup-memory-${on ? "on" : "off"}-${run + 1}`);
+      copyFixture(data, copy);
+      const started = Date.now();
+      app = await launch(appPath, { data: copy, onboarded: true, probe: true, keepData: true, startTimeout: 60000,
+        env: on ? warmupEnv : env, ready: { timeout: 180000, test: "return !!ac.store && !!ac.store.getState().windows.w1;" } });
+      await until("memory launch loads Default", async () => (await loadedNow()).includes(""), 60000, 250);
+      if (on) await until("idle warm-up", async () => (await loadedNow()).includes(engineOf(recent)), 40000, 250);
+      else await sleep(Math.max(0, 12000 - (Date.now() - started)));
+      await sleep(settle);
+      const loaded = await loadedNow();
+      const sample = processTree(app.pid);
+      report.warmupMemory.push({ mode: on ? "warm" : "lazy", run: run + 1, loaded, ...sample });
+      save();
+      process.stdout.write(`warm-up ${on ? "on " : "off"} ${run + 1}: loaded ${JSON.stringify(loaded)}, ${sample.count} processes, RSS ${(sample.rssBytes / 2 ** 20).toFixed(0)} MB, footprint ${sample.footprintBytes === null ? "n/a" : (sample.footprintBytes / 2 ** 20).toFixed(0) + " MB"}\n`);
+      await app.quit({ timeout: 30000, graceful: true });
+      app = null;
+    }
+  }
+}
+
 try {
   const from = await fixture();
-  await measure(from);
-  await measureSync(await syncFixture(from));
-  await checks(from);
-  await webkitInUnloadedProfile(from);
-  const all = () => [...report.measure, ...report.syncMeasure];
+  if (parts.has("measure")) await measure(from);
+  if (parts.has("sync")) await measureSync(await syncFixture(from));
+  if (parts.has("checks")) await checks(from);
+  if (parts.has("webkit")) await webkitInUnloadedProfile(from);
+  if (parts.has("warmup")) await warmups(from);
+  const all = () => [...report.measure, ...(report.syncMeasure ?? [])];
   const pick = (mode, key) => all().filter((m) => m.mode === mode).map((m) => m[key]);
   const median = (list) => { const s = [...list].filter((v) => v !== null).sort((a, b) => a - b); return s.length ? s[Math.floor((s.length - 1) / 2)] : null; };
   report.summary = Object.fromEntries(["lazy", "eager", "lazy+sync", "eager+sync"].map((mode) => [mode, {

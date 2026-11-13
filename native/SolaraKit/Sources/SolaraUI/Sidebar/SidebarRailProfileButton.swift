@@ -49,6 +49,7 @@ final class SidebarRailProfileButton: StripHoverView {
 @MainActor
 final class SidebarRailProfileRow: NSButton {
   var onChoose: (() -> Void)?
+  var onHover: ((Bool) -> Void)?
   private let check = SymbolView()
 
   init(profile: SidebarChromeDot, current: Bool, color: NSColor) {
@@ -82,6 +83,15 @@ final class SidebarRailProfileRow: NSButton {
     super.layout()
     check.frame = NSRect(x: bounds.width - 24, y: (bounds.height - 16) / 2, width: 16, height: 16)
   }
+
+  override func updateTrackingAreas() {
+    super.updateTrackingAreas()
+    for area in trackingAreas where area.owner === self { removeTrackingArea(area) }
+    addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+  }
+
+  override func mouseEntered(with event: NSEvent) { onHover?(true) }
+  override func mouseExited(with event: NSEvent) { onHover?(false) }
 
   @objc private func choose() { onChoose?() }
 }

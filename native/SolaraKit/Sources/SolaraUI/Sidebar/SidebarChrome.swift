@@ -55,6 +55,7 @@ public enum SidebarChromeAction: Equatable, Sendable {
   case profileMenu
   case toggleDownloads
   case switchProfile(String)
+  case profileIntent(String?)
   case liveWidth(Double?)
   case commitWidth(Double)
   case resetWidth
@@ -175,6 +176,7 @@ public final class SidebarChromeView: NSView {
   private var dots: [SidebarProfileDot] = []
   let profileSwitcher = SidebarRailProfileButton()
   let profilePopover = NSPopover()
+  private var railHover: String?
   private let tooltip = SidebarDotTooltip()
   private let dropGlow = CALayer()
   private var position: Double = 0
@@ -386,6 +388,7 @@ public final class SidebarChromeView: NSView {
         guard let self, let dot else { return }
         if inside { self.tooltip.show(dot.name, above: dot) } else { self.tooltip.hide(dot) }
         self.paintDots()
+        self.onAction(.profileIntent(self.dots.first { $0.hovered && !$0.isHidden }?.profileId))
       }
       addSubview(dot, positioned: .below, relativeTo: tooltip)
       dots.append(dot)
@@ -417,6 +420,11 @@ public final class SidebarChromeView: NSView {
       row.onChoose = { [weak self] in
         self?.profilePopover.performClose(nil)
         self?.onAction(.switchProfile(profile.id))
+      }
+      row.onHover = { [weak self] inside in
+        guard let self else { return }
+        if inside { self.railHover = profile.id } else if self.railHover == profile.id { self.railHover = nil } else { return }
+        self.onAction(.profileIntent(self.railHover))
       }
       row.frame = NSRect(
         x: FolderPanelMetrics.padding, y: FolderPanelMetrics.padding + CGFloat(index) * (FolderPanelMetrics.rowHeight + FolderPanelMetrics.rowGap),

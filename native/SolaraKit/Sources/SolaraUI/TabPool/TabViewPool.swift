@@ -50,7 +50,9 @@ public final class TabViewPool {
   static let gestureMoves: Set<NSEvent.EventType> = [.leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
   static let gestureStarts: Set<NSEvent.EventType> = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
   enum DroppedGesture { case mouse, scroll }
-  private var dropping: (window: ObjectIdentifier, gesture: DroppedGesture)?
+  private var dropping: DroppedGesture?
+  private weak var droppingWindow: NSWindow?
+  private var droppingObserver: NSObjectProtocol?
   private let after: After
   private var scheduled = false
   private var slotObserver: NSObjectProtocol?
@@ -71,10 +73,12 @@ public final class TabViewPool {
   isolated deinit {
     if let slotObserver { NotificationCenter.default.removeObserver(slotObserver) }
     if let inputMonitor { NSEvent.removeMonitor(inputMonitor) }
+    if let droppingObserver { NotificationCenter.default.removeObserver(droppingObserver) }
   }
 
   public func page(_ tabId: String) -> TabPoolPage? { pages[tabId] }
   public var heldTabIds: Set<String> { Set(held.keys) }
+  var isDroppingAGesture: Bool { dropping != nil }
   public func place(_ tabId: String) -> TabViewPlace? { places[tabId] }
 
   public func update(_ wanted: [TabViewWanted]) {
@@ -224,8 +228,9 @@ public final class TabViewPool {
     page.hold(true)
     if hadFocus, let window {
       window.makeFirstResponder(nil)
-      schedule { [weak incoming, weak window] in
-        guard let incoming, let window, window.firstResponder === window else { return }
+      schedule { [weak self, weak incoming, weak window] in
+        guard let self, let incoming, let window, window.firstResponder === window, self.pages[next] === incoming,
+          self.places[next] == .slot(key), incoming.view.window === window, !incoming.view.isHiddenOrHasHiddenAncestor else { return }
         incoming.focus()
       }
     }
@@ -253,23 +258,20 @@ public final class TabViewPool {
   }
 
   func inputArrived(_ type: NSEvent.EventType, window: NSWindow?, at point: NSPoint, phase: NSEvent.Phase = [], momentum: NSEvent.Phase = []) -> Bool {
+    if dropping != nil, droppingWindow == nil || droppingWindow !== window { stopDropping() }
     guard let window else { return false }
-    if let dropping, dropping.window == ObjectIdentifier(window) {
-      switch dropping.gesture {
+    if let dropping {
+      switch dropping {
       case .mouse where Self.gestureMoves.contains(type):
         return true
       case .mouse where Self.gestureEnds.contains(type):
-        self.dropping = nil
-        watchInput()
+        stopDropping()
         return true
       case .scroll where type == .scrollWheel && !phase.contains(.began) && !phase.contains(.mayBegin) && !(phase.isEmpty && momentum.isEmpty):
-        if momentum.contains(.ended) || momentum.contains(.cancelled) || (momentum.isEmpty && phase.contains(.cancelled)) {
-          self.dropping = nil
-          watchInput()
-        }
+        if momentum.contains(.ended) || momentum.contains(.cancelled) || (momentum.isEmpty && phase.contains(.cancelled)) { stopDropping() }
         return true
       default:
-        self.dropping = nil
+        stopDropping()
       }
     }
     let starts = Self.gestureStarts.contains(type) || (type == .scrollWheel && (phase.contains(.began) || phase.contains(.mayBegin) || (phase.isEmpty && momentum.isEmpty)))
@@ -284,12 +286,29 @@ public final class TabViewPool {
       endHold(id, settle: true)
     }
     if swallow, type == .scrollWheel, !phase.isEmpty {
-      dropping = (ObjectIdentifier(window), .scroll)
+      startDropping(.scroll, in: window)
     } else if swallow, Self.gestureStarts.contains(type) {
-      dropping = (ObjectIdentifier(window), .mouse)
+      startDropping(.mouse, in: window)
     }
     watchInput()
     return swallow
+  }
+
+  private func startDropping(_ gesture: DroppedGesture, in window: NSWindow) {
+    stopDropping()
+    dropping = gesture
+    droppingWindow = window
+    droppingObserver = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: nil) { [weak self] _ in
+      MainActor.assumeIsolated { self?.stopDropping() }
+    }
+  }
+
+  private func stopDropping() {
+    if let droppingObserver { NotificationCenter.default.removeObserver(droppingObserver) }
+    droppingObserver = nil
+    dropping = nil
+    droppingWindow = nil
+    watchInput()
   }
 
   private func release(_ id: String, generation: Int) {

@@ -331,6 +331,47 @@ struct TabViewPoolHoldTests {
     #expect(!rig.pool.inputArrived(.scrollWheel, window: rig.window, at: at, phase: .began))
   }
 
+  @Test func aDroppedPressWhoseWindowClosesStopsDropping() throws {
+    let rig = Rig()
+    _ = try rig.showDrawn("a", others: ["b"])
+    rig.show("b", others: ["a"])
+    let at = NSPoint(x: 250, y: 50)
+    #expect(rig.pool.inputArrived(.leftMouseDown, window: rig.window, at: at))
+    #expect(rig.pool.isDroppingAGesture)
+    NotificationCenter.default.post(name: NSWindow.willCloseNotification, object: rig.window)
+    #expect(!rig.pool.isDroppingAGesture)
+    #expect(!rig.pool.inputArrived(.leftMouseUp, window: rig.window, at: at))
+  }
+
+  @Test func aDroppedPressStopsWhenInputArrivesInAnotherWindow() throws {
+    let rig = Rig()
+    _ = try rig.showDrawn("a", others: ["b"])
+    rig.show("b", others: ["a"])
+    let at = NSPoint(x: 250, y: 50)
+    #expect(rig.pool.inputArrived(.leftMouseDown, window: rig.window, at: at))
+    let other = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 10, height: 10), styleMask: [.titled], backing: .buffered, defer: true)
+    other.isReleasedWhenClosed = false
+    #expect(!rig.pool.inputArrived(.leftMouseDragged, window: other, at: .zero))
+    #expect(!rig.pool.isDroppingAGesture)
+  }
+
+  @Test func theDeferredFocusSkipsAPageThatIsNoLongerShown() throws {
+    let rig = Rig()
+    let a = try rig.showDrawn("a", others: ["b", "c"])
+    let b = try #require(rig.made["b"])
+    #expect(rig.window.makeFirstResponder(a.view))
+    rig.pool.update([rig.wanted("b", .card), rig.wanted("a", .none), rig.wanted("c", .none)])
+    let pending = rig.pending
+    rig.pending = []
+    pending.forEach { $0() }
+    #expect(rig.pool.heldTabIds == ["a"])
+    rig.pool.update([rig.wanted("c", .card), rig.wanted("a", .none), rig.wanted("b", .none)])
+    rig.pool.reconcile()
+    rig.turn()
+    rig.turn()
+    #expect(b.focused == 0)
+  }
+
   @Test func aPressThatStartedBeforeTheHoldNeitherEndsItNorIsDropped() throws {
     let rig = Rig()
     _ = try rig.showDrawn("a", others: ["b"])

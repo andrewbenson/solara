@@ -328,6 +328,41 @@ func phaseAIssued(_ store: Store, _ id: String, generation: String = "G", revisi
     #expect(store.state.live[id]?.playingAudio == true)
   }
 
+  @Test func repeatedEmptyIssueKeepsItsSerialAndQueuesNoDelivery() throws {
+    let (store, id) = try phaseAPageFixture()
+    try store.dispatch(phaseAReport(id, phaseACreated(store, id)))
+    let first = try #require(try store.preparePooledIssue(id: id, report: phaseAIssued(store, id)))
+    #expect(store.consumePooledIssue(id: id, prepared: first))
+    let second = try #require(try store.preparePooledIssue(id: id, report: phaseAIssued(store, id)))
+    #expect(store.consumePooledIssue(id: id, prepared: second))
+    let empty = try #require(try store.preparePooledIssue(id: id, report: phaseAIssued(store, id)))
+    #expect(empty.actions == [])
+    let serial = store.memory.pages[id]!.modelSerial
+    let page = store.memory.pages[id]
+    let rev = store.rev
+    #expect(store.consumePooledIssue(id: id, prepared: empty))
+    #expect(store.queuedDeliveriesForTesting == 0)
+    #expect(store.consumePooledIssue(id: id, prepared: empty))
+    #expect(store.queuedDeliveriesForTesting == 0)
+    #expect(store.memory.pages[id]!.modelSerial == serial)
+    #expect(store.memory.pages[id] == page)
+    #expect(store.rev == rev)
+  }
+
+  @Test func issuePreparedPastAnExpiredHeldTransactionStillClosesIt() throws {
+    let clock = ReviewClock()
+    let store = syncingStore(clock: { clock.now })
+    let window = try store.dispatch(Command("createWindow", [["url": "https://page.example/"]])).result!.string!
+    let id = store.state.windows[window]!.tabIds[0]
+    try store.dispatch(phaseAReport(id, phaseACreated(store, id)))
+    try store.dispatch(Command("beginTransaction"), origin: .native)
+    try store.transactWhenFree { _ in }
+    #expect(store.queuedFromSyncCount == 1)
+    clock.now += Store.heldTransactionLimit + 1
+    _ = try store.preparePooledIssue(id: id, report: phaseAIssued(store, id))
+    #expect(store.queuedFromSyncCount == 0)
+  }
+
   @Test func invalidatedIssueCandidateCannotOverwriteNewerModelFacts() throws {
     let (store, id) = try phaseAPageFixture()
     try store.dispatch(phaseAReport(id, phaseACreated(store, id)))

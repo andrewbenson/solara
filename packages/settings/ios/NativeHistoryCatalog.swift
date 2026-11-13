@@ -240,13 +240,13 @@ enum NativeHistoryCatalog {
   }
 
   static func favicon(page: String, source: String? = nil, profileId: String, dark: Bool) async -> NSImage? {
-    if let state = NativeStoreHandle.store?.state, state.profiles[profileId] != nil, !Ids.isIncognitoProfile(profileId) {
+    if let state = NativeStoreHandle.store?.displayState, state.profiles[profileId] != nil, !Ids.isIncognitoProfile(profileId) {
       let engine = state.engineProfile(profileId)
       if !NativeProfileLoading.isLoaded(engine), let image = await NativeLaunchFavicons.image(page: page, source: source, engine: engine),
-        let current = NativeStoreHandle.store?.state, current.profiles[profileId] != nil,
+        let current = NativeStoreHandle.store?.displayState, current.profiles[profileId] != nil,
         current.engineProfile(profileId).utf16.elementsEqual(engine.utf16), !NativeProfileLoading.isLoaded(engine) { return image }
     }
-    let profile = NativeStoreHandle.store?.state.engineProfile(profileId) ?? (profileId == "default" ? "" : profileId)
+    let profile = NativeStoreHandle.store?.displayState.engineProfile(profileId) ?? (profileId == "default" ? "" : profileId)
     guard let result = await catalog.favicons?.favicon(page: page, source: source, engineProfile: profile, appearance: dark) else { return nil }
     return NSImage(data: result.data)
   }

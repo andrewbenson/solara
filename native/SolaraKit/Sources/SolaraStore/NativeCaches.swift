@@ -30,6 +30,7 @@ public final class EarlyLaunchTabProvider: Sendable {
 
   public func refresh() throws {
     let enabled = Self.resolve(environment: environment, cache: readCache())
+    guard store.displayState.caches.earlyLaunchTab != enabled else { return }
     try store.transact { session in
       session.update { $0.caches.earlyLaunchTab = enabled }
     }

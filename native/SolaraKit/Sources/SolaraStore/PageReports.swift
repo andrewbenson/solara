@@ -86,21 +86,36 @@ extension Session {
   }
 
   public func consumePageIssue(id: String, prepared: PreparedPageIssue) throws -> Bool {
-    let guardValue = prepared.guardValue
-    guard let tab = state.tabs[id], pageIsEligible(tab), tab.windowId == prepared.windowId,
-      tab.profileId == prepared.profileId, state.engineProfile(tab.profileId) == prepared.engineProfile,
-      tabEngine(state, id) == prepared.engine, pageNavigation(tab) == guardValue.navigation,
-      var page = memory.pages[id], page.generation == guardValue.sessionGeneration,
-      page.modelSerial == guardValue.modelSerial, contextMatchesNavigation(prepared.context, tab),
-      contextIsCurrent(prepared.context, page), let fence = memory.pageProducerFence[id],
-      fence.generation == guardValue.sessionGeneration, !fence.retired else { return false }
+    guard var page = consumablePage(id: id, prepared: prepared) else { return false }
     page.modelSerial = try nextPageModelSerial()
     page.model = prepared.model
     page.wasNewTab = prepared.context.wasNewTab
     page.contextRevision = prepared.context.revision
-    page.newTabShownUrl = prepared.actions.array?.contains { $0["type"]?.string == "clearNewTabShown" } == true ? nil : prepared.context.newTabShownUrl
+    page.newTabShownUrl = consumedNewTabShownUrl(prepared)
     memory.pages[id] = page
     return true
+  }
+
+  func pageIssueAlreadyConsumed(id: String, prepared: PreparedPageIssue) -> Bool {
+    guard prepared.actions.array?.isEmpty == true, let page = consumablePage(id: id, prepared: prepared) else { return false }
+    return page.model == prepared.model && page.wasNewTab == prepared.context.wasNewTab &&
+      page.contextRevision == prepared.context.revision && page.newTabShownUrl == consumedNewTabShownUrl(prepared)
+  }
+
+  private func consumablePage(id: String, prepared: PreparedPageIssue) -> PageReportMemory? {
+    let guardValue = prepared.guardValue
+    guard let tab = state.tabs[id], pageIsEligible(tab), tab.windowId == prepared.windowId,
+      tab.profileId == prepared.profileId, state.engineProfile(tab.profileId) == prepared.engineProfile,
+      tabEngine(state, id) == prepared.engine, pageNavigation(tab) == guardValue.navigation,
+      let page = memory.pages[id], page.generation == guardValue.sessionGeneration,
+      page.modelSerial == guardValue.modelSerial, contextMatchesNavigation(prepared.context, tab),
+      contextIsCurrent(prepared.context, page), let fence = memory.pageProducerFence[id],
+      fence.generation == guardValue.sessionGeneration, !fence.retired else { return nil }
+    return page
+  }
+
+  private func consumedNewTabShownUrl(_ prepared: PreparedPageIssue) -> String? {
+    prepared.actions.array?.contains { $0["type"]?.string == "clearNewTabShown" } == true ? nil : prepared.context.newTabShownUrl
   }
 
   func applyPageFeed(_ id: String, _ report: JSONValue, type: String, page: inout PageReportMemory) {

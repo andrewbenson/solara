@@ -106,7 +106,7 @@ final class PaneRootsHost {
   }
 
   func refresh() {
-    guard let window = NativeStoreHandle.store?.state.windows[windowId] else { return }
+    guard let window = NativeStoreHandle.store?.displayState.windows[windowId] else { return }
     let open = Set(window.tabIds)
     let windowId = windowId
     let visible = open.filter { tabId in

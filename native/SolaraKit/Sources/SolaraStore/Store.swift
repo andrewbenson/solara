@@ -122,6 +122,7 @@ public final class Store: Sendable {
   private let ingress = NSRecursiveLock()
   private let sequencing = Mutex(Sequencing())
   private let core: Mutex<Core>
+  private let published: Mutex<BrowserState>
   private let delivery = Mutex(Delivery())
   private let listeners = Mutex<[(id: Int, listener: Listener)]>([])
   private let nextListener = Atomic<Int>(0)
@@ -160,6 +161,7 @@ public final class Store: Sendable {
     var state = state
     normalizePageState(&state, memory: &memory)
     core = Mutex(Core(state: state, memory: memory, rev: rev))
+    published = Mutex(state)
     delivery.withLock { $0.deliveredRev = rev }
   }
 
@@ -186,6 +188,12 @@ public final class Store: Sendable {
   public var memory: StoreMemory { sequence { core.withLock { $0.memory } } }
 
   package var committedSnapshot: (rev: Int, state: BrowserState) { core.withLock { ($0.rev, $0.state) } }
+  public var displayState: BrowserState { published.withLock { $0 } }
+
+  private func record(_ core: inout Core, _ patch: Patch, state: BrowserState) {
+    core.record(patch, state: state)
+    published.withLock { $0 = state }
+  }
   var committedMemory: StoreMemory { core.withLock { $0.memory } }
 
   @discardableResult
@@ -339,7 +347,7 @@ public final class Store: Sendable {
         core.held = nil
         let (_, patch) = try settle(
           from: core.state, generations: pageGenerations(core.memory), rev: core.rev, settled: true, held, origin: heldFromSync ? .sync : .native, fromSync: tags && heldFromSync, tags: tags, commands: [], durable: false)
-        if let patch { core.record(patch, state: held.state) }
+        if let patch { record(&core, patch, state: held.state) }
         core.memory = held.memory
       }
       let heldByUser = core.held != nil && !core.heldFromSync
@@ -400,7 +408,7 @@ public final class Store: Sendable {
       core.held = session.depth > 0 ? session : nil
       let (commit, patch) = try settle(
         from: core.state, generations: pageGenerations(core.memory), rev: core.rev, settled: core.held == nil, session, origin: origin, fromSync: fromSync, tags: tags, commands: commands, durable: durable)
-      if let patch { core.record(patch, state: session.state) }
+      if let patch { record(&core, patch, state: session.state) }
       core.memory = session.memory
       return commit
     }
@@ -568,6 +576,8 @@ public final class Store: Sendable {
       }
     }
 
+    var queuedDeliveriesForTesting: Int { delivery.withLock { $0.queue.count } }
+
     func resumeDeliveryForTesting() {
       delivery.withLock { $0.pausedForTesting = false }
       drain()
@@ -626,25 +636,42 @@ public final class Store: Sendable {
   }
 
   public func preparePageIssueInScope(id: String, report: JSONValue) throws -> PreparedPageIssue? {
-    try withinSequence {
+    try withinSequence { try committedPageIssue(id: id, report: report) }
+  }
+
+  public func preparePooledIssue(id: String, report: JSONValue) throws -> PreparedPageIssue? {
+    try notifyingPersistenceRefusal { try sequence { try committedPageIssue(id: id, report: report) } }
+  }
+
+  private func committedPageIssue(id: String, report: JSONValue) throws -> PreparedPageIssue? {
+    let now = clock()
+    guard let (state, memory) = committedUnlessHeldExpired(now: now) else {
       var prepared: PreparedPageIssue?
       _ = try transactUnsequenced(commands: [], origin: .engine, durable: false, fromSync: false, waiting: nil, replaying: false) {
         prepared = try $0.preparePageIssue(id: id, report: report)
       }
       return prepared
     }
+    return try Session(state: state, memory: memory, env: env, config: config, now: now).preparePageIssue(id: id, report: report)
   }
 
-  public func preparePooledIssue(id: String, report: JSONValue) throws -> PreparedPageIssue? {
-    var prepared: PreparedPageIssue?
-    try transact { prepared = try $0.preparePageIssue(id: id, report: report) }
-    return prepared
+  private func committedUnlessHeldExpired(now: Double) -> (BrowserState, StoreMemory)? {
+    core.withLock { core in
+      if core.held != nil, now - core.heldSince > Store.heldTransactionLimit { return nil }
+      return (core.state, core.memory)
+    }
   }
 
   public func consumePooledIssue(id: String, prepared: PreparedPageIssue) -> Bool {
     var accepted = false
     do {
       let consume = {
+        let now = self.clock()
+        if let (state, memory) = self.committedUnlessHeldExpired(now: now),
+          Session(state: state, memory: memory, env: self.env, config: self.config, now: now).pageIssueAlreadyConsumed(id: id, prepared: prepared) {
+          accepted = true
+          return
+        }
         _ = try self.transactUnsequenced(commands: [], origin: .engine, durable: false, fromSync: false,
           waiting: nil, replaying: false) { accepted = try $0.consumePageIssue(id: id, prepared: prepared) }
       }

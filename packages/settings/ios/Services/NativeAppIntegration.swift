@@ -161,7 +161,7 @@ final class NativeAppIntegration {
   }
 
   private func syncHandoff() {
-    guard let state = NativeStoreHandle.store?.state else { return }
+    guard let state = NativeStoreHandle.store?.displayState else { return }
     for change in handoff.changes(state) { Handoff.setActivity(windowId: change.windowId, url: change.url, title: change.title) }
   }
 

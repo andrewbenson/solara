@@ -177,6 +177,12 @@ A fix-only release for 0.3.1, out as soon as it's gated (owner, 2026-11-11); the
 | One UI update per frame: several store changes in the same frame merge into one view update instead of a layout each; live gestures (resizing, dragging) still apply their geometry in the same event (owner, 2026-11-10) | planned |
 | Fewer, coalesced timers: repeating timers on the main thread (the tab-sleep sweep, the pairing observer) get tolerance, merge, or give way to notifications instead of polling; good for battery too (owner, 2026-11-10) | planned |
 
+## 0.3.5: the sidebar from the command line
+
+| Item | Status |
+|---|---|
+| The `solara` command arranges the sidebar: create groups and folders and move tabs into them; pin and unpin, rename, reorder, and move a tab to another profile or window; each change goes through the native store's own actions (undo, sync and the UI see it as a sidebar edit), refuses private profiles, and `--dry-run` prints what would change (owner, 2026-11-13) | planned |
+
 ## The road to all Swift (0.4.0 to 1.0.0)
 
 React Native leaves one layer at a time: first it stops drawing, then it stops deciding, then it stops holding data,

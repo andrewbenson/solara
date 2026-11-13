@@ -25,7 +25,19 @@ extension BrowserState {
 
   public mutating func applySlice(_ key: String, _ value: JSONValue?) throws {
     switch key {
-    case "profiles": profiles = try Self.table(value)
+    case "profiles":
+      let previous = profiles
+      var next: Table<Profile> = try Self.table(value)
+      for (id, incoming) in next {
+        if let old = previous[id], old.fileTheme != nil {
+          next[id] = incoming.carryingFileTheme(from: old, themeWritten: incoming.theme != old.theme)
+        } else if let seen = value?.object?[id]?.object?[ProfileFileTheme.replicaKey]?.object {
+          var own = incoming
+          own.theme = previous[id].map(\.theme) ?? seen["own"]
+          next[id] = own
+        }
+      }
+      profiles = next
     case "profileOrder": profileOrder = value?.array?.compactMap(\.string) ?? []
     case "orphanedProfileData": orphanedProfileData = value?.array?.compactMap(\.string) ?? []
     case "windows": windows = try Self.table(value)
@@ -69,7 +81,7 @@ extension BrowserState {
       for (k, v) in value?.object ?? [:] { sync[k] = v.object ?? [:] }
       pinSync = Table(sync)
     case "downloads": downloads = (value?.array ?? []).compactMap { $0.object.map(Download.init) }
-    case "settings": settings = Settings(values: value?.object ?? Settings.defaults.values)
+    case "settings": settings = settings.replacingValues(value?.object ?? Settings.defaults.values)
     case "find":
       var find = JSMap<FindState>()
       for (id, value) in value?.object ?? [:] { find[id] = try FindState(value: value) }
@@ -117,7 +129,7 @@ extension BrowserState {
       "privateCleanedTabs": .object(privateCleanedTabs.mapValues { .array($0.map(\.jsonValue)) }),
       "privateSiteMutes": .object(privateSiteMutes.mapValues { .object($0.mapValues(JSONValue.bool)) }), "parkedPins": table(parkedPins),
       "pinChoices": .object(pinChoices.map.mapValues { .object($0.mapValues(JSONValue.number)) }), "pinSync": .object(pinSync.map.mapValues { .object($0) }),
-      "downloads": .array(downloads.map { .object($0.json) }), "settings": settings.json,
+      "downloads": .array(downloads.map { .object($0.json) }), "settings": settings.replicaJSON,
       "live": .object(JSONObject(live.keys.sorted().map { ($0, live[$0]!.jsonValue) })),
       "find": .object(find.mapValues(\.jsonValue)),
       "selection": .object(selection.mapValues { JSONValue($0.ids) }), "selectionAnchors": .object(selectionAnchors.mapValues { .string($0.tabId) }),

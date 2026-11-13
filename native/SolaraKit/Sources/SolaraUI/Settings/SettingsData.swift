@@ -21,9 +21,18 @@ public protocol SettingsStoreSource: AnyObject {
   var profiles: [SettingsProfile] { get }
   var topTabLayout: Bool { get }
   func chooseTabLayout(_ layout: String)
+  func fileSource(_ key: String) -> String?
+  func fileSource(shortcut id: String) -> String?
+  func fileTheme(profile id: String) -> String?
 }
 
 public extension SettingsStoreSource {
+  func fileSource(_ key: String) -> String? { nil }
+  func fileSource(shortcut id: String) -> String? { nil }
+  func fileTheme(profile id: String) -> String? { nil }
+
+  func fileSource(keys: [String]) -> String? { keys.lazy.compactMap { self.fileSource($0) }.first }
+
   func engineProfile(_ profileId: String) -> String {
     profiles.first { $0.id == profileId }?.engineProfile ?? profileId
   }

@@ -30,6 +30,8 @@ export const unusedProfileColor = (profiles: Record<string, Profile>): ProfileCo
   COLORS.find((c) => !Object.values(profiles).some((p) => p.color === c)) ?? "blue";
 
 const dataIdOf = (profile: Pick<Profile, "id" | "dataId">) => profile.dataId ?? profile.id;
+export const ownTheme = (profile: Profile): Profile["theme"] => (profile.fileTheme ? profile.fileTheme.own : profile.theme);
+
 export const engineIdOf = (profile: Profile) => (dataIdOf(profile) === DEFAULT_PROFILE_ID ? "" : dataIdOf(profile));
 
 export const validProfileId = (id: string): boolean =>

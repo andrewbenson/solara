@@ -245,6 +245,7 @@ struct ShortcutsPane: View {
               overridden: model.customized(item, overrides: overrides, precedences: precedences),
               precedence: model.precedence(of: item, in: precedences),
               app: app,
+              fileSource: model.store.fileSource(shortcut: item.id),
               model: model
             )
           }
@@ -270,12 +271,13 @@ struct ShortcutRow: View {
   let overridden: Bool
   let precedence: ShortcutPrecedence?
   let app: String
+  var fileSource: String? = nil
   let model: ShortcutsPaneModel
 
   var body: some View {
     LabeledContent {
       HStack(spacing: 6) {
-        if overridden {
+        if overridden && fileSource == nil {
           Button {
             model.reset(item)
           } label: {
@@ -300,7 +302,7 @@ struct ShortcutRow: View {
         }
         ShortcutField(
           shortcut: shortcut,
-          remappable: item.remappable,
+          remappable: item.remappable && fileSource == nil,
           recording: model.recording == item.id,
           onRecord: { Task { await model.record(item) } },
           onClear: { model.clear(item) }
@@ -313,6 +315,15 @@ struct ShortcutRow: View {
           .foregroundStyle(ShortcutsPaneModel.conflictColor)
       } else if let path = ShortcutsPaneModel.pathText(item) {
         Text(path)
+      }
+      if let fileSource {
+        SettingsFileNote(source: fileSource)
+      }
+    }
+    .contextMenu {
+      Button("Copy Name for config.json") {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(item.id, forType: .string)
       }
     }
   }

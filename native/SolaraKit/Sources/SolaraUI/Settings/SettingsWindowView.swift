@@ -232,6 +232,7 @@ struct SettingsDetail: View {
         }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+      .safeAreaInset(edge: .top, spacing: 0) { ConfigProblemsBanner(model: ConfigProblemsModel.shared) }
       .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { context.viewport = $0 }
       .onChange(of: RevealKey(reveal: context.search.reveal, shown: context.shown), initial: true) { _, key in
         reveal(key, proxy: proxy)

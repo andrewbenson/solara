@@ -64,7 +64,7 @@ extension Session {
         try requireGeneratedProfileIdentity(updated, key: id)
         try refusePendingProfileData(engineIdOf(updated))
       }
-      next.profiles[id] = updated
+      next.profiles[id] = updated.carryingFileTheme(from: p, themeWritten: patch.has("theme"))
     }
     set(next)
   }

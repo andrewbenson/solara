@@ -13,6 +13,7 @@ public struct SettingsForm<Content: View>: View {
 }
 
 public struct SettingsSection<Content: View, Action: View>: View {
+  @Environment(\.settingsContext) private var context
   let title: String?
   let description: String?
   let anchor: String?
@@ -30,6 +31,7 @@ public struct SettingsSection<Content: View, Action: View>: View {
   public var body: some View {
     Section {
       content
+        .disabled(context?.store.fileSource(keys: SettingsFileKeys.keys(anchor: anchor)) != nil)
     } header: {
       SettingsSectionHeader(title, description: description, anchor: anchor) { action }
     }
@@ -61,6 +63,11 @@ public struct SettingsSectionHeader<Action: View>: View {
               .fontWeight(.regular)
               .foregroundStyle(.secondary)
               .fixedSize(horizontal: false, vertical: true)
+          }
+          if let fileSource = context?.store.fileSource(keys: SettingsFileKeys.keys(anchor: anchor)) {
+            SettingsFileNote(source: fileSource)
+              .font(.callout)
+              .fontWeight(.regular)
           }
         }
         Spacer(minLength: 8)
@@ -99,23 +106,30 @@ public struct SettingRow<Control: View>: View {
   let anchor: String?
   let title: String?
   let description: RowDescription
+  let keys: [String]
   let control: Control
 
-  public init(_ anchor: String? = nil, title: String? = nil, description: RowDescription = .index, @ViewBuilder control: () -> Control) {
+  public init(_ anchor: String? = nil, title: String? = nil, description: RowDescription = .index, keys: [String] = [], @ViewBuilder control: () -> Control) {
     self.anchor = anchor
     self.title = title
     self.description = description
+    self.keys = keys
     self.control = control()
   }
 
   public var body: some View {
+    let fileSource = context?.store.fileSource(keys: keys + SettingsFileKeys.keys(anchor: anchor))
     SettingsAnchor(anchor) {
       LabeledContent {
         control
+          .disabled(fileSource != nil)
       } label: {
         Text(resolvedTitle)
         if let text = resolvedDescription {
           Text(text)
+        }
+        if let fileSource {
+          SettingsFileNote(source: fileSource)
         }
       }
     }
@@ -159,7 +173,7 @@ public struct SettingToggle: View {
   }
 
   public var body: some View {
-    SettingRow(anchor) {
+    SettingRow(anchor, keys: [key]) {
       if let store = context?.store {
         Toggle("", isOn: Binding(get: { store.bool(key) != inverted }, set: { store.set(key, $0 != inverted) }))
           .labelsHidden()

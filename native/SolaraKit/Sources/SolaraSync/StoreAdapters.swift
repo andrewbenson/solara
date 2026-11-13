@@ -46,7 +46,7 @@ public final class SettingsAdapter: SyncAdapter {
   public init(store: SyncStore) { self.store = store }
 
   public func extract(_ context: ExtractContext) async throws -> Extraction? {
-    let settings = store.state.settings
+    let settings = store.state.settings.own
     let chosen = OrderedSet(settings.chosen ?? [])
     let inferred = OrderedSet(settings.inferred ?? [])
     func filledIn(_ name: String, _ value: JSONValue) -> Bool {
@@ -264,7 +264,7 @@ public final class ProfileThemesAdapter: SyncAdapter {
   public func extract(_ context: ExtractContext) async throws -> Extraction? {
     var values = OrderedDict<String, JSONValue>()
     for (id, link) in linkedProfiles(store, links()) {
-      let theme = store.state.profiles[id]!.theme
+      let theme = store.state.profiles[id]!.ownTheme
       let syncId = syncIdOf(link)
       let key = "pth:\(syncId)"
       let angleKey = Self.angleKey(syncId)

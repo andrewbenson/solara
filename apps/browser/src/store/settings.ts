@@ -108,6 +108,7 @@ export type Settings = {
   chosen?: string[];
   inferred?: string[];
   migrations?: string[];
+  fileOwn?: { covered: string[]; own: Record<string, unknown> };
 };
 
 export type SelectedTabGlow = "full" | "soft" | "off";
@@ -243,6 +244,12 @@ export function searchUrlPrefix(settings: Settings): string {
 
 function validateCustomEngine(settings: Settings, input: EngineInput, ignoreId?: string): string | null {
   return validateEngine(input, searchEngines(settings), ignoreId);
+}
+
+export function ownSetting<K extends keyof Settings>(settings: Settings, name: K): Settings[K] | undefined {
+  const file = settings.fileOwn;
+  if (!file?.covered.includes(name)) return settings[name];
+  return file.own[name] as Settings[K] | undefined;
 }
 
 export function choose(settings: Settings, patch: Partial<Settings>): Settings {

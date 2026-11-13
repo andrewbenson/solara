@@ -84,7 +84,7 @@ public final class PersistenceWriter: Sendable {
     pending = Mutex(
       Pending(
         rows: true, rowsScheduled: true, written: store.config.safeMode ? WorkspaceRows() : persisted.workspace ?? WorkspaceRows(),
-        settings: store.config.safeMode ? store.state.settings.values : persisted.settings,
+        settings: store.config.safeMode ? store.state.settings.ownValues : persisted.settings,
         downloads: store.config.safeMode ? store.state.downloads.filter { !$0.isPrivate }.map { $0.persisted() } : persisted.downloads,
         exportedDownloads: store.config.safeMode ? ShadowExport.downloadsDocument(store.state) : nil,
         syncAnchor: persisted.syncAnchor, writtenSyncAnchor: persisted.syncAnchor))
@@ -158,7 +158,7 @@ public final class PersistenceWriter: Sendable {
     guard dirty else { return nil }
     let (rev, state) = store.committedSnapshot
     let rows = scope == .everything ? WorkspaceRows(store.sessionDocument(of: state)) : WorkspaceRows()
-    let settings = state.settings.values
+    let settings = state.settings.ownValues
     let downloads = state.downloads.filter { !$0.isPrivate }.map { $0.persisted() }
     let (previous, previousSettings, previousDownloads, previousAnchor) = pending.withLock {
       ($0.written, $0.settings, $0.downloads, $0.writtenSyncAnchor)

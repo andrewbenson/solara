@@ -39,6 +39,7 @@ public struct ChangeSet: Sendable, Equatable {
   public var lists: Set<String> = []
   public var settingsChanged: [String] = []
   public var settingsRemoved: [String] = []
+  public var fileOwnChanged = false
 
   public init() {}
 
@@ -78,17 +79,28 @@ public struct ChangeSet: Sendable, Equatable {
     if before.settings != after.settings {
       for (key, value) in after.settings.values where before.settings.values[key] != value { settingsChanged.append(key) }
       for key in before.settings.values.keys where !after.settings.values.contains(key) { settingsRemoved.append(key) }
+      if before.settings.fileLayer != after.settings.fileLayer {
+        fileOwnChanged = true
+        let own = after.settings.ownValues
+        let ownBefore = before.settings.ownValues
+        for (key, value) in own where ownBefore[key] != value && !settingsChanged.contains(key) && after.settings.values.contains(key) {
+          settingsChanged.append(key)
+        }
+        for key in ownBefore.keys where !own.contains(key) && !settingsChanged.contains(key) && after.settings.values.contains(key) {
+          settingsChanged.append(key)
+        }
+      }
     }
   }
 
   public var isEmpty: Bool {
     profiles.isEmpty && windows.isEmpty && tabs.isEmpty && live.isEmpty && groups.isEmpty && splits.isEmpty && peeks.isEmpty && parkedPins.isEmpty
       && pinChoices.isEmpty && pinSync.isEmpty && find.isEmpty && selection.isEmpty && selectionAnchors.isEmpty && windowUi.isEmpty
-      && lists.isEmpty && settingsChanged.isEmpty && settingsRemoved.isEmpty
+      && lists.isEmpty && settingsChanged.isEmpty && settingsRemoved.isEmpty && !fileOwnChanged
   }
 
   public var downloads: Bool { lists.contains("downloads") }
-  public var settings: Bool { !settingsChanged.isEmpty || !settingsRemoved.isEmpty }
+  public var settings: Bool { !settingsChanged.isEmpty || !settingsRemoved.isEmpty || fileOwnChanged }
 }
 
 struct TablePatch: @unchecked Sendable {
@@ -208,6 +220,15 @@ public struct Patch: @unchecked Sendable {
     }
     settings = changes.settingsChanged.isEmpty ? nil : JSONObject(changes.settingsChanged.map { ($0, s.settings.values[$0]!) })
     settingsRemoved = changes.settingsRemoved
+    if changes.fileOwnChanged {
+      if let fileOwn = s.settings.replicaFileOwn {
+        var set = settings ?? JSONObject()
+        set[SettingsFileLayer.replicaKey] = fileOwn
+        settings = set
+      } else {
+        settingsRemoved.append(SettingsFileLayer.replicaKey)
+      }
+    }
   }
 
   public var downloads: [Download]? {

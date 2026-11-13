@@ -8,8 +8,8 @@ import { useBrowser } from "../store/browser";
 import { engineProfile } from "../store/model";
 import { isPeekTab } from "../store/peek";
 import { fromSync } from "../store/pinOrderChoices";
-import { engineIdOf, requireGeneratedProfileIdentity } from "../store/profiles";
-import { DEFAULT_PROFILE_ID, DEFAULT_SETTINGS, type Settings } from "../store/settings";
+import { engineIdOf, ownTheme, requireGeneratedProfileIdentity } from "../store/profiles";
+import { DEFAULT_PROFILE_ID, DEFAULT_SETTINGS, ownSetting, type Settings } from "../store/settings";
 import { sanitizeTheme } from "../lib/profileTheme";
 import { developerModeOf } from "../lib/developerMode";
 import { fromLegacy } from "../legacy";
@@ -96,7 +96,7 @@ export const settingsAdapter: Adapter = {
     };
     const values = new Map<string, unknown>();
     for (const name of SYNCED_SETTINGS) {
-      const value = settings[name] as unknown;
+      const value = ownSetting(settings, name) as unknown;
       if (!chosen.has(name) || value === undefined || (value === null && DEFAULT_SETTINGS[name] !== null) || filledIn(name, value)) continue;
       values.set(`set:${name}`, { v: value });
     }
@@ -123,7 +123,7 @@ export function settingsToReapply(records: Record<string, SyncRecord>): string[]
     const key = `set:${name}`;
     const value = (fromLegacy(records[key]?.v) as { v?: unknown } | null | undefined)?.v;
     if (chosen.has(name) || value === undefined || (value === null && DEFAULT_SETTINGS[name] !== null)) return [];
-    return canonical(value) === canonical(settings[name]) ? [] : [key];
+    return canonical(value) === canonical(ownSetting(settings, name)) ? [] : [key];
   });
 }
 
@@ -195,7 +195,7 @@ export function profilesAdapter(links: () => Record<string, { syncId: string; th
         const record = visible.get(key) as ProfileRecord | undefined;
         if (!record || !changed.has(key)) continue;
         try {
-          const legacy = store().profiles[id]!.theme === undefined && !records.known(`pth:${syncId}`) ? legacyThemeOf(record) : null;
+          const legacy = ownTheme(store().profiles[id]!) === undefined && !records.known(`pth:${syncId}`) ? legacyThemeOf(record) : null;
           applySyncedProfilePatch(id, { name: record.n, color: record.c, icon: record.i, ...legacy });
         } catch (error) {
           refused.add(key);
@@ -223,7 +223,7 @@ export function profileThemesAdapter(
     extract: (base, _queued, _now, known) => {
       const values = new Map<string, unknown>();
       for (const [id, { syncId, themeAdopting }] of linked()) {
-        const theme = store().profiles[id]!.theme;
+        const theme = ownTheme(store().profiles[id]!);
         const key = `pth:${syncId}`;
         const angleKey = themeAngleKey(syncId);
         if (theme === undefined || themeAdopting || unapplied(key, base) || unapplied(angleKey, base)) continue;

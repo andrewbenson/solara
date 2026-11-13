@@ -69,8 +69,8 @@ extension PersistenceWriter {
     guard !store.config.safeMode, scope == .everything || key.hasPrefix("set:") else { throw PairingCheckpointFailure.unavailable }
     let captured = store.committedSnapshot
     let memoryProfiles = store.sessionDocument(of: captured.state).profiles
-    try PairingProjection.validateDisposition(key: key, desired: desired, expected: expected, disposition: disposition, settings: captured.state.settings.values, links: links, settingsOptedOut: settingsOptedOut)
-    guard try PairingProjection.value(key: key, desired: desired, settings: captured.state.settings.values, profiles: memoryProfiles, links: links) == expected else { throw PairingCheckpointFailure.mismatched }
+    try PairingProjection.validateDisposition(key: key, desired: desired, expected: expected, disposition: disposition, settings: captured.state.settings.ownValues, links: links, settingsOptedOut: settingsOptedOut)
+    guard try PairingProjection.value(key: key, desired: desired, settings: captured.state.settings.ownValues, profiles: memoryProfiles, links: links) == expected else { throw PairingCheckpointFailure.mismatched }
     guard flush(timeout: timeout) == .saved else { throw PairingCheckpointFailure.unavailable }
     let disk = try database.load()
     guard let settings = disk.settings else { throw PairingCheckpointFailure.unavailable }

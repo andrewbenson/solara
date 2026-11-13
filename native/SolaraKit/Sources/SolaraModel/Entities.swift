@@ -9,6 +9,7 @@ public struct Profile: JSONConvertible {
   public var extra: JSONObject = [:]
   public var keyOrder: [String]? = nil
   public internal(set) var absent: Set<String> = []
+  public internal(set) var fileTheme: ProfileFileTheme?
 
   public init(id: String, name: String, color: String, icon: String?, createdAt: Double, dataId: String? = nil, theme: JSONValue? = nil) {
     self.id = id
@@ -20,7 +21,7 @@ public struct Profile: JSONConvertible {
     self.theme = theme
   }
 
-  static let keys: Set<String> = ["id", "name", "color", "icon", "createdAt", "dataId", "theme"]
+  static let keys: Set<String> = ["id", "name", "color", "icon", "createdAt", "dataId", "theme", ProfileFileTheme.replicaKey]
 
   public init(json: JSONObject) throws {
     let f = Fields(json, known: Self.keys)
@@ -45,6 +46,7 @@ public struct Profile: JSONConvertible {
     e.set("createdAt", createdAt)
     e.optional("dataId", dataId)
     e.optional("theme", theme)
+    if let fileTheme { e.set(ProfileFileTheme.replicaKey, fileTheme.replicaValue) }
     return e.object
   }
 }

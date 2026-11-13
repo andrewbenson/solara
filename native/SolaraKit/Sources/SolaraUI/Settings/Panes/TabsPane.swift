@@ -119,6 +119,7 @@ struct TabsPane: View {
             TabLayoutChoice(layout: "sidebar", title: "Tab layout in the sidebar", selected: !top) { store.chooseTabLayout("sidebar") }
             TabLayoutChoice(layout: "top", title: "Tab layout across the top of the window", selected: top) { store.chooseTabLayout("top") }
           }
+          .disabled(store.fileSource("tabLayout") != nil)
           .padding(.bottom, 2)
         }
       }
@@ -346,7 +347,11 @@ struct CleanUpRow: View {
           .toggleStyle(.checkbox)
           Text("Clean up tabs I haven't used in:")
         }
+        if let fileSource = store.fileSource("cleanUpInactiveTabsAfterHours") {
+          SettingsFileNote(source: fileSource)
+        }
       }
+      .disabled(store.fileSource("cleanUpInactiveTabsAfterHours") != nil)
     }
   }
 }

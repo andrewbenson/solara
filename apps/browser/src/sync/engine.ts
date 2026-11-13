@@ -30,7 +30,8 @@ import { nativeBusyWrites, nativeOwnsWorkspace, nativeSafeMode } from "../store/
 import { persistenceRefused } from "../lib/persistLatch";
 import { engineProfileLoaded, onLoadedProfilesChanged } from "../lib/lazyProfiles";
 import { engineProfile, isIncognitoProfile } from "../store/model";
-import { DEFAULT_PROFILE_ID, DEFAULT_SETTINGS } from "../store/settings";
+import { DEFAULT_PROFILE_ID, DEFAULT_SETTINGS, ownSetting } from "../store/settings";
+import { ownTheme } from "../store/profiles";
 import type { Profile } from "../store/types";
 import { fromLegacy } from "../legacy";
 import {
@@ -1655,14 +1656,15 @@ async function recoverPairing(host: PairingNative | null) {
 
 const validProfileRecord = (value: unknown): value is ProfileRecord => isObject(value) && typeof value.n === "string" && value.n.length > 0 && ["plum", "blue", "purple", "pink", "red", "orange", "yellow", "green", "neutral"].includes(value.c as string) && (value.i === null || typeof value.i === "string") && (value.d === undefined || value.d === true) && (value.th === undefined || value.th === null || !!legacyThemeOf(value as ProfileRecord));
 
-function localBootstrapValue(key: string, desired: unknown, links: SyncDoc["profiles"]) {
+export function localBootstrapValue(key: string, desired: unknown, links: SyncDoc["profiles"]) {
   const state = useBrowser.getState();
-  if (key.startsWith("set:")) return { v: state.settings[key.slice(4) as keyof typeof state.settings] };
+  if (key.startsWith("set:")) return { v: ownSetting(state.settings, key.slice(4) as keyof typeof state.settings) };
   const id = Object.entries(links).find(([, link]) => key === `prof:${link.syncId}` || key === `pth:${link.syncId}` || key === themeAngleKey(link.syncId) || key === `share:${link.syncId}`)?.[0];
   const profile = id ? state.profiles[id] : undefined;
   if (!profile) return null;
-  if (key.startsWith("prof:")) return { n: profile.name, c: profile.color, i: profile.icon, ...(isObject(desired) && "theme" in desired ? { theme: profile.theme ?? null } : {}) };
-  if (key.startsWith("pth:")) return key.endsWith(":angle") ? { a: profile.theme?.angle ?? null, d: profile.theme?.dark?.angle ?? null } : { theme: profile.theme ?? null };
+  const theme = ownTheme(profile);
+  if (key.startsWith("prof:")) return { n: profile.name, c: profile.color, i: profile.icon, ...(isObject(desired) && "theme" in desired ? { theme: theme ?? null } : {}) };
+  if (key.startsWith("pth:")) return key.endsWith(":angle") ? { a: theme?.angle ?? null, d: theme?.dark?.angle ?? null } : { theme: theme ?? null };
   if (key.startsWith("share:")) return { owner: profile.dataId ?? id };
   return null;
 }

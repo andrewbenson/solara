@@ -144,12 +144,16 @@ public final class NativeStore: Sendable {
       for note in launch.report.notes { NSLog("[store] %@", note) }
       var state = launch.state
       state.caches.systemDark = UserDefaults.standard.string(forKey: "AppleInterfaceStyle") == "Dark"
+      let configLocation = NativeConfigFiles.prepare(safeMode: safeMode)
+      let (configured, configContents) = NativeConfigFiles.applyAtLaunch(configLocation, to: state)
+      state = configured
       if safeMode && launch.database == nil {
         storeConfig.persistenceRefusal = "Safe mode could not open the database. Changes to settings and downloads cannot be saved. Open Solara normally to make these changes."
       }
       let store = Store(
         state: state, memory: launch.memory, env: addressing, config: storeConfig,
         onPersistenceRefusal: { message in DispatchQueue.main.async { showPersistenceRefusal(message) } }, clock: clock)
+      NativeConfigFiles.start(location: configLocation, contents: configContents, store: store)
       ownsWorkspace = activeScope == .everything
       let host = StoreHost(
         store: store, ownsWorkspace: ownsWorkspace, folder: folder,

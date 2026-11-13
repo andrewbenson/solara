@@ -5,6 +5,7 @@ import SolaraSyncAdapter
 import Carbon
 import SwiftUI
 #endif
+import SolaraModel
 import SolaraStore
 import SolaraUI
 
@@ -120,6 +121,43 @@ enum SettingsDev {
     return out
   }
 
+  #if DEBUG
+  static func configFiles(_ argument: String?, window: NSWindow?) -> [String: Any] {
+    let location = ConfigDirectory.shared?.location
+    var out: [String: Any] = [
+      "dir": location?.url.path ?? NSNull(),
+      "problems": ConfigProblems.shared.all.map { $0.summary(in: location) },
+      "notifications": NativeConfigNotifier.posted,
+    ]
+    guard let model = NativeSettingsHandle.model else { return out }
+    let layer = model.settings.fileLayer
+    out["source"] = layer?.source ?? NSNull()
+    out["fileKeys"] = layer?.values.keys ?? []
+    out["fileShortcuts"] = layer?.shortcuts.keys ?? []
+    out["fileThemes"] = Dictionary(uniqueKeysWithValues: model.profiles.compactMap { p in p.fileTheme.map { (p.id, $0.name) } })
+    let source = StoreSettingsSource(model: model)
+    let keys = (argument ?? "").split(separator: ",").map(String.init)
+    out["uiSources"] = Dictionary(uniqueKeysWithValues: keys.map { key -> (String, Any) in
+      if key.hasPrefix("shortcut:") { return (key, source.fileSource(shortcut: String(key.dropFirst(9))) ?? NSNull()) }
+      if key.hasPrefix("theme:") { return (key, source.fileTheme(profile: String(key.dropFirst(6))) ?? NSNull()) }
+      return (key, source.fileSource(key) ?? NSNull())
+    })
+    var notes: [String] = []
+    func walk(_ element: Any, depth: Int) {
+      guard depth < 60 else { return }
+      let object = element as AnyObject
+      if let identifier = object.accessibilityIdentifier?(), ["settings.fileNote", "settings.configProblems"].contains(identifier) {
+        let label = object.accessibilityLabel?() ?? nil
+        notes.append("\(identifier): \(label ?? "")")
+      }
+      for child in (object.accessibilityChildren?() ?? nil) ?? [] { walk(child, depth: depth + 1) }
+    }
+    if let window { walk(window, depth: 0) }
+    out["settingsNotes"] = notes
+    return out
+  }
+  #endif
+
   static func drive(_ action: String, _ argument: String?) -> String {
     let window = NativeSettingsWindow.window
     switch action {
@@ -228,6 +266,10 @@ enum SettingsDev {
       return json(SecureFieldProbe.run(argument ?? "window", settings: window))
     case "focusState":
       return json(SecureFieldProbe.focusState())
+    case "configFiles":
+      let env = ProcessInfo.processInfo.environment
+      guard env["SOLARA_BACKGROUND"] == "1", env["SOLARA_DATA_DIR"]?.isEmpty == false else { return #"{"error":"test instances only"}"# }
+      return json(configFiles(argument, window: window))
     #endif
     case "front":
       return json(["front": NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0, "active": NSApp.isActive])

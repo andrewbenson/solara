@@ -24,6 +24,7 @@ public class SettingsModule: Module {
       DispatchQueue.main.async { MainActor.assumeIsolated {
         PairingAdapter.install()
         NativeSettingsWindow.install()
+        NativeConfigNotifier.install()
       } }
     }
 

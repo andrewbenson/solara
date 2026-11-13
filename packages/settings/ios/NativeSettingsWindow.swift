@@ -27,6 +27,16 @@ final class StoreSettingsSource: SettingsStoreSource {
   func chooseTabLayout(_ layout: String) {
     SettingsJS.shared.fire("tabs.chooseLayout", layout)
   }
+
+  func fileSource(_ key: String) -> String? { model.settings.fileSource(key) }
+
+  func fileSource(shortcut id: String) -> String? { model.settings.fileSource(shortcut: id) }
+
+  func fileTheme(profile id: String) -> String? {
+    guard let theme = model.profiles.first(where: { $0.id == id })?.fileTheme else { return nil }
+    let folder = ConfigDirectory.shared?.location.display(ConfigThemeFile.file(theme.name)) ?? ConfigThemeFile.file(theme.name)
+    return "\(folder), named in \(theme.source)"
+  }
 }
 
 final class SettingsHostingController: NSHostingController<SettingsWindowView> {

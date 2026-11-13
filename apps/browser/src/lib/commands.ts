@@ -107,7 +107,7 @@ export function runCommand({ command, arg, windowId: requested }: CommandEvent) 
     case "setAppearance":
       if (arg === "auto" || arg === "light" || arg === "dark") {
         s.updateSettings({ appearance: arg });
-        void setAppearance(arg);
+        void setAppearance(useBrowser.getState().settings.appearance);
       }
       return;
     case "toggleFullUrl":

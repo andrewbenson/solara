@@ -1,8 +1,12 @@
 public struct Settings: Sendable, Hashable {
   public var values: JSONObject
+  public internal(set) var fileLayer: SettingsFileLayer?
 
-  public init(values: JSONObject) {
+  public init(values: JSONObject, fileLayer: SettingsFileLayer? = nil) {
+    var values = values
+    values.removeValue(forKey: SettingsFileLayer.replicaKey)
     self.values = values
+    self.fileLayer = fileLayer
   }
 
   public static let defaultProfileID = "default"
@@ -129,19 +133,21 @@ public struct Settings: Sendable, Hashable {
   public func choosing(_ patch: JSONObject) -> Settings {
     let chosen = self.chosen ?? []
     let added = patch.keys.filter { $0 != "chosen" && $0 != "inferred" && !chosen.contains($0) }
+    let (routed, layer) = routedThroughFile(patch)
     var next = values
-    for (key, value) in patch { next[key] = value }
+    for (key, value) in routed { next[key] = value }
     if !added.isEmpty { next["chosen"] = JSONValue(chosen + added) }
     if let inferred = self.inferred {
       next["inferred"] = JSONValue(inferred.filter { !patch.contains($0) })
     }
-    return Settings(values: next)
+    return Settings(values: next, fileLayer: layer)
   }
 
   public func merging(_ patch: JSONObject) -> Settings {
+    let (routed, layer) = routedThroughFile(patch)
     var next = values
-    for (key, value) in patch { next[key] = value }
-    return Settings(values: next)
+    for (key, value) in routed { next[key] = value }
+    return Settings(values: next, fileLayer: layer)
   }
 
   public func updated(_ patch: JSONObject, fromSync: Bool) -> Settings {

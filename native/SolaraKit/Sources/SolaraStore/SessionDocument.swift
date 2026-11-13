@@ -78,8 +78,8 @@ extension Session {
     }
     let early = s.caches.earlyLaunchTab ?? config.earlyLaunchTab
     return SessionDocument(
-      profiles: s.profiles.map.mapValues(\.jsonValue), profileOrder: s.profileOrder, orphanedProfileData: s.orphanedProfileData,
-      settings: s.settings.json, windows: windows, windowOrder: s.windowOrder.filter { windows[$0] != nil }, focusedWindowId: focusedWindowId,
+      profiles: s.profiles.map.mapValues(\.ownJSONValue), profileOrder: s.profileOrder, orphanedProfileData: s.orphanedProfileData,
+      settings: .object(s.settings.ownValues), windows: windows, windowOrder: s.windowOrder.filter { windows[$0] != nil }, focusedWindowId: focusedWindowId,
       lastProfileId: s.ui.lastProfileId, launchTab: early ? launchTab(s, focusedWindowId) : .null,
       launchBackdrop: early ? LaunchBackdropProvider.document(s, windowId: focusedWindowId) : .null,
       linkProfile: early ? .string(s.engineProfile(lastActiveProfile(s))) : .null, tabs: tabs,

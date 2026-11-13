@@ -34,6 +34,7 @@ export type Profile = {
   createdAt: number;
   dataId?: string;
   theme?: ProfileTheme | null;
+  fileTheme?: { name: string; source: string; own?: ProfileTheme | null };
 };
 
 export type BrowserWindow = {

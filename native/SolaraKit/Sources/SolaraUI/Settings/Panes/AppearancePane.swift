@@ -92,6 +92,7 @@ struct AppearancePane: View {
               }
             }
           }
+          .disabled(store.fileSource("appearance") != nil)
           .padding(.bottom, 2)
         }
       }
@@ -111,6 +112,7 @@ struct AppearancePane: View {
               AddressBarPreview(sidebar: true)
             }
           }
+          .disabled(store.fileSource("addressBar") != nil)
           .padding(.bottom, 2)
         }
       }

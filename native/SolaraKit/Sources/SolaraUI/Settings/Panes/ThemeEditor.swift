@@ -22,11 +22,13 @@ struct ThemeEditorState {
 }
 
 struct ThemeSection: View {
+  @Environment(\.settingsContext) private var context
   let model: ProfilesPaneModel
   let profile: ProfileSummary
 
   var body: some View {
     let state = ThemeEditorState(stored: model.editedTheme(profile.id), appDark: model.services.appDark, source: model.lookSource)
+    let fileTheme = context?.store.fileTheme(profile: profile.id)
     SettingsSection("Theme", description: "Tints this profile's windows, New Tab page and highlights.") {
       Menu("Import from Arc…") {
         if let choices = model.arcChoices, !choices.isEmpty {
@@ -48,7 +50,13 @@ struct ThemeSection: View {
         }
       }
       .fixedSize()
+      .disabled(fileTheme != nil)
     } content: {
+      if let fileTheme {
+        SettingRow(title: "From a theme file", description: .none) {
+          SettingsFileNote(source: fileTheme)
+        }
+      }
       SettingRow(title: "Colour", description: .text(state.colorDescription(preset: profile.color))) {
         HStack(spacing: 7) {
           ForEach(ProfileColorValue.allCases, id: \.self) { color in
@@ -76,6 +84,7 @@ struct ThemeSection: View {
           .buttonStyle(.plain)
           .help("Custom")
         }
+        .disabled(fileTheme != nil)
       }
       if let custom = state.custom, let shown = state.shown {
         ThemeEditor(
@@ -85,6 +94,7 @@ struct ThemeSection: View {
           followsApp: model.lookSource == .app,
           change: { model.changeTheme(profile.id, $0, settle: $1) }
         )
+        .disabled(fileTheme != nil)
         .onAppear { model.services.holdThemedWindowsKeyLook(true) }
         .onDisappear { model.services.holdThemedWindowsKeyLook(false) }
       }

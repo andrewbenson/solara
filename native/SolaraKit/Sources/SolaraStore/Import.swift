@@ -132,7 +132,7 @@ extension Session {
     }
     var next = state
     if let theme = object["theme"], !theme.isNull, var profile = next.profiles[profileId] {
-      profile.theme = theme
+      profile.setOwnTheme(theme)
       next.profiles[profileId] = profile
     }
     var windowIds: [String] = []

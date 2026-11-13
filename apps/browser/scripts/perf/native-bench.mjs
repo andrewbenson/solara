@@ -1455,6 +1455,11 @@ function summary(res) {
     add(`idle wakeups/s, ${t.slice(4)} tab(s) (renderers)`, S.map((r) => r.idle[t]?.kinds.renderer?.wakeups), "/s", 1);
   }
   for (const m of ["tabs1", "tabs10", "tabs20", "closed"]) add(`memory (phys_footprint), ${m === "closed" ? "after closing back to 1 tab" : m.slice(4) + " tab(s)"}`, S.map((r) => r.memory[m]?.totalMB), "MB");
+  for (const m of ["tabs1", "closed"]) {
+    const label = m === "closed" ? "after closing back to 1 tab" : "1 tab";
+    add(`memory, all but the GPU process, ${label}`, S.map((r) => r.memory[m] && r.memory[m].totalMB - (r.memory[m].kinds["gpu-process"] ?? 0)), "MB");
+    add(`memory, GPU process, ${label}`, S.map((r) => r.memory[m]?.kinds["gpu-process"]), "MB");
+  }
   add("memory, browser process, 20 tabs", S.map((r) => r.memory.tabs20?.kinds.browser), "MB");
   add("memory, browser process, after closing", S.map((r) => r.memory.closed?.kinds.browser), "MB");
   const M = res.memslope ?? [];

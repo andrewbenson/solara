@@ -374,7 +374,7 @@ command starts.
 | launch → first page painted | The restored tab's first-contentful-paint |
 | launch → first page's first frame | The restored tab's first `requestAnimationFrame` |
 | idle CPU, idle wakeups/s | rusage over the whole process tree (or one process kind) across `--idle` seconds, with the channel paused, at 1 tab and at 20 tabs |
-| memory (phys_footprint) | The tree's footprint at 1, 10 and 20 tabs, and 30 s after closing back to 1. The "browser process" rows count that process alone. |
+| memory (phys_footprint) | The tree's footprint at 1, 10 and 20 tabs, and 30 s after closing back to 1. The "browser process" rows count that process alone. The GPU process lands on one of a few levels by chance, in any build: the page keeps 5 or 7 raster tiles (3.7 MB each) and its IOAccelerator memory is purged (about 9 MB) at a random moment 60 to 120 s after launch, so it moves in 8 MB steps at 1 tab and 8 to 16 MB after closing. It gets its own rows, and "all but the GPU process" is the row to gate the rest of the tree on. Memory rows need `--runs 4` or more per app: at 2 they separate by chance (0.3.3's gate). |
 | idle windows: someone used the Mac (…with the pointer moving over the window) | Seconds of mouse, trackpad or keyboard input during the run's idle windows (HIDIdleTime polled every 250 ms), and of those, with the pointer moving over the instance's window |
 | after an idle minute: command answered | The first command's latency after the 1-tab idle (catches App Nap) |
 | samples left out | Switches and new tabs dropped because the page got fewer than 5 frames in 250 ms |

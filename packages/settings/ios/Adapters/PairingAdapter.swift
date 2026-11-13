@@ -52,7 +52,7 @@ final class PairingAdapter: TrustedPairingService {
     if arm != nil || authenticatingArm != nil || nativeArm != nil { return true }
     return surfaces.values.contains { surface in
       guard let window = surface.window else { return false }
-      return window.isVisible && !window.isMiniaturized
+      return window.isVisible && !window.isMiniaturized && window.occlusionState.contains(.visible)
     }
   }
 

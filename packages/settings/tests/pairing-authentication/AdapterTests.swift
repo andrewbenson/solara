@@ -173,6 +173,23 @@ import SolaraSyncAdapter
     #expect(count == stopped)
   }
 
+  @Test func aFullyCoveredSurfaceStopsPolling() {
+    let adapter = fresh()
+    let window = SurfaceWindow()
+    defer { withExtendedLifetime(window) {} }
+    let surface = adapter.attach(to: window)
+    var count = 0
+    let subscription = adapter.observe(on: surface) { _ in count += 1 }
+    defer { subscription.cancel() }
+    spin(0.3)
+    #expect(count >= 2)
+    window.exposed = false
+    spin(0.25)
+    let stopped = count
+    spin(0.45)
+    #expect(count == stopped)
+  }
+
   @Test func showingTheSurfaceAgainPublishesAndResumesPolling() {
     let adapter = fresh()
     let window = SurfaceWindow()

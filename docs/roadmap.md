@@ -156,7 +156,7 @@ A fix-only release for 0.3.1, out as soon as it's gated (owner, 2026-11-11); the
 
 | Item | Status |
 |---|---|
-| Win back 0.3.3's JS time on tab actions: the gate (docs/perf/0.3.2-to-0.3.3.md) measured JS outside React up 18–27% on tab switch and close (about 4 ms per action), listener time up 17–21% and store-update p95 14.2 → 17.3 ms; attribute it per feature (unread badges, tab numbers, pinned-link Peeks, lazy profiles, the bookmark bridge) and bring every row back to 0.3.2 or better (owner, 2026-11-12) | in progress: attribution running (jsattr33) |
+| Win back 0.3.3's JS time on tab actions: the gate (docs/perf/0.3.2-to-0.3.3.md) measured JS outside React up 18–27% on tab switch and close (about 4 ms per action), listener time up 17–21% and store-update p95 14.2 → 17.3 ms; attribute it per feature (unread badges, tab numbers, pinned-link Peeks, lazy profiles, the bookmark bridge) and bring every row back to 0.3.2 or better (owner, 2026-11-12) | in progress: about 90% is native (the main thread redraws more views per tab action; v0.3.2's JS on the 0.3.3 app is just as slow), being traced with Release A/B builds; the JS listener share is back to 0.3.2's level (c6388d9a) |
 | Profile first switch: lazy profiles moved loading to the first visit (profileSwipe JS 91 → 215 ms); trim the JS part of that load | planned |
 | Memory: 0.3.3 uses 5–12 MB more than 0.3.2 with one tab and after closing tabs (whole app and browser process); find where it goes (uBlock Origin Lite's WebKit lists are the first suspect, though they compile only once a WebKit tab exists) and give it back | planned |
 | Stall ceilings: commission the ratchet's main-thread stall ceilings on an unlocked screen, so the ratchet can pass again | planned |

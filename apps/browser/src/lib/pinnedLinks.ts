@@ -39,8 +39,14 @@ export function startPinnedLinks() {
     void setPinnedLinkSources(sources);
   };
   syncSources();
+  let syncQueued = false;
   useBrowser.subscribe((s, prev) => {
-    if (s.tabs !== prev.tabs || s.windows !== prev.windows) syncSources();
+    if (syncQueued || (s.tabs === prev.tabs && s.windows === prev.windows)) return;
+    syncQueued = true;
+    queueMicrotask(() => {
+      syncQueued = false;
+      syncSources();
+    });
   });
   onPinnedLink(pinnedLinkController({
     source(id) {

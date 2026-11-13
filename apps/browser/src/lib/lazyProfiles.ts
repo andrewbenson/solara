@@ -22,8 +22,12 @@ function record(engines: string[]) {
   if (changed) for (const listener of [...listeners]) listener();
 }
 
+let liveCache: { profiles: BrowserState["profiles"]; engines: Set<string> } | null = null;
+
 function liveEngines() {
-  return new Set(Object.values(useBrowser.getState().profiles).map((p) => p.dataId ?? p.id).map((id) => id === "default" ? "" : id));
+  const profiles = useBrowser.getState().profiles;
+  if (liveCache?.profiles !== profiles) liveCache = { profiles, engines: new Set(Object.values(profiles).map((p) => p.dataId ?? p.id).map((id) => id === "default" ? "" : id)) };
+  return liveCache.engines;
 }
 
 export async function refreshLoadedProfiles() {
@@ -54,6 +58,20 @@ export function startProfileLoading() {
         .finally(() => pending.delete(engine));
     }
   };
+  const allRequested = () => {
+    for (const engine of liveEngines()) if (!loaded.has(engine) && !pending.has(engine)) return false;
+    return true;
+  };
+  let queuedFrom: BrowserState | undefined;
+  const requestSoon = (prev: BrowserState) => {
+    if (queuedFrom) return;
+    queuedFrom = prev;
+    void Promise.resolve().then(() => {
+      const from = queuedFrom;
+      queuedFrom = undefined;
+      if (!stopped) request(from);
+    });
+  };
   const stop = useBrowser.subscribe((s, prev) => {
     if (s.profiles !== prev.profiles || s.windows !== prev.windows) failed.clear();
     if (s.profiles !== prev.profiles) {
@@ -61,7 +79,10 @@ export function startProfileLoading() {
       for (const engine of loaded) if (!live.has(engine)) loaded.delete(engine);
       if ([...live].some((engine) => !loaded.has(engine))) void loadedProfiles().then((engines) => { if (!stopped) record(engines); }).catch(() => {});
     }
-    if (s.windows !== prev.windows || s.profiles !== prev.profiles || s.tabs !== prev.tabs || s.settings.loadAllProfilesAtLaunch !== prev.settings.loadAllProfilesAtLaunch) request(prev);
+    if (s.windows !== prev.windows || s.profiles !== prev.profiles || s.tabs !== prev.tabs || s.settings.loadAllProfilesAtLaunch !== prev.settings.loadAllProfilesAtLaunch) {
+      if (!queuedFrom && allRequested()) return;
+      requestSoon(prev);
+    }
   });
   void loadedProfiles().then((engines) => { if (!stopped) { record(engines); request(); } })
     .catch((error) => { console.warn("[profiles] inventory unavailable", error); if (!stopped) request(); });

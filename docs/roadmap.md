@@ -167,6 +167,7 @@ A fix-only release for 0.3.1, out as soon as it's gated (owner, 2026-11-11); the
 | Opening and closing tabs never waits on the store lock: the main thread waited 156–230 ms on the Store NSRecursiveLock while the JS thread ran the command, with no disk involved (dw33 measurement, 2026-11-12) | planned |
 | SQLite durability: Apple's libsqlite3 issues F_BARRIERFSYNC, never F_FULLFSYNC, on solara.sqlite and its WAL even with fullfsync and checkpoint_fullfsync on and synchronous=FULL, so a durable commit is ordered but not flushed to media (dw33 measurement, 2026-11-12); confirm against SQLite's source and put the tradeoff to the owner | planned |
 | A light custom colour gets dark sidebar and tab-strip text, as Arc draws it, with a setting to turn it off; a dark colour keeps the selected tab's title white (Ardia) | planned |
+| Developer mode's toolbar stripes reach across the sidebar: on a developer-mode site the striped band stops where the sidebar begins, leaving the sidebar's top (window buttons, profile name) plain; the stripes run the full width of the window's top band, in the same phase across both (owner, 2026-11-12) | planned |
 | A coloured group shows its colour at rest; neutral groups show their box on hover only, as in Dia (Ardia) | planned |
 | Arrowing through the command bar shows the highlighted suggestion in the field, as Chrome and Dia do, and Esc brings back what was typed (Ardia) | planned |
 | A same-site page swap and a tab switch keep the old page up until the new one draws: no white flash (Ardia) | planned |

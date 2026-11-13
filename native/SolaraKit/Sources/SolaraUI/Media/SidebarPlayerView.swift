@@ -23,6 +23,7 @@ public final class SidebarPlayerView: NSView {
   private var hovered = false { didSet { if hovered != oldValue { needsLayout = true; paintCorners() } } }
   private var state: MediaPlayerState?
   private var ticker: Timer?
+  private var occlusionWatch: NSObjectProtocol?
   private let textHit = NSView()
 
   public override var isFlipped: Bool { true }
@@ -125,7 +126,7 @@ public final class SidebarPlayerView: NSView {
   private func retick() {
     ticker?.invalidate()
     ticker = nil
-    guard state?.playing == true, window != nil else { return }
+    guard state?.playing == true, let window, window.occlusionState.contains(.visible), !window.isMiniaturized else { return }
     let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.tick() } }
     timer.tolerance = 0.1
     RunLoop.main.add(timer, forMode: .common)
@@ -137,8 +138,22 @@ public final class SidebarPlayerView: NSView {
     seek.progress = state.position(at: MediaClock.nowMs()) / duration
   }
 
+  private func watchOcclusion() {
+    if let occlusionWatch { NotificationCenter.default.removeObserver(occlusionWatch) }
+    occlusionWatch = nil
+    guard let window else { return }
+    occlusionWatch = NotificationCenter.default.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main) { [weak self] _ in
+      MainActor.assumeIsolated {
+        guard let self else { return }
+        self.retick()
+        if self.ticker != nil { self.tick() }
+      }
+    }
+  }
+
   public override func viewDidMoveToWindow() {
     super.viewDidMoveToWindow()
+    watchOcclusion()
     retick()
     if window == nil { hovered = false }
   }

@@ -27,6 +27,7 @@ public final class MiniPlayerView: NSView {
   private let seek = SeekBarView()
   private var state: MediaPlayerState?
   private var ticker: Timer?
+  private var occlusionWatch: NSObjectProtocol?
   private var dragProgress: Double?
 
   public override var isFlipped: Bool { true }
@@ -109,15 +110,29 @@ public final class MiniPlayerView: NSView {
   private func retick() {
     ticker?.invalidate()
     ticker = nil
-    guard state?.playing == true, window != nil else { return }
+    guard state?.playing == true, let window, window.occlusionState.contains(.visible), !window.isMiniaturized else { return }
     let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.renderTime() } }
     timer.tolerance = 0.05
     RunLoop.main.add(timer, forMode: .common)
     ticker = timer
   }
 
+  private func watchOcclusion() {
+    if let occlusionWatch { NotificationCenter.default.removeObserver(occlusionWatch) }
+    occlusionWatch = nil
+    guard let window else { return }
+    occlusionWatch = NotificationCenter.default.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main) { [weak self] _ in
+      MainActor.assumeIsolated {
+        guard let self else { return }
+        self.retick()
+        if self.ticker != nil { self.renderTime() }
+      }
+    }
+  }
+
   public override func viewDidMoveToWindow() {
     super.viewDidMoveToWindow()
+    watchOcclusion()
     retick()
   }
 

@@ -80,7 +80,11 @@ public struct SidebarQuery {
 
   public func numberedRows(windowId: String, profileId: String? = nil) -> [NumberedTabRow] {
     guard let window = state.windows[windowId], window.kind != "small" else { return [] }
-    let entries = entries(windowId: windowId, profileId: profileId)
+    return numberedRows(windowId: windowId, profileId: profileId, entries: entries(windowId: windowId, profileId: profileId))
+  }
+
+  public func numberedRows(windowId: String, profileId: String?, entries: SidebarEntries) -> [NumberedTabRow] {
+    guard let window = state.windows[windowId], window.kind != "small" else { return [] }
     let active = state.activeTabId(windowId, profileId)
     var ancestors = Set<String>()
     func rows(_ entry: String) -> [NumberedTabRow] {

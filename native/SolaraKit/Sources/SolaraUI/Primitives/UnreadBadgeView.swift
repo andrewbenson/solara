@@ -54,7 +54,6 @@ public final class UnreadBadgeView: NSView {
     label.lineBreakMode = .byClipping
     label.maximumNumberOfLines = 1
     label.setAccessibilityElement(false)
-    addSubview(label)
     setAccessibilityElement(false)
     isHidden = true
   }
@@ -63,13 +62,20 @@ public final class UnreadBadgeView: NSView {
 
   public override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-  public func set(_ status: TabUnreadStatus?) {
-    guard self.status != status else { return }
+  @discardableResult
+  public func set(_ status: TabUnreadStatus?) -> Bool {
+    guard self.status != status else { return false }
     self.status = status
     isHidden = status == nil
     label.stringValue = status.flatMap(UnreadBadgeLayout.text) ?? ""
     label.isHidden = status == .dot
+    if case .count = status {
+      if label.superview == nil { addSubview(label) }
+    } else {
+      label.removeFromSuperview()
+    }
     needsLayout = true
+    return true
   }
 
   public override func layout() {

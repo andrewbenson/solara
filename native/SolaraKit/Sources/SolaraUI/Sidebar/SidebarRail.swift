@@ -229,9 +229,8 @@ final class RailTabView: RailIconView {
     guard let tab = context.state.tabs[id] else { return }
     self.tab = tab
     unreadStatus = context.unread(tab)
-    unreadBadge.set(unreadStatus)
     if unreadBadge.superview == nil { addSubview(unreadBadge) }
-    needsLayout = true
+    if unreadBadge.set(unreadStatus) { needsLayout = true }
     let palette = context.palette
     active = context.activeId == id
     selected = context.flags.selection.contains(id)

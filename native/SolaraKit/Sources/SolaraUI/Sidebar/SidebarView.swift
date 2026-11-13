@@ -274,7 +274,7 @@ public final class SidebarView: NSView {
     input.addressBar = context.host.addressBar
     input.newTabAtTop = context.host.newTabAtTop
     input.balanced = context.state.settings.bool("balancedTopApps")
-    var entries = context.query.entries(windowId: windowId, profileId: context.host.profileId)
+    var entries = context.entries
     if let live = SidebarLiveFeed.shared.live {
       let blocks = SidebarLiveBlocks(live, state: context.state, windowId: windowId, profileId: context.host.profileId)
       input.live = blocks

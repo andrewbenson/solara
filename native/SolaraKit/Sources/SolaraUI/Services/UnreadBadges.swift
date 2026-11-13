@@ -64,19 +64,23 @@ final class UnreadBadgeFeed {
     return UnreadSignal.resolve(api: entries[key]?.api ?? .unset, title: titles[key]?.1, favicon: entries[key]?.favicon ?? false)
   }
 
-  func receive(key: String, document: String, kind: String, payload: [String: Any]) {
+  @discardableResult
+  func receive(key: String, document: String, kind: String, payload: [String: Any]) -> Bool {
+    let before = entries[key].map { ($0.api, $0.favicon, $0.retired) } ?? (.unset, false, false)
     if kind == "reset" {
       entries[key] = Entry(document: document)
       titles[key] = nil
-      return
+    } else {
+      guard entries[key]?.document == document else { return false }
+      if kind == "closed" {
+        entries[key] = Entry(document: document, retired: true)
+        titles[key] = nil
+      } else if kind == "badge", let value = UnreadAPIValue.decode(payload) {
+        entries[key]?.api = value
+      }
     }
-    guard entries[key]?.document == document else { return }
-    if kind == "closed" {
-      entries[key] = Entry(document: document, retired: true)
-      titles[key] = nil
-    } else if kind == "badge", let value = UnreadAPIValue.decode(payload) {
-      entries[key]?.api = value
-    }
+    let after = entries[key].map { ($0.api, $0.favicon, $0.retired) } ?? (.unset, false, false)
+    return before != after
   }
 
   func accepts(key: String, document: String) -> Bool {
@@ -194,13 +198,13 @@ public enum UnreadBadges {
       images[key] = nil
       tasks.removeValue(forKey: key)?.cancel()
     }
-    feed.receive(key: key, document: document, kind: kind, payload: info["badge"] as? [String: Any] ?? [:])
+    let changed = feed.receive(key: key, document: document, kind: kind, payload: info["badge"] as? [String: Any] ?? [:])
     if kind == "favicon", let raw = info["image"], CFGetTypeID(raw as CFTypeRef) == CGImage.typeID {
       let snapshot = UnreadFaviconImage(image: raw as! CGImage)
       let source = info["source"] as? String ?? ""
       images[key] = (document, source, snapshot)
       if enabled { analyze(key: key, document: document, source: source, image: snapshot) }
-    } else {
+    } else if changed {
       publish()
     }
   }

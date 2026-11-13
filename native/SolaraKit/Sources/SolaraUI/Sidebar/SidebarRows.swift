@@ -55,6 +55,8 @@ final class SidebarContext {
   var activeId: String?
   let showClear: Bool
   let favicons: SidebarFavicons
+  let entries: SidebarEntries
+  private let showsUnread: Bool
   let tabNumberActions: [String: [String]]
   let tabNumberRowKeys: [String: String]
   let showsTabNumberHints: Bool
@@ -68,7 +70,9 @@ final class SidebarContext {
     self.state = state
     let sidebarQuery = SidebarQuery(state)
     query = sidebarQuery
-    let numbered = sidebarQuery.numberedRows(windowId: windowId, profileId: host.profileId)
+    entries = sidebarQuery.entries(windowId: windowId, profileId: host.profileId)
+    showsUnread = state.settings["showUnreadBadges"]?.bool != false
+    let numbered = sidebarQuery.numberedRows(windowId: windowId, profileId: host.profileId, entries: entries)
     tabNumberActions = TabNumberHintActions.mapping(rowKeys: numbered.map(\.key))
     tabNumberRowKeys = Dictionary(uniqueKeysWithValues: numbered.map { ($0.tabId, $0.key) })
     showsTabNumberHints = state.settings["showTabNumberHints"]?.bool != false && state.windows[windowId]?.kind != "small"
@@ -89,7 +93,7 @@ final class SidebarContext {
   }
 
   func unread(_ tab: Tab) -> TabUnreadStatus? {
-    guard state.settings["showUnreadBadges"]?.bool != false, activeId != tab.id else { return nil }
+    guard showsUnread, activeId != tab.id else { return nil }
     return UnreadBadges.status(tab: tab)
   }
 
@@ -402,8 +406,7 @@ final class TabRowView: SidebarRowView {
     loading = context.flags.loading.contains(id)
     showsAudio = context.flags.playing.contains(id) || tab.muted
     unreadStatus = context.unread(tab)
-    unreadBadge.set(unreadStatus)
-    needsLayout = true
+    if unreadBadge.set(unreadStatus) { needsLayout = true }
     resettable = context.query.awayFromPinnedUrl(id)
     developer = context.flags.developer.contains(id)
     let palette = context.palette
@@ -609,8 +612,7 @@ final class SplitPaneView: NSView {
     guard let tab = context.state.tabs[tabId] else { return }
     let active = context.activeId == tabId
     unreadStatus = context.unread(tab)
-    unreadBadge.set(unreadStatus)
-    needsLayout = true
+    if unreadBadge.set(unreadStatus) { needsLayout = true }
     icon.favicons = context.favicons
     icon.set(context.iconSpec(tab, size: 14), palette: context.palette)
     label.text = context.title(tab)
@@ -1348,9 +1350,9 @@ final class TileView: SidebarRowView {
     }
     badge.isHidden = !showsBadge
     unreadStatus = folderId == nil ? tab.flatMap(context.unread) : nil
-    unreadBadge.set(unreadStatus)
+    let unreadChanged = unreadBadge.set(unreadStatus)
     unreadBadge.isHidden = unreadStatus == nil || tab.map { context.flags.pip.contains($0.id) } == true
-    needsLayout = true
+    if unreadChanged { needsLayout = true }
     TabBadgesView.attach(&badges, to: body, flags: context.flags, tabId: folderId == nil ? tab?.id : nil, host: context.host, palette: palette)
     badges?.frame = icon.frame
     glass.dark = palette.dark

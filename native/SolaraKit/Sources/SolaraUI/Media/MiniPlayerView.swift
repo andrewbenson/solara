@@ -111,6 +111,7 @@ public final class MiniPlayerView: NSView {
     ticker = nil
     guard state?.playing == true, window != nil else { return }
     let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.renderTime() } }
+    timer.tolerance = 0.05
     RunLoop.main.add(timer, forMode: .common)
     ticker = timer
   }

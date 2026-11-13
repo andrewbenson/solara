@@ -127,6 +127,7 @@ public final class SidebarPlayerView: NSView {
     ticker = nil
     guard state?.playing == true, window != nil else { return }
     let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.tick() } }
+    timer.tolerance = 0.1
     RunLoop.main.add(timer, forMode: .common)
     ticker = timer
   }

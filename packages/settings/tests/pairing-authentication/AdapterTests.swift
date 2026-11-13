@@ -135,3 +135,74 @@ import SolaraSyncAdapter
     #expect(accepted)
   }
 }
+
+@Suite(.serialized) @MainActor struct AdapterPollingTests {
+  func spin(_ seconds: TimeInterval) { RunLoop.main.run(until: Date().addingTimeInterval(seconds)) }
+
+  func fresh() -> PairingAdapter {
+    NSApplication.shared.setActivationPolicy(.prohibited)
+    PairingServices.shared = PairingServices()
+    HarnessEnvironment.foreground = true
+    HarnessEnvironment.hidden = false
+    return PairingAdapter()
+  }
+
+  @Test func observerWithoutAShownSurfaceDoesNotPoll() {
+    let adapter = fresh()
+    var count = 0
+    let subscription = adapter.observe(on: nil) { _ in count += 1 }
+    defer { subscription.cancel() }
+    spin(0.45)
+    #expect(count == 1)
+  }
+
+  @Test func shownSurfacePollsAndHidingItStops() {
+    let adapter = fresh()
+    let window = SurfaceWindow()
+    defer { withExtendedLifetime(window) {} }
+    let surface = adapter.attach(to: window)
+    var count = 0
+    let subscription = adapter.observe(on: surface) { _ in count += 1 }
+    defer { subscription.cancel() }
+    spin(0.45)
+    #expect(count >= 3)
+    window.fixtureVisible = false
+    spin(0.25)
+    let stopped = count
+    spin(0.45)
+    #expect(count == stopped)
+  }
+
+  @Test func showingTheSurfaceAgainPublishesAndResumesPolling() {
+    let adapter = fresh()
+    let window = SurfaceWindow()
+    defer { withExtendedLifetime(window) {} }
+    window.fixtureVisible = false
+    let surface = adapter.attach(to: window)
+    var count = 0
+    let subscription = adapter.observe(on: surface) { _ in count += 1 }
+    defer { subscription.cancel() }
+    spin(0.3)
+    #expect(count == 1)
+    window.fixtureVisible = true
+    NotificationCenter.default.post(name: NSWindow.didChangeOcclusionStateNotification, object: window)
+    #expect(count == 2)
+    spin(0.45)
+    #expect(count >= 5)
+  }
+
+  @Test func aLiveArmKeepsPollingWhileItsWindowIsHidden() throws {
+    let adapter = fresh()
+    let window = SurfaceWindow()
+    defer { withExtendedLifetime(window) {} }
+    let surface = adapter.attach(to: window)
+    var count = 0
+    let subscription = adapter.observe(on: surface) { _ in count += 1 }
+    defer { subscription.cancel() }
+    _ = try adapter.arm(on: surface, reviewing: nil, options: .init())
+    window.fixtureVisible = false
+    let before = count
+    spin(0.45)
+    #expect(count >= before + 3)
+  }
+}

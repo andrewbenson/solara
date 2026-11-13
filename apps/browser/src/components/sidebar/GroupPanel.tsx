@@ -2,6 +2,7 @@ import { discardKeyResponder, FadeLabel, restoreKeyResponder, saveKeyResponder, 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { useShallow } from "zustand/react/shallow";
+import { everySlowly } from "../../lib/slowTimers";
 import { useTheme } from "../../lib/theme";
 import { ago } from "../../lib/timeAgo";
 import { webviews } from "../../lib/webviews";
@@ -97,10 +98,7 @@ export function GroupPanel({ groupId, windowId, anchor, windowHeight }: { groupI
   const latestHandBack = useRef(handBack);
   latestHandBack.current = handBack;
 
-  useEffect(() => {
-    const tick = setInterval(() => setNow(Date.now()), NOW_TICK_MS);
-    return () => clearInterval(tick);
-  }, []);
+  useEffect(() => everySlowly({ every: NOW_TICK_MS, run: () => setNow(Date.now()) }), []);
   useEffect(() => {
     if (!live) latestHandBack.current("origin");
   }, [live]);

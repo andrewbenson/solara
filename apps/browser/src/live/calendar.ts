@@ -1,5 +1,4 @@
 import type { CalendarAuthorization, SystemCalendar } from "@solara/shell";
-import { useEffect, useState } from "react";
 import { create } from "zustand";
 import type { CalendarEvent } from "./meetings";
 import { connectCalendarCommand, onLiveSnapshot, refreshCalendarCommand, setCalendarHidden as setCalendarHiddenCommand } from "./store";
@@ -47,13 +46,4 @@ export const calendarConnected = () => {
 };
 export const setCalendarHidden = (id: string, hidden: boolean) => setCalendarHiddenCommand(id, hidden);
 
-export function useNow(intervalMs = 15_000, enabled = true): number {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    if (!enabled) return;
-    setNow(Date.now());
-    const t = setInterval(() => setNow(Date.now()), intervalMs);
-    return () => clearInterval(t);
-  }, [intervalMs, enabled]);
-  return now;
-}
+export { useNow } from "../lib/useNow";

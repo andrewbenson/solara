@@ -334,7 +334,11 @@ public final class TabSleepRunner {
   }
 
   public static func scheduleTicks(_ intervalMs: Double, _ tick: @escaping @MainActor () -> Void) -> @MainActor () -> Void {
-    let timer = Timer(timeInterval: intervalMs / 1_000, repeats: true) { _ in MainActor.assumeIsolated { tick() } }
+    let interval = intervalMs / 1_000
+    let now = Date().timeIntervalSinceReferenceDate
+    let firstOnSharedGrid = Date(timeIntervalSinceReferenceDate: (floor(now / interval) + 1) * interval)
+    let timer = Timer(fire: firstOnSharedGrid, interval: interval, repeats: true) { _ in MainActor.assumeIsolated { tick() } }
+    timer.tolerance = interval / 10
     RunLoop.main.add(timer, forMode: .common)
     return { timer.invalidate() }
   }

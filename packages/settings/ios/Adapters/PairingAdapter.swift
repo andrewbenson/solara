@@ -39,16 +39,55 @@ final class PairingAdapter: TrustedPairingService {
   func observe(on surface: TrustedSurface?, _ receive: @escaping @MainActor (TrustedSnapshot) -> Void) -> TrustedSubscription {
     let id = UUID()
     observers[id] = (surface, receive)
-    if timer == nil {
+    watchWindows()
+    publish()
+    return TrustedSubscription { [weak self] in
+      self?.observers.removeValue(forKey: id)
+      self?.pollOnlyWhileNeeded()
+    }
+  }
+
+  private var pollingNeeded: Bool {
+    guard !observers.isEmpty else { return false }
+    if arm != nil || authenticatingArm != nil || nativeArm != nil { return true }
+    return surfaces.values.contains { surface in
+      guard let window = surface.window else { return false }
+      return window.isVisible && !window.isMiniaturized
+    }
+  }
+
+  private func pollOnlyWhileNeeded() {
+    if !pollingNeeded {
+      timer?.invalidate()
+      timer = nil
+    } else if timer == nil {
       timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
         MainActor.assumeIsolated { self?.publish() }
       }
     }
-    publish()
-    return TrustedSubscription { [weak self] in
-      self?.observers.removeValue(forKey: id)
-      if self?.observers.isEmpty == true { self?.timer?.invalidate(); self?.timer = nil }
+  }
+
+  private var watchingWindows = false
+
+  private func watchWindows() {
+    guard !watchingWindows else { return }
+    watchingWindows = true
+    let center = NotificationCenter.default
+    let names: [Notification.Name] = [
+      NSWindow.didChangeOcclusionStateNotification, NSWindow.didDeminiaturizeNotification, NSWindow.didBecomeKeyNotification,
+      NSWindow.didMiniaturizeNotification, NSWindow.willCloseNotification,
+      NSApplication.didUnhideNotification, NSApplication.didBecomeActiveNotification,
+    ]
+    for name in names {
+      center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+        MainActor.assumeIsolated { self?.windowsChanged() }
+      }
     }
+  }
+
+  private func windowsChanged() {
+    guard timer == nil, pollingNeeded else { return }
+    publish()
   }
 
   func attach(to settingsWindow: NSWindow) -> TrustedSurface {
@@ -268,5 +307,6 @@ final class PairingAdapter: TrustedPairingService {
       let admitted = entry.0 === armSurface && (delivered || (active || authenticationVisible || authenticationResolved) && (presentation != nil || authenticationInterrupted))
       entry.1(TrustedSnapshot(revision: revision, eligible: native.eligible, openMarkerVerified: native.markerVerified, indicator: native.suppressed ? .suppressed : currentRequests.isEmpty ? .none : .pending, requests: currentRequests, arm: admitted ? arm : nil, phase: admitted ? phase : .idle, foreground: active, comparison: admitted ? comparison : nil))
     }
+    pollOnlyWhileNeeded()
   }
 }

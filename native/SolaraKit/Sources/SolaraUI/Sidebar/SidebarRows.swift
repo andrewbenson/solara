@@ -865,6 +865,7 @@ final class GroupHeaderView: SidebarRowView {
         meetingTick = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
           MainActor.assumeIsolated { self?.renderMeeting() }
         }
+        meetingTick?.tolerance = 0.5
       }
       if SidebarMeetingCountdown.dueWiggles(groupId: groupId, minutesLeft: left, done: &SidebarMeetingCountdown.wiggled), let layer = titleBox.layer {
         layer.add(SidebarMeetingCountdown.wiggle(around: titleBox.bounds.size), forKey: "wiggle")

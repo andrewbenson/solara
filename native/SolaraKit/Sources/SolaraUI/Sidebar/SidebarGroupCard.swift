@@ -170,6 +170,7 @@ public final class SidebarGroupCardView: NSView, NSTextFieldDelegate {
     }
     if ticker == nil {
       let timer = Timer(timeInterval: 30, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.refreshRows() } }
+      timer.tolerance = 3
       RunLoop.main.add(timer, forMode: .common)
       ticker = timer
     }

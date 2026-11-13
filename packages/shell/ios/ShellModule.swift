@@ -2,22 +2,85 @@ import AppKit
 import Carbon.HIToolbox
 import ExpoModulesCore
 
-public enum OpenURLInbox {
-  static var pending: [String] = []
-  static var pendingPointer = NSPoint.zero
-  static var deliver: (([String], NSPoint) -> Void)?
+public struct OpenURLBatch: Sendable, Equatable {
+  public var urls: [String]
+  public var profile: String?
 
-  public static func receive(_ urls: [URL]) {
+  public init(urls: [String], profile: String? = nil) {
+    self.urls = urls
+    self.profile = profile
+  }
+}
+
+public enum OpenURLInbox {
+  static var pending: [(urls: [String], sourceApp: String?)] = []
+  static var pendingRouted: [OpenURLBatch] = []
+  static var pendingOutside: [(urls: [URL], sourceApp: String?)] = []
+  static var pendingPointer = NSPoint.zero
+  static var deliver: (([String], NSPoint, String?) -> Void)?
+  nonisolated(unsafe) public static var hook: (([String], String?) -> [OpenURLBatch])?
+  nonisolated(unsafe) public static var hookPending = false
+
+  public static func receive(_ urls: [URL], sourceApp: String? = nil) {
     let pointer = NSEvent.mouseLocation
-    let strings = urls.map { $0.isFileURL ? $0.absoluteString : $0.absoluteString }
-    if let deliver { return deliver(strings, pointer) }
-    pending += strings
-    pendingPointer = pointer
+    let strings = urls.map(\.absoluteString)
+    guard deliver != nil, !hookPending else {
+      pending.append((strings, sourceApp))
+      pendingPointer = pointer
+      return
+    }
+    hand(strings, sourceApp: sourceApp, pointer: pointer)
   }
 
-  public static func receiveFromOutside(_ urls: [URL]) {
-    guard OutsideURLs.forwarded else { return receive(urls) }
-    OutsideURLs.forward(urls)
+  static func hand(_ urls: [String], sourceApp: String?, pointer: NSPoint) {
+    guard let deliver else { return }
+    let batches = hook?(urls, sourceApp) ?? [OpenURLBatch(urls: urls)]
+    for batch in batches where !batch.urls.isEmpty { deliver(batch.urls, pointer, batch.profile) }
+  }
+
+  static func deliverRouted(_ batch: OpenURLBatch) {
+    guard let deliver, !hookPending else {
+      pendingRouted.append(batch)
+      pendingPointer = NSEvent.mouseLocation
+      return
+    }
+    deliver(batch.urls, NSEvent.mouseLocation, batch.profile)
+  }
+
+  static func flushPending() {
+    guard deliver != nil, !hookPending else { return }
+    let routed = pendingRouted
+    pendingRouted = []
+    for batch in routed { deliver?(batch.urls, pendingPointer, batch.profile) }
+    let waiting = pending
+    pending = []
+    for batch in waiting { hand(batch.urls, sourceApp: batch.sourceApp, pointer: pendingPointer) }
+  }
+
+  public static func hooksReady(_ newHook: (([String], String?) -> [OpenURLBatch])?) {
+    hook = newHook
+    guard hookPending else { return }
+    hookPending = false
+    let outside = pendingOutside
+    pendingOutside = []
+    for item in outside { receiveFromOutside(item.urls, sourceApp: item.sourceApp) }
+    flushPending()
+  }
+
+  public static func receiveFromOutside(_ urls: [URL], sourceApp: String? = nil) {
+    guard OutsideURLs.forwarded else { return receive(urls, sourceApp: sourceApp) }
+    guard !hookPending else { return pendingOutside.append((urls, sourceApp)) }
+    guard let hook else { return OutsideURLs.forward(urls) }
+    var forwarded: [URL] = []
+    for batch in hook(urls.map(\.absoluteString), sourceApp) where !batch.urls.isEmpty {
+      if batch.profile != nil {
+        deliverRouted(batch)
+      } else {
+        let kept = Set(batch.urls)
+        forwarded += urls.filter { kept.contains($0.absoluteString) }
+      }
+    }
+    if !forwarded.isEmpty { OutsideURLs.forward(forwarded) }
   }
 }
 
@@ -360,12 +423,10 @@ public class ShellModule: Module {
 
     OnStartObserving("onOpenURLs") {
       DispatchQueue.main.async { [weak self] in
-        OpenURLInbox.deliver = { urls, pointer in self?.sendEvent("onOpenURLs", ["urls": urls, "pointer": [pointer.x, pointer.y]]) }
-        if !OpenURLInbox.pending.isEmpty {
-          let urls = OpenURLInbox.pending
-          OpenURLInbox.pending = []
-          OpenURLInbox.deliver?(urls, OpenURLInbox.pendingPointer)
+        OpenURLInbox.deliver = { urls, pointer, profile in
+          self?.sendEvent("onOpenURLs", ["urls": urls, "pointer": [pointer.x, pointer.y], "profile": profile.map { $0 as Any } ?? NSNull()])
         }
+        OpenURLInbox.flushPending()
       }
     }
 

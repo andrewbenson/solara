@@ -60,6 +60,10 @@ NS_ASSUME_NONNULL_BEGIN
 + (BOOL)showAutofillSuggestions:(int)browserId passwords:(BOOL)passwords NS_SWIFT_NAME(showAutofillSuggestions(browserId:passwords:));
 + (void)resolvePermission:(NSString *)requestId result:(NSString *)result remember:(BOOL)remember
     NS_SWIFT_NAME(resolvePermission(_:result:remember:));
+@property(class, nonatomic, copy, nullable) BOOL (^permissionHook)(NSDictionary<NSString *, id> *request, NSString *profile, BOOL offTheRecord);
++ (nullable NSString *)takeLaunchLinkSender;
++ (nullable NSString *)senderOfCurrentAppleEvent;
++ (void)holdNavigationsForHooks;
 
 @end
 

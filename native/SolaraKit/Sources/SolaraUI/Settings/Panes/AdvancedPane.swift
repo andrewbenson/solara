@@ -61,13 +61,15 @@ public final class AdvancedPaneModel: SettingsPaneProvider {
   @ObservationIgnored let services: AdvancedServices
   @ObservationIgnored let store: SettingsStoreSource
   @ObservationIgnored let experiments: ExperimentsModel?
+  @ObservationIgnored let hooks: HooksSectionModel?
   var chromium: String??
   var widevine: String???
 
-  public init(services: AdvancedServices, store: SettingsStoreSource, experiments: ExperimentsModel? = nil) {
+  public init(services: AdvancedServices, store: SettingsStoreSource, experiments: ExperimentsModel? = nil, hooks: HooksSectionModel? = nil) {
     self.services = services
     self.store = store
     self.experiments = experiments
+    self.hooks = hooks
   }
 
   public func isLoaded(_ place: SettingsPlace) -> Bool { chromium != nil && widevine != nil }
@@ -171,6 +173,10 @@ struct AdvancedPane: View {
               .textSelection(.enabled)
           }
         }
+      }
+
+      if let hooks = model.hooks {
+        HooksSection(model: hooks)
       }
 
       SettingsSection("Web engine") {

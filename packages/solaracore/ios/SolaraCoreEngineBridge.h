@@ -27,6 +27,8 @@ typedef NS_ERROR_ENUM(SolaraCoreBookmarkURLErrorDomain, SolaraCoreBookmarkURLErr
 + (void)forwardTopics:(NSArray<NSString *> *)topics;
 + (void)observe:(NSString *)topic handler:(void (^)(NSDictionary<NSString *, id> *payload))handler;
 + (BOOL)exports:(NSString *)name;
++ (nullable NSDictionary<NSString *, id> *)configureHooks:(NSString *)json NS_SWIFT_NAME(configureHooks(_:));
++ (nullable NSDictionary<NSString *, id> *)matchHooks:(NSString *)url NS_SWIFT_NAME(matchHooks(_:));
 @end
 
 NS_ASSUME_NONNULL_END

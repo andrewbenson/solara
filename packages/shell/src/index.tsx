@@ -150,7 +150,7 @@ export type AppEvent =
 
 type ShellEvents = {
   onCommand: (e: CommandEvent) => void;
-  onOpenURLs: (e: { urls: string[]; pointer?: [number, number] }) => void;
+  onOpenURLs: (e: { urls: string[]; pointer?: [number, number]; profile?: string | null }) => void;
   onWindowEvent: (e: WindowEvent) => void;
   onAppEvent: (e: AppEvent) => void;
 };
@@ -392,8 +392,8 @@ export const prompt = (options: PromptOptions) => Shell.prompt(options);
 export const onCommand = (listener: (e: CommandEvent) => void) => Shell.addListener("onCommand", listener);
 export const onWindowEvent = (listener: (e: WindowEvent) => void) => Shell.addListener("onWindowEvent", listener);
 export const onAppEvent = (listener: (e: AppEvent) => void) => Shell.addListener("onAppEvent", listener);
-export const onOpenURLs = (listener: (urls: string[], pointer?: [number, number]) => void) =>
-  Shell.addListener("onOpenURLs", ({ urls, pointer }) => listener(urls, pointer));
+export const onOpenURLs = (listener: (urls: string[], pointer?: [number, number], profile?: string) => void) =>
+  Shell.addListener("onOpenURLs", ({ urls, pointer, profile }) => listener(urls, pointer, profile ?? undefined));
 
 export const WindowDragRegion = requireNativeViewManager<
   ViewProps & { titleBarDoubleClick?: boolean; onRegionDoubleClick?: () => void; clickable?: boolean; onRegionClick?: () => void }

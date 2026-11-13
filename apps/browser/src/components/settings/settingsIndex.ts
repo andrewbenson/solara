@@ -526,6 +526,16 @@ const ROWS: Record<SettingsPane, Section[]> = {
       },
     },
     {
+      section: "Hooks",
+      rows: {
+        hooks: {
+          title: "Hooks",
+          description: "Rules in hooks.json that act on links, downloads and sites.",
+          keywords: ["hooks", "hooks.json", "rules", "automation", "rewrite", "block", "redirect", "approve", "config"],
+        },
+      },
+    },
+    {
       section: "Web engine",
       rows: {
         chromium: { title: "Chromium", keywords: ["engine", "version", "solaracore"] },

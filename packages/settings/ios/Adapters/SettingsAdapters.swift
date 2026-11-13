@@ -13,7 +13,7 @@ enum SettingsAdapters {
     context.panes[.appearance] = AppearancePaneModel(services: AppearanceAdapter(), store: store)
     context.panes[.search] = SearchEnginePaneModel(services: SearchEngineAdapter(model: store.model), store: store)
     context.panes[.engines] = EnginesPaneModel(services: EnginesAdapter(model: store.model), store: store)
-    context.panes[.advanced] = AdvancedPaneModel(services: AdvancedAdapter(model: store.model), store: store, experiments: ExperimentsModel())
+    context.panes[.advanced] = AdvancedPaneModel(services: AdvancedAdapter(model: store.model), store: store, experiments: ExperimentsModel(), hooks: NativeHooks.shared.sectionModel())
     context.panes[.about] = AboutPaneModel(services: AboutAdapter())
     context.panes[.privacy] = PrivacyPaneModel(services: PrivacyAdapter(), store: store)
     context.panes[.passwords] = PasswordsPaneModel(services: PasswordsAdapter(), store: store)

@@ -1,6 +1,8 @@
 import AppKit
 import Expo
 import React
+import SolaraCore
+import SolaraSettingsAdapter
 import SolaraShell
 import SolaraSyncAdapter
 import ReactAppDependencyProvider
@@ -29,13 +31,15 @@ final class AppDelegate: ExpoAppDelegate {
       (factory?.rootViewFactory as? ExpoReactRootViewFactory)?.superView(
         withModuleName: module, initialProperties: props, launchOptions: nil)
     }
+    NativeHooks.start()
     factory.rootViewFactory.initializeReactHost(launchOptions: nil)
 
     super.applicationDidFinishLaunching(notification)
   }
 
   override func application(_ application: NSApplication, open urls: [URL]) {
-    OpenURLInbox.receiveFromOutside(urls)
+    let sourceApp = NSAppleEventManager.shared().currentAppleEvent != nil ? SolaraCoreHost.senderOfCurrentAppleEvent() : SolaraCoreHost.takeLaunchLinkSender()
+    OpenURLInbox.receiveFromOutside(urls, sourceApp: sourceApp)
   }
 
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }

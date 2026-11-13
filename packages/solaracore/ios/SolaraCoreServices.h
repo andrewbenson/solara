@@ -71,6 +71,7 @@ typedef void (^SolaraCoreResult)(NSDictionary<NSString *, id> *result);
 
 @property(class, nonatomic, copy, nullable) void (^downloadsHandler)(NSDictionary<NSString *, id> *download);
 + (void)watchDownloads:(NSString *)profile NS_SWIFT_NAME(watchDownloads(profile:));
+@property(class, nonatomic, copy, nullable) void (^downloadObserver)(NSDictionary<NSString *, id> *download, NSString *profile);
 + (void)endPrivateSession:(NSString *)engineProfile NS_SWIFT_NAME(endPrivateSession(_:));
 + (void)setPrivateSessionGeneration:(NSString *)engineProfile generation:(NSString *)generation NS_SWIFT_NAME(setPrivateSessionGeneration(_:generation:));
 + (void)downloadCommand:(NSString *)command id:(NSString *)downloadId NS_SWIFT_NAME(downloadCommand(_:id:));

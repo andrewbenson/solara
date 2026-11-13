@@ -579,6 +579,12 @@ public struct SettingsIndex: Sendable {
           Row(key: "cliControl", title: "Let the \(cli) command control \(app)", keywords: ["cli", "terminal", "devtools", "automation", "remote debugging"]),
           Row(key: "cliInstall", title: "The \(cli) command", keywords: ["cli", "terminal", "install"]),
         ]),
+        Section(section: "Hooks", rows: [
+          Row(
+            key: "hooks", title: "Hooks", description: "Rules in hooks.json that act on links, downloads and sites.",
+            keywords: ["hooks", "hooks.json", "rules", "automation", "rewrite", "block", "redirect", "approve", "config"]
+          ),
+        ]),
         Section(section: "Web engine", rows: [
           Row(key: "chromium", title: "Chromium", keywords: ["engine", "version", "solaracore"]),
           Row(key: "widevine", title: "Widevine (protected video)", keywords: ["drm", "netflix", "disney", "spotify"]),

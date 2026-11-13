@@ -51,6 +51,7 @@ NS_ASSUME_NONNULL_BEGIN
 + (void)setPinnedLinkSources:(NSArray<NSString *> *)keys NS_SWIFT_NAME(setPinnedLinkSources(_:));
 + (BOOL)resolvePinnedLink:(NSString *)requestId intercept:(BOOL)intercept NS_SWIFT_NAME(resolvePinnedLink(_:intercept:));
 + (void)setPeekModifier:(NSString *)modifier;
++ (void)setPageLoadHook:(nullable void (^)(NSDictionary<NSString *, id> *page))hook NS_SWIFT_NAME(setPageLoadHook(_:));
 + (void)setSplitLinkModifier:(NSString *)modifier;
 + (void)setSelectionPopoverEnabled:(BOOL)enabled NS_SWIFT_NAME(setSelectionPopoverEnabled(_:));
 + (BOOL)devPostPeekMouseUp:(NSString *)keys over:(NSString *)transferKey;

@@ -21,10 +21,11 @@ export function openLittleSolara(url?: string, profileId?: string, adoptId?: str
 
 const opensInLittleSolara = (url: string) => /^(https?|file):/i.test(url);
 
-export function openExternalUrls(given: string[], pointer?: [number, number]) {
+export function openExternalUrls(given: string[], pointer?: [number, number], profile?: string) {
   const settings = store().settings;
   const urls = settings.allowJavaScriptFromAppleEvents ? given : given.filter((url) => !runsJavaScript(url, settings));
   if (!urls.length) return;
+  if (profile !== undefined) return openUrlsFromApps(urls, routedLinks({ profile }, urls.length), pointer);
   void routeLinkTabs(urls).then(
     (route) => openRoutedUrls(urls, route, pointer),
     () => openUrlsFromApps(urls, routedLinks({}, urls.length), pointer),

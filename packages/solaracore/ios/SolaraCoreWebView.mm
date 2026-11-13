@@ -797,9 +797,12 @@ static void ShareFromContext(NSDictionary<NSString *, id> *context, NSView *view
   [ShareMenuClass(@selector(shareContext:fromView:)) shareContext:context fromView:view];
 }
 
+static void (^gPageLoadHook)(NSDictionary<NSString *, id> *);
+
 @implementation SolaraCoreWebView {
   SolaraCoreTab *_tab;
   BOOL _loadedOnce;
+  BOOL _hookPageLoading;
   BOOL _temporaryEmptyReported;
   BOOL _temporaryStopped;
   BOOL _pendingUserInitiated;
@@ -2410,6 +2413,10 @@ static BOOL PinnedLinkGestureBypassed() {
   return YES;
 }
 
++ (void)setPageLoadHook:(void (^)(NSDictionary<NSString *, id> *))hook {
+  gPageLoadHook = [hook copy];
+}
+
 + (void)setPeekModifier:(NSString *)modifier {
   InstallPeekMonitor();
   NSString *next = [@[ @"alt", @"shift" ] containsObject:modifier ?: @""] ? modifier : @"off";
@@ -2567,6 +2574,12 @@ static BOOL PinnedLinkGestureBypassed() {
   if (!tab.loading && tab.url.length && ![tab.url hasPrefix:@"about:"]) [self revealLittlePage:YES];
   if (tab.loading) [self resetBlocked:YES];
   if (tab.loading) ACFieldMarkNow(_transferKey, @"start");
+  if (tab.loading) _hookPageLoading = YES;
+  else if (_hookPageLoading) {
+    _hookPageLoading = NO;
+    if (gPageLoadHook && !_temporary && tab == _tab && !tab.closed && ([tab.url hasPrefix:@"https://"] || [tab.url hasPrefix:@"http://"]))
+      gPageLoadHook(@{@"url" : tab.url ?: @"", @"title" : tab.title ?: @"", @"profile" : _profile ?: @"", @"offTheRecord" : @(tab.profile.offTheRecord || solaracore_host::IsIncognito(_profile ?: @""))});
+  }
   [self queueNavigation];
 }
 

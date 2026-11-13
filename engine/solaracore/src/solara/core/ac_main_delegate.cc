@@ -31,6 +31,7 @@
 #include "chrome/browser/chrome_content_browser_client.h"
 #include "chrome/browser/solara/ac_notifications.h"
 #include "chrome/browser/solara/ac_scripts_policy.h"  // nogncheck
+#include "chrome/browser/solara/ac_user_hooks.h"  // nogncheck
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_paths_internal.h"
 #include "chrome/common/chrome_switches.h"
@@ -43,6 +44,7 @@
 #include "content/public/browser/browser_main_parts.h"
 #include "content/public/common/content_switches.h"
 #include "extensions/common/switches.h"
+#include "third_party/blink/public/common/loader/url_loader_throttle.h"
 #include "third_party/blink/public/common/switches.h"
 #include "content/public/common/result_codes.h"
 #include "services/cert_verifier/public/mojom/cert_verifier_service_factory.mojom.h"
@@ -249,9 +251,28 @@ class ACContentBrowserClient : public ChromeContentBrowserClient {
       content::NavigationThrottleRegistry& registry) override {
     ChromeContentBrowserClient::CreateThrottlesForNavigation(registry);
     AddAppSchemeThrottle(registry);
+    solara::AddUserHooksThrottle(registry);
     AddPinnedLinkThrottle(registry);
     MaybeAddNavigationHoldThrottle(registry);
     solara::AddScriptsPagesThrottle(registry);
+  }
+  std::vector<std::unique_ptr<blink::URLLoaderThrottle>>
+  CreateURLLoaderThrottles(
+      const network::ResourceRequest& request,
+      content::BrowserContext* browser_context,
+      const base::RepeatingCallback<content::WebContents*()>& wc_getter,
+      content::NavigationUIData* navigation_ui_data,
+      content::FrameTreeNodeId frame_tree_node_id,
+      std::optional<int64_t> navigation_id) override {
+    std::vector<std::unique_ptr<blink::URLLoaderThrottle>> throttles =
+        ChromeContentBrowserClient::CreateURLLoaderThrottles(
+            request, browser_context, wc_getter, navigation_ui_data,
+            frame_tree_node_id, navigation_id);
+    if (std::unique_ptr<blink::URLLoaderThrottle> rewrite =
+            solara::TakeUserHooksRewrite(navigation_id)) {
+      throttles.insert(throttles.begin(), std::move(rewrite));
+    }
+    return throttles;
   }
   std::optional<base::TimeDelta> GetSpareRendererDelayForSiteURL(
       const GURL& site_url) override {

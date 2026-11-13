@@ -1,5 +1,6 @@
 import ExpoModulesCore
 import Foundation
+import SolaraCore
 import SolaraEngine
 import SolaraLive
 import SolaraSyncAdapter
@@ -169,6 +170,17 @@ public class SettingsModule: Module {
     AsyncFunction("devSettings") { (action: String, argument: String?) -> String in
       MainActor.assumeIsolated { SettingsDev.drive(action, argument) }
     }.runOnQueue(.main)
+
+    #if DEBUG
+    AsyncFunction("devHooks") { (action: String, argument: String?) -> String in
+      MainActor.assumeIsolated {
+        guard SolaraCoreHost.testBuild, ProcessInfo.processInfo.environment["SOLARA_DATA_DIR"] != nil else { return #"{"error":"test instances only"}"# }
+        let result = NativeHooks.shared.dev(action, argument)
+        let data = (try? JSONSerialization.data(withJSONObject: result, options: [.sortedKeys])) ?? Data("{}".utf8)
+        return String(decoding: data, as: UTF8.self)
+      }
+    }.runOnQueue(.main)
+    #endif
 
     AsyncFunction("devSettingsSwitch") { (pane: String, promise: Promise) in
       nonisolated(unsafe) let reply = promise

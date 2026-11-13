@@ -112,6 +112,20 @@ AC_ENGINE_EXPORT int ac_bookmarks_canonicalize_url_v1(
     ac_bookmark_url_reply_t reply,
     void* context);
 
+typedef int (*ac_hooks_configure_v1_t)(const char* json,
+                                       ac_engine_reply_t reply,
+                                       void* context);
+typedef int (*ac_hooks_match_v1_t)(const char* url,
+                                   ac_engine_reply_t reply,
+                                   void* context);
+
+AC_ENGINE_EXPORT int ac_hooks_configure_v1(const char* json,
+                                           ac_engine_reply_t reply,
+                                           void* context);
+AC_ENGINE_EXPORT int ac_hooks_match_v1(const char* url,
+                                       ac_engine_reply_t reply,
+                                       void* context);
+
 typedef int (*ac_engine_abi_version_t)(void);
 typedef void (*ac_engine_set_event_sink_t)(ac_engine_event_t sink,
                                            void* context);

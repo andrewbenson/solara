@@ -1,0 +1,44 @@
+--- a/chrome/browser/download/download_target_determiner.cc
++++ b/chrome/browser/download/download_target_determiner.cc
+@@ -96,6 +96,10 @@
+ using download::DownloadPathReservationTracker;
+ using safe_browsing::DownloadFileType;
+ 
++bool (*g_solara_download_folder)(download::DownloadItem* item,
++                                 base::FilePath* folder,
++                                 base::FilePath* containment) = nullptr;
++
+ namespace {
+ 
+ const base::FilePath::CharType kCrdownloadSuffix[] =
+@@ -333,6 +337,7 @@
+     base::FilePath generated_filename = GenerateFileName();
+     confirmation_reason_ = NeedsConfirmation(generated_filename);
+     base::FilePath target_directory;
++    base::FilePath filed_containment;
+     if (confirmation_reason_ != DownloadConfirmationReason::NONE) {
+       if (download_prefs_->IsDownloadPathManaged())
+         CHECK(confirmation_reason_ == DownloadConfirmationReason::DLP_BLOCKED,
+@@ -346,10 +351,21 @@
+       target_directory = download_prefs_->DownloadPath();
+       RecordDownloadPathGeneration(
+           DownloadPathGenerationEvent::USE_DEFAULTL_DOWNLOAD_DIRECTORY, false);
++      base::FilePath filed_directory;
++      if (g_solara_download_folder &&
++          g_solara_download_folder(download_, &filed_directory,
++                                   &filed_containment) &&
++          filed_directory.IsAbsolute() && filed_containment.IsAbsolute()) {
++        target_directory = filed_directory;
++        create_target_directory_ = true;
++      } else {
++        filed_containment.clear();
++      }
+     }
+     should_notify_extensions_ = true;
+     virtual_path_ = target_directory.Append(generated_filename);
+-    containment_directory_ = target_directory;
++    containment_directory_ =
++        filed_containment.empty() ? target_directory : filed_containment;
+     CHECK(virtual_path_.IsAbsolute(), base::NotFatalUntil::M161);
+   } else {
+     conflict_action_ = DownloadPathReservationTracker::OVERWRITE;

@@ -3,6 +3,7 @@
 #import <Foundation/Foundation.h>
 
 #include <map>
+#include <optional>
 #include <utility>
 
 #include "base/functional/bind.h"
@@ -14,6 +15,7 @@
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "chrome/browser/solara/ac_user_hooks.h"  // nogncheck
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/tabs/tab_model.h"
 #include "components/tabs/public/tab_interface.h"
@@ -147,14 +149,18 @@ class PinnedLinkThrottle : public content::NavigationThrottle {
     source_ = source->GetWeakPtr();
     source_document_ = source->GetPrimaryMainFrame()->GetWeakDocumentPtr();
     candidate_ = true;
-    return Ask(handle->GetURL(), false);
+    std::optional<GURL> rewritten = solara::PendingUserHooksRewrite(*handle);
+    asked_url_ = rewritten ? *rewritten : handle->GetURL();
+    return Ask(asked_url_, false);
   }
 
   ThrottleCheckResult WillRedirectRequest() override {
-    if (!candidate_ || !SourceValid()) {
+    if (!candidate_ || !SourceValid() ||
+        navigation_handle()->GetURL() == asked_url_) {
       return PROCEED;
     }
-    return Ask(navigation_handle()->GetURL(), true);
+    asked_url_ = navigation_handle()->GetURL();
+    return Ask(asked_url_, true);
   }
 
   ThrottleCheckResult WillFailRequest() override {
@@ -270,6 +276,7 @@ class PinnedLinkThrottle : public content::NavigationThrottle {
 
   bool candidate_ = false;
   bool new_window_ = false;
+  GURL asked_url_;
   bool asking_ = false;
   GURL source_url_;
   base::WeakPtr<content::WebContents> source_;

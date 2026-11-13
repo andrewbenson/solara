@@ -238,6 +238,26 @@ void InstallSink() {
   InstallSink();
 }
 
++ (NSDictionary<NSString *, id> *)configureHooks:(NSString *)json {
+  auto configure = (ac_hooks_configure_v1_t)Symbol("ac_hooks_configure_v1");
+  if (!configure || !NSThread.isMainThread) return nil;
+  __block NSString *reply = nil;
+  void (^done)(NSString *) = ^(NSString *text) { reply = text; };
+  configure(json.UTF8String, Replied, (__bridge_retained void *)[done copy]);
+  NSDictionary *parsed = reply ? [NSJSONSerialization JSONObjectWithData:[reply dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil] : nil;
+  return [parsed isKindOfClass:NSDictionary.class] ? parsed : nil;
+}
+
++ (NSDictionary<NSString *, id> *)matchHooks:(NSString *)url {
+  auto match = (ac_hooks_match_v1_t)Symbol("ac_hooks_match_v1");
+  if (!match || !NSThread.isMainThread) return nil;
+  __block NSString *reply = nil;
+  void (^done)(NSString *) = ^(NSString *text) { reply = text; };
+  match(url.UTF8String, Replied, (__bridge_retained void *)[done copy]);
+  NSDictionary *parsed = reply ? [NSJSONSerialization JSONObjectWithData:[reply dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil] : nil;
+  return [parsed isKindOfClass:NSDictionary.class] ? parsed : nil;
+}
+
 + (BOOL)exports:(NSString *)name {
   return Symbol(name.UTF8String) != nullptr;
 }

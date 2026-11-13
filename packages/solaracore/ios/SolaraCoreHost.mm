@@ -3,6 +3,7 @@
 #import <objc/runtime.h>
 
 #import "SolaraCoreEarlyWindow.h"
+#import "SolaraCoreEngineBridge.h"
 #import "SolaraCoreInternal.h"
 #import "SolaraCoreServices.h"
 #import "SolaraCoreNavigationDownloads.h"
@@ -13,6 +14,8 @@
 #import "SolaraCoreWebViewInternal.h"
 
 #include <crt_externs.h>
+#include <pwd.h>
+#include <sys/stat.h>
 
 #include <cctype>
 #include <cstring>
@@ -156,6 +159,63 @@ bool ChromeUsesRealKeychain() {
 @end
 
 static void TryEarlyLittleWindow();
+static NSString *gLaunchLinkSender;
+static BOOL (^gPermissionHook)(NSDictionary *, NSString *, BOOL);
+
+static BOOL CodeSatisfies(SecCodeRef code, CFStringRef text) {
+  SecRequirementRef requirement = NULL;
+  if (SecRequirementCreateWithString(text, kSecCSDefaultFlags, &requirement) != errSecSuccess || !requirement) return NO;
+  const BOOL satisfied = SecCodeCheckValidity(code, kSecCSDefaultFlags, requirement) == errSecSuccess;
+  CFRelease(requirement);
+  return satisfied;
+}
+
+static NSString *SignedSenderOfAuditToken(NSData *token) {
+  if (token.length != sizeof(audit_token_t)) return nil;
+  SecCodeRef code = NULL;
+  NSDictionary *attributes = @{(__bridge NSString *)kSecGuestAttributeAudit : token};
+  if (SecCodeCopyGuestWithAttributes(NULL, (__bridge CFDictionaryRef)attributes, kSecCSDefaultFlags, &code) != errSecSuccess || !code)
+    return nil;
+  NSString *sender = nil;
+  const BOOL apple = CodeSatisfies(code, CFSTR("anchor apple"));
+  if (apple || CodeSatisfies(code, CFSTR("anchor apple generic"))) {
+    CFDictionaryRef info = NULL;
+    if (SecCodeCopySigningInformation((SecStaticCodeRef)code, kSecCSSigningInformation, &info) == errSecSuccess && info) {
+      NSDictionary *signing = (__bridge NSDictionary *)info;
+      id identifier = signing[(__bridge NSString *)kSecCodeInfoIdentifier];
+      id team = signing[(__bridge NSString *)kSecCodeInfoTeamIdentifier];
+      if ([identifier isKindOfClass:NSString.class] && [identifier length]) {
+        if (apple) sender = [NSString stringWithFormat:@"%@@apple", identifier];
+        else if ([team isKindOfClass:NSString.class] && [team length]) sender = [NSString stringWithFormat:@"%@@%@", identifier, team];
+      }
+      CFRelease(info);
+    }
+  }
+  CFRelease(code);
+  return sender;
+}
+
+static NSString *SenderOfCurrentAppleEvent() {
+  NSAppleEventDescriptor *event = NSAppleEventManager.sharedAppleEventManager.currentAppleEvent;
+  const pid_t pid = [event attributeDescriptorForKeyword:keySenderPIDAttr].int32Value;
+  if (pid <= 0 || pid == getpid()) return nil;
+  return SignedSenderOfAuditToken([event attributeDescriptorForKeyword:keySenderAuditTokenAttr].data);
+}
+
+static BOOL HooksFileExists() {
+  NSDictionary<NSString *, NSString *> *environment = NSProcessInfo.processInfo.environment;
+  NSString *dir = environment[@"SOLARA_CONFIG_DIR"];
+  if (dir.length) {
+    if (![dir hasPrefix:@"/"]) dir = [NSFileManager.defaultManager.currentDirectoryPath stringByAppendingPathComponent:dir];
+  } else {
+    if (environment[@"SOLARA_DATA_DIR"].length || [environment[@"SOLARA_BACKGROUND"] isEqualToString:@"1"]) return NO;
+    struct passwd *entry = getpwuid(getuid());
+    NSString *home = entry && entry->pw_dir ? @(entry->pw_dir) : NSHomeDirectory();
+    dir = [home stringByAppendingPathComponent:@".config/solara"];
+  }
+  struct stat info;
+  return lstat([dir.stringByStandardizingPath stringByAppendingPathComponent:@"hooks.json"].fileSystemRepresentation, &info) == 0;
+}
 
 @implementation SolaraCoreBootstrapDelegate
 - (instancetype)init {
@@ -164,6 +224,7 @@ static void TryEarlyLittleWindow();
 }
 - (void)application:(NSApplication *)application openURLs:(NSArray<NSURL *> *)urls {
   [_urls addObjectsFromArray:urls];
+  if (NSString *sender = SenderOfCurrentAppleEvent()) gLaunchLinkSender = sender;
   TryEarlyLittleWindow();
 }
 @end
@@ -280,7 +341,7 @@ static bool OutsideLinksForwarded() {
 }
 
 static void LinksArrived(NSArray<NSURL *> *urls) {
-  if (gLinksHandled || !urls.count || OutsideLinksForwarded()) return;
+  if (gLinksHandled || !urls.count || OutsideLinksForwarded() || HooksFileExists()) return;
   gLinksHandled = true;
   gEarlyLittleLinks = [urls copy];
   if (!gJSStarted) {
@@ -463,6 +524,7 @@ static void TryEarlyLittleWindow() {
   if (gEarlyLittleTried || !gStarted) return;
   if (!gJSStarted && TestSwitch("SOLARA_TEST_EARLY_LINK_AFTER_JS")) return SkipEarlyLittle(@"waitingForJS");
   if (SolaraCoreTabParking.linkTabsRouted) return SkipEarlyLittle(@"jsRoutedFirst");
+  if (HooksFileExists()) return SkipEarlyLittle(@"hooks");
   NSArray<NSURL *> *links = gBootstrap ? gBootstrap.urls : gEarlyLittleLinks;
   if (links.count != 1) return SkipEarlyLittle(@"links");
   gEarlyLittleTried = true;
@@ -595,6 +657,13 @@ static void StartEarlyWindow() {
 }
 
 - (void)engine:(SolaraCoreEngine *)engine permissionRequest:(NSDictionary *)request tab:(SolaraCoreTab *)tab {
+  NSString *requestId = [request[@"id"] isKindOfClass:NSString.class] ? request[@"id"] : nil;
+  NSMutableDictionary *hookRequest = [request mutableCopy];
+  hookRequest[@"embeddingURL"] = tab.url ?: @"";
+  if (gPermissionHook && tab && requestId.length && gPermissionHook(hookRequest, tab.profile.name ?: @"", tab.profile.offTheRecord)) {
+    [SolaraCoreHost resolvePermission:requestId result:@"deny" remember:NO];
+    return;
+  }
   if (tab && solaracore_host::AskPermissionInPopupWindow(tab, request)) return;
   NSMutableDictionary *payload = [request mutableCopy];
   payload[@"browserId"] = @(tab ? solaracore_host::BrowserId(tab) : 0);
@@ -1257,6 +1326,29 @@ static void StartEarlyWindow() {
 
 + (NSString *)dataDirectory {
   return gDataDirectory ?: @"";
+}
+
++ (BOOL (^)(NSDictionary *, NSString *, BOOL))permissionHook {
+  return gPermissionHook;
+}
+
++ (void)setPermissionHook:(BOOL (^)(NSDictionary *, NSString *, BOOL))hook {
+  gPermissionHook = [hook copy];
+}
+
++ (NSString *)takeLaunchLinkSender {
+  NSString *sender = gLaunchLinkSender;
+  gLaunchLinkSender = nil;
+  return sender;
+}
+
++ (void)holdNavigationsForHooks {
+  if (!HooksFileExists()) return;
+  [SolaraCoreEngineBridge configureHooks:@"{\"version\":1,\"pending\":true,\"rules\":[]}"];
+}
+
++ (NSString *)senderOfCurrentAppleEvent {
+  return SenderOfCurrentAppleEvent();
 }
 
 + (NSDictionary<NSString *, id> *)engineInfo {

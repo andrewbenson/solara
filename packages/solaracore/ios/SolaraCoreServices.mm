@@ -460,7 +460,9 @@ void solaracore_host::ApplyKeepAwakeSites(SolaraCoreProfile *profile) {
 }
 
 void (^gDownloadsHandler)(NSDictionary *);
+void (^gDownloadObserver)(NSDictionary *, NSString *);
 void DeliverDownload(NSDictionary *download, NSString *profile, NSInteger epoch) {
+  if (gDownloadObserver) gDownloadObserver(download, profile ?: @"");
   NSDictionary *forwarded = [NativePrivateDownloadRoutes.shared forwardedDownload:download profile:profile ?: @"" epoch:epoch
                                                        privateDownloadsSupported:SolaraPrivateDownloadSourceFenceAvailable()];
   if (forwarded && gDownloadsHandler) gDownloadsHandler(forwarded);
@@ -485,6 +487,14 @@ void DeliverDownload(NSDictionary *download, NSString *profile, NSInteger epoch)
 
 + (void (^)(NSDictionary *))downloadsHandler {
   return gDownloadsHandler;
+}
+
++ (void (^)(NSDictionary *, NSString *))downloadObserver {
+  return gDownloadObserver;
+}
+
++ (void)setDownloadObserver:(void (^)(NSDictionary *, NSString *))observer {
+  gDownloadObserver = [observer copy];
 }
 
 + (void)setDownloadsHandler:(void (^)(NSDictionary *))handler {
@@ -583,7 +593,10 @@ void DeliverDownload(NSDictionary *download, NSString *profile, NSInteger epoch)
 }
 
 + (void)clearBrowsingData:(NSString *)profile types:(NSArray<NSString *> *)types since:(double)sinceMs completion:(void (^)(void))completion {
-  if ([types containsObject:@"history"]) [SolaraCoreEarlyWindow forgetPictures];
+  if ([types containsObject:@"history"]) {
+    [SolaraCoreEarlyWindow forgetPictures];
+    [NSNotificationCenter.defaultCenter postNotificationName:@"SolaraHistoryCleared" object:nil];
+  }
   SolaraCoreProfile *p = solaracore_host::LoadedProfile(profile);
   if ([p respondsToSelector:@selector(clearBrowsingData:since:completion:)]) {
     [p clearBrowsingData:types since:[NSDate dateWithTimeIntervalSince1970:sinceMs / 1000] completion:completion];

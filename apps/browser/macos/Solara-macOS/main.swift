@@ -14,4 +14,6 @@ if let code = SafeStorageRekeyRun.runAtLaunch(
 _ = MainActor.assumeIsolated { NativeStore.launchAtStartup() }
 SolaraCoreHost.safeMode = NativeStore.safeMode
 
+if !SolaraCoreHost.safeMode { SolaraCoreHost.holdNavigationsForHooks() }
+
 exit(SolaraCoreHost.run(argc: CommandLine.argc, argv: CommandLine.unsafeArgv) { AppDelegate() })

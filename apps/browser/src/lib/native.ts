@@ -85,7 +85,7 @@ export function startNativeSync() {
   startWindowCloseGuard();
   startExtensionsBridge();
   startPinnedLinks();
-  onOpenURLs((urls, pointer) => openExternalUrls(urls, pointer));
+  onOpenURLs((urls, pointer, profile) => openExternalUrls(urls, pointer, profile));
   void lastTabClosesWindow().then((closes) => setLastTabKeepsWindow(!closes));
   onDownload((d) => store.getState().upsertDownload(d));
 

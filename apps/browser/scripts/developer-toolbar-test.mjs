@@ -6,7 +6,8 @@ A hidden instance on a page served from 127.0.0.1, which is in Developer Mode by
 edited (⌘L), and checks:
   - Chromium's level for the loopback page is NONE and the field shows no red not-secure badge;
   - the URL's ink box doesn't move (1 px at 2x) when editing starts;
-  - ⌘L opens no command bar, typed text and Return navigate the tab, Escape leaves the URL as it was.
+  - ⌘L opens no command bar, typed text and Return navigate the tab, Escape leaves the URL as it was;
+  - the stripes cover the toolbar band from its top to its bottom, across its width.
 Exits 1 on any failure.`;
 
 import { mkdtempSync, readFileSync } from "node:fs";
@@ -73,6 +74,20 @@ function inkBox(png, dark, [x0, y0, x1, y1]) {
   return right < 0 ? null : { left, right, top, bottom };
 }
 
+function striped(png, scale, y, x0, x1) {
+  const row = [];
+  for (let x = Math.round(x0 * scale); x < Math.round(x1 * scale); x++) row.push(Math.round(lum(rgb(png, x, Math.round(y * scale))) * 1000));
+  const period = Math.round(36 * scale);
+  const lo = Math.min(...row), hi = Math.max(...row);
+  if (hi - lo < 4) return { ok: false, spread: hi - lo };
+  let same = 0, opposite = 0;
+  for (let i = 0; i + period < row.length; i++) {
+    same += Math.abs(row[i] - row[i + period]);
+    opposite += Math.abs(row[i] - row[i + (period >> 1)]);
+  }
+  return { ok: same * 2 < opposite, spread: hi - lo };
+}
+
 function redPixels(png, [x0, y0, x1, y1]) {
   let n = 0;
   for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
@@ -129,7 +144,7 @@ for (const side of ["native"]) {
           .then(() => ac.runCommand({ command: "focusCommandBar", arg: null, windowId: w }))
           .then(() => sleep(900))
           .then(() => ac.shell.devSnapshotWindow(w, ${JSON.stringify(shots.edit)}))
-          .then(() => ({ level, panel: ac.store.getState().windowUi[w].panel.open, frame: ac.store.getState().windows[w].frame }));`);
+          .then(() => ({ level, panel: ac.store.getState().windowUi[w]?.panel?.open ?? false, frame: ac.store.getState().windows[w].frame }));`);
       await inApp(`return ac.shell.devTypeKeys(${JSON.stringify(w)}, "\\u001b", 20).then(() => new Promise((r) => setTimeout(r, 400))).then(() => 1);`);
       const rest = readPng(shots.rest), edit = readPng(shots.edit);
       const scale = Math.round(rest.width / r.frame[2]);
@@ -137,6 +152,7 @@ for (const side of ["native"]) {
       const dark = appearance === "dark";
       results[`${side}-${appearance}`] = {
         rest: inkBox(rest, dark, field), edit: inkBox(edit, dark, field), red: redPixels(rest, field), level: r.level, panel: r.panel,
+        stripes: [8, 44].map((y) => striped(rest, scale, y, 300, rest.width / scale - 12)),
         row: [5, 44].flatMap((y) => Array.from({ length: rest.width }, (_, x) => rgb(rest, x, Math.round(y * scale)).join(","))),
       };
     }
@@ -149,7 +165,7 @@ for (const side of ["native"]) {
       return sleep(800)
         .then(() => ac.shell.devTypeKeys(w, ${JSON.stringify(`${base}/other\r`)}, 20))
         .then(() => sleep(2000))
-        .then(() => { const went = url(); cmdL(); return sleep(800).then(() => ac.shell.devTypeKeys(w, "junk\\u001b", 20)).then(() => sleep(800)).then(() => ({ went, kept: url(), panel: ac.store.getState().windowUi[w].panel.open })); });`);
+        .then(() => { const went = url(); cmdL(); return sleep(800).then(() => ac.shell.devTypeKeys(w, "junk\\u001b", 20)).then(() => sleep(800)).then(() => ({ went, kept: url(), panel: ac.store.getState().windowUi[w]?.panel?.open ?? false })); });`);
     results[`${side}-edits`] = edits;
     const snapshot = await untilSnapshot("the edited URL", (state) => state.windows.some((window) => window.id === w &&
       state.tabs.some((tab) => tab.id === window.selectedTabId && tab.url === edits.kept)));
@@ -168,6 +184,8 @@ for (const appearance of ["light", "dark"]) {
   check(`${appearance}: loopback is Chromium's NONE and shows no not-secure badge`, nat.level === "none" && nat.red === 0, `level ${nat.level}, red px ${nat.red}`);
   check(`${appearance}: the URL doesn't move when editing starts`, near(nat.edit, nat.rest), `rest ${box(nat.rest)}, edit ${box(nat.edit)}`);
   check(`${appearance}: ⌘L edits in place, no command bar`, !nat.panel, `panel ${nat.panel}`);
+  check(`${appearance}: the stripes fill the toolbar band, top and bottom`, nat.stripes.every((r) => r.ok),
+    nat.stripes.map((r) => `${r.ok ? "striped" : "plain"} ${r.spread}`).join(" / "));
 }
 const e = results["native-edits"];
 check("Return goes to the typed URL, Escape keeps it", e.went.endsWith("/other") && e.kept === e.went && !e.panel, JSON.stringify(e).replace(base, ""));

@@ -48,10 +48,8 @@ public final class AutoHideStripView: NSView {
   private let cardCorners = CALayer()
   private let backdrop = CALayer()
   private let band = CALayer()
-  private let stripes = CALayer()
+  private let stripes = DeveloperStripes()
   private var bandColor: CGColor?
-  private var stripesUri: String?
-  private var stripesTask: Task<Void, Never>?
   private var labelInk: CGFloat = 1
   private let divider = CALayer()
   private let label = NSTextField(labelWithString: "")
@@ -81,16 +79,13 @@ public final class AutoHideStripView: NSView {
     super.init(frame: frame)
     wantsLayer = true
     layer?.masksToBounds = false
-    for l in [cardCorners, backdrop, band, stripes, divider] { l.actions = SurfaceLayer.noActions }
+    for l in [cardCorners, backdrop, band, divider] { l.actions = SurfaceLayer.noActions }
     cardCorners.masksToBounds = true
     cardCorners.cornerRadius = ShellMetrics.cardRadius
     backdrop.masksToBounds = true
     backdrop.anchorPoint = .zero
     backdrop.addSublayer(band)
-    stripes.anchorPoint = .zero
-    stripes.contentsGravity = .topLeft
-    stripes.isHidden = true
-    backdrop.addSublayer(stripes)
+    backdrop.addSublayer(stripes.layer)
     cardCorners.addSublayer(backdrop)
     layer?.addSublayer(cardCorners)
     layer?.addSublayer(divider)
@@ -110,7 +105,7 @@ public final class AutoHideStripView: NSView {
   }
 
   public var bandShown: CGColor? { bandColor }
-  public var stripesShown: Bool { !stripes.isHidden }
+  public var stripesShown: Bool { stripes.shown }
   public var bandFrame: CGRect { backdrop.frame }
 
   public func set(style next: AutoHideStripStyle, mode nextMode: ToolbarAutoHideMode, shownTop top: Double) {
@@ -141,10 +136,10 @@ public final class AutoHideStripView: NSView {
       band.removeAnimation(forKey: "backgroundColor")
       applyBand(nil, animated: false)
       PrimitiveMotion.setInstantly { band.backgroundColor = nil }
-      applyStripes(nil)
+      stripes.show(nil)
     } else {
       applyBand(style.band?.cg, animated: animated)
-      applyStripes(style.stripes)
+      stripes.show(style.stripes)
     }
   }
 
@@ -161,28 +156,6 @@ public final class AutoHideStripView: NSView {
     animation.duration = ToolbarAutoHideMetrics.bandEaseDuration
     animation.timingFunction = ToolbarView.bandEase
     band.add(animation, forKey: "backgroundColor")
-  }
-
-  private func applyStripes(_ uri: String?) {
-    guard uri != stripesUri else { return }
-    stripesTask?.cancel()
-    stripesUri = uri
-    let image = uri.flatMap(ToolbarView.localStripesImage)
-    setStripes(image)
-    guard let uri, image == nil else { return }
-    stripesTask = Task { [weak self] in
-      let image = await ToolbarView.stripesImage(uri)
-      guard let self, !Task.isCancelled, self.stripesUri == uri else { return }
-      self.setStripes(image)
-    }
-  }
-
-  private func setStripes(_ image: NSImage?) {
-    PrimitiveMotion.setInstantly {
-      stripes.contents = image
-      stripes.contentsScale = window?.backingScaleFactor ?? 2
-      stripes.isHidden = image == nil
-    }
   }
 
   public var showsToolTip: Bool { label.toolTip != nil }
@@ -267,7 +240,7 @@ public final class AutoHideStripView: NSView {
       backdrop.bounds = CGRect(x: 0, y: 0, width: bounds.width, height: h)
       backdrop.position = .zero
       band.frame = backdrop.bounds
-      stripes.frame = CGRect(x: 0, y: 0, width: 2560, height: 50)
+      stripes.fit(backdrop.bounds, scale: window?.backingScaleFactor ?? 2)
       if moved {
         let scale = ToolbarAutoHideCurves.bandScale(bar: b)
         var t = CATransform3DMakeTranslation(0, ToolbarAutoHideCurves.bandLift(bar: b), 0)
@@ -334,6 +307,16 @@ public final class AutoHideStripView: NSView {
     guard mode == .collapsed, inStrip(event) else { return }
     peekTimer?.invalidate()
     onEvent(.reveal)
+  }
+
+  public override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    needsLayout = true
+  }
+
+  public override func viewDidChangeBackingProperties() {
+    super.viewDidChangeBackingProperties()
+    needsLayout = true
   }
 
   public override func viewWillMove(toWindow newWindow: NSWindow?) {

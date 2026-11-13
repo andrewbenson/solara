@@ -15,10 +15,8 @@ public final class ToolbarView: NSView {
   private let surface = CALayer()
   private let under = CALayer()
   private let band = CALayer()
-  private let stripes = CALayer()
+  private let stripes = DeveloperStripes()
   private let surfaceFade = CAGradientLayer()
-  private var stripesUri: String?
-  private var stripesTask: Task<Void, Never>?
   private let content = ToolbarContentView()
   private let hairline = CALayer()
   private let progress = CALayer()
@@ -52,11 +50,9 @@ public final class ToolbarView: NSView {
     layer?.addSublayer(surface)
     surface.addSublayer(under)
     surface.addSublayer(band)
-    stripes.anchorPoint = .zero
-    stripes.contentsGravity = .topLeft
     surfaceFade.startPoint = CGPoint(x: 0, y: 0.5)
     surfaceFade.endPoint = CGPoint(x: 1, y: 0.5)
-    surface.addSublayer(stripes)
+    surface.addSublayer(stripes.layer)
     addSubview(content)
     content.addSubview(url)
     url.onClick = { [weak self] click in self?.onClick(click) }
@@ -180,7 +176,7 @@ public final class ToolbarView: NSView {
     if frame { band.removeAnimation(forKey: "backgroundColor") }
     CATransaction.commit()
     applyBand(shown ? toolbarColor(state.palette.background)?.cgColor : nil, animated: animated && !frame)
-    applyStripes(shown ? state.stripes : nil)
+    stripes.show(shown ? state.stripes : nil)
   }
 
   private func applyBand(_ color: CGColor?, animated: Bool) {
@@ -199,29 +195,6 @@ public final class ToolbarView: NSView {
     animation.duration = 0.18
     animation.timingFunction = ToolbarView.bandEase
     band.add(animation, forKey: "backgroundColor")
-  }
-
-  private func applyStripes(_ uri: String?) {
-    guard uri != stripesUri else { return }
-    stripesTask?.cancel()
-    stripesUri = uri
-    let image = uri.flatMap(ToolbarView.localStripesImage)
-    setStripes(image)
-    guard let uri, image == nil else { return }
-    stripesTask = Task { [weak self] in
-      let image = await ToolbarView.stripesImage(uri)
-      guard let self, !Task.isCancelled, self.stripesUri == uri else { return }
-      self.setStripes(image)
-    }
-  }
-
-  private func setStripes(_ image: NSImage?) {
-    CATransaction.begin()
-    CATransaction.setDisableActions(true)
-    stripes.contents = image
-    stripes.contentsScale = window?.backingScaleFactor ?? 2
-    stripes.isHidden = image == nil
-    CATransaction.commit()
   }
 
   public var underColor: CGColor? {
@@ -257,7 +230,6 @@ public final class ToolbarView: NSView {
   static func localStripesImage(_ uri: String) -> NSImage? {
     let url = uri.hasPrefix("/") ? URL(fileURLWithPath: uri) : URL(string: uri)
     guard let url, url.isFileURL, let data = try? Data(contentsOf: url), let image = NSImage(data: data) else { return nil }
-    image.size = NSSize(width: 2560, height: 50)
     return image
   }
 
@@ -266,7 +238,6 @@ public final class ToolbarView: NSView {
     guard let url = URL(string: uri), url.scheme == "http" || url.scheme == "https" else { return nil }
     let request = URLRequest(url: url, timeoutInterval: 10)
     guard let (data, _) = try? await stripesSession.data(for: request), !Task.isCancelled, let image = NSImage(data: data) else { return nil }
-    image.size = NSSize(width: 2560, height: 50)
     return image
   }
 
@@ -307,9 +278,9 @@ public final class ToolbarView: NSView {
     surface.frame = bounds
     under.frame = surface.bounds
     band.frame = surface.bounds
-    stripes.frame = CGRect(x: 0, y: 0, width: 2560, height: 50)
     layer?.masksToBounds = true
     let scale = window?.backingScaleFactor ?? 2
+    stripes.fit(surface.bounds, scale: scale)
     let rail = (windowShell?.input.dock ?? 0) > 0 ? windowShell?.railFraction ?? 0 : 0
     applySurface(animated: false)
     hairline.frame = CGRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1)
@@ -425,6 +396,11 @@ public final class ToolbarView: NSView {
   public override func viewDidMoveToWindow() {
     super.viewDidMoveToWindow()
     reportedAnchors = nil
+    needsLayout = true
+  }
+
+  public override func viewDidChangeBackingProperties() {
+    super.viewDidChangeBackingProperties()
     needsLayout = true
   }
 }

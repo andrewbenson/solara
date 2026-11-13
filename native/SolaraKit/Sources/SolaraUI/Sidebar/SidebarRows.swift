@@ -954,7 +954,10 @@ final class GroupBoxView: NSView {
   var fill: CALayer { box }
   private var groupId = ""
   private var shown = false
+  private var hovered = false
+  private(set) var tinted = false
   var item: SidebarItem?
+  var boxShown: Bool { shown }
 
   override var isFlipped: Bool { true }
 
@@ -965,7 +968,7 @@ final class GroupBoxView: NSView {
     box.cornerCurve = .continuous
     box.borderWidth = SidebarMetrics.groupBorder
     box.opacity = 0
-    box.actions = ["bounds": NSNull(), "position": NSNull(), "backgroundColor": NSNull(), "borderColor": NSNull()]
+    box.actions = ["bounds": NSNull(), "position": NSNull(), "backgroundColor": NSNull(), "borderColor": NSNull(), "opacity": NSNull()]
     layer?.addSublayer(box)
   }
 
@@ -983,9 +986,17 @@ final class GroupBoxView: NSView {
     box.backgroundColor = surface.fill.cgColor
     box.borderColor = surface.stroke.cgColor
     CATransaction.commit()
+    tinted = SidebarPalette.groupTinted(group.color)
+    apply(animated: false)
   }
 
   func show(_ on: Bool, animated: Bool) {
+    hovered = on
+    apply(animated: animated)
+  }
+
+  private func apply(animated: Bool) {
+    let on = hovered || tinted
     guard on != shown else { return }
     shown = on
     let target: Float = on ? 1 : 0

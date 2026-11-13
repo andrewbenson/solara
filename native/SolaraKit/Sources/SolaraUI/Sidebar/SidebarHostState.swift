@@ -220,6 +220,10 @@ public struct SidebarPalette {
     "purple": "#9B6CF0", "cyan": "#35B8C6", "orange": "#EE8434",
   ]
 
+  public static func groupTinted(_ color: String?) -> Bool {
+    color.map { groupColors[$0] != nil } ?? false
+  }
+
   public func groupSurface(_ color: String?) -> (fill: NSColor, stroke: NSColor) {
     if color == "none" { return (.clear, .clear) }
     guard let color, let hex = Self.groupColors[color], let tint = CSSColor(hex) else { return (groupFill, groupStroke) }

@@ -311,7 +311,7 @@ the same as top"), so if a Dia capture ever differs, the owner's equal insets wi
 - Pinned tile hover: a custom tooltip showing the title and URL.
 - Groups (GitHub issue #154's Dia capture): at rest no box; the header sits on the sidebar like a row (icon at x 15) and
   the group's tabs 16 pt further in (icon at x 31), their right edge with the other rows'. The box appears while the pointer
-  is over the group: `TabGroupNeutralBackground` (white 0.10 dark / black 0.05 light), edge `TabGroupSidebarStroke`
+  is over the group: `TabGroupNeutralBackground` (white 0.10 dark / black 0.05 light; a coloured group's tinted box stays at rest in Solara, 0.3.4), edge `TabGroupSidebarStroke`
   (white / black 0.10), header hover `TabGroupNeutralBackgroundHovered` (white 0.12 dark / 0.40 light). Fade time not
   recovered; Solara uses the hover card's 0.1 s curve.
 
@@ -1182,7 +1182,7 @@ Neither browser was launched. **Recovered** means it is in the binary; **inferre
   vertical dividers: copy link | two capture buttons (a photo-style icon, a camera) | terminal, globe, crosshair (console,
   network, inspect) | extensions, pinned extensions, split view. No reload button or chevron on that bar. So Developer
   Mode does change the URL display, which corrects the "Full URL" item above for developer tabs.
-- **Ours.** Stripes: a pre-drawn image (36 pt period at 45°, falling to the right, equal 18 pt bands and gaps (owner, 2026-10-24; first 12 pt rising, then this); white at 2 %
+- **Ours.** Stripes: drawn at the window's backing scale to fill the band on every layout, in the colour of a pre-drawn image (36 pt period at 45°, falling to the right, equal 18 pt bands and gaps (owner, 2026-10-24; first 12 pt rising, then this); white at 2 %
   on a dark bar, black at 1.8 % on a light one, which keeps the bar's mean brightness where the earlier 1 pt lines at
   7 % / 6 % had it: 21.6 vs 21.0 dark, 253.0 vs 253.2 light, 0–255), chosen from the bar's text color so a website-colored bar gets the right one), behind the toolbar band
   and the auto-hide band; no per-frame work. URL: the full URL with the scheme in the monospaced system font, no

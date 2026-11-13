@@ -251,10 +251,12 @@ final class NativeTabDrag {
     }
     if let over {
       let moved = (try? store.dispatch(Command("moveTabsToWindow", [JSONValue(tabIds), JSONValue(over)]), origin: .native))?.result?.string
+      FrameUpdates.flush()
       endPreview(preview)
       guard moved == over, open(over) else { return }
       if let before {
         _ = try? store.dispatch(Command("placeTabs", [JSONValue(tabIds), ["pinned": false, "beforeId": JSONValue(before)]]), origin: .native)
+        FrameUpdates.flush()
       }
       return focus(over)
     }
@@ -267,6 +269,7 @@ final class NativeTabDrag {
       "frame": [JSONValue(frame.minX), JSONValue(frame.minY), JSONValue(frame.width), JSONValue(frame.height)],
     ]
     let created = (try? store.dispatch(Command("createWindow", [options]), origin: .native))?.result?.string
+    FrameUpdates.flush()
     endPreview(preview, windowId: created, fallback: frame)
     if let created, store.state.windows[created] != nil { focus(created) }
   }

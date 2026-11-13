@@ -35,7 +35,7 @@ public class TabPoolModule: Module {
     }.runOnQueue(.main)
 
     AsyncFunction("claimFocusPage") { (generation: Int, tabId: String) -> Bool in
-      MainActor.assumeIsolated {
+      FrameUpdates.readOnMain {
         TabPoolHost.shared.claimFocusPage(generation, tabId: tabId)
       }
     }.runOnQueue(.main)

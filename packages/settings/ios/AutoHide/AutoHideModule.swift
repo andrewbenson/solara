@@ -86,6 +86,7 @@ enum AutoHideHost {
   }
 
   private static func setLiveTop(_ top: CGFloat?, windowId: String, tabId: String) {
+    FrameUpdates.flush()
     PaneOverlays.shared.setLiveTop(top, windowId: windowId, tabId: tabId)
     NativeSplitChrome.setLiveTop(top, windowId: windowId, tabId: tabId)
   }

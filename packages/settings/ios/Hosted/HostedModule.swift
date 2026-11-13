@@ -21,7 +21,7 @@ public class HostedModule: Module {
       HostedViews.declare(NativeToolTour.kind)
       let sink = HostedSink(self)
       DispatchQueue.main.async {
-        MainActor.assumeIsolated {
+        FrameUpdates.readOnMain {
           HostedViews.emit = { body in sink.module?.sendEvent("onHostedEvent", body) }
           NativeBookmarksBar.registerMenuSource()
           NativeStatusBubble.register(); NativeSidebar.register(); NativeDownloadMagnet.register(); NativeTabPickers.register()
@@ -33,7 +33,7 @@ public class HostedModule: Module {
     }
 
     AsyncFunction("bookmarkScale") { (windowId: String, operation: String, value: String?) -> String in
-      MainActor.assumeIsolated {
+      FrameUpdates.readOnMain {
         let environment = ProcessInfo.processInfo.environment
         guard !LaunchSwitches.shared.distribution, environment["AC_BENCH_BOOKMARKS"] == "1",
           environment["SOLARA_BACKGROUND"] == "1", environment["SOLARA_DATA_DIR"]?.isEmpty == false else { return "null" }
@@ -42,7 +42,7 @@ public class HostedModule: Module {
     }.runOnQueue(.main)
 
     AsyncFunction("focusPageIfUnclaimed") { (windowId: String, tabId: String) -> Bool in
-      MainActor.assumeIsolated { SidePanelFocus.focus(windowId: windowId, tabId: tabId) }
+      FrameUpdates.readOnMain { SidePanelFocus.focus(windowId: windowId, tabId: tabId) }
     }.runOnQueue(.main)
 
     Function("kinds") { () -> [String] in
@@ -50,32 +50,32 @@ public class HostedModule: Module {
     }
 
     AsyncFunction("sidebarRowFrame") { (windowId: String, key: String) -> [String: Double]? in
-      MainActor.assumeIsolated { NativeSidebar.rowFrame(windowId: windowId, key: key) }
+      FrameUpdates.readOnMain { NativeSidebar.rowFrame(windowId: windowId, key: key) }
     }.runOnQueue(.main)
 
     AsyncFunction("sidebarHoverShifts") { (windowId: String) -> String in
-      MainActor.assumeIsolated { NativeSidebar.hoverShifts(windowId: windowId) ?? "null" }
+      FrameUpdates.readOnMain { NativeSidebar.hoverShifts(windowId: windowId) ?? "null" }
     }.runOnQueue(.main)
 
     AsyncFunction("sidebarMotion") { (windowId: String) -> String in
-      MainActor.assumeIsolated { NativeSidebar.motion(windowId: windowId) ?? "null" }
+      FrameUpdates.readOnMain { NativeSidebar.motion(windowId: windowId) ?? "null" }
     }.runOnQueue(.main)
 
     AsyncFunction("sidebarHoverCard") { (windowId: String) -> String in
-      MainActor.assumeIsolated { NativeSidebarHoverCard.describe(windowId) }
+      FrameUpdates.readOnMain { NativeSidebarHoverCard.describe(windowId) }
     }.runOnQueue(.main)
 
     AsyncFunction("sidebarIconPicker") { (windowId: String) -> String in
-      MainActor.assumeIsolated { NativeSidebarIconPicker.describe(windowId) }
+      FrameUpdates.readOnMain { NativeSidebarIconPicker.describe(windowId) }
     }.runOnQueue(.main)
 
     AsyncFunction("sidebarIconPickerInput") { (windowId: String, action: String) in
-      MainActor.assumeIsolated { NativeSidebarIconPicker.devInput(windowId, action) }
+      FrameUpdates.readOnMain { NativeSidebarIconPicker.devInput(windowId, action) }
     }.runOnQueue(.main)
 
     #if DEBUG
     AsyncFunction("devTabNumberHintViews") { (windowId: String) -> String in
-      MainActor.assumeIsolated {
+      FrameUpdates.readOnMain {
         guard let root = ShellDrag.window(windowId)?.contentView,
           let data = try? JSONSerialization.data(withJSONObject: TabNumberHintInspection.views(in: root))
         else { return "[]" }
@@ -85,11 +85,11 @@ public class HostedModule: Module {
     #endif
 
     AsyncFunction("sidebarShell") { (windowId: String) -> String in
-      MainActor.assumeIsolated { NativeSidebarShell.describe(windowId) }
+      FrameUpdates.readOnMain { NativeSidebarShell.describe(windowId) }
     }.runOnQueue(.main)
 
     AsyncFunction("presentedAt") { (windowId: String, x: Double, y: Double, width: [Double], height: [Double]) -> String in
-      MainActor.assumeIsolated {
+      FrameUpdates.readOnMain {
         guard width.count == 2, height.count == 2 else { return "null" }
         return NativeSidebarHoverCard.presented(windowId, at: CGPoint(x: x, y: y), width: width[0]...width[1], height: height[0]...height[1])
       }
@@ -100,15 +100,15 @@ public class HostedModule: Module {
     }
 
     AsyncFunction("tabPickers") { (windowId: String) -> String in
-      MainActor.assumeIsolated { NativeTabPickers.describe(windowId) }
+      FrameUpdates.readOnMain { NativeTabPickers.describe(windowId) }
     }.runOnQueue(.main)
 
     AsyncFunction("downloadMagnet") { (windowId: String) -> String in
-      MainActor.assumeIsolated { NativeDownloadMagnet.describe(windowId) }
+      FrameUpdates.readOnMain { NativeDownloadMagnet.describe(windowId) }
     }.runOnQueue(.main)
 
     AsyncFunction("sidebarPages") { (windowId: String) -> String in
-      MainActor.assumeIsolated { NativeSidebar.pages(windowId: windowId) ?? "null" }
+      FrameUpdates.readOnMain { NativeSidebar.pages(windowId: windowId) ?? "null" }
     }.runOnQueue(.main)
 
     View(SolaraHostedView.self) {
@@ -117,7 +117,7 @@ public class HostedModule: Module {
       Prop("active") { (view: SolaraHostedView, v: Bool?) in MainActor.assumeIsolated { view.active = v ?? true } }
       Prop("state") { (view: SolaraHostedView, v: String?) in MainActor.assumeIsolated { view.state = v ?? "" } }
 
-      OnViewDidUpdateProps { (view: SolaraHostedView) in MainActor.assumeIsolated { view.propsDidUpdate() } }
+      OnViewDidUpdateProps { (view: SolaraHostedView) in FrameUpdates.readOnMain { view.propsDidUpdate() } }
     }
 
     #if DEBUG
@@ -126,40 +126,40 @@ public class HostedModule: Module {
     }
 
     AsyncFunction("devTabMemory") { (spec: String?) in
-      MainActor.assumeIsolated { NativeTabMemory.devSet(spec) }
+      FrameUpdates.readOnMain { NativeTabMemory.devSet(spec) }
     }.runOnQueue(.main)
 
     AsyncFunction("devBookmarksBarLayout") { (windowId: String) -> String in
-      MainActor.assumeIsolated { NativeBookmarksBar.devLayoutJSON(windowId: windowId) }
+      FrameUpdates.readOnMain { NativeBookmarksBar.devLayoutJSON(windowId: windowId) }
     }.runOnQueue(.main)
 
     AsyncFunction("devBookmarksBarMenu") { (windowId: String, trigger: String, id: String?) -> String in
-      MainActor.assumeIsolated { NativeBookmarksBar.devMenuJSON(windowId: windowId, trigger: trigger, id: id) }
+      FrameUpdates.readOnMain { NativeBookmarksBar.devMenuJSON(windowId: windowId, trigger: trigger, id: id) }
     }.runOnQueue(.main)
 
     AsyncFunction("devBookmarksBarChoose") { (windowId: String, trigger: String, id: String?, choiceId: String) -> String in
-      MainActor.assumeIsolated { NativeBookmarksBar.devChooseJSON(windowId: windowId, trigger: trigger, id: id, choiceId: choiceId) }
+      FrameUpdates.readOnMain { NativeBookmarksBar.devChooseJSON(windowId: windowId, trigger: trigger, id: id, choiceId: choiceId) }
     }.runOnQueue(.main)
 
     AsyncFunction("devBookmarksBarKey") { (windowId: String, key: String, id: String?, modifiers: Int, fullKeyboardAccess: Bool) -> String in
-      MainActor.assumeIsolated { NativeBookmarksBar.devKeyJSON(windowId: windowId, key: key, id: id, modifiers: modifiers, fullKeyboardAccess: fullKeyboardAccess) }
+      FrameUpdates.readOnMain { NativeBookmarksBar.devKeyJSON(windowId: windowId, key: key, id: id, modifiers: modifiers, fullKeyboardAccess: fullKeyboardAccess) }
     }.runOnQueue(.main)
 
     AsyncFunction("devBookmarksBarAccessibility") { (windowId: String) -> String in
-      MainActor.assumeIsolated { NativeBookmarksBar.devAccessibilityJSON(windowId: windowId) }
+      FrameUpdates.readOnMain { NativeBookmarksBar.devAccessibilityJSON(windowId: windowId) }
     }.runOnQueue(.main)
 
     AsyncFunction("devBookmarksBarDrop") { (windowId: String, x: Double, folderId: String?, payload: String) -> String in
-      MainActor.assumeIsolated { NativeBookmarksBar.devDropJSON(windowId: windowId, x: x, folderId: folderId, payload: payload) }
+      FrameUpdates.readOnMain { NativeBookmarksBar.devDropJSON(windowId: windowId, x: x, folderId: folderId, payload: payload) }
     }.runOnQueue(.main)
 
     AsyncFunction("devBookmarksBarInput") { (windowId: String, action: String, id: String?, modifiers: Int, x: Double?) -> Bool in
-      MainActor.assumeIsolated { NativeBookmarksBar.devInput(windowId: windowId, action: action, id: id, modifiers: modifiers, x: x) }
+      FrameUpdates.readOnMain { NativeBookmarksBar.devInput(windowId: windowId, action: action, id: id, modifiers: modifiers, x: x) }
     }.runOnQueue(.main)
     #endif
 
     AsyncFunction("devHost") { (kind: String, windowId: String, on: Bool) -> [String: String] in
-      MainActor.assumeIsolated { DevHost.toggle(kind: kind, windowId: windowId, on: on) }
+      FrameUpdates.readOnMain { DevHost.toggle(kind: kind, windowId: windowId, on: on) }
     }.runOnQueue(.main)
   }
 }

@@ -7,6 +7,7 @@ import SolaraProbes
 import SolaraStore
 import SolaraShell
 import SolaraSettingsAdapter
+import SolaraUI
 
 @_cdecl("SolaraProbeHostMarker")
 public func SolaraProbeHostMarker() -> Int32 { 1 }
@@ -54,6 +55,7 @@ final class ProbeHost {
     guard !polling else { return }
     polling = true
     defer { polling = false }
+    FrameUpdates.flush()
     var budget = ProbePollBudget()
     guard Bundle.main.bundleIdentifier?.hasSuffix(".dev") == true,
       ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] == "1",

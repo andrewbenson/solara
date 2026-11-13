@@ -1,6 +1,7 @@
 import SolaraModel
 import SolaraShell
 import SolaraStore
+import SolaraUI
 
 @MainActor
 enum NativeNumberedTabs {
@@ -24,6 +25,7 @@ enum NativeNumberedTabs {
     else { return false }
     do {
       try store.dispatch(Command("activateNumberedTab", [.string(windowId), .number(Double(number))]), origin: .native)
+      FrameUpdates.flush()
     } catch {
       return true
     }

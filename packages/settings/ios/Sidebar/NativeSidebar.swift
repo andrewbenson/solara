@@ -147,12 +147,16 @@ final class SidebarHost {
     if next == hostState { return }
     hostState = next
     loadMark(next.newTabMark)
-    render()
+    setNeedsRender()
   }
 
   func commit(_ next: BrowserState) {
     state = next
-    render()
+    setNeedsRender()
+  }
+
+  private func setNeedsRender() {
+    FrameUpdates.schedule(self) { [weak self] in self?.render() }
   }
 
   private func render() {
@@ -175,7 +179,7 @@ final class SidebarHost {
       guard let self, let image else { return }
       image.isTemplate = true
       self.view.favicons.newTabMark = image
-      self.render()
+      self.setNeedsRender()
     }
   }
 
@@ -218,6 +222,7 @@ final class SidebarHost {
     guard let store = NativeStoreHandle.store else { return false }
     do {
       _ = try store.dispatch(Command("activate", [.string(tabId)]), origin: .native)
+      FrameUpdates.flush()
       return true
     } catch {
       return false

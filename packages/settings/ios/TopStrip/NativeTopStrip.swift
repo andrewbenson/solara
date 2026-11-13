@@ -9,42 +9,42 @@ public class TopStripModule: Module {
   public func definition() -> ModuleDefinition {
     Name("SolaraTopStrip")
 
-    OnCreate { DispatchQueue.main.async { MainActor.assumeIsolated { NativeTopStrip.register() } } }
+    OnCreate { DispatchQueue.main.async { FrameUpdates.readOnMain { NativeTopStrip.register() } } }
 
     AsyncFunction("items") { (windowId: String) -> String in
-      MainActor.assumeIsolated { NativeTopStrip.items(windowId: windowId) ?? "null" }
+      FrameUpdates.readOnMain { NativeTopStrip.items(windowId: windowId) ?? "null" }
     }.runOnQueue(.main)
 
     AsyncFunction("hoverShifts") { (windowId: String) -> String in
-      MainActor.assumeIsolated { NativeTopStrip.hoverShifts(windowId: windowId) ?? "null" }
+      FrameUpdates.readOnMain { NativeTopStrip.hoverShifts(windowId: windowId) ?? "null" }
     }.runOnQueue(.main)
 
     AsyncFunction("groupSize") { (windowId: String, groupId: String) -> Double? in
-      MainActor.assumeIsolated { NativeTopStrip.hosts[windowId]?.view.current?.groupSize(groupId) }
+      FrameUpdates.readOnMain { NativeTopStrip.hosts[windowId]?.view.current?.groupSize(groupId) }
     }.runOnQueue(.main)
 
     AsyncFunction("peekMonitors") { () -> Int in
-      MainActor.assumeIsolated { StripPeekView.monitors }
+      FrameUpdates.readOnMain { StripPeekView.monitors }
     }.runOnQueue(.main)
 
     AsyncFunction("traceGroup") { (windowId: String, groupId: String) in
-      MainActor.assumeIsolated { NativeTopStrip.hosts[windowId]?.view.current?.traceGroup(groupId) }
+      FrameUpdates.readOnMain { NativeTopStrip.hosts[windowId]?.view.current?.traceGroup(groupId) }
     }.runOnQueue(.main)
 
     AsyncFunction("groupTrace") { (windowId: String) -> [[Double]] in
-      MainActor.assumeIsolated { NativeTopStrip.hosts[windowId]?.view.current?.groupTrace ?? [] }
+      FrameUpdates.readOnMain { NativeTopStrip.hosts[windowId]?.view.current?.groupTrace ?? [] }
     }.runOnQueue(.main)
 
     AsyncFunction("traceSlot") { (windowId: String, tabIds: String) in
-      MainActor.assumeIsolated { NativeTopStrip.hosts[windowId]?.view.current?.traceSlot(tabIds) }
+      FrameUpdates.readOnMain { NativeTopStrip.hosts[windowId]?.view.current?.traceSlot(tabIds) }
     }.runOnQueue(.main)
 
     AsyncFunction("slotTrace") { (windowId: String) -> [[Double]] in
-      MainActor.assumeIsolated { NativeTopStrip.hosts[windowId]?.view.current?.slotTrace ?? [] }
+      FrameUpdates.readOnMain { NativeTopStrip.hosts[windowId]?.view.current?.slotTrace ?? [] }
     }.runOnQueue(.main)
 
     AsyncFunction("incoming") { (windowId: String, x: Double?, y: Double?) -> String in
-      MainActor.assumeIsolated {
+      FrameUpdates.readOnMain {
         guard let page = NativeTopStrip.incomingPage(windowId) else { return "null" }
         let point = x.flatMap { x in y.map { CGPoint(x: x, y: $0) } }
         guard case .some(let beforeId) = page.incoming(at: point) else { return "null" }
@@ -53,46 +53,46 @@ public class TopStripModule: Module {
     }.runOnQueue(.main)
 
     AsyncFunction("peekShow") { (windowId: String) in
-      MainActor.assumeIsolated { TopStripPeekHost.hosts[windowId]?.view.peek.show() }
+      FrameUpdates.readOnMain { TopStripPeekHost.hosts[windowId]?.view.peek.show() }
     }.runOnQueue(.main)
 
     AsyncFunction("peekHide") { (windowId: String) in
-      MainActor.assumeIsolated { TopStripPeekHost.hosts[windowId]?.view.peek.hide() }
+      FrameUpdates.readOnMain { TopStripPeekHost.hosts[windowId]?.view.peek.hide() }
     }.runOnQueue(.main)
 
     AsyncFunction("pinPeek") { (windowId: String, value: Double) in
-      MainActor.assumeIsolated { TopStripPeekHost.hosts[windowId]?.view.pin(value) }
+      FrameUpdates.readOnMain { TopStripPeekHost.hosts[windowId]?.view.pin(value) }
     }.runOnQueue(.main)
 
     AsyncFunction("tracePeek") { (windowId: String) in
-      MainActor.assumeIsolated { TopStripPeekHost.hosts[windowId]?.view.traceSlide() }
+      FrameUpdates.readOnMain { TopStripPeekHost.hosts[windowId]?.view.traceSlide() }
     }.runOnQueue(.main)
 
     AsyncFunction("peekTrace") { (windowId: String) -> [[Double]] in
-      MainActor.assumeIsolated { TopStripPeekHost.hosts[windowId]?.view.slideTrace ?? [] }
+      FrameUpdates.readOnMain { TopStripPeekHost.hosts[windowId]?.view.slideTrace ?? [] }
     }.runOnQueue(.main)
 
     AsyncFunction("traceGlow") { (windowId: String) in
-      MainActor.assumeIsolated { TopStripGlowHost.hosts[windowId]?.view.startTrace() }
+      FrameUpdates.readOnMain { TopStripGlowHost.hosts[windowId]?.view.startTrace() }
     }.runOnQueue(.main)
 
     AsyncFunction("glowTrace") { (windowId: String) -> [[Double]] in
-      MainActor.assumeIsolated { TopStripGlowHost.hosts[windowId]?.view.trace ?? [] }
+      FrameUpdates.readOnMain { TopStripGlowHost.hosts[windowId]?.view.trace ?? [] }
     }.runOnQueue(.main)
 
     AsyncFunction("peekState") { (windowId: String) -> String in
-      MainActor.assumeIsolated { TopStripPeekHost.hosts[windowId].flatMap { NativeTopStrip.json($0.describe()) } ?? "null" }
+      FrameUpdates.readOnMain { TopStripPeekHost.hosts[windowId].flatMap { NativeTopStrip.json($0.describe()) } ?? "null" }
     }.runOnQueue(.main)
 
     AsyncFunction("endIncoming") { (windowId: String) in
-      MainActor.assumeIsolated {
+      FrameUpdates.readOnMain {
         NativeTopStrip.hosts[windowId]?.view.current?.endIncoming()
         TopStripPeekHost.hosts[windowId]?.strip.view.current?.endIncoming()
       }
     }.runOnQueue(.main)
 
     AsyncFunction("keys") { (windowId: String, profileId: String) -> [String] in
-      MainActor.assumeIsolated { NativeStoreHandle.store.map { StripQuery($0.state).keys(windowId: windowId, profileId: profileId) } ?? [] }
+      FrameUpdates.readOnMain { NativeStoreHandle.store.map { StripQuery($0.state).keys(windowId: windowId, profileId: profileId) } ?? [] }
     }.runOnQueue(.main)
   }
 }
@@ -241,12 +241,16 @@ final class TopStripHost {
     if next == hostState { return }
     hostState = next
     loadMark(next.newTabMark)
-    render()
+    setNeedsRender()
   }
 
   func commit(_ next: BrowserState) {
     state = next
-    render()
+    setNeedsRender()
+  }
+
+  private func setNeedsRender() {
+    FrameUpdates.schedule(self) { [weak self] in self?.render() }
   }
 
   private func render() {
@@ -270,7 +274,7 @@ final class TopStripHost {
       guard let self, let image else { return }
       image.isTemplate = true
       self.view.favicons.newTabMark = image
-      self.render()
+      self.setNeedsRender()
     }
   }
 
@@ -298,6 +302,7 @@ final class TopStripHost {
     guard let store = NativeStoreHandle.store else { return false }
     do {
       _ = try store.dispatch(Command(name, [.string(tabId)]), origin: .native)
+      FrameUpdates.flush()
       return true
     } catch {
       return false
@@ -342,11 +347,14 @@ final class TopStripDrag: StripDragBridge {
     if source != windowId {
       guard (try? store.dispatch(Command("moveTabsToWindow", [JSONValue(ids), JSONValue(windowId)]), origin: .native)) != nil else { return false }
     }
-    return (try? store.dispatch(Command("placeTabs", [JSONValue(ids), ["pinned": false, "beforeId": JSONValue(beforeId)]]), origin: .native)) != nil
+    let placed = (try? store.dispatch(Command("placeTabs", [JSONValue(ids), ["pinned": false, "beforeId": JSONValue(beforeId)]]), origin: .native)) != nil
+    FrameUpdates.flush()
+    return placed
   }
 
   func drop(ids: [String], drop: JSONValue) -> Bool {
     guard let store = NativeStoreHandle.store, let commit = try? store.dispatch(Command("dropTabs", [JSONValue(ids), drop]), origin: .native) else { return false }
+    FrameUpdates.flush()
     return !commit.changes.isEmpty
   }
 }

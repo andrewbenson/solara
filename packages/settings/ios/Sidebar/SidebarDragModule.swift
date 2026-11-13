@@ -19,19 +19,19 @@ public class SidebarDragModule: Module {
     }
 
     AsyncFunction("tabDrag") { (onPage: Bool, insert: Bool) in
-      MainActor.assumeIsolated { NativeTabDrag.shared.pageChanged(onPage: onPage, insert: insert) }
+      FrameUpdates.readOnMain { NativeTabDrag.shared.pageChanged(onPage: onPage, insert: insert) }
     }.runOnQueue(.main)
 
     AsyncFunction("escape") {
-      MainActor.assumeIsolated { SidebarDragHub.escape() }
+      FrameUpdates.readOnMain { SidebarDragHub.escape() }
     }.runOnQueue(.main)
 
     AsyncFunction("external") { (windowId: String, phase: String, x: Double, y: Double, count: Int) -> String? in
-      MainActor.assumeIsolated { NativeSidebarDrag.external(windowId: windowId, phase: phase, at: CGPoint(x: x, y: y), count: count) }
+      FrameUpdates.readOnMain { NativeSidebarDrag.external(windowId: windowId, phase: phase, at: CGPoint(x: x, y: y), count: count) }
     }.runOnQueue(.main)
 
     AsyncFunction("startProbe") { (windowId: String) -> String in
-      MainActor.assumeIsolated { NativeSidebarDrag.startProbe(windowId) }
+      FrameUpdates.readOnMain { NativeSidebarDrag.startProbe(windowId) }
     }.runOnQueue(.main)
 
     Function("probe") { (windowId: String) -> String in
@@ -39,25 +39,25 @@ public class SidebarDragModule: Module {
     }
 
     AsyncFunction("clearLanded") { (windowId: String) in
-      MainActor.assumeIsolated {
+      FrameUpdates.readOnMain {
         SidebarDragHub.controller(windowId: windowId)?.clearLanded()
         NativeSidebarDrag.refresh(windowId)
       }
     }.runOnQueue(.main)
 
     AsyncFunction("trace") { (identifier: String, milliseconds: Double) in
-      MainActor.assumeIsolated { SidebarDragTrace.shared.start(identifier, milliseconds: milliseconds) }
+      FrameUpdates.readOnMain { SidebarDragTrace.shared.start(identifier, milliseconds: milliseconds) }
     }.runOnQueue(.main)
 
     AsyncFunction("traceSamples") { () -> String in
-      MainActor.assumeIsolated {
+      FrameUpdates.readOnMain {
         let data = (try? JSONSerialization.data(withJSONObject: SidebarDragTrace.shared.samples)) ?? Data("[]".utf8)
         return String(decoding: data, as: UTF8.self)
       }
     }.runOnQueue(.main)
 
     AsyncFunction("scrollTo") { (windowId: String, y: Double) in
-      MainActor.assumeIsolated {
+      FrameUpdates.readOnMain {
         guard let page = NativeSidebarDrag.page(windowId) else { return }
         SidebarDragController.of(page).scroll(to: y)
         NativeSidebarDrag.refresh(windowId)
@@ -102,6 +102,7 @@ final class NativeSidebarDrag: SidebarDragBridge {
   func drop(windowId: String, ids: [String], drop: JSONValue, sequence: [String]?) {
     if let store = NativeStoreHandle.store {
       _ = try? store.dispatch(Command("dropTabs", [JSONValue(ids), drop]), origin: .native)
+      FrameUpdates.flush()
     }
     if let sequence, sequence.contains(where: { $0.hasPrefix(SidebarLive.prefix) }) {
       send("sidebar.drag.live", [sequence])

@@ -11,7 +11,7 @@ public class FolderPanelModule: Module {
 
     AsyncFunction("show") { (windowId: String, json: String) in
       let sink = FolderPanelSink(self)
-      MainActor.assumeIsolated {
+      FrameUpdates.readOnMain {
         guard let page = NativeSidebar.hosts[windowId]?.view.current, let data = json.data(using: .utf8),
           let request = try? JSONDecoder().decode(FolderPanelRequest.self, from: data)
         else { return }
@@ -22,7 +22,7 @@ public class FolderPanelModule: Module {
     }.runOnQueue(.main)
 
     AsyncFunction("hide") { (windowId: String) in
-      MainActor.assumeIsolated {
+      FrameUpdates.readOnMain {
         guard let page = NativeSidebar.hosts[windowId]?.view.current else { return }
         SidebarFolderPanelHost.hide(on: page)
       }

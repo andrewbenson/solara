@@ -375,20 +375,20 @@ public class WindowShellModule: Module {
     Function("mainOnTop") { (windowId: String) -> Bool in NativeWindowShell.mainOnTop && NativeWindowShell.active(windowId) }
 
     AsyncFunction("setBackdrop") { (windowId: String, json: String) in
-      MainActor.assumeIsolated { NativeWindowShell.setBackdrop(windowId, json) }
+      FrameUpdates.readOnMain { NativeWindowShell.setBackdrop(windowId, json) }
     }.runOnQueue(.main)
 
     AsyncFunction("setSidePanel") { (windowId: String, json: String?) in
-      MainActor.assumeIsolated { NativeWindowShell.host(windowId)?.setSidePanel(json) }
+      FrameUpdates.readOnMain { NativeWindowShell.host(windowId)?.setSidePanel(json) }
     }.runOnQueue(.main)
 
     AsyncFunction("setSheet") { (windowId: String, json: String?) in
-      MainActor.assumeIsolated { NativeSheets.set(windowId, json) }
+      FrameUpdates.readOnMain { NativeSheets.set(windowId, json) }
     }.runOnQueue(.main)
 
     AsyncFunction("setLayout") { (windowId: String, layout: [String: Any]) in
       nonisolated(unsafe) let given = layout
-      MainActor.assumeIsolated {
+      FrameUpdates.readOnMain {
         guard let shell = NativeWindowShell.host(windowId)?.shell else { return }
         if let right = given["peekRight"] as? NSNumber {
           NativeSidebarDock.setReactPeekRight(windowId, CGFloat(right.doubleValue))
@@ -405,16 +405,16 @@ public class WindowShellModule: Module {
     }.runOnQueue(.main)
 
     AsyncFunction("setModal") { (windowId: String, owner: String, shown: Bool) in
-      MainActor.assumeIsolated { NativeWindowShell.host(windowId)?.shell.setModal(owner, shown: shown) }
+      FrameUpdates.readOnMain { NativeWindowShell.host(windowId)?.shell.setModal(owner, shown: shown) }
     }.runOnQueue(.main)
 
     AsyncFunction("accessibilityReach") { (windowId: String) -> [String: Int]? in
-      MainActor.assumeIsolated { NativeWindowShell.host(windowId)?.shell.accessibilityReach() }
+      FrameUpdates.readOnMain { NativeWindowShell.host(windowId)?.shell.accessibilityReach() }
     }.runOnQueue(.main)
 
     AsyncFunction("devCover") { (windowId: String, rect: [Double]?, hidden: Bool?) -> Bool in
       #if DEBUG
-      return MainActor.assumeIsolated {
+      return FrameUpdates.readOnMain {
         guard let host = NativeWindowShell.host(windowId) else { return false }
         let id = NSUserInterfaceItemIdentifier("devCover")
         if let hidden, let cover = host.shell.overlay.subviews.first(where: { $0.identifier == id }) {
@@ -438,7 +438,7 @@ public class WindowShellModule: Module {
 
     AsyncFunction("devRefusePaneRoot") { (tabId: String, refused: Bool) -> Bool in
       #if DEBUG
-      return MainActor.assumeIsolated {
+      return FrameUpdates.readOnMain {
         if refused { NativePaneRoots.refusedTabs.insert(tabId) } else { NativePaneRoots.refusedTabs.remove(tabId) }
         return true
       }
@@ -449,7 +449,7 @@ public class WindowShellModule: Module {
 
     AsyncFunction("devLatePaneTeardown") { (seconds: Double) -> Bool in
       #if DEBUG
-      return MainActor.assumeIsolated {
+      return FrameUpdates.readOnMain {
         NativePaneRoots.lateTeardown = seconds
         return true
       }
@@ -460,7 +460,7 @@ public class WindowShellModule: Module {
 
     AsyncFunction("devHitCost") { (windowId: String, x: Double, y: Double) -> [String: String] in
       #if DEBUG
-      return MainActor.assumeIsolated {
+      return FrameUpdates.readOnMain {
         guard let host = NativeWindowShell.host(windowId), host.shell.window != nil else { return [:] }
         let point = host.shell.convert(NSPoint(x: x, y: y), to: nil)
         let start = DispatchTime.now().uptimeNanoseconds
@@ -480,7 +480,7 @@ public class WindowShellModule: Module {
 
     AsyncFunction("devLayerHitCosts") { (windowId: String, x: Double, y: Double) -> [[String: String]] in
       #if DEBUG
-      return MainActor.assumeIsolated {
+      return FrameUpdates.readOnMain {
         guard let host = NativeWindowShell.host(windowId), host.shell.window != nil else { return [] }
         let shell = host.shell
         let point = NSPoint(x: x, y: y)
@@ -509,7 +509,7 @@ public class WindowShellModule: Module {
     AsyncFunction("devPointerStream") { (windowId: String, points: [[Double]], hz: Double, promise: Promise) in
       #if DEBUG
       nonisolated(unsafe) let reply = promise
-      MainActor.assumeIsolated {
+      FrameUpdates.readOnMain {
         guard let host = NativeWindowShell.host(windowId), let window = host.shell.window else { return reply.resolve([String: Double]()) }
         let shell = host.shell
         let inWindow = points.map { shell.convert(NSPoint(x: $0[0], y: $0[1]), to: nil) }
@@ -541,7 +541,7 @@ public class WindowShellModule: Module {
     AsyncFunction("devPointerLatency") { (windowId: String, x: Double, y: Double, promise: Promise) in
       #if DEBUG
       nonisolated(unsafe) let reply = promise
-      MainActor.assumeIsolated {
+      FrameUpdates.readOnMain {
         guard let host = NativeWindowShell.host(windowId), let window = host.shell.window else { return reply.resolve([String: Any]()) }
         let shell = host.shell
         let start = DispatchTime.now().uptimeNanoseconds
@@ -574,17 +574,17 @@ public class WindowShellModule: Module {
     Function("peekNative") { (windowId: String) -> Bool in NativePeek.enabled && NativeWindowShell.active(windowId) }
 
     AsyncFunction("peekClose") { (windowId: String) -> Bool in
-      MainActor.assumeIsolated { NativePeek.close(windowId) }
+      FrameUpdates.readOnMain { NativePeek.close(windowId) }
     }.runOnQueue(.main)
 
     AsyncFunction("peekExpand") { (windowId: String, promise: Promise) in
       nonisolated(unsafe) let reply = promise
-      MainActor.assumeIsolated { NativePeek.expand(windowId) { reply.resolve(true) } }
+      FrameUpdates.readOnMain { NativePeek.expand(windowId) { reply.resolve(true) } }
     }.runOnQueue(.main)
 
     AsyncFunction("devReactBlockers") { (windowId: String, step: Double) -> String in
       #if DEBUG
-      return MainActor.assumeIsolated {
+      return FrameUpdates.readOnMain {
         guard let host = NativeWindowShell.host(windowId), let data = try? JSONSerialization.data(withJSONObject: host.reactBlockers(step: step)) else { return "null" }
         return String(data: data, encoding: .utf8) ?? "null"
       }
@@ -594,7 +594,7 @@ public class WindowShellModule: Module {
     }.runOnQueue(.main)
 
     AsyncFunction("describe") { (windowId: String) -> String in
-      MainActor.assumeIsolated {
+      FrameUpdates.readOnMain {
         guard let info = NativeWindowShell.describe(windowId), let data = try? JSONSerialization.data(withJSONObject: info) else { return "null" }
         return String(data: data, encoding: .utf8) ?? "null"
       }

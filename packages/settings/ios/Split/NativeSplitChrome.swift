@@ -46,7 +46,19 @@ enum NativeSplitChrome {
     applyTheme(SettingsJS.shared.latestValue(themeTopic))
   }
 
+  private static let renderToken = NSObject()
+  private static var pendingState: BrowserState?
+
   static func commit(_ state: BrowserState) {
+    pendingState = state
+    FrameUpdates.schedule(renderToken) {
+      guard let state = pendingState else { return }
+      pendingState = nil
+      render(state)
+    }
+  }
+
+  private static func render(_ state: BrowserState) {
     for (id, view) in views {
       if view.superview == nil {
         views[id] = nil
@@ -117,6 +129,7 @@ enum NativeSplitChrome {
       if let sizes { options["sizes"] = .array(sizes.map { .number($0) }) }
       if let stack { options["stackSizes"] = .array(stack.map { .number($0) }) }
       _ = try? NativeStoreHandle.store?.dispatch(Command("updateSplit", [.string(splitId), .object(options)]), origin: .native)
+      FrameUpdates.flush()
     }
     view.onToastHidden = { [weak shell = host.shell] id in
       shell?.coverChanged()
@@ -130,6 +143,7 @@ enum NativeSplitChrome {
     zone.onDrop = { tabId, target, side in
       let options: JSONObject = ["tabId": .string(tabId), "anchorTabId": .string(target), "side": .string(side.rawValue)]
       _ = try? NativeStoreHandle.store?.dispatch(Command("openSplitPane", [.string(windowId), .object(options)]), origin: .native)
+      FrameUpdates.flush()
     }
     if let old = dropZones[windowId] { TabDragSession.unregister(old) }
     dropZones[windowId] = zone

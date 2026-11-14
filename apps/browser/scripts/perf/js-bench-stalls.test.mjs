@@ -23,17 +23,18 @@ test('JS benchmark launches Debug against its selected Metro port', async () => 
   assert.ok(args.includes('SOLARA_JS_LOCATION=localhost:8189'));
 });
 
-test('JS scenarios retain their results and publish separate cumulative and delta stalls', async () => {
+test('JS startup and launch retain complete stalls when a checkpoint spans more than three seconds', async () => {
   let report;
   let injected;
   let quitCount = 0;
   let checkpoint = 0;
   const snapshots = [
-    { count: 1, totalMs: 20 }, { count: 2, totalMs: 100 },
-    { count: 2, totalMs: 100 }, { count: 3, totalMs: 120 },
+    { count: 1, totalMs: 20 }, { count: 2, totalMs: 3700 },
+    { count: 2, totalMs: 3700 }, { count: 3, totalMs: 3720 },
+    { count: 3, totalMs: 3720 }, { count: 4, totalMs: 3740 },
   ];
   const context = vm.createContext({
-    flags: { app: '/candidate/Solara.app', bundle: '/candidate/main.jsbundle', label: 'candidate', runs: '1', scenarios: 'startup,idle' },
+    flags: { app: '/candidate/Solara.app', bundle: '/candidate/main.jsbundle', label: 'candidate', runs: '1', scenarios: 'startup,launch,idle' },
     defaultOut: '/scratch', dirname, join, ALL: [], BENCH_REVISION: 7,
     rmSync() {}, mkdirSync() {}, execFileSync: () => '0.3.3', cpSync() {},
     resignForBench: (_app, _clone, options) => assert.ok(options.extra.includes('com.apple.security.cs.allow-dyld-environment-variables')),
@@ -44,7 +45,12 @@ test('JS scenarios retain their results and publish separate cumulative and delt
     launch: async (_app, _data, _port, env) => { injected = env; return { pid: 42, launchedAt: 50 }; },
     evaluate: async (_data, _pid, body) => body.startsWith('return acBench.run') ? { stats: { commits: 2 } } : 3,
     screenLocked: () => false, alive: () => true,
-    stallCheckpoint: async () => ({ schema: 1, ready: true, ioError: false, session: 'one', pid: 42, dropped: 0, startedMs: 60, updatedMs: 100 + checkpoint, completedThroughMs: 100 + checkpoint, ...snapshots[checkpoint++] }),
+    stallCheckpoint: async (_data, _pid, { timeoutMs = 3000 }) => {
+      const snapshot = { schema: 1, ready: true, ioError: false, session: 'one', pid: 42, dropped: 0, startedMs: 60, updatedMs: 100 + checkpoint, completedThroughMs: 100 + checkpoint, ...snapshots[checkpoint++] };
+      if ((checkpoint === 2 || checkpoint === 4) && timeoutMs < 3634) throw Error('watchdog checkpoint missing');
+      if (checkpoint > 4) assert.equal(timeoutMs, 3000);
+      return snapshot;
+    },
     measureStalls, blockerState: async () => null,
     quit: async () => { quitCount++; },
     statSync: () => ({ size: 1 }), existsSync: () => false,
@@ -56,6 +62,11 @@ test('JS scenarios retain their results and publish separate cumulative and delt
   assert.equal(report.results[0].startup.stats.commits, 2);
   assert.equal(report.results[0].stalls.startup.count, 2);
   assert.equal(report.results[0].stalls.startup.fromMs, 60);
+  assert.equal(report.results[0].stalls.startup.status, 'ok');
+  assert.equal(report.results[0].stalls.startup.totalMs, 3700);
+  assert.equal(report.results[0].stalls.launch.status, 'ok');
+  assert.equal(report.results[0].stalls.launch.count, 3);
+  assert.equal(report.results[0].stalls.launch.fromMs, 60);
   assert.equal(report.results[0].stalls.idle.count, 1);
   assert.equal(report.results[0].stalls.idle.totalMs, 20);
   assert.equal(report.stallRevision, 1);

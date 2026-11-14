@@ -420,7 +420,8 @@ async function run() {
           const options = JSON.stringify({ ...(flags.options ? JSON.parse(flags.options) : {}), origin, scenario: name });
           const entry = flags.trace && name !== "startup" ? "traced" : name;
           const lockedBefore = screenLocked();
-          const measured = await measureStalls({ checkpoint: () => stallCheckpoint(dataDir, pid, { alive: () => alive(pid) }), locked: () => screenLocked() || (lockedAtLaunch && (name === "startup" || name === "launch")), cumulative: name === "startup" || name === "launch" }, () => evaluate(dataDir, pid, `return acBench.run(${JSON.stringify(entry)}, ${options});`));
+          const cumulative = name === "startup" || name === "launch";
+          const measured = await measureStalls({ checkpoint: () => stallCheckpoint(dataDir, pid, { timeoutMs: cumulative ? 20_000 : 3000, alive: () => alive(pid) }), locked: () => screenLocked() || (lockedAtLaunch && cumulative), cumulative }, () => evaluate(dataDir, pid, `return acBench.run(${JSON.stringify(entry)}, ${options});`));
           result[name] = measured.value;
           result.stalls[name] = measured.stalls;
           if (lockedBefore || screenLocked()) (result.screenLocked ??= []).push(name);

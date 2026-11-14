@@ -534,10 +534,12 @@ stops, symbolication contention and custom modes outside the common run-loop mod
 No logs or stacks are uploaded by this feature.
 
 Drivers should call `stallCheckpoint(dataDir, pid, { alive })` from `stall-watchdog.mjs`. It writes a unique request,
-waits at most three seconds for the correlated response, and rejects mismatched processes, incomplete files and
-unready collectors. The main observer publishes a marker only after its active span ends naturally; the writer drains
-earlier records before responding. Drivers must serialize checkpoint requests per instance. A hung main thread
-cannot acknowledge a boundary; inspect the local long-span sample log in that case.
+waits at most three seconds by default for the correlated response, and rejects mismatched processes, incomplete files
+and unready collectors. The JS bench gives startup and launch checkpoints twenty seconds, matching its startup
+readiness budget: a genuine multi-second startup stall must end before its complete duration can be acknowledged.
+Other scenario checkpoints retain the three-second deadline. The main observer publishes a marker only after its active
+span ends naturally; the writer drains earlier records before responding. Drivers must serialize checkpoint requests per
+instance. A hung main thread cannot acknowledge a boundary; inspect the local long-span sample log in that case.
 
 JS raw results contain `stalls[scenario] = { status, count, totalMs, fromMs, toMs }`; a failed or ineligible window
 has `status: pending` and `reason`. Startup and launch are overlapping cumulative windows from `startedMs`
@@ -560,13 +562,18 @@ sleep, but epoch correlation is anchored at installation and can drift after sle
 
 `ratchet.json` adds the separate `stalls` tier (`<scenario>.stallCount`, `<scenario>.stallMs`) without named-count
 slack. Initial provisional ceilings use two Debug counter windows per scenario: maximum × 1.1, rounded up.
-Those diagnostic runs were screen-locked, so `stallBaseline.status` remains `pending` and the stall gate fails.
+Those diagnostic runs were screen-locked, so `stallBaseline.status` stayed `pending` and the stall gate failed.
 Two small-session checkpoint windows timed out; their missing counts were excluded rather than treated as zero,
 using a replacement small launch where available. The raw reports retain every attempt. These values are not an
 eligible application baseline. Existing React/Node ceilings retain their values, and older reports without native
 telemetry remain pending.
 
-The later measurement job must collect at least six valid unlocked big-session runs and six small startup/launch
+The baseline was commissioned on `209d9238` from eight unlocked big-session runs and eight complete small-session
+runs. Seven original small runs were retained and the one incomplete run was replaced after fixing the startup
+checkpoint budget. Raw reports and adoption output are in `~/.cache/solara-lead/work/stall35/codex/fix/`; the original
+reports remain in `~/.cache/solara-lead/work/stall35/base/`.
+
+A new measurement job must collect at least six valid unlocked big-session runs and six small startup/launch
 runs on a quiet awake Mac, using the same app/bundle, scenario order and options as the existing ratchet. Use
 `ratchet.mjs baseline --measure-only`, then `ratchet.mjs init <big-report> <small-report> --micro <micro-counts>
 --no-instr --adopt` (or supply the matching instruction count). Commissioning requires every placeholder scenario.

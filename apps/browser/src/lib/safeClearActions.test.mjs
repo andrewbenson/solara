@@ -89,28 +89,20 @@ for (const mode of ["option", "failedLaunches", null]) {
     assert.deepEqual(f.effects, ["clear", "reload"]);
   });
 
-  for (const confirmed of [true, false]) {
-    test(`site controls clear respects confirmation and reaches its effect in mode ${mode}: ${confirmed}`, async () => {
-      const effects = [];
-      const page = {
-        clearSiteData: async () => { effects.push("clear"); return { cookies: 2, storage: true }; },
-        reload: () => effects.push("reload"),
-      };
-      const env = {
-        origin: "https://example.test", host: "example.test", tabId: "tab", tab: { windowId: "window" },
-        confirm: async (options) => { effects.push(["confirm", options.confirmTitle, options.windowId]); return { confirmed }; },
-        webviews: new Map([["tab", page]]),
-        setCleared: (value) => effects.push(["status", value]),
-        nativeSafeMode: () => mode !== null,
-      };
-      const method = declaration(source("apps/browser/src/components/site/SiteControls.tsx"), "const clearData = async () =>");
-      const clearData = new Function(...Object.keys(env), `${method}; return clearData;`)(...Object.values(env));
-      await clearData();
-      assert.deepEqual(effects, confirmed ? [
-        ["confirm", "Clear", "window"], "clear", ["status", "Cleared 2 cookies and site data"], "reload",
-      ] : [["confirm", "Clear", "window"]]);
-    });
-  }
+  test(`native site panel bridge reaches its selected page clear and reload effects in mode ${mode}`, async () => {
+    const f = fixture(mode);
+    const effects = [];
+    const page = { clearSiteData: async () => { effects.push("clear"); return { cookies: 2, storage: true }; }, reload: () => effects.push("reload") };
+    let handlers;
+    f.modules["../../lib/webviews"] = { webviews: new Map([["tab", page]]) };
+    f.modules["../settings/nativeSettings"] = { addNativeSettingsHandlers: (value) => { handlers = value; } };
+    compile("apps/browser/src/components/site/NativeSiteControls.tsx", f.modules);
+    assert.deepEqual(await handlers["site.page"]("tab", "clearSiteData", []), { cookies: 2, storage: true });
+    handlers["site.page"]("tab", "reload", []);
+    assert.deepEqual(effects, ["clear", "reload"]);
+    assert.equal(handlers["site.page"]("gone", "clearSiteData", []), undefined);
+    assert.deepEqual(effects, ["clear", "reload"]);
+  });
 }
 
 

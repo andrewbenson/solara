@@ -314,4 +314,30 @@ import SolaraStore
     #expect(SiteControlsLogic.action(.zoom("anything", -40), context: c) == .none)
     #expect(SiteControlsLogic.action(.zoom("zoom", 0), context: c) == .zoom(0))
   }
+
+  @Test func recoveryContextRendersNativeSiteControlsAndKeepsNativeActions() throws {
+    let fallback = context(["title": "Temporary page", "zoom": 1.5, "keepAwakeSites": []])
+    let input: JSONValue = ["tabId": "t", "fallbackContext": fallback, "dark": true, "theme": ["textPrimary": "#fff"], "extensions": []]
+    let c = try #require(SiteControlsLogic.context(state: nil, tabId: "t", pageEngine: "", input: input))
+    #expect(c["title"] == "Temporary page" && c["zoom"] == 1.5)
+    #expect(c["dark"] == true && c["theme"]?["textPrimary"] == "#fff")
+    let items = try rows(c)
+    #expect(items.first?.tiles?.map(\.id) == ["share", "copy", "find", "cast"])
+    #expect(items.contains { $0.id == "developer" })
+    #expect(items.contains { $0.id == "sleep" })
+    #expect(SiteControlsLogic.action(.toggle("full-url", true), context: c) == .fullURL(true))
+    #expect(SiteControlsLogic.action(.press("sleep", .zero), context: c) == .keepAwake(["example.com"]))
+    #expect(SiteControlsLogic.action(.zoom("zoom", -1), context: c) == .zoom(-1))
+  }
+
+  @Test func nativeContextNeverFallsBackForMissingTabsAndRejectsMismatchedRecoveryIdentity() throws {
+    let input: JSONValue = ["tabId": "t", "fallbackContext": context()]
+    #expect(SiteControlsLogic.context(state: BrowserState(), tabId: "t", pageEngine: "chromium", input: input) == nil)
+    #expect(SiteControlsLogic.context(state: nil, tabId: "other", pageEngine: "", input: input) == nil)
+    var state = BrowserState()
+    state.tabs["t"] = Tab(id: "t", windowId: "native-window", profileId: "default", url: "https://native.test", now: 0)
+    let c = try #require(SiteControlsLogic.context(state: state, tabId: "t", pageEngine: "webkit", input: input))
+    #expect(c["windowId"] == "native-window" && c["url"] == "https://native.test" && c["pageEngine"] == "webkit")
+  }
+
 }

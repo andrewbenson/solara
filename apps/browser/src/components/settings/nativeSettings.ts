@@ -21,6 +21,7 @@ import { openImport, openSettings } from "./windows";
 const handlers: Record<string, SettingsHandler> = {};
 const publishers: (() => void)[] = [];
 let started = false;
+let bridgeStarted = false;
 
 export function addNativeSettingsHandlers(added: Record<string, SettingsHandler>, publish?: () => void) {
   Object.assign(handlers, added);
@@ -75,24 +76,27 @@ function updateChecksNote() {
 }
 
 export function startNativeSettings(): boolean {
+  if (!bridgeStarted) {
+    bridgeStarted = true;
+    Object.assign(
+      handlers,
+      coreHandlers,
+      privacyHandlers,
+      passwordsHandlers,
+      autofillHandlers,
+      extensionsHandlers,
+      shortcutsHandlers,
+      profilesHandlers,
+      syncHandlers,
+      liveHandlers,
+      importHandlers,
+      onboardingHandlers,
+    );
+    serveNativeSettings(handlers);
+  }
   if (started) return true;
   if (!nativeSettingsAvailable()) return false;
   started = true;
-  Object.assign(
-    handlers,
-    coreHandlers,
-    privacyHandlers,
-    passwordsHandlers,
-    autofillHandlers,
-    extensionsHandlers,
-    shortcutsHandlers,
-    profilesHandlers,
-    syncHandlers,
-    liveHandlers,
-    importHandlers,
-    onboardingHandlers,
-  );
-  serveNativeSettings(handlers);
   let focusProfile: string | null | undefined;
   const publishFocus = () => {
     const profile = extensionsProfileId(null);

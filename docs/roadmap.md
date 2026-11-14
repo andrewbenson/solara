@@ -192,11 +192,13 @@ then it's switched off, and only then is it deleted. Settings, onboarding, Impor
 pages, the link bubble and the store are already native (RN removal 01–08). Each milestone ships as its own release;
 feature releases can fit between them. New UI is built in Swift from now on, never in React Native.
 
-Progress (from [native/rn-inventory.md](native/rn-inventory.md)): on 2026-11-14, 402 files and
-55,311 lines of TypeScript are left in apps/browser/src: 10,920 draw, 26,706 decide, 13,369 hold data and 4,316 are
-glue. The cleanup removed five unused source files (223 lines) and one obsolete test (16 lines); three app-dead
-files remain to preserve live sync coverage and a native parity fixture. React Native starts from 3 entry points
-(the main window, panes, and the version-mismatch screen), with one root per window plus a root for each visible pane.
+Progress (from [native/rn-inventory.md](native/rn-inventory.md)): recounted on 2026-11-14 after the
+merged layout-controls cutover, 401 files and 52,256 lines of TypeScript remain in apps/browser/src:
+6,130 draw, 27,969 decide, 13,406 hold data and 4,751 are glue. Shared layout controls draw nothing;
+their existing native surfaces host the consumers, while larger retained RN surfaces are listed in the inventory.
+Source counts include retained fallback and unconsumed exports; they are not measured live pixel counts.
+React Native still registers main and pane module names, with one main root per browser/Little Solara window
+and a pane root per shown overlay; the API-skew screen reuses main.
 
 ## 0.4.0: React Native draws nothing
 
@@ -206,7 +208,7 @@ Done when no React Native view appears on screen; React Native only arranges nat
 |---|---|
 | Inventory every file left in apps/browser/src by what it does (draws, decides, holds data, glue) and the milestone that removes it: docs/native/rn-inventory.md | landed b1a78d3d |
 | The New Tab page's remaining React Native parts: Personalize, the feedback check-in and the release postcard | native drawing wired: Personalize, the due feedback banner and release postcard/page use Swift hosts; JS state, actions and feeds remain for later milestones |
-| Native site controls and prompts (permissions, autofill, translate, zoom, developer mode) | in progress: selection bar now hosts the existing native view in Little Solara, Peek and no-shell windows; JS selection/search adapters remain |
+| Native site controls and prompts (permissions, autofill, translate, zoom, developer mode) | in progress: existing native prompt/chooser/site/zoom bodies now serve every former shared-control consumer; RN fallback bodies, translation rows and developer button/URL-field bodies removed. Selection bar is native in Little Solara, Peek and no-shell windows. JS actions/feeds and retained ToolbarBackdrop developer stripes remain; unit/typecheck/Debug, hidden consumer and refused-session drivers, AppKit input guards, and matched control captures pass; real VoiceOver/hover feel remains an owner check |
 | Native extensions toolbar, overlays and side panel | in progress: popup frame (ea03e788, ee1d3c67), side panel card and container, and native dialog sheet for install, permission and pin dialogs; extension menus, the toolbar model and Little Solara popups next |
 | Native media: sidebar player, hover player, cast and share pickers, tab badges | in progress (tab badges, share bar) |
 | Native peek, Little Solara, calendar and meeting cards | in progress: crash/unresponsive controls now host native SadTabView in Little Solara and other inline consumers; small-window card fill/page hosting remains |

@@ -10,13 +10,16 @@ import { copyPageUrl } from "./selection";
 import { shareTab } from "./share";
 import type { PageEngine, SecurityInfo } from "@solara/solaracore";
 import type { Tab } from "../../store/types";
+import type { Settings } from "../../store/settings";
+import { builtInEngine, recommendedEngineFor, ruleFor, tabEngine } from "../../store/engines";
+import { useShallow } from "zustand/react/shallow";
 import { NativeSitePanelView, type NativeSitePanelEvent } from "@solara/settings";
 import { translation } from "@solara/shell";
 import { useEffect, useRef, useState } from "react";
 import { StyleSheet } from "react-native";
 import { useTheme } from "../../lib/theme";
-import { useBrowser } from "../../store/browser";
-import { isIncognitoProfile } from "../../store/model";
+import { useBrowser, type BrowserState } from "../../store/browser";
+import { engineProfile, isIncognitoProfile, tabLabel } from "../../store/model";
 import { activateExtension, openWebStore, showExtensionMenu, useWindowExtensions } from "../extensions/state";
 import { useThemeTokens } from "../omnibox/nativeBar";
 import { siteControlsMounted } from "../overlayGates";
@@ -140,8 +143,9 @@ export function NativeSiteControls({ tabId, open, right, left, top, onClosed }: 
     }
     expanded.push({ kind: "separator" });
   }
+  const fallbackContext = useBrowser(useShallow((s) => siteControlsFallbackContext(s, tabId)));
   const request = JSON.stringify({
-    tabId, open, top, right, left, dark: !!theme.dark, theme: tokens,
+    tabId, fallbackContext, open, top, right, left, dark: !!theme.dark, theme: tokens,
     video, pip, security, blocked, camera: !!access?.camera, microphone: !!access?.microphone, playingAudio,
     extensions: contributed.extensions, translate: contributed.translate,
   });
@@ -156,7 +160,30 @@ export function NativeSiteControls({ tabId, open, right, left, top, onClosed }: 
   return <NativeSitePanelView style={StyleSheet.absoluteFill} request={request} onSitePanelDismiss={onClose} onSitePanelClosed={onClosed} onSitePanelEvent={(e) => onEvent(e.nativeEvent)} />;
 }
 
+function siteControlsFallbackContext(s: BrowserState, tabId: string) {
+  const tab = s.tabs[tabId];
+  if (!tab) return null;
+  return {
+    tabId: tab.id, windowId: tab.windowId, url: tab.url, title: tab.title, customTitle: tab.customTitle ?? null,
+    label: tabLabel(tab), favicon: tab.favicon ?? null, profileId: tab.profileId, profile: engineProfile(tab.profileId),
+    privatePage: isIncognitoProfile(tab.profileId), pageEngine: tabEngine(s, tabId), muted: tab.muted, zoom: tab.zoom,
+    showFullUrl: s.settings.showFullUrl, developerMode: s.settings.developerMode, sleepInactiveTabs: s.settings.sleepInactiveTabs,
+    keepAwakeSites: s.settings.keepAwakeSites, engineRule: ruleFor(s, tab.url) ?? null,
+    streamingSite: builtInEngine(s, tab.url) === "webkit", recommendedEngine: recommendedEngineFor(s, tab.url),
+  };
+}
+
 addNativeSettingsHandlers({
+  "site.settings": (tabId: string, url: string, changed: Partial<Pick<Settings, "showFullUrl" | "developerMode" | "keepAwakeSites">>) => {
+    const s = useBrowser.getState();
+    if (s.tabs[tabId]?.url !== url) return;
+    s.updateSettings(changed);
+  },
+  "site.muted": (tabId: string, url: string, muted: boolean) => {
+    const s = useBrowser.getState();
+    if (s.tabs[tabId]?.url !== url) return;
+    s.updateTab(tabId, { muted });
+  },
   "site.security": (tabId: string, security: SecurityInfo) => patchPage(tabId, { security }),
   "site.page": (tabId: string, method: string, args: unknown[]) => {
     const page = webviews.get(tabId);

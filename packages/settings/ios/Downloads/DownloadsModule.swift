@@ -80,7 +80,7 @@ enum DownloadsHoverShifts {
     for root in shown.allObjects where root.window != nil {
       hosts += 1
       root.layoutSubtreeIfNeeded()
-      if locked { for view in descendants(of: root) { view.updateTrackingAreas() } }
+      for view in descendants(of: root) { view.updateTrackingAreas() }
       for target in descendants(of: root) where target.trackingAreas.contains(where: { $0.owner === target }) {
         guard let enter = event(.mouseEntered, in: target), let exit = event(.mouseExited, in: target) else { continue }
         hovered += 1

@@ -60,9 +60,18 @@ public enum SiteControlsLogic {
     "peacocktv.com", "paramountplus.com", "crunchyroll.com", "hotstar.com", "jiohotstar.com",
   ]
 
-  public static func context(state: BrowserState, tabId: String, pageEngine: String, input: JSONValue) -> JSONValue? {
+  public static func context(state: BrowserState?, tabId: String, pageEngine: String, input: JSONValue) -> JSONValue? {
+    guard let state else {
+      guard var c = input["fallbackContext"]?.object, c["tabId"]?.string == tabId,
+        c["windowId"]?.string?.isEmpty == false, c["url"]?.string != nil, c["profileId"]?.string != nil,
+        ["chromium", "webkit"].contains(c["pageEngine"]?.string ?? "")
+      else { return nil }
+      for (key, value) in input.object ?? [:] where key != "fallbackContext" { c[key] = value }
+      return .object(c)
+    }
     guard let tab = state.tabs[tabId] else { return nil }
     var c = input.object ?? [:]
+    c.removeValue(forKey: "fallbackContext")
     c["tabId"] = .string(tab.id)
     c["windowId"] = .string(tab.windowId)
     c["url"] = .string(tab.url)

@@ -1,8 +1,7 @@
-import { nativePagesAvailable, nativeToolbarAvailable, NativePromptView, type NativePromptEvent } from "@solara/settings";
-import { createContext, useContext, useState, type ComponentProps, type ReactNode } from "react";
+import { NativePromptView, type NativePromptEvent } from "@solara/settings";
+import { createContext, useContext, useState, type ReactNode } from "react";
 import { StyleSheet, View } from "react-native";
 import { useTheme } from "../../lib/theme";
-import { Popover } from "../layout/controls";
 import { useFormColors } from "../settings/controls";
 
 export type PromptPlacement = { width: number; top: number; left: number | null; right: number | null; modal: boolean };
@@ -11,10 +10,15 @@ const Placement = createContext<{ placement: PromptPlacement; onDismiss?: () => 
 
 export const usePromptPlacement = () => useContext(Placement);
 
-export const nativePromptFrames = () => nativeToolbarAvailable() && nativePagesAvailable();
-
-export function PromptPopover(props: ComponentProps<typeof Popover> & { children: ReactNode }) {
-  if (!nativePromptFrames()) return <Popover {...props} />;
+export function PromptPopover(props: {
+  width: number;
+  top: number;
+  left?: number;
+  right?: number;
+  modal?: boolean;
+  onDismiss?: () => void;
+  children: ReactNode;
+}) {
   const placement = { width: props.width, top: props.top, left: props.left ?? null, right: props.right ?? null, modal: props.modal ?? true };
   return <Placement.Provider value={{ placement, onDismiss: props.onDismiss }}>{props.children}</Placement.Provider>;
 }

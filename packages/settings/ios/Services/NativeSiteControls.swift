@@ -114,12 +114,13 @@ final class NativeSiteMenu {
   }
 
   func refresh() {
-    guard !closed, let store = NativeStoreHandle.store, let tabId = input["tabId"]?.string,
-      var c = SiteControlsLogic.context(state: store.state, tabId: tabId, pageEngine: store.pageEngine(tabId, in: store.state), input: input)?.object
+    let store = NativeStoreHandle.store
+    guard !closed, let tabId = input["tabId"]?.string,
+      var c = SiteControlsLogic.context(state: store?.state, tabId: tabId, pageEngine: store.map { $0.pageEngine(tabId, in: $0.state) } ?? "", input: input)?.object
     else { return }
     let windowId = c["windowId"]?.string ?? ""
-    if let provider = NativeSiteControls.shared.extensions { c["extensions"] = provider.rows(tabId: tabId, windowId: windowId) }
-    if let provider = NativeSiteControls.shared.translate { c["translate"] = provider.rows(tabId: tabId, windowId: windowId) }
+    if store != nil, let provider = NativeSiteControls.shared.extensions { c["extensions"] = provider.rows(tabId: tabId, windowId: windowId) }
+    if store != nil, let provider = NativeSiteControls.shared.translate { c["translate"] = provider.rows(tabId: tabId, windowId: windowId) }
     let next = JSONValue.object(c)
     guard next != context else { return }
     context = next
@@ -218,20 +219,20 @@ final class NativeSiteMenu {
     let windowId = context["windowId"]?.string ?? ""
     switch SiteControlsLogic.action(event, context: context) {
     case .contribution:
-      let provider = id.hasPrefix("ext:") ? NativeSiteControls.shared.extensions : NativeSiteControls.shared.translate
+      let provider = NativeStoreHandle.store == nil ? nil : id.hasPrefix("ext:") ? NativeSiteControls.shared.extensions : NativeSiteControls.shared.translate
       if provider?.handle(event, tabId: tabId, windowId: windowId, close: { [weak self] in self?.dismiss() }) != true { onContribution?(event) }
     case .zoom(let step):
       Task { _ = await page("zoomStep", [step]) }
     case .fullURL(let on):
-      NativeSettingsHandle.model?.update(["showFullUrl": .bool(on)])
+      updateSettings(["showFullUrl": .bool(on)])
     case .expand(let section):
       expanded = expanded == section ? nil : section
       render()
     case .developer(let changed):
-      NativeSettingsHandle.model?.update(["developerMode": changed])
+      updateSettings(["developerMode": changed])
     case .blocker: Task { await toggleBlocker() }
     case .keepAwake(let sites):
-      NativeSettingsHandle.model?.update([KeepAwakeSites.settingKey: sites])
+      updateSettings([KeepAwakeSites.settingKey: sites])
     case .sleepSettings(let detail):
       let captured = context
       dismiss()
@@ -246,6 +247,22 @@ final class NativeSiteMenu {
       dismiss()
       Task { await shared(action, ["rect": [rect.minX, rect.minY, rect.width, rect.height], "clickAt": clickAt], captured: captured) }
     case .none: break
+    }
+  }
+
+  private func matches(_ captured: JSONValue) -> Bool {
+    !closed && ["tabId", "windowId", "url", "profile", "pageEngine"].allSatisfy { context[$0] == captured[$0] }
+  }
+
+  private func updateSettings(_ changed: JSONObject) {
+    if let model = NativeSettingsHandle.model {
+      model.update(changed)
+      return
+    }
+    let captured = context
+    Task { [weak self] in
+      guard let self, self.matches(captured) else { return }
+      _ = await SettingsAdapters.js("site.settings", captured["tabId"]?.string ?? "", captured["url"]?.string ?? "", JSONValue.object(changed).foundation)
     }
   }
 
@@ -267,10 +284,16 @@ final class NativeSiteMenu {
       } else {
         refreshed = await EngineCalls.result({ done in SolaraCoreServices.siteSettings(profile: profile, origin: origin, completion: done) }, NativeSiteControls.json)
       }
+      guard matches(captured) else { return }
       settings = refreshed
       render()
-      if type == "sound", let store = NativeStoreHandle.store {
-        _ = try? store.dispatch(Command("updateTab", [.string(captured["tabId"]?.string ?? ""), ["muted": .bool(choice == "block")]]), origin: .native)
+      if type == "sound" {
+        if let store = NativeStoreHandle.store {
+          _ = try? store.dispatch(Command("updateTab", [.string(captured["tabId"]?.string ?? ""), ["muted": .bool(choice == "block")]]), origin: .native)
+        } else {
+          _ = await SettingsAdapters.js("site.muted", captured["tabId"]?.string ?? "", captured["url"]?.string ?? "", choice == "block")
+        }
+        guard matches(captured) else { return }
         _ = await page("setMuted", [choice == "block"])
       }
     }

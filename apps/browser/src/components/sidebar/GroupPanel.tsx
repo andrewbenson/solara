@@ -1,16 +1,16 @@
-import { discardKeyResponder, FadeLabel, restoreKeyResponder, saveKeyResponder, Symbol } from "@solara/shell";
+import { discardKeyResponder, FadeLabel, restoreKeyResponder, saveKeyResponder, Surface, Symbol, VisualEffect, type SurfaceProps } from "@solara/shell";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { useShallow } from "zustand/react/shallow";
 import { everySlowly } from "../../lib/slowTimers";
-import { useTheme } from "../../lib/theme";
+import { hex, useTheme } from "../../lib/theme";
 import { ago } from "../../lib/timeAgo";
 import { webviews } from "../../lib/webviews";
 import { useBrowser } from "../../store/browser";
 import { activeTabId } from "../../store/model";
 import { sharedTabsIn, sharesTabs } from "../../store/tabShare";
 import type { Tab } from "../../store/types";
-import { PANEL, PopoverSeparator, PopoverSurface, popoverRowFill } from "../layout/controls";
+import { PANEL } from "../layout/controls";
 import { focusHeroBar } from "../omnibox/barState";
 import { clickTab, tabTitle } from "./actions";
 import { byRecentUse, groupTabIds, matchingRows, type GroupPanelTab } from "./groupPanelRows";
@@ -226,4 +226,32 @@ function PanelRow({ row, now, selected, onHover, onPress }: { row: Row; now: num
       )}
     </Pressable>
   );
+}
+
+function PopoverSurface({ children, ...props }: SurfaceProps) {
+  const theme = useTheme();
+  return (
+    <Surface
+      {...props}
+      fill={hex(theme.dark ? "rgba(38,36,37,0.94)" : "rgba(252,251,252,0.96)")}
+      cornerRadius={PANEL.radius}
+      borderColor={hex(theme.dark ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.12)")}
+      borderWidth={0.5}
+      shadowColor="#000000"
+      shadowOpacity={theme.dark ? 0.45 : 0.16}
+      shadowRadius={18}
+      shadowOffset={[0, 8]}
+    >
+      <VisualEffect material="menu" cornerRadius={PANEL.radius} style={StyleSheet.absoluteFill} />
+      <View style={{ ...StyleSheet.absoluteFillObject, borderRadius: PANEL.radius, backgroundColor: theme.dark ? "rgba(38,36,37,0.72)" : "rgba(252,251,252,0.7)" }} />
+      {children}
+    </Surface>
+  );
+}
+
+const popoverRowFill = (dark: boolean, pressed = false) => (dark ? `rgba(255,255,255,${pressed ? 0.12 : 0.07})` : `rgba(0,0,0,${pressed ? 0.1 : 0.06})`);
+
+function PopoverSeparator() {
+  const theme = useTheme();
+  return <View style={{ height: StyleSheet.hairlineWidth, marginVertical: PANEL.separatorGap, marginHorizontal: PANEL.inset, backgroundColor: theme.dark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.1)" }} />;
 }

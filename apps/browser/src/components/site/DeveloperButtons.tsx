@@ -1,42 +1,7 @@
 import { showMenu } from "@solara/shell";
-import { memo } from "react";
-import { StyleSheet, View } from "react-native";
 import { withLivePage } from "../../lib/livePage";
 import { webviews } from "../../lib/webviews";
-import { ToolbarButton } from "../layout/controls";
-import type { ToolbarPalette } from "../layout/toolbarColors";
 import { developerReloadFor, setDeveloperReload } from "./developerMode";
-
-const PANELS = [
-  { panel: "console", icon: "terminal", tooltip: "Toggle Console" },
-  { panel: "network", icon: "network", tooltip: "Toggle Network Panel" },
-  { panel: "elements", icon: "scope", tooltip: "Inspect Element" },
-] as const;
-
-export const DeveloperButtons = memo(function DeveloperButtons({ tabId, palette, onFocus }: { tabId: string; palette: ToolbarPalette; onFocus: () => void }) {
-  const divider = <View style={{ width: StyleSheet.hairlineWidth * 2, height: 16, marginHorizontal: 5, backgroundColor: palette.divider }} />;
-  return (
-    <>
-      {divider}
-      {PANELS.map(({ panel, icon, tooltip }) => (
-        <ToolbarButton
-          key={panel}
-          palette={palette}
-          icon={icon}
-          size={13}
-          box={24}
-          radius={6}
-          onPress={() => {
-            onFocus();
-            void webviews.get(tabId)?.showDevTools(`toggle:${panel}`);
-          }}
-          tooltip={tooltip}
-        />
-      ))}
-      {divider}
-    </>
-  );
-});
 
 export function developerReload(tabId: string) {
   const force = developerReloadFor(tabId) === "forceReload";

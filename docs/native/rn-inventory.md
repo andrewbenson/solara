@@ -1,14 +1,14 @@
 # React Native removal inventory
 
 Release-path findings: `209d9238fde4ce41ee612fe2d99851ab69a177f3` on main (0.3.4), audited 2026-11-13.
-Source counts and deletion audit: working tree based on `14e7f23a`, recounted 2026-11-14 after the Downloads, toolbar backdrop and no-shell group ports.
+Source counts and deletion audit: HEAD `16842518b5dd59bbf148713b51e3f284c38e5655`, recounted 2026-11-14 after the extensions, Downloads, toolbar backdrop and no-shell group ports.
 
-Scope: 401 non-test `.ts`/`.tsx` files under `apps/browser/src`. Total: 52,044 lines.
+Scope: 401 non-test `.ts`/`.tsx` files under `apps/browser/src`. Total: 51,881 lines.
 Excluded: `*.test.*` and 8 test doubles in `src/test-native/` (1,044 lines).
-Suffix filtering alone finds 409 files and 53,088 lines. The test doubles explain the difference.
+Suffix filtering alone finds 409 files and 52,925 lines. The test doubles explain the difference.
 The two `sync/fixtures/pinned-v0.2.*.ts` files remain included. They do not use test filenames.
 Counts use `wc -l` on every included file. They include blank lines and declarations.
-Every table below is derived from the current appendix rows, with stale line counts refreshed against the files.
+Source-budget tables are derived from the appendix; every included path and line count was checked against the files.
 The inventory is a source audit. Targeted unit and hidden-instance checks do not validate unrelated rows.
 
 Each file has one primary column. Mixed files name secondary columns in the appendix.
@@ -26,11 +26,11 @@ Theme resolution, ranking, geometry, and gesture thresholds count as behavior. T
 
 | Column | Primary responsibility | Files | Lines |
 | --- | --- | ---: | ---: |
-| a | Draws RN pixels | 23 | 5,376 |
-| b | Decides behavior | 233 | 28,441 |
+| a | Draws RN pixels | 22 | 5,003 |
+| b | Decides behavior | 234 | 28,651 |
 | c | Holds data | 75 | 13,406 |
 | d | Glue | 70 | 4,821 |
-| Total | All included files | 401 | 52,044 |
+| Total | All included files | 401 | 51,881 |
 
 ## Findings that set the order
 
@@ -97,7 +97,7 @@ The NTP adapters feed native Personalize, check-in and release-note hosts; trans
 | Store | 49 | 0 | 5,579 | 2,920 | 176 | 8,675 |
 | Sync | 18 | 0 | 87 | 6,050 | 1 | 6,138 |
 | Lib | 76 | 0 | 6,178 | 2,060 | 323 | 8,561 |
-| Total | 401 | 5,376 | 28,441 | 13,406 | 4,821 | 52,044 |
+| Total | 401 | 5,003 | 28,651 | 13,406 | 4,821 | 51,881 |
 
 ## 0.4.0: components still drawing on native-default paths
 
@@ -315,11 +315,11 @@ Secondary work in a file moves with its own column: drawing inside a b or d file
 
 | Version | Leaves | Files | Lines | Largest path groups (lines in that column) |
 | --- | --- | ---: | ---: | --- |
-| 0.4.0: React Native draws nothing | a, drawing | 23 | 5,376 | Top strip 1,755; Sidebar 675; Toolbar 500; Split panes 461; Extensions 373 |
-| 0.5.0: React Native decides nothing | b, behaviour | 233 | 28,441 | Lib 6,178; Store 5,579; Sidebar 2,459; Window layout 1,805; Site and prompts 1,761 |
+| 0.4.0: React Native draws nothing | a, drawing | 22 | 5,003 | Top strip 1,755; Sidebar 675; Toolbar 500; Split panes 461; Settings 311 |
+| 0.5.0: React Native decides nothing | b, behaviour | 234 | 28,651 | Lib 6,178; Store 5,579; Sidebar 2,459; Window layout 1,805; Site and prompts 1,761 |
 | 0.6.0: the data layer is native | c, data | 75 | 13,406 | Sync 6,050; Store 2,920; Lib 2,060; Settings 693; Onboarding 501 |
 | 0.7.0: React Native off by default | d, glue, once nothing needs a root | 70 | 4,821 | Sidebar 1,147; Top strip 446; Toolbar 390; Lib 323; Page hosting 293 |
-| 1.0.0: React Native deleted | everything retained, plus the RN host, Expo modules, Metro, pods and patches outside apps/browser/src | 401 | 52,044 | see the 1.0.0 row below |
+| 1.0.0: React Native deleted | everything retained, plus the RN host, Expo modules, Metro, pods and patches outside apps/browser/src | 401 | 51,881 | see the 1.0.0 row below |
 
 React Native roots left today: 3 AppRegistry registrations (`main`, `pane`, and the API-skew screen, which reuses `main`),
 so 2 module names; one `main` root per browser or Little Solara window, plus a `pane` root for each pane whose overlay

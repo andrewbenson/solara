@@ -35,7 +35,7 @@ else
       && grep -q '^Authority=Developer ID Application:' <<<"$(codesign -dvv "$new" 2>&1)" \
       || fail "the 0.0.x migration target must have a valid Developer ID signature"
   fi
-  identity="$(security find-identity -v -p codesigning | awk '/"Apple Development/ { print $2; exit }')"
+  identity="$(security find-identity -v -p codesigning | awk '/"Apple Development/ && !/CSSMERR_|REVOKED|EXPIRED/ { print $2; exit }')"
   [ -n "$identity" ] || fail "no Apple Development identity to sign the test copies with"
 fi
 if [ "${SOLARA_RELEASE_UNSIGNED:-0}" = 1 ] || [ "$migration" = 1 ]; then

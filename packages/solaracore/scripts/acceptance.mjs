@@ -4690,6 +4690,9 @@ try {
         await act("fakeActiveClicks");
         await evalApp(`return ac.webviews.get("${tab}").focus()`);
         let opened = await open();
+        const captured = await evalApp(`return ac.shell.devSnapshotWindow(${JSON.stringify(mainWindow)}, ${JSON.stringify(join(data, "extension-popup-native-frame.png"))})`);
+        if (!captured) throw new Error("native extension popup capture failed");
+        writeFileSync(join(data, "extension-popup-native-frame.json"), JSON.stringify(opened.shown, null, 2));
         const resize = async (width, height) => {
           await cdp(opened.target, "Runtime.evaluate", { expression: `document.body.textContent = ''; document.body.style.cssText = 'margin:0;width:${width}px;height:${height}px'` });
           return until(`popup preferred size ${width}×${height}`, async () => {

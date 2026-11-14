@@ -31,6 +31,65 @@ final class ToolbarButtonView: NSView {
   override var isFlipped: Bool { true }
   override var mouseDownCanMoveWindow: Bool { false }
 
+  private var extensionAction: Bool { state.id.hasPrefix("ext:") || state.id == "ext-overflow" || state.id == "ext-cast" }
+
+  override var acceptsFirstResponder: Bool { extensionAction && enabled && !isHiddenOrHasHiddenAncestor }
+  override var needsPanelToBecomeKey: Bool { extensionAction ? false : super.needsPanelToBecomeKey }
+
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool { extensionAction && enabled }
+
+  override var canBecomeKeyView: Bool { extensionAction ? acceptsFirstResponder && super.canBecomeKeyView : super.canBecomeKeyView }
+  override var focusRingMaskBounds: NSRect { extensionAction ? plate.frame : super.focusRingMaskBounds }
+
+  override func drawFocusRingMask() {
+    guard extensionAction else { return super.drawFocusRingMask() }
+    NSColor.black.setFill()
+    NSBezierPath(roundedRect: plate.frame, xRadius: CGFloat(state.radius ?? 7), yRadius: CGFloat(state.radius ?? 7)).fill()
+  }
+
+  override func becomeFirstResponder() -> Bool {
+    guard extensionAction else { return super.becomeFirstResponder() }
+    guard acceptsFirstResponder else { return false }
+    needsDisplay = true
+    noteFocusRingMaskChanged()
+    return true
+  }
+
+  override func resignFirstResponder() -> Bool {
+    guard extensionAction else { return super.resignFirstResponder() }
+    needsDisplay = true
+    noteFocusRingMaskChanged()
+    return true
+  }
+
+  override func accessibilityPerformPress() -> Bool {
+    guard extensionAction, enabled, !isHiddenOrHasHiddenAncestor else { return false }
+    onClick(ToolbarClick(id: state.id, kind: .press))
+    return true
+  }
+
+  override func accessibilityPerformShowMenu() -> Bool {
+    guard extensionAction, enabled, state.menu == true, !isHiddenOrHasHiddenAncestor else { return false }
+    onClick(ToolbarClick(id: state.id, kind: .menu))
+    return true
+  }
+
+  override func keyDown(with event: NSEvent) {
+    guard extensionAction, enabled else { return super.keyDown(with: event) }
+    let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+    if event.keyCode == 48, modifiers.isEmpty || modifiers == .shift {
+      if modifiers == .shift { window?.selectPreviousKeyView(self) } else { window?.selectNextKeyView(self) }
+      return
+    }
+    if event.keyCode == 109, modifiers == .shift, accessibilityPerformShowMenu() { return }
+    if event.keyCode == 110, modifiers.isEmpty, accessibilityPerformShowMenu() { return }
+    if [36, 49, 76].contains(event.keyCode), modifiers.isEmpty {
+      if !event.isARepeat { _ = accessibilityPerformPress() }
+      return
+    }
+    super.keyDown(with: event)
+  }
+
   var box: CGFloat { CGFloat(state.box ?? 30) }
 
   var width: CGFloat {
@@ -99,6 +158,11 @@ final class ToolbarButtonView: NSView {
   override func mouseDown(with event: NSEvent) {
     guard isHitBy(event) else { return super.mouseDown(with: event) }
     guard enabled else { return }
+    if extensionAction, state.menu == true, event.modifierFlags.contains(.control) {
+      pressed = false
+      onClick(ToolbarClick(id: state.id, kind: .menu))
+      return
+    }
     pressed = true
     longPressFired = false
     apply()
@@ -141,6 +205,7 @@ final class ToolbarButtonView: NSView {
   }
 
   func apply() {
+    focusRingType = extensionAction ? .exterior : .default
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     let b = box

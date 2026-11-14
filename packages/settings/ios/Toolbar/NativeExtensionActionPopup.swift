@@ -93,7 +93,7 @@ enum NativeExtensionActionPopup {
       return false
     }
     if let state = NativeStoreHandle.store?.state {
-      guard let model = state.windows[intent.windowId], !model.isSmall,
+      guard state.windows[intent.windowId] != nil,
         (state.peeks[intent.windowId]?.tabId ?? state.activeTabId(intent.windowId)) == intent.tabId else {
         cancelPendingOmnibox(windowId: intent.windowId)
         return false
@@ -249,7 +249,7 @@ final class ExtensionActionPopupHost: NSObject, SolaraCoreWebViewDelegate {
 
   func open() {
     guard let root, let window else { return NativeExtensionActionPopup.close() }
-    let container = NativeWindowShell.overlay(intent.windowId) ?? root
+    let container = NativeLittleSolara.host(intent.windowId)?.shell.view(in: .react) ?? NativeWindowShell.overlay(intent.windowId) ?? root
     self.container = container
     surface.onResize = { [weak self] in self?.place() }
     surface.autoresizingMask = [.width, .height]
@@ -310,7 +310,11 @@ final class ExtensionActionPopupHost: NSObject, SolaraCoreWebViewDelegate {
 
   private func place() {
     guard let root, let container else { return }
-    if let window, let liveAnchor = NativeToolbarHostView.extensionAnchor(window: window, tabId: intent.tabId, extensionId: intent.extensionId) {
+    if NativeStoreHandle.store?.state.windows[intent.windowId]?.isSmall == true {
+      anchor = CGRect(x: root.bounds.width - SmallBarMetrics.inset - SmallBarMetrics.button,
+        y: (SmallBarMetrics.height - SmallBarMetrics.button) / 2,
+        width: SmallBarMetrics.button, height: SmallBarMetrics.button)
+    } else if let window, let liveAnchor = NativeToolbarHostView.extensionAnchor(window: window, tabId: intent.tabId, extensionId: intent.extensionId) {
       anchor = liveAnchor
     }
     let bounds = CGRect(origin: .zero, size: root.bounds.size)
@@ -343,7 +347,7 @@ final class ExtensionActionPopupHost: NSObject, SolaraCoreWebViewDelegate {
     var view: NSView? = hit
     while let current = view {
       if current is SolaraCoreWebView || current is NativePageView || current is NewTabHeroView { return .page(hit) }
-      if current is ToolbarView || current is SidebarAddressBarView { return .chrome }
+      if current is ToolbarView || current is SidebarAddressBarView || current is SmallBarView { return .chrome }
       if current.responds(to: Selector(("nativeID"))), current.value(forKey: "nativeID") as? String == "solara-page-content" { return .page(hit) }
       view = current.superview
     }

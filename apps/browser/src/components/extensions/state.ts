@@ -213,7 +213,7 @@ export async function activateExtension(
 ) {
   const current = pendingPopup ?? useExtensions.getState().popup;
   if (current?.windowId === windowId && current.extensionId === ext.id) return closeExtensionPopup();
-  if (!useBrowser.getState().windows[windowId] || useBrowser.getState().windows[windowId]?.kind === "small") return;
+  if (!useBrowser.getState().windows[windowId]) return;
   if (!ext.enabled) return void showExtensionMenu(windowId, ext);
   if (!shownIn(windowId, ext.id)) return;
   const request = beginPopupRequest(windowId, ext.id, tabId);
@@ -306,7 +306,7 @@ function dismissChangedPopup(s: BrowserState, prev: BrowserState) {
 
 export async function openActionPopup(windowId: string, extensionId: string, anchor: Anchor, browserId: number) {
   const s = useBrowser.getState();
-  if (!s.windows[windowId] || s.windows[windowId]?.kind === "small") return;
+  if (!s.windows[windowId]) return;
   const tabId = tabForBrowser(browserId);
   if (!tabId || s.tabs[tabId]?.windowId !== windowId || shownPageId(s, windowId) !== tabId) return;
   const request = beginPopupRequest(windowId, extensionId, tabId);

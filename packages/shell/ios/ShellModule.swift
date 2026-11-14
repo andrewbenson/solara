@@ -695,9 +695,21 @@ public class ShellModule: Module {
     AsyncFunction("showMenu") { (items: [[String: Any]], promise: Promise) in
       let target = MenuChoice()
       let menu = ShellModule.contextMenu(items, target: target)
+      #if DEBUG
+      if MainActor.assumeIsolated({ ShellContextMenuTest.consume(menu) }) {
+        promise.resolve(target.chosen)
+        return
+      }
+      #endif
       menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
       DispatchQueue.main.async { promise.resolve(target.chosen) }
     }.runOnQueue(.main)
+
+    #if DEBUG
+    AsyncFunction("devContextMenu") { (action: String, choice: String?) -> [String: Any] in
+      MainActor.assumeIsolated { ShellContextMenuTest.input(action, choice: choice) }
+    }.runOnQueue(.main)
+    #endif
 
     View(WindowDragRegion.self) {
       Events("onRegionDoubleClick", "onRegionClick")
@@ -806,6 +818,75 @@ public class ShellModule: Module {
     }
   }
 }
+
+#if DEBUG
+@MainActor
+private enum ShellContextMenuTest {
+  private static var armedUntil: Date?
+  private static var choice: String?
+  private static var snapshot: [String: Any] = [:]
+
+  private static var allowed: Bool {
+    let env = ProcessInfo.processInfo.environment
+    guard env["SOLARA_BACKGROUND"] == "1", let data = env["SOLARA_DATA_DIR"], !data.isEmpty else { return false }
+    return (data as NSString).isAbsolutePath && ACIsolatedDataDirectory() != nil
+  }
+
+  static func input(_ action: String, choice: String?) -> [String: Any] {
+    guard allowed else { return ["error": "hidden isolated instances only"] }
+    switch action {
+    case "arm":
+      armedUntil = Date().addingTimeInterval(5)
+      self.choice = choice
+      snapshot = [:]
+    case "clear":
+      armedUntil = nil
+      self.choice = nil
+      snapshot = [:]
+    case "read": break
+    default: return ["error": "unknown action"]
+    }
+    return snapshot
+  }
+
+  static func consume(_ menu: NSMenu) -> Bool {
+    guard allowed, let deadline = armedUntil else { return false }
+    armedUntil = nil
+    let requested = choice
+    choice = nil
+    snapshot = ["items": rows(menu), "choice": requested as Any? ?? NSNull(), "accepted": requested == nil]
+    guard deadline > Date() else {
+      snapshot["accepted"] = false
+      snapshot["error"] = "menu arm expired"
+      return true
+    }
+    guard let requested else { return true }
+    if let (owner, index) = find(requested, in: menu) {
+      owner.performActionForItem(at: index)
+      snapshot["accepted"] = true
+    }
+    return true
+  }
+
+  private static func rows(_ menu: NSMenu) -> [[String: Any]] {
+    menu.items.map { item in
+      if item.isSeparatorItem { return ["separator": true] }
+      var row: [String: Any] = ["title": item.title, "id": item.representedObject as Any? ?? NSNull(),
+        "enabled": item.isEnabled, "checked": item.state == .on, "image": item.image != nil]
+      if let submenu = item.submenu { row["children"] = rows(submenu) }
+      return row
+    }
+  }
+
+  private static func find(_ choice: String, in menu: NSMenu) -> (NSMenu, Int)? {
+    for (index, item) in menu.items.enumerated() where item.isEnabled && !item.isSeparatorItem {
+      if let submenu = item.submenu, let found = find(choice, in: submenu) { return found }
+      if item.submenu == nil, item.representedObject as? String == choice { return (menu, index) }
+    }
+    return nil
+  }
+}
+#endif
 
 final class MenuChoice: NSObject {
   var chosen: String?

@@ -70,7 +70,9 @@ async function clickFromLittleSolara(keeps, landed, link = "out") {
     for (const id of [...s.windows.w1.tabIds]) if (s.tabs[id]?.url?.includes("/child")) s.closeTab(id);
     s.updateSettings({ littleSolaraKeepsNewTabLinks: ${keeps} });
     s.createWindow({ small: true, url: ${JSON.stringify(`${origin}/opener`)} }); return 1;`);
-  await until("the opener page loads in Little Solara", async () => ({ ok: (await pageEval("/opener", "document.readyState")) === "complete" }));
+  await until("the opener page loads in Little Solara", async () => ({
+    ok: await pageEval("/opener", `location.href === ${JSON.stringify(`${origin}/opener`)} && document.readyState === "complete" && !!document.getElementById(${JSON.stringify(link)})`),
+  }));
   const before = await state();
   await pageEval("/opener", `document.getElementById(${JSON.stringify(link)}).click(), true`, { userGesture: true });
   const child = await until("the linked page loads", async () => ({ ok: (await pageEval("/child", "document.readyState")) === "complete" }));

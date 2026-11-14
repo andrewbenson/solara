@@ -34,6 +34,16 @@ import Testing
     #expect(shell.subviews.map { shell.view(in: .backdrop) === $0 ? "backdrop" : shell.view(in: .react) === $0 ? "react" : "bar" } == ["backdrop", "bar", "react"])
   }
 
+  @Test func aNativePopupInTheReactSlotReceivesHitsAboveThePage() {
+    let (shell, react, panel) = shell()
+    panel.isHidden = true
+    let popup = Flipped(frame: CGRect(x: 650, y: 39, width: 201, height: 81))
+    react.addSubview(popup)
+    #expect(shell.hitTest(NSPoint(x: 700, y: 60)) === popup)
+    let blank = shell.hitTest(NSPoint(x: 60, y: 19))
+    #expect(blank != nil && !(blank!.isDescendant(of: react)))
+  }
+
   @Test func reactViewsWinOverTheBarAndBlankReactFallsThrough() {
     let (shell, _, panel) = shell()
     #expect(shell.hitTest(NSPoint(x: 100, y: 20)) === panel)

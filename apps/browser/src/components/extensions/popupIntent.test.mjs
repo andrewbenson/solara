@@ -129,12 +129,27 @@ test("a new navigation sequence at the same URL dismisses its extension popup", 
   assert.deepEqual(closed, [windowId]);
 });
 
-test("Little Solara does not request an extension popup", async () => {
-  const { windowId } = setup();
+test("Little Solara sends the same native popup intents as a browser window", async () => {
+  const { windowId, tabId } = setup();
   useBrowser.setState((s) => ({ windows: { ...s.windows, [windowId]: { ...s.windows[windowId], kind: "small" } } }));
   await activateExtension(windowId, EXT, ANCHOR);
+  assert.deepEqual(shown, [{ extensionId: "ext", popupUrl: "chrome-extension://ext/popup.html", profile: "", tabId, windowId, anchor: ANCHOR, requiresActive: false }]);
+  native.extensionAnswers.actionStates = async () => ({ ext: { popup: "chrome-extension://ext/popup.html" } });
   await openActionPopup(windowId, EXT.id, ANCHOR, 1);
+  assert.equal(shown.length, 2);
+  assert.equal(shown[1].requiresActive, true);
+});
+
+test("closing Little Solara while an action is pending prevents its native popup", async () => {
+  const { windowId, tabId } = setup();
+  useBrowser.setState((s) => ({ windows: { ...s.windows, [windowId]: { ...s.windows[windowId], kind: "small" } } }));
+  const answer = delayedAction(tabId);
+  const opening = activateExtension(windowId, EXT, ANCHOR, { popup: "chrome-extension://ext/popup.html" });
+  S().closeWindow(windowId);
+  answer();
+  await opening;
   assert.equal(shown.length, 0);
+  assert.ok(closed.includes(windowId));
 });
 
 for (const reason of ["replacement", "dismissal"]) {

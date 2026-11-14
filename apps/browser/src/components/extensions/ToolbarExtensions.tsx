@@ -1,13 +1,11 @@
-import { terminateCastRoute, type ActionState, type CastRoute, type InstalledExtension } from "@solara/solaracore";
-import { ContextMenuArea, showMenu, Symbol } from "@solara/shell";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { Image, Pressable, Text, View } from "react-native";
+import { terminateCastRoute, type ActionState, type CastRoute } from "@solara/solaracore";
+import { showMenu } from "@solara/shell";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { View } from "react-native";
 import { useTheme } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
 import { toggleCastPicker, useCastRoutes } from "../media/cast";
-import type { ToolbarPalette } from "../layout/toolbarColors";
 import { usePages } from "../layout/pageState";
-import { useHover } from "../primitives";
 import { dropToolbarAnchor, setToolbarAnchor } from "./bridge";
 import {
   activateExtension,
@@ -44,15 +42,6 @@ export function useToolbarExtensionsWidth(windowId: string, limit = Infinity): n
   const count = pinned.length + (overflow ? 1 : 0) + (casting ? 1 : 0);
   return count ? count * PITCH - GAP + 6 : 0;
 }
-
-type ToolbarExtensionsProps = {
-  tabId: string;
-  windowId: string;
-  palette: ToolbarPalette;
-  top: number;
-  right: number;
-  limit?: number;
-};
 
 export type NativeExtensionButton = {
   id: string;
@@ -152,35 +141,6 @@ export function useNativeToolbarExtensions(windowId: string, tabId: string, limi
   return { buttons, onAnchors, onClick };
 }
 
-export const ToolbarExtensions = memo(function ToolbarExtensions(props: ToolbarExtensionsProps) {
-  return <TabToolbarExtensions key={`${props.windowId}|${props.tabId}`} {...props} />;
-});
-
-function TabToolbarExtensions({
-  tabId,
-  windowId,
-  palette,
-  top,
-  right,
-  limit = Infinity,
-}: ToolbarExtensionsProps) {
-  const { pinned, overflow, routes } = useToolbarExtensions(windowId, limit);
-  const browserId = usePages((p) => {
-    for (const [id, tab] of Object.entries(p.browsers)) if (tab === tabId) return Number(id);
-    return 0;
-  });
-  if (!pinned.length && !overflow && !routes.length) return <EmptyAnchor windowId={windowId} tabId={tabId} top={top} right={right} />;
-  return (
-    <View style={{ position: "absolute", top, right, flexDirection: "row", gap: GAP }}>
-      {routes.length ? <CastButton windowId={windowId} tabId={tabId} routes={routes} palette={palette} /> : null}
-      {pinned.map((ext) => (
-        <ExtensionButton key={ext.id} ext={ext} windowId={windowId} tabId={tabId} browserId={browserId} palette={palette} />
-      ))}
-      {overflow && <OverflowButton windowId={windowId} tabId={tabId} palette={palette} />}
-    </View>
-  );
-}
-
 export function ToolbarPopupAnchor(props: { windowId: string; tabId: string; top: number; right: number }) {
   return <EmptyAnchor key={`${props.windowId}|${props.tabId}`} {...props} />;
 }
@@ -217,133 +177,10 @@ function useAnchor(windowId: string, tabId: string, slot: string) {
   return { ref, measure };
 }
 
-function ExtensionButton({ ext, windowId, tabId, browserId, palette }: { ext: InstalledExtension; windowId: string; tabId: string; browserId: number; palette: ToolbarPalette }) {
-  const fetched = useExtensions((e) => (browserId ? e.actions[browserId] : undefined));
-  const held = useRef<ActionState | undefined>(undefined);
-  if (fetched) held.current = fetched[ext.id];
-  const state = held.current;
-  const open = useExtensions((e) => e.popup?.windowId === windowId && e.popup.extensionId === ext.id);
-  const { hovered, hoverProps } = useHover();
-  const { ref, measure } = useAnchor(windowId, tabId, ext.id);
-  const badge = state?.badgeText ?? "";
-  const dimmed = state ? !state.enabled : false;
-  const title = state?.title || ext.actionTitle || ext.name;
-  const icon = state?.icon || ext.actionIcon || ext.icon;
-  return (
-    <View ref={ref} tooltip={title} {...hoverProps} onLayout={() => void measure()}>
-      <ContextMenuArea onContextMenu={() => void showExtensionMenu(windowId, ext)}>
-        <Pressable onPress={async () => activateExtension(windowId, ext, await measure(), fetched?.[ext.id], tabId)}>
-          {({ pressed }) => (
-            <View
-              style={{
-                width: BUTTON,
-                height: BUTTON,
-                borderRadius: 7,
-                alignItems: "center",
-                justifyContent: "center",
-                backgroundColor: pressed || open ? palette.pressed : hovered ? palette.hover : undefined,
-              }}
-            >
-              {icon ? (
-                <View pointerEvents="none">
-                  <Image source={{ uri: icon }} style={{ width: 16, height: 16, opacity: dimmed ? 0.45 : 1 }} />
-                </View>
-              ) : (
-                <Symbol name="puzzlepiece.extension" size={14} color={palette.icon} style={{ width: 18, height: 18 }} />
-              )}
-              {badge ? <Badge text={badge} color={state?.badgeColor} textColor={state?.badgeTextColor} /> : null}
-            </View>
-          )}
-        </Pressable>
-      </ContextMenuArea>
-    </View>
-  );
-}
-
-function Badge({ text, color, textColor }: { text: string; color?: string | null; textColor?: string | null }) {
-  const fill = color && color !== "#000000" ? color : "#5F6368";
-  return (
-    <View
-      pointerEvents="none"
-      style={{
-        position: "absolute",
-        right: 1,
-        bottom: 3,
-        minWidth: 13,
-        height: 11,
-        paddingHorizontal: 2.5,
-        borderRadius: 3,
-        backgroundColor: fill,
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      <Text numberOfLines={1} style={{ fontSize: 8.5, lineHeight: 11, fontWeight: "700", color: textColor ?? contrastText(fill) }}>
-        {text.slice(0, 4)}
-      </Text>
-    </View>
-  );
-}
-
 function contrastText(hex: string) {
   const n = parseInt(hex.slice(1, 7), 16);
   const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
   return 0.299 * r + 0.587 * g + 0.114 * b > 160 ? "#000000" : "#FFFFFF";
-}
-
-function CastButton({ windowId, tabId, routes, palette }: { windowId: string; tabId: string; routes: CastRoute[]; palette: ToolbarPalette }) {
-  const theme = useTheme();
-  const { hovered, hoverProps } = useHover();
-  const tooltip = routes.map((r) => (r.description ? `${r.description} on ${r.sink}` : `Casting to ${r.sink}`)).join("\n");
-  const menu = () => castMenu(windowId, routes);
-  return (
-    <View tooltip={tooltip} {...hoverProps}>
-      <ContextMenuArea onContextMenu={() => void menu()}>
-        <Pressable onPress={() => void toggleCastPicker(windowId, tabId)}>
-          {({ pressed }) => (
-            <View
-              style={{
-                width: BUTTON,
-                height: BUTTON,
-                borderRadius: 7,
-                alignItems: "center",
-                justifyContent: "center",
-                backgroundColor: pressed ? palette.pressed : hovered ? palette.hover : undefined,
-              }}
-            >
-              <Symbol name="tv.and.mediabox.fill" size={14} color={theme.accent} style={{ width: 18, height: 18 }} />
-            </View>
-          )}
-        </Pressable>
-      </ContextMenuArea>
-    </View>
-  );
-}
-
-function OverflowButton({ windowId, tabId, palette }: { windowId: string; tabId: string; palette: ToolbarPalette }) {
-  const { hovered, hoverProps } = useHover();
-  const { ref, measure } = useAnchor(windowId, tabId, "*");
-  const onPress = async () => overflowMenu(windowId, tabId, await measure());
-  return (
-    <View ref={ref} tooltip="Extensions" {...hoverProps} onLayout={() => void measure()}>
-      <Pressable onPress={onPress}>
-        {({ pressed }) => (
-          <View
-            style={{
-              width: BUTTON,
-              height: BUTTON,
-              borderRadius: 7,
-              alignItems: "center",
-              justifyContent: "center",
-              backgroundColor: pressed ? palette.pressed : hovered ? palette.hover : undefined,
-            }}
-          >
-            <Symbol name="puzzlepiece.extension" size={14} color={palette.icon} style={{ width: 18, height: 18 }} />
-          </View>
-        )}
-      </Pressable>
-    </View>
-  );
 }
 
 async function castMenu(windowId: string, routes: CastRoute[]) {

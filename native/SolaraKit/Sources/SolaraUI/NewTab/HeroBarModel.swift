@@ -66,6 +66,7 @@ public protocol HeroFieldControl: AnyObject {
   func releaseFocus()
   var hasFocus: Bool { get }
   var fieldSelection: TextSelection { get }
+  var fieldValue: String { get }
 }
 
 public struct HeroBarSnapshot: Sendable, Equatable {
@@ -139,7 +140,7 @@ public final class HeroBarModel {
   @ObservationIgnored private var keyAt: ContinuousClock.Instant?
   @ObservationIgnored private var queryEpoch: String?
   @ObservationIgnored private var queryGeneration = 0
-  @ObservationIgnored private var sourcesSeen = -1
+  @ObservationIgnored private var sourcesSeen: NewTabSources.Revision?
   @ObservationIgnored private var tabScopeCache: (key: String, scope: SearchScope?)?
   @ObservationIgnored private var changeAnnounced = false
   @ObservationIgnored public private(set) var editing = false
@@ -215,7 +216,7 @@ public final class HeroBarModel {
 
   public var tabScope: SearchScope? {
     guard scope == nil, edited else { return nil }
-    let key = "\(typed)\u{1}\(shown)\u{1}\(sourcesSeen)"
+    let key = "\(typed)\u{1}\(shown)\u{1}\(sourcesSeen?.sources ?? -1)\u{1}\(sourcesSeen?.profile ?? -1)"
     if let cached = tabScopeCache, cached.key == key { return cached.scope }
     let found = offeredSiteSearch(typed, shown, scopeSources())
     tabScopeCache = (key, found)
@@ -290,8 +291,10 @@ public final class HeroBarModel {
     if !hero { events.cancel(session) }
   }
 
+  var sourcesRevision: NewTabSources.Revision { sources.revision(for: profileId) }
+
   public func sourcesChanged() {
-    guard sourcesSeen != sources.revision else { return }
+    guard sourcesSeen != sourcesRevision else { return }
     recompute()
     writeField()
   }
@@ -332,14 +335,7 @@ public final class HeroBarModel {
   public func selectionChanged(_ next: TextSelection) {
     selection = next
     if filled != nil { return }
-    if pending != nil, InlineRules.acceptsCompletion(typed: typed, shown: shown, selection: next) {
-      let carried = shown
-      settle(writing: false)
-      guard shown == carried else {
-        writeField()
-        return
-      }
-    }
+    if let field, field.fieldValue != value { return }
     if InlineRules.acceptsCompletion(typed: typed, shown: shown, selection: next) {
       typed = value
       shown = ""
@@ -723,7 +719,7 @@ public final class HeroBarModel {
 
   private func recompute() {
     invalidateQueryProbe()
-    sourcesSeen = sources.revision
+    sourcesSeen = sourcesRevision
     let query = jsTrim(typed)
     requestRemote(query)
     guard active, !query.isEmpty else {
@@ -801,14 +797,12 @@ public final class HeroBarModel {
   public var settled: Bool { pending == nil }
 
   public func settle() {
-    settle(writing: true)
-  }
-
-  private func settle(writing: Bool) {
     guard let request = pending else { return }
     supersedePending()
-    apply(sources.suggestNow(request))
-    if writing { writeField() }
+    let found = sources.worker.suggestIfPrepared(request)
+      ?? SuggestionIndex(history: [], bookmarks: []).suggest(request.typed, tabs: request.tabs, options: request.options)
+    apply(found)
+    writeField()
     finishKeystroke()
   }
 

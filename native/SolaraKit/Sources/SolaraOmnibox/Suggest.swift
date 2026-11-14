@@ -632,6 +632,8 @@ public final class SuggestionIndex {
     return t
   }
 
+  public var isPrepared: Bool { ready }
+
   @discardableResult
   public func prepare(deadline: ContinuousClock.Instant? = nil) -> Bool {
     if ready { return true }

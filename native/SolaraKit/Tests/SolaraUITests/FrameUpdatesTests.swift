@@ -105,6 +105,41 @@ struct FrameUpdatesTests {
     #expect(rendered)
   }
 
+  @Test func schedulingAfterTheBeforeWaitingFlushRendersWithoutAnotherEvent() {
+    let mode = Self.mode()
+    let main = CFRunLoopGetMain()
+    let owner = Owner()
+    FrameUpdates.schedule(owner) {}
+    FrameUpdates.flush()
+    var rendered = false
+    var renderedAtRescue: Bool?
+    let source = Self.source {}
+    let observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, false, 1_000_001) { _, _ in
+      MainActor.assumeIsolated {
+        FrameUpdates.schedule(owner) {
+          rendered = true
+        }
+      }
+    }!
+    let rescue = CFRunLoopTimerCreateWithHandler(nil, CFAbsoluteTimeGetCurrent() + 0.2, 0, 0, 0) { _ in
+      MainActor.assumeIsolated {
+        renderedAtRescue = rendered
+        CFRunLoopStop(main)
+      }
+    }!
+    CFRunLoopAddSource(main, source, mode)
+    CFRunLoopAddObserver(main, observer, mode)
+    CFRunLoopAddTimer(main, rescue, mode)
+    defer {
+      CFRunLoopRemoveSource(main, source, mode)
+      CFRunLoopObserverInvalidate(observer)
+      CFRunLoopTimerInvalidate(rescue)
+    }
+    for _ in 0..<5 where renderedAtRescue == nil { _ = CFRunLoopRunInMode(mode, 0.5, false) }
+    #expect(rendered)
+    #expect(renderedAtRescue == true)
+  }
+
   final class Perform {
     let action: () -> Void
     init(_ action: @escaping () -> Void) { self.action = action }

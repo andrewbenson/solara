@@ -164,16 +164,18 @@ struct SuggestionWorkerTests {
     #expect(!pages(ask(sources, "p", "beta")).contains("https://beta.example/"))
   }
 
-  @Test func aSwapBumpsTheRevisionSoOpenBarsRefresh() async {
+  @Test func aSwapBumpsOnlyItsProfilesRevisionSoOpenBarsRefresh() async {
     let sources = NewTabSources()
     sources.asynchronous = true
     sources.setHistory([row("https://alpha.example/", "Alpha")], profileId: "p")
     #expect(sources.preparedIndex("p"))
     await waitFor({ scope(sources, "p", "alpha.example") != nil }, sources)
     sources.setHistory([row("https://alpha.example/", "Alpha"), row("https://alpha.example/beta", "Beta")], profileId: "p")
-    let afterSet = sources.revision
-    await waitFor({ sources.revision != afterSet }, sources)
-    #expect(sources.revision > afterSet)
+    let globalRevision = sources.revision
+    let afterSet = sources.revision(for: "p")
+    await waitFor({ sources.revision(for: "p") != afterSet }, sources)
+    #expect(sources.revision(for: "p") != afterSet)
+    #expect(sources.revision == globalRevision)
     #expect(pages(ask(sources, "p", "beta")).contains("https://alpha.example/beta"))
   }
 
@@ -252,4 +254,115 @@ struct SuggestionWorkerTests {
     sources.setBookmarks([keep], profileId: "p")
     #expect(!pages(ask(sources, "p", "marked")).contains("https://marked.example/"))
   }
+
+  @Test(arguments: ["first", "clear", "switch"])
+  func aBlockedColdInstallSettlesWithoutWaitingForTheWorker(_ change: String) {
+    let worker = SuggestionWorker()
+    if change != "first" {
+      worker.replace(profileId: "p", history: [row("https://alpha.example/", "Alpha")], bookmarks: [], serveOldUntilReady: false)
+      #expect(worker.prepared("p"))
+      #expect(worker.hasPreparedIndex("p"))
+    }
+    let entered = DispatchSemaphore(value: 0)
+    let release = DispatchSemaphore(value: 0)
+    worker.submit(SuggestRequest(profileId: "gate", typed: "gate", tabs: [], options: SuggestOptions()), for: UUID(), generation: 1) { _ in
+      entered.signal()
+      _ = release.wait(timeout: .now() + .seconds(2))
+    }
+    #expect(entered.wait(timeout: .now() + .seconds(1)) == .success)
+    defer { release.signal() }
+    let history = change == "clear" ? [] : [row("https://beta.example/", "Beta")]
+    worker.replace(profileId: "p", history: history, bookmarks: [], serveOldUntilReady: false)
+    let request = SuggestRequest(profileId: "p", typed: "beta", tabs: [], options: SuggestOptions())
+    let start = ContinuousClock.now
+    for _ in 0..<32 { #expect(worker.suggestIfPrepared(request) == nil) }
+    #expect(ContinuousClock.now - start < .milliseconds(50))
+    #expect(!worker.hasPreparedIndex("p"))
+    release.signal()
+    #expect(worker.prepared("p"))
+    #expect(worker.hasPreparedIndex("p"))
+    let answer = worker.suggestNow(request)
+    #expect(pages(answer) == (change == "clear" ? [] : ["https://beta.example/"]))
+    #expect(!pages(worker.suggestNow(SuggestRequest(profileId: "p", typed: "alpha", tabs: [], options: SuggestOptions()))).contains("https://alpha.example/"))
+  }
+
+  @Test(arguments: ["warm", "compute"], [false, true])
+  func oldWorkCannotRepublishReadinessAfterInvalidation(_ work: String, _ removing: Bool) {
+    let worker = SuggestionWorker()
+    if work == "compute" {
+      worker.replace(profileId: "p", history: [row("https://alpha.example/", "Alpha")], bookmarks: [], serveOldUntilReady: false)
+      #expect(worker.prepared("p"))
+    }
+    let entered = DispatchSemaphore(value: 0)
+    let release = DispatchSemaphore(value: 0)
+    let gate = SuggestRequest(profileId: "gate", typed: "gate", tabs: [], options: SuggestOptions())
+    worker.submit(gate, for: UUID(), generation: 1) { _ in
+      entered.signal()
+      _ = release.wait(timeout: .now() + .seconds(2))
+    }
+    #expect(entered.wait(timeout: .now() + .seconds(1)) == .success)
+    defer { release.signal() }
+    let request = SuggestRequest(profileId: "p", typed: "alpha", tabs: [], options: SuggestOptions())
+    if work == "warm" {
+      worker.replace(profileId: "p", history: [row("https://alpha.example/", "Alpha")], bookmarks: [], serveOldUntilReady: false)
+    } else {
+      worker.submit(request, for: UUID(), generation: 1) { _ in }
+    }
+    let completed = DispatchSemaphore(value: 0)
+    let finish = DispatchSemaphore(value: 0)
+    worker.submit(gate, for: UUID(), generation: 1) { _ in
+      completed.signal()
+      _ = finish.wait(timeout: .now() + .seconds(2))
+    }
+    defer { finish.signal() }
+    if removing {
+      worker.remove("p")
+    } else {
+      worker.replace(profileId: "p", history: [], bookmarks: [], serveOldUntilReady: false)
+    }
+    release.signal()
+    #expect(completed.wait(timeout: .now() + .seconds(1)) == .success)
+    #expect(!worker.hasPreparedIndex("p"))
+    #expect(worker.suggestIfPrepared(request) == nil)
+  }
+
+  @Test func removingAProfileInvalidatesItsPreparedSnapshotBeforeTheWorkerRuns() {
+    let worker = SuggestionWorker()
+    worker.replace(profileId: "p", history: [row("https://alpha.example/", "Alpha")], bookmarks: [], serveOldUntilReady: false)
+    let request = SuggestRequest(profileId: "p", typed: "alpha", tabs: [], options: SuggestOptions())
+    #expect(pages(worker.suggestNow(request)) == ["https://alpha.example/"])
+    #expect(worker.hasPreparedIndex("p"))
+    let entered = DispatchSemaphore(value: 0)
+    let release = DispatchSemaphore(value: 0)
+    worker.submit(request, for: UUID(), generation: 1) { _ in
+      entered.signal()
+      _ = release.wait(timeout: .now() + .seconds(2))
+    }
+    #expect(entered.wait(timeout: .now() + .seconds(1)) == .success)
+    defer { release.signal() }
+    worker.remove("p")
+    #expect(!worker.hasPreparedIndex("p"))
+    #expect(worker.suggestIfPrepared(request) == nil)
+    release.signal()
+    worker.drain()
+    #expect(!worker.hasPreparedIndex("p"))
+  }
+
+  @Test func aQueuedSwapCannotRefreshARemovedProfile() async {
+    let sources = NewTabSources()
+    sources.asynchronous = true
+    let old = row("https://alpha.example/", "Alpha")
+    sources.setHistory([old], profileId: "gone")
+    #expect(sources.preparedIndex("gone"))
+    await waitFor({ scope(sources, "gone", "alpha.example") != nil }, sources)
+    sources.setHistory([old, row("https://alpha.example/beta", "Beta")], profileId: "gone")
+    #expect(sources.preparedIndex("gone"))
+    sources.applyWorkspace(OmniboxWorkspaceSources(BrowserState()))
+    let removedRevision = sources.revision(for: "gone")
+    for _ in 0..<20 { await Task.yield() }
+    #expect(sources.revision(for: "gone") == removedRevision)
+    #expect(!sources.worker.known.contains("gone"))
+    #expect(sources.omniboxBenchSnapshot(profileId: "gone")["sourceMode"] as? String == "unpublished")
+  }
+
 }

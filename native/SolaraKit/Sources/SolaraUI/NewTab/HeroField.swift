@@ -61,6 +61,8 @@ final class HeroFieldCoordinator: NSObject, NSTextFieldDelegate, HeroFieldContro
     self.model = model
   }
 
+  var fieldValue: String { field?.currentEditor()?.string ?? field?.stringValue ?? model.value }
+
   var fieldSelection: TextSelection {
     guard let editor = field?.currentEditor() else { return model.selection }
     let r = editor.selectedRange

@@ -129,18 +129,18 @@ public final class OmniboxBarView: NSView {
   }
 
   private func watchSources() {
-    guard !watching else { return }
     watching = true
     observeSources()
   }
 
   private func observeSources() {
+    guard let watchedModel = model else { return }
     withObservationTracking {
-      _ = NewTabSources.shared.revision
-    } onChange: { [weak self] in
+      _ = watchedModel.sourcesRevision
+    } onChange: { [weak self, weak watchedModel] in
       Task { @MainActor in
-        guard let self, self.watching else { return }
-        self.model?.sourcesChanged()
+        guard let self, let watchedModel, self.watching, self.model === watchedModel else { return }
+        watchedModel.sourcesChanged()
         self.observeSources()
       }
     }

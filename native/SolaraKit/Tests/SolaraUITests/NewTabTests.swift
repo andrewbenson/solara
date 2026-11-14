@@ -165,6 +165,7 @@ final class FakeHeroField: HeroFieldControl {
   func releaseFocus() {}
   var hasFocus: Bool { false }
   var fieldSelection: TextSelection { selection }
+  var fieldValue: String { value }
 }
 
 @MainActor

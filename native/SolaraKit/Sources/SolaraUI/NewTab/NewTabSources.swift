@@ -8,6 +8,16 @@ import SolaraOmnibox
 public final class NewTabSources {
   public static let shared = NewTabSources()
 
+  struct Revision: Equatable {
+    let sources: Int
+    let profile: Int
+  }
+
+  @Observable
+  final class ProfileRevision {
+    var value = 0
+  }
+
   private struct IdleTabContext: Hashable {
     let windowId: [UInt16]
     let profileId: [UInt16]
@@ -30,6 +40,7 @@ public final class NewTabSources {
   }
 
   public private(set) var revision = 0
+  @ObservationIgnored private var profileRevisions: [String: ProfileRevision] = [:]
   @ObservationIgnored private var workspaceProfileIds: Set<String> = []
   @ObservationIgnored private var idleTabs = OmniboxIdleTabSources(tabs: [], peeks: [:], shared: false)
   @ObservationIgnored private var idleTabRows: [IdleTabContext: [Suggestion]] = [:]
@@ -48,11 +59,27 @@ public final class NewTabSources {
   @ObservationIgnored private var bookmarkObservers: [String: Task<Void, Never>] = [:]
 
   public init() {
-    worker = SuggestionWorker { [weak self] _ in
+    worker = SuggestionWorker { [weak self] profileId in
       DispatchQueue.main.async {
-        MainActor.assumeIsolated { self?.revision += 1 }
+        MainActor.assumeIsolated { self?.indexChanged(profileId) }
       }
     }
+  }
+
+  private func profileRevision(_ profileId: String) -> ProfileRevision {
+    if let token = profileRevisions[profileId] { return token }
+    let token = ProfileRevision()
+    profileRevisions[profileId] = token
+    return token
+  }
+
+  func revision(for profileId: String) -> Revision {
+    Revision(sources: revision, profile: profileRevision(profileId).value)
+  }
+
+  private func indexChanged(_ profileId: String) {
+    guard profiles[profileId] != nil else { return }
+    profileRevision(profileId).value += 1
   }
 
   public func useHistoryCatalog(_ catalog: LibraryCatalog) {
@@ -218,6 +245,7 @@ public final class NewTabSources {
     historyVersions[profileId, default: 0] += 1
     worker.remove(profileId)
     profiles[profileId] = nil
+    profileRevisions[profileId] = nil
   }
 
   public func setBookmarkIcons(_ icons: [String: String], engineProfile: String, profileId: String) {
@@ -299,7 +327,7 @@ public final class NewTabSources {
     p.historyHosts = hosts
     p.hosts = nil
     profiles[profileId] = p
-    revision += 1
+    profileRevision(profileId).value += 1
   }
 
   func history(_ profileId: String) -> [HistoryRow] { profiles[profileId]?.history ?? [] }

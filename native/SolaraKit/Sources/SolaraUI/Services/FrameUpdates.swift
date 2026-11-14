@@ -9,9 +9,11 @@ public enum FrameUpdates {
   private static var flushPosted = false
 
   public static func schedule(_ owner: AnyObject, _ render: @escaping @MainActor () -> Void) {
+    let needsWake = pending.isEmpty
     let key = ObjectIdentifier(owner)
     if pending.updateValue(render, forKey: key) == nil { order.append(key) }
     installObserver()
+    if needsWake { CFRunLoopWakeUp(CFRunLoopGetMain()) }
   }
 
   public static func flush() {

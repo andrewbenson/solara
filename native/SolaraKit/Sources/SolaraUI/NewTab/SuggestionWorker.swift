@@ -22,6 +22,9 @@ public final class SuggestionWorker: @unchecked Sendable {
   private var next: [String: Rows] = [:]
   private let lock = NSLock()
   private var latest: [UUID: Int] = [:]
+  private var generations: [String: UUID] = [:]
+  private var preparedProfiles: Set<String> = []
+  private var installedGenerations: [String: UUID] = [:]
   private let swapped: @Sendable (String) -> Void
   #if DEBUG
   private(set) var swapCount = 0
@@ -38,50 +41,64 @@ public final class SuggestionWorker: @unchecked Sendable {
   }
 
   func replace(profileId: String, history: [HistoryRow], bookmarks: [BookmarkRow], serveOldUntilReady: Bool) {
+    let generation = lock.withLock {
+      if !serveOldUntilReady || generations[profileId] == nil {
+        generations[profileId] = UUID()
+        preparedProfiles.remove(profileId)
+      }
+      return generations[profileId]!
+    }
     queue.async {
+      self.installedGenerations[profileId] = generation
       guard serveOldUntilReady, self.indexes[profileId] != nil else {
         let index = SuggestionIndex(history: history, bookmarks: bookmarks, reusing: self.building[profileId] ?? self.indexes[profileId])
         self.building[profileId] = nil
         self.next[profileId] = nil
         self.indexes[profileId] = index
-        self.warm(profileId, index)
+        self.warm(profileId, index, generation: generation)
         return
       }
       guard self.building[profileId] == nil else {
         self.next[profileId] = Rows(history: history, bookmarks: bookmarks)
         return
       }
-      self.build(profileId, Rows(history: history, bookmarks: bookmarks))
+      self.build(profileId, Rows(history: history, bookmarks: bookmarks), generation: generation)
     }
   }
 
-  private func build(_ profileId: String, _ rows: Rows) {
+  private func build(_ profileId: String, _ rows: Rows, generation: UUID) {
     let index = SuggestionIndex(history: rows.history, bookmarks: rows.bookmarks, reusing: indexes[profileId])
     building[profileId] = index
-    warm(profileId, index)
+    warm(profileId, index, generation: generation)
   }
 
   func remove(_ profileId: String) {
+    lock.withLock {
+      generations[profileId] = nil
+      preparedProfiles.remove(profileId)
+    }
     queue.async {
+      self.installedGenerations[profileId] = nil
       self.indexes[profileId] = nil
       self.building[profileId] = nil
       self.next[profileId] = nil
     }
   }
 
-  private func warm(_ profileId: String, _ index: SuggestionIndex) {
+  private func warm(_ profileId: String, _ index: SuggestionIndex, generation: UUID) {
     let swapping = building[profileId] === index
     guard swapping || indexes[profileId] === index else { return }
     #if DEBUG
     warmQoS = qos_class_self()
     #endif
     guard index.prepare(deadline: ContinuousClock.now.advanced(by: Self.warmSlice)) else {
-      queue.async { self.warm(profileId, index) }
+      queue.async { self.warm(profileId, index, generation: generation) }
       return
     }
+    markPrepared(profileId, generation: generation)
     guard swapping else { return }
     swap(profileId, index)
-    if let rows = next.removeValue(forKey: profileId) { build(profileId, rows) }
+    if let rows = next.removeValue(forKey: profileId) { build(profileId, rows, generation: generation) }
   }
 
   private func swap(_ profileId: String, _ index: SuggestionIndex) {
@@ -98,7 +115,22 @@ public final class SuggestionWorker: @unchecked Sendable {
   }
 
   private func compute(_ request: SuggestRequest) -> SuggestionResult {
-    index(request.profileId).suggest(request.typed, tabs: request.tabs, options: request.options)
+    let index = index(request.profileId)
+    let result = index.suggest(request.typed, tabs: request.tabs, options: request.options)
+    if index.isPrepared, let generation = installedGenerations[request.profileId] {
+      markPrepared(request.profileId, generation: generation)
+    }
+    return result
+  }
+
+  private func markPrepared(_ profileId: String, generation: UUID) {
+    lock.withLock {
+      if generations[profileId] == generation { preparedProfiles.insert(profileId) }
+    }
+  }
+
+  func hasPreparedIndex(_ profileId: String) -> Bool {
+    lock.withLock { preparedProfiles.contains(profileId) }
   }
 
   #if DEBUG
@@ -111,6 +143,11 @@ public final class SuggestionWorker: @unchecked Sendable {
 
   func suggestNow(_ request: SuggestRequest) -> SuggestionResult {
     queue.sync { compute(request) }
+  }
+
+  func suggestIfPrepared(_ request: SuggestRequest) -> SuggestionResult? {
+    guard hasPreparedIndex(request.profileId) else { return nil }
+    return suggestNow(request)
   }
 
   func submit(_ request: SuggestRequest, for key: UUID, generation: Int, deliver: @escaping @Sendable (SuggestionResult) -> Void) {
@@ -154,7 +191,11 @@ public final class SuggestionWorker: @unchecked Sendable {
           building[profileId] = SuggestionIndex(history: rows.history, bookmarks: rows.bookmarks, reusing: index)
         }
       }
-      return indexes[profileId]?.prepare() ?? false
+      let prepared = indexes[profileId]?.prepare() ?? false
+      if prepared, let generation = installedGenerations[profileId] {
+        markPrepared(profileId, generation: generation)
+      }
+      return prepared
     }
   }
 

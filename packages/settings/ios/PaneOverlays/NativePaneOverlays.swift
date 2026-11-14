@@ -9,6 +9,10 @@ enum NativePaneOverlays {
   private static var hosts: [String: PaneOverlayHost] = [:]
 
   static func start() {
+    HostedSadTab.register()
+    HostedSelectionBar.register()
+    HostedSwipeCapsule.register()
+    HostedFrozenPage.register()
     guard NativeWindowShell.enabled, !started else { return }
     started = true
     _ = SettingsJS.shared.observe(topic) { value in apply(value) }
@@ -56,17 +60,40 @@ enum NativePaneOverlays {
   }
 
   static func swipe(_ windowId: String, _ tabId: String, _ json: String) {
-    guard NativeWindowShell.enabled, let data = json.data(using: .utf8), let message = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+    guard let data = json.data(using: .utf8), let message = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+    if HostedSwipeCapsule.send(windowId, tabId, message) { return }
+    guard NativeWindowShell.enabled else { return }
     guard let host = hosts[windowId] ?? (NativeWindowShell.host(windowId) != nil ? PaneOverlayHost(windowId: windowId) : nil) else { return }
     hosts[windowId] = host
     host.swipe(tabId, message)
   }
 
-  static func describe(_ windowId: String) -> String {
-    guard let host = hosts[windowId] else { return "null" }
-    let data = try? JSONSerialization.data(withJSONObject: host.describe())
-    return data.flatMap { String(data: $0, encoding: .utf8) } ?? "null"
-  }
+  #if DEBUG
+    static func snapshot(_ windowId: String) -> [String: Any]? {
+      var value = hosts[windowId]?.describe()
+      let hosted = [
+        HostedSadTab.describe(windowId),
+        HostedSelectionBar.describe(windowId),
+        HostedSwipeCapsule.describe(windowId),
+        HostedFrozenPage.describe(windowId),
+      ].compactMap { $0 }
+      for entry in hosted {
+        var tabs = value?["tabs"] as? [String: [String: Any]] ?? [:]
+        for (tabId, overlays) in entry["tabs"] as? [String: [String: Any]] ?? [:] {
+          tabs[tabId, default: [:]].merge(overlays) { _, inline in inline }
+        }
+        if value == nil { value = ["top": false, "inCard": false] }
+        value?["tabs"] = tabs
+      }
+      return value
+    }
+
+    static func describe(_ windowId: String) -> String {
+      guard let value = snapshot(windowId) else { return "null" }
+      let data = try? JSONSerialization.data(withJSONObject: value)
+      return data.flatMap { String(data: $0, encoding: .utf8) } ?? "null"
+    }
+  #endif
 }
 
 @MainActor
@@ -123,15 +150,17 @@ final class PanePopover<Body: NSView> {
     popover.frame = wrap.bounds
   }
 
-  func describe(_ inWindow: (NSView, CGRect) -> [Double]) -> [String: Any] {
-    var controls: [String: [Double]] = [:]
-    func walk(_ view: NSView) {
-      if view.accessibilityRole() == .button, let name = view.accessibilityLabel() { controls[name] = inWindow(view, view.bounds) }
-      view.subviews.forEach(walk)
+  #if DEBUG
+    func describe(_ inWindow: (NSView, CGRect) -> [Double]) -> [String: Any] {
+      var controls: [String: [Double]] = [:]
+      func walk(_ view: NSView) {
+        if view.accessibilityRole() == .button, let name = view.accessibilityLabel() { controls[name] = inWindow(view, view.bounds) }
+        view.subviews.forEach(walk)
+      }
+      walk(body)
+      return ["hidden": wrap.isHiddenOrHasHiddenAncestor, "frame": inWindow(wrap, wrap.bounds), "card": inWindow(popover, popover.cardFrame), "opacity": popover.presentedOpacity, "progress": popover.progress, "controls": controls]
     }
-    walk(body)
-    return ["hidden": wrap.isHiddenOrHasHiddenAncestor, "frame": inWindow(wrap, wrap.bounds), "card": inWindow(popover, popover.cardFrame), "opacity": popover.presentedOpacity, "progress": popover.progress, "controls": controls]
-  }
+  #endif
 }
 
 @MainActor
@@ -513,6 +542,7 @@ final class PaneOverlayHost {
       entry.capsule.frame = entry.wrap.bounds
       let theme = message["theme"] as? [String: Any] ?? [:]
       let direction = SwipeCapsuleDirection(rawValue: message["direction"] as? String ?? "") ?? .back
+      HostedSwipeCapsule.loadMark(message["newTabMark"] as? String, into: entry.capsule)
       entry.capsule.show(direction, theme: SwipeCapsuleTheme(dark: theme["dark"] as? Bool ?? false, textPrimary: theme["textPrimary"] as? String ?? "#000000D9", textSecondary: theme["textSecondary"] as? String ?? "#00000080"), profileId: message["profileId"] as? String ?? "")
       return relayout()
     }
@@ -588,62 +618,64 @@ final class PaneOverlayHost {
     if view.frame != container.bounds { view.frame = container.bounds }
   }
 
-  func describe() -> [String: Any] {
-    var tabs: [String: [String: Any]] = [:]
-    func inWindow(_ view: NSView, _ r: CGRect) -> [Double] {
-      let w = view.convert(r, to: nil)
-      let h = view.window?.contentView?.bounds.height ?? 0
-      return [w.minX, h - w.maxY, w.width, w.height]
+  #if DEBUG
+    func describe() -> [String: Any] {
+      var tabs: [String: [String: Any]] = [:]
+      func inWindow(_ view: NSView, _ r: CGRect) -> [Double] {
+        let w = view.convert(r, to: nil)
+        let h = view.window?.contentView?.bounds.height ?? 0
+        return [w.minX, h - w.maxY, w.width, w.height]
+      }
+      for (tabId, view) in sadTabs {
+        tabs[tabId, default: [:]]["sadTab"] = ["mode": (view.showing?.rawValue).map { $0 as Any } ?? NSNull(), "hidden": view.isHiddenOrHasHiddenAncestor, "frame": inWindow(view, view.bounds), "controls": view.controlFrames.mapValues { inWindow(view, $0) }]
+      }
+      for (tabId, zoom) in zooms { tabs[tabId, default: [:]]["zoom"] = zoom.describe(inWindow) }
+      for entry in prompts.values { tabs[entry.tabId, default: [:]][entry.kind.rawValue] = entry.popover.describe(inWindow).merging(["key": entry.key]) { _, key in key } }
+      for entry in choosers.values { tabs[entry.tabId, default: [:]]["deviceChooser"] = entry.popover.describe(inWindow).merging(["id": entry.id]) { _, id in id } }
+      for (tabId, history) in histories { tabs[tabId, default: [:]]["history"] = history.describe(inWindow) }
+      for (tabId, cast) in casts { tabs[tabId, default: [:]]["castPicker"] = cast.popover.describe(inWindow) }
+      for (tabId, pill) in cliPills { tabs[tabId, default: [:]]["cliPill"] = ["frame": inWindow(pill, pill.bounds), "pill": inWindow(pill, pill.pillFrame), "shown": pill.shown, "progress": pill.progress] }
+      for (tabId, share) in shares {
+        var info = share.popover.describe(inWindow)
+        info["focused"] = share.popover.wrap.window.map { window in (window.firstResponder as? NSView).map { $0 === share.popover.popover || $0.isDescendant(of: share.popover.popover) } ?? false } ?? false
+        tabs[tabId, default: [:]]["sharePicker"] = info
+      }
+      for (tabId, bar) in selections {
+        tabs[tabId, default: [:]]["selection"] = ["hidden": bar.isHiddenOrHasHiddenAncestor, "area": inWindow(bar, bar.bounds), "bar": bar.barFrame.map { inWindow(bar, $0) } ?? NSNull(),
+          "button": bar.buttonFrame.map { inWindow(bar, $0) } ?? NSNull(), "above": bar.above, "opacity": bar.presentedOpacity]
+      }
+      for (tabId, entry) in swipes {
+        let c = entry.capsule
+        let s = c.sample()
+        tabs[tabId, default: [:]]["swipe"] = ["shown": c.shown, "active": c.active, "direction": c.direction.rawValue, "confirmed": c.confirmed, "items": c.items?.map(\.title) ?? NSNull(), "selected": c.selected,
+          "frame": inWindow(c, s.frame), "area": inWindow(entry.wrap, entry.wrap.bounds), "radius": s.radius, "opacity": s.opacity, "scale": s.scale, "iconScale": s.iconScale, "list": s.list, "pill": s.pill]
+      }
+      let card = NativeWindowShell.host(windowId)?.shell.card
+      let layer = PaneOverlays.shared.layer(windowId: windowId)
+      return ["top": layer != nil && card?.subviews.last === layer, "inCard": !(sadTabs.isEmpty && zooms.isEmpty && histories.isEmpty && swipes.isEmpty && selections.isEmpty && cliPills.isEmpty && casts.isEmpty && shares.isEmpty) && layer != nil && layer?.superview === card, "tabs": tabs]
     }
-    for (tabId, view) in sadTabs {
-      tabs[tabId, default: [:]]["sadTab"] = ["mode": (view.showing?.rawValue).map { $0 as Any } ?? NSNull(), "hidden": view.isHiddenOrHasHiddenAncestor, "frame": inWindow(view, view.bounds), "controls": view.controlFrames.mapValues { inWindow(view, $0) }]
-    }
-    for (tabId, zoom) in zooms { tabs[tabId, default: [:]]["zoom"] = zoom.describe(inWindow) }
-    for entry in prompts.values { tabs[entry.tabId, default: [:]][entry.kind.rawValue] = entry.popover.describe(inWindow).merging(["key": entry.key]) { _, key in key } }
-    for entry in choosers.values { tabs[entry.tabId, default: [:]]["deviceChooser"] = entry.popover.describe(inWindow).merging(["id": entry.id]) { _, id in id } }
-    for (tabId, history) in histories { tabs[tabId, default: [:]]["history"] = history.describe(inWindow) }
-    for (tabId, cast) in casts { tabs[tabId, default: [:]]["castPicker"] = cast.popover.describe(inWindow) }
-    for (tabId, pill) in cliPills { tabs[tabId, default: [:]]["cliPill"] = ["frame": inWindow(pill, pill.bounds), "pill": inWindow(pill, pill.pillFrame), "shown": pill.shown, "progress": pill.progress] }
-    for (tabId, share) in shares {
-      var info = share.popover.describe(inWindow)
-      info["focused"] = share.popover.wrap.window.map { window in (window.firstResponder as? NSView).map { $0 === share.popover.popover || $0.isDescendant(of: share.popover.popover) } ?? false } ?? false
-      tabs[tabId, default: [:]]["sharePicker"] = info
-    }
-    for (tabId, bar) in selections {
-      tabs[tabId, default: [:]]["selection"] = ["hidden": bar.isHiddenOrHasHiddenAncestor, "area": inWindow(bar, bar.bounds), "bar": bar.barFrame.map { inWindow(bar, $0) } ?? NSNull(),
-        "button": bar.buttonFrame.map { inWindow(bar, $0) } ?? NSNull(), "above": bar.above, "opacity": bar.presentedOpacity]
-    }
-    for (tabId, entry) in swipes {
-      let c = entry.capsule
-      let s = c.sample()
-      tabs[tabId, default: [:]]["swipe"] = ["shown": c.shown, "active": c.active, "direction": c.direction.rawValue, "confirmed": c.confirmed, "items": c.items?.map(\.title) ?? NSNull(), "selected": c.selected,
-        "frame": inWindow(c, s.frame), "area": inWindow(entry.wrap, entry.wrap.bounds), "radius": s.radius, "opacity": s.opacity, "scale": s.scale, "iconScale": s.iconScale, "list": s.list, "pill": s.pill]
-    }
-    let card = NativeWindowShell.host(windowId)?.shell.card
-    let layer = PaneOverlays.shared.layer(windowId: windowId)
-    return ["top": layer != nil && card?.subviews.last === layer, "inCard": !(sadTabs.isEmpty && zooms.isEmpty && histories.isEmpty && swipes.isEmpty && selections.isEmpty && cliPills.isEmpty && casts.isEmpty && shares.isEmpty) && layer != nil && layer?.superview === card, "tabs": tabs]
-  }
+  #endif
 }
 
-#if SOLARA_PROBES
+#if DEBUG && SOLARA_PROBES
 @MainActor
 public enum PaneOverlayRead {
-  public static func snapshot(windowId: String) -> [String: Any]? { NativePaneOverlays.host(windowId)?.describe() }
+  public static func snapshot(windowId: String) -> [String: Any]? { NativePaneOverlays.snapshot(windowId) }
 
   public static func selection(windowId: String, tabId: String) -> [String: Any]? {
-    (NativePaneOverlays.host(windowId)?.describe()["tabs"] as? [String: [String: Any]])?[tabId]?["selection"] as? [String: Any]
+    (NativePaneOverlays.snapshot(windowId)?["tabs"] as? [String: [String: Any]])?[tabId]?["selection"] as? [String: Any]
   }
 
   public static func zoom(windowId: String, tabId: String) -> [String: Any]? {
-    (NativePaneOverlays.host(windowId)?.describe()["tabs"] as? [String: [String: Any]])?[tabId]?["zoom"] as? [String: Any]
+    (NativePaneOverlays.snapshot(windowId)?["tabs"] as? [String: [String: Any]])?[tabId]?["zoom"] as? [String: Any]
   }
 
   public static func history(windowId: String, tabId: String) -> [String: Any]? {
-    (NativePaneOverlays.host(windowId)?.describe()["tabs"] as? [String: [String: Any]])?[tabId]?["history"] as? [String: Any]
+    (NativePaneOverlays.snapshot(windowId)?["tabs"] as? [String: [String: Any]])?[tabId]?["history"] as? [String: Any]
   }
 
   public static func sadTab(windowId: String, tabId: String) -> [String: Any]? {
-    (NativePaneOverlays.host(windowId)?.describe()["tabs"] as? [String: [String: Any]])?[tabId]?["sadTab"] as? [String: Any]
+    (NativePaneOverlays.snapshot(windowId)?["tabs"] as? [String: [String: Any]])?[tabId]?["sadTab"] as? [String: Any]
   }
 }
 #endif

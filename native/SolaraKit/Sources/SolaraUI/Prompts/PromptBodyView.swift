@@ -84,7 +84,56 @@ enum PromptMetrics {
 final class PromptPressable: HoverFillView {
   var fill: (Bool, Bool) -> CGColor? = { _, _ in nil }
   var onDoublePress: (() -> Void)?
+  override var acceptsFirstResponder: Bool { onPress != nil && !isHiddenOrHasHiddenAncestor }
+  override var canBecomeKeyView: Bool { acceptsFirstResponder && super.canBecomeKeyView }
+  override var focusRingMaskBounds: NSRect { bounds }
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
   override func refresh() { layer?.backgroundColor = fill(hovered, pressed) }
+
+  override func drawFocusRingMask() {
+    NSColor.black.setFill()
+    NSBezierPath(roundedRect: bounds, xRadius: layer?.cornerRadius ?? 0, yRadius: layer?.cornerRadius ?? 0).fill()
+  }
+
+  override func becomeFirstResponder() -> Bool {
+    guard acceptsFirstResponder else { return false }
+    needsDisplay = true
+    noteFocusRingMaskChanged()
+    return true
+  }
+
+  override func resignFirstResponder() -> Bool {
+    pressed = false
+    refresh()
+    needsDisplay = true
+    noteFocusRingMaskChanged()
+    return true
+  }
+
+  override func keyDown(with event: NSEvent) {
+    guard acceptsFirstResponder else { return super.keyDown(with: event) }
+    if event.keyCode == 48 {
+      if event.modifierFlags.contains(.shift) { window?.selectPreviousKeyView(self) }
+      else { window?.selectNextKeyView(self) }
+      return
+    }
+    guard [36, 49, 76].contains(event.keyCode) else { return super.keyDown(with: event) }
+    pressed = true
+    refresh()
+    if !event.isARepeat { onPress?() }
+  }
+
+  override func keyUp(with event: NSEvent) {
+    guard [36, 49, 76].contains(event.keyCode) else { return super.keyUp(with: event) }
+    pressed = false
+    refresh()
+  }
+
+  override func accessibilityPerformPress() -> Bool {
+    guard acceptsFirstResponder, let onPress else { return false }
+    onPress()
+    return true
+  }
 
   override func mouseUp(with event: NSEvent) {
     super.mouseUp(with: event)

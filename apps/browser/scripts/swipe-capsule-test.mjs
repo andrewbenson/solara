@@ -12,13 +12,13 @@ const appArg = args.find((a) => !a.startsWith("--"));
 if (!appArg) {
   console.error(`usage: node swipe-capsule-test.mjs <Debug Solara.app> [--keep-data]
 
-The back-swipe capsule on a tab that went ONE, TWO, THREE on local pages, drawn by RN and then natively
-(SOLARA_NATIVE_SHELL=1: SwipeCapsuleView in the pane overlay container on top of the shell's card, fed by RN's
-SwipeOverlay, which keeps the gesture). The same simulated gestures in both: one kept moving past the threshold
+The back-swipe capsule on a tab that went ONE, TWO, THREE on local pages, drawn by the inline native host and then under the native shell
+(SOLARA_NATIVE_SHELL=1: SwipeCapsuleView in the pane overlay container on top of the shell's card).
+SwipeOverlay keeps the gesture and sends the same commands to each native host. The same simulated gestures in both: one kept moving past the threshold
 shows the confirmed 82 pt capsule centred on the page at the rubber-banded offset, and cancelling it navigates
 nowhere; one held still past the threshold turns into the 200 wide destination list (2 rows of 38 plus 8 above and
-below, its first row centred on the page), and ending it goes back one entry. The native frames match RN's within
-half a point, RN draws no capsule with the switch on, and the native container leaves the card once it fades.
+below, its first row centred on the page), and ending it goes back one entry. The inline and shell frames match within
+half a point, RN draws no capsule in either window, and the shell container leaves the card once it fades.
 With pane roots and the page pool on (SOLARA_SHELL_PANES=1 SOLARA_NATIVE_PAGES_POOL=1), a back swipe on the page goes
 back (a tracked one and a discrete one), and the same swipe over the native extension side panel or over docked\nDevTools starts nothing and stays put.`);
   process.exit(2);
@@ -49,7 +49,7 @@ const fixture = session({
 
 const timed = (steps) => steps.map((s) => ({ dy: 0, ...s, timestampMs: s.atMs }));
 const push = Array.from({ length: 8 }, (_, i) => ({ phase: "changed", dx: 20, atMs: 16 * (i + 1) }));
-const kept = timed([{ phase: "began", dx: 0, atMs: 0 }, ...push, ...Array.from({ length: 6 }, (_, i) => ({ phase: "changed", dx: 1, atMs: 200 + 100 * i })), { phase: "cancelled", dx: 0, atMs: 760 }]);
+const kept = timed([{ phase: "began", dx: 0, atMs: 0 }, ...push, ...Array.from({ length: 18 }, (_, i) => ({ phase: "changed", dx: 1, atMs: 200 + 100 * i })), { phase: "cancelled", dx: 0, atMs: 2000 }]);
 const held = timed([{ phase: "began", dx: 0, atMs: 0 }, ...push, { phase: "ended", dx: 0, atMs: 1100 }]);
 
 const HELPERS = `
@@ -59,18 +59,21 @@ const title = () => ac.store.getState().tabs.a.title;
 const hostOf = (fiber) => { let f = fiber; while (f && !(f.stateNode && f.stateNode.measureInWindow)) f = f.child; return f && f.stateNode; };
 const measure = (fiber) => new Promise((r) => { const n = hostOf(fiber); return n ? n.measureInWindow((x, y, w, h) => r([x, y, w, h])) : r(null); });
 const overlay = () => acPerf.findFibers("SwipeOverlay", 500).find((f) => f.memoizedProps.tabId === "a");
-const rnCapsule = () => { const o = overlay(); const area = o && o.child; const capsule = area && area.sibling; return capsule && !capsule.memoizedProps.onLayout ? capsule : null; };
+const rnCapsule = () => { const o = overlay(); const area = o && o.child; const capsule = area && area.sibling; return capsule && !capsule.memoizedProps.onLayout && capsule.memoizedProps.kind !== "swipeCapsule" ? capsule : null; };
 const native = () => M && M.describePaneOverlays ? M.describePaneOverlays("w1").then(JSON.parse) : Promise.resolve(null);
 const sample = () => Promise.all([rnCapsule() ? measure(rnCapsule()) : null, native(), measure(overlay().child),
   acPerf.findFibers("DestinationList", 50).length]).then(([rn, nat, area, lists]) => ({ rn, native: nat && nat.tabs.a && nat.tabs.a.swipe || null, area, lists, title: title() }));
-const gesture = (steps, at) => new Promise((resolve) => {
+const gesture = (steps, at, capture) => new Promise((resolve) => {
   let seen = null;
-  setTimeout(() => sample().then((s) => (seen = s)), at);
+  setTimeout(() => sample().then((s) => ac.shell.devSnapshotWindow("w1", capture).then((written) => {
+    seen = { ...s, snapshot: written ? capture : null };
+  })), at);
   globalThis.acSwipe.pane("a").devSimulate(steps, { ignorePreference: true }).then(() => setTimeout(() => resolve(seen), 100));
 });
 `;
 let app = null;
 let nativePollDeadline = 0;
+let captureIndex = 0;
 const run = (body, timeout = 20000) => {
   if (nativePollDeadline) {
     if (nativePollDeadline - Date.now() < 1000) throw new Error("native comparison has less than 1000 ms remaining");
@@ -121,7 +124,7 @@ try {
   for (const inputRoute of ["js", "native"]) {
   const prefix = inputRoute === "js" ? "" : "native-input-";
   for (const nativeShell of [false, true]) {
-    const tag = prefix + (nativeShell ? "native" : "rn");
+    const tag = prefix + (nativeShell ? "native" : "inline");
     app = await launch(resolve(appArg), {
       data: join(scratch, `data-${tag}`), fresh: true, session: fixture, onboarded: true, probe: true,
       env: { SOLARA_NATIVE_SHELL: nativeShell ? "1" : "0" },
@@ -133,10 +136,13 @@ try {
       await until(`page ${page}`, `return title() === ${JSON.stringify(page.toUpperCase())} || null;`, 15000);
     }
     await sleep(600);
-    const shown = (s) => (nativeShell ? s.native && s.native.frame : s.rn);
+    const shown = (s) => s.native?.frame ?? s.rn;
     const gestureSample = async (steps, at) => {
-      if (inputRoute === "js") return run(`return gesture(${JSON.stringify(steps)}, ${at});`);
-      const sampling = run(`return new Promise((resolve) => setTimeout(() => sample().then(resolve), ${at}));`);
+      const capture = join(scratch, `${tag}-${++captureIndex}.png`);
+      if (inputRoute === "js") return run(`return gesture(${JSON.stringify(steps)}, ${at}, ${JSON.stringify(capture)});`);
+      const sampling = run(`return new Promise((resolve) => setTimeout(() => sample().then((sampled) =>
+        ac.shell.devSnapshotWindow("w1", ${JSON.stringify(capture)}).then((written) =>
+          resolve({ ...sampled, snapshot: written ? ${JSON.stringify(capture)} : null }))), ${at}));`);
       const action = app.probe("input.swipe", { windowId: "w1", x: 400, y: 400, steps, ignorePreference: true });
       const [sampled, result] = await Promise.all([sampling, action]);
       if (result.eventCount !== steps.length || !result.where.target) throw new Error(`native gesture ${JSON.stringify(result)}`);
@@ -146,22 +152,23 @@ try {
 
     await rep.check(`${tag}-confirmed-capsule`, async () => {
       const running = gestureSample(kept, 620);
+      let probe;
       if (nativeShell) {
         await sleep(620);
-        await untilSnapshot("confirmed native capsule", async (window) => {
-          const at = 0;
-          const sampled = await run(`return new Promise((resolve) => setTimeout(() => sample().then(resolve), ${at}));`);
+        const state = await untilSnapshot("confirmed native capsule", (window) => {
           const read = window?.paneOverlays?.tabs?.a?.swipe;
-          return read?.confirmed && sampled?.native?.confirmed && near(read.frame, sampled.native.frame) &&
-            near(read.area, sampled.native.area) && read.confirmed === sampled.native.confirmed;
+          return read?.shown && read.active && read.confirmed;
         });
+        probe = state.windows.find((window) => window.id === "w1").paneOverlays.tabs.a.swipe;
       }
       const s = await running;
+      if (probe && (!near(probe.frame, s.native?.frame) || !near(probe.area, s.native?.area) || probe.confirmed !== s.native?.confirmed))
+        throw new Error(`confirmed native probe ${JSON.stringify(probe)} differs from sample ${JSON.stringify(s.native)}`);
       const frame = shown(s);
       if (!frame) throw new Error(`no capsule mid-gesture: ${JSON.stringify(s)}`);
       const [, ay, , ah] = s.area;
       if (Math.abs(frame[2] - 82) > 0.5 || Math.abs(frame[3] - 82) > 0.5 || Math.abs(frame[1] - (ay + ah / 2 - 41)) > 0.5) throw new Error(`capsule ${frame} in ${s.area}`);
-      if (nativeShell && (s.rn || !s.native.confirmed)) throw new Error(`RN capsule ${s.rn}, native ${JSON.stringify(s.native)}`);
+      if (s.rn || !s.native?.confirmed) throw new Error(`RN capsule ${s.rn}, native ${JSON.stringify(s.native)}`);
       await sleep(500);
       if ((await run(`return title();`)) !== "THREE") throw new Error("cancelling navigated");
       await untilSnapshot("cancel keeps THREE", async (_, state) => (await run(`return title();`)) === "THREE" &&
@@ -172,23 +179,24 @@ try {
 
     await rep.check(`${tag}-destination-list`, async () => {
       const running = gestureSample(held, 950);
+      let probe;
       if (nativeShell) {
         await sleep(950);
-        await untilSnapshot("native destination list", async (window) => {
-          const at = 0;
-          const sampled = await run(`return new Promise((resolve) => setTimeout(() => sample().then(resolve), ${at}));`);
+        const state = await untilSnapshot("native destination list", (window) => {
           const read = window?.paneOverlays?.tabs?.a?.swipe;
-          return read?.list && sampled?.native?.list && near(read.frame, sampled.native.frame) &&
-            near(read.area, sampled.native.area) && isDeepStrictEqual(read.items, sampled.native.items);
+          return read?.shown && read.active && read.list >= 0.99;
         });
+        probe = state.windows.find((window) => window.id === "w1").paneOverlays.tabs.a.swipe;
       }
       const s = await running;
+      if (probe && (!near(probe.frame, s.native?.frame) || !near(probe.area, s.native?.area) || !isDeepStrictEqual(probe.items, s.native?.items)))
+        throw new Error(`list native probe ${JSON.stringify(probe)} differs from sample ${JSON.stringify(s.native)}`);
       const frame = shown(s);
       if (!frame) throw new Error(`no list mid-gesture: ${JSON.stringify(s)}`);
       const [, ay, , ah] = s.area;
       const want = [200, 2 * 38 + 16];
       if (!near(frame.slice(2), want) || Math.abs(frame[1] - (ay + ah / 2 - 8 - 19)) > 0.5) throw new Error(`list ${frame} in ${s.area}`);
-      if (nativeShell && (s.lists || !isDeepStrictEqual(s.native.items, ["TWO", "ONE"]))) throw new Error(`RN lists ${s.lists}, native items ${JSON.stringify(s.native.items)}`);
+      if (s.lists || !isDeepStrictEqual(s.native?.items, ["TWO", "ONE"])) throw new Error(`RN lists ${s.lists}, native items ${JSON.stringify(s.native.items)}`);
       await until("back to TWO", `return title() === "TWO" || null;`, 4000);
       await untilSnapshot("back to TWO", async (_, state) => (await run(`return title();`)) === "TWO" &&
         state.tabs.some((tab) => tab.id === "a" && tab.title === "TWO" && tab.url === url("two")));
@@ -285,8 +293,8 @@ try {
   await app.quit();
   app = null;
 
-  await rep.check(`${prefix}native-matches-rn`, async () => {
-    for (const k of ["capsule", "list"]) if (!near(got[`${prefix}native-${k}`], got[`${prefix}rn-${k}`])) throw new Error(`${k}: native ${got[`${prefix}native-${k}`]}, RN ${got[`${prefix}rn-${k}`]}`);
+  await rep.check(`${prefix}shell-matches-inline`, async () => {
+    for (const k of ["capsule", "list"]) if (!near(got[`${prefix}native-${k}`], got[`${prefix}inline-${k}`])) throw new Error(`${k}: native ${got[`${prefix}native-${k}`]}, RN ${got[`${prefix}inline-${k}`]}`);
     return got;
   });
   }

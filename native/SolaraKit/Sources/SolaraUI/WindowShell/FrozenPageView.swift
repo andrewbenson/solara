@@ -14,6 +14,7 @@ public final class FrozenPageView: NSView {
   private let wash = CALayer()
 
   public override var isFlipped: Bool { true }
+  public override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
   public override init(frame: NSRect) {
     super.init(frame: frame)

@@ -340,6 +340,12 @@ public final class SwipeCapsuleView: NSView {
     pillLayer = pill
   }
 
+  public func rebuildIcons(now: CFTimeInterval = CACurrentMediaTime()) {
+    guard items != nil else { return }
+    buildList()
+    apply(at: now)
+  }
+
   private var settled: Bool {
     let now = CACurrentMediaTime()
     let springs = [w, h, top, radius, icon, pill].allSatisfy { now - $0.start >= $0.duration }

@@ -31,6 +31,10 @@ import time
 
 
 HARNESSES = {
+    'sad-tab-host': 'host',
+    'selection-host': 'host',
+    'swipe-host': 'host',
+    'frozen-page-host': 'host',
     'onboarding-host': 'host',
     'side-panel-host': 'host',
     'sheet-host': 'host',

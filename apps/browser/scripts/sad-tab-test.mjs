@@ -9,16 +9,10 @@ const appArg = args.find((a) => !a.startsWith("--"));
 if (!appArg) {
   console.error(`usage: node sad-tab-test.mjs <Debug Solara.app> [--keep-data]
 
-The sad tab over a local page, drawn by RN and then natively (SOLARA_NATIVE_SHELL=1, where SadTabView sits in a
-container on top of the shell's card, framed to the pane): a crashed tab covers the pane with "This tab needs to
-reload" and a Reload button, an unresponsive one dims it under a 320 wide card with Exit Page and Wait. The native
-overlay, its buttons and RN's are the same frames in the window (within half a point: one pixel of Yoga rounding), a click on Reload clears the
-crash and a click on Wait clears the hang, and once both are gone the native container leaves the card. A third instance
-serves the page from the pool (SOLARA_NATIVE_PAGES_POOL=1 SOLARA_SHELL_PANES=1): the renderer really crashes
-(chrome://crash through the pooled handle) and really hangs (a 40 second busy loop and a key press), both reach the
-store as page events, the native sad tab sits where RN's does, Reload reloads the pooled page back to A and Wait clears
-the hang. RN mounts no SadTab wrapper for the pooled pane: the native sad tab comes from the pool's page events
-alone, stays up while JS publishes an unrelated pane overlay (the zoom popover), and Reload and Wait clear it.`);
+The native sad tab over a local page through inline hosting, the browser overlay, and the pooled page events.
+Crash and unresponsive controls keep the same frames, clear their page state when clicked, and release their hosts.
+The pooled leg uses a real renderer crash and hang. Little Solara checks Reload, Wait, and Exit Page through its
+inline native host. Every mode saves an in-process PNG beside the log.`);
   process.exit(2);
 }
 const keep = args.includes("--keep-data");
@@ -87,20 +81,14 @@ const modes = [
   { unresponsive: true },
 ];
 const labels = { 0: ["Reload"], 1: ["Exit Page", "Wait"] };
-const measured = { rn: [], native: [], pool: [] };
+const measured = { inline: [], native: [], pool: [] };
 const LEGS = [
-  { tag: "rn", env: { SOLARA_NATIVE_SHELL: "0", SOLARA_NATIVE_PAGES_POOL: "0", SOLARA_SHELL_PANES: "0" } },
+  { tag: "inline", env: { SOLARA_NATIVE_SHELL: "0", SOLARA_NATIVE_PAGES_POOL: "0", SOLARA_SHELL_PANES: "0" } },
   { tag: "native", env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_PAGES_POOL: "0", SOLARA_SHELL_PANES: "0" } },
   { tag: "pool", env: { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_PAGES_POOL: "1", SOLARA_SHELL_PANES: "1", SOLARA_TAB_POOL: "1" } },
 ];
 
 async function frames(nativeShell, i) {
-  if (!nativeShell) {
-    const overlay = await until("RN's sad tab", `const [f] = fibers("SadTab"); return f ? measure(f) : null;`);
-    const controls = {};
-    for (const title of labels[i]) controls[title] = await until(`RN's ${title}`, `return button(${JSON.stringify(title)});`);
-    return { overlay, controls };
-  }
   let info;
   await untilSnapshot("the native sad tab and controls", async (state) => {
     info = await run(`return native().then((d) => d && d.tabs.a && d.tabs.a.sadTab && !d.tabs.a.sadTab.hidden ? d : null);`);
@@ -109,7 +97,7 @@ async function frames(nativeShell, i) {
     return sad?.visible && sad.mode === info.tabs.a.sadTab.mode && near(nativeFrame(sad.frame), info.tabs.a.sadTab.frame) &&
       labels[i].every((title) => near(nativeFrame(sad.controls.find((item) => item.id === title)?.frame), info.tabs.a.sadTab.controls[title]));
   });
-  if (!info.top || !info.inCard) throw new Error(`the overlay container is not the card's top child: ${JSON.stringify(info)}`);
+  if (nativeShell && (!info.top || !info.inCard)) throw new Error(`the overlay container is not the card's top child: ${JSON.stringify(info)}`);
   const drawn = await run(`return fibers("PromptButton").length + fibers("Symbol").filter((f) => f.memoizedProps.name === "exclamationmark.triangle").length;`);
   if (drawn) throw new Error("RN still draws the sad tab's icon or buttons with the native one on");
   return { overlay: info.tabs.a.sadTab.frame, controls: info.tabs.a.sadTab.controls, mode: info.tabs.a.sadTab.mode };
@@ -117,7 +105,7 @@ async function frames(nativeShell, i) {
 
 try {
   for (const { tag, env } of LEGS) {
-    const nativeShell = tag !== "rn";
+    const nativeShell = tag !== "inline";
     const pooled = tag === "pool";
     app = await launch(resolve(appArg), {
       data: join(scratch, `data-${tag}`), fresh: true, session: fixture, onboarded: true, probe: true, env,
@@ -163,15 +151,14 @@ try {
           await sleep(300);
         }
         const got = await frames(nativeShell, i);
-        if (nativeShell && got.mode !== name) throw new Error(`native mode ${got.mode}`);
+        if (!await run(`return ac.shell.devSnapshotWindow("w1", ${JSON.stringify(join(scratch, `${tag}-${name}.png`))});`)) throw new Error("in-process snapshot failed");
+        if (got.mode !== name) throw new Error(`native mode ${got.mode}`);
         measured[tag][i] = got;
         const action = i === 0 ? "Reload" : "Wait";
         await run(`return click(${number}, ${JSON.stringify(centre(got.controls[action]))}).then(() => true);`);
         await until(`${action} clears it`, `const p = page(); return !p.crashed && !p.unresponsive || null;`, 3000);
-        if (nativeShell) {
-          await until("the native overlay goes", `return native().then((d) => !d || (!d.tabs.a && !d.inCard) || null);`, 3000);
-          await untilSnapshot("the sad tab leaves the native snapshot", (state) => !nativeSad(state)?.visible);
-        }
+        await until("the native overlay goes", `return native().then((d) => !d?.tabs?.a?.sadTab || d.tabs.a.sadTab.hidden || null);`, 3000);
+        await untilSnapshot("the sad tab leaves the native snapshot", (state) => !nativeSad(state)?.visible);
         if (pooled && i === 1) await until("the native model clears the hang", `return native().then((d) => !d || !d.tabs.a || !d.tabs.a.sadTab || d.tabs.a.sadTab.hidden || null);`, 3000);
         if (pooled && i === 0) await until("the pooled page reloads to A", `return ac.webviews.get("a") && ac.store.getState().tabs.a?.title === "A" && !ac.store.getState().live.a?.isLoading ? true : null;`, 8000);
         return got;
@@ -204,9 +191,46 @@ try {
     app = null;
   }
 
-  for (const [i] of modes.entries()) for (const tag of LEGS.map((l) => l.tag).filter((t) => t !== "rn")) {
-    await rep.check(`${tag}-matches-rn-${i === 0 ? "crashed" : "unresponsive"}`, async () => {
-      const rn = measured.rn[i];
+  app = await launch(resolve(appArg), {
+    data: join(scratch, "data-little"), fresh: true, session: fixture, onboarded: true, probe: true,
+    ready: "return !!ac.store.getState().windows.w1",
+  });
+  const before = await run(`return C.chromeWindows().then((ws) => ws.map((w) => w.window));`);
+  await run(`ac.runCommand({ command: "newLittleSolara" }); return true;`);
+  const little = await until("Little Solara", `return Object.values(ac.store.getState().windows).find((w) => w.kind === "small") || null;`);
+  const littleId = JSON.stringify(little.id);
+  const littleTab = little.tabIds[0];
+  const littleTabId = JSON.stringify(littleTab);
+  await run(`ac.store.getState().navigate(${littleTabId}, ${JSON.stringify(pageUrl)}, { userInitiated: true }); ac.store.getState().closePanel(${littleId}); return true;`);
+  await until("Little Solara page A", `return ac.store.getState().tabs[${littleTabId}]?.title === "A" || null;`);
+  const littleNumber = await until("Little Solara native window", `return C.chromeWindows().then((ws) => ws.find((w) => !${JSON.stringify(before)}.includes(w.window) && w.visible)?.window ?? null);`);
+  for (const [mode, action] of [["crashed", "Reload"], ["unresponsive", "Wait"], ["unresponsive", "Exit Page"]]) {
+    await rep.check(`little-${mode}-${action}`, async () => {
+      const state = mode === "crashed" ? { crashed: { url: pageUrl, reason: "fixture" }, unresponsive: false } : { crashed: null, unresponsive: true };
+      await run(`ac.pageState.setState((s) => ({ pages: { ...s.pages, [${littleTabId}]: { ...(s.pages[${littleTabId}] || {}), ...${JSON.stringify(state)} } } })); return true;`);
+      const info = await until("Little Solara native sad tab", `return native(${littleId}).then((d) => d?.tabs?.[${littleTabId}]?.sadTab).then((s) => s && !s.hidden && s.mode === ${JSON.stringify(mode)} ? s : null);`);
+      await untilSnapshot("Little Solara native sad-tab controls", (snapshot) => {
+        const overlay = snapshot.windows.find((w) => w.id === little.id)?.overlays.find((o) => o.kind === "sadTab" && o.tabId === littleTab);
+        return overlay?.visible && overlay.mode === mode && near(nativeFrame(overlay.frame), info.frame) &&
+          Object.entries(info.controls).every(([title, frame]) => near(nativeFrame(overlay.controls.find((control) => control.id === title)?.frame), frame));
+      });
+      const wrapper = await run(`const fiber = fibers("SadTab").find((f) => f.memoizedProps.tabId === ${littleTabId}); return fiber ? measure(fiber) : null;`);
+      if (!near(wrapper, info.frame)) throw new Error(`native frame ${info.frame}, transparent host ${wrapper}`);
+      if (await run(`return fibers("PromptButton").length;`)) throw new Error("Little Solara still draws RN sad-tab controls");
+      const image = join(scratch, `little-${mode}-${action.replaceAll(" ", "-")}.png`);
+      if (!await run(`return ac.shell.devSnapshotWindow(${littleId}, ${JSON.stringify(image)});`)) throw new Error("Little Solara in-process snapshot failed");
+      await run(`return click(${littleNumber}, ${JSON.stringify(centre(info.controls[action]))}).then(() => true);`);
+      await until("Little Solara recovery action", `const page = ac.pageState.getState().pages[${littleTabId}] || {}; return !page.crashed && !page.unresponsive || null;`, 3000);
+      await until("Little Solara host unmounts", `return native(${littleId}).then((d) => !d?.tabs?.[${littleTabId}]?.sadTab || null);`, 3000);
+      return info;
+    });
+  }
+  await app.quit();
+  app = null;
+
+  for (const [i] of modes.entries()) for (const tag of LEGS.map((l) => l.tag).filter((t) => t !== "inline")) {
+    await rep.check(`${tag}-matches-inline-${i === 0 ? "crashed" : "unresponsive"}`, async () => {
+      const rn = measured.inline[i];
       const nat = measured[tag][i];
       if (!rn || !nat) throw new Error("a mode was not measured");
       if (!near(nat.overlay, rn.overlay)) throw new Error(`overlay ${nat.overlay}, RN ${rn.overlay}`);

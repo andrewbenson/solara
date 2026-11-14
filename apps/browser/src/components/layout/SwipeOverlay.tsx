@@ -1,11 +1,10 @@
 import { SwipeArea, swipeHaptic, type SwipeAreaHandle, type SwipeEvent } from "@solara/solaracore";
-import { sendPaneSwipe, windowShellActive } from "@solara/settings";
-import { Surface, Symbol, VisualEffect } from "@solara/shell";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Easing, StyleSheet, Text, View } from "react-native";
+import { SolaraHostedView, sendPaneSwipe, windowShellActive } from "@solara/settings";
+import { memo, useEffect, useRef, useState } from "react";
+import { Image, StyleSheet, View } from "react-native";
 import { useTheme } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
-import { Favicon, NewTabIcon } from "../primitives";
+import { NEW_TAB_MARK } from "../primitives";
 import { HistoryPopover } from "./HistoryPopover";
 import { goBack, goForward, goToHistoryItem, historyItems, openHistoryMenu, useHistoryAvailability, useHistoryMenu, type HistoryItem } from "./history";
 import type { ToolbarGeometry } from "./geometry";
@@ -17,25 +16,15 @@ import {
   capsuleOffset,
   LIST_ROW,
   listSelection,
-  springParams,
   swipeProgress,
 } from "./swipeMotion";
 
-
 const SIZE = CAPSULE_SIZE;
 const SIZE_CONFIRMED = CAPSULE_SIZE_CONFIRMED;
-const ICON = 28;
-const ICON_CONFIRMED = 34;
 const LIST_WIDTH = 200;
 const ROW = LIST_ROW;
 const LIST_PAD = 8;
-const LIST_RADIUS = 18;
 const LIST_IDLE_MS = 300;
-const EASE = Easing.bezier(0.25, 0.46, 0.45, 0.94);
-
-export function spring(value: Animated.Value, toValue: number, response: number, dampingRatio: number, native = false) {
-  return Animated.spring(value, { toValue, ...springParams(response, dampingRatio), useNativeDriver: native });
-}
 
 export const NavigationOverlays = memo(function NavigationOverlays({ tabId, windowId, geometry, peek = false }: { tabId: string; windowId: string; geometry: ToolbarGeometry; peek?: boolean }) {
   return (
@@ -50,11 +39,12 @@ type Shown = { direction: "back" | "forward"; confirmed: boolean; list: HistoryI
 
 export function SwipeOverlay({ tabId, windowId, nativeAllowed = true }: { tabId: string; windowId: string; nativeAllowed?: boolean }) {
   const theme = useTheme();
+  const newTabMark = Image.resolveAssetSource(NEW_TAB_MARK)?.uri ?? null;
   const [inShell] = useState(() => nativeAllowed && windowShellActive(windowId));
   const pageView = useRef<View>(null);
   const pageFrame = useRef<PageFrame | null>(null);
   const measurePage = () => pageView.current?.measureInWindow((x, y, width, height) => (pageFrame.current = [x, y, width, height]));
-  const send = (message: object) => inShell && sendPaneSwipe(windowId, tabId, message);
+  const send = (message: object) => sendPaneSwipe(windowId, tabId, message);
   const history = useHistoryAvailability(tabId);
   const sizeRef = useRef({ width: 0, height: 0 });
   const [shown, setShown] = useState<Shown | null>(null);
@@ -71,62 +61,17 @@ export function SwipeOverlay({ tabId, windowId, nativeAllowed = true }: { tabId:
     selected: 0,
     idle: undefined as ReturnType<typeof setTimeout> | undefined,
   }).current;
-  const v = useRef({
-    x: new Animated.Value(-SIZE),
-    w: new Animated.Value(SIZE),
-    h: new Animated.Value(SIZE),
-    top: new Animated.Value(0),
-    nudge: new Animated.Value(0),
-    radius: new Animated.Value(SIZE / 2),
-    confirm: new Animated.Value(0),
-    icon: new Animated.Value(1),
-    list: new Animated.Value(0),
-    pill: new Animated.Value(0),
-    fade: new Animated.Value(1),
-    scale: new Animated.Value(1),
-  }).current;
-
   const resetValues = (direction: "back" | "forward") => {
-    for (const value of Object.values(v)) value.stopAnimation();
     clearTimeout(g.idle);
-    const { height } = sizeRef.current;
-    v.x.setValue(-SIZE);
-    v.w.setValue(SIZE);
-    v.h.setValue(SIZE);
-    v.top.setValue(height / 2 - SIZE / 2);
-    v.nudge.setValue(0);
-    v.radius.setValue(SIZE / 2);
-    v.confirm.setValue(0);
-    v.icon.setValue(1);
-    v.list.setValue(0);
-    v.pill.setValue(0);
-    v.fade.setValue(1);
-    v.scale.setValue(1);
     Object.assign(g, { active: true, direction, confirmed: false, width: SIZE, list: null, listY: 0, selected: 0 });
-    if (pageFrame.current) send({ op: "show", direction, frame: pageFrame.current, theme: { dark: !!theme.dark, textPrimary: theme.textPrimary, textSecondary: theme.textSecondary }, profileId: useBrowser.getState().tabs[tabId]?.profileId ?? "" });
-  };
-
-  const layoutTo = (width: number, height: number, top: number, radius: number, response: number, ratio: number) => {
-    g.width = width;
-    Animated.parallel([
-      spring(v.w, width, response, ratio),
-      spring(v.h, height, response, ratio),
-      spring(v.top, top, response, ratio),
-      spring(v.radius, radius, response, ratio),
-    ]).start();
+    if (!inShell || pageFrame.current) send({ op: "show", direction, ...(inShell ? { frame: pageFrame.current } : {}), theme: { dark: !!theme.dark, textPrimary: theme.textPrimary, textSecondary: theme.textSecondary }, profileId: useBrowser.getState().tabs[tabId]?.profileId ?? "", newTabMark });
   };
 
   const setConfirmed = (confirmed: boolean) => {
     if (g.confirmed === confirmed) return;
     g.confirmed = confirmed;
     if (confirmed) swipeHaptic("levelChange");
-    const { height } = sizeRef.current;
-    if (!g.list) {
-      const s = confirmed ? SIZE_CONFIRMED : SIZE;
-      layoutTo(s, s, height / 2 - s / 2, s / 2, 0.18, 0.7);
-      spring(v.icon, confirmed ? ICON_CONFIRMED / ICON : 1, 0.18, 0.7, true).start();
-    }
-    Animated.timing(v.confirm, { toValue: confirmed ? 1 : 0, duration: 180, easing: EASE, useNativeDriver: true }).start();
+    if (!g.list) g.width = confirmed ? SIZE_CONFIRMED : SIZE;
     send({ op: "confirm", confirmed });
     setShown((s) => (s ? { ...s, confirmed } : s));
   };
@@ -142,23 +87,18 @@ export function SwipeOverlay({ tabId, windowId, nativeAllowed = true }: { tabId:
     g.selected = 0;
     g.listY = lastDy.current;
     swipeHaptic("generic");
-    layoutTo(LIST_WIDTH, list.length * ROW + LIST_PAD * 2, height / 2 - LIST_PAD - ROW / 2, LIST_RADIUS, 0.22, 0.77);
-    Animated.timing(v.list, { toValue: 1, duration: 220, easing: EASE, useNativeDriver: true }).start();
-    if (inShell) {
-      const favicons = faviconsFor(tabId, list);
-      send({ op: "list", items: list.map((item) => ({ title: item.title, url: item.url, favicon: favicons.get(item.url) ?? null, newTab: item.offset === "newTab" })) });
-    }
+    g.width = LIST_WIDTH;
+    const favicons = faviconsFor(tabId, list);
+    send({ op: "list", items: list.map((item) => ({ title: item.title, url: item.url, favicon: favicons.get(item.url) ?? null, newTab: item.offset === "newTab" })) });
     setShown((s) => (s ? { ...s, list, selected: 0 } : s));
   };
 
   const select = (dy: number) => {
     const { index, nudge } = listSelection(dy - g.listY, g.list!.length);
-    v.nudge.setValue(nudge);
     send({ op: "select", index, nudge });
     if (index === g.selected) return;
     g.selected = index;
     swipeHaptic("alignment");
-    spring(v.pill, index * ROW, 0.27, 0.9, true).start();
     setShown((s) => (s ? { ...s, selected: index } : s));
   };
 
@@ -166,10 +106,7 @@ export function SwipeOverlay({ tabId, windowId, nativeAllowed = true }: { tabId:
     clearTimeout(g.idle);
     g.active = false;
     send({ op: "dismiss", delay: delay / 1000 });
-    Animated.parallel([
-      Animated.timing(v.fade, { toValue: 0, duration: 200, delay, easing: Easing.in(Easing.ease), useNativeDriver: true }),
-      Animated.timing(v.scale, { toValue: 0.01, duration: 200, delay, easing: Easing.in(Easing.ease), useNativeDriver: true }),
-    ]).start(({ finished }) => finished && setShown(null));
+    setShown(null);
   };
 
   const lastDy = useRef(0);
@@ -182,7 +119,6 @@ export function SwipeOverlay({ tabId, windowId, nativeAllowed = true }: { tabId:
     }
     if (!g.active) return;
     if (e.phase === "swipe") {
-      v.x.setValue(CAPSULE_INSET);
       send({ op: "move", x: CAPSULE_INSET });
       setConfirmed(true);
       navigate(e.direction, null);
@@ -198,7 +134,6 @@ export function SwipeOverlay({ tabId, windowId, nativeAllowed = true }: { tabId:
     const progress = swipeProgress(e.distance);
     if (g.list) select(e.dy);
     else setConfirmed(progress >= 1);
-    v.x.setValue(capsuleOffset(progress, g.width));
     send({ op: "move", x: capsuleOffset(progress, g.width) });
 
     clearTimeout(g.idle);
@@ -211,11 +146,13 @@ export function SwipeOverlay({ tabId, windowId, nativeAllowed = true }: { tabId:
     else goForward(tabId);
   };
 
-  useEffect(() => () => clearTimeout(g.idle), []);
+  useEffect(() => () => {
+    clearTimeout(g.idle);
+    if (g.active) sendPaneSwipe(windowId, tabId, { op: "dismiss", delay: 0 });
+    g.active = false;
+    g.items = null;
+  }, [windowId, tabId]);
   useSwipeDevHandle(tabId, area);
-
-  const back = shown?.direction !== "forward";
-  const iconOpacity = Animated.multiply(v.confirm.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] }), v.list.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }));
 
   return (
     <>
@@ -230,47 +167,7 @@ export function SwipeOverlay({ tabId, windowId, nativeAllowed = true }: { tabId:
         onLayout={(e) => void (sizeRef.current = { width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height })}
       />
       {inShell && <View ref={pageView} pointerEvents="none" collapsable={false} onLayout={measurePage} style={StyleSheet.absoluteFill} />}
-      {shown && !inShell && (
-        <Animated.View
-          pointerEvents="none"
-          style={{
-            position: "absolute",
-            [back ? "left" : "right"]: v.x,
-            top: Animated.add(v.top, v.nudge),
-            width: v.w,
-            height: v.h,
-          }}
-        >
-          <Animated.View style={{ ...StyleSheet.absoluteFillObject, opacity: v.fade, transform: [{ scale: v.scale }] }}>
-            <Surface
-              style={StyleSheet.absoluteFill}
-              cornerRadius={shown.list ? LIST_RADIUS : (shown.confirmed ? SIZE_CONFIRMED : SIZE) / 2}
-              shadowColor="#000000"
-              shadowOpacity={theme.dark ? 0.25 : 0.2}
-              shadowRadius={8}
-              shadowOffset={[0, 2]}
-            />
-            <Animated.View style={{ ...StyleSheet.absoluteFillObject, borderRadius: v.radius, overflow: "hidden" }}>
-              <VisualEffect material="popover" style={StyleSheet.absoluteFill} />
-              {!theme.dark && <Animated.View style={{ ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(255,255,255,0.4)", opacity: v.confirm }} />}
-              <Animated.View style={{ ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center", opacity: iconOpacity }}>
-                <Animated.View style={{ transform: [{ scale: v.icon }] }}>
-                  <Symbol name={back ? "chevron.left" : "chevron.right"} size={ICON} weight="bold" color={theme.dark ? "#FFFFFFD9" : "#000000D9"} style={{ width: ICON + 6, height: ICON + 6 }} />
-                </Animated.View>
-              </Animated.View>
-              {shown.list && <DestinationList tabId={tabId} items={shown.list} selected={shown.selected} appear={v.list} pill={v.pill} />}
-            </Animated.View>
-            <Animated.View
-              style={{
-                ...StyleSheet.absoluteFillObject,
-                borderRadius: v.radius,
-                borderWidth: 1,
-                borderColor: theme.dark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.125)",
-              }}
-            />
-          </Animated.View>
-        </Animated.View>
-      )}
+      {!inShell && <SolaraHostedView kind="swipeCapsule" windowId={windowId} state={JSON.stringify({ tabId, newTabMark })} pointerEvents="none" style={StyleSheet.absoluteFill} />}
     </>
   );
 }
@@ -279,48 +176,6 @@ function faviconsFor(tabId: string, items: HistoryItem[]) {
   const profileId = useBrowser.getState().tabs[tabId]?.profileId ?? "";
   const urls = new Set(items.map((i) => i.url));
   return new Map((useBrowser.getState().history[profileId] ?? []).filter((h) => urls.has(h.url)).map((h) => [h.url, h.favicon]));
-}
-
-function DestinationList({ tabId, items, selected, appear, pill }: { tabId: string; items: HistoryItem[]; selected: number; appear: Animated.Value; pill: Animated.Value }) {
-  const theme = useTheme();
-  const profileId = useBrowser((s) => s.tabs[tabId]?.profileId ?? "");
-  const favicons = useMemo(() => faviconsFor(tabId, items), [items, profileId]);
-  return (
-    <Animated.View
-      style={{
-        position: "absolute",
-        left: 0,
-        top: 0,
-        width: LIST_WIDTH,
-        paddingVertical: LIST_PAD,
-        opacity: appear,
-        transform: [{ scale: appear.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1] }) }],
-      }}
-    >
-      <Animated.View
-        style={{
-          position: "absolute",
-          left: 8,
-          right: 8,
-          top: LIST_PAD,
-          height: ROW,
-          borderRadius: 10,
-          backgroundColor: theme.dark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)",
-          transform: [{ translateY: pill }],
-        }}
-      />
-      {items.map((item, i) => (
-        <View key={item.key} style={{ height: ROW, flexDirection: "row", alignItems: "center", paddingHorizontal: 18, gap: 10 }}>
-          <View style={{ width: 16, height: 16, borderRadius: 4, overflow: "hidden" }}>
-            {item.offset === "newTab" ? <NewTabIcon size={16} /> : <Favicon url={item.url} favicon={favicons.get(item.url) ?? null} size={16} />}
-          </View>
-          <Text numberOfLines={1} style={{ flex: 1, fontSize: 13, color: i === selected ? theme.textPrimary : theme.textSecondary }}>
-            {item.title}
-          </Text>
-        </View>
-      ))}
-    </Animated.View>
-  );
 }
 
 const devPanes = new Map<string, React.RefObject<SwipeAreaHandle | null>[]>();

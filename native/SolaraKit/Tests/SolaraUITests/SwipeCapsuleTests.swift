@@ -49,6 +49,18 @@ struct SwipeCapsuleTests {
     #expect(abs(s.pill - 38) < 0.01 && abs(s.frame.minY - 276) < 0.01)
   }
 
+  @Test func lateIconRefreshKeepsTheListSelectionAndMotion() {
+    let v = view()
+    v.setConfirmed(true, now: 0)
+    v.presentList([SwipeCapsuleItem(title: "New Tab", url: "", newTab: true), SwipeCapsuleItem(title: "One", url: "https://one.test")], now: 0.4)
+    v.select(1, now: 0.45)
+    v.move(x: 14, nudge: 3, now: 0.45)
+    let before = v.sample(at: 0.5)
+    v.rebuildIcons(now: 0.5)
+    #expect(v.sample(at: 0.5) == before)
+    #expect(v.selected == 1 && v.items?.first?.newTab == true && v.confirmed)
+  }
+
   @Test func aForwardSwipeComesInFromTheRight() {
     let v = view(.forward)
     v.move(x: 20, now: 0)

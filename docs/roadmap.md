@@ -206,11 +206,11 @@ Done when no React Native view appears on screen; React Native only arranges nat
 |---|---|
 | Inventory every file left in apps/browser/src by what it does (draws, decides, holds data, glue) and the milestone that removes it: docs/native/rn-inventory.md | landed b1a78d3d |
 | The New Tab page's remaining React Native parts: Personalize, the feedback check-in and the release postcard | planned |
-| Native site controls and prompts (permissions, autofill, translate, zoom, developer mode) | planned |
+| Native site controls and prompts (permissions, autofill, translate, zoom, developer mode) | in progress: selection bar now hosts the existing native view in Little Solara, Peek and no-shell windows; JS selection/search adapters remain |
 | Native extensions toolbar, overlays and side panel | in progress: popup frame (ea03e788, ee1d3c67), side panel card and container, and native dialog sheet for install, permission and pin dialogs; extension menus, the toolbar model and Little Solara popups next |
 | Native media: sidebar player, hover player, cast and share pickers, tab badges | in progress (tab badges, share bar) |
-| Native peek, Little Solara, calendar and meeting cards | planned |
-| Native top tab strip, split chrome, swipe overlay and the rest of the layout surfaces | planned |
+| Native peek, Little Solara, calendar and meeting cards | in progress: crash/unresponsive controls now host native SadTabView in Little Solara and other inline consumers; small-window card fill/page hosting remains |
+| Native top tab strip, split chrome, swipe overlay and the rest of the layout surfaces | in progress: existing native swipe capsule/history list hosted in Little Solara and inline consumers; shared-pin snapshot/wash hosted by native FrozenPageView with guarded painted/activation callbacks; window layout ownership remains in the separate layout port |
 | Sidebar on the right: a Left/Right position in Settings, the View menu and the sidebar's menu; peek, resize, hover cards and drops mirror; the window buttons stay top left (as in Arc and Zen); built with the layout port, so it's written once, in Swift | planned |
 | Only build what's visible: sidebar rows exist only for what's on screen, and row views are reused instead of one view per tab (a 200-tab session spent ~480 ms of launch building rows) (owner, 2026-11-10) | planned |
 | Launch in a smarter order: the window chrome first; invisible work (the extensions toolbar, sync, history hints, tab-sleep sweeps, pairing timers) when the main thread is idle, with lower priority classes for import, sync and cleanup (owner, 2026-11-10) | planned |

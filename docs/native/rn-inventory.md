@@ -3,18 +3,18 @@
 Release-path findings: `209d9238fde4ce41ee612fe2d99851ab69a177f3` on main (0.3.4), audited 2026-11-13.
 Source counts and deletion audit: `75ac3d0e` plus the cleanup below, audited 2026-11-14.
 
-Scope: 402 non-test `.ts`/`.tsx` files under `apps/browser/src`. Total: 55,311 lines.
+Scope: 403 non-test `.ts`/`.tsx` files under `apps/browser/src`. Total: 55,060 lines.
 Excluded: `*.test.*` and eight test doubles in `src/test-native/` (1,044 lines).
-Suffix filtering alone finds 410 files and 56,355 lines. The test doubles explain the difference.
+Suffix filtering alone finds 411 files and 56,104 lines. The test doubles explain the difference.
 The two `sync/fixtures/pinned-v0.2.*.ts` files remain included. They do not use test filenames.
 Counts use `wc -l` on every included file. They include blank lines and declarations.
-This inventory has no runtime validation. The cleanup audit ran the affected unit tests; it made no dependency changes.
+The original inventory is static. The targeted native-host ports below add unit and hidden-instance checks; they do not validate unrelated inventory rows.
 
 Each file has one primary column. Mixed files name secondary columns in the appendix.
 The choice follows the file's dominant responsibility. Whole-file lines go to that column.
 The 2026-11-13 recount had 407 files / 55,533 lines. This cleanup removes five source files / 223 lines.
-Three already-landed glue files also needed refreshed row counts (net +1 line), yielding 402 files / 55,311 lines.
-Every total is derived from the current appendix rows; tests remain excluded.
+Three already-landed glue files also needed refreshed row counts (net +1 line), yielding 402 files / 55,311 lines before the targeted native-host ports below.
+The targeted native-host ports now yield 403 files / 55,060 lines. Every total is derived from the current appendix rows; tests remain excluded.
 Unread badges, tab-number hints, config-file controls and hooks landed in Swift; they add no RN drawing files.
 
 An a count includes retained fallback drawing code. It is not a count of live release UI.
@@ -25,19 +25,20 @@ Theme resolution, ranking, geometry, and gesture thresholds count as behavior. T
 
 | Column | Primary responsibility | Files | Lines |
 | --- | --- | ---: | ---: |
-| a | Draws RN pixels | 50 | 10,920 |
-| b | Decides behavior | 216 | 26,706 |
+| a | Draws RN pixels | 46 | 10,325 |
+| b | Decides behavior | 219 | 27,013 |
 | c | Holds data | 75 | 13,369 |
-| d | Glue | 61 | 4,316 |
-| Total | All included files | 402 | 55,311 |
+| d | Glue | 63 | 4,353 |
+| Total | All included files | 403 | 55,060 |
 
 ## Findings that set the order
 
-1. New Tab personalization and the due feedback check-in still draw RN pixels. Release postcards/pages retain RN bodies, but the 0.3.4 version has no matching notes entry. Frozen-page handoff snapshots/washes and Little Solara page overlays also retain RN pixels. The component list below separates these from native-shadowed fallbacks.
-2. Bookmarks bar, bookmark dialogs, extension popup frames, install/pin sheets and side-panel containers now draw natively. Their JS bridges still decide actions and project state.
-3. Native controls still depend on JS actions, menus, focus, navigation, import, media, and window orchestration.
-4. Native workspace ownership is already the default. It does not remove JS sync, library reconciliation, caches, or migration work.
-5. A native window shell still wraps an RN main root. Browser pane roots add more RN roots. Native UI switches do not disable the RN runtime.
+1. Targeted native hosts wired in this follow-up: sad-tab, selection, swipe, frozen-page. The appendix reclassifies their former drawing adapters.
+2. New Tab personalization and the due feedback check-in still draw RN pixels. Release postcards/pages retain RN bodies, but the 0.3.4 version has no matching notes entry. Little Solara card fill and unrelated fallback surfaces retain RN pixels; frozen-page snapshots/washes now use the native view. The component list below separates these from native-shadowed fallbacks.
+3. Bookmarks bar, bookmark dialogs, extension popup frames, install/pin sheets and side-panel containers now draw natively. Their JS bridges still decide actions and project state.
+4. Native controls still depend on JS actions, menus, focus, navigation, import, media, and window orchestration.
+5. Native workspace ownership is already the default. It does not remove JS sync, library reconciliation, caches, or migration work.
+6. A native window shell still wraps an RN main root. Browser pane roots add more RN roots. Native UI switches do not disable the RN runtime.
 
 These are source findings. Runtime reachability, visual parity, and root counts in an actual release are **unverified** by this source inventory; its release-path findings remain the 2026-11-13 audit.
 Native counterparts below prove that code exists. They do not establish complete behavioral parity.
@@ -69,7 +70,7 @@ The root `legacy.ts` is Bootstrap. Generic library helpers stay in Lib.
 | Bootstrap | 6 | 43 | 78 | 51 | 134 | 306 |
 | Shared UI | 7 | 409 | 0 | 0 | 126 | 535 |
 | Window layout | 20 | 406 | 1,669 | 11 | 193 | 2,279 |
-| Page hosting | 14 | 456 | 1,494 | 321 | 256 | 2,527 |
+| Page hosting | 15 | 0 | 1,744 | 321 | 293 | 2,358 |
 | Split panes | 9 | 461 | 315 | 23 | 171 | 970 |
 | Sidebar | 38 | 1,160 | 2,348 | 31 | 1,027 | 4,566 |
 | Top strip | 6 | 1,754 | 315 | 0 | 408 | 2,477 |
@@ -84,7 +85,7 @@ The root `legacy.ts` is Bootstrap. Generic library helpers stay in Lib.
 | Internal pages | 11 | 0 | 372 | 0 | 53 | 425 |
 | Downloads | 3 | 659 | 43 | 0 | 43 | 745 |
 | Extensions | 10 | 373 | 1,249 | 108 | 0 | 1,730 |
-| Site and prompts | 22 | 2,121 | 1,192 | 0 | 91 | 3,404 |
+| Site and prompts | 22 | 1,982 | 1,249 | 0 | 91 | 3,322 |
 | Media | 13 | 55 | 700 | 240 | 121 | 1,116 |
 | Peek | 5 | 239 | 225 | 0 | 56 | 520 |
 | Little Solara | 3 | 129 | 324 | 0 | 0 | 453 |
@@ -93,7 +94,7 @@ The root `legacy.ts` is Bootstrap. Generic library helpers stay in Lib.
 | Store | 49 | 0 | 5,579 | 2,920 | 176 | 8,675 |
 | Sync | 18 | 0 | 87 | 6,050 | 1 | 6,138 |
 | Lib | 76 | 0 | 6,177 | 2,060 | 323 | 8,560 |
-| Total | 402 | 10,920 | 26,706 | 13,369 | 4,316 | 55,311 |
+| Total | 403 | 10,325 | 27,013 | 13,369 | 4,353 | 55,060 |
 
 ## 0.4.0: components still drawing on native-default paths
 
@@ -107,19 +108,19 @@ Paths in this section: `C/` = `apps/browser/src/components/`; `UI/` = `native/So
 `Settings/` = `packages/settings/ios/`. Native filenames end in `.swift` unless shown otherwise.
 Sizes are whole-file lines, including behavior and glue, not measured pixel code. Shared helpers are listed once.
 
-### Remaining components, grouped by the 0.4.0 roadmap rows
+### Components and targeted native-host ports, grouped by the 0.4.0 roadmap rows
 
 | Roadmap row | RN components and when they draw | Native counterpart already present | Missing for 0.4.0 |
 | --- | --- | --- | --- |
 | New Tab's Personalize, feedback check-in and release postcard | `C/ntp/Personalize.tsx` (94): `PersonalizeButton`, `PersonalizePanel`; `C/onboarding/personalize.tsx` (131): `ThemeColorPicker`, `ColorButton`, `TabLayoutPicker`, `LayoutButton`; `C/onboarding/ui.tsx` (82): `Radio`. Nonprivate NTP mounts the button; opening it draws text, swatches, rings, layout miniatures and radios. | `UI/Onboarding/OnboardingPersonalize` already implements native theme/layout pickers. `UI/NewTab/NewTabHeroView` and `Settings/NewTab/NativeNewTabView` replace only the hero. | A native NTP extras host, Personalize button/panel, picker integration, layout and motion. Native onboarding does not shadow these NTP consumers. |
 | Same New Tab row: feedback | `C/ntp/CheckInBanner.tsx` (109): `CheckInBanner`, `Card`, `CloseButton`. RN app image, text and button states when a nonprivate trial is at least seven days old and the check-in is not complete (`lib/defaultBrowserCheckIn.ts`). | Native `Surface`, `Symbol`, `VisualEffect` primitives only; no complete native check-in banner found. | Native banner, image/text/buttons and animation/placement. |
 | Same New Tab row: release notes, conditional content | `C/ntp/Postcard.tsx` (311): `ReleaseNotesPostcard`, `Tooltip`, `CloseButton`, `Artwork`, `ReleaseNotesPage`, `PageCloseButton`, `Stamp`. RN images/text/fills/borders/scrolling. Mounted by `C/ntp/index.tsx`, but **not queued by a clean 0.3.4 launch**: the catalog has only `1.0`, while the app is `0.3.4`. Matching saved pending notes or matching future version/content can activate it; postcard also needs at least 560×420 points. | Native startup release-note policy (`UI/Services/AppStartupPolicy`, `Settings/Services/NativeAppStartup`), plus native surface/backdrop primitives. No complete native postcard/page body found. | Port retained postcard/page/tooltip/artwork/stamp and motion. It has production consumers; lack of matching current content is not a dead-file proof. |
-| Native site controls and prompts | `C/site/SelectionPopover.tsx` (139): `SelectionPopover`, `Bar`, `SearchButton` draw the selection-search wash, hover/press fill and text in **Little Solara** because `windowShellActive` is false there. | `UI/PaneOverlays/SelectionBarView`; `Settings/PaneOverlays/NativePaneOverlays`. Site panels, permission/password/autofill/external-app/engine/device prompts, translation and zoom already have native bodies. | Route the existing native selection overlay into small windows. Prompt bodies remain native there through process-level toolbar/pages availability, even though the browser pane-prompt host is absent. |
+| Native site controls and prompts | `C/site/SelectionPopover.tsx` (57): delay, selection geometry and search actions feed native views; RN `Bar`/`SearchButton` drawing is removed. | `UI/PaneOverlays/SelectionBarView`; `Settings/PaneOverlays/HostedSelectionBar` for Little Solara, no-shell and Peek; existing browser pane host retained. | Targeted selection port wired. JS behavior and feeds remain for 0.5.0/0.7.0. |
 | Native extensions toolbar, overlays and side panel | No proven RN pixels with normal native capabilities. Popup frames, install/permission/pin sheets and side-panel containers are now native-only. `ExtensionOverlays` returns null; side-panel host returns null, with a transparent spacer. | `Settings/Toolbar/NativeExtensionActionPopup`, `UI/Panels/ExtensionDialogViews`, `UI/SidePanel/ExtensionSidePanelView`, `Settings/SidePanel/NativeExtensionSidePanel`, native toolbar buttons. | Retire or account for RN toolbar-button/badge capability fallbacks. JS models/menus/install/lifecycle remain 0.5.0/0.6.0 work. Small-window popups are rejected in both JS and native code; missing support is not an RN popup fallback. |
 | Native media: sidebar/hover player, cast/share pickers, tab badges | No proven RN media-body pixels on the normal path. `TabBadges`, `PipBadge`, `CaptureBadge` are used only by the React strip fallback. Share-bar animation wrappers are transparent. | `UI/Media/{SidebarPlayerView,HoverPlayerCardView,ShareBarView,SharePickerView,CastPickerView,CliControlPillView}`; `UI/Primitives/{TabBadgesView,UnreadBadgeView,TabNumberHintView}`; `Settings/Media/NativeMedia`. | Retire/account for badge fallback consumers. Playback/share/cast decisions and replicas remain, but are not missing native pixel bodies. |
-| Native peek, Little Solara, calendar and meeting cards | `C/ContentCard.tsx` (735, primarily behavior): `TabPane` paints the small-window card fill; `C/layout/PaneOverlays.tsx` (84): `SadTab` paints crash/unresponsive fills, scrim and text; shared `C/layout/controls.tsx` (406): `PromptButton` paints its RN button fill and label. These remain reachable in **native-default Little Solara**, conditionally on page state. | `UI/LittleSolara/{LittleSolaraShellView,SmallBarView}` already draw its shell/bar. `UI/PaneOverlays/SadTabView` exists for normal browser overlays. Native peek, calendar/live hover cards and meeting alerts are already hosted. | Add small-window page/overlay hosting and connect existing native recovery controls; remove the RN card fill and error subtree. `NativeLittleSolara` wraps the main RN root but never starts browser pane roots. Selection/swipe gaps are in the site/layout rows. |
-| Native top strip, split chrome, swipe overlay and other layout | `C/layout/SwipeOverlay.tsx` (342): `SwipeOverlay`, `DestinationList` paint the history capsule's tint/rim, highlight, row text and icons in **Little Solara**. Shared `C/primitives.tsx` (150): `Favicon`, `FaviconFallback`, `NewTabIcon` paint RN images or initials through those rows. | `UI/PaneOverlays/SwipeCapsuleView`; native favicon/image services; `Settings/PaneOverlays/NativePaneOverlays`. Native browser shell already uses these overlays. | Route native swipe/history destinations and icon rendering into small windows. The native input `SwipeArea` itself is not RN drawing. |
-| Same layout row: frozen shared pages | `C/layout/frozenPage.tsx` (30): `FrozenPage` paints RN snapshot `Image` and wash `View` while `tab.pageIn` or a pin-handoff bridge exists. `ContentCard` mounts it without excluding native shell/pool (nonsplit, nonfullscreen). | `UI/WindowShell/FrozenPageView` implements the matching picture/wash/press/painted contract, but only its definition and tests reference it in Swift. | Wire a production native host to snapshot/handoff state and activation/painted callbacks. Native default-on chrome does not bypass this RN subtree. |
+| Native peek, Little Solara, calendar and meeting cards | `C/ContentCard.tsx` (735, primarily behavior) still paints the small-window card fill. `C/layout/PaneOverlays.tsx` (29) now hosts native recovery UI; its RN crash/unresponsive subtree is removed. Shared `PromptButton` remains used elsewhere. | `UI/LittleSolara/{LittleSolaraShellView,SmallBarView}`; `UI/PaneOverlays/SadTabView` with `Settings/PaneOverlays/HostedSadTab` outside the browser shell. | Targeted SadTab port wired; Little Solara card fill/page hosting remains separate work. |
+| Native top strip, split chrome, swipe overlay and other layout | `C/layout/SwipeOverlay.tsx` (197) retains gesture/history actions and sends native commands. RN tint/rim, destination rows and their favicon drawing are removed. | `UI/PaneOverlays/SwipeCapsuleView`; `Settings/PaneOverlays/HostedSwipeCapsule` for Little Solara, no-shell and Peek; browser pane host retained. | Targeted swipe port wired. Layout ownership remains in its separate port. |
+| Same layout row: frozen shared pages | `C/layout/frozenPage.tsx` (53) feeds snapshot/wash state and guards activation/painted receipts; no RN `Image`, wash or `Pressable` drawing remains. | Existing `UI/WindowShell/FrozenPageView` is mounted by `Settings/PaneOverlays/HostedFrozenPage`, with no window-layout changes. | Targeted frozen-page port wired on every existing consumer, including native-default pooled windows. JS handoff decisions remain. |
 | Layout recovery (applies across roadmap rows) | `C/AreaBoundary.tsx` (106): `AreaErrorRow`, `PlainFallback` draw RN reload text/controls after two failed retries. Normal main-window/sidebar boundaries are nonquiet. Pane boundaries are quiet and draw nothing on failure. | `UI/Settings/StoreUnavailableView` handles native store-open failure only. | A native generic window/sidebar render-error/reload surface. This is a recovery lane, not healthy-launch UI. |
 | Sidebar on the right | No additional RN pixel body to port for this feature. Current native geometry/dock assumes the left edge. | `UI/WindowShell/{ShellGeometry,SidebarDock}`, native sidebar/hover/drop hosts. | Native position setting/menus and mirrored layout, resize, hover, peek and drops. Native counterparts do not mean right-side support is implemented. |
 | Only build visible sidebar rows | Default sidebar rows are already native. | `UI/Sidebar/SidebarView` creates/reuses by item key while iterating all layout items; scrolling does not materialize only a visible range. | Native viewport virtualization and row reuse; this remains performance work, not another RN pixel port. |
@@ -128,7 +129,7 @@ Sizes are whole-file lines, including behavior and glue, not measured pixel code
 Evidence for the non-obvious gaps: `C/ContentCard.tsx` mounts `FrozenPage` and uses `!pooled` for legacy content;
 `lib/pagesPool.ts` requires browser `windowShellActive`, pane roots and the pool. `Settings/WindowShell/NativeWindowShell`
 admits browser windows only; `Settings/LittleSolara/NativeLittleSolara` instead mounts backdrop/bar/react slots.
-Thus Little Solara can have a native shell while `SadTab`, `SelectionPopover` and `SwipeOverlay` choose RN bodies.
+Little Solara remains unpooled; `SadTab`, `SelectionPopover` and `SwipeOverlay` now mount existing native bodies inline.
 During main-root/pane-root handoff the older `PageOverlays` wrapper can also run, but its component-level gates still
 choose native prompt bodies/frames and native browser overlays; the wrapper alone is not proof of RN prompt pixels.
 
@@ -170,7 +171,7 @@ Brace lists name separate files. All listed native filenames end in `.swift` unl
 | Bootstrap | `apps/browser/macos/Solara-macOS/AppDelegate.swift`; `Shell/{Windows,AppModule}`; `Settings/Services/NativeAppStartup` | Always boots JS on the normal entry. Move service startup, first-window ordering, skew/error presentation, and root creation. The native shell still retains the main RN root. |
 | Shared UI | `UI/Primitives/{PopoverView,PopoverBubbleView,IconRing,CornerBadge,TabBadgesView,UnreadBadgeView,TabNumberHintView}`; `UI/Settings/SettingsControls`; native primitives exposed through shell | RN buttons, switches, tooltips, icons, and error UI survive through callers. Replace live consumers, then remove retained fallback widgets. Native store-unavailable UI does not replace every `AreaBoundary` error path. |
 | Window layout | `UI/WindowShell/{WindowShellView,SidebarDock,DockAnimator,DockMotion,ShellGeometry,FrozenPageView}`; `Settings/WindowShell/NativeWindowShell`; `Shell/ChromeWindows` | Native shell/dock default. RN still composes the window and feeds geometry, backdrop, modal state, profile paging, and drag targets. RN dock/tint branches remain fallback. |
-| Page hosting | `UI/TabPool/{TabViewPool,PageIssuer,PageRegistry,RNPageCallPolicy}`; `UI/PaneOverlays/{PaneRoots,PaneOverlays,SadTabView,SwipeCapsuleView}`; `Settings/{TabPool/TabPoolHost,PaneOverlays/NativePaneRoots,PaneOverlays/PanePrompts}` | Native engine-page pool default when available. RN `ContentCard`, page events, planning/props, overlay hints, and root handoff remain live. Move that orchestration and native fallback/error coverage before removing roots. `FrozenPage` still paints an RN snapshot/wash even with the pool; Little Solara remains unpooled. |
+| Page hosting | `UI/TabPool/{TabViewPool,PageIssuer,PageRegistry,RNPageCallPolicy}`; `UI/PaneOverlays/{PaneRoots,PaneOverlays,SadTabView,SwipeCapsuleView}`; `Settings/{TabPool/TabPoolHost,PaneOverlays/NativePaneRoots,PaneOverlays/PanePrompts}` | Native engine-page pool default when available. RN `ContentCard`, page events, planning/props, overlay hints, and root handoff remain live. Move that orchestration and native fallback/error coverage before removing roots. `FrozenPage` now mounts native snapshot/wash hosting even with the pool; Little Solara remains unpooled. |
 | Split panes | `UI/Split/{SplitChromeView,SplitPanesView,SplitSlots,SplitDividerView,SplitDropZonesView,SplitEmptyStateView}`; `Settings/Split/NativeSplitChrome`; `Store/Splits` | Native pooled chrome default. JS still chooses pane actions, feeds toolbars/toasts, and retains sizing/drop/empty-state fallbacks. Native chrome alone does not remove JS commands. |
 | Sidebar | `UI/Sidebar/{SidebarView,SidebarChrome,SidebarFolderPanel,SidebarGroupCard,SidebarIconPicker,SidebarHoverSurface,TabSearchPanel,TabSwitcherPanel}`; `Settings/Sidebar/{NativeSidebar,NativeSidebarShell,NativeSidebarDock,NativeSidebarHoverCard,NativeTabPickers}` | Rows and full column are native by default gates. JS still feeds theme/media/live/selection and handles menus, rename, close, search, hover, folder, and drop choices. Header/footer/group/hover pixels remain fallback. |
 | Top strip | `UI/TopStrip/{TopStripView,StripPageView,StripControls,StripPeekView,StripDrag,StripContext,StripLayout}`; `Settings/TopStrip/{NativeTopStrip,NativeTopStripPeek}`; `Store/StripQuery` | Native default; 1,754-line RN strip remains behind capability checks. Move JS callbacks, group/folder menus, entry policy, and reorder policy. Verify cached registration timing before calling the fallback dead. |
@@ -273,11 +274,11 @@ Secondary work in a file moves with its own column: drawing inside a b or d file
 
 | Version | Leaves | Files | Lines | Largest groups (lines in that column) |
 | --- | --- | ---: | ---: | --- |
-| 0.4.0: React Native draws nothing | a, drawing | 50 | 10,920 | Site and prompts 2,121; Top strip 1,754; Sidebar 1,160; Toolbar 1,123; Downloads 659 |
-| 0.5.0: React Native decides nothing | b, behaviour | 216 | 26,706 | Lib 6,177; Store 5,579; Sidebar 2,348; Window layout 1,669; Page hosting 1,494 |
+| 0.4.0: React Native draws nothing | a, drawing | 46 | 10,325 | Site and prompts 1,982; Top strip 1,754; Sidebar 1,160; Toolbar 1,123; Downloads 659 |
+| 0.5.0: React Native decides nothing | b, behaviour | 219 | 27,013 | Lib 6,177; Store 5,579; Sidebar 2,348; Window layout 1,669; Page hosting 1,744 |
 | 0.6.0: the data layer is native | c, data | 75 | 13,369 | Sync 6,050; Store 2,920; Lib 2,060; Settings 693; Onboarding 501 |
-| 0.7.0: React Native off by default | d, glue, once nothing needs a root | 61 | 4,316 | Sidebar 1,027; Top strip 408; Toolbar 331; Lib 323; Page hosting 256 |
-| 1.0.0: React Native deleted | everything retained, plus the RN host, Expo modules, Metro, pods and patches outside apps/browser/src | 402 | 55,311 | see the 1.0.0 row below |
+| 0.7.0: React Native off by default | d, glue, once nothing needs a root | 63 | 4,353 | Sidebar 1,027; Top strip 408; Toolbar 331; Lib 323; Page hosting 293 |
+| 1.0.0: React Native deleted | everything retained, plus the RN host, Expo modules, Metro, pods and patches outside apps/browser/src | 403 | 55,060 | see the 1.0.0 row below |
 
 React Native roots left today: 3 AppRegistry registrations (`main`, `pane`, and the API-skew screen, which reuses `main`),
 so 2 module names; one `main` root per browser or Little Solara window, plus a `pane` root for each pane whose overlay
@@ -289,7 +290,7 @@ Each cell lists the largest dependencies first. These are proposed work boundari
 
 | Milestone | Required moves | Exit evidence to collect later |
 | --- | --- | --- |
-| 0.4.0: draws nothing in RN | Port NTP extras and their shared onboarding pickers; wire native frozen-page handoff; cover Little Solara card/swipe/selection/error pixels and generic render recovery. Bookmarks bar and extension popup/frame/sheets/panel pixels are already native. Decide the supported recovery/capability lane before retiring toolbar/find/site/download/legacy Peek fallbacks and API-skew pixels. Transfer RN-driven layout/animation where native content still depends on it. Secondary a work inside b/d files also counts. | Every supported release surface and recovery path draws native pixels. Exercise unavailable-capability and handoff paths. Retained development fallbacks must be outside the milestone's supported release lane. |
+| 0.4.0: draws nothing in RN | Port NTP extras and their shared onboarding pickers; finish Little Solara card fill/page hosting; frozen handoff, swipe, selection and SadTab bodies are now native; cover generic render recovery. Bookmarks bar and extension popup/frame/sheets/panel pixels are already native. Decide the supported recovery/capability lane before retiring toolbar/find/site/download/legacy Peek fallbacks and API-skew pixels. Transfer RN-driven layout/animation where native content still depends on it. Secondary a work inside b/d files also counts. | Every supported release surface and recovery path draws native pixels. Exercise unavailable-capability and handoff paths. Retained development fallbacks must be outside the milestone's supported release lane. |
 | 0.5.0: decides nothing in RN | Move command/menu/window/focus/navigation orchestration; omnibox action/disposition/clipboard policy; import and settings RPC actions; sidebar/top-strip drag/selection/close/rename; live auth/meeting integration; media/extension/prompt/translation lifecycle. Retire TS workspace fallback reducers after native parity is demonstrated. | Native views and commands work with JS action/RPC handlers disabled. Native UI has no required JS decision round trip. |
 | 0.6.0: data layer is native | Move the JS sync coordinator/adapters/durable metadata and remaining history reconciliation/migrations first. Bookmark reconciliation, migration and caches moved in 0.3.0. Remove remaining JS history/favicon/launch caches and unwrapped Zustand stores. Replace or delete UI/page/media/extension replicas. Keep native writer/ownership safeguards during the transition. | Full persistence, restart, import, sync, privacy deletion, and recovery work without JS data services. Native SolaraSync must be wired into the app, not merely present in the library. |
 | 0.7.0: RN off by default | Remove mandatory `AppDelegate` main/pane root creation and `main.tsx` startup dependency. Give native app startup, window/menu binding, settings services, page props, and root handoff independent lifetimes. Default to no RN host/bridge; any compatibility switch must explicitly opt in. | Signed distribution starts, opens windows/tabs/settings, syncs, quits, and restores with no RN runtime or roots. UI switches being on is insufficient evidence. |
@@ -357,20 +358,21 @@ Notes name secondary work and immediate deletion candidates. Whole-file lines re
 | `apps/browser/src/components/layout/NativeSplitToolbars.tsx` | 15 | d | 0.7.0 | Toolbar JSON/callback relay |
 | `apps/browser/src/components/layout/NativeStripControls.tsx` | 77 | d | 0.7.0 | Native controls/glow JSON feed |
 | `apps/browser/src/components/layout/NativeTopStrip.tsx` | 331 | d | 0.7.0 | Strip JSON feed; also b actions |
-| `apps/browser/src/components/layout/PaneOverlays.tsx` | 84 | a | 0.4.0 | RN SadTab pixels live in Little Solara; native in browser shell; also d status host |
+| `apps/browser/src/components/layout/PaneOverlays.tsx` | 29 | d | 0.7.0 | Native SadTabView hosting and browser overlay feed; no RN recovery pixels |
+| `apps/browser/src/components/layout/sadTabState.ts` | 8 | d | 0.7.0 | Native SadTab state/theme projection |
 | `apps/browser/src/components/layout/ProfileSwipe.tsx` | 113 | b | 0.5.0 | Profile swipe decisions; native tint placement |
 | `apps/browser/src/components/layout/ShellBackdrop.tsx` | 42 | d | 0.7.0 | Native backdrop placement/feed |
 | `apps/browser/src/components/layout/SidebarDock.tsx` | 489 | b | 0.5.0 | Dock/motion decisions; also a fallback surface |
 | `apps/browser/src/components/layout/SplitChrome.tsx` | 344 | a | 0.4.0 | Fallback divider/drop/toast pixels; also b |
 | `apps/browser/src/components/layout/SplitEmptyState.tsx` | 117 | a | 0.4.0 | Fallback pane search pixels; also b |
-| `apps/browser/src/components/layout/SwipeOverlay.tsx` | 342 | a | 0.4.0 | RN swipe/destination pixels live in Little Solara; native in browser shell; also b motion |
+| `apps/browser/src/components/layout/SwipeOverlay.tsx` | 197 | b | 0.5.0 | Gesture/navigation policy and native SwipeCapsuleView messages; no RN capsule or list |
 | `apps/browser/src/components/layout/TopTabStrip.tsx` | 1,754 | a | 0.4.0 | Fallback tab-strip pixels; also b drag/menu |
 | `apps/browser/src/components/layout/WindowProfile.tsx` | 26 | d | 0.7.0 | Native profile/neighbour mirror |
 | `apps/browser/src/components/layout/controls.tsx` | 406 | a | 0.4.0 | RN buttons/popovers; also b hover/motion |
 | `apps/browser/src/components/layout/devExpose.ts` | 12 | d | 0.7.0 | Development exposure facade |
 | `apps/browser/src/components/layout/dockMotion.ts` | 79 | b | 0.5.0 | Dock motion/edge/hit rules; also c |
 | `apps/browser/src/components/layout/fileDrop.tsx` | 132 | b | 0.5.0 | Drop validation and tab placement |
-| `apps/browser/src/components/layout/frozenPage.tsx` | 30 | a | 0.4.0 | Live RN handoff snapshot/wash, including native-default pooled windows |
+| `apps/browser/src/components/layout/frozenPage.tsx` | 53 | b | 0.5.0 | Handoff receipt/activation guards and native FrozenPageView state; also d hosting |
 | `apps/browser/src/components/layout/geometry.ts` | 97 | b | 0.5.0 | Split sizing and toolbar geometry |
 | `apps/browser/src/components/layout/history.ts` | 140 | b | 0.5.0 | Back/forward/history target rules; also c |
 | `apps/browser/src/components/layout/measuredWidths.ts` | 11 | c | 0.6.0 | Measured-width cache |
@@ -538,7 +540,7 @@ Notes name secondary work and immediate deletion candidates. Whole-file lines re
 | `apps/browser/src/components/site/NativePromptBody.tsx` | 91 | d | 0.7.0 | Native prompt placement/size feed |
 | `apps/browser/src/components/site/NativeSiteControls.tsx` | 181 | b | 0.5.0 | Site-panel decisions; also d native host |
 | `apps/browser/src/components/site/Prompts.tsx` | 447 | a | 0.4.0 | Fallback prompt pixels; also b answers |
-| `apps/browser/src/components/site/SelectionPopover.tsx` | 139 | a | 0.4.0 | RN search bar live in Little Solara; native in browser shell; also b actions |
+| `apps/browser/src/components/site/SelectionPopover.tsx` | 57 | b | 0.5.0 | Selection delay/search actions and native SelectionBarView state; also d hosting |
 | `apps/browser/src/components/site/SiteControls.tsx` | 492 | a | 0.4.0 | Fallback site panel; also b policy |
 | `apps/browser/src/components/site/SiteControlsParts.tsx` | 259 | a | 0.4.0 | RN site-panel tiles/rows |
 | `apps/browser/src/components/site/SiteExtensions.tsx` | 65 | a | 0.4.0 | Fallback extension grid; also b menus |

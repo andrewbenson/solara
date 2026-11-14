@@ -10,12 +10,10 @@ const appArg = args.find((a) => !a.startsWith("--"));
 if (!appArg) {
   console.error(`usage: node selection-popover-test.mjs <Debug Solara.app> [--keep-data]
 
-The selection search bar over a local page whose custom search engine is a local URL, drawn by RN and then natively
-(SOLARA_NATIVE_SHELL=1: SelectionBarView in the tab's pane overlay container on top of the shell's card). A word selected in the page, as a mouse selection reports it, brings the bar up 6 above it
-(and below a word near the top), centred on it and kept 8 inside the page; the bar and its Search button sit on the same window frames in both
-within half a point, RN draws no bar with the switch on, the native bar fades in, and a click on Search through the
-window searches the custom engine for the word and takes the bar down. A third run pools the page: RN mounts no
-SelectionPopover and the bar comes from the pool's page messages, on the same frames, and searches the same way.`);
+The existing native SelectionBarView over a local page with a local custom search engine, hosted inline without
+the browser shell, in its native pane overlay, over a pooled page, and in Little Solara. A mouse selection brings
+the bar up 6 above the word (below one near the top), centred and kept 8 inside the page. Every leg checks native
+geometry, no RN bar, the search action, and in-process PNG snapshots.`);
   process.exit(2);
 }
 const keep = args.includes("--keep-data");
@@ -26,8 +24,8 @@ const server = createServer((req, res) => {
   res.writeHead(200, { "content-type": "text/html" });
   if (req.url.startsWith("/search")) return res.end(searchPage(req.url));
   res.end(`<!doctype html><title>WORDS</title><link rel="icon" href="data:,"><body style="margin:0;font:16px sans-serif">
-<p style="position:absolute;left:10px;top:4px;margin:0"><span id="top">topmost</span></p>
-<p style="position:absolute;left:300px;top:300px;margin:0">some <span id="mid">selectable</span> words</p></body>`);
+<p style="position:absolute;left:10px;top:4px;margin:0"><span id="top" tabindex="0">topmost</span></p>
+<p style="position:absolute;left:300px;top:300px;margin:0">some <span id="mid" tabindex="0">selectable</span> words</p></body>`);
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const base = `http://127.0.0.1:${server.address().port}`;
@@ -50,8 +48,6 @@ const click = (n, p) => act(n, "mouse:moved:" + p[0] + "," + p[1]).then(() => se
   .then(() => act(n, "mouse:down:" + p[0] + "," + p[1])).then(() => settle(60)).then(() => act(n, "mouse:up:" + p[0] + "," + p[1]));
 const native = () => M && M.describePaneOverlays ? M.describePaneOverlays("w1").then(JSON.parse) : Promise.resolve(null);
 const rnBar = () => acPerf.findFibers("Bar", 500).find((f) => f.memoizedProps && f.memoizedProps.selection && f.memoizedProps.area);
-const rn = () => { const bar = rnBar(); const button = fibers("SearchButton")[0]; return bar && button ? Promise.all([measure(bar), measure(button)]) : Promise.resolve(null); };
-const rnSettled = () => rn().then((a) => a && settle(200).then(rn).then((b) => JSON.stringify(a) === JSON.stringify(b) ? b : null));
 `;
 let app = null;
 let page = null;
@@ -115,10 +111,12 @@ try {
   await app.quit();
   app = null;
 
-  for (const tag of ["rn", "native", "prompts"]) {
-    const nativeShell = tag !== "rn";
+  for (const tag of ["inline", "native", "prompts", "little"]) {
+    const nativeShell = tag === "native" || tag === "prompts";
     app = await launch(resolve(appArg), {
-      data: join(scratch, `data-${tag}`), fresh: true, session: fixture, onboarded: true, probe: true,
+      data: join(scratch, `data-${tag}`), fresh: true,
+      session: tag === "little" ? { ...fixture, windows: fixture.windows.map((window) => ({ ...window, kind: "small", sidebarOpen: false })) } : fixture,
+      onboarded: true, probe: true,
       env: tag === "prompts"
         ? { SOLARA_NATIVE_SHELL: "1", SOLARA_NATIVE_PAGES_POOL: "1", SOLARA_SHELL_PANES: "1", SOLARA_TAB_POOL: "1" }
         : { SOLARA_NATIVE_SHELL: nativeShell ? "1" : "0", SOLARA_NATIVE_PAGES_POOL: "0", SOLARA_SHELL_PANES: "0" },
@@ -130,10 +128,14 @@ try {
 
     for (const [id, above] of [["mid", true], ["top", false]]) {
       await rep.check(`${tag}-${id}`, async () => {
+        await run('return ac.webviews.get("a").focus().then(() => true);');
+        await page.eval(`document.getElementById(${JSON.stringify(id)}).focus(); true`);
+        const responderBefore = await run(`return act(${number}, "responder");`);
+        if (!responderBefore.includes("RenderWidgetHostViewCocoa")) throw new Error(`page is not first responder: ${responderBefore}`);
         const word = await select(id);
-        const read = `return (${nativeShell ? `native().then((d) => { const s = d && d.tabs.a && d.tabs.a.selection; return s && s.bar && s.opacity === 1 ? [s.bar, s.button, s.area, s.above] : null; })` : "rnSettled()"});`;
+        const read = `return native().then((d) => { const s = d && d.tabs.a && d.tabs.a.selection; return s && s.bar && s.opacity === 1 ? [s.bar, s.button, s.area, s.above] : null; });`;
         let f = await until(`the bar over #${id}`, read, 3000);
-        if (nativeShell) {
+        {
           await untilSnapshot("the native selection", async (state) => {
             f = await run(read);
             if (!f) return false;
@@ -151,15 +153,20 @@ try {
           const wantX = area[0] + Math.max(8, Math.min(word[0] + word[2] / 2 - bar[2] / 2, area[2] - bar[2] - 8));
           if (Math.abs(bar[1] - wantY) > 0.5 || Math.abs(bar[0] - wantX) > 0.5) throw new Error(`bar ${bar} for word ${word} in ${area}`);
         }
+        const responderAfter = await run(`return act(${number}, "responder");`);
+        const focusedElement = await page.eval('document.activeElement.id');
+        if (responderAfter !== responderBefore || focusedElement !== id) throw new Error(`selection presentation changed page focus: ${responderBefore} -> ${responderAfter}, element ${focusedElement}`);
         const [bar, button] = f;
         got[`${tag}-${id}`] = [bar, button];
+        const captured = await run(`return ac.shell.devSnapshotWindow("w1", ${JSON.stringify(join(scratch, `${tag}-${id}.png`))});`);
+        if (!captured) throw new Error("the in-process selection snapshot failed");
         await page.eval(`getSelection().removeAllRanges(); document.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 })); document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 0 })); true`);
         await sleep(300);
-        return { bar, button };
+        return { bar, button, responderBefore, responderAfter, focusedElement };
       });
     }
 
-    if (nativeShell) {
+    {
       await rep.check(`${tag}-search-click`, async () => {
         await select("mid");
         const f = await until("the bar again", `return native().then((d) => { const s = d && d.tabs.a && d.tabs.a.selection; return s && s.button && s.opacity === 1 ? s.button : null; });`, 3000);
@@ -182,11 +189,11 @@ try {
     app = null;
   }
   for (const tag of ["native", "prompts"]) {
-    await rep.check(`${tag}-matches-rn`, async () => {
+    await rep.check(`${tag}-matches-inline`, async () => {
       for (const id of ["mid", "top"]) {
         const [nb, nbtn] = got[`${tag}-${id}`];
-        const [rb, rbtn] = got[`rn-${id}`];
-        if (!near(nb, rb) || !near(nbtn, rbtn)) throw new Error(`#${id}: ${tag} ${nb} / ${nbtn}, RN ${rb} / ${rbtn}`);
+        const [rb, rbtn] = got[`inline-${id}`];
+        if (!near(nb, rb) || !near(nbtn, rbtn)) throw new Error(`#${id}: ${tag} ${nb} / ${nbtn}, inline ${rb} / ${rbtn}`);
       }
       return got;
     });

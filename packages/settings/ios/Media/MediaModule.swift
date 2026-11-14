@@ -45,9 +45,11 @@ public class MediaModule: Module {
       FrameUpdates.readOnMain { NativePaneOverlays.swipe(windowId, tabId, json) }
     }.runOnQueue(.main)
 
-    AsyncFunction("describePaneOverlays") { (windowId: String) -> String in
-      FrameUpdates.readOnMain { NativePaneOverlays.describe(windowId) }
-    }.runOnQueue(.main)
+    #if DEBUG
+      AsyncFunction("describePaneOverlays") { (windowId: String) -> String in
+        FrameUpdates.readOnMain { NativePaneOverlays.describe(windowId) }
+      }.runOnQueue(.main)
+    #endif
 
     AsyncFunction("describeDownloadsPanel") { (windowId: String) -> String in
       FrameUpdates.readOnMain { NativeDownloadsPanel.describe(windowId) }

@@ -6,8 +6,9 @@ import SolaraStore
 import SolaraUI
 
 @MainActor final class SettingsModel {
-  struct Profile { let id: String; let name: String; let engineProfile: String }
+  struct Profile { let id: String; let name: String; let engineProfile: String; let fileTheme: ProfileFileTheme? }
   let profiles: [Profile] = []
+  let settings = Settings.defaults
   func value(_ key: String) -> JSONValue? { nil }
   func update(_ patch: JSONObject) {}
 }

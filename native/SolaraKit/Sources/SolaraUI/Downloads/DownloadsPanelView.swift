@@ -23,11 +23,13 @@ public struct DownloadsPanelState: Decodable, Equatable, Sendable {
   public var list: DownloadsListState
   public var placement: DownloadsPanelPlacement
   public var closing: Bool
+  public var token: Int?
 
   public init(list: DownloadsListState, placement: DownloadsPanelPlacement, closing: Bool) {
     self.list = list
     self.placement = placement
     self.closing = closing
+    self.token = nil
   }
 
   public static func decode(_ json: String) -> DownloadsPanelState? {
@@ -61,6 +63,7 @@ public final class DownloadsPanelView: NSView {
   private var closing = false
   private var closeTimer: Timer?
   private var pressedOutside = false
+  private var ended = false
 
   public override var isFlipped: Bool { true }
 
@@ -80,7 +83,10 @@ public final class DownloadsPanelView: NSView {
     bubble.shadowOffsetY = DownloadsPanelMetrics.shadowOffsetY
     card.addSubview(bubble)
     card.addSubview(list)
-    list.onEvent = { [weak self] e in self?.onEvent(e) }
+    list.onEvent = { [weak self] e in
+      guard let self, !self.ended, !self.closing else { return }
+      self.onEvent(e)
+    }
     list.onHeight = { [weak self] h in
       DispatchQueue.main.async {
         guard let self, abs(h - self.listHeight) > 0.25 else { return }
@@ -99,6 +105,7 @@ public final class DownloadsPanelView: NSView {
   public var presentedOpacity: Double { Double(motion.layer?.presentation()?.opacity ?? motion.layer?.opacity ?? 0) }
 
   public func update(_ next: DownloadsPanelState) {
+    guard !ended else { return }
     let wasClosing = state?.closing ?? false
     state = next
     let dark = next.list.dark
@@ -177,7 +184,10 @@ public final class DownloadsPanelView: NSView {
   private func finishClosing(after delay: Double) {
     closeTimer?.invalidate()
     closeTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
-      MainActor.assumeIsolated { self?.onClosed() }
+      MainActor.assumeIsolated {
+        guard let self, !self.ended, self.closing else { return }
+        self.onClosed()
+      }
     }
   }
 
@@ -191,10 +201,27 @@ public final class DownloadsPanelView: NSView {
   }
 
   public override func hitTest(_ point: NSPoint) -> NSView? {
-    if closing || isHidden { return nil }
+    if ended || closing || isHidden { return nil }
     let local = convert(point, from: superview)
     if let frame = cardFrame, frame.contains(local) { return super.hitTest(point) }
     return bounds.contains(local) ? self : nil
+  }
+
+  public func end() {
+    ended = true
+    closeTimer?.invalidate()
+    closeTimer = nil
+    motion.layer?.removeAllAnimations()
+    onClosed = {}
+    onDismiss = {}
+    onEvent = { _ in }
+    list.onEvent = { _ in }
+    pressedOutside = false
+  }
+
+  public override func keyDown(with event: NSEvent) {
+    if event.keyCode == 53, !ended, !closing { onDismiss() }
+    else { super.keyDown(with: event) }
   }
 
   public override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -206,5 +233,70 @@ public final class DownloadsPanelView: NSView {
     pressedOutside = false
     let local = convert(event.locationInWindow, from: nil)
     if was, bounds.contains(local), !(cardFrame?.contains(local) ?? false) { onDismiss() }
+  }
+}
+
+@MainActor
+public final class DownloadButtonView: NSView {
+  public var onPress: (() -> Void)?
+  private let control = PostcardControl(frame: .zero)
+  private var palette: [String: String] = [:]
+  private var open = false
+  public private(set) var token: Int?
+  public override var isFlipped: Bool { true }
+
+  private struct State: Decodable {
+    var open: Bool
+    var tooltip: String?
+    var token: Int?
+    var theme: [String: String]
+  }
+
+  public override init(frame: NSRect) {
+    super.init(frame: frame)
+    control.glyph = "arrow.down.circle"
+    control.glyphSize = 16
+    control.glyphWeight = .regular
+    control.radius = 10
+    control.onPress = { [weak self] in self?.onPress?() }
+    control.onHover = { [weak self] _ in self?.refresh() }
+    control.onPressed = { [weak self] _ in self?.refresh() }
+    control.setAccessibilityLabel("Downloads")
+    addSubview(control)
+  }
+
+  public required init?(coder: NSCoder) { nil }
+
+  public override func layout() {
+    super.layout()
+    control.frame = bounds
+  }
+
+  public override func setFrameSize(_ newSize: NSSize) {
+    super.setFrameSize(newSize)
+    control.frame = bounds
+  }
+
+  public func apply(json: String) {
+    guard let data = json.data(using: .utf8), let state = try? JSONDecoder().decode(State.self, from: data) else { return }
+    open = state.open
+    token = state.token
+    palette = state.theme
+    control.toolTip = state.tooltip
+    control.setAccessibilityValue(open ? "Open" : "Closed")
+    refresh()
+  }
+
+  private func refresh() {
+    control.glyphColor = palette["icon"].flatMap(CSSColor.init)?.ns ?? .labelColor
+    let color = control.pressed || open ? palette["toolbarPressed"] : control.hovered ? palette["toolbarHover"] : nil
+    control.fill = color.flatMap(CSSColor.init)?.ns
+    control.needsDisplay = true
+  }
+
+  public func end() {
+    onPress = nil
+    control.onPress = nil
+    control.interactionEnabled = false
   }
 }

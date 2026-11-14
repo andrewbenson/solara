@@ -1,15 +1,13 @@
-import { Hairline } from "@solara/shell";
+import { SolaraHostedView } from "@solara/settings";
 import { useShallow } from "zustand/react/shallow";
-import { Animated, StyleSheet, View } from "react-native";
 import { layout, useTheme } from "../lib/theme";
 import { useBrowser } from "../store/browser";
 import type { Tab } from "../store/types";
 import type { ToolbarGeometry } from "./layout/geometry";
 import type { PageState } from "./layout/pageState";
-import { TOOLBAR_DIVIDER_THICKNESS, toolbarPalette, useEasedColor } from "./layout/toolbarColors";
-import { DeveloperStripes } from "./site/DeveloperStripes";
+import { toolbarPalette } from "./layout/toolbarColors";
 import { useTabDeveloperMode, useToolbarSiteColor } from "./site/developerMode";
-import { NativeToolbar } from "./NativeToolbar";
+import { NativeToolbar, stripesUri } from "./NativeToolbar";
 
 type ToolbarTab = Pick<Tab, "id" | "url" | "title" | "windowId" | "zoom">;
 const toolbarTab = (t: Tab | undefined): ToolbarTab | undefined =>
@@ -45,15 +43,17 @@ export function Toolbar(props: ToolbarProps) {
 
 export function ToolbarBackdrop({ tabId }: { tabId: string }) {
   const theme = useTheme();
-  const url = useBrowser((s) => s.tabs[tabId]?.url ?? "");
+  const tab = useBrowser((s) => s.tabs[tabId]);
   const palette = toolbarPalette(theme, useToolbarSiteColor(tabId));
-  const band = useEasedColor(palette.background);
   const developer = useTabDeveloperMode(tabId);
+  if (!tab) return null;
   return (
-    <View pointerEvents="none" style={{ height: layout.toolbarHeight }}>
-      <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: band }]} />
-      {developer && <DeveloperStripes palette={palette} />}
-      {url ? <Hairline color={palette.divider} thickness={TOOLBAR_DIVIDER_THICKNESS} style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 1 }} /> : null}
-    </View>
+    <SolaraHostedView
+      kind="toolbarBackdrop"
+      windowId={tab.windowId}
+      pointerEvents="none"
+      state={JSON.stringify({ tabId, background: palette.background, divider: palette.divider, hairline: !!tab.url, stripes: developer ? stripesUri(palette) : null })}
+      style={{ height: layout.toolbarHeight }}
+    />
   );
 }

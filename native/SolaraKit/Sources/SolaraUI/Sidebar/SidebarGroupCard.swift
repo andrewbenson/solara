@@ -11,6 +11,8 @@ public struct SidebarGroupCardState: Decodable, Equatable, Sendable {
     public var favicon: String?
     public var icon: String?
     public var profileId: String
+    public var dimmed: Bool?
+    public var engineSymbol: String?
   }
 
   public var groupId: String
@@ -99,7 +101,7 @@ public final class SidebarGroupCardView: NSView, NSTextFieldDelegate {
 
   private let surface = PanelSurfaceView()
   private let glass = SymbolView()
-  private let field = NSTextField()
+  private let field = GroupCardSearchField()
   private let separator = NSView()
   private let scroll = NSScrollView()
   private let list = GroupCardListView()
@@ -109,6 +111,7 @@ public final class SidebarGroupCardView: NSView, NSTextFieldDelegate {
   private var selected = 0
   private var focused = false
   private weak var origin: NSResponder?
+  private var originSelection: NSRange?
   private var tracking: NSTrackingArea?
   private var inside = false
   private var ticker: Timer?
@@ -164,6 +167,9 @@ public final class SidebarGroupCardView: NSView, NSTextFieldDelegate {
     field.placeholderAttributedString = NSAttributedString(
       string: "Search Tabs", attributes: [.font: NSFont.systemFont(ofSize: 13), .foregroundColor: color("placeholder", dark ? "#FFFFFF59" : "#00000059")])
     (field.currentEditor() as? NSTextView)?.insertionPointColor = color("textPrimary", dark ? "#FFFFFF" : "#000000")
+    if let selection = tokens["selection"].flatMap({ CSSColor($0)?.ns }), let editor = field.currentEditor() as? NSTextView {
+      editor.selectedTextAttributes = [.backgroundColor: selection]
+    }
     empty.textColor = color("textTertiary", dark ? "#FFFFFF59" : "#00000059")
     PrimitiveMotion.setInstantly {
       separator.layer?.backgroundColor = CSSColor(dark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.1)")?.cg
@@ -200,6 +206,24 @@ public final class SidebarGroupCardView: NSView, NSTextFieldDelegate {
         guard let self, let row, let index = self.rowViews.firstIndex(where: { $0 === row }) else { return }
         self.choose(index)
       }
+      row.onCommand = { [weak self, weak row] event in
+        guard let self, let row, let index = self.rowViews.firstIndex(where: { $0 === row }) else { return false }
+        switch event.keyCode {
+        case 48:
+          let next = index + (event.modifierFlags.contains(.shift) ? -1 : 1)
+          self.window?.makeFirstResponder(self.rowViews.indices.contains(next) ? self.rowViews[next] : self.field)
+        case 53:
+          self.onEvent?(.close)
+          self.handBack(toPage: false)
+        case 125, 126:
+          self.select(index + (event.keyCode == 125 ? 1 : -1), reveal: true)
+          self.window?.makeFirstResponder(self.rowViews[self.selected])
+        default:
+          return false
+        }
+        return true
+      }
+      row.onFocusExit = { [weak self] in self?.releaseFocusOutsideCard() }
       list.addSubview(row)
       rowViews.append(row)
     }
@@ -208,7 +232,9 @@ public final class SidebarGroupCardView: NSView, NSTextFieldDelegate {
     for (index, (view, row)) in zip(rowViews, shown).enumerated() {
       view.icon.favicons = favicons
       view.set(row, ago: SidebarGroupCardMetrics.ago(row.usedAt, now: now), palette: palette, selected: index == selected, dark: dark)
+      view.nextKeyView = index + 1 < rowViews.count ? rowViews[index + 1] : field
     }
+    field.nextKeyView = rowViews.first ?? field
     empty.isHidden = !shown.isEmpty
     empty.stringValue = query.isEmpty ? "No tabs" : "No tabs match \u{201C}\(query)\u{201D}"
     needsLayout = true
@@ -268,7 +294,13 @@ public final class SidebarGroupCardView: NSView, NSTextFieldDelegate {
   private func takeFocus() {
     guard !focused, let window else { return }
     focused = true
-    origin = window.firstResponder
+    if let editor = window.firstResponder as? NSTextView, editor.isFieldEditor, let field = editor.delegate as? NSResponder {
+      origin = field
+      originSelection = editor.selectedRange()
+    } else {
+      origin = window.firstResponder
+      originSelection = nil
+    }
     window.makeFirstResponder(field)
   }
 
@@ -277,10 +309,21 @@ public final class SidebarGroupCardView: NSView, NSTextFieldDelegate {
     focused = false
     onEvent?(.hold(false))
     let from = origin
+    let selection = originSelection
     origin = nil
-    if field.currentEditor() != nil { window?.makeFirstResponder(nil) }
+    originSelection = nil
+    guard let window, ownsFocus else { return }
+    window.makeFirstResponder(nil)
     if toPage { return onEvent?(.focusPage) ?? () }
-    if let from, let window, (from as? NSView)?.window === window || from === window, window.makeFirstResponder(from) { return }
+    if let from, let view = from as? NSView, view.window === window, !view.isHiddenOrHasHiddenAncestor, view.acceptsFirstResponder, window.makeFirstResponder(from) {
+      if let selection, let editor = (from as? NSTextField)?.currentEditor() as? NSTextView {
+        let length = (editor.string as NSString).length
+        let location = min(selection.location, length)
+        editor.setSelectedRange(NSRange(location: location, length: min(selection.length, length - location)))
+      }
+      return
+    }
+    if from === window, window.makeFirstResponder(window) { return }
     onEvent?(.focusPage)
   }
 
@@ -292,10 +335,25 @@ public final class SidebarGroupCardView: NSView, NSTextFieldDelegate {
   }
 
   public func controlTextDidEndEditing(_ note: Notification) {
-    guard focused else { return }
-    focused = false
-    origin = nil
-    onEvent?(.hold(false))
+    releaseFocusOutsideCard()
+  }
+
+  private func releaseFocusOutsideCard() {
+    DispatchQueue.main.async { [weak self] in
+      guard let self, self.focused, !self.ownsFocus else { return }
+      self.focused = false
+      self.origin = nil
+      self.originSelection = nil
+      self.onEvent?(.hold(false))
+    }
+  }
+
+  private var ownsFocus: Bool {
+    guard let current = window?.firstResponder as? NSView else { return false }
+    if let editor = current as? NSTextView, editor.isFieldEditor, let field = editor.delegate as? NSView {
+      return field === self || field.isDescendant(of: self)
+    }
+    return current === self || current.isDescendant(of: self)
   }
 
   public func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
@@ -309,6 +367,10 @@ public final class SidebarGroupCardView: NSView, NSTextFieldDelegate {
       select(selected + 1, reveal: true)
     case #selector(NSResponder.moveUp(_:)):
       select(selected - 1, reveal: true)
+    case #selector(NSResponder.insertTab(_:)):
+      window?.makeFirstResponder(rowViews.first ?? field)
+    case #selector(NSResponder.insertBacktab(_:)):
+      window?.makeFirstResponder(rowViews.last ?? field)
     default:
       return false
     }
@@ -346,6 +408,21 @@ public final class SidebarGroupCardView: NSView, NSTextFieldDelegate {
     }
   }
 
+  public override func viewWillMove(toWindow newWindow: NSWindow?) {
+    if newWindow == nil { handBack(toPage: false) }
+    super.viewWillMove(toWindow: newWindow)
+  }
+
+  public override func viewWillMove(toSuperview newSuperview: NSView?) {
+    if newSuperview == nil { handBack(toPage: false) }
+    super.viewWillMove(toSuperview: newSuperview)
+  }
+
+  public override func removeFromSuperview() {
+    handBack(toPage: false)
+    super.removeFromSuperview()
+  }
+
   private func pointer(_ on: Bool) {
     guard on != inside else { return }
     inside = on
@@ -355,6 +432,10 @@ public final class SidebarGroupCardView: NSView, NSTextFieldDelegate {
   public override func mouseDown(with event: NSEvent) {}
 }
 
+final class GroupCardSearchField: NSTextField {
+  override func accessibilityLabel() -> String? { "Search Tabs" }
+}
+
 final class GroupCardListView: NSView {
   override var isFlipped: Bool { true }
 }
@@ -362,6 +443,8 @@ final class GroupCardListView: NSView {
 final class GroupCardRowView: NSView {
   var onHover: (() -> Void)?
   var onPress: (() -> Void)?
+  var onCommand: ((NSEvent) -> Bool)?
+  var onFocusExit: (() -> Void)?
   let icon = TabIconView()
   private let plate = CALayer()
   private let title = FadeLabel(fontSize: 13)
@@ -372,6 +455,7 @@ final class GroupCardRowView: NSView {
   var selected = false { didSet { if selected != oldValue { paint() } } }
 
   override var isFlipped: Bool { true }
+  override var acceptsFirstResponder: Bool { true }
 
   override init(frame: NSRect) {
     super.init(frame: frame)
@@ -389,9 +473,25 @@ final class GroupCardRowView: NSView {
 
   required init?(coder: NSCoder) { fatalError() }
 
+  override func becomeFirstResponder() -> Bool {
+    onHover?()
+    return true
+  }
+
+  override func resignFirstResponder() -> Bool {
+    onFocusExit?()
+    return true
+  }
+
+  override func keyDown(with event: NSEvent) {
+    if onCommand?(event) == true { return }
+    if [36, 49, 76].contains(event.keyCode), !event.isARepeat { onPress?() }
+    else { super.keyDown(with: event) }
+  }
+
   func set(_ row: SidebarGroupCardState.Row, ago: String, palette: SidebarPalette, selected: Bool, dark: Bool) {
     self.dark = dark
-    icon.set(TabIconSpec(url: row.url, favicon: row.favicon, customIcon: row.icon, profileId: row.profileId), palette: palette)
+    icon.set(TabIconSpec(url: row.url, favicon: row.favicon, customIcon: row.icon, profileId: row.profileId, dimmed: row.dimmed ?? false, engineSymbol: row.engineSymbol), palette: palette)
     title.text = row.title
     title.color = palette.textPrimary
     subtitle.stringValue = ago

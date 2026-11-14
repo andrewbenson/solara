@@ -167,7 +167,37 @@ public enum DownloadsDrags {
   public internal(set) static var lastPaths: [String] = []
 }
 
-final class DownloadRowView: HoverFillView, NSDraggingSource {
+
+class DownloadsPressableView: HoverFillView {
+  override var acceptsFirstResponder: Bool { onPress != nil && !isHiddenOrHasHiddenAncestor }
+  override var canBecomeKeyView: Bool { acceptsFirstResponder }
+  override var focusRingMaskBounds: NSRect { bounds }
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool { false }
+  override func hitTest(_ point: NSPoint) -> NSView? {
+    guard let hit = super.hitTest(point) else { return nil }
+    return hit is PostcardControl || hit is DownloadsTextButton ? hit : self
+  }
+  override func drawFocusRingMask() { NSBezierPath(roundedRect: bounds, xRadius: 6, yRadius: 6).fill() }
+  override func becomeFirstResponder() -> Bool { needsDisplay = true; noteFocusRingMaskChanged(); return acceptsFirstResponder }
+  override func resignFirstResponder() -> Bool { pressed = false; refresh(); needsDisplay = true; noteFocusRingMaskChanged(); return true }
+  override func keyDown(with event: NSEvent) {
+    if event.keyCode == 48 {
+      if event.modifierFlags.contains(.shift) { window?.selectPreviousKeyView(self) }
+      else { window?.selectNextKeyView(self) }
+      return
+    }
+    if event.keyCode == 53 { nextResponder?.keyDown(with: event); return }
+    guard acceptsFirstResponder, [36, 49, 76].contains(event.keyCode) else { return super.keyDown(with: event) }
+    if !event.isARepeat { onPress?() }
+  }
+  override func accessibilityPerformPress() -> Bool {
+    guard acceptsFirstResponder, let onPress else { return false }
+    onPress()
+    return true
+  }
+}
+
+final class DownloadRowView: DownloadsPressableView, NSDraggingSource {
   var row: DownloadRowState
   var theme: NewTabTheme
   var dark: Bool
@@ -177,7 +207,7 @@ final class DownloadRowView: HoverFillView, NSDraggingSource {
   private let status = NSTextField(labelWithString: "")
   private let track = CALayer()
   private let fill = CALayer()
-  private var buttons: [ToolbarButtonView] = []
+  private var buttons: [PostcardControl] = []
   private var textButtons: [DownloadsTextButton] = []
   private var dragStart: NSPoint?
 
@@ -207,6 +237,7 @@ final class DownloadRowView: HoverFillView, NSDraggingSource {
       self.onEvent(.menu(self.row.id))
     }
     onHover = { [weak self] _ in self?.syncButtons() }
+    setAccessibilityRole(.button)
     update(row, theme: theme, dark: dark)
   }
 
@@ -220,6 +251,7 @@ final class DownloadRowView: HoverFillView, NSDraggingSource {
     theme = nextTheme
     dark = nextDark
     let present = exists
+    setAccessibilityLabel(next.filename.isEmpty ? "Preparing…" : next.filename)
     icon.image = NSWorkspace.shared.icon(forFile: next.path.isEmpty ? next.filename : next.path)
     if next.path.isEmpty || !FileManager.default.fileExists(atPath: next.path) {
       icon.image = NSWorkspace.shared.icon(for: .init(filenameExtension: (next.filename as NSString).pathExtension) ?? .data)
@@ -281,22 +313,33 @@ final class DownloadRowView: HoverFillView, NSDraggingSource {
     } else if done && hovered {
       specs = [("magnifyingglass.circle.fill", "Show in Finder", .reveal(row.id))]
     }
-    let palette = FindBarView.palette(theme)
-    if buttons.count != specs.count || zip(buttons, specs).contains(where: { $0.state.icon != $1.0 }) {
+    if buttons.count != specs.count || zip(buttons, specs).contains(where: { $0.glyph != $1.0 }) {
       buttons.forEach { $0.removeFromSuperview() }
       buttons = specs.map { spec in
-        let state = ToolbarButtonState(
-          id: spec.1, icon: spec.0, size: 13, box: DownloadsMetrics.rowButton, radius: 6, weight: nil, color: nil, enabled: true, active: false,
-          tooltip: spec.1, menu: false, longPress: false, middle: false, plain: false)
-        let b = ToolbarButtonView(state: state, palette: palette)
+        let b = PostcardControl(frame: .zero)
+        b.glyph = spec.0
+        b.glyphSize = 13
+        b.glyphWeight = .regular
+        b.radius = 6
+        b.toolTip = spec.1
+        b.setAccessibilityLabel(spec.1)
+        b.onHover = { [weak self] _ in self?.refreshButtons() }
+        b.onPressed = { [weak self] _ in self?.refreshButtons() }
         let event = spec.2
-        b.onClick = { [weak self] _ in self?.onEvent(event) }
+        b.onPress = { [weak self] in self?.onEvent(event) }
         addSubview(b)
         return b
       }
       needsLayout = true
-    } else {
-      buttons.forEach { $0.palette = palette }
+    }
+    refreshButtons()
+  }
+
+  private func refreshButtons() {
+    for button in buttons {
+      button.glyphColor = theme.icon.ns
+      button.fill = button.pressed ? theme.toolbarPressed.ns : button.hovered ? theme.toolbarHover.ns : nil
+      button.needsDisplay = true
     }
   }
 
@@ -363,7 +406,7 @@ final class DownloadRowView: HoverFillView, NSDraggingSource {
   }
 }
 
-final class DownloadsTextButton: HoverFillView {
+final class DownloadsTextButton: DownloadsPressableView {
   let label = NSTextField(labelWithString: "")
   var theme = NewTabTheme.fallbackLight { didSet { label.textColor = theme.textSecondary.ns; refresh() } }
 
@@ -393,7 +436,7 @@ final class DownloadsTextButton: HoverFillView {
   }
 }
 
-final class DownloadsFooterButton: HoverFillView {
+final class DownloadsFooterButton: DownloadsPressableView {
   let label = NSTextField(labelWithString: "View all downloads")
   let chevron = NSImageView()
   var theme = NewTabTheme.fallbackLight { didSet { refresh() } }

@@ -193,8 +193,8 @@ pages, the link bubble and the store are already native (RN removal 01–08). Ea
 feature releases can fit between them. New UI is built in Swift from now on, never in React Native.
 
 Progress (from [native/rn-inventory.md](native/rn-inventory.md)): recounted on 2026-11-14 after the
-merged layout-controls cutover, 401 files and 52,256 lines of TypeScript remain in apps/browser/src:
-6,130 draw, 27,969 decide, 13,406 hold data and 4,751 are glue. Shared layout controls draw nothing;
+Downloads, toolbar backdrop and no-shell group cutover, 401 files and 52,044 lines of TypeScript remain in apps/browser/src:
+5,376 draw, 28,441 decide, 13,406 hold data and 4,821 are glue. Shared layout controls draw nothing;
 their existing native surfaces host the consumers, while larger retained RN surfaces are listed in the inventory.
 Source counts include retained fallback and unconsumed exports; they are not measured live pixel counts.
 React Native still registers main and pane module names, with one main root per browser/Little Solara window
@@ -208,7 +208,8 @@ Done when no React Native view appears on screen; React Native only arranges nat
 |---|---|
 | Inventory every file left in apps/browser/src by what it does (draws, decides, holds data, glue) and the milestone that removes it: docs/native/rn-inventory.md | landed b1a78d3d |
 | The New Tab page's remaining React Native parts: Personalize, the feedback check-in and the release postcard | native drawing wired: Personalize, the due feedback banner and release postcard/page use Swift hosts; JS state, actions and feeds remain for later milestones |
-| Native site controls and prompts (permissions, autofill, translate, zoom, developer mode) | in progress: existing native prompt/chooser/site/zoom bodies now serve every former shared-control consumer; RN fallback bodies, translation rows and developer button/URL-field bodies removed. Selection bar is native in Little Solara, Peek and no-shell windows. JS actions/feeds and retained ToolbarBackdrop developer stripes remain; unit/typecheck/Debug, hidden consumer and refused-session drivers, AppKit input guards, and matched control captures pass; real VoiceOver/hover feel remains an owner check |
+| Native site controls and prompts (permissions, autofill, translate, zoom, developer mode) | in progress: existing native prompt/chooser/site/zoom bodies now serve every former shared-control consumer; RN fallback bodies, translation rows and developer button/URL-field bodies removed. Selection bar is native in Little Solara, Peek and no-shell windows. JS actions/feeds remain; ToolbarBackdrop developer stripes now draw in Swift; unit/typecheck/Debug, hidden consumer and refused-session drivers, AppKit input guards, and matched control captures pass; real VoiceOver/hover feel remains an owner check |
+| Downloads popover skin/button/motion, toolbar backdrop and no-shell GroupPanel | native drawing wired: Swift hosts reuse DownloadsPanelView and SidebarGroupCardView; JS retains state, placement and actions. Debug build, targeted Swift tests and hidden downloads/toolbar/group drivers pass in both shell modes; live material/motion and VoiceOver speech remain owner checks |
 | Native extensions toolbar, overlays and side panel | drawing complete: shared Swift popup frame now serves Little Solara, existing NSMenu context/overflow menus retain their actions, native extension buttons support keyboard/VoiceOver and RN button/badge drawing is deleted. Native side panel and install/permission/pin sheets remain. JS toolbar model, menu actions and lifecycle adapters stay for 0.5.0; real VoiceOver, menu tracking and Dia visual checks remain on the owner list |
 | Native media: sidebar player, hover player, cast and share pickers, tab badges | in progress (tab badges, share bar) |
 | Native peek, Little Solara, calendar and meeting cards | in progress: crash/unresponsive controls now host native SadTabView in Little Solara and other inline consumers; small-window card fill/page hosting remains |

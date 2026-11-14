@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { launch, reporter, session, sleep } from "../../../scripts/lib/instance.mjs";
@@ -8,7 +8,7 @@ const appArg = args.find((a) => !a.startsWith("--"));
 if (!appArg) {
   console.error(`usage: node downloads-popover-test.mjs <Debug Solara.app> [--keep-data]
 
-The Downloads popover with two finished downloads, drawn by RN and then natively (SOLARA_NATIVE_SHELL=1:
+The Downloads popover with two finished downloads, hosted inline and in the native shell (SOLARA_NATIVE_SHELL=1:
 DownloadsPanelView in the shell's overlay container). In each the card sits where its placement says (left, width,
 top or bottom, the arrow's height on the button's side) and is fully faded in; the native list is as tall as RN's for
 the same rows and the native card lands on RN's frame when the placements match; RN draws no panel with the switch
@@ -17,6 +17,8 @@ without changing anything, and Clear empties the list and closes it.`);
   process.exit(2);
 }
 const keep = args.includes("--keep-data");
+const out = args.includes("--out") ? resolve(args[args.indexOf("--out") + 1]) : null;
+if (out) mkdirSync(out, { recursive: true });
 const scratch = mkdtempSync(join(tmpdir(), "ac-downloads-popover-"));
 const rep = reporter(join(scratch, "downloads-popover-test.log"), { name: "downloads-popover-test" });
 const files = ["one.zip", "two.pdf"].map((name) => {
@@ -86,10 +88,20 @@ try {
       env: { SOLARA_NATIVE_SHELL: nativeShell ? "1" : "0" },
       ready: "return !!ac.store.getState().windows.w1",
     });
+    const ported = await run(`return globalThis.expo.modules.SolaraHosted.kinds().includes("downloadsPanel");`);
     const number = await until("the window", `return C.chromeWindows().then((ws) => ws.find((w) => w.visible)?.window ?? null);`, 15000);
     const open = () => run(`${JSON.stringify(seed)}.forEach((d) => st().upsertDownload(d)); st().setDownloadsOpen("w1", true); return true;`);
-    const placed = () => until("the placement", `const f = acPerf.findFibers(${JSON.stringify(nativeShell ? "ShellDownloadsPanel" : "PanelBackground")}, 500)[0];
+    const placed = () => until("the placement", `const f = acPerf.findFibers(${JSON.stringify(ported ? "NativeDownloadsPanel" : nativeShell ? "ShellDownloadsPanel" : "PanelBackground")}, 500)[0];
       const p = f && (f.memoizedProps.placement); return p ? placement().then((root) => ({ p, root })) : null;`, 5000);
+
+    if (ported && !nativeShell) await rep.check("inline-downloads-button", async () => {
+      await run(`${JSON.stringify(seed)}.forEach((d) => st().upsertDownload(d)); st().setDownloadsOpen("w1", false); return settle(300).then(() => true);`);
+      const button = await until("the Downloads button", `return measure(fiber("DownloadsButton")).then((r) => r && r[2] > 0 ? r : null);`);
+      await run(`return click(${number}, ${JSON.stringify(centre(button))}).then(() => true);`);
+      await until("the button opens Downloads", `return !!st().windowUi.w1?.downloadsOpen || null;`);
+      await run(`st().setDownloadsOpen("w1", false); return settle(250).then(() => true);`);
+      return { button };
+    });
 
     for (const addressBar of ["toolbar", "sidebar"]) await rep.check(`${tag}-frame-${addressBar}`, async () => {
       await run(`st().updateSettings({ addressBar: ${JSON.stringify(addressBar)} }); return settle(600).then(() => true);`);
@@ -97,7 +109,7 @@ try {
       const { p, root } = await placed();
       let card;
       let list;
-      if (nativeShell) {
+      if (nativeShell || ported) {
         const d = await until("the native card", `return native().then((d) => d && d.card && d.opacity === 1 ? d : null);`, 4000);
         if (await run(`return acPerf.findFibers("PanelBackground", 500).length > 0 || acPerf.findFibers("NativeDownloadsList", 500).length > 0;`)) throw new Error("RN still draws the panel");
         const shifts = JSON.parse(await run(`return globalThis.expo.modules.SolaraDownloads.devHoverShifts();`));
@@ -119,12 +131,17 @@ try {
       if (!near(card, want)) throw new Error(`card ${card}, want ${want} from ${JSON.stringify(p)} in ${root}`);
       if (addressBar === "sidebar" && p.bottom === undefined) throw new Error(`the panel opens downward with the address bar in the sidebar: ${JSON.stringify(p)}`);
       got[`${tag}-${addressBar}`] = { card, list, p, root };
+      if (out) {
+        const path = join(out, `${tag}-${addressBar}.png`);
+        if (!await run(`return ac.shell.devSnapshotWindow("w1", ${JSON.stringify(path)});`)) throw new Error("snapshot failed");
+        writeFileSync(join(out, `${tag}-${addressBar}.json`), JSON.stringify({ card, list, p, root }, null, 2));
+      }
       await run(`st().setDownloadsOpen("w1", false); return settle(400).then(() => true);`);
       return { card, list, arrow: p.arrow, bottom: p.bottom };
     });
     await run(`st().updateSettings({ addressBar: "toolbar" }); return settle(600).then(() => true);`);
 
-    if (nativeShell) {
+    if (nativeShell || ported) {
       await rep.check("native-gone-after-close", async () => {
         await until("the panel goes", `return native().then((d) => d === null || null);`, 3000);
         await untilSnapshot("native downloads closed", (state) => !state.windows.some((w) => w.overlays.some((o) => o.kind === "downloads" && o.visible)));

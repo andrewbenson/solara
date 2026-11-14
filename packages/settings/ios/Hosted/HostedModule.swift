@@ -25,6 +25,10 @@ public class HostedModule: Module {
       HostedViews.declare(HostedPostcard.pageKind)
       HostedViews.declare(HostedFavicon.kind)
       HostedViews.declare(HostedAreaRecovery.kind)
+      HostedViews.declare(HostedToolbarBackdrop.kind)
+      HostedViews.declare(HostedGroupPanel.kind)
+      HostedViews.declare(NativeDownloadsPanel.kind)
+      HostedViews.declare(NativeDownloadsPanel.buttonKind)
       let sink = HostedSink(self)
       DispatchQueue.main.async {
         FrameUpdates.readOnMain {
@@ -38,12 +42,27 @@ public class HostedModule: Module {
           HostedPostcard.register()
           HostedFavicon.register()
           HostedAreaRecovery.register()
+          HostedToolbarBackdrop.register()
+          HostedGroupPanel.register()
+          NativeDownloadsPanel.register()
           if NativeBookmarksBar.enabled { NativeBookmarksBar.register() }
         }
       }
     }
 
     #if DEBUG
+      AsyncFunction("devGroupPanel") { (windowId: String, action: String, argument: String?) -> String in
+        FrameUpdates.readOnMain {
+          let data = (try? JSONSerialization.data(withJSONObject: HostedGroupPanel.drive(windowId, action, argument))) ?? Data("{}".utf8)
+          return String(decoding: data, as: UTF8.self)
+        }
+      }.runOnQueue(.main)
+      AsyncFunction("devToolbarBackdrops") { (windowId: String) -> String in
+        FrameUpdates.readOnMain {
+          let data = (try? JSONSerialization.data(withJSONObject: HostedToolbarBackdrop.describe(windowId))) ?? Data("[]".utf8)
+          return String(decoding: data, as: UTF8.self)
+        }
+      }.runOnQueue(.main)
       AsyncFunction("devCheckInBanner") { (windowId: String, action: String, argument: String?) -> String in
         FrameUpdates.readOnMain {
           let value = HostedCheckInBanner.drive(windowId, action, argument)

@@ -51,9 +51,11 @@ public class MediaModule: Module {
       }.runOnQueue(.main)
     #endif
 
-    AsyncFunction("describeDownloadsPanel") { (windowId: String) -> String in
-      FrameUpdates.readOnMain { NativeDownloadsPanel.describe(windowId) }
-    }.runOnQueue(.main)
+    #if DEBUG
+      AsyncFunction("describeDownloadsPanel") { (windowId: String) -> String in
+        FrameUpdates.readOnMain { NativeDownloadsPanel.describe(windowId) }
+      }.runOnQueue(.main)
+    #endif
 
     AsyncFunction("describeLittle") { (windowId: String) -> String in
       FrameUpdates.readOnMain {

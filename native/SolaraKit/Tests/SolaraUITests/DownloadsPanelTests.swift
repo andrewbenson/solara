@@ -66,3 +66,47 @@ struct DownloadsPanelTests {
     #expect(closed == 1)
   }
 }
+
+@MainActor
+struct DownloadsNativeInputTests {
+  @Test func downloadButtonRetainsItsLabelAndRequiresAnActiveClick() throws {
+    let button = DownloadButtonView(frame: CGRect(x: 0, y: 0, width: 30, height: 30))
+    button.apply(json: "{\"open\":true,\"tooltip\":null,\"theme\":{\"icon\":\"#111111\",\"toolbarHover\":\"#222222\",\"toolbarPressed\":\"#333333\"}}")
+    let control = try #require(button.subviews.first as? PostcardControl)
+    var clicks = 0
+    button.onPress = { clicks += 1 }
+    #expect(control.accessibilityLabel() == "Downloads")
+    #expect(!control.acceptsFirstMouse(for: nil))
+    #expect(control.accessibilityPerformPress())
+    #expect(clicks == 1)
+    let space = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, characters: " ", charactersIgnoringModifiers: " ", isARepeat: false, keyCode: 49))
+    control.keyDown(with: space)
+    #expect(clicks == 2)
+    button.end()
+    #expect(!control.accessibilityPerformPress())
+  }
+
+  @Test func downloadsControlsSupportKeyboardAndAccessibilityWithoutFirstClick() throws {
+    let button = DownloadsTextButton(title: "Keep")
+    var clicks = 0
+    button.onPress = { clicks += 1 }
+    #expect(button.acceptsFirstResponder)
+    #expect(!button.acceptsFirstMouse(for: nil))
+    #expect(button.accessibilityPerformPress())
+    #expect(clicks == 1)
+    let enter = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+    button.keyDown(with: enter)
+    #expect(clicks == 2)
+  }
+
+  @Test func endingAPanelCancelsItsPendingClosedReceipt() async throws {
+    let panel = DownloadsPanelView(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+    var closed = 0
+    panel.onClosed = { closed += 1 }
+    panel.close()
+    panel.end()
+    try await Task.sleep(for: .milliseconds(30))
+    #expect(closed == 0)
+    #expect(panel.hitTest(CGPoint(x: 400, y: 400)) == nil)
+  }
+}

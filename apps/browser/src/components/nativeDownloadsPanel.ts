@@ -2,10 +2,11 @@ import { publishSettingsTopic, type NativeDownloadsEvent } from "@solara/setting
 import { useEffect, useRef } from "react";
 import { addNativeSettingsHandlers } from "./settings/nativeSettings";
 
-export type DownloadsPanelEvent = NativeDownloadsEvent | { kind: "dismiss" } | { kind: "closed" };
+export type DownloadsPanelEvent = (NativeDownloadsEvent | { kind: "dismiss" } | { kind: "closed" }) & { token?: number };
 
 const windows: Record<string, string> = {};
 const handlers = new Map<string, { current: (event: DownloadsPanelEvent) => void }>();
+const owners = new Map<string, object>();
 let queued = false;
 
 function publish() {
@@ -29,12 +30,22 @@ export function useNativeDownloadsPanel(windowId: string, state: string | null, 
     return () => void (handlers.get(windowId) === ref && handlers.delete(windowId));
   }, [windowId]);
   useEffect(() => {
-    if (state === null || windows[windowId] === state) return;
+    if (state === null) {
+      if (owners.get(windowId) !== ref) return;
+      owners.delete(windowId);
+      delete windows[windowId];
+      publish();
+      return;
+    }
+    owners.set(windowId, ref);
+    if (windows[windowId] === state) return;
     windows[windowId] = state;
     publish();
   }, [windowId, state]);
   useEffect(
     () => () => {
+      if (owners.get(windowId) !== ref) return;
+      owners.delete(windowId);
       delete windows[windowId];
       publish();
     },

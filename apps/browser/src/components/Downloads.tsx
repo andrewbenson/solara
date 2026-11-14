@@ -1,11 +1,11 @@
 import { sidebarWidthOf, SIDEBAR_RAIL_WIDTH } from "../store/sidebarRail";
 import { nativeSidebarShell } from "./sidebar/sidebarShell";
 import { cancelDownload, keepDownload, pauseDownload, resumeDownload, type Download } from "@solara/solaracore";
-import { copyText, fileExists, moveToTrash, openFile, PopoverBubble, popoverBubbleAvailable, revealFile, showMenu, Surface, VisualEffect, type MenuItem } from "@solara/shell";
-import { useEffect, useRef, useState } from "react";
-import { Animated, Pressable, StyleSheet, View, type LayoutChangeEvent } from "react-native";
+import { copyText, fileExists, moveToTrash, openFile, revealFile, showMenu, type MenuItem } from "@solara/shell";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { StyleSheet, View, type LayoutChangeEvent } from "react-native";
 import { useShortcutHint, withShortcut } from "../lib/commandShortcuts";
-import { hex, layout, useTheme } from "../lib/theme";
+import { layout, useTheme } from "../lib/theme";
 import { useShallow } from "zustand/react/shallow";
 import { useBrowser } from "../store/browser";
 import { useSidebarOpen, useWindowId, useWindowUi } from "../store/hooks";
@@ -15,9 +15,8 @@ import { PROFILE_DOTS_HEIGHT, useProfileDotsShown } from "./profiles/ProfileDots
 import { openInternalPage } from "./pages/urls";
 import { useSidebarWidth } from "./sidebar/tokens";
 import { anchorInside, DOWNLOADS_PANEL, downloadsPlacement, type DownloadsPlacement, type Rect, type Size } from "./downloadsPlacement";
-import { PANEL, POPOVER_MOTION, usePopoverPresence } from "./layout/controls";
-import { IconButton } from "./primitives";
-import { NativeDownloadsView, SolaraHostedView, windowShellActive, type NativeDownloadsEvent } from "@solara/settings";
+import { PANEL, usePopoverPresence } from "./layout/controls";
+import { onHostedEvent, SolaraHostedView, windowShellActive, type NativeDownloadsEvent } from "@solara/settings";
 import { useNativeDownloadsPanel } from "./nativeDownloadsPanel";
 import { usePages } from "./layout/pageState";
 
@@ -154,7 +153,11 @@ async function locateDownloadsButton(windowId: string, origin: Rect): Promise<Re
   return null;
 }
 
+let downloadPresentations = 0;
+
 export function DownloadsButton({ windowId }: { windowId: string }) {
+  const theme = useTheme();
+  const [token] = useState(() => ++downloadPresentations);
   const open = useBrowser((s) => !!s.windowUi[windowId]?.downloadsOpen);
   const hint = useShortcutHint("downloads");
   const view = useRef<View>(null);
@@ -163,20 +166,16 @@ export function DownloadsButton({ windowId }: { windowId: string }) {
     if (!node) return;
     return registerDownloadsAnchor(windowId, () => measureInWindow(node));
   }, [windowId]);
+  useLayoutEffect(() => onHostedEvent("downloadsButton", windowId, (name, payload) => {
+    if (name !== "press" || payload.token !== token) return;
+    const s = useBrowser.getState();
+    s.setDownloadsOpen(windowId, !s.windowUi[windowId]?.downloadsOpen);
+  }), [windowId, token]);
   return (
-    <View ref={view} collapsable={false}>
-      <IconButton
-        icon="arrow.down.circle"
-        size={16}
-        box={SIDEBAR_FOOTER_DOWNLOADS.size}
-        radius={10}
-        active={open}
-        tooltip={open ? undefined : withShortcut("Downloads", hint)}
-        onPress={() => {
-          const s = useBrowser.getState();
-          s.setDownloadsOpen(windowId, !s.windowUi[windowId]?.downloadsOpen);
-        }}
-      />
+    <View ref={view} collapsable={false} style={{ width: SIDEBAR_FOOTER_DOWNLOADS.size, height: SIDEBAR_FOOTER_DOWNLOADS.size }}>
+      <SolaraHostedView kind="downloadsButton" windowId={windowId}
+        state={JSON.stringify({ open, token, tooltip: open ? null : withShortcut("Downloads", hint), theme: { icon: theme.icon, toolbarHover: theme.toolbarHover, toolbarPressed: theme.toolbarPressed } })}
+        style={StyleSheet.absoluteFill} />
     </View>
   );
 }
@@ -199,7 +198,6 @@ function DownloadsPanel({ windowId, closing, onClosed }: { windowId: string; clo
   const setOpen = (value: boolean) => useBrowser.getState().setDownloadsOpen(windowId, value);
   const { root, placement: p, onLayout } = useDownloadsPlacement(windowId, closing, { topStrip, footer: addressBar, footerBottom: PROFILE_DOTS_HEIGHT + 2 });
   const placed = p !== null;
-  const appear = useRef(new Animated.Value(0)).current;
   const closed = useRef(onClosed);
   closed.current = onClosed;
   useEffect(
@@ -216,72 +214,39 @@ function DownloadsPanel({ windowId, closing, onClosed }: { windowId: string; clo
       if (closing) closed.current();
       return;
     }
-    if (inShell) return;
-    const motion = closing ? POPOVER_MOTION.close : POPOVER_MOTION.open;
-    Animated.timing(appear, { toValue: closing ? 0 : 1, duration: motion.duration, easing: motion.easing, useNativeDriver: true }).start(
-      ({ finished }) => finished && closing && closed.current(),
-    );
   }, [closing, placed]);
 
-  const upward = p?.bottom !== undefined;
-  const arrowRoom = p && p.arrow !== "none" ? DOWNLOADS_PANEL.arrowHeight : 0;
   const listMax = p ? Math.max(ROW, Math.min(VISIBLE_ROWS * ROW, p.room - PANEL_CHROME)) : VISIBLE_ROWS * ROW;
 
-  if (inShell) {
-    return (
-      <View ref={root} collapsable={false} onLayout={onLayout} pointerEvents="none" style={StyleSheet.absoluteFill}>
-        {p && <ShellDownloadsPanel windowId={windowId} ids={ids} clearable={clearable} listMax={listMax} placement={p} closing={closing} onClose={() => setOpen(false)} onClosed={() => closed.current()} />}
-      </View>
-    );
-  }
-
   return (
-    <View ref={root} collapsable={false} onLayout={onLayout} pointerEvents={closing ? "none" : "auto"} style={StyleSheet.absoluteFill}>
-      <Pressable style={StyleSheet.absoluteFill} onPress={() => setOpen(false)} />
-      {p ? (
-        <Animated.View
-          style={{
-            position: "absolute",
-            left: p.left,
-            ...(upward ? { bottom: p.bottom } : { top: p.top }),
-            width: p.width,
-            opacity: appear,
-            transformOrigin: `${p.arrowX}px ${upward ? "bottom" : "top"}`,
-            transform: [
-              { scale: appear.interpolate({ inputRange: [0, 1], outputRange: [0.94, 1] }) },
-              { translateY: appear.interpolate({ inputRange: [0, 1], outputRange: upward ? [4, 0] : [-4, 0] }) },
-            ],
-          }}
-        >
-          <PanelBackground placement={p} />
-          <View style={{ marginTop: upward ? 0 : arrowRoom, marginBottom: upward ? arrowRoom : 0 }}>
-            <NativeDownloadsList windowId={windowId} ids={ids} clearable={clearable} listMax={listMax} onClose={() => setOpen(false)} />
-          </View>
-        </Animated.View>
-      ) : null}
+    <View ref={root} collapsable={false} onLayout={onLayout} pointerEvents={inShell || closing ? "none" : "auto"} style={StyleSheet.absoluteFill}>
+      {p && <NativeDownloadsPanel windowId={windowId} inShell={inShell} ids={ids} clearable={clearable} listMax={listMax} placement={p} closing={closing} onClose={() => setOpen(false)} onClosed={() => closed.current()} />}
     </View>
   );
 }
 
-function ShellDownloadsPanel({ windowId, ids, clearable, listMax, placement, closing, onClose, onClosed }: { windowId: string; ids: string[]; clearable: boolean; listMax: number; placement: DownloadsPlacement; closing: boolean; onClose: () => void; onClosed: () => void }) {
+function NativeDownloadsPanel({ windowId, inShell, ids, clearable, listMax, placement, closing, onClose, onClosed }: { windowId: string; inShell: boolean; ids: string[]; clearable: boolean; listMax: number; placement: DownloadsPlacement; closing: boolean; onClose: () => void; onClosed: () => void }) {
   const { state, onEvent } = useDownloadsListFeed(windowId, ids, clearable, listMax, onClose);
+  const [token] = useState(() => ++downloadPresentations);
   const { width, left, top, bottom, arrow, arrowX } = placement;
-  useNativeDownloadsPanel(windowId, `{"list":${state},"placement":${JSON.stringify({ width, left, top, bottom, arrow, arrowX })},"closing":${closing}}`, (e) => {
-    if (e.kind === "dismiss") onClose();
-    else if (e.kind === "closed") onClosed();
-    else onEvent(e);
-  });
-  return null;
-}
-
-function NativeDownloadsList({ windowId, ids, clearable, listMax, onClose }: { windowId: string; ids: string[]; clearable: boolean; listMax: number; onClose: () => void }) {
-  const { state, onEvent } = useDownloadsListFeed(windowId, ids, clearable, listMax, onClose);
-  const [height, setHeight] = useState<number | null>(null);
-  return (
-    <View style={{ height: height ?? undefined, minHeight: 1 }}>
-      <NativeDownloadsView style={StyleSheet.absoluteFill} state={state} onDownloadsEvent={(e) => onEvent(e.nativeEvent)} onDownloadsHeight={(e) => setHeight(e.nativeEvent.height)} />
-    </View>
-  );
+  const json = `{"list":${state},"placement":${JSON.stringify({ width, left, top, bottom, arrow, arrowX })},"closing":${closing},"token":${token}}`;
+  const latest = useRef({ closing, onClose, onClosed, onEvent });
+  latest.current = { closing, onClose, onClosed, onEvent };
+  const handle = (e: NativeDownloadsEvent | { kind: "dismiss" | "closed"; token?: number }) => {
+    if ((e as { token?: number }).token !== token) return;
+    if (e.kind === "closed") { if (latest.current.closing) latest.current.onClosed(); }
+    else if (!latest.current.closing) {
+      if (e.kind === "dismiss") latest.current.onClose();
+      else latest.current.onEvent(e as NativeDownloadsEvent);
+    }
+  };
+  useNativeDownloadsPanel(windowId, inShell ? json : null, handle);
+  useLayoutEffect(() => onHostedEvent("downloadsPanel", windowId, (name, payload) => {
+    if (inShell) return;
+    if (name === "action") handle(payload as NativeDownloadsEvent);
+    else if (name === "dismiss" || name === "closed") handle({ kind: name, token: payload.token as number });
+  }), [windowId, inShell, token]);
+  return inShell ? null : <SolaraHostedView kind="downloadsPanel" windowId={windowId} state={json} style={StyleSheet.absoluteFill} />;
 }
 
 function useDownloadsListFeed(windowId: string, ids: string[], clearable: boolean, listMax: number, onClose: () => void) {
@@ -313,7 +278,7 @@ function useDownloadsListFeed(windowId: string, ids: string[], clearable: boolea
       onClose();
       return openInternalPage("downloads", windowId);
     }
-    if (!d) return;
+    if (!d || !ids.includes(d.id) || !downloadVisibleIn(d, useBrowser.getState().windows[windowId])) return;
     if (e.kind === "open") void openFile(d.path);
     else if (e.kind === "reveal") void revealFile(d.path);
     else if (e.kind === "pause") void pauseDownload(d.id);
@@ -356,48 +321,6 @@ function useDownloadsPlacement(windowId: string, closing: boolean, fallback: { t
     if (!latest.current.closing) locate();
   };
   return { root, placement, onLayout };
-}
-
-function PanelBackground({ placement }: { placement: DownloadsPlacement }) {
-  const theme = useTheme();
-  const edge = hex(theme.dark ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.12)");
-  const tint = theme.dark ? "rgba(38,36,37,0.3)" : "rgba(252,251,252,0.3)";
-  if (popoverBubbleAvailable) {
-    return (
-      <PopoverBubble
-        material="popover"
-        dark={theme.dark}
-        cornerRadius={PANEL.radius}
-        arrowEdge={placement.arrow}
-        arrowX={placement.arrowX}
-        arrowWidth={DOWNLOADS_PANEL.arrowWidth}
-        arrowHeight={DOWNLOADS_PANEL.arrowHeight}
-        tint={hex(tint)}
-        edgeColor={edge}
-        edgeWidth={0.5}
-        shadowOpacity={theme.dark ? 0.45 : 0.16}
-        shadowRadius={18}
-        shadowOffsetY={8}
-        style={StyleSheet.absoluteFill}
-      />
-    );
-  }
-  const arrowRoom = placement.arrow === "none" ? 0 : DOWNLOADS_PANEL.arrowHeight;
-  return (
-    <Surface
-      cornerRadius={PANEL.radius}
-      borderColor={edge}
-      borderWidth={0.5}
-      shadowColor="#000000"
-      shadowOpacity={theme.dark ? 0.45 : 0.16}
-      shadowRadius={18}
-      shadowOffset={[0, 8]}
-      style={{ ...StyleSheet.absoluteFillObject, top: placement.arrow === "top" ? arrowRoom : 0, bottom: placement.arrow === "bottom" ? arrowRoom : 0 }}
-    >
-      <VisualEffect material="popover" cornerRadius={PANEL.radius} style={StyleSheet.absoluteFill} />
-      <View style={{ ...StyleSheet.absoluteFillObject, borderRadius: PANEL.radius, backgroundColor: tint }} />
-    </Surface>
-  );
 }
 
 export function DownloadMagnet() {

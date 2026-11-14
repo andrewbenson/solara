@@ -192,8 +192,8 @@ then it's switched off, and only then is it deleted. Settings, onboarding, Impor
 pages, the link bubble and the store are already native (RN removal 01–08). Each milestone ships as its own release;
 feature releases can fit between them. New UI is built in Swift from now on, never in React Native.
 
-Progress, updated at each release (from [native/rn-inventory.md](native/rn-inventory.md)): on 2026-11-03, 388 files and
-54,494 lines of TypeScript are left in apps/browser/src: 12,097 draw, 24,435 decide, 13,639 hold data and 4,323 are
+Progress, updated at each release (from [native/rn-inventory.md](native/rn-inventory.md)): on 2026-11-13, 407 files and
+55,533 lines of TypeScript are left in apps/browser/src: 11,026 draw, 26,757 decide, 13,369 hold data and 4,381 are
 glue. React Native starts from 3 entry points (the main window, panes, and the version-mismatch screen), with one root
 per window plus a root for each visible pane.
 

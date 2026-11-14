@@ -26,7 +26,8 @@ let package = Package(
   targets: [
     .target(name: "SolaraModel"),
     .target(name: "SolaraStore", dependencies: ["SolaraModel"]),
-    .target(name: "SolaraPersistence", dependencies: ["SolaraModel", "SolaraStore", .product(name: "GRDB", package: "GRDB.swift")]),
+    .target(name: "SolaraDurability", linkerSettings: [.linkedLibrary("sqlite3")]),
+    .target(name: "SolaraPersistence", dependencies: ["SolaraDurability", "SolaraModel", "SolaraStore", .product(name: "GRDB", package: "GRDB.swift")]),
     .target(name: "SolaraBridgeCore", dependencies: ["SolaraModel", "SolaraStore", "SolaraPersistence", "SolaraOmnibox"]),
     .target(name: "SolaraOmnibox", dependencies: ["SolaraModel"]),
     .target(name: "SolaraSync", dependencies: ["SolaraModel", "SolaraStore", "SolaraPersistence"]),
@@ -42,7 +43,7 @@ let package = Package(
     .testTarget(name: "WebKitHubTests"),
     .testTarget(name: "SolaraModelTests", dependencies: ["SolaraModel"]),
     .testTarget(name: "SolaraStoreTests", dependencies: ["SolaraModel", "SolaraStore", "SolaraPersistence"], exclude: ["Cases"]),
-    .testTarget(name: "SolaraPersistenceTests", dependencies: ["SolaraModel", "SolaraStore", "SolaraPersistence"]),
+    .testTarget(name: "SolaraPersistenceTests", dependencies: ["SolaraDurability", "SolaraModel", "SolaraStore", "SolaraPersistence"]),
     .testTarget(name: "SolaraBridgeCoreTests", dependencies: ["SolaraModel", "SolaraStore", "SolaraPersistence", "SolaraBridgeCore"]),
     .testTarget(name: "SolaraOmniboxTests", dependencies: ["SolaraOmnibox", "SolaraModel"], exclude: ["Fixtures"]),
     .testTarget(name: "SolaraImportTests", dependencies: ["SolaraImport"], exclude: ["Fixtures"]),

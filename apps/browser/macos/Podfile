@@ -142,6 +142,7 @@ ac_solara_kit = lambda do |installer|
       grdb_sqlite = 'SourcePackages/checkouts/GRDB.swift/Sources/GRDBSQLite'
       wanted = [
         '${SYMROOT}/${CONFIGURATION}${EFFECTIVE_PLATFORM_NAME}/',
+        "${PODS_ROOT}/#{kit}/Sources/SolaraDurability/include",
         "${BUILD_DIR}/../../#{grdb_sqlite}",
         "${BUILD_DIR}/../../../../../#{grdb_sqlite}",
       ]

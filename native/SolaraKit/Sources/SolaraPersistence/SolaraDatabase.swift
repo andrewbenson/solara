@@ -2,6 +2,7 @@ import Foundation
 import GRDB
 import SolaraModel
 import SolaraStore
+import SolaraDurability
 
 public enum OpenFailure: Error, Equatable {
   case corrupt(String)
@@ -11,6 +12,24 @@ public enum OpenFailure: Error, Equatable {
 public final class SolaraDatabase: Sendable {
   public let pool: any DatabaseWriter
   public let url: URL
+  let sync: DurableSync
+
+  public struct DurabilityToken: Equatable, Sendable {
+    let writes: Int64
+    let version: Int64
+  }
+
+  static func durabilityToken(_ db: Database, version: Int64? = nil) throws -> DurabilityToken {
+    var writes: Int64 = 0
+    guard sd_generation(db.sqliteConnection, &writes) == SQLITE_OK else {
+      throw DatabaseError(resultCode: .SQLITE_IOERR, message: "durable SQLite generation is unavailable")
+    }
+    return DurabilityToken(writes: writes, version: try version ?? Int64.fetchOne(db, sql: "PRAGMA data_version") ?? 0)
+  }
+
+  func durabilityToken() throws -> DurabilityToken {
+    try pool.writeWithoutTransaction { try Self.durabilityToken($0) }
+  }
 
   static func configuration() -> Configuration {
     var config = Configuration()
@@ -24,9 +43,14 @@ public final class SolaraDatabase: Sendable {
     return config
   }
 
-  public init(url: URL) throws {
+  public convenience init(url: URL) throws {
+    try self.init(url: url, sync: DurableSyncHooks())
+  }
+
+  init(url: URL, sync hooks: DurableSyncHooks) throws {
     self.url = url
-    pool = try DatabasePool(path: url.path, configuration: Self.configuration())
+    sync = DurableSync(hooks: hooks)
+    pool = try DatabasePool(path: sync.path(url), configuration: Self.configuration())
     let quick = try pool.read { db in try String.fetchAll(db, sql: "PRAGMA quick_check") }
     guard quick == ["ok"] else { throw OpenFailure.corrupt(quick.joined(separator: "; ")) }
     let migrator = Schema.migrator
@@ -35,9 +59,10 @@ public final class SolaraDatabase: Sendable {
     try pool.write { db in try Rows.setMeta(db, "schema", Schema.migrationNames.last!) }
   }
 
-  init(existing url: URL) throws {
+  init(existing url: URL, sync hooks: DurableSyncHooks = DurableSyncHooks()) throws {
     self.url = url
-    pool = try DatabaseQueue(path: url.absoluteString + "?mode=rw", configuration: Self.configuration())
+    sync = DurableSync(hooks: hooks)
+    pool = try DatabaseQueue(path: sync.path(url, existing: true), configuration: Self.configuration())
     try pool.read { db in try Self.checkCurrent(db) }
   }
 
@@ -47,20 +72,48 @@ public final class SolaraDatabase: Sendable {
     guard try Schema.migrator.appliedIdentifiers(db) == Set(Schema.migrationNames) else { throw OpenFailure.newerSchema }
   }
 
-  public func write(durable: Bool, _ body: (Database) throws -> Void) throws {
+  @discardableResult
+  public func write(durable: Bool, _ body: (Database) throws -> Void) throws -> DurabilityToken? {
+    try write(durable: durable, onCommit: {}, body)
+  }
+
+  @discardableResult
+  func write(durable: Bool, onCommit: () -> Void, _ body: (Database) throws -> Void) throws -> DurabilityToken? {
     try pool.writeWithoutTransaction { db in
-      if durable { try db.execute(sql: "PRAGMA synchronous = FULL") }
-      defer { if durable { try? db.execute(sql: "PRAGMA synchronous = NORMAL") } }
-      try db.inTransaction {
-        try body(db)
-        return .commit
+      guard durable else {
+        try db.inTransaction { try body(db); return .commit }
+        onCommit()
+        return nil
       }
-      if durable {
-        let checkpoint = try Row.fetchOne(db, sql: "PRAGMA wal_checkpoint(FULL)")
-        if let checkpoint, checkpoint[0] as Int != 0 {
-          throw DatabaseError(resultCode: .SQLITE_BUSY, message: "durable WAL checkpoint did not complete")
+      guard sync.available else {
+        try db.inTransaction { try body(db); return .commit }
+        onCommit()
+        throw sync.unavailable()
+      }
+      let version = try Int64.fetchOne(db, sql: "PRAGMA data_version") ?? 0
+      try db.execute(sql: "PRAGMA synchronous = FULL")
+      var failure: (any Error)?
+      do {
+        try sync.run(db) {
+          try db.inTransaction { try body(db); return .commit }
+          onCommit()
+          let checkpoint = try Row.fetchOne(db, sql: "PRAGMA wal_checkpoint(FULL)")
+          guard let checkpoint, checkpoint[0] as Int == 0,
+            checkpoint[1] as Int == checkpoint[2] as Int else {
+            throw DatabaseError(resultCode: .SQLITE_BUSY, message: "durable WAL checkpoint did not complete")
+          }
         }
+      } catch { failure = error }
+      do { try db.execute(sql: "PRAGMA synchronous = NORMAL") }
+      catch {
+        DurableSync.logger.error("restoring SQLite NORMAL failed: \(String(describing: error), privacy: .public)")
+        if let previous = failure {
+          throw DatabaseError(resultCode: .SQLITE_IOERR, message: "\(previous); restoring NORMAL: \(error)")
+        }
+        throw error
       }
+      if let failure { throw failure }
+      return try Self.durabilityToken(db, version: version)
     }
   }
 

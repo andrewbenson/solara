@@ -1,0 +1,5 @@
+module SolaraDurability {
+  header "SolaraDurability.h"
+  export *
+  link "sqlite3"
+}

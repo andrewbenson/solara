@@ -1,0 +1,21 @@
+#!/bin/bash
+set -euo pipefail
+if [[ $# != 1 || $1 != /* ]]; then
+  printf 'usage: %s <absolute-scratch-dir>\n' "$0" >&2
+  exit 2
+fi
+kit="$(cd "$(dirname "$0")/.." && pwd)"
+mkdir -p "$1"
+run="$(mktemp -d "$1/durability.XXXXXX")"
+source="$kit/Sources/SolaraDurability"
+tests="$kit/Tests/SolaraDurabilityTests"
+xcrun clang -Wall -Wextra -Werror -dynamiclib "$tests/PrimitiveHooks.c" -o "$run/primitive-hooks.dylib"
+xcrun clang -Wall -Wextra -Werror -dynamiclib "$tests/RegistrationHooks.c" -lsqlite3 -o "$run/registration-hooks.dylib"
+xcrun clang -Wall -Wextra -Werror -I "$source/include" "$source/SolaraDurability.c" "$tests/PrimitiveTests.c" -lsqlite3 -o "$run/tests"
+DYLD_INSERT_LIBRARIES="$run/primitive-hooks.dylib" "$run/tests" available "$run/primitives.sqlite" > "$run/primitives.stdout" 2> "$run/primitives.trace"
+cat "$run/primitives.stdout"
+for mode in collision install ignored register version; do
+  SD_TEST_REGISTRATION_FAILURE="$mode" DYLD_INSERT_LIBRARIES="$run/registration-hooks.dylib" "$run/tests" "$mode" "$run/$mode.sqlite" > "$run/$mode.log" 2>&1
+  cat "$run/$mode.log"
+done
+printf 'Traces: %s\n' "$run"

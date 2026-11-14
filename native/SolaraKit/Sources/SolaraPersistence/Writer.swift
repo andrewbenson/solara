@@ -39,6 +39,12 @@ public final class PersistenceWriter: Sendable {
   public static let keptErrors = 20
   public static let troubleAfter = 3
 
+  struct DurableCheckpoint {
+    let revision: Int
+    let generation: UInt64
+    let token: SolaraDatabase.DurabilityToken
+  }
+
   struct Pending {
     var rows = false
     var rowsScheduled = false
@@ -55,6 +61,17 @@ public final class PersistenceWriter: Sendable {
     var frozen = false
     var syncAnchor: String?
     var writtenSyncAnchor: String?
+    var requiresBaselineReload = false
+    var generation: UInt64 = 0
+    var checkpoint: DurableCheckpoint?
+    var lastDurableWriteToken: SolaraDatabase.DurabilityToken?
+    var durableWaiters: [@Sendable (FlushResult) -> Void] = []
+    var durableFlushScheduled = false
+
+    mutating func invalidateCheckpoint() {
+      generation &+= 1
+      checkpoint = nil
+    }
   }
 
   let store: Store
@@ -100,7 +117,10 @@ public final class PersistenceWriter: Sendable {
   public var errors: [String] { failures.withLock { $0 } }
 
   public func freeze() {
-    pending.withLock { $0.frozen = true }
+    pending.withLock {
+      $0.frozen = true
+      $0.invalidateCheckpoint()
+    }
   }
   public var flushCount: Int { pending.withLock { $0.flushes } }
 
@@ -110,6 +130,7 @@ public final class PersistenceWriter: Sendable {
     guard !store.config.safeMode else { return }
     let schedule = pending.withLock { p -> Bool in
       guard p.syncAnchor != anchor else { return false }
+      p.invalidateCheckpoint()
       p.syncAnchor = anchor
       p.rows = true
       let schedule = !p.rowsScheduled
@@ -124,6 +145,7 @@ public final class PersistenceWriter: Sendable {
     persistent.live = TableChange()
     guard !persistent.isEmpty else { return }
     let (scheduleRows, scheduleShadow) = pending.withLock { p -> (Bool, Bool) in
+      p.invalidateCheckpoint()
       p.rows = true
       if commit.durable { p.durable = true }
       p.shadow = true
@@ -134,10 +156,7 @@ public final class PersistenceWriter: Sendable {
       return (rows, shadow)
     }
     if commit.durable {
-      queue.async {
-        self.flushRows()
-        self.writeShadow()
-      }
+      queue.async { self.writeEverythingDurably() }
     } else if scheduleRows {
       queue.asyncAfter(deadline: .now() + Self.rowDelay) { self.flushRows() }
     }
@@ -160,13 +179,33 @@ public final class PersistenceWriter: Sendable {
     let rows = scope == .everything ? WorkspaceRows(store.sessionDocument(of: state)) : WorkspaceRows()
     let settings = state.settings.ownValues
     let downloads = state.downloads.filter { !$0.isPrivate }.map { $0.persisted() }
-    let (previous, previousSettings, previousDownloads, previousAnchor) = pending.withLock {
-      ($0.written, $0.settings, $0.downloads, $0.writtenSyncAnchor)
-    }
-    let changed = rows != previous || settings != previousSettings || downloads != previousDownloads || anchor != previousAnchor
-    if !changed && !durable { return nil }
+    var committed = false
     do {
-      try database.write(durable: durable) { db in
+      if pending.withLock({ $0.requiresBaselineReload }) {
+        let persisted = try database.load()
+        pending.withLock {
+          $0.written = scope == .everything ? persisted.workspace ?? WorkspaceRows() : WorkspaceRows()
+          $0.settings = persisted.settings
+          $0.downloads = persisted.downloads
+          $0.writtenSyncAnchor = persisted.syncAnchor
+          $0.requiresBaselineReload = false
+        }
+      }
+      let (previous, previousSettings, previousDownloads, previousAnchor) = pending.withLock {
+        ($0.written, $0.settings, $0.downloads, $0.writtenSyncAnchor)
+      }
+      let changed = rows != previous || settings != previousSettings || downloads != previousDownloads || anchor != previousAnchor
+      if !changed && !durable { return nil }
+      let token = try database.write(durable: durable, onCommit: {
+        committed = true
+        pending.withLock {
+          $0.written = rows
+          $0.settings = settings
+          $0.downloads = downloads
+          $0.writtenSyncAnchor = anchor
+          if changed { $0.flushes += 1 }
+        }
+      }) { db in
         guard changed else { return }
         if scope == .everything { try Rows.writeWorkspace(db, rows, previous: previous) }
         if settings != previousSettings { try Rows.writeSettings(db, settings) }
@@ -175,16 +214,13 @@ public final class PersistenceWriter: Sendable {
         if !store.config.safeMode { try Rows.setMeta(db, "rev", String(rev)) }
       }
       pending.withLock {
-        $0.written = rows
-        $0.settings = settings
-        $0.downloads = downloads
-        $0.writtenSyncAnchor = anchor
-        if changed { $0.flushes += 1 }
+        if durable { $0.lastDurableWriteToken = token }
       }
       succeeded()
       return nil
     } catch {
       pending.withLock {
+        if !committed { $0.requiresBaselineReload = true }
         $0.rows = true
         $0.rowsScheduled = true
         $0.durable = $0.durable || durable
@@ -244,6 +280,7 @@ public final class PersistenceWriter: Sendable {
       if $0.count > Self.keptErrors { $0.removeFirst($0.count - Self.keptErrors) }
     }
     let attempt = pending.withLock { p -> Int in
+      p.invalidateCheckpoint()
       p.failedInARow += 1
       return p.failedInARow
     }
@@ -253,7 +290,10 @@ public final class PersistenceWriter: Sendable {
   }
 
   public func markShadowDirty() {
-    pending.withLock { $0.shadow = true }
+    pending.withLock {
+      $0.invalidateCheckpoint()
+      $0.shadow = true
+    }
   }
 
   @discardableResult
@@ -269,22 +309,64 @@ public final class PersistenceWriter: Sendable {
   }
 
   func enqueueDurableFlush(_ complete: @escaping @Sendable (FlushResult) -> Void) {
-    queue.async { complete(self.writeEverythingDurably()) }
+    let schedule = pending.withLock { p -> Bool in
+      p.durableWaiters.append(complete)
+      guard !p.durableFlushScheduled else { return false }
+      p.durableFlushScheduled = true
+      return true
+    }
+    if schedule { queue.async { self.flushDurableBatch() } }
+  }
+
+  func flushDurableBatch() {
+    dispatchPrecondition(condition: .onQueue(queue))
+    let waiters = pending.withLock { p in
+      let waiters = p.durableWaiters
+      p.durableWaiters.removeAll(keepingCapacity: true)
+      return waiters
+    }
+    let result = writeEverythingDurably()
+    for complete in waiters { complete(result) }
+    let schedule = pending.withLock { p -> Bool in
+      if !p.durableWaiters.isEmpty { return true }
+      p.durableFlushScheduled = false
+      return false
+    }
+    if schedule { queue.async { self.flushDurableBatch() } }
   }
 
   @discardableResult
   func writeEverythingDurably() -> FlushResult {
     dispatchPrecondition(condition: .onQueue(queue))
-    let frozen = pending.withLock { p -> Bool in
-      guard !p.frozen else { return true }
+    let revision = store.committedSnapshot.rev
+    let checkpoint = pending.withLock { p -> DurableCheckpoint? in
+      guard !p.frozen, !p.rows, !p.shadow, !p.durable,
+        let checkpoint = p.checkpoint, checkpoint.revision == revision, checkpoint.generation == p.generation else { return nil }
+      return checkpoint
+    }
+    if let checkpoint, (try? database.durabilityToken()) == checkpoint.token,
+      store.committedSnapshot.rev == revision,
+      pending.withLock({ !$0.frozen && !$0.rows && !$0.shadow && !$0.durable && $0.generation == checkpoint.generation }) {
+      return .saved
+    }
+    let generation = pending.withLock { p -> UInt64? in
+      guard !p.frozen else { return nil }
+      p.checkpoint = nil
       p.rows = true
       p.durable = true
-      return false
+      return p.generation
     }
-    if frozen { return .failed("persistence is frozen") }
+    guard let generation else { return .failed("persistence is frozen") }
     let failures = [flushRows(), writeShadow()].compactMap { $0 }
     if !failures.isEmpty { return .failed(failures.joined(separator: "; ")) }
     if pending.withLock({ $0.rows || $0.shadow }) { return .failed("persistence still has pending writes") }
+    if store.committedSnapshot.rev == revision {
+      pending.withLock { p in
+        if !p.frozen, !p.rows, !p.shadow, !p.durable, p.generation == generation, let token = p.lastDurableWriteToken {
+          p.checkpoint = DurableCheckpoint(revision: revision, generation: generation, token: token)
+        }
+      }
+    }
     return .saved
   }
 }

@@ -10,6 +10,8 @@ public final class ToolbarView: NSView {
   public var onAnchors: ([String: CGRect]) -> Void = { _ in }
   public var onHiddenOrDetached: () -> Void = {}
   public var onGeometryChange: () -> Void = {}
+  public var onLayoutAnchorsChange: () -> Void = {}
+  private var reportedLayoutAnchors: [String: CGRect] = [:]
   public private(set) var state: ToolbarState?
 
   private let surface = CALayer()
@@ -243,6 +245,15 @@ public final class ToolbarView: NSView {
 
   public var urlEditView: NSView? { url.editorView }
 
+  public var layoutAnchors: [String: CGRect] {
+    let field = url.convert(url.bounds, to: self)
+    var anchors = ["urlField": field, "url": CGRect(x: field.minX, y: 0, width: field.width, height: min(bounds.height, ShellMetrics.toolbarHeight))]
+    for button in left + right + extensions where !button.isHidden {
+      anchors["button:\(button.state.id)"] = button.convert(button.bounds, to: self)
+    }
+    return anchors
+  }
+
   private func applyProgress(_ value: Double?, color: NSColor?) {
     guard let value else {
       progress.isHidden = true
@@ -335,6 +346,11 @@ public final class ToolbarView: NSView {
     if window != nil, anchors != reportedAnchors {
       reportedAnchors = anchors
       onAnchors(anchors)
+    }
+    let layoutAnchors = self.layoutAnchors
+    if layoutAnchors != reportedLayoutAnchors {
+      reportedLayoutAnchors = layoutAnchors
+      onLayoutAnchorsChange()
     }
   }
 

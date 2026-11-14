@@ -2,6 +2,7 @@ import CoreGraphics
 
 public enum ShellMetrics {
   public static let sidebarWidth: CGFloat = 190
+  public static let legacySidebarRailWidth: CGFloat = 84
   public static let cardTop: CGFloat = 6
   public static let cardInset: CGFloat = 7
   public static let cardRadius: CGFloat = 10
@@ -9,6 +10,7 @@ public enum ShellMetrics {
   public static let toolbarIconCenters: [CGFloat] = [21, 56, 92, 127]
   public static let breadcrumbX: CGFloat = 153
   public static let topStripHeight: CGFloat = 42
+  public static let topStripLeadingReservation: CGFloat = 78 + 8
   public static let topCardInset: CGFloat = 6
   public static let paneGap: CGFloat = 7
   public static let minPane: CGFloat = 220

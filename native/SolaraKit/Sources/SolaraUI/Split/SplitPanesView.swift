@@ -65,6 +65,7 @@ public final class SplitPanesView: NSView {
   public var favicons: SidebarFavicons?
   public var onToolbarClick: (String, ToolbarClick) -> Void = { _, _ in }
   public var onToolbarAnchors: (String, [String: CGRect]) -> Void = { _, _ in }
+  public var onToolbarGeometryChange: (String) -> Void = { _ in }
   public var onNavigate: (String, String) -> Void = { _, _ in }
   public var onReplace: (String, String) -> Void = { _, _ in }
   private var split: SplitView?
@@ -235,6 +236,7 @@ public final class SplitPanesView: NSView {
     pane.fill = cardColor
     pane.toolbar.onClick = { [weak self] click in self?.onToolbarClick(tabId, click) }
     pane.toolbar.onAnchors = { [weak self] anchors in self?.onToolbarAnchors(tabId, anchors) }
+    pane.toolbar.onLayoutAnchorsChange = { [weak self] in self?.onToolbarGeometryChange(tabId) }
     pane.setToolbar(toolbars[tabId])
     panes[tabId] = pane
     addSubview(pane.edgeShadow)

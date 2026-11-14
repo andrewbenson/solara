@@ -148,6 +148,10 @@ final class NativeToolbarHostView: ExpoView {
       guard let self, let tabId = toolbar.state?.tabId, let windowId = toolbarShell?.windowId else { return }
       AutoHideHost.toolbarReady(windowId: windowId, tabId: tabId, toolbar: toolbar)
     }
+    toolbar.onLayoutAnchorsChange = { [weak self] in
+      guard let windowId = self?.toolbarShell?.windowId else { return }
+      NativeWindowShell.host(windowId)?.scheduleLayoutProjection()
+    }
     toolbar.onHiddenOrDetached = { [weak self] in
       MainActor.assumeIsolated {
         guard let self else { return }
@@ -274,6 +278,7 @@ enum SidebarAddressBridge {
       Task { @MainActor in _ = await SettingsAdapters.js("sidebar.addressClick", windowId, payload) }
     }
     SidebarAddressBars.shared.onAnchors = { windowId, anchors in
+      NativeWindowShell.host(windowId)?.scheduleLayoutProjection()
       let state = NativeStoreHandle.store?.state
       let tabId = state?.peeks[windowId]?.tabId ?? state?.activeTabId(windowId)
       NativeExtensionActionPopup.anchorsChanged(window: ShellDrag.window(windowId), tabId: tabId, anchors: anchors)

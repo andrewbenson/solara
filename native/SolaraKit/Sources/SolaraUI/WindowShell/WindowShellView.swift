@@ -545,7 +545,10 @@ public final class WindowShellView: NSView {
     if hiddenPages.frame != frames.card { hiddenPages.frame = frames.card }
     placeCardPage()
     placeRailToolbar()
-    for view in card.subviews where view is SplitPanesView || view is PaneOverlaysView { view.needsLayout = true }
+    for view in card.subviews where view is SplitPanesView || view is PaneOverlaysView {
+      if view.frame != card.bounds { view.frame = card.bounds }
+      view.needsLayout = true
+    }
     mounted[.splitChrome]?.needsLayout = true
     onLightsLayout?()
     if changed {

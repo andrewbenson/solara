@@ -125,6 +125,24 @@ private func splitState(sizes: [Double] = [0.5, 0.5]) throws -> BrowserState {
     TabSlots.shared.remove(.pane("w1", "b"), container: other)
   }
 
+  @Test func childToolbarGeometryPublishesOnlyChangedAnchors() throws {
+    let view = SplitPanesView(windowId: "w1")
+    view.frame = CGRect(x: 0, y: 0, width: 1007, height: 700)
+    view.update(state: try splitState())
+    view.setToolbars(["a": paneToolbar("a")])
+    view.layoutSubtreeIfNeeded()
+    let toolbar = try #require(view.toolbar("a"))
+    var changes: [String] = []
+    view.onToolbarGeometryChange = { changes.append($0) }
+    toolbar.frame.size.width += 20
+    toolbar.needsLayout = true
+    toolbar.layoutSubtreeIfNeeded()
+    #expect(changes == ["a"])
+    toolbar.needsLayout = true
+    toolbar.layoutSubtreeIfNeeded()
+    #expect(changes == ["a"])
+  }
+
   @Test func eachLeafHostsItsOwnToolbarAboveThePage() throws {
     let view = SplitPanesView(windowId: "w1")
     view.frame = CGRect(x: 0, y: 0, width: 1007, height: 700)

@@ -30,8 +30,13 @@ public enum ToolTourRead {
     }
     guard let host = find(root) else { return nil }
     let model = host.model
+    func rect(_ frame: CGRect) -> [CGFloat] { [frame.minX, frame.minY, frame.width, frame.height] }
+    let card = model.cardHeight.map { CGRect(origin: model.cardOrigin, size: CGSize(width: ToolTourLayout.cardWidth, height: $0)) }
     return ["active": model.active, "visible": model.visible && !host.isHiddenOrHasHiddenAncestor,
-      "index": model.index, "stops": model.stops.map(\.id)]
+      "index": model.index, "stops": model.stops.map(\.id),
+      "card": card.map(rect) ?? NSNull(), "hole": rect(model.hole.rect),
+      "target": model.target.map(rect) ?? NSNull(), "controls": model.controlFrames.mapValues(rect)]
   }
+
 }
 #endif

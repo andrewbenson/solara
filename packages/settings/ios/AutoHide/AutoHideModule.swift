@@ -85,10 +85,15 @@ enum AutoHideHost {
     if created { setLiveTop(CGFloat(strip.restingTop), windowId: windowId, tabId: tabId) }
   }
 
+  static func layoutTop(windowId: String, tabId: String) -> CGFloat? {
+    strips[key(windowId, tabId)].map { CGFloat($0.presentationTop) }
+  }
+
   private static func setLiveTop(_ top: CGFloat?, windowId: String, tabId: String) {
     FrameUpdates.flush()
     PaneOverlays.shared.setLiveTop(top, windowId: windowId, tabId: tabId)
     NativeSplitChrome.setLiveTop(top, windowId: windowId, tabId: tabId)
+    NativeWindowShell.host(windowId)?.scheduleLayoutProjection()
   }
 
   static func toolbarReady(windowId: String? = nil, tabId: String, toolbar: ToolbarView? = nil) {

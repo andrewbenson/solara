@@ -105,6 +105,7 @@ enum NativeSplitChrome {
       let payload: [String: Any] = ["id": click.id, "kind": click.kind.rawValue, "meta": click.meta, "alt": click.alt, "shift": click.shift, "text": click.text ?? NSNull()]
       Task { @MainActor in _ = await SettingsAdapters.js("split.toolbarClick", windowId, tabId, payload) }
     }
+    view.onToolbarGeometryChange = { _ in NativeWindowShell.host(windowId)?.scheduleLayoutProjection() }
     view.onToolbarAnchors = { tabId, anchors in
       NativeExtensionActionPopup.anchorsChanged(window: ShellDrag.window(windowId), tabId: tabId, anchors: anchors)
       let payload = anchors.mapValues { [$0.minX, $0.minY, $0.width, $0.height] }

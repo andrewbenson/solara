@@ -121,7 +121,8 @@ export function TopTabStrip({
   const controls = (profileChip ? profileChip + CONTROLS_GAP : 0) + DOWNLOADS_BOX;
   const left = floating ? 8 : layout.trafficLightsWidth + LIGHTS_GAP;
   const right = Math.max(84, controls + 8 + 6);
-  const pageWidth = Math.max(0, width - left - right);
+  const nativePageWidth = useMeasuredWidth(`window-strip|${windowId}`);
+  const pageWidth = !floating && nativePageWidth !== undefined ? nativePageWidth : Math.max(0, width - left - right);
   const flare = floating ? 0 : FLARE;
 
   useEffect(() => {

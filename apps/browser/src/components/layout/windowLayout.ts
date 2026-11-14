@@ -1,3 +1,5 @@
+import { dropNativeMeasuredWidth, setNativeMeasuredWidths } from "./measuredWidths";
+import { WindowLayoutAnchorFeed, type WindowLayoutAnchors } from "@solara/settings";
 import { nativeSidebarShell } from "../sidebar/sidebarShell";
 import { create } from "zustand";
 import { switchOn } from "../../lib/killSwitches";
@@ -53,6 +55,11 @@ type UrlAnchor = { left: number; top: number; width: number; sidebar?: { height:
 export const useUrlAnchors = create<Record<string, UrlAnchor>>()(() => ({}));
 
 export function setUrlAnchor(windowId: string, anchor: UrlAnchor) {
+  if (nativeWindowAnchorFeed.active(windowId)) return;
+  writeUrlAnchor(windowId, anchor);
+}
+
+function writeUrlAnchor(windowId: string, anchor: UrlAnchor) {
   const current = useUrlAnchors.getState()[windowId];
   if (current && current.left === anchor.left && current.top === anchor.top && current.width === anchor.width && current.sidebar?.height === anchor.sidebar?.height) return;
   useUrlAnchors.setState({ [windowId]: anchor });
@@ -62,7 +69,14 @@ type CardAnchor = { left: number; top: number; width: number; height: number };
 
 export const useCardAnchors = create<Record<string, CardAnchor>>()(() => ({}));
 
+export const nativeWindowAnchorFeed = new WindowLayoutAnchorFeed();
+
 export function setCardAnchor(windowId: string, anchor: CardAnchor) {
+  if (nativeWindowAnchorFeed.active(windowId)) return;
+  writeCardAnchor(windowId, anchor);
+}
+
+function writeCardAnchor(windowId: string, anchor: CardAnchor) {
   const current = useCardAnchors.getState()[windowId];
   if (current && current.left === anchor.left && current.top === anchor.top && current.width === anchor.width && current.height === anchor.height) return;
   useCardAnchors.setState({ [windowId]: anchor });
@@ -73,4 +87,31 @@ export const useToolbarExtensionsWidths = create<Record<string, number>>()(() =>
 export function setToolbarExtensionsWidth(windowId: string, width: number) {
   if (useToolbarExtensionsWidths.getState()[windowId] === width) return;
   useToolbarExtensionsWidths.setState({ [windowId]: width });
+}
+
+export function applyNativeWindowAnchors(batch: WindowLayoutAnchors) {
+  setNativeMeasuredWidths({ [`profile-name|${batch.profileTitle}`]: batch.profileNameWidth, [`window-strip|${batch.windowId}`]: batch.stripAvailableWidth });
+  const content = batch.anchors.content;
+  if (content) writeCardAnchor(batch.windowId, { left: content[0], top: content[1], width: content[2], height: content[3] });
+  const url = batch.anchors.url;
+  if (url) writeUrlAnchor(batch.windowId, { left: url[0], top: url[1], width: url[2], ...(batch.sidebar ? { sidebar: { height: url[3] } } : {}) });
+  else dropUrlAnchor(batch.windowId);
+}
+
+function dropUrlAnchor(windowId: string) {
+  useUrlAnchors.setState((state) => {
+    const next = { ...state };
+    delete next[windowId];
+    return next;
+  }, true);
+}
+
+export function dropNativeWindowAnchors(windowId: string) {
+  dropNativeMeasuredWidth(`window-strip|${windowId}`);
+  dropUrlAnchor(windowId);
+  useCardAnchors.setState((state) => {
+    const next = { ...state };
+    delete next[windowId];
+    return next;
+  }, true);
 }

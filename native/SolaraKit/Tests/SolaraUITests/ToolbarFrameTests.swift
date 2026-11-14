@@ -39,6 +39,41 @@ struct ToolbarFrameTests {
     #expect(field.layer?.sublayers?.first?.backgroundColor?.alpha ?? 0 > 0)
   }
 
+  @Test func layoutAnchorChangesPublishOnceAndDoNotLoopOnUnchangedLayout() {
+    let f = ToolbarResizeTests.Fixture(bare: false)
+    f.toolbar.update(Self.state(windowToolbar: true))
+    f.toolbar.layoutSubtreeIfNeeded()
+    var changes = 0
+    f.toolbar.onLayoutAnchorsChange = { changes += 1 }
+    f.toolbar.needsLayout = true
+    f.toolbar.layoutSubtreeIfNeeded()
+    #expect(changes == 0)
+    f.toolbar.frame.size.width += 40
+    f.toolbar.layoutSubtreeIfNeeded()
+    #expect(changes == 1)
+    f.toolbar.needsLayout = true
+    f.toolbar.layoutSubtreeIfNeeded()
+    #expect(changes == 1)
+  }
+
+  @Test func layoutAnchorsFollowTheNativeFieldAfterRailReparenting() throws {
+    let f = ToolbarResizeTests.Fixture(bare: false)
+    f.toolbar.update(Self.state(windowToolbar: true))
+    f.shell.registerToolbar(f.toolbar, owner: f.owner)
+    for width: CGFloat in [190, 42, 190] {
+      f.shell.setSidebarWidth(width, animated: false)
+      f.toolbar.layoutSubtreeIfNeeded()
+      let field = try #require(ToolbarWebKitPillTests.fieldIn(f.toolbar))
+      let anchors = f.toolbar.layoutAnchors
+      #expect(anchors["urlField"] == field.convert(field.bounds, to: f.toolbar))
+      let band = try #require(anchors["url"])
+      #expect(band.minY == 0)
+      #expect(band.minX == anchors["urlField"]?.minX)
+      #expect(band.width == anchors["urlField"]?.width)
+      #expect(anchors == f.toolbar.layoutAnchors)
+    }
+  }
+
   @Test func anIconsOnlyToolbarHasNoSurfaceButKeepsTheAddressPill() throws {
     let f = ToolbarResizeTests.Fixture(bare: false)
     f.toolbar.update(Self.state(windowToolbar: true))

@@ -52,6 +52,21 @@ struct AutoHideStripTests {
     #expect(reduced.page == .resting(1) && reduced.fade.duration == 0.15)
   }
 
+  @MainActor @Test(arguments: [ToolbarAutoHideMode.shown, .collapsed, .peek])
+  func nativeProjectionTopMatchesTheEmittedPresentationSample(mode: ToolbarAutoHideMode) throws {
+    let strip = AutoHideStripView(frame: CGRect(x: 0, y: 0, width: 600, height: 71))
+    let style = AutoHideStripStyle(card: try #require(CSSColor("#FFFFFF")), band: nil,
+      divider: try #require(CSSColor("#00000020")), secondary: try #require(CSSColor("#00000080")), host: "example.com", hasPage: true)
+    var emitted: Double?
+    strip.onFrame = { frame in
+      emitted = frame.liveTop
+      #expect(strip.presentationTop == frame.liveTop)
+    }
+    strip.set(style: style, mode: mode, shownTop: 71)
+    #expect(strip.presentationTop == (mode == .shown ? 71 : 20))
+    #expect(emitted == strip.presentationTop)
+  }
+
   @MainActor @Test func aSiteWithoutAColorLeavesTheBandClearAndDeveloperSitesGetStripes() throws {
     let strip = AutoHideStripView(frame: CGRect(x: 0, y: 0, width: 600, height: 41))
     let plain = AutoHideStripStyle(card: try #require(CSSColor("#FFFFFF")), band: nil, divider: try #require(CSSColor("rgba(0,0,0,0.1)")), secondary: try #require(CSSColor("#00000080")), host: "example.com", hasPage: true)

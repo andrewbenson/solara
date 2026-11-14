@@ -46,6 +46,24 @@ private final class PostedTabs: @unchecked Sendable {
     #expect(PaneOverlays.shared.layer(windowId: "w9") == nil)
   }
 
+  @Test func appliedPaneFramesRemainDistinctFromPageSlots() throws {
+    let host = NSView(frame: CGRect(x: 0, y: 0, width: 1007, height: 700))
+    let view = PaneOverlaysView(windowId: "w9")
+    view.frame = host.bounds
+    host.addSubview(view)
+    defer { view.removeFromSuperview() }
+    view.update(state: try overlayState(split: true))
+    view.pageTops = ["a": 41, "b": 41]
+    view.layoutSubtreeIfNeeded()
+    #expect(view.paneFrames["a"] == CGRect(x: 0, y: 0, width: 500, height: 700))
+    let slot = try #require(view.container("a", layer: .rn))
+    #expect(slot.convert(slot.bounds, to: view).minY == 41)
+    view.pageTops = ["a": 71, "b": 41]
+    view.layoutSubtreeIfNeeded()
+    #expect(view.paneFrames["a"]?.minY == 0)
+    #expect(slot.convert(slot.bounds, to: view).minY == 71)
+  }
+
   @Test func aHiddenTabKeepsItsSlotWhileAnRnRootIsInIt() throws {
     let host = NSView(frame: CGRect(x: 0, y: 0, width: 1007, height: 700))
     let view = PaneOverlaysView(windowId: "w9")

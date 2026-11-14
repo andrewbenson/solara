@@ -68,6 +68,27 @@ struct ToolTourTests {
     #expect(model.passesThrough(CGPoint(x: 100, y: 100)))
   }
 
+  #if SOLARA_PROBES
+  @Test func measuredControlsBelongToTheCurrentStopAndSession() {
+    let model = ToolTourModel()
+    let old = CGRect(x: 10, y: 20, width: 50, height: 28)
+    let fresh = CGRect(x: 40, y: 60, width: 50, height: 28)
+    model.apply(Self.state(session: 1))
+    model.recordControlFrame("Next", frame: old, session: 1, index: 0)
+    #expect(model.controlFrames["Next"] == old)
+    model.apply(Self.state(session: 1, index: 1))
+    #expect(model.controlFrames["Next"] == nil)
+    model.recordControlFrame("Next", frame: old, session: 1, index: 0)
+    #expect(model.controlFrames["Next"] == nil)
+    model.recordControlFrame("Next", frame: fresh, session: 1, index: 1)
+    #expect(model.controlFrames["Next"] == fresh)
+    model.apply(Self.state(session: 2))
+    #expect(model.controlFrames.isEmpty)
+    model.recordControlFrame("Next", frame: old, session: 1, index: 0)
+    #expect(model.controlFrames.isEmpty)
+  }
+  #endif
+
   @Test func theRingPulsesBetweenTheRNOpacities() {
     #expect(abs(TourRing.opacity(at: 0) - 0.45) < 0.0001)
     #expect(abs(TourRing.opacity(at: 1.1) - 1) < 0.0001)

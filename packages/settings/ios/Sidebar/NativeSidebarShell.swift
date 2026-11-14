@@ -44,6 +44,7 @@ enum NativeSidebarShell {
         state: state,
         layout: SidebarShellColumn.Layout(top: number("top"), header: number("header"), bottom: number("bottom"), clip: (given["clip"] as? Bool) ?? false),
         chrome: (given["chrome"] as? String).flatMap(SidebarChromeState.decode))
+      NativeWindowShell.host(windowId)?.scheduleLayoutProjection()
     }
   }
 

@@ -41,6 +41,7 @@ public final class AutoHideStripView: NSView {
   public var onEvent: (AutoHideStripEvent) -> Void = { _ in }
   public var onFrame: (AutoHideFrame) -> Void = { _ in }
   public var onMotion: (Bool) -> Void = { _ in }
+  public private(set) var presentationTop: Double = Double(ToolbarAutoHideMetrics.toolbarHeight)
   public var frameSurface = false {
     didSet { if frameSurface != oldValue { applySurface(animated: false) } }
   }
@@ -231,6 +232,7 @@ public final class AutoHideStripView: NSView {
     let f = fade.value(at: now)
     let p = page.value(at: now)
     let top = ToolbarAutoHideCurves.liveTop(laid: laid, page: p, collapsed: mode != .shown, shownTop: shownTop)
+    presentationTop = top
     apply(bar: b, fade: f)
     onFrame(AutoHideFrame(bar: b, fade: f, liveTop: top, interactive: mode != .collapsed))
     if page.finished(at: now), bar.finished(at: now), fade.finished(at: now) {

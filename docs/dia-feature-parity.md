@@ -300,6 +300,12 @@ string doesn't matter. Afterwards: `kill %1` for the server, quit the app, `rm -
 | Shared split view in sidebar | ✓ | ✅ | one row per split, a segment per pane. A split row moves as one, as Dia's split sidebar item does (2026-10-24, issue #68): Pin / Unpin on a pane pins the split as one pinned row (never Top Apps tiles), Move to Group, New Group with Tab and Remove from Group take both panes, and the row drags into groups, pinned groups and the pinned rows. A pinned split shows as a split in the profile's other windows (separating or flipping it in one follows in the others), is parked with the last window and comes back a split, and survives relaunch. Closing any pane of a pinned split (⌘W, Close Pane, the pane's menu), or of a split in a pinned group, closes the split as the one pinned item it is: all its panes unload together, the split stays one row and the window moves off it, as closing a pinned tab does (Dia's split item has one close button, ⌥-click to unsplit). It used to unload only that pane and drop it from the split, leaving separate pinned rows (2026-10-24, issue #162). In the top strip a pinned split is two pinned cells |
 
 ## 4. Sidebar & layout
+
+Layout-port Patch 2 adds native state projection and generation-stamped card, URL and strip-width anchors, with
+legacy frame ownership retained. Residual RN content/dropdown anchors preserve their existing contract separately
+from actual native card/page/field geometry. This infrastructure does not complete the remaining layout port or
+right-sidebar work (`docs/native/layout-port.md`).
+
 | Feature | Dia | Solara | Gap |
 |---|---|---|---|
 | Vertical sidebar vs top tab strip (⇧⌘S) | ✓ | ✅ | per window; new windows follow Settings › Tabs. The top strip matches a 2× Dia capture (`dia-spec.md` › Top tab strip): pinned tabs share one container, the selected tab is attached to the card (concave flares, the toolbar's website color), the card starts at y 42 with 6 pt insets, and the window buttons center on y 20.75. Tab groups: see Tab groups in the top tab strip |

@@ -21,6 +21,8 @@ enum NativeWindowShell {
     return lifetimes
   }()
   private static let commits = ShellStoreCommits()
+  private static var nextGeneration: UInt64 = 0
+  private static var latestRevision = -1
   nonisolated private static let activeIds = Mutex<Set<String>>([])
 
   nonisolated static var enabled: Bool {
@@ -43,22 +45,29 @@ enum NativeWindowShell {
       NativeWorkCounters.shellStoreSubscriptions = 1
       #endif
       storeListener = store.subscribe { commit in
-        sink.receive(Set(commit.state.windows.keys))
+        sink.receive(commit.state, revision: commit.rev)
         NativePaneRoots.storeChanged()
       }
     }
     WindowHost.makeContentView = { windowId in
       guard isBrowserWindow(windowId) else { return make(windowId) }
       activeIds.withLock { _ = $0.insert(windowId) }
-      let host = ShellHost(windowId: windowId, root: make(windowId))
+      nextGeneration += 1
+      let host = ShellHost(windowId: windowId, generation: nextGeneration, root: make(windowId))
       lifetimes.adopt(windowId, host)
+      if let store = NativeStoreHandle.store {
+        store.sequence { windowsChanged(store.state, revision: store.rev) }
+      }
       host.onClose = { [weak host] in lifetimes.end(windowId, ifHost: host) }
       return host.shell
     }
   }
 
-  static func windowsChanged(_ live: Set<String>) {
-    lifetimes.prune(keeping: live)
+  static func windowsChanged(_ state: BrowserState, revision: Int) {
+    guard revision >= latestRevision else { return }
+    latestRevision = revision
+    for id in lifetimes.ids { lifetimes.host(id)?.applyLayoutState(state, revision: revision) }
+    lifetimes.prune(keeping: Set(state.windows.keys))
   }
 
   static func isBrowserWindow(_ windowId: String) -> Bool {
@@ -97,6 +106,15 @@ final class ShellHost {
   private var panes: PaneRootsHost?
   private var profilePager: ProfilePagerHost?
   private var sidePanel: SidePanelHost?
+  private let layoutAnchors: WindowAnchors
+  private let windowGeneration: UInt64
+  private var layoutState: BrowserState?
+  private var layoutRevision = -1
+  private var layoutGeneration: UInt64 = 0
+  private var lastLayoutInput: WindowLayoutInput?
+  private var lastChildAnchors: [String: CGRect] = [:]
+  private var layoutStopped = false
+  private var layoutReader: String?
   #if DEBUG
   var devSidePanelResizeLinkActive: Bool { sidePanel?.devResizeLinkActive ?? false }
   #endif
@@ -105,7 +123,9 @@ final class ShellHost {
   #endif
   var onClose: (() -> Void)?
 
-  init(windowId: String, root: NSView) {
+  init(windowId: String, generation: UInt64, root: NSView) {
+    windowGeneration = generation
+    layoutAnchors = WindowAnchors(windowId: windowId, windowGeneration: generation)
     shell = WindowShellView(windowId: windowId, reactOnTop: NativeWindowShell.mainOnTop)
     self.root = root
     #if SOLARA_PROBES
@@ -133,12 +153,14 @@ final class ShellHost {
       self?.watchClose(of: window)
       self?.profilePager?.windowChanged()
       self?.sidePanel?.windowChanged(window)
+      self?.scheduleLayoutProjection()
     }
     panes = NativePaneRoots.start(windowId)
     profilePager = NativeProfilePager.start(shell)
     shell.onFrames = { [weak self] _ in
       self?.profilePager?.place()
       self?.sidePanel?.place()
+      self?.scheduleLayoutProjection()
     }
   }
 
@@ -152,6 +174,9 @@ final class ShellHost {
   }
 
   func stop() {
+    layoutStopped = true
+    layoutAnchors.stop()
+    shell.onFrames = nil
     #if SOLARA_PROBES
     probeStopped = true
     #endif
@@ -215,6 +240,7 @@ final class ShellHost {
     let f = shell.frames
     return [
       "bounds": rect(shell.bounds),
+      "layout": describeLayout() ?? NSNull(),
       "card": rect(f.card),
       "sidebar": rect(f.sidebar),
       "sidebarShift": f.sidebarShift,
@@ -233,6 +259,184 @@ final class ShellHost {
       "peek": NativePeek.sample(shell.windowId) ?? NSNull(),
       "sidebarDock": NativeSidebarDock.describe(shell.windowId) ?? NSNull(),
     ]
+  }
+}
+
+extension ShellHost {
+  func applyLayoutState(_ state: BrowserState, revision: Int) {
+    guard !layoutStopped, revision >= layoutRevision, state.windows[shell.windowId] != nil else { return }
+    layoutState = state
+    layoutRevision = revision
+    scheduleLayoutProjection()
+  }
+
+  func scheduleLayoutProjection() {
+    guard !layoutStopped else { return }
+    FrameUpdates.schedule(self) { [weak self] in self?.refreshLayoutProjection() }
+  }
+
+  private func makeLayoutInput() -> WindowLayoutInput? {
+    guard !layoutStopped, let state = layoutState, let window = shell.window, !shell.bounds.isEmpty else { return nil }
+    let update = NativeSidebarShell.column(shell.windowId)?.chrome.state?.update
+    let updateHeight: CGFloat = update == nil ? 0 : shell.railFraction > 0 ? SidebarUpdatePillMetrics.railBand : SidebarUpdatePillMetrics.band
+    guard let base = WindowLayoutInput(state: state, windowId: shell.windowId, windowGeneration: windowGeneration,
+      storeRevision: layoutRevision, bounds: shell.bounds, backingScale: window.backingScaleFactor, presentation: shell.input,
+      sidebarUpdateHeight: updateHeight) else { return nil }
+    let ids = base.split?.tabIds ?? base.selectedTabId.map { [$0] } ?? []
+    let store = NativeStoreHandle.store
+    var facts: [String: WindowLayoutPageFacts] = [:]
+    for id in ids {
+      let page = store?.pageFacts(id)
+      let fullscreen = page?.keepAlive?.reveal.fullscreen == true
+      let autoHide = state.settings.values["hideToolbarWhileScrolling"]?.bool == true && !base.layout.addressBarInSidebar
+      let toolbar: CGFloat = !base.layout.addressBarInSidebar && !fullscreen ? ShellMetrics.toolbarHeight : 0
+      let mode = state.settings.values["bookmarksBar"]?.string ?? "newTab"
+      let bar = !fullscreen && base.split == nil && state.windows[shell.windowId]?.incognito != true
+        && (mode == "always" || mode == "newTab" && state.tabs[id]?.url.isEmpty == true)
+      let shownTop = toolbar + (bar ? 30 : 0)
+      let top = autoHide && !fullscreen ? AutoHideHost.layoutTop(windowId: shell.windowId, tabId: id) ?? shownTop : shownTop
+      facts[id] = WindowLayoutPageFacts(registration: page?.generation ?? "", fullscreen: fullscreen, top: top,
+        band: NativeShareBand.height(windowId: shell.windowId, tabId: id))
+    }
+    return WindowLayoutInput(state: state, windowId: shell.windowId, windowGeneration: windowGeneration,
+      storeRevision: layoutRevision, bounds: shell.bounds, backingScale: window.backingScaleFactor, presentation: shell.input,
+      sidebarUpdateHeight: updateHeight, pageFacts: facts)
+  }
+
+  private func refreshLayoutProjection() {
+    guard !layoutStopped else { return }
+    shell.layoutSubtreeIfNeeded()
+    guard let input = makeLayoutInput() else { return }
+    let snapshot = WindowLayoutSnapshot.of(input, generation: layoutGeneration + 1)
+    let children = childLayoutAnchors(snapshot)
+    if let lastLayoutInput, lastLayoutInput.hasSameLayout(as: input), children == lastChildAnchors {
+      _ = layoutAnchors.restamp(input)
+      return
+    }
+    layoutGeneration += 1
+    guard layoutAnchors.publish(WindowAnchorBatch(snapshot: snapshot, anchors: children)) else { return }
+    lastLayoutInput = input
+    lastChildAnchors = children
+    if layoutReader != nil { sendLayoutAnchors() }
+  }
+
+  private func childLayoutAnchors(_ snapshot: WindowLayoutSnapshot) -> [String: CGRect] {
+    let input = snapshot.input
+    if input.layout.addressBarInSidebar {
+      guard let bar = SidebarAddressBars.shared.existing(shell.windowId), bar.window === shell.window else { return [:] }
+      let field = bar.convert(bar.fieldFrame, to: shell)
+      return ["url": field, "urlField": field]
+    }
+    guard let id = input.selectedTabId else { return [:] }
+    let split = shell.card.subviews.compactMap { $0 as? SplitPanesView }.first
+    guard let toolbar = split?.toolbar(id) ?? NativeToolbarHostView.host(windowId: shell.windowId, tabId: id)?.toolbar,
+      toolbar.window === shell.window else { return [:] }
+    var anchors = toolbar.layoutAnchors.mapValues { toolbar.convert($0, to: shell) }
+    anchors["nativeURLBand"] = anchors["url"]
+    anchors["url"] = snapshot.residualURLBand(tabId: id, trailingReservation: CGFloat(toolbar.state?.geometry.urlRight ?? 12))
+    return anchors
+  }
+
+  private func actualLayoutEndpoints(_ snapshot: WindowLayoutSnapshot) -> [String: CGRect] {
+    var endpoints = childLayoutAnchors(snapshot)
+    endpoints["card"] = shell.card.convert(shell.card.bounds, to: shell)
+    if let panes = shell.card.subviews.first(where: { $0 is SplitPanesView }) {
+      endpoints["paneHost"] = panes.convert(panes.bounds, to: shell)
+    }
+    if let overlays = PaneOverlays.shared.layer(windowId: shell.windowId) {
+      endpoints["overlayHost"] = overlays.convert(overlays.bounds, to: shell)
+    }
+    if let sidebar = shell.view(in: .sidebar) { endpoints["sidebar"] = sidebar.convert(sidebar.bounds, to: shell) }
+    if let chrome = NativeSidebarShell.column(shell.windowId)?.chrome, !chrome.isHidden {
+      endpoints["sidebarHeader"] = chrome.convert(CGRect(x: 0, y: 0, width: chrome.bounds.width, height: chrome.headerHeight), to: shell)
+      endpoints["sidebarFooter"] = chrome.convert(CGRect(x: 0, y: chrome.bounds.height - chrome.footerHeight,
+        width: chrome.bounds.width, height: chrome.footerHeight), to: shell)
+    }
+    if let strip = shell.view(in: .topStrip) {
+      endpoints["topStrip"] = strip.convert(strip.bounds, to: shell)
+    } else if let strip = NativeTopStrip.hosts[shell.windowId]?.view {
+      var ancestor: NSView? = strip
+      while let view = ancestor, view !== shell {
+        let frame = view.convert(view.bounds, to: shell)
+        if abs(frame.width - shell.bounds.width) <= 0.5, abs(frame.height - ShellMetrics.topStripHeight) <= 0.5 {
+          endpoints["topStrip"] = frame
+          break
+        }
+        ancestor = view.superview
+      }
+    }
+    for id in snapshot.panes.keys {
+      if let layer = PaneOverlays.shared.layer(windowId: shell.windowId) as? PaneOverlaysView, layer.window === shell.window,
+        let frame = layer.paneFrames[id] {
+        endpoints["pane:\(id)"] = layer.convert(frame, to: shell)
+      }
+      let slot = snapshot.input.split == nil ? TabSlotKey.card(shell.windowId) : .pane(shell.windowId, id)
+      if let page = TabSlots.shared.container(for: slot), page.window === shell.window {
+        endpoints["page:\(id)"] = page.convert(page.bounds, to: shell)
+      }
+    }
+    return endpoints
+  }
+
+  func anchorPayload() -> [String: Any]? {
+    guard !layoutStopped, let batch = layoutAnchors.current else { return nil }
+    let input = batch.snapshot.input
+    return ["windowId": shell.windowId, "windowGeneration": windowGeneration, "generation": batch.snapshot.generation,
+      "storeRevision": input.storeRevision, "anchors": batch.anchors.mapValues(Self.layoutRect),
+      "sidebar": input.layout.addressBarInSidebar, "profileTitle": input.profileTitle, "profileNameWidth": input.profileNameWidth,
+      "stripAvailableWidth": batch.snapshot.stripAvailableWidth]
+  }
+
+  func observationPayload() -> [String: Any] {
+    ["windowGeneration": windowGeneration, "batch": anchorPayload() ?? NSNull()]
+  }
+
+  func observeLayoutAnchors(_ enabled: Bool, generation: UInt64?, reader: String) {
+    guard !layoutStopped, enabled || generation != nil, generation == nil || generation == windowGeneration else { return }
+    if enabled { layoutReader = reader } else if layoutReader == reader { layoutReader = nil }
+  }
+
+  private func sendLayoutAnchors() {
+    let generation = layoutGeneration
+    Task { @MainActor [weak self] in
+      guard let self, !self.layoutStopped, self.layoutReader != nil, self.layoutGeneration == generation,
+        let payload = self.anchorPayload() else { return }
+      _ = await SettingsAdapters.js("window.layoutAnchors", self.shell.windowId, payload)
+    }
+  }
+
+  private static func layoutRect(_ rect: CGRect) -> [CGFloat] { [rect.minX, rect.minY, rect.width, rect.height] }
+
+  func describeLayout() -> [String: Any]? {
+    guard !layoutStopped, let batch = layoutAnchors.current else { return nil }
+    let snapshot = batch.snapshot
+    let input = snapshot.input
+    let actual = actualLayoutEndpoints(snapshot)
+    var expected = ["card": snapshot.frames.card]
+    if let sidebar = snapshot.frames.sidebar { expected["sidebar"] = sidebar.offsetBy(dx: snapshot.frames.sidebarShift, dy: 0) }
+    if let strip = snapshot.frames.topStrip { expected["topStrip"] = strip }
+    if let header = snapshot.sidebarHeader { expected["sidebarHeader"] = header }
+    if let footer = snapshot.sidebarFooter { expected["sidebarFooter"] = footer }
+    for (id, rect) in snapshot.panes { expected["pane:\(id)"] = rect }
+    for (id, rect) in snapshot.pages { expected["page:\(id)"] = rect }
+    var errors: [String: CGFloat] = [:]
+    var missing: [String] = []
+    for (name, wanted) in expected {
+      guard let found = actual[name] else { missing.append(name); continue }
+      errors[name] = max(abs(wanted.minX - found.minX), abs(wanted.minY - found.minY), abs(wanted.maxX - found.maxX), abs(wanted.maxY - found.maxY))
+    }
+    func optional(_ rect: CGRect?) -> Any { rect.map(Self.layoutRect) ?? NSNull() }
+    return ["windowGeneration": windowGeneration, "generation": snapshot.generation, "storeRevision": input.storeRevision,
+      "latestStoreRevision": layoutRevision, "backingScale": input.backingScale, "bounds": Self.layoutRect(input.bounds),
+      "card": Self.layoutRect(snapshot.frames.card), "content": Self.layoutRect(snapshot.content), "sidebar": optional(expected["sidebar"]), "topStrip": optional(snapshot.frames.topStrip),
+      "sidebarHeader": optional(snapshot.sidebarHeader), "sidebarFooter": optional(snapshot.sidebarFooter),
+      "stripAvailableWidth": snapshot.stripAvailableWidth, "panes": snapshot.panes.mapValues(Self.layoutRect),
+      "pages": snapshot.pages.mapValues(Self.layoutRect), "toolbars": snapshot.toolbars.mapValues(Self.layoutRect),
+      "anchors": batch.anchors.mapValues(Self.layoutRect), "actual": actual.mapValues(Self.layoutRect), "errors": errors,
+      "missing": missing.sorted(), "maxError": errors.values.max() ?? 0,
+      "current": makeLayoutInput().map { $0.storeRevision == input.storeRevision && $0.hasSameLayout(as: input) && childLayoutAnchors(WindowLayoutSnapshot.of($0, generation: snapshot.generation)) == lastChildAnchors } ?? false,
+      "profileId": input.profileId, "selectedTabId": input.selectedTabId ?? NSNull(),
+      "topTabs": input.layout.topTabs, "addressBarInSidebar": input.layout.addressBarInSidebar]
   }
 }
 
@@ -354,30 +558,39 @@ enum ShellLayoutPush {
 
 final class ShellStoreCommits: @unchecked Sendable {
   private let lock = NSLock()
-  private var latest: Set<String>?
+  private var latest: (BrowserState, Int)?
+  private var acceptedRevision = -1
   private var scheduled = false
 
-  func receive(_ ids: Set<String>) {
+  func receive(_ state: BrowserState, revision: Int) {
+    let admitted = lock.withLock { () -> Bool in
+      guard revision > acceptedRevision else { return false }
+      acceptedRevision = revision
+      latest = (state, revision)
+      return true
+    }
+    guard admitted else { return }
     if Thread.isMainThread {
-      lock.withLock { latest = nil }
-      MainActor.assumeIsolated { NativeWindowShell.windowsChanged(ids) }
+      let pending = lock.withLock { () -> (BrowserState, Int)? in
+        defer { latest = nil }
+        return latest
+      }
+      if let pending { MainActor.assumeIsolated { NativeWindowShell.windowsChanged(pending.0, revision: pending.1) } }
       return
     }
     let schedule = lock.withLock { () -> Bool in
-      latest = ids
       if scheduled { return false }
       scheduled = true
       return true
     }
     guard schedule else { return }
     DispatchQueue.main.async { [self] in
-      let ids = lock.withLock { () -> Set<String>? in
+      let pending = lock.withLock { () -> (BrowserState, Int)? in
         scheduled = false
         defer { latest = nil }
         return latest
       }
-      guard let ids else { return }
-      MainActor.assumeIsolated { NativeWindowShell.windowsChanged(ids) }
+      if let pending { MainActor.assumeIsolated { NativeWindowShell.windowsChanged(pending.0, revision: pending.1) } }
     }
   }
 }
@@ -631,6 +844,27 @@ public class WindowShellModule: Module {
       }
     }.runOnQueue(.main)
     #endif
+
+    Function("layoutAnchorsAvailable") { (windowId: String) -> Bool in
+      NativeWindowShell.active(windowId) && NativeStoreHandle.ownedWorkspaceAtLaunch
+    }
+
+    AsyncFunction("observeLayoutAnchors") { (windowId: String, enabled: Bool, generation: Int?, reader: String) -> String in
+      FrameUpdates.readOnMain {
+        guard let host = NativeWindowShell.host(windowId) else { return "null" }
+        if let generation, generation < 0 { return "null" }
+        host.observeLayoutAnchors(enabled, generation: generation.map(UInt64.init), reader: reader)
+        guard let data = try? JSONSerialization.data(withJSONObject: host.observationPayload()) else { return "null" }
+        return String(data: data, encoding: .utf8) ?? "null"
+      }
+    }.runOnQueue(.main)
+
+    AsyncFunction("layoutAnchors") { (windowId: String) -> String in
+      FrameUpdates.readOnMain {
+        guard let info = NativeWindowShell.host(windowId)?.anchorPayload(), let data = try? JSONSerialization.data(withJSONObject: info) else { return "null" }
+        return String(data: data, encoding: .utf8) ?? "null"
+      }
+    }.runOnQueue(.main)
 
     AsyncFunction("describe") { (windowId: String) -> String in
       FrameUpdates.readOnMain {

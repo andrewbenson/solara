@@ -100,6 +100,7 @@ final class PaneRootLayerView: PaneOverlayLayerView {
 @MainActor
 public final class PaneOverlaysView: NSView {
   public let windowId: String
+  public private(set) var paneFrames: [String: CGRect] = [:]
   public var toolbarHeight: CGFloat = ShellMetrics.toolbarHeight { didSet { if toolbarHeight != oldValue { needsLayout = true } } }
   public var pageTops: [String: CGFloat] = [:] { didSet { if pageTops != oldValue { needsLayout = true } } }
   public var bandHeights: [String: CGFloat] = [:] {
@@ -180,6 +181,7 @@ public final class PaneOverlaysView: NSView {
     let area = SplitLayout.bounds(in: self, fullscreenTab: fullscreenTab)
     let rail = fullscreenTab == nil ? windowShell?.railFraction ?? 0 : 0
     let rects = SplitLayout.panes(split: split, activeId: activeId, fullscreenTab: fullscreenTab, bounds: area).panes
+    paneFrames = rects
     for (tabId, rect) in rects {
       let overlay = overlays[tabId] ?? make(tabId)
       let base = min(max(0, (liveTops[tabId] ?? pageTops[tabId] ?? (tabId == fullscreenTab ? 0 : toolbarHeight)) * (1 - rail)), rect.height)

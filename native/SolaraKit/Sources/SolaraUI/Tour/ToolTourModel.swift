@@ -82,6 +82,14 @@ public enum ToolTourLayout {
   }
 }
 
+#if SOLARA_PROBES
+struct ToolTourControlSample: Equatable {
+  let frame: CGRect
+  let session: Int
+  let index: Int
+}
+#endif
+
 @MainActor
 @Observable
 public final class ToolTourModel {
@@ -94,6 +102,18 @@ public final class ToolTourModel {
   public private(set) var theme = PageTheme(dark: false, tokens: [:])
   public var size: CGSize = .zero
   public var cardHeight: Double?
+  #if SOLARA_PROBES
+  @ObservationIgnored private var controlSamples: [String: ToolTourControlSample] = [:]
+
+  public var controlFrames: [String: CGRect] {
+    controlSamples.filter { $0.value.session == session && $0.value.index == index }.mapValues(\.frame)
+  }
+
+  public func recordControlFrame(_ label: String, frame: CGRect, session: Int, index: Int) {
+    guard session == self.session, index == self.index, !frame.isEmpty else { return }
+    controlSamples[label] = ToolTourControlSample(frame: frame, session: session, index: index)
+  }
+  #endif
 
   public var send: (String) -> Void = { _ in }
 

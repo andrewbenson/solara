@@ -814,3 +814,26 @@ struct WindowShellWorkTests {
   }
 }
 #endif
+
+@MainActor
+struct WindowShellChildSizingTests {
+  @Test func fractionalRailTransitionsKeepNativeCardChildrenOnTheCardsExactBounds() {
+    let fixture = ToolbarResizeTests.Fixture(bare: false)
+    let shell = fixture.shell
+    let panes = SplitPanesView(windowId: "child-sizing")
+    let overlays = PaneOverlaysView(windowId: "child-sizing")
+    for child in [panes as NSView, overlays] {
+      child.frame = shell.card.bounds
+      child.autoresizingMask = [.width, .height]
+      shell.card.addSubview(child)
+    }
+    for width: CGFloat in [42, 190] {
+      shell.setSidebarWidth(width, animated: true)
+      for _ in 0..<24 {
+        shell.stepWidth(by: 1 / 120)
+        #expect(panes.frame == shell.card.bounds)
+        #expect(overlays.frame == shell.card.bounds)
+      }
+    }
+  }
+}

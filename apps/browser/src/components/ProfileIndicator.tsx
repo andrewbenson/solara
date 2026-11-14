@@ -1,3 +1,5 @@
+import { windowLayoutAnchorsAvailable } from "@solara/settings";
+import { useState } from "react";
 import { Symbol, showMenu, type MenuItem } from "@solara/shell";
 import { Pressable, Text, View } from "react-native";
 import { createProfile, openWindow, switchProfile } from "../lib/actions";
@@ -39,6 +41,9 @@ export function useProfileTitle() {
 }
 
 export function ProfileNameMeasure({ title }: { title: string }) {
+  const windowId = useWindowId();
+  const [native] = useState(() => windowLayoutAnchorsAvailable(windowId));
+  if (native) return null;
   return (
     <View pointerEvents="none" style={{ position: "absolute", width: 1000, height: 0, overflow: "hidden", opacity: 0 }}>
       <Text

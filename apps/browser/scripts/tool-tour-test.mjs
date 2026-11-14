@@ -53,6 +53,23 @@ const assertNativeTour = async (what, expected) => {
     assert.deepEqual(tour.stops, expected.stops, `${what}: native anchors`);
   } else assert.ok(!tour || !tour.visible, `${what}: native tour remains visible`);
 };
+const measuredControl = async (label) => {
+  const valid = (rect) => Array.isArray(rect) && rect.length === 4 && rect.every(Number.isFinite) && rect[2] > 0 && rect[3] > 0;
+  const state = await untilSnapshot(`native tour ${label} control`, (snapshot) => {
+    const tour = nativeTour(snapshot);
+    if (!tour?.visible || !valid(tour.card) || !valid(tour.controls?.[label])) return false;
+    const [x, y, width, height] = tour.controls[label];
+    const [left, top, cardWidth, cardHeight] = tour.card;
+    return x + width / 2 >= left && x + width / 2 <= left + cardWidth && y + height / 2 >= top && y + height / 2 <= top + cardHeight;
+  });
+  const tour = nativeTour(state);
+  const [x, y, width, height] = tour.controls[label];
+  const point = { x: x + width / 2, y: y + height / 2 };
+  const [left, top, cardWidth, cardHeight] = tour.card;
+  assert.ok(point.x >= left && point.x <= left + cardWidth && point.y >= top && point.y <= top + cardHeight, `${label}: measured control is inside the measured native callout`);
+  rep.log(`${label} control ${JSON.stringify(tour.controls[label])}, card ${JSON.stringify(tour.card)}`);
+  return { ...point, hole: tour.hole };
+};
 try {
   app = await launch(appPath, { data, onboarded: true });
   rep.log(`instance: pid ${app.pid}, data ${data}`);
@@ -86,26 +103,30 @@ async function tourChecks() {
   rep.log("spotlight passes clicks through, the dim swallows them");
 
   const steps = [
-    ["Next on 1", 875, 604, 1],
-    ["Back on 2", 392, 192, 0],
-    ["Next on 1", 875, 604, 1],
-    ["Next on 2", 452, 192, 2],
-    ["Next on 3", 433, 200, 3],
-    ["Next on 4 (inside the spotlight)", 874, 663, 4],
+    ["Next on 1", "Next", 1],
+    ["Back on 2", "Back", 0],
+    ["Next on 1", "Next", 1],
+    ["Next on 2", "Next", 2],
+    ["Next on 3", "Next", 3],
+    ["Next on 4 (inside the spotlight)", "Next", 4],
   ];
-  for (const [label, x, y, index] of steps) {
+  for (const [label, control, index] of steps) {
+    const { x, y, hole } = await measuredControl(control);
+    if (index === 4) assert.ok(x >= hole[0] && x <= hole[0] + hole[2] && y >= hole[1] && y <= hole[1] + hole[3], "the split stop's measured Next is inside the spotlight");
     const after = await run(`return click(${x}, ${y});`);
     assert.equal(after.index, index, `${label} goes to stop ${index + 1} (hit ${after.hit})`);
     await assertNativeTour(label, { ...after, stops: started.stops, active: true });
     rep.log(`${label} → stop ${index + 1}`);
   }
-  const done = await run("return click(781, 589);");
+  const donePoint = await measuredControl("Done");
+  const done = await run(`return click(${donePoint.x}, ${donePoint.y});`);
   assert.equal(done.active, false, "Done ends the tour");
   await assertNativeTour("Done", done);
   rep.log("Done ends it");
 
   await run("return acTour.start(wid).then(() => settle(1500));");
-  const skipped = await run("return click(669, 604).then(() => settle(1500)).then(tour);");
+  const skipPoint = await measuredControl("Skip Tour");
+  const skipped = await run(`return click(${skipPoint.x}, ${skipPoint.y}).then(() => settle(1500)).then(tour);`);
   assert.equal(skipped.active, false, "Skip Tour ends it and it stays gone");
   await assertNativeTour("Skip Tour", skipped);
   rep.log("Skip Tour ends it, still gone 1.5 s later");

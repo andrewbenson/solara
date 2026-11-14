@@ -31,6 +31,9 @@ public struct ToolTourView: View {
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    #if SOLARA_PROBES
+    .coordinateSpace(name: "ToolTourProbe")
+    #endif
     .opacity(placedSession == model.session ? presence : 0)
     .environment(\.colorScheme, model.theme.dark ? .dark : .light)
     .onGeometryChange(for: CGSize.self, of: { $0.size }, action: { model.size = $0 })
@@ -143,11 +146,29 @@ struct TourCoachMark: View {
       OnboardingText(stop.title, size: 15, weight: 600, color: theme.textPrimary, kerning: -0.1)
       OnboardingText(stop.body, size: 12.5, color: theme.textSecondary, lineHeight: 18)
       HStack(spacing: 6) {
-        if !last { TourTextButton(title: "Skip Tour", theme: theme) { model.send("skip") } }
+        if !last {
+          TourTextButton(title: "Skip Tour", theme: theme) { model.send("skip") }
+            #if SOLARA_PROBES
+            .modifier(TourControlProbe(model: model, label: "Skip Tour"))
+            #endif
+        }
         Spacer(minLength: 0)
-        if last && model.video { TourPillButton(title: "Watch Video Tour", primary: false, colors: colors) { model.send("video") } }
-        if index > 0 && !last { TourPillButton(title: "Back", primary: false, colors: colors) { model.send("back") } }
+        if last && model.video {
+          TourPillButton(title: "Watch Video Tour", primary: false, colors: colors) { model.send("video") }
+            #if SOLARA_PROBES
+            .modifier(TourControlProbe(model: model, label: "Watch Video Tour"))
+            #endif
+        }
+        if index > 0 && !last {
+          TourPillButton(title: "Back", primary: false, colors: colors) { model.send("back") }
+            #if SOLARA_PROBES
+            .modifier(TourControlProbe(model: model, label: "Back"))
+            #endif
+        }
         TourPillButton(title: last ? "Done" : "Next", primary: true, colors: colors) { model.send("next") }
+          #if SOLARA_PROBES
+          .modifier(TourControlProbe(model: model, label: last ? "Done" : "Next"))
+          #endif
       }
       .padding(.top, 7)
     }
@@ -163,6 +184,23 @@ struct TourCoachMark: View {
     }
   }
 }
+
+#if SOLARA_PROBES
+private struct TourControlProbe: ViewModifier {
+  let model: ToolTourModel
+  let label: String
+
+  func body(content: Content) -> some View {
+    let session = model.session
+    let index = model.index
+    return content.onGeometryChange(for: ToolTourControlSample.self, of: { proxy in
+      ToolTourControlSample(frame: proxy.frame(in: .named("ToolTourProbe")), session: session, index: index)
+    }, action: { sample in
+      model.recordControlFrame(label, frame: sample.frame, session: sample.session, index: sample.index)
+    })
+  }
+}
+#endif
 
 struct TourPillButton: View {
   let title: String

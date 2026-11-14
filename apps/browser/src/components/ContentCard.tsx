@@ -48,7 +48,7 @@ import { pagerFor } from "./layout/profilePager";
 import { dockMoving, useDockMotion, usePeekEdge } from "./layout/dockMotion";
 import { FrozenPage } from "./layout/frozenPage";
 import { holderOf } from "../store/pinShare";
-import { setCardAnchor, setUrlAnchor, useAddressBarInSidebar, useTabLayout, useToolbarExtensionsWidths } from "./layout/windowLayout";
+import { setCardAnchor, setUrlAnchor, useCardAnchors, useAddressBarInSidebar, useTabLayout, useToolbarExtensionsWidths } from "./layout/windowLayout";
 import { notePageEventHandled, acceptPageReport, currentPageContext, followNavigation, newPageSession, pageEventHandlers, releasePageSession } from "./pageEvents";
 import { NewTabPage } from "./NewTabPage";
 import { EmptyCard } from "./EmptyCard";
@@ -73,6 +73,7 @@ import { railToolbarOnFrame } from "./layout/toolbarColors";
 import { NavigationOverlays } from "./layout/SwipeOverlay";
 import "./layout/devExpose";
 import { isSmallWindow } from "../store/small";
+import { useNativeWindowAnchors } from "./layout/shellLayout";
 import { NativePeekMount } from "./peek/NativePeekMount";
 import { PeekOverlay } from "./peek/PeekOverlay";
 import { PooledPageProps } from "./PooledPageProps";
@@ -90,7 +91,10 @@ export function ContentCard() {
   const showSidebarButton = useBrowser((s) => s.settings.showSidebarButton !== false);
   const barMode = useBookmarksBarMode(windowId);
   const [size, setSize] = useState({ width: 0, height: 0 });
-  const [origin, setOrigin] = useState<{ x: number; y: number } | null>(null);
+  const [measuredOrigin, setOrigin] = useState<{ x: number; y: number } | null>(null);
+  const nativeAnchors = useNativeWindowAnchors(windowId);
+  const nativeContent = useCardAnchors((state) => nativeAnchors ? state[windowId] : undefined);
+  const origin = useMemo(() => nativeContent ? { x: nativeContent.left, y: nativeContent.top } : measuredOrigin, [nativeContent, measuredOrigin]);
   const container = useRef<View>(null);
   useEffect(startPermissionPrompts, []);
   useEffect(startChromeTabs, []);
@@ -230,7 +234,7 @@ export function ContentCard() {
 
   const focusedRect = activeId ? panes[activeId] : undefined;
   useEffect(() => {
-    if (!origin || !focusedRect || addressInSidebar || small) return;
+    if (nativeAnchors || !origin || !focusedRect || addressInSidebar || small) return;
     const g = geometryFor(focusedRect);
     const place = (extensionsWidth = 0) =>
       setUrlAnchor(windowId, {
@@ -242,16 +246,16 @@ export function ContentCard() {
     return useToolbarExtensionsWidths.subscribe((w, prev) => {
       if (w[windowId] !== prev[windowId]) place(w[windowId]);
     });
-  }, [origin, focusedRect?.x, focusedRect?.y, focusedRect?.width, tabLayout, addressInSidebar, !!split, showSidebarButton]);
+  }, [nativeAnchors, origin, focusedRect?.x, focusedRect?.y, focusedRect?.width, tabLayout, addressInSidebar, !!split, showSidebarButton]);
 
   useEffect(() => {
-    if (origin && size.width > 0) setCardAnchor(windowId, { left: origin.x, top: origin.y, width: size.width, height: size.height });
-  }, [origin, size.width, size.height, windowId]);
+    if (!nativeAnchors && origin && size.width > 0) setCardAnchor(windowId, { left: origin.x, top: origin.y, width: size.width, height: size.height });
+  }, [nativeAnchors, origin, size.width, size.height, windowId]);
 
   const settled = useRef<{ width: number; height: number } | null>(null);
   const measure = (width: number, height: number) => {
     setSize({ width, height });
-    container.current?.measureInWindow((x, y) => setOrigin({ x, y }));
+    if (!nativeAnchors) container.current?.measureInWindow((x, y) => setOrigin({ x, y }));
   };
   useEffect(
     () =>

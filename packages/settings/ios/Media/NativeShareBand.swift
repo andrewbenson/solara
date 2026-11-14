@@ -46,6 +46,7 @@ enum NativeShareBand {
 
     private func apply(_ heights: [String: CGFloat]) {
       NativeSplitChrome.setShareBands(heights, windowId: windowId)
+      NativeWindowShell.host(windowId)?.scheduleLayoutProjection()
       for (tabId, clip) in clips where heights[tabId] == nil && !shown.contains(tabId) {
         clips[tabId] = nil
         targets[tabId] = nil
@@ -98,6 +99,8 @@ enum NativeShareBand {
   static func windowEnded(_ windowId: String) {
     windows.removeValue(forKey: windowId)?.end()
   }
+
+  static func height(windowId: String, tabId: String) -> CGFloat { windows[windowId]?.band.heights[tabId] ?? 0 }
 
   static var windowIds: [String] { windows.keys.sorted() }
 

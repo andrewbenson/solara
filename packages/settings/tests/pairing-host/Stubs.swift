@@ -12,6 +12,9 @@ import SolaraUI
   func value(_ key: String) -> JSONValue? { nil }
   func update(_ patch: JSONObject) {}
 }
+@MainActor enum NativeConfigNotifier {
+  static let posted: [String] = []
+}
 @MainActor enum NativeSettingsHandle {
   static var model: SettingsModel? = SettingsModel()
   nonisolated static let active = true

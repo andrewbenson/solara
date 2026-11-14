@@ -1,11 +1,13 @@
 import { displayHost } from "@solara/core";
 import { Symbol, type SymbolProps } from "@solara/shell";
-import { memo, useState } from "react";
-import { Image, Pressable, Text, View, type ViewStyle } from "react-native";
+import { onHostedEvent, SolaraHostedView } from "@solara/settings";
+import { memo, useLayoutEffect, useRef, useState } from "react";
+import { Image, Pressable, View, type ViewStyle } from "react-native";
 import { markHoverProps } from "../lib/hoverShift";
 import { faviconFailed, useAppearanceDark, useFavicon, useFaviconTheme } from "../lib/favicons";
 import { bundledSiteIcon } from "../lib/siteIcons";
 import { useTheme } from "../lib/theme";
+import { useWindowId } from "../store/hooks";
 
 export function useHover() {
   const [hovered, setHovered] = useState(false);
@@ -90,43 +92,17 @@ export const Favicon = memo(function Favicon({
   const [broken, setBroken] = useState<string | null>(null);
   if (!url && !resolved) return <NewTabIcon size={size} />;
   if (!resolved || broken === resolved.uri) return <FaviconFallback url={url} size={size} />;
-  return (
-    <Image
-      key={white ? `${resolved.uri} tinted` : resolved.uri}
-      source={{ uri: resolved.uri }}
-      onError={() => {
-        setBroken(resolved.uri);
-        if (resolved.profileId) faviconFailed(resolved.profileId, resolved.uri);
-      }}
-      style={{ width: size, height: size, borderRadius: size > 18 ? 4 : 3, tintColor: white ? theme.textPrimary : undefined }}
-    />
-  );
+  return <NativeFavicon mode="image" url={url} size={size} uri={resolved.uri} tint={white ? theme.textPrimary : undefined} onError={() => {
+    setBroken(resolved.uri);
+    if (resolved.profileId) faviconFailed(resolved.profileId, resolved.uri);
+  }} />;
 });
 
 export const FaviconFallback = memo(function FaviconFallback({ url, size = 16 }: { url: string; size?: number }) {
   const theme = useTheme();
   const bundled = bundledSiteIcon(url, theme.dark);
-  if (bundled !== undefined) return <Image source={bundled} style={{ width: size, height: size, borderRadius: size > 18 ? 4 : 3 }} />;
-  const initial = hostInitial(url);
-  if (!initial) return <Symbol name="globe" size={size - 3} color={theme.textSecondary} style={{ width: size, height: size }} />;
-  const tile = Math.round((size * 14) / 16);
-  return (
-    <View style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>
-      <View
-        style={{
-          width: tile,
-          height: tile,
-          borderRadius: tile * 0.32,
-          borderCurve: "continuous",
-          backgroundColor: theme.dark ? "rgba(247,245,255,0.2)" : "rgba(0,0,0,0.13)",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <Text style={{ fontSize: Math.round(tile * 0.64), lineHeight: tile, fontWeight: "600", color: theme.textSecondary }}>{initial}</Text>
-      </View>
-    </View>
-  );
+  const uri = bundled === undefined ? undefined : Image.resolveAssetSource(bundled)?.uri;
+  return <NativeFavicon mode={bundled === undefined ? "fallback" : "image"} url={url} size={size} uri={uri} initial={hostInitial(url)} />;
 });
 
 function hostInitial(url: string): string {
@@ -139,12 +115,29 @@ function hostInitial(url: string): string {
 export const NEW_TAB_MARK: number = require("../../assets/solara/new-tab-mark.png");
 
 export function NewTabIcon({ size = 16 }: { size?: number }) {
+  return <NativeFavicon mode="newTab" url="" size={size} uri={Image.resolveAssetSource(NEW_TAB_MARK)?.uri} />;
+}
+
+let faviconReceipts = 0;
+
+function NativeFavicon({ mode, url, size, uri, tint, initial, onError }: {
+  mode: "image" | "fallback" | "newTab";
+  url: string;
+  size: number;
+  uri?: string;
+  tint?: string;
+  initial?: string;
+  onError?: () => void;
+}) {
   const theme = useTheme();
-  return (
-    <Image
-      key={theme.dark ? "dark" : "light"}
-      source={NEW_TAB_MARK}
-      style={{ width: size, height: size, tintColor: theme.dark ? "#FFFFFF" : "#000000", opacity: theme.dark ? 0.28 : 0.3 }}
-    />
-  );
+  const windowId = useWindowId();
+  const current = useRef<{ token: number; windowId: string; uri: string | undefined; mode: string; onError?: () => void } | null>(null);
+  if (!current.current || current.current.windowId !== windowId || current.current.uri !== uri || current.current.mode !== mode) current.current = { token: ++faviconReceipts, windowId, uri, mode, onError };
+  current.current.onError = onError;
+  useLayoutEffect(() => onHostedEvent("favicon", windowId, (name, payload) => {
+    if (name === "error" && current.current?.windowId === windowId && payload.token === current.current.token && payload.uri === current.current.uri) current.current.onError?.();
+  }), [windowId]);
+  return <SolaraHostedView kind="favicon" windowId={windowId} pointerEvents="none" accessible={false}
+    state={JSON.stringify({ mode, url, size, uri, tint, initial, token: current.current.token, dark: !!theme.dark, textSecondary: theme.textSecondary })}
+    style={{ width: size, height: size }} />;
 }

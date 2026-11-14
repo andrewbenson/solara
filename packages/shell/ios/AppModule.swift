@@ -11,7 +11,7 @@ public class AppModule: Module {
 
   public func definition() -> ModuleDefinition {
     Name("SolaraApp")
-    Constant("apiVersion") { () -> Int in 45 }
+    Constant("apiVersion") { () -> Int in 46 }
     Constant("sidebarRail") { true }
     Events("onNotificationResponse", "onPendingUpdate")
 

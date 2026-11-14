@@ -35,6 +35,8 @@ HARNESSES = {
     'sad-tab-host': 'host',
     'selection-host': 'host',
     'swipe-host': 'host',
+    'area-recovery-host': 'host',
+    'favicon-host': 'host',
     'frozen-page-host': 'host',
     'onboarding-host': 'host',
     'side-panel-host': 'host',

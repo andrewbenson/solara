@@ -20,6 +20,8 @@ public class HostedModule: Module {
       if NativeSidebarShell.enabled { HostedViews.declare(NativeSidebarShell.topic) }
       HostedViews.declare(NativeToolTour.kind)
       HostedViews.declare(HostedPersonalize.kind)
+      HostedViews.declare(HostedFavicon.kind)
+      HostedViews.declare(HostedAreaRecovery.kind)
       let sink = HostedSink(self)
       DispatchQueue.main.async {
         FrameUpdates.readOnMain {
@@ -29,12 +31,28 @@ public class HostedModule: Module {
           NativeSidebarIconPicker.register()
           NativeToolTour.register()
           HostedPersonalize.register()
+          HostedFavicon.register()
+          HostedAreaRecovery.register()
           if NativeBookmarksBar.enabled { NativeBookmarksBar.register() }
         }
       }
     }
 
     #if DEBUG
+      AsyncFunction("devFavicons") { (windowId: String) -> String in
+        FrameUpdates.readOnMain {
+          let data = (try? JSONSerialization.data(withJSONObject: HostedFavicon.describe(windowId))) ?? Data("[]".utf8)
+          return String(decoding: data, as: UTF8.self)
+        }
+      }.runOnQueue(.main)
+
+      AsyncFunction("devAreaRecovery") { (windowId: String, action: String) -> String in
+        FrameUpdates.readOnMain {
+          let data = (try? JSONSerialization.data(withJSONObject: HostedAreaRecovery.drive(windowId, action))) ?? Data("{}".utf8)
+          return String(decoding: data, as: UTF8.self)
+        }
+      }.runOnQueue(.main)
+
       AsyncFunction("devPersonalize") { (windowId: String, action: String, argument: String?) -> String in
         FrameUpdates.readOnMain {
           let value = HostedPersonalize.drive(windowId, action, argument)

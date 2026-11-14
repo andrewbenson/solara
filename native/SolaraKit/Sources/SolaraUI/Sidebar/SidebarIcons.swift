@@ -92,6 +92,7 @@ final class TabIconView: NSView {
   private var palette: SidebarPalette?
   private var requested: SidebarFaviconRequest?
   private var renderedMark: NSImage?
+  private var resolved: (state: FaviconState, image: NSImage?)?
   weak var favicons: SidebarFavicons?
 
   override var isFlipped: Bool { true }
@@ -137,6 +138,8 @@ final class TabIconView: NSView {
   override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
   func set(_ spec: TabIconSpec, palette: SidebarPalette) {
+    resolved = nil
+    madeImage?.contentsGravity = .resizeAspect
     let same = spec == self.spec && palette.dark == dark && self.palette != nil && renderedMark === favicons?.newTabMark
     self.spec = spec
     self.palette = palette
@@ -151,6 +154,16 @@ final class TabIconView: NSView {
     render()
   }
 
+  func setResolved(_ state: FaviconState, image: NSImage?) {
+    resolved = (state, image)
+    var host = SidebarHostState(profileId: "", dark: state.dark)
+    host.theme = ["textSecondary": state.textSecondary]
+    palette = SidebarPalette(host)
+    dark = state.dark
+    spec = TabIconSpec(url: state.url, favicon: nil, customIcon: nil, profileId: "", size: state.size)
+    render()
+  }
+
   private func render() {
     guard let spec, let palette else { return }
     renderedMark = favicons?.newTabMark
@@ -159,6 +172,18 @@ final class TabIconView: NSView {
     for view in [madeSymbol, madeEmoji, madeInitial] as [NSView?] { view?.isHidden = true }
     madeImage?.isHidden = true
     fallback.isHidden = true
+    if let resolved {
+      if resolved.state.mode == "fallback" {
+        showFallback(spec, initial: resolved.state.initial, textLayout: true)
+      } else {
+        image.contentsGravity = .resizeAspectFill
+        let mark = resolved.state.mode == "newTab"
+        let tint = mark ? (dark ? NSColor.white : NSColor.black) : resolved.state.tint.flatMap { CSSColor($0)?.ns }
+        image.show(resolved.image, in: box, tint: tint, alpha: mark ? (dark ? 0.28 : 0.3) : 1,
+          radius: mark ? 0 : size > 18 ? 4 : 3, scale: window?.backingScaleFactor ?? 2)
+      }
+      return
+    }
     if let icon = spec.customIcon, icon.hasPrefix("symbol:") {
       let name = String(icon.dropFirst("symbol:".count))
       let ink = icon == "symbol:square.stack.fill" ? palette.noGroupIcon : palette.icon
@@ -198,10 +223,10 @@ final class TabIconView: NSView {
     }
   }
 
-  private func showFallback(_ spec: TabIconSpec) {
+  private func showFallback(_ spec: TabIconSpec, initial: String? = nil, textLayout: Bool = false) {
     guard let palette else { return }
     let size = spec.size
-    let letter = Self.hostInitial(spec.url)
+    let letter = initial ?? Self.hostInitial(spec.url)
     if letter.isEmpty {
       symbol.frame = NSRect(x: 0, y: 0, width: size, height: size)
       symbol.set("globe", size: size - 3, color: palette.textSecondary)
@@ -217,7 +242,7 @@ final class TabIconView: NSView {
     fallback.isHidden = false
     CATransaction.commit()
     let initial = self.initial
-    initial.set(letter, font: .systemFont(ofSize: (tile * 0.64).rounded(), weight: .semibold), color: palette.textSecondary)
+    initial.set(letter, font: .systemFont(ofSize: (tile * 0.64).rounded(), weight: .semibold), color: palette.textSecondary, lineHeight: textLayout ? tile : nil)
     initial.frame = NSRect(x: 0, y: 0, width: size, height: size)
     initial.isHidden = false
   }
@@ -259,6 +284,7 @@ final class TabIconView: NSView {
 
 final class DrawnLetterView: NSView {
   private var text = NSAttributedString()
+  private var lineHeight: CGFloat?
 
   override var isFlipped: Bool { true }
 
@@ -272,9 +298,10 @@ final class DrawnLetterView: NSView {
 
   override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-  func set(_ letter: String, font: NSFont, color: NSColor) {
+  func set(_ letter: String, font: NSFont, color: NSColor, lineHeight: CGFloat? = nil) {
     let next = NSAttributedString(string: letter, attributes: [.font: font, .foregroundColor: color])
-    guard next != text else { return }
+    guard next != text || self.lineHeight != lineHeight else { return }
+    self.lineHeight = lineHeight
     text = next
     needsDisplay = true
   }
@@ -282,6 +309,32 @@ final class DrawnLetterView: NSView {
   override func draw(_ dirtyRect: NSRect) {
     guard text.length > 0, let font = text.attribute(.font, at: 0, effectiveRange: nil) as? NSFont else { return }
     let scale = window?.backingScaleFactor ?? 2
+    if let lineHeight {
+      let paragraph = NSMutableParagraphStyle()
+      paragraph.minimumLineHeight = lineHeight
+      paragraph.maximumLineHeight = lineHeight
+      let laidOut = NSMutableAttributedString(attributedString: text)
+      let range = NSRange(location: 0, length: laidOut.length)
+      laidOut.addAttribute(.paragraphStyle, value: paragraph, range: range)
+      let fontLineHeight = ceil(font.ascender + abs(font.descender) + font.leading)
+      if lineHeight >= fontLineHeight {
+        laidOut.addAttribute(.baselineOffset, value: (lineHeight - fontLineHeight) / 2, range: range)
+      }
+      let storage = NSTextStorage(attributedString: laidOut)
+      let manager = NSLayoutManager()
+      manager.usesFontLeading = false
+      let container = NSTextContainer(size: NSSize(width: bounds.width, height: .greatestFiniteMagnitude))
+      container.lineFragmentPadding = 0
+      storage.addLayoutManager(manager)
+      manager.addTextContainer(container)
+      manager.ensureLayout(for: container)
+      let used = manager.usedRect(for: container).size
+      let measured = NSSize(width: ceil(used.width * scale) / scale + 0.001, height: ceil(used.height * scale) / scale + 0.001)
+      let origin = NSPoint(x: floor((bounds.width - measured.width) / 2 * scale) / scale,
+        y: floor((bounds.height - measured.height) / 2 * scale) / scale)
+      manager.drawGlyphs(forGlyphRange: manager.glyphRange(for: container), at: origin)
+      return
+    }
     let snap = { (value: CGFloat) in (value * scale).rounded() / scale }
     let x = snap((bounds.width - text.size().width) / 2)
     let y = snap((bounds.height - font.capHeight) / 2 - (font.ascender - font.capHeight))
@@ -332,5 +385,51 @@ final class PictureLayer: CALayer {
       rect.fill(using: .sourceIn)
       return true
     }
+  }
+}
+
+public struct FaviconState: Decodable, Equatable, Sendable {
+  public var url: String
+  public var size: CGFloat
+  public var dark: Bool
+  public var textSecondary: String
+  public var mode: String
+  public var initial: String?
+  public var uri: String?
+  public var tint: String?
+  public var token: Int
+
+  public static func decode(_ json: String) -> FaviconState? {
+    guard let data = json.data(using: .utf8), let state = try? JSONDecoder().decode(Self.self, from: data),
+      state.size.isFinite, state.size > 0, state.size <= 512,
+      ["fallback", "image", "newTab"].contains(state.mode) else { return nil }
+    return state
+  }
+}
+
+public final class FaviconView: NSView {
+  private let icon = TabIconView(frame: .zero)
+  public private(set) var state: FaviconState?
+  public private(set) var hasImage = false
+
+  public override var isFlipped: Bool { true }
+
+  public override init(frame: NSRect) {
+    super.init(frame: frame)
+    setAccessibilityElement(false)
+    addSubview(icon)
+  }
+
+  public required init?(coder: NSCoder) { fatalError() }
+
+  public override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+  public func update(_ state: FaviconState?, image: NSImage?) {
+    self.state = state
+    hasImage = image != nil
+    isHidden = state == nil
+    guard let state else { return }
+    icon.frame = NSRect(x: 0, y: 0, width: state.size, height: state.size)
+    icon.setResolved(state, image: image)
   }
 }

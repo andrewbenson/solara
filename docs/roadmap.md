@@ -226,7 +226,7 @@ Done when no React Native view appears on screen; React Native only arranges nat
 | The `solara` command lists what's open: `solara profiles`, `solara windows`, and `solara tabs --window/--profile/--group/--asleep/--awake`; one tab ID across `tabs` and `sidebar` so commands chain (owner 2026-11-14) | drafting |
 | Everyday tab actions from the command line: `solara open URL [--window] [--profile] [--background]`, `solara tab activate/close/reload/duplicate/mute/sleep`, close duplicates, sleep tabs idle for a while; never brings Solara forward unless asked (owner 2026-11-14) | planned |
 | Search from the command line: `solara find` across open tabs, pins and recent history; `solara history` as a plain command (owner 2026-11-14) | planned |
-| Profiles agents can't reach: a per-profile setting that keeps the `solara` command and MCP out of a profile, enforced by the app on the control connection, not by the command (owner 2026-11-14) | design, waiting on the owner's choices |
+| Profiles agents can't reach: a per-profile setting that keeps the `solara` command and MCP out of a profile, enforced by the app on the control connection, not by the command; new profiles allow agents by default; the command's history and pins reads move into the app so the setting covers them (owner 2026-11-14) | design: how blocked profiles show in listings is still open |
 
 ## 0.5.0: React Native decides nothing
 

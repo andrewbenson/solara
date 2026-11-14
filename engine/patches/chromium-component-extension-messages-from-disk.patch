@@ -1,0 +1,48 @@
+--- a/extensions/browser/renderer_startup_helper.cc
++++ b/extensions/browser/renderer_startup_helper.cc
+@@ -26,6 +26,7 @@
+ #include "content/public/browser/browser_context.h"
+ #include "content/public/browser/render_process_host.h"
+ #include "extensions/browser/bad_message.h"
++#include "extensions/browser/component_extension_resource_manager.h"
+ #include "extensions/browser/extension_function_dispatcher.h"
+ #include "extensions/browser/extension_mojo_binder_registry.h"
+ #include "extensions/browser/extension_mojo_binder_registry_factory.h"
+@@ -39,6 +40,7 @@
+ #include "extensions/browser/service_worker/service_worker_task_queue.h"
+ #include "extensions/browser/user_script_manager.h"
+ #include "extensions/browser/user_script_world_configuration_manager.h"
++#include "extensions/common/constants.h"
+ #include "extensions/common/extension_id.h"
+ #include "extensions/common/extension_l10n_util.h"
+ #include "extensions/common/extension_set.h"
+@@ -219,6 +221,19 @@
+       GetWorkerActivationToken(browser_context, extension),
+       extension.creation_flags(), extension.guid(),
+       is_mojo_js_enabled_for_service_worker);
++}
++
++bool MessagesAreComponentResources(const Extension& extension,
++                                   const std::string& default_locale) {
++  const ComponentExtensionResourceManager* manager =
++      ExtensionsBrowserClient::Get()->GetComponentExtensionResourceManager();
++  int resource_id = 0;
++  return manager && manager->IsComponentExtensionResource(
++                        extension.path(),
++                        base::FilePath(kLocaleFolder)
++                            .AppendASCII(default_locale)
++                            .Append(kMessagesFilename),
++                        &resource_id);
+ }
+ 
+ base::flat_map<std::string, std::string> ToFlatMap(
+@@ -755,7 +770,8 @@
+   }
+ 
+   bool is_component =
+-    extension->location() == extensions::mojom::ManifestLocation::kComponent;
++      extension->location() == extensions::mojom::ManifestLocation::kComponent &&
++      MessagesAreComponentResources(*extension, default_locale);
+ 
+   if (is_component) {
+     auto dictionary_map = l10n_file_util::LoadMessageBundleSubstitutionMapFromPaths(

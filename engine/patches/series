@@ -34,6 +34,7 @@ chromium chromium-extension-sync-installer-hook.patch
 chromium chromium-unpacked-load-path-hook.patch
 chromium chromium-extension-window-hidden.patch
 chromium chromium-component-extension-restricted-urls.patch
+chromium chromium-component-extension-messages-from-disk.patch
 chromium chromium-helium-ublock-off.patch
 chromium chromium-helium-onboarding-off.patch
 chromium chromium-helium-services-page-off.patch

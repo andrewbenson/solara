@@ -96,6 +96,12 @@ const script = await adFate(adScript, () => evaluate(`fetch(${JSON.stringify(adS
 const control = await evaluate(`fetch("https://www.iana.org/favicon.ico",{mode:"no-cors"}).then(()=>"loaded",e=>"failed")`);
 check("uBlock blocks an ad request, lets other requests through", ad === "blocked" && control === "loaded", `${ad}/${control}`);
 check("…and Google's ad script never loads (uBlock swaps in its stand-in)", script !== "loaded", script);
+const blockedDetails = encodeURIComponent(JSON.stringify({ url: "https://awstrack.me/", hn: "awstrack.me", dn: "awstrack.me", fs: "||awstrack.me^" }));
+await go(`chrome-extension://fajbdaomknpkicfjcpipdmcpoamdmilh/document-blocked.html?details=${blockedDetails}`);
+const blockedText = await evaluate(`["docblockedPrompt1", "docblockedBack"].map((k) => document.querySelector('[data-i18n="' + k + '"]')?.textContent.trim() ?? "")`);
+check("…and its pages show their text (uBlock's strict-blocking page)",
+  Array.isArray(blockedText) && blockedText.every((t) => t && t !== "_"), JSON.stringify(blockedText));
+await go("https://example.com/");
 
 const media = JSON.parse(
   await evaluate(

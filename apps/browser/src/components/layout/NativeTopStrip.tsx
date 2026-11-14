@@ -7,7 +7,7 @@ import { useShallow } from "zustand/react/shallow";
 import { toggleMute } from "../../lib/actions";
 import { shortcutHint, useShortcutHint, withShortcut } from "../../lib/commandShortcuts";
 import { nativeOwnsWorkspace } from "../../store/nativeStore";
-import { stripHostProps } from "../nativeHostProps";
+import { chromeLiveIds, chromeSleeping, stripHostProps } from "../nativeHostProps";
 import { useLifecycle } from "../../lib/tabLifecycle";
 import { hex, inkedTokens, inkIsLight, profileNameColor, profileTheme, selectedTabGlow, spaceLookSource, useAdjustedInk, useSelectedTabGlow, useTheme, type Theme } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
@@ -195,14 +195,8 @@ function useTopStripState(windowId: string, profileId: string, floating: boolean
       return out;
     }),
   );
-  const playing = useBrowser((s) => {
-    let out = "";
-    for (const id of s.windows[windowId]?.tabIds ?? NONE) if (s.live[id]?.playingAudio) out += (out ? "," : "") + id;
-    return out;
-  });
-  const legacySleeping = useLifecycle(useShallow((l) => Object.keys(l.discarded).filter((id) => l.discarded[id])));
-  const nativeSleeping = useBrowser(useShallow((s) => (s.windows[windowId]?.tabIds ?? NONE).filter((id) => s.live[id]?.discarded)));
-  const sleeping = nativeOwnsWorkspace() ? nativeSleeping : legacySleeping;
+  const playing = useBrowser((s) => chromeLiveIds(s, windowId, "playingAudio", nativeOwnsWorkspace()));
+  const sleeping = useLifecycle(useShallow((l) => chromeSleeping(l.discarded, nativeOwnsWorkspace())));
   const closeHint = useBrowser((s) => shortcutHint("closeTab", s) ?? null);
   const engines = useBrowser(
     useShallow((s) => {

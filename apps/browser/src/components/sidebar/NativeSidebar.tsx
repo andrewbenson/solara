@@ -7,7 +7,7 @@ import { closeTab, toggleMute } from "../../lib/actions";
 import { shortcutHint } from "../../lib/commandShortcuts";
 import { PRODUCT } from "../../lib/productName";
 import { nativeOwnsWorkspace } from "../../store/nativeStore";
-import { sidebarHostProps } from "../nativeHostProps";
+import { chromeLiveIds, chromeSleeping, sidebarHostProps } from "../nativeHostProps";
 import { useLifecycle } from "../../lib/tabLifecycle";
 import { hex, inkedTokens, inkIsLight, profileNameColor, profileTheme, selectedTabGlow, spaceLookSource, useAdjustedInk, useSelectedTabGlow, useTheme, type Theme } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
@@ -252,13 +252,6 @@ addNativeSettingsHandlers({
   },
 });
 
-function liveIds(s: ReturnType<typeof useBrowser.getState>, windowId: string, key: "isLoading" | "playingAudio"): string {
-  const ids = s.windows[windowId]?.tabIds ?? NONE;
-  let out = "";
-  for (const id of ids) if (s.live[id]?.[key]) out += (out ? "," : "") + id;
-  return out;
-}
-
 const split = (ids: string) => (ids ? ids.split(",") : NONE);
 
 function themeTokens(theme: Theme, adjustInk: boolean): Record<string, string> {
@@ -313,11 +306,9 @@ export const NativeSidebar = memo(function NativeSidebar({ windowId, profileId, 
   const theme = useTheme();
   const glow = useSelectedTabGlow();
   const selection = useBrowser((s) => s.selection[windowId] ?? NONE);
-  const loading = useBrowser((s) => liveIds(s, windowId, "isLoading"));
-  const playing = useBrowser((s) => liveIds(s, windowId, "playingAudio"));
-  const legacySleeping = useLifecycle(useShallow((l) => Object.keys(l.discarded).filter((id) => l.discarded[id])));
-  const nativeSleeping = useBrowser(useShallow((s) => (s.windows[windowId]?.tabIds ?? NONE).filter((id) => s.live[id]?.discarded)));
-  const sleeping = nativeOwnsWorkspace() ? nativeSleeping : legacySleeping;
+  const loading = useBrowser((s) => chromeLiveIds(s, windowId, "isLoading", nativeOwnsWorkspace()));
+  const playing = useBrowser((s) => chromeLiveIds(s, windowId, "playingAudio", nativeOwnsWorkspace()));
+  const sleeping = useLifecycle(useShallow((l) => chromeSleeping(l.discarded, nativeOwnsWorkspace())));
   const renaming = useSidebarUi((u) => (u.renaming?.windowId === windowId && (u.renaming.kind === "tab" || u.renaming.kind === "group") ? `${u.renaming.kind}:${u.renaming.id}` : null));
   const clear = useSettings((s) => s.showClearButton);
   const tidy = useBrowser((s) => canTidyPins(s, windowId, profileId));

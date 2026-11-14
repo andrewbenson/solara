@@ -67,3 +67,19 @@ export function sidebarHostProps({ ownsLive, live, ...rest }: HostInput<SidebarH
   const lists = ownsLive ? OWNED : live;
   return { ...rest, loading: lists.loading, playing: lists.playing, sleeping: lists.sleeping };
 }
+
+type ChromeLiveState = {
+  windows: Record<string, { tabIds: readonly string[] } | undefined>;
+  live: Record<string, { isLoading?: boolean; playingAudio?: boolean } | undefined>;
+};
+
+export function chromeLiveIds(state: ChromeLiveState, windowId: string, key: "isLoading" | "playingAudio", ownsLive: boolean): string {
+  if (ownsLive) return "";
+  let out = "";
+  for (const id of state.windows[windowId]?.tabIds ?? []) if (state.live[id]?.[key]) out += (out ? "," : "") + id;
+  return out;
+}
+
+export function chromeSleeping(discarded: Record<string, boolean | undefined>, ownsLive: boolean): string[] {
+  return ownsLive ? OWNED.sleeping : Object.keys(discarded).filter((id) => discarded[id]);
+}

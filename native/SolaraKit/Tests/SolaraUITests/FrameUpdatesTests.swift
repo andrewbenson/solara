@@ -34,6 +34,24 @@ struct FrameUpdatesTests {
     CFRunLoopAddTimer(CFRunLoopGetMain(), timer, mode)
   }
 
+  #if SOLARA_PROBES
+  @Test func deferredWorkCountsCoalescedJobsAndResetKeepsPendingWork() {
+    FrameUpdates.flush()
+    NativeWorkCounters.reset()
+    let first = Owner(), second = Owner()
+    FrameUpdates.schedule(first) {}
+    FrameUpdates.schedule(first) {}
+    FrameUpdates.schedule(second) {}
+    #expect(FrameUpdates.probePendingJobs == 2)
+    #expect(NativeWorkCounters.snapshot()["pendingDeferredJobs"] as? Int == 2)
+    NativeWorkCounters.reset()
+    #expect(FrameUpdates.probePendingJobs == 2)
+    FrameUpdates.flush()
+    #expect(NativeWorkCounters.deferredJobs == 2)
+    #expect(FrameUpdates.probePendingJobs == 0)
+  }
+  #endif
+
   @Test func severalSchedulesInOneTurnRenderOnceWithTheLatest() {
     let owner = Owner()
     var rendered: [Int] = []

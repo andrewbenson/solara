@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { launch, reporter, session, sleep } from "../../../scripts/lib/instance.mjs";
+import { readNativeWork, validateWindowContract } from "./perf/native-work.mjs";
 import { fixturePage } from "../../../scripts/lib/fixture-html.mjs";
 
 const args = process.argv.slice(2);
@@ -108,6 +109,23 @@ try {
   const chromeWindowNumber = await run(`return win();`);
   await untilSnapshot("Chrome window number", (snapshot) => snapshot.windows[0]?.chromeWindowNumber === chromeWindowNumber);
   await run(`return act("fakeActiveClicks");`);
+  await rep.check("native layout owner, counters and page identity survive scrolling", async () => {
+    const before = await app.snapshot({ windowId: "w1", fields: ["windows.shell"] });
+    const contract = validateWindowContract(before.windows[0].shell.contract);
+    assert.equal(contract.hostCounts.sidebar, 1, "one native sidebar host");
+    assert.ok((await readNativeWork(app)).rows.live > 0, "native row census is present");
+    await readNativeWork(app, true);
+    await run(`return scrollTo(260).then(() => scrollTo(0));`);
+    const after = await app.snapshot({ windowId: "w1", fields: ["windows.shell"] });
+    const afterContract = validateWindowContract(after.windows[0].shell.contract);
+    const { pageIdentities, ...geometry } = contract;
+    const { pageIdentities: afterPages, ...afterGeometry } = afterContract;
+    assert.deepEqual(afterGeometry, geometry);
+    const page = pageIdentities.find((value) => value.tabId === "t0");
+    assert.ok(page, "selected pooled page identity is present");
+    assert.deepEqual(afterPages.find((value) => value.tabId === "t0"), page);
+    assert.equal((await readNativeWork(app)).rows.created, 0, "eager sidebar scroll allocates no new rows");
+  });
 
   for (const addressBar of ["sidebar", "toolbar"])
     await rep.check(`${addressBar === "sidebar" ? "address field in the sidebar" : "Dia's layout"}: after a scroll, a row dragged onto a tile pins it there (a new tile row opens)`, () =>

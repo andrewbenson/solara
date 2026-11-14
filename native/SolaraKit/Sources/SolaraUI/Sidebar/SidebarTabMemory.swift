@@ -162,6 +162,9 @@ public final class TabMemoryCache {
     observesDocuments = true
     observedStore = store
     clear()
+    #if SOLARA_PROBES
+    NativeWorkCounters.host(self, windowId: "", kind: "tabMemory") { cache in (false, cache.storeListener == nil ? 0 : 1) }
+    #endif
     guard let store else { return }
     let documents = documents
     storeListener = store.subscribe { [weak self] commit in

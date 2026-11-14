@@ -39,6 +39,9 @@ enum NativeWindowShell {
     NativePeek.start()
     if let store = NativeStoreHandle.store {
       let sink = commits
+      #if SOLARA_PROBES
+      NativeWorkCounters.shellStoreSubscriptions = 1
+      #endif
       storeListener = store.subscribe { commit in
         sink.receive(Set(commit.state.windows.keys))
         NativePaneRoots.storeChanged()
@@ -97,11 +100,22 @@ final class ShellHost {
   #if DEBUG
   var devSidePanelResizeLinkActive: Bool { sidePanel?.devResizeLinkActive ?? false }
   #endif
+  #if SOLARA_PROBES
+  private var probeStopped = false
+  #endif
   var onClose: (() -> Void)?
 
   init(windowId: String, root: NSView) {
     shell = WindowShellView(windowId: windowId, reactOnTop: NativeWindowShell.mainOnTop)
     self.root = root
+    #if SOLARA_PROBES
+    NativeWorkCounters.host(self, windowId: windowId, kind: "ShellHost") { (host: ShellHost) -> (Bool, Int) in
+      let contentSubscriptions = host.contentSizer == nil ? 0 : 1
+      let closeSubscriptions = host.closing == nil ? 0 : 1
+      let subscriptions = host.observers.count + contentSubscriptions + closeSubscriptions
+      return (!host.probeStopped, subscriptions)
+    }
+    #endif
     if shell.reactOnTop, root.responds(to: Selector(("setPassThroughTouches:"))) { root.setValue(true, forKey: "passThroughTouches") }
     shell.mount(.react, root)
     let center = NotificationCenter.default
@@ -138,6 +152,9 @@ final class ShellHost {
   }
 
   func stop() {
+    #if SOLARA_PROBES
+    probeStopped = true
+    #endif
     sidePanel?.stop()
     sidePanel = nil
     NativePeek.windowEnded(shell.windowId)
@@ -243,8 +260,19 @@ public enum WindowShellRead {
 
   public static func snapshot(windowId: String) -> [String: Any]? {
     guard let source = NativeWindowShell.describe(windowId) else { return nil }
+    let work = NativeWorkCounters.snapshot()
+    let hosts = (work["hosts"] as? [[String: Any]] ?? []).filter { $0["windowId"] as? String == windowId }
+    let counts = Dictionary(uniqueKeysWithValues: hosts.compactMap { host -> (String, Int)? in
+      guard let kind = host["kind"] as? String, let count = host["count"] as? Int else { return nil }
+      return (kind, count)
+    })
     return ["card": source["card"] ?? NSNull(), "order": source["order"] ?? [],
-      "reactOnTop": source["reactOnTop"] ?? false]
+      "reactOnTop": source["reactOnTop"] ?? false, "nativeWork": work,
+      "contract": ["bounds": source["bounds"] ?? NSNull(), "sidebar": source["sidebar"] ?? NSNull(),
+        "topStrip": source["topStrip"] ?? NSNull(), "slots": source["slots"] ?? [],
+        "ownerCount": counts["ShellHost"] ?? 0,
+        "hostCounts": ["ShellHost": counts["ShellHost"] ?? 0, "sidebar": counts["sidebar"] ?? 0, "topStrip": counts["topStrip"] ?? 0],
+        "pageIdentities": TabPoolHost.shared.probePageIdentities(windowId)]]
   }
 
   public static func hitSlot(windowId: String, x: Double, y: Double) -> String? {
@@ -592,6 +620,17 @@ public class WindowShellModule: Module {
       return "null"
       #endif
     }.runOnQueue(.main)
+
+    #if SOLARA_PROBES
+    AsyncFunction("nativeWork") { (reset: Bool) -> String in
+      MainActor.assumeIsolated {
+        let work = NativeWorkCounters.snapshot()
+        if reset { NativeWorkCounters.reset() }
+        guard let data = try? JSONSerialization.data(withJSONObject: work) else { return "null" }
+        return String(data: data, encoding: .utf8) ?? "null"
+      }
+    }.runOnQueue(.main)
+    #endif
 
     AsyncFunction("describe") { (windowId: String) -> String in
       FrameUpdates.readOnMain {

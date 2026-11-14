@@ -75,6 +75,16 @@ final class TabPoolHost {
     }
   }
 
+  #if SOLARA_PROBES
+  func probePageIdentities(_ windowId: String) -> [[String: String]] {
+    guard let state else { return [] }
+    return pages.keys.sorted().compactMap { tabId in
+      guard state.tabs[tabId]?.windowId == windowId, let entry = pages[tabId] else { return nil }
+      return ["tabId": tabId, "identity": String(describing: ObjectIdentifier(entry.view))]
+    }
+  }
+  #endif
+
   func pageView(_ tabId: String) -> NSView? {
     guard let issuer = PageIssuer.shared else { return nil }
     return issuer.store.sequence {

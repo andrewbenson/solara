@@ -127,6 +127,9 @@ final class SplitToastView: NSView {
     tick()
     guard link == nil, !finished(CACurrentMediaTime()) else { return }
     let made = displayLink(target: self, selector: #selector(step(_:)))
+    #if SOLARA_PROBES
+    NativeWorkCounters.link(made)
+    #endif
     made.add(to: .main, forMode: .common)
     link = made
   }
@@ -147,6 +150,9 @@ final class SplitToastView: NSView {
     card.alphaValue = max(0, min(1, a))
     CATransaction.commit()
     guard finished(now) else { return }
+    #if SOLARA_PROBES
+    NativeWorkCounters.unlink(link)
+    #endif
     link?.invalidate()
     link = nil
     if let hiding {

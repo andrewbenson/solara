@@ -27,6 +27,18 @@ private func layout(_ state: BrowserState, height: CGFloat = 600, addressBar: Bo
 }
 
 @Suite struct SidebarLayoutTests {
+  @Test func fixedViewportRetainsCompleteOffscreenMetadataAtTwoSessionSizes() throws {
+    let small = layout(try sidebarState(tabs: (0..<200).map { ("t\($0)", "") }), height: 400)
+    let large = layout(try sidebarState(tabs: (0..<2000).map { ("t\($0)", "") }), height: 400)
+    #expect(small.scrollTop == large.scrollTop)
+    #expect(small.scrollBottom == large.scrollBottom)
+    #expect(small.item("t:t0") == large.item("t:t0"))
+    #expect(small.items.count == 201)
+    #expect(large.items.count == 2001)
+    #expect(large.item("t:t1999")!.frame.minY > large.scrollBottom)
+    #expect(large.contentHeight > small.contentHeight * 9)
+  }
+
   @Test func listRowsSitAtTheRowPitchBelowTheGlowRoom() throws {
     let out = layout(try sidebarState(tabs: [("t1", ""), ("t2", ""), ("t3", "")]))
     #expect(out.tilesFixed)

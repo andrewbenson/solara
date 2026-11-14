@@ -713,6 +713,9 @@ public final class SidebarResizeHandle: NSView {
     let target = SidebarResizeMath.clamp(raw)
     if raw == target { return commit(target) }
     let link = displayLink(target: self, selector: #selector(step(_:)))
+    #if SOLARA_PROBES
+    NativeWorkCounters.link(link)
+    #endif
     link.add(to: .main, forMode: .common)
     spring = (raw, target, CACurrentMediaTime(), link)
   }
@@ -728,6 +731,9 @@ public final class SidebarResizeHandle: NSView {
   }
 
   private func stopSpring() {
+    #if SOLARA_PROBES
+    NativeWorkCounters.unlink(spring?.link)
+    #endif
     spring?.link.invalidate()
     spring = nil
   }

@@ -201,6 +201,9 @@ final class TopStripHost {
   private let commits = TopStripCommits()
   private var markUri: String?
   private var pagerObserver: NSObjectProtocol?
+  #if SOLARA_PROBES
+  private var probeStopped = false
+  #endif
   var pageWidth: Double? {
     didSet { if pageWidth != oldValue { render() } }
   }
@@ -217,6 +220,11 @@ final class TopStripHost {
     view.onAction = { [weak self] action in self?.handle(action) }
     view.dragBridge = TopStripDrag.shared
     commits.host = self
+    #if SOLARA_PROBES
+    NativeWorkCounters.host(self, windowId: windowId, kind: takesDrops ? "topStrip" : "topStripPeek") { host in
+      (!host.probeStopped, (host.listener == nil ? 0 : 1) + (host.pagerObserver == nil ? 0 : 1))
+    }
+    #endif
     pagerObserver = NotificationCenter.default.addObserver(forName: Notification.Name("SolaraPagerPosition"), object: nil, queue: nil) {
       [weak self] note in
       guard note.userInfo?["key"] as? String == windowId, let position = note.userInfo?["position"] as? Double else { return }
@@ -230,6 +238,9 @@ final class TopStripHost {
   }
 
   func stop() {
+    #if SOLARA_PROBES
+    probeStopped = true
+    #endif
     if let listener { NativeStoreHandle.store?.unsubscribe(listener) }
     listener = nil
     if let pagerObserver { NotificationCenter.default.removeObserver(pagerObserver) }

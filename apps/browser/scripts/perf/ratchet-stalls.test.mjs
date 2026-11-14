@@ -16,6 +16,7 @@ function rig(body) {
   mkdirSync(perf, { recursive: true });
   mkdirSync(join(dir, "scripts/lib"), { recursive: true });
   copyFileSync(new URL("./ratchet.mjs", import.meta.url), join(perf, "ratchet.mjs"));
+  copyFileSync(new URL("./native-work.mjs", import.meta.url), join(perf, "native-work.mjs"));
   copyFileSync(new URL("../../../../scripts/lib/identity.mjs", import.meta.url), join(dir, "scripts/lib/identity.mjs"));
   const ceilings = { about: "fixture", baseline: {}, revisions: { probe: "3", bench: "7" }, exact: {}, noisy: {}, micro: {}, instr: {}, stallBaseline: { status: "measured", runs: 6 }, stalls: { "typing.stallCount": 2, "typing.stallMs": 100 } };
   const save = (name, value) => { const path = join(perf, name); writeFileSync(path, JSON.stringify(value)); return path; };

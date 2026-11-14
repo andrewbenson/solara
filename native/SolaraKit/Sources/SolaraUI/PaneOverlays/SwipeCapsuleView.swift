@@ -351,6 +351,9 @@ public final class SwipeCapsuleView: NSView {
     apply(at: now)
     guard link == nil else { return }
     let made = displayLink(target: self, selector: #selector(tick(_:)))
+    #if SOLARA_PROBES
+    NativeWorkCounters.link(made)
+    #endif
     made.add(to: .main, forMode: .common)
     link = made
   }
@@ -367,6 +370,9 @@ public final class SwipeCapsuleView: NSView {
   }
 
   private func stop() {
+    #if SOLARA_PROBES
+    NativeWorkCounters.unlink(link)
+    #endif
     link?.invalidate()
     link = nil
   }

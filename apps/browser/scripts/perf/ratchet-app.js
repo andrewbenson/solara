@@ -5,6 +5,11 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const sum = (o) => Object.values(o ?? {}).reduce((a, b) => a + (typeof b === "number" ? b : 0), 0);
 
 const extra = {
+  async nativeWork({ reset = false } = {}) {
+    const module = globalThis.expo.modules.SolaraWindowShell;
+    if (!module || typeof module.nativeWork !== "function") throw new Error("native work counters unavailable in this build");
+    return JSON.parse(await module.nativeWork(reset));
+  },
   async launch({ quietMs = 2500, timeoutMs = 30000 } = {}) {
     const state = () => {
       const s = P.read();

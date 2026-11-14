@@ -125,6 +125,9 @@ public final class StripPageView: NSView {
   }
 
   private func reconcile(_ context: StripContext) {
+    #if SOLARA_PROBES
+    NativeWorkCounters.layoutApplications += 1
+    #endif
     let entries = context.query.entries(windowId: windowId, profileId: profileId)
     let layout = StripPageLayout(
       entries: entries, activeId: context.activeId, pageWidth: pageWidth, flare: context.host.floating ? 0 : StripMetrics.flare,
@@ -138,17 +141,26 @@ public final class StripPageView: NSView {
     for item in layout.items {
       switch item.kind {
       case .dock(let cells, let members):
+        #if SOLARA_PROBES
+        NativeWorkCounters.bind(dock, windowId: windowId, profileId: profileId, kind: "strip.dock")
+        #endif
         dock.frame = NSRect(x: item.x, y: StripMetrics.itemTop, width: item.width, height: StripMetrics.itemHeight)
         dock.update(cells: cells, members: members, geometry: layout.dock, context)
       case .tab(let m):
         liveTabs.insert(m.id)
         let view = tabs[m.id] ?? make { StripTabChip() }
+        #if SOLARA_PROBES
+        NativeWorkCounters.bind(view, windowId: windowId, profileId: profileId, kind: "strip.tab")
+        #endif
         tabs[m.id] = view
         view.frame.size = NSSize(width: StripLayout.pixel(item.width), height: StripMetrics.height)
         view.update(m.id, context)
       case .split(let m):
         liveSplits.insert(m.id)
         let view = splits[m.id] ?? make { StripSplitChip() }
+        #if SOLARA_PROBES
+        NativeWorkCounters.bind(view, windowId: windowId, profileId: profileId, kind: "strip.split")
+        #endif
         splits[m.id] = view
         view.frame.size = NSSize(width: StripLayout.pixel(item.width), height: StripMetrics.height)
         view.update(m.tabIds, context)
@@ -157,6 +169,9 @@ public final class StripPageView: NSView {
       case .group(let g):
         liveGroups.insert(g.entry.id)
         let view = groups[g.entry.id] ?? make { StripGroupView() }
+        #if SOLARA_PROBES
+        NativeWorkCounters.bind(view, windowId: windowId, profileId: profileId, kind: "strip.group")
+        #endif
         groups[g.entry.id] = view
         if let motion = motions[g.entry.id] {
           motion.retarget(g)
@@ -166,6 +181,9 @@ public final class StripPageView: NSView {
         }
         view.update(g, chip: layout.chip, context)
       case .newTab:
+        #if SOLARA_PROBES
+        NativeWorkCounters.bind(newTab, windowId: windowId, profileId: profileId, kind: "strip.newTab")
+        #endif
         newTab.update(context)
       }
     }

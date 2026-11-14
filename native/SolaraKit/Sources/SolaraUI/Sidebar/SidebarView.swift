@@ -288,6 +288,9 @@ public final class SidebarView: NSView {
     if context.host.upsell != nil {
       input.upsellHeight = CleanUpUpsellView.height(width: bounds.width - SidebarMetrics.inset * 2, product: context.host.product ?? "Solara")
     }
+    #if SOLARA_PROBES
+    NativeWorkCounters.layoutApplications += 1
+    #endif
     let next = SidebarLayout(query: context.query, input: input).layout(entries)
     pageLayout = next
     place(next, context, animated: animated)

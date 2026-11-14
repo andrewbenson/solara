@@ -116,6 +116,9 @@ final class SidebarHost {
   private let commits = SidebarCommits()
   private var markUri: String?
   private var pagerObserver: NSObjectProtocol?
+  #if SOLARA_PROBES
+  private var probeStopped = false
+  #endif
 
   init(windowId: String) {
     self.windowId = windowId
@@ -123,6 +126,11 @@ final class SidebarHost {
     view.favicons.loader = { request in try await NativeSidebar.favicon(request) }
     view.onAction = { [weak self] action in self?.handle(action) }
     commits.host = self
+    #if SOLARA_PROBES
+    NativeWorkCounters.host(self, windowId: windowId, kind: "sidebar") { host in
+      (!host.probeStopped, (host.listener == nil ? 0 : 1) + (host.pagerObserver == nil ? 0 : 1))
+    }
+    #endif
     pagerObserver = NotificationCenter.default.addObserver(forName: Notification.Name("SolaraPagerPosition"), object: nil, queue: nil) {
       [weak self] note in
       guard note.userInfo?["key"] as? String == windowId, let position = note.userInfo?["position"] as? Double else { return }
@@ -136,6 +144,9 @@ final class SidebarHost {
   }
 
   func stop() {
+    #if SOLARA_PROBES
+    probeStopped = true
+    #endif
     if let listener { NativeStoreHandle.store?.unsubscribe(listener) }
     listener = nil
     if let pagerObserver { NotificationCenter.default.removeObserver(pagerObserver) }

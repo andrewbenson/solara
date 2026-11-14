@@ -54,6 +54,9 @@ final class SplitDropZonesView: NSView {
   private func run() {
     guard link == nil, animating else { return }
     let made = displayLink(target: self, selector: #selector(step(_:)))
+    #if SOLARA_PROBES
+    NativeWorkCounters.link(made)
+    #endif
     made.add(to: .main, forMode: .common)
     link = made
   }
@@ -70,6 +73,9 @@ final class SplitDropZonesView: NSView {
       }
     }
     if !animating {
+      #if SOLARA_PROBES
+      NativeWorkCounters.unlink(link)
+      #endif
       link?.invalidate()
       link = nil
     }

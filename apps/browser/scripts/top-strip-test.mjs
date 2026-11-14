@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { validateNativeWork, validateWindowContract } from "./perf/native-work.mjs";
 import { inflateSync } from "node:zlib";
 import { launch, reporter, session, sleep } from "../../../scripts/lib/instance.mjs";
 
@@ -95,7 +96,7 @@ const pageTheme = (id, themeColor) => {
 `;
 
 const STRIP_FIELDS = ["root.hostedKinds", "root.swipeSimulation", "root.haptics",
-  ...["profileId", "selectedTabId", "tabIds", "topStrip", "stripPoints", "overlays", "dropTargets", "hoverLayout"].map((key) => "windows." + key)];
+  ...["profileId", "selectedTabId", "tabIds", "topStrip", "stripPoints", "overlays", "dropTargets", "hoverLayout"].map((key) => "windows." + key), "windows.shell"];
 const nativeSnapshot = (app, args = {}) => app.snapshot({ windowId: "w1", topStrip: true, fields: STRIP_FIELDS, ...args });
 
 async function untilSnapshot(app, what, accept, ms = 8000, args = {}) {
@@ -243,6 +244,11 @@ async function measure(native) {
     await untilSnapshot(app, "registered top strip", (_, state) => state.hostedKinds.includes("topStrip") === native);
     const hello = await app.probe("probe.hello");
     assert.ok(hello.capabilities.includes("state.snapshot"));
+    const layoutSnapshot = await nativeSnapshot(app);
+    const shell = nativeWindow(layoutSnapshot).shell;
+    validateWindowContract(shell.contract);
+    validateNativeWork(shell.nativeWork);
+    assert.equal(shell.contract.hostCounts.topStrip, native ? 1 : 0, "one native top-strip host only on the native path");
     const out = { spans: await run(`return runs("w1", 21);`) };
     const nativeSpans = [];
     let span = null;
@@ -300,10 +306,13 @@ async function measure(native) {
     await untilSnapshot(app, "native hit before the click", (w) => !w.topStrip.downloadsOpen &&
       w.stripPoints.some((p) => p.x === 1569 && p.y === 27 && p.hit === out.peekHeld.hit), 8000, { stripPoints: [[1569, 27]] });
     Object.assign(out.peekHeld, await run(`return act("w1", "click:1569,27").then(() => settle(400)).then(() => ({ open: !!st().windowUi.w1?.downloadsOpen, panel: !!st().windowUi.w1?.panel.open }));`));
+    writeFileSync(join(scratch, `${native ? "native" : "rn"}-peek-held.json`), JSON.stringify(out.peekHeld, null, 2));
+    assert.equal(out.peekHeld.open, true, `peek downloads click opens the list: ${JSON.stringify(out.peekHeld)}`);
     await untilSnapshot(app, "native downloads open", (w) => w.topStrip.downloadsOpen === out.peekHeld.open && w.topStrip.panelOpen === out.peekHeld.panel, 8000);
     out.peekHeld.heldLive = await run(`st().closePanel("w1"); globalThis.acLayout.peek["strip:w1"].hide(); return settle(500).then(() => globalThis.acLayout.peek["strip:w1"].live);`);
     if (native) {
-      await untilSnapshot(app, "downloads hold peek after hide", (w) => w?.topStrip?.peek?.live === out.peekHeld.heldLive && w.overlays.some((o) => o.kind === "downloads" && o.visible));
+      writeFileSync(join(scratch, "native-peek-held.json"), JSON.stringify(out.peekHeld, null, 2));
+      await untilSnapshot(app, `downloads hold peek after hide (${JSON.stringify(out.peekHeld)})`, (w) => w?.topStrip?.peek?.live === out.peekHeld.heldLive && w.overlays.some((o) => o.kind === "downloads" && o.visible));
     }
     out.peekHeld.afterClose = await run(`st().setDownloadsOpen("w1", false); return settle(800).then(() => globalThis.acLayout.peek["strip:w1"].live);`);
     if (native) await untilSnapshot(app, "closed downloads release peek before strip restore", (w) => w?.topStrip?.peek?.live === out.peekHeld.afterClose && !w.overlays.some((o) => o.kind === "downloads" && o.visible));
@@ -348,17 +357,29 @@ async function measure(native) {
       const seen = {};
       st().toggleSidebar("w1");
       return settle(600).then(() => peek().show()).then(() => settle(400))
+        .then(() => {
+          seen.before = { profileId: st().windows.w1.profileId, sidebarOpen: st().windows.w1.sidebarOpen, peekLive: peek().live, tabIds: st().windows.w1.tabIds.slice(), frame: st().windows.w1.frame };
+          return act("w1", "hit:200,27");
+        }).then((hit) => (seen.hit = hit))
         .then(() => drag("move", 200, { urls: ["https://dropped.example/"] })).then((r) => (seen.over = r)).then(() => settle(100))
-        .then(() => drag("move", 300)).then(() => settle(300))
+        .then(() => drag("move", 300)).then((r) => (seen.move = r)).then(() => settle(300))
         .then(() => drag("drop", 300)).then((r) => (seen.drop = r)).then(() => settle(800))
         .then(() => {
           const ids = st().windows.w1.tabIds;
           const added = ids.find((id) => !before.includes(id));
           seen.after = added ? ids[ids.indexOf(added) - 1] ?? null : "none";
           seen.added = added ?? null;
+          seen.state = { profileId: st().windows.w1.profileId, sidebarOpen: st().windows.w1.sidebarOpen, peekLive: peek().live, tabIds: ids };
           return seen;
         });`);
-    assert.ok(out.peekFile.added, "peek drop added a tab");
+    const dropDiagnostics = join(scratch, `${native ? "native" : "rn"}-peek-drop.json`);
+    if (!out.peekFile.added) {
+      const snapshot = await app.snapshot({ windowId: "w1", topStrip: true, stripPoints: [[200, 27], [300, 27]],
+        dropTargets: [200, 300].map((x) => ({ x, y: 27, type: "public.url" })),
+        fields: [...STRIP_FIELDS, "windows.sidebarOpen", "root.fileDropResults", "root.fileDropSequence"] }, { timeout: 5000 }).catch((error) => ({ error: error.message }));
+      writeFileSync(dropDiagnostics, JSON.stringify({ native, drop: out.peekFile, snapshot }, null, 2));
+    }
+    assert.ok(out.peekFile.added, `peek drop added a tab: ${JSON.stringify(out.peekFile)} (diagnostics ${dropDiagnostics})`);
     await untilSnapshot(app, "peek drop native order", (w, state) => {
       const added = state.tabs.find((t) => t.id === out.peekFile.added && t.url === "https://dropped.example/");
       return added && w.tabIds.includes(added.id) && (w.tabIds[w.tabIds.indexOf(added.id) - 1] ?? null) === out.peekFile.after;

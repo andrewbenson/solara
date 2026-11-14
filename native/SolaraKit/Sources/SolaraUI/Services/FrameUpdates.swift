@@ -7,6 +7,9 @@ public enum FrameUpdates {
   private static var order: [ObjectIdentifier] = []
   private static var observer: CFRunLoopObserver?
   private static var flushPosted = false
+  #if SOLARA_PROBES
+  public static var probePendingJobs: Int { pending.count }
+  #endif
 
   public static func schedule(_ owner: AnyObject, _ render: @escaping @MainActor () -> Void) {
     let needsWake = pending.isEmpty
@@ -24,7 +27,12 @@ public enum FrameUpdates {
       let renders = pending
       order = []
       pending = [:]
-      for key in keys { renders[key]?() }
+      for key in keys {
+        #if SOLARA_PROBES
+        if renders[key] != nil { NativeWorkCounters.deferredJobs += 1 }
+        #endif
+        renders[key]?()
+      }
     }
     if !order.isEmpty { postFlush() }
   }

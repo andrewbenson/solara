@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readNativeWork, validateWindowContract } from "./perf/native-work.mjs";
 import { isDeepStrictEqual } from "node:util";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -71,6 +72,10 @@ try {
   };
 
   const locked = screenLocked();
+  const first = await app.snapshot({ windowId: "w1", fields: ["windows.shell"] });
+  const initialContract = validateWindowContract(first.windows[0].shell.contract);
+  assert.equal(initialContract.hostCounts.sidebar, 1, "one native sidebar host");
+  assert.ok((await readNativeWork(app)).rows.live >= ids.length, "native eager row census includes every fixture tab");
   const settled = async (what) => {
     await sleep(1200);
     let list, rows;
@@ -81,6 +86,13 @@ try {
       assert.deepEqual(sample.clipped, [], `${what}: rows left clipped`);
       return isDeepStrictEqual(state.windows[0]?.tabIds, list);
     });
+    const contract = validateWindowContract(native.windows[0].shell.contract);
+    assert.equal(contract.hostCounts.sidebar, 1, "bulk changes retain one native sidebar host");
+    assert.deepEqual(contract.bounds, initialContract.bounds, "bulk changes preserve shell bounds");
+    const selectedPage = initialContract.pageIdentities.find((page) => page.tabId === "t0");
+    assert.ok(selectedPage, "selected pooled page identity is present");
+    assert.deepEqual(contract.pageIdentities.find((page) => page.tabId === "t0"), selectedPage, "bulk changes preserve the selected pooled page identity");
+    assert.ok((await readNativeWork(app)).rows.live >= list.length, "native eager row census includes all remaining tabs");
     assert.deepEqual(native.windows[0].tabIds, list, `${what}: native store order differs from the measured rows`);
     assert.deepEqual(native.tabs.map((tab) => tab.id).sort(), [...list].sort(), `${what}: native tab IDs differ from JS`);
     const shown = rows.filter((r) => r.f);

@@ -793,3 +793,24 @@ private final class PassThroughRoot: NSView {
     return hit === self ? nil : hit
   }
 }
+
+#if SOLARA_PROBES
+@MainActor
+struct WindowShellWorkTests {
+  @Test func equalInputsAndRepeatedMountsDoNotPublishSlots() {
+    let shell = WindowShellView(windowId: "work")
+    shell.frame = CGRect(x: 0, y: 0, width: 1000, height: 700)
+    let sidebar = NSView()
+    NativeWorkCounters.reset()
+    shell.mount(.sidebar, sidebar)
+    #expect(NativeWorkCounters.slotPublishes == 1)
+    shell.mount(.sidebar, sidebar)
+    shell.update { $0 = shell.input }
+    #expect(NativeWorkCounters.slotPublishes == 1)
+    #expect(NativeWorkCounters.layoutApplications == 0)
+    shell.update { $0.sidebarWidth = 240 }
+    #expect(NativeWorkCounters.layoutApplications == 1)
+    #expect(NativeWorkCounters.slotPublishes == 2)
+  }
+}
+#endif

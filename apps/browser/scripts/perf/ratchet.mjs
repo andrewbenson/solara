@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { identity } from "../../../../scripts/lib/identity.mjs";
+import { NATIVE_WORK_REVISION, nativeWorkCounts } from "./native-work.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const appDir = process.env.RATCHET_APP_DIR ? resolve(process.env.RATCHET_APP_DIR) : resolve(here, "../..");
@@ -104,6 +105,22 @@ const isTotal = (key) => {
 };
 
 const readJson = (file) => JSON.parse(readFileSync(file, "utf8"));
+
+export function collectNativeWork(reports) {
+  const samples = [];
+  const names = new Set([...JOURNEYS, "idleLate", "profileSwipe", "storeUpdate", "persistence"]);
+  for (const report of reports) {
+    if (report.nativeWorkRevision === undefined) continue;
+    if (report.nativeWorkRevision !== NATIVE_WORK_REVISION || report.nativeWorkWindow !== "outerScenario") throw new Error("native work: incompatible report revision or measurement window");
+    for (const [run, result] of report.results.entries()) {
+      for (const name of names) {
+        if (!result[name]) continue;
+        samples.push({ seed: report.seed ?? "big", run, scenario: name, counts: nativeWorkCounts(result[name].nativeWork) });
+      }
+    }
+  }
+  return samples;
+}
 
 function collectStalls(reports) {
   const values = {};
@@ -215,6 +232,8 @@ function evaluate(ceilings, { files = [], micro = null, instr = null }) {
   let stallPending = false;
   if (files.length) {
     const reports = files.map(readJson);
+    const native = collectNativeWork(reports);
+    if (native.length) notes.push(`native work revision ${NATIVE_WORK_REVISION}: ${native.length} validated scenario samples (allocation baseline only; no eager-row ceilings)`);
     const rev = reportRevisions(reports);
     if (String(ceilings.revisions.probe) !== rev.probe || String(ceilings.revisions.bench) !== rev.bench)
       notes.push(`WARNING: ratchet.json is for probe revision ${ceilings.revisions.probe}, bench revision ${ceilings.revisions.bench}; this report has probe ${rev.probe}, bench ${rev.bench}. If a counter was redefined (not just added), the ceilings mean something else now: rebuild them with \`ratchet.mjs init\` on a fresh census.`);
@@ -300,6 +319,7 @@ function lower(files, micro, instr) {
   };
   if (files.length) {
     const reports = files.map(readJson);
+    collectNativeWork(reports);
     const { values, ran } = collect(reports);
     for (const [key, ceiling] of Object.entries(ceilings.exact)) {
       if (!ran.has(scenarioOf(key))) continue;
@@ -324,6 +344,7 @@ function lower(files, micro, instr) {
 
 function init(files, microRuns, instr, { adopt = false } = {}) {
   const reports = files.map(readJson);
+  collectNativeWork(reports);
   const { values, runs, ran } = collect(reports);
   if (runs < MIN_RUNS) throw new Error(`init needs at least ${MIN_RUNS} runs to tell a steady count from a wobbling one; got ${runs}`);
   const measuredStalls = collectStalls(reports);
@@ -404,7 +425,9 @@ function adoptCeilings(next, dropped) {
 }
 
 function census(files) {
-  const { values, runs, ran } = collect(files.map(readJson));
+  const reports = files.map(readJson);
+  for (const sample of collectNativeWork(reports)) console.log(`native ${sample.seed} ${sample.run} ${sample.scenario}: ${JSON.stringify(sample.counts)}`);
+  const { values, runs, ran } = collect(reports);
   console.log(`${runs} runs; scenarios ${[...ran].join(", ")}`);
   const rows = Object.entries(values).map(([key, v]) => ({ key, v, min: Math.min(...v), max: Math.max(...v), mode: modeOf(v) }));
   const steady = rows.filter((r) => r.mode.share >= EXACT_SHARE && r.max > 0);
@@ -450,6 +473,7 @@ function jsSetup(flags, out, mark) {
     const a = [join(here, "js-bench.mjs"), "run", "--app", app, "--bundle", jsbundle, "--label", small ? smallLabel : label, "--runs", String(runs), "--port", flags.port ?? "47831", "--out", out, "--scenarios", small ? "startup,launch" : scenarios, "--options", OPTIONS];
     if (small) a.push("--seed", "small");
     else a.push("--probe", "selectors");
+    if (flags["native-work"]) a.push("--native-work", "1");
     if (append) a.push("--append", "1");
     a.push("--lib", libs);
     return a;

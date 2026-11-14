@@ -281,6 +281,9 @@ public final class NewTabHeroView: NSView {
     intro = MarkIntroPlayer()
     mark.apply(intro!.offsets)
     let made = displayLink(target: self, selector: #selector(tick(_:)))
+    #if SOLARA_PROBES
+    NativeWorkCounters.link(made)
+    #endif
     made.add(to: .main, forMode: .common)
     link = made
   }
@@ -300,12 +303,18 @@ public final class NewTabHeroView: NSView {
   }
 
   private func stopLink() {
+    #if SOLARA_PROBES
+    NativeWorkCounters.unlink(link)
+    #endif
     link?.invalidate()
     link = nil
   }
 
   isolated deinit {
     watching = false
+    #if SOLARA_PROBES
+    NativeWorkCounters.unlink(link)
+    #endif
     link?.invalidate()
     model?.save()
   }

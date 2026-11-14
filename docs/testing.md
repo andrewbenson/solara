@@ -291,3 +291,24 @@ batch, verify C remains deleted in desired state while Chrome retains it, crash,
 confirm C disappears without reimport or a JS writer. Fault commands are absent from release builds and
 refused without isolated development data. Complete the release smoke/update and performance gates after
 these checks; no drafted test constitutes a recorded pass.
+
+## Layout port contract and native work (Patch 1)
+
+`WindowLayoutContractTests`, `WindowShellTests`, `SidebarLayoutTests` and `FrameUpdatesTests` freeze the current
+left-sidebar/top-strip/fullscreen frames, visibility, mounted guest/page identity and coalescing contract. Run the
+unfiltered SolaraKit suite with `-Xswiftc -DSOLARA_PROBES`; the counter tests are compiled out without that define.
+The fixed-viewport test deliberately records eager realization at 200 and 2,000 tabs. Patch 5 replaces this assertion
+with the visible-row bound; it is not a permanent performance ceiling.
+
+After a Debug build, run `sidebar-scroll-test`, `sidebar-bulk-test` and `top-strip-test`, then
+`node apps/browser/scripts/perf/native-work-report.mjs <Debug app> --out=<scratch>/native-work`.
+The report keeps small and 200-tab sessions plus a 2,000-tab fixture at the same viewport, cumulative launch counts,
+reset scroll counts and native geometry/host/page-identity observations. Missing or malformed counters fail validation.
+Keep the raw JSON with the baseline commit. Screen-dependent checks still follow the locked-screen rules above.
+
+On the instrumented `75ac3d0e` tree, the full top-strip driver exposes two failures in unchanged peek hit routing: the RN reference
+URL drop reaches a refusing root instead of its drop view, and the native peek's downloads button is covered by
+`ToolbarUrlFieldView` in `ShellOverlayView` even with the peek fully shown. Both click event routes reproduce the
+native miss at the measured button centre; programmatic downloads opening preserves the peek hold. Patch 1 keeps
+these checks strict and records diagnostics rather than changing layout ownership or accepting the missed clicks.
+The unchanged layering suggests pre-existing failures; a clean base binary was not run as a control.

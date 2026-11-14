@@ -59,6 +59,9 @@ public final class DockAnimator {
     running = true
     if link == nil {
       let made = view.displayLink(target: DisplayLinkTrampoline(self), selector: #selector(DisplayLinkTrampoline.tick(_:)))
+      #if SOLARA_PROBES
+      NativeWorkCounters.link(made)
+      #endif
       made.add(to: .main, forMode: .common)
       link = made
     }
@@ -110,6 +113,9 @@ public final class DockAnimator {
 
   private func halt() {
     running = false
+    #if SOLARA_PROBES
+    NativeWorkCounters.unlink(link)
+    #endif
     link?.invalidate()
     link = nil
     stallTimer?.invalidate()
@@ -131,7 +137,12 @@ private final class DisplayLinkTrampoline: NSObject {
   }
 
   @objc func tick(_ link: CADisplayLink) {
-    guard let animator else { return link.invalidate() }
+    guard let animator else {
+      #if SOLARA_PROBES
+      NativeWorkCounters.unlink(link)
+      #endif
+      return link.invalidate()
+    }
     animator.tick()
   }
 }

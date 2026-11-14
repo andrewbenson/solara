@@ -588,3 +588,37 @@ then run it with `TMPDIR=<scratch>`. It opens no window and does not initialize 
 `SolaraShell.devMainThreadStall(milliseconds)` seam sleeps the main thread for a bounded 0–5000 ms.
 `SOLARA_STALL_WATCHDOG=0` skips embedded Debug installation for interleaved overhead measurements;
 Release contains neither control. Debug benchmark launches use `METRO_PORT` to select their own Metro server.
+
+## Native layout work baseline (layout port Patch 1)
+
+Native work is an additive, separately versioned Debug probe report (`nativeWorkRevision: 1`), enabled in js-bench
+and ratchet runs with `--native-work 1`. Existing scenarios and JS counter revisions retain their meaning.
+`nativeWorkWindow: "outerScenario"` and summary keys `*.nativeOuter.*` distinguish the native window, which includes
+scenario preparation and checkpoint tails, from the narrower internal JS reset window. The dedicated fixture report
+resets after settling before it scrolls; its scroll counters exclude startup work. Production
+Release builds have no native-work API or collector: instrumentation and the adapter compile only with `SOLARA_PROBES`.
+Do not interpret an unavailable report as zero, or compare mixed native-work versions. The report validator checks
+required nonnegative integer fields and that per-window/profile/kind row counts sum to the totals.
+
+`SolaraWindowShell.nativeWork(false)` reads the report; `nativeWork(true)` returns the current report and resets event
+counts. Reset preserves live gauges and allocation identity. `rows.created` counts first observed concrete row views,
+`bound` counts binding/update passes, and `reused` counts bindings of an already observed view, including today's
+stable-key retention. It does not yet prove reuse between different tab identities. Live rows include retained hidden
+profile pages and detached retiring rows until deallocation. Counts are grouped by window, profile and concrete row kind.
+Layout applications and slot publications are events; animation links and subscriptions are live gauges. The subscription
+scope is shell/sidebar/strip host notifications and store listeners plus the tab-memory store listener; internal row/view
+observers and other application services are outside this census. Paused and invalidated display links are excluded. Deferred work
+currently means executed and pending `FrameUpdates` callbacks, not optional launch jobs that Patch 10 has yet to introduce.
+These are layout instrumentation counters, not a census of every service subscription or animation in the app.
+
+Collect `native-work-report.mjs <Debug app> --out=<scratch>/native-work` beside native-bench launch/frame output.
+It retains small/big launch observations and scroll event counts, and expands the fixed 200-tab viewport to 2,000 tabs.
+`launchBoundary: "openToSettled"` measures from the post-gate pre-open timestamp through the settled allocation snapshot,
+excluding UI gate waits. It is a full-settlement diagnostic, separate from native-bench first chrome/page timing.
+`settlement: "shownProfilesAndNativeQuiet"` requires shown-profile history readiness and three seconds without JS
+commits, store updates, document writes or native row/layout/deferred work, with no active links or pending frame jobs. Cold profiles
+remain unloaded; the legacy all-profile history wait is not used by this fixture. Per-sample settlement diagnostics are saved,
+and existing per-count data directories are refused so SQLite state cannot silently replace the fixture.
+The current eager allocation is recorded explicitly as a baseline for Patch 5; no bad-allocation ceiling is adopted in
+`ratchet.json`. Timing from Debug runs is diagnostic, and native counts must be considered with launch/scroll cost.
+New ceilings require repeated matched measurements and time correlation as described above.

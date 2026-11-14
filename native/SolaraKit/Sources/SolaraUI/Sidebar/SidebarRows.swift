@@ -186,6 +186,9 @@ class SidebarRowView: NSView {
   private var rendered: AnyHashable?
 
   func update(_ item: SidebarItem, _ context: SidebarContext) {
+    #if SOLARA_PROBES
+    NativeWorkCounters.bindSidebar(self, item, context)
+    #endif
     let hintKey: String
     switch item.kind {
     case .tile(let id): hintKey = "t:\(id)"
@@ -980,6 +983,9 @@ final class GroupBoxView: NSView {
   override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
   func update(_ item: SidebarItem, _ context: SidebarContext) {
+    #if SOLARA_PROBES
+    NativeWorkCounters.bindSidebar(self, item, context)
+    #endif
     self.item = item
     guard case .groupBox(let id) = item.kind, let group = context.state.groups[id] else { return }
     groupId = id

@@ -194,6 +194,9 @@ public final class AutoHideStripView: NSView {
   private func startLink() {
     guard link == nil else { return }
     let made = displayLink(target: self, selector: #selector(step))
+    #if SOLARA_PROBES
+    NativeWorkCounters.link(made)
+    #endif
     made.add(to: .main, forMode: .common)
     link = made
     let timer = Timer(timeInterval: DockMotion.stallCheck, repeats: true) { [weak self] timer in
@@ -205,6 +208,9 @@ public final class AutoHideStripView: NSView {
   }
 
   private func stopLink() {
+    #if SOLARA_PROBES
+    NativeWorkCounters.unlink(link)
+    #endif
     link?.invalidate()
     link = nil
     stallTimer?.invalidate()

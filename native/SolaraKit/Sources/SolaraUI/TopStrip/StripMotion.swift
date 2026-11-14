@@ -144,6 +144,9 @@ final class StripTicker {
     guard link == nil, let view else { return }
     lastFrame = Self.now
     let made = view.displayLink(target: self, selector: #selector(step(_:)))
+    #if SOLARA_PROBES
+    NativeWorkCounters.link(made)
+    #endif
     made.add(to: .main, forMode: .common)
     link = made
     let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
@@ -157,6 +160,9 @@ final class StripTicker {
   }
 
   func stop() {
+    #if SOLARA_PROBES
+    NativeWorkCounters.unlink(link)
+    #endif
     link?.invalidate()
     link = nil
     fallback?.invalidate()

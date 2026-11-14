@@ -145,6 +145,9 @@ public final class SplitChromeView: NSView {
     }
     guard link == nil else { return }
     let made = displayLink(target: self, selector: #selector(frameTick(_:)))
+    #if SOLARA_PROBES
+    NativeWorkCounters.link(made)
+    #endif
     made.add(to: .main, forMode: .common)
     link = made
   }
@@ -161,6 +164,9 @@ public final class SplitChromeView: NSView {
   }
 
   private func stopLink() {
+    #if SOLARA_PROBES
+    NativeWorkCounters.unlink(link)
+    #endif
     link?.invalidate()
     link = nil
   }

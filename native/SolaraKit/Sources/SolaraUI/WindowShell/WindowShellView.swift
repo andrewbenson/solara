@@ -150,6 +150,9 @@ public final class WindowShellView: NSView {
     if let current = mounted[slot], current === view { return }
     if let current = mounted[slot], (current.superview === self || current.superview === cardClip), current !== view { current.removeFromSuperview() }
     if let view, let other = mounted.first(where: { $0.key != slot && $0.value === view })?.key { mounted[other] = nil }
+    #if SOLARA_PROBES
+    NativeWorkCounters.slotPublishes += 1
+    #endif
     mounted[slot] = view
     defer { coverChanged() }
     guard let view else { return }
@@ -474,6 +477,9 @@ public final class WindowShellView: NSView {
     resolvePointer(pointInWindow)
     if let pointerLink { pointerLink.isPaused = false; return }
     let made = displayLink(target: self, selector: #selector(pointerFrame(_:)))
+    #if SOLARA_PROBES
+    NativeWorkCounters.link(made)
+    #endif
     made.add(to: .main, forMode: .common)
     pointerLink = made
   }
@@ -485,6 +491,9 @@ public final class WindowShellView: NSView {
   }
 
   private func stopPointerLink() {
+    #if SOLARA_PROBES
+    NativeWorkCounters.unlink(pointerLink)
+    #endif
     pointerLink?.invalidate()
     pointerLink = nil
     pendingPointer = nil
@@ -525,6 +534,9 @@ public final class WindowShellView: NSView {
   #endif
 
   private func relayout() {
+    #if SOLARA_PROBES
+    NativeWorkCounters.layoutApplications += 1
+    #endif
     input.size = bounds.size
     let next = DockedLayoutFrames.of(input)
     let changed = next != frames
@@ -537,6 +549,9 @@ public final class WindowShellView: NSView {
     mounted[.splitChrome]?.needsLayout = true
     onLightsLayout?()
     if changed {
+      #if SOLARA_PROBES
+      NativeWorkCounters.slotPublishes += 1
+      #endif
       coverChanged()
       onFrames?(next)
     }

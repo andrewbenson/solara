@@ -26,6 +26,7 @@
 //                              selector timed by call site), renders (why each component rendered), listeners
 //         --lib <a.js,b.js>    the scenario files to load instead of bench-app.js, in order (a copy of another revision of
 //                              it; ratchet-app.js adds the scenarios ratchet.mjs needs)
+//         --native-work 1     gated Debug native work counters, with independent nativeWorkRevision; required samples fail if unavailable
 //         --seed small         one window with one tab instead of the 200-tab session (the report's `seed` says which)
 //         --trace 1            names anonymous timer callbacks by call site (slower: for finding, not timing)
 //         --options '<json>'   options passed to every scenario (bench-app.js), e.g. '{"seconds":20}'
@@ -79,6 +80,7 @@ import { escapeHtml } from "../../../../scripts/lib/fixture-html.mjs";
 import { resignForBench } from "./bench-signing.mjs";
 import { stallLibrary, stallCheckpoint, measureStalls } from "./stall-watchdog.mjs";
 import { writeSeed } from "./seed.mjs";
+import { NATIVE_WORK_REVISION, nativeWorkCounts, validateNativeWork, validateNativeWorkAppend } from "./native-work.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const appDir = resolve(here, "../..");
@@ -384,6 +386,9 @@ async function run() {
   const { app, bundle: jsbundle, label, runs = "5", port = "47817", out = defaultOut } = flags;
   if (!app || !jsbundle || !label) throw new Error("run needs --app, --bundle and --label");
   const scenarios = flags.scenarios ? flags.scenarios.split(",") : ALL;
+  const file = join(out, `${label}.json`);
+  const previous = flags.append && existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : null;
+  if (previous) validateNativeWorkAppend(previous, !!flags["native-work"]);
   const clone = join(out, "apps", label, "Solara.app");
   rmSync(dirname(clone), { recursive: true, force: true });
   mkdirSync(dirname(clone), { recursive: true });
@@ -421,8 +426,11 @@ async function run() {
           const entry = flags.trace && name !== "startup" ? "traced" : name;
           const lockedBefore = screenLocked();
           const cumulative = name === "startup" || name === "launch";
+          const nativeWork = async (reset) => validateNativeWork(await evaluate(dataDir, pid, `const module = globalThis.expo.modules.SolaraWindowShell; if (!module || typeof module.nativeWork !== "function") throw new Error("native work counters unavailable in this build"); return module.nativeWork(${reset}).then(JSON.parse);`));
+          if (flags["native-work"] && !cumulative) await nativeWork(true);
           const measured = await measureStalls({ checkpoint: () => stallCheckpoint(dataDir, pid, { timeoutMs: cumulative ? 20_000 : 3000, alive: () => alive(pid) }), locked: () => screenLocked() || (lockedAtLaunch && cumulative), cumulative }, () => evaluate(dataDir, pid, `return acBench.run(${JSON.stringify(entry)}, ${options});`));
           result[name] = measured.value;
+          if (flags["native-work"]) result[name].nativeWork = await nativeWork(false);
           result.stalls[name] = measured.stalls;
           if (lockedBefore || screenLocked()) (result.screenLocked ??= []).push(name);
         }
@@ -437,13 +445,13 @@ async function run() {
     server.close();
   }
   const bundleSize = statSync(jsbundle).size;
-  const file = join(out, `${label}.json`);
-  if (flags.append && existsSync(file)) results.unshift(...JSON.parse(readFileSync(file, "utf8")).results);
+  if (previous) results.unshift(...previous.results);
   const revisions = [...new Set(results.map(runRevision))];
   if (revisions.length > 1) console.log(`WARNING: these runs mix probe revisions ${revisions.join(", ")}; their numbers don't compare`);
   const report = {
     label, version, seed: flags.seed ?? "big", bundle: jsbundle, bundleSize, when: new Date().toISOString(),
     probeRevision: revisions.length > 1 ? revisions : revisions[0], benchRevision: BENCH_REVISION, stallRevision: 1,
+    ...(flags["native-work"] ? { nativeWorkRevision: NATIVE_WORK_REVISION, nativeWorkWindow: "outerScenario" } : {}),
     results, summary: summarize(results, bundleSize),
   };
   writeFileSync(file, JSON.stringify(report, null, 2));
@@ -548,6 +556,11 @@ function summarize(results, bundleSize) {
   for (const k of ["commits", "renders", "hostUpdates", "taskMs"])
     add(`profileSwipe.${k}`, (r) => median(r.profileSwipe.runs.map((x) => statLine(x.stats)[k])));
 
+  for (const name of new Set(results.flatMap((r) => Object.keys(r).filter((key) => r[key]?.nativeWork)))) {
+    for (const result of results) if (result[name]) validateNativeWork(result[name].nativeWork);
+    const keys = Object.keys(nativeWorkCounts(results.find((r) => r[name]?.nativeWork)[name].nativeWork));
+    for (const metric of keys) add(`${name}.nativeOuter.${metric}`, (r) => r[name]?.nativeWork ? nativeWorkCounts(r[name].nativeWork)[metric] : null);
+  }
   const last = results.at(-1) ?? {};
   const detail = {};
   const put = (key, stats) => stats && (detail[key] = { renders: top(appOnly(stats.renders), 12), storeKeys: top(stats.storeKeys, 8), tasks: top(stats.tasks, 8), taskMs: top(stats.taskMs, 6), timers: top(stats.timers, 8), timerMs: top(stats.timerMs, 8), writes: top(stats.writeBytes, 5) });

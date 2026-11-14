@@ -13,6 +13,9 @@ public final class SidebarDragTrace: NSObject {
   public private(set) var samples: [[Double]] = []
 
   public func start(_ identifier: String, milliseconds: Double) {
+    #if SOLARA_PROBES
+    NativeWorkCounters.unlink(link)
+    #endif
     link?.invalidate()
     self.identifier = identifier
     samples = []
@@ -20,6 +23,9 @@ public final class SidebarDragTrace: NSObject {
     until = started + milliseconds / 1000
     guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
     let link = screen.displayLink(target: self, selector: #selector(tick(_:)))
+    #if SOLARA_PROBES
+    NativeWorkCounters.link(link)
+    #endif
     link.add(to: .main, forMode: .common)
     self.link = link
   }
@@ -27,6 +33,9 @@ public final class SidebarDragTrace: NSObject {
   @objc private func tick(_ link: CADisplayLink) {
     let now = CACurrentMediaTime()
     guard now <= until else {
+      #if SOLARA_PROBES
+      NativeWorkCounters.unlink(link)
+      #endif
       link.invalidate()
       self.link = nil
       return

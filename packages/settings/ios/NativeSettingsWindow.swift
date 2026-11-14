@@ -6,6 +6,12 @@ import SolaraStore
 import SolaraUI
 import SwiftUI
 
+public enum NativeSidebarPositionSupport {
+  @MainActor public static func install() {
+    NativeSidebarPositionCapability.enabled = NativeWindowShell.nativeLayout && NativeStoreHandle.ownedWorkspaceAtLaunch
+  }
+}
+
 @MainActor
 final class StoreSettingsSource: SettingsStoreSource {
   let model: SettingsModel
@@ -26,6 +32,13 @@ final class StoreSettingsSource: SettingsStoreSource {
 
   func chooseTabLayout(_ layout: String) {
     SettingsJS.shared.fire("tabs.chooseLayout", layout)
+  }
+
+  var sidebarPositionAvailable: Bool { NativeSidebarPositionCapability.enabled && NativeStoreHandle.ownsWorkspace }
+
+  func chooseSidebarPosition(_ position: String) {
+    guard sidebarPositionAvailable else { return }
+    _ = try? NativeStoreHandle.store?.dispatch(Command("setSidebarPosition", [.null, .string(position)]), origin: .native)
   }
 
   func fileSource(_ key: String) -> String? { model.settings.fileSource(key) }

@@ -334,7 +334,8 @@ final class SplitLeafView: NSView {
       toolbar.frame = CGRect(x: 0, y: 0, width: bounds.width, height: toolbarHeight)
       toolbar.isHidden = toolbarHeight == 0 || toolbarJson == nil
     }
-    let pageTop = min((liveTop.map { min(max(0, $0), bounds.height) } ?? toolbarHeight) + max(0, band), bounds.height)
+    let caption = fullscreen ? 0 : windowShell?.captionTop(in: self) ?? 0
+    let pageTop = min(max(caption, liveTop.map { min(max(0, $0), bounds.height) } ?? toolbarHeight) + max(0, band), bounds.height)
     page.frame = CGRect(x: 0, y: pageTop, width: bounds.width, height: max(0, bounds.height - pageTop))
     empty?.frame = page.frame
   }

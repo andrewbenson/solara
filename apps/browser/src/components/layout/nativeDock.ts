@@ -34,12 +34,12 @@ function publish(windowId: string, state: string | null) {
 }
 
 addNativeSettingsHandlers({
-  [TOPIC]: (windowId: string, event: string, extra: { value?: number; moving?: boolean; live?: boolean; right?: number }) => {
+  [TOPIC]: (windowId: string, event: string, extra: { value?: number; moving?: boolean; live?: boolean; right?: number; rect?: [number, number, number, number] | null }) => {
     if (event === "dock") {
       setDockMoving(windowId, !!extra.moving);
       listeners.get(windowId)?.(extra.value ?? 0, !!extra.moving);
     } else if (event === "peek") {
-      setPeekShown(windowId, !!extra.live, extra.right ?? 0);
+      setPeekShown(windowId, !!extra.live, extra.right ?? 0, extra.rect ?? undefined);
       dismissHoverIn(windowId);
     } else if (event === "slideOut") dismissHoverIn(windowId);
   },

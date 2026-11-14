@@ -103,6 +103,7 @@ Setting names are the names Solara's settings store uses. Each value must have t
 | `videoUpscaling` | true or false |
 | `sidebarMediaControls` | true or false |
 | `hoverCardMemoryUsage` | true or false |
+| `sidebarPosition` | `"left"`, `"right"`; used by the development native window layout |
 | `sidebarWidth` | points from 140 to 600 |
 | `sidebarIconsOnly` | true or false |
 | `showSidebarButton` | true or false |

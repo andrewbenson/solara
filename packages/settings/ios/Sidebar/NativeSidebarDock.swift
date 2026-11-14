@@ -35,10 +35,9 @@ enum NativeSidebarDock {
     reactPeekRight[windowId] = right > 0 ? (rail ? railRight ?? right : right) : nil
   }
 
-  static func peekCovers(_ windowId: String, x: CGFloat) -> Bool {
-    if let right = reactPeekRight[windowId], x < right { return true }
-    guard let dock = docks[windowId], dock.peek.live, !dock.state.open, !dock.state.fullscreen else { return false }
-    return x < (dock.shell.frames.sidebar?.maxX ?? (ShellMetrics.peekOrigin.x + CGFloat(dock.state.width)))
+  static func peekCovers(_ windowId: String, point: CGPoint) -> Bool {
+    if !NativeWindowShell.nativeLayoutActive(windowId), let right = reactPeekRight[windowId], point.x < right { return true }
+    return docks[windowId]?.shell.sidebarPeekCoverage?.contains(point) == true
   }
 
   static func describe(_ windowId: String) -> [String: Any]? {
@@ -46,6 +45,8 @@ enum NativeSidebarDock {
     return [
       "dock": dock.dockValue, "moving": dock.moving, "live": dock.peek.live, "slide": dock.slideValue,
       "watching": dock.watchingHold.map { Double($0) } ?? NSNull(),
+      "coverage": dock.shell.sidebarPeekCoverage.map { [$0.minX, $0.minY, $0.width, $0.height] } ?? NSNull(),
+      "side": dock.shell.input.sidebarSide.rawValue,
       "column": dock.panel.content != nil ? "panel" : dock.shell.view(in: .sidebar) == nil ? "none" : "slot",
     ]
   }

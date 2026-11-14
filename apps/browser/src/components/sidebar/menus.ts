@@ -35,6 +35,8 @@ import { togglePageEngine } from "../../lib/engines";
 import { canSwitchEngine, ENGINE_SYMBOLS, openPageInTitle, otherEngine, tabEngine } from "../../store/engines";
 import { GROUP_COLORS, NEUTRAL_GROUP_SWATCH, nearestGroupColor, type GroupTint } from "./tokens";
 
+import { setSidebarPosition, sidebarPositionOf, sidebarPositionSupported } from "../../store/sidebarRail";
+
 const store = () => useBrowser.getState();
 const sep = { separator: true } as const;
 
@@ -322,8 +324,14 @@ export async function openSidebarMenu(windowId: string) {
     { id: "mute", title: muted ? "Unmute All Tabs" : "Mute All Tabs", symbol: muted ? "speaker.wave.2" : "speaker.slash" },
     { id: "closeAll", title: "Close All Tabs", symbol: "xmark", ...menuShortcut("closeAllTabs") },
     sep,
+    ...(sidebarPositionSupported(windowId) ? [{
+      id: "sidebarPosition",
+      title: "Sidebar Position",
+      children: ["left", "right"].map((position) => ({ id: `sidebarPosition:${position}`, title: position === "left" ? "Left" : "Right", checked: sidebarPositionOf(s.windows[windowId], s.settings) === position, enabled: !s.settings.fileOwn?.covered.includes("sidebarPosition") })),
+    }] : []),
     newLiveFolderMenuItem(),
   ]);
+  if (choice === "sidebarPosition:left" || choice === "sidebarPosition:right") return setSidebarPosition(windowId, choice === "sidebarPosition:right" ? "right" : "left");
   if (choice && runNewLiveFolder(windowId, choice)) return;
   if (choice === "newTab") {
     if (!toggleNewTabBar(windowId)) s.newTab(windowId, { newTabCommand: true });

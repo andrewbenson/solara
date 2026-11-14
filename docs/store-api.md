@@ -5,7 +5,7 @@ modules before using them — this is a summary from the agent that built it.
 
 ## State
 - `profiles` + `profileOrder`; default profile id is `"default"`.
-- `windows`: `{ profileId, incognito, tabIds (sidebar order, pinned first), activeTabIds[profileId], sidebarOpen, frame, tabLayout?, fullScreen?, sidebarWidth?, sidebarIconsOnly?, sidePanelWidth?, keptOnClose? }` + `windowOrder`.
+- `windows`: `{ profileId, incognito, tabIds (sidebar order, pinned first), activeTabIds[profileId], sidebarOpen, frame, tabLayout?, fullScreen?, sidebarPosition?, sidebarWidth?, sidebarIconsOnly?, sidePanelWidth?, keptOnClose? }` + `windowOrder`.
   A private window's `profileId` is `incognito:<window id>@<originalProfileId>` (`incognitoProfileId`, store/model.ts),
   `originalProfileId` the regular profile it was opened from (`createWindow({ incognito: true, profileId })`, default
   `lastActiveProfile`). Its engine profile (`engineProfile`) is that profile's off-the-record one: private windows of one
@@ -21,7 +21,7 @@ modules before using them — this is a summary from the agent that built it.
 - `splits` (store/splits.ts): `{ windowId, tabIds (2–3, pane order), orientation, sizes, stack? }` — `stack` = two panes sharing a slot the other way (Add Bottom Split). Members are contiguous in `window.tabIds`; the window's active tab is the focused pane. A split is one sidebar row (`splitRowPanes`): its panes are all unpinned, or all pinned rows; `placing`, `withGroup`, `createGroup`, `addTabsToGroup` and `removeTabsFromGroup` take every pane of a row they're given one of (`withSplitRows`), pinned panes are always rows, and a pinned split is mirrored to the profile's windows (pinMirror) and parked with them (`ParkedPins.splits`). `window.tabLayout` ("sidebar" | "top", unset = Settings).
 - `history[profileId]`: a view of Chrome's history (HistoryService), one entry per URL, not saved; `historyReady[profileId]`
   once it has been read (lib/history.ts). `bookmarks`: `{ nodes, roots[profileId]: { bar, other } }`.
-- `closedTabs` / `closedWindows` (full state; a closed window's entry leaves out its pinned tabs and pinned groups, and retains its optional tab layout, full-screen state, sidebar width, icons-only and side-panel width);
+- `closedTabs` / `closedWindows` (full state; a closed window's entry leaves out its pinned tabs and pinned groups, and retains its optional tab layout, full-screen state, sidebar position, sidebar width, icons-only and side-panel width);
   `downloads`; `settings` (typed, store/settings.ts).
 - `parkedPins[profileId]` (store/parkedPins.ts): pinned tabs belong to the profile's sidebar, as in Dia. Closing a
   window (⌘W on its last tab, the close button, ⇧⌘W, "Start fresh" on launch) parks its pinned tiles (at their pinned
@@ -103,6 +103,13 @@ modules before using them — this is a summary from the agent that built it.
   Bookmark, history, favicon, password, cookie and autofill import keep their existing owners.
 - Groups: `createGroup`, `addTabsToGroup`, …
 - Splits: `createSplit`, `openSplitPane(windowId, { tabId | url, anchorTabId, side, background })`, `replaceSplitPane`, `removeTabFromSplit`, `separateSplit`, `flipSplit`, `toggleSplitOrientation`, `movePane`, `focusPane`, `updateSplit`; `toggleTabLayout`; `setWindowLayout(windowId, "sidebar" | "top")` changes only that window, without choosing a global setting. UI entry points with Dia's feedback (max-panes toast, menus): components/layout/splitActions.ts (`openSplitPane`, `openNewTabInSplit`, `openInSplit`, `openLinkInSplit`, `showSplitMenu`). Drag a tab onto the page to split: components/layout/tabDrag.ts.
+- Sidebar position: `setSidebarPosition(windowId | null, "left" | "right")` is the canonical native command for
+  Settings, View and the sidebar menu. A window choice updates that window and the new-window default, pinning
+  other non-small windows to their existing effective side. A null window clears non-small window overrides and
+  changes the Settings default. `updateSettings({ sidebarPosition })` routes through the same command. Missing
+  values resolve left; config-file ownership overrides window and Settings choices. The local, unsynced preference
+  survives session/closed-window restoration and top tabs. Entry points require the development native-window-layout
+  capability and API 50; incapable hosts keep left geometry without changing the remembered preference.
 - Sidebar sizing: `setWindowSidebar(windowId, { sidebarWidth?, sidebarIconsOnly?, sidePanelWidth? })` changes the target window
   and chooses the matching global defaults (`sidePanelWidth` uses `settings.extensionSidePanelWidth`). Before choosing each
   global, every other window without that override is pinned to its current effective value, except Little Solara. New windows inherit

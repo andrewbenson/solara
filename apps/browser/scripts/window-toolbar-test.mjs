@@ -1,4 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
+import { sidebarSession, assertSidebarPosition, assertSidebarTrafficLights } from "./sidebar-position-test.mjs";
 import { cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -32,7 +33,7 @@ const page = (name, color) => `data:text/html,${encodeURIComponent(`<title>${nam
 const tab = (id, url) => ({ id, url, title: id, favicon: null, pinned: false, muted: false, zoom: 1, customTitle: null, customIcon: null, pinnedUrl: null, navigation: null, openerId: null, createdAt: Date.now(), lastActiveAt: Date.now() });
 const pages = { a: page("Tab-a", "#C0392B"), b: page("Tab-b", "#2471A3"), c: "https://example.com/c", d: "https://example.org/d" };
 const ids = Object.keys(pages);
-const fixture = {
+const fixture = sidebarSession({
     version: 2,
     profiles: { default: { id: "default", name: "Personal", color: "plum", icon: null, createdAt: 0 } },
     profileOrder: ["default"],
@@ -46,7 +47,7 @@ const fixture = {
     splits: [],
     closedTabs: [],
     closedWindows: [],
-};
+});
 const files = { "perf-probe": "" };
 if (process.env.SOLARA_SWITCHES) {
   const switches = {};
@@ -92,6 +93,7 @@ try {
   let ready = false;
   for (let i = 0; i < 60 && !ready; i++) ready = await ac("return !!ac.store.getState().windows.w1;", 2000).then((v) => v, () => false);
   if (!ready) throw new Error("the dev harness never answered");
+  await assertSidebarPosition(instance);
   await ac(`
     globalThis.wt = {
       frames: (n) => new Promise((r) => { let k = n || 3; const step = () => (k-- > 0 ? requestAnimationFrame(step) : r()); step(); }),
@@ -145,6 +147,7 @@ try {
     for (const rail of [true, false]) {
       await ac(`ac.runCommand({ command: "toggleSidebarIconsOnly", windowId: "w1" }); return wt.frames(8).then(() => new Promise((r) => setTimeout(r, 250))).then(() => true);`);
       const st = await switchTo("a");
+      await assertSidebarTrafficLights(instance);
       const bar = st.nativeToolbars.find((n) => n.tabId === "a");
       check(`${appearance}: ${rail ? "rail" : "full sidebar"} switches the live native surface`, !!bar && !bar.bare && bar.windowToolbar && bar.hairline === !rail && (rail ? bar.background === null && bar.stripes === null : bar.background === "#C0392B"), JSON.stringify(bar));
       const path = join(out, `${appearance}-${rail ? "rail" : "full"}.png`);

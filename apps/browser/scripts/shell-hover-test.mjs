@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { sidebarSession, sidebarEdgeX, assertSidebarPosition, assertSidebarPeekCoverage } from "./sidebar-position-test.mjs";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -39,11 +40,11 @@ const keep = args.includes("--keep-data");
 const scratch = mkdtempSync(join(tmpdir(), "ac-shell-hover-"));
 const data = join(scratch, "data");
 const rep = reporter(join(scratch, "shell-hover-test.log"), { name: "shell-hover-test" });
-const fixture = session({
+const fixture = session(sidebarSession({
   windows: [{ id: "w1", frame: [80, 80, 1280, 800], activeTabIds: { default: "a" } }],
   tabs: [{ id: "a", url: "about:blank", title: "A" }, { id: "b", url: "about:blank", title: "B" }, { id: "c", url: "about:blank", title: "C" }],
   settings: { warnBeforeClosingLastTab: false, warnBeforeClosingWindow: false },
-});
+}));
 const HELPERS = `
 const S = globalThis.expo.modules.SolaraWindowShell;
 const C = globalThis.expo.modules.SolaraCEF;
@@ -54,7 +55,9 @@ const H = globalThis.expo.modules.SolaraHosted;
 const hover = () => (H?.sidebarShell ? H.sidebarShell("w1").then((d) => JSON.parse(d)?.hover ?? null) : Promise.resolve(null)).then((value) => { globalThis.__shellHoverValue = { value }; return value; });
 `;
 let ROWS = [];
-const COVER = [0, 0, 320, 800];
+let COVER = [0, 0, 320, 800];
+let ROW_X = 120;
+let WINDOW_WIDTH = 1280;
 let app = null;
 const untilSnapshot = async (what, accept, ms = 5000) => {
   const end = Date.now() + ms;
@@ -79,7 +82,7 @@ const run = async (body) => {
     (snapshot.windows[0]?.sidebarShell?.hover ?? null) === result.hover.value);
   return result.value;
 };
-const entersAt = (y) => run(`return at(700, 400).then(() => at(120, ${y})).then(hover).then((k) => (k ? 1 : 0));`);
+const entersAt = (y) => run(`return at(700, 400).then(() => at(${ROW_X}, ${y})).then(hover).then((k) => (k ? 1 : 0));`);
 const cover = (rect, hidden) => `S.devCover("w1", ${JSON.stringify(rect)}, ${JSON.stringify(hidden)}).then(() => settle(250))`;
 
 try {
@@ -98,6 +101,11 @@ try {
     assert.ok(row && Math.abs(row.y - (54 + index * 37)) <= 0.5 && Math.abs(row.height - 34) <= 0.5, `row geometry ${JSON.stringify(rows)}`);
   });
   ROWS = rows.map(row => row.y + row.height / 2);
+  ROW_X = Math.round(rows[1].x + rows[1].width / 2);
+  const nativeColumn = await run(`return H.sidebarShell("w1").then(JSON.parse);`);
+  WINDOW_WIDTH = await run(`return ac.store.getState().windows.w1.frame[2];`);
+  COVER = [nativeColumn.frame[0], 0, nativeColumn.frame[2], 800];
+  await assertSidebarPosition(app);
   const chromeWindowNumber = await run(`return win();`);
   await untilSnapshot("Chrome window number", async (snapshot) =>
     snapshot.windows[0]?.chromeWindowNumber === await run(`return win();`) && snapshot.windows[0]?.chromeWindowNumber === chromeWindowNumber);
@@ -126,7 +134,7 @@ try {
 
   await hoverCheck("still-pointer-follows-the-cover", async () => {
     await run(`return at(700, 400);`);
-    const parked = await run(`return at(120, 130).then(hover);`);
+    const parked = await run(`return at(${ROW_X}, 130).then(hover);`);
     const out = { parked, coverOn: await run(`return ${cover(COVER, null)}.then(hover);`), coverOff: await run(`return ${cover(null, null)}.then(hover);`) };
     if (!parked || out.coverOn !== null || out.coverOff !== parked) throw new Error(`hover didn't follow the cover: ${JSON.stringify(out)}`);
     return out;
@@ -134,7 +142,7 @@ try {
 
   await hoverCheck("a-hidden-cover-gives-hover-back", async () => {
     await run(`return at(700, 400);`);
-    const parked = await run(`return at(120, 130).then(hover);`);
+    const parked = await run(`return at(${ROW_X}, 130).then(hover);`);
     const out = { parked, shown: await run(`return ${cover(COVER, null)}.then(hover);`), hidden: await run(`return ${cover(null, true)}.then(hover);`), again: await run(`return ${cover(null, false)}.then(hover);`) };
     await run(`return S.devCover("w1", null, null);`);
     if (!parked || out.shown !== null || out.hidden !== parked || out.again !== null) throw new Error(`hover didn't follow the cover's isHidden: ${JSON.stringify(out)}`);
@@ -145,11 +153,12 @@ try {
   await hoverCheck(PEEK, async () => {
     await run(`if (ac.store.getState().windows.w1.sidebarOpen) ac.store.getState().toggleSidebar("w1"); return settle(900);`);
     try {
-      await run(`return ac.shell.devLeftEdgePointer("w1", { x: -4, y: 300 }).then(() => settle(500));`);
-      const peeking = await run(`return ac.shell.devLeftEdgePointer("w1", { x: 120, y: 300 }).then(() => settle(500)).then(() => "w1" in globalThis.acLayout.dockMotion.getState().peeks);`);
+      await run(`return ac.shell.devLeftEdgePointer("w1", { x: ${sidebarEdgeX(WINDOW_WIDTH, -4)}, y: 300 }).then(() => settle(500));`);
+      const peeking = await run(`return ac.shell.devLeftEdgePointer("w1", { x: ${sidebarEdgeX(WINDOW_WIDTH, 120)}, y: 300 }).then(() => settle(500)).then(() => "w1" in globalThis.acLayout.dockMotion.getState().peeks);`);
       await untilSnapshot("peeking sidebar", (snapshot) => snapshot.windows[0]?.shellHover?.sidebarDockLive === peeking);
       const row = await run(`return H.sidebarRowFrame("w1","t:b");`);
       assert.ok(row && row.width > 0 && row.height > 0, "peeking row is visible");
+      await assertSidebarPeekCoverage(app, "w1", [row.x + row.width / 2, row.y + row.height / 2]);
       const out = { peeking, parked: await run(`return at(${row.x + row.width / 2}, ${row.y + row.height / 2}).then(hover);`), covered: await run(`return ${cover(COVER, null)}.then(hover);`) };
       if (!peeking || !out.parked || out.covered !== null) throw new Error(`hover under the cover while peeking: ${JSON.stringify(out)}`);
       return out;
@@ -160,7 +169,7 @@ try {
 
   await rep.check("layer-lookup-cost", async () => {
     const costs = [];
-    for (const [x, y] of [[120, 130], [700, 400]]) {
+    for (const [x, y] of [[ROW_X, 130], [700, 400]]) {
       const cost = await run(`return S.devHitCost("w1", ${x}, ${y});`);
       await untilSnapshot("layer lookup timings and slot", (snapshot) => same(snapshot.windows[0]?.shellHover?.hitCost, cost));
       costs.push(cost);
@@ -169,7 +178,7 @@ try {
     const mainTop = process.env.SOLARA_SHELL_MAIN_TOP !== "0";
     if (micros.some((m) => !(m < (mainTop ? 120 : 40)))) throw new Error(`layer lookup ${micros} µs`);
     if (!mainTop) return micros;
-    const points = Array.from({ length: 240 }, (_, i) => (i % 2 ? [700 + (i % 7), 400] : [120, 130 + (i % 5)]));
+    const points = Array.from({ length: 240 }, (_, i) => (i % 2 ? [700 + (i % 7), 400] : [ROW_X, 130 + (i % 5)]));
     const stream = await run(`return S.devPointerStream("w1", ${JSON.stringify(points)}, 120);`);
     await untilSnapshot("pointer stream counters and timings", (snapshot) => same(snapshot.windows[0]?.shellHover?.pointerStream, stream));
     const frames = stream.seconds / stream.frame;
@@ -180,7 +189,7 @@ try {
   await hoverCheck("hover-within-a-frame", async () => {
     const moves = [];
     await run(`return S.devPointerLatency("w1", -1, -1);`);
-    for (const [x, y] of [[120, 130], [-1, -1], [700, 400], [-1, -1], [120, 130], [-1, -1]]) {
+    for (const [x, y] of [[ROW_X, 130], [-1, -1], [700, 400], [-1, -1], [ROW_X, 130], [-1, -1]]) {
       const moved = await run(`return S.devPointerLatency("w1", ${x}, ${y});`);
       await untilSnapshot("hover latency and slot", (snapshot) => same(snapshot.windows[0]?.shellHover?.pointerLatency, moved));
       moves.push([x, y, moved]);

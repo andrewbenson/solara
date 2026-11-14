@@ -25,13 +25,14 @@ public struct SidebarChromeState: Decodable, Equatable, Sendable {
   public var currentProfileId: String?
   public var iconsOnly: Bool?
   public var dropOver: Bool
+  public var sidebarPosition: String?
   public var update: SidebarUpdatePillState?
 
   public var rail: Bool { iconsOnly == true }
 
   public init(
     controls: StripControlsState, downloads: Bool, addressBar: Bool, dark: Bool, theme: [String: String], dots: [SidebarChromeDot], savedWidth: Double,
-    iconsOnly: Bool = false, dropOver: Bool = false, update: SidebarUpdatePillState? = nil, currentProfileId: String? = nil
+    iconsOnly: Bool = false, dropOver: Bool = false, update: SidebarUpdatePillState? = nil, currentProfileId: String? = nil, sidebarPosition: String? = nil
   ) {
     self.controls = controls
     self.downloads = downloads
@@ -44,6 +45,7 @@ public struct SidebarChromeState: Decodable, Equatable, Sendable {
     self.iconsOnly = iconsOnly
     self.dropOver = dropOver
     self.update = update
+    self.sidebarPosition = sidebarPosition
   }
 
   public static func decode(_ json: String) -> SidebarChromeState? {
@@ -351,7 +353,7 @@ public final class SidebarChromeView: NSView {
 
     let resizeTop = state.rail ? header : SidebarChromeMetrics.header
     resize.frame = NSRect(
-      x: width - SidebarChromeMetrics.resizeStrip, y: resizeTop, width: SidebarChromeMetrics.resizeStrip,
+      x: state.sidebarPosition == "right" ? 0 : width - SidebarChromeMetrics.resizeStrip, y: resizeTop, width: SidebarChromeMetrics.resizeStrip,
       height: max(0, bounds.height - resizeTop))
     tooltip.look(dark: state.dark, panel: color("panel"), border: color("panelBorder"))
     CATransaction.begin()
@@ -439,7 +441,7 @@ public final class SidebarChromeView: NSView {
     controller.view = scroll
     profilePopover.contentViewController = controller
     profilePopover.contentSize = scroll.frame.size
-    if profileSwitcher.window != nil { profilePopover.show(relativeTo: profileSwitcher.bounds, of: profileSwitcher, preferredEdge: .maxX) }
+    if profileSwitcher.window != nil { profilePopover.show(relativeTo: profileSwitcher.bounds, of: profileSwitcher, preferredEdge: state.sidebarPosition == "right" ? .minX : .maxX) }
   }
 
   private func paintDots() {
@@ -682,7 +684,7 @@ public final class SidebarResizeHandle: NSView {
   }
 
   private func snapped(_ event: NSEvent) -> SidebarResizeMath.Snap {
-    SidebarResizeMath.snap(pointer: start + Double(event.locationInWindow.x - downX), fromRail: fromRail, saved: savedWidth())
+    SidebarResizeMath.snap(pointer: start + Double((windowShell?.input.sidebarSide ?? .left).widthDelta(event.locationInWindow.x - downX)), fromRail: fromRail, saved: savedWidth())
   }
 
   public override func mouseDown(with event: NSEvent) {

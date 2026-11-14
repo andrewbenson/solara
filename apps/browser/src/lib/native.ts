@@ -1,5 +1,5 @@
 import { startPinnedLinks } from "./pinnedLinks";
-import { sidebarIconsOnlyOf } from "../store/sidebarRail";
+import { sidebarIconsOnlyOf, sidebarPositionOf, sidebarPositionSupported } from "../store/sidebarRail";
 import { lastTabClosesWindow, onDownload, releaseProfile } from "@solara/solaracore";
 import {
   cancelFocusMove,
@@ -230,6 +230,7 @@ export function menuState(s: BrowserState): MenuState {
   const regularWindows = s.windowOrder.filter((id) => !s.windows[id]!.incognito && s.windows[id]!.kind !== "small");
 
   const disabled: string[] = [];
+  if (!sidebarPositionSupported(windowId) || s.settings.fileOwn?.covered.includes("sidebarPosition")) disabled.push("setSidebarPosition");
   if (!tab || !splitOf(s, tab.id)) disabled.push("focusNextPane", "focusPreviousPane");
   if (w && (w.tabLayout ?? s.settings.tabLayout) === "top") disabled.push("toggleAddressBar", "toggleSidebarIconsOnly");
   if (!w) disabled.push(...WINDOW_COMMANDS);
@@ -246,7 +247,7 @@ export function menuState(s: BrowserState): MenuState {
   if (!s.closedTabs.length && !s.closedWindows.length && !s.closedGroups.length) disabled.push("reopenClosedTab");
   if (!s.closedWindows.length) disabled.push("reopenClosedWindow");
 
-  const checked = [`setAppearance:${s.settings.appearance}`];
+  const checked = [`setAppearance:${s.settings.appearance}`, `setSidebarPosition:${sidebarPositionOf(w, s.settings)}`];
   if (s.settings.showFullUrl) checked.push("toggleFullUrl");
   if (s.settings.allowJavaScriptFromAppleEvents) checked.push("toggleJavaScriptFromAppleEvents");
   if (s.settings.addressBar === "sidebar") checked.push("toggleAddressBar");

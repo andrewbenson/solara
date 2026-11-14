@@ -30,7 +30,7 @@ public final class SplitDropZone: TabDropZone {
     let panes = chrome.panes
     let next = Self.candidates(state(), windowId: windowId, dragging: dragging, panes: panes)
     let overPage = panes.values.contains { $0.contains(local) }
-    guard !next.isEmpty, overPage, !covered(windowPoint), session.lifted != false, !session.outside else { return hide() }
+    guard !next.isEmpty, overPage, !covered(windowPoint), chrome.windowShell?.sidebarPeekCoverage?.contains(windowPoint) != true, session.lifted != false, !session.outside else { return hide() }
     candidates = next
     px = local.x
     if !shown {

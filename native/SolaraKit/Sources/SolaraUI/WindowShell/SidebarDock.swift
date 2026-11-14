@@ -10,11 +10,12 @@ public struct SidebarDockState: Decodable, Equatable, Sendable {
   public var held: Bool
   public var slideSwitch: Bool
   public var lights: [Double]
+  public var sidebarPosition: String?
   public var look: StripPeekLook
 
   public init(
     open: Bool = true, arc: Bool = false, fullscreen: Bool = false, topTabs: Bool = false, width: Double = Double(ShellMetrics.sidebarWidth),
-    held: Bool = false, slideSwitch: Bool = true,
+    held: Bool = false, slideSwitch: Bool = true, sidebarPosition: String? = nil,
     lights: [Double] = [Double(ShellMetrics.lightsCenter.x), Double(ShellMetrics.lightsCenter.y)],
     look: StripPeekLook = StripPeekLook(fill: "#202020", border: "#FFFFFF1A", shadowOpacity: 0.3)
   ) {
@@ -25,6 +26,7 @@ public struct SidebarDockState: Decodable, Equatable, Sendable {
     self.width = width
     self.held = held
     self.slideSwitch = slideSwitch
+    self.sidebarPosition = sidebarPosition
     self.lights = lights
     self.look = look
   }
@@ -93,6 +95,7 @@ public final class SidebarDock {
   public var onLights: (CGPoint?) -> Void = { _ in }
   public var onDock: (_ value: Double, _ moving: Bool) -> Void = { _, _ in }
   public var onPeek: (_ live: Bool, _ right: Double) -> Void = { _, _ in }
+  public var onPeekCoverage: (_ live: Bool, _ rect: CGRect?) -> Void = { _, _ in }
   public var onSlideOut: () -> Void = {}
   public var reduceMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
@@ -127,6 +130,7 @@ public final class SidebarDock {
     }
     shell.update {
       $0.dock = CGFloat(dock.value)
+      if let position = state.sidebarPosition { $0.sidebarSide = SidebarSide(position: position) }
       $0.away = toggle.away
       $0.peeking = false
       $0.peekSlide = 0
@@ -149,7 +153,8 @@ public final class SidebarDock {
     let was = state
     state = next
     if next.look != was.look { panel.chrome.apply(next.look) }
-    if next.arc != was.arc { rebuildPeek() }
+    if next.sidebarPosition != was.sidebarPosition { setWatch(nil) }
+    if next.arc != was.arc || next.sidebarPosition != was.sidebarPosition { rebuildPeek() }
     if next.open != was.open { toggleTo(next.open) }
     if was.held && !next.held { peek.recheck() }
     syncPeek()
@@ -180,6 +185,7 @@ public final class SidebarDock {
       $0.peekSlide = 0
     }
     setWatch(nil)
+    onPeekCoverage(false, nil)
     onLights(nil)
   }
 
@@ -247,12 +253,14 @@ public final class SidebarDock {
     syncPeek()
     let right = shell.frames.sidebar.map { $0.maxX } ?? (ShellMetrics.peekOrigin.x + CGFloat(state.width))
     onPeek(live, Double(right))
+    onPeekCoverage(live, shell.sidebarPeekCoverage)
     refresh()
   }
 
   private func syncPeek() {
     if peeking { borrowColumn() } else { returnColumn() }
     shell.update {
+      if let position = state.sidebarPosition { $0.sidebarSide = SidebarSide(position: position) }
       $0.peeking = peeking
       $0.peekSlide = CGFloat(slide.value)
       $0.away = awayNow
@@ -262,6 +270,7 @@ public final class SidebarDock {
   private func slideMoved() {
     shell.update { $0.peekSlide = CGFloat(slide.value) }
     panel.alphaValue = state.arc ? 1 : CGFloat(slide.value)
+    onPeekCoverage(peeking, shell.sidebarPeekCoverage)
     sendLights()
   }
 
@@ -297,7 +306,8 @@ public final class SidebarDock {
     peek.setEnabled(!state.open && !toggle.moving && !state.fullscreen && !state.topTabs)
     let watch = !state.open && !state.fullscreen && !toggle.moving && !state.topTabs
     let right = shell.frames.sidebar.map(\.maxX) ?? (ShellMetrics.peekOrigin.x + CGFloat(state.width))
-    let hold = peek.live ? right + ShellMetrics.holdSlack : ShellMetrics.edgeStripWidth
+    let edgeDistance = shell.input.sidebarSide == .right ? shell.bounds.width - (shell.frames.sidebar?.minX ?? (shell.bounds.width - CGFloat(state.width))) : right
+    let hold = peek.live ? edgeDistance + ShellMetrics.holdSlack : ShellMetrics.edgeStripWidth
     setWatch(watch ? hold : nil)
     sendLights()
   }

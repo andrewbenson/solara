@@ -45,6 +45,13 @@ export const COMMANDS: Readonly<Record<BrowserCommand, CommandSpec>> = {
   },
   reload: { title: "Refresh", barTitle: "Reload Page", symbol: "arrow.clockwise", keys: ["⌘R"], ...pageInLittleSolara },
   forceReload: { title: "Force Refresh the Page", barTitle: "Force Reload Page", symbol: "arrow.clockwise", keys: ["⇧⌘R"], ...pageInLittleSolara },
+  setSidebarPosition: {
+    ...windowOffInLittleSolara,
+    variants: {
+      left: { title: "Left", barTitle: "Sidebar on Left", symbol: "sidebar.left" },
+      right: { title: "Right", barTitle: "Sidebar on Right", symbol: "sidebar.right" },
+    },
+  },
   toggleTabLayout: { title: "Show Tabs in Sidebar", keys: ["⇧⌘S"], ...windowOffInLittleSolara },
   toggleSidebar: { title: "Auto-Hide Tabs", symbol: "sidebar.left", keys: ["⌘S", "⇧⌘L", "⇧⌘F"], ...windowOffInLittleSolara },
   openSplitPane: { title: "Open Split Pane", keys: ["⌃⇧=", "⌃+"], ...windowOffInLittleSolara },

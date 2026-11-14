@@ -66,7 +66,7 @@ import {
 import { runPeekCommand } from "../components/peek/actions";
 import { startUrlEdit, tabInDeveloperMode, toggleDeveloperModeFor } from "../components/site/developerMode";
 import { peekTabId } from "../store/peek";
-import { toggleSidebarIconsOnly } from "../store/sidebarRail";
+import { setSidebarPosition, toggleSidebarIconsOnly } from "../store/sidebarRail";
 import { expectFocus, findFocus, urlEditFocus } from "./focusClaims";
 
 export function runCommand({ command, arg, windowId: requested }: CommandEvent) {
@@ -114,6 +114,12 @@ export function runCommand({ command, arg, windowId: requested }: CommandEvent) 
       return s.updateSettings({ showFullUrl: !s.settings.showFullUrl });
     case "toggleJavaScriptFromAppleEvents":
       return s.updateSettings({ allowJavaScriptFromAppleEvents: !s.settings.allowJavaScriptFromAppleEvents });
+    case "setSidebarPosition":
+      if (arg === "left" || arg === "right") {
+        const id = resolveWindowId(s, requested);
+        if (id) return setSidebarPosition(id, arg);
+      }
+      return;
     case "toggleSidebarIconsOnly":
       return toggleSidebarIconsOnly(resolveWindowId(s, requested) ?? "");
     case "toggleAddressBar":

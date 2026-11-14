@@ -184,7 +184,8 @@ public final class PaneOverlaysView: NSView {
     paneFrames = rects
     for (tabId, rect) in rects {
       let overlay = overlays[tabId] ?? make(tabId)
-      let base = min(max(0, (liveTops[tabId] ?? pageTops[tabId] ?? (tabId == fullscreenTab ? 0 : toolbarHeight)) * (1 - rail)), rect.height)
+      let caption = tabId == fullscreenTab ? 0 : windowShell?.captionTop(in: self, rect: rect) ?? 0
+      let base = min(max(caption, (liveTops[tabId] ?? pageTops[tabId] ?? (tabId == fullscreenTab ? 0 : toolbarHeight)) * (1 - rail)), rect.height)
       let band = tabId == fullscreenTab ? 0 : min(max(0, bandHeights[tabId] ?? 0), rect.height - base)
       let top = base + band
       overlay.frame = CGRect(x: rect.minX, y: rect.minY + top, width: rect.width, height: rect.height - top)

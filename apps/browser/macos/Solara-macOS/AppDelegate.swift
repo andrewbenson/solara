@@ -31,6 +31,7 @@ final class AppDelegate: ExpoAppDelegate {
       (factory?.rootViewFactory as? ExpoReactRootViewFactory)?.superView(
         withModuleName: module, initialProperties: props, launchOptions: nil)
     }
+    NativeSidebarPositionSupport.install()
     NativeHooks.start()
     factory.rootViewFactory.initializeReactHost(launchOptions: nil)
 

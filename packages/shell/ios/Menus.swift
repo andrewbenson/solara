@@ -1,5 +1,9 @@
 import AppKit
 
+public enum NativeSidebarPositionCapability {
+  nonisolated(unsafe) public static var enabled = false
+}
+
 public enum NativeBookmarkMenuSource {
   nonisolated(unsafe) public static var read: ((String) -> [String: Any]?)?
 }
@@ -535,6 +539,12 @@ enum MainMenu {
       cmd("Auto-Hide Tabs", "toggleSidebar", "l", [.command, .shift]).hiddenShortcut(),
       cmd("Auto-Hide Tabs", "toggleSidebar", "f", [.command, .shift]).hiddenShortcut(),
       cmd("Icons-Only Sidebar", "toggleSidebarIconsOnly"),
+      ] + (NativeSidebarPositionCapability.enabled ? [
+        sub("Sidebar Position", [
+          cmd("Left", "setSidebarPosition", arg: "left"),
+          cmd("Right", "setSidebarPosition", arg: "right"),
+        ]),
+      ] : []) + [
       .separator(),
       cmd("Open Split Pane", "openSplitPane", "=", [.control, .shift]),
       cmd("Focus Next Split Pane", "focusNextPane", "]", [.control, .shift]),

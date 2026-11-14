@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
+import { sidebarPositionSpecified, sidebarSession, assertSidebarPosition } from "./sidebar-position-test.mjs";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { launch, reporter, sleep } from "../../../scripts/lib/instance.mjs";
+import { launch, reporter, session, sleep } from "../../../scripts/lib/instance.mjs";
 
 let nativePollDeadline = null;
 const evaluate = (body, options = {}) => {
@@ -33,10 +34,12 @@ const rep = reporter(join(scratch, "folder-panel-test.log"), { name: "folder-pan
 let app;
 async function run() {
   const data = join(scratch, "native");
-  app = await launch(resolve(appArg), { data, onboarded: true });
+  app = await launch(resolve(appArg), { ...(sidebarPositionSpecified ? { session: session(sidebarSession({})) } : {}), data, onboarded: true });
   try {
     await app.ready({ test: "return !!globalThis.expo?.modules?.SolaraPages?.devViewFrame && !!ac.pages.tileFolders" });
     await sleep(4000);
+    const windowId = await evaluate(`return Object.keys(ac.store.getState().windows)[0];`);
+    await assertSidebarPosition(app, windowId);
     const win = await evaluate(`return globalThis.expo.modules.SolaraCEF.chromeWindows().then((ws) => ws.find((w) => w.hasRoot).window)`);
     const dev = (action) => evaluate(`return globalThis.expo.modules.SolaraCEF.devWindow(${win}, ${JSON.stringify(action)})`);
     await dev("fakeActiveClicks");

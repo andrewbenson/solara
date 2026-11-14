@@ -77,6 +77,7 @@ export type SystemInfo = {
 };
 
 export type AppModule = {
+  sidebarPosition?: boolean;
   addListener(name: "onNotificationResponse", listener: (e: NotificationResponse) => void): EventSubscription;
   addListener(name: "onPendingUpdate", listener: (e: { update: PendingUpdate | null }) => void): EventSubscription;
   pendingUpdate?(): Promise<PendingUpdate | null>;

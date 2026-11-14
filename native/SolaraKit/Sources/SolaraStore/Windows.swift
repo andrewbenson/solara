@@ -198,6 +198,25 @@ extension Session {
     set(next)
   }
 
+  public func setSidebarPosition(_ windowId: String?, _ position: String) throws {
+    guard position == "left" || position == "right" else { throw CommandError("setSidebarPosition: invalid position") }
+    if let windowId {
+      guard let window = state.windows[windowId], !window.isSmall else { throw CommandError("setSidebarPosition: invalid window") }
+    }
+    var next = state
+    for original in state.windows.values where !original.isSmall {
+      var window = original
+      if let windowId {
+        window.sidebarPosition = original.id == windowId ? position : original.sidebarPosition ?? original.effectiveSidebarPosition(state.settings)
+      } else {
+        window.sidebarPosition = nil
+      }
+      next.windows[original.id] = window
+    }
+    next.settings = next.settings.choosing(["sidebarPosition": .string(position)])
+    set(next)
+  }
+
   public func setWindowSidebar(_ windowId: String, _ patch: JSONObject) throws {
     guard let window = state.windows[windowId], !window.isSmall else { return }
     let widths = ["sidebarWidth", "sidePanelWidth"]
@@ -486,6 +505,7 @@ extension Session {
     w.sidebarOpen = entry.sidebarOpen
     w.tabLayout = entry.tabLayout
     w.fullScreen = entry.fullScreen
+    w.sidebarPosition = entry.sidebarPosition
     w.sidebarWidth = entry.sidebarWidth
     w.sidebarIconsOnly = entry.sidebarIconsOnly
     w.sidePanelWidth = entry.sidePanelWidth

@@ -1,8 +1,9 @@
 import { mkdtempSync } from "node:fs";
+import { sidebarPositionSpecified, sidebarSession, assertSidebarPosition } from "./sidebar-position-test.mjs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { launch, sleep } from "../../../scripts/lib/instance.mjs";
+import { launch, session, sleep } from "../../../scripts/lib/instance.mjs";
 
 const appArg = process.argv.slice(2).find((a) => !a.startsWith("--"));
 if (!appArg) {
@@ -23,12 +24,13 @@ const server = createServer((req, res) => {
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const base = `http://127.0.0.1:${server.address().port}`;
 const scratch = mkdtempSync(join(tmpdir(), "ac-focus-hold-"));
-const instance = await launch(resolve(appArg), { data: join(scratch, "data"), fresh: true, onboarded: true, ready: "return !!ac.shell.devKeyEquivalent" });
+const instance = await launch(resolve(appArg), { ...(sidebarPositionSpecified ? { session: session(sidebarSession({})) } : {}), data: join(scratch, "data"), fresh: true, onboarded: true, ready: "return !!ac.shell.devKeyEquivalent" });
 const run = (body, timeout = 30000) => instance.eval(body, { timeout });
 const out = { checks: [] };
 let failed = 0;
 try {
   const w = await run(`const s = ac.store.getState(); const w = Object.keys(s.windows)[0]; s.setWindowFrame(w, [60, 60, 1200, 800]); return w;`);
+  await assertSidebarPosition(instance, w);
   const tabs = [];
   for (let i = 0; i < 2; i++) {
     tabs.push(await run(`const s = ac.store.getState(); s.newTab(${JSON.stringify(w)}, { url: ${JSON.stringify(`${base}/p${i}`)} });

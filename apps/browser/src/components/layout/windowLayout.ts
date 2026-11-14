@@ -70,6 +70,7 @@ type CardAnchor = { left: number; top: number; width: number; height: number };
 export const useCardAnchors = create<Record<string, CardAnchor>>()(() => ({}));
 
 export const nativeWindowAnchorFeed = new WindowLayoutAnchorFeed();
+export const useNativePopoverAnchors = create<Record<string, Record<string, readonly [number, number, number, number]>>>()(() => ({}));
 
 export function setCardAnchor(windowId: string, anchor: CardAnchor) {
   if (nativeWindowAnchorFeed.active(windowId)) return;
@@ -90,6 +91,9 @@ export function setToolbarExtensionsWidth(windowId: string, width: number) {
 }
 
 export function applyNativeWindowAnchors(batch: WindowLayoutAnchors) {
+  const popovers = Object.fromEntries(Object.entries(batch.anchors).filter(([name]) => name.startsWith("peekPopover:")).map(([name, rect]) => [name.slice("peekPopover:".length), rect]));
+  const old = useNativePopoverAnchors.getState()[batch.windowId];
+  if (JSON.stringify(old) !== JSON.stringify(popovers)) useNativePopoverAnchors.setState({ [batch.windowId]: popovers });
   setNativeMeasuredWidths({ [`profile-name|${batch.profileTitle}`]: batch.profileNameWidth, [`window-strip|${batch.windowId}`]: batch.stripAvailableWidth });
   const content = batch.anchors.content;
   if (content) writeCardAnchor(batch.windowId, { left: content[0], top: content[1], width: content[2], height: content[3] });
@@ -107,6 +111,11 @@ function dropUrlAnchor(windowId: string) {
 }
 
 export function dropNativeWindowAnchors(windowId: string) {
+  useNativePopoverAnchors.setState((state) => {
+    const next = { ...state };
+    delete next[windowId];
+    return next;
+  }, true);
   dropNativeMeasuredWidth(`window-strip|${windowId}`);
   dropUrlAnchor(windowId);
   useCardAnchors.setState((state) => {

@@ -62,6 +62,11 @@ public struct BrowserWindow: JSONConvertible, @unchecked Sendable {
     box = Box(try BrowserWindowFields(json: json))
   }
 
+  public func effectiveSidebarPosition(_ settings: Settings) -> String {
+    let value = settings.fileSource("sidebarPosition") != nil ? settings.string("sidebarPosition") : sidebarPosition ?? settings.string("sidebarPosition")
+    return value == "right" ? "right" : "left"
+  }
+
   public func effectiveSidebarWidth(_ settings: Settings) -> Double { sidebarWidth ?? settings.number("sidebarWidth") ?? 190 }
   public func effectiveSidebarIconsOnly(_ settings: Settings) -> Bool { sidebarIconsOnly ?? settings["sidebarIconsOnly"]?.bool ?? false }
   public func effectiveSidePanelWidth(_ settings: Settings) -> Double { sidePanelWidth ?? settings.number("extensionSidePanelWidth") ?? 360 }
@@ -120,6 +125,13 @@ public struct BrowserWindow: JSONConvertible, @unchecked Sendable {
     set {
       if !isKnownUniquelyReferenced(&box) { box = Box(box.value) }
       box.value.tabLayout = newValue
+    }
+  }
+  public var sidebarPosition: String? {
+    get { box.value.sidebarPosition }
+    set {
+      if !isKnownUniquelyReferenced(&box) { box = Box(box.value) }
+      box.value.sidebarPosition = newValue
     }
   }
   public var sidebarWidth: Double? {
@@ -223,6 +235,7 @@ public struct BrowserWindowFields: Sendable, Equatable {
   public var activeTabIds: JSMap<String>
   public var sidebarOpen: Bool
   public var tabLayout: String?
+  public var sidebarPosition: String?
   public var sidebarWidth: Double?
   public var sidebarIconsOnly: Bool?
   public var sidePanelWidth: Double?
@@ -253,7 +266,7 @@ public struct BrowserWindowFields: Sendable, Equatable {
 
   static let keys: Set<String> = [
     "id", "profileId", "incognito", "tabIds", "activeTabIds", "sidebarOpen", "tabLayout", "frame", "fullScreen", "createdAt", "kind",
-    "linkPointer", "originalProfileId", "chromeWindow", "keptOnClose", "sidebarWidth", "sidebarIconsOnly", "sidePanelWidth",
+    "linkPointer", "originalProfileId", "chromeWindow", "keptOnClose", "sidebarPosition", "sidebarWidth", "sidebarIconsOnly", "sidePanelWidth",
   ]
 
   public init(json: JSONObject) throws {
@@ -265,6 +278,7 @@ public struct BrowserWindowFields: Sendable, Equatable {
     activeTabIds = f.stringMap("activeTabIds")
     sidebarOpen = f.bool("sidebarOpen")
     tabLayout = f.optionalString("tabLayout")
+    sidebarPosition = f.optionalString("sidebarPosition").flatMap { ["left", "right"].contains($0) ? $0 : nil }
     sidebarWidth = f.optionalNumber("sidebarWidth")
     sidebarIconsOnly = f.optionalBool("sidebarIconsOnly")
     sidePanelWidth = f.optionalNumber("sidePanelWidth")
@@ -290,6 +304,7 @@ public struct BrowserWindowFields: Sendable, Equatable {
     e.set("activeTabIds", activeTabIds)
     e.set("sidebarOpen", sidebarOpen)
     e.optional("tabLayout", tabLayout)
+    e.optional("sidebarPosition", sidebarPosition)
     e.optional("sidebarWidth", sidebarWidth)
     e.optional("sidebarIconsOnly", sidebarIconsOnly)
     e.optional("sidePanelWidth", sidePanelWidth)

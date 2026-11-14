@@ -25,13 +25,13 @@ public struct Command: Sendable, Equatable {
   public var json: JSONValue { ["name": .string(name), "args": .array(args)] }
 
   public static let durable: Set<String> = [
-    "updateSettings", "setWindowSidebar", "setWindowKeptOnClose", "closeWindow", "restoreClosingWindow", "deleteProfile", "createProfile", "updateProfile", "reorderProfiles", "setDefaultProfile",
+    "updateSettings", "setSidebarPosition", "setWindowSidebar", "setWindowKeptOnClose", "closeWindow", "restoreClosingWindow", "deleteProfile", "createProfile", "updateProfile", "reorderProfiles", "setDefaultProfile",
   ]
 
   public var isDurable: Bool { Command.durable.contains(name) }
 
   public static let known: Set<String> = [
-    "pageReport", "registerKeepAliveRuntime", "importWorkspace", "setWindowLayout", "setWindowSidebar", "newTab", "closeTab", "closeTabs", "activate", "activateNumberedTab", "handOffPin", "activateIndex", "cycle", "navigate", "updateTab", "navigated", "faviconChanged",
+    "pageReport", "registerKeepAliveRuntime", "importWorkspace", "setWindowLayout", "setSidebarPosition", "setWindowSidebar", "newTab", "closeTab", "closeTabs", "activate", "activateNumberedTab", "handOffPin", "activateIndex", "cycle", "navigate", "updateTab", "navigated", "faviconChanged",
     "duplicateTab", "togglePin", "moveTab", "moveTabBy", "createWindow", "closeWindow", "restoreClosingWindow", "forgetClosedWindow", "setWindowKeptOnClose", "setWindowFrame", "setWindowFullScreen", "toggleSidebar",
     "switchProfile", "moveTabsToWindow", "moveTabToProfile", "mergeAllWindows", "reopenClosed", "reopenClosedTab", "reopenClosedWindow",
     "restoreClosed", "createProfile", "updateProfile", "deleteProfile", "reorderProfiles", "setDefaultProfile", "profileDataDeleted",
@@ -152,6 +152,9 @@ extension Session {
     case "pageReport": try pageReport(try a.requireString(0), a[1] ?? .null)
     case "registerKeepAliveRuntime": result = JSONValue(try registerKeepAliveRuntime())
     case "importWorkspace": result = try importWorkspace(a[0] ?? .null)
+    case "setSidebarPosition":
+      if let window = a.raw(0), !window.isNull, window.string == nil { throw CommandError("setSidebarPosition: invalid window") }
+      try setSidebarPosition(a.string(0), a.requireString(1))
     case "setWindowSidebar": try setWindowSidebar(try a.requireString(0), a.object(1))
     case "setWindowLayout":
       let id = try a.requireString(0)
@@ -287,7 +290,14 @@ extension Session {
     case "openPeek": result = .string(openPeek(try a.requireString(0), try a.requireString(1), from: a[2].flatMap { try? PeekPoint(value: $0) }))
     case "closePeek": closePeek(try a.requireString(0))
     case "peekToTab": result = JSONValue(peekToTab(try a.requireString(0), activate: a[1]?["activate"].map(\.truthy) ?? true))
-    case "updateSettings": updateSettings(a.object(0), fromSync: a[1]?["fromSync"]?.truthy ?? false)
+    case "updateSettings":
+      var patch = a.object(0)
+      if let position = patch["sidebarPosition"] {
+        guard let value = position.string else { throw CommandError("setSidebarPosition: invalid position") }
+        try setSidebarPosition(nil, value)
+        patch.removeValue(forKey: "sidebarPosition")
+      }
+      updateSettings(patch, fromSync: a[1]?["fromSync"]?.truthy ?? false)
     case "setFocusedWindow": setFocusedWindow(try a.requireString(0))
     case "upsertDownload": upsertDownload(Download(json: a.object(0)))
     case "removeDownload": removeDownload(try a.requireString(0))

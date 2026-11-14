@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { sidebarPosition, sidebarSession, sidebarEdgeX, sidebarPointX, assertSidebarPosition, assertSidebarPeekCoverage } from "./sidebar-position-test.mjs";
 import { isDeepStrictEqual } from "node:util";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -37,7 +38,7 @@ const data = join(scratch, "data");
 const rep = reporter(join(scratch, "tab-drag-test.log"), { name: "tab-drag-test" });
 
 const tab = (id, windowId, pinned = false) => ({ id, windowId, pinned, lastActiveAt: id === "t1" ? 2 : 1 });
-const fixture = () => session({
+const fixture = () => session(sidebarSession({
   profiles: [{ id: "default", name: "Personal", color: "plum" }],
   settings: { tabLayout: "top" },
   windows: [
@@ -50,7 +51,7 @@ const fixture = () => session({
   tabs: [tab("p1", "w1", true), tab("p2", "w1", true), tab("t1", "w1"), tab("t2", "w1"), tab("t3", "w1"), tab("t4", "w1"), tab("l1", "w2"),
     tab("g1", "w3"), tab("g2", "w3"), tab("x1", "w3"), tab("a1", "w5"), tab("a2", "w5"), tab("b1", "w6"), tab("b2", "w6"), tab("b3", "w6")],
   groups: [{ id: "grp", windowId: "w3", profileId: "default", name: "Group", icon: null, color: null, collapsed: false, pinned: false, tabIds: ["g1", "g2"], createdAt: 1 }],
-});
+}));
 
 let app = null;
 
@@ -304,6 +305,13 @@ function contrast(png, windowWidth, [x0, y0, x1, y1]) {
 }
 
 const check = (name, fn) => rep.check(name, fn);
+const pointBetweenWindows = async (sourceId, targetId, point) => {
+  const state = await nativeSnapshot({ fields: ["windows.screenFrame"] });
+  const source = nativeWindow(state, sourceId)?.screenFrame;
+  const target = nativeWindow(state, targetId)?.screenFrame;
+  assert.ok(source?.length === 4 && target?.length === 4, "both drag windows have actual native screen frames");
+  return [Math.round(target[0] + point[0] - source[0]), Math.round(source[1] + source[3] - target[1] - target[3] + point[1])];
+};
 
 try {
   app = await launch(appPath, { data, port, session: fixture() });
@@ -311,6 +319,7 @@ try {
   const initialNative = await untilSnapshot("native drag workspace", (s) => s.windows.length === 5);
   for (const field of ["windows.sidebarDrag", "windows.savedFrame", "windows.screenFrame", "tabs.tileFolderId", "groups", "splits", "dragPreview", "tabDrag", "fileDragURLs", "fileDropResults", "windows.dragPoints", "haptics"]) assert.ok(initialNative.capabilities.available.includes(field), field);
   await sleep(1500);
+  await assertSidebarPosition(app);
   if (!(await run(`return !!globalThis.acTabDrag;`))) throw new Error("tab-drag-test runs on Debug builds only: acTabDrag and the ac.shell hooks are __DEV__-only");
   await run(`return act("w1", "windowDrags");`);
 
@@ -517,19 +526,35 @@ try {
 
   await check("the empty strip moves the window over its whole height, and a double-click on it zooms", async () => {
     const x = strip[5][1] + 150;
+    const number = await run(`return win("w1");`);
+    await run(`return C.devWindow(${number}, "windowDrags");`);
+    const perPress = [];
+    for (const y of [4, 38]) {
+      const before = await nativeSnapshot();
+      const count = await run(`const n = ${number};
+        return C.devWindow(n, "mouse:down:${x},${y},1").then(() => settle(30)).then(() => C.devWindow(n, "mouse:up:${x},${y},1")).then(() => settle(60)).then(() => {
+          const end = Date.now() + 1500;
+          const acknowledged = () => C.devWindow(n, "windowDrags").then((value) => {
+            const count = Number(value.split("\\n")[0]);
+            if (count || Date.now() >= end) return count;
+            return settle(20).then(acknowledged);
+          });
+          return acknowledged();
+        });`);
+      await untilSnapshot("one native window drag at strip y=" + y, (state) => state.windowDragCount - before.windowDragCount === count);
+      perPress.push(count);
+    }
     const result = await run(`
-      return win("w1").then((n) => {
-        const frame = () => C.chromeWindows().then((ws) => ws.find((w) => w.window === n).frame);
-        const click = (y, count) => C.devWindow(n, "mouse:down:${x}," + y + "," + count).then(() => settle(30)).then(() => C.devWindow(n, "mouse:up:${x}," + y + "," + count)).then(() => settle(60));
-        const out = {};
-        return C.devWindow(n, "windowDrags")
-          .then(() => click(4, 1)).then(() => click(38, 1)).then(() => settle(300))
-          .then(() => C.devWindow(n, "windowDrags")).then((d) => { out.drags = Number(d.split("\\n")[0]); return frame(); })
-          .then((f) => { out.before = f; return click(38, 1).then(() => click(38, 2)); }).then(() => settle(900)).then(frame)
-          .then((f) => { out.zoomed = f; return click(38, 1).then(() => click(38, 2)); }).then(() => settle(900)).then(frame)
-          .then((f) => { out.back = f; return out; });
-      });`);
-    assert.equal(result.drags, 2, "a press at the strip's top and one near its bottom each drag the window");
+      const n = ${number};
+      const frame = () => C.chromeWindows().then((ws) => ws.find((w) => w.window === n).frame);
+      const click = (y, count) => C.devWindow(n, "mouse:down:${x}," + y + "," + count).then(() => settle(30)).then(() => C.devWindow(n, "mouse:up:${x}," + y + "," + count)).then(() => settle(60));
+      const out = { perPress: ${JSON.stringify(perPress)}, drags: ${perPress.reduce((sum, value) => sum + value, 0)} };
+      return Promise.all([4, 38].map((y) => C.devWindow(n, "hit:${x}," + y))).then((hits) => { out.hits = hits; return globalThis.expo.modules.SolaraWindowShell.describe("w1").then(JSON.parse); }).then((layout) => { out.topStrip = layout.topStrip; return frame(); })
+        .then((f) => { out.before = f; return click(38, 1).then(() => click(38, 2)); }).then(() => settle(900)).then(frame)
+        .then((f) => { out.zoomed = f; return click(38, 1).then(() => click(38, 2)); }).then(() => settle(900)).then(frame)
+        .then((f) => { out.back = f; return out; });`);
+    assert.deepEqual(result.perPress, [1, 1], `both native strip presses are acknowledged: ${JSON.stringify(result)}`);
+    assert.equal(result.drags, 2, `a press at the strip's top and one near its bottom each drag the window: ${JSON.stringify(result)}`);
     let action = null;
     try { action = execFileSync("defaults", ["read", "-g", "AppleActionOnDoubleClick"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch {}
     if (action === "None" || action === "Minimize") return;
@@ -705,10 +730,11 @@ try {
       const row = rows.find((r) => r.id === id);
       assert.ok(row && row.w > 0, `a row for ${id}: ${JSON.stringify(rows)}`);
       const sx = Math.round(row.x + row.w / 2), sy = Math.round(row.y + row.h / 2);
-      const tx = 90 - 600;
+      const targetColumn = await run(`return globalThis.expo.modules.SolaraHosted.sidebarShell(${JSON.stringify(wa)}).then(JSON.parse);`);
+      const [tx, ty] = await pointBetweenWindows(wb, wa, [sidebarPointX(targetColumn), sy]);
       const seen = await run(`const seen = [];
         const iv = setInterval(() => seen.push(globalThis.acTabDrag.getState().overWindow ?? null), 40);
-        return postDrag(${JSON.stringify(wb)}, "${sx},${sy};${sx + 10},${sy + 6};-60,${sy};${tx},${sy};${tx + 2},${sy + 2};${tx},${sy}").then(() => settle(1600)).then(() => { clearInterval(iv); return seen; });`);
+        return postDrag(${JSON.stringify(wb)}, "${sx},${sy};${sx + 10},${sy + 6};-60,${sy};${tx},${ty};${tx + 2},${ty + 2};${tx},${ty}").then(() => settle(1600)).then(() => { clearInterval(iv); return seen; });`);
       assert.ok(seen.includes(wa), `over the other window during the drag: ${JSON.stringify([...new Set(seen)])}`);
       const after = await run(`return [st().windows[${JSON.stringify(wa)}]?.tabIds ?? [], st().windows[${JSON.stringify(wb)}]?.tabIds ?? []];`);
       assert.ok(after[0].includes(id), `${id} moved: ${JSON.stringify(after)}`);
@@ -764,12 +790,15 @@ try {
   const closeAll = () => run(`for (const id of Object.keys(st().windows)) if (id !== "w1") st().closeWindow(id); return settle(900);`);
 
   await check("sidebar: a row let go over another window that covers its own lands in the window on top", async () => {
-    const [wa, wb, ia] = await twoWindows([100, 60, 560, 420], [400, 100, 560, 420]);
+    const [wa, wb, ia] = await twoWindows(sidebarPosition === "right" ? [400, 60, 560, 420] : [100, 60, 560, 420], sidebarPosition === "right" ? [100, 100, 560, 420] : [400, 100, 560, 420]);
     try {
       const row = await rowIn(wa, ia);
       assert.ok(row && row.w > 0, `a row for ${ia}`);
       const sx = Math.round(row.x + row.w / 2), sy = Math.round(row.y + row.h / 2);
-      await run(`return postDrag(${JSON.stringify(wa)}, "${sx},${sy};${sx + 10},${sy + 6};400,200;450,200;452,202;450,200").then(() => settle(1600));`);
+      const destination = await run(`return globalThis.expo.modules.SolaraHosted.sidebarShell(${JSON.stringify(wb)}).then(JSON.parse);`);
+      assert.ok(destination?.frame?.[2] > 0, "the covering window has an actual sidebar column");
+      const [tx, ty] = await pointBetweenWindows(wa, wb, [sidebarPointX(destination), 200]);
+      await run(`return postDrag(${JSON.stringify(wa)}, "${sx},${sy};${sx + 10},${sy + 6};${tx - 50},${ty};${tx},${ty};${tx + 2},${ty + 2};${tx},${ty}").then(() => settle(1600));`);
       const after = await live();
       assert.equal(after.tabs[ia], wb, `${ia} moved into the covering window: ${JSON.stringify(after.tabs)}`);
     } finally {
@@ -783,9 +812,10 @@ try {
       const row = await rowIn(wb, ib);
       assert.ok(row && row.w > 0, `a row for ${ib}`);
       const sx = Math.round(row.x + row.w / 2), sy = Math.round(row.y + row.h / 2);
-      const tx = 90 - 600;
+      const targetColumn = await run(`return globalThis.expo.modules.SolaraHosted.sidebarShell(${JSON.stringify(wa)}).then(JSON.parse);`);
+      const [tx, ty] = await pointBetweenWindows(wb, wa, [sidebarPointX(targetColumn), sy]);
       await run(`setTimeout(() => st().closeWindow(${JSON.stringify(wa)}), 900);
-        return postDrag(${JSON.stringify(wb)}, "${sx},${sy};${sx + 10},${sy + 6};-60,${sy};${tx},${sy};${tx + 2},${sy + 2};${tx},${sy};${tx + 1},${sy}").then(() => settle(1800));`);
+        return postDrag(${JSON.stringify(wb)}, "${sx},${sy};${sx + 10},${sy + 6};-60,${sy};${tx},${ty};${tx + 2},${ty + 2};${tx},${ty};${tx + 1},${ty}").then(() => settle(1800));`);
       const after = await live();
       assert.ok(!after.windows.includes(wa), "the target closed");
       assert.ok(after.windows.includes(after.tabs[ib]), `${ib} is in a live window: ${JSON.stringify(after)}`);
@@ -828,7 +858,7 @@ try {
     assert.ok(row, JSON.stringify(rows));
     const before = await live();
     const sx = Math.round(row.x + row.w / 2), sy = Math.round(row.y + row.h / 2);
-    const page = Math.round(row.x + row.w + 200), back = Math.round(row.x + row.w - 10);
+    const page = Math.round(sidebarPosition === "right" ? row.x - 200 : row.x + row.w + 200), back = Math.round(sidebarPosition === "right" ? row.x + 10 : row.x + row.w - 10);
     const seen = await run(`const seen = []; const iv = setInterval(() => { const d = globalThis.acTabDrag.getState(); seen.push([Math.round(d.x), Math.round(d.y), d.outside, d.overWindow, d.onPage].join()); }, 20);
       return postDrag("w1", "${sx},${sy};${sx + 10},${sy + 6};${page},400;${page + 2},404;${page},406;${back},${sy}").then(() => settle(1600)).then(() => { clearInterval(iv); return [...new Set(seen)]; });`);
     const after = await live();
@@ -851,7 +881,8 @@ try {
     const dropLate = async (row, delay) => {
       const before = await live();
       const sx = Math.round(row.x + row.w / 2), sy = Math.round(row.y + row.h / 2);
-      const left = Math.round(row.x + row.w + 140);
+      const nativePage = await run(`return globalThis.expo.modules.SolaraWindowShell.describe("w1").then(JSON.parse).then((s) => s.layout?.pages?.[s.layout.selectedTabId] ?? s.card);`);
+      const left = Math.round(nativePage[0] + Math.min(140, nativePage[2] / 4));
       await run(`globalThis.acTabDragEndDelay = ${delay};
         return postDrag("w1", "${sx},${sy};${sx + 40},${sy + 20};${left},380;${left + 4},390;${left + 6},396;${left + 6},398").then(() => settle(${Math.max(2800, delay + 1200)})).finally(() => { globalThis.acTabDragEndDelay = 0; });`);
       const after = await live();
@@ -934,7 +965,7 @@ try {
     const windows = await run(`return Object.keys(st().windows).length;`);
     const splits = await run(`return Object.values(st().splits).map((v) => v.tabIds);`);
     const sx = Math.round(row.x + row.w / 2), sy = Math.round(row.y + row.h / 2);
-    const px = Math.round(row.x + row.w + 160);
+    const px = Math.round(sidebarPosition === "right" ? row.x - 160 : row.x + row.w + 160);
     const seen = await watch("w1", `${sx},${sy};${sx + 10},${sy + 6};${px},560;${px},740`, 1400);
     assert.ok(seen.some((p) => p.shape === "card" && p.frame[2] === 209 && p.frame[3] === 110), `a 209 × 110 card: ${JSON.stringify(seen.at(-1))}`);
     assert.equal(seen.at(-1).visible, false, "gone after the drop");
@@ -951,7 +982,8 @@ try {
     const row = rows.find((r) => r.id === "t2") ?? rows[0];
     assert.ok(row, "a sidebar row");
     const sx = Math.round(row.x + row.w / 2), sy = Math.round(row.y + row.h / 2);
-    const left = Math.round(row.x + row.w + 140);
+    const nativePage = await run(`return globalThis.expo.modules.SolaraWindowShell.describe("w1").then(JSON.parse).then((s) => s.layout?.pages?.[s.layout.selectedTabId] ?? s.card);`);
+    const left = Math.round(nativePage[0] + Math.min(140, nativePage[2] / 4));
     const state = await run(`
       const seen = [];
       const iv = setInterval(() => { const d = globalThis.acTabDrag.getState(); seen.push(d.target); }, 60);
@@ -1007,13 +1039,16 @@ try {
     const edge = (p) => run(`return ac.shell.devLeftEdgePointer("w1", ${JSON.stringify(p)}).then(() => settle(500)).then(() => ${PEEKING});`);
     await run(`for (const v of Object.values(st().splits)) st().separateSplit(v.id); if (st().windows.w1.sidebarOpen) st().toggleSidebar("w1"); return settle(900);`);
     try {
-      await edge({ x: -4, y: 300 });
-      assert.equal(await edge({ x: 120, y: 300 }), true, "the sidebar peeks");
+      const windowWidth = await run(`return st().windows.w1.frame[2];`);
+      await edge({ x: sidebarEdgeX(windowWidth, -4), y: 300 });
+      assert.equal(await edge({ x: sidebarEdgeX(windowWidth, 120), y: 300 }), true, "the sidebar peeks");
       const rows = (await run(`return Promise.all([...globalThis.sidebarDrag.items.values()].filter((i) => i.kind === "row" && !i.parentGroup && i.section === "list" && i.view).map((i) => new Promise((r) => i.view.measureInWindow((x, y, w, h) => r({ id: i.tabIds[0], x, y, w, h })))));`))
         .filter((r) => r.x > 0).sort((a, b) => a.y - b.y);
       assert.ok(rows.length >= 3, JSON.stringify(rows));
       const [a, , c] = rows;
       const sx = Math.round(a.x + a.w / 2), sy = Math.round(a.y + a.h / 2), to = Math.round(c.y + c.h * 0.85);
+      await assertSidebarPeekCoverage(app, "w1", [sx, sy]);
+      await assertSidebarPeekCoverage(app, "w1", [sx, to]);
       const before = await order("w1");
       const seen = await run(`const seen = []; const iv = setInterval(() => { const d = globalThis.acTabDrag.getState(); if (d.tabIds.length) seen.push([d.onPage, d.target]); }, 40);
         return postDrag("w1", "${sx},${sy};${sx},${sy + 10};${sx},${to};${sx},${to}").then(() => settle(1600)).then(() => { clearInterval(iv); return seen; });`);
@@ -1036,7 +1071,8 @@ try {
   });
 
   await check("sidebar: the empty room under the rows moves the window, and a double-click there still opens a tab", async () => {
-    const x = 120, height = await run(`return st().windows.w1.frame[3];`);
+    const column = await run(`return globalThis.expo.modules.SolaraHosted.sidebarShell("w1").then(JSON.parse);`);
+    const x = sidebarPointX(column), height = await run(`return st().windows.w1.frame[3];`);
     const emptyRoom = /^(\S*WindowDragRegion|SolaraUI\.SidebarDocumentView)\b/;
     let y = height - 140;
     while (y < height - 60 && !emptyRoom.test(await run(`return win("w1").then((n) => C.devWindow(n, "hit:${x},${y}"));`))) y += 10;
@@ -1318,7 +1354,7 @@ try {
       st().setDownloadsOpen("w1", true); return settle(900);`);
     let dragged = [];
     try {
-      const spot = await run(`return win("w1").then((n) => { const pts = []; for (let y = 30; y < 420; y += 6) for (let x = 20; x < 700; x += 12) pts.push([x, y]);
+      const spot = await run(`return win("w1").then((n) => { const pts = []; for (let y = 30; y < 420; y += 6) for (let x = 20; x < st().windows.w1.frame[2] - 20; x += 12) pts.push([x, y]);
         return Promise.all(pts.map(([x, y]) => C.devWindow(n, "hit:" + x + "," + y).then((h) => (/FileDragView|DownloadRowView/.test(h) ? [x, y] : null)))).then((hits) => hits.filter(Boolean)); });`);
       assert.ok(spot.length, "a download row in the popover");
       const [sx, sy] = spot[Math.floor(spot.length / 2)];
@@ -1331,10 +1367,16 @@ try {
     }
     const rows = await listRows();
     const b = rows[1];
+    const actual = (await nativeProbe("w1")).items.find((item) => item.key === b.key);
+    const column = await run(`return globalThis.expo.modules.SolaraHosted.sidebarShell("w1").then(JSON.parse);`);
+    const visible = [column.frame[0], column.frame[1] + column.header, column.frame[2], column.frame[3] - column.header - column.bottom];
+    assert.ok(actual && ["x", "y", "w", "h"].every((key) => Math.abs(actual[key] - b[key]) <= 0.5), `the measured download drop row matches its actual native frame: ${JSON.stringify({ b, actual })}`);
+    assert.ok(b.x >= visible[0] - 0.5 && b.x + b.w <= visible[0] + visible[2] + 0.5 && b.y >= visible[1] - 0.5 && b.y + b.h <= visible[1] + visible[3] + 0.5, `the downloaded file targets a visible native row: ${JSON.stringify({ b, visible })}`);
     const x = Math.round(b.x + b.w / 2);
     const out = await fileDrop([[x, b.y - 6], [x, b.y + 3]], { files: dragged });
     assert.deepEqual(out.added.map((a) => a.url), [fileUrl(download)]);
-    assert.equal(out.order[out.order.indexOf(b.id) - 1], out.added[0].id);
+    const drop = await nativeProbe("w1");
+    assert.equal(out.order[out.order.indexOf(b.id) - 1], out.added[0].id, JSON.stringify({ out, beforeRow: b, actualRow: actual, visible, lastDrop: drop?.lastDrop }));
     await closeAdded(out);
   });
 
@@ -1343,20 +1385,31 @@ try {
     const loose = await tabsOf("w1");
     const xs = await run(`return tabItems("w1");`);
     assert.ok(xs.length >= 3, JSON.stringify(xs));
-    const x = xs[1][0] + 4;
-    const out = await run(`const FD = ac.shell.devFileDrag; const before = new Set(Object.keys(st().tabs)); let gap = null;
+    const nativeOwner = await run(`return globalThis.expo.modules.SolaraWindowShell.nativeLayout("w1");`);
+    const beforeItems = nativeOwner ? await run(`return globalThis.expo.modules.SolaraTopStrip.items("w1").then(JSON.parse).then((state) => state.items);`) : null;
+    const second = beforeItems?.filter((item) => item.kind === "tab" && loose.includes(item.id))[1];
+    if (nativeOwner) assert.ok(second?.width > 0, "the second actual loose native chip is visible");
+    const x = nativeOwner ? second.windowX + 4 : xs[1][0] + 4;
+    const incoming = nativeOwner ? `globalThis.expo.modules.SolaraTopStrip.incoming("w1", ${x}, 20).then(JSON.parse)` : `Promise.resolve(globalThis.acTabDrag.getState().insert)`;
+    const active = nativeOwner ? `globalThis.expo.modules.SolaraWindowShell.describe("w1").then(JSON.parse).then((shell) => Number(shell.nativeLayoutChrome.dockedExternalDrop))` : `Promise.resolve(globalThis.acTabDrag.getState().tabIds.length)`;
+    const out = await run(`const FD = ac.shell.devFileDrag; const before = new Set(Object.keys(st().tabs)); let gap = null; let items = null;
       return FD.drag("w1", "move", ${x + 30}, 20, { files: [${JSON.stringify(pdf)}] }).then(() => settle(400)).then(() => FD.drag("w1", "move", ${x}, 20)).then(() => settle(400))
-        .then(() => { gap = globalThis.acTabDrag.getState().insert; return FD.drag("w1", "drop", ${x}, 20); }).then((r) => settle(900).then(() => ({ r, gap,
-          added: st().windows.w1.tabIds.filter((id) => !before.has(id)), order: st().windows.w1.tabIds, idle: globalThis.acTabDrag.getState().tabIds.length === 0 })));`);
-    assert.match(out.r, /FileDropView performed/, JSON.stringify(out));
+        .then(() => ${incoming}).then((g) => { gap = g; return ${nativeOwner ? 'globalThis.expo.modules.SolaraTopStrip.items("w1").then(JSON.parse).then((state) => state.items)' : 'Promise.resolve(null)'}; }).then((i) => { items = i; return FD.drag("w1", "drop", ${x}, 20); }).then((r) => settle(900).then(() => (${active})).then((busy) => ({ r, gap, items,
+          added: st().windows.w1.tabIds.filter((id) => !before.has(id)), order: st().windows.w1.tabIds, idle: busy === 0 && globalThis.acTabDrag.getState().tabIds.length === 0 })));`);
+    assert.match(out.r, nativeOwner ? /NativeLayoutStripDropView performed/ : /FileDropView performed/, JSON.stringify(out));
     assert.ok(out.gap?.beforeId && loose.indexOf(out.gap.beforeId) > 0, `an incoming gap inside the strip: ${JSON.stringify(out.gap)} in ${loose}`);
+    if (nativeOwner) {
+      const before = beforeItems.find((item) => item.kind === "tab" && item.id === out.gap.beforeId);
+      const during = out.items.find((item) => item.kind === "tab" && item.id === out.gap.beforeId);
+      assert.ok(before && during && during.windowX > before.windowX + 20, `the actual native tab moved aside for its incoming gap: ${JSON.stringify({ before, during })}`);
+    }
     assert.equal(out.added.length, 1);
     assert.equal(out.order[out.order.indexOf(out.gap.beforeId) - 1], out.added[0], JSON.stringify(out.order));
     assert.ok(out.idle, "the strip's drag state is idle again");
     await run(`st().closeTabs(${JSON.stringify(out.added)}); return settle(500);`);
     const ended = await run(`const FD = ac.shell.devFileDrag;
-      return FD.drag("w1", "move", ${x}, 20, { files: [${JSON.stringify(pdf)}] }).then(() => settle(400)).then(() => { const busy = globalThis.acTabDrag.getState().tabIds.length;
-        return FD.drag("w1", "end", ${x}, 20).then(() => settle(400)).then(() => ({ busy, idle: globalThis.acTabDrag.getState().tabIds.length === 0 })); });`);
+      return FD.drag("w1", "move", ${x}, 20, { files: [${JSON.stringify(pdf)}] }).then(() => settle(400)).then(() => ${active}).then((busy) =>
+        FD.drag("w1", "end", ${x}, 20).then(() => settle(400)).then(() => ${active}).then((after) => ({ busy, idle: after === 0 && globalThis.acTabDrag.getState().tabIds.length === 0 })));`);
     assert.deepEqual(ended, { busy: 1, idle: true }, "a drag that just ends frees the strip for tab drags");
   });
 
@@ -1368,7 +1421,8 @@ try {
           .then((r) => settle(900).then(() => { const w = st().windows[id]; const added = w.tabIds.slice(before);
             const out = { r, windowId: id, added: w.tabIds.filter((t) => st().tabs[t].url === ${JSON.stringify(fileUrl(pdf))}).length, total: w.tabIds.length - before, profile: w.profileId };
             return out; })); });`);
-    assert.match(out.r, /FileDropView performed/, JSON.stringify(out));
+    const nativeOwner = await run(`return globalThis.expo.modules.SolaraWindowShell.nativeLayout(${JSON.stringify(out.windowId)});`);
+    assert.match(out.r, nativeOwner ? /NativeLayoutStripDropView performed/ : /FileDropView performed/, JSON.stringify(out));
     assert.equal(out.added, 1, JSON.stringify(out));
     await run(`st().closeWindow(${JSON.stringify(out.windowId)}); return settle(600);`);
   });

@@ -100,6 +100,24 @@ public enum ShellGeometry {
   }
 }
 
+public enum SidebarSide: String, Equatable, Sendable {
+  case left
+  case right
+
+  public init(position: String) { self = position == "right" ? .right : .left }
+
+  public func widthDelta(_ delta: CGFloat) -> CGFloat { self == .right ? -delta : delta }
+}
+
+public enum SidebarAttachment {
+  public static func origin(anchor: CGRect, size: CGSize, visible: CGRect, side: SidebarSide, gap: CGFloat = 8, preferredY: CGFloat? = nil) -> CGPoint {
+    let preferred = side == .right ? anchor.minX - size.width - gap : anchor.maxX + gap
+    return CGPoint(
+      x: max(visible.minX + 8, min(preferred, visible.maxX - size.width - 8)),
+      y: max(visible.minY + 8, min(preferredY ?? (anchor.midY - size.height / 2), visible.maxY - size.height - 8)))
+  }
+}
+
 public struct DockedLayoutInput: Equatable, Sendable {
   public var size: CGSize
   public var dock: CGFloat
@@ -112,10 +130,11 @@ public struct DockedLayoutInput: Equatable, Sendable {
   public var away: Bool
   public var sidePanel: CGFloat
   public var railProgress: CGFloat?
+  public var sidebarSide: SidebarSide
 
   public init(
     size: CGSize, dock: CGFloat, sidebarWidth: CGFloat = ShellMetrics.sidebarWidth, topTabs: Bool = false, fullscreen: Bool = false,
-    peeking: Bool = false, peekSlide: CGFloat = 0, addressBarInSidebar: Bool = false, away: Bool = false, sidePanel: CGFloat = 0, railProgress: CGFloat? = nil
+    peeking: Bool = false, peekSlide: CGFloat = 0, addressBarInSidebar: Bool = false, away: Bool = false, sidePanel: CGFloat = 0, railProgress: CGFloat? = nil, sidebarSide: SidebarSide = .left
   ) {
     self.size = size
     self.dock = dock
@@ -128,6 +147,7 @@ public struct DockedLayoutInput: Equatable, Sendable {
     self.away = away
     self.sidePanel = sidePanel
     self.railProgress = railProgress
+    self.sidebarSide = sidebarSide
   }
 
   public var inset: ShellInset { topTabs ? .topTabs : .sidebar }
@@ -159,7 +179,40 @@ public struct DockedLayoutFrames: Equatable, Sendable {
   public var topStrip: CGRect?
   public var lights: CGPoint?
 
+  public func sidebarCoverage(in bounds: CGRect) -> CGRect? {
+    guard let sidebar else { return nil }
+    let visible = sidebar.offsetBy(dx: sidebarShift, dy: 0).intersection(bounds)
+    return visible.isNull || visible.isEmpty ? nil : visible
+  }
+
   public static func of(_ input: DockedLayoutInput) -> DockedLayoutFrames {
+    if input.sidebarSide == .right, !input.topTabs, !input.fullscreen { return rightFrames(input) }
+    return leftFrames(input)
+  }
+
+  private static func rightFrames(_ input: DockedLayoutInput) -> DockedLayoutFrames {
+    var base = input
+    base.sidePanel = 0
+    base.sidebarSide = .left
+    var result = leftFrames(base)
+    let reflect = { (rect: CGRect) in CGRect(x: input.size.width - rect.maxX, y: rect.minY, width: rect.width, height: rect.height) }
+    result.card = reflect(result.card)
+    result.page = reflect(result.page)
+    result.sidebar = result.sidebar.map(reflect)
+    result.sidebarShift = -result.sidebarShift
+    let available = max(0, result.page.width - ShellMetrics.minPane)
+    let room = min(max(0, input.sidePanel), available)
+    if room > 0 {
+      let edge = min(result.card.maxX, result.page.maxX)
+      result.sidePanel = input.alignFrame(CGRect(x: edge - room, y: result.card.minY, width: room, height: result.card.height))
+      result.card.size.width = max(0, edge - room - result.card.minX)
+      result.page.size.width = max(0, result.page.width - room)
+    }
+    result.lights = DockMotion.sidebarLightsCenter(input)
+    return result
+  }
+
+  private static func leftFrames(_ input: DockedLayoutInput) -> DockedLayoutFrames {
     let size = input.size
     let inset = input.inset
     let dock = input.dock

@@ -401,3 +401,16 @@ func configReader(_ files: [String: String]) -> (String) -> ConfigRead {
     #expect(ConfigLocation.resolve(environment: ["SOLARA_CONFIG_DIR": "rel"], home: home, currentDirectory: "/work")?.url.path == "/work/rel")
   }
 }
+
+extension ConfigFileParseTests {
+  @Test func sidebarPositionAcceptsOnlyPhysicalSides() throws {
+    for position in ["left", "right"] {
+      let load = ConfigFile.load(configReader(["config.json": "{\"settings\":{\"sidebarPosition\":\"\(position)\"}}"] ))
+      #expect(load.good)
+      #expect(load.contents?.settings["sidebarPosition"] == .string(position))
+    }
+    let invalid = ConfigFile.load(configReader(["config.json": #"{"settings":{"sidebarPosition":"top"}}"#]))
+    #expect(!invalid.good)
+    #expect(invalid.problems.first?.key == "settings.sidebarPosition")
+  }
+}

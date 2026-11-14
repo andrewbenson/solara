@@ -98,6 +98,7 @@ enum NativeSidebarHoverCard {
 final class SidebarHoverCardHost {
   let windowId: String
   private let motion = HoverCardView()
+  private var attachment: (anchor: CGRect, y: CGFloat, gap: CGFloat)?
   private lazy var tabCard: SidebarTabCardView = {
     let card = SidebarTabCardView()
     card.onAction = { [weak self, weak card] action in
@@ -135,7 +136,7 @@ final class SidebarHoverCardHost {
       }
     }
     card.onPointer = { [weak self] inside in self?.pointer(inside) }
-    card.onResize = { [weak self] in self?.coverChanged() }
+    card.onResize = { [weak self] in self?.contentResized() }
     return card
   }()
   private lazy var playerCard: HoverPlayerCardView = {
@@ -161,7 +162,7 @@ final class SidebarHoverCardHost {
       }
     }
     card.onPointer = { [weak self] inside in self?.pointer(inside) }
-    card.onResize = { [weak self] in self?.coverChanged() }
+    card.onResize = { [weak self] in self?.contentResized() }
     return card
   }()
   private lazy var folderPeek: SidebarFolderPeekView = {
@@ -199,7 +200,19 @@ final class SidebarHoverCardHost {
     NativeWindowShell.host(windowId)?.shell.coverChanged()
   }
 
+  private func contentResized() {
+    if let attachment, let content = motion.content, motion.phase != .hidden, motion.phase != .leaving,
+      let host = NativeWindowShell.host(windowId), host.ownsNativeLayout, host.shell.input.sidebarSide == .right {
+      let origin = SidebarAttachment.origin(anchor: attachment.anchor, size: content.frame.size,
+        visible: host.shell.bounds, side: .right, gap: attachment.gap, preferredY: attachment.y)
+      motion.origin = origin
+      NativeSidebarHoverCard.send(windowId, "", "layout", ["frame": [origin.x, origin.y, content.frame.width, content.frame.height]])
+    }
+    coverChanged()
+  }
+
   func show(_ card: [String: Any]?) {
+    attachment = nil
     guard let card, let kind = card["kind"] as? String else {
       if kind == "group" { groupCard.live = false }
       tabCardInput = nil
@@ -218,8 +231,20 @@ final class SidebarHoverCardHost {
     if self.kind == "group", kind != "group" { groupCard.live = false }
     if kind != "tab" { tabCardInput = nil }
     self.kind = kind
-    motion.show(placed.view, origin: placed.origin)
-    NativeSidebarHoverCard.send(windowId, "", "layout", ["frame": [placed.origin.x, placed.origin.y, placed.view.frame.width, placed.view.frame.height]])
+    var origin = placed.origin
+    if let host = NativeWindowShell.host(windowId), host.ownsNativeLayout, host.shell.input.sidebarSide == .right,
+      let values = card["anchor"] as? [Double], values.count == 4 {
+      var anchor = CGRect(x: values[0], y: values[1], width: values[2], height: values[3])
+      let sidebar = host.shell.frames.sidebarCoverage(in: host.shell.bounds)
+      let tabAtEdge = kind == "tab" && sidebar.map { anchor.minX >= $0.minX - 1 } == true
+      if tabAtEdge, let sidebar { anchor.origin.x = sidebar.minX }
+      let gap: CGFloat = tabAtEdge ? 0.5 : 8
+      attachment = (anchor, placed.origin.y, gap)
+      origin = SidebarAttachment.origin(anchor: anchor, size: placed.view.frame.size,
+        visible: host.shell.bounds, side: .right, gap: gap, preferredY: placed.origin.y)
+    }
+    motion.show(placed.view, origin: origin)
+    NativeSidebarHoverCard.send(windowId, "", "layout", ["frame": [origin.x, origin.y, placed.view.frame.width, placed.view.frame.height]])
     coverChanged()
     DispatchQueue.main.asyncAfter(deadline: .now() + HoverCardMotion.fadeDuration) { [weak self] in self?.coverChanged() }
   }

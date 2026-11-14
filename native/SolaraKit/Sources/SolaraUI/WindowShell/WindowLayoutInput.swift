@@ -43,7 +43,7 @@ public struct WindowLayoutInput: Equatable, Sendable {
   public init?(
     state: BrowserState, windowId: String, windowGeneration: UInt64 = 1, storeRevision: Int = 0,
     bounds: CGRect, backingScale: CGFloat = 1, presentation: DockedLayoutInput? = nil,
-    sidebarUpdateHeight: CGFloat = 0, stripProfileWidth: CGFloat? = nil,
+    sidebarUpdateHeight: CGFloat = 0, stripProfileWidth: CGFloat? = nil, sidebarPositionAllowed: Bool = true,
     pageFacts: [String: WindowLayoutPageFacts] = [:]
   ) {
     guard let window = state.windows[windowId] else { return nil }
@@ -71,10 +71,12 @@ public struct WindowLayoutInput: Equatable, Sendable {
     layout = DockedLayoutInput(
       size: self.bounds.size, dock: window.sidebarOpen ? 1 : 0,
       sidebarWidth: rail ? CGFloat(SidebarRail.width) : CGFloat(window.effectiveSidebarWidth(state.settings)),
-      topTabs: topTabs, fullscreen: fullscreen, addressBarInSidebar: address)
+      topTabs: topTabs, fullscreen: fullscreen, addressBarInSidebar: address,
+      sidebarSide: sidebarPositionAllowed ? SidebarSide(position: window.effectiveSidebarPosition(state.settings)) : .left)
     var sample = presentation ?? layout
     sample.size = self.bounds.size
     sample.topTabs = topTabs
+    sample.sidebarSide = layout.sidebarSide
     sample.addressBarInSidebar = address
     if !self.pageFacts.isEmpty { sample.fullscreen = fullscreen }
     self.presentation = sample

@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
+import { sidebarPosition, sidebarPositionSpecified, sidebarDirection, sidebarSession, sidebarPointX, assertSidebarPosition, assertSidebarTrafficLights } from "./sidebar-position-test.mjs";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -22,12 +23,12 @@ committing a width or icons-only in one window keeps the other window's sidebar 
 const keep = args.includes("--keep-data");
 const scratch = mkdtempSync(join(tmpdir(), "ac-sidebar-chrome-"));
 const rep = reporter(join(scratch, "sidebar-chrome-test.log"), { name: "sidebar-chrome-test" });
-const fixture = session({
+const fixture = session(sidebarSession({
   profiles: [{ id: "default", name: "Personal" }, { id: "work", name: "Work" }],
   windows: [{ id: "w1", frame: [80, 80, 1280, 800], activeTabIds: { default: "a" } }],
   tabs: [{ id: "a", url: "about:blank", title: "A" }, { id: "b", url: "about:blank", title: "B" }, { id: "c", url: "about:blank", title: "C" }],
   settings: { warnBeforeClosingLastTab: false, warnBeforeClosingWindow: false, addressBar: "sidebar" },
-});
+}));
 const HELPERS = `
 const C = globalThis.expo.modules.SolaraCEF;
 const H = globalThis.expo.modules.SolaraHosted;
@@ -73,7 +74,7 @@ const checkColumn = (what) => untilSnapshot(what, async (window) => {
 });
 
 const canary = async (after) => {
-  const r = await run(`return col().then((c) => { const d = c.chrome.dots.find((d) => d.id === "work"); const x = Math.round(d.rect[0] + d.rect[2] / 2), y = Math.round(d.rect[1] + d.rect[3] / 2);
+  const r = await run(`return col().then((c) => { const d = c.chrome.dots.find((d) => d.id === "work"); const x = Math.round(c.frame[0] + d.rect[0] + d.rect[2] / 2), y = Math.round(c.frame[1] + d.rect[1] + d.rect[3] / 2);
     return click(x, y).then(() => settle(1000)).then(() => st().windows.w1.profileId); });`).catch((e) => String(e));
   if (r === "work") await untilSnapshot("profile dot after " + after, (window) => window?.profileId === r);
   await run(`st().switchProfile("w1", "default"); return settle(1000);`);
@@ -92,24 +93,30 @@ try {
   const c0 = await run(`return col();`);
   if (!c0?.chrome) throw new Error(`no native chrome: ${JSON.stringify(c0)}`);
   await checkColumn("sidebar column at launch", c0);
+  await assertSidebarPosition(inst);
+  await assertSidebarTrafficLights(inst);
 
   await canary("launch");
   await rep.check("(a) the blank header drags the window, and a double-click acts as the titlebar's", async () => {
     await run(`st().updateSettings({ addressBar: "toolbar" }); return settle(900);`);
     const beforeDrag = await untilSnapshot("header drag counter before click", (_, snapshot) => Number.isInteger(snapshot.windowDragCount));
     const beforeCount = beforeDrag.windowDragCount;
-    const out = await run(`const x = 172, y = 20;
+    const header = await run(`return col();`);
+    const hx = Math.round(header.frame[0] + header.frame[2] - 18), hy = Math.round(header.frame[1] + 20);
+    const out = await run(`const x = ${hx}, y = ${hy};
       const o = {};
       return act("hit:" + x + "," + y).then((h) => { o.hit = h; return act("windowDrags"); })
         .then(() => click(x, y)).then(() => settle(300)).then(() => act("windowDrags")).then((d) => { o.drags = Number(String(d).split("\\n")[0]); return frame(); })
         .then((f) => { o.before = f; return o; });`);
     await untilSnapshot("header drag counter after click", (_, snapshot) => snapshot.windowDragCount - beforeCount === out.drags);
-    out.after = await run(`return click(172, 20).then(() => click(172, 20, 2)).then(() => settle(900)).then(frame);`);
+    out.after = await run(`return click(${hx}, ${hy}).then(() => click(${hx}, ${hy}, 2)).then(() => settle(900)).then(frame);`);
     if (!/SidebarChromeView/.test(out.hit) || out.drags !== 1 || isDeepStrictEqual(out.after, out.before)) throw new Error(JSON.stringify(out));
     const afterFrame = out.after.replace(/[{}]/g, "").split(",").map(Number);
     await untilSnapshot("header drag window frame", (window) => window?.sidebarShell?.chrome?.header === 46 &&
       Math.abs(window.frame.width - afterFrame[2]) <= 0.5 && Math.abs(window.frame.height - afterFrame[3]) <= 0.5);
-    await run(`return click(172, 20).then(() => click(172, 20, 2)).then(() => settle(900)).then(() => { st().updateSettings({ addressBar: "sidebar" }); return settle(900); });`);
+    const zoomed = await run(`return col();`);
+    const zx = Math.round(zoomed.frame[0] + zoomed.frame[2] - 18), zy = Math.round(zoomed.frame[1] + 20);
+    await run(`return click(${zx}, ${zy}).then(() => click(${zx}, ${zy}, 2)).then(() => settle(900)).then(() => { st().updateSettings({ addressBar: "sidebar" }); return settle(900); });`);
     return out;
   });
   await canary("(a)");
@@ -141,7 +148,7 @@ try {
       return window?.sidebarAddressBar?.claimed === reloaded?.claimed && window?.sidebarAddressBar?.inWindow === reloaded?.inWindow;
     });
     let c = await run(`return col();`);
-    const opened = await run(`const [x, y] = [${Math.round(c0.frame[0] + 80)}, ${Math.round(c0.frame[1] + 62)}];
+    const opened = await run(`const [x, y] = [${Math.round(c.frame[0] + 80)}, ${Math.round(c.frame[1] + 62)}];
       return click(x, y).then(() => settle(700)).then(() => ({ panel: !!st().windowUi.w1?.panel.open }));`);
     await untilSnapshot("address panel opened", async (window) => {
       c = await run(`return col();`);
@@ -165,6 +172,7 @@ try {
       const r = c?.chrome?.headerDownloads ?? c?.chrome?.footerDownloads;
       if (!r) { out[mode] = { missing: c?.chrome }; continue; }
       await checkColumn(`downloads button in ${mode}`, c);
+      await assertSidebarTrafficLights(inst);
       const [x, y] = centre(c, r);
       out[mode] = await run(`return click(${x}, ${y}).then(() => settle(500)).then(() => !!st().windowUi.w1?.downloadsOpen);`);
       await untilSnapshot(`downloads open in ${mode}`, (window) => window?.overlays?.some((overlay) => overlay.kind === "downloads"));
@@ -179,8 +187,12 @@ try {
   await rep.check("(d) the resize handle drags the width live, keeps it on release, and a double-click resets it", async () => {
     const c = await run(`return col();`);
     const [x, y] = centre(c, c.chrome.resize);
+    if (sidebarPositionSpecified) {
+      const edge = c.frame[0] + (sidebarPosition === "right" ? 0 : c.frame[2]);
+      if (Math.abs(x - edge) > c.chrome.resize[2]) throw new Error(`resize handle is not on the inward edge: ${JSON.stringify(c)}`);
+    }
     const out = await run(`const o = { saved: savedWidth() };
-      return act("mouse:down:${x},${y},1").then(() => act("mouse:dragged:${x + 20},${y}")).then(() => act("mouse:dragged:${x + 40},${y}")).then(() => settle(200))
+      return act("mouse:down:${x},${y},1").then(() => act("mouse:dragged:${x + sidebarDirection * 20},${y}")).then(() => act("mouse:dragged:${x + sidebarDirection * 40},${y}")).then(() => settle(200))
         .then(() => col()).then((c) => ({ ...o, live: c.frame[2] }));`);
     try {
       await untilSnapshot("sidebar resize live width", async (window) => {
@@ -190,14 +202,14 @@ try {
           Math.abs(window?.sidebarChromeMetrics?.committedWidth - out.saved) <= 0.5;
       });
     } finally {
-      await run(`return act("mouse:up:${x + 40},${y},1").then(() => settle(500));`);
+      await run(`return act("mouse:up:${x + sidebarDirection * 40},${y},1").then(() => settle(500));`);
     }
     await untilSnapshot("sidebar resize committed width", async (window) => {
       Object.assign(out, await run(`const committed = savedWidth(); return col().then((c) => ({ committed, after: c.frame[2] }));`));
       return Math.abs(window?.sidebarChromeMetrics?.liveWidth - out.after) <= 0.5 &&
         Math.abs(window?.sidebarChromeMetrics?.committedWidth - out.committed) <= 0.5;
     });
-    out.reset = await run(`return click(${x + 40}, ${y}).then(() => click(${x + 40}, ${y}, 2)).then(() => settle(600)).then(() => savedWidth());`);
+    out.reset = await run(`return click(${x + sidebarDirection * 40}, ${y}).then(() => click(${x + sidebarDirection * 40}, ${y}, 2)).then(() => settle(600)).then(() => savedWidth());`);
     if (!(out.live > out.saved + 30) || !(Math.abs(out.committed - out.after) < 1) || out.reset !== 190) throw new Error(JSON.stringify(out));
     await untilSnapshot("sidebar resize reset", async (window) => {
       const read = await run(`const committed = savedWidth(); return col().then((c) => ({ committed, after: c.frame[2] }));`);
@@ -225,10 +237,12 @@ try {
 
   await rep.check("(f) a drop on the header and on the footer opens a tab, with the native glow", async () => {
     const out = {};
-    for (const [name, y] of [["header", 30], ["footer", 800 - 12]]) {
+    const column = await run(`return col();`);
+    const dropX = sidebarPointX(column);
+    for (const [name, y] of [["header", column.frame[1] + 30], ["footer", column.frame[1] + column.frame[3] - 12]]) {
       out[name] = await run(`const FD = ac.shell.devFileDrag; const before = Object.keys(st().tabs).length;
-        return FD.drag("w1", "move", 120, ${y}, { urls: ["https://example.com/${name}"] }).then(() => settle(400))
-          .then(() => FD.drag("w1", "drop", 120, ${y})).then(() => settle(900)).then(() => ({ added: Object.keys(st().tabs).length - before }));`);
+        return FD.drag("w1", "move", ${dropX}, ${y}, { urls: ["https://example.com/${name}"] }).then(() => settle(400))
+          .then(() => FD.drag("w1", "drop", ${dropX}, ${y})).then(() => settle(900)).then(() => ({ added: Object.keys(st().tabs).length - before }));`);
     }
     await untilSnapshot("header and footer dropped tabs", async (_, state) => {
       out.total = await run(`return Object.keys(st().tabs).length;`);
@@ -266,6 +280,7 @@ try {
     await run(`st().updateSettings({ tabLayout: "sidebar" }); return settle(1500);`);
     const back = await run(`return col();`);
     await checkColumn("column restored with sidebar tabs", back);
+    await assertSidebarPosition(inst);
     if ((nativeLayout ? off?.hidden !== true || back?.hidden !== false : off !== null) || !back?.chrome) throw new Error(JSON.stringify({ off, back }));
     if (nativeLayout) {
       const after = await run(`return globalThis.expo.modules.SolaraWindowShell.describe("w1").then(JSON.parse);`);
@@ -275,11 +290,11 @@ try {
   });
 
   await rep.check("(h) a drag, the icons-only command and a relaunch each keep to their own window", async () => {
-    const twoWindows = session({
+    const twoWindows = session(sidebarSession({
       windows: [{ id: "w1", frame: [80, 80, 1280, 800] }, { id: "w2", frame: [120, 120, 1200, 760] }],
       tabs: [{ id: "a", windowId: "w1", url: "about:blank", title: "A" }, { id: "b", windowId: "w2", url: "about:blank", title: "B" }],
       settings: { sidebarWidth: 238, sidebarIconsOnly: false, warnBeforeClosingLastTab: false, warnBeforeClosingWindow: false },
-    });
+    }));
     const twoWindowLaunch = (fresh) => launch(resolve(appArg), {
       data: join(scratch, "two-window-data"),
       fresh,
@@ -308,8 +323,8 @@ try {
     const [x, y] = centre(c, c.chrome.resize);
     await run(`const w1 = () => C.chromeWindows().then((ws) => ws.find((w) => w.hasRoot && w.frame.includes("1280")).window);
       const drag = (a) => w1().then((n) => C.devWindow(n, a));
-      return drag("mouse:down:${x},${y},1").then(() => drag("mouse:dragged:${x + 20},${y}")).then(() => drag("mouse:dragged:${x + 40},${y}"))
-        .then(() => settle(200)).then(() => drag("mouse:up:${x + 40},${y},1")).then(() => settle(800));`);
+      return drag("mouse:down:${x},${y},1").then(() => drag("mouse:dragged:${x + sidebarDirection * 20},${y}")).then(() => drag("mouse:dragged:${x + sidebarDirection * 40},${y}"))
+        .then(() => settle(200)).then(() => drag("mouse:up:${x + sidebarDirection * 40},${y},1")).then(() => settle(800));`);
     const dragged = await widths();
     if (!(dragged[0] > before[0] + 30)) throw new Error(`the drag in w1 didn't widen it: ${JSON.stringify({ before, dragged })}`);
     const resized = await matchesColumns("w1 wider after its drag, w2 as it was", [dragged[0], 238]);

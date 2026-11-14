@@ -5,11 +5,15 @@ public enum BookmarksBarDropTarget: Equatable, Sendable {
   case folder(String)
   case sidebar
 
-  public static func resolve(id: String, items: [BookmarksBarItem], visible: [BookmarksBarLayout.Placement], deltaX: CGFloat, pointerX: CGFloat, sidebarEdge: CGFloat?) -> BookmarksBarDropTarget? {
+  public static func resolve(id: String, items: [BookmarksBarItem], visible: [BookmarksBarLayout.Placement], deltaX: CGFloat, pointerX: CGFloat, sidebarEdge: CGFloat?, sidebarCoverage: CGRect? = nil, pointerY: CGFloat = 0) -> BookmarksBarDropTarget? {
     guard deltaX.isFinite, pointerX.isFinite,
       let source = items.firstIndex(where: { $0.id == id }),
       let placement = visible.first(where: { $0.index == source }) else { return nil }
-    if items[source].kind == .folder, let sidebarEdge, sidebarEdge.isFinite, pointerX < sidebarEdge { return .sidebar }
+    if items[source].kind == .folder {
+      if let sidebarCoverage {
+        if sidebarCoverage.contains(CGPoint(x: pointerX, y: pointerY)) { return .sidebar }
+      } else if let sidebarEdge, sidebarEdge.isFinite, pointerX < sidebarEdge { return .sidebar }
+    }
     let x = placement.frame.midX + deltaX
     for placement in visible {
       guard items.indices.contains(placement.index) else { continue }

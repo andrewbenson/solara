@@ -239,3 +239,15 @@ test("Arc's layout keeps the address bar in a hidden sidebar (no toolbar on the 
   stub.docs.clear();
   reloadSwitches();
 });
+
+test("native peek coverage includes both axes and never covers the opposite edge", async () => {
+  const dm = await import("./dockMotion.ts");
+  dm.setPeekShown("right", true, 1275, [1085, 5, 190, 790]);
+  assert.equal(dm.overPeek("right", 120, 300), false);
+  assert.equal(dm.overPeek("right", 1100, 300), true);
+  assert.equal(dm.overPeek("right", 1100, 4), false);
+  assert.equal(dm.overPeek("right", 1100, 795), false);
+  assert.equal(dm.overPeek("right", 1275, 300), false);
+  dm.setPeekShown("right", false);
+  assert.equal(dm.overPeek("right", 1100, 300), false);
+});

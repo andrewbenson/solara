@@ -31,10 +31,14 @@ public struct WindowLayoutSnapshot: Equatable, Sendable {
     var pages: [String: CGRect] = [:]
     var toolbars: [String: CGRect] = [:]
     var anchors: [String: CGRect] = ["card": frames.card, "content": content, "page": frames.page]
+    if input.layout.sidebarSide == .right && !input.layout.topTabs && !input.layout.fullscreen {
+      anchors["caption"] = CGRect(x: 0, y: 0, width: ShellMetrics.railLightsTrailing + ShellMetrics.chromeCaptionTrailingMargin, height: ShellMetrics.toolbarHeight + ShellMetrics.cardTop)
+    }
     for (id, pane) in panes {
       let hidden = input.layout.addressBarInSidebar || id == fullscreenTab
       let toolbar = hidden ? 0 : min(pane.height, ShellMetrics.toolbarHeight * (1 - rail))
-      let toolbarTop = min(pane.height, max(0, input.pageFacts[id]?.top.map { $0 * (1 - rail) } ?? toolbar))
+      let captionTop: CGFloat = input.layout.sidebarSide == .right && input.layout.addressBarInSidebar && id != fullscreenTab && pane.minX == area.minX && pane.minY == area.minY ? ShellMetrics.toolbarHeight : 0
+      let toolbarTop = min(pane.height, max(captionTop, input.pageFacts[id]?.top.map { $0 * (1 - rail) } ?? toolbar))
       let band = id == fullscreenTab ? 0 : max(0, input.pageFacts[id]?.band ?? 0)
       let top = min(pane.height, toolbarTop + band)
       let page = CGRect(x: pane.minX, y: pane.minY + top, width: pane.width, height: max(0, pane.height - top))
@@ -51,9 +55,17 @@ public struct WindowLayoutSnapshot: Equatable, Sendable {
     let header = sidebar.map { CGRect(x: $0.minX, y: $0.minY, width: $0.width, height: min($0.height, input.sidebarHeaderHeight)) }
     let footer = sidebar.map { CGRect(x: $0.minX, y: max($0.minY, $0.maxY - input.sidebarFooterHeight), width: $0.width, height: min($0.height, input.sidebarFooterHeight)) }
     if let sidebar { anchors["sidebar"] = sidebar }
+    if input.presentation.peeking, let coverage = frames.sidebarCoverage(in: input.bounds) { anchors["sidebarPeekCoverage"] = coverage }
     if let header { anchors["sidebarHeader"] = header }
     if let footer { anchors["sidebarFooter"] = footer }
     if let strip = frames.topStrip { anchors["topStrip"] = strip }
+    if input.presentation.peeking, input.layout.addressBarInSidebar, let sidebar,
+      let selected = input.selectedTabId.flatMap({ contentPanes[$0] }) {
+      for (name, width): (String, CGFloat) in [("siteControls", 288), ("popups", 360), ("zoom", 236)] {
+        let origin = SidebarAttachment.origin(anchor: sidebar, size: CGSize(width: width, height: 0), visible: selected, side: input.layout.sidebarSide)
+        anchors["peekPopover:\(name)"] = CGRect(x: origin.x, y: selected.minY + 8, width: width, height: 0)
+      }
+    }
     let stripAvailableWidth = max(0, input.bounds.width - ShellMetrics.topStripLeadingReservation - max(84, input.stripControlsWidth + 14))
     return Self(input: input, generation: generation, frames: frames, content: content, contentPanes: contentPanes, panes: panes, pages: pages, toolbars: toolbars, sidebarHeader: header, sidebarFooter: footer, stripAvailableWidth: stripAvailableWidth, anchors: anchors)
   }
@@ -62,9 +74,10 @@ public struct WindowLayoutSnapshot: Equatable, Sendable {
     guard !input.layout.addressBarInSidebar, let pane = contentPanes[tabId] else { return nil }
     let leading = pane.minX == content.minX && pane.minY == content.minY
     let geometry = ToolbarGeometry.of(sidebarButton: leading && !input.layout.topTabs && input.showSidebarButton)
+    let captionReservation = input.layout.sidebarSide == .right && leading && !input.layout.topTabs && !input.layout.fullscreen ? ShellMetrics.railToolbarLeadingInset : 0
     return CGRect(
-      x: pane.minX + geometry.urlLeft, y: pane.minY,
-      width: max(0, pane.width - geometry.urlLeft - max(0, trailingReservation)), height: min(pane.height, ShellMetrics.toolbarHeight))
+      x: pane.minX + geometry.urlLeft + captionReservation, y: pane.minY,
+      width: max(0, pane.width - geometry.urlLeft - captionReservation - max(0, trailingReservation)), height: min(pane.height, ShellMetrics.toolbarHeight))
   }
 
   public func endpointError(observed: [String: CGRect], names: [String]) -> CGFloat? {

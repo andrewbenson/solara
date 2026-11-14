@@ -382,8 +382,15 @@ public final class SidebarIconPickerView: NSView, NSTextFieldDelegate {
   private func layoutPanel() {
     guard let state else { return }
     let m = SidebarIconPickerMetrics.self
-    let origin = embedded ? .zero : m.origin(anchor: state.anchorRect, sidebarWidth: CGFloat(state.sidebarWidth))
     let height = panelHeight
+    let origin: CGPoint
+    if embedded {
+      origin = .zero
+    } else if let shell = windowShell, shell.input.sidebarSide == .right, let anchor = state.anchorRect {
+      origin = SidebarAttachment.origin(anchor: anchor, size: CGSize(width: m.width, height: height), visible: bounds, side: .right, gap: m.anchorGap)
+    } else {
+      origin = m.origin(anchor: state.anchorRect, sidebarWidth: CGFloat(state.sidebarWidth))
+    }
     panel.frame = NSRect(x: origin.x, y: origin.y, width: m.width, height: height)
     if embedded, frame.size != panel.frame.size { invalidateIntrinsicContentSize() }
     PrimitiveMotion.setInstantly { surface.frame = panel.bounds }

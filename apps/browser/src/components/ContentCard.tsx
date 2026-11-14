@@ -48,7 +48,7 @@ import { pagerFor } from "./layout/profilePager";
 import { dockMoving, useDockMotion, usePeekEdge } from "./layout/dockMotion";
 import { FrozenPage } from "./layout/frozenPage";
 import { holderOf } from "../store/pinShare";
-import { setCardAnchor, setUrlAnchor, useCardAnchors, useAddressBarInSidebar, useTabLayout, useToolbarExtensionsWidths } from "./layout/windowLayout";
+import { setCardAnchor, setUrlAnchor, useCardAnchors, useNativePopoverAnchors, useAddressBarInSidebar, useTabLayout, useToolbarExtensionsWidths } from "./layout/windowLayout";
 import { notePageEventHandled, acceptPageReport, currentPageContext, followNavigation, newPageSession, pageEventHandlers, releasePageSession } from "./pageEvents";
 import { NewTabPage } from "./NewTabPage";
 import { EmptyCard } from "./EmptyCard";
@@ -93,6 +93,7 @@ export function ContentCard() {
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [measuredOrigin, setOrigin] = useState<{ x: number; y: number } | null>(null);
   const nativeAnchors = useNativeWindowAnchors(windowId);
+  const nativePopovers = useNativePopoverAnchors((state) => nativeAnchors ? state[windowId] : undefined);
   const nativeContent = useCardAnchors((state) => nativeAnchors ? state[windowId] : undefined);
   const origin = useMemo(() => nativeContent ? { x: nativeContent.left, y: nativeContent.top } : measuredOrigin, [nativeContent, measuredOrigin]);
   const container = useRef<View>(null);
@@ -353,6 +354,8 @@ export function ContentCard() {
           left={Math.max(activeRect.x, peekEdge - origin.x) + POPOVER_MARGIN}
           top={activeRect.y + POPOVER_MARGIN}
           room={size.width}
+          placements={nativePopovers}
+          origin={origin}
         />
       )}
       {!fullscreenTab && <DropTargets panes={panes} origin={origin} windowId={windowId} native={shell} />}
@@ -634,14 +637,17 @@ export function PaneContent({ windowId, tabId, shown }: { windowId: string; tabI
   );
 }
 
-function BesidePeekPopovers({ tabId, left, top, room }: { tabId: string; left: number; top: number; room: number }) {
+function BesidePeekPopovers({ tabId, left, top, room, placements, origin }: { tabId: string; left: number; top: number; room: number; placements?: Record<string, readonly [number, number, number, number]>; origin: { x: number; y: number } }) {
   const popover = usePages((s) => s.popover[tabId] ?? null);
-  const fit = (width: number) => ({ left: Math.max(POPOVER_MARGIN, Math.min(left, room - width - POPOVER_MARGIN)), top });
+  const fit = (key: string, width: number) => {
+    const rect = placements?.[key];
+    return rect ? { left: rect[0] - origin.x, top: rect[1] - origin.y } : { left: Math.max(POPOVER_MARGIN, Math.min(left, room - width - POPOVER_MARGIN)), top };
+  };
   return (
     <>
-      <SiteControls tabId={tabId} open={popover === "siteControls"} {...fit(SITE_PANEL.width)} />
-      {popover === "popups" && <BlockedPopupsPrompt tabId={tabId} {...fit(BLOCKED_POPUPS_WIDTH)} />}
-      {popover === "zoom" && <ZoomPopover tabId={tabId} {...fit(ZOOM_POPOVER_WIDTH)} />}
+      <SiteControls tabId={tabId} open={popover === "siteControls"} {...fit("siteControls", SITE_PANEL.width)} />
+      {popover === "popups" && <BlockedPopupsPrompt tabId={tabId} {...fit("popups", BLOCKED_POPUPS_WIDTH)} />}
+      {popover === "zoom" && <ZoomPopover tabId={tabId} {...fit("zoom", ZOOM_POPOVER_WIDTH)} />}
     </>
   );
 }

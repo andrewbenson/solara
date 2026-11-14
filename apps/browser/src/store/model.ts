@@ -218,7 +218,7 @@ export function windowTitle(s: BrowserState, windowId: string): string {
   return `${profileFor(s, w.profileId).name} — ${label}${others > 0 ? ` & ${plural(others, "Tab")}` : ""}`;
 }
 
-const closedWindowPresentationKeys = ["tabLayout", "fullScreen", "sidebarWidth", "sidebarIconsOnly", "sidePanelWidth"] as const;
+const closedWindowPresentationKeys = ["tabLayout", "fullScreen", "sidebarPosition", "sidebarWidth", "sidebarIconsOnly", "sidePanelWidth"] as const;
 
 export function closedWindowPresentation(w: BrowserWindow): ClosedWindow["window"] {
   const kept: ClosedWindow["window"] = { profileId: w.profileId, sidebarOpen: w.sidebarOpen, frame: w.frame };

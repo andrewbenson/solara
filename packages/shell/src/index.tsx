@@ -30,6 +30,7 @@ export type BrowserCommand =
   | "setAppearance"
   | "reload"
   | "forceReload"
+  | "setSidebarPosition"
   | "toggleTabLayout"
   | "toggleSidebar"
   | "openSplitPane"

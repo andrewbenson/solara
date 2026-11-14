@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { sidebarSession, assertSidebarPosition } from "./sidebar-position-test.mjs";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -23,7 +24,7 @@ const peekPending = "pending: the RN reference draws the profile tint above the 
 
 const tab = (id, extra = {}) => ({ id, url: `https://${id}.example/`, title: `Tab ${id}`, lastActiveAt: id === "t1" ? 9 : 1, ...extra });
 const fixture = () =>
-  session({
+  session(sidebarSession({
     settings: { tabLayout: "top" },
     profiles: ["Personal", "Work"],
     windows: [{ id: "w1", activeTabIds: { default: "t1", work: "k1" }, frame: [80, 80, 1600, 800] }],
@@ -37,7 +38,7 @@ const fixture = () =>
       { id: "g3c", windowId: "w1", profileId: "default", name: "Docs", icon: null, color: null, collapsed: false, pinned: false, parentId: "g3", tabIds: ["fa", "fb"], createdAt: 4 },
     ],
     splits: [{ id: "s1", windowId: "w1", tabIds: ["s1a", "s1b"], orientation: "horizontal", sizes: [0.5, 0.5] }],
-  });
+  }));
 
 const stripPointKind = (hit) => /WindowDragRegion/.test(hit) || /NativeLayoutStrip(?:Row|DropView)$/.test(hit.split(" < ")[0]) ? "drag" : /SwipeArea/.test(hit) ? "swipe" : "item";
 
@@ -248,6 +249,7 @@ async function measure(native) {
   const run = (body) => app.eval(`${HELPERS}\n${body}`);
   try {
     await sleep(2500);
+    await assertSidebarPosition(app);
     const kinds = await run(`return globalThis.expo.modules.SolaraHosted.kinds();`);
     const owned = await run(`return globalThis.expo.modules.SolaraWindowShell.nativeLayout?.("w1") ?? false;`);
     assert.equal(kinds.includes("topStrip"), native && !owned, `legacy topStrip factory admission: ${kinds}`);

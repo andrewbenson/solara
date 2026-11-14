@@ -100,3 +100,13 @@ test("native intrinsic widths reject late RN measurements and unchanged publicat
   layout.dropNativeWindowAnchors("native-width");
   assert.equal(measured.useWidths.getState()["window-strip|native-width"], undefined);
 });
+
+test("native peek popover rectangles replace and retire with their window batch", async () => {
+  const layout = await import("./windowLayout.ts");
+  layout.applyNativeWindowAnchors({ ...batch(1, 1), windowId: "peek-room", anchors: { content: [8, 6, 1264, 788], "peekPopover:zoom": [840, 8, 236, 0] } });
+  assert.deepEqual(layout.useNativePopoverAnchors.getState()["peek-room"], { zoom: [840, 8, 236, 0] });
+  layout.applyNativeWindowAnchors({ ...batch(1, 2), windowId: "peek-room" });
+  assert.deepEqual(layout.useNativePopoverAnchors.getState()["peek-room"], {});
+  layout.dropNativeWindowAnchors("peek-room");
+  assert.equal(layout.useNativePopoverAnchors.getState()["peek-room"], undefined);
+});

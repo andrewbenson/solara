@@ -245,6 +245,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
     _ window: NSWindow, id: String, frame: [Double]?, title: String, focus: Bool, smallSize: [Double]? = nil, smallPointer: NSPoint? = nil,
     behind: String? = nil
   ) {
+    defer { LeftEdgeWatcher.shared.registered(id) }
     window.title = title
     if let smallSize, frame == nil { placeSmall(window, size: smallSize, pointer: smallPointer) } else if frame != nil || !window.isVisible { place(window, frame: frame) }
     relayoutRoot(window)
@@ -544,6 +545,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
     observeDelegateNotifications(to)
     observeFrame(to)
     reportFrame(to)
+    LeftEdgeWatcher.shared.registered(id)
   }
 
   private func openAux(id: String, kind: String, title: String) {
@@ -574,6 +576,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
     if native == nil { keepContentSizedAcrossReloads(id: id, root: root) }
     relayoutRoot(window)
     window.makeKeyAndOrderFront(nil)
+    LeftEdgeWatcher.shared.registered(id)
   }
 
   private func configureSmall(_ window: NSWindow) {
@@ -645,6 +648,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
   }
 
   func close(id: String) {
+    LeftEdgeWatcher.shared.watch(id: id, on: false, hold: 0)
     closingIntents.remove(id)
     revealRetained(id: id)
     privateIds.remove(id)
@@ -716,6 +720,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
 
   func windowWillClose(_ notification: Notification) {
     guard let window = notification.object as? NSWindow, let id = id(of: window) else { return }
+    LeftEdgeWatcher.shared.watch(id: id, on: false, hold: 0)
     closingIntents.remove(id)
     revealRetained(id: id)
     privateIds.remove(id)

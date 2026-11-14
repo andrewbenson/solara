@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { sidebarSession, assertSidebarPosition, assertSidebarTrafficLights } from "./sidebar-position-test.mjs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { launch, reporter, session, sleep } from "../../../scripts/lib/instance.mjs";
@@ -21,12 +22,12 @@ const shotsAt = args.indexOf("--shots");
 const shots = shotsAt >= 0 ? args[shotsAt + 1] : null;
 const scratch = mkdtempSync(join(tmpdir(), "ac-sidebar-rail-"));
 const rep = reporter(join(scratch, "sidebar-rail-test.log"), { name: "sidebar-rail-test" });
-const fixture = session({
+const fixture = session(sidebarSession({
   profiles: [{ id: "default", name: "Personal" }, { id: "work", name: "Work" }],
   windows: [{ id: "w1", frame: [80, 80, 1280, 800], activeTabIds: { default: "a" } }],
   tabs: [{ id: "a", url: "about:blank", title: "A" }, { id: "b", url: "about:blank", title: "B" }, { id: "c", url: "about:blank", title: "C" }],
   settings: { warnBeforeClosingLastTab: false, warnBeforeClosingWindow: false, sidebarWidth: 240 },
-});
+}));
 const HELPERS = `
 const C = globalThis.expo.modules.SolaraCEF;
 const H = globalThis.expo.modules.SolaraHosted;
@@ -54,6 +55,10 @@ const until = async (what, probe, ms = 6000) => {
 const column = () => run(`return col();`);
 const widthIs = (w) => until(`the native column at ${w} pt`, async () => {
   const c = await column();
+  if (c) {
+    await assertSidebarPosition(inst);
+    await assertSidebarTrafficLights(inst);
+  }
   return { ok: !!c && Math.round(c.frame[2]) === w, width: c?.frame?.[2] };
 });
 const toggle = () => run(`ac.runCommand({ command: "toggleSidebarIconsOnly", arg: null, windowId: "w1" }); return true;`);

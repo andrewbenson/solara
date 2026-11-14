@@ -1,8 +1,8 @@
 import AppKit
 
 public enum ShellWindowEdge {
-  public static func watch(_ id: String, hold: CGFloat?, over: @escaping (Bool) -> Void) {
-    LeftEdgeWatcher.shared.watch(id: id, on: hold != nil, hold: hold ?? 0, listener: hold != nil ? over : nil)
+  public static func watch(_ id: String, hold: CGFloat?, side: String = "left", over: @escaping (Bool) -> Void) {
+    LeftEdgeWatcher.shared.watch(id: id, on: hold != nil, hold: hold ?? 0, right: side == "right", listener: hold != nil ? over : nil)
   }
 
   public static func setLightsCenter(_ id: String, _ center: CGPoint?) {
@@ -21,6 +21,7 @@ final class LeftEdgeWatcher {
   }
   private var watched: [String: CGFloat] = [:]
   private var listeners: [String: (Bool) -> Void] = [:]
+  private var rightEdges: Set<String> = []
   private var over: Set<String> = []
   private var unreported: Set<String> = []
   private var localMonitor: Any?
@@ -39,13 +40,18 @@ final class LeftEdgeWatcher {
     .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged, .leftMouseUp, .rightMouseUp, .otherMouseUp,
   ]
 
-  func watch(id: String, on: Bool, hold: CGFloat, listener: ((Bool) -> Void)? = nil) {
+  func watch(id: String, on: Bool, hold: CGFloat, right: Bool = false, listener: ((Bool) -> Void)? = nil) {
     watched[id] = on ? max(0, hold) : nil
+    if on && right { rightEdges.insert(id) } else { rightEdges.remove(id) }
     listeners[id] = on ? listener : nil
     if on { unreported.insert(id) } else { over.remove(id) }
     if watched.isEmpty { return stop() }
     start()
     checkPointer()
+  }
+
+  func registered(_ id: String) {
+    if watched[id] != nil { checkPointer() }
   }
 
   func checkPointer() {
@@ -60,16 +66,20 @@ final class LeftEdgeWatcher {
     lazy var onDock = live && active && isOnDock(point)
     for (id, hold) in watched {
       guard let window = WindowManager.shared.windows[id] else {
-        watched[id] = nil
-        listeners[id] = nil
-        over.remove(id)
-        unreported.remove(id)
+        if listeners[id] == nil {
+          watched[id] = nil
+          rightEdges.remove(id)
+          over.remove(id)
+          unreported.remove(id)
+        }
         continue
       }
-      let inColumn = point.x < window.frame.minX + hold && window.screen?.frame.contains(point) == true
-      let now = active && (isOver(point, of: window, hold: hold, live: live)
+      let right = rightEdges.contains(id)
+      let distance = right ? window.frame.maxX - point.x : point.x - window.frame.minX
+      let inColumn = distance < hold && window.screen?.frame.contains(point) == true
+      let now = active && (isOver(point, of: window, hold: hold, right: right, live: live)
         || (inColumn && over.contains(id) && onDock)
-        || (inColumn && isOver(point, of: window, hold: hold, live: false) && onDock && isTopBeneathDock(point, of: window)))
+        || (inColumn && isOver(point, of: window, hold: hold, right: right, live: false) && onDock && isTopBeneathDock(point, of: window, right: right)))
       let fresh = unreported.remove(id) != nil
       guard fresh || now != over.contains(id) else { continue }
       if now { over.insert(id) } else { over.remove(id) }
@@ -84,18 +94,18 @@ final class LeftEdgeWatcher {
     updateGlobalMonitor()
   }
 
-  private func isOver(_ point: NSPoint, of window: NSWindow, hold: CGFloat, live: Bool) -> Bool {
+  private func isOver(_ point: NSPoint, of window: NSWindow, hold: CGFloat, right: Bool, live: Bool) -> Bool {
     guard window.isVisible, !window.isMiniaturized, !window.styleMask.contains(.fullScreen), let screen = window.screen else { return false }
     let frame = window.frame
     guard point.y >= frame.minY, point.y < frame.maxY else { return false }
-    if point.x >= frame.minX, point.x < frame.minX + hold {
+    if WindowEdgeGeometry.inside(point, window: frame, hold: hold, right: right) {
       guard live else { return true }
       let hit = NSApp.window(withWindowNumber: Self.windowNumber(at: point))
       return hit === window || hit?.parent === window
     }
-    guard point.x < frame.minX, point.x >= max(screen.frame.minX, frame.minX - Self.reach) else { return false }
+    guard WindowEdgeGeometry.outside(point, window: frame, screen: screen.frame, reach: Self.reach, right: right) else { return false }
     guard live else { return true }
-    let edge = NSPoint(x: frame.minX + 1, y: point.y)
+    let edge = NSPoint(x: right ? frame.maxX - 1 : frame.minX + 1, y: point.y)
     guard Self.windowNumber(at: edge) == window.windowNumber else { return false }
     let under = Self.windowNumber(at: point)
     return under == window.windowNumber || NSApp.window(withWindowNumber: under) == nil
@@ -115,8 +125,8 @@ final class LeftEdgeWatcher {
     isDock(Self.windowNumber(at: point))
   }
 
-  private func isTopBeneathDock(_ point: NSPoint, of window: NSWindow) -> Bool {
-    let probe = NSPoint(x: max(point.x, window.frame.minX + 1), y: point.y)
+  private func isTopBeneathDock(_ point: NSPoint, of window: NSWindow, right: Bool) -> Bool {
+    let probe = NSPoint(x: right ? min(point.x, window.frame.maxX - 1) : max(point.x, window.frame.minX + 1), y: point.y)
     var number = Self.windowNumber(at: probe)
     while isDock(number) {
       let below = Self.windowNumber(at: probe, below: number)
@@ -202,6 +212,7 @@ final class LeftEdgeWatcher {
 
   func reset() {
     watched = [:]
+    rightEdges = []
     listeners = [:]
     over = []
     unreported = []

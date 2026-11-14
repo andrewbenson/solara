@@ -140,7 +140,7 @@ enum NativeSplitChrome {
     host.shell.mount(.splitChrome, view)
     let zone = SplitDropZone(windowId: windowId, chrome: view)
     zone.state = { NativeStoreHandle.store?.state }
-    zone.covered = { NativeSidebarDock.peekCovers(windowId, x: $0.x) }
+    zone.covered = { NativeSidebarDock.peekCovers(windowId, point: $0) }
     zone.onDrop = { tabId, target, side in
       let options: JSONObject = ["tabId": .string(tabId), "anchorTabId": .string(target), "side": .string(side.rawValue)]
       _ = try? NativeStoreHandle.store?.dispatch(Command("openSplitPane", [.string(windowId), .object(options)]), origin: .native)

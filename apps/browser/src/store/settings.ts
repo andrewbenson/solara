@@ -61,6 +61,7 @@ export type Settings = {
   videoUpscaling: boolean;
   sidebarMediaControls: boolean;
   hoverCardMemoryUsage: boolean;
+  sidebarPosition: "left" | "right";
   sidebarWidth: number;
   sidebarIconsOnly: boolean;
   showSidebarButton: boolean;
@@ -170,6 +171,7 @@ export const DEFAULT_SETTINGS: Settings = {
   videoUpscaling: true,
   sidebarMediaControls: true,
   hoverCardMemoryUsage: true,
+  sidebarPosition: "left",
   sidebarWidth: 190,
   sidebarIconsOnly: false,
   showSidebarButton: true,

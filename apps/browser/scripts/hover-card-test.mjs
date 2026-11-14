@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
+import { sidebarPosition, sidebarPositionSpecified, sidebarSession, assertSidebarPosition } from "./sidebar-position-test.mjs";
 import { isDeepStrictEqual } from "node:util";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -36,7 +37,7 @@ const app = await launch(resolve(appArg), {
   files: { "calendar-fixture.json": calendarFixture },
   env: { SOLARA_NATIVE_SHELL: "1", SOLARA_CALENDAR_FIXTURE: "1" },
   probe: true,
-  session: session({ profiles: ["Personal", "Work"], windows: [{ id: "w1", tabIds: ids, activeTabIds: { default: "t1" }, frame: [60, 60, 1200, 800] }], tabs }),
+  session: session(sidebarSession({ profiles: ["Personal", "Work"], windows: [{ id: "w1", tabIds: ids, activeTabIds: { default: "t1" }, frame: [60, 60, 1200, 800] }], tabs })),
   ready: "return !!ac.store",
 });
 let nativePollDeadline = 0;
@@ -113,6 +114,7 @@ const gone = (what) => until(`the card to leave on ${what}`, async () => (await 
 
 try {
   await sleep(3000);
+  await assertSidebarPosition(app);
 
   await rep.check("a card waits for the 500 ms hover intent, then shows natively with no RN card", async () => {
     const r = await row("t3");
@@ -126,6 +128,10 @@ try {
     });
     const c = await shown("t3");
     rep.say(`shown at ${c.frame.map(Math.round)}`);
+    if (sidebarPositionSpecified) {
+      const anchor = await row("t3");
+      assert.ok(sidebarPosition === "right" ? c.frame[0] + c.frame[2] <= anchor.x + 0.5 : c.frame[0] >= anchor.x + anchor.width - 0.5, `the native card attaches inward on ${sidebarPosition}: ${JSON.stringify({ card: c.frame, anchor })}`);
+    }
     assert.ok(c.inWindow && c.onScreen && c.opacity > 0.99, "on screen and opaque");
     assert.equal(await rnCards(), 0, "RN draws no Dia card of its own");
     assert.deepEqual(Object.keys(c.buttons).sort(), ["Bookmark", "Open in Split View", "Pin"]);

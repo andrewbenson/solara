@@ -303,7 +303,8 @@ public final class ToolbarView: NSView {
     content.frame = CGRect(x: 0, y: contentTop, width: bounds.width, height: bounds.height - contentTop)
     let px = { (v: CGFloat) in (v * scale).rounded() / scale }
     let top = px(ToolbarView.buttonTop)
-    let inset = CGFloat(state.leadingInset ?? 0) + rail * ShellMetrics.railToolbarLeadingInset
+    let reservation = windowShell?.trafficLightsLeadingInset(for: self) ?? 0
+    let inset = max(CGFloat(state.leadingInset ?? 0) + rail * ShellMetrics.railToolbarLeadingInset, reservation)
     let g = state.geometry
     let centers = [g.sidebarButton, g.back, g.forward, g.reload]
     let ids = ["sidebar", "back", "forward", "reload"]

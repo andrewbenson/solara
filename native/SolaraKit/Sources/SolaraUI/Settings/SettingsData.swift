@@ -20,6 +20,8 @@ public protocol SettingsStoreSource: AnyObject {
   func updateSettings(_ patch: JSONObject)
   var profiles: [SettingsProfile] { get }
   var topTabLayout: Bool { get }
+  var sidebarPositionAvailable: Bool { get }
+  func chooseSidebarPosition(_ position: String)
   func chooseTabLayout(_ layout: String)
   func fileSource(_ key: String) -> String?
   func fileSource(shortcut id: String) -> String?
@@ -27,6 +29,8 @@ public protocol SettingsStoreSource: AnyObject {
 }
 
 public extension SettingsStoreSource {
+  var sidebarPositionAvailable: Bool { false }
+  func chooseSidebarPosition(_ position: String) { updateSettings(["sidebarPosition": .string(position)]) }
   func fileSource(_ key: String) -> String? { nil }
   func fileSource(shortcut id: String) -> String? { nil }
   func fileTheme(profile id: String) -> String? { nil }

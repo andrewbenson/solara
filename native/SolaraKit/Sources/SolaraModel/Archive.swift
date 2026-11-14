@@ -307,6 +307,7 @@ public struct ClosedWindow: JSONConvertible {
   public var frame: [Double]?
   public var tabLayout: String?
   public var fullScreen: Double?
+  public var sidebarPosition: String?
   public var sidebarWidth: Double?
   public var sidebarIconsOnly: Bool?
   public var sidePanelWidth: Double?
@@ -332,12 +333,13 @@ public struct ClosedWindow: JSONConvertible {
   public init(json: JSONObject) throws {
     let f = Fields(json, known: ["kind", "id", "window", "tabs", "groups", "closedAt"])
     id = f.string("id")
-    let w = Fields(f.value("window")?.object ?? [:], known: ["profileId", "sidebarOpen", "frame", "tabLayout", "fullScreen", "sidebarWidth", "sidebarIconsOnly", "sidePanelWidth"])
+    let w = Fields(f.value("window")?.object ?? [:], known: ["profileId", "sidebarOpen", "frame", "tabLayout", "fullScreen", "sidebarPosition", "sidebarWidth", "sidebarIconsOnly", "sidePanelWidth"])
     profileId = w.string("profileId")
     sidebarOpen = w.bool("sidebarOpen")
     frame = w.optionalNumbers("frame")
     tabLayout = w.optionalString("tabLayout")
     fullScreen = w.optionalNumber("fullScreen")
+    sidebarPosition = w.optionalString("sidebarPosition").flatMap { ["left", "right"].contains($0) ? $0 : nil }
     sidebarWidth = w.optionalNumber("sidebarWidth")
     sidebarIconsOnly = w.optionalBool("sidebarIconsOnly")
     sidePanelWidth = w.optionalNumber("sidePanelWidth")
@@ -357,6 +359,7 @@ public struct ClosedWindow: JSONConvertible {
     w.set("sidebarOpen", sidebarOpen)
     w.optional("tabLayout", tabLayout)
     w.optional("fullScreen", fullScreen)
+    w.optional("sidebarPosition", sidebarPosition)
     w.optional("sidebarWidth", sidebarWidth)
     w.optional("sidebarIconsOnly", sidebarIconsOnly)
     w.optional("sidePanelWidth", sidePanelWidth)
@@ -656,6 +659,7 @@ extension ClosedWindow {
   public mutating func keepPresentation(of window: BrowserWindow) {
     tabLayout = window.tabLayout
     fullScreen = window.fullScreen
+    sidebarPosition = window.sidebarPosition
     sidebarWidth = window.sidebarWidth
     sidebarIconsOnly = window.sidebarIconsOnly
     sidePanelWidth = window.sidePanelWidth

@@ -39,8 +39,9 @@ export function lightsCenter(offset: number, down = 0, base: readonly [number, n
 
 export const cardLeft = (dock: number, width: number, inset: number) => inset + (width - inset) * dock;
 
-type DockMotion = { moving: Record<string, true>; peeks: Record<string, number> };
-export const useDockMotion = create<DockMotion>()(() => ({ moving: {}, peeks: {} }));
+type PeekRect = readonly [number, number, number, number];
+type DockMotion = { moving: Record<string, true>; peeks: Record<string, number>; coverage: Record<string, PeekRect> };
+export const useDockMotion = create<DockMotion>()(() => ({ moving: {}, peeks: {}, coverage: {} }));
 
 export const dockMoving = (windowId: string) => !!useDockMotion.getState().moving[windowId];
 
@@ -53,14 +54,21 @@ export function setDockMoving(windowId: string, moving: boolean) {
   });
 }
 
-export function setPeekShown(windowId: string, shown: boolean, rightEdge = 0) {
-  const current = useDockMotion.getState().peeks;
-  if (shown ? current[windowId] === rightEdge : !(windowId in current)) return;
-  const { [windowId]: _, ...rest } = current;
-  useDockMotion.setState({ peeks: shown ? { ...current, [windowId]: rightEdge } : rest });
+export function setPeekShown(windowId: string, shown: boolean, rightEdge = 0, rect?: PeekRect) {
+  const state = useDockMotion.getState();
+  const previous = state.coverage[windowId];
+  const sameRect = rect === previous || !!rect && !!previous && rect.every((n, i) => n === previous[i]);
+  if ((shown ? state.peeks[windowId] === rightEdge : !(windowId in state.peeks)) && sameRect) return;
+  const { [windowId]: _, ...rest } = state.peeks;
+  const { [windowId]: __, ...coverage } = state.coverage;
+  useDockMotion.setState({ peeks: shown ? { ...rest, [windowId]: rightEdge } : rest, coverage: shown && rect ? { ...coverage, [windowId]: rect } : coverage });
 }
 export const peekShown = (windowId: string) => windowId in useDockMotion.getState().peeks;
-export const overPeek = (windowId: string, x: number) => x < (useDockMotion.getState().peeks[windowId] ?? -Infinity);
+export const overPeek = (windowId: string, x: number, y?: number) => {
+  const { peeks, coverage } = useDockMotion.getState();
+  const rect = coverage[windowId];
+  return rect ? x >= rect[0] && x < rect[0] + rect[2] && y !== undefined && y >= rect[1] && y < rect[1] + rect[3] : x < (peeks[windowId] ?? -Infinity);
+};
 export const usePeekEdge = (windowId: string): number | undefined => useDockMotion((m) => m.peeks[windowId]);
 export const devPeeks: Record<string, { show(): void; hide(): void; live?: boolean; trace?(): void; samples?(): number[][] | Promise<number[][]>; pin?(value: number): void }> = {};
 

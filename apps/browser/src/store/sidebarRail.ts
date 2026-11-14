@@ -1,5 +1,6 @@
 import { requireOptionalNativeModule } from "expo-modules-core";
 import { encodeCommand } from "@solara/store";
+import { windowNativeLayout } from "@solara/settings";
 import { useBrowser } from "./browser";
 import { nativeOwnsWorkspace, nativeWrite, writeState } from "./nativeStore";
 import { choose, type Settings } from "./settings";
@@ -63,4 +64,20 @@ export function toggleSidebarIconsOnly(windowId: string) {
 
 export function commitSidebarWidth(windowId: string, width: number, nativeShell = true) {
   return setWindowSidebar(windowId, { sidebarWidth: width, ...(nativeShell ? { sidebarIconsOnly: false } : {}) });
+}
+
+export function sidebarPositionSupported(windowId?: string): boolean {
+  const app = requireOptionalNativeModule<{ apiVersion?: number; sidebarPosition?: boolean }>("SolaraApp");
+  return app?.apiVersion === 50 && app.sidebarPosition === true && nativeOwnsWorkspace() && (windowId === undefined || windowNativeLayout(windowId));
+}
+
+export function sidebarPositionOf(window: Pick<BrowserWindow, "sidebarPosition"> | undefined, settings: Pick<Settings, "sidebarPosition" | "fileOwn">): "left" | "right" {
+  const value = settings.fileOwn?.covered.includes("sidebarPosition") ? settings.sidebarPosition : window?.sidebarPosition ?? settings.sidebarPosition;
+  return value === "right" ? "right" : "left";
+}
+
+export function setSidebarPosition(windowId: string | null, position: "left" | "right") {
+  if (position !== "left" && position !== "right") throw new Error("invalid sidebar position");
+  if (!sidebarPositionSupported(windowId ?? undefined)) return;
+  return nativeWrite(encodeCommand("setSidebarPosition", [windowId, position]));
 }

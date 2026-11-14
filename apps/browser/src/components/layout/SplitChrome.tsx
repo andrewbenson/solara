@@ -108,7 +108,7 @@ export function DropTargets({ panes, origin, windowId, native = false }: { panes
 
   const px = origin ? x - origin.x : -1;
   const py = origin ? y - origin.y : -1;
-  const overPage = !!origin && x >= 0 && !overPeek(windowId, x) && Object.values(panes).some((r) => px >= r.x && px <= r.x + r.width && py >= r.y && py <= r.y + r.height);
+  const overPage = !!origin && x >= 0 && !overPeek(windowId, x, y) && Object.values(panes).some((r) => px >= r.x && px <= r.x + r.width && py >= r.y && py <= r.y + r.height);
   const shown = !!dragging && !!origin && !full && !outside && candidates.length > 0 && (lifted ?? overPage);
   const [grown, setGrown] = useState(false);
   useEffect(() => {
@@ -133,7 +133,7 @@ export function DropTargets({ panes, origin, windowId, native = false }: { panes
     if (!dragging) return;
     const pageAt = (x: number, y: number) => {
       const { origin, panes } = resolver.current;
-      if (!origin || x < 0 || overPeek(windowId, x)) return null;
+      if (!origin || x < 0 || overPeek(windowId, x, y)) return null;
       const px = x - origin.x, py = y - origin.y;
       return Object.values(panes).some((r) => px >= r.x && px <= r.x + r.width && py >= r.y && py <= r.y + r.height) ? { px, py } : null;
     };

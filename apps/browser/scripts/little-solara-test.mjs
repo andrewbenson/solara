@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync } from "node:fs";
+import { sidebarSession, assertSidebarPosition } from "./sidebar-position-test.mjs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -33,11 +34,11 @@ const server = createServer((req, res) => {
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const url = (name) => `http://127.0.0.1:${server.address().port}/${name}`;
-const fixture = session({
+const fixture = session(sidebarSession({
   windows: [{ id: "w1", frame: [80, 80, 1280, 800], activeTabIds: { default: "a" } }],
   tabs: [{ id: "a", url: url("a"), title: "A" }],
   settings: { warnBeforeClosingLastTab: false, warnBeforeClosingWindow: false, searchSuggestions: false },
-});
+}));
 
 const HELPERS = `
 const C = globalThis.expo.modules.SolaraCEF;
@@ -85,6 +86,8 @@ try {
     data, fresh: true, session: fixture, onboarded: true, probe: true,
     ready: "return !!ac.store.getState().windows.w1",
   });
+
+  await assertSidebarPosition(app);
 
   await rep.check("opens", async () => {
     const before = await run(`return C.chromeWindows().then((ws) => ws.map((w) => w.window));`);

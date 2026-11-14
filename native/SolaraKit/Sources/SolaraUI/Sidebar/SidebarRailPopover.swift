@@ -185,7 +185,7 @@ final class SidebarRailPopover: NSObject, NSPopoverDelegate {
   func show(on row: RailIconView) {
     guard !closed, !popover.isShown, row.window != nil else { return }
     anchor = row
-    popover.show(relativeTo: row.body.convert(row.icon.frame, to: row), of: row, preferredEdge: .maxX)
+    popover.show(relativeTo: row.body.convert(row.icon.frame, to: row), of: row, preferredEdge: row.windowShell?.input.sidebarSide == .right ? .minX : .maxX)
     if let field { field.begin() } else {
       align()
       content.window?.makeFirstResponder(content)
@@ -197,7 +197,10 @@ final class SidebarRailPopover: NSObject, NSPopoverDelegate {
     content.layoutSubtreeIfNeeded()
     let icon = window.convertToScreen(row.body.convert(row.icon.frame, to: nil))
     let rect = panel.convertToScreen(content.convert(content.bounds, to: nil))
-    panel.setFrameOrigin(NSPoint(x: panel.frame.minX + icon.maxX + FolderPanelMetrics.inset - rect.minX, y: panel.frame.minY + icon.maxY - rect.maxY))
+    let right = row.windowShell?.input.sidebarSide == .right
+    let x = right ? panel.frame.minX + icon.minX - FolderPanelMetrics.inset - rect.maxX : panel.frame.minX + icon.maxX + FolderPanelMetrics.inset - rect.minX
+    let visible = window.screen?.visibleFrame ?? window.frame
+    panel.setFrameOrigin(NSPoint(x: max(visible.minX, min(x, visible.maxX - panel.frame.width)), y: max(visible.minY, min(panel.frame.minY + icon.maxY - rect.maxY, visible.maxY - panel.frame.height))))
   }
 
   func close(commitRename: Bool = true) {

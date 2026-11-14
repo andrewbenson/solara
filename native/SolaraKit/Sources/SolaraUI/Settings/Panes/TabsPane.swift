@@ -109,6 +109,15 @@ struct TabsPane: View {
           SettingToggle("tabs.showClearButton", key: "showClearButton")
           SettingToggle("tabs.balancedTopApps", key: "balancedTopApps")
         }
+        if store.sidebarPositionAvailable {
+          LabeledContent("Sidebar position") {
+            SettingPicker(
+              [SettingOption("left", "Left"), SettingOption("right", "Right")],
+              selection: Binding(get: { store.string("sidebarPosition") == "right" ? "right" : "left" }, set: { store.chooseSidebarPosition($0) })
+            )
+          }
+          .disabled(store.fileSource("sidebarPosition") != nil)
+        }
         SettingToggle("tabs.classicPinnedTabs", key: "classicPinnedTabs", inverted: true)
         SettingToggle("tabs.fadeUnloadedTabs", key: "fadeUnloadedTabs")
         SettingToggle("tabs.showUnreadBadges", key: "showUnreadBadges")

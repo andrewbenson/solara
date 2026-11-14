@@ -84,6 +84,7 @@ public enum ConfigCatalog {
     ("videoUpscaling", .bool),
     ("sidebarMediaControls", .bool),
     ("hoverCardMemoryUsage", .bool),
+    ("sidebarPosition", .choice(["left", "right"])),
     ("sidebarWidth", .number(min: 140, max: 600)),
     ("sidebarIconsOnly", .bool),
     ("showSidebarButton", .bool),

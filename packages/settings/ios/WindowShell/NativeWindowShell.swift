@@ -284,6 +284,10 @@ final class ShellHost {
     let f = shell.frames
     return [
       "bounds": rect(shell.bounds),
+      "trafficLights": [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].compactMap { kind -> [String: Any]? in
+        guard let button = shell.window?.standardWindowButton(kind) else { return nil }
+        return ["rect": rect(button.convert(button.bounds, to: shell)), "hidden": button.isHiddenOrHasHiddenAncestor]
+      },
       "nativeLayout": ownsNativeLayout,
       "nativeLayoutChrome": layoutChrome?.describe() ?? NSNull(),
       "layoutControllerSubscriptions": layoutController?.subscriptionCount ?? 0,
@@ -328,7 +332,7 @@ extension ShellHost {
     let updateHeight: CGFloat = update == nil ? 0 : shell.railFraction > 0 ? SidebarUpdatePillMetrics.railBand : SidebarUpdatePillMetrics.band
     guard let base = WindowLayoutInput(state: state, windowId: shell.windowId, windowGeneration: windowGeneration,
       storeRevision: layoutRevision, bounds: shell.bounds, backingScale: window.backingScaleFactor, presentation: shell.input,
-      sidebarUpdateHeight: updateHeight) else { return nil }
+      sidebarUpdateHeight: updateHeight, sidebarPositionAllowed: ownsNativeLayout) else { return nil }
     let ids = base.split?.tabIds ?? base.selectedTabId.map { [$0] } ?? []
     let store = NativeStoreHandle.store
     var facts: [String: WindowLayoutPageFacts] = [:]
@@ -347,7 +351,7 @@ extension ShellHost {
     }
     return WindowLayoutInput(state: state, windowId: shell.windowId, windowGeneration: windowGeneration,
       storeRevision: layoutRevision, bounds: shell.bounds, backingScale: window.backingScaleFactor, presentation: shell.input,
-      sidebarUpdateHeight: updateHeight, pageFacts: facts)
+      sidebarUpdateHeight: updateHeight, sidebarPositionAllowed: ownsNativeLayout, pageFacts: facts)
   }
 
   private func refreshLayoutProjection() {
@@ -483,7 +487,7 @@ extension ShellHost {
     }
     func optional(_ rect: CGRect?) -> Any { rect.map(Self.layoutRect) ?? NSNull() }
     return ["windowGeneration": windowGeneration, "generation": snapshot.generation, "storeRevision": input.storeRevision,
-      "latestStoreRevision": layoutRevision, "backingScale": input.backingScale, "bounds": Self.layoutRect(input.bounds),
+      "latestStoreRevision": layoutRevision, "sidebarPosition": input.layout.sidebarSide.rawValue, "backingScale": input.backingScale, "bounds": Self.layoutRect(input.bounds),
       "card": Self.layoutRect(snapshot.frames.card), "content": Self.layoutRect(snapshot.content), "sidebar": optional(expected["sidebar"]), "topStrip": optional(snapshot.frames.topStrip),
       "sidebarHeader": optional(snapshot.sidebarHeader), "sidebarFooter": optional(snapshot.sidebarFooter),
       "stripAvailableWidth": snapshot.stripAvailableWidth, "panes": snapshot.panes.mapValues(Self.layoutRect),

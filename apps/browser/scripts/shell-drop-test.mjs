@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
+import { sidebarPosition, sidebarPositionSpecified, sidebarSession, assertSidebarPosition } from "./sidebar-position-test.mjs";
 import { isDeepStrictEqual } from "node:util";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { launch, reporter, sleep } from "../../../scripts/lib/instance.mjs";
+import { launch, reporter, session, sleep } from "../../../scripts/lib/instance.mjs";
 
 const args = process.argv.slice(2);
 const appArg = args.find((a) => !a.startsWith("--"));
@@ -21,7 +22,7 @@ const WEB = /RenderWidgetHostViewCocoa|WebContentsViewCocoa|SolaraCoreWebView/;
 const PAGE = "data:text/html,<body style='height:2000px'>drop here</body>";
 
 async function open(env, dir) {
-  const app = await launch(resolve(appArg), { data: join(scratch, dir), onboarded: true, env });
+  const app = await launch(resolve(appArg), { ...(sidebarPositionSpecified ? { session: session(sidebarSession({})) } : {}), data: join(scratch, dir), onboarded: true, env });
   let nativePollDeadline = 0;
   const read = (body) => {
     if (nativePollDeadline && nativePollDeadline - Date.now() < 1000) throw new Error("native comparison has less than 1000 ms remaining");
@@ -53,6 +54,7 @@ async function open(env, dir) {
     }
     throw new Error(`${what}: native snapshot never matched (${JSON.stringify(last)})`);
   };
+  if (env.SOLARA_NATIVE_SHELL !== "0") await assertSidebarPosition(app, windowId);
   await untilSnapshot("Chrome window and selected tab", {}, (window) =>
     window?.chromeWindowNumber === win && window.selectedTabId === tab &&
     Math.abs(window.frame.width - w) <= 0.5 && Math.abs(window.frame.height - h) <= 0.5);
@@ -83,7 +85,19 @@ let rn = null;
 try {
   shell = await open({ SOLARA_NATIVE_SHELL: "1" }, "shell-data");
   const { w, h } = shell;
-  const page = [Math.round(w * 0.6), Math.round(h * 0.6)];
+  let pageFrame = { x: 0, y: 0, width: w, height: h };
+  const nativeLayout = await shell.read(`return globalThis.expo.modules.SolaraWindowShell.nativeLayout(${JSON.stringify(shell.windowId)});`);
+  if (nativeLayout) await shell.untilSnapshot("actual native page endpoint", { fields: ["windows.shell"] }, async (window) => {
+    const description = await shell.read(`return globalThis.expo.modules.SolaraWindowShell.describe(${JSON.stringify(shell.windowId)}).then(JSON.parse);`);
+    const actual = description?.layout?.actual?.["page:" + shell.tab];
+    const expected = description?.layout?.pages?.[shell.tab];
+    if (!window?.shell?.card?.every((value, index) => Math.abs(value - description.card[index]) <= 0.5)) return false;
+    if (!actual || !expected || actual[2] <= 0 || actual[3] <= 0) return false;
+    assert.ok(actual.every((value, index) => Math.abs(value - expected[index]) <= 0.5), "the actual page endpoint matches its native allocation");
+    pageFrame = { x: actual[0], y: actual[1], width: actual[2], height: actual[3] };
+    return true;
+  });
+  const page = [Math.round(pageFrame.x + pageFrame.width * 0.6), Math.round(pageFrame.y + pageFrame.height * 0.6)];
   const pageGoesToWeb = async (label, at = page) => {
     for (const type of TYPES) {
       const hit = await shell.target(at[0], at[1], type);
@@ -149,7 +163,9 @@ try {
 
   await rep.check("with the native hover card on screen, a drop on the page still reaches it", async () => {
     bare = await snapshot("without the card");
-    await shell.app.eval(`const w = ${JSON.stringify(windowId)}; ac.pages.setSidebarUi({ hover: { windowId: w, kind: "tab", id: ${JSON.stringify(shell.tab)}, anchor: { x: 10, y: 120, width: 240, height: 32 } } }); return true`);
+    const anchor = await shell.app.eval(`return globalThis.expo.modules.SolaraHosted.sidebarRowFrame(${JSON.stringify(windowId)}, "t:" + ${JSON.stringify(shell.tab)});`);
+    assert.ok(anchor && anchor.width > 0, "the card anchor is an actual native sidebar row");
+    await shell.app.eval(`const w = ${JSON.stringify(windowId)}; ac.pages.setSidebarUi({ hover: { windowId: w, kind: "tab", id: ${JSON.stringify(shell.tab)}, anchor: ${JSON.stringify(anchor)} } }); return true`);
     await sleep(800);
     const before = await cardOnScreen("before the drops");
     await pageGoesToWeb("with a hover card");
@@ -167,8 +183,90 @@ try {
     await sleep(2000);
     assert.ok((await shell.frameOf("SplitChromeView")).found, "the native split chrome shown");
     await shell.untilSnapshot("split chrome", {}, (window) => window?.split != null);
-    await pageGoesToWeb("left pane", [Math.round(w * 0.35), Math.round(h * 0.6)]);
-    await pageGoesToWeb("right pane", [Math.round(w * 0.8), Math.round(h * 0.6)]);
+    await pageGoesToWeb("left pane", [Math.round(pageFrame.x + pageFrame.width * 0.25), Math.round(h * 0.6)]);
+    await pageGoesToWeb("right pane", [Math.round(pageFrame.x + pageFrame.width * 0.75), Math.round(h * 0.6)]);
+  });
+  if (sidebarPositionSpecified && sidebarPosition === "right") await rep.check("right sidebar and right extension panel keep separate native frames and page drop targets", async () => {
+    await shell.app.eval(`const s = ac.store.getState(); for (const split of Object.values(s.splits)) s.separateSplit(split.id); return true;`);
+    await shell.untilSnapshot("one page before extension coexistence", {}, async (window) => {
+      const layout = await shell.read(`return globalThis.expo.modules.SolaraWindowShell.describe(${JSON.stringify(windowId)}).then(JSON.parse).then((shell) => shell.layout);`);
+      return layout && Object.keys(layout.panes).length === 1 && Object.keys(window?.split?.leaves ?? {}).length === 0;
+    });
+    const ext = join(scratch, "side-panel-extension");
+    cpSync(resolve(import.meta.dirname, "../../../packages/solaracore/scripts/fixtures/ext"), ext, { recursive: true });
+    const manifest = JSON.parse(readFileSync(join(ext, "manifest.json"), "utf8"));
+    delete manifest.content_scripts;
+    delete manifest.declarative_net_request;
+    manifest.name = "Right sidebar drop fixture";
+    manifest.permissions = ["sidePanel"];
+    writeFileSync(join(ext, "manifest.json"), JSON.stringify(manifest));
+    writeFileSync(join(ext, "panel.html"), "<!doctype html><title>Right panel</title><body>Right panel</body>");
+    const extension = await shell.app.eval(`return globalThis.expo.modules.SolaraExtensions.install(${JSON.stringify(ext)}, "");`);
+    assert.ok(extension?.id, "the scratch extension installs");
+    await shell.app.eval(`return ac.extensions.refreshExtensions("").then(() => ac.extensions.openSidePanel(${JSON.stringify(windowId)}, ${JSON.stringify(extension.id)}));`);
+    try {
+      let frames;
+      await shell.untilSnapshot("right sidebar beside the extension panel", { fields: ["windows.sidePanel", "windows.shell", "windows.sidebarShell"] }, async (window) => {
+        const panel = window?.sidePanel?.card?.frame;
+        const column = window?.sidebarShell?.frame;
+        const page = window?.shell?.card;
+        if (!panel || !column || !page || window.sidePanel.moving) return false;
+        assert.ok(panel[2] > 0 && page[2] > 0 && column[2] > 0, "all three native allocations have usable width");
+        assert.ok(panel[0] + panel[2] <= column[0] + 0.5, `the right panel stays inward from the sidebar: ${JSON.stringify({ panel, column })}`);
+        assert.ok(page[0] + page[2] <= panel[0] + 0.5, `the page stays inward from the panel: ${JSON.stringify({ panel, page })}`);
+        frames = { panel, column, page };
+        return true;
+      });
+      const leftPagePoint = [Math.round(frames.page[0] + frames.page[2] / 3), Math.round(frames.page[1] + frames.page[3] / 2)];
+      await pageGoesToWeb("with the right sidebar and extension panel", leftPagePoint);
+      const panelTargets = async () => {
+        const response = await fetch(`http://127.0.0.1:${shell.app.port}/json/list`, { signal: AbortSignal.timeout(1000) });
+        return (await response.json()).filter((target) => target.url.startsWith(`chrome-extension://${extension.id}/panel.html`)).map(({ id, url }) => ({ id, url }));
+      };
+      let identity;
+      for (const end = Date.now() + 5000; end - Date.now() >= 1000; await sleep(100)) {
+        identity = await panelTargets();
+        if (identity.length === 1) break;
+      }
+      assert.equal(identity?.length, 1, "the real extension panel has one Chromium target");
+      await shell.app.eval(`const s = ac.store.getState(); if (s.windows[${JSON.stringify(windowId)}].sidebarOpen) s.toggleSidebar(${JSON.stringify(windowId)}); return true;`);
+      await shell.untilSnapshot("right sidebar hidden beside the extension panel", { fields: ["windows.sidePanel"] }, async (window) => {
+        const state = await shell.read(`return globalThis.expo.modules.SolaraWindowShell.describe(${JSON.stringify(windowId)}).then(JSON.parse);`);
+        return state?.sidebarDock?.dock === 0 && !state.sidebarDock.moving && !state.sidebarDock.live && !!window?.sidePanel?.card;
+      });
+      await shell.app.eval(`return ac.shell.devLeftEdgePointer(${JSON.stringify(windowId)}, { x: ${w + 4}, y: 300 }).then(() => new Promise((resolve) => setTimeout(resolve, 250))).then(() => ac.shell.devLeftEdgePointer(${JSON.stringify(windowId)}, { x: ${w - 3}, y: 300 }));`);
+      let peek;
+      await shell.untilSnapshot("right peek overlaps the extension panel", { fields: ["windows.sidePanel", "windows.sidebarShell"] }, async (window) => {
+        const state = await shell.read(`return globalThis.expo.modules.SolaraWindowShell.describe(${JSON.stringify(windowId)}).then(JSON.parse);`);
+        const coverage = state?.sidebarDock?.coverage;
+        const panel = window?.sidePanel?.card?.frame;
+        if (!state?.sidebarDock?.live || state.sidebarDock.moving || Math.abs(state.sidebarDock.slide - 1) > 0.001 || !coverage || !panel) return false;
+        const overlaps = coverage[0] < panel[0] + panel[2] && panel[0] < coverage[0] + coverage[2] && coverage[1] < panel[1] + panel[3] && panel[1] < coverage[1] + coverage[3];
+        assert.ok(overlaps, `the actual right peek covers part of the extension panel: ${JSON.stringify({ coverage, panel })}`);
+        peek = { coverage, panel };
+        return true;
+      });
+      const peekRow = await shell.read(`return globalThis.expo.modules.SolaraHosted.sidebarRowFrame(${JSON.stringify(windowId)}, "t:" + ${JSON.stringify(shell.tab)});`);
+      assert.ok(peekRow?.width > 0 && peekRow.height > 0, "the actual peeking sidebar row has a visible frame");
+      const rowPoint = [Math.round(peekRow.x + peekRow.width / 2), Math.round(peekRow.y + peekRow.height / 2)];
+      assert.ok(rowPoint[0] >= peek.coverage[0] && rowPoint[0] < peek.coverage[0] + peek.coverage[2] && rowPoint[1] >= peek.coverage[1] && rowPoint[1] < peek.coverage[1] + peek.coverage[3], "the real row pointer lies in native peek coverage");
+      await shell.app.eval(`return ac.shell.devLeftEdgePointer(${JSON.stringify(windowId)}, { x: ${rowPoint[0]}, y: ${rowPoint[1]} });`);
+      for (const type of TYPES) {
+        const hit = await shell.target(rowPoint[0], rowPoint[1], type);
+        assert.match(String(hit.view), /SidebarShellColumn/, `the right peek takes ${type} above the page and extension panel: ${JSON.stringify(hit)}`);
+      }
+      await pageGoesToWeb("left page while the right peek covers the extension panel", leftPagePoint);
+      await shell.app.eval(`return ac.shell.devLeftEdgePointer(${JSON.stringify(windowId)}, { x: ${leftPagePoint[0]}, y: ${leftPagePoint[1]} });`);
+      await shell.untilSnapshot("dismissing the right peek keeps the extension panel", { fields: ["windows.sidePanel"] }, async (window) => {
+        const state = await shell.read(`return globalThis.expo.modules.SolaraWindowShell.describe(${JSON.stringify(windowId)}).then(JSON.parse);`);
+        return !state?.sidebarDock?.live && !state?.sidebarDock?.coverage && !!window?.sidePanel?.card && window.sidePanel.pages.some((page) => page.extensionId === extension.id && page.visible);
+      });
+      assert.deepEqual(await panelTargets(), identity, "dismissing the peek keeps the same extension-panel Chromium target");
+      return { ...frames, peek, rowPoint, panelIdentity: identity };
+    } finally {
+      await shell.app.eval(`return ac.shell.devLeftEdgePointer(${JSON.stringify(windowId)}, null);`).catch(() => {});
+      await shell.app.eval(`ac.extensions.closeSidePanel(${JSON.stringify(windowId)}); return true;`);
+    }
   });
   await shell.app.quit();
   shell = null;

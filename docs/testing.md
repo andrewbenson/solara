@@ -391,3 +391,29 @@ The profile-pager spring oracle uses release and notification-delivery timestamp
 start and sample times. A fresh `60f0488a` control reproduced its unchanged position-tolerance failure (7/8), then
 passed (8/8); peek-flick passed in both controls. Preserve the strict assertions and raw traces when recording this
 existing timing flake, and compare it separately from a missing swipe target or a changed spring response.
+
+
+## Layout port Patch 4: sidebar side
+
+The development native-layout path accepts `sidebarPosition: "left" | "right"` in Settings and an optional window
+field. Settings, View and the sidebar menu use the canonical `setSidebarPosition` command; a null window applies
+Settings to regular windows, while a window choice preserves other windows and changes the new-window default.
+Config-file ownership wins, and the preference remains local and unsynced. Native API 50 includes this capability.
+The legacy layout keeps left geometry even when the saved preference is right. Top tabs remember the side.
+
+Run the existing sidebar-chrome, sidebar-rail, shell-hover, tab-drag, shell-drop, top-strip, window-toolbar,
+little-solara, focus-hold, left-edge-active, hover-card and folder-panel drivers with
+`SOLARA_NATIVE_WINDOW_LAYOUT=1 SOLARA_TEST_SIDEBAR_POSITION=left`, then `right`.
+Use `top-strip-test --only=native` for this matrix. The optional side fixture checks actual native sidebar and
+traffic-light frames, inward resize sign, rectangular peek coverage and right extension-panel allocation.
+For legacy sidebar-chrome and window-toolbar use `SOLARA_NATIVE_WINDOW_LAYOUT=0`; add
+`SOLARA_TEST_SIDEBAR_POSITION=left SOLARA_TEST_SAVED_SIDEBAR_POSITION=right` to check that a remembered right
+preference cannot leak into legacy native anchors. Keep the UI-gate wait bounded and use an owned Metro/bundle.
+
+Focused Swift coverage is in `SidebarPositionTests`, `SidebarSideGeometryTests`, config and window-sidebar tests,
+and the shell's `WindowEdgeGeometryTests`. Run the unfiltered SolaraKit suite with `-Xswiftc -DSOLARA_PROBES`;
+rerun parallel-sensitive `CalendarPaneTests`, `SyncPaneModelTests`, `LiveFoldersPaneTests`,
+`BookmarkCatalogPageTests` and `BookmarkJournalWriterTests` with
+`--no-parallel` if they fail only in the unfiltered run. Matched visual captures, real Spaces, display/Dock edges,
+trackpad feel and VoiceOver traversal remain owner checks. Right placement is an Arc/Zen request; Dia remains the
+styling reference, not a measured reference for right-side placement.

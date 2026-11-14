@@ -60,6 +60,22 @@ public final class WindowShellView: NSView {
   private let railToolbarClip = FlippedContainerView()
 
   public var railFraction: CGFloat { input.railFraction }
+  public var sidebarPeekCoverage: CGRect? { input.peeking ? frames.sidebarCoverage(in: bounds) : nil }
+  public var trafficLightsLeadingInset: CGFloat { input.sidebarSide == .right && !input.topTabs && !input.fullscreen ? ShellMetrics.railToolbarLeadingInset : 0 }
+
+  public func trafficLightsLeadingInset(for view: NSView) -> CGFloat {
+    let at = view.convert(CGPoint.zero, to: self)
+    return at.x <= frames.card.minX + 0.5 && at.y <= frames.card.minY + 0.5 ? trafficLightsLeadingInset : 0
+  }
+
+  public func captionTop(in view: NSView, rect: CGRect? = nil) -> CGFloat {
+    guard input.sidebarSide == .right, input.addressBarInSidebar, !input.topTabs, !input.fullscreen else { return 0 }
+    let local = rect ?? view.bounds
+    let shellRect = view.convert(local, to: self)
+    guard shellRect.minX <= frames.card.minX + 0.5, shellRect.minY <= frames.card.minY + 0.5 else { return 0 }
+    return min(local.height, max(0, frames.card.minY + ShellMetrics.toolbarHeight - shellRect.minY))
+  }
+
   public var pageArea: CGRect { frames.page.offsetBy(dx: -frames.card.minX, dy: -frames.card.minY) }
   public var contentArea: CGRect { CGRect(x: pageArea.minX, y: 0, width: pageArea.width, height: frames.card.height) }
   public var widthMoving: Bool { widthMotion.moving }
@@ -643,9 +659,13 @@ public final class WindowShellView: NSView {
     let page = pageArea
     let top = min(max(cardPageFrame?.minY ?? page.minY, page.minY), page.maxY)
     let vertical = cardPageFrame ?? page
+    let caption = captionTop(in: card)
+    let requestedTop = railFraction > 0 ? top : vertical.minY
+    let actualTop = caption > 0 ? max(caption, requestedTop) : requestedTop
+    let bottom = railFraction > 0 ? page.maxY : vertical.maxY
     let frame = input.alignFrame(CGRect(
-      x: page.minX, y: railFraction > 0 ? top : vertical.minY, width: page.width,
-      height: railFraction > 0 ? page.maxY - top : vertical.height))
+      x: page.minX, y: actualTop, width: page.width,
+      height: max(0, bottom - actualTop)))
     if cardPage.frame != frame { cardPage.frame = frame }
     placeCardSurface()
     if railFraction > 0 { cardPage.wantsLayer = true }
@@ -671,7 +691,7 @@ public final class WindowShellView: NSView {
     }
     let local: CGRect
     if slot == .sidebar {
-      let parent: NSView = railFraction == 1 ? cardClip : self
+      let parent: NSView = railFraction == 1 && !(input.sidebarSide == .right && frames.sidePanel != nil) ? cardClip : self
       if view.superview !== parent {
         if parent === self {
           let above = stack.drop { $0 != slot }.dropFirst().compactMap { mounted[$0] }.first { $0.superview === self }

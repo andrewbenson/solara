@@ -1,6 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
 import ExpoModulesCore
+import React
 
 public struct OpenURLBatch: Sendable, Equatable {
   public var urls: [String]
@@ -374,7 +375,7 @@ public class ShellModule: Module {
         }
         WindowManager.shared.emit = { name, body in self?.sendEvent(name, body) }
         FocusHandoff.shared.install()
-        if let queue = self?.appContext?.reactBridge?.uiManager.methodQueue {
+        if let queue = RCTGetUIManagerQueue() {
           FocusHandoff.shared.afterPendingUI = { block in queue.async { DispatchQueue.main.async(execute: block) } }
         }
         LeftEdgeWatcher.shared.emit = { name, body in self?.sendEvent(name, body) }

@@ -31,6 +31,7 @@ import time
 
 
 HARNESSES = {
+    'personalize-host': 'host',
     'sad-tab-host': 'host',
     'selection-host': 'host',
     'swipe-host': 'host',

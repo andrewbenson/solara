@@ -46,7 +46,7 @@ struct ColorDot: View {
 
   var body: some View {
     let swatch = PreviewColor.color(color.swatch)
-    OnboardingPressable(action: action) { hovered, pressed in
+    PersonalizePressable(title: color.name, selected: selected, action: action) { hovered, pressed in
       let rest = size - (hovered ? 6 : 8)
       let inner = rest + (size - 12 - rest) * shown
       ZStack {
@@ -58,8 +58,6 @@ struct ColorDot: View {
       .contentShape(Circle())
     }
     .help(color.name)
-    .accessibilityLabel(color.name)
-    .accessibilityAddTraits(selected ? .isSelected : [])
     .onChange(of: selected) { _, on in withAnimation(.rn(160, .outQuad)) { shown = on ? 1 : 0 } }
   }
 }
@@ -74,7 +72,7 @@ public struct TabLayoutPicker: View {
   }
 
   public var body: some View {
-    HStack(spacing: 10) {
+    HStack(alignment: .top, spacing: 10) {
       LayoutButton(kind: "sidebar", title: "Sidebar", subtitle: "Tabs down the side", selected: layout == "sidebar") { if layout != "sidebar" { onPick("sidebar") } }
       LayoutButton(kind: "top", title: "Classic", subtitle: "Tabs along the top", selected: layout == "top") { if layout != "top" { onPick("top") } }
     }
@@ -93,10 +91,10 @@ struct LayoutButton: View {
 
   var body: some View {
     let colors = OnboardingColors.of(scheme)
-    OnboardingPressable(action: action) { hovered, pressed in
+    PersonalizePressable(title: title, selected: selected, action: action) { hovered, pressed in
       VStack(alignment: .leading, spacing: 10) {
         GeometryReader { proxy in
-          let inner = proxy.size.width - 10
+          let inner = proxy.size.width - 12
           let card = RoundedRectangle(cornerRadius: 4).fill(colors.card).overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(colors.previewBorder, lineWidth: 1))
           Group {
             if kind == "sidebar" {
@@ -122,7 +120,7 @@ struct LayoutButton: View {
               }
             }
           }
-          .padding(5)
+          .padding(6)
         }
         .frame(height: 64)
         .background(RoundedRectangle(cornerRadius: 7).fill(colors.preview))
@@ -133,17 +131,15 @@ struct LayoutButton: View {
             OnboardingText(title, size: 12.5, weight: 500, color: colors.title)
             OnboardingText(subtitle, size: 11, color: colors.rowSubtitle)
           }
-          Spacer(minLength: 0)
+          .frame(maxWidth: .infinity, alignment: .leading)
         }
       }
-      .padding(10)
+      .padding(selected ? 11.5 : 11)
       .background(RoundedRectangle(cornerRadius: 12).fill(hovered || selected ? colors.button : colors.row))
       .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(selected ? colors.title : colors.rowBorder, lineWidth: selected ? 1.5 : 1))
       .scaleEffect(pressed ? 0.98 : 1)
       .contentShape(Rectangle())
     }
     .frame(maxWidth: .infinity)
-    .accessibilityLabel(title)
-    .accessibilityAddTraits(selected ? .isSelected : [])
   }
 }

@@ -19,6 +19,7 @@ public class HostedModule: Module {
       HostedViews.declare(PanePrompts.kind)
       if NativeSidebarShell.enabled { HostedViews.declare(NativeSidebarShell.topic) }
       HostedViews.declare(NativeToolTour.kind)
+      HostedViews.declare(HostedPersonalize.kind)
       let sink = HostedSink(self)
       DispatchQueue.main.async {
         FrameUpdates.readOnMain {
@@ -27,10 +28,21 @@ public class HostedModule: Module {
           NativeStatusBubble.register(); NativeSidebar.register(); NativeDownloadMagnet.register(); NativeTabPickers.register()
           NativeSidebarIconPicker.register()
           NativeToolTour.register()
+          HostedPersonalize.register()
           if NativeBookmarksBar.enabled { NativeBookmarksBar.register() }
         }
       }
     }
+
+    #if DEBUG
+      AsyncFunction("devPersonalize") { (windowId: String, action: String, argument: String?) -> String in
+        FrameUpdates.readOnMain {
+          let value = HostedPersonalize.drive(windowId, action, argument)
+          let data = (try? JSONSerialization.data(withJSONObject: value)) ?? Data("{}".utf8)
+          return String(decoding: data, as: UTF8.self)
+        }
+      }.runOnQueue(.main)
+    #endif
 
     AsyncFunction("bookmarkScale") { (windowId: String, operation: String, value: String?) -> String in
       FrameUpdates.readOnMain {

@@ -3,9 +3,9 @@
 Release-path findings: `209d9238fde4ce41ee612fe2d99851ab69a177f3` on main (0.3.4), audited 2026-11-13.
 Source counts and deletion audit: `75ac3d0e` plus the cleanup below, audited 2026-11-14.
 
-Scope: 403 non-test `.ts`/`.tsx` files under `apps/browser/src`. Total: 55,060 lines.
+Scope: 401 non-test `.ts`/`.tsx` files under `apps/browser/src`. Total: 54,817 lines.
 Excluded: `*.test.*` and eight test doubles in `src/test-native/` (1,044 lines).
-Suffix filtering alone finds 411 files and 56,104 lines. The test doubles explain the difference.
+Suffix filtering alone finds 409 files and 55,861 lines. The test doubles explain the difference.
 The two `sync/fixtures/pinned-v0.2.*.ts` files remain included. They do not use test filenames.
 Counts use `wc -l` on every included file. They include blank lines and declarations.
 The original inventory is static. The targeted native-host ports below add unit and hidden-instance checks; they do not validate unrelated inventory rows.
@@ -14,7 +14,7 @@ Each file has one primary column. Mixed files name secondary columns in the appe
 The choice follows the file's dominant responsibility. Whole-file lines go to that column.
 The 2026-11-13 recount had 407 files / 55,533 lines. This cleanup removes five source files / 223 lines.
 Three already-landed glue files also needed refreshed row counts (net +1 line), yielding 402 files / 55,311 lines before the targeted native-host ports below.
-The targeted native-host ports now yield 403 files / 55,060 lines. Every total is derived from the current appendix rows; tests remain excluded.
+The targeted native-host ports now yield 401 files / 54,817 lines. Every total is derived from the current appendix rows; tests remain excluded.
 Unread badges, tab-number hints, config-file controls and hooks landed in Swift; they add no RN drawing files.
 
 An a count includes retained fallback drawing code. It is not a count of live release UI.
@@ -25,16 +25,16 @@ Theme resolution, ranking, geometry, and gesture thresholds count as behavior. T
 
 | Column | Primary responsibility | Files | Lines |
 | --- | --- | ---: | ---: |
-| a | Draws RN pixels | 46 | 10,325 |
-| b | Decides behavior | 219 | 27,013 |
+| a | Draws RN pixels | 43 | 10,018 |
+| b | Decides behavior | 220 | 27,077 |
 | c | Holds data | 75 | 13,369 |
 | d | Glue | 63 | 4,353 |
-| Total | All included files | 403 | 55,060 |
+| Total | All included files | 401 | 54,817 |
 
 ## Findings that set the order
 
-1. Targeted native hosts wired in this follow-up: sad-tab, selection, swipe, frozen-page. The appendix reclassifies their former drawing adapters.
-2. New Tab personalization and the due feedback check-in still draw RN pixels. Release postcards/pages retain RN bodies, but the 0.3.4 version has no matching notes entry. Little Solara card fill and unrelated fallback surfaces retain RN pixels; frozen-page snapshots/washes now use the native view. The component list below separates these from native-shadowed fallbacks.
+1. Targeted native hosts wired in this follow-up: sad-tab, selection, swipe, frozen-page and NTP Personalize. The appendix reclassifies their former drawing adapters.
+2. The due New Tab feedback check-in still draws RN pixels. Personalize uses a native host and the existing Swift onboarding pickers; its RN drawing helpers are deleted. Release postcards/pages retain RN bodies, but the 0.3.4 version has no matching notes entry. Little Solara card fill and unrelated fallback surfaces retain RN pixels; frozen-page snapshots/washes now use the native view. The component list below separates these from native-shadowed fallbacks.
 3. Bookmarks bar, bookmark dialogs, extension popup frames, install/pin sheets and side-panel containers now draw natively. Their JS bridges still decide actions and project state.
 4. Native controls still depend on JS actions, menus, focus, navigation, import, media, and window orchestration.
 5. Native workspace ownership is already the default. It does not remove JS sync, library reconciliation, caches, or migration work.
@@ -63,7 +63,7 @@ Native counterparts below prove that code exists. They do not establish complete
 
 All numbers are whole-file `wc -l` counts. Group membership follows the path, with layout files split by surface.
 The root `legacy.ts` is Bootstrap. Generic library helpers stay in Lib.
-`components/onboarding/personalize.tsx` and `ui.tsx` stay in Onboarding even though the live NTP reuses them.
+The NTP no longer imports RN onboarding drawing helpers; its Personalize adapter feeds the native host.
 
 | Group | Files | a lines | b lines | c lines | d lines | Total lines |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -76,11 +76,11 @@ The root `legacy.ts` is Bootstrap. Generic library helpers stay in Lib.
 | Top strip | 6 | 1,754 | 315 | 0 | 408 | 2,477 |
 | Toolbar | 9 | 1,123 | 297 | 0 | 331 | 1,751 |
 | Omnibox | 16 | 0 | 1,287 | 67 | 80 | 1,434 |
-| New Tab | 8 | 544 | 123 | 117 | 75 | 859 |
+| New Tab | 8 | 450 | 187 | 117 | 75 | 829 |
 | Bookmarks | 11 | 0 | 485 | 0 | 148 | 633 |
 | Profiles | 4 | 187 | 82 | 0 | 0 | 269 |
 | Settings | 17 | 311 | 1,039 | 693 | 130 | 2,173 |
-| Onboarding | 9 | 213 | 66 | 501 | 134 | 914 |
+| Onboarding | 7 | 0 | 66 | 501 | 134 | 701 |
 | Import | 3 | 0 | 365 | 101 | 0 | 466 |
 | Internal pages | 11 | 0 | 372 | 0 | 53 | 425 |
 | Downloads | 3 | 659 | 43 | 0 | 43 | 745 |
@@ -94,7 +94,7 @@ The root `legacy.ts` is Bootstrap. Generic library helpers stay in Lib.
 | Store | 49 | 0 | 5,579 | 2,920 | 176 | 8,675 |
 | Sync | 18 | 0 | 87 | 6,050 | 1 | 6,138 |
 | Lib | 76 | 0 | 6,177 | 2,060 | 323 | 8,560 |
-| Total | 403 | 10,325 | 27,013 | 13,369 | 4,353 | 55,060 |
+| Total | 401 | 10,018 | 27,077 | 13,369 | 4,353 | 54,817 |
 
 ## 0.4.0: components still drawing on native-default paths
 
@@ -112,7 +112,7 @@ Sizes are whole-file lines, including behavior and glue, not measured pixel code
 
 | Roadmap row | RN components and when they draw | Native counterpart already present | Missing for 0.4.0 |
 | --- | --- | --- | --- |
-| New Tab's Personalize, feedback check-in and release postcard | `C/ntp/Personalize.tsx` (94): `PersonalizeButton`, `PersonalizePanel`; `C/onboarding/personalize.tsx` (131): `ThemeColorPicker`, `ColorButton`, `TabLayoutPicker`, `LayoutButton`; `C/onboarding/ui.tsx` (82): `Radio`. Nonprivate NTP mounts the button; opening it draws text, swatches, rings, layout miniatures and radios. | `UI/Onboarding/OnboardingPersonalize` already implements native theme/layout pickers. `UI/NewTab/NewTabHeroView` and `Settings/NewTab/NativeNewTabView` replace only the hero. | A native NTP extras host, Personalize button/panel, picker integration, layout and motion. Native onboarding does not shadow these NTP consumers. |
+| New Tab's Personalize, feedback check-in and release postcard | `C/ntp/Personalize.tsx` (64) retains only open state, theme/profile/layout feeds and existing store actions. The RN panel, swatches, rings, layout miniatures and Radio helpers are deleted. | `UI/NewTab/PersonalizeView` and `Settings/NewTab/HostedPersonalize` host the button/panel and reuse `UI/Onboarding/OnboardingPersonalize` pickers. | Targeted Personalize port wired. Feedback check-in and release postcard/page remain below; JS actions and feeds remain for 0.5.0/0.7.0. |
 | Same New Tab row: feedback | `C/ntp/CheckInBanner.tsx` (109): `CheckInBanner`, `Card`, `CloseButton`. RN app image, text and button states when a nonprivate trial is at least seven days old and the check-in is not complete (`lib/defaultBrowserCheckIn.ts`). | Native `Surface`, `Symbol`, `VisualEffect` primitives only; no complete native check-in banner found. | Native banner, image/text/buttons and animation/placement. |
 | Same New Tab row: release notes, conditional content | `C/ntp/Postcard.tsx` (311): `ReleaseNotesPostcard`, `Tooltip`, `CloseButton`, `Artwork`, `ReleaseNotesPage`, `PageCloseButton`, `Stamp`. RN images/text/fills/borders/scrolling. Mounted by `C/ntp/index.tsx`, but **not queued by a clean 0.3.4 launch**: the catalog has only `1.0`, while the app is `0.3.4`. Matching saved pending notes or matching future version/content can activate it; postcard also needs at least 560×420 points. | Native startup release-note policy (`UI/Services/AppStartupPolicy`, `Settings/Services/NativeAppStartup`), plus native surface/backdrop primitives. No complete native postcard/page body found. | Port retained postcard/page/tooltip/artwork/stamp and motion. It has production consumers; lack of matching current content is not a dead-file proof. |
 | Native site controls and prompts | `C/site/SelectionPopover.tsx` (57): delay, selection geometry and search actions feed native views; RN `Bar`/`SearchButton` drawing is removed. | `UI/PaneOverlays/SelectionBarView`; `Settings/PaneOverlays/HostedSelectionBar` for Little Solara, no-shell and Peek; existing browser pane host retained. | Targeted selection port wired. JS behavior and feeds remain for 0.5.0/0.7.0. |
@@ -177,11 +177,11 @@ Brace lists name separate files. All listed native filenames end in `.swift` unl
 | Top strip | `UI/TopStrip/{TopStripView,StripPageView,StripControls,StripPeekView,StripDrag,StripContext,StripLayout}`; `Settings/TopStrip/{NativeTopStrip,NativeTopStripPeek}`; `Store/StripQuery` | Native default; 1,754-line RN strip remains behind capability checks. Move JS callbacks, group/folder menus, entry policy, and reorder policy. Verify cached registration timing before calling the fallback dead. |
 | Toolbar | `UI/Toolbar/{ToolbarView,ToolbarState,ToolbarUrlFieldView,SidebarAddressBarView}`; `UI/Find/FindBarView`; `UI/AutoHide/ToolbarAutoHide`; `UI/Panels/HistoryPanelView`; `Settings/{Toolbar/ToolbarModule,Find/FindBarModule,AutoHide/AutoHideModule}` | Native toolbar/find default. JS still builds button/state JSON, handles clicks, history, URL edits, translation, focus, replace, and visibility. RN toolbar/find/history bodies remain fallback. |
 | Omnibox | `UI/Omnibox/{OmniboxBarView,OmniboxPanelHostView}`; `UI/NewTab/{HeroBarModel,OmniboxCommandSources,OmniboxWorkspaceSources,OmniboxCommandCatalog}`; `Settings/Omnibox/{NativeOmniboxView,NativeOmniboxSources}` | Native fields/suggestions; JS still owns open/switch dispositions, action dispatch, clipboard menus, file chips, focus, and extension/action feeds. Workspace-tab feed is suppressed under native-source mode. |
-| New Tab | `UI/NewTab/{NewTabHeroView,HeroBarContent,HeroField,BarSurfaceView,NewTabLayout}`; `Settings/NewTab/{NativeNewTabView,NewTabModule}` | Hero is native-only. NTP extras remain live RN: personalization, feedback check-in, release postcard/page. Native onboarding already has theme/layout pickers (`UI/Onboarding/OnboardingPersonalize`), but no complete NTP extras host/panel/check-in/postcard exists. Wire those pickers into a native host; port the remaining bodies and motion. |
+| New Tab | `UI/NewTab/{NewTabHeroView,HeroBarContent,HeroField,BarSurfaceView,NewTabLayout}`; `Settings/NewTab/{NativeNewTabView,NewTabModule}` | Hero and Personalize are native-only. `Settings/NewTab/HostedPersonalize` hosts the native button/panel and existing Swift onboarding theme/layout pickers. Feedback check-in and release postcard/page retain RN bodies and motion. |
 | Bookmarks | `UI/Pages/{BookmarkFormView,BookmarksPageView}`; `Settings/Pages/PagesModule`; `Settings/NativeHistoryCatalog` | Dialogs are native. The bookmarks bar is native (`SolaraUI/BookmarksBar`, `Settings/BookmarksBar`); `NativeBookmarksBar.tsx` only feeds it state and runs its actions. JS retains edit/menu/undo routing and the display projection. NativeBookmarkCoordinator/BookmarkPump own durable edits, Chrome reconciliation and migration; `lib/bookmarks.ts` is now a subscription/reload bridge. |
 | Profiles | `UI/Pages/CreateProfileFormView`; `UI/Settings/Panes/{ProfilesPane,ProfileDetailsPane,ProfileSheets}`; `UI/Sidebar/SidebarChrome`; `Store/ProfileActions` | Create form is native. Indicator/dots are RN fallback when the full native column is unavailable. JS still selects profile defaults, dispatches creation, and supplies form data. |
 | Settings | `UI/Settings/{SettingsWindowView,SettingsNavigation,SettingsSearch,SettingsIndex}`; `UI/Settings/Panes/{GeneralPane,SyncPane,PrivacyPane,PasswordsPane,AutofillPane,ExtensionsPane,ThemeEditor}`; `Settings/{NativeSettingsWindow,SettingsJS,Adapters/SettingsAdapters}` | Native auxiliary window by default. JS topic/RPC server still services profiles, sync, import, privacy integration, password CSV, and resource caches. Extension/password/autofill CRUD already have direct native adapters. Only the nonvisual `useFormColors` hook serves normal native consumers; `Checkbox` is a prompt fallback and the other RN settings widgets have no production consumers. NTP uses onboarding pickers instead. |
-| Onboarding | `UI/Onboarding/{OnboardingOverlayView,OnboardingSteps,OnboardingPersonalize,OnboardingPairing,OnboardingSyncView}`; `UI/Tour/{ToolTourView,ToolTourModel}`; `Settings/Onboarding/{NativeOnboarding,OnboardingAdapter}`; `Settings/Tour/NativeToolTour` | Overlay and tour are native-only. Release enables first launch; Debug requires its onboarding flag (`OnboardingAdapter.swift:166`). JS still tracks sessions/tour, opens import, pins sites, and publishes context. RN personalization helpers remain live through NTP. |
+| Onboarding | `UI/Onboarding/{OnboardingOverlayView,OnboardingSteps,OnboardingPersonalize,OnboardingPairing,OnboardingSyncView}`; `UI/Tour/{ToolTourView,ToolTourModel}`; `Settings/Onboarding/{NativeOnboarding,OnboardingAdapter}`; `Settings/Tour/NativeToolTour` | Overlay and tour are native-only. Release enables first launch; Debug requires its onboarding flag (`OnboardingAdapter.swift:166`). JS still tracks sessions/tour, opens import, pins sites, and publishes context. The NTP reuses Swift personalization pickers; its RN personalization helpers are deleted. |
 | Import | `UI/Import/{ImportWindowView,ImportModel,ImportComponents,ImportData}`; `Settings/{NativeImportWindow,Adapters/ImportAdapter}`; `Store/Import` | Window pixels native. Adapter invokes JS discovery/unlock/run/cancel/Safari/HTML/Dia flows. Move application of imported workspace data, progress/error state, and coordination with import/engine services. |
 | Internal pages | `UI/Pages/{HistoryPageView,BookmarksPageView,DownloadsPageView,ClearDataDialogView}`; `Settings/{Pages/PagesModule,NativeHistoryCatalog}` | Native-only page wrappers. JS still handles navigation, deletion, confirmation, bookmark groups/import/Arc restore/undo, downloads commands, themes, and URL classification. |
 | Downloads | `UI/Downloads/{DownloadsListView,DownloadsPanelView,DownloadMagnetView}`; `Settings/Downloads/{DownloadsModule,NativeDownloadsPanel,NativeDownloadMagnet}` | Panel native in shell; list native when toolbar available. RN panel/rows remain fallback. JS still formats/feeds rows, routes menus/actions/open-when-done, measures placement, and triggers magnet state. |
@@ -425,7 +425,7 @@ Notes name secondary work and immediate deletion candidates. Whole-file lines re
 | `apps/browser/src/components/nativeHostProps.ts` | 85 | d | 0.7.0 | Native host JSON shapes |
 | `apps/browser/src/components/ntp/CheckInBanner.tsx` | 109 | a | 0.4.0 | Live RN feedback banner; also b timing |
 | `apps/browser/src/components/ntp/NativeNewTabHero.tsx` | 75 | d | 0.7.0 | Native hero host/feed; also b navigation callbacks |
-| `apps/browser/src/components/ntp/Personalize.tsx` | 94 | a | 0.4.0 | Live RN NTP personalization |
+| `apps/browser/src/components/ntp/Personalize.tsx` | 64 | b | 0.5.0 | Native Personalize open/actions; also d theme/profile/layout feeds |
 | `apps/browser/src/components/ntp/Postcard.tsx` | 311 | a | 0.4.0 | Conditional RN postcard/page; current 0.3.4 has no matching notes entry; also b motion |
 | `apps/browser/src/components/ntp/index.tsx` | 30 | a | 0.4.0 | Live RN NTP extras composition |
 | `apps/browser/src/components/ntp/newTabLayout.ts` | 21 | b | 0.5.0 | New Tab hero geometry |
@@ -447,13 +447,11 @@ Notes name secondary work and immediate deletion candidates. Whole-file lines re
 | `apps/browser/src/components/omnibox/workspaceSources.ts` | 101 | b | 0.5.0 | Workspace feed selection; also d |
 | `apps/browser/src/components/onboarding/OnboardingOverlay.tsx` | 20 | d | 0.7.0 | Native onboarding/tour placement |
 | `apps/browser/src/components/onboarding/index.ts` | 3 | d | 0.7.0 | Onboarding export facade |
-| `apps/browser/src/components/onboarding/personalize.tsx` | 131 | a | 0.4.0 | Live RN NTP layout/theme controls |
 | `apps/browser/src/components/onboarding/sites.ts` | 66 | b | 0.5.0 | Onboarding site/pin selection |
 | `apps/browser/src/components/onboarding/state.ts` | 397 | c | 0.6.0 | Onboarding document/session state; also b |
 | `apps/browser/src/components/onboarding/tour/ToolTour.tsx` | 64 | d | 0.7.0 | Native tour state/anchor feed |
 | `apps/browser/src/components/onboarding/tour/anchors.ts` | 47 | d | 0.7.0 | Native tour anchor feed |
 | `apps/browser/src/components/onboarding/tour/state.ts` | 104 | c | 0.6.0 | Tour progress store; also b |
-| `apps/browser/src/components/onboarding/ui.tsx` | 82 | a | 0.4.0 | Live RN NTP radio/colors |
 | `apps/browser/src/components/overlayGates.ts` | 11 | d | 0.7.0 | Overlay owner gate helper |
 | `apps/browser/src/components/pageEvents.ts` | 412 | b | 0.5.0 | Page-event handling/navigation; also c |
 | `apps/browser/src/components/pages/ClearDataDialog.tsx` | 35 | b | 0.5.0 | Clear-data native invocation |

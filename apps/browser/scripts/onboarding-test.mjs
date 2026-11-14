@@ -92,7 +92,7 @@ const untilSnapshot = async (what, accept, args = {}, ms = 5000) => {
 
 try {
   rep.log(`bundle: built by Metro on :${metroPort} in ${await warmBundle()} ms`);
-  app = await launch(appPath, { data, port, env: { SOLARA_ONBOARDING: "1", ...overlay, ...extraEnv } });
+  app = await launch(appPath, { data, port, probe: true, files: { "onboarding.json": JSON.stringify({ version: 1, startedAt: 1, step: "intro" }) }, env: { SOLARA_ONBOARDING: "1", ...overlay, ...extraEnv } });
   rep.log(`instance: pid ${app.pid}, DevTools port ${app.port}, data ${data}`);
   await app.ready({ test: "const S = globalThis.expo?.modules?.SolaraSettings; return S?.devOnboarding ? S.devOnboarding(\"state\").then((t) => JSON.parse(t).active === true) : false" }).catch(async (error) => {
     const state = await run("return S.devOnboarding ? S.devOnboarding(\"state\") : \"no devOnboarding\";").catch((e) => e.message);

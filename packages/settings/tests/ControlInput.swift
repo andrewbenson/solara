@@ -18,7 +18,7 @@ private final class FirstMouseControl: NSView {
 }
 
 @MainActor
-func verifyControlInput(_ view: NSView, labels: [String], present: () -> Void, count: () -> Int) async -> [String] {
+func verifyControlInput(_ view: NSView, labels: [String], present: () -> Void, count: () -> Int, traversalLabels: [String]? = nil) async -> [String] {
   let frontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier
   let panel = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
   panel.isReleasedWhenClosed = false
@@ -41,7 +41,7 @@ func verifyControlInput(_ view: NSView, labels: [String], present: () -> Void, c
     if !condition { failures.append(message) }
   }
   func find(_ label: String, in root: NSView) -> NSView? {
-    if root.accessibilityRole() == .button && root.accessibilityLabel() == label { return root }
+    if [.button, .radioButton].contains(root.accessibilityRole()) && root.accessibilityLabel() == label { return root }
     return root.subviews.lazy.compactMap { find(label, in: $0) }.first
   }
   let negative = FirstMouseControl(frame: CGRect(x: 760, y: 560, width: 40, height: 40))
@@ -66,7 +66,7 @@ func verifyControlInput(_ view: NSView, labels: [String], present: () -> Void, c
   expect(retainedFocusOnMount && retainedFocusOnPresentation, "mounting and presenting controls must preserve page focus")
   expect(!NSApp.isActive && !panel.isKeyWindow, "input fixture must remain an inactive window")
   panel.selectNextKeyView(nil)
-  expect(labels.contains((panel.firstResponder as? NSView)?.accessibilityLabel() ?? ""), "explicit key traversal must reach an overlay control")
+  expect((traversalLabels ?? labels).contains((panel.firstResponder as? NSView)?.accessibilityLabel() ?? ""), "explicit key traversal must reach an overlay control")
   panel.makeFirstResponder(page)
   for label in labels {
     guard let control = find(label, in: view) else {

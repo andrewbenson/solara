@@ -1,19 +1,20 @@
 # React Native removal inventory
 
-Snapshot: `209d9238fde4ce41ee612fe2d99851ab69a177f3` on main (0.3.4). Audited on 2026-11-13.
+Release-path findings: `209d9238fde4ce41ee612fe2d99851ab69a177f3` on main (0.3.4), audited 2026-11-13.
+Source counts and deletion audit: `75ac3d0e` plus the cleanup below, audited 2026-11-14.
 
-Scope: 407 non-test `.ts`/`.tsx` files under `apps/browser/src`. Total: 55,533 lines.
+Scope: 402 non-test `.ts`/`.tsx` files under `apps/browser/src`. Total: 55,311 lines.
 Excluded: `*.test.*` and eight test doubles in `src/test-native/` (1,044 lines).
-Suffix filtering alone finds 415 files and 56,577 lines. The test doubles explain the difference.
+Suffix filtering alone finds 410 files and 56,355 lines. The test doubles explain the difference.
 The two `sync/fixtures/pinned-v0.2.*.ts` files remain included. They do not use test filenames.
 Counts use `wc -l` on every included file. They include blank lines and declarations.
-No builds, launches, tests, dependency changes, or Git writes were run.
+This inventory has no runtime validation. The cleanup audit ran the affected unit tests; it made no dependency changes.
 
 Each file has one primary column. Mixed files name secondary columns in the appendix.
 The choice follows the file's dominant responsibility. Whole-file lines go to that column.
-The previous headline was 388 files / 54,494 lines. Its summary still included the deleted 442-line
-`components/bookmarks/BookmarksBar.tsx`, although its appendix no longer did. This recount derives every total
-from the current 407 appendix rows: 20 paths added to that 387-row appendix, including the native bar bridge.
+The 2026-11-13 recount had 407 files / 55,533 lines. This cleanup removes five source files / 223 lines.
+Three already-landed glue files also needed refreshed row counts (net +1 line), yielding 402 files / 55,311 lines.
+Every total is derived from the current appendix rows; tests remain excluded.
 Unread badges, tab-number hints, config-file controls and hooks landed in Swift; they add no RN drawing files.
 
 An a count includes retained fallback drawing code. It is not a count of live release UI.
@@ -24,11 +25,11 @@ Theme resolution, ranking, geometry, and gesture thresholds count as behavior. T
 
 | Column | Primary responsibility | Files | Lines |
 | --- | --- | ---: | ---: |
-| a | Draws RN pixels | 52 | 11,026 |
-| b | Decides behavior | 217 | 26,757 |
+| a | Draws RN pixels | 50 | 10,920 |
+| b | Decides behavior | 216 | 26,706 |
 | c | Holds data | 75 | 13,369 |
-| d | Glue | 63 | 4,381 |
-| Total | All included files | 407 | 55,533 |
+| d | Glue | 61 | 4,316 |
+| Total | All included files | 402 | 55,311 |
 
 ## Findings that set the order
 
@@ -38,7 +39,7 @@ Theme resolution, ranking, geometry, and gesture thresholds count as behavior. T
 4. Native workspace ownership is already the default. It does not remove JS sync, library reconciliation, caches, or migration work.
 5. A native window shell still wraps an RN main root. Browser pane roots add more RN roots. Native UI switches do not disable the RN runtime.
 
-These are source findings. Runtime reachability, visual parity, and root counts in an actual release are **unverified** because the task forbids launching or building.
+These are source findings. Runtime reachability, visual parity, and root counts in an actual release are **unverified** by this source inventory; its release-path findings remain the 2026-11-13 audit.
 Native counterparts below prove that code exists. They do not establish complete behavioral parity.
 
 ## Release lanes and ownership gates
@@ -66,18 +67,18 @@ The root `legacy.ts` is Bootstrap. Generic library helpers stay in Lib.
 | Group | Files | a lines | b lines | c lines | d lines | Total lines |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Bootstrap | 6 | 43 | 78 | 51 | 134 | 306 |
-| Shared UI | 8 | 409 | 0 | 0 | 170 | 579 |
+| Shared UI | 7 | 409 | 0 | 0 | 126 | 535 |
 | Window layout | 20 | 406 | 1,669 | 11 | 193 | 2,279 |
 | Page hosting | 14 | 456 | 1,494 | 321 | 256 | 2,527 |
 | Split panes | 9 | 461 | 315 | 23 | 171 | 970 |
-| Sidebar | 38 | 1,160 | 2,348 | 31 | 1,036 | 4,575 |
-| Top strip | 6 | 1,754 | 315 | 0 | 414 | 2,483 |
+| Sidebar | 38 | 1,160 | 2,348 | 31 | 1,027 | 4,566 |
+| Top strip | 6 | 1,754 | 315 | 0 | 408 | 2,477 |
 | Toolbar | 9 | 1,123 | 297 | 0 | 331 | 1,751 |
 | Omnibox | 16 | 0 | 1,287 | 67 | 80 | 1,434 |
 | New Tab | 8 | 544 | 123 | 117 | 75 | 859 |
 | Bookmarks | 11 | 0 | 485 | 0 | 148 | 633 |
 | Profiles | 4 | 187 | 82 | 0 | 0 | 269 |
-| Settings | 18 | 311 | 1,039 | 693 | 136 | 2,179 |
+| Settings | 17 | 311 | 1,039 | 693 | 130 | 2,173 |
 | Onboarding | 9 | 213 | 66 | 501 | 134 | 914 |
 | Import | 3 | 0 | 365 | 101 | 0 | 466 |
 | Internal pages | 11 | 0 | 372 | 0 | 53 | 425 |
@@ -87,12 +88,12 @@ The root `legacy.ts` is Bootstrap. Generic library helpers stay in Lib.
 | Media | 13 | 55 | 700 | 240 | 121 | 1,116 |
 | Peek | 5 | 239 | 225 | 0 | 56 | 520 |
 | Little Solara | 3 | 129 | 324 | 0 | 0 | 453 |
-| Live cards | 6 | 383 | 244 | 0 | 33 | 660 |
-| Live services | 12 | 0 | 602 | 75 | 206 | 883 |
+| Live cards | 4 | 277 | 244 | 0 | 33 | 554 |
+| Live services | 11 | 0 | 551 | 75 | 206 | 832 |
 | Store | 49 | 0 | 5,579 | 2,920 | 176 | 8,675 |
 | Sync | 18 | 0 | 87 | 6,050 | 1 | 6,138 |
 | Lib | 76 | 0 | 6,177 | 2,060 | 323 | 8,560 |
-| Total | 407 | 11,026 | 26,757 | 13,369 | 4,381 | 55,533 |
+| Total | 402 | 10,920 | 26,706 | 13,369 | 4,316 | 55,311 |
 
 ## 0.4.0: components still drawing on native-default paths
 
@@ -188,7 +189,7 @@ Brace lists name separate files. All listed native filenames end in `.swift` unl
 | Media | `UI/Media/{SidebarPlayerView,HoverPlayerCardView,ShareBarView,SharePickerView,CastPickerView,CliControlPillView}`; `Settings/Media/{NativeMedia,MediaModule}` | Players/pickers/control bodies native. JS still owns session/artwork replicas, source filtering/thumbnails, share/cast selection, playback/mute/PiP/dismiss actions, and share-bar layout animation. RN badge fills remain only in the retained React top-strip branch; unread and number badges have native views. The RN share-bar wrapper only animates/clips native content. |
 | Peek | `UI/Peek/{PeekOverlayView,PeekMotion}`; `Settings/WindowShell/NativePeek`; `Store/Peek` | Native peek when pooled; RN overlay otherwise (`ContentCard.tsx:351`). JS still publishes state and routes close/expand/hold/pinch. Move supported fallback pixels and remaining lifecycle policy. |
 | Little Solara | `UI/LittleSolara/{LittleSolaraShellView,SmallBarView}`; `Settings/LittleSolara/NativeLittleSolara`; `Shell/Windows` | Native shell/bar wraps the main root. JS still composes content and command/download/extension overlays and handles open/expand/window targeting. This host does not start browser pane roots: its RN card fill, swipe destinations, selection-search bar and crash/unresponsive UI remain live. `SmallChrome` pixel helpers actually serve legacy Peek, not the native small bar. |
-| Live cards | `UI/Pages/{LiveCardsView,MeetingAlertFrameView}`; `UI/Sidebar/{SidebarLiveCard,SidebarMeetingCountdown}`; `Settings/Pages/MeetingAlertHost` | Calendar/alert card bodies native. RN live hover card is fallback when native hover kind is unavailable. JS still computes labels, join/related links, alerts, and placement. Standalone `MeetingCountdown` and `NextMeetingBadge` have no importer/consumer and are removable now. |
+| Live cards | `UI/Pages/{LiveCardsView,MeetingAlertFrameView}`; `UI/Sidebar/{SidebarLiveCard,SidebarMeetingCountdown}`; `Settings/Pages/MeetingAlertHost` | Calendar/alert card bodies native. RN live hover card is fallback when native hover kind is unavailable. JS still computes labels, join/related links, alerts, and placement. Standalone `MeetingCountdown` and `NextMeetingBadge` were deleted on 2026-11-14 after a repository-wide consumer check. |
 | Live services | `Live/{Engine,Commands,Documents,Accounts,CalendarEngine,MeetingGroups,Meetings,GitHub,Rows}`; `Settings/Live/{NativeLiveEngine,NativeLiveEffects}` | Fetch jobs, secrets/calendar and live persistence are native. JS replicas remain; auth tabs, item-to-tab reuse, group/autogroup, cleanup, and join/open routing still run. Do not describe the live JSON replica as a second durable writer. |
 | Store | `Store/{Store,Command,ChangeSet,StateJSON,Hydrate,SessionLoader,Tabs,Windows,Groups,Organize,Splits,PinMirror,PinShare,TabShare,TidyPins,TileFolders,PageReports}`; `packages/store/ios/{NativeStore,StoreModule,RNPageReports}.swift`; `Persistence/{Writer,SolaraDatabase,Importer}` | Native full ownership default. JS Zustand replica and revision guards remain. Wrapped workspace actions use native reducers; retained TS reducer bodies are largely fallback, while exported helpers can remain live. Remove unwrapped library/UI stores, replica consumers, and legacy migrations before deleting TS store code. |
 | Sync | `Sync/{Scope,Files,HLC,Order,Canon,StateDecode,EditJournal,StoreAdapters,HostedAdapters,PinnedAdapters,Extensions,LedgerPasswords,PasswordLedger}`; `Store/{SyncPinsCommand,SyncPinned,SyncPinnedApply}`; `packages/sync/ios/SyncModule.swift` | JS sync orchestrator remains live when sync is enabled. Native transport/crypto/pairing and native pin apply do not replace JS adapter selection, cycles, sync.json, metadata, recovery, or merging. Native `syncScope` exists in CLI use; app ownership is **unverified** because inspected app adapters import SolaraSyncAdapter, not the SolaraSync library. |
@@ -224,29 +225,37 @@ The skew code requests a settings-kind auxiliary; whether its RN error UI become
 The checked-in app uses Legacy RN: `Solara-macOS/Info.plist:127` and `macos/Podfile:10`; the Podfile permits an architecture override.
 Main-window close removes its root/controller. Explicit RN invalidation is evident for pane roots; main-root unmount timing is **unverified** because framework lifetime also applies.
 
-## Removable now and app-dead source
+## Removed source and retained app-dead source
 
-The following whole files have no importer, dynamic source consumer, test consumer or native entry registration.
-They are **removable now: 4 files / 172 lines**, still counted above until actually deleted.
+On 2026-11-14, the cleanup removed **4 unreferenced files / 172 lines** after checking repository-wide imports,
+reexports, dynamic imports/requires, filename-based source loaders, tests, exported symbols and native registration.
+Historical perf census/ratchet names are measurements, not executable consumers. The AppRegistry entries remain main
+(normal/skew) and pane; Metro has no glob registration for these files.
 
-| Path under `apps/browser/src/` | Lines | Evidence |
+| Deleted path under `apps/browser/src/` | Lines | Evidence |
 | --- | ---: | --- |
 | `components/live/NextMeetingBadge.tsx` | 64 | No consumer for `NextMeetingBadge`; old perf census names are not executable consumers. |
-| `components/glass.tsx` | 60 | No consumer for `GlassFill`, `liquidGlass` or its exported constants. |
+| `components/glass.tsx` | 60 | No consumer for `GlassFill`, JS `liquidGlass` or its exported constants. |
 | `components/live/MeetingCountdown.tsx` | 42 | No consumer for `useMeetingCountdown` / `MeetingTimeLabel`; native sidebar countdown is separate. |
 | `components/settings/sheet.ts` | 6 | No consumer for `useSettingsSheet`, `showSettingsSheet`, `closeSettingsSheet`. |
+| `live/rows.ts` | 51 | Only consumer was `live/folderOptions.test.mjs`; its two cases tested only this dead helper. Deleted the 16-line test too; independent Swift folder-options coverage remains. |
 
-Another **4 files / 169 lines** have no app importer and are removable now **with their obsolete tests removed or
-migrated**: `sync/commandJournal.ts` (58; five `sync/redesign/step5-*.test.mjs` consumers), `live/rows.ts` (51;
-`live/folderOptions.test.mjs`), `components/omnibox/dropdownStart.ts` (47; its test reads/transpiles the source directly),
-and `lib/profileThemeActions.ts` (13; `sync/themePairing.test.mjs`). No source deletion is part of this doc patch.
+The fifth source deletion brings the total to **5 files / 223 lines**, plus **1 test / 16 lines** excluded from source
+budgets. The other **3 app-dead files / 118 lines** remain because deleting their consumers would remove active coverage:
+
+| Retained path under `apps/browser/src/` | Lines | Reason |
+| --- | ---: | --- |
+| `sync/commandJournal.ts` | 58 | Five step5 test files use this oracle alongside live native-store/sync-origin behavior. `step5-fallback` checks the fallback protocol; `step5-followups` checks sync tokens, transaction busy/retry, switch ordering and deferred effects. Preserve these tests until the oracle is migrated. |
+| `components/omnibox/dropdownStart.ts` | 47 | Its unit test reads/transpiles the source. `native/SolaraKit/Scripts/omnibox-idle-fixtures.mts:55` also hashes it for the native `idle-tabs.json` fixture; deleting it breaks fixture verification. |
+| `lib/profileThemeActions.ts` | 13 | The preset case in `sync/themePairing.test.mjs` tests late theme download/adoption and propagation to another Mac. The suite also covers live sync pairing, persistence and refused admission; it is not an obsolete helper-only test. |
+
 The unconsumed `NetworkBadge` export in `components/site/Autofill.tsx` is removable, but the file's `requestAutofill`
 function is live; do not delete the whole file.
 
 Do not infer deadness from an app-only import graph: `components/omnibox/knownHosts.ts` (30) is used by
 `scripts/perf/{micro-bench,suggest-hermes}.mjs` and tests; both pinned sync fixtures (691 lines) are test inputs and
 pinned by native `sources.json`; `react-native-macos.d.ts` (10) is an ambient declaration included by tsconfig.
-These explain the other four of twelve app-graph orphans (1,072 lines total), not additional safe deletions.
+Together with the three retained files above, these account for seven app-graph orphans (849 lines total), not additional safe deletions.
 The scan followed literal imports/reexports/require/dynamic import repository-wide, checked filename-based source
 loaders and exported-symbol references, and retained `index.js` / AppRegistry/native main/pane bootstrap entries.
 
@@ -264,11 +273,11 @@ Secondary work in a file moves with its own column: drawing inside a b or d file
 
 | Version | Leaves | Files | Lines | Largest groups (lines in that column) |
 | --- | --- | ---: | ---: | --- |
-| 0.4.0: React Native draws nothing | a, drawing | 52 | 11,026 | Site and prompts 2,121; Top strip 1,754; Sidebar 1,160; Toolbar 1,123; Downloads 659 |
-| 0.5.0: React Native decides nothing | b, behaviour | 217 | 26,757 | Lib 6,177; Store 5,579; Sidebar 2,348; Window layout 1,669; Page hosting 1,494 |
+| 0.4.0: React Native draws nothing | a, drawing | 50 | 10,920 | Site and prompts 2,121; Top strip 1,754; Sidebar 1,160; Toolbar 1,123; Downloads 659 |
+| 0.5.0: React Native decides nothing | b, behaviour | 216 | 26,706 | Lib 6,177; Store 5,579; Sidebar 2,348; Window layout 1,669; Page hosting 1,494 |
 | 0.6.0: the data layer is native | c, data | 75 | 13,369 | Sync 6,050; Store 2,920; Lib 2,060; Settings 693; Onboarding 501 |
-| 0.7.0: React Native off by default | d, glue, once nothing needs a root | 63 | 4,381 | Sidebar 1,036; Top strip 414; Toolbar 331; Lib 323; Page hosting 256 |
-| 1.0.0: React Native deleted | everything retained, plus the RN host, Expo modules, Metro, pods and patches outside apps/browser/src | 407 | 55,533 | see the 1.0.0 row below |
+| 0.7.0: React Native off by default | d, glue, once nothing needs a root | 61 | 4,316 | Sidebar 1,027; Top strip 408; Toolbar 331; Lib 323; Page hosting 256 |
+| 1.0.0: React Native deleted | everything retained, plus the RN host, Expo modules, Metro, pods and patches outside apps/browser/src | 402 | 55,311 | see the 1.0.0 row below |
 
 React Native roots left today: 3 AppRegistry registrations (`main`, `pane`, and the API-skew screen, which reuses `main`),
 so 2 module names; one `main` root per browser or Little Solara window, plus a `pane` root for each pane whose overlay
@@ -286,7 +295,7 @@ Each cell lists the largest dependencies first. These are proposed work boundari
 | 0.7.0: RN off by default | Remove mandatory `AppDelegate` main/pane root creation and `main.tsx` startup dependency. Give native app startup, window/menu binding, settings services, page props, and root handoff independent lifetimes. Default to no RN host/bridge; any compatibility switch must explicitly opt in. | Signed distribution starts, opens windows/tabs/settings, syncs, quits, and restores with no RN runtime or roots. UI switches being on is insufficient evidence. |
 | 1.0.0: RN deleted | Delete retained RN roots, JS UI/decision/data fallbacks, JSON/RPC topics, test doubles, and skew plumbing. Remove Expo/RN native bindings, package dependencies, Metro/bundle phases, Pod integration, RN patches, and tests/harnesses that require RN. Audit package TS wrappers beyond this appendix before deleting shared pure TS. | Dependency/source/build audit finds no RN/Expo host or required bundle. Native-only release and recovery acceptance pass. Preserve engine/native APIs still used by the app. |
 
-The 407-file appendix is not the full deletion boundary.
+The 402-file appendix is not the full deletion boundary.
 Outside it are `apps/browser/index.js`, macOS AppDelegate/Podfile/Xcode configuration, `packages/{settings,shell,solaracore}/src` wrappers, Expo module adapters, dependency manifests/locks, RN dependency patches, and build/test tooling.
 These need a separate dependency closure check before 1.0.0. No package deletion safety claim is made here.
 
@@ -341,14 +350,13 @@ Notes name secondary work and immediate deletion candidates. Whole-file lines re
 | `apps/browser/src/components/extensions/state.ts` | 361 | b | 0.5.0 | Extension install/configure/menu/popup lifecycle policy; also c replicas |
 | `apps/browser/src/components/extensions/store.ts` | 108 | c | 0.6.0 | Extension runtime/UI store and schema; also b selectors |
 | `apps/browser/src/components/extensions/webkitPill.ts` | 25 | b | 0.5.0 | Engine-specific extension button model/width policy |
-| `apps/browser/src/components/glass.tsx` | 60 | d | 0.7.0 | Removable now: no importer/consumer; native glass wrapper |
 | `apps/browser/src/components/import/apply.ts` | 351 | b | 0.5.0 | Import discovery/apply orchestration; also c |
 | `apps/browser/src/components/import/arcTheme.ts` | 101 | c | 0.6.0 | Imported Arc theme conversion |
 | `apps/browser/src/components/import/module.ts` | 14 | b | 0.5.0 | Import module capability gate |
 | `apps/browser/src/components/layout/HistoryPopover.tsx` | 163 | a | 0.4.0 | Fallback history rows; also b navigation |
 | `apps/browser/src/components/layout/NativeSplitToolbars.tsx` | 15 | d | 0.7.0 | Toolbar JSON/callback relay |
 | `apps/browser/src/components/layout/NativeStripControls.tsx` | 77 | d | 0.7.0 | Native controls/glow JSON feed |
-| `apps/browser/src/components/layout/NativeTopStrip.tsx` | 337 | d | 0.7.0 | Strip JSON feed; also b actions |
+| `apps/browser/src/components/layout/NativeTopStrip.tsx` | 331 | d | 0.7.0 | Strip JSON feed; also b actions |
 | `apps/browser/src/components/layout/PaneOverlays.tsx` | 84 | a | 0.4.0 | RN SadTab pixels live in Little Solara; native in browser shell; also d status host |
 | `apps/browser/src/components/layout/ProfileSwipe.tsx` | 113 | b | 0.5.0 | Profile swipe decisions; native tint placement |
 | `apps/browser/src/components/layout/ShellBackdrop.tsx` | 42 | d | 0.7.0 | Native backdrop placement/feed |
@@ -398,8 +406,6 @@ Notes name secondary work and immediate deletion candidates. Whole-file lines re
 | `apps/browser/src/components/live/CalendarPreview.tsx` | 123 | b | 0.5.0 | Calendar grouping/labels/join policy; also d native card feed |
 | `apps/browser/src/components/live/LiveItemCard.tsx` | 277 | a | 0.4.0 | Fallback live-card pixels; also b actions |
 | `apps/browser/src/components/live/MeetingAlert.tsx` | 121 | b | 0.5.0 | Alert placement/join policy; also d feed |
-| `apps/browser/src/components/live/MeetingCountdown.tsx` | 42 | a | 0.4.0 | Removable now: no importer/consumer; RN countdown label |
-| `apps/browser/src/components/live/NextMeetingBadge.tsx` | 64 | a | 0.4.0 | Removable now: no importer/consumer; RN badge/motion |
 | `apps/browser/src/components/live/colors.ts` | 33 | d | 0.7.0 | Live badge palette |
 | `apps/browser/src/components/media/CastPicker.tsx` | 92 | b | 0.5.0 | Cast target selection; also d host |
 | `apps/browser/src/components/media/HoverPlayer.tsx` | 59 | d | 0.7.0 | Native hover-player placement/feed |
@@ -414,7 +420,7 @@ Notes name secondary work and immediate deletion candidates. Whole-file lines re
 | `apps/browser/src/components/media/state.ts` | 189 | c | 0.6.0 | Media session and PiP stores |
 | `apps/browser/src/components/media/tokens.ts` | 1 | d | 0.7.0 | Media token re-export |
 | `apps/browser/src/components/nativeDownloadsPanel.ts` | 43 | d | 0.7.0 | Native download-panel state feed |
-| `apps/browser/src/components/nativeHostProps.ts` | 69 | d | 0.7.0 | Native host JSON shapes |
+| `apps/browser/src/components/nativeHostProps.ts` | 85 | d | 0.7.0 | Native host JSON shapes |
 | `apps/browser/src/components/ntp/CheckInBanner.tsx` | 109 | a | 0.4.0 | Live RN feedback banner; also b timing |
 | `apps/browser/src/components/ntp/NativeNewTabHero.tsx` | 75 | d | 0.7.0 | Native hero host/feed; also b navigation callbacks |
 | `apps/browser/src/components/ntp/Personalize.tsx` | 94 | a | 0.4.0 | Live RN NTP personalization |
@@ -426,7 +432,7 @@ Notes name secondary work and immediate deletion candidates. Whole-file lines re
 | `apps/browser/src/components/omnibox/actions.ts` | 141 | b | 0.5.0 | Command candidate eligibility/titles |
 | `apps/browser/src/components/omnibox/barState.ts` | 51 | b | 0.5.0 | Bar dismissal/focus policy; also c |
 | `apps/browser/src/components/omnibox/devDriver.ts` | 55 | b | 0.5.0 | Omnibox driver/trace hooks |
-| `apps/browser/src/components/omnibox/dropdownStart.ts` | 47 | b | 0.5.0 | App-dead; removable now with source-reading test cleanup; initial suggestion selection |
+| `apps/browser/src/components/omnibox/dropdownStart.ts` | 47 | b | 0.5.0 | App-dead; retained for source-reading tests and native idle-tabs fixture hash; initial suggestion selection |
 | `apps/browser/src/components/omnibox/extensions.ts` | 17 | c | 0.6.0 | Extension candidate projection |
 | `apps/browser/src/components/omnibox/knownHosts.ts` | 30 | c | 0.6.0 | Perf/test-only history host projection; micro-bench and suggest-hermes consumers remain |
 | `apps/browser/src/components/omnibox/nativeBar.tsx` | 207 | b | 0.5.0 | Open/action/menu decisions; also d feeds |
@@ -485,7 +491,6 @@ Notes name secondary work and immediate deletion candidates. Whole-file lines re
 | `apps/browser/src/components/settings/searchMatch.ts` | 135 | b | 0.5.0 | Settings query matching/ranking |
 | `apps/browser/src/components/settings/searchState.ts` | 30 | c | 0.6.0 | Settings search store |
 | `apps/browser/src/components/settings/settingsIndex.ts` | 573 | c | 0.6.0 | Settings search catalog |
-| `apps/browser/src/components/settings/sheet.ts` | 6 | d | 0.7.0 | Removable now: no importer/consumer; unused native sheet facade |
 | `apps/browser/src/components/settings/windows.ts` | 43 | b | 0.5.0 | Settings/import window routing |
 | `apps/browser/src/components/sidebar/AddressBar.tsx` | 256 | a | 0.4.0 | Fallback header pixels; also b/native model |
 | `apps/browser/src/components/sidebar/FolderPanel.tsx` | 83 | d | 0.7.0 | Native folder panel lifecycle |
@@ -493,7 +498,7 @@ Notes name secondary work and immediate deletion candidates. Whole-file lines re
 | `apps/browser/src/components/sidebar/GroupPanel.tsx` | 229 | a | 0.4.0 | Fallback group-search pixels; also b |
 | `apps/browser/src/components/sidebar/HoverCard.tsx` | 367 | a | 0.4.0 | Fallback hover pixels; also b native routing |
 | `apps/browser/src/components/sidebar/IconPicker.tsx` | 74 | b | 0.5.0 | Picker events; also d native host |
-| `apps/browser/src/components/sidebar/NativeSidebar.tsx` | 400 | d | 0.7.0 | Sidebar JSON feed; also b actions |
+| `apps/browser/src/components/sidebar/NativeSidebar.tsx` | 391 | d | 0.7.0 | Sidebar JSON feed; also b actions |
 | `apps/browser/src/components/sidebar/Overlays.tsx` | 26 | b | 0.5.0 | Overlay routing; also a child UI |
 | `apps/browser/src/components/sidebar/ResizeHandle.tsx` | 27 | b | 0.5.0 | Resize gesture decisions |
 | `apps/browser/src/components/sidebar/SearchTabs.tsx` | 81 | b | 0.5.0 | Search ranking; also d native feed |
@@ -603,7 +608,7 @@ Notes name secondary work and immediate deletion candidates. Whole-file lines re
 | `apps/browser/src/lib/profileData.ts` | 44 | c | 0.6.0 | Deleted-profile data cleanup |
 | `apps/browser/src/lib/profileLoading.ts` | 52 | b | 0.5.0 | Profile launch/page target selection |
 | `apps/browser/src/lib/profileTheme.ts` | 359 | b | 0.5.0 | Profile appearance selection/math; also c schema |
-| `apps/browser/src/lib/profileThemeActions.ts` | 13 | b | 0.5.0 | App-dead; removable now with themePairing test cleanup; theme choice helper |
+| `apps/browser/src/lib/profileThemeActions.ts` | 13 | b | 0.5.0 | App-dead; retained for live theme-pairing regression coverage; theme choice helper |
 | `apps/browser/src/lib/scriptUrls.ts` | 10 | b | 0.5.0 | JavaScript URL admission |
 | `apps/browser/src/lib/shortcuts.ts` | 115 | b | 0.5.0 | Shortcut parsing/conflict resolution |
 | `apps/browser/src/lib/signInCookies.ts` | 24 | c | 0.6.0 | Cookie transfer filtering |
@@ -631,7 +636,6 @@ Notes name secondary work and immediate deletion candidates. Whole-file lines re
 | `apps/browser/src/live/index.ts` | 9 | b | 0.5.0 | Starts auth/grouping/cleanup observers |
 | `apps/browser/src/live/meetingGroups.ts` | 120 | b | 0.5.0 | Meeting tab/group/autogroup decisions |
 | `apps/browser/src/live/meetings.ts` | 182 | b | 0.5.0 | Meeting URL/event/link matching |
-| `apps/browser/src/live/rows.ts` | 51 | b | 0.5.0 | App-dead; removable now with folderOptions test cleanup; live row construction |
 | `apps/browser/src/live/sources.ts` | 11 | b | 0.5.0 | Live source/icon fallback policy |
 | `apps/browser/src/live/store.ts` | 157 | d | 0.7.0 | Native live JSON replica/command facade |
 | `apps/browser/src/live/types.ts` | 75 | c | 0.6.0 | Live source/item data types |
@@ -688,7 +692,7 @@ Notes name secondary work and immediate deletion candidates. Whole-file lines re
 | `apps/browser/src/store/ui.ts` | 135 | b | 0.5.0 | Panel/focus/download behavior; also c |
 | `apps/browser/src/store/windows.ts` | 535 | b | 0.5.0 | Window lifecycle and restore rules; also c |
 | `apps/browser/src/sync/adapters.ts` | 772 | c | 0.6.0 | Settings/profile/library sync adapters |
-| `apps/browser/src/sync/commandJournal.ts` | 58 | c | 0.6.0 | App-dead; removable now with step5 test cleanup; command journal oracle |
+| `apps/browser/src/sync/commandJournal.ts` | 58 | c | 0.6.0 | App-dead; retained as live native-store/sync-origin test oracle |
 | `apps/browser/src/sync/editJournal.ts` | 121 | c | 0.6.0 | Durable edit journal |
 | `apps/browser/src/sync/engine.ts` | 2,397 | c | 0.6.0 | Sync orchestration/persistence; also b |
 | `apps/browser/src/sync/extensions.ts` | 110 | c | 0.6.0 | Extension sync reconciliation |

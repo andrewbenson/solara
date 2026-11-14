@@ -68,7 +68,7 @@ export function PermissionPrompt({ tabId, left, top }: { tabId: string; left: nu
     <PromptPopover key={request.id} width={300} top={top} left={left} modal={false}>
       {nativeToolbarAvailable() ? (
         <NativePromptBody
-          spec={{ icons, title: question, message: "Click the lock to change this any time", buttons: [{ id: "deny", title: "Don't Allow" }, { id: "accept", title: "Allow", primary: true }] }}
+          spec={{ inputProtectionKey: request.id, icons, title: question, message: "Click the lock to change this any time", buttons: [{ id: "deny", title: "Don't Allow" }, { id: "accept", title: "Allow", primary: true }] }}
           onButton={guard((id: string) => answerPermission(tabId, request.id, id as "deny" | "accept"))}
           onClose={guard(() => answerPermission(tabId, request.id, "dismiss"))}
         />

@@ -57,6 +57,7 @@ public struct PromptState: Decodable, Equatable, Sendable {
   public var goButtonText: String
   public var rows: [PromptRow]?
   public var rowsMore: String?
+  public var inputProtectionKey: String?
 
   public static func decode(_ json: String) -> PromptState? {
     guard let data = json.data(using: .utf8) else { return nil }
@@ -84,15 +85,28 @@ enum PromptMetrics {
 final class PromptPressable: HoverFillView {
   var fill: (Bool, Bool) -> CGColor? = { _, _ in nil }
   var onDoublePress: (() -> Void)?
+  var acceptsFirstClick = false
+  private var mouseDownEvent: NSEvent?
   override var acceptsFirstResponder: Bool { onPress != nil && !isHiddenOrHasHiddenAncestor }
   override var canBecomeKeyView: Bool { acceptsFirstResponder && super.canBecomeKeyView }
   override var focusRingMaskBounds: NSRect { bounds }
-  override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool { acceptsFirstClick }
   override func refresh() { layer?.backgroundColor = fill(hovered, pressed) }
+
+  override func hitTest(_ point: NSPoint) -> NSView? {
+    super.hitTest(point) == nil ? nil : self
+  }
 
   override func drawFocusRingMask() {
     NSColor.black.setFill()
     NSBezierPath(roundedRect: bounds, xRadius: layer?.cornerRadius ?? 0, yRadius: layer?.cornerRadius ?? 0).fill()
+  }
+
+  override func viewWillMove(toSuperview newSuperview: NSView?) {
+    mouseDownEvent = nil
+    pressed = false
+    refresh()
+    super.viewWillMove(toSuperview: newSuperview)
   }
 
   override func becomeFirstResponder() -> Bool {
@@ -103,6 +117,7 @@ final class PromptPressable: HoverFillView {
   }
 
   override func resignFirstResponder() -> Bool {
+    mouseDownEvent = nil
     pressed = false
     refresh()
     needsDisplay = true
@@ -118,6 +133,7 @@ final class PromptPressable: HoverFillView {
       return
     }
     guard [36, 49, 76].contains(event.keyCode) else { return super.keyDown(with: event) }
+    guard PromptInputProtection.allows(self, event: event) else { return }
     pressed = true
     refresh()
     if !event.isARepeat { onPress?() }
@@ -130,19 +146,38 @@ final class PromptPressable: HoverFillView {
   }
 
   override func accessibilityPerformPress() -> Bool {
-    guard acceptsFirstResponder, let onPress else { return false }
+    guard acceptsFirstResponder, let onPress, PromptInputProtection.allows(self) else { return false }
     onPress()
     return true
   }
 
+  override func mouseDown(with event: NSEvent) {
+    mouseDownEvent = nil
+    guard PromptInputProtection.allows(self, event: event) else {
+      pressed = false
+      refresh()
+      return
+    }
+    mouseDownEvent = event
+    super.mouseDown(with: event)
+  }
+
   override func mouseUp(with event: NSEvent) {
+    let wasPressed = pressed
+    defer { mouseDownEvent = nil }
+    guard let mouseDownEvent, PromptInputProtection.allows(self, event: mouseDownEvent), PromptInputProtection.allows(self, event: event) else {
+      pressed = false
+      refresh()
+      return
+    }
     super.mouseUp(with: event)
-    if event.clickCount == 2, bounds.contains(convert(event.locationInWindow, from: nil)) { onDoublePress?() }
+    if wasPressed, event.clickCount == 2, bounds.contains(convert(event.locationInWindow, from: nil)) { onDoublePress?() }
   }
 }
 
 @MainActor
-public final class PromptBodyView: NSView {
+public final class PromptBodyView: NSView, PromptInputProtectionOwner {
+  let inputProtection = PromptInputProtection()
   public var onEvent: (PromptEvent) -> Void = { _ in }
   public var onHeight: (CGFloat) -> Void = { _ in }
   private var state: PromptState?
@@ -157,7 +192,19 @@ public final class PromptBodyView: NSView {
 
   required init?(coder: NSCoder) { fatalError() }
 
+  public override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    inputProtection.attach(to: self)
+  }
+
+  public override func viewDidUnhide() {
+    super.viewDidUnhide()
+    inputProtection.shown()
+  }
+
   public func update(_ next: PromptState) {
+    if next.inputProtectionKey != state?.inputProtectionKey { inputProtection.shown() }
+    inputProtection.enabled = next.inputProtectionKey != nil
     state = next
     rebuild()
   }

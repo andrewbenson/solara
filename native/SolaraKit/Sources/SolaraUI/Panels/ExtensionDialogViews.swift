@@ -130,8 +130,26 @@ public class ExtensionDialogBody: NSView {
 }
 
 @MainActor
-public final class ExtensionInstallView: ExtensionDialogBody {
+public final class ExtensionInstallView: ExtensionDialogBody, PromptInputProtectionOwner {
+  let inputProtection = PromptInputProtection()
   private var state: ExtensionInstallState?
+
+  public override init(frame: NSRect) {
+    super.init(frame: frame)
+    inputProtection.enabled = true
+  }
+
+  required init?(coder: NSCoder) { fatalError() }
+
+  public override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    inputProtection.attach(to: self)
+  }
+
+  public override func viewDidUnhide() {
+    super.viewDidUnhide()
+    inputProtection.shown()
+  }
 
   public func update(_ next: ExtensionInstallState) {
     guard next != state else { return }

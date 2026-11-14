@@ -126,6 +126,7 @@ public final class SadTabView: NSView {
     text.maximumNumberOfLines = 1
     let textWidth = text.intrinsicContentSize.width
     let b = PromptPressable(frame: CGRect(x: 0, y: 0, width: textWidth + SadTabMetrics.buttonPadding * 2, height: SadTabMetrics.buttonHeight))
+    b.acceptsFirstClick = true
     b.wantsLayer = true
     b.layer?.cornerRadius = 8
     let dark = state.dark

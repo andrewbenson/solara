@@ -29,6 +29,7 @@ public final class SheetView: NSView {
   private var keys: Any?
   private var scrimAlpha: CGFloat = 0
   private var scrimPressed = false
+  private var scrimDownEvent: NSEvent?
 
   #if DEBUG
   public var devReduceMotion: Bool?
@@ -137,13 +138,15 @@ public final class SheetView: NSView {
   }
 
   public override func mouseDown(with event: NSEvent) {
-    scrimPressed = !cardFrame.contains(convert(event.locationInWindow, from: nil))
+    scrimPressed = allowsInput(event) && !cardFrame.contains(convert(event.locationInWindow, from: nil))
+    scrimDownEvent = scrimPressed ? event : nil
   }
 
   public override func mouseUp(with event: NSEvent) {
     let dismiss = scrimPressed && !cardFrame.contains(convert(event.locationInWindow, from: nil))
     scrimPressed = false
-    if dismiss { cancelOperation(nil) }
+    defer { scrimDownEvent = nil }
+    if dismiss, let scrimDownEvent, allowsInput(scrimDownEvent), allowsInput(event) { cancelOperation(nil) }
   }
 
   public override func rightMouseDown(with event: NSEvent) {}
@@ -153,10 +156,15 @@ public final class SheetView: NSView {
   public override func scrollWheel(with event: NSEvent) {}
 
   public override func cancelOperation(_ sender: Any?) {
-    if !busy { onDismiss() }
+    if !busy, allowsInput() { onDismiss() }
+  }
+
+  private func allowsInput(_ event: NSEvent? = nil) -> Bool {
+    (body as? PromptInputProtectionOwner)?.inputProtection.allows(event) ?? true
   }
 
   public override func keyDown(with event: NSEvent) {
+    if [36, 53, 76].contains(event.keyCode), !allowsInput(event) { return }
     switch event.keyCode {
     case 53: cancelOperation(nil)
     case 36, 76: if window?.firstResponder === card { onSubmit() }

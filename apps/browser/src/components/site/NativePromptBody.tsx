@@ -27,6 +27,7 @@ export type PromptDetail =
   | { kind: "note"; text: string };
 export type PromptSpec = {
   icons: string[];
+  inputProtectionKey?: string;
   image?: string | null;
   title: string;
   message?: string | null;
@@ -59,6 +60,7 @@ export function NativePromptBody({
   const state = JSON.stringify({
     popover: frame?.placement ?? null,
     icons: spec.icons,
+    inputProtectionKey: spec.inputProtectionKey,
     image: spec.image ?? null,
     title: spec.title,
     message: spec.message ?? null,

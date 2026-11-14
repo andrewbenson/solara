@@ -58,7 +58,8 @@ enum DeviceChooserMetrics {
 }
 
 @MainActor
-public final class DeviceChooserView: NSView {
+public final class DeviceChooserView: NSView, PromptInputProtectionOwner {
+  let inputProtection = PromptInputProtection()
   public var onEvent: (DeviceChooserEvent) -> Void = { _ in }
   public var onHeight: (CGFloat) -> Void = { _ in }
   private var state: DeviceChooserState?
@@ -72,6 +73,7 @@ public final class DeviceChooserView: NSView {
   public override init(frame: NSRect) {
     super.init(frame: frame)
     wantsLayer = true
+    inputProtection.enabled = true
     list.drawsBackground = false
     list.hasVerticalScroller = true
     list.autohidesScrollers = true
@@ -81,8 +83,19 @@ public final class DeviceChooserView: NSView {
 
   required init?(coder: NSCoder) { fatalError() }
 
+  public override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    inputProtection.attach(to: self)
+  }
+
+  public override func viewDidUnhide() {
+    super.viewDidUnhide()
+    inputProtection.shown()
+  }
+
   public func update(_ next: DeviceChooserState) {
     guard next != state else { return }
+    if next.id != state?.id { inputProtection.shown() }
     state = next
     rebuild()
   }
@@ -95,6 +108,7 @@ public final class DeviceChooserView: NSView {
 
   public override func keyDown(with event: NSEvent) {
     guard let s = state else { return super.keyDown(with: event) }
+    guard inputProtection.allows(event) else { return }
     switch event.keyCode {
     case 53: onEvent(.cancel)
     case 36, 76: if s.valid { onEvent(.choose(s.scanning ? nil : s.selected)) }

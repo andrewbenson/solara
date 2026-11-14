@@ -3775,10 +3775,12 @@ try {
         return answer;
       };
       const firstPrompt = await ask();
+      await sleep(650);
       const installHit = await clickScrim(firstPrompt.sheet);
       const scrimAnswer = await cancelled();
       const second = await ask();
       assert.notEqual(second.prompt.requestId, firstPrompt.prompt.requestId);
+      await sleep(650);
       const escape = await evalApp(`return ac.shell.devKeyEquivalent(${JSON.stringify(mainWindow)}, { key: "\\u001b", keyCode: 53, modifiers: [] })`);
       if (escape.error) throw new Error(escape.error);
       const escapeAnswer = await cancelled();

@@ -230,6 +230,7 @@ extension PanePromptSpecs {
       "popover": ["width": permissionWidth, "top": margin, "left": left, "modal": false],
       "icons": described.icons,
       "title": described.question,
+      "inputProtectionKey": request.id,
       "message": "Click the lock to change this any time",
       "details": [] as [Any],
       "buttons": [["id": "deny", "title": "Don't Allow"], ["id": "accept", "title": "Allow", "primary": true]],

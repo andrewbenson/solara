@@ -93,6 +93,7 @@ public final class SelectionBarView: NSView {
     overlay.layer?.cornerRadius = SelectionBarMetrics.radius
     overlay.layer?.cornerCurve = .continuous
     bar.addSubview(overlay)
+    button.acceptsFirstClick = true
     button.wantsLayer = true
     button.layer?.cornerRadius = SelectionBarMetrics.buttonRadius
     button.setAccessibilityRole(.button)

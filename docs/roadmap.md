@@ -222,7 +222,7 @@ Done when no React Native view appears on screen; React Native only arranges nat
 
 | Item | Status |
 |---|---|
-| `solara mcp`: an MCP server in the `solara` command for Claude Code, Codex and Cursor, over the existing control path (no new listener); read-only tools by default, acting tools behind `--allow-actions`, never `exec`; page text marked untrusted; `solara mcp install` (owner 2026-11-14, moved from 0.4.0) | built, parked for 0.4.1 |
+| `solara mcp`: an MCP server in the `solara` command for Claude Code, Codex and Cursor, over the existing control path (no new listener); read-only tools by default, acting tools behind `--allow-actions`, never `exec`; page text marked untrusted; `solara mcp install`; every tool carries MCP's standard annotations as Claude reads them (`title`, `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`), set per tool, with the sidebar editor split so deleting a group is its own destructive tool (owner 2026-11-14, moved from 0.4.0) | built, parked for 0.4.1; annotations to refine |
 | The `solara` command lists what's open: `solara profiles`, `solara windows`, and `solara tabs --window/--profile/--group/--asleep/--awake`; one tab ID across `tabs` and `sidebar` so commands chain (owner 2026-11-14) | drafting |
 | Everyday tab actions from the command line: `solara open URL [--window] [--profile] [--background]`, `solara tab activate/close/reload/duplicate/mute/sleep`, close duplicates, sleep tabs idle for a while; never brings Solara forward unless asked (owner 2026-11-14) | planned |
 | Search from the command line: `solara find` across open tabs, pins and recent history; `solara history` as a plain command (owner 2026-11-14) | planned |

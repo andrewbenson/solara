@@ -13,9 +13,9 @@ enum NativeProfilePager {
   static var hosts: [String: ProfilePagerHost] = [:]
   private(set) static var looks: [String: NSDictionary] = [:]
 
-  static func start(_ shell: WindowShellView) -> ProfilePagerHost? {
+  static func start(_ shell: WindowShellView, subscribeToStore: Bool = true) -> ProfilePagerHost? {
     guard NativeWindowShell.enabled, NativeTopStrip.enabled else { return nil }
-    let host = ProfilePagerHost(shell: shell)
+    let host = ProfilePagerHost(shell: shell, subscribeToStore: subscribeToStore)
     hosts[shell.windowId] = host
     return host
   }
@@ -93,6 +93,7 @@ final class ProfilePagerHost {
   private weak var shell: WindowShellView?
   let sidebarTarget = NativeSwipeTarget()
   let stripTarget = NativeSwipeTarget()
+  let peekTarget = NativeSwipeTarget()
   let tint = ProfileTintView()
   private var listener: Int?
   private let commits = ProfilePagerCommits()
@@ -106,11 +107,16 @@ final class ProfilePagerHost {
   private var swap: CFRunLoopObserver?
   private var stopped = false
 
-  init(shell: WindowShellView) {
+  init(shell: WindowShellView, subscribeToStore: Bool = true) {
     windowId = shell.windowId
     self.shell = shell
     let windowId = windowId
     stripTarget.measuredWidth = { CGFloat(NativeTopStrip.hosts[windowId]?.swipeWidth ?? 0) }
+    peekTarget.measuredWidth = { CGFloat(TopStripPeekHost.hosts[windowId]?.strip.swipeWidth ?? 0) }
+    peekTarget.isHidden = true
+    peekTarget.autoresizingMask = [.width, .height]
+    peekTarget.onSwipe = { [weak self] event in self?.swiped(event) }
+    peekTarget.onPagerState = { [weak self] event in self?.pagerChanged(event) }
     for target in [sidebarTarget, stripTarget] {
       target.isHidden = true
       target.autoresizingMask = []
@@ -124,7 +130,8 @@ final class ProfilePagerHost {
       [weak self] note in
       guard note.userInfo?["key"] as? String == windowId, let position = note.userInfo?["position"] as? Double else { return }
       MainActor.assumeIsolated {
-        self?.tint.position = position
+        guard let self, !self.stopped else { return }
+        self.tint.position = position
         NativeProfilePager.moved(windowId, position)
       }
     }
@@ -133,7 +140,7 @@ final class ProfilePagerHost {
       guard let profile = note.userInfo?["profile"] as? String else { return }
       MainActor.assumeIsolated { self?.neighbourLoaded(profile) }
     }
-    if let store = NativeStoreHandle.store {
+    if subscribeToStore, let store = NativeStoreHandle.store {
       let sink = commits
       listener = store.subscribe { commit in sink.receive(commit.state) }
       commit(store.state)
@@ -142,6 +149,7 @@ final class ProfilePagerHost {
   }
 
   func stop() {
+    guard !stopped else { return }
     stopped = true
     if let listener { NativeStoreHandle.store?.unsubscribe(listener) }
     listener = nil
@@ -153,14 +161,16 @@ final class ProfilePagerHost {
     swap = nil
     sidebarTarget.use(nil)
     stripTarget.use(nil)
+    peekTarget.use(nil)
     sidebarTarget.removeFromSuperview()
     stripTarget.removeFromSuperview()
+    peekTarget.removeFromSuperview()
     if shell?.view(in: .tint) === tint { shell?.mount(.tint, nil) }
     NativeProfilePager.ended(self)
   }
 
   func place() {
-    guard let shell else { return }
+    guard !stopped, let shell else { return }
     let frames = shell.frames
     let sidebar = frames.sidebar.map { $0.offsetBy(dx: frames.sidebarShift, dy: 0) }
     sidebarTarget.frame = sidebar ?? .zero
@@ -168,6 +178,13 @@ final class ProfilePagerHost {
     let live = window?.index != nil
     sidebarTarget.isHidden = !live || sidebar == nil
     stripTarget.isHidden = !live || frames.topStrip == nil
+    if NativeWindowShell.nativeLayoutActive(windowId), let peek = TopStripPeekHost.hosts[windowId], let content = peek.view.content {
+      if peekTarget.superview !== content { content.addSubview(peekTarget) }
+      peekTarget.frame = content.bounds
+      peekTarget.isHidden = !live || !peek.view.live
+    } else {
+      peekTarget.isHidden = true
+    }
     if let last = shell.subviews.last, last !== stripTarget {
       for target in [sidebarTarget, stripTarget] where target.superview === shell {
         shell.addSubview(target, positioned: .above, relativeTo: nil)
@@ -196,7 +213,7 @@ final class ProfilePagerHost {
 
   private func configure(_ w: PagerWindow, previous: PagerWindow?) {
     let multiple = w.order.count > 1
-    for target in [sidebarTarget, stripTarget] {
+    for target in [sidebarTarget, stripTarget, peekTarget] {
       target.canSwipeBack = (w.index ?? 0) > 0
       target.canSwipeForward = w.index.map { $0 < w.order.count - 1 } ?? false
       target.tracksUnavailableDirections = multiple
@@ -205,6 +222,7 @@ final class ProfilePagerHost {
     guard let index = w.index else {
       sidebarTarget.use(nil)
       stripTarget.use(nil)
+      peekTarget.use(nil)
       pager = nil
       return
     }
@@ -212,6 +230,7 @@ final class ProfilePagerHost {
     self.pager = pager
     sidebarTarget.use(pager)
     stripTarget.use(pager)
+    peekTarget.use(NativeWindowShell.nativeLayoutActive(windowId) ? pager : nil)
     pager.configure(selected: index, count: w.order.count, ack: ack, order: w.order.joined(separator: "\n"))
     guard let previous, previous.profileId != w.profileId, selectedProfile != w.profileId else { return }
     if pager.select(w.profileId, order: w.order.joined(separator: "\n")) { acknowledge() }
@@ -245,6 +264,7 @@ final class ProfilePagerHost {
   }
 
   private func swiped(_ event: [String: Any]) {
+    guard !stopped else { return }
     switch event["phase"] as? String {
     case "swipe": step(event["direction"] as? String == "back" ? -1 : 1)
     case "wheel": wheeled(event)
@@ -267,7 +287,7 @@ final class ProfilePagerHost {
   }
 
   private func step(_ delta: Int) {
-    guard let w = window, let index = w.index else { return }
+    guard !stopped, let w = window, let index = w.index else { return }
     if pager?.step(delta, wrap: false, order: w.order.joined(separator: "\n")) == true { return }
     let target = index + delta
     guard w.order.indices.contains(target) else { return }
@@ -275,6 +295,7 @@ final class ProfilePagerHost {
   }
 
   private func renderTint() {
+    guard !stopped else { return }
     guard let w = window, let index = w.index else { return tint.show(nil) }
     tint.show(w.order.map { ($0, NativeProfilePager.looks[$0]) })
     tint.position = (ACPager.snapshot(windowId)?["position"] as? Double) ?? Double(index)
@@ -313,6 +334,7 @@ final class ProfilePagerHost {
   }
 
   func windowChanged() {
+    guard !stopped else { return }
     applied = nil
     if window != nil { scheduleSwap() }
   }
@@ -330,7 +352,7 @@ final class ProfilePagerHost {
       ]
     }
     return [
-      "sidebar": target(sidebarTarget), "strip": target(stripTarget), "ack": ack, "tint": tint.describe(),
+      "sidebar": target(sidebarTarget), "strip": target(stripTarget), "peek": target(peekTarget), "ack": ack, "tint": tint.describe(),
       "snapshot": ACPager.snapshot(windowId) ?? NSNull(),
       "applied": applied.map { ["profile": $0.profile, "neighbours": $0.neighbours, "selection": $0.selection] as [String: Any] } ?? NSNull(),
     ]

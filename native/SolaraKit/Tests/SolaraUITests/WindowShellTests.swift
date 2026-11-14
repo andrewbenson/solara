@@ -542,8 +542,9 @@ struct WindowShellMountTests {
     shell.mount(.sidebar, NSView())
     shell.devNotePointer(NSPoint(x: 30, y: 350))
     var seen: [WindowShellView.Slot?] = []
+    let record: @MainActor @Sendable () -> Void = { seen.append(shell.pointerSlot) }
     let token = NotificationCenter.default.addObserver(forName: WindowShellView.hoverCoverChanged, object: shell, queue: nil) { _ in
-      MainActor.assumeIsolated { seen.append(shell.pointerSlot) }
+      MainActor.assumeIsolated { record() }
     }
     defer { NotificationCenter.default.removeObserver(token) }
     let cover = NSView(frame: CGRect(x: 10, y: 325, width: 50, height: 50))

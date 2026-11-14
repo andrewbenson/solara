@@ -2,6 +2,8 @@ import { requireOptionalNativeModule } from "expo-modules-core";
 
 type WindowShellModule = {
   active(windowId: string): boolean;
+  nativeLayout?(windowId: string): boolean;
+  nativeLayoutGeneration?(windowId: string): number;
   layoutAnchorsAvailable?(windowId: string): boolean;
   observeLayoutAnchors?(windowId: string, enabled: boolean, generation: number | null, reader: string): Promise<string>;
   pagesPool?(): boolean;
@@ -27,6 +29,14 @@ export function windowShellActive(windowId: string): boolean {
   } catch {
     return false;
   }
+}
+
+export function windowNativeLayout(windowId: string): boolean {
+  return native?.nativeLayout?.(windowId) ?? false;
+}
+
+export function windowNativeLayoutGeneration(windowId: string): number {
+  return native?.nativeLayoutGeneration?.(windowId) ?? 0;
 }
 
 export function windowPagesPoolActive(): boolean {

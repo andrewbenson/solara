@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import SolaraUI
+import SolaraModel
 
 struct StripPeekHostState: Decodable, Equatable {
   var strip: String
@@ -24,35 +25,73 @@ final class TopStripPeekHost {
   let strip: TopStripHost
   let row: StripPeekRow
   let view = StripPeekView()
+  var onDemand: (() -> Void)?
+  private var stopped = false
+  private var held = false
+  private var externalDropHeld = false
   private var state: StripPeekHostState?
 
-  init(windowId: String) {
+  init(windowId: String, subscribeToStore: Bool = true) {
     self.windowId = windowId
-    strip = TopStripHost(windowId: windowId, takesDrops: false)
+    strip = TopStripHost(windowId: windowId, takesDrops: false, subscribeToStore: subscribeToStore)
     row = StripPeekRow(strip: strip.view)
     view.content = row
-    view.peek.held = { [weak self] in self?.state?.held ?? false }
+    view.peek.held = { [weak self] in (self?.held ?? false) || (self?.externalDropHeld ?? false) }
     row.controls.onAction = { [weak self] action in self?.handle(action) }
     row.onPageWidth = { [weak self] width in self?.strip.pageWidth = Double(width) }
-    view.onLive = { [weak self] live in self?.send("live", ["live": live, "pageWidth": Double(self?.row.pageWidth ?? 0)]) }
+    view.onLive = { [weak self] live in
+      guard let self, !self.stopped else { return }
+      if self.onDemand != nil {
+        self.strip.renderingEnabled = live
+        NativeProfilePager.hosts[self.windowId]?.place()
+      }
+      if live { self.onDemand?() }
+      self.send("live", ["live": live, "pageWidth": Double(self.row.pageWidth)])
+    }
   }
 
   func stop() {
+    guard !stopped else { return }
+    stopped = true
+    onDemand = nil
+    view.onLive = { _ in }
+    row.onPageWidth = { _ in }
+    row.controls.onAction = { _ in }
     strip.stop()
-    view.peek.stop()
-    view.setEnabled(false)
+    view.stop()
+  }
+
+  func setExternalDropHeld(_ held: Bool) {
+    guard !stopped, held != externalDropHeld else { return }
+    externalDropHeld = held
+    if !held { view.peek.recheck() }
   }
 
   func apply(_ json: String) {
-    guard let next = StripPeekHostState.decode(json), next != state else { return }
+    guard !stopped, let next = StripPeekHostState.decode(json), next != state else { return }
     let released = state?.held == true && !next.held
     state = next
+    held = next.held
     view.look = next.look
     view.bandLeft = CGFloat(next.bandLeft)
     row.controls.update(next.controls, theme: next.theme)
     row.needsLayout = true
     strip.apply(next.strip)
     view.setEnabled(next.enabled)
+    if released { view.peek.recheck() }
+  }
+
+  func apply(state: BrowserState, host: StripHostState, controls: StripControlsState, enabled: Bool, bandLeft: CGFloat, look: StripPeekLook, renderStrip: Bool = true) {
+    guard !stopped else { return }
+    let released = held && !controls.downloadsOpen
+    held = controls.downloadsOpen
+    view.look = look
+    view.bandLeft = bandLeft
+    row.controls.update(controls, theme: host.theme)
+    row.needsLayout = true
+    strip.renderingEnabled = renderStrip
+    if renderStrip { strip.apply(state: state, host: host) }
+    view.setEnabled(enabled)
     if released { view.peek.recheck() }
   }
 
@@ -66,7 +105,10 @@ final class TopStripPeekHost {
   private func send(_ name: String, _ extra: [String: Any] = [:]) {
     let windowId = windowId
     let payload = SidebarPayload(extra)
-    Task { @MainActor in _ = await SettingsAdapters.js("topStrip.peek.action", windowId, name, payload.value) }
+    Task { @MainActor [weak self] in
+      guard let self, !self.stopped else { return }
+      _ = await SettingsAdapters.js("topStrip.peek.action", windowId, name, payload.value)
+    }
   }
 
   func describe() -> [String: Any] {
@@ -75,16 +117,19 @@ final class TopStripPeekHost {
       guard let rect, let content else { return nil }
       return [rect.minX, content.bounds.height - rect.maxY, rect.width, rect.height].map(Double.init)
     }
+    let downloads = view.live ? row.controls.downloadsRect : NativeLayoutChrome.downloadsRect(windowId) ?? row.controls.downloadsRect
     return [
       "live": view.live, "slide": view.slideValue, "watching": view.watching,
       "panel": inWindow(view.live ? view.panel.convert(view.panel.bounds, to: nil) : nil) ?? NSNull(),
-      "downloads": inWindow(row.controls.downloadsRect) ?? NSNull(),
+      "downloads": inWindow(downloads) ?? NSNull(),
       "pageWidth": strip.pageWidth ?? 0,
     ]
   }
 
   static func register() {
+    guard !NativeWindowShell.nativeLayout else { return }
     HostedViews.register(NativeTopStrip.peekKind) { windowId in
+      guard !NativeWindowShell.nativeLayout else { return nil }
       let host = TopStripPeekHost(windowId: windowId)
       hosts[windowId] = host
       return HostedContent(
@@ -138,7 +183,9 @@ final class TopStripControlsHost {
   }
 
   static func register() {
+    guard !NativeWindowShell.nativeLayout else { return }
     HostedViews.register(kind) { windowId in
+      guard !NativeWindowShell.nativeLayout else { return nil }
       let host = TopStripControlsHost(windowId: windowId)
       hosts[windowId] = host
       return HostedContent(
@@ -164,7 +211,9 @@ final class TopStripGlowHost {
   }
 
   static func register() {
+    guard !NativeWindowShell.nativeLayout else { return }
     HostedViews.register(kind) { windowId in
+      guard !NativeWindowShell.nativeLayout else { return nil }
       let host = TopStripGlowHost()
       hosts[windowId] = host
       return HostedContent(

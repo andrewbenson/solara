@@ -15,7 +15,9 @@ enum NativeSidebar {
     NativeSidebarHoverCard.start()
     NativeSidebarShell.register()
     NativeSidebarDock.register()
+    guard !NativeWindowShell.nativeLayout else { return }
     HostedViews.register(kind) { windowId in
+      guard !NativeWindowShell.nativeLayout else { return nil }
       let host = SidebarHost(windowId: windowId)
       hosts[windowId] = host
       return HostedContent(
@@ -110,9 +112,11 @@ final class SidebarCommits: @unchecked Sendable {
 final class SidebarHost {
   let windowId: String
   let view: SidebarPagerView
+  private var stopped = false
   private var hostState: SidebarHostState?
   private var state: BrowserState?
   private var listener: Int?
+  var storeSubscriptions: Int { listener == nil ? 0 : 1 }
   private let commits = SidebarCommits()
   private var markUri: String?
   private var pagerObserver: NSObjectProtocol?
@@ -120,7 +124,7 @@ final class SidebarHost {
   private var probeStopped = false
   #endif
 
-  init(windowId: String) {
+  init(windowId: String, subscribeToStore: Bool = true) {
     self.windowId = windowId
     view = SidebarPagerView(windowId: windowId)
     view.favicons.loader = { request in try await NativeSidebar.favicon(request) }
@@ -136,7 +140,7 @@ final class SidebarHost {
       guard note.userInfo?["key"] as? String == windowId, let position = note.userInfo?["position"] as? Double else { return }
       MainActor.assumeIsolated { self?.view.setPagerPosition(position) }
     }
-    if let store = NativeStoreHandle.store {
+    if subscribeToStore, let store = NativeStoreHandle.store {
       state = store.state
       let sink = commits
       listener = store.subscribe { commit in sink.receive(commit.state) }
@@ -144,6 +148,11 @@ final class SidebarHost {
   }
 
   func stop() {
+    guard !stopped else { return }
+    stopped = true
+    commits.host = nil
+    view.onAction = { _ in }
+    view.stop()
     #if SOLARA_PROBES
     probeStopped = true
     #endif
@@ -154,7 +163,7 @@ final class SidebarHost {
   }
 
   func apply(_ json: String) {
-    guard let next = SidebarHostState.decode(json) else { return }
+    guard !stopped, let next = SidebarHostState.decode(json) else { return }
     if next == hostState { return }
     hostState = next
     loadMark(next.newTabMark)
@@ -162,8 +171,17 @@ final class SidebarHost {
   }
 
   func commit(_ next: BrowserState) {
+    guard !stopped else { return }
     state = next
     setNeedsRender()
+  }
+
+  func apply(state: BrowserState, host: SidebarHostState) {
+    guard !stopped else { return }
+    self.state = state
+    hostState = host
+    loadMark(host.newTabMark)
+    render()
   }
 
   private func setNeedsRender() {
@@ -171,7 +189,7 @@ final class SidebarHost {
   }
 
   private func render() {
-    guard let hostState, let state = state ?? NativeStoreHandle.store?.state else { return }
+    guard !stopped, let hostState, let state = state ?? NativeStoreHandle.store?.state else { return }
     self.state = state
     view.update(state: state, host: hostState)
   }
@@ -187,7 +205,7 @@ final class SidebarHost {
     guard let url = URL(string: uri) else { return }
     Task { @MainActor [weak self] in
       let image = await Task.detached { (try? Data(contentsOf: url)).flatMap(NSImage.init(data:)) }.value
-      guard let self, let image else { return }
+      guard let self, !self.stopped, self.markUri == uri, let image else { return }
       image.isTemplate = true
       self.view.favicons.newTabMark = image
       self.setNeedsRender()
@@ -195,6 +213,7 @@ final class SidebarHost {
   }
 
   private func handle(_ action: SidebarAction) {
+    guard !stopped else { return }
     switch action {
     case .click(let tabId, let mods):
       if mods.none, hostState?.selection.isEmpty == true, activate(tabId) {
@@ -243,7 +262,8 @@ final class SidebarHost {
   private func call(_ name: String, _ id: String, _ extra: [String: Any] = [:]) {
     let windowId = windowId
     let payload = SidebarPayload(extra)
-    Task { @MainActor in
+    Task { @MainActor [weak self] in
+      guard let self, !self.stopped else { return }
       _ = await SettingsAdapters.js("sidebar.action", windowId, name, id, payload.value)
     }
   }

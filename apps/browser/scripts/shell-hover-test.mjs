@@ -53,7 +53,7 @@ const at = (x, y) => ac.shell.devSetPointer("w1", { x, y }).then(() => win()).th
 const H = globalThis.expo.modules.SolaraHosted;
 const hover = () => (H?.sidebarShell ? H.sidebarShell("w1").then((d) => JSON.parse(d)?.hover ?? null) : Promise.resolve(null)).then((value) => { globalThis.__shellHoverValue = { value }; return value; });
 `;
-const ROWS = [90, 130, 170, 210];
+let ROWS = [];
 const COVER = [0, 0, 320, 800];
 let app = null;
 const untilSnapshot = async (what, accept, ms = 5000) => {
@@ -93,6 +93,11 @@ try {
   assert.ok(column, "the native sidebar column is mounted");
   await untilSnapshot("native sidebar availability", async (snapshot) =>
     (snapshot.windows[0]?.sidebarShell != null) === await run(`return H?.sidebarShell ? H.sidebarShell("w1").then((d) => d !== "null") : false;`) && snapshot.windows[0]?.sidebarShell != null);
+  const rows = await run(`return Promise.all(["t:a", "t:b", "t:c", "newTab"].map(key => H.sidebarRowFrame("w1",key)));`);
+  rows.forEach((row, index) => {
+    assert.ok(row && Math.abs(row.y - (54 + index * 37)) <= 0.5 && Math.abs(row.height - 34) <= 0.5, `row geometry ${JSON.stringify(rows)}`);
+  });
+  ROWS = rows.map(row => row.y + row.height / 2);
   const chromeWindowNumber = await run(`return win();`);
   await untilSnapshot("Chrome window number", async (snapshot) =>
     snapshot.windows[0]?.chromeWindowNumber === await run(`return win();`) && snapshot.windows[0]?.chromeWindowNumber === chromeWindowNumber);
@@ -143,7 +148,9 @@ try {
       await run(`return ac.shell.devLeftEdgePointer("w1", { x: -4, y: 300 }).then(() => settle(500));`);
       const peeking = await run(`return ac.shell.devLeftEdgePointer("w1", { x: 120, y: 300 }).then(() => settle(500)).then(() => "w1" in globalThis.acLayout.dockMotion.getState().peeks);`);
       await untilSnapshot("peeking sidebar", (snapshot) => snapshot.windows[0]?.shellHover?.sidebarDockLive === peeking);
-      const out = { peeking, parked: await run(`return at(120, 130).then(hover);`), covered: await run(`return ${cover(COVER, null)}.then(hover);`) };
+      const row = await run(`return H.sidebarRowFrame("w1","t:b");`);
+      assert.ok(row && row.width > 0 && row.height > 0, "peeking row is visible");
+      const out = { peeking, parked: await run(`return at(${row.x + row.width / 2}, ${row.y + row.height / 2}).then(hover);`), covered: await run(`return ${cover(COVER, null)}.then(hover);`) };
       if (!peeking || !out.parked || out.covered !== null) throw new Error(`hover under the cover while peeking: ${JSON.stringify(out)}`);
       return out;
     } finally {

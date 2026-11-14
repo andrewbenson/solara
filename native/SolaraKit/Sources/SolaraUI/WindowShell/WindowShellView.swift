@@ -49,6 +49,7 @@ public final class WindowShellView: NSView {
   public var cardPageFrame: CGRect? { didSet { if cardPageFrame != oldValue { placeCardPage() } } }
   public var widthDragActive = false
   private var mounted: [Slot: NSView] = [:]
+  private var layoutStopped = false
   private let widthMotion = DockAnimator(value: 0)
   private let sidePanelMotion = DockAnimator(value: 0)
   private var sidePanelOpen = false
@@ -205,7 +206,18 @@ public final class WindowShellView: NSView {
     relayout()
   }
 
+  public func stopLayoutMotion() {
+    guard !layoutStopped else { return }
+    layoutStopped = true
+    widthMotion.stop()
+    widthRun = nil
+    sidePanelMotion.stop()
+    stopPointerLink()
+    widthDragActive = false
+  }
+
   public func setSidebarWidth(_ width: CGFloat, animated: Bool) {
+    guard !layoutStopped else { return }
     let targetRail: CGFloat = SidebarRail.contains(width: Double(width)) ? 1 : 0
     guard animated, !input.topTabs, !input.fullscreen, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
       widthMotion.stop()
@@ -224,6 +236,7 @@ public final class WindowShellView: NSView {
   }
 
   public func setSidePanelRoom(_ room: CGFloat, open: Bool, animated: Bool) {
+    guard !layoutStopped else { return }
     let room = max(0, room)
     let wasOpen = sidePanelOpen
     let changedRoom = room != sidePanelRoom
@@ -494,6 +507,7 @@ public final class WindowShellView: NSView {
   }
 
   private func notePointer(_ pointInWindow: NSPoint?) {
+    guard !layoutStopped else { return }
     lastPointer = pointInWindow
     guard reactOnTop, window != nil else {
       resolvePointer(pointInWindow)

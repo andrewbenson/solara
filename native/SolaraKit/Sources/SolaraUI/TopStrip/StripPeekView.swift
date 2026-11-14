@@ -59,6 +59,7 @@ public final class StripPeekView: NSView {
     didSet { if look != oldValue { panel.apply(look) } }
   }
 
+  private var stopped = false
   private let slide = DockAnimator(value: 0)
   private var settled: (() -> Void)?
   private var monitor: Any? {
@@ -115,7 +116,20 @@ public final class StripPeekView: NSView {
   public var slideValue: Double { slide.value }
   public var watching: Bool { monitor != nil }
 
+  public func stop() {
+    guard !stopped else { return }
+    stopped = true
+    peek.setEnabled(false)
+    peek.stop()
+    slide.stop()
+    settled = nil
+    unwatch()
+    onLive = { _ in }
+    panel.isHidden = true
+  }
+
   public func setEnabled(_ enabled: Bool) {
+    guard !stopped else { return }
     peek.setEnabled(enabled)
     watch()
   }
@@ -145,6 +159,7 @@ public final class StripPeekView: NSView {
   }
 
   public func pointer(at point: CGPoint?) {
+    guard !stopped else { return }
     let next = point.map { StripPeekMetrics.holds($0, windowWidth: bounds.width, bandLeft: bandLeft) } ?? false
     if next == inside { return }
     inside = next
@@ -162,7 +177,7 @@ public final class StripPeekView: NSView {
   }
 
   private func watch() {
-    guard window != nil, peek.enabled else { return unwatch() }
+    guard !stopped, window != nil, peek.enabled else { return unwatch() }
     guard monitor == nil else { return }
     monitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .mouseExited, .leftMouseDragged]) { [weak self] event in
       MainActor.assumeIsolated { self?.observe(event) }

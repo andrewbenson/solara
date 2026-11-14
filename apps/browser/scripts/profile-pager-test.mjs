@@ -258,7 +258,7 @@ try {
     await reset();
     await run(`return swipe("w2", ${STRIP}, ${JSON.stringify(steps([-18, -22, -22]))});`);
     try {
-      const [held, d, strips] = await run(`return Promise.all([S.devPagerState("w2"), P.describe("w2")]).then(([held, d]) => [held, JSON.parse(d), acPerf.findFibers("NativeTopStrip", 50).map((f) => f.memoizedProps).filter((p) => p.windowId === "w2" && p.floating === false).map((p) => p.pageWidth)]);`);
+      const [held, d, strips] = await run(`return Promise.all([S.devPagerState("w2"), P.describe("w2"), globalThis.expo.modules.SolaraWindowShell.describe("w2")]).then(([held, d, shell]) => [held, JSON.parse(d), JSON.parse(shell).nativeLayout ? [JSON.parse(shell).layout.stripAvailableWidth] : acPerf.findFibers("NativeTopStrip", 50).map((f) => f.memoizedProps).filter((p) => p.windowId === "w2" && p.floating === false).map((p) => p.pageWidth)]);`);
       const width = strips.length === 1 && Number.isFinite(strips[0]) && strips[0] >= 0 ? strips[0] + 2 * 15 : NaN;
       mine.strip = held.position;
       if (!Number.isFinite(width) || width <= 0 || !near(d.strip.pageWidth, width) || held.phase !== "tracking" || !(held.position > 0.02) || !near(held.position, 62 * 0.5 / width)) throw new Error(JSON.stringify({ held, target: d.strip, strips, width }));
@@ -271,17 +271,24 @@ try {
   await rep.check(`${tag}-peek-flick`, async () => {
     await reset();
     const seen = await run(`
+      const nativeLayout = globalThis.expo.modules.SolaraWindowShell.nativeLayout?.("w2") ?? false;
+      const nativeStrip = globalThis.expo.modules.SolaraTopStrip;
       const peek = () => globalThis.acLayout.peek["strip:w2"];
+      const show = () => nativeLayout ? nativeStrip.peekShow("w2") : peek().show();
+      const hide = () => nativeLayout ? nativeStrip.peekHide("w2") : peek().hide();
+      const live = () => nativeLayout ? nativeStrip.peekState("w2").then(JSON.parse).then(p => p.live) : Promise.resolve(peek().live);
       const original = st().switchProfile;
       const calls = [];
       const profiles = [];
+      let hit;
       ac.store.setState({ switchProfile: (...a) => { calls.push(a[1]); return original(...a); } });
       const stop = ac.store.subscribe((s, prev) => { if (s.windows.w2?.profileId !== prev.windows.w2?.profileId) profiles.push(s.windows.w2.profileId); });
       st().toggleSidebar("w2");
-      return settle(600).then(() => peek().show()).then(() => settle(400))
+      return settle(600).then(show).then(() => settle(400))
+        .then(() => win("w2").then(w => C.devWindow(w.window,"hit:700,22"))).then(value => { hit = value; })
         .then(() => swipe("w2", 700, 22, ${JSON.stringify(flick(-1))}))
         .then(() => settle(900)).then(() => S.devPagerState("w2"))
-        .then((p) => { stop(); ac.store.setState({ switchProfile: original }); const out = { calls, profiles, live: peek().live, phase: p.phase, position: p.position, profile: st().windows.w2.profileId }; peek().hide(); return settle(600).then(() => { st().toggleSidebar("w2"); return settle(600); }).then(() => out); });`);
+        .then((p) => { stop(); ac.store.setState({ switchProfile: original }); return live().then(live => { const out = { calls, profiles, hit, live, phase: p.phase, position: p.position, profile: st().windows.w2.profileId }; return Promise.resolve(hide()).then(() => settle(600)).then(() => { st().toggleSidebar("w2"); return settle(600); }).then(() => out); }); });`);
     mine.peek = seen;
     if (!seen.live || seen.profile !== "work" || seen.phase !== "idle" || seen.position !== 1 || !isDeepStrictEqual(seen.profiles, ["work"])) throw new Error(JSON.stringify(seen));
     if (seen.calls.length !== 0) throw new Error(`JS switched too: ${JSON.stringify(seen)}`);

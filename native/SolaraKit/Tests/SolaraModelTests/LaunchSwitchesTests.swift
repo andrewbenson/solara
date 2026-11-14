@@ -171,6 +171,23 @@ import Testing
     }
   }
 
+  @Test func nativeWindowLayoutRequiresAnExplicitScratchDevelopmentCapability() {
+    let defaults = scratchDefaults()
+    defaults.set("1", forKey: "SOLARA_NATIVE_WINDOW_LAYOUT")
+    #expect(!LaunchSwitch.nativeWindowLayout.storable(distribution: false))
+    #expect(!LaunchSwitch.nativeWindowLayout.storable(distribution: true))
+    #expect(!LaunchSwitch.onByDefault.contains(.nativeWindowLayout))
+    for env in [[:], ["SOLARA_NATIVE_WINDOW_LAYOUT": "1"], ["SOLARA_NATIVE_WINDOW_LAYOUT": "1", "SOLARA_DATA_DIR": ""]] {
+      #expect(!LaunchSwitches(environment: env, defaults: defaults, distribution: false, skipStored: false).isOn(.nativeWindowLayout))
+    }
+    let environment = ["SOLARA_NATIVE_WINDOW_LAYOUT": "1", "SOLARA_DATA_DIR": "/tmp/layout"]
+    #expect(LaunchSwitches(environment: environment, defaults: defaults, distribution: false, skipStored: false).isOn(.nativeWindowLayout))
+    #expect(!LaunchSwitches(environment: environment, defaults: defaults, distribution: true, skipStored: false).isOn(.nativeWindowLayout))
+    var disabled = environment
+    disabled["SOLARA_NATIVE_SHELL"] = "0"
+    #expect(!LaunchSwitches(environment: disabled, defaults: nil, distribution: false, skipStored: false).isOn(.nativeWindowLayout))
+  }
+
   @Test func theEnvironmentWinsOverAStoredValue() {
     let defaults = scratchDefaults()
     defaults.set("1", forKey: "SOLARA_NATIVE_SHELL")

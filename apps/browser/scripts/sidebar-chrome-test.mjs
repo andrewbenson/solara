@@ -257,15 +257,21 @@ try {
   });
   await canary("(f)");
 
-  await rep.check("(g) with the column off (top tabs), RN's header, footer and glow are back", async () => {
+  await rep.check("(g) top tabs hide the sidebar and returning restores one column", async () => {
+    const nativeLayout = await run(`return globalThis.expo.modules.SolaraWindowShell.nativeLayout?.("w1") ?? false;`);
+    const before = nativeLayout ? await run(`return globalThis.expo.modules.SolaraWindowShell.describe("w1").then(JSON.parse);`) : null;
     await run(`st().updateSettings({ tabLayout: "top" }); return settle(1500);`);
     const off = await run(`return col();`);
-    await untilSnapshot("column hidden with top tabs", (window) => window?.sidebarShell == null);
+    await untilSnapshot("column hidden with top tabs", (window) => nativeLayout ? window?.sidebarShell?.hidden === true : window?.sidebarShell == null);
     await run(`st().updateSettings({ tabLayout: "sidebar" }); return settle(1500);`);
     const back = await run(`return col();`);
     await checkColumn("column restored with sidebar tabs", back);
-    if (off !== null || !back?.chrome) throw new Error(JSON.stringify({ off, back: !!back }));
-    return { off, back: !!back.chrome };
+    if ((nativeLayout ? off?.hidden !== true || back?.hidden !== false : off !== null) || !back?.chrome) throw new Error(JSON.stringify({ off, back }));
+    if (nativeLayout) {
+      const after = await run(`return globalThis.expo.modules.SolaraWindowShell.describe("w1").then(JSON.parse);`);
+      if (before.nativeLayoutChrome.column !== after.nativeLayoutChrome.column || after.layoutControllerSubscriptions !== 1 || after.nativeLayoutChrome.childStoreSubscriptions !== 0) throw new Error(JSON.stringify({ before, after }));
+    }
+    return { hidden: nativeLayout ? off.hidden : off === null, back: !!back.chrome };
   });
 
   await rep.check("(h) a drag, the icons-only command and a relaunch each keep to their own window", async () => {

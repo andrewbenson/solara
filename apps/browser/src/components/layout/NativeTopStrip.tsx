@@ -1,5 +1,8 @@
 import { endTopStripIncoming, hostedKinds, SolaraHostedView, topStripIncoming, topStripPeek } from "@solara/settings";
 import { memo, useEffect, useMemo, useRef } from "react";
+import type { DroppedItem } from "@solara/shell";
+import type { TabPlacement } from "../../store/organize";
+import { openDroppedItems } from "./fileDrop";
 import { registerDownloadsAnchor } from "../Downloads";
 import { openProfileMenu } from "../ProfileIndicator";
 import { Image, StyleSheet, type ViewStyle } from "react-native";
@@ -28,6 +31,8 @@ import { openFolderMenu, openTileFolderStripMenu } from "./stripFolderMenu";
 import { tuckTarget } from "./stripGroups";
 import { EXTERNAL_DRAG, setInsert, setInsertResolver, useTabDrag } from "./tabDrag";
 import "./nativeTabDrag";
+import { nativeLayoutFeed, useNativeLayoutFeed } from "./nativeLayoutFeed";
+import { devPeeks } from "./dockMotion";
 
 let nativeTopStrip: boolean | undefined;
 let nativePeek: boolean | undefined;
@@ -43,9 +48,11 @@ export function nativeStripPeekEnabled(): boolean {
 const peekLive = new Map<string, (live: boolean, pageWidth: number) => void>();
 
 addNativeSettingsHandlers({
-  "topStrip.peek.action": (windowId: string, name: string, extra?: { live?: boolean; pageWidth?: number }) => {
+  "topStrip.peek.action": (windowId: string, name: string, extra?: { live?: boolean; pageWidth?: number; items?: DroppedItem[]; placement?: string | null }) => {
     const s = useBrowser.getState();
     switch (name) {
+      case "drop":
+        return void openDroppedItems(windowId, extra?.items ?? [], extra?.placement ? JSON.parse(extra.placement) as TabPlacement : null);
       case "profileMenu":
         return void openProfileMenu(windowId);
       case "toggleDownloads":
@@ -249,6 +256,37 @@ function useTopStripState(windowId: string, profileId: string, floating: boolean
   );
 
   return state;
+}
+
+const nativeFeed = nativeLayoutFeed<{ state: string }>("topStrip.nativeFeed");
+
+export function NativeTopStripFeed({ windowId, profileId }: { windowId: string; profileId: string }) {
+  const state = useTopStripState(windowId, profileId, false, 0);
+  useEffect(() => {
+    if (!__DEV__) return;
+    const key = `strip:${windowId}`;
+    const peek = topStripPeek(windowId);
+    const handle = { live: false, show: () => void peek.show(), hide: () => void peek.hide(), trace: () => void peek.trace(), samples: () => peek.samples(), pin: (value: number) => void peek.pin(value) };
+    const report = (live: boolean) => { handle.live = live; };
+    devPeeks[key] = handle;
+    peekLive.set(windowId, report);
+    void peek.state().then(state => { if (devPeeks[key] === handle) handle.live = state?.live ?? false; });
+    return () => {
+      if (devPeeks[key] === handle) delete devPeeks[key];
+      if (peekLive.get(windowId) === report) peekLive.delete(windowId);
+    };
+  }, [windowId]);
+  const dropOver = useTabDrag((d) => d.overWindow === windowId);
+  const value = useMemo(() => ({ state: JSON.stringify({ ...JSON.parse(state), dropOver }) }), [state, dropOver]);
+  useNativeLayoutFeed(nativeFeed, windowId, value);
+  useEffect(
+    () => registerDownloadsAnchor(windowId, async () => {
+      const rect = (await topStripPeek(windowId).state())?.downloads;
+      return rect ? { x: rect[0]!, y: rect[1]!, width: rect[2]!, height: rect[3]! } : null;
+    }),
+    [windowId],
+  );
+  return null;
 }
 
 export const NativeTopStrip = memo(function NativeTopStrip({

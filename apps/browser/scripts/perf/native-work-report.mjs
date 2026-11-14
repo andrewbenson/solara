@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { join, resolve } from "node:path";
-import { launch } from "../../../../scripts/lib/instance.mjs";
+import { launch, sleep } from "../../../../scripts/lib/instance.mjs";
 import { buildSeed } from "./seed.mjs";
 import { NATIVE_WORK_REVISION, nativeWorkCounts, readNativeWork, validateNativeWork, validateWindowContract } from "./native-work.mjs";
 
@@ -15,12 +15,8 @@ const nativeSignature = (sample) => JSON.stringify({
 async function settleFixture(app, path) {
   const started = Date.now();
   const samples = [];
-  const read = async (windowed = false) => {
+  const read = async () => {
     const sample = await app.eval(`async function sampleFixture() {
-      if (${windowed}) {
-        acPerf.reset();
-        await new Promise((done) => setTimeout(done, 3000));
-      }
       const state = ac.store.getState();
       const shownProfiles = [...new Set(Object.values(state.windows).map((window) => window.profileId))].filter((id) => !id.startsWith("incognito:"));
       const nativeWork = JSON.parse(await globalThis.expo.modules.SolaraWindowShell.nativeWork(false));
@@ -28,15 +24,22 @@ async function settleFixture(app, path) {
     } return sampleFixture();`, { timeout: 5000 });
     validateNativeWork(sample.nativeWork);
     samples.push({ elapsedMs: Date.now() - started, ...sample });
-    writeFileSync(path, JSON.stringify({ settlement: "shownProfilesAndNativeQuiet", quietMs: 3000, timeoutMs: 45000, samples }, null, 2));
+    writeFileSync(path, JSON.stringify({ settlementVersion: 2, settlement: "shownProfilesAndNativeQuiet", quietMs: 3000, quietWait: "driver", sampleTimeoutMs: 5000, measurementWrites: { "dev-eval-result.json": 1 }, timeoutMs: 45000, samples }, null, 2));
     return sample;
   };
   let before = await read();
   while (Date.now() - started < 45000) {
     if (!app.alive) throw new Error("fixture exited before settling");
-    const after = await read(true);
+    await app.eval("acPerf.reset(); return true;", { timeout: 5000 });
+    const quietUntil = Date.now() + 3000;
+    while (Date.now() < quietUntil) {
+      if (!app.alive) throw new Error("fixture exited during the quiet window");
+      await sleep(Math.min(100, quietUntil - Date.now()));
+    }
+    const after = await read();
     const ready = after.shownProfiles.every((id) => after.historyReady[id]);
-    const quiet = !after.stats.commits && !total(after.stats.storeUpdates) && !total(after.stats.writes)
+    const applicationWrites = Object.fromEntries(Object.entries(after.stats.writes ?? {}).filter(([name, count]) => name !== "dev-eval-result.json" || count !== 1));
+    const quiet = !after.stats.commits && !total(after.stats.storeUpdates) && !total(applicationWrites)
       && !after.nativeWork.activeAnimationLinks && !after.nativeWork.pendingDeferredJobs;
     if (ready && quiet && nativeSignature(before.nativeWork) === nativeSignature(after.nativeWork)) return;
     before = after;
@@ -53,7 +56,7 @@ const server = createServer((_, response) => { response.writeHead(200, { "conten
 await new Promise((done) => server.listen(0, "127.0.0.1", done));
 const origin = `http://127.0.0.1:${server.address().port}`;
 const baseFiles = buildSeed(origin);
-const report = { nativeWorkRevision: NATIVE_WORK_REVISION, viewport: [1440, 900], launchBoundary: "openToSettled", settlement: "shownProfilesAndNativeQuiet", results: [] };
+const report = { settlementVersion: 2, nativeWorkRevision: NATIVE_WORK_REVISION, viewport: [1440, 900], launchBoundary: "openToSettled", settlement: "shownProfilesAndNativeQuiet", results: [] };
 try {
   for (const count of [1, 200, 2000]) {
     const files = structuredClone(baseFiles);

@@ -49,6 +49,10 @@ export function validateWindowContract(value) {
     if (key !== "bounds" && value[key] === null) continue;
     if (!Array.isArray(value[key]) || value[key].length !== 4 || !value[key].every(Number.isFinite)) fail(key);
   }
+  if (value.nativeLayout) {
+    if (value.hostCounts.WindowLayoutController !== 1) fail("window controller count");
+    if (value.controllerStoreSubscriptions !== 1 || value.childStoreSubscriptions !== 0 || value.legacyLayoutStoreSubscriptions !== 0) fail("layout store subscriptions");
+  }
   if (!Array.isArray(value.slots) || !Array.isArray(value.pageIdentities)) fail("slots or page identities");
   for (const page of value.pageIdentities) if (typeof page.tabId !== "string" || !page.tabId || typeof page.identity !== "string" || !page.identity) fail("page identity");
   return value;

@@ -37,6 +37,7 @@ public final class StripPageView: NSView {
   var onAction: (StripAction) -> Void = { _ in }
   public private(set) var pageLayout = StripPageLayout()
 
+  private var stopped = false
   private var context: StripContext?
   var shownKey: String { "\(context?.activeId ?? "")|\(pageLayout.items.map(\.key).joined(separator: ","))" }
 
@@ -93,6 +94,24 @@ public final class StripPageView: NSView {
 
   required init?(coder: NSCoder) { fatalError() }
 
+  public func stop() {
+    guard !stopped else { return }
+    stopped = true
+    drag.cancel()
+    ticker.stop()
+    NotificationCenter.default.removeObserver(self)
+    onAction = { _ in }
+    dragBridge = nil
+    context = nil
+    motions.removeAll()
+    incomingRooms.removeAll()
+    func stopAnimations(_ view: NSView) {
+      view.layer?.removeAllAnimations()
+      view.subviews.forEach(stopAnimations)
+    }
+    stopAnimations(self)
+  }
+
   public override func viewDidMoveToWindow() {
     super.viewDidMoveToWindow()
     if window == nil { drag.cancel() }
@@ -106,6 +125,7 @@ public final class StripPageView: NSView {
   public var scrolledX: CGFloat { scroll.contentView.bounds.minX }
 
   func update(state: BrowserState, host: StripHostState, current: Bool) {
+    guard !stopped else { return }
     let next = StripContext(state: state, host: host, windowId: windowId, favicons: favicons, previous: context)
     next.send = { [weak self] action in self?.onAction(action) }
     let first = context == nil
@@ -262,6 +282,7 @@ public final class StripPageView: NSView {
   }
 
   private func tick(_ now: Double) -> Bool {
+    guard !stopped else { return false }
     for motion in motions.values { motion.step(now: now) }
     if let (id, start) = groupTraced, let size = motions[id]?.size.value { groupSamples.append([(now - start) * 1000, size]) }
     drag.tick(now)
@@ -350,6 +371,7 @@ public final class StripPageView: NSView {
   public var groupTrace: [[Double]] { groupSamples }
 
   public func incoming(at point: CGPoint?) -> String?? {
+    guard !stopped else { return nil }
     let top = pageLayout.top
     if point == nil, incomingAt == nil { return nil }
     if incomingRooms.count != top.slots.count + 1 { incomingRooms = (0...top.slots.count).map { StripTimedValue($0 == incomingAt ? 1 : 0) } }

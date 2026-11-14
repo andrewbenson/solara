@@ -15,6 +15,16 @@ public struct SidebarPageLook: Decodable, Equatable, Sendable {
   public var glow: SidebarGlow
   public var tidy: Bool
   public var incognito: Bool
+
+  public init(profileId: String, dark: Bool, theme: [String: String], border: [String], glow: SidebarGlow, tidy: Bool, incognito: Bool) {
+    self.profileId = profileId
+    self.dark = dark
+    self.theme = theme
+    self.border = border
+    self.glow = glow
+    self.tidy = tidy
+    self.incognito = incognito
+  }
 }
 
 public struct SidebarHostState: Decodable, Equatable, Sendable {

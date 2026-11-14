@@ -17,7 +17,7 @@ enum NativeSidebarShell {
   }
 
   static func register() {
-    guard enabled, observer == nil else { return }
+    guard enabled, !NativeWindowShell.nativeLayout, observer == nil else { return }
     HostedViews.register(topic) { _ in nil }
     observer = SettingsJS.shared.observe(topic) { value in receive(value) }
     shellAppeared = NotificationCenter.default.addObserver(forName: Notification.Name("RCTContentDidAppearNotification"), object: nil, queue: .main) { note in
@@ -25,6 +25,12 @@ enum NativeSidebarShell {
       MainActor.assumeIsolated { receive(SettingsJS.shared.latestValue(topic)) }
     }
     receive(SettingsJS.shared.latestValue(topic))
+  }
+
+  static func adopt(_ column: SidebarShellColumn) { columns[column.windowId] = column }
+
+  static func release(_ column: SidebarShellColumn) {
+    if columns[column.windowId] === column { columns[column.windowId] = nil }
   }
 
   static func column(_ windowId: String) -> SidebarShellColumn? { columns[windowId] }
@@ -35,6 +41,7 @@ enum NativeSidebarShell {
   }
 
   private static func receive(_ value: Any?) {
+    guard !NativeWindowShell.nativeLayout else { return }
     let windows = ((value as? [String: Any])?["windows"] as? [String: Any]) ?? [:]
     for (windowId, column) in columns where windows[windowId] == nil { remove(windowId, column) }
     for (windowId, given) in windows {
@@ -94,6 +101,7 @@ final class SidebarShellColumn: NSView, DevDropDestination {
   private var pagerObserver: NSObjectProtocol?
   private var given = Layout()
   private var dropCount = 0
+  private var stopped = false
 
   override var isFlipped: Bool { true }
 
@@ -122,13 +130,19 @@ final class SidebarShellColumn: NSView, DevDropDestination {
   required init?(coder: NSCoder) { fatalError() }
 
   func stop() {
+    guard !stopped else { return }
+    stopped = true
+    unregisterDraggedTypes()
+    leave()
+    chrome.onAction = { _ in }
     if let pagerObserver { NotificationCenter.default.removeObserver(pagerObserver) }
     pagerObserver = nil
-    syncAddress(false)
+    if NativeSidebar.hosts[windowId] === host { syncAddress(false) }
     host.stop()
   }
 
   func apply(state: String, layout: Layout, chrome look: SidebarChromeState?) {
+    guard !stopped else { return }
     let previousFooter = footerInset
     let previousTop = topInset
     let previousLift = listLift
@@ -145,8 +159,21 @@ final class SidebarShellColumn: NSView, DevDropDestination {
     host.apply(state)
   }
 
+  func apply(state: BrowserState, host look: SidebarHostState, layout: Layout, chrome: SidebarChromeState, renderHost: Bool = true) {
+    guard !stopped else { return }
+    self.chrome.isHidden = false
+    var chrome = chrome
+    chrome.iconsOnly = SidebarRail.contains(width: Double(bounds.width))
+    self.chrome.update(chrome)
+    given = layout
+    syncAddress(chrome.addressBar && !chrome.rail)
+    placeList()
+    if renderHost { host.apply(state: state, host: look) }
+  }
+
   override func setFrameSize(_ newSize: NSSize) {
     super.setFrameSize(newSize)
+    guard !stopped else { return }
     if var state = chrome.state {
       let rail = SidebarRail.contains(width: Double(newSize.width))
       if state.rail != rail {
@@ -345,3 +372,577 @@ public enum SidebarShellRead {
   public static func snapshot(windowId: String) -> [String: Any]? { NativeSidebarShell.column(windowId)?.describe() }
 }
 #endif
+
+@MainActor
+final class NativeLayoutChrome {
+  private static var owners: [String: NativeLayoutChrome] = [:]
+  private static var feeds: [UUID] = []
+
+  static func downloadsRect(_ windowId: String) -> NSRect? {
+    guard let owner = owners[windowId], !owner.stopped, !owner.stripRow.isHiddenOrHasHiddenAncestor else { return nil }
+    return owner.controls.downloadsRect
+  }
+  let shell: WindowShellView
+  let generation: UInt64
+  let column: SidebarShellColumn
+  let strip: TopStripHost
+  let peek: TopStripPeekHost
+  let dock: SidebarDock
+  let controls: StripControlsView
+  private let glow = TopStripGlowHost()
+  private var stripOver = false
+  private let stripRow: NativeLayoutStripRow
+  private let stripDrop: NativeLayoutStripDropView
+  private let peekDrop: NativeLayoutStripDropView
+  private struct RefreshKey: Equatable {
+    let revision: Int
+    let feed: UInt64
+    let bounds: CGRect
+    let input: DockedLayoutInput
+    let fullscreen: Bool
+  }
+  private var refreshing = false
+  private var lastRefresh: RefreshKey?
+  private var feedRevision: UInt64 = 0
+  private var state: BrowserState?
+  private var revision = -1
+  private var sidebarFeed: SidebarHostState?
+  private var stripFeed: StripHostState?
+  private var featureChrome: SidebarChromeState?
+  private var held = false
+  private var stopped = false
+
+  init(windowId: String, shell: WindowShellView, generation: UInt64) {
+    self.shell = shell
+    self.generation = generation
+    let host = SidebarHost(windowId: windowId, subscribeToStore: false)
+    column = SidebarShellColumn(windowId: windowId, host: host)
+    strip = TopStripHost(windowId: windowId, subscribeToStore: false)
+    let floating = TopStripPeekHost(windowId: windowId, subscribeToStore: false)
+    floating.strip.view.takesDrops = true
+    peek = floating
+    stripRow = NativeLayoutStripRow(strip: strip.view)
+    stripDrop = NativeLayoutStripDropView(content: stripRow)
+    peekDrop = NativeLayoutStripDropView()
+    controls = stripRow.controls
+    let initial = NativeStoreHandle.store?.state
+    let window = initial?.windows[windowId]
+    let topTabs = (window?.tabLayout ?? initial?.settings.string("tabLayout")) == "top"
+    dock = SidebarDock(shell: shell, state: SidebarDockState(open: window?.sidebarOpen ?? true,
+      arc: !topTabs && initial?.settings.string("addressBar") == "sidebar", topTabs: topTabs,
+      width: window.flatMap { window in initial.map { SidebarRail.effectiveWidth(window, $0.settings) } } ?? Double(ShellMetrics.sidebarWidth)))
+    Self.owners[windowId] = self
+    NativeSidebar.hosts[windowId] = host
+    NativeSidebarShell.adopt(column)
+    NativeSidebarDock.adopt(dock, windowId: windowId)
+    NativeTopStrip.hosts[windowId] = strip
+    TopStripPeekHost.hosts[windowId] = peek
+    TopStripGlowHost.hosts[windowId] = glow
+    stripRow.addSubview(glow.view)
+    shell.mount(.sidebar, column)
+    shell.mount(.topStrip, stripDrop)
+    peek.view.content = nil
+    peekDrop.hold(peek.row)
+    peek.view.content = peekDrop
+    shell.overlay.addSubview(peek.view)
+    configureDrop(stripDrop, host: strip, floating: false)
+    configureDrop(peekDrop, host: peek.strip, floating: true)
+    dock.column = { [weak self] in self?.stopped == false ? self?.column : nil }
+    dock.onWatch = { [weak self] hold in
+      guard let self, !self.stopped, Self.owners[windowId] === self else { return }
+      ShellWindowEdge.watch(windowId, hold: hold) { [weak self] over in
+        guard let self, !self.stopped, Self.owners[windowId] === self else { return }
+        self.dock.edge(over: over)
+      }
+    }
+    dock.onLights = { [weak self] center in
+      guard let self, !self.stopped, Self.owners[windowId] === self else { return }
+      ShellWindowEdge.setLightsCenter(windowId, center)
+    }
+    controls.onAction = { [weak self] action in
+      guard let self, !self.stopped else { return }
+      self.sendFeature("topStrip.peek.action", action == .profileMenu ? "profileMenu" : "toggleDownloads")
+    }
+    dock.onPeek = { [weak self] live, right in
+      self?.sendFeature(NativeSidebarDock.topic, "peek", ["live": live, "right": right])
+    }
+    dock.onSlideOut = { [weak self] in self?.sendFeature(NativeSidebarDock.topic, "slideOut") }
+    stripRow.onPageWidth = { [weak strip] width in strip?.pageWidth = Double(width) }
+    peek.onDemand = { [weak self] in
+      guard let self, !self.stopped, Self.owners[windowId] === self else { return }
+      self.lastRefresh = nil
+      FrameUpdates.schedule(self) { [weak self] in
+        guard let self, !self.stopped, Self.owners[windowId] === self else { return }
+        self.refresh()
+      }
+    }
+    strip.renderingEnabled = false
+    peek.strip.renderingEnabled = false
+    Self.installFeeds()
+    dock.start()
+  }
+
+  func describe() -> [String: Any] {
+    let identity: (AnyObject) -> String = { String(describing: ObjectIdentifier($0)) }
+    return ["owner": identity(self), "column": identity(column), "dockedStrip": identity(strip.view),
+      "floatingStrip": identity(peek.strip.view), "generation": generation, "stopped": stopped,
+      "childStoreSubscriptions": column.host.storeSubscriptions + strip.storeSubscriptions + peek.strip.storeSubscriptions,
+      "sidebarStoreSubscriptions": column.host.storeSubscriptions, "dockedStripStoreSubscriptions": strip.storeSubscriptions,
+      "floatingStripStoreSubscriptions": peek.strip.storeSubscriptions,
+      "sidebarRealized": column.host.view.current != nil, "dockedStripRealized": strip.view.current != nil,
+      "floatingStripRealized": peek.strip.view.current != nil,
+      "dockedStripRendering": strip.renderingEnabled, "floatingStripRendering": peek.strip.renderingEnabled,
+      "dockedExternalDrop": stripDrop.active, "floatingExternalDrop": peekDrop.active,
+      "sidebarRegistry": NativeSidebar.hosts[shell.windowId] === column.host,
+      "stripRegistry": NativeTopStrip.hosts[shell.windowId] === strip,
+      "peekRegistry": TopStripPeekHost.hosts[shell.windowId] === peek]
+  }
+
+  func apply(state: BrowserState, revision: Int) {
+    guard !stopped, revision >= self.revision, state.windows[shell.windowId] != nil else { return }
+    self.state = state
+    self.revision = revision
+    refresh()
+  }
+
+  func refresh() {
+    guard !stopped, !refreshing else { return }
+    let nativeInput = state.flatMap(layoutInput)
+    strip.renderingEnabled = nativeInput?.layout.topTabs == true && (state?.windows[shell.windowId]?.sidebarOpen == true || dock.moving)
+    peek.strip.renderingEnabled = peek.view.live
+    let key = RefreshKey(revision: revision, feed: feedRevision, bounds: shell.bounds, input: shell.input, fullscreen: nativeInput?.layout.fullscreen ?? shell.input.fullscreen)
+    guard key != lastRefresh else { return }
+    if let lastRefresh, lastRefresh.revision == revision, lastRefresh.feed == feedRevision,
+      lastRefresh.fullscreen == key.fullscreen {
+      peek.view.frame = shell.overlay.bounds
+      stripRow.needsLayout = true
+      stripRow.layoutSubtreeIfNeeded()
+      glow.view.frame = StripDropGlowMetrics.frame(width: stripRow.bounds.width, left: ShellMetrics.topStripLeadingReservation, right: max(84, controls.width + 14))
+      self.lastRefresh = key
+      return
+    }
+    refreshing = true
+    defer {
+      refreshing = false
+      lastRefresh = RefreshKey(revision: revision, feed: feedRevision, bounds: shell.bounds, input: shell.input, fullscreen: key.fullscreen)
+    }
+    guard let state, let window = state.windows[shell.windowId],
+      let input = nativeInput else { return }
+    let look = NativeLayoutAppearance(state: state, profileId: window.profileId, incognito: window.incognito)
+    var sidebar = SidebarHostState(profileId: window.profileId, dark: look.dark)
+    sidebar.theme = look.tokens
+    sidebar.border = look.border
+    sidebar.glow = look.glow
+    sidebar.addressBar = input.layout.addressBarInSidebar
+    sidebar.selection = state.selection[shell.windowId]?.ids ?? []
+    sidebar.clear = state.settings["showClearButton"]?.bool ?? true
+    sidebar.iconRing = !state.settings.bool("classicPinnedTabs")
+    sidebar.newTabAtTop = state.settings.string("newTabButtonPosition") == "top"
+    sidebar.pages = window.incognito ? nil : state.profileOrder.map { id in
+      let page = NativeLayoutAppearance(state: state, profileId: id, incognito: false)
+      return SidebarPageLook(profileId: id, dark: page.dark, theme: page.tokens, border: page.border, glow: page.glow, tidy: false, incognito: false)
+    }
+    sidebar.incognito = window.incognito
+    sidebar.tidy = CommandContext(state: state, windowId: shell.windowId).canTidyPins
+    sidebar.cleaned = state.cleanedTabs.filter { $0.windowId == shell.windowId }.count
+    if let feed = sidebarFeed {
+      sidebar.player = feed.profileId == window.profileId ? feed.player : nil
+      sidebar.pip = feed.pip
+      sidebar.capture = feed.capture
+      sidebar.badge = feed.badge
+      sidebar.upsell = feed.profileId == window.profileId ? feed.upsell : nil
+      sidebar.product = feed.product
+      sidebar.renaming = feed.renaming
+      sidebar.engines = feed.engines
+      sidebar.developer = feed.developer
+      sidebar.newTabMark = feed.newTabMark
+      sidebar.closeHint = feed.closeHint
+      sidebar.backHint = feed.backHint
+    }
+    let dots = window.incognito || state.profileOrder.count < 2 ? [] : state.profileOrder.enumerated().compactMap { index, id -> SidebarChromeDot? in
+      guard let profile = state.profiles[id] else { return nil }
+      return SidebarChromeDot(id: id, name: profile.name, slot: Double(index), icon: profile.icon)
+    }
+    let downloadsTooltip = featureChrome?.controls.downloadsTooltip
+      ?? CommandShortcutSnapshot().hint("downloads", state: state).map { "Downloads (\($0))" } ?? "Downloads"
+    let controls = StripControlsState(title: input.profileTitle, incognito: window.incognito, profiles: input.profileCount,
+      nameColor: look.nameColor, downloadsOpen: state.windowUi[shell.windowId]?.downloadsOpen ?? false,
+      downloadsTooltip: downloadsTooltip)
+    let chrome = SidebarChromeState(controls: controls, downloads: hasDownloads(state, window), addressBar: sidebar.addressBar,
+      dark: look.dark, theme: look.tokens, dots: dots, savedWidth: window.effectiveSidebarWidth(state.settings),
+      iconsOnly: window.effectiveSidebarIconsOnly(state.settings), dropOver: featureChrome?.dropOver ?? false,
+      update: featureChrome?.update, currentProfileId: window.profileId)
+    shell.update {
+      $0.topTabs = input.layout.topTabs
+      $0.addressBarInSidebar = input.layout.addressBarInSidebar
+      $0.fullscreen = input.layout.fullscreen
+      if !shell.widthDragActive { $0.sidebarWidth = input.layout.sidebarWidth }
+    }
+    let top = SidebarChromeMetrics.headerHeight(addressBar: sidebar.addressBar)
+    let bottom = SidebarChromeMetrics.footerHeight(chrome)
+    column.apply(state: state, host: sidebar, layout: .init(top: max(0, top - SidebarMetrics.glowRoom), header: top, bottom: bottom, clip: state.profileOrder.count > 1), chrome: chrome, renderHost: !input.layout.topTabs)
+    dock.apply(SidebarDockState(open: window.sidebarOpen, arc: sidebar.addressBar, fullscreen: input.layout.fullscreen,
+      topTabs: input.layout.topTabs, width: Double(input.layout.sidebarWidth), held: held || controls.downloadsOpen,
+      look: look.panel))
+    let stripLook = NativeLayoutAppearance(state: state, profileId: window.profileId, incognito: window.incognito, strip: true)
+    var strip = StripHostState(profileId: window.profileId, dark: stripLook.dark)
+    strip.theme = stripLook.tokens
+    strip.border = look.border
+    strip.glow = look.glow
+    strip.pages = window.incognito ? nil : state.profileOrder.map { id in
+      let page = NativeLayoutAppearance(state: state, profileId: id, incognito: false, strip: true)
+      return SidebarPageLook(profileId: id, dark: page.dark, theme: page.tokens, border: page.border, glow: page.glow, tidy: false, incognito: false)
+    }
+    strip.selection = sidebar.selection
+    strip.iconRing = sidebar.iconRing
+    strip.engines = stripFeed?.engines ?? sidebar.engines
+    strip.capture = stripFeed?.capture ?? sidebar.capture ?? [:]
+    strip.bands = stripFeed?.bands ?? [:]
+    strip.closeHint = stripFeed?.closeHint ?? sidebar.closeHint
+    strip.newTabMark = stripFeed?.newTabMark ?? sidebar.newTabMark
+    self.strip.renderingEnabled = input.layout.topTabs && (window.sidebarOpen || dock.moving)
+    if self.strip.renderingEnabled { self.strip.apply(state: state, host: strip) }
+    var stripControls = controls
+    stripControls.nameColor = stripLook.nameColor
+    self.controls.update(stripControls, theme: stripLook.tokens)
+    stripRow.needsLayout = true
+    stripRow.layoutSubtreeIfNeeded()
+    glow.view.frame = StripDropGlowMetrics.frame(width: stripRow.bounds.width, left: ShellMetrics.topStripLeadingReservation, right: max(84, self.controls.width + 14))
+    glow.view.set(over: stripOver || stripDrop.active, accent: stripLook.tokens["accent"] ?? "#4A77D4", dark: stripLook.dark)
+    strip.floating = true
+    peek.view.frame = shell.overlay.bounds
+    peek.apply(state: state, host: strip, controls: stripControls,
+      enabled: input.layout.topTabs && !window.sidebarOpen && !input.layout.fullscreen,
+      bandLeft: ShellMetrics.topStripLeadingReservation, look: look.panel, renderStrip: peek.view.live)
+    if input.layout.topTabs && window.sidebarOpen { ShellWindowEdge.setLightsCenter(shell.windowId, ShellMetrics.topStripLightsCenter) }
+  }
+
+  func stop() {
+    guard !stopped else { return }
+    let current = Self.owners[shell.windowId] === self
+    dock.stop()
+    stopped = true
+    column.stop()
+    stripDrop.stop()
+    peekDrop.stop()
+    strip.stop()
+    peek.stop()
+    glow.view.stop()
+    controls.onAction = { _ in }
+    stripRow.onPageWidth = { _ in }
+    peek.view.removeFromSuperview()
+    if shell.view(in: .sidebar) === column { shell.mount(.sidebar, nil) }
+    if shell.view(in: .topStrip) === stripDrop { shell.mount(.topStrip, nil) }
+    NativeSidebarShell.release(column)
+    NativeSidebarDock.release(dock, windowId: shell.windowId)
+    if NativeSidebar.hosts[shell.windowId] === column.host { NativeSidebar.hosts[shell.windowId] = nil }
+    if NativeTopStrip.hosts[shell.windowId] === strip { NativeTopStrip.hosts[shell.windowId] = nil }
+    if TopStripPeekHost.hosts[shell.windowId] === peek { TopStripPeekHost.hosts[shell.windowId] = nil }
+    if TopStripGlowHost.hosts[shell.windowId] === glow { TopStripGlowHost.hosts[shell.windowId] = nil }
+    if current {
+      ShellWindowEdge.watch(shell.windowId, hold: nil) { _ in }
+      Self.owners[shell.windowId] = nil
+    }
+    state = nil
+  }
+
+  private func configureDrop(_ target: NativeLayoutStripDropView, host: TopStripHost, floating: Bool) {
+    target.accepts = { [weak self] in
+      guard let self, !self.stopped, Self.owners[self.shell.windowId] === self else { return false }
+      return floating ? self.peek.view.live && self.peek.strip.renderingEnabled : self.strip.renderingEnabled
+    }
+    target.incoming = { [weak host] point in host?.view.current?.incoming(at: point) }
+    target.clearIncoming = { [weak host] in host?.view.current?.endIncoming() }
+    target.onDrop = { [weak self] items, placement in
+      self?.sendFeature("topStrip.peek.action", "drop", ["items": items, "placement": placement ?? NSNull()])
+    }
+    target.onActive = { [weak self] active in
+      guard let self, !self.stopped, Self.owners[self.shell.windowId] === self else { return }
+      if floating { self.peek.setExternalDropHeld(active) }
+      self.lastRefresh = nil
+      self.refresh()
+    }
+  }
+
+  private func sendFeature(_ topic: String, _ event: String, _ values: [String: Any] = [:]) {
+    let payload = SidebarPayload(values)
+    Task { @MainActor [weak self] in
+      guard let self, !self.stopped, Self.owners[self.shell.windowId] === self else { return }
+      _ = await SettingsAdapters.js(topic, self.shell.windowId, event, payload.value)
+    }
+  }
+
+  private func layoutInput(_ state: BrowserState) -> WindowLayoutInput? {
+    guard let base = WindowLayoutInput(state: state, windowId: shell.windowId, bounds: shell.bounds, presentation: shell.input) else { return nil }
+    let ids = base.split?.tabIds ?? base.selectedTabId.map { [$0] } ?? []
+    var facts: [String: WindowLayoutPageFacts] = [:]
+    for id in ids {
+      let page = NativeStoreHandle.store?.pageFacts(id)
+      facts[id] = WindowLayoutPageFacts(registration: page?.generation ?? "", fullscreen: page?.keepAlive?.reveal.fullscreen == true)
+    }
+    return WindowLayoutInput(state: state, windowId: shell.windowId, bounds: shell.bounds, presentation: shell.input, pageFacts: facts)
+  }
+
+  private func hasDownloads(_ state: BrowserState, _ window: BrowserWindow) -> Bool {
+    state.downloads.contains { download in
+      let session = download.offTheRecord ? download.profile ?? "" : download.profile.flatMap { Ids.isIncognitoProfile($0) ? state.privateSession($0) : nil }
+      return window.incognito ? session != nil && session == state.privateSession(window.profileId)
+        : session == nil && (download.profile ?? "") == state.engineProfile(window.profileId)
+    }
+  }
+
+  private static func installFeeds() {
+    guard feeds.isEmpty else { return }
+    for topic in ["sidebar.nativeFeed", "topStrip.nativeFeed"] {
+      feeds.append(SettingsJS.shared.observe(topic) { value in receive(topic, value) })
+    }
+  }
+
+  private static func receive(_ topic: String, _ value: Any?) {
+    guard let windows = (value as? [String: Any])?["windows"] as? [String: Any] else { return }
+    for (id, value) in windows {
+      guard let owner = owners[id], !owner.stopped, let feed = value as? [String: Any],
+        (feed["generation"] as? NSNumber)?.uint64Value == owner.generation else { continue }
+      if topic == "sidebar.nativeFeed" {
+        owner.sidebarFeed = (feed["state"] as? String).flatMap(SidebarHostState.decode)
+        owner.featureChrome = (feed["chrome"] as? String).flatMap(SidebarChromeState.decode)
+        owner.held = feed["held"] as? Bool ?? false
+      } else if topic == "topStrip.nativeFeed", let json = feed["state"] as? String {
+        owner.stripFeed = StripHostState.decode(json)
+        owner.stripOver = ((try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any])?["dropOver"] as? Bool ?? false
+      }
+      owner.feedRevision += 1
+      owner.refresh()
+    }
+  }
+}
+
+@MainActor
+private final class NativeLayoutStripDropView: NSView, DevDropDestination {
+  var accepts: () -> Bool = { false }
+  var incoming: (CGPoint?) -> String?? = { _ in nil }
+  var clearIncoming: () -> Void = {}
+  var onDrop: ([[String: String]], String?) -> Void = { _, _ in }
+  var onActive: (Bool) -> Void = { _ in }
+  private var count = 0
+  private var stopped = false
+  private var content: NSView?
+  var active: Bool { count > 0 }
+  override var isFlipped: Bool { true }
+
+  init(content: NSView? = nil) {
+    super.init(frame: .zero)
+    if let content { hold(content) }
+    registerForDraggedTypes([.fileURL, .URL, .string])
+  }
+
+  required init?(coder: NSCoder) { fatalError() }
+
+  func hold(_ view: NSView) {
+    content?.removeFromSuperview()
+    content = view
+    addSubview(view)
+    view.frame = bounds
+  }
+
+  override func setFrameSize(_ newSize: NSSize) {
+    super.setFrameSize(newSize)
+    content?.frame = bounds
+  }
+
+  override func layout() {
+    super.layout()
+    content?.frame = bounds
+  }
+
+  override func mouseDown(with event: NSEvent) {
+    guard !stopped, let window else { return }
+    if event.clickCount == 2 { WindowTitlebar.doubleClick(window, event.modifierFlags) } else { window.performDrag(with: event) }
+  }
+
+  private func admitted(_ sender: NSDraggingInfo) -> Bool {
+    !stopped && window != nil && !isHiddenOrHasHiddenAncestor && TabDragSession.current == nil && accepts()
+      && bounds.contains(convert(sender.draggingLocation, from: nil))
+  }
+
+  private func point(_ sender: NSDraggingInfo) -> CGPoint {
+    CGPoint(x: sender.draggingLocation.x, y: (window?.contentView?.bounds.height ?? 0) - sender.draggingLocation.y)
+  }
+
+  private func operation(_ sender: NSDraggingInfo) -> NSDragOperation {
+    let mask = sender.draggingSourceOperationMask
+    if mask.contains(.copy) { return .copy }
+    if mask.contains(.generic) { return .generic }
+    return mask.contains(.link) ? .link : []
+  }
+
+  override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+    guard admitted(sender) else { return [] }
+    count = DroppedLinks.count(sender.draggingPasteboard)
+    guard active else { return [] }
+    onActive(true)
+    _ = incoming(point(sender))
+    return operation(sender)
+  }
+
+  override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+    guard admitted(sender), active else {
+      leave()
+      return []
+    }
+    _ = incoming(point(sender))
+    return operation(sender)
+  }
+
+  override func draggingExited(_ sender: NSDraggingInfo?) { leave() }
+  override func draggingEnded(_ sender: NSDraggingInfo) { leave() }
+
+  override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool { admitted(sender) && active }
+
+  override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+    guard admitted(sender), active else { return false }
+    let items = DroppedLinks.items(sender.draggingPasteboard)
+    guard !items.isEmpty else { leave(); return false }
+    let placement: String?
+    if case .some(let beforeId) = incoming(point(sender)) {
+      placement = NativeTopStrip.json(["pinned": false, "beforeId": beforeId.map { $0 as Any } ?? NSNull()])
+    } else {
+      placement = nil
+    }
+    leave()
+    onDrop(items, placement)
+    return true
+  }
+
+  private func leave() {
+    let was = active
+    count = 0
+    clearIncoming()
+    if was { onActive(false) }
+  }
+
+  func stop() {
+    guard !stopped else { return }
+    stopped = true
+    unregisterDraggedTypes()
+    leave()
+    accepts = { false }
+    incoming = { _ in nil }
+    clearIncoming = {}
+    onDrop = { _, _ in }
+    onActive = { _ in }
+  }
+}
+
+@MainActor
+private final class NativeLayoutStripRow: NSView {
+  let strip: TopStripView
+  let controls = StripControlsView()
+  var onPageWidth: (CGFloat) -> Void = { _ in }
+  override var isFlipped: Bool { true }
+
+  init(strip: TopStripView) {
+    self.strip = strip
+    super.init(frame: .zero)
+    addSubview(strip)
+    addSubview(controls)
+  }
+
+  required init?(coder: NSCoder) { fatalError() }
+
+  override func hitTest(_ point: NSPoint) -> NSView? {
+    let hit = super.hitTest(point)
+    if hit === self, !controls.isHidden, controls.frame.contains(convert(point, from: superview)) { return controls }
+    return hit
+  }
+
+  override func layout() {
+    super.layout()
+    let left = ShellMetrics.topStripLeadingReservation
+    let right = max(84, controls.width + 14)
+    let width = max(0, bounds.width - left - right)
+    strip.frame = CGRect(x: left - StripMetrics.flare, y: 0, width: max(0, bounds.width - left + StripMetrics.flare - max(right - StripMetrics.flare, controls.width + 8)), height: bounds.height)
+    controls.frame = CGRect(x: bounds.width - 8 - controls.width, y: StripControlsLayout.rowTop, width: controls.width, height: 34.5)
+    onPageWidth(width)
+  }
+
+  override func mouseDown(with event: NSEvent) {
+    guard let window, controls.isHidden || !controls.frame.contains(convert(event.locationInWindow, from: nil)) else { return }
+    if event.clickCount == 2 { WindowTitlebar.doubleClick(window, event.modifierFlags) } else { window.performDrag(with: event) }
+  }
+}
+
+@MainActor
+private struct NativeLayoutAppearance {
+  let dark: Bool
+  let tokens: [String: String]
+  let border: [String]
+  let glow: SidebarGlow
+  let nameColor: String
+  let panel: StripPeekLook
+
+  init(state: BrowserState, profileId: String, incognito: Bool, strip: Bool = false) {
+    let profile = state.profiles[profileId]
+    let swatches = ["plum": "#C07A98", "blue": "#4691C3", "purple": "#7873AF", "pink": "#D37B8B", "red": "#C1575C", "orange": "#D87249", "yellow": "#E3AC38", "green": "#3EB489", "neutral": "#8E8E93"]
+    let color = profile?.color ?? "plum"
+    let swatch = swatches[color] ?? swatches["plum"]!
+    let custom = profile?.theme.flatMap { try? JSONDecoder().decode(ProfileThemeValue.self, from: Data($0.text().utf8)) }
+    let shown = custom.map { ThemeMath.shown($0, appDark: state.ui.appDark, source: state.settings.bool("spacesFollowAppearance") ? .app : .own) }
+    dark = incognito || (shown?.dark ?? state.ui.appDark)
+    let accent = shown.map { ThemeMath.accent($0.look) } ?? (color == "plum" ? "#DD899B" : swatch)
+    let base = ThemeMath.hexColor(swatch)
+    let (h, _, _) = ThemeMath.rgbToHsl(base.r, base.g, base.b)
+    let (r, g, b) = ThemeMath.hslToRgb(h, color == "neutral" ? 0 : 0.36, 0.527)
+    let tint = incognito ? "#3A3A3C" : shown.map { ThemeMath.accent($0.look) } ?? (color == "plum" ? "#B25B6B" : ThemeMath.colorHex(.init(r: r, g: g, b: b)))
+    let fill: String
+    if let shown {
+      fill = ThemeMath.opaqueTint(shown.look, dark: dark)
+    } else {
+      let over = ThemeMath.hexColor(tint)
+      let a = (color == "neutral" || incognito ? 0.12 : 0.36) * (dark ? 0.5 : 0.75)
+      let under = dark ? [24.42, 19.86, 19.08] : [251.0, 250.2, 250.0]
+      fill = ThemeMath.colorHex(.init(r: a * over.r + (1 - a) * under[0] / 255,
+        g: a * over.g + (1 - a) * under[1] / 255, b: a * over.b + (1 - a) * under[2] / 255))
+    }
+    var tokens = [
+      "textTab": dark ? "#FFFFFFC7" : "#000000AD", "tabSelectedText": dark ? "#FFFFFF" : "#000000",
+      "tabHover": dark ? "#FFFFFF29" : "#FFFFFF8C", "tabPressed": dark ? "#FFFFFF4F" : "#FFFFFFB3",
+      "tabSelected": dark ? "#12121280" : "#FFFFFFB3", "rowHover": dark ? "#FFFFFF12" : "#0F182C0D",
+      "divider": dark ? "#FFFFFF14" : "#00000014", "textPrimary": dark ? "#FFFFFF" : "#000000",
+      "textSecondary": dark ? "#FFFFFF80" : "#00000080", "textTertiary": dark ? "#FFFFFF59" : "#00000059",
+      "icon": dark ? "#F7F5FFC6" : "#000000C6", "pinnedResting": dark ? "#FFFFFF1A" : "#0000000D",
+      "pinnedRestingStroke": dark ? "#FFFFFF24" : "#0000002E", "pinnedSelectedFill": dark ? "#FFFFFF40" : "#FFFFFFB3",
+      "pinnedSelectedRim": dark ? "#000000D9" : "#0000001F", "pinnedSelectedOutline": dark ? "#FFFFFF33" : "#FFFFFFFA",
+      "accent": dark ? "#4A77D4" : "#6395FC", "toolbarHover": dark ? "#FFFFFF1A" : "#0000000F",
+      "toolbarPressed": dark ? "#FFFFFF2E" : "#0000001A", "card": dark ? "#12121280" : "#FFFFFFB3",
+      "panel": dark ? "#2A2A2A" : "#FFFFFF", "panelBorder": dark ? "#FFFFFF1A" : "#0000001A",
+      "windowTint": fill, "backdropTint": tint,
+    ]
+    if let shown, !state.settings.bool("lightColorsKeepWhiteText") {
+      let ink = ThemeMath.textInk(shown.look, dark: dark, strip: strip)
+      tokens["tabSelectedText"] = ink.selectedDark ? "#000000" : "#FFFFFF"
+      if ink.dark == dark {
+        tokens["ink"] = dark ? "dark" : "light"
+        tokens["textPrimary"] = dark ? "#000000" : "#FFFFFF"
+        tokens["textTab"] = dark ? "#000000AD" : "#FFFFFFC7"
+        tokens["textSecondary"] = dark ? "#00000080" : "#FFFFFF80"
+        tokens["textTertiary"] = dark ? "#00000059" : "#FFFFFF59"
+        tokens["icon"] = dark ? "#000000C6" : "#F7F5FFC6"
+      }
+    }
+    self.tokens = tokens
+    border = dark ? ["#FFFFFF26", "#FFFFFF26"] : ["#FFFFFFFA", "#0000000F"]
+    var host = SidebarHostState(profileId: profileId, dark: dark)
+    host.glow.color = dark ? "#FFFFFF26" : "#0000001F"
+    host.glow.opacity = 1
+    host.glow.radius = dark ? 15 : 12.5
+    glow = host.glow
+    let lightInk = tokens["ink"].map { $0 == "light" } ?? dark
+    let name = ThemeMath.hexColor(custom.map { ThemeMath.accent(ThemeMath.resolve($0, dark: lightInk)) } ?? accent)
+    let mix = lightInk ? 0.6 : 0.4
+    let target = lightInk ? 1.0 : 0.0
+    nameColor = incognito ? "#FFFFFF" : ThemeMath.colorHex(.init(r: name.r + (target - name.r) * mix,
+      g: name.g + (target - name.g) * mix, b: name.b + (target - name.b) * mix))
+    panel = StripPeekLook(fill: fill, border: dark ? "#FFFFFF1A" : "#0000001A", shadowOpacity: dark ? 0.5 : 0.18)
+  }
+}

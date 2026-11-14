@@ -9,6 +9,7 @@ public final class SidebarView: NSView {
   public var onAction: (SidebarAction) -> Void = { _ in }
   public private(set) var pageLayout = SidebarPageLayout()
 
+  private var stopped = false
   var context: SidebarContext?
   private let fixed = SidebarLayer()
   private let edgeLine = CALayer()
@@ -76,7 +77,23 @@ public final class SidebarView: NSView {
 
   required init?(coder: NSCoder) { fatalError() }
 
+  public func stop() {
+    guard !stopped else { return }
+    stopped = true
+    NotificationCenter.default.removeObserver(self)
+    onAction = { _ in }
+    SidebarDragController.existing(self)?.cancelForModeChange()
+    SidebarDragHub.controllers.removeObject(forKey: self)
+    context = nil
+    func stopAnimations(_ view: NSView) {
+      view.layer?.removeAllAnimations()
+      view.subviews.forEach(stopAnimations)
+    }
+    stopAnimations(self)
+  }
+
   public func update(state: BrowserState, host: SidebarHostState) {
+    guard !stopped else { return }
     UnreadBadges.retain(tabIds: Set(state.tabs.keys))
     UnreadBadges.setEnabled(state.settings["showUnreadBadges"]?.bool != false)
     let next = SidebarContext(state: state, host: host, windowId: windowId, favicons: favicons, previous: context)

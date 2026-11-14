@@ -8,6 +8,7 @@ import CoreGraphics
 #endif
 
 public enum LaunchSwitch: String, CaseIterable, Sendable {
+  case nativeWindowLayout = "SOLARA_NATIVE_WINDOW_LAYOUT"
   case nativeShell = "SOLARA_NATIVE_SHELL"
   case shellPanes = "SOLARA_SHELL_PANES"
   case nativePagesPool = "SOLARA_NATIVE_PAGES_POOL"
@@ -26,7 +27,7 @@ public enum LaunchSwitch: String, CaseIterable, Sendable {
     .nativeShell, .shellPanes, .nativePagesPool, .shellMainTop, .nativeTopStrip,
     .nativeBookmarksBar,
   ]
-  static let developmentOnly: Set<LaunchSwitch> = [.syncRedesign, .nativeBookmarks]
+  static let developmentOnly: Set<LaunchSwitch> = [.syncRedesign, .nativeBookmarks, .nativeWindowLayout]
   public static let onByDefault: Set<LaunchSwitch> = [
     .nativeShell, .nativeTopStrip, .nativeBookmarksBar, .nativeBookmarks,
     .shellPanes, .nativePagesPool, .shellMainTop, .nativeTabSleep,
@@ -35,6 +36,7 @@ public enum LaunchSwitch: String, CaseIterable, Sendable {
   public var needs: [LaunchSwitch] {
     switch self {
     case .shellPanes, .nativePagesPool, .nativeBookmarksBar: [.nativeShell]
+    case .nativeWindowLayout: [.nativeShell, .shellMainTop, .nativeTopStrip]
     case .shellMainTop: [.shellPanes, .nativePagesPool]
     default: []
     }

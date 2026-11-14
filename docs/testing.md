@@ -352,3 +352,38 @@ capability, including Little Solara. Frame ownership remains on the existing pat
 After the Debug build run `window-toolbar-test`, `pane-roots-placement-test`, `folder-panel-test`, `tool-tour-test`
 and `little-solara-test`, and compare `native-work-report.mjs` fixtures at the same viewport. A Release build must
 pass `scripts/agent/probe-scan`. Screen-dependent/manual checks still follow the rules above.
+
+## Native sidebar and strip ownership (layout Patch 3)
+
+An isolated development launch with `SOLARA_NATIVE_WINDOW_LAYOUT=1` selects one native layout controller at window
+creation. It requires the native workspace, shell, pooled pane roots/main-root ordering and native top strip; otherwise
+the complete legacy path remains selected. The capability defaults off and is unavailable to distribution builds.
+
+`WindowLayoutControllerTests`, `NativeLayoutAdoptionTests` and launch-switch tests cover queued commits, stale
+generations, early hosts, replacement/close, retained pages, mode identity and explicit motion/view shutdown.
+`native-layout-test.mjs <Debug app>` exercises actual JS-runtime reload, retained-last-window close/reopen, stable
+chrome/page/session/registration identities, refused legacy factories and no RN sidebar/strip layout wrappers.
+The native work contract asserts one controller subscription and no adopted sidebar/strip store subscriptions.
+Its initial sidebar fixture also checks that hidden docked/floating strips have not realized row trees; this is not
+a general zero-work guarantee for previously realized hidden views, and row virtualization remains Patch 5.
+
+The native floating strip owns a pager target while its peek is live and detaches it when its host stops. Downloads
+anchors to the live peek's button and retains its configured shortcut hint. The strip driver recognizes the native
+drag and drop destinations while preserving exact drag edges, tooltip spans, insertion order and panel placement.
+The controller-driven toolbar test covers both toolbar states, earlier React backgrounds and the overlay peek.
+
+Run sidebar-chrome, sidebar-rail, top-strip, profile-pager, profile-swipe, shell-hover, main-top, little-solara and
+focus-hold with the capability both off and on. Also run top-strip with `--only=native` when an RN-reference failure
+would otherwise stop the native leg, and native-work-report fixtures on both paths. The sidebar/strip data adapters
+are headless on the new path, stamped with the host generation, and cannot create layout hosts. ContentCard and
+unported pane feature content remain guests until the later pane/split patches.
+
+The counter report's settlement version 2 keeps its 3 s quiet window, 5 s query timeout and 45 s settlement deadline.
+It waits for quiet in the driver so the deliberate wait does not consume the query budget, and records the one
+expected `dev-eval-result.json` reset reply separately from application writes. Raw write counts remain in every
+sample; additional replies or any application write still prevent settlement. Native counter definitions remain v1.
+
+The profile-pager spring oracle uses release and notification-delivery timestamps rather than the spring's actual
+start and sample times. A fresh `60f0488a` control reproduced its unchanged position-tolerance failure (7/8), then
+passed (8/8); peek-flick passed in both controls. Preserve the strict assertions and raw traces when recording this
+existing timing flake, and compare it separately from a missing swipe target or a changed spring response.

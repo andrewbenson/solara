@@ -53,6 +53,11 @@ public final class StripDropGlow: NSView {
     ticker.start()
   }
 
+  public func stop() {
+    ticker.stop()
+    layer?.removeAllAnimations()
+  }
+
   public func startTrace() { trace = [[StripTicker.now, opacity.value]] }
 
   public override func layout() {

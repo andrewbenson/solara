@@ -10,6 +10,7 @@ public final class TopStripView: NSView {
     didSet { for page in pages.values { page.dragBridge = dragBridge } }
   }
 
+  private var stopped = false
   private var pages: [String: StripPageView] = [:]
   private var state: BrowserState?
   private var host: StripHostState?
@@ -41,11 +42,28 @@ public final class TopStripView: NSView {
 
   public override func viewDidMoveToWindow() {
     super.viewDidMoveToWindow()
-    if window == nil || !takesDrops {
+    if stopped || window == nil || !takesDrops {
       TabDragSession.unregister(dropZone)
     } else {
       TabDragSession.register(dropZone, windowId: windowId, priority: .insert)
     }
+  }
+
+  public func stop() {
+    guard !stopped else { return }
+    stopped = true
+    NotificationCenter.default.removeObserver(self)
+    TabDragSession.unregister(dropZone)
+    takesDrops = false
+    onAction = { _ in }
+    dragBridge = nil
+    state = nil
+    host = nil
+    for page in pages.values {
+      page.stop()
+      page.removeFromSuperview()
+    }
+    pages.removeAll()
   }
 
   public var current: StripPageView? { host.flatMap { pages[$0.profileId] } }
@@ -54,6 +72,7 @@ public final class TopStripView: NSView {
   private var shownKey: String?
 
   public func update(state: BrowserState, host: StripHostState) {
+    guard !stopped else { return }
     self.state = state
     if self.host?.profileId != host.profileId, let pagerPosition, abs(pagerPosition - pagerPosition.rounded()) < 0.001 { self.pagerPosition = nil }
     self.host = host
@@ -68,6 +87,7 @@ public final class TopStripView: NSView {
   }
 
   public func setPagerPosition(_ position: Double) {
+    guard !stopped else { return }
     pagerPosition = position
     place(refresh: false)
   }

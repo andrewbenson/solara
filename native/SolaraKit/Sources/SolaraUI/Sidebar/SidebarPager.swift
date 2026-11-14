@@ -7,6 +7,7 @@ public final class SidebarPagerView: NSView {
   public let favicons = SidebarFavicons()
   public var onAction: (SidebarAction) -> Void = { _ in }
 
+  private var stopped = false
   private var pages: [String: SidebarView] = [:]
   private var stale: Set<String> = []
   private var state: BrowserState?
@@ -26,6 +27,22 @@ public final class SidebarPagerView: NSView {
   }
 
   required init?(coder: NSCoder) { fatalError() }
+
+  public func stop() {
+    guard !stopped else { return }
+    stopped = true
+    warm?.cancel()
+    warm = nil
+    state = nil
+    host = nil
+    onAction = { _ in }
+    for page in pages.values {
+      page.stop()
+      page.removeFromSuperview()
+    }
+    pages.removeAll()
+    stale.removeAll()
+  }
 
   public var current: SidebarView? { host.flatMap { pages[$0.profileId] } }
 
@@ -49,6 +66,7 @@ public final class SidebarPagerView: NSView {
   static func layers(_ layer: CALayer) -> Int { 1 + (layer.sublayers ?? []).reduce(0) { $0 + layers($1) } }
 
   public func update(state: BrowserState, host: SidebarHostState) {
+    guard !stopped else { return }
     self.state = state
     if self.host?.profileId != host.profileId, let pagerPosition, abs(pagerPosition - pagerPosition.rounded()) < 0.001 { self.pagerPosition = nil }
     self.host = host
@@ -63,6 +81,7 @@ public final class SidebarPagerView: NSView {
   }
 
   public func setPagerPosition(_ position: Double) {
+    guard !stopped else { return }
     pagerPosition = position
     place()
   }
@@ -128,7 +147,7 @@ public final class SidebarPagerView: NSView {
   private func scheduleWarm() {
     warm?.cancel()
     let work = DispatchWorkItem { [weak self] in
-      guard let self, let host else { return }
+      guard let self, !self.stopped, let host else { return }
       let ids = order
       guard let home = ids.firstIndex(of: host.profileId) else { return }
       for slot in [home - 1, home + 1] where slot >= 0 && slot < ids.count {

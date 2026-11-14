@@ -1,4 +1,5 @@
-import { windowMainOnTop } from "@solara/settings";
+import { windowMainOnTop, windowNativeLayout } from "@solara/settings";
+import "./components/layout/nativeDock";
 import { useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { CommandPanel } from "./components/CommandPanel";
@@ -14,15 +15,19 @@ import { CreateProfileHost } from "./components/profiles/CreateProfile";
 import { useFullscreenTab } from "./components/layout/pageState";
 import { ProfileTint } from "./components/layout/ProfileSwipe";
 import { TOP_CARD_INSET, TOP_STRIP_HEIGHT, TopStripPeek, TopTabStrip } from "./components/layout/TopTabStrip";
-import { useTabLayout } from "./components/layout/windowLayout";
+import { useAddressBarInSidebar, useCardAnchors, useTabLayout } from "./components/layout/windowLayout";
 import { WindowProfile } from "./components/layout/WindowProfile";
 import { DockedLayout } from "./components/layout/SidebarDock";
+import { NativeTopStripFeed } from "./components/layout/NativeTopStrip";
+import { NativeSidebar } from "./components/sidebar/NativeSidebar";
+import { FolderPanel } from "./components/sidebar/FolderPanel";
+import { useShellModal } from "./components/layout/shellModal";
 import { ShellBackdrop, useWindowShell } from "./components/layout/ShellBackdrop";
 import { LittleSolaraWindow } from "./components/littleSolara/LittleSolaraWindow";
 import { SidebarOverlays } from "./components/sidebar/Overlays";
 import { layout, ThemeScope, useTheme } from "./lib/theme";
 import { useBrowser } from "./store/browser";
-import { useWindowId, WindowContext } from "./store/hooks";
+import { useWindowId, useWindowProfileId, WindowContext } from "./store/hooks";
 
 export function WindowRoot({ windowId }: { windowId?: string }) {
   if (isUtilityWindowId(windowId)) return null;
@@ -49,6 +54,7 @@ function BrowserWindow() {
   const [width, setWidth] = useState(0);
   const shell = useWindowShell();
   const [onTop] = useState(() => windowMainOnTop(windowId));
+  const [nativeLayout] = useState(() => windowNativeLayout(windowId));
   const card = (
     <>
       <ContentCard />
@@ -62,7 +68,7 @@ function BrowserWindow() {
       <WindowProfile />
       <ExtensionSidePanel fullscreen={fullscreen} />
       <ProfileTint />
-      <DockedLayout
+      {nativeLayout ? <NativeLayoutGuests topTabs={topTabs} /> : <DockedLayout
         fullscreen={fullscreen}
         topTabs={topTabs}
         inset={topTabs ? { top: TOP_STRIP_HEIGHT, right: TOP_CARD_INSET, bottom: TOP_CARD_INSET, left: TOP_CARD_INSET } : { top: layout.cardTop, right: layout.cardInset, bottom: layout.cardInset, left: layout.cardInset }}
@@ -73,7 +79,7 @@ function BrowserWindow() {
         }
       >
         {card}
-      </DockedLayout>
+      </DockedLayout>}
       <CommandPanel windowWidth={width} />
       <DownloadsPopover />
       <ExtensionOverlays />
@@ -84,5 +90,22 @@ function BrowserWindow() {
       <SidebarOverlays windowWidth={width} />
       <OnboardingOverlay />
     </View>
+  );
+}
+
+function NativeLayoutGuests({ topTabs }: { topTabs: boolean }) {
+  const windowId = useWindowId();
+  const profileId = useWindowProfileId();
+  const addressBar = useAddressBarInSidebar();
+  const content = useCardAnchors((state) => state[windowId]);
+  useShellModal(windowId);
+  return (
+    <>
+      <View pointerEvents="box-none" style={{ position: "absolute", left: content?.left ?? 0, top: content?.top ?? 0, width: content?.width ?? 0, height: content?.height ?? 0 }}>
+        <ContentCard />
+      </View>
+      {topTabs ? <NativeTopStripFeed windowId={windowId} profileId={profileId} /> : <NativeSidebar windowId={windowId} profileId={profileId} addressBar={addressBar} headless />}
+      {!topTabs && <FolderPanel windowId={windowId} />}
+    </>
   );
 }

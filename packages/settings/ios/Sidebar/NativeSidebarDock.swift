@@ -15,10 +15,16 @@ enum NativeSidebarDock {
   nonisolated static var enabled: Bool { NativeSidebarShell.enabled }
 
   static func register() {
-    guard enabled, observer == nil else { return }
+    guard enabled, !NativeWindowShell.nativeLayout, observer == nil else { return }
     HostedViews.register(topic) { _ in nil }
     observer = SettingsJS.shared.observe(topic) { value in receive(value) }
     receive(SettingsJS.shared.latestValue(topic))
+  }
+
+  static func adopt(_ dock: SidebarDock, windowId: String) { docks[windowId] = dock }
+
+  static func release(_ dock: SidebarDock, windowId: String) {
+    if docks[windowId] === dock { docks[windowId] = nil }
   }
 
   static func dock(_ windowId: String) -> SidebarDock? { docks[windowId] }
@@ -45,6 +51,7 @@ enum NativeSidebarDock {
   }
 
   private static func receive(_ value: Any?) {
+    guard !NativeWindowShell.nativeLayout else { return }
     let windows = ((value as? [String: Any])?["windows"] as? [String: Any]) ?? [:]
     for (windowId, dock) in docks where windows[windowId] == nil { remove(windowId, dock) }
     for (windowId, given) in windows {

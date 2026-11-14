@@ -39,7 +39,10 @@ const fixture = () =>
     splits: [{ id: "s1", windowId: "w1", tabIds: ["s1a", "s1b"], orientation: "horizontal", sizes: [0.5, 0.5] }],
   });
 
+const stripPointKind = (hit) => /WindowDragRegion/.test(hit) || /NativeLayoutStrip(?:Row|DropView)$/.test(hit.split(" < ")[0]) ? "drag" : /SwipeArea/.test(hit) ? "swipe" : "item";
+
 const HELPERS = `
+const stripPointKind = ${stripPointKind.toString()};
 const C = globalThis.expo.modules.SolaraCEF;
 const st = () => ac.store.getState();
 const win = (id) => C.chromeWindows().then((ws) => { const f = st().windows[id].frame; const w = ws.filter((w) => w.hasRoot).find((w) => { const r = w.frame.match(/[-\\d.]+/g).map(Number); return Math.abs(r[0] - f[0]) < 2 && Math.abs(r[2] - f[2]) < 2; }); return w && w.window; });
@@ -246,8 +249,9 @@ async function measure(native) {
   try {
     await sleep(2500);
     const kinds = await run(`return globalThis.expo.modules.SolaraHosted.kinds();`);
-    assert.equal(kinds.includes("topStrip"), native, `topStrip kind registered: ${kinds}`);
-    await untilSnapshot(app, "registered top strip", (_, state) => state.hostedKinds.includes("topStrip") === native);
+    const owned = await run(`return globalThis.expo.modules.SolaraWindowShell.nativeLayout?.("w1") ?? false;`);
+    assert.equal(kinds.includes("topStrip"), native && !owned, `legacy topStrip factory admission: ${kinds}`);
+    await untilSnapshot(app, "top strip admission", (_, state) => state.hostedKinds.includes("topStrip") === (native && !owned));
     const hello = await app.probe("probe.hello");
     assert.ok(hello.capabilities.includes("state.snapshot"));
     const layoutSnapshot = await nativeSnapshot(app);
@@ -428,7 +432,7 @@ async function measure(native) {
         for (let x = W - 8 - 110; x < W; x += 0.5) xs.push(x);
         return Promise.all(xs.map((x) => C.devWindow(n, "hit:" + x + ",21"))).then((hits) => {
           const edges = []; let prev = null;
-          hits.forEach((h, i) => { const k = /WindowDragRegion/.test(h) ? "drag" : /SwipeArea/.test(h) ? "swipe" : "item"; if (k !== prev) edges.push(xs[i] + " " + k); prev = k; });
+          hits.forEach((h, i) => { const k = stripPointKind(h); if (k !== prev) edges.push(xs[i] + " " + k); prev = k; });
           seen.edges = edges;
           seen.downloadsHit = hits[xs.indexOf(W - 25)];
           return seen;
@@ -437,7 +441,7 @@ async function measure(native) {
     const dockedEdges = [];
     const dockedPoints = await pointSamples(app, Array.from({ length: 236 }, (_, i) => [1482 + i / 2, 21]));
     for (const point of dockedPoints) {
-      const kind = /WindowDragRegion/.test(point.hit) ? "drag" : /SwipeArea/.test(point.hit) ? "swipe" : "item";
+      const kind = stripPointKind(point.hit);
       if (!dockedEdges.length || !dockedEdges.at(-1).endsWith(` ${kind}`)) dockedEdges.push(`${point.x} ${kind}`);
     }
     assert.deepEqual(dockedEdges, out.docked.edges);
@@ -727,7 +731,8 @@ try {
     });
     await rep.check("a link dropped on the peek opens where RN's peek puts it", async () => {
       rep.log(`peek file rn ${JSON.stringify(rn.peekFile)} native ${JSON.stringify(native.peekFile)}`);
-      assert.match(native.peekFile.over, /FileDropView/, `the drag is over the peek's drop area: ${native.peekFile.over}`);
+      assert.match(native.peekFile.over, /(?:FileDropView|NativeLayoutStripDropView) 1$/, `the drag is over the peek's drop area: ${native.peekFile.over}`);
+      assert.match(native.peekFile.drop, /(?:FileDropView|NativeLayoutStripDropView) performed$/, "the peek's drop area accepted the link");
       assert.notEqual(rn.peekFile.after, "none", "RN opened the link");
       assert.equal(native.peekFile.after, rn.peekFile.after, "the link lands after the same tab");
       assert.notEqual(rn.peekFile.after, "t2", "RN puts it at the pointer, not at the end");

@@ -1,6 +1,6 @@
 import { hostedSidebarShell, nativeOmniboxAvailable, publishSettingsTopic, sidebarAddressBarAvailable, SolaraHostedView } from "@solara/settings";
 import type { DroppedItem } from "@solara/shell";
-import { memo, useEffect, useMemo } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { Image, StyleSheet } from "react-native";
 import { useShallow } from "zustand/react/shallow";
 import { closeTab, toggleMute } from "../../lib/actions";
@@ -47,6 +47,8 @@ import { openProfileMenu } from "../ProfileIndicator";
 import { registerDownloadsAnchor } from "../Downloads";
 import { useProfileDotsShown } from "../profiles/ProfileDots";
 import { useTabDrag } from "../layout/tabDrag";
+import { followPeekHold } from "../layout/peekHold";
+import { nativeLayoutFeed, useNativeLayoutFeed } from "../layout/nativeLayoutFeed";
 import { SidebarAddressBarState } from "./AddressBar";
 import { closeFolderPanelIn, openTileFolderMenu, toggleFolderPanel } from "./tileFolderUi";
 import { installNativeDragProbe } from "./nativeDrag";
@@ -55,6 +57,7 @@ import { UPDATE_PILL_TEXT, updatePillTooltip, usePendingUpdate } from "../../lib
 
 const SHELL_TOPIC = "sidebar.shell";
 const shellColumns: Record<string, object> = {};
+const nativeFeed = nativeLayoutFeed<{ state: string; chrome: string; held: boolean }>("sidebar.nativeFeed");
 
 export { nativeSidebarShell } from "./sidebarShell";
 
@@ -152,6 +155,23 @@ function ShellColumnState({ windowId, state, chrome, addressWidth, top, header, 
     [windowId],
   );
   return addressWidth === null ? null : <SidebarAddressBarState width={addressWidth} />;
+}
+
+function NativeSidebarFeed({ windowId, state, chrome, addressBar }: { windowId: string; state: string; chrome: string; addressBar: boolean }) {
+  const floating = useBrowser((s) => s.windows[windowId]?.sidebarOpen === false);
+  const width = useBrowser((s) => sidebarWidthOf(s.windows[windowId], s.settings, true));
+  const [held, setHeld] = useState(false);
+  useEffect(() => followPeekHold(windowId, floating, setHeld), [windowId, floating]);
+  const value = useMemo(() => ({ state, chrome, held }), [state, chrome, held]);
+  useNativeLayoutFeed(nativeFeed, windowId, value);
+  useEffect(
+    () => registerDownloadsAnchor(windowId, async () => {
+      const rect = (JSON.parse(await hostedSidebarShell(windowId)) as { downloads?: number[] } | null)?.downloads;
+      return rect ? { x: rect[0]!, y: rect[1]!, width: rect[2]!, height: rect[3]! } : null;
+    }),
+    [windowId],
+  );
+  return addressBar ? <SidebarAddressBarState width={width} /> : null;
 }
 
 const NEW_TAB_MARK: number = require("../../../assets/solara/new-tab-mark.png");
@@ -300,7 +320,7 @@ function useNativeSidebarPlayer(windowId: string, profileId: string, theme: Them
   );
 }
 
-export const NativeSidebar = memo(function NativeSidebar({ windowId, profileId, addressBar, column, width }: { windowId: string; profileId: string; addressBar: boolean; column?: ShellColumn; width?: number }) {
+export const NativeSidebar = memo(function NativeSidebar({ windowId, profileId, addressBar, column, width, headless = false }: { windowId: string; profileId: string; addressBar: boolean; column?: ShellColumn; width?: number; headless?: boolean }) {
   useEffect(publishNativeLive, []);
   useEffect(() => installNativeDragProbe(windowId), [windowId]);
   const theme = useTheme();
@@ -386,6 +406,7 @@ export const NativeSidebar = memo(function NativeSidebar({ windowId, profileId, 
   }, [player, pip, capture, tokens.badge, tokens.badgeGlyph, pages, theme, glow.shadowColor, glow.shadowOpacity, glow.shadowRadius, profileId, selection, loading, playing, sleeping, closeHint, renaming, addressBar, tidy, clear, iconRing, newTabAtTop, cleaned, upsell, engines, developer, adjustInk]);
 
   const chrome = useShellChrome(windowId, addressBar, theme);
+  if (headless) return <NativeSidebarFeed windowId={windowId} state={state} chrome={chrome} addressBar={addressBar} />;
   if (column) return <ShellColumnState windowId={windowId} state={state} chrome={chrome} addressWidth={addressBar && width ? width : null} {...column} />;
   return <SolaraHostedView kind="sidebar" windowId={windowId} state={state} style={StyleSheet.absoluteFill} />;
 });

@@ -17,13 +17,19 @@ enum NativeWindowShell {
       host.stop()
       if NativeWindowShell.lifetimes.host(host.shell.windowId) == nil { NativeShareBand.windowEnded(host.shell.windowId) }
     }
-    lifetimes.onIds = { ids in activeIds.withLock { $0 = ids } }
+    lifetimes.onIds = { ids in
+      activeIds.withLock { $0 = ids }
+      nativeLayoutGenerations.withLock { generations in
+        generations = generations.filter { ids.contains($0.key) }
+      }
+    }
     return lifetimes
   }()
   private static let commits = ShellStoreCommits()
   private static var nextGeneration: UInt64 = 0
   private static var latestRevision = -1
   nonisolated private static let activeIds = Mutex<Set<String>>([])
+  nonisolated private static let nativeLayoutGenerations = Mutex<[String: UInt64]>([:])
 
   nonisolated static var enabled: Bool {
     LaunchSwitches.shared.isOn(.nativeShell)
@@ -33,13 +39,25 @@ enum NativeWindowShell {
     TabPoolHost.available && LaunchSwitches.shared.isOn(.shellMainTop)
   }
 
+  nonisolated static var nativeLayout: Bool {
+    LaunchSwitches.shared.isOn(.nativeWindowLayout) && mainOnTop
+  }
+
+  nonisolated static func nativeLayoutActive(_ windowId: String) -> Bool {
+    nativeLayoutGenerations.withLock { $0[windowId] != nil }
+  }
+
+  nonisolated static func nativeLayoutGeneration(_ windowId: String) -> UInt64 {
+    nativeLayoutGenerations.withLock { $0[windowId] ?? 0 }
+  }
+
   static func install() {
     guard enabled, !installed, let make = WindowHost.makeContentView else { return }
     installed = true
     NativeSplitChrome.start()
     NativeShareBand.start()
     NativePeek.start()
-    if let store = NativeStoreHandle.store {
+    if !nativeLayout, let store = NativeStoreHandle.store {
       let sink = commits
       #if SOLARA_PROBES
       NativeWorkCounters.shellStoreSubscriptions = 1
@@ -53,9 +71,11 @@ enum NativeWindowShell {
       guard isBrowserWindow(windowId) else { return make(windowId) }
       activeIds.withLock { _ = $0.insert(windowId) }
       nextGeneration += 1
-      let host = ShellHost(windowId: windowId, generation: nextGeneration, root: make(windowId))
+      let ownsNativeLayout = nativeLayout
+      if ownsNativeLayout { nativeLayoutGenerations.withLock { $0[windowId] = nextGeneration } }
+      let host = ShellHost(windowId: windowId, generation: nextGeneration, nativeLayout: ownsNativeLayout, root: make(windowId))
       lifetimes.adopt(windowId, host)
-      if let store = NativeStoreHandle.store {
+      if !host.ownsNativeLayout, let store = NativeStoreHandle.store {
         store.sequence { windowsChanged(store.state, revision: store.rev) }
       }
       host.onClose = { [weak host] in lifetimes.end(windowId, ifHost: host) }
@@ -106,7 +126,11 @@ final class ShellHost {
   private var panes: PaneRootsHost?
   private var profilePager: ProfilePagerHost?
   private var sidePanel: SidePanelHost?
-  private let layoutAnchors: WindowAnchors
+  let ownsNativeLayout: Bool
+  private var layoutController: WindowLayoutController?
+  private var layoutChrome: NativeLayoutChrome?
+  private let legacyLayoutAnchors: WindowAnchors
+  private var layoutAnchors: WindowAnchors { layoutController?.anchors ?? legacyLayoutAnchors }
   private let windowGeneration: UInt64
   private var layoutState: BrowserState?
   private var layoutRevision = -1
@@ -123,9 +147,10 @@ final class ShellHost {
   #endif
   var onClose: (() -> Void)?
 
-  init(windowId: String, generation: UInt64, root: NSView) {
+  init(windowId: String, generation: UInt64, nativeLayout: Bool, root: NSView) {
+    ownsNativeLayout = nativeLayout
     windowGeneration = generation
-    layoutAnchors = WindowAnchors(windowId: windowId, windowGeneration: generation)
+    legacyLayoutAnchors = WindowAnchors(windowId: windowId, windowGeneration: generation)
     shell = WindowShellView(windowId: windowId, reactOnTop: NativeWindowShell.mainOnTop)
     self.root = root
     #if SOLARA_PROBES
@@ -143,7 +168,7 @@ final class ShellHost {
     observers.append(
       center.addObserver(forName: appeared, object: root, queue: .main) { [weak self] _ in
         MainActor.assumeIsolated {
-          guard let self else { return }
+          guard let self, !self.layoutStopped else { return }
           self.keepContentSized()
           center.post(name: appeared, object: self.shell)
         }
@@ -156,11 +181,25 @@ final class ShellHost {
       self?.scheduleLayoutProjection()
     }
     panes = NativePaneRoots.start(windowId)
-    profilePager = NativeProfilePager.start(shell)
+    profilePager = NativeProfilePager.start(shell, subscribeToStore: !ownsNativeLayout)
     shell.onFrames = { [weak self] _ in
       self?.profilePager?.place()
       self?.sidePanel?.place()
       self?.scheduleLayoutProjection()
+    }
+    if ownsNativeLayout, let store = NativeStoreHandle.store {
+      layoutChrome = NativeLayoutChrome(windowId: windowId, shell: shell, generation: generation)
+      let controller = WindowLayoutController(shell: shell, generation: generation, store: store)
+      layoutController = controller
+      controller.onState = { [weak self] state, revision in
+        guard let self, !self.layoutStopped else { return }
+        self.layoutChrome?.apply(state: state, revision: revision)
+        self.profilePager?.commit(state)
+        self.applyLayoutState(state, revision: revision)
+        NativePaneRoots.storeChanged()
+      }
+      controller.onRemoved = { [weak self] in self?.onClose?() }
+      controller.start()
     }
   }
 
@@ -174,7 +213,11 @@ final class ShellHost {
   }
 
   func stop() {
+    guard !layoutStopped else { return }
     layoutStopped = true
+    layoutController?.stop()
+    layoutChrome?.stop()
+    layoutChrome = nil
     layoutAnchors.stop()
     shell.onFrames = nil
     #if SOLARA_PROBES
@@ -199,6 +242,7 @@ final class ShellHost {
   }
 
   private func keepContentSized() {
+    guard !layoutStopped else { return }
     if let contentSizer { NotificationCenter.default.removeObserver(contentSizer) }
     contentSizer = nil
     guard let root, let content = root.subviews.first(where: { NSStringFromClass(type(of: $0)).hasSuffix("RootContentView") }) else { return }
@@ -240,6 +284,9 @@ final class ShellHost {
     let f = shell.frames
     return [
       "bounds": rect(shell.bounds),
+      "nativeLayout": ownsNativeLayout,
+      "nativeLayoutChrome": layoutChrome?.describe() ?? NSNull(),
+      "layoutControllerSubscriptions": layoutController?.subscriptionCount ?? 0,
       "layout": describeLayout() ?? NSNull(),
       "card": rect(f.card),
       "sidebar": rect(f.sidebar),
@@ -305,10 +352,19 @@ extension ShellHost {
 
   private func refreshLayoutProjection() {
     guard !layoutStopped else { return }
+    layoutChrome?.refresh()
     shell.layoutSubtreeIfNeeded()
     guard let input = makeLayoutInput() else { return }
     let snapshot = WindowLayoutSnapshot.of(input, generation: layoutGeneration + 1)
     let children = childLayoutAnchors(snapshot)
+    if let layoutController {
+      let changed = layoutController.apply(input: input, anchors: children)
+      layoutGeneration = layoutController.layoutGeneration
+      lastLayoutInput = input
+      lastChildAnchors = children
+      if changed, layoutReader != nil { sendLayoutAnchors() }
+      return
+    }
     if let lastLayoutInput, lastLayoutInput.hasSameLayout(as: input), children == lastChildAnchors {
       _ = layoutAnchors.restamp(input)
       return
@@ -470,12 +526,18 @@ public enum WindowShellRead {
       guard let kind = host["kind"] as? String, let count = host["count"] as? Int else { return nil }
       return (kind, count)
     })
+    let chrome = source["nativeLayoutChrome"] as? [String: Any]
     return ["card": source["card"] ?? NSNull(), "order": source["order"] ?? [],
       "reactOnTop": source["reactOnTop"] ?? false, "nativeWork": work,
       "contract": ["bounds": source["bounds"] ?? NSNull(), "sidebar": source["sidebar"] ?? NSNull(),
         "topStrip": source["topStrip"] ?? NSNull(), "slots": source["slots"] ?? [],
+        "nativeLayout": source["nativeLayout"] ?? false,
+        "controllerStoreSubscriptions": source["layoutControllerSubscriptions"] ?? 0,
+        "legacyLayoutStoreSubscriptions": NativeWorkCounters.shellStoreSubscriptions,
+        "childStoreSubscriptions": chrome?["childStoreSubscriptions"] ?? 0,
         "ownerCount": counts["ShellHost"] ?? 0,
-        "hostCounts": ["ShellHost": counts["ShellHost"] ?? 0, "sidebar": counts["sidebar"] ?? 0, "topStrip": counts["topStrip"] ?? 0],
+        "hostCounts": ["ShellHost": counts["ShellHost"] ?? 0, "WindowLayoutController": counts["WindowLayoutController"] ?? 0,
+          "sidebar": counts["sidebar"] ?? 0, "topStrip": counts["topStrip"] ?? 0],
         "pageIdentities": TabPoolHost.shared.probePageIdentities(windowId)]]
   }
 
@@ -611,6 +673,9 @@ public class WindowShellModule: Module {
       NativeWindowShell.enabled && NativeWindowShell.active(windowId)
     }
 
+    Function("nativeLayout") { (windowId: String) -> Bool in NativeWindowShell.nativeLayoutActive(windowId) }
+    Function("nativeLayoutGeneration") { (windowId: String) -> Double in Double(NativeWindowShell.nativeLayoutGeneration(windowId)) }
+
     Function("pagesPool") { () -> Bool in NativeSplitChrome.panesEnabled }
     Function("paneRoots") { (windowId: String) -> Bool in NativePaneRoots.active(windowId) }
     Function("mainOnTop") { (windowId: String) -> Bool in NativeWindowShell.mainOnTop && NativeWindowShell.active(windowId) }
@@ -630,7 +695,8 @@ public class WindowShellModule: Module {
     AsyncFunction("setLayout") { (windowId: String, layout: [String: Any]) in
       nonisolated(unsafe) let given = layout
       FrameUpdates.readOnMain {
-        guard let shell = NativeWindowShell.host(windowId)?.shell else { return }
+        guard let host = NativeWindowShell.host(windowId), !host.ownsNativeLayout else { return }
+        let shell = host.shell
         if let right = given["peekRight"] as? NSNumber {
           NativeSidebarDock.setReactPeekRight(windowId, CGFloat(right.doubleValue))
         } else if given["sidebarWidth"] != nil {

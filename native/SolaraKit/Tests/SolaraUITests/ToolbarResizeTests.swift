@@ -51,8 +51,9 @@ struct ToolbarResizeTests {
     var toolbarRect: CGRect { toolbar.convert(toolbar.bounds, to: shell) }
   }
 
-  @Test func oneResizeEventPlacesTheWindowToolbarAndItsControlsWithThePage() throws {
-    let f = Fixture()
+  @Test(arguments: [false, true])
+  func oneResizeEventPlacesTheWindowToolbarAndItsControlsWithThePage(reactOnTop: Bool) throws {
+    let f = Fixture(reactOnTop: reactOnTop)
     f.handle.mouseDown(with: f.mouse(.leftMouseDown, x: 190))
     f.handle.mouseDragged(with: f.mouse(.leftMouseDragged, x: 270))
     #expect(f.shell.card.frame == CGRect(x: 270, y: 6, width: 723, height: 687))
@@ -103,8 +104,9 @@ struct ToolbarResizeTests {
     #expect(resized.maxX == f.toolbarRect.maxX)
   }
 
-  @Test func delayedOwnerLayoutCannotMoveTheToolbarAndMouseUpKeepsTheFinalGeometry() {
-    let f = Fixture()
+  @Test(arguments: [false, true])
+  func delayedOwnerLayoutCannotMoveTheToolbarAndMouseUpKeepsTheFinalGeometry(reactOnTop: Bool) {
+    let f = Fixture(reactOnTop: reactOnTop)
     f.handle.mouseDown(with: f.mouse(.leftMouseDown, x: 190))
     f.handle.mouseDragged(with: f.mouse(.leftMouseDragged, x: 270))
     f.owner.frame = CGRect(x: 230, y: 6, width: 763, height: 41)
@@ -244,8 +246,10 @@ struct ToolbarResizeTests {
     #expect(f.toolbarRect == CGRect(x: 600, y: 6, width: 393, height: 41))
   }
 
-  @Test func controlsOutsideTheStaleOwnerStillReceiveHits() throws {
-    let f = Fixture()
+  @Test(arguments: [false, true])
+  func controlsOutsideTheStaleOwnerStillReceiveHits(reactOnTop: Bool) throws {
+    let f = Fixture(reactOnTop: reactOnTop)
+    f.shell.cardPage.addSubview(NSView(frame: f.shell.cardPage.bounds))
     var state = f.toolbar.state!
     state.left = [try JSONDecoder().decode(ToolbarButtonState.self, from: Data(#"{"id":"back","icon":"chevron.left"}"#.utf8))]
     f.toolbar.update(state)
@@ -310,6 +314,45 @@ struct ToolbarResizeTests {
     f.handle.mouseUp(with: f.mouse(.leftMouseUp, x: 190))
   }
 
+  @Test(arguments: [false, true])
+  func ordinaryToolbarPaintsAboveEarlierReactBackgroundsAndOutsideItsStaleOwner(windowToolbar: Bool) throws {
+    let f = Fixture(bare: !windowToolbar, reactOnTop: true)
+    defer { f.window.close() }
+    var state = f.toolbar.state!
+    state.windowToolbar = windowToolbar
+    f.toolbar.update(state)
+    let react = try #require(f.shell.view(in: .react))
+    let background = NSView(frame: react.bounds)
+    background.wantsLayer = true
+    background.layer?.backgroundColor = NSColor(srgbRed: 0, green: 0, blue: 1, alpha: 1).cgColor
+    react.addSubview(background, positioned: .below, relativeTo: f.owner)
+    let marker = CALayer()
+    marker.backgroundColor = NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 1).cgColor
+    f.toolbar.layer?.addSublayer(marker)
+    f.shell.setSidebarWidth(120, animated: false)
+    f.shell.registerToolbar(f.toolbar, owner: f.owner)
+    marker.frame = f.toolbar.bounds
+    f.shell.displayIfNeeded()
+    CATransaction.flush()
+    let layer = try #require(f.shell.layer)
+    let first = try DeveloperStripesTests.rendered(layer, f.shell.bounds, scale: 1)
+    let toolbar = try #require(first.colorAt(x: 150, y: first.pixelsHigh - 20)?.usingColorSpace(.sRGB))
+    #expect(toolbar.redComponent > 0.95)
+    #expect(toolbar.blueComponent < 0.05)
+    #expect(f.owner.frame.minX == 190)
+    #expect(f.toolbarRect.minX == 120)
+    let peek = NSView(frame: CGRect(x: 120, y: 6, width: 200, height: 41))
+    peek.wantsLayer = true
+    peek.layer?.backgroundColor = NSColor(srgbRed: 0, green: 1, blue: 0, alpha: 1).cgColor
+    react.addSubview(peek)
+    f.shell.displayIfNeeded()
+    CATransaction.flush()
+    let second = try DeveloperStripesTests.rendered(layer, f.shell.bounds, scale: 1)
+    let covered = try #require(second.colorAt(x: 150, y: second.pixelsHigh - 20)?.usingColorSpace(.sRGB))
+    #expect(covered.greenComponent > 0.95)
+    #expect(covered.redComponent < 0.05)
+  }
+
   @Test func shellToolbarLayeringMatchesTheReactRootAndRailRoundTrip() throws {
     for reactOnTop in [false, true] {
       let f = Fixture(reactOnTop: reactOnTop)
@@ -318,7 +361,7 @@ struct ToolbarResizeTests {
       f.shell.registerToolbar(f.toolbar, owner: f.owner)
       let clip = try #require(f.toolbar.superview)
       if reactOnTop {
-        #expect(clip.superview === f.shell.overlay)
+        #expect(clip.superview === f.owner)
       } else {
         #expect(clip.superview === f.shell)
         let children = f.shell.subviews
@@ -329,8 +372,73 @@ struct ToolbarResizeTests {
       f.shell.setSidebarWidth(42, animated: false)
       #expect(clip.superview === f.shell.overlay)
       f.shell.setSidebarWidth(190, animated: false)
-      #expect(clip.superview === (reactOnTop ? f.shell.overlay : f.shell))
+      #expect(clip.superview === (reactOnTop ? f.owner : f.shell))
     }
+  }
+
+  @Test(arguments: [false, true], [false, true])
+  func aLiveStripPeekReceivesWindowClicksAboveTheWindowToolbar(reactOnTop: Bool, windowToolbar: Bool) throws {
+    NSApplication.shared.setActivationPolicy(.prohibited)
+    let f = Fixture(bare: !windowToolbar, reactOnTop: reactOnTop)
+    f.window.alphaValue = 0
+    f.window.level = NSWindow.Level(rawValue: -1_000_000)
+    f.window.orderBack(nil)
+    defer { f.window.close() }
+    var state = f.toolbar.state!
+    state.windowToolbar = windowToolbar
+    state.geometry.urlRight = 8
+    f.toolbar.update(state)
+    f.shell.update { $0.topTabs = true; $0.dock = 0 }
+    f.shell.registerToolbar(f.toolbar, owner: f.owner)
+    let react = try #require(f.shell.view(in: .react))
+    let dragRegion = NSView(frame: react.bounds)
+    react.addSubview(dragRegion, positioned: .below, relativeTo: f.owner)
+    let peek = StripPeekView(frame: f.shell.bounds)
+    peek.peek.schedule = { _, run in run(); return nil }
+    let row = StripPeekRow(strip: TopStripView(windowId: f.shell.windowId))
+    row.controls.update(StripControlsState(title: "Default", incognito: false, profiles: 1, nameColor: "#000000", downloadsOpen: false, downloadsTooltip: "Downloads"), theme: [:])
+    peek.content = row
+    if reactOnTop {
+      f.shell.view(in: .react)!.addSubview(peek)
+    } else {
+      f.shell.mount(.peek, peek)
+      peek.frame = f.shell.bounds
+    }
+    peek.setEnabled(true)
+    peek.peek.show()
+    peek.pin(1)
+    peek.layoutSubtreeIfNeeded()
+    var actions: [StripControlAction] = []
+    var clicks: [String] = []
+    row.controls.onAction = { actions.append($0) }
+    f.toolbar.onClick = { clicks.append($0.id) }
+    func click(_ point: CGPoint) throws {
+      for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+        let event = try #require(NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+          windowNumber: f.window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0))
+        f.window.sendEvent(event)
+      }
+    }
+    let downloads = try #require(row.controls.downloadsRect)
+    try click(CGPoint(x: downloads.midX, y: downloads.midY))
+    #expect(actions == [.toggleDownloads])
+    #expect(clicks.isEmpty)
+    if reactOnTop { #expect(f.shell.slotUnderPointer(at: CGPoint(x: downloads.midX, y: downloads.midY)) == .react) }
+    let overlay = ToolbarButtonView(state: try JSONDecoder().decode(ToolbarButtonState.self, from: Data(#"{"id":"overlay","icon":"xmark"}"#.utf8)), palette: state.palette)
+    overlay.frame = f.shell.overlay.convert(downloads, from: nil)
+    overlay.onClick = { clicks.append($0.id) }
+    f.shell.overlay.addSubview(overlay)
+    try click(CGPoint(x: downloads.midX, y: downloads.midY))
+    #expect(clicks == ["overlay"])
+    #expect(actions == [.toggleDownloads])
+    overlay.removeFromSuperview()
+    clicks.removeAll()
+    peek.isHidden = true
+    let field = try #require(ToolbarWebKitPillTests.fieldIn(f.toolbar))
+    try click(field.convert(CGPoint(x: field.bounds.midX, y: field.bounds.midY), to: nil))
+    #expect(clicks == ["url"])
+    if reactOnTop { #expect(f.shell.slotUnderPointer(at: field.convert(CGPoint(x: field.bounds.midX, y: field.bounds.midY), to: nil)) != .react) }
+    peek.setEnabled(false)
   }
 
   @Test func anAutoHideTransitionKeepsRunningThroughTheRailParentRoundTrip() {

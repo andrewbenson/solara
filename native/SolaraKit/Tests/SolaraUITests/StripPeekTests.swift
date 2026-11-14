@@ -3,7 +3,7 @@ import Testing
 
 @testable import SolaraUI
 
-@Suite @MainActor struct StripPeekTests {
+@Suite(.serialized) @MainActor struct StripPeekTests {
   private func view() -> StripPeekView {
     let view = StripPeekView(frame: NSRect(x: 0, y: 0, width: 1200, height: 80))
     view.bandLeft = 78
@@ -96,4 +96,84 @@ import Testing
     view.step(by: 0.2)
     #expect(!view.live)
   }
+
+  #if DEBUG
+  @Test func postedAppKitMouseMovesShowHoldAndDismissThePeekWithoutAPointerOverride() async throws {
+    await configurePairingTestApplication()
+    let frontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 200), styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.alphaValue = 0
+    let view = StripPeekView(frame: NSRect(x: 0, y: 0, width: 1200, height: 200))
+    view.bandLeft = 78
+    window.contentView = view
+    view.setEnabled(true)
+    defer {
+      view.setEnabled(false)
+      window.close()
+    }
+    func post(_ point: CGPoint) throws {
+      let event = try #require(NSEvent.mouseEvent(
+        with: .mouseMoved, location: view.convert(point, to: nil), modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+        windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 0, pressure: 0))
+      NSApp.postEvent(event, atStart: false)
+    }
+    func pump(_ seconds: TimeInterval, check: () -> Void = {}) async throws {
+      let end = Date(timeIntervalSinceNow: seconds)
+      while Date() < end {
+        try await Task.sleep(for: .milliseconds(10))
+        check()
+      }
+    }
+    #expect(view.watching)
+    try post(CGPoint(x: 300, y: 160))
+    try await pump(0.1)
+    #expect(!view.live)
+    try post(CGPoint(x: 300, y: 2))
+    try await pump(0.3)
+    try #require(view.live)
+    try post(CGPoint(x: 520, y: 30))
+    try await pump(0.6) { #expect(view.live) }
+    try post(CGPoint(x: 520, y: 160))
+    try await pump(0.5)
+    #expect(!view.live)
+    #expect(NSWorkspace.shared.frontmostApplication?.processIdentifier == frontmost)
+  }
+
+  @Test func theDebugPointerNotificationShowsHoldsAndDismissesThePeek() {
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 80), styleMask: [], backing: .buffered, defer: true)
+    window.isReleasedWhenClosed = false
+    let view = view()
+    window.contentView?.addSubview(view)
+    defer {
+      view.setEnabled(false)
+      window.close()
+    }
+    func pointer(_ point: CGPoint?) {
+      let screen = point.map { NSValue(point: window.convertPoint(toScreen: view.convert($0, to: nil))) }
+      NotificationCenter.default.post(name: DevPointer.changed, object: screen)
+    }
+    pointer(CGPoint(x: 300, y: 30))
+    view.step(by: 0.2)
+    #expect(view.live)
+    pointer(CGPoint(x: 520, y: 30))
+    view.step(by: 0.2)
+    #expect(view.live)
+    pointer(CGPoint(x: 520, y: 70))
+    view.step(by: 0.2)
+    #expect(!view.live)
+    pointer(CGPoint(x: 300, y: 30))
+    view.step(by: 0.2)
+    #expect(view.live)
+    pointer(nil)
+    view.step(by: 0.2)
+    #expect(!view.live)
+    view.setEnabled(false)
+    pointer(CGPoint(x: 300, y: 30))
+    view.setEnabled(true)
+    pointer(CGPoint(x: 300, y: 30))
+    view.step(by: 0.2)
+    #expect(view.live)
+  }
+  #endif
 }

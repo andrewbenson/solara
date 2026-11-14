@@ -309,12 +309,23 @@ The report keeps small and 200-tab sessions plus a 2,000-tab fixture at the same
 reset scroll counts and native geometry/host/page-identity observations. Missing or malformed counters fail validation.
 Keep the raw JSON with the baseline commit. Screen-dependent checks still follow the locked-screen rules above.
 
-On the instrumented `75ac3d0e` tree, the full top-strip driver exposes two failures in unchanged peek hit routing: the RN reference
-URL drop reaches a refusing root instead of its drop view, and the native peek's downloads button is covered by
-`ToolbarUrlFieldView` in `ShellOverlayView` even with the peek fully shown. Both click event routes reproduce the
-native miss at the measured button centre; programmatic downloads opening preserves the peek hold. Patch 1 keeps
-these checks strict and records diagnostics rather than changing layout ownership or accepting the missed clicks.
-A clean `afa20abb` Debug control now reproduces the downloads miss in both the RN-reference and native-only legs: the hit is `ToolbarUrlFieldView` in `ShellOverlayView`, downloads stays closed and the address panel opens. That assertion stops both legs before the later URL-drop check. Patch 2 leaves hit routing unchanged.
+`ToolbarResizeTests.aLiveStripPeekReceivesWindowClicksAboveTheWindowToolbar` sends real `NSEvent` presses through
+`NSWindow` for static and auto-hide toolbars, with both shell root orders. Downloads in the live peek receives the
+click, shell overlay controls stay above it, and hiding the peek restores address-field clicks above an earlier
+React drag background. The ordinary toolbar clip stays inside its original host, with geometry converted from the
+shell's card frame, so earlier profile backgrounds paint below it and the later peek paints above it. Rail toolbars
+stay in the shell overlay. The paint regression includes an earlier background, a later cover and stale owner geometry.
+
+Before any pointer override, run the AppKit hover check by itself:
+`scripts/agent/swift-test-bounded --timeout 120 --package native/SolaraKit -- -Xswiftc -DSOLARA_PROBES --filter StripPeekTests.postedAppKitMouseMovesShowHoldAndDismissThePeekWithoutAPointerOverride`.
+It posts only real mouse-move events through the AppKit queue and requires peek entry, a continuous 600 ms hold
+and exit. Its isolated, nonactivating window avoids unrelated tracking-exit events at the unmoved physical cursor
+in the full app; it never sets the pointer or calls the peek's show method. Disabling the production local monitor
+makes entry fail.
+
+Keep both legs of `top-strip-test` strict through the peek URL drop. Its styling captures use the Debug test pointer
+and clear it afterward. Tooltip and accessibility reads post a mouse move to establish AppKit event context; their
+exact label and span comparisons remain strict.
 
 ## Native layout projection and anchors (Patch 2)
 

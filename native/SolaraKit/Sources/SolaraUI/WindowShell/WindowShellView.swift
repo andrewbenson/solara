@@ -310,7 +310,9 @@ public final class WindowShellView: NSView {
         railToolbarClip.addSubview(toolbar)
       }
     }
-    if railToolbar != nil, railFraction == 0, !reactOnTop {
+    if railToolbar != nil, railFraction == 0, reactOnTop, let owner = home?.owner {
+      if railToolbarClip.superview !== owner { owner.addSubview(railToolbarClip) }
+    } else if railToolbar != nil, railFraction == 0 {
       if let above = [Slot.peek, .sidebar, .topStrip, .overlay].compactMap({ mounted[$0] }).first(where: { $0.superview === self }) {
         let index = subviews.firstIndex(of: above)
         let below = index.flatMap { $0 > 0 ? subviews[$0 - 1] : nil }
@@ -320,7 +322,7 @@ public final class WindowShellView: NSView {
       overlay.addSubview(railToolbarClip)
     }
     railToolbarClip.isHidden = railToolbar == nil || modalShown
-    railToolbarClip.frame = frames.card
+    railToolbarClip.frame = railToolbarClip.superview?.convert(frames.card, from: self) ?? frames.card
     if let toolbar = railToolbar {
       let height = min(frames.card.height, ShellMetrics.toolbarHeight + ShellMetrics.railToolbarTop * railFraction)
       toolbar.frame = CGRect(x: 0, y: 0, width: frames.card.width, height: height)
@@ -370,7 +372,33 @@ public final class WindowShellView: NSView {
 
   public override func hitTest(_ point: NSPoint) -> NSView? {
     let hit = super.hitTest(point)
+    if let hit, let toolbar = toolbarHit(over: hit, at: convert(point, from: superview)) { return toolbar }
     return hit === self ? nil : hit
+  }
+
+  private func toolbarHit(over hit: NSView, at point: NSPoint) -> NSView? {
+    guard reactOnTop, railFraction == 0,
+      let root = mounted[.react],
+      let toolbar = railToolbar, let owner = toolbars.first(where: { $0.toolbar === toolbar })?.owner,
+      railToolbarClip.superview === owner,
+      let candidate = railToolbarClip.hitTest(owner.convert(point, from: self)) else { return nil }
+    if hit === self { return candidate }
+    if hit !== root, !hit.isDescendant(of: root) {
+      var branch = hit
+      while let parent = branch.superview, parent !== self { branch = parent }
+      guard let hitIndex = subviews.firstIndex(of: branch), let rootIndex = subviews.firstIndex(of: root), hitIndex < rootIndex else { return nil }
+      return candidate
+    }
+    var branch = owner
+    while let parent = branch.superview {
+      if hit === parent { return candidate }
+      if let hitBranch = parent.subviews.first(where: { hit === $0 || hit.isDescendant(of: $0) }) {
+        guard let ownerIndex = parent.subviews.firstIndex(of: branch), let hitIndex = parent.subviews.firstIndex(of: hitBranch) else { return nil }
+        return ownerIndex >= hitIndex ? candidate : nil
+      }
+      branch = parent
+    }
+    return nil
   }
 
   public var modalShown: Bool { !modalOwners.isEmpty }
@@ -450,7 +478,8 @@ public final class WindowShellView: NSView {
     let point = convert(pointInWindow, from: nil)
     for layer in subviews.reversed() where !layer.isHidden {
       if layer === mounted[.react], !reactOnTop { return layer.frame.contains(point) ? layer : nil }
-      if layer.hitTest(point) != nil {
+      if let hit = layer.hitTest(point) {
+        if toolbarHit(over: hit, at: point) != nil { return railToolbarClip }
         if layer === card, let sidebar = mounted[.sidebar], sidebar.superview === cardClip,
           sidebar.hitTest(convert(point, to: cardClip)) != nil { return sidebar }
         return layer

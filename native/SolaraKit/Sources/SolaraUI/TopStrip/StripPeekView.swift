@@ -104,6 +104,9 @@ public final class StripPeekView: NSView {
       self?.place()
       self?.onLive(live)
     }
+    #if DEBUG
+    DevPointer.observe(self, #selector(devPointer(_:)))
+    #endif
   }
 
   required init?(coder: NSCoder) { fatalError() }
@@ -177,6 +180,14 @@ public final class StripPeekView: NSView {
     guard let window, event.window === window else { return }
     pointer(at: convert(event.locationInWindow, from: nil))
   }
+
+  #if DEBUG
+  @objc private func devPointer(_ note: Notification) {
+    guard peek.enabled, let window else { return }
+    guard let screen = (note.object as? NSValue)?.pointValue else { return pointer(at: nil) }
+    pointer(at: convert(window.convertPoint(fromScreen: screen), from: nil))
+  }
+  #endif
 }
 
 @MainActor

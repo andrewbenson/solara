@@ -65,6 +65,7 @@ const runs = (id, y) => win(id).then((n) => { const xs = []; for (let x = 60; x 
       if (on && !cur) cur = [xs[i], xs[i], kind]; else if (on) cur[1] = xs[i]; else if (cur) { out.push(cur); cur = null; } });
     if (cur) out.push(cur); return out; }); });
 const settle = (ms) => new Promise((r) => setTimeout(r, ms));
+const movePointer = (id, x, y) => act(id, "mouse:moved:" + x + "," + y).then(() => settle(600)).then(() => ac.shell.devSetPointer(id, { x, y }));
 const pageSettled = (id) => !!ac.nativePages.facts(id)?.ready && st().live[id]?.isLoading === false;
 const pageReady = (id, deadline = Date.now() + 15000, settledSince = null) => {
   if (pageSettled(id) && settledSince !== null && Date.now() - settledSince >= 500) return Promise.resolve();
@@ -114,10 +115,15 @@ async function pointSamples(app, points, labels = false) {
   const rows = [];
   for (let at = 0; at < points.length; at += 4) {
     const chunk = points.slice(at, at + 4);
+    if (labels) await preparePointLabels(app);
     const state = await untilSnapshot(app, "native point samples", (w) => w?.stripPoints?.length === chunk.length, 8000, { stripPoints: chunk, stripLabels: labels, topStrip: false, fields: ["windows.stripPoints"] });
     rows.push(...state.windows.find((w) => w.id === "w1").stripPoints);
   }
   return rows;
+}
+
+async function preparePointLabels(app) {
+  await app.eval(`${HELPERS}\nreturn act("w1", "mouse:moved:600,500").then(() => settle(0));`);
 }
 
 function nativeWindow(state) { return state.windows.find((w) => w.id === "w1"); }
@@ -457,6 +463,7 @@ async function measure(native) {
       return added && w.tabIds.includes(added.id) && (w.tabIds[w.tabIds.indexOf(added.id) - 1] ?? null) === out.docked.dropped;
     }, 8000, { fields: [...STRIP_FIELDS, "tabs.url"] });
     await run(`st().closeTab(${JSON.stringify(out.docked.added)}); st().activate("t1"); return settle(500);`);
+    await preparePointLabels(app);
     out.labels = await run(`
       const W = st().windows.w1.frame[2];
       return win("w1").then((n) => {
@@ -478,18 +485,18 @@ async function measure(native) {
     const W = 1600;
     const dockedLooks = [
       ["rest", ``, ``],
-      ["hoverDownloads", `ac.shell.devSetPointer("w1", { x: ${W - 25}, y: 21 }).then(() => act("w1", "mouse:moved:${W - 25},21"));`, `ac.shell.devSetPointer("w1", { x: 600, y: 400 }).then(() => act("w1", "mouse:moved:600,400")).then(() => ac.shell.devSetPointer("w1", null));`],
-      ["hoverName", `ac.shell.devSetPointer("w1", { x: ${W - 80}, y: 21 }).then(() => act("w1", "mouse:moved:${W - 80},21"));`, `ac.shell.devSetPointer("w1", { x: 600, y: 400 }).then(() => act("w1", "mouse:moved:600,400")).then(() => ac.shell.devSetPointer("w1", null));`],
-      ["pressDownloads", `act("w1", "mouse:down:${W - 25},21");`, `act("w1", "mouse:up:${W - 25},21").then(() => settle(300)).then(() => { st().setDownloadsOpen("w1", false); st().closePanel("w1"); });`],
+      ["hoverDownloads", `return movePointer("w1", ${W - 25}, 21);`, `return movePointer("w1", 600, 400).then(() => ac.shell.devSetPointer("w1", null));`],
+      ["hoverName", `return movePointer("w1", ${W - 80}, 21);`, `return movePointer("w1", 600, 400).then(() => ac.shell.devSetPointer("w1", null));`],
+      ["pressDownloads", `return act("w1", "mouse:down:${W - 25},21");`, `return act("w1", "mouse:up:${W - 25},21").then(() => settle(300)).then(() => { st().setDownloadsOpen("w1", false); st().closePanel("w1"); });`],
       ["downloadsOpen", `st().setDownloadsOpen("w1", true);`, `st().setDownloadsOpen("w1", false);`],
       ["glow", `globalThis.acTabDrag.setState({ overWindow: "w1" });`, `globalThis.acTabDrag.setState({ overWindow: null });`],
     ];
     for (const [look, setup, undo] of dockedLooks) {
       const shot = join(scratch, `${native ? "native" : "rn"}-docked-${look}.png`);
-      await run(`${setup} return settle(500);`);
+      await run(`return Promise.resolve((() => { ${setup} })()).then(() => settle(500));`);
       out.dockedShots[look] = (await run(`return ac.shell.devSnapshotWindow("w1", ${JSON.stringify(shot)});`)) ? shot : null;
       if (look !== "pressDownloads") await nativeCapture(app, out.dockedShots[look]);
-      await run(`${undo} return settle(600);`);
+      await run(`return Promise.resolve((() => { ${undo} })()).then(() => settle(600));`);
     }
     const glowArm = native ? `globalThis.expo.modules.SolaraTopStrip.traceGlow("w1")` : `Promise.resolve(globalThis.acStrip.traceGlow("w1"))`;
     const glowRead = native ? `globalThis.expo.modules.SolaraTopStrip.glowTrace("w1").then((s) => s.map(([t, x]) => [t * 1000, x]))` : `Promise.resolve(globalThis.acStrip.glowTrace())`;
@@ -562,11 +569,11 @@ async function measure(native) {
         return settle(500)
           .then(() => globalThis.acLayout.peek["strip:w1"].show()).then(() => settle(500)).then(() => ${live});`);
       await untilSnapshot(app, "native peek shown", (w) => w?.topStrip?.peek?.live === out.peekHover.shown);
-      Object.assign(out.peekHover, await run(`return act("w1", "mouse:moved:300,24").then(() => settle(150)).then(() => act("w1", "mouse:moved:520,30")).then(() => settle(500))
+      Object.assign(out.peekHover, await run(`return movePointer("w1", 300, 24).then(() => settle(150)).then(() => movePointer("w1", 520, 30)).then(() => settle(500))
         .then(() => act("w1", "hit:520,30")).then((hit) => ({ overStrip: ${live}, hit }));`));
       await untilSnapshot(app, "native peek stays under hover", (w) => w?.topStrip?.peek?.live === out.peekHover.overStrip &&
         w.stripPoints.some((p) => p.x === 520 && p.y === 30 && p.hit === out.peekHover.hit), 8000, { stripPoints: [[520, 30]] });
-      Object.assign(out.peekHover, await run(`return act("w1", "mouse:moved:520,160").then(() => settle(600))
+      Object.assign(out.peekHover, await run(`return movePointer("w1", 520, 160).then(() => settle(600))
         .then(() => globalThis.expo.modules.SolaraTopStrip.peekMonitors()).then((afterHide) => ({ away: ${live}, afterHide }));`));
       await untilSnapshot(app, "native peek hidden after hover", (w) => w?.topStrip?.peek?.live === out.peekHover.away && w.topStrip.peekMonitors === out.peekHover.afterHide);
       out.peekHover.whileOut = await run(`globalThis.acLayout.peek["strip:w1"].show(); return settle(500).then(() => globalThis.expo.modules.SolaraTopStrip.peekMonitors());`);
@@ -584,6 +591,7 @@ async function measure(native) {
         !state.windows.some((w) => w.id === out.peekHover.w2), 8000, { windowId: undefined });
       assert.equal(nativeWindow(stripRestored).topStrip.peekMonitors, out.peekHover.afterStripBack, "native peek monitors after strip restore");
       assert.equal(nativeWindow(final).topStrip.peekMonitors, out.peekHover.afterClose, "native peek monitors after second window closes");
+      await run(`return ac.shell.devSetPointer("w1", null);`);
     }
     const t2 = out.spans.filter(([, , k]) => k !== "SolaraUI.StripNewTabButton").at(-1);
     await run(`return act("w1", "click:${t2[0] + 70},21").then(() => settle(400));`);
@@ -692,7 +700,7 @@ try {
     await rep.check("the peek's downloads button opens the list and holds the peek out until it closes, as on RN", async () => {
       rep.log(`peek held rn ${JSON.stringify(rn.peekHeld)} native ${JSON.stringify(native.peekHeld)}`);
       assert.match(native.peekHeld.hit, /^SolaraUI\.StripIconButton < SolaraUI\.StripControlsView/, `the native button is under the pointer: ${native.peekHeld.hit}`);
-      assert.equal(native.peekHeld.panel, false, "the click presses only the native button, not the address field under it (RN's peek presses both; docs/backlog.md)");
+      assert.equal(native.peekHeld.panel, false, "the click presses only the native button, not the address field under it");
       for (const [name, seen] of [["rn", rn.peekHeld], ["native", native.peekHeld]]) {
         assert.equal(seen.open, true, `${name}: the click opened the downloads list`);
         assert.equal(seen.heldLive, true, `${name}: the open list holds the peek out`);

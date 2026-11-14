@@ -237,7 +237,7 @@ enum SettingsDev {
           destroyPairingFixture()
           return #"{"error":"fixture requires an isolated Settings provider"}"#
         }
-        if pairingFixtureHost == nil { pairingFixtureHost = SyncPairingFixtureHost() }
+        if pairingFixtureHost == nil { pairingFixtureHost = SyncPairingFixtureHost(isolatesWindowEvents: true) }
       }
       guard let pairingFixtureHost else { return #"{"error":"no mounted fixture"}"# }
       let result = pairingFixtureHost.drive(command, argument: body["argument"] as? String, settingsWindow: window)

@@ -48,6 +48,9 @@ import SolaraUI
     if action != "destroy" {
       Evidence.check(state["actionControlFound"] as? Bool == true, "\(action) finds its control: \(state)")
     }
+    if action == "select", let sheet = NativeSettingsWindow.window?.attachedSheet {
+      NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: sheet)
+    }
     await pause()
     return state
   }
@@ -59,6 +62,9 @@ import SolaraUI
     Evidence.check(sheet.sheetParent === panel, "fixture sheet has Settings parent")
     Evidence.check(panel.sheets.contains { $0 === sheet }, "Settings lists fixture sheet")
     Evidence.check(!sheet.isKeyWindow && !panel.isKeyWindow, "fixture and Settings stay non-key")
+    Evidence.check(!sheet.canBecomeKey && !panel.canBecomeKey, "fixture and Settings cannot become key")
+    Evidence.check(!sheet.canBecomeMain && !panel.canBecomeMain, "fixture and Settings cannot become main")
+    Evidence.check(!sheet.isMainWindow && !panel.isMainWindow, "fixture and Settings stay non-main")
     Evidence.check(panel.frame.maxX < 0 && sheet.frame.maxX < 0, "fixture and Settings stay offscreen")
     _ = await step("select")
     Evidence.check(command("state")["preparing"] as? Bool == true, "selection prepares comparison")

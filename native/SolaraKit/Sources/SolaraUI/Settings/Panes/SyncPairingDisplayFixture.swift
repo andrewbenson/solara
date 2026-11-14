@@ -148,6 +148,12 @@ private struct SyncPairingFixtureAccessibility {
 }
 
 @MainActor
+private final class SyncPairingFixturePanel: NSPanel {
+  override var canBecomeKey: Bool { false }
+  override var canBecomeMain: Bool { false }
+}
+
+@MainActor
 final class SyncPairingDisplayFixture: SyncPairingFixtureSession {
   private let service = SyncPairingDisplayService()
   private let model: SyncTrustedPairingModel
@@ -169,7 +175,7 @@ final class SyncPairingDisplayFixture: SyncPairingFixtureSession {
     self.settings = settings
     self.dataDirectory = URL(fileURLWithPath: dataDirectory, isDirectory: true).resolvingSymlinksInPath()
     model = SyncTrustedPairingModel(service: service)
-    panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 540, height: 640), styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: false)
+    panel = SyncPairingFixturePanel(contentRect: NSRect(x: 0, y: 0, width: 540, height: 640), styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: false)
     panel.isReleasedWhenClosed = false
     panel.identifier = NSUserInterfaceItemIdentifier("sync-pairing-sensitive")
     panel.title = "Pairing display fixture"
@@ -463,7 +469,7 @@ extension SyncPairingFixtureHost {
     self.init(environment: environment, isolatesWindowEvents: false)
   }
 
-  convenience init(environment: [String: String], isolatesWindowEvents: Bool) {
+  public convenience init(environment: [String: String] = ProcessInfo.processInfo.environment, isolatesWindowEvents: Bool) {
     self.init(environment: environment) { window in
       SyncPairingDisplayFixture(settings: window, dataDirectory: environment["SOLARA_DATA_DIR"] ?? "", isolatesWindowEvents: isolatesWindowEvents)
     }

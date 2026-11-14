@@ -202,7 +202,7 @@ struct OmniboxServiceParityTests {
       #expect(serviceEqual(history, fixture.source["history"]!), "history projection \(id): \(history.text())")
       #expect(serviceEqual(bookmarks, fixture.source["bookmarks"]!), "bookmark projection \(id): \(bookmarks.text())")
       #expect(serviceEqual(tabs, fixture.source["tabs"]!), "tab table order \(id): \(tabs.text())")
-      #expect(warm.index(id).prepare())
+      #expect(warm.preparedIndex(id))
     }
     for (query, expected) in zip(fixture.cases, fixture.expected) {
       await Task.yield()
@@ -211,7 +211,7 @@ struct OmniboxServiceParityTests {
       let profile = fixture.context(query)["profileId"]!.string!
       let answer: JSONValue = ["items": expected["items"]!, "completion": expected["completion"]!]
       for (state, sources) in [("fresh", fixture.sources(catalog, workspaceTabs: workspaceTabs)), ("warm", warm)] {
-        let result = sources.index(profile).suggest(text, tabs: sources.tabs(profile), options: fixture.options(query, sources))
+        let result = sources.suggestNow(SuggestRequest(profileId: profile, typed: text, tabs: sources.tabs(profile), options: fixture.options(query, sources)))
         let actual = serviceResult(result)
         #expect(result.items.count <= 8)
         #expect(serviceEqual(actual, answer), "\(state) \(query.text()): Swift=\(actual.text()) Node=\(answer.text())")

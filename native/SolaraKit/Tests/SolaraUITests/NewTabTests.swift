@@ -450,7 +450,7 @@ struct NewTabCatalogTests {
     #expect(sources.history("work").first?.lastVisit == 30)
     #expect(sources.history("work").first?.favicon == nil)
     #expect(sources.knownHosts("work").contains("shared.example"))
-    #expect(sources.index("work").suggest("shared", tabs: []).items.contains { if case .page(let url, _, _, _, _, _) = $0 { return url == "https://shared.example/" }; return false })
+    #expect(sources.suggestNow(SuggestRequest(profileId: "work", typed: "shared", tabs: [], options: SuggestOptions())).items.contains { if case .page(let url, _, _, _, _, _) = $0 { return url == "https://shared.example/" }; return false })
   }
 
   @Test func bookmarkRowsFollowCatalogAndOriginalProfileMapping() async throws {

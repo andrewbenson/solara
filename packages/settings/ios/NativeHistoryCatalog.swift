@@ -164,7 +164,7 @@ final class SolaraHistoryClient: EngineClient {
   }
 
   private func validImageData(_ data: Data?) -> Data? {
-    guard let data, NSImage(data: data) != nil else { return nil }
+    guard let data, ImageDecoding.isImage(data) else { return nil }
     return data
   }
 
@@ -248,7 +248,7 @@ enum NativeHistoryCatalog {
     }
     let profile = NativeStoreHandle.store?.displayState.engineProfile(profileId) ?? (profileId == "default" ? "" : profileId)
     guard let result = await catalog.favicons?.favicon(page: page, source: source, engineProfile: profile, appearance: dark) else { return nil }
-    return NSImage(data: result.data)
+    return await ImageDecoding.decoded(result.data)
   }
 
   static func devFaviconLookup(page: String, engineProfile: String) async -> [String: Any] {
@@ -257,6 +257,7 @@ enum NativeHistoryCatalog {
   }
 
   static func start(engineProfiles: [String]) async {
+    NewTabSources.shared.asynchronous = true
     do { try await NativeBookmarkLaunch.ensureReady() } catch {
       guard NativeBookmarkOwner.bookmarksSelected else { return }
     }
@@ -376,8 +377,9 @@ private enum NativeLaunchFavicons {
         let width = properties[kCGImagePropertyPixelWidth] as? Int,
         let height = properties[kCGImagePropertyPixelHeight] as? Int,
         width > 0, width <= 256, height > 0, height <= 256,
-        let decodedImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) else { continue }
-      let image = NSImage(cgImage: decodedImage, size: NSSize(width: CGFloat(width), height: CGFloat(height)))
+        let image = await ImageDecoding.decoded(data, maxPixels: 256) else { continue }
+      image.size = NSSize(width: CGFloat(width), height: CGFloat(height))
+      if let raced = decoded[index] { return raced }
       decoded[index] = image
       return image
     }

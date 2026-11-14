@@ -145,6 +145,10 @@ public final class HeroBarModel {
   @ObservationIgnored public private(set) var editing = false
   @ObservationIgnored public private(set) var editingSession = UUID()
   @ObservationIgnored private var focusedOnce = false
+  @ObservationIgnored private let suggestKey = UUID()
+  @ObservationIgnored private var suggestGeneration = 0
+  @ObservationIgnored private var pending: SuggestRequest?
+  @ObservationIgnored private var appliedValue = ""
 
   public init(
     windowId: String, tabId: String, profileId: String, incognito: Bool, settings: @escaping () -> Settings,
@@ -188,6 +192,7 @@ public final class HeroBarModel {
 
   isolated deinit {
     fetcher?.cancel()
+    sources.worker.forget(suggestKey)
   }
 
   public var engine: SearchEngine { defaultSearchEngine(settings()) }
@@ -327,6 +332,14 @@ public final class HeroBarModel {
   public func selectionChanged(_ next: TextSelection) {
     selection = next
     if filled != nil { return }
+    if pending != nil, InlineRules.acceptsCompletion(typed: typed, shown: shown, selection: next) {
+      let carried = shown
+      settle(writing: false)
+      guard shown == carried else {
+        writeField()
+        return
+      }
+    }
     if InlineRules.acceptsCompletion(typed: typed, shown: shown, selection: next) {
       typed = value
       shown = ""
@@ -338,6 +351,7 @@ public final class HeroBarModel {
 
   @discardableResult
   public func key(_ k: HeroKey) -> Bool {
+    settle()
     switch k.name {
     case .escape:
       if filled != nil {
@@ -429,6 +443,7 @@ public final class HeroBarModel {
   static let wwwBreakers = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "./:"))
 
   public func submit() {
+    settle()
     choose(current, .current, byEnter: true)
   }
 
@@ -441,6 +456,7 @@ public final class HeroBarModel {
   }
 
   public func goPressed() {
+    settle()
     choose(current, .current, byEnter: true)
   }
 
@@ -644,7 +660,7 @@ public final class HeroBarModel {
   }
 
   func scopeSources() -> ScopeSources {
-    ScopeSources(engines: searchEngines(settings()), hosts: sources.knownHosts(profileId))
+    sources.scopeSources(profileId, engines: searchEngines(settings()))
   }
 
   func keywordScope(_ text: String) -> SearchScope? {
@@ -664,6 +680,10 @@ public final class HeroBarModel {
   private func update() {
     recompute()
     writeField()
+    if pending == nil { finishKeystroke() }
+  }
+
+  private func finishKeystroke() {
     if !items.isEmpty { events.journey(.suggestions) }
     if let keyAt {
       self.keyAt = nil
@@ -707,9 +727,11 @@ public final class HeroBarModel {
     let query = jsTrim(typed)
     requestRemote(query)
     guard active, !query.isEmpty else {
+      supersedePending()
       if idle { _ = items }
       result = SuggestionResult(items: [], completion: "")
       shown = ""
+      appliedValue = typed
       refollowHighlight()
       return
     }
@@ -731,9 +753,63 @@ public final class HeroBarModel {
       scope: scope,
       preventInline: suppressCompletion,
       bangs: table)
-    result = sources.index(profileId).suggest(typed, tabs: sources.tabs(profileId), options: options)
-    shown = suppressCompletion || scope != nil ? "" : result.completion
+    let request = SuggestRequest(profileId: profileId, typed: typed, tabs: sources.tabs(profileId), options: options)
+    guard sources.asynchronous else {
+      supersedePending()
+      apply(sources.suggestNow(request))
+      return
+    }
+    suggestGeneration += 1
+    let generation = suggestGeneration
+    pending = request
+    shown = provisionalShown()
+    sources.worker.submit(request, for: suggestKey, generation: generation) { [weak self] found in
+      DispatchQueue.main.async {
+        MainActor.assumeIsolated { self?.delivered(found, generation: generation) }
+      }
+    }
+  }
+
+  private func apply(_ found: SuggestionResult) {
+    result = found
+    shown = suppressCompletion || scope != nil ? "" : found.completion
+    appliedValue = typed + shown
     refollowHighlight()
+  }
+
+  private func provisionalShown() -> String {
+    guard !suppressCompletion, scope == nil, !typed.isEmpty, appliedValue.count > typed.count else { return "" }
+    guard String(appliedValue.prefix(typed.count)).compare(typed, options: .caseInsensitive) == .orderedSame else { return "" }
+    return String(appliedValue.dropFirst(typed.count))
+  }
+
+  private func supersedePending() {
+    suggestGeneration += 1
+    guard pending != nil else { return }
+    pending = nil
+    sources.worker.supersede(for: suggestKey, generation: suggestGeneration)
+  }
+
+  func delivered(_ found: SuggestionResult, generation: Int) {
+    guard generation == suggestGeneration, let request = pending, request.typed == typed else { return }
+    pending = nil
+    apply(found)
+    writeField()
+    finishKeystroke()
+  }
+
+  public var settled: Bool { pending == nil }
+
+  public func settle() {
+    settle(writing: true)
+  }
+
+  private func settle(writing: Bool) {
+    guard let request = pending else { return }
+    supersedePending()
+    apply(sources.suggestNow(request))
+    if writing { writeField() }
+    finishKeystroke()
   }
 
   private func refollowHighlight() {

@@ -7,7 +7,6 @@ import SolaraOmnibox
 @Observable
 public final class NewTabSources {
   public static let shared = NewTabSources()
-  static let warmSlice: Duration = .milliseconds(4)
 
   private struct IdleTabContext: Hashable {
     let windowId: [UInt16]
@@ -21,9 +20,11 @@ public final class NewTabSources {
     var bookmarks: [BookmarkRow] = []
     var bookmarkIcons: [String: String] = [:]
     var bookmarkIconsByEngine: [String: [String: String]] = [:]
-    var index = SuggestionIndex(history: [], bookmarks: [])
     var historyHosts: [String] = []
-    var hosts: [String]?
+    var hosts: [String]? {
+      didSet { scope = nil }
+    }
+    var scope: (engines: [SearchEngine], sources: ScopeSources)?
     var engineProfile: String?
     var bookmarkEngineProfile: String?
   }
@@ -38,13 +39,21 @@ public final class NewTabSources {
   @ObservationIgnored private var profiles: [String: Profile] = [:]
   @ObservationIgnored private var actions: [String: ActionIndex<CommandAction>] = [:]
   @ObservationIgnored private var extensions: [String: [ExtensionCandidate]] = [:]
-  @ObservationIgnored private var warming: [String: Task<Void, Never>] = [:]
+  @ObservationIgnored private(set) var worker = SuggestionWorker()
+  @ObservationIgnored public var asynchronous = false
+  @ObservationIgnored private var historyVersions: [String: Int] = [:]
   @ObservationIgnored private var historyObservers: [String: Task<Void, Never>] = [:]
   @ObservationIgnored private var historyCatalog: LibraryCatalog?
   @ObservationIgnored private var bookmarkCatalog: LibraryCatalog?
   @ObservationIgnored private var bookmarkObservers: [String: Task<Void, Never>] = [:]
 
-  public init() {}
+  public init() {
+    worker = SuggestionWorker { [weak self] _ in
+      DispatchQueue.main.async {
+        MainActor.assumeIsolated { self?.revision += 1 }
+      }
+    }
+  }
 
   public func useHistoryCatalog(_ catalog: LibraryCatalog) {
     if let historyCatalog, historyCatalog === catalog { return }
@@ -78,9 +87,11 @@ public final class NewTabSources {
 
   private func observeHistory(profileId: String, engineProfile: String) {
     historyObservers[profileId]?.cancel()
-    setHistory([], profileId: profileId)
-    guard let historyCatalog else { return }
-    applyHistory(historyCatalog.history(engineProfile: engineProfile), profileId: profileId)
+    guard let historyCatalog else {
+      setHistory([], profileId: profileId, sameSource: false)
+      return
+    }
+    applyHistory(historyCatalog.history(engineProfile: engineProfile), profileId: profileId, sameSource: false)
     historyObservers[profileId] = Task { [weak self] in
       for await snapshot in historyCatalog.observe(engineProfile: engineProfile) {
         guard !Task.isCancelled, self?.profiles[profileId]?.engineProfile == engineProfile else { return }
@@ -89,18 +100,20 @@ public final class NewTabSources {
     }
   }
 
-  private func applyHistory(_ snapshot: HistorySnapshot, profileId: String) {
+  private func applyHistory(_ snapshot: HistorySnapshot, profileId: String, sameSource: Bool = true) {
     let rows = snapshot.ready ? snapshot.entries.map { entry in
       HistoryRow(url: entry.url, title: entry.title, favicon: nil, visits: Double(entry.visits), lastVisit: entry.lastVisit)
     } : []
-    if profiles[profileId]?.history != rows { setHistory(rows, profileId: profileId) }
+    if profiles[profileId]?.history != rows { setHistory(rows, profileId: profileId, sameSource: sameSource) }
   }
 
   private func observeBookmarks(profileId: String, engineProfile: String) {
     bookmarkObservers[profileId]?.cancel()
-    setBookmarks([], profileId: profileId)
-    guard let bookmarkCatalog else { return }
-    applyBookmarks(bookmarkCatalog.bookmarks(engineProfile: engineProfile), profileId: profileId)
+    guard let bookmarkCatalog else {
+      setBookmarks([], profileId: profileId, sameSource: false)
+      return
+    }
+    applyBookmarks(bookmarkCatalog.bookmarks(engineProfile: engineProfile), profileId: profileId, sameSource: false)
     bookmarkObservers[profileId] = Task { [weak self] in
       for await snapshot in bookmarkCatalog.observeBookmarks(engineProfile: engineProfile) {
         guard !Task.isCancelled, self?.profiles[profileId]?.bookmarkEngineProfile == engineProfile else { return }
@@ -109,9 +122,9 @@ public final class NewTabSources {
     }
   }
 
-  private func applyBookmarks(_ snapshot: BookmarkSnapshot, profileId: String) {
+  private func applyBookmarks(_ snapshot: BookmarkSnapshot, profileId: String, sameSource: Bool = true) {
     guard snapshot.ready, let roots = snapshot.roots else {
-      if profiles[profileId]?.bookmarks != [] { setBookmarks([], profileId: profileId) }
+      if profiles[profileId]?.bookmarks != [] { setBookmarks([], profileId: profileId, sameSource: sameSource) }
       return
     }
     var seen = Set<String>()
@@ -127,7 +140,7 @@ public final class NewTabSources {
     }
     walk(roots.bar)
     walk(roots.other)
-    if profiles[profileId]?.bookmarks != rows { setBookmarks(rows, profileId: profileId) }
+    if profiles[profileId]?.bookmarks != rows { setBookmarks(rows, profileId: profileId, sameSource: sameSource) }
   }
 
   func bookmarks(_ profileId: String) -> [BookmarkRow] { profiles[profileId]?.bookmarks ?? [] }
@@ -202,7 +215,8 @@ public final class NewTabSources {
   private func removeProfile(_ profileId: String) {
     historyObservers.removeValue(forKey: profileId)?.cancel()
     bookmarkObservers.removeValue(forKey: profileId)?.cancel()
-    warming.removeValue(forKey: profileId)?.cancel()
+    historyVersions[profileId, default: 0] += 1
+    worker.remove(profileId)
     profiles[profileId] = nil
   }
 
@@ -233,31 +247,73 @@ public final class NewTabSources {
     revision += 1
   }
 
-  func setHistory(_ history: [HistoryRow], profileId: String) {
+  func setHistory(_ history: [HistoryRow], profileId: String, sameSource: Bool = true) {
     var p = profiles[profileId] ?? Profile()
+    let serveOld = servesOldIndex(p, history: history, bookmarks: p.bookmarks, sameSource: sameSource)
     p.history = history
+    historyVersions[profileId, default: 0] += 1
+    if asynchronous {
+      let version = historyVersions[profileId]
+      DispatchQueue.global(qos: .utility).async { [weak self] in
+        let hosts = NewTabSources.hosts(of: history)
+        DispatchQueue.main.async {
+          MainActor.assumeIsolated { self?.publishHosts(hosts, profileId: profileId, version: version) }
+        }
+      }
+    } else {
+      p.historyHosts = Self.hosts(of: history)
+      p.hosts = nil
+    }
+    profiles[profileId] = p
+    worker.replace(profileId: profileId, history: history, bookmarks: p.bookmarks, serveOldUntilReady: serveOld)
+    revision += 1
+  }
+
+  private func servesOldIndex(_ old: Profile, history: [HistoryRow], bookmarks: [BookmarkRow], sameSource: Bool) -> Bool {
+    asynchronous && sameSource
+      && old.history.isEmpty == history.isEmpty
+      && old.bookmarks.isEmpty == bookmarks.isEmpty
+      && !(history.isEmpty && bookmarks.isEmpty)
+      && Self.onlyAdds(old.history.map(\.url), history.map(\.url))
+      && Self.onlyAdds(old.bookmarks.map(\.url), bookmarks.map(\.url))
+  }
+
+  static func onlyAdds(_ old: [String], _ new: [String]) -> Bool {
+    guard old.count <= new.count else { return false }
+    let kept = Set(new)
+    return old.allSatisfy(kept.contains)
+  }
+
+  nonisolated static func hosts(of history: [HistoryRow]) -> [String] {
     var seen = Set<String>()
     var hosts: [String] = []
     for h in history {
       let host = hostOf(h.url)
       if !host.isEmpty && seen.insert(host).inserted { hosts.append(host) }
     }
+    return hosts
+  }
+
+  private func publishHosts(_ hosts: [String], profileId: String, version: Int?) {
+    guard historyVersions[profileId] == version, var p = profiles[profileId], p.historyHosts != hosts else { return }
     p.historyHosts = hosts
     p.hosts = nil
-    p.index = SuggestionIndex(history: history, bookmarks: p.bookmarks, reusing: p.index)
     profiles[profileId] = p
-    warm(profileId)
     revision += 1
   }
 
   func history(_ profileId: String) -> [HistoryRow] { profiles[profileId]?.history ?? [] }
 
   public func setBookmarks(_ bookmarks: [BookmarkRow], profileId: String) {
+    setBookmarks(bookmarks, profileId: profileId, sameSource: true)
+  }
+
+  func setBookmarks(_ bookmarks: [BookmarkRow], profileId: String, sameSource: Bool) {
     var p = profiles[profileId] ?? Profile()
+    let serveOld = servesOldIndex(p, history: p.history, bookmarks: bookmarks, sameSource: sameSource)
     p.bookmarks = bookmarks
-    p.index = SuggestionIndex(history: p.history, bookmarks: bookmarks, reusing: p.index)
     profiles[profileId] = p
-    warm(profileId)
+    worker.replace(profileId: profileId, history: p.history, bookmarks: bookmarks, serveOldUntilReady: serveOld)
     revision += 1
   }
 
@@ -276,18 +332,25 @@ public final class NewTabSources {
     extensions[windowId] = nil
   }
 
-  func index(_ profileId: String) -> SuggestionIndex {
-    if let p = profiles[profileId] { return p.index }
-    let made = Profile()
-    profiles[profileId] = made
-    return made.index
-  }
+  func preparedIndex(_ profileId: String) -> Bool { worker.prepared(profileId) }
+
+  func suggestNow(_ request: SuggestRequest) -> SuggestionResult { worker.suggestNow(request) }
 
   func tabs(_ profileId: String) -> [TabRow] { profiles[profileId]?.tabs ?? [] }
 
   func actions(_ windowId: String) -> ActionIndex<CommandAction>? { actions[windowId] }
 
   func extensions(_ windowId: String) -> [ExtensionCandidate] { extensions[windowId] ?? [] }
+
+  func scopeSources(_ profileId: String, engines: [SearchEngine]) -> ScopeSources {
+    if let cached = profiles[profileId]?.scope, cached.engines == engines { return cached.sources }
+    let made = ScopeSources(engines: engines, hosts: knownHosts(profileId))
+    if var p = profiles[profileId] {
+      p.scope = (engines, made)
+      profiles[profileId] = p
+    }
+    return made
+  }
 
   func knownHosts(_ profileId: String) -> [String] {
     guard var p = profiles[profileId] else { return [] }
@@ -300,14 +363,4 @@ public final class NewTabSources {
     return hosts
   }
 
-  private func warm(_ profileId: String) {
-    warming[profileId]?.cancel()
-    warming[profileId] = Task { [weak self] in
-      while !Task.isCancelled {
-        guard let index = self?.profiles[profileId]?.index else { return }
-        if index.prepare(deadline: ContinuousClock.now.advanced(by: NewTabSources.warmSlice)) { return }
-        try? await Task.sleep(for: .milliseconds(16))
-      }
-    }
-  }
 }

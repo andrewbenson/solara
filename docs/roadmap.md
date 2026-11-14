@@ -218,6 +218,16 @@ Done when no React Native view appears on screen; React Native only arranges nat
 | Only build what's visible: sidebar rows exist only for what's on screen, and row views are reused instead of one view per tab (a 200-tab session spent ~480 ms of launch building rows) (owner, 2026-11-10) | planned |
 | Launch in a smarter order: the window chrome first; invisible work (the extensions toolbar, sync, history hints, tab-sleep sweeps, pairing timers) when the main thread is idle, with lower priority classes for import, sync and cleanup (owner, 2026-11-10) | planned |
 
+## 0.4.1: agents, with limits you set
+
+| Item | Status |
+|---|---|
+| `solara mcp`: an MCP server in the `solara` command for Claude Code, Codex and Cursor, over the existing control path (no new listener); read-only tools by default, acting tools behind `--allow-actions`, never `exec`; page text marked untrusted; `solara mcp install` (owner 2026-11-14, moved from 0.4.0) | built, parked for 0.4.1 |
+| The `solara` command lists what's open: `solara profiles`, `solara windows`, and `solara tabs --window/--profile/--group/--asleep/--awake`; one tab ID across `tabs` and `sidebar` so commands chain (owner 2026-11-14) | drafting |
+| Everyday tab actions from the command line: `solara open URL [--window] [--profile] [--background]`, `solara tab activate/close/reload/duplicate/mute/sleep`, close duplicates, sleep tabs idle for a while; never brings Solara forward unless asked (owner 2026-11-14) | planned |
+| Search from the command line: `solara find` across open tabs, pins and recent history; `solara history` as a plain command (owner 2026-11-14) | planned |
+| Profiles agents can't reach: a per-profile setting that keeps the `solara` command and MCP out of a profile, enforced by the app on the control connection, not by the command (owner 2026-11-14) | design, waiting on the owner's choices |
+
 ## 0.5.0: React Native decides nothing
 
 Done when every user action is handled in Swift; JavaScript only mirrors state.

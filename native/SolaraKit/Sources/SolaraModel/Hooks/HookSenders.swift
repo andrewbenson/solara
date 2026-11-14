@@ -96,7 +96,7 @@ public final class HookSenderTeams: @unchecked Sendable {
       save(snapshot)
     }
     guard let expected else {
-      note(sender.identifier, "A link came from \(sender.identifier), but no installed copy of it was found to check who signs it; hooks for that app ignored it")
+      note(sender.identifier, "A link came from \(sender.identifier), but no installed copy of it in /Applications with one signer was found to check it against; hooks for that app ignored it (pin its team with \"team\" in the hook)")
       return sender
     }
     guard expected == sender.team else {

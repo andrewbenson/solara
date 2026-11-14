@@ -158,12 +158,18 @@ final class HooksRuntime: @unchecked Sendable {
   }
 
   static func installedTeam(_ identifier: String) -> String? {
-    func rank(_ url: URL) -> Int {
+    func trusted(_ url: URL) -> Bool {
       let folder = url.resolvingSymlinksInPath().deletingLastPathComponent().path
-      if folder == "/Applications" || folder == "/System/Applications" || folder.hasPrefix("/System/Applications/") { return 0 }
-      return folder.hasPrefix("/Applications/") ? 1 : 2
+      return folder == "/Applications" || folder.hasPrefix("/Applications/") || folder == "/System/Applications"
+        || folder.hasPrefix("/System/Applications/")
     }
-    guard let app = NSWorkspace.shared.urlsForApplications(withBundleIdentifier: identifier).min(by: { rank($0) < rank($1) }) else { return nil }
+    let copies = NSWorkspace.shared.urlsForApplications(withBundleIdentifier: identifier).filter(trusted)
+    let teams = Set(copies.map(signingTeam))
+    guard teams.count == 1, let team = teams.first else { return nil }
+    return team
+  }
+
+  static func signingTeam(_ app: URL) -> String? {
     var found: SecStaticCode?
     guard SecStaticCodeCreateWithPath(app as CFURL, [], &found) == errSecSuccess, let code = found else { return nil }
     func satisfies(_ text: String) -> Bool {

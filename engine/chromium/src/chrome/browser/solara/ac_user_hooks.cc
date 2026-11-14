@@ -8,6 +8,8 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 
+#include <algorithm>
+#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -162,7 +164,12 @@ bool g_configured = false;
 bool g_pending = false;
 base::TimeTicks g_pending_since;
 bool g_hold_timed_out = false;
-int g_late_count = 0;
+size_t g_late_count = 0;
+
+int LateCount() {
+  return static_cast<int>(
+      std::min<size_t>(g_late_count, std::numeric_limits<int>::max()));
+}
 constexpr base::TimeDelta kPendingDeadline = base::Seconds(3);
 
 class UserHooksThrottle;
@@ -1261,7 +1268,9 @@ extern "C" AC_ENGINE_EXPORT int ac_hooks_configure_v1(const char* json,
       solara::HoldTimedOut();
     }
     solara::ReplyWith(reply, context,
-                      base::DictValue().Set("error", "bad hooks configuration"));
+                      base::DictValue()
+                          .Set("error", "bad hooks configuration")
+                          .Set("late", solara::LateCount()));
     return 0;
   }
   std::vector<std::unique_ptr<solara::Rule>> rules;
@@ -1309,7 +1318,7 @@ extern "C" AC_ENGINE_EXPORT int ac_hooks_configure_v1(const char* json,
       base::DictValue()
           .Set("ok", true)
           .Set("rules", static_cast<int>(solara::Rules().size()))
-          .Set("late", solara::g_late_count)
+          .Set("late", solara::LateCount())
           .Set("problems", std::move(problems)));
   return 1;
 }

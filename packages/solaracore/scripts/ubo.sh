@@ -6,7 +6,7 @@ vendor="$(cd "$(dirname "$0")/.." && pwd)/vendor"
 UBO_VERSION="1.76.0"
 UBO_SHA256="e76a1912426caa7b8679ad11dd140d1529c23db22ddbe892b6f901e9b7763456"
 UBO_KEY="MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAv1MPdIgJjIsN4Y0N/20GDNPfN4J//aknk5dsH8Y1LBxSnz3Jp/BT187Gub5cv6lee5CUVDmVBa3Yiqow8GMna5KwX+ZP+yc1pt/ewzyNxm2BzoQPgWz+1DgZaahz56/szi1EEtWVYxd3wNxFN4wPDqwV6aqlnV4R3RnxlF1ocw1kDgJ+8BxR1EY+MB+H8bymdef+xB3TNifBZIVmZt81cC3UMOG6KWRTU1wtIXsW+ZqSv5zaeFHLkjG4MPB7EfcMGrvO80ElJBZZLdrTmYOL4uUPsz2Wy6GiPWzpDmzzI9RfsZm11sLiJo63blcPF0Cz3sM0wQfxJPPcQuqkZDReswIDAQAB"
-UBO_PATCH="22"
+UBO_PATCH="23"
 ubo="$vendor/ubo"
 stamp="$UBO_VERSION-$UBO_PATCH"
 installed() { [ -f "$ubo/.version" ] && [ "$(cat "$ubo/.version")" = "$stamp" ]; }
@@ -32,6 +32,9 @@ import json, os, sys
 ext, key, level = sys.argv[1], sys.argv[2], sys.argv[3]
 path = os.path.join(ext, "manifest.json")
 manifest = json.load(open(path))
+messages = json.load(open(os.path.join(ext, "_locales", manifest["default_locale"], "messages.json")))
+for field, message in (("name", "extName"), ("description", "extShortDesc")):
+    manifest[field] = messages[message]["message"]
 manifest["key"] = key
 manifest["version_name"] = manifest["version"]
 manifest["version"] = f"{manifest['version']}.{level}"

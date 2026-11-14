@@ -1,9 +1,97 @@
 ---
 name: solara
-description: Drive the user's running Solara browser from the terminal with `solara exec` (Python and pydoll over the Chrome DevTools Protocol). Use when a task needs a real browser with the user's logins, to read the page the user is looking at, open pages, click, type, take screenshots or run JavaScript; to write, test and install userscripts that change how sites look or behave; or to set up and run a daily report built from the sites the user pins and visits.
+description: Use when a task needs the user's running Solara browser and logins, page reading or interaction, screenshots, JavaScript, tab memory, sidebar tabs, groups or folders, userscripts, or reports from pinned and visited sites.
 ---
 
-# Driving Solara with `solara exec`
+# Driving Solara
+
+Use `solara exec` for web pages. Use `solara sidebar` to find native sidebar IDs, then `solara tab`,
+`solara group` or `solara folder` to arrange them. Use `solara tabs` for tab memory. Sidebar IDs and DevTools
+`targetId` values are different; never substitute one for the other.
+
+## Sidebar
+
+Start with a listing:
+
+```sh
+solara sidebar --json
+```
+
+It lists normal profiles, regular windows, tabs, groups and Top Apps folders, including sleeping tabs without
+waking them. Private profiles and windows are omitted and refused as sources or destinations of edits.
+
+Run every edit with `--dry-run` first, especially anything destructive. Inspect the proposed change, then repeat
+without `--dry-run` to apply it. Dry-run validates without changing state or allocating IDs; it still needs Solara
+running with control on. Use IDs from the listing in these examples:
+
+| Edit | Preview |
+| --- | --- |
+| Create an unpinned group | `solara group create Research --color blue --tabs t_1 t_2 --dry-run` |
+| Rename a group | `solara group rename g_1 Reading --dry-run` |
+| Delete a group and close its tabs | `solara group delete g_1 --dry-run` |
+| Create a Top Apps folder and pin its tabs | `solara folder create Tools --tabs t_3 t_4 --dry-run` |
+| Rename a folder | `solara folder rename tf_1 "Daily tools" --dry-run` |
+| Dissolve a folder, keeping its pinned tabs | `solara folder delete tf_1 --dry-run` |
+| Move into a group | `solara tab move t_5 --to-group g_1 --dry-run` |
+| Move into a folder | `solara tab move t_5 --to-folder tf_1 --dry-run` |
+| Move to a window | `solara tab move t_5 --to-window w_2 --dry-run` |
+| Move to a profile by its unique name | `solara tab move t_5 --to-profile Work --dry-run` |
+| Pin a tab | `solara tab pin t_5 --dry-run` |
+| Unpin a tab | `solara tab unpin t_5 --dry-run` |
+| Set a custom title | `solara tab rename t_5 "Daily reading" --dry-run` |
+| Reorder before a tab | `solara tab reorder t_5 --before t_6 --dry-run` |
+| Reorder after a tab | `solara tab reorder t_5 --after t_6 --dry-run` |
+
+Create requires tabs from one window and profile. Without `--tabs`, it uses the active tab of the focused regular
+window, or the window selected with `--window w_1`; empty groups and folders are unsupported. Group colors:
+`grey`, `blue`, `red`, `yellow`, `green`, `pink`, `purple`, `cyan`, `orange`, `none` (transparent), `neutral`.
+An empty title (`solara tab rename t_5 "" --dry-run`) clears the custom title.
+
+Reorder stays within one window, profile, pin section, group and folder. Split panes move together; split rows
+cannot enter Top Apps folders. A profile move starts a fresh navigation using that profile's cookies and session;
+it does not carry page state. Move to the destination window or profile before moving into its group or folder.
+
+All edits accept `--json` and `--data-dir DIR`. JSON gives `operation`, `dryRun`, `changes`, and a new `id` after
+creation. Sidebar commands require the token control path (`SolaraControl.json`), native workspace ownership,
+control on and safe mode off. `--port`, `--ws` and `$SOLARA_CDP_URL` are refused. The data dir is `--data-dir`,
+then `$SOLARA_DATA_DIR`, then the installed app's. After a timeout or disconnect, inspect `solara sidebar` before
+repeating an edit: its outcome may be unknown.
+
+Write limits apply to dry-run too: 65,536 bytes of serialized JSON params; 256 Unicode scalars for names,
+titles and profile-name destinations; 1–256 ASCII letters, digits or `._:@-` for IDs; 500 explicit tab entries
+before deduplication and 500 tabs after split-row expansion. Operation names are capped at 64 scalars, colors
+at 32; only supported values are accepted. Invalid input is refused, never shortened. Folder names cannot start
+or end with whitespace.
+
+Listings cap names and titles at 1,024 Unicode scalars, URLs at 8,192, IDs at 256 and colors at 32. A capped row
+has `truncated: true` in JSON and `…` in text; stored values stay intact. Each row returns at most 500 `tabIds`,
+with omitted membership in its `more.tabIds`. The whole inventory has a 262,144-byte budget: top-level `more`
+counts omitted profiles, windows, tabs, groups and folders. Text shows `(17 more tabs)` or `(42 more tabIds)`.
+Referenced IDs can belong to omitted rows. There is no pagination flag; do not treat a partial listing as complete.
+
+## Tab memory
+
+```sh
+solara tabs
+solara tabs --full
+solara tabs --json
+solara exec --json 'await tab_memory()'
+```
+
+`solara tabs` lists actual Chromium tabs in normal profiles across windows, including sleeping tabs without waking
+them. Restored sidebar tabs not yet instantiated in Chromium may be absent. Use `solara sidebar` for saved sidebar
+IDs and titles, subject to its listing caps. The memory table sorts largest first, in decimal MB/GB. `—` means asleep; `?` means awake with no reading. The footer
+sums available tab readings, not whole-browser memory; it says `Known total` when an awake reading is missing.
+`--full` keeps whole URLs; the normal table shortens columns to terminal width. Private, guest and system profiles
+are excluded.
+
+`--json` and `await tab_memory()` return the original-order list with `targetId`, `title`, `url`, `profile`,
+`discarded` and unrounded `bytes` (`null` when asleep or unavailable). `title` is Chromium's page title, not a custom
+sidebar name; titles and URLs are unshortened. This is attributed private footprint, not JavaScript heap size or a renderer total repeated per tab. Measurements can change between
+requests. Both use the token control path, accept `--data-dir DIR` on their command, and refuse `--port`, `--ws`
+and `$SOLARA_CDP_URL`. An engine without the tab-memory endpoint reports an error.
+
+## Page execution
 
 `solara exec` runs Python against the Solara the user has open, with top-level `await`. The value of the last
 expression is printed: strings as they are, anything else as its repr, or JSON with `--json`. Every run is a new

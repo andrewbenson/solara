@@ -126,6 +126,11 @@ AC_ENGINE_EXPORT int ac_hooks_match_v1(const char* url,
                                        ac_engine_reply_t reply,
                                        void* context);
 
+typedef char* (*ac_cli_sidebar_handler_v1_t)(const char* request_json);
+typedef void (*ac_cli_sidebar_register_v1_t)(ac_cli_sidebar_handler_v1_t handler);
+
+AC_ENGINE_EXPORT void ac_cli_sidebar_register_v1(ac_cli_sidebar_handler_v1_t handler);
+
 typedef int (*ac_engine_abi_version_t)(void);
 typedef void (*ac_engine_set_event_sink_t)(ac_engine_event_t sink,
                                            void* context);

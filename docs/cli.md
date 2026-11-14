@@ -40,6 +40,8 @@ the pins into `pyproject.toml`).
   returns the same list. Both require the token control path; `--port`, `--ws` and `$SOLARA_CDP_URL` are refused
   for this operation. Exit codes follow `exec`: 0 success, 1 processing error, 2 connection/control-file
   or endpoint error (including its 10 s request deadline), 130 interrupted. The endpoint requires the Chromium 157 engine with `/solara/tabs` support.
+- `solara sidebar`, `solara group create|rename|delete`, `solara folder create|rename|delete`, and
+  `solara tab move|pin|unpin|rename|reorder` arrange the sidebar (see below).
 - `solara skills install --target general|codex|claude-code|cursor|opencode [--target …] [--project]` installs the
   agent skill (`solara_cli/skill`: `SKILL.md` and `references/pydoll.md`) into `~/.agents/skills` (general, codex),
   `~/.claude/skills`, `~/.cursor/skills` or `~/.config/opencode/skills`; with `--project`, into `./.agents/skills`,
@@ -53,6 +55,79 @@ refuses fragmented sends), so
 an `execute_commands` batch (checked whole before anything is sent) or straight on the socket. On exit (normal, an
 exception or Ctrl-C) it closes only its own page and browser WebSockets. Its WebSockets always connect directly,
 ignoring `http_proxy`, `ws_proxy` and the like, so no proxy sees the token.
+
+## Arranging the sidebar
+
+These commands follow the existing noun/verb style used by `scripts`. Use `solara sidebar [--json] [--data-dir DIR]`
+to list the native IDs of normal profiles, windows, tabs, groups and folders. These are sidebar IDs, distinct from
+`tabs --json`'s DevTools `targetId`. Sleeping tabs are included without waking them. Private profiles and windows
+are excluded from the inventory and refused as sources or destinations of every edit.
+
+Every edit below accepts `--dry-run`, `--json` and `--data-dir DIR`. Dry-run validates the same IDs and boundaries
+and prints the proposed change, without dispatching an action, allocating IDs or changing the store revision.
+It still requires a running app with control enabled. JSON returns `operation`, `dryRun`, `changes` (a list of
+change descriptions), and `id` for a newly created group or folder. Text prints the descriptions and any new ID.
+
+Sidebar params are limited to 65,536 bytes of serialized JSON before the native handler runs. Names, titles and
+profile-name destinations accept at most 256 Unicode scalars; IDs accept 1–256 ASCII letters, digits or `._:@-`.
+An explicit tab list accepts at most 500 entries before deduplication and at most 500 tabs after split-row expansion.
+These limits apply equally to dry-run and real edits; invalid input is rejected before dispatch. Text is never
+silently shortened or trimmed. Folder names with leading or trailing whitespace are refused because the existing
+folder action would trim them. An empty tab title clears its custom title.
+
+Inventory never refuses a listing because a stored value exceeds a write limit. Returned titles and names are
+capped at 1,024 Unicode scalars, URLs at 8,192, IDs at 256 and colors at 32. A row with a capped value has
+`"truncated": true` in JSON and an ellipsis (`…`) in text. The stored value stays intact, including long page titles
+and data URLs; these read caps do not change the edit limits above.
+
+The inventory has a fixed 262,144-byte budget, including Chromium JSON escaping and the protocol envelope.
+`sidebar --json` prints compact JSON to keep its output within the same budget. It returns fewer rows as needed, with a top-level
+`more` object giving the number omitted from each of `profiles`, `windows`, `tabs`, `groups` and `folders`.
+Text prints these as, for example, `(17 more tabs)`. Each row lists at most 500 `tabIds`, with omitted membership
+counts in that row's `more` object (`{"tabIds": 42}`), `truncated: true`, and `(42 more tabIds)` in text.
+IDs referenced by returned rows can belong to omitted rows. Listing never changes state or wakes sleeping tabs.
+Other request strings remain bounded: operation names to 64 scalars and colors to 32, with only the listed
+operations and colors accepted.
+
+```sh
+solara group create Research --color blue --tabs t_1 t_2
+solara folder create Tools --tabs t_3 t_4
+solara tab move t_5 --to-group g_1
+solara tab move t_5 --to-folder tf_1
+solara tab pin t_5
+solara tab unpin t_5
+solara tab rename t_5 "Daily reading"
+solara tab reorder t_5 --before t_6
+solara tab reorder t_5 --after t_6
+solara tab move t_5 --to-window w_2
+solara tab move t_5 --to-profile Work
+solara group rename g_1 Reading
+solara group delete g_1
+solara folder rename tf_1 "Daily tools"
+solara folder delete tf_1
+solara tab move t_5 --to-window w_2 --dry-run --json
+```
+
+A group is an unpinned sidebar group; a folder is a Top Apps tile folder, whose tabs become pinned tiles.
+Creation takes an optional `--tabs ID [ID ...]`. When omitted it uses the active tab of the focused regular window,
+or the window named with `--window ID`; it errors if there is no active tab. The store has no empty group or empty
+folder model. Tabs supplied together must belong to one window and profile. Colors are `grey`, `blue`, `red`,
+`yellow`, `green`, `pink`, `purple`, `cyan`, `orange`, `none` (transparent) or `neutral`.
+
+Deleting a group uses the sidebar's Delete Group action, closing its tabs. Deleting a folder dissolves the folder
+and keeps its pinned tabs. Reordering follows sidebar row semantics, so split panes move together. The app refuses
+placements that cannot be represented by the existing action rather than silently ignoring them. Profile names
+must identify one normal profile. A profile move calls the existing `moveTabToProfile` action: the tab starts a fresh
+navigation in that profile, using its cookies and session; it does not transfer page state or profile data.
+
+Sidebar commands use only `SolaraControl.json`, resolved as described below. `--port`, `--ws` and `$SOLARA_CDP_URL`
+are refused. They send `Solara.sidebar` on the token browser WebSocket; page connections and attached sessions cannot
+call it. The app requires native workspace ownership, control on and safe mode off, and runs the same native store
+commands as sidebar edits, with their normal UI, sync and undo behavior. An older engine without the method reports
+an error. No request is retried automatically: after a timeout or disconnect, inspect `sidebar` before repeating an
+edit whose outcome is unknown. Exit 0 means success, 1 a refused/invalid edit or output error, 2 a connection,
+control-file or invalid-response error, and 130 interrupted. The request deadline is 10 s, followed by bounded socket
+cleanup.
 
 ## Browsing data
 
@@ -317,3 +392,8 @@ control server when the port switch is set) and with control on, for example a s
 `"settings": {"cliControl": true}`, opened with `open -g -n --env SOLARA_BACKGROUND=1 --env SOLARA_DATA_DIR=<dir>`.
 Unit tests (matching parity with node, import confinement, store rollback and recovery, symlink refusal):
 `python -m unittest discover -s apps/cli/tests` with the locked dependencies installed.
+
+The sidebar driver is `node apps/browser/scripts/cli-sidebar-test.mjs <Debug Solara.app> [--python=/path/to/python]`
+(with the CLI's locked Python dependencies installed). It launches a hidden scratch instance on the token-control
+path, exercises each edit with dry-run first, compares native workspace snapshots, checks unknown/private refusals
+and bulk atomicity, and checks that turning control off prevents edits. `--keep-data` retains its fixture.

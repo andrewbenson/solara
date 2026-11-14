@@ -31,4 +31,8 @@ typedef NS_ERROR_ENUM(SolaraCoreBookmarkURLErrorDomain, SolaraCoreBookmarkURLErr
 + (nullable NSDictionary<NSString *, id> *)matchHooks:(NSString *)url NS_SWIFT_NAME(matchHooks(_:));
 @end
 
+@interface SolaraCoreCliSidebar : NSObject
++ (BOOL)setHandler:(nullable NSString * (^)(NSString *request))handler;
+@end
+
 NS_ASSUME_NONNULL_END

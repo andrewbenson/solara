@@ -72,6 +72,9 @@ final class NativeCliControl {
     self.model = model
     CliPillIndicator.shared.onStop = { NativeCliControl.shared.stop() }
     showPill()
+    SolaraCoreCliSidebar.setHandler { request in
+      MainActor.assumeIsolated { NativeCliControl.shared.sidebar(request) }
+    }
     SolaraCoreEngineBridge.observe("cliControl") { @Sendable payload in
       let status = CliControlServer(payload)
       Task { @MainActor in NativeCliControl.shared.heard(status) }
@@ -79,6 +82,21 @@ final class NativeCliControl {
     observeActiveTabs()
     settingChanged()
     DispatchQueue.main.asyncAfter(deadline: .now() + Self.upgradeDelay) { [weak self] in self?.upgradeIfBehind() }
+  }
+
+  private func sidebar(_ request: String) -> String {
+    do {
+      guard !SolaraCoreHost.safeMode else { throw CommandError("Sidebar control is disabled in safe mode.") }
+      guard NativeStoreHandle.ownsWorkspace, let store = NativeStoreHandle.store else {
+        throw CommandError("Sidebar control requires the native workspace.")
+      }
+      guard store.displayState.settings["cliControl"]?.bool == true else {
+        throw CommandError("Let the solara command control Solara is off in Settings.")
+      }
+      return try store.cliSidebar(JSONValue.parse(request)).text()
+    } catch {
+      return JSONValue.object(["error": .string(String(describing: error))]).text()
+    }
   }
 
   private var settingOn: Bool { model?.value("cliControl")?.bool ?? false }

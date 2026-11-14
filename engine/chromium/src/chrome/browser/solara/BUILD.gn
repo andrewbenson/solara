@@ -10,6 +10,7 @@ source_set("solara") {
     "ac_browsing_data.cc",
     "ac_browsing_data.h",
     "ac_cli_control.cc",
+    "ac_cli_sidebar.h",
     "ac_cli_token_policy.cc",
     "ac_cli_token_policy.h",
     "ac_cookies.cc",

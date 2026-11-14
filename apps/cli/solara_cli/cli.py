@@ -96,8 +96,9 @@ def build_parser():
     install.add_argument("--target", action="append", choices=sorted(TARGETS), metavar="TARGET", help="general, codex, claude-code, cursor or opencode; repeat for several (default: general)")
     install.add_argument("--project", action="store_true", help="install into the current directory's project folders")
 
-    from solara_cli import scripts_cli
+    from solara_cli import scripts_cli, sidebar
 
+    sidebar.add_parser(commands)
     scripts_cli.add_parser(commands, argparse.RawDescriptionHelpFormatter)
     return parser
 
@@ -115,6 +116,10 @@ def main(argv: list[str] | None = None) -> int:
         from solara_cli import tab_memory
 
         return tab_memory.run(args)
+    if args.command in ("sidebar", "tab", "group", "folder"):
+        from solara_cli import sidebar
+
+        return sidebar.run(args)
     if args.command == "skills":
         if args.skills_command != "install":
             parser.parse_args(["skills", "--help"])

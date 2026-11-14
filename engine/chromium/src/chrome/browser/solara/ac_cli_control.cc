@@ -325,6 +325,10 @@ class ControlServer {
     Stop();
   }
 
+  uint64_t RunningGeneration() const {
+    return state_ == State::kRunning ? generation_ : 0;
+  }
+
   base::DictValue Status() const {
     base::DictValue status;
     if (ServerStartedBySwitch()) {
@@ -665,6 +669,11 @@ class ControlServer {
 };
 
 }
+
+uint64_t CliControlGeneration() {
+  return ControlServer::Get().RunningGeneration();
+}
+
 }
 
 AC_ENGINE_CALL(ac_cli_control) {

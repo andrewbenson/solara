@@ -1,6 +1,7 @@
 // Copyright 2026 Solara. Apache-2.0.
 
 #include "chrome/browser/solara/ac_cli_token_policy.h"
+#include "chrome/browser/solara/ac_cli_sidebar.h"
 
 #include <algorithm>
 #include <map>
@@ -24,6 +25,7 @@
 #include "base/values.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/browser_window/public/global_browser_collection.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/devtools_agent_host_client.h"
@@ -47,6 +49,11 @@ constexpr int kInvalidRequest = -32600;
 constexpr int kParseError = -32700;
 constexpr int kRefused = -32000;
 constexpr size_t kMaxPending = 4096;
+
+CliSidebarChannel& SidebarChannel() {
+  static CliSidebarChannel channel;
+  return channel;
+}
 
 const std::set<std::string_view>& AllowedMethods() {
   static const base::NoDestructor<std::set<std::string_view>> methods({
@@ -112,6 +119,7 @@ const std::set<std::string_view>& AllowedMethods() {
       "Runtime.releaseObject",
       "Runtime.releaseObjectGroup",
       "Runtime.runIfWaitingForDebugger",
+      "Solara.sidebar",
       "Target.activateTarget",
       "Target.attachToTarget",
       "Target.closeTarget",
@@ -501,7 +509,7 @@ class TokenClient : public SolaraDevToolsTokenClient {
  public:
   TokenClient(content::DevToolsAgentHostClient* client,
               content::DevToolsAgentHost* host)
-      : client_(client), root_host_(host) {
+      : client_(client), root_host_(host), control_generation_(CliControlGeneration()) {
     Registry()[client_] = this;
   }
   ~TokenClient() override { Registry().erase(client_); }
@@ -570,6 +578,36 @@ class TokenClient : public SolaraDevToolsTokenClient {
                           "solara: too many commands are waiting for replies; "
                           "closing the connection");
       wedged_ = true;
+      return false;
+    }
+    if (*method == "Solara.sidebar") {
+      const auto request = base::WriteJson(params);
+      if (!request) {
+        *reply = ErrorReply(*id, session, kRefused,
+                            "sidebar params could not be serialized");
+        return false;
+      }
+      const auto response = SidebarChannel().Invoke(
+          *request,
+          root_host_ && root_host_->GetType() == content::DevToolsAgentHost::kTypeBrowser,
+          session_id != nullptr, control_generation_, CliControlGeneration());
+      if (!response.error.empty()) {
+        *reply = ErrorReply(*id, session, kRefused, response.error);
+        return false;
+      }
+      auto result = base::JSONReader::Read(response.json, base::JSON_PARSE_RFC);
+      if (!result || !result->is_dict()) {
+        *reply = ErrorReply(*id, session, kRefused, "sidebar control returned an invalid response");
+        return false;
+      }
+      if (const std::string* error = result->GetDict().FindString("error")) {
+        *reply = ErrorReply(*id, session, kRefused, *error);
+        return false;
+      }
+      base::DictValue answer;
+      answer.Set("id", *id);
+      answer.Set("result", std::move(*result));
+      *reply = base::WriteJson(answer).value_or(std::string());
       return false;
     }
     outstanding_[key] =
@@ -1007,6 +1045,7 @@ class TokenClient : public SolaraDevToolsTokenClient {
 
   const raw_ptr<content::DevToolsAgentHostClient> client_;
   const scoped_refptr<content::DevToolsAgentHost> root_host_;
+  const uint64_t control_generation_;
   std::map<std::string, std::string> targets_;
   std::map<std::string, Contexts> sessions_;
   std::map<std::pair<std::string, int>, std::string> outstanding_;
@@ -1032,4 +1071,9 @@ bool TokenClientMayInput(content::DevToolsAgentHostClient* root_client,
   return !Registry().contains(root_client) || IsWebFrame(frame);
 }
 
+}
+
+extern "C" AC_ENGINE_EXPORT void ac_cli_sidebar_register_v1(ac_cli_sidebar_handler_v1_t handler) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  solara::SidebarChannel().Register(handler);
 }

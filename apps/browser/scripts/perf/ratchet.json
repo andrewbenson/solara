@@ -993,8 +993,8 @@
     "launch.timers": 642,
     "launch.writeBytes": 927111,
     "launch.writes": 16,
-    "open.commitTasks": 378,
-    "open.commits": 378,
+    "open.commitTasks": 402,
+    "open.commits": 402,
     "open.hostUpdates": 3029,
     "open.listenerCalls": 8312,
     "open.mounts": 2620,
@@ -1036,7 +1036,7 @@
     "typing.renders": 1533,
     "typing.selectorCalls": 14954,
     "typing.subNotified": 13462,
-    "typing.tasks": 164,
+    "typing.tasks": 173,
     "typing.timers": 199
   },
   "micro": {

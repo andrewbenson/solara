@@ -6,12 +6,14 @@ public struct HostedContent {
   public let onUnmount: (() -> Void)?
   public let takesFocus: Bool
   public let onState: ((String) -> Void)?
+  public let focusRestoration: HostedFocusRestoration?
 
-  public init(view: NSView, onUnmount: (() -> Void)? = nil, takesFocus: Bool = true, onState: ((String) -> Void)? = nil) {
+  public init(view: NSView, onUnmount: (() -> Void)? = nil, takesFocus: Bool = true, focusRestoration: HostedFocusRestoration? = nil, onState: ((String) -> Void)? = nil) {
     self.view = view
     self.onUnmount = onUnmount
     self.takesFocus = takesFocus
     self.onState = onState
+    self.focusRestoration = focusRestoration
   }
 }
 
@@ -64,6 +66,7 @@ final class HostedMount {
   init(content: HostedContent, in host: NSView, window: NSWindow) {
     self.content = content
     self.window = window
+    content.focusRestoration?.attach(to: content.view, in: window)
     let responder = content.takesFocus ? window.firstResponder : nil
     if let editor = responder as? NSTextView, editor.isFieldEditor, let field = editor.delegate as? NSResponder {
       savedResponder = field
@@ -111,4 +114,73 @@ final class HostedMount {
     guard let view = responder as? NSView else { return false }
     return view.window === window && !view.isHiddenOrHasHiddenAncestor && view.acceptsFirstResponder
   }
+}
+
+@MainActor
+public final class HostedFocusRestoration {
+  private weak var window: NSWindow?
+  private weak var notice: NSView?
+  private weak var responder: NSResponder?
+  private var selection: NSRange?
+  private var context: String?
+  private var observations: [NSObjectProtocol] = []
+
+  public init() {}
+
+  func attach(to notice: NSView, in window: NSWindow) {
+    self.window = window
+    self.notice = notice
+    capture()
+    for name in [NSWindow.didUpdateNotification, NSTextView.didChangeSelectionNotification, NSControl.textDidBeginEditingNotification] {
+      observations.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+        MainActor.assumeIsolated { self?.capture() }
+      })
+    }
+  }
+
+  public func updateContext(_ next: String?) {
+    if let context, context != next { responder = nil; selection = nil }
+    context = next
+  }
+
+  public func cancel() {
+    responder = nil
+    selection = nil
+    observations.forEach(NotificationCenter.default.removeObserver)
+    observations.removeAll()
+  }
+
+  public func restore() {
+    guard let window, let notice, ownsFocus(notice, in: window), NSApp.keyWindow == nil || NSApp.keyWindow === window,
+      let responder, let view = responder as? NSView, view.window === window,
+      !view.isHiddenOrHasHiddenAncestor, view.acceptsFirstResponder else { return }
+    let selection = selection
+    guard window.makeFirstResponder(responder) else { return }
+    if let selection, let editor = (responder as? NSTextField)?.currentEditor() as? NSTextView,
+      NSMaxRange(selection) <= (editor.string as NSString).length {
+      editor.setSelectedRange(selection)
+    }
+  }
+
+  private func capture() {
+    guard let window, let notice, !ownsFocus(notice, in: window), let current = window.firstResponder as? NSView,
+      current.window === window else { return }
+    if let editor = current as? NSTextView, editor.isFieldEditor, let field = editor.delegate as? NSView {
+      responder = field
+      selection = editor.selectedRange()
+    } else {
+      responder = current
+      selection = nil
+    }
+  }
+
+  private func ownsFocus(_ notice: NSView, in window: NSWindow) -> Bool {
+    guard let current = window.firstResponder as? NSView else { return false }
+    if let editor = current as? NSTextView, editor.isFieldEditor, let field = editor.delegate as? NSView {
+      return field === notice || field.isDescendant(of: notice)
+    }
+    return current === notice || current.isDescendant(of: notice)
+  }
+
+  isolated deinit { observations.forEach(NotificationCenter.default.removeObserver) }
 }

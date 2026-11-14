@@ -205,7 +205,7 @@ Done when no React Native view appears on screen; React Native only arranges nat
 | Item | Status |
 |---|---|
 | Inventory every file left in apps/browser/src by what it does (draws, decides, holds data, glue) and the milestone that removes it: docs/native/rn-inventory.md | landed b1a78d3d |
-| The New Tab page's remaining React Native parts: Personalize, the feedback check-in and the release postcard | in progress: Personalize now hosts a native button/panel and the Swift onboarding theme/layout pickers; feedback and release postcard remain |
+| The New Tab page's remaining React Native parts: Personalize, the feedback check-in and the release postcard | native drawing wired: Personalize, the due feedback banner and release postcard/page use Swift hosts; JS state, actions and feeds remain for later milestones |
 | Native site controls and prompts (permissions, autofill, translate, zoom, developer mode) | in progress: selection bar now hosts the existing native view in Little Solara, Peek and no-shell windows; JS selection/search adapters remain |
 | Native extensions toolbar, overlays and side panel | in progress: popup frame (ea03e788, ee1d3c67), side panel card and container, and native dialog sheet for install, permission and pin dialogs; extension menus, the toolbar model and Little Solara popups next |
 | Native media: sidebar player, hover player, cast and share pickers, tab badges | in progress (tab badges, share bar) |

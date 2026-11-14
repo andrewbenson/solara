@@ -59,6 +59,18 @@ type State = {
 };
 
 const useReleaseNotes = create<State>(() => ({ pending: null, page: null }));
+let pageReceipt = 0;
+
+export function releaseNotesPageReceipt(windowId: string, version: string): number | null {
+  const page = useReleaseNotes.getState().page;
+  return page?.windowId === windowId && page.version === version ? pageReceipt : null;
+}
+
+export function closeReleaseNotesIfCurrent(receipt: number, close = closeReleaseNotes) {
+  if (receipt === pageReceipt && useReleaseNotes.getState().page !== null) close();
+}
+
+export const releaseNotesPendingReceipt = () => useReleaseNotes.getState().pending;
 
 export const releaseNotesVersions = () => RELEASE_NOTES.map((notes) => notes.version);
 
@@ -84,22 +96,26 @@ export function trackAppVersion(): boolean {
 }
 
 export function usePendingReleaseNotes(): ReleaseNotes | null {
-  const version = useReleaseNotes((s) => s.pending?.version);
-  return version ? notesFor(version) : null;
+  const pending = useReleaseNotes((s) => s.pending);
+  return pending ? notesFor(pending.version) : null;
 }
 
 export function useReleaseNotesPage(windowId: string): ReleaseNotes | null {
-  const version = useReleaseNotes((s) => (s.page?.windowId === windowId ? s.page.version : undefined));
-  return version ? notesFor(version) : null;
+  const page = useReleaseNotes((s) => s.page?.windowId === windowId ? s.page : null);
+  return page ? notesFor(page.version) : null;
 }
 
 export function openReleaseNotes(windowId: string, version = useReleaseNotes.getState().pending?.version ?? systemInfo().appVersion) {
   if (!notesFor(version)) return;
   retireReleaseNotes();
+  pageReceipt++;
   useReleaseNotes.setState({ page: { windowId, version } });
 }
 
-export const closeReleaseNotes = () => useReleaseNotes.setState({ page: null });
+export const closeReleaseNotes = () => {
+  pageReceipt++;
+  useReleaseNotes.setState({ page: null });
+};
 
 export function retireReleaseNotes() {
   const pending = useReleaseNotes.getState().pending;

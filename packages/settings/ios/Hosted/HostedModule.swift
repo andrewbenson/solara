@@ -20,6 +20,9 @@ public class HostedModule: Module {
       if NativeSidebarShell.enabled { HostedViews.declare(NativeSidebarShell.topic) }
       HostedViews.declare(NativeToolTour.kind)
       HostedViews.declare(HostedPersonalize.kind)
+      HostedViews.declare(HostedCheckInBanner.kind)
+      HostedViews.declare(HostedPostcard.postcardKind)
+      HostedViews.declare(HostedPostcard.pageKind)
       HostedViews.declare(HostedFavicon.kind)
       HostedViews.declare(HostedAreaRecovery.kind)
       let sink = HostedSink(self)
@@ -31,6 +34,8 @@ public class HostedModule: Module {
           NativeSidebarIconPicker.register()
           NativeToolTour.register()
           HostedPersonalize.register()
+          HostedCheckInBanner.register()
+          HostedPostcard.register()
           HostedFavicon.register()
           HostedAreaRecovery.register()
           if NativeBookmarksBar.enabled { NativeBookmarksBar.register() }
@@ -39,6 +44,20 @@ public class HostedModule: Module {
     }
 
     #if DEBUG
+      AsyncFunction("devCheckInBanner") { (windowId: String, action: String, argument: String?) -> String in
+        FrameUpdates.readOnMain {
+          let value = HostedCheckInBanner.drive(windowId, action, argument)
+          let data = (try? JSONSerialization.data(withJSONObject: value)) ?? Data("{}".utf8)
+          return String(decoding: data, as: UTF8.self)
+        }
+      }.runOnQueue(.main)
+      AsyncFunction("devPostcard") { (windowId: String, kind: String, action: String, argument: String?) -> String in
+        FrameUpdates.readOnMain {
+          let value = HostedPostcard.drive(windowId, kind, action, argument)
+          let data = (try? JSONSerialization.data(withJSONObject: value)) ?? Data("{}".utf8)
+          return String(decoding: data, as: UTF8.self)
+        }
+      }.runOnQueue(.main)
       AsyncFunction("devFavicons") { (windowId: String) -> String in
         FrameUpdates.readOnMain {
           let data = (try? JSONSerialization.data(withJSONObject: HostedFavicon.describe(windowId))) ?? Data("[]".utf8)

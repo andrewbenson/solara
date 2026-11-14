@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 const sent = [];
-const app = { apiVersion: 50, sidebarPosition: true };
+const apiVersion = Number(readFileSync(new URL("../nativeApi.tsx", import.meta.url), "utf8").match(/export const NATIVE_API_VERSION = (\d+);/)?.[1]);
+assert.ok(apiVersion, "native API version declaration found");
+const app = { apiVersion, sidebarPosition: true };
 let layoutActive = true;
 globalThis.acTestNativeModules = {
   SolaraApp: app,
@@ -38,6 +41,18 @@ test("side choices refuse invalid values and require the development capability 
   standDown();
   side.setSidebarPosition("window", "right");
   assert.deepEqual(sent, []);
+});
+
+test("side choices require the matching native API version", () => {
+  startNativeStore();
+  for (const version of [apiVersion - 1, apiVersion + 1]) {
+    app.apiVersion = version;
+    side.setSidebarPosition("window", "right");
+    assert.equal(side.sidebarPositionSupported("window"), false);
+  }
+  app.apiVersion = apiVersion;
+  assert.deepEqual(sent, []);
+  standDown();
 });
 
 test("the typed replica resolves configuration before the window and defaults old windows to left", () => {

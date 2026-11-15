@@ -6,6 +6,7 @@ public final class SidebarPagerView: NSView {
   public let virtualizesRows: Bool
   public let windowId: String
   public let favicons = SidebarFavicons()
+  public var onLayoutAnchorsChange: (() -> Void)?
   public var onAction: (SidebarAction) -> Void = { _ in }
 
   private var stopped = false
@@ -38,6 +39,7 @@ public final class SidebarPagerView: NSView {
     state = nil
     host = nil
     onAction = { _ in }
+    onLayoutAnchorsChange = nil
     for page in pages.values {
       page.stop()
       page.removeFromSuperview()
@@ -141,6 +143,7 @@ public final class SidebarPagerView: NSView {
     if let page = pages[id] { return page }
     let page = SidebarView(windowId: windowId, favicons: favicons, virtualizesRows: virtualizesRows)
     page.onAction = { [weak self] action in self?.onAction(action) }
+    page.onLayoutAnchorsChange = { [weak self] in self?.onLayoutAnchorsChange?() }
     page.isHidden = true
     pages[id] = page
     stale.insert(id)

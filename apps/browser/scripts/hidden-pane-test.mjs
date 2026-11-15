@@ -172,6 +172,14 @@ try {
       find: t(() => audit.props("FindBar", "b")[0]?.rendered),
       prompt: t(() => paneShown && !audit.props("PermissionPrompt", "b").some((p) => p.rendered)),
     }));`);
+  const nativeShown = await untilSnapshot("B's visible toolbar", (s) => s.windows[0]?.selectedTabId === "b" && (!s.windows[0]?.shell?.contract?.nativeLayout || s.windows[0]?.toolbarStates?.b?.hidden === false));
+  if (nativeShown.windows[0].shell?.contract?.nativeLayout) {
+    const toolbar = nativeShown.windows[0].toolbarStates.b;
+    shown.nativeToolbarCount = 1;
+    shown.url = toolbar.url;
+    shown.zoom = toolbar.zoomLabel ? Number(toolbar.zoomLabel.match(/([0-9]+)%/)[1]) / 100 : 1;
+    shown.loading = toolbar.reloadIcon === "xmark";
+  }
   check("shown: the URL it loaded while hidden", typeof shown.url === "string" && shown.url.includes("HiddenLoad"), shown.url);
   check("shown: its zoom", shown.zoom === 1.5, String(shown.zoom));
   check("shown: loading", shown.loading === true, String(shown.loading));

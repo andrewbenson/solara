@@ -795,6 +795,11 @@ NSEvent *SyntheticScroll(NSWindow *window, NSPoint point, NSDictionary *step, ui
   [Targets() removeObject:target];
 }
 
++ (void)cancelTarget:(NSView<ACSwipeTarget> *)target {
+  if (gPrepared == target) gPrepared = nil;
+  if (gGesture.target == target) gGesture = Gesture();
+}
+
 + (void)simulateInWindow:(NSWindow *)window
                    point:(NSPoint)point
                    steps:(NSArray<NSDictionary<NSString *, id> *> *)steps

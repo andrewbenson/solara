@@ -118,7 +118,7 @@ final class WebKitTab: NSView, WKNavigationDelegate, WKUIDelegate {
         self?.userSightChanged()
       }
     }
-    userSightChanged()
+    DispatchQueue.main.async { [weak self] in self?.userSightChanged() }
   }
 
   private func userSightChanged() {

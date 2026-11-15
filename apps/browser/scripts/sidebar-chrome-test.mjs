@@ -321,7 +321,7 @@ try {
     const before = await matchesColumns("both columns at the saved width", [238, 238]);
     const c = await run(`return col("w1");`);
     const [x, y] = centre(c, c.chrome.resize);
-    await run(`const w1 = () => C.chromeWindows().then((ws) => ws.find((w) => w.hasRoot && w.frame.includes("1280")).window);
+    await run(`const w1 = () => globalThis.expo.modules.SolaraApp.devWindowLifecycle("inventory", false).then((inventory) => inventory.windows.find((w) => w.id === "w1").number);
       const drag = (a) => w1().then((n) => C.devWindow(n, a));
       return drag("mouse:down:${x},${y},1").then(() => drag("mouse:dragged:${x + sidebarDirection * 20},${y}")).then(() => drag("mouse:dragged:${x + sidebarDirection * 40},${y}"))
         .then(() => settle(200)).then(() => drag("mouse:up:${x + sidebarDirection * 40},${y},1")).then(() => settle(800));`);

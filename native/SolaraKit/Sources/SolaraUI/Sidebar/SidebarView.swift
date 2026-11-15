@@ -109,6 +109,7 @@ public final class SidebarView: NSView {
     SidebarDragHub.controllers.removeObject(forKey: self)
     clearRealization()
     onAction = { _ in }
+    onLayoutAnchorsChange = nil
     logicalElements.removeAll()
     logicalItems.removeAll()
     stopViewportLink()
@@ -119,6 +120,8 @@ public final class SidebarView: NSView {
     }
     stopAnimations(self)
   }
+
+  public var onLayoutAnchorsChange: (() -> Void)?
 
   public func update(state: BrowserState, host: SidebarHostState) {
     guard !stopped else { return }
@@ -458,6 +461,7 @@ public final class SidebarView: NSView {
       lastSize = bounds.size
       reconcile()
     }
+    onLayoutAnchorsChange?()
   }
 
   private var canAnimate: Bool {
@@ -810,6 +814,8 @@ public final class SidebarView: NSView {
           clipUnder(view, from: from, to: to, edge: cover.maxY)
         }
       }
+    } completionHandler: { [weak self] in
+      MainActor.assumeIsolated { self?.onLayoutAnchorsChange?() }
     }
   }
 
@@ -895,6 +901,7 @@ public final class SidebarView: NSView {
     if virtualizesRows { reconcileViewport() }
     syncPill()
     syncPointer()
+    onLayoutAnchorsChange?()
   }
 
   private func syncPill() {
@@ -1004,6 +1011,7 @@ public final class SidebarView: NSView {
       SidebarDragController.existing(self)?.cancelForModeChange()
       clearRealization()
     } else { reconcileViewport() }
+    onLayoutAnchorsChange?()
   }
 
   private var devPointerAt: NSPoint?

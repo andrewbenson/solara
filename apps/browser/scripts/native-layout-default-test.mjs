@@ -22,11 +22,11 @@ try {
   });
   const inspect = () => app.eval(`
     const W = globalThis.expo.modules.SolaraWindowShell;
-    const shell = JSON.parse(await W.describe("w1"));
-    const forbidden = ["LegacyWindow", "LegacyContentCard", "DockedLayout", "TopTabStrip", "TopStripPeek", "TabPane", "TabWebView", "EngineWebView", "LegacySwipeOverlay", "SwipeArea"];
-    const mounted = Object.fromEntries(forbidden.map(name=>[name,acPerf.findFibers(name,2000).length]));
-    const blockers = JSON.parse(await W.devReactBlockers("w1",24));
-    return { shell, mounted, blockers };
+    return W.describe("w1").then(JSON.parse).then(shell => W.devReactBlockers("w1",24).then(JSON.parse).then(blockers => {
+      const forbidden = ["LegacyWindow", "LegacyContentCard", "DockedLayout", "TopTabStrip", "TopStripPeek", "TabPane", "TabWebView", "EngineWebView", "LegacySwipeOverlay", "SwipeArea"];
+      const mounted = Object.fromEntries(forbidden.map(name=>[name,acPerf.findFibers(name,2000).length]));
+      return { shell, mounted, blockers };
+    }));
   `);
   const evidence = [];
   for (const layout of ["sidebar", "top"]) {

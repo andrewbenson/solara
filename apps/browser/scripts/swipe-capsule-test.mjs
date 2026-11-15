@@ -50,7 +50,7 @@ const fixture = session({
 const timed = (steps) => steps.map((s) => ({ dy: 0, ...s, timestampMs: s.atMs }));
 const push = Array.from({ length: 8 }, (_, i) => ({ phase: "changed", dx: 20, atMs: 16 * (i + 1) }));
 const kept = timed([{ phase: "began", dx: 0, atMs: 0 }, ...push, ...Array.from({ length: 18 }, (_, i) => ({ phase: "changed", dx: 1, atMs: 200 + 100 * i })), { phase: "cancelled", dx: 0, atMs: 2000 }]);
-const held = timed([{ phase: "began", dx: 0, atMs: 0 }, ...push, { phase: "ended", dx: 0, atMs: 1100 }]);
+const held = timed([{ phase: "began", dx: 0, atMs: 0 }, ...push, { phase: "ended", dx: 0, atMs: 2000 }]);
 
 const HELPERS = `
 const C = globalThis.expo.modules.SolaraCEF;
@@ -61,7 +61,7 @@ const measure = (fiber) => new Promise((r) => { const n = hostOf(fiber); return 
 const overlay = () => acPerf.findFibers("SwipeOverlay", 500).find((f) => f.memoizedProps.tabId === "a");
 const rnCapsule = () => { const o = overlay(); const area = o && o.child; const capsule = area && area.sibling; return capsule && !capsule.memoizedProps.onLayout && capsule.memoizedProps.kind !== "swipeCapsule" ? capsule : null; };
 const native = () => M && M.describePaneOverlays ? M.describePaneOverlays("w1").then(JSON.parse) : Promise.resolve(null);
-const sample = () => Promise.all([rnCapsule() ? measure(rnCapsule()) : null, native(), (overlay()?.child ? measure(overlay().child) : Promise.resolve(null)).then(async (area) => area ?? (await native())?.tabs?.a?.swipe?.area ?? null),
+const sample = () => Promise.all([rnCapsule() ? measure(rnCapsule()) : null, native(), (overlay()?.child ? measure(overlay().child) : Promise.resolve(null)).then((area) => area ?? native().then((value) => value?.tabs?.a?.swipe?.area ?? null)),
   acPerf.findFibers("DestinationList", 50).length]).then(([rn, nat, area, lists]) => ({ rn, native: nat && nat.tabs.a && nat.tabs.a.swipe || null, area, lists, title: title() }));
 const gesture = (steps, at, capture) => new Promise((resolve) => {
   let seen = null;
@@ -257,7 +257,9 @@ try {
     await until("the side panel opens", `return ac.extensions.openSidePanel("w1", ${JSON.stringify(id)}).then(() => !!ac.extensions.useExtensions.getState().sidePanels.w1 || null);`);
     await sleep(1200);
     const width = await run(`return ac.store.getState().settings.extensionSidePanelWidth ?? 360;`);
-    const where = await stays("side panel", 1280 - width / 2, 400);
+    const state = await app.snapshot({ windowId: "w1" });
+    const bounds = state.windows.find((window) => window.id === "w1").shell.contract.bounds;
+    const where = await stays("side panel", bounds[2] - width / 2, bounds[3] / 2);
     await run(`ac.extensions.closeSidePanel("w1"); return true;`);
     await sleep(600);
     return where;
@@ -267,11 +269,16 @@ try {
     await run(`ac.webviews.get("a").showDevTools(); return true;`);
     for (const end = Date.now() + 8000; !(await app.targets()).some((t) => t.url.startsWith("devtools://")); await sleep(150)) if (Date.now() > end) throw new Error("DevTools never opened");
     await sleep(1500);
+    const state = await app.snapshot({ windowId: "w1" });
+    const bounds = state.windows.find((window) => window.id === "w1").shell.contract.bounds;
     const scan = [];
-    for (const x of [300, 600, 900, 1150]) scan.push([x, (await swipe(x, 400, [])).target]);
+    for (const fraction of [300, 600, 900, 1150].map((x) => x / 1280)) {
+      const x = fraction * bounds[2];
+      scan.push([x, (await swipe(x, bounds[3] / 2, [])).target]);
+    }
     const devtools = scan.find(([, target]) => !target);
     if (!scan[0][1] || !devtools) throw new Error(`page and DevTools not both under the card: ${JSON.stringify(scan)}`);
-    return { scan, where: await stays("DevTools", devtools[0], 400) };
+    return { scan, where: await stays("DevTools", devtools[0], bounds[3] / 2) };
   });
 
   await rep.check(`${prefix}pool-page-swipe-goes-back`, async () => {

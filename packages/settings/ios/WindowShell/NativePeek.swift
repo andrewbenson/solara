@@ -46,7 +46,7 @@ enum NativePeek {
     let windowId = shell.windowId
     guard NativeWindowShell.nativeLayoutActive(windowId), let window = state.windows[windowId] else { return }
     let look = NativeLayoutAppearance(state: state, profileId: window.profileId, incognito: window.incognito)
-    let fullscreen = state.peeks[windowId].flatMap { NativeStoreHandle.store?.pageFacts($0.tabId)?.keepAlive?.reveal.fullscreen } ?? false
+    let fullscreen = state.peeks[windowId].map { $0.tabId == fullscreenTabId } ?? false
     let next = PeekState.native(state: state, windowId: windowId, card: shell.railFraction > 0 ? shell.frames.page : shell.frames.card, tokens: look.tokens, dark: look.dark,
       fullscreen: fullscreen, reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
     if next == nil, hosts[windowId] == nil { return }

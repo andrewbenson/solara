@@ -383,6 +383,8 @@ try {
       .then((all) => (all.find((w) => w.hasRoot && w.profile === "" && w.group) ?? all.find((w) => w.hasRoot)).window)
       .then((n) => globalThis.expo.modules.SolaraSwipe.devSimulate(x, y, n, steps, true)) });
     const strip = at(700, 22);
+    const pane = globalThis.acSwipe.pane;
+    globalThis.acSwipe.pane = (id) => globalThis.expo.modules.SolaraWindowShell.nativeLayout?.("w1") && id === "t1" ? at(700, 400)() : pane(id);
     globalThis.acSwipe.sidebar = at(120, 400);
     globalThis.acSwipe.strip = () => ac.store.getState().settings.tabLayout === "top" ? strip() : null;
     return true;

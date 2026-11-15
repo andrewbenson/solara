@@ -42,7 +42,10 @@ const fixture = session({
 const HELPERS = `
 const S = () => ac.store.getState();
 const roots = () => globalThis.expo.modules.SolaraWindowShell.describe("w1").then(JSON.parse).then((d) => ({ native: (d && d.paneRoots) || {}, mounted: globalThis.acPaneRoots ? globalThis.acPaneRoots.count : -1 }));
-const setFullscreen = (id, on) => acLayout.pages.setState((s) => ({ pages: { ...s.pages, [id]: { ...s.pages[id], fullscreen: on } } }));
+const setFullscreen = (id, on) => globalThis.expo.modules.SolaraWindowShell.describe("w1").then(JSON.parse).then(shell => {
+  if (shell.nativeLayout) return globalThis.expo.modules.SolaraTabPool.devPageEvent(id,"onFullscreen",{fullscreen:on}).then(accepted => { if (!accepted) throw new Error("fullscreen fact rejected for " + id); });
+  acLayout.pages.setState((s) => ({ pages: { ...s.pages, [id]: { ...s.pages[id], fullscreen: on } } }));
+});
 `;
 let app = null;
 const run = (body, timeout = 20000) => app.eval(`${HELPERS}\n${body}`, { timeout });
@@ -118,14 +121,14 @@ try {
   });
 
   await rep.check("fullscreen-retires-the-other-panes-root", async () => {
-    await run(`setFullscreen("b", true); return true;`);
+    await run(`return setFullscreen("b", true);`);
     const mid = await until("a retiring", `return roots().then((r) => (r.native.a && r.native.a.retiring && r.native.a.hidden && r.native.b && !r.native.b.hidden) ? r : { waiting: true, r });`);
     const after = await until("only b", shownOnly(["b"]), 4000);
     return { mid, after };
   });
 
   await rep.check("leaving-fullscreen-brings-it-back", async () => {
-    await run(`setFullscreen("b", false); return true;`);
+    await run(`return setFullscreen("b", false);`);
     return until("a and b again", shownOnly(["a", "b"]));
   });
 
@@ -181,21 +184,45 @@ try {
       const f = acPerf.findFibers("PaneContent", 20).find((f) => f.memoizedProps.tabId === "c" && f.memoizedProps.windowId === ${JSON.stringify(to)});
       return f || null ? true : null;`, 15000);
     await sleep(800);
-    await run(`acLayout.pages.setState((s) => ({ pages: { ...s.pages, c: { ...(s.pages.c || {}), status: "https://example.com/c" } } })); ac.toolbarAutoHide.noteScroll("c", { state: "down" }); return true;`);
-    await sleep(1200);
-    const shifts = await run(`
-      const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
-      const shift = () => {
-        const f = acPerf.findFibers("PageOverlays", 50).find((f) => f.memoizedProps.tabId === "c" && !f.memoizedProps.peek);
-        let inPane = false;
-        for (let c = f && f.return; c; c = c.return) if (acPerf.nameOf(c.type) === "PaneRoot") inPane = true;
-        const t = f && f.memoizedProps.statusStyle && f.memoizedProps.statusStyle.transform && f.memoizedProps.statusStyle.transform[0].translateY;
-        return !inPane ? "not-in-pane" : t === undefined || t === null ? null : typeof t === "number" ? t : t.__getValue();
-      };
-      const out = [];
-      ac.toolbarAutoHide.noteScroll("c", { state: "up" });
-      const sample = (n) => n ? frame().then(() => { out.push(shift()); return sample(n - 1); }) : Promise.resolve(out);
-      return sample(40);`);
+    const nativeLayout = await run(`return globalThis.expo.modules.SolaraWindowShell.describe(${JSON.stringify(to)}).then(JSON.parse).then(shell => shell.nativeLayout);`);
+    let shifts;
+    if (nativeLayout) {
+      const scroll = (state) => run(`return globalThis.expo.modules.SolaraTabPool.devPageEvent("c","onPageMessage",{kind:"scroll",data:{state:${JSON.stringify(state)}}});`);
+      await run(`acLayout.pages.setState((s) => ({pages:{...s.pages,c:{...s.pages.c,status:"https://example.com/c"}}}));return true;`);
+      if (!await scroll("down")) throw new Error("scroll fact rejected in the new window");
+      await sleep(1200);
+      const collapsed = await run(`return globalThis.expo.modules.SolaraWindowShell.describe(${JSON.stringify(to)}).then(JSON.parse);`);
+      if (collapsed.layout.toolbarModes.c !== "collapsed") throw new Error("native toolbar did not hide in the new window");
+      if (!await scroll("up")) throw new Error("reveal fact rejected in the new window");
+      shifts = [];
+      for (let index = 0; index < 40; index++) {
+        const shell = await run(`return globalThis.expo.modules.SolaraWindowShell.describe(${JSON.stringify(to)}).then(JSON.parse);`);
+        const root = shell.paneRoots.c;
+        const overlay = shell.split.overlays.c;
+        if (!root || root.hidden || !root.inSlot || root.size.some((size, axis) => Math.abs(size - overlay.window[axis + 2]) > 0.5)) throw new Error("status guest detached from its native sliding pane");
+        shifts.push(overlay.window[1]);
+        await sleep(16);
+      }
+      const bubbles = await run(`return acPerf.findFibers("StatusBubble",50).filter(f=>f.memoizedProps.tabId==="c" && f.memoizedProps.windowId===${JSON.stringify(to)}).length;`);
+      if (bubbles !== 1) throw new Error("the new pane must own exactly one status bubble");
+      shifts = shifts.map(value => value - collapsed.split.overlays.c.window[1]);
+    } else {
+      await run(`acLayout.pages.setState((s) => ({ pages: { ...s.pages, c: { ...(s.pages.c || {}), status: "https://example.com/c" } } })); ac.toolbarAutoHide.noteScroll("c", { state: "down" }); return true;`);
+      await sleep(1200);
+      shifts = await run(`
+        const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
+        const shift = () => {
+          const f = acPerf.findFibers("PageOverlays", 50).find((f) => f.memoizedProps.tabId === "c" && !f.memoizedProps.peek);
+          let inPane = false;
+          for (let c = f && f.return; c; c = c.return) if (acPerf.nameOf(c.type) === "PaneRoot") inPane = true;
+          const t = f && f.memoizedProps.statusStyle && f.memoizedProps.statusStyle.transform && f.memoizedProps.statusStyle.transform[0].translateY;
+          return !inPane ? "not-in-pane" : t === undefined || t === null ? null : typeof t === "number" ? t : t.__getValue();
+        };
+        const out = [];
+        ac.toolbarAutoHide.noteScroll("c", { state: "up" });
+        const sample = (n) => n ? frame().then(() => { out.push(shift()); return sample(n - 1); }) : Promise.resolve(out);
+        return sample(40);`);
+    }
     await run(`S().updateSettings({ hideToolbarWhileScrolling: false }); return true;`);
     const moved = shifts.filter((x) => typeof x === "number" && Math.abs(x) > 0.5);
     if (!moved.length) throw new Error(`the status bubble didn't slide in the new window: ${JSON.stringify(shifts)}`);

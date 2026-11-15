@@ -36,8 +36,8 @@ if (perfProbeEnabled) afterFirstWindow(() => {
     if (at !== null) perfMark("firstWindow", at);
   }).catch((error) => console.warn("[launch] native chrome mark failed", error));
 });
-startPersistence();
 startProfileLoading();
+startPersistence();
 startNotifications();
 startNewTabBar();
 startTabPages();

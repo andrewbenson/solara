@@ -238,7 +238,7 @@ final class ShellHost {
       self?.scheduleLayoutProjection()
     }
     panes = NativePaneRoots.start(windowId)
-    profilePager = NativeProfilePager.start(shell, subscribeToStore: !ownsNativeLayout)
+    profilePager = NativeProfilePager.start(shell)
     shell.onFrames = { [weak self] _ in
       self?.profilePager?.place()
       self?.sidePanel?.place()
@@ -246,15 +246,15 @@ final class ShellHost {
     }
     if ownsNativeLayout, let store = NativeStoreHandle.store {
       layoutChrome = NativeLayoutChrome(windowId: windowId, shell: shell, generation: generation)
+      NativeSidebarShell.column(windowId)?.host.view.onLayoutAnchorsChange = { [weak self] in self?.scheduleLayoutProjection() }
       paneLayout = NativeSplitChrome.adopt(shell: shell, generation: generation)
       toolbarPresentation = ToolbarAutoHideController(windowId: windowId, windowGeneration: generation)
       let controller = WindowLayoutController(shell: shell, generation: generation, store: store)
       layoutController = controller
       controller.onState = { [weak self] state, revision in
         guard let self, !self.layoutStopped else { return }
-        self.layoutChrome?.apply(state: state, revision: revision)
-        self.profilePager?.commit(state)
         self.applyLayoutState(state, revision: revision)
+        self.layoutChrome?.apply(state: state, revision: revision)
         NativePaneRoots.storeChanged()
       }
       controller.onRemoved = { [weak self] in self?.onClose?() }
@@ -579,9 +579,11 @@ extension ShellHost {
     var guests = NativePeek.anchors(shell.windowId)
     if let id = input.selectedTabId {
       guests["tour:page"] = snapshot.pages[id]
-      if let column = NativeSidebarShell.column(shell.windowId), !column.isHiddenOrHasHiddenAncestor,
-        let page = column.host.view.current, let row = page.frameOf(id) {
-        guests["tour:tabs"] = page.convert(row, to: shell)
+      if let column = NativeSidebarShell.column(shell.windowId), !column.isHiddenOrHasHiddenAncestor {
+        column.layoutSubtreeIfNeeded()
+        if let page = column.host.view.current, let row = page.frameOf(id) {
+          guests["tour:tabs"] = page.convert(row, to: shell)
+        }
       }
     }
     if input.layout.addressBarInSidebar {

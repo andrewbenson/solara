@@ -118,9 +118,14 @@ const warmupEnv = { SOLARA_NATIVE_SCOPE: "everything", SOLARA_NATIVE_SHELL: "1",
 const env = { ...warmupEnv, SOLARA_PROFILE_WARMUP: "0" };
 let app = null;
 
+const resetNativeSession = (data) => {
+  for (const suffix of ["", "-wal", "-shm"]) rmSync(join(data, `solara.sqlite${suffix}`), { force: true });
+};
+
 async function start(data, eager, { fresh = true, folder = null, warmup = false } = {}) {
   const startedAt = Date.now();
   const base = warmup ? warmupEnv : env;
+  if (fresh) resetNativeSession(data);
   app = await launch(appPath, { data, ...(fresh ? { session: fixtureSession(eager) } : {}), onboarded: true, probe: true, keepData: true, startTimeout: 60000,
     env: folder ? { ...base, SOLARA_SYNC_DEFAULT_FOLDER: folder } : base,
     ready: { timeout: 180000, test: "return !!ac.store && !!ac.store.getState().windows.w1;" } });
@@ -509,6 +514,7 @@ async function webkitInUnloadedProfile(from) {
   copyFixture(from, data);
   const target = profileIds[3];
   const tabId = "wk-unloaded";
+  resetNativeSession(data);
   app = await launch(appPath, { data, onboarded: true, probe: true, keepData: true, startTimeout: 60000, env,
     session: session({
       profiles: profileIds.map((id, index) => ({ id, name: `Profile ${index + 1}` })),

@@ -374,6 +374,7 @@ public enum ToolbarStateRead {
   public static func snapshot(windowId: String, tabId: String) -> [String: Any]? {
     guard let toolbar = NativeToolbarHostView.toolbar(windowId: windowId, tabId: tabId), let state = toolbar.state else { return nil }
     return ["tabId": state.tabId, "hidden": toolbar.isHiddenOrHasHiddenAncestor,
+      "url": state.url.map { $0.host + $0.hoverTrail } ?? NSNull(),
       "identity": String(describing: ObjectIdentifier(toolbar)), "background": state.palette.background ?? NSNull(),
       "hairline": state.hairline, "stripes": state.stripes ?? NSNull(), "windowToolbar": state.windowToolbar ?? false,
       "reloadIcon": state.left.first(where: { $0.id == "reload" }).map { $0.icon as Any } ?? NSNull(),

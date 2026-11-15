@@ -25,6 +25,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 + (void)addTarget:(NSView<ACSwipeTarget> *)target;
 + (void)removeTarget:(NSView<ACSwipeTarget> *)target;
++ (void)cancelTarget:(NSView<ACSwipeTarget> *)target;
 
 + (void)simulateInWindow:(NSWindow *)window
                    point:(NSPoint)point

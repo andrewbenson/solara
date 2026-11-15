@@ -32,6 +32,7 @@ public final class PostcardControl: NSControl {
   public override func acceptsFirstMouse(for event: NSEvent?) -> Bool { acceptsFirstClick && isEnabled && interactionEnabled }
   public override init(frame: NSRect) {
     super.init(frame: frame)
+    DevPointer.observe(self, #selector(devPointerChanged(_:)))
     wantsLayer = true
     glyphView.imageScaling = .scaleNone
     glyphView.autoresizingMask = [.width, .height]
@@ -80,6 +81,13 @@ public final class PostcardControl: NSControl {
     let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self)
     tracking = area
     addTrackingArea(area)
+  }
+  @objc private func devPointerChanged(_ note: Notification) {
+    let inside = DevPointer.inside(self, note)
+    guard inside != hovered else { return }
+    hovered = inside
+    onHover(inside)
+    if !inside { setPressed(false) }
   }
   public override func mouseEntered(with event: NSEvent) { hovered = true; onHover(true) }
   public override func mouseExited(with event: NSEvent) { hovered = false; onHover(false); setPressed(false) }

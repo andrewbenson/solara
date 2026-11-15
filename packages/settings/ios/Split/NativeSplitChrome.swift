@@ -80,7 +80,7 @@ enum NativeSplitChrome {
   private static func cardContainer(for window: String) -> NSView? { NativeWindowShell.host(window)?.shell.card }
 
   static func setShareBands(_ heights: [String: CGFloat], windowId: String) {
-    if owners[windowId] != nil { NativeWindowShell.host(windowId)?.scheduleLayoutProjection(); return }
+    if owners[windowId] != nil { NativeWindowShell.host(windowId)?.scheduleLayoutProjection() }
     if let overlay = overlays[windowId], overlay.superview != nil { overlay.bandHeights = heights }
     if let view = panes[windowId], view.superview != nil { view.bandHeights = heights }
   }
@@ -106,9 +106,20 @@ enum NativeSplitChrome {
     view.favicons = favicons
     view.frame = card.bounds
     view.autoresizingMask = [.width, .height]
-    view.onToolbarClick = { tabId, click in
+    view.onToolbarClick = { [weak view] tabId, click in
       let payload: [String: Any] = ["id": click.id, "kind": click.kind.rawValue, "meta": click.meta, "alt": click.alt, "shift": click.shift, "text": click.text ?? NSNull()]
-      Task { @MainActor in _ = await SettingsAdapters.js("split.toolbarClick", windowId, tabId, payload) }
+      let send: () -> Void = { Task { @MainActor in _ = await SettingsAdapters.js("split.toolbarClick", windowId, tabId, payload) } }
+      if let toolbar = view?.toolbar(tabId), click.id == "urlEdit" {
+        if click.kind == .focus { NativeExtensionActionPopup.dropHeldFieldBlur(from: toolbar) }
+        if click.kind == .blur {
+          toolbar.onHiddenOrDetached = { [weak toolbar] in
+            guard let toolbar else { return }
+            NativeExtensionActionPopup.flushHeldFieldBlur(from: toolbar)
+          }
+          if NativeExtensionActionPopup.holdFieldBlur(from: toolbar, fieldContainer: toolbar, flush: send) { return }
+        }
+      }
+      send()
     }
     view.onToolbarGeometryChange = { _ in NativeWindowShell.host(windowId)?.scheduleLayoutProjection() }
     view.onToolbarAnchors = { tabId, anchors in

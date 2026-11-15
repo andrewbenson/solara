@@ -120,7 +120,7 @@ try {
   await rep.check("separated-leaves-one-slot", async () => {
     await run(`for (const id of Object.keys(S().splits)) S().separateSplit(id); S().activate("a"); return true;`);
     const s = await until("one slot", `return split().then((s) => (s.overlays && s.overlays.a && !s.overlays.a.hidden && (!s.overlays.b || s.overlays.b.hidden)) ? s : null);`);
-    const native = splitFrom(await untilSnapshot("one native slot", (state) => splitFrom(state)?.overlays?.a && !splitFrom(state).overlays.a.hidden && !splitFrom(state).overlays.b));
+    const native = splitFrom(await untilSnapshot("one native slot", (state) => splitFrom(state)?.overlays?.a && !splitFrom(state).overlays.a.hidden && (!splitFrom(state).overlays.b || splitFrom(state).overlays.b.hidden)));
     if (!near(native.overlays.a.window, s.overlays.a.window)) throw new Error(`native slot ${JSON.stringify(native.overlays.a)}, JS ${JSON.stringify(s.overlays.a)}`);
     return Object.keys(s.overlays);
   });

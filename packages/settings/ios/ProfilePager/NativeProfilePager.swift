@@ -47,31 +47,32 @@ enum NativeProfilePager {
 final class ProfilePagerCommits: @unchecked Sendable {
   private let lock = NSLock()
   private var latest: BrowserState?
+  private var selectionRequested = false
   private var scheduled = false
   weak var host: ProfilePagerHost?
 
-  func receive(_ state: BrowserState) {
-    if Thread.isMainThread {
-      lock.withLock { latest = nil }
-      MainActor.assumeIsolated { host?.commit(state) }
-      return
-    }
+  func receive(_ state: BrowserState, selectionRequested: Bool) {
     let schedule = lock.withLock { () -> Bool in
       latest = state
+      self.selectionRequested = self.selectionRequested || selectionRequested
       if scheduled { return false }
       scheduled = true
       return true
     }
-    guard schedule else { return }
-    DispatchQueue.main.async { [self] in
-      let state = lock.withLock { () -> BrowserState? in
-        scheduled = false
-        defer { latest = nil }
-        return latest
-      }
-      guard let state else { return }
-      MainActor.assumeIsolated { host?.commit(state) }
+    if Thread.isMainThread {
+      MainActor.assumeIsolated { flush() }
+    } else if schedule {
+      DispatchQueue.main.async { [self] in flush() }
     }
+  }
+
+  @MainActor private func flush() {
+    let pending = lock.withLock { () -> (BrowserState, Bool)? in
+      scheduled = false
+      defer { latest = nil; selectionRequested = false }
+      return latest.map { ($0, selectionRequested) }
+    }
+    if let pending { host?.commit(pending.0, selectionRequested: pending.1) }
   }
 }
 
@@ -142,7 +143,9 @@ final class ProfilePagerHost {
     }
     if subscribeToStore, let store = NativeStoreHandle.store {
       let sink = commits
-      listener = store.subscribe { commit in sink.receive(commit.state) }
+      listener = store.subscribe { commit in
+        sink.receive(commit.state, selectionRequested: commit.origin == .bridge && commit.commands.contains { $0.name == "switchProfile" && $0.args.first?.string == windowId })
+      }
       commit(store.state)
     }
     place()
@@ -196,7 +199,7 @@ final class ProfilePagerHost {
     renderTint()
   }
 
-  func commit(_ state: BrowserState) {
+  func commit(_ state: BrowserState, selectionRequested: Bool = false) {
     guard !stopped, let w = state.windows[windowId] else { return }
     let order = state.profileOrder
     let index = w.incognito ? nil : order.firstIndex(of: w.profileId)
@@ -205,13 +208,13 @@ final class ProfilePagerHost {
       neighbours: index.map { i in [i - 1, i + 1].filter { order.indices.contains($0) }.map { state.engineProfile(order[$0]) } } ?? [])
     let previous = window
     window = next
-    configure(next, previous: previous)
+    configure(next, previous: previous, selectionRequested: selectionRequested)
     if previous != next { scheduleSwap() }
     renderTint()
     place()
   }
 
-  private func configure(_ w: PagerWindow, previous: PagerWindow?) {
+  private func configure(_ w: PagerWindow, previous: PagerWindow?, selectionRequested: Bool) {
     let multiple = w.order.count > 1
     for target in [sidebarTarget, stripTarget, peekTarget] {
       target.canSwipeBack = (w.index ?? 0) > 0
@@ -232,7 +235,10 @@ final class ProfilePagerHost {
     stripTarget.use(pager)
     peekTarget.use(NativeWindowShell.nativeLayoutActive(windowId) ? pager : nil)
     pager.configure(selected: index, count: w.order.count, ack: ack, order: w.order.joined(separator: "\n"))
-    guard let previous, previous.profileId != w.profileId, selectedProfile != w.profileId else { return }
+    if selectionRequested {
+      for target in [sidebarTarget, stripTarget, peekTarget] { ACSwipe.cancelTarget(target) }
+    }
+    guard previous != nil, selectionRequested || previous?.profileId != w.profileId && selectedProfile != w.profileId else { return }
     if pager.select(w.profileId, order: w.order.joined(separator: "\n")) { acknowledge() }
   }
 
@@ -481,9 +487,10 @@ enum PagerTrace {
     if on {
       observer = NotificationCenter.default.addObserver(forName: Notification.Name("SolaraPagerPosition"), object: nil, queue: nil) { note in
         guard note.userInfo?["key"] as? String == windowId, let position = note.userInfo?["position"] as? Double else { return }
+        let timestamp = note.userInfo?["timestamp"] as? Double ?? CACurrentMediaTime()
         MainActor.assumeIsolated {
           let tint = NativeProfilePager.hosts[windowId]?.tint.opacities ?? []
-          samples.append([CACurrentMediaTime(), position, tint])
+          samples.append([timestamp, position, tint])
         }
       }
     }

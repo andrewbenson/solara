@@ -50,7 +50,7 @@ const S = globalThis.expo.modules.SolaraWindowShell;
 const C = globalThis.expo.modules.SolaraCEF;
 const settle = (ms) => new Promise((r) => setTimeout(r, ms));
 const win = () => C.chromeWindows().then((ws) => ws.find((w) => w.hasRoot).window);
-const at = (x, y) => ac.shell.devSetPointer("w1", { x, y }).then(() => win()).then((n) => C.devWindow(n, "mouse:moved:" + x + "," + y)).then(() => settle(250));
+const at = (x, y) => ac.shell.devSetPointer("w1", { x, y }).then(() => settle(250));
 const H = globalThis.expo.modules.SolaraHosted;
 const hover = () => (H?.sidebarShell ? H.sidebarShell("w1").then((d) => JSON.parse(d)?.hover ?? null) : Promise.resolve(null)).then((value) => { globalThis.__shellHoverValue = { value }; return value; });
 `;

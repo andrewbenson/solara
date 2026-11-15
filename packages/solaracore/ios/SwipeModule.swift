@@ -358,8 +358,9 @@ public final class ACPager {
       track(distance, direction, timestamp, sample: true)
     case "ended", "cancelled":
       guard phase == .tracking, drag.area === area else { return }
+      let releasedAt = CACurrentMediaTime()
       track(distance, direction, timestamp, sample: false)
-      release(velocity: releaseVelocity(at: timestamp), cancelled: input == "cancelled")
+      release(velocity: releaseVelocity(at: timestamp), cancelled: input == "cancelled", at: releasedAt)
     default:
       break
     }
@@ -425,7 +426,7 @@ public final class ACPager {
     return (last.position - first.position) / (last.time - first.time)
   }
 
-  private func release(velocity v: Double, cancelled: Bool) {
+  private func release(velocity v: Double, cancelled: Bool, at timestamp: TimeInterval? = nil) {
     let home = drag.home
     let area = drag.area as? ACPagerSurface
     let width = area?.pageWidth ?? 0
@@ -436,7 +437,7 @@ public final class ACPager {
       target = !flick ? Int(position.rounded()) : v > 0 ? Int(position.rounded(.down)) + 1 : Int(position.rounded(.up)) - 1
       target = max(0, home - 1, min(count - 1, home + 1, target))
     }
-    settle(to: target, velocity: towards(target, v), from: area)
+    settle(to: target, velocity: towards(target, v), from: area, at: timestamp)
   }
 
   private func towards(_ target: Int, _ v: Double) -> Double {
@@ -482,7 +483,8 @@ public final class ACPager {
     return target == selected || switchTo(target)
   }
 
-  private func settle(to target: Int, velocity v: Double, from origin: ACPagerSurface? = nil) {
+  private func settle(to target: Int, velocity v: Double, from origin: ACPagerSurface? = nil, at timestamp: TimeInterval? = nil) {
+    let startedAt = timestamp ?? CACurrentMediaTime()
     announceActivity()
     if target != selected {
       selected = target
@@ -494,7 +496,7 @@ public final class ACPager {
     stopSpring()
     phase = .settling
     velocity = v
-    spring = Spring(from: position, target: target, velocity: v, start: CACurrentMediaTime())
+    spring = Spring(from: position, target: target, velocity: v, start: startedAt)
     let generation = self.generation
     if let screen = origin?.surfaceWindow?.screen ?? surfaces.lazy.compactMap({ $0.surfaceWindow?.screen }).first {
       let link = screen.displayLink(target: ACPagerFrames(self, generation: generation), selector: #selector(ACPagerFrames.frame(_:)))
@@ -569,10 +571,11 @@ public final class ACPager {
   }
 
   private func emitPosition() {
+    let timestamp = CACurrentMediaTime()
     let area = phase == .tracking ? drag.area as? ACPagerSurface : nil
     let all = surfaces
     (area ?? all.first { $0.surfaceWindow != nil } ?? all.first)?.pagerMoved(position)
-    NotificationCenter.default.post(name: pagerPosition, object: nil, userInfo: ["key": key, "position": position])
+    NotificationCenter.default.post(name: pagerPosition, object: nil, userInfo: ["key": key, "position": position, "timestamp": timestamp])
   }
 
   private func emitState(_ name: String) {

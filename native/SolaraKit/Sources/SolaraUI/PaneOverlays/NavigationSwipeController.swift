@@ -111,7 +111,6 @@ public final class NavigationSwipeController {
   public var profileId = ""
   private var interaction = NavigationSwipeInteraction()
   private var idle: DispatchWorkItem?
-  private var distance = 0.0
 
   public init() {}
 
@@ -151,7 +150,6 @@ public final class NavigationSwipeController {
       if let action, isCurrent?() == true { navigate?(action) }
       return
     }
-    self.distance = distance
     interaction.move(distance: distance, dy: dy, at: now)
     capsule.setConfirmed(interaction.confirmed)
     capsule.select(interaction.selected)
@@ -169,7 +167,6 @@ public final class NavigationSwipeController {
     interaction.expand(at: CACurrentMediaTime(), height: capsule.bounds.height)
     guard interaction.listShown, !wasShown else { return }
     capsule.presentList(interaction.items.map(\.capsule))
-    capsule.move(x: NavigationSwipeInteraction.offset(distance: distance, width: interaction.width))
     onVerticalMotion?(true)
   }
 }

@@ -21,12 +21,14 @@ const browserIdentities = () => app.eval('return globalThis.expo.modules.SolaraT
 const read = () => app.eval('return globalThis.expo.modules.SolaraWindowShell.describe("w1").then(JSON.parse);');
 async function settled() {
   const end = Date.now() + 10000;
+  let shell;
   while (Date.now() < end) {
     assert.ok(app.alive, "instance exited");
-    const shell = await read();
+    shell = await read();
     if (shell?.nativeLayout && shell.nativeLayoutChrome && shell.layout?.current) return shell;
     await sleep(100);
   }
+  samples.push(shell);
   throw new Error("native layout did not settle");
 }
 function verify(shell, baseline) {

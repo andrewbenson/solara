@@ -5,6 +5,7 @@ type WindowShellModule = {
   nativeLayout?(windowId: string): boolean;
   nativeLayoutGeneration?(windowId: string): number;
   layoutAnchorsAvailable?(windowId: string): boolean;
+  layoutAnchors?(windowId: string): Promise<string>;
   observeLayoutAnchors?(windowId: string, enabled: boolean, generation: number | null, reader: string): Promise<string>;
   pagesPool?(): boolean;
   paneRoots?(windowId: string): boolean;
@@ -241,4 +242,9 @@ export function windowLayoutAnchorsAvailable(windowId: string): boolean {
 export async function observeWindowLayoutAnchors(windowId: string, enabled: boolean, reader: string, windowGeneration: number | null = null): Promise<WindowLayoutObservation | null> {
   const json = await native?.observeLayoutAnchors?.(windowId, enabled, windowGeneration, reader);
   return json ? JSON.parse(json) as WindowLayoutObservation | null : null;
+}
+
+export async function readWindowLayoutAnchors(windowId: string): Promise<WindowLayoutAnchors | null> {
+  const json = await native?.layoutAnchors?.(windowId);
+  return json ? JSON.parse(json) as WindowLayoutAnchors | null : null;
 }

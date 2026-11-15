@@ -134,16 +134,18 @@ try {
       await ac(`${setup} return true;`);
       await sleep(1200);
       const native = name === "sidebar";
-      const nativeStrip = name === "tab strip" && (await ac(`return globalThis.expo.modules.SolaraHosted.kinds().includes("topStrip");`));
+      const nativeLayout = await ac(`return globalThis.expo.modules.SolaraWindowShell.describe("w1").then(JSON.parse).then(s => s?.nativeLayout === true);`);
+      const nativeStrip = name === "tab strip" && (nativeLayout || (await ac(`return globalThis.expo.modules.SolaraHosted.kinds().includes("topStrip");`)));
       const nativeDownloads = name === "downloads" && (!!JSON.parse(await ac(`return globalThis.expo.modules.SolaraDownloads.devHoverShifts();`)).hosts);
       const capabilitySnapshot = await untilSnapshot("hosted hover capabilities", async (s) => {
+        if (nativeLayout) return s.windows[0]?.shell?.contract?.nativeLayout === true && (name !== "sidebar" || !!s.windows[0]?.sidebarShell);
         if (!Array.isArray(s.hostedKinds)) return false;
         if (native) return s.hostedKinds.includes("sidebar") === await ac(`return globalThis.expo.modules.SolaraHosted.kinds().includes("sidebar");`) && s.hostedKinds.includes("sidebar");
         if (name === "tab strip") return s.hostedKinds.includes("topStrip") === await ac(`return globalThis.expo.modules.SolaraHosted.kinds().includes("topStrip");`) && s.hostedKinds.includes("topStrip") === nativeStrip;
         return true;
       });
-      if (name === "sidebar") assert.equal(capabilitySnapshot.hostedKinds.includes("sidebar"), native);
-      if (name === "tab strip") assert.equal(capabilitySnapshot.hostedKinds.includes("topStrip"), nativeStrip);
+      if (!nativeLayout && name === "sidebar") assert.equal(capabilitySnapshot.hostedKinds.includes("sidebar"), native);
+      if (!nativeLayout && name === "tab strip") assert.equal(capabilitySnapshot.hostedKinds.includes("topStrip"), nativeStrip);
       const { hovered, shifts, forced = null } = nativeDownloads
         ? await nativeDownloadShifts()
         : native

@@ -1,4 +1,4 @@
-import { windowNativeLayout } from "@solara/settings";
+import { readWindowLayoutAnchors, windowNativeLayout } from "@solara/settings";
 import type { View } from "react-native";
 import { layout } from "../../../lib/theme";
 import { useBrowser } from "../../../store/browser";
@@ -25,7 +25,12 @@ function measure(view: View | undefined): Promise<Rect | null> {
 
 export async function locateAnchor(windowId: string, id: TourAnchor): Promise<Rect | null> {
   if (windowNativeLayout(windowId)) {
-    const rect = nativeWindowAnchorFeed.current(windowId)?.anchors[`tour:${id}`];
+    if (id === "commandBar" || id === "page") {
+      const rect = await measure(registered.get(key(windowId, id)));
+      if (rect) return rect;
+    }
+    const batch = await readWindowLayoutAnchors(windowId);
+    const rect = (batch ?? nativeWindowAnchorFeed.current(windowId))?.anchors[`tour:${id}`];
     return rect ? { x: rect[0], y: rect[1], width: rect[2], height: rect[3] } : null;
   }
   const s = useBrowser.getState();

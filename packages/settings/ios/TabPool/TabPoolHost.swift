@@ -51,7 +51,10 @@ final class TabPoolHost {
     }
     pool.onReplace = { [weak self] tabId in
       guard let entry = self?.pages[tabId] else { return }
-      if let binding = entry.token.binding { PageIssuer.shared?.retire(binding) }
+      if let binding = entry.token.binding {
+        if let registration = binding.registration, let windowId = self?.windowOf(tabId) { NativeWindowShell.host(windowId)?.retirePresentation(registration) }
+        PageIssuer.shared?.retire(binding)
+      }
       entry.page.discard()
     }
     self.pool = pool
@@ -118,6 +121,12 @@ final class TabPoolHost {
         issuer.afterIngress { reject(error.code, error.message) }
       } catch { issuer.afterIngress { reject("ERR_PAGE_VALUE", "Invalid page arguments") } }
     }
+  }
+
+  func presentationRegistration(_ tabId: String) -> PageRegistration? {
+    guard let issuer = PageIssuer.shared, let binding = pages[tabId]?.token.binding,
+      issuer.isCurrent(binding) else { return nil }
+    return binding.registration
   }
 
   func windowOf(_ tabId: String) -> String? { NativeStoreHandle.store?.state.tabs[tabId]?.windowId }
@@ -404,7 +413,10 @@ final class TabPoolHost {
       if let given = props[tabId] { page.apply(given) }
       let entry = PoolPage(page: page, token: token) { [weak self, weak token] in
         guard let token else { return }
-        if let binding = token.binding { issuer.retire(binding) }
+        if let binding = token.binding {
+          if let registration = binding.registration, let windowId = self?.windowOf(tabId) { NativeWindowShell.host(windowId)?.retirePresentation(registration) }
+          issuer.retire(binding)
+        }
         guard let self, self.pages[tabId]?.token === token else { return }
         self.pages[tabId] = nil
         issuer.afterIngress { [weak self] in
@@ -457,6 +469,9 @@ final class TabPoolHost {
       }
       guard let data = try? JSONSerialization.data(withJSONObject: payload), let value = try? JSONValue.parse(data),
         let sequence = issuer.reserveEvent(binding, name: name, payload: value) else { return false }
+      if let registration = binding.registration, let windowId = issuer.store.state.tabs[tabId]?.windowId {
+        NativeWindowShell.host(windowId)?.receivePresentation(registration, name: name, payload: payload)
+      }
       issuer.afterIngress { [weak self] in self?.emitEvent(binding, name: name, payload: payload, eventSeq: sequence) }
       return true
     }

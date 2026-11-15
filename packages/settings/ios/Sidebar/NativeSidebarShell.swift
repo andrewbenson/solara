@@ -676,14 +676,8 @@ final class NativeLayoutChrome {
   }
 
   private func layoutInput(_ state: BrowserState) -> WindowLayoutInput? {
-    guard let base = WindowLayoutInput(state: state, windowId: shell.windowId, bounds: shell.bounds, presentation: shell.input) else { return nil }
-    let ids = base.split?.tabIds ?? base.selectedTabId.map { [$0] } ?? []
-    var facts: [String: WindowLayoutPageFacts] = [:]
-    for id in ids {
-      let page = NativeStoreHandle.store?.pageFacts(id)
-      facts[id] = WindowLayoutPageFacts(registration: page?.generation ?? "", fullscreen: page?.keepAlive?.reveal.fullscreen == true)
-    }
-    return WindowLayoutInput(state: state, windowId: shell.windowId, bounds: shell.bounds, presentation: shell.input, pageFacts: facts)
+    if let host = NativeWindowShell.host(shell.windowId), host.ownsNativeLayout { return host.makeLayoutInput() }
+    return WindowLayoutInput(state: state, windowId: shell.windowId, bounds: shell.bounds, presentation: shell.input)
   }
 
   private func hasDownloads(_ state: BrowserState, _ window: BrowserWindow) -> Bool {

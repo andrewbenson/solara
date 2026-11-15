@@ -19,7 +19,12 @@ function publishThemes() {
   queueMicrotask(() => {
     themeQueued = false;
     const windows: Record<string, object> = {};
-    for (const [windowId, entry] of Object.entries(themes)) windows[windowId] = windowNativeLayout(windowId) ? entry : { ...entry, pageTops: pageTops[windowId] ?? {} };
+    for (const [windowId, entry] of Object.entries(themes)) {
+      if (windowNativeLayout(windowId)) {
+        const { theme } = entry as { theme: object };
+        windows[windowId] = { theme };
+      } else windows[windowId] = { ...entry, pageTops: pageTops[windowId] ?? {} };
+    }
     publishSettingsTopic("split.theme", { v: VERSION, windows });
   });
 }

@@ -1,5 +1,5 @@
 import { WebView, type PageEngine } from "@solara/solaracore";
-import { nativeToolbarAvailable, tabPool, windowNativeLayout, windowNativeLayoutGeneration, windowPaneRootsActive, windowShellActive } from "@solara/settings";
+import { nativeToolbarAvailable, tabPool, windowNativeLayout, windowPaneRootsActive, windowShellActive } from "@solara/settings";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Animated, StyleSheet, View, type ViewStyle } from "react-native";
 import { useShallow } from "zustand/react/shallow";
@@ -66,7 +66,7 @@ import { CastPicker } from "./media/CastPicker";
 import { DeviceChooser } from "./site/DeviceChooser";
 import { Toolbar, ToolbarBackdrop, urlFieldRight } from "./Toolbar";
 import { AutoHideBackdrop, AutoHideToolbar, useToolbarMode, useToolbarMotion } from "./AutoHideToolbar";
-import { NativeAutoHide } from "./NativeAutoHide";
+import { NativeAutoHide, NativeAutoHideStyleFeed } from "./NativeAutoHide";
 import { publishPaneChrome, WindowToolbar } from "./WindowToolbar";
 import { revealToolbar } from "./layout/toolbarAutoHide";
 import { railToolbarOnFrame } from "./layout/toolbarColors";
@@ -79,7 +79,6 @@ import { PeekOverlay } from "./peek/PeekOverlay";
 import { PooledPageProps } from "./PooledPageProps";
 import { dismissPeek, startPeeks } from "./peek/actions";
 import { NativePaneFallback, useNativePaneFallbacks } from "./layout/NativePaneFallback";
-import { publishNativePaneStatus } from "./layout/nativePaneStatus";
 
 export function ContentCard() {
   const windowId = useWindowId();
@@ -99,11 +98,6 @@ function NativeContentGuests() {
   const windowId = useWindowId();
   const activeId = useActiveTabId();
   const split = useBrowser((s) => splitOf(s, activeId));
-  const fullscreenTab = useFullscreenTab(windowId);
-  const peekId = useBrowser((s) => s.peeks[windowId]?.tabId);
-  const peekFullscreen = !!peekId && fullscreenTab === peekId;
-  const addressInSidebar = useAddressBarInSidebar();
-  const hideWhileScrolling = useBrowser((s) => s.settings.hideToolbarWhileScrolling);
   const theme = useTheme();
   const [nativePrompts] = useState(() => panePromptsNativeIn(windowId));
   useContentServices();
@@ -111,10 +105,7 @@ function NativeContentGuests() {
   const content = useCardAnchors((state) => state[windowId]);
   const origin = useMemo(() => content ? { x: content.left, y: content.top } : null, [content]);
   useNativePanePromptsTheme(nativePrompts, windowId, theme, useFormColors());
-  useNativeSplitChrome(windowId, true, theme, fullscreenTab ?? null, !!peekId, !addressInSidebar && !hideWhileScrolling, false);
-  useEffect(() => {
-    if (fullscreenTab && peekId && !peekFullscreen) dismissPeek(windowId);
-  }, [fullscreenTab, peekId, peekFullscreen, windowId]);
+  useNativeSplitChrome(windowId, true, theme, null, false, true, false);
   const fallbacks = useNativePaneFallbacks(windowId);
   const tabIds = useMemo(() => split?.tabIds ?? (activeId ? [activeId] : NO_TABS), [split, activeId]);
   useEffect(() => {
@@ -134,35 +125,21 @@ function NativeContentGuests() {
           <PaneContent windowId={windowId} tabId={tabId} shown nativeFallback />
         </NativePaneFallback>
       ))}
-      {tabIds.map((tabId) => <NativePaneChromeFeed key={tabId} windowId={windowId} tabId={tabId} inSplit={!!split} leading={tabId === tabIds[0]} focused={tabId === activeId} fullscreen={tabId === fullscreenTab} />)}
-      {!fullscreenTab && tabIds.map((tabId) => <FrozenPage key={tabId} windowId={windowId} tabId={tabId} headless />)}
-      {(!fullscreenTab || peekFullscreen) && <NativePeekMount windowId={windowId} origin={origin} fullscreen={peekFullscreen} />}
+      {tabIds.map((tabId) => <NativePaneChromeFeed key={tabId} windowId={windowId} tabId={tabId} inSplit={!!split} leading={tabId === tabIds[0]} focused={tabId === activeId} />)}
+      {tabIds.map((tabId) => <FrozenPage key={tabId} windowId={windowId} tabId={tabId} headless />)}
+      <NativePeekMount windowId={windowId} origin={origin} fullscreen={false} />
     </>
   );
 }
 
-function NativePaneChromeFeed({ windowId, tabId, inSplit, leading, focused, fullscreen }: { windowId: string; tabId: string; inSplit: boolean; leading: boolean; focused: boolean; fullscreen: boolean }) {
-  const addressInSidebar = useAddressBarInSidebar();
+function NativePaneChromeFeed({ windowId, tabId, inSplit, leading, focused }: { windowId: string; tabId: string; inSplit: boolean; leading: boolean; focused: boolean }) {
   const tabLayout = useTabLayout();
   const showSidebarButton = useBrowser((s) => s.settings.showSidebarButton !== false);
-  const hideWhileScrolling = useBrowser((s) => s.settings.hideToolbarWhileScrolling);
-  const barMode = useBookmarksBarMode(windowId);
-  const own = useTabValue(tabId, paneTab, shallowEqual);
-  const toolbar = !addressInSidebar && !fullscreen;
-  const autoHide = toolbar && hideWhileScrolling;
-  const mode = useToolbarMode(tabId, windowId, autoHide);
-  const geometry = toolbar ? toolbarGeometry({ sidebarButton: leading && tabLayout === "sidebar" && showSidebarButton }) : NO_TOOLBAR;
-  const bookmarksBar = !fullscreen && !inSplit && bookmarksBarShown(barMode, own.exists ? own : undefined);
-  const [feedOwner] = useState(() => ({}));
-  const [generation] = useState(() => windowNativeLayoutGeneration(windowId));
-  const motion = useToolbarMotion({ enabled: autoHide, mode, extra: bookmarksBar ? BOOKMARKS_BAR_HEIGHT : 0, doc: pageKey(own.url) });
-  useLayoutEffect(() => publishNativePaneStatus(windowId, generation, tabId, feedOwner, autoHide ? motion.bottomStyle : undefined));
-  useEffect(() => () => dropPaneStatusStyle(tabId, feedOwner), [tabId, feedOwner]);
-  useEffect(() => revealToolbar(tabId), [tabId]);
+  const geometry = toolbarGeometry({ sidebarButton: leading && tabLayout === "sidebar" && showSidebarButton });
   return (
     <>
-      {toolbar && <SplitToolbarFeed tabId={tabId} windowId={windowId} geometry={geometry} focused={focused} inSplit={inSplit} />}
-      {autoHide && <NativeAutoHide windowId={windowId} tabId={tabId} mode={mode} extra={bookmarksBar ? BOOKMARKS_BAR_HEIGHT : 0} focused={focused || !inSplit} />}
+      <SplitToolbarFeed tabId={tabId} windowId={windowId} geometry={geometry} focused={focused} inSplit={inSplit} />
+      <NativeAutoHideStyleFeed windowId={windowId} tabId={tabId} />
     </>
   );
 }

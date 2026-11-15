@@ -170,7 +170,7 @@ struct WindowLayoutContractTests {
     let top = WindowLayoutSnapshot.of(try #require(WindowLayoutInput(state: state, windowId: "w", bounds: bounds)), generation: 3)
     #expect(top.content == top.frames.card)
     let fullscreen = DockedLayoutInput(size: bounds.size, dock: 1, fullscreen: true)
-    let full = WindowLayoutSnapshot.of(try #require(WindowLayoutInput(state: state, windowId: "w", bounds: bounds, presentation: fullscreen)), generation: 4)
+    let full = WindowLayoutSnapshot.of(try #require(WindowLayoutInput(state: state, windowId: "w", bounds: bounds, presentation: fullscreen, pageFacts: ["a": WindowLayoutPageFacts(fullscreen: true)])), generation: 4)
     #expect(full.content == bounds && full.frames.card == bounds)
   }
 

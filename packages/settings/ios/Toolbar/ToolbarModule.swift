@@ -372,8 +372,10 @@ public enum SidebarAddressBarRead {
 @MainActor
 public enum ToolbarStateRead {
   public static func snapshot(windowId: String, tabId: String) -> [String: Any]? {
-    guard let host = NativeToolbarHostView.host(windowId: windowId, tabId: tabId), let state = host.toolbar.state else { return nil }
-    return ["tabId": state.tabId, "hidden": host.isHiddenOrHasHiddenAncestor,
+    guard let toolbar = NativeToolbarHostView.toolbar(windowId: windowId, tabId: tabId), let state = toolbar.state else { return nil }
+    return ["tabId": state.tabId, "hidden": toolbar.isHiddenOrHasHiddenAncestor,
+      "identity": String(describing: ObjectIdentifier(toolbar)), "background": state.palette.background ?? NSNull(),
+      "hairline": state.hairline, "stripes": state.stripes ?? NSNull(), "windowToolbar": state.windowToolbar ?? false,
       "reloadIcon": state.left.first(where: { $0.id == "reload" }).map { $0.icon as Any } ?? NSNull(),
       "zoomLabel": (state.url?.trailing.first(where: { $0.id == "zoom" })?.tooltip).map { $0 as Any } ?? NSNull()]
   }
@@ -387,8 +389,10 @@ public enum ToolbarRead {
     guard let model = NativeStoreHandle.store?.state.windows[windowId] else { return [] }
     var rows: [[String: Any]] = []
     for tabId in model.tabIds {
-      guard let host = NativeToolbarHostView.host(windowId: windowId, tabId: tabId), let state = host.toolbar.state else { continue }
-      rows.append(["tabId": state.tabId, "bare": state.bare, "urlHost": state.url.map { $0.host as Any } ?? NSNull()])
+      guard let toolbar = NativeToolbarHostView.toolbar(windowId: windowId, tabId: tabId), let state = toolbar.state else { continue }
+      rows.append(["tabId": state.tabId, "bare": state.bare, "urlHost": state.url.map { $0.host as Any } ?? NSNull(),
+        "identity": String(describing: ObjectIdentifier(toolbar)), "background": state.palette.background ?? NSNull(),
+        "hairline": state.hairline, "stripes": state.stripes ?? NSNull(), "windowToolbar": state.windowToolbar ?? false])
     }
     return rows
   }

@@ -39,6 +39,10 @@ enum NativePeek {
     return host
   }
 
+  static func presentationChanged(_ windowId: String, fullscreenTabId: String?) {
+    hosts[windowId]?.presentationChanged(fullscreenTabId)
+  }
+
   static func windowEnded(_ windowId: String) {
     hosts.removeValue(forKey: windowId)?.end()
   }
@@ -58,6 +62,11 @@ enum NativePeek {
     host.view.expandToTab(done)
   }
 
+  static func paneFrame(_ windowId: String, in shell: WindowShellView) -> CGRect? {
+    guard let host = hosts[windowId], host.view.window === shell.window, host.view.superview != nil else { return nil }
+    return host.view.convert(host.view.bounds, to: shell)
+  }
+
   static func sample(_ windowId: String) -> [String: Any]? {
     guard let host = hosts[windowId] else { return nil }
     return [
@@ -74,6 +83,8 @@ final class PeekHost {
   let windowId: String
   let view = PeekOverlayView(frame: .zero)
   private(set) weak var shell: WindowShellView?
+  private var latestJSON = ""
+  private var fullscreenTabId: String?
 
   init(windowId: String, shell: WindowShellView) {
     self.windowId = windowId
@@ -84,6 +95,7 @@ final class PeekHost {
   }
 
   func apply(_ json: String) {
+    latestJSON = json
     guard let shell else { return }
     if json.isEmpty {
       view.clear()
@@ -95,8 +107,22 @@ final class PeekHost {
       refreshBackdrop()
     }
     TabSlots.shared.set(.peek(windowId), container: view.pageSlot)
-    view.apply(json: json)
+    if NativeWindowShell.nativeLayoutActive(windowId),
+      let data = json.data(using: .utf8), var value = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+      let tabId = value["tabId"] as? String
+      value["fullscreen"] = tabId != nil && tabId == fullscreenTabId
+      view.isHidden = fullscreenTabId != nil && tabId != fullscreenTabId
+      if let encoded = try? JSONSerialization.data(withJSONObject: value), let next = String(data: encoded, encoding: .utf8) { view.apply(json: next) }
+    } else {
+      view.apply(json: json)
+    }
     shell.coverChanged()
+  }
+
+  func presentationChanged(_ fullscreenTabId: String?) {
+    guard self.fullscreenTabId != fullscreenTabId else { return }
+    self.fullscreenTabId = fullscreenTabId
+    if !latestJSON.isEmpty { apply(latestJSON) }
   }
 
   func refreshBackdrop() {

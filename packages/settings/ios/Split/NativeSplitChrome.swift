@@ -180,7 +180,7 @@ enum NativeSplitChrome {
       guard let view = view(windowId) else { continue }
       let theme = SplitChromeTheme(entry["theme"] as? [String: Any] ?? [:])
       if let owner = owners[windowId] {
-        owner.setTheme(theme, covered: entry["covered"] as? Bool ?? false)
+        owner.setTheme(theme, covered: false)
         continue
       }
       let fullscreenTab = entry["fullscreenTab"] as? String
@@ -319,8 +319,8 @@ final class NativePaneLayoutHost {
     self.state = state
     TabSlots.shared.performBatch {
       PaneOverlays.shared.performBatch {
-        let fullscreen = snapshot.input.pageFacts.first { $0.value.fullscreen }?.key
-        chrome.setChrome(theme: theme, fullscreenTab: fullscreen, covered: covered)
+        let fullscreen = snapshot.fullscreenTabId
+        chrome.setChrome(theme: theme, fullscreenTab: fullscreen, covered: state.peeks[shell.windowId] != nil && fullscreen == nil)
         panes.theme = theme
         panes.cardColor = theme.color("card", dark: "rgba(18,18,18,0.5)", light: "rgba(255,255,255,0.7)")
         panes.small = false
@@ -371,7 +371,8 @@ final class NativePaneLayoutHost {
   private func placeFrozen() {
     guard !stopped, let snapshot, let state else { return }
     let wanted = frozenStates.filter { id, entry in
-      guard snapshot.pages[id] != nil, let copyId = entry["copyId"] as? String, state.tabs[copyId] != nil else { return false }
+      guard snapshot.fullscreenTabId == nil, snapshot.pages[id] != nil,
+        let copyId = entry["copyId"] as? String, state.tabs[copyId] != nil else { return false }
       return state.tabs[id]?.windowId == shell.windowId
         && FrozenPageIdentity.admits(tabId: id, copyId: copyId, holder: state.tabs[id]?.pageIn, copyHolder: state.tabs[copyId]?.pageIn)
     }

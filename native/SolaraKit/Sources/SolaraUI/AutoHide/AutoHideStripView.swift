@@ -112,6 +112,7 @@ public final class AutoHideStripView: NSView {
   public func set(style next: AutoHideStripStyle, mode nextMode: ToolbarAutoHideMode, shownTop top: Double) {
     let first = style == nil
     style = next
+    let topChanged = shownTop != top
     shownTop = top
     applySurface(animated: !first)
     label.stringValue = next.host
@@ -122,6 +123,8 @@ public final class AutoHideStripView: NSView {
       jump(to: nextMode)
     } else if nextMode != mode {
       transition(to: nextMode)
+    } else if topChanged {
+      tick()
     }
     needsLayout = true
   }
@@ -162,6 +165,8 @@ public final class AutoHideStripView: NSView {
   public var showsToolTip: Bool { label.toolTip != nil }
 
   private func setMode(_ next: ToolbarAutoHideMode) {
+    peekTimer?.invalidate()
+    peekTimer = nil
     mode = next
     label.toolTip = next == .collapsed ? "Show Toolbar" : nil
   }
@@ -180,9 +185,10 @@ public final class AutoHideStripView: NSView {
   private func transition(to next: ToolbarAutoHideMode) {
     let now = CACurrentMediaTime()
     let current = (page: page.value(at: now), bar: bar.value(at: now), fade: fade.value(at: now))
-    defer { setMode(next) }
+    let previous = mode
+    setMode(next)
     if next != .shown { moved = true }
-    guard let t = ToolbarAutoHideTransition.between(mode, next, current: current, at: now, reduceMotion: reduceMotion) else { return }
+    guard let t = ToolbarAutoHideTransition.between(previous, next, current: current, at: now, reduceMotion: reduceMotion) else { return }
     page = t.page
     bar = t.bar
     fade = t.fade

@@ -83,7 +83,7 @@ public final class SplitPanesView: NSView {
     guard !stopped, snapshot.input.windowId == windowId else { return }
     installed = snapshot
     update(state: state)
-    setFullscreenTab(snapshot.input.pageFacts.first { $0.value.fullscreen }?.key)
+    setFullscreenTab(snapshot.fullscreenTabId)
     frame = CGRect(origin: .zero, size: snapshot.frames.card.size)
     needsLayout = true
     layoutSubtreeIfNeeded()
@@ -178,9 +178,16 @@ public final class SplitPanesView: NSView {
     func rect(_ r: CGRect) -> [Double] { [r.minX, r.minY, r.width, r.height].map(Double.init) }
     let height = window?.contentView?.bounds.height ?? 0
     return panes.mapValues { pane -> [String: Any] in
-      let page = pane.page.convert(pane.page.bounds, to: nil)
+      let viewport = pane.page.frame
+      let left = max(pane.bounds.minX, viewport.minX)
+      let top = max(pane.bounds.minY, viewport.minY)
+      let visible = installed == nil ? viewport : CGRect(x: left, y: top,
+        width: max(0, min(pane.bounds.maxX, viewport.maxX) - left), height: max(0, min(pane.bounds.maxY, viewport.maxY) - top))
+      let page = pane.convert(visible, to: nil)
+      let renderer = pane.page.convert(pane.page.bounds, to: nil)
       return [
-        "frame": rect(pane.frame), "page": rect(pane.page.frame), "window": rect(CGRect(x: page.minX, y: height - page.maxY, width: page.width, height: page.height)),
+        "frame": rect(pane.frame), "page": rect(visible), "window": rect(CGRect(x: page.minX, y: height - page.maxY, width: page.width, height: page.height)),
+        "viewport": rect(viewport), "viewportWindow": rect(CGRect(x: renderer.minX, y: height - renderer.maxY, width: renderer.width, height: renderer.height)),
         "toolbar": !pane.toolbar.isHidden, "empty": pane.empty != nil, "hidden": pane.isHidden, "covered": fullscreenTab != nil && pane.layer?.zPosition == 0, "radius": Double(pane.radius),
       ]
     }
@@ -198,7 +205,7 @@ public final class SplitPanesView: NSView {
     layer?.cornerCurve = .continuous
     CATransaction.commit()
     let origin = installed?.frames.card.origin ?? .zero
-    let rects = installed?.panes.mapValues { $0.offsetBy(dx: -origin.x, dy: -origin.y) }
+    let rects = installed?.panes.filter { $0.key != installed?.input.peekTabId }.mapValues { $0.offsetBy(dx: -origin.x, dy: -origin.y) }
       ?? (split == nil ? [:] : SplitLayout.panes(split: split, activeId: activeId, fullscreenTab: fullscreenTab, bounds: area).panes)
     var made = false
     for (tabId, rect) in rects {
@@ -223,12 +230,12 @@ public final class SplitPanesView: NSView {
         }
         pane.toolbar.alphaValue = 1 - rail
       }
-      let edge: CGFloat = fullscreenTab == nil && window?.styleMask.contains(.fullScreen) != true ? 1 : 0
+      let edge: CGFloat = fullscreenTab == nil && installed?.input.windowFullscreen != true && installed?.input.windowFullscreenTransition != true && window?.styleMask.contains(.fullScreen) != true ? 1 : 0
       pane.edgeShadow.tint = windowShell?.cardEdgeTint
       pane.edgeRim.tint = windowShell?.cardEdgeTint
       pane.edgeShadow.place(rect, radius: pane.radius, strength: edge)
       pane.edgeRim.place(rect, radius: pane.radius, strength: edge)
-      if let snapshot = installed, let page = snapshot.pages[tabId], let bar = snapshot.toolbars[tabId] {
+      if let snapshot = installed, let page = snapshot.pageViewports[tabId], let bar = snapshot.toolbars[tabId] {
         pane.toolbarHeight = bar.height
         pane.installedPage = page.offsetBy(dx: -origin.x - rect.minX, dy: -origin.y - rect.minY)
         pane.installedToolbar = bar.offsetBy(dx: -origin.x - rect.minX, dy: -origin.y - rect.minY)

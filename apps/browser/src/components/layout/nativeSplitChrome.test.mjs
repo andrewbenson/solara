@@ -33,7 +33,7 @@ test("legacy layout still publishes its drag target and pane bounds", () => {
   assert.deepEqual(published, [["split.drag", { v: 1, windowId: "legacy", shown: true, grown: true, px: 10, target: ["a", "right"], panes: [["a", 0, 0, 800, 600]] }]]);
 });
 
-test("headless native theme updates carry fullscreen facts without RN page tops", async () => {
+test("headless native theme updates omit JavaScript presentation policy", async () => {
   published.length = 0;
   useNativeSplitChrome("native", true, { dark: true }, "a", false, true, false);
   useNativePageTops("native", true, { a: 105 });
@@ -41,8 +41,8 @@ test("headless native theme updates carry fullscreen facts without RN page tops"
   useNativePageTops("legacy", true, { a: 38 });
   await Promise.resolve();
   const value = published.findLast(([topic]) => topic === "split.theme")?.[1];
-  assert.equal(value.windows.native.fullscreenTab, "a");
-  assert.equal(Object.hasOwn(value.windows.native, "pageTops"), false);
+  for (const key of ["fullscreenTab", "covered", "toolbar", "small", "pageTops"]) assert.equal(Object.hasOwn(value.windows.native, key), false);
+  assert.equal(value.windows.native.theme.dark, true);
   assert.deepEqual(value.windows.legacy.pageTops, { a: 38 });
 });
 

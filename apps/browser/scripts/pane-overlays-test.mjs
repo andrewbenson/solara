@@ -39,7 +39,9 @@ const HELPERS = `
 const S = () => ac.store.getState();
 const shell = () => globalThis.expo.modules.SolaraWindowShell.describe("w1").then(JSON.parse);
 const split = () => shell().then((d) => (d && d.split) || {});
-const setFullscreen = (id, on) => acLayout.pages.setState((s) => ({ pages: { ...s.pages, [id]: { ...s.pages[id], fullscreen: on } } }));
+const setFullscreen = (id, on) => shell().then((owner) => owner.nativeLayout
+  ? globalThis.expo.modules.SolaraTabPool.devPageEvent(id, "onFullscreen", { fullscreen: on })
+  : acLayout.pages.setState((s) => ({ pages: { ...s.pages, [id]: { ...s.pages[id], fullscreen: on } } })));
 `;
 let app = null;
 const run = (body, timeout = 20000) => app.eval(`${HELPERS}\n${body}`, { timeout });
@@ -90,7 +92,7 @@ try {
 
   let full;
   await rep.check("fullscreen-hides-the-other-slot", async () => {
-    await run(`setFullscreen("b", true); return true;`);
+    await run(`return setFullscreen("b", true);`);
     full = await until("b fullscreen", `return split().then((s) => (s.leaves && s.leaves.a && s.leaves.a.covered && !s.leaves.a.hidden && !s.leaves.b.covered && !s.leaves.b.hidden) ? s : null);`);
     if (!hidden(full, "a")) throw new Error(`a's slot shows while its pane is hidden: ${JSON.stringify(full.overlays)}`);
     if (!shown(full, "b")) throw new Error(`b's slot is hidden: ${JSON.stringify(full.overlays)}`);
@@ -105,7 +107,7 @@ try {
   });
 
   await rep.check("leaving-fullscreen-shows-both", async () => {
-    await run(`setFullscreen("b", false); return true;`);
+    await run(`return setFullscreen("b", false);`);
     const s = await until("both shown", `return split().then((s) => (s.leaves && !s.leaves.a.hidden && !s.leaves.b.hidden && !s.leaves.a.covered && !s.leaves.b.covered) ? s : null);`);
     for (const id of ["a", "b"]) if (!shown(s, id)) throw new Error(`${id}'s slot is hidden: ${JSON.stringify(s.overlays)}`);
     for (const id of ["a", "b"]) if (!near(s.overlays[id].window, s.leaves[id].window)) throw new Error(`${id}: slot ${s.overlays[id].window}, page ${s.leaves[id].window}`);

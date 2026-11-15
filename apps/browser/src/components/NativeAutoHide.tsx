@@ -1,5 +1,5 @@
 import { breadcrumb } from "@solara/core";
-import { windowShellActive } from "@solara/settings";
+import { windowNativeLayoutGeneration, windowShellActive } from "@solara/settings";
 import { requireOptionalNativeModule, type EventSubscription } from "expo-modules-core";
 import { useEffect } from "react";
 import { layout, useTheme } from "../lib/theme";
@@ -8,17 +8,41 @@ import { tabLayoutOf } from "../store/model";
 import { nativeSidebarRailSupported, sidebarIconsOnlyOf } from "../store/sidebarRail";
 import { revealToolbar, setToolbarPeek, type ToolbarMode } from "./layout/toolbarAutoHide";
 import { railToolbarOnFrame, toolbarPalette } from "./layout/toolbarColors";
-import { useFullscreenTab } from "./layout/pageState";
+import { useFullscreenTab, usePages } from "./layout/pageState";
 import { stripesUri } from "./NativeToolbar";
-import { useTabDeveloperMode, useToolbarSiteColor } from "./site/developerMode";
+import { useTabDeveloperMode, useToolbarSiteColor, useUrlEdit } from "./site/developerMode";
+import { useHistoryMenu } from "./layout/history";
+import { useExtensions } from "./extensions/store";
 
 type AutoHideNative = {
   set(windowId: string, tabId: string, json: string): Promise<void>;
+  setStyle(windowId: string, tabId: string, generation: number, json: string): Promise<void>;
   remove(windowId: string, tabId: string): Promise<void>;
   addListener(event: "onAutoHideEvent", listener: (e: { windowId: string; tabId: string; kind: "reveal" | "peek"; on: boolean }) => void): EventSubscription;
 };
 
 const native = requireOptionalNativeModule<AutoHideNative>("SolaraAutoHide");
+
+export function NativeAutoHideStyleFeed({ windowId, tabId }: { windowId: string; tabId: string }) {
+  const theme = useTheme();
+  const url = useBrowser((s) => s.tabs[tabId]?.url ?? "");
+  const palette = toolbarPalette(theme, useToolbarSiteColor(tabId));
+  const developer = useTabDeveloperMode(tabId);
+  const popover = usePages((s) => !!s.popover[tabId]);
+  const history = useHistoryMenu((s) => s.menu?.tabId === tabId);
+  const extension = useExtensions((s) => s.popup?.windowId === windowId);
+  const editing = useUrlEdit((s) => s.tabId === tabId);
+  const json = JSON.stringify({
+    held: popover || history || extension || editing,
+    card: theme.card, band: palette.background, divider: palette.divider, secondary: palette.secondary,
+    host: url.startsWith("file:") ? "File" : breadcrumb(url).host, hasPage: !!url,
+    stripes: developer ? stripesUri(palette) : null,
+  });
+  useEffect(() => {
+    void native?.setStyle(windowId, tabId, windowNativeLayoutGeneration(windowId), json);
+  }, [windowId, tabId, json]);
+  return null;
+}
 
 export function NativeAutoHide({ windowId, tabId, mode, pane, extra, focused }: { windowId: string; tabId: string; mode: ToolbarMode; pane?: { x: number; y: number; width: number; height: number }; extra: number; focused: boolean }) {
   const theme = useTheme();

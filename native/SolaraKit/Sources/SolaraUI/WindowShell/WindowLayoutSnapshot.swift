@@ -8,7 +8,11 @@ public struct WindowLayoutSnapshot: Equatable, Sendable {
   public let contentPanes: [String: CGRect]
   public let panes: [String: CGRect]
   public let pages: [String: CGRect]
+  public let pageViewports: [String: CGRect]
   public let toolbars: [String: CGRect]
+  public let toolbarModes: [String: ToolbarAutoHideMode]
+  public let shownTops: [String: CGFloat]
+  public let fullscreenTabId: String?
   public let sidebarHeader: CGRect?
   public let sidebarFooter: CGRect?
   public let stripAvailableWidth: CGFloat
@@ -22,13 +26,19 @@ public struct WindowLayoutSnapshot: Equatable, Sendable {
     if input.presentation.railFraction == 1 { contentInput.sidebarWidth = ShellMetrics.legacySidebarRailWidth }
     let content = DockedLayoutFrames.of(contentInput).card
     let rail = input.presentation.railFraction
-    let fullscreenTab = input.pageFacts.first { $0.value.fullscreen }?.key
-    let contentPanes = SplitLayout.panes(split: input.split, activeId: input.selectedTabId, fullscreenTab: fullscreenTab, bounds: content).panes
+    let fullscreenTab = input.fullscreenTabId
+    func paneFrames(in bounds: CGRect) -> [String: CGRect] {
+      var panes = SplitLayout.panes(split: input.split, activeId: input.selectedTabId, fullscreenTab: nil, bounds: bounds).panes
+      if let fullscreenTab { panes[fullscreenTab] = bounds }
+      return panes
+    }
+    let contentPanes = paneFrames(in: content)
     let area = CGRect(
       x: frames.page.minX, y: frames.card.minY + (frames.page.minY - frames.card.minY) * rail,
       width: frames.page.width, height: max(0, frames.card.height + (frames.page.height - frames.card.height) * rail))
-    let panes = SplitLayout.panes(split: input.split, activeId: input.selectedTabId, fullscreenTab: fullscreenTab, bounds: area).panes
+    let panes = paneFrames(in: area)
     var pages: [String: CGRect] = [:]
+    var pageViewports: [String: CGRect] = [:]
     var toolbars: [String: CGRect] = [:]
     var anchors: [String: CGRect] = ["card": frames.card, "content": content, "page": frames.page]
     if input.layout.sidebarSide == .right && !input.layout.topTabs && !input.layout.fullscreen {
@@ -38,10 +48,17 @@ public struct WindowLayoutSnapshot: Equatable, Sendable {
       let hidden = input.layout.addressBarInSidebar || id == fullscreenTab
       let toolbar = hidden ? 0 : min(pane.height, ShellMetrics.toolbarHeight * (1 - rail))
       let captionTop: CGFloat = input.layout.sidebarSide == .right && input.layout.addressBarInSidebar && id != fullscreenTab && pane.minX == area.minX && pane.minY == area.minY ? ShellMetrics.toolbarHeight : 0
-      let toolbarTop = min(pane.height, max(captionTop, input.pageFacts[id]?.top.map { $0 * (1 - rail) } ?? toolbar))
+      let shownTop = input.shownTops[id] ?? toolbar
+      let restingTop = input.toolbarModes[id] == .shown ? shownTop : ToolbarAutoHideMetrics.stripHeight
+      let toolbarTop = id == fullscreenTab ? 0 : min(pane.height, max(captionTop, (input.pageFacts[id]?.top ?? restingTop) * (1 - rail)))
       let band = id == fullscreenTab ? 0 : max(0, input.pageFacts[id]?.band ?? 0)
       let top = min(pane.height, toolbarTop + band)
       let page = CGRect(x: pane.minX, y: pane.minY + top, width: pane.width, height: max(0, pane.height - top))
+      let keepsTallViewport = input.hideToolbarWhileScrolling && !hidden
+        && (input.toolbarModes[id] != .shown || toolbarTop < min(pane.height, shownTop * (1 - rail)))
+      let viewportToolbarTop = keepsTallViewport ? min(pane.height, ToolbarAutoHideMetrics.stripHeight * (1 - rail)) : toolbarTop
+      let viewportTop = min(pane.height, viewportToolbarTop + band)
+      pageViewports[id] = CGRect(x: page.minX, y: page.minY, width: page.width, height: max(0, pane.height - viewportTop))
       let bar = rail > 0 && id == input.selectedTabId && !hidden
         ? CGRect(x: frames.card.minX, y: frames.card.minY, width: frames.card.width, height: min(frames.card.height, ShellMetrics.toolbarHeight + ShellMetrics.railToolbarTop * rail))
         : CGRect(x: pane.minX, y: pane.minY, width: pane.width, height: toolbar)
@@ -67,7 +84,7 @@ public struct WindowLayoutSnapshot: Equatable, Sendable {
       }
     }
     let stripAvailableWidth = max(0, input.bounds.width - ShellMetrics.topStripLeadingReservation - max(84, input.stripControlsWidth + 14))
-    return Self(input: input, generation: generation, frames: frames, content: content, contentPanes: contentPanes, panes: panes, pages: pages, toolbars: toolbars, sidebarHeader: header, sidebarFooter: footer, stripAvailableWidth: stripAvailableWidth, anchors: anchors)
+    return Self(input: input, generation: generation, frames: frames, content: content, contentPanes: contentPanes, panes: panes, pages: pages, pageViewports: pageViewports, toolbars: toolbars, toolbarModes: input.toolbarModes, shownTops: input.shownTops, fullscreenTabId: fullscreenTab, sidebarHeader: header, sidebarFooter: footer, stripAvailableWidth: stripAvailableWidth, anchors: anchors)
   }
 
   public func residualURLBand(tabId: String, trailingReservation: CGFloat) -> CGRect? {

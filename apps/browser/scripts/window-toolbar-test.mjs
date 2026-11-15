@@ -89,11 +89,108 @@ const check = (name, ok, detail = "") => {
   results.push(ok);
   console.log(`${ok ? "ok  " : "FAIL"} ${name}${detail ? `  (${detail})` : ""}`);
 };
+async function nativeChecks() {
+  const readShell = () => ac('return globalThis.expo.modules.SolaraWindowShell.describe("w1").then(JSON.parse);');
+  const waitShell = async (name, accept = () => true) => {
+    const end = Date.now() + 15000;
+    let last;
+    while (Date.now() < end) {
+      if (!instance.alive) throw new Error(`${name}: instance exited`);
+      last = await readShell();
+      if (last?.layout?.current && accept(last.layout)) return last;
+      await sleep(100);
+    }
+    throw new Error(`${name}: native layout never matched (${JSON.stringify(last)})`);
+  };
+  const snapshot = async (name, shownIds, selected) => {
+    const shell = await waitShell(name, (layout) => layout.selectedTabId === selected && shownIds.every((id) => layout.panes[id]));
+    const snap = await untilSnapshot(name, (value) => {
+      const window = value.windows[0];
+      return window?.selectedTabId === selected && shownIds.every((id) => window.toolbarStates?.[id]?.hidden === false && window.toolbarHosts?.some((bar) => bar.tabId === id));
+    }, 15000);
+    const state = await ac('const s=ac.store.getState();return {urls:Object.fromEntries(s.windows.w1.tabIds.map(id=>[id,s.tabs[id]?.url])),autoHide:s.settings.hideToolbarWhileScrolling};');
+    const window = snap.windows[0];
+    for (const id of shownIds) {
+      const bar = window.toolbarHosts.find((bar) => bar.tabId === id);
+      check(`${name}: ${id} is a mounted native toolbar`, !!bar && window.toolbarStates[id].tabId === id && window.toolbarStates[id].hidden === false);
+      const expected = state.urls[id]?.startsWith("data:") ? "data:" : state.urls[id] || null;
+      check(`${name}: ${id} uses the current page address`, snap.tabs.find((tab) => tab.id === id)?.url === expected && (!/^https?:/.test(state.urls[id]) || bar.urlHost === new URL(state.urls[id]).hostname), JSON.stringify({ url: expected, host: bar.urlHost }));
+    }
+    check(`${name}: native page endpoints agree`, shell.layout.maxError <= 0.5, JSON.stringify(shell.layout.errors));
+    return { shell, snap, window, state };
+  };
+  const activate = async (id) => {
+    await ac(`ac.store.getState().activate(${JSON.stringify(id)});return true;`);
+    await waitShell(`activate ${id}`, (layout) => layout.selectedTabId === id);
+    if (id === "a" || id === "b") {
+      await ac(`const id=${JSON.stringify(id)},s=ac.store.getState(),tab=s.tabs[id],facts=ac.nativePages.facts(id);if(!facts)return false;ac.nativePages.report(id,{type:"navigation",generation:facts.generation,url:tab.url,title:tab.title,isLoading:false,canGoBack:false,canGoForward:false,themeColor:id==="a"?"#C0392B":"#2471A3",eventSeq:facts.newestEventSeq+1});return true;`);
+    }
+  };
+  for (const enabled of [true, false]) {
+    await ac(`ac.store.getState().updateSettings({hideToolbarWhileScrolling:${enabled}});return true;`);
+    for (const id of ["a", "b", "c", "d", "a"]) {
+      await activate(id);
+      const current = await snapshot(`${enabled ? "auto-hide" : "always shown"}: switch ${id}`, [id], id);
+      check(`native switch ${id}: the single toolbar follows selection`, current.window.toolbarHosts.length === 1 && Object.keys(current.shell.layout.toolbarModes).length === 1);
+      check(`native switch ${id}: the selected toolbar is shown`, current.shell.layout.toolbarModes[id] === "shown");
+      const bar = current.window.toolbarHosts.find((bar) => bar.tabId === id);
+      if (!enabled && ["a", "b"].includes(id)) check(`native switch ${id}: the site color reaches the toolbar`, bar.background === (id === "a" ? "#C0392B" : "#2471A3"), JSON.stringify(bar));
+    }
+  }
+  await activate("a");
+  const initial = await snapshot("native toolbar before style updates", ["a"], "a");
+  const identity = initial.window.toolbarHosts.find((bar) => bar.tabId === "a").identity;
+  for (const appearance of ["light", "dark"]) {
+    for (const rail of [true, false]) {
+      await ac(`ac.store.getState().updateSettings({appearance:${JSON.stringify(appearance)},hideToolbarWhileScrolling:false,sidebarIconsOnly:${rail}});return true;`);
+      await waitShell(`${appearance} sidebar motion`);
+      await sleep(500);
+      const current = await snapshot(`${appearance}: ${rail ? "rail" : "full sidebar"}`, ["a"], "a");
+      const bar = current.window.toolbarHosts.find((bar) => bar.tabId === "a");
+      check(`${appearance}: native ${rail ? "rail" : "full sidebar"} surface colors`, !bar.bare && bar.windowToolbar === true && bar.hairline === !rail && (rail ? bar.background === null && bar.stripes === null : bar.background === "#C0392B"), JSON.stringify(bar));
+      check(`${appearance}: native style changes keep the toolbar view`, typeof identity === "string" && bar.identity === identity, String(bar.identity));
+      const path = join(out, `native-${appearance}-${rail ? "rail" : "full"}.png`);
+      check(`${appearance}: native sidebar toolbar snapshot`, await ac(`return ac.shell.devSnapshotWindow("w1",${JSON.stringify(path)});`), path);
+    }
+  }
+  await ac('ac.store.getState().updateSettings({hideToolbarWhileScrolling:true});return true;');
+  await activate("c");
+  await snapshot("native c ready for scroll", ["c"], "c");
+  const reported = await ac('return globalThis.expo.modules.SolaraTabPool.devPageEvent("c","onPageMessage",{kind:"scroll",data:{state:"down"}});');
+  check("native current page registration accepts scrolling", reported === true);
+  const collapsed = await waitShell("native scrolling collapses", (layout) => layout.toolbarModes.c === "collapsed" && Math.abs(layout.presentationFacts.c.top - 20) <= 0.5);
+  check("native scrolling collapses the shown toolbar", collapsed.layout.toolbarModes.c === "collapsed");
+  await activate("d");
+  check("native next tab has a shown toolbar", (await snapshot("native next tab", ["d"], "d")).shell.layout.toolbarModes.d === "shown");
+  await activate("c");
+  check("native returning to a scrolled tab reveals its toolbar", (await snapshot("native returned tab", ["c"], "c")).shell.layout.toolbarModes.c === "shown");
+  const opened = await ac('return ac.store.getState().newTab("w1");');
+  await snapshot("native new tab", [opened], opened);
+  await ac(`ac.store.getState().closeTab(${JSON.stringify(opened)});return true;`);
+  await waitShell("native closed new tab", (layout) => layout.selectedTabId !== opened);
+  const afterClose = await ac('const s=ac.store.getState();return s.windows.w1.activeTabIds.default;');
+  await snapshot("native toolbar after close", [afterClose], afterClose);
+  const split = await ac('const s=ac.store.getState();const id=s.createSplit(["a","b"]);s.activate("a");return id;');
+  const paired = await snapshot("native split toolbars", ["a", "b"], "a");
+  check("native split has exactly one toolbar for each pane", paired.window.toolbarHosts.map((bar) => bar.tabId).sort().join() === "a,b");
+  await ac('return globalThis.expo.modules.SolaraTabPool.devPageEvent("b","onPageMessage",{kind:"scroll",data:{state:"down"}});');
+  const splitModes = await waitShell("native split independent scroll", (layout) => layout.toolbarModes.a === "shown" && layout.toolbarModes.b === "collapsed");
+  check("native split toolbars have independent modes", splitModes.layout.toolbarModes.a === "shown" && splitModes.layout.toolbarModes.b === "collapsed");
+  await ac(`ac.store.getState().separateSplit(${JSON.stringify(split)});ac.store.getState().activate("d");return true;`);
+  const unpaired = await snapshot("native split ended", ["d"], "d");
+  check("native leaving split restores one selected toolbar", unpaired.window.toolbarHosts.length === 1);
+  const mounts = await ac('return Object.fromEntries(["Toolbar","AutoHideToolbar","LegacyContentCard","TabPane","WindowToolbar"].map(name=>[name,acPerf.findFibers(name,50).length]));');
+  check("native toolbar checks use no React toolbar layout hosts", Object.values(mounts).every((count) => count === 0), JSON.stringify(mounts));
+}
+
 try {
   let ready = false;
   for (let i = 0; i < 60 && !ready; i++) ready = await ac("return !!ac.store.getState().windows.w1;", 2000).then((v) => v, () => false);
   if (!ready) throw new Error("the dev harness never answered");
   await assertSidebarPosition(instance);
+  const nativeLayout = await ac('return globalThis.expo.modules.SolaraWindowShell.describe("w1").then(value=>JSON.parse(value)?.nativeLayout===true);');
+  if (nativeLayout) await nativeChecks();
+  else {
   await ac(`
     globalThis.wt = {
       frames: (n) => new Promise((r) => { let k = n || 3; const step = () => (k-- > 0 ? requestAnimationFrame(step) : r()); step(); }),
@@ -179,6 +276,7 @@ try {
   const unsplit = await ac(`${S} for (const id of Object.keys(S().splits)) S().separateSplit(id); S().activate("d"); return wt.frames(6).then(() => wt.state());`);
   await nativeState(unsplit);
   check("out of the split: back to one window toolbar", unsplit.auto.length === 1 && !unsplit.auto[0].pane && unsplit.auto[0].tabId === "d", JSON.stringify(unsplit.auto));
+  }
 } catch (e) {
   check("run", false, e.message);
 } finally {

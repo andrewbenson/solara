@@ -7,12 +7,16 @@ public struct WindowLayoutPageFacts: Equatable, Sendable {
   public let fullscreen: Bool
   public let top: CGFloat?
   public let band: CGFloat
+  public let scrolledDown: Bool
+  public let peek: Bool
 
-  public init(registration: String = "", fullscreen: Bool = false, top: CGFloat? = nil, band: CGFloat = 0) {
+  public init(registration: String = "", fullscreen: Bool = false, top: CGFloat? = nil, band: CGFloat = 0, scrolledDown: Bool = false, peek: Bool = false) {
     self.registration = registration
     self.fullscreen = fullscreen
     self.top = top
     self.band = band
+    self.scrolledDown = scrolledDown
+    self.peek = peek
   }
 }
 
@@ -29,6 +33,12 @@ public struct WindowLayoutInput: Equatable, Sendable {
   public let selectedTabId: String?
   public let split: SplitView?
   public let windowFullscreen: Bool
+  public let windowFullscreenTransition: Bool
+  public let peekTabId: String?
+  public let fullscreenTabId: String?
+  public let toolbarHolds: Set<String>
+  public let toolbarModes: [String: ToolbarAutoHideMode]
+  public let shownTops: [String: CGFloat]
   public let showSidebarButton: Bool
   public let hideToolbarWhileScrolling: Bool
   public let bookmarksBar: String
@@ -44,7 +54,8 @@ public struct WindowLayoutInput: Equatable, Sendable {
     state: BrowserState, windowId: String, windowGeneration: UInt64 = 1, storeRevision: Int = 0,
     bounds: CGRect, backingScale: CGFloat = 1, presentation: DockedLayoutInput? = nil,
     sidebarUpdateHeight: CGFloat = 0, stripProfileWidth: CGFloat? = nil, sidebarPositionAllowed: Bool = true,
-    pageFacts: [String: WindowLayoutPageFacts] = [:]
+    pageFacts: [String: WindowLayoutPageFacts] = [:], windowFullscreen: Bool? = nil, windowTransitioning: Bool = false,
+    toolbarHolds: Set<String> = []
   ) {
     guard let window = state.windows[windowId] else { return nil }
     self.windowId = windowId
@@ -58,16 +69,35 @@ public struct WindowLayoutInput: Equatable, Sendable {
     profileCount = state.profileOrder.count
     selectedTabId = state.activeTabId(windowId)
     split = selectedTabId.flatMap { selected in state.splits.values.first { $0.windowId == windowId && $0.tabIds.contains(selected) } }
-    let visible = Set(split?.tabIds ?? selectedTabId.map { [$0] } ?? [])
+    peekTabId = state.peeks[windowId].flatMap { peek in state.tabs[peek.tabId]?.windowId == windowId ? peek.tabId : nil }
+    let ordered = (peekTabId.map { [$0] } ?? []) + (split?.tabIds ?? selectedTabId.map { [$0] } ?? [])
+    let visible = Set(ordered.filter { state.tabs[$0]?.windowId == windowId })
     self.pageFacts = pageFacts.filter { visible.contains($0.key) }
-    windowFullscreen = window.fullScreen.map { $0 != 0 } ?? false
+    fullscreenTabId = ordered.first { visible.contains($0) && pageFacts[$0]?.fullscreen == true }
+    self.windowFullscreen = windowFullscreen ?? window.fullScreen.map { $0 != 0 } ?? false
+    windowFullscreenTransition = windowTransitioning
+    self.toolbarHolds = toolbarHolds.intersection(visible)
     showSidebarButton = state.settings["showSidebarButton"]?.bool ?? true
     hideToolbarWhileScrolling = state.settings.bool("hideToolbarWhileScrolling")
-    bookmarksBar = state.settings.string("bookmarksBar") ?? "never"
+    bookmarksBar = state.settings.string("bookmarksBar") ?? "newTab"
     let topTabs = (window.tabLayout ?? state.settings.string("tabLayout") ?? "sidebar") == "top"
     let rail = !topTabs && window.effectiveSidebarIconsOnly(state.settings)
     let address = !topTabs && !rail && state.settings.string("addressBar") == "sidebar"
-    let fullscreen = self.pageFacts.values.contains { $0.fullscreen }
+    let fullscreen = fullscreenTabId != nil
+    var modes: [String: ToolbarAutoHideMode] = [:]
+    var tops: [String: CGFloat] = [:]
+    for id in visible {
+      let hidden = address || id == fullscreenTabId
+      let hasPage = state.tabs[id]?.url.isEmpty == false
+      let needsBar = state.windowUi[windowId]?.panelOpen == true || state.find[id]?.json["open"]?.truthy == true || self.toolbarHolds.contains(id)
+      modes[id] = ToolbarAutoHideInput(enabled: hideToolbarWhileScrolling && !hidden, hasPage: hasPage,
+        scrolledDown: self.pageFacts[id]?.scrolledDown == true, peek: self.pageFacts[id]?.peek == true, needsBar: needsBar).mode
+      let bookmarks = id != fullscreenTabId && split == nil && !window.incognito
+        && (bookmarksBar == "always" || bookmarksBar == "newTab" && !hasPage)
+      tops[id] = (hidden ? 0 : ShellMetrics.toolbarHeight) + (bookmarks ? 30 : 0)
+    }
+    toolbarModes = modes
+    shownTops = tops
     layout = DockedLayoutInput(
       size: self.bounds.size, dock: window.sidebarOpen ? 1 : 0,
       sidebarWidth: rail ? CGFloat(SidebarRail.width) : CGFloat(window.effectiveSidebarWidth(state.settings)),
@@ -78,7 +108,7 @@ public struct WindowLayoutInput: Equatable, Sendable {
     sample.topTabs = topTabs
     sample.sidebarSide = layout.sidebarSide
     sample.addressBarInSidebar = address
-    if !self.pageFacts.isEmpty { sample.fullscreen = fullscreen }
+    sample.fullscreen = fullscreen
     self.presentation = sample
     let dots = !window.incognito && profileCount > 1
     let downloads = state.downloads.contains { download in
@@ -95,7 +125,10 @@ public struct WindowLayoutInput: Equatable, Sendable {
     windowId == other.windowId && bounds == other.bounds && backingScale == other.backingScale
       && profileId == other.profileId && profileTitle == other.profileTitle && profileNameWidth == other.profileNameWidth
       && profileCount == other.profileCount && selectedTabId == other.selectedTabId && split == other.split
-      && windowFullscreen == other.windowFullscreen && showSidebarButton == other.showSidebarButton
+      && windowFullscreen == other.windowFullscreen && windowFullscreenTransition == other.windowFullscreenTransition
+      && peekTabId == other.peekTabId && fullscreenTabId == other.fullscreenTabId
+      && toolbarHolds == other.toolbarHolds && toolbarModes == other.toolbarModes && shownTops == other.shownTops
+      && showSidebarButton == other.showSidebarButton
       && hideToolbarWhileScrolling == other.hideToolbarWhileScrolling && bookmarksBar == other.bookmarksBar
       && layout == other.layout && presentation == other.presentation && pageFacts == other.pageFacts
       && sidebarHeaderHeight == other.sidebarHeaderHeight && sidebarFooterHeight == other.sidebarFooterHeight

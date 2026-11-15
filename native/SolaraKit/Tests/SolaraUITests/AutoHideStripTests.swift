@@ -67,6 +67,44 @@ struct AutoHideStripTests {
     #expect(emitted == strip.presentationTop)
   }
 
+  @MainActor @Test func changingShownHeightPublishesWithoutChangingMode() throws {
+    let strip = AutoHideStripView(frame: CGRect(x: 0, y: 0, width: 600, height: 71))
+    let style = AutoHideStripStyle(card: try #require(CSSColor("#FFFFFF")), band: nil,
+      divider: try #require(CSSColor("#00000020")), secondary: try #require(CSSColor("#00000080")), host: "example.com", hasPage: true)
+    strip.set(style: style, mode: .shown, shownTop: 41)
+    strip.set(style: style, mode: .shown, shownTop: 71)
+    #expect(strip.presentationTop == 71)
+  }
+
+  @MainActor @Test func transitionFirstFrameUsesTheDestinationMode() throws {
+    let strip = AutoHideStripView(frame: CGRect(x: 0, y: 0, width: 600, height: 41))
+    let style = AutoHideStripStyle(card: try #require(CSSColor("#FFFFFF")), band: nil,
+      divider: try #require(CSSColor("#00000020")), secondary: try #require(CSSColor("#00000080")), host: "example.com", hasPage: true)
+    strip.set(style: style, mode: .shown, shownTop: 41)
+    strip.set(style: style, mode: .collapsed, shownTop: 41)
+    #expect(strip.presentationTop >= 20 && strip.presentationTop <= 41)
+    strip.set(style: style, mode: .shown, shownTop: 41)
+    #expect(strip.presentationTop >= 20 && strip.presentationTop <= 41)
+    strip.removeFromSuperview()
+  }
+
+  @MainActor @Test func revealCancelsAnOlderPendingHoverPeek() throws {
+    let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 600, height: 41), styleMask: [.borderless], backing: .buffered, defer: true)
+    let strip = AutoHideStripView(frame: CGRect(x: 0, y: 0, width: 600, height: 41))
+    window.contentView?.addSubview(strip)
+    let style = AutoHideStripStyle(card: try #require(CSSColor("#FFFFFF")), band: nil,
+      divider: try #require(CSSColor("#00000020")), secondary: try #require(CSSColor("#00000080")), host: "example.com", hasPage: true)
+    var events: [AutoHideStripEvent] = []
+    strip.onEvent = { events.append($0) }
+    strip.set(style: style, mode: .collapsed, shownTop: 41)
+    let event = try #require(NSEvent.mouseEvent(with: .mouseMoved, location: CGPoint(x: 300, y: 35), modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 0))
+    strip.mouseMoved(with: event)
+    strip.set(style: style, mode: .shown, shownTop: 41)
+    RunLoop.main.run(until: Date().addingTimeInterval(0.25))
+    #expect(events.isEmpty)
+    strip.removeFromSuperview()
+  }
+
   @MainActor @Test func aSiteWithoutAColorLeavesTheBandClearAndDeveloperSitesGetStripes() throws {
     let strip = AutoHideStripView(frame: CGRect(x: 0, y: 0, width: 600, height: 41))
     let plain = AutoHideStripStyle(card: try #require(CSSColor("#FFFFFF")), band: nil, divider: try #require(CSSColor("rgba(0,0,0,0.1)")), secondary: try #require(CSSColor("#00000080")), host: "example.com", hasPage: true)

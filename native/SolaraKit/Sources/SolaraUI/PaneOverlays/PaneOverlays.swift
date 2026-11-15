@@ -139,7 +139,7 @@ public final class PaneOverlaysView: NSView {
     guard !stopped, snapshot.input.windowId == windowId else { return }
     installed = snapshot
     update(state: state)
-    setFullscreenTab(snapshot.input.pageFacts.first { $0.value.fullscreen }?.key)
+    setFullscreenTab(snapshot.fullscreenTabId)
     frame = CGRect(origin: .zero, size: snapshot.frames.card.size)
     needsLayout = true
     layoutSubtreeIfNeeded()

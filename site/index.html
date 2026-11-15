@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Solara, a browser for macOS</title>
+<meta name="description" content="A web browser for your Mac. Tabs in a sidebar, pages side by side, and nothing you do sent anywhere. No account, no AI features, no telemetry.">
+<meta name="theme-color" content="#1A0B3D">
+<meta property="og:title" content="Solara">
+<meta property="og:description" content="A web browser for your Mac. Tabs in a sidebar, pages side by side, and no telemetry.">
+<meta property="og:image" content="https://andrewbenson.github.io/solara/images/icon.png">
+<link rel="icon" href="images/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="images/icon.png">
+<link rel="stylesheet" href="style.css">
+<script src="site.js" defer></script>
+<script src="intro.js" defer></script>
+</head>
+<body>
+<header class="hero">
+  <nav class="hero-nav" aria-label="Site">
+    <a href="docs/">Docs</a>
+    <a href="https://github.com/andrewbenson/solara">GitHub</a>
+  </nav>
+  <canvas class="wash" id="wash" aria-hidden="true"></canvas>
+  <div class="hero-copy">
+    <h1>Solara</h1>
+    <p class="tagline">A web browser for your Mac. Your tabs live in a sidebar, pages sit side by side, and nothing you do is sent anywhere.</p>
+    <div class="stage">
+      <button type="button" class="mark" id="mark" aria-label="Play the sunrise again">
+        <img class="sun" id="sun" src="images/sun.png" width="200" height="200" alt="">
+      </button>
+      <div class="bar" id="bar">
+        <canvas class="halo" id="halo" aria-hidden="true"></canvas>
+        <div class="bar-text">
+          <strong>Solara for Mac</strong>
+          <span><span id="version">Latest release</span>, macOS 26 or later, Apple Silicon</span>
+        </div>
+        <a class="download" id="download" href="https://github.com/andrewbenson/solara/releases/latest">Download</a>
+      </div>
+    </div>
+    <p class="requirements">Free, signed with a Developer ID and notarized by Apple. No account needed.</p>
+  </div>
+</header>
+
+<main>
+  <section class="feature">
+    <div class="feature-text">
+      <h2>Tabs in the sidebar</h2>
+      <p>Keep pinned sites as tiles. Put related tabs in folders. Switch profiles with the dots at the bottom.</p>
+    </div>
+    <img src="images/sidebar.webp" width="1800" height="1186" loading="lazy" alt="Solara's sidebar with pinned tiles, folders, tabs, and profile dots beside a Wikipedia article.">
+  </section>
+
+  <section class="feature">
+    <div class="feature-text">
+      <h2>Pages side by side</h2>
+      <p>Split a window to keep pages together. A split holds up to three tabs.</p>
+    </div>
+    <img src="images/split.webp" width="1800" height="1186" loading="lazy" alt="Wikipedia and MDN open side by side in Solara.">
+  </section>
+
+  <section class="feature">
+    <div class="feature-text">
+      <h2>A sun on New Tab</h2>
+      <p>Open a new tab to search beneath Solara's sun.</p>
+    </div>
+    <img src="images/new-tab.webp" width="1800" height="1186" loading="lazy" alt="Solara's New Tab page with its sun and search field.">
+  </section>
+
+  <section class="feature">
+    <div class="feature-text">
+      <h2>Light and dark</h2>
+      <p>Pick a color for each profile, and a light or dark appearance.</p>
+    </div>
+    <img src="images/dark.webp" width="1800" height="1186" loading="lazy" alt="Solara in dark appearance.">
+  </section>
+
+  <section class="also">
+    <h2>Also in Solara</h2>
+    <dl>
+      <div><dt>Command bar</dt><dd>Command-L finds tabs, bookmarks and history, or searches the web.</dd></div>
+      <div><dt>Peek</dt><dd>Open a link over the page, then close it or keep it as a tab.</dd></div>
+      <div><dt>No account</dt><dd>Sync, if you turn it on, goes through a folder in your own iCloud Drive, end-to-end encrypted.</dd></div>
+      <div><dt>No telemetry</dt><dd>No usage data and no crash reports. Google's background services are compiled out of the engine, and uBlock Origin is built in.</dd></div>
+      <div><dt>Chrome extensions</dt><dd>Install them from the Chrome Web Store.</dd></div>
+      <div><dt>Moving in</dt><dd>Bring bookmarks, history, passwords, cookies and tabs from Chrome, Safari, Firefox, Arc, Dia and more.</dd></div>
+    </dl>
+  </section>
+
+  <section class="install">
+    <h2>Install</h2>
+    <ol>
+      <li><a href="https://github.com/andrewbenson/solara/releases/latest" class="dmg-link">Download the DMG</a>, open it, and drag Solara to Applications.</li>
+      <li>Solara updates itself. Choose Stable or Nightly in Settings › General › Update channel.</li>
+    </ol>
+    <p>Or install it with Homebrew:</p>
+    <div class="command">
+      <code id="brew">brew install --cask andrewbenson/solara/solara</code>
+      <button type="button" id="copy-brew">Copy</button>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <img src="images/icon.png" width="48" height="48" alt="">
+  <nav aria-label="Project">
+    <a href="docs/">Documentation</a>
+    <a href="https://github.com/andrewbenson/solara">Source on GitHub</a>
+    <a href="https://github.com/andrewbenson/solara/releases">Release notes</a>
+    <a href="https://github.com/andrewbenson/solara/blob/main/NOTICE">Licenses</a>
+  </nav>
+  <p>Solara is free software under the GPL v3. Its own source files are Apache 2.0.</p>
+</footer>
+</body>
+</html>

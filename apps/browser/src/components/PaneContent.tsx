@@ -1,5 +1,5 @@
 import { tabPool, windowNativeLayout } from "@solara/settings";
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { Animated, StyleSheet, View, type ViewStyle } from "react-native";
 import { layout } from "../lib/theme";
 import { panePromptsNativeIn } from "../lib/pagesPool";
@@ -112,15 +112,10 @@ export function PaneContent({ windowId, tabId, shown, nativeFallback = false }: 
   const peekShown = useBrowser((s) => !!s.peeks[windowId]?.tabId);
   const [nativePrompts] = useState(() => panePromptsNativeIn(windowId));
   const [nativeLayout] = useState(() => windowNativeLayout(windowId));
-  const own = useTabValue(tabId, paneTab, shallowEqual);
-  const emptyCard = useBrowser((s) => s.settings.newTabOpens === "commandBar");
   const statusStyle = usePaneStatusStyle(tabId);
   const overCard = usePopoversOverCard(windowId);
   const [feedOwner] = useState(() => ({}));
   const drawing = shown && width > 0 && !nativeFallback;
-  useEffect(() => {
-    if (nativeLayout && shown && !own.url) patchPage(tabId, { wasNewTab: true });
-  }, [nativeLayout, shown, own.url, tabId]);
   useLayoutEffect(() => {
     if (!drawing) return;
     markPaneRootDrawn(tabId, feedOwner, true);
@@ -142,12 +137,7 @@ export function PaneContent({ windowId, tabId, shown, nativeFallback = false }: 
   return (
     <View pointerEvents="box-none" style={{ flex: 1 }} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
       {nativeLayout && shown && (
-        <>
-          {tabPool && <PooledPageProps pool={tabPool} tabId={tabId} visible />}
-          {!fullscreen && <ShareBar tabId={tabId} />}
-          {!own.url && !inSplit && (emptyCard ? <EmptyCard windowId={windowId} tabId={tabId} /> : <NewTabPage key={tabId} tabId={tabId} toolbar={toolbar} />)}
-          <InternalPage tabId={tabId} />
-        </>
+        <NativePageContent windowId={windowId} tabId={tabId} fullscreen={fullscreen} inSplit={inSplit} toolbar={toolbar} />
       )}
       {width > 0 && (
         <PageOverlays
@@ -167,6 +157,22 @@ export function PaneContent({ windowId, tabId, shown, nativeFallback = false }: 
     </View>
   );
 }
+
+const NativePageContent = memo(function NativePageContent({ windowId, tabId, fullscreen, inSplit, toolbar }: { windowId: string; tabId: string; fullscreen: boolean; inSplit: boolean; toolbar: boolean }) {
+  const own = useTabValue(tabId, paneTab, shallowEqual);
+  const emptyCard = useBrowser((s) => s.settings.newTabOpens === "commandBar");
+  useEffect(() => {
+    if (!own.url) patchPage(tabId, { wasNewTab: true });
+  }, [own.url, tabId]);
+  return (
+    <>
+      {tabPool && <PooledPageProps pool={tabPool} tabId={tabId} visible />}
+      {!fullscreen && <ShareBar tabId={tabId} />}
+      {!own.url && !inSplit && (emptyCard ? <EmptyCard windowId={windowId} tabId={tabId} /> : <NewTabPage key={tabId} tabId={tabId} toolbar={toolbar} />)}
+      <InternalPage tabId={tabId} />
+    </>
+  );
+});
 
 export function BesidePeekPopovers({ tabId, left, top, room, placements, origin }: { tabId: string; left: number; top: number; room: number; placements?: Record<string, readonly [number, number, number, number]>; origin: { x: number; y: number } }) {
   const popover = usePages((s) => s.popover[tabId] ?? null);

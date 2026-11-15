@@ -178,6 +178,8 @@ final class ShellHost {
   private var lastChildAnchors: [String: CGRect] = [:]
   private var layoutStopped = false
   private var layoutReader: String?
+  private var lastSentLayoutAnchors: WindowAnchorBatch?
+  private var layoutToolbarReady = false
   private var launchReadiness: NativeLaunchReadiness?
   #if DEBUG
   var devSidePanelResizeLinkActive: Bool { sidePanel?.devResizeLinkActive ?? false }
@@ -554,13 +556,17 @@ extension ShellHost {
     AutoHideHost.install(snapshot)
     NativePeek.presentationChanged(shell.windowId, fullscreenTabId: snapshot.fullscreenTabId)
     if let state = layoutState { NativePeek.install(state, shell: shell, fullscreenTabId: snapshot.fullscreenTabId) }
+    let toolbar = input.selectedTabId.flatMap { NativeSplitChrome.toolbar(windowId: shell.windowId, tabId: $0) }
+    let toolbarReady = !ownsNativeLayout || toolbar?.state != nil && toolbar?.window != nil && toolbar?.window === shell.window
+    let toolbarBecameReady = toolbarReady && !layoutToolbarReady
+    layoutToolbarReady = toolbarReady
     let children = childLayoutAnchors(snapshot)
     if let layoutController {
       let changed = layoutController.apply(input: input, anchors: children)
       layoutGeneration = layoutController.layoutGeneration
       lastLayoutInput = input
       lastChildAnchors = children
-      if changed, layoutReader != nil { sendLayoutAnchors() }
+      if changed || toolbarBecameReady, layoutReader != nil { sendLayoutAnchors(toolbarReady: toolbarReady) }
       return
     }
     if let lastLayoutInput, lastLayoutInput.hasSameLayout(as: input), children == lastChildAnchors {
@@ -571,7 +577,7 @@ extension ShellHost {
     guard layoutAnchors.publish(WindowAnchorBatch(snapshot: snapshot, anchors: children)) else { return }
     lastLayoutInput = input
     lastChildAnchors = children
-    if layoutReader != nil { sendLayoutAnchors() }
+    if layoutReader != nil { sendLayoutAnchors(toolbarReady: toolbarReady) }
   }
 
   private func childLayoutAnchors(_ snapshot: WindowLayoutSnapshot) -> [String: CGRect] {
@@ -665,14 +671,23 @@ extension ShellHost {
 
   func observeLayoutAnchors(_ enabled: Bool, generation: UInt64?, reader: String) {
     guard !layoutStopped, enabled || generation != nil, generation == nil || generation == windowGeneration else { return }
-    if enabled { layoutReader = reader } else if layoutReader == reader { layoutReader = nil }
+    if enabled {
+      if layoutReader != reader { lastSentLayoutAnchors = nil }
+      layoutReader = reader
+    } else if layoutReader == reader {
+      layoutReader = nil
+      lastSentLayoutAnchors = nil
+    }
   }
 
-  private func sendLayoutAnchors() {
+  private func sendLayoutAnchors(toolbarReady: Bool) {
     let generation = layoutGeneration
+    let reader = layoutReader
     Task { @MainActor [weak self] in
-      guard let self, !self.layoutStopped, self.layoutReader != nil, self.layoutGeneration == generation,
-        let payload = self.anchorPayload() else { return }
+      guard let self, !self.layoutStopped, let reader, self.layoutReader == reader, self.layoutGeneration == generation,
+        let batch = self.layoutAnchors.current, let payload = self.anchorPayload() else { return }
+      guard batch.shouldSendGuestProjection(after: self.lastSentLayoutAnchors, toolbarReady: toolbarReady) else { return }
+      self.lastSentLayoutAnchors = batch
       _ = await SettingsAdapters.js("window.layoutAnchors", self.shell.windowId, payload)
     }
   }

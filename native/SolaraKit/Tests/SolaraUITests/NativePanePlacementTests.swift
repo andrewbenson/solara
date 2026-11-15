@@ -22,6 +22,167 @@ struct NativePanePlacementTests {
     #expect(seen == [Set([.pane("w", "a"), .pane("w", "b")])])
   }
 
+  @Test func switchingSinglePanesKeepsTheCardAndOutgoingPageAttached() throws {
+    var state = try fixture()
+    state.splits = Table()
+    let view = SplitPanesView(windowId: "pane-placement")
+    let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1000, height: 700), styleMask: [.borderless], backing: .buffered, defer: true)
+    window.isReleasedWhenClosed = false
+    window.contentView = view
+    defer { view.stop(); window.close() }
+    view.setToolbars(["a": singletonToolbar("a"), "b": singletonToolbar("b")])
+    view.install(try snapshot(state, width: 1000), state: state)
+    let container = try #require(view.container("a"))
+    let page = PlacementWindowTrackingView()
+    container.addSubview(page)
+    page.windowChanges = 0
+    state.windows["pane-placement"]?.activeTabIds["p"] = "b"
+    let next = try snapshot(state, width: 1000)
+    view.install(next, state: state)
+    #expect(view.container("a") == nil)
+    #expect(view.container("b") === container)
+    #expect(TabSlots.shared.container(for: .card("pane-placement")) === container)
+    #expect(TabSlots.shared.container(for: .pane("pane-placement", "a")) == nil)
+    #expect(TabSlots.shared.container(for: .pane("pane-placement", "b")) === container)
+    #expect(page.superview === container && page.window === window)
+    #expect(page.windowChanges == 0)
+    let expected = try #require(next.pageViewports["b"])
+    #expect(container.bounds.size == expected.size)
+  }
+
+  @Test func reusedSinglePaneToolbarReportsOnlyTheIncomingTab() throws {
+    var state = try fixture()
+    state.splits = Table()
+    let view = SplitPanesView(windowId: "pane-placement")
+    defer { view.stop() }
+    view.setToolbars(["a": singletonToolbar("a"), "b": singletonToolbar("b")])
+    view.install(try snapshot(state, width: 1000), state: state)
+    let oldToolbar = try #require(view.toolbar("a"))
+    var releases = 0
+    var releasedTabs: [String] = []
+    view.onToolbarClick = { tabId, _ in releasedTabs.append(tabId) }
+    oldToolbar.onHiddenOrDetached = {
+      releases += 1
+      oldToolbar.onClick(ToolbarClick(id: "urlEdit", kind: .blur))
+    }
+    state.windows["pane-placement"]?.activeTabIds["p"] = "b"
+    view.install(try snapshot(state, width: 1000), state: state)
+    let toolbar = try #require(view.toolbar("b"))
+    #expect(toolbar !== oldToolbar)
+    #expect(toolbar.state?.tabId == "b")
+    #expect(releases == 1)
+    #expect(releasedTabs == ["a"])
+    var clicks: [String] = [], anchors: [String] = [], geometry: [String] = []
+    view.onToolbarClick = { tabId, _ in clicks.append(tabId) }
+    view.onToolbarAnchors = { tabId, _ in anchors.append(tabId) }
+    view.onToolbarGeometryChange = { geometry.append($0) }
+    toolbar.onClick(ToolbarClick(id: "url", kind: .press))
+    toolbar.onAnchors([:])
+    toolbar.onLayoutAnchorsChange()
+    toolbar.onHiddenOrDetached()
+    #expect(clicks == ["b"] && anchors == ["b"] && geometry == ["b"])
+    #expect(releases == 1)
+  }
+
+  @Test func singlePaneReuseDoesNotCarryAnEditorsRequestToTheIncomingTab() throws {
+    var state = try fixture()
+    state.splits = Table()
+    let view = SplitPanesView(windowId: "pane-placement")
+    defer { view.stop() }
+    func editingToolbar(_ tabId: String) -> String {
+      singletonToolbar(tabId).replacingOccurrences(of: #""url":null"#,
+        with: #""url":{"developer":{"text":"\#(tabId)","editing":true,"request":1},"host":"","restTrail":"","hoverTrail":"","hoverButtons":[],"trailing":[],"pinned":false}"#)
+    }
+    view.setToolbars(["a": editingToolbar("a"), "b": editingToolbar("b")])
+    view.install(try snapshot(state, width: 1000), state: state)
+    let container = try #require(view.container("a"))
+    let oldEditor = try #require(view.toolbar("a")?.urlEditView as? NSTextField)
+    #expect(oldEditor.stringValue == "a")
+    state.windows["pane-placement"]?.activeTabIds["p"] = "b"
+    view.install(try snapshot(state, width: 1000), state: state)
+    let editor = try #require(view.toolbar("b")?.urlEditView as? NSTextField)
+    #expect(view.container("b") === container)
+    #expect(editor !== oldEditor)
+    #expect(editor.stringValue == "b")
+  }
+
+  @Test(arguments: [false, true])
+  func singlePaneReuseKeepsToolbarModelsInTheirOwnLifetime(incomingToolbar: Bool) throws {
+    var state = try fixture()
+    state.splits = Table()
+    let view = SplitPanesView(windowId: "pane-placement")
+    defer { view.stop() }
+    view.setToolbars(incomingToolbar ? ["a": singletonToolbar("a"), "b": singletonToolbar("b")] : ["a": singletonToolbar("a")])
+    view.install(try snapshot(state, width: 1000), state: state)
+    let old = try #require(view.container("a"))
+    let toolbar = try #require(view.toolbar("a"))
+    state.windows["pane-placement"]?.activeTabIds["p"] = "b"
+    view.install(try snapshot(state, width: 1000), state: state)
+    #expect(view.container("b") === old)
+    #expect(view.toolbar("b") !== toolbar)
+    #expect(view.toolbar("b")?.state?.tabId == (incomingToolbar ? "b" : nil))
+    #expect(view.toolbar("b")?.isHidden == !incomingToolbar)
+  }
+
+  @Test func singlePaneReusePreservesThePoolsOutgoingDrawHold() throws {
+    var state = try fixture()
+    state.splits = Table()
+    let view = SplitPanesView(windowId: "pane-placement")
+    let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1000, height: 700), styleMask: [.borderless], backing: .buffered, defer: true)
+    window.isReleasedWhenClosed = false
+    window.contentView = view
+    var pending: [@MainActor () -> Void] = []
+    let pool = TabViewPool(make: { _, _ in HoldingPage() }, schedule: { pending.append($0) }, after: { _, _ in })
+    defer { pool.update([]); pool.reconcile(); view.stop(); window.close() }
+    func reconcile() {
+      let work = pending
+      pending = []
+      work.forEach { $0() }
+    }
+    func updatePool() {
+      let selected = state.windows["pane-placement"]?.activeTabIds["p"]
+      pool.update(["a", "b"].map { TabViewWanted(tabId: $0, windowId: "pane-placement", shown: $0 == selected ? .card : .none, profileId: "p") })
+      reconcile()
+    }
+    view.install(try snapshot(state, width: 1000), state: state)
+    updatePool()
+    let a = try #require(pool.page("a") as? HoldingPage)
+    let b = try #require(pool.page("b") as? HoldingPage)
+    a.draw()
+    state.windows["pane-placement"]?.activeTabIds["p"] = "b"
+    view.install(try snapshot(state, width: 1000), state: state)
+    updatePool()
+    #expect(pool.heldTabIds == ["a"])
+    #expect(a.view.superview === view.container("b"))
+    #expect(b.view.superview === view.container("b"))
+    b.draw()
+    #expect(pool.heldTabIds.isEmpty)
+    #expect(a.view.superview === pool.keeper)
+  }
+
+  @Test func fullscreenAndSplitTransitionsKeepDistinctPaneIdentities() throws {
+    var state = try fixture()
+    state.splits = Table()
+    let view = SplitPanesView(windowId: "pane-placement")
+    defer { view.stop() }
+    view.install(try snapshot(state, width: 1000), state: state)
+    let original = try #require(view.container("a"))
+    state.windows["pane-placement"]?.activeTabIds["p"] = "b"
+    let fullscreen = try #require(WindowLayoutInput(state: state, windowId: "pane-placement", bounds: CGRect(x: 0, y: 0, width: 1000, height: 700),
+      pageFacts: ["b": WindowLayoutPageFacts(registration: "b", fullscreen: true)]))
+    view.install(.of(fullscreen, generation: 2), state: state)
+    #expect(view.container("b") !== original)
+    state.splits = try fixture().splits
+    state.windows["pane-placement"]?.activeTabIds["p"] = "a"
+    view.install(try snapshot(state, width: 1000), state: state)
+    #expect(view.container("a") !== view.container("b"))
+    let splitA = try #require(view.container("a"))
+    state.windows["pane-placement"]?.activeTabIds["p"] = "c"
+    view.install(try snapshot(state, width: 1000), state: state)
+    #expect(view.container("a") == nil && view.container("b") == nil)
+    #expect(view.container("c") !== splitA)
+  }
+
   @Test func placementAndOldOwnerTeardownPreserveTheReplacementRegistration() throws {
     let state = try fixture()
     let first = SplitPanesView(windowId: "pane-placement")
@@ -216,10 +377,23 @@ struct NativePanePlacementTests {
     try BrowserState(stateJSON: JSONValue.parse(#"{"windows":{"pane-placement":{"id":"pane-placement","profileId":"p","sidebarOpen":true,"tabIds":["a","b","c"],"activeTabIds":{"p":"a"}}},"tabs":{"a":{"id":"a","windowId":"pane-placement","profileId":"p"},"b":{"id":"b","windowId":"pane-placement","profileId":"p"},"c":{"id":"c","windowId":"pane-placement","profileId":"p"}},"splits":{"s":{"id":"s","windowId":"pane-placement","tabIds":["a","b"],"orientation":"horizontal","sizes":[0.5,0.5]}}}"#).object ?? [:])
   }
 
+  private func singletonToolbar(_ tabId: String) -> String {
+    ##"{"tabId":"\##(tabId)","height":41,"bare":false,"focused":true,"accent":"#3478F6","palette":{"text":"#000000","secondary":"#00000080","icon":"#000000D4","iconDisabled":"#0000006E","hover":"#0000000D","pressed":"#0000001A","pill":"#0000000A","divider":"#0000001A"},"geometry":{"back":12,"forward":40,"reload":68,"urlLeft":100,"urlRight":8},"left":[],"url":null,"right":[],"rightInset":8,"hairline":false}"##
+  }
+
   private func snapshot(_ state: BrowserState, width: CGFloat, height: CGFloat = 700) throws -> WindowLayoutSnapshot {
     let input = try #require(WindowLayoutInput(state: state, windowId: "pane-placement", bounds: CGRect(x: 0, y: 0, width: width, height: height),
       pageFacts: ["a": WindowLayoutPageFacts(registration: "a-registered", top: 71, band: 38), "b": WindowLayoutPageFacts(registration: "b-registered", top: 41)]))
     return .of(input, generation: 1)
+  }
+}
+
+@MainActor
+private final class PlacementWindowTrackingView: NSView {
+  var windowChanges = 0
+  override func viewWillMove(toWindow newWindow: NSWindow?) {
+    windowChanges += 1
+    super.viewWillMove(toWindow: newWindow)
   }
 }
 

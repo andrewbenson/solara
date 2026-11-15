@@ -102,9 +102,15 @@ struct StoreUnavailableView: View {
 @MainActor enum NativeHistoryCatalog { static func favicon(page: String, profileId: String, dark: Bool) async -> NSImage? { nil } }
 extension Bundle { var productName: String { "Fixture Integration" } }
 @MainActor final class OnboardingTextNSView: NSView { var text = "" }
-@MainActor enum NativeStoreHandle { static let store: StubStore? = nil }
+@MainActor enum NativeWindowShell { static let nativeLayout = false }
+@MainActor enum NativeStoreHandle {
+  static let store: StubStore? = nil
+  static let ownedWorkspaceAtLaunch = false
+  static let ownsWorkspace = false
+}
 struct StubStore {
   let state = 0
+  func dispatch(_ command: Command, origin: Origin) throws {}
   func silencesNotifications(profileDirectory: String, origin: String) -> Bool { false }
 }
 enum ScriptState { static func build(_ state: Int, loading: [String]) -> [String: Any] { [:] } }

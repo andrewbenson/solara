@@ -110,3 +110,19 @@ test("native peek popover rectangles replace and retire with their window batch"
   layout.dropNativeWindowAnchors("peek-room");
   assert.equal(layout.useNativePopoverAnchors.getState()["peek-room"], undefined);
 });
+
+
+test("tour row motion and revision changes leave guest anchor subscribers quiet", async () => {
+  const layout = await import("./windowLayout.ts");
+  const measured = await import("./measuredWidths.ts");
+  const windowId = "tour-motion";
+  const initial = { ...batch(1, 1), windowId, anchors: { window: [0, 0, 1000, 700], content: [10, 6, 500, 700], url: [200, 6, 300, 41], "tour:tabs": [10, 100, 170, 30] } };
+  layout.applyNativeWindowAnchors(initial);
+  let changes = 0;
+  const stores = [layout.useNativeWindowBounds, layout.useCardAnchors, layout.useUrlAnchors, layout.useNativePopoverAnchors, measured.useWidths];
+  const stops = stores.map((store) => store.subscribe(() => changes++));
+  layout.applyNativeWindowAnchors({ ...initial, generation: 2, storeRevision: 2, anchors: { ...initial.anchors, "tour:tabs": [10, 50, 170, 30] } });
+  assert.equal(changes, 0);
+  stops.forEach((stop) => stop());
+  layout.dropNativeWindowAnchors(windowId);
+});

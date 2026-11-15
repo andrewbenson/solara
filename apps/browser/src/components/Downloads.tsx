@@ -354,7 +354,10 @@ export function DownloadMagnet() {
   const start = { x: sidebar + (size.width - sidebar) / 2, y: size.height * 0.45 };
   const state = JSON.stringify({ flight: flight && size.width > 0 ? { ...flight, start: [start.x, start.y], target: [target.x, target.y] } : null });
   return (
-    <View pointerEvents="none" style={StyleSheet.absoluteFill} onLayout={(e) => setSize(e.nativeEvent.layout)}>
+    <View pointerEvents="none" style={StyleSheet.absoluteFill} onLayout={(e) => {
+      const { width, height } = e.nativeEvent.layout;
+      setSize((size) => size.width === width && size.height === height ? size : { width, height });
+    }}>
       <SolaraHostedView kind="downloadMagnet" windowId={windowId} state={state} pointerEvents="none" style={StyleSheet.absoluteFill} />
     </View>
   );

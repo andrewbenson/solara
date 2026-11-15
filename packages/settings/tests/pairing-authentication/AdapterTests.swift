@@ -154,6 +154,7 @@ import SolaraSyncAdapter
     defer { subscription.cancel() }
     spin(0.45)
     #expect(count == 1)
+    #expect(!PairingServices.shared.demanded)
   }
 
   @Test func shownSurfacePollsAndHidingItStops() {
@@ -166,11 +167,13 @@ import SolaraSyncAdapter
     defer { subscription.cancel() }
     spin(0.45)
     #expect(count >= 3)
+    #expect(PairingServices.shared.demanded)
     window.fixtureVisible = false
     spin(0.25)
     let stopped = count
     spin(0.45)
     #expect(count == stopped)
+    #expect(!PairingServices.shared.demanded)
   }
 
   @Test func aFullyCoveredSurfaceStopsPolling() {

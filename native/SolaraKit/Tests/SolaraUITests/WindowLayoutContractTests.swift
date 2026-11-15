@@ -250,6 +250,92 @@ struct WindowLayoutContractTests {
     #expect(!anchors.publish(WindowAnchorBatch(snapshot: .of(input, generation: 5))))
   }
 
+  @Test func guestAnchorPublicationsIgnoreTourMotionAndRevisionOnlyChanges() throws {
+    let state = try projectionState()
+    let bounds = CGRect(x: 0, y: 0, width: 1000, height: 700)
+    let input = try #require(WindowLayoutInput(state: state, windowId: "w", windowGeneration: 4, storeRevision: 10, bounds: bounds))
+    let first = WindowAnchorBatch(snapshot: .of(input, generation: 1), anchors: ["tour:tabs": CGRect(x: 10, y: 100, width: 170, height: 30)])
+    let restamped = try #require(WindowLayoutInput(state: state, windowId: "w", windowGeneration: 4, storeRevision: 11, bounds: bounds))
+    let moved = WindowAnchorBatch(snapshot: .of(restamped, generation: 2), anchors: ["tour:tabs": CGRect(x: 10, y: 50, width: 170, height: 30)])
+    #expect(first.hasSameGuestProjection(as: moved))
+    #expect(moved.anchors["tour:tabs"]?.minY == 50)
+    let resized = try #require(WindowLayoutInput(state: state, windowId: "w", windowGeneration: 4, storeRevision: 12, bounds: bounds.insetBy(dx: 1, dy: 0)))
+    #expect(!first.hasSameGuestProjection(as: WindowAnchorBatch(snapshot: .of(resized, generation: 3))))
+    let url = WindowAnchorBatch(snapshot: .of(restamped, generation: 3), anchors: ["url": CGRect(x: 200, y: 6, width: 300, height: 41)])
+    #expect(!first.hasSameGuestProjection(as: url))
+    let peek = WindowAnchorBatch(snapshot: .of(restamped, generation: 3), anchors: ["peekPopover:zoom": CGRect(x: 700, y: 8, width: 236, height: 0)])
+    #expect(!first.hasSameGuestProjection(as: peek))
+    var switched = state
+    switched.windows["w"]?.activeTabIds["default"] = "b"
+    let selected = try #require(WindowLayoutInput(state: switched, windowId: "w", windowGeneration: 4, storeRevision: 12, bounds: bounds))
+    #expect(first.hasSameGuestProjection(as: WindowAnchorBatch(snapshot: .of(selected, generation: 3))))
+  }
+
+  @Test func guestAnchorCallsWaitForReplacementToolbarStateAcrossTabActions() throws {
+    let bounds = CGRect(x: 0, y: 0, width: 1000, height: 700)
+    let window = NSWindow(contentRect: bounds, styleMask: [.borderless], backing: .buffered, defer: true)
+    window.isReleasedWhenClosed = false
+    defer { window.contentView = nil; window.close() }
+    for reservation: CGFloat in [12, 46] {
+      for (action, count) in [("open", 20), ("close", 20), ("switchTabs", 13)] {
+        var state = try projectionState()
+        let input = try #require(WindowLayoutInput(state: state, windowId: "w", windowGeneration: 4, bounds: bounds))
+        let snapshot = WindowLayoutSnapshot.of(input, generation: 1)
+        let url = try #require(snapshot.residualURLBand(tabId: "a", trailingReservation: reservation))
+        var sent = WindowAnchorBatch(snapshot: snapshot, anchors: ["url": url])
+        var calls = 0
+        for step in 0..<count {
+          let tabId = step.isMultiple(of: 2) ? "b" : "a"
+          state.windows["w"]?.activeTabIds["default"] = tabId
+          let next = try #require(WindowLayoutInput(state: state, windowId: "w", windowGeneration: 4, storeRevision: step + 1, bounds: bounds))
+          let snapshot = WindowLayoutSnapshot.of(next, generation: UInt64(step + 2))
+          let toolbar = ToolbarView(frame: CGRect(x: 0, y: 0, width: 803, height: 41))
+          func publish(_ batch: WindowAnchorBatch, toolbarReady: Bool? = nil) {
+            let ready = toolbarReady ?? (toolbar.state != nil && toolbar.window != nil && toolbar.window === window)
+            if batch.shouldSendGuestProjection(after: sent, toolbarReady: ready) { calls += 1; sent = batch }
+          }
+          publish(WindowAnchorBatch(snapshot: snapshot))
+          window.contentView = toolbar
+          let pending = WindowAnchorBatch(snapshot: snapshot, anchors: ["url": try #require(snapshot.residualURLBand(tabId: tabId, trailingReservation: CGFloat(toolbar.state?.geometry.urlRight ?? 12)))])
+          let pendingReady = toolbar.state != nil && toolbar.window != nil && toolbar.window === window
+          publish(pending, toolbarReady: pendingReady)
+          window.contentView = nil
+          var toolbarState = ToolbarWebKitPillTests.state(extensions: "")
+          toolbarState.geometry.urlRight = Double(reservation)
+          toolbar.update(toolbarState)
+          publish(WindowAnchorBatch(snapshot: snapshot))
+          window.contentView = toolbar
+          publish(pending, toolbarReady: pendingReady)
+          publish(WindowAnchorBatch(snapshot: snapshot, anchors: ["url": try #require(snapshot.residualURLBand(tabId: tabId, trailingReservation: CGFloat(toolbar.state?.geometry.urlRight ?? 12)))]))
+        }
+        #expect(calls == 0, "\(action) sent \(calls) redundant guest anchor calls")
+        let changed = WindowAnchorBatch(snapshot: snapshot, anchors: ["url": url.insetBy(dx: 1, dy: 0)])
+        #expect(!changed.shouldSendGuestProjection(after: sent, toolbarReady: false))
+        #expect(changed.shouldSendGuestProjection(after: sent, toolbarReady: true))
+        #expect(!changed.shouldSendGuestProjection(after: changed, toolbarReady: true))
+        #expect(!sent.shouldSendGuestProjection(after: nil, toolbarReady: false))
+        #expect(sent.shouldSendGuestProjection(after: nil, toolbarReady: true))
+        let resizedInput = try #require(WindowLayoutInput(state: state, windowId: "w", windowGeneration: 4, storeRevision: count + 1, bounds: bounds.insetBy(dx: 10, dy: 0)))
+        let resized = WindowAnchorBatch(snapshot: .of(resizedInput, generation: UInt64(count + 2)), anchors: ["url": url])
+        #expect(!resized.shouldSendGuestProjection(after: sent, toolbarReady: false))
+        #expect(resized.shouldSendGuestProjection(after: sent, toolbarReady: true))
+        #expect(!resized.shouldSendGuestProjection(after: resized, toolbarReady: true))
+      }
+    }
+  }
+
+  @Test func guestAnchorCallsDoNotWaitForAToolbarInSidebarOrEmptyWindows() throws {
+    var state = try projectionState()
+    let bounds = CGRect(x: 0, y: 0, width: 1000, height: 700)
+    state.settings["addressBar"] = "sidebar"
+    let sidebar = try #require(WindowLayoutInput(state: state, windowId: "w", bounds: bounds))
+    #expect(WindowAnchorBatch(snapshot: .of(sidebar, generation: 1)).shouldSendGuestProjection(after: nil, toolbarReady: false))
+    state.settings["addressBar"] = "toolbar"
+    state.windows["w"]?.activeTabIds = [:]
+    let empty = try #require(WindowLayoutInput(state: state, windowId: "w", bounds: bounds))
+    #expect(WindowAnchorBatch(snapshot: .of(empty, generation: 1)).shouldSendGuestProjection(after: nil, toolbarReady: false))
+  }
+
   @Test func endpointComparisonRequiresEveryAnchorAndHonorsHalfPointThreshold() throws {
     let input = try #require(WindowLayoutInput(state: projectionState(), windowId: "w", bounds: CGRect(x: 0, y: 0, width: 1000, height: 700)))
     let snapshot = WindowLayoutSnapshot.of(input, generation: 1)

@@ -1,4 +1,7 @@
 import AppKit
+public enum NativeSidebarPositionCapability {
+  nonisolated(unsafe) public static var enabled = false
+}
 @MainActor public enum ShellLiveNotifications { public static var silencesSite: ((_ profileDirectory: String, _ origin: String) -> Bool)? }
 @MainActor public enum WindowHost { public static var makeAuxController: ((String, String) -> NSViewController?)? }
 @MainActor public enum ShellScripting {

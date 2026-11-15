@@ -44,23 +44,34 @@ function viewOf(engine: string): HistoryEntry[] {
 let legacyMoved = false;
 const legacyMigratedEngines = new Set<string>();
 
-function setView(engine: string, list: HistoryEntry[], floor?: number) {
-  useBrowser.setState((s) => {
-    const ids = profilesUsing(s, engine);
-    const was = ids.map((id) => s.historyFloor[id] ?? -Infinity).reduce((a, b) => Math.max(a, b), -Infinity);
-    const full = list.length >= MAX_HISTORY ? list[list.length - 1]!.lastVisit : -Infinity;
-    const next = Math.max(floor ?? was, full);
-    const ready = legacyMoved || legacyMigratedEngines.has(engine);
-    const sameList = ids.every((id) => s.history[id] === list);
-    const sameFloor = ids.every((id) => (s.historyFloor[id] ?? -Infinity) === next);
-    const sameReady = !ready || ids.every((id) => s.historyReady[id]);
-    if (sameList && sameFloor && sameReady) return {};
-    return {
-      ...(sameList ? {} : { history: { ...s.history, ...Object.fromEntries(ids.map((id) => [id, list])) } }),
-      ...(sameFloor ? {} : { historyFloor: { ...s.historyFloor, ...Object.fromEntries(ids.map((id) => [id, next])) } }),
-      ...(sameReady ? {} : { historyReady: { ...s.historyReady, ...Object.fromEntries(ids.map((id) => [id, true as const])) } }),
-    };
+function sameHistory(current: HistoryEntry[] | undefined, list: HistoryEntry[]): boolean {
+  return current === list || !!current && current.length === list.length && list.every((entry, index) => {
+    const previous = current[index]!;
+    return previous.url === entry.url && previous.title === entry.title && previous.favicon === entry.favicon && previous.visits === entry.visits && previous.lastVisit === entry.lastVisit &&
+      (previous.visitTimes === entry.visitTimes || !!previous.visitTimes && !!entry.visitTimes && previous.visitTimes.length === entry.visitTimes.length && previous.visitTimes.every((at, visit) => at === entry.visitTimes![visit]));
   });
+}
+
+function setView(engine: string, list: HistoryEntry[], floor?: number) {
+  if (Object.keys(viewPatch(useBrowser.getState(), engine, list, floor)).length === 0) return;
+  useBrowser.setState((s) => viewPatch(s, engine, list, floor));
+}
+
+function viewPatch(s: ReturnType<typeof useBrowser.getState>, engine: string, list: HistoryEntry[], floor?: number) {
+  const ids = profilesUsing(s, engine);
+  const was = ids.map((id) => s.historyFloor[id] ?? -Infinity).reduce((a, b) => Math.max(a, b), -Infinity);
+  const full = list.length >= MAX_HISTORY ? list[list.length - 1]!.lastVisit : -Infinity;
+  const next = Math.max(floor ?? was, full);
+  const ready = legacyMoved || legacyMigratedEngines.has(engine);
+  const sameList = ids.every((id) => sameHistory(s.history[id], list));
+  const sameFloor = ids.every((id) => (s.historyFloor[id] ?? -Infinity) === next);
+  const sameReady = !ready || ids.every((id) => s.historyReady[id]);
+  if (sameList && sameFloor && sameReady) return {};
+  return {
+    ...(sameList ? {} : { history: { ...s.history, ...Object.fromEntries(ids.map((id) => [id, list])) } }),
+    ...(sameFloor ? {} : { historyFloor: { ...s.historyFloor, ...Object.fromEntries(ids.map((id) => [id, next])) } }),
+    ...(sameReady ? {} : { historyReady: { ...s.historyReady, ...Object.fromEntries(ids.map((id) => [id, true as const])) } }),
+  };
 }
 
 const byLastVisit = (a: HistoryEntry, b: HistoryEntry) => b.lastVisit - a.lastVisit;

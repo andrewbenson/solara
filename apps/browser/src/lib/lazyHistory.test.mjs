@@ -23,6 +23,7 @@ function harness() {
   const useBrowser = { getState: () => state, setState: (patch) => {
     const previous = state;
     const next = typeof patch === "function" ? patch(state) : patch;
+    if (Object.is(next, state)) return;
     state = { ...state, ...next };
     for (const listener of [...subscribers]) listener(state, previous);
   }, subscribe: (listener) => (subscribers.add(listener), () => subscribers.delete(listener)) };
@@ -85,6 +86,76 @@ test("passive history startup never reads or watches unloaded profile", async ()
     await settle();
     assert.ok(h.reads.includes("cold"));
     assert.equal(h.state().historyReady.cold, true);
+  } finally { stop(); }
+});
+
+test("reading unchanged history preserves the view and does not notify store listeners", async () => {
+  const h = harness();
+  h.databases.set("", new Map([["https://warm.test/", { url: "https://warm.test/", title: "Warm", visits: 2, visitTimes: [100, 200] }]]));
+  const stop = h.api.startHistory();
+  try {
+    await settle();
+    const before = h.state().history;
+    let notifications = 0;
+    const off = h.useBrowser.subscribe(() => { notifications++; });
+    try {
+      await h.api.reloadHistory();
+      await settle();
+      assert.equal(h.state().history, before);
+      assert.equal(notifications, 0);
+      h.databases.get("").set("https://warm.test/", { url: "https://warm.test/", title: "Renamed", visits: 3, visitTimes: [100, 200, 300] });
+      await h.api.reloadHistory();
+      await settle();
+      assert.equal(notifications, 1);
+      assert.equal(h.state().history.default[0].title, "Renamed");
+      assert.deepEqual([...h.state().history.default[0].visitTimes], [100, 200, 300]);
+      h.databases.get("").clear();
+      await h.api.reloadHistory();
+      await settle();
+      assert.equal(notifications, 2);
+      assert.equal(h.state().history.default.length, 0);
+    } finally { off(); }
+  } finally { stop(); }
+});
+
+test("an unchanged history read still initializes shared aliases and updates readiness and retention floor", async () => {
+  const h = harness();
+  h.databases.set("", new Map([["https://warm.test/", { url: "https://warm.test/", title: "Warm", visits: 1, visitTimes: [100] }]]));
+  const stop = h.api.startHistory();
+  try {
+    await settle();
+    h.useBrowser.setState((state) => ({ profiles: { ...state.profiles, alias: { id: "alias", dataId: "default" } } }));
+    await settle();
+    assert.equal(h.state().history.alias, h.state().history.default);
+    assert.equal(h.state().history.alias[0].title, "Warm");
+    assert.equal(h.state().historyReady.alias, true);
+    h.useBrowser.setState({ historyReady: { default: false, alias: false } });
+    const history = h.state().history;
+    const floor = h.state().historyFloor;
+    let notifications = 0;
+    const off = h.useBrowser.subscribe(() => { notifications++; });
+    try {
+      await h.api.reloadHistory();
+      await settle();
+      assert.equal(h.state().history, history);
+      assert.equal(h.state().historyReady.default, true);
+      assert.equal(h.state().historyReady.alias, true);
+      assert.equal(h.state().historyFloor, floor);
+      assert.equal(notifications, 1);
+      const ready = h.state().historyReady;
+      h.useBrowser.setState({ historyFloor: { default: 123, alias: 123 } });
+      notifications = 0;
+      await h.api.reloadHistory();
+      await settle();
+      assert.equal(h.state().history, history);
+      assert.equal(h.state().historyReady, ready);
+      assert.equal(h.state().historyFloor.default, -Infinity);
+      assert.equal(h.state().historyFloor.alias, -Infinity);
+      assert.equal(notifications, 1);
+      await h.api.reloadHistory();
+      await settle();
+      assert.equal(notifications, 1);
+    } finally { off(); }
   } finally { stop(); }
 });
 

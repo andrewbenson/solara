@@ -8,6 +8,24 @@ public struct WindowAnchorBatch: Equatable, Sendable {
   public var storeRevision: Int { snapshot.input.storeRevision }
   public var generation: UInt64 { snapshot.generation }
 
+  public func shouldSendGuestProjection(after previous: Self?, toolbarReady: Bool) -> Bool {
+    guard toolbarReady || snapshot.input.layout.addressBarInSidebar || snapshot.input.selectedTabId == nil else { return false }
+    return previous.map { !hasSameGuestProjection(as: $0) } ?? true
+  }
+
+  public func hasSameGuestProjection(as other: Self) -> Bool {
+    windowId == other.windowId && windowGeneration == other.windowGeneration
+      && snapshot.input.layout.addressBarInSidebar == other.snapshot.input.layout.addressBarInSidebar
+      && snapshot.input.profileTitle == other.snapshot.input.profileTitle
+      && snapshot.input.profileNameWidth == other.snapshot.input.profileNameWidth
+      && snapshot.stripAvailableWidth == other.snapshot.stripAvailableWidth
+      && guestAnchors == other.guestAnchors
+  }
+
+  private var guestAnchors: [String: CGRect] {
+    anchors.filter { ["window", "content", "url"].contains($0.key) || $0.key.hasPrefix("peekPopover:") }
+  }
+
   public init(snapshot: WindowLayoutSnapshot, anchors: [String: CGRect] = [:]) {
     self.snapshot = snapshot
     self.anchors = snapshot.anchors.merging(anchors) { _, native in native }

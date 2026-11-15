@@ -11,6 +11,8 @@ public final class PairingServices {
   public var live = false
   public var hides = 0
   public var allows = 0
+  public private(set) var demanded = false
+  public func setDemanded(_ value: Bool) { demanded = value }
   public var validate: ((@escaping (Bool) -> Void) -> Void)?
   public var foregroundAtReply: Bool?
   private var foregroundObserved = false

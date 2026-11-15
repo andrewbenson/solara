@@ -81,20 +81,36 @@ public final class SplitPanesView: NSView {
 
   public func install(_ snapshot: WindowLayoutSnapshot, state: BrowserState) {
     guard !stopped, snapshot.input.windowId == windowId else { return }
-    installed = snapshot
-    update(state: state)
-    setFullscreenTab(snapshot.fullscreenTabId)
-    frame = CGRect(origin: .zero, size: snapshot.frames.card.size)
-    needsLayout = true
-    layoutSubtreeIfNeeded()
-    if snapshot.input.split == nil, let id = snapshot.input.selectedTabId, let container = panes[id]?.page {
-      if let singlePage, singlePage !== container { TabSlots.shared.remove(.card(windowId), container: singlePage) }
-      singlePage = container
-      TabSlots.shared.set(.card(windowId), container: container)
-    } else if let singlePage {
-      TabSlots.shared.remove(.card(windowId), container: singlePage)
-      self.singlePage = nil
+    TabSlots.shared.performBatch {
+      reuseSinglePane(snapshot)
+      installed = snapshot
+      update(state: state)
+      setFullscreenTab(snapshot.fullscreenTabId)
+      frame = CGRect(origin: .zero, size: snapshot.frames.card.size)
+      needsLayout = true
+      layoutSubtreeIfNeeded()
+      if snapshot.input.split == nil, let id = snapshot.input.selectedTabId, let container = panes[id]?.page {
+        if let singlePage, singlePage !== container { TabSlots.shared.remove(.card(windowId), container: singlePage) }
+        singlePage = container
+        TabSlots.shared.set(.card(windowId), container: container)
+      } else if let singlePage {
+        TabSlots.shared.remove(.card(windowId), container: singlePage)
+        self.singlePage = nil
+      }
     }
+  }
+
+  private func reuseSinglePane(_ snapshot: WindowLayoutSnapshot) {
+    guard let previous = installed, previous.input.split == nil, snapshot.input.split == nil,
+      previous.fullscreenTabId == nil, snapshot.fullscreenTabId == nil,
+      let oldId = previous.input.selectedTabId, let nextId = snapshot.input.selectedTabId, oldId != nextId,
+      panes.count == 1, let pane = panes[oldId], snapshot.panes[nextId] != nil else { return }
+    pane.rebindForNextTab()
+    TabSlots.shared.remove(.pane(windowId, oldId), container: pane.page)
+    panes[oldId] = nil
+    panes[nextId] = pane
+    bind(pane, tabId: nextId)
+    TabSlots.shared.set(.pane(windowId, nextId), container: pane.page)
   }
 
   public func stop() {
@@ -281,16 +297,20 @@ public final class SplitPanesView: NSView {
   private func make(_ tabId: String) -> SplitLeafView {
     let pane = SplitLeafView()
     pane.fill = cardColor
-    pane.toolbar.onClick = { [weak self] click in self?.onToolbarClick(tabId, click) }
-    pane.toolbar.onAnchors = { [weak self] anchors in self?.onToolbarAnchors(tabId, anchors) }
-    pane.toolbar.onLayoutAnchorsChange = { [weak self] in self?.onToolbarGeometryChange(tabId) }
-    pane.setToolbar(toolbars[tabId])
+    bind(pane, tabId: tabId)
     panes[tabId] = pane
     addSubview(pane.edgeShadow)
     addSubview(pane)
     addSubview(pane.edgeRim)
     TabSlots.shared.set(.pane(windowId, tabId), container: pane.page)
     return pane
+  }
+
+  private func bind(_ pane: SplitLeafView, tabId: String) {
+    pane.toolbar.onClick = { [weak self] click in self?.onToolbarClick(tabId, click) }
+    pane.toolbar.onAnchors = { [weak self] anchors in self?.onToolbarAnchors(tabId, anchors) }
+    pane.toolbar.onLayoutAnchorsChange = { [weak self] in self?.onToolbarGeometryChange(tabId) }
+    pane.setToolbar(toolbars[tabId])
   }
 
   private func drop(_ tabId: String, _ pane: SplitLeafView) {
@@ -308,7 +328,7 @@ final class SplitLeafView: NSView {
   let page = SplitPageContainer()
   let edgeShadow = CardEdgeView(part: .shadow)
   let edgeRim = CardEdgeView(part: .rim)
-  let toolbar = ToolbarView(frame: .zero)
+  private(set) var toolbar = ToolbarView(frame: .zero)
   private(set) var empty: SplitEmptyStateView?
   private var toolbarJson: String?
   var installedPage: CGRect?
@@ -357,6 +377,17 @@ final class SplitLeafView: NSView {
   }
 
   required init?(coder: NSCoder) { fatalError() }
+
+  func rebindForNextTab() {
+    toolbar.onHiddenOrDetached()
+    toolbar.onHiddenOrDetached = {}
+    toolbar.removeFromSuperview()
+    toolbar = ToolbarView(frame: .zero)
+    toolbar.isHidden = true
+    toolbarJson = nil
+    addSubview(toolbar)
+    setEmpty(nil)
+  }
 
   func setToolbar(_ json: String?) {
     guard json != toolbarJson else { return }

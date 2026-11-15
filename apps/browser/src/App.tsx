@@ -80,12 +80,17 @@ function NativeLayoutGuests({ topTabs }: { topTabs: boolean }) {
   const windowId = useWindowId();
   const profileId = useWindowProfileId();
   const addressBar = useAddressBarInSidebar();
-  useShellModal(windowId);
   return (
     <>
+      <NativeShellModal windowId={windowId} />
       <ContentCard />
       {topTabs ? <NativeTopStripFeed windowId={windowId} profileId={profileId} /> : <NativeSidebar windowId={windowId} profileId={profileId} addressBar={addressBar} headless />}
       {!topTabs && <FolderPanel windowId={windowId} />}
     </>
   );
+}
+
+function NativeShellModal({ windowId }: { windowId: string }) {
+  useShellModal(windowId);
+  return null;
 }

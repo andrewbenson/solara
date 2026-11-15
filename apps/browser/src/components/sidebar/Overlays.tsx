@@ -15,7 +15,10 @@ export function SidebarOverlays({ windowWidth }: { windowWidth: number }) {
   const [size, setSize] = useState({ width: 0, height: 0 });
   useEffect(startSidebarEffects, []);
   return (
-    <View pointerEvents="box-none" style={StyleSheet.absoluteFill} onLayout={(e) => setSize({ width: e.nativeEvent.layout.width, height: e.nativeEvent.layout.height })}>
+    <View pointerEvents="box-none" style={StyleSheet.absoluteFill} onLayout={(e) => {
+      const { width, height } = e.nativeEvent.layout;
+      setSize((size) => size.width === width && size.height === height ? size : { width, height });
+    }}>
       <HoverCard windowId={windowId} width={size.width} height={size.height} />
       <MeetingAlert windowId={windowId} windowWidth={windowWidth} />
       <IconPicker windowId={windowId} sidebarWidth={sidebarWidth} />

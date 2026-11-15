@@ -15,6 +15,7 @@ enum NativeSplitChrome {
   nonisolated static var panesEnabled: Bool { NativeWindowShell.enabled && LaunchSwitches.shared.isOn(.nativePagesPool) }
 
   private static var started = false
+  private static var owners: [String: NativePaneLayoutHost] = [:]
   private static var views: [String: SplitChromeView] = [:]
   private static var panes: [String: SplitPanesView] = [:]
   private static var overlays: [String: PaneOverlaysView] = [:]
@@ -35,11 +36,12 @@ enum NativeSplitChrome {
     _ = SettingsJS.shared.observe(dragTopic) { value in applyDrag(value) }
     _ = SettingsJS.shared.observe(toastTopic) { value in applyToast(value) }
     _ = SettingsJS.shared.observe(noticeTopic) { value in applyNotice(value) }
+    _ = SettingsJS.shared.observe("split.frozen") { value in applyFrozen(value) }
     if panesEnabled { _ = SettingsJS.shared.observe(toolbarTopic) { value in applyToolbars(value) } }
     #if DEBUG
     _ = SettingsJS.shared.observe("split.dev") { value in SplitChromeDevRun.start(value, views) }
     #endif
-    if let store = NativeStoreHandle.store {
+    if !NativeWindowShell.nativeLayout, let store = NativeStoreHandle.store {
       let sink = commits
       listener = store.subscribe { commit in sink.receive(commit.state) }
     }
@@ -59,7 +61,7 @@ enum NativeSplitChrome {
   }
 
   private static func render(_ state: BrowserState) {
-    for (id, view) in views {
+    for (id, view) in views where owners[id] == nil {
       if view.superview == nil {
         views[id] = nil
         if let zone = dropZones.removeValue(forKey: id) { TabDragSession.unregister(zone) }
@@ -67,10 +69,10 @@ enum NativeSplitChrome {
         view.update(state: state)
       }
     }
-    for (id, view) in overlays {
+    for (id, view) in overlays where owners[id] == nil {
       if view.superview == nil { overlays[id] = nil } else { view.update(state: state) }
     }
-    for (id, view) in panes {
+    for (id, view) in panes where owners[id] == nil {
       if view.superview == nil { panes[id] = nil } else { view.update(state: state) }
     }
   }
@@ -78,6 +80,7 @@ enum NativeSplitChrome {
   private static func cardContainer(for window: String) -> NSView? { NativeWindowShell.host(window)?.shell.card }
 
   static func setShareBands(_ heights: [String: CGFloat], windowId: String) {
+    if owners[windowId] != nil { NativeWindowShell.host(windowId)?.scheduleLayoutProjection(); return }
     if let overlay = overlays[windowId], overlay.superview != nil { overlay.bandHeights = heights }
     if let view = panes[windowId], view.superview != nil { view.bandHeights = heights }
   }
@@ -88,15 +91,17 @@ enum NativeSplitChrome {
   }
 
   static func setLiveTop(_ top: CGFloat?, windowId: String, tabId: String) {
+    if owners[windowId] != nil { NativeWindowShell.host(windowId)?.scheduleLayoutProjection(); return }
     guard let view = panes[windowId], view.superview != nil else { return }
     view.setLiveTop(top, tabId: tabId)
   }
 
-  private static func panesView(_ windowId: String) -> SplitPanesView? {
+  private static func panesView(_ windowId: String, shell supplied: WindowShellView? = nil) -> SplitPanesView? {
+    if supplied == nil, NativeWindowShell.nativeLayoutActive(windowId) { return owners[windowId]?.panes }
     guard panesEnabled else { return nil }
-    if let view = panes[windowId], view.superview != nil { return view }
+    if supplied == nil, let view = panes[windowId], view.superview != nil { return view }
     panes[windowId] = nil
-    guard let card = cardContainer(for: windowId) else { return nil }
+    guard let card = supplied?.card ?? cardContainer(for: windowId) else { return nil }
     let view = SplitPanesView(windowId: windowId)
     view.favicons = favicons
     view.frame = card.bounds
@@ -115,15 +120,16 @@ enum NativeSplitChrome {
     view.onReplace = { tabId, other in _ = try? NativeStoreHandle.store?.dispatch(Command("replaceSplitPane", [.string(tabId), .string(other)]), origin: .native) }
     if let overlay = overlays[windowId], overlay.superview === card { card.addSubview(view, positioned: .below, relativeTo: overlay) } else { card.addSubview(view) }
     view.setToolbars(toolbars[windowId] ?? [:])
-    if let state = NativeStoreHandle.store?.state { view.update(state: state) }
+    if supplied == nil, let state = NativeStoreHandle.store?.state { view.update(state: state) }
     panes[windowId] = view
     return view
   }
 
-  private static func view(_ windowId: String) -> SplitChromeView? {
-    if let view = views[windowId], view.superview != nil { return view }
+  private static func view(_ windowId: String, shell supplied: WindowShellView? = nil) -> SplitChromeView? {
+    if supplied == nil, NativeWindowShell.nativeLayoutActive(windowId) { return owners[windowId]?.chrome }
+    if supplied == nil, let view = views[windowId], view.superview != nil { return view }
     views[windowId] = nil
-    guard let host = NativeWindowShell.host(windowId) else { return nil }
+    guard let shell = supplied ?? NativeWindowShell.host(windowId)?.shell else { return nil }
     let view = SplitChromeView(windowId: windowId)
     view.onResize = { splitId, sizes, stack in
       var options: JSONObject = [:]
@@ -132,12 +138,12 @@ enum NativeSplitChrome {
       _ = try? NativeStoreHandle.store?.dispatch(Command("updateSplit", [.string(splitId), .object(options)]), origin: .native)
       FrameUpdates.flush()
     }
-    view.onToastHidden = { [weak shell = host.shell] id in
+    view.onToastHidden = { [weak shell] id in
       shell?.coverChanged()
       Task { @MainActor in _ = await SettingsAdapters.js("split.toast", windowId, id, "hidden") }
     }
     view.onToastAction = { id in Task { @MainActor in _ = await SettingsAdapters.js("split.toast", windowId, id, "action") } }
-    host.shell.mount(.splitChrome, view)
+    shell.mount(.splitChrome, view)
     let zone = SplitDropZone(windowId: windowId, chrome: view)
     zone.state = { NativeStoreHandle.store?.state }
     zone.covered = { NativeSidebarDock.peekCovers(windowId, point: $0) }
@@ -150,14 +156,14 @@ enum NativeSplitChrome {
     dropZones[windowId] = zone
     TabDragSession.register(zone, windowId: windowId, priority: .split)
     let overlay = PaneOverlaysView(windowId: windowId)
-    overlay.frame = host.shell.card.bounds
+    overlay.frame = shell.card.bounds
     overlay.autoresizingMask = [.width, .height]
-    overlay.onCoverChanged = { [weak shell = host.shell] in shell?.coverChanged() }
-    host.shell.card.addSubview(overlay)
+    overlay.onCoverChanged = { [weak shell] in shell?.coverChanged() }
+    shell.card.addSubview(overlay)
     overlays[windowId]?.removeFromSuperview()
     overlays[windowId] = overlay
-    if let state = NativeStoreHandle.store?.state { overlay.update(state: state) }
-    if let state = NativeStoreHandle.store?.state { view.update(state: state) }
+    if supplied == nil, let state = NativeStoreHandle.store?.state { overlay.update(state: state) }
+    if supplied == nil, let state = NativeStoreHandle.store?.state { view.update(state: state) }
     if let notice = windows(SettingsJS.shared.latestValue(noticeTopic))?[windowId] { view.setNotice(SplitToastSpec(notice)) }
     views[windowId] = view
     return view
@@ -173,6 +179,10 @@ enum NativeSplitChrome {
     for (windowId, entry) in all {
       guard let view = view(windowId) else { continue }
       let theme = SplitChromeTheme(entry["theme"] as? [String: Any] ?? [:])
+      if let owner = owners[windowId] {
+        owner.setTheme(theme, covered: entry["covered"] as? Bool ?? false)
+        continue
+      }
       let fullscreenTab = entry["fullscreenTab"] as? String
       view.setChrome(theme: theme, fullscreenTab: fullscreenTab, covered: entry["covered"] as? Bool ?? false)
       if let overlay = overlays[windowId] {
@@ -191,10 +201,43 @@ enum NativeSplitChrome {
     }
   }
 
+  private static func applyFrozen(_ value: Any?) {
+    guard let all = windows(value) else { return }
+    for (id, owner) in owners {
+      guard let entry = all[id], let generation = entry["generation"] as? NSNumber,
+        generation.uint64Value == owner.generation else { continue }
+      owner.setFrozen(entry["presentations"] as? [String: [String: Any]] ?? [:])
+    }
+  }
+
+  static func adopt(shell: WindowShellView, generation: UInt64) -> NativePaneLayoutHost? {
+    let id = shell.windowId
+    guard let chrome = view(id, shell: shell), let panes = panesView(id, shell: shell),
+      let overlays = overlays[id], let zone = dropZones[id] else { return nil }
+    let owner = NativePaneLayoutHost(shell: shell, generation: generation, chrome: chrome, panes: panes, overlays: overlays, zone: zone)
+    owners[id] = owner
+    return owner
+  }
+
+  static func end(_ owner: NativePaneLayoutHost) {
+    let id = owner.shell.windowId
+    if owners[id] === owner { owners[id] = nil }
+    if views[id] === owner.chrome { views[id] = nil }
+    if panes[id] === owner.panes { panes[id] = nil }
+    if overlays[id] === owner.overlays { overlays[id] = nil }
+    if dropZones[id] === owner.zone { dropZones[id] = nil }
+  }
+
+  static func toolbar(windowId: String, tabId: String) -> ToolbarView? { owners[windowId]?.panes.toolbar(tabId) }
+
+  #if DEBUG
+  static func bookmarksView(_ windowId: String) -> BookmarksBarView? { owners[windowId]?.bookmarksView }
+  #endif
+
   private static func applyDrag(_ value: Any?) {
     guard let o = value as? [String: Any], let windowId = o["windowId"] as? String else { return }
     for (id, view) in views where id != windowId { view.setDrag(nil) }
-    view(windowId)?.setDrag(SplitDragFrame(o))
+    if owners[windowId] == nil { view(windowId)?.setDrag(SplitDragFrame(o)) }
   }
 
   private static func applyToast(_ value: Any?) {
@@ -215,14 +258,189 @@ enum NativeSplitChrome {
   private static func applyToolbars(_ value: Any?) {
     guard let o = value as? [String: Any], o["v"] as? Int == 1, let all = o["windows"] as? [String: [String: String]] else { return }
     toolbars = all
-    for (windowId, view) in panes { view.setToolbars(all[windowId] ?? [:]) }
+    for (windowId, view) in panes {
+      view.setToolbars(all[windowId] ?? [:])
+      if owners[windowId] != nil {
+        for tabId in all[windowId]?.keys ?? Dictionary<String, String>().keys {
+          AutoHideHost.toolbarReady(windowId: windowId, tabId: tabId, toolbar: view.toolbar(tabId))
+        }
+      }
+    }
   }
 
   static func sample(_ windowId: String) -> [String: Any]? {
     guard var out = views[windowId]?.sample() else { return nil }
     if let view = panes[windowId], view.window != nil { out["leaves"] = view.sample() }
     if let view = overlays[windowId], view.window != nil { out["overlays"] = view.sample() }
+    if let owner = owners[windowId] { out["owner"] = owner.describe() }
     return out
+  }
+}
+
+@MainActor
+final class NativePaneLayoutHost {
+  let shell: WindowShellView
+  let generation: UInt64
+  let chrome: SplitChromeView
+  let panes: SplitPanesView
+  let overlays: PaneOverlaysView
+  let zone: SplitDropZone
+  private var stopped = false
+  private var snapshot: WindowLayoutSnapshot?
+  private var state: BrowserState?
+  private var theme = SplitChromeTheme.fallback
+  private var covered = false
+  private var frozen: [String: FrozenPageView] = [:]
+  private var frozenStates: [String: [String: Any]] = [:]
+  private var frozenURIs: [String: String] = [:]
+  private var paintedTokens: [String: Int] = [:]
+  private var bookmarks: BookmarksBarHost?
+  private var features: PaneOverlayHost?
+  #if DEBUG
+  var bookmarksView: BookmarksBarView? { stopped ? nil : bookmarks?.view }
+  #endif
+
+  init(shell: WindowShellView, generation: UInt64, chrome: SplitChromeView, panes: SplitPanesView, overlays: PaneOverlaysView, zone: SplitDropZone) {
+    self.shell = shell
+    self.generation = generation
+    self.chrome = chrome
+    self.panes = panes
+    self.overlays = overlays
+    self.zone = zone
+    shell.ownsPaneSlots = true
+    features = NativePaneOverlays.adopt(shell.windowId)
+    panes.pagesPooled = true
+    panes.onCardStyle = { [weak shell] in shell?.cardStyle = $0 }
+  }
+
+  func install(_ snapshot: WindowLayoutSnapshot, state: BrowserState) {
+    guard !stopped, snapshot.input.windowGeneration == generation else { return }
+    self.snapshot = snapshot
+    self.state = state
+    TabSlots.shared.performBatch {
+      PaneOverlays.shared.performBatch {
+        let fullscreen = snapshot.input.pageFacts.first { $0.value.fullscreen }?.key
+        chrome.setChrome(theme: theme, fullscreenTab: fullscreen, covered: covered)
+        panes.theme = theme
+        panes.cardColor = theme.color("card", dark: "rgba(18,18,18,0.5)", light: "rgba(255,255,255,0.7)")
+        panes.small = false
+        chrome.install(snapshot, state: state)
+        panes.install(snapshot, state: state)
+        overlays.install(snapshot, state: state)
+        placeBookmarks(snapshot, state: state)
+        placeFrozen()
+      }
+    }
+    for id in snapshot.panes.keys { AutoHideHost.toolbarReady(windowId: shell.windowId, tabId: id, toolbar: panes.toolbar(id)) }
+    features?.refresh()
+  }
+
+  func setTheme(_ theme: SplitChromeTheme, covered: Bool) {
+    guard !stopped else { return }
+    self.theme = theme
+    self.covered = covered
+    NativeWindowShell.host(shell.windowId)?.scheduleLayoutProjection()
+  }
+
+  private func placeBookmarks(_ snapshot: WindowLayoutSnapshot, state: BrowserState) {
+    guard snapshot.input.split == nil, let id = snapshot.input.selectedTabId,
+      let pane = snapshot.panes[id], let page = snapshot.pages[id], let bar = snapshot.toolbars[id],
+      state.windows[shell.windowId]?.incognito != true,
+      snapshot.input.bookmarksBar == "always" || snapshot.input.bookmarksBar == "newTab" && state.tabs[id]?.url.isEmpty == true,
+      snapshot.input.pageFacts[id]?.fullscreen != true else {
+      bookmarks?.view.removeFromSuperview()
+      bookmarks = nil
+      return
+    }
+    let host = bookmarks ?? BookmarksBarHost(windowId: shell.windowId)
+    bookmarks = host
+    if host.view.superview !== shell.card { shell.card.addSubview(host.view, positioned: .below, relativeTo: overlays) }
+    let band = snapshot.input.pageFacts[id]?.band ?? 0
+    let top = min(max(bar.maxY, page.minY - band - 30), pane.maxY)
+    host.view.frame = CGRect(x: pane.minX - snapshot.frames.card.minX, y: top - snapshot.frames.card.minY,
+      width: pane.width, height: min(30, max(0, page.minY - band - top)))
+    host.updateNative(state, profileId: snapshot.input.profileId, theme: theme)
+  }
+
+  func setFrozen(_ next: [String: [String: Any]]) {
+    guard !stopped else { return }
+    frozenStates = next
+    placeFrozen()
+  }
+
+  private func placeFrozen() {
+    guard !stopped, let snapshot, let state else { return }
+    let wanted = frozenStates.filter { id, entry in
+      guard snapshot.pages[id] != nil, let copyId = entry["copyId"] as? String, state.tabs[copyId] != nil else { return false }
+      return state.tabs[id]?.windowId == shell.windowId
+        && FrozenPageIdentity.admits(tabId: id, copyId: copyId, holder: state.tabs[id]?.pageIn, copyHolder: state.tabs[copyId]?.pageIn)
+    }
+    for (id, view) in frozen where wanted[id] == nil { view.removeFromSuperview(); frozen[id] = nil; frozenURIs[id] = nil; paintedTokens[id] = nil }
+    for (id, entry) in wanted {
+      guard let rect = snapshot.pages[id], let token = entry["token"] as? Int,
+        let copyId = entry["copyId"] as? String else { continue }
+      let view = frozen[id] ?? FrozenPageView(frame: .zero)
+      frozen[id] = view
+      if view.superview !== shell.card { shell.card.addSubview(view, positioned: .below, relativeTo: overlays) }
+      view.frame = rect.offsetBy(dx: -snapshot.frames.card.minX, dy: -snapshot.frames.card.minY)
+      view.dark = entry["dark"] as? Bool ?? theme.dark
+      let send: (String) -> Void = { [weak self, weak view] name in
+        guard let self, !self.stopped, self.frozen[id] === view,
+          self.frozenStates[id]?["token"] as? Int == token,
+          self.frozenStates[id]?["copyId"] as? String == copyId,
+          let state = NativeStoreHandle.store?.state, state.tabs[id]?.windowId == self.shell.windowId,
+          FrozenPageIdentity.admits(tabId: id, copyId: copyId, holder: state.tabs[id]?.pageIn, copyHolder: state.tabs[copyId]?.pageIn) else { return }
+        if name == "painted" {
+          guard self.paintedTokens[id] != token else { return }
+          self.paintedTokens[id] = token
+        }
+        HostedViews.send("frozenPage", windowId: self.shell.windowId, name, ["token": token, "copyId": copyId])
+      }
+      view.onPress = { send("press") }
+      view.onPainted = { send("painted") }
+      let uri = entry["uri"] as? String
+      if frozenURIs[id] == uri, view.image != nil { send("painted"); continue }
+      frozenURIs[id] = uri
+      let image = uri.flatMap { uri -> NSImage? in
+        guard uri.hasPrefix("data:image/"), let comma = uri.firstIndex(of: ","), uri[..<comma].hasSuffix(";base64"),
+          let data = Data(base64Encoded: String(uri[uri.index(after: comma)...])) else { return nil }
+        return NSImage(data: data)
+      }
+      view.show(image)
+      if image != nil { send("painted") }
+    }
+  }
+
+  func stop() {
+    guard !stopped else { return }
+    stopped = true
+    TabDragSession.unregister(zone)
+    zone.clear()
+    TabSlots.shared.performBatch {
+      PaneOverlays.shared.performBatch {
+        panes.stop()
+        overlays.stop()
+        chrome.stop()
+      }
+    }
+    for view in frozen.values { view.onPress = nil; view.onPainted = nil; view.removeFromSuperview() }
+    frozen = [:]
+    frozenStates = [:]
+    frozenURIs = [:]
+    paintedTokens = [:]
+    bookmarks?.view.removeFromSuperview()
+    bookmarks = nil
+    if let features { NativePaneOverlays.end(shell.windowId, ifHost: features) }
+    features = nil
+    snapshot = nil
+    state = nil
+    NativeSplitChrome.end(self)
+  }
+
+  func describe() -> [String: Any] {
+    ["generation": generation, "stopped": stopped, "identity": String(describing: ObjectIdentifier(self)),
+      "panes": String(describing: ObjectIdentifier(panes)), "overlays": String(describing: ObjectIdentifier(overlays)),
+      "frozen": frozen.mapValues { ["image": $0.image != nil] }]
   }
 }
 

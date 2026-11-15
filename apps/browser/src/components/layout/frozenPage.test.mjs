@@ -8,6 +8,8 @@ const fake = (source) => ({ url: `data:text/javascript,${encodeURIComponent(sour
 const sources = {
   "@solara/settings": `
     export const SolaraHostedView = "HostedView";
+    export const publishSettingsTopic = async () => {};
+    export const windowNativeLayoutGeneration = () => 1;
     export const onHostedEvent = (kind, windowId, listener) => {
       const f = globalThis.frozenPageHostTest;
       f.subscription = [kind, windowId]; f.listener = listener;
@@ -19,13 +21,15 @@ const sources = {
       return f.refs[index] ??= { current: value };
     };
     export const useLayoutEffect = (fn) => { const f = globalThis.frozenPageHostTest; if (!f.mounted) { f.cleanups.push(fn()); f.mounted = true; } };
-    export const useEffect = () => {};`,
+    export const useEffect = () => {};
+    export const useMemo = (fn) => fn();`,
   "react-native": `export const StyleSheet = { absoluteFill: { position: "absolute" } }, Image = "Image", Pressable = "Pressable", View = "View";`,
   "../../lib/theme": `export const useTheme = () => ({ dark: globalThis.frozenPageHostTest.dark });`,
   "../../store/browser": `
     const f = globalThis.frozenPageHostTest;
     export const useBrowser = (fn) => fn(f.store);
     useBrowser.getState = () => f.store;`,
+  "../../store/pinShare": `export const holderOf = (state, copyId) => state.tabs[state.tabs[copyId]?.pageIn];`,
   "./pinHandoff": `
     const f = globalThis.frozenPageHostTest;
     export const useFrozenPages = (fn) => fn(f.frozen);
@@ -126,4 +130,44 @@ test("unmount disarms already queued callbacks and removes the subscription", ()
   listener("painted", { token: state.token, copyId: state.copyId });
   listener("press", { token: state.token, copyId: state.copyId });
   assert.deepEqual(f.actions, []);
+});
+
+test("the native layout publishes a headless frozen presentation without an RN host", () => {
+  const guest = render({ headless: true });
+  assert.notEqual(guest.type, "HostedView");
+  assert.equal(guest.props.tabId, "copy");
+  const presentation = JSON.parse(guest.props.state);
+  assert.equal(presentation.copyId, "copy");
+  assert.equal(presentation.uri, f.frozen.frames.copy);
+});
+
+test("a source bridge covers only its holder pane", () => {
+  f.store.tabs.copy.pageIn = null;
+  f.store.tabs.holder = { id: "holder", windowId: "w" };
+  f.store.tabs.target = { pageIn: "holder" };
+  f.frozen.bridges.w = { copyId: "target", uri: "data:image/jpeg;base64,AQ==" };
+  assert.equal(render({ headless: true }).props.state, null);
+  const guest = render({ headless: true, tabId: "holder" });
+  assert.equal(JSON.parse(guest.props.state).copyId, "target");
+});
+
+test("a sibling frozen bitmap never acknowledges another pane's source bridge", () => {
+  f.store.tabs.holder = { id: "holder", windowId: "w" };
+  f.store.tabs.target = { pageIn: "holder" };
+  f.frozen.bridges.w = { copyId: "target", uri: "data:image/jpeg;base64,AQ==" };
+  render({ headless: true });
+  assert.equal(f.state.copyId, "copy");
+  assert.equal(f.state.uri, f.frozen.frames.copy);
+  event("painted");
+  assert.deepEqual(f.actions, []);
+});
+
+test("the native holder pane acknowledges its current source bridge", () => {
+  f.store.tabs.holder = { id: "holder", windowId: "w" };
+  f.store.tabs.target = { pageIn: "holder" };
+  f.frozen.bridges.w = { copyId: "target", uri: "data:image/jpeg;base64,AQ==" };
+  render({ headless: true, tabId: "holder" });
+  event("painted");
+  event("press");
+  assert.deepEqual(f.actions, [["painted", "w"]]);
 });

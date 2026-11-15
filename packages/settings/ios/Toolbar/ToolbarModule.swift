@@ -98,7 +98,7 @@ final class NativeToolbarHostView: ExpoView {
   private weak var toolbarShell: WindowShellView?
   private static let live = NSHashTable<NativeToolbarHostView>.weakObjects()
 
-  static func toolbar(windowId: String, tabId: String) -> ToolbarView? { host(windowId: windowId, tabId: tabId)?.toolbar }
+  static func toolbar(windowId: String, tabId: String) -> ToolbarView? { NativeSplitChrome.toolbar(windowId: windowId, tabId: tabId) ?? host(windowId: windowId, tabId: tabId)?.toolbar }
 
   static func extensionButton(_ event: NSEvent) -> ExtensionPopupButton? {
     guard let window = event.window, let root = window.contentView,

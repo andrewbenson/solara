@@ -15,6 +15,8 @@ public final class SplitChromeView: NSView {
     set { toast.onAction = newValue }
   }
 
+  private var installed: WindowLayoutSnapshot?
+  private var stopped = false
   private var split: SplitView?
   private var activeId: String?
   private var fullscreenTab: String?
@@ -47,6 +49,31 @@ public final class SplitChromeView: NSView {
     let local = convert(point, from: superview)
     if let hit = toast.hitTest(local) { return hit }
     return dividers.values.first { !$0.isHidden && $0.frame.contains(local) }
+  }
+
+  public func install(_ snapshot: WindowLayoutSnapshot, state: BrowserState) {
+    guard !stopped, snapshot.input.windowId == windowId else { return }
+    installed = snapshot
+    update(state: state)
+    fullscreenTab = snapshot.input.pageFacts.first { $0.value.fullscreen }?.key
+    needsLayout = true
+    layoutSubtreeIfNeeded()
+  }
+
+  public func stop() {
+    guard !stopped else { return }
+    stopped = true
+    stopLink()
+    toast.stop()
+    notice.stop()
+    pending = nil
+    drag = nil
+    zones.apply(nil)
+    SplitSlots.shared.remove(windowId, owner: self)
+    onResize = nil
+    onToastHidden = nil
+    onToastAction = nil
+    removeFromSuperview()
   }
 
   public func update(state: BrowserState) {
@@ -91,11 +118,18 @@ public final class SplitChromeView: NSView {
   public var panes: [String: CGRect] { SplitSlots.shared.panes(windowId) }
 
   private func relayout() {
-    let area = SplitLayout.bounds(in: self, fullscreenTab: fullscreenTab)
+    guard !stopped else { return }
+    let area: CGRect
+    if let installed {
+      let f = installed.frames
+      let rail = installed.input.presentation.railFraction
+      area = CGRect(x: f.page.minX - f.card.minX, y: (f.page.minY - f.card.minY) * rail,
+        width: f.page.width, height: max(0, f.card.height + (f.page.height - f.card.height) * rail))
+    } else { area = SplitLayout.bounds(in: self, fullscreenTab: fullscreenTab) }
     let laid = SplitLayout.panes(split: split, activeId: activeId, fullscreenTab: fullscreenTab, bounds: area)
     let panes = laid.panes
     let shown = covered ? [] : laid.dividers
-    SplitSlots.shared.publish(windowId, panes)
+    SplitSlots.shared.publish(windowId, panes, owner: self)
     var seen = Set<String>()
     for divider in shown {
       let key = Self.key(divider.kind)
@@ -134,7 +168,14 @@ public final class SplitChromeView: NSView {
 
   private func moved(_ delta: CGFloat) {
     guard let drag else { return }
-    let area = SplitLayout.bounds(in: self, fullscreenTab: fullscreenTab)
+    guard !stopped else { return }
+    let area: CGRect
+    if let installed {
+      let f = installed.frames
+      let rail = installed.input.presentation.railFraction
+      area = CGRect(x: f.page.minX - f.card.minX, y: (f.page.minY - f.card.minY) * rail,
+        width: f.page.width, height: max(0, f.card.height + (f.page.height - f.card.height) * rail))
+    } else { area = SplitLayout.bounds(in: self, fullscreenTab: fullscreenTab) }
     let total = Double(drag.vertical ? area.width : area.height)
     switch drag.kind {
     case .root(let index):

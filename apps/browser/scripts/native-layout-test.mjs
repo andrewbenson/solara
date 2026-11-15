@@ -17,6 +17,7 @@ const app = await launch(resolve(appPath), { data: join(scratch, "data"), sessio
   env: { SOLARA_NATIVE_WINDOW_LAYOUT: "1" }, ready: "return !!ac.store.getState().windows.w1" });
 const samples = [];
 const registrations = () => app.eval('return globalThis.expo.modules.SolaraTabPool.livePages().then(pages => pages.map(({tabId,sessionGeneration,registrationGeneration}) => ({tabId,sessionGeneration,registrationGeneration})).sort((a,b)=>a.tabId.localeCompare(b.tabId)));');
+const browserIdentities = () => app.eval('return globalThis.expo.modules.SolaraTabPool.livePages().then(pages=>pages.filter(page=>["a","b"].includes(page.tabId)).map(page=>({tabId:page.tabId,browserId:page.ready?.browserId??null})).sort((a,b)=>a.tabId.localeCompare(b.tabId)));');
 const read = () => app.eval('return globalThis.expo.modules.SolaraWindowShell.describe("w1").then(JSON.parse);');
 async function settled() {
   const end = Date.now() + 10000;
@@ -45,10 +46,61 @@ try {
   const work = await app.eval('return globalThis.expo.modules.SolaraWindowShell.nativeWork(false).then(JSON.parse);');
   assert.ok(work.groups.filter(group => group.kind.startsWith("strip.")).every(group => group.created === 0 && group.live === 0), "hidden strips create no row trees");
   const snapshot = await app.snapshot({ windowId: "w1", fields: ["windows.shell", "windows.tabIds"] });
-  const pages = validateWindowContract(snapshot.windows.find((window) => window.id === "w1").shell.contract).pageIdentities;
+  let pages = validateWindowContract(snapshot.windows.find((window) => window.id === "w1").shell.contract).pageIdentities;
   assert.ok(pages.some((page) => page.tabId === "a"));
-  const pageRegistrations = await registrations();
+  let pageRegistrations = await registrations();
   assert.ok(pageRegistrations.some((page) => page.tabId === "a" && page.registrationGeneration > 0));
+  const splitId = await app.eval('const s=ac.store.getState(); const id=s.createSplit(["a","b"]); s.activate("a"); return id;');
+  const splitDeadline = Date.now() + 10000;
+  let splitReady = false;
+  while (Date.now() < splitDeadline) {
+    assert.ok(app.alive, "split creation exited");
+    const split = (await read())?.split;
+    splitReady = ["a", "b"].every(id => split?.leaves?.[id] && split?.overlays?.[id] && !split.overlays[id].hidden);
+    if (splitReady) break;
+    await sleep(100);
+  }
+  assert.equal(splitReady, true, "both split pane slots install");
+  const browserDeadline = Date.now() + 10000;
+  let splitBrowsers;
+  while (Date.now() < browserDeadline) {
+    assert.ok(app.alive, "waiting for split browser identities exited");
+    splitBrowsers = await browserIdentities();
+    if (splitBrowsers.length === 2 && splitBrowsers.every(page => page.browserId !== null)) break;
+    await sleep(100);
+  }
+  assert.ok(splitBrowsers?.length === 2 && splitBrowsers.every(page => page.browserId !== null), "both WebContents are registered");
+  const splitRegistrations = await registrations();
+  const splitIdentity = await app.snapshot({ windowId: "w1", fields: ["windows.shell"] });
+  const splitPages = splitIdentity.windows.find(window => window.id === "w1").shell.contract.pageIdentities;
+  assert.deepEqual(splitPages.map(page => page.tabId).sort(), ["a", "b"]);
+  assert.deepEqual(splitRegistrations.map(page => page.tabId).sort(), ["a", "b"]);
+  assert.deepEqual(splitPages.filter(page => pages.some(initial => initial.tabId === page.tabId)), pages);
+  assert.deepEqual(splitRegistrations.filter(page => pageRegistrations.some(initial => initial.tabId === page.tabId)), pageRegistrations);
+  for (const sizes of [[0.35, 0.65], [0.6, 0.4], [0.5, 0.5]]) {
+    await app.eval(`const s=ac.store.getState(); s.updateSplit(${JSON.stringify(splitId)},{sizes:${JSON.stringify(sizes)}}); s.toggleSplitOrientation(${JSON.stringify(splitId)}); return true;`);
+    await sleep(700);
+    const shell = await settled();
+    verify(shell, before);
+    for (const id of ["a", "b"]) {
+      assert.equal(shell.split.overlays[id].hidden, false);
+      const page = shell.split.leaves[id].window;
+      const overlay = shell.split.overlays[id].window;
+      assert.ok(page.every((value, index) => Math.abs(value - overlay[index]) <= 0.5), `${id} page and overlay endpoints`);
+    }
+    assert.deepEqual(await registrations(), splitRegistrations);
+    assert.deepEqual(await browserIdentities(), splitBrowsers);
+    const sample = await app.snapshot({ windowId: "w1", fields: ["windows.shell"] });
+    assert.deepEqual(sample.windows.find(window => window.id === "w1").shell.contract.pageIdentities, splitPages);
+  }
+  await app.eval(`ac.store.getState().separateSplit(${JSON.stringify(splitId)}); ac.store.getState().activate("a"); return true;`);
+  await sleep(700);
+  assert.deepEqual(await registrations(), splitRegistrations);
+  assert.deepEqual(await browserIdentities(), splitBrowsers);
+  pages = splitPages;
+  pageRegistrations = splitRegistrations;
+  const paneMounts = await app.eval('return Object.fromEntries(["TabWebView","LegacyContentCard","TabPane","WindowToolbar","NativeContentGuests"].map(name=>[name,acPerf.findFibers(name,10).length]));');
+  assert.deepEqual(paneMounts, { TabWebView: 0, LegacyContentCard: 0, TabPane: 0, WindowToolbar: 0, NativeContentGuests: 1 });
   for (const changes of [{ sidebarIconsOnly: true }, { tabLayout: "top" }, { tabLayout: "sidebar", sidebarIconsOnly: false, addressBar: "sidebar" }, { addressBar: "toolbar" }]) {
     await app.eval(`ac.store.getState().updateSettings(${JSON.stringify(changes)}); return true;`);
     await sleep(700);

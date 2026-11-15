@@ -15,7 +15,20 @@ public final class PaneOverlays {
   private var containers: [String: [String: PaneOverlaySlot]] = [:]
   private var windows: [String: WeakOverlays] = [:]
 
+  private var batchDepth = 0
+  private var pendingWindows: Set<String> = []
+
   public init() {}
+
+  public func performBatch(_ install: () -> Void) {
+    batchDepth += 1
+    install()
+    batchDepth -= 1
+    guard batchDepth == 0 else { return }
+    let windows = pendingWindows.sorted()
+    pendingWindows = []
+    for windowId in windows { post(windowId, "") }
+  }
 
   public func container(windowId: String, tabId: String, layer: PaneOverlayLayer) -> NSView? {
     containers[windowId]?[tabId].map { layer == .rn ? $0.rn : $0.native }
@@ -32,7 +45,7 @@ public final class PaneOverlays {
   func setWindow(_ windowId: String, _ view: PaneOverlaysView?) {
     guard windows[windowId]?.view !== view else { return }
     windows[windowId] = view.map(WeakOverlays.init)
-    NotificationCenter.default.post(name: Self.changed, object: self, userInfo: ["windowId": windowId])
+    post(windowId, "")
   }
 
   public func tabIds(in windowId: String) -> Set<String> { Set(containers[windowId].map { Array($0.keys) } ?? []) }
@@ -45,6 +58,7 @@ public final class PaneOverlays {
   }
 
   func post(_ windowId: String, _ tabId: String) {
+    if batchDepth > 0 { pendingWindows.insert(windowId); return }
     NotificationCenter.default.post(name: Self.changed, object: self, userInfo: ["windowId": windowId, "tabId": tabId])
   }
 }
@@ -118,6 +132,29 @@ public final class PaneOverlaysView: NSView {
   private var fullscreenTab: String?
   private var liveTabs: Set<String> = []
   private var overlays: [String: PaneOverlaySlot] = [:]
+  private var installed: WindowLayoutSnapshot?
+  private var stopped = false
+
+  public func install(_ snapshot: WindowLayoutSnapshot, state: BrowserState) {
+    guard !stopped, snapshot.input.windowId == windowId else { return }
+    installed = snapshot
+    update(state: state)
+    setFullscreenTab(snapshot.input.pageFacts.first { $0.value.fullscreen }?.key)
+    frame = CGRect(origin: .zero, size: snapshot.frames.card.size)
+    needsLayout = true
+    layoutSubtreeIfNeeded()
+  }
+
+  public func stop() {
+    guard !stopped else { return }
+    stopped = true
+    for (tabId, overlay) in overlays { drop(tabId, overlay) }
+    if PaneOverlays.shared.layer(windowId: windowId) === self { PaneOverlays.shared.setWindow(windowId, nil) }
+    installed = nil
+    bandViews.values.forEach { $0.removeFromSuperview() }
+    bandViews = [:]
+    removeFromSuperview()
+  }
 
   public override var isFlipped: Bool { true }
 
@@ -180,7 +217,9 @@ public final class PaneOverlaysView: NSView {
     }
     let area = SplitLayout.bounds(in: self, fullscreenTab: fullscreenTab)
     let rail = fullscreenTab == nil ? windowShell?.railFraction ?? 0 : 0
-    let rects = SplitLayout.panes(split: split, activeId: activeId, fullscreenTab: fullscreenTab, bounds: area).panes
+    let origin = installed?.frames.card.origin ?? .zero
+    let rects = installed?.panes.mapValues { $0.offsetBy(dx: -origin.x, dy: -origin.y) }
+      ?? SplitLayout.panes(split: split, activeId: activeId, fullscreenTab: fullscreenTab, bounds: area).panes
     paneFrames = rects
     for (tabId, rect) in rects {
       let overlay = overlays[tabId] ?? make(tabId)
@@ -188,11 +227,15 @@ public final class PaneOverlaysView: NSView {
       let base = min(max(caption, (liveTops[tabId] ?? pageTops[tabId] ?? (tabId == fullscreenTab ? 0 : toolbarHeight)) * (1 - rail)), rect.height)
       let band = tabId == fullscreenTab ? 0 : min(max(0, bandHeights[tabId] ?? 0), rect.height - base)
       let top = base + band
-      overlay.frame = CGRect(x: rect.minX, y: rect.minY + top, width: rect.width, height: rect.height - top)
+      overlay.frame = installed?.pages[tabId].map { $0.offsetBy(dx: -origin.x, dy: -origin.y) }
+        ?? CGRect(x: rect.minX, y: rect.minY + top, width: rect.width, height: rect.height - top)
+      overlay.layoutSubtreeIfNeeded()
       overlay.isHidden = fullscreenTab != nil && tabId != fullscreenTab
       if let view = bandViews[tabId] {
-        view.frame = CGRect(x: rect.minX, y: rect.minY + base, width: rect.width, height: band)
-        view.isHidden = band <= 0 || overlay.isHidden
+        let nativeBand = installed?.input.pageFacts[tabId]?.band
+        let height = min(max(0, nativeBand ?? band), max(0, overlay.frame.minY - rect.minY))
+        view.frame = CGRect(x: rect.minX, y: overlay.frame.minY - height, width: rect.width, height: height)
+        view.isHidden = height <= 0 || overlay.isHidden
       }
     }
     for (tabId, view) in bandViews where rects[tabId] == nil { view.isHidden = true }
@@ -228,6 +271,7 @@ public final class PaneOverlaysView: NSView {
   public override func viewDidMoveToSuperview() {
     super.viewDidMoveToSuperview()
     if superview == nil {
+      guard installed == nil else { return }
       for (tabId, overlay) in overlays { drop(tabId, overlay) }
       if PaneOverlays.shared.layer(windowId: windowId) === self { PaneOverlays.shared.setWindow(windowId, nil) }
     } else {

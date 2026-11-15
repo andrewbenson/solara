@@ -102,6 +102,15 @@ enum NativeWindowShell {
 
   nonisolated static var activeWindowIds: Set<String> { activeIds.withLock { $0 } }
 
+  static func preparePagePlacement(_ state: BrowserState, revision: Int) -> Set<String> {
+    var ready = Set<String>()
+    for id in lifetimes.ids {
+      guard let host = lifetimes.host(id), host.ownsNativeLayout else { continue }
+      if host.preparePagePlacement(state, revision: revision) { ready.insert(id) }
+    }
+    return ready
+  }
+
   static func overlay(_ windowId: String) -> NSView? { host(windowId)?.shell.overlay }
 
   static func hiddenPages(_ windowId: String) -> NSView? { host(windowId)?.shell.hiddenPages }
@@ -129,6 +138,7 @@ final class ShellHost {
   let ownsNativeLayout: Bool
   private var layoutController: WindowLayoutController?
   private var layoutChrome: NativeLayoutChrome?
+  private var paneLayout: NativePaneLayoutHost?
   private let legacyLayoutAnchors: WindowAnchors
   private var layoutAnchors: WindowAnchors { layoutController?.anchors ?? legacyLayoutAnchors }
   private let windowGeneration: UInt64
@@ -189,6 +199,7 @@ final class ShellHost {
     }
     if ownsNativeLayout, let store = NativeStoreHandle.store {
       layoutChrome = NativeLayoutChrome(windowId: windowId, shell: shell, generation: generation)
+      paneLayout = NativeSplitChrome.adopt(shell: shell, generation: generation)
       let controller = WindowLayoutController(shell: shell, generation: generation, store: store)
       layoutController = controller
       controller.onState = { [weak self] state, revision in
@@ -218,6 +229,8 @@ final class ShellHost {
     layoutController?.stop()
     layoutChrome?.stop()
     layoutChrome = nil
+    paneLayout?.stop()
+    paneLayout = nil
     layoutAnchors.stop()
     shell.onFrames = nil
     #if SOLARA_PROBES
@@ -314,6 +327,30 @@ final class ShellHost {
 }
 
 extension ShellHost {
+  func nativeShownTop(_ tabId: String) -> Double? {
+    guard ownsNativeLayout, let state = layoutState, let window = state.windows[shell.windowId] else { return nil }
+    let topTabs = (window.tabLayout ?? state.settings.string("tabLayout")) == "top"
+    let rail = !topTabs && window.effectiveSidebarIconsOnly(state.settings)
+    let address = !topTabs && !rail && state.settings.string("addressBar") == "sidebar"
+    let fullscreen = NativeStoreHandle.store?.pageFacts(tabId)?.keepAlive?.reveal.fullscreen == true
+    let toolbar = address || fullscreen ? 0 : ShellMetrics.toolbarHeight
+    let split = Splits.splitOf(state, state.activeTabId(shell.windowId))
+    let mode = state.settings.string("bookmarksBar") ?? "newTab"
+    let bar = !fullscreen && split == nil && !window.incognito && (mode == "always" || mode == "newTab" && state.tabs[tabId]?.url.isEmpty == true)
+    return Double(toolbar + (bar ? 30 : 0))
+  }
+
+  func preparePagePlacement(_ state: BrowserState, revision: Int) -> Bool {
+    guard ownsNativeLayout, !layoutStopped, state.windows[shell.windowId] != nil,
+      NativeWindowShell.nativeLayoutGeneration(shell.windowId) == windowGeneration else { return false }
+    layoutController?.receive(state, revision: revision, generation: windowGeneration)
+    FrameUpdates.flush()
+    applyLayoutState(state, revision: revision)
+    refreshLayoutProjection()
+    return lastLayoutInput?.storeRevision == revision && lastLayoutInput?.windowGeneration == windowGeneration
+      && shell.window != nil && paneLayout != nil
+  }
+
   func applyLayoutState(_ state: BrowserState, revision: Int) {
     guard !layoutStopped, revision >= layoutRevision, state.windows[shell.windowId] != nil else { return }
     layoutState = state
@@ -360,6 +397,7 @@ extension ShellHost {
     shell.layoutSubtreeIfNeeded()
     guard let input = makeLayoutInput() else { return }
     let snapshot = WindowLayoutSnapshot.of(input, generation: layoutGeneration + 1)
+    if let state = layoutState { paneLayout?.install(snapshot, state: state) }
     let children = childLayoutAnchors(snapshot)
     if let layoutController {
       let changed = layoutController.apply(input: input, anchors: children)
@@ -682,6 +720,22 @@ public class WindowShellModule: Module {
 
     Function("pagesPool") { () -> Bool in NativeSplitChrome.panesEnabled }
     Function("paneRoots") { (windowId: String) -> Bool in NativePaneRoots.active(windowId) }
+    Function("paneFallbacks") { (windowId: String) -> String in NativePaneRoots.fallbackSnapshot(windowId) }
+    Function("paneFallbackState") { (windowId: String) -> String in NativePaneRoots.fallbackState(windowId) }
+    Function("admitPaneFallback") { (windowId: String, generation: Double, revision: Double) -> String in
+      guard generation.isFinite, revision.isFinite, generation >= 0, revision >= 0,
+        generation <= 9_007_199_254_740_991, revision <= 9_007_199_254_740_991,
+        generation.rounded(.towardZero) == generation, revision.rounded(.towardZero) == revision else { return "{}" }
+      return NativePaneRoots.admitFallbackSnapshot(windowId, windowGeneration: UInt64(generation), revision: UInt64(revision))
+    }
+
+    AsyncFunction("releasePaneFallback") { (windowId: String, tabId: String, generation: Double, lease: Double) in
+      MainActor.assumeIsolated {
+        guard generation.isFinite, generation >= 0, generation <= 9_007_199_254_740_991, generation.rounded(.towardZero) == generation,
+          lease.isFinite, lease > 0, lease <= 9_007_199_254_740_991, lease.rounded(.towardZero) == lease else { return }
+        NativePaneRoots.releaseFallback(windowId, tabId: tabId, generation: UInt64(generation), lease: UInt64(lease))
+      }
+    }.runOnQueue(.main)
     Function("mainOnTop") { (windowId: String) -> Bool in NativeWindowShell.mainOnTop && NativeWindowShell.active(windowId) }
 
     AsyncFunction("setBackdrop") { (windowId: String, json: String) in

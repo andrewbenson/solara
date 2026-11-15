@@ -109,3 +109,88 @@ public final class PaneRoots {
     onEnd?(tabId, root)
   }
 }
+
+@MainActor
+public final class PaneGuestLifetime {
+  private static var nextGeneration: UInt64 = 0
+  public private(set) var generation: UInt64 = 0
+  public private(set) var generations = Set<UInt64>()
+  public private(set) var shown = false
+  public private(set) var retired = false
+  public private(set) var ended = false
+  public var onEnd: (() -> Void)?
+  private var announced = Set<UInt64>()
+
+  public init() {}
+
+  public func setShown(_ shown: Bool) {
+    guard !retired, !ended, self.shown != shown else { return }
+    self.shown = shown
+    if shown {
+      precondition(Self.nextGeneration < 9_007_199_254_740_991)
+      Self.nextGeneration += 1
+      generation = Self.nextGeneration
+      generations.insert(generation)
+    }
+  }
+
+  public func announce(generation: UInt64) {
+    guard generations.contains(generation) else { return }
+    announced.insert(generation)
+  }
+
+  public func release(generation: UInt64) {
+    guard generations.contains(generation) else { return }
+    announced.remove(generation)
+    finish()
+  }
+
+  public func retire() {
+    retired = true
+    shown = false
+    finish()
+  }
+
+  public func abandon() {
+    retired = true
+    shown = false
+    announced = []
+    finish()
+  }
+
+  private func finish() {
+    guard retired, announced.isEmpty, !ended else { return }
+    ended = true
+    let end = onEnd
+    onEnd = nil
+    end?()
+  }
+}
+
+public struct PaneGuestAnnouncements: Sendable {
+  private var tickets: [UInt64: Set<UInt64>] = [:]
+  private var nextLease: UInt64 = 0
+
+  public init() {}
+
+  public mutating func acquire(_ generation: UInt64) -> UInt64 {
+    precondition(nextLease < 9_007_199_254_740_991)
+    nextLease += 1
+    announce(generation, ticket: nextLease)
+    return nextLease
+  }
+
+  public mutating func announce(_ generation: UInt64, ticket: UInt64) {
+    tickets[generation, default: []].insert(ticket)
+  }
+
+  public mutating func reject(_ generation: UInt64, ticket: UInt64) -> Bool {
+    guard var current = tickets[generation], current.remove(ticket) != nil else { return false }
+    tickets[generation] = current.isEmpty ? nil : current
+    return current.isEmpty
+  }
+
+  public func contains(_ generation: UInt64) -> Bool { tickets[generation]?.isEmpty == false }
+
+  public mutating func remove(_ generation: UInt64) { tickets[generation] = nil }
+}

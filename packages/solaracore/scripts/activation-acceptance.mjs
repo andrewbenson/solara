@@ -787,7 +787,7 @@ try {
 } finally {
   await instance.quit();
   try {
-    execFileSync(resolve(new URL(".", import.meta.url).pathname, "../../../scripts/agent/unregister-builds"), [], { stdio: "ignore" });
+    execFileSync("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister", ["-u", app], { stdio: "ignore" });
   } catch {}
   server.close();
   writeFileSync(join(scratch, "activation-results.json"), JSON.stringify(results, null, 2));

@@ -1,4 +1,4 @@
-import { publishSettingsTopic, windowPagesPoolActive, type ToolbarClick } from "@solara/settings";
+import { publishSettingsTopic, windowNativeLayout, windowPagesPoolActive, type ToolbarClick } from "@solara/settings";
 import { useEffect, type RefObject } from "react";
 import { addNativeSettingsHandlers } from "../settings/nativeSettings";
 import type { Theme } from "../../lib/theme";
@@ -19,7 +19,7 @@ function publishThemes() {
   queueMicrotask(() => {
     themeQueued = false;
     const windows: Record<string, object> = {};
-    for (const [windowId, entry] of Object.entries(themes)) windows[windowId] = { ...entry, pageTops: pageTops[windowId] ?? {} };
+    for (const [windowId, entry] of Object.entries(themes)) windows[windowId] = windowNativeLayout(windowId) ? entry : { ...entry, pageTops: pageTops[windowId] ?? {} };
     publishSettingsTopic("split.theme", { v: VERSION, windows });
   });
 }
@@ -46,7 +46,7 @@ export function useNativeSplitChrome(windowId: string, shell: boolean, theme: Th
 export function useNativePageTops(windowId: string, shell: boolean, tops: Record<string, number>) {
   const key = JSON.stringify(tops);
   useEffect(() => {
-    if (!shell) return;
+    if (!shell || windowNativeLayout(windowId)) return;
     pageTops[windowId] = JSON.parse(key);
     publishThemes();
   }, [shell, windowId, key]);
@@ -109,7 +109,8 @@ export function feedSplitToolbar(windowId: string, tabId: string, json: string |
   publishToolbars();
 }
 
-export function dropSplitToolbar(windowId: string, tabId: string) {
+export function dropSplitToolbar(windowId: string, tabId: string, handlers: RefObject<SplitToolbarHandlers>) {
+  if (toolbarHandlers.get(`${windowId}:${tabId}`) !== handlers) return;
   toolbarHandlers.delete(`${windowId}:${tabId}`);
   const panes = toolbars[windowId];
   if (!panes) return;
@@ -140,6 +141,7 @@ export type NativeDropFrame = { shown: boolean; grown: boolean; px: number; targ
 let lastDrop = "";
 
 export function publishNativeDrop(windowId: string, frame: NativeDropFrame) {
+  if (windowNativeLayout(windowId)) return;
   const message = {
     v: VERSION,
     windowId,

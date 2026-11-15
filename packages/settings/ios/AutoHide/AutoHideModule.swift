@@ -36,7 +36,7 @@ struct AutoHideState: Decodable {
 
   let mode: String
   let shownTop: Double
-  let pane: Rect
+  let pane: Rect?
   let card: String
   let band: String?
   let divider: String
@@ -81,7 +81,8 @@ enum AutoHideHost {
       card: CSSColor(state.card) ?? CSSColor("#FFFFFF")!, band: state.band.flatMap { CSSColor($0) },
       divider: CSSColor(state.divider) ?? CSSColor("rgba(0,0,0,0.1)")!, secondary: CSSColor(state.secondary) ?? CSSColor("#00000080")!,
       host: state.host, hasPage: state.hasPage, stripes: state.stripes)
-    strip.set(style: style, mode: mode, shownTop: state.shownTop)
+    let shownTop = NativeWindowShell.host(windowId)?.nativeShownTop(tabId) ?? state.shownTop
+    strip.set(style: style, mode: mode, shownTop: shownTop)
     if created { setLiveTop(CGFloat(strip.restingTop), windowId: windowId, tabId: tabId) }
   }
 
@@ -106,7 +107,7 @@ enum AutoHideHost {
   }
 
   private static func keepUnderToolbar(_ strip: AutoHideStripView, windowId: String, tabId: String, toolbar supplied: ToolbarView? = nil) {
-    guard let toolbar = supplied ?? NativeToolbarHostView.host(windowId: windowId, tabId: tabId)?.toolbar,
+    guard let toolbar = supplied ?? NativeToolbarHostView.toolbar(windowId: windowId, tabId: tabId),
       toolbar.superview != nil else { return }
     toolbar.placeBackdrop(strip)
   }

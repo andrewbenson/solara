@@ -351,3 +351,27 @@ test("older native hosts retain their full snapshot fallback", () => {
   f.state.bookmarks = { ...f.state.bookmarks, nodes: { ...f.state.bookmarks.nodes, a: { ...f.state.bookmarks.nodes.a, title: "Renamed" } } };
   assert.equal(JSON.parse(mount().props.state).items[0].title, "Renamed");
 });
+
+test("the native layout keeps bookmark actions alive through a headless feed", async () => {
+  const { NativeBookmarksBarFeed } = await import("./NativeBookmarksBar.tsx");
+  assert.equal(NativeBookmarksBarFeed({ windowId: "first" }), null);
+  const event = f.listeners.get("first");
+  assert.equal(typeof event, "function");
+  event("press", { id: "a", profileId: "one" });
+  event("move", { id: "a", index: 2, profileId: "one" });
+  event("dropLinks", { parentId: "bar", index: 0, items: [{ url: "https://new.example", title: "New" }] });
+  event("menuChoice", { action: "manage", profileId: "one" });
+  f.state.windows.first.shownPageId = "active-page";
+  event("focusPage", {});
+  event("importPress", {});
+  assert.deepEqual(f.actions, [
+    ["url", "https://a.example", "first", { metaKey: false, shiftKey: false, altKey: false, middle: false }],
+    ["move", "a", "bar", 2],
+    ["add", { profileId: "one", parentId: "bar", index: 0, url: "https://new.example", title: "New" }],
+    ["menuChoice", "first", "one", "manage", undefined],
+    ["focusPage", "first", "active-page"],
+    ["import"],
+  ]);
+  f.cleanups.forEach((cleanup) => cleanup());
+  assert.equal(f.listeners.size, 0);
+});

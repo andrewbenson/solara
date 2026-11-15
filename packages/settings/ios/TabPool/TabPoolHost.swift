@@ -17,6 +17,8 @@ final class TabPoolHost {
   var pageEventObservers: [@MainActor (String, String, [String: Any]) -> Void] = []
   var stateObservers: [@MainActor () -> Void] = []
   private var pool: TabViewPool?
+  private var preparingPlacement = false
+  private var preparedWindows = Set<String>()
   private var listener: Int?
   private var slotObserver: NSObjectProtocol?
   private var overlaysObserver: NSObjectProtocol?
@@ -42,6 +44,7 @@ final class TabPoolHost {
     guard Self.available, let store = NativeStoreHandle.store else { return startWhenSlotsChange() }
     if let slotObserver { NotificationCenter.default.removeObserver(slotObserver) }
     let pool = TabViewPool(make: { [weak self] tabId, windowId in self?.makePage(tabId, windowId) })
+    pool.preparePlacement = { [weak self] in self?.preparePlacement() }
     pool.hiddenContainer = { NativeWindowShell.hiddenPages($0) }
     pool.onPlaced = { [weak self] places in
       PageIssuer.shared?.afterIngress { [weak self] in _ = self?.emit?("onPlaced", ["places": places]) }
@@ -165,7 +168,19 @@ final class TabPoolHost {
     stateObservers.forEach { $0() }
   }
 
+  private func preparePlacement() {
+    guard !preparingPlacement, let store = NativeStoreHandle.store else { return }
+    preparingPlacement = true
+    defer { preparingPlacement = false }
+    store.sequence {
+      let snapshot = store.snapshot
+      preparedWindows = NativeWindowShell.preparePagePlacement(snapshot.state, revision: snapshot.rev)
+      refreshInScope(snapshot.state)
+    }
+  }
+
   private func refresh() {
+    guard !preparingPlacement else { return }
     guard let store = NativeStoreHandle.store else { return }
     store.sequence { refreshInScope(store.state) }
   }
@@ -183,6 +198,11 @@ final class TabPoolHost {
       shellNSWindows.removeObject(forKey: key as NSString)
     }
     let fresh = TabViewWanted.from(state, windows: shellWindows, isInternal: Self.isInternal, frozen: { _ in false }, newTabShown: newTabShown)
+      .map { entry in
+        var entry = entry
+        if NativeWindowShell.nativeLayoutActive(entry.windowId), !preparedWindows.contains(entry.windowId) { entry.shown = .none }
+        return entry
+      }
       .filter { entry in
         guard let tab = state.tabs[entry.tabId] else { return false }
         return entry.shown != .none || pages[entry.tabId] != nil || NativeProfileLoading.isLoaded(state.engineProfile(tab.profileId))

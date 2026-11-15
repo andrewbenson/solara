@@ -75,6 +75,37 @@ public final class SplitPanesView: NSView {
   private var toolbars: [String: String] = [:]
   private var panes: [String: SplitLeafView] = [:]
   private var liveTops: [String: CGFloat] = [:]
+  private var installed: WindowLayoutSnapshot?
+  private var stopped = false
+  private var singlePage: NSView?
+
+  public func install(_ snapshot: WindowLayoutSnapshot, state: BrowserState) {
+    guard !stopped, snapshot.input.windowId == windowId else { return }
+    installed = snapshot
+    update(state: state)
+    setFullscreenTab(snapshot.input.pageFacts.first { $0.value.fullscreen }?.key)
+    frame = CGRect(origin: .zero, size: snapshot.frames.card.size)
+    needsLayout = true
+    layoutSubtreeIfNeeded()
+    if snapshot.input.split == nil, let id = snapshot.input.selectedTabId, let container = panes[id]?.page {
+      if let singlePage, singlePage !== container { TabSlots.shared.remove(.card(windowId), container: singlePage) }
+      singlePage = container
+      TabSlots.shared.set(.card(windowId), container: container)
+    } else if let singlePage {
+      TabSlots.shared.remove(.card(windowId), container: singlePage)
+      self.singlePage = nil
+    }
+  }
+
+  public func stop() {
+    guard !stopped else { return }
+    stopped = true
+    if let singlePage { TabSlots.shared.remove(.card(windowId), container: singlePage) }
+    singlePage = nil
+    for (tabId, pane) in panes { drop(tabId, pane) }
+    installed = nil
+    removeFromSuperview()
+  }
   public var bandHeights: [String: CGFloat] = [:] {
     didSet {
       guard bandHeights != oldValue else { return }
@@ -166,7 +197,9 @@ public final class SplitPanesView: NSView {
     layer?.cornerRadius = rail > 0 ? (windowShell?.cardStyle.radius ?? ShellMetrics.cardRadius) * (1 - rail) : 0
     layer?.cornerCurve = .continuous
     CATransaction.commit()
-    let rects = split == nil ? [:] : SplitLayout.panes(split: split, activeId: activeId, fullscreenTab: fullscreenTab, bounds: area).panes
+    let origin = installed?.frames.card.origin ?? .zero
+    let rects = installed?.panes.mapValues { $0.offsetBy(dx: -origin.x, dy: -origin.y) }
+      ?? (split == nil ? [:] : SplitLayout.panes(split: split, activeId: activeId, fullscreenTab: fullscreenTab, bounds: area).panes)
     var made = false
     for (tabId, rect) in rects {
       let pane = panes[tabId] ?? { made = true; return make(tabId) }()
@@ -195,7 +228,14 @@ public final class SplitPanesView: NSView {
       pane.edgeRim.tint = windowShell?.cardEdgeTint
       pane.edgeShadow.place(rect, radius: pane.radius, strength: edge)
       pane.edgeRim.place(rect, radius: pane.radius, strength: edge)
+      if let snapshot = installed, let page = snapshot.pages[tabId], let bar = snapshot.toolbars[tabId] {
+        pane.toolbarHeight = bar.height
+        pane.installedPage = page.offsetBy(dx: -origin.x - rect.minX, dy: -origin.y - rect.minY)
+        pane.installedToolbar = bar.offsetBy(dx: -origin.x - rect.minX, dy: -origin.y - rect.minY)
+        if pane.toolbar.superview === self { pane.toolbar.frame = bar.offsetBy(dx: -origin.x, dy: -origin.y) }
+      }
       pane.needsLayout = true
+      pane.layoutSubtreeIfNeeded()
     }
     for (tabId, pane) in panes where rects[tabId] == nil { drop(tabId, pane) }
     if rail > 0, let activeId, let toolbar = panes[activeId]?.toolbar, toolbar.superview === self, subviews.last !== toolbar {
@@ -206,7 +246,7 @@ public final class SplitPanesView: NSView {
 
   public override func viewWillMove(toWindow newWindow: NSWindow?) {
     super.viewWillMove(toWindow: newWindow)
-    guard newWindow == nil else { return }
+    guard newWindow == nil, installed == nil else { return }
     for (tabId, pane) in panes { drop(tabId, pane) }
   }
 
@@ -214,7 +254,7 @@ public final class SplitPanesView: NSView {
     guard let state else { return }
     for (tabId, pane) in panes {
       let tab = state.tabs[tabId]
-      guard let tab, tab.url.isEmpty, !small else {
+      guard let tab, tab.url.isEmpty, !small, installed == nil || split != nil else {
         pane.setEmpty(nil)
         continue
       }
@@ -264,6 +304,8 @@ final class SplitLeafView: NSView {
   let toolbar = ToolbarView(frame: .zero)
   private(set) var empty: SplitEmptyStateView?
   private var toolbarJson: String?
+  var installedPage: CGRect?
+  var installedToolbar: CGRect?
   var fullscreen = false {
     didSet {
       guard fullscreen != oldValue else { return }
@@ -331,12 +373,12 @@ final class SplitLeafView: NSView {
   override func layout() {
     super.layout()
     if toolbar.superview === self {
-      toolbar.frame = CGRect(x: 0, y: 0, width: bounds.width, height: toolbarHeight)
+      toolbar.frame = installedToolbar ?? CGRect(x: 0, y: 0, width: bounds.width, height: toolbarHeight)
       toolbar.isHidden = toolbarHeight == 0 || toolbarJson == nil
     }
     let caption = fullscreen ? 0 : windowShell?.captionTop(in: self) ?? 0
     let pageTop = min(max(caption, liveTop.map { min(max(0, $0), bounds.height) } ?? toolbarHeight) + max(0, band), bounds.height)
-    page.frame = CGRect(x: 0, y: pageTop, width: bounds.width, height: max(0, bounds.height - pageTop))
+    page.frame = installedPage ?? CGRect(x: 0, y: pageTop, width: bounds.width, height: max(0, bounds.height - pageTop))
     empty?.frame = page.frame
   }
 }

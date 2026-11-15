@@ -1,5 +1,12 @@
 import AppKit
 
+public enum FrozenPageIdentity {
+  public static func admits(tabId: String, copyId: String, holder: String?, copyHolder: String?) -> Bool {
+    if tabId == copyId { return holder?.isEmpty == false }
+    return holder == copyId || copyHolder == tabId
+  }
+}
+
 @MainActor
 public final class FrozenPageView: NSView {
   public static let lightWash = NSColor(srgbRed: 1, green: 1, blue: 1, alpha: 0.4)

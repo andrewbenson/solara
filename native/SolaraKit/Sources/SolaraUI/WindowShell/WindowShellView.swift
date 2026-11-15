@@ -34,6 +34,7 @@ public final class WindowShellView: NSView {
   public let overlay = ShellOverlayView()
   public let hiddenPages = FlippedContainerView()
   public let cardPage = FlippedContainerView()
+  public var ownsPaneSlots = false
   public let cardClip = FlippedContainerView()
   public let cardShadow = CardEdgeView(part: .shadow)
   public let cardRim = CardEdgeView(part: .rim)
@@ -374,7 +375,7 @@ public final class WindowShellView: NSView {
 
   public override func viewDidMoveToWindow() {
     super.viewDidMoveToWindow()
-    if window == nil { TabSlots.shared.remove(.card(windowId), container: cardPage) } else { TabSlots.shared.set(.card(windowId), container: cardPage) }
+    if window == nil { TabSlots.shared.remove(.card(windowId), container: cardPage) } else if !ownsPaneSlots { TabSlots.shared.set(.card(windowId), container: cardPage) }
     if window == nil {
       stopPointerLink()
       widthMotion.stop()

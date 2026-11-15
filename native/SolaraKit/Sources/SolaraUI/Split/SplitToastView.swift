@@ -63,6 +63,23 @@ final class SplitToastView: NSView {
     return button.frame.contains(card.convert(local, from: self)) ? button : nil
   }
 
+  func stop() {
+    hideTimer?.invalidate()
+    hideTimer = nil
+    #if SOLARA_PROBES
+    NativeWorkCounters.unlink(link)
+    #endif
+    link?.invalidate()
+    link = nil
+    spec = nil
+    hiding = nil
+    appear = (nil, .resting(0))
+    appearValue = 0
+    card.isHidden = true
+    onHidden = nil
+    onAction = nil
+  }
+
   func show(_ next: SplitToastSpec?) {
     let now = CACurrentMediaTime()
     guard let next else {

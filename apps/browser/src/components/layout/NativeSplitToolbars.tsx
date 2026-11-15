@@ -5,11 +5,11 @@ import { dropSplitToolbar, feedSplitToolbar, type SplitToolbarHandlers } from ".
 
 const noHandle = () => null;
 
-export function SplitToolbarFeed({ tabId, windowId, geometry, focused }: { tabId: string; windowId: string; geometry: ToolbarGeometry; focused: boolean }) {
-  const { json, onClick, onAnchors } = useNativeToolbarModel({ tabId, geometry, windowId, inSplit: true, focused }, noHandle);
+export function SplitToolbarFeed({ tabId, windowId, geometry, focused, inSplit = true }: { tabId: string; windowId: string; geometry: ToolbarGeometry; focused: boolean; inSplit?: boolean }) {
+  const { json, onClick, onAnchors } = useNativeToolbarModel({ tabId, geometry, windowId, inSplit, windowToolbar: !inSplit, focused }, noHandle);
   const handlers = useRef<SplitToolbarHandlers>({ onClick, onAnchors });
   handlers.current = { onClick, onAnchors };
   useEffect(() => feedSplitToolbar(windowId, tabId, json, handlers), [windowId, tabId, json]);
-  useEffect(() => () => dropSplitToolbar(windowId, tabId), [windowId, tabId]);
+  useEffect(() => () => dropSplitToolbar(windowId, tabId, handlers), [windowId, tabId]);
   return null;
 }

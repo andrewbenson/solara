@@ -28,6 +28,8 @@ public final class TabViewPool {
   public let keeper: NSView
   public var hiddenContainer: @MainActor (String) -> NSView? = { _ in nil }
   public var onPlaced: (@MainActor ([String: String]) -> Void)?
+  public var preparePlacement: @MainActor () -> Void = {}
+  private var preparingPlacement = false
   public var onReplace: (@MainActor (String) -> Void)?
 
   private let make: Make
@@ -97,6 +99,10 @@ public final class TabViewPool {
   }
 
   public func reconcile() {
+    guard !preparingPlacement else { return }
+    preparingPlacement = true
+    preparePlacement()
+    preparingPlacement = false
     scheduled = false
     let replaced = retireChangedIdentities()
     let ops = TabViewPlan.plan(wanted: wanted, slots: slots.keys, current: places, visible: shown)

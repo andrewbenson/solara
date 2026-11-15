@@ -57,13 +57,13 @@ type ToolbarMotion = {
 export function useToolbarMotion({
   enabled,
   mode,
-  height,
+  height = 0,
   extra,
   doc,
 }: {
   enabled: boolean;
   mode: ToolbarMode;
-  height: number;
+  height?: number;
   extra: number;
   doc: string;
 }): ToolbarMotion {

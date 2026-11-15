@@ -410,6 +410,33 @@ It waits for quiet in the driver so the deliberate wait does not consume the que
 expected `dev-eval-result.json` reset reply separately from application writes. Raw write counts remain in every
 sample; additional replies or any application write still prevent settlement. Native counter definitions remain v1.
 
+## Native pane and split placement (layout Patch 6)
+
+With `SOLARA_NATIVE_WINDOW_LAYOUT=1`, the window owner installs pane pages, toolbar/bookmark/share-band insets and
+overlay slots from the same native snapshot. Page and overlay registry changes are batched until their final frames
+are installed. The app-wide page pool retains page, session and registration ownership through layout changes.
+Pane roots remain content guests; the main root supplies headless feature feeds rather than pane rectangles or
+page tops. The capability remains off by default and keeps the complete legacy path when unavailable.
+
+`NativePanePlacementTests` covers slot publication, replacement-owner teardown, pooled page/registration/session
+identity, geometry-only focus neutrality and page/overlay bounds across horizontal, vertical, stacked, two/three-pane
+and tiny-window layouts. `native-layout-test.mjs` also checks split resizing/orientation with unchanged page and
+registration identities and no RN page, pane, card or window-toolbar layout host.
+
+Refused pane roots keep their feature guests in registered native overlay targets. Fallback admission and release
+use exact acquisition leases, so delayed cleanup from a replaced React owner cannot retire a current portal.
+Receipt tests cover intermediate snapshots, stale commit effects, window error recovery and late old-owner cleanup;
+the pane-roots driver keeps its strict FindBar fallback and moved-tab status animation assertions.
+`NativePaneFallback.test.mjs` mounts through the real React Native renderer with a recording UIManager: the portal
+must address its native container, fill the slot independently of the empty root app container, and preserve its
+mounted child when only an acquisition lease changes. The FindBarPanel probe remains valid with the Swift find bar.
+
+Run pane-overlays, pane-roots, pane-roots-placement, pool-e2e, shell-drop, tab-drag, hidden-pane, activation-acceptance,
+little-solara and focus-hold with the capability both off and on. A driver that intentionally disables pane roots or
+the pool exercises its legacy capability leg. Check that `nativeLayout` and `SolaraTabPool.available()` are true in
+the native leg rather than treating an unavailable pool as native coverage. Keep UI-gate waits bounded and every
+instance in isolated development data.
+
 The profile-pager spring oracle uses release and notification-delivery timestamps rather than the spring's actual
 start and sample times. A fresh `60f0488a` control reproduced its unchanged position-tolerance failure (7/8), then
 passed (8/8); peek-flick passed in both controls. Preserve the strict assertions and raw traces when recording this
@@ -421,7 +448,7 @@ existing timing flake, and compare it separately from a missing swipe target or 
 The development native-layout path accepts `sidebarPosition: "left" | "right"` in Settings and an optional window
 field. Settings, View and the sidebar menu use the canonical `setSidebarPosition` command; a null window applies
 Settings to regular windows, while a window choice preserves other windows and changes the new-window default.
-Config-file ownership wins, and the preference remains local and unsynced. Native API 58 includes this capability.
+Config-file ownership wins, and the preference remains local and unsynced. Native API 59 includes this capability.
 The legacy layout keeps left geometry even when the saved preference is right. Top tabs remember the side.
 
 Run the existing sidebar-chrome, sidebar-rail, shell-hover, tab-drag, shell-drop, top-strip, window-toolbar,

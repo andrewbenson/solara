@@ -36,6 +36,16 @@ function Bar({ windowId }: { windowId: string }) {
     return w?.sidebarOpen && (w.tabLayout ?? s.settings.tabLayout) !== "top" ? width : null;
   });
   const state = useMemo(() => JSON.stringify(nativeSource ? { nativeSource: true, profileId, engineProfile: engineProfile(profileId), items: [], hasOther: false, hideBookmarksBarImport: hideImport, theme: { toolbarHover: theme.toolbarHover, toolbarPressed: theme.toolbarPressed, textTab: theme.textTab, textTertiary: theme.textTertiary, icon: theme.icon, divider: theme.divider, accent: theme.accent }, dark: theme.dark, sidebarEdge, bookmarksBar: barMode } : bookmarksBarSnapshot(bookmarks, profileId, hideImport, theme, sidebarEdge, barMode)), [nativeSource, bookmarks, profileId, hideImport, theme, sidebarEdge, barMode]);
+  useBookmarksBarActions(windowId);
+  return <SolaraHostedView kind="bookmarksBar" windowId={windowId} state={state} style={{ height: BOOKMARKS_BAR_HEIGHT }} />;
+}
+
+export function NativeBookmarksBarFeed({ windowId }: { windowId: string }) {
+  useBookmarksBarActions(windowId);
+  return null;
+}
+
+function useBookmarksBarActions(windowId: string) {
   useEffect(() => onHostedEvent("bookmarksBar", windowId, (name, payload) => {
     const s = useBrowser.getState();
     const window = s.windows[windowId];
@@ -80,5 +90,4 @@ function Bar({ windowId }: { windowId: string }) {
       if (tabId) void focusPageIfUnclaimed(windowId, tabId);
     } else if (name === "importPress") openImport();
   }), [windowId]);
-  return <SolaraHostedView kind="bookmarksBar" windowId={windowId} state={state} style={{ height: BOOKMARKS_BAR_HEIGHT }} />;
 }

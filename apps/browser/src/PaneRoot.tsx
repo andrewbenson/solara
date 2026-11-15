@@ -33,4 +33,9 @@ function PaneRoot({ windowId, tabId, shown = false }: { windowId: string; tabId:
 
 export function registerPaneRoot() {
   AppRegistry.registerComponent("pane", () => PaneRoot);
+  AppRegistry.registerComponent("paneFallbackSlot", () => PaneFallbackSlot);
+}
+
+function PaneFallbackSlot() {
+  return null;
 }

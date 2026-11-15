@@ -15,7 +15,7 @@ import { CreateProfileHost } from "./components/profiles/CreateProfile";
 import { useFullscreenTab } from "./components/layout/pageState";
 import { ProfileTint } from "./components/layout/ProfileSwipe";
 import { TOP_CARD_INSET, TOP_STRIP_HEIGHT, TopStripPeek, TopTabStrip } from "./components/layout/TopTabStrip";
-import { useAddressBarInSidebar, useCardAnchors, useTabLayout } from "./components/layout/windowLayout";
+import { useAddressBarInSidebar, useTabLayout } from "./components/layout/windowLayout";
 import { WindowProfile } from "./components/layout/WindowProfile";
 import { DockedLayout } from "./components/layout/SidebarDock";
 import { NativeTopStripFeed } from "./components/layout/NativeTopStrip";
@@ -97,13 +97,10 @@ function NativeLayoutGuests({ topTabs }: { topTabs: boolean }) {
   const windowId = useWindowId();
   const profileId = useWindowProfileId();
   const addressBar = useAddressBarInSidebar();
-  const content = useCardAnchors((state) => state[windowId]);
   useShellModal(windowId);
   return (
     <>
-      <View pointerEvents="box-none" style={{ position: "absolute", left: content?.left ?? 0, top: content?.top ?? 0, width: content?.width ?? 0, height: content?.height ?? 0 }}>
-        <ContentCard />
-      </View>
+      <ContentCard />
       {topTabs ? <NativeTopStripFeed windowId={windowId} profileId={profileId} /> : <NativeSidebar windowId={windowId} profileId={profileId} addressBar={addressBar} headless />}
       {!topTabs && <FolderPanel windowId={windowId} />}
     </>

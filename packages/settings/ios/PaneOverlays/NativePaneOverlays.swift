@@ -30,6 +30,17 @@ enum NativePaneOverlays {
 
   static func host(_ windowId: String) -> PaneOverlayHost? { hosts[windowId] }
 
+  static func adopt(_ windowId: String) -> PaneOverlayHost {
+    let host = PaneOverlayHost(windowId: windowId)
+    hosts[windowId] = host
+    return host
+  }
+
+  static func end(_ windowId: String, ifHost host: PaneOverlayHost) {
+    if hosts[windowId] === host { hosts[windowId] = nil }
+    host.stop()
+  }
+
   static func refresh(_ windowId: String) {
     guard started else { return }
     if let host = hosts[windowId] { return host.refresh() }
@@ -49,7 +60,7 @@ enum NativePaneOverlays {
     let windows = ((value as? [String: Any])?["windows"] as? [String: Any]) ?? [:]
     for (windowId, host) in hosts where windows[windowId] == nil {
       host.apply([:])
-      if !PanePrompts.draws(windowId) { hosts[windowId] = nil }
+      if !PanePrompts.draws(windowId), !NativeWindowShell.nativeLayoutActive(windowId) { hosts[windowId] = nil }
     }
     for (windowId, tabs) in windows {
       guard let tabs = tabs as? [String: Any] else { continue }
@@ -228,6 +239,7 @@ final class PaneChooserEntry {
 @MainActor
 final class PaneOverlayHost {
   let windowId: String
+  private var stopped = false
   private var sadTabs: [String: SadTabView] = [:]
   private var zooms: [String: PanePopover<ZoomPanelView>] = [:]
   private var histories: [String: PanePopover<HistoryPanelView>] = [:]
@@ -263,6 +275,7 @@ final class PaneOverlayHost {
   }
 
   func apply(_ tabs: [String: Any]) {
+    guard !stopped else { return }
     fromJS = tabs
     var sad = Set<String>()
     var zoomed = Set<String>()
@@ -579,7 +592,33 @@ final class PaneOverlayHost {
     return (wrap, capsule)
   }
 
+  func stop() {
+    guard !stopped else { return }
+    stopped = true
+    sadTabs.values.forEach { $0.removeFromSuperview() }
+    zooms.values.forEach { $0.wrap.removeFromSuperview() }
+    histories.values.forEach { $0.wrap.removeFromSuperview() }
+    selections.values.forEach { $0.removeFromSuperview() }
+    cliPills.values.forEach { $0.removeFromSuperview() }
+    casts.values.forEach { $0.popover.wrap.removeFromSuperview() }
+    swipes.values.forEach { $0.wrap.removeFromSuperview() }
+    prompts.values.forEach { $0.popover.wrap.removeFromSuperview() }
+    choosers.values.forEach { $0.popover.wrap.removeFromSuperview() }
+    for id in shares.keys { endShare(id) }
+    sadTabs = [:]
+    zooms = [:]
+    histories = [:]
+    selections = [:]
+    cliPills = [:]
+    casts = [:]
+    swipes = [:]
+    prompts = [:]
+    choosers = [:]
+    fromJS = [:]
+  }
+
   func relayout() {
+    guard !stopped else { return }
     for (tabId, view) in sadTabs {
       Self.place(view, in: slot(tabId), bottom: true)
       view.isHidden = view.superview == nil || view.showing == nil

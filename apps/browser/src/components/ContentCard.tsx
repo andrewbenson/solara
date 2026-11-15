@@ -1,5 +1,5 @@
 import { WebView, type PageEngine } from "@solara/solaracore";
-import { nativeToolbarAvailable, tabPool, windowPaneRootsActive, windowShellActive } from "@solara/settings";
+import { nativeToolbarAvailable, tabPool, windowNativeLayout, windowNativeLayoutGeneration, windowPaneRootsActive, windowShellActive } from "@solara/settings";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Animated, StyleSheet, View, type ViewStyle } from "react-native";
 import { useShallow } from "zustand/react/shallow";
@@ -26,7 +26,7 @@ import { removeTabs } from "../store/tabs";
 import { splitOf } from "../store/splits";
 import type { SplitView, Tab } from "../store/types";
 import { BOOKMARKS_BAR_HEIGHT, bookmarksBarShown, useBookmarksBarMode, type BookmarksBarMode } from "./bookmarks/bookmarksBarPolicy";
-import { NativeBookmarksBar } from "./bookmarks/NativeBookmarksBar";
+import { NativeBookmarksBar, NativeBookmarksBarFeed } from "./bookmarks/NativeBookmarksBar";
 import { CliControlPill } from "./CliControlPill";
 import { FindBar } from "./FindBar";
 import { POPOVER_MARGIN } from "./layout/controls";
@@ -78,8 +78,96 @@ import { NativePeekMount } from "./peek/NativePeekMount";
 import { PeekOverlay } from "./peek/PeekOverlay";
 import { PooledPageProps } from "./PooledPageProps";
 import { dismissPeek, startPeeks } from "./peek/actions";
+import { NativePaneFallback, useNativePaneFallbacks } from "./layout/NativePaneFallback";
+import { publishNativePaneStatus } from "./layout/nativePaneStatus";
 
 export function ContentCard() {
+  const windowId = useWindowId();
+  const [nativeLayout] = useState(() => windowNativeLayout(windowId));
+  return nativeLayout ? <NativeContentGuests /> : <LegacyContentCard />;
+}
+
+function useContentServices() {
+  useEffect(startPermissionPrompts, []);
+  useEffect(startChromeTabs, []);
+  useEffect(startMedia, []);
+  useEffect(startSelectionTools, []);
+  useEffect(startPeeks, []);
+}
+
+function NativeContentGuests() {
+  const windowId = useWindowId();
+  const activeId = useActiveTabId();
+  const split = useBrowser((s) => splitOf(s, activeId));
+  const fullscreenTab = useFullscreenTab(windowId);
+  const peekId = useBrowser((s) => s.peeks[windowId]?.tabId);
+  const peekFullscreen = !!peekId && fullscreenTab === peekId;
+  const addressInSidebar = useAddressBarInSidebar();
+  const hideWhileScrolling = useBrowser((s) => s.settings.hideToolbarWhileScrolling);
+  const theme = useTheme();
+  const [nativePrompts] = useState(() => panePromptsNativeIn(windowId));
+  useContentServices();
+  useNativeWindowAnchors(windowId);
+  const content = useCardAnchors((state) => state[windowId]);
+  const origin = useMemo(() => content ? { x: content.left, y: content.top } : null, [content]);
+  useNativePanePromptsTheme(nativePrompts, windowId, theme, useFormColors());
+  useNativeSplitChrome(windowId, true, theme, fullscreenTab ?? null, !!peekId, !addressInSidebar && !hideWhileScrolling, false);
+  useEffect(() => {
+    if (fullscreenTab && peekId && !peekFullscreen) dismissPeek(windowId);
+  }, [fullscreenTab, peekId, peekFullscreen, windowId]);
+  const fallbacks = useNativePaneFallbacks(windowId);
+  const tabIds = useMemo(() => split?.tabIds ?? (activeId ? [activeId] : NO_TABS), [split, activeId]);
+  useEffect(() => {
+    const state = useBrowser.getState();
+    for (const tabId of tabIds) {
+      const tab = state.tabs[tabId];
+      if (!tab || !needsPage(tab)) continue;
+      const holder = holderOf(state, tabId);
+      state.updateTab(tabId, holder ? { pageIn: holder.id, unloaded: undefined } : wake(tab));
+    }
+  }, [tabIds]);
+  return (
+    <>
+      <NativeBookmarksBarFeed windowId={windowId} />
+      {tabIds.map((tabId) => (
+        <NativePaneFallback key={tabId} windowId={windowId} tabId={tabId} target={fallbacks[tabId]}>
+          <PaneContent windowId={windowId} tabId={tabId} shown nativeFallback />
+        </NativePaneFallback>
+      ))}
+      {tabIds.map((tabId) => <NativePaneChromeFeed key={tabId} windowId={windowId} tabId={tabId} inSplit={!!split} leading={tabId === tabIds[0]} focused={tabId === activeId} fullscreen={tabId === fullscreenTab} />)}
+      {!fullscreenTab && tabIds.map((tabId) => <FrozenPage key={tabId} windowId={windowId} tabId={tabId} headless />)}
+      {(!fullscreenTab || peekFullscreen) && <NativePeekMount windowId={windowId} origin={origin} fullscreen={peekFullscreen} />}
+    </>
+  );
+}
+
+function NativePaneChromeFeed({ windowId, tabId, inSplit, leading, focused, fullscreen }: { windowId: string; tabId: string; inSplit: boolean; leading: boolean; focused: boolean; fullscreen: boolean }) {
+  const addressInSidebar = useAddressBarInSidebar();
+  const tabLayout = useTabLayout();
+  const showSidebarButton = useBrowser((s) => s.settings.showSidebarButton !== false);
+  const hideWhileScrolling = useBrowser((s) => s.settings.hideToolbarWhileScrolling);
+  const barMode = useBookmarksBarMode(windowId);
+  const own = useTabValue(tabId, paneTab, shallowEqual);
+  const toolbar = !addressInSidebar && !fullscreen;
+  const autoHide = toolbar && hideWhileScrolling;
+  const mode = useToolbarMode(tabId, windowId, autoHide);
+  const geometry = toolbar ? toolbarGeometry({ sidebarButton: leading && tabLayout === "sidebar" && showSidebarButton }) : NO_TOOLBAR;
+  const bookmarksBar = !fullscreen && !inSplit && bookmarksBarShown(barMode, own.exists ? own : undefined);
+  const [feedOwner] = useState(() => ({}));
+  const [generation] = useState(() => windowNativeLayoutGeneration(windowId));
+  const motion = useToolbarMotion({ enabled: autoHide, mode, extra: bookmarksBar ? BOOKMARKS_BAR_HEIGHT : 0, doc: pageKey(own.url) });
+  useLayoutEffect(() => publishNativePaneStatus(windowId, generation, tabId, feedOwner, autoHide ? motion.bottomStyle : undefined));
+  useEffect(() => () => dropPaneStatusStyle(tabId, feedOwner), [tabId, feedOwner]);
+  useEffect(() => revealToolbar(tabId), [tabId]);
+  return (
+    <>
+      {toolbar && <SplitToolbarFeed tabId={tabId} windowId={windowId} geometry={geometry} focused={focused} inSplit={inSplit} />}
+      {autoHide && <NativeAutoHide windowId={windowId} tabId={tabId} mode={mode} extra={bookmarksBar ? BOOKMARKS_BAR_HEIGHT : 0} focused={focused || !inSplit} />}
+    </>
+  );
+}
+
+function LegacyContentCard() {
   const windowId = useWindowId();
   const activeId = useActiveTabId();
   const split = useBrowser((s) => splitOf(s, activeId));
@@ -97,11 +185,7 @@ export function ContentCard() {
   const nativeContent = useCardAnchors((state) => nativeAnchors ? state[windowId] : undefined);
   const origin = useMemo(() => nativeContent ? { x: nativeContent.left, y: nativeContent.top } : measuredOrigin, [nativeContent, measuredOrigin]);
   const container = useRef<View>(null);
-  useEffect(startPermissionPrompts, []);
-  useEffect(startChromeTabs, []);
-  useEffect(startMedia, []);
-  useEffect(startSelectionTools, []);
-  useEffect(startPeeks, []);
+  useContentServices();
   const peekId = useBrowser((s) => s.peeks[windowId]?.tabId);
   const peekFullscreen = !!peekId && fullscreenTab === peekId;
   const shell = useWindowShell();
@@ -584,7 +668,7 @@ function PageOverlays({
   );
 }
 
-export function PaneContent({ windowId, tabId, shown }: { windowId: string; tabId: string; shown: boolean }) {
+export function PaneContent({ windowId, tabId, shown, nativeFallback = false }: { windowId: string; tabId: string; shown: boolean; nativeFallback?: boolean }) {
   const [width, setWidth] = useState(0);
   const split = useBrowser((s) => splitOf(s, tabId));
   const focused = useActiveTabId() === tabId;
@@ -595,10 +679,16 @@ export function PaneContent({ windowId, tabId, shown }: { windowId: string; tabI
   const showSidebarButton = useBrowser((s) => s.settings.showSidebarButton !== false);
   const peekShown = useBrowser((s) => !!s.peeks[windowId]?.tabId);
   const [nativePrompts] = useState(() => panePromptsNativeIn(windowId));
+  const [nativeLayout] = useState(() => windowNativeLayout(windowId));
+  const own = useTabValue(tabId, paneTab, shallowEqual);
+  const emptyCard = useBrowser((s) => s.settings.newTabOpens === "commandBar");
   const statusStyle = usePaneStatusStyle(tabId);
   const overCard = usePopoversOverCard(windowId);
   const [feedOwner] = useState(() => ({}));
-  const drawing = shown && width > 0;
+  const drawing = shown && width > 0 && !nativeFallback;
+  useEffect(() => {
+    if (nativeLayout && shown && !own.url) patchPage(tabId, { wasNewTab: true });
+  }, [nativeLayout, shown, own.url, tabId]);
   useLayoutEffect(() => {
     if (!drawing) return;
     markPaneRootDrawn(tabId, feedOwner, true);
@@ -609,15 +699,24 @@ export function PaneContent({ windowId, tabId, shown }: { windowId: string; tabI
   const inSplit = !!split && !fullscreen;
   const leading = useMemo(() => {
     if (!split || fullscreen) return true;
+    if (nativeLayout) return split.tabIds[0] === tabId;
     const rect = splitGeometry(split, 1000, 1000).panes[tabId];
     return !!rect && rect.x === 0 && rect.y === 0;
-  }, [split, fullscreen, tabId]);
+  }, [split, fullscreen, tabId, nativeLayout]);
   const toolbar = !addressInSidebar && !small;
   const sidebarButton = leading && tabLayout === "sidebar" && showSidebarButton;
   const geometry = useMemo(() => (!toolbar ? NO_TOOLBAR : toolbarGeometry({ sidebarButton })), [toolbar, sidebarButton]);
   useNativePanePromptsPane(nativePrompts, windowId, tabId, geometry.urlLeft, newTabShown);
   return (
     <View pointerEvents="box-none" style={{ flex: 1 }} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
+      {nativeLayout && shown && (
+        <>
+          {tabPool && <PooledPageProps pool={tabPool} tabId={tabId} visible />}
+          {!fullscreen && <ShareBar tabId={tabId} />}
+          {!own.url && !inSplit && (emptyCard ? <EmptyCard windowId={windowId} tabId={tabId} /> : <NewTabPage key={tabId} tabId={tabId} toolbar={toolbar} />)}
+          <InternalPage tabId={tabId} />
+        </>
+      )}
       {width > 0 && (
         <PageOverlays
           tabId={tabId}

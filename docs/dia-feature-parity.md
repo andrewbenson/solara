@@ -301,10 +301,12 @@ string doesn't matter. Afterwards: `kill %1` for the server, quit the app, `rm -
 
 ## 4. Sidebar & layout
 
-Layout-port Patch 2 adds native state projection and generation-stamped card, URL and strip-width anchors, with
-legacy frame ownership retained. Residual RN content/dropdown anchors preserve their existing contract separately
-from actual native card/page/field geometry. This infrastructure does not complete the remaining layout port or
-right-sidebar work (`docs/native/layout-port.md`).
+Layout-port Patches 2–3 add native state projection, generation-stamped anchors and per-window sidebar/strip
+ownership. Patch 6 moves pane/split placement, toolbar/bookmark/share-band insets and page/overlay slot installation
+into that owner behind `SOLARA_NATIVE_WINDOW_LAYOUT`. The global page pool keeps page and registration ownership;
+RN pane roots remain content guests. Residual RN content/dropdown anchors preserve their existing contract
+separately from native geometry. Default cutover and the remaining layout work stay in the port plan
+(`docs/native/layout-port.md`).
 
 | Feature | Dia | Solara | Gap |
 |---|---|---|---|

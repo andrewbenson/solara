@@ -20,7 +20,7 @@ type AutoHideNative = {
 
 const native = requireOptionalNativeModule<AutoHideNative>("SolaraAutoHide");
 
-export function NativeAutoHide({ windowId, tabId, mode, pane, extra, focused }: { windowId: string; tabId: string; mode: ToolbarMode; pane: { x: number; y: number; width: number; height: number }; extra: number; focused: boolean }) {
+export function NativeAutoHide({ windowId, tabId, mode, pane, extra, focused }: { windowId: string; tabId: string; mode: ToolbarMode; pane?: { x: number; y: number; width: number; height: number }; extra: number; focused: boolean }) {
   const theme = useTheme();
   const url = useBrowser((s) => s.tabs[tabId]?.url ?? "");
   const rail = useBrowser((s) => nativeSidebarRailSupported && sidebarIconsOnlyOf(s.windows[windowId], s.settings));

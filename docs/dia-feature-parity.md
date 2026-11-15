@@ -828,3 +828,14 @@ reproduced.
     ACFavicons, Move to Window, Alloy screen-sharing, import-Keychain and `Menus.swift` comments; the README (it still
     described WebKit). The `ACSwipe.mm` responder-delegate comment went with Findings 3 (R1).
 14. No `TODO`/`FIXME`/`XXX` markers in the code paths audited.
+
+### Layout-port Patch 11 default candidate
+
+Native API 64 selects the native window layout by default, including safe mode. The default main root reads
+native window bounds and mounts headless feature feeds; its RN dock/card/strip measurement and gesture owners
+are isolated in the complete legacy path. Source-audit tests cover the separation. Pane roots still host live
+New Tab/internal-page/overlay adapters; their pool prerequisite stays. Explicit development layout/prerequisite
+overrides, workspace-off and Little Solara retain legacy composition. Sidebar-side controls require native
+layout capability. Default focused drivers, build, release gates, matched Dia captures and owner interaction
+checks remain acceptance work; this entry does not mark the layout, right-side, virtualization or launch rows done.
+Patches 9 and 10 are integrated: native Peek presentation/holds and launch readiness survive the default cutover; default runtime evidence remains pending.

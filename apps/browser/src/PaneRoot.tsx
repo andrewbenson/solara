@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { AppRegistry, View } from "react-native";
 import { AreaBoundary } from "./components/AreaBoundary";
-import { PaneContent } from "./components/ContentCard";
+import { PaneContent } from "./components/PaneContent";
 import { ThemeScope } from "./lib/theme";
 import { useBrowser } from "./store/browser";
 import { WindowContext } from "./store/hooks";

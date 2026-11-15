@@ -1,14 +1,12 @@
 import { hostedKinds, publishSettingsTopic } from "@solara/settings";
 import { useEffect, useRef, useState } from "react";
 import { Animated } from "react-native";
-import { addNativeSettingsHandlers } from "../settings/nativeSettings";
 import { nativeSidebarShell } from "../sidebar/NativeSidebar";
-import { dismissHoverIn } from "../sidebar/hover";
 import { setDockMoving, setPeekShown } from "./dockMotion";
 
 const TOPIC = "sidebar.dock";
 const states: Record<string, string> = {};
-const listeners = new Map<string, (value: number, moving: boolean) => void>();
+import { nativeDockListeners as listeners } from "./nativeDockEvents";
 
 export type NativeDockState = {
   open: boolean;
@@ -32,18 +30,6 @@ function publish(windowId: string, state: string | null) {
   else return;
   publishSettingsTopic(TOPIC, { windows: states });
 }
-
-addNativeSettingsHandlers({
-  [TOPIC]: (windowId: string, event: string, extra: { value?: number; moving?: boolean; live?: boolean; right?: number; rect?: [number, number, number, number] | null }) => {
-    if (event === "dock") {
-      setDockMoving(windowId, !!extra.moving);
-      listeners.get(windowId)?.(extra.value ?? 0, !!extra.moving);
-    } else if (event === "peek") {
-      setPeekShown(windowId, !!extra.live, extra.right ?? 0, extra.rect ?? undefined);
-      dismissHoverIn(windowId);
-    } else if (event === "slideOut") dismissHoverIn(windowId);
-  },
-});
 
 export function useNativeDockState(windowId: string, state: NativeDockState) {
   const json = JSON.stringify(state);

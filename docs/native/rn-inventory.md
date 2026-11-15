@@ -129,7 +129,7 @@ Sizes are whole-file lines, including behavior and glue, not measured pixel code
 | Only build visible sidebar rows | Default sidebar rows are already native. | `UI/Sidebar/SidebarView` creates/reuses by item key while iterating all layout items; scrolling does not materialize only a visible range. | Native viewport virtualization and row reuse; this remains performance work, not another RN pixel port. |
 | Smarter launch ordering | No additional RN drawing component identified for this row. RN startup and native service startup still interleave. | Native startup policy, Settings prewarm, native history hints, tab-sleep runner and profile warmup. | Chrome-first/idle/priority scheduling and measurement. `main.tsx` still starts services at module load; `afterFirstWindow` uses a zero-delay task, not an idle scheduler. |
 
-Evidence for the non-obvious gaps: `C/ContentCard.tsx` mounts `FrozenPage` and uses `!pooled` for legacy content;
+Evidence for the non-obvious gaps: `C/ContentCard.tsx` mounts headless `FrozenPage`; `C/LegacyContentCard.tsx` uses `!pooled` for legacy content;
 `lib/pagesPool.ts` requires browser `windowShellActive`, pane roots and the pool. `Settings/WindowShell/NativeWindowShell`
 admits browser windows only; `Settings/LittleSolara/NativeLittleSolara` instead mounts backdrop/bar/react slots.
 Little Solara remains unpooled; `SadTab`, `SelectionPopover` and `SwipeOverlay` now mount existing native bodies inline.
@@ -228,7 +228,7 @@ Brace lists name separate files. All listed native filenames end in `.swift` unl
 | Extensions | `UI/SidePanel/ExtensionSidePanelView`; `UI/Panels/ExtensionDialogViews`; `Settings/{SidePanel/NativeExtensionSidePanel,Toolbar/NativeExtensionActionPopup,Adapters/ExtensionsAdapter}`; `packages/solaracore/ios/ExtensionsModule.swift` | Popup frame, install/pin sheets and side-panel container are native-only. `ExtensionOverlays` and the panel state host return null; `SidePanelSpacer` is transparent layout. RN extension-button/badge exports are deleted from the retained toolbar-model module. Existing NSMenu draws context/overflow menus; native buttons expose keyboard and AX actions. Little Solara hosts the same popup in its existing root slot. JS still owns models, menu actions, installation and popup/panel lifecycle. |
 | Site and prompts | `UI/SitePanel/SitePanelView`; `UI/Prompts/{PromptBodyView,DeviceChooserView}`; `UI/PaneOverlays/{PanePromptPage,PanePromptSpecs,PanePermissions,SelectionBarView}`; `Settings/{Services/NativeSiteControls,PaneOverlays/PanePrompts,SitePanel/SitePanelModule}` | Pooled prompts/site panels are native. Pooled site page commands use native `PageIssuer`; other bindings and `site.action` still bridge JS. Move JS engine offers, translation, selection search/copy, and compatibility policy. RN prompt/device/site/zoom bodies are removed; their native hosts still receive JS state and actions. |
 | Media | `UI/Media/{SidebarPlayerView,HoverPlayerCardView,ShareBarView,SharePickerView,CastPickerView,CliControlPillView}`; `Settings/Media/{NativeMedia,MediaModule}` | Players/pickers/control bodies native. JS still owns session/artwork replicas, source filtering/thumbnails, share/cast selection, playback/mute/PiP/dismiss actions, and share-bar layout animation. RN badge fills remain only in the retained React top-strip branch; unread and number badges have native views. The RN share-bar wrapper only animates/clips native content. |
-| Peek | `UI/Peek/{PeekOverlayView,PeekMotion}`; `Settings/WindowShell/NativePeek`; `Store/Peek` | Native peek when pooled; RN overlay otherwise (`ContentCard.tsx:351`). JS still publishes state and routes close/expand/hold/pinch. Move supported fallback pixels and remaining lifecycle policy. |
+| Peek | `UI/Peek/{PeekOverlayView,PeekMotion}`; `Settings/WindowShell/NativePeek`; `Store/Peek` | Native peek when pooled; RN overlay otherwise (`LegacyContentCard.tsx`). JS still publishes state and routes close/expand/hold/pinch. Move supported fallback pixels and remaining lifecycle policy. |
 | Little Solara | `UI/LittleSolara/{LittleSolaraShellView,SmallBarView}`; `Settings/LittleSolara/NativeLittleSolara`; `Shell/Windows` | Native shell/bar wraps the main root. JS still composes content and command/download/extension overlays and handles open/expand/window targeting. This host does not start browser pane roots: RN card fill remains; swipe destinations, selection-search and crash/unresponsive UI now host Swift views. Shared favicon adapters also host native sidebar icons. `SmallChrome` pixel helpers actually serve legacy Peek, not the native small bar. |
 | Live cards | `UI/Pages/{LiveCardsView,MeetingAlertFrameView}`; `UI/Sidebar/{SidebarLiveCard,SidebarMeetingCountdown}`; `Settings/Pages/MeetingAlertHost` | Calendar/alert card bodies native. RN live hover card is fallback when native hover kind is unavailable. JS still computes labels, join/related links, alerts, and placement. Standalone `MeetingCountdown` and `NextMeetingBadge` were deleted on 2026-11-14 after a repository-wide consumer check. |
 | Live services | `Live/{Engine,Commands,Documents,Accounts,CalendarEngine,MeetingGroups,Meetings,GitHub,Rows}`; `Settings/Live/{NativeLiveEngine,NativeLiveEffects}` | Fetch jobs, secrets/calendar and live persistence are native. JS replicas remain; auth tabs, item-to-tab reuse, group/autogroup, cleanup, and join/open routing still run. Do not describe the live JSON replica as a second durable writer. |
@@ -351,13 +351,13 @@ Notes name secondary work and immediate deletion candidates. Whole-file lines re
 
 | Path | Lines | Column | Milestone | Note |
 | --- | ---: | :---: | :---: | --- |
-| `apps/browser/src/App.tsx` | 111 | d | 0.4.6 | Window/component placement; also b gates |
-| `apps/browser/src/PaneRoot.tsx` | 36 | d | 0.4.6 | Pane root/context placement |
+| `apps/browser/src/App.tsx` | 91 | d | 0.4.6 | Native default feature-root composition; bounds come from native anchors |
+| `apps/browser/src/PaneRoot.tsx` | 41 | d | 0.4.6 | Native-slot feature guest registration/context; no window layout ownership |
 | `apps/browser/src/components/AreaBoundary.tsx` | 163 | b | 0.4.2 | Recovery retries/remount and native row state/events; Debug-only failure fixture |
 | `apps/browser/src/components/AutoHideToolbar.tsx` | 275 | a | 0.4.0 | Fallback toolbar strip pixels; also b motion |
 | `apps/browser/src/components/CliControlPill.tsx` | 61 | d | 0.4.6 | Native CLI-pill placement/feed |
 | `apps/browser/src/components/CommandPanel.tsx` | 299 | b | 0.4.2 | Panel geometry/focus; transparent RN Grow around native Surface/bar, no RN frame fill |
-| `apps/browser/src/components/ContentCard.tsx` | 739 | b | 0.4.2 | Page lifecycle/pooling; also a Little Solara card fill and FrozenPage composition |
+| `apps/browser/src/components/ContentCard.tsx` | 84 | b | 0.4.2 | Native content/action feeds; lazy complete legacy card selector |
 | `apps/browser/src/components/Downloads.tsx` | 361 | b | 0.4.2 | Download status/menu/actions and placement policy; native panel/button adapters draw nothing |
 | `apps/browser/src/components/EmptyCard.tsx` | 7 | d | 0.4.6 | Empty-card native composition |
 | `apps/browser/src/components/FindBar.tsx` | 110 | b | 0.4.4 | Native-only find controls and Surface; JS find/replace/focus state/actions and transparent layout/motion remain. Pooled native Peek has no find mount. |
@@ -763,3 +763,42 @@ test oracles remain. Cycle, transport, encryption and HLC minting stay in JS.
 
 Safe mode retains the claimed native display with a notice, read-only journal decoding and no edits or sync.
 Development-off/partial scope fails closed. API 40 and bookmark bridge version 3 require a rebuilt native host.
+
+### Layout-port Patch 11 ownership and retained-caller audit
+
+API 64 enables native window layout by default. `App.tsx` uses native window bounds for feature overlays;
+`ContentCard.tsx` has no page renderer, split rectangles, measured layout host, page-top publisher or dock animation.
+`nativeWindowAnchors.ts` only receives native geometry. `nativeDockEvents.ts` only receives native presentation
+events used by hover and feature actions. Neither mounts a layout host or publishes geometry.
+
+No RN file, Expo module registration or native bridge is deleted by this patch: the following live callers
+prevent removing the complete legacy path and feature adapters. Source-audit tests check the two entry paths;
+`native-layout-default-test.mjs` is the default-candidate runtime ownership/pool/blocker gate.
+
+| Retained machinery | Live callers and reason |
+| --- | --- |
+| `LegacyWindow.tsx`, `layout/SidebarDock.tsx`, `layout/TopTabStrip.tsx`, `Sidebar.tsx` | Explicit development/prerequisite-off or workspace-off browser composition; dock, strip, side-panel spacer and measurements run together only on that path. |
+| `LegacyContentCard.tsx`, `layout/{geometry,shellLayout,SplitChrome,toolbarAutoHide}.ts*` | `ContentCard` selects the complete legacy card; `LittleSolaraWindow` uses that selector. Inline/unpooled pages still need their renderer, geometry and gestures. |
+| `PaneContent.tsx`, `ContentServices.ts` | `PaneRoot` registers `pane`; the default card's native fallback slot also mounts the same feature guest. New Tab, internal pages, overlays and page/action services remain live. The pane-root pool prerequisite stays. |
+| `sidebar.shell`, `sidebar.dock`, hosted sidebar/strip factories and `setLayout` | The legacy dock/sidebar/strip wrappers still publish them; native factories and module methods still serve that complete path. Native owners reject legacy layout publications. |
+| `split.theme`, `split.toolbar`, pane overlay/pool/fallback methods | Native theme/action feeds and remaining feature guests still call them; legacy mode additionally supplies page tops/presentation. These are not obsolete registrations. |
+| `peek.state`, `NativePeekMount`, `peekHold`, frozen-page adapters | Still used on the default path pending Patch 9. Deleting them here would remove Peek or reveal holds. Patch 9 must update the new native card and extracted legacy/feature consumers separately. |
+
+Fallback matrix: default regular/private windows use native layout and the pool; safe mode retains that layout
+and its existing restore/extension policy. Development `SOLARA_NATIVE_WINDOW_LAYOUT=0`, any disabled required
+layout/pool prerequisite, `SOLARA_TAB_POOL=0`, or workspace-off uses the complete legacy browser/card path.
+Little Solara keeps its separate host and unpooled legacy card. Sidebar-side controls remain unavailable on an
+incapable path. Distribution ignores environment overrides for shipped default-on switches. Shell descriptions
+and launch logs report a legacy-path reason. Neither fallback nor default runtime matrix is claimed passed here.
+
+`apps/browser/src/LegacyWindow.tsx`: 71 lines, d, 0.4.6 — Complete legacy browser composition for documented fallbacks.
+
+`apps/browser/src/components/LegacyContentCard.tsx`: 594 lines, b, 0.4.2 — Complete legacy page renderer, split/dock geometry and Little Solara card fill.
+
+`apps/browser/src/components/PaneContent.tsx`: 186 lines, a, 0.4.0 — Feature-only native-slot guest and overlay adapters; no browser layout owner.
+
+`apps/browser/src/components/ContentServices.ts`: 16 lines, b, 0.4.2 — Page, permission, selection, media and Peek service starters.
+
+`apps/browser/src/components/layout/nativeWindowAnchors.ts`: 38 lines, d, 0.4.6 — Generation-fenced native geometry intake.
+
+`apps/browser/src/components/layout/nativeDockEvents.ts`: 18 lines, d, 0.4.6 — Native presentation event intake for feature actions.

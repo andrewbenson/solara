@@ -67,6 +67,8 @@ function writeUrlAnchor(windowId: string, anchor: UrlAnchor) {
 
 type CardAnchor = { left: number; top: number; width: number; height: number };
 
+export const useNativeWindowBounds = create<Record<string, readonly [number, number, number, number]>>()(() => ({}));
+
 export const useCardAnchors = create<Record<string, CardAnchor>>()(() => ({}));
 
 export const nativeWindowAnchorFeed = new WindowLayoutAnchorFeed();
@@ -95,6 +97,8 @@ export function applyNativeWindowAnchors(batch: WindowLayoutAnchors) {
   const old = useNativePopoverAnchors.getState()[batch.windowId];
   if (JSON.stringify(old) !== JSON.stringify(popovers)) useNativePopoverAnchors.setState({ [batch.windowId]: popovers });
   setNativeMeasuredWidths({ [`profile-name|${batch.profileTitle}`]: batch.profileNameWidth, [`window-strip|${batch.windowId}`]: batch.stripAvailableWidth });
+  const bounds = batch.anchors.window;
+  if (bounds && JSON.stringify(useNativeWindowBounds.getState()[batch.windowId]) !== JSON.stringify(bounds)) useNativeWindowBounds.setState({ [batch.windowId]: bounds });
   const content = batch.anchors.content;
   if (content) writeCardAnchor(batch.windowId, { left: content[0], top: content[1], width: content[2], height: content[3] });
   const url = batch.anchors.url;
@@ -111,6 +115,11 @@ function dropUrlAnchor(windowId: string) {
 }
 
 export function dropNativeWindowAnchors(windowId: string) {
+  useNativeWindowBounds.setState((state) => {
+    const next = { ...state };
+    delete next[windowId];
+    return next;
+  }, true);
   useNativePopoverAnchors.setState((state) => {
     const next = { ...state };
     delete next[windowId];

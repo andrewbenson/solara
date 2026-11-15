@@ -40,7 +40,7 @@ public struct WindowLayoutSnapshot: Equatable, Sendable {
     var pages: [String: CGRect] = [:]
     var pageViewports: [String: CGRect] = [:]
     var toolbars: [String: CGRect] = [:]
-    var anchors: [String: CGRect] = ["card": frames.card, "content": content, "page": frames.page]
+    var anchors: [String: CGRect] = ["window": input.bounds, "card": frames.card, "content": content, "page": frames.page]
     if input.layout.sidebarSide == .right && !input.layout.topTabs && !input.layout.fullscreen {
       anchors["caption"] = CGRect(x: 0, y: 0, width: ShellMetrics.railLightsTrailing + ShellMetrics.chromeCaptionTrailingMargin, height: ShellMetrics.toolbarHeight + ShellMetrics.cardTop)
     }

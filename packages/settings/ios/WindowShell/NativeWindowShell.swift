@@ -43,6 +43,16 @@ enum NativeWindowShell {
     LaunchSwitches.shared.isOn(.nativeWindowLayout) && mainOnTop
   }
 
+  nonisolated static var legacyLayoutReason: String? {
+    if !enabled { return "native shell disabled" }
+    if !NativeStoreHandle.ownedWorkspaceAtLaunch { return "native workspace disabled" }
+    if !NativeStoreHandle.opened { return "native workspace not opened" }
+    if !LaunchSwitches.shared.isOn(.nativeWindowLayout) { return "native layout switch or prerequisite disabled" }
+    if !NativePaneRoots.available { return "pane guest factory unavailable" }
+    if !mainOnTop { return "native page pool unavailable" }
+    return nil
+  }
+
   nonisolated static func nativeLayoutActive(_ windowId: String) -> Bool {
     nativeLayoutGenerations.withLock { $0[windowId] != nil }
   }
@@ -81,6 +91,7 @@ enum NativeWindowShell {
       activeIds.withLock { _ = $0.insert(windowId) }
       nextGeneration += 1
       let ownsNativeLayout = nativeLayout
+      if !ownsNativeLayout { NSLog("[window layout] %@ uses the complete legacy path: %@", windowId, legacyLayoutReason ?? "unavailable") }
       if ownsNativeLayout { nativeLayoutGenerations.withLock { $0[windowId] = nextGeneration } }
       let host = ShellHost(windowId: windowId, generation: nextGeneration, nativeLayout: ownsNativeLayout, root: make(windowId))
       lifetimes.adopt(windowId, host)
@@ -381,6 +392,7 @@ final class ShellHost {
         return ["rect": rect(button.convert(button.bounds, to: shell)), "hidden": button.isHiddenOrHasHiddenAncestor]
       },
       "nativeLayout": ownsNativeLayout,
+      "legacyLayoutReason": ownsNativeLayout ? NSNull() : NativeWindowShell.legacyLayoutReason as Any,
       "nativeLayoutChrome": layoutChrome?.describe() ?? NSNull(),
       "layoutControllerSubscriptions": layoutController?.subscriptionCount ?? 0,
       "layout": describeLayout() ?? NSNull(),

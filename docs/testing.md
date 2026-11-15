@@ -393,9 +393,9 @@ pass `scripts/agent/probe-scan`. Screen-dependent/manual checks still follow the
 
 ## Native sidebar and strip ownership (layout Patch 3)
 
-An isolated development launch with `SOLARA_NATIVE_WINDOW_LAYOUT=1` selects one native layout controller at window
-creation. It requires the native workspace, shell, pooled pane roots/main-root ordering and native top strip; otherwise
-the complete legacy path remains selected. The capability defaults off and is unavailable to distribution builds.
+Since Patch 11, the default launch selects one native layout controller at window creation.
+`SOLARA_NATIVE_WINDOW_LAYOUT=0` selects the complete legacy development fallback. It requires the native workspace, shell, pooled pane roots/main-root ordering and native top strip; otherwise
+the complete legacy path remains selected. The capability ships on; distribution ignores environment overrides for shipped switches.
 
 `WindowLayoutControllerTests`, `NativeLayoutAdoptionTests` and launch-switch tests cover queued commits, stale
 generations, early hosts, replacement/close, retained pages, mode identity and explicit motion/view shutdown.
@@ -423,11 +423,11 @@ sample; additional replies or any application write still prevent settlement. Na
 
 ## Native pane and split placement (layout Patch 6)
 
-With `SOLARA_NATIVE_WINDOW_LAYOUT=1`, the window owner installs pane pages, toolbar/bookmark/share-band insets and
+On the default native layout, the window owner installs pane pages, toolbar/bookmark/share-band insets and
 overlay slots from the same native snapshot. Page and overlay registry changes are batched until their final frames
 are installed. The app-wide page pool retains page, session and registration ownership through layout changes.
 Pane roots remain content guests; the main root supplies headless feature feeds rather than pane rectangles or
-page tops. The capability remains off by default and keeps the complete legacy path when unavailable.
+page tops. Explicit development overrides or unavailable workspace/pool prerequisites select the complete legacy path.
 
 `NativePanePlacementTests` covers slot publication, replacement-owner teardown, pooled page/registration/session
 identity, geometry-only focus neutrality and page/overlay bounds across horizontal, vertical, stacked, two/three-pane
@@ -498,3 +498,18 @@ window-toolbar, pane-overlays, pane-roots-placement, focus-hold, main-top and sh
 with `SOLARA_NATIVE_WINDOW_LAYOUT=1`, plus SolaraCore acceptance's `fullscreen-transition-picture`.
 Use bounded UI-gate waits and isolated data. Real Spaces/green-button/multiple-monitor transitions and mouse/trackpad
 feel remain owner visual checks.
+
+## Native layout default cutover (Patch 11, API 64)
+
+`node apps/browser/scripts/native-layout-default-test.mjs <Debug app> <fresh scratch directory>` launches
+without layout/shell/pool overrides. It requires the native ownership probe, one ShellHost/controller and store
+subscription, a genuinely pooled page, no legacy RN layout/gesture fibers and no empty RN pointer blockers in
+sidebar/top modes. `nativeLayoutCutover.test.mjs` audits entry-point imports and JSX; it does not replace runtime
+acceptance. `swipe-capsule-test` selects native input by default; `SOLARA_NATIVE_WINDOW_LAYOUT=0` retains its
+explicit legacy JS/native input matrix.
+
+The complete legacy path remains for explicit development overrides, workspace-off and Little Solara;
+`docs/native/rn-inventory.md` records its callers and matrix. No deleted registration is inferred from pixels.
+Run all layout-port focused drivers on a fresh API 64 default candidate, then full focus/window/page-lifetime
+acceptance and stable smoke/update/perf gates. Patch 9 Peek/holds and Patch 10 readiness are integrated; their default runtime acceptance remains a gate.
+Do not mark roadmap rows complete or lower native/perf ceilings without their own acceptance measurements.

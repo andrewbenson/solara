@@ -41,6 +41,7 @@ struct WindowLayoutContractTests {
     let bounds = CGRect(x: 0, y: 0, width: 1000, height: 700)
     let first = try #require(WindowLayoutInput(state: state, windowId: "w", bounds: bounds))
     #expect(first.profileId == "default" && first.selectedTabId == "a")
+    #expect(WindowLayoutSnapshot.of(first, generation: 1).anchors["window"] == bounds)
     #expect(first.layout.sidebarWidth == 190 && !first.layout.topTabs)
     #expect(WindowLayoutSnapshot.of(first, generation: 1).frames.card == CGRect(x: 190, y: 6, width: 803, height: 687))
     state.settings["tabLayout"] = "top"

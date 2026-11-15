@@ -115,11 +115,11 @@ Sizes are whole-file lines, including behavior and glue, not measured pixel code
 
 | Roadmap row | RN components and when they draw | Native counterpart already present | Missing for 0.4.0 |
 | --- | --- | --- | --- |
-| New Tab's Personalize, feedback check-in and release postcard | `C/ntp/Personalize.tsx` (64) retains only open state, theme/profile/layout feeds and existing store actions. The RN panel, swatches, rings, layout miniatures and Radio helpers are deleted. | `UI/NewTab/PersonalizeView` and `Settings/NewTab/HostedPersonalize` host the button/panel and reuse `UI/Onboarding/OnboardingPersonalize` pickers. | Targeted New Tab drawing ports wired. JS actions and feeds remain for 0.5.0/0.7.0. |
+| New Tab's Personalize, feedback check-in and release postcard | `C/ntp/Personalize.tsx` (64) retains only open state, theme/profile/layout feeds and existing store actions. The RN panel, swatches, rings, layout miniatures and Radio helpers are deleted. | `UI/NewTab/PersonalizeView` and `Settings/NewTab/HostedPersonalize` host the button/panel and reuse `UI/Onboarding/OnboardingPersonalize` pickers. | Targeted New Tab drawing ports wired. JS actions and feeds remain for 0.4.2/0.4.6. |
 | Same New Tab row: feedback | `C/ntp/CheckInBanner.tsx` feeds due-trial, profile, theme and icon state and dispatches the existing feedback/dismiss actions. | `UI/NewTab/CheckInBannerView`, `CheckInControl`, `CheckInMotion` and `Settings/NewTab/HostedCheckInBanner` draw the banner and its controls/motion. | Native drawing wired; stale presentation/profile actions are fenced and unmount cancels motion. JS due-trial policy remains. |
 | Same New Tab row: release notes, conditional content | `C/ntp/Postcard.tsx` feeds notes, theme, profile and presentation receipts to native hosts. The catalog still has only `1.0`, so a clean 0.3.4 launch does not queue a postcard. The fixture explicitly queues matching content; the native host hides below 560×420 points while its intro continues, as RN did. | `UI/NewTab/PostcardView`, `PostcardInput` and `Settings/NewTab/HostedPostcard` draw the postcard/page, tooltip, artwork, stamp, scrolling and close controls. Artwork uses the existing native backdrop shader. | Native drawing wired; delayed dismiss/close and old page cleanup reject replaced presentations. JS notes/progress/actions remain. |
-| Native site controls and prompts | `C/site/SelectionPopover.tsx` (57): delay, selection geometry and search actions feed native views; RN `Bar`/`SearchButton` drawing is removed. | `UI/PaneOverlays/SelectionBarView`; `Settings/PaneOverlays/HostedSelectionBar` for Little Solara, no-shell and Peek; existing browser pane host retained. | Targeted selection port wired. JS behavior and feeds remain for 0.5.0/0.7.0. |
-| Native extensions toolbar, overlays and side panel | No proven RN pixels with normal native capabilities. Popup frames, install/permission/pin sheets and side-panel containers are now native-only. `ExtensionOverlays` returns null; side-panel host returns null, with a transparent spacer. | `Settings/Toolbar/NativeExtensionActionPopup`, `UI/Panels/ExtensionDialogViews`, `UI/SidePanel/ExtensionSidePanelView`, `Settings/SidePanel/NativeExtensionSidePanel`, native toolbar buttons. | Extension-button/badge RN drawing is deleted. Existing NSMenu renders context/overflow menus, with keyboard/AX actions on native extension buttons. Little Solara uses the same native popup frame through its existing root slot. JS toolbar models/menu actions/install/lifecycle remain 0.5.0/0.6.0 work. |
+| Native site controls and prompts | `C/site/SelectionPopover.tsx` (57): delay, selection geometry and search actions feed native views; RN `Bar`/`SearchButton` drawing is removed. | `UI/PaneOverlays/SelectionBarView`; `Settings/PaneOverlays/HostedSelectionBar` for Little Solara, no-shell and Peek; existing browser pane host retained. | Targeted selection port wired. JS behavior and feeds remain for 0.4.2/0.4.6. |
+| Native extensions toolbar, overlays and side panel | No proven RN pixels with normal native capabilities. Popup frames, install/permission/pin sheets and side-panel containers are now native-only. `ExtensionOverlays` returns null; side-panel host returns null, with a transparent spacer. | `Settings/Toolbar/NativeExtensionActionPopup`, `UI/Panels/ExtensionDialogViews`, `UI/SidePanel/ExtensionSidePanelView`, `Settings/SidePanel/NativeExtensionSidePanel`, native toolbar buttons. | Extension-button/badge RN drawing is deleted. Existing NSMenu renders context/overflow menus, with keyboard/AX actions on native extension buttons. Little Solara uses the same native popup frame through its existing root slot. JS toolbar models/menu actions/install/lifecycle remain 0.4.4/0.4.5 work. |
 | Native media: sidebar/hover player, cast/share pickers, tab badges | No proven RN media-body pixels on the normal path. `TabBadges`, `PipBadge`, `CaptureBadge` are used only by the React strip fallback. Share-bar animation wrappers are transparent. | `UI/Media/{SidebarPlayerView,HoverPlayerCardView,ShareBarView,SharePickerView,CastPickerView,CliControlPillView}`; `UI/Primitives/{TabBadgesView,UnreadBadgeView,TabNumberHintView}`; `Settings/Media/NativeMedia`. | Retire/account for badge fallback consumers. Playback/share/cast decisions and replicas remain, but are not missing native pixel bodies. |
 | Native peek, Little Solara, calendar and meeting cards | `C/ContentCard.tsx` (739, primarily behavior) still paints the small-window card fill. `C/layout/PaneOverlays.tsx` (29) now hosts native recovery UI; its RN crash/unresponsive subtree is removed. Shared `PromptButton` and the other layout-control drawing exports are removed; this card uses only their retained placement constants. | `UI/LittleSolara/{LittleSolaraShellView,SmallBarView}`; `UI/PaneOverlays/SadTabView` with `Settings/PaneOverlays/HostedSadTab` outside the browser shell. | Targeted SadTab port wired; Little Solara card fill/page hosting remains separate work. |
 | Native top strip, split chrome, swipe overlay and other layout | `C/layout/SwipeOverlay.tsx` (197) retains gesture/history actions and sends native commands. RN tint/rim, destination rows and their favicon drawing are removed. | `UI/PaneOverlays/SwipeCapsuleView`; `Settings/PaneOverlays/HostedSwipeCapsule` for Little Solara, no-shell and Peek; browser pane host retained. | Targeted swipe port wired. Layout ownership remains in its separate port. |
@@ -236,7 +236,7 @@ Brace lists name separate files. All listed native filenames end in `.swift` unl
 | Sync | `Sync/{Scope,Files,HLC,Order,Canon,StateDecode,EditJournal,StoreAdapters,HostedAdapters,PinnedAdapters,Extensions,LedgerPasswords,PasswordLedger}`; `Store/{SyncPinsCommand,SyncPinned,SyncPinnedApply}`; `packages/sync/ios/SyncModule.swift` | JS sync orchestrator remains live when sync is enabled. Native transport/crypto/pairing and native pin apply do not replace JS adapter selection, cycles, sync.json, metadata, recovery, or merging. Native `syncScope` exists in CLI use; app ownership is **unverified** because inspected app adapters import SolaraSyncAdapter, not the SolaraSync library. |
 | Lib | `UI/Services/{AppStartupPolicy,AppIntegrationPolicy,ScriptCommands,CliControlSync,MemoryTrimSchedule,SiteControlsLogic}`; `Settings/Services/{NativeAppStartup,NativeAppIntegration,NativeCliControl,NativeUserScripts,NativeMemoryTrim}`; `Shell/{Menus,Windows,Notifications,UserScripts}`; `Store/{ChromeTabs,NativeCaches,ProfileDataCleanup}` | JS window/menu/command/focus/engine/lifecycle integration remains live, including pinned-link disposition and lazy-profile admission. `Settings/Services/{NativeConfigNotifier,NativeHooks,NativeProfileWarmup}`, `packages/store/ios/{NativeConfigFiles,NativeTabSleep}.swift` and native config/hooks UI already exist; they introduce no new RN surfaces. Library sync/cache/migration services run even with native workspace. Native service files cover parts only; for example native memory trim still invokes JS compact. |
 
-## Data ownership that still matters for 0.6.0
+## Data ownership that still matters for 0.4.5
 
 - `src/store/nativeStore.ts:253,288,400` forwards wrapped commands, applies revision commits, and guards writes to owned state. `store/browser.ts:204` disables several JS normalization/mirror observers under full ownership. This is real native ownership.
 - `src/lib/persist.ts` starts bookmark/history/favicon services in the native branch too. `lib/bookmarks.ts` subscribes to native projection and requests catalog reloads; it owns no Chrome writes, cache saves or migration. NativeBookmarkOwner and BookmarkPump own those bookmark lifetimes. `lib/history.ts` retains legacy history redaction/migration and tombstone handling.
@@ -315,11 +315,12 @@ Secondary work in a file moves with its own column: drawing inside a b or d file
 
 | Version | Leaves | Files | Lines | Largest path groups (lines in that column) |
 | --- | --- | ---: | ---: | --- |
-| 0.4.0: React Native draws nothing | a, drawing | 22 | 5,003 | Top strip 1,755; Sidebar 675; Toolbar 500; Split panes 461; Settings 311 |
-| 0.5.0: React Native decides nothing | b, behaviour | 234 | 28,651 | Lib 6,178; Store 5,579; Sidebar 2,459; Window layout 1,805; Site and prompts 1,761 |
-| 0.6.0: the data layer is native | c, data | 75 | 13,406 | Sync 6,050; Store 2,920; Lib 2,060; Settings 693; Onboarding 501 |
-| 0.7.0: React Native off by default | d, glue, once nothing needs a root | 70 | 4,821 | Sidebar 1,147; Top strip 446; Toolbar 390; Lib 323; Page hosting 293 |
-| 1.0.0: React Native deleted | everything retained, plus the RN host, Expo modules, Metro, pods and patches outside apps/browser/src | 401 | 51,881 | see the 1.0.0 row below |
+| 0.4.0: React Native draws nothing | a, drawing | 21 | 4,778 | Top strip 1,755; Sidebar 675; Toolbar 500; Split panes 461; Settings 311 |
+| 0.4.2: commands and orchestration | b, commands and orchestration | 135 | 14,487 | Lib 6,178; Window layout 1,725; Page hosting 1,679; Settings 1,043; Omnibox 988 |
+| 0.4.4: remaining interaction behavior | b, interaction behavior | 100 | 14,274 | Store 5,579; Sidebar 2,459; Site and prompts 2,005; Extensions 1,459; Window layout 1,411 |
+| 0.4.5: the data layer is native | c, data | 75 | 13,406 | Sync 6,050; Store 2,920; Lib 2,060; Settings 693; Shared UI 501 |
+| 0.4.6: React Native off by default | d, glue, once nothing needs a root | 70 | 4,821 | Sidebar 1,147; Window layout 1,107; Shared UI 741; Lib 323; Live services 239 |
+| 1.0.0: React Native deleted | everything retained, plus the RN host, Expo modules, Metro, pods and patches outside apps/browser/src | 401 | 51,766 | see the 1.0.0 row below |
 
 React Native roots left today: 3 AppRegistry registrations (`main`, `pane`, and the API-skew screen, which reuses `main`),
 so 2 module names; one `main` root per browser or Little Solara window, plus a `pane` root for each pane whose overlay
@@ -332,9 +333,10 @@ Each cell lists the largest dependencies first. These are proposed work boundari
 | Milestone | Required moves | Exit evidence to collect later |
 | --- | --- | --- |
 | 0.4.0: draws nothing in RN | NTP extras and their onboarding pickers now draw natively; finish Little Solara card fill/page hosting; frozen handoff, swipe, selection and SadTab bodies are now native; generic render recovery and shared favicon drawing are now native. Bookmarks bar and extension popup/frame/sheets/panel pixels are already native. Main/sidebar toolbar controls and prompt/site/chooser/history/zoom/download-list bodies now use native hosts only. Downloads skin/button/motion, toolbar backdrop and no-shell group card now host Swift views. Finish retained find, legacy Peek and API-skew pixels; verify recovery/capability lanes. Transfer RN-driven layout/animation where native content still depends on it. Secondary a work inside b/d files also counts. | Every supported release surface and recovery path draws native pixels. Exercise unavailable-capability and handoff paths. Retained development fallbacks must be outside the milestone's supported release lane. |
-| 0.5.0: decides nothing in RN | Move command/menu/window/focus/navigation orchestration; omnibox action/disposition/clipboard policy; import and settings RPC actions; sidebar/top-strip drag/selection/close/rename; live auth/meeting integration; media/extension/prompt/translation lifecycle. Retire TS workspace fallback reducers after native parity is demonstrated. | Native views and commands work with JS action/RPC handlers disabled. Native UI has no required JS decision round trip. |
-| 0.6.0: data layer is native | Move the JS sync coordinator/adapters/durable metadata and remaining history reconciliation/migrations first. Bookmark reconciliation, migration and caches moved in 0.3.0. Remove remaining JS history/favicon/launch caches and unwrapped Zustand stores. Replace or delete UI/page/media/extension replicas. Keep native writer/ownership safeguards during the transition. | Full persistence, restart, import, sync, privacy deletion, and recovery work without JS data services. Native SolaraSync must be wired into the app, not merely present in the library. |
-| 0.7.0: RN off by default | Remove mandatory `AppDelegate` main/pane root creation and `main.tsx` startup dependency. Give native app startup, window/menu binding, settings services, page props, and root handoff independent lifetimes. Default to no RN host/bridge; any compatibility switch must explicitly opt in. | Signed distribution starts, opens windows/tabs/settings, syncs, quits, and restores with no RN runtime or roots. UI switches being on is insufficient evidence. |
+| 0.4.2: commands and orchestration | Move commands, menus, shortcuts, window/focus/navigation orchestration, omnibox actions, Settings and Import RPC actions, and find. | Native views and commands work with JS action/RPC handlers disabled. Native UI has no required JS decision round trip. |
+| 0.4.4: remaining interaction behavior | Move sidebar/top-strip drag, selection, close, rename, pin and move; folders and groups; media, extension, prompt and translation lifecycles; live auth/meeting integration; TypeScript fallback reducers. | Native UI has no required JS decision round trip across retained interaction behavior. |
+| 0.4.5: data layer is native | Move the JS sync coordinator/adapters/durable metadata and remaining history reconciliation/migrations first. Bookmark reconciliation, migration and caches moved in 0.3.0. Remove remaining JS history/favicon/launch caches and unwrapped Zustand stores. Replace or delete UI/page/media/extension replicas. Keep native writer/ownership safeguards during the transition. | Full persistence, restart, import, sync, privacy deletion, and recovery work without JS data services. Native SolaraSync must be wired into the app, not merely present in the library. |
+| 0.4.6: RN off by default | Remove mandatory `AppDelegate` main/pane root creation and `main.tsx` startup dependency. Give native app startup, window/menu binding, settings services, page props, and root handoff independent lifetimes. Default to no RN host/bridge; any compatibility switch must explicitly opt in. | Signed distribution starts, opens windows/tabs/settings, syncs, quits, and restores with no RN runtime or roots. UI switches being on is insufficient evidence. |
 | 1.0.0: RN deleted | Delete retained RN roots, JS UI/decision/data fallbacks, JSON/RPC topics, test doubles, and skew plumbing. Remove Expo/RN native bindings, package dependencies, Metro/bundle phases, Pod integration, RN patches, and tests/harnesses that require RN. Audit package TS wrappers beyond this appendix before deleting shared pure TS. | Dependency/source/build audit finds no RN/Expo host or required bundle. Native-only release and recovery acceptance pass. Preserve engine/native APIs still used by the app. |
 
 The 401-file appendix is not the full deletion boundary.
@@ -349,407 +351,407 @@ Notes name secondary work and immediate deletion candidates. Whole-file lines re
 
 | Path | Lines | Column | Milestone | Note |
 | --- | ---: | :---: | :---: | --- |
-| `apps/browser/src/App.tsx` | 111 | d | 0.7.0 | Window/component placement; also b gates |
-| `apps/browser/src/PaneRoot.tsx` | 36 | d | 0.7.0 | Pane root/context placement |
-| `apps/browser/src/components/AreaBoundary.tsx` | 163 | b | 0.5.0 | Recovery retries/remount and native row state/events; Debug-only failure fixture |
+| `apps/browser/src/App.tsx` | 111 | d | 0.4.6 | Window/component placement; also b gates |
+| `apps/browser/src/PaneRoot.tsx` | 36 | d | 0.4.6 | Pane root/context placement |
+| `apps/browser/src/components/AreaBoundary.tsx` | 163 | b | 0.4.2 | Recovery retries/remount and native row state/events; Debug-only failure fixture |
 | `apps/browser/src/components/AutoHideToolbar.tsx` | 275 | a | 0.4.0 | Fallback toolbar strip pixels; also b motion |
-| `apps/browser/src/components/CliControlPill.tsx` | 61 | d | 0.7.0 | Native CLI-pill placement/feed |
-| `apps/browser/src/components/CommandPanel.tsx` | 299 | b | 0.5.0 | Panel geometry/focus; transparent RN Grow around native Surface/bar, no RN frame fill |
-| `apps/browser/src/components/ContentCard.tsx` | 739 | b | 0.5.0 | Page lifecycle/pooling; also a Little Solara card fill and FrozenPage composition |
-| `apps/browser/src/components/Downloads.tsx` | 361 | b | 0.5.0 | Download status/menu/actions and placement policy; native panel/button adapters draw nothing |
-| `apps/browser/src/components/EmptyCard.tsx` | 7 | d | 0.7.0 | Empty-card native composition |
-| `apps/browser/src/components/FindBar.tsx` | 110 | b | 0.5.0 | Native-only find controls and Surface; JS find/replace/focus state/actions and transparent layout/motion remain. Pooled native Peek has no find mount. |
-| `apps/browser/src/components/HoverSlot.tsx` | 30 | d | 0.7.0 | Transparent layout slots |
-| `apps/browser/src/components/NativeAutoHide.tsx` | 58 | b | 0.5.0 | Toolbar reveal policy; also d feed |
-| `apps/browser/src/components/NativeToolbar.tsx` | 331 | d | 0.7.0 | Native toolbar JSON model; also b click/menu policy |
-| `apps/browser/src/components/NewTabPage.tsx` | 102 | b | 0.5.0 | Hero geometry/intro policy; also a extras composition |
-| `apps/browser/src/components/PooledPageProps.tsx` | 28 | d | 0.7.0 | Pooled-page prop feed |
+| `apps/browser/src/components/CliControlPill.tsx` | 61 | d | 0.4.6 | Native CLI-pill placement/feed |
+| `apps/browser/src/components/CommandPanel.tsx` | 299 | b | 0.4.2 | Panel geometry/focus; transparent RN Grow around native Surface/bar, no RN frame fill |
+| `apps/browser/src/components/ContentCard.tsx` | 739 | b | 0.4.2 | Page lifecycle/pooling; also a Little Solara card fill and FrozenPage composition |
+| `apps/browser/src/components/Downloads.tsx` | 361 | b | 0.4.2 | Download status/menu/actions and placement policy; native panel/button adapters draw nothing |
+| `apps/browser/src/components/EmptyCard.tsx` | 7 | d | 0.4.6 | Empty-card native composition |
+| `apps/browser/src/components/FindBar.tsx` | 110 | b | 0.4.4 | Native-only find controls and Surface; JS find/replace/focus state/actions and transparent layout/motion remain. Pooled native Peek has no find mount. |
+| `apps/browser/src/components/HoverSlot.tsx` | 30 | d | 0.4.6 | Transparent layout slots |
+| `apps/browser/src/components/NativeAutoHide.tsx` | 58 | b | 0.4.2 | Toolbar reveal policy; also d feed |
+| `apps/browser/src/components/NativeToolbar.tsx` | 331 | d | 0.4.6 | Native toolbar JSON model; also b click/menu policy |
+| `apps/browser/src/components/NewTabPage.tsx` | 102 | b | 0.4.2 | Hero geometry/intro policy; also a extras composition |
+| `apps/browser/src/components/PooledPageProps.tsx` | 28 | d | 0.4.6 | Pooled-page prop feed |
 | `apps/browser/src/components/ProfileIndicator.tsx` | 123 | a | 0.4.0 | Fallback profile label; also b menu |
 | `apps/browser/src/components/Sidebar.tsx` | 158 | a | 0.4.0 | Fallback sidebar chrome; also b routing |
 | `apps/browser/src/components/Switch.tsx` | 87 | a | 0.4.0 | RN switch track/thumb |
-| `apps/browser/src/components/Toolbar.tsx` | 59 | d | 0.7.0 | Native toolbar/backdrop state and geometry adapter; no RN band, stripes or hairline |
+| `apps/browser/src/components/Toolbar.tsx` | 59 | d | 0.4.6 | Native toolbar/backdrop state and geometry adapter; no RN band, stripes or hairline |
 | `apps/browser/src/components/TooltipAbove.tsx` | 66 | a | 0.4.0 | RN tooltip label/motion |
-| `apps/browser/src/components/WindowToolbar.tsx` | 51 | b | 0.5.0 | Toolbar routing; also c chrome cache |
-| `apps/browser/src/components/bookmarks/BookmarkDialog.tsx` | 58 | b | 0.5.0 | Bookmark defaults and close handling |
-| `apps/browser/src/components/bookmarks/EditBookmarkDialog.tsx` | 36 | b | 0.5.0 | Bookmark editor state and callbacks |
-| `apps/browser/src/components/bookmarks/NativeBookmarkForms.tsx` | 108 | b | 0.5.0 | Bookmark editing rules; also d host |
-| `apps/browser/src/components/bookmarks/NativeBookmarksBar.tsx` | 84 | d | 0.7.0 | Native bookmarks bar placement/feed; also b actions |
-| `apps/browser/src/components/bookmarks/actions.ts` | 119 | b | 0.5.0 | Bookmark menu/action routing |
-| `apps/browser/src/components/bookmarks/bookmarksBarActions.ts` | 56 | b | 0.5.0 | Bookmarks bar menu/open/edit routing |
-| `apps/browser/src/components/bookmarks/bookmarksBarDrop.ts` | 29 | b | 0.5.0 | Bookmark link-drop validation and mutations |
-| `apps/browser/src/components/bookmarks/bookmarksBarPolicy.ts` | 21 | b | 0.5.0 | Bookmarks bar visibility/capability policy |
-| `apps/browser/src/components/bookmarks/bookmarksBarSnapshot.ts` | 64 | d | 0.7.0 | Native bookmarks bar state/theme projection |
-| `apps/browser/src/components/bookmarks/edit.ts` | 45 | b | 0.5.0 | Bookmark edit/undo decisions |
-| `apps/browser/src/components/bookmarks/formGate.ts` | 13 | b | 0.5.0 | Bookmark form duplicate-submit guard |
-| `apps/browser/src/components/downloadsPlacement.ts` | 43 | b | 0.5.0 | Download panel geometry rules |
-| `apps/browser/src/components/extensions/ExtensionOverlays.tsx` | 128 | b | 0.5.0 | Native install/pin sheet lifecycle/actions; no RN popup/frame |
-| `apps/browser/src/components/extensions/SidePanel.tsx` | 100 | b | 0.5.0 | Native side-panel lifecycle/width/actions; only transparent RN spacer |
-| `apps/browser/src/components/extensions/ToolbarExtensions.tsx` | 210 | b | 0.5.0 | Native toolbar model/menu actions and transparent popup anchor; RN buttons/badge deleted |
-| `apps/browser/src/components/extensions/actions.ts` | 50 | b | 0.5.0 | Extension menu/action routing |
-| `apps/browser/src/components/extensions/bridge.ts` | 483 | b | 0.5.0 | Extension event/install/navigation policy |
-| `apps/browser/src/components/extensions/searchEngines.ts` | 35 | b | 0.5.0 | Extension search-engine policy |
-| `apps/browser/src/components/extensions/sidePanels.ts` | 67 | b | 0.5.0 | Side-panel eligibility/open/close/URL synchronization; also c request maps |
-| `apps/browser/src/components/extensions/state.ts` | 361 | b | 0.5.0 | Extension install/configure/menu/popup lifecycle policy; also c replicas |
-| `apps/browser/src/components/extensions/store.ts` | 108 | c | 0.6.0 | Extension runtime/UI store and schema; also b selectors |
-| `apps/browser/src/components/extensions/webkitPill.ts` | 25 | b | 0.5.0 | Engine-specific extension button model/width policy |
-| `apps/browser/src/components/import/apply.ts` | 351 | b | 0.5.0 | Import discovery/apply orchestration; also c |
-| `apps/browser/src/components/import/arcTheme.ts` | 101 | c | 0.6.0 | Imported Arc theme conversion |
-| `apps/browser/src/components/import/module.ts` | 14 | b | 0.5.0 | Import module capability gate |
-| `apps/browser/src/components/layout/HistoryPopover.tsx` | 72 | b | 0.5.0 | History disposition/actions and native panel feed; RN rows removed |
-| `apps/browser/src/components/layout/NativeSplitToolbars.tsx` | 15 | d | 0.7.0 | Toolbar JSON/callback relay |
-| `apps/browser/src/components/layout/NativeStripControls.tsx` | 77 | d | 0.7.0 | Native controls/glow JSON feed |
-| `apps/browser/src/components/layout/NativeTopStrip.tsx` | 369 | d | 0.7.0 | Strip JSON feed; also b actions |
-| `apps/browser/src/components/layout/PaneOverlays.tsx` | 29 | d | 0.7.0 | Native SadTabView hosting and browser overlay feed; no RN recovery pixels |
-| `apps/browser/src/components/layout/sadTabState.ts` | 8 | d | 0.7.0 | Native SadTab state/theme projection |
-| `apps/browser/src/components/layout/ProfileSwipe.tsx` | 113 | b | 0.5.0 | Profile swipe decisions; native tint placement |
-| `apps/browser/src/components/layout/ShellBackdrop.tsx` | 42 | d | 0.7.0 | Native backdrop placement/feed |
-| `apps/browser/src/components/layout/SidebarDock.tsx` | 489 | b | 0.5.0 | Dock/motion decisions; also a fallback surface |
+| `apps/browser/src/components/WindowToolbar.tsx` | 51 | b | 0.4.2 | Toolbar routing; also c chrome cache |
+| `apps/browser/src/components/bookmarks/BookmarkDialog.tsx` | 58 | b | 0.4.2 | Bookmark defaults and close handling |
+| `apps/browser/src/components/bookmarks/EditBookmarkDialog.tsx` | 36 | b | 0.4.2 | Bookmark editor state and callbacks |
+| `apps/browser/src/components/bookmarks/NativeBookmarkForms.tsx` | 108 | b | 0.4.2 | Bookmark editing rules; also d host |
+| `apps/browser/src/components/bookmarks/NativeBookmarksBar.tsx` | 84 | d | 0.4.6 | Native bookmarks bar placement/feed; also b actions |
+| `apps/browser/src/components/bookmarks/actions.ts` | 119 | b | 0.4.2 | Bookmark menu/action routing |
+| `apps/browser/src/components/bookmarks/bookmarksBarActions.ts` | 56 | b | 0.4.2 | Bookmarks bar menu/open/edit routing |
+| `apps/browser/src/components/bookmarks/bookmarksBarDrop.ts` | 29 | b | 0.4.2 | Bookmark link-drop validation and mutations |
+| `apps/browser/src/components/bookmarks/bookmarksBarPolicy.ts` | 21 | b | 0.4.2 | Bookmarks bar visibility/capability policy |
+| `apps/browser/src/components/bookmarks/bookmarksBarSnapshot.ts` | 64 | d | 0.4.6 | Native bookmarks bar state/theme projection |
+| `apps/browser/src/components/bookmarks/edit.ts` | 45 | b | 0.4.2 | Bookmark edit/undo decisions |
+| `apps/browser/src/components/bookmarks/formGate.ts` | 13 | b | 0.4.2 | Bookmark form duplicate-submit guard |
+| `apps/browser/src/components/downloadsPlacement.ts` | 43 | b | 0.4.2 | Download panel geometry rules |
+| `apps/browser/src/components/extensions/ExtensionOverlays.tsx` | 128 | b | 0.4.4 | Native install/pin sheet lifecycle/actions; no RN popup/frame |
+| `apps/browser/src/components/extensions/SidePanel.tsx` | 100 | b | 0.4.4 | Native side-panel lifecycle/width/actions; only transparent RN spacer |
+| `apps/browser/src/components/extensions/ToolbarExtensions.tsx` | 210 | b | 0.4.4 | Native toolbar model/menu actions and transparent popup anchor; RN buttons/badge deleted |
+| `apps/browser/src/components/extensions/actions.ts` | 50 | b | 0.4.4 | Extension menu/action routing |
+| `apps/browser/src/components/extensions/bridge.ts` | 483 | b | 0.4.4 | Extension event/install/navigation policy |
+| `apps/browser/src/components/extensions/searchEngines.ts` | 35 | b | 0.4.4 | Extension search-engine policy |
+| `apps/browser/src/components/extensions/sidePanels.ts` | 67 | b | 0.4.4 | Side-panel eligibility/open/close/URL synchronization; also c request maps |
+| `apps/browser/src/components/extensions/state.ts` | 361 | b | 0.4.4 | Extension install/configure/menu/popup lifecycle policy; also c replicas |
+| `apps/browser/src/components/extensions/store.ts` | 108 | c | 0.4.5 | Extension runtime/UI store and schema; also b selectors |
+| `apps/browser/src/components/extensions/webkitPill.ts` | 25 | b | 0.4.4 | Engine-specific extension button model/width policy |
+| `apps/browser/src/components/import/apply.ts` | 351 | b | 0.4.2 | Import discovery/apply orchestration; also c |
+| `apps/browser/src/components/import/arcTheme.ts` | 101 | c | 0.4.5 | Imported Arc theme conversion |
+| `apps/browser/src/components/import/module.ts` | 14 | b | 0.4.2 | Import module capability gate |
+| `apps/browser/src/components/layout/HistoryPopover.tsx` | 72 | b | 0.4.2 | History disposition/actions and native panel feed; RN rows removed |
+| `apps/browser/src/components/layout/NativeSplitToolbars.tsx` | 15 | d | 0.4.6 | Toolbar JSON/callback relay |
+| `apps/browser/src/components/layout/NativeStripControls.tsx` | 77 | d | 0.4.6 | Native controls/glow JSON feed |
+| `apps/browser/src/components/layout/NativeTopStrip.tsx` | 369 | d | 0.4.6 | Strip JSON feed; also b actions |
+| `apps/browser/src/components/layout/PaneOverlays.tsx` | 29 | d | 0.4.6 | Native SadTabView hosting and browser overlay feed; no RN recovery pixels |
+| `apps/browser/src/components/layout/sadTabState.ts` | 8 | d | 0.4.6 | Native SadTab state/theme projection |
+| `apps/browser/src/components/layout/ProfileSwipe.tsx` | 113 | b | 0.4.2 | Profile swipe decisions; native tint placement |
+| `apps/browser/src/components/layout/ShellBackdrop.tsx` | 42 | d | 0.4.6 | Native backdrop placement/feed |
+| `apps/browser/src/components/layout/SidebarDock.tsx` | 489 | b | 0.4.4 | Dock/motion decisions; also a fallback surface |
 | `apps/browser/src/components/layout/SplitChrome.tsx` | 344 | a | 0.4.0 | Fallback divider/drop/toast pixels; also b |
 | `apps/browser/src/components/layout/SplitEmptyState.tsx` | 117 | a | 0.4.0 | Fallback pane search pixels; also b |
-| `apps/browser/src/components/layout/SwipeOverlay.tsx` | 197 | b | 0.5.0 | Gesture/navigation policy and native SwipeCapsuleView messages; no RN capsule or list |
+| `apps/browser/src/components/layout/SwipeOverlay.tsx` | 197 | b | 0.4.4 | Gesture/navigation policy and native SwipeCapsuleView messages; no RN capsule or list |
 | `apps/browser/src/components/layout/TopTabStrip.tsx` | 1755 | a | 0.4.0 | Fallback tab-strip pixels; also b drag/menu |
-| `apps/browser/src/components/layout/WindowProfile.tsx` | 26 | d | 0.7.0 | Native profile/neighbour mirror |
-| `apps/browser/src/components/layout/controls.tsx` | 48 | b | 0.5.0 | Drawing-free geometry/modifier/motion/presence adapters; native consumers replace shared controls |
-| `apps/browser/src/components/layout/devExpose.ts` | 13 | d | 0.7.0 | Development exposure facade |
-| `apps/browser/src/components/layout/dockMotion.ts` | 79 | b | 0.5.0 | Dock motion/edge/hit rules; also c |
-| `apps/browser/src/components/layout/fileDrop.tsx` | 132 | b | 0.5.0 | Drop validation and tab placement |
-| `apps/browser/src/components/layout/frozenPage.tsx` | 53 | b | 0.5.0 | Handoff receipt/activation guards and native FrozenPageView state; also d hosting |
-| `apps/browser/src/components/layout/geometry.ts` | 97 | b | 0.5.0 | Split sizing and toolbar geometry |
-| `apps/browser/src/components/layout/history.ts` | 140 | b | 0.5.0 | Back/forward/history target rules; also c |
-| `apps/browser/src/components/layout/measuredWidths.ts` | 32 | c | 0.6.0 | Measured-width cache |
-| `apps/browser/src/components/layout/nativeDock.ts` | 77 | d | 0.7.0 | Native dock state/motion mirror |
-| `apps/browser/src/components/layout/nativeLayoutFeed.ts` | 47 | b | 0.5.0 | Coalesced native layout ownership admission and state feed; also d bridge |
-| `apps/browser/src/components/layout/nativePaneOverlays.ts` | 221 | d | 0.7.0 | Pane overlay/hint JSON feeds |
-| `apps/browser/src/components/layout/nativeSplitChrome.ts` | 156 | d | 0.7.0 | Split JSON feeds; also b toast callback |
-| `apps/browser/src/components/layout/nativeTabDrag.ts` | 58 | b | 0.5.0 | Native drag event decisions |
-| `apps/browser/src/components/layout/openFromPage.ts` | 51 | b | 0.5.0 | Page-created tab/window routing |
-| `apps/browser/src/components/layout/pageState.ts` | 127 | c | 0.6.0 | Page facts and popover store; also b |
-| `apps/browser/src/components/layout/paneFeed.ts` | 69 | c | 0.6.0 | Pane presence/status caches |
-| `apps/browser/src/components/layout/peekHold.ts` | 28 | b | 0.5.0 | Peek hold/dismiss rules |
-| `apps/browser/src/components/layout/pinHandoff.ts` | 125 | c | 0.6.0 | Frozen-page handoff state; also b |
-| `apps/browser/src/components/layout/profilePager.ts` | 230 | b | 0.5.0 | Profile pager decisions; also c/d |
-| `apps/browser/src/components/layout/shellLayout.ts` | 74 | d | 0.7.0 | Shell geometry feed |
-| `apps/browser/src/components/layout/shellModal.ts` | 28 | b | 0.5.0 | Modal layer/interaction policy |
-| `apps/browser/src/components/layout/splitActions.ts` | 101 | b | 0.5.0 | Split creation/drop/menu decisions |
-| `apps/browser/src/components/layout/splitDrop.ts` | 43 | b | 0.5.0 | Split drop hit zones |
-| `apps/browser/src/components/layout/stripFolderMenu.ts` | 19 | b | 0.5.0 | Strip folder menus |
-| `apps/browser/src/components/layout/stripGroups.ts` | 226 | b | 0.5.0 | Strip grouping/drop/menu policy |
-| `apps/browser/src/components/layout/stripReorder.ts` | 70 | b | 0.5.0 | RN reorder motion policy |
-| `apps/browser/src/components/layout/swipeMotion.ts` | 33 | b | 0.5.0 | Swipe thresholds/selection math |
-| `apps/browser/src/components/layout/tabDrag.ts` | 303 | b | 0.5.0 | Drag/drop lifecycle; also c/d |
-| `apps/browser/src/components/layout/toasts.ts` | 23 | c | 0.6.0 | Toast/notice store; also b lifecycle |
-| `apps/browser/src/components/layout/toolbarAutoHide.ts` | 81 | b | 0.5.0 | Toolbar visibility/scroll rules; also c |
-| `apps/browser/src/components/layout/toolbarColors.ts` | 107 | b | 0.5.0 | Toolbar palette/motion policy |
-| `apps/browser/src/components/layout/usePeek.ts` | 51 | b | 0.5.0 | Peek hover/motion decisions |
-| `apps/browser/src/components/layout/useResizeDrag.ts` | 74 | b | 0.5.0 | Split resize interaction |
-| `apps/browser/src/components/layout/windowDrop.ts` | 49 | b | 0.5.0 | Cross-window drag placement |
-| `apps/browser/src/components/layout/windowLayout.ts` | 117 | b | 0.5.0 | Layout/address-bar selection; also c anchors |
-| `apps/browser/src/components/littleSolara/LittleSolaraWindow.tsx` | 190 | b | 0.5.0 | Small-window composition; also d native bar |
+| `apps/browser/src/components/layout/WindowProfile.tsx` | 26 | d | 0.4.6 | Native profile/neighbour mirror |
+| `apps/browser/src/components/layout/controls.tsx` | 48 | b | 0.4.2 | Drawing-free geometry/modifier/motion/presence adapters; native consumers replace shared controls |
+| `apps/browser/src/components/layout/devExpose.ts` | 13 | d | 0.4.6 | Development exposure facade |
+| `apps/browser/src/components/layout/dockMotion.ts` | 79 | b | 0.4.2 | Dock motion/edge/hit rules; also c |
+| `apps/browser/src/components/layout/fileDrop.tsx` | 132 | b | 0.4.2 | Drop validation and tab placement |
+| `apps/browser/src/components/layout/frozenPage.tsx` | 53 | b | 0.4.2 | Handoff receipt/activation guards and native FrozenPageView state; also d hosting |
+| `apps/browser/src/components/layout/geometry.ts` | 97 | b | 0.4.2 | Split sizing and toolbar geometry |
+| `apps/browser/src/components/layout/history.ts` | 140 | b | 0.4.2 | Back/forward/history target rules; also c |
+| `apps/browser/src/components/layout/measuredWidths.ts` | 32 | c | 0.4.5 | Measured-width cache |
+| `apps/browser/src/components/layout/nativeDock.ts` | 77 | d | 0.4.6 | Native dock state/motion mirror |
+| `apps/browser/src/components/layout/nativeLayoutFeed.ts` | 47 | b | 0.4.2 | Coalesced native layout ownership admission and state feed; also d bridge |
+| `apps/browser/src/components/layout/nativePaneOverlays.ts` | 221 | d | 0.4.6 | Pane overlay/hint JSON feeds |
+| `apps/browser/src/components/layout/nativeSplitChrome.ts` | 156 | d | 0.4.6 | Split JSON feeds; also b toast callback |
+| `apps/browser/src/components/layout/nativeTabDrag.ts` | 58 | b | 0.4.4 | Native drag event decisions |
+| `apps/browser/src/components/layout/openFromPage.ts` | 51 | b | 0.4.2 | Page-created tab/window routing |
+| `apps/browser/src/components/layout/pageState.ts` | 127 | c | 0.4.5 | Page facts and popover store; also b |
+| `apps/browser/src/components/layout/paneFeed.ts` | 69 | c | 0.4.5 | Pane presence/status caches |
+| `apps/browser/src/components/layout/peekHold.ts` | 28 | b | 0.4.2 | Peek hold/dismiss rules |
+| `apps/browser/src/components/layout/pinHandoff.ts` | 125 | c | 0.4.5 | Frozen-page handoff state; also b |
+| `apps/browser/src/components/layout/profilePager.ts` | 230 | b | 0.4.2 | Profile pager decisions; also c/d |
+| `apps/browser/src/components/layout/shellLayout.ts` | 74 | d | 0.4.6 | Shell geometry feed |
+| `apps/browser/src/components/layout/shellModal.ts` | 28 | b | 0.4.2 | Modal layer/interaction policy |
+| `apps/browser/src/components/layout/splitActions.ts` | 101 | b | 0.4.2 | Split creation/drop/menu decisions |
+| `apps/browser/src/components/layout/splitDrop.ts` | 43 | b | 0.4.2 | Split drop hit zones |
+| `apps/browser/src/components/layout/stripFolderMenu.ts` | 19 | b | 0.4.4 | Strip folder menus |
+| `apps/browser/src/components/layout/stripGroups.ts` | 226 | b | 0.4.4 | Strip grouping/drop/menu policy |
+| `apps/browser/src/components/layout/stripReorder.ts` | 70 | b | 0.4.4 | RN reorder motion policy |
+| `apps/browser/src/components/layout/swipeMotion.ts` | 33 | b | 0.4.2 | Swipe thresholds/selection math |
+| `apps/browser/src/components/layout/tabDrag.ts` | 303 | b | 0.4.4 | Drag/drop lifecycle; also c/d |
+| `apps/browser/src/components/layout/toasts.ts` | 23 | c | 0.4.5 | Toast/notice store; also b lifecycle |
+| `apps/browser/src/components/layout/toolbarAutoHide.ts` | 81 | b | 0.4.2 | Toolbar visibility/scroll rules; also c |
+| `apps/browser/src/components/layout/toolbarColors.ts` | 107 | b | 0.4.2 | Toolbar palette/motion policy |
+| `apps/browser/src/components/layout/usePeek.ts` | 51 | b | 0.4.2 | Peek hover/motion decisions |
+| `apps/browser/src/components/layout/useResizeDrag.ts` | 74 | b | 0.4.2 | Split resize interaction |
+| `apps/browser/src/components/layout/windowDrop.ts` | 49 | b | 0.4.4 | Cross-window drag placement |
+| `apps/browser/src/components/layout/windowLayout.ts` | 117 | b | 0.4.2 | Layout/address-bar selection; also c anchors |
+| `apps/browser/src/components/littleSolara/LittleSolaraWindow.tsx` | 190 | b | 0.4.2 | Small-window composition; also d native bar |
 | `apps/browser/src/components/littleSolara/SmallChrome.tsx` | 129 | a | 0.4.0 | RN label/progress helpers used by legacy Peek fallback, not native small bar |
-| `apps/browser/src/components/littleSolara/actions.ts` | 134 | b | 0.5.0 | Small-window open/expand routing |
-| `apps/browser/src/components/live/CalendarPreview.tsx` | 123 | b | 0.5.0 | Calendar grouping/labels/join policy; also d native card feed |
+| `apps/browser/src/components/littleSolara/actions.ts` | 134 | b | 0.4.2 | Small-window open/expand routing |
+| `apps/browser/src/components/live/CalendarPreview.tsx` | 123 | b | 0.4.4 | Calendar grouping/labels/join policy; also d native card feed |
 | `apps/browser/src/components/live/LiveItemCard.tsx` | 277 | a | 0.4.0 | Fallback live-card pixels; also b actions |
-| `apps/browser/src/components/live/MeetingAlert.tsx` | 121 | b | 0.5.0 | Alert placement/join policy; also d feed |
-| `apps/browser/src/components/live/colors.ts` | 33 | d | 0.7.0 | Live badge palette |
-| `apps/browser/src/components/media/CastPicker.tsx` | 92 | b | 0.5.0 | Cast target selection; also d host |
-| `apps/browser/src/components/media/HoverPlayer.tsx` | 59 | d | 0.7.0 | Native hover-player placement/feed |
-| `apps/browser/src/components/media/ShareBar.tsx` | 146 | b | 0.5.0 | Share controls; also d animated native placement |
-| `apps/browser/src/components/media/SharePicker.tsx` | 196 | b | 0.5.0 | Screen-share selection; also d host |
-| `apps/browser/src/components/media/SidebarPlayer.tsx` | 25 | b | 0.5.0 | Sidebar player eligibility/order/selection and action routing |
+| `apps/browser/src/components/live/MeetingAlert.tsx` | 121 | b | 0.4.4 | Alert placement/join policy; also d feed |
+| `apps/browser/src/components/live/colors.ts` | 33 | d | 0.4.6 | Live badge palette |
+| `apps/browser/src/components/media/CastPicker.tsx` | 92 | b | 0.4.4 | Cast target selection; also d host |
+| `apps/browser/src/components/media/HoverPlayer.tsx` | 59 | d | 0.4.6 | Native hover-player placement/feed |
+| `apps/browser/src/components/media/ShareBar.tsx` | 146 | b | 0.4.4 | Share controls; also d animated native placement |
+| `apps/browser/src/components/media/SharePicker.tsx` | 196 | b | 0.4.4 | Screen-share selection; also d host |
+| `apps/browser/src/components/media/SidebarPlayer.tsx` | 25 | b | 0.4.4 | Sidebar player eligibility/order/selection and action routing |
 | `apps/browser/src/components/media/TabBadges.tsx` | 55 | a | 0.4.0 | RN PiP/capture badge fills only in React top-strip fallback |
-| `apps/browser/src/components/media/artwork.ts` | 51 | c | 0.6.0 | Artwork cache and loading |
-| `apps/browser/src/components/media/cast.ts` | 80 | b | 0.5.0 | Cast target/menu policy |
-| `apps/browser/src/components/media/nativeMedia.tsx` | 117 | b | 0.5.0 | Media control/action policy; also d JSON host |
-| `apps/browser/src/components/media/pip.ts` | 44 | b | 0.5.0 | PiP open/close policy |
-| `apps/browser/src/components/media/state.ts` | 189 | c | 0.6.0 | Media session and PiP stores |
-| `apps/browser/src/components/media/tokens.ts` | 1 | d | 0.7.0 | Media token re-export |
-| `apps/browser/src/components/nativeDownloadsPanel.ts` | 54 | d | 0.7.0 | Native download-panel state feed with owned publisher cleanup |
-| `apps/browser/src/components/nativeHostProps.ts` | 85 | d | 0.7.0 | Native host JSON shapes |
-| `apps/browser/src/components/ntp/CheckInBanner.tsx` | 42 | d | 0.7.0 | Native check-in state/action bridge; no RN drawing |
-| `apps/browser/src/components/ntp/NativeNewTabHero.tsx` | 75 | d | 0.7.0 | Native hero host/feed; also b navigation callbacks |
-| `apps/browser/src/components/ntp/Personalize.tsx` | 64 | b | 0.5.0 | Native Personalize open/actions; also d theme/profile/layout feeds |
-| `apps/browser/src/components/ntp/Postcard.tsx` | 82 | d | 0.7.0 | Native postcard/page bridge with profile/presentation receipts; no RN drawing |
-| `apps/browser/src/components/ntp/index.tsx` | 30 | d | 0.7.0 | Transparent New Tab native-host composition and tour anchors |
-| `apps/browser/src/components/ntp/newTabLayout.ts` | 21 | b | 0.5.0 | New Tab hero geometry |
-| `apps/browser/src/components/ntp/releaseNotes.ts` | 133 | c | 0.6.0 | Release-note content/progress store and current-page receipts; also b |
-| `apps/browser/src/components/omnibox/NativeOmniboxBar.tsx` | 80 | d | 0.7.0 | Native bar host/focus relay; also b open callbacks |
-| `apps/browser/src/components/omnibox/actions.ts` | 141 | b | 0.5.0 | Command candidate eligibility/titles |
-| `apps/browser/src/components/omnibox/barState.ts` | 51 | b | 0.5.0 | Bar dismissal/focus policy; also c |
-| `apps/browser/src/components/omnibox/devDriver.ts` | 55 | b | 0.5.0 | Omnibox driver/trace hooks |
-| `apps/browser/src/components/omnibox/dropdownStart.ts` | 47 | b | 0.5.0 | App-dead; retained for source-reading tests and native idle-tabs fixture hash; initial suggestion selection |
-| `apps/browser/src/components/omnibox/extensions.ts` | 17 | c | 0.6.0 | Extension candidate projection |
-| `apps/browser/src/components/omnibox/knownHosts.ts` | 30 | c | 0.6.0 | Perf/test-only history host projection; micro-bench and suggest-hermes consumers remain |
-| `apps/browser/src/components/omnibox/nativeBar.tsx` | 207 | b | 0.5.0 | Open/action/menu decisions; also d feeds |
-| `apps/browser/src/components/omnibox/newTabBar.ts` | 88 | b | 0.5.0 | New Tab bar open/close/target rules |
-| `apps/browser/src/components/omnibox/open.ts` | 30 | b | 0.5.0 | Navigation/switch disposition |
-| `apps/browser/src/components/omnibox/organizeActions.ts` | 154 | b | 0.5.0 | Organize-command eligibility |
-| `apps/browser/src/components/omnibox/paste.ts` | 35 | b | 0.5.0 | Clipboard URL/menu decisions |
-| `apps/browser/src/components/omnibox/profileBookmarks.ts` | 20 | c | 0.6.0 | Bookmark row projection |
-| `apps/browser/src/components/omnibox/runBar.ts` | 79 | b | 0.5.0 | Command/extension dispatch |
-| `apps/browser/src/components/omnibox/workspaceSources.ts` | 101 | b | 0.5.0 | Workspace feed selection; also d |
-| `apps/browser/src/components/onboarding/OnboardingOverlay.tsx` | 20 | d | 0.7.0 | Native onboarding/tour placement |
-| `apps/browser/src/components/onboarding/index.ts` | 3 | d | 0.7.0 | Onboarding export facade |
-| `apps/browser/src/components/onboarding/sites.ts` | 66 | b | 0.5.0 | Onboarding site/pin selection |
-| `apps/browser/src/components/onboarding/state.ts` | 397 | c | 0.6.0 | Onboarding document/session state; also b |
-| `apps/browser/src/components/onboarding/tour/ToolTour.tsx` | 64 | d | 0.7.0 | Native tour state/anchor feed |
-| `apps/browser/src/components/onboarding/tour/anchors.ts` | 47 | d | 0.7.0 | Native tour anchor feed |
-| `apps/browser/src/components/onboarding/tour/state.ts` | 104 | c | 0.6.0 | Tour progress store; also b |
-| `apps/browser/src/components/overlayGates.ts` | 11 | d | 0.7.0 | Overlay owner gate helper |
-| `apps/browser/src/components/pageEvents.ts` | 412 | b | 0.5.0 | Page-event handling/navigation; also c |
-| `apps/browser/src/components/pages/ClearDataDialog.tsx` | 35 | b | 0.5.0 | Clear-data native invocation |
-| `apps/browser/src/components/pages/InternalPage.tsx` | 38 | d | 0.7.0 | Native internal-page placement |
-| `apps/browser/src/components/pages/NativeBookmarksPage.tsx` | 100 | b | 0.5.0 | Bookmark commands; also d page host |
-| `apps/browser/src/components/pages/NativeDownloadsPage.tsx` | 37 | b | 0.5.0 | Download commands; also d page host |
-| `apps/browser/src/components/pages/NativeHistoryPage.tsx` | 56 | b | 0.5.0 | History commands; also d page host |
-| `apps/browser/src/components/pages/appUrls.ts` | 46 | b | 0.5.0 | App URL routing |
-| `apps/browser/src/components/pages/devDrivers.ts` | 43 | b | 0.5.0 | Native page development driver |
-| `apps/browser/src/components/pages/index.ts` | 3 | d | 0.7.0 | Internal-page export facade |
-| `apps/browser/src/components/pages/internalUrls.ts` | 27 | b | 0.5.0 | Internal URL classification |
-| `apps/browser/src/components/pages/nativePageTheme.ts` | 12 | d | 0.7.0 | Native page theme feed |
-| `apps/browser/src/components/pages/urls.ts` | 28 | b | 0.5.0 | Internal URL/navigation routing |
-| `apps/browser/src/components/peek/NativePeekMount.tsx` | 72 | b | 0.5.0 | Peek transitions; also d native state |
+| `apps/browser/src/components/media/artwork.ts` | 51 | c | 0.4.5 | Artwork cache and loading |
+| `apps/browser/src/components/media/cast.ts` | 80 | b | 0.4.4 | Cast target/menu policy |
+| `apps/browser/src/components/media/nativeMedia.tsx` | 117 | b | 0.4.4 | Media control/action policy; also d JSON host |
+| `apps/browser/src/components/media/pip.ts` | 44 | b | 0.4.4 | PiP open/close policy |
+| `apps/browser/src/components/media/state.ts` | 189 | c | 0.4.5 | Media session and PiP stores |
+| `apps/browser/src/components/media/tokens.ts` | 1 | d | 0.4.6 | Media token re-export |
+| `apps/browser/src/components/nativeDownloadsPanel.ts` | 54 | d | 0.4.6 | Native download-panel state feed with owned publisher cleanup |
+| `apps/browser/src/components/nativeHostProps.ts` | 85 | d | 0.4.6 | Native host JSON shapes |
+| `apps/browser/src/components/ntp/CheckInBanner.tsx` | 42 | d | 0.4.6 | Native check-in state/action bridge; no RN drawing |
+| `apps/browser/src/components/ntp/NativeNewTabHero.tsx` | 75 | d | 0.4.6 | Native hero host/feed; also b navigation callbacks |
+| `apps/browser/src/components/ntp/Personalize.tsx` | 64 | b | 0.4.2 | Native Personalize open/actions; also d theme/profile/layout feeds |
+| `apps/browser/src/components/ntp/Postcard.tsx` | 82 | d | 0.4.6 | Native postcard/page bridge with profile/presentation receipts; no RN drawing |
+| `apps/browser/src/components/ntp/index.tsx` | 30 | d | 0.4.6 | Transparent New Tab native-host composition and tour anchors |
+| `apps/browser/src/components/ntp/newTabLayout.ts` | 21 | b | 0.4.2 | New Tab hero geometry |
+| `apps/browser/src/components/ntp/releaseNotes.ts` | 133 | c | 0.4.5 | Release-note content/progress store and current-page receipts; also b |
+| `apps/browser/src/components/omnibox/NativeOmniboxBar.tsx` | 80 | d | 0.4.6 | Native bar host/focus relay; also b open callbacks |
+| `apps/browser/src/components/omnibox/actions.ts` | 141 | b | 0.4.2 | Command candidate eligibility/titles |
+| `apps/browser/src/components/omnibox/barState.ts` | 51 | b | 0.4.2 | Bar dismissal/focus policy; also c |
+| `apps/browser/src/components/omnibox/devDriver.ts` | 55 | b | 0.4.2 | Omnibox driver/trace hooks |
+| `apps/browser/src/components/omnibox/dropdownStart.ts` | 47 | b | 0.4.2 | App-dead; retained for source-reading tests and native idle-tabs fixture hash; initial suggestion selection |
+| `apps/browser/src/components/omnibox/extensions.ts` | 17 | c | 0.4.5 | Extension candidate projection |
+| `apps/browser/src/components/omnibox/knownHosts.ts` | 30 | c | 0.4.5 | Perf/test-only history host projection; micro-bench and suggest-hermes consumers remain |
+| `apps/browser/src/components/omnibox/nativeBar.tsx` | 207 | b | 0.4.2 | Open/action/menu decisions; also d feeds |
+| `apps/browser/src/components/omnibox/newTabBar.ts` | 88 | b | 0.4.2 | New Tab bar open/close/target rules |
+| `apps/browser/src/components/omnibox/open.ts` | 30 | b | 0.4.2 | Navigation/switch disposition |
+| `apps/browser/src/components/omnibox/organizeActions.ts` | 154 | b | 0.4.2 | Organize-command eligibility |
+| `apps/browser/src/components/omnibox/paste.ts` | 35 | b | 0.4.2 | Clipboard URL/menu decisions |
+| `apps/browser/src/components/omnibox/profileBookmarks.ts` | 20 | c | 0.4.5 | Bookmark row projection |
+| `apps/browser/src/components/omnibox/runBar.ts` | 79 | b | 0.4.2 | Command/extension dispatch |
+| `apps/browser/src/components/omnibox/workspaceSources.ts` | 101 | b | 0.4.2 | Workspace feed selection; also d |
+| `apps/browser/src/components/onboarding/OnboardingOverlay.tsx` | 20 | d | 0.4.6 | Native onboarding/tour placement |
+| `apps/browser/src/components/onboarding/index.ts` | 3 | d | 0.4.6 | Onboarding export facade |
+| `apps/browser/src/components/onboarding/sites.ts` | 66 | b | 0.4.2 | Onboarding site/pin selection |
+| `apps/browser/src/components/onboarding/state.ts` | 397 | c | 0.4.5 | Onboarding document/session state; also b |
+| `apps/browser/src/components/onboarding/tour/ToolTour.tsx` | 64 | d | 0.4.6 | Native tour state/anchor feed |
+| `apps/browser/src/components/onboarding/tour/anchors.ts` | 47 | d | 0.4.6 | Native tour anchor feed |
+| `apps/browser/src/components/onboarding/tour/state.ts` | 104 | c | 0.4.5 | Tour progress store; also b |
+| `apps/browser/src/components/overlayGates.ts` | 11 | d | 0.4.6 | Overlay owner gate helper |
+| `apps/browser/src/components/pageEvents.ts` | 412 | b | 0.4.2 | Page-event handling/navigation; also c |
+| `apps/browser/src/components/pages/ClearDataDialog.tsx` | 35 | b | 0.4.2 | Clear-data native invocation |
+| `apps/browser/src/components/pages/InternalPage.tsx` | 38 | d | 0.4.6 | Native internal-page placement |
+| `apps/browser/src/components/pages/NativeBookmarksPage.tsx` | 100 | b | 0.4.2 | Bookmark commands; also d page host |
+| `apps/browser/src/components/pages/NativeDownloadsPage.tsx` | 37 | b | 0.4.2 | Download commands; also d page host |
+| `apps/browser/src/components/pages/NativeHistoryPage.tsx` | 56 | b | 0.4.2 | History commands; also d page host |
+| `apps/browser/src/components/pages/appUrls.ts` | 46 | b | 0.4.2 | App URL routing |
+| `apps/browser/src/components/pages/devDrivers.ts` | 43 | b | 0.4.2 | Native page development driver |
+| `apps/browser/src/components/pages/index.ts` | 3 | d | 0.4.6 | Internal-page export facade |
+| `apps/browser/src/components/pages/internalUrls.ts` | 27 | b | 0.4.2 | Internal URL classification |
+| `apps/browser/src/components/pages/nativePageTheme.ts` | 12 | d | 0.4.6 | Native page theme feed |
+| `apps/browser/src/components/pages/urls.ts` | 28 | b | 0.4.2 | Internal URL/navigation routing |
+| `apps/browser/src/components/peek/NativePeekMount.tsx` | 72 | b | 0.4.2 | Peek transitions; also d native state |
 | `apps/browser/src/components/peek/PeekOverlay.tsx` | 239 | a | 0.4.0 | Fallback peek card/bar; also b interaction |
-| `apps/browser/src/components/peek/actions.ts` | 136 | b | 0.5.0 | Peek open/close/expand routing |
-| `apps/browser/src/components/peek/nativePeek.ts` | 56 | d | 0.7.0 | Native peek state feed |
-| `apps/browser/src/components/peek/pinch.ts` | 17 | b | 0.5.0 | Pinch-to-peek interaction |
-| `apps/browser/src/components/pooledPages.ts` | 156 | b | 0.5.0 | Pool plans/navigation reconciliation; also d |
+| `apps/browser/src/components/peek/actions.ts` | 136 | b | 0.4.2 | Peek open/close/expand routing |
+| `apps/browser/src/components/peek/nativePeek.ts` | 56 | d | 0.4.6 | Native peek state feed |
+| `apps/browser/src/components/peek/pinch.ts` | 17 | b | 0.4.2 | Pinch-to-peek interaction |
+| `apps/browser/src/components/pooledPages.ts` | 156 | b | 0.4.2 | Pool plans/navigation reconciliation; also d |
 | `apps/browser/src/components/primitives.tsx` | 143 | a | 0.4.0 | IconButton still draws RN; favicon/image/initial/New Tab adapters host native sidebar icons; also b hover |
-| `apps/browser/src/components/profiles/CreateProfile.tsx` | 80 | b | 0.5.0 | Create-profile decisions; also d host |
+| `apps/browser/src/components/profiles/CreateProfile.tsx` | 80 | b | 0.4.2 | Create-profile decisions; also d host |
 | `apps/browser/src/components/profiles/ProfileDots.tsx` | 69 | a | 0.4.0 | Fallback RN profile-dot fills; also b switching |
-| `apps/browser/src/components/profiles/icons.tsx` | 2 | b | 0.5.0 | Profile symbol-name parsing; no RN pixels |
+| `apps/browser/src/components/profiles/icons.tsx` | 2 | b | 0.4.2 | Profile symbol-name parsing; no RN pixels |
 | `apps/browser/src/components/settings/controls.tsx` | 311 | a | 0.4.0 | Live useFormColors; RN widget exports, including Checkbox, now unconsumed |
-| `apps/browser/src/components/settings/native/autofill.ts` | 36 | c | 0.6.0 | Autofill resource/cache facade; also b CRUD |
-| `apps/browser/src/components/settings/native/extensions.ts` | 31 | b | 0.5.0 | Extension close/open/refresh routing; also d |
-| `apps/browser/src/components/settings/native/import.ts` | 438 | b | 0.5.0 | Import RPC orchestration; also c progress |
-| `apps/browser/src/components/settings/native/live.ts` | 28 | b | 0.5.0 | Live-folder/OAuth/window routing |
-| `apps/browser/src/components/settings/native/onboarding.ts` | 94 | b | 0.5.0 | Onboarding action routing |
-| `apps/browser/src/components/settings/native/passwords.ts` | 15 | b | 0.5.0 | Password CSV import routing; also d availability |
-| `apps/browser/src/components/settings/native/privacy.ts` | 46 | b | 0.5.0 | Privacy clear-data operations |
-| `apps/browser/src/components/settings/native/profiles.ts` | 97 | b | 0.5.0 | Profile settings operations |
-| `apps/browser/src/components/settings/native/resources.ts` | 54 | c | 0.6.0 | Async resource cache/generation tracking |
-| `apps/browser/src/components/settings/native/shortcuts.ts` | 11 | d | 0.7.0 | Shortcut topic mirror |
-| `apps/browser/src/components/settings/native/sync.ts` | 119 | d | 0.7.0 | Sync status/action facade; also c |
-| `apps/browser/src/components/settings/nativeSettings.ts` | 116 | b | 0.5.0 | JS topic/RPC server; also d feeds |
-| `apps/browser/src/components/settings/searchMatch.ts` | 135 | b | 0.5.0 | Settings query matching/ranking |
-| `apps/browser/src/components/settings/searchState.ts` | 30 | c | 0.6.0 | Settings search store |
-| `apps/browser/src/components/settings/settingsIndex.ts` | 573 | c | 0.6.0 | Settings search catalog |
-| `apps/browser/src/components/settings/windows.ts` | 43 | b | 0.5.0 | Settings/import window routing |
-| `apps/browser/src/components/sidebar/AddressBar.tsx` | 99 | d | 0.7.0 | Native sidebar address host/model/action feed; RN header/URL bodies removed |
-| `apps/browser/src/components/sidebar/FolderPanel.tsx` | 83 | d | 0.7.0 | Native folder panel lifecycle |
+| `apps/browser/src/components/settings/native/autofill.ts` | 36 | c | 0.4.5 | Autofill resource/cache facade; also b CRUD |
+| `apps/browser/src/components/settings/native/extensions.ts` | 31 | b | 0.4.2 | Extension close/open/refresh routing; also d |
+| `apps/browser/src/components/settings/native/import.ts` | 438 | b | 0.4.2 | Import RPC orchestration; also c progress |
+| `apps/browser/src/components/settings/native/live.ts` | 28 | b | 0.4.2 | Live-folder/OAuth/window routing |
+| `apps/browser/src/components/settings/native/onboarding.ts` | 94 | b | 0.4.2 | Onboarding action routing |
+| `apps/browser/src/components/settings/native/passwords.ts` | 15 | b | 0.4.2 | Password CSV import routing; also d availability |
+| `apps/browser/src/components/settings/native/privacy.ts` | 46 | b | 0.4.2 | Privacy clear-data operations |
+| `apps/browser/src/components/settings/native/profiles.ts` | 97 | b | 0.4.2 | Profile settings operations |
+| `apps/browser/src/components/settings/native/resources.ts` | 54 | c | 0.4.5 | Async resource cache/generation tracking |
+| `apps/browser/src/components/settings/native/shortcuts.ts` | 11 | d | 0.4.6 | Shortcut topic mirror |
+| `apps/browser/src/components/settings/native/sync.ts` | 119 | d | 0.4.6 | Sync status/action facade; also c |
+| `apps/browser/src/components/settings/nativeSettings.ts` | 116 | b | 0.4.2 | JS topic/RPC server; also d feeds |
+| `apps/browser/src/components/settings/searchMatch.ts` | 135 | b | 0.4.2 | Settings query matching/ranking |
+| `apps/browser/src/components/settings/searchState.ts` | 30 | c | 0.4.5 | Settings search store |
+| `apps/browser/src/components/settings/settingsIndex.ts` | 573 | c | 0.4.5 | Settings search catalog |
+| `apps/browser/src/components/settings/windows.ts` | 43 | b | 0.4.2 | Settings/import window routing |
+| `apps/browser/src/components/sidebar/AddressBar.tsx` | 99 | d | 0.4.6 | Native sidebar address host/model/action feed; RN header/URL bodies removed |
+| `apps/browser/src/components/sidebar/FolderPanel.tsx` | 83 | d | 0.4.6 | Native folder panel lifecycle |
 | `apps/browser/src/components/sidebar/FolderTile.tsx` | 41 | a | 0.4.0 | RN folder mosaic layout |
-| `apps/browser/src/components/sidebar/GroupPanel.tsx` | 111 | b | 0.5.0 | Group row selection, state projection and action/focus receipts; native host draws search/list/rows |
+| `apps/browser/src/components/sidebar/GroupPanel.tsx` | 111 | b | 0.4.4 | Group row selection, state projection and action/focus receipts; native host draws search/list/rows |
 | `apps/browser/src/components/sidebar/HoverCard.tsx` | 367 | a | 0.4.0 | Fallback hover pixels; also b native routing |
-| `apps/browser/src/components/sidebar/IconPicker.tsx` | 74 | b | 0.5.0 | Picker events; also d native host |
-| `apps/browser/src/components/sidebar/NativeSidebar.tsx` | 412 | d | 0.7.0 | Sidebar JSON feed; also b actions |
-| `apps/browser/src/components/sidebar/Overlays.tsx` | 26 | b | 0.5.0 | Overlay routing; also a child UI |
-| `apps/browser/src/components/sidebar/ResizeHandle.tsx` | 27 | b | 0.5.0 | Resize gesture decisions |
-| `apps/browser/src/components/sidebar/SearchTabs.tsx` | 81 | b | 0.5.0 | Search ranking; also d native feed |
+| `apps/browser/src/components/sidebar/IconPicker.tsx` | 74 | b | 0.4.4 | Picker events; also d native host |
+| `apps/browser/src/components/sidebar/NativeSidebar.tsx` | 412 | d | 0.4.6 | Sidebar JSON feed; also b actions |
+| `apps/browser/src/components/sidebar/Overlays.tsx` | 26 | b | 0.4.4 | Overlay routing; also a child UI |
+| `apps/browser/src/components/sidebar/ResizeHandle.tsx` | 27 | b | 0.4.4 | Resize gesture decisions |
+| `apps/browser/src/components/sidebar/SearchTabs.tsx` | 81 | b | 0.4.4 | Search ranking; also d native feed |
 | `apps/browser/src/components/sidebar/TabIcon.tsx` | 109 | a | 0.4.0 | RN favicon/engine-mark pixels |
-| `apps/browser/src/components/sidebar/TabSwitcher.tsx` | 9 | d | 0.7.0 | Native switcher state feed |
-| `apps/browser/src/components/sidebar/actions.ts` | 138 | b | 0.5.0 | Tab selection/rename decisions |
-| `apps/browser/src/components/sidebar/cleanUpUpsell.ts` | 49 | b | 0.5.0 | Cleanup offer/dismiss rules |
-| `apps/browser/src/components/sidebar/closeControl.ts` | 53 | b | 0.5.0 | Close/return-to-pin semantics |
-| `apps/browser/src/components/sidebar/commands.ts` | 74 | b | 0.5.0 | Sidebar command/menu enablement |
-| `apps/browser/src/components/sidebar/effects.ts` | 53 | b | 0.5.0 | Sidebar/live-service startup effects |
-| `apps/browser/src/components/sidebar/entries.ts` | 130 | b | 0.5.0 | Sidebar ordering/group/split queries |
-| `apps/browser/src/components/sidebar/fileDrop.tsx` | 21 | b | 0.5.0 | Sidebar drop target adapter |
-| `apps/browser/src/components/sidebar/groupPanelRows.ts` | 40 | b | 0.5.0 | Group search/sort rules |
-| `apps/browser/src/components/sidebar/hover.ts` | 153 | b | 0.5.0 | Hover intent/hold/dismiss rules |
-| `apps/browser/src/components/sidebar/hoverAim.ts` | 20 | b | 0.5.0 | Hover-card pointer intent |
-| `apps/browser/src/components/sidebar/hoverMotion.ts` | 109 | b | 0.5.0 | Hover placement/motion policy |
-| `apps/browser/src/components/sidebar/liveMenus.ts` | 189 | b | 0.5.0 | Live-folder/calendar menus |
-| `apps/browser/src/components/sidebar/menus.ts` | 438 | b | 0.5.0 | Tab/group/sidebar menus and cleanup |
-| `apps/browser/src/components/sidebar/movePinned.ts` | 98 | b | 0.5.0 | Pin/unpin ordering rules |
-| `apps/browser/src/components/sidebar/nativeDrag.ts` | 157 | b | 0.5.0 | Native drag callbacks/drop policy |
-| `apps/browser/src/components/sidebar/nativeHoverCard.ts` | 297 | d | 0.7.0 | Native hover-card feed; also b kind choice |
-| `apps/browser/src/components/sidebar/nativeLive.ts` | 101 | b | 0.5.0 | Live item actions; also d replica |
-| `apps/browser/src/components/sidebar/nativeTabPickers.ts` | 114 | d | 0.7.0 | Native search/switcher JSON feed |
-| `apps/browser/src/components/sidebar/pinnedOrder.ts` | 102 | b | 0.5.0 | Live/pinned ordering rules |
-| `apps/browser/src/components/sidebar/sidebarShell.ts` | 5 | d | 0.7.0 | Native full-column capability/ownership gate |
-| `apps/browser/src/components/sidebar/state.ts` | 31 | c | 0.6.0 | Sidebar hover/rename/width store |
-| `apps/browser/src/components/sidebar/switcher.ts` | 108 | b | 0.5.0 | Keyboard/mouse tab-switch policy |
-| `apps/browser/src/components/sidebar/tidyPinsUi.ts` | 25 | b | 0.5.0 | Tidy/undo command routing |
-| `apps/browser/src/components/sidebar/tileFolderUi.ts` | 82 | b | 0.5.0 | Tile-folder menu/open/rename rules |
-| `apps/browser/src/components/sidebar/tokens.ts` | 128 | d | 0.7.0 | Sidebar palette/size tokens |
+| `apps/browser/src/components/sidebar/TabSwitcher.tsx` | 9 | d | 0.4.6 | Native switcher state feed |
+| `apps/browser/src/components/sidebar/actions.ts` | 138 | b | 0.4.4 | Tab selection/rename decisions |
+| `apps/browser/src/components/sidebar/cleanUpUpsell.ts` | 49 | b | 0.4.4 | Cleanup offer/dismiss rules |
+| `apps/browser/src/components/sidebar/closeControl.ts` | 53 | b | 0.4.4 | Close/return-to-pin semantics |
+| `apps/browser/src/components/sidebar/commands.ts` | 74 | b | 0.4.4 | Sidebar command/menu enablement |
+| `apps/browser/src/components/sidebar/effects.ts` | 53 | b | 0.4.4 | Sidebar/live-service startup effects |
+| `apps/browser/src/components/sidebar/entries.ts` | 130 | b | 0.4.4 | Sidebar ordering/group/split queries |
+| `apps/browser/src/components/sidebar/fileDrop.tsx` | 21 | b | 0.4.4 | Sidebar drop target adapter |
+| `apps/browser/src/components/sidebar/groupPanelRows.ts` | 40 | b | 0.4.4 | Group search/sort rules |
+| `apps/browser/src/components/sidebar/hover.ts` | 153 | b | 0.4.4 | Hover intent/hold/dismiss rules |
+| `apps/browser/src/components/sidebar/hoverAim.ts` | 20 | b | 0.4.4 | Hover-card pointer intent |
+| `apps/browser/src/components/sidebar/hoverMotion.ts` | 109 | b | 0.4.4 | Hover placement/motion policy |
+| `apps/browser/src/components/sidebar/liveMenus.ts` | 189 | b | 0.4.4 | Live-folder/calendar menus |
+| `apps/browser/src/components/sidebar/menus.ts` | 438 | b | 0.4.4 | Tab/group/sidebar menus and cleanup |
+| `apps/browser/src/components/sidebar/movePinned.ts` | 98 | b | 0.4.4 | Pin/unpin ordering rules |
+| `apps/browser/src/components/sidebar/nativeDrag.ts` | 157 | b | 0.4.4 | Native drag callbacks/drop policy |
+| `apps/browser/src/components/sidebar/nativeHoverCard.ts` | 297 | d | 0.4.6 | Native hover-card feed; also b kind choice |
+| `apps/browser/src/components/sidebar/nativeLive.ts` | 101 | b | 0.4.4 | Live item actions; also d replica |
+| `apps/browser/src/components/sidebar/nativeTabPickers.ts` | 114 | d | 0.4.6 | Native search/switcher JSON feed |
+| `apps/browser/src/components/sidebar/pinnedOrder.ts` | 102 | b | 0.4.4 | Live/pinned ordering rules |
+| `apps/browser/src/components/sidebar/sidebarShell.ts` | 5 | d | 0.4.6 | Native full-column capability/ownership gate |
+| `apps/browser/src/components/sidebar/state.ts` | 31 | c | 0.4.5 | Sidebar hover/rename/width store |
+| `apps/browser/src/components/sidebar/switcher.ts` | 108 | b | 0.4.4 | Keyboard/mouse tab-switch policy |
+| `apps/browser/src/components/sidebar/tidyPinsUi.ts` | 25 | b | 0.4.4 | Tidy/undo command routing |
+| `apps/browser/src/components/sidebar/tileFolderUi.ts` | 82 | b | 0.4.4 | Tile-folder menu/open/rename rules |
+| `apps/browser/src/components/sidebar/tokens.ts` | 128 | d | 0.4.6 | Sidebar palette/size tokens |
 | `apps/browser/src/components/site/Autofill.tsx` | 48 | a | 0.4.0 | Unused RN NetworkBadge export; requestAutofill behavior remains live |
-| `apps/browser/src/components/site/DeveloperButtons.tsx` | 29 | b | 0.5.0 | Developer reload/menu actions; RN button body removed |
+| `apps/browser/src/components/site/DeveloperButtons.tsx` | 29 | b | 0.4.4 | Developer reload/menu actions; RN button body removed |
 | `apps/browser/src/components/site/DeveloperStripes.tsx` | 22 | a | 0.4.0 | RN developer stripe image |
-| `apps/browser/src/components/site/DeviceChooser.tsx` | 117 | b | 0.5.0 | Chooser state/selection/guards/actions and native body feed; RN chooser body removed |
-| `apps/browser/src/components/site/EnginePrompt.tsx` | 29 | b | 0.5.0 | Engine offer/remember actions and native prompt feed; RN body removed |
-| `apps/browser/src/components/site/NativePromptBody.tsx` | 97 | d | 0.7.0 | Native-only prompt placement/size/event feed, independent of toolbar/pages capabilities |
-| `apps/browser/src/components/site/NativeSiteControls.tsx` | 208 | b | 0.5.0 | Site-panel decisions; also d native host |
-| `apps/browser/src/components/site/Prompts.tsx` | 226 | b | 0.5.0 | Permission/password/autofill/external/popup answers and native prompt specs; RN bodies removed |
-| `apps/browser/src/components/site/SelectionPopover.tsx` | 57 | b | 0.5.0 | Selection delay/search actions and native SelectionBarView state; also d hosting |
-| `apps/browser/src/components/site/SiteControls.tsx` | 6 | d | 0.7.0 | Native site-panel host and close-presence adapter; RN panel removed |
-| `apps/browser/src/components/site/SiteControlsParts.tsx` | 12 | d | 0.7.0 | SITE_PANEL geometry constants only; RN tiles/rows removed |
-| `apps/browser/src/components/site/SiteExtensions.tsx` | 15 | b | 0.5.0 | Extension menu actions only; RN extension grid removed |
-| `apps/browser/src/components/site/TranslateControls.tsx` | 30 | b | 0.5.0 | Translation language/menu actions only; RN rows/buttons removed |
-| `apps/browser/src/components/site/ZoomControls.tsx` | 39 | b | 0.5.0 | Zoom actions and native panel state/placement feed; RN controls removed |
-| `apps/browser/src/components/site/developerMode.ts` | 111 | b | 0.5.0 | Developer URL/reload policy; also c |
-| `apps/browser/src/components/site/pageTranslator.ts` | 201 | b | 0.5.0 | Page translation execution |
-| `apps/browser/src/components/site/permissions.ts` | 139 | b | 0.5.0 | Permission request/answer rules |
-| `apps/browser/src/components/site/promptGuard.ts` | 41 | b | 0.5.0 | Prompt lifetime guards |
-| `apps/browser/src/components/site/selection.ts` | 249 | b | 0.5.0 | Selection search/copy/open policy; also c |
-| `apps/browser/src/components/site/share.ts` | 12 | b | 0.5.0 | Native share command routing |
-| `apps/browser/src/components/site/translate.ts` | 258 | b | 0.5.0 | Translation state/language policy; also c |
-| `apps/browser/src/legacy.ts` | 51 | c | 0.6.0 | Legacy URL/key migration |
-| `apps/browser/src/lib/actions.ts` | 203 | b | 0.5.0 | Window/tab/profile action routing |
-| `apps/browser/src/lib/afterFirstWindow.ts` | 31 | b | 0.5.0 | First-window task scheduling |
-| `apps/browser/src/lib/appIcon.ts` | 1 | d | 0.7.0 | Bundled app icon reference |
-| `apps/browser/src/lib/appIntegration.ts` | 103 | b | 0.5.0 | Native app/notification event decisions |
-| `apps/browser/src/lib/bookmarkGroups.ts` | 190 | b | 0.5.0 | Bookmark-folder sidebar restoration |
-| `apps/browser/src/lib/bookmarkWriter.ts` | 103 | b | 0.5.0 | Native bookmark command/receipt routing; also c projection refresh |
-| `apps/browser/src/lib/bookmarks.ts` | 22 | d | 0.7.0 | Native bookmark projection subscription/reload bridge |
-| `apps/browser/src/lib/chromeTabs.ts` | 157 | c | 0.6.0 | Fallback Chrome tab synchronization; also b |
-| `apps/browser/src/lib/cliControl.ts` | 71 | b | 0.5.0 | CLI install/stop decisions; also c mirror |
-| `apps/browser/src/lib/closeAnimated.ts` | 29 | b | 0.5.0 | Animated window-close scheduling |
-| `apps/browser/src/lib/closeSnapshots.ts` | 17 | c | 0.6.0 | Window close snapshot cache |
-| `apps/browser/src/lib/closeWindowDialog.ts` | 24 | b | 0.5.0 | Close confirmation decisions |
-| `apps/browser/src/lib/commandCatalog.ts` | 243 | b | 0.5.0 | Command metadata/eligibility |
-| `apps/browser/src/lib/commandShortcuts.ts` | 69 | b | 0.5.0 | Shortcut/menu resolution; also c |
-| `apps/browser/src/lib/commands.ts` | 414 | b | 0.5.0 | Main command dispatch |
-| `apps/browser/src/lib/defaultBrowserCheckIn.ts` | 43 | b | 0.5.0 | Feedback check-in eligibility |
-| `apps/browser/src/lib/devHarness.ts` | 127 | b | 0.5.0 | Development command dispatch |
-| `apps/browser/src/lib/developerMode.ts` | 57 | b | 0.5.0 | Developer-host policy |
-| `apps/browser/src/lib/earlyNavigate.ts` | 27 | b | 0.5.0 | Early-navigation handoff policy |
-| `apps/browser/src/lib/engineSignIn.ts` | 41 | b | 0.5.0 | WebKit sign-in transfer decisions |
-| `apps/browser/src/lib/engines.ts` | 201 | b | 0.5.0 | Engine offer/switch/history policy; also c |
-| `apps/browser/src/lib/favicons.ts` | 494 | c | 0.6.0 | Favicon cache/lookup/migration |
-| `apps/browser/src/lib/focusClaims.ts` | 77 | b | 0.5.0 | Focus generation/claim policy |
-| `apps/browser/src/lib/focusHandoff.ts` | 61 | b | 0.5.0 | Command focus settlement |
-| `apps/browser/src/lib/history.ts` | 437 | c | 0.6.0 | History sync and legacy redaction |
-| `apps/browser/src/lib/hoverShift.ts` | 151 | b | 0.5.0 | Development React layout inspection |
-| `apps/browser/src/lib/jsErrors.ts` | 81 | c | 0.6.0 | JS error recording; also b fatal policy |
-| `apps/browser/src/lib/keepAliveFeed.ts` | 140 | b | 0.5.0 | Keep-alive identity/epoch sequencing and resend policy; also d report relay |
-| `apps/browser/src/lib/keepAwakeSites.ts` | 48 | b | 0.5.0 | Keep-awake site matching and sleep setting normalization |
-| `apps/browser/src/lib/killSwitches.ts` | 111 | c | 0.6.0 | Cached switch configuration; also b defaults |
-| `apps/browser/src/lib/launchBackdrop.ts` | 21 | d | 0.7.0 | Native launch-backdrop projection |
-| `apps/browser/src/lib/launchLook.ts` | 112 | c | 0.6.0 | Launch appearance cache; also b fallback |
-| `apps/browser/src/lib/layoutWatch.ts` | 99 | b | 0.5.0 | Layout diagnostics; also c report |
-| `apps/browser/src/lib/lazyProfiles.ts` | 90 | b | 0.5.0 | Profile admission/loading orchestration; also c loaded replica |
-| `apps/browser/src/lib/linkRoutes.ts` | 18 | b | 0.5.0 | External-link profile/adoption routing |
-| `apps/browser/src/lib/livePage.ts` | 40 | b | 0.5.0 | Live WebView command targeting |
-| `apps/browser/src/lib/memoryTrim.ts` | 45 | b | 0.5.0 | Memory compaction policy |
-| `apps/browser/src/lib/native.ts` | 321 | b | 0.5.0 | Window/menu/native event decisions; also d |
-| `apps/browser/src/lib/nativeEvents.ts` | 142 | d | 0.7.0 | Native report batching/relay |
-| `apps/browser/src/lib/nativeKeepAlive.ts` | 165 | b | 0.5.0 | Native sleep protection/lifetime coordination; also d report feed |
-| `apps/browser/src/lib/notifications.ts` | 23 | b | 0.5.0 | Notification event routing |
-| `apps/browser/src/lib/opaqueCard.ts` | 15 | d | 0.7.0 | Native card color projection |
-| `apps/browser/src/lib/pageHandoff.ts` | 2 | d | 0.7.0 | Handoff completion helper |
-| `apps/browser/src/lib/pagesPool.ts` | 6 | d | 0.7.0 | Native pool/overlay owner gates |
-| `apps/browser/src/lib/pendingUpdate.ts` | 39 | c | 0.6.0 | Pending-update mirror; also b install |
-| `apps/browser/src/lib/perfMarks.ts` | 216 | b | 0.5.0 | Journey sampling; also c counters |
-| `apps/browser/src/lib/perfProbe.ts` | 521 | b | 0.5.0 | React/bridge instrumentation; also c |
-| `apps/browser/src/lib/persist.ts` | 441 | c | 0.6.0 | Persistence/bootstrap/migration; also b |
-| `apps/browser/src/lib/persistLatch.ts` | 8 | c | 0.6.0 | Persistence refusal latch |
-| `apps/browser/src/lib/pinnedLinkController.ts` | 86 | b | 0.5.0 | Pinned-link interception and disposition policy; also c pending decisions |
-| `apps/browser/src/lib/pinnedLinks.ts` | 80 | b | 0.5.0 | Pinned-link source selection and target routing |
-| `apps/browser/src/lib/preload.ts` | 40 | b | 0.5.0 | Engine prewarm policy |
-| `apps/browser/src/lib/productName.ts` | 33 | d | 0.7.0 | Native product metadata/constants |
-| `apps/browser/src/lib/profileData.ts` | 44 | c | 0.6.0 | Deleted-profile data cleanup |
-| `apps/browser/src/lib/profileLoading.ts` | 52 | b | 0.5.0 | Profile launch/page target selection |
-| `apps/browser/src/lib/profileTheme.ts` | 359 | b | 0.5.0 | Profile appearance selection/math; also c schema |
-| `apps/browser/src/lib/profileThemeActions.ts` | 13 | b | 0.5.0 | App-dead; retained for live theme-pairing regression coverage; theme choice helper |
-| `apps/browser/src/lib/scriptUrls.ts` | 10 | b | 0.5.0 | JavaScript URL admission |
-| `apps/browser/src/lib/shortcuts.ts` | 115 | b | 0.5.0 | Shortcut parsing/conflict resolution |
-| `apps/browser/src/lib/signInCookies.ts` | 24 | c | 0.6.0 | Cookie transfer filtering |
-| `apps/browser/src/lib/siteIcons.ts` | 37 | d | 0.7.0 | Bundled site icon lookup |
-| `apps/browser/src/lib/slowTimers.ts` | 111 | b | 0.5.0 | Slow-job scheduling |
-| `apps/browser/src/lib/tabLifecycle.ts` | 511 | b | 0.5.0 | Discard/freeze/battery policy; also c state |
-| `apps/browser/src/lib/tabPages.ts` | 66 | b | 0.5.0 | Page transfer/launch claim decisions |
-| `apps/browser/src/lib/tabPictures.ts` | 61 | c | 0.6.0 | Tab screenshot cache |
-| `apps/browser/src/lib/tabReveal.ts` | 61 | b | 0.5.0 | Tab-reveal eligibility |
-| `apps/browser/src/lib/tabSleepPolicy.ts` | 66 | b | 0.5.0 | Fallback sleep candidate and unused-profile policy |
-| `apps/browser/src/lib/theme.ts` | 347 | b | 0.5.0 | Appearance/palette resolution; also d tokens |
-| `apps/browser/src/lib/tileTheme.ts` | 28 | d | 0.7.0 | Theme token projection |
-| `apps/browser/src/lib/timeAgo.ts` | 16 | d | 0.7.0 | Relative-time display formatter |
-| `apps/browser/src/lib/useNow.ts` | 12 | b | 0.5.0 | Coalesced React clock scheduling |
-| `apps/browser/src/lib/webviews.ts` | 34 | c | 0.6.0 | WebView handle registry |
-| `apps/browser/src/lib/windowClose.ts` | 75 | b | 0.5.0 | Window-close decision sequencing |
-| `apps/browser/src/lib/windowOpenOrder.ts` | 15 | b | 0.5.0 | Window launch ordering |
-| `apps/browser/src/lib/windowSync.ts` | 113 | b | 0.5.0 | Window open/close/fullscreen policy; also d |
-| `apps/browser/src/lib/windowTint.ts` | 55 | b | 0.5.0 | Window-tint tracking/motion policy |
-| `apps/browser/src/live/alerts.ts` | 37 | b | 0.5.0 | Meeting join/dismiss/window selection |
-| `apps/browser/src/live/calendar.ts` | 49 | d | 0.7.0 | Native calendar replica; also b clock timer |
-| `apps/browser/src/live/engine.ts` | 112 | b | 0.5.0 | Live tab integration/cleanup decisions |
-| `apps/browser/src/live/github.ts` | 31 | b | 0.5.0 | GitHub status/tone derivation |
-| `apps/browser/src/live/googleAuth.ts` | 49 | b | 0.5.0 | OAuth tab/window lifecycle |
-| `apps/browser/src/live/index.ts` | 9 | b | 0.5.0 | Starts auth/grouping/cleanup observers |
-| `apps/browser/src/live/meetingGroups.ts` | 120 | b | 0.5.0 | Meeting tab/group/autogroup decisions |
-| `apps/browser/src/live/meetings.ts` | 182 | b | 0.5.0 | Meeting URL/event/link matching |
-| `apps/browser/src/live/sources.ts` | 11 | b | 0.5.0 | Live source/icon fallback policy |
-| `apps/browser/src/live/store.ts` | 157 | d | 0.7.0 | Native live JSON replica/command facade |
-| `apps/browser/src/live/types.ts` | 75 | c | 0.6.0 | Live source/item data types |
-| `apps/browser/src/main.tsx` | 78 | b | 0.5.0 | Service boot; main/pane registration |
+| `apps/browser/src/components/site/DeviceChooser.tsx` | 117 | b | 0.4.4 | Chooser state/selection/guards/actions and native body feed; RN chooser body removed |
+| `apps/browser/src/components/site/EnginePrompt.tsx` | 29 | b | 0.4.4 | Engine offer/remember actions and native prompt feed; RN body removed |
+| `apps/browser/src/components/site/NativePromptBody.tsx` | 97 | d | 0.4.6 | Native-only prompt placement/size/event feed, independent of toolbar/pages capabilities |
+| `apps/browser/src/components/site/NativeSiteControls.tsx` | 208 | b | 0.4.4 | Site-panel decisions; also d native host |
+| `apps/browser/src/components/site/Prompts.tsx` | 226 | b | 0.4.4 | Permission/password/autofill/external/popup answers and native prompt specs; RN bodies removed |
+| `apps/browser/src/components/site/SelectionPopover.tsx` | 57 | b | 0.4.4 | Selection delay/search actions and native SelectionBarView state; also d hosting |
+| `apps/browser/src/components/site/SiteControls.tsx` | 6 | d | 0.4.6 | Native site-panel host and close-presence adapter; RN panel removed |
+| `apps/browser/src/components/site/SiteControlsParts.tsx` | 12 | d | 0.4.6 | SITE_PANEL geometry constants only; RN tiles/rows removed |
+| `apps/browser/src/components/site/SiteExtensions.tsx` | 15 | b | 0.4.4 | Extension menu actions only; RN extension grid removed |
+| `apps/browser/src/components/site/TranslateControls.tsx` | 30 | b | 0.4.4 | Translation language/menu actions only; RN rows/buttons removed |
+| `apps/browser/src/components/site/ZoomControls.tsx` | 39 | b | 0.4.4 | Zoom actions and native panel state/placement feed; RN controls removed |
+| `apps/browser/src/components/site/developerMode.ts` | 111 | b | 0.4.4 | Developer URL/reload policy; also c |
+| `apps/browser/src/components/site/pageTranslator.ts` | 201 | b | 0.4.4 | Page translation execution |
+| `apps/browser/src/components/site/permissions.ts` | 139 | b | 0.4.4 | Permission request/answer rules |
+| `apps/browser/src/components/site/promptGuard.ts` | 41 | b | 0.4.4 | Prompt lifetime guards |
+| `apps/browser/src/components/site/selection.ts` | 249 | b | 0.4.4 | Selection search/copy/open policy; also c |
+| `apps/browser/src/components/site/share.ts` | 12 | b | 0.4.4 | Native share command routing |
+| `apps/browser/src/components/site/translate.ts` | 258 | b | 0.4.4 | Translation state/language policy; also c |
+| `apps/browser/src/legacy.ts` | 51 | c | 0.4.5 | Legacy URL/key migration |
+| `apps/browser/src/lib/actions.ts` | 203 | b | 0.4.2 | Window/tab/profile action routing |
+| `apps/browser/src/lib/afterFirstWindow.ts` | 31 | b | 0.4.2 | First-window task scheduling |
+| `apps/browser/src/lib/appIcon.ts` | 1 | d | 0.4.6 | Bundled app icon reference |
+| `apps/browser/src/lib/appIntegration.ts` | 103 | b | 0.4.2 | Native app/notification event decisions |
+| `apps/browser/src/lib/bookmarkGroups.ts` | 190 | b | 0.4.2 | Bookmark-folder sidebar restoration |
+| `apps/browser/src/lib/bookmarkWriter.ts` | 103 | b | 0.4.2 | Native bookmark command/receipt routing; also c projection refresh |
+| `apps/browser/src/lib/bookmarks.ts` | 22 | d | 0.4.6 | Native bookmark projection subscription/reload bridge |
+| `apps/browser/src/lib/chromeTabs.ts` | 157 | c | 0.4.5 | Fallback Chrome tab synchronization; also b |
+| `apps/browser/src/lib/cliControl.ts` | 71 | b | 0.4.2 | CLI install/stop decisions; also c mirror |
+| `apps/browser/src/lib/closeAnimated.ts` | 29 | b | 0.4.2 | Animated window-close scheduling |
+| `apps/browser/src/lib/closeSnapshots.ts` | 17 | c | 0.4.5 | Window close snapshot cache |
+| `apps/browser/src/lib/closeWindowDialog.ts` | 24 | b | 0.4.2 | Close confirmation decisions |
+| `apps/browser/src/lib/commandCatalog.ts` | 243 | b | 0.4.2 | Command metadata/eligibility |
+| `apps/browser/src/lib/commandShortcuts.ts` | 69 | b | 0.4.2 | Shortcut/menu resolution; also c |
+| `apps/browser/src/lib/commands.ts` | 414 | b | 0.4.2 | Main command dispatch |
+| `apps/browser/src/lib/defaultBrowserCheckIn.ts` | 43 | b | 0.4.2 | Feedback check-in eligibility |
+| `apps/browser/src/lib/devHarness.ts` | 127 | b | 0.4.2 | Development command dispatch |
+| `apps/browser/src/lib/developerMode.ts` | 57 | b | 0.4.2 | Developer-host policy |
+| `apps/browser/src/lib/earlyNavigate.ts` | 27 | b | 0.4.2 | Early-navigation handoff policy |
+| `apps/browser/src/lib/engineSignIn.ts` | 41 | b | 0.4.2 | WebKit sign-in transfer decisions |
+| `apps/browser/src/lib/engines.ts` | 201 | b | 0.4.2 | Engine offer/switch/history policy; also c |
+| `apps/browser/src/lib/favicons.ts` | 494 | c | 0.4.5 | Favicon cache/lookup/migration |
+| `apps/browser/src/lib/focusClaims.ts` | 77 | b | 0.4.2 | Focus generation/claim policy |
+| `apps/browser/src/lib/focusHandoff.ts` | 61 | b | 0.4.2 | Command focus settlement |
+| `apps/browser/src/lib/history.ts` | 437 | c | 0.4.5 | History sync and legacy redaction |
+| `apps/browser/src/lib/hoverShift.ts` | 151 | b | 0.4.2 | Development React layout inspection |
+| `apps/browser/src/lib/jsErrors.ts` | 81 | c | 0.4.5 | JS error recording; also b fatal policy |
+| `apps/browser/src/lib/keepAliveFeed.ts` | 140 | b | 0.4.2 | Keep-alive identity/epoch sequencing and resend policy; also d report relay |
+| `apps/browser/src/lib/keepAwakeSites.ts` | 48 | b | 0.4.2 | Keep-awake site matching and sleep setting normalization |
+| `apps/browser/src/lib/killSwitches.ts` | 111 | c | 0.4.5 | Cached switch configuration; also b defaults |
+| `apps/browser/src/lib/launchBackdrop.ts` | 21 | d | 0.4.6 | Native launch-backdrop projection |
+| `apps/browser/src/lib/launchLook.ts` | 112 | c | 0.4.5 | Launch appearance cache; also b fallback |
+| `apps/browser/src/lib/layoutWatch.ts` | 99 | b | 0.4.2 | Layout diagnostics; also c report |
+| `apps/browser/src/lib/lazyProfiles.ts` | 90 | b | 0.4.2 | Profile admission/loading orchestration; also c loaded replica |
+| `apps/browser/src/lib/linkRoutes.ts` | 18 | b | 0.4.2 | External-link profile/adoption routing |
+| `apps/browser/src/lib/livePage.ts` | 40 | b | 0.4.2 | Live WebView command targeting |
+| `apps/browser/src/lib/memoryTrim.ts` | 45 | b | 0.4.2 | Memory compaction policy |
+| `apps/browser/src/lib/native.ts` | 321 | b | 0.4.2 | Window/menu/native event decisions; also d |
+| `apps/browser/src/lib/nativeEvents.ts` | 142 | d | 0.4.6 | Native report batching/relay |
+| `apps/browser/src/lib/nativeKeepAlive.ts` | 165 | b | 0.4.2 | Native sleep protection/lifetime coordination; also d report feed |
+| `apps/browser/src/lib/notifications.ts` | 23 | b | 0.4.2 | Notification event routing |
+| `apps/browser/src/lib/opaqueCard.ts` | 15 | d | 0.4.6 | Native card color projection |
+| `apps/browser/src/lib/pageHandoff.ts` | 2 | d | 0.4.6 | Handoff completion helper |
+| `apps/browser/src/lib/pagesPool.ts` | 6 | d | 0.4.6 | Native pool/overlay owner gates |
+| `apps/browser/src/lib/pendingUpdate.ts` | 39 | c | 0.4.5 | Pending-update mirror; also b install |
+| `apps/browser/src/lib/perfMarks.ts` | 216 | b | 0.4.2 | Journey sampling; also c counters |
+| `apps/browser/src/lib/perfProbe.ts` | 521 | b | 0.4.2 | React/bridge instrumentation; also c |
+| `apps/browser/src/lib/persist.ts` | 441 | c | 0.4.5 | Persistence/bootstrap/migration; also b |
+| `apps/browser/src/lib/persistLatch.ts` | 8 | c | 0.4.5 | Persistence refusal latch |
+| `apps/browser/src/lib/pinnedLinkController.ts` | 86 | b | 0.4.2 | Pinned-link interception and disposition policy; also c pending decisions |
+| `apps/browser/src/lib/pinnedLinks.ts` | 80 | b | 0.4.2 | Pinned-link source selection and target routing |
+| `apps/browser/src/lib/preload.ts` | 40 | b | 0.4.2 | Engine prewarm policy |
+| `apps/browser/src/lib/productName.ts` | 33 | d | 0.4.6 | Native product metadata/constants |
+| `apps/browser/src/lib/profileData.ts` | 44 | c | 0.4.5 | Deleted-profile data cleanup |
+| `apps/browser/src/lib/profileLoading.ts` | 52 | b | 0.4.2 | Profile launch/page target selection |
+| `apps/browser/src/lib/profileTheme.ts` | 359 | b | 0.4.2 | Profile appearance selection/math; also c schema |
+| `apps/browser/src/lib/profileThemeActions.ts` | 13 | b | 0.4.2 | App-dead; retained for live theme-pairing regression coverage; theme choice helper |
+| `apps/browser/src/lib/scriptUrls.ts` | 10 | b | 0.4.2 | JavaScript URL admission |
+| `apps/browser/src/lib/shortcuts.ts` | 115 | b | 0.4.2 | Shortcut parsing/conflict resolution |
+| `apps/browser/src/lib/signInCookies.ts` | 24 | c | 0.4.5 | Cookie transfer filtering |
+| `apps/browser/src/lib/siteIcons.ts` | 37 | d | 0.4.6 | Bundled site icon lookup |
+| `apps/browser/src/lib/slowTimers.ts` | 111 | b | 0.4.2 | Slow-job scheduling |
+| `apps/browser/src/lib/tabLifecycle.ts` | 511 | b | 0.4.2 | Discard/freeze/battery policy; also c state |
+| `apps/browser/src/lib/tabPages.ts` | 66 | b | 0.4.2 | Page transfer/launch claim decisions |
+| `apps/browser/src/lib/tabPictures.ts` | 61 | c | 0.4.5 | Tab screenshot cache |
+| `apps/browser/src/lib/tabReveal.ts` | 61 | b | 0.4.2 | Tab-reveal eligibility |
+| `apps/browser/src/lib/tabSleepPolicy.ts` | 66 | b | 0.4.2 | Fallback sleep candidate and unused-profile policy |
+| `apps/browser/src/lib/theme.ts` | 347 | b | 0.4.2 | Appearance/palette resolution; also d tokens |
+| `apps/browser/src/lib/tileTheme.ts` | 28 | d | 0.4.6 | Theme token projection |
+| `apps/browser/src/lib/timeAgo.ts` | 16 | d | 0.4.6 | Relative-time display formatter |
+| `apps/browser/src/lib/useNow.ts` | 12 | b | 0.4.2 | Coalesced React clock scheduling |
+| `apps/browser/src/lib/webviews.ts` | 34 | c | 0.4.5 | WebView handle registry |
+| `apps/browser/src/lib/windowClose.ts` | 75 | b | 0.4.2 | Window-close decision sequencing |
+| `apps/browser/src/lib/windowOpenOrder.ts` | 15 | b | 0.4.2 | Window launch ordering |
+| `apps/browser/src/lib/windowSync.ts` | 113 | b | 0.4.2 | Window open/close/fullscreen policy; also d |
+| `apps/browser/src/lib/windowTint.ts` | 55 | b | 0.4.2 | Window-tint tracking/motion policy |
+| `apps/browser/src/live/alerts.ts` | 37 | b | 0.4.4 | Meeting join/dismiss/window selection |
+| `apps/browser/src/live/calendar.ts` | 49 | d | 0.4.6 | Native calendar replica; also b clock timer |
+| `apps/browser/src/live/engine.ts` | 112 | b | 0.4.4 | Live tab integration/cleanup decisions |
+| `apps/browser/src/live/github.ts` | 31 | b | 0.4.4 | GitHub status/tone derivation |
+| `apps/browser/src/live/googleAuth.ts` | 49 | b | 0.4.4 | OAuth tab/window lifecycle |
+| `apps/browser/src/live/index.ts` | 9 | b | 0.4.4 | Starts auth/grouping/cleanup observers |
+| `apps/browser/src/live/meetingGroups.ts` | 120 | b | 0.4.4 | Meeting tab/group/autogroup decisions |
+| `apps/browser/src/live/meetings.ts` | 182 | b | 0.4.4 | Meeting URL/event/link matching |
+| `apps/browser/src/live/sources.ts` | 11 | b | 0.4.4 | Live source/icon fallback policy |
+| `apps/browser/src/live/store.ts` | 157 | d | 0.4.6 | Native live JSON replica/command facade |
+| `apps/browser/src/live/types.ts` | 75 | c | 0.4.5 | Live source/item data types |
+| `apps/browser/src/main.tsx` | 78 | b | 0.4.2 | Service boot; main/pane registration |
 | `apps/browser/src/nativeApi.tsx` | 43 | a | 0.4.0 | Alternate skew-screen pixels; also b version gate |
-| `apps/browser/src/react-native-macos.d.ts` | 10 | d | 0.7.0 | RN type declarations; no runtime |
-| `apps/browser/src/store/bookmarkProjection.ts` | 102 | c | 0.6.0 | Native bookmark replica revision and write guards |
-| `apps/browser/src/store/bookmarks.ts` | 154 | c | 0.6.0 | Bookmark tree model and edits; also b |
-| `apps/browser/src/store/browser.ts` | 252 | c | 0.6.0 | Zustand assembly/replica; also b fallback |
-| `apps/browser/src/store/changes.ts` | 22 | c | 0.6.0 | Store subscription comparison |
-| `apps/browser/src/store/closedTogether.ts` | 25 | b | 0.5.0 | Reopen eligibility and order |
-| `apps/browser/src/store/closingWindowRestore.ts` | 79 | c | 0.6.0 | Close snapshot remapping/undo |
-| `apps/browser/src/store/closingWindows.ts` | 14 | c | 0.6.0 | Closing-window set; also d command forwarding |
-| `apps/browser/src/store/draftGroups.ts` | 89 | b | 0.5.0 | Draft admission/dedupe/placement; also c |
-| `apps/browser/src/store/drops.ts` | 175 | b | 0.5.0 | Drop and selection rules; also c |
-| `apps/browser/src/store/engines.ts` | 154 | b | 0.5.0 | Engine choice and visit debounce; also c |
-| `apps/browser/src/store/groupNames.ts` | 99 | b | 0.5.0 | Automatic group naming |
-| `apps/browser/src/store/groups.ts` | 419 | b | 0.5.0 | Group creation/nesting/close rules; also c |
-| `apps/browser/src/store/history.ts` | 70 | c | 0.6.0 | History state and migration |
-| `apps/browser/src/store/hooks.ts` | 85 | c | 0.6.0 | Zustand/window context selectors |
-| `apps/browser/src/store/launchTab.ts` | 22 | b | 0.5.0 | Early-launch tab eligibility |
-| `apps/browser/src/store/liveTabs.ts` | 308 | b | 0.5.0 | Chrome reconciliation policy; also c |
-| `apps/browser/src/store/model.ts` | 227 | c | 0.6.0 | State queries/types; also b selection |
-| `apps/browser/src/store/nativeStore.ts` | 465 | c | 0.6.0 | Native-store replica/guards; also d dispatch |
-| `apps/browser/src/store/nativeWorkspace.ts` | 176 | d | 0.7.0 | Workspace patches/effects relay |
-| `apps/browser/src/store/newTabBar.ts` | 40 | b | 0.5.0 | Empty-window command-bar policy |
-| `apps/browser/src/store/openers.ts` | 104 | b | 0.5.0 | New-tab placement and successor rules |
-| `apps/browser/src/store/organize.ts` | 1013 | b | 0.5.0 | Selection/pin/group/cleanup rules; also c |
-| `apps/browser/src/store/pageKeys.ts` | 32 | c | 0.6.0 | Page identity keys |
-| `apps/browser/src/store/pageProgress.ts` | 29 | c | 0.6.0 | Page progress replica |
-| `apps/browser/src/store/pageSession.ts` | 15 | c | 0.6.0 | Per-page session tracking |
-| `apps/browser/src/store/parkedPins.ts` | 146 | c | 0.6.0 | Pin snapshot/adoption; also b admission |
-| `apps/browser/src/store/peek.ts` | 108 | b | 0.5.0 | Peek lifecycle; also c |
-| `apps/browser/src/store/pinHomes.ts` | 28 | b | 0.5.0 | Pinned-home policy |
-| `apps/browser/src/store/pinMirror.ts` | 397 | b | 0.5.0 | Cross-window pin rules; also c |
-| `apps/browser/src/store/pinOrderChoices.ts` | 61 | c | 0.6.0 | Pinned-order choice records |
-| `apps/browser/src/store/pinShare.ts` | 260 | b | 0.5.0 | Pinned-page sharing/handoff; also c |
-| `apps/browser/src/store/pinnedArea.ts` | 122 | c | 0.6.0 | Pinned-area state transforms |
-| `apps/browser/src/store/profiles.ts` | 236 | c | 0.6.0 | Profile identity/data lifecycle; also b |
-| `apps/browser/src/store/safeLibraryEdits.ts` | 29 | c | 0.6.0 | Bookmark edit safety state |
-| `apps/browser/src/store/settings.ts` | 373 | c | 0.6.0 | Settings schema/defaults; also b policy |
-| `apps/browser/src/store/sidebarRail.ts` | 66 | b | 0.5.0 | Sidebar width and per-window override policy; also d native commands |
-| `apps/browser/src/store/small.ts` | 46 | b | 0.5.0 | Little Solara targeting; also c |
-| `apps/browser/src/store/splits.ts` | 342 | b | 0.5.0 | Pane creation/focus/layout rules; also c |
-| `apps/browser/src/store/structure.ts` | 36 | c | 0.6.0 | Workspace structure transforms |
-| `apps/browser/src/store/syncOrigin.ts` | 22 | c | 0.6.0 | Sync-origin transaction marker |
-| `apps/browser/src/store/tabShare.ts` | 354 | b | 0.5.0 | Shared-tab rules; also c |
-| `apps/browser/src/store/tabWatch.ts` | 86 | c | 0.6.0 | Tab state subscriptions |
-| `apps/browser/src/store/tabs.ts` | 536 | b | 0.5.0 | Tab open/close/navigation rules; also c |
-| `apps/browser/src/store/tidyPins.ts` | 153 | b | 0.5.0 | Pinned grouping policy |
-| `apps/browser/src/store/tileFolders.ts` | 171 | b | 0.5.0 | Tile-folder semantics; also c |
-| `apps/browser/src/store/transaction.ts` | 50 | c | 0.6.0 | State transaction boundaries |
-| `apps/browser/src/store/types.ts` | 213 | c | 0.6.0 | Browser-state types; no runtime |
-| `apps/browser/src/store/ui.ts` | 135 | b | 0.5.0 | Panel/focus/download behavior; also c |
-| `apps/browser/src/store/windows.ts` | 535 | b | 0.5.0 | Window lifecycle and restore rules; also c |
-| `apps/browser/src/sync/adapters.ts` | 772 | c | 0.6.0 | Settings/profile/library sync adapters |
-| `apps/browser/src/sync/commandJournal.ts` | 58 | c | 0.6.0 | App-dead; retained as live native-store/sync-origin test oracle |
-| `apps/browser/src/sync/editJournal.ts` | 121 | c | 0.6.0 | Durable edit journal |
-| `apps/browser/src/sync/engine.ts` | 2397 | c | 0.6.0 | Sync orchestration/persistence; also b |
-| `apps/browser/src/sync/extensions.ts` | 110 | c | 0.6.0 | Extension sync reconciliation |
-| `apps/browser/src/sync/fixtures/pinned-v0.2.38.ts` | 184 | c | 0.6.0 | Historical pin fixture; non-test filename |
-| `apps/browser/src/sync/fixtures/pinned-v0.2.40.ts` | 507 | c | 0.6.0 | Historical pin fixture; non-test filename |
-| `apps/browser/src/sync/journalHost.ts` | 194 | c | 0.6.0 | Journal state host |
-| `apps/browser/src/sync/ledgerPasswords.ts` | 313 | c | 0.6.0 | Password-ledger sync adapter |
-| `apps/browser/src/sync/menu.ts` | 33 | b | 0.5.0 | Sync device/tab menu choices |
-| `apps/browser/src/sync/notes.ts` | 14 | c | 0.6.0 | Sync note/state records |
-| `apps/browser/src/sync/pairingBootstrap.ts` | 109 | c | 0.6.0 | Pairing document bootstrap |
-| `apps/browser/src/sync/pairingNative.ts` | 54 | b | 0.5.0 | Pairing startup/retry coordination; also c |
-| `apps/browser/src/sync/passwordLedger.ts` | 178 | c | 0.6.0 | Password-ledger state |
-| `apps/browser/src/sync/pinned.ts` | 931 | c | 0.6.0 | Pin extraction/merge; native apply |
-| `apps/browser/src/sync/readable.ts` | 33 | c | 0.6.0 | Readable sync state serialization |
-| `apps/browser/src/sync/redesignSwitch.ts` | 1 | d | 0.7.0 | Native sync-launch gate mirror |
-| `apps/browser/src/sync/stateDeltas.ts` | 129 | c | 0.6.0 | Sync delta generation/replay |
+| `apps/browser/src/react-native-macos.d.ts` | 10 | d | 0.4.6 | RN type declarations; no runtime |
+| `apps/browser/src/store/bookmarkProjection.ts` | 102 | c | 0.4.5 | Native bookmark replica revision and write guards |
+| `apps/browser/src/store/bookmarks.ts` | 154 | c | 0.4.5 | Bookmark tree model and edits; also b |
+| `apps/browser/src/store/browser.ts` | 252 | c | 0.4.5 | Zustand assembly/replica; also b fallback |
+| `apps/browser/src/store/changes.ts` | 22 | c | 0.4.5 | Store subscription comparison |
+| `apps/browser/src/store/closedTogether.ts` | 25 | b | 0.4.4 | Reopen eligibility and order |
+| `apps/browser/src/store/closingWindowRestore.ts` | 79 | c | 0.4.5 | Close snapshot remapping/undo |
+| `apps/browser/src/store/closingWindows.ts` | 14 | c | 0.4.5 | Closing-window set; also d command forwarding |
+| `apps/browser/src/store/draftGroups.ts` | 89 | b | 0.4.4 | Draft admission/dedupe/placement; also c |
+| `apps/browser/src/store/drops.ts` | 175 | b | 0.4.4 | Drop and selection rules; also c |
+| `apps/browser/src/store/engines.ts` | 154 | b | 0.4.4 | Engine choice and visit debounce; also c |
+| `apps/browser/src/store/groupNames.ts` | 99 | b | 0.4.4 | Automatic group naming |
+| `apps/browser/src/store/groups.ts` | 419 | b | 0.4.4 | Group creation/nesting/close rules; also c |
+| `apps/browser/src/store/history.ts` | 70 | c | 0.4.5 | History state and migration |
+| `apps/browser/src/store/hooks.ts` | 85 | c | 0.4.5 | Zustand/window context selectors |
+| `apps/browser/src/store/launchTab.ts` | 22 | b | 0.4.4 | Early-launch tab eligibility |
+| `apps/browser/src/store/liveTabs.ts` | 308 | b | 0.4.4 | Chrome reconciliation policy; also c |
+| `apps/browser/src/store/model.ts` | 227 | c | 0.4.5 | State queries/types; also b selection |
+| `apps/browser/src/store/nativeStore.ts` | 465 | c | 0.4.5 | Native-store replica/guards; also d dispatch |
+| `apps/browser/src/store/nativeWorkspace.ts` | 176 | d | 0.4.6 | Workspace patches/effects relay |
+| `apps/browser/src/store/newTabBar.ts` | 40 | b | 0.4.4 | Empty-window command-bar policy |
+| `apps/browser/src/store/openers.ts` | 104 | b | 0.4.4 | New-tab placement and successor rules |
+| `apps/browser/src/store/organize.ts` | 1013 | b | 0.4.4 | Selection/pin/group/cleanup rules; also c |
+| `apps/browser/src/store/pageKeys.ts` | 32 | c | 0.4.5 | Page identity keys |
+| `apps/browser/src/store/pageProgress.ts` | 29 | c | 0.4.5 | Page progress replica |
+| `apps/browser/src/store/pageSession.ts` | 15 | c | 0.4.5 | Per-page session tracking |
+| `apps/browser/src/store/parkedPins.ts` | 146 | c | 0.4.5 | Pin snapshot/adoption; also b admission |
+| `apps/browser/src/store/peek.ts` | 108 | b | 0.4.4 | Peek lifecycle; also c |
+| `apps/browser/src/store/pinHomes.ts` | 28 | b | 0.4.4 | Pinned-home policy |
+| `apps/browser/src/store/pinMirror.ts` | 397 | b | 0.4.4 | Cross-window pin rules; also c |
+| `apps/browser/src/store/pinOrderChoices.ts` | 61 | c | 0.4.5 | Pinned-order choice records |
+| `apps/browser/src/store/pinShare.ts` | 260 | b | 0.4.4 | Pinned-page sharing/handoff; also c |
+| `apps/browser/src/store/pinnedArea.ts` | 122 | c | 0.4.5 | Pinned-area state transforms |
+| `apps/browser/src/store/profiles.ts` | 236 | c | 0.4.5 | Profile identity/data lifecycle; also b |
+| `apps/browser/src/store/safeLibraryEdits.ts` | 29 | c | 0.4.5 | Bookmark edit safety state |
+| `apps/browser/src/store/settings.ts` | 373 | c | 0.4.5 | Settings schema/defaults; also b policy |
+| `apps/browser/src/store/sidebarRail.ts` | 66 | b | 0.4.4 | Sidebar width and per-window override policy; also d native commands |
+| `apps/browser/src/store/small.ts` | 46 | b | 0.4.4 | Little Solara targeting; also c |
+| `apps/browser/src/store/splits.ts` | 342 | b | 0.4.4 | Pane creation/focus/layout rules; also c |
+| `apps/browser/src/store/structure.ts` | 36 | c | 0.4.5 | Workspace structure transforms |
+| `apps/browser/src/store/syncOrigin.ts` | 22 | c | 0.4.5 | Sync-origin transaction marker |
+| `apps/browser/src/store/tabShare.ts` | 354 | b | 0.4.4 | Shared-tab rules; also c |
+| `apps/browser/src/store/tabWatch.ts` | 86 | c | 0.4.5 | Tab state subscriptions |
+| `apps/browser/src/store/tabs.ts` | 536 | b | 0.4.4 | Tab open/close/navigation rules; also c |
+| `apps/browser/src/store/tidyPins.ts` | 153 | b | 0.4.4 | Pinned grouping policy |
+| `apps/browser/src/store/tileFolders.ts` | 171 | b | 0.4.4 | Tile-folder semantics; also c |
+| `apps/browser/src/store/transaction.ts` | 50 | c | 0.4.5 | State transaction boundaries |
+| `apps/browser/src/store/types.ts` | 213 | c | 0.4.5 | Browser-state types; no runtime |
+| `apps/browser/src/store/ui.ts` | 135 | b | 0.4.4 | Panel/focus/download behavior; also c |
+| `apps/browser/src/store/windows.ts` | 535 | b | 0.4.4 | Window lifecycle and restore rules; also c |
+| `apps/browser/src/sync/adapters.ts` | 772 | c | 0.4.5 | Settings/profile/library sync adapters |
+| `apps/browser/src/sync/commandJournal.ts` | 58 | c | 0.4.5 | App-dead; retained as live native-store/sync-origin test oracle |
+| `apps/browser/src/sync/editJournal.ts` | 121 | c | 0.4.5 | Durable edit journal |
+| `apps/browser/src/sync/engine.ts` | 2397 | c | 0.4.5 | Sync orchestration/persistence; also b |
+| `apps/browser/src/sync/extensions.ts` | 110 | c | 0.4.5 | Extension sync reconciliation |
+| `apps/browser/src/sync/fixtures/pinned-v0.2.38.ts` | 184 | c | 0.4.5 | Historical pin fixture; non-test filename |
+| `apps/browser/src/sync/fixtures/pinned-v0.2.40.ts` | 507 | c | 0.4.5 | Historical pin fixture; non-test filename |
+| `apps/browser/src/sync/journalHost.ts` | 194 | c | 0.4.5 | Journal state host |
+| `apps/browser/src/sync/ledgerPasswords.ts` | 313 | c | 0.4.5 | Password-ledger sync adapter |
+| `apps/browser/src/sync/menu.ts` | 33 | b | 0.4.2 | Sync device/tab menu choices |
+| `apps/browser/src/sync/notes.ts` | 14 | c | 0.4.5 | Sync note/state records |
+| `apps/browser/src/sync/pairingBootstrap.ts` | 109 | c | 0.4.5 | Pairing document bootstrap |
+| `apps/browser/src/sync/pairingNative.ts` | 54 | b | 0.4.2 | Pairing startup/retry coordination; also c |
+| `apps/browser/src/sync/passwordLedger.ts` | 178 | c | 0.4.5 | Password-ledger state |
+| `apps/browser/src/sync/pinned.ts` | 931 | c | 0.4.5 | Pin extraction/merge; native apply |
+| `apps/browser/src/sync/readable.ts` | 33 | c | 0.4.5 | Readable sync state serialization |
+| `apps/browser/src/sync/redesignSwitch.ts` | 1 | d | 0.4.6 | Native sync-launch gate mirror |
+| `apps/browser/src/sync/stateDeltas.ts` | 129 | c | 0.4.5 | Sync delta generation/replay |
 
 ### Bookmark ownership cutover (0.3.0)
 

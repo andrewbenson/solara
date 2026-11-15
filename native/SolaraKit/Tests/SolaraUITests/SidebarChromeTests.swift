@@ -96,6 +96,44 @@ struct SidebarChromeTests {
     #expect(abs(opacities[0] - 0.525) < 1e-6 && abs(opacities[1] - 0.525) < 1e-6 && abs(opacities[2] - 0.2) < 1e-6)
   }
 
+  func restoredState(_ profileId: String) -> SidebarChromeState {
+    var next = state(dots: 4, profiles: 4)
+    next.dots = (0..<4).map { SidebarChromeDot(id: "p\($0)", name: "P\($0)", slot: Double($0)) }
+    next.currentProfileId = profileId
+    return next
+  }
+
+  func dotOpacities(_ view: SidebarChromeView) -> [Double] {
+    (view.describe()["dots"] as! [[String: Any]]).map { $0["opacity"] as! Double }
+  }
+
+  @Test(arguments: ["p1", "p3"])
+  func restoredProfileIsSelectedBeforeAnyPagerEvent(profileId: String) {
+    let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 220, height: 600))
+    view.update(restoredState(profileId))
+    let expected = profileId == "p1" ? [0.2, 0.85, 0.2, 0.2] : [0.2, 0.2, 0.2, 0.85]
+    for (actual, wanted) in zip(dotOpacities(view), expected) { #expect(abs(actual - wanted) < 1e-6) }
+  }
+
+  @Test func restoredSelectionCanArriveAfterEmptyChrome() {
+    let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 220, height: 600))
+    view.update(state(dots: 0, profiles: 0))
+    view.update(restoredState("p1"))
+    for (actual, wanted) in zip(dotOpacities(view), [0.2, 0.85, 0.2, 0.2]) { #expect(abs(actual - wanted) < 1e-6) }
+  }
+
+  @Test func earlySwipePositionSurvivesInitialStateAndThemeUpdate() {
+    let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 220, height: 600))
+    view.setPagerPosition(1.5)
+    var next = restoredState("p1")
+    view.update(next)
+    for (actual, wanted) in zip(dotOpacities(view), [0.2, 0.525, 0.525, 0.2]) { #expect(abs(actual - wanted) < 1e-6) }
+    next.dark = true
+    next.currentProfileId = "p2"
+    view.update(next)
+    for (actual, wanted) in zip(dotOpacities(view), [0.2, 0.525, 0.525, 0.2]) { #expect(abs(actual - wanted) < 1e-6) }
+  }
+
   @Test func passesThroughBelowTheHeader() {
     let host = FlippedContainerView(frame: NSRect(x: 0, y: 0, width: 220, height: 600))
     let view = SidebarChromeView(frame: host.bounds)

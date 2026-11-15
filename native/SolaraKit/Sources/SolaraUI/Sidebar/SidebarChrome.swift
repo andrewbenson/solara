@@ -181,7 +181,7 @@ public final class SidebarChromeView: NSView {
   private var railHover: String?
   private let tooltip = SidebarDotTooltip()
   private let dropGlow = CALayer()
-  private var position: Double = 0
+  private var pagerPosition: Double?
   private var tracking: NSTrackingArea?
 
   public override var isFlipped: Bool { true }
@@ -249,8 +249,12 @@ public final class SidebarChromeView: NSView {
   }
 
   public func setPagerPosition(_ next: Double) {
-    position = next
+    pagerPosition = next
     paintDots()
+  }
+
+  private var position: Double {
+    pagerPosition ?? state?.dots.first { $0.id == state?.currentProfileId }?.slot ?? 0
   }
 
   public var downloadsRect: NSRect? {

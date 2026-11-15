@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Solara documentation</title>
+<meta name="description" content="How to install Solara, move in from another browser, sync your Macs, and set it up from files.">
+<meta name="theme-color" content="#1A0B3D">
+<link rel="icon" href="../images/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../images/icon.png">
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="docs.css">
+<script src="../site.js" defer></script>
+</head>
+<body class="docs-page">
+<header class="topbar">
+  <a class="wordmark" href="../">Solara</a>
+  <nav aria-label="Site">
+    <a href="./" aria-current="page">Docs</a>
+    <a href="https://github.com/andrewbenson/solara">GitHub</a>
+    <a class="topbar-download" id="download" href="https://github.com/andrewbenson/solara/releases/latest">Download</a>
+  </nav>
+</header>
+
+<div class="docs">
+  <nav class="contents" aria-label="Contents">
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#install">Install and updates</a></li>
+      <li><a href="#import">Moving in from another browser</a></li>
+      <li><a href="#shortcuts">Keyboard shortcuts</a></li>
+      <li><a href="#sync">Sync</a></li>
+      <li><a href="#cli">The solara command</a></li>
+      <li><a href="#config">Setting Solara up from files</a></li>
+      <li><a href="#hooks">Hooks</a></li>
+      <li><a href="#privacy">Privacy</a></li>
+    </ol>
+  </nav>
+
+  <main class="docs-content">
+    <h1>Documentation</h1>
+    <p class="lede">Everything you need to get Solara running and make it yours.</p>
+
+    <section id="install">
+      <h2>Install and updates</h2>
+      <p>Solara runs on macOS 26 or later, on Apple Silicon. Each release is signed with a Developer ID and notarized by Apple.</p>
+      <ol>
+        <li><a class="dmg-link" href="https://github.com/andrewbenson/solara/releases/latest">Download the DMG</a> from the latest release.</li>
+        <li>Open it and drag Solara to Applications.</li>
+      </ol>
+      <p>Or install it with Homebrew:</p>
+      <pre><code>brew install --cask andrewbenson/solara/solara</code></pre>
+      <h3>Updates</h3>
+      <p>Solara installs its own updates from GitHub Releases, using <a href="https://sparkle-project.org">Sparkle</a>. Pick a channel in Settings › General › Update channel.</p>
+      <dl class="terms">
+        <dt>Stable</dt>
+        <dd>Receives stable releases only.</dd>
+        <dt>Nightly</dt>
+        <dd>Receives newer prereleases as well as stable releases.</dd>
+      </dl>
+      <p>Switching from Nightly back to Stable waits for the next stable build. It never downgrades.</p>
+      <p>If you used 0.0.1, install 0.1.0 or later from the DMG over it. 0.1.0 has a new app identity and starts with a fresh profile.</p>
+    </section>
+
+    <section id="import">
+      <h2>Moving in from another browser</h2>
+      <p>Choose Solara › Import from Another Browser…. Pick a browser, then its profiles and what to bring over.</p>
+      <table>
+        <thead>
+          <tr><th scope="col">From</th><th scope="col">What comes over</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Chrome, Edge, Brave, Helium, Opera, Vivaldi and other Chromium browsers</td><td>Bookmarks, history, open tabs, passwords, cookies, addresses and cards, and a list of your extensions</td></tr>
+          <tr><td>Arc</td><td>All of the above, plus spaces, pinned tabs and favorites</td></tr>
+          <tr><td>Dia</td><td>The same as Chrome. With Dia running, its open and pinned tabs too.</td></tr>
+          <tr><td>Firefox</td><td>Bookmarks, history, open tabs, passwords and cookies</td></tr>
+          <tr><td>Zen</td><td>The same as Firefox, plus spaces, pinned tabs and Essentials</td></tr>
+          <tr><td>Safari</td><td>Bookmarks, history, open tabs and cookies with Full Disk Access, or a Safari export file with bookmarks, passwords, history and cards</td></tr>
+          <tr><td>Any browser</td><td>A bookmarks HTML file or a passwords CSV file</td></tr>
+        </tbody>
+      </table>
+      <p>Extensions are listed so you can find them again in the Chrome Web Store. They aren't installed for you.</p>
+    </section>
+
+    <section id="shortcuts">
+      <h2>Keyboard shortcuts</h2>
+      <p>The ones you'll reach for most. Every menu shows the rest, and you can change any of them from a <a href="#config">config file</a>.</p>
+      <table class="shortcuts">
+        <thead>
+          <tr><th scope="col">Shortcut</th><th scope="col">Does</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><kbd>⌘L</kbd></td><td>Open the command bar</td></tr>
+          <tr><td><kbd>⌘T</kbd></td><td>New tab</td></tr>
+          <tr><td><kbd>⇧⌘T</kbd></td><td>Reopen closed tab</td></tr>
+          <tr><td><kbd>⌘W</kbd></td><td>Close tab</td></tr>
+          <tr><td><kbd>⌘N</kbd></td><td>New window</td></tr>
+          <tr><td><kbd>⇧⌘N</kbd></td><td>New incognito window</td></tr>
+          <tr><td><kbd>⌥⌘N</kbd></td><td>New Little Solara window</td></tr>
+          <tr><td><kbd>⇧⌘A</kbd></td><td>Search tabs</td></tr>
+          <tr><td><kbd>⇧⌘]</kbd> <kbd>⇧⌘[</kbd></td><td>Next and previous tab</td></tr>
+          <tr><td><kbd>⌘1</kbd> to <kbd>⌘8</kbd>, <kbd>⌘9</kbd></td><td>Select a tab by number, or the last tab</td></tr>
+          <tr><td><kbd>⌃Tab</kbd></td><td>Switch tabs in recent order</td></tr>
+          <tr><td><kbd>⌘[</kbd> <kbd>⌘]</kbd></td><td>Back and forward</td></tr>
+          <tr><td><kbd>⌘S</kbd></td><td>Auto-hide the sidebar</td></tr>
+          <tr><td><kbd>⌘D</kbd></td><td>Move a tab to pinned</td></tr>
+          <tr><td><kbd>⌃⌘N</kbd></td><td>New group with the tab</td></tr>
+          <tr><td><kbd>⌃⇧=</kbd></td><td>Open a split pane</td></tr>
+          <tr><td><kbd>⌃⇧]</kbd> <kbd>⌃⇧[</kbd></td><td>Focus the next or previous split pane</td></tr>
+          <tr><td><kbd>⌥⌘K</kbd></td><td>Clean up tabs</td></tr>
+          <tr><td><kbd>⇧⌘C</kbd></td><td>Copy the page's URL</td></tr>
+          <tr><td><kbd>⌘F</kbd></td><td>Find on the page</td></tr>
+          <tr><td><kbd>⌥⇧⌘D</kbd></td><td>Bookmark this page</td></tr>
+          <tr><td><kbd>⇧⌘B</kbd></td><td>Show or hide the bookmarks bar</td></tr>
+          <tr><td><kbd>⇧⌘J</kbd></td><td>Downloads</td></tr>
+          <tr><td><kbd>⌥⌘I</kbd></td><td>Developer tools</td></tr>
+          <tr><td><kbd>⌘,</kbd></td><td>Settings</td></tr>
+        </tbody>
+      </table>
+      <p>Shift-click a link to open it in a Peek over the page. Choose another key in Settings › Tabs › Links.</p>
+    </section>
+
+    <section id="sync">
+      <h2>Sync</h2>
+      <p>Sync keeps your profiles, bookmarks, history, tabs, passwords, extensions and settings the same across your Macs. It has no server and no account. Each Mac reads and writes sealed files in a folder you choose, and whatever syncs that folder carries them between Macs.</p>
+      <ul>
+        <li><strong>The folder.</strong> By default it's Solara Sync in iCloud Drive. Dropbox, a NAS or a USB drive work the same way.</li>
+        <li><strong>End-to-end encrypted.</strong> Every file is sealed with a key only your Macs hold. Anyone who can open the folder sees files they can't read.</li>
+        <li><strong>The recovery phrase.</strong> Turning sync on makes a 24-word phrase and offers a Recovery Kit to save as a PDF. Keep it somewhere other than this Mac: it's the only way back in if you lose your Macs.</li>
+        <li><strong>Each profile chooses.</strong> Turn sync on per profile in Settings › Sync › Profiles. A synced profile your other Mac doesn't have yet is offered there as Add to This Mac.</li>
+      </ul>
+      <h3>Adding another Mac</h3>
+      <ol>
+        <li>On the new Mac, open Solara and choose Use Solara from your other Mac.</li>
+        <li>On the Mac that already syncs, open Settings › Sync and choose Connect another Mac or Review request.</li>
+        <li>Check that both Macs show the same six characters, then choose Allow and confirm with Touch ID or your password.</li>
+      </ol>
+      <p>You can enter the recovery phrase on the new Mac instead. Pairing shows this Mac's name to the Mac you're pairing with before you compare codes, even if you cancel.</p>
+      <p><a href="https://github.com/andrewbenson/solara/blob/main/docs/sync.md">How sync works, in full</a></p>
+    </section>
+
+    <section id="cli">
+      <h2>The solara command</h2>
+      <p>The <code>solara</code> command drives a running Solara from the terminal. Turn it on in Settings with Let the solara command control Solara, under Command line. Solara installs the command into <code>~/.local/bin</code> and keeps it up to date with the app. While it's connected, a pill at the bottom of the page says so, with a Stop button.</p>
+      <pre><code>solara tabs
+solara sidebar
+solara exec 'await tab.go_to("https://example.com")'
+solara exec -f report.py</code></pre>
+      <dl class="terms">
+        <dt><code>solara tabs</code></dt>
+        <dd>Lists every open tab in every window, sorted by memory, without waking sleeping tabs.</dd>
+        <dt><code>solara exec</code></dt>
+        <dd>Runs Python against the browser, with the current tab, your open tabs and your history at hand.</dd>
+        <dt><code>solara sidebar</code>, <code>group</code>, <code>folder</code>, <code>tab</code></dt>
+        <dd>List and arrange the sidebar: make groups and folders, and move, pin, rename and reorder tabs. Add <code>--dry-run</code> to see a change first.</dd>
+        <dt><code>solara scripts</code></dt>
+        <dd>Writes, tests and installs userscripts. Violentmonkey and Tampermonkey scripts work as they are.</dd>
+        <dt><code>solara skills install</code></dt>
+        <dd>Installs a skill that teaches coding agents how to use the command.</dd>
+      </dl>
+      <p><a href="https://github.com/andrewbenson/solara/blob/main/docs/cli.md">The full command reference</a></p>
+    </section>
+
+    <section id="config">
+      <h2>Setting Solara up from files</h2>
+      <p>Solara can read its settings, keyboard shortcuts and profile themes from JSON files, so you can keep them in your dotfiles and get the same browser on every Mac. It reads them at launch and again whenever you save. It never writes to them.</p>
+      <pre><code>mkdir -p ~/.config/solara/themes</code></pre>
+      <p><code>~/.config/solara/config.json</code>:</p>
+      <pre><code>{
+  "settings": {
+    "appearance": "dark",
+    "sidebarWidth": 240,
+    "bookmarksBar": "newTab"
+  },
+  "keybindings": {
+    "toggleSidebar": "⌘S",
+    "print": ""
+  },
+  "theme": "ocean",
+  "profiles": {
+    "Work": { "theme": "forest" }
+  }
+}</code></pre>
+      <p>Every part is optional. Anything set in the file wins over Settings, which shows it greyed out. Take it out of the file and your choice in Settings comes back. Values from the file never sync.</p>
+      <h3>Themes</h3>
+      <p>A theme sets a profile's gradient. Save it as <code>~/.config/solara/themes/ocean.json</code> and name it in <code>config.json</code>:</p>
+      <pre><code>{
+  "colors": ["#3366FF", "#00CCAA"],
+  "angle": 135,
+  "intensity": 0.6,
+  "grain": 0.2,
+  "dark": { "colors": ["#1A2A66", "#006655"], "intensity": 0.8 }
+}</code></pre>
+      <p><a href="https://github.com/andrewbenson/solara/blob/main/docs/config-files.md">Every setting, shortcut name and theme key</a></p>
+    </section>
+
+    <section id="hooks">
+      <h2>Hooks</h2>
+      <p>Hooks are rules in <code>~/.config/solara/hooks.json</code>. They can block pages or rewrite where they go, strip tracking parameters, send links from an app to a profile, file downloads into a folder, deny the camera or microphone to some sites, and play a sound, show a notification or run a program when something happens.</p>
+      <pre><code>{
+  "hooks": [
+    { "name": "no-tracking", "match": { "hosts": ["*.example.com"] }, "stripParams": ["utm_*", "fbclid"] },
+    { "name": "old-reddit", "match": { "hosts": ["www.reddit.com"] }, "rewrite": "https://old.reddit.com{path}{query}{fragment}" },
+    { "name": "slack-to-work", "match": { "apps": ["com.tinyspeck.slackmacgap"] }, "openIn": { "profile": "Work" } },
+    { "name": "chime", "on": ["download.finished"], "sound": "Glass" }
+  ]
+}</code></pre>
+      <p>Hooks are tried in order and the first that applies decides. Settings › Advanced › Hooks lists every rule and shows any error in the file. The file must belong to you and not be writable by other users.</p>
+      <p><a href="https://github.com/andrewbenson/solara/blob/main/docs/hooks.md">Every match, action and event</a></p>
+    </section>
+
+    <section id="privacy">
+      <h2>Privacy</h2>
+      <ul>
+        <li><strong>No account.</strong> Nothing to sign up for. Sync, if you turn it on, goes through your own folder.</li>
+        <li><strong>No telemetry.</strong> No usage data and no crash reports leave your Mac.</li>
+        <li><strong>No Google background services.</strong> They're compiled out of the engine.</li>
+        <li><strong>uBlock Origin is built in.</strong></li>
+        <li><strong>No AI features.</strong></li>
+      </ul>
+      <p>This site has no analytics either. The download button asks GitHub for the latest release, and that's all.</p>
+    </section>
+  </main>
+</div>
+
+<footer>
+  <img src="../images/icon.png" width="48" height="48" alt="">
+  <nav aria-label="Project">
+    <a href="../">Home</a>
+    <a href="https://github.com/andrewbenson/solara">Source on GitHub</a>
+    <a href="https://github.com/andrewbenson/solara/releases">Release notes</a>
+    <a href="https://github.com/andrewbenson/solara/blob/main/NOTICE">Licenses</a>
+  </nav>
+  <p>Solara is free software under the GPL v3. Its own source files are Apache 2.0.</p>
+</footer>
+</body>
+</html>

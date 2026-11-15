@@ -1,0 +1,371 @@
+:root {
+  --sky-top: #0C0320;
+  --sky: #1A0B3D;
+  --dusk: #28104F;
+  --plum: #3B0F5C;
+  --magenta: #FF2BD6;
+  --rose: #FF3D8B;
+  --amber: #FF9A3C;
+  --gold: #FFE45C;
+  --text: #F6EEFF;
+  --text-dim: #BBA8D6;
+  --measure: 34rem;
+  --gutter: clamp(1rem, 4vw, 3rem);
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--sky-top);
+}
+
+body {
+  margin: 0;
+  background: var(--sky-top);
+  color: var(--text);
+  font: 400 1.0625rem/1.55 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2 {
+  font-family: ui-rounded, "SF Pro Rounded", -apple-system, system-ui, sans-serif;
+  margin: 0;
+}
+
+a {
+  color: var(--gold);
+}
+
+a:focus-visible, button:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+.hero {
+  position: relative;
+  min-height: min(100svh, 60rem);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: radial-gradient(ellipse 70% 60% at 50% 40%, var(--dusk), var(--sky) 55%, var(--sky-top));
+}
+
+.hero-nav {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 1;
+  display: flex;
+  gap: 1.5rem;
+  padding: 1.25rem var(--gutter);
+}
+
+.hero-nav a {
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: 0.9375rem;
+}
+
+.hero-nav a:hover {
+  color: var(--text);
+}
+
+.wash {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  filter: blur(24px);
+}
+
+.hero-copy {
+  position: relative;
+  width: 100%;
+  padding: 6rem var(--gutter) 4rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.hero h1 {
+  font-size: clamp(3.5rem, 11vw, 7rem);
+  font-weight: 800;
+  line-height: 0.95;
+  letter-spacing: -0.04em;
+  color: var(--text);
+}
+
+.tagline {
+  max-width: var(--measure);
+  margin: 1.25rem 0 1rem;
+  font-size: clamp(1.0625rem, 2.2vw, 1.25rem);
+  color: var(--text-dim);
+  text-wrap: balance;
+}
+
+.stage {
+  --mark-scale: 2;
+  position: relative;
+  width: min(652px, 100%);
+  padding-top: calc(84px * var(--mark-scale));
+}
+
+.mark {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: calc(100px * var(--mark-scale));
+  height: calc(84px * var(--mark-scale));
+  margin: 0 0 0 calc(-50px * var(--mark-scale));
+  padding: 0;
+  border: 0;
+  background: none;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.sun {
+  display: block;
+  width: calc(100px * var(--mark-scale));
+  height: calc(100px * var(--mark-scale));
+  will-change: transform;
+}
+
+.bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-height: 76px;
+  padding: 0.75rem 0.75rem 0.75rem 1.5rem;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12), 0 1.5rem 4rem -1rem rgba(0, 0, 0, 0.5);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  text-align: left;
+}
+
+.halo {
+  position: absolute;
+  inset: -50px;
+  width: calc(100% + 100px);
+  height: calc(100% + 100px);
+  pointer-events: none;
+}
+
+.bar-text {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.bar-text strong {
+  font-size: 1.0625rem;
+}
+
+.bar-text span {
+  color: var(--text-dim);
+  font-size: 0.875rem;
+}
+
+.download {
+  position: relative;
+  flex: none;
+  display: inline-block;
+  padding: 0.85rem 1.6rem;
+  border-radius: 12px;
+  background: linear-gradient(var(--gold), var(--amber) 55%, var(--rose));
+  color: var(--sky-top);
+  font-weight: 700;
+  font-size: 1.0625rem;
+  text-decoration: none;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.download:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0.5rem 1.5rem rgba(255, 61, 139, 0.45);
+}
+
+.download:active {
+  transform: translateY(1px);
+}
+
+.requirements {
+  margin: 1.25rem 0 0;
+  font-size: 0.9375rem;
+  color: var(--text-dim);
+}
+
+@media (max-width: 30rem) {
+  .bar {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 1rem;
+    text-align: center;
+  }
+  .bar-text {
+    align-items: center;
+  }
+  .download {
+    text-align: center;
+  }
+}
+
+main {
+  max-width: 76rem;
+  margin: 0 auto;
+  padding: clamp(3rem, 10vw, 7rem) var(--gutter) 0;
+}
+
+.feature {
+  display: grid;
+  gap: 1.5rem 3rem;
+  margin-bottom: clamp(4rem, 12vw, 8rem);
+}
+
+.feature-text {
+  max-width: var(--measure);
+}
+
+.feature h2, .also h2, .install h2 {
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.feature p {
+  margin: 0.75rem 0 0;
+  color: var(--text-dim);
+  font-size: 1.125rem;
+}
+
+.feature img {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 14px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 2rem 5rem -1.5rem rgba(255, 43, 214, 0.35);
+}
+
+@media (min-width: 60rem) {
+  .feature {
+    grid-template-columns: 17rem 1fr;
+    align-items: center;
+  }
+}
+
+.also, .install {
+  border-top: 2px solid var(--plum);
+  padding-top: 3rem;
+  margin-bottom: clamp(4rem, 10vw, 6rem);
+}
+
+.also dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 2rem 3rem;
+  margin: 2rem 0 0;
+}
+
+.also dt {
+  font-weight: 700;
+  color: var(--gold);
+}
+
+.also dd {
+  margin: 0.35rem 0 0;
+  color: var(--text-dim);
+}
+
+.install {
+  max-width: 44rem;
+}
+
+.install ol {
+  margin: 1.5rem 0;
+  padding-left: 1.25rem;
+}
+
+.install li {
+  margin-bottom: 0.5rem;
+}
+
+.install p {
+  color: var(--text-dim);
+}
+
+.command {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.5rem 0.5rem 1rem;
+  border-radius: 12px;
+  background: var(--sky);
+  box-shadow: inset 0 0 0 1px var(--plum);
+}
+
+.command code {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  font: 0.9375rem/1.4 ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--text);
+}
+
+.command button {
+  flex: none;
+  padding: 0.5rem 1rem;
+  border: 0;
+  border-radius: 8px;
+  background: var(--plum);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9375rem;
+  cursor: pointer;
+}
+
+.command button:hover {
+  background: var(--dusk);
+}
+
+footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem 2rem;
+  max-width: 76rem;
+  margin: 0 auto;
+  padding: 2rem var(--gutter) 3rem;
+  border-top: 2px solid var(--plum);
+  color: var(--text-dim);
+  font-size: 0.9375rem;
+}
+
+footer nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+}
+
+footer p {
+  margin: 0;
+  flex-basis: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .download {
+    transition: none;
+  }
+}

@@ -19,6 +19,7 @@ in [docs/agent-brief.md](docs/agent-brief.md): read it before your first change.
 | `packages/{import,sync,shaders}` | Importing from other browsers, iCloud sync, Metal views |
 | `engine/` | Our Chromium patch series (`engine/patches`), our Chrome-side code (`engine/chromium`, the `ac_*` C calls) and SolaraCore's window and tab layer (`engine/solaracore`) |
 | `apps/cli` | The `solara` command-line tool (Python), shipped in each release |
+| `site/` | The website: the download page and the user docs, plain HTML on GitHub Pages |
 | `scripts/` | `release.sh`, the DMG layout, and `scripts/agent/*`, the tools for parallel agents (each takes `--help`) |
 | `.claude/skills/release` | The release skill and its smoke, update and publish scripts |
 
@@ -112,8 +113,10 @@ in [docs/agent-brief.md](docs/agent-brief.md): read it before your first change.
   is in [docs/releasing.md](docs/releasing.md). Two channels in one app: **nightly** (a GitHub prerelease, focused
   checks only) and **stable** (smoke, update test, perf ratchet and perf gate against the previous stable).
 - Solara releases from this Mac to `andrewbenson/solara`'s GitHub releases; Sparkle reads the appcast there. Its Homebrew
-  cask lives in the `andrewbenson/homebrew-solara` tap, which `publish.sh` bumps with each stable release. It has no
-  site and no telemetry. The owner has authorized releases to go all the way through.
+  cask lives in the `andrewbenson/homebrew-solara` tap, which `publish.sh` bumps with each stable release. Its website is
+  `site/`, a static page on GitHub Pages (andrewbenson.github.io/solara) that `.github/workflows/pages.yml` deploys
+  on each push to `main` that touches it; its download button finds the latest stable DMG at load. No telemetry. The
+  owner has authorized releases to go all the way through.
 - No announcement or tweet drafts. Any other public action (posting anywhere, a PR or issue in another project)
   needs the owner's OK.
 

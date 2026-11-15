@@ -13,7 +13,8 @@ to the backlog, and move the version's section, unchanged, to the end of [shippe
 React Native leaves one layer at a time: first it stops drawing, then it stops deciding, then it stops holding data,
 then it's switched off, and only then is it deleted. Settings, onboarding, Import, New Tab, the omnibox, the internal
 pages, the link bubble and the store are already native (RN removal 01–08). The port runs through 0.4.x, one layer per release (owner 2026-11-14: 0.5.0 and 0.6.0 folded into
-0.4.x); 0.5.0 is the first release that starts without React Native, and 1.0.0 deletes it. A feature release takes the
+0.4.x); 0.4.6 is the first release that starts without React Native, 0.5.0 confirms it was never needed, and
+1.0.0 deletes it. A feature release takes the
 next 0.4.x number when it fits between them. New UI is built in Swift from now on, never in React Native.
 
 Progress (from [native/rn-inventory.md](native/rn-inventory.md)): recounted on 2026-11-14 after the
@@ -106,21 +107,23 @@ Done when JavaScript holds no state of its own.
 | Legacy migrations in Swift | planned |
 | The JavaScript mirror of the store is gone | planned |
 
-## 0.4.6: windows that sync
+## 0.4.6: React Native off by default
 
-The first feature on the Swift sync engine (0.4.5), so it is designed once (moved from the backlog, owner 2026-11-14).
-
-| Item | Status |
-|---|---|
-| Sync with several windows when tabs aren't shared between windows (`shareTabsAcrossWindows` off): today it isn't clear which window a profile publishes, and it feels like data is lost. Design agreed with the owner 2026-11-14: (1) a primary window per profile: one shared tab list both Macs edit (two writers), marked in the sidebar, with Window › Make This the Primary Window; closing it never deletes its tabs. (2) Every other window becomes a synced window object, offered on other Macs and never opened by itself, listed only for the profile the window shows, never other profiles' names ("From MacBook Air › Research, 12 tabs" while in Work); the user opens a single window, or all of the profile's windows at once, as tab groups in the primary window (default) or as windows; once open on both Macs both edit it. Opened as a group inside the primary window, it stays its own object placed there on this Mac only: the primary's shared list doesn't carry it, so other Macs' primary windows don't change; dragging a tab out of the group into the primary's own tabs moves it into the shared list. A deliberate "Move into Primary" folds the whole window into the shared primary as a group on every Mac and closes its separate window wherever it was open (owner chose this split 2026-11-14). Window names (no AI): the user's name wins; else a group holding most of the window's tabs; else a site with at least 40% of them (Tidy's site naming); else the two most common sites; an empty or New Tab-only window has no name and isn't offered; duplicates get a number; the automatic name follows the tabs until the user renames it or it's opened on another Mac, then it freezes; shown in the list, the window title and the linked group. The list (Swift): a favicon strip (first five or six, then +N), tab count and last used time per window; a hover card listing its tabs grouped as in the window, the active one marked, the first 15 or so then "and N more"; a disclosure arrow to expand the tabs inline and open a single tab; search over window names and tab titles and URLs; no page thumbnails. (3) Closing asks "this Mac only" (default) or "everywhere"; unopened objects stay listed 30 days. Merge: per-tab records, close beats a concurrent navigation (only Reopen brings a tab back), moves between lists are a container change, fractional order as pins; older versions must ignore the new records. New windows are offered by default, "Don't sync this window" for scratch windows; opened objects carry a link icon (owner 2026-11-14; Build order: primary window first (fixes most of the confusion), then window objects, then close-here/everywhere and the 30-day list. Ardia (upstream, checked 2026-11-14) has today's model and hasn't touched it; Arc syncs Today tabs across windows and machines (Arc 1.5 reverted a per-window attempt); Dia added unpinned-tab sync across devices in 2026. Today pins sync per profile from the frontmost window; open tabs only as "Your Devices" (`tabs:<device>`)) | design settled |
-
-## 0.5.0: React Native off by default
-
-Done when a full release cycle passes with the React Native fallback never needed.
+The app starts without React Native; it stays bundled as a fallback, switched off.
 
 | Item | Status |
 |---|---|
 | The app starts without React Native; React Native stays bundled as a fallback, switched off | planned |
+
+## 0.5.0: all native, and windows that sync
+
+Done when a full release cycle (0.4.6 to 0.5.0) passes with the React Native fallback never needed, and window sync
+works between two Macs (owner 2026-11-14: window sync joins 0.5.0; the full-cycle bar stays).
+
+| Item | Status |
+|---|---|
+| The React Native fallback was never needed through 0.4.6's cycle: no fallback launch in testing or on the owner's Macs | planned |
+| Sync with several windows when tabs aren't shared between windows (`shareTabsAcrossWindows` off): today it isn't clear which window a profile publishes, and it feels like data is lost. Design agreed with the owner 2026-11-14: (1) a primary window per profile: one shared tab list both Macs edit (two writers), marked in the sidebar, with Window › Make This the Primary Window; closing it never deletes its tabs. (2) Every other window becomes a synced window object, offered on other Macs and never opened by itself, listed only for the profile the window shows, never other profiles' names ("From MacBook Air › Research, 12 tabs" while in Work); the user opens a single window, or all of the profile's windows at once, as tab groups in the primary window (default) or as windows; once open on both Macs both edit it. Opened as a group inside the primary window, it stays its own object placed there on this Mac only: the primary's shared list doesn't carry it, so other Macs' primary windows don't change; dragging a tab out of the group into the primary's own tabs moves it into the shared list. A deliberate "Move into Primary" folds the whole window into the shared primary as a group on every Mac and closes its separate window wherever it was open (owner chose this split 2026-11-14). Window names (no AI): the user's name wins; else a group holding most of the window's tabs; else a site with at least 40% of them (Tidy's site naming); else the two most common sites; an empty or New Tab-only window has no name and isn't offered; duplicates get a number; the automatic name follows the tabs until the user renames it or it's opened on another Mac, then it freezes; shown in the list, the window title and the linked group. The list (Swift): a favicon strip (first five or six, then +N), tab count and last used time per window; a hover card listing its tabs grouped as in the window, the active one marked, the first 15 or so then "and N more"; a disclosure arrow to expand the tabs inline and open a single tab; search over window names and tab titles and URLs; no page thumbnails. (3) Closing asks "this Mac only" (default) or "everywhere"; unopened objects stay listed 30 days. Merge: per-tab records, close beats a concurrent navigation (only Reopen brings a tab back), moves between lists are a container change, fractional order as pins; older versions must ignore the new records. New windows are offered by default, "Don't sync this window" for scratch windows; opened objects carry a link icon (owner 2026-11-14; Build order: primary window first (fixes most of the confusion), then window objects, then close-here/everywhere and the 30-day list. Ardia (upstream, checked 2026-11-14) has today's model and hasn't touched it; Arc syncs Today tabs across windows and machines (Arc 1.5 reverted a per-window attempt); Dia added unpinned-tab sync across devices in 2026. Today pins sync per profile from the frontmost window; open tabs only as "Your Devices" (`tabs:<device>`)) | design settled |
 
 ## 1.0.0: all Swift
 

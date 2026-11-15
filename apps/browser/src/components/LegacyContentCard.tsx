@@ -45,6 +45,7 @@ import { setCardAnchor, setUrlAnchor, useCardAnchors, useNativePopoverAnchors, u
 import { notePageEventHandled, acceptPageReport, currentPageContext, followNavigation, newPageSession, pageEventHandlers, releasePageSession } from "./pageEvents";
 import { NewTabPage } from "./NewTabPage";
 import { EmptyCard } from "./EmptyCard";
+import { SmallWindowCard } from "./SmallWindowCard";
 import { InternalPage } from "./pages";
 import { useAutoPictureInPicture } from "./media/pip";
 import { ShareBar } from "./media/ShareBar";
@@ -440,6 +441,8 @@ const TabPane = memo(function TabPane({
   });
   useEffect(() => () => dropPaneStatusStyle(tabId, feedOwner), [tabId]);
 
+  const cardFill = visible && !fullscreen && !nativePane && !pooled && !(windowToolbar && nativeRailChrome) ? theme.card : undefined;
+
   return (
     <View
       pointerEvents={!visible || covered ? "none" : pooled ? "box-none" : "auto"}
@@ -452,9 +455,10 @@ const TabPane = memo(function TabPane({
         borderRadius: fullscreen ? 0 : layout.cardRadius,
         overflow: "hidden",
         opacity: covered ? 0 : 1,
-        backgroundColor: visible && !fullscreen && !nativePane && !pooled && !(windowToolbar && nativeRailChrome) ? theme.card : undefined,
+        backgroundColor: small ? undefined : cardFill,
       }}
     >
+      {small && visible && <SmallWindowCard windowId={windowId} tabId={tabId} fill={cardFill ?? null} radius={fullscreen ? 0 : layout.cardRadius} />}
       {!toolbar || fullscreen || autoLayout ? null : nativePane ? (
         <View pointerEvents="none" style={{ height: layout.toolbarHeight }} />
       ) : visible && !windowToolbar ? (

@@ -125,6 +125,37 @@ try {
     return { slots, card: info.card, bounds: info.bounds, blankBarHit: info.blankBarHit };
   });
 
+  await rep.check("native-card-fill", async () => {
+    const original = await run(`return st().settings.appearance;`);
+    const evidence = [];
+    const page = await app.page((target) => target.url === url("b"), { timeout: 3000 });
+    try {
+      await page.eval('globalThis.smallWindowCardReceipt = "same-page"', { timeout: 3000 });
+      for (const [appearance, fill] of [["light", "rgba(255,255,255,0.7)"], ["dark", "rgba(18,18,18,0.5)"]]) {
+        await run(`st().updateSettings({ appearance: ${JSON.stringify(appearance)} }); return true;`);
+        const card = await until(`${appearance} native card fill`, `return globalThis.expo.modules.SolaraHosted.devSmallWindowCards(${JSON.stringify(little.id)}).then(JSON.parse).then((entries) => entries.find((entry) => entry.tabId === ${JSON.stringify(little.tab)} && entry.fill === ${JSON.stringify(fill)}) ?? null);`);
+        const shell = await run(`return M.describeLittle(${JSON.stringify(little.id)}).then(JSON.parse);`);
+        if (!near(card.frame, shell.card) || card.radius !== 10) throw new Error(`native card geometry ${JSON.stringify(card)}, shell ${JSON.stringify(shell.card)}`);
+        if (card.interceptsInput || card.focusable || card.accessibilityElement) throw new Error(`the card decoration claims interaction: ${JSON.stringify(card)}`);
+        const rn = await run(`const card = acPerf.findFibers("SmallWindowCard", 20).find((f) => f.memoizedProps.tabId === ${JSON.stringify(little.tab)});
+          for (let parent = card?.return; parent; parent = parent.return) {
+            const style = parent.memoizedProps?.style;
+            if (style?.position === "absolute" && style.overflow === "hidden") return { found: true, fill: style.backgroundColor ?? null };
+          }
+          return { found: false };`);
+        if (!rn.found || rn.fill !== null) throw new Error(`RN still paints the small-window card: ${JSON.stringify(rn)}`);
+        if (await page.eval('globalThis.smallWindowCardReceipt', { timeout: 3000 }) !== "same-page") throw new Error("changing the card fill replaced the page");
+        const path = join(scratch, `little-card-${appearance}.png`);
+        if (!await run(`return ac.shell.devSnapshotWindow(${JSON.stringify(little.id)}, ${JSON.stringify(path)});`)) throw new Error(`failed to capture ${appearance} card`);
+        evidence.push({ appearance, card, rn, path });
+      }
+      return evidence;
+    } finally {
+      await run(`st().updateSettings({ appearance: ${JSON.stringify(original)} }); return true;`);
+      page.close();
+    }
+  });
+
   const fieldRect = async () => {
     return (await until("native bar frames", `return bar(${JSON.stringify(little.id)}).then((r) => r && r.frames.field ? r.frames : null);`)).field;
   };

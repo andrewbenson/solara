@@ -11,7 +11,7 @@ public class AppModule: Module {
 
   public func definition() -> ModuleDefinition {
     Name("SolaraApp")
-    Constant("apiVersion") { () -> Int in 64 }
+    Constant("apiVersion") { () -> Int in 65 }
     Constant("sidebarRail") { true }
     Constant("sidebarPosition") { NativeSidebarPositionCapability.enabled }
     Events("onNotificationResponse", "onPendingUpdate")

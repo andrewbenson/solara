@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { inflateSync } from "node:zlib";
 import { launch, reporter, session, sleep } from "../../../scripts/lib/instance.mjs";
 import { fixturePage } from "../../../scripts/lib/fixture-html.mjs";
+import { mediaPickerFrames } from "./lib/media-picker-frames.mjs";
 
 let nativePollDeadline = null;
 const evaluate = (body, options = {}) => {
@@ -72,7 +73,7 @@ const url = (name) => `http://127.0.0.1:${server.address().port}/${name}`;
 const fixture = session({
   windows: [{ id: "w1", frame: [80, 80, 1280, 800], activeTabIds: { default: "p" } }],
   tabs: [{ id: "p", url: url("player"), title: "Player", pinned: true, pinnedUrl: url("player") }, { id: "b", url: url("b"), title: "B" }],
-  settings: { sidebarMediaControls: true, warnBeforeClosingLastTab: false, warnBeforeClosingWindow: false, searchSuggestions: false },
+  settings: { sidebarWidth: 190, sidebarMediaControls: true, warnBeforeClosingLastTab: false, warnBeforeClosingWindow: false, searchSuggestions: false },
 });
 
 const HELPERS = `
@@ -245,6 +246,11 @@ try {
       ...(prompts ? { SOLARA_NATIVE_PAGES_POOL: "1", SOLARA_SHELL_PANES: "1", SOLARA_TAB_POOL: "1" } : { SOLARA_NATIVE_PAGES_POOL: "0" }) },
     switches: "--disable-audio-output --autoplay-policy=no-user-gesture-required",
     ready: "return !!ac.store.getState().windows.w1",
+  });
+
+  if (prompts && process.env.SOLARA_NATIVE_WINDOW_LAYOUT === "1") await rep.check("native-window-layout", async () => {
+    const state = await until("native window layout", `return globalThis.expo.modules.SolaraWindowShell.describe("w1").then(JSON.parse).then((state) => state?.nativeLayout ? state : { error: state?.legacyLayoutReason ?? "native window layout unavailable" });`);
+    return { nativeLayout: state.nativeLayout };
   });
 
   await rep.check("native-kinds", async () => {
@@ -495,10 +501,10 @@ try {
       await sleep(400);
     }
   });
-  const CAST_FRAME = [925, 55, 340, 185];
-  const SHARE_FRAME = [501.5, 55, 460, 423];
+  const pickerWindow = await untilSnapshot("picker window geometry", (window) => window?.contentFrame?.width > 0);
+  const pickerFrames = mediaPickerFrames(pickerWindow.windows.find((window) => window.id === "w1").contentFrame.width);
   const sameRect = (what, rect, want) => {
-    if (!nearRect(rect, want)) throw new Error(`${what} popover at ${JSON.stringify(rect)}, RN draws ${JSON.stringify(want)}`);
+    if (!nearRect(rect, want)) throw new Error(`${what} popover at ${JSON.stringify(rect)}, expected ${JSON.stringify(want)}`);
   };
   const staysUp = async (kind) => {
     const gaps = await run(`
@@ -541,7 +547,7 @@ try {
   };
   await rep.check("cast-picker", async () => {
     const opened = await openPopover("media.castPicker", `acCast.useCast.setState({ dialogs: { b: ${JSON.stringify(CAST)} } });`);
-    sameRect("cast", opened.rect, CAST_FRAME);
+    sameRect("cast", opened.rect, pickerFrames.cast);
     assert.equal(opened.labels.done, "Done");
     assert.equal(opened.labels.stop1, "Stop");
     await untilSnapshot("cast picker card", async (window) => {
@@ -575,7 +581,7 @@ try {
   const openShare = `acMedia.useMedia.setState((m) => ({ displayRequests: { ...m.displayRequests, b: ${JSON.stringify(SHARE)} } }));`;
   await rep.check("share-picker", async () => {
     const opened = await openPopover("media.sharePicker", openShare);
-    sameRect("share", opened.rect, SHARE_FRAME);
+    sameRect("share", opened.rect, pickerFrames.share);
     assert.equal(opened.labels.share, "Share");
     assert.equal(opened.labels.cancel, "Cancel");
     await untilSnapshot("share picker card", async (window) => {

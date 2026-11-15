@@ -51,6 +51,7 @@ test("side choices require the matching native API version", () => {
     assert.equal(side.sidebarPositionSupported("window"), false);
   }
   app.apiVersion = apiVersion;
+  assert.equal(side.sidebarPositionSupported("window"), true);
   assert.deepEqual(sent, []);
   standDown();
 });

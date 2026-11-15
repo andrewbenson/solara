@@ -44,6 +44,8 @@ function boot(bundleVersion, builtVersion) {
 test("the JS bundle and the native build declare the same API version", () => {
   assert.ok(jsVersion() && nativeVersion(), "both declarations found");
   assert.equal(jsVersion(), nativeVersion());
+  const testHostVersion = Number(read("./test-native/shell.ts").match(/apiVersion: (\d+),/)?.[1]);
+  assert.equal(testHostVersion, jsVersion());
 });
 
 test("legacy bundles and native builds are refused before main can start JS cleanup", () => {

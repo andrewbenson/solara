@@ -35,7 +35,7 @@ function fixture() {
     "react/jsx-runtime": jsx,
     "react-native": { View: "View", StyleSheet: { absoluteFill: {}, absoluteFillObject: {}, hairlineWidth: 0.5 }, Image: { resolveAssetSource: () => ({ uri: "mark" }) } },
     "zustand/react/shallow": { useShallow: (fn) => fn },
-    "@solara/settings": { nativeToolbarAvailable: () => false, sidebarAddressBarAvailable: () => false, windowShellActive: () => f.shell, NativePanelView: "NativePanelView" },
+    "@solara/settings": { nativeToolbarAvailable: () => false, sidebarAddressBarAvailable: () => false, windowShellActive: () => f.shell, windowNativeLayout: () => false, NativePanelView: "NativePanelView" },
     "../../lib/theme": { useTheme: () => theme },
     "../lib/theme": { useTheme: () => theme },
     "../../lib/webviews": { webviews: new Map([["a", page]]) },
@@ -88,7 +88,8 @@ test("inline zoom keeps native controls and forwards reset, steps and dismissal"
 test("inline history forwards native modifier actions and keeps background opens visible", () => {
   const f = fixture();
   const { HistoryPopover } = compile("apps/browser/src/components/layout/HistoryPopover.tsx", f.modules);
-  const view = HistoryPopover({ tabId: "a", windowId: "w", anchors: { back: 80, forward: 100 } });
+  const element = HistoryPopover({ tabId: "a", windowId: "w", anchors: { back: 80, forward: 100 } });
+  const view = element.type(element.props);
   assert.equal(view.type, "NativePanelView");
   assert.equal(JSON.parse(view.props.state).items[0].title, "One");
   f.effects.length = 0;

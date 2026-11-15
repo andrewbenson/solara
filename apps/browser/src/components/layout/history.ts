@@ -1,3 +1,8 @@
+import { openModeFor, openUrl } from "../bookmarks/actions";
+import { openInternalPage } from "../pages/urls";
+import { windowNativeLayoutGeneration, publishSettingsTopic } from "@solara/settings";
+import { isPageCurrent, nativePageFacts } from "@solara/store";
+import { addNativeSettingsHandlers } from "../settings/nativeSettings";
 import { create } from "zustand";
 import { publishPageContext } from "../pageEvents";
 import { goBackAcrossEngines } from "../../lib/engines";
@@ -109,14 +114,16 @@ export async function historyItems(asked: string, direction: -1 | 1, max = 15): 
   return items;
 }
 
-export async function goToHistoryItem(tabId: string, item: HistoryItem): Promise<void> {
-  if (livePageId(tabId) !== tabId) return withLivePage(tabId, (_, id) => void goToHistoryItem(id, item));
+export async function goToHistoryItem(tabId: string, item: HistoryItem, current = () => true): Promise<void> {
+  if (!current()) return;
+  if (livePageId(tabId) !== tabId) return withLivePage(tabId, (_, id) => void goToHistoryItem(id, item, current));
   const page = pageOf(tabId);
   if (item.offset === "newTab") {
     const list = (await webviews.get(tabId)?.navigationEntries()) ?? [];
-    const current = list.findIndex((e) => e.current);
-    if (current <= 0 || !list[0]) return goBack(tabId);
-    return goBackToNewTab(tabId, -current, list[0]);
+    if (!current()) return;
+    const index = list.findIndex((e) => e.current);
+    if (index <= 0 || !list[0]) return goBack(tabId);
+    return goBackToNewTab(tabId, -index, list[0]);
   }
   if (page.newTabShown) {
     hideNewTab(tabId);
@@ -128,13 +135,56 @@ export async function goToHistoryItem(tabId: string, item: HistoryItem): Promise
   if (item.offset) void webviews.get(tabId)?.goToOffset(item.offset);
 }
 
+let nativeMenuRequest = 0;
+
 type HistoryMenu = { tabId: string; direction: -1 | 1; items: HistoryItem[] };
 export const useHistoryMenu = create<{ menu: HistoryMenu | null }>(() => ({ menu: null }));
 
 export async function openHistoryMenu(tabId: string, direction: -1 | 1) {
+  const windowId = store().tabs[tabId]?.windowId;
+  const generation = windowId ? windowNativeLayoutGeneration(windowId) : 0;
+  if (generation > 0) {
+    publishSettingsTopic("pane.navigationMenu", { windowId, tabId, generation, direction, request: ++nativeMenuRequest });
+    return;
+  }
   const items = await historyItems(tabId, direction);
   if (!items.length) return;
   useHistoryMenu.setState({ menu: { tabId, direction, items } });
 }
 
 export const closeHistoryMenu = () => useHistoryMenu.setState({ menu: null });
+
+
+type NavigationCompatibilityAction = { kind: "back" | "forward" } | ({ kind: "item" } & HistoryItem);
+const nativeNavigationCurrent = (windowId: string, tabId: string, generation: number) => generation > 0 && windowNativeLayoutGeneration(windowId) === generation && store().tabs[tabId]?.windowId === windowId;
+
+addNativeSettingsHandlers({
+  "pane.navigationOpen": (windowId: string, tabId: string, generation: number, item: HistoryItem, click: { metaKey?: boolean; shiftKey?: boolean; altKey?: boolean; middle?: boolean }) => {
+    if (!nativeNavigationCurrent(windowId, tabId, generation) || !item.url) return;
+    openUrl(item.url, windowId, openModeFor(click));
+  },
+  "pane.navigationFullHistory": (windowId: string, tabId: string, generation: number) => {
+    if (nativeNavigationCurrent(windowId, tabId, generation)) openInternalPage("history", windowId);
+  },
+  "pane.navigationHistory": async (windowId: string, tabId: string, generation: number, direction: -1 | 1) => {
+    if (!nativeNavigationCurrent(windowId, tabId, generation)) return [];
+    const handle = webviews.get(tabId);
+    const items = await historyItems(tabId, direction);
+    return nativeNavigationCurrent(windowId, tabId, generation) && webviews.get(tabId) === handle ? items : [];
+  },
+  "pane.navigationCompatibility": (windowId: string, tabId: string, generation: number, registrationGeneration: number, sourceUrl: string, action: NavigationCompatibilityAction) => {
+    const facts = nativePageFacts(tabId);
+    const pageCurrent = () => {
+      if (!nativeNavigationCurrent(windowId, tabId, generation)) return false;
+      if (registrationGeneration === 0) {
+        const tab = store().tabs[tabId];
+        return !!tab && tab.url === sourceUrl && (internalPageOf(tabDestination(tab)) !== null || !tabDestination(tab));
+      }
+      return !!facts && isPageCurrent({ tabId, sessionGeneration: facts.generation, registrationGeneration });
+    };
+    if (!pageCurrent()) return;
+    if (action.kind === "back") goBack(tabId);
+    else if (action.kind === "forward") goForward(tabId);
+    else if (action.kind === "item") void goToHistoryItem(tabId, action, pageCurrent);
+  },
+});

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Image, StyleSheet, View } from "react-native";
-import { NativePanelView, windowShellActive, type NativePanelEvent } from "@solara/settings";
+import { NativePanelView, windowShellActive, windowNativeLayout, type NativePanelEvent } from "@solara/settings";
 import { useTheme } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
 import { openModeFor, openUrl } from "../bookmarks/actions";
@@ -13,7 +13,12 @@ import { useNativePaneHandler, useNativePaneOverlay, usePageFrame } from "./nati
 const WIDTH = 300;
 const FAVICON_X = PANEL.inset + (PANEL.iconSlot - 16) / 2;
 
-export function HistoryPopover({ tabId, windowId, anchors, nativeAllowed = true }: { tabId: string; windowId: string; anchors: { back: number; forward: number }; nativeAllowed?: boolean }) {
+export function HistoryPopover(props: { tabId: string; windowId: string; anchors: { back: number; forward: number }; nativeAllowed?: boolean }) {
+  const [native] = useState(() => windowNativeLayout(props.windowId));
+  return native ? null : <LegacyHistoryPopover {...props} />;
+}
+
+function LegacyHistoryPopover({ tabId, windowId, anchors, nativeAllowed = true }: { tabId: string; windowId: string; anchors: { back: number; forward: number }; nativeAllowed?: boolean }) {
   const menu = useHistoryMenu((s) => (s.menu?.tabId === tabId ? s.menu : null));
   const theme = useTheme();
   const profileId = useBrowser((s) => s.tabs[tabId]?.profileId ?? "");

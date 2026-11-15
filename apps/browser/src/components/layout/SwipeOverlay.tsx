@@ -1,5 +1,5 @@
 import { SwipeArea, swipeHaptic, type SwipeAreaHandle, type SwipeEvent } from "@solara/solaracore";
-import { SolaraHostedView, sendPaneSwipe, windowShellActive } from "@solara/settings";
+import { SolaraHostedView, sendPaneSwipe, windowShellActive, windowNativeLayout, publishSettingsTopic } from "@solara/settings";
 import { memo, useEffect, useRef, useState } from "react";
 import { Image, StyleSheet, View } from "react-native";
 import { useTheme } from "../../lib/theme";
@@ -7,6 +7,8 @@ import { useBrowser } from "../../store/browser";
 import { NEW_TAB_MARK } from "../primitives";
 import { HistoryPopover } from "./HistoryPopover";
 import { goBack, goForward, goToHistoryItem, historyItems, openHistoryMenu, useHistoryAvailability, useHistoryMenu, type HistoryItem } from "./history";
+import { usePage } from "./pageState";
+import { NativeLayoutFeed, nativePaneWindows, useNativeLayoutFeed, type NativePanePresentation } from "./nativeLayoutFeed";
 import type { ToolbarGeometry } from "./geometry";
 import type { PageFrame } from "./nativePaneOverlays";
 import {
@@ -35,9 +37,26 @@ export const NavigationOverlays = memo(function NavigationOverlays({ tabId, wind
   );
 });
 
+type NavigationPresentation = { newTabShown: boolean; backToNewTab: boolean; engineBack: boolean; theme: { dark: boolean; textPrimary: string; textSecondary: string } };
+const navigationFeed = new NativeLayoutFeed<NativePanePresentation<NavigationPresentation>>((entries) => publishSettingsTopic("pane.navigation", { windows: nativePaneWindows(entries) }));
+
+export function SwipeOverlay(props: { tabId: string; windowId: string; nativeAllowed?: boolean }) {
+  const [native] = useState(() => windowNativeLayout(props.windowId));
+  return native ? <NativeNavigationHistory tabId={props.tabId} windowId={props.windowId} /> : <LegacySwipeOverlay {...props} />;
+}
+
+function NativeNavigationHistory({ tabId, windowId }: { tabId: string; windowId: string }) {
+  const theme = useTheme();
+  const newTabShown = usePage(tabId, (page) => !!page.newTabShown);
+  const backToNewTab = usePage(tabId, (page) => page.backToNewTab);
+  const engineBack = usePage(tabId, (page) => !!page.engineBack);
+  useNativeLayoutFeed(navigationFeed, windowId, { windowId, tabId, presentation: { newTabShown, backToNewTab, engineBack, theme: { dark: !!theme.dark, textPrimary: theme.textPrimary, textSecondary: theme.textSecondary } } }, `${windowId}:${tabId}`);
+  return null;
+}
+
 type Shown = { direction: "back" | "forward"; confirmed: boolean; list: HistoryItem[] | null; selected: number };
 
-export function SwipeOverlay({ tabId, windowId, nativeAllowed = true }: { tabId: string; windowId: string; nativeAllowed?: boolean }) {
+function LegacySwipeOverlay({ tabId, windowId, nativeAllowed = true }: { tabId: string; windowId: string; nativeAllowed?: boolean }) {
   const theme = useTheme();
   const newTabMark = Image.resolveAssetSource(NEW_TAB_MARK)?.uri ?? null;
   const [inShell] = useState(() => nativeAllowed && windowShellActive(windowId));

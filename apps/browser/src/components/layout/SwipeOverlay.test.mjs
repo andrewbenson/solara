@@ -10,7 +10,7 @@ const source = readFileSync(new URL("./SwipeOverlay.tsx", import.meta.url), "utf
 const motion = await import("./swipeMotion.ts");
 const plain = (value) => JSON.parse(JSON.stringify(value));
 
-function harness(inShell = false) {
+function harness(inShell = false, nativeLayout = false) {
   const h = { messages: [], navigation: [], effects: [], timers: new Map(), nextTimer: 0, time: 0, cells: [], cursor: 0, history: [{ title: "Two", url: "https://two.invalid", key: "two", offset: -1 }, { title: "One", url: "https://one.invalid", key: "one", offset: -2 }] };
   const state = { tabs: { a: { profileId: "work" } }, history: { work: [{ url: "https://two.invalid", favicon: "two.png" }] } };
   const useBrowser = Object.assign((fn) => fn(state), { getState: () => state });
@@ -32,7 +32,7 @@ function harness(inShell = false) {
     "react/jsx-runtime": { Fragment: "Fragment", jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) },
     "react-native": { Animated: animated, Easing: { bezier() {}, in() {}, ease() {} }, Image: { resolveAssetSource: () => ({ uri: "fixture://mark" }) }, StyleSheet: { absoluteFill: { position: "absolute" } }, View: "View", Text: "Text" },
     "@solara/solaracore": { SwipeArea: "SwipeArea", swipeHaptic() {} },
-    "@solara/settings": { SolaraHostedView: "HostedView", windowShellActive: () => inShell, sendPaneSwipe: (...args) => h.messages.push(args) },
+    "@solara/settings": { SolaraHostedView: "HostedView", windowShellActive: () => inShell, windowNativeLayout: () => nativeLayout, sendPaneSwipe: (...args) => h.messages.push(args) },
     "@solara/shell": { Surface: "Surface", Symbol: "Symbol", VisualEffect: "VisualEffect" },
     "../../lib/theme": { useTheme: () => ({ dark: false, textPrimary: "#111111", textSecondary: "#777777" }) },
     "../../store/browser": { useBrowser },
@@ -40,6 +40,8 @@ function harness(inShell = false) {
     "./HistoryPopover": { HistoryPopover: "HistoryPopover" },
     "./history": { useHistoryAvailability: () => ({ back: true, forward: true }), historyItems: () => h.historyPromise ?? Promise.resolve(h.history), goBack: (tab) => h.navigation.push(["back", tab]), goForward: (tab) => h.navigation.push(["forward", tab]), goToHistoryItem: (...args) => h.navigation.push(["item", ...args]) },
     "./swipeMotion": motion,
+    "./nativeLayoutFeed": { NativeLayoutFeed: class {}, useNativeLayoutFeed() {} },
+    "./pageState": { usePage: (tabId, select) => select({ newTabShown: null, backToNewTab: false, engineBack: null }) },
   };
   const module = { exports: {} };
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
@@ -48,7 +50,7 @@ function harness(inShell = false) {
     clearTimeout(id) { h.timers.delete(id); },
   };
   new vm.Script(code).runInNewContext({ exports: module.exports, module, require: (id) => mocks[id] ?? {}, __DEV__: false, ...clock });
-  h.render = (nativeAllowed = true) => { h.cursor = 0; return module.exports.SwipeOverlay({ tabId: "a", windowId: "little", nativeAllowed }); };
+  h.render = (nativeAllowed = true) => { h.cursor = 0; const element = module.exports.SwipeOverlay({ tabId: "a", windowId: "little", nativeAllowed }); return element.type(element.props); };
   h.swipe = (phase, distance = 0, dy = 0) => h.render().props.children[0].props.onSwipe({ phase, direction: "back", distance, dy });
   h.layout = () => h.render().props.children[0].props.onLayout({ nativeEvent: { layout: { width: 800, height: 600 } } });
   h.advance = async (milliseconds) => {
@@ -134,4 +136,12 @@ test("an unmounted gesture cannot deliver a delayed destination list to its repl
   await h.advance(1);
   assert.equal(h.messages.some(([, , message]) => message.op === "list"), false);
   assert.deepEqual(plain(h.messages.at(-1)[2]), { op: "dismiss", delay: 0 });
+});
+
+
+test("native layout keeps only a headless history compatibility feed", () => {
+  const h = harness(true, true);
+  assert.equal(h.render(), null);
+  assert.deepEqual(h.messages, []);
+  assert.deepEqual(h.navigation, []);
 });

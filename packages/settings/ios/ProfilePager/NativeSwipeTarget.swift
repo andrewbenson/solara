@@ -7,6 +7,7 @@ final class NativeSwipeTarget: NSView, @preconcurrency ACSwipeTarget, @preconcur
   var tracksUnavailableDirections = false
   var allowsVerticalMotion = false
   @objc var isPager = false
+  @objc var coversPage = false
   var measuredWidth: (() -> CGFloat)?
   var onSwipe: (([String: Any]) -> Void)?
   var onPagerState: (([String: Any]) -> Void)?

@@ -1,6 +1,8 @@
 import AppKit
 import Foundation
 import SolaraUI
+import SolaraModel
+import SolaraStore
 
 @MainActor
 enum NativePaneOverlays {
@@ -17,6 +19,23 @@ enum NativePaneOverlays {
     started = true
     _ = SettingsJS.shared.observe(topic) { value in apply(value) }
     PanePrompts.start()
+    _ = SettingsJS.shared.observe("pane.navigation") { value in
+      navigation = (value as? [String: Any])?["windows"] as? [String: [String: Any]] ?? [:]
+      for host in hosts.values { host.relayout() }
+    }
+    _ = SettingsJS.shared.observe("pane.navigationMenu") { value in
+      guard let value = value as? [String: Any], let windowId = value["windowId"] as? String,
+        let tabId = value["tabId"] as? String,
+        (value["generation"] as? NSNumber)?.uint64Value == NativeWindowShell.nativeLayoutGeneration(windowId),
+        NativeWindowShell.nativeLayoutActive(windowId) else { return }
+      hosts[windowId]?.openNavigationMenu(tabId, direction: (value["direction"] as? Int ?? -1) < 0 ? .back : .forward)
+    }
+    TabPoolHost.shared.stateObservers.append { for host in hosts.values { host.relayout() } }
+    TabPoolHost.shared.pageEventObservers.append { _, _, _ in for host in hosts.values { host.relayout() } }
+    NotificationCenter.default.addObserver(forName: TabSlots.changed, object: TabSlots.shared, queue: .main) { note in
+      guard let windowId = note.userInfo?["windowId"] as? String else { return }
+      MainActor.assumeIsolated { hosts[windowId]?.relayout() }
+    }
     NotificationCenter.default.addObserver(forName: PaneOverlays.changed, object: nil, queue: .main) { note in
       guard let windowId = note.userInfo?["windowId"] as? String else { return }
       MainActor.assumeIsolated { hosts[windowId]?.relayout() }
@@ -27,6 +46,8 @@ enum NativePaneOverlays {
     }
     apply(SettingsJS.shared.latestValue(topic))
   }
+
+  static var navigation: [String: [String: Any]] = [:]
 
   static func host(_ windowId: String) -> PaneOverlayHost? { hosts[windowId] }
 
@@ -72,6 +93,7 @@ enum NativePaneOverlays {
 
   static func swipe(_ windowId: String, _ tabId: String, _ json: String) {
     guard let data = json.data(using: .utf8), let message = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+    guard !NativeWindowShell.nativeLayoutActive(windowId) else { return }
     if HostedSwipeCapsule.send(windowId, tabId, message) { return }
     guard NativeWindowShell.enabled else { return }
     guard let host = hosts[windowId] ?? (NativeWindowShell.host(windowId) != nil ? PaneOverlayHost(windowId: windowId) : nil) else { return }
@@ -248,6 +270,7 @@ final class PaneOverlayHost {
   private var casts: [String: (id: String, popover: PanePopover<CastPickerView>)] = [:]
   private var shares: [String: (id: String, popover: PanePopover<SharePickerView>, focus: HostedMount?)] = [:]
   private var swipes: [String: (wrap: PanePopoverWrap, capsule: SwipeCapsuleView)] = [:]
+  private var navigationSwipes: [String: NativeNavigationSwipe] = [:]
   private var fromJS: [String: Any] = [:]
   private var prompts: [String: PanePromptEntry] = [:]
   private var choosers: [String: PaneChooserEntry] = [:]
@@ -595,6 +618,8 @@ final class PaneOverlayHost {
   func stop() {
     guard !stopped else { return }
     stopped = true
+    navigationSwipes.values.forEach { $0.stop() }
+    navigationSwipes = [:]
     sadTabs.values.forEach { $0.removeFromSuperview() }
     zooms.values.forEach { $0.wrap.removeFromSuperview() }
     histories.values.forEach { $0.wrap.removeFromSuperview() }
@@ -619,6 +644,7 @@ final class PaneOverlayHost {
 
   func relayout() {
     guard !stopped else { return }
+    reconcileNavigationSwipes()
     for (tabId, view) in sadTabs {
       Self.place(view, in: slot(tabId), bottom: true)
       view.isHidden = view.superview == nil || view.showing == nil
@@ -646,6 +672,43 @@ final class PaneOverlayHost {
     for (tabId, entry) in swipes {
       Self.place(entry.wrap, in: slot(tabId), bottom: false)
       entry.capsule.frame = entry.wrap.bounds
+    }
+  }
+
+  func openNavigationMenu(_ tabId: String, direction: SwipeCapsuleDirection) {
+    relayout()
+    navigationSwipes[tabId]?.openMenu(direction)
+  }
+
+  private func reconcileNavigationSwipes() {
+    guard NativeWindowShell.nativeLayoutActive(windowId), let issuer = PageIssuer.shared else { return }
+    let generation = NativeWindowShell.nativeLayoutGeneration(windowId)
+    let feed = NativePaneOverlays.navigation[windowId]
+    let presentations = (feed?["generation"] as? NSNumber)?.uint64Value == generation ? feed?["presentations"] as? [String: [String: Any]] ?? [:] : [:]
+    let peekId = NativeStoreHandle.store?.state.peeks[windowId]?.tabId
+    func containers(_ tabId: String) -> (input: NSView?, drawing: NSView?) {
+      if tabId == peekId {
+        let peek = TabSlots.shared.container(for: .peek(windowId))
+        return (peek, peek)
+      }
+      return (PaneOverlays.shared.container(windowId: windowId, tabId: tabId, layer: .rn), slot(tabId))
+    }
+    let registered = Dictionary(uniqueKeysWithValues: issuer.registry.descriptors.filter { $0.host == .pooled }.map { ($0.tabID, $0.registration) })
+    var candidates = PaneOverlays.shared.tabIds(in: windowId)
+    if let peekId { candidates.insert(peekId) }
+    let ids = candidates.filter { TabPoolHost.shared.windowOf($0) == windowId && containers($0).input?.window != nil }
+    for (id, entry) in navigationSwipes where !ids.contains(id) {
+      entry.stop()
+      navigationSwipes[id] = nil
+    }
+    for id in ids {
+      let registration = registered[id] ?? PageRegistration(tabID: id, registrationGeneration: 0)
+      if navigationSwipes[id]?.matches(registration) != true {
+        navigationSwipes[id]?.stop()
+        navigationSwipes[id] = NativeNavigationSwipe(windowId: windowId, generation: generation, registration: registration)
+      }
+      let slots = containers(id)
+      navigationSwipes[id]?.place(input: slots.input, drawing: slots.drawing, presentation: presentations[id] ?? [:])
     }
   }
 
@@ -689,6 +752,13 @@ final class PaneOverlayHost {
         tabs[tabId, default: [:]]["swipe"] = ["shown": c.shown, "active": c.active, "direction": c.direction.rawValue, "confirmed": c.confirmed, "items": c.items?.map(\.title) ?? NSNull(), "selected": c.selected,
           "frame": inWindow(c, s.frame), "area": inWindow(entry.wrap, entry.wrap.bounds), "radius": s.radius, "opacity": s.opacity, "scale": s.scale, "iconScale": s.iconScale, "list": s.list, "pill": s.pill]
       }
+      for (tabId, entry) in navigationSwipes {
+        let c = entry.capsule
+        let s = c.sample()
+        tabs[tabId, default: [:]]["swipe"] = ["shown": c.shown, "active": c.active, "direction": c.direction.rawValue, "confirmed": c.confirmed,
+          "items": c.items?.map(\.title) ?? NSNull(), "selected": c.selected, "frame": inWindow(c, s.frame), "area": inWindow(c, c.bounds),
+          "radius": s.radius, "opacity": s.opacity, "scale": s.scale, "iconScale": s.iconScale, "list": s.list, "pill": s.pill]
+      }
       let card = NativeWindowShell.host(windowId)?.shell.card
       let layer = PaneOverlays.shared.layer(windowId: windowId)
       return ["top": layer != nil && card?.subviews.last === layer, "inCard": !(sadTabs.isEmpty && zooms.isEmpty && histories.isEmpty && swipes.isEmpty && selections.isEmpty && cliPills.isEmpty && casts.isEmpty && shares.isEmpty) && layer != nil && layer?.superview === card, "tabs": tabs]
@@ -718,3 +788,195 @@ public enum PaneOverlayRead {
   }
 }
 #endif
+
+@MainActor
+private final class NativeNavigationSwipe {
+  let registration: PageRegistration
+  private let windowId: String
+  private let generation: UInt64
+  private let compatibilityURL: String
+  private let target = NativeSwipeTarget(frame: .zero)
+  private let controller = NavigationSwipeController()
+  var capsule: SwipeCapsuleView { controller.capsule }
+  private var presentation: [String: Any] = [:]
+  private var stopped = false
+  private var menu: PanePopover<HistoryPanelView>?
+  private var menuSequence = 0
+
+  init(windowId: String, generation: UInt64, registration: PageRegistration) {
+    self.windowId = windowId
+    self.generation = generation
+    self.registration = registration
+    compatibilityURL = NativeStoreHandle.store?.state.tabs[registration.tabID]?.url ?? ""
+    target.coversPage = true
+    target.autoresizingMask = [.width, .height]
+    controller.capsule.autoresizingMask = [.width, .height]
+    controller.isCurrent = { [weak self] in self?.current == true }
+    controller.onVerticalMotion = { [weak self] in self?.target.allowsVerticalMotion = $0 }
+    controller.loadHistory = { [weak self] direction, completion in self?.history(direction, completion) }
+    controller.navigate = { [weak self] action in self?.navigate(action) }
+    target.onSwipe = { [weak self] event in
+      guard let self else { return }
+      self.controller.input(phase: event["phase"] as? String ?? "", direction: SwipeCapsuleDirection(rawValue: event["direction"] as? String ?? "") ?? .back,
+        distance: (event["distance"] as? NSNumber)?.doubleValue ?? 0, dy: (event["dy"] as? NSNumber)?.doubleValue ?? 0)
+    }
+  }
+
+  func matches(_ next: PageRegistration) -> Bool {
+    registration == next && (registration.registrationGeneration != 0 || NativeStoreHandle.store?.state.tabs[registration.tabID]?.url == compatibilityURL)
+  }
+
+  private var pageCurrent: Bool {
+    guard let registry = PageIssuer.shared?.registry else { return false }
+    if registration.registrationGeneration != 0 { return registry.descriptor(registration) != nil }
+    return matches(registration) && !registry.descriptors.contains { $0.tabID == registration.tabID }
+  }
+
+  private var current: Bool {
+    !stopped && target.window != nil && !target.isHiddenOrHasHiddenAncestor && NativeWindowShell.nativeLayoutGeneration(windowId) == generation
+      && TabPoolHost.shared.windowOf(registration.tabID) == windowId && pageCurrent
+  }
+
+  func place(input: NSView?, drawing: NSView?, presentation: [String: Any]) {
+    self.presentation = presentation
+    menu?.place(in: drawing)
+    PaneOverlayHost.place(target, in: input, bottom: false)
+    PaneOverlayHost.place(controller.capsule, in: drawing, bottom: false)
+    let live = NativeStoreHandle.store?.state.live[registration.tabID]
+    let newTabShown = presentation["newTabShown"] as? Bool == true
+    target.canSwipeBack = !newTabShown && (live?.canGoBack == true || presentation["backToNewTab"] as? Bool == true || presentation["engineBack"] as? Bool == true)
+    target.canSwipeForward = newTabShown || live?.canGoForward == true
+    controller.profileId = NativeStoreHandle.store?.state.tabs[registration.tabID]?.profileId ?? ""
+    if let theme = presentation["theme"] as? [String: Any] {
+      controller.theme = SwipeCapsuleTheme(dark: theme["dark"] as? Bool ?? false, textPrimary: theme["textPrimary"] as? String ?? "#000000D9", textSecondary: theme["textSecondary"] as? String ?? "#00000080")
+    }
+  }
+
+  private func history(_ direction: SwipeCapsuleDirection, _ completion: @escaping ([NavigationSwipeItem]) -> Void) {
+    guard current, let registry = PageIssuer.shared?.registry else { return }
+    if registration.registrationGeneration == 0 {
+      completion(direction == .back && presentation["backToNewTab"] as? Bool == true ? [.init(title: "New Tab", url: "", offset: 0, newTab: true)] : [])
+      return
+    }
+    registry.call(registration, command: .navigationEntries) { [weak self] result in
+      guard let self, self.current, case .success(let value) = result, let entries = value.foundation as? [[String: Any]] else { return }
+      let current = entries.firstIndex { $0["current"] as? Bool == true } ?? -1
+      let step = direction == .back ? -1 : 1
+      var items: [NavigationSwipeItem] = []
+      let shown = self.presentation["newTabShown"] as? Bool == true
+      if current >= 0, !shown {
+        var index = current + step
+        while entries.indices.contains(index), items.count < 15 {
+          let entry = entries[index]
+          let url = entry["url"] as? String ?? ""
+          let title = entry["title"] as? String ?? ""
+          items.append(.init(title: title.isEmpty ? url : title, url: url, offset: index - current))
+          index += step
+        }
+      }
+      if shown {
+        Task { @MainActor [weak self] in
+          guard let self, self.current else { return }
+          let value = await SettingsAdapters.js("pane.navigationHistory", self.windowId, self.registration.tabID, Double(self.generation), step)
+          guard self.current, let rows = value as? [[String: Any]] else { return }
+          completion(rows.map { .init(title: $0["title"] as? String ?? "", url: $0["url"] as? String ?? "", offset: $0["offset"] as? Int ?? 0) })
+        }
+      } else {
+        if step < 0, self.presentation["backToNewTab"] as? Bool == true, items.count < 15 {
+          items.append(.init(title: "New Tab", url: "", offset: -max(0, current), newTab: true))
+        }
+        completion(items)
+      }
+    }
+  }
+
+  func openMenu(_ direction: SwipeCapsuleDirection) {
+    guard current else { return }
+    controller.stop()
+    menuSequence += 1
+    let sequence = menuSequence
+    history(direction) { [weak self] items in
+      guard let self, self.current, self.menuSequence == sequence, !items.isEmpty else { return }
+      self.dismissMenu()
+      let menu = PanePopover(HistoryPanelView(frame: .zero))
+      self.menu = menu
+      let theme = self.controller.theme
+      let state: [String: Any] = ["items": items.map { ["title": $0.title, "url": $0.url, "newTab": $0.newTab] }, "profileId": self.controller.profileId,
+        "dark": theme.dark, "theme": ["textPrimary": theme.textPrimary, "textSecondary": theme.textSecondary, "icon": theme.textSecondary]]
+      guard let data = try? JSONSerialization.data(withJSONObject: state), let decoded = try? JSONDecoder().decode(HistoryPanelState.self, from: data) else { return }
+      menu.body.favicons.loader = { request in try await NativeSidebar.favicon(request) }
+      menu.body.onHeight = { [weak menu] in menu?.setHeight($0) }
+      menu.popover.onDismiss = { [weak self] in self?.dismissMenu() }
+      menu.body.onEvent = { [weak self] event in
+        guard let self, self.current else { return }
+        switch event {
+        case .open(let index, let click):
+          guard items.indices.contains(index) else { return }
+          let item = items[index]
+          if !click.meta && !click.shift && !click.alt && !click.middle || item.url.isEmpty {
+            self.dismissMenu()
+            self.navigate(.item(item))
+          } else {
+            if click.shift || click.alt { self.dismissMenu() }
+            Task { @MainActor [weak self] in
+              guard let self, self.current else { return }
+              _ = await SettingsAdapters.js("pane.navigationOpen", self.windowId, self.registration.tabID, Double(self.generation),
+                ["key": String(item.offset), "title": item.title, "url": item.url, "offset": item.offset],
+                ["metaKey": click.meta, "shiftKey": click.shift, "altKey": click.alt, "middle": click.middle])
+            }
+          }
+        case .fullHistory:
+          self.dismissMenu()
+          Task { @MainActor [weak self] in
+            guard let self, self.current else { return }
+            _ = await SettingsAdapters.js("pane.navigationFullHistory", self.windowId, self.registration.tabID, Double(self.generation))
+          }
+        }
+      }
+      menu.place(in: self.controller.capsule.superview)
+      var left = 12.0
+      if let host = NativeWindowShell.host(self.windowId), let anchors = host.anchorPayload()?["anchors"] as? [String: [Double]],
+        let rect = anchors[direction == .back ? "button:back" : "button:forward"], rect.count == 4 {
+        let point = self.target.convert(NSPoint(x: rect[0], y: rect[1]), from: host.shell)
+        left = max(12, point.x - 18)
+      }
+      menu.body.update(decoded)
+      menu.popover.set(placement: PopoverPlacement(width: 300, top: 12, left: left), dark: theme.dark)
+    }
+  }
+
+  private func dismissMenu() {
+    menuSequence += 1
+    menu?.wrap.removeFromSuperview()
+    menu = nil
+  }
+
+  private func navigate(_ action: NavigationSwipeAction) {
+    guard current, let registry = PageIssuer.shared?.registry else { return }
+    let live = NativeStoreHandle.store?.state.live[registration.tabID]
+    let shown = presentation["newTabShown"] as? Bool == true
+    var compatibility: [String: Any]?
+    switch action {
+    case .step(let direction):
+      if registration.registrationGeneration == 0 || shown || (direction == .back && live?.canGoBack != true) { compatibility = ["kind": direction.rawValue] }
+      else { registry.call(registration, command: direction == .back ? .goBack : .goForward) { _ in } }
+    case .item(let item):
+      if shown || item.newTab { compatibility = ["kind": "item", "title": item.title, "url": item.url, "offset": item.newTab ? "newTab" : item.offset] }
+      else { registry.call(registration, command: .goToOffset(item.offset)) { _ in } }
+    }
+    if let compatibility {
+      Task { @MainActor [weak self] in
+        guard let self, self.current else { return }
+        _ = await SettingsAdapters.js("pane.navigationCompatibility", self.windowId, self.registration.tabID, Double(self.generation), Double(self.registration.registrationGeneration), self.compatibilityURL, compatibility)
+      }
+    }
+  }
+
+  func stop() {
+    stopped = true
+    dismissMenu()
+    controller.stop()
+    target.removeFromSuperview()
+    controller.capsule.removeFromSuperview()
+  }
+}

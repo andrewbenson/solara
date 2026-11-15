@@ -25,27 +25,6 @@ Source counts include retained fallback and unconsumed exports; they are not mea
 React Native still registers main and pane module names, with one main root per browser/Little Solara window
 and a pane root per shown overlay; the API-skew screen reuses main.
 
-## 0.4.0: native drawing, with the previous window layout
-
-The fallback keeps 0.3.5's window layout by default. The native window layout remains available with
-`SOLARA_NATIVE_WINDOW_LAYOUT=1` and returns as the default in 0.4.1 after the tab-switch regression passes its gate.
-Little Solara's card background still draws in React Native; it finishes in 0.4.1. The extensions side panel was already Swift.
-
-| Item | Status |
-|---|---|
-| Inventory every file left in apps/browser/src by what it does (draws, decides, holds data, glue) and the milestone that removes it: docs/native/rn-inventory.md | shipped (0.4.0) |
-| The New Tab page's remaining React Native parts: Personalize, the feedback check-in and the release postcard | shipped (0.4.0): Personalize, the feedback banner and the release postcard/page draw in Swift; their state, actions and feeds are still JS |
-| Native site controls and prompts (permissions, autofill, translate, zoom, developer mode) | shipped (0.4.0): every consumer uses the native prompt, chooser, site, zoom and selection views and the developer stripes draw in Swift; actions and feeds are still JS; VoiceOver and hover feel are owner checks |
-| Downloads popover skin/button/motion, toolbar backdrop and no-shell GroupPanel | shipped (0.4.0): Swift drawing; state, placement and actions are still JS; live material, motion and VoiceOver are owner checks |
-| Native extensions toolbar, overlays and side panel | shipped (0.4.0) for the toolbar, its buttons, popups and menus; the rest of the side panel moves to 0.4.1; VoiceOver, menu tracking and the Dia visual check are owner checks |
-| Native find bar | shipped (0.4.0): FindBarView everywhere; find, replace and focus decide in JS until 0.4.2; VoiceOver speech is an owner check |
-| Native media: sidebar player, hover player, cast and share pickers, tab badges | shipped: the players and the cast and share pickers have drawn in Swift since 0.3.5 (f3b22e0c); tab badges and the share bar in 0.4.0 |
-| Native peek, Little Solara, calendar and meeting cards | Peek and the crash/unresponsive views shipped (0.4.0); small-window card fill and page hosting move to 0.4.1 |
-| Native top tab strip, split chrome, swipe overlay and the rest of the layout surfaces | native drawing ships (0.4.0) with the previous window layout; the native window layout stays opt-in with `SOLARA_NATIVE_WINDOW_LAYOUT=1`; native layout ownership, navigation-swipe handling and shared fullscreen/auto-hide placement return as the default in 0.4.1 after re-gating |
-| Sidebar on the right: a Left/Right position in Settings, the View menu and the sidebar's menu; peek, resize, hover cards and drops mirror; the window buttons stay top left (as in Arc and Zen); built with the layout port, so it's written once, in Swift | deferred by the 0.4.0 fallback to 0.4.1; choices are hidden or disabled while the native window layout is off; the opt-in path stays available for verification |
-| Only build what's visible: sidebar rows exist only for what's on screen, and row views are reused instead of one view per tab (a 200-tab session spent ~480 ms of launch building rows) (owner, 2026-11-10) | shipped (0.4.0), including the fallback layout; layout port 5 |
-| Launch in a smarter order: the window chrome first; invisible work (the extensions toolbar, sync, history hints, tab-sleep sweeps, pairing timers) when the main thread is idle, with lower priority classes for import, sync and cleanup (owner, 2026-11-10) | shipped (0.4.0), layout port 10 |
-
 ## 0.4.1: polish on the new native layout
 
 Small changes to surfaces 0.4.0 made native, while they are fresh: they need the native tab strip, rail and window
@@ -53,6 +32,7 @@ layout, and the profile dots fix replaces a React Native pager 0.4.0 retires.
 
 | Item | Status |
 |---|---|
+| 0.4.0's perf follow-ups: new window on screen 135 vs 97 ms, page-load and profile-swipe JS stalls (+57%, +18%), and the sheet-host harness's busy-dismiss failure (docs/perf/0.3.5-to-0.4.0.md) | planned |
 | The native window layout is the default again: tab switch, new tab and new window within 15% of 0.3.5 (0.4.0's candidate: 48 vs 40 ms, 143 vs 95 ms, 162 vs 102 ms), then the right sidebar ships with it | planned (owner 2026-11-15) |
 | From 0.4.0: the last React Native drawing: Little Solara's and the calendar and meeting cards' fill and page hosting, and the rest of the extensions side panel | planned |
 | Fix: when Solara opens on a profile that isn't first (Work, second of four), the sidebar's profile dots light the first dot until you swipe; they should show the open profile's place from launch (owner 2026-11-14, seen on 0.3.5) | landed |

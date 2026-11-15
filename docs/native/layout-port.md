@@ -13,7 +13,7 @@
 - Written as a plan before any implementation.
 - Future implementation follows AGENTS.md: new UI in Swift, no comments in code, shared checkout preserved, behaviour changes covered by tests. Commands below describe future checks, not checks performed for this design.
 - The roadmap's general 0.4.0 gate permits RN to arrange native views (`docs/roadmap.md:202`). This layout port intentionally goes further for these surfaces: RN neither draws nor arranges them. It does not claim that every other 0.4.0 row is complete.
-- Do not pull all commands, menus' action logic, drag business rules, sync, persistence, and the JS mirror into this port. Those remain 0.5.0/0.6.0 work (`docs/roadmap.md:217`). Existing JS action adapters can remain headless; Swift owns presentation and pointer-to-layout interpretation.
+- Do not pull all commands, menus' action logic, drag business rules, sync, persistence, and the JS mirror into this port. Those remain 0.4.2–0.4.4 work (`docs/roadmap.md`). Existing JS action adapters can remain headless; Swift owns presentation and pointer-to-layout interpretation.
 - Regular/private browser windows use the same owner; Little Solara and utility windows retain their separate hosts. Their page transfers and focus must continue working. The separate native Little Solara/calendar/media/content ports are dependencies for deleting their RN content, not hidden scope here.
 - Preserve native workspace-off and safe-mode policies until the final cutover is validated. A capability selects one complete layout path for a window at creation; never mount two competing owners.
 

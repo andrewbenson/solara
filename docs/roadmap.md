@@ -189,8 +189,9 @@ A fix-only release for 0.3.1, out as soon as it's gated (owner, 2026-11-11); the
 
 React Native leaves one layer at a time: first it stops drawing, then it stops deciding, then it stops holding data,
 then it's switched off, and only then is it deleted. Settings, onboarding, Import, New Tab, the omnibox, the internal
-pages, the link bubble and the store are already native (RN removal 01–08). Each milestone ships as its own release;
-feature releases can fit between them. New UI is built in Swift from now on, never in React Native.
+pages, the link bubble and the store are already native (RN removal 01–08). The port runs through 0.4.x, one layer per release (owner 2026-11-14: 0.5.0 and 0.6.0 folded into
+0.4.x); 0.5.0 is the first release that starts without React Native, and 1.0.0 deletes it. A feature release takes the
+next 0.4.x number when it fits between them. New UI is built in Swift from now on, never in React Native.
 
 Progress (from [native/rn-inventory.md](native/rn-inventory.md)): recounted on 2026-11-14 after the
 Downloads, toolbar backdrop and no-shell group cutover, 401 files and 52,044 lines of TypeScript remain in apps/browser/src:
@@ -210,8 +211,8 @@ Done when no React Native view appears on screen; React Native only arranges nat
 | The New Tab page's remaining React Native parts: Personalize, the feedback check-in and the release postcard | native drawing wired: Personalize, the due feedback banner and release postcard/page use Swift hosts; JS state, actions and feeds remain for later milestones |
 | Native site controls and prompts (permissions, autofill, translate, zoom, developer mode) | in progress: existing native prompt/chooser/site/zoom bodies now serve every former shared-control consumer; RN fallback bodies, translation rows and developer button/URL-field bodies removed. Selection bar is native in Little Solara, Peek and no-shell windows. JS actions/feeds remain; ToolbarBackdrop developer stripes now draw in Swift; unit/typecheck/Debug, hidden consumer and refused-session drivers, AppKit input guards, and matched control captures pass; real VoiceOver/hover feel remains an owner check |
 | Downloads popover skin/button/motion, toolbar backdrop and no-shell GroupPanel | native drawing wired: Swift hosts reuse DownloadsPanelView and SidebarGroupCardView; JS retains state, placement and actions. Debug build, targeted Swift tests and hidden downloads/toolbar/group drivers pass in both shell modes; live material/motion and VoiceOver speech remain owner checks |
-| Native extensions toolbar, overlays and side panel | drawing complete: shared Swift popup frame now serves Little Solara, existing NSMenu context/overflow menus retain their actions, native extension buttons support keyboard/VoiceOver and RN button/badge drawing is deleted. Native side panel and install/permission/pin sheets remain. JS toolbar model, menu actions and lifecycle adapters stay for 0.5.0; real VoiceOver, menu tracking and Dia visual checks remain on the owner list |
-| Native find bar | drawing complete: FindBarView is unconditional on existing main/split/Little Solara/legacy Peek mounts; JS find/replace/focus remains for 0.5.0. Studio Debug build, 11 native Find tests and 95 driver checks pass; 23 matched fixed crops are pixel-identical. Queued focus and native AX actions/state are verified; real VoiceOver speech remains an owner check |
+| Native extensions toolbar, overlays and side panel | drawing complete: shared Swift popup frame now serves Little Solara, existing NSMenu context/overflow menus retain their actions, native extension buttons support keyboard/VoiceOver and RN button/badge drawing is deleted. Native side panel and install/permission/pin sheets remain. JS toolbar model, menu actions and lifecycle adapters stay for 0.4.3; real VoiceOver, menu tracking and Dia visual checks remain on the owner list |
+| Native find bar | drawing complete: FindBarView is unconditional on existing main/split/Little Solara/legacy Peek mounts; JS find/replace/focus remains for 0.4.2. Studio Debug build, 11 native Find tests and 95 driver checks pass; 23 matched fixed crops are pixel-identical. Queued focus and native AX actions/state are verified; real VoiceOver speech remains an owner check |
 | Native media: sidebar player, hover player, cast and share pickers, tab badges | in progress (tab badges, share bar) |
 | Native peek, Little Solara, calendar and meeting cards | in progress: crash/unresponsive controls now host native SadTabView in Little Solara and other inline consumers; small-window card fill/page hosting remains |
 | Native top tab strip, split chrome, swipe overlay and the rest of the layout surfaces | in progress: existing native swipe capsule/history list hosted in Little Solara and inline consumers; shared-pin snapshot/wash hosted by native FrozenPageView with guarded painted/activation callbacks; shared favicon images/initials and exhausted-retry recovery rows now host Swift views; layout-port Patches 1–3 add contracts, native work counters, native projection, shared anchor readers and per-window native sidebar/strip ownership behind an isolated-development capability; pane guests and the remaining surfaces are still planned (`docs/native/layout-port.md`) |
@@ -236,17 +237,29 @@ Done when no React Native view appears on screen; React Native only arranges nat
 | One Agents pane in Settings (Swift) for both the MCP server and the `solara` command: the master switch, per-profile access, and per app read-only or "can act"; "Add" for each agent app found (Claude Desktop through its own extension install, Claude Code, Codex and ChatGPT desktop through their shared config, Cursor and VS Code through their install links, the rest by copy or a reviewed file edit); every edit shows its lines first, keeps a backup, leaves other servers alone and has Remove; says when an app needs a restart. The MCP entry runs the command inside Solara.app, so nothing else is installed. ChatGPT on the web isn't offered: it needs a public endpoint (owner 2026-11-14) | planned |
 | The terminal command stays a separate, explicit choice: per coding agent "also let it use `solara` in the terminal (full control)", off by default, installing the command and its skill; plus the existing install for people. The app enforces scope: the MCP gets a read-only key unless actions are allowed, the command a full key, and the control connection refuses anything outside a key's scope or profiles (owner 2026-11-14) | planned |
 
-## 0.5.0: React Native decides nothing
+## 0.4.2: commands and the omnibox decide in Swift
 
-Done when every user action is handled in Swift; JavaScript only mirrors state.
+The first half of "React Native decides nothing": every command a user gives through a menu, a shortcut or the
+omnibox is handled in Swift. Done when menus, shortcuts and the omnibox work with their JavaScript handlers switched
+off.
 
 | Item | Status |
 |---|---|
-| Commands, menus and shortcuts in Swift | planned |
-| Tab and window drag and drop, folder and group actions in Swift | planned |
-| The omnibox's actions and the sidebar's actions in Swift | planned |
+| Commands, menus and shortcuts in Swift, with window, focus and navigation handling | planned |
+| The omnibox's actions in Swift: what Return opens, where it opens, clipboard and paste-and-go | planned |
+| Settings and Import actions call Swift directly, not a JavaScript round trip | planned |
 
-## 0.6.0: the data layer is native
+## 0.4.3: the sidebar and tab strip decide in Swift
+
+The second half: done when every user action is handled in Swift and JavaScript only mirrors state.
+
+| Item | Status |
+|---|---|
+| Tab and window drag and drop, folder and group actions in Swift | planned |
+| The sidebar's and the top strip's actions in Swift: selection, close, rename, pin and move | planned |
+| Media, extension, prompt and translation lifecycles in Swift; the TypeScript fallback reducers retire | planned |
+
+## 0.4.4: the data layer is native
 
 Done when JavaScript holds no state of its own.
 
@@ -256,7 +269,7 @@ Done when JavaScript holds no state of its own.
 | Legacy migrations in Swift | planned |
 | The JavaScript mirror of the store is gone | planned |
 
-## 0.7.0: React Native off by default
+## 0.5.0: React Native off by default
 
 Done when a full release cycle passes with the React Native fallback never needed.
 

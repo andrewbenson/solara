@@ -456,8 +456,8 @@ export function probeStore(name: string, store: Store) {
   });
 }
 
-export function perfMark(name: string) {
-  if (perfProbeEnabled && !marks[name]) marks[name] = Date.now();
+export function perfMark(name: string, at = Date.now()) {
+  if (perfProbeEnabled && !marks[name] && Number.isFinite(at) && at > 0) marks[name] = at;
 }
 
 function findFibers(name: string, limit = 50): Fiber[] {
@@ -495,6 +495,8 @@ if (perfProbeEnabled) {
   if (probeOptions?.includes("selectors")) wrapSelectors();
   (globalThis as { acPerf?: unknown }).acPerf = {
     revision: PERF_PROBE_REVISION,
+    startupMarkRevision: 2,
+    firstWindowBoundary: "nativeChromeCACommit",
     marks,
     startup,
     get firstCommit() {

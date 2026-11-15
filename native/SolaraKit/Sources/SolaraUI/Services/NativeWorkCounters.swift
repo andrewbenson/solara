@@ -55,6 +55,7 @@ public enum NativeWorkCounters {
   public static var slotPublishes = 0
   public static var deferredJobs = 0
   public static var shellStoreSubscriptions = 0
+  public static var launchWorkRead: (() -> [String: Any])?
 
   public static func bind(_ view: NSView, windowId: String, profileId: String, kind: String) {
     let scope = Scope(windowId: windowId, profileId: profileId, kind: kind)
@@ -127,6 +128,7 @@ public enum NativeWorkCounters {
     let liveHosts = hostCounts.map { ["windowId": $0.key.windowId, "kind": $0.key.kind, "count": $0.value] as [String: Any] }
       .sorted { "\($0["windowId"]!)|\($0["kind"]!)" < "\($1["windowId"]!)|\($1["kind"]!)" }
     return ["version": 1, "rows": total.value, "groups": groups, "hosts": liveHosts,
+      "launchWork": launchWorkRead?() ?? [:],
       "layoutApplications": layoutApplications, "slotPublishes": slotPublishes,
       "activeAnimationLinks": links.values.filter { $0.value?.isPaused == false }.count, "liveSubscriptions": subscriptions,
       "deferredJobs": deferredJobs, "pendingDeferredJobs": FrameUpdates.probePendingJobs,

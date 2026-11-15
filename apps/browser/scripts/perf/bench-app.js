@@ -122,7 +122,8 @@ const scenarios = {
     await until(() => P.marks.firstWindow, 20000);
     const info = ac.shell.systemInfo();
     const read = P.read();
-    return { marks: { ...P.marks, processStart: info.processStart ?? null, firstCommit: P.firstCommit }, stats: read };
+    return { markRevision: P.startupMarkRevision ?? 1, firstWindowBoundary: P.firstWindowBoundary ?? "reactRootEffect",
+      marks: { ...P.marks, processStart: info.processStart ?? null, firstCommit: P.firstCommit }, stats: read };
   },
 
   async idle({ seconds = 10 } = {}) {

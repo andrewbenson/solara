@@ -4,7 +4,18 @@ const { useBrowser } = await import("./browser.ts");
 const model = await import("./model.ts");
 const { migrateHistoryFile, reloadHistory, startHistory } = await import("../lib/history.ts");
 const { flushPersistence, loadSession, startPersistence } = await import("../lib/persist.ts");
-const { firstWindowCommitted } = await import("../lib/afterFirstWindow.ts");
+const { installAfterFirstWindowScheduler } = await import("../lib/afterFirstWindow.ts");
+let firstWindowReady = false;
+const firstWindowTasks = [];
+installAfterFirstWindowScheduler((task) => {
+  if (firstWindowReady) queueMicrotask(task);
+  else firstWindowTasks.push(task);
+  return () => {};
+});
+const firstWindowCommitted = () => {
+  firstWindowReady = true;
+  for (const task of firstWindowTasks.splice(0)) queueMicrotask(task);
+};
 const stub = await import("../test-native/index.ts");
 
 const S = () => useBrowser.getState();

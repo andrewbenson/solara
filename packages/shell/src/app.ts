@@ -77,6 +77,9 @@ export type SystemInfo = {
 };
 
 export type AppModule = {
+  waitForLaunchIdle(id: string): Promise<boolean>;
+  cancelLaunchIdle(id: string): Promise<void>;
+  launchChromeCommittedAt(): Promise<number | null>;
   sidebarPosition?: boolean;
   addListener(name: "onNotificationResponse", listener: (e: NotificationResponse) => void): EventSubscription;
   addListener(name: "onPendingUpdate", listener: (e: { update: PendingUpdate | null }) => void): EventSubscription;
@@ -128,6 +131,20 @@ export type AppModule = {
 
 
 const App = nativeModule("SolaraApp");
+
+let launchTask = 0;
+export const launchChromeCommittedAt = () => App.launchChromeCommittedAt();
+export const scheduleAfterChrome = (task: () => void, cancelled: () => void = () => {}) => {
+  const id = `launch-${++launchTask}`;
+  let active = true;
+  void App.waitForLaunchIdle(id).then((admitted) => {
+    if (!active) return;
+    active = false;
+    if (admitted) task();
+    else cancelled();
+  }).catch((error) => console.warn("[launch] native admission failed", error));
+  return () => { active = false; void App.cancelLaunchIdle(id); };
+};
 
 export const updaterState = () => App.updaterState();
 export const checkForUpdates = () => App.checkForUpdates();

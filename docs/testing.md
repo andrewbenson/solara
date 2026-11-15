@@ -144,6 +144,17 @@ hand URLs to an instance whose env turns it off; any other way of handing an ins
 
 ## Test instances
 
+Layout launch scheduling uses `LaunchWorkSchedulerTests` in SolaraKit and `LaunchAdmissionTests` in packages/shell.
+The fake-clock scheduler cases cover prerequisite order, one chunk per idle opportunity, deadline starvation,
+input/live-resize pauses, cancellation and window-generation replacement. Native pairing admission and refresh
+coalescing tests in packages/sync cover bootstrap without a window, demanded pairing, required recovery, stale timer
+callbacks and close/quit rearming. Run pairing-host and pairing-service with `scripts/agent/host-harnesses` too.
+
+`node apps/browser/scripts/launch-scheduling-test.mjs <Debug app> <scratch>` drives the actual native scheduler,
+including a delayed required React guest, input while bounded work is pending, promotion and closing a job's window.
+Use little-solara, focus-hold and the SolaraCore content-blocker checks beside it. Patches 6/7 still own removing the
+remaining React layout/visible-guest prerequisite and supplying the native selected-page draw source.
+
 Launch with `scripts/agent/ac launch <app> --data <dir> [--env NAME=value]…` (`--help`; then `ac eval`, `ac page`,
 `ac quit`), or `launch()` in `scripts/lib/instance.mjs`. `SOLARA_BACKGROUND=1` and a scratch `SOLARA_DATA_DIR`
 make an instance a test instance; the rest are hooks for one test. Test facilities require `ACDevBuild=YES`, or a

@@ -1,5 +1,6 @@
 import AppKit
 import SolaraCore
+import SolaraShell
 import ExpoModulesCore
 import SolaraImportAdapter
 import Security
@@ -10,6 +11,7 @@ public class SyncModule: Module {
   private let creation = SyncCreationAdmission.shared
   private static let work = DispatchQueue(label: "solara.sync", qos: .utility)
   private static let sealed = SealedPasswords()
+  @MainActor private static var pairingAdmission: UUID?
   private static let pairingWork = DispatchQueue(label: "solara.sync.pairing.bridge", qos: .utility)
 
   public func definition() -> ModuleDefinition {
@@ -23,6 +25,11 @@ public class SyncModule: Module {
       pairing.onKeyAvailable = { account, entropy in KeyState.shared.set(entropy, account: account) }
       pairing.bootstrap(dataDirectory: Self.pairingDataDirectory, defaultFolder: Self.defaultFolder, keys: Self.pairingKeyStore, safeMode: { SolaraCoreHost.safeMode })
       pairing.moduleAttached()
+      DispatchQueue.main.async {
+        MainActor.assumeIsolated {
+          if Self.pairingAdmission == nil { Self.pairingAdmission = LaunchAdmission.observe { pairing.setPeriodicAdmitted($0) } }
+        }
+      }
       Self.work.async { Self.removeTemporaryKits() }
     }
 
@@ -139,6 +146,7 @@ public class SyncModule: Module {
       Self.work.async {
         guard let entropy = Self.keyStore.load(account: account), entropy.count == 32 else { promise.resolve(false); return }
         self.state.set(entropy, account: account)
+        PairingServices.shared.refresh()
         promise.resolve(true)
       }
     }.runOnQueue(.main)
@@ -583,7 +591,7 @@ private final class KeyState {
     defer { lock.unlock() }
     _entropy = entropy
     _keys = entropy.map(SyncKeys.init(entropy:))
-    PairingServices.shared.refresh()
+    if changed { PairingServices.shared.refresh() }
   }
 
   var entropy: Data? {

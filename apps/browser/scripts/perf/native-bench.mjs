@@ -890,6 +890,8 @@ async function launchRun(side, i) {
     };
     let { content, committed } = contentMarks();
     for (const end = Date.now() + 5000; !committed && Date.now() < end; await sleep(20)) ({ content, committed } = contentMarks());
+    const nativeWork = await app.run(`const module = globalThis.expo?.modules?.SolaraWindowShell;
+      return typeof module?.nativeWork === "function" ? module.nativeWork(false).then(JSON.parse) : null;`);
     const r = {
       window: app.windowAt - app.t0,
       withContent: committed ? Math.max(app.windowAt, committed.committed) - app.t0 : NaN,
@@ -899,7 +901,22 @@ async function launchRun(side, i) {
       load: Math.round(loadavg()[0] * 10) / 10,
       stalls: app.stalls,
       display,
+      nativeWork,
+      nativeChromeCommit: Number.isFinite(nativeWork?.launchWork?.chromeCommittedAt) ? nativeWork.launchWork.chromeCommittedAt - app.t0 : null,
     };
+    await sleep(3000);
+    r.nativeWorkSettled = await app.run(`const module = globalThis.expo?.modules?.SolaraWindowShell;
+      return typeof module?.nativeWork === "function" ? module.nativeWork(false).then(JSON.parse) : null;`);
+    if (r.nativeWorkSettled?.launchWork) {
+      for (const end = Date.now() + 5000; !Number.isFinite(r.nativeWorkSettled.launchWork.chromeCommittedAt) && Date.now() < end;) {
+        await sleep(50);
+        r.nativeWorkSettled = await app.run(`return globalThis.expo.modules.SolaraWindowShell.nativeWork(false).then(JSON.parse);`);
+      }
+      if (!Number.isFinite(r.nativeWorkSettled.launchWork.chromeCommittedAt)) {
+        throw new Error(`native chrome did not commit: ${JSON.stringify(r.nativeWorkSettled.launchWork)}`);
+      }
+      r.nativeChromeCommit = r.nativeWorkSettled.launchWork.chromeCommittedAt - app.t0;
+    }
     await app.measureStalls("launch", async () => {}, { cumulative: true });
     if (opt.seed) r.pageTargets = (await app.cdp.targets()).length;
     if (opt["trace-startup"]) {
@@ -1443,6 +1460,11 @@ function summary(res) {
   add("launch → window shown", res.launch.map((r) => r.window), "ms");
   add("launch → window shown with its content", res.launch.map((r) => r.withContent), "ms");
   add("launch → JS running", res.launch.map((r) => r.js), "ms");
+  if (res.launch.some((r) => r.nativeWork?.launchWork)) {
+    add("launch → native chrome CA commit", res.launch.map((r) => r.nativeChromeCommit), "ms");
+    add("launch optional chunks executed at settlement", res.launch.map((r) => r.nativeWorkSettled?.launchWork?.executed), "chunks");
+    add("launch optional chunks pending at settlement", res.launch.map((r) => r.nativeWorkSettled?.launchWork?.pending), "chunks");
+  }
   rows.push(framedRow("launch → first page painted", res.launch, (r) => r.firstPaint, "ms"));
   rows.push(framedRow("launch → first page's first frame", res.launch, (r) => r.firstFrame, "ms"));
   const S = res.session;

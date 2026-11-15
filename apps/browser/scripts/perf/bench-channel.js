@@ -20,6 +20,11 @@ const ac = {
   shell,
   now: () => Date.now(),
   journeys: devJourneys,
+  async nativeWork() {
+    const native = requireOptionalNativeModule("SolaraWindowShell");
+    if (typeof native?.nativeWork !== "function") return null;
+    return JSON.parse(await native.nativeWork(false));
+  },
   async omniboxFixture() {
     const native = requireOptionalNativeModule("SolaraNewTab");
     if (!native?.benchFixture) throw new Error("omnibox fixture probe unavailable; rebuild with the probe");

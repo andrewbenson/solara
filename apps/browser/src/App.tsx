@@ -63,7 +63,7 @@ function BrowserWindow() {
   );
 
   return (
-    <View pointerEvents={onTop ? "box-none" : "auto"} style={{ flex: 1, flexDirection: "row" }} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
+    <View testID={`solara-window-guest.${windowId}`} pointerEvents={onTop ? "box-none" : "auto"} style={{ flex: 1, flexDirection: "row" }} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
       <ShellBackdrop shell={shell} />
       <WindowProfile />
       <ExtensionSidePanel fullscreen={fullscreen} />

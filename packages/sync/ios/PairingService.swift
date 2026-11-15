@@ -68,6 +68,12 @@ public final class PairingServices: PairingJoining, CustomReflectable {
   private var storeRevision: (() -> Int?)?
   private var bootstrap: (() -> Void)?
   private var refreshPending = false
+  private var refreshDirty = false
+  private var periodicAdmitted = false
+  private var demanded = false
+  private var shutdown = false
+  private var recoveryRequired = false
+  private let scheduleTimer: PairingPeriodicTimer.Schedule
   private var eligible = false
   private var markerVerified = false
   private var stopped = false
@@ -82,13 +88,13 @@ public final class PairingServices: PairingJoining, CustomReflectable {
   private var requestObjects: [Data: PairingNativeRequest] = [:]
   private var observers: [NSObjectProtocol] = []
   private var presenter: PairingFolderPresenter?
-  private var timer: DispatchSourceTimer?
+  private lazy var timer = PairingPeriodicTimer(queue: .main, delay: 1, interval: 5, schedule: scheduleTimer) { [weak self] in self?.refresh(periodic: true) }
   var onRequest: (() -> Void)?
   var onKeyAvailable: ((String, Data) -> Void)?
 
   private let sessionDictionary: () -> [String: Any]?
 
-  init(sessionDictionary: @escaping () -> [String: Any]? = { CGSessionCopyCurrentDictionary() as? [String: Any] }) { self.sessionDictionary = sessionDictionary }
+  init(sessionDictionary: @escaping () -> [String: Any]? = { CGSessionCopyCurrentDictionary() as? [String: Any] }, scheduleTimer: @escaping PairingPeriodicTimer.Schedule = PairingPeriodicTimer.dispatch) { self.sessionDictionary = sessionDictionary; self.scheduleTimer = scheduleTimer }
 
   #if DEBUG
   public var backendReady: Bool {
@@ -101,7 +107,7 @@ public final class PairingServices: PairingJoining, CustomReflectable {
   func register(_ coordinator: PairingCoordinator) {
     lock.lock()
     defer { lock.unlock() }
-    if self.coordinator == nil { self.coordinator = coordinator }
+    if self.coordinator == nil { self.coordinator = coordinator; updateTimerLocked() }
   }
 
   public func registerStore(healthy: @escaping () -> Bool, revision: @escaping () -> Int?, projection: @escaping ([String: Any], [String: Any]) throws -> Any) {
@@ -117,11 +123,35 @@ public final class PairingServices: PairingJoining, CustomReflectable {
 
   public func moduleAttached() {
     lock.lock()
+    guard !shutdown else { lock.unlock(); return }
     let reload = attached
     attached = true
     lock.unlock()
     if reload { invalidate("reload") }
     refresh()
+  }
+
+  public func setPeriodicAdmitted(_ admitted: Bool) {
+    lock.lock()
+    periodicAdmitted = admitted
+    updateTimerLocked()
+    lock.unlock()
+  }
+
+  public func setDemanded(_ value: Bool) {
+    lock.lock()
+    guard !shutdown, demanded != value else { lock.unlock(); return }
+    demanded = value
+    updateTimerLocked()
+    let owner = coordinator
+    lock.unlock()
+    if value { refresh(); owner?.poll() }
+  }
+
+  private func updateTimerLocked() {
+    let optional = !shutdown && (periodicAdmitted || demanded)
+    timer.setEnabled(!shutdown && (optional || recoveryRequired || pendingStops > 0))
+    coordinator?.setPeriodicAdmitted(optional)
   }
 
   public var committedOnboardingJoinToken: String? {
@@ -131,6 +161,7 @@ public final class PairingServices: PairingJoining, CustomReflectable {
   public func invalidate(_ reason: String) {
     lock.lock()
     revision &+= 1
+    if reason == "shutdown" { shutdown = true; refreshDirty = false; recoveryRequired = false }
     eligible = false
     markerVerified = false
     context = nil
@@ -146,6 +177,7 @@ public final class PairingServices: PairingJoining, CustomReflectable {
     }
     if reason == "folder" { folderGeneration &+= 1; selectedFolder = nil; selectedCID = nil }
     if reason == "forget" || reason == "rekey" { keyGeneration &+= 1 }
+    updateTimerLocked()
     let coordinator = coordinator
     lock.unlock()
     let mapped: PairingCoordinator.InvalidationReason
@@ -161,7 +193,6 @@ public final class PairingServices: PairingJoining, CustomReflectable {
     if reason == "shutdown" {
       DispatchQueue.main.async { [weak self] in
         guard let self else { return }
-        self.timer?.cancel(); self.timer = nil
         if let presenter = self.presenter { NSFileCoordinator.removeFilePresenter(presenter); self.presenter = nil }
         for observer in self.observers { NotificationCenter.default.removeObserver(observer); DistributedNotificationCenter.default().removeObserver(observer) }
         self.observers.removeAll()
@@ -194,6 +225,7 @@ public final class PairingServices: PairingJoining, CustomReflectable {
     coordinator?.finishStop()
     lock.lock()
     pendingStops -= count
+    updateTimerLocked()
     cachedCommitted = nil
     committedListeners.removeAll()
     lock.unlock()
@@ -209,24 +241,41 @@ public final class PairingServices: PairingJoining, CustomReflectable {
 
   func bootstrap(dataDirectory: URL, defaultFolder: URL, keys: PairingInstallationKeyStoring, safeMode: @escaping () -> Bool) {
     lock.lock()
-    guard bootstrap == nil else { lock.unlock(); return }
+    guard bootstrap == nil, !shutdown else { lock.unlock(); return }
     localStop = { dto, generation in try PairingInstallationHost.stopInstallation(dataDirectory: dataDirectory, dto, stopGeneration: generation) }
     bootstrap = { [weak self] in self?.configure(dataDirectory: dataDirectory, defaultFolder: defaultFolder, keys: keys, safeMode: safeMode) }
+    updateTimerLocked()
     lock.unlock()
     DispatchQueue.main.async { [weak self] in self?.installLifecycle() }
     refresh()
   }
 
-  func refresh() {
+  func refresh(periodic: Bool = false) {
     lock.lock()
-    guard !refreshPending, let bootstrap else { lock.unlock(); return }
+    guard !shutdown, !periodic || periodicAdmitted || demanded || recoveryRequired || pendingStops > 0, let bootstrap else { lock.unlock(); return }
+    if refreshPending { if !periodic { refreshDirty = true }; lock.unlock(); return }
     refreshPending = true
     lock.unlock()
     worker.async { [weak self] in
-      bootstrap()
-      self?.lock.lock()
-      self?.refreshPending = false
-      self?.lock.unlock()
+      guard let self else { return }
+      var optional = periodic
+      while true {
+        self.lock.lock()
+        let active = !self.shutdown && (!optional || self.periodicAdmitted || self.demanded || self.recoveryRequired || self.pendingStops > 0)
+        self.lock.unlock()
+        if active { bootstrap() }
+        self.lock.lock()
+        if self.refreshDirty && !self.shutdown {
+          self.refreshDirty = false
+          optional = false
+          self.lock.unlock()
+          continue
+        }
+        self.refreshPending = false
+        self.updateTimerLocked()
+        self.lock.unlock()
+        return
+      }
     }
   }
 
@@ -234,6 +283,7 @@ public final class PairingServices: PairingJoining, CustomReflectable {
     persistPendingStops()
     let ownerEpoch = coordinator?.configurationEpoch
     lock.lock()
+    guard !shutdown else { lock.unlock(); return }
     let captured = revision
     let chosenFolder = selectedFolder
     let chosenCID = selectedCID
@@ -243,6 +293,7 @@ public final class PairingServices: PairingJoining, CustomReflectable {
     let folderGeneration = folderGeneration
     let keyGeneration = keyGeneration
     lock.unlock()
+    var retryRequired = true
     do {
       let sample = try PairingBootClock.sample()
       let documentURL = dataDirectory.appendingPathComponent("sync.json")
@@ -252,10 +303,17 @@ public final class PairingServices: PairingJoining, CustomReflectable {
         bytes = try PairingPOSIXDurableIO().read(documentURL, limit: 4 * 1024 * 1024)
       } else if errno == ENOENT { bytes = nil }
       else { throw PairingCoordinator.Failure.unavailable }
+      retryRequired = bytes != nil
+      var markerInfo = stat()
+      let markerPath = dataDirectory.appendingPathComponent("Application Support/sync-pairing/host-installation.json").path
+      let markerExists = lstat(markerPath, &markerInfo) == 0
+      let markerUncertain = !markerExists && errno != ENOENT
       let document = bytes.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
       let version = document?["v"] as? Int
       guard bytes == nil || version == 1 || version == 2 else { throw PairingCoordinator.Failure.unavailable }
+      retryRequired = markerExists || markerUncertain || version == 2 && document?["enabled"] as? Bool == true
       let committed = try PairingInstallationHost.committedTarget(dataDirectory: dataDirectory, keys: keys)
+      retryRequired = committed != nil || version == 2 && document?["enabled"] as? Bool == true
       if let committed {
         lock.lock()
         if revision == captured && !stopped {
@@ -330,6 +388,7 @@ public final class PairingServices: PairingJoining, CustomReflectable {
       cachedCommitted = committedState
       cachedOnboardingToken = stopped ? nil : onboardingToken
       if let context, context.cid == configuration.cid, context.environment == configuration.environment, context.localName == configuration.localName, context.entropy == configuration.entropy, context.trustedDevice == configuration.trustedDevice {
+        recoveryRequired = committed != nil && committedState != .installed
         eligible = allowed
         markerVerified = trusted && allowed
         lock.unlock()
@@ -339,7 +398,7 @@ public final class PairingServices: PairingJoining, CustomReflectable {
       if coordinator == nil {
         guard keyState != .failure else { return }
         accounting.setFirstInstallationEvidence(try Self.firstInstallationEvidence(dataDirectory: dataDirectory, syncState: .success(bytes), version: version, keyState: keyState))
-        let made = PairingCoordinator(configuration: configuration, mailbox: mailbox, store: accounting, authenticator: FreshPairingOwnerAuthenticator(), keyStore: keys, host: installationRouter, clock: { (try? PairingBootClock.sample().milliseconds) ?? UInt64.max }, wall: { UInt64(max(0, Date().timeIntervalSince1970 * 1000)) }, initialGeneration: host.minimumGeneration, eligibility: { [weak self] in self?.currentEligibility(safeMode: safeMode) == true })
+        let made = PairingCoordinator(configuration: configuration, mailbox: mailbox, store: accounting, authenticator: FreshPairingOwnerAuthenticator(), keyStore: keys, host: installationRouter, clock: { (try? PairingBootClock.sample().milliseconds) ?? UInt64.max }, wall: { UInt64(max(0, Date().timeIntervalSince1970 * 1000)) }, initialGeneration: host.minimumGeneration, eligibility: { [weak self] in self?.currentEligibility(safeMode: safeMode) == true }, periodicAdmitted: false, scheduleTimer: scheduleTimer)
         lock.lock()
         guard revision == captured else { lock.unlock(); return }
         register(made)
@@ -352,12 +411,16 @@ public final class PairingServices: PairingJoining, CustomReflectable {
       lock.lock()
       guard revision == captured else { lock.unlock(); return }
       context = configuration
+      recoveryRequired = committed != nil && committedState != .installed
       eligible = allowed
       markerVerified = trusted && allowed
       lock.unlock()
       if hostChanged { onRequest?() }
       DispatchQueue.main.async { [weak self] in self?.watch(folder) }
-    } catch { invalidate("health") }
+    } catch {
+      invalidate("health")
+      lock.lock(); recoveryRequired = retryRequired; updateTimerLocked(); lock.unlock()
+    }
   }
 
   static func firstInstallationEvidence(dataDirectory: URL, syncState: Result<Data?, Error>, version: Int?, keyState: PairingKeyLookup?) throws -> PairingFirstInstallationEvidence {
@@ -388,7 +451,8 @@ public final class PairingServices: PairingJoining, CustomReflectable {
   }
 
   private func installLifecycle() {
-    guard observers.isEmpty else { return }
+    lock.lock(); let active = !shutdown; lock.unlock()
+    guard active, observers.isEmpty else { return }
     let state = PairingScreenLockState.from(session: sessionDictionary())
     lock.lock()
     lockKnown = state != .unknown
@@ -404,16 +468,12 @@ public final class PairingServices: PairingJoining, CustomReflectable {
       })
     }
     observers.append(NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: nil) { [weak self] _ in self?.invalidate("shutdown") })
-    let timer = DispatchSource.makeTimerSource(queue: .main)
-    timer.schedule(deadline: .now() + 1, repeating: 5)
-    timer.setEventHandler { [weak self] in self?.refresh() }
-    self.timer = timer
-    timer.resume()
     refresh()
   }
 
   private func watch(_ folder: URL) {
-    guard presenter?.presentedItemURL != folder else { return }
+    lock.lock(); let active = !shutdown; lock.unlock()
+    guard active, presenter?.presentedItemURL != folder else { return }
     if let presenter { NSFileCoordinator.removeFilePresenter(presenter) }
     let presenter = PairingFolderPresenter(folder) { [weak self] in self?.coordinator?.poll(); self?.refresh() }
     self.presenter = presenter
@@ -502,6 +562,7 @@ public final class PairingServices: PairingJoining, CustomReflectable {
   }
 
   public func arm(override: Bool = false) throws -> PairingNativeArm {
+    refresh()
     lock.lock()
     let allowed = eligible && markerVerified
     lock.unlock()
@@ -618,4 +679,51 @@ private final class PairingInstallationRouter: PairingInstallationHosting {
     guard let host else { initialized(false); ready(false); return }
     host.keySaved(installation, initialized: initialized, ready: ready)
   }
+}
+
+final class PairingPeriodicTimer {
+  typealias Schedule = (DispatchQueue, TimeInterval, TimeInterval, @escaping () -> Void) -> () -> Void
+  static let dispatch: Schedule = { queue, delay, interval, fire in
+    let source = DispatchSource.makeTimerSource(queue: queue)
+    source.schedule(deadline: .now() + delay, repeating: interval)
+    source.setEventHandler(handler: fire)
+    source.resume()
+    return { source.cancel() }
+  }
+  private let lock = NSRecursiveLock()
+  private let queue: DispatchQueue
+  private let delay: TimeInterval
+  private let interval: TimeInterval
+  private let schedule: Schedule
+  private let action: () -> Void
+  private var cancel: (() -> Void)?
+  private var epoch: UInt64 = 0
+
+  init(queue: DispatchQueue, delay: TimeInterval, interval: TimeInterval, schedule: @escaping Schedule = PairingPeriodicTimer.dispatch, action: @escaping () -> Void) {
+    self.queue = queue
+    self.delay = delay
+    self.interval = interval
+    self.schedule = schedule
+    self.action = action
+  }
+
+  func setEnabled(_ enabled: Bool) {
+    lock.lock()
+    defer { lock.unlock() }
+    guard enabled != (cancel != nil) else { return }
+    epoch &+= 1
+    cancel?()
+    cancel = nil
+    guard enabled else { return }
+    let captured = epoch
+    cancel = schedule(queue, delay, interval) { [weak self] in
+      guard let self else { return }
+      self.lock.lock()
+      let current = self.epoch == captured && self.cancel != nil
+      self.lock.unlock()
+      if current { self.action() }
+    }
+  }
+
+  deinit { cancel?() }
 }

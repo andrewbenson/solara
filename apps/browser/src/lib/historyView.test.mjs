@@ -4,7 +4,18 @@ import { test } from "node:test";
 globalThis.__DEV__ = false;
 const { useBrowser } = await import("../store/browser.ts");
 const { reloadHistory, startHistory } = await import("./history.ts");
-const { firstWindowCommitted } = await import("./afterFirstWindow.ts");
+const { installAfterFirstWindowScheduler } = await import("./afterFirstWindow.ts");
+let firstWindowReady = false;
+const firstWindowTasks = [];
+installAfterFirstWindowScheduler((task) => {
+  if (firstWindowReady) queueMicrotask(task);
+  else firstWindowTasks.push(task);
+  return () => {};
+});
+const firstWindowCommitted = () => {
+  firstWindowReady = true;
+  for (const task of firstWindowTasks.splice(0)) queueMicrotask(task);
+};
 const stub = await import("../test-native/index.ts");
 
 const S = () => useBrowser.getState();

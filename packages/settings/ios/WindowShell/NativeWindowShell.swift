@@ -54,6 +54,15 @@ enum NativeWindowShell {
   static func install() {
     guard enabled, !installed, let make = WindowHost.makeContentView else { return }
     installed = true
+    NativeLaunchWork.install()
+    let prepare = WindowHost.prepareContent
+    WindowHost.prepareContent = { windowId, root, committed in
+      guard let host = lifetimes.host(windowId), host.shell === root else {
+        return prepare?(windowId, root, committed) ?? false
+      }
+      host.prepareLaunch(committed)
+      return true
+    }
     NativeSplitChrome.start()
     NativeShareBand.start()
     NativePeek.start()
@@ -158,6 +167,7 @@ final class ShellHost {
   private var lastChildAnchors: [String: CGRect] = [:]
   private var layoutStopped = false
   private var layoutReader: String?
+  private var launchReadiness: NativeLaunchReadiness?
   #if DEBUG
   var devSidePanelResizeLinkActive: Bool { sidePanel?.devResizeLinkActive ?? false }
   #endif
@@ -172,6 +182,23 @@ final class ShellHost {
     legacyLayoutAnchors = WindowAnchors(windowId: windowId, windowGeneration: generation)
     shell = WindowShellView(windowId: windowId, reactOnTop: NativeWindowShell.mainOnTop)
     self.root = root
+    launchReadiness = NativeLaunchReadiness(windowId: windowId, generation: generation, shell: shell, root: root)
+    launchReadiness?.coherent = { [weak self] in
+      guard let self, let last = self.lastLayoutInput, let input = self.makeLayoutInput() else { return false }
+      return last.hasSameLayout(as: input) && NativeStoreHandle.store?.rev == self.layoutRevision
+        && !self.shell.frames.card.isEmpty && !self.shell.frames.page.isEmpty
+    }
+    launchReadiness?.revision = { [weak self] in self?.layoutRevision ?? -1 }
+    launchReadiness?.guestsReady = { [weak self] in
+      guard let self, let input = self.lastLayoutInput else { return false }
+      guard NativePaneRoots.active(windowId) else { return true }
+      let ids = input.split?.tabIds ?? input.selectedTabId.map { [$0] } ?? []
+      return ids.allSatisfy { id in
+        guard let slot = PaneOverlays.shared.container(windowId: windowId, tabId: id, layer: .rn) else { return false }
+        guard !slot.isHiddenOrHasHiddenAncestor else { return true }
+        return slot.subviews.contains { !$0.isHidden && !$0.bounds.isEmpty }
+      }
+    }
     #if SOLARA_PROBES
     NativeWorkCounters.host(self, windowId: windowId, kind: "ShellHost") { (host: ShellHost) -> (Bool, Int) in
       let contentSubscriptions = host.contentSizer == nil ? 0 : 1
@@ -274,6 +301,8 @@ final class ShellHost {
     AutoHideHost.windowEnded(shell.windowId)
     for observer in fullscreenObservers { NotificationCenter.default.removeObserver(observer) }
     fullscreenObservers = []
+    launchReadiness?.stop()
+    launchReadiness = nil
     layoutController?.stop()
     layoutChrome?.stop()
     layoutChrome = nil
@@ -301,6 +330,8 @@ final class ShellHost {
     if let contentSizer { NotificationCenter.default.removeObserver(contentSizer) }
     contentSizer = nil
   }
+
+  func prepareLaunch(_ committed: @escaping () -> Void) { launchReadiness?.attach(committed) }
 
   private func keepContentSized() {
     guard !layoutStopped else { return }
@@ -502,6 +533,7 @@ extension ShellHost {
 
   private func refreshLayoutProjectionInBatch() {
     guard !layoutStopped else { return }
+    defer { launchReadiness?.refresh() }
     layoutChrome?.refresh()
     shell.layoutSubtreeIfNeeded()
     guard let input = makeLayoutInput() else { return }
@@ -1094,6 +1126,11 @@ public class WindowShellModule: Module {
     }.runOnQueue(.main)
 
     #if SOLARA_PROBES
+    AsyncFunction("devLaunchWork") { (command: String, options: [String: Any]) -> String in
+      let given = NativeLaunchWorkOptions(options)
+      return MainActor.assumeIsolated { NativeLaunchWork.dev(command, given) }
+    }.runOnQueue(.main)
+
     AsyncFunction("nativeWork") { (reset: Bool) -> String in
       MainActor.assumeIsolated {
         let work = NativeWorkCounters.snapshot()

@@ -1,31 +1,39 @@
-const FALLBACK_MS = 5000;
+type Admission = (task: () => void, cancelled: () => void) => () => void;
 
-let waiting: (() => void)[] | null = [];
-let fallback: ReturnType<typeof setTimeout> | undefined;
+export class AfterFirstWindowQueue {
+  private admission: Admission | undefined;
+  private waiting = new Map<object, { run: () => void; cancelled: () => void; cancel?: () => void }>();
 
-function run(tasks: (() => void)[]) {
-  for (const task of tasks) {
-    try {
-      task();
-    } catch (error) {
-      console.warn("[launch] deferred work failed", error);
+  install(admission: Admission) {
+    this.admission = admission;
+    for (const entry of this.waiting.values()) {
+      entry.cancel?.();
+      entry.cancel = admission(entry.run, entry.cancelled);
     }
   }
-}
 
-export function afterFirstWindow(task: () => void) {
-  if (!waiting) {
-    setTimeout(() => run([task]), 0);
-    return;
+  add(task: () => void) {
+    const token = {};
+    const entry: { run: () => void; cancelled: () => void; cancel?: () => void } = {
+      cancelled: () => { this.waiting.delete(token); },
+      run: () => {
+        if (!this.waiting.delete(token)) return;
+        try {
+          task();
+        } catch (error) {
+          console.warn("[launch] deferred work failed", error);
+        }
+      },
+    };
+    this.waiting.set(token, entry);
+    if (this.admission) entry.cancel = this.admission(entry.run, entry.cancelled);
+    return () => {
+      if (!this.waiting.delete(token)) return;
+      entry.cancel?.();
+    };
   }
-  waiting.push(task);
-  fallback ??= setTimeout(firstWindowCommitted, FALLBACK_MS);
 }
 
-export function firstWindowCommitted() {
-  if (!waiting) return;
-  const tasks = waiting;
-  waiting = null;
-  clearTimeout(fallback);
-  if (tasks.length) setTimeout(() => run(tasks), 0);
-}
+const queue = new AfterFirstWindowQueue();
+export const installAfterFirstWindowScheduler = (admission: Admission) => queue.install(admission);
+export const afterFirstWindow = (task: () => void) => queue.add(task);

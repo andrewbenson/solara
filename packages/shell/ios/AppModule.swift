@@ -16,6 +16,16 @@ public class AppModule: Module {
     Constant("sidebarPosition") { NativeSidebarPositionCapability.enabled }
     Events("onNotificationResponse", "onPendingUpdate")
 
+    AsyncFunction("waitForLaunchIdle") { (id: String, promise: Promise) in
+      MainActor.assumeIsolated { LaunchAdmission.whenIdle(id) { promise.resolve($0) } }
+    }.runOnQueue(.main)
+    AsyncFunction("cancelLaunchIdle") { (id: String) in
+      MainActor.assumeIsolated { LaunchAdmission.cancelWork(id) }
+    }.runOnQueue(.main)
+    AsyncFunction("launchChromeCommittedAt") { () -> Double? in
+      MainActor.assumeIsolated { LaunchAdmission.chromeCommittedAt }
+    }.runOnQueue(.main)
+
     OnCreate {
       DispatchQueue.main.async {
         NotificationHub.shared.install()

@@ -57,6 +57,7 @@ final class PairingAdapter: TrustedPairingService {
   }
 
   private func pollOnlyWhileNeeded() {
+    owner.setDemanded(pollingNeeded)
     if !pollingNeeded {
       timer?.invalidate()
       timer = nil
@@ -257,6 +258,7 @@ final class PairingAdapter: TrustedPairingService {
       nativeComparison = nil
       authorizations.removeAll()
     }
+    owner.setDemanded(pollingNeeded)
     let native = owner.trustedSnapshot(nativeArm)
     let currentRequests = native.requests.map { request -> TrustedRequest in
       let id = ObjectIdentifier(request)

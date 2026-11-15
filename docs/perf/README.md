@@ -610,8 +610,22 @@ are grouped by window, profile and concrete row kind.
 Layout applications and slot publications are events; animation links and subscriptions are live gauges. The subscription
 scope is shell/sidebar/strip host notifications and store listeners plus the tab-memory store listener; internal row/view
 observers and other application services are outside this census. Paused and invalidated display links are excluded. Deferred work
-currently means executed and pending `FrameUpdates` callbacks, not optional launch jobs that Patch 10 has yet to introduce.
+means executed and pending `FrameUpdates` callbacks. The separate `launchWork` report (version 1) counts optional launch
+jobs queued, chunks executed, jobs cancelled and pending work, alongside per-window generation readiness and the first
+native chrome Core Animation commit timestamp. It does not count service work performed later by an admitted timer.
+Launch-work counts and the first-commit stamp are process-cumulative; layout-counter resets leave them intact.
+An absent launch report is unavailable, not zero. `selectedPageDrawAt` remains null until Patch 7 provides a native
+selected-page draw source; native-bench retains the independent selected fixture page FCP and frame rows.
 These are layout instrumentation counters, not a census of every service subscription or animation in the app.
+
+The native-bench launch phase records `nativeWork` after the selected page FCP and `nativeWorkSettled` three seconds
+later. Its native chrome commit row uses the readiness transaction, independently of the existing first React-content
+transaction row. Keep the app and matching JS bundle for each side when comparing a native API change. Debug runs are
+diagnostics, not release launch claims; locked-screen page paint/frame rows remain pending under the usual display gate.
+JS startup reports separately identify `markRevision: 2` and `firstWindowBoundary: "nativeChromeCACommit"`.
+The `firstWindow` mark uses that native epoch, fetched after idle admission; it no longer measures a React root effect.
+Historical revision-1 first-window timings have a different boundary. Count probe revision 3 and existing count ceilings
+retain their definitions; this timing-boundary change does not authorize changing them.
 
 Collect `native-work-report.mjs <Debug app> --out=<scratch>/native-work` beside native-bench launch/frame output.
 It retains small/big launch observations and scroll event counts, and expands the fixed 200-tab viewport to 2,000 tabs.

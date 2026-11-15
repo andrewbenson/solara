@@ -640,6 +640,20 @@ each scope's cycle (`guard` in `engine.ts`) holds that back.
 
 ## Tests
 
+Native pairing bootstrap, key/installation recovery, stop settlement and lifecycle/file intake run immediately,
+including when no browser window exists. Layout Patch 10e admits optional discovery/refresh polling from the native
+post-chrome idle signal installed before React starts. A visible pairing surface or explicit pairing action promotes
+its work immediately. Closing the last usable browser window revokes optional admission; active sessions, terminal
+cleanup and durable recovery keep their existing timers and deadlines. A fresh disabled installation without a sync
+folder does not acquire a recovery timer merely because that optional folder is absent.
+
+`PairingTimerAdmissionTests` and `PairingRefreshCoalescingTests` in packages/sync use injected timers and controlled
+startup interleavings to check admission, module-before-window, no-window recovery, stop retries, expiry/cleanup,
+shutdown and stale callbacks. Authentication and durable installation decisions use the existing protocol.
+After building packages/sync's Swift tests, `python3 packages/sync/scripts/test-pairing-unlock.py --scratch <scratch>`
+compiles the actual native unlock registration and KeyState against that package to check that explicit same-key
+unlock restores eligibility without making automatic identical-key recovery callbacks loop.
+
 - `pnpm --filter @solara/sync test`:
   - `swift test`: 5 tests. BIP39 reference vectors; tampering and truncation are detected; the
     wrong phrase opens nothing; the folder holds no plaintext in names or contents; deleting one

@@ -296,10 +296,15 @@ final class PairingCoordinator: PairingJoining {
   private var nextPoll: UInt64 = 0
   private var ownedPackets: [ObjectIdentifier: [PairingSession.Entry]] = [:]
   private var cleanupGrace: [(deadline: UInt64, entries: [PairingSession.Entry], binding: Binding)] = []
-  private var timer: DispatchSourceTimer?
+  private var periodicAdmitted: Bool
+  private var shutdown = false
+  private let scheduleTimer: PairingPeriodicTimer.Schedule
+  private lazy var timer = PairingPeriodicTimer(queue: admission, delay: 1, interval: 1, schedule: scheduleTimer) { [weak self] in self?.tick() }
 
-  init(configuration: Configuration, mailbox: PairingCoordinatingMailbox, store: PairingAccountingStoring, authenticator: PairingOwnerAuthenticating, keyStore: PairingInstallationKeyStoring, host: PairingInstallationHosting, clock: @escaping () -> UInt64, wall: @escaping () -> UInt64, random: @escaping PairingCrypto.Random = PairingCrypto.random, initialGeneration: UInt64 = 0, eligibility: @escaping () -> Bool = { true }) {
+  init(configuration: Configuration, mailbox: PairingCoordinatingMailbox, store: PairingAccountingStoring, authenticator: PairingOwnerAuthenticating, keyStore: PairingInstallationKeyStoring, host: PairingInstallationHosting, clock: @escaping () -> UInt64, wall: @escaping () -> UInt64, random: @escaping PairingCrypto.Random = PairingCrypto.random, initialGeneration: UInt64 = 0, eligibility: @escaping () -> Bool = { true }, periodicAdmitted: Bool = true, scheduleTimer: @escaping PairingPeriodicTimer.Schedule = PairingPeriodicTimer.dispatch) {
     self.configuration = configuration; self.store = store
+    self.periodicAdmitted = periodicAdmitted
+    self.scheduleTimer = scheduleTimer
     binding = try? Self.bind(configuration, mailbox: mailbox, store: store)
     if binding == nil { self.configuration.environment.eligible = false }
     self.authenticator = authenticator; self.keyStore = keyStore; self.host = host
@@ -310,11 +315,7 @@ final class PairingCoordinator: PairingJoining {
     restoration = store.restoreAccounting(now: clock(), epoch: configuration.environment.clockEpoch)
     if case .restored(let value) = restoration { accounting = value }
     admission.setSpecific(key: queueKey, value: true)
-    let source = DispatchSource.makeTimerSource(queue: admission)
-    source.schedule(deadline: .now() + 1, repeating: 1)
-    source.setEventHandler { [weak self] in self?.pollOwned() }
-    timer = source
-    source.resume()
+    updateTimer()
   }
 
   private static func bind(_ configuration: Configuration, mailbox: PairingCoordinatingMailbox, store: PairingAccountingStoring) throws -> Binding {
@@ -329,11 +330,22 @@ final class PairingCoordinator: PairingJoining {
     return nil
   }
 
-  deinit { timer?.cancel() }
+  private func updateTimer() {
+    timer.setEnabled(!shutdown && (periodicAdmitted || joining?.committed == false || trusted != nil || !cleanupGrace.isEmpty))
+  }
+
+  func setPeriodicAdmitted(_ admitted: Bool) {
+    admission.async { [weak self] in
+      guard let self, !self.shutdown else { return }
+      self.periodicAdmitted = admitted
+      if !admitted { self.pollDirty = false }
+      self.updateTimer()
+    }
+  }
 
   private func owned<T>(_ body: () throws -> T) rethrows -> T {
-    if DispatchQueue.getSpecific(key: queueKey) == true { return try body() }
-    return try admission.sync(execute: body)
+    if DispatchQueue.getSpecific(key: queueKey) == true { defer { updateTimer() }; return try body() }
+    return try admission.sync { defer { updateTimer() }; return try body() }
   }
 
   var snapshot: Snapshot {
@@ -808,7 +820,9 @@ final class PairingCoordinator: PairingJoining {
         }
       }
       endTrusted(persist: false)
-      if reason == .shutdown { timer?.cancel(); timer = nil }
+      pollDirty = false
+      if reason == .shutdown { shutdown = true; periodicAdmitted = false }
+      updateTimer()
   }
 
   func finishStop() {
@@ -903,6 +917,7 @@ final class PairingCoordinator: PairingJoining {
     else {
       let (deadline, overflow) = clock().addingReportingOverflow(grace)
       cleanupGrace.append((overflow ? UInt64.max : deadline, entries, binding))
+      updateTimer()
     }
   }
 
@@ -1000,27 +1015,40 @@ final class PairingCoordinator: PairingJoining {
     }
   }
 
-  func tick() { admission.async { [weak self] in self?.pollOwned() } }
+  func tick() {
+    let epoch = invalidationEpoch
+    admission.async { [weak self] in
+      guard let self, self.invalidationEpoch == epoch else { return }
+      self.pollOwned()
+    }
+  }
 
   func poll() {
     trustedHandleLock.lock()
     let handle = currentTrustedHandle
     trustedHandleLock.unlock()
     if let handle { expireReply(handle) }
-    admission.async { [weak self] in self?.pollOwned(force: true) }
+    let epoch = invalidationEpoch
+    admission.async { [weak self] in
+      guard let self, self.invalidationEpoch == epoch else { return }
+      self.pollOwned(force: true)
+    }
   }
 
   private func pollOwned(force: Bool = false) {
+    guard !shutdown else { return }
+    defer { updateTimer() }
     cleanDuePackets()
     for session in [joining?.session, trusted?.session].compactMap({ $0 }) {
       if let result = try? session.tick() { process(result, session: session) }
     }
     let activeJoining = joining.flatMap { $0.committed || $0.cancelRequested || $0.admissionUncertain ? nil : $0 }
-    let observing = activeJoining == nil && trusted == nil && configuration.environment.eligible && configuration.entropy != nil
+    let observing = periodicAdmitted && activeJoining == nil && trusted == nil && configuration.environment.eligible && configuration.entropy != nil
     guard activeJoining != nil || trusted != nil || observing else { return }
     if observing, quiet == nil { quiet = try? makeSession(.trusted, cid: configuration.cid) }
     let capturedQuiet = observing ? quiet : nil
     let capturedGeneration = generation
+    let capturedEpoch = invalidationEpoch
     let now = clock()
     guard force || now >= nextPoll else { return }
     if polling { pollDirty = true; return }
@@ -1033,7 +1061,10 @@ final class PairingCoordinator: PairingJoining {
     let rids = Set([capturedJ?.session, capturedT?.session].compactMap { $0?.cryptoContext }.compactMap { try? PairingFormat.decode($0.request).rid })
     let scheduled = mailboxWork { [weak self] in
       guard let self else { return }
-      let result = Result { try binding.mailbox.poll(rids: rids) }
+      let result = Result {
+        guard self.invalidationEpoch == capturedEpoch else { throw Failure.stale }
+        return try binding.mailbox.poll(rids: rids)
+      }
       if case .success(let entries) = result {
         let observed = self.clock()
         _ = self.janitor.observe(entries: entries, mailbox: binding.mailbox, now: observed == UInt64.max ? nil : observed)
@@ -1043,6 +1074,7 @@ final class PairingCoordinator: PairingJoining {
         defer {
           if self.pollDirty { self.pollDirty = false; self.pollOwned(force: true) }
         }
+        guard self.invalidationEpoch == capturedEpoch else { return }
         guard case .success(let entries) = result else {
           if let slot = capturedJ, self.joining === slot { self.failJoining(.folderUnavailable) }
           if let slot = capturedT, self.trusted === slot { self.endTrusted() }

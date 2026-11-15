@@ -97,6 +97,9 @@ const shell: Modules["SolaraShell"] = {
 const appEvents = nativeEvents();
 const app: Modules["SolaraApp"] & { apiVersion: number } = {
   apiVersion: 64,
+  waitForLaunchIdle: () => Promise.resolve(false),
+  cancelLaunchIdle: () => Promise.resolve(),
+  launchChromeCommittedAt: () => Promise.resolve(null),
   sidebarPosition: false,
   addListener: appEvents.addListener,
   updaterState: () => Promise.resolve({ available: false }),

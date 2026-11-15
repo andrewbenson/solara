@@ -144,6 +144,7 @@ async function joiningMac(name, folder, env = {}) {
   const app = await launch(APP, {
     data: path.join(WORK, name, "J"),
     keepData: true,
+    files: { "onboarding.json": { version: 1, startedAt: 1, completedAt: null } },
     env: { SOLARA_ONBOARDING: "1", SOLARA_SYNC_DEFAULT_FOLDER: folder, ...env },
   });
   running.add(app);

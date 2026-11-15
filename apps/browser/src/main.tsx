@@ -2,13 +2,14 @@ import "./lib/jsErrors";
 import "./lib/productName";
 import "./lib/nativeEvents";
 import { tabPool, tabPoolAvailable, windowPagesPoolActive } from "@solara/settings";
+import { launchChromeCommittedAt, scheduleAfterChrome } from "@solara/shell";
 import { useEffect, useState } from "react";
 import { AppRegistry, unstable_batchedUpdates } from "react-native";
 import { WindowRoot } from "./App";
 import { registerPaneRoot } from "./PaneRoot";
 import { AreaBoundary } from "./components/AreaBoundary";
 import { startTranslate } from "./components/site/translate";
-import { afterFirstWindow, firstWindowCommitted } from "./lib/afterFirstWindow";
+import { afterFirstWindow, installAfterFirstWindowScheduler } from "./lib/afterFirstWindow";
 import { jsErrorsSurvivable } from "./lib/jsErrors";
 import { offerNativeDefaultBrowserAfterFirstWindow, startAppIntegrationPresentation, startScriptLoading } from "./lib/appIntegration";
 import { startNativeSync } from "./lib/native";
@@ -29,9 +30,15 @@ import { startNativeSettings } from "./components/settings/nativeSettings";
 
 probeStore("browser", useBrowser);
 setStoreBatching(unstable_batchedUpdates);
+installAfterFirstWindowScheduler(scheduleAfterChrome);
+if (perfProbeEnabled) afterFirstWindow(() => {
+  void launchChromeCommittedAt().then((at) => {
+    if (at !== null) perfMark("firstWindow", at);
+  }).catch((error) => console.warn("[launch] native chrome mark failed", error));
+});
+startPersistence();
 startProfileLoading();
 startNotifications();
-startPersistence();
 startNewTabBar();
 startTabPages();
 if (tabPool && windowPagesPoolActive() && tabPoolAvailable()) startPooledPages(tabPool);
@@ -61,8 +68,6 @@ function Root({ windowId }: { windowId: string }) {
     return () => clearTimeout(timer);
   }, []);
   useEffect(() => {
-    perfMark("firstWindow");
-    firstWindowCommitted();
     jsErrorsSurvivable();
   }, []);
   if (held) return null;

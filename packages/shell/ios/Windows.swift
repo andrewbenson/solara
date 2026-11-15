@@ -4,6 +4,7 @@ public enum WindowHost {
   public static var makeWindow: (() -> NSWindow)?
   nonisolated(unsafe) public static var makeContentView: ((_ windowId: String) -> NSView)?
   nonisolated(unsafe) public static var makeRootView: ((_ module: String, _ props: [String: Any]) -> NSView?)?
+  @MainActor public static var prepareContent: ((_ windowId: String, _ root: NSView, _ committed: @escaping () -> Void) -> Bool)?
   nonisolated(unsafe) public private(set) static var openingKinds: [String: String] = [:]
 
   #if SOLARA_PROBES
@@ -222,7 +223,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
       let root = WindowHost.makeContent(makeContentView, id: id, kind: small ? "small" : "browser")
       ChromeWindows.embed(root, in: chromeWindow)
       if small || animated, !chromeWindow.isVisible { entrances[id] = !small || frame == nil }
-      holdUntilContent(chromeWindow, id: id, root: root)
+      holdUntilContent(chromeWindow, id: id, root: root, admit: !small)
       noteFirstContent(id: id, root: root)
       keepContentSizedAcrossReloads(id: id, root: root)
       ChromeWindows.onSwap { [weak self] from, to in self?.adopt(from: from, to: to) }
@@ -354,38 +355,50 @@ final class WindowManager: NSObject, NSWindowDelegate {
     if entered, fullScreenEntering == id { enteredFullScreen(id) }
   }
 
-  private static let revealTimeout = 0.6
   private var unrevealed: [String: [() -> Void]] = [:]
+  private var revealObservers: [String: NSObjectProtocol] = [:]
   private var entrances: [String: Bool] = [:]
   private var exits: [String: [() -> Void]] = [:]
 
-  private func holdUntilContent(_ window: NSWindow, id: String, root: NSView) {
-    guard !window.isVisible else { return }
-    window.alphaValue = 0
-    unrevealed[id] = []
-    var observer: NSObjectProtocol?
+  private func holdUntilContent(_ window: NSWindow, id: String, root: NSView, admit: Bool) {
+    let needsReveal = !window.isVisible
+    if needsReveal {
+      window.alphaValue = 0
+      unrevealed[id] = []
+    }
     let reveal: () -> Void = { [weak self, weak window] in
-      if let observer { NotificationCenter.default.removeObserver(observer) }
-      observer = nil
-      guard let self, let waiting = self.unrevealed.removeValue(forKey: id) else { return }
-      if let window, let scales = self.entrances.removeValue(forKey: id) {
+      guard let self, let window, self.windows[id] === window else { return }
+      if let observer = self.revealObservers.removeValue(forKey: id) { NotificationCenter.default.removeObserver(observer) }
+      guard needsReveal, let waiting = self.unrevealed.removeValue(forKey: id) else { return }
+      if let scales = self.entrances.removeValue(forKey: id) {
         WindowMotion.enter(window, style: self.motionStyle(id), scales: scales)
       } else {
-        window?.alphaValue = 1
+        window.alphaValue = 1
       }
       CATransaction.flush()
       waiting.forEach { $0() }
     }
-    observer = NotificationCenter.default.addObserver(forName: Notification.Name("RCTContentDidAppearNotification"), object: root, queue: .main) {
-      _ in reveal()
+    let committed: () -> Void = needsReveal ? reveal : {}
+    if admit, MainActor.assumeIsolated({ WindowHost.prepareContent?(id, root, committed) == true }) { return }
+    revealObservers[id] = NotificationCenter.default.addObserver(forName: Notification.Name("RCTContentDidAppearNotification"), object: root, queue: .main) { _ in
+      CATransaction.begin()
+      CATransaction.setCompletionBlock {
+        DispatchQueue.main.async {
+          reveal()
+          NotificationCenter.default.post(name: Notification.Name("SolaraWindowChromeCommitted"), object: root)
+        }
+      }
+      root.layoutSubtreeIfNeeded()
+      root.displayIfNeeded()
+      CATransaction.commit()
+      CATransaction.flush()
     }
-    DispatchQueue.main.asyncAfter(deadline: .now() + Self.revealTimeout, execute: reveal)
   }
 
   private func noteFirstContent(id: String, root: NSView) {
     if let old = firstContentObservers.removeValue(forKey: id) { NotificationCenter.default.removeObserver(old) }
     firstContentObservers[id] = NotificationCenter.default.addObserver(
-      forName: Notification.Name("RCTContentDidAppearNotification"), object: root, queue: .main
+      forName: Notification.Name("SolaraWindowChromeCommitted"), object: root, queue: .main
     ) { [weak self] _ in
       guard let self else { return }
       if let observer = self.firstContentObservers.removeValue(forKey: id) { NotificationCenter.default.removeObserver(observer) }
@@ -658,6 +671,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
       return
     }
     entrances[id] = nil
+    if let observer = revealObservers.removeValue(forKey: id) { NotificationCenter.default.removeObserver(observer) }
     contentShown.remove(id)
     if let observer = firstContentObservers.removeValue(forKey: id) { NotificationCenter.default.removeObserver(observer) }
     guard let window = windows[id] else { return }
@@ -667,7 +681,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
       window.animationBehavior = .none
       window.orderOut(nil)
       CATransaction.flush()
-      if let waiting = unrevealed.removeValue(forKey: id) { waiting.forEach { $0() } }
+      unrevealed[id] = nil
       stopKeepingContentSized(id)
       lightsCenters[id] = nil
       fullScreenIds.remove(id)

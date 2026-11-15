@@ -114,6 +114,12 @@ final class SidebarHoverCardHost {
   }()
   private lazy var groupCard: SidebarGroupCardView = {
     let card = SidebarGroupCardView(favicons: NativeSidebar.hosts[windowId]?.view.favicons ?? SidebarFavicons())
+    card.virtualizesRows = NativeSidebar.hosts[windowId]?.view.virtualizesRows ?? false
+    #if SOLARA_PROBES
+    card.probeRowBinding = { [windowId = self.windowId] view, profileId in
+      NativeWorkCounters.bind(view, windowId: windowId, profileId: profileId, kind: "sidebar.groupCard.full")
+    }
+    #endif
     card.onEvent = { [weak self, weak card] event in
       guard let self, let id = card?.state?.groupId else { return }
       switch event {

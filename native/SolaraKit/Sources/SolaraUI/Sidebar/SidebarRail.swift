@@ -123,6 +123,13 @@ class RailIconView: SidebarRowView {
 
   required init?(coder: NSCoder) { fatalError() }
 
+  override func clearIdentity() {
+    popover?.close()
+    popover = nil
+    active = false
+    selected = false
+  }
+
   var restingFill: NSColor { .clear }
 
   override func repaint() {
@@ -193,6 +200,30 @@ final class RailTabView: RailIconView {
   private var closeReveal: CGFloat = 0
   private let unreadBadge = UnreadBadgeView()
   private var unreadStatus: TabUnreadStatus?
+
+  override func clearIdentity() {
+    super.clearIdentity()
+    tab = nil
+    loading = false
+    unreadStatus = nil
+    closeReveal = 0
+    closeSymbol = "xmark"
+    closeTooltip = "Close Tab"
+    if let close {
+      SidebarRowReuse.reset(close)
+      close.removeFromSuperview()
+    }
+    close = nil
+    if let spinner {
+      SidebarRowReuse.reset(spinner)
+      spinner.removeFromSuperview()
+    }
+    spinner = nil
+    audio?.isHidden = true
+    badges?.isHidden = true
+    unreadBadge.set(nil)
+    unreadBadge.isHidden = true
+  }
 
   var tabId: String? { tab?.id }
 

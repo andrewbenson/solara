@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { sidebarSession, assertSidebarPosition } from "./sidebar-position-test.mjs";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -28,7 +29,7 @@ const server = createServer((req, res) => {
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const url = (name) => `http://127.0.0.1:${server.address().port}/${name}`;
 const tab = (id, extra = {}) => ({ id, url: url(id), title: id.toUpperCase(), ...extra });
-const fixture = session({
+const fixture = session(sidebarSession({
   windows: [{ id: "w1", frame: [80, 80, 1280, 800], activeTabIds: { default: "a" } }],
   tabs: [
     tab("p1", { pinned: true, pinnedUrl: url("p1") }),
@@ -36,7 +37,7 @@ const fixture = session({
     tab("pr", { pinned: true, pinnedUrl: url("pr"), pinnedAsRow: true }),
     tab("a"), tab("b"), tab("c"),
   ],
-});
+}));
 
 let app = null;
 const HELPERS = `
@@ -114,6 +115,7 @@ async function asCardMounts(hoverId, clickId, rounds) {
 try {
   app = await launch(appPath, { data, port, session: fixture, onboarded: true });
   rep.log(`instance: pid ${app.pid}, DevTools port ${app.port}, data ${data}`);
+  await assertSidebarPosition(app);
   await sleep(1500);
   await run(`return act("fakeActiveClicks");`);
 

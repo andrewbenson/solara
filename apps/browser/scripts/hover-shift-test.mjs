@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { sidebarSession, assertSidebarPosition } from "./sidebar-position-test.mjs";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -41,9 +42,10 @@ let app;
 try {
   app = await launch(resolve(appArg), {
     data, port, files: { "report.pdf": "%PDF-1.4\n" },
-    session: session({ profiles: ["Personal", "Work"], windows: [{ id: "w1", tabIds: ids, activeTabIds: { default: "t2" } }], tabs: ids.map(tab) }),
+    session: session(sidebarSession({ profiles: ["Personal", "Work"], windows: [{ id: "w1", tabIds: ids, activeTabIds: { default: "t2" } }], tabs: ids.map(tab) })),
     ready: "return !!ac.hoverShift",
   });
+  await assertSidebarPosition(app);
   const ac = (body) => evaluate(body, { timeout: 120000 });
   const untilSnapshot = async (what, accept, ms = 8000, args = {}) => {
     const end = Date.now() + ms;

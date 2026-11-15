@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
+import { sidebarSession, assertSidebarPosition } from "./sidebar-position-test.mjs";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { launch, reporter, session, sleep } from "../../../scripts/lib/instance.mjs";
-import { readNativeWork, validateWindowContract } from "./perf/native-work.mjs";
+import { readNativeWork, readSidebarRealization, validateWindowContract } from "./perf/native-work.mjs";
 import { fixturePage } from "../../../scripts/lib/fixture-html.mjs";
 
 const args = process.argv.slice(2);
@@ -30,10 +31,10 @@ const url = (name) => `http://127.0.0.1:${server.address().port}/${name}`;
 const tab = (id, extra = {}) => ({ id, url: url(id), title: id.toUpperCase(), ...extra });
 const PINS = ["p1", "p2", "p3"];
 const LOOSE = Array.from({ length: 40 }, (_, i) => `t${i}`);
-const fixture = session({
+const fixture = session(sidebarSession({
   windows: [{ id: "w1", frame: [80, 80, 1280, 800], activeTabIds: { default: "t0" } }],
   tabs: [...PINS.map((id) => tab(id, { pinned: true, pinnedUrl: url(id) })), ...LOOSE.map((id) => tab(id))],
-});
+}));
 
 let app = null;
 const HELPERS = `
@@ -105,6 +106,7 @@ async function dragRowOntoTile(addressBar) {
 try {
   app = await launch(appPath, { data, port, session: fixture, onboarded: true });
   rep.log(`instance: pid ${app.pid}, DevTools port ${app.port}, data ${data}`);
+  await assertSidebarPosition(app);
   await sleep(1500);
   const chromeWindowNumber = await run(`return win();`);
   await untilSnapshot("Chrome window number", (snapshot) => snapshot.windows[0]?.chromeWindowNumber === chromeWindowNumber);
@@ -124,7 +126,16 @@ try {
     const page = pageIdentities.find((value) => value.tabId === "t0");
     assert.ok(page, "selected pooled page identity is present");
     assert.deepEqual(afterPages.find((value) => value.tabId === "t0"), page);
-    assert.equal((await readNativeWork(app)).rows.created, 0, "eager sidebar scroll allocates no new rows");
+    if (contract.nativeLayout) {
+      await readSidebarRealization(app, "w1");
+      const firstScroll = await readNativeWork(app, true);
+      await run(`return scrollTo(260).then(() => scrollTo(0));`);
+      await readSidebarRealization(app, "w1");
+      const secondScroll = await readNativeWork(app);
+      assert.equal(secondScroll.rows.created, 0, "a repeated viewport sweep reuses its rows without allocating");
+      assert.ok(secondScroll.rows.reused > 0, "scrolling rebinds previously allocated native cells");
+      assert.equal(secondScroll.rows.live, firstScroll.rows.live, "a repeated viewport sweep has the same live high-water count");
+    } else assert.equal((await readNativeWork(app)).rows.created, 0, "eager sidebar scroll allocates no new rows");
   });
 
   for (const addressBar of ["sidebar", "toolbar"])

@@ -105,6 +105,7 @@ final class UpsellButton: NSView {
   private let label = NSTextField(labelWithString: "")
   private let primary: Bool
   private var pressed = false { didSet { paint() } }
+  private var trackingPress = false
   var palette: SidebarPalette? { didSet { paint() } }
   var onPress: (() -> Void)?
 
@@ -127,6 +128,11 @@ final class UpsellButton: NSView {
 
   required init?(coder: NSCoder) { fatalError() }
 
+  func clearBinding() {
+    trackingPress = false
+    pressed = false
+  }
+
   override func accessibilityPerformPress() -> Bool {
     onPress?()
     return onPress != nil
@@ -140,14 +146,19 @@ final class UpsellButton: NSView {
     label.frame = NSRect(x: 0, y: (bounds.height - size.height) / 2, width: bounds.width, height: size.height)
   }
 
-  override func mouseDown(with event: NSEvent) { pressed = true }
+  override func mouseDown(with event: NSEvent) { trackingPress = true; pressed = true }
 
-  override func mouseDragged(with event: NSEvent) { pressed = bounds.contains(convert(event.locationInWindow, from: nil)) }
+  override func mouseDragged(with event: NSEvent) {
+    guard trackingPress else { return }
+    pressed = bounds.contains(convert(event.locationInWindow, from: nil))
+  }
 
   override func mouseUp(with event: NSEvent) {
     let inside = bounds.contains(convert(event.locationInWindow, from: nil))
+    let valid = pressed && trackingPress
     pressed = false
-    if inside { onPress?() }
+    trackingPress = false
+    if inside && valid { onPress?() }
   }
 
   private func paint() {

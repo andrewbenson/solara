@@ -317,7 +317,7 @@ struct WindowLayoutContractTests {
     #expect(count() == 0)
   }
 
-  @Test func fixedViewportCurrentlyCreatesEverySidebarRow() throws {
+  @Test func fixedViewportCreatesOnlyVisibleSidebarRows() throws {
     for total in [200, 2000] {
       NativeWorkCounters.reset()
       let windowId = "eager-\(total)"
@@ -325,12 +325,14 @@ struct WindowLayoutContractTests {
       let ids = (0..<total).map { "\"t\($0)\"" }.joined(separator: ",")
       let json = "{\"windows\":{\"\(windowId)\":{\"id\":\"\(windowId)\",\"profileId\":\"p\",\"tabIds\":[\(ids)],\"activeTabIds\":{\"p\":\"t0\"}}},\"tabs\":{\(tabs)}}"
       let state = try BrowserState(stateJSON: try JSONValue.parse(json).object ?? [:])
-      let sidebar = SidebarView(windowId: windowId)
+      let sidebar = SidebarView(windowId: windowId, virtualizesRows: true)
       sidebar.frame = CGRect(x: 0, y: 0, width: 190, height: 400)
       sidebar.update(state: state, host: SidebarHostState(profileId: "p"))
       let group = try #require((NativeWorkCounters.snapshot()["groups"] as? [[String: Any]])?.first { $0["windowId"] as? String == windowId && $0["kind"] as? String == "sidebar.tab.full" })
-      #expect(group["created"] as? Int == total)
-      #expect(group["live"] as? Int == total)
+      let realized = sidebar.views.values.filter { $0 is TabRowView }.count
+      #expect(realized > 0 && realized < 20)
+      #expect(group["created"] as? Int == realized)
+      #expect(group["live"] as? Int == realized)
       #expect(sidebar.pageLayout.items.filter { if case .tab = $0.kind { true } else { false } }.count == total)
       let views = sidebar.views
       sidebar.update(state: state, host: SidebarHostState(profileId: "p"))

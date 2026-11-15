@@ -10,6 +10,7 @@ final class SidebarIconButton: NSView {
   private var tracking: NSTrackingArea?
   private var hovered = false { didSet { if hovered != oldValue { paint() } } }
   private var pressed = false { didSet { if pressed != oldValue { paint() } } }
+  private var trackingPress = false
   var hoverFill: NSColor = .clear { didSet { paint() } }
   var pressedFill: NSColor = .clear { didSet { paint() } }
   var radius: CGFloat = 6 { didSet { plate.cornerRadius = radius } }
@@ -28,6 +29,13 @@ final class SidebarIconButton: NSView {
   }
 
   required init?(coder: NSCoder) { fatalError() }
+
+  func clearBinding() {
+    hovered = false
+    pressed = false
+    trackingPress = false
+    toolTip = nil
+  }
 
   func set(_ name: String, size: CGFloat, weight: NSFont.Weight, color: NSColor, tooltip: String?) {
     symbol.set(name, size: size, weight: weight, color: color)
@@ -71,16 +79,19 @@ final class SidebarIconButton: NSView {
   override func mouseExited(with event: NSEvent) { hovered = false }
   override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-  override func mouseDown(with event: NSEvent) { pressed = true }
+  override func mouseDown(with event: NSEvent) { trackingPress = true; pressed = true }
 
   override func mouseDragged(with event: NSEvent) {
+    guard trackingPress else { return }
     pressed = bounds.contains(convert(event.locationInWindow, from: nil))
   }
 
   override func mouseUp(with event: NSEvent) {
     let inside = bounds.contains(convert(event.locationInWindow, from: nil))
+    let wasPressed = pressed && trackingPress
     pressed = false
-    if inside { onPress?() }
+    trackingPress = false
+    if inside && wasPressed { onPress?() }
   }
 
   private func paint() {

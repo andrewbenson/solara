@@ -179,6 +179,24 @@ public class HostedModule: Module {
       FrameUpdates.readOnMain { NativeSidebar.pages(windowId: windowId) ?? "null" }
     }.runOnQueue(.main)
 
+    #if SOLARA_PROBES
+    AsyncFunction("sidebarRealization") { (windowId: String) -> String in
+      FrameUpdates.readOnMain {
+        guard let pager = NativeSidebar.hosts[windowId]?.view,
+          let data = try? JSONSerialization.data(withJSONObject: pager.probeRealization())
+        else { return "null" }
+        return String(data: data, encoding: .utf8) ?? "null"
+      }
+    }.runOnQueue(.main)
+
+    AsyncFunction("devSidebarAccessibility") { (windowId: String, key: String, action: String) -> String in
+      FrameUpdates.readOnMain {
+        let performed = NativeSidebar.hosts[windowId]?.view.current?.probeAccessibility(key: key, action: action) ?? false
+        return performed ? "{\"performed\":true}" : "{\"performed\":false}"
+      }
+    }.runOnQueue(.main)
+    #endif
+
     View(SolaraHostedView.self) {
       Prop("kind") { (view: SolaraHostedView, v: String) in MainActor.assumeIsolated { view.kind = v } }
       Prop("windowId") { (view: SolaraHostedView, v: String) in MainActor.assumeIsolated { view.windowId = v } }

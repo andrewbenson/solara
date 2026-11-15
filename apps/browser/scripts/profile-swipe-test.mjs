@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { sidebarSession, assertSidebarPosition } from "./sidebar-position-test.mjs";
 import { spawnSync } from "node:child_process";
 import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -54,7 +55,7 @@ const server = createServer((req, res) => {
 });
 
 const tab = (id, profileId) => ({ id, profileId, url: "solara://newtab", title: "New Tab" });
-const fixture = session({ profiles: ["Personal", "Work"], tabs: [tab("t1", "default"), tab("t2", "work")] });
+const fixture = session(sidebarSession({ profiles: ["Personal", "Work"], tabs: [tab("t1", "default"), tab("t2", "work")] }));
 
 const ac = async (body, timeout = 15000) => {
   const result = await owned.eval(`return Promise.resolve((function(ac) {${body}\n})(ac)).then(value => {
@@ -388,6 +389,7 @@ try {
   `);
   evidence.owner = { pid: owned.pid, port: owned.port, binary: owned.binary, started: owned.started, js: owned.js };
   appendFileSync(rep.logFile, `instance pid ${owned.pid}, DevTools port ${owned.port}, data ${data}\n`);
+  await assertSidebarPosition(owned);
   if (bundlePort) {
     evidence.liveUpdatesDisabled = await ac(`
       const entry=[...globalThis.__r.getModules()].find(([,m])=>m.verboseName?.endsWith("/Libraries/Utilities/HMRClient.js"));

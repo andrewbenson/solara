@@ -60,6 +60,7 @@ final class SidebarContext {
   let tabNumberActions: [String: [String]]
   let tabNumberRowKeys: [String: String]
   let showsTabNumberHints: Bool
+  var virtualizesRows = false
   var live: SidebarLiveBlocks?
   var send: (SidebarAction) -> Void = { _ in }
 
@@ -125,6 +126,8 @@ final class SidebarContext {
 
 @MainActor
 class SidebarRowView: NSView {
+  let allocationId = UUID().uuidString
+  private(set) var bindingToken = 0
   var item: SidebarItem?
   weak var context: SidebarContext?
   let body = NSView()
@@ -134,6 +137,7 @@ class SidebarRowView: NSView {
   var hoverKey: String { item?.key ?? "" }
   var pressScales: Bool { true }
   private(set) var retired = false
+  var pressToken: Int?
 
   override var isFlipped: Bool { true }
 
@@ -167,6 +171,38 @@ class SidebarRowView: NSView {
 
   func retiredLook() {}
 
+  func clearIdentity() {}
+
+  override func prepareForReuse() {
+    func finishEditors(_ view: NSView) {
+      for child in view.subviews {
+        if let field = child as? SidebarRenameField {
+          let text = field.currentEditor()?.string ?? field.stringValue
+          field.finish(text)
+          field.onDone = nil
+          if let window = field.window, window.firstResponder === field.currentEditor() { window.makeFirstResponder(nil) }
+          field.removeFromSuperview()
+        } else { finishEditors(child) }
+      }
+    }
+    finishEditors(self)
+    bindingToken += 1
+    retired = true
+    hovered = false
+    pressed = false
+    pressToken = nil
+    clearIdentity()
+    rendered = nil
+    numberHint.configure(actions: [], enabled: false)
+    item = nil
+    context = nil
+    SidebarRowReuse.reset(self)
+    layer?.mask = nil
+    layer?.masksToBounds = false
+    body.layer?.mask = nil
+    removeFromSuperview()
+  }
+
   var hoverHost: SidebarView? {
     var view = superview
     while let v = view {
@@ -189,6 +225,12 @@ class SidebarRowView: NSView {
     #if SOLARA_PROBES
     NativeWorkCounters.bindSidebar(self, item, context)
     #endif
+    if self.item?.key != item.key {
+      bindingToken += 1
+      retired = false
+      rendered = nil
+      needsLayout = true
+    }
     let hintKey: String
     switch item.kind {
     case .tile(let id): hintKey = "t:\(id)"
@@ -220,7 +262,7 @@ class SidebarRowView: NSView {
   var hoverTarget: (kind: String, id: String)? { nil }
   var accessibleTitle: String? { nil }
 
-  override func isAccessibilityElement() -> Bool { !retired && accessibleTitle != nil }
+  override func isAccessibilityElement() -> Bool { !retired && context?.virtualizesRows != true && accessibleTitle != nil }
   override func accessibilityRole() -> NSAccessibility.Role? { .button }
   override func accessibilityLabel() -> String? { accessibleTitle }
 
@@ -248,6 +290,7 @@ class SidebarRowView: NSView {
       hoverHost?.dismissHover()
       return contextMenu()
     }
+    pressToken = bindingToken
     if let host = hoverHost { SidebarDragController.of(host).press(self, event) }
     pressed = true
   }
@@ -257,6 +300,7 @@ class SidebarRowView: NSView {
       pressed = false
       return
     }
+    guard pressToken == bindingToken else { pressed = false; return }
     pressed = bounds.contains(convert(event.locationInWindow, from: nil))
   }
 
@@ -266,8 +310,9 @@ class SidebarRowView: NSView {
       return
     }
     let inside = bounds.contains(convert(event.locationInWindow, from: nil))
-    let wasPressed = pressed
+    let wasPressed = pressed && pressToken == bindingToken
     pressed = false
+    pressToken = nil
     guard inside, wasPressed else { return }
     hoverHost?.dismissHover()
     click(SidebarClickMods(event.modifierFlags), count: event.clickCount)
@@ -278,7 +323,11 @@ class SidebarRowView: NSView {
     contextMenu()
   }
 
+  override func otherMouseDown(with event: NSEvent) { pressToken = bindingToken }
+
   override func otherMouseUp(with event: NSEvent) {
+    if context?.virtualizesRows == true && pressToken != bindingToken { return }
+    pressToken = nil
     guard event.buttonNumber == 2, bounds.contains(convert(event.locationInWindow, from: nil)) else { return super.otherMouseUp(with: event) }
     middleClick()
   }
@@ -367,6 +416,23 @@ final class TabRowView: SidebarRowView {
   }
 
   var tabId: String? { tab?.id }
+
+  override func clearIdentity() {
+    tab = nil
+    active = false
+    selected = false
+    loading = false
+    showsAudio = false
+    resettable = false
+    resetting = false
+    developer = false
+    unreadStatus = nil
+    rename = nil
+    laidOutShape = []
+    label.text = ""
+    spinner?.removeFromSuperview()
+    spinner = nil
+  }
 
   override func retiredLook() {
     active = false
@@ -646,6 +712,17 @@ final class SplitRowView: SidebarRowView {
   private var dividers: [CALayer] = []
   private var active = false
   private var pressedPane: String?
+  private var middlePressedPane: String?
+
+  override func clearIdentity() {
+    pressedPane = nil
+    middlePressedPane = nil
+    active = false
+    panes.forEach { SidebarRowReuse.reset($0); $0.removeFromSuperview() }
+    panes.removeAll()
+    dividers.forEach { $0.removeFromSuperlayer() }
+    dividers.removeAll()
+  }
 
   override var pressScales: Bool { false }
 
@@ -661,7 +738,7 @@ final class SplitRowView: SidebarRowView {
     guard let context, case .split(let id)? = item?.kind else { return }
     let ids = context.query.splitPanes(id)
     if panes.map(\.tabId) != ids {
-      panes.forEach { $0.removeFromSuperview() }
+      panes.forEach { SidebarRowReuse.reset($0); $0.removeFromSuperview() }
       dividers.forEach { $0.removeFromSuperlayer() }
       panes = ids.map { SplitPaneView(tabId: $0) }
       dividers = ids.dropFirst().map { _ in
@@ -735,6 +812,7 @@ final class SplitRowView: SidebarRowView {
 
   override func mouseDown(with event: NSEvent) {
     pressedPane = pane(at: event)?.tabId
+    pressToken = bindingToken
     if event.modifierFlags.contains(.control) {
       hoverHost?.dismissHover()
       return contextMenu()
@@ -751,8 +829,9 @@ final class SplitRowView: SidebarRowView {
       pressed = false
       return
     }
-    let wasPressed = pressed
+    let wasPressed = pressed && pressToken == bindingToken
     pressed = false
+    pressToken = nil
     guard wasPressed, let target, target.tabId == pressedPane else { return }
     hoverHost?.dismissHover()
     context?.send(.click(tabId: target.tabId, mods: SidebarClickMods(event.modifierFlags)))
@@ -764,8 +843,24 @@ final class SplitRowView: SidebarRowView {
     contextMenu()
   }
 
+  override func click(_ mods: SidebarClickMods, count: Int) {
+    guard let context, case .split(let id)? = item?.kind else { return }
+    let members = context.query.splitPanes(id)
+    guard let tabId = context.activeId.flatMap({ members.contains($0) ? $0 : nil }) ?? members.first else { return }
+    context.send(.click(tabId: tabId, mods: mods))
+  }
+
+  override func otherMouseDown(with event: NSEvent) {
+    pressToken = bindingToken
+    middlePressedPane = pane(at: event)?.tabId
+  }
+
   override func otherMouseUp(with event: NSEvent) {
     guard event.buttonNumber == 2, let target = pane(at: event) else { return super.otherMouseUp(with: event) }
+    let valid = context?.virtualizesRows != true || (pressToken == bindingToken && middlePressedPane == target.tabId)
+    pressToken = nil
+    middlePressedPane = nil
+    guard valid else { return }
     context?.send(.middleClick(tabId: target.tabId))
   }
 
@@ -821,6 +916,16 @@ final class GroupHeaderView: SidebarRowView {
   override func viewDidMoveToWindow() {
     super.viewDidMoveToWindow()
     if window == nil { stopMeetingTick() }
+  }
+
+  override func clearIdentity() {
+    stopMeetingTick()
+    groupId = ""
+    collapsed = false
+    hasIcon = false
+    closeable = false
+    rename = nil
+    label.text = ""
   }
 
   override func render() {
@@ -956,6 +1061,21 @@ final class GroupHeaderView: SidebarRowView {
 }
 
 final class GroupBoxView: NSView {
+  let allocationId = UUID().uuidString
+  private(set) var bindingToken = 0
+
+  override func prepareForReuse() {
+    bindingToken += 1
+    item = nil
+    groupId = ""
+    shown = false
+    hovered = false
+    tinted = false
+    SidebarRowReuse.reset(self)
+    layer?.mask = nil
+    box.opacity = 0
+    removeFromSuperview()
+  }
   private let box = CALayer()
   var fill: CALayer { box }
   private var groupId = ""
@@ -986,6 +1106,7 @@ final class GroupBoxView: NSView {
     #if SOLARA_PROBES
     NativeWorkCounters.bindSidebar(self, item, context)
     #endif
+    if self.item?.key != item.key { bindingToken += 1 }
     self.item = item
     guard case .groupBox(let id) = item.kind, let group = context.state.groups[id] else { return }
     groupId = id
@@ -1237,6 +1358,11 @@ final class DividerButton: NSView {
 
   required init?(coder: NSCoder) { fatalError() }
 
+  func clearBinding() {
+    hovered = false
+    pressed = false
+  }
+
   var fittingWidth: CGFloat { 8 + iconWidth + 3 + label.fittingSize.width }
 
   func describe(_ text: String) {
@@ -1273,8 +1399,9 @@ final class DividerButton: NSView {
 
   override func mouseUp(with event: NSEvent) {
     let inside = bounds.contains(convert(event.locationInWindow, from: nil))
+    let wasPressed = pressed
     pressed = false
-    if inside { onPress?() }
+    if inside && wasPressed { onPress?() }
   }
 
   private func paint() {
@@ -1299,8 +1426,23 @@ final class TileView: SidebarRowView {
   private var ring: IconRingView?
   private var ringShown = false
   private var ringRequest: SidebarFaviconRequest?
+  private var ringInterest: UUID?
   private let unreadBadge = UnreadBadgeView()
   private var unreadStatus: TabUnreadStatus?
+
+  override func clearIdentity() {
+    tabId = nil
+    folderId = nil
+    active = false
+    selected = false
+    showsBadge = false
+    unreadStatus = nil
+    ringShown = false
+    context?.favicons.cancel(ringInterest)
+    ringInterest = nil
+    ringRequest = nil
+    ring?.isHidden = true
+  }
 
   override var accessibleTitle: String? {
     guard let context else { return nil }
@@ -1372,6 +1514,11 @@ final class TileView: SidebarRowView {
     guard let source, let theme = IconRingView.theme(of: source) else {
       ring?.isHidden = true
       ringShown = false
+      if !active || !context.host.iconRing || tab == nil {
+        context.favicons.cancel(ringInterest)
+        ringInterest = nil
+        ringRequest = nil
+      }
       return
     }
     let view = ring ?? IconRingView()
@@ -1418,9 +1565,12 @@ final class TileView: SidebarRowView {
 
   private func load(_ request: SidebarFaviconRequest, _ context: SidebarContext) -> IconRingSource? {
     guard ringRequest != request else { return nil }
+    context.favicons.cancel(ringInterest)
     ringRequest = request
-    context.favicons.load(request) { [weak self] picture in
-      guard let self, self.ringRequest == request else { return }
+    let token = bindingToken
+    ringInterest = context.favicons.load(request) { [weak self] picture in
+      guard let self, self.bindingToken == token, self.item != nil, self.ringRequest == request else { return }
+      self.ringInterest = nil
       self.ringRequest = nil
       if picture != nil { self.render() }
     }
@@ -1506,7 +1656,11 @@ final class FolderMosaicView: NSView {
       addSubview(view)
       icons.append(view)
     }
-    while icons.count > ids.count { icons.removeLast().removeFromSuperview() }
+    while icons.count > ids.count {
+      let icon = icons.removeLast()
+      icon.clearBinding()
+      icon.removeFromSuperview()
+    }
     for (i, id) in ids.enumerated() {
       guard let tab = context.state.tabs[id] else { continue }
       icons[i].favicons = context.favicons
@@ -1602,17 +1756,27 @@ extension SidebarRowView {
   func syncRename(_ editing: Bool, kind: String, id: String, frame: NSRect, initial: @autoclosure () -> String, placeholder: @autoclosure () -> String,
     font: NSFont, color: NSColor, field: inout SidebarRenameField?)
   {
+    if field?.superview == nil { field = nil }
     if !editing {
+      field?.onDone = nil
       field?.removeFromSuperview()
       field = nil
       return
     }
     if field == nil {
       let editor = SidebarRenameField(initial: initial(), placeholder: placeholder(), font: font, color: color)
-      editor.onDone = { [weak self] text in self?.context?.send(.renamed(kind: kind, id: id, text: text)) }
+      let token = bindingToken
+      let send = context?.send
+      editor.onDone = { [weak self] text in
+        guard self?.bindingToken == token else { return }
+        send?(.renamed(kind: kind, id: id, text: text))
+      }
       body.addSubview(editor)
       field = editor
-      DispatchQueue.main.async { [weak editor] in editor?.begin() }
+      DispatchQueue.main.async { [weak self, weak editor] in
+        guard self?.bindingToken == token, editor?.superview != nil else { return }
+        editor?.begin()
+      }
     }
     field?.frame = frame
   }

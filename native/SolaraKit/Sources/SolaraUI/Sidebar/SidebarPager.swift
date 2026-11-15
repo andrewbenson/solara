@@ -3,6 +3,7 @@ import SolaraModel
 
 @MainActor
 public final class SidebarPagerView: NSView {
+  public let virtualizesRows: Bool
   public let windowId: String
   public let favicons = SidebarFavicons()
   public var onAction: (SidebarAction) -> Void = { _ in }
@@ -19,7 +20,8 @@ public final class SidebarPagerView: NSView {
 
   public override var isFlipped: Bool { true }
 
-  public init(windowId: String) {
+  public init(windowId: String, virtualizesRows: Bool = false) {
+    self.virtualizesRows = virtualizesRows
     self.windowId = windowId
     super.init(frame: .zero)
     wantsLayer = true
@@ -56,6 +58,14 @@ public final class SidebarPagerView: NSView {
           "layers": layer.map { Self.layers($0) } ?? 0, "windowLayers": window?.contentView?.layer.map { Self.layers($0) } ?? 0, "classes": Self.classes(self)]]
   }
 
+  #if SOLARA_PROBES
+  public func probeRealization() -> [String: Any] {
+    ["enabled": virtualizesRows, "position": position, "pages": order.map { id in
+      ["profileId": id, "realization": pages[id]?.probeRealization() ?? ["enabled": virtualizesRows, "logical": [], "bound": [], "reuse": [], "effectiveClip": [0, 0, 0, 0]]] as [String: Any]
+    }]
+  }
+  #endif
+
   static func classes(_ view: NSView) -> [String: Int] {
     var out = [String(describing: type(of: view)): 1]
     for sub in view.subviews { out.merge(classes(sub), uniquingKeysWith: +) }
@@ -72,12 +82,13 @@ public final class SidebarPagerView: NSView {
     self.host = host
     stale = Set(pages.keys)
     for id in pages.keys where !order.contains(id) {
+      pages[id]?.stop()
       pages[id]?.removeFromSuperview()
       pages[id] = nil
       stale.remove(id)
     }
     place()
-    scheduleWarm()
+    if !virtualizesRows { scheduleWarm() }
   }
 
   public func setPagerPosition(_ position: Double) {
@@ -118,16 +129,17 @@ public final class SidebarPagerView: NSView {
         continue
       }
       let page = page(id)
-      if stale.contains(id) { refresh(id) }
       let frame = NSRect(x: (offset * bounds.width).rounded(), y: 0, width: bounds.width, height: bounds.height)
       if page.frame != frame { page.frame = frame }
       page.isHidden = false
+      if stale.contains(id) { refresh(id) }
+      if virtualizesRows { page.reconcileViewport() }
     }
   }
 
   private func page(_ id: String) -> SidebarView {
     if let page = pages[id] { return page }
-    let page = SidebarView(windowId: windowId, favicons: favicons)
+    let page = SidebarView(windowId: windowId, favicons: favicons, virtualizesRows: virtualizesRows)
     page.onAction = { [weak self] action in self?.onAction(action) }
     page.isHidden = true
     pages[id] = page

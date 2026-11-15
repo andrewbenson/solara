@@ -109,7 +109,7 @@ modules before using them — this is a summary from the agent that built it.
   changes the Settings default. `updateSettings({ sidebarPosition })` routes through the same command. Missing
   values resolve left; config-file ownership overrides window and Settings choices. The local, unsynced preference
   survives session/closed-window restoration and top tabs. Entry points require the development native-window-layout
-  capability and API 50; incapable hosts keep left geometry without changing the remembered preference.
+  capability and API 58; incapable hosts keep left geometry without changing the remembered preference.
 - Sidebar sizing: `setWindowSidebar(windowId, { sidebarWidth?, sidebarIconsOnly?, sidePanelWidth? })` changes the target window
   and chooses the matching global defaults (`sidePanelWidth` uses `settings.extensionSidePanelWidth`). Before choosing each
   global, every other window without that override is pinned to its current effective value, except Little Solara. New windows inherit

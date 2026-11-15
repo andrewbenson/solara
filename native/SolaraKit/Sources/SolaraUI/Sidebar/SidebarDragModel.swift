@@ -19,8 +19,16 @@ final class DragItem {
   var liveFolderId: String?
   var frame: CGRect?
   var headerFrame: CGRect?
-  var views: [NSView] = []
-  var box: NSView?
+  private var bindings: [SidebarViewBinding] = []
+  private var boxBinding: SidebarViewBinding?
+  var views: [NSView] {
+    get { bindings.compactMap(\.view) }
+    set { bindings = newValue.map(SidebarViewBinding.init) }
+  }
+  var box: NSView? {
+    get { boxBinding?.view }
+    set { boxBinding = newValue.map(SidebarViewBinding.init) }
+  }
   var fixed = false
 
   init(key: String, kind: DragKind, tabIds: [String], section: DragSection) {

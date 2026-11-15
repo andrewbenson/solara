@@ -124,9 +124,9 @@ final class SidebarHost {
   private var probeStopped = false
   #endif
 
-  init(windowId: String, subscribeToStore: Bool = true) {
+  init(windowId: String, subscribeToStore: Bool = true, virtualizesRows: Bool = false) {
     self.windowId = windowId
-    view = SidebarPagerView(windowId: windowId)
+    view = SidebarPagerView(windowId: windowId, virtualizesRows: virtualizesRows)
     view.favicons.loader = { request in try await NativeSidebar.favicon(request) }
     view.onAction = { [weak self] action in self?.handle(action) }
     commits.host = self

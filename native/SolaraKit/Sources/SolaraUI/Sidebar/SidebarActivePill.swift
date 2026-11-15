@@ -32,6 +32,14 @@ final class SidebarActivePill: NSView {
 
   required init?(coder: NSCoder) { fatalError() }
 
+  func clearBinding() {
+    icon.clearBinding()
+    pressed = false
+    alphaValue = 0
+    toolTip = nil
+    setAccessibilityLabel(nil)
+  }
+
   func set(_ spec: TabIconSpec, title: String, up: Bool, palette: SidebarPalette, favicons: SidebarFavicons) {
     let dark = palette.dark
     CATransaction.begin()

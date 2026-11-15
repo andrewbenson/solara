@@ -4,6 +4,7 @@ import SolaraStore
 
 @MainActor
 public final class SidebarView: NSView {
+  public let virtualizesRows: Bool
   public let windowId: String
   public let favicons: SidebarFavicons
   public var onAction: (SidebarAction) -> Void = { _ in }
@@ -31,10 +32,26 @@ public final class SidebarView: NSView {
   private var lastSize = NSSize.zero
   private var player: SidebarPlayerView?
   private var railShown = false
+  private let reuse = SidebarRowReuse()
+  private let viewportWatch = SidebarAuxiliaryViewportWatch()
+  private var detachedFromWindow = false
+  private var windowWasVisible = false
+  private var windowSuppressed = false
+  private var bindingKinds: [String: String] = [:]
+  private var viewportSize = CGSize.zero
+  private var placing = false
+  private var pendingPlacement = false
+  private var logicalElements: [String: SidebarLogicalElement] = [:]
+  private var logicalItems: [String: SidebarItem] = [:]
+  private var retirementPictures: [UUID: SidebarRetirementPicture] = [:]
+  private var viewportLink: CADisplayLink?
+  private var animationEnd: CFTimeInterval = 0
+
 
   public override var isFlipped: Bool { true }
 
-  public init(windowId: String, favicons: SidebarFavicons = SidebarFavicons()) {
+  public init(windowId: String, favicons: SidebarFavicons = SidebarFavicons(), virtualizesRows: Bool = false) {
+    self.virtualizesRows = virtualizesRows
     self.windowId = windowId
     self.favicons = favicons
     super.init(frame: .zero)
@@ -67,6 +84,11 @@ public final class SidebarView: NSView {
     addSubview(pill)
     addSubview(panels)
     NotificationCenter.default.addObserver(self, selector: #selector(scrolled), name: NSView.boundsDidChangeNotification, object: scroll.contentView)
+    if virtualizesRows {
+      for name in [NSWindow.didMiniaturizeNotification, NSWindow.didDeminiaturizeNotification, NSWindow.didChangeOcclusionStateNotification] {
+        NotificationCenter.default.addObserver(self, selector: #selector(windowVisibilityChanged(_:)), name: name, object: nil)
+      }
+    }
     UnreadBadges.start()
     NotificationCenter.default.addObserver(self, selector: #selector(heavyChanged), name: UnreadBadges.changed, object: nil)
     DevPointer.observe(self, #selector(devPointer(_:)))
@@ -81,9 +103,15 @@ public final class SidebarView: NSView {
     guard !stopped else { return }
     stopped = true
     NotificationCenter.default.removeObserver(self)
-    onAction = { _ in }
-    SidebarDragController.existing(self)?.cancelForModeChange()
+    viewportWatch.stop()
+    SidebarFolderPanelHost.hide(on: self)
+    SidebarDragController.existing(self)?.stop()
     SidebarDragHub.controllers.removeObject(forKey: self)
+    clearRealization()
+    onAction = { _ in }
+    logicalElements.removeAll()
+    logicalItems.removeAll()
+    stopViewportLink()
     context = nil
     func stopAnimations(_ view: NSView) {
       view.layer?.removeAllAnimations()
@@ -97,6 +125,7 @@ public final class SidebarView: NSView {
     UnreadBadges.retain(tabIds: Set(state.tabs.keys))
     UnreadBadges.setEnabled(state.settings["showUnreadBadges"]?.bool != false)
     let next = SidebarContext(state: state, host: host, windowId: windowId, favicons: favicons, previous: context)
+    next.virtualizesRows = virtualizesRows
     next.send = { [weak self] action in self?.onAction(action) }
     let previous = context
     let moved = previous != nil && previous?.activeId != next.activeId
@@ -174,6 +203,114 @@ public final class SidebarView: NSView {
     return view.convert(view.bounds, to: self)
   }
 
+  public override func isAccessibilityElement() -> Bool { false }
+
+  public override func accessibilityChildren() -> [Any]? {
+    guard virtualizesRows else { return super.accessibilityChildren() }
+    let keys = pageLayout.items.flatMap { item -> [String] in
+      switch item.kind {
+      case .divider:
+        return (context?.host.tidy == true ? ["divider|tidy"] : []) + (context?.host.clear == true ? ["divider|clear"] : [])
+      case .upsell: return ["upsell|once", "upsell|daily", "upsell|dismiss"]
+      default: return logicalLabel(item.key) != nil ? [item.key] : []
+      }
+    }
+    let children = keys.map { key -> SidebarLogicalElement in
+      if let element = logicalElements[key] { return element }
+      let element = SidebarLogicalElement(owner: self, key: key)
+      logicalElements[key] = element
+      return element
+    }
+    var chrome: [NSView] = [panels]
+    if pillShown && !pill.isHidden { chrome.append(pill) }
+    if let player, !player.isHidden { chrome.append(player) }
+    return children + chrome
+  }
+
+  private func logicalBase(_ key: String) -> String {
+    if key.hasPrefix("divider|") { return "divider" }
+    if key.hasPrefix("upsell|") { return "upsell" }
+    return key
+  }
+
+  func logicalLabel(_ key: String) -> String? {
+    guard let context, let item = logicalItems[logicalBase(key)] else { return nil }
+    switch key {
+    case "divider|tidy": return context.host.tidy ? "Tidy pinned tabs" : nil
+    case "divider|clear": return context.host.clear ? "Clear unpinned tabs" : nil
+    case "upsell|once": return "Clean Up Once"
+    case "upsell|daily": return "Clean Up Daily"
+    case "upsell|dismiss": return "Not Now"
+    default: break
+    }
+    switch item.kind {
+    case .tab(let id), .tile(let id):
+      guard let tab = context.state.tabs[id] else { return nil }
+      let title = context.unreadLabel(tab)
+      return TabIconSpec.engineName(context.host.engines[id]).map { "\(title), Opens in \($0)" } ?? title
+    case .folder(let id):
+      return context.query.folderMembers(windowId: windowId, id).lazy.compactMap { context.state.tabs[$0]?.tileFolder?.name }.first ?? "Folder"
+    case .split(let id): return context.query.splitPanes(id).compactMap { context.state.tabs[$0].map(context.title) }.joined(separator: ", ")
+    case .groupHeader(let id): return context.query.groupLabel(id)
+    case .newTab: return "New Tab"
+    case .live(let key):
+      if let header = context.live?.header(key) { return header.folder.name }
+      guard let row = context.live?.row(key) else { return nil }
+      switch row.kind {
+      case .item(let spec): return spec.item.title
+      case .stack(_, _, let repo, let count, _): return "\(repo) stack, \(count) items"
+      case .section(let text): return text
+      case .more(_, _, let count): return "Show \(count) More"
+      case .note(let note): return note.text
+      case .footer(_, let count, _): return "\(count) Completed"
+      case .completed(_, let done): return done.item.title
+      case .stray: return nil
+      }
+    default: return nil
+    }
+  }
+
+  func logicalAccessibilityFrame(_ key: String) -> CGRect {
+    guard let item = logicalItems[logicalBase(key)], let window else { return .zero }
+    return window.convertToScreen(convert(modelFrame(item), to: nil))
+  }
+
+  @discardableResult
+  func revealLogical(_ key: String) -> Bool {
+    guard let item = logicalItems[logicalBase(key)] else { return false }
+    if item.region == .scroll {
+      let height = scroll.contentView.bounds.height
+      let top = scroll.contentView.bounds.minY
+      let next = item.frame.minY < top ? item.frame.minY : item.frame.maxY > top + height ? item.frame.maxY - height : top
+      let limit = max(0, (scroll.documentView?.frame.height ?? 0) - height)
+      scroll.contentView.setBoundsOrigin(CGPoint(x: 0, y: max(0, min(limit, next))))
+      scroll.reflectScrolledClipView(scroll.contentView)
+    }
+    reconcileViewport()
+    return views[logicalBase(key)] != nil
+  }
+
+  func performLogicalAction(_ key: String, action: String) -> Bool {
+    guard !stopped, virtualizesRows, logicalLabel(key) != nil, revealLogical(key), let row = views[logicalBase(key)] as? SidebarRowView else { return false }
+    if action == "press" {
+      switch key {
+      case "divider|tidy": context?.send(.tidy); return true
+      case "divider|clear": context?.send(.clear); return true
+      case "upsell|once": context?.send(.cleanUp(.once)); return true
+      case "upsell|daily": context?.send(.cleanUp(.daily)); return true
+      case "upsell|dismiss": context?.send(.cleanUp(.dismiss)); return true
+      default: break
+      }
+    }
+    switch action {
+    case "press": row.click(SidebarClickMods([]), count: 1)
+    case "menu": row.contextMenu()
+    case "focus", "reveal", "scroll": break
+    default: return false
+    }
+    return true
+  }
+
   public var hoverKey: String? { hoveredKey }
 
   public func motionSample() -> [[String: Any]] {
@@ -191,6 +328,57 @@ public final class SidebarView: NSView {
   }
 
   #if SOLARA_PROBES
+  public func probeScroll(to y: CGFloat) {
+    let height = scroll.contentView.bounds.height
+    let limit = max(0, (scroll.documentView?.frame.height ?? 0) - height)
+    scroll.contentView.setBoundsOrigin(CGPoint(x: 0, y: max(0, min(limit, y))))
+    scroll.reflectScrolledClipView(scroll.contentView)
+    scrolled()
+  }
+
+  public func probeReveal(key: String) -> Bool { revealLogical(key) }
+
+  public func probeAccessibility(key: String, action: String) -> Bool {
+    _ = accessibilityChildren()
+    guard let element = logicalElements[key] else { return false }
+    switch action {
+    case "press": return element.accessibilityPerformPress()
+    case "menu": return element.accessibilityPerformShowMenu()
+    case "focus": element.setAccessibilityFocused(true); return views[logicalBase(key)] != nil
+    case "reveal", "scroll": return revealLogical(key)
+    default: return false
+    }
+  }
+
+  public func probeRealization() -> [String: Any] {
+    func rect(_ value: CGRect) -> [CGFloat] { [value.minX, value.minY, value.width, value.height] }
+    let logical: [[String: Any]] = pageLayout.items.map { item in
+      ["key": item.key, "kind": SidebarRowReuse.kind(item.kind, rail: railShown), "region": String(describing: item.region),
+        "frame": rect(modelFrame(item)), "clip": rect(regionClip(item)), "presentation": presentationFrame(item).map(rect) as Any? ?? NSNull()]
+    }
+    var bound: [[String: Any]] = pageLayout.items.compactMap { item in
+      guard let view = views[item.key] else { return nil }
+      let id = (view as? SidebarRowView)?.allocationId ?? (view as? GroupBoxView)?.allocationId ?? String(describing: ObjectIdentifier(view))
+      let selected: Bool
+      let active: Bool
+      if case .tab(let tabId) = item.kind {
+        active = context?.activeId == tabId
+        selected = active || context?.flags.selection.contains(tabId) == true
+      } else { active = false; selected = false }
+      return ["key": item.key, "kind": SidebarRowReuse.kind(item.kind, rail: railShown), "allocationId": id,
+        "token": SidebarViewBinding.token(view), "frame": rect(view.superview?.convert(view.frame, to: self) ?? .zero), "presentation": presentationFrame(item).map(rect) as Any? ?? NSNull(),
+        "clip": rect(regionClip(item)), "retired": false, "picture": false, "label": (view as? SidebarRowView)?.accessibleTitle ?? view.accessibilityLabel() ?? "",
+        "selected": selected, "active": active]
+    }
+    bound += retirementPictures.map { id, picture in
+      let frame = picture.view.superview?.convert(picture.view.frame, to: self) ?? .zero
+      return ["key": picture.item.key, "kind": SidebarRowReuse.kind(picture.item.kind, rail: railShown), "allocationId": id.uuidString,
+        "token": 1, "frame": rect(frame), "presentation": rect(frame), "clip": rect(regionClip(picture.item)), "retired": true, "picture": true, "label": "", "selected": false, "active": false]
+    }
+    return ["enabled": virtualizesRows, "effectiveClip": rect(effectiveClip), "profileId": context?.host.profileId ?? "", "mode": railShown ? "rail" : "full",
+      "logical": logical, "bound": bound, "reuse": reuse.highWater.keys.sorted().map { kind in ["kind": kind, "count": reuse.bins[kind]?.count ?? 0, "highWater": reuse.highWater[kind] ?? 0] as [String: Any] }]
+  }
+
   public func probeUnreadBadges() -> [[String: Any]] {
     func badges(_ view: NSView) -> [UnreadBadgeView] {
       if let badge = view as? UnreadBadgeView { return [badge] }
@@ -278,6 +466,7 @@ public final class SidebarView: NSView {
 
   private func reconcile(animated: Bool = false) {
     guard let context, bounds.width > 0 else { return }
+    guard !placing else { pendingPlacement = true; return }
     var input = SidebarLayoutInput(windowId: windowId, profileId: context.host.profileId, width: bounds.width, height: bounds.height)
     input.rail = SidebarRail.contains(width: Double(bounds.width))
     if input.rail != railShown {
@@ -285,8 +474,8 @@ public final class SidebarView: NSView {
       setHover(nil, group: nil)
       sendHoverTarget()
       railShown = input.rail
-      for view in views.values { view.removeFromSuperview() }
-      views.removeAll()
+      clearRealization()
+      reuse.clear()
     }
     input.addressBar = context.host.addressBar
     input.newTabAtTop = context.host.newTabAtTop
@@ -310,10 +499,20 @@ public final class SidebarView: NSView {
     #endif
     let next = SidebarLayout(query: context.query, input: input).layout(entries)
     pageLayout = next
+    logicalItems = Dictionary(uniqueKeysWithValues: next.items.map { ($0.key, $0) })
     place(next, context, animated: animated)
   }
 
   private func place(_ layout: SidebarPageLayout, _ context: SidebarContext, animated: Bool) {
+    guard !placing else { pendingPlacement = true; return }
+    placing = true
+    defer {
+      placing = false
+      if pendingPlacement {
+        pendingPlacement = false
+        reconcile()
+      }
+    }
     let width = bounds.width
     let inset = SidebarMetrics.inset
     fixed.frame = NSRect(x: 0, y: 0, width: width, height: layout.fixedHeight)
@@ -337,21 +536,35 @@ public final class SidebarView: NSView {
       x: ((width - pillSize.width) / 2).rounded(), y: layout.scrollBottom - SidebarActivePill.gapAboveDock - pillSize.height,
       width: pillSize.width, height: pillSize.height)
 
+    syncEdge()
+    let logicalKeys = Set(layout.items.map(\.key))
+    logicalElements = logicalElements.filter { logicalKeys.contains(logicalBase($0.key)) }
+    let visible = virtualizesRows ? layout.items.filter { shouldRealize($0) } : layout.items
+    let wanted = Set(visible.map(\.key))
+    if virtualizesRows {
+      let demand = Dictionary(grouping: visible, by: { SidebarRowReuse.kind($0.kind, rail: railShown) }).mapValues(\.count)
+      let size = effectiveClip.size
+      reuse.demand(demand, shrinking: size.width < viewportSize.width || size.height < viewportSize.height)
+      viewportSize = size
+      for key in Array(views.keys) where !wanted.contains(key) {
+        guard let view = views.removeValue(forKey: key) else { continue }
+        if animated && !logicalKeys.contains(key) && (view.superview === rows || view.superview === boxes) {
+          makeRetirementPicture(view)
+        }
+        recycle(view, key: key)
+      }
+      trimRetirementPictures()
+    }
     var seen = Set<String>()
     var slides: [(view: NSView, to: NSRect)] = []
     var inserted: [NSRect] = []
-    for item in layout.items {
+    for item in visible {
       seen.insert(item.key)
-      let parent: NSView
-      switch (item.region, item.kind) {
-      case (.fixed, _): parent = fixed
-      case (.dock, _): parent = dock
-      case (_, .groupBox): parent = boxes
-      case (_, .live(let key)) where key.hasPrefix(SidebarLive.prefix): parent = boxes
-      default: parent = rows
-      }
+      let parent = container(item)
       let known = views[item.key]
-      let view = known ?? make(item.kind)
+      let kind = SidebarRowReuse.kind(item.kind, rail: railShown)
+      let view = known ?? (virtualizesRows ? reuse.take(kind) { make(item.kind) } : make(item.kind))
+      bindingKinds[item.key] = kind
       views[item.key] = view
       let reparented = view.superview !== parent
       if reparented { parent.addSubview(view) }
@@ -377,12 +590,181 @@ public final class SidebarView: NSView {
       if animated && (view.superview === rows || view.superview === boxes) { retire(view) } else { view.removeFromSuperview() }
     }
     if let hoveredKey, !seen.contains(hoveredKey) { self.hoveredKey = nil }
-    if !slides.isEmpty { slide(slides, under: inserted) }
+    if !slides.isEmpty {
+      slide(slides, under: inserted)
+      if virtualizesRows { runViewportLink(for: motion.slide) }
+    }
     syncEdge()
     syncPill()
     if animated { syncPointer() }
     placePlayer(layout, context)
     SidebarDragController.placed(self)
+  }
+
+  var effectiveClip: CGRect {
+    guard !stopped, !detachedFromWindow, !windowSuppressed, !isHiddenOrHasHiddenAncestor, bounds.width > 0, bounds.height > 0, window?.isMiniaturized != true else { return .zero }
+    var result = bounds
+    var ancestor = superview
+    while let current = ancestor {
+      if current.isHidden { return .zero }
+      result = result.intersection(convert(current.bounds, from: current))
+      if result.isNull || result.isEmpty { return .zero }
+      ancestor = current.superview
+    }
+    return result
+  }
+
+  func container(_ item: SidebarItem) -> NSView {
+    switch (item.region, item.kind) {
+    case (.fixed, _): fixed
+    case (.dock, _): dock
+    case (_, .groupBox): boxes
+    case (_, .live(let key)) where key.hasPrefix(SidebarLive.prefix): boxes
+    default: rows
+    }
+  }
+
+  func modelFrame(_ item: SidebarItem) -> CGRect { container(item).convert(item.frame, to: self) }
+
+  func regionClip(_ item: SidebarItem) -> CGRect {
+    let region: CGRect
+    switch item.region {
+    case .scroll: region = clip.convert(clip.bounds, to: self)
+    case .fixed: region = fixed.convert(fixed.bounds, to: self)
+    case .dock: region = dock.convert(dock.bounds, to: self)
+    }
+    let intersection = effectiveClip.intersection(region)
+    return intersection.isNull ? .zero : intersection
+  }
+
+  func presentationRect(of view: NSView) -> CGRect? {
+    guard let parent = view.superview else { return nil }
+    let target = parent.convert(view.frame, to: self)
+    guard let rowLayer = view.layer else { return target }
+    let shown = rowLayer.presentation() ?? rowLayer
+    let origin = CGPoint(x: rowLayer.position.x - rowLayer.bounds.width * rowLayer.anchorPoint.x,
+      y: rowLayer.position.y - rowLayer.bounds.height * rowLayer.anchorPoint.y)
+    let delta = CGPoint(x: shown.frame.minX - origin.x, y: shown.frame.minY - origin.y)
+    return CGRect(x: target.minX + delta.x, y: target.minY + delta.y, width: shown.frame.width, height: shown.frame.height)
+  }
+
+  func presentationFrame(_ item: SidebarItem) -> CGRect? {
+    views[item.key].flatMap { presentationRect(of: $0) }
+  }
+
+  private func shouldRealize(_ item: SidebarItem) -> Bool {
+    let clip = regionClip(item)
+    guard !clip.isEmpty else { return false }
+    return modelFrame(item).intersects(clip) || presentationFrame(item)?.intersects(clip) == true
+  }
+
+  public func reconcileViewport() {
+    guard virtualizesRows, let context, !stopped else { return }
+    if effectiveClip.isEmpty { clearRealization(); return }
+    place(pageLayout, context, animated: false)
+    syncPointer()
+  }
+
+  private func recycle(_ view: NSView, key: String) {
+    if hoveredKey == key {
+      hoveredKey = nil
+      sentTarget = nil
+      onAction(.hover(kind: nil, id: nil))
+    }
+    let kind = bindingKinds.removeValue(forKey: key)
+    if let row = view as? SidebarRowView { row.prepareForReuse() }
+    else if let box = view as? GroupBoxView { box.prepareForReuse() }
+    else { SidebarRowReuse.reset(view); view.removeFromSuperview() }
+    if let kind { reuse.put(view, kind: kind) }
+  }
+
+  private func clearRealization() {
+    for key in Array(views.keys) {
+      if let view = views.removeValue(forKey: key) {
+        if virtualizesRows { recycle(view, key: key) } else { view.removeFromSuperview() }
+      }
+    }
+    bindingKinds.removeAll()
+    reuse.clear()
+    pill.clearBinding()
+    pillShown = false
+    for picture in retirementPictures.values { picture.view.removeFromSuperview() }
+    retirementPictures.removeAll()
+    hoveredKey = nil
+    hoveredGroup = nil
+    SidebarFolderPanelHost.hide(on: self)
+    stopViewportLink()
+  }
+
+  private func makeRetirementPicture(_ view: NSView) {
+    guard let item = (view as? SidebarRowView)?.item ?? (view as? GroupBoxView)?.item, let parent = view.superview else { return }
+    (view as? SidebarRowView)?.retire()
+    guard let frame = presentationRect(of: view) else { return }
+    let visible = frame.intersection(regionClip(item))
+    guard !visible.isNull, !visible.isEmpty, frame.width > 0, frame.height > 0 else { return }
+    let source = CGRect(x: view.bounds.minX + (visible.minX - frame.minX) * view.bounds.width / frame.width,
+      y: view.bounds.minY + (visible.minY - frame.minY) * view.bounds.height / frame.height,
+      width: visible.width * view.bounds.width / frame.width, height: visible.height * view.bounds.height / frame.height)
+    guard let bitmap = view.bitmapImageRepForCachingDisplay(in: source) else { return }
+    view.cacheDisplay(in: source, to: bitmap)
+    let image = NSImage(size: visible.size)
+    image.addRepresentation(bitmap)
+    let picture = NSImageView(frame: parent.convert(visible, from: self))
+    picture.image = image
+    picture.imageScaling = .scaleAxesIndependently
+    picture.wantsLayer = true
+    parent.addSubview(picture, positioned: .below, relativeTo: view)
+    let id = UUID()
+    retirementPictures[id] = SidebarRetirementPicture(view: picture, item: item)
+    NSAnimationContext.runAnimationGroup { animation in
+      animation.duration = motion.fade
+      animation.timingFunction = motion.fadeCurve
+      picture.animator().alphaValue = 0
+    } completionHandler: { [weak self, weak picture] in
+      MainActor.assumeIsolated {
+        picture?.removeFromSuperview()
+        self?.retirementPictures[id] = nil
+      }
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + motion.fade) { [weak self, weak picture] in
+      picture?.removeFromSuperview()
+      self?.retirementPictures[id] = nil
+    }
+    runViewportLink(for: motion.fade)
+  }
+
+  private func trimRetirementPictures() {
+    for (id, picture) in retirementPictures {
+      let frame = picture.view.superview?.convert(picture.view.frame, to: self) ?? .zero
+      if !frame.intersects(regionClip(picture.item)) {
+        picture.view.removeFromSuperview()
+        retirementPictures[id] = nil
+      }
+    }
+  }
+
+  private func runViewportLink(for duration: TimeInterval) {
+    animationEnd = max(animationEnd, CACurrentMediaTime() + duration)
+    guard viewportLink == nil, window != nil else { return }
+    let link = displayLink(target: self, selector: #selector(viewportTick(_:)))
+    viewportLink = link
+    #if SOLARA_PROBES
+    NativeWorkCounters.link(link)
+    #endif
+    link.add(to: .main, forMode: .common)
+  }
+
+  @objc private func viewportTick(_ link: CADisplayLink) {
+    reconcileViewport()
+    if CACurrentMediaTime() >= animationEnd { stopViewportLink() }
+  }
+
+  private func stopViewportLink() {
+    #if SOLARA_PROBES
+    NativeWorkCounters.unlink(viewportLink)
+    #endif
+    viewportLink?.invalidate()
+    viewportLink = nil
   }
 
   private func placePlayer(_ layout: SidebarPageLayout, _ context: SidebarContext) {
@@ -510,6 +892,7 @@ public final class SidebarView: NSView {
       onAction(.scrolled)
     }
     syncEdge()
+    if virtualizesRows { reconcileViewport() }
     syncPill()
     syncPointer()
   }
@@ -518,12 +901,13 @@ public final class SidebarView: NSView {
     let top = scroll.contentView.bounds.minY
     let viewport = scroll.frame.height
     var shown = false
-    if let context, let active = context.activeId, let tab = context.state.tabs[active], let item = scrollItem(active, context),
+    if let context, (!virtualizesRows || pill.frame.intersects(effectiveClip)), let active = context.activeId, let tab = context.state.tabs[active], let item = scrollItem(active, context),
       viewport > 0, item.frame.maxY <= top || item.frame.minY >= top + viewport
     {
       shown = true
       pill.set(context.iconSpec(tab), title: context.title(tab), up: item.frame.maxY <= top, palette: context.palette, favicons: favicons)
     }
+    if virtualizesRows && !shown { pill.clearBinding() }
     guard shown != pillShown else { return }
     pillShown = shown
     NSAnimationContext.runAnimationGroup { motion in
@@ -572,6 +956,54 @@ public final class SidebarView: NSView {
   public override func viewDidHide() {
     super.viewDidHide()
     setHover(nil, group: nil)
+    if virtualizesRows {
+      SidebarDragController.existing(self)?.cancelForModeChange()
+      viewportWatch.stop()
+      clearRealization()
+    }
+  }
+
+  public override func viewDidUnhide() {
+    super.viewDidUnhide()
+    if virtualizesRows { watchViewport(); reconcileViewport() }
+  }
+
+  public override func viewDidMoveToSuperview() {
+    super.viewDidMoveToSuperview()
+    if virtualizesRows { watchViewport(); reconcileViewport() }
+  }
+
+  public override func viewWillMove(toWindow newWindow: NSWindow?) {
+    super.viewWillMove(toWindow: newWindow)
+    guard virtualizesRows else { return }
+    if newWindow != nil { detachedFromWindow = false; windowSuppressed = false }
+    else if window != nil { detachedFromWindow = true; viewportWatch.stop(); clearRealization() }
+  }
+
+  public override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    if virtualizesRows { watchViewport(); reconcileViewport() }
+  }
+
+  private func watchViewport() {
+    guard virtualizesRows, !stopped, !isHiddenOrHasHiddenAncestor, !detachedFromWindow else { viewportWatch.stop(); return }
+    viewportWatch.watch(self) { [weak self] in
+      guard let self, !self.stopped else { return }
+      if self.bounds.size != self.lastSize {
+        self.lastSize = self.bounds.size
+        self.reconcile()
+      } else { self.reconcileViewport() }
+    }
+  }
+
+  @objc private func windowVisibilityChanged(_ notification: Notification) {
+    guard virtualizesRows, let window, notification.object as AnyObject? === window else { return }
+    if window.isVisible { windowWasVisible = true; windowSuppressed = window.isMiniaturized }
+    else if windowWasVisible { windowSuppressed = true }
+    if windowSuppressed {
+      SidebarDragController.existing(self)?.cancelForModeChange()
+      clearRealization()
+    } else { reconcileViewport() }
   }
 
   private var devPointerAt: NSPoint?

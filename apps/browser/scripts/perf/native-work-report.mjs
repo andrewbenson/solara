@@ -4,7 +4,8 @@ import { createServer } from "node:http";
 import { join, resolve } from "node:path";
 import { launch, sleep } from "../../../../scripts/lib/instance.mjs";
 import { buildSeed } from "./seed.mjs";
-import { NATIVE_WORK_REVISION, nativeWorkCounts, readNativeWork, validateNativeWork, validateWindowContract } from "./native-work.mjs";
+import { sidebarSession } from "../sidebar-position-test.mjs";
+import { NATIVE_WORK_REVISION, nativeWorkCounts, readNativeWork, readSidebarRealization, sidebarWorkCounts, validateNativeWork, validateWindowContract } from "./native-work.mjs";
 
 const total = (counter) => Object.values(counter ?? {}).reduce((sum, value) => sum + value, 0);
 const nativeSignature = (sample) => JSON.stringify({
@@ -16,12 +17,11 @@ async function settleFixture(app, path) {
   const started = Date.now();
   const samples = [];
   const read = async () => {
-    const sample = await app.eval(`async function sampleFixture() {
+    const sample = await app.eval(`
       const state = ac.store.getState();
       const shownProfiles = [...new Set(Object.values(state.windows).map((window) => window.profileId))].filter((id) => !id.startsWith("incognito:"));
-      const nativeWork = JSON.parse(await globalThis.expo.modules.SolaraWindowShell.nativeWork(false));
-      return { shownProfiles, historyReady: state.historyReady, profileOrder: state.profileOrder, nativeWork, stats: acPerf.read() };
-    } return sampleFixture();`, { timeout: 5000 });
+      return globalThis.expo.modules.SolaraWindowShell.nativeWork(false).then((raw) => ({ shownProfiles, historyReady: state.historyReady, profileOrder: state.profileOrder, nativeWork: JSON.parse(raw), stats: acPerf.read() }));
+    `, { timeout: 5000 });
     validateNativeWork(sample.nativeWork);
     samples.push({ elapsedMs: Date.now() - started, ...sample });
     writeFileSync(path, JSON.stringify({ settlementVersion: 2, settlement: "shownProfilesAndNativeQuiet", quietMs: 3000, quietWait: "driver", sampleTimeoutMs: 5000, measurementWrites: { "dev-eval-result.json": 1 }, timeoutMs: 45000, samples }, null, 2));
@@ -61,6 +61,7 @@ try {
   for (const count of [1, 200, 2000]) {
     const files = structuredClone(baseFiles);
     const fixture = files["session.json"];
+    fixture.settings = sidebarSession(fixture).settings;
     const window = fixture.windows[0];
     if (count === 1) {
       const keep = window.activeTabIds.default;
@@ -91,6 +92,7 @@ try {
       const nativeWindow = snapshot.windows.find((candidate) => candidate.id === "w-bench");
       assert.equal(nativeWindow.tabIds.length, count, "native window contains the fixture tab count");
       const contract = validateWindowContract(nativeWindow.shell.contract);
+      const realizationBefore = contract.nativeLayout ? await readSidebarRealization(app, "w-bench") : null;
       assert.equal(contract.hostCounts.sidebar, 1, "one native sidebar host at each tab count");
       assert.ok(contract.pageIdentities.some((page) => page.tabId === window.activeTabIds.default), "selected pooled page identity is present");
       if (report.results.length) {
@@ -100,18 +102,13 @@ try {
       }
       await readNativeWork(app, true);
       const scrolling = performance.now();
-      await app.eval(`async function scrollFixture() {
+      await app.eval(`
         const drag = globalThis.expo.modules.SolaraSidebarDrag;
         if (!drag || typeof drag.scrollTo !== "function") throw new Error("native sidebar scroll unavailable");
-        for (const direction of [1, -1]) {
-          for (let step = 0; step <= 60; step++) {
-            await drag.scrollTo("w-bench", direction === 1 ? step * 40 : 2400 - step * 40);
-            await new Promise((done) => setTimeout(done, 16));
-          }
-        }
-        await new Promise((done) => setTimeout(done, 300));
-        return true;
-      } return scrollFixture();`, { timeout: 30000 });
+        const positions = [1, -1].flatMap((direction) => Array.from({ length: 61 }, (_, step) => direction === 1 ? step * 40 : 2400 - step * 40));
+        return positions.reduce((chain, y) => chain.then(() => drag.scrollTo("w-bench", y)).then(() => new Promise((done) => setTimeout(done, 16))), Promise.resolve())
+          .then(() => new Promise((done) => setTimeout(done, 300))).then(() => true);
+      `, { timeout: 30000 });
       const scrollElapsedMs = performance.now() - scrolling;
       const scroll = await readNativeWork(app);
       const after = await app.snapshot({ windowId: "w-bench", fields: ["windows.shell", "windows.tabIds"] });
@@ -121,11 +118,28 @@ try {
       assert.equal(afterWindow.tabIds.length, count, "native tab count survives scrolling");
       assert.deepEqual(afterWindow.tabIds, nativeWindow.tabIds, "scrolling preserves native tab IDs and order");
       const afterShell = afterWindow.shell;
+      const realizationAfter = contract.nativeLayout ? await readSidebarRealization(app, "w-bench") : null;
       validateWindowContract(afterShell.contract);
       assert.deepEqual(afterShell.contract, beforeShell.contract, "scroll preserves shell geometry, hosts and pooled page identities");
-      assert.ok(startup.rows.live >= count, `eager baseline retains at least ${count} row views (${startup.rows.live})`);
-      assert.equal(scroll.rows.created, 0, "scroll reuses retained eager rows");
-      report.results.push({ seed: count === 1 ? "small" : count === 200 ? "big" : "fixedViewport2000", tabs: count, launchElapsedMs, scrollElapsedMs, startup, scroll, before: snapshot, after });
+      if (contract.nativeLayout) {
+        const sidebarStartup = sidebarWorkCounts(startup, "w-bench");
+        const sidebarScroll = sidebarWorkCounts(scroll, "w-bench");
+        assert.ok(sidebarStartup.live > 0 && sidebarStartup.live < 100, "native sidebar rows are bounded by the fixed visible viewport");
+        if (count > 1) assert.ok(sidebarScroll.reused > 0 && sidebarScroll.bound > 0, "native scrolling records sidebar binding and reuse work");
+        if (count === 2000) {
+          const previous = report.results.find((result) => result.tabs === 200);
+          assert.ok(previous?.realizationBefore, "200-tab native visibility evidence exists");
+          const previousStartup = sidebarWorkCounts(previous.startup, "w-bench");
+          assert.equal(sidebarStartup.live, previousStartup.live, "200 and 2000 tabs have identical fixed-viewport live sidebar rows");
+          assert.equal(sidebarStartup.created, previousStartup.created, "200 and 2000 tabs create equal fixed-viewport sidebar row allocations");
+          const live = (probe) => probe.pages.reduce((sum, page) => sum + page.realization.bound.length, 0);
+          assert.equal(live(realizationBefore), live(previous.realizationBefore), "200 and 2000 tabs bind equal exact visible intersections");
+        }
+      } else {
+        assert.ok(startup.rows.live >= count, `eager baseline retains at least ${count} row views (${startup.rows.live})`);
+        assert.equal(scroll.rows.created, 0, "scroll reuses retained eager rows");
+      }
+      report.results.push({ seed: count === 1 ? "small" : count === 200 ? "big" : "fixedViewport2000", tabs: count, launchElapsedMs, scrollElapsedMs, startup, scroll, before: snapshot, after, realizationBefore, realizationAfter });
       writeFileSync(join(out, "report.json"), JSON.stringify(report, null, 2));
       console.log(`${count} tabs: ${JSON.stringify({ launchElapsedMs, scrollElapsedMs, startup, scroll })}`);
     } finally { await app.quit(); }

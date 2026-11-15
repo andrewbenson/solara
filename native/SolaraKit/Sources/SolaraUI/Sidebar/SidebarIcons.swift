@@ -17,7 +17,12 @@ public final class SidebarFavicons {
   public var newTabMark: NSImage?
   private var cache: [SidebarFaviconRequest: NSImage] = [:]
   private var missing: Set<SidebarFaviconRequest> = []
-  private var pending: [SidebarFaviconRequest: [(NSImage?) -> Void]] = [:]
+  private final class Pending {
+    let token = UUID()
+    var callbacks: [UUID: (NSImage?) -> Void] = [:]
+    var task: Task<Void, Never>?
+  }
+  private var pending: [SidebarFaviconRequest: Pending] = [:]
   nonisolated(unsafe) private var invalidationObserver: NSObjectProtocol?
 
   public init() {
@@ -37,23 +42,46 @@ public final class SidebarFavicons {
     return nil
   }
 
-  public func load(_ request: SidebarFaviconRequest, _ done: @escaping (NSImage?) -> Void) {
-    if let known = cached(request) { return done(known) }
-    if pending[request] != nil {
-      pending[request]?.append(done)
-      return
+  @discardableResult
+  public func load(_ request: SidebarFaviconRequest, _ done: @escaping (NSImage?) -> Void) -> UUID? {
+    if let known = cached(request) { done(known); return nil }
+    guard let loader else { done(nil); return nil }
+    let interest = UUID()
+    if let flight = pending[request] {
+      flight.callbacks[interest] = done
+      return interest
     }
-    guard let loader else { return done(nil) }
-    pending[request] = [done]
-    Task { @MainActor in
+    let flight = Pending()
+    flight.callbacks[interest] = done
+    pending[request] = flight
+    let token = flight.token
+    flight.task = Task { @MainActor [weak self] in
       let loaded = try? await loader(request)
+      guard let self, !Task.isCancelled, self.pending[request]?.token == token else { return }
       let image = loaded ?? nil
       if let image { self.cache[request] = image } else if loaded != nil { self.missing.insert(request) }
       if self.cache.count > 2000 { self.cache.removeAll() }
-      let waiting = self.pending.removeValue(forKey: request) ?? []
+      if self.missing.count > 2000 { self.missing.removeAll() }
+      let waiting = self.pending.removeValue(forKey: request)?.callbacks.values ?? Dictionary<UUID, (NSImage?) -> Void>().values
       for callback in waiting { callback(image) }
     }
+    return interest
   }
+
+  public func cancel(_ interest: UUID?) {
+    guard let interest else { return }
+    for (request, flight) in pending where flight.callbacks.removeValue(forKey: interest) != nil {
+      if flight.callbacks.isEmpty {
+        flight.task?.cancel()
+        pending[request] = nil
+      }
+      return
+    }
+  }
+
+  #if SOLARA_PROBES
+  var pendingInterestCount: Int { pending.values.reduce(0) { $0 + $1.callbacks.count } }
+  #endif
 
   public func forget(url: String) {
     for key in cache.keys where key.url == url { cache[key] = nil }
@@ -91,9 +119,15 @@ final class TabIconView: NSView {
   private var dark = true
   private var palette: SidebarPalette?
   private var requested: SidebarFaviconRequest?
+  private var interest: UUID?
+  private var generation = 0
   private var renderedMark: NSImage?
   private var resolved: (state: FaviconState, image: NSImage?)?
   weak var favicons: SidebarFavicons?
+  #if SOLARA_PROBES
+  private(set) var probeRenderCount = 0
+  var probeURL: String? { spec?.url }
+  #endif
 
   override var isFlipped: Bool { true }
 
@@ -137,10 +171,36 @@ final class TabIconView: NSView {
 
   override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
+  func clearBinding() {
+    generation += 1
+    favicons?.cancel(interest)
+    interest = nil
+    requested = nil
+    spec = nil
+    palette = nil
+    resolved = nil
+    renderedMark = nil
+    madeImage?.clearBinding()
+    madeSymbol?.isHidden = true
+    madeEmoji?.stringValue = ""
+    madeEmoji?.isHidden = true
+    madeInitial?.isHidden = true
+    fallback.isHidden = true
+    badge?.removeFromSuperview()
+    badge = nil
+    alphaValue = 1
+  }
+
   func set(_ spec: TabIconSpec, palette: SidebarPalette) {
     resolved = nil
     madeImage?.contentsGravity = .resizeAspect
     let same = spec == self.spec && palette.dark == dark && self.palette != nil && renderedMark === favicons?.newTabMark
+    if !same {
+      generation += 1
+      favicons?.cancel(interest)
+      interest = nil
+      requested = nil
+    }
     self.spec = spec
     self.palette = palette
     dark = palette.dark
@@ -166,6 +226,9 @@ final class TabIconView: NSView {
 
   private func render() {
     guard let spec, let palette else { return }
+    #if SOLARA_PROBES
+    probeRenderCount += 1
+    #endif
     renderedMark = favicons?.newTabMark
     let size = spec.size
     let box = NSRect(x: 0, y: 0, width: size, height: size)
@@ -216,10 +279,13 @@ final class TabIconView: NSView {
       return
     }
     showFallback(spec)
+    guard requested != request else { return }
     requested = request
-    favicons?.load(request) { [weak self] picture in
-      guard let self, picture != nil, self.requested == request else { return }
-      self.render()
+    let token = generation
+    interest = favicons?.load(request) { [weak self] picture in
+      guard let self, self.generation == token, self.spec != nil, self.requested == request else { return }
+      self.interest = nil
+      if picture != nil { self.render() }
     }
   }
 
@@ -376,6 +442,12 @@ final class PictureLayer: CALayer {
     }
     isHidden = false
     CATransaction.commit()
+  }
+
+  func clearBinding() {
+    shown = nil
+    contents = nil
+    isHidden = true
   }
 
   private static func tinted(_ image: NSImage, _ color: NSColor) -> NSImage {

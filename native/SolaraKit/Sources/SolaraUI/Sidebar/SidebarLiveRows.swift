@@ -145,6 +145,8 @@ class LiveRowView: SidebarRowView {
   var plateRadius: CGFloat { 8 }
   var row: SidebarLiveRow?
 
+  override func clearIdentity() { row = nil }
+
   override var pressScales: Bool { false }
 
   override init(frame: NSRect) {
@@ -391,6 +393,13 @@ final class LiveItemRowView: LiveRowView {
   private var popped: CompletionState?
 
   override var interactive: Bool { false }
+
+  override func clearIdentity() {
+    super.clearIdentity()
+    spec = nil
+    popped = nil
+    laidOutClosing = false
+  }
 
   override init(frame: NSRect) {
     super.init(frame: frame)
@@ -847,6 +856,7 @@ final class LiveCompletedRowView: LiveRowView {
 
   override func renderRow(_ context: SidebarContext) {
     guard case .completed(let folderId, let done)? = row?.kind else { return }
+    body.alphaValue = 0.75
     self.folderId = folderId
     itemId = done.item.id
     let look = SidebarLiveColors(dark: context.palette.dark).completion(done.state)

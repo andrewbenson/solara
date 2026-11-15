@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
+import { sidebarSession, assertSidebarPosition } from "./sidebar-position-test.mjs";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -19,7 +20,7 @@ const tabs = ids.map((id) => ({ id, url: `data:text/html,<title>Tab ${id}</title
 
 const app = await launch(resolve(appArg), {
   data: join(scratch, "data"),
-  session: session({ profiles: ["Personal"], windows: [{ id: "w1", tabIds: ids, activeTabIds: { default: "t0" }, frame: [60, 60, 1200, 800] }], tabs }),
+  session: session(sidebarSession({ profiles: ["Personal"], windows: [{ id: "w1", tabIds: ids, activeTabIds: { default: "t0" }, frame: [60, 60, 1200, 800] }], tabs })),
   ready: "return !!ac.store",
 });
 let nativePollDeadline = 0;
@@ -70,6 +71,7 @@ const startRename = async (id) => {
 
 try {
   await sleep(2500);
+  await assertSidebarPosition(app);
   const last = await run(`return ac.sidebarRows.measureRow("w1", "t2")`);
   const blank = { x: last.x + 60, y: Math.round(last.y + last.height + 160) };
 

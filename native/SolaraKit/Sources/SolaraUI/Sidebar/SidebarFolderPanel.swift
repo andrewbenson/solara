@@ -97,6 +97,11 @@ public final class SidebarFolderPanelView: NSView {
   public var onEvent: (FolderPanelEvent) -> Void = { _ in }
   public var onDropZone: (FolderPanelDropZone?) -> Void = { _ in }
   public var makeIcon: (String) -> NSView = { _ in NSView() }
+  var bindIcon: ((String, NSView) -> Void)?
+  #if SOLARA_PROBES
+  var probeRowBinding: ((NSView) -> Void)?
+  #endif
+  public var virtualizesRows = false { didSet { if oldValue != virtualizesRows { needsLayout = true } } }
   public var folderId = ""
   public var hintActions: [String: [String]] = [:]
   public var showsTabNumberHints = true
@@ -105,7 +110,12 @@ public final class SidebarFolderPanelView: NSView {
   private let card = FolderPanelFlipped()
   private let surface = SurfaceLayer()
   private let header = FadeLabel(fontSize: FolderPanelMetrics.headerSize, weight: .semibold)
-  private var rows: [FolderPanelRow] = []
+  private let rowPool = SidebarAuxiliaryRowPool()
+  private let viewportWatch = SidebarAuxiliaryViewportWatch()
+  private let scroll = NSScrollView()
+  private let list = FolderPanelFlipped()
+  private var rowTop: CGFloat = 0
+  private var reconciling = false
   private var label = ""
   private var members: [FolderPanelMember] = []
   private var colors = FolderPanelColors(dark: true, tokens: [:])
@@ -133,6 +143,15 @@ public final class SidebarFolderPanelView: NSView {
     motion.addSubview(card)
     header.setAccessibilityRole(.staticText)
     card.addSubview(header)
+    scroll.drawsBackground = false
+    scroll.hasHorizontalScroller = false
+    scroll.hasVerticalScroller = false
+    scroll.horizontalScrollElasticity = .none
+    scroll.documentView = list
+    scroll.contentView.postsBoundsChangedNotifications = true
+    NotificationCenter.default.addObserver(self, selector: #selector(scrolled), name: NSView.boundsDidChangeNotification, object: scroll.contentView)
+    card.addSubview(scroll)
+    scroll.isHidden = true
   }
 
   required init?(coder: NSCoder) { fatalError() }
@@ -147,28 +166,16 @@ public final class SidebarFolderPanelView: NSView {
     surface.glowOpacity = colors.panelShadowOpacity * FolderPanelMetrics.shadowScale
     header.text = "\(label) · \(members.count) tab\(members.count == 1 ? "" : "s")"
     header.color = colors.textSecondary.ns
-    if members.map(\.tabId) != self.members.map(\.tabId) {
-      rows.forEach { $0.removeFromSuperview() }
-      rows = members.map { member in
-        let row = FolderPanelRow(member: member, icon: makeIcon(member.tabId))
-        row.onEvent = { [weak self] in self?.onEvent($0) }
-        card.addSubview(row)
-        return row
-      }
-    }
-    for (row, member) in zip(rows, members) {
-      row.set(member, colors: colors)
-      row.numberHint.configure(actions: hintActions[member.tabId] ?? [], enabled: showsTabNumberHints)
-    }
     self.members = members
+    if !virtualizesRows { syncRows() }
     needsLayout = true
   }
 
   func updateHintActions(_ actions: [String: [String]], enabled: Bool) {
     hintActions = actions
     showsTabNumberHints = enabled
-    for (row, member) in zip(rows, members) {
-      row.numberHint.configure(actions: actions[member.tabId] ?? [], enabled: enabled)
+    for (key, row) in rowPool.views {
+      (row as? FolderPanelRow)?.numberHint.configure(actions: actions[key] ?? [], enabled: enabled)
     }
   }
 
@@ -181,22 +188,93 @@ public final class SidebarFolderPanelView: NSView {
     var inner = pad + m.headerTop
     header.frame = CGRect(x: pad + m.headerSide, y: inner, width: width - 2 * (pad + m.headerSide), height: ceil(NSFont.systemFont(ofSize: m.headerSize, weight: .semibold).boundingRectForFont.height))
     inner += header.frame.height + m.headerBottom
-    for (i, row) in rows.enumerated() {
-      if i > 0 { inner += m.rowGap }
-      row.frame = CGRect(x: pad, y: inner, width: width - 2 * pad, height: m.rowHeight)
-      inner += m.rowHeight
-    }
-    inner += m.rowGap + pad
+    rowTop = inner
+    let contentHeight = CGFloat(members.count) * (m.rowHeight + m.rowGap)
+    inner += contentHeight + pad
     motion.frame = bounds
-    card.frame = CGRect(x: x, y: y, width: width, height: inner)
+    let available = SidebarAuxiliaryViewport.clip(self)
+    let height = virtualizesRows ? min(inner, max(0, available.maxY - y)) : inner
+    card.frame = CGRect(x: x, y: y, width: width, height: height)
+    scroll.isHidden = !virtualizesRows
+    scroll.frame = CGRect(x: 0, y: rowTop, width: width, height: max(0, height - rowTop - pad))
+    list.frame = CGRect(x: 0, y: 0, width: width, height: contentHeight)
     PrimitiveMotion.setInstantly { surface.frame = card.bounds }
-    if !opened, window != nil, !rows.isEmpty { open() }
+    syncRows()
+    viewportWatch.watch(self) { [weak self] in
+      guard let self, virtualizesRows else { return }
+      needsLayout = true
+      layoutSubtreeIfNeeded()
+    }
+    if !opened, window != nil, !members.isEmpty { open() }
     report()
   }
 
   public override func viewDidMoveToWindow() {
     super.viewDidMoveToWindow()
     if window != nil { needsLayout = true }
+    else if virtualizesRows { rowPool.clear { ($0 as? FolderPanelRow)?.clearBinding() }; viewportWatch.stop() }
+  }
+
+  private func rowFrame(_ index: Int) -> CGRect {
+    let m = FolderPanelMetrics.self
+    let pad = m.padding + m.border
+    return CGRect(x: pad, y: (virtualizesRows ? 0 : rowTop) + CGFloat(index) * (m.rowHeight + m.rowGap), width: max(0, width - 2 * pad), height: m.rowHeight)
+  }
+
+  private func syncRows() {
+    guard !reconciling else { return }
+    reconciling = true
+    defer { reconciling = false }
+    let parent: NSView = virtualizesRows ? list : card
+    rowPool.reconcile(keys: members.map(\.tabId), frames: members.indices.map(rowFrame), container: parent, virtualized: virtualizesRows, make: { _ in FolderPanelRow(member: FolderPanelMember(tabId: "", title: "", active: false), icon: NSView()) }, clear: { ($0 as? FolderPanelRow)?.clearBinding() }) { [weak self] view, index in
+      guard let self, let row = view as? FolderPanelRow else { return }
+      let member = members[index]
+      if let bindIcon, row.hasBoundIcon { bindIcon(member.tabId, row.iconView) }
+      else if row.memberId != member.tabId { row.replaceIcon(makeIcon(member.tabId)) }
+      row.set(member, colors: colors)
+      row.transfersDrag = virtualizesRows
+      row.setAccessibilityElement(!virtualizesRows)
+      #if SOLARA_PROBES
+      probeRowBinding?(row)
+      #endif
+      row.numberHint.configure(actions: hintActions[member.tabId] ?? [], enabled: showsTabNumberHints)
+      row.onEvent = { [weak self] in self?.onEvent($0) }
+    }
+    rowPool.updateElements(keys: members.map(\.tabId), parent: self, label: { [weak self] key in
+      self?.members.first { $0.tabId == key }?.title
+    }, frame: { [weak self] key in
+      guard let self, let index = members.firstIndex(where: { $0.tabId == key }) else { return .zero }
+      return SidebarAuxiliaryViewport.screen(rowFrame(index), in: virtualizesRows ? list : card)
+    }, action: { [weak self] key, action in
+      guard let self, virtualizesRows, !SidebarAuxiliaryViewport.clip(self).isEmpty, let index = members.firstIndex(where: { $0.tabId == key }) else { return false }
+      list.scrollToVisible(rowFrame(index))
+      syncRows()
+      report()
+      if action == "press" { onEvent(.open(tabId: key)) }
+      if action == "menu" { onEvent(.tabMenu(tabId: key)) }
+      return true
+    })
+  }
+
+  @objc private func scrolled() {
+    guard virtualizesRows else { return }
+    syncRows()
+    report()
+  }
+
+  public override func accessibilityChildren() -> [Any]? {
+    guard virtualizesRows else { return super.accessibilityChildren() }
+    return [header] as [Any] + rowPool.orderedElements
+  }
+
+  public override func viewDidHide() {
+    super.viewDidHide()
+    if virtualizesRows { rowPool.clear { ($0 as? FolderPanelRow)?.clearBinding() }; viewportWatch.stop(); onDropZone(nil) }
+  }
+
+  public override func viewDidUnhide() {
+    super.viewDidUnhide()
+    needsLayout = true
   }
 
   private func open() {
@@ -220,7 +298,10 @@ public final class SidebarFolderPanelView: NSView {
     guard let height = window?.contentView?.bounds.height else { return onDropZone(nil) }
     func top(_ r: CGRect) -> CGRect { CGRect(x: r.minX, y: height - r.maxY, width: r.width, height: r.height) }
     let frame = top(convert(card.frame, to: nil))
-    let zone = FolderPanelDropZone(frame: frame, members: zip(members, rows).map { ($0.tabId, top($1.convert($1.bounds, to: nil))) })
+    let parent: NSView = virtualizesRows ? list : card
+    let zone = FolderPanelDropZone(frame: frame, members: members.enumerated().map { index, member in
+      (member.tabId, top(parent.convert(rowFrame(index), to: nil)))
+    })
     guard zone != reported else { return }
     reported = zone
     onDropZone(zone)
@@ -254,7 +335,7 @@ final class FolderPanelFlipped: NSView {
 final class FolderPanelRow: NSView {
   var onEvent: (FolderPanelEvent) -> Void = { _ in }
   private let fill = CALayer()
-  private let icon: NSView
+  private var icon: NSView
   private let title = FadeLabel(fontSize: FolderPanelMetrics.labelSize)
   let numberHint = TabNumberHintView()
   private var member: FolderPanelMember
@@ -263,12 +344,18 @@ final class FolderPanelRow: NSView {
   private var pressed = false
   private var downAt: NSPoint?
   private var dragging = false
+  private var transferredDrag = false
+  var transfersDrag = false
+  var hasBoundIcon = false
+  var memberId: String { member.tabId }
+  var iconView: NSView { icon }
 
   override var isFlipped: Bool { true }
 
   init(member: FolderPanelMember, icon: NSView) {
     self.member = member
     self.icon = icon
+    hasBoundIcon = !member.tabId.isEmpty
     super.init(frame: .zero)
     wantsLayer = true
     fill.cornerRadius = FolderPanelMetrics.rowRadius
@@ -323,6 +410,7 @@ final class FolderPanelRow: NSView {
     pressed = true
     downAt = event.locationInWindow
     dragging = false
+    transferredDrag = false
     refresh()
   }
 
@@ -339,18 +427,26 @@ final class FolderPanelRow: NSView {
       pressed = false
       refresh()
       onEvent(.drag(phase: "begin", tabId: member.tabId, point: topLeft(event)))
+      if transfersDrag {
+        transferredDrag = true
+        dragging = false
+        self.downAt = nil
+        return
+      }
     }
     if dragging { onEvent(.drag(phase: "move", tabId: member.tabId, point: topLeft(event))) }
   }
 
   override func mouseUp(with event: NSEvent) {
+    guard !transferredDrag else { transferredDrag = false; return }
+    let wasPressed = downAt != nil
     let wasDragging = dragging
     pressed = false
     dragging = false
     downAt = nil
     refresh()
     if wasDragging { return onEvent(.drag(phase: "end", tabId: member.tabId, point: topLeft(event))) }
-    if bounds.contains(convert(event.locationInWindow, from: nil)) { onEvent(.open(tabId: member.tabId)) }
+    if wasPressed, bounds.contains(convert(event.locationInWindow, from: nil)) { onEvent(.open(tabId: member.tabId)) }
   }
 
   override func rightMouseDown(with event: NSEvent) { onEvent(.tabMenu(tabId: member.tabId)) }
@@ -371,6 +467,27 @@ final class FolderPanelRow: NSView {
     pressed = false
     downAt = nil
     onEvent(.drag(phase: "cancel", tabId: member.tabId, point: .zero))
+  }
+
+  func replaceIcon(_ next: NSView) {
+    icon.removeFromSuperview()
+    icon = next
+    addSubview(icon)
+    hasBoundIcon = true
+  }
+
+  func clearBinding() {
+    cancelDrag()
+    hovered = false
+    pressed = false
+    downAt = nil
+    transferredDrag = false
+    numberHint.configure(actions: [], enabled: false)
+    member = FolderPanelMember(tabId: "", title: "", active: false)
+    onEvent = { _ in }
+    setAccessibilityElement(false)
+    setAccessibilityLabel(nil)
+    SidebarRowReuse.reset(self)
   }
 
   override func accessibilityPerformPress() -> Bool {
@@ -409,6 +526,13 @@ public enum SidebarFolderPanelHost {
       panels.setObject(made, forKey: page)
       return made
     }()
+    panel.virtualizesRows = page.virtualizesRows
+    #if SOLARA_PROBES
+    panel.probeRowBinding = { [weak page] view in
+      guard let context = page?.context else { return }
+      NativeWorkCounters.bind(view, windowId: windowId, profileId: context.host.profileId, kind: "sidebar.folderPanel.full")
+    }
+    #endif
     refreshHints(on: page)
     panel.folderId = request.folderId
     panel.onEvent = { [weak page] event in
@@ -429,6 +553,11 @@ public enum SidebarFolderPanelHost {
         icon.set(context.iconSpec(tab, size: FolderPanelMetrics.icon), palette: context.palette)
       }
       return icon
+    }
+    panel.bindIcon = { [weak page] tabId, view in
+      guard let icon = view as? TabIconView, let page, let context = page.context, let tab = context.state.tabs[tabId] else { return }
+      icon.favicons = page.favicons
+      icon.set(context.iconSpec(tab, size: FolderPanelMetrics.icon), palette: context.palette)
     }
     let colors = FolderPanelColors(dark: request.dark, tokens: request.theme, panelShadowOpacity: request.panelShadowOpacity)
     let width = max(0, page.bounds.width - 2 * FolderPanelMetrics.inset)

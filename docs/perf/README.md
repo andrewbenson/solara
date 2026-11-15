@@ -602,9 +602,11 @@ required nonnegative integer fields and that per-window/profile/kind row counts 
 
 `SolaraWindowShell.nativeWork(false)` reads the report; `nativeWork(true)` returns the current report and resets event
 counts. Reset preserves live gauges and allocation identity. `rows.created` counts first observed concrete row views,
-`bound` counts binding/update passes, and `reused` counts bindings of an already observed view, including today's
-stable-key retention. It does not yet prove reuse between different tab identities. Live rows include retained hidden
-profile pages and detached retiring rows until deallocation. Counts are grouped by window, profile and concrete row kind.
+`bound` counts binding/update passes, and `reused` counts bindings of an already observed view, including stable-key
+retention. That counter alone does not prove reuse between different tab identities. The Patch 5 realization probe
+and driver compare allocation IDs, logical keys and binding tokens to establish cross-identity reuse. Live rows
+include detached reuse-bin objects until deallocation; the legacy control also retains hidden profile rows. Counts
+are grouped by window, profile and concrete row kind.
 Layout applications and slot publications are events; animation links and subscriptions are live gauges. The subscription
 scope is shell/sidebar/strip host notifications and store listeners plus the tab-memory store listener; internal row/view
 observers and other application services are outside this census. Paused and invalidated display links are excluded. Deferred work
@@ -619,6 +621,8 @@ excluding UI gate waits. It is a full-settlement diagnostic, separate from nativ
 commits, store updates, document writes or native row/layout/deferred work, with no active links or pending frame jobs. Cold profiles
 remain unloaded; the legacy all-profile history wait is not used by this fixture. Per-sample settlement diagnostics are saved,
 and existing per-count data directories are refused so SQLite state cannot silently replace the fixture.
-The current eager allocation is recorded explicitly as a baseline for Patch 5; no bad-allocation ceiling is adopted in
-`ratchet.json`. Timing from Debug runs is diagnostic, and native counts must be considered with launch/scroll cost.
+The eager allocation remains an explicit legacy control; the development native-layout report requires equal
+sidebar creation/live counts at 200 and 2,000 tabs with the same viewport. The realization validator independently
+requires exact visible bindings and bounded reuse bins. No eager-allocation ceiling is adopted in `ratchet.json`.
+Timing from Debug runs is diagnostic, and native counts must be considered with launch/scroll cost.
 New ceilings require repeated matched measurements and time correlation as described above.

@@ -95,6 +95,10 @@ public enum SidebarGroupCardEvent: Equatable, Sendable {
 public final class SidebarGroupCardView: NSView, NSTextFieldDelegate {
   public var onEvent: ((SidebarGroupCardEvent) -> Void)?
   public var onPointer: ((Bool) -> Void)?
+  #if SOLARA_PROBES
+  public var probeRowBinding: ((NSView, String) -> Void)?
+  #endif
+  public var virtualizesRows = false { didSet { if oldValue != virtualizesRows { refreshRows(); needsLayout = true } } }
   public var live = true { didSet { if !live { handBack(toPage: false) } } }
   public private(set) var state: SidebarGroupCardState?
   public let favicons: SidebarFavicons
@@ -106,7 +110,8 @@ public final class SidebarGroupCardView: NSView, NSTextFieldDelegate {
   private let scroll = NSScrollView()
   private let list = GroupCardListView()
   private let empty = NSTextField(labelWithString: "")
-  private var rowViews: [GroupCardRowView] = []
+  private let rowPool = SidebarAuxiliaryRowPool()
+  private let viewportWatch = SidebarAuxiliaryViewportWatch()
   private var shown: [SidebarGroupCardState.Row] = []
   private var selected = 0
   private var focused = false
@@ -141,6 +146,8 @@ public final class SidebarGroupCardView: NSView, NSTextFieldDelegate {
     scroll.hasVerticalScroller = false
     scroll.horizontalScrollElasticity = .none
     scroll.documentView = list
+    scroll.contentView.postsBoundsChangedNotifications = true
+    NotificationCenter.default.addObserver(self, selector: #selector(scrolled), name: NSView.boundsDidChangeNotification, object: scroll.contentView)
     addSubview(scroll)
     empty.lineBreakMode = .byTruncatingTail
     empty.font = .systemFont(ofSize: 13)
@@ -174,15 +181,23 @@ public final class SidebarGroupCardView: NSView, NSTextFieldDelegate {
     PrimitiveMotion.setInstantly {
       separator.layer?.backgroundColor = CSSColor(dark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.1)")?.cg
     }
-    if ticker == nil {
-      let timer = Timer(timeInterval: 30, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.refreshRows() } }
-      timer.tolerance = 3
-      RunLoop.main.add(timer, forMode: .common)
-      ticker = timer
-    }
+    syncTicker()
     refreshRows()
     setFrameSize(NSSize(width: SidebarGroupCardMetrics.width, height: SidebarGroupCardMetrics.height(next.rows.count)))
     needsLayout = true
+  }
+
+  private func syncTicker() {
+    if virtualizesRows, window == nil || isHiddenOrHasHiddenAncestor {
+      ticker?.invalidate()
+      ticker = nil
+      return
+    }
+    guard ticker == nil else { return }
+    let timer = Timer(timeInterval: 30, repeats: true) { [weak self] _ in MainActor.assumeIsolated { self?.refreshRows() } }
+    timer.tolerance = 3
+    RunLoop.main.add(timer, forMode: .common)
+    ticker = timer
   }
 
   private var query: String { field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -191,50 +206,7 @@ public final class SidebarGroupCardView: NSView, NSTextFieldDelegate {
     guard let state else { return }
     shown = SidebarGroupCardMetrics.matching(query, state.rows)
     selected = max(0, min(selected, shown.count - 1))
-    let tokens = state.theme
-    let dark = state.dark
-    var host = SidebarHostState(profileId: "", dark: dark)
-    host.theme = tokens
-    let palette = SidebarPalette(host)
-    while rowViews.count < shown.count {
-      let row = GroupCardRowView()
-      row.onHover = { [weak self, weak row] in
-        guard let self, let row, let index = self.rowViews.firstIndex(where: { $0 === row }) else { return }
-        self.select(index, reveal: false)
-      }
-      row.onPress = { [weak self, weak row] in
-        guard let self, let row, let index = self.rowViews.firstIndex(where: { $0 === row }) else { return }
-        self.choose(index)
-      }
-      row.onCommand = { [weak self, weak row] event in
-        guard let self, let row, let index = self.rowViews.firstIndex(where: { $0 === row }) else { return false }
-        switch event.keyCode {
-        case 48:
-          let next = index + (event.modifierFlags.contains(.shift) ? -1 : 1)
-          self.window?.makeFirstResponder(self.rowViews.indices.contains(next) ? self.rowViews[next] : self.field)
-        case 53:
-          self.onEvent?(.close)
-          self.handBack(toPage: false)
-        case 125, 126:
-          self.select(index + (event.keyCode == 125 ? 1 : -1), reveal: true)
-          self.window?.makeFirstResponder(self.rowViews[self.selected])
-        default:
-          return false
-        }
-        return true
-      }
-      row.onFocusExit = { [weak self] in self?.releaseFocusOutsideCard() }
-      list.addSubview(row)
-      rowViews.append(row)
-    }
-    while rowViews.count > shown.count { rowViews.removeLast().removeFromSuperview() }
-    let now = Date().timeIntervalSince1970 * 1000
-    for (index, (view, row)) in zip(rowViews, shown).enumerated() {
-      view.icon.favicons = favicons
-      view.set(row, ago: SidebarGroupCardMetrics.ago(row.usedAt, now: now), palette: palette, selected: index == selected, dark: dark)
-      view.nextKeyView = index + 1 < rowViews.count ? rowViews[index + 1] : field
-    }
-    field.nextKeyView = rowViews.first ?? field
+    syncRows()
     empty.isHidden = !shown.isEmpty
     empty.stringValue = query.isEmpty ? "No tabs" : "No tabs match \u{201C}\(query)\u{201D}"
     needsLayout = true
@@ -256,10 +228,105 @@ public final class SidebarGroupCardView: NSView, NSTextFieldDelegate {
     scroll.frame = NSRect(x: x0, y: listTop, width: width, height: listHeight)
     let content = m.listPad * 2 + CGFloat(shown.count) * m.row
     list.frame = NSRect(x: 0, y: 0, width: width, height: max(listHeight, content))
-    for (index, view) in rowViews.enumerated() {
-      view.frame = NSRect(x: m.rowInset, y: m.listPad + CGFloat(index) * m.row, width: width - 2 * m.rowInset, height: m.row)
-    }
+    syncRows()
+    watchViewport()
     empty.frame = NSRect(x: m.inset, y: m.listPad + (m.row - 16) / 2, width: width - 2 * m.inset, height: 16)
+  }
+
+  private func rowFrame(_ index: Int) -> CGRect {
+    let m = SidebarGroupCardMetrics.self
+    return CGRect(x: m.rowInset, y: m.listPad + CGFloat(index) * m.row, width: max(0, list.bounds.width - 2 * m.rowInset), height: m.row)
+  }
+
+  private func syncRows() {
+    guard let state else { return }
+    var host = SidebarHostState(profileId: "", dark: state.dark)
+    host.theme = state.theme
+    let palette = SidebarPalette(host)
+    let now = Date().timeIntervalSince1970 * 1000
+    rowPool.reconcile(keys: shown.map(\.id), frames: shown.indices.map(rowFrame), container: list, virtualized: virtualizesRows, make: { _ in GroupCardRowView() }, clear: { [weak self] view in
+      if view === self?.window?.firstResponder { self?.window?.makeFirstResponder(self?.field) }
+      (view as? GroupCardRowView)?.clearBinding()
+    }) { [weak self] view, index in
+      guard let self, let view = view as? GroupCardRowView else { return }
+      let row = shown[index]
+      view.icon.favicons = favicons
+      view.set(row, ago: SidebarGroupCardMetrics.ago(row.usedAt, now: now), palette: palette, selected: index == selected, dark: state.dark)
+      view.setAccessibilityElement(!virtualizesRows)
+      #if SOLARA_PROBES
+      probeRowBinding?(view, row.profileId)
+      #endif
+      view.onHover = { [weak self] in
+        guard let self, let index = shown.firstIndex(where: { $0.id == row.id }) else { return }
+        select(index, reveal: false)
+      }
+      view.onPress = { [weak self] in
+        guard let self, let index = shown.firstIndex(where: { $0.id == row.id }) else { return }
+        choose(index)
+      }
+      view.onCommand = { [weak self] event in
+        guard let self, let index = shown.firstIndex(where: { $0.id == row.id }) else { return false }
+        switch event.keyCode {
+        case 48:
+          focusRow(index + (event.modifierFlags.contains(.shift) ? -1 : 1))
+        case 53:
+          onEvent?(.close)
+          handBack(toPage: false)
+        case 125, 126:
+          focusRow(max(0, min(shown.count - 1, index + (event.keyCode == 125 ? 1 : -1))))
+        default:
+          return false
+        }
+        return true
+      }
+      view.onFocusExit = { [weak self] in self?.releaseFocusOutsideCard() }
+    }
+    rowPool.updateElements(keys: shown.map(\.id), parent: self, label: { [weak self] key in
+      self?.shown.first { $0.id == key }?.title
+    }, frame: { [weak self] key in
+      guard let self, let index = shown.firstIndex(where: { $0.id == key }) else { return .zero }
+      return SidebarAuxiliaryViewport.screen(rowFrame(index), in: list)
+    }, action: { [weak self] key, action in
+      guard let self, virtualizesRows, !SidebarAuxiliaryViewport.clip(self).isEmpty, let index = shown.firstIndex(where: { $0.id == key }), action != "menu" else { return false }
+      select(index, reveal: true)
+      if action == "press" { choose(index) }
+      return true
+    })
+  }
+
+  private func watchViewport() {
+    viewportWatch.watch(list) { [weak self] in self?.syncRows() }
+  }
+
+  @objc private func scrolled() { syncRows() }
+
+  public override func accessibilityChildren() -> [Any]? {
+    guard virtualizesRows else { return super.accessibilityChildren() }
+    return [field] as [Any] + rowPool.orderedElements
+  }
+
+  public override func viewDidHide() {
+    super.viewDidHide()
+    if virtualizesRows {
+      handBack(toPage: false)
+      rowPool.clear { ($0 as? GroupCardRowView)?.clearBinding() }
+      viewportWatch.stop()
+      syncTicker()
+    }
+  }
+
+  public override func viewDidUnhide() {
+    super.viewDidUnhide()
+    syncTicker()
+    syncRows()
+    watchViewport()
+  }
+
+  private func focusRow(_ index: Int) {
+    guard shown.indices.contains(index) else { window?.makeFirstResponder(field); return }
+    let id = shown[index].id
+    select(index, reveal: true)
+    window?.makeFirstResponder(rowPool.views[id] ?? field)
   }
 
   private func select(_ index: Int, reveal: Bool) {
@@ -267,7 +334,7 @@ public final class SidebarGroupCardView: NSView, NSTextFieldDelegate {
     let next = max(0, min(shown.count - 1, index))
     if next != selected {
       selected = next
-      for (i, view) in rowViews.enumerated() { view.selected = i == next }
+      for (key, view) in rowPool.views { (view as? GroupCardRowView)?.selected = key == shown[next].id }
     }
     if reveal { self.reveal(next) }
   }
@@ -280,9 +347,10 @@ public final class SidebarGroupCardView: NSView, NSTextFieldDelegate {
     var y: CGFloat?
     if rowTop - m.listPad < offset { y = rowTop - m.listPad }
     else if rowTop + m.row + m.listPad > offset + height { y = rowTop + m.row + m.listPad - height }
-    guard let y else { return }
+    guard let y else { syncRows(); return }
     scroll.contentView.scroll(to: NSPoint(x: 0, y: y))
     scroll.reflectScrolledClipView(scroll.contentView)
+    syncRows()
   }
 
   private func choose(_ index: Int) {
@@ -368,9 +436,9 @@ public final class SidebarGroupCardView: NSView, NSTextFieldDelegate {
     case #selector(NSResponder.moveUp(_:)):
       select(selected - 1, reveal: true)
     case #selector(NSResponder.insertTab(_:)):
-      window?.makeFirstResponder(rowViews.first ?? field)
+      focusRow(0)
     case #selector(NSResponder.insertBacktab(_:)):
-      window?.makeFirstResponder(rowViews.last ?? field)
+      focusRow(shown.count - 1)
     default:
       return false
     }
@@ -405,7 +473,8 @@ public final class SidebarGroupCardView: NSView, NSTextFieldDelegate {
       pointer(false)
       ticker?.invalidate()
       ticker = nil
-    }
+      if virtualizesRows { rowPool.clear { ($0 as? GroupCardRowView)?.clearBinding() }; viewportWatch.stop() }
+    } else { syncTicker(); syncRows(); watchViewport() }
   }
 
   public override func viewWillMove(toWindow newWindow: NSWindow?) {
@@ -452,6 +521,7 @@ final class GroupCardRowView: NSView {
   private var tracking: NSTrackingArea?
   private var pressed = false { didSet { paint() } }
   private var dark = true
+  private var down = false
   var selected = false { didSet { if selected != oldValue { paint() } } }
 
   override var isFlipped: Bool { true }
@@ -528,13 +598,28 @@ final class GroupCardRowView: NSView {
   }
 
   override func mouseEntered(with event: NSEvent) { onHover?() }
-  override func mouseDown(with event: NSEvent) { pressed = true }
+  override func mouseDown(with event: NSEvent) { down = true; pressed = true }
   override func mouseDragged(with event: NSEvent) { pressed = bounds.contains(convert(event.locationInWindow, from: nil)) }
 
   override func mouseUp(with event: NSEvent) {
-    let inside = bounds.contains(convert(event.locationInWindow, from: nil))
+    let inside = down && bounds.contains(convert(event.locationInWindow, from: nil))
+    down = false
     pressed = false
     if inside { onPress?() }
+  }
+
+  func clearBinding() {
+    down = false
+    pressed = false
+    selected = false
+    onHover = nil
+    onPress = nil
+    onCommand = nil
+    onFocusExit = nil
+    nextKeyView = nil
+    setAccessibilityElement(false)
+    setAccessibilityLabel(nil)
+    SidebarRowReuse.reset(self)
   }
 
   override func accessibilityPerformPress() -> Bool {
@@ -600,5 +685,189 @@ final class PanelSurfaceView: NSView {
       overlay.frame = bounds
     }
     effect.frame = bounds
+  }
+}
+
+@MainActor
+enum SidebarAuxiliaryViewport {
+  static func clip(_ view: NSView) -> CGRect {
+    guard !view.isHiddenOrHasHiddenAncestor, view.window?.isMiniaturized != true else { return .zero }
+    var rect = view.bounds
+    var ancestor = view.superview
+    while let current = ancestor {
+      rect = rect.intersection(view.convert(current.bounds, from: current))
+      if rect.isNull || rect.isEmpty { return .zero }
+      ancestor = current.superview
+    }
+    return rect
+  }
+
+  static func screen(_ rect: CGRect, in view: NSView) -> CGRect {
+    guard let window = view.window else { return .zero }
+    return window.convertToScreen(view.convert(rect, to: nil))
+  }
+}
+
+final class SidebarAuxiliaryElement: NSAccessibilityElement {
+  @MainActor
+  private final class Payload {
+    var label: (() -> String?)?
+    var frame: (() -> CGRect)?
+    var action: ((String) -> Bool)?
+  }
+
+  private let payload: Payload
+
+  @MainActor
+  init(parent: NSView) {
+    payload = Payload()
+    super.init()
+    setAccessibilityParent(parent)
+  }
+
+  @MainActor
+  var label: (() -> String?)? {
+    get { payload.label }
+    set { payload.label = newValue }
+  }
+
+  @MainActor
+  var frame: (() -> CGRect)? {
+    get { payload.frame }
+    set { payload.frame = newValue }
+  }
+
+  @MainActor
+  var action: ((String) -> Bool)? {
+    get { payload.action }
+    set { payload.action = newValue }
+  }
+
+  override func accessibilityLabel() -> String? {
+    let value = payload
+    return MainActor.assumeIsolated { value.label?() }
+  }
+
+  override func accessibilityFrame() -> CGRect {
+    let value = payload
+    return MainActor.assumeIsolated { value.frame?() ?? .zero }
+  }
+
+  override func accessibilityPerformPress() -> Bool {
+    let value = payload
+    return MainActor.assumeIsolated { value.action?("press") ?? false }
+  }
+
+  override func accessibilityPerformShowMenu() -> Bool {
+    let value = payload
+    return MainActor.assumeIsolated { value.action?("menu") ?? false }
+  }
+
+  override func setAccessibilityFocused(_ focused: Bool) {
+    let value = payload
+    MainActor.assumeIsolated { if focused { _ = value.action?("focus") } }
+  }
+
+  @MainActor
+  func invalidate() {
+    payload.label = nil
+    payload.frame = nil
+    payload.action = nil
+    setAccessibilityParent(nil)
+  }
+}
+
+@MainActor
+final class SidebarAuxiliaryRowPool {
+  private(set) var views: [String: NSView] = [:]
+  private var recycled: [NSView] = []
+  private var elements: [String: SidebarAuxiliaryElement] = [:]
+  private(set) var orderedElements: [SidebarAuxiliaryElement] = []
+  private var reconciling = false
+
+  func reconcile(keys: [String], frames: [CGRect], container: NSView, virtualized: Bool, make: (Int) -> NSView, clear: (NSView) -> Void, bind: (NSView, Int) -> Void) {
+    guard !reconciling else { return }
+    reconciling = true
+    defer { reconciling = false }
+    let clip = SidebarAuxiliaryViewport.clip(container)
+    let wanted = keys.indices.filter { !virtualized || (!clip.isEmpty && frames[$0].intersects(clip)) }
+    let seen = Set(wanted.map { keys[$0] })
+    for (key, view) in views where !seen.contains(key) {
+      views[key] = nil
+      clear(view)
+      view.removeFromSuperview()
+      if virtualized, recycled.count < wanted.count { recycled.append(view) }
+    }
+    recycled = Array(recycled.prefix(virtualized ? wanted.count : 0))
+    for index in wanted {
+      let key = keys[index]
+      let view = views[key] ?? recycled.popLast() ?? make(index)
+      if views[key] == nil { views[key] = view }
+      if view.superview !== container { container.addSubview(view) }
+      view.frame = frames[index]
+      bind(view, index)
+    }
+  }
+
+  func updateElements(keys: [String], parent: NSView, label: @escaping (String) -> String?, frame: @escaping (String) -> CGRect, action: @escaping (String, String) -> Bool) {
+    let seen = Set(keys)
+    for (key, element) in elements where !seen.contains(key) {
+      element.invalidate()
+      elements[key] = nil
+    }
+    orderedElements = keys.map { key in
+      let element = elements[key] ?? SidebarAuxiliaryElement(parent: parent)
+      element.setAccessibilityParent(parent)
+      element.setAccessibilityRole(.button)
+      element.setAccessibilityElement(true)
+      element.label = { label(key) }
+      element.frame = { frame(key) }
+      element.action = { action(key, $0) }
+      elements[key] = element
+      return element
+    }
+  }
+
+  func clear(_ clear: (NSView) -> Void) {
+    for view in views.values { clear(view); view.removeFromSuperview() }
+    views.removeAll()
+    recycled.removeAll()
+    for element in elements.values { element.invalidate() }
+    elements.removeAll()
+    orderedElements.removeAll()
+  }
+}
+
+@MainActor
+final class SidebarAuxiliaryViewportWatch {
+  nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
+  private var ancestors: [ObjectIdentifier] = []
+
+  deinit { for observer in observers { NotificationCenter.default.removeObserver(observer) } }
+
+  func stop() {
+    for observer in observers { NotificationCenter.default.removeObserver(observer) }
+    observers = []
+    ancestors = []
+  }
+
+  func watch(_ view: NSView, changed: @escaping @MainActor () -> Void) {
+    var chain: [NSView] = []
+    var next: NSView? = view
+    while let current = next { chain.append(current); next = current.superview }
+    let ids = chain.map(ObjectIdentifier.init)
+    guard ids != ancestors else { return }
+    ancestors = ids
+    for observer in observers { NotificationCenter.default.removeObserver(observer) }
+    observers = []
+    for current in chain {
+      current.postsFrameChangedNotifications = true
+      current.postsBoundsChangedNotifications = true
+      for name in [NSView.frameDidChangeNotification, NSView.boundsDidChangeNotification] {
+        observers.append(NotificationCenter.default.addObserver(forName: name, object: current, queue: .main) { _ in
+          MainActor.assumeIsolated { changed() }
+        })
+      }
+    }
   }
 }

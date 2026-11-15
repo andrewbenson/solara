@@ -73,7 +73,7 @@ public final class SidebarDragController {
 
   private(set) var items: [String: DragItem] = [:]
   private var order: [DragItem] = []
-  private var passive: [(view: NSView, frame: CGRect)] = []
+  private var passive: [(binding: SidebarViewBinding, frame: CGRect)] = []
   private var regionFrames: [String: CGRect] = [:]
   private var foreignRegions: [String: CGRect] = [:]
   private(set) var marks = DragMarks()
@@ -104,15 +104,15 @@ public final class SidebarDragController {
   private var holdReady: String?
   private var holdTimer: DispatchWorkItem?
   private var token = 0
-  private var press: (row: SidebarRowView, at: CGPoint)?
+  private var press: (binding: SidebarViewBinding, at: CGPoint)?
   private(set) var settling = false
   private var landingKey: String?
   private var pinZone: SidebarPinSlotView?
   private var rings: [String: SidebarFolderRing] = [:]
   private var tileHomes: [String: CGRect] = [:]
-  private var hidden: [NSView] = []
+  private var hidden: [SidebarViewBinding] = []
   private var shifted: Set<ObjectIdentifier> = []
-  private var shiftedViews: [NSView] = []
+  private var shiftedViews: [SidebarViewBinding] = []
   var landed: (key: String, x: CGFloat, y: CGFloat)?
   private var folderPanelOpen: Bool { panelFrame != nil }
 
@@ -139,7 +139,8 @@ public final class SidebarDragController {
   public var active: Bool { !sources.isEmpty }
   var suppressesMotion: Bool { settling }
 
-  private var bridge: SidebarDragBridge? { SidebarDragHub.bridge }
+  weak var bridgeOverride: SidebarDragBridge?
+  private var bridge: SidebarDragBridge? { bridgeOverride ?? SidebarDragHub.bridge }
   private var context: SidebarContext? { view?.context }
   private var state: BrowserState? { context?.state }
   private var rail: Bool { view.map { SidebarRail.contains(width: Double($0.bounds.width)) } ?? false }
@@ -154,7 +155,11 @@ public final class SidebarDragController {
   }
 
   func press(_ row: SidebarRowView, _ event: NSEvent) {
-    press = (row, windowPoint(event))
+    if let view, view.virtualizesRows, !active, !sourcesEnding, !row.retired,
+      let key = row.item?.key, view.views[key] === row {
+      swallowing = false
+    }
+    press = (SidebarViewBinding(row), windowPoint(event))
   }
 
   func dragged(_ row: SidebarRowView, _ event: NSEvent) -> Bool {
@@ -164,7 +169,7 @@ public final class SidebarDragController {
       return true
     }
     if swallowing { return true }
-    guard let press, press.row === row else { return false }
+    guard let press, press.binding.view === row else { return false }
     guard hypot(at.x - press.at.x, at.y - press.at.y) > Self.threshold, let key = dragKey(row) else { return false }
     self.press = nil
     begin(key, press.at)
@@ -234,6 +239,11 @@ public final class SidebarDragController {
       default: return .list
       }
     }
+    let scrollDelta = view.virtualizesRows && active && measured ? scrollY - startScrollY : 0
+    func dragFrame(_ frame: CGRect?, region: SidebarRegion) -> CGRect? {
+      guard region == .scroll else { return frame }
+      return frame?.offsetBy(dx: 0, dy: scrollDelta)
+    }
     var listTop: CGFloat?
     var pinnedTop: CGFloat?
     var listBottom: CGFloat?
@@ -241,34 +251,35 @@ public final class SidebarDragController {
     var groupBottoms: [String: CGFloat] = [:]
     var liveBox: DragItem?
     for entry in layout.items {
-      guard let shown = view.views[entry.key] else { continue }
-      let frame = windowRect(shown)
+      let shown = view.views[entry.key]
+      if shown == nil && !view.virtualizesRows { continue }
+      let frame = dragFrame(view.virtualizesRows ? windowRect(view.modelFrame(entry), in: view) : shown.flatMap(windowRect), region: entry.region)
       let parent = entry.groups.last
       switch entry.kind {
       case .tile(let id):
         let item = DragItem(key: "t:\(id)", kind: .tile, tabIds: [id], section: .tiles)
         item.frame = frame
-        item.views = [shown]
+        item.views = shown.map { [$0] } ?? []
         item.fixed = entry.region == .fixed
         add(item)
       case .folder(let id):
         let item = DragItem(key: "tf:\(id)", kind: .tile, tabIds: context.query.folderMembers(windowId: windowId, id), section: .tiles)
         item.folderId = id
         item.frame = frame
-        item.views = [shown]
+        item.views = shown.map { [$0] } ?? []
         item.fixed = entry.region == .fixed
         add(item)
       case .tab(let id):
         let item = DragItem(key: "t:\(id)", kind: .row, tabIds: [id], section: section(entry.section, group: false))
         item.parentGroup = parent
         item.frame = frame
-        item.views = [shown]
+        item.views = shown.map { [$0] } ?? []
         add(item)
       case .split(let id):
         let item = DragItem(key: "s:\(id)", kind: .split, tabIds: context.query.splitPanes(id), section: section(entry.section, group: false))
         item.parentGroup = parent
         item.frame = frame
-        item.views = [shown]
+        item.views = shown.map { [$0] } ?? []
         add(item)
       case .groupBox(let id):
         let item = items["g:\(id)"] ?? DragItem(key: "g:\(id)", kind: .group, tabIds: context.state.groups[id]?.tabIds ?? [], section: section(entry.section, group: true))
@@ -282,7 +293,7 @@ public final class SidebarDragController {
         let item = items["g:\(id)"] ?? DragItem(key: "g:\(id)", kind: .group, tabIds: context.state.groups[id]?.tabIds ?? [], section: section(entry.section, group: true))
         item.groupId = id
         item.headerFrame = frame
-        item.views.append(shown)
+        if let shown { item.views.append(shown) }
         if items[item.key] == nil { add(item) }
       case .live(let key) where key.hasPrefix(SidebarLive.prefix):
         let item = DragItem(key: key, kind: .live, tabIds: [], section: section(entry.section, group: true))
@@ -303,12 +314,13 @@ public final class SidebarDragController {
           liveBox = item
         }
         liveBox?.headerFrame = frame
-        liveBox?.views.append(shown)
+        if let shown { liveBox?.views.append(shown) }
       case .live:
-        if let box = liveBox, let frame, box.frame?.contains(frame) == true { box.views.append(shown) }
-        else if let frame, entry.region == .scroll { passive.append((shown, frame)) }
+        if let box = liveBox, let frame, box.frame?.contains(frame) == true {
+          if let shown { box.views.append(shown) }
+        } else if let shown, let frame, entry.region == .scroll { passive.append((SidebarViewBinding(shown), frame)) }
       default:
-        if let frame, entry.region == .scroll { passive.append((shown, frame)) }
+        if let shown, let frame, entry.region == .scroll { passive.append((SidebarViewBinding(shown), frame)) }
       }
       guard let frame, entry.region == .scroll else { continue }
       let isEntry: Bool = {
@@ -340,8 +352,10 @@ public final class SidebarDragController {
       add(tail)
     }
     let inner = CGRect(x: 0, y: 0, width: view.bounds.width - SidebarMetrics.inset * 2, height: 0)
-    let rowsOrigin = windowRect(inner, in: view.rows)
-    let divider = layout.items.first { $0.kind == .divider }.flatMap { view.views[$0.key] }.flatMap(windowRect)
+    let rowsOrigin = dragFrame(windowRect(inner, in: view.rows), region: .scroll)
+    let divider = layout.items.first { $0.kind == .divider }.flatMap { entry in
+      dragFrame(view.virtualizesRows ? windowRect(view.modelFrame(entry), in: view) : view.views[entry.key].flatMap(windowRect), region: entry.region)
+    }
     let x = rowsOrigin?.minX ?? 0
     let width = rowsOrigin?.width ?? 0
     let emptyListY: CGFloat
@@ -440,6 +454,7 @@ public final class SidebarDragController {
     measured = true
     move(pointer)
     changed()
+    if view.virtualizesRows { startFollowingDrag() }
   }
 
   private func orderedUnique(_ ids: [String]) -> [String] {
@@ -506,6 +521,21 @@ public final class SidebarDragController {
   func tabDragChanged() {
     ghost?.alphaValue = SidebarDragHub.tabDrag.onPage ? 0 : 1
     if measured { retarget() }
+  }
+
+  func stop() {
+    cancelForModeChange()
+    stopFollowingPopoverDrag()
+    if let scrollObserver { NotificationCenter.default.removeObserver(scrollObserver) }
+    scrollObserver = nil
+    items.removeAll()
+    order.removeAll()
+    passive.removeAll()
+    hidden.removeAll()
+    shiftedViews.removeAll()
+    shifted.removeAll()
+    press = nil
+    view = nil
   }
 
   func cancelForModeChange() {
@@ -603,7 +633,7 @@ public final class SidebarDragController {
   private func finishLanding() {
     landingKey = nil
     marks.landing = nil
-    for view in hidden { view.alphaValue = 1 }
+    for view in hidden.compactMap(\.view) { view.alphaValue = 1 }
     hidden = []
     removeGhost()
     hidePinZone()
@@ -974,18 +1004,20 @@ public final class SidebarDragController {
       let subtree = Set([id] + Groups.descendantIds(state.groups, id))
       for i in order where (i.parentGroup.map(subtree.contains) ?? false) || (i.groupId.map(subtree.contains) ?? false) { keys.insert(i.key) }
     }
+    hidden = hidden.filter { $0.view != nil }
+    var bound = Set(hidden.compactMap(\.view).map(ObjectIdentifier.init))
     for key in keys {
       guard let item = items[key] else { continue }
       for v in item.views + [item.box].compactMap({ $0 }) {
         v.alphaValue = 0
-        hidden.append(v)
+        if bound.insert(ObjectIdentifier(v)).inserted { hidden.append(SidebarViewBinding(v)) }
       }
     }
   }
 
   private func render() {
     guard let view else { return }
-    let hiddenSet = Set(hidden.map(ObjectIdentifier.init))
+    let hiddenSet = Set(hidden.compactMap(\.view).map(ObjectIdentifier.init))
     var targets: [(NSView, CGFloat)] = []
     let noGrid = gridBase == nil
     let tilesGap = noGrid && gapKey == "tail:tiles" && view.context?.host.addressBar != true ? pitch : 0
@@ -998,7 +1030,8 @@ public final class SidebarDragController {
         setBoxGrowth(box, dh)
       }
     }
-    for (v, f) in passive {
+    for (binding, f) in passive {
+      guard let v = binding.view else { continue }
       let (dy, _) = offset(top: f.minY, bottom: f.maxY, item: nil)
       targets.append((v, dy + tilesGap))
     }
@@ -1012,13 +1045,13 @@ public final class SidebarDragController {
     }
   }
 
-  private var boxHeights: [ObjectIdentifier: CGFloat] = [:]
+  private var boxHeights: [ObjectIdentifier: (binding: SidebarViewBinding, delta: CGFloat)] = [:]
 
   private func setBoxGrowth(_ box: NSView, _ dh: CGFloat) {
     let id = ObjectIdentifier(box)
-    let was = boxHeights[id] ?? 0
+    let was = boxHeights[id]?.binding.view === box ? boxHeights[id]?.delta ?? 0 : 0
     guard was != dh else { return }
-    boxHeights[id] = dh
+    boxHeights[id] = (SidebarViewBinding(box), dh)
     var frame = box.frame
     frame.size.height += dh - was
     box.frame = frame
@@ -1031,7 +1064,7 @@ public final class SidebarDragController {
     if dy == 0 && !shifted.contains(id) { return }
     if !shifted.contains(id) {
       shifted.insert(id)
-      shiftedViews.append(v)
+      shiftedViews.append(SidebarViewBinding(v))
     }
     guard abs(current - dy) > 0.01 else { return }
     let from = layer.presentation()?.transform ?? layer.transform
@@ -1087,7 +1120,7 @@ public final class SidebarDragController {
   private func restoreAll(keepHidden: [String] = []) {
     let animated = false
     let keep = Set(keepHidden.flatMap { items[$0].map { $0.views + [$0.box].compactMap { $0 } } ?? [] }.map(ObjectIdentifier.init))
-    for v in shiftedViews {
+    for v in shiftedViews.compactMap(\.view) {
       guard let layer = v.layer else { continue }
       let from = layer.presentation()?.transform ?? layer.transform
       layer.removeAnimation(forKey: "dragShift")
@@ -1098,10 +1131,10 @@ public final class SidebarDragController {
     }
     shifted = []
     shiftedViews = []
-    for (id, dh) in boxHeights where dh != 0 {
-      guard let box = order.compactMap(\.box).first(where: { ObjectIdentifier($0) == id }) else { continue }
+    for entry in boxHeights.values where entry.delta != 0 {
+      guard let box = entry.binding.view else { continue }
       var frame = box.frame
-      frame.size.height -= dh
+      frame.size.height -= entry.delta
       box.frame = frame
     }
     boxHeights = [:]
@@ -1110,9 +1143,10 @@ public final class SidebarDragController {
       if animated { moveTile(v, to: home) } else { v.frame = home }
     }
     tileHomes = [:]
-    var still: [NSView] = []
-    for v in hidden {
-      if keep.contains(ObjectIdentifier(v)) { still.append(v) } else { v.alphaValue = 1 }
+    var still: [SidebarViewBinding] = []
+    for binding in hidden {
+      guard let v = binding.view else { continue }
+      if keep.contains(ObjectIdentifier(v)) { still.append(binding) } else { v.alphaValue = 1 }
     }
     hidden = still
     if still.isEmpty { hidePinZone() }
@@ -1136,8 +1170,16 @@ public final class SidebarDragController {
   }
 
   func placed() {
+    shiftedViews = shiftedViews.filter { $0.view != nil }
+    shifted = Set(shiftedViews.compactMap(\.view).map(ObjectIdentifier.init))
+    hidden = hidden.filter { $0.view != nil }
     if active, measured, !settling {
+      if view?.virtualizesRows == true {
+        boxHeights.removeAll()
+        tileHomes.removeAll()
+      }
       collect()
+      hideSources()
       render()
     }
     if SidebarDragHub.probing { changed() }
@@ -1208,6 +1250,11 @@ public final class SidebarDragController {
       floating = nil
       return
     }
+    startFollowingDrag()
+  }
+
+  private func startFollowingDrag() {
+    guard popoverFollow == nil else { return }
     let follow = PopoverDragFollow(token: token)
     popoverFollow = follow
     follow.monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDragged, .leftMouseUp, .keyDown]) { [weak self] event in
@@ -1307,7 +1354,9 @@ public final class SidebarDragController {
     for item in order {
       guard var f = item.frame else { continue }
       if item.kind == .tile, let v = item.views.first, let r = windowRect(v) { f = r }
-      else if item.kind != .tail, dropKey != nil || !shiftedViews.isEmpty {
+      else if active {
+        f = shown(item)
+      } else if item.kind != .tail, dropKey != nil || !shiftedViews.isEmpty {
         let (dy, dh) = offset(top: f.minY, bottom: f.maxY, item: item)
         f = CGRect(x: f.minX, y: f.minY + dy, width: f.width, height: f.height + dh)
       }

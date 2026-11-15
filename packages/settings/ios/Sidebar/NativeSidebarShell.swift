@@ -415,7 +415,7 @@ final class NativeLayoutChrome {
   init(windowId: String, shell: WindowShellView, generation: UInt64) {
     self.shell = shell
     self.generation = generation
-    let host = SidebarHost(windowId: windowId, subscribeToStore: false)
+    let host = SidebarHost(windowId: windowId, subscribeToStore: false, virtualizesRows: true)
     column = SidebarShellColumn(windowId: windowId, host: host)
     strip = TopStripHost(windowId: windowId, subscribeToStore: false)
     let floating = TopStripPeekHost(windowId: windowId, subscribeToStore: false)
@@ -732,6 +732,7 @@ private final class NativeLayoutStripDropView: NSView, DevDropDestination {
   private var content: NSView?
   var active: Bool { count > 0 }
   override var isFlipped: Bool { true }
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
   init(content: NSView? = nil) {
     super.init(frame: .zero)
@@ -843,6 +844,7 @@ private final class NativeLayoutStripRow: NSView {
   let controls = StripControlsView()
   var onPageWidth: (CGFloat) -> Void = { _ in }
   override var isFlipped: Bool { true }
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
   init(strip: TopStripView) {
     self.strip = strip

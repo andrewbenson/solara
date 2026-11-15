@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readNativeWork, validateWindowContract } from "./perf/native-work.mjs";
+import { sidebarSession, assertSidebarPosition } from "./sidebar-position-test.mjs";
+import { readNativeWork, readSidebarRealization, validateWindowContract } from "./perf/native-work.mjs";
 import { isDeepStrictEqual } from "node:util";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -35,10 +36,10 @@ const scratch = mkdtempSync(join(tmpdir(), "ac-sidebar-bulk-"));
 const data = join(scratch, "data");
 const rep = reporter(join(scratch, "sidebar-bulk-test.log"), { name: "sidebar-bulk-test" });
 const ids = Array.from({ length: 15 }, (_, i) => `t${i}`);
-const fixture = session({
+const fixture = session(sidebarSession({
   windows: [{ id: "w1", frame: [80, 80, 1200, 800], tabIds: ids, activeTabIds: { default: "t0" } }],
   tabs: ids.map((id) => ({ id, url: `https://example.com/?${id}`, title: `Tab ${id}` })),
-});
+}));
 
 const SETTLED = `
   const s = ac.store.getState();
@@ -55,6 +56,7 @@ let app = null;
 try {
   app = await launch(appPath, { data, port, session: fixture, onboarded: true });
   rep.log(`instance: pid ${app.pid}, DevTools port ${app.port}, data ${data}`);
+  await assertSidebarPosition(app);
   const run = (body) => evaluate(body, { timeout: 60000 });
   await sleep(1500);
 
@@ -75,7 +77,8 @@ try {
   const first = await app.snapshot({ windowId: "w1", fields: ["windows.shell"] });
   const initialContract = validateWindowContract(first.windows[0].shell.contract);
   assert.equal(initialContract.hostCounts.sidebar, 1, "one native sidebar host");
-  assert.ok((await readNativeWork(app)).rows.live >= ids.length, "native eager row census includes every fixture tab");
+  if (initialContract.nativeLayout) await readSidebarRealization(app, "w1");
+  else assert.ok((await readNativeWork(app)).rows.live >= ids.length, "native eager row census includes every fixture tab");
   const settled = async (what) => {
     await sleep(1200);
     let list, rows;
@@ -92,7 +95,11 @@ try {
     const selectedPage = initialContract.pageIdentities.find((page) => page.tabId === "t0");
     assert.ok(selectedPage, "selected pooled page identity is present");
     assert.deepEqual(contract.pageIdentities.find((page) => page.tabId === "t0"), selectedPage, "bulk changes preserve the selected pooled page identity");
-    assert.ok((await readNativeWork(app)).rows.live >= list.length, "native eager row census includes all remaining tabs");
+    if (contract.nativeLayout) {
+      const realization = await readSidebarRealization(app, "w1");
+      const bindings = realization.pages.flatMap((page) => page.realization.bound);
+      assert.ok(bindings.length > 0 && bindings.length < list.length, "bulk changes retain exactly the visible sidebar bindings");
+    } else assert.ok((await readNativeWork(app)).rows.live >= list.length, "native eager row census includes all remaining tabs");
     assert.deepEqual(native.windows[0].tabIds, list, `${what}: native store order differs from the measured rows`);
     assert.deepEqual(native.tabs.map((tab) => tab.id).sort(), [...list].sort(), `${what}: native tab IDs differ from JS`);
     const shown = rows.filter((r) => r.f);

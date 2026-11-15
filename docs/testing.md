@@ -307,14 +307,36 @@ these checks; no drafted test constitutes a recorded pass.
 `WindowLayoutContractTests`, `WindowShellTests`, `SidebarLayoutTests` and `FrameUpdatesTests` freeze the current
 left-sidebar/top-strip/fullscreen frames, visibility, mounted guest/page identity and coalescing contract. Run the
 unfiltered SolaraKit suite with `-Xswiftc -DSOLARA_PROBES`; the counter tests are compiled out without that define.
-The fixed-viewport test deliberately records eager realization at 200 and 2,000 tabs. Patch 5 replaces this assertion
-with the visible-row bound; it is not a permanent performance ceiling.
+The fixed-viewport tests compare 200 and 2,000 tabs. The legacy path retains its eager control; the development
+native layout path requires the same viewport-sized row count at both sizes.
 
 After a Debug build, run `sidebar-scroll-test`, `sidebar-bulk-test` and `top-strip-test`, then
 `node apps/browser/scripts/perf/native-work-report.mjs <Debug app> --out=<scratch>/native-work`.
 The report keeps small and 200-tab sessions plus a 2,000-tab fixture at the same viewport, cumulative launch counts,
 reset scroll counts and native geometry/host/page-identity observations. Missing or malformed counters fail validation.
 Keep the raw JSON with the baseline commit. Screen-dependent checks still follow the locked-screen rules above.
+
+### Sidebar realization and identity (layout Patch 5)
+
+The [row lifetime contract](native/sidebar-row-lifetimes.md) keeps logical geometry and accessibility complete while
+native row bindings follow effective target/presentation clips. `SidebarViewportTests`, `SidebarRowReuseTests`,
+`SidebarRecycleEditorTests`, `SidebarVirtualDragTests` and `SidebarAuxiliaryViewportTests` cover actual AppKit rows,
+reuse, edit/drag lifetime, profile/rail transitions and auxiliary lists. Iterate with focused filters and
+`scripts/agent/swift-test-bounded`; run the unfiltered SolaraKit suite once at the end with `-Xswiftc -DSOLARA_PROBES`.
+
+After a Debug build, set `SOLARA_NATIVE_WINDOW_LAYOUT=1` and run `sidebar-reuse-test.mjs <Debug app>` with
+`SOLARA_TEST_SIDEBAR_POSITION=left`, then `right`. Its independent geometry validator requires every intersecting
+logical row and rejects every offscreen binding, missing probe, stale identity and unbounded reuse bin. It records
+Patch 1 native counters at 200/2,000 tabs and requires concrete allocations to cross logical identities, advance
+binding tokens and stop allocating on repeated down/up passes. The driver exercises source drag through recycling,
+cancel/drop, rename through scrolling, selected-tab reveal, keyboard traversal and a virtual accessibility press.
+Use a fresh `--out=<scratch>` for retained evidence and keep `TMPDIR` under the job's scratch folder.
+
+Run sidebar-chrome, sidebar-scroll, sidebar-bulk, tab-drag, hover-card, hover-shift, sidebar-click, profile-swipe,
+sidebar-rename and folder-panel on both sides, with bounded UI-gate waits. `native-work-report.mjs` records settled
+small/200/2,000 sessions and checks equal native sidebar creation/live counts at equal viewports. Keep an own-build
+control for interleaved native launch measurements; Debug timing under contention is diagnostic. Actual VoiceOver
+traversal, real mouse/trackpad feel and visual effects absent from in-process captures remain owner checks.
 
 `ToolbarResizeTests.aLiveStripPeekReceivesWindowClicksAboveTheWindowToolbar` sends real `NSEvent` presses through
 `NSWindow` for static and auto-hide toolbars, with both shell root orders. Downloads in the live peek receives the
@@ -399,7 +421,7 @@ existing timing flake, and compare it separately from a missing swipe target or 
 The development native-layout path accepts `sidebarPosition: "left" | "right"` in Settings and an optional window
 field. Settings, View and the sidebar menu use the canonical `setSidebarPosition` command; a null window applies
 Settings to regular windows, while a window choice preserves other windows and changes the new-window default.
-Config-file ownership wins, and the preference remains local and unsynced. Native API 50 includes this capability.
+Config-file ownership wins, and the preference remains local and unsynced. Native API 58 includes this capability.
 The legacy layout keeps left geometry even when the saved preference is right. Top tabs remember the side.
 
 Run the existing sidebar-chrome, sidebar-rail, shell-hover, tab-drag, shell-drop, top-strip, window-toolbar,

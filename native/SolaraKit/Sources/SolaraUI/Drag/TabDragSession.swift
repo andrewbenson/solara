@@ -26,6 +26,7 @@ public protocol TabDropZone: AnyObject {
 
 @MainActor
 public final class TabDragSession {
+  public static let changed = Notification.Name("SolaraTabDragChanged")
   public static private(set) var current: TabDragSession?
 
   public let tabIds: [String]
@@ -79,6 +80,7 @@ public final class TabDragSession {
     let session = TabDragSession(tabIds: tabIds, sourceWindow: windowId)
     current = session
     session.watchSource()
+    NotificationCenter.default.post(name: changed, object: session)
     return session
   }
 
@@ -91,6 +93,7 @@ public final class TabDragSession {
     let window = window(at: screenPoint)
     overWindow = window.map { $0.0 }
     outside = overWindow != sourceWindow
+    NotificationCenter.default.post(name: Self.changed, object: self)
     var next: (zone: TabDropZone, aim: TabDropAim)?
     if let (windowId, nsWindow) = window {
       let local = Self.windowPoint(screenPoint, in: nsWindow)
@@ -113,6 +116,7 @@ public final class TabDragSession {
     move(screenPoint: pointer)
     endedAim = aim
     Self.current = nil
+    NotificationCenter.default.post(name: Self.changed, object: self)
     defer { clearAll() }
     guard let aim else { return false }
     if let aimed { return aimed.drop(self, aim) }
@@ -122,6 +126,7 @@ public final class TabDragSession {
   public func cancel() {
     guard Self.current === self else { return }
     Self.current = nil
+    NotificationCenter.default.post(name: Self.changed, object: self)
     clearAll()
   }
 

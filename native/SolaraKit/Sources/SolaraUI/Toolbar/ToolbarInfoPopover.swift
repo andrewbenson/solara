@@ -6,7 +6,11 @@ public final class ToolbarInfoPopover: NSObject, NSPopoverDelegate {
   static let inset: CGFloat = 16
   static let gap: CGFloat = 6
 
-  public private(set) static var current: ToolbarInfoPopover?
+  public static let changed = Notification.Name("SolaraToolbarInfoPopoverChanged")
+  public private(set) static var current: ToolbarInfoPopover? {
+    didSet { NotificationCenter.default.post(name: changed, object: current) }
+  }
+  public private(set) weak var anchorView: NSView?
 
   public let info: ToolbarInfoState
   let popover = NSPopover()
@@ -26,6 +30,7 @@ public final class ToolbarInfoPopover: NSObject, NSPopoverDelegate {
   static func show(_ info: ToolbarInfoState, relativeTo view: NSView, onAction: @escaping () -> Void) -> ToolbarInfoPopover {
     current?.popover.close()
     let made = ToolbarInfoPopover(info: info, onAction: onAction)
+    made.anchorView = view
     current = made
     if view.window != nil {
       made.popover.show(relativeTo: view.bounds, of: view, preferredEdge: .minY)

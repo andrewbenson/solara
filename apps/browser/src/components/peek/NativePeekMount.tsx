@@ -1,5 +1,5 @@
-import { closeWindowPeek, expandWindowPeek, publishSettingsTopic } from "@solara/settings";
-import { useEffect, useRef } from "react";
+import { closeWindowPeek, expandWindowPeek, publishSettingsTopic, windowNativeLayout } from "@solara/settings";
+import { useEffect, useRef, useState } from "react";
 import { AccessibilityInfo } from "react-native";
 import { useTheme } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
@@ -32,26 +32,35 @@ addNativeSettingsHandlers({
 });
 
 export function NativePeekMount({ windowId, origin, fullscreen }: { windowId: string; origin: { x: number; y: number } | null; fullscreen: boolean }) {
+  const [nativeLayout] = useState(() => windowNativeLayout(windowId));
   const tabId = useBrowser((s) => s.peeks[windowId]?.tabId);
   useEffect(() => {
     handlers.set(windowId, (event) => onNativePeekEvent(windowId, event));
     const unregister = registerNativePeek(windowId, {
-      close: () => void closeWindowPeek(windowId),
-      expand: (done) => void expandWindowPeek(windowId).then(done, done),
+      close: () => {
+        const tabId = useBrowser.getState().peeks[windowId]?.tabId;
+        if (tabId) void closeWindowPeek(windowId, tabId);
+      },
+      expand: (done) => {
+        const tabId = useBrowser.getState().peeks[windowId]?.tabId;
+        if (tabId) void expandWindowPeek(windowId, tabId).then((accepted) => { if (accepted) done(); }, () => {});
+      },
     });
     return () => {
       unregister();
       handlers.delete(windowId);
-      delete states[windowId];
-      publish();
+      if (!nativeLayout) {
+        delete states[windowId];
+        publish();
+      }
     };
-  }, [windowId]);
+  }, [windowId, nativeLayout]);
   useEffect(() => {
-    if (tabId) return;
+    if (nativeLayout || tabId) return;
     states[windowId] = "";
     publish();
-  }, [windowId, tabId]);
-  return tabId && origin ? <NativePeekState key={tabId} windowId={windowId} tabId={tabId} origin={origin} fullscreen={fullscreen} /> : null;
+  }, [windowId, tabId, nativeLayout]);
+  return !nativeLayout && tabId && origin ? <NativePeekState key={tabId} windowId={windowId} tabId={tabId} origin={origin} fullscreen={fullscreen} /> : null;
 }
 
 function NativePeekState({ windowId, tabId, origin, fullscreen }: { windowId: string; tabId: string; origin: { x: number; y: number }; fullscreen: boolean }) {

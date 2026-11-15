@@ -410,6 +410,9 @@ final class NativeLayoutChrome {
   private var stripFeed: StripHostState?
   private var featureChrome: SidebarChromeState?
   private var held = false
+  private let revealHolds = RevealHolds()
+  private var holdTokens: [String: UUID] = [:]
+  private var holdObservers: [NSObjectProtocol] = []
   private var stopped = false
 
   init(windowId: String, shell: WindowShellView, generation: UInt64) {
@@ -480,6 +483,34 @@ final class NativeLayoutChrome {
     }
     strip.renderingEnabled = false
     peek.strip.renderingEnabled = false
+    dock.revealHeld = { [weak self] in self?.revealHolds.held ?? false }
+    let stripHeld = peek.view.peek.held
+    peek.view.peek.held = { [weak self] in stripHeld() || (self?.revealHolds.held ?? false) }
+    revealHolds.onChange = { [weak self] held in
+      guard let self, !self.stopped else { return }
+      if !held {
+        self.dock.peek.recheck()
+        self.peek.view.peek.recheck()
+      }
+    }
+    let center = NotificationCenter.default
+    for name in [NSMenu.didBeginTrackingNotification, NSMenu.didEndTrackingNotification, TabDragSession.changed, ToolbarInfoPopover.changed] {
+      holdObservers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+        nonisolated(unsafe) let menu = note.object as? NSMenu
+        MainActor.assumeIsolated {
+          guard let self, !self.stopped else { return }
+          if name == NSMenu.didBeginTrackingNotification, let menu {
+            self.setHold("menu:\(ObjectIdentifier(menu))", true)
+          } else if name == NSMenu.didEndTrackingNotification, let menu {
+            self.setHold("menu:\(ObjectIdentifier(menu))", false)
+          } else {
+            let drag = TabDragSession.current
+            self.setHold("drag", drag?.sourceWindow == windowId || drag?.overWindow == windowId)
+            self.setHold("toolbar", ToolbarInfoPopover.current?.anchorView?.window === self.shell.window && self.shell.window != nil)
+          }
+        }
+      })
+    }
     Self.installFeeds()
     dock.start()
   }
@@ -584,6 +615,8 @@ final class NativeLayoutChrome {
     let top = SidebarChromeMetrics.headerHeight(addressBar: sidebar.addressBar)
     let bottom = SidebarChromeMetrics.footerHeight(chrome)
     column.apply(state: state, host: sidebar, layout: .init(top: max(0, top - SidebarMetrics.glowRoom), header: top, bottom: bottom, clip: state.profileOrder.count > 1), chrome: chrome, renderHost: !input.layout.topTabs)
+    setHold("downloads", controls.downloadsOpen)
+    setHold("feature", held)
     dock.apply(SidebarDockState(open: window.sidebarOpen, arc: sidebar.addressBar, fullscreen: input.layout.fullscreen,
       topTabs: input.layout.topTabs, width: Double(input.layout.sidebarWidth), held: held || controls.downloadsOpen,
       sidebarPosition: input.layout.sidebarSide.rawValue, look: look.panel))
@@ -625,6 +658,11 @@ final class NativeLayoutChrome {
     let current = Self.owners[shell.windowId] === self
     dock.stop()
     stopped = true
+    holdObservers.forEach { NotificationCenter.default.removeObserver($0) }
+    holdObservers = []
+    revealHolds.onChange = { _ in }
+    for token in holdTokens.values { revealHolds.release(token) }
+    holdTokens = [:]
     column.stop()
     stripDrop.stop()
     peekDrop.stop()
@@ -649,6 +687,14 @@ final class NativeLayoutChrome {
     state = nil
   }
 
+  private func setHold(_ reason: String, _ held: Bool) {
+    if held {
+      if holdTokens[reason] == nil { holdTokens[reason] = revealHolds.acquire() }
+    } else if let token = holdTokens.removeValue(forKey: reason) {
+      revealHolds.release(token)
+    }
+  }
+
   private func configureDrop(_ target: NativeLayoutStripDropView, host: TopStripHost, floating: Bool) {
     target.accepts = { [weak self] in
       guard let self, !self.stopped, Self.owners[self.shell.windowId] === self else { return false }
@@ -661,6 +707,7 @@ final class NativeLayoutChrome {
     }
     target.onActive = { [weak self] active in
       guard let self, !self.stopped, Self.owners[self.shell.windowId] === self else { return }
+      self.setHold(floating ? "floatingDrop" : "stripDrop", active)
       if floating { self.peek.setExternalDropHeld(active) }
       self.lastRefresh = nil
       self.refresh()
@@ -872,7 +919,7 @@ private final class NativeLayoutStripRow: NSView {
 }
 
 @MainActor
-private struct NativeLayoutAppearance {
+struct NativeLayoutAppearance {
   let dark: Bool
   let tokens: [String: String]
   let border: [String]

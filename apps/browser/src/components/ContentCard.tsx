@@ -102,8 +102,6 @@ function NativeContentGuests() {
   const [nativePrompts] = useState(() => panePromptsNativeIn(windowId));
   useContentServices();
   useNativeWindowAnchors(windowId);
-  const content = useCardAnchors((state) => state[windowId]);
-  const origin = useMemo(() => content ? { x: content.left, y: content.top } : null, [content]);
   useNativePanePromptsTheme(nativePrompts, windowId, theme, useFormColors());
   useNativeSplitChrome(windowId, true, theme, null, false, true, false);
   const fallbacks = useNativePaneFallbacks(windowId);
@@ -127,7 +125,7 @@ function NativeContentGuests() {
       ))}
       {tabIds.map((tabId) => <NativePaneChromeFeed key={tabId} windowId={windowId} tabId={tabId} inSplit={!!split} leading={tabId === tabIds[0]} focused={tabId === activeId} />)}
       {tabIds.map((tabId) => <FrozenPage key={tabId} windowId={windowId} tabId={tabId} headless />)}
-      <NativePeekMount windowId={windowId} origin={origin} fullscreen={false} />
+      <NativePeekMount windowId={windowId} origin={null} fullscreen={false} />
     </>
   );
 }

@@ -161,7 +161,7 @@ function NativeSidebarFeed({ windowId, state, chrome, addressBar }: { windowId: 
   const floating = useBrowser((s) => s.windows[windowId]?.sidebarOpen === false);
   const width = useBrowser((s) => sidebarWidthOf(s.windows[windowId], s.settings, true));
   const [held, setHeld] = useState(false);
-  useEffect(() => followPeekHold(windowId, floating, setHeld), [windowId, floating]);
+  useEffect(() => followPeekHold(windowId, floating, setHeld, true), [windowId, floating]);
   const value = useMemo(() => ({ state, chrome, held }), [state, chrome, held]);
   useNativeLayoutFeed(nativeFeed, windowId, value);
   useEffect(

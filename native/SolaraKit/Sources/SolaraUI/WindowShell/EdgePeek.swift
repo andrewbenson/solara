@@ -22,6 +22,8 @@ public final class EdgePeek {
   private var hideTimer: AnyObject?
   private var heldBack = false
   private var generation = 0
+  private var hideGeneration = 0
+  private var stopped = false
 
   public init(enabled: Bool, arc: Bool) {
     self.enabled = enabled
@@ -34,6 +36,7 @@ public final class EdgePeek {
   }
 
   public func show() {
+    guard !stopped else { return }
     clearHide()
     heldBack = false
     guard enabled else { return }
@@ -42,9 +45,11 @@ public final class EdgePeek {
   }
 
   public func hide() {
+    guard !stopped else { return }
     clearHide()
+    let mine = hideGeneration
     hideTimer = schedule(Self.hideDelayMs / 1000) { [weak self] in
-      guard let self else { return }
+      guard let self, !self.stopped, self.hideGeneration == mine else { return }
       self.hideTimer = nil
       self.heldBack = self.held()
       if !self.heldBack { self.slideOut() }
@@ -52,13 +57,13 @@ public final class EdgePeek {
   }
 
   public func recheck() {
-    guard heldBack, !held() else { return }
+    guard !stopped, heldBack, !held() else { return }
     heldBack = false
     hide()
   }
 
   public func setEnabled(_ next: Bool) {
-    guard next != enabled else { return }
+    guard !stopped, next != enabled else { return }
     enabled = next
     guard !next else { return }
     clearHide()
@@ -66,7 +71,9 @@ public final class EdgePeek {
   }
 
   public func stop() {
+    stopped = true
     clearHide()
+    setLive(false)
     generation += 1
   }
 
@@ -91,6 +98,7 @@ public final class EdgePeek {
   }
 
   private func clearHide() {
+    hideGeneration += 1
     if let hideTimer { cancel(hideTimer) }
     hideTimer = nil
   }

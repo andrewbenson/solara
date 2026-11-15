@@ -10,8 +10,8 @@ type WindowShellModule = {
   paneRoots?(windowId: string): boolean;
   mainOnTop?(windowId: string): boolean;
   peekNative?(windowId: string): boolean;
-  peekClose?(windowId: string): Promise<boolean>;
-  peekExpand?(windowId: string): Promise<boolean>;
+  peekClose?(windowId: string, tabId: string, generation: number): Promise<boolean>;
+  peekExpand?(windowId: string, tabId: string, generation: number): Promise<boolean>;
   setBackdrop(windowId: string, json: string): Promise<void>;
   setLayout?(windowId: string, layout: WindowShellLayout): Promise<void>;
   setSidePanel?(windowId: string, json: string | null): Promise<void>;
@@ -71,12 +71,12 @@ export function windowPeekNative(windowId: string): boolean {
   }
 }
 
-export function closeWindowPeek(windowId: string): Promise<boolean> {
-  return native?.peekClose?.(windowId) ?? Promise.resolve(false);
+export function closeWindowPeek(windowId: string, tabId: string): Promise<boolean> {
+  return native?.peekClose?.(windowId, tabId, windowNativeLayoutGeneration(windowId)) ?? Promise.resolve(false);
 }
 
-export function expandWindowPeek(windowId: string): Promise<boolean> {
-  return native?.peekExpand?.(windowId) ?? Promise.resolve(false);
+export function expandWindowPeek(windowId: string, tabId: string): Promise<boolean> {
+  return native?.peekExpand?.(windowId, tabId, windowNativeLayoutGeneration(windowId)) ?? Promise.resolve(false);
 }
 
 export function setWindowShellBackdrop(windowId: string, json: string) {

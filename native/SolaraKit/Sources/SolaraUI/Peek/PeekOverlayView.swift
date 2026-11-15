@@ -1,5 +1,7 @@
 import AppKit
 import QuartzCore
+import SolaraModel
+import SolaraStore
 
 public struct PeekPoint: Decodable, Equatable, Sendable {
   public var x: Double
@@ -22,6 +24,28 @@ public struct PeekState: Decodable, Equatable, Sendable {
   public var panel: String
   public var card: String
   public var accent: String
+}
+
+extension PeekState {
+  public static func native(state: BrowserState, windowId: String, card: CGRect, tokens: [String: String], dark: Bool,
+    fullscreen: Bool = false, reduceMotion: Bool = false) -> PeekState? {
+    guard state.windows[windowId] != nil, let peek = state.peeks[windowId], let tab = state.tabs[peek.tabId],
+      let source = state.tabs[peek.sourceId], source.windowId == windowId, tab.windowId == windowId,
+      state.activeTabId(windowId) == peek.sourceId, source.url.components(separatedBy: "#").first == peek.sourcePage else { return nil }
+    let text = tokens["textPrimary"] ?? (dark ? "#FFFFFF" : "#000000CC")
+    let secondary = tokens["textSecondary"] ?? (dark ? "#FFFFFF80" : "#00000080")
+    let icon = tokens["icon"] ?? text
+    let hover = tokens["toolbarHover"] ?? (dark ? "#FFFFFF1A" : "#0000000F")
+    let pressed = tokens["toolbarPressed"] ?? (dark ? "#FFFFFF2E" : "#0000001A")
+    return PeekState(tabId: peek.tabId, dark: dark, host: URL(string: tab.url)?.host ?? "", title: tab.customTitle ?? tab.title,
+      favicon: tab.favicon, insecure: tab.url.lowercased().hasPrefix("http:"), loading: state.live[tab.id]?.isLoading == true ? 0.08 : nil,
+      splitFull: (Splits.splitOf(state, peek.sourceId)?.tabIds.count ?? 0) >= Splits.maxPanes, fullscreen: fullscreen,
+      from: peek.from.map { PeekPoint(x: $0.x - card.minX, y: $0.y - card.minY) }, reduceMotion: reduceMotion,
+      palette: ToolbarPaletteState(background: nil, text: text, secondary: secondary, icon: icon, iconDisabled: secondary,
+        hover: hover, pressed: pressed, pill: hover, divider: tokens["panelBorder"] ?? pressed, urlHost: nil, urlPath: nil),
+      panel: tokens["panel"] ?? (dark ? "#2A2A2A" : "#FFFFFF"), card: tokens["card"] ?? (dark ? "#12121280" : "#FFFFFFB3"),
+      accent: tokens["accent"] ?? "#3478F6")
+  }
 }
 
 public enum PeekEvent: Equatable, Sendable {
@@ -48,6 +72,8 @@ public final class PeekOverlayView: NSView {
   private var expand: CGFloat = 0
   private var leaving: Leaving?
   private var shownTab: String?
+  private let lifetime = PeekLifetime()
+  private var expandReply: ((Bool) -> Void)?
 
   private enum Leaving { case close, expand }
 
@@ -101,6 +127,12 @@ public final class PeekOverlayView: NSView {
 
   public func apply(_ next: PeekState) {
     let fresh = shownTab != next.tabId
+    lifetime.replace(next.tabId)
+    if fresh {
+      finishExpand(false)
+      card.layer?.removeAllAnimations()
+      dim.layer?.removeAllAnimations()
+    }
     state = next
     shownTab = next.tabId
     let rim = next.dark ? CSSColor("rgba(255,255,255,0.1)")! : CSSColor("rgba(255,255,255,0)")!
@@ -193,6 +225,7 @@ public final class PeekOverlayView: NSView {
   }
 
   private func animate(progress toProgress: CGFloat, expand toExpand: CGFloat, duration: Double, curve: (Double) -> Double, done: (() -> Void)? = nil) {
+    let receipt = lifetime.receipt()
     let fromProgress = progress, fromExpand = expand
     progress = toProgress
     expand = toExpand
@@ -211,7 +244,12 @@ public final class PeekOverlayView: NSView {
       dims.append(Float(p.dim))
     }
     CATransaction.begin()
-    CATransaction.setCompletionBlock { MainActor.assumeIsolated { done?() } }
+    CATransaction.setCompletionBlock { [weak self] in
+      MainActor.assumeIsolated {
+        guard let self, self.lifetime.accepts(receipt) else { return }
+        done?()
+      }
+    }
     pose()
     func keyframes(_ keyPath: String, _ values: [Any]) -> CAKeyframeAnimation {
       let a = CAKeyframeAnimation(keyPath: keyPath)
@@ -234,7 +272,13 @@ public final class PeekOverlayView: NSView {
     }
   }
 
-  public func close() {
+  public override func cancelOperation(_ sender: Any?) {
+    guard state != nil, leaving == nil else { return }
+    onEvent(.dismiss)
+  }
+
+  public func close(expectedTabId: String? = nil) {
+    guard expectedTabId == nil || expectedTabId == shownTab else { return }
     guard leaving == nil, let tab = shownTab else { return }
     leaving = .close
     animate(progress: 0, expand: 0, duration: PeekTiming.close, curve: { $0 * $0 * $0 }) { [weak self] in
@@ -242,15 +286,25 @@ public final class PeekOverlayView: NSView {
     }
   }
 
-  public func expandToTab(_ done: @escaping () -> Void) {
-    guard leaving != .expand else { return }
+  public func expandToTab(expectedTabId: String? = nil, _ done: @escaping (Bool) -> Void) {
+    guard expectedTabId == nil || expectedTabId == shownTab else { return done(false) }
+    guard state != nil, leaving == nil else { return done(false) }
+    expandReply = done
     leaving = .expand
     if fade {
       progress = 1
       pose()
-      return done()
+      return finishExpand(true)
     }
-    animate(progress: 1, expand: 1, duration: PeekTiming.expand, curve: { 1 - pow(1 - $0, 3) }, done: done)
+    animate(progress: 1, expand: 1, duration: PeekTiming.expand, curve: { 1 - pow(1 - $0, 3) }) { [weak self] in
+      self?.finishExpand(true)
+    }
+  }
+
+  private func finishExpand(_ accepted: Bool) {
+    let reply = expandReply
+    expandReply = nil
+    reply?(accepted)
   }
 
   public func apply(json: String) {
@@ -268,6 +322,8 @@ public final class PeekOverlayView: NSView {
   }
 
   public func clear() {
+    lifetime.replace(nil)
+    finishExpand(false)
     state = nil
     shownTab = nil
     leaving = nil

@@ -83,3 +83,44 @@ public struct PeekPose: Equatable, Sendable {
       cardOpacity: opacity, dim: progress * (1 - expand))
   }
 }
+
+@MainActor
+public final class PeekLifetime {
+  private var tabId: String?
+  private var generation: UInt64 = 0
+
+  public init() {}
+
+  public func replace(_ next: String?) {
+    guard next != tabId else { return }
+    generation += 1
+    tabId = next
+  }
+
+  public func receipt() -> UInt64 { generation }
+
+  public func accepts(_ receipt: UInt64) -> Bool { tabId != nil && receipt == generation }
+}
+
+@MainActor
+public final class RevealHolds {
+  private var tokens = Set<UUID>()
+  public var onChange: (Bool) -> Void = { _ in }
+  public var held: Bool { !tokens.isEmpty }
+
+  public init() {}
+
+  public func acquire() -> UUID {
+    let token = UUID()
+    let was = held
+    tokens.insert(token)
+    if !was { onChange(true) }
+    return token
+  }
+
+  public func release(_ token: UUID) {
+    let was = held
+    tokens.remove(token)
+    if was && !held { onChange(false) }
+  }
+}

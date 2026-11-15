@@ -97,6 +97,7 @@ public final class SidebarDock {
   public var onPeek: (_ live: Bool, _ right: Double) -> Void = { _, _ in }
   public var onPeekCoverage: (_ live: Bool, _ rect: CGRect?) -> Void = { _, _ in }
   public var onSlideOut: () -> Void = {}
+  public var revealHeld: () -> Bool = { false }
   public var reduceMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
   private var toggle: DockToggle
@@ -192,7 +193,7 @@ public final class SidebarDock {
   private func wire(_ peek: EdgePeek) {
     peek.held = { [weak self] in
       guard let self else { return false }
-      return self.edgeOver || self.state.held
+      return self.edgeOver || self.state.held || self.revealHeld()
     }
     peek.onSlideOut = { [weak self] in self?.onSlideOut() }
     peek.onLive = { [weak self] live in self?.peekLive(live) }

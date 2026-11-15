@@ -7,7 +7,7 @@ import { toolbarPalette } from "../layout/toolbarColors";
 import { insecureLevel } from "../Toolbar";
 import { dismissPeek, finishPeek, openPeekAsTab, openPeekInSplit, registerPeekMotion } from "./actions";
 
-export type NativePeekEvent = { kind: "dismiss" | "openAsTab" | "openInSplit" } | { kind: "closed"; tabId: string };
+export type NativePeekEvent = { kind: "dismiss" | "openAsTab" | "openInSplit"; tabId?: string } | { kind: "closed"; tabId: string };
 
 export type NativePeekControl = { close(): void; expand(done: () => void): void };
 
@@ -45,6 +45,7 @@ export function nativePeekState(
 }
 
 export function onNativePeekEvent(windowId: string, event: NativePeekEvent) {
+  if (event.tabId && useBrowser.getState().peeks[windowId]?.tabId !== event.tabId) return;
   if (event.kind === "closed") return finishPeek(windowId, event.tabId);
   if (event.kind === "dismiss") return dismissPeek(windowId);
   if (event.kind === "openAsTab") return openPeekAsTab(windowId);

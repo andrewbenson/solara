@@ -1,10 +1,11 @@
+import { windowNativeLayout } from "@solara/settings";
 import type { View } from "react-native";
 import { layout } from "../../../lib/theme";
 import { useBrowser } from "../../../store/browser";
 import { activeTabId } from "../../../store/model";
 import { splitOf } from "../../../store/splits";
 import { toolbarGeometry, type Rect } from "../../layout/geometry";
-import { useUrlAnchors } from "../../layout/windowLayout";
+import { nativeWindowAnchorFeed, useUrlAnchors } from "../../layout/windowLayout";
 import { measureRow } from "../../sidebar/state";
 
 export type TourAnchor = "commandBar" | "page" | "tabs" | "sidebarButton";
@@ -23,6 +24,10 @@ function measure(view: View | undefined): Promise<Rect | null> {
 }
 
 export async function locateAnchor(windowId: string, id: TourAnchor): Promise<Rect | null> {
+  if (windowNativeLayout(windowId)) {
+    const rect = nativeWindowAnchorFeed.current(windowId)?.anchors[`tour:${id}`];
+    return rect ? { x: rect[0], y: rect[1], width: rect[2], height: rect[3] } : null;
+  }
   const s = useBrowser.getState();
   const w = s.windows[windowId];
   if (!w) return null;

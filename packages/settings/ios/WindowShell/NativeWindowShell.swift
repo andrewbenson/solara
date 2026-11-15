@@ -497,6 +497,10 @@ extension ShellHost {
   }
 
   private func refreshLayoutProjection() {
+    TabSlots.shared.performBatch { refreshLayoutProjectionInBatch() }
+  }
+
+  private func refreshLayoutProjectionInBatch() {
     guard !layoutStopped else { return }
     layoutChrome?.refresh()
     shell.layoutSubtreeIfNeeded()
@@ -505,6 +509,7 @@ extension ShellHost {
     if let state = layoutState { paneLayout?.install(snapshot, state: state) }
     AutoHideHost.install(snapshot)
     NativePeek.presentationChanged(shell.windowId, fullscreenTabId: snapshot.fullscreenTabId)
+    if let state = layoutState { NativePeek.install(state, shell: shell, fullscreenTabId: snapshot.fullscreenTabId) }
     let children = childLayoutAnchors(snapshot)
     if let layoutController {
       let changed = layoutController.apply(input: input, anchors: children)
@@ -527,19 +532,30 @@ extension ShellHost {
 
   private func childLayoutAnchors(_ snapshot: WindowLayoutSnapshot) -> [String: CGRect] {
     let input = snapshot.input
-    if input.layout.addressBarInSidebar {
-      guard let bar = SidebarAddressBars.shared.existing(shell.windowId), bar.window === shell.window else { return [:] }
-      let field = bar.convert(bar.fieldFrame, to: shell)
-      return ["url": field, "urlField": field]
+    var guests = NativePeek.anchors(shell.windowId)
+    if let id = input.selectedTabId {
+      guests["tour:page"] = snapshot.pages[id]
+      if let column = NativeSidebarShell.column(shell.windowId), !column.isHiddenOrHasHiddenAncestor,
+        let page = column.host.view.current, let row = page.frameOf(id) {
+        guests["tour:tabs"] = page.convert(row, to: shell)
+      }
     }
-    guard let id = input.selectedTabId else { return [:] }
+    if input.layout.addressBarInSidebar {
+      guard let bar = SidebarAddressBars.shared.existing(shell.windowId), bar.window === shell.window else { return guests }
+      let field = bar.convert(bar.fieldFrame, to: shell)
+      guests.merge(["url": field, "urlField": field, "tour:commandBar": field]) { _, new in new }
+      return guests
+    }
+    guard let id = input.selectedTabId else { return guests }
     let split = shell.card.subviews.compactMap { $0 as? SplitPanesView }.first
     guard let toolbar = split?.toolbar(id) ?? NativeToolbarHostView.host(windowId: shell.windowId, tabId: id)?.toolbar,
-      toolbar.window === shell.window else { return [:] }
+      toolbar.window === shell.window else { return guests }
     var anchors = toolbar.layoutAnchors.mapValues { toolbar.convert($0, to: shell) }
     anchors["nativeURLBand"] = anchors["url"]
     anchors["url"] = snapshot.residualURLBand(tabId: id, trailingReservation: CGFloat(toolbar.state?.geometry.urlRight ?? 12))
-    return anchors
+    anchors["tour:commandBar"] = anchors["urlField"]
+    if input.split == nil, !input.layout.topTabs { anchors["tour:sidebarButton"] = anchors["button:sidebar"] }
+    return guests.merging(anchors) { _, new in new }
   }
 
   private func actualLayoutEndpoints(_ snapshot: WindowLayoutSnapshot) -> [String: CGRect] {
@@ -1057,13 +1073,13 @@ public class WindowShellModule: Module {
 
     Function("peekNative") { (windowId: String) -> Bool in NativePeek.enabled && NativeWindowShell.active(windowId) }
 
-    AsyncFunction("peekClose") { (windowId: String) -> Bool in
-      FrameUpdates.readOnMain { NativePeek.close(windowId) }
+    AsyncFunction("peekClose") { (windowId: String, tabId: String, generation: UInt64) -> Bool in
+      FrameUpdates.readOnMain { NativePeek.close(windowId, tabId: tabId, generation: generation) }
     }.runOnQueue(.main)
 
-    AsyncFunction("peekExpand") { (windowId: String, promise: Promise) in
+    AsyncFunction("peekExpand") { (windowId: String, tabId: String, generation: UInt64, promise: Promise) in
       nonisolated(unsafe) let reply = promise
-      FrameUpdates.readOnMain { NativePeek.expand(windowId) { reply.resolve(true) } }
+      FrameUpdates.readOnMain { NativePeek.expand(windowId, tabId: tabId, generation: generation) { reply.resolve($0) } }
     }.runOnQueue(.main)
 
     AsyncFunction("devReactBlockers") { (windowId: String, step: Double) -> String in

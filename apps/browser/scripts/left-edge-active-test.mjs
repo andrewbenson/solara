@@ -1,5 +1,5 @@
 import { mkdtempSync, rmSync } from "node:fs";
-import { sidebarSession, sidebarEdgeX, assertSidebarPosition } from "./sidebar-position-test.mjs";
+import { sidebarSession, sidebarEdgeX, assertSidebarPosition, assertSidebarPeekCoverage } from "./sidebar-position-test.mjs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { launch, reporter, session, sleep } from "../../../scripts/lib/instance.mjs";
@@ -58,6 +58,7 @@ try {
   await rep.check("once Solara is active, the pointer at the edge peeks", async () => {
     const out = await run(`return pointer({ x: ${sidebarEdgeX(windowWidth, 3)}, y: 300 }).then(() => active(true));`);
     if (!out) throw new Error("no peek with Solara active and the pointer at the edge");
+    await assertSidebarPeekCoverage(app, "w1", [sidebarEdgeX(windowWidth, 30), 300]);
     return { peeking: out };
   });
 

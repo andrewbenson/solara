@@ -84,6 +84,9 @@ try {
     await expectLayers("rest: the card is reachable", null, ["react", "card", "titlebar", ...sidebar]);
     await expectLayers("command panel: only the main root and the native bar", `ac.store.getState().openPanel("w1"); return true`, ["react", "overlay"]);
     await expectLayers("panel closed: the card is back", `ac.store.getState().closePanel("w1"); return true`, ["react", "card", "titlebar", ...sidebar]);
+    await expectLayers("command panel above a page Peek", `ac.store.getState().openPeek("a", ${JSON.stringify(`${base}/peek`)}); ac.store.getState().openPanel("w1"); return true`, ["react", "overlay"]);
+    await expectLayers("closing a modal while peeking leaves the Peek reachable", `ac.store.getState().closePanel("w1"); return true`, ["react", "card", "peek", "titlebar", ...sidebar]);
+    await expectLayers("dismissing Peek restores source layers", `ac.store.getState().closePeek("w1"); return true`, ["react", "card", "titlebar", ...sidebar]);
     await expectLayers("split: the split panes are reachable", `ac.store.getState().createSplit(["a", "b"]); return true`, ["card", "titlebar", ...sidebar]);
     await expectLayers("split under the command panel: only the native bar", `ac.store.getState().openPanel("w1"); return true`, ["overlay"]);
     await expectLayers("split, panel closed: the panes are back", `ac.store.getState().closePanel("w1"); return true`, ["card", "titlebar", ...sidebar]);

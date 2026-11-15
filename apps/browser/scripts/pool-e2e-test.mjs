@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { launch, reporter, session, sleep } from "../../../scripts/lib/instance.mjs";
+import { sidebarSession, assertSidebarPosition } from "./sidebar-position-test.mjs";
 import { poolPage } from "../../../scripts/lib/fixture-html.mjs";
 
 const args = process.argv.slice(2);
@@ -45,11 +46,11 @@ const server = createServer((req, res) => {
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const origin = `http://127.0.0.1:${server.address().port}`;
 const url = (n) => `${origin}/${n}`;
-const fixture = session({
+const fixture = session(sidebarSession({
   windows: [{ id: "w1", frame: [80, 80, 1280, 800], activeTabIds: { default: "a" } }],
   tabs: [{ id: "a", url: url("one"), title: "ONE" }, { id: "b", url: url("two"), title: "TWO" }],
   settings: { warnBeforeClosingLastTab: false, warnBeforeClosingWindow: false },
-});
+}));
 
 const HELPERS = `
 const S = () => ac.store.getState();
@@ -167,17 +168,33 @@ try {
     return shown;
   });
 
+  await assertSidebarPosition(app);
   await rep.check("a peek opens on its own pooled page and Open as Tab promotes it into the window", async () => {
     const peekId = await run(`return S().openPeek("a", ${json(url("peeked"))});`);
     await until("the peek's page loads", `const p = S().peeks.w1; return p && p.tabId === ${json(peekId)} && S().tabs[p.tabId]?.title === "PEEKED" ? true : null;`);
     const inPeek = await run(`return ev(${json(peekId)}, "document.title");`);
     if (inPeek !== "PEEKED") throw new Error(`the peek's handle reads ${json(inPeek)}`);
+    await run(`return ev(${json(peekId)}, "window.__peekIdentity = 9381");`);
     await run(`ac.peek.openPeekAsTab("w1"); return true;`);
     await until("promoted", `return !S().peeks.w1 && S().windows.w1.tabIds.includes(${json(peekId)}) && active() === ${json(peekId)} ? true : null;`, 5000);
     const after = await until("the promoted page still answers", `return ev(${json(peekId)}, "document.title").then((t) => t === "PEEKED" ? t : null);`);
+    const identity = await run(`return ev(${json(peekId)}, "window.__peekIdentity");`);
+    if (identity !== 9381) throw new Error("promotion replaced the pooled document");
     await run(`S().activate("a"); return true;`);
     return { peekId, after };
   });
+
+  await rep.check("Peek to Split keeps the pooled document", async () => {
+    const peekId = await run(`return S().openPeek("a", ${json(url("split-peek"))});`);
+    await until("split peek loaded", `return S().tabs[${json(peekId)}]?.title === "SPLIT-PEEK" || null;`);
+    await run(`return ev(${json(peekId)}, "window.__peekIdentity = 9382");`);
+    await run(`ac.peek.openPeekInSplit("w1"); return true;`);
+    await until("peek joined a split", `return !S().peeks.w1 && Object.values(S().splits).some((split) => split.tabIds.includes(${json(peekId)}) && split.tabIds.includes("a")) || null;`);
+    const identity = await run(`return ev(${json(peekId)}, "window.__peekIdentity");`);
+    if (identity !== 9382) throw new Error("split promotion replaced the pooled document");
+    await run(`const split = Object.values(S().splits).find((split) => split.tabIds.includes(${json(peekId)})); S().separateSplit(split.id); S().closeTab(${json(peekId)}); S().activate("a"); return true;`);
+  });
+
 
   await rep.check("a click in the unfocused split pane focuses it", async () => {
     await run(`S().createSplit(["a", "b"]); S().activate("a"); return true;`);

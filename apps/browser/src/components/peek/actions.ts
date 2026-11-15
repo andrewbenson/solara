@@ -1,3 +1,4 @@
+import { windowNativeLayout } from "@solara/settings";
 import { setPeekModifier, setSplitLinkModifier } from "@solara/solaracore";
 import { hapticTick } from "@solara/shell";
 import { webviews } from "../../lib/webviews";
@@ -44,7 +45,7 @@ export function openPeekAsTab(windowId: string) {
     const id = store().peekToTab(windowId);
     if (!id) return;
     hapticTick();
-    focusSoon(id);
+    if (!windowNativeLayout(windowId)) focusSoon(id);
   };
   const expand = expanders.get(windowId);
   if (expand) expand(promote);
@@ -60,7 +61,9 @@ export function openPeekInSplit(windowId: string) {
   }
   const id = s.peekToTab(windowId, { activate: false });
   if (!id) return;
-  if (openSplitPane(windowId, { tabId: id, anchorTabId: peek.sourceId, side: "right" })) focusSoon(id);
+  if (openSplitPane(windowId, { tabId: id, anchorTabId: peek.sourceId, side: "right" })) {
+    if (!windowNativeLayout(windowId)) focusSoon(id);
+  }
   else store().activate(id);
 }
 
@@ -112,7 +115,7 @@ export function startPeeks() {
 function refocusAfterClose(s: BrowserState, prev: BrowserState) {
   if (s.peeks === prev.peeks) return;
   for (const [windowId, peek] of Object.entries(prev.peeks)) {
-    if (s.peeks[windowId]?.tabId === peek.tabId || s.tabs[peek.tabId]) continue;
+    if (windowNativeLayout(windowId) || s.peeks[windowId]?.tabId === peek.tabId || s.tabs[peek.tabId]) continue;
     if (s.tabs[peek.sourceId] && activeTabId(s, windowId) === peek.sourceId) void webviews.get(peek.sourceId)?.focus();
   }
 }

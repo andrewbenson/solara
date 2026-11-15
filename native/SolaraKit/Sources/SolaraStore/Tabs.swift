@@ -390,6 +390,7 @@ extension Session {
     }
     let shown = s.activeTabId(tab.windowId)
     var next = activated(s, id)
+    if s.peeks[tab.windowId]?.sourceId == id { next = withoutPeek(next, tab.windowId) }
     if let shown, shown != id, !switchKeepsOpeners(s, shown, id) { next = forgetOpeners(next, tab.windowId) }
     set(next)
   }

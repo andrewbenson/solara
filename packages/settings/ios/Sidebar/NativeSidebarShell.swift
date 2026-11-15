@@ -57,7 +57,7 @@ enum NativeSidebarShell {
 
   private static func make(_ windowId: String) -> SidebarShellColumn? {
     guard let shell = NativeWindowShell.host(windowId)?.shell else { return nil }
-    let host = SidebarHost(windowId: windowId)
+    let host = SidebarHost(windowId: windowId, virtualizesRows: true)
     NativeSidebar.hosts[windowId] = host
     let column = SidebarShellColumn(windowId: windowId, host: host)
     columns[windowId] = column

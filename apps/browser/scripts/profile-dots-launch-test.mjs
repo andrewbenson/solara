@@ -17,6 +17,7 @@ let instance;
 try {
   instance = await launch(resolve(appPath), {
     data: join(scratch, "data"), fresh: true, session: fixture, onboarded: true,
+    env: { SOLARA_NATIVE_WINDOW_LAYOUT: "1" },
     ready: 'return !!ac.store.getState().windows["w-smoke"]',
   });
   let evidence;
@@ -32,7 +33,7 @@ try {
     await sleep(100);
   }
   writeFileSync(join(scratch, "launch.json"), JSON.stringify(evidence, null, 2));
-  assert.equal(evidence?.shell?.nativeLayout, true, "default native window layout");
+  assert.equal(evidence?.shell?.nativeLayout, true, "explicit native window layout");
   assert.equal(evidence?.profileId, "p-work", "restored second profile");
   const dots = evidence?.column?.chrome?.dots;
   assert.deepEqual(dots?.map((dot) => dot.id), fixture.profileOrder);

@@ -1,4 +1,4 @@
-import { observeWindowLayoutAnchors, windowLayoutAnchorsAvailable, type WindowLayoutAnchors } from "@solara/settings";
+import { observeWindowLayoutAnchors, windowLayoutAnchorsAvailable, windowNativeLayout, type WindowLayoutAnchors } from "@solara/settings";
 import { useEffect, useState } from "react";
 import { addNativeSettingsHandlers } from "../settings/nativeSettings";
 import { applyNativeWindowAnchors, dropNativeWindowAnchors, nativeWindowAnchorFeed } from "./windowLayout";
@@ -13,7 +13,7 @@ addNativeSettingsHandlers({
 });
 
 export function useNativeWindowAnchors(windowId: string): boolean {
-  const [native] = useState(() => windowLayoutAnchorsAvailable(windowId));
+  const [native] = useState(() => windowNativeLayout(windowId) && windowLayoutAnchorsAvailable(windowId));
   useEffect(() => {
     if (!native) return;
     const owner = {};

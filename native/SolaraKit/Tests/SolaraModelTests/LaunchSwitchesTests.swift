@@ -6,7 +6,7 @@ import Testing
 @Suite struct LaunchSwitchesTests {
   static let defaultOn: Set<LaunchSwitch> = [
     .nativeShell, .nativeTopStrip, .nativeBookmarksBar, .nativeBookmarks,
-    .shellPanes, .nativePagesPool, .shellMainTop, .nativeTabSleep, .nativeWindowLayout,
+    .shellPanes, .nativePagesPool, .shellMainTop, .nativeTabSleep,
   ]
   static let shippedSurfaces = defaultOn.filter { !$0.storable(distribution: true) && $0 != .nativeBookmarks }
 
@@ -171,26 +171,30 @@ import Testing
     }
   }
 
-  @Test func nativeWindowLayoutShipsOnWithAnExplicitDevelopmentFallback() {
+  @Test func nativeWindowLayoutStaysOffUntilExplicitlyEnabled() {
     let defaults = scratchDefaults()
-    defaults.set("0", forKey: "SOLARA_NATIVE_WINDOW_LAYOUT")
+    defaults.set("1", forKey: "SOLARA_NATIVE_WINDOW_LAYOUT")
     #expect(!LaunchSwitch.nativeWindowLayout.storable(distribution: false))
     #expect(!LaunchSwitch.nativeWindowLayout.storable(distribution: true))
-    #expect(LaunchSwitch.onByDefault.contains(.nativeWindowLayout))
+    #expect(!LaunchSwitch.onByDefault.contains(.nativeWindowLayout))
     for distribution in [false, true] {
       let switches = LaunchSwitches(environment: [:], defaults: defaults, distribution: distribution, skipStored: false)
-      #expect(switches.isOn(.nativeWindowLayout))
+      #expect(!switches.isOn(.nativeWindowLayout))
+      for (value, expected) in [("0", false), ("1", true)] {
+        let environment = ["SOLARA_NATIVE_WINDOW_LAYOUT": value, "SOLARA_DATA_DIR": "/tmp/layout"]
+        #expect(LaunchSwitches(environment: environment, defaults: defaults, distribution: distribution, skipStored: false).isOn(.nativeWindowLayout) == expected)
+      }
     }
-    let environment = ["SOLARA_NATIVE_WINDOW_LAYOUT": "0", "SOLARA_DATA_DIR": "/tmp/layout"]
-    #expect(!LaunchSwitches(environment: environment, defaults: nil, distribution: false, skipStored: false).isOn(.nativeWindowLayout))
-    #expect(LaunchSwitches(environment: environment, defaults: nil, distribution: true, skipStored: false).isOn(.nativeWindowLayout))
     for prerequisite in ["SOLARA_NATIVE_SHELL", "SOLARA_SHELL_PANES", "SOLARA_NATIVE_PAGES_POOL", "SOLARA_SHELL_MAIN_TOP", "SOLARA_NATIVE_TOP_STRIP"] {
-      let switches = LaunchSwitches(environment: [prerequisite: "0"], defaults: nil, distribution: false, skipStored: false)
+      let switches = LaunchSwitches(environment: ["SOLARA_NATIVE_WINDOW_LAYOUT": "1", prerequisite: "0"], defaults: nil, distribution: false, skipStored: false)
       #expect(!switches.isOn(.nativeWindowLayout), "\(prerequisite) must select the complete legacy path")
     }
     var safe = LaunchSwitches(environment: [:], defaults: nil, distribution: false, skipStored: false)
     safe.safeMode = true
-    #expect(safe.isOn(.nativeWindowLayout))
+    #expect(!safe.isOn(.nativeWindowLayout))
+    var optedIn = LaunchSwitches(environment: ["SOLARA_NATIVE_WINDOW_LAYOUT": "1"], defaults: nil, distribution: false, skipStored: false)
+    optedIn.safeMode = true
+    #expect(optedIn.isOn(.nativeWindowLayout))
   }
 
   @Test func theEnvironmentWinsOverAStoredValue() {
@@ -332,7 +336,6 @@ import Testing
     #expect(!alone.isOn(.shellMainTop, defaultOn: false))
     #expect(alone.unmetNeeds(.shellMainTop) == [.shellPanes])
     #expect(alone.refusals == [
-      "SOLARA_NATIVE_WINDOW_LAYOUT is on but stays off: it needs SOLARA_SHELL_MAIN_TOP=1",
       "SOLARA_SHELL_MAIN_TOP is on but stays off: it needs SOLARA_SHELL_PANES=1",
     ])
     let met = LaunchSwitches(
@@ -343,7 +346,6 @@ import Testing
     let top = LaunchSwitches(environment: ["SOLARA_SHELL_MAIN_TOP": "1", "SOLARA_NATIVE_SHELL": "1", "SOLARA_NATIVE_PAGES_POOL": "0"], defaults: nil, distribution: false, skipStored: false)
     #expect(!top.isOn(.shellMainTop, defaultOn: false))
     #expect(top.refusals == [
-      "SOLARA_NATIVE_WINDOW_LAYOUT is on but stays off: it needs SOLARA_SHELL_MAIN_TOP=1",
       "SOLARA_SHELL_MAIN_TOP is on but stays off: it needs SOLARA_NATIVE_PAGES_POOL=1",
     ])
 
@@ -351,7 +353,7 @@ import Testing
       environment: ["SOLARA_NATIVE_SHELL": "0", "SOLARA_SHELL_MAIN_TOP": "1", "SOLARA_SHELL_PANES": "1", "SOLARA_NATIVE_PAGES_POOL": "1"], defaults: nil, distribution: false, skipStored: false)
     #expect(!noShell.isOn(.shellMainTop, defaultOn: false))
     #expect(noShell.unmetNeeds(.shellMainTop) == [.shellPanes, .nativePagesPool])
-    #expect(noShell.refusals.count == 5)
+    #expect(noShell.refusals.count == 4)
     #expect(LaunchSwitches(environment: [:], defaults: nil, distribution: false, skipStored: false).refusals.isEmpty)
     #expect(LaunchSwitches(environment: ["SOLARA_NATIVE_SHELL": "0", "SOLARA_SHELL_PANES": "0", "SOLARA_NATIVE_PAGES_POOL": "0", "SOLARA_SHELL_MAIN_TOP": "0", "SOLARA_NATIVE_BOOKMARKS_BAR": "0", "SOLARA_NATIVE_WINDOW_LAYOUT": "0"], defaults: nil, distribution: false, skipStored: false).refusals.isEmpty)
   }
@@ -380,11 +382,14 @@ import Testing
     defaults.set("1", forKey: "SOLARA_SHELL_PANES")
     let switches = LaunchSwitches(environment: [:], defaults: defaults, distribution: false, skipStored: false)
     #expect(!switches.isOn(.shellPanes, defaultOn: false))
-    #expect(switches.refusals.count == 5)
+    let refusal = "SOLARA_SHELL_PANES is on but stays off: it needs SOLARA_NATIVE_SHELL=1"
+    #expect(switches.unmetNeeds(.shellPanes) == [.nativeShell])
+    #expect(switches.refusals.contains(refusal))
     defaults.set("1", forKey: "SOLARA_NATIVE_SHELL")
     let withShell = LaunchSwitches(environment: [:], defaults: defaults, distribution: false, skipStored: false)
     #expect(withShell.isOn(.shellPanes, defaultOn: false))
-    #expect(withShell.refusals.isEmpty)
+    #expect(withShell.unmetNeeds(.shellPanes).isEmpty)
+    #expect(!withShell.refusals.contains(refusal))
   }
 
   @Test func twoUnfinishedLaunchesTriggerSafeModeWithoutChangingSwitches() {

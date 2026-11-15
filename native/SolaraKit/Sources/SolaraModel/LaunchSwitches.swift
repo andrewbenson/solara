@@ -30,7 +30,7 @@ public enum LaunchSwitch: String, CaseIterable, Sendable {
   static let developmentOnly: Set<LaunchSwitch> = [.syncRedesign, .nativeBookmarks]
   public static let onByDefault: Set<LaunchSwitch> = [
     .nativeShell, .nativeTopStrip, .nativeBookmarksBar, .nativeBookmarks,
-    .shellPanes, .nativePagesPool, .shellMainTop, .nativeTabSleep, .nativeWindowLayout,
+    .shellPanes, .nativePagesPool, .shellMainTop, .nativeTabSleep,
   ]
 
   public var needs: [LaunchSwitch] {

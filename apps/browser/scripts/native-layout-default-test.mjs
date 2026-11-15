@@ -9,14 +9,16 @@ assert.ok(appArg && outputArg, "usage: node native-layout-default-test.mjs <Debu
 const appPath = resolve(appArg);
 const output = resolve(outputArg);
 assert.equal(execFileSync("/usr/libexec/PlistBuddy", ["-c", "Print CFBundleIdentifier", join(appPath, "Contents/Info.plist")], { encoding: "utf8" }).trim(), "network.benson.solara.dev");
-for (const key of ["SOLARA_NATIVE_WINDOW_LAYOUT", "SOLARA_NATIVE_SHELL", "SOLARA_SHELL_PANES", "SOLARA_NATIVE_PAGES_POOL", "SOLARA_SHELL_MAIN_TOP", "SOLARA_NATIVE_TOP_STRIP", "SOLARA_TAB_POOL", "SOLARA_NATIVE_SCOPE"]) {
-  assert.equal(process.env[key], undefined, `default acceptance requires no ${key} override`);
+assert.ok(process.env.SOLARA_NATIVE_WINDOW_LAYOUT === undefined || process.env.SOLARA_NATIVE_WINDOW_LAYOUT === "1", "native opt-in acceptance sets SOLARA_NATIVE_WINDOW_LAYOUT=1; inherited override must be 1");
+for (const key of ["SOLARA_NATIVE_SHELL", "SOLARA_SHELL_PANES", "SOLARA_NATIVE_PAGES_POOL", "SOLARA_SHELL_MAIN_TOP", "SOLARA_NATIVE_TOP_STRIP", "SOLARA_TAB_POOL", "SOLARA_NATIVE_SCOPE"]) {
+  assert.equal(process.env[key], undefined, `native opt-in acceptance requires no ${key} override`);
 }
 mkdirSync(output, { recursive: true });
 let app;
 try {
   app = await launch(appPath, {
     data: join(output, "data"), fresh: true, onboarded: true, probe: true, keepData: true,
+    env: { SOLARA_NATIVE_WINDOW_LAYOUT: "1" },
     session: session({ windows: [{ id: "w1", activeTabIds: { default: "a" } }], tabs: [{ id: "a", url: "about:blank", title: "Default layout" }] }),
     ready: 'return !!globalThis.acPerf && globalThis.expo.modules.SolaraWindowShell.describe("w1").then(JSON.parse).then(s=>s?.nativeLayout && s.layout?.current);',
   });
@@ -52,7 +54,7 @@ try {
     assert.equal(value.shell.layoutControllerSubscriptions, 1);
     assert.equal(value.shell.layout.maxError <= 0.5, true);
     assert.deepEqual(Object.values(value.mounted), Array(Object.keys(value.mounted).length).fill(0));
-    assert.deepEqual(value.blockers, [], "no empty RN pointer blocker on the default path");
+    assert.deepEqual(value.blockers, [], "no empty RN pointer blocker on the opt-in path");
     const contract = native.windows.find(window => window.id === "w1")?.shell?.contract;
     assert.ok(contract, "native ownership probe is required");
     assert.equal(contract.nativeLayout, true);
@@ -63,7 +65,7 @@ try {
     assert.ok(contract.pageIdentities.some(page => page.tabId === "a"), "default page is owned by the native pool");
   }
   writeFileSync(join(output, "evidence.json"), JSON.stringify(evidence, null, 2));
-  console.log("PASS default native owner, pooled page, no RN layout/gesture hosts or empty pointer blockers");
+  console.log("PASS opt-in native owner, pooled page, no RN layout/gesture hosts or empty pointer blockers");
 } finally {
   if (app) await app.quit();
 }

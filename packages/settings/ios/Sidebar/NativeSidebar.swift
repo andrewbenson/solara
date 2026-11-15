@@ -18,7 +18,7 @@ enum NativeSidebar {
     guard !NativeWindowShell.nativeLayout else { return }
     HostedViews.register(kind) { windowId in
       guard !NativeWindowShell.nativeLayout else { return nil }
-      let host = SidebarHost(windowId: windowId)
+      let host = SidebarHost(windowId: windowId, virtualizesRows: true)
       hosts[windowId] = host
       return HostedContent(
         view: host.view,

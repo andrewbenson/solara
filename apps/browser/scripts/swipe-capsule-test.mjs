@@ -121,7 +121,7 @@ const readHaptics = async () => {
 const got = {};
 
 try {
-  for (const inputRoute of process.env.SOLARA_NATIVE_WINDOW_LAYOUT !== "0" ? ["native"] : ["js", "native"]) {
+  for (const inputRoute of process.env.SOLARA_NATIVE_WINDOW_LAYOUT === "1" ? ["native"] : ["js", "native"]) {
   const prefix = inputRoute === "js" ? "" : "native-input-";
   for (const nativeShell of [false, true]) {
     const tag = prefix + (nativeShell ? "native" : "inline");
@@ -136,7 +136,7 @@ try {
       await until(`page ${page}`, `return title() === ${JSON.stringify(page.toUpperCase())} || null;`, 15000);
     }
     await sleep(600);
-    if (process.env.SOLARA_NATIVE_WINDOW_LAYOUT !== "0" && nativeShell) {
+    if (process.env.SOLARA_NATIVE_WINDOW_LAYOUT === "1" && nativeShell) {
       assert.equal(await run(`return acPerf.findFibers("LegacySwipeOverlay", 500).filter((fiber) => fiber.memoizedProps.tabId === "a").length;`), 0, "native navigation mounts no legacy gesture owner");
     }
     const shown = (s) => s.native?.frame ?? s.rn;

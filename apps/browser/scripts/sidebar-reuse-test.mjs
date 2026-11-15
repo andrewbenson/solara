@@ -10,19 +10,21 @@ import { readNativeWork, readSidebarRealization, sidebarWorkCounts, validateWind
 const args = process.argv.slice(2);
 const appArg = args.find((arg) => !arg.startsWith("--"));
 if (!appArg || args.includes("--help")) {
-  console.error("usage: node sidebar-reuse-test.mjs <Debug Solara.app> [--out=<fresh directory>] [--port=<port>] [--keep-data]\n\nNative layout sidebar visibility, reusable cells, 200/2000 fixed viewport, rename/drag recycling, profile/rail/group state and offscreen selection/accessibility. SOLARA_TEST_SIDEBAR_POSITION selects left or right. TMPDIR controls scratch storage.");
+  console.error("usage: node sidebar-reuse-test.mjs <Debug Solara.app> [--out=<fresh directory>] [--port=<port>] [--keep-data]\n\nSidebar visibility, reusable cells, 200/2000 fixed viewport, rename/drag recycling, profile/rail/group state and offscreen selection/accessibility. SOLARA_TEST_SIDEBAR_POSITION selects left or right. SOLARA_NATIVE_WINDOW_LAYOUT=0 checks the fallback layout. TMPDIR controls scratch storage.");
   process.exit(appArg ? 0 : 2);
 }
 process.env.AC_UITEST_WAIT ??= "90";
 assert.ok(Number(process.env.AC_UITEST_WAIT) > 0 && Number(process.env.AC_UITEST_WAIT) <= 480, "UI gate wait must be bounded below ten minutes");
-process.env.SOLARA_NATIVE_WINDOW_LAYOUT = "1";
+process.env.SOLARA_NATIVE_WINDOW_LAYOUT ??= "1";
+assert.ok(["0", "1"].includes(process.env.SOLARA_NATIVE_WINDOW_LAYOUT), "SOLARA_NATIVE_WINDOW_LAYOUT must be 0 or 1");
+const nativeLayout = process.env.SOLARA_NATIVE_WINDOW_LAYOUT === "1";
 const outArg = args.find((arg) => arg.startsWith("--out="))?.slice(6);
 const scratch = outArg ? resolve(outArg) : mkdtempSync(join(tmpdir(), `ac-sidebar-reuse-${sidebarPosition}-`));
 mkdirSync(scratch, { recursive: true });
 const keep = args.includes("--keep-data");
 if (keep) process.env.AC_KEEP_DATA = "1";
 const rep = reporter(join(scratch, "sidebar-reuse-test.log"), { name: "sidebar-reuse-test" });
-const report = { sidebarPosition, viewport: [1280, 800], nativeLayout: true, fixtures: [] };
+const report = { sidebarPosition, viewport: [1280, 800], nativeLayout, fixtures: [] };
 const save = () => writeFileSync(join(scratch, "sidebar-reuse-results.json"), JSON.stringify(report, null, 2));
 const server = createServer((request, response) => {
   const id = request.url.slice(1);
@@ -75,7 +77,7 @@ try {
       const native = await app.snapshot({ windowId: "w1", fields: ["windows.shell", "windows.tabIds", "windows.selectedTabId"] }, { timeout: 5000 });
       const window = native.windows.find((candidate) => candidate.id === "w1");
       const contract = validateWindowContract(window?.shell?.contract);
-      assert.equal(contract.nativeLayout, true, "fixture uses the native layout owner");
+      assert.equal(contract.nativeLayout, nativeLayout, "fixture uses the requested layout owner");
       assert.equal(contract.hostCounts.sidebar, 1, "fixture retains one sidebar host");
       const sidebarCounters = sidebarWorkCounts(counters, "w1");
       const sample = { name, realization, counters, sidebarCounters, contract, selectedTabId: window.selectedTabId };
@@ -99,6 +101,7 @@ try {
     try {
       await sleep(1500);
       await assertSidebarPosition(app, "w1");
+      assert.equal(await run('return globalThis.expo.modules.SolaraApp.sidebarPosition;'), nativeLayout, "sidebar side choices require native layout");
       await rep.check(`${count}: fixed viewport realizes only exact native visible intersections`, async () => {
         await scroll(0);
         const before = await capture("initial");

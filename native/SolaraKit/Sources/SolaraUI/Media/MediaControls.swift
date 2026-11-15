@@ -330,6 +330,7 @@ final class MediaArtView: NSView {
 final class MediaCircleButton: NSView {
   private let surface = SurfaceLayer()
   private let symbol = SymbolView()
+  private var symbolBox: CGFloat = 0
   private var tracking: NSTrackingArea?
   private(set) var hovered = false { didSet { if hovered != oldValue { onHover?(hovered) } } }
   var onPress: (() -> Void)?
@@ -365,7 +366,8 @@ final class MediaCircleButton: NSView {
 
   func set(_ name: String, size: CGFloat, weight: NSFont.Weight, color: NSColor, box: CGFloat, tooltip: String) {
     symbol.set(name, size: size, weight: weight, color: color)
-    symbol.frame = CGRect(x: (bounds.width - box) / 2, y: (bounds.height - box) / 2, width: box, height: box)
+    symbolBox = box
+    needsLayout = true
     if toolTip != tooltip {
       toolTip = tooltip
       setAccessibilityLabel(tooltip)
@@ -376,6 +378,7 @@ final class MediaCircleButton: NSView {
     super.layout()
     surface.radius = bounds.height / 2
     MediaMotion.setInstantly { surface.frame = bounds }
+    symbol.frame = CGRect(x: (bounds.width - symbolBox) / 2, y: (bounds.height - symbolBox) / 2, width: symbolBox, height: symbolBox)
   }
 
   override func updateTrackingAreas() {

@@ -146,6 +146,7 @@ class RailIconView: SidebarRowView {
   override func layoutBody() {
     glass.frame = SidebarRail.tileFrame(in: bounds)
     icon.frame = SidebarRail.iconFrame(in: glass.frame)
+    numberHint.present(icon: icon, color: active ? context?.palette.selectedText : context?.palette.textTab)
     if popover?.renameKey != nil { popover?.show(on: self) }
   }
 
@@ -233,7 +234,7 @@ final class RailTabView: RailIconView {
   }
 
   func containsClose(_ point: NSPoint) -> Bool {
-    hovered && !retired && close?.isHidden == false && close?.frame.contains(point) == true
+    hovered && !retired && !numberHint.blocksClose && close?.isHidden == false && close?.frame.contains(point) == true
   }
 
   override func hitTest(_ point: NSPoint) -> NSView? {
@@ -297,7 +298,7 @@ final class RailTabView: RailIconView {
     guard let context else { return }
     let palette = context.palette
     unreadBadge.isHidden = unreadStatus == nil || hovered || loading || tab.map { context.flags.pip.contains($0.id) } == true
-    if hovered && tab != nil {
+    if hovered && tab != nil && !numberHint.blocksClose {
       let button = close ?? attach(makeClose())
       close = button
       let colors = badgeColors(palette)
@@ -311,7 +312,8 @@ final class RailTabView: RailIconView {
       button.isHidden = false
       button.syncHover()
     }
-    let target: CGFloat = hovered && tab != nil ? 1 : 0
+    close?.isHidden = numberHint.blocksClose
+    let target: CGFloat = hovered && tab != nil && !numberHint.blocksClose ? 1 : 0
     if target != closeReveal {
       closeReveal = target
       NSAnimationContext.runAnimationGroup { ctx in

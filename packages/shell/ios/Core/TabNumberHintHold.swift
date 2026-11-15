@@ -1,7 +1,7 @@
 import Foundation
 
 public struct TabNumberHintHold: Sendable {
-  public static let delay: TimeInterval = 1
+  public static let delay: TimeInterval = 0.25
   public private(set) var generation: UInt64 = 0
   public private(set) var deadline: TimeInterval?
   public private(set) var visible = false

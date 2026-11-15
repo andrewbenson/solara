@@ -100,6 +100,7 @@ final class SurfaceLayer: CALayer {
 
 final class FadeLabel: NSTextField {
   private let fade = CAGradientLayer()
+  private var keycapEnd: CGFloat?
 
   var text = "" { didSet { if text != oldValue { stringValue = text; relayout() } } }
   var color: NSColor = .labelColor { didSet { if color != oldValue { textColor = color } } }
@@ -143,18 +144,57 @@ final class FadeLabel: NSTextField {
 
   var textWidth: CGFloat { cell?.cellSize.width ?? 0 }
 
-  private func relayout() {
-    guard bounds.width > 0, textWidth > bounds.width + 0.5 else {
+  func keycapFade(end: CGFloat?, transition: TabNumberHintTransition? = nil) {
+    guard keycapEnd != end else {
+      if let transition, !transition.animated {
+        fade.removeAnimation(forKey: "tabNumberHintTitle")
+        relayout()
+      }
+      return
+    }
+    keycapEnd = end
+    relayout(transition: transition)
+  }
+
+  private func relayout(transition: TabNumberHintTransition? = nil) {
+    let width = max(0, min(bounds.width, keycapEnd ?? bounds.width))
+    guard bounds.width > 0, keycapEnd != nil || textWidth > bounds.width + 0.5 || transition?.animated == true else {
       layer?.mask = nil
       return
     }
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    fade.frame = bounds
-    let start = max(0, 1 - fadeWidth / bounds.width)
+    if layer?.mask == nil {
+      fade.frame = bounds
+      fade.locations = [0, NSNumber(value: Double(max(0, 1 - fadeWidth / max(1, bounds.width)))), 1]
+    }
+    let previousBounds = (fade.presentation() ?? fade).bounds
+    let previousPosition = (fade.presentation() ?? fade).position
+    let previousLocations = (fade.presentation() ?? fade).locations
+    fade.frame = CGRect(x: 0, y: 0, width: width, height: bounds.height)
+    let start = keycapEnd == nil && textWidth <= width + 0.5 ? 1 : max(0, 1 - fadeWidth / max(1, width))
     fade.locations = [0, NSNumber(value: Double(start)), 1]
     layer?.mask = fade
     CATransaction.commit()
+    fade.removeAnimation(forKey: "tabNumberHintTitle")
+    if let transition, transition.animated {
+      let resize = CABasicAnimation(keyPath: "bounds")
+      resize.fromValue = previousBounds
+      resize.toValue = fade.bounds
+      let move = CABasicAnimation(keyPath: "position")
+      move.fromValue = previousPosition
+      move.toValue = fade.position
+      let stops = CABasicAnimation(keyPath: "locations")
+      stops.fromValue = previousLocations
+      stops.toValue = fade.locations
+      let group = CAAnimationGroup()
+      for animation in [resize, move, stops] { animation.duration = transition.duration }
+      group.animations = [resize, move, stops]
+      group.beginTime = fade.convertTime(transition.start, from: nil)
+      group.duration = transition.duration
+      group.timingFunction = transition.curve
+      fade.add(group, forKey: "tabNumberHintTitle")
+    }
   }
 }
 

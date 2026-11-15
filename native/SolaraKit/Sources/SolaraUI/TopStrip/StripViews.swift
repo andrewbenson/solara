@@ -58,6 +58,7 @@ class StripHoverView: NSView {
     super.init(frame: frame)
     wantsLayer = true
     addSubview(numberHint)
+    numberHint.visibilityChanged = { [weak self] in self?.repaint() }
   }
 
   required init?(coder: NSCoder) { fatalError() }
@@ -68,10 +69,14 @@ class StripHoverView: NSView {
   }
 
   func setNumberHint(_ key: String, _ context: StripContext, compact: Bool = false) {
-    numberHint.configure(actions: context.sidebar.tabNumberActions[key] ?? [], enabled: context.sidebar.showsTabNumberHints, compact: compact)
+    numberHint.configure(actions: context.sidebar.tabNumberActions[key] ?? [], enabled: context.sidebar.showsTabNumberHints, style: compact ? .corner : .row)
   }
 
-  override func hitTest(_ point: NSPoint) -> NSView? { passive ? nil : super.hitTest(point) }
+  override func hitTest(_ point: NSPoint) -> NSView? {
+    guard !passive else { return nil }
+    if numberHint.blocksClose, numberHint.frame.contains(convert(point, from: superview)) { return self }
+    return super.hitTest(point)
+  }
 
   func repaint() {}
   func press(_ mods: SidebarClickMods) {}
@@ -327,7 +332,7 @@ final class StripTabChip: StripHoverView, StripDraggable {
 
   func update(_ tabId: String, _ context: StripContext) {
     self.context = context
-    setNumberHint("t:\(tabId)", context)
+    setNumberHint("t:\(tabId)", context, compact: bounds.width < 70)
     guard let tab = context.state.tabs[tabId] else { return }
     if self.tab?.id != tabId { self.band = nil }
     self.tab = tab
@@ -391,7 +396,7 @@ final class StripTabChip: StripHoverView, StripDraggable {
     CATransaction.setDisableActions(true)
     row.backgroundColor = fill.cgColor
     CATransaction.commit()
-    close.isHidden = !hovered
+    close.isHidden = !hovered || numberHint.blocksClose
     if hovered { close.hovered = close.bounds.contains(close.convert(window?.mouseLocationOutsideOfEventStream ?? .zero, from: nil)) }
   }
 
@@ -423,6 +428,7 @@ final class StripTabChip: StripHoverView, StripDraggable {
     let right = w - 6 - StripMetrics.closeSlot
     label.frame = NSRect(x: x, y: StripMetrics.mid - 8, width: max(0, right - x), height: 16)
     close.frame = NSRect(x: right, y: StripMetrics.mid - 10, width: 20, height: 20)
+    numberHint.present(title: bounds.width < 70 ? nil : label, icon: icon, color: label.color)
   }
 
   override func press(_ mods: SidebarClickMods) {
@@ -564,6 +570,7 @@ final class StripPinnedCell: StripHoverView {
     ring?.frame = bounds.insetBy(dx: inset, dy: inset)
     icon.frame = NSRect(x: (bounds.width - 16) / 2, y: (bounds.height - 16) / 2, width: 16, height: 16)
     badges?.frame = icon.frame
+    numberHint.present(icon: icon, color: context?.base.textTab)
     let side = FolderMosaicView.side
     mosaic.frame = NSRect(x: (bounds.width - side) / 2, y: (bounds.height - side) / 2, width: side, height: side)
   }
@@ -876,7 +883,7 @@ final class StripFolderChip: StripHoverView {
 final class StripSplitPart: StripHoverView, NSViewToolTipOwner {
   private let divider = CALayer()
   private let icon = TabIconView()
-  private let label = FadeLabel(fontSize: 12)
+  let label = FadeLabel(fontSize: 12)
   var first = true
   private(set) var tabId = ""
   private var focused = false
@@ -1020,6 +1027,10 @@ final class StripSplitChip: StripHoverView, StripDraggable {
     for (i, part) in parts.enumerated() {
       let left = StripLayout.pixel(start + CGFloat(i) * each)
       part.frame = NSRect(x: left, y: StripMetrics.itemTop, width: StripLayout.pixel(start + CGFloat(i + 1) * each) - left, height: StripMetrics.itemHeight)
+    }
+    if let part = parts.last {
+      part.layoutSubtreeIfNeeded()
+      numberHint.present(title: part.label, color: part.label.color)
     }
   }
 

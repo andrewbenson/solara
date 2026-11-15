@@ -49,11 +49,11 @@ final class TabNumberHintTests: XCTestCase {
     view.layoutSubtreeIfNeeded()
     let label = view.subviews.compactMap { $0 as? NSTextField }.first
     XCTAssertEqual(label?.stringValue, "⌃⇧⌘K")
-    XCTAssertLessThanOrEqual(view.frame.width, parent.bounds.width)
+    XCTAssertGreaterThan(view.frame.width, 0)
     if let label, let font = label.font {
       let textWidth = (label.stringValue as NSString).size(withAttributes: [.font: font]).width
       XCTAssertLessThanOrEqual(textWidth, label.frame.width)
-      XCTAssertLessThan(font.pointSize, 10)
+      XCTAssertEqual(font.pointSize, 10)
     } else {
       XCTFail("The keycap must contain its label")
     }

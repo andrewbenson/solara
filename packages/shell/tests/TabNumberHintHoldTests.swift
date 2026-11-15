@@ -6,9 +6,9 @@ final class TabNumberHintHoldTests: XCTestCase {
     var hold = TabNumberHintHold()
     hold.modifiers(command: true, alone: true, now: 10)
     let generation = hold.generation
-    XCTAssertEqual(hold.deadline, 11)
-    XCTAssertFalse(hold.expire(generation: generation, now: 10.999))
-    XCTAssertTrue(hold.expire(generation: generation, now: 11))
+    XCTAssertEqual(hold.deadline, 10.25)
+    XCTAssertFalse(hold.expire(generation: generation, now: 10.249))
+    XCTAssertTrue(hold.expire(generation: generation, now: 10.25))
     XCTAssertTrue(hold.visible)
   }
 
@@ -22,7 +22,7 @@ final class TabNumberHintHoldTests: XCTestCase {
     XCTAssertNil(hold.deadline)
     hold.modifiers(command: false, alone: false, now: 4)
     hold.modifiers(command: true, alone: true, now: 5)
-    XCTAssertEqual(hold.deadline, 6)
+    XCTAssertEqual(hold.deadline, 5.25)
   }
 
   func testReleaseHidesAndRejectsOldTimer() {
@@ -79,13 +79,13 @@ final class TabNumberHintHoldTests: XCTestCase {
     XCTAssertNil(hold.deadline)
     hold.modifiers(command: false, alone: false, now: 3)
     hold.modifiers(command: true, alone: true, now: 4)
-    XCTAssertEqual(hold.deadline, 5)
+    XCTAssertEqual(hold.deadline, 4.25)
   }
 
   func testTypingBeforeCommandDoesNotBlockNextHold() {
     var hold = TabNumberHintHold()
     hold.interrupt()
     hold.modifiers(command: true, alone: true, now: 0)
-    XCTAssertEqual(hold.deadline, 1)
+    XCTAssertEqual(hold.deadline, 0.25)
   }
 }

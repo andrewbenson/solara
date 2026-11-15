@@ -41,7 +41,7 @@ const begin = async (id = "w1") => {
 const show = async (id = "w1") => {
   const armed = await begin(id);
   assert.equal(armed.pending, true, JSON.stringify(armed));
-  await sleep(1250);
+  await sleep(450);
   assert.equal((await seam("state", 0, id)).visible, true);
 };
 const capture = async (name, id = "w1") => {
@@ -69,7 +69,7 @@ const labelsMatch = (rows, unbound = [], remapped = {}, concealed = []) => {
   for (const [action, label] of Object.entries(expected)) {
     const matches = visible.filter((r) => r.actions.includes(action));
     assert.ok(matches.length > 0, `no visible ${action}: ${JSON.stringify(rows)}`);
-    assert.ok(matches.every((r) => r.label === label), `${action}: ${JSON.stringify(matches)}`);
+    assert.ok(matches.every((r) => r.label === (r.compact && /^⌘[1-9]$/.test(label) ? label.slice(1) : label)), `${action}: ${JSON.stringify(matches)}`);
   }
   for (const action of unbound) assert.ok(!visible.some((r) => r.actions.includes(action)), `${action} remained visible`);
   for (const row of visible) {
@@ -89,16 +89,16 @@ try {
   }
   app = attach(data);
   await sleep(3500);
-  await rep.check("before 1 s: no hints; after 1 s: tiles, rows, group, split, list and final ⌘9", async () => {
+  await rep.check("before 250 ms: no hints; after 250 ms: tiles, rows, group, split, list and final ⌘9", async () => {
     await seam("end");
     await hidden();
     await capture("before-hold-rest");
-    const earlyPath = join(output, "before-one-second.png");
+    const earlyPath = join(output, "before-quarter-second.png");
     const early = await ac(`const S = globalThis.expo.modules.SolaraShell, H = globalThis.expo.modules.SolaraHosted;
       let start = 0;
       return S.devTabNumberHints("w1", "begin", 0)
         .then(() => S.devTabNumberHints("w1", "flags", 1048576))
-        .then(() => { start = performance.now(); return new Promise(resolve => setTimeout(resolve, 650)); })
+        .then(() => { start = performance.now(); return new Promise(resolve => setTimeout(resolve, 80)); })
         .then(() => Promise.all([S.devTabNumberHints("w1", "state", 0), H.devTabNumberHintViews("w1")]))
         .then(values => {
           const sampled = { state: values[0], rows: JSON.parse(values[1]), elapsed: performance.now() - start };
@@ -109,19 +109,19 @@ try {
     assert.equal(early.saved, true, JSON.stringify(early));
     assert.equal(early.state.visible, false, JSON.stringify(early));
     assert.deepEqual(early.rows.filter((r) => r.visible), []);
-    assert.ok(early.elapsed < 1000, JSON.stringify(early));
-    assert.ok(early.captureStart < 1000, JSON.stringify(early));
-    writeFileSync(join(output, "before-one-second.json"), JSON.stringify(early.rows, null, 2));
-    writeFileSync(join(output, "before-one-second-timing.json"), JSON.stringify({ sampled: early.elapsed, captureStart: early.captureStart, saved: early.saved }, null, 2));
-    await sleep(650);
+    assert.ok(early.elapsed < 250, JSON.stringify(early));
+    assert.ok(early.captureStart < 250, JSON.stringify(early));
+    writeFileSync(join(output, "before-quarter-second.json"), JSON.stringify(early.rows, null, 2));
+    writeFileSync(join(output, "before-quarter-second-timing.json"), JSON.stringify({ sampled: early.elapsed, captureStart: early.captureStart, saved: early.saved }, null, 2));
+    await sleep(400);
     assert.equal((await seam("state")).visible, true);
     const rows = await capture("sidebar-hints");
     labelsMatch(rows);
-    assert.ok(rows.some((r) => r.visible && r.compact && r.actions.includes("selectTab:1")));
+    assert.ok(rows.some((r) => r.visible && r.style === "tile" && r.actions.includes("selectTab:1")));
     const keys = ["tile:tile", "t:row", "t:group-a", "t:group-b", "s:split", "t:list1", "t:list2", "t:list3"];
     for (const [index, key] of keys.entries()) assert.ok(rows.some((r) => r.visible && r.actions.includes(`selectTab:${index + 1}`) && r.rowKey === key), `${key}: ${JSON.stringify(rows)}`);
     assert.ok(rows.some((r) => r.visible && r.actions.includes("selectLastTab") && r.rowKey === "t:last"));
-    return { visible: rows.filter((r) => r.visible), earlyElapsed: early.elapsed, earlyCaptureStart: early.captureStart, lateElapsed: ">=1300 ms", beforeSnapshot: "during the timed hold after the 650 ms sample" };
+    return { visible: rows.filter((r) => r.visible), earlyElapsed: early.elapsed, earlyCaptureStart: early.captureStart, lateElapsed: ">=480 ms", beforeSnapshot: "during the timed hold after the 80 ms sample" };
   });
   await rep.check("dark sidebar keycap snapshot", async () => {
     await settings({ appearance: "dark" });
@@ -185,7 +185,7 @@ try {
     await seam("begin");
     const armed = await seam("flags", 1114112);
     assert.equal(armed.pending, true, JSON.stringify(armed));
-    await sleep(1250);
+    await sleep(450);
     assert.equal((await seam("state")).visible, true);
     labelsMatch(await capture("caps-lock-hints"));
     await seam("flags", 65536);

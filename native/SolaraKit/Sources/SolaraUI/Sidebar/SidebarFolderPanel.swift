@@ -393,7 +393,7 @@ final class FolderPanelRow: NSView {
     icon.frame = CGRect(x: m.rowPadding, y: (bounds.height - m.icon) / 2, width: m.icon, height: m.icon)
     let x = m.rowPadding + m.icon + m.labelGap
     title.frame = CGRect(x: x, y: (bounds.height - m.labelHeight) / 2, width: max(0, bounds.width - x - m.rowPadding), height: m.labelHeight)
-    numberHint.place()
+    numberHint.present(title: title, color: title.color)
   }
 
   override func mouseEntered(with event: NSEvent) {

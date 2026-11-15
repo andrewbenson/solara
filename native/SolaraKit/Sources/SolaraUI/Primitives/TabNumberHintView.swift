@@ -61,17 +61,51 @@ final class TabNumberHintFeed: NSObject {
   }
 }
 
+enum TabNumberHintStyle {
+  case row, tile, rail, corner
+}
+
+@MainActor
+struct TabNumberHintTransition {
+  let start: CFTimeInterval
+  let duration: CFTimeInterval
+  let animated: Bool
+  let curve = CAMediaTimingFunction(name: .easeOut)
+
+  func apply(_ layer: CALayer, keyPath: String, to value: Any, key: String) {
+    let previous = (layer.presentation() ?? layer).value(forKeyPath: keyPath)
+    layer.removeAnimation(forKey: key)
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    layer.setValue(value, forKeyPath: keyPath)
+    CATransaction.commit()
+    guard animated, (previous as? NSObject)?.isEqual(value) != true else { return }
+    let animation = CABasicAnimation(keyPath: keyPath)
+    animation.fromValue = previous
+    animation.toValue = value
+    animation.beginTime = layer.convertTime(start, from: nil)
+    animation.duration = duration
+    animation.timingFunction = curve
+    layer.add(animation, forKey: key)
+  }
+}
+
 @MainActor
 final class TabNumberHintView: NSView {
   private let label = NSTextField(labelWithString: "")
   private let plate = CALayer()
   private var actions: [String] = []
   private var enabled = true
-  private var compact = false
+  private var style: TabNumberHintStyle = .row
+  private var compact: Bool { style == .rail || style == .corner }
   private var shown = false
   private var inset: CGFloat = 8
-  private var measured: (text: String, width: CGFloat)?
-  private var laidOut: (size: CGSize, compact: Bool)?
+  private var generation = 0
+  private weak var title: FadeLabel?
+  private weak var icon: NSView?
+  private var color: NSColor = .labelColor
+  private(set) var blocksClose = false
+  var visibilityChanged: (() -> Void)?
 
   override var isFlipped: Bool { true }
 
@@ -82,12 +116,13 @@ final class TabNumberHintView: NSView {
     plate.actions = SurfaceLayer.noActions
     plate.cornerRadius = 5
     layer?.addSublayer(plate)
-    label.font = .systemFont(ofSize: 10, weight: .medium)
-    label.textColor = .secondaryLabelColor
+    label.font = .monospacedDigitSystemFont(ofSize: 10, weight: .medium)
+    label.textColor = color
     label.alignment = .center
     label.lineBreakMode = .byClipping
     label.maximumNumberOfLines = 1
     label.setAccessibilityElement(false)
+    addSubview(label)
     layer?.opacity = 0
     isHidden = true
     setAccessibilityElement(false)
@@ -97,26 +132,42 @@ final class TabNumberHintView: NSView {
 
   required init?(coder: NSCoder) { fatalError() }
 
-  override func hitTest(_ point: NSPoint) -> NSView? { nil }
+  override func hitTest(_ point: NSPoint) -> NSView? {
+    guard blocksClose, !isHidden, frame.contains(point) else { return nil }
+    return superview
+  }
+
   override func isAccessibilityElement() -> Bool { false }
 
-  func configure(actions: [String], enabled: Bool, compact: Bool = false, inset: CGFloat = 8) {
-    guard actions != self.actions || enabled != self.enabled || compact != self.compact || inset != self.inset || measured == nil else { return }
+  func configure(actions: [String], enabled: Bool, compact: Bool = false, inset: CGFloat = 8, style: TabNumberHintStyle? = nil) {
+    let nextStyle = style ?? (compact ? .corner : .row)
+    guard actions != self.actions || enabled != self.enabled || nextStyle != self.style || inset != self.inset else { return }
+    let rebound = actions != self.actions || nextStyle != self.style || !enabled
+    if rebound { reset() }
     self.actions = actions
     self.enabled = enabled
-    self.compact = compact
+    self.style = nextStyle
     self.inset = inset
     refresh()
   }
 
+  func present(title: FadeLabel? = nil, icon: NSView? = nil, color: NSColor? = nil) {
+    let changed = self.title !== title || self.icon !== icon
+    self.title = title
+    self.icon = icon
+    if let color { self.color = color }
+    place()
+    if changed { updatePresentation(transition: transition(animated: false)) }
+    label.textColor = self.color
+  }
+
   override func viewDidMoveToWindow() {
     super.viewDidMoveToWindow()
-    refresh()
+    if window == nil { reset() } else { refresh() }
   }
 
   override func viewDidChangeEffectiveAppearance() {
     super.viewDidChangeEffectiveAppearance()
-    laidOut = nil
     needsLayout = true
   }
 
@@ -129,77 +180,97 @@ final class TabNumberHintView: NSView {
     #endif
     let next = enabled && window != nil && window === feed.window && keyWindow && text != nil
     if let text {
-      if text != label.stringValue { label.stringValue = text }
-      if label.superview == nil { addSubview(label) }
+      label.stringValue = compact && text.count == 2 && text.first == "⌘" ? String(text.suffix(1)) : text
     }
     place()
     if shown != next { fade(to: next) }
-    if !shown, layer?.animation(forKey: "tabNumberHintOpacity") == nil { settleHidden() }
+  }
+
+  private func transition(animated: Bool = true) -> TabNumberHintTransition {
+    TabNumberHintTransition(start: CACurrentMediaTime(), duration: shown ? 0.12 : 0.08, animated: animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
   }
 
   private func fade(to next: Bool) {
+    generation += 1
+    let token = generation
     shown = next
-    let opacity: Float = next ? 1 : 0
-    let previous = layer?.presentation()?.opacity ?? layer?.opacity ?? 0
-    if next { isHidden = false }
-    layer?.removeAnimation(forKey: "tabNumberHintOpacity")
-    CATransaction.begin()
-    CATransaction.setDisableActions(true)
-    layer?.opacity = opacity
-    CATransaction.commit()
-    guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
-    let fade = CABasicAnimation(keyPath: "opacity")
-    fade.fromValue = previous
-    fade.toValue = opacity
-    fade.duration = 0.12
+    let motion = transition()
+    if next {
+      isHidden = false
+      blocksClose = true
+      visibilityChanged?()
+    }
     CATransaction.begin()
     CATransaction.setCompletionBlock { [weak self] in
       MainActor.assumeIsolated {
-        guard let self, !self.shown else { return }
+        guard let self, self.generation == token, !self.shown else { return }
         self.settleHidden()
       }
     }
-    layer?.add(fade, forKey: "tabNumberHintOpacity")
+    if let layer { motion.apply(layer, keyPath: "opacity", to: next ? Float(1) : Float(0), key: "tabNumberHintOpacity") }
+    updatePresentation(transition: motion)
     CATransaction.commit()
+    if !motion.animated && !next { settleHidden() }
   }
 
   private func settleHidden() {
     isHidden = true
-    if TabNumberHintActions.label(actions, bindings: TabNumberHintFeed.shared.bindings) == nil { label.removeFromSuperview() }
+    blocksClose = false
+    visibilityChanged?()
+  }
+
+  private func reset() {
+    generation += 1
+    shown = false
+    layer?.removeAnimation(forKey: "tabNumberHintOpacity")
+    if let layer { transition(animated: false).apply(layer, keyPath: "opacity", to: Float(0), key: "tabNumberHintOpacity") }
+    updatePresentation(transition: transition(animated: false))
+    settleHidden()
+  }
+
+  private func updatePresentation(transition: TabNumberHintTransition) {
+    if let title {
+      let end = shown ? title.convert(CGPoint(x: frame.minX - 6, y: 0), from: superview).x : nil
+      title.keycapFade(end: end, transition: transition)
+    }
+    if let icon {
+      icon.wantsLayer = true
+      if let layer = icon.layer {
+        transition.apply(layer, keyPath: "transform.translation.x", to: shown && style == .rail ? CGFloat(-5) : CGFloat(0), key: "tabNumberHintNudge")
+        transition.apply(layer, keyPath: "opacity", to: shown && style == .corner ? Float(0.35) : Float(1), key: "tabNumberHintIconOpacity")
+      }
+    }
+    label.textColor = color
+    needsLayout = true
   }
 
   func place() {
     guard let parent = superview else { return }
-    let text = label.stringValue
-    let textWidth: CGFloat
-    if let measured, measured.text == text {
-      textWidth = measured.width
-    } else {
-      textWidth = (text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 10, weight: .medium)]).width
-      measured = (text, textWidth)
-    }
-    let padding: CGFloat = compact ? 1 : 4
-    let width = min(max(0, parent.bounds.width - 2 * (compact ? 1 : inset)), max(25, ceil(textWidth) + 2 * padding + 2))
-    let available = max(0, width - 2 * padding - 2)
-    let size = max(1, min(10, 10 * available / max(1, textWidth)))
-    if label.font?.pointSize != size { label.font = .systemFont(ofSize: size, weight: .medium) }
-    let target = CGRect(x: parent.bounds.maxX - (compact ? 1 : inset) - width, y: parent.bounds.midY - 9, width: width, height: 18)
+    let measured = label.cell?.cellSize ?? .zero
+    let width = ceil(measured.width) + 6
+    let edge = compact ? CGFloat(1) : inset
+    let y = style == .tile || style == .corner ? parent.bounds.maxY - 18 - 4 : parent.bounds.midY - 9
+    let target = CGRect(x: parent.bounds.maxX - edge - width, y: y, width: width, height: 18)
     if frame != target { frame = target }
-    if laidOut?.size != target.size || laidOut?.compact != compact { needsLayout = true }
+    if let title {
+      let end = shown ? title.convert(CGPoint(x: frame.minX - 6, y: 0), from: parent).x : nil
+      title.keycapFade(end: end)
+    }
+    needsLayout = true
   }
 
   override func layout() {
     super.layout()
-    laidOut = (bounds.size, compact)
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     plate.frame = bounds
-    plate.borderWidth = 1
-    plate.borderColor = NSColor.secondaryLabelColor.withAlphaComponent(0.125).cgColor
-    plate.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.96).cgColor
+    plate.isHidden = compact
+    plate.borderWidth = 0.5
+    plate.borderColor = color.withAlphaComponent(color.alphaComponent * 0.22).cgColor
+    plate.backgroundColor = color.withAlphaComponent(color.alphaComponent * 0.06).cgColor
     CATransaction.commit()
-    let padding: CGFloat = compact ? 1 : 4
-    label.frame = CGRect(x: padding, y: (bounds.height - 13) / 2, width: max(0, bounds.width - 2 * padding), height: 13)
+    let height = label.cell?.cellSize.height ?? 13
+    label.frame = CGRect(x: 0, y: (bounds.height - height) / 2, width: bounds.width, height: height)
   }
 }
 
@@ -235,6 +306,15 @@ extension TabNumberHintView {
       "opacity": layer?.opacity ?? 0, "presentationOpacity": layer?.presentation()?.opacity ?? layer?.opacity ?? 0,
       "frame": [rect.minX, rect.minY, rect.width, rect.height],
       "fontSize": label.font?.pointSize ?? 0, "compact": compact, "ancestors": ancestors, "rowKey": rowKey,
+      "style": String(describing: style), "blocksClose": blocksClose,
+      "cellWidth": label.cell?.cellSize.width ?? 0,
+      "labelFrame": [label.frame.minX, label.frame.minY, label.frame.width, label.frame.height],
+      "iconTranslationX": icon?.layer?.value(forKeyPath: "transform.translation.x") as? CGFloat ?? 0,
+      "presentationIconTranslationX": (icon?.layer?.presentation() ?? icon?.layer)?.value(forKeyPath: "transform.translation.x") as? CGFloat ?? 0,
+      "titleMaskWidth": title?.layer?.mask?.bounds.width ?? title?.bounds.width ?? 0,
+      "presentationTitleMaskWidth": title?.layer?.mask?.presentation()?.bounds.width ?? title?.layer?.mask?.bounds.width ?? title?.bounds.width ?? 0,
+      "transitionStart": layer?.animation(forKey: "tabNumberHintOpacity")?.beginTime ?? 0,
+      "transitionDuration": layer?.animation(forKey: "tabNumberHintOpacity")?.duration ?? 0,
     ]
   }
 }

@@ -131,7 +131,7 @@ class SidebarRowView: NSView {
   var item: SidebarItem?
   weak var context: SidebarContext?
   let body = NSView()
-  private let numberHint = TabNumberHintView()
+  let numberHint = TabNumberHintView()
   var hovered = false { didSet { if hovered != oldValue { repaint() } } }
   var pressed = false { didSet { if pressed != oldValue { pressChanged() } } }
   var hoverKey: String { item?.key ?? "" }
@@ -147,6 +147,7 @@ class SidebarRowView: NSView {
     body.wantsLayer = true
     addSubview(body)
     addSubview(numberHint)
+    numberHint.visibilityChanged = { [weak self] in self?.repaint() }
   }
 
   required init?(coder: NSCoder) { fatalError() }
@@ -159,6 +160,8 @@ class SidebarRowView: NSView {
 
   override func hitTest(_ point: NSPoint) -> NSView? {
     if retired { return nil }
+    let local = convert(point, from: superview)
+    if numberHint.blocksClose, numberHint.frame.contains(local) { return self }
     let hit = super.hitTest(point)
     return hit === body ? self : hit
   }
@@ -237,7 +240,7 @@ class SidebarRowView: NSView {
     case .tab, .split: hintKey = item.key
     default: hintKey = ""
     }
-    numberHint.configure(actions: context.tabNumberActions[hintKey] ?? [], enabled: context.showsTabNumberHints, compact: SidebarRail.contains(width: Double(item.frame.width)) || item.section == .tiles)
+    numberHint.configure(actions: context.tabNumberActions[hintKey] ?? [], enabled: context.showsTabNumberHints, style: SidebarRail.contains(width: Double(item.frame.width)) ? .rail : item.section == .tiles ? .tile : .row)
     let key = renderKey(item, context)
     if let key, key == rendered, item == self.item {
       self.context = context
@@ -526,7 +529,7 @@ final class TabRowView: SidebarRowView {
       ring.dash.isHidden = !ringShown
     }
     let renaming = context.host.renaming == "tab:\(tab?.id ?? "")"
-    let closeShown = hovered && !renaming
+    let closeShown = hovered && !renaming && !numberHint.blocksClose
     if closeShown {
       let close = attached(&closeButton, makeClose)
       close.set(closeLook.symbol, size: 10, weight: .semibold, color: palette.icon, tooltip: closeLook.tooltip)
@@ -587,7 +590,7 @@ final class TabRowView: SidebarRowView {
     }
     x += 5
     let right = bounds.width - 6
-    let closeShown = closeButton.map { !$0.isHidden } ?? false
+    let closeShown = hovered && context?.host.renaming != "tab:\(tab?.id ?? "")"
     let slot = UnreadBadgeLayout.rowSlot(unreadStatus, affordance: closeShown ? 22 : (loading ? 14 : 0))
     if let unreadStatus { unreadBadge.frame = UnreadBadgeLayout.trailingFrame(unreadStatus, in: bounds) }
     closeButton?.frame = NSRect(x: right - 22, y: (h - 22) / 2, width: 22, height: 22)
@@ -599,6 +602,7 @@ final class TabRowView: SidebarRowView {
     } else {
       label.frame = NSRect(x: x, y: (h - 18) / 2, width: titleWidth, height: 18)
     }
+    numberHint.present(title: label, color: label.color)
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     let ring = CGPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), cornerWidth: SidebarMetrics.rowRadius - 1, cornerHeight: SidebarMetrics.rowRadius - 1, transform: nil)
@@ -652,7 +656,7 @@ final class SplitPaneView: NSView {
   let tabId: String
   private let plate = CALayer()
   private let icon = TabIconView()
-  private let label = FadeLabel(fontSize: 12)
+  let label = FadeLabel(fontSize: 12)
   private let unreadBadge = UnreadBadgeView()
   private var unreadStatus: TabUnreadStatus?
   var hovered = false
@@ -796,6 +800,10 @@ final class SplitRowView: SidebarRowView {
       pane.frame = NSRect(x: x, y: 3, width: width, height: bounds.height - 6)
     }
     CATransaction.commit()
+    if let pane = panes.last {
+      pane.layoutSubtreeIfNeeded()
+      numberHint.present(title: pane.label, color: pane.label.color)
+    }
   }
 
   override func pointerMoved() {
@@ -1601,6 +1609,7 @@ final class TileView: SidebarRowView {
     badge.frame = folderId != nil
       ? NSRect(x: bounds.width - 4 - 10, y: bounds.height - 3 - 9, width: 10, height: 9)
       : NSRect(x: bounds.width - 4 - 12, y: bounds.height - 3 - 10, width: 12, height: 10)
+    numberHint.present(icon: icon, color: active ? context?.palette.selectedText : context?.palette.textTab)
   }
 
   override func click(_ mods: SidebarClickMods, count: Int) {

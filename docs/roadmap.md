@@ -27,7 +27,7 @@ and a pane root per shown overlay; the API-skew screen reuses main.
 
 ## 0.4.0: React Native draws nothing
 
-Done when no React Native view appears on screen; React Native only arranges native views. Shipped 2026-11-15 with the media players, the small-window cards and the rest of the extensions side panel still drawn by React Native; they finish in 0.4.1.
+Done when no React Native view appears on screen; React Native only arranges native views. Shipped 2026-11-15 with the cast and share pickers, the small-window cards and the rest of the extensions side panel still drawn by React Native; they finish in 0.4.1.
 
 | Item | Status |
 |---|---|
@@ -37,7 +37,7 @@ Done when no React Native view appears on screen; React Native only arranges nat
 | Downloads popover skin/button/motion, toolbar backdrop and no-shell GroupPanel | shipped (0.4.0): Swift drawing; state, placement and actions are still JS; live material, motion and VoiceOver are owner checks |
 | Native extensions toolbar, overlays and side panel | shipped (0.4.0) for the toolbar, its buttons, popups and menus; the rest of the side panel moves to 0.4.1; VoiceOver, menu tracking and the Dia visual check are owner checks |
 | Native find bar | shipped (0.4.0): FindBarView everywhere; find, replace and focus decide in JS until 0.4.2; VoiceOver speech is an owner check |
-| Native media: sidebar player, hover player, cast and share pickers, tab badges | tab badges and the share bar shipped (0.4.0); the sidebar and hover players and the cast and share pickers move to 0.4.1 |
+| Native media: sidebar player, hover player, cast and share pickers, tab badges | tab badges, the share bar and the sidebar and hover players (f3b22e0c) shipped (0.4.0); the cast and share pickers move to 0.4.1 |
 | Native peek, Little Solara, calendar and meeting cards | Peek and the crash/unresponsive views shipped (0.4.0); small-window card fill and page hosting move to 0.4.1 |
 | Native top tab strip, split chrome, swipe overlay and the rest of the layout surfaces | shipped (0.4.0): layout port patches 1 to 11; the native window layout is the default and the legacy layout stays for when its switch is off |
 | Sidebar on the right: a Left/Right position in Settings, the View menu and the sidebar's menu; peek, resize, hover cards and drops mirror; the window buttons stay top left (as in Arc and Zen); built with the layout port, so it's written once, in Swift | shipped (0.4.0); a right-hand sidebar check by the owner remains |
@@ -51,7 +51,7 @@ layout, and the profile dots fix replaces a React Native pager 0.4.0 retires.
 
 | Item | Status |
 |---|---|
-| From 0.4.0: the last React Native drawing: the sidebar and hover media players, the cast and share pickers, Little Solara's and the calendar and meeting cards' fill and page hosting, and the rest of the extensions side panel | planned |
+| From 0.4.0: the last React Native drawing: the cast and share pickers, Little Solara's and the calendar and meeting cards' fill and page hosting, and the rest of the extensions side panel | planned |
 | Fix: when Solara opens on a profile that isn't first (Work, second of four), the sidebar's profile dots light the first dot until you swipe; they should show the open profile's place from launch (owner 2026-11-14, seen on 0.3.5) | planned |
 | Full screen: no window buttons at rest; when the pointer reaches the top, a small rounded island with the three buttons slides down about 10 pt below the menu bar, at the left, over the sidebar, on a Liquid Glass capsule (NSGlassEffectView), and nothing underneath moves; same on a Mac that always shows the menu bar in full screen; the system's own full-screen title bar reveal sets the timing; windowed unchanged; buttons stay top left with the sidebar on the right. Modelled on Rex (80 x 34 pt island, 9 pt from the left). Mock: https://claude.ai/artifact/EDrrFhwur4Jok5AVNDBPg3 (owner 2026-11-14) | planned |
 | New tabs open at the top by default, and the + New Tab button sits there too (owner 2026-11-14); existing installs keep what they chose. The change touches the recorded settings fixtures (adapter and phase 1b replays) and the replay harness, which drops cases when its source tests fail: re-record on a current base without losing a case. The Dia onboarding preset picks top too (owner 2026-11-15) | in progress: defaults and order-dependent tests done (deftop fin4), replay fixtures left; moved from 0.4.0 |

@@ -165,7 +165,7 @@ const cmd = (key, keyCode, ...more) => K(key, keyCode, "command", ...more);
 
 const devToolsOwn = new Set([
   "⌘O", "⌘P", "⇧⌘C", "⌘F", "⌥⌘F", "⌘G", "⇧⌘G", "⌘R", "⇧⌘R", "⌘0", "⌘+", "⌘=", "⌘-", "⌥⌘C", "⌘[", "⌘]",
-  "⌃⇧⇟", "⌃⇧⇞", "⌘↩", "⌥⌘B", "⇧⌘M",
+  "⌃⇧⇟", "⌃⇧⇞", "⌘↩", "⇧⌘M",
 ]);
 const shortcuts = [
   ["⌘,", cmd(",", 43), { command: "openSettings" }, "⌘,"],

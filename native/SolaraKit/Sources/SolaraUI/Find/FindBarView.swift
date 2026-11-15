@@ -55,6 +55,8 @@ public final class FindBarView: NSView, NSTextFieldDelegate {
   private var replaceOne: FindTextButton!
   private var replaceAll: FindTextButton!
   private var handledFocus = 0
+  private var focusGeneration = 0
+  private var scheduledFocus: Int?
 
   public override var isFlipped: Bool { true }
 
@@ -65,6 +67,7 @@ public final class FindBarView: NSView, NSTextFieldDelegate {
     up = ToolbarButtonView(state: FindBarView.button("previous", "chevron.up", 12), palette: palette)
     down = ToolbarButtonView(state: FindBarView.button("next", "chevron.down", 12), palette: palette)
     done = ToolbarButtonView(state: FindBarView.button("done", "xmark", 11, tooltip: "Done (Esc)"), palette: palette)
+    for button in [up!, down!, done!] { button.supportsAccessibilityPress = true }
     replaceOne = FindTextButton(title: "Replace")
     replaceAll = FindTextButton(title: "All")
     for v: NSView in [icon, field, activeLabel, countLabel, noneLabel, up, down, done, swapIcon, replaceField, noteLabel, replaceOne, replaceAll] { addSubview(v) }
@@ -122,6 +125,10 @@ public final class FindBarView: NSView, NSTextFieldDelegate {
   public var height: CGFloat { state?.replace == true ? 40 + 1 + 38 : 40 }
 
   public func update(_ next: FindBarState) {
+    if state?.focusRequest != next.focusRequest {
+      focusGeneration += 1
+      scheduledFocus = nil
+    }
     state = next
     let theme = NewTabTheme(dark: next.dark, tokens: next.theme)
     let palette = FindBarView.palette(theme)
@@ -166,14 +173,32 @@ public final class FindBarView: NSView, NSTextFieldDelegate {
       b.enabled = !next.query.isEmpty
     }
     needsLayout = true
-    if next.focusRequest != 0 && next.focusRequest != handledFocus {
-      handledFocus = next.focusRequest
-      DispatchQueue.main.async { [weak self] in
-        guard let self, let window = self.window else { return }
-        window.makeFirstResponder(self.field)
-        self.field.currentEditor()?.selectedRange = NSRange(location: 0, length: (self.field.stringValue as NSString).length)
-        self.onEvent(.focused)
-      }
+    scheduleFocusIfNeeded()
+  }
+
+  public override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    if window == nil {
+      focusGeneration += 1
+      scheduledFocus = nil
+    } else {
+      scheduleFocusIfNeeded()
+    }
+  }
+
+  private func scheduleFocusIfNeeded() {
+    guard let request = state?.focusRequest, request != 0, request != handledFocus,
+          scheduledFocus == nil, window != nil, !isHiddenOrHasHiddenAncestor else { return }
+    let generation = focusGeneration
+    scheduledFocus = generation
+    DispatchQueue.main.async { [weak self] in
+      guard let self, self.focusGeneration == generation else { return }
+      self.scheduledFocus = nil
+      guard self.state?.focusRequest == request, !self.isHiddenOrHasHiddenAncestor, let window = self.window,
+            window.makeFirstResponder(self.field), let editor = self.field.currentEditor(), window.firstResponder === editor else { return }
+      self.handledFocus = request
+      editor.selectedRange = NSRange(location: 0, length: (self.field.stringValue as NSString).length)
+      self.onEvent(.focused)
     }
   }
 
@@ -341,7 +366,14 @@ final class FindTextButton: NSView {
     label.frame = CGRect(x: 8 - FindBarView.labelPad, y: (bounds.height - s.height) / 2 - FindBarView.textRise, width: textWidth + 2 * FindBarView.labelPad, height: s.height)
   }
 
+  override func accessibilityPerformPress() -> Bool {
+    guard enabled, !isHiddenOrHasHiddenAncestor else { return false }
+    onPress()
+    return true
+  }
+
   func apply() {
+    setAccessibilityEnabled(enabled)
     layer?.backgroundColor = !enabled ? nil : pressed ? theme.toolbarPressed.cg : hovered ? theme.toolbarHover.cg : nil
     label.textColor = enabled ? theme.textPrimary.ns : theme.iconDisabled.ns
   }

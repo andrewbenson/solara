@@ -11,6 +11,7 @@ final class ToolbarButtonView: NSView {
   var state: ToolbarButtonState { didSet { if state != oldValue { apply() } } }
   var palette: ToolbarPaletteState { didSet { if palette != oldValue { apply() } } }
   var onClick: (ToolbarClick) -> Void = { _ in }
+  var supportsAccessibilityPress = false
   var forcedHover = false { didSet { apply() } }
 
   private let plate = CALayer()
@@ -62,8 +63,12 @@ final class ToolbarButtonView: NSView {
     return true
   }
 
+  override func isAccessibilityEnabled() -> Bool {
+    supportsAccessibilityPress ? enabled : super.isAccessibilityEnabled()
+  }
+
   override func accessibilityPerformPress() -> Bool {
-    guard extensionAction, enabled, !isHiddenOrHasHiddenAncestor else { return false }
+    guard extensionAction || supportsAccessibilityPress, enabled, !isHiddenOrHasHiddenAncestor else { return false }
     onClick(ToolbarClick(id: state.id, kind: .press))
     return true
   }

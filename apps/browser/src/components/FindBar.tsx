@@ -1,16 +1,15 @@
 import { useShortcutHint, withShortcut } from "../lib/commandShortcuts";
 import { claimFocusTag, findFocus } from "../lib/focusClaims";
-import { Surface, Symbol } from "@solara/shell";
+import { Surface } from "@solara/shell";
 import { memo, useEffect, useRef, useState } from "react";
-import { Animated, Easing, findNodeHandle, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Animated, Easing, findNodeHandle, StyleSheet, View } from "react-native";
 import { hex, useTheme } from "../lib/theme";
 import { webviews } from "../lib/webviews";
 import { useBrowser } from "../store/browser";
 import { useFind } from "../store/hooks";
 import type { FindState } from "../store/types";
-import { IconButton, useHover } from "./primitives";
 import { replaceInField } from "./site/selection";
-import { nativeToolbarAvailable, NativeFindBarView, type NativeFindEvent } from "@solara/settings";
+import { NativeFindBarView, type NativeFindEvent } from "@solara/settings";
 
 export const FindBar = memo(function FindBar({ tabId }: { tabId: string }) {
   const hasPage = useBrowser((s) => !!s.tabs[tabId]?.url);
@@ -19,37 +18,16 @@ export const FindBar = memo(function FindBar({ tabId }: { tabId: string }) {
   return <FindBarPanel key={tabId} tabId={tabId} find={find} />;
 });
 
-const handledFocus = new Map<string, number>();
-const FIND_KEYS = [
-  { key: "Escape" },
-  { key: "Enter" },
-  { key: "Enter", shiftKey: true },
-  { key: "Enter", altKey: true },
-  { key: "Enter", altKey: true, shiftKey: true },
-];
-
 function FindBarPanel({ tabId, find }: { tabId: string; find: FindState }) {
   const previousHint = useShortcutHint("findPrevious");
   const nextHint = useShortcutHint("findNext");
   const theme = useTheme();
-  const input = useRef<TextInput>(null);
   const nativeRef = useRef<View>(null);
+  const initialFocusRequest = useRef(find.focusRequest || Date.now()).current;
   const appear = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(appear, { toValue: 1, duration: 160, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
   }, []);
-  useEffect(() => {
-    const request = find.focusRequest;
-    if (!request || handledFocus.get(tabId) === request) return;
-    handledFocus.set(tabId, request);
-    if (nativeToolbarAvailable()) return;
-    input.current?.focus();
-    input.current?.setSelection(0, find.query.length);
-    const windowId = useBrowser.getState().tabs[tabId]?.windowId;
-    if (windowId) claimFocusTag(windowId, findFocus(tabId), () => findNodeHandle(input.current));
-    if (find.query) void webviews.get(tabId)?.find(find.query, true, false);
-  }, [find.focusRequest]);
-
   const setFind = (patch: Partial<FindState>) => useBrowser.getState().setFind(tabId, patch);
   const run = (backwards: boolean, query = find.query, findNext = true) => {
     if (!query) setFind({ count: null, active: 0 });
@@ -74,25 +52,19 @@ function FindBarPanel({ tabId, find }: { tabId: string; find: FindState }) {
     if (all || !count) setNote({ text: count ? `${count} replaced` : "No matches", error: !count });
     run(false, find.query, false);
   };
-  const none = find.count === 0 && !!find.query;
-  const separator = theme.dark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.1)";
-  const error = theme.dark ? "#FF6B63" : "#C93333";
-
-  const nativeState = nativeToolbarAvailable()
-    ? JSON.stringify({
-        query: find.query,
-        count: find.count,
-        active: find.active,
-        replace: !!find.replace,
-        note: note?.text ?? null,
-        noteError: !!note?.error,
-        focusRequest: find.focusRequest ?? 0,
-        previousTooltip: withShortcut("Previous", previousHint),
-        nextTooltip: withShortcut("Next", nextHint),
-        dark: !!theme.dark,
-        theme: { textPrimary: theme.textPrimary, textSecondary: theme.textSecondary, placeholder: theme.placeholder, selection: theme.selection, toolbarHover: theme.toolbarHover, toolbarPressed: theme.toolbarPressed, icon: theme.icon, iconDisabled: theme.iconDisabled, rowHover: theme.rowHover },
-      })
-    : null;
+  const nativeState = JSON.stringify({
+    query: find.query,
+    count: find.count,
+    active: find.active,
+    replace: !!find.replace,
+    note: note?.text ?? null,
+    noteError: !!note?.error,
+    focusRequest: find.focusRequest || initialFocusRequest,
+    previousTooltip: withShortcut("Previous", previousHint),
+    nextTooltip: withShortcut("Next", nextHint),
+    dark: !!theme.dark,
+    theme: { textPrimary: theme.textPrimary, textSecondary: theme.textSecondary, placeholder: theme.placeholder, selection: theme.selection, toolbarHover: theme.toolbarHover, toolbarPressed: theme.toolbarPressed, icon: theme.icon, iconDisabled: theme.iconDisabled, rowHover: theme.rowHover },
+  });
   const onNativeEvent = (e: NativeFindEvent) => {
     if (e.kind === "query") {
       setFind({ query: e.text });
@@ -129,97 +101,10 @@ function FindBarPanel({ tabId, find }: { tabId: string; find: FindState }) {
         shadowOffset={[0, 6]}
         style={{ width: 340 }}
       >
-        {nativeState ? (
-          <View ref={nativeRef} style={{ height: find.replace ? 79 : 40 }}>
-            <NativeFindBarView style={StyleSheet.absoluteFill} state={nativeState} onFindEvent={(e) => onNativeEvent(e.nativeEvent)} />
-          </View>
-        ) : (
-        <>
-        <View style={{ height: 40, flexDirection: "row", alignItems: "center", paddingLeft: 11, paddingRight: 4, gap: 2 }}>
-          <Symbol name="magnifyingglass" size={13} color={theme.textSecondary} style={{ width: 16, height: 16, marginRight: 5 }} />
-          <TextInput
-            ref={input}
-            autoFocus
-            value={find.query}
-            onChangeText={(query) => {
-              setFind({ query });
-              run(false, query, false);
-            }}
-            placeholder="Find on Page"
-            placeholderTextColor={theme.placeholder}
-            selectionColor={theme.selection}
-            enableFocusRing={false}
-            onSubmitEditing={() => run(false)}
-            keyDownEvents={FIND_KEYS}
-            onKeyDown={(e) => {
-              const { key, shiftKey, ctrlKey, metaKey } = e.nativeEvent;
-              if (key === "Escape") close();
-              else if (key === "Enter" && !ctrlKey && !metaKey) run(!!shiftKey);
-            }}
-            style={{ flex: 1, fontSize: 14, color: theme.textPrimary, paddingVertical: 0 }}
-          />
-          {none ? (
-            <Text style={{ fontSize: 12, color: error, marginRight: 6 }}>No results</Text>
-          ) : find.count !== null && !!find.query ? (
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginRight: 6 }}>
-              <Text style={{ fontSize: 12, color: theme.textPrimary, fontVariant: ["tabular-nums"] }}>{find.active}</Text>
-              <View style={{ width: StyleSheet.hairlineWidth * 2, height: 12, backgroundColor: separator }} />
-              <Text style={{ fontSize: 12, color: theme.textSecondary, fontVariant: ["tabular-nums"] }}>{find.count}</Text>
-            </View>
-          ) : null}
-          <IconButton icon="chevron.up" size={12} box={26} radius={6} disabled={!find.count} onPress={() => run(true)} tooltip={withShortcut("Previous", previousHint)} />
-          <IconButton icon="chevron.down" size={12} box={26} radius={6} disabled={!find.count} onPress={() => run(false)} tooltip={withShortcut("Next", nextHint)} />
-          <View style={{ width: 1, height: 18, marginHorizontal: 3, backgroundColor: separator }} />
-          <IconButton icon="xmark" size={11} box={26} radius={6} onPress={close} tooltip="Done (Esc)" />
+        <View ref={nativeRef} style={{ height: find.replace ? 79 : 40 }}>
+          <NativeFindBarView style={StyleSheet.absoluteFill} state={nativeState} onFindEvent={(e) => onNativeEvent(e.nativeEvent)} />
         </View>
-        {find.replace && <View style={{ height: StyleSheet.hairlineWidth * 2, backgroundColor: separator }} />}
-        {find.replace && (
-          <View style={{ height: 38, flexDirection: "row", alignItems: "center", paddingLeft: 11, paddingRight: 6, gap: 4 }}>
-            <Symbol name="arrow.triangle.swap" size={12} color={theme.textSecondary} style={{ width: 16, height: 16, marginRight: 3 }} />
-            <TextInput
-              value={replacement}
-              onChangeText={setReplacement}
-              placeholder="Replace"
-              placeholderTextColor={theme.placeholder}
-              selectionColor={theme.selection}
-              enableFocusRing={false}
-              onSubmitEditing={() => void replace(false)}
-              keyDownEvents={[{ key: "Escape" }]}
-              onKeyDown={(e) => e.nativeEvent.key === "Escape" && close()}
-              style={{ flex: 1, fontSize: 14, color: theme.textPrimary, paddingVertical: 0 }}
-            />
-            {note && <Text style={{ fontSize: 12, color: note.error ? error : theme.textSecondary, marginRight: 2 }}>{note.text}</Text>}
-            <TextButton title="Replace" disabled={!find.query} onPress={() => void replace(false)} />
-            <TextButton title="All" disabled={!find.query} onPress={() => void replace(true)} />
-          </View>
-        )}
-        </>
-        )}
       </Surface>
     </Animated.View>
-  );
-}
-
-function TextButton({ title, disabled, onPress }: { title: string; disabled: boolean; onPress: () => void }) {
-  const theme = useTheme();
-  const { hovered, hoverProps } = useHover();
-  return (
-    <View {...hoverProps}>
-      <Pressable onPress={onPress} disabled={disabled}>
-        {({ pressed }) => (
-          <View
-            style={{
-              height: 26,
-              paddingHorizontal: 8,
-              borderRadius: 6,
-              justifyContent: "center",
-              backgroundColor: disabled ? undefined : pressed ? theme.toolbarPressed : hovered ? theme.toolbarHover : undefined,
-            }}
-          >
-            <Text style={{ fontSize: 12, fontWeight: "500", color: disabled ? theme.iconDisabled : theme.textPrimary }}>{title}</Text>
-          </View>
-        )}
-      </Pressable>
-    </View>
   );
 }

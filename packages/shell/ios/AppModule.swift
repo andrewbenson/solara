@@ -193,7 +193,17 @@ public class AppModule: Module {
 
     AsyncFunction("devMenuCommand") { (command: String, arg: String?) in
       #if DEBUG
-      MenuTarget.shared.handler?(command, arg, WindowManager.shared.keyWindowId)
+      MenuTarget.shared.dispatchCommand(command, arg: arg, windowId: WindowManager.shared.keyWindowId)
+      #endif
+    }.runOnQueue(.main)
+
+    AsyncFunction("devWorkspaceMenuCommand") { (windowId: String, command: String, arg: String?) in
+      #if DEBUG
+      if command == "closeWindow" {
+        WindowManager.shared.windows[windowId]?.performClose(nil)
+      } else {
+        MenuTarget.shared.dispatchCommand(command, arg: arg, windowId: windowId)
+      }
       #endif
     }.runOnQueue(.main)
 

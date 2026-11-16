@@ -237,6 +237,7 @@ enum SwitcherHold {
 
 public enum NativeMenuCommands {
   nonisolated(unsafe) public static var handlers: [String: (String?) -> Void] = [:]
+  nonisolated(unsafe) public static var workspaceAvailability: ((String, String?, String?) -> Bool?)?
   nonisolated(unsafe) public static var argumentHandlers: [String: (String?, String?) -> Bool] = [:]
 }
 
@@ -248,8 +249,9 @@ final class MenuTarget: NSObject, NSMenuItemValidation {
 
   @objc(commandDispatch:) func performCommand(_ sender: NSMenuItem) {
     guard let item = sender as? CommandItem else { return }
+    let nativeAvailability = NativeMenuCommands.workspaceAvailability?(item.command, item.arg, item.windowless ? nil : WindowManager.shared.keyWindowId)
     if let run = NativeMenuCommands.argumentHandlers[item.command] {
-      guard !MenuState.current.disabled.contains(item.stateKey), !MenuState.current.disabled.contains(item.command) else { return }
+      guard nativeAvailability ?? (!MenuState.current.disabled.contains(item.stateKey) && !MenuState.current.disabled.contains(item.command)) else { return }
       if run(item.arg, item.windowless ? nil : WindowManager.shared.keyWindowId) { return }
     }
     if let run = NativeMenuCommands.handlers[item.command] {
@@ -267,6 +269,12 @@ final class MenuTarget: NSObject, NSMenuItemValidation {
     if item.command == "tabSwitcher" { SwitcherHold.opened(by: item) }
   }
 
+  func dispatchCommand(_ command: String, arg: String?, windowId: String?) {
+    if command == "closeWindow" { return closeWindow(nil) }
+    if NativeMenuCommands.argumentHandlers[command]?(arg, windowId) == true { return }
+    handler?(command, arg, windowId)
+  }
+
   @objc(cut:) func cutEdit(_ sender: Any?) { forwardEdit(#selector(NSText.cut(_:)), from: sender) }
   @objc(copy:) func copyEdit(_ sender: Any?) { forwardEdit(#selector(NSText.copy(_:)), from: sender) }
   @objc(paste:) func pasteEdit(_ sender: Any?) { forwardEdit(#selector(NSText.paste(_:)), from: sender) }
@@ -276,7 +284,9 @@ final class MenuTarget: NSObject, NSMenuItemValidation {
 
   @objc(undo:) func undoOrReopenClosedTab(_ sender: Any?) {
     if Self.undoReopensClosedTab {
-      handler?("reopenClosedTab", nil, WindowManager.shared.keyWindowId)
+      if NativeMenuCommands.argumentHandlers["reopenClosedTab"]?(nil, WindowManager.shared.keyWindowId) != true {
+        handler?("reopenClosedTab", nil, WindowManager.shared.keyWindowId)
+      }
     } else {
       NSApp.sendAction(Self.undoAction, to: nil, from: sender)
     }
@@ -284,7 +294,9 @@ final class MenuTarget: NSObject, NSMenuItemValidation {
 
   private static var undoReopensClosedTab: Bool {
     let state = MenuState.current
-    guard state.undoReopensClosedTab, !state.disabled.contains("reopenClosedTab"),
+    let canReopen = NativeMenuCommands.workspaceAvailability?("reopenClosedTab", nil, WindowManager.shared.keyWindowId)
+      ?? !state.disabled.contains("reopenClosedTab")
+    guard state.undoReopensClosedTab, canReopen,
       WindowManager.shared.keyWindowId != "settings", let window = WindowManager.shared.keyBrowserWindow
     else { return false }
     return !MainMenu.editsText(window.firstResponder)
@@ -334,7 +346,8 @@ final class MenuTarget: NSObject, NSMenuItemValidation {
     if item.keyEquivalent == "\r", NSApp.keyWindow?.firstResponder is NSText { return false }
     if MainMenu.movesCaret(item), NSApp.currentEvent?.type == .keyDown, MainMenu.editsText(NSApp.keyWindow?.firstResponder) { return false }
     if item.command == "findInPage", WindowManager.shared.keyWindowId == "settings" { return true }
-    let enabled = !state.disabled.contains(item.stateKey) && !state.disabled.contains(item.command)
+    let enabled = NativeMenuCommands.workspaceAvailability?(item.command, item.arg, item.windowless ? nil : WindowManager.shared.keyWindowId)
+      ?? (!state.disabled.contains(item.stateKey) && !state.disabled.contains(item.command))
     if item.hidesWhenDisabled, item.isHidden == enabled { item.isHidden = !enabled }
     return enabled
   }

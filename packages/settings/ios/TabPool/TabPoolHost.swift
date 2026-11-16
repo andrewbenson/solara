@@ -140,6 +140,10 @@ final class TabPoolHost {
     }
   }
 
+  func prepareCommandFocus() {
+    pool?.reconcile()
+  }
+
   func devPageEvent(_ tabId: String, _ name: String, _ payload: [String: Any]) -> Bool {
     #if DEBUG
       guard let entry = pages[tabId] else { return false }

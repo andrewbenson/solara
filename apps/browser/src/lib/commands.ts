@@ -1,4 +1,5 @@
-import { nativeAppIntegrationCommand } from "@solara/settings";
+import { nativeOwnsWorkspace } from "../store/nativeStore";
+import { nativeAppIntegrationCommand, nativeWorkspaceCommand } from "@solara/settings";
 import { showNativePanelNow } from "../components/CommandPanel";
 import { markPanelFrame } from "./perfMarks";
 import {
@@ -69,7 +70,19 @@ import { peekTabId } from "../store/peek";
 import { setSidebarPosition, toggleSidebarIconsOnly } from "../store/sidebarRail";
 import { expectFocus, findFocus, urlEditFocus } from "./focusClaims";
 
+let commandHandlersEnabled = true;
+let commandHandlerCalls = 0;
+let commandHandlerBlocked = 0;
+
+export const commandHandlers = {
+  setEnabled(enabled: boolean) { if (__DEV__) commandHandlersEnabled = enabled; },
+  stats: () => ({ enabled: commandHandlersEnabled, calls: commandHandlerCalls, blocked: commandHandlerBlocked }),
+};
+
 export function runCommand({ command, arg, windowId: requested }: CommandEvent) {
+  if (nativeOwnsWorkspace() && nativeWorkspaceCommand(command, arg, requested)) return;
+  if (__DEV__ && !commandHandlersEnabled) { commandHandlerBlocked++; return; }
+  if (__DEV__) commandHandlerCalls++;
   switch (command) {
     case "showOnboarding":
     case "toolTour":

@@ -30,7 +30,7 @@ export function createWindowSync({ port, getState, isQuitting, lightsCenter, isU
   const titles = new Map<string, string>();
 
   const releaseIfIncognito = (w: BrowserState["windows"][string] | undefined) => {
-    if (!w?.incognito) return;
+    if (nativeOwnsWorkspace() || !w?.incognito) return;
     const profileId = w.profileId;
     const release = () => {
       if (!Object.values(getState().windows).some((window) => window.profileId === profileId)) port.releaseProfile(engineProfile(profileId));

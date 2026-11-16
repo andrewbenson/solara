@@ -7,7 +7,7 @@ import { openSettings } from "../components/settings/windows";
 import { useSidebarUi } from "../components/sidebar/state";
 import { useBrowser } from "../store/browser";
 import * as actions from "./actions";
-import { runCommand } from "./commands";
+import { commandHandlers, runCommand } from "./commands";
 import * as favicons from "./favicons";
 import { probeStore } from "./perfProbe";
 import { useLifecycle } from "./tabLifecycle";
@@ -30,7 +30,7 @@ export function startDevHarness() {
   }
 
   const ac = {
-    store: useBrowser, actions, runCommand, webviews, shell, omnibox: omniboxDrivers, pages: pagesDrivers,
+    store: useBrowser, actions, runCommand, commandHandlers, webviews, shell, omnibox: omniboxDrivers, pages: pagesDrivers,
     pageState: usePages,
     reload: () => setTimeout(() => require("react-native").DevSettings.reload(), 100),
     panelFrameMarks: () => require("./perfMarks").panelFrameMarks() as [string, number][],

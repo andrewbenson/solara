@@ -25,14 +25,14 @@ public struct Command: Sendable, Equatable {
   public var json: JSONValue { ["name": .string(name), "args": .array(args)] }
 
   public static let durable: Set<String> = [
-    "updateSettings", "setSidebarPosition", "setWindowSidebar", "setWindowKeptOnClose", "closeWindow", "restoreClosingWindow", "deleteProfile", "createProfile", "updateProfile", "reorderProfiles", "setDefaultProfile",
+    "updateSettings", "setSidebarPosition", "setWindowSidebar", "setWindowKeptOnClose", "closeWindow", "restoreClosingWindow", "restoreCommandWindow", "deleteProfile", "createProfile", "updateProfile", "reorderProfiles", "setDefaultProfile",
   ]
 
   public var isDurable: Bool { Command.durable.contains(name) }
 
   public static let known: Set<String> = [
     "pageReport", "registerKeepAliveRuntime", "importWorkspace", "setWindowLayout", "setSidebarPosition", "setWindowSidebar", "newTab", "closeTab", "closeTabs", "activate", "activateNumberedTab", "handOffPin", "activateIndex", "cycle", "navigate", "updateTab", "navigated", "faviconChanged",
-    "duplicateTab", "togglePin", "moveTab", "moveTabBy", "createWindow", "closeWindow", "restoreClosingWindow", "forgetClosedWindow", "setWindowKeptOnClose", "setWindowFrame", "setWindowFullScreen", "toggleSidebar",
+    "closeCommandTabs", "reopenCommandClosed", "restoreCommandWindow", "duplicateTab", "togglePin", "moveTab", "moveTabBy", "createWindow", "closeWindow", "restoreClosingWindow", "forgetClosedWindow", "setWindowKeptOnClose", "setWindowFrame", "setWindowFullScreen", "toggleSidebar",
     "switchProfile", "moveTabsToWindow", "moveTabToProfile", "mergeAllWindows", "reopenClosed", "reopenClosedTab", "reopenClosedWindow",
     "restoreClosed", "createProfile", "updateProfile", "deleteProfile", "reorderProfiles", "setDefaultProfile", "profileDataDeleted",
     "createGroup", "updateGroup", "addTabsToGroup", "removeTabsFromGroup", "ungroup", "newNestedGroup", "closeGroup", "deleteGroup",
@@ -165,6 +165,9 @@ extension Session {
     case "newTab":
       result = .string(newTab(try a.requireString(0), newTabOptions(a[1]?.object)))
     case "closeTab": closeTab(try a.requireString(0))
+    case "closeCommandTabs": closeCommandTabs(a.strings(0))
+    case "reopenCommandClosed": reopenCommandClosed(a.string(0))
+    case "restoreCommandWindow": result = JSONValue(restoreCommandWindow(try a.requireString(0), chromeWindow: try a.requireString(1), live: a[2]?.array ?? []))
     case "closeTabs":
       closeTabs(a.strings(0), lastClosesWindow: a[1]?["lastClosesWindow"]?.truthy ?? false,
                 windowClosedByChrome: a[1]?["windowClosedByChrome"]?.truthy ?? false)

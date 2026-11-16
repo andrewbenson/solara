@@ -533,3 +533,11 @@ The complete legacy path remains for explicit development overrides, workspace-o
 Run all layout-port focused drivers on a fresh API 64 default candidate, then full focus/window/page-lifetime
 acceptance and stable smoke/update/perf gates. Patch 9 Peek/holds and Patch 10 readiness are integrated; their default runtime acceptance remains a gate.
 Do not mark roadmap rows complete or lower native/perf ceilings without their own acceptance measurements.
+
+## Native tab and window commands (0.4.2)
+
+`WorkspaceMenuCommandTests` covers native command resolution and canonical store actions for tabs and windows,
+including panel/Peek dismissal and close-together restoration. Run the SolaraKit suite with `-Xswiftc -DSOLARA_PROBES`.
+`node apps/browser/scripts/native-tab-commands-test.mjs <Debug app> <fresh scratch directory>` disables JavaScript
+command handlers and exercises actual menu/shortcut routing, tab state and native windows. The command port is
+pending VM build, Swift tests and driver acceptance; no Solara build, install or instance ran on the owner's Mac.

@@ -2,6 +2,47 @@ import AppKit
 
 public enum WindowHost {
   public static var makeWindow: (() -> NSWindow)?
+  @MainActor public static var closeRequest: ((String) -> Bool)?
+  @MainActor public static func beginCommandFocus(_ command: String, windowId: String) -> Int? {
+    guard let window = WindowManager.shared.windows[windowId] else { return nil }
+    NotificationCenter.default.post(name: Notification.Name("SolaraCommandWillDispatch"), object: window, userInfo: ["command": command])
+    guard command == "newTab" else { return nil }
+    _ = FocusHandoff.shared.takeBegun()
+    let generation = FocusHandoff.shared.begin(in: window)
+    _ = FocusHandoff.shared.takeBegun()
+    return generation
+  }
+  @MainActor public static func cancelCommandFocus(_ generation: Int, restoring: Bool) {
+    FocusHandoff.shared.cancel(generation, restoringSource: restoring)
+  }
+  @MainActor public static func endCommandFocus(_ windowId: String) {
+    guard let window = WindowManager.shared.windows[windowId] else { return }
+    FocusHandoff.shared.cancel(in: window)
+  }
+  @MainActor public static func contentView(_ id: String) -> NSView? { WindowManager.shared.windows[id]?.contentView }
+  @MainActor public static func openBrowserWindow(_ id: String, frame: [Double]?, incognito: Bool, profile: String, title: String, focus: Bool, chromeWindow: String?, small: Bool, size: [Double]?) {
+    WindowManager.shared.open(id: id, frame: frame, incognito: incognito, title: title, focus: focus, kind: small ? "small" : "browser", profile: profile, size: size, chromeWindow: chromeWindow, animated: true)
+  }
+  @MainActor public static func closeBrowserWindow(_ id: String) { WindowManager.shared.close(id: id) }
+  @MainActor public static func cancelWindowClose(_ id: String) { WindowManager.shared.focus(id: id, cancellingClose: true) }
+
+  @MainActor public static func retainLastWindow(_ id: String, committingClose: Bool = false) -> Bool {
+    WindowManager.shared.retainLastWindow(id: id, committingClose: committingClose)
+  }
+  @MainActor public static func animateClose(_ id: String, done: @escaping @MainActor () -> Void) {
+    WindowManager.shared.animateClose(id: id, after: nil) { MainActor.assumeIsolated { done() } }
+  }
+  @MainActor public static var hasClosableForeignKeyWindow: Bool {
+    guard WindowManager.shared.keyWindowId == nil, let key = NSApp.keyWindow, !(key is NSPanel) else { return false }
+    return key.styleMask.contains(.closable)
+  }
+  @MainActor public static func closeForeignKeyWindow() -> Bool { WindowManager.shared.closeForeignKeyWindow() }
+  @MainActor public static func closeAuxiliaryWindow(_ id: String) -> Bool {
+    guard WindowManager.shared.auxKinds[id] != nil else { return WindowManager.shared.closeForeignKeyWindow() }
+    WindowManager.shared.close(id: id)
+    return true
+  }
+
   nonisolated(unsafe) public static var makeContentView: ((_ windowId: String) -> NSView)?
   nonisolated(unsafe) public static var makeRootView: ((_ module: String, _ props: [String: Any]) -> NSView?)?
   @MainActor public static var prepareContent: ((_ windowId: String, _ root: NSView, _ committed: @escaping () -> Void) -> Bool)?
@@ -721,7 +762,9 @@ final class WindowManager: NSObject, NSWindowDelegate {
     case .userRequest: break
     }
     if let id = id(of: sender), retainLastWindow(id: id) { return false }
-    guard let id = id(of: sender), auxKinds[id] == nil, appEventsObserved, let emit else { return true }
+    guard let id = id(of: sender), auxKinds[id] == nil else { return true }
+    if MainActor.assumeIsolated({ WindowHost.closeRequest?(id) == true }) { return false }
+    guard appEventsObserved, let emit else { return true }
     emit("onWindowEvent", ["type": "closeRequest", "id": id])
     return false
   }
@@ -1351,6 +1394,11 @@ final class FocusHandoff {
     drop(in: gate) { $0.generation == id }
     gate.generations.remove(at: index)
     settle(gate)
+  }
+
+  func cancel(in window: NSWindow) {
+    guard let gate = gates[ObjectIdentifier(window)] else { return }
+    end(gate, restoring: false)
   }
 
   func refusesUnhandledKey(_ event: NSEvent, in window: NSWindow) -> Bool {

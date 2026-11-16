@@ -101,6 +101,7 @@ enum NativeSettingsWindow {
 
   static func install() {
     SettingsProbe.enabled = ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] == "1"
+    NativeWorkspaceCommands.install()
     NativeOnboarding.register()
     NativeAppStartup.shared.install()
     ShellLiveNotifications.silencesSite = { directory, origin in

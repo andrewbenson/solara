@@ -5,6 +5,7 @@ type SettingsCall = { id: number; name: string; args: string };
 type NativeSettingsModule = {
   available(): boolean;
   servicesActive?(): boolean;
+  workspaceCommand?(command: string, arg: string | null, windowId: string | null): boolean;
   startAppStartup(optionsJSON: string): Promise<string>;
   completeAppStartup(): Promise<void>;
   cancelOnboardingReplay(requestId: string): Promise<void>;
@@ -484,3 +485,7 @@ export * from "./littleSolara";
 export * from "./cliIndicator";
 export * from "./topStrip";
 export * from "./pages";
+
+export function nativeWorkspaceCommand(command: string, arg: string | null | undefined, windowId: string | null): boolean {
+  return native?.workspaceCommand?.(command, arg ?? null, windowId) ?? false;
+}

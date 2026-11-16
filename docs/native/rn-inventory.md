@@ -41,6 +41,12 @@ Theme resolution, ranking, geometry, and gesture thresholds count as behavior. T
 5. Native workspace ownership is already the default. It does not remove JS sync, library reconciliation, caches, or migration work.
 6. A native window shell still wraps an RN main root. Browser pane roots add more RN roots. Native UI switches do not disable the RN runtime.
 
+The 0.4.2 tabs/windows command port adds Swift ownership of menu, shortcut and direct-command routing through
+`WorkspaceMenuCommand` and `NativeWorkspaceCommands`. Existing store reducers remain canonical, including `newTab`.
+JavaScript command branches remain the workspace-ownership fallback; the new handler-disabled driver and Swift tests
+require VM verification. Other command groups, menu-state projection and remaining window lifecycle feeds still count
+as column b behavior; this partial port does not complete the 0.4.2 command row or change source totals.
+
 These are source findings. Runtime reachability, visual parity, and root counts in an actual release are **unverified** by this source inventory; its release-path findings remain the 2026-11-13 audit.
 Native counterparts below prove that code exists. They do not establish complete behavioral parity.
 

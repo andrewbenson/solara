@@ -1853,7 +1853,7 @@ NSMapTable<SolaraCoreProfile *, SolaraCoreWindowController *> *StandaloneWindows
         }];
       }
     }
-    if (!tabs.count || !SolaraCoreServices.extensionsHandler) return;
+    if (!tabs.count || (!SolaraCoreServices.closeCancelledHandler && !SolaraCoreServices.extensionsHandler)) return;
     NSString *previousToken = controller->_chromeToken;
     const BOOL previousAnnounced = controller->_announced;
     const BOOL previousShowInactive = controller->_showInactive;
@@ -1875,10 +1875,12 @@ NSMapTable<SolaraCoreProfile *, SolaraCoreWindowController *> *StandaloneWindows
       waiting->_announced = previousAnnounced;
       waiting->_showInactive = previousShowInactive;
     });
-    SolaraCoreServices.extensionsHandler(@"tabs", @{
+    NSDictionary *request = @{
       @"action" : @"closeCancelled", @"chromeWindow" : token, @"appWindow" : controller.appWindowId ?: @"",
       @"focused" : @YES, @"tabs" : tabs,
-    });
+    };
+    if (SolaraCoreServices.closeCancelledHandler && SolaraCoreServices.closeCancelledHandler(request)) return;
+    if (SolaraCoreServices.extensionsHandler) SolaraCoreServices.extensionsHandler(@"tabs", request);
   });
 }
 

@@ -37,6 +37,11 @@ public class SettingsModule: Module {
       NativeSettingsWindow.enabled
     }
 
+    Function("workspaceCommand") { (command: String, arg: String?, windowId: String?) -> Bool in
+      if Thread.isMainThread { return MainActor.assumeIsolated { NativeWorkspaceCommands.perform(command, arg: arg, windowId: windowId) } }
+      return DispatchQueue.main.sync { MainActor.assumeIsolated { NativeWorkspaceCommands.perform(command, arg: arg, windowId: windowId) } }
+    }
+
     Function("servicesActive") { () -> Bool in
       NativeCliControl.active
     }

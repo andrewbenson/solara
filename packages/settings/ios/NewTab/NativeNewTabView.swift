@@ -58,10 +58,16 @@ final class NativeNewTabView: ExpoView {
   func propsDidUpdate() {
     if !windowId.isEmpty && !tabId.isEmpty { hero.configure(NewTabIdentity(windowId: windowId, tabId: tabId, profileId: profileId)) }
     hero.theme = NewTabTheme(dark: dark, tokens: themeTokens)
+    NativeWorkspaceCommands.newTabViewReady(self)
     if marks != loadedMarks {
       loadedMarks = marks
       hero.markImages = NewTabNetwork.markImages(marks)
     }
+  }
+
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    NativeWorkspaceCommands.newTabViewReady(self)
   }
 
   private func makeEvents() -> HeroBarEvents {

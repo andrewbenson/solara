@@ -104,6 +104,7 @@ SolaraCoreResult Dated(NSString *key, SolaraCoreResult completion) {
 }
 
 void (^gExtensionsHandler)(NSString *, NSDictionary *);
+BOOL (^gCloseCancelledHandler)(NSDictionary *);
 
 void Changed(NSString *profile, NSString *extensionId, NSString *event) {
   if (gExtensionsHandler && extensionId.length)
@@ -366,6 +367,14 @@ void solaracore_host::ApplyKeepAwakeSites(SolaraCoreProfile *profile) {
   if (!host.length || zoom <= 0) return;
   const double level = fabs(zoom - 1) < 1e-6 ? 0 : log(zoom) / log(1.2);
   [self call:@"ac_zoom_set" profile:profile args:@{@"host" : host, @"level" : @(level)} completion:^(NSDictionary *) {}];
+}
+
++ (BOOL (^)(NSDictionary *))closeCancelledHandler {
+  return gCloseCancelledHandler;
+}
+
++ (void)setCloseCancelledHandler:(BOOL (^)(NSDictionary *))handler {
+  gCloseCancelledHandler = [handler copy];
 }
 
 + (void (^)(NSString *, NSDictionary *))extensionsHandler {

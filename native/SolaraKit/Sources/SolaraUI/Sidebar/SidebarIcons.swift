@@ -14,7 +14,14 @@ public final class SidebarFavicons {
   public typealias Loader = @MainActor (SidebarFaviconRequest) async throws -> NSImage?
 
   public var loader: Loader?
-  public var newTabMark: NSImage?
+  static let bundledNewTabMark: NSImage? = {
+    guard let url = Bundle.module.url(forResource: "new-tab-mark", withExtension: "png"), let image = NSImage(contentsOf: url) else { return nil }
+    image.size = NSSize(width: 16, height: 16)
+    image.isTemplate = true
+    return image
+  }()
+
+  public var newTabMark: NSImage? = SidebarFavicons.bundledNewTabMark
   private var cache: [SidebarFaviconRequest: NSImage] = [:]
   private var missing: Set<SidebarFaviconRequest> = []
   private final class Pending {
@@ -260,7 +267,7 @@ final class TabIconView: NSView {
       emoji.frame = NSRect(x: (size - fitting.width) / 2, y: (size - fitting.height) / 2, width: fitting.width, height: fitting.height)
       emoji.isHidden = false
     } else if spec.url.isEmpty && (spec.favicon ?? "").isEmpty {
-      image.show(favicons?.newTabMark, in: box, tint: dark ? .white : .black, alpha: dark ? 0.28 : 0.3, radius: 0, scale: window?.backingScaleFactor ?? 2)
+      image.show(favicons?.newTabMark ?? SidebarFavicons.bundledNewTabMark, in: box, tint: dark ? .white : .black, alpha: dark ? 0.28 : 0.3, radius: 0, scale: window?.backingScaleFactor ?? 2)
     } else {
       showFavicon(spec, box: box)
     }
@@ -498,6 +505,7 @@ public final class FaviconView: NSView {
 
   public func update(_ state: FaviconState?, image: NSImage?) {
     self.state = state
+    let image = image ?? (state?.mode == "newTab" ? SidebarFavicons.bundledNewTabMark : nil)
     hasImage = image != nil
     isHidden = state == nil
     guard let state else { return }

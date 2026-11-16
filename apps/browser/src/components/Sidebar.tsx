@@ -30,13 +30,15 @@ export function Sidebar({ width }: { width: number }) {
   const header = addressBar ? SIDEBAR_HEADER_WITH_FIELD : layout.sidebarHeader;
   const hasDownloads = useBrowser((s) => downloadsIn(s, windowId).length > 0);
   const dots = useProfileDotsShown();
+  const nativeProfileBar = useBrowser((s) => !s.windows[windowId]?.incognito && s.profileOrder.length > 0);
   const footerDownloads = addressBar && hasDownloads;
   const pending = usePendingUpdate();
   const footerRow = dots || footerDownloads ? PROFILE_DOTS_HEIGHT : 0;
   const footer = footerRow + (pending ? UPDATE_PILL_BAND : 0);
   const [shellCapable] = useState(() => nativeSidebarShell(windowId));
   const shellColumn = shellCapable && shellColumnFitsAddressBar(addressBar);
-  const column = useMemo(() => ({ top: header - GLOW_ROOM, header, bottom: footer, clip: paging }), [header, footer, paging]);
+  const nativeFooter = (nativeProfileBar || footerDownloads ? 40 : 0) + (pending ? UPDATE_PILL_BAND : 0);
+  const column = useMemo(() => ({ top: header - GLOW_ROOM, header, bottom: nativeFooter, clip: paging }), [header, nativeFooter, paging]);
 
   useLayoutEffect(() => dismissHoverIn(windowId), [windowId, current, paging]);
 

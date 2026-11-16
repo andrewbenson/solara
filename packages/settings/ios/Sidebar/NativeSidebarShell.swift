@@ -288,9 +288,13 @@ final class SidebarShellColumn: NSView, DevDropDestination {
     let shell = NativeWindowShell.host(windowId)?.shell
     switch action {
     case .profileMenu: NativeSidebarShell.send(windowId, "profileMenu")
+    case .manageProfiles: NativeSidebarShell.send(windowId, "manageProfiles")
     case .toggleDownloads: NativeSidebarShell.send(windowId, "toggleDownloads")
     case .switchProfile(let id):
       _ = try? NativeStoreHandle.store?.dispatch(Command("switchProfile", [.string(windowId), .string(id)]), origin: .native)
+      FrameUpdates.flush()
+    case .changeProfileIcon(let id, let icon):
+      _ = try? NativeStoreHandle.store?.dispatch(Command("updateProfile", [.string(id), .object(["icon": icon.map(JSONValue.string) ?? .null])]), origin: .native)
       FrameUpdates.flush()
     case .profileIntent(let id): NativeProfileWarmup.shared.hover(id, source: "footer")
     case .liveWidth(let width):
@@ -606,9 +610,11 @@ final class NativeLayoutChrome {
       sidebar.closeHint = feed.closeHint
       sidebar.backHint = feed.backHint
     }
-    let dots = window.incognito || state.profileOrder.count < 2 ? [] : state.profileOrder.enumerated().compactMap { index, id -> SidebarChromeDot? in
+    let dots = window.incognito ? [] : state.profileOrder.enumerated().compactMap { index, id -> SidebarChromeDot? in
       guard let profile = state.profiles[id] else { return nil }
-      return SidebarChromeDot(id: id, name: profile.name, slot: Double(index), icon: profile.icon)
+      return SidebarChromeDot(id: id, name: profile.name, slot: Double(index), icon: profile.icon,
+        shortcut: CommandShortcutSnapshot().hint("switchProfile:\(id)", state: state),
+        color: NativeLayoutAppearance(state: state, profileId: id, incognito: false).tokens["accent"])
     }
     let downloadsTooltip = featureChrome?.controls.downloadsTooltip
       ?? CommandShortcutSnapshot().hint("downloads", state: state).map { "Downloads (\($0))" } ?? "Downloads"

@@ -196,7 +196,7 @@ export function profilesAdapter(links: () => Record<string, { syncId: string; th
         if (!record || !changed.has(key)) continue;
         try {
           const legacy = ownTheme(store().profiles[id]!) === undefined && !records.known(`pth:${syncId}`) ? legacyThemeOf(record) : null;
-          applySyncedProfilePatch(id, { name: record.n, color: record.c, icon: record.i, ...legacy });
+          applySyncedProfilePatch(id, { name: record.n, color: record.c, ...(record.i !== undefined ? { icon: record.i } : {}), ...legacy });
         } catch (error) {
           refused.add(key);
           cause ??= error;

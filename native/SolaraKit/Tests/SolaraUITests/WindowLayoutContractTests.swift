@@ -97,13 +97,13 @@ struct WindowLayoutContractTests {
     state.downloads = [Download(json: ["id": "d"])]
     let bounds = CGRect(x: 0, y: 0, width: 1000, height: 700)
     let address = WindowLayoutSnapshot.of(try #require(WindowLayoutInput(state: state, windowId: "w", bounds: bounds)), generation: 1)
-    #expect(address.sidebarHeader?.height == 80 && address.sidebarFooter?.height == 41)
+    #expect(address.sidebarHeader?.height == 80 && address.sidebarFooter?.height == 40)
     #expect(address.pages["a"]?.minY == address.panes["a"]?.minY)
     state.windows["w"]?.sidebarIconsOnly = true
     let rail = WindowLayoutSnapshot.of(try #require(WindowLayoutInput(state: state, windowId: "w", bounds: bounds)), generation: 2)
     #expect(rail.input.layout.sidebarWidth == CGFloat(SidebarRail.width))
     #expect(!rail.input.layout.addressBarInSidebar)
-    #expect(rail.sidebarHeader?.height == 36 && rail.sidebarFooter?.height == 82)
+    #expect(rail.sidebarHeader?.height == 0 && rail.sidebarFooter?.height == 80)
     state.windows["w"]?.tabLayout = "top"
     let top = WindowLayoutSnapshot.of(try #require(WindowLayoutInput(state: state, windowId: "w", bounds: bounds)), generation: 3)
     #expect(top.sidebarHeader == nil && top.frames.topStrip?.height == 42)

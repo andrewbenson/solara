@@ -31,7 +31,7 @@ struct ProfileDetailsPane: View {
           .fixedSize()
           .help("Change Icon")
           .popover(isPresented: $pickingFromBadge, arrowEdge: .bottom) {
-            ProfileIconPicker(profileId: profileId, current: profile.icon) { pick($0, from: $pickingFromBadge) }
+            ProfileIconPicker(profileId: profileId, current: profile.icon, tint: profile.accent) { pick($0, from: $pickingFromBadge) }
           }
           Text(model.services.stats(profileId: profileId).text)
             .font(.system(size: 12))
@@ -55,7 +55,7 @@ struct ProfileDetailsPane: View {
         SettingRow(title: "Icon", description: .text(ProfileIcons.title(profile.icon))) {
           Button("Change…") { pickingFromRow = true }
             .popover(isPresented: $pickingFromRow, arrowEdge: .bottom) {
-              ProfileIconPicker(profileId: profileId, current: profile.icon) { pick($0, from: $pickingFromRow) }
+              ProfileIconPicker(profileId: profileId, current: profile.icon, tint: profile.accent) { pick($0, from: $pickingFromRow) }
             }
         }
       }
@@ -112,8 +112,10 @@ struct ProfileDetailsPane: View {
   }
 
   private func pick(_ event: SidebarIconPickerView.Event, from shown: Binding<Bool>) {
-    if case .choose(let icon) = event { model.setIcon(profileId, icon) }
-    shown.wrappedValue = false
+    switch event {
+    case .choose(let icon): model.setIcon(profileId, icon)
+    case .close: shown.wrappedValue = false
+    }
   }
 
   private func commitName() {

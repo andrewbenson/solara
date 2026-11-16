@@ -120,12 +120,12 @@ public struct WindowLayoutInput: Equatable, Sendable {
     sample.fullscreen = fullscreen
     sample.windowFullscreen = self.windowFullscreen
     self.presentation = sample
-    let dots = !window.incognito && profileCount > 1
+    let dots = !window.incognito && profileCount > 0
     let downloads = state.downloads.contains { download in
       let session = download.offTheRecord ? download.profile ?? "" : download.profile.flatMap { Ids.isIncognitoProfile($0) ? state.privateSession($0) : nil }
       return window.incognito ? session != nil && session == state.privateSession(window.profileId) : session == nil && (download.profile ?? "") == state.engineProfile(window.profileId)
     }
-    sidebarHeaderHeight = rail ? (window.incognito || profileCount > 1 ? SidebarChromeMetrics.railHeader : 0) : SidebarChromeMetrics.headerHeight(addressBar: address)
+    sidebarHeaderHeight = rail ? (window.incognito ? SidebarChromeMetrics.railHeader : 0) : SidebarChromeMetrics.headerHeight(addressBar: address)
     sidebarFooterHeight = (rail ? (dots ? SidebarChromeMetrics.footer : 0) + (downloads ? SidebarChromeMetrics.footer : 0) : (dots || (address && downloads) ? SidebarChromeMetrics.footer : 0)) + max(0, sidebarUpdateHeight)
     let leading = self.windowFullscreen ? 8 : ShellMetrics.topStripLeadingReservation
     let room = StripControlsLayout.profileRoom(width: self.bounds.width, leading: leading)

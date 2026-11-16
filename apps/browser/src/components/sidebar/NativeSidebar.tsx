@@ -9,7 +9,7 @@ import { PRODUCT } from "../../lib/productName";
 import { nativeOwnsWorkspace } from "../../store/nativeStore";
 import { chromeLiveIds, chromeSleeping, sidebarHostProps } from "../nativeHostProps";
 import { useLifecycle } from "../../lib/tabLifecycle";
-import { hex, inkedTokens, inkIsLight, profileNameColor, profileTheme, selectedTabGlow, spaceLookSource, useAdjustedInk, useSelectedTabGlow, useTheme, type Theme } from "../../lib/theme";
+import { hex, inkedTokens, inkIsLight, profileAccent, profileNameColor, profileTheme, selectedTabGlow, spaceLookSource, useAdjustedInk, useSelectedTabGlow, useTheme, type Theme } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
 import { commitSidebarWidth, setSidebarIconsOnly, sidebarWidthOf, SIDEBAR_RAIL_WIDTH } from "../../store/sidebarRail";
 import { engineMark, ENGINE_SYMBOLS } from "../../store/engines";
@@ -24,6 +24,7 @@ import { isDeveloperMode } from "../../lib/developerMode";
 import { developerModeFor } from "../site/developerMode";
 import { toggleNewTabBar } from "../omnibox/newTabBar";
 import { addNativeSettingsHandlers } from "../settings/nativeSettings";
+import { openSettings } from "../settings/windows";
 import { clickTab, commitRename, endRename, startRename } from "./actions";
 import { pressGroupClose, pressTabClose } from "./closeControl";
 import { dismissHover, nativeRowHover } from "./hover";
@@ -45,7 +46,6 @@ import { downloadsIn } from "../../store/ui";
 import { useShortcutHint, withShortcut } from "../../lib/commandShortcuts";
 import { openProfileMenu } from "../ProfileIndicator";
 import { registerDownloadsAnchor } from "../Downloads";
-import { useProfileDotsShown } from "../profiles/ProfileDots";
 import { useTabDrag } from "../layout/tabDrag";
 import { followPeekHold } from "../layout/peekHold";
 import { nativeLayoutFeed, useNativeLayoutFeed } from "../layout/nativeLayoutFeed";
@@ -84,6 +84,8 @@ addNativeSettingsHandlers({
       }
       case "profileMenu":
         return void openProfileMenu(windowId);
+      case "manageProfiles":
+        return void openSettings("profiles");
       case "toggleDownloads":
         return s.setDownloadsOpen(windowId, !s.windowUi[windowId]?.downloadsOpen);
       case "liveWidth": {
@@ -109,10 +111,12 @@ function useShellChrome(windowId: string, addressBar: boolean, theme: Theme): st
   const hint = useShortcutHint("downloads");
   const savedWidth = useBrowser((s) => sidebarWidthOf(s.windows[windowId], s.settings, false));
   const iconsOnly = useBrowser((s) => sidebarWidthOf(s.windows[windowId], s.settings, nativeSidebarShell(windowId)) === SIDEBAR_RAIL_WIDTH);
-  const dotsShown = useProfileDotsShown();
+  const dotsShown = !incognito;
   const order = useBrowser(useShallow((s) => s.profileOrder));
   const names = useBrowser(useShallow((s) => order.map((id) => s.profiles[id]?.name ?? "")));
   const icons = useBrowser(useShallow((s) => order.map((id) => s.profiles[id]?.icon ?? null)));
+  const colors = useBrowser(useShallow((s) => order.map((id) => profileAccent(s.profiles[id]))));
+  const shortcuts = useBrowser(useShallow((s) => order.map((id) => shortcutHint(`switchProfile:${id}`, s) ?? null)));
   const { pages } = usePagerPages(windowId);
   const dropOver = useTabDrag((d) => d.overWindow === windowId);
   const pending = usePendingUpdate();
@@ -132,14 +136,14 @@ function useShellChrome(windowId: string, addressBar: boolean, theme: Theme): st
         addressBar,
         dark: theme.dark,
         theme: { ...themeTokens(theme, adjustInk), panel: theme.panel, panelBorder: theme.panelBorder },
-        dots: dotsShown ? order.map((id, i) => ({ id, name: names[i] ?? "", icon: icons[i] ?? null, slot: pages.find((p) => p.id === id)?.slot ?? null })) : [],
+        dots: dotsShown ? order.map((id, i) => ({ id, name: names[i] ?? "", icon: icons[i] ?? null, color: colors[i] ?? null, shortcut: shortcuts[i] ?? null, slot: pages.find((p) => p.id === id)?.slot ?? null })) : [],
         savedWidth,
         currentProfileId: profile?.id ?? null,
         iconsOnly,
         dropOver,
         update: pending ? { text: UPDATE_PILL_TEXT, tooltip: updatePillTooltip(pending) } : null,
       }),
-    [incognito, profile, profiles, theme, downloadsOpen, hint, downloads, addressBar, dotsShown, order, names, icons, pages, savedWidth, iconsOnly, dropOver, pending, adjustInk],
+    [incognito, profile, profiles, theme, downloadsOpen, hint, downloads, addressBar, dotsShown, order, names, icons, colors, shortcuts, pages, savedWidth, iconsOnly, dropOver, pending, adjustInk],
   );
 }
 

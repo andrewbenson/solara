@@ -5,12 +5,16 @@ public struct SidebarChromeDot: Decodable, Equatable, Sendable {
   public var name: String
   public var slot: Double?
   public var icon: String?
+  public var shortcut: String?
+  public var color: String?
 
-  public init(id: String, name: String, slot: Double?, icon: String? = nil) {
+  public init(id: String, name: String, slot: Double?, icon: String? = nil, shortcut: String? = nil, color: String? = nil) {
     self.id = id
     self.name = name
     self.slot = slot
     self.icon = icon
+    self.shortcut = shortcut
+    self.color = color
   }
 }
 
@@ -58,8 +62,10 @@ public struct SidebarChromeState: Decodable, Equatable, Sendable {
 
 public enum SidebarChromeAction: Equatable, Sendable {
   case profileMenu
+  case manageProfiles
   case toggleDownloads
   case switchProfile(String)
+  case changeProfileIcon(String, String?)
   case profileIntent(String?)
   case liveWidth(Double?)
   case commitWidth(Double)
@@ -75,25 +81,25 @@ public enum SidebarChromeMetrics {
   public static let railPadding: CGFloat = 4
   public static let railHeader: CGFloat = railPadding + railButton + railPadding
   public static let fieldRow: CGFloat = 34
-  public static let footer: CGFloat = 41
+  public static let footer: CGFloat = 40
   public static let indicatorX = ShellMetrics.railLightsTrailing + 8 - StripControlsLayout.pad
   public static let headerRight: CGFloat = 7
   public static let controlTop: CGFloat = 10
   public static let downloadsBox: CGFloat = 34
-  public static let footerDownloadsBottom: CGFloat = 3 + (41 - 3 - 34) / 2
+  public static let footerDownloadsBottom: CGFloat = (40 - 34) / 2
   public static let inset: CGFloat = 6
   public static let resizeStrip: CGFloat = 4
-  public static let dotCell: CGFloat = 12
-  public static let dotBand: CGFloat = 28
-  public static let dot: CGFloat = 6
-  public static let profileButton: CGFloat = 28
+  public static let dotCell: CGFloat = 26
+  public static let dotBand: CGFloat = 24
+  public static let dot: CGFloat = 5
+  public static let profileButton: CGFloat = 24
   public static let minWidth: Double = 160
   public static let maxWidth: Double = 400
   public static let defaultWidth: Double = 190
 
   public static func headerHeight(addressBar: Bool) -> CGFloat { addressBar ? header + fieldRow : header }
 
-  public static func railHeaderShown(_ state: SidebarChromeState) -> Bool { state.controls.incognito || state.controls.profiles > 1 }
+  public static func railHeaderShown(_ state: SidebarChromeState) -> Bool { state.controls.incognito }
 
   public static func footerRowHeight(_ state: SidebarChromeState) -> CGFloat {
     if state.rail { return (state.dots.isEmpty ? 0 : footer) + (state.downloads ? footer : 0) }
@@ -189,6 +195,9 @@ public final class SidebarChromeView: NSView {
   private var dots: [SidebarProfileDot] = []
   let profileSwitcher = SidebarRailProfileButton()
   let profilePopover = NSPopover()
+  let iconPopover = ProfileIconPopover()
+  private var iconProfileId: String?
+  private var menuProfileId: String?
   private var railHover: String?
   private let tooltip = SidebarDotTooltip()
   private let dropGlow = CALayer()
@@ -231,6 +240,15 @@ public final class SidebarChromeView: NSView {
     fullScreenHeader.addSubview(indicator)
     profileSwitcher.isHidden = true
     profileSwitcher.onPress = { [weak self] in self?.showProfiles() }
+    profileSwitcher.onMenu = { [weak self] in
+      guard let self, let profile = self.currentProfile else { return }
+      self.showProfileMenu(profile.id, on: self.profileSwitcher)
+    }
+    profileSwitcher.onHover = { [weak self] inside in
+      guard let self, let profile = self.currentProfile else { return }
+      if inside { self.tooltip.show(profile.name, shortcut: profile.shortcut, above: self.profileSwitcher) } else { self.tooltip.hide(self.profileSwitcher) }
+      self.onAction(.profileIntent(inside ? profile.id : nil))
+    }
     addSubview(profileSwitcher)
     profilePopover.behavior = .transient
     profilePopover.animates = false
@@ -251,6 +269,12 @@ public final class SidebarChromeView: NSView {
 
   public override func viewDidMoveToWindow() {
     super.viewDidMoveToWindow()
+    if window == nil {
+      tooltip.hide()
+      tooltip.removeFromSuperview()
+      iconPopover.close()
+      profilePopover.close()
+    }
     let center = NotificationCenter.default
     for name in [NSWindow.didEnterFullScreenNotification, NSWindow.didExitFullScreenNotification] {
       center.removeObserver(self, name: name, object: fullscreenWindow)
@@ -312,6 +336,11 @@ public final class SidebarChromeView: NSView {
     guard next != state else { return }
     if next.dropOver != state?.dropOver { fadeDropGlow(to: next.dropOver ? 1 : 0) }
     if next.rail != state?.rail || next.dots != state?.dots || next.currentProfileId != state?.currentProfileId { profilePopover.performClose(nil) }
+    if next.rail != state?.rail || next.currentProfileId != state?.currentProfileId || iconProfileId.map({ id in !next.dots.contains { $0.id == id } }) == true {
+      iconPopover.close()
+      iconProfileId = nil
+      tooltip.hide()
+    }
     state = next
     syncDots(next.dots)
     needsLayout = true
@@ -405,12 +434,16 @@ public final class SidebarChromeView: NSView {
       y: bounds.height - SidebarChromeMetrics.footerDownloadsBottom - box - (state.rail && !state.dots.isEmpty ? SidebarChromeMetrics.footer : 0), width: box, height: box)
 
     let cell = SidebarChromeMetrics.dotCell
-    let overflow = state.rail && cell * CGFloat(dots.count) > max(0, width - SidebarChromeMetrics.inset * 2)
-    let rowLeft = ((width - cell * CGFloat(dots.count)) / 2 * 2).rounded() / 2
-    let rowTop = bounds.height - (state.rail ? SidebarChromeMetrics.footer : footer) + (SidebarChromeMetrics.footer - 3 - SidebarChromeMetrics.dotBand) / 2
+    let rowWidth = cell * CGFloat(dots.count) - 2
+    let rowLeft = ((width - rowWidth) / 2 * 2).rounded() / 2
+    let leadingRoom = footerDownloads.isHidden ? SidebarChromeMetrics.inset : footerDownloads.frame.maxX + 6
+    let overflow = !dots.isEmpty && (state.rail || rowLeft < leadingRoom || rowLeft + rowWidth > width - SidebarChromeMetrics.inset)
+    let rowTop = bounds.height - (state.rail ? SidebarChromeMetrics.footer : footer) + (SidebarChromeMetrics.footer - SidebarChromeMetrics.dotBand) / 2
     for (index, dot) in dots.enumerated() {
-      dot.frame = NSRect(x: rowLeft + cell * CGFloat(index), y: rowTop, width: cell, height: SidebarChromeMetrics.dotBand)
-      dot.ink = SidebarPalette.lightInk(dark: state.dark, ink: state.theme["ink"]) ? .white : .black
+      dot.frame = NSRect(x: rowLeft + cell * CGFloat(index), y: rowTop, width: SidebarChromeMetrics.profileButton, height: SidebarChromeMetrics.dotBand)
+      dot.dark = state.dark
+      dot.ink = SidebarPalette.parse(state.dots[index].color) ?? color("accent")
+      if dot.ink == .clear { dot.ink = SidebarPalette.lightInk(dark: state.dark, ink: state.theme["ink"]) ? .white : .black }
       dot.isHidden = overflow
       if overflow { dot.setHovered(false) }
     }
@@ -418,7 +451,7 @@ public final class SidebarChromeView: NSView {
     if overflow, let profile = currentProfile {
       let side = SidebarChromeMetrics.profileButton
       profileSwitcher.frame = NSRect(x: ((width - side) / 2).rounded(), y: rowTop, width: side, height: side)
-      profileSwitcher.set(profile, dark: state.dark, hover: color("toolbarHover"), pressed: color("toolbarPressed"))
+      profileSwitcher.set(profile, dark: state.dark, ink: SidebarPalette.parse(profile.color) ?? color("accent"), hover: NSColor(white: state.dark ? 0 : 1, alpha: 0.18), pressed: color("toolbarPressed"))
     } else {
       profilePopover.performClose(nil)
     }
@@ -472,17 +505,23 @@ public final class SidebarChromeView: NSView {
       }
       dot.onHover = { [weak self, weak dot] inside in
         guard let self, let dot else { return }
-        if inside { self.tooltip.show(dot.name, above: dot) } else { self.tooltip.hide(dot) }
+        if inside { self.tooltip.show(dot.name, shortcut: dot.shortcut, above: dot) } else { self.tooltip.hide(dot) }
         self.paintDots()
         self.onAction(.profileIntent(self.dots.first { $0.hovered && !$0.isHidden }?.profileId))
       }
-      addSubview(dot, positioned: .below, relativeTo: tooltip)
+      dot.onMenu = { [weak self, weak dot] in
+        guard let self, let dot else { return }
+        self.showProfileMenu(dot.profileId, on: dot)
+      }
+      addSubview(dot, positioned: .below, relativeTo: tooltip.superview === self ? tooltip : nil)
       dots.append(dot)
     }
     for (dot, info) in zip(dots, given) {
       dot.profileId = info.id
       dot.name = info.name
       dot.slot = info.slot
+      dot.icon = info.icon
+      dot.shortcut = info.shortcut
     }
   }
 
@@ -493,10 +532,13 @@ public final class SidebarChromeView: NSView {
   }
 
   private func showProfiles() {
-    guard let state, state.rail, !profileSwitcher.isHidden else { return }
+    guard let state, !profileSwitcher.isHidden else { return }
     if profilePopover.isShown { return profilePopover.performClose(nil) }
     let width = CGFloat(min(320, max(200, state.savedWidth)))
-    let height = CGFloat(state.dots.count) * (FolderPanelMetrics.rowHeight + FolderPanelMetrics.rowGap) - FolderPanelMetrics.rowGap + FolderPanelMetrics.padding * 2
+    tooltip.hide()
+    iconPopover.close()
+    let rowsHeight = CGFloat(state.dots.count) * (FolderPanelMetrics.rowHeight + FolderPanelMetrics.rowGap)
+    let height = rowsHeight + FolderPanelMetrics.padding * 2 + 66
     let body = FlippedContainerView(frame: NSRect(x: 0, y: 0, width: width, height: height))
     let colors = FolderPanelColors(dark: state.dark, tokens: state.theme)
     body.wantsLayer = true
@@ -521,11 +563,60 @@ public final class SidebarChromeView: NSView {
     scroll.drawsBackground = false
     scroll.hasVerticalScroller = height > 400
     scroll.documentView = body
+    for (index, title) in ["Change Icon…", "Manage Profiles…"].enumerated() {
+      let button = NSButton(title: title, target: self, action: index == 0 ? #selector(changeCurrentIcon) : #selector(manageProfiles))
+      button.isBordered = false
+      button.alignment = .left
+      button.font = .systemFont(ofSize: 13)
+      button.frame = NSRect(x: 12, y: rowsHeight + 12 + CGFloat(index) * 30, width: width - 24, height: 30)
+      body.addSubview(button)
+    }
     let controller = NSViewController()
     controller.view = scroll
+    profilePopover.appearance = NSAppearance(named: state.dark ? .darkAqua : .aqua)
     profilePopover.contentViewController = controller
     profilePopover.contentSize = scroll.frame.size
     if profileSwitcher.window != nil { profilePopover.show(relativeTo: profileSwitcher.bounds, of: profileSwitcher, preferredEdge: state.sidebarPosition == "right" ? .minX : .maxX) }
+  }
+
+  func showProfileMenu(_ id: String, on anchor: NSView) {
+    tooltip.hide()
+    profilePopover.performClose(nil)
+    menuProfileId = id
+    let menu = NSMenu()
+    menu.addItem(withTitle: "Change Icon…", action: #selector(changeMenuIcon), keyEquivalent: "").target = self
+    menu.addItem(.separator())
+    menu.addItem(withTitle: "Manage Profiles…", action: #selector(manageProfiles), keyEquivalent: "").target = self
+    if anchor.window != nil { menu.popUp(positioning: nil, at: NSPoint(x: 0, y: 0), in: anchor) }
+  }
+
+  @objc private func changeMenuIcon() {
+    guard let menuProfileId else { return }
+    showIconPicker(menuProfileId)
+  }
+
+  @objc private func changeCurrentIcon() {
+    guard let profile = currentProfile else { return }
+    showIconPicker(profile.id)
+  }
+
+  @objc private func manageProfiles() {
+    profilePopover.performClose(nil)
+    onAction(.manageProfiles)
+  }
+
+  func showIconPicker(_ id: String) {
+    guard let state, let profile = state.dots.first(where: { $0.id == id }) else { return }
+    profilePopover.performClose(nil)
+    tooltip.hide()
+    let anchor: NSView
+    if profileSwitcher.isHidden, let dot = dots.first(where: { $0.profileId == id }) { anchor = dot } else { anchor = profileSwitcher }
+    iconProfileId = id
+    iconPopover.show(profileId: id, current: profile.icon, dark: state.dark,
+      tint: SidebarPalette.parse(profile.color) ?? SidebarPalette.parse(state.theme["accent"]) ?? .controlAccentColor,
+      relativeTo: anchor.bounds, of: anchor) { [weak self] icon in
+        self?.onAction(.changeProfileIcon(id, icon))
+      }
   }
 
   private func paintDots() {
@@ -574,8 +665,9 @@ public final class SidebarChromeView: NSView {
       "resize": rect(resize),
       "update": updatePill.isHidden ? NSNull() : ["text": updatePill.text, "rect": rect(updatePill)],
       "dropGlow": Double(dropGlow.opacity),
-      "dots": dots.map { ["id": $0.profileId, "rect": rect($0), "opacity": Double($0.opacity)] },
-      "tooltip": tooltip.isHidden ? NSNull() : ["text": tooltip.text, "rect": rect(tooltip), "alpha": Double(tooltip.alphaValue)],
+      "dots": dots.map { ["id": $0.profileId, "rect": rect($0), "opacity": Double($0.opacity), "icon": ($0.icon as Any?) ?? NSNull(), "selected": $0.selected, "hidden": $0.isHidden] },
+      "profileSwitcher": profileSwitcher.isHidden ? NSNull() : ["id": currentProfile?.id ?? "", "rect": rect(profileSwitcher), "icon": (currentProfile?.icon as Any?) ?? NSNull(), "label": currentProfile?.name ?? ""],
+      "tooltip": tooltip.isHidden ? NSNull() : ["text": tooltip.text, "shortcut": (tooltip.shortcut as Any?) ?? NSNull(), "rect": rect(tooltip), "alpha": Double(tooltip.alphaValue)],
     ]
   }
 }
@@ -585,21 +677,18 @@ final class SidebarProfileDot: NSView {
   var profileId = ""
   var name = ""
   var slot: Double?
+  var shortcut: String?
+  var icon: String? { didSet { repaint() } }
   var onPress: (() -> Void)?
   var onHover: ((Bool) -> Void)?
+  var onMenu: (() -> Void)?
   private(set) var hovered = false
   private var pressed = false
-  private let disc = CALayer()
-
-  var ink: NSColor = .black { didSet { disc.backgroundColor = ink.cgColor } }
-  var opacity: CGFloat = 0.2 {
-    didSet {
-      CATransaction.begin()
-      CATransaction.setDisableActions(true)
-      disc.opacity = Float(opacity)
-      CATransaction.commit()
-    }
-  }
+  let glyph = SidebarProfileGlyph()
+  var dark = false { didSet { repaint() } }
+  var ink: NSColor = .black { didSet { repaint() } }
+  var opacity: CGFloat = 0.2 { didSet { repaint() } }
+  var selected: Bool { opacity > 0.6 }
 
   override var isFlipped: Bool { true }
   override var mouseDownCanMoveWindow: Bool { false }
@@ -608,43 +697,53 @@ final class SidebarProfileDot: NSView {
   override init(frame: NSRect) {
     super.init(frame: frame)
     wantsLayer = true
-    disc.actions = SurfaceLayer.noActions
-    disc.cornerRadius = SidebarChromeMetrics.dot / 2
-    layer?.addSublayer(disc)
+    layer?.cornerRadius = 6
+    addSubview(glyph)
   }
 
   required init?(coder: NSCoder) { fatalError() }
 
   override func layout() {
     super.layout()
-    let size = SidebarChromeMetrics.dot
-    CATransaction.begin()
-    CATransaction.setDisableActions(true)
-    disc.frame = NSRect(x: (bounds.width - size) / 2, y: (bounds.height - size) / 2, width: size, height: size)
-    CATransaction.commit()
+    glyph.frame = bounds
+  }
+
+  private func repaint() {
+    let amount: CGFloat = pressed ? 0.28 : selected ? 0.22 : hovered ? 0.18 : 0
+    layer?.backgroundColor = NSColor(white: dark ? 0 : 1, alpha: amount).cgColor
+    glyph.set(icon, color: ink, opacity: selected ? 0.72 : hovered ? 0.5 : 0.3, active: selected)
+    setAccessibilityValue(NSNumber(value: selected))
   }
 
   func setHovered(_ inside: Bool) {
     guard inside != hovered else { return }
     hovered = inside
     if !inside { pressed = false }
+    repaint()
     onHover?(inside && !pressed)
   }
 
-  override func mouseDown(with event: NSEvent) { pressed = true }
+  override func mouseDown(with event: NSEvent) {
+    if event.modifierFlags.contains(.control) { return rightMouseDown(with: event) }
+    pressed = true
+    onHover?(false)
+    repaint()
+  }
 
   override func mouseUp(with event: NSEvent) {
-    guard pressed, bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
-    onPress?()
+    let choose = pressed && bounds.contains(convert(event.locationInWindow, from: nil))
+    pressed = false
+    repaint()
+    if choose { onPress?() }
   }
 
-  override func isAccessibilityElement() -> Bool { true }
-  override func accessibilityRole() -> NSAccessibility.Role? { .button }
+  override func rightMouseDown(with event: NSEvent) { onMenu?() }
+  override func isAccessibilityElement() -> Bool { !isHidden }
+  override func accessibilityRole() -> NSAccessibility.Role? { .radioButton }
   override func accessibilityLabel() -> String? { name }
-  override func accessibilityPerformPress() -> Bool {
-    onPress?()
-    return true
-  }
+  override func accessibilityHelp() -> String? { shortcut }
+  override func accessibilityPerformPress() -> Bool { onPress?(); return true }
+  override func accessibilityPerformShowMenu() -> Bool { onMenu?(); return true }
 }
 
 @MainActor
@@ -655,6 +754,9 @@ final class SidebarDotTooltip: NSView {
   private let ring = CALayer()
   private let plate = CALayer()
   private let label = StripLabel()
+  private var keycaps: [StripLabel] = []
+  private var dark = false
+  private(set) var shortcut: String?
   private var pending: DispatchWorkItem?
   private weak var anchor: NSView?
   private(set) var text = ""
@@ -667,22 +769,23 @@ final class SidebarDotTooltip: NSView {
     wantsLayer = true
     ring.actions = SurfaceLayer.noActions
     plate.actions = SurfaceLayer.noActions
-    ring.cornerRadius = 4.5
+    ring.cornerRadius = 17
     ring.borderWidth = 0.5
     ring.shadowColor = NSColor.black.cgColor
     ring.shadowRadius = 4
     ring.shadowOffset = CGSize(width: 0, height: -1)
-    plate.cornerRadius = 4
+    plate.cornerRadius = 16.5
     plate.borderWidth = 1
     layer?.addSublayer(ring)
     layer?.addSublayer(plate)
-    label.font = .systemFont(ofSize: 12, weight: .medium)
+    label.font = .systemFont(ofSize: 14, weight: .semibold)
     addSubview(label)
   }
 
   required init?(coder: NSCoder) { fatalError() }
 
   func look(dark: Bool, panel: NSColor, border: NSColor) {
+    self.dark = dark
     ring.borderColor = NSColor.black.withAlphaComponent(dark ? 0.4 : 0.12).cgColor
     ring.shadowOpacity = dark ? 0.15 : 0.08
     plate.backgroundColor = (dark ? NSColor(srgbRed: 0x26 / 255, green: 0x26 / 255, blue: 0x26 / 255, alpha: 1) : panel).cgColor
@@ -690,13 +793,34 @@ final class SidebarDotTooltip: NSView {
     label.textColor = (dark ? NSColor.white : NSColor.black).withAlphaComponent(0.85)
   }
 
-  func show(_ text: String, above view: NSView) {
+  func show(_ text: String, shortcut: String? = nil, above view: NSView) {
+    self.shortcut = shortcut
     pending?.cancel()
     anchor = view
+    if let parent = view.window?.contentView ?? view.superview, superview !== parent {
+      removeFromSuperview()
+      parent.addSubview(self)
+    }
     guard !text.isEmpty else { return hide() }
     let work = DispatchWorkItem { [weak self] in self?.appear(text) }
     pending = work
     DispatchQueue.main.asyncAfter(deadline: .now() + Self.delay, execute: work)
+  }
+
+  static func keys(_ shortcut: String?) -> [String] {
+    guard let shortcut, !shortcut.isEmpty else { return [] }
+    var keys: [String] = []
+    var key = ""
+    for character in shortcut {
+      if "⌃⌥⇧⌘".contains(character) {
+        if !key.isEmpty { keys.append(key); key = "" }
+        keys.append(String(character))
+      } else {
+        key.append(character)
+      }
+    }
+    if !key.isEmpty { keys.append(key) }
+    return keys
   }
 
   func hide(_ from: NSView? = nil) {
@@ -708,20 +832,43 @@ final class SidebarDotTooltip: NSView {
     alphaValue = 0
   }
 
-  private func appear(_ text: String) {
+  func appear(_ text: String) {
     guard let anchor, let superview else { return }
     self.text = text
     label.stringValue = text
     let textWidth = StripControlsLayout.measuredLikeYoga((text as NSString).size(withAttributes: [.font: label.font]).width)
-    let size = NSSize(width: textWidth + 13 + 1, height: label.lineHeight + 10 + 1)
-    let center = anchor.convert(NSPoint(x: anchor.bounds.midX, y: anchor.bounds.midY), to: superview)
-    frame = NSRect(x: (center.x - size.width / 2).rounded(), y: center.y - Self.centerToTooltip - size.height + 0.5, width: size.width, height: size.height)
+    for keycap in keycaps { keycap.removeFromSuperview() }
+    keycaps = Self.keys(shortcut).map { key in
+      let keycap = StripLabel()
+      keycap.stringValue = key
+      keycap.font = .systemFont(ofSize: 12, weight: .semibold)
+      keycap.textColor = dark ? .white : NSColor(white: 0.2, alpha: 1)
+      keycap.wantsLayer = true
+      keycap.layer?.cornerRadius = 6
+      keycap.layer?.backgroundColor = NSColor(white: dark ? 1 : 0, alpha: dark ? 0.1 : 0.04).cgColor
+      keycap.layer?.borderColor = NSColor(white: dark ? 1 : 0, alpha: 0.16).cgColor
+      keycap.layer?.borderWidth = 0.5
+      addSubview(keycap)
+      return keycap
+    }
+    let widths = keycaps.map { max(22, ($0.stringValue as NSString).size(withAttributes: [.font: $0.font]).width + 12) }
+    let shortcutWidth = widths.reduce(0, +) + CGFloat(max(0, widths.count - 1)) * 4
+    let size = NSSize(width: min(superview.bounds.width - 8, textWidth + 14 + 8 + (keycaps.isEmpty ? 0 : shortcutWidth + 8)), height: 34)
+    let top = anchor.convert(NSPoint(x: anchor.bounds.midX, y: anchor.bounds.minY), to: superview)
+    let x = max(4, min(top.x - size.width / 2, superview.bounds.width - size.width - 4))
+    frame = NSRect(x: x.rounded(), y: top.y - 12 - size.height, width: size.width, height: size.height)
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     ring.frame = bounds
     plate.frame = bounds.insetBy(dx: 0.5, dy: 0.5)
     CATransaction.commit()
-    label.frame = NSRect(x: 7, y: 5.5, width: textWidth, height: label.lineHeight)
+    let labelWidth = max(0, size.width - 22 - (keycaps.isEmpty ? 0 : shortcutWidth + 8))
+    label.frame = NSRect(x: 14, y: 0, width: labelWidth, height: size.height)
+    var keyX = size.width - 8 - shortcutWidth
+    for (keycap, width) in zip(keycaps, widths) {
+      keycap.frame = NSRect(x: keyX, y: 6, width: width, height: 22)
+      keyX += width + 4
+    }
     isHidden = false
     alphaValue = 0
     NSAnimationContext.runAnimationGroup { context in

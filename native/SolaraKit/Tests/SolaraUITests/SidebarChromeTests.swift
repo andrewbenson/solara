@@ -16,10 +16,10 @@ struct SidebarChromeTests {
     let view = SidebarChromeView(frame: host.bounds)
     host.addSubview(view)
     view.update(state(update: SidebarUpdatePillState(text: "New Solara Version Available")))
-    #expect(view.footerHeight == 79, "footer \(view.footerHeight)")
-    #expect(view.updatePill.frame == NSRect(x: 8, y: 600 - 41 - 8 - 30, width: 204, height: 30))
+    #expect(view.footerHeight == 78, "footer \(view.footerHeight)")
+    #expect(view.updatePill.frame == NSRect(x: 8, y: 600 - 40 - 8 - 30, width: 204, height: 30))
     #expect(view.updatePill.text == "New Solara Version Available")
-    #expect(view.hitTest(NSPoint(x: 100, y: 600 - 41 - 20)) === view.updatePill)
+    #expect(view.hitTest(NSPoint(x: 100, y: 600 - 40 - 20)) === view.updatePill)
   }
 
   @Test func updatePillAloneKeepsItsOwnBand() {
@@ -62,7 +62,7 @@ struct SidebarChromeTests {
     let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 220, height: 600))
     view.update(state())
     #expect(view.headerHeight == 46)
-    #expect(view.footerHeight == 41)
+    #expect(view.footerHeight == 40)
     let greenTrailing = ShellMetrics.lightsCenter.x + 2 * ShellMetrics.trafficLightPitch + ShellMetrics.trafficLightSize / 2
     #expect(view.indicator.frame.minX + view.indicator.leadingPadding == greenTrailing + 8)
     #expect(view.indicator.frame.midY == ShellMetrics.lightsCenter.y)
@@ -292,9 +292,9 @@ struct SidebarChromeTests {
     let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 220, height: 600))
     view.update(state(addressBar: true, dots: 0))
     #expect(view.headerHeight == 80)
-    #expect(view.footerHeight == 41)
+    #expect(view.footerHeight == 40)
     #expect(view.indicator.isHidden && view.headerDownloads.isHidden)
-    #expect(view.footerDownloads.frame == NSRect(x: 6, y: 600 - 5 - 34, width: 34, height: 34))
+    #expect(view.footerDownloads.frame == NSRect(x: 6, y: 600 - 3 - 34, width: 34, height: 34))
   }
 
   @Test func noFooterWithoutDotsOrFooterDownloads() {
@@ -309,7 +309,7 @@ struct SidebarChromeTests {
     view.update(state())
     let info = view.describe()["dots"] as! [[String: Any]]
     let rects = info.map { $0["rect"] as! [Double] }
-    #expect(rects[0] == [92, 564, 12, 28])
+    #expect(rects[0] == [72, 568, 24, 24])
     view.setPagerPosition(0.5)
     let opacities = (view.describe()["dots"] as! [[String: Any]]).map { $0["opacity"] as! Double }
     #expect(abs(opacities[0] - 0.525) < 1e-6 && abs(opacities[1] - 0.525) < 1e-6 && abs(opacities[2] - 0.2) < 1e-6)

@@ -11,7 +11,7 @@ if (!appArg) {
 
 The icons-only sidebar rail under the native shell. View › Icons-Only Sidebar (the toggleSidebarIconsOnly command)
 narrows the native column to 42 pt and back to the saved full width, which the rail never overwrites; in the rail the
-footer's downloads button and profile dots sit in separate bands inside the column, and a pending update shows as a
+footer's downloads button and current-profile button sit in separate bands inside the column, and a pending update shows as a
 round 34 pt button inside it; dragging a tab out of a group's popover closes the popover and drops the tab below
 a loose tab, out of the group; Settings › Tabs' switch is the same setting. With --shots, snapshots the window in-process (devSnapshotWindow) in the
 rail and at full width, dark and light, with a pending update, for the owner's visual check.`);
@@ -94,18 +94,31 @@ try {
     return { width: c.width, settings: s };
   });
 
-  await rep.check("in the rail the footer's downloads button and profile dots don't overlap and stay inside the column", async () => {
+  await rep.check("in the rail one current-profile button stays clear of downloads and inside the column", async () => {
     await run(`st().upsertDownload({ id: "d1", url: "https://example.com/a.pdf", filename: "a.pdf", path: "/tmp/a.pdf", state: "finished", paused: false, received: 1, total: 1, speed: 0, mimeType: "application/pdf" }); st().setDownloadsOpen("w1", false); return true;`);
-    const got = await until("the footer's downloads button and dots", async () => {
+    const got = await until("the footer's downloads button and current profile", async () => {
       const c = await column();
       const chrome = c?.chrome;
-      return { ok: !!chrome?.footerDownloads && chrome.dots.length === 2, chrome, width: c?.frame?.[2] };
+      return { ok: !!chrome?.footerDownloads && !!chrome.profileSwitcher && chrome.dots.every((d) => d.hidden), chrome, width: c?.frame?.[2] };
     });
-    const dots = got.chrome.dots.map((d) => d.rect);
+    const profile = got.chrome.profileSwitcher;
     const downloads = got.chrome.footerDownloads;
-    if (dots.some((d) => overlap(d, downloads))) throw new Error(`a profile dot overlaps downloads: ${JSON.stringify({ dots, downloads })}`);
-    if (![...dots, downloads].every((r) => inside(r, got.width))) throw new Error(`a footer control leaves the 42 pt column: ${JSON.stringify({ dots, downloads })}`);
-    return { dots, downloads, shot: await capture("rail-dark") };
+    if (profile.rect[2] !== 24 || profile.rect[3] !== 24 || profile.id !== "default") throw new Error(`unexpected profile button: ${JSON.stringify(profile)}`);
+    if (overlap(profile.rect, downloads)) throw new Error(`the profile button overlaps downloads: ${JSON.stringify({ profile, downloads })}`);
+    if (![profile.rect, downloads].every((r) => inside(r, got.width))) throw new Error(`a footer control leaves the 42 pt column: ${JSON.stringify({ profile, downloads })}`);
+    return { profile, downloads, shot: await capture("rail-dark") };
+  });
+
+  await rep.check("the single rail button follows the current profile's symbol emoji and cleared icon", async () => {
+    for (const icon of ["symbol:briefcase.fill", "🍌", null]) {
+      await run(`st().updateProfile("default", { icon: ${JSON.stringify(icon)} }); return true;`);
+      await until("the rail profile icon", async () => {
+        const c = await column();
+        const button = c?.chrome?.profileSwitcher;
+        return { ok: button?.id === "default" && button.icon === icon && button.label === "Personal", button };
+      });
+    }
+    return { icons: ["symbol:briefcase.fill", "🍌", null] };
   });
 
   await rep.check("a pending update shows as a round 34 pt button inside the rail", async () => {

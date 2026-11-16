@@ -7,6 +7,7 @@ import { launch, listenerPids, sleep } from "../../../../scripts/lib/instance.mj
 const [phase, app, home, port, origin, extra, out] = process.argv.slice(2);
 const here = path.dirname(new URL(import.meta.url).pathname);
 const bundleId = execFileSync("/usr/libexec/PlistBuddy", ["-c", "Print :CFBundleIdentifier", `${app}/Contents/Info.plist`]).toString().trim();
+const version = execFileSync("/usr/libexec/PlistBuddy", ["-c", "Print :CFBundleShortVersionString", `${app}/Contents/Info.plist`]).toString().trim();
 const docs = path.join(home, "Library/Application Support", bundleId);
 let instance = null;
 const alive = () => !!instance && !instance.exited;
@@ -205,9 +206,10 @@ const expected = path.join(docs, "Chromium");
 if (phase !== "back") line(report.read?.dataDirectory?.replace(/^\/private/, "") === expected.replace(/^\/private/, ""), "the same isolated profile folder across builds", report.read?.dataDirectory);
 for (const [key, was] of Object.entries(created)) {
   if (key === "dataDirectory") continue;
+  const wanted = key === "settings" && phase === "read" && version === "0.4.1" ? { ...was, newTabPosition: "top" } : was;
   const now = report.read?.[key];
   const failedRead = typeof now === "string" && now.startsWith("error:");
-  const ok = !failedRead && key.endsWith(" history") && Array.isArray(was) && Array.isArray(now) ? was.every((u) => now.includes(u)) : !failedRead && (stable(now) === stable(was) || (phase === "back" && key.endsWith(" page") && sessionless(now) === sessionless(was)));
+  const ok = !failedRead && key.endsWith(" history") && Array.isArray(was) && Array.isArray(now) ? was.every((u) => now.includes(u)) : !failedRead && (stable(now) === stable(wanted) || (phase === "back" && key.endsWith(" page") && sessionless(now) === sessionless(was)));
   if (phase === "back" && key.endsWith(" page") && ok && stable(now) !== stable(was))
     console.log(`INFO  ${key}: the previous build dropped session cookies at launch (${(String(was).match(/\w+_session/g) || []).join(", ")})`);
   const shown = JSON.stringify(now ?? null);

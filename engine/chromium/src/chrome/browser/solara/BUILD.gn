@@ -67,6 +67,7 @@ source_set("solara") {
     "pip/ac_pip_controls.h",
     "pip/ac_pip_mac.h",
     "pip/ac_pip_mac.mm",
+    "pip/ac_pip_geometry.h",
     "pip/ac_pip_window.cc",
     "pip/ac_pip_window.h",
     "public/ac_engine.h",

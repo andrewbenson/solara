@@ -63,6 +63,7 @@ public final class SolaraPictureInPictureWindow: NSObject {
   private var placement: PictureInPicturePlacement?
   private var keepOnTop: Bool
   private var reconciling = false
+  private var refreshingScreen = false
 
   @objc(configure:keepOnTop:)
   public static func configure(_ window: NSWindow, keepOnTop: Bool) {
@@ -90,6 +91,7 @@ public final class SolaraPictureInPictureWindow: NSObject {
     for name in [NSWindow.didMoveNotification, NSWindow.didResizeNotification] {
       observe(NotificationCenter.default, name: name, object: window) { $0.rememberFrame() }
     }
+    observe(NotificationCenter.default, name: NSWindow.didChangeScreenNotification, object: window) { $0.screenChanged() }
     observe(NotificationCenter.default, name: NSWindow.willCloseNotification, object: window) { policy in
       guard let window = policy.window else { return }
       objc_setAssociatedObject(window, &Self.associationKey, nil, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
@@ -120,6 +122,15 @@ public final class SolaraPictureInPictureWindow: NSObject {
     window.hidesOnDeactivate = false
     window.setAccessibilityRole(.window)
     window.setAccessibilitySubrole(.floatingWindow)
+  }
+
+  private func screenChanged() {
+    guard !refreshingScreen, let window else { return }
+    refreshingScreen = true
+    defer { refreshingScreen = false }
+    window.collectionBehavior.subtract([.canJoinAllSpaces, .canJoinAllApplications, .fullScreenAuxiliary])
+    applySettings()
+    rememberFrame()
   }
 
   private func rememberFrame() {

@@ -25,6 +25,8 @@ class SolaraVideoOverlayWindow : public VideoOverlayWindowViews {
       delete;
   ~SolaraVideoOverlayWindow() override;
 
+  gfx::Size GetMinimumSize() const override;
+  void UpdateNaturalSize(const gfx::Size& natural_size) override;
   void ShowInactive() override;
   void Hide() override;
   void SetMediaPosition(const media_session::MediaPosition& position) override;

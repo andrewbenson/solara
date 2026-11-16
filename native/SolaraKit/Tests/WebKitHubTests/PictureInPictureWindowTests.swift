@@ -10,6 +10,18 @@ import Testing
   }
 }
 
+@MainActor private final class SpaceObservingPanel: NSPanel {
+  var behaviorWrites: [NSWindow.CollectionBehavior] = []
+
+  override var collectionBehavior: NSWindow.CollectionBehavior {
+    get { super.collectionBehavior }
+    set {
+      behaviorWrites.append(newValue)
+      super.collectionBehavior = newValue
+    }
+  }
+}
+
 @Suite @MainActor struct PictureInPictureWindowTests {
   private func panel() -> NSPanel {
     NSApplication.shared.setActivationPolicy(.prohibited)
@@ -84,6 +96,7 @@ import Testing
     window.collectionBehavior = []
     NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
     NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: NSApp)
+    NotificationCenter.default.post(name: NSWindow.didChangeScreenNotification, object: window)
     #expect(window.level == .normal)
     #expect(window.collectionBehavior.isEmpty)
     #expect(window.accessibilityIsAttributeSettable(.position) == baseline)
@@ -125,6 +138,44 @@ import Testing
     #expect(window.frame == frame)
     #expect(!NSApp.isActive)
     #expect(!window.isVisible)
+  }
+
+  @Test(arguments: [true, false])
+  func screenChangeRefreshesMembershipWithoutMovingOrActivating(keepOnTop: Bool) {
+    NSApplication.shared.setActivationPolicy(.prohibited)
+    let window = SpaceObservingPanel(contentRect: NSRect(x: 100, y: 100, width: 320, height: 180), styleMask: [.nonactivatingPanel, .resizable], backing: .buffered, defer: true)
+    window.isReleasedWhenClosed = false
+    defer { window.close() }
+    SolaraPictureInPictureWindow.configure(window, keepOnTop: keepOnTop)
+    let frame = window.frame
+    let behavior = window.collectionBehavior
+    window.behaviorWrites.removeAll()
+    NotificationCenter.default.post(name: NSWindow.didChangeScreenNotification, object: window)
+    #expect(window.behaviorWrites.count == 2)
+    #expect(window.behaviorWrites.first?.intersection([.canJoinAllSpaces, .canJoinAllApplications, .fullScreenAuxiliary]).isEmpty == true)
+    #expect(window.behaviorWrites.last == behavior)
+    #expect(window.collectionBehavior == behavior)
+    #expect(window.level == (keepOnTop ? .floating : .normal))
+    #expect(window.frame == frame)
+    #expect(!window.isVisible)
+    #expect(!window.isKeyWindow)
+    #expect(!NSApp.isActive)
+  }
+
+  @Test func screenChangeRestoresPolicyOnlyForItsOwnWindow() {
+    let window = panel()
+    let other = panel()
+    defer { window.close(); other.close() }
+    SolaraPictureInPictureWindow.configure(window, keepOnTop: true)
+    window.level = .normal
+    window.collectionBehavior = []
+    NotificationCenter.default.post(name: NSWindow.didChangeScreenNotification, object: other)
+    #expect(window.collectionBehavior.isEmpty)
+    #expect(window.level == .normal)
+    NotificationCenter.default.post(name: NSWindow.didChangeScreenNotification, object: window)
+    #expect(window.collectionBehavior.contains([.canJoinAllSpaces, .canJoinAllApplications, .fullScreenAuxiliary]))
+    #expect(!window.collectionBehavior.contains(.moveToActiveSpace))
+    #expect(window.level == .floating)
   }
 
   private let main = PictureInPictureDisplay(id: 1, frame: NSRect(x: 0, y: 0, width: 1440, height: 900), visibleFrame: NSRect(x: 0, y: 40, width: 1440, height: 835))

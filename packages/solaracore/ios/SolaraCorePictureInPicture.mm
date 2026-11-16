@@ -1424,6 +1424,8 @@ NSDictionary *CheckPictureInPicturePlacement(NSWindow *window) {
                        @"collectionBehavior" : @(window.collectionBehavior)}];
   };
   record(@"moved to chosen display");
+  [NSNotificationCenter.defaultCenter postNotificationName:NSWindowDidChangeScreenNotification object:window];
+  record(@"window screen change notification");
   [NSWorkspace.sharedWorkspace.notificationCenter postNotificationName:NSWorkspaceActiveSpaceDidChangeNotification object:nil];
   record(@"simulated Space change");
   [NSNotificationCenter.defaultCenter postNotificationName:NSApplicationDidBecomeActiveNotification object:NSApp];

@@ -3,12 +3,14 @@
 #include "chrome/browser/solara/pip/ac_pip_window.h"
 
 #include <algorithm>
+#include <cmath>
 #include <optional>
 #include <utility>
 #include <vector>
 
 #include "base/functional/bind.h"
 #include "chrome/browser/solara/pip/ac_pip_controls.h"
+#include "chrome/browser/solara/pip/ac_pip_geometry.h"
 #include "chrome/browser/solara/pip/ac_pip_mac.h"
 #include "chrome/browser/picture_in_picture/picture_in_picture_widget_fade_animator.h"
 #include "chrome/browser/picture_in_picture/picture_in_picture_window_manager.h"
@@ -193,6 +195,27 @@ void SolaraVideoOverlayWindow::SetMediaPosition(
   ac_progress_bar_->SetMediaPosition(position);
 }
 
+gfx::Size SolaraVideoOverlayWindow::GetMinimumSize() const {
+  const gfx::Size baseline = VideoOverlayWindowViews::GetMinimumSize();
+  if (natural_size_.IsEmpty() || IsOverlayViewShown()) {
+    return baseline;
+  }
+  const ACPiPSize minimum = ACPiPNativeMinimumSize(
+      static_cast<double>(natural_size_.width()) / natural_size_.height(),
+      {static_cast<double>(baseline.width()),
+       static_cast<double>(baseline.height())},
+      {static_cast<double>(max_size_.width()),
+       static_cast<double>(max_size_.height())});
+  return gfx::Size(static_cast<int>(minimum.width),
+                   static_cast<int>(minimum.height));
+}
+
+void SolaraVideoOverlayWindow::UpdateNaturalSize(const gfx::Size& natural_size) {
+  natural_size_ = natural_size;
+  OnSizeConstraintsChanged();
+  VideoOverlayWindowViews::UpdateNaturalSize(natural_size);
+}
+
 gfx::Rect SolaraVideoOverlayWindow::CalculateAndUpdateWindowBounds() {
   std::optional<gfx::Rect> saved;
   if (!has_been_shown_) {
@@ -203,14 +226,22 @@ gfx::Rect SolaraVideoOverlayWindow::CalculateAndUpdateWindowBounds() {
         display::Screen::Get()->GetDisplayMatching(*saved).work_area();
     UpdateMaxSize(work_area);
     gfx::Rect rect = *saved;
-    gfx::Size size = rect.size();
-    size.SetToMin(max_size_);
-    size.SetToMax(GetMinimumSize());
-    rect.set_size(size);
     if (!natural_size_.IsEmpty()) {
-      const gfx::Point center = rect.CenterPoint();
+      const gfx::Size minimum = GetMinimumSize();
+      const ACPiPSize size = ACPiPRestoredSize(
+          {static_cast<double>(rect.width()), static_cast<double>(rect.height())},
+          static_cast<double>(natural_size_.width()) / natural_size_.height(),
+          {static_cast<double>(minimum.width()),
+           static_cast<double>(minimum.height())},
+          {static_cast<double>(max_size_.width()),
+           static_cast<double>(max_size_.height())});
+      const gfx::Point center = saved->CenterPoint();
       const bool left = center.x() < work_area.CenterPoint().x();
       const bool top = center.y() < work_area.CenterPoint().y();
+      rect.set_size(gfx::Size(static_cast<int>(std::round(size.width)),
+                             static_cast<int>(std::round(size.height))));
+      rect.set_x(left ? saved->x() : saved->right() - rect.width());
+      rect.set_y(top ? saved->y() : saved->bottom() - rect.height());
       const gfx::ResizeEdge edge =
           top ? (left ? gfx::ResizeEdge::kBottomRight
                       : gfx::ResizeEdge::kBottomLeft)
@@ -221,6 +252,11 @@ gfx::Rect SolaraVideoOverlayWindow::CalculateAndUpdateWindowBounds() {
           static_cast<float>(natural_size_.width()) / natural_size_.height(),
           GetMinimumSize(), max_size_, &rect);
       UpdateLayerBoundsWithLetterboxing(rect.size());
+    } else {
+      gfx::Size size = rect.size();
+      size.SetToMin(max_size_);
+      size.SetToMax(GetMinimumSize());
+      rect.set_size(size);
     }
     rect.AdjustToFit(work_area);
     return rect;

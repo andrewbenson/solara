@@ -16,6 +16,7 @@ public final class SidebarView: NSView {
   private let edgeLine = CALayer()
   let clip = SidebarLayer()
   let scroll = NSScrollView()
+  let bottomEdge = SidebarScrollEdgeView()
   private let document = SidebarDocumentView()
   private let boxes = SidebarLayer()
   let rows = SidebarLayer()
@@ -75,6 +76,7 @@ public final class SidebarView: NSView {
     document.addSubview(boxes)
     document.addSubview(rows)
     clip.addSubview(scroll)
+    clip.addSubview(bottomEdge)
     addSubview(clip)
     addSubview(fixed)
     addSubview(dock)
@@ -454,6 +456,12 @@ public final class SidebarView: NSView {
 
   public var panelLayer: NSView { panels }
 
+  public override func setFrameSize(_ newSize: NSSize) {
+    let changed = newSize != frame.size
+    super.setFrameSize(newSize)
+    if changed { needsLayout = true }
+  }
+
   public override func layout() {
     super.layout()
     panels.frame = bounds
@@ -534,6 +542,7 @@ public final class SidebarView: NSView {
     }
     boxes.frame = NSRect(x: inset, y: 0, width: width - inset * 2, height: docHeight)
     rows.frame = boxes.frame
+    bottomEdge.update(context.palette)
     dock.frame = bounds
     let pillSize = SidebarActivePill.size
     pill.frame = NSRect(
@@ -946,6 +955,9 @@ public final class SidebarView: NSView {
       clip.frame = NSRect(x: 0, y: pageLayout.scrollTop + shift, width: bounds.width, height: max(0, scrollHeight - shift))
       scroll.frame = NSRect(x: 0, y: -shift, width: bounds.width, height: scrollHeight)
     }
+    let edgeHeight = min(28, clip.bounds.height)
+    bottomEdge.frame = CGRect(x: 0, y: clip.bounds.maxY - edgeHeight, width: clip.bounds.width, height: edgeHeight)
+    bottomEdge.isHidden = edgeHeight <= 0 || document.frame.maxY <= scroll.contentView.bounds.maxY + 0.5
   }
 
   public override func updateTrackingAreas() {

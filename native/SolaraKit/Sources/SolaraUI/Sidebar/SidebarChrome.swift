@@ -26,13 +26,15 @@ public struct SidebarChromeState: Decodable, Equatable, Sendable {
   public var iconsOnly: Bool?
   public var dropOver: Bool
   public var sidebarPosition: String?
+  public var windowFullscreen: Bool?
   public var update: SidebarUpdatePillState?
 
   public var rail: Bool { iconsOnly == true }
 
   public init(
     controls: StripControlsState, downloads: Bool, addressBar: Bool, dark: Bool, theme: [String: String], dots: [SidebarChromeDot], savedWidth: Double,
-    iconsOnly: Bool = false, dropOver: Bool = false, update: SidebarUpdatePillState? = nil, currentProfileId: String? = nil, sidebarPosition: String? = nil
+    iconsOnly: Bool = false, dropOver: Bool = false, update: SidebarUpdatePillState? = nil, currentProfileId: String? = nil, sidebarPosition: String? = nil,
+    windowFullscreen: Bool? = nil
   ) {
     self.controls = controls
     self.downloads = downloads
@@ -46,6 +48,7 @@ public struct SidebarChromeState: Decodable, Equatable, Sendable {
     self.dropOver = dropOver
     self.update = update
     self.sidebarPosition = sidebarPosition
+    self.windowFullscreen = windowFullscreen
   }
 
   public static func decode(_ json: String) -> SidebarChromeState? {
@@ -73,7 +76,7 @@ public enum SidebarChromeMetrics {
   public static let railHeader: CGFloat = railPadding + railButton + railPadding
   public static let fieldRow: CGFloat = 34
   public static let footer: CGFloat = 41
-  public static let indicatorX: CGFloat = 84
+  public static let indicatorX = ShellMetrics.railLightsTrailing + 8 - StripControlsLayout.pad
   public static let headerRight: CGFloat = 7
   public static let controlTop: CGFloat = 10
   public static let downloadsBox: CGFloat = 34
@@ -104,8 +107,12 @@ public enum SidebarChromeMetrics {
 
   public static func footerDownloads(_ state: SidebarChromeState) -> Bool { state.addressBar || state.rail }
 
-  public static func indicatorRoom(width: CGFloat, downloads: Bool) -> CGFloat {
-    width - indicatorX - headerRight - (downloads ? downloadsBox + 2 : 0)
+  public static func indicatorLeading(windowFullscreen: Bool) -> CGFloat {
+    windowFullscreen ? inset : indicatorX
+  }
+
+  public static func indicatorRoom(width: CGFloat, downloads: Bool, windowFullscreen: Bool = false) -> CGFloat {
+    width - indicatorLeading(windowFullscreen: windowFullscreen) - headerRight - (downloads ? downloadsBox + 2 : 0)
   }
 
   public static func dotOpacity(slot: Double?, position: Double, hovered: Bool) -> CGFloat {
@@ -166,6 +173,10 @@ public enum SidebarResizeMath {
 public final class SidebarChromeView: NSView {
   public var onAction: (SidebarChromeAction) -> Void = { _ in }
   public var onBlankMouseDown: (NSEvent) -> Void = { event in event.window?.performDrag(with: event) }
+  public let fullScreenHeader = FlippedContainerView()
+  public private(set) var fullScreenHeaderOffset: CGFloat = 0
+  public var onFullScreenPresentationChange: (() -> Void)?
+  private var fullScreenCaptionReserved = false
   public let addressSlot = FlippedContainerView()
   public private(set) var state: SidebarChromeState?
 
@@ -183,6 +194,8 @@ public final class SidebarChromeView: NSView {
   private let dropGlow = CALayer()
   private var pagerPosition: Double?
   private var tracking: NSTrackingArea?
+  private weak var fullscreenWindow: NSWindow?
+  private var observedWindowFullscreen: Bool?
 
   public override var isFlipped: Bool { true }
   public override var mouseDownCanMoveWindow: Bool { true }
@@ -197,13 +210,15 @@ public final class SidebarChromeView: NSView {
     dropGlow.actions = SurfaceLayer.noActions
     layer?.addSublayer(dropGlow)
     DevPointer.observe(self, #selector(devPointer(_:)))
+    fullScreenHeader.wantsLayer = true
+    addSubview(fullScreenHeader)
     addressSlot.autoresizingMask = []
-    addSubview(addressSlot)
+    fullScreenHeader.addSubview(addressSlot)
     for button in [headerDownloads, footerDownloads] {
       button.radius = 10
       button.name = "Downloads"
       button.onPress = { [weak self] in self?.onAction(.toggleDownloads) }
-      addSubview(button)
+      if button === headerDownloads { fullScreenHeader.addSubview(button) } else { addSubview(button) }
     }
     headerProfile.radius = 8
     headerProfile.isHidden = true
@@ -211,9 +226,9 @@ public final class SidebarChromeView: NSView {
       guard self?.state?.controls.incognito != true else { return }
       self?.onAction(.profileMenu)
     }
-    addSubview(headerProfile)
+    fullScreenHeader.addSubview(headerProfile)
     indicator.onPress = { [weak self] in self?.onAction(.profileMenu) }
-    addSubview(indicator)
+    fullScreenHeader.addSubview(indicator)
     profileSwitcher.isHidden = true
     profileSwitcher.onPress = { [weak self] in self?.showProfiles() }
     addSubview(profileSwitcher)
@@ -231,6 +246,61 @@ public final class SidebarChromeView: NSView {
   }
 
   required init?(coder: NSCoder) { fatalError() }
+
+  deinit { NotificationCenter.default.removeObserver(self) }
+
+  public override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    let center = NotificationCenter.default
+    for name in [NSWindow.didEnterFullScreenNotification, NSWindow.didExitFullScreenNotification] {
+      center.removeObserver(self, name: name, object: fullscreenWindow)
+      if let window { center.addObserver(self, selector: #selector(windowFullscreenChanged(_:)), name: name, object: window) }
+    }
+    fullscreenWindow = window
+    observedWindowFullscreen = window?.styleMask.contains(.fullScreen)
+    needsLayout = true
+  }
+
+  @objc private func windowFullscreenChanged(_ note: Notification) {
+    guard let changed = note.object as? NSWindow else { return }
+    setWindowFullscreen(note.name == NSWindow.didEnterFullScreenNotification, in: changed)
+  }
+
+  func setWindowFullscreen(_ fullscreen: Bool, in changed: NSWindow) {
+    guard state?.windowFullscreen == nil, changed === window else { return }
+    observedWindowFullscreen = fullscreen
+    needsLayout = true
+    layoutSubtreeIfNeeded()
+  }
+
+  public var reservesFullScreenCaption: Bool {
+    guard let state, !state.addressBar, !state.controls.incognito, state.controls.profiles <= 1 else { return false }
+    return windowShell?.input.windowFullscreen ?? state.windowFullscreen ?? observedWindowFullscreen ?? false
+  }
+
+  public var toolbarBandBottom: CGFloat {
+    let fullscreen = windowShell?.input.windowFullscreen ?? state?.windowFullscreen ?? observedWindowFullscreen ?? false
+    return fullscreen ? ShellMetrics.cardTop + ShellMetrics.toolbarHeight : ShellMetrics.railToolbarTop + ShellMetrics.railToolbarHeight
+  }
+
+  public func sidebarListTopInset(_ top: CGFloat) -> CGFloat {
+    let resting = state?.rail == true ? toolbarBandBottom + headerHeight : top
+    guard reservesFullScreenCaption else { return resting }
+    return max(resting, SidebarChromeMetrics.header) + fullScreenHeaderOffset
+  }
+
+  public func setFullScreenHeaderOffset(_ offset: CGFloat) {
+    let reserved = reservesFullScreenCaption
+    let changed = offset != fullScreenHeaderOffset || reserved != fullScreenCaptionReserved
+    fullScreenHeaderOffset = offset
+    fullScreenCaptionReserved = reserved
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    fullScreenHeader.layer?.transform = CATransform3DMakeTranslation(0, offset, 0)
+    CATransaction.commit()
+    for bar in addressSlot.subviews.compactMap({ $0 as? SidebarAddressBarView }) { bar.refreshFullScreenAnchors() }
+    if changed { onFullScreenPresentationChange?() }
+  }
 
   public var headerHeight: CGFloat {
     guard let state, state.rail else { return SidebarChromeMetrics.headerHeight(addressBar: state?.addressBar ?? false) }
@@ -260,19 +330,22 @@ public final class SidebarChromeView: NSView {
   public var downloadsRect: NSRect? {
     let button = [headerDownloads, footerDownloads].first { !$0.isHidden }
     guard let button, window != nil else { return nil }
-    return button.convert(button.bounds, to: nil)
+    return button.fullScreenRect(button.bounds, to: nil)
   }
 
   public override func hitTest(_ point: NSPoint) -> NSView? {
     let local = convert(point, from: superview)
     guard bounds.contains(local) else { return nil }
+    let headerPoint = CGPoint(x: local.x, y: local.y - fullScreenHeaderOffset)
+    if fullScreenHeader.frame.contains(headerPoint), let hit = fullScreenHeader.hitTest(headerPoint), hit !== fullScreenHeader { return hit }
     let hit = super.hitTest(point)
-    if hit !== self { return hit }
-    return local.y < headerHeight || local.y >= bounds.height - footerHeight ? self : nil
+    if hit !== self, hit !== fullScreenHeader, hit?.isDescendant(of: fullScreenHeader) != true { return hit }
+    return fullScreenHeader.frame.contains(headerPoint) || local.y >= bounds.height - footerHeight ? self : nil
   }
 
   public override func mouseDown(with event: NSEvent) {
-    guard convert(event.locationInWindow, from: nil).y < headerHeight else { return }
+    let point = convert(event.locationInWindow, from: nil)
+    guard fullScreenHeader.frame.contains(CGPoint(x: point.x, y: point.y - fullScreenHeaderOffset)) else { return }
     onBlankMouseDown(event)
   }
   public override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -283,6 +356,8 @@ public final class SidebarChromeView: NSView {
     func color(_ key: String) -> NSColor { SidebarPalette.parse(state.theme[key]) ?? .clear }
     let width = bounds.width
     let header = headerHeight
+    fullScreenHeader.frame = CGRect(x: 0, y: 0, width: width, height: header)
+    setFullScreenHeaderOffset(fullScreenHeaderOffset)
     let footer = SidebarChromeMetrics.footerRowHeight(state)
     addressSlot.isHidden = !state.addressBar || state.rail
     addressSlot.frame = NSRect(x: 0, y: 0, width: width, height: header)
@@ -299,16 +374,21 @@ public final class SidebarChromeView: NSView {
       x: ((width - SidebarChromeMetrics.railButton) / 2).rounded(), y: SidebarChromeMetrics.railPadding,
       width: SidebarChromeMetrics.railButton, height: SidebarChromeMetrics.railButton)
     let inHeader = !state.addressBar && !state.rail
-    let room = SidebarChromeMetrics.indicatorRoom(width: width, downloads: state.downloads)
+    let windowFullscreen = state.windowFullscreen ?? observedWindowFullscreen ?? window?.styleMask.contains(.fullScreen) ?? false
+    let leadingAtEdge = windowFullscreen || state.sidebarPosition == "right"
+    let room = SidebarChromeMetrics.indicatorRoom(width: width, downloads: state.downloads, windowFullscreen: leadingAtEdge)
     let layout = StripControlsLayout.indicator(
       textWidth: StripControlsLayout.nameWidth(controls.title), room: room, incognito: controls.incognito, profiles: controls.profiles)
+    let leadingTrim: CGFloat = leadingAtEdge ? 0 : 5
+    indicator.leadingPadding = StripControlsLayout.pad - leadingTrim
     indicator.isHidden = !inHeader || !layout.shown
     indicator.set(
       title: controls.title, showName: layout.showName, color: SidebarPalette.parse(controls.nameColor) ?? color("textPrimary"),
       hover: controls.incognito ? .clear : color("tabHover"), pressed: controls.incognito ? .clear : color("tabPressed"), enabled: !controls.incognito,
       tooltip: controls.incognito ? nil : "Switch between profiles")
     indicator.frame = NSRect(
-      x: SidebarChromeMetrics.indicatorX, y: SidebarChromeMetrics.controlTop + 0.5, width: layout.shown ? layout.width : 0, height: StripControlsLayout.height)
+      x: SidebarChromeMetrics.indicatorLeading(windowFullscreen: leadingAtEdge) + leadingTrim, y: SidebarChromeMetrics.controlTop,
+      width: layout.shown ? max(0, layout.width - leadingTrim) : 0, height: StripControlsLayout.height)
 
     let box = SidebarChromeMetrics.downloadsBox
     for button in [headerDownloads, footerDownloads] {
@@ -460,19 +540,21 @@ public final class SidebarChromeView: NSView {
     tracking = area
   }
 
-  public override func mouseMoved(with event: NSEvent) { hover(at: convert(event.locationInWindow, from: nil)) }
-  public override func mouseEntered(with event: NSEvent) { hover(at: convert(event.locationInWindow, from: nil)) }
+  public override func mouseMoved(with event: NSEvent) { hover(at: fullScreenPoint(event.locationInWindow, from: nil)) }
+  public override func mouseEntered(with event: NSEvent) { hover(at: fullScreenPoint(event.locationInWindow, from: nil)) }
   public override func mouseExited(with event: NSEvent) { hover(at: nil) }
 
   @objc private func devPointer(_ note: Notification) {
     guard DevPointer.inside(self, note), let window, let screen = (note.object as? NSValue)?.pointValue else { return hover(at: nil) }
-    hover(at: convert(window.convertPoint(fromScreen: screen), from: nil))
+    hover(at: fullScreenPoint(window.convertPoint(fromScreen: screen), from: nil))
   }
 
   private func hover(at point: NSPoint?) {
-    headerProfile.hovered = point.map { !headerProfile.isHidden && headerProfile.frame.contains($0) } ?? false
-    indicator.hovered = point.map { !indicator.isHidden && indicator.frame.contains($0) } ?? false
-    for button in [headerDownloads, footerDownloads] { button.hovered = point.map { !button.isHidden && button.frame.contains($0) } ?? false }
+    let headerPoint = point.map { CGPoint(x: $0.x, y: $0.y - fullScreenHeaderOffset) }
+    headerProfile.hovered = headerPoint.map { !headerProfile.isHidden && headerProfile.frame.contains($0) } ?? false
+    indicator.hovered = headerPoint.map { !indicator.isHidden && indicator.frame.contains($0) } ?? false
+    headerDownloads.hovered = headerPoint.map { !headerDownloads.isHidden && headerDownloads.frame.contains($0) } ?? false
+    footerDownloads.hovered = point.map { !footerDownloads.isHidden && footerDownloads.frame.contains($0) } ?? false
     updatePill.hovered = point.map { !updatePill.isHidden && updatePill.frame.contains($0) } ?? false
     profileSwitcher.hovered = point.map { !profileSwitcher.isHidden && profileSwitcher.frame.contains($0) } ?? false
     for dot in dots { dot.setHovered(point.map { !dot.isHidden && dot.frame.contains($0) } ?? false) }

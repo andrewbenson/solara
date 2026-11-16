@@ -431,6 +431,7 @@ struct OnboardingJoinOwnershipTests {
 
   @Test(arguments: [false, true]) func earlyStagedBrowserEntryDoesNotDismissRemountedJoin(failed: Bool) async {
     let (model, services, discovery, joining) = fixture()
+    let scheduler = model.scheduler as! OnboardingFakeScheduler
     services.stagesJoinedWrites = true
     model.maybeStart()
     discovery.emit(.found([candidate]))
@@ -439,7 +440,7 @@ struct OnboardingJoinOwnershipTests {
     joining.committedResult = true
     joining.committedState = .approved
     joining.emit(.approved)
-    (model.scheduler as! OnboardingFakeScheduler).advance(.seconds(60))
+    scheduler.advance(.seconds(60))
     services.holdJoinedWrite = true
     model.finishJoined()
     await settle()
@@ -451,10 +452,10 @@ struct OnboardingJoinOwnershipTests {
       await settle()
       #expect(model.syncRoute == .savingFailed)
     }
-    let remount = OnboardingModel(services: services, store: services.store, appName: "Solara")
+    let remount = OnboardingModel(services: services, store: services.store, appName: "Solara", scheduler: scheduler)
     remount.maybeStart()
     #expect(remount.isActive)
-    #expect(remount.syncRoute == .joining(.approved))
+    #expect(remount.syncRoute == .downloading)
     model.leaveSetup()
     remount.leaveSetup()
     services.holdJoinedWrite = false

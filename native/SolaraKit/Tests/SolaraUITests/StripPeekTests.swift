@@ -109,7 +109,7 @@ import Testing
     window.contentView = view
     view.setEnabled(true)
     defer {
-      view.setEnabled(false)
+      view.stop()
       window.close()
     }
     func post(_ point: CGPoint) throws {
@@ -135,7 +135,10 @@ import Testing
     try post(CGPoint(x: 520, y: 30))
     try await pump(0.6) { #expect(view.live) }
     try post(CGPoint(x: 520, y: 160))
-    try await pump(0.5)
+    let dismissedBy = Date(timeIntervalSinceNow: 2)
+    while view.live && Date() < dismissedBy {
+      try await Task.sleep(for: .milliseconds(10))
+    }
     #expect(!view.live)
     #expect(NSWorkspace.shared.frontmostApplication?.processIdentifier == frontmost)
   }

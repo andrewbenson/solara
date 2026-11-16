@@ -83,7 +83,7 @@ public struct WindowLayoutInput: Equatable, Sendable {
     bookmarksBar = state.settings.string("bookmarksBar") ?? "newTab"
     let topTabs = (window.tabLayout ?? state.settings.string("tabLayout") ?? "sidebar") == "top"
     let rail = !topTabs && window.effectiveSidebarIconsOnly(state.settings)
-    let address = !topTabs && !rail && state.settings.string("addressBar") == "sidebar"
+    let address = !topTabs && (!rail || !window.sidebarOpen) && state.settings.string("addressBar") == "sidebar"
     let fullscreen = fullscreenTabId != nil
     var modes: [String: ToolbarAutoHideMode] = [:]
     var tops: [String: CGFloat] = [:]
@@ -100,16 +100,25 @@ public struct WindowLayoutInput: Equatable, Sendable {
     toolbarModes = modes
     shownTops = tops
     layout = DockedLayoutInput(
-      size: self.bounds.size, dock: window.sidebarOpen ? 1 : 0,
+      size: self.bounds.size, dock: topTabs || window.sidebarOpen ? 1 : 0,
       sidebarWidth: rail ? CGFloat(SidebarRail.width) : CGFloat(window.effectiveSidebarWidth(state.settings)),
       topTabs: topTabs, fullscreen: fullscreen, addressBarInSidebar: address,
-      sidebarSide: sidebarPositionAllowed ? SidebarSide(position: window.effectiveSidebarPosition(state.settings)) : .left)
+      sidebarSide: !topTabs && window.sidebarOpen && sidebarPositionAllowed ? SidebarSide(position: window.effectiveSidebarPosition(state.settings)) : .left,
+      windowFullscreen: self.windowFullscreen)
     var sample = presentation ?? layout
     sample.size = self.bounds.size
     sample.topTabs = topTabs
+    if topTabs {
+      sample.dock = 1
+      sample.away = false
+      sample.peeking = false
+      sample.peekSlide = 0
+      sample.railProgress = nil
+    }
     sample.sidebarSide = layout.sidebarSide
     sample.addressBarInSidebar = address
     sample.fullscreen = fullscreen
+    sample.windowFullscreen = self.windowFullscreen
     self.presentation = sample
     let dots = !window.incognito && profileCount > 1
     let downloads = state.downloads.contains { download in
@@ -122,7 +131,7 @@ public struct WindowLayoutInput: Equatable, Sendable {
     let room = StripControlsLayout.profileRoom(width: self.bounds.width, leading: leading)
     let indicator = StripControlsLayout.indicator(textWidth: profileNameWidth, room: room, incognito: window.incognito, profiles: profileCount)
     stripControlsWidth = StripControlsLayout.downloadsBox
-    stripProfileSlotWidth = StripControlsLayout.profileSlot(indicator: indicator.width)
+    stripProfileSlotWidth = StripControlsLayout.profileSlot(indicator: indicator.width, coveredByIsland: self.windowFullscreen)
   }
 
   public func hasSameLayout(as other: Self) -> Bool {

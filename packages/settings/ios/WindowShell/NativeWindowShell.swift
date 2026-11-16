@@ -239,6 +239,10 @@ final class ShellHost {
       self?.sidePanel?.windowChanged(window)
       self?.scheduleLayoutProjection()
     }
+    shell.onCaptionLayout = { [weak self] in
+      guard let self, !self.layoutStopped, let window = self.shell.window else { return }
+      WindowCaptionLayout.refresh(in: window)
+    }
     panes = NativePaneRoots.start(windowId)
     profilePager = NativeProfilePager.start(shell)
     shell.onFrames = { [weak self] _ in
@@ -309,6 +313,7 @@ final class ShellHost {
   func stop() {
     guard !layoutStopped else { return }
     layoutStopped = true
+    SidebarAddressBars.shared.removeNavigationView(shell.windowId)
     toolbarPresentation?.stop()
     toolbarPresentation = nil
     AutoHideHost.windowEnded(shell.windowId)
@@ -323,6 +328,7 @@ final class ShellHost {
     paneLayout = nil
     layoutAnchors.stop()
     shell.onFrames = nil
+    shell.onCaptionLayout = nil
     #if SOLARA_PROBES
     probeStopped = true
     #endif
@@ -551,6 +557,15 @@ extension ShellHost {
     layoutChrome?.refresh()
     shell.layoutSubtreeIfNeeded()
     guard let input = makeLayoutInput() else { return }
+    if input.presentation.chromeNavigationRow {
+      SidebarAddressBridge.install()
+      let navigation = SidebarAddressBars.shared.navigationView(shell.windowId)
+      navigation.navigationLeadingInset = shell.trafficLightsLeadingInset(at: 0)
+      if shell.view(in: .navigation) !== navigation { shell.mount(.navigation, navigation) }
+    } else if shell.view(in: .navigation) != nil {
+      shell.mount(.navigation, nil)
+      SidebarAddressBars.shared.removeNavigationView(shell.windowId)
+    }
     let snapshot = WindowLayoutSnapshot.of(input, generation: layoutGeneration + 1)
     if let state = layoutState { paneLayout?.install(snapshot, state: state) }
     AutoHideHost.install(snapshot)
@@ -592,9 +607,14 @@ extension ShellHost {
         }
       }
     }
+    if input.presentation.chromeNavigationRow, let navigation = shell.view(in: .navigation) as? SidebarAddressBarView {
+      navigation.layoutSubtreeIfNeeded()
+      guests.merge(navigation.navigationFrames.mapValues { navigation.fullScreenRect($0, to: shell) }) { _, new in new }
+      return guests
+    }
     if input.layout.addressBarInSidebar {
       guard let bar = SidebarAddressBars.shared.existing(shell.windowId), bar.window === shell.window else { return guests }
-      let field = bar.convert(bar.fieldFrame, to: shell)
+      let field = bar.fullScreenRect(bar.fieldFrame, to: shell)
       guests.merge(["url": field, "urlField": field, "tour:commandBar": field]) { _, new in new }
       return guests
     }
@@ -602,9 +622,9 @@ extension ShellHost {
     let split = shell.card.subviews.compactMap { $0 as? SplitPanesView }.first
     guard let toolbar = split?.toolbar(id) ?? NativeToolbarHostView.host(windowId: shell.windowId, tabId: id)?.toolbar,
       toolbar.window === shell.window else { return guests }
-    var anchors = toolbar.layoutAnchors.mapValues { toolbar.convert($0, to: shell) }
+    var anchors = toolbar.layoutAnchors.mapValues { toolbar.fullScreenRect($0, to: shell) }
     anchors["nativeURLBand"] = anchors["url"]
-    anchors["url"] = snapshot.residualURLBand(tabId: id, trailingReservation: CGFloat(toolbar.state?.geometry.urlRight ?? 12))
+    anchors["url"] = snapshot.residualURLBand(tabId: id, trailingReservation: CGFloat(toolbar.state?.geometry.urlRight ?? 12), trafficLightsInset: shell.trafficLightsLeadingInset(for: toolbar))?.offsetBy(dx: 0, dy: shell.fullScreenPresentationOffset(for: toolbar))
     anchors["tour:commandBar"] = anchors["urlField"]
     if input.split == nil, !input.layout.topTabs { anchors["tour:sidebarButton"] = anchors["button:sidebar"] }
     return guests.merging(anchors) { _, new in new }

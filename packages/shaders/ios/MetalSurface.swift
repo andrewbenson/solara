@@ -34,19 +34,24 @@ class MetalSurface: ExpoView, MTKViewDelegate {
   }
 
   func writeSnapshot(to path: String) -> Bool {
-    guard let pipeline, bounds.width > 0, bounds.height > 0 else { return false }
+    guard let rep = snapshotImage(), let png = rep.representation(using: .png, properties: [:]) else { return false }
+    return (try? png.write(to: URL(fileURLWithPath: path))) != nil
+  }
+
+  func snapshotImage() -> NSBitmapImageRep? {
+    guard let pipeline, bounds.width > 0, bounds.height > 0 else { return nil }
     let scale = window?.backingScaleFactor ?? 2
     let width = Int(bounds.width * scale), height = Int(bounds.height * scale)
     let desc = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: width, height: height, mipmapped: false)
     desc.usage = [.renderTarget]
     desc.storageMode = .shared
-    guard let texture = Self.device.makeTexture(descriptor: desc), let buffer = Self.queue.makeCommandBuffer() else { return false }
+    guard let texture = Self.device.makeTexture(descriptor: desc), let buffer = Self.queue.makeCommandBuffer() else { return nil }
     let pass = MTLRenderPassDescriptor()
     pass.colorAttachments[0].texture = texture
     pass.colorAttachments[0].loadAction = .clear
     pass.colorAttachments[0].clearColor = metalView.clearColor
     pass.colorAttachments[0].storeAction = .store
-    guard let encoder = buffer.makeRenderCommandEncoder(descriptor: pass) else { return false }
+    guard let encoder = buffer.makeRenderCommandEncoder(descriptor: pass) else { return nil }
     encoder.setRenderPipelineState(pipeline)
     encode(encoder, size: SIMD2(Float(bounds.width), Float(bounds.height)))
     encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
@@ -66,10 +71,9 @@ class MetalSurface: ExpoView, MTKViewDelegate {
     guard let rep = NSBitmapImageRep(
       bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
       isPlanar: false, colorSpaceName: .deviceRGB, bitmapFormat: [.alphaNonpremultiplied], bytesPerRow: width * 4, bitsPerPixel: 32),
-      let data = rep.bitmapData else { return false }
+      let data = rep.bitmapData else { return nil }
     bytes.withUnsafeBytes { data.update(from: $0.bindMemory(to: UInt8.self).baseAddress!, count: bytes.count) }
-    guard let png = rep.representation(using: .png, properties: [:]) else { return false }
-    return (try? png.write(to: URL(fileURLWithPath: path))) != nil
+    return rep
   }
 
   override func hitTest(_ point: NSPoint) -> NSView? { nil }

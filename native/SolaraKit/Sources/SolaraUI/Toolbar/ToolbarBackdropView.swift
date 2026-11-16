@@ -82,7 +82,8 @@ public final class ToolbarBackdropView: NSView {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     band.frame = bounds
-    hairline.frame = CGRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1)
+    let hairlineHeight = 1 / (window?.backingScaleFactor ?? 2)
+    hairline.frame = CGRect(x: 0, y: bounds.height - hairlineHeight, width: bounds.width, height: hairlineHeight)
     stripes.fit(bounds, scale: window?.backingScaleFactor ?? 2)
     CATransaction.commit()
   }

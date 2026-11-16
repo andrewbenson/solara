@@ -34,6 +34,7 @@ import { devPeeks, lightsCenter, TOP_STRIP_LIGHTS_CENTER } from "./dockMotion";
 import { NativeStripControls, nativeStripControlsEnabled, NativeStripDropGlow } from "./NativeStripControls";
 import { NativeStripPeek, nativeStripPeekEnabled, NativeTopStrip, nativeTopStripEnabled } from "./NativeTopStrip";
 import { topStripPeek } from "@solara/settings";
+import { topStripLeading } from "./topStripLeading";
 import {
   aimDrop,
   dockCellOf,
@@ -84,7 +85,6 @@ const FOLDER_HEIGHT = 24;
 const FOLDER_RADIUS = 7;
 const LIFT_SLOP = 12;
 const LIFT_MS = 150;
-const LIGHTS_GAP = 8;
 const ONTO_EDGE = MAX_CHIP / 4;
 
 const FloatingStrip = createContext(false);
@@ -119,12 +119,12 @@ export function TopTabStrip({
   const current = useWindowProfileId();
   const { pages } = usePagerPages(windowId);
   const fullscreen = useBrowser((s) => !!s.windows[windowId]?.fullScreen);
-  const leadingInset = floating || fullscreen ? 8 : layout.trafficLightsWidth + LIGHTS_GAP;
+  const leadingInset = floating || fullscreen ? 8 : layout.trafficLightsWidth + 8;
   const profileRoom = Math.max(MIN_PROFILE_SLOT - PROFILE_GAP, Math.min(PROFILE_ROOM, width - leadingInset - TRAILING_ROOM - MIN_CHIP - PROFILE_GAP));
   const profileChip = useProfileIndicatorWidth(profileRoom);
   const profileTitle = useProfileTitle();
-  const profileSlot = profileChip > 0 ? Math.max(MIN_PROFILE_SLOT, profileChip + PROFILE_GAP) : 0;
-  const left = leadingInset + profileSlot;
+  const docked = topStripLeading(width, profileChip, floating || fullscreen);
+  const left = floating ? leadingInset + docked.profileSlot : docked.leading;
   const right = TRAILING_ROOM;
   const nativePageWidth = useMeasuredWidth(`window-strip|${windowId}`);
   const pageWidth = !floating && nativePageWidth !== undefined ? nativePageWidth : Math.max(0, width - left - right);
@@ -150,14 +150,14 @@ export function TopTabStrip({
         {nativeStripControlsEnabled() ? (
           <>
             <ProfileNameMeasure title={profileTitle} />
-            <NativeStripControls windowId={windowId} indicator={profileChip > 0} leadingInset={leadingInset} style={{ position: "absolute", left: 0, right: 8, top: MID - 17, height: 34.5 }} />
+            <NativeStripControls windowId={windowId} indicator={profileChip > 0} leadingInset={leadingInset} windowFullscreen={floating ? undefined : fullscreen} style={{ position: "absolute", left: 0, right: 8, top: floating ? MID - 17 : TOP_STRIP_LIGHTS_CENTER[1] - 17, height: 34.5 }} />
           </>
         ) : (
           <>
-            <View mouseDownCanMoveWindow={false} style={{ position: "absolute", left: leadingInset, top: MID - 17 }}>
+            <View mouseDownCanMoveWindow={false} style={{ position: "absolute", left: leadingInset, top: floating ? MID - 17 : TOP_STRIP_LIGHTS_CENTER[1] - 17 }}>
               <ProfileIndicator room={profileRoom} />
             </View>
-            <View mouseDownCanMoveWindow={false} style={{ position: "absolute", right: 8, top: MID - 17 + (profileChip > 0 ? 0.5 : 0) }}>
+            <View mouseDownCanMoveWindow={false} style={{ position: "absolute", right: 8, top: floating ? MID - 17 + (profileChip > 0 ? 0.5 : 0) : TOP_STRIP_LIGHTS_CENTER[1] - 17 }}>
               <DownloadsButton windowId={windowId} />
             </View>
           </>

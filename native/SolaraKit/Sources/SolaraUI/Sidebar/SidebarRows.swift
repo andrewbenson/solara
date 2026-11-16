@@ -240,7 +240,7 @@ class SidebarRowView: NSView {
     case .tab, .split: hintKey = item.key
     default: hintKey = ""
     }
-    numberHint.configure(actions: context.tabNumberActions[hintKey] ?? [], enabled: context.showsTabNumberHints, style: SidebarRail.contains(width: Double(item.frame.width)) ? .rail : item.section == .tiles ? .tile : .row)
+    numberHint.configure(actions: context.tabNumberActions[hintKey] ?? [], enabled: context.showsTabNumberHints, style: (windowShell?.fullScreenIconSidebar == true || SidebarRail.contains(width: Double(item.frame.width))) ? .rail : item.section == .tiles ? .tile : .row)
     let key = renderKey(item, context)
     if let key, key == rendered, item == self.item {
       self.context = context

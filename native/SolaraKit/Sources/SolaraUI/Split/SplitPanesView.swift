@@ -39,6 +39,7 @@ public enum SplitLayout {
 @MainActor
 public final class SplitPanesView: NSView {
   public let windowId: String
+  private weak var chromeToolbar: ToolbarView?
   public var toolbarHeight: CGFloat = ShellMetrics.toolbarHeight { didSet { if toolbarHeight != oldValue { needsLayout = true } } }
   public var cardColor: NSColor = .windowBackgroundColor {
     didSet {
@@ -220,6 +221,11 @@ public final class SplitPanesView: NSView {
     layer?.cornerRadius = rail > 0 ? (windowShell?.cardStyle.radius ?? ShellMetrics.cardRadius) * (1 - rail) : 0
     layer?.cornerCurve = .continuous
     CATransaction.commit()
+    let toolbarOnChrome = windowShell?.input.chromeToolbarRow == true
+    if let current = chromeToolbar, !toolbarOnChrome || current !== activeId.flatMap({ panes[$0]?.toolbar }) {
+      windowShell?.unregisterToolbar(current)
+      chromeToolbar = nil
+    }
     let origin = installed?.frames.card.origin ?? .zero
     let rects = installed?.panes.filter { $0.key != installed?.input.peekTabId }.mapValues { $0.offsetBy(dx: -origin.x, dy: -origin.y) }
       ?? (split == nil ? [:] : SplitLayout.panes(split: split, activeId: activeId, fullscreenTab: fullscreenTab, bounds: area).panes)
@@ -234,12 +240,15 @@ public final class SplitPanesView: NSView {
       pane.liveTop = liveTops[tabId].map { $0 * (1 - rail) }
       pane.band = tabId == fullscreenTab ? 0 : bandHeights[tabId] ?? 0
       if rail > 0, tabId == activeId {
-        if pane.toolbar.superview !== self {
-          addSubview(pane.toolbar)
-        }
-        pane.toolbar.frame = CGRect(x: 0, y: 0, width: bounds.width, height: toolbarHeight + ShellMetrics.railToolbarTop * rail)
         pane.toolbar.isHidden = !pane.hasToolbar
         pane.toolbar.alphaValue = 1
+        if toolbarOnChrome, let shell = windowShell {
+          chromeToolbar = pane.toolbar
+          shell.registerToolbar(pane.toolbar, owner: self)
+        } else {
+          if pane.toolbar.superview !== self { addSubview(pane.toolbar) }
+          pane.toolbar.frame = CGRect(x: 0, y: 0, width: bounds.width, height: windowShell?.input.toolbarHeight ?? toolbarHeight)
+        }
       } else {
         if pane.toolbar.superview !== pane {
           pane.addSubview(pane.toolbar)
@@ -250,7 +259,8 @@ public final class SplitPanesView: NSView {
       pane.edgeShadow.tint = windowShell?.cardEdgeTint
       pane.edgeRim.tint = windowShell?.cardEdgeTint
       pane.edgeShadow.place(rect, radius: pane.radius, strength: edge)
-      pane.edgeRim.place(rect, radius: pane.radius, strength: edge)
+      let topTabs = installed?.input.layout.topTabs ?? windowShell?.input.topTabs ?? false
+      pane.edgeRim.place(rect, radius: pane.radius, strength: edge, topEdge: split != nil || !topTabs)
       if let snapshot = installed, let page = snapshot.pageViewports[tabId], let bar = snapshot.toolbars[tabId] {
         pane.toolbarHeight = bar.height
         pane.installedPage = page.offsetBy(dx: -origin.x - rect.minX, dy: -origin.y - rect.minY)
@@ -314,6 +324,10 @@ public final class SplitPanesView: NSView {
   }
 
   private func drop(_ tabId: String, _ pane: SplitLeafView) {
+    if pane.toolbar === chromeToolbar {
+      windowShell?.unregisterToolbar(pane.toolbar)
+      chromeToolbar = nil
+    }
     TabSlots.shared.remove(.pane(windowId, tabId), container: pane.page)
     panes[tabId] = nil
     pane.toolbar.removeFromSuperview()

@@ -455,6 +455,7 @@ public final class SidebarView: NSView {
   }
 
   public var panelLayer: NSView { panels }
+  public var usesIconRail: Bool { windowShell?.fullScreenIconSidebar == true || SidebarRail.contains(width: Double(bounds.width)) }
 
   public override func setFrameSize(_ newSize: NSSize) {
     let changed = newSize != frame.size
@@ -480,7 +481,7 @@ public final class SidebarView: NSView {
     guard let context, bounds.width > 0 else { return }
     guard !placing else { pendingPlacement = true; return }
     var input = SidebarLayoutInput(windowId: windowId, profileId: context.host.profileId, width: bounds.width, height: bounds.height)
-    input.rail = SidebarRail.contains(width: Double(bounds.width))
+    input.rail = usesIconRail
     if input.rail != railShown {
       SidebarDragController.existing(self)?.cancelForModeChange()
       setHover(nil, group: nil)

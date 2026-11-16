@@ -193,7 +193,9 @@ private func splitState(sizes: [Double] = [0.5, 0.5]) throws -> BrowserState {
     shell.setSidebarWidth(CGFloat(SidebarRail.width), animated: false)
     view.needsLayout = true
     view.layoutSubtreeIfNeeded()
-    #expect(a.superview === view)
+    #expect(a.superview !== view)
+    #expect(shell.toolbarSitsOnFrame(a))
+    #expect(a.convert(a.bounds, to: shell) == shell.toolbarRowFrame)
     #expect(a.state?.palette.background == "#202030")
     for layer in ToolbarFrameTests.surfaceLayers(a) { #expect(layer.backgroundColor == nil || layer.backgroundColor?.alpha == 0) }
     #expect(a.layer?.sublayers?[1].isHidden == true)

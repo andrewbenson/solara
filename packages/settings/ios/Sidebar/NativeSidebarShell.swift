@@ -117,6 +117,7 @@ final class SidebarShellColumn: NSView, DevDropDestination {
     chrome.autoresizingMask = [.width, .height]
     chrome.isHidden = true
     chrome.onAction = { [weak self] action in self?.chromeAction(action) }
+    chrome.onFullScreenPresentationChange = { [weak self] in self?.placeList() }
     chrome.onBlankMouseDown = { event in Self.blankMouseDown(event) }
     addSubview(chrome)
     pagerObserver = NotificationCenter.default.addObserver(forName: Notification.Name("SolaraPagerPosition"), object: nil, queue: nil) {
@@ -135,6 +136,7 @@ final class SidebarShellColumn: NSView, DevDropDestination {
     unregisterDraggedTypes()
     leave()
     chrome.onAction = { _ in }
+    chrome.onFullScreenPresentationChange = nil
     if let pagerObserver { NotificationCenter.default.removeObserver(pagerObserver) }
     pagerObserver = nil
     if NativeSidebar.hosts[windowId] === host { syncAddress(false) }
@@ -148,7 +150,7 @@ final class SidebarShellColumn: NSView, DevDropDestination {
     let previousLift = listLift
     chrome.isHidden = look == nil
     if var look {
-      look.iconsOnly = SidebarRail.contains(width: Double(bounds.width))
+      look.iconsOnly = effectiveRail(width: bounds.width)
       chrome.update(look)
     }
     syncAddress(chrome.state?.addressBar == true && chrome.state?.rail != true)
@@ -163,7 +165,7 @@ final class SidebarShellColumn: NSView, DevDropDestination {
     guard !stopped else { return }
     self.chrome.isHidden = false
     var chrome = chrome
-    chrome.iconsOnly = SidebarRail.contains(width: Double(bounds.width))
+    chrome.iconsOnly = effectiveRail(width: bounds.width)
     self.chrome.update(chrome)
     given = layout
     syncAddress(chrome.addressBar && !chrome.rail)
@@ -175,7 +177,7 @@ final class SidebarShellColumn: NSView, DevDropDestination {
     super.setFrameSize(newSize)
     guard !stopped else { return }
     if var state = chrome.state {
-      let rail = SidebarRail.contains(width: Double(newSize.width))
+      let rail = effectiveRail(width: newSize.width)
       if state.rail != rail {
         state.iconsOnly = rail
         chrome.update(state)
@@ -191,7 +193,16 @@ final class SidebarShellColumn: NSView, DevDropDestination {
     return up as? WindowShellView
   }
 
-  private var topInset: CGFloat { chrome.state?.rail == true && !chrome.isHidden ? chrome.headerHeight : given.top }
+  private func effectiveRail(width: CGFloat) -> Bool {
+    if let shell = shellView, shell.input.windowFullscreen, !shell.input.topTabs {
+      return SidebarRail.contains(width: Double(shell.input.sidebarWidth))
+    }
+    return SidebarRail.contains(width: Double(width))
+  }
+
+  private var topInset: CGFloat {
+    chrome.isHidden ? given.top : chrome.sidebarListTopInset(given.top)
+  }
 
   private var footerInset: CGFloat { chrome.state?.rail == true && !chrome.isHidden ? chrome.footerHeight : given.bottom }
 
@@ -203,9 +214,10 @@ final class SidebarShellColumn: NSView, DevDropDestination {
   private func placeList() {
     let lift = listLift
     list.frame = CGRect(x: 0, y: topInset, width: bounds.width, height: max(0, bounds.height - topInset - footerInset))
-    list.layer?.masksToBounds = given.clip || lift > 0
+    list.layer?.masksToBounds = given.clip || lift > 0 || chrome.reservesFullScreenCaption
     host.view.frame = CGRect(x: 0, y: -lift, width: list.bounds.width, height: list.bounds.height + lift)
-    chrome.frame = bounds
+    let chromeTop = chrome.state?.rail == true ? chrome.toolbarBandBottom : 0
+    chrome.frame = CGRect(x: 0, y: chromeTop, width: bounds.width, height: max(0, bounds.height - chromeTop))
   }
 
   override func hitTest(_ point: NSPoint) -> NSView? {
@@ -432,7 +444,7 @@ final class NativeLayoutChrome {
     let initial = NativeStoreHandle.store?.state
     let window = initial?.windows[windowId]
     let topTabs = (window?.tabLayout ?? initial?.settings.string("tabLayout")) == "top"
-    dock = SidebarDock(shell: shell, state: SidebarDockState(open: window?.sidebarOpen ?? true,
+    dock = SidebarDock(shell: shell, state: SidebarDockState(open: topTabs || (window?.sidebarOpen ?? true),
       arc: !topTabs && initial?.settings.string("addressBar") == "sidebar", topTabs: topTabs,
       width: window.flatMap { window in initial.map { SidebarRail.effectiveWidth(window, $0.settings) } } ?? Double(ShellMetrics.sidebarWidth),
       sidebarPosition: window.flatMap { window in initial.map { window.effectiveSidebarPosition($0.settings) } } ?? "left"))
@@ -542,7 +554,7 @@ final class NativeLayoutChrome {
   func refresh() {
     guard !stopped, !refreshing else { return }
     let nativeInput = state.flatMap(layoutInput)
-    strip.renderingEnabled = nativeInput?.layout.topTabs == true && (state?.windows[shell.windowId]?.sidebarOpen == true || dock.moving)
+    strip.renderingEnabled = nativeInput?.layout.topTabs == true
     peek.strip.renderingEnabled = peek.view.live
     let key = RefreshKey(revision: revision, feed: feedRevision, bounds: shell.bounds, input: shell.input, fullscreen: nativeInput?.layout.fullscreen ?? shell.input.fullscreen, windowFullscreen: nativeInput?.windowFullscreen ?? false)
     guard key != lastRefresh else { return }
@@ -562,6 +574,7 @@ final class NativeLayoutChrome {
     }
     guard let state, let window = state.windows[shell.windowId],
       let input = nativeInput else { return }
+    let effectiveOpen = input.layout.topTabs || window.sidebarOpen
     let look = NativeLayoutAppearance(state: state, profileId: window.profileId, incognito: window.incognito)
     var sidebar = SidebarHostState(profileId: window.profileId, dark: look.dark)
     sidebar.theme = look.tokens
@@ -605,12 +618,14 @@ final class NativeLayoutChrome {
     let chrome = SidebarChromeState(controls: controls, downloads: hasDownloads(state, window), addressBar: sidebar.addressBar,
       dark: look.dark, theme: look.tokens, dots: dots, savedWidth: window.effectiveSidebarWidth(state.settings),
       iconsOnly: window.effectiveSidebarIconsOnly(state.settings), dropOver: featureChrome?.dropOver ?? false,
-      update: featureChrome?.update, currentProfileId: window.profileId, sidebarPosition: input.layout.sidebarSide.rawValue)
+      update: featureChrome?.update, currentProfileId: window.profileId, sidebarPosition: input.layout.sidebarSide.rawValue,
+      windowFullscreen: input.windowFullscreen)
     shell.update {
       $0.topTabs = input.layout.topTabs
       $0.addressBarInSidebar = input.layout.addressBarInSidebar
       $0.sidebarSide = input.layout.sidebarSide
       $0.fullscreen = input.layout.fullscreen
+      $0.windowFullscreen = input.windowFullscreen
       if !shell.widthDragActive { $0.sidebarWidth = input.layout.sidebarWidth }
     }
     let top = SidebarChromeMetrics.headerHeight(addressBar: sidebar.addressBar)
@@ -618,7 +633,7 @@ final class NativeLayoutChrome {
     column.apply(state: state, host: sidebar, layout: .init(top: max(0, top - SidebarMetrics.glowRoom), header: top, bottom: bottom, clip: state.profileOrder.count > 1), chrome: chrome, renderHost: !input.layout.topTabs)
     setHold("downloads", controls.downloadsOpen)
     setHold("feature", held)
-    dock.apply(SidebarDockState(open: window.sidebarOpen, arc: sidebar.addressBar, fullscreen: input.layout.fullscreen,
+    dock.apply(SidebarDockState(open: effectiveOpen, arc: sidebar.addressBar, fullscreen: input.layout.fullscreen,
       topTabs: input.layout.topTabs, width: Double(input.layout.sidebarWidth), held: held || controls.downloadsOpen,
       sidebarPosition: input.layout.sidebarSide.rawValue, look: look.panel))
     let stripLook = NativeLayoutAppearance(state: state, profileId: window.profileId, incognito: window.incognito, strip: true)
@@ -637,11 +652,12 @@ final class NativeLayoutChrome {
     strip.bands = stripFeed?.bands ?? [:]
     strip.closeHint = stripFeed?.closeHint ?? sidebar.closeHint
     strip.newTabMark = stripFeed?.newTabMark ?? sidebar.newTabMark
-    self.strip.renderingEnabled = input.layout.topTabs && (window.sidebarOpen || dock.moving)
+    self.strip.renderingEnabled = input.layout.topTabs
     if self.strip.renderingEnabled { self.strip.apply(state: state, host: strip) }
     var stripControls = controls
     stripControls.nameColor = stripLook.nameColor
     stripRow.leadingInset = input.windowFullscreen ? 8 : ShellMetrics.topStripLeadingReservation
+    self.controls.windowFullscreen = input.windowFullscreen
     self.controls.update(stripControls, theme: stripLook.tokens)
     stripRow.needsLayout = true
     stripRow.layoutSubtreeIfNeeded()
@@ -650,9 +666,9 @@ final class NativeLayoutChrome {
     strip.floating = true
     peek.view.frame = shell.overlay.bounds
     peek.apply(state: state, host: strip, controls: stripControls,
-      enabled: input.layout.topTabs && !window.sidebarOpen && !input.layout.fullscreen,
+      enabled: input.layout.topTabs && !effectiveOpen && !input.layout.fullscreen,
       bandLeft: ShellMetrics.topStripLeadingReservation, look: look.panel, renderStrip: peek.view.live)
-    if input.layout.topTabs && window.sidebarOpen { ShellWindowEdge.setLightsCenter(shell.windowId, ShellMetrics.topStripLightsCenter) }
+    if input.layout.topTabs && effectiveOpen { ShellWindowEdge.setLightsCenter(shell.windowId, ShellMetrics.topStripLightsCenter) }
   }
 
   func stop() {
@@ -901,13 +917,14 @@ private final class NativeLayoutStripRow: NSView {
     addSubview(strip)
     addSubview(controls)
     controls.leadingInset = leadingInset
+    controls.captionAligned = true
   }
 
   required init?(coder: NSCoder) { fatalError() }
 
   override func layout() {
     super.layout()
-    controls.frame = CGRect(x: 0, y: StripControlsLayout.rowTop, width: max(0, bounds.width - 8), height: 34.5)
+    controls.frame = CGRect(x: 0, y: ShellMetrics.topStripLightsCenter.y - StripControlsLayout.height / 2, width: max(0, bounds.width - 8), height: 34.5)
     let left = leadingInset + controls.profileSlotWidth
     let right = StripControlsLayout.trailingReservation
     let width = max(0, bounds.width - left - right)

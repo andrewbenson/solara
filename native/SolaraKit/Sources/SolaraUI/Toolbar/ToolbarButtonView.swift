@@ -1,9 +1,11 @@
 import AppKit
 
 extension NSView {
-  func isHitBy(_ event: NSEvent) -> Bool {
-    guard let frame = window?.contentView?.superview, let hit = frame.hitTest(event.locationInWindow) else { return true }
-    return hit.isDescendant(of: self)
+  func isHitBy(_ event: NSEvent) -> Bool { isHitAt(event.locationInWindow) }
+
+  func isHitAt(_ point: NSPoint) -> Bool {
+    guard let frame = window?.contentView?.superview, let hit = frame.hitTest(point) else { return true }
+    return hit === self || hit.isDescendant(of: self)
   }
 }
 
@@ -137,13 +139,13 @@ final class ToolbarButtonView: NSView {
   }
 
   override func mouseEntered(with event: NSEvent) {
-    hovered = true
+    hovered = isHitBy(event) && bounds.contains(fullScreenPoint(event.locationInWindow))
     apply()
   }
 
   func recheckHover() {
     guard hovered, let window else { return }
-    let inside = bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil))
+    let inside = bounds.contains(fullScreenPoint(window.mouseLocationOutsideOfEventStream))
     if !inside {
       hovered = false
       apply()
@@ -151,7 +153,7 @@ final class ToolbarButtonView: NSView {
   }
 
   override func mouseExited(with event: NSEvent) {
-    hovered = false
+    hovered = isHitBy(event) && bounds.contains(fullScreenPoint(event.locationInWindow))
     apply()
   }
 
@@ -190,7 +192,7 @@ final class ToolbarButtonView: NSView {
     let wasPressed = pressed
     pressed = false
     apply()
-    guard wasPressed, !longPressFired, bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
+    guard wasPressed, !longPressFired, bounds.contains(fullScreenPoint(event.locationInWindow)) else { return }
     onClick(ToolbarClick(id: state.id, kind: .press, flags: event.modifierFlags))
   }
 

@@ -126,9 +126,9 @@ private final class ShareBandClock {
     shell.update { $0.sidebarWidth = 42 }
     let page = shell.pageArea
     shell.cardPageFrame = CGRect(x: 0, y: page.minY + 38, width: shell.frames.card.width, height: page.height - 38)
-    #expect(shell.cardPage.convert(shell.cardPage.bounds, to: shell) == CGRect(x: 42, y: 85, width: 1151, height: 708))
+    #expect(shell.cardPage.convert(shell.cardPage.bounds, to: shell) == CGRect(x: 42, y: 70, width: 1151, height: 723))
     shell.cardPageFrame = CGRect(x: 0, y: page.minY - 10, width: shell.frames.card.width, height: page.height)
-    #expect(shell.cardPage.convert(shell.cardPage.bounds, to: shell) == CGRect(x: 42, y: 47, width: 1151, height: 746))
+    #expect(shell.cardPage.convert(shell.cardPage.bounds, to: shell) == CGRect(x: 42, y: 32, width: 1151, height: 761))
   }
 
   @Test func aSplitPaneMovesItsPageDownByTheBand() throws {

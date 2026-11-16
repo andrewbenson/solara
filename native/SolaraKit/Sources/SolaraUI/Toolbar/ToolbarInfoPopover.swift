@@ -32,10 +32,17 @@ public final class ToolbarInfoPopover: NSObject, NSPopoverDelegate {
     let made = ToolbarInfoPopover(info: info, onAction: onAction)
     made.anchorView = view
     current = made
-    if view.window != nil {
-      made.popover.show(relativeTo: view.bounds, of: view, preferredEdge: .minY)
+    if let root = view.window?.contentView {
+      let edge: NSRectEdge = root.isFlipped == view.isFlipped ? .minY : .maxY
+      made.popover.show(relativeTo: view.fullScreenRect(view.bounds, to: root), of: root, preferredEdge: edge)
     }
     return made
+  }
+
+  public static func refreshAnchor(in view: NSView) {
+    guard let current, let anchor = current.anchorView, anchor === view || anchor.isDescendant(of: view),
+      let root = anchor.window?.contentView else { return }
+    current.popover.positioningRect = anchor.fullScreenRect(anchor.bounds, to: root)
   }
 
   public static func describe() -> [String: Any]? {

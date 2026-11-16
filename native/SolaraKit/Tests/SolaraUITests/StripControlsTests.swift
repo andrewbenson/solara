@@ -4,6 +4,23 @@ import Testing
 @testable import SolaraUI
 
 @Suite @MainActor struct StripControlsTests {
+  @Test(arguments: [CGFloat(0), 1, 8, 31, 32, 42, 83, 84])
+  func aSingleProfileLeavesNoCaptionSlotInAnEmptyOrNarrowStrip(width: CGFloat) {
+    let view = StripControlsView(frame: CGRect(x: 0, y: 0, width: width, height: 34))
+    view.docked = true
+    for fullscreen in [false, true] {
+      view.windowFullscreen = fullscreen
+      view.update(StripControlsState(title: "Personal", incognito: false, profiles: 1,
+        nameColor: "#FF0000", downloadsOpen: false, downloadsTooltip: nil), theme: [:])
+      view.layoutSubtreeIfNeeded()
+      #expect(view.indicator.isHidden)
+      #expect(view.profileSlotWidth == 0)
+      #expect(view.dockedLayout.pageWidth == 0)
+      #expect(view.dockedLayout.strip.size.width >= 0)
+      #expect(view.downloads.frame.minX >= 0)
+    }
+  }
+
   @Test func theIndicatorShowsWithTwoProfilesOrIncognito() {
     #expect(!StripControlsLayout.indicator(textWidth: 60, incognito: false, profiles: 1).shown)
     #expect(StripControlsLayout.indicator(textWidth: 60, incognito: true, profiles: 1).shown)
@@ -75,6 +92,7 @@ import Testing
   @Test func aOneLetterNameReservesTheIslandWhileNoNameReservesNothing() {
     let view = StripControlsView(frame: CGRect(x: 0, y: 0, width: 992, height: 34.5))
     view.leadingInset = 8
+    view.profileCoveredByIsland = true
     view.update(StripControlsState(title: "A", incognito: false, profiles: 2, nameColor: "#FF0000", downloadsOpen: false, downloadsTooltip: nil), theme: [:])
     #expect(view.profileSlotWidth == 84)
     #expect(view.indicator.frame.minX == 8)
@@ -94,9 +112,68 @@ import Testing
     let tabStart = view.leadingInset + view.profileSlotWidth
     #expect(view.indicator.frame.minX == 86)
     #expect(view.indicator.frame.maxX < tabStart)
-    #expect(tabStart == 170)
+    #expect(tabStart == view.indicator.frame.maxX + 8)
+    #expect(view.profileSlotWidth < 84)
     #expect(view.hitTest(CGPoint(x: 500, y: 17)) == nil)
     #expect(view.hitTest(CGPoint(x: 165, y: 17)) == nil)
+  }
+
+  @Test func dockedControlsReserveTheMeasuredProfileAndProtectOnlyTheFullscreenName() {
+    for fullscreen in [false, true] {
+      for (profileWidth, windowedSlot, fullscreenSlot): (CGFloat, CGFloat, CGFloat) in [(0, 0, 0), (26, 34, 84), (78, 86, 86), (140, 148, 148)] {
+        let geometry = TopStripLeadingLayout(width: 1000, profileWidth: profileWidth, windowFullscreen: fullscreen)
+        let leading: CGFloat = fullscreen ? 8 : 86
+        let slot = fullscreen ? fullscreenSlot : windowedSlot
+        #expect(geometry.profile.minX == leading)
+        #expect(geometry.leading == leading + slot)
+        #expect(geometry.pageWidth == 1000 - leading - slot - 84)
+        #expect(geometry.strip.minX == leading + slot - StripMetrics.flare)
+        #expect(geometry.strip.maxX == 931)
+        #expect(geometry.downloads.maxX == 992)
+        #expect(geometry.profile.midY == ShellMetrics.topStripLightsCenter.y)
+        #expect(geometry.downloads.midY == ShellMetrics.topStripLightsCenter.y)
+      }
+    }
+  }
+
+  @Test func theSameShortNameExpandsOnlyWhenTheIslandCoversItAndRestoresOnExit() {
+    let view = StripControlsView(frame: CGRect(x: 0, y: 0, width: 1000, height: 42))
+    view.docked = true
+    view.update(StripControlsState(title: "A", incognito: false, profiles: 2, nameColor: "#FF0000", downloadsOpen: false, downloadsTooltip: nil), theme: [:])
+    let windowedSlot = view.profileSlotWidth
+    #expect(windowedSlot == view.profileWidth + 8)
+    #expect(windowedSlot < 84)
+    #expect(view.dockedLayout.leading == 86 + windowedSlot)
+    view.windowFullscreen = true
+    #expect(view.profileSlotWidth == 84)
+    #expect(view.dockedLayout.leading == 92)
+    view.windowFullscreen = false
+    #expect(view.profileSlotWidth == windowedSlot)
+    #expect(view.dockedLayout.leading == 86 + windowedSlot)
+  }
+
+  @Test func thePeekExplicitlyReservesTheIslandForShortNames() {
+    let row = StripPeekRow(strip: TopStripView(windowId: "profile-slot"))
+    defer { row.strip.stop() }
+    row.frame = CGRect(x: 0, y: 0, width: 1000, height: 42)
+    row.controls.update(StripControlsState(title: "A", incognito: false, profiles: 2, nameColor: "#FF0000", downloadsOpen: false, downloadsTooltip: nil), theme: [:])
+    row.layout()
+    #expect(row.controls.profileSlotWidth == 84)
+    #expect(row.strip.frame.minX == 92)
+    #expect(row.pageWidth == 824)
+  }
+
+  @Test func captionAlignedRowsCentreBothControlsOnTheLightsWithoutChangingInsets() {
+    let view = StripControlsView(frame: CGRect(x: 0, y: 3.75, width: 992, height: 34.5))
+    view.leadingInset = 86
+    view.captionAligned = true
+    for count in [1, 2] {
+      view.update(StripControlsState(title: "A", incognito: false, profiles: count, nameColor: "#FF0000", downloadsOpen: false, downloadsTooltip: nil), theme: [:])
+      #expect(view.indicator.frame.midY + view.frame.minY == ShellMetrics.topStripLightsCenter.y)
+      #expect(view.downloads.frame.midY + view.frame.minY == ShellMetrics.topStripLightsCenter.y)
+      #expect(view.downloads.frame.maxX == 992)
+      #expect(view.profileSlotWidth == (count == 2 ? view.profileWidth + 8 : 0))
+    }
   }
 
   @Test func aLongNameTruncatesBeforeTheTabLosesItsMinimumWidthAndRecoversOnResize() {

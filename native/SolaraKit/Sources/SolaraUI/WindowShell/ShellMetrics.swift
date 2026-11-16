@@ -24,12 +24,13 @@ public enum ShellMetrics {
   public static let arcLightsCenter = CGPoint(x: 25, y: 24)
   public static let trafficLightSize: CGFloat = 14
   public static let trafficLightPitch: CGFloat = 23
-  public static let railLightsCenter = lightsCenter
+  public static let railToolbarHeight: CGFloat = 32
+  public static let railLightsCenter = CGPoint(x: lightsCenter.x, y: railToolbarHeight / 2)
   public static let chromeCaptionTrailingMargin: CGFloat = 14
   public static let chromeToolbarLeadingMargin: CGFloat = 6
   public static let chromeToolbarButtonSize: CGFloat = 28
   public static let railToolbarLeadingInset = railLightsCenter.x + 2 * trafficLightPitch + trafficLightSize / 2 + chromeCaptionTrailingMargin + chromeToolbarLeadingMargin + chromeToolbarButtonSize / 2 - toolbarIconCenters[0]
-  public static let railToolbarTop = cardTop
+  public static let railToolbarTop: CGFloat = 0
   public static let railLightsTrailing = railLightsCenter.x + 2 * trafficLightPitch + trafficLightSize / 2
   public static let railBandClearUntil: CGFloat = 40
   public static let railBandFullFrom: CGFloat = 240

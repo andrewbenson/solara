@@ -26,6 +26,8 @@ public final class ToolbarView: NSView {
   private var right: [ToolbarButtonView] = []
   private var extensions: [ToolbarButtonView] = []
   private var reportedAnchors: [String: CGRect]?
+  private var extensionAnchorRects: [String: CGRect] = [:]
+  private var reportedFullScreenOffset: CGFloat = 0
   private let url = ToolbarUrlFieldView()
   private let updatePill = SidebarUpdatePill()
   static let updatePillHeight: CGFloat = 24
@@ -294,7 +296,8 @@ public final class ToolbarView: NSView {
     stripes.fit(surface.bounds, scale: scale)
     let rail = (windowShell?.input.dock ?? 0) > 0 ? windowShell?.railFraction ?? 0 : 0
     applySurface(animated: false)
-    hairline.frame = CGRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1)
+    let hairlineHeight = 1 / scale
+    hairline.frame = CGRect(x: 0, y: bounds.height - hairlineHeight, width: bounds.width, height: hairlineHeight)
     hairline.opacity = Float(1 - rail)
     progress.position = CGPoint(x: 0, y: bounds.height - 1.5)
     if let shownProgress { progress.bounds.size.width = bounds.width * max(shownProgress, 0.08) }
@@ -302,9 +305,12 @@ public final class ToolbarView: NSView {
     let contentTop = max(0, bounds.height - ShellMetrics.toolbarHeight)
     content.frame = CGRect(x: 0, y: contentTop, width: bounds.width, height: bounds.height - contentTop)
     let px = { (v: CGFloat) in (v * scale).rounded() / scale }
-    let top = px(ToolbarView.buttonTop)
+    let controlsRail = windowShell?.railFraction ?? 0
+    let controlTop = ToolbarView.buttonTop + (ShellMetrics.railToolbarHeight / 2 - 15 - ToolbarView.buttonTop) * controlsRail
+    let controlCenter = controlTop + 15
+    let top = px(controlTop)
     let reservation = windowShell?.trafficLightsLeadingInset(for: self) ?? 0
-    let inset = max(CGFloat(state.leadingInset ?? 0) + rail * ShellMetrics.railToolbarLeadingInset, reservation)
+    let inset = max(CGFloat(state.leadingInset ?? 0), reservation)
     let g = state.geometry
     let centers = [g.sidebarButton, g.back, g.forward, g.reload]
     let ids = ["sidebar", "back", "forward", "reload"]
@@ -319,7 +325,7 @@ public final class ToolbarView: NSView {
       b.frame = CGRect(x: px(x), y: top, width: b.box, height: b.box)
       x += 2
     }
-    url.frame = CGRect(x: CGFloat(g.urlLeft) + inset, y: ToolbarView.buttonTop, width: max(0, content.bounds.width - CGFloat(g.urlLeft) - inset - CGFloat(g.urlRight)), height: ToolbarUrlFieldView.height)
+    url.frame = CGRect(x: CGFloat(g.urlLeft) + inset, y: controlTop, width: max(0, content.bounds.width - CGFloat(g.urlLeft) - inset - CGFloat(g.urlRight)), height: ToolbarUrlFieldView.height)
     for b in left + right + extensions { b.recheckHover() }
     var anchors: [String: CGRect] = [:]
     var trailingEdge = x
@@ -327,27 +333,25 @@ public final class ToolbarView: NSView {
       var ex = bounds.width - CGFloat(extensionsRight)
       for b in extensions.reversed() {
         ex -= b.width
-        b.frame = CGRect(x: px(ex), y: px(21.2 - b.box / 2), width: b.width, height: b.box)
-        if let slot = b.state.anchor { anchors[slot] = windowRect(b.frame) }
+        b.frame = CGRect(x: px(ex), y: px(controlCenter - b.box / 2), width: b.width, height: b.box)
+        if let slot = b.state.anchor { anchors[slot] = b.frame }
         ex -= 2
       }
       if extensions.isEmpty {
-        anchors["*"] = windowRect(CGRect(x: px(ex - 28), y: px(21.2 - 14), width: 28, height: 28))
+        anchors["*"] = CGRect(x: px(ex - 28), y: px(controlCenter - 14), width: 28, height: 28)
       }
       trailingEdge = min(trailingEdge, ex + 2)
       if extensions.contains(where: { $0.state.label != nil }), url.frame.maxX > trailingEdge - ToolbarView.updatePillGap {
         url.frame.size.width = max(0, trailingEdge - ToolbarView.updatePillGap - url.frame.minX)
       }
     }
-    layoutUpdatePill(state, trailingEdge: trailingEdge, px: px)
+    layoutUpdatePill(state, trailingEdge: trailingEdge, center: controlCenter, px: px)
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     fadeSurface(rail: rail)
     CATransaction.commit()
-    if window != nil, anchors != reportedAnchors {
-      reportedAnchors = anchors
-      onAnchors(anchors)
-    }
+    extensionAnchorRects = anchors
+    refreshFullScreenAnchors()
     let layoutAnchors = self.layoutAnchors
     if layoutAnchors != reportedLayoutAnchors {
       reportedLayoutAnchors = layoutAnchors
@@ -355,7 +359,7 @@ public final class ToolbarView: NSView {
     }
   }
 
-  private func layoutUpdatePill(_ state: ToolbarState, trailingEdge: CGFloat, px: (CGFloat) -> CGFloat) {
+  private func layoutUpdatePill(_ state: ToolbarState, trailingEdge: CGFloat, center: CGFloat, px: (CGFloat) -> CGFloat) {
     guard let update = state.update else {
       updatePill.isHidden = true
       return
@@ -375,7 +379,7 @@ public final class ToolbarView: NSView {
     let width = text == update.text ? long : short
     let height = ToolbarView.updatePillHeight
     updatePill.set(SidebarUpdatePillState(text: text, tooltip: update.tooltip), color: toolbarColor(state.palette.text) ?? .labelColor, dark: ToolbarView.isLightInk(state.palette.text))
-    updatePill.frame = CGRect(x: px(right - width), y: px(21.2 - height / 2), width: width, height: height)
+    updatePill.frame = CGRect(x: px(right - width), y: px(center - height / 2), width: width, height: height)
     updatePill.isHidden = false
     updatePill.recheckHover()
     let urlRight = updatePill.frame.minX - ToolbarView.updatePillGap
@@ -387,6 +391,19 @@ public final class ToolbarView: NSView {
     return 0.2126 * color.redComponent + 0.7152 * color.greenComponent + 0.0722 * color.blueComponent > 0.5
   }
 
+  public func refreshFullScreenAnchors() {
+    let anchors = extensionAnchorRects.mapValues { windowRect($0) }
+    if window != nil, anchors != reportedAnchors {
+      reportedAnchors = anchors
+      onAnchors(anchors)
+    }
+    let offset = windowShell?.fullScreenPresentationOffset(for: self) ?? 0
+    if offset != reportedFullScreenOffset {
+      reportedFullScreenOffset = offset
+      ToolbarInfoPopover.refreshAnchor(in: self)
+    }
+  }
+
   public func describeExtensions() -> [[String: Any]] {
     extensions.map { b in
       let r = windowRect(b.frame)
@@ -396,7 +413,7 @@ public final class ToolbarView: NSView {
 
   private func windowRect(_ local: CGRect) -> CGRect {
     guard let root = window?.contentView else { return local }
-    let r = content.convert(local, to: root)
+    let r = content.fullScreenRect(local, to: root)
     return root.isFlipped ? r : CGRect(x: r.minX, y: root.bounds.height - r.maxY, width: r.width, height: r.height)
   }
 

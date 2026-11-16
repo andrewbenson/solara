@@ -409,6 +409,10 @@ final class ProfileTintView: NSView {
     fade()
   }
 
+  @objc var fullScreenBackdropSignature: String {
+    "\(position)|" + pages.map { "\($0.id):\($0.look.debugDescription)" }.joined(separator: "|")
+  }
+
   static func opacity(_ k: Int, position: Double) -> Double {
     k == 0 ? 1 : min(1, max(0, position - Double(k - 1)))
   }

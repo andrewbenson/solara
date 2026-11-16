@@ -53,6 +53,17 @@ struct SidebarDockTests {
     }
   }
 
+  @Test(arguments: [false, true], ["left", "right"])
+  func openingDeliversTheInitialLightsAfterTheCallbackIsConnected(open: Bool, side: String) {
+    var state = SidebarDockState()
+    state.open = open
+    state.sidebarPosition = side
+    let rig = Rig(state)
+    #expect(rig.lights.count == 1)
+    #expect(rig.lights.first == .some(rig.shell.frames.lights))
+    rig.dock.stop()
+  }
+
   @Test func closingSpringsTheDockToZeroAndLeavesTheSidebarAway() {
     let rig = Rig()
     #expect(rig.shell.input.dock == 1)
@@ -151,12 +162,11 @@ struct SidebarDockTests {
     #expect(rig.dock.panel.alphaValue == 1)
   }
 
-  @Test func lightsFollowTheDockAndRestWhereRNPutsThem() {
+  @Test func lightsStayOnTheToolbarCenterLineWhileTheSidebarHides() {
     let rig = Rig()
     rig.set { $0.open = false }
     rig.settle()
-    let width = ShellMetrics.sidebarWidth
-    #expect(rig.lights.last == DockMotion.lightsCenter(offset: width))
+    #expect(rig.lights.last == .some(nil))
     rig.set { $0.open = true }
     rig.settle()
     #expect(rig.lights.last == .some(nil))

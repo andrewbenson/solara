@@ -39,8 +39,8 @@ import Testing
     shell.layoutSubtreeIfNeeded()
     let a = try #require(panes.container("a"))
     let b = try #require(panes.container("b"))
-    #expect(a.convert(a.bounds, to: shell.card) == CGRect(x: 42, y: 47, width: 573, height: 746))
-    #expect(b.convert(b.bounds, to: shell.card) == CGRect(x: 622, y: 47, width: 573, height: 746))
+    #expect(a.convert(a.bounds, to: shell.card) == CGRect(x: 0, y: 32, width: 573, height: 761))
+    #expect(b.convert(b.bounds, to: shell.card) == CGRect(x: 580, y: 32, width: 573, height: 761))
     for id in ["a", "b"] {
       let page = try #require(panes.container(id))
       let overlay = try #require(overlays.container(id, layer: .native))
@@ -54,8 +54,8 @@ import Testing
     shell.mount(.splitChrome, chrome)
     chrome.update(state: try state())
     shell.layoutSubtreeIfNeeded()
-    #expect(chrome.panes["a"] == CGRect(x: 42, y: 47, width: 573, height: 746))
-    #expect(chrome.panes["b"] == CGRect(x: 622, y: 47, width: 573, height: 746))
+    #expect(chrome.panes["a"] == CGRect(x: 0, y: 32, width: 573, height: 761))
+    #expect(chrome.panes["b"] == CGRect(x: 580, y: 32, width: 573, height: 761))
   }
 
   @Test func aSinglePooledPageOverlayUsesTheRailsPageArea() throws {
@@ -68,7 +68,7 @@ import Testing
     overlays.pageTops = ["a": 41]
     shell.layoutSubtreeIfNeeded()
     let overlay = try #require(overlays.container("a", layer: .native))
-    #expect(overlay.convert(overlay.bounds, to: shell.card) == CGRect(x: 42, y: 47, width: 1152, height: 746))
+    #expect(overlay.convert(overlay.bounds, to: shell.card) == CGRect(x: 0, y: 32, width: 1152, height: 761))
   }
 
   @Test func theActiveSplitToolbarSpansTheCardAndReturnsToItsPaneInFullMode() throws {
@@ -90,8 +90,8 @@ import Testing
     let other = try #require(panes.toolbar("b"))
     #expect(panes.layer?.masksToBounds == true)
     #expect(panes.layer?.cornerRadius == 0)
-    #expect(active.superview === panes)
-    #expect(active.frame == CGRect(x: 0, y: 0, width: 1201, height: 47))
+    #expect(shell.toolbarSitsOnFrame(active))
+    #expect(active.convert(active.bounds, to: shell) == CGRect(x: 0, y: 0, width: 1201, height: 32))
     #expect(!active.isHidden)
     #expect(other.isHidden || other.alphaValue == 0)
     shell.update { $0.sidebarWidth = 190 }

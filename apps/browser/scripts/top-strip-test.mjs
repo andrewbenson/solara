@@ -878,7 +878,11 @@ async function trailingControls() {
       assert.ok(frame(controls.profile), `the visible name has an actual frame: ${JSON.stringify(controls)}`);
       assert.ok(contains(controls.host, controls.profile) && contains(controls.container, controls.profile), `the name stays inside the strip: ${JSON.stringify(controls)}`);
       assert.ok(Math.abs(controls.profile[0] - leading) <= 0.5, `the name follows the lights or full-screen leading inset: ${JSON.stringify(controls)}`);
-      assert.ok(controls.profileSlot[2] >= 84 - 0.5, `a visible name reserves the 76 pt island plus 8 pt gap: ${JSON.stringify(controls)}`);
+      if (fullscreen) {
+        assert.ok(controls.profileSlot[2] >= 84 - 0.5, `a full-screen name reserves the 76 pt island plus 8 pt gap: ${JSON.stringify(controls)}`);
+      } else {
+        assert.ok(Math.abs(controls.profileSlot[2] - controls.profile[2] - 8) <= 0.5, `a windowed name reserves its measured width plus 8 pt: ${JSON.stringify(controls)}`);
+      }
       assert.ok(maxX(controls.profile) <= firstTab.windowX + 0.5, `the name is left of the first tab: ${JSON.stringify({ controls, firstTab })}`);
       assert.ok(maxX(controls.profileSlot) <= firstTab.windowX + 0.5, `the first tab stays beyond the profile reservation: ${JSON.stringify({ controls, firstTab })}`);
       if (!fullscreen) {

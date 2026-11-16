@@ -143,7 +143,7 @@ public final class SidebarDragController {
   private var bridge: SidebarDragBridge? { bridgeOverride ?? SidebarDragHub.bridge }
   private var context: SidebarContext? { view?.context }
   private var state: BrowserState? { context?.state }
-  private var rail: Bool { view.map { SidebarRail.contains(width: Double($0.bounds.width)) } ?? false }
+  private var rail: Bool { view?.usesIconRail ?? false }
   private var rowGap: CGFloat { rail ? SidebarRail.rowGap : SidebarMetrics.rowGap }
   private var rowHeight: CGFloat { rail ? SidebarRail.rowHeight : SidebarMetrics.rowHeight }
   private var tileGap: CGFloat { rail ? SidebarRail.rowGap : SidebarMetrics.tileGap }
@@ -285,7 +285,7 @@ public final class SidebarDragController {
         let item = items["g:\(id)"] ?? DragItem(key: "g:\(id)", kind: .group, tabIds: context.state.groups[id]?.tabIds ?? [], section: section(entry.section, group: true))
         item.groupId = id
         item.parentGroup = entry.groups.dropLast().last
-        item.collapsed = context.state.groups[id]?.collapsed == true || SidebarRail.contains(width: Double(view.bounds.width))
+        item.collapsed = context.state.groups[id]?.collapsed == true || view.usesIconRail
         item.frame = frame
         item.box = shown
         if items[item.key] == nil { add(item) }
@@ -303,7 +303,7 @@ public final class SidebarDragController {
         add(item)
         liveBox = item
       case .live(let key) where key.hasPrefix(Self.liveHeaderPrefix):
-        if SidebarRail.contains(width: Double(view.bounds.width)) {
+        if view.usesIconRail {
           let id = String(key.dropFirst(Self.liveHeaderPrefix.count))
           let item = DragItem(key: SidebarLive.prefix + id, kind: .live, tabIds: [], section: section(entry.section, group: true))
           item.liveFolderId = id

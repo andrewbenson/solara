@@ -18,6 +18,11 @@
 #include <initializer_list>
 #include <optional>
 
+@protocol ACWindowCaptionLayout
++ (void)configureWindow:(NSWindow *)window;
++ (void)positionInWindow:(NSWindow *)window center:(NSPoint)center;
+@end
+
 namespace {
 
 BOOL (^gShouldClose)(NSWindow *);
@@ -172,6 +177,8 @@ void LogTrafficLightsOf(NSWindow *window) {
       objc_setAssociatedObject(view, kLoggedKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 
+void PositionTrafficLights(NSWindow *window);
+
 void InstallTrafficLightsOrigin(Class frameClass) {
   static NSMutableSet<Class> *installed = [NSMutableSet set];
   if (!frameClass || [installed containsObject:frameClass]) return;
@@ -192,6 +199,15 @@ void InstallTrafficLightsOrigin(Class frameClass) {
     return NSMakePoint(kTrafficLightInsetX, height - kTrafficLightTop - size.height);
   });
   if (!class_addMethod(frameClass, sel, ours, method_getTypeEncoding(method))) method_setImplementation(method, ours);
+  const SEL update = NSSelectorFromString(@"_updateButtonPositions");
+  Method positions = class_getInstanceMethod(frameClass, update);
+  if (!positions) return;
+  const IMP standardPositions = method_getImplementation(positions);
+  const IMP positioned = imp_implementationWithBlock(^(NSView *frameView) {
+    ((void (*)(id, SEL))standardPositions)(frameView, update);
+    if (NSWindow *window = frameView.window; window && objc_getAssociatedObject(window, kInsetLightsKey)) PositionTrafficLights(window);
+  });
+  if (!class_addMethod(frameClass, update, positioned, method_getTypeEncoding(positions))) method_setImplementation(positions, positioned);
 }
 
 const void *kSharingIndicatorTuckedKey = &kSharingIndicatorTuckedKey;
@@ -286,12 +302,22 @@ void SyncSharingWindows(NSWindow *window) {
     if ([child isKindOfClass:pillClass] && [child respondsToSelector:sel]) ((void (*)(id, SEL))objc_msgSend)(child, sel);
 }
 
+void PositionTrafficLights(NSWindow *window) {
+  NSButton *close = [window standardWindowButton:NSWindowCloseButton];
+  const NSSize size = close ? close.frame.size : NSMakeSize(14, 14);
+  NSValue *given = objc_getAssociatedObject(window, kLightsCenterKey);
+  const NSPoint center = given ? given.pointValue : NSMakePoint(kTrafficLightInsetX + size.width / 2, kTrafficLightTop + size.height / 2);
+  Class<ACWindowCaptionLayout> layout = NSClassFromString(@"SolaraWindowCaptionLayout");
+  [layout positionInWindow:window center:center];
+}
+
 void RetileTrafficLights(NSWindow *window) {
   NSView *frameView = window.contentView.superview;
   for (NSString *name in @[ @"_updateButtonPositions", @"_positionSharingIndicator" ]) {
     const SEL sel = NSSelectorFromString(name);
     if ([frameView respondsToSelector:sel]) ((void (*)(id, SEL))objc_msgSend)(frameView, sel);
   }
+  PositionTrafficLights(window);
   SyncSharingWindows(window);
 }
 
@@ -370,11 +396,8 @@ void WatchFullScreenLights(NSWindow *window);
 
 void ConfigureWindow(NSWindow *window) {
   InstallTrafficLightsLog();
-  const NSRect frame = window.frame;
-  window.styleMask |= NSWindowStyleMaskFullSizeContentView;
-  if (!NSEqualRects(window.frame, frame)) [window setFrame:frame display:NO];
-  window.titlebarAppearsTransparent = YES;
-  window.titleVisibility = NSWindowTitleHidden;
+  Class<ACWindowCaptionLayout> layout = NSClassFromString(@"SolaraWindowCaptionLayout");
+  [layout configureWindow:window];
   window.title = [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleName"] ?: @"Solara";
   window.minSize = NSMakeSize(720, 460);
   window.backgroundColor = WindowColor();
@@ -800,66 +823,37 @@ namespace {
 
 const void *kFullScreenLightsKey = &kFullScreenLightsKey;
 const void *kFullScreenLightsWatchKey = &kFullScreenLightsWatchKey;
+const void *kFullScreenWindowedButtonsKey = &kFullScreenWindowedButtonsKey;
 
 }
 
-@interface ACFullScreenLights : NSView
+@protocol ACFullScreenIslandSurface
+- (void)updateFullscreen:(BOOL)fullscreen page:(BOOL)page reveal:(CGFloat)reveal menuBottom:(CGFloat)menuBottom closeCenter:(NSPoint)closeCenter windowedButtons:(NSArray<NSValue *> *)windowedButtons;
 @end
 
-@implementation ACFullScreenLights {
-  BOOL _hovered;
-}
+@class ACTitlebarRevealWatch;
 
-+ (instancetype)lightsForWindow:(NSWindow *)window {
-  NSButton *standardClose = [window standardWindowButton:NSWindowCloseButton];
-  if (!standardClose) return nil;
-  ACFullScreenLights *lights = [[ACFullScreenLights alloc] initWithFrame:NSZeroRect];
-  NSRect bounds = NSZeroRect;
-  for (NSWindowButton kind : {NSWindowCloseButton, NSWindowMiniaturizeButton, NSWindowZoomButton}) {
-    NSButton *standard = [window standardWindowButton:kind];
-    NSButton *button = standard ? [NSWindow standardWindowButton:kind forStyleMask:window.styleMask & ~NSWindowStyleMaskFullScreen] : nil;
-    if (!button) continue;
-    [button setFrameOrigin:NSMakePoint(NSMinX(standard.frame) - NSMinX(standardClose.frame), 0)];
-    button.target = window;
-    button.action = kind == NSWindowCloseButton ? @selector(performClose:)
-                    : kind == NSWindowMiniaturizeButton ? @selector(performMiniaturize:)
-                                                         : @selector(toggleFullScreen:);
-    [lights addSubview:button];
-    bounds = NSUnionRect(bounds, button.frame);
-  }
-  [lights setFrameSize:bounds.size];
-  lights.autoresizingMask = NSViewMaxXMargin | NSViewMinYMargin;
-  [lights addTrackingArea:[[NSTrackingArea alloc] initWithRect:NSZeroRect
-                                                       options:NSTrackingMouseEnteredAndExited | NSTrackingActiveAlways | NSTrackingInVisibleRect
-                                                         owner:lights
-                                                      userInfo:nil]];
-  return lights;
-}
-
-- (void)setHovered:(BOOL)hovered {
-  _hovered = hovered;
-  for (NSView *button in self.subviews) button.needsDisplay = YES;
-}
-
-- (void)mouseEntered:(NSEvent *)event {
-  [self setHovered:YES];
-}
-
-- (void)mouseExited:(NSEvent *)event {
-  [self setHovered:NO];
-}
-
-- (BOOL)_mouseInGroup:(NSButton *)button {
-  return _hovered;
-}
-
+@interface ACTitlebarRevealFrame : NSObject
+@property(nonatomic, weak) ACTitlebarRevealWatch *watch;
+- (void)step:(CADisplayLink *)link;
 @end
 
 @interface ACTitlebarRevealWatch : NSObject
 @property(nonatomic, weak, readonly) NSWindow *bar;
 - (instancetype)initWithWindow:(NSWindow *)window findBar:(NSWindow * (^)(NSWindow *))findBar changed:(void (^)(void))changed;
 - (void)refresh;
+- (void)tick;
 - (void)stop;
+@end
+
+@implementation ACTitlebarRevealFrame
+
+- (void)step:(CADisplayLink *)link {
+  ACTitlebarRevealWatch *watch = self.watch;
+  if (watch) [watch tick];
+  else [link invalidate];
+}
+
 @end
 
 @implementation ACTitlebarRevealWatch {
@@ -868,8 +862,11 @@ const void *kFullScreenLightsWatchKey = &kFullScreenLightsWatchKey;
   void (^_changed)(void);
   NSArray *_windowObservers;
   NSArray *_barObservers;
-  NSTimer *_settle;
-  CFTimeInterval _settleUntil;
+  NSArray *_screenObservers;
+  CADisplayLink *_link;
+  BOOL _stopped;
+  CGFloat _barFrameAlpha;
+  BOOL _barIgnoresMouseEvents;
 }
 
 - (instancetype)initWithWindow:(NSWindow *)window findBar:(NSWindow * (^)(NSWindow *))findBar changed:(void (^)(void))changed {
@@ -877,7 +874,8 @@ const void *kFullScreenLightsWatchKey = &kFullScreenLightsWatchKey;
     _window = window;
     _findBar = [findBar copy];
     _changed = [changed copy];
-    _windowObservers = [self observe:@[ NSWindowDidChangeScreenNotification, NSWindowDidChangeOcclusionStateNotification ] of:window];
+    _windowObservers = [self observe:@[ NSWindowDidChangeScreenNotification, NSWindowDidMoveNotification, NSWindowDidResizeNotification, NSWindowDidChangeOcclusionStateNotification, NSWindowWillCloseNotification ] of:window];
+    _screenObservers = [self observe:@[ NSApplicationDidChangeScreenParametersNotification ] of:nil];
   }
   return self;
 }
@@ -889,7 +887,10 @@ const void *kFullScreenLightsWatchKey = &kFullScreenLightsWatchKey;
     [observers addObject:[NSNotificationCenter.defaultCenter addObserverForName:name
                                                                          object:object
                                                                           queue:nil
-                                                                     usingBlock:^(NSNotification *) { [weakSelf refresh]; }]];
+                                                                     usingBlock:^(NSNotification *note) {
+                                                                       if ([note.name isEqualToString:NSWindowWillCloseNotification]) [weakSelf stop];
+                                                                       else [weakSelf refresh];
+                                                                     }]];
   return observers;
 }
 
@@ -897,49 +898,58 @@ const void *kFullScreenLightsWatchKey = &kFullScreenLightsWatchKey;
   for (id observer in observers) [NSNotificationCenter.defaultCenter removeObserver:observer];
 }
 
+- (void)restoreBar {
+  if (!_bar) return;
+  _bar.contentView.superview.alphaValue = _barFrameAlpha;
+  _bar.ignoresMouseEvents = _barIgnoresMouseEvents;
+}
+
 - (void)bind {
   NSWindow *window = _window;
   NSWindow *bar = window ? _findBar(window) : nil;
   if (bar == _bar && (bar || !_barObservers.count)) return;
+  [self restoreBar];
   [self forget:_barObservers];
   _barObservers = nil;
   _bar = bar;
+  _barFrameAlpha = bar.contentView.superview.alphaValue;
+  _barIgnoresMouseEvents = bar.ignoresMouseEvents;
   if (bar)
     _barObservers = [self observe:@[ NSWindowDidMoveNotification, NSWindowDidResizeNotification, NSWindowDidChangeOcclusionStateNotification ] of:bar];
 }
 
 - (void)tick {
-  if (!_window) return [self stop];
+  if (_stopped) return;
+  if (!_window.contentView || !(_window.styleMask & NSWindowStyleMaskFullScreen)) return [self stop];
   [self bind];
+  _bar.contentView.superview.alphaValue = 0;
+  _bar.ignoresMouseEvents = YES;
   _changed();
 }
 
 - (void)refresh {
+  if (_stopped) return;
   [self tick];
-  if (!_window) return;
-  _settleUntil = CACurrentMediaTime() + 0.5;
-  if (_settle) return;
-  __weak ACTitlebarRevealWatch *weakSelf = self;
-  _settle = [NSTimer timerWithTimeInterval:1.0 / 60
-                                   repeats:YES
-                                     block:^(NSTimer *timer) {
-                                       ACTitlebarRevealWatch *watch = weakSelf;
-                                       if (!watch) return [timer invalidate];
-                                       [watch tick];
-                                       if (CACurrentMediaTime() < watch->_settleUntil) return;
-                                       [timer invalidate];
-                                       watch->_settle = nil;
-                                     }];
-  [NSRunLoop.mainRunLoop addTimer:_settle forMode:NSRunLoopCommonModes];
+  if (_stopped || _link) return;
+  ACTitlebarRevealFrame *target = [ACTitlebarRevealFrame new];
+  target.watch = self;
+  _link = [_window.contentView displayLinkWithTarget:target selector:@selector(step:)];
+  [_link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
 }
 
 - (void)stop {
+  if (_stopped) return;
+  _stopped = YES;
+  [_link invalidate];
+  _link = nil;
+  [self restoreBar];
+  _bar = nil;
   [self forget:_windowObservers];
   [self forget:_barObservers];
+  [self forget:_screenObservers];
+  _screenObservers = nil;
   _windowObservers = nil;
   _barObservers = nil;
-  [_settle invalidate];
-  _settle = nil;
 }
 
 - (void)dealloc {
@@ -964,29 +974,70 @@ BOOL FullScreenTitlebarRevealed(NSWindow *window) {
   return NSHeight(NSIntersectionRect(bar.frame, window.screen.frame)) > 0;
 }
 
-void PlaceFullScreenLights(NSWindow *window) {
-  ACFullScreenLights *lights = window ? objc_getAssociatedObject(window, kFullScreenLightsKey) : nil;
-  NSView *frameView = window.contentView.superview;
-  NSView *close = lights.subviews.firstObject;
-  if (!lights || !frameView || !close) return;
-  ACWindowFullScreen *state = objc_getAssociatedObject(window, kWindowFullScreenKey);
-  lights.hidden = state.pageFullScreen || FullScreenTitlebarRevealed(window);
-  const NSSize size = close.frame.size;
+CGFloat FullScreenTitlebarProgress(NSWindow *window) {
+  ACTitlebarRevealWatch *watch = window ? objc_getAssociatedObject(window, kTitlebarRevealWatchKey) : nil;
+  NSWindow *bar = watch.bar;
+  if (!FullScreenTitlebarRevealed(window) || NSHeight(bar.frame) <= 0) return 0;
+  return MIN(1, MAX(0, NSHeight(NSIntersectionRect(bar.frame, window.screen.frame)) / NSHeight(bar.frame)));
+}
+
+NSArray<NSValue *> *WindowedTrafficLightFrames(NSWindow *window) {
+  if (NSArray *saved = objc_getAssociatedObject(window, kFullScreenWindowedButtonsKey)) return saved;
+  NSMutableArray *frames = [NSMutableArray array];
+  NSArray<NSButton *> *buttons = TrafficLightButtons(window);
+  NSButton *close = buttons.firstObject;
+  const NSSize size = close ? close.frame.size : NSMakeSize(14, 14);
   const NSPoint center = LightsCenter(objc_getAssociatedObject(window, kLightsCenterKey), size);
-  const CGFloat top = center.y - size.height / 2;
-  [lights setFrameOrigin:NSMakePoint(center.x - size.width / 2,
-                                     frameView.isFlipped ? top : NSHeight(frameView.bounds) - top - NSHeight(lights.frame))];
+  for (NSButton *button in buttons)
+    [frames addObject:[NSValue valueWithRect:NSMakeRect(center.x - size.width / 2 + NSMinX(button.frame) - NSMinX(close.frame),
+                                                      center.y - size.height / 2, NSWidth(button.frame), NSHeight(button.frame))]];
+  return frames;
+}
+
+void CaptureWindowedTrafficLights(NSWindow *window) {
+  SettleTrafficLights(window);
+  NSView *frameView = window.contentView.superview;
+  NSMutableArray *frames = [NSMutableArray array];
+  for (NSButton *button in TrafficLightButtons(window)) {
+    const NSRect rect = [button convertRect:button.bounds toView:frameView];
+    const CGFloat top = frameView.isFlipped ? NSMinY(rect) - NSMinY(frameView.bounds) : NSMaxY(frameView.bounds) - NSMaxY(rect);
+    [frames addObject:[NSValue valueWithRect:NSMakeRect(NSMinX(rect) - NSMinX(frameView.bounds), top, NSWidth(rect), NSHeight(rect))]];
+  }
+  objc_setAssociatedObject(window, kFullScreenWindowedButtonsKey, frames, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+void PlaceFullScreenLights(NSWindow *window) {
+  NSView<ACFullScreenIslandSurface> *lights = window ? objc_getAssociatedObject(window, kFullScreenLightsKey) : nil;
+  NSView *frameView = window.contentView.superview;
+  if (!lights || !frameView) return;
+  ACWindowFullScreen *state = objc_getAssociatedObject(window, kWindowFullScreenKey);
+  NSScreen *screen = window.screen;
+  const CGFloat menuHeight = MAX(MAX(NSApp.mainMenu.menuBarHeight, NSStatusBar.systemStatusBar.thickness),
+                                 screen.safeAreaInsets.top);
+  const NSPoint menuEdge = [frameView convertPoint:[window convertPointFromScreen:NSMakePoint(NSMinX(screen.frame), NSMaxY(screen.frame) - menuHeight)] fromView:nil];
+  const CGFloat menuBottom = MAX(0, frameView.isFlipped ? menuEdge.y - NSMinY(frameView.bounds) : NSMaxY(frameView.bounds) - menuEdge.y);
+  NSArray<NSValue *> *windowedButtons = WindowedTrafficLightFrames(window);
+  const NSSize buttonSize = windowedButtons.count ? windowedButtons.firstObject.rectValue.size : NSMakeSize(14, 14);
+  [lights updateFullscreen:(window.styleMask & NSWindowStyleMaskFullScreen) != 0
+                      page:state.pageFullScreen
+                    reveal:FullScreenTitlebarProgress(window)
+                menuBottom:menuBottom
+               closeCenter:LightsCenter(objc_getAssociatedObject(window, kLightsCenterKey), buttonSize)
+           windowedButtons:windowedButtons];
 }
 
 void ShowFullScreenLights(NSWindow *window, BOOL show) {
-  ACFullScreenLights *lights = objc_getAssociatedObject(window, kFullScreenLightsKey);
+  NSView *lights = objc_getAssociatedObject(window, kFullScreenLightsKey);
   if (!show) {
     [lights removeFromSuperview];
     objc_setAssociatedObject(window, kFullScreenLightsKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     return;
   }
   NSView *frameView = window.contentView.superview;
-  if (lights || !frameView || !(lights = [ACFullScreenLights lightsForWindow:window])) return;
+  if (lights || !frameView) return;
+  Class islandClass = NSClassFromString(@"SolaraFullScreenIsland");
+  if (!islandClass) return;
+  lights = [[islandClass alloc] initWithFrame:NSZeroRect];
   objc_setAssociatedObject(window, kFullScreenLightsKey, lights, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
   [frameView addSubview:lights positioned:NSWindowAbove relativeTo:nil];
   PlaceFullScreenLights(window);
@@ -998,7 +1049,7 @@ void HideStandardLights(NSWindow *window, BOOL hide) {
 
 void ShowLightsForReveal(NSWindow *window) {
   if (!objc_getAssociatedObject(window, kFullScreenLightsKey)) return;
-  HideStandardLights(window, !FullScreenTitlebarRevealed(window));
+  HideStandardLights(window, YES);
   PlaceFullScreenLights(window);
 }
 
@@ -1047,9 +1098,24 @@ void UnwatchTitlebarReveal(NSWindow *window) {
   ACFullScreenLightsWatch *watch = [[ACFullScreenLightsWatch alloc] init];
   watch->_window = window;
   NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
+  [center addObserver:watch selector:@selector(willEnter) name:NSWindowWillEnterFullScreenNotification object:window];
   [center addObserver:watch selector:@selector(didEnter) name:NSWindowDidEnterFullScreenNotification object:window];
   [center addObserver:watch selector:@selector(didExit) name:NSWindowDidExitFullScreenNotification object:window];
+  for (NSNotificationName name in @[ NSWindowDidResizeNotification, NSWindowDidUpdateNotification, NSWindowDidChangeBackingPropertiesNotification ])
+    [center addObserver:watch selector:@selector(refreshWindowed) name:name object:window];
   objc_setAssociatedObject(window, kFullScreenLightsWatchKey, watch, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+- (void)willEnter {
+  NSWindow *window = _window;
+  if (!window) return;
+  CaptureWindowedTrafficLights(window);
+}
+
+- (void)refreshWindowed {
+  NSWindow *window = _window;
+  if (!window || (window.styleMask & NSWindowStyleMaskFullScreen)) return;
+  PositionTrafficLights(window);
 }
 
 - (void)didEnter {
@@ -1068,6 +1134,8 @@ void UnwatchTitlebarReveal(NSWindow *window) {
   UnwatchTitlebarReveal(window);
   HideStandardLights(window, NO);
   ShowFullScreenLights(window, NO);
+  objc_setAssociatedObject(window, kFullScreenWindowedButtonsKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+  RetileTrafficLights(window);
 }
 
 @end
@@ -2598,7 +2666,10 @@ NSView *ACWindowRootView(NSWindow *window) {
     TranslateTrafficLights(window, 0);
   }
   NSValue *current = objc_getAssociatedObject(window, kLightsCenterKey);
-  if (current == center || [current isEqual:center]) return;
+  if (current == center || [current isEqual:center]) {
+    PositionTrafficLights(window);
+    return;
+  }
   objc_setAssociatedObject(window, kLightsCenterKey, center, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
   RetileTrafficLights(window);
   PlaceFullScreenLights(window);
@@ -2607,7 +2678,10 @@ NSView *ACWindowRootView(NSWindow *window) {
 + (void)moveTrafficLightsCenter:(NSValue *)center inWindow:(NSWindow *)window {
   id shown = objc_getAssociatedObject(window, kLightsShownKey);
   NSValue *current = shown ? (shown == NSNull.null ? nil : shown) : objc_getAssociatedObject(window, kLightsCenterKey);
-  if (current == center || [current isEqual:center]) return;
+  if (current == center || [current isEqual:center]) {
+    PositionTrafficLights(window);
+    return;
+  }
   if (!MoveTrafficLights(window, center)) [self setTrafficLightsCenter:center inWindow:window];
 }
 

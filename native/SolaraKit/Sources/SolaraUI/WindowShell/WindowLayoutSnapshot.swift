@@ -47,10 +47,9 @@ public struct WindowLayoutSnapshot: Equatable, Sendable {
     for (id, pane) in panes {
       let hidden = input.layout.addressBarInSidebar || id == fullscreenTab
       let toolbar = hidden ? 0 : min(pane.height, ShellMetrics.toolbarHeight * (1 - rail))
-      let captionTop: CGFloat = input.layout.sidebarSide == .right && input.layout.addressBarInSidebar && id != fullscreenTab && pane.minX == area.minX && pane.minY == area.minY ? ShellMetrics.toolbarHeight : 0
       let shownTop = input.shownTops[id] ?? toolbar
       let restingTop = input.toolbarModes[id] == .shown ? shownTop : ToolbarAutoHideMetrics.stripHeight
-      let toolbarTop = id == fullscreenTab ? 0 : min(pane.height, max(captionTop, (input.pageFacts[id]?.top ?? restingTop) * (1 - rail)))
+      let toolbarTop = id == fullscreenTab ? 0 : min(pane.height, (input.pageFacts[id]?.top ?? restingTop) * (1 - rail))
       let band = id == fullscreenTab ? 0 : max(0, input.pageFacts[id]?.band ?? 0)
       let top = min(pane.height, toolbarTop + band)
       let page = CGRect(x: pane.minX, y: pane.minY + top, width: pane.width, height: max(0, pane.height - top))
@@ -59,8 +58,10 @@ public struct WindowLayoutSnapshot: Equatable, Sendable {
       let viewportToolbarTop = keepsTallViewport ? min(pane.height, ToolbarAutoHideMetrics.stripHeight * (1 - rail)) : toolbarTop
       let viewportTop = min(pane.height, viewportToolbarTop + band)
       pageViewports[id] = CGRect(x: page.minX, y: page.minY, width: page.width, height: max(0, pane.height - viewportTop))
+      let chromeRow = input.presentation.chromeToolbarRow ? rail : 0
       let bar = rail > 0 && id == input.selectedTabId && !hidden
-        ? CGRect(x: frames.card.minX, y: frames.card.minY, width: frames.card.width, height: min(frames.card.height, ShellMetrics.toolbarHeight + ShellMetrics.railToolbarTop * rail))
+        ? CGRect(x: frames.card.minX * (1 - chromeRow), y: frames.card.minY,
+          width: frames.card.width + (input.bounds.width - frames.card.width) * chromeRow, height: min(frames.card.height, input.presentation.toolbarHeight))
         : CGRect(x: pane.minX, y: pane.minY, width: pane.width, height: toolbar)
       pages[id] = page
       toolbars[id] = bar
@@ -88,11 +89,13 @@ public struct WindowLayoutSnapshot: Equatable, Sendable {
     return Self(input: input, generation: generation, frames: frames, content: content, contentPanes: contentPanes, panes: panes, pages: pages, pageViewports: pageViewports, toolbars: toolbars, toolbarModes: input.toolbarModes, shownTops: input.shownTops, fullscreenTabId: fullscreenTab, sidebarHeader: header, sidebarFooter: footer, stripAvailableWidth: stripAvailableWidth, anchors: anchors)
   }
 
-  public func residualURLBand(tabId: String, trailingReservation: CGFloat) -> CGRect? {
-    guard !input.layout.addressBarInSidebar, let pane = contentPanes[tabId] else { return nil }
-    let leading = pane.minX == content.minX && pane.minY == content.minY
+  public func residualURLBand(tabId: String, trailingReservation: CGFloat, trafficLightsInset: CGFloat? = nil) -> CGRect? {
+    guard !input.layout.addressBarInSidebar, let contentPane = contentPanes[tabId] else { return nil }
+    let chromeRow = input.presentation.chromeToolbarRow && tabId == input.selectedTabId
+    let pane = chromeRow ? toolbars[tabId] ?? contentPane : contentPane
+    let leading = chromeRow || pane.minX == content.minX && pane.minY == content.minY
     let geometry = ToolbarGeometry.of(sidebarButton: leading && !input.layout.topTabs && input.showSidebarButton)
-    let captionReservation = input.layout.sidebarSide == .right && leading && !input.layout.topTabs && !input.layout.fullscreen ? ShellMetrics.railToolbarLeadingInset : 0
+    let captionReservation = leading ? trafficLightsInset ?? (chromeRow ? input.presentation : input.layout).trafficLightsLeadingInset(at: pane.minX) : 0
     return CGRect(
       x: pane.minX + geometry.urlLeft + captionReservation, y: pane.minY,
       width: max(0, pane.width - geometry.urlLeft - captionReservation - max(0, trailingReservation)), height: min(pane.height, ShellMetrics.toolbarHeight))

@@ -154,12 +154,12 @@ final class ToolbarUrlFieldView: NSView {
   }
 
   override func mouseEntered(with event: NSEvent) {
-    hovered = true
+    hovered = isHitBy(event) && bounds.contains(fullScreenPoint(event.locationInWindow))
     applyHover()
   }
 
   override func mouseExited(with event: NSEvent) {
-    hovered = false
+    hovered = isHitBy(event) && bounds.contains(fullScreenPoint(event.locationInWindow))
     applyHover()
   }
 
@@ -304,7 +304,7 @@ final class ToolbarUrlFieldView: NSView {
 
   override func mouseUp(with event: NSEvent) {
     defer { pressedOnText = false }
-    guard pressedOnText, bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
+    guard pressedOnText, bounds.contains(fullScreenPoint(event.locationInWindow)) else { return }
     onClick(ToolbarClick(id: "url", kind: .press, flags: event.modifierFlags))
   }
 
@@ -500,7 +500,7 @@ final class NotSecureBadgeView: NSView {
     let wasPressed = pressed
     pressed = false
     alphaValue = 1
-    guard wasPressed, bounds.contains(convert(event.locationInWindow, from: nil)) else { return }
+    guard wasPressed, bounds.contains(fullScreenPoint(event.locationInWindow)) else { return }
     onClick(ToolbarClick(id: "lock", kind: .press, flags: event.modifierFlags))
   }
 }

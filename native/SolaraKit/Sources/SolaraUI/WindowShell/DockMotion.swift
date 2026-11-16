@@ -47,7 +47,15 @@ public enum DockMotion {
 
   public static func sidebarLightsCenter(_ input: DockedLayoutInput, base given: CGPoint? = nil) -> CGPoint? {
     guard !input.topTabs else { return nil }
-    let base = given ?? (input.addressBarInSidebar ? ShellMetrics.arcLightsCenter : ShellMetrics.lightsCenter)
+    if input.railFraction > 0, input.chromeNavigationRow || input.chromeCaptionRow { return ShellMetrics.lightsCenter }
+    let base = !input.peeking ? ShellMetrics.lightsCenter
+      : given ?? (input.addressBarInSidebar ? ShellMetrics.arcLightsCenter : ShellMetrics.lightsCenter)
+    if !input.fullscreen, !input.peeking {
+      let progress = input.railFraction
+      if progress == 0 { return base == ShellMetrics.lightsCenter && input.sidebarSide == .left ? nil : base }
+      return CGPoint(x: base.x + (ShellMetrics.railLightsCenter.x - base.x) * progress,
+        y: base.y + (ShellMetrics.railLightsCenter.y - base.y) * progress)
+    }
     if input.sidebarSide == .right {
       let travel: CGFloat = input.fullscreen ? 0
         : input.peeking ? (input.sidebarWidth + 12) * (1 - input.peekSlide) : input.sidebarWidth * (1 - input.dock)

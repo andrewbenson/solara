@@ -20,7 +20,6 @@ import { useShellLayoutPush } from "./shellLayout";
 import { useShellModal } from "./shellModal";
 import {
   ARC_HIDE_MS,
-  ARC_LIGHTS_CENTER,
   devPeeks,
   dockMoving,
   DOCK_SPRING,
@@ -164,15 +163,16 @@ export function DockedLayout({
     useShallow(
       (s) =>
         [
-          s.windows[windowId]?.sidebarOpen ?? true,
+          topTabs || (s.windows[windowId]?.sidebarOpen ?? true),
           sidebarWidthOf(s.windows[windowId], s.settings, nativeSidebarShell(windowId)),
-          s.settings.addressBar === "sidebar" && sidebarWidthOf(s.windows[windowId], s.settings, nativeSidebarShell(windowId)) !== SIDEBAR_RAIL_WIDTH,
+          s.settings.addressBar === "sidebar" && (!s.windows[windowId]?.sidebarOpen || sidebarWidthOf(s.windows[windowId], s.settings, nativeSidebarShell(windowId)) !== SIDEBAR_RAIL_WIDTH),
         ] as const,
     ),
   );
   const width = useSidebarUi((u) => u.dragWidth[windowId]) ?? savedWidth;
+  const cardTop = inset.top + (addressBar && !topTabs && !open ? layout.toolbarHeight : 0);
   const arc = addressBar && !topTabs && switchOn("sidebarSlide");
-  const lights = addressBar && !topTabs ? ARC_LIGHTS_CENTER : LIGHTS_CENTER;
+  const lights = LIGHTS_CENTER;
   const [nativeDockCapable] = useState(() => nativeDockIn(windowId));
   const nativeDock = nativeDockCapable && shellColumnFitsAddressBar(addressBar);
   const rnDock = useSidebarDock(open, !fullscreen, arc, !nativeDock);
@@ -204,7 +204,7 @@ export function DockedLayout({
             : {
                 flex: 1,
                 flexDirection: "row",
-                paddingTop: topTabs ? top : inset.top,
+                paddingTop: topTabs ? top : cardTop,
                 paddingRight: inset.right,
                 paddingBottom: inset.bottom,
                 paddingLeft: topTabs ? inset.left : left,
@@ -213,7 +213,7 @@ export function DockedLayout({
       >
         {!fullscreen &&
           (pooled ? (
-            <DragGutters top={topTabs ? top : inset.top} left={topTabs ? inset.left : left} inset={inset} nativeColumn={nativeDock && !topTabs && open ? width : 0} />
+            <DragGutters top={topTabs ? top : cardTop} left={topTabs ? inset.left : left} inset={inset} nativeColumn={nativeDock && !topTabs && open ? width : 0} />
           ) : (
             <WindowDragRegion style={StyleSheet.absoluteFill} />
           ))}
@@ -457,7 +457,7 @@ function useTrafficLights(
   const sent = useRef<string | undefined>(undefined);
   apply.current = () => {
     const v = values.current;
-    const offset = o.fullscreen ? 0 : o.peeking ? (o.width + 12) * (1 - v.slide) - PEEK_ORIGIN[0] : o.width * (1 - v.dock);
+    const offset = o.fullscreen || !o.peeking ? 0 : (o.width + 12) * (1 - v.slide) - PEEK_ORIGIN[0];
     const center = lightsCenter(offset, o.peeking && !o.fullscreen ? PEEK_ORIGIN[1] : 0, o.lights);
     const key = center ? center.join(",") : "";
     if (key === sent.current) return;

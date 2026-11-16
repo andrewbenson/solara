@@ -122,7 +122,7 @@ class StripHoverView: NSView {
       pressed = false
       return
     }
-    pressed = bounds.contains(convert(event.locationInWindow, from: nil))
+    pressed = bounds.contains(fullScreenPoint(event.locationInWindow))
   }
 
   override func mouseUp(with event: NSEvent) {
@@ -130,7 +130,7 @@ class StripHoverView: NSView {
       pressed = false
       return
     }
-    let inside = bounds.contains(convert(event.locationInWindow, from: nil))
+    let inside = bounds.contains(fullScreenPoint(event.locationInWindow))
     let was = pressed
     pressed = false
     if inside && was { press(SidebarClickMods(event.modifierFlags)) }
@@ -397,7 +397,7 @@ final class StripTabChip: StripHoverView, StripDraggable {
     row.backgroundColor = fill.cgColor
     CATransaction.commit()
     close.isHidden = !hovered || numberHint.blocksClose
-    if hovered { close.hovered = close.bounds.contains(close.convert(window?.mouseLocationOutsideOfEventStream ?? .zero, from: nil)) }
+    if hovered { close.hovered = close.bounds.contains(close.fullScreenPoint(window?.mouseLocationOutsideOfEventStream ?? .zero)) }
   }
 
   override func setFrameSize(_ newSize: NSSize) {
@@ -924,7 +924,7 @@ final class StripSplitPart: StripHoverView, NSViewToolTipOwner {
 
   func view(_ view: NSView, stringForToolTip tag: NSView.ToolTipTag, point: NSPoint, userData data: UnsafeMutableRawPointer?) -> String { tip }
 
-  override func devToolTip(at point: NSValue) -> String? { convert(point.pointValue, from: nil).x >= pressStart ? tip : nil }
+  override func devToolTip(at point: NSValue) -> String? { fullScreenPoint(point.pointValue).x >= pressStart ? tip : nil }
 
   override func layout() {
     super.layout()

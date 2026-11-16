@@ -92,7 +92,7 @@ public final class SidebarDock {
   public private(set) var peek: EdgePeek
   public var column: () -> NSView? = { nil }
   public var onWatch: (_ hold: CGFloat?) -> Void = { _ in }
-  public var onLights: (CGPoint?) -> Void = { _ in }
+  public var onLights: (CGPoint?) -> Void = { _ in } { didSet { sentLights = nil } }
   public var onDock: (_ value: Double, _ moving: Bool) -> Void = { _, _ in }
   public var onPeek: (_ live: Bool, _ right: Double) -> Void = { _, _ in }
   public var onPeekCoverage: (_ live: Bool, _ rect: CGRect?) -> Void = { _, _ in }

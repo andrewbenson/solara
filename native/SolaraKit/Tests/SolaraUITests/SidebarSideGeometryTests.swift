@@ -33,7 +33,8 @@ struct SidebarSideGeometryTests {
       #expect(coverage.maxX <= 1000)
       #expect(coverage.contains(CGPoint(x: coverage.midX, y: coverage.midY)))
       #expect(!coverage.contains(CGPoint(x: 100, y: 300)))
-      #expect(!coverage.contains(CGPoint(x: coverage.midX, y: 0)))
+      #expect(coverage.contains(CGPoint(x: coverage.midX, y: 0)) == SidebarRail.contains(width: Double(width)))
+      #expect(!coverage.contains(CGPoint(x: coverage.midX, y: coverage.minY - 1)))
     }
   }
 
@@ -49,13 +50,13 @@ struct SidebarSideGeometryTests {
     }
   }
 
-  @Test func fullRightLightsHideVerticallyAndPeekWithTheExistingMotionSample() throws {
+  @Test func fullRightLightsStayCenteredWhileDockingAndPeekWithTheExistingMotionSample() throws {
     var input = DockedLayoutInput(size: CGSize(width: 1000, height: 700), dock: 0, sidebarSide: .right)
     let hidden = try #require(DockMotion.sidebarLightsCenter(input))
     #expect(hidden.x == 25)
-    #expect(hidden.y + ShellMetrics.trafficLightSize / 2 < 0)
+    #expect(hidden.y == ShellMetrics.lightsCenter.y)
     input.dock = 0.5
-    #expect(DockMotion.sidebarLightsCenter(input)?.y == ShellMetrics.lightsCenter.y - input.sidebarWidth / 2)
+    #expect(DockMotion.sidebarLightsCenter(input)?.y == ShellMetrics.lightsCenter.y)
     input.dock = 1
     #expect(DockMotion.sidebarLightsCenter(input)?.y == ShellMetrics.lightsCenter.y)
     input.dock = 0
@@ -208,7 +209,7 @@ struct SidebarSideGeometryTests {
     #expect(!chrome.resize.dragging)
   }
 
-  @Test func nativeCaptionReservationSurvivesLegacyPageAndOverlayTops() throws {
+  @Test func rightSidebarCaptionHasASeparateRowAboveTheCard() throws {
     var state = BrowserState()
     state.windows["caption"] = BrowserWindow(id: "caption", profileId: "default", incognito: false, frame: nil, createdAt: 0)
     state.windows["caption"]?.activeTabIds = ["default": "a"]
@@ -219,7 +220,8 @@ struct SidebarSideGeometryTests {
     shell.update { $0.sidebarSide = .right; $0.addressBarInSidebar = true }
     for top: CGFloat in [0, 41, 0, 70] {
       shell.cardPageFrame = CGRect(x: 0, y: top, width: shell.card.bounds.width, height: shell.card.bounds.height - top)
-      #expect(shell.cardPage.frame.minY == max(41, top))
+      #expect(shell.cardPage.frame.minY == top)
+      #expect(shell.frames.card.minY == ShellMetrics.cardTop + ShellMetrics.toolbarHeight)
     }
     let overlays = PaneOverlaysView(windowId: "caption")
     overlays.frame = shell.card.bounds
@@ -230,9 +232,9 @@ struct SidebarSideGeometryTests {
     overlays.update(state: state)
     overlays.layoutSubtreeIfNeeded()
     let slot = try #require(overlays.container("a", layer: .native))
-    #expect(slot.convert(slot.bounds, to: shell.card).minY == 41)
+    #expect(slot.convert(slot.bounds, to: shell.card).minY == 0)
     shell.cardPageFrame = CGRect(origin: .zero, size: shell.card.bounds.size)
-    #expect(shell.cardPage.frame.minY == 41)
+    #expect(shell.cardPage.frame.minY == 0)
     shell.update { $0.sidebarSide = .left }
     overlays.layoutSubtreeIfNeeded()
     #expect(shell.cardPage.frame.minY == 0)

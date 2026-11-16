@@ -149,6 +149,7 @@ struct StripControlsHostState: Decodable, Equatable {
   var controls: StripControlsState
   var theme: [String: String]
   var leadingInset: Double?
+  var windowFullscreen: Bool?
 }
 
 struct StripGlowHostState: Decodable, Equatable {
@@ -175,6 +176,9 @@ final class TopStripControlsHost {
     guard let next = json.data(using: .utf8).flatMap({ try? JSONDecoder().decode(StripControlsHostState.self, from: $0) }), next != state else { return }
     state = next
     view.leadingInset = CGFloat(next.leadingInset ?? 0)
+    view.captionAligned = next.windowFullscreen != nil
+    view.windowFullscreen = next.windowFullscreen ?? false
+    view.profileCoveredByIsland = next.windowFullscreen == nil
     view.update(next.controls, theme: next.theme)
   }
 

@@ -3,7 +3,7 @@ import { WindowLayoutAnchorFeed, type WindowLayoutAnchors } from "@solara/settin
 import { nativeSidebarShell } from "../sidebar/sidebarShell";
 import { create } from "zustand";
 import { switchOn } from "../../lib/killSwitches";
-import { ARC_LIGHTS_CENTER, LIGHTS_CENTER, lightsCenter, TOP_STRIP_LIGHTS_CENTER } from "./dockMotion";
+import { LIGHTS_CENTER, TOP_STRIP_LIGHTS_CENTER } from "./dockMotion";
 import { layout } from "../../lib/theme";
 import { useBrowser, type BrowserState } from "../../store/browser";
 import { useWindowId } from "../../store/hooks";
@@ -19,7 +19,7 @@ export function addressBarInSidebar(s: BrowserState, windowId: string): boolean 
   return (
     !!w &&
     s.settings.addressBar === "sidebar" &&
-    sidebarWidthOf(s.windows[windowId], s.settings, nativeSidebarShell(windowId)) !== SIDEBAR_RAIL_WIDTH &&
+    (!w.sidebarOpen || sidebarWidthOf(s.windows[windowId], s.settings, nativeSidebarShell(windowId)) !== SIDEBAR_RAIL_WIDTH) &&
     (w.sidebarOpen || switchOn("sidebarSlide")) &&
     (w.tabLayout ?? s.settings.tabLayout) === "sidebar"
   );
@@ -37,9 +37,8 @@ export function useAddressBarInSidebar(): boolean {
 export function openingLightsCenter(s: BrowserState, windowId: string): [number, number] | null {
   const w = s.windows[windowId];
   if (!w) return null;
-  const open = w.sidebarOpen ?? true;
-  if ((w.tabLayout ?? s.settings.tabLayout) === "top") return open ? [...TOP_STRIP_LIGHTS_CENTER] : lightsCenter(layout.sidebarWidth);
-  return lightsCenter(open ? 0 : sidebarWidthOf(s.windows[windowId], s.settings, nativeSidebarShell(windowId)), 0, addressBarInSidebar(s, windowId) ? ARC_LIGHTS_CENTER : LIGHTS_CENTER);
+  if ((w.tabLayout ?? s.settings.tabLayout) === "top") return [...TOP_STRIP_LIGHTS_CENTER];
+  return [...LIGHTS_CENTER];
 }
 
 export const SIDEBAR_FIELD = { top: 46, height: layout.rowHeight, radius: 10 } as const;

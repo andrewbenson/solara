@@ -25,6 +25,18 @@ final class WindowBackdropView: MetalSurface {
     metalView.enableSetNeedsDisplay = true
   }
 
+  @objc var fullScreenBackdropSignature: String { "\(uniforms)|\(tint)|\(custom)|\(treatment != nil)" }
+  @objc var fullScreenBackdropOpacity: CGFloat { treatment == nil ? alphaValue : 1 }
+
+  @objc func fullScreenBackdropImage() -> NSBitmapImageRep? {
+    guard treatment == nil else {
+      guard let rep = bitmapImageRepForCachingDisplay(in: bounds) else { return nil }
+      cacheDisplay(in: bounds, to: rep)
+      return rep
+    }
+    return snapshotImage()
+  }
+
   func setColors(_ hex: [String]) {
     let rgba = hex.compactMap { SIMD4<Float>(hex: $0) }
     guard let first = rgba.first else { return }
@@ -429,6 +441,8 @@ final class WindowTreatmentView: NSView {
     updateAppearance()
     updateTint()
   }
+
+  @objc var fullScreenBackdropSignature: String { "\(tint)|\(custom)|\(blur.state.rawValue)|\(blur.material.rawValue)|\(showsKeyLook)|\(activity.isActive)" }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 

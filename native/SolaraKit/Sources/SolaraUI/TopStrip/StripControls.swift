@@ -54,8 +54,8 @@ public enum StripControlsLayout {
     max(minimumProfileSlot - profileGap, min(profileRoom, width - leading - trailingReservation - StripMetrics.minChip - profileGap))
   }
 
-  public static func profileSlot(indicator: CGFloat) -> CGFloat {
-    indicator > 0 ? max(minimumProfileSlot, indicator + profileGap) : 0
+  public static func profileSlot(indicator: CGFloat, coveredByIsland: Bool) -> CGFloat {
+    indicator > 0 ? max(coveredByIsland ? minimumProfileSlot : 0, indicator + profileGap) : 0
   }
 
   public static func width(indicator: CGFloat) -> CGFloat { (indicator > 0 ? indicator + gap : 0) + downloadsBox }
@@ -71,14 +71,43 @@ public enum StripControlsLayout {
   }
 }
 
+public struct TopStripLeadingLayout: Equatable {
+  public let profile: CGRect
+  public let downloads: CGRect
+  public let strip: CGRect
+  public let leading: CGFloat
+  public let pageWidth: CGFloat
+
+  public init(width: CGFloat, profileWidth: CGFloat, windowFullscreen: Bool) {
+    let profileX: CGFloat = windowFullscreen ? 8 : ShellMetrics.topStripLeadingReservation
+    profile = CGRect(x: profileX, y: ShellMetrics.topStripLightsCenter.y - StripControlsLayout.height / 2,
+      width: profileWidth, height: StripControlsLayout.height)
+    downloads = CGRect(x: max(0, width - 8 - StripControlsLayout.downloadsBox),
+      y: ShellMetrics.topStripLightsCenter.y - StripControlsLayout.downloadsBox / 2,
+      width: StripControlsLayout.downloadsBox, height: StripControlsLayout.downloadsBox)
+    leading = profileX + StripControlsLayout.profileSlot(indicator: profileWidth, coveredByIsland: windowFullscreen)
+    pageWidth = max(0, width - leading - StripControlsLayout.trailingReservation)
+    strip = CGRect(x: leading - StripMetrics.flare, y: 0,
+      width: max(0, width - leading + StripMetrics.flare - max(StripControlsLayout.trailingReservation - StripMetrics.flare, StripControlsLayout.downloadsBox + 8)), height: StripMetrics.height)
+  }
+}
+
 @MainActor
 public final class StripControlsView: NSView {
   public var onAction: (StripControlAction) -> Void = { _ in }
   public private(set) var width: CGFloat = StripControlsLayout.downloadsBox
   public private(set) var profileSlotWidth: CGFloat = 0
   public var leadingInset: CGFloat = 0 { didSet { place() } }
+  public var captionAligned = false { didSet { place() } }
   private var state: StripControlsState?
   private var theme: [String: String] = [:]
+  public var docked = false { didSet { place() } }
+  public var windowFullscreen = false { didSet { place() } }
+  public var profileCoveredByIsland = false { didSet { place() } }
+  public private(set) var profileWidth: CGFloat = 0
+  public var dockedLayout: TopStripLeadingLayout {
+    TopStripLeadingLayout(width: bounds.width, profileWidth: profileWidth, windowFullscreen: windowFullscreen)
+  }
   let indicator = StripProfileIndicator()
   let downloads = StripIconButton()
 
@@ -118,7 +147,8 @@ public final class StripControlsView: NSView {
   private func place() {
     guard let state else { return }
     func color(_ key: String) -> NSColor { SidebarPalette.parse(theme[key]) ?? .clear }
-    let room = bounds.width > 0 ? StripControlsLayout.profileRoom(width: bounds.width + 8, leading: leadingInset) : StripControlsLayout.profileRoom
+    let leading: CGFloat = docked ? (windowFullscreen ? 8 : ShellMetrics.topStripLeadingReservation) : leadingInset
+    let room = bounds.width > 0 ? StripControlsLayout.profileRoom(width: bounds.width + (docked ? 0 : 8), leading: leading) : StripControlsLayout.profileRoom
     let layout = StripControlsLayout.indicator(textWidth: StripControlsLayout.nameWidth(state.title), room: room, incognito: state.incognito, profiles: state.profiles)
     indicator.isHidden = !layout.shown
     indicator.set(
@@ -130,10 +160,23 @@ public final class StripControlsView: NSView {
       "arrow.down.circle", size: 16, weight: .regular, color: color("icon"), hover: color("toolbarHover"), pressed: color("toolbarPressed"),
       tooltip: state.downloadsOpen ? nil : state.downloadsTooltip)
     let indicatorWidth = layout.shown ? layout.width : 0
+    profileWidth = indicatorWidth
     width = StripControlsLayout.width(indicator: indicatorWidth)
-    profileSlotWidth = StripControlsLayout.profileSlot(indicator: indicatorWidth)
-    indicator.frame = NSRect(x: leadingInset, y: 0.5, width: indicatorWidth, height: StripControlsLayout.height)
-    downloads.frame = NSRect(x: max(0, bounds.width - StripControlsLayout.downloadsBox), y: indicatorWidth > 0 ? 0.5 : 0, width: StripControlsLayout.downloadsBox, height: StripControlsLayout.downloadsBox)
+    profileSlotWidth = StripControlsLayout.profileSlot(indicator: indicatorWidth, coveredByIsland: windowFullscreen || profileCoveredByIsland)
+    indicator.frame = NSRect(x: leadingInset, y: captionAligned ? 0 : 0.5, width: indicatorWidth, height: StripControlsLayout.height)
+    downloads.frame = NSRect(x: max(0, bounds.width - StripControlsLayout.downloadsBox), y: !captionAligned && indicatorWidth > 0 ? 0.5 : 0, width: StripControlsLayout.downloadsBox, height: StripControlsLayout.downloadsBox)
+    if docked { placeDocked() }
+  }
+
+  private func placeDocked() {
+    let geometry = dockedLayout
+    indicator.frame = geometry.profile
+    downloads.frame = geometry.downloads
+  }
+
+  public override func layout() {
+    super.layout()
+    if docked { placeDocked() }
   }
 
   public override func updateTrackingAreas() {
@@ -144,13 +187,13 @@ public final class StripControlsView: NSView {
     tracking = area
   }
 
-  public override func mouseMoved(with event: NSEvent) { hover(at: convert(event.locationInWindow, from: nil)) }
-  public override func mouseEntered(with event: NSEvent) { hover(at: convert(event.locationInWindow, from: nil)) }
-  public override func mouseExited(with event: NSEvent) { hover(at: nil) }
+  public override func mouseMoved(with event: NSEvent) { hover(at: isHitBy(event) ? fullScreenPoint(event.locationInWindow) : nil) }
+  public override func mouseEntered(with event: NSEvent) { hover(at: isHitBy(event) ? fullScreenPoint(event.locationInWindow) : nil) }
+  public override func mouseExited(with event: NSEvent) { hover(at: isHitBy(event) ? fullScreenPoint(event.locationInWindow) : nil) }
 
   @objc private func devPointer(_ note: Notification) {
     guard DevPointer.inside(self, note), let window, let screen = (note.object as? NSValue)?.pointValue else { return hover(at: nil) }
-    hover(at: convert(window.convertPoint(fromScreen: screen), from: nil))
+    hover(at: fullScreenPoint(window.convertPoint(fromScreen: screen)))
   }
 
   private func hover(at point: NSPoint?) {
@@ -158,7 +201,7 @@ public final class StripControlsView: NSView {
     downloads.hovered = point.map { downloads.frame.contains($0) } ?? false
   }
 
-  public var downloadsRect: NSRect? { downloads.isHidden || window == nil ? nil : downloads.convert(downloads.bounds, to: nil) }
+  public var downloadsRect: NSRect? { downloads.isHidden || window == nil ? nil : downloads.fullScreenRect(downloads.bounds, to: nil) }
 }
 
 @MainActor
@@ -169,6 +212,7 @@ final class StripProfileIndicator: StripHoverView {
   private var fills: (hover: NSColor, pressed: NSColor) = (.clear, .clear)
   private var showName = true
   private var enabled = true
+  var leadingPadding: CGFloat = StripControlsLayout.pad { didSet { placeContents() } }
   var onPress: (() -> Void)?
 
   override var accessibleName: String? { label.stringValue }
@@ -202,12 +246,21 @@ final class StripProfileIndicator: StripHoverView {
 
   override func layout() {
     super.layout()
+    placeContents()
+  }
+
+  override func setFrameSize(_ newSize: NSSize) {
+    super.setFrameSize(newSize)
+    placeContents()
+  }
+
+  private func placeContents() {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     plate.frame = bounds
     CATransaction.commit()
-    label.frame = bounds.insetBy(dx: StripControlsLayout.pad, dy: 0)
-    symbol.frame = NSRect(x: (bounds.width - 16) / 2, y: (bounds.height - 16) / 2, width: 16, height: 16)
+    label.frame = NSRect(x: leadingPadding, y: 0, width: max(0, bounds.width - leadingPadding - StripControlsLayout.pad), height: bounds.height)
+    symbol.frame = NSRect(x: (bounds.width - 16 + leadingPadding - StripControlsLayout.pad) / 2, y: (bounds.height - 16) / 2, width: 16, height: 16)
   }
 
   override func repaint() {
@@ -241,6 +294,7 @@ public final class StripPeekRow: NSView {
     addSubview(strip)
     addSubview(controls)
     controls.leadingInset = 8
+    controls.profileCoveredByIsland = true
   }
 
   required init?(coder: NSCoder) { fatalError() }

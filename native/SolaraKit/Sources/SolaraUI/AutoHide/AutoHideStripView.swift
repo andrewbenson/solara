@@ -249,6 +249,7 @@ public final class AutoHideStripView: NSView {
 
   private func apply(bar b: Double, fade f: Double) {
     let h = Double(ToolbarAutoHideMetrics.toolbarHeight)
+    let hairlineHeight = Double(1 / (window?.backingScaleFactor ?? 2))
     PrimitiveMotion.setInstantly {
       cardCorners.frame = CGRect(x: 0, y: 0, width: bounds.width, height: h + ShellMetrics.cardRadius)
       backdrop.bounds = CGRect(x: 0, y: 0, width: bounds.width, height: h)
@@ -261,10 +262,10 @@ public final class AutoHideStripView: NSView {
         t = CATransform3DTranslate(t, 0, h / 2, 0)
         t = CATransform3DScale(t, 1, scale, 1)
         backdrop.transform = CATransform3DTranslate(t, 0, -h / 2, 0)
-        divider.frame = CGRect(x: 0, y: h - 1 + ToolbarAutoHideCurves.dividerLift(bar: b), width: bounds.width, height: 1)
+        divider.frame = CGRect(x: 0, y: h - hairlineHeight + ToolbarAutoHideCurves.dividerLift(bar: b), width: bounds.width, height: hairlineHeight)
       } else {
         backdrop.transform = CATransform3DIdentity
-        divider.frame = CGRect(x: 0, y: h - 1, width: bounds.width, height: 1)
+        divider.frame = CGRect(x: 0, y: h - hairlineHeight, width: bounds.width, height: hairlineHeight)
       }
     }
     label.alphaValue = moved ? ToolbarAutoHideCurves.labelOpacity(fade: f) * labelInk : 0

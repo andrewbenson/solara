@@ -466,8 +466,8 @@ public final class SidebarIconPickerView: NSView, NSTextFieldDelegate {
   @objc private func scrolled() { grid.pointerMoved() }
 
   @objc private func devPointer(_ note: Notification) {
-    guard let window, let screen = (note.object as? NSValue)?.pointValue else { return }
-    grid.pointer(at: grid.convert(window.convertPoint(fromScreen: screen), from: nil))
+    guard DevPointer.inside(self, note), let window, let screen = (note.object as? NSValue)?.pointValue else { return grid.pointer(at: nil) }
+    grid.pointer(at: grid.fullScreenPoint(window.convertPoint(fromScreen: screen)))
   }
 
   public override func hitTest(_ point: NSPoint) -> NSView? {

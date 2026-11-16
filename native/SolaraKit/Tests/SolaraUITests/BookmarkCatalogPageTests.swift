@@ -89,8 +89,9 @@ struct BookmarkCatalogPageTests {
       let point = CGPoint(x: start.x + (end.x - start.x) * fraction, y: start.y + (end.y - start.y) * fraction)
       let event = try #require(NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime + Double(step) * 0.016, windowNumber: panel.windowNumber, context: nil, eventNumber: step, clickCount: 1, pressure: step == 13 ? 0 : 1))
       DispatchQueue.main.asyncAfter(deadline: .now() + (step == 0 ? 0 : 0.15 + Double(step) * 0.016)) {
+        dragStates.append(model.dragging)
         panel.sendEvent(event)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.005) { dragStates.append(model.dragging) }
+        dragStates.append(model.dragging)
       }
     }
     try await Task.sleep(for: .milliseconds(700))

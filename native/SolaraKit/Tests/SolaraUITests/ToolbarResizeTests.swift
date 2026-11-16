@@ -4,6 +4,34 @@ import Testing
 
 @MainActor
 struct ToolbarResizeTests {
+  @Test(arguments: [CGSize.zero, CGSize(width: 1, height: 1), CGSize(width: 31, height: 31),
+    CGSize(width: 32, height: 32), CGSize(width: 42, height: 42), CGSize(width: 84, height: 48)])
+  func compactAndRevealedToolbarsLeaveEmptyPagesWhenTheWindowIsTooSmall(size: CGSize) {
+    let fixture = Fixture(bare: false)
+    defer { fixture.window.contentView = nil; fixture.window.close() }
+    fixture.toolbar.update(ToolbarFrameTests.state(windowToolbar: true))
+    fixture.shell.registerToolbar(fixture.toolbar, owner: fixture.owner)
+    fixture.shell.frame.size = size
+    fixture.shell.setSidebarWidth(42, animated: false)
+    #expect(fixture.shell.frames.page.height == (size.height == 48 ? 9 : size.height == 42 ? 3 : 0))
+    for topTabs in [false, true] {
+      fixture.shell.update { $0.topTabs = topTabs }
+      fixture.shell.applyFullScreenReveal(fullscreen: true, page: false, reveal: 0, menuBottom: 37)
+      let page = fixture.shell.cardPage.convert(fixture.shell.cardPage.bounds, to: fixture.shell)
+      for reveal: CGFloat in [0.5, 1, 0] {
+        fixture.shell.applyFullScreenReveal(fullscreen: true, page: false, reveal: reveal, menuBottom: 37)
+        fixture.toolbar.layoutSubtreeIfNeeded()
+        #expect(fixture.shell.cardPage.convert(fixture.shell.cardPage.bounds, to: fixture.shell) == page)
+        let rects = [fixture.shell.cardClip.frame, fixture.shell.cardRim.edgeRect,
+          fixture.shell.cardShadow.edgeRect, fixture.toolbarRect] + Array(fixture.toolbar.layoutAnchors.values)
+        #expect(rects.allSatisfy {
+          $0.origin.x.isFinite && $0.origin.y.isFinite && $0.size.width.isFinite && $0.size.height.isFinite
+            && $0.size.width >= 0 && $0.size.height >= 0
+        })
+      }
+    }
+  }
+
   @MainActor final class Fixture {
     let window: NSWindow
     let shell: WindowShellView
@@ -128,8 +156,9 @@ struct ToolbarResizeTests {
     #expect(parent !== f.owner)
     f.shell.setSidebarWidth(42, animated: false)
     #expect(f.toolbar.superview === parent)
-    #expect(f.toolbarRect.minX == f.shell.frames.card.minX)
-    #expect(f.toolbarRect.height == 47)
+    #expect(f.toolbarRect.minX == 0)
+    #expect(f.toolbarRect.maxX == f.shell.bounds.maxX)
+    #expect(f.toolbarRect.height == 32)
     f.shell.setSidebarWidth(190, animated: false)
     #expect(f.toolbar.superview === parent)
     #expect(f.toolbarRect == CGRect(x: 190, y: 6, width: 803, height: 41))
@@ -186,6 +215,31 @@ struct ToolbarResizeTests {
     #expect(f.toolbar.hitTest(CGPoint(x: 400, y: 20)) == nil)
   }
 
+  @Test(arguments: [CGFloat(0), 1])
+  func iconToolbarCentersEveryControlWithinItsBand(_ dock: CGFloat) throws {
+    let f = Fixture(bare: false)
+    defer { f.window.close() }
+    var state = ToolbarWebKitPillTests.state(extensions: ToolbarWebKitPillTests.pill)
+    state.height = 41
+    state.windowToolbar = true
+    state.update = try JSONDecoder().decode(ToolbarUpdateState.self, from: Data(#"{"text":"Update available","short":"Update","tooltip":"Install update"}"#.utf8))
+    f.toolbar.update(state)
+    f.shell.update { $0.dock = dock }
+    f.shell.setSidebarWidth(CGFloat(SidebarRail.width), animated: false)
+    f.shell.registerToolbar(f.toolbar, owner: f.owner)
+    f.toolbar.layoutSubtreeIfNeeded()
+    let row = f.toolbarRect
+    #expect(row.minY == 0 && row.maxY == 32)
+    for button in ToolbarWebKitPillTests.buttons(in: f.toolbar) where !button.isHiddenOrHasHiddenAncestor {
+      #expect(abs(button.convert(button.bounds, to: f.shell).midY - row.midY) <= 0.5)
+    }
+    let field = try #require(ToolbarWebKitPillTests.fieldIn(f.toolbar))
+    #expect(field.convert(field.bounds, to: f.shell).midY == row.midY)
+    let update = try #require(f.toolbar.subviews.flatMap(\.subviews).compactMap { $0 as? SidebarUpdatePill }.first)
+    #expect(!update.isHidden)
+    #expect(abs(update.convert(update.bounds, to: f.shell).midY - row.midY) <= 0.5)
+  }
+
   @Test func theAutoHideBackdropFollowsTheToolbarThroughResizeRailAndDetachedRestoration() {
     let f = Fixture()
     let strip = AutoHideStripView(frame: .zero)
@@ -202,8 +256,8 @@ struct ToolbarResizeTests {
     #expect(strip.superview === f.toolbar.superview)
     #expect(strip.superview?.subviews.suffix(2) == [strip, f.toolbar])
     f.shell.setSidebarWidth(42, animated: false)
-    #expect(strip.convert(strip.bounds, to: f.shell).minY == f.toolbarRect.minY + 6)
-    #expect(strip.frame.height == 41)
+    #expect(strip.convert(strip.bounds, to: f.shell).minY == f.toolbarRect.minY + ShellMetrics.railToolbarTop)
+    #expect(strip.frame.height == 32)
     f.owner.removeFromSuperview()
     f.shell.unregisterToolbar(f.toolbar)
     #expect(f.toolbar.window == nil)
@@ -474,5 +528,65 @@ struct ToolbarResizeTests {
     #expect(f.toolbar.alphaValue == 0)
     #expect(strip.superview === f.toolbar.superview)
     strip.removeFromSuperview()
+  }
+}
+
+@MainActor
+struct ToolbarSeparatorTests {
+  @Test(arguments: [false, true], [false, true])
+  func separatorReachesBothCardEdgesWithoutBottomCornerClipping(reactOnTop: Bool, autoHide: Bool) throws {
+    let f = ToolbarResizeTests.Fixture(bare: autoHide, reactOnTop: reactOnTop)
+    defer { f.window.close() }
+    var state = f.toolbar.state!
+    state.bare = autoHide
+    state.windowToolbar = true
+    state.hairline = !autoHide
+    state.palette.background = "#FFFFFF"
+    state.palette.divider = "#FF0000"
+    state.stripes = nil
+    state.left = []
+    state.right = []
+    state.url = nil
+    f.toolbar.update(state)
+    let strip = AutoHideStripView(frame: .zero)
+    strip.reduceMotion = true
+    if autoHide {
+      strip.set(style: AutoHideStripStyle(card: CSSColor("#FFFFFF")!, band: nil, divider: CSSColor("#FF0000")!,
+        secondary: CSSColor("#000000")!, host: "example.com", hasPage: true), mode: .shown, shownTop: 41)
+      f.toolbar.onGeometryChange = { [weak toolbar = f.toolbar, weak strip] in
+        if let toolbar, let strip { toolbar.placeBackdrop(strip) }
+      }
+    }
+    for variant in ["sidebar", "caption", "hidden", "top", "icon"] {
+      f.shell.update {
+        $0.sidebarSide = variant == "caption" ? .right : .left
+        $0.addressBarInSidebar = variant == "caption"
+        $0.dock = variant == "hidden" ? 0 : 1
+        $0.topTabs = variant == "top"
+        $0.sidebarWidth = variant == "icon" ? 42 : 190
+      }
+      f.shell.setSidebarWidth(variant == "icon" ? 42 : 190, animated: false)
+      f.shell.registerToolbar(f.toolbar, owner: f.owner)
+      let clip = try #require(f.toolbar.superview)
+      let clipLayer = try #require(clip.layer)
+      #expect(clipLayer.masksToBounds)
+      #expect(!clipLayer.maskedCorners.contains(.layerMinXMaxYCorner))
+      #expect(!clipLayer.maskedCorners.contains(.layerMaxXMaxYCorner))
+      f.toolbar.layoutSubtreeIfNeeded()
+      strip.layoutSubtreeIfNeeded()
+      let separator = try #require((autoHide ? strip.layer : f.toolbar.layer)?.sublayers?[1])
+      #expect(separator.isHidden == (variant == "icon"))
+      if variant == "icon" { continue }
+      let separatorView: NSView = autoHide ? strip : f.toolbar
+      let separatorRect = separatorView.convert(separator.frame, to: f.shell)
+      #expect(separatorRect.minX == f.shell.frames.card.minX)
+      #expect(separatorRect.maxX == f.shell.frames.card.maxX)
+      f.shell.displayIfNeeded()
+      CATransaction.flush()
+      let scale = f.window.backingScaleFactor
+      #expect(separator.frame.height == 1 / scale)
+      #expect(separator.frame.maxY == separatorView.bounds.maxY)
+      #expect(separator.cornerRadius == 0 && separator.mask == nil)
+    }
   }
 }

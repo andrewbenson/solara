@@ -58,15 +58,234 @@ struct SidebarChromeTests {
     #expect(SidebarResizeMath.live(200.26) == 200.5)
   }
 
-  @Test func headerControlsSitWhereRNPutsThem() {
+  @Test func headerProfileSitsEightPointsAfterGreenAtTheLightsCenter() {
     let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 220, height: 600))
     view.update(state())
     #expect(view.headerHeight == 46)
     #expect(view.footerHeight == 41)
-    #expect(view.indicator.frame.minX == 84 && view.indicator.frame.minY == 10.5)
+    let greenTrailing = ShellMetrics.lightsCenter.x + 2 * ShellMetrics.trafficLightPitch + ShellMetrics.trafficLightSize / 2
+    #expect(view.indicator.frame.minX + view.indicator.leadingPadding == greenTrailing + 8)
+    #expect(view.indicator.frame.midY == ShellMetrics.lightsCenter.y)
     #expect(view.headerDownloads.frame == NSRect(x: 220 - 7 - 34, y: 10, width: 34, height: 34))
     #expect(view.footerDownloads.isHidden)
     #expect(view.resize.frame == NSRect(x: 216, y: 46, width: 4, height: 554))
+  }
+
+  @Test func profileLabelTracksTheCaptionLineBeforeTheNextLayoutPass() throws {
+    let host = FlippedContainerView(frame: CGRect(x: 0, y: 0, width: 190, height: 80))
+    let indicator = StripProfileIndicator(frame: .zero)
+    host.addSubview(indicator)
+    let label = try #require(indicator.subviews.compactMap { $0 as? StripLabel }.first)
+    for width in [CGFloat(60), 90, 150] {
+      indicator.frame = CGRect(x: 6, y: SidebarChromeMetrics.controlTop, width: width, height: StripControlsLayout.height)
+      let name = label.convert(label.bounds, to: host)
+      #expect(abs(name.midY - ShellMetrics.lightsCenter.y) <= 0.5)
+      #expect(label.frame.width == width - 2 * StripControlsLayout.pad)
+    }
+  }
+
+  @Test(arguments: ["Test", "Personal", "A long profile name", ""], [CGFloat(160), 190, 220])
+  func windowedProfilePillClearsActualLightsWithoutMovingItsContents(_ title: String, _ width: CGFloat) throws {
+    let window = NSPanel(contentRect: CGRect(x: 0, y: 0, width: 900, height: 650),
+      styleMask: [.titled, .closable, .miniaturizable, .resizable, .nonactivatingPanel], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    WindowCaptionLayout.configure(window)
+    let host = FlippedContainerView(frame: CGRect(x: 0, y: 0, width: 900, height: 650))
+    window.contentView = host
+    let view = SidebarChromeView(frame: CGRect(x: 0, y: 0, width: width, height: 650))
+    host.addSubview(view)
+    defer { window.contentView = nil; window.close() }
+    var next = state()
+    next.controls.title = title
+    next.theme = ["tabHover": "#ff0000", "tabPressed": "#0000ff"]
+    view.update(next)
+    view.layoutSubtreeIfNeeded()
+    WindowCaptionLayout.position(in: window, center: CGPoint(x: 25, y: 27))
+    let label = try #require(view.indicator.subviews.compactMap { $0 as? StripLabel }.first)
+    let symbol = try #require(view.indicator.subviews.compactMap { $0 as? SymbolView }.first)
+    let before = StripControlsLayout.indicator(textWidth: StripControlsLayout.nameWidth(title), room: width - 77 - 7 - 36,
+      incognito: false, profiles: 3)
+    let nameFrame = CGRect(x: 86, y: 10, width: before.width - 18, height: 34)
+    let symbolFrame = CGRect(x: 77 + (before.width - 16) / 2, y: 19, width: 16, height: 16)
+    #expect(label.isHidden == !before.showName)
+    #expect(!view.indicator.isHidden)
+    #expect(label.convert(label.bounds, to: host) == nameFrame)
+    #expect(symbol.convert(symbol.bounds, to: host) == symbolFrame)
+    let plate = try #require(view.indicator.layer?.sublayers?.first { $0.cornerRadius == 10 })
+    for pressed in [false, true] {
+      view.indicator.hovered = true
+      view.indicator.pressed = pressed
+      let pill = view.indicator.convert(plate.frame, to: host)
+      #expect(pill.minX == 82)
+      #expect(plate.backgroundColor == SidebarPalette.parse(next.theme[pressed ? "tabPressed" : "tabHover"])?.cgColor)
+      #expect(pill.maxX == 77 + before.width)
+      for kind in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+        let button = try #require(window.standardWindowButton(kind))
+        let light = button.convert(button.bounds, to: host)
+        #expect(!pill.intersects(light))
+        #expect(pill.minX - light.maxX >= 4)
+      }
+      #expect(label.convert(label.bounds, to: host) == nameFrame)
+      #expect(symbol.convert(symbol.bounds, to: host) == symbolFrame)
+    }
+  }
+
+  @Test(arguments: ["Test", ""])
+  func profilePillPaddingResetsAcrossFullscreenAndSideChanges(_ title: String) throws {
+    let view = SidebarChromeView(frame: CGRect(x: 0, y: 0, width: 220, height: 650))
+    var next = state()
+    next.controls.title = title
+    view.update(next)
+    view.layoutSubtreeIfNeeded()
+    let label = try #require(view.indicator.subviews.compactMap { $0 as? StripLabel }.first)
+    let original = label.convert(label.bounds, to: view)
+    let originalPill = view.indicator.frame
+    for right in [false, true, false] {
+      for fullscreen in [false, true, false] {
+        next.sidebarPosition = right ? "right" : "left"
+        next.windowFullscreen = fullscreen
+        view.update(next)
+        view.layoutSubtreeIfNeeded()
+        let leadingAtEdge = right || fullscreen
+        let room: CGFloat = leadingAtEdge ? 171 : 100
+        let before = StripControlsLayout.indicator(textWidth: StripControlsLayout.nameWidth(title), room: room,
+          incognito: false, profiles: 3)
+        let expected = CGRect(x: leadingAtEdge ? 15 : 86, y: 10, width: before.width - 18, height: 34)
+        #expect(label.convert(label.bounds, to: view) == expected)
+        #expect(view.indicator.frame.minX == (leadingAtEdge ? 6 : 82))
+        if !leadingAtEdge {
+          #expect(label.convert(label.bounds, to: view) == original)
+          #expect(view.indicator.frame == originalPill)
+        }
+      }
+    }
+  }
+
+  @Test(arguments: ["Test", "Personal", ""])
+  func fullscreenIslandOwnsRevealedLightHitsAndClearsTheProfilePaint(_ title: String) throws {
+    let window = NSPanel(contentRect: CGRect(x: 0, y: 0, width: 900, height: 650),
+      styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    defer { window.contentView = nil; window.close() }
+    let root = FlippedContainerView(frame: CGRect(x: 0, y: 0, width: 900, height: 650))
+    window.contentView = root
+    let shell = WindowShellView(windowId: "profile-island")
+    defer { shell.stopLayoutMotion() }
+    shell.frame = root.bounds
+    root.addSubview(shell)
+    shell.update { $0.sidebarWidth = 220 }
+    shell.mount(.backdrop, FullScreenBackdropFixture(colors: [.systemPink, .white]))
+    let chrome = SidebarChromeView(frame: .zero)
+    shell.mount(.sidebar, chrome)
+    var next = state(downloads: false)
+    next.controls.title = title
+    next.theme = ["tabHover": "#ff0000", "tabPressed": "#0000ff"]
+    chrome.update(next)
+    root.layoutSubtreeIfNeeded()
+    let label = try #require(chrome.indicator.subviews.compactMap { $0 as? StripLabel }.first)
+    let original = label.fullScreenRect(label.bounds, to: root)
+    #expect(original.minX == 86)
+    let plate = try #require(chrome.indicator.layer?.sublayers?.first { $0.cornerRadius == 10 })
+    let island = FullScreenIslandView(frame: .zero)
+    root.addSubview(island)
+    defer { island.removeFromSuperview() }
+    let values = [CGFloat(18), 41, 64].map { NSValue(rect: CGRect(x: $0, y: 20, width: 14, height: 14)) }
+    let frame = try #require(root.superview)
+    for menuBottom: CGFloat in [0, 24] {
+      next.windowFullscreen = true
+      chrome.update(next)
+      for reveal: CGFloat in [0, 1] {
+        island.update(fullscreen: true, page: false, reveal: reveal, menuBottom: menuBottom,
+          closeCenter: CGPoint(x: 25, y: 27), windowedButtons: values)
+        root.layoutSubtreeIfNeeded()
+        #expect(label.fullScreenRect(label.bounds, to: root) == original.offsetBy(dx: -71, dy: menuBottom * reveal))
+        #expect(island.isHidden == (reveal == 0))
+        if reveal == 0 {
+          let point = chrome.indicator.fullScreenRect(chrome.indicator.bounds, to: nil)
+          let screen = window.convertPoint(toScreen: CGPoint(x: point.midX, y: point.midY))
+          NotificationCenter.default.post(name: DevPointer.fullScreenChanged, object: NSValue(point: screen), userInfo: ["window": window])
+          #expect(chrome.indicator.hovered)
+          continue
+        }
+        let glass = try #require(island.subviews.compactMap { $0 as? NSGlassEffectView }.first)
+        let buttons = try #require(glass.contentView).subviews.compactMap { $0 as? NSButton }
+        #expect(buttons.count == 3)
+        for button in buttons {
+          let light = button.convert(button.bounds, to: nil)
+          let point = CGPoint(x: light.midX, y: light.midY)
+          let hit = try #require(frame.hitTest(point))
+          #expect(hit === button || hit.isDescendant(of: button))
+          chrome.indicator.hovered = true
+          NotificationCenter.default.post(name: DevPointer.fullScreenChanged,
+            object: NSValue(point: window.convertPoint(toScreen: point)), userInfo: ["window": window])
+          #expect(!chrome.indicator.hovered)
+        }
+        let zoom = try #require(buttons.last)
+        let light = zoom.convert(zoom.bounds, to: nil)
+        let point = CGPoint(x: light.midX, y: light.midY)
+        if !chrome.indicator.bounds.contains(chrome.indicator.fullScreenPoint(point)) {
+          chrome.indicator.pressed = true
+          let drag = try #require(NSEvent.mouseEvent(with: .leftMouseDragged, location: point, modifierFlags: [],
+            timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
+          chrome.indicator.mouseDragged(with: drag)
+          #expect(!chrome.indicator.pressed)
+        }
+        let fill = try #require(plate.backgroundColor)
+        #expect(fill.alpha == 0)
+        if menuBottom > 0 {
+          let pill = chrome.indicator.fullScreenRect(chrome.indicator.bounds, to: root)
+          let cover = try #require(island.subviews.compactMap { $0 as? FullScreenIslandScrim }.first {
+            !$0.isHidden && $0.fullScreenRect($0.bounds, to: root).contains(pill)
+          })
+          #expect(root.subviews.last === island)
+          #expect(cover.alphaValue == 1)
+        }
+      }
+      next.windowFullscreen = false
+      chrome.update(next)
+      island.update(fullscreen: false, page: false, reveal: 0, menuBottom: menuBottom,
+        closeCenter: CGPoint(x: 25, y: 27), windowedButtons: values)
+      root.layoutSubtreeIfNeeded()
+      #expect(label.fullScreenRect(label.bounds, to: root) == original)
+    }
+  }
+
+  @Test func fullscreenProfileUsesTheSidebarLeadingInsetAndRestoresOnExit() {
+    let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 160, height: 600))
+    var next = state()
+    view.update(next)
+    #expect(!view.indicator.isHidden)
+    next.windowFullscreen = true
+    view.update(next)
+    #expect(view.indicator.frame.minX == SidebarMetrics.inset)
+    #expect(view.indicator.frame.minX + StripControlsLayout.pad == 15)
+    #expect(view.indicator.frame.midY == ShellMetrics.lightsCenter.y)
+    #expect(!view.indicator.isHidden)
+    #expect(view.indicator.frame.maxX <= view.headerDownloads.frame.minX - StripControlsLayout.gap)
+    next.windowFullscreen = false
+    view.update(next)
+    #expect(view.indicator.frame.minX == 82)
+    #expect(view.indicator.frame.midY == 27)
+  }
+
+  @Test func legacyFullscreenProfileFollowsItsWindowWithoutAFeedUpdate() {
+    let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 220, height: 600),
+      styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+    let host = FlippedContainerView(frame: NSRect(x: 0, y: 0, width: 220, height: 600))
+    window.contentView = host
+    let view = SidebarChromeView(frame: host.bounds)
+    host.addSubview(view)
+    view.update(state())
+    #expect(view.state?.windowFullscreen == nil)
+    #expect(view.indicator.frame.minX == 82)
+    view.setWindowFullscreen(true, in: window)
+    #expect(view.indicator.frame.minX == SidebarMetrics.inset)
+    view.setWindowFullscreen(false, in: window)
+    #expect(view.indicator.frame.minX == 82)
+    view.removeFromSuperview()
+    view.setWindowFullscreen(true, in: window)
+    #expect(view.indicator.frame.minX == 82)
+    window.contentView = nil
   }
 
   @Test func addressModeMovesDownloadsToFooter() {

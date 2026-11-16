@@ -12,9 +12,10 @@ public final class WindowShellView: NSView {
     case peek
     case sidebar
     case topStrip
+    case navigation
     case overlay
 
-    static let reactOnTop: [Slot] = [.backdrop, .tint, .card, .sidePanel, .splitChrome, .peek, .sidebar, .topStrip, .react, .overlay]
+    static let reactOnTop: [Slot] = [.backdrop, .tint, .card, .sidePanel, .splitChrome, .peek, .sidebar, .topStrip, .react, .navigation, .overlay]
   }
 
   public static let hoverCoverChanged = Notification.Name("SolaraHoverCoverChanged")
@@ -25,6 +26,7 @@ public final class WindowShellView: NSView {
   public private(set) var frames: DockedLayoutFrames
   public var onFrames: ((DockedLayoutFrames) -> Void)?
   public var onLightsLayout: (() -> Void)?
+  public var onCaptionLayout: (() -> Void)?
   public var onDetach: (() -> Void)?
   public var onWindow: ((NSWindow?) -> Void)?
   public var onSidePanelChange: ((CGFloat) -> Void)?
@@ -59,23 +61,175 @@ public final class WindowShellView: NSView {
   private var toolbars: [RailToolbarHome] = []
   private weak var railToolbar: ToolbarView?
   private let railToolbarClip = FlippedContainerView()
+  public var fullScreenProfileNameShown = false
+  public private(set) var fullScreenStripOffset: CGFloat = 0
+  private var fullScreenRevealEnabled = false
+  private var fullScreenRevealProgress: CGFloat = 0
+  private var fullScreenMenuBottom: CGFloat = 0
+  private weak var fullScreenChrome: SidebarChromeView?
+  private var fullScreenPaneToolbars: [RailToolbarHome] = []
 
   public var railFraction: CGFloat { input.railFraction }
+  public var fullScreenIconSidebar: Bool { input.windowFullscreen && !input.topTabs && SidebarRail.contains(width: Double(input.sidebarWidth)) }
+
+  public var fullScreenHeaderCanSlide: Bool {
+    !input.fullscreen
+  }
+
+  public var fullScreenTopInsetFrame: CGRect {
+    CGRect(x: frames.card.minX, y: frames.card.minY - ShellMetrics.cardTop + fullScreenStripOffset,
+      width: frames.card.width, height: ShellMetrics.cardTop)
+  }
+
+  public var fullScreenHeaderRect: CGRect {
+    if input.topTabs { return frames.topStrip ?? CGRect(x: 0, y: 0, width: bounds.width, height: ShellMetrics.topStripHeight) }
+    let side = frames.sidebar.map { $0.offsetBy(dx: frames.sidebarShift, dy: 0) }
+    let center = ShellMetrics.lightsCenter.y
+    return CGRect(x: 0, y: center - (ShellMetrics.toolbarHeight + 1) / 2, width: side?.width ?? input.sidebarWidth, height: ShellMetrics.toolbarHeight + 1)
+  }
+
+  public func applyFullScreenReveal(fullscreen: Bool, page: Bool, reveal: CGFloat, menuBottom: CGFloat) {
+    let enabled = fullscreen && !page
+    let progress = enabled ? min(1, max(0, reveal)) : 0
+    let changed = enabled != fullScreenRevealEnabled || progress != fullScreenRevealProgress || max(0, menuBottom) != fullScreenMenuBottom
+    fullScreenRevealEnabled = enabled
+    fullScreenRevealProgress = progress
+    fullScreenMenuBottom = max(0, menuBottom)
+    if input.windowFullscreen != fullscreen {
+      input.windowFullscreen = fullscreen
+      relayout()
+    } else {
+      applyFullScreenStripLayers()
+    }
+    if changed {
+      refreshFullScreenPointer(window?.mouseLocationOutsideOfEventStream)
+      coverChanged()
+    }
+  }
+
+  public func fullScreenPresentationOffset(for view: NSView) -> CGFloat {
+    if let chrome = fullScreenChrome, view === chrome.fullScreenHeader || view.isDescendant(of: chrome.fullScreenHeader) { return chrome.fullScreenHeaderOffset }
+    for slot: Slot in [.topStrip, .navigation] {
+      if let strip = mounted[slot], view === strip || view.isDescendant(of: strip) { return fullScreenStripOffset }
+    }
+    if view === railToolbarClip || view.isDescendant(of: railToolbarClip) { return fullScreenStripOffset }
+    if fullScreenPaneToolbars.contains(where: { home in home.toolbar.map { view === $0 || view.isDescendant(of: $0) } == true }) { return fullScreenStripOffset }
+    return 0
+  }
+
+  private func applyFullScreenStripLayers() {
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    fullScreenStripOffset = fullScreenRevealEnabled && fullScreenHeaderCanSlide ? fullScreenRevealProgress * fullScreenMenuBottom : 0
+    let shift = CATransform3DMakeTranslation(0, fullScreenStripOffset, 0)
+    for slot: Slot in [.topStrip, .navigation] {
+      mounted[slot]?.wantsLayer = true
+      mounted[slot]?.layer?.transform = shift
+    }
+    railToolbarClip.layer?.transform = shift
+    refreshFullScreenPaneToolbars()
+    for home in fullScreenPaneToolbars { home.toolbar?.layer?.transform = shift }
+    if let sidebar = mounted[.sidebar] {
+      if fullScreenChrome?.isDescendant(of: sidebar) != true { fullScreenChrome = findFullScreenChrome(sidebar) }
+      fullScreenChrome?.setFullScreenHeaderOffset(fullScreenStripOffset)
+    }
+    if let navigation = mounted[.navigation] as? SidebarAddressBarView {
+      navigation.navigationLeadingInset = input.trafficLightsLeadingInset(at: 0, reveal: fullScreenRevealProgress)
+      navigation.needsLayout = true
+      navigation.layoutSubtreeIfNeeded()
+    }
+    if !DockedLayoutInput.reserveFullScreenCaptionSpace, input.reservesCaption {
+      for home in toolbars + fullScreenPaneToolbars {
+        home.toolbar?.needsLayout = true
+        home.toolbar?.layoutSubtreeIfNeeded()
+      }
+    }
+    placeCardSurface()
+    CATransaction.commit()
+    for home in toolbars + fullScreenPaneToolbars { home.toolbar?.refreshFullScreenAnchors() }
+  }
+
+  private func refreshFullScreenPaneToolbars() {
+    var found: [RailToolbarHome] = []
+    func visit(_ view: NSView) {
+      if view is SplitPageContainer { return }
+      if let toolbar = view as? ToolbarView {
+        if abs(toolbar.convert(toolbar.bounds, to: self).minY - frames.card.minY) < 0.5, let owner = toolbar.superview {
+          found.append(RailToolbarHome(toolbar: toolbar, owner: owner))
+        }
+        return
+      }
+      for child in view.subviews { visit(child) }
+    }
+    if input.windowFullscreen { visit(card) }
+    for home in fullScreenPaneToolbars where !found.contains(where: { $0.toolbar === home.toolbar }) { home.toolbar?.layer?.transform = CATransform3DIdentity }
+    fullScreenPaneToolbars = found
+  }
+
+  private func fullScreenPaneToolbarHit(over hit: NSView?, in view: NSView, at point: CGPoint) -> NSView? {
+    for home in fullScreenPaneToolbars.reversed() {
+      guard let toolbar = home.toolbar, let owner = toolbar.superview, toolbar.isDescendant(of: view), !toolbar.isHiddenOrHasHiddenAncestor,
+        let candidate = toolbar.hitTest(owner.convert(point, from: self)) else { continue }
+      guard let hit else { return candidate }
+      if hit === toolbar || hit.isDescendant(of: toolbar) { return candidate }
+      var branch: NSView = toolbar
+      while let parent = branch.superview {
+        if hit === parent { return candidate }
+        if let hitBranch = parent.subviews.first(where: { hit === $0 || hit.isDescendant(of: $0) }) {
+          if let toolbarIndex = parent.subviews.firstIndex(of: branch), let hitIndex = parent.subviews.firstIndex(of: hitBranch), toolbarIndex >= hitIndex { return candidate }
+          break
+        }
+        branch = parent
+      }
+    }
+    return nil
+  }
+
+  private func findFullScreenChrome(_ view: NSView) -> SidebarChromeView? {
+    if let chrome = view as? SidebarChromeView { return chrome }
+    for child in view.subviews.reversed() {
+      if let chrome = findFullScreenChrome(child) { return chrome }
+    }
+    return nil
+  }
+
+  private func fullScreenStripHit(at point: CGPoint) -> NSView? {
+    for view in subviews.reversed() where !view.isHidden {
+      let shifted = view === mounted[.topStrip] || view === mounted[.navigation] || view === railToolbarClip
+      let source = shifted ? CGPoint(x: point.x, y: point.y - fullScreenStripOffset) : point
+      let underlying = view.hitTest(source)
+      if !shifted, railToolbarClip.isDescendant(of: view),
+        let toolbar = toolbarHit(over: underlying ?? view, at: CGPoint(x: point.x, y: point.y - fullScreenStripOffset)) { return toolbar }
+      if !shifted, let toolbar = fullScreenPaneToolbarHit(over: underlying, in: view, at: CGPoint(x: point.x, y: point.y - fullScreenStripOffset)) { return toolbar }
+      guard let hit = underlying else { continue }
+      let inToolbar = hit.isDescendant(of: railToolbarClip) || fullScreenPaneToolbars.contains { $0.toolbar.map { hit === $0 || hit.isDescendant(of: $0) } == true }
+      if !shifted, fullScreenPresentationOffset(for: hit) > 0, inToolbar || mounted[.topStrip].map({ hit === $0 || hit.isDescendant(of: $0) }) == true { continue }
+      return hit
+    }
+    return nil
+  }
+
   public var sidebarPeekCoverage: CGRect? { input.peeking ? frames.sidebarCoverage(in: bounds) : nil }
-  public var trafficLightsLeadingInset: CGFloat { input.sidebarSide == .right && !input.topTabs && !input.fullscreen ? ShellMetrics.railToolbarLeadingInset : 0 }
+  public var toolbarRowFrame: CGRect {
+    let progress = input.chromeToolbarRow ? railFraction : 0
+    return CGRect(x: frames.card.minX * (1 - progress), y: frames.card.minY,
+      width: frames.card.width + (bounds.width - frames.card.width) * progress, height: input.toolbarHeight)
+  }
+
+  public var trafficLightsLeadingInset: CGFloat {
+    trafficLightsLeadingInset(at: toolbarRowFrame.minX)
+  }
+
+  public func trafficLightsLeadingInset(at x: CGFloat) -> CGFloat {
+    input.trafficLightsLeadingInset(at: x, reveal: fullScreenRevealProgress)
+  }
 
   public func trafficLightsLeadingInset(for view: NSView) -> CGFloat {
     let at = view.convert(CGPoint.zero, to: self)
     return at.x <= frames.card.minX + 0.5 && at.y <= frames.card.minY + 0.5 ? trafficLightsLeadingInset : 0
   }
 
-  public func captionTop(in view: NSView, rect: CGRect? = nil) -> CGFloat {
-    guard input.sidebarSide == .right, input.addressBarInSidebar, !input.topTabs, !input.fullscreen else { return 0 }
-    let local = rect ?? view.bounds
-    let shellRect = view.convert(local, to: self)
-    guard shellRect.minX <= frames.card.minX + 0.5, shellRect.minY <= frames.card.minY + 0.5 else { return 0 }
-    return min(local.height, max(0, frames.card.minY + ShellMetrics.toolbarHeight - shellRect.minY))
-  }
+  public func captionTop(in view: NSView, rect: CGRect? = nil) -> CGFloat { 0 }
 
   public var pageArea: CGRect { frames.page.offsetBy(dx: -frames.card.minX, dy: -frames.card.minY) }
   public var contentArea: CGRect { CGRect(x: pageArea.minX, y: 0, width: pageArea.width, height: frames.card.height) }
@@ -142,6 +296,7 @@ public final class WindowShellView: NSView {
     railToolbarClip.wantsLayer = true
     railToolbarClip.layer?.masksToBounds = true
     railToolbarClip.layer?.cornerCurve = .continuous
+    railToolbarClip.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
     railToolbarClip.layer?.cornerRadius = cardStyle.radius
     railToolbarClip.isHidden = true
     overlay.addSubview(railToolbarClip)
@@ -166,7 +321,14 @@ public final class WindowShellView: NSView {
     }
     if view == nil, ownedContainer(slot) != nil { return }
     if let current = mounted[slot], current === view { return }
-    if let current = mounted[slot], (current.superview === self || current.superview === cardClip), current !== view { current.removeFromSuperview() }
+    if let current = mounted[slot], current !== view {
+      if slot == .topStrip || slot == .navigation { current.layer?.transform = CATransform3DIdentity }
+      if slot == .sidebar {
+        findFullScreenChrome(current)?.setFullScreenHeaderOffset(0)
+        fullScreenChrome = nil
+      }
+      if current.superview === self || current.superview === cardClip { current.removeFromSuperview() }
+    }
     if let view, let other = mounted.first(where: { $0.key != slot && $0.value === view })?.key { mounted[other] = nil }
     #if SOLARA_PROBES
     NativeWorkCounters.slotPublishes += 1
@@ -180,6 +342,7 @@ public final class WindowShellView: NSView {
     let foreign = subviews.first { subview in subview !== view && subview !== hiddenPages && !mounted.values.contains { $0 === subview } }
     if let above = above ?? foreign { addSubview(view, positioned: .below, relativeTo: above) } else { addSubview(view) }
     place(slot, view)
+    applyFullScreenStripLayers()
   }
 
   private var stack: [Slot] { reactOnTop ? Slot.reactOnTop : Slot.allCases }
@@ -212,7 +375,7 @@ public final class WindowShellView: NSView {
     let changedWidth = width != input.sidebarWidth
     let target = widthRun?.to ?? input.sidebarWidth
     let crossing = SidebarRail.contains(width: Double(target)) != SidebarRail.contains(width: Double(width))
-    if changedWidth, widthRun != nil || (crossing && window != nil && !next.topTabs && !next.fullscreen) {
+    if changedWidth, widthRun != nil || (crossing && window != nil && !next.topTabs && !next.fullscreen && !next.windowFullscreen) {
       next.sidebarWidth = input.sidebarWidth
       next.railProgress = input.railProgress
       input = next
@@ -231,12 +394,13 @@ public final class WindowShellView: NSView {
     sidePanelMotion.stop()
     stopPointerLink()
     widthDragActive = false
+    applyFullScreenReveal(fullscreen: false, page: false, reveal: 0, menuBottom: 0)
   }
 
   public func setSidebarWidth(_ width: CGFloat, animated: Bool) {
     guard !layoutStopped else { return }
     let targetRail: CGFloat = SidebarRail.contains(width: Double(width)) ? 1 : 0
-    guard animated, !input.topTabs, !input.fullscreen, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+    guard animated, !input.topTabs, !input.fullscreen, !input.windowFullscreen, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
       widthMotion.stop()
       widthRun = nil
       input.sidebarWidth = width
@@ -352,15 +516,17 @@ public final class WindowShellView: NSView {
       overlay.addSubview(railToolbarClip)
     }
     railToolbarClip.isHidden = railToolbar == nil || modalShown
-    railToolbarClip.frame = railToolbarClip.superview?.convert(frames.card, from: self) ?? frames.card
+    let row = toolbarRowFrame
+    railToolbarClip.frame = railToolbarClip.superview?.convert(row, from: self) ?? row
     if let toolbar = railToolbar {
-      let height = min(frames.card.height, ShellMetrics.toolbarHeight + ShellMetrics.railToolbarTop * railFraction)
-      toolbar.frame = CGRect(x: 0, y: 0, width: frames.card.width, height: height)
+      let height = min(frames.card.height, input.toolbarHeight)
+      toolbar.frame = CGRect(x: 0, y: 0, width: row.width, height: height)
       toolbar.needsLayout = true
       toolbar.layoutSubtreeIfNeeded()
       toolbar.onGeometryChange()
     }
     applyCardStyle()
+    applyFullScreenStripLayers()
   }
 
   public override func setFrameSize(_ newSize: NSSize) {
@@ -393,6 +559,12 @@ public final class WindowShellView: NSView {
     }
     syncTitlebarAccessibility()
     onWindow?(window)
+    onCaptionLayout?()
+  }
+
+  public override func viewDidChangeEffectiveAppearance() {
+    super.viewDidChangeEffectiveAppearance()
+    onCaptionLayout?()
   }
 
   public override func viewDidMoveToSuperview() {
@@ -401,6 +573,7 @@ public final class WindowShellView: NSView {
   }
 
   public override func hitTest(_ point: NSPoint) -> NSView? {
+    if fullScreenRevealEnabled, fullScreenStripOffset > 0 { return fullScreenStripHit(at: convert(point, from: superview)) }
     let hit = super.hitTest(point)
     if let hit, let toolbar = toolbarHit(over: hit, at: convert(point, from: superview)) { return toolbar }
     return hit === self ? nil : hit
@@ -506,6 +679,10 @@ public final class WindowShellView: NSView {
 
   private func layerUnderPointer(at pointInWindow: NSPoint) -> NSView? {
     let point = convert(pointInWindow, from: nil)
+    if fullScreenRevealEnabled, fullScreenStripOffset > 0 {
+      guard let hit = fullScreenStripHit(at: point) else { return nil }
+      return slot(containing: hit).flatMap { mounted[$0] } ?? railToolbarClip
+    }
     for layer in subviews.reversed() where !layer.isHidden {
       if layer === mounted[.react], !reactOnTop { return layer.frame.contains(point) ? layer : nil }
       if let hit = layer.hitTest(point) {
@@ -523,8 +700,15 @@ public final class WindowShellView: NSView {
     notePointer((note.object as? NSValue).map { window.convertPoint(fromScreen: $0.pointValue) } ?? window.mouseLocationOutsideOfEventStream)
   }
 
+  private func refreshFullScreenPointer(_ pointInWindow: NSPoint?) {
+    guard let window else { return }
+    let screen = pointInWindow.map { NSValue(point: window.convertPoint(toScreen: $0)) }
+    NotificationCenter.default.post(name: Notification.Name("SolaraFullScreenPointerChanged"), object: screen, userInfo: ["window": window])
+  }
+
   private func notePointer(_ pointInWindow: NSPoint?) {
     guard !layoutStopped else { return }
+    if fullScreenRevealEnabled { refreshFullScreenPointer(pointInWindow) }
     lastPointer = pointInWindow
     guard reactOnTop, window != nil else {
       resolvePointer(pointInWindow)
@@ -605,12 +789,14 @@ public final class WindowShellView: NSView {
     if hiddenPages.frame != frames.card { hiddenPages.frame = frames.card }
     placeCardPage()
     placeRailToolbar()
+    applyFullScreenStripLayers()
     for view in card.subviews where view is SplitPanesView || view is PaneOverlaysView {
       if view.frame != card.bounds { view.frame = card.bounds }
       view.needsLayout = true
     }
     mounted[.splitChrome]?.needsLayout = true
     onLightsLayout?()
+    onCaptionLayout?()
     if changed {
       #if SOLARA_PROBES
       NativeWorkCounters.slotPublishes += 1
@@ -621,9 +807,8 @@ public final class WindowShellView: NSView {
   }
 
   private func applyCardStyle() {
-    let rail = input.dock > 0 ? railFraction : 0
-    let radius = cardStyle.radius * (1 - rail)
-    let fill = cardStyle.fill.map { $0.withAlphaComponent($0.alphaComponent * (1 - rail)).cgColor }
+    let radius = cardStyle.radius
+    let fill = cardStyle.fill?.cgColor
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     railToolbar?.underColor = nil
@@ -635,8 +820,8 @@ public final class WindowShellView: NSView {
   }
 
   private var cardSurfaceRect: CGRect {
-    let exposed = railToolbar?.sitsOnWindowFrame == true && railFraction < 1 && !input.fullscreen
-    let top = exposed ? min(max(0, cardPage.frame.minY), frames.card.height) : 0
+    let baseTop = input.chromeToolbarRow ? min(input.toolbarHeight * railFraction, frames.card.height) : 0
+    let top = min(frames.card.height, baseTop + fullScreenStripOffset)
     return CGRect(x: 0, y: top, width: frames.card.width, height: max(0, frames.card.height - top))
   }
 
@@ -649,11 +834,10 @@ public final class WindowShellView: NSView {
 
   private func placeCardEdge() {
     let rect = cardSurfaceRect
-    let rail = input.dock > 0 ? railFraction : 0
-    let strength = cardStyle.edge && !input.fullscreen && cardStyle.radius > 0 ? 1 - rail : 0
-    let radius = cardStyle.radius * (1 - rail)
+    let strength: CGFloat = cardStyle.edge && !input.fullscreen && cardStyle.radius > 0 ? 1 : 0
+    let radius = cardStyle.radius
     cardShadow.place(rect, radius: radius, strength: strength)
-    cardRim.place(rect, radius: radius, strength: strength)
+    cardRim.place(rect, radius: radius, strength: strength, topEdge: !input.topTabs)
   }
 
   private func placeCardPage() {
@@ -671,7 +855,7 @@ public final class WindowShellView: NSView {
     placeCardSurface()
     if railFraction > 0 { cardPage.wantsLayer = true }
     guard let layer = cardPage.layer else { return }
-    let radius = ShellMetrics.cardRadius * railFraction
+    let radius: CGFloat = 0
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     if layer.cornerRadius != radius { layer.cornerRadius = radius }
@@ -689,10 +873,12 @@ public final class WindowShellView: NSView {
     case .peek: frame = railFraction > 0 ? frames.page : frames.card
     case .sidebar: frame = (frames.sidebar ?? .zero).offsetBy(dx: frames.sidebarShift, dy: 0)
     case .topStrip: frame = frames.topStrip ?? .zero
+    case .navigation:
+      frame = CGRect(x: 0, y: ShellMetrics.cardTop, width: bounds.width, height: ShellMetrics.toolbarHeight)
     }
     let local: CGRect
     if slot == .sidebar {
-      let parent: NSView = railFraction == 1 && !(input.sidebarSide == .right && frames.sidePanel != nil) ? cardClip : self
+      let parent: NSView = self
       if view.superview !== parent {
         if parent === self {
           let above = stack.drop { $0 != slot }.dropFirst().compactMap { mounted[$0] }.first { $0.superview === self }
@@ -706,7 +892,7 @@ public final class WindowShellView: NSView {
       local = frame
     }
     if view.frame != local { view.frame = local }
-    view.isHidden = (slot == .sidePanel && frames.sidePanel == nil) || (slot == .sidebar && frames.sidebar == nil) || (slot == .topStrip && frames.topStrip == nil)
+    view.isHidden = (slot == .sidePanel && frames.sidePanel == nil) || (slot == .sidebar && frames.sidebar == nil) || (slot == .topStrip && frames.topStrip == nil) || (slot == .navigation && !input.chromeNavigationRow)
   }
 }
 
@@ -760,10 +946,12 @@ public final class CardEdgeView: NSView {
   public private(set) var edgeRect = CGRect.zero
   public private(set) var radius: CGFloat = 0
   public private(set) var strength: CGFloat = 0
+  public private(set) var topEdge = true
   public var tint: NSColor? { didSet { if tint != oldValue { redraw() } } }
   private let shades = CardEdgeMetrics.shadows.map { _ in CALayer() }
   private let shadowMask = CAShapeLayer()
   private let shadeGroup = CALayer()
+  private let rimMask = CAShapeLayer()
 
   public override var isFlipped: Bool { true }
 
@@ -775,8 +963,9 @@ public final class CardEdgeView: NSView {
     layer?.masksToBounds = false
     shadowMask.fillRule = .evenOdd
     shadeGroup.mask = shadowMask
+    rimMask.fillRule = .evenOdd
     let still: [String: CAAction] = ["bounds": NSNull(), "position": NSNull(), "shadowPath": NSNull(), "shadowOpacity": NSNull(), "path": NSNull(), "frame": NSNull()]
-    for each in shades + [shadowMask, shadeGroup] { each.actions = still }
+    for each in shades + [shadowMask, shadeGroup, rimMask] { each.actions = still }
     shades.forEach { shadeGroup.addSublayer($0) }
     if part == .shadow { layer?.addSublayer(shadeGroup) }
     isHidden = true
@@ -791,11 +980,12 @@ public final class CardEdgeView: NSView {
     redraw()
   }
 
-  public func place(_ rect: CGRect, radius: CGFloat, strength: CGFloat) {
-    guard rect != edgeRect || radius != self.radius || strength != self.strength else { return }
+  public func place(_ rect: CGRect, radius: CGFloat, strength: CGFloat, topEdge: Bool = true) {
+    guard rect != edgeRect || radius != self.radius || strength != self.strength || topEdge != self.topEdge else { return }
     edgeRect = rect
     self.radius = radius
     self.strength = strength
+    self.topEdge = topEdge
     redraw()
   }
 
@@ -832,6 +1022,16 @@ public final class CardEdgeView: NSView {
       layer.borderWidth = CardEdgeMetrics.rimWidth
       let light = CardEdgeMetrics.rimColor(over: tint)
       layer.borderColor = (dark ? NSColor.white.withAlphaComponent(CardEdgeMetrics.darkRim * strength) : light.withAlphaComponent(light.alphaComponent * strength)).cgColor
+      if topEdge {
+        layer.mask = nil
+      } else {
+        let mask = CGMutablePath()
+        mask.addRect(bounds)
+        mask.addRect(CGRect(x: corner, y: 0, width: max(0, bounds.width - corner * 2), height: CardEdgeMetrics.rimWidth.rounded(.up)))
+        rimMask.frame = bounds
+        rimMask.path = mask
+        layer.mask = rimMask
+      }
     }
     CATransaction.commit()
   }

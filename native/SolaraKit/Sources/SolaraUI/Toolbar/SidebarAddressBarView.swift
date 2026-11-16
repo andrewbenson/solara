@@ -25,12 +25,12 @@ public struct SidebarAddressBarState: Decodable, Equatable, Sendable {
 }
 
 public enum SidebarHeaderMetrics {
-  public static let toggleX: CGFloat = 70.75 + 27
+  public static let toggleX: CGFloat = ShellMetrics.railLightsTrailing + 8 + SidebarHeaderMetrics.plate / 2
   public static let pitch: CGFloat = 35
   public static let edge: CGFloat = 7
   public static let minGap: CGFloat = 2
   public static let button: CGFloat = 30
-  public static let buttonsY: CGFloat = 24
+  public static let buttonsY: CGFloat = ShellMetrics.lightsCenter.y
   public static let plate: CGFloat = 32
   public static let plateRadius: CGFloat = 6
   public static let fieldTop: CGFloat = 46
@@ -51,6 +51,8 @@ public final class SidebarAddressBarView: NSView {
   public var onClick: (ToolbarClick) -> Void = { _ in }
   public var onAnchors: ([String: CGRect]) -> Void = { _ in }
   public private(set) var state: SidebarAddressBarState?
+  public var navigationOnly = false { didSet { needsLayout = true } }
+  public var navigationLeadingInset = ShellMetrics.railToolbarLeadingInset { didSet { needsLayout = true } }
 
   private var buttons: [ToolbarButtonView] = []
   private let field = ToolbarUrlFieldView()
@@ -79,9 +81,19 @@ public final class SidebarAddressBarView: NSView {
     needsLayout = true
   }
 
+  public func clear() {
+    state = nil
+    for button in buttons { button.removeFromSuperview() }
+    buttons = []
+    field.isHidden = true
+  }
+
   static let empty = ToolbarUrlState(host: "", restTrail: "", hoverTrail: "", hoverButtons: [], trailing: [], pinned: false)
 
   public var fieldFrame: CGRect { field.frame }
+  public var navigationFrames: [String: CGRect] {
+    Dictionary(uniqueKeysWithValues: buttons.filter { !$0.isHidden }.map { ("button:" + $0.state.id, $0.frame) })
+  }
 
   private func sync(_ views: [ToolbarButtonView], _ specs: [ToolbarButtonState], _ palette: ToolbarPaletteState) -> [ToolbarButtonView] {
     var out: [ToolbarButtonView] = []
@@ -106,6 +118,18 @@ public final class SidebarAddressBarView: NSView {
     let M = SidebarHeaderMetrics.self
     let scale = window?.backingScaleFactor ?? 2
     let px = { (v: CGFloat) in (v * scale).rounded() / scale }
+    if navigationOnly {
+      field.isHidden = true
+      var x = navigationLeadingInset + ShellMetrics.toolbarIconCenters[0] - M.plate / 2
+      for button in buttons {
+        button.isHidden = false
+        button.frame = CGRect(x: px(x), y: px((bounds.height - M.plate) / 2), width: M.plate, height: M.plate)
+        x += M.pitch
+        button.recheckHover()
+      }
+      return
+    }
+    field.isHidden = false
     let toggle = buttons.first { $0.state.id == "sidebar" }
     let navigation = buttons.filter { M.navigation.contains($0.state.id) }
     let fitting = M.navigationFitting(width: bounds.width, toggle: toggle != nil)
@@ -121,10 +145,10 @@ public final class SidebarAddressBarView: NSView {
     field.frame = CGRect(x: SidebarMetrics.inset, y: M.fieldTop, width: max(0, bounds.width - 2 * SidebarMetrics.inset), height: M.fieldHeight)
     field.layoutSubtreeIfNeeded()
     for b in buttons { b.recheckHover() }
-    reportAnchors()
+    refreshFullScreenAnchors()
   }
 
-  private func reportAnchors() {
+  func refreshFullScreenAnchors() {
     guard window != nil else { return }
     var anchors: [String: CGRect] = ["field": windowRect(field.frame)]
     for (slot, rect) in field.accessoryAnchors { anchors[slot] = windowRect(field.convert(rect, to: self)) }
@@ -135,7 +159,7 @@ public final class SidebarAddressBarView: NSView {
 
   private func windowRect(_ local: CGRect) -> CGRect {
     guard let root = window?.contentView else { return local }
-    let r = convert(local, to: root)
+    let r = fullScreenRect(local, to: root)
     return root.isFlipped ? r : CGRect(x: r.minX, y: root.bounds.height - r.maxY, width: r.width, height: r.height)
   }
 
@@ -168,6 +192,7 @@ public final class SidebarAddressBars {
 
   private var views: [String: SidebarAddressBarView] = [:]
   private var states: [String: SidebarAddressBarState] = [:]
+  private var navigationViews: [String: SidebarAddressBarView] = [:]
   private var claims: Set<String> = []
 
   public static let claimsChanged = Notification.Name("SidebarAddressBars.claimsChanged")
@@ -184,9 +209,24 @@ public final class SidebarAddressBars {
 
   public func existing(_ windowId: String) -> SidebarAddressBarView? { views[windowId] }
 
+  public func navigationView(_ windowId: String) -> SidebarAddressBarView {
+    if let view = navigationViews[windowId] { return view }
+    let view = SidebarAddressBarView(frame: .zero)
+    view.navigationOnly = true
+    view.onClick = { [weak self] click in self?.onClick(windowId, click) }
+    if let state = states[windowId] { view.update(state) }
+    navigationViews[windowId] = view
+    return view
+  }
+
+  public func removeNavigationView(_ windowId: String) {
+    navigationViews.removeValue(forKey: windowId)?.removeFromSuperview()
+  }
+
   public func set(_ windowId: String, json: String?) {
     guard let json, let state = SidebarAddressBarState.decode(json) else {
       states[windowId] = nil
+      navigationViews[windowId]?.clear()
       if claims.contains(windowId) { return }
       views[windowId]?.removeFromSuperview()
       views[windowId] = nil
@@ -194,6 +234,7 @@ public final class SidebarAddressBars {
     }
     states[windowId] = state
     views[windowId]?.update(state)
+    navigationViews[windowId]?.update(state)
   }
 
   public func claim(_ windowId: String) {

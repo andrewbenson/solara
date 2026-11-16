@@ -16,7 +16,7 @@ export function nativeStripControlsEnabled(): boolean {
 
 const DOWNLOADS_BOX = 34;
 
-export const NativeStripControls = memo(function NativeStripControls({ windowId, indicator, leadingInset, style }: { windowId: string; indicator: boolean; leadingInset: number; style: ViewStyle }) {
+export const NativeStripControls = memo(function NativeStripControls({ windowId, indicator, leadingInset, windowFullscreen, style }: { windowId: string; indicator: boolean; leadingInset: number; windowFullscreen?: boolean; style: ViewStyle }) {
   const theme = useTheme();
   const incognito = useIsIncognito();
   const profiles = useProfiles().length;
@@ -24,7 +24,7 @@ export const NativeStripControls = memo(function NativeStripControls({ windowId,
   const downloadsOpen = useBrowser((s) => !!s.windowUi[windowId]?.downloadsOpen);
   const hint = useShortcutHint("downloads");
   const box = useRef<View>(null);
-  const downloadsTop = indicator ? 0.5 : 0;
+  const downloadsTop = windowFullscreen === undefined && indicator ? 0.5 : 0;
 
   useEffect(() => {
     const node = box.current;
@@ -38,12 +38,13 @@ export const NativeStripControls = memo(function NativeStripControls({ windowId,
           ),
         ),
     );
-  }, [windowId, downloadsTop]);
+  }, [windowId, downloadsTop, windowFullscreen]);
 
   const state = useMemo(
     () =>
       JSON.stringify({
         leadingInset,
+        windowFullscreen,
         controls: {
           title: incognito ? "Incognito" : profile.name,
           incognito,
@@ -61,7 +62,7 @@ export const NativeStripControls = memo(function NativeStripControls({ windowId,
           toolbarPressed: theme.toolbarPressed,
         },
       }),
-    [incognito, profile, profiles, theme, downloadsOpen, hint, leadingInset],
+    [incognito, profile, profiles, theme, downloadsOpen, hint, leadingInset, windowFullscreen],
   );
   return (
     <View ref={box} collapsable={false} pointerEvents="box-none" style={style}>

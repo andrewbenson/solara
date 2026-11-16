@@ -4,25 +4,26 @@ import Testing
 
 @MainActor
 struct SidebarRailShellTests {
-  @Test func theRailSharesTheCardsRoundedClipAndLeavesTheToolbarAboveIt() {
+  @Test func theRailSitsBesideTheRoundedCardBelowTheToolbar() {
     let shell = WindowShellView(windowId: "w")
     shell.frame = CGRect(x: 0, y: 0, width: 1200, height: 800)
     shell.update { $0.sidebarWidth = 42 }
     let sidebar = FlippedContainerView()
     shell.mount(.sidebar, sidebar)
     shell.layoutSubtreeIfNeeded()
-    #expect(sidebar.superview === shell.cardClip)
-    #expect(sidebar.convert(sidebar.bounds, to: shell) == CGRect(x: 0, y: 47, width: 42, height: 753))
-    #expect(shell.cardPage.convert(shell.cardPage.bounds, to: shell) == CGRect(x: 42, y: 47, width: 1151, height: 746))
+    #expect(sidebar.superview === shell)
+    #expect(sidebar.convert(sidebar.bounds, to: shell) == CGRect(x: 0, y: 0, width: 42, height: 800))
+    #expect(shell.cardPage.convert(shell.cardPage.bounds, to: shell) == CGRect(x: 42, y: 32, width: 1151, height: 761))
     #expect(shell.cardClip.layer?.masksToBounds == true)
-    #expect(shell.cardClip.layer?.cornerRadius == 0)
-    #expect(shell.cardPage.layer?.cornerRadius == ShellMetrics.cardRadius)
+    #expect(shell.cardClip.layer?.cornerRadius == ShellMetrics.cardRadius)
+    #expect(shell.cardClip.convert(shell.cardClip.bounds, to: shell).minY == 32)
+    #expect(shell.cardPage.layer?.cornerRadius == 0)
     #expect(shell.cardPage.layer?.borderWidth == 0)
     #expect(shell.cardClip.layer?.backgroundColor.map { $0.alpha } ?? 0 == 0)
   }
 
   #if DEBUG
-  @Test func thePointerOverTheRailInsideTheCardIsTheSidebars() {
+  @Test func thePointerOverTheRailBesideTheCardIsTheSidebars() {
     let shell = WindowShellView(windowId: "w")
     shell.frame = CGRect(x: 0, y: 0, width: 1200, height: 800)
     shell.update { $0.sidebarWidth = 42 }
@@ -46,7 +47,7 @@ struct SidebarRailShellTests {
     #expect(shell.slot(containing: row) == .sidebar)
     shell.update { $0.sidebarWidth = 42 }
     shell.layoutSubtreeIfNeeded()
-    #expect(column.superview === shell.cardClip)
+    #expect(column.superview === shell)
     #expect(shell.slot(containing: row) == .sidebar)
     #expect(shell.slot(containing: shell.cardPage) == .card)
   }
@@ -57,7 +58,7 @@ struct SidebarRailShellTests {
     shell.frame = CGRect(x: 0, y: 0, width: 1200, height: 800)
     shell.update { $0.sidebarWidth = 42 }
     shell.cardPageFrame = CGRect(origin: .zero, size: shell.frames.card.size)
-    #expect(shell.cardPage.convert(shell.cardPage.bounds, to: shell) == CGRect(x: 42, y: 47, width: 1151, height: 746))
+    #expect(shell.cardPage.convert(shell.cardPage.bounds, to: shell) == CGRect(x: 42, y: 32, width: 1151, height: 761))
   }
 
   @Test func snapAnimationsUseTheSameProgressForWidthAndLightsInBothDirections() {
@@ -85,7 +86,7 @@ struct SidebarRailShellTests {
     }
   }
 
-  @Test func movingTheRailInsideTheCardKeepsTheResizeGestureAlive() throws {
+  @Test func compactingTheRailKeepsTheResizeGestureAlive() throws {
     NSApplication.shared.setActivationPolicy(.prohibited)
     let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1200, height: 800), styleMask: [.borderless], backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false
@@ -100,7 +101,7 @@ struct SidebarRailShellTests {
     #expect(handle.dragging)
     shell.setSidebarWidth(42, animated: true)
     for _ in 0..<30 { shell.stepWidth(by: 1.0 / 60) }
-    #expect(sidebar.superview === shell.cardClip)
+    #expect(sidebar.superview === shell)
     #expect(handle.dragging)
     shell.setSidebarWidth(190, animated: true)
     for _ in 0..<30 { shell.stepWidth(by: 1.0 / 60) }
@@ -120,7 +121,7 @@ struct SidebarRailShellTests {
     return toolbar
   }
 
-  @Test func theNativeToolbarSpansTheCardAndItsFirstButtonClearsTheLights() throws {
+  @Test func theNativeToolbarSpansTheChromeAndItsFirstButtonClearsTheLights() throws {
     let shell = WindowShellView(windowId: "w", reactOnTop: true)
     shell.frame = CGRect(x: 0, y: 0, width: 1200, height: 800)
     let react = NSView()
@@ -134,10 +135,10 @@ struct SidebarRailShellTests {
     shell.layoutSubtreeIfNeeded()
     #expect(toolbar.isDescendant(of: shell.overlay))
     #expect(toolbar.superview?.layer?.masksToBounds == true)
-    #expect(toolbar.superview?.layer?.cornerRadius == 0)
-    #expect(toolbar.frame == CGRect(x: 0, y: 0, width: 1200, height: 47))
+    #expect(toolbar.superview?.layer?.cornerRadius == ShellMetrics.cardRadius)
+    #expect(toolbar.frame == CGRect(x: 0, y: 0, width: 1200, height: 32))
     let button = try #require(toolbar.subviews.flatMap(\.subviews).compactMap { $0 as? ToolbarButtonView }.first)
-    #expect(button.frame.minX == 97)
+    #expect(button.convert(button.bounds, to: shell).minX == 97)
     let point = button.convert(CGPoint(x: 15, y: 15), to: shell.superview)
     #expect(shell.hitTest(point) === button)
     shell.setModal("dialog", shown: true)

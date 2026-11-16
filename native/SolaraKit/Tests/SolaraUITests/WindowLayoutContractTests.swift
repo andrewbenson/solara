@@ -36,6 +36,42 @@ struct WindowLayoutContractTests {
     return state
   }
 
+  @Test(arguments: [CGSize.zero, CGSize(width: 1, height: 1), CGSize(width: 6, height: 6),
+    CGSize(width: 7, height: 7), CGSize(width: 31, height: 31), CGSize(width: 32, height: 32),
+    CGSize(width: 41, height: 41), CGSize(width: 42, height: 42), CGSize(width: 83, height: 47),
+    CGSize(width: 84, height: 48), CGSize(width: 160, height: 100)])
+  func smallWindowsKeepPageAndToolbarExtentsNonnegative(size: CGSize) throws {
+    for (layout, rail) in [("sidebar", false), ("sidebar", true), ("top", false)] {
+      for fullscreen in [false, true] {
+        for address in ["toolbar", "sidebar"] {
+          var state = try projectionState()
+          state.windows["w"]?.tabLayout = layout
+          state.windows["w"]?.sidebarIconsOnly = rail
+          state.settings["addressBar"] = JSONValue.string(address)
+          for panel: CGFloat in [0, 300] {
+            for dock: CGFloat in [0, 0.5, 1] {
+              let presentation = DockedLayoutInput(size: size, dock: dock, sidebarWidth: rail ? 42 : 190,
+                peeking: true, peekSlide: 0.5, sidePanel: panel, railProgress: rail ? dock : 0)
+              let input = try #require(WindowLayoutInput(state: state, windowId: "w",
+                bounds: CGRect(origin: .zero, size: size), presentation: presentation, windowFullscreen: fullscreen))
+              let snapshot = WindowLayoutSnapshot.of(input, generation: 1)
+              let band = snapshot.residualURLBand(tabId: "a", trailingReservation: 84)
+              let rects = Array(snapshot.anchors.values) + Array(snapshot.pages.values)
+                + Array(snapshot.pageViewports.values) + Array(snapshot.toolbars.values) + [band].compactMap { $0 }
+              #expect(rects.allSatisfy {
+                $0.origin.x.isFinite && $0.origin.y.isFinite && $0.size.width.isFinite && $0.size.height.isFinite
+                  && $0.size.width >= 0 && $0.size.height >= 0
+              })
+              #expect(snapshot.stripAvailableWidth >= 0)
+              #expect(input.stripProfileSlotWidth == 0)
+              if size.width == 0 { #expect(snapshot.stripAvailableWidth == 0) }
+            }
+          }
+        }
+      }
+    }
+  }
+
   @Test func projectionResolvesDefaultsAndWindowOverrides() throws {
     var state = try projectionState()
     let bounds = CGRect(x: 0, y: 0, width: 1000, height: 700)
@@ -85,8 +121,8 @@ struct WindowLayoutContractTests {
       #expect(WindowLayoutSnapshot.of(hidden, generation: 1).stripAvailableWidth == (fullscreen ? 908 : 830))
       state.profileOrder.append("work")
       let shown = try #require(WindowLayoutInput(state: state, windowId: "w", bounds: bounds, stripProfileWidth: 8, windowFullscreen: fullscreen))
-      #expect(shown.stripProfileSlotWidth == 84)
-      #expect(WindowLayoutSnapshot.of(shown, generation: 1).stripAvailableWidth == (fullscreen ? 824 : 746))
+      #expect(shown.stripProfileSlotWidth == (fullscreen ? 84 : 34))
+      #expect(WindowLayoutSnapshot.of(shown, generation: 1).stripAvailableWidth == (fullscreen ? 824 : 796))
       state.profileOrder.removeLast()
     }
   }
@@ -99,7 +135,7 @@ struct WindowLayoutContractTests {
     let windowed = try #require(WindowLayoutInput(state: state, windowId: "w", storeRevision: 1, bounds: bounds, stripProfileWidth: 8, windowFullscreen: false))
     let fullscreen = try #require(WindowLayoutInput(state: state, windowId: "w", storeRevision: 1, bounds: bounds, stripProfileWidth: 8, windowFullscreen: true))
     #expect(!windowed.hasSameLayout(as: fullscreen))
-    #expect(WindowLayoutSnapshot.of(windowed, generation: 1).stripAvailableWidth == 746)
+    #expect(WindowLayoutSnapshot.of(windowed, generation: 1).stripAvailableWidth == 796)
     #expect(WindowLayoutSnapshot.of(fullscreen, generation: 2).stripAvailableWidth == 824)
   }
 
@@ -176,7 +212,7 @@ struct WindowLayoutContractTests {
     state.splits["s"] = SplitView(id: "s", windowId: "w", tabIds: ["a", "b"], orientation: "horizontal", sizes: [0.5, 0.5])
     let bounds = CGRect(x: 0, y: 0, width: 1000, height: 700)
     let first = WindowLayoutSnapshot.of(try #require(WindowLayoutInput(state: state, windowId: "w", bounds: bounds)), generation: 1)
-    #expect(first.toolbars["a"] == CGRect(x: 0, y: 0, width: 1000, height: 47))
+    #expect(first.toolbars["a"] == CGRect(x: 0, y: 0, width: 1000, height: 32))
     #expect(first.toolbars["b"]?.height == 0)
     #expect(first.contentPanes["a"] == CGRect(x: 84, y: 6, width: 451, height: 687))
     #expect(first.contentPanes["b"] == CGRect(x: 542, y: 6, width: 451, height: 687))
@@ -201,7 +237,7 @@ struct WindowLayoutContractTests {
     for dock: CGFloat in [0, 1] {
       let sample = DockedLayoutInput(size: bounds.size, dock: dock, sidebarWidth: CGFloat(SidebarRail.width), railProgress: 1)
       let rail = WindowLayoutSnapshot.of(try #require(WindowLayoutInput(state: state, windowId: "w", bounds: bounds, presentation: sample)), generation: 2)
-      #expect(rail.frames.card == bounds)
+      #expect(rail.frames.card == CGRect(x: dock == 1 ? 42 : 7, y: 0, width: dock == 1 ? 951 : 986, height: 693))
       #expect(rail.content == CGRect(x: dock == 1 ? 84 : 7, y: 6, width: dock == 1 ? 909 : 986, height: 687))
       #expect(rail.anchors["content"] == rail.content)
       #expect(rail.contentPanes["a"] == rail.content)
@@ -214,16 +250,38 @@ struct WindowLayoutContractTests {
     #expect(full.content == bounds && full.frames.card == bounds)
   }
 
+  @Test func railURLBandFollowsThePresentedToolbarAsItSpansTheWindow() throws {
+    var state = try projectionState()
+    state.windows["w"]?.sidebarIconsOnly = true
+    state.splits["s"] = SplitView(id: "s", windowId: "w", tabIds: ["a", "b"], orientation: "horizontal", sizes: [0.5, 0.5])
+    let bounds = CGRect(x: 0, y: 0, width: 1000, height: 700)
+    for progress: CGFloat in [0.25, 0.5, 0.75, 1] {
+      let presentation = DockedLayoutInput(size: bounds.size, dock: 1, sidebarWidth: 190 + (42 - 190) * progress, railProgress: progress)
+      let snapshot = WindowLayoutSnapshot.of(try #require(WindowLayoutInput(state: state, windowId: "w", bounds: bounds, presentation: presentation)), generation: 1)
+      let row = try #require(snapshot.toolbars["a"])
+      let band = try #require(snapshot.residualURLBand(tabId: "a", trailingReservation: 12))
+      #expect(band.maxX == bounds.maxX - 12 - ShellMetrics.cardInset * (1 - progress))
+      #expect(band.minX >= ShellMetrics.railToolbarLeadingInset + ShellMetrics.breadcrumbX - 8)
+      #expect(band.minY == row.minY && band.height == row.height)
+      if progress == 0.5 { #expect(band == CGRect(x: 236, y: 3, width: 748.5, height: 36.5)) }
+      if progress == 1 { #expect(band == CGRect(x: 236, y: 0, width: 752, height: 32)) }
+      state.windows["w"]?.activeTabIds["default"] = "b"
+      let selected = WindowLayoutSnapshot.of(try #require(WindowLayoutInput(state: state, windowId: "w", bounds: bounds, presentation: presentation)), generation: 2)
+      #expect(selected.residualURLBand(tabId: "b", trailingReservation: 12) == band)
+      state.windows["w"]?.activeTabIds["default"] = "a"
+    }
+  }
+
   @Test func residualURLBandPreservesTheConsumerContractAcrossRailSplitsAndTopTabs() throws {
     var state = try projectionState()
     state.windows["w"]?.sidebarIconsOnly = true
     let bounds = CGRect(x: 0, y: 0, width: 1280, height: 800)
     let rail = WindowLayoutSnapshot.of(try #require(WindowLayoutInput(state: state, windowId: "w", bounds: bounds)), generation: 1)
-    #expect(rail.residualURLBand(tabId: "a", trailingReservation: 12) == CGRect(x: 229, y: 6, width: 1032, height: 41))
-    #expect(rail.frames.page == CGRect(x: 42, y: 47, width: 1231, height: 746))
+    #expect(rail.residualURLBand(tabId: "a", trailingReservation: 12) == CGRect(x: 236, y: 0, width: 1032, height: 32))
+    #expect(rail.frames.page == CGRect(x: 42, y: 32, width: 1231, height: 761))
     state.splits["s"] = SplitView(id: "s", windowId: "w", tabIds: ["a", "b"], orientation: "horizontal", sizes: [0.5, 0.5])
     let split = WindowLayoutSnapshot.of(try #require(WindowLayoutInput(state: state, windowId: "w", bounds: bounds)), generation: 2)
-    #expect(split.residualURLBand(tabId: "a", trailingReservation: 68) == CGRect(x: 229, y: 6, width: 378, height: 41))
+    #expect(split.residualURLBand(tabId: "a", trailingReservation: 68) == CGRect(x: 236, y: 0, width: 976, height: 32))
     #expect(split.residualURLBand(tabId: "b", trailingReservation: 68) == CGRect(x: 792, y: 6, width: 413, height: 41))
     state.splits["s"] = nil
     state.windows["w"]?.tabLayout = "top"
@@ -237,6 +295,21 @@ struct WindowLayoutContractTests {
     let address = WindowLayoutSnapshot.of(try #require(WindowLayoutInput(state: state, windowId: "w", bounds: bounds)), generation: 4)
     #expect(address.residualURLBand(tabId: "a", trailingReservation: 12) == nil)
     #expect(address.residualURLBand(tabId: "missing", trailingReservation: 12) == nil)
+  }
+
+  @Test func fullscreenURLBandFollowsTheIslandsLiveReservation() throws {
+    var state = try projectionState()
+    state.windows["w"]?.sidebarOpen = false
+    let bounds = CGRect(x: 0, y: 0, width: 1000, height: 700)
+    let input = try #require(WindowLayoutInput(state: state, windowId: "w", bounds: bounds, windowFullscreen: true))
+    let snapshot = WindowLayoutSnapshot.of(input, generation: 1)
+    let resting = try #require(snapshot.residualURLBand(tabId: "a", trailingReservation: 12))
+    for reveal: CGFloat in [0, 0.5, 1, 0] {
+      let inset = input.layout.trafficLightsLeadingInset(at: snapshot.frames.card.minX, reveal: reveal)
+      let band = try #require(snapshot.residualURLBand(tabId: "a", trailingReservation: 12, trafficLightsInset: inset))
+      #expect(band.minX == resting.minX + inset)
+      #expect(band.maxX == resting.maxX)
+    }
   }
 
   @Test func nativeBandsFollowToolbarPresentationWithoutMovingChromeOrContentAnchors() throws {

@@ -331,20 +331,20 @@ public final class StripPageView: NSView {
     tracking = area
   }
 
-  public override func mouseMoved(with event: NSEvent) { hover(at: convert(event.locationInWindow, from: nil)) }
-  public override func mouseEntered(with event: NSEvent) { hover(at: convert(event.locationInWindow, from: nil)) }
-  public override func mouseExited(with event: NSEvent) { hover(at: nil) }
+  public override func mouseMoved(with event: NSEvent) { hover(at: isHitBy(event) ? fullScreenPoint(event.locationInWindow) : nil) }
+  public override func mouseEntered(with event: NSEvent) { hover(at: isHitBy(event) ? fullScreenPoint(event.locationInWindow) : nil) }
+  public override func mouseExited(with event: NSEvent) { hover(at: isHitBy(event) ? fullScreenPoint(event.locationInWindow) : nil) }
 
   @objc private func devPointer(_ note: Notification) {
-    guard let window, let screen = (note.object as? NSValue)?.pointValue else { return hover(at: nil) }
-    let point = convert(window.convertPoint(fromScreen: screen), from: nil)
+    guard DevPointer.inside(self, note), let window, let screen = (note.object as? NSValue)?.pointValue else { return hover(at: nil) }
+    let point = fullScreenPoint(window.convertPoint(fromScreen: screen))
     hover(at: bounds.contains(point) && !isHiddenOrHasHiddenAncestor ? point : nil)
   }
 
   func syncHover() {
     guard let window, !isHiddenOrHasHiddenAncestor else { return hover(at: nil) }
-    let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
-    hover(at: bounds.contains(point) ? point : nil)
+    let point = fullScreenPoint(window.mouseLocationOutsideOfEventStream)
+    hover(at: bounds.contains(point) && isHitAt(window.mouseLocationOutsideOfEventStream) ? point : nil)
   }
 
   private func hover(at point: NSPoint?) {
@@ -376,7 +376,7 @@ public final class StripPageView: NSView {
     if point == nil, incomingAt == nil { return nil }
     if incomingRooms.count != top.slots.count + 1 { incomingRooms = (0...top.slots.count).map { StripTimedValue($0 == incomingAt ? 1 : 0) } }
     var at: Int?
-    if let point, point.y <= StripMetrics.height + 24, let state = context?.state {
+    if let point, point.y - (windowShell?.fullScreenPresentationOffset(for: self) ?? 0) <= StripMetrics.height + 24, let state = context?.state {
       let start = document.convert(NSPoint(x: pageLayout.topStart, y: 0), to: nil).x
       at = StripLayout.incomingIndex(top, x: point.x - start) { id in state.groups.values.contains { $0.pinned && $0.tabIds.contains(id) } }
     }
@@ -435,7 +435,7 @@ public final class StripPageView: NSView {
   func windowRect(_ view: NSView) -> CGRect? {
     guard let window = view.window, let content = window.contentView, view.superview != nil else { return nil }
     let r = view.convert(view.bounds, to: nil)
-    return CGRect(x: r.minX, y: content.bounds.height - r.maxY, width: r.width, height: r.height)
+    return CGRect(x: r.minX, y: content.bounds.height - r.maxY + (windowShell?.fullScreenPresentationOffset(for: view) ?? 0), width: r.width, height: r.height)
   }
 
   func dragChanged() {

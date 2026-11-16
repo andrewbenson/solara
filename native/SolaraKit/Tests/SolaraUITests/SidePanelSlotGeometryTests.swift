@@ -15,10 +15,10 @@ struct SidePanelSlotGeometryTests {
     #expect(frames.sidePanel == CGRect(x: 828, y: 42, width: 366, height: 752))
   }
 
-  @Test func railReservesAFullHeightStrip() {
+  @Test func railReservesAStripBesideTheInsetCard() {
     let frames = DockedLayoutFrames.of(DockedLayoutInput(size: CGSize(width: 1360, height: 860), dock: 1, sidePanel: 366, railProgress: 1))
-    #expect(frames.card == CGRect(x: 0, y: 0, width: 994, height: 860))
-    #expect(frames.sidePanel == CGRect(x: 994, y: 0, width: 366, height: 860))
+    #expect(frames.card == CGRect(x: 42, y: 0, width: 945, height: 853))
+    #expect(frames.sidePanel == CGRect(x: 987, y: 0, width: 366, height: 853))
   }
 
   @Test func fullscreenAndNonpositiveRoomHaveNoSidePanelSlot() {

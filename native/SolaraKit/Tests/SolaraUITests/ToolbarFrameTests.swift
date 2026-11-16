@@ -82,7 +82,8 @@ struct ToolbarFrameTests {
     f.shell.setSidebarWidth(42, animated: false)
     try Self.expectFrameIsClear(f.toolbar)
     #expect(f.toolbar.superview !== f.owner)
-    #expect(f.toolbarRect.minX == f.shell.frames.card.minX)
+    #expect(f.toolbarRect.minX == 0)
+    #expect(f.toolbarRect.maxX == f.shell.bounds.maxX)
   }
 
   static func expectBand(_ toolbar: ToolbarView) throws {

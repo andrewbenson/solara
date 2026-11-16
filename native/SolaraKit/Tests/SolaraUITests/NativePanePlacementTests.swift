@@ -362,7 +362,7 @@ struct NativePanePlacementTests {
       overlays.install(value, state: state)
       let firstPane = try #require(value.panes["a"])
       let firstPage = try #require(value.pages["a"])
-      #expect(firstPage.minY == firstPane.minY + ShellMetrics.toolbarHeight + 38)
+      #expect(firstPage.minY == firstPane.minY + 38)
       for id in ["a", "b"] {
         let page = try #require(panes.container(id))
         let overlay = try #require(overlays.container(id, layer: .native))

@@ -37,13 +37,38 @@ struct WindowShellFrameSurfaceTests {
     shell.update { $0.topTabs = true }
     #expect(shell.cardClip.convert(shell.cardClip.bounds, to: shell) == CGRect(x: 6, y: 42, width: 988, height: 652))
     shell.update { $0.topTabs = false }
-    shell.setSidebarWidth(CGFloat(SidebarRail.width), animated: false)
-    #expect(shell.cardClip.frame == CGRect(x: 0, y: 0, width: 1000, height: 700))
+    #expect(shell.cardClip.convert(shell.cardClip.bounds, to: shell) == CGRect(x: 190, y: 6, width: 803, height: 687))
+  }
+
+  @Test(arguments: [false, true])
+  func theRailCardSurfaceTracksItsPageAndRestoresFillWhenTheSidebarHides(reactOnTop: Bool) {
+    let fixture = ToolbarResizeTests.Fixture(bare: false, reactOnTop: reactOnTop)
+    fixture.toolbar.update(ToolbarFrameTests.state(windowToolbar: true))
+    fixture.shell.registerToolbar(fixture.toolbar, owner: fixture.owner)
+    let shell = fixture.shell
     shell.cardStyle = CardStyle(fill: .black, radius: 10)
+    shell.setSidebarWidth(CGFloat(SidebarRail.width), animated: false)
+    #expect(shell.frames.card == CGRect(x: 42, y: 0, width: 951, height: 693))
+    #expect(shell.cardClip.frame == CGRect(x: 0, y: 32, width: 951, height: 661))
+    #expect(shell.cardShadow.edgeRect == CGRect(x: 0, y: 32, width: 951, height: 661))
+    #expect(shell.cardRim.edgeRect == CGRect(x: 0, y: 32, width: 951, height: 661))
+    #expect(shell.cardPage.convert(shell.cardPage.bounds, to: shell) == CGRect(x: 42, y: 32, width: 951, height: 661))
+    #expect(fixture.toolbarRect == CGRect(x: 0, y: 0, width: 1000, height: 32))
     shell.update { $0.dock = 0 }
+    #expect(shell.frames.card == CGRect(x: 7, y: 0, width: 986, height: 693))
+    #expect(shell.cardClip.frame == CGRect(x: 0, y: 0, width: 986, height: 693))
+    #expect(shell.cardClip.convert(shell.cardClip.bounds, to: shell) == CGRect(x: 7, y: 0, width: 986, height: 693))
+    #expect(shell.cardShadow.edgeRect == CGRect(x: 0, y: 0, width: 986, height: 693))
+    #expect(shell.cardRim.edgeRect == CGRect(x: 0, y: 0, width: 986, height: 693))
+    #expect(shell.cardPage.convert(shell.cardPage.bounds, to: shell) == CGRect(x: 7, y: 32, width: 986, height: 661))
     #expect(shell.cardClip.layer?.backgroundColor == NSColor.black.cgColor)
     #expect(shell.cardClip.layer?.cornerRadius == 10)
-    #expect(shell.cardRim.edgeRect == CGRect(x: 0, y: 0, width: 1000, height: 700))
+    shell.update { $0.dock = 1 }
+    #expect(shell.cardClip.frame == CGRect(x: 0, y: 32, width: 951, height: 661))
+    #expect(shell.cardRim.edgeRect == CGRect(x: 0, y: 32, width: 951, height: 661))
+    shell.setSidebarWidth(190, animated: false)
+    #expect(shell.cardClip.frame == CGRect(x: 0, y: 0, width: 803, height: 687))
+    #expect(shell.cardRim.edgeRect == CGRect(x: 0, y: 0, width: 803, height: 687))
   }
 
   @Test func theFrameAutoHideStripHasNoPaintAndRetainsItsCollapsedHitTarget() throws {

@@ -199,8 +199,8 @@ public final class StripPeekView: NSView {
   #if DEBUG
   @objc private func devPointer(_ note: Notification) {
     guard peek.enabled, let window else { return }
-    guard let screen = (note.object as? NSValue)?.pointValue else { return pointer(at: nil) }
-    pointer(at: convert(window.convertPoint(fromScreen: screen), from: nil))
+    guard DevPointer.inside(self, note), let screen = (note.object as? NSValue)?.pointValue else { return pointer(at: nil) }
+    pointer(at: fullScreenPoint(window.convertPoint(fromScreen: screen)))
   }
   #endif
 }

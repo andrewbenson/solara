@@ -15,7 +15,7 @@ final class StripDropZone: TabDropZone {
   func aim(_ session: TabDragSession, at windowPoint: CGPoint) -> TabDropAim? {
     guard let (strip, page) = target, session.sourceWindow != strip.windowId,
       let content = strip.window?.contentView else { return nil }
-    let local = strip.convert(CGPoint(x: windowPoint.x, y: content.bounds.height - windowPoint.y), from: nil)
+    let local = strip.fullScreenPoint(CGPoint(x: windowPoint.x, y: content.bounds.height - windowPoint.y))
     guard strip.bounds.contains(local), case .some(let beforeId) = page.incoming(at: windowPoint) else { return nil }
     return .insert(beforeId: beforeId)
   }

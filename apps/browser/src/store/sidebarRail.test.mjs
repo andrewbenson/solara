@@ -10,7 +10,7 @@ globalThis.acTestNativeModules = {
 };
 const { useBrowser } = await import("./browser.ts");
 const rail = await import("./sidebarRail.ts");
-const { addressBarInSidebar } = await import("../components/layout/windowLayout.ts");
+const { addressBarInSidebar, openingLightsCenter } = await import("../components/layout/windowLayout.ts");
 const { flushPersistence, loadSession, startPersistence } = await import("../lib/persist.ts");
 const stub = await import("../test-native/index.ts");
 const { asSyncOrigin } = await import("./syncOrigin.ts");
@@ -186,4 +186,28 @@ test("Little Solara is not pinned or changed by window sidebar writes", () => {
   assert.equal(S().windows[small].sidePanelWidth, undefined);
   S().setWindowSidebar(small, { sidebarWidth: 210 });
   assert.equal(S().settings.sidebarWidth, 281);
+});
+
+test("hiding either sidebar keeps the caption and restores the requested sidebar address navigation", () => {
+  for (const icons of [false, true]) {
+    S().hydrate({});
+    const windowId = S().createWindow({ url: "example.com" });
+    S().updateSettings({ addressBar: "sidebar", tabLayout: "sidebar" });
+    rail.setSidebarIconsOnly(windowId, icons);
+    assert.deepEqual(openingLightsCenter(S(), windowId), [25, 27]);
+    assert.equal(addressBarInSidebar(S(), windowId), !icons);
+    S().toggleSidebar(windowId);
+    assert.deepEqual(openingLightsCenter(S(), windowId), [25, 27]);
+    assert.equal(addressBarInSidebar(S(), windowId), true);
+    S().toggleSidebar(windowId);
+    assert.equal(addressBarInSidebar(S(), windowId), !icons);
+  }
+});
+
+test("horizontal tabs ignore a saved hidden sidebar when placing the lights", () => {
+  S().hydrate({});
+  const windowId = S().createWindow({ url: "example.com" });
+  S().updateSettings({ tabLayout: "top" });
+  S().toggleSidebar(windowId);
+  assert.deepEqual(openingLightsCenter(S(), windowId), [20.75, 20.75]);
 });

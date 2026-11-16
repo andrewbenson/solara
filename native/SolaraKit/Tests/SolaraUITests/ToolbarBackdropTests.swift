@@ -14,12 +14,12 @@ struct ToolbarBackdropTests {
     #expect(!view.isAccessibilityElement())
     let layers = try #require(view.layer?.sublayers)
     #expect(layers[0].frame == view.bounds)
-    #expect(layers[2].frame == CGRect(x: 0, y: 40, width: 803, height: 1))
+    #expect(layers[2].frame == CGRect(x: 0, y: 40.5, width: 803, height: 0.5))
     #expect(!layers[2].isHidden)
     view.setFrameSize(CGSize(width: 900, height: 42))
     view.layoutSubtreeIfNeeded()
     #expect(layers[0].frame == view.bounds)
-    #expect(layers[2].frame == CGRect(x: 0, y: 41, width: 900, height: 1))
+    #expect(layers[2].frame == CGRect(x: 0, y: 41.5, width: 900, height: 0.5))
   }
 
   @Test func bandTransitionsFor180MillisecondsAndClearsWithoutAColorFlash() throws {
@@ -56,5 +56,14 @@ struct ToolbarBackdropTests {
     view.update(nil)
     #expect(stripes.isHidden)
     #expect(stripes.contents == nil)
+  }
+
+  @Test func separatorIsOnePixelAcrossTheEntireBackdrop() throws {
+    let view = ToolbarBackdropView(frame: CGRect(x: 0, y: 0, width: 600, height: 41))
+    view.update(ToolbarBackdropState(tabId: "a", background: "#FFFFFF", divider: "#FF0000", hairline: true, stripes: nil))
+    view.layoutSubtreeIfNeeded()
+    let line = try #require(view.layer?.sublayers?.last)
+    #expect(line.frame == CGRect(x: 0, y: 40.5, width: 600, height: 0.5))
+    #expect(line.cornerRadius == 0 && line.mask == nil)
   }
 }

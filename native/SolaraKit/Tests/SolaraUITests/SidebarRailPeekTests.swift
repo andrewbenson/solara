@@ -23,11 +23,11 @@ import Testing
     rig.shell.layoutSubtreeIfNeeded()
     #expect(rig.dock.peek.live)
     #expect(rig.shell.input.peeking)
-    #expect(rig.dock.panel.convert(rig.dock.panel.bounds, to: rig.shell) == CGRect(x: 0, y: 47, width: 42, height: 753))
+    #expect(rig.dock.panel.convert(rig.dock.panel.bounds, to: rig.shell) == CGRect(x: 0, y: 0, width: 42, height: 800))
     #expect(rig.column.frame.width == 42)
     #expect(rig.dock.watchingHold == 42 + ShellMetrics.holdSlack)
     #expect(rig.lights.last == ShellMetrics.railLightsCenter)
-    #expect(rig.shell.frames.page.minX == 42)
+    #expect(rig.shell.frames.page.minX == 7)
   }
 
   @Test func dockingThePeekReturnsTheColumnAtRailWidth() {
@@ -41,7 +41,7 @@ import Testing
     #expect(!rig.shell.input.peeking)
     #expect(rig.shell.view(in: .sidebar) === rig.column)
     #expect(rig.column.frame.width == 42)
-    #expect(rig.shell.frames.card.minX == 0)
+    #expect(rig.shell.frames.card.minX == 42)
     #expect(rig.dock.state.width == 42)
     #expect(rig.lights.last == ShellMetrics.railLightsCenter)
     #expect(rig.shell.frames.page.minX == 42)

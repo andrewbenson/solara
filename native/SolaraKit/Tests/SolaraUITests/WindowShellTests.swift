@@ -161,11 +161,11 @@ struct WindowShellGeometryTests {
     let closed = DockedLayoutFrames.of(DockedLayoutInput(size: size, dock: 0, away: true))
     #expect(closed.card == CGRect(x: 7, y: 6, width: 1346, height: 847))
     #expect(closed.sidebar?.minX == -10_000)
-    #expect(closed.lights == CGPoint(x: 25 - 190, y: 27))
+    #expect(closed.lights == nil)
     let half = DockedLayoutFrames.of(DockedLayoutInput(size: size, dock: 0.5, sidebarWidth: 240))
     #expect(half.card.minX == 123.5)
     #expect(half.sidebarShift == -120)
-    #expect(half.lights == CGPoint(x: 25 - 120, y: 27))
+    #expect(half.lights == nil)
   }
 
   @Test(arguments: [197.25, 197.5, 197.75], [1.0, 2.0])
@@ -205,13 +205,13 @@ struct WindowShellGeometryTests {
         #expect(rect.height == rect.height.rounded())
         #expect(rect.width >= 0 && rect.height >= 0)
       }
-      #expect(frames.page.maxX == frames.card.maxX - ShellMetrics.railPageGap * input.railFraction)
+      #expect(frames.page.maxX == frames.card.maxX)
     }
     let panel = DockedLayoutFrames.of(inputs[0])
     #expect(panel.sidePanel?.minX == panel.card.maxX)
     #expect(panel.sidePanel?.maxX == (size.width - inputs[0].inset.right).rounded())
     let rail = DockedLayoutFrames.of(inputs[3])
-    #expect(rail.card.minX == 0)
+    #expect(rail.card.minX == 42)
     #expect(rail.page.minX == 42)
     #expect(rail.sidebar?.width == 42)
     let full = DockedLayoutFrames.of(DockedLayoutInput(size: size, dock: 1, sidebarWidth: 42.51))
@@ -227,14 +227,16 @@ struct WindowShellGeometryTests {
     #expect(dock.card.minX == 102.25)
     #expect(dock.page.width == 1090.75)
     let rail = DockedLayoutFrames.of(DockedLayoutInput(size: size, dock: 1, sidebarWidth: 197.5, railProgress: 0.5))
-    #expect(rail.card.minX == 51.125)
+    #expect(rail.card == CGRect(x: 149.875, y: 3, width: 1043.125, height: 790))
+    #expect(rail.page == CGRect(x: 149.875, y: 39.5, width: 1043.125, height: 753.5))
     let peek = DockedLayoutFrames.of(DockedLayoutInput(size: size, dock: 0, sidebarWidth: 42.5, peeking: true, peekSlide: 0.5))
-    #expect(peek.page.minX == 24.75)
+    #expect(peek.page.minX == 7)
+    #expect(peek.sidebarShift == -21.25)
   }
 
-  @Test func theAddressBarInTheSidebarRaisesTheLights() {
+  @Test func theAddressBarInTheSidebarKeepsLightsOnTheSharedHeaderCentre() {
     let size = CGSize(width: 1360, height: 860)
-    #expect(DockedLayoutFrames.of(DockedLayoutInput(size: size, dock: 1, addressBarInSidebar: true)).lights == CGPoint(x: 25, y: 24))
+    #expect(DockedLayoutFrames.of(DockedLayoutInput(size: size, dock: 1, addressBarInSidebar: true)).lights == nil)
   }
 
   @Test func thePeekPanelSlidesInFromPastTheEdge() {
@@ -266,7 +268,7 @@ struct WindowShellGeometryTests {
     #expect(f.sidebar == nil)
     #expect(f.lights == nil)
     let arc = DockedLayoutFrames.of(DockedLayoutInput(size: size, dock: 1, fullscreen: true, addressBarInSidebar: true))
-    #expect(arc.lights == CGPoint(x: 25, y: 24), "RN still places Arc's lights in full screen")
+    #expect(arc.lights == nil)
   }
 }
 
@@ -318,6 +320,22 @@ struct WindowShellViewTests {
     #expect(shell.cardClip.layer?.backgroundColor == nil)
     #expect(shell.cardClip.layer?.cornerRadius == 0)
     #expect(shell.hitTest(NSPoint(x: 500, y: 400)) == nil)
+  }
+
+  @Test func hiddenSidebarNavigationStopsDrawingWhenTheSidebarReturns() {
+    let shell = WindowShellView(windowId: "navigation")
+    shell.frame = CGRect(x: 0, y: 0, width: 1000, height: 700)
+    shell.update { $0.dock = 0; $0.addressBarInSidebar = true }
+    let navigation = FlippedContainerView()
+    shell.mount(.navigation, navigation)
+    #expect(!navigation.isHidden)
+    #expect(navigation.frame == CGRect(x: 0, y: 6, width: 1000, height: 41))
+    shell.update { $0.dock = 1 }
+    #expect(navigation.isHidden)
+    shell.update { $0.dock = 0 }
+    #expect(!navigation.isHidden)
+    shell.update { $0.addressBarInSidebar = false }
+    #expect(navigation.isHidden)
   }
 
   @Test func theReactRootOnTopStacksAboveEveryNativeLayerButTheOverlay() {

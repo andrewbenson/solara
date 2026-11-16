@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { test } from "node:test";
+import { topStripLeading } from "./topStripLeading.ts";
 
 const require = createRequire(import.meta.url);
 const ts = require("typescript");
@@ -36,6 +37,8 @@ function strip({ width = 1000, nameWidth = 34, shown = true, fullscreen = false,
     "./NativeStripControls": { NativeStripControls: "NativeStripControls", NativeStripDropGlow: "NativeStripDropGlow", nativeStripControlsEnabled: () => controls },
     "./NativeTopStrip": { NativeTopStrip: "NativeTopStrip", nativeTopStripEnabled: () => true },
     "./stripGroups": { dragGeometry: () => ({ slots: [], lefts: [] }) },
+    "./topStripLeading": { topStripLeading },
+    "./dockMotion": { TOP_STRIP_LIGHTS_CENTER: [20.75, 20.75] },
   };
   const { TopTabStrip } = compile("./TopTabStrip.tsx", modules);
   const tree = TopTabStrip({ width, floating, swipe: false });
@@ -44,14 +47,16 @@ function strip({ width = 1000, nameWidth = 34, shown = true, fullscreen = false,
   return { viewport: viewport.props, controls: children[2].props.children, page: viewport.props.children.props };
 }
 
-test("windowed profile sits after the lights and reserves an island-wide slot before tabs", () => {
-  for (const nameWidth of [8, 34]) {
+test("windowed profile sits after the lights with only its measured width and padding before tabs", () => {
+  for (const [nameWidth, left, pageWidth] of [[8, 105, 796], [34, 131, 770]]) {
     const view = strip({ nameWidth });
     assert.equal(view.controls[1].props.leadingInset, 86);
-    assert.equal(view.viewport.style.left, 155);
-    assert.equal(view.page.pageWidth, 746);
+    assert.equal(view.viewport.style.left, left);
+    assert.equal(view.page.pageWidth, pageWidth);
     assert.equal(view.controls[1].props.style.right, 8);
     assert.equal(view.viewport.style.right, 69);
+    assert.equal(view.controls[1].props.style.top, 3.75);
+    assert.equal(view.controls[1].props.windowFullscreen, false);
   }
 });
 
@@ -61,6 +66,7 @@ test("full-screen and floating profile slots protect the first tab from the isla
     assert.equal(view.controls[1].props.leadingInset, 8);
     assert.equal(view.page.pageWidth, 824);
     assert.equal(view.viewport.style.left, state.floating ? 92 : 77);
+    assert.equal(view.controls[1].props.style.top, state.floating ? 4 : 3.75);
   }
 });
 

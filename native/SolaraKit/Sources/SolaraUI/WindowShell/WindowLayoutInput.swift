@@ -48,6 +48,7 @@ public struct WindowLayoutInput: Equatable, Sendable {
   public let sidebarHeaderHeight: CGFloat
   public let sidebarFooterHeight: CGFloat
   public let stripControlsWidth: CGFloat
+  public let stripProfileSlotWidth: CGFloat
 
   @MainActor
   public init?(
@@ -117,8 +118,11 @@ public struct WindowLayoutInput: Equatable, Sendable {
     }
     sidebarHeaderHeight = rail ? (window.incognito || profileCount > 1 ? SidebarChromeMetrics.railHeader : 0) : SidebarChromeMetrics.headerHeight(addressBar: address)
     sidebarFooterHeight = (rail ? (dots ? SidebarChromeMetrics.footer : 0) + (downloads ? SidebarChromeMetrics.footer : 0) : (dots || (address && downloads) ? SidebarChromeMetrics.footer : 0)) + max(0, sidebarUpdateHeight)
-    let indicator = StripControlsLayout.indicator(textWidth: profileNameWidth, incognito: window.incognito, profiles: profileCount)
-    stripControlsWidth = StripControlsLayout.width(indicator: indicator.width)
+    let leading = self.windowFullscreen ? 8 : ShellMetrics.topStripLeadingReservation
+    let room = StripControlsLayout.profileRoom(width: self.bounds.width, leading: leading)
+    let indicator = StripControlsLayout.indicator(textWidth: profileNameWidth, room: room, incognito: window.incognito, profiles: profileCount)
+    stripControlsWidth = StripControlsLayout.downloadsBox
+    stripProfileSlotWidth = StripControlsLayout.profileSlot(indicator: indicator.width)
   }
 
   public func hasSameLayout(as other: Self) -> Bool {
@@ -132,6 +136,6 @@ public struct WindowLayoutInput: Equatable, Sendable {
       && hideToolbarWhileScrolling == other.hideToolbarWhileScrolling && bookmarksBar == other.bookmarksBar
       && layout == other.layout && presentation == other.presentation && pageFacts == other.pageFacts
       && sidebarHeaderHeight == other.sidebarHeaderHeight && sidebarFooterHeight == other.sidebarFooterHeight
-      && stripControlsWidth == other.stripControlsWidth
+      && stripControlsWidth == other.stripControlsWidth && stripProfileSlotWidth == other.stripProfileSlotWidth
   }
 }

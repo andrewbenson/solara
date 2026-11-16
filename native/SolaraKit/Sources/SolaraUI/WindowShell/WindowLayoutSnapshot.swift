@@ -83,7 +83,8 @@ public struct WindowLayoutSnapshot: Equatable, Sendable {
         anchors["peekPopover:\(name)"] = CGRect(x: origin.x, y: selected.minY + 8, width: width, height: 0)
       }
     }
-    let stripAvailableWidth = max(0, input.bounds.width - ShellMetrics.topStripLeadingReservation - max(84, input.stripControlsWidth + 14))
+    let stripLeading = input.windowFullscreen ? 8 : ShellMetrics.topStripLeadingReservation
+    let stripAvailableWidth = max(0, input.bounds.width - stripLeading - input.stripProfileSlotWidth - StripControlsLayout.trailingReservation)
     return Self(input: input, generation: generation, frames: frames, content: content, contentPanes: contentPanes, panes: panes, pages: pages, pageViewports: pageViewports, toolbars: toolbars, toolbarModes: input.toolbarModes, shownTops: input.shownTops, fullscreenTabId: fullscreenTab, sidebarHeader: header, sidebarFooter: footer, stripAvailableWidth: stripAvailableWidth, anchors: anchors)
   }
 

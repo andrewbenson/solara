@@ -100,7 +100,9 @@ const useOnto = (target: DropTarget) => useStripOnto((s) => s.key === ontoKey(ta
 
 const PROFILE_ROOM = 140;
 const DOWNLOADS_BOX = 34;
-const CONTROLS_GAP = 2;
+const PROFILE_GAP = 8;
+const MIN_PROFILE_SLOT = 84;
+const TRAILING_ROOM = 84;
 
 export function TopTabStrip({
   width,
@@ -116,11 +118,14 @@ export function TopTabStrip({
   const windowId = useWindowId();
   const current = useWindowProfileId();
   const { pages } = usePagerPages(windowId);
-  const profileChip = useProfileIndicatorWidth(PROFILE_ROOM);
+  const fullscreen = useBrowser((s) => !!s.windows[windowId]?.fullScreen);
+  const leadingInset = floating || fullscreen ? 8 : layout.trafficLightsWidth + LIGHTS_GAP;
+  const profileRoom = Math.max(MIN_PROFILE_SLOT - PROFILE_GAP, Math.min(PROFILE_ROOM, width - leadingInset - TRAILING_ROOM - MIN_CHIP - PROFILE_GAP));
+  const profileChip = useProfileIndicatorWidth(profileRoom);
   const profileTitle = useProfileTitle();
-  const controls = (profileChip ? profileChip + CONTROLS_GAP : 0) + DOWNLOADS_BOX;
-  const left = floating ? 8 : layout.trafficLightsWidth + LIGHTS_GAP;
-  const right = Math.max(84, controls + 8 + 6);
+  const profileSlot = profileChip > 0 ? Math.max(MIN_PROFILE_SLOT, profileChip + PROFILE_GAP) : 0;
+  const left = leadingInset + profileSlot;
+  const right = TRAILING_ROOM;
   const nativePageWidth = useMeasuredWidth(`window-strip|${windowId}`);
   const pageWidth = !floating && nativePageWidth !== undefined ? nativePageWidth : Math.max(0, width - left - right);
   const flare = floating ? 0 : FLARE;
@@ -135,7 +140,7 @@ export function TopTabStrip({
     <FloatingStrip.Provider value={floating}>
       <StripDropArea style={{ height: TOP_STRIP_HEIGHT }}>
         <WindowDragRegion style={StyleSheet.absoluteFill} />
-        <View pointerEvents={nativeTopStripEnabled() ? "box-none" : "auto"} style={{ position: "absolute", left: left - flare, right: Math.max(right - flare, controls + 8), top: 0, bottom: 0, overflow: "hidden" }}>
+        <View pointerEvents={nativeTopStripEnabled() ? "box-none" : "auto"} style={{ position: "absolute", left: left - flare, right: Math.max(right - flare, DOWNLOADS_BOX + 8), top: 0, bottom: 0, overflow: "hidden" }}>
           {nativeTopStripEnabled() ? (
             <NativeTopStrip windowId={windowId} profileId={current} floating={floating} pageWidth={pageWidth} />
           ) : (
@@ -145,13 +150,17 @@ export function TopTabStrip({
         {nativeStripControlsEnabled() ? (
           <>
             <ProfileNameMeasure title={profileTitle} />
-            <NativeStripControls windowId={windowId} indicator={profileChip > 0} style={{ position: "absolute", right: 8, top: MID - 17, width: controls, height: profileChip > 0 ? 34.5 : 34 }} />
+            <NativeStripControls windowId={windowId} indicator={profileChip > 0} leadingInset={leadingInset} style={{ position: "absolute", left: 0, right: 8, top: MID - 17, height: 34.5 }} />
           </>
         ) : (
-          <View mouseDownCanMoveWindow={false} style={{ position: "absolute", right: 8, top: MID - 17, flexDirection: "row", alignItems: "center", gap: CONTROLS_GAP }}>
-            <ProfileIndicator room={PROFILE_ROOM} />
-            <DownloadsButton windowId={windowId} />
-          </View>
+          <>
+            <View mouseDownCanMoveWindow={false} style={{ position: "absolute", left: leadingInset, top: MID - 17 }}>
+              <ProfileIndicator room={profileRoom} />
+            </View>
+            <View mouseDownCanMoveWindow={false} style={{ position: "absolute", right: 8, top: MID - 17 + (profileChip > 0 ? 0.5 : 0) }}>
+              <DownloadsButton windowId={windowId} />
+            </View>
+          </>
         )}
         {swipe && <ProfileSwipeArea surface="strip" style={StyleSheet.absoluteFill} pageWidth={pageWidth + flare * 2} />}
         {!floating &&

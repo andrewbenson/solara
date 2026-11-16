@@ -16,7 +16,7 @@ export function nativeStripControlsEnabled(): boolean {
 
 const DOWNLOADS_BOX = 34;
 
-export const NativeStripControls = memo(function NativeStripControls({ windowId, indicator, style }: { windowId: string; indicator: boolean; style: ViewStyle }) {
+export const NativeStripControls = memo(function NativeStripControls({ windowId, indicator, leadingInset, style }: { windowId: string; indicator: boolean; leadingInset: number; style: ViewStyle }) {
   const theme = useTheme();
   const incognito = useIsIncognito();
   const profiles = useProfiles().length;
@@ -43,6 +43,7 @@ export const NativeStripControls = memo(function NativeStripControls({ windowId,
   const state = useMemo(
     () =>
       JSON.stringify({
+        leadingInset,
         controls: {
           title: incognito ? "Incognito" : profile.name,
           incognito,
@@ -60,10 +61,10 @@ export const NativeStripControls = memo(function NativeStripControls({ windowId,
           toolbarPressed: theme.toolbarPressed,
         },
       }),
-    [incognito, profile, profiles, theme, downloadsOpen, hint],
+    [incognito, profile, profiles, theme, downloadsOpen, hint, leadingInset],
   );
   return (
-    <View ref={box} collapsable={false} style={style}>
+    <View ref={box} collapsable={false} pointerEvents="box-none" style={style}>
       <SolaraHostedView kind="topStripControls" windowId={windowId} state={state} style={{ flex: 1 }} />
     </View>
   );

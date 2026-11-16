@@ -2,6 +2,7 @@ import AppKit
 import ExpoModulesCore
 import Foundation
 import SolaraModel
+import SolaraShell
 import SolaraStore
 import SolaraUI
 
@@ -94,6 +95,29 @@ public class TopStripModule: Module {
     AsyncFunction("keys") { (windowId: String, profileId: String) -> [String] in
       FrameUpdates.readOnMain { NativeStoreHandle.store.map { StripQuery($0.state).keys(windowId: windowId, profileId: profileId) } ?? [] }
     }.runOnQueue(.main)
+
+    #if DEBUG && SOLARA_PROBES
+    AsyncFunction("devScreenVisibleFrame") { (windowId: String) -> [Double]? in
+      FrameUpdates.readOnMain {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["SOLARA_BACKGROUND"] == "1", environment["SOLARA_DATA_DIR"]?.isEmpty == false,
+          let screen = WindowHost.window(id: windowId)?.screen else { return nil }
+        let frame = screen.visibleFrame
+        return [frame.minX, frame.minY, frame.width, frame.height].map(Double.init)
+      }
+    }.runOnQueue(.main)
+
+    AsyncFunction("devResizeWindow") { (windowId: String, width: Double, height: Double) -> Bool in
+      FrameUpdates.readOnMain {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["SOLARA_BACKGROUND"] == "1", environment["SOLARA_DATA_DIR"]?.isEmpty == false,
+          width.isFinite, height.isFinite, width > 0, height > 0,
+          let window = WindowHost.window(id: windowId) else { return false }
+        window.setContentSize(NSSize(width: width, height: height))
+        return true
+      }
+    }.runOnQueue(.main)
+    #endif
   }
 }
 
@@ -407,6 +431,7 @@ public enum TopStripRead {
     if let json = NativeTopStrip.items(windowId: windowId), let data = json.data(using: .utf8),
       let value = try? JSONSerialization.jsonObject(with: data) { items = value }
     return ["items": items, "keys": StripQuery(store.state).keys(windowId: windowId, profileId: model.profileId),
+      "controls": controls(windowId: windowId) ?? NSNull(),
       "panelOpen": store.state.windowUi[windowId]?.panelOpen ?? false,
       "downloadsOpen": store.state.windowUi[windowId]?.downloadsOpen ?? false,
       "groupSizes": sizes, "groups": groups.sorted { ($0["id"] as? String ?? "") < ($1["id"] as? String ?? "") },
@@ -414,6 +439,36 @@ public enum TopStripRead {
       "glowTrace": trace == "glow" ? samples(TopStripGlowHost.hosts[windowId]?.view.trace) : [],
       "peekTrace": trace == "peek" ? samples(TopStripPeekHost.hosts[windowId]?.view.slideTrace) : [],
       "peek": TopStripPeekHost.hosts[windowId]?.describe() ?? [:], "peekMonitors": StripPeekView.monitors]
+  }
+
+  private static func controls(windowId: String) -> [String: Any]? {
+    guard let strip = NativeTopStrip.hosts[windowId]?.view, let content = strip.window?.contentView else { return nil }
+    func find(_ root: NSView) -> StripControlsView? {
+      if root.isHiddenOrHasHiddenAncestor { return nil }
+      if let view = root as? StripControlsView { return view }
+      for child in root.subviews {
+        if let view = find(child) { return view }
+      }
+      return nil
+    }
+    guard let host = find(content) else { return nil }
+    let profile = host.subviews.first { !$0.isHidden && $0.accessibilityLabel() != "Downloads" }
+    let downloads = host.subviews.first { $0.accessibilityLabel() == "Downloads" }
+    func rect(_ view: NSView?) -> Any {
+      guard let view else { return NSNull() }
+      let frame = view.convert(view.bounds, to: content)
+      let y = content.isFlipped ? frame.minY : content.bounds.height - frame.maxY
+      return [frame.minX, y, frame.width, frame.height].map(Double.init)
+    }
+    let slot = host.convert(CGRect(x: host.leadingInset, y: 0, width: host.profileSlotWidth, height: host.bounds.height), to: content)
+    let slotY = content.isFlipped ? slot.minY : content.bounds.height - slot.maxY
+    let lights = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].compactMap { kind -> Any? in
+      guard let button = strip.window?.standardWindowButton(kind) else { return nil }
+      return rect(button)
+    }
+    return ["container": rect(content), "host": rect(host), "profile": rect(profile), "downloads": rect(downloads),
+      "strip": rect(strip), "title": profile?.accessibilityLabel() ?? "",
+      "profileSlot": [slot.minX, slotY, slot.width, slot.height].map(Double.init), "trafficLights": lights]
   }
 
   private static func samples(_ source: [[Double]]?) -> [[Double]] {

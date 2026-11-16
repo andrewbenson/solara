@@ -71,7 +71,46 @@ struct WindowLayoutContractTests {
     state.windows["w"]?.tabLayout = "top"
     let top = WindowLayoutSnapshot.of(try #require(WindowLayoutInput(state: state, windowId: "w", bounds: bounds)), generation: 3)
     #expect(top.sidebarHeader == nil && top.frames.topStrip?.height == 42)
-    #expect(top.stripAvailableWidth == 1000 - 86 - max(84, StripControlsLayout.width(indicator: StripControlsLayout.indicator(textWidth: top.input.profileNameWidth, incognito: false, profiles: 2).width) + 14))
+    #expect(top.stripAvailableWidth == 1000 - 86 - top.input.stripProfileSlotWidth - 84)
+  }
+
+  @Test func horizontalProfileSlotProtectsTheFullscreenIslandOnlyWhenANameShows() throws {
+    var state = try projectionState()
+    state.windows["w"]?.tabLayout = "top"
+    state.profiles["default"]?.name = "A"
+    let bounds = CGRect(x: 0, y: 0, width: 1000, height: 700)
+    for fullscreen in [false, true] {
+      let hidden = try #require(WindowLayoutInput(state: state, windowId: "w", bounds: bounds, stripProfileWidth: 8, windowFullscreen: fullscreen))
+      #expect(hidden.stripProfileSlotWidth == 0)
+      #expect(WindowLayoutSnapshot.of(hidden, generation: 1).stripAvailableWidth == (fullscreen ? 908 : 830))
+      state.profileOrder.append("work")
+      let shown = try #require(WindowLayoutInput(state: state, windowId: "w", bounds: bounds, stripProfileWidth: 8, windowFullscreen: fullscreen))
+      #expect(shown.stripProfileSlotWidth == 84)
+      #expect(WindowLayoutSnapshot.of(shown, generation: 1).stripAvailableWidth == (fullscreen ? 824 : 746))
+      state.profileOrder.removeLast()
+    }
+  }
+
+  @Test func aSpacesChangeMovesTheProfileWithoutAStoreRevision() throws {
+    var state = try projectionState()
+    state.windows["w"]?.tabLayout = "top"
+    state.profileOrder.append("work")
+    let bounds = CGRect(x: 0, y: 0, width: 1000, height: 700)
+    let windowed = try #require(WindowLayoutInput(state: state, windowId: "w", storeRevision: 1, bounds: bounds, stripProfileWidth: 8, windowFullscreen: false))
+    let fullscreen = try #require(WindowLayoutInput(state: state, windowId: "w", storeRevision: 1, bounds: bounds, stripProfileWidth: 8, windowFullscreen: true))
+    #expect(!windowed.hasSameLayout(as: fullscreen))
+    #expect(WindowLayoutSnapshot.of(windowed, generation: 1).stripAvailableWidth == 746)
+    #expect(WindowLayoutSnapshot.of(fullscreen, generation: 2).stripAvailableWidth == 824)
+  }
+
+  @Test func horizontalNameGivesItsRoomToTheMinimumTabBeforeTruncatingTheStrip() throws {
+    var state = try projectionState()
+    state.windows["w"]?.tabLayout = "top"
+    state.profileOrder.append("work")
+    let bounds = CGRect(x: 0, y: 0, width: 400, height: 700)
+    let input = try #require(WindowLayoutInput(state: state, windowId: "w", bounds: bounds, stripProfileWidth: 300))
+    #expect(input.stripProfileSlotWidth == 134)
+    #expect(WindowLayoutSnapshot.of(input, generation: 1).stripAvailableWidth == 96)
   }
 
   @Test func projectionPreservesSplitStackAndNativePresentation() throws {

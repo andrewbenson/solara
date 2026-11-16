@@ -400,6 +400,7 @@ final class NativeLayoutChrome {
     let bounds: CGRect
     let input: DockedLayoutInput
     let fullscreen: Bool
+    let windowFullscreen: Bool
   }
   private var refreshing = false
   private var lastRefresh: RefreshKey?
@@ -543,21 +544,21 @@ final class NativeLayoutChrome {
     let nativeInput = state.flatMap(layoutInput)
     strip.renderingEnabled = nativeInput?.layout.topTabs == true && (state?.windows[shell.windowId]?.sidebarOpen == true || dock.moving)
     peek.strip.renderingEnabled = peek.view.live
-    let key = RefreshKey(revision: revision, feed: feedRevision, bounds: shell.bounds, input: shell.input, fullscreen: nativeInput?.layout.fullscreen ?? shell.input.fullscreen)
+    let key = RefreshKey(revision: revision, feed: feedRevision, bounds: shell.bounds, input: shell.input, fullscreen: nativeInput?.layout.fullscreen ?? shell.input.fullscreen, windowFullscreen: nativeInput?.windowFullscreen ?? false)
     guard key != lastRefresh else { return }
     if let lastRefresh, lastRefresh.revision == revision, lastRefresh.feed == feedRevision,
-      lastRefresh.fullscreen == key.fullscreen {
+      lastRefresh.fullscreen == key.fullscreen, lastRefresh.windowFullscreen == key.windowFullscreen {
       peek.view.frame = shell.overlay.bounds
       stripRow.needsLayout = true
       stripRow.layoutSubtreeIfNeeded()
-      glow.view.frame = StripDropGlowMetrics.frame(width: stripRow.bounds.width, left: ShellMetrics.topStripLeadingReservation, right: max(84, controls.width + 14))
+      glow.view.frame = StripDropGlowMetrics.frame(width: stripRow.bounds.width, left: stripRow.leadingInset + controls.profileSlotWidth, right: StripControlsLayout.trailingReservation)
       self.lastRefresh = key
       return
     }
     refreshing = true
     defer {
       refreshing = false
-      lastRefresh = RefreshKey(revision: revision, feed: feedRevision, bounds: shell.bounds, input: shell.input, fullscreen: key.fullscreen)
+      lastRefresh = RefreshKey(revision: revision, feed: feedRevision, bounds: shell.bounds, input: shell.input, fullscreen: key.fullscreen, windowFullscreen: key.windowFullscreen)
     }
     guard let state, let window = state.windows[shell.windowId],
       let input = nativeInput else { return }
@@ -640,10 +641,11 @@ final class NativeLayoutChrome {
     if self.strip.renderingEnabled { self.strip.apply(state: state, host: strip) }
     var stripControls = controls
     stripControls.nameColor = stripLook.nameColor
+    stripRow.leadingInset = input.windowFullscreen ? 8 : ShellMetrics.topStripLeadingReservation
     self.controls.update(stripControls, theme: stripLook.tokens)
     stripRow.needsLayout = true
     stripRow.layoutSubtreeIfNeeded()
-    glow.view.frame = StripDropGlowMetrics.frame(width: stripRow.bounds.width, left: ShellMetrics.topStripLeadingReservation, right: max(84, self.controls.width + 14))
+    glow.view.frame = StripDropGlowMetrics.frame(width: stripRow.bounds.width, left: stripRow.leadingInset + self.controls.profileSlotWidth, right: StripControlsLayout.trailingReservation)
     glow.view.set(over: stripOver || stripDrop.active, accent: stripLook.tokens["accent"] ?? "#4A77D4", dark: stripLook.dark)
     strip.floating = true
     peek.view.frame = shell.overlay.bounds
@@ -883,6 +885,12 @@ private final class NativeLayoutStripDropView: NSView, DevDropDestination {
 private final class NativeLayoutStripRow: NSView {
   let strip: TopStripView
   let controls = StripControlsView()
+  var leadingInset: CGFloat = ShellMetrics.topStripLeadingReservation {
+    didSet {
+      controls.leadingInset = leadingInset
+      needsLayout = true
+    }
+  }
   var onPageWidth: (CGFloat) -> Void = { _ in }
   override var isFlipped: Bool { true }
   override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -892,28 +900,23 @@ private final class NativeLayoutStripRow: NSView {
     super.init(frame: .zero)
     addSubview(strip)
     addSubview(controls)
+    controls.leadingInset = leadingInset
   }
 
   required init?(coder: NSCoder) { fatalError() }
 
-  override func hitTest(_ point: NSPoint) -> NSView? {
-    let hit = super.hitTest(point)
-    if hit === self, !controls.isHidden, controls.frame.contains(convert(point, from: superview)) { return controls }
-    return hit
-  }
-
   override func layout() {
     super.layout()
-    let left = ShellMetrics.topStripLeadingReservation
-    let right = max(84, controls.width + 14)
+    controls.frame = CGRect(x: 0, y: StripControlsLayout.rowTop, width: max(0, bounds.width - 8), height: 34.5)
+    let left = leadingInset + controls.profileSlotWidth
+    let right = StripControlsLayout.trailingReservation
     let width = max(0, bounds.width - left - right)
-    strip.frame = CGRect(x: left - StripMetrics.flare, y: 0, width: max(0, bounds.width - left + StripMetrics.flare - max(right - StripMetrics.flare, controls.width + 8)), height: bounds.height)
-    controls.frame = CGRect(x: bounds.width - 8 - controls.width, y: StripControlsLayout.rowTop, width: controls.width, height: 34.5)
+    strip.frame = CGRect(x: left - StripMetrics.flare, y: 0, width: max(0, bounds.width - left + StripMetrics.flare - max(right - StripMetrics.flare, StripControlsLayout.downloadsBox + 8)), height: bounds.height)
     onPageWidth(width)
   }
 
   override func mouseDown(with event: NSEvent) {
-    guard let window, controls.isHidden || !controls.frame.contains(convert(event.locationInWindow, from: nil)) else { return }
+    guard let window, controls.isHidden || controls.hitTest(convert(event.locationInWindow, from: nil)) == nil else { return }
     if event.clickCount == 2 { WindowTitlebar.doubleClick(window, event.modifierFlags) } else { window.performDrag(with: event) }
   }
 }

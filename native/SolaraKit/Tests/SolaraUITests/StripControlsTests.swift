@@ -22,11 +22,12 @@ import Testing
   }
 
   @Test func theDownloadsButtonSitsAtTheRightAndShowsOpenAsPressed() {
-    let view = StripControlsView(frame: .zero)
+    let view = StripControlsView(frame: NSRect(x: 0, y: 0, width: 992, height: 34.5))
     var actions: [StripControlAction] = []
     view.onAction = { actions.append($0) }
     view.update(StripControlsState(title: "Work", incognito: false, profiles: 2, nameColor: "#FF0000", downloadsOpen: true, downloadsTooltip: "Downloads"), theme: [:])
-    #expect(view.downloads.frame.maxX == view.width)
+    #expect(view.downloads.frame.maxX == 992)
+    #expect(view.indicator.frame.maxX < view.downloads.frame.minX)
     #expect(view.downloads.active)
     #expect(view.downloads.toolTip == nil)
     view.downloads.onPress?()
@@ -35,7 +36,7 @@ import Testing
   }
 
   @Test func voiceOverReadsTheProfileAndTheDownloadsButtonAsButtons() {
-    let view = StripControlsView(frame: .zero)
+    let view = StripControlsView(frame: NSRect(x: 0, y: 0, width: 992, height: 34.5))
     view.update(StripControlsState(title: "Work", incognito: false, profiles: 2, nameColor: "#FF0000", downloadsOpen: true, downloadsTooltip: nil), theme: [:])
     #expect(view.indicator.isAccessibilityElement())
     #expect(view.indicator.accessibilityRole() == .button)
@@ -45,7 +46,7 @@ import Testing
   }
 
   @Test func theDownloadsButtonSitsWhereYogaRoundsItsCentredQuarterPointOnlyWhenTheIndicatorShows() {
-    let view = StripControlsView(frame: .zero)
+    let view = StripControlsView(frame: NSRect(x: 0, y: 0, width: 992, height: 34.5))
     view.update(StripControlsState(title: "Work", incognito: false, profiles: 2, nameColor: "#FF0000", downloadsOpen: false, downloadsTooltip: nil), theme: [:])
     #expect(view.downloads.frame.minY == 0.5)
     view.update(StripControlsState(title: "Work", incognito: false, profiles: 1, nameColor: "#FF0000", downloadsOpen: false, downloadsTooltip: nil), theme: [:])
@@ -63,11 +64,52 @@ import Testing
 }
 
 @MainActor @Suite struct StripPeekRowTests {
-  @Test func theStripFillsTheRowUpToTheControlsAsTopTabStripLaysItOut() {
-    let frames = StripPeekRow.frames(width: 1187, controls: 114)
-    #expect(frames.strip == CGRect(x: 8, y: 0, width: 1187 - 8 - 128, height: 42))
-    #expect(frames.controls == CGRect(x: 1187 - 8 - 114, y: 4, width: 114, height: 34.5))
-    #expect(StripPeekRow.frames(width: 1187, controls: 34).strip.width == CGFloat(1095))
+  @Test func theProfilePrecedesTabsAndDownloadsKeepTheirRightInset() {
+    let frames = StripPeekRow.frames(width: 1187, profileSlot: 84)
+    #expect(frames.strip == CGRect(x: 92, y: 0, width: 1011, height: 42))
+    #expect(frames.controls == CGRect(x: 0, y: 4, width: 1179, height: 34.5))
+    #expect(StripPeekRow.frames(width: 1187, profileSlot: 0).strip.minX == 8)
+    #expect(StripPeekRow.frames(width: 1187, profileSlot: 0).strip.width == 1095)
+  }
+
+  @Test func aOneLetterNameReservesTheIslandWhileNoNameReservesNothing() {
+    let view = StripControlsView(frame: CGRect(x: 0, y: 0, width: 992, height: 34.5))
+    view.leadingInset = 8
+    view.update(StripControlsState(title: "A", incognito: false, profiles: 2, nameColor: "#FF0000", downloadsOpen: false, downloadsTooltip: nil), theme: [:])
+    #expect(view.profileSlotWidth == 84)
+    #expect(view.indicator.frame.minX == 8)
+    #expect(view.indicator.frame.maxX <= 84)
+    #expect(view.downloads.frame.maxX == 992)
+    for count in [0, 1] {
+      view.update(StripControlsState(title: "", incognito: false, profiles: count, nameColor: "#FF0000", downloadsOpen: false, downloadsTooltip: nil), theme: [:])
+      #expect(view.profileSlotWidth == 0)
+      #expect(view.indicator.isHidden)
+    }
+  }
+
+  @Test func theWindowedProfileSitsAfterLightsAndBeforeTheFirstTab() {
+    let view = StripControlsView(frame: CGRect(x: 0, y: 0, width: 992, height: 34.5))
+    view.leadingInset = 86
+    view.update(StripControlsState(title: "A", incognito: false, profiles: 2, nameColor: "#FF0000", downloadsOpen: false, downloadsTooltip: nil), theme: [:])
+    let tabStart = view.leadingInset + view.profileSlotWidth
+    #expect(view.indicator.frame.minX == 86)
+    #expect(view.indicator.frame.maxX < tabStart)
+    #expect(tabStart == 170)
+    #expect(view.hitTest(CGPoint(x: 500, y: 17)) == nil)
+    #expect(view.hitTest(CGPoint(x: 165, y: 17)) == nil)
+  }
+
+  @Test func aLongNameTruncatesBeforeTheTabLosesItsMinimumWidthAndRecoversOnResize() {
+    let view = StripControlsView(frame: CGRect(x: 0, y: 0, width: 992, height: 34.5))
+    view.leadingInset = 86
+    view.update(StripControlsState(title: String(repeating: "Wide profile ", count: 20), incognito: false, profiles: 2, nameColor: "#FF0000", downloadsOpen: false, downloadsTooltip: nil), theme: [:])
+    #expect(view.indicator.frame.width == 140)
+    view.setFrameSize(CGSize(width: 392, height: 34.5))
+    #expect(view.indicator.frame.width == 126)
+    #expect(400 - 86 - view.profileSlotWidth - 84 == 96)
+    #expect(view.downloads.frame.maxX == 392)
+    view.setFrameSize(CGSize(width: 992, height: 34.5))
+    #expect(view.indicator.frame.width == 140)
   }
 }
 

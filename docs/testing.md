@@ -21,6 +21,25 @@ Give a Swift package's tests a deadline with `scripts/agent/swift-test-bounded -
 arguments>`, never `timeout swift test`: `timeout` ends swift-test but leaves its `swiftpm-testing-helper` running a hung
 test, holding the main thread and the UI gate (`--help`).
 
+Horizontal profile placement: `top-strip-test.mjs <Debug app> --only=trailing --keep-data` checks actual native
+frames across window widths, acted Spaces fullscreen, profile switches, long and one-letter names, and a hidden
+single-profile name. The visible name leads the first tab, follows windowed traffic lights and reserves at least
+84 pt for the fullscreen island; a hidden name reserves zero. Downloads remains inside the 8 pt right inset and
+overflowing tabs retain their 96 pt minimum. Run with `SOLARA_NATIVE_WINDOW_LAYOUT=0`, then `1`, followed by
+both strip rendering paths in the ordinary driver. Swift coverage is in `StripControlsTests`, `StripPeekRowTests`
+and `WindowLayoutContractTests`. These placement changes require VM verification; no app or Swift checks ran on
+the owner's main Mac.
+
+The strip driver reads its window's screen `visibleFrame` through the Debug-only
+`SolaraTopStrip.devScreenVisibleFrame` helper before sizing. It caps the ordinary fixture at 1600 × 800 within
+that frame, verifies the actual bounds, and derives sampling points and capture crops from the selected size.
+The trailing matrix records widths that exceed the screen and tests the available maximum. A screen too small
+for the ordinary fixture's complete item comparison is recorded as a skip. Wait failures name the unsatisfied
+conditions and preserve their final snapshot. `state.snapshot` accepts up to four `stripPoints` pairs, with
+optional boolean `stripLabels` and `topStrip`, but rejects points outside the actual window. The Debug
+`SolaraTopStrip.devResizeWindow` helper works with either rendering path. Geometry checks read layout ownership
+and fullscreen state from `SolaraWindowShell.describe`; the probe's `windows.shell.contract` carries the bounds.
+
 A test instance holds the uitest lock for as long as it runs, and the UI gate quits one that has held it 60 minutes. A
 longer run (a soak) sets `AC_UITEST_MAX_HOLD=<minutes>` before it launches and runs off-hours, when nobody needs UI
 tests: every other agent's UI test waits for it.

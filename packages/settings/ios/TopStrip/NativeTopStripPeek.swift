@@ -148,6 +148,7 @@ final class TopStripPeekHost {
 struct StripControlsHostState: Decodable, Equatable {
   var controls: StripControlsState
   var theme: [String: String]
+  var leadingInset: Double?
 }
 
 struct StripGlowHostState: Decodable, Equatable {
@@ -173,6 +174,7 @@ final class TopStripControlsHost {
   func apply(_ json: String) {
     guard let next = json.data(using: .utf8).flatMap({ try? JSONDecoder().decode(StripControlsHostState.self, from: $0) }), next != state else { return }
     state = next
+    view.leadingInset = CGFloat(next.leadingInset ?? 0)
     view.update(next.controls, theme: next.theme)
   }
 

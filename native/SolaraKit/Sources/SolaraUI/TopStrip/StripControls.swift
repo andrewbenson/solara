@@ -37,6 +37,9 @@ public enum StripControlsLayout {
   public static let profileRoom: CGFloat = 140
   public static let downloadsBox: CGFloat = 34
   public static let gap: CGFloat = 2
+  public static let profileGap: CGFloat = 8
+  public static let minimumProfileSlot: CGFloat = 84
+  public static let trailingReservation: CGFloat = 84
   public static let rowTop: CGFloat = StripMetrics.mid - 17
 
   public static func indicator(textWidth: CGFloat, room: CGFloat = profileRoom, incognito: Bool, profiles: Int) -> StripIndicatorLayout {
@@ -45,6 +48,14 @@ public enum StripControlsLayout {
     let showName = textWidth > 0 && (textWidth <= nameRoom || nameRoom >= minCutName)
     let width = !shown ? 0 : showName ? min(room, textWidth + 2 * pad) : iconWidth
     return StripIndicatorLayout(shown: shown, showName: showName, width: width)
+  }
+
+  public static func profileRoom(width: CGFloat, leading: CGFloat) -> CGFloat {
+    max(minimumProfileSlot - profileGap, min(profileRoom, width - leading - trailingReservation - StripMetrics.minChip - profileGap))
+  }
+
+  public static func profileSlot(indicator: CGFloat) -> CGFloat {
+    indicator > 0 ? max(minimumProfileSlot, indicator + profileGap) : 0
   }
 
   public static func width(indicator: CGFloat) -> CGFloat { (indicator > 0 ? indicator + gap : 0) + downloadsBox }
@@ -64,6 +75,10 @@ public enum StripControlsLayout {
 public final class StripControlsView: NSView {
   public var onAction: (StripControlAction) -> Void = { _ in }
   public private(set) var width: CGFloat = StripControlsLayout.downloadsBox
+  public private(set) var profileSlotWidth: CGFloat = 0
+  public var leadingInset: CGFloat = 0 { didSet { place() } }
+  private var state: StripControlsState?
+  private var theme: [String: String] = [:]
   let indicator = StripProfileIndicator()
   let downloads = StripIconButton()
 
@@ -90,8 +105,21 @@ public final class StripControlsView: NSView {
   }
 
   public func update(_ state: StripControlsState, theme: [String: String]) {
+    self.state = state
+    self.theme = theme
+    place()
+  }
+
+  public override func setFrameSize(_ newSize: NSSize) {
+    super.setFrameSize(newSize)
+    place()
+  }
+
+  private func place() {
+    guard let state else { return }
     func color(_ key: String) -> NSColor { SidebarPalette.parse(theme[key]) ?? .clear }
-    let layout = StripControlsLayout.indicator(textWidth: StripControlsLayout.nameWidth(state.title), incognito: state.incognito, profiles: state.profiles)
+    let room = bounds.width > 0 ? StripControlsLayout.profileRoom(width: bounds.width + 8, leading: leadingInset) : StripControlsLayout.profileRoom
+    let layout = StripControlsLayout.indicator(textWidth: StripControlsLayout.nameWidth(state.title), room: room, incognito: state.incognito, profiles: state.profiles)
     indicator.isHidden = !layout.shown
     indicator.set(
       title: state.title, showName: layout.showName, color: SidebarPalette.parse(state.nameColor) ?? color("textPrimary"),
@@ -103,8 +131,9 @@ public final class StripControlsView: NSView {
       tooltip: state.downloadsOpen ? nil : state.downloadsTooltip)
     let indicatorWidth = layout.shown ? layout.width : 0
     width = StripControlsLayout.width(indicator: indicatorWidth)
-    indicator.frame = NSRect(x: 0, y: 0.5, width: indicatorWidth, height: StripControlsLayout.height)
-    downloads.frame = NSRect(x: width - StripControlsLayout.downloadsBox, y: indicatorWidth > 0 ? 0.5 : 0, width: StripControlsLayout.downloadsBox, height: StripControlsLayout.downloadsBox)
+    profileSlotWidth = StripControlsLayout.profileSlot(indicator: indicatorWidth)
+    indicator.frame = NSRect(x: leadingInset, y: 0.5, width: indicatorWidth, height: StripControlsLayout.height)
+    downloads.frame = NSRect(x: max(0, bounds.width - StripControlsLayout.downloadsBox), y: indicatorWidth > 0 ? 0.5 : 0, width: StripControlsLayout.downloadsBox, height: StripControlsLayout.downloadsBox)
   }
 
   public override func updateTrackingAreas() {
@@ -211,6 +240,7 @@ public final class StripPeekRow: NSView {
     super.init(frame: .zero)
     addSubview(strip)
     addSubview(controls)
+    controls.leadingInset = 8
   }
 
   required init?(coder: NSCoder) { fatalError() }
@@ -220,19 +250,18 @@ public final class StripPeekRow: NSView {
     return hit === self ? nil : hit
   }
 
-  public static func frames(width: CGFloat, controls: CGFloat) -> (strip: CGRect, controls: CGRect) {
-    let left: CGFloat = 8
-    let right = max(84, controls + 8 + 6)
-    let strip = CGRect(x: left, y: 0, width: max(0, width - left - right), height: StripMetrics.height)
-    let row = CGRect(x: width - 8 - controls, y: StripControlsLayout.rowTop, width: controls, height: StripControlsLayout.height + 0.5)
+  public static func frames(width: CGFloat, profileSlot: CGFloat) -> (strip: CGRect, controls: CGRect) {
+    let left = 8 + profileSlot
+    let strip = CGRect(x: left, y: 0, width: max(0, width - left - StripControlsLayout.trailingReservation), height: StripMetrics.height)
+    let row = CGRect(x: 0, y: StripControlsLayout.rowTop, width: max(0, width - 8), height: StripControlsLayout.height + 0.5)
     return (strip, row)
   }
 
   public override func layout() {
     super.layout()
-    let frames = Self.frames(width: bounds.width, controls: controls.width)
+    controls.frame = Self.frames(width: bounds.width, profileSlot: 0).controls
+    let frames = Self.frames(width: bounds.width, profileSlot: controls.profileSlotWidth)
     strip.frame = frames.strip
-    controls.frame = frames.controls
     let next = frames.strip.width
     if next != pageWidth {
       pageWidth = next

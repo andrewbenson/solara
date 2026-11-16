@@ -75,6 +75,10 @@ public final class StoreBridge: Sendable {
   public func observeForeignCommits(_ handler: @escaping @Sendable (String) -> Void) -> Int {
     store.subscribe { commit in
       guard commit.origin != .bridge, !commit.changes.isEmpty || !commit.effects.isEmpty else { return }
+      if commit.changes.isEmpty && commit.effects.allSatisfy({ effect in
+        if case .stripCommand = effect { return true }
+        return false
+      }) { return }
       var event: JSONObject = ["rev": JSONValue(commit.rev), "patch": commit.patch.json]
       if !commit.effects.isEmpty { event["effects"] = .array(commit.effects.map(\.json)) }
       handler(JSONValue.object(event).text())

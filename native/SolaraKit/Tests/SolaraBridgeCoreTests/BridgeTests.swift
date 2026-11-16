@@ -46,6 +46,63 @@ import Testing
     #expect(response["patches"] == nil)
   }
 
+  @Test func nativeStripEffectsDoNotNotifyTheReplicaOrAdvanceItsCursor() throws {
+    let bridge = bridge()
+    let events = Events()
+    bridge.observeForeignCommits { events.append($0) }
+    let command: JSONValue = ["op": "arrange", "strip": 7, "keys": ["a", "b"], "pinned": 0]
+    let commit = try bridge.store.transact(origin: .engine) { session in
+      session.emit(.stripCommand(strip: 7, id: 1, command: command))
+      session.emit(.stripCommand(strip: 8, id: 2, command: ["op": "activate", "strip": 8, "key": "c"]))
+    }
+    #expect(commit.effects.count == 2)
+    #expect(commit.changes.isEmpty)
+    #expect(commit.rev == 0)
+    #expect(events.values.isEmpty)
+    let caughtUp = bridge.catchUp(sinceRev: 0)
+    #expect(caughtUp["rev"] == 0)
+    #expect(caughtUp["patches"] == [])
+    try bridge.store.dispatch(Command("updateSettings", [["appearance": "light"]]), origin: .native)
+    #expect(events.values.count == 1)
+    let next = try JSONValue.parse(events.values.last!)
+    #expect(next["rev"] == 1)
+    #expect(next["patch"]?["settings"]?["set"]?["appearance"] == "light")
+  }
+
+  @Test func foreignStateChangesRetainTheirStripEffects() throws {
+    let bridge = bridge()
+    let events = Events()
+    bridge.observeForeignCommits { events.append($0) }
+    let commit = try bridge.store.transact(origin: .engine) { session in
+      try session.apply(Command("updateSettings", [["appearance": "light"]]))
+      session.emit(.stripCommand(strip: 7, id: 1, command: ["op": "arrange", "strip": 7, "keys": [], "pinned": 0]))
+    }
+    #expect(events.values.count == 1)
+    let event = try JSONValue.parse(events.values[0])
+    #expect(event["rev"] == 1)
+    #expect(event["patch"]?["settings"]?["set"]?["appearance"] == "light")
+    #expect(event["effects"] == .array(commit.effects.map(\.json)))
+  }
+
+  @Test func foreignJavaScriptEffectsRemainVisibleWithAndWithoutStripEffects() throws {
+    for includeStrip in [false, true] {
+      let bridge = bridge()
+      let events = Events()
+      bridge.observeForeignCommits { events.append($0) }
+      let commit = try bridge.store.transact(origin: .engine) { session in
+        if includeStrip {
+          session.emit(.stripCommand(strip: 7, id: 1, command: ["op": "arrange", "strip": 7, "keys": [], "pinned": 0]))
+        }
+        session.emit(.cancelDownload(id: "download"))
+      }
+      #expect(commit.changes.isEmpty)
+      #expect(events.values.count == 1)
+      let event = try JSONValue.parse(events.values[0])
+      #expect(event["rev"] == 0)
+      #expect(event["effects"] == .array(commit.effects.map(\.json)))
+    }
+  }
+
   @Test func foreignCommitsAreReportedAndBridgeOnesAreNot() throws {
     let bridge = bridge()
     let events = Events()

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -9,20 +9,25 @@ import { launch, reporter, session, sleep } from "../../../scripts/lib/instance.
 
 const HELP = `Checks the native New Tab hero in one hidden fixture instance.
 
-  node apps/browser/scripts/newtab-test.mjs <Debug Solara.app> [--keep-data]
+  node apps/browser/scripts/newtab-test.mjs <Debug Solara.app> [--keep-data] [--placement=top|bottom|below-current]
 
 Checks initial focus with an in-process key dispatch, per-tab text and selection after remount,
 two-window/profile isolation, and Enter navigation in place. Uses loopback pages, disables remote
 suggestions, and cross-checks the JS driver against the native model items, field editor and
 native app snapshot. Teardown has a separate 10-second deadline. It does not verify SwiftUI row rendering or accessibility exposure. Defaults AC_UITEST_WAIT to 0; an occupied UI gate fails fast.
-Requires native observationVersion 2 hooks (mounted, fieldAttached, listAway and editor state).`;
+Requires native observationVersion 2 hooks (mounted, fieldAttached, listAway and editor state).
+An explicit placement changes both settings after launch; the default exercises the launch settings.
+Retains before/after Enter state and failed hero observation samples in hero-observations.json.`;
 const args = process.argv.slice(2);
 if (args.includes("--help") || args.includes("-h")) {
   console.log(HELP);
   process.exit(0);
 }
 const appArg = args.find((arg) => !arg.startsWith("--"));
-if (!appArg || args.some((arg) => arg.startsWith("--") && arg !== "--keep-data")) {
+const placementArgs = args.filter((arg) => arg.startsWith("--placement="));
+const placement = placementArgs[0]?.slice("--placement=".length) ?? null;
+const placements = new Map([["top", ["top", "top"]], ["bottom", ["bottom", "bottom"]], ["below-current", ["nextToCurrent", "bottom"]]]);
+if (!appArg || placementArgs.length > 1 || (placement !== null && !placements.has(placement)) || args.some((arg) => arg.startsWith("--") && arg !== "--keep-data" && !arg.startsWith("--placement="))) {
   console.error(HELP);
   process.exit(2);
 }
@@ -34,6 +39,12 @@ process.env.AC_UITEST_WAIT ??= "0";
 const scratch = mkdtempSync(join(tmpdir(), "ac-newtab-"));
 const data = join(scratch, "data");
 const rep = reporter(join(scratch, "newtab-test.log"), { name: "newtab-test" });
+const observationsFile = join(scratch, "hero-observations.json");
+const diagnostics = [];
+const retainObservation = (entry) => {
+  diagnostics.push(entry);
+  writeFileSync(observationsFile, JSON.stringify(diagnostics, null, 2));
+};
 let app = null;
 let launching = null;
 let cleaning = null;
@@ -110,24 +121,69 @@ const view = (w, t, end) => {
 };
 const snapshot = (what, accept) => until(what, () => app.snapshot({}, { timeout: 1000 }), (state, end) => state.consistent && accept(state, end));
 const checkedView = async (w, t, text, { focused = true, title = null, absentTitle = null, compareJS = false } = {}) => {
-  const valid = (state) => {
-    if (!state?.native || state.native.typed !== text) return false;
+  const mismatches = (state) => {
+    if (!state?.native) return ["native hero missing"];
     const n = state.native;
     assert.equal(n.observationVersion, 2, "rebuild with observationVersion 2 native hooks");
-    if (!n.mounted || !n.fieldAttached || n.listAway !== false || !Array.isArray(n.items)) return false;
-    if (n.windowId !== w || n.tabId !== t || n.profileId !== (w === "w1" ? "default" : "work") || n.variant !== "hero") return false;
-    if (focused && (n.focused !== true || n.fieldValue !== n.value || !isDeepStrictEqual(n.fieldSelection, n.selection))) return false;
-    if ((compareJS || title) && (!state.js || state.js.windowId !== w || state.js.tabId !== t || state.js.profileId !== n.profileId || state.js.typed !== text || !isDeepStrictEqual(n.items, state.js.items) || n.value !== state.js.value || !isDeepStrictEqual(n.selection, state.js.selection))) return false;
-    if (title && !n.items.some((item) => item.title === title)) return false;
-    if (absentTitle && n.items.some((item) => item.title === absentTitle)) return false;
-    return true;
+    const failures = [];
+    if (n.typed !== text) failures.push("typed");
+    if (!n.mounted) failures.push("mounted");
+    if (!n.fieldAttached) failures.push("field attached");
+    if (n.listAway !== false) failures.push("list away");
+    if (!Array.isArray(n.items)) failures.push("native items missing");
+    if (n.windowId !== w || n.tabId !== t || n.profileId !== (w === "w1" ? "default" : "work") || n.variant !== "hero") failures.push("native identity");
+    if (focused && n.focused !== true) failures.push("field focus");
+    if (focused && n.fieldValue !== n.value) failures.push("field value");
+    if (focused && !isDeepStrictEqual(n.fieldSelection, n.selection)) failures.push("field selection");
+    if (compareJS || title) {
+      if (!state.js || state.js.windowId !== w || state.js.tabId !== t || state.js.profileId !== n.profileId) failures.push("JS identity");
+      if (state.js?.typed !== text) failures.push("JS typed");
+      if (!isDeepStrictEqual(n.items, state.js?.items)) failures.push("JS/native items");
+      if (n.value !== state.js?.value) failures.push("JS/native value");
+      if (!isDeepStrictEqual(n.selection, state.js?.selection)) failures.push("JS/native selection");
+    }
+    if (title && (!Array.isArray(n.items) || !n.items.some((item) => item.title === title))) failures.push("expected title missing");
+    if (absentTitle && Array.isArray(n.items) && n.items.some((item) => item.title === absentTitle)) failures.push("other profile title");
+    return failures;
   };
   let found;
-  await snapshot(`${w} native hero, selection and focus`, async (state, end) => {
-    found = await view(w, t, end);
-    return valid(found) && state.windows.some((entry) => entry.id === w && entry.selectedTabId === t && (!focused || /NSTextView|NSTextField|FieldEditor|TextField/.test(entry.firstResponder ?? "")));
-  });
+  const observations = [];
+  let failures = ["no observation"];
+  try {
+    await until(`${w} native hero, selection and focus`, () => app.snapshot({}, { timeout: 1000 }), async (state, end) => {
+      found = await view(w, t, end);
+      failures = mismatches(found);
+      if (!state.consistent) failures.push("snapshot inconsistent");
+      const window = state.windows.find((entry) => entry.id === w);
+      if (!window || window.selectedTabId !== t) failures.push(`selected tab ${window?.selectedTabId ?? "missing"}`);
+      if (focused && !/NSTextView|NSTextField|FieldEditor|TextField/.test(window?.firstResponder ?? "")) failures.push(`first responder ${window?.firstResponder ?? "missing"}`);
+      observations.push({ at: Date.now(), failures, hero: found, snapshot: state });
+      return failures.length === 0;
+    });
+  } catch (error) {
+    const evidence = { windowId: w, tabId: t, expected: { text, focused, title, absentTitle, compareJS }, observations };
+    retainObservation({ stage: "failed hero check", ...evidence });
+    rep.log("hero check observations", evidence);
+    rep.log("hero wait error", error);
+    rep.say("Hero diagnostics:", observationsFile);
+    throw new Error(`${w}/${t} native hero: ${failures.join(", ")}`, { cause: error });
+  }
   return found.native;
+};
+const observeEnter = async (stage) => {
+  const state = await run(`return Promise.all([["w1", "a"], ["w2", "b"]].map(([windowId, tabId]) => {
+    const ref = heroRef(windowId, tabId);
+    return (ref ? ref.driverState().then(JSON.parse) : Promise.resolve(null)).then((native) => ({
+      windowId, tabId, native, js: ac.omnibox.get(windowId + ":hero")?.state() ?? null
+    }));
+  })).then((heroes) => {
+    const s = S();
+    return { heroes, settings: { newTabPosition: s.settings.newTabPosition, newTabButtonPosition: s.settings.newTabButtonPosition },
+      focusedWindowId: s.ui.focusedWindowId, windows: s.windows, tabs: s.tabs };
+  });`);
+  const evidence = { stage, placement, at: Date.now(), state, snapshot: await app.snapshot({}, { timeout: 1000 }) };
+  retainObservation(evidence);
+  rep.log("Enter observation", evidence);
 };
 const editorKey = async (key, keyCode, modifiers = []) => {
   const press = await run(`return ac.shell.devKeyEquivalent("w1", ${JSON.stringify({ key, keyCode, modifiers, send: true, asKey: true, wait: 30 })});`);
@@ -174,6 +230,12 @@ try {
   app = await launching;
   assert.ok(!stopping, "launch interrupted");
   await app.ready({ timeout: 20_000, test: "return !!ac.store.getState().windows.w2 && !!globalThis.acPerf && ac.omnibox.ids().includes('w1:hero') && ac.omnibox.ids().includes('w2:hero')" });
+  if (placement !== null) {
+    const [newTabPosition, newTabButtonPosition] = placements.get(placement);
+    const settings = { newTabPosition, newTabButtonPosition };
+    await run(`S().updateSettings(${JSON.stringify(settings)}); return true;`);
+    await until("explicit placement applied after launch", () => run(`return { newTabPosition: S().settings.newTabPosition, newTabButtonPosition: S().settings.newTabButtonPosition };`), (state) => isDeepStrictEqual(state, settings));
+  }
 
   await check("Cmd-T opens a fresh hero with its native field focused", async () => {
     await run(`S().activate("pa"); return true;`);
@@ -251,10 +313,12 @@ try {
     const destination = `${base}/entered`;
     await type("w1", "a", destination);
     const before = await run(`return Object.keys(S().tabs).sort();`);
+    await observeEnter("before");
     await run(`return ac.shell.devTypeKeys("w1", "\\r", 5);`);
     await until("same tab navigated", () => run(`return { url: S().tabs.a?.url, ids: Object.keys(S().tabs).sort(), selected: S().windows.w1.activeTabIds.default };`), (state) => state.url === destination && state.selected === "a");
     assert.deepEqual(await run(`return Object.keys(S().tabs).sort();`), before);
     await snapshot("native in-place navigation", (state) => state.tabs.some((t) => t.id === "a" && t.url === destination && t.profileId === "default") && state.windows.some((w) => w.id === "w1" && w.selectedTabId === "a" && w.tabIds.length === 3));
+    await observeEnter("after in-place navigation");
     await checkedView("w2", "b", "Fixture", { title: "Fixture Beryl", absentTitle: "Fixture Aster" });
     return { tabId: "a", url: destination, tabCount: before.length };
   });

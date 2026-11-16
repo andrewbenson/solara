@@ -26,6 +26,13 @@ struct SettingsSearchTests {
     #expect(first("dock") == "appearance.appIcon")
   }
 
+  @Test func newTabsHasOneSearchEntryForBothSettings() {
+    #expect(index["tabs.newTabPosition"].title == "New tabs")
+    #expect(index.entry("tabs.newTabButtonPosition") == nil)
+    #expect(first("new tab button") == "tabs.newTabPosition")
+    #expect(first("below current") == "tabs.newTabPosition")
+  }
+
   @Test func aPanesNameFindsThatPanesRowsFirst() {
     let found = hits("password")
     let passwordRows = index.entries.filter { $0.pane == .passwords }.map(\.id)
@@ -90,8 +97,8 @@ struct SettingsSearchTests {
     #expect(SettingsSearch.normalize("--") == "")
   }
 
-  @Test func theIndexHas123RowsWithUniqueIds() {
-    #expect(index.entries.count == 123)
+  @Test func theIndexHas122RowsWithUniqueIds() {
+    #expect(index.entries.count == 122)
     #expect(Set(index.entries.map(\.id)).count == index.entries.count)
   }
 

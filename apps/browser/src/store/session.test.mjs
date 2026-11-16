@@ -38,7 +38,7 @@ const select = (id) => at(() => S().activate(id));
 function windowWith(...hosts) {
   const w = at(() => S().createWindow({ url: `${hosts[0]}.com` }));
   const ids = [model.viewTabIds(S(), w)[0]];
-  for (const h of hosts.slice(1)) ids.push(at(() => S().newTab(w, { url: `${h}.com` })));
+  for (const h of hosts.slice(1)) ids.push(at(() => S().newTab(w, { index: S().windows[w].tabIds.length, url: `${h}.com` })));
   return { w, ids };
 }
 
@@ -73,7 +73,8 @@ test("a reopened window's tabs wake with their back/forward list", () => {
   S().closeWindow(w);
   S().reopenClosedWindow();
   const w2 = S().windowOrder.at(-1);
-  const [ra, rb, rc] = S().windows[w2].tabIds.map((id) => S().tabs[id]);
+  const restored = S().windows[w2].tabIds.map((id) => S().tabs[id]);
+  const [ra, rb, rc] = ["https://a.com", "https://b.com", "https://c.com"].map((url) => restored.find((tab) => tab.url === url));
   assert.match(ra.adoptId, new RegExp(`^restore:${a}$`), "the shown tab loads with its history");
   assert.match(rb.wakeAdoptId, new RegExp(`^restore:${b}$`), "the others keep it until they wake");
   assert.equal(rb.navigation, null);

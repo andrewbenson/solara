@@ -126,16 +126,15 @@ try {
     const page = pageIdentities.find((value) => value.tabId === "t0");
     assert.ok(page, "selected pooled page identity is present");
     assert.deepEqual(afterPages.find((value) => value.tabId === "t0"), page);
-    if (contract.nativeLayout) {
-      await readSidebarRealization(app, "w1");
-      const firstScroll = await readNativeWork(app, true);
-      await run(`return scrollTo(260).then(() => scrollTo(0));`);
-      await readSidebarRealization(app, "w1");
-      const secondScroll = await readNativeWork(app);
-      assert.equal(secondScroll.rows.created, 0, "a repeated viewport sweep reuses its rows without allocating");
-      assert.ok(secondScroll.rows.reused > 0, "scrolling rebinds previously allocated native cells");
-      assert.equal(secondScroll.rows.live, firstScroll.rows.live, "a repeated viewport sweep has the same live high-water count");
-    } else assert.equal((await readNativeWork(app)).rows.created, 0, "eager sidebar scroll allocates no new rows");
+    await readSidebarRealization(app, "w1");
+    const firstScroll = await readNativeWork(app, true);
+    await run(`return scrollTo(260).then(() => scrollTo(0));`);
+    await readSidebarRealization(app, "w1");
+    const secondScroll = await readNativeWork(app);
+    rep.log(`scroll row work: ${JSON.stringify({ firstScroll, secondScroll })}`);
+    assert.equal(secondScroll.rows.created, 0, "a repeated viewport sweep reuses its rows without allocating");
+    assert.ok(secondScroll.rows.reused > 0, "scrolling rebinds previously allocated native cells");
+    assert.equal(secondScroll.rows.live, firstScroll.rows.live, "a repeated viewport sweep has the same live high-water count");
   });
 
   for (const addressBar of ["sidebar", "toolbar"])

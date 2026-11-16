@@ -92,7 +92,7 @@ final class LaterQueue {
     let store = makeStore()
     try store.dispatch(Command("createWindow", [["url": "https://a.example/"]]))
     let w = store.state.windowOrder[0]
-    for u in ["b", "c"] { try store.dispatch(Command("newTab", [.string(w), ["url": .string("https://\(u).example/"), "background": true]])) }
+    for u in ["b", "c"] { try store.dispatch(Command("newTab", [.string(w), ["url": .string("https://\(u).example/"), "background": true, "index": JSONValue(store.state.windows[w]!.tabIds.count)]])) }
     let keys = store.state.windows[w]!.tabIds
     let window = store.state.windows[w]!
     let active = window.activeTabIds[window.profileId]
@@ -375,7 +375,7 @@ final class LaterQueue {
     for number in [7, 8] {
       try store.dispatch(Command("createWindow", [["url": "https://a.example/"]]))
       let w = store.state.windowOrder.last!
-      for u in ["b", "c"] { try store.dispatch(Command("newTab", [.string(w), ["url": .string("https://\(u).example/"), "background": true]])) }
+      for u in ["b", "c"] { try store.dispatch(Command("newTab", [.string(w), ["url": .string("https://\(u).example/"), "background": true, "index": JSONValue(store.state.windows[w]!.tabIds.count)]])) }
       let window = store.state.windows[w]!
       let keys = window.tabIds
       strips.append(strip([keys[2], keys[0], keys[1]], active: window.activeTabIds[window.profileId], number: number))

@@ -95,9 +95,9 @@ import Testing
   @Test func heldSurvivorKeepsAdoptedOpenerAndReturnsToItWhenClosed() throws {
     let (store, ancestor) = try phaseAPageFixture()
     let window = store.state.tabs[ancestor]!.windowId
-    let parent = try #require(try store.dispatch(Command("newTab", [.string(window), ["url": "https://parent.example/", "background": true]])).result?.string)
-    let child = try #require(try store.dispatch(Command("newTab", [.string(window), ["url": "https://child.example/", "background": true]])).result?.string)
-    let other = try #require(try store.dispatch(Command("newTab", [.string(window), ["url": "https://other.example/", "background": true]])).result?.string)
+    let parent = try #require(try store.dispatch(Command("newTab", [.string(window), ["url": "https://parent.example/", "background": true, "index": JSONValue(store.state.windows[window]!.tabIds.count)]])).result?.string)
+    let child = try #require(try store.dispatch(Command("newTab", [.string(window), ["url": "https://child.example/", "background": true, "index": JSONValue(store.state.windows[window]!.tabIds.count)]])).result?.string)
+    let other = try #require(try store.dispatch(Command("newTab", [.string(window), ["url": "https://other.example/", "background": true, "index": JSONValue(store.state.windows[window]!.tabIds.count)]])).result?.string)
     try store.dispatch(Command("activate", [.string(child)]))
     try store.dispatch(Command("updateTab", [.string(parent), ["openerId": .string(ancestor)]]))
     try store.dispatch(Command("updateTab", [.string(child), ["openerId": .string(parent)]]))

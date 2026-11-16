@@ -34,8 +34,8 @@ test("incognito window: own profile, closing records nothing, history ignored", 
   S().removeHistory(tab.profileId, ["https://secret.com/"]);
   assert.equal(S().history[tab.profileId], undefined);
   assert.equal(stub.historyDbs.size, 0, "nothing reaches Chrome's history, not even the default profile's");
-  S().newTab(w, { url: "x.com" });
-  S().closeTab(model.viewTabIds(S(), w)[1]);
+  const extra = S().newTab(w, { url: "x.com" });
+  S().closeTab(extra);
   assert.equal(S().closedTabs.length, 1);
   S().closeWindow(w);
   assert.equal(S().closedTabs.length, 0);
@@ -47,8 +47,8 @@ test("cleaning up a private window keeps its tabs in memory, out of session.json
   S().hydrate({});
   const stop = startPersistence();
   const normal = S().createWindow({ url: "https://public.example/" });
-  const { w, ids: [, stale, dupe] } = privateWindowWith("https://secret.example/a", "https://secret.example/old", "https://secret.example/a");
-  S().activate(model.viewTabIds(S(), w)[0]);
+  const { w, ids: [current, stale, dupe] } = privateWindowWith("https://secret.example/a", "https://secret.example/old", "https://secret.example/a");
+  S().activate(current);
   S().updateTab(stale, { lastActiveAt: OLD() });
   S().updateTab(dupe, { lastActiveAt: Date.now() - 2 * HOUR });
   assert.equal(S().cleanUpTabs(w), 2);
@@ -70,8 +70,9 @@ test("cleaning up a private window keeps its tabs in memory, out of session.json
   assert.equal(model.viewTabIds(S(), w).length, 3);
   assert.ok(model.viewTabIds(S(), w).every((id) => model.isIncognitoProfile(S().tabs[id].profileId)));
 
-  S().activate(model.viewTabIds(S(), w)[0]);
-  S().updateTab(model.viewTabIds(S(), w)[1], { lastActiveAt: OLD() });
+  const restored = model.viewTabIds(S(), w).find((id) => S().tabs[id].url === "https://secret.example/old");
+  S().activate(current);
+  S().updateTab(restored, { lastActiveAt: OLD() });
   S().cleanUpTabs(w);
   assert.equal(cleanedTabsFor(S(), w).length, 1);
   S().closeWindow(w);
@@ -123,7 +124,7 @@ test("cleaned tabs leave Recently Cleaned a week after their clean-up", () => {
 
   useBrowser.setState({ cleanedTabs: [stale] });
   const old = S().newTab(w, { url: "https://idle.example/" });
-  S().activate(model.viewTabIds(S(), w)[0]);
+  S().activate(model.viewTabIds(S(), w).find((id) => id !== old));
   S().updateTab(old, { lastActiveAt: OLD() });
   S().cleanUpTabs(w);
   assert.ok(!S().cleanedTabs.some((c) => c.id === "ct-stale"), "the next clean-up drops the expired entry");

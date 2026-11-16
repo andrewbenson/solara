@@ -97,7 +97,7 @@ afterEach(() => {
 const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
 const group = () => {
   const a = S().newTab(windowId, { url: "https://one.example/" });
-  const b = S().newTab(windowId, { url: "https://two.example/" });
+  const b = S().newTab(windowId, { index: S().windows[windowId].tabIds.length, url: "https://two.example/" });
   S().updateTab(a, { favicon: "https://one.example/icon.png" });
   return S().createGroup([a, b], { name: "Saved" });
 };

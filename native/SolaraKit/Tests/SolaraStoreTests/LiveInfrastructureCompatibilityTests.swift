@@ -44,8 +44,15 @@ func liveInfrastructureRowBytes(_ rows: WorkspaceRows) -> String {
   return JSONValue.array([.array(tables), .array(archives), .array(values)]).text()
 }
 
+private func liveInfrastructureLegacyStore() -> Store {
+  var settings = Settings.defaults
+  settings.values["newTabPosition"] = "bottom"
+  settings.values["newTabButtonPosition"] = "bottom"
+  return Store(state: BrowserState(settings: settings), memory: StoreMemory(ids: IdSource(launch: "step5a-head")), clock: { 1_000 })
+}
+
 func liveInfrastructureBytes() throws -> JSONValue {
-  let store = Store(memory: StoreMemory(ids: IdSource(launch: "step5a-head")), clock: { 1_000 })
+  let store = liveInfrastructureLegacyStore()
   let patches = try liveInfrastructureWorkload(store)
   let document = store.sessionDocument()
   let marker: JSONValue = ["rev": JSONValue(store.rev), "at": 1_000, "scope": "everything"]
@@ -66,7 +73,7 @@ func liveInfrastructureBytes() throws -> JSONValue {
   @Test func persistedRowsAndSessionFileMatchHeadBytes() throws {
     let path = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appending(path: "Cases/step5a-head-bytes.json")
     let expected = try JSONValue.parse(Data(contentsOf: path))
-    let store = Store(memory: StoreMemory(ids: IdSource(launch: "step5a-head")), clock: { 1_000 })
+    let store = liveInfrastructureLegacyStore()
     _ = try liveInfrastructureWorkload(store)
     let folder = DataFolder(url: FileManager.default.temporaryDirectory.appending(path: "solara-step5a-\(UUID().uuidString)"))
     try FileManager.default.createDirectory(at: folder.url, withIntermediateDirectories: true)

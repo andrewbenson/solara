@@ -18,7 +18,7 @@ const share = (on) => S().updateSettings({ shareTabsAcrossWindows: on });
 function twoWindows() {
   const a = S().createWindow({ url: "https://a1.com" });
   const [a1] = S().windows[a].tabIds;
-  const a2 = S().newTab(a, { url: "https://a2.com" });
+  const a2 = S().newTab(a, { index: S().windows[a].tabIds.length, url: "https://a2.com" });
   S().activate(a1);
   const b = S().createWindow({ url: "https://b1.com" });
   const [b1] = S().windows[b].tabIds;

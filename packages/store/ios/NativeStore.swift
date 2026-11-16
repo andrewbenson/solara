@@ -153,7 +153,6 @@ public final class NativeStore: Sendable {
       let store = Store(
         state: state, memory: launch.memory, env: addressing, config: storeConfig,
         onPersistenceRefusal: { message in DispatchQueue.main.async { showPersistenceRefusal(message) } }, clock: clock)
-      NativeConfigFiles.start(location: configLocation, contents: configContents, store: store)
       ownsWorkspace = activeScope == .everything
       let host = StoreHost(
         store: store, ownsWorkspace: ownsWorkspace, folder: folder,
@@ -164,6 +163,13 @@ public final class NativeStore: Sendable {
             scope: safeMode ? .settingsAndDownloads : activeScope,
             trouble: { message in NSLog("[store] %@", message) })
         } })
+      do {
+        try NewTabsLaunchOverride.apply(store: store, writer: host.writer, folder: folder, safeMode: safeMode)
+      } catch {
+        host.writer?.freeze()
+        throw error
+      }
+      NativeConfigFiles.start(location: configLocation, contents: configContents, store: store)
       if ownsWorkspace {
         let issuer = PageIssuer(store: store, deliver: { work in host.deliverPageCallback(work) })
         PageIssuer.shared = issuer

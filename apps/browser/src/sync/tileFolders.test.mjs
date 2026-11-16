@@ -85,7 +85,7 @@ const act = (fn) => useBrowser.setState(fn(S()), true);
 function seed(device, hosts) {
   device.with(() => {
     const w = S().createWindow({ url: "https://home.example/" });
-    const ids = hosts.map((h) => S().newTab(w, { url: `https://${h}.example/` }));
+    const ids = hosts.map((h) => S().newTab(w, { index: S().windows[w].tabIds.length, url: `https://${h}.example/` }));
     S().pinTabs(ids, true);
   });
 }

@@ -16,8 +16,8 @@ function windowWithTabs() {
   S().hydrate({ profiles: { default: PERSONAL }, profileOrder: ["default"] });
   const w = S().createWindow({ url: "https://a.example/" });
   const a = S().windows[w].tabIds[0];
-  const b = S().newTab(w, { url: "https://b.example/" });
-  const c = S().newTab(w, { url: "https://c.example/", background: true });
+  const b = S().newTab(w, { index: S().windows[w].tabIds.length, url: "https://b.example/" });
+  const c = S().newTab(w, { index: S().windows[w].tabIds.length, url: "https://c.example/", background: true });
   S().activate(a);
   return { w, a, b, c };
 }

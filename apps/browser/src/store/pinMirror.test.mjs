@@ -20,7 +20,7 @@ const tileOf = (w, url) => model.viewTabIds(S(), w).find((id) => S().tabs[id].pi
 function twoWindows() {
   const a = S().createWindow({ url: "https://mail.com" });
   const [mail] = S().windows[a].tabIds;
-  const docs = S().newTab(a, { url: "https://docs.com" });
+  const docs = S().newTab(a, { index: S().windows[a].tabIds.length, url: "https://docs.com" });
   S().newTab(a, { url: "https://a.com" });
   S().pinTabs([mail, docs], true);
   const b = S().createWindow({ url: "https://b.com" });
@@ -132,7 +132,7 @@ test("pinned groups are mirrored too, and unpinning a group unpins it everywhere
   reset();
   const a = S().createWindow({ url: "https://jira.com" });
   const [jira] = S().windows[a].tabIds;
-  const wiki = S().newTab(a, { url: "https://wiki.com" });
+  const wiki = S().newTab(a, { index: S().windows[a].tabIds.length, url: "https://wiki.com" });
   S().newTab(a, { url: "https://a.com" });
   const work = S().groupTabs([jira, wiki], { pinned: true });
   S().updateGroup(work, { name: "Work" });
@@ -195,7 +195,7 @@ test("moving a pinned group's unloaded tab to a window that has its copy shows i
   reset();
   const a = S().createWindow({ url: "https://jira.com" });
   const [jira] = S().windows[a].tabIds;
-  const wiki = S().newTab(a, { url: "https://wiki.com" });
+  const wiki = S().newTab(a, { index: S().windows[a].tabIds.length, url: "https://wiki.com" });
   S().newTab(a, { url: "https://a.com" });
   S().groupTabs([jira, wiki], { pinned: true });
   const b = S().createWindow({ url: "https://b.com" });

@@ -14,7 +14,7 @@ const panesOf = (w) => Object.values(S().splits).filter((v) => v.windowId === w)
 function windowWith(...hosts) {
   const w = S().createWindow({ url: `https://${hosts[0]}.com/` });
   const ids = [S().windows[w].tabIds[0]];
-  for (const h of hosts.slice(1)) ids.push(S().newTab(w, { url: `https://${h}.com/`, background: true }));
+  for (const h of hosts.slice(1)) ids.push(S().newTab(w, { index: S().windows[w].tabIds.length, url: `https://${h}.com/`, background: true }));
   return { w, ids };
 }
 

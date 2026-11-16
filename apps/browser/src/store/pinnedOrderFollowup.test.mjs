@@ -11,7 +11,7 @@ function start(...names) {
   S().hydrate({});
   for (const id of Object.keys(live().folders)) removeFolder(id);
   const w = S().createWindow({ url: "https://home.example/" });
-  const ids = Object.fromEntries(names.map((n) => [n, S().newTab(w, { url: `https://${n}.example/`, background: true })]));
+  const ids = Object.fromEntries(names.map((n) => [n, S().newTab(w, { index: S().windows[w].tabIds.length, url: `https://${n}.example/`, background: true })]));
   return { w, ids };
 }
 

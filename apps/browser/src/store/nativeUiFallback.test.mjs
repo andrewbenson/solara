@@ -46,7 +46,7 @@ test("settingsAndDownloads keeps JS selection, anchors, clicks and window UI red
   sent.length = 0;
   S().clickTab(windowId, first);
   S().clickTab(windowId, third, { shiftKey: true });
-  assert.deepEqual(S().selection[windowId], [first, second, third]);
+  assert.deepEqual(S().selection[windowId], [third, second, first]);
   assert.equal(S().selectionAnchors[windowId], first);
   S().setSelectionAnchor(windowId, second);
   assert.equal(S().selectionAnchors[windowId], second);
@@ -57,7 +57,7 @@ test("settingsAndDownloads keeps JS selection, anchors, clicks and window UI red
   assert.deepEqual(S().windowUi[windowId], { panel: { open: false, initialText: "" }, downloadsOpen: true });
   assert.ok(!sent.some((c) => ["setSelection", "setSelectionAnchor", "clickTab", "openPanel", "closePanel", "setDownloadsOpen"].includes(c.name)));
   S().closeTab(second);
-  assert.deepEqual(S().selection[windowId], [first, third]);
+  assert.deepEqual(S().selection[windowId], [third, first]);
   S().closeWindow(windowId);
   assert.equal(S().windowUi[windowId], undefined);
 });

@@ -146,9 +146,9 @@ function instrumentAdapters(source) {
     appended.push(`export function ${name}(...args) { return globalThis.__replayAdapter("${name}", args, (given) => __replay_${name}(...given)); }`);
     return `function __replay_${name}(`;
   });
-  source = source.replace(/^export const (\w+Adapter): Adapter = /gm, (_, name) => {
+  source = source.replace(/^export const (\w+Adapter)(\s*(?:: Adapter)?\s*)= /gm, (_, name, annotation) => {
     appended.push(`export const ${name} = globalThis.__replayLazyAdapter("${name}", __replay_${name});`);
-    return `const __replay_${name}: Adapter = `;
+    return `const __replay_${name}${annotation}= `;
   });
   return `${source}\n${appended.join("\n")}\n`;
 }

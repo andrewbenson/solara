@@ -16,7 +16,10 @@ import Testing
       return JSONValue.object(object).canonical
     }
     let log = Log()
-    let store = Store(memory: StoreMemory(ids: IdSource(launch: "neutral")), checksInvariants: true, clock: { 1_793_016_000_000 })
+    var settings = Settings.defaults
+    settings.values["newTabPosition"] = "bottom"
+    settings.values["newTabButtonPosition"] = "bottom"
+    let store = Store(state: BrowserState(settings: settings), memory: StoreMemory(ids: IdSource(launch: "neutral")), checksInvariants: true, clock: { 1_793_016_000_000 })
     store.subscribe { commit in log.add("first \(commit.rev) \(commit.origin) \(workspacePatch(commit.patch)) \(JSONValue.array(commit.effects.map(\.json)).canonical)") }
     final class Once: @unchecked Sendable { var fired = false }
     let once = Once()

@@ -153,14 +153,9 @@ const ROWS: Record<SettingsPane, Section[]> = {
           keywords: ["new tab page", "command bar", "cmd t"],
         },
         newTabPosition: {
-          title: "Add new tabs",
-          description: "Where ⌘T and + New Tab put the new tab. Next to the current tab, it joins that tab's group (from a pinned tab, it goes first in the list), and closing it brings you back. Links open next to their page either way.",
-          keywords: ["new tab position", "next to current tab", "after current tab", "beside", "right of", "below", "adjacent", "end", "left", "top", "bottom", "order", "cmd t"],
-        },
-        newTabButtonPosition: {
-          title: "New Tab button",
-          description: "Where + New Tab sits in the sidebar, whatever Add new tabs says. At the top it stays above your tabs and scrolls with them; at the bottom it follows your last tab and stays at the sidebar's bottom edge once the tabs fill it.",
-          keywords: ["new tab button", "plus", "+", "top", "bottom", "sticky", "docked", "position"],
+          title: "New tabs",
+          description: "Where ⌘T and + New Tab put the new tab and where the button sits. Below current puts new tabs next to the current tab and keeps the button at the bottom. The tab joins the current tab's group (from a pinned tab, it goes first in the list), and closing it brings you back. Links open next to their page either way.",
+          keywords: ["new tab position", "new tab button", "plus", "+", "next to current tab", "after current tab", "below current", "beside", "right of", "below", "adjacent", "end", "left", "top", "bottom", "order", "cmd t"],
         },
         shareTabsAcrossWindows: {
           title: "Share tabs across windows",

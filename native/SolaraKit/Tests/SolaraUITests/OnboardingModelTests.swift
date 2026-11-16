@@ -75,6 +75,11 @@ struct OnboardingModelTests {
     #expect(model.value("cleanUpInactiveTabsAfterHours") == 12)
   }
 
+  @Test func diaPresetPlacesNewTabsAndTheButtonAtTop() {
+    #expect(OnboardingPreset.dia.settings["newTabPosition"] == "top")
+    #expect(OnboardingPreset.dia.settings["newTabButtonPosition"] == "top")
+  }
+
   @Test func chosenSettingsBeatThePreset() {
     let (model, _, store) = OnboardingFixture.make()
     store.updateSettings(["addressBar": "toolbar"])

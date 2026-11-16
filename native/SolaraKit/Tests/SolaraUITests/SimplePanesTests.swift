@@ -151,9 +151,31 @@ struct SimplePanesTests {
     #expect(model.widevineDescription.count <= 90)
   }
 
-  @Test func newTabPositionsFollowTheLayout() {
-    #expect(TabsPaneModel.newTabPositions(top: false).map(\.title) == ["At the bottom", "At the top", "Below the current tab"])
-    #expect(TabsPaneModel.newTabPositions(top: true).map(\.title) == ["On the right", "On the left", "Next to the current tab"])
+  @Test func newTabsMapsEveryStoredPairToTheClosestChoice() {
+    let store = FakeSettingsStore()
+    #expect(TabsPaneModel.newTabPositions.map(\.title) == ["Top", "Bottom", "Below current"])
+    #expect(SettingsFileKeys.keys(anchor: "tabs.newTabPosition") == ["newTabPosition", "newTabButtonPosition"])
+    for position in ["top", "bottom", "nextToCurrent"] {
+      for button in ["top", "bottom"] {
+        store.values["newTabPosition"] = .string(position)
+        store.values["newTabButtonPosition"] = .string(button)
+        #expect(TabsPaneModel.newTabPosition(store) == position)
+      }
+    }
+    store.values["newTabPosition"] = "unknown"
+    store.values["newTabButtonPosition"] = "bottom"
+    #expect(TabsPaneModel.newTabPosition(store) == "bottom")
+    store.values["newTabButtonPosition"] = "unknown"
+    #expect(TabsPaneModel.newTabPosition(store) == "top")
+  }
+
+  @Test func newTabsWritesBothExistingSettingsInOnePatch() {
+    let store = FakeSettingsStore()
+    for position in ["top", "bottom", "nextToCurrent"] {
+      TabsPaneModel.chooseNewTabPosition(position, store: store)
+      #expect(store.patches.last == ["newTabPosition": .string(position), "newTabButtonPosition": position == "top" ? "top" : "bottom"])
+    }
+    #expect(store.patches.count == 3)
   }
 
   @Test func cleanUpHoursReadsNullAsOff() {

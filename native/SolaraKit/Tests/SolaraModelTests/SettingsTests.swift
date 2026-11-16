@@ -88,6 +88,15 @@ import Testing
     #expect(inferredOn["chosen"] == [])
   }
 
+  @Test func newTabsDefaultToTopAndKeepStoredPairs() {
+    let settings = Settings.hydrated(from: nil)
+    #expect(settings["newTabPosition"] == "top")
+    #expect(settings["newTabButtonPosition"] == "top")
+    let saved = Settings.hydrated(from: ["newTabPosition": "bottom", "newTabButtonPosition": "bottom"])
+    #expect(saved["newTabPosition"] == "bottom")
+    #expect(saved["newTabButtonPosition"] == "bottom")
+  }
+
   @Test func newTabButtonFollowsATopNewTabPosition() {
     let migrated = Settings.migrateSaved(["newTabPosition": "top", "chosen": ["newTabPosition", "newTabButtonPosition"], "inferred": ["x"]])!
     #expect(migrated["newTabButtonPosition"] == "top")

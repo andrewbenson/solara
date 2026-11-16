@@ -24,7 +24,7 @@ const pinnedArea = (w) =>
 
 function windowWith(...urls) {
   const w = S().createWindow({ url: "https://home.com/" });
-  const ids = urls.map((url) => S().newTab(w, { url, background: true }));
+  const ids = urls.map((url) => S().newTab(w, { index: S().windows[w].tabIds.length, url, background: true }));
   return { w, ids };
 }
 

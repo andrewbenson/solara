@@ -261,7 +261,7 @@ private func closeSnapshot(_ state: BrowserState, _ id: String) -> JSONValue {
     let window = try store.dispatch(Command("createWindow", [["url": "https://a.example/"]])).result!.string!
     var ids = store.state.windows[window]!.tabIds
     for host in ["b", "c"] {
-      ids.append(try store.dispatch(Command("newTab", [.string(window), ["url": .string("https://\(host).example/")]])).result!.string!)
+      ids.append(try store.dispatch(Command("newTab", [.string(window), ["url": .string("https://\(host).example/"), "index": JSONValue(ids.count)]])).result!.string!)
     }
     try store.dispatch(Command("pinTabs", [.array(ids.map(JSONValue.string)), true, true]))
     let split = try store.dispatch(Command("createSplit", [.array(ids.map(JSONValue.string)), "vertical"])).result!.string!

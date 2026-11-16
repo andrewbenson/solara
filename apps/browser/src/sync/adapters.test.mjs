@@ -331,7 +331,7 @@ test("pinned rows sync as rows, keep their order, and move between rows and tile
     const w = S().createWindow({ url: "https://mail.example/" });
     const mail = model.viewTabIds(S(), w)[0];
     const docs = S().newTab(w, { url: "https://docs.example/" });
-    const cal = S().newTab(w, { url: "https://cal.example/" });
+    const cal = S().newTab(w, { index: S().windows[w].tabIds.length, url: "https://cal.example/" });
     S().pinTabs([mail], true);
     S().pinTabs([docs, cal], true, true);
   });
@@ -943,7 +943,7 @@ test("a pinned group whose members are open in two windows of a Mac keeps both p
   a.with(() => {
     const w = S().createWindow({ url: "https://home.example/" });
     x = S().newTab(w, { url: "https://x.example/" });
-    y = S().newTab(w, { url: "https://y.example/" });
+    y = S().newTab(w, { index: S().windows[w].tabIds.length, url: "https://y.example/" });
     S().pinTabs([x, y], true);
   });
   let b1, b2;
@@ -1130,7 +1130,7 @@ const pinnedAreaOf = (d, w) =>
 function buildPinnedTree(d) {
   return d.with(() => {
     const w = S().createWindow({ url: "https://home.example/" });
-    const open = (h) => S().newTab(w, { url: `https://${h}.example/`, background: true });
+    const open = (h) => S().newTab(w, { index: S().windows[w].tabIds.length, url: `https://${h}.example/`, background: true });
     const [tile, r1, o1, i1, i2, o2, r2, x] = ["tile", "r1", "o1", "i1", "i2", "o2", "r2", "x"].map(open);
     S().pinTabs([tile], true);
     S().pinTabs([r1], true, true);
@@ -1256,7 +1256,7 @@ test("a Mac on v0.2.38 in the sync set sees each pinned tree as one group, and l
   const old = new OldMac("devOld", folder);
   a.with(() => {
     const w = S().createWindow({ url: "https://home.example/" });
-    const open = (h) => S().newTab(w, { url: `https://${h}.example/`, background: true });
+    const open = (h) => S().newTab(w, { index: S().windows[w].tabIds.length, url: `https://${h}.example/`, background: true });
     const [o1, i1, o2, c1] = ["o1", "i1", "o2", "c1"].map(open);
     S().groupTabs([o1, i1, o2], { pinned: true, name: "Outer" });
     S().groupTabs([i1], { name: "Inner" });
@@ -1291,7 +1291,7 @@ test("two Macs nesting two groups into each other concurrently agree, and a grou
   const b = new Device("devB", folder);
   a.with(() => {
     const w = S().createWindow({ url: "https://home.example/" });
-    const open = (h) => S().newTab(w, { url: `https://${h}.example/`, background: true });
+    const open = (h) => S().newTab(w, { index: S().windows[w].tabIds.length, url: `https://${h}.example/`, background: true });
     const [x, z, y] = ["x", "z", "y"].map(open);
     S().groupTabs([x, z], { pinned: true, name: "GA" });
     S().groupTabs([z], { name: "GX" });
@@ -1370,7 +1370,7 @@ class PreInterleaveMac extends Device {
 function groupBeforeRow(d) {
   return d.with(() => {
     const w = S().createWindow({ url: "https://home.example/" });
-    const open = (h) => S().newTab(w, { url: `https://${h}.example/`, background: true });
+    const open = (h) => S().newTab(w, { index: S().windows[w].tabIds.length, url: `https://${h}.example/`, background: true });
     const [tile, row, member] = ["tile", "row", "member"].map(open);
     S().pinTabs([tile], true);
     S().pinTabs([row], true, true);
@@ -1417,7 +1417,7 @@ for (const [label, Old, rows] of [["a build from before the interleaved order", 
 function rowAndGroup(d, groupFirst) {
   return d.with(() => {
     const w = S().createWindow({ url: "https://home.example/" });
-    const open = (h) => S().newTab(w, { url: `https://${h}.example/`, background: true });
+    const open = (h) => S().newTab(w, { index: S().windows[w].tabIds.length, url: `https://${h}.example/`, background: true });
     const [row, member] = ["row", "member"].map(open);
     S().pinTabs([row], true, true);
     const g = S().groupTabs([member], { pinned: true, name: "Group" });
@@ -1671,7 +1671,7 @@ test("a tile turned into a row whose marker is still on its way is waited for as
   const b = new Device("devB", folder);
   a.with(() => {
     const w = S().createWindow({ url: "https://home.example/" });
-    const open = (h) => S().newTab(w, { url: `https://${h}.example/`, background: true });
+    const open = (h) => S().newTab(w, { index: S().windows[w].tabIds.length, url: `https://${h}.example/`, background: true });
     const [x, row, member] = ["x", "row", "member"].map(open);
     S().pinTabs([x], true);
     S().pinTabs([row], true, true);
@@ -1737,7 +1737,7 @@ for (const [label, edit] of [
     const b = new Device("devB", folder);
     a.with(() => {
       const w = S().createWindow({ url: "https://home.example/" });
-      const open = (h) => S().newTab(w, { url: `https://${h}.example/`, background: true });
+      const open = (h) => S().newTab(w, { index: S().windows[w].tabIds.length, url: `https://${h}.example/`, background: true });
       const [x, row, member] = ["x", "row", "member"].map(open);
       S().pinTabs([x], true);
       S().pinTabs([row], true, true);
@@ -1800,7 +1800,7 @@ async function deletedWhileAway(OldMac, withGroup) {
     const other = new OldMac("devOther", folder);
     const w = a.with(() => {
       const w = S().createWindow({ url: "https://home.example/" });
-      const open = (h) => S().newTab(w, { url: `https://${h}.example/`, background: true });
+      const open = (h) => S().newTab(w, { index: S().windows[w].tabIds.length, url: `https://${h}.example/`, background: true });
       const [r, x, m] = ["r", "x", "member"].map(open);
       S().placeTabs([r, x], { pinned: true, row: true, beforeId: null });
       if (withGroup) S().groupTabs([m], { pinned: true, name: "Group" });

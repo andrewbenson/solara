@@ -19,7 +19,7 @@ const snapshot = (w) => ({
 function fixture(options = {}) {
   S().hydrate({});
   const w = S().createWindow({ url: "https://tile.example/", ...options });
-  const open = (name) => S().newTab(w, { url: `https://${name}.example/`, background: true });
+  const open = (name) => S().newTab(w, { index: S().windows[w].tabIds.length, url: `https://${name}.example/`, background: true });
   const tile = S().windows[w].tabIds[0];
   const [row, member, a, b] = ["row", "member", "a", "b"].map(open);
   if (!options.small) {
@@ -201,9 +201,9 @@ for (const alias of [false, true]) {
 test("Stay restores only the live tab and records the other two as normal closes atomically", () => {
   S().hydrate({});
   const w = S().createWindow({ url: "https://first.example/" });
-  const live = S().newTab(w, { url: "https://live.example/", background: true });
-  const last = S().newTab(w, { url: "https://last.example/", background: true });
   const first = S().windows[w].tabIds[0];
+  const live = S().newTab(w, { index: S().windows[w].tabIds.length, url: "https://live.example/", background: true });
+  const last = S().newTab(w, { index: S().windows[w].tabIds.length, url: "https://last.example/", background: true });
   S().groupTabs([first, live, last], { pinned: false, name: "Partial" });
   S().createSplit([first, live, last], "vertical");
   S().setSelection(w, [first, live, last]);

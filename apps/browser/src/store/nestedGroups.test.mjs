@@ -17,7 +17,7 @@ const rows = (groupId) => groupEntries(S(), groupId).map((e) => (e.startsWith("g
 function windowWith(...names) {
   const w = S().createWindow({ url: `https://${names[0]}.com/` });
   const ids = [S().windows[w].tabIds[0]];
-  for (const h of names.slice(1)) ids.push(S().newTab(w, { url: `https://${h}.com/`, background: true }));
+  for (const h of names.slice(1)) ids.push(S().newTab(w, { index: S().windows[w].tabIds.length, url: `https://${h}.com/`, background: true }));
   return { w, ids };
 }
 

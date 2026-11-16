@@ -48,13 +48,25 @@ public final class TabsPaneModel: SettingsPaneProvider {
     ]
   }
 
-  static func newTabPositions(top: Bool) -> [SettingOption] {
-    top
-      ? [SettingOption("bottom", "On the right"), SettingOption("top", "On the left"), SettingOption("nextToCurrent", "Next to the current tab")]
-      : [SettingOption("bottom", "At the bottom"), SettingOption("top", "At the top"), SettingOption("nextToCurrent", "Below the current tab")]
+  static let newTabPositions = [
+    SettingOption("top", "Top"),
+    SettingOption("bottom", "Bottom"),
+    SettingOption("nextToCurrent", "Below current"),
+  ]
+
+  static func newTabPosition(_ store: SettingsStoreSource) -> String {
+    let position = store.string("newTabPosition")
+    if newTabPositions.contains(where: { $0.value == position }) { return position }
+    return store.string("newTabButtonPosition") == "bottom" ? "bottom" : "top"
   }
 
-  static let newTabButtonPositions = [SettingOption("bottom", "At the bottom"), SettingOption("top", "At the top")]
+  static func chooseNewTabPosition(_ position: String, store: SettingsStoreSource) {
+    guard newTabPositions.contains(where: { $0.value == position }) else { return }
+    store.updateSettings([
+      "newTabPosition": .string(position),
+      "newTabButtonPosition": position == "top" ? "top" : "bottom",
+    ])
+  }
 
   static let cleanUpChoices = [
     SettingOption("12", "12 hours"),
@@ -138,12 +150,10 @@ struct TabsPane: View {
           SettingPicker([SettingOption("page", "New Tab Page"), SettingOption("commandBar", "Command Bar")], selection: store.choice("newTabOpens"))
         }
         SettingRow("tabs.newTabPosition") {
-          SettingPicker(TabsPaneModel.newTabPositions(top: top), selection: store.choice("newTabPosition"))
-        }
-        if !top {
-          SettingRow("tabs.newTabButtonPosition") {
-            SettingPicker(TabsPaneModel.newTabButtonPositions, selection: store.choice("newTabButtonPosition"))
-          }
+          SettingPicker(TabsPaneModel.newTabPositions, selection: Binding(
+            get: { TabsPaneModel.newTabPosition(store) },
+            set: { TabsPaneModel.chooseNewTabPosition($0, store: store) }
+          ))
         }
         SettingToggle("tabs.shareTabsAcrossWindows", key: "shareTabsAcrossWindows")
         SettingToggle("tabs.tabReorderHaptics", key: "tabReorderHaptics")

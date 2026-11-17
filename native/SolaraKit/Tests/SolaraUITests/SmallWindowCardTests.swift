@@ -52,6 +52,52 @@ struct SmallWindowCardTests {
     #expect(page.isAccessibilityElement())
   }
 
+  @Test func nativePageHostingClipsAndSizesTheSameContentWithoutTakingFocus() throws {
+    let host = NSView(frame: CGRect(x: 0, y: 0, width: 480, height: 360))
+    let page = NSTextField(string: "Existing page")
+    let chrome = SmallWindowCardView(frame: .zero)
+    host.addSubview(chrome)
+    host.addSubview(page)
+    chrome.update(SmallWindowCardState(tabId: "little", fill: "rgba(255,255,255,0.7)", radius: 10))
+    chrome.hostContent(in: host)
+    let clip = try #require(host.layer)
+    #expect(clip.masksToBounds)
+    #expect(clip.cornerRadius == CGFloat(10))
+    #expect(page.superview === host)
+    #expect(page.frame == host.bounds)
+    #expect(chrome.frame == host.bounds)
+    #expect(!chrome.acceptsFirstResponder)
+    host.setFrameSize(CGSize(width: 610, height: 420))
+    chrome.hostContent(in: host)
+    #expect(page.frame == host.bounds)
+    #expect(page.superview === host)
+    #expect(host.subviews.last === page)
+    chrome.update(SmallWindowCardState(tabId: "little", fill: nil, radius: 0))
+    chrome.hostContent(in: host)
+    #expect(clip.cornerRadius == CGFloat(0))
+    #expect(page.superview === host)
+    #expect(chrome.layer?.sublayers?.first?.backgroundColor == nil)
+  }
+
+  @Test func nativePageHostingRetainsDarkFillAndReleasesNoPageOnStateClear() throws {
+    let host = NSView(frame: CGRect(x: 0, y: 0, width: 480, height: 360))
+    let page = NSView()
+    let chrome = SmallWindowCardView(frame: .zero)
+    host.addSubview(page)
+    host.addSubview(chrome)
+    chrome.update(SmallWindowCardState(tabId: "little", fill: "rgba(18,18,18,0.5)", radius: 10))
+    chrome.hostContent(in: host)
+    let fill = try #require(chrome.layer?.sublayers?.first?.backgroundColor)
+    #expect(abs(fill.alpha - 0.5) < 0.001)
+    chrome.update(nil)
+    chrome.hostContent(in: host)
+    #expect(page.superview === host)
+    #expect(host.subviews.last === page)
+    #expect(chrome.state == nil)
+    let clip = try #require(host.layer)
+    #expect(clip.cornerRadius == CGFloat(0))
+  }
+
   @Test func malformedStateClearsThePreviouslyPaintedCard() throws {
     let view = SmallWindowCardView(frame: CGRect(x: 0, y: 0, width: 480, height: 360))
     let valid = try #require(SmallWindowCardState.decode("{\"tabId\":\"little\",\"fill\":\"#ffffff\",\"radius\":10}"))

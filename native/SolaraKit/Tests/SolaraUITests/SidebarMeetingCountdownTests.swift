@@ -73,6 +73,21 @@ import Testing
     #expect(SidebarMeetingCountdown(ended, now: now).label == nil)
   }
 
+  @Test func nativeUrgencyColorsAndWiggleMatchBothAppearances() throws {
+    for (dark, red, green, blue) in [(false, 0xD1, 0x24, 0x2F), (true, 0xE5, 0x53, 0x4B)] {
+      let color = try #require(SidebarMeetingCountdown.nowColor(dark: dark).usingColorSpace(.sRGB))
+      #expect(abs(color.redComponent - CGFloat(red) / 255) < 0.0001)
+      #expect(abs(color.greenComponent - CGFloat(green) / 255) < 0.0001)
+      #expect(abs(color.blueComponent - CGFloat(blue) / 255) < 0.0001)
+      #expect(color.alphaComponent == 1)
+    }
+    let animation = SidebarMeetingCountdown.wiggle(around: CGSize(width: 180, height: 22))
+    #expect(abs(animation.duration - 0.59) < 0.0001)
+    #expect(animation.values?.count == 7)
+    #expect(animation.keyTimes?.first == 0)
+    #expect(animation.keyTimes?.last == 1)
+  }
+
   @Test func eachMarkWigglesOnceAndPassedMarksNever() {
     var done = Set<String>()
     #expect(SidebarMeetingCountdown.dueWiggles(groupId: "g", minutesLeft: 4.5, done: &done))

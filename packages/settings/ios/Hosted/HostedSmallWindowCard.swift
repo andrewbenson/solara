@@ -8,7 +8,12 @@ enum HostedSmallWindowCard {
     private final class Entry {
       let windowId: String
       weak var view: SmallWindowCardView?
-      init(windowId: String, view: SmallWindowCardView) { self.windowId = windowId; self.view = view }
+      weak var pageHost: NSView?
+      init(windowId: String, view: SmallWindowCardView, pageHost: NSView? = nil) {
+        self.windowId = windowId
+        self.view = view
+        self.pageHost = pageHost
+      }
     }
     private static var entries: [UUID: Entry] = [:]
   #endif
@@ -33,6 +38,14 @@ enum HostedSmallWindowCard {
   }
 
   #if DEBUG
+    static func track(_ view: SmallWindowCardView, windowId: String, pageHost: NSView) -> UUID {
+      let id = UUID()
+      entries[id] = Entry(windowId: windowId, view: view, pageHost: pageHost)
+      return id
+    }
+
+    static func untrack(_ id: UUID) { entries[id] = nil }
+
     static func describe(_ windowId: String) -> [[String: Any]] {
       entries.values.compactMap { entry in
         guard entry.windowId == windowId, let view = entry.view, let state = view.state,
@@ -42,7 +55,11 @@ enum HostedSmallWindowCard {
         return ["tabId": state.tabId, "fill": state.fill as Any? ?? NSNull(), "radius": state.radius,
           "frame": [frame.minX, frame.minY, frame.width, frame.height],
           "interceptsInput": view.hitTest(CGPoint(x: view.bounds.midX, y: view.bounds.midY)) != nil,
-          "focusable": view.acceptsFirstResponder, "accessibilityElement": view.isAccessibilityElement()]
+          "focusable": view.acceptsFirstResponder, "accessibilityElement": view.isAccessibilityElement(),
+          "pageHosted": entry.pageHost != nil, "clipsPage": entry.pageHost?.layer?.masksToBounds ?? false,
+          "pageRadius": Double(entry.pageHost?.layer?.cornerRadius ?? 0),
+          "contentCount": entry.pageHost?.subviews.filter { $0 !== view }.count ?? 0,
+          "owner": entry.pageHost.map { NSStringFromClass(type(of: $0)) } ?? NSStringFromClass(type(of: view))]
       }
     }
   #endif

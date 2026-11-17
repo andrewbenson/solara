@@ -7,6 +7,15 @@ public class MediaModule: Module {
   public func definition() -> ModuleDefinition {
     Name("SolaraMedia")
 
+    View(SmallWindowPageHost.self) {
+      Prop("state") { (view: SmallWindowPageHost, json: String) in
+        MainActor.assumeIsolated { view.setState(json) }
+      }
+      Prop("windowId") { (view: SmallWindowPageHost, id: String) in
+        MainActor.assumeIsolated { view.windowId = id }
+      }
+    }
+
     OnCreate {
       DispatchQueue.main.async {
         MainActor.assumeIsolated {
@@ -67,5 +76,65 @@ public class MediaModule: Module {
     AsyncFunction("probe") { (kind: String, windowId: String) -> String in
       FrameUpdates.readOnMain { NativeMedia.probe(kind: kind, windowId: windowId) }
     }.runOnQueue(.main)
+  }
+}
+
+@MainActor
+final class SmallWindowPageHost: ExpoView {
+  let card = SmallWindowCardView(frame: .zero)
+  var windowId = "" { didSet { track() } }
+  #if DEBUG
+    private var tracking: UUID?
+  #endif
+
+  required init(appContext: AppContext? = nil) {
+    super.init(appContext: appContext)
+    addSubview(card)
+    setAccessibilityElement(false)
+  }
+
+  override var isFlipped: Bool { true }
+
+  override func didAddSubview(_ subview: NSView) {
+    super.didAddSubview(subview)
+    card.hostContent(in: self)
+  }
+
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    track()
+  }
+
+  private func track() {
+    #if DEBUG
+      if let tracking { HostedSmallWindowCard.untrack(tracking) }
+      tracking = nil
+      if window != nil, !windowId.isEmpty { tracking = HostedSmallWindowCard.track(card, windowId: windowId, pageHost: self) }
+    #endif
+  }
+
+  func setState(_ json: String) {
+    card.update(SmallWindowCardState.decode(json))
+    card.hostContent(in: self)
+  }
+
+  override func layout() {
+    super.layout()
+    card.hostContent(in: self)
+  }
+
+  override func setFrameSize(_ newSize: NSSize) {
+    super.setFrameSize(newSize)
+    card.hostContent(in: self)
+  }
+
+  override func updateLayer() {
+    super.updateLayer()
+    card.hostContent(in: self)
+  }
+
+  override func hitTest(_ point: NSPoint) -> NSView? {
+    guard let hit = super.hitTest(point), hit !== self else { return nil }
+    return hit
   }
 }

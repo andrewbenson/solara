@@ -1,6 +1,6 @@
 import { hideNativeMeetingAlert, nativePagesAvailable, onNativeMeetingAlert, showNativeMeetingAlert } from "@solara/settings";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Animated } from "react-native";
+import { View } from "react-native";
 import { useTheme } from "../../lib/theme";
 import { dismiss, joinEvent, useMeetingAlert } from "../../live/alerts";
 import { useCalendar, useNow } from "../../live/calendar";
@@ -100,22 +100,9 @@ function AlertCard({ event, windowId, windowWidth }: { event: CalendarEvent; win
 }
 
 function AlertFrame({ position, children }: { position: { left: number; top: number }; children: ReactNode }) {
-  const appear = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    Animated.spring(appear, { toValue: 1, speed: 14, bounciness: 6, useNativeDriver: true }).start();
-  }, []);
   return (
-    <Animated.View
-      style={{
-        position: "absolute",
-        ...position,
-        width: WIDTH,
-        opacity: appear,
-        transform: [{ translateY: appear.interpolate({ inputRange: [0, 1], outputRange: [-10, 0] }) }, { scale: appear.interpolate({ inputRange: [0, 1], outputRange: [0.97, 1] }) }],
-      }}
-    >
+    <View style={{ position: "absolute", ...position, width: WIDTH }}>
       {children}
-    </Animated.View>
+    </View>
   );
 }
-

@@ -105,7 +105,7 @@ const until = async (what, test, ms = 3000) => {
   }
 };
 const onRow = async (id) => {
-  const r = await row(id);
+  const r = await until(`the row for ${id} to be measured`, () => row(id));
   await point(r.x + 60, Math.round(r.y + r.height / 2));
   return r;
 };
@@ -423,7 +423,7 @@ try {
   await rep.check("scrolling the sidebar dismisses it, as RN's does", async () => {
     await point(900, 600);
     await gone("hover away");
-    const extra = JSON.parse(await run(`const ids = []; for (let i = 0; i < 30; i++) ids.push(ac.store.getState().newTab("w1", { url: "data:text/html,<title>More " + i + "</title>", background: true })); return JSON.stringify(ids);`));
+    const extra = JSON.parse(await run(`const ids = []; for (let i = 0; i < 30; i++) ids.push(ac.store.getState().newTab("w1", { url: "data:text/html,<title>More " + i + "</title>", background: true, index: ac.store.getState().windows.w1.tabIds.length })); return JSON.stringify(ids);`));
     try {
       await run(`return globalThis.expo.modules.SolaraSidebarDrag.scrollTo("w1", 0)`);
       await sleep(600);

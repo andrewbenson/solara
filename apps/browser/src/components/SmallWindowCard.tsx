@@ -1,14 +1,14 @@
-import { SolaraHostedView } from "@solara/settings";
-import { StyleSheet } from "react-native";
+import { requireNativeViewManager } from "expo-modules-core";
+import type { ComponentType } from "react";
+import { View, type ViewProps } from "react-native";
 
-export function SmallWindowCard({ windowId, tabId, fill, radius }: { windowId: string; tabId: string; fill: string | null; radius: number }) {
-  return (
-    <SolaraHostedView
-      kind="smallWindowCard"
-      windowId={windowId}
-      pointerEvents="none"
-      state={JSON.stringify({ tabId, fill, radius })}
-      style={StyleSheet.absoluteFill}
-    />
-  );
+type NativeCardProps = ViewProps & { windowId: string; state: string };
+type CardProps = ViewProps & { nativeSmall: boolean; windowId: string; tabId: string; fill: string | null; radius: number };
+
+let NativeCard: ComponentType<NativeCardProps> | null = null;
+
+export function SmallWindowCard({ nativeSmall, windowId, tabId, fill, radius, ...props }: CardProps) {
+  if (!nativeSmall) return <View {...props} />;
+  NativeCard ??= requireNativeViewManager<NativeCardProps>("SolaraMedia") as ComponentType<NativeCardProps>;
+  return <NativeCard {...props} windowId={windowId} state={JSON.stringify({ tabId, fill, radius })} />;
 }

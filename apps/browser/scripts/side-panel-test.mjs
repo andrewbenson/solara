@@ -460,8 +460,11 @@ try {
         (timeout) => run(`return Object.keys(ac.store.getState().tabs).length;`, timeout));
       assert.equal(initialTabs.tabs.length, before);
       const panel = await app.page(`chrome-extension://${a.id}/panel.html`);
-      await panel.eval(`window.open(${JSON.stringify(`${origin}/opened`)}); true`, { userGesture: true });
-      panel.close();
+      try {
+        await panel.eval(`window.open(${JSON.stringify(`${origin}/opened`)}); true`, { userGesture: true });
+      } finally {
+        panel.close();
+      }
       const tabRows = (tabs) => tabs.map((t) => ({ id: t.id, url: t.url })).sort((a, b) => a.id.localeCompare(b.id));
       const { value: jsTabs, snapshot: s } = await crossRead("native panel opens a tab", (s) => tabRows(s.tabs),
         async (timeout) => {

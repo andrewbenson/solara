@@ -14,8 +14,9 @@ public class SolaraCoreWebView: NSView {
   public var standalone = false
   public var extensionHost: String?
   public var pageBackgroundColor: NSColor?
+  public private(set) var closeCount = 0
 
-  public func closeBrowser() {}
+  public func closeBrowser() { closeCount += 1 }
   public func focusPage() {}
 }
 

@@ -1,7 +1,7 @@
 import { requireNativeModule, requireOptionalNativeModule } from "expo-modules-core";
 import { AppRegistry, Text, View } from "react-native";
 
-export const NATIVE_API_VERSION = 65;
+export const NATIVE_API_VERSION = 66;
 
 const built = requireOptionalNativeModule<{ apiVersion?: number }>("SolaraApp")?.apiVersion ?? 0;
 

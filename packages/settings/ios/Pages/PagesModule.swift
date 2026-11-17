@@ -242,11 +242,16 @@ final class NativePageView: ExpoView {
       case "bookmarks": NSHostingView(rootView: BookmarksPageView(model: bookmarks, favicons: PageNetwork.favicons))
       case "bookmarkForm": NSHostingView(rootView: BookmarkFormView(model: bookmarkForm))
       case "createProfile": NSHostingView(rootView: CreateProfileFormView(model: createProfile))
-      case "calendarPreview", "meetingAlert": NSHostingView(rootView: LiveCardView(model: liveCard))
+      case "calendarPreview": NSHostingView(rootView: LiveCardView(model: liveCard))
+      case "meetingAlert": MeetingAlertFrameView(frame: .zero)
       default: nil
       }
     guard let made else { return }
     if next == "bookmarkForm" { (made as? NSHostingView<BookmarkFormView>)?.safeAreaRegions = [] }
+    if let meeting = made as? MeetingAlertFrameView {
+      meeting.onEvent = { [weak self] event in self?.send(event) }
+      meeting.onHeight = { [weak self] height in self?.send(LiveCardEvent.height(Double(height))) }
+    }
     made.frame = bounds
     made.autoresizingMask = [.width, .height]
     addSubview(made)
@@ -276,7 +281,8 @@ final class NativePageView: ExpoView {
     case "bookmarks": bookmarks.apply(json: json)
     case "bookmarkForm": bookmarkForm.apply(json: json)
     case "createProfile": createProfile.apply(json: json)
-    case "calendarPreview", "meetingAlert": liveCard.apply(json: json)
+    case "calendarPreview": liveCard.apply(json: json)
+    case "meetingAlert": (host as? MeetingAlertFrameView)?.apply(json: json)
     default: break
     }
     consumeClearDataRequest()

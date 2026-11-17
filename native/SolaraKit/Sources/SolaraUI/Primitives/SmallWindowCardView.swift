@@ -47,6 +47,21 @@ public final class SmallWindowCardView: NSView {
     needsLayout = true
   }
 
+  public func hostContent(in host: NSView) {
+    host.wantsLayer = true
+    if let first = host.subviews.first, first !== self, superview === host {
+      host.addSubview(self, positioned: .below, relativeTo: first)
+    }
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    host.layer?.masksToBounds = true
+    host.layer?.cornerRadius = CGFloat(max(0, state?.radius ?? 0))
+    CATransaction.commit()
+    for content in host.subviews where content.frame != host.bounds {
+      content.frame = host.bounds
+    }
+  }
+
   public override func layout() {
     super.layout()
     CATransaction.begin()

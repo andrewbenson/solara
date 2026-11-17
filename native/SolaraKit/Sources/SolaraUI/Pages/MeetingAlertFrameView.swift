@@ -29,6 +29,7 @@ public final class MeetingAlertFrameView: NSView {
     motion.layer?.opacity = 0
     addSubview(motion)
     hosting.safeAreaRegions = []
+    hosting.sizingOptions = []
     motion.addSubview(hosting)
     model.onEvent = { [weak self] event in
       guard let self else { return }

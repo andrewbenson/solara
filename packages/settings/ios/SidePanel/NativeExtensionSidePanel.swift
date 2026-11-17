@@ -415,8 +415,9 @@ final class SidePanelHost: NSObject, SolaraCoreWebViewDelegate {
   private func open(_ state: SidePanelState) {
     let window = page?.window
     let hadFocus = close()
-    guard !state.url.isEmpty else { return }
     key = state.key
+    defer { if hadFocus, let window { refocus(window) } }
+    guard !state.url.isEmpty else { return }
     view.layoutSubtreeIfNeeded()
     let web = SolaraCoreWebView(frame: view.content.bounds)
     web.standalone = true
@@ -428,7 +429,6 @@ final class SidePanelHost: NSObject, SolaraCoreWebViewDelegate {
     web.delegate = self
     view.content.addSubview(web)
     page = web
-    if hadFocus, let window { refocus(window) }
   }
 
   @discardableResult

@@ -36,4 +36,33 @@ import Testing
     #expect(view.hitTest(CGPoint(x: 2, y: 300)) == nil)
     #expect(view.hitTest(CGPoint(x: 200, y: 300)) === view.content)
   }
+
+  @Test func nativeEmptyAndLoadingFillIsWhiteInBothThemes() throws {
+    let view = ExtensionSidePanelView(frame: CGRect(x: 0, y: 0, width: 366, height: 700))
+    for card in [NSColor.white.withAlphaComponent(0.7), NSColor(calibratedWhite: 18.0 / 255, alpha: 0.5)] {
+      view.set(title: "Extension", icon: nil, width: 360, look: SidePanelLook(card: card, text: .black, icon: .black, hover: .gray, pressed: .darkGray, hairline: .lightGray, radius: 10))
+      view.layoutSubtreeIfNeeded()
+      let fill = try #require(view.content.layer?.backgroundColor)
+      #expect(fill == NSColor.white.cgColor)
+      #expect(view.content.frame == CGRect(x: 0, y: 41, width: 360, height: 659))
+      #expect(view.content.subviews.isEmpty)
+      let panel = try #require(view.subviews.first)
+      #expect(panel.layer?.backgroundColor == card.cgColor)
+      let radius = try #require(panel.layer?.cornerRadius)
+      #expect(radius == CGFloat(10))
+      #expect(panel.layer?.masksToBounds == true)
+    }
+  }
+
+  @Test func iconRemovalRestoresTheNativeTitleInset() {
+    let view = ExtensionSidePanelView(frame: CGRect(x: 0, y: 0, width: 326, height: 30))
+    let look = SidePanelLook(card: .white, text: .black, icon: .black, hover: .gray, pressed: .darkGray, hairline: .lightGray, radius: 10)
+    view.set(title: "Extension", icon: NSImage(size: CGSize(width: 16, height: 16)), width: 320, look: look)
+    #expect(view.frames.title.minX == 36)
+    view.set(title: "Extension", icon: nil, width: 320, look: look)
+    view.layoutSubtreeIfNeeded()
+    #expect(view.frames.title.minX == 12)
+    #expect(view.frames.content.height == 0)
+    #expect(view.frames.close == CGRect(x: 285, y: 5, width: 30, height: 30))
+  }
 }

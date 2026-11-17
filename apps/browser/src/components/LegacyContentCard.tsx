@@ -1,5 +1,5 @@
 import { WebView, type PageEngine } from "@solara/solaracore";
-import { nativeToolbarAvailable, tabPool, windowPaneRootsActive, windowShellActive } from "@solara/settings";
+import { littleSolaraShellActive, nativeToolbarAvailable, tabPool, windowPaneRootsActive, windowShellActive } from "@solara/settings";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Animated, StyleSheet, View } from "react-native";
 import { useShallow } from "zustand/react/shallow";
@@ -441,10 +441,17 @@ const TabPane = memo(function TabPane({
   });
   useEffect(() => () => dropPaneStatusStyle(tabId, feedOwner), [tabId]);
 
+  const [nativeSmall] = useState(() => small && littleSolaraShellActive(windowId));
+
   const cardFill = visible && !fullscreen && !nativePane && !pooled && !(windowToolbar && nativeRailChrome) ? theme.card : undefined;
 
   return (
-    <View
+    <SmallWindowCard
+      nativeSmall={nativeSmall}
+      windowId={windowId}
+      tabId={tabId}
+      fill={visible ? cardFill ?? null : null}
+      radius={fullscreen ? 0 : layout.cardRadius}
       pointerEvents={!visible || covered ? "none" : pooled ? "box-none" : "auto"}
       onTouchStart={() => {
         if (visible && !focused) useBrowser.getState().activate(tabId);
@@ -452,13 +459,12 @@ const TabPane = memo(function TabPane({
       style={{
         position: "absolute",
         ...(fills ? { left: 0, top: 0, right: 0, bottom: 0 } : { left: frame.x, top: frame.y, width: frame.width, height: frame.height }),
-        borderRadius: fullscreen ? 0 : layout.cardRadius,
-        overflow: "hidden",
+        borderRadius: nativeSmall ? undefined : fullscreen ? 0 : layout.cardRadius,
+        overflow: nativeSmall ? undefined : "hidden",
         opacity: covered ? 0 : 1,
-        backgroundColor: small ? undefined : cardFill,
+        backgroundColor: nativeSmall ? undefined : cardFill,
       }}
     >
-      {small && visible && <SmallWindowCard windowId={windowId} tabId={tabId} fill={cardFill ?? null} radius={fullscreen ? 0 : layout.cardRadius} />}
       {!toolbar || fullscreen || autoLayout ? null : nativePane ? (
         <View pointerEvents="none" style={{ height: layout.toolbarHeight }} />
       ) : visible && !windowToolbar ? (
@@ -502,7 +508,7 @@ const TabPane = memo(function TabPane({
         <AutoHideBackdrop tabId={tabId} mode={mode} motion={motion} onFrame={nativeRailChrome} />
       ))}
       {hideBar && !windowToolbar && <AutoHideToolbar tabId={tabId} geometry={geometry} windowId={windowId} inSplit={inSplit} focused={focused || !inSplit} mode={mode} motion={motion} />}
-    </View>
+    </SmallWindowCard>
   );
 });
 

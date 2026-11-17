@@ -137,13 +137,11 @@ try {
         const shell = await run(`return M.describeLittle(${JSON.stringify(little.id)}).then(JSON.parse);`);
         if (!near(card.frame, shell.card) || card.radius !== 10) throw new Error(`native card geometry ${JSON.stringify(card)}, shell ${JSON.stringify(shell.card)}`);
         if (card.interceptsInput || card.focusable || card.accessibilityElement) throw new Error(`the card decoration claims interaction: ${JSON.stringify(card)}`);
+        if (!card.pageHosted || !card.clipsPage || card.pageRadius !== 10 || card.contentCount < 1 || !card.owner.endsWith("SmallWindowPageHost")) throw new Error(`native page host missing: ${JSON.stringify(card)}`);
         const rn = await run(`const card = acPerf.findFibers("SmallWindowCard", 20).find((f) => f.memoizedProps.tabId === ${JSON.stringify(little.tab)});
-          for (let parent = card?.return; parent; parent = parent.return) {
-            const style = parent.memoizedProps?.style;
-            if (style?.position === "absolute" && style.overflow === "hidden") return { found: true, fill: style.backgroundColor ?? null };
-          }
-          return { found: false };`);
-        if (!rn.found || rn.fill !== null) throw new Error(`RN still paints the small-window card: ${JSON.stringify(rn)}`);
+          const style = card?.memoizedProps?.style;
+          return { found: !!card, nativeSmall: card?.memoizedProps.nativeSmall, fill: style?.backgroundColor ?? null, radius: style?.borderRadius ?? null, clip: style?.overflow ?? null };`);
+        if (!rn.found || !rn.nativeSmall || rn.fill !== null || rn.radius !== null || rn.clip !== null) throw new Error(`RN still paints or clips the small-window card: ${JSON.stringify(rn)}`);
         if (await page.eval('globalThis.smallWindowCardReceipt', { timeout: 3000 }) !== "same-page") throw new Error("changing the card fill replaced the page");
         const path = join(scratch, `little-card-${appearance}.png`);
         if (!await run(`return ac.shell.devSnapshotWindow(${JSON.stringify(little.id)}, ${JSON.stringify(path)});`)) throw new Error(`failed to capture ${appearance} card`);

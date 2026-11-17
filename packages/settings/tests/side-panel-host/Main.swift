@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import SolaraModel
 import SolaraStore
+import SolaraCore
 import SolaraUI
 
 @MainActor
@@ -22,17 +23,17 @@ final class SidePanelFixture {
     expect(host.view.onResetWidth != nil, "the host must install the reset callback")
   }
 
-  func apply(_ width: Double, key: String = "K") {
+  func apply(_ width: Double, key: String = "K", url: String = "https://example.invalid/side-panel", card: String = "#ffffff") {
     let state: [String: Any] = [
       "key": key,
       "pageProfile": "fixture-profile",
-      "url": "https://example.invalid/side-panel",
+      "url": url,
       "title": "Side Panel Fixture",
       "icon": NSNull(),
       "width": width,
       "room": width + 6,
       "look": [
-        "card": "#ffffff",
+        "card": card,
         "text": "#111111",
         "icon": "#333333",
         "hover": "#eeeeee",
@@ -59,6 +60,8 @@ final class SidePanelFixture {
         $0.payload["key"] as? String == "K" && $0.payload["ended"] as? Bool == true
     }.compactMap { $0.payload["width"] as? Double }
   }
+
+  var page: SolaraCoreWebView? { host.view.content.subviews.compactMap { $0 as? SolaraCoreWebView }.first }
 
   func settle() {
     RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.35))
@@ -185,6 +188,78 @@ struct SidePanelHostTests {
     }
     return fixture.base.failures
   }
+  @MainActor
+  static func nativePageSurvivesWidthAndThemeChanges() -> [String] {
+    let fixture = SidePanelFixture()
+    defer { fixture.host.stop() }
+    guard let page = fixture.page else { return ["the native host must own its page"] }
+    fixture.expect(page.standalone, "the side panel page must be standalone")
+    fixture.expect(page.extensionHost == "sidePanel", "the page must carry the extension lifetime tag")
+    fixture.expect(page.profile == "fixture-profile", "the page must retain its profile")
+    fixture.expect(page.initialURL == "https://example.invalid/side-panel", "the page must retain its URL")
+    fixture.expect(page.pageBackgroundColor == .white, "loading must keep the existing white page fill")
+    fixture.apply(440, card: "#12121280")
+    fixture.shell.devStepSidePanel(by: 0.3)
+    fixture.host.view.layoutSubtreeIfNeeded()
+    fixture.expect(fixture.page === page, "width and theme changes must not recreate the native page")
+    fixture.expect(page.closeCount == 0, "width and theme changes must not close the page")
+    fixture.expect(page.frame == fixture.host.view.content.bounds, "native layout must size the page to its content host")
+    return fixture.failures
+  }
+
+  @MainActor
+  static func replacementClosesTheOldPageAndRejectsItsEvents() -> [String] {
+    let fixture = SidePanelFixture()
+    defer { fixture.host.stop() }
+    guard let old = fixture.page else { return ["the native host must own its initial page"] }
+    fixture.apply(360, key: "K2", url: "https://example.invalid/replacement")
+    fixture.expect(old.closeCount == 1, "replacement must close the old page exactly once")
+    fixture.expect(old.delegate == nil && old.superview == nil, "replacement must detach the old page and its delegate")
+    guard let page = fixture.page else { return fixture.failures + ["replacement must mount a new native page"] }
+    fixture.expect(page !== old, "replacement must create a distinct page")
+    fixture.expect(page.initialURL == "https://example.invalid/replacement", "replacement must load the new URL")
+    HostedViews.events.removeAll()
+    fixture.host.webView(old, event: "windowClose", payload: [:])
+    fixture.host.webView(old, event: "openWindow", payload: ["url": "https://example.invalid/stale"])
+    fixture.expect(HostedViews.events.isEmpty, "events from a replaced page must be ignored")
+    fixture.host.webView(page, event: "windowClose", payload: [:])
+    fixture.expect(HostedViews.events.count == 1, "the current page must still forward window.close")
+    fixture.expect(HostedViews.events.first?.payload["key"] as? String == "K2", "current page events must use the replacement key")
+    return fixture.failures
+  }
+
+  @MainActor
+  static func closingWaitsForNativeExitAndReleasesThePage() -> [String] {
+    let fixture = SidePanelFixture()
+    fixture.shell.devStepSidePanel(by: 0.3)
+    guard let page = fixture.page else { return ["the native host must own its page before close"] }
+    fixture.host.apply(nil)
+    fixture.expect(page.closeCount == 0, "the page must remain alive during the native exit")
+    fixture.shell.devStepSidePanel(by: 0.3)
+    fixture.expect(page.closeCount == 1, "settled exit must close the page exactly once")
+    fixture.expect(page.delegate == nil && page.superview == nil, "settled exit must detach the page and delegate")
+    fixture.expect(fixture.page == nil && fixture.host.view.superview == nil, "settled exit must remove the page and native panel")
+    fixture.host.stop()
+    fixture.expect(page.closeCount == 1, "stopping an already closed host must not close the page twice")
+    return fixture.failures
+  }
+
+  @MainActor
+  static func emptyPageKeepsNativeControlsAndCurrentIdentity() -> [String] {
+    let fixture = SidePanelFixture()
+    defer { fixture.host.stop() }
+    guard let old = fixture.page else { return ["the native host must own its initial page"] }
+    fixture.apply(360, key: "empty", url: "")
+    fixture.expect(old.closeCount == 1, "empty content must close the previous native page")
+    fixture.expect(fixture.page == nil, "empty content must retain only the native white fill")
+    HostedViews.events.removeAll()
+    fixture.host.view.onMenu?()
+    fixture.host.view.onClose?()
+    fixture.expect(HostedViews.events.map(\.name) == ["menu", "close"], "empty native chrome must retain its actions")
+    fixture.expect(HostedViews.events.allSatisfy { $0.payload["key"] as? String == "empty" }, "empty native chrome must use the current state identity")
+    return fixture.failures
+  }
+
   @MainActor
   static func settleWithoutEchoFinishes() -> [String] {
     let fixture = SidePanelFixture()
@@ -317,6 +392,10 @@ struct SidePanelHostTests {
     case "nativeOpenWindowUsesStore": run = nativeOpenWindowUsesStore
     case "nativeHostStopReleasesOwnership": run = nativeHostStopReleasesOwnership
     case "nativeProfileSwitchReplacesSameExtensionBeforeQueuedTeardown": run = nativeProfileSwitchReplacesSameExtensionBeforeQueuedTeardown
+    case "nativePageSurvivesWidthAndThemeChanges": run = nativePageSurvivesWidthAndThemeChanges
+    case "replacementClosesTheOldPageAndRejectsItsEvents": run = replacementClosesTheOldPageAndRejectsItsEvents
+    case "closingWaitsForNativeExitAndReleasesThePage": run = closingWaitsForNativeExitAndReleasesThePage
+    case "emptyPageKeepsNativeControlsAndCurrentIdentity": run = emptyPageKeepsNativeControlsAndCurrentIdentity
     case "settleWithoutEchoFinishes": run = settleWithoutEchoFinishes
     case "staleEchoDoesNotCancelSettle": run = staleEchoDoesNotCancelSettle
     case "outsideWidthWinsOverDrag": run = outsideWidthWinsOverDrag

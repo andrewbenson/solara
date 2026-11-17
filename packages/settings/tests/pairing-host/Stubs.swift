@@ -72,6 +72,7 @@ typealias ShortcutsAdapter = StubAdapter
 typealias ProfilesAdapter = StubAdapter
 typealias LiveAdapter = StubAdapter
 @MainActor enum NativeOnboarding { static func register() {} }
+@MainActor enum NativeWorkspaceCommands { static func install() {} }
 @MainActor final class StubStartup {
   static let shared = StubStartup()
   func install() {}

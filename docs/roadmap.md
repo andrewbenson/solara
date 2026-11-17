@@ -64,6 +64,11 @@ The second half: done when every user action is handled in Swift and JavaScript 
 | Tab and window drag and drop, folder and group actions in Swift | planned |
 | The sidebar's and the top strip's actions in Swift: selection, close, rename, pin and move | planned |
 | Media, extension, prompt and translation lifecycles in Swift; the TypeScript fallback reducers retire | planned |
+| Closing a tab goes back to the tab you used before it, as in Arc; Back on a tab a link opened closes it and returns to its opener (seen in Ardia, 2026-11) | planned |
+| Shortcuts: ⌃Tab / ⌃⇧Tab step down and up the sidebar list; ⌥⌘← / ⌥⌘→ switch profiles; ⌘1–9 count a collapsed group as one row; ⇧⌘C copies every selected tab's link (seen in Ardia, 2026-11) | planned |
+| Picture in Picture: a click on the video's left or right side skips 10 s back or forward; thrown into a corner, its curve nests inside the window's corner (seen in Ardia, 2026-11) | planned |
+| Auto Picture in Picture for calls: Google Meet pops out when you leave its tab and comes back when you return (seen in Ardia, 2026-11) | planned |
+| Split View: double-click a divider to even the panes; an accent ring marks the focused pane; the resize cursor covers the whole divider (seen in Ardia, 2026-11) | planned |
 
 ## 0.4.5: the data layer is native
 
@@ -74,6 +79,8 @@ Done when JavaScript holds no state of its own.
 | The sync engine in Swift | planned |
 | Legacy migrations in Swift | planned |
 | The JavaScript mirror of the store is gone | planned |
+| Air Traffic Control: links from other apps go to a chosen profile or tab group by URL pattern (Arc's; seen in Ardia, 2026-11) | planned |
+| Interface size: one setting scales Solara's own interface, not web pages (seen in Ardia, 2026-11) | planned |
 
 ## 0.4.6: React Native off by default
 
@@ -82,6 +89,7 @@ The app starts without React Native; it stays bundled as a fallback, switched of
 | Item | Status |
 |---|---|
 | The app starts without React Native; React Native stays bundled as a fallback, switched off | planned |
+| Protected video in the Chromium engine through Apple's FairPlay (Netflix, Disney+, YouTube films, Spotify) with a sandboxed AVFoundation helper, replacing the WebKit fallback; engine work, licence and sandbox review first (seen in Ardia, 2026-11) | planned |
 
 ## 0.5.0: all native, and windows that sync
 

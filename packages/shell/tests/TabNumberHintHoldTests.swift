@@ -88,4 +88,25 @@ final class TabNumberHintHoldTests: XCTestCase {
     hold.modifiers(command: true, alone: true, now: 0)
     XCTAssertEqual(hold.deadline, 0.25)
   }
+
+  func testTabShortcutKeepsVisibleHints() {
+    var hold = TabNumberHintHold()
+    hold.modifiers(command: true, alone: true, now: 0)
+    XCTAssertTrue(hold.expire(generation: hold.generation, now: 1))
+    hold.tabShortcut()
+    XCTAssertTrue(hold.visible)
+    hold.modifiers(command: true, alone: true, now: 2)
+    XCTAssertTrue(hold.visible)
+    hold.modifiers(command: false, alone: false, now: 3)
+    XCTAssertFalse(hold.visible)
+  }
+
+  func testTabShortcutBeforeDelayCancelsPendingHold() {
+    var hold = TabNumberHintHold()
+    hold.modifiers(command: true, alone: true, now: 0)
+    let generation = hold.generation
+    hold.tabShortcut()
+    XCTAssertFalse(hold.expire(generation: generation, now: 1))
+    XCTAssertFalse(hold.visible)
+  }
 }

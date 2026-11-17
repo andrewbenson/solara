@@ -137,7 +137,7 @@ public final class SidebarView: NSView {
     next.send = { [weak self] action in self?.onAction(action) }
     let previous = context
     let moved = previous != nil && previous?.activeId != next.activeId
-    if moved, let window { TabNumberHintFeed.shared.cancel(in: window) }
+    if moved, let window { TabNumberHintFeed.shared.cancelOnSelection(in: window) }
     context = next
     SidebarFolderPanelHost.refreshHints(on: self)
     let resting = motion

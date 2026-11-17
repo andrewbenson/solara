@@ -1051,6 +1051,16 @@ enum MainMenu {
     ShortcutPrecedence.standard(shortcutId: item.shortcutId, command: (item as? CommandItem)?.command)
   }
 
+  static func isTabNumberShortcut(_ event: NSEvent) -> Bool {
+    guard let key = event.charactersIgnoringModifiers?.lowercased(), !key.isEmpty else { return false }
+    let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting(.capsLock)
+    return shortcutGroups().contains { id, group in
+      guard id.hasPrefix("selectTab:") || id == "selectLastTab" else { return false }
+      let current = shortcut(of: group.primary)
+      return current.key == key && current.mods.intersection(.deviceIndependentFlagsMask) == mods
+    }
+  }
+
   static func tabNumberHintBindings() -> [String: String] {
     var bindings: [String: String] = [:]
     for (id, group) in shortcutGroups() where id.hasPrefix("selectTab:") || id == "selectLastTab" {

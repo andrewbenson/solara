@@ -56,6 +56,7 @@ public final class TabNumberHintMonitor: NSObject {
   }
 
   private func receive(_ event: NSEvent) {
+    if event.type == .keyDown, MainMenu.isTabNumberShortcut(event) { return tabShortcutPressed() }
     guard event.type == .flagsChanged else { return cancel() }
     receiveModifiers(event.modifierFlags, keyCode: event.keyCode)
   }
@@ -151,6 +152,7 @@ public final class TabNumberHintMonitor: NSObject {
         inputProbe?.modifiers = NSEvent.ModifierFlags(rawValue: modifiers)
         receiveModifiers(currentModifiers, keyCode: 57)
       case "key", "click": cancel()
+      case "tabKey": tabShortcutPressed()
       case "deactivate":
         inputProbe?.active = false
         deactivated()
@@ -201,6 +203,12 @@ public final class TabNumberHintMonitor: NSObject {
     }
   }
 
+  private func tabShortcutPressed() {
+    hold.tabShortcut()
+    guard hold.visible else { return cancel() }
+    publish(visible: true, holdsThroughSelection: true)
+  }
+
   private func cancel() {
     hold.interrupt()
     finishCancellation()
@@ -214,9 +222,12 @@ public final class TabNumberHintMonitor: NSObject {
     targetId = nil
   }
 
-  private func publish(visible: Bool) {
+  private func publish(visible: Bool, holdsThroughSelection: Bool = false) {
     guard let target else { return }
-    var info: [String: Any] = ["visible": visible, "bindings": visible ? MainMenu.tabNumberHintBindings() : [:]]
+    var info: [String: Any] = [
+      "visible": visible, "bindings": visible ? MainMenu.tabNumberHintBindings() : [:],
+      "holdsThroughSelection": visible && holdsThroughSelection,
+    ]
     #if DEBUG
     info["debugInput"] = inputProbe != nil
     #endif

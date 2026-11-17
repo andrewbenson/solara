@@ -163,6 +163,34 @@ try {
     await hidden();
     await capture("released");
   });
+  await rep.check("Command held through Command-number keeps hints until release", async () => {
+    await show();
+    try {
+    const before = (await shown()).length;
+    await seam("tabKey", 1048576);
+    await ac(`ac.store.getState().activate("row"); return true;`);
+    await sleep(300);
+    const state = await seam("state", 1048576);
+    assert.equal(state.visible, true, "hold stays visible after a tab shortcut");
+    assert.ok((await shown()).length >= Math.min(before, 1), "hints still drawn after switching tabs");
+    await seam("tabKey", 1048576);
+    await ac(`ac.store.getState().activate("tile"); return true;`);
+    await sleep(300);
+    assert.ok((await shown()).length > 0, "hints still drawn after a second switch");
+    await capture("held-through-tab-shortcut");
+    } finally {
+      await seam("flags", 0);
+    }
+    await hidden();
+  });
+  await rep.check("Command-number before the delay still cancels the pending hold", async () => {
+    await begin();
+    await sleep(150);
+    await seam("tabKey", 1048576);
+    await sleep(1150);
+    await hidden();
+    await seam("flags", 0);
+  });
   for (const action of ["key", "click", "deactivate", "resignKey", "capsLock", "queuedCancellation"]) {
     await rep.check(`${action} cancels pending hold and blocks rearm`, async () => {
       await begin();

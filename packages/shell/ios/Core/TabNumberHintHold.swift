@@ -34,6 +34,11 @@ public struct TabNumberHintHold: Sendable {
     if commandDown { blocked = true }
   }
 
+  public mutating func tabShortcut() {
+    guard !visible else { return }
+    interrupt()
+  }
+
   @discardableResult
   public mutating func expire(generation expected: UInt64, now: TimeInterval) -> Bool {
     guard generation == expected, let deadline, now >= deadline, commandDown, !blocked else { return false }

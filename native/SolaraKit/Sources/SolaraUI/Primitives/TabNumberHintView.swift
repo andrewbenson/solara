@@ -20,6 +20,7 @@ final class TabNumberHintFeed: NSObject {
   static let changed = Notification.Name("SolaraTabNumberHintFeedChanged")
   private(set) weak var window: NSWindow?
   private(set) var bindings: [String: String] = [:]
+  private(set) var holdsThroughSelection = false
   #if DEBUG
   private(set) var debugInput = false
   #endif
@@ -35,11 +36,17 @@ final class TabNumberHintFeed: NSObject {
       return
     }
     window = target
+    holdsThroughSelection = notification.userInfo?["holdsThroughSelection"] as? Bool == true
     #if DEBUG
     debugInput = ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] == "1" && notification.userInfo?["debugInput"] as? Bool == true
     #endif
     bindings = notification.userInfo?["bindings"] as? [String: String] ?? [:]
     publish()
+  }
+
+  func cancelOnSelection(in target: NSWindow) {
+    if holdsThroughSelection, target === window { return }
+    cancel(in: target)
   }
 
   func cancel(in target: NSWindow? = nil) {
@@ -50,6 +57,7 @@ final class TabNumberHintFeed: NSObject {
     guard window != nil || !bindings.isEmpty else { return }
     window = nil
     bindings = [:]
+    holdsThroughSelection = false
     #if DEBUG
     debugInput = false
     #endif

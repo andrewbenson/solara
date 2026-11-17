@@ -50,6 +50,7 @@ native (the engine and the native store), so the rest does not wait on the port.
 | Fix: with New tabs opening the Command Bar, ⌘T on a blank New Tab page doesn't open the Command Bar panel (since 4ffd5446; a fix passes omnibox-test but not its own native-tab-commands step) | planned |
 | From 0.4.2's gate: JS startup to first window 355 -> 428 ms (+20.5%) and the after-idle command 112 -> 134 ms; trace the commit and win it back (docs/perf/0.4.1-to-0.4.2.md) | planned |
 | Full-screen island like Rex's: 80 x 33 capsule, slides down and back up, no hover through to the sidebar's profile button, button glyphs on hover, minimize grey | in progress |
+| Profile bar redesign (owner 2026-11-17): every profile its icon in one slot size, unselected dimmed, selected on a lighter fill, star in the same style; hover tooltip above the bar with the name, inside the window | in progress |
 
 ## 0.4.4: the sidebar and tab strip decide in Swift
 

@@ -43,6 +43,8 @@ async function until(label, accept, ms = 12000) {
     if (await accept(last)) return last;
     await sleep(50);
   }
+  evidence.push({ label, failed: true, state: last });
+  writeFileSync(join(output, "evidence.json"), JSON.stringify(evidence, null, 2));
   throw new Error(`${label}: deadline exceeded; native state ${JSON.stringify(last)}`);
 }
 async function capture(label, details = {}) {
@@ -93,7 +95,41 @@ async function focusedHero(tabId, text) {
       && hero.typed === text && hero.fieldValue === text) return last;
     await sleep(50);
   }
+  evidence.push({ label: "New Tab hero focus", failed: true, tabId, expectedText: text, ...last });
+  writeFileSync(join(output, "evidence.json"), JSON.stringify(evidence, null, 2));
   throw new Error(`New Tab hero did not receive native command focus and text ${JSON.stringify(text)}: ${JSON.stringify(last)}`);
+}
+async function focusedPanel(label, text = "") {
+  let native;
+  try {
+    await until(label, async () => {
+      native = await app.snapshot({ windowId: "w1" }, { timeout: 1000 });
+      const bar = native.windows.find((window) => window.id === "w1")?.omnibox;
+      return native.consistent && bar?.source === "panel" && bar.open && bar.focused
+        && bar.typed === text && Array.isArray(bar.rows) && bar.rows.length > 0;
+    });
+  } catch (error) {
+    evidence.push({ label, failed: true, expectedText: text, native, error: String(error) });
+    writeFileSync(join(output, "evidence.json"), JSON.stringify(evidence, null, 2));
+    const diagnostics = await run(`
+      const state = ac.store.getState();
+      const window = state.windows.w1;
+      const tabId = window?.activeTabIds[window.profileId];
+      return {
+        panel: state.windowUi.w1?.panel,
+        keyTrace: await expo.modules.SolaraApp.devKeyEquivalentTrace(),
+        focusTrace: await expo.modules.SolaraApp.devFocusHandoffTrace(),
+        hero: ac.omnibox.get("w1:hero")?.state() ?? null,
+        panelDriver: ac.omnibox.get("w1:panel")?.state() ?? null,
+        cardAnchor: globalThis.acLayout?.cardAnchors.getState().w1 ?? null,
+        tabId,
+      };
+    `).catch((failure) => ({ error: String(failure) }));
+    evidence[evidence.length - 1].diagnostics = diagnostics;
+    writeFileSync(join(output, "evidence.json"), JSON.stringify(evidence, null, 2));
+    throw new Error(`${label}: ${error.message}; last native snapshot ${JSON.stringify(native)}`, { cause: error });
+  }
+  return native;
 }
 async function press(windowId, key, keyCode, modifiers = ["command"], options = {}) {
   const result = await run(`return ac.shell.devKeyEquivalent(${JSON.stringify(windowId)}, ${JSON.stringify({ key, keyCode, modifiers, focus: "window", asKey: true, wait: 30, ...options })});`);
@@ -131,9 +167,12 @@ try {
     env: { SOLARA_NATIVE_WINDOW_LAYOUT: "1" },
     session: session({
       profiles: ["Personal", "Work"],
-      windows: [{ id: "w1", activeTabIds: { default: "a" } }, { id: "w2", activeTabIds: { default: "z" } }],
+      windows: [
+        { id: "w1", frame: [80, 80, 1100, 800], activeTabIds: { default: "a" } },
+        { id: "w2", frame: [140, 100, 900, 700], activeTabIds: { default: "z" } },
+      ],
       tabs: ["a", "b", "c", "d"].map((id) => ({ id, url: `about:blank#${id}`, title: id.toUpperCase() })).concat([{ id: "z", windowId: "w2", url: "about:blank#z", title: "Z" }]),
-      settings: { warnBeforeClosingWindow: false, warnBeforeClosingLastTab: false, warnBeforeMovingTabsToProfile: false, sleepInactiveTabs: false, newTabPosition: "bottom", shareTabsAcrossWindows: false },
+      settings: { warnBeforeClosingWindow: false, warnBeforeClosingLastTab: false, warnBeforeMovingTabsToProfile: false, sleepInactiveTabs: false, newTabOpens: "page", newTabPosition: "bottom", shareTabsAcrossWindows: false },
     }),
     ready: "return !!ac.commandHandlers && !!ac.shell.devKeyEquivalent && !!ac.shell.devTypeKeys && !!globalThis.acPerf && !!expo.modules.SolaraApp.devWorkspaceMenuCommand && !!ac.store.getState().windows.w2;",
   });
@@ -195,6 +234,53 @@ try {
   await checkPastes("Rapid native Command T Command W preserves the first paste", 1);
   await postKeys([keyPress("v", 9)]);
   await checkPastes("Rapid native Command T Command W preserves the next paste", 2);
+
+  await setup('ac.store.getState().updateSettings({ newTabOpens: "commandBar", searchSuggestions: false })');
+  await postKeys([keyPress("t", 17)]);
+  state = await until("Command T opens the New Tab panel", (state) => state.windowUi.w1?.panel.newTab?.kind === "list");
+  assert.deepEqual(state.windows.w1.tabIds, initial);
+  assert.equal(active(state), "a");
+  const pagePanel = await focusedPanel("Command T panel owns focus and initial rows");
+  await run('return ac.shell.devTypeKeys("w1", "native panel focus", 5);');
+  const typedPanel = await focusedPanel("Command T panel accepts typing", "native panel focus");
+  await capture("Command T opens a focused native panel over a page without creating a tab", { pagePanel, typedPanel });
+  await postKeys([keyPress("t", 17), keyPress("v", 9, 30)]);
+  state = await until("Command T toggles the New Tab panel closed", (state) => !state.windowUi.w1?.panel.open);
+  assert.deepEqual(state.windows.w1.tabIds, initial);
+  await checkPastes("Command T panel dismissal restores the page before the first paste", 3);
+  await postKeys([keyPress("t", 17), { key: "x", keyCode: 7, modifiers: [], after: 0 }]);
+  const immediatePanel = await focusedPanel("Command T panel receives the first immediate keystroke", "x");
+  await capture("Native Command T panel preserves immediate typing", { immediatePanel });
+  await press("w1", "t", 17);
+  await until("Immediate typing panel closed", (state) => !state.windowUi.w1?.panel.open);
+
+  await setup('ac.store.getState().updateSettings({ newTabOpens: "page" })');
+  await press("w1", "t", 17);
+  state = await until("Blank New Tab fixture", (state) => state.windows.w1.tabIds.some((id) => !initial.includes(id)));
+  const emptyTab = active(state);
+  await focusedHero(emptyTab, "");
+  await setup('ac.store.getState().updateSettings({ newTabOpens: "commandBar" })');
+  const emptyTabs = state.windows.w1.tabIds;
+  state = await until("Command Bar setting presents the blank New Tab panel", (state) => state.windowUi.w1?.panel.open
+    && state.windowUi.w1.panel.newTab?.kind === "into" && state.windowUi.w1.panel.newTab.tabId === emptyTab);
+  assert.deepEqual(state.windows.w1.tabIds, emptyTabs);
+  await focusedPanel("Command Bar setting panel owns focus and initial rows");
+  await postKeys([keyPress("t", 17)]);
+  state = await until("Automatic blank New Tab panel toggles closed", (state) => !state.windowUi.w1?.panel.open);
+  assert.deepEqual(state.windows.w1.tabIds, emptyTabs);
+  await capture("Command Bar setting opens once and Cmd-T dismisses the blank New Tab panel");
+  await postKeys([keyPress("t", 17)]);
+  state = await until("Command T targets the existing blank New Tab", (state) => state.windowUi.w1?.panel.newTab?.tabId === emptyTab);
+  assert.equal(state.windowUi.w1.panel.newTab.kind, "into");
+  assert.deepEqual(state.windows.w1.tabIds, emptyTabs);
+  const emptyPanel = await focusedPanel("Blank New Tab Cmd-T panel owns focus and initial rows");
+  await capture("Command T opens native panel rows over the existing blank New Tab", { emptyPanel });
+  await press("w1", "t", 17);
+  state = await until("Blank New Tab Cmd-T panel toggles closed", (state) => !state.windowUi.w1?.panel.open);
+  assert.deepEqual(state.windows.w1.tabIds, emptyTabs);
+  await setup('ac.store.getState().updateSettings({ newTabOpens: "page" })');
+  await press("w1", "w", 13);
+  await until("Blank New Tab fixture closed", (state) => !state.tabs[emptyTab] && active(state) === "a");
 
   await setup('ac.store.getState().activate("a")');
   const beforeDuplicate = Object.keys((await nativeState()).data.tabs);

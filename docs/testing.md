@@ -542,6 +542,14 @@ including panel/Peek dismissal and close-together restoration. Run the SolaraKit
 `node apps/browser/scripts/native-tab-commands-test.mjs <Debug app> <fresh scratch directory>` disables JavaScript
 command handlers and exercises actual menu/shortcut routing, tab state and native windows. The command port is
 pending VM build, Swift tests and driver acceptance; no Solara build, install or instance ran on the owner's Mac.
+The native command driver also checks Command Bar mode over a page and an existing blank New Tab: focused initial
+rows, no tab creation, into/list targets, repeated Cmd-T dismissal, immediate typing and page paste after dismissal.
+Keep the existing `omnibox-test.mjs` Cmd-T expectations; the native command must preserve that panel behavior.
+A panel deadline retains its last native snapshot, field models, card anchor and key/focus traces in `evidence.json`.
+The blank-tab fixture waits for the setting change's automatic panel, verifies Cmd-T closes it, then checks
+Cmd-T reopens it. The fixture windows use distinct positions and widths so the native snapshot cannot match
+one window to the other by frame. Hero focus deadlines retain the complete hero and native snapshot in
+`evidence.json`. The New Tab driver keeps main's unmodified input path and assertions.
 
 ## Native omnibox actions
 

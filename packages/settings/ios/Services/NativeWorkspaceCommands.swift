@@ -17,6 +17,13 @@ enum NativeWorkspaceCommands {
     let editorDelegate: ObjectIdentifier?
   }
   private static var newTabFocus: [String: NewTabFocus] = [:]
+  private struct PanelFocus {
+    let tabId: String?
+    let generation: Int
+    let ownership: Int
+    let request: UUID
+  }
+  private static var panelFocus: [String: PanelFocus] = [:]
 
   static func install() {
     for command in WorkspaceMenuCommand.commands {
@@ -70,7 +77,20 @@ enum NativeWorkspaceCommands {
     }
     let before = store.state
     let focusWindow = before.resolveWindowId(windowId)
-    let focusGeneration = focusWindow.flatMap { WindowHost.beginCommandFocus(command, windowId: $0) }
+    let opensPanel = command == "newTab" && plan.commands.first?.name == "openPanel"
+    let closesPanel = command == "newTab" && plan.commands.first?.name == "closePanel"
+    if command == "newTab", let focusWindow {
+      if let previous = newTabFocus.removeValue(forKey: focusWindow), let generation = previous.generation {
+        WindowHost.cancelCommandFocus(generation, restoring: false)
+      }
+      if let previous = panelFocus.removeValue(forKey: focusWindow) {
+        WindowHost.cancelCommandFocus(previous.generation, restoring: false)
+      }
+    }
+    let focusGeneration = closesPanel ? nil : focusWindow.flatMap { WindowHost.beginCommandFocus(command, windowId: $0) }
+    if opensPanel, let focusWindow, let focusGeneration {
+      requestPanelFocus(windowId: focusWindow, tabId: before.activeTabId(focusWindow), generation: focusGeneration)
+    }
     do {
       var commands = plan.commands
       if command == "moveTabToProfile", let move = commands.first {
@@ -103,6 +123,10 @@ enum NativeWorkspaceCommands {
         ShellScripting.showWindow(target)
       }
       FrameUpdates.flush()
+      if closesPanel, let focusWindow, let active = store.state.activeTabId(focusWindow),
+        store.state.tabs[active]?.url.isEmpty == false {
+        restoreContentFocus(windowId: focusWindow, store: store, tabId: active)
+      }
       if command == "closeTab", let targetWindow = before.resolveWindowId(windowId) {
         if commands.first?.name == "closePeek" {
           restoreContentFocus(windowId: targetWindow, store: store)
@@ -115,6 +139,31 @@ enum NativeWorkspaceCommands {
       NSLog("[commands] %@ failed: %@", command, String(describing: error))
     }
     return true
+  }
+
+  private static func requestPanelFocus(windowId: String, tabId: String?, generation: Int) {
+    let request = UUID()
+    panelFocus[windowId] = PanelFocus(tabId: tabId, generation: generation,
+      ownership: NativeStoreHandle.ownershipGeneration, request: request)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+      guard let wanted = panelFocus[windowId], wanted.request == request else { return }
+      panelFocus[windowId] = nil
+      WindowHost.cancelCommandFocus(wanted.generation, restoring: false)
+    }
+  }
+
+  static func panelDidFocus(_ view: NativeOmniboxView) {
+    guard let wanted = panelFocus[view.windowId], let state = NativeStoreHandle.store?.state,
+      NativeStoreHandle.ownsWorkspace, NativeStoreHandle.ownershipGeneration == wanted.ownership,
+      state.activeTabId(view.windowId) == wanted.tabId,
+      state.windowUi[view.windowId]?.json["panel"]?["open"]?.truthy == true,
+      state.windowUi[view.windowId]?.json["panel"]?["newTab"]?.truthy == true,
+      view.tabId == wanted.tabId, view.bar.model?.tabId == wanted.tabId,
+      view.bar.model?.windowId == view.windowId,
+      view.bar.model?.opensTab == true, view.bar.model?.field?.hasFocus == true,
+      view.window?.isKeyWindow == true else { return }
+    panelFocus[view.windowId] = nil
+    FocusMoves.claim(wanted.generation, destination: view.bar)
   }
 
   private static func requestHeroFocus(_ tabId: String, windowId: String, generation: Int?) {

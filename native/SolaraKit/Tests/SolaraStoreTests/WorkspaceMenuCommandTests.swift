@@ -33,6 +33,98 @@ import Testing
     #expect(store.state.tabs[active]?.url == "")
   }
 
+  @Test(arguments: ["page", "empty", "panel"])
+  func commandBarNewTabRowCreatesImmediately(surface: String) throws {
+    var state = fixture()
+    state.settings["newTabOpens"] = "commandBar"
+    if surface == "empty" { state.tabs["b"]?.url = "" }
+    let store = makeStore(state)
+    if surface == "panel" {
+      try store.dispatch(Command("openPanel", ["w", "", ["kind": "list"]]))
+    }
+    let plan = try run("newTab", arg: "create", store: store)
+    #expect(plan.commands == [Command("newTab", ["w", ["newTabCommand": true]])])
+    #expect(store.state.windows["w"]?.tabIds.count == 4)
+    let active = try #require(store.state.activeTabId("w"))
+    #expect(!["a", "b", "c"].contains(active))
+    #expect(store.state.tabs[active]?.url == "")
+    #expect(store.state.windowUi["w"]?.panelOpen != true)
+  }
+
+  @Test func commandBarNewTabReusesTheActiveEmptyCard() throws {
+    var state = fixture()
+    state.settings["newTabOpens"] = "commandBar"
+    state.tabs["b"]?.url = ""
+    let store = makeStore(state)
+    let plan = try run("newTab", store: store)
+    #expect(plan.commands == [Command("openPanel", ["w", "", ["kind": "into", "tabId": "b"]])])
+    #expect(store.state.windowUi["w"]?.panelOpen == true)
+    #expect(store.state.windowUi["w"]?.json["panel"]?["newTab"] == ["kind": "into", "tabId": "b"])
+    #expect(store.state.activeTabId("w") == "b")
+    #expect(store.state.windows["w"]?.tabIds == ["a", "b", "c"])
+    #expect(store.state.tabs["b"]?.url == "")
+  }
+
+  @Test func commandBarNewTabOverAPageCreatesNoTabUntilSubmission() throws {
+    var state = fixture()
+    state.settings["newTabOpens"] = "commandBar"
+    let store = makeStore(state)
+    let plan = try run("newTab", store: store)
+    #expect(plan.commands == [Command("openPanel", ["w", "", ["kind": "list"]])])
+    #expect(store.state.windowUi["w"]?.json["panel"]?["initialText"] == "")
+    #expect(store.state.windows["w"]?.tabIds == ["a", "b", "c"])
+    #expect(store.state.activeTabId("w") == "b")
+    #expect(store.state.tabs["b"]?.url == "https://b.example/")
+  }
+
+  @Test func commandBarNewTabTogglesAnExistingNewTabPanelClosed() throws {
+    var state = fixture()
+    state.settings["newTabOpens"] = "commandBar"
+    let store = makeStore(state)
+    try run("newTab", store: store)
+    let plan = try run("newTab", store: store)
+    #expect(plan.commands == [Command("closePanel", ["w"])])
+    #expect(store.state.windowUi["w"]?.panelOpen == false)
+    #expect(store.state.windows["w"]?.tabIds == ["a", "b", "c"])
+  }
+
+  @Test func commandBarNewTabReplacesAnAddressPanel() throws {
+    var state = fixture()
+    state.settings["newTabOpens"] = "commandBar"
+    let store = makeStore(state)
+    try store.dispatch(Command("openPanel", ["w", "https://b.example/"]))
+    try run("newTab", store: store)
+    #expect(store.state.windowUi["w"]?.panelOpen == true)
+    #expect(store.state.windowUi["w"]?.json["panel"]?["newTab"] == ["kind": "list"])
+    #expect(store.state.windowUi["w"]?.json["panel"]?["initialText"] == "")
+    #expect(store.state.windows["w"]?.tabIds == ["a", "b", "c"])
+  }
+
+  @Test(arguments: ["pinned", "navigation", "adopted", "split"])
+  func commandBarNewTabDoesNotReuseAnOccupiedEmptyCard(reason: String) throws {
+    var state = fixture()
+    state.settings["newTabOpens"] = "commandBar"
+    state.tabs["b"]?.url = ""
+    switch reason {
+    case "pinned": state.tabs["b"]?.pinned = true
+    case "navigation": state.tabs["b"]?.navigation = Navigation(url: "https://pending.example/", seq: 1)
+    case "adopted": state.tabs["b"]?.adoptId = "adoption"
+    default: state.splits["split"] = SplitView(id: "split", windowId: "w", tabIds: ["a", "b"], orientation: "horizontal", sizes: [0.5, 0.5])
+    }
+    let store = makeStore(state)
+    let plan = try run("newTab", store: store)
+    #expect(plan.commands == [Command("openPanel", ["w", "", ["kind": "list"]])])
+    #expect(store.state.windows["w"]?.tabIds == ["a", "b", "c"])
+  }
+
+  @Test func commandBarNewTabInLittleSolaraKeepsTheCanonicalRedirect() throws {
+    var state = fixture()
+    state.settings["newTabOpens"] = "commandBar"
+    state.windows["w"]?.kind = "small"
+    let plan = try #require(WorkspaceMenuCommand.plan("newTab", windowId: "w", state: state))
+    #expect(plan.commands == [Command("newTab", ["w", ["newTabCommand": true]])])
+  }
+
   @Test func newTabWithoutAWindowCreatesAWindow() throws {
     let store = makeStore()
     try run("newTab", windowId: nil, store: store)

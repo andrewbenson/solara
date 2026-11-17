@@ -213,7 +213,11 @@ final class NativeOmniboxView: ExpoView, FocusHandoffDestination {
     }
     e.dictate = { [weak self] in self?.onDictate([:]) }
     e.contextMenu = { [weak self] hasSelection, hasValue in self?.onContextMenu(["hasSelection": hasSelection, "hasValue": hasValue]) }
-    e.journey = { [weak self] mark in self?.onJourney(["mark": mark.rawValue]) }
+    e.journey = { [weak self] mark in
+      guard let self else { return }
+      if mark == .focused { NativeWorkspaceCommands.panelDidFocus(self) }
+      self.onJourney(["mark": mark.rawValue])
+    }
     e.latency = { [weak self] ms in self?.onLatency(["ms": ms]) }
     if FieldTimingMarks.queryProbeEnabled {
       let journey = e.journey

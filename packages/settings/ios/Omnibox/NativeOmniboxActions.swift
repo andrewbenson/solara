@@ -193,7 +193,7 @@ enum NativeOmniboxActions {
     guard ownsActions, !id.isEmpty, let store = NativeStoreHandle.store else { return false }
     let parts = id.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
     let command = parts[0]
-    let argument = parts.count > 1 ? parts[1] : nil
+    let argument = id == "newTab" ? "create" : parts.count > 1 ? parts[1] : nil
     if let run = NativeMenuCommands.argumentHandlers[command], run(argument, windowId) { return true }
     if let run = NativeMenuCommands.handlers[command] { run(windowId); return true }
     if let result = try? store.dispatch(Command("omniboxCommand", [.string(windowId), .string(id)]), origin: .native), result.result != .bool(false) {

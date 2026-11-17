@@ -67,7 +67,16 @@ public enum WorkspaceMenuCommand {
     let panel = state.windowUi[windowId]?.json["panel"]
     let targetWindow = JSONValue.string(windowId)
     switch command {
-    case "newTab": return run("newTab", [targetWindow, ["newTabCommand": true]])
+    case "newTab":
+      if arg != "create", state.settings.string("newTabOpens") == "commandBar", !window.isSmall {
+        if panel?["newTab"]?.truthy == true { return run("closePanel", [targetWindow]) }
+        let target: JSONValue
+        if let tab, !tab.pinned, tab.url.isEmpty, tab.navigation == nil, !truthy(tab.adoptId), Splits.splitOf(state, tab.id) == nil {
+          target = ["kind": "into", "tabId": .string(tab.id)]
+        } else { target = ["kind": "list"] }
+        return run("openPanel", [targetWindow, "", target])
+      }
+      return run("newTab", [targetWindow, ["newTabCommand": true]])
     case "closeWindow": return WorkspaceMenuPlan(close: .window(windowId))
     case "closeTab":
       if panel?["open"]?.truthy == true, !window.isSmall || tab?.url.isEmpty == false { return run("closePanel", [targetWindow]) }

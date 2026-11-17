@@ -74,11 +74,15 @@ def build_parser():
 
     tabs = commands.add_parser(
         "tabs",
-        help=f"list {identity.PRODUCT} tabs by memory use",
-        description=f"List {identity.PRODUCT} tabs by memory use, largest first. — means asleep; ? means unavailable. Requires control on and SolaraControl.json; plain DevTools endpoints are not supported.",
+        help=f"list {identity.PRODUCT} tabs and sidebar IDs",
+        description=f"List {identity.PRODUCT} tabs using sidebar IDs. Use --memory for the DevTools memory inventory. Requires control on and SolaraControl.json.",
     )
     tabs.add_argument("--data-dir", metavar="DIR", help=f"the {identity.PRODUCT} data dir (default: $SOLARA_DATA_DIR, else the installed app's)")
-    tabs.add_argument("--json", action="store_true", help="print the endpoint list in its original order with exact bytes")
+    tabs.add_argument("--json", action="store_true", help="print the listing as JSON")
+    tabs.add_argument("--memory", action="store_true", help="show the legacy memory inventory with DevTools target IDs")
+    from solara_cli import inventory, tab_actions
+
+    inventory.add_tab_options(tabs)
     tabs.add_argument("--full", action="store_true", help="show whole URLs without shortening")
     tabs.add_argument("--port", type=int, metavar="N", help="unsupported: tab memory requires SolaraControl.json")
     tabs.add_argument("--ws", metavar="URL", help="unsupported: tab memory requires SolaraControl.json")
@@ -111,6 +115,8 @@ def build_parser():
     from solara_cli import scripts_cli, sidebar
 
     sidebar.add_parser(commands)
+    inventory.add_parser(commands)
+    tab_actions.add_parser(commands)
     scripts_cli.add_parser(commands, argparse.RawDescriptionHelpFormatter)
     return parser
 
@@ -124,10 +130,20 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "exec":
         return run_exec(args, parser)
-    if args.command == "tabs":
+    if args.command == "tabs" and args.memory:
         from solara_cli import tab_memory
 
+        if any((args.window, args.profile, args.group, args.asleep, args.awake)):
+            parser.error("--memory cannot be combined with sidebar filters")
         return tab_memory.run(args)
+    if args.command in ("tabs", "profiles", "windows", "find", "history"):
+        from solara_cli import inventory
+
+        return inventory.run(args)
+    if args.command == "open" or getattr(args, "tab_action", None):
+        from solara_cli import tab_actions
+
+        return tab_actions.run(args)
     if args.command == "mcp":
         if args.mcp_command == "install":
             from solara_cli.mcp_install import install

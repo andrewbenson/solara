@@ -43,8 +43,11 @@ def add_parser(commands):
         for action, child in (("create", create), ("rename", rename), ("delete", delete)):
             child.set_defaults(sidebar_operation=f"{kind}.{action}")
             add_options(child)
-    tab = commands.add_parser("tab", help="move, pin, unpin, rename and reorder sidebar tabs")
+    tab = commands.add_parser("tab", help="act on and organize sidebar tabs")
     actions = tab.add_subparsers(dest="sidebar_action", metavar="<command>", required=True)
+    from solara_cli.tab_actions import add_tab_parsers
+
+    add_tab_parsers(actions)
     move = actions.add_parser("move", help="move a tab to a group, folder, window or profile")
     move.add_argument("id", metavar="ID")
     target = move.add_mutually_exclusive_group(required=True)

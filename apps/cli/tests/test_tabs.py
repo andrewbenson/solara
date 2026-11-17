@@ -90,7 +90,7 @@ class Tabs(unittest.TestCase):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err), mock.patch("shutil.get_terminal_size", return_value=os.terminal_size((width, 24))):
             try:
-                code = cli.main(["tabs", *args])
+                code = cli.main(["tabs", "--memory", *args])
             except SystemExit as error:
                 code = error.code
         return code, out.getvalue(), err.getvalue()

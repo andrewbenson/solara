@@ -30,16 +30,41 @@ the pins into `pyproject.toml`).
   `asyncio`, pydoll's exports and its common exceptions. It prints the last expression's value. Exit 0 done, 1 the
   code raised or timed out (default 300 s), 2 Solara can't be reached or closed the browser socket (it watches the
   socket, so turning the setting off ends an idle run at once), 130 interrupted.
-- `solara tabs [--data-dir DIR] [--full] [--json]` lists every open tab in every normal profile and
-  window, including sleeping tabs. The table sorts by memory, largest first, and shows memory in decimal MB/GB,
-  title, a host-first address, and profile name. Columns shorten to the terminal width; `--full` keeps whole URLs.
-  A sleeping tab shows `—`; an awake tab whose attribution is not available shows `?`. The footer gives the sum
-  of measured memory, the tab count and how many are asleep; it labels the sum "Known total" when any awake tab
-  has no reading. Querying does not wake sleeping tabs. Private, guest and system profiles are excluded.
-  `--json` returns the endpoint's list in its original order with unrounded bytes. `await tab_memory()` in `exec`
-  returns the same list. Both require the token control path; `--port`, `--ws` and `$SOLARA_CDP_URL` are refused
-  for this operation. Exit codes follow `exec`: 0 success, 1 processing error, 2 connection/control-file
-  or endpoint error (including its 10 s request deadline), 130 interrupted. The endpoint requires the Chromium 157 engine with `/solara/tabs` support.
+- `solara profiles [--json]` lists normal profile IDs and names; `solara windows [--profile ID|NAME] [--json]`
+  lists their windows. Both accept `--data-dir DIR` and exclude private profiles and windows.
+- `solara tabs [--profile ID|NAME] [--window ID] [--group ID] [--asleep|--awake] [--full] [--json]`
+  lists canonical sidebar tab IDs, including sleeping tabs, without waking them. Filters combine. Memory and
+  DevTools targets are included only when the app supplies a reliable join to that exact sidebar ID; matching a
+  URL or title is insufficient because several tabs may share both. Missing attribution stays unknown;
+  `--asleep` and `--awake` refuse when the app cannot supply verified sleep state for the selected tabs.
+- `solara tabs --memory [--full] [--json]` preserves the original engine memory inventory and its DevTools
+  `targetId` values. It does not accept sidebar filters. The text table sorts measured memory largest first,
+  uses decimal MB/GB, shows sleeping tabs as `—` and unknown awake readings as `?`, and labels its sum
+  “Known total” when an awake reading is unavailable. `--full` preserves complete URLs in the table;
+  JSON preserves exact bytes in endpoint order. The sum is tab attribution, not total browser memory.
+- `solara find QUERY [--tabs] [--pins] [--history] [--profile ID|NAME] [--days N] [--limit N] [--json]`
+  searches tab titles/URLs, pinned tabs and browsing history. No source flags selects all three; explicit flags
+  select their union. Matching is literal and case-insensitive. JSON rows carry `source` (`tab`, `pin` or
+  `history`). History defaults to seven days in `find` and one day in `history`; both default to 200 rows.
+  `--days` must be finite, greater than zero and at most 365; `--limit` accepts integers from 1 through 500.
+- `solara history [QUERY] [--days N] [--limit N] [--profile ID|NAME] [--domains] [--json]`
+  reads recent history through the existing control-gated history helper. `--domains` rolls it up by domain.
+  All convenience reads require the token control path and accept `--data-dir DIR`.
+- `solara open URL [--background | --focus | --activate] [--profile ID|NAME] [--window ID] [--json]`
+  opens a background tab by default; `--focus` (alias `--activate`) explicitly permits bringing Solara forward. The current app endpoint
+  cannot select its destination atomically, so explicit destinations fail clearly. The result reports its DevTools
+  `targetId`; its canonical `id` stays null when the app cannot supply a reliable join.
+- `solara tab activate|close|reload|duplicate|mute|sleep ID` takes a canonical sidebar ID. The current app does
+  not expose a reliable sidebar-to-DevTools target join, so target-based actions refuse before changing anything.
+  Activation also requires `--focus` (or `--activate`) as explicit permission to bring Solara forward.
+  Mute and sleep additionally need app operations that are not currently exposed. These commands do not guess
+  from a URL, title, tab order or the active page.
+- `solara tab close-duplicates [--dry-run]` validates duplicate candidates without mutation. Preview and
+  apply both require the same reliable target join whenever a duplicate exists. It compares exact URLs
+  within each window and profile and preserves pinned tabs.
+  `solara tab sleep-idle --minutes N` needs authoritative idle timestamps and a
+  supported sleep operation; the current app refuses it. Unsupported commands report their missing capability
+  instead of simulating success. Action commands accept `--data-dir DIR` and `--json`.
 - `solara sidebar`, `solara group create|rename|delete`, `solara folder create|rename|delete`, and
   `solara tab move|pin|unpin|rename|reorder` arrange the sidebar (see below).
 - `solara skills install --target general|codex|claude-code|cursor|opencode [--target …] [--project]` installs the
@@ -79,8 +104,8 @@ available for terminal automation the user authorizes.
 ## Arranging the sidebar
 
 These commands follow the existing noun/verb style used by `scripts`. Use `solara sidebar [--json] [--data-dir DIR]`
-to list the native IDs of normal profiles, windows, tabs, groups and folders. These are sidebar IDs, distinct from
-`tabs --json`'s DevTools `targetId`. Sleeping tabs are included without waking them. Private profiles and windows
+to list the native IDs of normal profiles, windows, tabs, groups and folders. These are the same canonical sidebar IDs used by
+`tabs --json` and `tab` actions; a DevTools `targetId` is a separate identifier. Sleeping tabs are included without waking them. Private profiles and windows
 are excluded from the inventory and refused as sources or destinations of every edit.
 
 Every edit below accepts `--dry-run`, `--json` and `--data-dir DIR`. Dry-run validates the same IDs and boundaries
@@ -304,7 +329,7 @@ This route has the same token, GET-only, no-Origin and loopback restrictions as 
 on a plain DevTools server. It exposes metadata for every actual normal-profile tab, including file and Chrome
 pages, without granting script access to those pages. It does not enumerate extension workers, subframes or
 internal helper windows. The CLI sends no Origin, bypasses proxies, refuses redirects, validates responses, and
-redacts the token; an error never falls back to another inventory. `--json` and `tab_memory()` preserve complete
+redacts the token; an error never falls back to another inventory. `tabs --memory --json` and `tab_memory()` preserve complete
 titles and URLs, which can contain sensitive page information, while the text table removes terminal control
 characters and shortens fields for display.
 
@@ -387,19 +412,20 @@ tarball and its `.sha256`.
 Never against the real home. A hidden instance's plain DevTools port works with `--port`:
 
 ```sh
-scripts/agent/ac launch <Solara.app> --data /tmp/solara-cli-test --onboarded
+scripts/agent/ac launch <Solara.dev.app> --data <absolute-workbench-dir>/data --onboarded
 solara exec --port <port> 't = await new_tab("https://example.com"); await t.title()'
-scripts/agent/ac quit /tmp/solara-cli-test
+scripts/agent/ac quit <absolute-workbench-dir>/data
 ```
 
 The `SolaraControl.json` path needs the app's token server: Chrome's plain server accepts `?token=` on the browser
-socket but answers 500 on page sockets with a query. For the installer:
+socket but answers 500 on page sockets with a query. For the installer, set `$SCRATCH` to an absolute
+workbench task directory first:
 
 ```sh
-apps/cli/scripts/build.sh 0.0.1 /tmp/solara-cli-out
-HOME=/tmp/solara-cli-home SOLARA_CLI_URL=file:///tmp/solara-cli-out/solara-cli-0.0.1-macos-arm64.tar.gz \
+apps/cli/scripts/build.sh 0.0.1 "$SCRATCH/cli-out"
+HOME="$SCRATCH/cli-home" SOLARA_CLI_URL="file://$SCRATCH/cli-out/solara-cli-0.0.1-macos-arm64.tar.gz" \
   /bin/sh apps/cli/install.sh
-HOME=/tmp/solara-cli-home solara skills install --target claude-code
+HOME="$SCRATCH/cli-home" solara skills install --target claude-code
 ```
 
 Solara's tarball installs with `--product Solara --repo andrewbenson/solara`, which makes `~/.local/bin/solara`
@@ -417,3 +443,17 @@ The sidebar driver is `node apps/browser/scripts/cli-sidebar-test.mjs <Debug Sol
 (with the CLI's locked Python dependencies installed). It launches a hidden scratch instance on the token-control
 path, exercises each edit with dry-run first, compares native workspace snapshots, checks unknown/private refusals
 and bulk atomicity, and checks that turning control off prevents edits. `--keep-data` retains its fixture.
+
+The convenience-command driver requires an absolute scratch directory and verifies that the supplied app has
+bundle ID `network.benson.solara.dev` before launching it hidden:
+
+```sh
+node apps/browser/scripts/cli-commands-test.mjs <Release-Solara.dev.app> \
+  --scratch=<absolute-workbench-dir> --python=<python-with-locked-CLI-dependencies>
+```
+
+It covers canonical inventory IDs, filters, selected find sources, per-profile history, background open,
+unsupported-action refusals with state invariance, duplicate preview and Settings revocation. It accepts
+`--bundle=/absolute/main.jsbundle` to serve a frozen JS bundle without starting Metro; a bundled Release app
+needs neither Metro nor that flag. `--keep-data` retains the fixture. Successful activate, close, reload,
+duplicate, mute, sleep and idle cleanup still need app capabilities described above and are not claimed by this test.

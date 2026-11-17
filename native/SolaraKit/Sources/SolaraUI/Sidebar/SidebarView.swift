@@ -219,7 +219,7 @@ public final class SidebarView: NSView {
       switch item.kind {
       case .divider:
         return (context?.host.tidy == true ? ["divider|tidy"] : []) + (context?.host.clear == true ? ["divider|clear"] : [])
-      case .upsell: return ["upsell|once", "upsell|daily", "upsell|dismiss"]
+      case .upsell: return ["upsell|once", "upsell|daily", "upsell|dismiss", "upsell|dontAskAgain"]
       default: return logicalLabel(item.key) != nil ? [item.key] : []
       }
     }
@@ -249,6 +249,7 @@ public final class SidebarView: NSView {
     case "upsell|once": return "Clean Up Once"
     case "upsell|daily": return "Clean Up Daily"
     case "upsell|dismiss": return "Not Now"
+    case "upsell|dontAskAgain": return "Don't Ask Again"
     default: break
     }
     switch item.kind {
@@ -307,6 +308,7 @@ public final class SidebarView: NSView {
       case "upsell|once": context?.send(.cleanUp(.once)); return true
       case "upsell|daily": context?.send(.cleanUp(.daily)); return true
       case "upsell|dismiss": context?.send(.cleanUp(.dismiss)); return true
+      case "upsell|dontAskAgain": context?.send(.cleanUp(.dontAskAgain)); return true
       default: break
       }
     }
@@ -507,7 +509,7 @@ public final class SidebarView: NSView {
     input.divided = context.host.tidy || context.host.clear
     input.incognitoBadge = context.host.addressBar && context.host.incognito
     input.playerHeight = context.host.player == nil ? 0 : SidebarPlayerView.height + SidebarPlayerView.gap
-    if context.host.upsell != nil {
+    if context.host.upsell != nil && context.state.settings.bool("suggestTabCleanUp") {
       input.upsellHeight = CleanUpUpsellView.height(width: bounds.width - SidebarMetrics.inset * 2, product: context.host.product ?? "Solara")
     }
     #if SOLARA_PROBES

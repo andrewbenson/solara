@@ -2,6 +2,15 @@ import SolaraModel
 import Testing
 
 @Suite struct SettingsTests {
+  @Test func cleanUpSuggestionsDefaultOnAndRememberAnExplicitOff() {
+    #expect(Settings.defaults["suggestTabCleanUp"] == true)
+    #expect(Settings.hydrated(from: [:])["suggestTabCleanUp"] == true)
+    let chosen = Settings.hydrated(from: nil).choosing(["suggestTabCleanUp": false])
+    let restored = Settings.hydrated(from: chosen.json)
+    #expect(restored["suggestTabCleanUp"] == false)
+    #expect(restored.chosen?.contains("suggestTabCleanUp") == true)
+  }
+
   @Test func profileLaunchLoadingDefaultsToLazyAndKeepsAnExplicitChoice() {
     #expect(!Settings.defaults.loadAllProfilesAtLaunch)
     #expect(!Settings.hydrated(from: [:]).loadAllProfilesAtLaunch)

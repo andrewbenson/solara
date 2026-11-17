@@ -68,6 +68,7 @@ export const SYNCED_SETTINGS = [
   "splitLinkModifier",
   "autoGroupMeetingTabs",
   "cleanUpInactiveTabsAfterHours",
+  "suggestTabCleanUp",
   "mutedSites",
   "autoPictureInPicture",
   "videoUpscaling",

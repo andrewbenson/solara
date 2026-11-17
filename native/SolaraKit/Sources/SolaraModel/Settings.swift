@@ -45,6 +45,7 @@ public struct Settings: Sendable, Hashable {
     "splitLinkModifier": "altShift",
     "autoGroupMeetingTabs": true,
     "cleanUpInactiveTabsAfterHours": nil,
+    "suggestTabCleanUp": true,
     "mutedSites": [],
     "neverTranslateSites": [:],
     "developerMode": [:],

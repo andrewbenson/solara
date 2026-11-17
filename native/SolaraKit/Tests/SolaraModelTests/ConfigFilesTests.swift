@@ -7,6 +7,15 @@ func configReader(_ files: [String: String]) -> (String) -> ConfigRead {
 }
 
 @Suite struct ConfigFileParseTests {
+  @Test func cleanUpSuggestionSettingAcceptsOnlyBooleans() {
+    let valid = ConfigFile.load(configReader(["config.json": #"{"settings":{"suggestTabCleanUp":false}}"#]))
+    #expect(valid.good)
+    #expect(valid.contents?.settings["suggestTabCleanUp"] == false)
+    let invalid = ConfigFile.load(configReader(["config.json": #"{"settings":{"suggestTabCleanUp":"false"}}"#]))
+    #expect(!invalid.good)
+    #expect(invalid.problems.first?.key == "settings.suggestTabCleanUp")
+  }
+
   @Test func absentFileMeansNoConfig() {
     let load = ConfigFile.load(configReader([:]))
     #expect(load.good)

@@ -289,6 +289,12 @@ public struct SettingsIndex: Sendable {
         ]),
         Section(section: "Clean up", rows: [
           Row(
+            key: "suggestTabCleanUp",
+            title: "Suggest cleaning up old tabs",
+            description: "Shows a suggestion when there are unused or duplicate tabs to clean up.",
+            keywords: ["suggestion", "don't ask again", "inactive tabs", "duplicates"]
+          ),
+          Row(
             key: "cleanUp",
             title: "Clean up tabs I haven't used in",
             description: "Closes tabs you haven't used (and duplicates) automatically, like the tab menu's Clean Up Daily.",

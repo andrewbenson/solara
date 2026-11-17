@@ -26,6 +26,8 @@ export function cleanUpUpsellChoice(windowId: string, choice: string) {
   } else if (choice === "daily") {
     s.updateSettings({ cleanUpInactiveTabsAfterHours: 24 });
     s.cleanUpTabs(windowId);
+  } else if (choice === "dontAskAgain") {
+    s.updateSettings({ suggestTabCleanUp: false });
   } else if (choice === "dismiss") {
     declineCleanUpUpsell();
   }
@@ -35,10 +37,11 @@ export function useCleanUpUpsellCount(windowId: string, current: boolean): numbe
   const [count, setCount] = useState(0);
   const hidden = useSyncExternalStore(subscribe, () => declined);
   const daily = useBrowser((s) => s.settings.cleanUpInactiveTabsAfterHours !== null);
+  const suggest = useBrowser((s) => s.settings.suggestTabCleanUp);
   const tabIds = useBrowser((s) => s.windows[windowId]?.tabIds);
   const profileId = useBrowser((s) => s.windows[windowId]?.profileId);
   const activeId = useBrowser((s) => activeTabId(s, windowId));
-  const off = !current || hidden || daily;
+  const off = !current || hidden || daily || !suggest;
   useEffect(() => {
     if (off) return;
     const check = () => setCount(cleanUpCandidates(useBrowser.getState(), windowId).length);

@@ -23,6 +23,7 @@ public enum SettingsFileKeys {
     "tabs.layout": ["tabLayout"],
     "tabs.keepAwakeSites": ["keepAwakeSites"],
     "tabs.cleanUp": ["cleanUpInactiveTabsAfterHours"],
+    "tabs.suggestTabCleanUp": ["suggestTabCleanUp"],
     "search.defaultEngine": ["searchEngine"],
     "search.otherEngines": ["customSearchEngines"],
     "engines.websiteRules": ["websiteEngines"],

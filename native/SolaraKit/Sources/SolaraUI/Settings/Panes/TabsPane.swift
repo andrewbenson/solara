@@ -188,6 +188,7 @@ struct TabsPane: View {
         description: "Closes unused and duplicate tabs. Pinned, playing and selected tabs stay. Find closed tabs in Recently Cleaned."
       ) {
         CleanUpRow(store: store)
+        SettingToggle("tabs.suggestTabCleanUp", key: "suggestTabCleanUp")
       }
 
       SettingsSection(

@@ -36,6 +36,13 @@ import Testing
     return contents
   }
 
+  @Test func disablingCleanUpSuggestionsPublishesTheExplicitChoice() async throws {
+    let store = try Self.store()
+    try store.dispatch(Command("updateSettings", [["suggestTabCleanUp": false]]))
+    let values = Self.values(try await SettingsAdapter(store: store).extract(Self.context()))
+    #expect(values["set:suggestTabCleanUp"]?["v"] == false)
+  }
+
   @Test func theSettingsPayloadCarriesOnlyTheUsersOwnValues() async throws {
     let store = try Self.store()
     try store.applyConfig(Self.contents(), source: "config.json")

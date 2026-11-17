@@ -97,6 +97,7 @@ Setting names are the names Solara's settings store uses. Each value must have t
 | `splitLinkModifier` | `"altShift"`, `"alt"` |
 | `autoGroupMeetingTabs` | true or false |
 | `cleanUpInactiveTabsAfterHours` | hours from 1 to 8760, or null for never |
+| `suggestTabCleanUp` | boolean; suggest cleaning up old tabs (default: true) |
 | `mutedSites` | a list of sites, like `["example.com"]` |
 | `neverTranslateSites` | an object of language codes and sites |
 | `autoPictureInPicture` | true or false |

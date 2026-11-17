@@ -78,6 +78,7 @@ public enum ConfigCatalog {
     ("splitLinkModifier", .choice(["altShift", "alt"])),
     ("autoGroupMeetingTabs", .bool),
     ("cleanUpInactiveTabsAfterHours", .numberOrNull(min: 1, max: 24 * 365)),
+    ("suggestTabCleanUp", .bool),
     ("mutedSites", .strings),
     ("neverTranslateSites", .object),
     ("autoPictureInPicture", .bool),

@@ -11,7 +11,7 @@ public enum PairingProjection {
     "fadeUnloadedTabs", "showUnreadBadges", "sleepInactiveTabs", "sleepTabsAfterMinutes", "keepAwakeSites", "warnBeforeClosingTabGroup", "newTabPosition", "newTabButtonPosition", "newTabOpens",
     "warnBeforeClosingLastTab", "undoReopensClosedTab", "warnBeforeMovingTabsToProfile", "tabReorderHaptics",
     "extendWebsiteColor", "cmdClickCreatesTabGroup", "optShiftClickOpensInGroup", "peekModifier", "splitLinkModifier", "pinnedLinkTarget",
-    "autoGroupMeetingTabs", "cleanUpInactiveTabsAfterHours", "mutedSites", "autoPictureInPicture", "videoUpscaling",
+    "autoGroupMeetingTabs", "cleanUpInactiveTabsAfterHours", "suggestTabCleanUp", "mutedSites", "autoPictureInPicture", "videoUpscaling",
     "sidebarMediaControls", "hoverCardMemoryUsage", "showFullUrl", "bookmarksBar", "appearance", "addressBar", "commandBarPlacement", "shortcuts",
     "shortcutPrecedence",
   ]

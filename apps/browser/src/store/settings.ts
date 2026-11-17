@@ -54,6 +54,7 @@ export type Settings = {
   splitLinkModifier: SplitLinkModifier;
   autoGroupMeetingTabs: boolean;
   cleanUpInactiveTabsAfterHours: number | null;
+  suggestTabCleanUp: boolean;
   mutedSites: string[];
   neverTranslateSites: Record<string, string[]>;
   developerMode: Record<string, DeveloperModeState>;
@@ -164,6 +165,7 @@ export const DEFAULT_SETTINGS: Settings = {
   splitLinkModifier: "altShift",
   autoGroupMeetingTabs: true,
   cleanUpInactiveTabsAfterHours: null,
+  suggestTabCleanUp: true,
   mutedSites: [],
   neverTranslateSites: {},
   developerMode: {},

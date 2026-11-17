@@ -226,6 +226,11 @@ const ROWS: Record<SettingsPane, Section[]> = {
     {
       section: "Clean up",
       rows: {
+        suggestTabCleanUp: {
+          title: "Suggest cleaning up old tabs",
+          description: "Shows a suggestion when there are unused or duplicate tabs to clean up.",
+          keywords: ["suggestion", "don't ask again", "inactive tabs", "duplicates"],
+        },
         cleanUp: {
           title: "Clean up tabs I haven't used in",
           description: "Closes tabs you haven't used (and duplicates) automatically, like the tab menu's Clean Up Daily.",

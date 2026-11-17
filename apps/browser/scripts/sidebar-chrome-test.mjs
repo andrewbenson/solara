@@ -235,27 +235,109 @@ try {
   });
   await canary("(e)");
 
-  await rep.check("(e2) hovering a profile dot shows its name and its Control-number shortcut", async () => {
-    const c = await run(`return col();`);
+  await rep.check("(e2) profile tooltips show name and shortcut above the bar within both sidebar widths", async () => {
+    const saved = await run(`return savedWidth();`);
     const out = {};
-    for (const [index, dot] of c.chrome.dots.entries()) {
-      const [x, y] = centre(c, dot.rect);
-      const tip = await run(`const end = Date.now() + 3000;
-        const poll = () => ac.shell.devSetPointer("w1", { x: ${x}, y: ${y} }).then(() => act("mouse:moved:${x},${y}")).then(() => settle(150)).then(() => col()).then((c) => {
-          const t = c.chrome.tooltip;
-          if (t && t.text) return t;
-          if (Date.now() > end) return { missing: true };
-          return poll();
-        });
-        return poll();`);
-      if (tip.missing) throw new Error(`no tooltip over ${dot.id}`);
-      const want = index < 9 ? `⌃${index + 1}` : null;
-      if ((tip.shortcut ?? null)?.replace?.(/\s/g, "") !== want && (tip.shortcut ?? null) !== want) throw new Error(`${dot.id}: tooltip ${JSON.stringify(tip)}, wanted shortcut ${want}`);
-      out[dot.id] = tip;
+    try {
+      for (const width of [160, 400]) {
+        await run(`st().setWindowSidebar("w1", { sidebarWidth: ${width}, sidebarIconsOnly: false }); return settle(600);`);
+        await untilSnapshot(`tooltip sidebar width ${width}`, (window) => Math.abs(window?.sidebarShell?.frame?.[2] - width) <= 0.5);
+        const c = await run(`return col();`);
+        out[width] = {};
+        for (const [index, dot] of c.chrome.dots.entries()) {
+          if (dot.hidden) throw new Error(`profile ${dot.id} hidden at width ${width}`);
+          const [x, y] = centre(c, dot.rect);
+          const expectedName = await run(`return st().profiles[${JSON.stringify(dot.id)}]?.name;`);
+          const tip = await run(`const end = Date.now() + 3000;
+            const poll = () => ac.shell.devSetPointer("w1", { x: ${x}, y: ${y} }).then(() => act("mouse:moved:${x},${y}")).then(() => settle(150)).then(() => col()).then((c) => {
+              const t = c.chrome.tooltip;
+              if (t && t.text === ${JSON.stringify(expectedName)}) return t;
+              if (Date.now() > end) return { missing: true };
+              return poll();
+            });
+            return poll();`);
+          if (tip.missing) throw new Error(`no tooltip over ${dot.id} at width ${width}`);
+          const want = index < 9 ? `⌃${index + 1}` : null;
+          if ((tip.shortcut ?? null)?.replace?.(/\s/g, "") !== want && (tip.shortcut ?? null) !== want) throw new Error(`${dot.id}: tooltip ${JSON.stringify(tip)}, wanted shortcut ${want}`);
+          const [tx, ty, tw, th] = tip.rect;
+          const barTop = c.frame[3] - 40;
+          if (tx < 4 || tx + tw > c.frame[2] - 4 || ty < 0 || ty + th > barTop - 4) throw new Error(`tooltip overlaps bar or leaves sidebar: ${JSON.stringify({ width, dot, tip, column: c.frame })}`);
+          const expectedX = Math.max(4, Math.min(dot.rect[0] + dot.rect[2] / 2 - tw / 2, c.frame[2] - tw - 4));
+          if (Math.abs(tx - expectedX) > 0.5) throw new Error(`tooltip is not centered or edge-clamped: ${JSON.stringify({ dot, tip, expectedX })}`);
+          await untilSnapshot(`tooltip ${dot.id} within the window at ${width}`, (window) => {
+            const native = window?.sidebarShell?.chrome?.tooltip;
+            return native?.text === expectedName && nearRect(native.rect, tip.rect) &&
+              c.frame[0] + tx >= 0 && c.frame[1] + ty >= 0 &&
+              c.frame[0] + tx + tw <= window.frame.width && c.frame[1] + ty + th <= window.frame.height;
+          });
+          out[width][dot.id] = tip;
+        }
+        await run(`return ac.shell.devSetPointer("w1", { x: ${c.frame[0] + 20}, y: ${c.frame[1] + 120} }).then(() => act("mouse:moved:${c.frame[0] + 20},${c.frame[1] + 120}")).then(() => settle(300));`);
+      }
+    } finally {
+      await run(`st().setWindowSidebar("w1", { sidebarWidth: ${saved}, sidebarIconsOnly: false }); return settle(600);`);
     }
-    await run(`return ac.shell.devSetPointer("w1", { x: ${c.frame[0] + 20}, y: ${c.frame[1] + 120} }).then(() => act("mouse:moved:${c.frame[0] + 20},${c.frame[1] + 120}")).then(() => settle(300));`);
     return out;
   });
+
+  await rep.check("(e3) profile icons keep equal slots, dim consistently and select on a lighter tile", async () => {
+    const saved = await run(`return { width: savedWidth(), appearance: st().settings.appearance, profiles: ["default", "work"].map((id) => ({ id, icon: st().profiles[id].icon ?? null, color: st().profiles[id].color })) };`);
+    const out = {};
+    try {
+      await run(`st().setWindowSidebar("w1", { sidebarWidth: 240, sidebarIconsOnly: false }); st().switchProfile("w1", "default"); return settle(800);`);
+      for (const theme of ["dark", "light"]) {
+        await run(`st().updateSettings({ appearance: ${JSON.stringify(theme)} }); st().updateProfile("default", { icon: "symbol:star.fill" }); return settle(600);`);
+        out[theme] = [];
+        for (const icon of ["symbol:briefcase.fill", "🧭", null]) {
+          await run(`st().updateProfile("work", { icon: ${JSON.stringify(icon)} }); return settle(300);`);
+          const c = await run(`return col();`);
+          const dots = c.chrome.dots;
+          const selected = dots.find((dot) => dot.id === "default"), other = dots.find((dot) => dot.id === "work");
+          for (const dot of dots) if (dot.hidden || dot.rect[2] !== 24 || dot.rect[3] !== 24) throw new Error(`unequal/hidden profile slot: ${JSON.stringify(dot)}`);
+          for (let i = 1; i < dots.length; i++) if (Math.abs(dots[i].rect[0] - dots[i - 1].rect[0] - 28) > 0.5) throw new Error(`uneven profile spacing: ${JSON.stringify(dots)}`);
+          if (selected.icon !== "symbol:star.fill" || !selected.selected || selected.glyphOpacity !== 1 || other.selected || Math.abs(other.glyphOpacity - 0.65) > 1e-6 || other.icon !== icon) throw new Error(`profile identity/emphasis: ${JSON.stringify(dots)}`);
+          const [r, g, b, a] = selected.fill;
+          if ([r, g, b].some((channel) => Math.abs(channel - 1) > 1e-6) || Math.abs(a - (theme === "dark" ? 0.16 : 0.55)) > 1e-6) throw new Error(`selection must composite lighter: ${JSON.stringify(selected)}`);
+          const [x, y] = centre(c, other.rect);
+          await run(`return ac.shell.devSetPointer("w1", { x: ${x}, y: ${y} }).then(() => act("mouse:moved:${x},${y}")).then(() => settle(100));`);
+          const hovered = await run(`return col().then((c) => c.chrome.dots.find((dot) => dot.id === "work"));`);
+          if (hovered.selected || Math.abs(hovered.glyphOpacity - 0.85) > 1e-6 || hovered.icon !== icon) throw new Error(`hover changed selection or identity: ${JSON.stringify(hovered)}`);
+          await run(`return ac.shell.devSetPointer("w1", { x: ${c.frame[0] + 20}, y: ${c.frame[1] + 120} }).then(() => act("mouse:moved:${c.frame[0] + 20},${c.frame[1] + 120}")).then(() => settle(100));`);
+          out[theme].push({ selected, other, hovered });
+        }
+      }
+    } finally {
+      await run(`for (const profile of ${JSON.stringify(saved.profiles)}) { const { id, ...values } = profile; st().updateProfile(id, values); } st().updateSettings({ appearance: ${JSON.stringify(saved.appearance)} }); st().setWindowSidebar("w1", { sidebarWidth: ${saved.width}, sidebarIconsOnly: false }); return settle(700);`);
+    }
+    return out;
+  });
+  await canary("(e3)");
+
+  await rep.check("(e4) overflow scroll keeps its gestures at both edges without switching profiles", async () => {
+    const saved = await run(`return { width: savedWidth(), ids: st().profileOrder.slice() };`);
+    const out = [];
+    try {
+      await run(`for (let i = 0; i < 6; i++) st().createProfile({ name: "Overflow " + i, icon: i % 2 ? "🧭" : "symbol:briefcase.fill", shareWith: "default" }); st().setWindowSidebar("w1", { sidebarWidth: 160, sidebarIconsOnly: false }); st().switchProfile("w1", "default"); return settle(1200);`);
+      const c = await run(`return col();`);
+      if (c.chrome.profileSwitcher || c.chrome.dots.length < 8 || c.chrome.dots.some((dot) => dot.hidden || dot.rect[2] !== 24)) throw new Error(`overflow must retain slots: ${JSON.stringify(c.chrome)}`);
+      const x = c.frame[0] + c.frame[2] / 2, y = c.frame[1] + c.frame[3] - 20;
+      for (const trackpad of [false, true]) {
+        const positions = [];
+        for (const dx of [-1000, -1000, 1000, 1000]) {
+          const steps = trackpad ? [{ phase: "began", dx: 0, dy: 0, dispatch: "app" }, { phase: "changed", dx, dy: 0, dispatch: "app" }, { phase: "ended", dx: 0, dy: 0, dispatch: "app" }] : [{ phase: "wheel", dx, dy: 0, dispatch: "app" }];
+          const result = await run(`return win().then((number) => globalThis.expo.modules.SolaraSwipe.devSimulate(${x}, ${y}, number, ${JSON.stringify(steps)}, true)).then(() => settle(250)).then(() => col()).then((column) => ({ id: st().windows.w1.profileId, dots: column.chrome.dots }));`);
+          if (result.id !== "default") throw new Error(`overflow gesture paged to ${result.id}`);
+          positions.push(result.dots[0].rect[0]);
+        }
+        if (Math.abs(positions[0] - positions[1]) > 0.5 || Math.abs(positions[2] - positions[3]) > 0.5 || positions[2] - positions[0] < 28) throw new Error(`overflow did not scroll and clamp: ${JSON.stringify({ trackpad, positions })}`);
+        out.push({ trackpad, positions });
+      }
+    } finally {
+      await run(`st().switchProfile("w1", "default"); for (const id of st().profileOrder.slice()) if (!${JSON.stringify(saved.ids)}.includes(id)) st().deleteProfile(id); st().setWindowSidebar("w1", { sidebarWidth: ${saved.width}, sidebarIconsOnly: false }); return settle(1000);`);
+    }
+    return out;
+  });
+  await canary("(e4)");
 
   await rep.check("(f) a drop on the header and on the footer opens a tab, with the native glow", async () => {
     const out = {};

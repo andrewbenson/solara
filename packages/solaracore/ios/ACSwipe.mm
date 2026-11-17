@@ -6,6 +6,10 @@
 #import <objc/message.h>
 #import <objc/runtime.h>
 
+@interface NSScrollView (SolaraHorizontalScrolling)
+@property (nonatomic, readonly) BOOL solaraOwnsHorizontalScrolling;
+@end
+
 namespace {
 
 constexpr CGFloat kStartDistance = 4;
@@ -332,6 +336,7 @@ BOOL NativeContentScrolls(NSView *hit, NSView *container, int direction) {
   for (NSView *v = hit; v && v != container; v = v.superview) {
     if (![v isKindOfClass:NSScrollView.class]) continue;
     NSScrollView *scroll = (NSScrollView *)v;
+    if ([scroll respondsToSelector:@selector(solaraOwnsHorizontalScrolling)] && scroll.solaraOwnsHorizontalScrolling) return YES;
     NSRect visible = scroll.contentView.bounds;
     CGFloat width = NSWidth(scroll.documentView.frame);
     if (width <= NSWidth(visible) + 0.5) continue;

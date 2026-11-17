@@ -89,10 +89,13 @@ public enum SidebarChromeMetrics {
   public static let footerDownloadsBottom: CGFloat = (40 - 34) / 2
   public static let inset: CGFloat = 6
   public static let resizeStrip: CGFloat = 4
-  public static let dotCell: CGFloat = 26
+  public static let dotCell: CGFloat = 28
   public static let dotBand: CGFloat = 24
   public static let dot: CGFloat = 5
   public static let profileButton: CGFloat = 24
+  public static let profileGlyph: CGFloat = 13
+  public static let profileOpticalBox: CGFloat = 16
+  public static let profileInset: CGFloat = 8
   public static let minWidth: Double = 160
   public static let maxWidth: Double = 400
   public static let defaultWidth: Double = 190
@@ -122,10 +125,10 @@ public enum SidebarChromeMetrics {
   }
 
   public static func dotOpacity(slot: Double?, position: Double, hovered: Bool) -> CGFloat {
-    let rest = hovered ? 0.4 : 0.2
+    let rest = hovered ? 0.85 : 0.65
     guard let slot else { return rest }
     let distance = min(1, abs(position - slot))
-    return CGFloat(0.85 + (rest - 0.85) * distance)
+    return CGFloat(1 + (rest - 1) * distance)
   }
 }
 
@@ -193,6 +196,8 @@ public final class SidebarChromeView: NSView {
   let resize = SidebarResizeHandle()
   let updatePill = SidebarUpdatePill()
   private var dots: [SidebarProfileDot] = []
+  let profileScroll = SidebarProfileScrollView()
+  let profileRow = FlippedContainerView()
   let profileSwitcher = SidebarRailProfileButton()
   let profilePopover = NSPopover()
   private(set) var iconPopover: ProfileIconPopover?
@@ -238,6 +243,13 @@ public final class SidebarChromeView: NSView {
     fullScreenHeader.addSubview(headerProfile)
     indicator.onPress = { [weak self] in self?.onAction(.profileMenu) }
     fullScreenHeader.addSubview(indicator)
+    profileScroll.documentView = profileRow
+    profileScroll.onScroll = { [weak self] in
+      guard let self else { return }
+      self.tooltip.hide()
+      for dot in self.dots { dot.setHovered(false) }
+    }
+    addSubview(profileScroll)
     profileSwitcher.isHidden = true
     profileSwitcher.onPress = { [weak self] in self?.showProfiles() }
     profileSwitcher.onMenu = { [weak self] in
@@ -434,28 +446,37 @@ public final class SidebarChromeView: NSView {
       y: bounds.height - SidebarChromeMetrics.footerDownloadsBottom - box - (state.rail && !state.dots.isEmpty ? SidebarChromeMetrics.footer : 0), width: box, height: box)
 
     let cell = SidebarChromeMetrics.dotCell
-    let rowWidth = cell * CGFloat(dots.count) - 2
-    let rowLeft = ((width - rowWidth) / 2 * 2).rounded() / 2
-    let leadingRoom = footerDownloads.isHidden ? SidebarChromeMetrics.inset : footerDownloads.frame.maxX + 6
-    let overflow = !dots.isEmpty && (state.rail || rowLeft < leadingRoom || rowLeft + rowWidth > width - SidebarChromeMetrics.inset)
+    let rowWidth = max(0, cell * CGFloat(dots.count) - (cell - SidebarChromeMetrics.profileButton))
+    let leadingRoom = footerDownloads.isHidden ? SidebarChromeMetrics.profileInset : footerDownloads.frame.maxX + SidebarChromeMetrics.profileInset
     let rowTop = bounds.height - (state.rail ? SidebarChromeMetrics.footer : footer) + (SidebarChromeMetrics.footer - SidebarChromeMetrics.dotBand) / 2
+    profileScroll.isHidden = state.rail || dots.isEmpty
+    profileScroll.frame = NSRect(x: leadingRoom, y: rowTop, width: max(0, width - leadingRoom - SidebarChromeMetrics.profileInset), height: SidebarChromeMetrics.dotBand)
+    profileRow.frame = NSRect(x: 0, y: 0, width: max(rowWidth, profileScroll.contentSize.width), height: SidebarChromeMetrics.dotBand)
+    let rowLeft = (max(0, min((width - rowWidth) / 2 - leadingRoom, profileRow.bounds.width - rowWidth)) * 2).rounded() / 2
+    let background = SidebarPalette.parse(state.theme["windowTint"]) ?? NSColor(white: state.dark ? 0.16 : 0.85, alpha: 1)
     for (index, dot) in dots.enumerated() {
-      dot.frame = NSRect(x: rowLeft + cell * CGFloat(index), y: rowTop, width: SidebarChromeMetrics.profileButton, height: SidebarChromeMetrics.dotBand)
+      dot.frame = NSRect(x: rowLeft + cell * CGFloat(index), y: 0, width: SidebarChromeMetrics.profileButton, height: SidebarChromeMetrics.dotBand)
       dot.dark = state.dark
-      dot.ink = SidebarPalette.parse(state.dots[index].color) ?? color("accent")
-      if dot.ink == .clear { dot.ink = SidebarPalette.lightInk(dark: state.dark, ink: state.theme["ink"]) ? .white : .black }
-      dot.isHidden = overflow
-      if overflow { dot.setHovered(false) }
+      let neutral = SidebarProfileStyle.neutral(dark: state.dark)
+      let isStar = ["star", "star.fill"].contains(ProfileIcons.symbol(dot.icon) ?? "")
+      let ink = isStar ? neutral : SidebarPalette.parse(state.dots[index].color) ?? neutral
+      dot.ink = SidebarProfileStyle.accessibleInk(ink, background: background, dark: state.dark)
+      dot.isHidden = state.rail
+      if state.rail { dot.setHovered(false) }
     }
-    profileSwitcher.isHidden = !overflow
-    if overflow, let profile = currentProfile {
+    profileSwitcher.isHidden = !state.rail || dots.isEmpty
+    if state.rail, let profile = currentProfile {
       let side = SidebarChromeMetrics.profileButton
       profileSwitcher.frame = NSRect(x: ((width - side) / 2).rounded(), y: rowTop, width: side, height: side)
-      profileSwitcher.set(profile, dark: state.dark, ink: SidebarPalette.parse(profile.color) ?? color("accent"), hover: NSColor(white: state.dark ? 0 : 1, alpha: 0.18), pressed: color("toolbarPressed"))
+      let neutral = SidebarProfileStyle.neutral(dark: state.dark)
+      let isStar = ["star", "star.fill"].contains(ProfileIcons.symbol(profile.icon) ?? "")
+      let ink = SidebarProfileStyle.accessibleInk(isStar ? neutral : SidebarPalette.parse(profile.color) ?? neutral, background: background, dark: state.dark)
+      profileSwitcher.set(profile, dark: state.dark, ink: ink)
     } else {
       profilePopover.performClose(nil)
     }
     paintDots()
+    revealCurrentProfile()
 
     updatePill.isHidden = state.update == nil
     if let update = state.update {
@@ -513,7 +534,7 @@ public final class SidebarChromeView: NSView {
         guard let self, let dot else { return }
         self.showProfileMenu(dot.profileId, on: dot)
       }
-      addSubview(dot, positioned: .below, relativeTo: tooltip.superview === self ? tooltip : nil)
+      profileRow.addSubview(dot)
       dots.append(dot)
     }
     for (dot, info) in zip(dots, given) {
@@ -622,7 +643,20 @@ public final class SidebarChromeView: NSView {
   }
 
   private func paintDots() {
-    for dot in dots { dot.opacity = SidebarChromeMetrics.dotOpacity(slot: dot.slot, position: position, hovered: dot.hovered) }
+    let selectedId = currentProfile?.id
+    for dot in dots {
+      dot.selected = dot.profileId == selectedId
+      dot.opacity = SidebarChromeMetrics.dotOpacity(slot: dot.slot, position: position, hovered: dot.hovered)
+    }
+  }
+
+  private func revealCurrentProfile() {
+    guard !profileScroll.isHidden, let dot = dots.first(where: { $0.selected }) else { return }
+    let clip = profileScroll.contentView
+    let left = min(clip.bounds.minX, dot.frame.minX)
+    let origin = max(left, dot.frame.maxX - clip.bounds.width)
+    clip.scroll(to: NSPoint(x: max(0, min(origin, profileRow.bounds.width - clip.bounds.width)), y: 0))
+    profileScroll.reflectScrolledClipView(clip)
   }
 
   public override func updateTrackingAreas() {
@@ -650,13 +684,21 @@ public final class SidebarChromeView: NSView {
     footerDownloads.hovered = point.map { !footerDownloads.isHidden && footerDownloads.frame.contains($0) } ?? false
     updatePill.hovered = point.map { !updatePill.isHidden && updatePill.frame.contains($0) } ?? false
     profileSwitcher.hovered = point.map { !profileSwitcher.isHidden && profileSwitcher.frame.contains($0) } ?? false
-    for dot in dots { dot.setHovered(point.map { !dot.isHidden && dot.frame.contains($0) } ?? false) }
+    for dot in dots {
+      dot.setHovered(point.map {
+        !profileScroll.isHidden && profileScroll.frame.contains($0) && dot.bounds.contains(dot.convert($0, from: self))
+      } ?? false)
+    }
   }
 
   public func describe() -> [String: Any] {
     func rect(_ view: NSView) -> [Double] {
       let r = view.convert(view.bounds, to: self)
       return [r.minX, r.minY, r.width, r.height]
+    }
+    func fill(_ dot: SidebarProfileDot) -> [Double] {
+      guard let fill = dot.layer?.backgroundColor, let color = NSColor(cgColor: fill)?.usingColorSpace(.sRGB) else { return [0, 0, 0, 0] }
+      return [Double(color.redComponent), Double(color.greenComponent), Double(color.blueComponent), Double(color.alphaComponent)]
     }
     return [
       "header": headerHeight, "footer": footerHeight,
@@ -667,7 +709,7 @@ public final class SidebarChromeView: NSView {
       "resize": rect(resize),
       "update": updatePill.isHidden ? NSNull() : ["text": updatePill.text, "rect": rect(updatePill)],
       "dropGlow": Double(dropGlow.opacity),
-      "dots": dots.map { ["id": $0.profileId, "rect": rect($0), "opacity": Double($0.opacity), "icon": ($0.icon as Any?) ?? NSNull(), "selected": $0.selected, "hidden": $0.isHidden] },
+      "dots": dots.map { ["id": $0.profileId, "rect": rect($0), "opacity": Double($0.opacity), "glyphOpacity": Double($0.glyph.alphaValue), "fill": fill($0), "icon": ($0.icon as Any?) ?? NSNull(), "selected": $0.selected, "hidden": $0.isHidden] },
       "profileSwitcher": profileSwitcher.isHidden ? NSNull() : ["id": currentProfile?.id ?? "", "rect": rect(profileSwitcher), "icon": (currentProfile?.icon as Any?) ?? NSNull(), "label": currentProfile?.name ?? ""],
       "tooltip": tooltip.isHidden ? NSNull() : ["text": tooltip.text, "shortcut": (tooltip.shortcut as Any?) ?? NSNull(), "rect": rect(tooltip), "alpha": Double(tooltip.alphaValue)],
     ]
@@ -689,8 +731,8 @@ final class SidebarProfileDot: NSView {
   let glyph = SidebarProfileGlyph()
   var dark = false { didSet { repaint() } }
   var ink: NSColor = .black { didSet { repaint() } }
-  var opacity: CGFloat = 0.2 { didSet { repaint() } }
-  var selected: Bool { opacity > 0.6 }
+  var opacity: CGFloat = 0.65 { didSet { repaint() } }
+  var selected = false { didSet { repaint() } }
 
   override var isFlipped: Bool { true }
   override var mouseDownCanMoveWindow: Bool { false }
@@ -711,9 +753,10 @@ final class SidebarProfileDot: NSView {
   }
 
   private func repaint() {
-    let amount: CGFloat = pressed ? 0.28 : selected ? 0.22 : hovered ? 0.18 : 0
-    layer?.backgroundColor = NSColor(white: dark ? 0 : 1, alpha: amount).cgColor
-    glyph.set(icon, color: ink, opacity: selected ? 0.72 : hovered ? 0.5 : 0.3, active: selected)
+    layer?.backgroundColor = SidebarProfileStyle.fill(dark: dark, selected: selected, hovered: hovered, pressed: pressed).cgColor
+    layer?.borderWidth = selected ? 0.5 : 0
+    layer?.borderColor = NSColor(white: dark ? 1 : 0, alpha: dark ? 0.14 : 0.08).cgColor
+    glyph.set(icon, color: ink, opacity: pressed || selected ? 1 : opacity)
     setAccessibilityValue(NSNumber(value: selected))
   }
 
@@ -799,7 +842,9 @@ final class SidebarDotTooltip: NSView {
     self.shortcut = shortcut
     pending?.cancel()
     anchor = view
-    if let parent = view.window?.contentView ?? view.superview, superview !== parent {
+    var sidebar = view.superview
+    while sidebar != nil, !(sidebar is SidebarChromeView) { sidebar = sidebar?.superview }
+    if let parent = view.window?.contentView ?? sidebar ?? view.superview, superview !== parent {
       removeFromSuperview()
       parent.addSubview(self)
     }
@@ -836,6 +881,9 @@ final class SidebarDotTooltip: NSView {
 
   func appear(_ text: String) {
     guard let anchor, let superview else { return }
+    var parent = anchor.superview
+    while parent != nil, !(parent is SidebarChromeView) { parent = parent?.superview }
+    guard let sidebar = parent ?? anchor.superview else { return }
     self.text = text
     label.stringValue = text
     let textWidth = StripControlsLayout.measuredLikeYoga((text as NSString).size(withAttributes: [.font: label.font]).width)
@@ -855,10 +903,17 @@ final class SidebarDotTooltip: NSView {
     }
     let widths = keycaps.map { max(22, ($0.stringValue as NSString).size(withAttributes: [.font: $0.font]).width + 12) }
     let shortcutWidth = widths.reduce(0, +) + CGFloat(max(0, widths.count - 1)) * 4
-    let size = NSSize(width: min(superview.bounds.width - 8, textWidth + 14 + 8 + (keycaps.isEmpty ? 0 : shortcutWidth + 8)), height: 34)
-    let top = anchor.convert(NSPoint(x: anchor.bounds.midX, y: anchor.bounds.minY), to: superview)
-    let x = max(4, min(top.x - size.width / 2, superview.bounds.width - size.width - 4))
-    frame = NSRect(x: x.rounded(), y: top.y - 12 - size.height, width: size.width, height: size.height)
+    let windowBounds = sidebar.convert(superview.bounds, from: superview).insetBy(dx: 4, dy: 4)
+    var room = windowBounds
+    if (sidebar as? SidebarChromeView)?.state?.rail != true {
+      room = room.intersection(sidebar.bounds.insetBy(dx: 4, dy: 0))
+    }
+    let size = NSSize(width: min(room.width, textWidth + 14 + 8 + (keycaps.isEmpty ? 0 : shortcutWidth + 8)), height: 34)
+    let item = anchor.convert(anchor.bounds, to: sidebar)
+    let y = sidebar.isFlipped ? item.minY - 12 - size.height : item.maxY + 12
+    let target = NSRect(x: max(room.minX, min((item.midX - size.width / 2).rounded(), room.maxX - size.width)), y: y, width: size.width, height: size.height)
+    guard size.width >= shortcutWidth + 22, room.contains(target) else { return hide() }
+    frame = sidebar.convert(target, to: superview)
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     ring.frame = bounds

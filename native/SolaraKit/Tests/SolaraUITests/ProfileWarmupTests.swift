@@ -108,7 +108,7 @@ import Testing
       downloads: true, addressBar: true, dark: false, theme: [:],
       dots: [SidebarChromeDot(id: "p1", name: "Work", slot: 0), SidebarChromeDot(id: "p2", name: "Home", slot: 1), SidebarChromeDot(id: "p3", name: "Spare", slot: 2)],
       savedWidth: 240, iconsOnly: false, update: nil))
-    let dots = view.subviews.compactMap { $0 as? SidebarProfileDot }
+    let dots = view.profileRow.subviews.compactMap { $0 as? SidebarProfileDot }
     dots[1].setHovered(true)
     #expect(actions.last == .profileIntent("p2"))
     dots[2].setHovered(true)

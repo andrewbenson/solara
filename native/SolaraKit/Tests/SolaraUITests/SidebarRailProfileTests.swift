@@ -21,7 +21,7 @@ import Testing
   @Test(arguments: [1, 2, 8, 12]) func railAlwaysHasOneCurrentProfileButton(count: Int) {
     let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 42, height: 700))
     view.update(state(count: count))
-    let dots = view.subviews.compactMap { $0 as? SidebarProfileDot }.filter { !$0.isHidden }
+    let dots = descendants(view).compactMap { $0 as? SidebarProfileDot }.filter { !$0.isHidden }
     #expect(dots.isEmpty)
     #expect(!view.profileSwitcher.isHidden)
     #expect(view.profileSwitcher.frame == NSRect(x: 9, y: 668, width: 24, height: 24))
@@ -66,15 +66,16 @@ import Testing
     #expect(actions.last == .manageProfiles)
   }
 
-  @Test func fullWidthHasTwentyFourPointButtonsAndTwoPointGaps() {
+  @Test func fullWidthHasTwentyFourPointButtonsAndFourPointGaps() {
     let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 240, height: 700))
     var next = state(count: 8, rail: false)
     next.dots[0].icon = "symbol:star.fill"
     next.downloads = false
     view.update(next)
-    let dots = view.subviews.compactMap { $0 as? SidebarProfileDot }.filter { !$0.isHidden }
+    let dots = descendants(view).compactMap { $0 as? SidebarProfileDot }.filter { !$0.isHidden }
     #expect(dots.count == 8)
-    #expect(dots.map(\.frame) == (0..<8).map { NSRect(x: 17 + 26 * CGFloat($0), y: 668, width: 24, height: 24) })
+    #expect(!view.profileScroll.solaraOwnsHorizontalScrolling)
+    #expect(dots.map { $0.convert($0.bounds, to: view) } == (0..<8).map { NSRect(x: 10 + 28 * CGFloat($0), y: 668, width: 24, height: 24) })
     #expect(view.profileSwitcher.isHidden)
     #expect(view.footerHeight == 40)
     #expect(dots[0].glyph.value == "symbol:star.fill")
@@ -84,30 +85,219 @@ import Testing
     #expect(dots[0].accessibilityValue() as? NSNumber == NSNumber(value: false))
   }
 
-  @Test(arguments: [CGFloat(160), 190]) func fullWidthOverflowKeepsEveryProfileReachable(width: CGFloat) {
+  @Test(arguments: [CGFloat(160), 190]) func fullWidthOverflowScrollsWithoutShrinkingOrReplacingIcons(width: CGFloat) {
     let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: width, height: 700))
-    view.update(state(count: 8, rail: false))
-    #expect(view.subviews.compactMap { $0 as? SidebarProfileDot }.allSatisfy { $0.isHidden })
-    #expect(!view.profileSwitcher.isHidden)
-    #expect(view.bounds.contains(view.profileSwitcher.frame))
-    #expect(!view.profileSwitcher.frame.intersects(view.footerDownloads.frame))
-    #expect(view.profileSwitcher.accessibilityPerformPress())
-    let rows = view.profilePopover.contentViewController.map { descendants($0.view).compactMap { $0 as? SidebarRailProfileRow } } ?? []
-    #expect(rows.count == 8)
-    view.profilePopover.close()
+    var next = state(count: 12, rail: false)
+    next.dots[0].icon = "symbol:star.fill"
+    view.update(next)
+    let dots = descendants(view).compactMap { $0 as? SidebarProfileDot }
+    #expect(dots.count == 12)
+    #expect(dots.allSatisfy { !$0.isHidden && $0.frame.size == NSSize(width: 24, height: 24) })
+    #expect(view.profileSwitcher.isHidden)
+    #expect(view.bounds.contains(view.profileScroll.frame))
+    #expect(!view.profileScroll.frame.intersects(view.footerDownloads.frame))
+    #expect(view.profileScroll.documentVisibleRect.contains(dots[2].frame))
+    #expect(view.profileScroll.solaraOwnsHorizontalScrolling)
+    for index in 1..<dots.count { #expect(dots[index].frame.minX - dots[index - 1].frame.maxX == 4) }
+    next.currentProfileId = "p11"
+    view.update(next)
+    #expect(view.profileScroll.documentVisibleRect.contains(dots[11].frame))
+    #expect(view.profileScroll.solaraOwnsHorizontalScrolling)
+    #expect(dots[0].glyph.value == "symbol:star.fill")
+    #expect(dots[2].glyph.value == "🧭")
+    next.currentProfileId = "p0"
+    view.update(next)
+    #expect(view.profileScroll.documentVisibleRect.contains(dots[0].frame))
+    #expect(view.profileScroll.solaraOwnsHorizontalScrolling)
+    var actions: [SidebarChromeAction] = []
+    view.onAction = { actions.append($0) }
+    #expect(dots[0].accessibilityPerformPress())
+    #expect(actions == [.switchProfile("p0")])
+    view.setFrameSize(NSSize(width: 400, height: 700))
+    view.layoutSubtreeIfNeeded()
+    #expect(view.profileScroll.documentVisibleRect.contains(dots[0].frame))
   }
 
-  @Test(arguments: [false, true]) func allProfileTintsKeepStableGeometry(dark: Bool) {
+  @Test(arguments: [false, true]) func fittingProfileBarLeavesPaddingAndGapsToTheSidebar(translated: Bool) {
+    let host = FlippedContainerView(frame: NSRect(x: 0, y: 0, width: 1000, height: 900))
+    let view = SidebarChromeView(frame: NSRect(x: translated ? 510 : 0, y: translated ? 57 : 0, width: 240, height: 700))
+    host.addSubview(view)
+    var next = state(count: 3, rail: false)
+    next.downloads = false
+    view.update(next)
+    let dots = descendants(view).compactMap { $0 as? SidebarProfileDot }
+    #expect(!view.profileScroll.solaraOwnsHorizontalScrolling)
+    let first = dots[0].convert(dots[0].bounds, to: view)
+    let last = dots[2].convert(dots[2].bounds, to: view)
+    for x in [view.profileScroll.frame.minX + 1, first.maxX + 2, last.maxX + 1] {
+      let point = view.convert(NSPoint(x: x, y: first.midY), to: host)
+      #expect(view.hitTest(point) === view)
+    }
+    for dot in dots {
+      #expect(dot.bounds.size == NSSize(width: 24, height: 24))
+      for x in [CGFloat(0.5), 12, 23.5] {
+        for y in [CGFloat(0.5), 12, 23.5] {
+          #expect(view.hitTest(dot.convert(NSPoint(x: x, y: y), to: host)) === dot)
+        }
+      }
+    }
+  }
+
+  @Test(arguments: [false, true]) func overflowingProfileBarKeepsScrollHitsAtBothEdges(translated: Bool) throws {
+    let host = FlippedContainerView(frame: NSRect(x: 0, y: 0, width: 1000, height: 900))
+    let view = SidebarChromeView(frame: NSRect(x: translated ? 510 : 0, y: translated ? 57 : 0, width: 160, height: 700))
+    host.addSubview(view)
+    var next = state(count: 12, rail: false)
+    next.downloads = false
+    let dots = { descendants(view).compactMap { $0 as? SidebarProfileDot } }
+    for profile in ["p0", "p11"] {
+      next.currentProfileId = profile
+      view.update(next)
+      let scroll = view.profileScroll
+      #expect(scroll.solaraOwnsHorizontalScrolling)
+      let viewport = scroll.convert(scroll.bounds, to: view)
+      for x in [viewport.minX + 0.5, viewport.maxX - 0.5] {
+        let hit = try #require(view.hitTest(view.convert(NSPoint(x: x, y: viewport.midY), to: host)))
+        #expect(hit === scroll || hit.isDescendant(of: scroll))
+      }
+      var gaps = 0
+      for dot in dots().dropLast() {
+        let rect = dot.convert(dot.bounds, to: view)
+        let point = NSPoint(x: rect.maxX + 2, y: rect.midY)
+        guard viewport.contains(point) else { continue }
+        let hit = try #require(view.hitTest(view.convert(point, to: host)))
+        #expect(hit === scroll || hit.isDescendant(of: scroll))
+        #expect(!(hit is SidebarProfileDot))
+        gaps += 1
+      }
+      #expect(gaps > 0)
+      let selected = try #require(dots().first { $0.profileId == profile })
+      #expect(view.hitTest(selected.convert(NSPoint(x: 12, y: 12), to: host)) === selected)
+      for x in [CGFloat(4), 154] {
+        #expect(view.hitTest(view.convert(NSPoint(x: x, y: viewport.midY), to: host)) === view)
+      }
+    }
+  }
+
+  func channels(_ color: NSColor) -> [CGFloat] {
+    let rgb = color.usingColorSpace(.sRGB)!
+    return [rgb.redComponent, rgb.greenComponent, rgb.blueComponent]
+  }
+
+  func composite(_ foreground: NSColor, over background: NSColor) -> [CGFloat] {
+    zip(channels(foreground), channels(background)).map { $0 * foreground.alphaComponent + $1 * (1 - foreground.alphaComponent) }
+  }
+
+  func luminance(_ channels: [CGFloat]) -> CGFloat {
+    let linear = channels.map { $0 <= 0.04045 ? $0 / 12.92 : pow(($0 + 0.055) / 1.055, 2.4) }
+    return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722
+  }
+
+  @Test(arguments: [false, true]) func allProfileTintsHaveLighterSelectionAndStableSlots(dark: Bool) throws {
     let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 240, height: 700))
     for color in ProfileColorValue.allCases {
-      var next = state(count: 3, rail: false, icon: "symbol:star.fill")
+      let tint = try #require(SidebarPalette.parse(color.swatch))
+      let background = NSColor(srgbRed: dark ? 0.06 : 0.78, green: dark ? 0.05 : 0.78, blue: dark ? 0.05 : 0.78, alpha: 1)
+        .blended(withFraction: dark ? 0.3 : 0.15, of: tint)!
+      var next = state(count: 3, rail: false, icon: "symbol:briefcase.fill")
       next.dark = dark
+      next.theme["windowTint"] = "#" + channels(background).map { String(format: "%02X", Int(($0 * 255).rounded())) }.joined()
       next.dots = next.dots.map { var dot = $0; dot.color = color.swatch; return dot }
       view.update(next)
-      let dots = view.subviews.compactMap { $0 as? SidebarProfileDot }
-      #expect(dots.map(\.frame) == (0..<3).map { NSRect(x: 82 + 26 * CGFloat($0), y: 668, width: 24, height: 24) })
-      #expect(dots.allSatisfy { $0.ink == SidebarPalette.parse(color.swatch) })
+      let dots = descendants(view).compactMap { $0 as? SidebarProfileDot }
+      #expect(dots.map { $0.convert($0.bounds, to: view) } == (0..<3).map { NSRect(x: 80 + 28 * CGFloat($0), y: 668, width: 24, height: 24) })
+      for dot in dots where !dot.selected {
+        let rendered = composite(dot.ink.withAlphaComponent(0.65), over: SidebarPalette.parse(next.theme["windowTint"])!)
+        let back = luminance(channels(SidebarPalette.parse(next.theme["windowTint"])!))
+        let mark = luminance(rendered)
+        #expect((max(mark, back) + 0.05) / (min(mark, back) + 0.05) >= 3)
+      }
+      let selected = dots[2]
+      #expect(selected.selected)
+      #expect(selected.glyph.alphaValue == 1)
+      let fill = NSColor(cgColor: try #require(selected.layer?.backgroundColor))!
+      #expect(abs(fill.alphaComponent - (dark ? 0.16 : 0.55)) < 1e-6)
+      let composited = composite(fill, over: background)
+      #expect(zip(composited, channels(background)).allSatisfy { $0 >= $1 })
+      #expect(luminance(composited) > luminance(channels(background)))
+      #expect(composite(fill, over: .white).allSatisfy { abs($0 - 1) < 1e-6 })
+      #expect(selected.layer?.borderWidth == 0.5)
+      #expect(selected.layer?.cornerRadius == 6)
     }
+  }
+
+  @Test(arguments: [false, true], ["symbol:briefcase.fill", "🧭", "A", ""]) func everyGlyphUsesOneOpacityAndKeepsItsIdentity(dark: Bool, icon: String) throws {
+    let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 240, height: 700))
+    var next = state(count: 3, rail: false, icon: icon)
+    next.dark = dark
+    next.currentProfileId = "p0"
+    view.update(next)
+    let dots = descendants(view).compactMap { $0 as? SidebarProfileDot }
+    let dot = dots[2]
+    let original = dot.frame
+    #expect(dot.glyph.value == (icon.isEmpty ? nil : icon))
+    #expect(dot.glyph.subviews.compactMap { $0 as? SidebarProfileEmoji }.allSatisfy { $0.color == dot.ink })
+    #expect(abs(dot.glyph.alphaValue - 0.65) < 1e-6)
+    #expect(!dot.selected)
+    dot.setHovered(true)
+    #expect(abs(dot.glyph.alphaValue - 0.85) < 1e-6)
+    #expect(!dot.selected)
+    #expect(dot.accessibilityValue() as? NSNumber == NSNumber(value: false))
+    #expect(dot.glyph.value == (icon.isEmpty ? nil : icon))
+    #expect(dot.frame == original)
+    let hoverFill = NSColor(cgColor: try #require(dot.layer?.backgroundColor))!
+    #expect(abs(hoverFill.alphaComponent - (dark ? 0.09 : 0.30)) < 1e-6)
+    dot.setHovered(false)
+    next.currentProfileId = "p2"
+    view.update(next)
+    #expect(dot.selected)
+    #expect(dot.glyph.alphaValue == 1)
+    #expect(dot.frame == original)
+    #expect(dot.glyph.value == (icon.isEmpty ? nil : icon))
+    #expect(dot.accessibilityLabel() == "Profile 2")
+    #expect(dot.accessibilityHelp() == "⌃3")
+    #expect(dot.accessibilityValue() as? NSNumber == NSNumber(value: true))
+    dot.setHovered(true)
+    #expect(dot.glyph.alphaValue == 1)
+    #expect(dot.accessibilityValue() as? NSNumber == NSNumber(value: true))
+  }
+
+  @Test(arguments: [false, true], [false, true]) func pressKeepsIdentityAndUsesFullOpacity(dark: Bool, selected: Bool) throws {
+    let dot = SidebarProfileDot(frame: NSRect(x: 0, y: 0, width: 24, height: 24))
+    dot.dark = dark
+    dot.icon = "🧭"
+    dot.selected = selected
+    let event = try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: .zero, modifierFlags: [], timestamp: 0,
+      windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+    dot.mouseDown(with: event)
+    #expect(dot.glyph.alphaValue == 1)
+    #expect(dot.glyph.value == "🧭")
+    #expect(dot.selected == selected)
+    #expect(dot.frame.size == NSSize(width: 24, height: 24))
+    let fill = NSColor(cgColor: try #require(dot.layer?.backgroundColor))!
+    let expected = dark ? (selected ? 0.24 : 0.20) : (selected ? 0.75 : 0.65)
+    #expect(abs(Double(fill.alphaComponent) - expected) < 1e-6)
+    var menus = 0
+    dot.onMenu = { menus += 1 }
+    #expect(dot.accessibilityPerformShowMenu())
+    #expect(menus == 1)
+  }
+
+  @Test(arguments: [false, true]) func starUsesTheSameSizeAndNeutralInk(dark: Bool) {
+    let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 240, height: 700))
+    var next = state(count: 3, rail: false, icon: "symbol:star.fill")
+    next.dark = dark
+    view.update(next)
+    view.layoutSubtreeIfNeeded()
+    let dots = descendants(view).compactMap { $0 as? SidebarProfileDot }
+    let star = dots[2]
+    #expect(star.frame.size == dots[0].frame.size)
+    #expect(star.glyph.alphaValue == 1)
+    #expect(star.ink == SidebarPalette.parse(dark ? "#F5F2F7" : "#302938"))
+    #expect(SidebarChromeMetrics.dotCell == 28)
+    #expect(SidebarChromeMetrics.dot == 5)
+    #expect(SidebarChromeMetrics.profileGlyph == 13)
+    #expect(star.glyph.subviews.allSatisfy { $0.frame.size == NSSize(width: 16, height: 16) })
   }
 
   @Test(arguments: [false, true]) func railHoverPillUsesWindowRoomAndActualShortcut(right: Bool) {
@@ -131,8 +321,47 @@ import Testing
     #expect(root.bounds.contains(pill.frame))
     #expect(pill.subviews.allSatisfy { pill.bounds.contains($0.frame) })
     rail.update(state(count: 4))
-    #expect(rail.subviews.compactMap { $0 as? SidebarProfileDot }.count == 4)
+    #expect(descendants(rail).compactMap { $0 as? SidebarProfileDot }.count == 4)
     pill.hide()
+  }
+
+  @Test(arguments: [CGFloat(160), 400], [false, true])
+  func profileTooltipsStayAboveTheBarInsideEitherSideOfTheWindow(width: CGFloat, flipped: Bool) {
+    let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 900, height: 700), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    defer { window.contentView = nil; window.close() }
+    let contentBounds = NSRect(x: 0, y: 0, width: 900, height: 700)
+    let root: NSView = flipped ? FlippedContainerView(frame: contentBounds) : NSView(frame: contentBounds)
+    window.contentView = root
+    for right in [false, true] {
+      let sidebar = SidebarChromeView(frame: NSRect(x: right ? 900 - width : 0, y: 0, width: width, height: 700))
+      root.addSubview(sidebar)
+      defer { sidebar.removeFromSuperview() }
+      var next = state(count: 3, rail: false)
+      next.downloads = false
+      sidebar.update(next)
+      let dots = descendants(sidebar).compactMap { $0 as? SidebarProfileDot }
+      let pill = SidebarDotTooltip()
+      sidebar.addSubview(pill)
+      defer { pill.hide(); pill.removeFromSuperview() }
+      for index in [0, dots.count - 1] {
+        let dot = dots[index]
+        #expect(!dot.isHidden)
+        let name = index == 0 ? "Personal" : "A very long profile name that must fit inside the sidebar"
+        pill.show(name, shortcut: "⌃\(index + 1)", above: dot)
+        pill.appear(name)
+        let frame = pill.convert(pill.bounds, to: sidebar)
+        #expect(!pill.isHidden)
+        #expect(pill.text == name)
+        #expect(pill.shortcut == "⌃\(index + 1)")
+        #expect(root.bounds.contains(pill.frame))
+        #expect(sidebar.bounds.contains(frame))
+        #expect(frame.maxY <= sidebar.bounds.maxY - SidebarChromeMetrics.footer - 4)
+        let centered = dot.convert(dot.bounds, to: sidebar).midX - frame.width / 2
+        #expect(abs(frame.minX - max(4, min(centered, width - frame.width - 4))) <= 0.5)
+        #expect(pill.subviews.allSatisfy { pill.bounds.contains($0.frame) })
+      }
+    }
   }
 
   @Test func shortcutKeycapsKeepRemappedAndDisabledBindings() {

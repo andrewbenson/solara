@@ -331,10 +331,10 @@ struct SidebarChromeTests {
     view.update(state())
     let info = view.describe()["dots"] as! [[String: Any]]
     let rects = info.map { $0["rect"] as! [Double] }
-    #expect(rects[0] == [72, 568, 24, 24])
+    #expect(rects[0] == [70, 568, 24, 24])
     view.setPagerPosition(0.5)
     let opacities = (view.describe()["dots"] as! [[String: Any]]).map { $0["opacity"] as! Double }
-    #expect(abs(opacities[0] - 0.525) < 1e-6 && abs(opacities[1] - 0.525) < 1e-6 && abs(opacities[2] - 0.2) < 1e-6)
+    #expect(abs(opacities[0] - 0.825) < 1e-6 && abs(opacities[1] - 0.825) < 1e-6 && abs(opacities[2] - 0.65) < 1e-6)
   }
 
   func restoredState(_ profileId: String) -> SidebarChromeState {
@@ -352,7 +352,7 @@ struct SidebarChromeTests {
   func restoredProfileIsSelectedBeforeAnyPagerEvent(profileId: String) {
     let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 220, height: 600))
     view.update(restoredState(profileId))
-    let expected = profileId == "p1" ? [0.2, 0.85, 0.2, 0.2] : [0.2, 0.2, 0.2, 0.85]
+    let expected = profileId == "p1" ? [0.65, 1, 0.65, 0.65] : [0.65, 0.65, 0.65, 1]
     for (actual, wanted) in zip(dotOpacities(view), expected) { #expect(abs(actual - wanted) < 1e-6) }
   }
 
@@ -360,7 +360,7 @@ struct SidebarChromeTests {
     let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 220, height: 600))
     view.update(state(dots: 0, profiles: 0))
     view.update(restoredState("p1"))
-    for (actual, wanted) in zip(dotOpacities(view), [0.2, 0.85, 0.2, 0.2]) { #expect(abs(actual - wanted) < 1e-6) }
+    for (actual, wanted) in zip(dotOpacities(view), [0.65, 1, 0.65, 0.65]) { #expect(abs(actual - wanted) < 1e-6) }
   }
 
   @Test func earlySwipePositionSurvivesInitialStateAndThemeUpdate() {
@@ -368,11 +368,11 @@ struct SidebarChromeTests {
     view.setPagerPosition(1.5)
     var next = restoredState("p1")
     view.update(next)
-    for (actual, wanted) in zip(dotOpacities(view), [0.2, 0.525, 0.525, 0.2]) { #expect(abs(actual - wanted) < 1e-6) }
+    for (actual, wanted) in zip(dotOpacities(view), [0.65, 0.825, 0.825, 0.65]) { #expect(abs(actual - wanted) < 1e-6) }
     next.dark = true
     next.currentProfileId = "p2"
     view.update(next)
-    for (actual, wanted) in zip(dotOpacities(view), [0.2, 0.525, 0.525, 0.2]) { #expect(abs(actual - wanted) < 1e-6) }
+    for (actual, wanted) in zip(dotOpacities(view), [0.65, 0.825, 0.825, 0.65]) { #expect(abs(actual - wanted) < 1e-6) }
   }
 
   @Test func passesThroughBelowTheHeader() {

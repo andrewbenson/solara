@@ -56,7 +56,7 @@ struct SidebarRailChromeTests {
   @Test func railDownloadsAndDotsHaveSeparateBands() {
     let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 42, height: 700))
     view.update(state(rail: true))
-    let dots = view.subviews.compactMap { $0 as? SidebarProfileDot }
+    let dots = view.profileRow.subviews.compactMap { $0 as? SidebarProfileDot }
     #expect(view.footerHeight == 80)
     #expect(view.footerDownloads.frame == NSRect(x: 4, y: 623, width: 34, height: 34))
     #expect(dots.allSatisfy { $0.isHidden })
@@ -67,7 +67,7 @@ struct SidebarRailChromeTests {
   @Test func railUpdatePreservesSeparateFooterBands() {
     let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 42, height: 700))
     view.update(state(rail: true, update: true))
-    let dots = view.subviews.compactMap { $0 as? SidebarProfileDot }
+    let dots = view.profileRow.subviews.compactMap { $0 as? SidebarProfileDot }
     #expect(dots.allSatisfy { $0.isHidden && !$0.frame.intersects(view.footerDownloads.frame) })
     #expect(view.footerDownloads.frame == NSRect(x: 4, y: 623, width: 34, height: 34))
     #expect(!view.updatePill.frame.intersects(view.footerDownloads.frame))
@@ -92,10 +92,10 @@ struct SidebarRailChromeTests {
   @Test func fullWidthFooterAndUpdateUseFortyPointProfileBar() {
     let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 240, height: 700))
     view.update(state(rail: false, update: true))
-    let dots = view.subviews.compactMap { $0 as? SidebarProfileDot }
+    let dots = view.profileRow.subviews.compactMap { $0 as? SidebarProfileDot }
     #expect(view.footerHeight == 78)
     #expect(view.footerDownloads.frame == NSRect(x: 6, y: 663, width: 34, height: 34))
-    #expect(dots.map(\.frame) == [NSRect(x: 95, y: 668, width: 24, height: 24), NSRect(x: 121, y: 668, width: 24, height: 24)])
+    #expect(dots.map { $0.convert($0.bounds, to: view) } == [NSRect(x: 94, y: 668, width: 24, height: 24), NSRect(x: 122, y: 668, width: 24, height: 24)])
     #expect(view.updatePill.frame == NSRect(x: 8, y: 622, width: 224, height: 30))
     #expect(view.updatePill.toolTip == "Install update")
     #expect(view.updatePill.subviews.compactMap { $0 as? NSTextField }.allSatisfy { !$0.isHidden })

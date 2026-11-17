@@ -282,6 +282,7 @@ function themeTokens(theme: Theme, adjustInk: boolean): Record<string, string> {
   const tokens: Record<string, string> = {};
   for (const key of THEME_KEYS) tokens[key] = theme[key];
   tokens.backdropTint = theme.backdrop.tintColor;
+  tokens.windowTint = theme.windowTint[1];
   return inkedTokens(tokens, theme.sidebarInk, adjustInk);
 }
 

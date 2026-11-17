@@ -131,7 +131,7 @@ try {
       });
       if (!inside(got.update.rect, got.width)) throw new Error(`the update button leaves the column: ${JSON.stringify(got)}`);
       const dark = await capture("rail-update-dark");
-      await run(`st().updateSettings({ theme: "light" }); return true;`);
+      await run(`st().updateSettings({ appearance: "light" }); return true;`);
       await sleep(800);
       const light = await capture("rail-update-light");
       await toggle();
@@ -140,7 +140,7 @@ try {
       const fullLight = await capture("full-update-light");
       await toggle();
       await widthIs(42);
-      await run(`st().updateSettings({ theme: "dark" }); return true;`);
+      await run(`st().updateSettings({ appearance: "dark" }); return true;`);
       return { update: got.update, shots: { dark, light, fullLight } };
     } finally {
       await run(`return A.devSimulatePendingUpdate(null, "count");`).catch(() => {});

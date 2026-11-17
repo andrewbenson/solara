@@ -25,25 +25,6 @@ Source counts include retained fallback and unconsumed exports; they are not mea
 React Native still registers main and pane module names, with one main root per browser/Little Solara window
 and a pane root per shown overlay; the API-skew screen reuses main.
 
-## 0.4.3: agents can read your browser, and the owner's polish list
-
-The `solara mcp` server and the `solara` command's listings and search, read-only by default; plus the fixes the
-owner raised on 0.4.2: profile bar, Picture in Picture pinch, held ⌘ keycaps, the clean-up card, the sidebar fade.
-
-| Item | Status |
-|---|---|
-| `solara mcp`: an MCP server in the `solara` command for Claude Code, Codex and Cursor, over the existing control path (no new listener); read-only tools by default, acting tools behind `--allow-actions`, never `exec`; page text marked untrusted; `solara mcp install`; every tool carries MCP's standard annotations as Claude reads them (`title`, `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`), set per tool, with the sidebar editor split so deleting a group is its own destructive tool (owner 2026-11-14, moved from 0.4.0) | landed: 5 read tools and 5 opt-in action tools with annotations, install for Claude Code/Codex/Cursor; CLI tests 135, hidden Release e2e 8/8 (Hill Studio) |
-| The `solara` command lists what's open: `solara profiles`, `solara windows`, and `solara tabs --window/--profile/--group/--asleep/--awake`; one tab ID across `tabs` and `sidebar` so commands chain (owner 2026-11-14) | landed: profiles, windows, tabs with --window/--profile/--group, --json; --asleep/--awake and one ID shared with MCP need an app-side ID map (0.4.4) |
-| Everyday tab actions from the command line: `solara open URL [--window] [--profile] [--background]`, `solara tab activate/close/reload/duplicate/mute/sleep`, close duplicates, sleep tabs idle for a while; never brings Solara forward unless asked (owner 2026-11-14) | shipped in 0.4.3: open URL (background by default); actions by ID refuse with a clear error until 0.4.4 |
-| Search from the command line: `solara find` across open tabs, pins and recent history; `solara history` as a plain command (owner 2026-11-14) | landed: solara find across tabs, pins and recent history; solara history with query and domain rollups |
-| Fix: with New tabs opening the Command Bar, ⌘T on a blank New Tab page doesn't open the Command Bar panel (since 4ffd5446; a fix passes omnibox-test but not its own native-tab-commands step) | landed; omnibox 16/16, shortcuts 109/109, newtab 6/6 (unmodified), native-tab-commands and native-omnibox-actions 42/42 in the build VM |
-| From 0.4.2's gate: JS startup to first window 355 -> 428 ms (+20.5%) and the after-idle command 112 -> 134 ms; trace the commit and win it back (docs/perf/0.4.1-to-0.4.2.md) | landed: 4073a8c8 built the icon picker in every sidebar at launch; deferred, 404 -> 337 ms (Hill Studio, n=4) |
-| Profile bar redesign (owner 2026-11-17): every profile its icon in one slot size, unselected dimmed, selected on a lighter fill, star in the same style; hover tooltip above the bar with the name, inside the window | landed; sidebar-chrome 20/20, rail 9/9, click 7/7 in the build VM; needs the owner's look |
-| Holding ⌘ through ⌘1–9 keeps the tab-number keycaps up until ⌘ is released (owner 2026-11-17) | landed; tab-number-hints-test 24/24 in the build VM |
-| Fix: pinch to resize Picture in Picture doesn't work for the owner (pinch-in shrinks, spread grows, anchored at the pointer, whether or not Solara is active) | landed; pip-window-test 10/10 incl. inactive pinch and ⌘-scroll for video and document PiP |
-| The clean-up suggestion card: a Don't Ask Again choice and a setting to turn it off (owner 2026-11-17); fix its upside-down layout | landed; needs the owner's look |
-| The sidebar's bottom fade runs behind the profile bar: rows stay opaque to the bar's top and clear by its centre, the last row still clears the bar (owner 2026-11-17) | landed; needs the owner's look |
-
 ## 0.4.4: the sidebar and tab strip decide in Swift
 
 The second half: done when every user action is handled in Swift and JavaScript only mirrors state.
@@ -71,6 +52,8 @@ The second half: done when every user action is handled in Swift and JavaScript 
 | 0.4.0's perf follow-ups: new window on screen 135 vs 97 ms, page-load and profile-swipe JS stalls (+57%, +18%), and the sheet-host harness's busy-dismiss failure (docs/perf/0.3.5-to-0.4.0.md) | in progress: native layout fixes landed (a62efaf5); default-path new window +55% vs 0.3.5 open; new window (default layout): page-created engine report reveals the window without waiting on pane roots, 161 -> 111 ms vs main, 124 vs 0.3.5 104 (landed) |
 | Commands, menus and shortcuts in Swift, with window, focus and navigation handling | in progress: tabs and windows landed (4ffd5446); other groups per docs/native/commands-plan.md |
 | Settings and Import actions call Swift directly, not a JavaScript round trip | planned |
+| From 0.4.3's gate: the open-tabs ratchet counts rose without attribution (listenerCalls 8218 -> 8320, subNotified +0.65%; suspect 2565518a); trace them, and fix or attribute before raising ceilings | planned |
+| Fix sheet-host's "ending busy must allow dismiss" (fails in every gate since 0.4.0) so a full host-harness run passes | planned |
 
 ## 0.4.5: the data layer is native
 

@@ -49,7 +49,6 @@ native (the engine and the native store), so the rest does not wait on the port.
 | Settings and Import actions call Swift directly, not a JavaScript round trip | planned |
 | Fix: with New tabs opening the Command Bar, ⌘T on a blank New Tab page doesn't open the Command Bar panel (since 4ffd5446; a fix passes omnibox-test but not its own native-tab-commands step) | landed; omnibox 16/16, shortcuts 109/109, newtab 6/6 (unmodified), native-tab-commands and native-omnibox-actions 42/42 in the build VM |
 | From 0.4.2's gate: JS startup to first window 355 -> 428 ms (+20.5%) and the after-idle command 112 -> 134 ms; trace the commit and win it back (docs/perf/0.4.1-to-0.4.2.md) | landed: 4073a8c8 built the icon picker in every sidebar at launch; deferred, 404 -> 337 ms (Hill Studio, n=4) |
-| Full-screen island like Rex's: 80 x 33 capsule, slides down and back up, no hover through to the sidebar's profile button, button glyphs on hover, minimize grey | in progress |
 | Profile bar redesign (owner 2026-11-17): every profile its icon in one slot size, unselected dimmed, selected on a lighter fill, star in the same style; hover tooltip above the bar with the name, inside the window | landed; sidebar-chrome 20/20, rail 9/9, click 7/7 in the build VM; needs the owner's look |
 | Holding ⌘ through ⌘1–9 keeps the tab-number keycaps up until ⌘ is released (owner 2026-11-17) | landed; tab-number-hints-test 24/24 in the build VM |
 | Fix: pinch to resize Picture in Picture doesn't work for the owner (pinch-in shrinks, spread grows, anchored at the pointer, whether or not Solara is active) | landed; pip-window-test 10/10 incl. inactive pinch and ⌘-scroll for video and document PiP |
@@ -69,6 +68,7 @@ The second half: done when every user action is handled in Swift and JavaScript 
 | Picture in Picture: a click on the video's left or right side skips 10 s back or forward; thrown into a corner, its curve nests inside the window's corner (seen in Ardia, 2026-11) | planned |
 | Auto Picture in Picture for calls: Google Meet pops out when you leave its tab and comes back when you return (seen in Ardia, 2026-11) | planned |
 | Split View: double-click a divider to even the panes; an accent ring marks the focused pane; the resize cursor covers the whole divider (seen in Ardia, 2026-11) | planned |
+| Full-screen island like Rex's: 80 x 33 capsule, slides down and back up, no hover through to the sidebar's profile button, button glyphs on hover, minimize grey | moved from 0.4.3: five passes; geometry, slide, hover coverage and glyphs pass, but minimize isn't disabled in the icons layout and the top strip's live peek loses a tab's accessibility span; patch kept in work/island43 |
 
 ## 0.4.5: the data layer is native
 

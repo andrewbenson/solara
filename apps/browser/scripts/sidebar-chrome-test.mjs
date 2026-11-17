@@ -235,6 +235,28 @@ try {
   });
   await canary("(e)");
 
+  await rep.check("(e2) hovering a profile dot shows its name and its Control-number shortcut", async () => {
+    const c = await run(`return col();`);
+    const out = {};
+    for (const [index, dot] of c.chrome.dots.entries()) {
+      const [x, y] = centre(c, dot.rect);
+      const tip = await run(`const end = Date.now() + 3000;
+        const poll = () => ac.shell.devSetPointer("w1", { x: ${x}, y: ${y} }).then(() => act("mouse:moved:${x},${y}")).then(() => settle(150)).then(() => col()).then((c) => {
+          const t = c.chrome.tooltip;
+          if (t && t.text) return t;
+          if (Date.now() > end) return { missing: true };
+          return poll();
+        });
+        return poll();`);
+      if (tip.missing) throw new Error(`no tooltip over ${dot.id}`);
+      const want = index < 9 ? `⌃${index + 1}` : null;
+      if ((tip.shortcut ?? null)?.replace?.(/\s/g, "") !== want && (tip.shortcut ?? null) !== want) throw new Error(`${dot.id}: tooltip ${JSON.stringify(tip)}, wanted shortcut ${want}`);
+      out[dot.id] = tip;
+    }
+    await run(`return ac.shell.devSetPointer("w1", { x: ${c.frame[0] + 20}, y: ${c.frame[1] + 120} }).then(() => act("mouse:moved:${c.frame[0] + 20},${c.frame[1] + 120}")).then(() => settle(300));`);
+    return out;
+  });
+
   await rep.check("(f) a drop on the header and on the footer opens a tab, with the native glow", async () => {
     const out = {};
     const column = await run(`return col();`);

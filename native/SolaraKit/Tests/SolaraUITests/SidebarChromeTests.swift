@@ -11,6 +11,28 @@ struct SidebarChromeTests {
       dots: (0..<dots).map { SidebarChromeDot(id: "p\($0)", name: "P\($0)", slot: $0 < 2 ? Double($0) : nil) }, savedWidth: 220, update: update)
   }
 
+  @Test func unusedProfileIconPickerIsNotAllocatedDuringChromeLifecycle() {
+    let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 220, height: 600))
+    #expect((view.iconPopover as ProfileIconPopover?) == nil)
+    view.update(state())
+    #expect((view.iconPopover as ProfileIconPopover?) == nil)
+    view.viewDidMoveToWindow()
+    #expect((view.iconPopover as ProfileIconPopover?) == nil)
+  }
+
+  @Test func profileIconPickerIsCreatedOnlyForAnExistingProfileAndReused() throws {
+    let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 220, height: 600))
+    view.update(state())
+    view.showIconPicker("missing")
+    #expect((view.iconPopover as ProfileIconPopover?) == nil)
+    view.showIconPicker("p0")
+    let picker = try #require(view.iconPopover as ProfileIconPopover?)
+    view.showIconPicker("p1")
+    #expect(view.iconPopover === picker)
+    view.viewDidMoveToWindow()
+    #expect(view.iconPopover === picker)
+  }
+
   @Test func updatePillSitsAboveTheFooterRow() {
     let host = FlippedContainerView(frame: NSRect(x: 0, y: 0, width: 220, height: 600))
     let view = SidebarChromeView(frame: host.bounds)

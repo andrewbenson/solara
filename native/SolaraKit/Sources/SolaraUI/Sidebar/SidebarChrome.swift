@@ -195,7 +195,7 @@ public final class SidebarChromeView: NSView {
   private var dots: [SidebarProfileDot] = []
   let profileSwitcher = SidebarRailProfileButton()
   let profilePopover = NSPopover()
-  let iconPopover = ProfileIconPopover()
+  private(set) var iconPopover: ProfileIconPopover?
   private var iconProfileId: String?
   private var menuProfileId: String?
   private var railHover: String?
@@ -272,7 +272,7 @@ public final class SidebarChromeView: NSView {
     if window == nil {
       tooltip.hide()
       tooltip.removeFromSuperview()
-      iconPopover.close()
+      iconPopover?.close()
       profilePopover.close()
     }
     let center = NotificationCenter.default
@@ -337,7 +337,7 @@ public final class SidebarChromeView: NSView {
     if next.dropOver != state?.dropOver { fadeDropGlow(to: next.dropOver ? 1 : 0) }
     if next.rail != state?.rail || next.dots != state?.dots || next.currentProfileId != state?.currentProfileId { profilePopover.performClose(nil) }
     if next.rail != state?.rail || next.currentProfileId != state?.currentProfileId || iconProfileId.map({ id in !next.dots.contains { $0.id == id } }) == true {
-      iconPopover.close()
+      iconPopover?.close()
       iconProfileId = nil
       tooltip.hide()
     }
@@ -536,7 +536,7 @@ public final class SidebarChromeView: NSView {
     if profilePopover.isShown { return profilePopover.performClose(nil) }
     let width = CGFloat(min(320, max(200, state.savedWidth)))
     tooltip.hide()
-    iconPopover.close()
+    iconPopover?.close()
     let rowsHeight = CGFloat(state.dots.count) * (FolderPanelMetrics.rowHeight + FolderPanelMetrics.rowGap)
     let height = rowsHeight + FolderPanelMetrics.padding * 2 + 66
     let body = FlippedContainerView(frame: NSRect(x: 0, y: 0, width: width, height: height))
@@ -612,7 +612,9 @@ public final class SidebarChromeView: NSView {
     let anchor: NSView
     if profileSwitcher.isHidden, let dot = dots.first(where: { $0.profileId == id }) { anchor = dot } else { anchor = profileSwitcher }
     iconProfileId = id
-    iconPopover.show(profileId: id, current: profile.icon, dark: state.dark,
+    let popover = iconPopover ?? ProfileIconPopover()
+    iconPopover = popover
+    popover.show(profileId: id, current: profile.icon, dark: state.dark,
       tint: SidebarPalette.parse(profile.color) ?? SidebarPalette.parse(state.theme["accent"]) ?? .controlAccentColor,
       relativeTo: anchor.bounds, of: anchor) { [weak self] icon in
         self?.onAction(.changeProfileIcon(id, icon))

@@ -121,7 +121,7 @@ enum NativeSplitChrome {
       }
       send()
     }
-    view.onToolbarGeometryChange = { _ in NativeWindowShell.host(windowId)?.scheduleLayoutProjection() }
+    view.onToolbarGeometryChange = { _ in NativeWindowShell.host(windowId)?.layoutGeometryChanged() }
     view.onToolbarAnchors = { tabId, anchors in
       NativeExtensionActionPopup.anchorsChanged(window: ShellDrag.window(windowId), tabId: tabId, anchors: anchors)
       let payload = anchors.mapValues { [$0.minX, $0.minY, $0.width, $0.height] }
@@ -307,6 +307,7 @@ final class NativePaneLayoutHost {
   private var paintedTokens: [String: Int] = [:]
   private var bookmarks: BookmarksBarHost?
   private var features: PaneOverlayHost?
+  private var featuresInstalled = false
   #if DEBUG
   var bookmarksView: BookmarksBarView? { stopped ? nil : bookmarks?.view }
   #endif
@@ -325,6 +326,10 @@ final class NativePaneLayoutHost {
   }
 
   func install(_ snapshot: WindowLayoutSnapshot, state: BrowserState) {
+    #if DEBUG || SOLARA_PERF_TRACE
+    let trace = LayoutTrace.begin("paneInstall", "\(shell.windowId) \(snapshot.input.storeRevision)")
+    defer { LayoutTrace.end(trace) }
+    #endif
     guard !stopped, snapshot.input.windowGeneration == generation else { return }
     self.snapshot = snapshot
     self.state = state
@@ -335,15 +340,56 @@ final class NativePaneLayoutHost {
         panes.theme = theme
         panes.cardColor = theme.color("card", dark: "rgba(18,18,18,0.5)", light: "rgba(255,255,255,0.7)")
         panes.small = false
+        #if DEBUG || SOLARA_PERF_TRACE
+        let paneChromeTrace = LayoutTrace.begin("paneChrome", shell.windowId)
+        #endif
         chrome.install(snapshot, state: state)
+        #if DEBUG || SOLARA_PERF_TRACE
+        LayoutTrace.end(paneChromeTrace)
+        #endif
+        #if DEBUG || SOLARA_PERF_TRACE
+        let paneGeometryTrace = LayoutTrace.begin("paneGeometry", shell.windowId)
+        #endif
         panes.install(snapshot, state: state)
+        #if DEBUG || SOLARA_PERF_TRACE
+        LayoutTrace.end(paneGeometryTrace)
+        #endif
+        #if DEBUG || SOLARA_PERF_TRACE
+        let paneOverlaysTrace = LayoutTrace.begin("paneOverlays", shell.windowId)
+        #endif
         overlays.install(snapshot, state: state)
+        #if DEBUG || SOLARA_PERF_TRACE
+        LayoutTrace.end(paneOverlaysTrace)
+        #endif
+        #if DEBUG || SOLARA_PERF_TRACE
+        let paneBookmarksTrace = LayoutTrace.begin("paneBookmarks", shell.windowId)
+        #endif
         placeBookmarks(snapshot, state: state)
+        #if DEBUG || SOLARA_PERF_TRACE
+        LayoutTrace.end(paneBookmarksTrace)
+        #endif
+        #if DEBUG || SOLARA_PERF_TRACE
+        let paneFrozenTrace = LayoutTrace.begin("paneFrozen", shell.windowId)
+        #endif
         placeFrozen()
+        #if DEBUG || SOLARA_PERF_TRACE
+        LayoutTrace.end(paneFrozenTrace)
+        #endif
       }
     }
     for id in snapshot.panes.keys { AutoHideHost.toolbarReady(windowId: shell.windowId, tabId: id, toolbar: panes.toolbar(id)) }
-    features?.refresh()
+    #if DEBUG || SOLARA_PERF_TRACE
+    let featuresTrace = LayoutTrace.begin("paneFeatures", shell.windowId)
+    #endif
+    if featuresInstalled {
+      features?.relayout()
+    } else {
+      featuresInstalled = true
+      features?.refresh()
+    }
+    #if DEBUG || SOLARA_PERF_TRACE
+    LayoutTrace.end(featuresTrace)
+    #endif
   }
 
   func setTheme(_ theme: SplitChromeTheme, covered: Bool) {

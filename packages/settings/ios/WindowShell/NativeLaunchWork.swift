@@ -2,6 +2,9 @@ import AppKit
 import SolaraShell
 import SolaraStore
 import SolaraUI
+#if DEBUG || SOLARA_PERF_TRACE
+import SolaraModel
+#endif
 
 #if SOLARA_PROBES
 struct NativeLaunchWorkOptions: Sendable {
@@ -325,7 +328,12 @@ final class NativeLaunchReadiness {
         let view = note.object as? NSView
         MainActor.assumeIsolated {
           guard let self, !self.stopped else { return }
-          if let view, view === self.root { self.guestReady = true }
+          if let view, view === self.root {
+            self.guestReady = true
+            #if DEBUG || SOLARA_PERF_TRACE
+            LayoutTrace.event("windowRootAppeared", self.token.id)
+            #endif
+          }
           DispatchQueue.main.async { [weak self] in self?.refresh() }
         }
       })
@@ -355,15 +363,30 @@ final class NativeLaunchReadiness {
       NativeStoreHandle.opened, NativeStoreHandle.store != nil else { return }
     let scheduler = NativeLaunchWork.scheduler
     guard scheduler.reach(.store, window: token), ownerReady, scheduler.reach(.owner, window: token),
-      !shell.bounds.isEmpty, coherent?() == true, scheduler.reach(.slots, window: token),
-      guestReady, LaunchGuestReadiness.contains(in: root, windowId: token.id),
-      guestsReady?() != false, scheduler.reach(.guest, window: token) else { return }
+      !shell.bounds.isEmpty, coherent?() == true, scheduler.reach(.slots, window: token) else { return }
+    #if DEBUG || SOLARA_PERF_TRACE
+    LayoutTrace.event("windowSlotsReady", token.id)
+    #endif
+    guard guestReady, LaunchGuestReadiness.contains(in: root, windowId: token.id) else { return }
+    #if DEBUG || SOLARA_PERF_TRACE
+    LayoutTrace.event("windowGuestReady", token.id)
+    #endif
+    guard guestsReady?() != false, scheduler.reach(.guest, window: token) else { return }
+    #if DEBUG || SOLARA_PERF_TRACE
+    LayoutTrace.event("windowPaneGuestsReady", token.id)
+    #endif
     committing = true
     FrameUpdates.flush()
-    shell.layoutSubtreeIfNeeded()
+    flushShellLayout(shell)
     let revision = revision?() ?? 0
+    #if DEBUG || SOLARA_PERF_TRACE
+    let traceWindowId = token.id
+    #endif
     CATransaction.begin()
     CATransaction.setCompletionBlock { [weak self] in
+      #if DEBUG || SOLARA_PERF_TRACE
+      LayoutTrace.event("windowCACompleted", traceWindowId)
+      #endif
       DispatchQueue.main.async {
         MainActor.assumeIsolated {
           guard let self, !self.stopped, !self.committed else { return }
@@ -373,7 +396,7 @@ final class NativeLaunchReadiness {
             return
           }
           FrameUpdates.flush()
-          shell.layoutSubtreeIfNeeded()
+          self.flushShellLayout(shell)
           guard shell.window === ownerWindow, root.window === ownerWindow,
             self.coherent?() == true, LaunchGuestReadiness.contains(in: root, windowId: self.token.id),
             self.guestsReady?() != false, (self.revision?() ?? 0) == revision else {
@@ -393,6 +416,9 @@ final class NativeLaunchReadiness {
         }
       }
     }
+    #if DEBUG || SOLARA_PERF_TRACE
+    LayoutTrace.event("windowCABegin", token.id)
+    #endif
     shell.displayIfNeeded()
     CATransaction.commit()
     CATransaction.flush()
@@ -412,6 +438,24 @@ final class NativeLaunchReadiness {
     let onStop = onStop
     self.onStop = nil
     onStop?()
+  }
+
+  private func flushShellLayout(_ view: NSView) {
+    #if DEBUG || SOLARA_PERF_TRACE
+    let trace = LayoutTrace.begin("windowRevealShellLayout", token.id)
+    defer { LayoutTrace.end(trace) }
+    #endif
+    if NativeWindowShell.nativeLayoutActive(token.id), let shell = view as? WindowShellView {
+      #if DEBUG || SOLARA_PERF_TRACE
+      LayoutTrace.event("windowRevealLayoutMode", "\(token.id) frame")
+      #endif
+      shell.layoutFrameIfNeeded()
+    } else {
+      #if DEBUG || SOLARA_PERF_TRACE
+      LayoutTrace.event("windowRevealLayoutMode", "\(token.id) subtree")
+      #endif
+      view.layoutSubtreeIfNeeded()
+    }
   }
 
   private func observeMounting(_ root: NSView) {

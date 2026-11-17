@@ -21,6 +21,7 @@ enum NativePaneOverlays {
     PanePrompts.start()
     _ = SettingsJS.shared.observe("pane.navigation") { value in
       navigation = (value as? [String: Any])?["windows"] as? [String: [String: Any]] ?? [:]
+      navigationRevision &+= 1
       for host in hosts.values { host.relayout() }
     }
     _ = SettingsJS.shared.observe("pane.navigationMenu") { value in
@@ -48,6 +49,7 @@ enum NativePaneOverlays {
   }
 
   static var navigation: [String: [String: Any]] = [:]
+  private(set) static var navigationRevision: UInt64 = 0
 
   static func host(_ windowId: String) -> PaneOverlayHost? { hosts[windowId] }
 
@@ -681,11 +683,13 @@ final class PaneOverlayHost {
   }
 
   private func reconcileNavigationSwipes() {
-    guard NativeWindowShell.nativeLayoutActive(windowId), let issuer = PageIssuer.shared else { return }
+    guard NativeWindowShell.nativeLayoutActive(windowId), PageIssuer.shared != nil,
+      let snapshot = NativeStoreHandle.store?.snapshot else { return }
+    let state = snapshot.state
     let generation = NativeWindowShell.nativeLayoutGeneration(windowId)
     let feed = NativePaneOverlays.navigation[windowId]
     let presentations = (feed?["generation"] as? NSNumber)?.uint64Value == generation ? feed?["presentations"] as? [String: [String: Any]] ?? [:] : [:]
-    let peekId = NativeStoreHandle.store?.state.peeks[windowId]?.tabId
+    let peekId = state.peeks[windowId]?.tabId
     func containers(_ tabId: String) -> (input: NSView?, drawing: NSView?) {
       if tabId == peekId {
         let peek = TabSlots.shared.container(for: .peek(windowId))
@@ -693,22 +697,31 @@ final class PaneOverlayHost {
       }
       return (PaneOverlays.shared.container(windowId: windowId, tabId: tabId, layer: .rn), slot(tabId))
     }
-    let registered = Dictionary(uniqueKeysWithValues: issuer.registry.descriptors.filter { $0.host == .pooled }.map { ($0.tabID, $0.registration) })
     var candidates = PaneOverlays.shared.tabIds(in: windowId)
     if let peekId { candidates.insert(peekId) }
-    let ids = candidates.filter { TabPoolHost.shared.windowOf($0) == windowId && containers($0).input?.window != nil }
+    let attached = candidates.compactMap { id -> (id: String, input: NSView, drawing: NSView?)? in
+      guard state.tabs[id]?.windowId == windowId else { return nil }
+      let slots = containers(id)
+      guard let input = slots.input, input.window != nil else { return nil }
+      return (id, input, slots.drawing)
+    }
+    let ids = Set(attached.map { $0.id })
+    let visible = attached.filter { !$0.input.isHiddenOrHasHiddenAncestor }
+    #if DEBUG || SOLARA_PERF_TRACE
+    LayoutTrace.event("navigationCandidates", "\(windowId) \(ids.count) \(visible.count)")
+    #endif
     for (id, entry) in navigationSwipes where !ids.contains(id) {
       entry.stop()
       navigationSwipes[id] = nil
     }
-    for id in ids {
-      let registration = registered[id] ?? PageRegistration(tabID: id, registrationGeneration: 0)
-      if navigationSwipes[id]?.matches(registration) != true {
+    for slots in visible {
+      let id = slots.id
+      let registration = TabPoolHost.shared.presentationRegistration(id) ?? PageRegistration(tabID: id, registrationGeneration: 0)
+      if navigationSwipes[id]?.matches(registration, url: state.tabs[id]?.url) != true {
         navigationSwipes[id]?.stop()
-        navigationSwipes[id] = NativeNavigationSwipe(windowId: windowId, generation: generation, registration: registration)
+        navigationSwipes[id] = NativeNavigationSwipe(windowId: windowId, generation: generation, registration: registration, compatibilityURL: state.tabs[id]?.url ?? "")
       }
-      let slots = containers(id)
-      navigationSwipes[id]?.place(input: slots.input, drawing: slots.drawing, presentation: presentations[id] ?? [:])
+      navigationSwipes[id]?.place(input: slots.input, drawing: slots.drawing, presentation: presentations[id] ?? [:], state: state, revision: snapshot.rev, presentationRevision: NativePaneOverlays.navigationRevision)
     }
   }
 
@@ -799,15 +812,17 @@ private final class NativeNavigationSwipe {
   private let controller = NavigationSwipeController()
   var capsule: SwipeCapsuleView { controller.capsule }
   private var presentation: [String: Any] = [:]
+  private var configurationRevision: Int?
+  private var configurationPresentationRevision: UInt64?
   private var stopped = false
   private var menu: PanePopover<HistoryPanelView>?
   private var menuSequence = 0
 
-  init(windowId: String, generation: UInt64, registration: PageRegistration) {
+  init(windowId: String, generation: UInt64, registration: PageRegistration, compatibilityURL: String) {
     self.windowId = windowId
     self.generation = generation
     self.registration = registration
-    compatibilityURL = NativeStoreHandle.store?.state.tabs[registration.tabID]?.url ?? ""
+    self.compatibilityURL = compatibilityURL
     target.coversPage = true
     target.autoresizingMask = [.width, .height]
     controller.capsule.autoresizingMask = [.width, .height]
@@ -822,14 +837,14 @@ private final class NativeNavigationSwipe {
     }
   }
 
-  func matches(_ next: PageRegistration) -> Bool {
-    registration == next && (registration.registrationGeneration != 0 || NativeStoreHandle.store?.state.tabs[registration.tabID]?.url == compatibilityURL)
+  func matches(_ next: PageRegistration, url: String?) -> Bool {
+    registration == next && (registration.registrationGeneration != 0 || url == compatibilityURL)
   }
 
   private var pageCurrent: Bool {
     guard let registry = PageIssuer.shared?.registry else { return false }
     if registration.registrationGeneration != 0 { return registry.descriptor(registration) != nil }
-    return matches(registration) && !registry.descriptors.contains { $0.tabID == registration.tabID }
+    return matches(registration, url: NativeStoreHandle.store?.state.tabs[registration.tabID]?.url) && !registry.descriptors.contains { $0.tabID == registration.tabID }
   }
 
   private var current: Bool {
@@ -837,16 +852,25 @@ private final class NativeNavigationSwipe {
       && TabPoolHost.shared.windowOf(registration.tabID) == windowId && pageCurrent
   }
 
-  func place(input: NSView?, drawing: NSView?, presentation: [String: Any]) {
-    self.presentation = presentation
+  func place(input: NSView?, drawing: NSView?, presentation: [String: Any], state: BrowserState, revision: Int, presentationRevision: UInt64) {
+    #if DEBUG || SOLARA_PERF_TRACE
+    LayoutTrace.event("navigationPlace", "\(windowId) \(registration.tabID)")
+    #endif
     menu?.place(in: drawing)
     PaneOverlayHost.place(target, in: input, bottom: false)
     PaneOverlayHost.place(controller.capsule, in: drawing, bottom: false)
-    let live = NativeStoreHandle.store?.state.live[registration.tabID]
+    guard configurationRevision != revision || configurationPresentationRevision != presentationRevision else { return }
+    configurationRevision = revision
+    configurationPresentationRevision = presentationRevision
+    self.presentation = presentation
+    #if DEBUG || SOLARA_PERF_TRACE
+    LayoutTrace.event("navigationConfigure", "\(windowId) \(registration.tabID) \(revision) \(presentationRevision)")
+    #endif
+    let live = state.live[registration.tabID]
     let newTabShown = presentation["newTabShown"] as? Bool == true
     target.canSwipeBack = !newTabShown && (live?.canGoBack == true || presentation["backToNewTab"] as? Bool == true || presentation["engineBack"] as? Bool == true)
     target.canSwipeForward = newTabShown || live?.canGoForward == true
-    controller.profileId = NativeStoreHandle.store?.state.tabs[registration.tabID]?.profileId ?? ""
+    controller.profileId = state.tabs[registration.tabID]?.profileId ?? ""
     if let theme = presentation["theme"] as? [String: Any] {
       controller.theme = SwipeCapsuleTheme(dark: theme["dark"] as? Bool ?? false, textPrimary: theme["textPrimary"] as? String ?? "#000000D9", textSecondary: theme["textSecondary"] as? String ?? "#00000080")
     }

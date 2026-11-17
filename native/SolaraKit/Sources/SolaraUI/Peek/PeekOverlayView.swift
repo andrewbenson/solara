@@ -56,10 +56,10 @@ public enum PeekEvent: Equatable, Sendable {
 }
 
 @MainActor
-public final class PeekOverlayView: NSView {
+public final class PeekOverlayView: FrameLayoutView {
   public var onEvent: (PeekEvent) -> Void = { _ in }
-  public let pageSlot = NSView()
-  public let backdropSlot = NSView()
+  public let pageSlot = FrameLayoutView()
+  public let backdropSlot = FrameLayoutView()
   public private(set) var state: PeekState?
 
   private let dim = PeekDimView()
@@ -155,7 +155,7 @@ public final class PeekOverlayView: NSView {
     clip.layer?.cornerRadius = chrome ? PeekMetrics.windowRadius : 0
     clip.layer?.borderWidth = chrome ? 0.5 : 0
     needsLayout = true
-    layoutSubtreeIfNeeded()
+    layoutNativeContentIfNeeded()
     if fresh {
       leaving = nil
       progress = 0
@@ -164,6 +164,11 @@ public final class PeekOverlayView: NSView {
     } else {
       pose()
     }
+  }
+
+  public func layoutNativeContentIfNeeded() {
+    layoutFrameIfNeeded()
+    bar.layoutSubtreeIfNeeded()
   }
 
   public override func layout() {

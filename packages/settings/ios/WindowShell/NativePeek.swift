@@ -17,7 +17,8 @@ enum NativePeek {
     started = true
     if NativeWindowShell.nativeLayout {
       TabPoolHost.shared.pageEventObservers.append { tabId, _, _ in
-        guard let windowId = TabPoolHost.shared.windowOf(tabId), NativeWindowShell.nativeLayoutActive(windowId) else { return }
+        guard let windowId = TabPoolHost.shared.windowOf(tabId), NativeWindowShell.nativeLayoutActive(windowId),
+          NativeStoreHandle.store?.state.peeks[windowId] != nil else { return }
         NativeWindowShell.host(windowId)?.scheduleLayoutProjection()
       }
       return
@@ -92,7 +93,7 @@ enum NativePeek {
 
   static func anchors(_ windowId: String) -> [String: CGRect] {
     guard let host = hosts[windowId], let shell = host.shell, host.view.state != nil else { return [:] }
-    host.view.layoutSubtreeIfNeeded()
+    host.view.layoutNativeContentIfNeeded()
     return ["peekPage": host.view.pageSlot.convert(host.view.pageSlot.bounds, to: shell)]
   }
 

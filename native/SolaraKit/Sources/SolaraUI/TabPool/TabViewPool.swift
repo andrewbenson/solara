@@ -1,4 +1,7 @@
 import AppKit
+#if DEBUG || SOLARA_PERF_TRACE
+import SolaraModel
+#endif
 
 @MainActor
 public protocol TabPoolPage: AnyObject {
@@ -26,6 +29,7 @@ public final class TabViewPool {
 
   public let slots: TabSlots
   public let keeper: NSView
+  public var nativePlacement: @MainActor (String) -> Bool = { _ in false }
   public var hiddenContainer: @MainActor (String) -> NSView? = { _ in nil }
   public var onPlaced: (@MainActor ([String: String]) -> Void)?
   public var preparePlacement: @MainActor () -> Void = {}
@@ -99,6 +103,10 @@ public final class TabViewPool {
   }
 
   public func reconcile() {
+    #if DEBUG || SOLARA_PERF_TRACE
+    let trace = LayoutTrace.begin("reconcile")
+    defer { LayoutTrace.end(trace) }
+    #endif
     guard !preparingPlacement else { return }
     preparingPlacement = true
     preparePlacement()
@@ -114,6 +122,9 @@ public final class TabViewPool {
       return
     }
     var made: Set<String> = []
+    let initialKeys = ops.reduce(into: [String: TabSlotKey]()) { keys, op in
+      if case .attach(let id, let key, _) = op { keys[id] = key }
+    }
     let holding = holds(ops)
     for op in ops {
       switch op {
@@ -139,16 +150,17 @@ public final class TabViewPool {
         pages[id] = page
         identities[id] = identity(of: id)
         made.insert(id)
-        move(page.view, into: hidden(windowId), below: false)
+        let frame = initialContainer(initialKeys[id], windowId: windowId)?.bounds
+        park(page.view, in: windowId, initial: true, initialFrame: frame)
       case .attach(let id, let key, _):
         guard let view = pages[id]?.view, let container = slots.container(for: key) else { continue }
-        move(view, into: container, below: false)
+        attach(view, to: container, tabId: id)
       case .behind(let id, let key, _):
         guard holding[id] == nil, let view = pages[id]?.view, let container = slots.container(for: key) else { continue }
         move(view, into: container, below: true)
       case .hide(let id, let windowId, _):
         guard holding[id] == nil, let view = pages[id]?.view else { continue }
-        move(view, into: hidden(windowId), below: false)
+        park(view, in: windowId)
       case .visible(let id, let on):
         if on, let page = pages[id] {
           page.setShown(true)
@@ -205,7 +217,13 @@ public final class TabViewPool {
     let generation = showGeneration
     showGenerations[id] = generation
     drawnSinceShown.remove(id)
+    #if DEBUG || SOLARA_PERF_TRACE
+    let trace = LayoutTrace.begin("firstDraw", id)
+    #endif
     page.whenDrawn { [weak self] drawn in
+      #if DEBUG || SOLARA_PERF_TRACE
+      LayoutTrace.end(trace)
+      #endif
       guard drawn, let self, self.showGenerations[id] == generation else { return }
       self.drawnSinceShown.insert(id)
     }
@@ -347,7 +365,7 @@ public final class TabViewPool {
   private func settle(_ id: String) {
     guard let view = pages[id]?.view, let place = places[id] else { return }
     switch place {
-    case .hidden(let windowId): move(view, into: hidden(windowId), below: false)
+    case .hidden(let windowId): park(view, in: windowId)
     case .behind(let key): if let container = slots.container(for: key) { move(view, into: container, below: true) }
     case .slot(let key): if let container = slots.container(for: key) { move(view, into: container, below: false) }
     }
@@ -397,7 +415,11 @@ public final class TabViewPool {
       let container: NSView?
       switch place {
       case .slot(let key), .behind(let key): container = slots.container(for: key)
-      case .hidden(let windowId): container = hidden(windowId)
+      case .hidden(let windowId):
+        guard view.superview !== hidden(windowId) else { continue }
+        park(view, in: windowId)
+        moved = true
+        continue
       }
       guard let container, view.superview !== container else { continue }
       if case .behind = place { move(view, into: container, below: true) } else { move(view, into: container, below: false) }
@@ -410,10 +432,34 @@ public final class TabViewPool {
     hiddenContainer(windowId) ?? keeper
   }
 
-  private func move(_ view: NSView, into container: NSView, below: Bool) {
+  private func initialContainer(_ key: TabSlotKey?, windowId: String) -> NSView? {
+    guard nativePlacement(windowId), let key, let container = slots.container(for: key), container.window != nil,
+      !container.bounds.isEmpty else { return nil }
+    return container
+  }
+
+  private func attach(_ view: NSView, to container: NSView, tabId: String) {
+    #if DEBUG || SOLARA_PERF_TRACE
+    let trace = LayoutTrace.begin("paneAttach", tabId)
+    defer { LayoutTrace.end(trace) }
+    #endif
+    move(view, into: container, below: false)
+  }
+
+  private func park(_ view: NSView, in windowId: String, initial: Bool = false, initialFrame: NSRect? = nil) {
+    let native = nativePlacement(windowId)
+    move(view, into: hidden(windowId), below: false, preserveFrame: native && !initial,
+      autoresizing: native ? [] : [.width, .height], initialFrame: native ? initialFrame : nil)
+  }
+
+  private func move(_ view: NSView, into container: NSView, below: Bool, preserveFrame: Bool = false,
+    autoresizing: NSView.AutoresizingMask = [.width, .height], initialFrame: NSRect? = nil) {
     let window = view.window
     let responder = window?.firstResponder as? NSView
     let hadFocus = responder.map { $0 === view || $0.isDescendant(of: view) } ?? false
+    let frame = initialFrame ?? (preserveFrame && !view.frame.isEmpty ? view.frame : container.bounds)
+    view.autoresizingMask = autoresizing
+    if view.frame != frame { view.frame = frame }
     let poolViews = Set(pages.values.map { ObjectIdentifier($0.view) })
     let topPage = below ? nil : container.subviews.last { $0 !== view && poolViews.contains(ObjectIdentifier($0)) }
     if let topPage {
@@ -421,8 +467,6 @@ public final class TabViewPool {
     } else {
       container.addSubview(view, positioned: .below, relativeTo: nil)
     }
-    view.frame = container.bounds
-    view.autoresizingMask = [.width, .height]
     if hadFocus, let responder, let now = view.window, now === window, now.firstResponder !== responder {
       now.makeFirstResponder(responder)
     }

@@ -93,7 +93,18 @@ enum NativeWindowShell {
       let ownsNativeLayout = nativeLayout
       if !ownsNativeLayout { NSLog("[window layout] %@ uses the complete legacy path: %@", windowId, legacyLayoutReason ?? "unavailable") }
       if ownsNativeLayout { nativeLayoutGenerations.withLock { $0[windowId] = nextGeneration } }
-      let host = ShellHost(windowId: windowId, generation: nextGeneration, nativeLayout: ownsNativeLayout, root: make(windowId))
+      #if DEBUG || SOLARA_PERF_TRACE
+      let rootTrace = LayoutTrace.begin("windowRoot", windowId)
+      #endif
+      let root = make(windowId)
+      #if DEBUG || SOLARA_PERF_TRACE
+      LayoutTrace.end(rootTrace)
+      let shellTrace = LayoutTrace.begin("windowShell", windowId)
+      #endif
+      let host = ShellHost(windowId: windowId, generation: nextGeneration, nativeLayout: ownsNativeLayout, root: root)
+      #if DEBUG || SOLARA_PERF_TRACE
+      LayoutTrace.end(shellTrace)
+      #endif
       lifetimes.adopt(windowId, host)
       if !host.ownsNativeLayout, let store = NativeStoreHandle.store {
         store.sequence { windowsChanged(store.state, revision: store.rev) }
@@ -123,12 +134,15 @@ enum NativeWindowShell {
   nonisolated static var activeWindowIds: Set<String> { activeIds.withLock { $0 } }
 
   static func preparePagePlacement(_ state: BrowserState, revision: Int) -> Set<String> {
-    var ready = Set<String>()
-    for id in lifetimes.ids {
-      guard let host = lifetimes.host(id), host.ownsNativeLayout else { continue }
-      if host.preparePagePlacement(state, revision: revision) { ready.insert(id) }
+    let hosts = lifetimes.ids.compactMap { id -> ShellHost? in
+      guard let host = lifetimes.host(id), host.queuePagePlacement(state, revision: revision) else { return nil }
+      return host
     }
-    return ready
+    guard !hosts.isEmpty else { return [] }
+    FrameUpdates.flush()
+    return Set(hosts.compactMap { host in
+      host.finishPagePlacement(state, revision: revision) ? host.shell.windowId : nil
+    })
   }
 
   static func overlay(_ windowId: String) -> NSView? { host(windowId)?.shell.overlay }
@@ -177,6 +191,8 @@ final class ShellHost {
   private var lastLayoutInput: WindowLayoutInput?
   private var lastChildAnchors: [String: CGRect] = [:]
   private var layoutStopped = false
+  private var layoutProjectionPending = false
+  private var layoutCollectingAnchors = false
   private var layoutReader: String?
   private var lastSentLayoutAnchors: WindowAnchorBatch?
   private var layoutToolbarReady = false
@@ -252,7 +268,7 @@ final class ShellHost {
     }
     if ownsNativeLayout, let store = NativeStoreHandle.store {
       layoutChrome = NativeLayoutChrome(windowId: windowId, shell: shell, generation: generation)
-      NativeSidebarShell.column(windowId)?.host.view.onLayoutAnchorsChange = { [weak self] in self?.scheduleLayoutProjection() }
+      NativeSidebarShell.column(windowId)?.host.view.onLayoutAnchorsChange = { [weak self] in self?.layoutGeometryChanged() }
       paneLayout = NativeSplitChrome.adopt(shell: shell, generation: generation)
       toolbarPresentation = ToolbarAutoHideController(windowId: windowId, windowGeneration: generation)
       let controller = WindowLayoutController(shell: shell, generation: generation, store: store)
@@ -350,7 +366,18 @@ final class ShellHost {
     contentSizer = nil
   }
 
-  func prepareLaunch(_ committed: @escaping () -> Void) { launchReadiness?.attach(committed) }
+  func prepareLaunch(_ committed: @escaping () -> Void) {
+    #if DEBUG || SOLARA_PERF_TRACE
+    let windowId = shell.windowId
+    LayoutTrace.event("windowAwaitReady", windowId)
+    launchReadiness?.attach {
+      LayoutTrace.event("windowReady", windowId)
+      committed()
+    }
+    #else
+    launchReadiness?.attach(committed)
+    #endif
+  }
 
   private func keepContentSized() {
     guard !layoutStopped else { return }
@@ -444,6 +471,7 @@ extension ShellHost {
 
   func receivePresentation(_ registration: PageRegistration, name: String, payload: [String: Any]) {
     guard !layoutStopped, ownsNativeLayout, let toolbarPresentation else { return }
+    let previous = toolbarPresentation.facts[registration.tabID]
     toolbarPresentation.register(registration)
     if name == "onNavigationChange", let url = payload["url"] as? String {
       let key = String(url.prefix { $0 != "#" })
@@ -459,7 +487,7 @@ extension ShellHost {
       _ = toolbarPresentation.setFullscreen(registration, on: false)
       toolbarPresentation.reveal(tabId: registration.tabID)
     }
-    scheduleLayoutProjection()
+    if previous != toolbarPresentation.facts[registration.tabID] { scheduleLayoutProjection() }
   }
 
   func retirePresentation(_ registration: PageRegistration) {
@@ -486,26 +514,53 @@ extension ShellHost {
     return WindowLayoutSnapshot.of(input, generation: layoutGeneration).shownTops[tabId].map(Double.init)
   }
 
-  func preparePagePlacement(_ state: BrowserState, revision: Int) -> Bool {
+  func queuePagePlacement(_ state: BrowserState, revision: Int) -> Bool {
     guard ownsNativeLayout, !layoutStopped, state.windows[shell.windowId] != nil,
       NativeWindowShell.nativeLayoutGeneration(shell.windowId) == windowGeneration else { return false }
     layoutController?.receive(state, revision: revision, generation: windowGeneration)
-    FrameUpdates.flush()
+    return true
+  }
+
+  func finishPagePlacement(_ state: BrowserState, revision: Int) -> Bool {
+    guard ownsNativeLayout, !layoutStopped, state.windows[shell.windowId] != nil,
+      NativeWindowShell.nativeLayoutGeneration(shell.windowId) == windowGeneration else { return false }
+    if pagePlacementReady(revision: revision) { return true }
     applyLayoutState(state, revision: revision)
     refreshLayoutProjection()
-    return lastLayoutInput?.storeRevision == revision && lastLayoutInput?.windowGeneration == windowGeneration
+    return pagePlacementReady(revision: revision)
+  }
+
+  private func pagePlacementReady(revision: Int) -> Bool {
+    !layoutProjectionPending && lastLayoutInput?.storeRevision == revision && lastLayoutInput?.windowGeneration == windowGeneration
       && shell.window != nil && paneLayout != nil
   }
 
   func applyLayoutState(_ state: BrowserState, revision: Int) {
     guard !layoutStopped, revision >= layoutRevision, state.windows[shell.windowId] != nil else { return }
+    if ownsNativeLayout, revision == layoutRevision { return }
+    #if DEBUG || SOLARA_PERF_TRACE
+    let trace = LayoutTrace.begin("layoutState", "\(shell.windowId) \(revision)")
+    defer { LayoutTrace.end(trace) }
+    #endif
     layoutState = state
     layoutRevision = revision
     scheduleLayoutProjection()
   }
 
-  func scheduleLayoutProjection() {
+  func layoutGeometryChanged(_ origin: StaticString = #function, line: Int = #line) {
+    guard !layoutCollectingAnchors else { return }
+    scheduleLayoutProjection(origin, line: line)
+  }
+
+  func scheduleLayoutProjection(_ origin: StaticString = #function, line: Int = #line) {
     guard !layoutStopped else { return }
+    #if DEBUG || SOLARA_PERF_TRACE
+    LayoutTrace.event("layoutScheduled", "\(shell.windowId) \(layoutRevision) \(origin):\(line)")
+    if LayoutTrace.enabled, ProcessInfo.processInfo.environment["SOLARA_LAYOUT_STACKS"] == "1" {
+      LayoutTrace.event("layoutRequester", "\(shell.windowId) \(layoutRevision) \(Thread.callStackSymbols.joined(separator: " | "))")
+    }
+    #endif
+    layoutProjectionPending = true
     FrameUpdates.schedule(self) { [weak self] in self?.refreshLayoutProjection() }
   }
 
@@ -548,15 +603,44 @@ extension ShellHost {
   }
 
   private func refreshLayoutProjection() {
+    #if DEBUG || SOLARA_PERF_TRACE
+    if LayoutTrace.enabled, ProcessInfo.processInfo.environment["SOLARA_LAYOUT_STACKS"] == "1" {
+      LayoutTrace.event("layoutExecution", "\(shell.windowId) \(layoutRevision) \(Thread.callStackSymbols.joined(separator: " | "))")
+    }
+    #endif
     TabSlots.shared.performBatch { refreshLayoutProjectionInBatch() }
   }
 
   private func refreshLayoutProjectionInBatch() {
+    #if DEBUG || SOLARA_PERF_TRACE
+    let trace = LayoutTrace.begin("layout", "\(shell.windowId) \(layoutRevision)")
+    defer { LayoutTrace.end(trace) }
+    #endif
     guard !layoutStopped else { return }
-    defer { launchReadiness?.refresh() }
+    layoutProjectionPending = false
+    layoutCollectingAnchors = ownsNativeLayout
+    defer {
+      layoutCollectingAnchors = false
+      launchReadiness?.refresh()
+    }
+    #if DEBUG || SOLARA_PERF_TRACE
+    let chromeTrace = LayoutTrace.begin("layoutChrome", shell.windowId)
+    #endif
     layoutChrome?.refresh()
-    shell.layoutSubtreeIfNeeded()
-    guard let input = makeLayoutInput() else { return }
+    #if DEBUG || SOLARA_PERF_TRACE
+    LayoutTrace.end(chromeTrace)
+    let subtreeTrace = LayoutTrace.begin("layoutShellSubtree", shell.windowId)
+    #endif
+    if ownsNativeLayout { shell.layoutFrameIfNeeded() } else { shell.layoutSubtreeIfNeeded() }
+    #if DEBUG || SOLARA_PERF_TRACE
+    LayoutTrace.end(subtreeTrace)
+    let inputTrace = LayoutTrace.begin("layoutMakeInput", shell.windowId)
+    #endif
+    let madeInput = makeLayoutInput()
+    #if DEBUG || SOLARA_PERF_TRACE
+    LayoutTrace.end(inputTrace)
+    #endif
+    guard let input = madeInput else { return }
     if input.presentation.chromeNavigationRow {
       SidebarAddressBridge.install()
       let navigation = SidebarAddressBars.shared.navigationView(shell.windowId)
@@ -575,9 +659,24 @@ extension ShellHost {
     let toolbarReady = !ownsNativeLayout || toolbar?.state != nil && toolbar?.window != nil && toolbar?.window === shell.window
     let toolbarBecameReady = toolbarReady && !layoutToolbarReady
     layoutToolbarReady = toolbarReady
+    #if DEBUG || SOLARA_PERF_TRACE
+    let anchorsTrace = LayoutTrace.begin("layoutChildAnchors", shell.windowId)
+    #endif
     let children = childLayoutAnchors(snapshot)
+    layoutCollectingAnchors = false
+    #if DEBUG || SOLARA_PERF_TRACE
+    LayoutTrace.end(anchorsTrace)
+    #endif
     if let layoutController {
+      #if DEBUG || SOLARA_PERF_TRACE
+      if LayoutTrace.enabled, ProcessInfo.processInfo.environment["SOLARA_LAYOUT_STACKS"] == "1" {
+        LayoutTrace.event("layoutInputs", "\(shell.windowId) \(layoutRevision) sameInput:\(lastLayoutInput?.hasSameLayout(as: input) ?? false) sameAnchors:\(children == lastChildAnchors) \(String(reflecting: input)) anchors:\(children)")
+      }
+      #endif
       let changed = layoutController.apply(input: input, anchors: children)
+      #if DEBUG || SOLARA_PERF_TRACE
+      LayoutTrace.event("layoutPublished", "\(shell.windowId) \(layoutRevision) changed:\(changed)")
+      #endif
       layoutGeneration = layoutController.layoutGeneration
       lastLayoutInput = input
       lastChildAnchors = children
@@ -918,6 +1017,16 @@ final class ShellStoreCommits: @unchecked Sendable {
 public class WindowShellModule: Module {
   public func definition() -> ModuleDefinition {
     Name("SolaraWindowShell")
+
+    #if DEBUG || SOLARA_PERF_TRACE
+    Function("layoutTrace") { (reset: Bool) -> String in
+      if let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "SolaraLayoutTraceFlush") {
+        unsafeBitCast(symbol, to: (@convention(c) () -> Void).self)()
+      }
+      return LayoutTrace.take(reset: reset)
+    }
+    Function("layoutTraceMark") { (stage: String, detail: String) in LayoutTrace.event("command", "\(stage) \(detail)") }
+    #endif
 
     OnCreate {
       if Thread.isMainThread {

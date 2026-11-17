@@ -37,7 +37,7 @@ public enum SplitLayout {
 }
 
 @MainActor
-public final class SplitPanesView: NSView {
+public final class SplitPanesView: FrameLayoutView {
   public let windowId: String
   private weak var chromeToolbar: ToolbarView?
   public var toolbarHeight: CGFloat = ShellMetrics.toolbarHeight { didSet { if toolbarHeight != oldValue { needsLayout = true } } }
@@ -79,17 +79,30 @@ public final class SplitPanesView: NSView {
   private var installed: WindowLayoutSnapshot?
   private var stopped = false
   private var singlePage: NSView?
+  #if DEBUG || SOLARA_PROBES
+  private(set) var placementLayoutPasses = 0
+  #endif
 
   public func install(_ snapshot: WindowLayoutSnapshot, state: BrowserState) {
     guard !stopped, snapshot.input.windowId == windowId else { return }
     TabSlots.shared.performBatch {
+      let placementChanged = installed.map { !$0.input.hasSameLayout(as: snapshot.input) } ?? true
       reuseSinglePane(snapshot)
       installed = snapshot
       update(state: state)
       setFullscreenTab(snapshot.fullscreenTabId)
-      frame = CGRect(origin: .zero, size: snapshot.frames.card.size)
-      needsLayout = true
-      layoutSubtreeIfNeeded()
+      let nextFrame = CGRect(origin: .zero, size: snapshot.frames.card.size)
+      if frame != nextFrame { frame = nextFrame }
+      if placementChanged { needsLayout = true }
+      if needsLayout {
+        layoutFrameIfNeeded()
+      } else {
+        for pane in panes.values { pane.layoutNativeContentIfNeeded() }
+      }
+      for pane in panes.values {
+        pane.edgeShadow.tint = windowShell?.cardEdgeTint
+        pane.edgeRim.tint = windowShell?.cardEdgeTint
+      }
       if snapshot.input.split == nil, let id = snapshot.input.selectedTabId, let container = panes[id]?.page {
         if let singlePage, singlePage !== container { TabSlots.shared.remove(.card(windowId), container: singlePage) }
         singlePage = container
@@ -127,7 +140,7 @@ public final class SplitPanesView: NSView {
     didSet {
       guard bandHeights != oldValue else { return }
       needsLayout = true
-      layoutSubtreeIfNeeded()
+      layoutFrameIfNeeded()
     }
   }
 
@@ -211,6 +224,13 @@ public final class SplitPanesView: NSView {
   }
 
   public override func layout() {
+    #if DEBUG || SOLARA_PERF_TRACE
+    let trace = LayoutTrace.begin("splitPanesLayout", windowId)
+    defer { LayoutTrace.end(trace) }
+    #endif
+    #if DEBUG || SOLARA_PROBES
+    placementLayoutPasses += 1
+    #endif
     super.layout()
     let area = SplitLayout.bounds(in: self, fullscreenTab: fullscreenTab)
     let rail = fullscreenTab == nil ? windowShell?.railFraction ?? 0 : 0
@@ -232,28 +252,50 @@ public final class SplitPanesView: NSView {
     var made = false
     for (tabId, rect) in rects {
       let pane = panes[tabId] ?? { made = true; return make(tabId) }()
-      pane.frame = rect
-      pane.fullscreen = tabId == fullscreenTab
-      pane.layer?.zPosition = pane.fullscreen ? 1 : 0
-      pane.railFraction = rail
-      pane.toolbarHeight = tabId == fullscreenTab ? 0 : toolbarHeight * (1 - rail)
-      pane.liveTop = liveTops[tabId].map { $0 * (1 - rail) }
-      pane.band = tabId == fullscreenTab ? 0 : bandHeights[tabId] ?? 0
-      if rail > 0, tabId == activeId {
-        pane.toolbar.isHidden = !pane.hasToolbar
-        pane.toolbar.alphaValue = 1
-        if toolbarOnChrome, let shell = windowShell {
-          chromeToolbar = pane.toolbar
-          shell.registerToolbar(pane.toolbar, owner: self)
-        } else {
-          if pane.toolbar.superview !== self { addSubview(pane.toolbar) }
-          pane.toolbar.frame = CGRect(x: 0, y: 0, width: bounds.width, height: windowShell?.input.toolbarHeight ?? toolbarHeight)
-        }
+      let fullscreen = tabId == fullscreenTab
+      let barHeight = installed?.toolbars[tabId]?.height ?? (fullscreen ? 0 : toolbarHeight * (1 - rail))
+      let top = liveTops[tabId].map { $0 * (1 - rail) }
+      let band = fullscreen ? 0 : bandHeights[tabId] ?? 0
+      let page = installed?.pageViewports[tabId]?.offsetBy(dx: -origin.x - rect.minX, dy: -origin.y - rect.minY)
+      let bar = installed?.toolbars[tabId]?.offsetBy(dx: -origin.x - rect.minX, dy: -origin.y - rect.minY)
+      let liftedToolbar = rail > 0 && tabId == activeId
+      let toolbarParentChanged: Bool
+      if liftedToolbar, toolbarOnChrome, let shell = windowShell {
+        toolbarParentChanged = !shell.toolbarSitsOnFrame(pane.toolbar)
       } else {
-        if pane.toolbar.superview !== pane {
-          pane.addSubview(pane.toolbar)
+        toolbarParentChanged = pane.toolbar.superview !== (liftedToolbar ? self : pane)
+      }
+      let placementChanged = installed == nil || pane.frame != rect || pane.fullscreen != fullscreen || pane.railFraction != rail
+        || pane.toolbarHeight != barHeight || pane.liveTop != top || pane.band != band
+        || pane.installedPage != page || pane.installedToolbar != bar || toolbarParentChanged
+      if placementChanged {
+        pane.performPlacement(deferred: installed != nil) {
+          if pane.frame != rect { pane.frame = rect }
+          pane.fullscreen = fullscreen
+          pane.layer?.zPosition = fullscreen ? 1 : 0
+          pane.railFraction = rail
+          pane.toolbarHeight = barHeight
+          pane.liveTop = top
+          pane.band = band
+          pane.installedPage = page
+          pane.installedToolbar = bar
+          if liftedToolbar {
+            pane.toolbar.isHidden = !pane.hasToolbar
+            pane.toolbar.alphaValue = 1
+            if toolbarOnChrome, let shell = windowShell {
+              chromeToolbar = pane.toolbar
+              shell.registerToolbar(pane.toolbar, owner: self)
+            } else {
+              if pane.toolbar.superview !== self { addSubview(pane.toolbar) }
+              pane.toolbar.frame = installed?.toolbars[tabId]?.offsetBy(dx: -origin.x, dy: -origin.y)
+                ?? CGRect(x: 0, y: 0, width: bounds.width, height: windowShell?.input.toolbarHeight ?? toolbarHeight)
+            }
+          } else {
+            if pane.toolbar.superview !== pane { pane.addSubview(pane.toolbar) }
+            pane.toolbar.alphaValue = 1 - rail
+          }
+          pane.needsLayout = true
         }
-        pane.toolbar.alphaValue = 1 - rail
       }
       let edge: CGFloat = fullscreenTab == nil && installed?.input.windowFullscreen != true && installed?.input.windowFullscreenTransition != true && window?.styleMask.contains(.fullScreen) != true ? 1 : 0
       pane.edgeShadow.tint = windowShell?.cardEdgeTint
@@ -261,20 +303,16 @@ public final class SplitPanesView: NSView {
       pane.edgeShadow.place(rect, radius: pane.radius, strength: edge)
       let topTabs = installed?.input.layout.topTabs ?? windowShell?.input.topTabs ?? false
       pane.edgeRim.place(rect, radius: pane.radius, strength: edge, topEdge: split != nil || !topTabs)
-      if let snapshot = installed, let page = snapshot.pageViewports[tabId], let bar = snapshot.toolbars[tabId] {
-        pane.toolbarHeight = bar.height
-        pane.installedPage = page.offsetBy(dx: -origin.x - rect.minX, dy: -origin.y - rect.minY)
-        pane.installedToolbar = bar.offsetBy(dx: -origin.x - rect.minX, dy: -origin.y - rect.minY)
-        if pane.toolbar.superview === self { pane.toolbar.frame = bar.offsetBy(dx: -origin.x, dy: -origin.y) }
-      }
-      pane.needsLayout = true
-      pane.layoutSubtreeIfNeeded()
+      pane.layoutNativeContentIfNeeded()
     }
     for (tabId, pane) in panes where rects[tabId] == nil { drop(tabId, pane) }
     if rail > 0, let activeId, let toolbar = panes[activeId]?.toolbar, toolbar.superview === self, subviews.last !== toolbar {
       addSubview(toolbar, positioned: .above, relativeTo: nil)
     }
-    if made { refreshEmpty() }
+    if made {
+      refreshEmpty()
+      for pane in panes.values { pane.layoutNativeContentIfNeeded() }
+    }
   }
 
   public override func viewWillMove(toWindow newWindow: NSWindow?) {
@@ -338,13 +376,17 @@ public final class SplitPanesView: NSView {
 }
 
 @MainActor
-final class SplitLeafView: NSView {
+final class SplitLeafView: FrameLayoutView {
   let page = SplitPageContainer()
   let edgeShadow = CardEdgeView(part: .shadow)
   let edgeRim = CardEdgeView(part: .rim)
   private(set) var toolbar = ToolbarView(frame: .zero)
   private(set) var empty: SplitEmptyStateView?
   private var toolbarJson: String?
+  #if DEBUG || SOLARA_PROBES
+  private(set) var placementLayoutPasses = 0
+  #endif
+  private var installingPlacement = false
   var installedPage: CGRect?
   var installedToolbar: CGRect?
   var fullscreen = false {
@@ -364,14 +406,14 @@ final class SplitLeafView: NSView {
     didSet {
       guard band != oldValue else { return }
       needsLayout = true
-      layoutSubtreeIfNeeded()
+      if !installingPlacement { layoutNativeContentIfNeeded() }
     }
   }
   var liveTop: CGFloat? {
     didSet {
       guard liveTop != oldValue else { return }
       needsLayout = true
-      layoutSubtreeIfNeeded()
+      if !installingPlacement { layoutNativeContentIfNeeded() }
     }
   }
   var fill: NSColor = .windowBackgroundColor { didSet { if !fullscreen { layer?.backgroundColor = fill.cgColor } } }
@@ -392,7 +434,23 @@ final class SplitLeafView: NSView {
 
   required init?(coder: NSCoder) { fatalError() }
 
+  func layoutNativeContentIfNeeded() {
+    layoutFrameIfNeeded()
+    toolbar.layoutSubtreeIfNeeded()
+    empty?.layoutSubtreeIfNeeded()
+  }
+
+  func performPlacement(deferred: Bool, _ install: () -> Void) {
+    installingPlacement = deferred
+    install()
+    installingPlacement = false
+  }
+
   func rebindForNextTab() {
+    #if DEBUG || SOLARA_PERF_TRACE
+    let trace = LayoutTrace.begin("paneToolbarRebuild")
+    defer { LayoutTrace.end(trace) }
+    #endif
     toolbar.onHiddenOrDetached()
     toolbar.onHiddenOrDetached = {}
     toolbar.removeFromSuperview()
@@ -401,6 +459,7 @@ final class SplitLeafView: NSView {
     toolbarJson = nil
     addSubview(toolbar)
     setEmpty(nil)
+    needsLayout = true
   }
 
   func setToolbar(_ json: String?) {
@@ -423,6 +482,13 @@ final class SplitLeafView: NSView {
   }
 
   override func layout() {
+    #if DEBUG || SOLARA_PERF_TRACE
+    let trace = LayoutTrace.begin("splitLeafLayout")
+    defer { LayoutTrace.end(trace) }
+    #endif
+    #if DEBUG || SOLARA_PROBES
+    placementLayoutPasses += 1
+    #endif
     super.layout()
     if toolbar.superview === self {
       toolbar.frame = installedToolbar ?? CGRect(x: 0, y: 0, width: bounds.width, height: toolbarHeight)
@@ -436,7 +502,7 @@ final class SplitLeafView: NSView {
 }
 
 @MainActor
-final class SplitPageContainer: NSView {
+final class SplitPageContainer: FrameLayoutView {
   override var isFlipped: Bool { true }
 
   override func hitTest(_ point: NSPoint) -> NSView? {

@@ -70,6 +70,11 @@ struct NativePanePlacementTests {
     let toolbar = try #require(view.toolbar("b"))
     #expect(toolbar !== oldToolbar)
     #expect(toolbar.state?.tabId == "b")
+    let current = try snapshot(state, width: 1000)
+    let expected = try #require(current.toolbars["b"])
+    let leaf = try #require(view.container("b")?.superview)
+    #expect(toolbar.superview === leaf)
+    #expect(toolbar.frame == expected.offsetBy(dx: -current.frames.card.minX - leaf.frame.minX, dy: -current.frames.card.minY - leaf.frame.minY))
     #expect(releases == 1)
     #expect(releasedTabs == ["a"])
     var clicks: [String] = [], anchors: [String] = [], geometry: [String] = []
@@ -372,6 +377,45 @@ struct NativePanePlacementTests {
       }
     }
   }
+
+  #if DEBUG || SOLARA_PROBES
+  @Test func splitSelectionDoesNotRelayoutUnchangedPanes() throws {
+    var state = try fixture()
+    let view = SplitPanesView(windowId: "pane-placement")
+    defer { view.stop() }
+    view.setToolbars(["a": singletonToolbar("a"), "b": singletonToolbar("b")])
+    view.install(try snapshot(state, width: 1000), state: state)
+    let a = try #require(view.container("a")?.superview as? SplitLeafView)
+    let b = try #require(view.container("b")?.superview as? SplitLeafView)
+    let passes = [a.placementLayoutPasses, b.placementLayoutPasses]
+    let frames = [a.page.frame, b.page.frame]
+    state.windows["pane-placement"]?.activeTabIds["p"] = "b"
+    view.install(try snapshot(state, width: 1000), state: state)
+    #expect(a.placementLayoutPasses == passes[0])
+    #expect(b.placementLayoutPasses == passes[1])
+    #expect([a.page.frame, b.page.frame] == frames)
+  }
+
+  @Test func changingOneSplitInsetLaysOutOnlyItsPane() throws {
+    let state = try fixture()
+    let view = SplitPanesView(windowId: "pane-placement")
+    defer { view.stop() }
+    view.install(try snapshot(state, width: 1000), state: state)
+    let a = try #require(view.container("a")?.superview as? SplitLeafView)
+    let b = try #require(view.container("b")?.superview as? SplitLeafView)
+    let passes = [a.placementLayoutPasses, b.placementLayoutPasses]
+    let unchanged = b.page.frame
+    let input = try #require(WindowLayoutInput(state: state, windowId: "pane-placement", bounds: CGRect(x: 0, y: 0, width: 1000, height: 700),
+      pageFacts: ["a": WindowLayoutPageFacts(registration: "a-registered", top: 91, band: 38), "b": WindowLayoutPageFacts(registration: "b-registered", top: 41)]))
+    let value = WindowLayoutSnapshot.of(input, generation: 2)
+    view.install(value, state: state)
+    #expect(a.placementLayoutPasses == passes[0] + 1)
+    #expect(b.placementLayoutPasses == passes[1])
+    #expect(b.page.frame == unchanged)
+    let expected = try #require(value.pageViewports["a"])
+    #expect(a.page.convert(a.page.bounds, to: view) == expected.offsetBy(dx: -value.frames.card.minX, dy: -value.frames.card.minY))
+  }
+  #endif
 
   private func fixture() throws -> BrowserState {
     try BrowserState(stateJSON: JSONValue.parse(#"{"windows":{"pane-placement":{"id":"pane-placement","profileId":"p","sidebarOpen":true,"tabIds":["a","b","c"],"activeTabIds":{"p":"a"}}},"tabs":{"a":{"id":"a","windowId":"pane-placement","profileId":"p"},"b":{"id":"b","windowId":"pane-placement","profileId":"p"},"c":{"id":"c","windowId":"pane-placement","profileId":"p"}},"splits":{"s":{"id":"s","windowId":"pane-placement","tabIds":["a","b"],"orientation":"horizontal","sizes":[0.5,0.5]}}}"#).object ?? [:])

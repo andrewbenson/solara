@@ -192,6 +192,9 @@ public final class Store: Sendable {
 
   private func record(_ core: inout Core, _ patch: Patch, state: BrowserState) {
     core.record(patch, state: state)
+    #if DEBUG || SOLARA_PERF_TRACE
+    LayoutTrace.event("storeCommit", String(patch.rev))
+    #endif
     published.withLock { $0 = state }
   }
   var committedMemory: StoreMemory { core.withLock { $0.memory } }
@@ -203,7 +206,11 @@ public final class Store: Sendable {
 
   @discardableResult
   public func dispatch(_ commands: [Command], origin: Origin = .native, fromSync: Bool = false) throws -> Commit {
-    try notifyingPersistenceRefusal {
+    #if DEBUG || SOLARA_PERF_TRACE
+    let trace = LayoutTrace.begin("storeDispatch", commands.map(\.name).joined(separator: ","))
+    defer { LayoutTrace.end(trace) }
+    #endif
+    return try notifyingPersistenceRefusal {
       try sequence { try dispatchUnsequenced(commands, origin: origin, fromSync: fromSync) }
     }
   }

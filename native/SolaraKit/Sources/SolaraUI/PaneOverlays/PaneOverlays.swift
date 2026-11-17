@@ -86,13 +86,13 @@ final class PaneOverlaySlot: PaneOverlayLayerView {
 
   override func layout() {
     super.layout()
-    rn.frame = bounds
-    native.frame = bounds
+    if rn.frame != bounds { rn.frame = bounds }
+    if native.frame != bounds { native.frame = bounds }
   }
 }
 
 @MainActor
-class PaneOverlayLayerView: NSView {
+class PaneOverlayLayerView: FrameLayoutView {
   override var isFlipped: Bool { true }
 
   override func hitTest(_ point: NSPoint) -> NSView? {
@@ -112,7 +112,7 @@ final class PaneRootLayerView: PaneOverlayLayerView {
 }
 
 @MainActor
-public final class PaneOverlaysView: NSView {
+public final class PaneOverlaysView: FrameLayoutView {
   public let windowId: String
   public private(set) var paneFrames: [String: CGRect] = [:]
   public var toolbarHeight: CGFloat = ShellMetrics.toolbarHeight { didSet { if toolbarHeight != oldValue { needsLayout = true } } }
@@ -121,7 +121,7 @@ public final class PaneOverlaysView: NSView {
     didSet {
       guard bandHeights != oldValue else { return }
       needsLayout = true
-      layoutSubtreeIfNeeded()
+      layoutNativeContentIfNeeded()
     }
   }
   private var bandViews: [String: NSView] = [:]
@@ -137,12 +137,14 @@ public final class PaneOverlaysView: NSView {
 
   public func install(_ snapshot: WindowLayoutSnapshot, state: BrowserState) {
     guard !stopped, snapshot.input.windowId == windowId else { return }
+    let placementChanged = installed.map { !$0.input.hasSameLayout(as: snapshot.input) } ?? true
     installed = snapshot
     update(state: state)
     setFullscreenTab(snapshot.fullscreenTabId)
-    frame = CGRect(origin: .zero, size: snapshot.frames.card.size)
-    needsLayout = true
-    layoutSubtreeIfNeeded()
+    let nextFrame = CGRect(origin: .zero, size: snapshot.frames.card.size)
+    if frame != nextFrame { frame = nextFrame }
+    if placementChanged { needsLayout = true }
+    layoutNativeContentIfNeeded()
   }
 
   public func stop() {
@@ -189,7 +191,7 @@ public final class PaneOverlaysView: NSView {
     guard liveTops[tabId] != top else { return }
     liveTops[tabId] = top
     needsLayout = true
-    layoutSubtreeIfNeeded()
+    layoutNativeContentIfNeeded()
   }
 
   public func setFullscreenTab(_ tabId: String?) {
@@ -227,10 +229,12 @@ public final class PaneOverlaysView: NSView {
       let base = min(max(caption, (liveTops[tabId] ?? pageTops[tabId] ?? (tabId == fullscreenTab ? 0 : toolbarHeight)) * (1 - rail)), rect.height)
       let band = tabId == fullscreenTab ? 0 : min(max(0, bandHeights[tabId] ?? 0), rect.height - base)
       let top = base + band
-      overlay.frame = installed?.pages[tabId].map { $0.offsetBy(dx: -origin.x, dy: -origin.y) }
+      let nextFrame = installed?.pages[tabId].map { $0.offsetBy(dx: -origin.x, dy: -origin.y) }
         ?? CGRect(x: rect.minX, y: rect.minY + top, width: rect.width, height: rect.height - top)
-      overlay.layoutSubtreeIfNeeded()
-      overlay.isHidden = fullscreenTab != nil && tabId != fullscreenTab
+      if overlay.frame != nextFrame { overlay.frame = nextFrame }
+      overlay.layoutFrameIfNeeded()
+      let hidden = fullscreenTab != nil && tabId != fullscreenTab
+      if overlay.isHidden != hidden { overlay.isHidden = hidden }
       if let view = bandViews[tabId] {
         let nativeBand = installed?.input.pageFacts[tabId]?.band
         let height = min(max(0, nativeBand ?? band), max(0, overlay.frame.minY - rect.minY))
@@ -241,11 +245,20 @@ public final class PaneOverlaysView: NSView {
     for (tabId, view) in bandViews where rects[tabId] == nil { view.isHidden = true }
     for (tabId, overlay) in overlays where rects[tabId] == nil {
       if liveTabs.contains(tabId), !overlay.rn.subviews.isEmpty {
-        overlay.isHidden = true
+        if !overlay.isHidden { overlay.isHidden = true }
       } else {
         drop(tabId, overlay)
       }
     }
+  }
+
+  private func layoutNativeContentIfNeeded() {
+    layoutFrameIfNeeded()
+    for overlay in overlays.values where !overlay.isHiddenOrHasHiddenAncestor {
+      overlay.layoutFrameIfNeeded()
+      overlay.native.layoutSubtreeIfNeeded()
+    }
+    for band in bandViews.values where !band.isHiddenOrHasHiddenAncestor { band.layoutSubtreeIfNeeded() }
   }
 
   public override func viewDidHide() {

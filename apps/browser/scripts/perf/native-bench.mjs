@@ -77,6 +77,8 @@
 //     --fresh-copy            launch phase only: every launch runs from its own APFS clone of the app (same signature,
 //                             a new path and inodes), removed after, as the first launch after an install or update
 //                             is. Without it only the first launch of a prepared copy is cold; the rest are warm.
+//     --layout-trace         record per-action native layout signposts and correlated page timestamps; requires a
+//                             Debug or SOLARA_PERF_TRACE build, and enables SOLARA_LAYOUT_TRACE=1 on both sides
 //     --trace-startup <cats>  launch phase only: each launch records Chrome's startup trace of those categories
 //                             (`--trace-startup`, 4 s, JSON) into <out>/<label>/traces/launch-<i>.json, named in its
 //                             result's `trace`; launch-trace.mjs compares two sides'. Tracing slows the launch:
@@ -202,6 +204,7 @@ const { values: opt } = parseArgs({
     "control-source-mode": { type: "string" },
     "fresh-copy": { type: "boolean" },
     "trace-startup": { type: "string" },
+    "layout-trace": { type: "boolean" },
     "page-port": { type: "string", default: "0" },
     "journey-n": { type: "string", default: "10" },
     "frames-n": { type: "string", default: "8" },
@@ -982,19 +985,37 @@ async function tabIds(app) {
   return app.run(`const s = ac.store.getState(); return s.windows[${WINDOW}].tabIds.map((id) => [id, s.tabs[id].url]);`);
 }
 
-async function newWindow(app, id) {
+function layoutTraceCommand(action, detail) {
+  if (!opt["layout-trace"]) return "const t = ac.now();";
+  return `const trace = globalThis.expo.modules.SolaraWindowShell;
+    if (typeof trace.layoutTrace !== "function" || typeof trace.layoutTraceMark !== "function") throw new Error("layout trace requires Debug or SOLARA_PERF_TRACE");
+    trace.layoutTrace(true);
+    const t = ac.now(); trace.layoutTraceMark("command", ${JSON.stringify(`${action}:${detail}`)});`;
+}
+
+async function readLayoutTrace(app, sample) {
+  if (!opt["layout-trace"]) return null;
+  const observed = await app.run(`const s = ac.store.getState();
+    const tab = Object.values(s.tabs).find(tab => tab.url === ${JSON.stringify(sample.url)});
+    return { events: JSON.parse(globalThis.expo.modules.SolaraWindowShell.layoutTrace(true)), tabId: tab?.id ?? null, windowId: tab?.windowId ?? null };`);
+  if (!Array.isArray(observed.events) || !observed.events.some(event => event.stage === "command")) throw new Error("layout trace did not record the command");
+  return { ...observed, ...sample, marks: app.marks().filter(mark => Object.values(mark).some(value => typeof value === "number" && value >= sample.commandAt && value <= Date.now())) };
+}
+
+async function newWindow(app, id, layoutTrace) {
   const watcher = spawn(join(toolDir, "acperf"), ["newwindow", String(app.pid), "20"], { stdio: ["ignore", "pipe", "ignore"] });
   let said = "";
   watcher.stdout.on("data", (d) => (said += d));
   const exited = new Promise((done) => watcher.on("exit", done));
   for (const end = Date.now() + 10_000; !said.includes("ready") && Date.now() < end; ) await Promise.race([exited, sleep(5)]);
-  const at = await app.run(`const t = ac.now(); ac.actions.openWindow({ url: "${base()}/static?id=${id}" }); return t;`);
+  const at = await app.run(`${layoutTraceCommand("newwindow", id)} ac.actions.openWindow({ url: "${base()}/static?id=${id}" }); return t;`);
   await exited;
   const shown = JSON.parse(said.split("\n").find((l) => l.startsWith("{")) ?? "null");
   const s = await app.pageState(`id=${id}`, 20_000, (st) => st.fcp);
   const marks = app.marks();
   const content = marks.find((m) => m.content >= at && (!shown || m.window === shown.id));
   const committed = content && marks.find((m) => m.committed >= content.content && m.window === content.window);
+  if (layoutTrace) layoutTrace.push(await readLayoutTrace(app, { action: "newwindow", commandAt: at, url: `${base()}/static?id=${id}`, shownAt: shown?.at ?? null, paintAt: s?.fcp ?? null, frameAt: s?.frame ?? null, domAt: s?.dom ?? null }));
   await app.run(`const s = ac.store.getState(); const t = Object.values(s.tabs).find((t) => t.url.includes("id=${id}"));
     if (t) ac.store.getState().closeWindow(t.windowId); return true;`);
   await sleep(1500);
@@ -1009,11 +1030,12 @@ async function newWindow(app, id) {
 async function windowsRun(side, i) {
   const app = new Instance(side, freshDir(side, `windows-${i}`));
   const r = { newWindow: [], stalls: app.stalls, display: { before: displayState() } };
+  if (opt["layout-trace"]) r.layoutTrace = [];
   try {
     await app.launch();
     await app.pageState("id=seed", 30_000, (s) => s.fcp);
     await sleep(10_000);
-    for (let k = 0; k < 8; k++) r.newWindow.push(await app.measureStalls("newwindow", () => newWindow(app, `w${k}`)));
+    for (let k = 0; k < 8; k++) r.newWindow.push(await app.measureStalls("newwindow", () => newWindow(app, `w${k}`, r.layoutTrace)));
     log(`${side.tag}windows ${i}:`, JSON.stringify(r.newWindow));
     side.results.windows.push(r);
   } finally {
@@ -1271,6 +1293,7 @@ async function sessionRun(side, i, parts) {
   const secs = +opt.idle;
   const app = new Instance(side, freshDir(side, `session-${i}`));
   const r = { stalls: app.stalls, memory: {}, idle: {}, tabSwitch: [], tabVisible: [], newTab: [], newTabFrame: [], newTabDom: [], newWindow: [], processes: {}, throttled: { tabSwitch: 0, newTab: 0 } };
+  if (opt["layout-trace"]) r.layoutTrace = [];
   if (parts.size < SESSION_PARTS.length) r.parts = [...parts];
   r.display = { before: displayState() };
   try {
@@ -1299,13 +1322,14 @@ async function sessionRun(side, i, parts) {
         const target = await app.cdp.find(`id=${marker}`);
         const before = (await app.cdp.state(target))?.shown?.length ?? 0;
         const hidden = await throttled(app);
-        const at = await app.run(`const t = ac.now(); ac.actions.switchToTab(${JSON.stringify(id)}); return t;`);
+        const at = await app.run(`${layoutTraceCommand("switch", id)} ac.actions.switchToTab(${JSON.stringify(id)}); return t;`);
         const s = await app.pageState(`id=${marker}`, 5000, (st) => (st.shown?.length ?? 0) > before);
         const shown = s?.shown.at(-1);
         if (hidden) r.throttled.tabSwitch++;
         r.tabSwitch.push(shown && !hidden ? shown[1] - at : NaN);
         const visible = (s ?? (await app.cdp.state(target)))?.vis?.findLast(([t, state]) => state === "visible" && t >= at);
         r.tabVisible.push(visible ? visible[0] - at : NaN);
+        if (r.layoutTrace) r.layoutTrace.push(await readLayoutTrace(app, { action: "switch", commandAt: at, tabId: id, url, shownAt: shown?.[1] ?? null, visibleAt: visible?.[0] ?? null, excluded: !!hidden }));
         if (process.env.BENCH_DEBUG) log("switch", marker, "before", before, "at", at - Date.now(), "state", JSON.stringify((await app.cdp.state(target)) ?? null)?.slice(0, 300));
         await sleep(400);
       }
@@ -1315,20 +1339,21 @@ async function sessionRun(side, i, parts) {
     if (has("newtab")) await app.measureStalls("newtab", async () => {
       for (let k = 0; k < 5; k++) {
         const hidden = await throttled(app);
-        const at = await app.run(`const t = ac.now(); ac.store.getState().newTab(${WINDOW}, { url: "${base()}/static?id=n${k}" }); return t;`);
+        const at = await app.run(`${layoutTraceCommand("newtab", `n${k}`)} ac.store.getState().newTab(${WINDOW}, { url: "${base()}/static?id=n${k}" }); return t;`);
         const s = await app.pageState(`id=n${k}`, 20_000, (st) => st.fcp);
         if (hidden) r.throttled.newTab++;
         r.newTab.push(s && !hidden ? s.fcp - at : NaN);
         r.newTabFrame.push(s?.frame && !hidden ? s.frame - at : NaN);
         const loaded = s ?? (await app.pageState(`id=n${k}`, 2000, (st) => st.dom));
         r.newTabDom.push(loaded?.dom ? loaded.dom - at : NaN);
+        if (r.layoutTrace) r.layoutTrace.push(await readLayoutTrace(app, { action: "newtab", commandAt: at, url: `${base()}/static?id=n${k}`, paintAt: s?.fcp ?? null, frameAt: s?.frame ?? null, domAt: loaded?.dom ?? null, excluded: !!hidden }));
         await sleep(800);
       }
     });
     if (has("newtab"))
       await app.run(`const s = ac.store.getState(); for (const id of Object.keys(s.tabs)) if (s.tabs[id].url.includes("id=n")) ac.store.getState().closeTab(id); return true;`);
 
-    for (let k = 0; k < (has("newwindow") ? 3 : 0); k++) r.newWindow.push(await app.measureStalls("newwindow", () => newWindow(app, `w${k}`)));
+    for (let k = 0; k < (has("newwindow") ? 3 : 0); k++) r.newWindow.push(await app.measureStalls("newwindow", () => newWindow(app, `w${k}`, r.layoutTrace)));
 
     if (has("memory")) {
       r.processes.tabs20 = usage(app.pid).length;
@@ -1604,6 +1629,7 @@ if (only.has("newtabkey") || opt["fixture-template"] || only.has("prepare-fixtur
   if ([...opt.env, ...opt["candidate-env"], ...opt["control-env"]].some((entry) => entry.startsWith("AC_BENCH_OMNIBOX=") && entry !== "AC_BENCH_OMNIBOX=1")) fail("correlated omnibox timing requires AC_BENCH_OMNIBOX=1");
   opt.env.push("AC_BENCH_OMNIBOX=1");
 }
+if (opt["layout-trace"]) opt.env.push("SOLARA_LAYOUT_TRACE=1");
 if (!(+opt["mem-windows"] >= 1)) fail(`--mem-windows wants a count, got "${opt["mem-windows"]}"`);
 for (const e of [...opt.env, ...opt["candidate-env"], ...opt["control-env"]]) if (!/^[A-Za-z_]\w*=/.test(e)) fail(`--env wants K=V, got "${e}"`);
 if (!(+opt.hold >= 0)) fail(`--hold wants seconds, got "${opt.hold}"`);
@@ -1690,7 +1716,7 @@ try {
     }
     const other = sides.find((s) => s !== side);
     Object.assign(side.results.meta, { app: side.src, bundle: side.bundle, label: side.label, date: new Date().toISOString(),
-      runs: +opt.runs, idleSecs: +opt.idle, only: [...only], env: opt.env, seed: opt.seed ?? null, freshCopy: !!opt["fresh-copy"], ...(other ? { role: side.role, interleavedWith: other.label } : {}) });
+      runs: +opt.runs, idleSecs: +opt.idle, only: [...only], env: opt.env, sideEnv: side.env, layoutTrace: !!opt["layout-trace"], seed: opt.seed ?? null, freshCopy: !!opt["fresh-copy"], ...(other ? { role: side.role, interleavedWith: other.label } : {}) });
   }
   if (only.has("prepare")) {
     for (const side of sides) console.log(`prepared ${side.app} (rerun with --app ${side.app} --prepared)`);

@@ -55,11 +55,16 @@ async function check(label, body) {
 }
 const registrations = () => run('return globalThis.expo.modules.SolaraTabPool.livePages().then(pages=>pages.map(({tabId,sessionGeneration,registrationGeneration,ready})=>({tabId,sessionGeneration,registrationGeneration,browserId:ready?.browserId??null})).sort((a,b)=>a.tabId.localeCompare(b.tabId)));');
 async function page(path) {
-  const connection = await app.page(path, { timeout: 20000 });
+  const connection = await app.page(target => target.url === `${base}${path}`, { timeout: 20000 });
   connections.push(connection);
   return connection;
 }
+async function readyPage(connection) {
+  await until("active fixture document committed", () => connection.eval("({url:location.href,ready:document.readyState,field:!!document.getElementById('field')})"),
+    state => state.url.startsWith(`${base}/`) && state.ready === "complete" && state.field);
+}
 async function scroll(connection, direction) {
+  await readyPage(connection);
   const key = direction === "down" ? { key: "End", code: "End", windowsVirtualKeyCode: 35, nativeVirtualKeyCode: 119 } : { key: "Home", code: "Home", windowsVirtualKeyCode: 36, nativeVirtualKeyCode: 115 };
   for (const type of ["keyDown", "keyUp"]) await connection.send("Input.dispatchKeyEvent", { type, ...key });
 }
@@ -72,6 +77,7 @@ async function closeFields() {
   await key({ key: "\u001b", keyCode: 53, modifiers: [], asKey: true, wait: 50 });
 }
 async function enterFullscreen(connection, id) {
+  await readyPage(connection);
   await connection.eval("document.documentElement.requestFullscreen().then(()=>true)", { userGesture: true });
   await sample(`renderer fullscreen ${id}`, (layout) => layout.fullscreenTabId === id);
 }
@@ -102,6 +108,7 @@ try {
   });
   await run('ac.store.getState().updateSettings({hideToolbarWhileScrolling:true,bookmarksBar:"always"});return true;');
   const a = await page("/a");
+  await readyPage(a);
   await sample("initial native presentation");
   await sleep(500);
   await a.eval("window.__toolbarResizes=[];addEventListener('resize',()=>window.__toolbarResizes.push({width:innerWidth,height:innerHeight,at:performance.now()}));true");
@@ -125,6 +132,7 @@ try {
   });
   await run('const s=ac.store.getState();s.activate("b");return true;');
   const b = await page("/b");
+  await readyPage(b);
   await run('ac.store.getState().activate("a");return true;');
   for (const spec of [{ key: "l", keyCode: 37, modifiers: ["command"] }, { key: "f", keyCode: 3, modifiers: ["command"] }]) {
     await check(`scroll then ⌘${spec.key.toUpperCase()} and switch preserves the newest field focus`, async () => {

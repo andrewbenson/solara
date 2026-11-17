@@ -1,7 +1,7 @@
 import AppKit
 
 @MainActor
-public final class WindowShellView: NSView {
+public final class WindowShellView: FrameLayoutView {
   public enum Slot: String, CaseIterable, Sendable {
     case backdrop
     case tint
@@ -1038,7 +1038,7 @@ public final class CardEdgeView: NSView {
 }
 
 @MainActor
-public final class FlippedContainerView: NSView {
+public final class FlippedContainerView: FrameLayoutView {
   public override var isFlipped: Bool { true }
 
   public override func hitTest(_ point: NSPoint) -> NSView? {
@@ -1048,7 +1048,7 @@ public final class FlippedContainerView: NSView {
 }
 
 @MainActor
-public final class ShellOverlayView: NSView {
+public final class ShellOverlayView: FrameLayoutView {
   public var onChildrenChanged: (() -> Void)?
   private let turn = OverlayTurn()
   private var watches: [ObjectIdentifier: (hidden: NSKeyValueObservation, frame: NSObjectProtocol)] = [:]

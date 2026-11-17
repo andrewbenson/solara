@@ -640,3 +640,33 @@ sidebar creation/live counts at 200 and 2,000 tabs with the same viewport. The r
 requires exact visible bindings and bounded reuse bins. No eager-allocation ceiling is adopted in `ratchet.json`.
 Timing from Debug runs is diagnostic, and native counts must be considered with launch/scroll cost.
 New ceilings require repeated matched measurements and time correlation as described above.
+
+## Native window layout stage traces
+
+Build an isolated optimized app with `SOLARA_PERF_TRACE` added to
+`SWIFT_ACTIVE_COMPILATION_CONDITIONS` through a scratch `XCODE_XCCONFIG_FILE`.
+Debug builds also include these hooks. Normal Release builds compile them out.
+Run native-bench with `--layout-trace`, the same app as candidate and control,
+`--candidate-env SOLARA_NATIVE_WINDOW_LAYOUT=1` and
+`--control-env SOLARA_NATIVE_WINDOW_LAYOUT=0`. Keep the usual perflab lock,
+interleaving, display checks and at least four complete runs per side.
+
+Set `SOLARA_LAYOUT_STACKS=1` only for separate diagnostic runs to retain layout requester stacks and projection inputs. Stack symbolization changes latency; exclude those runs from timing tables. Page painting and resize marks retain wrapper and physical child visibility, alpha and frame sizes.
+
+Each action retains its command timestamp, target tab/window, renderer endpoint,
+native `os_signpost` spans and bench-injected RN layout/mount/painting records in
+`session[].layoutTrace`. The trace collector flushes the marker writer outside
+the action's measured interval. Analyze both results with
+`node apps/browser/scripts/perf/layout-trace.mjs <off/results.json> <on/results.json>`.
+The analyzer uses medians of per-run medians, reports missing stages as unavailable,
+and excludes locked, asleep and throttled paint samples.
+
+For switches and tabs, the off path's active layout boundary is the global RN
+shadow layout pass; its target shell projection is reported separately. RN
+shadow and mount spans cover the whole UIManager. A new window may first
+update an older root, so those global spans cannot establish the new window's
+layout boundary; its off-path active-layout deltas remain unavailable. Inclusive scoped costs overlap and must not
+be added. Native visibility application is separate from renderer FCP or the
+switch fixture's shown frame. Pool `firstDraw` is a delayed callback wall wait,
+not first paint. Buffer resets can split pending callbacks; unmatched spans are
+reported instead of paired across actions. Keep raw traces beside the table.

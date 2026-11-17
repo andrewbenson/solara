@@ -45,6 +45,7 @@ final class TabPoolHost {
     if let slotObserver { NotificationCenter.default.removeObserver(slotObserver) }
     let pool = TabViewPool(make: { [weak self] tabId, windowId in self?.makePage(tabId, windowId) })
     pool.preparePlacement = { [weak self] in self?.preparePlacement() }
+    pool.nativePlacement = { NativeWindowShell.nativeLayoutActive($0) }
     pool.hiddenContainer = { NativeWindowShell.hiddenPages($0) }
     pool.onPlaced = { [weak self] places in
       PageIssuer.shared?.afterIngress { [weak self] in _ = self?.emit?("onPlaced", ["places": places]) }
@@ -175,6 +176,10 @@ final class TabPoolHost {
   }
 
   func receive(_ next: BrowserState) {
+    #if DEBUG || SOLARA_PERF_TRACE
+    let trace = LayoutTrace.begin("poolReceive")
+    defer { LayoutTrace.end(trace) }
+    #endif
     state = next
     for tabId in props.keys where next.tabs[tabId] == nil { props[tabId] = nil }
     refresh()
@@ -182,12 +187,22 @@ final class TabPoolHost {
   }
 
   private func preparePlacement() {
+    #if DEBUG || SOLARA_PERF_TRACE
+    let trace = LayoutTrace.begin("poolPrepare")
+    defer { LayoutTrace.end(trace) }
+    #endif
     guard !preparingPlacement, let store = NativeStoreHandle.store else { return }
     preparingPlacement = true
     defer { preparingPlacement = false }
     store.sequence {
       let snapshot = store.snapshot
+      #if DEBUG || SOLARA_PERF_TRACE
+      let layoutTrace = LayoutTrace.begin("poolPrepareLayouts", String(snapshot.rev))
+      #endif
       preparedWindows = NativeWindowShell.preparePagePlacement(snapshot.state, revision: snapshot.rev)
+      #if DEBUG || SOLARA_PERF_TRACE
+      LayoutTrace.end(layoutTrace)
+      #endif
       refreshInScope(snapshot.state)
     }
   }
@@ -199,6 +214,10 @@ final class TabPoolHost {
   }
 
   private func refreshInScope(_ state: BrowserState) {
+    #if DEBUG || SOLARA_PERF_TRACE
+    let trace = LayoutTrace.begin("poolRefresh")
+    defer { LayoutTrace.end(trace) }
+    #endif
     guard let pool else { return }
     self.state = state
     shellWindows.formUnion(NativeWindowShell.activeWindowIds)
@@ -360,6 +379,10 @@ final class TabPoolHost {
   }
 
   private func makePage(_ tabId: String, _ windowId: String) -> TabPoolPage? {
+    #if DEBUG || SOLARA_PERF_TRACE
+    let trace = LayoutTrace.begin("makePage", "\(windowId) \(tabId)")
+    defer { LayoutTrace.end(trace) }
+    #endif
     guard let issuer = PageIssuer.shared else { return nil }
     return issuer.store.sequence {
       let state = issuer.store.state
@@ -621,6 +644,9 @@ final class TabPoolCommits: @unchecked Sendable {
   private var scheduled = false
 
   func receive(_ state: BrowserState) {
+    #if DEBUG || SOLARA_PERF_TRACE
+    LayoutTrace.event("poolEnqueue")
+    #endif
     let schedule = lock.withLock { () -> Bool in
       latest = state
       if scheduled { return false }

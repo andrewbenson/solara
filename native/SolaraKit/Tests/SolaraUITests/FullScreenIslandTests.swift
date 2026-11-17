@@ -236,6 +236,7 @@ struct FullScreenIslandTests {
 
   @MainActor @Test func sampleIncludesProfileTintAndInvalidatesForThemeAppearanceAndSize() throws {
     let owner = FlippedContainerView(frame: CGRect(x: 0, y: 0, width: 400, height: 300))
+    owner.appearance = NSAppearance(named: .aqua)
     let base = FullScreenBackdropFixture(colors: [.white, .lightGray])
     let tint = FullScreenBackdropFixture(colors: [.systemPink, .systemPurple])
     for view in [base, tint] {

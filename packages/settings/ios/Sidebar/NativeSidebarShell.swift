@@ -556,6 +556,10 @@ final class NativeLayoutChrome {
   }
 
   func refresh() {
+    #if DEBUG || SOLARA_PERF_TRACE
+    let trace = LayoutTrace.begin("chromeRefresh", "\(shell.windowId) \(revision)")
+    defer { LayoutTrace.end(trace) }
+    #endif
     guard !stopped, !refreshing else { return }
     let nativeInput = state.flatMap(layoutInput)
     strip.renderingEnabled = nativeInput?.layout.topTabs == true

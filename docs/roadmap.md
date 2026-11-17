@@ -34,7 +34,6 @@ off.
 | Item | Status |
 |---|---|
 | 0.4.0's perf follow-ups: new window on screen 135 vs 97 ms, page-load and profile-swipe JS stalls (+57%, +18%), and the sheet-host harness's busy-dismiss failure (docs/perf/0.3.5-to-0.4.0.md) | in progress: native layout fixes landed (a62efaf5); default-path new window +55% vs 0.3.5 open |
-| The native window layout is the default again: tab switch, new tab and new window within 15% of 0.3.5 (0.4.0's candidate: 48 vs 40 ms, 143 vs 95 ms, 162 vs 102 ms), then the right sidebar ships with it | planned (from 0.4.1) |
 | From 0.4.0: the last React Native drawing: Little Solara's and the calendar and meeting cards' fill and page hosting, and the rest of the extensions side panel | planned (from 0.4.1) |
 | Fix: a portrait Picture in Picture (a phone video, a person talking) can't be made as small as a landscape one; its smallest size is still very tall. The minimum should follow the video's shape, for dragging the edge, pinching and the remembered size (owner 2026-11-14, seen on 0.3.5) | landed (bcbdd4f3, engine 9e9bdb03c2a7) |
 | Fix: Picture in Picture dragged onto a display that shows another app's full-screen Space doesn't appear over it; it only shows there once that display leaves full screen (owner 2026-11-14, seen on 0.3.5). Dragging across displays and past the menu bar already works (2c61e084, 8881dfe1); the window keeps its Space membership from the display it left. Verify on two displays with a full-screen app on the target one (owner check: Spaces and multiple displays) | landed (bcbdd4f3); needs the owner's two-display check |
@@ -61,6 +60,7 @@ native (the engine and the native store), so the rest does not wait on the port.
 | Revamp the `solara` command (apps/cli, docs/cli.md): scope to be set with the owner; its connection to the app is built in Swift (settings and keybindings from files, a local control socket, event hooks), not on the JavaScript side (moved from 0.3.0, owner 2026-11-04: after the port; moved up with the agents work, owner 2026-11-14) | planned |
 | Revamp the Raycast extension (extras/raycast-solara) against the revamped CLI (moved from 0.3.0, owner 2026-11-04: after the port; moved up with the agents work, owner 2026-11-14) | planned |
 | Publish the extension on the Raycast Store: meet its review guidelines and submit to raycast/extensions (a public PR in another project, so it needs the owner's OK at submission) (moved from 0.3.0, owner 2026-11-04: after the port; moved up with the agents work, owner 2026-11-14) | planned |
+| The native window layout is the default again: tab switch, new tab and new window within 15% of 0.3.5 (0.4.0's candidate: 48 vs 40 ms, 143 vs 95 ms, 162 vs 102 ms), then the right sidebar ships with it | moved from 0.4.2 (owner 2026-11-16): after a62efaf5, layout on is switch 61 vs 40.5 ms, new tab 128 vs 95, new window 138 vs 105 against 0.3.5; also chase the default layout's new window, 148 vs 95 ms |
 
 ## 0.4.4: the sidebar and tab strip decide in Swift
 

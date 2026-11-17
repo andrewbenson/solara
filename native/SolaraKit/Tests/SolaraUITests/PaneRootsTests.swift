@@ -167,13 +167,73 @@ struct PaneRootsTests {
     #expect(h.made == ["a"])
   }
 
-  @Test func aTabWithNoSlotYetGetsNoRootUntilItHasOne() {
+  @Test func aVisibleTabPreparesItsRootBeforeTheSlotArrives() throws {
     let h = Harness()
     h.roots.update(visible: ["a"], open: ["a"])
-    #expect(h.roots.root("a") == nil)
-    _ = h.slot("a")
+    let root = try #require(h.roots.root("a"))
+    #expect(root.superview == nil)
+    #expect(root.isHidden)
+    #expect(h.roots.isRetiring("a"))
+    h.roots.contentAppeared("a", root: root)
+    #expect(root.isHidden)
+    let slot = h.slot("a")
     h.roots.update(visible: ["a"], open: ["a"])
-    #expect(h.roots.root("a") != nil)
+    #expect(h.roots.root("a") === root)
+    #expect(root.superview === slot)
+    #expect(root.frame == slot.bounds)
+    #expect(!root.isHidden)
+    #expect(!h.roots.isRetiring("a"))
+    #expect(h.made == ["a"])
+    h.clock.advance(2)
+    #expect(h.roots.root("a") === root)
+  }
+
+  @Test func aPreparedRootStillWaitsForItsOwnContentAfterTheSlotArrives() throws {
+    let h = Harness()
+    h.roots.update(visible: ["a"], open: ["a"])
+    let root = try #require(h.roots.root("a"))
+    let slot = h.slot("a")
+    h.roots.update(visible: ["a"], open: ["a"])
+    #expect(root.superview === slot)
+    #expect(root.isHidden)
+    h.roots.contentAppeared("a", root: root)
+    #expect(!root.isHidden)
+  }
+
+  @Test func closingOrStoppingADetachedPreparedRootEndsItOnce() throws {
+    let h = Harness()
+    var ended: [String] = []
+    h.roots.onEnd = { tabId, _ in ended.append(tabId) }
+    h.roots.update(visible: ["a", "b"], open: ["a", "b"])
+    let a = try #require(h.roots.root("a"))
+    let b = try #require(h.roots.root("b"))
+    h.roots.update(visible: [], open: ["b"])
+    #expect(h.roots.root("a") == nil)
+    h.roots.contentAppeared("a", root: a)
+    h.roots.stop()
+    h.roots.contentAppeared("b", root: b)
+    h.clock.advance(2)
+    #expect(h.roots.tabIds.isEmpty)
+    #expect(ended.sorted() == ["a", "b"])
+    #expect(a.isHidden && b.isHidden)
+  }
+
+  @Test func aPreparedRootWhoseSlotNeverArrivesEndsAfterTheGrace() throws {
+    let h = Harness()
+    var ended = 0
+    h.roots.onEnd = { _, _ in ended += 1 }
+    h.roots.update(visible: ["a"], open: ["a"])
+    let old = try #require(h.roots.root("a"))
+    h.clock.advance(1.1)
+    #expect(h.roots.root("a") == nil)
+    #expect(ended == 1)
+    let slot = h.slot("a")
+    h.roots.update(visible: ["a"], open: ["a"])
+    let fresh = try #require(h.roots.root("a"))
+    h.roots.contentAppeared("a", root: old)
+    #expect(fresh !== old)
+    #expect(fresh.superview === slot)
+    #expect(fresh.isHidden)
   }
 
   @Test func aStaleAppearanceFromAnEndedRootShowsNothing() throws {

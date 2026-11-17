@@ -227,6 +227,10 @@ props supplement this publication. Loading A, Back to New Tab, then navigating t
 navigation's URL is unchanged. A no-op follow of the already consumed sequence preserves the overlay.
 A stale prop cannot overwrite accepted newer context. Pooled creation validates cached context before attachment and engine construction; later appearance-only prop batches retain that context.
 
+An accepted `created` report fills a missing or empty tab engine with its resolved backend in the same settlement.
+An explicit tab engine stays unchanged, including a saved WebKit preference on a Chromium-only URL. Recording it before
+the creation callback avoids a second engine-only store commit from the JS compatibility fallback.
+
 Swift interprets the existing pure TabPageModel and PageLive rules. Navigation commits URL/title and live in one
 settlement; ready records `{ browserId, tabId? }` and clears discarded. Discard changes facts through reports and
 keeps the producer identity, as does freeze. Gone retires the matching fence and resets surviving tab facts to idle.

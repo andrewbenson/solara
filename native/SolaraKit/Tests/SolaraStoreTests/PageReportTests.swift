@@ -397,8 +397,11 @@ func phaseAIssued(_ store: Store, _ id: String, generation: String = "G", revisi
     #expect(store.pageFacts(id) == nil)
     try store.dispatch(phaseAReport(id, phaseACreated(store, id, engine: "webkit")))
     #expect(store.pageFacts(id)?.generation == "G")
+    #expect(store.state.tabs[id]?.engine == "webkit")
     let candidate = try #require(try store.preparePooledIssue(id: id, report: phaseAIssued(store, id)))
     try store.dispatch(settingsCommand(["pageEngine": "chromium"]))
+    #expect(store.pageEngine(id, in: store.state) == "webkit")
+    try store.dispatch(Command("updateTab", [.string(id), ["engine": "chromium"]]))
     #expect(!store.consumePooledIssue(id: id, prepared: candidate))
     #expect(store.memory.pages[id]?.model.issuedSeq == nil)
   }

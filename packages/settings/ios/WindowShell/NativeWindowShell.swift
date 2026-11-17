@@ -259,7 +259,7 @@ final class ShellHost {
       guard let self, !self.layoutStopped, let window = self.shell.window else { return }
       WindowCaptionLayout.refresh(in: window)
     }
-    panes = NativePaneRoots.start(windowId)
+    panes = NativePaneRoots.start(windowId, prepareSelected: !ownsNativeLayout)
     profilePager = NativeProfilePager.start(shell)
     shell.onFrames = { [weak self] _ in
       self?.profilePager?.place()

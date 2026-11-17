@@ -98,7 +98,7 @@ enum NativePaneRoots {
     }
   }
 
-  static func start(_ windowId: String) -> PaneRootsHost? {
+  static func start(_ windowId: String, prepareSelected: Bool) -> PaneRootsHost? {
     guard available else { return nil }
     if slotsObserver == nil {
       slotsObserver = NotificationCenter.default.addObserver(forName: PaneOverlays.changed, object: nil, queue: .main) { note in
@@ -109,6 +109,7 @@ enum NativePaneRoots {
     hosts[windowId]?.stop()
     let host = PaneRootsHost(windowId: windowId)
     hosts[windowId] = host
+    if prepareSelected { host.prepareSelected() }
     host.refresh()
     return host
   }
@@ -187,6 +188,13 @@ final class PaneRootsHost {
   private static func setProps(_ root: NSView, _ props: [String: Any]) {
     guard root.responds(to: Selector(("setAppProperties:"))) else { return }
     root.setValue(props, forKey: "appProperties")
+  }
+
+  func prepareSelected() {
+    guard !stopped, let state = NativeStoreHandle.store?.displayState,
+      let window = state.windows[windowId], let active = state.activeTabId(windowId) else { return }
+    let selected = Set(Splits.splitOf(state, active)?.tabIds ?? [active])
+    roots.update(visible: selected, open: Set(window.tabIds))
   }
 
   func refresh() {

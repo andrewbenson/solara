@@ -153,6 +153,7 @@ func phaseAFeed(generation: String = "G", epoch: Int, seq: Int, handled: Int = 0
 
   @Test func missingTabMemoryOrGenerationNeverCreatesFeedPage() throws {
     let (store, id) = try phaseAPageFixture()
+    try store.dispatch(Command("updateTab", [.string(id), ["engine": "chromium"]]))
     let epoch = store.registerKeepAliveRuntime()
     let baseline = store.rev
     try store.dispatch(phaseAReport("missing", phaseAFeed(epoch: epoch, seq: 1)))
@@ -194,6 +195,7 @@ func phaseAFeed(generation: String = "G", epoch: Int, seq: Int, handled: Int = 0
 
   @Test func registrationDrainsOlderReportsWithoutStateRevisionOfItsOwn() throws {
     let (store, id) = try phaseAPageFixture()
+    try store.dispatch(Command("updateTab", [.string(id), ["engine": "chromium"]]))
     let baseline = store.memory.currentEpoch
     let revision = store.rev
     store.enqueuePageReport(id: id, report: phaseACreated(store, id))

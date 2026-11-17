@@ -267,7 +267,9 @@ extension Session {
       memory.pageProducerFence[id] = PageProducerFence(generation: generation, retired: false)
       if memory.feedWatermark[id]?.generation != generation { memory.feedWatermark[id] = nil }
       memory.pages[id] = page
-      if state.live[id] != page.live.facts { update { $0.live[id] = page.live.facts } }
+      if tab.engine?.isEmpty != false {
+        updateTab(id, TabUpdate(set: ["engine": .string(engine)]), live: page.live.facts)
+      } else if state.live[id] != page.live.facts { update { $0.live[id] = page.live.facts } }
       return
     }
     if type == "restore" {

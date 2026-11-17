@@ -53,7 +53,7 @@ public final class PaneRoots {
   public func contentAppeared(_ tabId: String, root: NSView) {
     guard roots[tabId] === root else { return }
     appeared.insert(tabId)
-    if retiring[tabId] == nil { setShown(tabId, root, true) }
+    if retiring[tabId] == nil, root.superview != nil { setShown(tabId, root, true) }
   }
 
   public func stop() {
@@ -62,8 +62,6 @@ public final class PaneRoots {
   }
 
   private func show(_ tabId: String) -> Bool {
-    guard let into = container(tabId) else { return false }
-    retiring.removeValue(forKey: tabId)?.cancel()
     let root: NSView
     if let existing = roots[tabId] {
       root = existing
@@ -74,6 +72,8 @@ public final class PaneRoots {
       roots[tabId] = made
       root = made
     }
+    guard let into = container(tabId) else { return false }
+    retiring.removeValue(forKey: tabId)?.cancel()
     if root.superview !== into {
       root.removeFromSuperview()
       into.addSubview(root, positioned: .below, relativeTo: nil)

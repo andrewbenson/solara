@@ -85,6 +85,10 @@ public final class SidebarPlayerView: NSView {
     let palette = MediaPalette(next.theme)
     surface.fill = palette.groupFill
     surface.borderTint = palette.groupStroke
+    layer?.shadowColor = NSColor.black.cgColor
+    layer?.shadowOpacity = palette.dark ? 0.32 : 0.12
+    layer?.shadowRadius = 8
+    layer?.shadowOffset = CGSize(width: 0, height: -2)
     artView.set(next, palette: palette)
     title.text = next.title
     title.color = palette.textPrimary
@@ -167,7 +171,10 @@ public final class SidebarPlayerView: NSView {
   public override func layout() {
     super.layout()
     let width = bounds.width
-    MediaMotion.setInstantly { surface.frame = CGRect(x: 0, y: 0, width: width, height: Self.height) }
+    MediaMotion.setInstantly {
+      surface.frame = CGRect(x: 0, y: 0, width: width, height: Self.height)
+      layer?.shadowPath = CGPath(roundedRect: surface.frame, cornerWidth: 12, cornerHeight: 12, transform: nil)
+    }
     let pad: CGFloat = 7 + Self.border
     artView.frame = CGRect(x: pad, y: pad, width: 32, height: 32)
     let textX = pad + 32 + 8

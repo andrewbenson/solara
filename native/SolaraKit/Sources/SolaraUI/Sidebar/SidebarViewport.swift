@@ -1,43 +1,5 @@
 import AppKit
 
-final class SidebarScrollEdgeView: NSVisualEffectView {
-  private let fade = CAGradientLayer()
-  private let tint = CALayer()
-
-  override var isFlipped: Bool { true }
-
-  init() {
-    super.init(frame: .zero)
-    wantsLayer = true
-    material = .sidebar
-    blendingMode = .withinWindow
-    state = .followsWindowActiveState
-    isHidden = true
-    fade.actions = SurfaceLayer.noActions
-    fade.colors = [NSColor.clear.cgColor, NSColor.black.cgColor]
-    fade.startPoint = CGPoint(x: 0.5, y: 0)
-    fade.endPoint = CGPoint(x: 0.5, y: 1)
-    layer?.mask = fade
-    tint.actions = SurfaceLayer.noActions
-    layer?.addSublayer(tint)
-  }
-
-  required init?(coder: NSCoder) { fatalError() }
-
-  func update(_ palette: SidebarPalette) {
-    appearance = NSAppearance(named: palette.dark ? .darkAqua : .aqua)
-    tint.backgroundColor = palette.backdropTint?.ns.withAlphaComponent(palette.dark ? 0.18 : 0.27).cgColor
-  }
-
-  override func setFrameSize(_ newSize: NSSize) {
-    super.setFrameSize(newSize)
-    fade.frame = bounds
-    tint.frame = bounds
-  }
-
-  override func hitTest(_ point: NSPoint) -> NSView? { nil }
-}
-
 @MainActor
 struct SidebarRetirementPicture {
   let view: NSImageView

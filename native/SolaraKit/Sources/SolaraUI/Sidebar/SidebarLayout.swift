@@ -8,6 +8,8 @@ public enum SidebarMetrics {
   public static let rowGap: CGFloat = 3
   public static let rowPitch: CGFloat = rowHeight + rowGap
   public static let rowRadius: CGFloat = 10
+  public static let bottomFadeHeight: CGFloat = 28
+  public static let bottomFadeUnderPlayer: CGFloat = 8
   public static let tileHeight: CGFloat = 41
   public static let tileGap: CGFloat = 6
   public static let tileRadius: CGFloat = 10
@@ -91,6 +93,7 @@ public struct SidebarPageLayout: Equatable, Sendable {
   public var lineY: CGFloat = 0
   public var scrollTop: CGFloat = 0
   public var scrollBottom: CGFloat = 0
+  public var listBottom: CGFloat = 0
   public var contentHeight: CGFloat = 0
   public var rowsHeight: CGFloat = 0
   public var docked = false
@@ -275,12 +278,14 @@ public struct SidebarLayout {
       out.items.append(SidebarItem(kind: .newTab, frame: CGRect(x: M.inset, y: dockTop, width: innerWidth, height: rowHeight), region: .dock, groups: [], section: .list))
       out.scrollBottom = dockTop - rowGap
     }
+    out.listBottom = out.scrollBottom
     if input.playerHeight > 0 && !input.rail {
       let playerBody = input.playerHeight - SidebarPlayerView.gap
       let playerTop = out.docked ? out.scrollBottom - playerBody : input.height - input.playerHeight
       out.playerFrame = CGRect(x: M.inset, y: playerTop, width: innerWidth, height: playerBody)
       out.scrollBottom = out.docked ? playerTop - SidebarPlayerView.gap : playerTop
     }
+    out.listBottom = max(out.listBottom, out.scrollBottom)
     return out
   }
 

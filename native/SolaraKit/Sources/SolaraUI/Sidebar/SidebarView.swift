@@ -16,7 +16,7 @@ public final class SidebarView: NSView {
   private let edgeLine = CALayer()
   let clip = SidebarLayer()
   let scroll = NSScrollView()
-  let bottomEdge = SidebarScrollEdgeView()
+  let bottomFade = CAGradientLayer()
   private let document = SidebarDocumentView()
   private let boxes = SidebarLayer()
   let rows = SidebarLayer()
@@ -63,6 +63,10 @@ public final class SidebarView: NSView {
     fixed.layer?.addSublayer(edgeLine)
     clip.wantsLayer = true
     clip.layer?.masksToBounds = true
+    bottomFade.actions = SurfaceLayer.noActions
+    bottomFade.colors = [NSColor.black.cgColor, NSColor.black.cgColor, NSColor.clear.cgColor, NSColor.clear.cgColor]
+    bottomFade.startPoint = CGPoint(x: 0.5, y: 0)
+    bottomFade.endPoint = CGPoint(x: 0.5, y: 1)
     scroll.drawsBackground = false
     scroll.hasVerticalScroller = false
     scroll.hasHorizontalScroller = false
@@ -76,7 +80,6 @@ public final class SidebarView: NSView {
     document.addSubview(boxes)
     document.addSubview(rows)
     clip.addSubview(scroll)
-    clip.addSubview(bottomEdge)
     addSubview(clip)
     addSubview(fixed)
     addSubview(dock)
@@ -534,16 +537,17 @@ public final class SidebarView: NSView {
     edgeLine.frame = CGRect(x: 0, y: layout.lineY, width: width, height: SidebarMetrics.edgeLine)
     edgeLine.backgroundColor = context.palette.scrollEdge.cgColor
     CATransaction.commit()
-    let scrollHeight = max(0, layout.scrollBottom - layout.scrollTop)
+    let scrollHeight = max(0, layout.listBottom - layout.scrollTop)
+    let visibleHeight = max(0, layout.scrollBottom - layout.scrollTop)
     clip.frame = NSRect(x: 0, y: layout.scrollTop + clipShift, width: width, height: max(0, scrollHeight - clipShift))
     scroll.frame = NSRect(x: 0, y: -clipShift, width: width, height: scrollHeight)
-    let docHeight = max(layout.contentHeight, scrollHeight)
+    let underPlayer = layout.listBottom - layout.scrollBottom
+    let docHeight = layout.contentHeight > visibleHeight ? layout.contentHeight + underPlayer : scrollHeight
     if document.frame.size != NSSize(width: width, height: docHeight) {
       document.frame = NSRect(x: 0, y: 0, width: width, height: docHeight)
     }
     boxes.frame = NSRect(x: inset, y: 0, width: width - inset * 2, height: docHeight)
     rows.frame = boxes.frame
-    bottomEdge.update(context.palette)
     dock.frame = bounds
     let pillSize = SidebarActivePill.size
     pill.frame = NSRect(
@@ -952,13 +956,22 @@ public final class SidebarView: NSView {
     let shift = min(max(y, 0), 1) * SidebarMetrics.glowRoom
     if shift != clipShift {
       clipShift = shift
-      let scrollHeight = max(0, pageLayout.scrollBottom - pageLayout.scrollTop)
+      let scrollHeight = max(0, pageLayout.listBottom - pageLayout.scrollTop)
       clip.frame = NSRect(x: 0, y: pageLayout.scrollTop + shift, width: bounds.width, height: max(0, scrollHeight - shift))
       scroll.frame = NSRect(x: 0, y: -shift, width: bounds.width, height: scrollHeight)
     }
-    let edgeHeight = min(28, clip.bounds.height)
-    bottomEdge.frame = CGRect(x: 0, y: clip.bounds.maxY - edgeHeight, width: clip.bounds.width, height: edgeHeight)
-    bottomEdge.isHidden = edgeHeight <= 0 || document.frame.maxY <= scroll.contentView.bounds.maxY + 0.5
+    let clipHeight = clip.bounds.height
+    let visibleEnd = min(clipHeight, pageLayout.scrollBottom - clip.frame.minY)
+    let clearAt = min(clipHeight, visibleEnd + (visibleEnd < clipHeight ? SidebarMetrics.bottomFadeUnderPlayer : 0))
+    let opaqueTo = max(0, clearAt - SidebarMetrics.bottomFadeHeight)
+    let rowsBelow = clipHeight > 0 && clearAt > opaqueTo && document.frame.maxY > scroll.contentView.bounds.maxY + 0.5
+    if rowsBelow {
+      bottomFade.frame = clip.bounds
+      bottomFade.locations = [0, opaqueTo / clipHeight, clearAt / clipHeight, 1].map { NSNumber(value: Double($0)) }
+      if clip.layer?.mask !== bottomFade { clip.layer?.mask = bottomFade }
+    } else if clip.layer?.mask === bottomFade {
+      clip.layer?.mask = nil
+    }
   }
 
   public override func updateTrackingAreas() {

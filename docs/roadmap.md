@@ -53,6 +53,7 @@ native (the engine and the native store), so the rest does not wait on the port.
 | Profile bar redesign (owner 2026-11-17): every profile its icon in one slot size, unselected dimmed, selected on a lighter fill, star in the same style; hover tooltip above the bar with the name, inside the window | in progress |
 | Holding ⌘ through ⌘1–9 keeps the tab-number keycaps up until ⌘ is released (owner 2026-11-17) | landed; tab-number-hints-test 24/24 in the build VM |
 | Fix: pinch to resize Picture in Picture doesn't work for the owner (pinch-in shrinks, spread grows, anchored at the pointer, whether or not Solara is active) | in progress |
+| The clean-up suggestion card: a Don't Ask Again choice and a setting to turn it off (owner 2026-11-17); fix its upside-down layout | in progress |
 
 ## 0.4.4: the sidebar and tab strip decide in Swift
 

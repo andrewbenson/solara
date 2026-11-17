@@ -354,7 +354,7 @@ def iso(webkit_us: int) -> str:
     return datetime.fromtimestamp(webkit_us / 1_000_000 - WEBKIT_EPOCH_OFFSET).astimezone().isoformat(timespec="seconds")
 
 
-def history(root: Path | None, days: float = 1, limit: int | None = 200, profile: str | None = None, domains: bool = False, deadline: float | None = None) -> list[dict]:
+def history(root: Path | None, days: float = 1, limit: int | None = 200, profile: str | None = None, domains: bool = False, deadline: float | None = None, *, _profile_folders: frozenset[str] | None = None) -> list[dict]:
     deadline = deadline if deadline is not None else time.monotonic() + HISTORY_BUDGET
     root = checked_root(root, "history")
     if not isinstance(days, (int, float)) or days <= 0:
@@ -362,7 +362,10 @@ def history(root: Path | None, days: float = 1, limit: int | None = 200, profile
     if limit is not None and (not isinstance(limit, int) or limit <= 0):
         raise BrowsingDataError("limit must be a positive integer or None")
     session = read_session(root, deadline)
-    profiles = pick_profiles(profile_dirs(root, session), profile)
+    profiles = profile_dirs(root, session)
+    if _profile_folders is not None:
+        profiles = [item for item in profiles if item[1].name in _profile_folders]
+    profiles = pick_profiles(profiles, profile)
     cutoff = int((time.time() - days * 86400 + WEBKIT_EPOCH_OFFSET) * 1_000_000)
     rows: list[dict] = []
     for label, folder in profiles:

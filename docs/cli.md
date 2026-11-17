@@ -46,6 +46,22 @@ the pins into `pyproject.toml`).
   agent skill (`solara_cli/skill`: `SKILL.md` and `references/pydoll.md`) into `~/.agents/skills` (general, codex),
   `~/.claude/skills`, `~/.cursor/skills` or `~/.config/opencode/skills`; with `--project`, into `./.agents/skills`,
   `./.claude/skills`, `./.cursor/skills` or `./.opencode/skills`. It replaces only its own `solara` folder.
+- `solara mcp [--data-dir DIR] [--profiles A,B] [--allow-actions]` serves MCP tools over stdio for agents such as
+  Claude Code, Codex and Cursor. It uses only the existing token control path and Settings opt-in, with no new
+  listener. The default tools list tab memory and the sidebar, read tab text/title/URL and screenshots, and read
+  history. `--allow-actions` adds background open, navigate, close, sidebar arrangement and a separate destructive
+  `delete_group` tool. Sidebar arrangement and group deletion support `dry_run`, which defaults to true.
+  `--profiles` limits profile visibility and action operands; scoped open is refused because the existing endpoint
+  cannot select a profile atomically. Results mark browser content untrusted and cap its size. Arbitrary `exec`
+  is never exposed. See [cli-mcp.md](cli-mcp.md) for schemas, limits and the threat model.
+- `solara mcp install --target claude-code|codex|cursor [--project] [--dry-run]` registers a read-only `solara mcp` entry and
+  prints its destination and entry. `--dry-run` previews without writing; changing an existing file first saves a
+  private sibling backup and prints its path. Claude Code uses `~/.claude.json` or project `.mcp.json`; Codex uses
+  `~/.codex/config.toml` or project `.codex/config.toml`; Cursor uses `~/.cursor/mcp.json` or project
+  `.cursor/mcp.json`. It preserves unrelated entries and refuses a different entry named `solara`. Install does
+  not enable control or actions. The `solara` executable must be on the client's PATH; clients keep their own
+  project trust and MCP approval rules. Existing customized entries are left for the user to edit. An existing
+  Codex inline `mcp_servers` table is refused when adding a subtable would require rewriting unrelated settings.
 - `solara scripts new|test|install|uninstall|list` writes, tests and installs userscripts (see Userscripts).
 - `solara --version`, `solara --help`, `solara exec --help`, `solara scripts <command> --help`.
 
@@ -55,6 +71,10 @@ refuses fragmented sends), so
 an `execute_commands` batch (checked whole before anything is sent) or straight on the socket. On exit (normal, an
 exception or Ctrl-C) it closes only its own page and browser WebSockets. Its WebSockets always connect directly,
 ignoring `http_proxy`, `ws_proxy` and the like, so no proxy sees the token.
+
+Read-only MCP by default and excluding arbitrary `exec` from MCP are our recommendations. They are enforced by the
+Solara server; client trust and tool approval settings remain the user’s choice. Standalone `solara exec` stays
+available for terminal automation the user authorizes.
 
 ## Arranging the sidebar
 

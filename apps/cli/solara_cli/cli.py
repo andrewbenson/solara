@@ -83,6 +83,18 @@ def build_parser():
     tabs.add_argument("--port", type=int, metavar="N", help="unsupported: tab memory requires SolaraControl.json")
     tabs.add_argument("--ws", metavar="URL", help="unsupported: tab memory requires SolaraControl.json")
 
+    mcp = commands.add_parser("mcp", help=f"serve {identity.PRODUCT} tools over MCP stdio", description=f"Serve read-only MCP tools for {identity.PRODUCT} through SolaraControl.json. Use --allow-actions to expose browser actions; exec is never exposed.")
+    mcp.add_argument("--data-dir", metavar="DIR", help=f"the {identity.PRODUCT} data dir (default: $SOLARA_DATA_DIR, else the installed app's)")
+    mcp.add_argument("--profiles", metavar="A,B", help="limit tools to these profile names or IDs")
+    mcp.add_argument("--allow-actions", action="store_true", help="expose open, navigate, close and sidebar edit tools")
+    mcp_commands = mcp.add_subparsers(dest="mcp_command", metavar="<command>")
+    mcp_install = mcp_commands.add_parser("install", help="register read-only MCP tools with an agent")
+    from solara_cli.mcp_install import TARGETS as MCP_TARGETS
+
+    mcp_install.add_argument("--target", required=True, choices=MCP_TARGETS, help="agent client to register")
+    mcp_install.add_argument("--dry-run", action="store_true", help="preview the read-only registration without writing files")
+    mcp_install.add_argument("--project", action="store_true", help="write the current project's client configuration")
+
     skills = commands.add_parser("skills", help=f"install the {identity.COMMAND} agent skill")
     skill_commands = skills.add_subparsers(dest="skills_command", metavar="<command>")
     install = skill_commands.add_parser(
@@ -116,6 +128,16 @@ def main(argv: list[str] | None = None) -> int:
         from solara_cli import tab_memory
 
         return tab_memory.run(args)
+    if args.command == "mcp":
+        if args.mcp_command == "install":
+            from solara_cli.mcp_install import install
+
+            if args.allow_actions or args.profiles or args.data_dir:
+                parser.error("mcp install registers read-only defaults; server flags belong in the client configuration")
+            return install(args.target, args.project, dry_run=args.dry_run)
+        from solara_cli import mcp
+
+        return mcp.run(args)
     if args.command in ("sidebar", "tab", "group", "folder"):
         from solara_cli import sidebar
 

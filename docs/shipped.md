@@ -202,6 +202,20 @@ Little Solara's card background still draws in React Native; it finishes in 0.4.
 | Only build what's visible: sidebar rows exist only for what's on screen, and row views are reused instead of one view per tab (a 200-tab session spent ~480 ms of launch building rows) (owner, 2026-11-10) | shipped (0.4.0), including the fallback layout; layout port 5 |
 | Launch in a smarter order: the window chrome first; invisible work (the extensions toolbar, sync, history hints, tab-sleep sweeps, pairing timers) when the main thread is idle, with lower priority classes for import, sync and cleanup (owner, 2026-11-10) | shipped (0.4.0), layout port 10 |
 
+## 0.4.2: commands and the omnibox decide in Swift
+
+The first half of "React Native decides nothing": every command a user gives through a menu, a shortcut or the
+omnibox is handled in Swift. Done when menus, shortcuts and the omnibox work with their JavaScript handlers switched
+off.
+
+| Item | Status |
+|---|---|
+| From 0.4.0: the last React Native drawing: Little Solara's and the calendar and meeting cards' fill and page hosting, and the rest of the extensions side panel | shipped (96a9e605); light/dark look and resize feel need the owner's eyes |
+| Fix: a portrait Picture in Picture (a phone video, a person talking) can't be made as small as a landscape one; its smallest size is still very tall. The minimum should follow the video's shape, for dragging the edge, pinching and the remembered size (owner 2026-11-14, seen on 0.3.5) | shipped (bcbdd4f3, engine 9e9bdb03c2a7) |
+| Fix: Picture in Picture dragged onto a display that shows another app's full-screen Space doesn't appear over it; it only shows there once that display leaves full screen (owner 2026-11-14, seen on 0.3.5). Dragging across displays and past the menu bar already works (2c61e084, 8881dfe1); the window keeps its Space membership from the display it left. Verify on two displays with a full-screen app on the target one (owner check: Spaces and multiple displays) | shipped (bcbdd4f3); needs the owner's two-display check |
+| Profile icons from the owner-approved mockup: native symbol/emoji picker, subtle profile bar, single current-profile rail button, hover name and shortcut pill, existing synced icon field | shipped (4073a8c8); needs the owner's visual check |
+| The omnibox's actions in Swift: what Return opens, where it opens, clipboard and paste-and-go | shipped (736f023a); JS-off driver 42/42 |
+
 ## 0.4.1: polish on the new native layout
 
 Small changes to surfaces 0.4.0 made native, while they are fresh: they need the native tab strip, rail and window

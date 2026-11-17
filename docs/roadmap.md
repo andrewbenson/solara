@@ -25,20 +25,6 @@ Source counts include retained fallback and unconsumed exports; they are not mea
 React Native still registers main and pane module names, with one main root per browser/Little Solara window
 and a pane root per shown overlay; the API-skew screen reuses main.
 
-## 0.4.2: commands and the omnibox decide in Swift, and + New Tab is the new tab
-
-The first half of "React Native decides nothing": every command a user gives through a menu, a shortcut or the
-omnibox is handled in Swift. Done when menus, shortcuts and the omnibox work with their JavaScript handlers switched
-off.
-
-| Item | Status |
-|---|---|
-| From 0.4.0: the last React Native drawing: Little Solara's and the calendar and meeting cards' fill and page hosting, and the rest of the extensions side panel | landed (96a9e605); light/dark look and resize feel need the owner's eyes |
-| Fix: a portrait Picture in Picture (a phone video, a person talking) can't be made as small as a landscape one; its smallest size is still very tall. The minimum should follow the video's shape, for dragging the edge, pinching and the remembered size (owner 2026-11-14, seen on 0.3.5) | landed (bcbdd4f3, engine 9e9bdb03c2a7) |
-| Fix: Picture in Picture dragged onto a display that shows another app's full-screen Space doesn't appear over it; it only shows there once that display leaves full screen (owner 2026-11-14, seen on 0.3.5). Dragging across displays and past the menu bar already works (2c61e084, 8881dfe1); the window keeps its Space membership from the display it left. Verify on two displays with a full-screen app on the target one (owner check: Spaces and multiple displays) | landed (bcbdd4f3); needs the owner's two-display check |
-| Profile icons from the owner-approved mockup: native symbol/emoji picker, subtle profile bar, single current-profile rail button, hover name and shortcut pill, existing synced icon field | landed (4073a8c8); needs the owner's visual check |
-| The omnibox's actions in Swift: what Return opens, where it opens, clipboard and paste-and-go | landed (736f023a); JS-off driver 42/42 |
-
 ## 0.4.3: agents, with limits you set
 
 Tab actions from agents call the Swift commands 0.4.2 brings, so they are written once. The control path is already
@@ -62,6 +48,8 @@ native (the engine and the native store), so the rest does not wait on the port.
 | Commands, menus and shortcuts in Swift, with window, focus and navigation handling | in progress: tabs and windows landed (4ffd5446); other groups per docs/native/commands-plan.md |
 | Settings and Import actions call Swift directly, not a JavaScript round trip | planned |
 | Fix: with New tabs opening the Command Bar, ⌘T on a blank New Tab page doesn't open the Command Bar panel (since 4ffd5446; a fix passes omnibox-test but not its own native-tab-commands step) | planned |
+| From 0.4.2's gate: JS startup to first window 355 -> 428 ms (+20.5%) and the after-idle command 112 -> 134 ms; trace the commit and win it back (docs/perf/0.4.1-to-0.4.2.md) | planned |
+| Full-screen island like Rex's: 80 x 33 capsule, slides down and back up, no hover through to the sidebar's profile button, button glyphs on hover, minimize grey | in progress |
 
 ## 0.4.4: the sidebar and tab strip decide in Swift
 

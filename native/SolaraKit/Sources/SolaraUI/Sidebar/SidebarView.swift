@@ -9,6 +9,11 @@ public final class SidebarView: NSView {
   public let favicons: SidebarFavicons
   public var onAction: (SidebarAction) -> Void = { _ in }
   public private(set) var pageLayout = SidebarPageLayout()
+  public var bottomBarHeight: CGFloat = 0 {
+    didSet {
+      if bottomBarHeight != oldValue { reconcile() }
+    }
+  }
 
   private var stopped = false
   var context: SidebarContext?
@@ -180,7 +185,7 @@ public final class SidebarView: NSView {
 
   private func reveal(_ tabId: String, _ context: SidebarContext) {
     guard let item = scrollItem(tabId, context) else { return }
-    let viewport = scroll.frame.height
+    let viewport = max(0, pageLayout.scrollBottom - pageLayout.scrollTop)
     let top = scroll.contentView.bounds.minY
     let y = item.frame.minY
     let pad = SidebarMetrics.glowRoom + SidebarMetrics.edgeInset
@@ -192,7 +197,7 @@ public final class SidebarView: NSView {
     } else {
       return
     }
-    to = min(to, max(0, document.frame.height - viewport))
+    to = min(to, max(0, document.frame.height - scroll.frame.height))
     guard abs(to - top) > 0.5 else { return }
     scroll.contentView.setBoundsOrigin(NSPoint(x: 0, y: to))
     scroll.reflectScrolledClipView(scroll.contentView)
@@ -288,10 +293,10 @@ public final class SidebarView: NSView {
   func revealLogical(_ key: String) -> Bool {
     guard let item = logicalItems[logicalBase(key)] else { return false }
     if item.region == .scroll {
-      let height = scroll.contentView.bounds.height
+      let height = max(0, pageLayout.scrollBottom - pageLayout.scrollTop)
       let top = scroll.contentView.bounds.minY
       let next = item.frame.minY < top ? item.frame.minY : item.frame.maxY > top + height ? item.frame.maxY - height : top
-      let limit = max(0, (scroll.documentView?.frame.height ?? 0) - height)
+      let limit = max(0, (scroll.documentView?.frame.height ?? 0) - scroll.contentView.bounds.height)
       scroll.contentView.setBoundsOrigin(CGPoint(x: 0, y: max(0, min(limit, next))))
       scroll.reflectScrolledClipView(scroll.contentView)
     }
@@ -485,7 +490,8 @@ public final class SidebarView: NSView {
   private func reconcile(animated: Bool = false) {
     guard let context, bounds.width > 0 else { return }
     guard !placing else { pendingPlacement = true; return }
-    var input = SidebarLayoutInput(windowId: windowId, profileId: context.host.profileId, width: bounds.width, height: bounds.height)
+    var input = SidebarLayoutInput(windowId: windowId, profileId: context.host.profileId, width: bounds.width, height: max(0, bounds.height - bottomBarHeight))
+    input.bottomBarHeight = bottomBarHeight
     input.rail = usesIconRail
     if input.rail != railShown {
       SidebarDragController.existing(self)?.cancelForModeChange()
@@ -735,7 +741,7 @@ public final class SidebarView: NSView {
     picture.wantsLayer = true
     parent.addSubview(picture, positioned: .below, relativeTo: view)
     let id = UUID()
-    retirementPictures[id] = SidebarRetirementPicture(view: picture, item: item)
+    retirementPictures[id] = SidebarRetirementPicture(view: picture, item: item, expiresAt: CACurrentMediaTime() + motion.fade)
     NSAnimationContext.runAnimationGroup { animation in
       animation.duration = motion.fade
       animation.timingFunction = motion.fadeCurve
@@ -754,9 +760,10 @@ public final class SidebarView: NSView {
   }
 
   private func trimRetirementPictures() {
+    let now = CACurrentMediaTime()
     for (id, picture) in retirementPictures {
       let frame = picture.view.superview?.convert(picture.view.frame, to: self) ?? .zero
-      if !frame.intersects(regionClip(picture.item)) {
+      if now >= picture.expiresAt || !frame.intersects(regionClip(picture.item)) {
         picture.view.removeFromSuperview()
         retirementPictures[id] = nil
       }
@@ -922,7 +929,7 @@ public final class SidebarView: NSView {
 
   private func syncPill() {
     let top = scroll.contentView.bounds.minY
-    let viewport = scroll.frame.height
+    let viewport = max(0, pageLayout.scrollBottom - pageLayout.scrollTop)
     var shown = false
     if let context, (!virtualizesRows || pill.frame.intersects(effectiveClip)), let active = context.activeId, let tab = context.state.tabs[active], let item = scrollItem(active, context),
       viewport > 0, item.frame.maxY <= top || item.frame.minY >= top + viewport
@@ -964,8 +971,16 @@ public final class SidebarView: NSView {
     }
     let clipHeight = clip.bounds.height
     let visibleEnd = min(clipHeight, pageLayout.scrollBottom - clip.frame.minY)
-    let clearAt = min(clipHeight, visibleEnd + (visibleEnd < clipHeight ? SidebarMetrics.bottomFadeUnderPlayer : 0))
-    let opaqueTo = max(0, clearAt - SidebarMetrics.bottomFadeHeight)
+    let barHeight = railShown ? 0 : min(bottomBarHeight, bounds.height)
+    let clearAt: CGFloat
+    let opaqueTo: CGFloat
+    if barHeight > 0 {
+      opaqueTo = min(clipHeight, max(0, bounds.height - barHeight - clip.frame.minY))
+      clearAt = min(clipHeight, opaqueTo + barHeight / 2)
+    } else {
+      clearAt = min(clipHeight, visibleEnd + (visibleEnd < clipHeight ? SidebarMetrics.bottomFadeUnderPlayer : 0))
+      opaqueTo = max(0, clearAt - SidebarMetrics.bottomFadeHeight)
+    }
     let rowsBelow = clipHeight > 0 && clearAt > opaqueTo && document.frame.maxY > scroll.contentView.bounds.maxY + 0.5
     if rowsBelow {
       bottomFade.frame = clip.bounds
@@ -1078,6 +1093,7 @@ public final class SidebarView: NSView {
   }
 
   private func rowAt(_ windowPoint: NSPoint) -> SidebarRowView? {
+    if bottomBarHeight > 0, convert(windowPoint, from: nil).y >= bounds.height - bottomBarHeight { return nil }
     if pillShown, pill.bounds.contains(pill.convert(windowPoint, from: nil)) { return nil }
     if panels.hitTest(panels.superview?.convert(windowPoint, from: nil) ?? .zero) != nil { return nil }
     if let row = hoveredKey.flatMap({ views[$0] as? RailTabView }), !row.isHidden,
@@ -1093,6 +1109,7 @@ public final class SidebarView: NSView {
   }
 
   private func groupsAt(_ windowPoint: NSPoint) -> String? {
+    if bottomBarHeight > 0, convert(windowPoint, from: nil).y >= bounds.height - bottomBarHeight { return nil }
     guard clip.bounds.contains(clip.convert(windowPoint, from: nil)) else { return nil }
     var best: (id: String, depth: Int)?
     for case let box as GroupBoxView in boxes.subviews {
@@ -1102,7 +1119,11 @@ public final class SidebarView: NSView {
     return best?.id
   }
 
-  func pointerEntered(_ row: SidebarRowView) {
+  func pointerEntered(_ row: SidebarRowView, at windowPoint: NSPoint? = nil) {
+    if let windowPoint, bottomBarHeight > 0, convert(windowPoint, from: nil).y >= bounds.height - bottomBarHeight {
+      setHover(nil, group: nil)
+      return
+    }
     setHover(row, group: row.item?.groups.last)
   }
 

@@ -139,6 +139,7 @@ public struct SidebarLayoutInput: Sendable {
   public var balanced = false
   public var divided = false
   public var incognitoBadge = false
+  public var bottomBarHeight: CGFloat = 0
   public var playerHeight: CGFloat = 0
   public var upsellHeight: CGFloat = 0
   public var live: SidebarLiveBlocks?
@@ -286,6 +287,9 @@ public struct SidebarLayout {
       out.scrollBottom = out.docked ? playerTop - SidebarPlayerView.gap : playerTop
     }
     out.listBottom = max(out.listBottom, out.scrollBottom)
+    if input.bottomBarHeight > 0 && !input.rail {
+      out.listBottom = input.height + input.bottomBarHeight
+    }
     return out
   }
 

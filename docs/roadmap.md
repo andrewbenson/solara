@@ -53,6 +53,7 @@ native (the engine and the native store), so the rest does not wait on the port.
 | Holding ⌘ through ⌘1–9 keeps the tab-number keycaps up until ⌘ is released (owner 2026-11-17) | landed; tab-number-hints-test 24/24 in the build VM |
 | Fix: pinch to resize Picture in Picture doesn't work for the owner (pinch-in shrinks, spread grows, anchored at the pointer, whether or not Solara is active) | landed; pip-window-test 10/10 incl. inactive pinch and ⌘-scroll for video and document PiP |
 | The clean-up suggestion card: a Don't Ask Again choice and a setting to turn it off (owner 2026-11-17); fix its upside-down layout | landed; needs the owner's look |
+| The sidebar's bottom fade runs behind the profile bar: rows stay opaque to the bar's top and clear by its centre, the last row still clears the bar (owner 2026-11-17) | landed; needs the owner's look |
 
 ## 0.4.4: the sidebar and tab strip decide in Swift
 

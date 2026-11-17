@@ -26,7 +26,8 @@ const rep = reporter(join(scratch, "sidebar-chrome-test.log"), { name: "sidebar-
 const fixture = session(sidebarSession({
   profiles: [{ id: "default", name: "Personal" }, { id: "work", name: "Work" }],
   windows: [{ id: "w1", frame: [80, 80, 1280, 800], activeTabIds: { default: "a" } }],
-  tabs: [{ id: "a", url: "about:blank", title: "A" }, { id: "b", url: "about:blank", title: "B" }, { id: "c", url: "about:blank", title: "C" }],
+  tabs: [{ id: "a", url: "about:blank", title: "A" }, { id: "b", url: "about:blank", title: "B" }, { id: "c", url: "about:blank", title: "C" },
+    ...Array.from({ length: 40 }, (_, index) => ({ id: `overflow-${index}`, url: "about:blank", title: `Overflow ${index}` }))],
   settings: { warnBeforeClosingLastTab: false, warnBeforeClosingWindow: false, addressBar: "sidebar" },
 }));
 const HELPERS = `
@@ -224,6 +225,9 @@ try {
 
   await rep.check("(e) the footer's profile dots switch profiles", async () => {
     const c = await run(`return col();`);
+    if (Math.abs(c.list[1] + c.list[3] - c.frame[1] - c.frame[3]) > 0.5 || Math.abs(c.bottom - c.chrome.footer) > 0.5) {
+      throw new Error(`the overflowing list must extend behind the live footer: ${JSON.stringify(c)}`);
+    }
     const dot = c.chrome.dots.find((d) => d.id === "work");
     if (!dot) throw new Error(`no dot: ${JSON.stringify(c.chrome.dots)}`);
     const [x, y] = centre(c, dot.rect);

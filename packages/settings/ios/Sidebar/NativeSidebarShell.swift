@@ -204,7 +204,9 @@ final class SidebarShellColumn: NSView, DevDropDestination {
     chrome.isHidden ? given.top : chrome.sidebarListTopInset(given.top)
   }
 
-  private var footerInset: CGFloat { chrome.state?.rail == true && !chrome.isHidden ? chrome.footerHeight : given.bottom }
+  private var footerInset: CGFloat { chrome.isHidden ? given.bottom : chrome.footerHeight }
+
+  private var bottomBarHeight: CGFloat { !chrome.isHidden && chrome.state?.rail != true ? footerInset : 0 }
 
   private var listLift: CGFloat {
     guard let state = chrome.state, state.rail, !chrome.isHidden else { return 0 }
@@ -213,7 +215,9 @@ final class SidebarShellColumn: NSView, DevDropDestination {
 
   private func placeList() {
     let lift = listLift
-    list.frame = CGRect(x: 0, y: topInset, width: bounds.width, height: max(0, bounds.height - topInset - footerInset))
+    let barHeight = bottomBarHeight
+    host.view.bottomBarHeight = barHeight
+    list.frame = CGRect(x: 0, y: topInset, width: bounds.width, height: max(0, bounds.height - topInset - footerInset + barHeight))
     list.layer?.masksToBounds = given.clip || lift > 0 || chrome.reservesFullScreenCaption
     host.view.frame = CGRect(x: 0, y: -lift, width: list.bounds.width, height: list.bounds.height + lift)
     let chromeTop = chrome.state?.rail == true ? chrome.toolbarBandBottom : 0

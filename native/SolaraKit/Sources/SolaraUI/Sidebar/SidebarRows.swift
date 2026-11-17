@@ -154,7 +154,7 @@ class SidebarRowView: NSView {
 
   @objc var onMouseEnter: Any? { self }
 
-  override func mouseEntered(with event: NSEvent) { hoverHost?.pointerEntered(self) }
+  override func mouseEntered(with event: NSEvent) { hoverHost?.pointerEntered(self, at: event.locationInWindow) }
   override func mouseExited(with event: NSEvent) { hoverHost?.pointerExited(self) }
   override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 

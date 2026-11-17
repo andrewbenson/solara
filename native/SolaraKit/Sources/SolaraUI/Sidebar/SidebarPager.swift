@@ -6,6 +6,12 @@ public final class SidebarPagerView: NSView {
   public let virtualizesRows: Bool
   public let windowId: String
   public let favicons = SidebarFavicons()
+  public var bottomBarHeight: CGFloat = 0 {
+    didSet {
+      guard bottomBarHeight != oldValue else { return }
+      for page in pages.values { page.bottomBarHeight = bottomBarHeight }
+    }
+  }
   public var onLayoutAnchorsChange: (() -> Void)?
   public var onAction: (SidebarAction) -> Void = { _ in }
 
@@ -142,6 +148,7 @@ public final class SidebarPagerView: NSView {
   private func page(_ id: String) -> SidebarView {
     if let page = pages[id] { return page }
     let page = SidebarView(windowId: windowId, favicons: favicons, virtualizesRows: virtualizesRows)
+    page.bottomBarHeight = bottomBarHeight
     page.onAction = { [weak self] action in self?.onAction(action) }
     page.onLayoutAnchorsChange = { [weak self] in self?.onLayoutAnchorsChange?() }
     page.isHidden = true

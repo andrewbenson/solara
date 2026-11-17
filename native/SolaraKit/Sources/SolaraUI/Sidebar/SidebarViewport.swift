@@ -4,6 +4,7 @@ import AppKit
 struct SidebarRetirementPicture {
   let view: NSImageView
   let item: SidebarItem
+  let expiresAt: CFTimeInterval
 }
 
 final class SidebarLogicalElement: NSAccessibilityElement {

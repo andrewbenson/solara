@@ -20,6 +20,42 @@ int main() {
   const Size minSize{284, 160}, maxSize{1512 * 0.8, 945 * 0.8};
   const double aspect = 16.0 / 9;
 
+  CHECK(RoutesToPiP(InputSource::Local, true, true, false, true));
+  CHECK(RoutesToPiP(InputSource::Global, true, true, false, true));
+  CHECK(RoutesToPiP(InputSource::View, true, true, true, false));
+  CHECK(!RoutesToPiP(InputSource::Global, true, true, true, false));
+  CHECK(!RoutesToPiP(InputSource::Local, true, true, true, false));
+  CHECK(!RoutesToPiP(InputSource::View, true, true, false, true));
+  CHECK(!RoutesToPiP(InputSource::Global, false, true, false, true));
+  CHECK(!RoutesToPiP(InputSource::Global, true, false, false, true));
+  {
+    ScrollSession scroll;
+    CHECK(!scroll.Handle(ScrollKind::Begin, true, false, 1));
+    CHECK(!scroll.Handle(ScrollKind::Change, true, false, 1.01));
+    CHECK(scroll.Handle(ScrollKind::Begin, true, true, 2));
+    CHECK(scroll.Handle(ScrollKind::Change, true, false, 2.01));
+    CHECK(scroll.Handle(ScrollKind::End, true, false, 2.02));
+    CHECK(!scroll.Handle(ScrollKind::Change, true, false, 2.03));
+    CHECK(!scroll.Handle(ScrollKind::MomentumBegin, true, false, 2.04));
+    CHECK(scroll.Handle(ScrollKind::Begin, true, true, 3));
+    CHECK(scroll.Handle(ScrollKind::End, true, false, 3.01));
+    CHECK(scroll.Handle(ScrollKind::MomentumBegin, true, false, 3.02));
+    CHECK(scroll.Handle(ScrollKind::MomentumChange, true, false, 3.03));
+    CHECK(scroll.Handle(ScrollKind::MomentumEnd, true, false, 3.04));
+    CHECK(!scroll.Handle(ScrollKind::MomentumChange, true, false, 3.05));
+    CHECK(scroll.Handle(ScrollKind::Begin, true, true, 4));
+    CHECK(scroll.Handle(ScrollKind::Cancel, true, false, 4.01));
+    CHECK(!scroll.Handle(ScrollKind::Change, true, false, 4.02));
+    CHECK(scroll.Handle(ScrollKind::Begin, true, true, 5));
+    CHECK(!scroll.Handle(ScrollKind::Change, false, true, 5.01));
+    CHECK(!scroll.Handle(ScrollKind::Change, true, false, 5.02));
+    CHECK(scroll.Handle(ScrollKind::Begin, true, true, 6));
+    CHECK(scroll.Handle(ScrollKind::End, true, false, 6.01));
+    CHECK(!scroll.Handle(ScrollKind::MomentumBegin, true, false, 7));
+    CHECK(scroll.Handle(ScrollKind::Wheel, true, true, 8));
+    CHECK(!scroll.Handle(ScrollKind::Wheel, true, false, 8.01));
+  }
+
   CHECK(ScrollFactor(10, true) > 1 && ScrollFactor(-10, true) < 1);
   CHECK(Near(ScrollFactor(25, true) * ScrollFactor(-25, true), 1, 1e-12));
   CHECK(Near(ScrollFactor(150, true), 1.82, 0.01));

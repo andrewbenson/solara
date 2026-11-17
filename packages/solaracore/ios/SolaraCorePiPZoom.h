@@ -17,6 +17,63 @@ struct Point {
   double x, y;
 };
 
+enum class InputSource { Local, Global, View };
+
+inline bool RoutesToPiP(InputSource source, bool enabled, bool eligible, bool eventWindow, bool pointerWindow) {
+  return enabled && eligible && (source == InputSource::View ? eventWindow : pointerWindow);
+}
+
+enum class ScrollKind { Wheel, Begin, Change, End, Cancel, MomentumBegin, MomentumChange, MomentumEnd };
+
+struct ScrollSession {
+  bool active = false;
+  bool momentum = false;
+  double endedAt = -1;
+
+  void Clear() { active = momentum = false; endedAt = -1; }
+
+  bool Handle(ScrollKind kind, bool target, bool command, double now) {
+    if (!target) { Clear(); return false; }
+    switch (kind) {
+      case ScrollKind::Wheel:
+        Clear();
+        return command;
+      case ScrollKind::Begin:
+        Clear();
+        active = command;
+        return active;
+      case ScrollKind::Change:
+        momentum = false;
+        endedAt = -1;
+        return active;
+      case ScrollKind::End: {
+        const bool handled = active;
+        active = momentum = false;
+        endedAt = handled ? now : -1;
+        return handled;
+      }
+      case ScrollKind::Cancel: {
+        const bool handled = active || momentum;
+        Clear();
+        return handled;
+      }
+      case ScrollKind::MomentumBegin:
+        momentum = endedAt >= 0 && now >= endedAt && now - endedAt <= 0.25;
+        active = false;
+        endedAt = -1;
+        return momentum;
+      case ScrollKind::MomentumChange:
+        return momentum;
+      case ScrollKind::MomentumEnd: {
+        const bool handled = momentum;
+        Clear();
+        return handled;
+      }
+    }
+    return false;
+  }
+};
+
 constexpr double kPerPoint = 0.004, kPerLine = 0.08;
 constexpr double kDockSlop = 64;
 

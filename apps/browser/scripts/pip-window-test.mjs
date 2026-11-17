@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,7 +17,7 @@ const output = resolve(positionals[1]);
 mkdirSync(output, { recursive: true });
 const data = mkdtempSync(join(output, "data-"));
 const rep = reporter(join(output, "pip-window-test.log"), { name: "pip-window-test" });
-const evidence = { mode: before ? "baseline" : "fixed", spaceChange: "in-process notification simulation", accessibility: "AppKit geometry permissions and external AXUIElement setter outcomes are observed when already trusted; the probe never requests permission", frontBefore: frontApp(), snapshots: [], placements: [], externalAX: [] };
+const evidence = { mode: before ? "baseline" : "fixed", spaceChange: "in-process notification simulation", accessibility: "AppKit geometry permissions and external AXUIElement setter outcomes are observed when already trusted; the probe never requests permission", frontBefore: frontApp(), snapshots: [], placements: [], zoom: [], externalAX: [] };
 const axProbe = join(output, "pip-ax-probe");
 const fixture = `<!doctype html><title>PiP window fixture</title><body><canvas id="c" width="640" height="360"></canvas><video id="v" muted playsinline></video><script>
 const canvas = document.getElementById("c");
@@ -83,6 +83,38 @@ function checkSettings(window, top = true) {
   assert.equal(typeof window.positionWritable, "boolean");
   assert.equal(typeof window.sizeWritable, "boolean");
 }
+async function zoom(kind) {
+  const path = join(data, `pip-zoom-${kind}.json`);
+  rmSync(path, { force: true });
+  assert.equal(await action(`zoom:${kind}`), "started", `${kind}: native zoom test did not start`);
+  const result = await deadline(`${kind} inactive PiP zoom`, () => existsSync(path) && JSON.parse(readFileSync(path, "utf8")), 15000);
+  evidence.zoom.push({ kind, ...result });
+  assert.equal(result.inactive, true, `${kind}: zoom test needs Solara inactive`);
+  assert.ok(Array.isArray(result.steps) && result.steps.length > 0, `${kind}: no native zoom checks ran`);
+  assert.ok(result.inputPaths?.some((path) => path.includes("NSWindow.sendEvent")), `${kind}: no window magnify dispatch`);
+  assert.ok(result.inputPaths?.some((path) => path.includes("global routing")), `${kind}: no global routing coverage`);
+  const failedSteps = result.steps.filter((step) => !step.pass);
+  const firstEvent = result.windowEvents?.[0];
+  const hit = firstEvent && { root: firstEvent.hitRoot, view: firstEvent.hitView, recognizer: firstEvent.recognizerView, ancestor: firstEvent.recognizerAncestor, valid: firstEvent.valid, consumed: firstEvent.localMonitorConsumed };
+  assert.equal(failedSteps.length, 0, `${kind}: ${JSON.stringify({ hit, evidencePath: path, failedSteps: failedSteps.map((step) => step.step), recognizerAttempts: result.recognizerAttempts, recognizerActions: result.recognizerActions, expectedLimits: result.expectedLimits })}`);
+  assert.ok(Array.isArray(result.windowEvents), `${kind}: missing native window gesture sequence`);
+  assert.deepEqual(result.windowEvents.map((event) => event.phase), [1, 4, 8, 1, 4, 8], `${kind}: incomplete pinch/spread phases`);
+  for (const event of result.windowEvents) {
+    assert.equal(event.cgBacked, true, `${kind}: magnify has no CGEvent payload: ${JSON.stringify(event)}`);
+    assert.equal(event.valid, true, `${kind}: magnify payload failed read-back: ${JSON.stringify(event)}`);
+    assert.equal(event.windowNumber, event.expectedWindowNumber, `${kind}: magnify targets another window: ${JSON.stringify(event)}`);
+    assert.equal(event.localMonitorConsumed, false, `${kind}: local monitor consumed the native gesture: ${JSON.stringify(event)}`);
+    assert.equal(event.recognizerAncestor, true, `${kind}: magnify hit bypasses the recognizer view: ${JSON.stringify(event)}`);
+  }
+  assert.ok(result.recognizerAttempts?.some((attempt) => attempt.allowed), `${kind}: recognizer never accepted a window event`);
+  assert.ok(result.recognizerActions?.some((action) => action.magnification < 0), `${kind}: recognizer never received pinch`);
+  assert.ok(result.recognizerActions?.some((action) => action.magnification > 0), `${kind}: recognizer never received spread`);
+  const settled = await current(kind);
+  checkHidden(`${kind}-zoom-settled`, settled);
+  checkSettings(settled, settled.level !== 0);
+  result.settled = settled;
+  return result;
+}
 async function placement(kind) {
   if (before) return { baseline: true, note: "placement hook absent from baseline" };
   const result = JSON.parse(await action(`placement:${kind}`));
@@ -143,6 +175,15 @@ try {
   });
   page = await app.page(url);
   await deadline("canvas video metadata", () => page.eval("typeof openVideo === 'function' && v.readyState >= 2"));
+  if (!before) {
+    await rep.check("document PiP installs inactive zoom before any video PiP", async () => {
+      assert.equal(await page.eval("openDocument()", { userGesture: true }), "document opened");
+      await current("document");
+      return zoom("document");
+    });
+    await page.eval("window.pipDocument?.close(); true");
+    await deadline("initial document PiP closed", async () => !(await snapshots()).some((window) => window.visible && window.document));
+  }
   await rep.check("video PiP window settings and hidden focus guard", async () => {
     assert.equal(await page.eval("openVideo()", { userGesture: true }), "video opened");
     await current("video");
@@ -152,6 +193,7 @@ try {
     checkSettings(window);
     return window;
   });
+  if (!before) await rep.check("video PiP pinch and command scroll resize while inactive", () => zoom("video"));
   if (before) rep.record("video PiP lifecycle placement", { skip: "the baseline has no placement hook" });
   else await rep.check("video PiP keeps its chosen display through simulated lifecycle notifications", () => placement("video"));
   await rep.check("Keep Window on Top off and on preserves PiP policy", async () => {
@@ -166,6 +208,16 @@ try {
     checkSettings(on);
     return { off, on };
   });
+  if (!before) await rep.check("video PiP pinch and command scroll with Keep Window on Top off", async () => {
+    await action("keepOnTop:0");
+    try {
+      await deadline("normal PiP level for zoom", async () => { const value = await current("video"); return value.level === 0 && value; });
+      return await zoom("video");
+    } finally {
+      await action("keepOnTop:1");
+      await deadline("floating PiP level after zoom", async () => { const value = await current("video"); return value.level === 3 && value; });
+    }
+  });
   await page.eval("document.pictureInPictureElement ? document.exitPictureInPicture() : true");
   await deadline("video PiP closed", async () => !(await snapshots()).some((window) => window.visible && window.video));
   await rep.check("document PiP window settings and hidden focus guard", async () => {
@@ -175,6 +227,7 @@ try {
     checkSettings(window);
     return window;
   });
+  if (!before) await rep.check("document PiP pinch and command scroll resize while inactive", () => zoom("document"));
   if (before) rep.record("document PiP lifecycle placement", { skip: "the baseline has no placement hook" });
   else await rep.check("document PiP keeps its chosen display through simulated lifecycle notifications", () => placement("document"));
   await page.eval("window.pipDocument?.close(); true");

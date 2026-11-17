@@ -7,6 +7,9 @@
 #import "SolaraCoreWebViewInternal.h"
 
 #import <objc/runtime.h>
+#if DEBUG
+#import <dlfcn.h>
+#endif
 #import <QuartzCore/QuartzCore.h>
 
 #include <vector>
@@ -1041,8 +1044,61 @@ static __weak NSWindow *gSwipeMomentum;
 
 @end
 
-@interface ACPiPZoom : NSObject
+#if DEBUG
+static const void *kZoomTestHitKey = &kZoomTestHitKey;
+constexpr CGEventType kZoomTestGestureEvent = (CGEventType)29;
+constexpr CGEventField kZoomTestWindowID = (CGEventField)51;
+constexpr CGEventField kZoomTestHIDType = (CGEventField)110;
+constexpr CGEventField kZoomTestMagnification = (CGEventField)113;
+constexpr CGEventField kZoomTestPhase = (CGEventField)132;
+constexpr int64_t kZoomTestHIDZoom = 8;
+
+@interface ACPiPZoomTestEvent : NSEvent
+@property (nonatomic, weak) NSWindow *testWindow;
+@property (nonatomic) NSPoint testPoint;
+@property (nonatomic) NSEventType testType;
+@property (nonatomic) NSEventPhase testPhase;
+@property (nonatomic) CGFloat testMagnification;
+@property (nonatomic) CGFloat testDelta;
+@property (nonatomic) NSEventModifierFlags testModifiers;
+@property (nonatomic) NSInteger testHit;
+@end
+
+@implementation ACPiPZoomTestEvent
+- (NSEventType)type { return _testType; }
+- (NSWindow *)window { return _testWindow; }
+- (NSInteger)windowNumber { return _testWindow.windowNumber; }
+- (NSPoint)locationInWindow { return _testWindow ? [_testWindow convertPointFromScreen:_testPoint] : _testPoint; }
+- (NSEventPhase)phase { return _testPhase; }
+- (NSEventPhase)momentumPhase { return NSEventPhaseNone; }
+- (CGFloat)magnification { return _testMagnification; }
+- (CGFloat)scrollingDeltaY { return _testDelta; }
+- (BOOL)hasPreciseScrollingDeltas { return YES; }
+- (NSEventModifierFlags)modifierFlags { return _testModifiers; }
+- (NSTimeInterval)timestamp { return NSProcessInfo.processInfo.systemUptime; }
+@end
+#endif
+
+@interface ACPiPZoom : NSObject <NSGestureRecognizerDelegate>
 + (BOOL)handle:(NSEvent *)event;
++ (void)handleGlobal:(NSEvent *)event;
++ (void)installOn:(NSWindow *)window;
++ (BOOL)zooms:(NSWindow *)window;
++ (BOOL)enabled;
++ (instancetype)forWindow:(NSWindow *)window;
++ (NSPoint)screenPoint:(NSEvent *)event;
++ (NSInteger)hitFor:(NSEvent *)event point:(NSPoint)point;
++ (BOOL)route:(NSEvent *)event;
++ (BOOL)route:(NSEvent *)event source:(solaracore_pip_zoom::InputSource)source point:(NSPoint)point hit:(NSInteger)hit;
+- (void)detach;
+- (void)magnified:(NSMagnificationGestureRecognizer *)recognizer;
+- (void)zoomBy:(double)factor at:(NSPoint)pointer ease:(BOOL)ease;
+- (solaracore_pip_zoom::Size)minSize;
+- (solaracore_pip_zoom::Size)maxSize;
+- (solaracore_pip_zoom::Rect)visible;
+#if DEBUG
++ (void)devCheckOnWindow:(NSWindow *)window kind:(NSString *)kind;
+#endif
 @end
 
 @implementation ACPiPZoom {
@@ -1053,13 +1109,28 @@ static __weak NSWindow *gSwipeMomentum;
   double _target;
   NSPoint _pointer;
   NSTimer *_ease;
+  NSMagnificationGestureRecognizer *_magnify;
+  id _closeObserver;
+#if DEBUG
+  NSMutableArray *_testAttempts;
+  NSMutableArray *_testActions;
+#endif
+}
+
+static __weak NSWindow *gZoomGesture;
+static solaracore_pip_zoom::ScrollSession gZoomScroll;
+
+static NSView *ZoomEventRoot(NSWindow *window) {
+  NSView *root = window.contentView;
+  while (root.superview) root = root.superview;
+  return root;
 }
 
 + (BOOL)zooms:(NSWindow *)window {
   if (!window.visible || !(window.styleMask & NSWindowStyleMaskResizable)) return NO;
   ACPiPController *controller = [ACPiPController forWindow:window];
   if (controller) return controller.stashedEdge == ACPiPEdgeNone;
-  return IsChromeDocumentPictureInPicture(window) && IsChromeFloatingWindow(window);
+  return IsChromeVideoPictureInPicture(window) || (IsChromeDocumentPictureInPicture(window) && IsChromeFloatingWindow(window));
 }
 
 + (instancetype)forWindow:(NSWindow *)window {
@@ -1068,11 +1139,72 @@ static __weak NSWindow *gSwipeMomentum;
     zoom = [[ACPiPZoom alloc] init];
     zoom->_window = window;
     objc_setAssociatedObject(window, kZoomKey, zoom, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    __weak ACPiPZoom *weakZoom = zoom;
+    zoom->_closeObserver = [NSNotificationCenter.defaultCenter addObserverForName:NSWindowWillCloseNotification
+                                                                        object:window queue:nil
+                                                                    usingBlock:^(NSNotification *) { [weakZoom detach]; }];
   }
   return zoom;
 }
 
-static __weak NSWindow *gZoomGesture;
++ (void)installOn:(NSWindow *)window {
+  ACPiPZoom *zoom = [self forWindow:window];
+  if (!zoom->_magnify) {
+    zoom->_magnify = [[NSMagnificationGestureRecognizer alloc] initWithTarget:zoom action:@selector(magnified:)];
+    zoom->_magnify.delegate = zoom;
+  }
+  NSView *root = ZoomEventRoot(window);
+  if (zoom->_magnify.view != root) {
+    [zoom->_magnify.view removeGestureRecognizer:zoom->_magnify];
+    [root addGestureRecognizer:zoom->_magnify];
+  }
+}
+
+- (void)detach {
+  [_ease invalidate];
+  _ease = nil;
+  [_magnify.view removeGestureRecognizer:_magnify];
+  _magnify.delegate = nil;
+  _magnify.target = nil;
+  [NSNotificationCenter.defaultCenter removeObserver:_closeObserver];
+  _closeObserver = nil;
+  if (gZoomGesture == _window) {
+    gZoomGesture = nil;
+    gZoomScroll.Clear();
+  }
+  objc_setAssociatedObject(_window, kZoomKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+- (BOOL)gestureRecognizer:(NSGestureRecognizer *)recognizer shouldAttemptToRecognizeWithEvent:(NSEvent *)event {
+  const NSPoint point = [ACPiPZoom screenPoint:event];
+  const BOOL ownsHit = event.type == NSEventTypeDirectTouch || [ACPiPZoom hitFor:event point:point] == _window.windowNumber;
+  const BOOL allowed = solaracore_pip_zoom::RoutesToPiP(solaracore_pip_zoom::InputSource::View, [ACPiPZoom enabled],
+                                                      [ACPiPZoom zooms:_window], event.window == _window && ownsHit, false);
+#if DEBUG
+  if (_testAttempts) {
+    const NSEventPhase phase = event.type == NSEventTypeMagnify || event.type == NSEventTypeScrollWheel ? event.phase : NSEventPhaseNone;
+    [_testAttempts addObject:@{@"type" : @(event.type), @"phase" : @(phase), @"windowNumber" : @(event.windowNumber),
+                              @"allowed" : @(allowed)}];
+  }
+#endif
+  return allowed;
+}
+
+- (BOOL)gestureRecognizerShouldBegin:(NSGestureRecognizer *)recognizer {
+  return [ACPiPZoom enabled] && [ACPiPZoom zooms:_window];
+}
+
+- (void)magnified:(NSMagnificationGestureRecognizer *)recognizer {
+  const double magnification = recognizer.magnification;
+#if DEBUG
+  [_testActions addObject:@{@"state" : @(recognizer.state), @"magnification" : @(magnification)}];
+#endif
+  recognizer.magnification = 0;
+  if (recognizer.state == NSGestureRecognizerStateCancelled || recognizer.state == NSGestureRecognizerStateFailed ||
+      ![ACPiPZoom enabled] || ![ACPiPZoom zooms:_window] || !std::isfinite(magnification)) return;
+  [self zoomBy:solaracore_pip_zoom::MagnifyFactor(magnification)
+            at:[_window convertPointToScreen:[recognizer locationInView:nil]] ease:NO];
+}
 
 + (BOOL)handle:(NSEvent *)event {
   BOOL handled = [self route:event];
@@ -1089,38 +1221,65 @@ static __weak NSWindow *gZoomGesture;
   return handled;
 }
 
-+ (NSWindow *)windowFor:(NSEvent *)event {
-  if (event.window) return event.window;
-  NSPoint point = event.locationInWindow;
-  for (NSWindow *window in NSApp.orderedWindows)
-    if (NSPointInRect(point, window.frame) && [self zooms:window]) return window;
-  return nil;
++ (NSInteger)hitFor:(NSEvent *)event point:(NSPoint)point {
+#if DEBUG
+  if (solaracore_host::Background()) {
+    NSNumber *hit = objc_getAssociatedObject(event, kZoomTestHitKey);
+    if (hit) return hit.integerValue;
+    if ([event isKindOfClass:ACPiPZoomTestEvent.class]) return ((ACPiPZoomTestEvent *)event).testHit;
+  }
+#endif
+  return [NSWindow windowNumberAtPoint:point belowWindowWithWindowNumber:0];
+}
+
++ (void)handleGlobal:(NSEvent *)event {
+  const NSPoint point = event.locationInWindow;
+  const NSInteger hit = [self hitFor:event point:point];
+  [self route:event source:solaracore_pip_zoom::InputSource::Global point:point hit:hit];
 }
 
 + (BOOL)route:(NSEvent *)event {
-  NSWindow *window = [self windowFor:event];
-  BOOL command = (event.modifierFlags & NSEventModifierFlagCommand) != 0;
-  BOOL scroll = event.type == NSEventTypeScrollWheel;
-  if (scroll) {
-    NSEventPhase phase = event.phase, momentum = event.momentumPhase;
-    BOOL wheel = phase == NSEventPhaseNone && momentum == NSEventPhaseNone;
-    if (wheel || (phase & (NSEventPhaseBegan | NSEventPhaseMayBegin))) gZoomGesture = nil;
-    if (gZoomGesture) window = gZoomGesture;
-    if (!window || (!command && gZoomGesture != window)) return NO;
-    if (![self zooms:window] || ![self enabled]) return NO;
-    if (!wheel) gZoomGesture = window;
-    if (momentum & (NSEventPhaseEnded | NSEventPhaseCancelled)) gZoomGesture = nil;
-    double dy = event.scrollingDeltaY;
-    if (dy == 0) return YES;
-    [[self forWindow:window] zoomBy:solaracore_pip_zoom::ScrollFactor(dy, event.hasPreciseScrollingDeltas)
-                                 at:[self screenPoint:event]
-                               ease:!event.hasPreciseScrollingDeltas];
+  const NSPoint point = [self screenPoint:event];
+  const NSInteger hit = [self hitFor:event point:point];
+  return [self route:event source:solaracore_pip_zoom::InputSource::Local point:point hit:hit];
+}
+
++ (BOOL)route:(NSEvent *)event source:(solaracore_pip_zoom::InputSource)source point:(NSPoint)point hit:(NSInteger)hit {
+  if (event.type != NSEventTypeScrollWheel && event.type != NSEventTypeMagnify) return NO;
+  NSWindow *window = hit > 0 ? [NSApp windowWithWindowNumber:hit] : nil;
+  const BOOL eligible = [self zooms:window];
+  const BOOL target = solaracore_pip_zoom::RoutesToPiP(source, [self enabled], eligible, event.window == window,
+                                                     window && window.windowNumber == hit);
+  if (event.type == NSEventTypeScrollWheel) {
+    const NSEventPhase phase = event.phase, momentum = event.momentumPhase;
+    using solaracore_pip_zoom::ScrollKind;
+    ScrollKind kind = ScrollKind::Change;
+    if ((phase & NSEventPhaseCancelled) || (momentum & NSEventPhaseCancelled)) kind = ScrollKind::Cancel;
+    else if (momentum & NSEventPhaseEnded) kind = ScrollKind::MomentumEnd;
+    else if (momentum & NSEventPhaseBegan) kind = ScrollKind::MomentumBegin;
+    else if (momentum != NSEventPhaseNone) kind = ScrollKind::MomentumChange;
+    else if (phase & (NSEventPhaseBegan | NSEventPhaseMayBegin)) kind = ScrollKind::Begin;
+    else if (phase & NSEventPhaseEnded) kind = ScrollKind::End;
+    else if (phase == NSEventPhaseNone) kind = ScrollKind::Wheel;
+    if (kind == ScrollKind::Begin || kind == ScrollKind::Wheel) gZoomGesture = target ? window : nil;
+    const BOOL command = (event.modifierFlags & NSEventModifierFlagCommand) != 0;
+    if (!gZoomScroll.Handle(kind, target && gZoomGesture == window, command, event.timestamp)) {
+      if (!target || kind == ScrollKind::Cancel || kind == ScrollKind::MomentumEnd) gZoomGesture = nil;
+      return NO;
+    }
+    if (kind == ScrollKind::Cancel || kind == ScrollKind::MomentumEnd || kind == ScrollKind::Wheel) gZoomGesture = nil;
+    if (event.scrollingDeltaY != 0)
+      [[self forWindow:window] zoomBy:solaracore_pip_zoom::ScrollFactor(event.scrollingDeltaY, event.hasPreciseScrollingDeltas)
+                                   at:point ease:!event.hasPreciseScrollingDeltas];
     return YES;
   }
-  if (!window || ![self zooms:window] || ![self enabled]) return NO;
-  [[self forWindow:window] zoomBy:solaracore_pip_zoom::MagnifyFactor(event.magnification)
-                               at:[self screenPoint:event]
-                             ease:NO];
+  if (!target) return NO;
+  if (source == solaracore_pip_zoom::InputSource::Local && event.window == window) [self installOn:window];
+  ACPiPZoom *zoom = [self forWindow:window];
+  if (source == solaracore_pip_zoom::InputSource::Local && event.window == window && zoom->_magnify.view)
+    return NO;
+  if (std::isfinite(event.magnification))
+    [zoom zoomBy:solaracore_pip_zoom::MagnifyFactor(event.magnification) at:point ease:NO];
   return YES;
 }
 
@@ -1132,6 +1291,222 @@ static __weak NSWindow *gZoomGesture;
   id value = [NSUserDefaults.standardUserDefaults objectForKey:kZoomDefault];
   return value ? [value boolValue] : YES;
 }
+
+#if DEBUG
++ (void)devCheckOnWindow:(NSWindow *)window kind:(NSString *)kind {
+  if (!solaracore_host::Background()) return;
+  NSString *path = [[NSString stringWithUTF8String:getenv("SOLARA_DATA_DIR")]
+      stringByAppendingPathComponent:[NSString stringWithFormat:@"pip-zoom-%@.json", kind]];
+  ACPiPZoom *zoom = objc_getAssociatedObject(window, kZoomKey);
+  NSMutableArray *steps = [NSMutableArray array];
+  NSMutableArray *windowEvents = [NSMutableArray array];
+  NSMutableDictionary *limits = [NSMutableDictionary dictionary];
+  if (zoom) {
+    zoom->_testAttempts = [NSMutableArray array];
+    zoom->_testActions = [NSMutableArray array];
+  }
+  const NSRect original = window.frame;
+  const NSInteger activations = gActivations;
+  id preference = [NSUserDefaults.standardUserDefaults objectForKey:kZoomDefault];
+  void (^record)(NSString *, BOOL) = ^(NSString *name, BOOL pass) {
+    [steps addObject:@{@"step" : name, @"pass" : @(pass && !NSRunningApplication.currentApplication.active && gActivations == activations),
+                       @"frame" : NSStringFromRect(window.frame), @"systemAppActive" : @(NSRunningApplication.currentApplication.active)}];
+  };
+  void (^finish)(void) = ^{
+    [window setFrame:original display:NO];
+    if (preference) [NSUserDefaults.standardUserDefaults setObject:preference forKey:kZoomDefault];
+    else [NSUserDefaults.standardUserDefaults removeObjectForKey:kZoomDefault];
+    NSDictionary *result = @{@"inactive" : @(!NSRunningApplication.currentApplication.active), @"steps" : steps,
+      @"inputPaths" : @[@"NSWindow.sendEvent (CGEvent-backed magnify; began/changed/ended; injected hit window)", @"global routing boundary (simulated topmost hit)"],
+      @"initialFrame" : NSStringFromRect(original), @"restoredFrame" : NSStringFromRect(window.frame),
+      @"activationAttempts" : @(gActivations - activations), @"simulationOnly" : @YES,
+      @"windowEvents" : windowEvents, @"recognizerAttempts" : zoom ? zoom->_testAttempts : @[],
+      @"recognizerActions" : zoom ? zoom->_testActions : @[], @"expectedLimits" : limits};
+    if (zoom) {
+      zoom->_testAttempts = nil;
+      zoom->_testActions = nil;
+    }
+    NSData *json = [NSJSONSerialization dataWithJSONObject:result options:NSJSONWritingPrettyPrinted error:nil];
+    [json writeToFile:path atomically:YES];
+  };
+  record(@"recognizer installed by PiP entry", zoom && zoom->_magnify.view == ZoomEventRoot(window));
+  if (!zoom || !zoom->_magnify.view) return finish();
+  [NSUserDefaults.standardUserDefaults setBool:YES forKey:kZoomDefault];
+  const NSRect visible = ScreenFor(window.frame).visibleFrame;
+  const double aspect = NSWidth(original) / MAX(NSHeight(original), 1);
+  double low, high;
+  solaracore_pip_zoom::WidthLimits(aspect, [zoom minSize], [zoom maxSize], [zoom visible], &low, &high);
+  limits[@"originalAspect"] = @(aspect);
+  limits[@"originalLow"] = @(low);
+  limits[@"originalHigh"] = @(high);
+  const double width = low + (high - low) * 0.3;
+  NSRect initial = NSMakeRect(NSMidX(visible) - width / 2, NSMidY(visible) - width / aspect / 2, width, width / aspect);
+  [window setFrame:initial display:NO];
+  initial = window.frame;
+  const NSPoint point = NSMakePoint(NSMinX(initial) + NSWidth(initial) * 0.35, NSMinY(initial) + NSHeight(initial) * 0.6);
+  ACPiPZoomTestEvent *(^event)(NSEventType, NSEventPhase, double, BOOL, NSInteger) =
+      ^ACPiPZoomTestEvent *(NSEventType type, NSEventPhase phase, double value, BOOL command, NSInteger hit) {
+        ACPiPZoomTestEvent *item = [[ACPiPZoomTestEvent alloc] init];
+        item.testWindow = type == NSEventTypeMagnify ? window : nil;
+        item.testPoint = point;
+        item.testType = type;
+        item.testPhase = phase;
+        item.testMagnification = value;
+        item.testDelta = value;
+        item.testModifiers = command ? NSEventModifierFlagCommand : 0;
+        item.testHit = hit;
+        return item;
+      };
+  void (^sendMagnify)(NSEventPhase, double) = ^(NSEventPhase phase, double magnification) {
+    CGEventRef cg = CGEventCreate(nullptr);
+    if (!cg) return record(@"native magnify event created", NO);
+    const int64_t cgPhase = phase == NSEventPhaseBegan ? 1 : phase == NSEventPhaseChanged ? 2 : 4;
+    CGEventSetType(cg, kZoomTestGestureEvent);
+    CGEventSetIntegerValueField(cg, kZoomTestHIDType, kZoomTestHIDZoom);
+    CGEventSetIntegerValueField(cg, kZoomTestPhase, cgPhase);
+    CGEventSetDoubleValueField(cg, kZoomTestMagnification, magnification);
+    CGEventSetIntegerValueField(cg, kZoomTestWindowID, window.windowNumber);
+    CGEventSetTimestamp(cg, (CGEventTimestamp)(NSProcessInfo.processInfo.systemUptime * NSEC_PER_SEC));
+    CGEventSetLocation(cg, CGPointMake(point.x, NSMaxY(NSScreen.screens.firstObject.frame) - point.y));
+    static auto setWindowLocation = (void (*)(CGEventRef, CGPoint))dlsym(RTLD_DEFAULT, "CGEventSetWindowLocation");
+    const NSPoint local = [window convertPointFromScreen:point];
+    if (setWindowLocation) setWindowLocation(cg, CGPointMake(local.x, NSHeight(window.frame) - local.y));
+    NSEvent *item = [NSEvent eventWithCGEvent:cg];
+    const CGEventType actualCGType = CGEventGetType(cg);
+    const int64_t actualHIDType = CGEventGetIntegerValueField(cg, kZoomTestHIDType);
+    const int64_t actualCGPhase = CGEventGetIntegerValueField(cg, kZoomTestPhase);
+    const double actualCGMagnification = CGEventGetDoubleValueField(cg, kZoomTestMagnification);
+    const BOOL nativeFields = actualCGType == kZoomTestGestureEvent && actualHIDType == kZoomTestHIDZoom &&
+        actualCGPhase == cgPhase && fabs(actualCGMagnification - magnification) < 0.00001;
+    CFRelease(cg);
+    const NSEventPhase actualPhase = item.type == NSEventTypeMagnify ? item.phase : NSEventPhaseNone;
+    const CGFloat actualMagnification = item.type == NSEventTypeMagnify ? item.magnification : 0;
+    const BOOL valid = nativeFields && item.CGEvent && item.type == NSEventTypeMagnify && item.window == window &&
+        actualPhase == phase && fabs(actualMagnification - magnification) < 0.00001 &&
+        hypot(item.locationInWindow.x - local.x, item.locationInWindow.y - local.y) < 0.1;
+    BOOL handled = NO;
+    if (valid) {
+      objc_setAssociatedObject(item, kZoomTestHitKey, @(window.windowNumber), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+      handled = [self handle:item];
+    }
+    NSView *hitRoot = ZoomEventRoot(window);
+    const NSPoint hitPoint = hitRoot.superview ? [hitRoot.superview convertPoint:item.locationInWindow fromView:nil] : item.locationInWindow;
+    NSView *hit = [hitRoot hitTest:hitPoint];
+    const BOOL ancestor = hit && (hit == zoom->_magnify.view || [hit isDescendantOf:zoom->_magnify.view]);
+    NSMutableDictionary *dispatch = [@{@"type" : @(item.type), @"phase" : @(actualPhase),
+      @"magnification" : @(actualMagnification),
+      @"windowNumber" : @(item.windowNumber), @"expectedWindowNumber" : @(window.windowNumber),
+      @"locationInWindow" : NSStringFromPoint(item.locationInWindow), @"expectedLocationInWindow" : NSStringFromPoint(local),
+      @"cgBacked" : @(item.CGEvent != nullptr), @"nativeFields" : @(nativeFields), @"valid" : @(valid),
+      @"cgType" : @(actualCGType), @"hidType" : @(actualHIDType), @"cgPhase" : @(actualCGPhase),
+      @"cgMagnification" : @(actualCGMagnification), @"expectedPhase" : @(phase), @"expectedMagnification" : @(magnification),
+      @"hitRoot" : hitRoot.className ?: @"", @"hitView" : hit.className ?: @"", @"recognizerView" : zoom->_magnify.view.className ?: @"",
+      @"recognizerAncestor" : @(ancestor), @"localMonitorConsumed" : @(handled),
+      @"attemptsBefore" : @(zoom->_testAttempts.count), @"actionsBefore" : @(zoom->_testActions.count),
+      @"stateBefore" : @(zoom->_magnify.state)} mutableCopy];
+    [windowEvents addObject:dispatch];
+    if (windowEvents.count == 1) {
+      NSMutableArray *hierarchy = [NSMutableArray array];
+      NSMutableArray<NSView *> *views = [NSMutableArray arrayWithObject:hitRoot];
+      for (NSUInteger index = 0; index < views.count && index < 64; ++index) {
+        NSView *view = views[index];
+        const NSUInteger parent = [views indexOfObjectIdenticalTo:view.superview];
+        [hierarchy addObject:@{@"class" : view.className, @"frame" : NSStringFromRect(view.frame),
+                              @"parent" : @(parent == NSNotFound ? -1 : (NSInteger)parent), @"hidden" : @(view.hidden),
+                              @"hit" : @(view == hit), @"recognizer" : @(view == zoom->_magnify.view)}];
+        [views addObjectsFromArray:view.subviews];
+      }
+      dispatch[@"hierarchy"] = hierarchy;
+    }
+    if (valid && !handled) [window sendEvent:item];
+    dispatch[@"attemptsAfter"] = @(zoom->_testAttempts.count);
+    dispatch[@"actionsAfter"] = @(zoom->_testActions.count);
+    dispatch[@"stateAfter"] = @(zoom->_magnify.state);
+    record(@"native magnify targets PiP hit view", valid && ancestor && !handled);
+  };
+  NSMutableArray<dispatch_block_t> *operations = [NSMutableArray array];
+  auto enqueue = [operations](dispatch_block_t block) { [operations addObject:[block copy]]; };
+  enqueue(^{
+    record(@"local monitor delegates to installed recognizer", ![self handle:event(NSEventTypeMagnify, NSEventPhaseChanged, -0.12, NO, window.windowNumber)]);
+    sendMagnify(NSEventPhaseBegan, 0);
+  });
+  enqueue(^{ sendMagnify(NSEventPhaseChanged, -0.12); });
+  enqueue(^{ sendMagnify(NSEventPhaseEnded, 0); });
+  __block NSRect shrunk;
+  enqueue(^{
+    shrunk = window.frame;
+    record(@"window magnify reaches installed recognizer", zoom->_testAttempts.count > 0 && zoom->_testActions.count > 0);
+    record(@"inactive window pinch shrinks once", fabs(NSWidth(shrunk) - NSWidth(initial) * 0.88) <= 1);
+    record(@"pinch keeps the pointer anchor", fabs((point.x - NSMinX(shrunk)) / NSWidth(shrunk) - 0.35) < 0.01 &&
+           fabs((point.y - NSMinY(shrunk)) / NSHeight(shrunk) - 0.6) < 0.01);
+  });
+  __block NSUInteger recoveryAttempts, recoveryActions;
+  enqueue(^{
+    recoveryAttempts = zoom->_testAttempts.count;
+    recoveryActions = zoom->_testActions.count;
+    [zoom->_magnify.view removeGestureRecognizer:zoom->_magnify];
+    sendMagnify(NSEventPhaseBegan, 0);
+    record(@"local monitor restores detached recognizer before dispatch", zoom->_magnify.view == ZoomEventRoot(window));
+  });
+  enqueue(^{ sendMagnify(NSEventPhaseChanged, 0.15); });
+  enqueue(^{ sendMagnify(NSEventPhaseEnded, 0); });
+  enqueue(^{
+    record(@"restored recognizer receives spread callbacks", zoom->_testAttempts.count > recoveryAttempts && zoom->_testActions.count > recoveryActions);
+    record(@"inactive window spread grows", NSWidth(window.frame) > NSWidth(shrunk));
+    NSRect before = window.frame;
+    ACPiPZoomTestEvent *magnify = event(NSEventTypeMagnify, NSEventPhaseChanged, -0.08, NO, window.windowNumber);
+    magnify.testWindow = nil;
+    [self handleGlobal:magnify];
+    record(@"global inactive pinch routes to topmost PiP", NSWidth(window.frame) < NSWidth(before));
+    before = window.frame;
+    magnify.testHit = NSIntegerMax;
+    [self handleGlobal:magnify];
+    record(@"foreign topmost window passes through", NSEqualRects(before, window.frame));
+    [NSUserDefaults.standardUserDefaults setBool:NO forKey:kZoomDefault];
+    magnify.testHit = window.windowNumber;
+    [self handleGlobal:magnify];
+    record(@"disabled zoom passes through", NSEqualRects(before, window.frame));
+    [NSUserDefaults.standardUserDefaults setBool:YES forKey:kZoomDefault];
+    [self handleGlobal:event(NSEventTypeScrollWheel, NSEventPhaseBegan, 0, YES, window.windowNumber)];
+    [self handleGlobal:event(NSEventTypeScrollWheel, NSEventPhaseChanged, 12, NO, window.windowNumber)];
+    [self handleGlobal:event(NSEventTypeScrollWheel, NSEventPhaseEnded, 0, NO, window.windowNumber)];
+    record(@"inactive command-scroll grows after modifier release", NSWidth(window.frame) > NSWidth(before));
+    before = window.frame;
+    [self handleGlobal:event(NSEventTypeScrollWheel, NSEventPhaseChanged, 12, NO, window.windowNumber)];
+    record(@"ended scroll does not own a later gesture", NSEqualRects(before, window.frame));
+    const double currentAspect = zoom->_aspect;
+    double currentLow, currentHigh;
+    solaracore_pip_zoom::WidthLimits(currentAspect, [zoom minSize], [zoom maxSize], [zoom visible], &currentLow, &currentHigh);
+    limits[@"initialAspect"] = @(NSWidth(initial) / MAX(NSHeight(initial), 1));
+    limits[@"aspect"] = @(currentAspect);
+    limits[@"low"] = @(currentLow);
+    limits[@"high"] = @(currentHigh);
+    const solaracore_pip_zoom::Rect currentVisible = [zoom visible];
+    limits[@"visible"] = NSStringFromRect(NSMakeRect(currentVisible.x, currentVisible.y, currentVisible.w, currentVisible.h));
+    limits[@"minSize"] = NSStringFromSize(window.contentMinSize);
+    limits[@"maxSize"] = NSStringFromSize(window.contentMaxSize);
+    ACPiPZoomTestEvent *limit = event(NSEventTypeMagnify, NSEventPhaseChanged, -100, NO, window.windowNumber);
+    limit.testWindow = nil;
+    [self handleGlobal:limit];
+    record(@"pinch clamps to existing minimum", fabs(NSWidth(window.frame) - ceil(currentLow)) <= 1);
+    limit.testMagnification = 1000;
+    [self handleGlobal:limit];
+    record(@"spread clamps to existing maximum", fabs(NSWidth(window.frame) - floor(currentHigh)) <= 1);
+    gZoomGesture = nil;
+    gZoomScroll.Clear();
+    finish();
+  });
+  __block NSUInteger index = 0;
+  __block dispatch_block_t advance;
+  advance = ^{
+    if (index == operations.count) { advance = nil; return; }
+    dispatch_block_t operation = operations[index++];
+    operation();
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_MSEC), dispatch_get_main_queue(), advance);
+  };
+  dispatch_async(dispatch_get_main_queue(), advance);
+}
+#endif
 
 - (void)zoomBy:(double)factor at:(NSPoint)pointer ease:(BOOL)ease {
   NSWindow *window = _window;
@@ -1287,12 +1662,15 @@ void InstallDragMonitor() {
 }
 
 void InstallZoomMonitor() {
-  static id monitor;
-  if (monitor) return;
-  monitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskScrollWheel | NSEventMaskMagnify
-                                                  handler:^NSEvent *(NSEvent *event) {
-                                                    return [ACPiPController handleSwipe:event] || [ACPiPZoom handle:event] ? nil : event;
-                                                  }];
+  static id monitor, globalMonitor;
+  if (!monitor)
+    monitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskScrollWheel | NSEventMaskMagnify
+                                                   handler:^NSEvent *(NSEvent *event) {
+                                                     return [ACPiPController handleSwipe:event] || [ACPiPZoom handle:event] ? nil : event;
+                                                   }];
+  if (!globalMonitor)
+    globalMonitor = [NSEvent addGlobalMonitorForEventsMatchingMask:NSEventMaskScrollWheel | NSEventMaskMagnify
+                                                         handler:^(NSEvent *event) { [ACPiPZoom handleGlobal:event]; }];
 }
 
 bool Attach(SolaraCoreWebView *view, NSString *host) {
@@ -1315,6 +1693,7 @@ bool Attach(SolaraCoreWebView *view, NSString *host) {
     InstallMenuMonitor();
     InstallDragMonitor();
     InstallZoomMonitor();
+    [ACPiPZoom installOn:window];
     NSString *selfTest = NSProcessInfo.processInfo.environment[@"SOLARA_PIP_SELFTEST"];
     if (fresh && [@[ @"close", @"backToTab" ] containsObject:selfTest]) [controller runButtonSelfTest:selfTest];
     else if (fresh && [selfTest isEqual:@"hover"]) [controller runHoverSelfTest];
@@ -1329,6 +1708,7 @@ bool Attach(SolaraCoreWebView *view, NSString *host) {
 void WatchZoom() { InstallZoomMonitor(); }
 
 void DocumentEntered() {
+  InstallZoomMonitor();
   __block int tries = 0;
   __block int found = 0;
   __block void (^look)(void);
@@ -1336,6 +1716,7 @@ void DocumentEntered() {
     for (NSWindow *window in NSApp.windows) {
       if (!IsChromeDocumentPictureInPicture(window) || !IsChromeFloatingWindow(window)) continue;
       ShowInFullScreenSpaces(window);
+      [ACPiPZoom installOn:window];
       ++found;
     }
     if (found || ++tries >= 20) {
@@ -1511,6 +1892,19 @@ NSString *ClickDocumentBackToTab() {
 }
 
 + (NSString *)devPictureInPictureAction:(NSString *)action {
+#if DEBUG
+  if ([action hasPrefix:@"zoom:"] && solaracore_host::Background()) {
+    NSString *kind = [action substringFromIndex:5];
+    const BOOL document = [kind isEqual:@"document"];
+    for (NSWindow *window in NSApp.windows) {
+      const BOOL video = IsChromeVideoPictureInPicture(window) || ([ACPiPController forWindow:window] && !ShowsPage(window.contentView));
+      if (!window.visible || (document ? !IsChromeDocumentPictureInPicture(window) : !video)) continue;
+      [ACPiPZoom devCheckOnWindow:window kind:kind];
+      return @"started";
+    }
+    return @"";
+  }
+#endif
   if ([action hasPrefix:@"placement:"]) {
     const BOOL document = [[action substringFromIndex:10] isEqual:@"document"];
     for (NSWindow *window in NSApp.windows) {

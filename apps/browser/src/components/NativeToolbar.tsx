@@ -26,6 +26,7 @@ import { closePane, openSplitPane, showSplitMenu } from "./layout/splitActions";
 import { railToolbarOnFrame, toolbarPalette } from "./layout/toolbarColors";
 import { setToolbarExtensionsWidth } from "./layout/windowLayout";
 import { showUrlBarMenu } from "./omnibox/paste";
+import { runOmniboxFallback } from "./omnibox/nativeActions";
 import { endUrlEdit, startUrlEdit, submitUrlEdit, useTabDeveloperMode, useToolbarSiteColor, useUrlEdit } from "./site/developerMode";
 import { developerReload, showDeveloperReloadMenu } from "./site/DeveloperButtons";
 import { claimFocusTag, urlEditFocus } from "../lib/focusClaims";
@@ -287,7 +288,7 @@ export function useNativeToolbarModel({ tabId, geometry, windowId, inSplit, focu
         return useBrowser.getState().openPanel(windowId, tab.url);
       case "urlEdit":
         if (c.kind === "focus") return claimFocusTag(windowId, urlEditFocus(tabId), focusHandle);
-        if (c.kind === "submit") submitUrlEdit(tabId, c.text ?? "");
+        if (c.kind === "submit") runOmniboxFallback("developerSubmit", c, () => submitUrlEdit(tabId, c.text ?? ""));
         else endUrlEdit(tabId);
         if (c.kind !== "blur") void webviews.get(tabId)?.focus();
         return;

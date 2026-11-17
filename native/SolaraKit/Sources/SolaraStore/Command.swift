@@ -44,7 +44,7 @@ public struct Command: Sendable, Equatable {
     "renameTileFolder", "newTileFolder", "leaveTileFolder", "dissolveTileFolder", "openDraftGroups", "forgetClosedTab", "setWindowClosing",
     "setLastTabKeepsWindow", "noteRemotePinDeletion", "setHistoryHints", "setPlayingAudio", "setLaunchBackdrop", "setEarlyLaunchTab", "nextId", "nextNavigation",
     "syncPinsApply", "settlePinChoices", "beginFromSync", "endFromSync", "beginTransaction", "endTransaction", "closeTransactions", "stripSnapshot", "stripTransaction", "projectStrips", "stripCommandSent", "applyState", "attachReplicaProfiles",
-    "setAppDark", "setFind", "setSelection", "setSelectionAnchor", "clickTab", "openPanel", "closePanel", "setDownloadsOpen",
+    "omniboxOpen", "omniboxSwitch", "omniboxCommand", "setAppDark", "setFind", "setSelection", "setSelectionAnchor", "clickTab", "openPanel", "closePanel", "setDownloadsOpen",
   ]
 }
 
@@ -162,6 +162,13 @@ extension Session {
       guard layout == "sidebar" || layout == "top", var window = state.windows[id] else { throw CommandError("setWindowLayout: invalid window or layout") }
       window.tabLayout = layout
       update { $0.windows[id] = window }
+    case "omniboxCommand": result = omniboxCommand(try a.requireString(0), try a.requireString(1))
+    case "omniboxOpen":
+      guard let disposition = OmniboxOpenDisposition(rawValue: try a.requireString(3)) else { throw CommandError("omniboxOpen: invalid disposition") }
+      result = omniboxOpen(try a.requireString(0), try a.requireString(1), try a.requireString(2), disposition, a[4])
+    case "omniboxSwitch":
+      guard let disposition = OmniboxOpenDisposition(rawValue: try a.requireString(4)) else { throw CommandError("omniboxSwitch: invalid disposition") }
+      result = omniboxSwitch(try a.requireString(0), try a.requireString(1), try a.requireString(2), try a.requireString(3), disposition)
     case "newTab":
       result = .string(newTab(try a.requireString(0), newTabOptions(a[1]?.object)))
     case "closeTab": closeTab(try a.requireString(0))

@@ -11,6 +11,7 @@ import type { BarDismissal } from "./barState";
 import { openFromBar, useNativeBar, useThemeTokens } from "./nativeBar";
 import { openFromNewTabBar } from "./newTabBar";
 import type { Disposition } from "./open";
+import { runOmniboxFallback } from "./nativeActions";
 
 export function NativeOmniboxBar({
   variant,
@@ -44,7 +45,7 @@ export function NativeOmniboxBar({
 
   const go = (url: string, disposition: Disposition = "current") => {
     if (!url) return;
-    if (opensTab && disposition !== "newWindow") return openFromNewTabBar(windowId, opensTab, url);
+    if (opensTab && (disposition === "current" || disposition === "newTab")) return openFromNewTabBar(windowId, opensTab, url);
     openFromBar(url, tabId, disposition);
   };
   const { props } = useNativeBar({ ref, windowId, tabId, profileId, driverId: idle ? "" : `${windowId}:${variant}`, focusTag: commandBarFocus, go });
@@ -67,12 +68,12 @@ export function NativeOmniboxBar({
         dark={!!theme.dark}
         theme={themeProps}
         {...props}
-        onDone={(e) => onDone?.(e.nativeEvent.reason ?? undefined)}
-        onCancel={() => onCancel?.()}
-        onSiteControls={() => {
+        onDone={(e) => runOmniboxFallback("done", e.nativeEvent, () => onDone?.(e.nativeEvent.reason ?? undefined))}
+        onCancel={(e) => runOmniboxFallback("cancel", e.nativeEvent, () => onCancel?.())}
+        onSiteControls={(e) => runOmniboxFallback("siteControls", e.nativeEvent, () => {
           onCancel?.();
           setPopover(tabId, "siteControls");
-        }}
+        })}
         onBarLayout={(e) => setHeight(e.nativeEvent.height)}
       />
     </View>

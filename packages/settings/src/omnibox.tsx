@@ -3,7 +3,7 @@ import { forwardRef, type ComponentType, type Ref } from "react";
 import type { NativeSyntheticEvent, ViewProps } from "react-native";
 import type { NativeNewTabHandle, NativeSuggestion, NewTabDisposition, NewTabJourneyMark } from "./newTab";
 
-type Event<T> = NativeSyntheticEvent<T>;
+type Event<T> = NativeSyntheticEvent<T & { nativeActions?: boolean }>;
 
 export type NativeOmniboxVariant = "panel" | "sidebar";
 

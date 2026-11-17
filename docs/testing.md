@@ -541,3 +541,9 @@ including panel/Peek dismissal and close-together restoration. Run the SolaraKit
 `node apps/browser/scripts/native-tab-commands-test.mjs <Debug app> <fresh scratch directory>` disables JavaScript
 command handlers and exercises actual menu/shortcut routing, tab state and native windows. The command port is
 pending VM build, Swift tests and driver acceptance; no Solara build, install or instance ran on the owner's Mac.
+
+## Native omnibox actions
+
+`node apps/browser/scripts/native-omnibox-actions-test.mjs <Debug app> <fresh scratch directory>` disables JavaScript omnibox actions and records received/executed fallback counters. It checks hero, panel, sidebar and toolbar fields, real Return, modified Return, verbatim search, tab switching, paste-and-go/search, Copy URL, Escape, Developer Mode URL editing and opening Command Bar commands. The driver records native ownership and app snapshots in `evidence.json`, owns one hidden instance and quits it with a bounded teardown. Use an existing engine and dependencies in the verification VM. Swift cases are `OmniboxActionTests` and `OmniboxActionControllerTests`; run the full SolaraKit suite with `-Xswiftc -DSOLARA_PROBES` after the focused cases. Native menus, file picker, extension action/options/side-panel fixtures, profile creation and the Clear Browsing Data dialog also need VM interaction checks.
+
+The native-actions driver requests all windows from `state.snapshot`: a `windowId` filter also filters the returned tabs. Its ⇧Return checks require a newly created window selecting the destination tab, unchanged source selection and a closed source panel. Keep the ordinary deadline; a snapshot restricted to the source window cannot observe the destination.

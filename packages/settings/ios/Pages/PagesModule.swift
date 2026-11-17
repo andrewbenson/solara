@@ -1,6 +1,8 @@
 import AppKit
 import ExpoModulesCore
 import SolaraModel
+import SolaraOmnibox
+import SolaraShell
 import SolaraStore
 import SolaraUI
 import SwiftUI
@@ -81,6 +83,41 @@ final class NativePageView: ExpoView {
   override var isFlipped: Bool { true }
 
   static let live = NSHashTable<NativePageView>.weakObjects()
+  private struct ClearDataRequest {
+    let store: Store
+    let generation: Int
+    let profileId: String
+    let tabId: String
+  }
+  private static var pendingClearData: [String: ClearDataRequest] = [:]
+
+  static func requestClearData(windowId: String) {
+    guard NativeStoreHandle.ownsWorkspace, let store = NativeStoreHandle.store,
+      let profileId = store.state.windows[windowId]?.profileId, let tabId = store.state.activeTabId(windowId) else { return }
+    pendingClearData[windowId] = ClearDataRequest(store: store, generation: NativeStoreHandle.ownershipGeneration, profileId: profileId, tabId: tabId)
+    for view in live.allObjects { view.consumeClearDataRequest() }
+  }
+
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    consumeClearDataRequest()
+  }
+
+  private func consumeClearDataRequest() {
+    Self.pendingClearData = Self.pendingClearData.filter { windowId, request in
+      NativeStoreHandle.ownsWorkspace && NativeStoreHandle.store === request.store
+        && NativeStoreHandle.ownershipGeneration == request.generation && request.store.state.windows[windowId]?.profileId == request.profileId
+        && request.store.state.activeTabId(windowId) == request.tabId
+        && request.store.state.tabs[request.tabId].map { tab in
+          if case .page(.history)? = SolaraOmnibox.appUrlRoute(tab.navigation?.url ?? tab.url) { return true }
+          return false
+        } == true
+    }
+    guard kind == "history", !isHiddenOrHasHiddenAncestor, let window,
+      let entry = Self.pendingClearData.first(where: { ShellDrag.window($0.key) === window && $0.value.profileId == history.profileId }) else { return }
+    Self.pendingClearData.removeValue(forKey: entry.key)
+    history.clearOpen = true
+  }
 
   required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
@@ -242,6 +279,7 @@ final class NativePageView: ExpoView {
     case "calendarPreview", "meetingAlert": liveCard.apply(json: json)
     default: break
     }
+    consumeClearDataRequest()
   }
 
   private func send(_ event: DownloadsPageEvent) {

@@ -107,6 +107,14 @@ enum NativeSplitChrome {
     view.frame = card.bounds
     view.autoresizingMask = [.width, .height]
     view.onToolbarClick = { [weak view] tabId, click in
+      if let toolbar = view?.toolbar(tabId),
+        click.id == "urlEdit" || click.kind == .menu || toolbar.state?.url?.developer == nil,
+        NativeOmniboxActions.addressClick(click, windowId: windowId, tabId: tabId, view: toolbar) {
+        if click.id == "urlEdit", click.kind == .submit {
+          Task { @MainActor in _ = await SettingsAdapters.js("split.toolbarClick", windowId, tabId, ["id": "urlEdit", "kind": "cancel", "nativeActions": true]) }
+        }
+        return
+      }
       let payload: [String: Any] = ["id": click.id, "kind": click.kind.rawValue, "meta": click.meta, "alt": click.alt, "shift": click.shift, "text": click.text ?? NSNull()]
       let send: () -> Void = { Task { @MainActor in _ = await SettingsAdapters.js("split.toolbarClick", windowId, tabId, payload) } }
       if let toolbar = view?.toolbar(tabId), click.id == "urlEdit" {

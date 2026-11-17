@@ -161,6 +161,14 @@ final class NativeToolbarHostView: ExpoView {
     toolbar.onClick = { [weak self] click in
       MainActor.assumeIsolated {
         guard let self else { return }
+        if let tabId = self.toolbar.state?.tabId,
+          click.id == "urlEdit" || click.kind == .menu || self.toolbar.state?.url?.developer == nil,
+          NativeOmniboxActions.addressClick(click, windowId: self.toolbarShell?.windowId ?? NativeStoreHandle.store?.state.tabs[tabId]?.windowId ?? "", tabId: tabId, view: self.toolbar) {
+          if click.id == "urlEdit", click.kind == .submit {
+            self.onToolbarClick(["id": "urlEdit", "kind": "cancel", "nativeActions": true, "meta": false, "alt": false, "shift": false])
+          }
+          return
+        }
         let payload: [String: Any] = ["id": click.id, "kind": click.kind.rawValue, "meta": click.meta, "alt": click.alt, "shift": click.shift, "text": click.text ?? NSNull()]
         if click.id == "urlEdit", click.kind.rawValue == "focus" { NativeExtensionActionPopup.dropHeldFieldBlur(from: self) }
         if click.id == "urlEdit", click.kind.rawValue == "blur",
@@ -274,6 +282,17 @@ enum SidebarAddressBridge {
     guard !installed else { return }
     installed = true
     SidebarAddressBars.shared.onClick = { windowId, click in
+      let bar = SidebarAddressBars.shared.existing(windowId)
+      if NativeOmniboxActions.ownsActions, click.id == "url" || click.id == "urlEdit",
+        NativeStoreHandle.store?.state.activeTabId(windowId) == nil { return }
+      if let store = NativeStoreHandle.store, let tabId = store.state.activeTabId(windowId),
+        click.id == "urlEdit" || click.kind == .menu || bar?.state?.url?.developer == nil,
+        NativeOmniboxActions.addressClick(click, windowId: windowId, tabId: tabId, view: bar) {
+        if click.id == "urlEdit", click.kind == .submit {
+          Task { @MainActor in _ = await SettingsAdapters.js("sidebar.addressClick", windowId, ["id": "urlEdit", "kind": "cancel", "nativeActions": true]) }
+        }
+        return
+      }
       let payload: [String: Any] = ["id": click.id, "kind": click.kind.rawValue, "meta": click.meta, "alt": click.alt, "shift": click.shift, "text": click.text ?? NSNull()]
       Task { @MainActor in _ = await SettingsAdapters.js("sidebar.addressClick", windowId, payload) }
     }

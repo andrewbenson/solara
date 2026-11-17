@@ -5,9 +5,10 @@ import SolaraModel
 import SolaraOmnibox
 
 public enum Disposition: String, Sendable {
-  case current, newTab, newWindow
+  case current, newTab, backgroundTab, newWindow
 
   public static func from(meta: Bool, alt: Bool, shift: Bool) -> Disposition {
+    if alt && shift { return .backgroundTab }
     if meta || alt { return .newTab }
     if shift { return .newWindow }
     return .current
@@ -27,7 +28,7 @@ public enum HeroJourney: String, Sendable {
 }
 
 public enum HeroMenuChoice: String, Sendable {
-  case cut, copy, paste, selectAll
+  case cut, copy, paste, selectAll, pasteAndGo, copyURL
 }
 
 @MainActor
@@ -465,7 +466,22 @@ public final class HeroBarModel {
     events.contextMenu(selection.end > selection.start, !value.isEmpty)
   }
 
+  public var pasteAction: PasteAction? { classifyPaste(events.readClipboard()) }
+
   public func apply(_ choice: HeroMenuChoice) {
+    if choice == .pasteAndGo {
+      guard let action = pasteAction else { return }
+      switch action {
+      case .go(let url): go(url)
+      case .search(let query): go(searchUrl(engine, query))
+      }
+      return
+    }
+    if choice == .copyURL {
+      events.runAction("copyUrl")
+      field?.focusField()
+      return
+    }
     let units = Array(value.utf16)
     let lo = max(0, min(selection.start, units.count))
     let hi = max(lo, min(selection.end, units.count))
@@ -489,6 +505,8 @@ public final class HeroBarModel {
     case .selectAll:
       selection = TextSelection(start: 0, end: units.count)
       field?.show(value: value, selection: selection)
+    case .pasteAndGo, .copyURL:
+      return
     }
     field?.focusField()
   }

@@ -35,7 +35,7 @@ objects += [output / 'SolaraCore.o', output / 'SolaraShell.o']
 files = [source / 'packages/settings/ios/SidePanel/NativeExtensionSidePanel.swift', here / 'Stubs.swift', here / 'Main.swift']
 subprocess.run(base + ['-o', str(output / 'host-tests')] + [str(item) for item in files + objects], env=environment, check=True, timeout=120)
 failed = False
-for case in args.cases or ['settleWithoutEchoFinishes', 'staleEchoDoesNotCancelSettle', 'outsideWidthWinsOverDrag', 'droppedEchoFallsBack', 'echoQueueIsBounded', 'keyChangeClearsQueue', 'closeClearsQueue', 'resetWidthEchoes']:
+for case in args.cases or ['settleWithoutEchoFinishes', 'staleEchoDoesNotCancelSettle', 'outsideWidthWinsOverDrag', 'droppedEchoFallsBack', 'echoQueueIsBounded', 'keyChangeClearsQueue', 'closeClearsQueue', 'resetWidthEchoes', 'nativeResizeAndCloseAvoidJavaScript', 'nativeOwnershipLossClosesAndUnsubscribes', 'nativeOpenWindowUsesStore', 'nativeHostStopReleasesOwnership', 'nativeProfileSwitchReplacesSameExtensionBeforeQueuedTeardown']:
     try:
         result = subprocess.run([str(output / 'host-tests'), case], env=environment, timeout=10)
         failed = failed or result.returncode != 0

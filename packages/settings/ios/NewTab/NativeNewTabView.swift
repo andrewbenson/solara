@@ -6,6 +6,15 @@ import SolaraStore
 import SolaraUI
 
 final class NativeNewTabView: ExpoView {
+  private static let live = NSHashTable<NativeNewTabView>.weakObjects()
+
+  static func focusHero(windowId: String, tabId: String) -> Bool {
+    guard let view = live.allObjects.first(where: {
+      $0.windowId == windowId && $0.tabId == tabId && $0.window != nil && !$0.isHiddenOrHasHiddenAncestor
+    }) else { return false }
+    view.hero.focusBar()
+    return true
+  }
   static let events = [
     "onOpen", "onSwitch", "onAction", "onExtension", "onRemoveHistory", "onChosen", "onOpenChip", "onDictate", "onContextMenu", "onJourney",
     "onLatency", "onBarLayout", "onDriverState",
@@ -27,6 +36,7 @@ final class NativeNewTabView: ExpoView {
   var driven = false
 
   let hero = NewTabHeroView(frame: .zero)
+  private lazy var actions = NativeOmniboxActions.controller(view: { [weak self] in self?.hero })
   var windowId = ""
   var tabId = ""
   var profileId = ""
@@ -39,6 +49,7 @@ final class NativeNewTabView: ExpoView {
 
   required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
+    Self.live.add(self)
     hero.autoresizingMask = [.width, .height]
     hero.frame = bounds
     hero.settings = { NativeSettingsHandle.model?.settings ?? SolaraModel.Settings(values: [:]) }
@@ -72,13 +83,17 @@ final class NativeNewTabView: ExpoView {
 
   private func makeEvents() -> HeroBarEvents {
     var e = HeroBarEvents()
-    e.open = { [weak self] url, disposition in self?.onOpen(["url": url, "disposition": disposition.rawValue]) }
-    e.switchTo = { [weak self] tab, url, disposition in self?.onSwitch(["tabId": tab, "url": url, "disposition": disposition.rawValue]) }
-    e.runAction = { [weak self] id in self?.onAction(["id": id]) }
+    e.open = { [weak self] url, disposition in self?.onOpen(["url": url, "disposition": disposition.rawValue, "nativeActions": false]) }
+    e.switchTo = { [weak self] tab, url, disposition in self?.onSwitch(["tabId": tab, "url": url, "disposition": disposition.rawValue, "nativeActions": false]) }
+    e.runAction = { [weak self] id in self?.onAction(["id": id, "nativeActions": false]) }
     e.runExtension = { [weak self] s in self?.onExtension(["suggestion": NewTabJSON.suggestion(s)]) }
     e.removeHistory = { [weak self] url in self?.onRemoveHistory(["url": url]) }
     e.chosen = { [weak self] s in self?.onChosen(["suggestion": s.map(NewTabJSON.suggestion) ?? NSNull()]) }
-    e.openChip = { [weak self] in self?.onOpenChip([:]) }
+    e.openChip = { [weak self] in
+      guard let self else { return }
+      if self.actions.ownsActions, let model = self.hero.model { NativeOmniboxActions.openChip(model, in: self.hero) }
+      else { self.onOpenChip(["nativeActions": false]) }
+    }
     e.dictate = { [weak self] in self?.onDictate([:]) }
     e.contextMenu = { [weak self] hasSelection, hasValue in self?.onContextMenu(["hasSelection": hasSelection, "hasValue": hasValue]) }
     e.journey = { [weak self] mark in self?.onJourney(["mark": mark.rawValue]) }
@@ -102,7 +117,7 @@ final class NativeNewTabView: ExpoView {
       guard let self, self.driven else { return }
       self.onDriverState(["json": self.driverStateJSON()])
     }
-    return e
+    return actions.decorate(e, model: { [weak self] in self?.hero.model })
   }
 
   func driverState() -> [String: Any] {
@@ -112,7 +127,7 @@ final class NativeNewTabView: ExpoView {
     let editor = focused ? hero.window?.firstResponder as? NSTextView : nil
     let range = editor?.isFieldEditor == true ? editor?.selectedRange() : nil
     return [
-      "observationVersion": 2, "mounted": hero.window != nil, "fieldAttached": m.field != nil, "listAway": m.listAway,
+      "observationVersion": 2, "nativeActions": actions.ownsActions, "mounted": hero.window != nil, "fieldAttached": m.field != nil, "listAway": m.listAway,
       "windowId": m.windowId, "tabId": m.tabId, "profileId": m.profileId, "variant": m.variant.rawValue, "opensTab": m.opensTab,
       "focused": focused, "fieldValue": range != nil ? (editor?.string ?? "") as Any : NSNull(),
       "fieldSelection": range.map { ["start": $0.location, "end": $0.location + $0.length] } as Any? ?? NSNull(),

@@ -13,6 +13,7 @@ import { sampleOmniboxLatency } from "../../lib/perfMarks";
 import { currentBarActions } from "./actions";
 import { profileBookmarks } from "./profileBookmarks";
 import { useOmniboxDriver } from "./devDriver";
+import { runOmniboxFallback, type NativeActionOwnership } from "./nativeActions";
 import { useBarExtensions } from "./extensions";
 import { openFromBar, switchFromBar, type Disposition } from "./open";
 import { clipboardPasteAction, pasteMenuItem, pasteTarget } from "./paste";
@@ -107,7 +108,7 @@ export type NativeBarHandle = {
   measure(): Promise<{ x: number; y: number; width: number; height: number }>;
 };
 
-type Event<T> = { nativeEvent: T };
+type Event<T> = { nativeEvent: T & NativeActionOwnership };
 
 export function useNativeBar({
   ref,
@@ -139,6 +140,7 @@ export function useNativeBar({
     key: (key, mods) => void ref.current?.key(key, mods).then(refreshState),
     select: (start, end) => void ref.current?.select(start, end),
     submit: () => void ref.current?.submit(),
+    applyMenu: (choice) => void ref.current?.applyMenu(choice).then(refreshState),
     measure: () => ref.current?.measure() ?? Promise.resolve({ x: 0, y: 0, width: 0, height: 0 }),
     state: () => driverState.current,
   });
@@ -182,14 +184,14 @@ export function useNativeBar({
     driven: __DEV__ || perfProbeEnabled,
     offline: benchOffline,
     onDriverState: (e: Event<{ json: string }>) => (driverState.current = JSON.parse(e.nativeEvent.json) as Record<string, unknown>),
-    onOpen: (e: Event<{ url: string; disposition: Disposition }>) => go(e.nativeEvent.url, e.nativeEvent.disposition),
-    onSwitch: (e: Event<{ tabId: string; url: string; disposition: Disposition }>) => switchTo(e.nativeEvent.tabId, e.nativeEvent.url, e.nativeEvent.disposition),
-    onAction: (e: Event<{ id: string }>) => runBarAction(e.nativeEvent.id, windowId),
-    onExtension: (e: Event<{ suggestion: unknown }>) => runBarExtension(e.nativeEvent.suggestion as Extract<Suggestion, { kind: "extension" }>, windowId),
-    onRemoveHistory: (e: Event<{ url: string }>) => useBrowser.getState().removeHistory(profileId, [e.nativeEvent.url]),
-    onOpenChip: () => void openChip(),
-    onDictate: () => startDictation(),
-    onContextMenu: (e: Event<{ hasSelection: boolean; hasValue: boolean }>) => void contextMenu(e.nativeEvent.hasSelection, e.nativeEvent.hasValue),
+    onOpen: (e: Event<{ url: string; disposition: Disposition }>) => runOmniboxFallback("open", e.nativeEvent, () => go(e.nativeEvent.url, e.nativeEvent.disposition)),
+    onSwitch: (e: Event<{ tabId: string; url: string; disposition: Disposition }>) => runOmniboxFallback("switch", e.nativeEvent, () => switchTo(e.nativeEvent.tabId, e.nativeEvent.url, e.nativeEvent.disposition)),
+    onAction: (e: Event<{ id: string }>) => runOmniboxFallback("action", e.nativeEvent, () => runBarAction(e.nativeEvent.id, windowId)),
+    onExtension: (e: Event<{ suggestion: unknown }>) => runOmniboxFallback("extension", e.nativeEvent, () => runBarExtension(e.nativeEvent.suggestion as Extract<Suggestion, { kind: "extension" }>, windowId)),
+    onRemoveHistory: (e: Event<{ url: string }>) => runOmniboxFallback("removeHistory", e.nativeEvent, () => useBrowser.getState().removeHistory(profileId, [e.nativeEvent.url])),
+    onOpenChip: (e: Event<Record<string, unknown>>) => runOmniboxFallback("openChip", e.nativeEvent, () => void openChip()),
+    onDictate: (e: Event<Record<string, unknown>>) => runOmniboxFallback("dictate", e.nativeEvent, () => startDictation()),
+    onContextMenu: (e: Event<{ hasSelection: boolean; hasValue: boolean }>) => runOmniboxFallback("contextMenu", e.nativeEvent, () => void contextMenu(e.nativeEvent.hasSelection, e.nativeEvent.hasValue)),
     onJourney: (e: Event<{ mark: string; tabId?: string; query?: string; generation?: string; at?: number }>) => {
       const mark = e.nativeEvent.mark;
       if (mark === "committed") journeyBarCommitted(tabId);

@@ -13,6 +13,18 @@ public class OmniboxModule: Module {
       NativeSettingsHandle.active
     }
 
+    #if DEBUG
+    AsyncFunction("devAddressPress") { (windowId: String, tabId: String) -> Bool in
+      MainActor.assumeIsolated {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["SOLARA_BACKGROUND"] == "1", environment["SOLARA_DATA_DIR"]?.isEmpty == false else { return false }
+        let view: NSView? = NativeStoreHandle.store?.state.settings.string("addressBar") == "sidebar"
+          ? SidebarAddressBars.shared.existing(windowId) : NativeToolbarHostView.toolbar(windowId: windowId, tabId: tabId)
+        return NativeOmniboxActions.addressClick(ToolbarClick(id: "url", kind: .press), windowId: windowId, tabId: tabId, view: view)
+      }
+    }.runOnQueue(.main)
+    #endif
+
     AsyncFunction("showPanel") { (windowId: String, json: String) in
       MainActor.assumeIsolated {
         guard let view = NativeOmniboxView.hosts[windowId]?.view else { return }

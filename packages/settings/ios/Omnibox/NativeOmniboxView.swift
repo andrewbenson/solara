@@ -30,6 +30,7 @@ final class NativeOmniboxView: ExpoView, FocusHandoffDestination {
   let onSiteControls = EventDispatcher()
 
   let bar = OmniboxBarView(frame: .zero)
+  private lazy var actions = NativeOmniboxActions.controller(view: { [weak self] in self?.bar })
   var windowId = ""
   var tabId = ""
   var profileId = ""
@@ -71,8 +72,13 @@ final class NativeOmniboxView: ExpoView, FocusHandoffDestination {
       bar.removeFromSuperview()
       let made = OmniboxPanelHostView(bar: bar)
       made.onOutside = { [weak self] event in
-        guard let self, !NativeExtensionActionPopup.preserveOmniboxForToolbarPress(windowId: self.windowId, event: event, cancel: { [weak self] in self?.onCancel([:]) }) else { return }
-        self.onCancel([:])
+        guard let self, let model = self.bar.model else { return }
+        let cancel = { [weak self, weak model] in
+          guard let self, let model, self.bar.model === model else { return }
+          self.cancelBar()
+        }
+        guard !NativeExtensionActionPopup.preserveOmniboxForToolbarPress(windowId: self.windowId, event: event, cancel: cancel) else { return }
+        cancel()
       }
       made.onHeight = { [weak self] h in self?.onBarLayout(["height": h]) }
       host = made
@@ -141,6 +147,25 @@ final class NativeOmniboxView: ExpoView, FocusHandoffDestination {
     open(panel, in: host)
   }
 
+  func openNativePanel(text: String) {
+    guard NativeOmniboxActions.ownsActions, let store = NativeStoreHandle.store,
+      let window = store.state.windows[windowId], window.isSmall || store.state.settings.string("commandBarPlacement") != "centred",
+      store.state.windowUi[windowId]?.json["panel"]?["newTab"]?.truthy != true,
+      let tabId = store.state.activeTabId(windowId), let data = panelJSON.data(using: .utf8),
+      var panel = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], panel["ready"] as? Bool == true else { return }
+    panel["open"] = true
+    panel["tabId"] = tabId
+    panel["text"] = text
+    guard let encoded = try? JSONSerialization.data(withJSONObject: panel) else { return }
+    panelJSON = String(decoding: encoded, as: UTF8.self)
+    showPanel(panelJSON)
+  }
+
+  private func cancelBar() {
+    if let model = bar.model, actions.cancel(model) { host?.hide(); return }
+    onCancel(["nativeActions": false])
+  }
+
   private func identity(of panel: NativeOmniboxPanel) -> OmniboxBarIdentity {
     OmniboxBarIdentity(windowId: windowId, tabId: panel.tabId, profileId: profileId, variant: panel.variant, opensTab: false, initialText: panel.text)
   }
@@ -175,13 +200,17 @@ final class NativeOmniboxView: ExpoView, FocusHandoffDestination {
 
   private func makeEvents() -> HeroBarEvents {
     var e = HeroBarEvents()
-    e.open = { [weak self] url, disposition in self?.onOpen(["url": url, "disposition": disposition.rawValue]) }
-    e.switchTo = { [weak self] tab, url, disposition in self?.onSwitch(["tabId": tab, "url": url, "disposition": disposition.rawValue]) }
-    e.runAction = { [weak self] id in self?.onAction(["id": id]) }
+    e.open = { [weak self] url, disposition in self?.onOpen(["url": url, "disposition": disposition.rawValue, "nativeActions": false]) }
+    e.switchTo = { [weak self] tab, url, disposition in self?.onSwitch(["tabId": tab, "url": url, "disposition": disposition.rawValue, "nativeActions": false]) }
+    e.runAction = { [weak self] id in self?.onAction(["id": id, "nativeActions": false]) }
     e.runExtension = { [weak self] s in self?.onExtension(["suggestion": NewTabJSON.suggestion(s)]) }
     e.removeHistory = { [weak self] url in self?.onRemoveHistory(["url": url]) }
     e.chosen = { [weak self] s in self?.onChosen(["suggestion": s.map(NewTabJSON.suggestion) ?? NSNull()]) }
-    e.openChip = { [weak self] in self?.onOpenChip([:]) }
+    e.openChip = { [weak self] in
+      guard let self else { return }
+      if self.actions.ownsActions, let model = self.bar.model { NativeOmniboxActions.openChip(model, in: self.bar) }
+      else { self.onOpenChip(["nativeActions": false]) }
+    }
     e.dictate = { [weak self] in self?.onDictate([:]) }
     e.contextMenu = { [weak self] hasSelection, hasValue in self?.onContextMenu(["hasSelection": hasSelection, "hasValue": hasValue]) }
     e.journey = { [weak self] mark in self?.onJourney(["mark": mark.rawValue]) }
@@ -204,20 +233,31 @@ final class NativeOmniboxView: ExpoView, FocusHandoffDestination {
     e.done = { [weak self] reason in
       guard let self else { return }
       NativeExtensionActionPopup.omniboxSessionEnded(windowId: self.windowId)
-      self.onDone(["reason": reason?.rawValue ?? NSNull()])
+      self.onDone(["reason": reason?.rawValue ?? NSNull(), "nativeActions": false])
     }
     e.cancel = { [weak self] session in
       guard let self, self.bar.model?.editingSession == session else { return }
       let preserved = NativeExtensionActionPopup.preservesOmnibox(windowId: self.windowId)
       NativeExtensionActionPopup.omniboxSessionEnded(windowId: self.windowId)
-      if !preserved { self.onCancel([:]) }
+      if !preserved { self.onCancel(["nativeActions": false]) }
     }
     e.siteControls = { [weak self] in self?.onSiteControls([:]) }
     e.changed = { [weak self] in
       guard let self, self.driven else { return }
       self.onDriverState(["json": self.driverStateJSON()])
     }
-    return e
+    let dismiss = actions.didDismiss
+    actions.didDismiss = { [weak self] model, reason in
+      self?.host?.hide()
+      dismiss(model, reason)
+    }
+    var decorated = actions.decorate(e, model: { [weak self] in self?.bar.model })
+    let cancel = decorated.cancel
+    decorated.cancel = { [weak self] session in
+      guard let self, self.bar.model?.editingSession == session else { return }
+      if !NativeExtensionActionPopup.preservesOmnibox(windowId: self.windowId) { cancel(session) }
+    }
+    return decorated
   }
 
   func driverStateJSON() -> String {
@@ -227,7 +267,7 @@ final class NativeOmniboxView: ExpoView, FocusHandoffDestination {
     let editor = focused ? bar.window?.firstResponder as? NSTextView : nil
     let range = editor?.isFieldEditor == true ? editor?.selectedRange() : nil
     let state: [String: Any] = [
-      "observationVersion": 2, "mounted": bar.window != nil, "fieldAttached": m.field != nil, "listAway": m.listAway,
+      "observationVersion": 2, "nativeActions": actions.ownsActions, "mounted": bar.window != nil, "fieldAttached": m.field != nil, "listAway": m.listAway,
       "windowId": m.windowId, "tabId": m.tabId, "profileId": m.profileId, "variant": m.variant.rawValue, "opensTab": m.opensTab,
       "focused": focused, "fieldValue": range != nil ? (editor?.string ?? "") as Any : NSNull(),
       "fieldSelection": range.map { ["start": $0.location, "end": $0.location + $0.length] } as Any? ?? NSNull(),

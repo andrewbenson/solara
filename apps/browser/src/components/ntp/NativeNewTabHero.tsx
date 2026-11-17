@@ -68,7 +68,6 @@ export function NativeNewTabHero({
       theme={themeProps}
       marks={marks}
       {...props}
-      onOpen={(e) => openFromBar(e.nativeEvent.url, tabId, e.nativeEvent.disposition)}
       onBarLayout={(e) => onLayout({ height: e.nativeEvent.height, headingHeight: e.nativeEvent.headingHeight })}
     />
   );

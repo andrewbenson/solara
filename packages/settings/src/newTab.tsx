@@ -2,12 +2,12 @@ import { requireNativeViewManager, requireOptionalNativeModule, type EventSubscr
 import { forwardRef, type ComponentType, type Ref } from "react";
 import type { NativeSyntheticEvent, ViewProps } from "react-native";
 
-export type NewTabDisposition = "current" | "newTab" | "newWindow";
+export type NewTabDisposition = "current" | "newTab" | "backgroundTab" | "newWindow";
 export type NewTabJourneyMark = "committed" | "focused" | "keystroke" | "suggestions" | "navigate" | "queryInvalidated";
-export type NewTabMenuChoice = "cut" | "copy" | "paste" | "selectAll";
+export type NewTabMenuChoice = "cut" | "copy" | "paste" | "selectAll" | "pasteAndGo" | "copyURL";
 export type NativeSuggestion = { kind: string } & Record<string, unknown>;
 
-type Event<T> = NativeSyntheticEvent<T>;
+type Event<T> = NativeSyntheticEvent<T & { nativeActions?: boolean }>;
 
 export type NativeNewTabProps = ViewProps & {
   windowId: string;

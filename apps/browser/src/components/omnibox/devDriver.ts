@@ -1,11 +1,14 @@
 import { useEffect, useRef } from "react";
 import { perfProbeEnabled } from "../../lib/perfProbe";
+import { omniboxActionDriver } from "./nativeActions";
+import type { NewTabMenuChoice } from "@solara/settings";
 
 type OmniboxDriver = {
   type(text: string): void;
   clear(): void;
   key(key: string, mods?: { metaKey?: boolean; altKey?: boolean; shiftKey?: boolean; ctrlKey?: boolean }): void;
   submit(): void;
+  applyMenu(choice: NewTabMenuChoice): void;
   select(start: number, end: number): void;
   state(): unknown;
   measure(): Promise<{ x: number; y: number; width: number; height: number }>;
@@ -21,6 +24,7 @@ export function traceOmnibox(entry: OmniboxTrace) {
 }
 
 export const omniboxDrivers = {
+  actions: omniboxActionDriver,
   get: (id: string) => drivers.get(id),
   ids: () => [...drivers.keys()],
   trace: {
@@ -43,6 +47,7 @@ export function useOmniboxDriver(id: string, driver: OmniboxDriver) {
       clear: () => latest.current.clear(),
       key: (key, mods) => latest.current.key(key, mods),
       submit: () => latest.current.submit(),
+      applyMenu: (choice) => latest.current.applyMenu(choice),
       select: (start, end) => latest.current.select(start, end),
       state: () => latest.current.state(),
       measure: () => latest.current.measure(),

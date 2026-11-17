@@ -480,20 +480,20 @@ Notes name secondary work and immediate deletion candidates. Whole-file lines re
 | `apps/browser/src/components/ntp/index.tsx` | 30 | d | 0.4.6 | Transparent New Tab native-host composition and tour anchors |
 | `apps/browser/src/components/ntp/newTabLayout.ts` | 21 | b | 0.4.2 | New Tab hero geometry |
 | `apps/browser/src/components/ntp/releaseNotes.ts` | 133 | c | 0.4.5 | Release-note content/progress store and current-page receipts; also b |
-| `apps/browser/src/components/omnibox/NativeOmniboxBar.tsx` | 80 | d | 0.4.6 | Native bar host/focus relay; also b open callbacks |
+| `apps/browser/src/components/omnibox/NativeOmniboxBar.tsx` | 80 | d | 0.4.6 | Native bar host/focus relay; ownership-off action fallback |
 | `apps/browser/src/components/omnibox/actions.ts` | 141 | b | 0.4.2 | Command candidate eligibility/titles |
 | `apps/browser/src/components/omnibox/barState.ts` | 51 | b | 0.4.2 | Bar dismissal/focus policy; also c |
 | `apps/browser/src/components/omnibox/devDriver.ts` | 55 | b | 0.4.2 | Omnibox driver/trace hooks |
 | `apps/browser/src/components/omnibox/dropdownStart.ts` | 47 | b | 0.4.2 | App-dead; retained for source-reading tests and native idle-tabs fixture hash; initial suggestion selection |
 | `apps/browser/src/components/omnibox/extensions.ts` | 17 | c | 0.4.5 | Extension candidate projection |
 | `apps/browser/src/components/omnibox/knownHosts.ts` | 30 | c | 0.4.5 | Perf/test-only history host projection; micro-bench and suggest-hermes consumers remain |
-| `apps/browser/src/components/omnibox/nativeBar.tsx` | 207 | b | 0.4.2 | Open/action/menu decisions; also d feeds |
+| `apps/browser/src/components/omnibox/nativeBar.tsx` | 207 | b | 0.4.2 | Ownership-off action/menu fallback and native driver/source feeds |
 | `apps/browser/src/components/omnibox/newTabBar.ts` | 88 | b | 0.4.2 | New Tab bar open/close/target rules |
-| `apps/browser/src/components/omnibox/open.ts` | 30 | b | 0.4.2 | Navigation/switch disposition |
+| `apps/browser/src/components/omnibox/open.ts` | 30 | b | 0.4.2 | Ownership-off navigation/switch disposition fallback |
 | `apps/browser/src/components/omnibox/organizeActions.ts` | 154 | b | 0.4.2 | Organize-command eligibility |
-| `apps/browser/src/components/omnibox/paste.ts` | 35 | b | 0.4.2 | Clipboard URL/menu decisions |
+| `apps/browser/src/components/omnibox/paste.ts` | 35 | b | 0.4.2 | Ownership-off clipboard URL/menu fallback; native toolbar and sidebar intercept owned URL actions |
 | `apps/browser/src/components/omnibox/profileBookmarks.ts` | 20 | c | 0.4.5 | Bookmark row projection |
-| `apps/browser/src/components/omnibox/runBar.ts` | 79 | b | 0.4.2 | Command/extension dispatch |
+| `apps/browser/src/components/omnibox/runBar.ts` | 79 | b | 0.4.2 | Fallback for commands without a native owner; opening commands/extensions route through native hosts |
 | `apps/browser/src/components/omnibox/workspaceSources.ts` | 101 | b | 0.4.2 | Workspace feed selection; also d |
 | `apps/browser/src/components/onboarding/OnboardingOverlay.tsx` | 20 | d | 0.4.6 | Native onboarding/tour placement |
 | `apps/browser/src/components/onboarding/index.ts` | 3 | d | 0.4.6 | Onboarding export facade |
@@ -826,3 +826,5 @@ This audit and port are source changes only. No app build, Swift test or driver 
 The job report lists the exact VM verification commands.
 
 `apps/browser/src/components/SmallWindowCard.tsx`: 14 lines, d, 0.4.6 — Passive native fill state projection; no RN drawing.
+
+The 0.4.2 omnibox action owner is `OmniboxActionController` with `SolaraStore/OmniboxActions.swift`; both native field hosts decorate the same model events. Swift `SolaraOmnibox` already parses and ranks input. `NativeOmniboxActions` owns AppKit clipboard/context menus, address clicks, Developer Mode submission, file selection and opening Command Bar surfaces. Nonopening commands without native menu owners retain their explicit JS fallback. The disabled-JS acceptance driver is `apps/browser/scripts/native-omnibox-actions-test.mjs`; compilation and VM acceptance remain pending.

@@ -48,6 +48,10 @@ public enum WindowHost {
   @MainActor public static var prepareContent: ((_ windowId: String, _ root: NSView, _ committed: @escaping () -> Void) -> Bool)?
   nonisolated(unsafe) public private(set) static var openingKinds: [String: String] = [:]
 
+  @MainActor public static func openAuxiliary(id: String, kind: String, title: String) {
+    WindowManager.shared.open(id: id, frame: nil, incognito: false, title: title, focus: true, kind: kind)
+  }
+
   #if SOLARA_PROBES
   @MainActor public static func window(id: String) -> NSWindow? { WindowManager.shared.windows[id] }
   @MainActor public static var retainedWindowId: String? { WindowManager.shared.retainedWindowId }

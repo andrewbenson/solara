@@ -1,5 +1,6 @@
 import AppKit
 import SolaraShell
+import SolaraUI
 
 @MainActor
 enum HostedViews {
@@ -26,4 +27,18 @@ final class TabPoolHost {
 @MainActor
 final class NativeAppIntegration {
   static func preparePageFocus(_ page: NSView) -> FocusMoves.PageFocus? { nil }
+}
+
+@MainActor
+enum NativeWindowShell {
+  static var hosts: [String: SidePanelHarnessShell] = [:]
+  static func host(_ windowId: String) -> SidePanelHarnessShell? { hosts[windowId] }
+}
+
+@MainActor
+final class SidePanelHarnessShell {
+  let panel: SidePanelHost
+  let shell: WindowShellView
+  init(_ panel: SidePanelHost, shell: WindowShellView) { self.panel = panel; self.shell = shell }
+  func setSidePanel(_ json: String?) { panel.apply(json) }
 }

@@ -54,6 +54,7 @@ The second half: done when every user action is handled in Swift and JavaScript 
 | Settings and Import actions call Swift directly, not a JavaScript round trip | planned |
 | From 0.4.3's gate: the open-tabs ratchet counts rose without attribution (listenerCalls 8218 -> 8320, subNotified +0.65%; suspect 2565518a); trace them, and fix or attribute before raising ceilings | planned |
 | Fix sheet-host's "ending busy must allow dismiss" (fails in every gate since 0.4.0) so a full host-harness run passes | planned |
+| Fix (user report 2026-11-17, 0.4.1 and later): with the address bar in the sidebar, ⌘L and clicking the sidebar search bar do nothing until the sidebar is resized; suspected JS/native disagreement on icons-only (JS treats width 84 as the rail) | in progress: reproduce in a driver, then fix |
 
 ## 0.4.5: the data layer is native
 

@@ -1,5 +1,8 @@
 import AppKit
 import QuartzCore
+#if SOLARA_PROBES
+import SolaraProbes
+#endif
 
 public struct OmniboxPanelStyle: Equatable, Sendable {
   public var fill: CSSColor
@@ -41,6 +44,9 @@ public final class OmniboxPanelHostView: NSView {
   public private(set) var identity: OmniboxBarIdentity?
   private let surface = CALayer()
   private let mask = CALayer()
+  private let glassSurface = NewTabGlassSurface(frame: .zero)
+  private var glassLink: CADisplayLink?
+  private lazy var glassTarget = GlassFrameTarget(self)
   private var placement: OmniboxPanelPlacement?
   private var height: CGFloat = 107
   private var monitor: Any?
@@ -60,7 +66,8 @@ public final class OmniboxPanelHostView: NSView {
     mask.backgroundColor = NSColor.black.cgColor
     bar.layer?.mask = mask
     layer?.addSublayer(surface)
-    addSubview(bar)
+    addSubview(glassSurface)
+    glassSurface.foreground.addSubview(bar)
     bar.onHeight = { [weak self] h in self?.barHeight(h) }
   }
 
@@ -73,16 +80,10 @@ public final class OmniboxPanelHostView: NSView {
   private func applyStyle() {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    surface.backgroundColor = style.fill.cg
-    surface.borderColor = style.border.cg
-    surface.borderWidth = 0.5
     surface.cornerRadius = style.radius
-    surface.shadowColor = NSColor.black.cgColor
-    surface.shadowOpacity = Float(style.shadowOpacity)
-    surface.shadowRadius = 24
-    surface.shadowOffset = CGSize(width: 0, height: -10)
     mask.cornerRadius = style.radius
     CATransaction.commit()
+    syncGlass()
   }
 
   public func show(_ next: OmniboxPanelPlacement, identity nextIdentity: OmniboxBarIdentity) {
@@ -126,6 +127,7 @@ public final class OmniboxPanelHostView: NSView {
   public func hide() {
     guard shown else { return }
     shown = false
+    finishGlassAnimation()
     identity = nil
     if let monitor { NSEvent.removeMonitor(monitor) }
     monitor = nil
@@ -153,14 +155,109 @@ public final class OmniboxPanelHostView: NSView {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     surface.frame = target
-    surface.shadowPath = CGPath(roundedRect: CGRect(origin: .zero, size: target.size), cornerWidth: style.radius, cornerHeight: style.radius, transform: nil)
     bar.frame = target
     mask.frame = bar.bounds
     CATransaction.commit()
-    guard let from else { return }
+    syncGlass()
+    guard let from, window != nil else { return }
     let start = from.offsetBy(dx: -target.minX, dy: -target.minY)
     grow(surface, from: CGRect(origin: from.origin, size: from.size), to: target)
     grow(mask, from: start, to: CGRect(origin: .zero, size: target.size))
+    let radius = CABasicAnimation(keyPath: "cornerRadius")
+    radius.fromValue = NewTabLayout.barRadius
+    radius.toValue = style.radius
+    radius.duration = Self.growDuration
+    radius.timingFunction = Self.growCurve
+    surface.add(radius, forKey: "glassRadius")
+    stopGlassLink()
+    let link = displayLink(target: glassTarget, selector: #selector(GlassFrameTarget.tick(_:)))
+    #if SOLARA_PROBES
+    NativeWorkCounters.link(link)
+    #endif
+    link.add(to: .main, forMode: .common)
+    glassLink = link
+    updateGlass(frame: from, radius: NewTabLayout.barRadius)
+  }
+
+  public override func setFrameSize(_ newSize: NSSize) {
+    super.setFrameSize(newSize)
+    syncGlass()
+  }
+
+  public override func viewWillMove(toWindow newWindow: NSWindow?) {
+    if newWindow == nil { finishGlassAnimation() }
+    super.viewWillMove(toWindow: newWindow)
+  }
+
+  private func updateGlass(frame: CGRect? = nil, radius: CGFloat? = nil) {
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    let displayedFrame = frame ?? panelFrame
+    glassSurface.frame = bounds
+    glassSurface.apply(frame: displayedFrame, radius: radius ?? style.radius, tint: style.fill.ns, dark: bar.theme.dark)
+    bar.frame = CGRect(x: panelFrame.minX - displayedFrame.minX, y: panelFrame.minY - displayedFrame.minY, width: panelFrame.width, height: panelFrame.height)
+    CATransaction.commit()
+  }
+
+  private func syncGlass() {
+    if surface.animation(forKey: "grow") != nil, let presentation = surface.presentation() {
+      updateGlass(frame: presentation.frame, radius: presentation.cornerRadius)
+    } else {
+      updateGlass()
+    }
+  }
+
+  private func tickGlass() {
+    guard shown, surface.animation(forKey: "grow") != nil else {
+      stopGlassLink()
+      updateGlass()
+      return
+    }
+    syncGlass()
+  }
+
+  private func stopGlassLink() {
+    #if SOLARA_PROBES
+    NativeWorkCounters.unlink(glassLink)
+    #endif
+    glassLink?.invalidate()
+    glassLink = nil
+  }
+
+  private func finishGlassAnimation() {
+    stopGlassLink()
+    surface.removeAnimation(forKey: "grow")
+    surface.removeAnimation(forKey: "glassRadius")
+    mask.removeAnimation(forKey: "grow")
+    updateGlass()
+  }
+
+  @MainActor
+  private final class GlassFrameTarget: NSObject {
+    weak var host: OmniboxPanelHostView?
+
+    init(_ host: OmniboxPanelHostView) {
+      self.host = host
+    }
+
+    @objc func tick(_ link: CADisplayLink) {
+      guard let host else {
+        #if SOLARA_PROBES
+        NativeWorkCounters.unlink(link)
+        #endif
+        link.invalidate()
+        return
+      }
+      host.tickGlass()
+    }
+  }
+
+  isolated deinit {
+    #if SOLARA_PROBES
+    NativeWorkCounters.unlink(glassLink)
+    #endif
+    glassLink?.invalidate()
+    if let monitor { NSEvent.removeMonitor(monitor) }
   }
 
   private func grow(_ layer: CALayer, from: CGRect, to: CGRect) {

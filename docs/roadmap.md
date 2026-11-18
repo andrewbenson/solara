@@ -58,7 +58,7 @@ The second half: done when every user action is handled in Swift and JavaScript 
 | ⌘L opens the Command Bar on the first press by default, as in Chrome (owner 2026-11-17): Open Command Bar defaults to Prefer Solara instead of Use Both; a choice already made is kept | landed: precedence 27/27, presses 108/109, omnibox and newtab identical to main (Hill Studio, two runs each) |
 | top-strip-test runs to the end on main (it stops at "show of undefined", then at the peek's accessibility span), so the full-screen island can be checked against a real baseline (owner chose this over landing pass 9, 2026-11-17) | landed: four fixes; top-strip now runs to the end on main (26/33 on the Hill Studio, the 7 docked-strip leading-profile checks fail without the island); tab-drag 46/49 same as main |
 | Carry a drag to another tab or profile (owner 2026-11-17): hold a dragged image or link over a tab or a profile slot to switch there, and ⌘1–9, ⌘⇧[ ], ⌃1–9 mid-drag if macOS delivers keys during a drag; drop lands on the new page | in progress |
-| The New Tab bar in Liquid Glass (owner 2026-11-17): NSGlassEffectView in place of the flat plate, the sun rising behind the glass, every animation kept; three variants for the owner to pick from (stills and recordings) | prototype in progress |
+| The New Tab bar in Liquid Glass (owner 2026-11-17): NSGlassEffectView in place of the flat plate, the sun rising behind the glass, every animation kept; three variants for the owner to pick from (stills and recordings) | landed: A (glass bar, sun rising behind it), buttons fixed, tall results checked over default, gradient and photo in light and dark; newtab 6/6, omnibox 19/19 (Hill Studio) |
 
 ## 0.4.5: the data layer is native
 

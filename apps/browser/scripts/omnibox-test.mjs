@@ -161,9 +161,10 @@ const observe = async (name, accept = () => true) => {
 };
 const key = async (name) => {
   const characters = { Enter: "\r", Escape: "\u001b", PageUp: "\uf72c", ArrowDown: "\uf701", ArrowUp: "\uf700" };
+  const keyCodes = { Enter: 36, Escape: 53, PageUp: 116, ArrowDown: 125, ArrowUp: 126 };
   assert.ok(Object.hasOwn(characters, name), `unsupported local key ${name}`);
-  const sent = await run(`return ac.shell.devTypeKeys("w1", ${JSON.stringify(characters[name])}, 5);`);
-  assert.equal(sent.length, 1, `${name} delivered to w1's first responder`);
+  const sent = await run(`return ac.shell.devKeyEquivalent("w1", ${JSON.stringify({ key: characters[name], keyCode: keyCodes[name], modifiers: [], send: true, asKey: true, wait: 30 })});`);
+  assert.equal(sent.handledBy, "sent", `${name} delivered to w1's first responder`);
 };
 const type = async (text, accept = (state) => state.typed === text) => {
   await run(`const h = globalThis.__omniboxNative; let prefix = "";

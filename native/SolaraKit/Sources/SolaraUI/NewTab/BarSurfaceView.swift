@@ -127,3 +127,39 @@ final class MarkView: NSView {
     for l in layersByName.values { l.contentsScale = window?.backingScaleFactor ?? 2 }
   }
 }
+
+final class NewTabGlassSurface: NSGlassEffectContainerView {
+  let canvas = NewTabGlassCanvas()
+  let glass = NSGlassEffectView()
+  let foreground = NewTabGlassCanvas()
+
+  override init(frame: NSRect) {
+    super.init(frame: frame)
+    spacing = 0
+    contentView = canvas
+    glass.style = .regular
+    glass.contentView = foreground
+    canvas.addSubview(glass)
+  }
+
+  required init?(coder: NSCoder) { fatalError() }
+
+  override var isFlipped: Bool { true }
+
+  func apply(frame: CGRect, radius: CGFloat, tint: NSColor, dark: Bool) {
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    canvas.frame = bounds
+    glass.frame = frame
+    glass.cornerRadius = radius
+    glass.tintColor = tint.withAlphaComponent(tint.alphaComponent * 0.12)
+    glass.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+    foreground.frame = glass.bounds
+    CATransaction.commit()
+  }
+}
+
+final class NewTabGlassCanvas: NSView {
+  override var isFlipped: Bool { true }
+  override var allowsVibrancy: Bool { true }
+}

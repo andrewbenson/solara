@@ -54,9 +54,7 @@ public final class NewTabHeroView: NSView {
   public private(set) var model: HeroBarModel?
   private var identity: NewTabIdentity?
   private let mark = MarkView(frame: .zero)
-  private let shadowNear = BarSurfaceView(frame: .zero)
-  private let shadowFar = BarSurfaceView(frame: .zero)
-  private let surface = BarSurfaceView(frame: .zero)
+  private let surface = NewTabGlassSurface(frame: .zero)
   private var content: NSHostingView<AnyView>?
   private var heading: NSHostingView<AnyView>?
   private var barHeight: CGFloat = NewTabLayout.barHeight
@@ -77,20 +75,8 @@ public final class NewTabHeroView: NSView {
   public override init(frame: NSRect) {
     super.init(frame: frame)
     wantsLayer = true
-    shadowNear.shadowColor = .black
-    shadowNear.shadowOpacity = 0.08
-    shadowNear.shadowRadius = 2
-    shadowNear.shadowOffset = CGSize(width: 0, height: 0.5)
-    shadowFar.shadowColor = .black
-    shadowFar.shadowOpacity = 0.04
-    shadowFar.shadowRadius = 1
-    shadowFar.shadowOffset = CGSize(width: 0, height: 2)
-    for s in [shadowNear, shadowFar, surface] {
-      s.radius = NewTabLayout.barRadius
-      addSubview(s)
-    }
-    addSubview(mark, positioned: .below, relativeTo: shadowNear)
-    surface.borderWidth = NewTabLayout.barBorder
+    surface.canvas.addSubview(mark, positioned: .below, relativeTo: surface.glass)
+    addSubview(surface)
     applyTheme()
     #if SOLARA_PROBES
     ProbeCapture.shared.register(self) { $0.prepareForCapture() }
@@ -113,7 +99,20 @@ public final class NewTabHeroView: NSView {
     watchSources()
   }
 
-  public var barFrame: CGRect { surface.frame }
+  public var barFrame: CGRect { surface.glass.frame }
+
+  #if DEBUG
+  public var devGlassState: [String: Any] {
+    [
+      "style": "regular",
+      "active": true,
+      "radius": surface.glass.cornerRadius,
+      "frame": [barFrame.minX, barFrame.minY, barFrame.width, barFrame.height],
+      "markFrame": [mark.frame.minX, mark.frame.minY, mark.frame.width, mark.frame.height],
+      "reduceTransparency": NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency,
+    ]
+  }
+  #endif
 
   public func focusBar() {
     model?.focusSelectingAll()
@@ -121,7 +120,7 @@ public final class NewTabHeroView: NSView {
 
   public override func hitTest(_ point: NSPoint) -> NSView? {
     let local = convert(point, from: superview)
-    guard surface.frame.contains(local) else { return nil }
+    guard barFrame.contains(local) else { return nil }
     return super.hitTest(point)
   }
 
@@ -153,9 +152,10 @@ public final class NewTabHeroView: NSView {
     let frames = NewTabLayout.frames(size: bounds.size, under: under, headingHeight: showsHeading ? headingHeight : 0, barHeight: barHeight, scale: scale)
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    mark.frame = frames.mark
-    for s in [shadowNear, shadowFar, surface] { s.frame = frames.bar }
-    content?.frame = surface.bounds.insetBy(dx: NewTabLayout.barBorder, dy: NewTabLayout.barBorder)
+    surface.frame = bounds
+    surface.apply(frame: frames.bar, radius: NewTabLayout.barRadius, tint: theme.ntpBarSolid.ns, dark: theme.dark)
+    mark.frame = CGRect(origin: frames.mark.origin, size: CGSize(width: NewTabLayout.markSize, height: NewTabLayout.markSize))
+    content?.frame = surface.foreground.bounds.insetBy(dx: NewTabLayout.barBorder, dy: NewTabLayout.barBorder)
     if showsHeading {
       if heading == nil { makeHeading() }
       let size = heading?.fittingSize ?? .zero
@@ -182,8 +182,7 @@ public final class NewTabHeroView: NSView {
   }
 
   private func applyTheme() {
-    surface.fill = theme.ntpBarSolid.ns
-    surface.borderColor = theme.ntpBarBorder.ns
+    surface.apply(frame: barFrame, radius: NewTabLayout.barRadius, tint: theme.ntpBarSolid.ns, dark: theme.dark)
     refreshEnvironment()
   }
 
@@ -213,7 +212,7 @@ public final class NewTabHeroView: NSView {
       let hosting = NSHostingView(rootView: view)
       hosting.sizingOptions = []
       hosting.safeAreaRegions = []
-      surface.addSubview(hosting)
+      surface.foreground.addSubview(hosting)
       content = hosting
     }
     needsLayout = true

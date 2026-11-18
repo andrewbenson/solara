@@ -126,7 +126,7 @@ final class NativeNewTabView: ExpoView {
     let focused = m.field?.hasFocus ?? false
     let editor = focused ? hero.window?.firstResponder as? NSTextView : nil
     let range = editor?.isFieldEditor == true ? editor?.selectedRange() : nil
-    return [
+    var state: [String: Any] = [
       "observationVersion": 2, "nativeActions": actions.ownsActions, "mounted": hero.window != nil, "fieldAttached": m.field != nil, "listAway": m.listAway,
       "windowId": m.windowId, "tabId": m.tabId, "profileId": m.profileId, "variant": m.variant.rawValue, "opensTab": m.opensTab,
       "focused": focused, "fieldValue": range != nil ? (editor?.string ?? "") as Any : NSNull(),
@@ -135,6 +135,10 @@ final class NativeNewTabView: ExpoView {
       "preventInline": m.suppressCompletion, "selected": m.items.isEmpty ? -1 : m.selectedIndex, "scope": m.scope.map(NewTabJSON.scope) ?? NSNull(),
       "scopeFrom": m.scopeFrom, "tabScope": m.tabScope.map(NewTabJSON.scope) ?? NSNull(), "items": m.items.map(NewTabJSON.suggestion),
     ]
+    #if DEBUG
+    state["glass"] = hero.devGlassState
+    #endif
+    return state
   }
 
   func driverStateJSON() -> String {

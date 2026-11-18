@@ -74,7 +74,7 @@ struct OmniboxBarContent: View {
     HStack(spacing: 0) {
       AddChipView { model.events.openChip() }
       Spacer(minLength: 0)
-      IconButtonView(icon: "mic", size: 14, color: env.theme.textTertiary.color, tooltip: "Dictate") { model.dictatePressed() }
+      IconButtonView(icon: "mic", size: 14, color: Color(nsColor: .secondaryLabelColor), tooltip: "Dictate") { model.dictatePressed() }
       GoButtonView(label: model.goLabel, enabled: model.goEnabled) { model.goPressed() }
     }
     .padding(.leading, 14)

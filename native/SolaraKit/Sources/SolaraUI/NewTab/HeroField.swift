@@ -281,11 +281,12 @@ struct HeroFieldView: NSViewRepresentable {
 
   private func style(_ field: HeroTextField) {
     if field.font?.pointSize != fontSize { field.font = .systemFont(ofSize: fontSize) }
-    field.textColor = theme.textPrimary.ns
+    field.textColor = model.variant == .sidebar ? theme.textPrimary.ns : .labelColor
     field.selectionColor = theme.selection.ns
     let placeholder = model.placeholder
-    if field.placeholderAttributedString?.string != placeholder || field.placeholderAttributedString?.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor != theme.placeholder.ns {
-      field.placeholderAttributedString = NSAttributedString(string: placeholder, attributes: [.foregroundColor: theme.placeholder.ns, .font: NSFont.systemFont(ofSize: fontSize)])
+    let placeholderColor = model.variant == .sidebar ? theme.placeholder.ns : NSColor.placeholderTextColor
+    if field.placeholderAttributedString?.string != placeholder || field.placeholderAttributedString?.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor != placeholderColor {
+      field.placeholderAttributedString = NSAttributedString(string: placeholder, attributes: [.foregroundColor: placeholderColor, .font: NSFont.systemFont(ofSize: fontSize)])
     }
   }
 }

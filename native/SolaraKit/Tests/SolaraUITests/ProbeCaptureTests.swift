@@ -217,7 +217,8 @@ import Testing
     init() throws {
       _ = NSApplication.shared
       glass = try #require(tile.subviews.compactMap { $0 as? NSGlassEffectView }.first)
-      mark = try #require(hero.subviews.compactMap { $0 as? MarkView }.first)
+      let heroSurface = try #require(hero.subviews.compactMap { $0 as? NewTabGlassSurface }.first)
+      mark = try #require(heroSurface.canvas.subviews.compactMap { $0 as? MarkView }.first)
       window = NSPanel(contentRect: root.bounds, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
       window.isReleasedWhenClosed = false
       root.wantsLayer = true

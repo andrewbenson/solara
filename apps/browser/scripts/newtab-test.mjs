@@ -314,7 +314,7 @@ try {
     await type("w1", "a", destination);
     const before = await run(`return Object.keys(S().tabs).sort();`);
     await observeEnter("before");
-    await run(`return ac.shell.devTypeKeys("w1", "\\r", 5);`);
+    await run(`return ac.shell.devKeyEquivalent("w1", { key: "\\r", keyCode: 36, modifiers: [], send: true, asKey: true, wait: 30 });`);
     await until("same tab navigated", () => run(`return { url: S().tabs.a?.url, ids: Object.keys(S().tabs).sort(), selected: S().windows.w1.activeTabIds.default };`), (state) => state.url === destination && state.selected === "a");
     assert.deepEqual(await run(`return Object.keys(S().tabs).sort();`), before);
     await snapshot("native in-place navigation", (state) => state.tabs.some((t) => t.id === "a" && t.url === destination && t.profileId === "default") && state.windows.some((w) => w.id === "w1" && w.selectedTabId === "a" && w.tabIds.length === 3));

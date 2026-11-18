@@ -320,14 +320,14 @@ struct AddChipView: View {
   var body: some View {
     Button(action: action) {
       HStack(spacing: 5) {
-        SymbolImage(name: "arrow.up.right", size: 10, weight: .medium, color: env.theme.chipText.color, box: CGSize(width: 14, height: 14))
-        Text("Open a tab or file").font(.system(size: 13)).foregroundStyle(env.theme.chipText.color)
+        SymbolImage(name: "arrow.up.right", size: 10, weight: .medium, color: Color(nsColor: .secondaryLabelColor), box: CGSize(width: 14, height: 14))
+        Text("Open a tab or file").font(.system(size: 13)).foregroundStyle(Color(nsColor: .secondaryLabelColor))
       }
       .padding(.leading, 10)
       .padding(.trailing, 13)
       .frame(height: 32)
       .fixedSize()
-      .background(Capsule(style: .circular).fill(hovered ? env.theme.rowHover.color : .clear))
+      .background(Capsule(style: .circular).fill(hovered ? env.theme.rowHover.color : env.theme.goButtonIdle.color))
       .overlay(Capsule(style: .circular).strokeBorder(env.theme.chipBorder.color, lineWidth: 1))
     }
     .buttonStyle(HoverButtonStyle())
@@ -354,6 +354,7 @@ struct GoButtonView: View {
       .frame(minWidth: 99)
       .frame(height: 32)
       .background(Capsule(style: .circular).fill(enabled ? env.theme.goButton.color : env.theme.goButtonIdle.color))
+      .overlay(Capsule(style: .circular).strokeBorder(enabled ? .clear : env.theme.chipBorder.color, lineWidth: 1))
       .opacity(enabled && hovered ? 0.9 : 1)
     }
     .buttonStyle(HoverButtonStyle())
@@ -402,7 +403,7 @@ struct HeroBarContent: View {
       HStack(spacing: 0) {
         AddChipView { model.events.openChip() }
         Spacer(minLength: 0)
-        IconButtonView(icon: "mic", size: 14, color: env.theme.textTertiary.color, tooltip: "Dictate") { model.dictatePressed() }
+        IconButtonView(icon: "mic", size: 14, color: Color(nsColor: .secondaryLabelColor), tooltip: "Dictate") { model.dictatePressed() }
         GoButtonView(label: model.goLabel, enabled: model.goEnabled) { model.goPressed() }
       }
       .padding(.leading, 13)

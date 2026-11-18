@@ -38,7 +38,7 @@ try {
   const dots = evidence?.column?.chrome?.dots;
   assert.deepEqual(dots?.map((dot) => dot.id), fixture.profileOrder);
   for (const dot of dots) {
-    assert.ok(Math.abs(dot.opacity - (dot.id === "p-work" ? 0.85 : 0.2)) < 1e-6, `${dot.id}: ${dot.opacity}`);
+    assert.ok(Math.abs(dot.opacity - (dot.id === "p-work" ? 1 : 0.65)) < 1e-6, `${dot.id}: ${dot.opacity}`);
   }
   assert.equal(await instance.eval(`return ac.shell.devSnapshotWindow("w-smoke", ${JSON.stringify(join(scratch, "launch.png"))});`), true);
   console.log(`PASS restored second-profile dots before any swipe (${scratch})`);

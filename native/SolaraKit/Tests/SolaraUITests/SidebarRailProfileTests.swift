@@ -18,6 +18,95 @@ import Testing
     view.subviews.flatMap { [$0] + descendants($0) }
   }
 
+  @Test(arguments: ["🧭", "symbol:star.fill", ""]) func swipeOpacityDoesNotInvalidateProfileArtwork(icon: String) throws {
+    let dot = SidebarProfileDot(frame: NSRect(x: 0, y: 0, width: 24, height: 24))
+    dot.icon = icon
+    dot.opacity = 0.65
+    dot.layoutSubtreeIfNeeded()
+    let emoji = try #require(descendants(dot).compactMap { $0 as? SidebarProfileEmoji }.first)
+    emoji.needsDisplay = false
+    dot.selected = false
+    dot.opacity = 0.8
+    #expect(dot.glyph.alphaValue == 0.8)
+    #expect(!dot.glyph.needsLayout)
+    #expect(!emoji.needsDisplay)
+    #expect(dot.accessibilityValue() as? NSNumber == NSNumber(value: false))
+    dot.selected = true
+    dot.layoutSubtreeIfNeeded()
+    emoji.needsDisplay = false
+    dot.opacity = 0.7
+    #expect(dot.glyph.alphaValue == 1)
+    #expect(!dot.glyph.needsLayout)
+    #expect(!emoji.needsDisplay)
+    #expect(dot.accessibilityValue() as? NSNumber == NSNumber(value: true))
+    dot.selected = false
+    #expect(dot.glyph.alphaValue == 0.7)
+    #expect(dot.accessibilityValue() as? NSNumber == NSNumber(value: false))
+  }
+
+  @Test func profileHighlightTracksTheDragBeforeTheCommittedProfileChanges() {
+    let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 240, height: 700))
+    var next = state(count: 3, rail: false)
+    next.currentProfileId = "p0"
+    view.update(next)
+    let dots = descendants(view).compactMap { $0 as? SidebarProfileDot }
+    let frames = dots.map(\.frame)
+    for (position, selected) in [(0.0, ["p0"]), (0.38, ["p0"]), (0.4, []), (0.6, []), (0.62, ["p1"]), (0.8, ["p1"])] {
+      view.setPagerPosition(position)
+      #expect(dots.filter(\.selected).map(\.profileId) == selected)
+      #expect(dots.map(\.frame) == frames)
+    }
+  }
+
+  @Test func profileHighlightFollowsTheSpringAfterCommit() {
+    let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 240, height: 700))
+    var next = state(count: 3, rail: false)
+    next.currentProfileId = "p0"
+    view.update(next)
+    let dots = descendants(view).compactMap { $0 as? SidebarProfileDot }
+    view.setPagerPosition(0.5)
+    next.currentProfileId = "p1"
+    view.update(next)
+    #expect(dots.filter(\.selected).isEmpty)
+    for position in [0.65, 0.9, 1.0] {
+      view.setPagerPosition(position)
+      #expect(dots.filter(\.selected).map(\.profileId) == ["p1"])
+    }
+  }
+
+  @Test func cancelledSwipeReturnsTheHighlightWithTheSpring() {
+    let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 240, height: 700))
+    var next = state(count: 3, rail: false)
+    next.currentProfileId = "p0"
+    view.update(next)
+    let dots = descendants(view).compactMap { $0 as? SidebarProfileDot }
+    for (position, selected) in [(0.0, ["p0"]), (0.4, []), (0.7, ["p1"]), (0.5, []), (0.3, ["p0"]), (0.05, ["p0"]), (0.0, ["p0"])] {
+      view.setPagerPosition(position)
+      #expect(dots.filter(\.selected).map(\.profileId) == selected)
+    }
+    #expect(dots[0].glyph.alphaValue == 1)
+    #expect(dots[1].glyph.alphaValue == 0.65)
+  }
+
+  @Test func selectionBoundariesIgnoreHoverAndProfilesWithoutPagerSlots() {
+    let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 240, height: 700))
+    var next = state(count: 3, rail: false)
+    next.currentProfileId = "p0"
+    next.dots[2].slot = nil
+    view.update(next)
+    let dots = descendants(view).compactMap { $0 as? SidebarProfileDot }
+    #expect(dots.filter(\.selected).map(\.profileId) == ["p0"])
+    dots[2].setHovered(true)
+    for position in [5.0 / 13, 8.0 / 13] {
+      view.setPagerPosition(position)
+      #expect(dots.filter(\.selected).isEmpty)
+    }
+    view.setPagerPosition(0.7)
+    dots[0].setHovered(true)
+    #expect(dots.filter(\.selected).map(\.profileId) == ["p1"])
+    #expect(!dots[2].selected)
+  }
+
   @Test(arguments: [1, 2, 8, 12]) func railAlwaysHasOneCurrentProfileButton(count: Int) {
     let view = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 42, height: 700))
     view.update(state(count: count))

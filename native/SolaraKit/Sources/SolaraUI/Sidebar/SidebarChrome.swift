@@ -645,7 +645,9 @@ public final class SidebarChromeView: NSView {
   private func paintDots() {
     let selectedId = currentProfile?.id
     for dot in dots {
-      dot.selected = dot.profileId == selectedId
+      dot.selected = pagerPosition.map { progress in
+        dot.slot.map { abs(progress - $0) * 13 < 5 } ?? false
+      } ?? (dot.profileId == selectedId)
       dot.opacity = SidebarChromeMetrics.dotOpacity(slot: dot.slot, position: position, hovered: dot.hovered)
     }
   }
@@ -731,8 +733,8 @@ final class SidebarProfileDot: NSView {
   let glyph = SidebarProfileGlyph()
   var dark = false { didSet { repaint() } }
   var ink: NSColor = .black { didSet { repaint() } }
-  var opacity: CGFloat = 0.65 { didSet { repaint() } }
-  var selected = false { didSet { repaint() } }
+  var opacity: CGFloat = 0.65 { didSet { glyph.alphaValue = pressed || selected ? 1 : opacity } }
+  var selected = false { didSet { if selected != oldValue { repaint() } } }
 
   override var isFlipped: Bool { true }
   override var mouseDownCanMoveWindow: Bool { false }

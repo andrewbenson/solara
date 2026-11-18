@@ -67,7 +67,7 @@ export function ProfileIndicator({ room }: { room: number }) {
   return (
     <View {...hoverProps} tooltip={incognito ? undefined : "Switch between profiles"} style={{ marginTop: 0.5 }}>
       <ProfileNameMeasure title={title} />
-      <Pressable onPress={() => !incognito && void openProfileMenu(windowId)} disabled={incognito}>
+      <Pressable accessible accessibilityRole="button" accessibilityLabel={title} onPress={() => !incognito && void openProfileMenu(windowId)} disabled={incognito}>
         {({ pressed }) => (
           <View
             style={{

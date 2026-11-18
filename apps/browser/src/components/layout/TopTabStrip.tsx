@@ -905,7 +905,7 @@ function TabChip({ tabId, width, tuck, dragged }: { tabId: string; width: number
       )}
       {onto && <OntoRing width={width} />}
       <ContextMenuArea onContextMenu={() => void openTabMenu(windowId, tab)} style={StyleSheet.absoluteFill}>
-        <Pressable onPress={(e) => clickTab(windowId, tab.id, modifiersOf(e))} style={{ flex: 1 }}>
+        <Pressable accessible accessibilityRole="radio" accessibilityLabel={title} accessibilityState={{ selected: active }} onPress={(e) => clickTab(windowId, tab.id, modifiersOf(e))} style={{ flex: 1 }}>
           {({ pressed }) => (
             <ItemRow hovered={(hovered || dragged) && !active && !onto} pressed={pressed && !active}>
               <View pointerEvents="none">

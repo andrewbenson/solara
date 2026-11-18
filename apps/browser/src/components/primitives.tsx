@@ -44,7 +44,7 @@ export const IconButton = memo(function IconButton({
   const { hovered, hoverProps } = useHover();
   return (
     <View tooltip={tooltip} style={style} {...hoverProps}>
-      <Pressable onPress={onPress} disabled={disabled}>
+      <Pressable accessible accessibilityRole="button" accessibilityLabel={tooltip} onPress={onPress} disabled={disabled}>
         {({ pressed }) => (
           <View
             style={{

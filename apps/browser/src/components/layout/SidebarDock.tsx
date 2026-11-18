@@ -164,7 +164,7 @@ export function DockedLayout({
     useShallow(
       (s) =>
         [
-          topTabs || (s.windows[windowId]?.sidebarOpen ?? true),
+          s.windows[windowId]?.sidebarOpen ?? true,
           sidebarWidthOf(s.windows[windowId], s.settings, nativeSidebarShell(windowId)),
           addressBarInSidebar(s, windowId),
         ] as const,

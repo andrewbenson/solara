@@ -1086,8 +1086,7 @@ public class WindowShellModule: Module {
           NativeSidebarDock.setReactPeekRight(windowId, 0)
         }
         var layout = given
-        if !shell.widthDragActive, let width = (given["sidebarWidth"] as? NSNumber)?.doubleValue,
-          NativeSidebarDock.railShown(windowId) || width == 84 {
+        if !shell.widthDragActive, given["sidebarWidth"] is NSNumber, NativeSidebarDock.railShown(windowId) {
           layout["sidebarWidth"] = SidebarRail.width
         }
         shell.update { ShellLayoutPush.apply(layout, to: &$0, keepWidth: shell.widthDragActive) }

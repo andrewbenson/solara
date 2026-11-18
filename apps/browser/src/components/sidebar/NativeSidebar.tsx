@@ -11,7 +11,7 @@ import { chromeLiveIds, chromeSleeping, sidebarHostProps } from "../nativeHostPr
 import { useLifecycle } from "../../lib/tabLifecycle";
 import { hex, inkedTokens, inkIsLight, profileAccent, profileNameColor, profileTheme, selectedTabGlow, spaceLookSource, useAdjustedInk, useSelectedTabGlow, useTheme, type Theme } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
-import { commitSidebarWidth, setSidebarIconsOnly, sidebarWidthOf, SIDEBAR_RAIL_WIDTH } from "../../store/sidebarRail";
+import { commitSidebarWidth, setSidebarIconsOnly, sidebarWidthOf, sidebarUsesIconRail } from "../../store/sidebarRail";
 import { engineMark, ENGINE_SYMBOLS } from "../../store/engines";
 import { useSettings } from "../../store/hooks";
 import { activeTabId, isIncognitoProfile } from "../../store/model";
@@ -110,7 +110,7 @@ function useShellChrome(windowId: string, addressBar: boolean, theme: Theme): st
   const downloadsOpen = useBrowser((s) => !!s.windowUi[windowId]?.downloadsOpen);
   const hint = useShortcutHint("downloads");
   const savedWidth = useBrowser((s) => sidebarWidthOf(s.windows[windowId], s.settings, false));
-  const iconsOnly = useBrowser((s) => sidebarWidthOf(s.windows[windowId], s.settings, nativeSidebarShell(windowId)) === SIDEBAR_RAIL_WIDTH);
+  const iconsOnly = useBrowser((s) => sidebarUsesIconRail(s.windows[windowId], s.settings, nativeSidebarShell(windowId)));
   const dotsShown = !incognito;
   const order = useBrowser(useShallow((s) => s.profileOrder));
   const names = useBrowser(useShallow((s) => order.map((id) => s.profiles[id]?.name ?? "")));

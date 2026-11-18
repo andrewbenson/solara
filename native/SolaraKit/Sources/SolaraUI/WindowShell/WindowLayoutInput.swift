@@ -82,7 +82,7 @@ public struct WindowLayoutInput: Equatable, Sendable {
     hideToolbarWhileScrolling = state.settings.bool("hideToolbarWhileScrolling")
     bookmarksBar = state.settings.string("bookmarksBar") ?? "newTab"
     let topTabs = (window.tabLayout ?? state.settings.string("tabLayout") ?? "sidebar") == "top"
-    let rail = !topTabs && window.effectiveSidebarIconsOnly(state.settings)
+    let rail = !topTabs && SidebarRail.contains(width: SidebarRail.effectiveWidth(window, state.settings))
     let address = !topTabs && (!rail || !window.sidebarOpen) && state.settings.string("addressBar") == "sidebar"
     let fullscreen = fullscreenTabId != nil
     var modes: [String: ToolbarAutoHideMode] = [:]

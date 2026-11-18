@@ -110,6 +110,25 @@ struct WindowLayoutContractTests {
     #expect(top.stripAvailableWidth == 1000 - 86 - top.input.stripProfileSlotWidth - 84)
   }
 
+  @Test func savedWidthsUseTheRailThatTheSidebarDraws() throws {
+    var state = try projectionState()
+    state.settings["addressBar"] = "sidebar"
+    state.settings["sidebarIconsOnly"] = true
+    state.windows["w"]?.sidebarIconsOnly = false
+    let bounds = CGRect(x: 0, y: 0, width: 1000, height: 700)
+    for (width, rail) in [(42.0, true), (42.5, true), (42.5001, false), (84.0, false), (240.0, false)] {
+      state.windows["w"]?.sidebarWidth = width
+      let input = try #require(WindowLayoutInput(state: state, windowId: "w", bounds: bounds))
+      #expect(input.layout.addressBarInSidebar == !rail)
+      #expect(input.layout.sidebarWidth == CGFloat(rail ? 42 : width))
+      #expect(input.sidebarHeaderHeight == (rail ? 0 : 80))
+      state.windows["w"]?.sidebarOpen = false
+      let hidden = try #require(WindowLayoutInput(state: state, windowId: "w", bounds: bounds))
+      #expect(hidden.layout.addressBarInSidebar)
+      state.windows["w"]?.sidebarOpen = true
+    }
+  }
+
   @Test func horizontalProfileSlotProtectsTheFullscreenIslandOnlyWhenANameShows() throws {
     var state = try projectionState()
     state.windows["w"]?.tabLayout = "top"

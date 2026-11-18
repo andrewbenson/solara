@@ -7,7 +7,7 @@ import { LIGHTS_CENTER, TOP_STRIP_LIGHTS_CENTER } from "./dockMotion";
 import { layout } from "../../lib/theme";
 import { useBrowser, type BrowserState } from "../../store/browser";
 import { useWindowId } from "../../store/hooks";
-import { sidebarWidthOf, SIDEBAR_RAIL_WIDTH } from "../../store/sidebarRail";
+import { sidebarUsesIconRail } from "../../store/sidebarRail";
 
 export function useTabLayout(): "sidebar" | "top" {
   const windowId = useWindowId();
@@ -19,7 +19,7 @@ export function addressBarInSidebar(s: BrowserState, windowId: string): boolean 
   return (
     !!w &&
     s.settings.addressBar === "sidebar" &&
-    (!w.sidebarOpen || sidebarWidthOf(s.windows[windowId], s.settings, nativeSidebarShell(windowId)) !== SIDEBAR_RAIL_WIDTH) &&
+    (!w.sidebarOpen || !sidebarUsesIconRail(w, s.settings, nativeSidebarShell(windowId))) &&
     (w.sidebarOpen || switchOn("sidebarSlide")) &&
     (w.tabLayout ?? s.settings.tabLayout) === "sidebar"
   );

@@ -1,4 +1,4 @@
-import { sidebarWidthOf, SIDEBAR_RAIL_WIDTH } from "../store/sidebarRail";
+import { sidebarUsesIconRail } from "../store/sidebarRail";
 import { nativeSidebarShell } from "./sidebar/sidebarShell";
 import { cancelDownload, keepDownload, pauseDownload, resumeDownload, type Download } from "@solara/solaracore";
 import { copyText, fileExists, moveToTrash, openFile, revealFile, showMenu, type MenuItem } from "@solara/shell";
@@ -329,7 +329,7 @@ export function DownloadMagnet() {
   const sidebarWidth = useSidebarWidth(windowId);
   const topStrip = useTabLayout() === "top";
   const addressBar = useAddressBarInSidebar();
-  const iconsOnly = useBrowser((s) => sidebarWidthOf(s.windows[windowId], s.settings, nativeSidebarShell(windowId)) === SIDEBAR_RAIL_WIDTH);
+  const iconsOnly = useBrowser((s) => sidebarUsesIconRail(s.windows[windowId], s.settings, nativeSidebarShell(windowId)));
   const railDots = useProfileDotsShown();
   const [flight, setFlight] = useState<{ id: string; path: string } | null>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });

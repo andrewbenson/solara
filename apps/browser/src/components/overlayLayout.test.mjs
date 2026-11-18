@@ -33,7 +33,7 @@ async function fixture(kind) {
     "../store/browser": { useBrowser },
     "../store/hooks": { useWindowId: () => "w", useSidebarOpen: () => true },
     "../../store/hooks": { useWindowId: () => "w" },
-    "../store/sidebarRail": { sidebarWidthOf: () => 220, SIDEBAR_RAIL_WIDTH: 52 },
+    "../store/sidebarRail": { sidebarUsesIconRail: () => false },
     "../lib/theme": { layout: { sidebarInset: 6 } },
     "./sidebar/sidebarShell": { nativeSidebarShell: () => true },
     "./sidebar/tokens": { useSidebarWidth: () => 220 },

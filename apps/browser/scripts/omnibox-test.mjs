@@ -7,6 +7,7 @@ import { isDeepStrictEqual } from "node:util";
 import { launch, reporter, session, sleep } from "../../../scripts/lib/instance.mjs";
 
 const HELP = `Checks native panel, sidebar and New Tab command bars on isolated local fixtures.
+Restores a saved 84-point sidebar with icons-only off and checks Cmd-L and a real field click.
 
   node apps/browser/scripts/omnibox-test.mjs <Debug Solara.app> [--keep-data]
 
@@ -170,6 +171,17 @@ const type = async (text, accept = (state) => state.typed === text) => {
   return observe(`query ${JSON.stringify(text)}`, accept);
 };
 const activate = (id) => run(`const s = ac.store.getState(); s.closePanel("w1"); s.activate(${JSON.stringify(id)}); return true;`);
+const bindNativeBar = async (surface) => {
+  await until("native bar mounted", () => run(`
+    const f = acPerf.findFibers("NativeOmniboxBar", 30).find((f) => f.memoizedProps.variant === ${JSON.stringify(surface.variant)} && !f.memoizedProps.idle && !!f.memoizedProps.opensTab === ${surface.newTab});
+    if (!f) return false;
+    for (let hook = f.memoizedState; hook; hook = hook.next) {
+      const handle = hook.memoizedState?.current;
+      if (typeof handle?.driverState === "function") { globalThis.__omniboxNative = handle; return true; }
+    }
+    return false;
+  `));
+};
 const open = async (surface) => {
   current = surface;
   await activate("a");
@@ -186,15 +198,7 @@ const open = async (surface) => {
   const press = surface.newTab ? { key: "t", keyCode: 17, modifiers: ["command"] } : { key: "l", keyCode: 37, modifiers: ["command"] };
   const result = await run(`return ac.shell.devKeyEquivalent("w1", ${JSON.stringify(press)});`);
   assert.ok(!result?.error, JSON.stringify(result));
-  await until("native bar mounted", () => run(`
-    const f = acPerf.findFibers("NativeOmniboxBar", 30).find((f) => f.memoizedProps.variant === ${JSON.stringify(surface.variant)} && !f.memoizedProps.idle && !!f.memoizedProps.opensTab === ${surface.newTab});
-    if (!f) return false;
-    for (let hook = f.memoizedState; hook; hook = hook.next) {
-      const handle = hook.memoizedState?.current;
-      if (typeof handle?.driverState === "function") { globalThis.__omniboxNative = handle; return true; }
-    }
-    return false;
-  `));
+  await bindNativeBar(surface);
   return observe(`${surface.name} opened`, (state) => surface.newTab
     ? state.typed === "" && state.value === "" && state.selected === -1 && isDeepStrictEqual(state.items.map((row) => row.tabId), ["b"])
     : state.typed === state.value && /^http:\/\/127\.0\.0\.1:\d+\/start$/.test(state.value)
@@ -212,11 +216,11 @@ try {
   const bookmarkUrl = `${base}/bookmark`;
   const historyPrefix = `${base.slice("http://".length)}/his`;
   const fixture = session({
-    windows: [{ id: "w1", activeTabIds: { default: "a" }, frame: [80, 80, 1280, 900] }],
+    windows: [{ id: "w1", activeTabIds: { default: "a" }, frame: [80, 80, 1280, 900], sidebarWidth: 84, sidebarIconsOnly: false }],
     tabs: [{ id: "a", url: `${base}/start`, title: "Omni Local Fixture", lastActiveAt: 1 }, { id: "b", url: `${base}/open`, title: "Omni Open Fixture", lastActiveAt: 2 }],
     settings: { developerMode: { default: { on: [], off: ["127.0.0.1"], reload: "reload" } }, tabLayout: "sidebar", searchSuggestions: false, searchEngine: "custom", customSearchUrl: `${base}/search?q=%s`,
       customSearchEngines: [{ id: "fixture", name: "Fixture", keyword: "fixture", url: `${base}/scoped?q=%s` }],
-      newTabOpens: "commandBar", addressBar: "toolbar", commandBarPreference: "website", warnBeforeClosingLastTab: false, warnBeforeClosingWindow: false },
+      newTabOpens: "commandBar", addressBar: "sidebar", sidebarWidth: 190, sidebarIconsOnly: false, commandBarPlacement: "field", commandBarPreference: "website", warnBeforeClosingLastTab: false, warnBeforeClosingWindow: false },
   });
   budget = setTimeout(() => {
     rep.record("100-second run budget", { error: new Error("deadline exceeded") });
@@ -228,6 +232,53 @@ try {
     files: { "bench-offline": "1" } });
   instance = await launching;
   assert.ok(!stopping, "launch interrupted");
+  await check("restored 84-point full sidebar: Cmd-L and search click focus the Command Bar", async () => {
+    current = { name: "restored sidebar", variant: "sidebar", addressBar: "sidebar", newTab: false };
+    const saved = await run(`const s = ac.store.getState(); return { window: s.windows.w1, settings: s.settings };`);
+    assert.equal(saved.window.sidebarWidth, 84, "the saved window retains its narrow full sidebar");
+    assert.equal(saved.window.sidebarIconsOnly, false, "the saved window is not an icon rail");
+    assert.equal(saved.settings.sidebarWidth, 190, "the per-window width differs from the settings default");
+    assert.equal(saved.settings.sidebarIconsOnly, false);
+    await nativeWindow("restored full sidebar field is visible", (window) => window?.selectedTabId === "a"
+      && Math.abs(window.sidebarShell?.frame?.[2] - 84) <= 0.5
+      && window.sidebarShell?.chrome?.header === 80 && window.sidebarAddressBar?.claimed === true
+      && window.sidebarAddressBar.inWindow === true);
+    const outcomes = [];
+    for (const input of ["Cmd-L", "search click"]) {
+      const passed = await rep.check(`restored sidebar ${input}`, async () => {
+        await activate("a");
+        await nativeWindow(`${input} begins with the panel closed`, (window) => window?.selectedTabId === "a" && window.panelOpen === false);
+        let result;
+        if (input === "Cmd-L") {
+          result = await run(`return ac.shell.devKeyEquivalent("w1", { key: "l", keyCode: 37, modifiers: ["command"], focus: "page" });`);
+        } else {
+          const snapshot = await nativeWindow("search field click geometry", (window) => window?.sidebarAddressBar?.inWindow === true
+            && window.sidebarAddressBar.field?.[2] > 0 && window.sidebarAddressBar.field?.[3] > 0);
+          const window = snapshot.windows.find((window) => window.id === "w1");
+          const column = window.sidebarShell.frame;
+          const bar = window.sidebarAddressBar.frame;
+          const field = window.sidebarAddressBar.field;
+          const point = { x: column[0] + bar[0] + field[0] + field[2] / 2, y: column[1] + bar[1] + field[1] + field[3] / 2 };
+          result = await run(`return ac.shell.devClick("w1", ${JSON.stringify(point)});`);
+        }
+        assert.ok(!result?.error, JSON.stringify(result));
+        await until(`${input} opens the Command Bar`, () => run(`return ac.store.getState().windowUi.w1?.panel.open === true;`));
+        await bindNativeBar(current);
+        const focused = await observe(`restored sidebar ${input} focused`, (state) => state.typed === state.value
+          && state.value === `${base}/start` && isDeepStrictEqual(state.selection, { start: 0, end: state.value.length }));
+        assert.equal(focused.focused, true);
+        assert.equal(focused.variant, "sidebar");
+        assert.equal(focused.value, `${base}/start`);
+        const unchanged = await run(`const w = ac.store.getState().windows.w1; return { width: w.sidebarWidth, iconsOnly: w.sidebarIconsOnly };`);
+        assert.deepEqual(unchanged, { width: 84, iconsOnly: false }, "focus works without a resize repairing stored state");
+      });
+      outcomes.push({ input, passed });
+      await run(`ac.store.getState().closePanel("w1"); return true;`);
+    }
+    await run(`ac.store.getState().setWindowSidebar("w1", { sidebarWidth: 190, sidebarIconsOnly: false }); return true;`);
+    assert.ok(outcomes.every(({ passed }) => passed), JSON.stringify(outcomes));
+    return outcomes;
+  });
   await check("fixture native catalogs are ready", async () => {
     await until("fixture bookmark root", () => run(`return !!ac.store.getState().bookmarks.roots.default?.bar;`));
     await run(`const s = ac.store.getState(); s.importHistory("default", [{ url: ${JSON.stringify(historyUrl)}, title: "Omni History Fixture", visits: 30, lastVisit: Date.now() }]);

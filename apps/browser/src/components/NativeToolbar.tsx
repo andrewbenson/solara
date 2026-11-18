@@ -8,7 +8,8 @@ import { withLivePage } from "../lib/livePage";
 import { layout, useTheme } from "../lib/theme";
 import { webviews } from "../lib/webviews";
 import { useBrowser } from "../store/browser";
-import { nativeSidebarRailSupported, sidebarIconsOnlyOf } from "../store/sidebarRail";
+import { sidebarUsesIconRail } from "../store/sidebarRail";
+import { nativeSidebarShell } from "./sidebar/sidebarShell";
 import { useIsBookmarked, useSettings, useTabLive } from "../store/hooks";
 import { bookmarkProfileId, tabLayoutOf } from "../store/model";
 import { toggleBookmarkFromUI } from "../lib/bookmarkWriter";
@@ -105,7 +106,7 @@ export function useNativeToolbarModel({ tabId, geometry, windowId, inSplit, focu
   const tab = useToolbarTab(tabId);
   const isLoading = useTabLive(tabId, (l) => l.isLoading);
   const siteColor = useToolbarSiteColor(tabId);
-  const rail = useBrowser((s) => nativeSidebarRailSupported && sidebarIconsOnlyOf(s.windows[windowId], s.settings));
+  const rail = useBrowser((s) => sidebarUsesIconRail(s.windows[windowId], s.settings, nativeSidebarShell(windowId)));
   const topTabs = useBrowser((s) => tabLayoutOf(s, windowId) === "top");
   const fullscreen = !!useFullscreenTab(windowId);
   const sidebarVisible = useBrowser((s) => s.windows[windowId]?.sidebarOpen ?? true);

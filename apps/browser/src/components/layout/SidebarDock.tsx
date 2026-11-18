@@ -1,3 +1,4 @@
+import { addressBarInSidebar } from "./windowLayout";
 import { nativeSidebarShell } from "../sidebar/sidebarShell";
 import { onWindowEvent, setTrafficLightsCenter, Surface, watchLeftEdge, WindowDragRegion } from "@solara/shell";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -8,7 +9,7 @@ import { pagesPooledIn } from "../../lib/pagesPool";
 import { hex, layout, useTheme } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
 import { useWindowId } from "../../store/hooks";
-import { sidebarWidthOf, SIDEBAR_RAIL_WIDTH } from "../../store/sidebarRail";
+import { sidebarWidthOf } from "../../store/sidebarRail";
 import { Sidebar } from "../Sidebar";
 import { AreaBoundary } from "../AreaBoundary";
 import { dismissHoverIn } from "../sidebar/hover";
@@ -165,7 +166,7 @@ export function DockedLayout({
         [
           topTabs || (s.windows[windowId]?.sidebarOpen ?? true),
           sidebarWidthOf(s.windows[windowId], s.settings, nativeSidebarShell(windowId)),
-          s.settings.addressBar === "sidebar" && (!s.windows[windowId]?.sidebarOpen || sidebarWidthOf(s.windows[windowId], s.settings, nativeSidebarShell(windowId)) !== SIDEBAR_RAIL_WIDTH),
+          addressBarInSidebar(s, windowId),
         ] as const,
     ),
   );

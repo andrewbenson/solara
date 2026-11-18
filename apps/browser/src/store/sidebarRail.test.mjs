@@ -211,3 +211,43 @@ test("horizontal tabs ignore a saved hidden sidebar when placing the lights", ()
   S().toggleSidebar(windowId);
   assert.deepEqual(openingLightsCenter(S(), windowId), [20.75, 20.75]);
 });
+
+test("a saved full sidebar width of 84 never hides its address bar", () => {
+  for (const inherited of [false, true]) {
+    S().hydrate({});
+    const windowId = S().createWindow({ url: "example.com" });
+    S().updateSettings({ addressBar: "sidebar", tabLayout: "sidebar", sidebarWidth: inherited ? 84 : 240, sidebarIconsOnly: inherited });
+    useBrowser.setState((s) => ({ windows: { ...s.windows, [windowId]: { ...s.windows[windowId], sidebarIconsOnly: false, ...(inherited ? {} : { sidebarWidth: 84 }) } } }));
+    assert.equal(addressBarInSidebar(S(), windowId), true);
+  }
+});
+
+test("rail detection follows the native rendered width and explicit window preference", () => {
+  const settings = { sidebarWidth: 240, sidebarIconsOnly: true };
+  const cases = [
+    [{ sidebarWidth: 84, sidebarIconsOnly: false }, true, true, false],
+    [{ sidebarWidth: 240, sidebarIconsOnly: false }, true, true, false],
+    [{ sidebarWidth: 240, sidebarIconsOnly: true }, true, true, true],
+    [{ sidebarWidth: 240 }, true, true, true],
+    [{ sidebarWidth: 42, sidebarIconsOnly: false }, true, true, true],
+    [{ sidebarWidth: 42.5, sidebarIconsOnly: false }, true, true, true],
+    [{ sidebarWidth: 42.6, sidebarIconsOnly: false }, true, true, false],
+    [{ sidebarWidth: 42, sidebarIconsOnly: true }, false, true, false],
+    [{ sidebarWidth: 42, sidebarIconsOnly: true }, true, false, false],
+    [{ kind: "small", sidebarWidth: 42, sidebarIconsOnly: true }, true, true, false],
+  ];
+  for (const [window, nativeShell, supported, expected] of cases) {
+    assert.equal(rail.sidebarUsesIconRail(window, settings, nativeShell, supported), expected, JSON.stringify({ window, nativeShell, supported }));
+  }
+});
+
+test("a narrow saved native sidebar uses rail address placement until it is hidden", () => {
+  S().hydrate({});
+  const windowId = S().createWindow({ url: "example.com" });
+  S().updateSettings({ addressBar: "sidebar", tabLayout: "sidebar", sidebarIconsOnly: false });
+  S().setWindowSidebar(windowId, { sidebarWidth: 42, sidebarIconsOnly: false });
+  assert.equal(addressBarInSidebar(S(), windowId), false);
+  assert.equal(rail.sidebarWidthOf(S().windows[windowId], S().settings, true), 42);
+  S().toggleSidebar(windowId);
+  assert.equal(addressBarInSidebar(S(), windowId), true);
+});

@@ -12,11 +12,15 @@ export const SIDE_PANEL_DEFAULT_WIDTH = 360;
 
 export const nativeSidebarRailSupported = requireOptionalNativeModule<{ sidebarRail?: boolean }>("SolaraApp")?.sidebarRail === true;
 
-type SidebarWindow = Pick<BrowserWindow, "sidebarWidth" | "sidebarIconsOnly" | "sidePanelWidth"> | undefined;
+type SidebarWindow = Pick<BrowserWindow, "sidebarWidth" | "sidebarIconsOnly" | "sidePanelWidth" | "kind"> | undefined;
 export type WindowSidebarPatch = Pick<BrowserWindow, "sidebarWidth" | "sidebarIconsOnly" | "sidePanelWidth">;
 
 export function sidebarIconsOnlyOf(window: SidebarWindow, settings: Pick<Settings, "sidebarIconsOnly">): boolean {
   return window?.sidebarIconsOnly ?? settings.sidebarIconsOnly ?? false;
+}
+
+export function sidebarUsesIconRail(window: SidebarWindow, settings: Pick<Settings, "sidebarWidth" | "sidebarIconsOnly">, nativeShell: boolean, supported = nativeSidebarRailSupported): boolean {
+  return window?.kind !== "small" && supported && nativeShell && (sidebarIconsOnlyOf(window, settings) || (window?.sidebarWidth ?? settings.sidebarWidth ?? SIDEBAR_DEFAULT_WIDTH) <= 42.5);
 }
 
 export function sidebarWidthOf(window: SidebarWindow, settings: Pick<Settings, "sidebarWidth" | "sidebarIconsOnly">, nativeShell: boolean, supported = nativeSidebarRailSupported): number {

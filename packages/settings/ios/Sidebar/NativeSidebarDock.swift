@@ -59,7 +59,7 @@ enum NativeSidebarDock {
       guard let json = given as? String, let data = json.data(using: .utf8),
         var state = try? JSONDecoder().decode(SidebarDockState.self, from: data)
       else { continue }
-      if railShown(windowId) || state.width == 84 { state.width = SidebarRail.width }
+      if railShown(windowId) { state.width = SidebarRail.width }
       if let dock = docks[windowId] {
         dock.apply(state)
       } else {

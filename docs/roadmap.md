@@ -25,7 +25,7 @@ Source counts include retained fallback and unconsumed exports; they are not mea
 React Native still registers main and pane module names, with one main root per browser/Little Solara window
 and a pane root per shown overlay; the API-skew screen reuses main.
 
-## 0.4.4: fixes, the glass New Tab bar and a tighter profile swipe
+## 0.4.4: fixes, the glass New Tab bar and a tighter profile swipe (shipped 2026-11-18)
 
 The sidebar and tab strip deciding in Swift moved to 0.4.5 with the rest of this version's unfinished rows.
 
@@ -70,6 +70,7 @@ Done when JavaScript holds no state of its own.
 | From 0.4.3's gate: the open-tabs ratchet counts rose without attribution (listenerCalls 8218 -> 8320, subNotified +0.65%; suspect 2565518a); trace them, and fix or attribute before raising ceilings | moved from 0.4.4: planned |
 | Fix sheet-host's "ending busy must allow dismiss" (fails in every gate since 0.4.0) so a full host-harness run passes | moved from 0.4.4: planned |
 | Carry a drag to another tab or profile (owner 2026-11-17): hold a dragged image or link over a tab or a profile slot to switch there, and ⌘1–9, ⌘⇧[ ], ⌃1–9 mid-drag if macOS delivers keys during a drag; drop lands on the new page | moved from 0.4.4: in progress |
+| From 0.4.4's gate: JS synchronous typing 0.085 -> 0.122 ms and native session main-thread stall 2178 -> 3050 ms (n=2, contention during the run); rerun quiet with n>=5 and attribute (docs/perf/0.4.3-to-0.4.4.md) | planned |
 | The sync engine in Swift | planned |
 | Legacy migrations in Swift | planned |
 | The JavaScript mirror of the store is gone | planned |

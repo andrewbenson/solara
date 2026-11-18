@@ -58,6 +58,7 @@ The second half: done when every user action is handled in Swift and JavaScript 
 | Fix (owner 2026-11-17): swiping between profiles feels less smooth in 0.4.3 than 0.4.2; measure native swipe frames 0.4.2 vs 0.4.3, bisect (suspects e87b9a2e profile bar, fbd60886 lower fade), fix, and add a native swipe-frames row to the gate | in progress |
 | ⌘L opens the Command Bar on the first press by default, as in Chrome (owner 2026-11-17): Open Command Bar defaults to Prefer Solara instead of Use Both; a choice already made is kept | in progress |
 | top-strip-test runs to the end on main (it stops at "show of undefined", then at the peek's accessibility span), so the full-screen island can be checked against a real baseline (owner chose this over landing pass 9, 2026-11-17) | in progress |
+| Carry a drag to another tab or profile (owner 2026-11-17): hold a dragged image or link over a tab or a profile slot to switch there, and ⌘1–9, ⌘⇧[ ], ⌃1–9 mid-drag if macOS delivers keys during a drag; drop lands on the new page | in progress |
 
 ## 0.4.5: the data layer is native
 

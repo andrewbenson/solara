@@ -198,6 +198,33 @@ struct ShortcutsPaneTests {
     #expect(model.overrides.isEmpty)
   }
 
+  @Test func commandBarDefaultsToSolaraAndKeepsStoredChoices() async {
+    let store = FakeSettingsStore()
+    let services = FakeShortcutsServices()
+    let commandBar = MenuShortcutItem(id: "focusCommandBar", title: "Open Command Bar", path: ["View"], defaultShortcut: KeyShortcut(key: "l", modifiers: [.command]), remappable: true, aliases: [["\u{F708}", "control"]], defaultPrecedence: .solara)
+    services.items = [commandBar]
+    let model = ShortcutsPaneModel(services: services, store: store, recorder: FakeShortcutRecorder())
+    await model.prepare(SettingsPlace(pane: .shortcuts))
+
+    #expect(model.precedence(of: commandBar, in: model.precedences) == .solara)
+    #expect(!commandBar.precedenceFixed)
+    #expect(model.resolved(model.overrides).bindings["focusCommandBar"] == [KeyShortcut(key: "l", modifiers: [.command]), KeyShortcut(key: "\u{F708}", modifiers: [.control])])
+    for choice in [ShortcutPrecedence.both, .website] {
+      store.values["shortcutPrecedence"] = .object(["focusCommandBar": .string(choice.rawValue)])
+      #expect(model.precedence(of: commandBar, in: model.precedences) == choice)
+      #expect(model.customized(commandBar, overrides: model.overrides, precedences: model.precedences))
+    }
+    model.setPrecedence(commandBar, .both)
+    #expect(model.precedences["focusCommandBar"] == .both)
+    model.setPrecedence(commandBar, .solara)
+    #expect(model.precedences["focusCommandBar"] == nil)
+    #expect(model.precedence(of: commandBar, in: model.precedences) == .solara)
+    model.setPrecedence(commandBar, .website)
+    model.reset(commandBar)
+    #expect(model.precedences["focusCommandBar"] == nil)
+    #expect(model.precedence(of: commandBar, in: model.precedences) == .solara)
+  }
+
   @Test func precedenceTitlesNameTheApp() {
     #expect(ShortcutPrecedence.solara.title(app: "Solara Dev") == "Prefer Solara Dev")
     #expect(ShortcutPrecedence.website.title(app: "Solara") == "Prefer Website")

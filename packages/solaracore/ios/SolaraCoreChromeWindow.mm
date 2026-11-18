@@ -437,6 +437,7 @@ using solaracore_keys::KeyPrecedence;
 
 KeyPrecedence StandardKeyPrecedence(NSMenuItem *item) {
   if ([ReservedIdentifiers() containsObject:item.identifier]) return KeyPrecedence::Solara;
+  if ([item.identifier isEqualToString:@"solara.command.focusCommandBar"]) return KeyPrecedence::Solara;
   if ([item.identifier isEqualToString:@"solara.command.toggleSidebar"]) return KeyPrecedence::Both;
   return KeyPrecedence::Website;
 }
@@ -450,6 +451,15 @@ KeyPrecedence KeyPrecedenceOf(NSMenuItem *item) {
 bool IsSolaraShortcut(NSMenuItem *item) {
   return [item.identifier hasPrefix:@"solara."];
 }
+
+bool MovesShortcutFocus(NSMenuItem *item) {
+  static NSSet<NSString *> *identifiers = [NSSet setWithArray:@[
+    @"solara.command.newTab", @"solara.command.focusCommandBar", @"solara.command.findInPage"
+  ]];
+  return item.identifier && [identifiers containsObject:item.identifier];
+}
+
+const void *kFocusShortcutAtKey = &kFocusShortcutAtKey;
 
 BOOL (^const kSolaraShortcut)(NSMenuItem *) = ^BOOL(NSMenuItem *item) {
   return IsSolaraShortcut(item);
@@ -1890,13 +1900,20 @@ NSMapTable<SolaraCoreProfile *, SolaraCoreWindowController *> *StandaloneWindows
 
 - (BOOL)window:(SolaraCoreWindow *)window preHandleKeyEvent:(NSEvent *)event {
   NSMenuItem *item = ShortcutMenuItemForEvent(event);
-  return item && PerformsShortcutBeforePage(event, item, ^BOOL {
+  const BOOL handled = item && PerformsShortcutBeforePage(event, item, ^BOOL {
            return [NSApp.mainMenu performKeyEquivalent:event];
          });
+  if (handled && MovesShortcutFocus(item)) {
+    NSNumber *latest = objc_getAssociatedObject(window.window, kFocusShortcutAtKey);
+    objc_setAssociatedObject(window.window, kFocusShortcutAtKey, @(MAX(latest.doubleValue, event.timestamp)), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+  }
+  return handled;
 }
 
 - (BOOL)window:(SolaraCoreWindow *)window handleKeyEvent:(NSEvent *)event {
   if (KeepsUnhandledSharedKeyInPage(window.window, event)) return YES;
+  NSNumber *latestFocus = objc_getAssociatedObject(window.window, kFocusShortcutAtKey);
+  if (latestFocus.doubleValue > event.timestamp && MovesShortcutFocus(ShortcutMenuItemForEvent(event))) return YES;
   if (solaracore_keys::IsPlainEscape(event)) {
     NSResponder *focused = window.window.firstResponder;
     SolaraCoreWebView *target = nil;

@@ -489,12 +489,20 @@ if (part === "precedence") {
   await run("⇧⌘] in a page that takes it selects the next tab, before the page", once("}", 30, ["command", "shift"]), (a) => a.active === "t4" && pageGot(a));
   await run("one ⌘F in a page that takes it stays with the page", cmdKey("f", 3), (a) => !a.find && pageGot(a, "⌘f"));
   await run("two quick ⌘F in a page that takes it open Find on the second", cmdKey("f", 3, 2), (a) => a.find && pageGot(a, "⌘f"));
-  await run("two quick ⌘L in a page that takes it open the command bar on the second", cmdKey("l", 37, 2), (a) => a.panel && pageGot(a, "⌘l"));
+  await run("default: one ⌘L opens the command bar before a page that preventDefaults ⌘L", cmdKey("l", 37), (a) => a.panel && pageGot(a));
   await run("one ⌘S in a page that takes it stays with the page", cmdKey("s", 1), (a, b) => a.sidebar === b.sidebar && pageGot(a, "⌘s"));
   await run("two quick ⌘S in a page that takes it toggle the sidebar once", cmdKey("s", 1, 2), (a, b) => a.sidebar !== b.sidebar && pageGot(a, "⌘s"));
-  await run("a single ⌘L in a page's editor that doesn't take it opens the command bar", cmdKey("l", 37), (a) => a.panel && pageGot(a, "⌘l"), { consumes: false });
+  await run("a single ⌘L in a page's editor that doesn't take it opens the command bar", cmdKey("l", 37), (a) => a.panel && pageGot(a), { consumes: false });
   await run("a single ⌘F in a page's editor that doesn't take it opens Find", cmdKey("f", 3), (a) => a.find && pageGot(a, "⌘f"), { consumes: false });
   await run("one ⌘S in a page's editor that doesn't take it still stays with the page", cmdKey("s", 1), (a, b) => a.sidebar === b.sidebar && pageGot(a, "⌘s"), { consumes: false });
+
+  await run("default: one ⌃F5 opens the command bar before a page that takes it", once(F(0xf708), 96, ["control", "function"]), (a) => a.panel && pageGot(a));
+  await choose({ focusCommandBar: "both" });
+  await run("Use Both: one ⌘L stays with a page that takes it", cmdKey("l", 37), (a) => !a.panel && pageGot(a, "⌘l"));
+  await run("Use Both: two quick ⌘L open the command bar on the second", cmdKey("l", 37, 2), (a) => a.panel && pageGot(a, "⌘l"));
+  await choose({ focusCommandBar: "website" });
+  await run("Prefer Website: two quick ⌘L stay with a page that takes them", cmdKey("l", 37, 2), (a) => !a.panel && pageGot(a, "⌘l", "⌘l"));
+  await run("Prefer Website: one ⌘L opens the command bar when the page doesn't take it", cmdKey("l", 37), (a) => a.panel && pageGot(a, "⌘l"), { consumes: false });
 
   await choose({ nextTab: "website", closeTab: "website", newWindow: "both" });
   await run("Next Tab stays Prefer Solara whatever is chosen: ⌥⌘↓ selects the next tab before the page", down(1), (a) => a.active === "t4" && pageGot(a));
@@ -512,10 +520,10 @@ if (part === "precedence") {
 
   await choose({ nextTab: "website", nextProfile: "website", findInPage: "solara" });
   {
-    const listed = await ac(`return ac.shell.menuShortcuts().then((items) => Object.fromEntries(items.filter((i) => ["nextTab", "nextProfile", "selectTab:1", "findInPage", "reload", "std:copy:"].includes(i.id)).map((i) => [i.id, [i.precedence, i.defaultPrecedence, i.precedenceFixed]])));`);
+    const listed = await ac(`return ac.shell.menuShortcuts().then((items) => Object.fromEntries(items.filter((i) => ["nextTab", "nextProfile", "selectTab:1", "findInPage", "focusCommandBar", "reload", "std:copy:"].includes(i.id)).map((i) => [i.id, [i.precedence, i.defaultPrecedence, i.precedenceFixed]])));`);
     const expected = {
       nextTab: ["solara", "solara", true], nextProfile: ["website", "solara", false], "selectTab:1": ["solara", "solara", false],
-      findInPage: ["solara", "both", false], reload: ["website", "website", false], "std:copy:": ["website", "website", false],
+      findInPage: ["solara", "both", false], focusCommandBar: ["solara", "solara", false], reload: ["website", "website", false], "std:copy:": ["website", "website", false],
     };
     check("the menu tells Settings each shortcut's precedence and its default", isDeepStrictEqual(listed, expected), JSON.stringify(listed));
   }

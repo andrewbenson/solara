@@ -21,8 +21,17 @@ final class ShortcutPrecedenceTests: XCTestCase {
     XCTAssertEqual(ShortcutPrecedence.standard(shortcutId: "std:closeWindow:", command: nil), .solara)
   }
 
+  func testCommandBarGoesToSolaraFirstUnlessTheUserChoosesOtherwise() {
+    XCTAssertEqual(standard("focusCommandBar"), .solara)
+    XCTAssertFalse(ShortcutPrecedence.isFixed(shortcutId: "focusCommandBar", command: "focusCommandBar"))
+    for choice in ShortcutPrecedence.allCases {
+      XCTAssertEqual(ShortcutPrecedence.resolve(shortcutId: "focusCommandBar", command: "focusCommandBar", chosen: ["focusCommandBar": choice.rawValue]), choice)
+    }
+    XCTAssertEqual(ShortcutPrecedence.resolve(shortcutId: "focusCommandBar", command: "focusCommandBar", chosen: [:]), .solara)
+  }
+
   func testKeysAppsReuseAreShared() {
-    for id in ["toggleSidebar", "findInPage", "findNext", "findPrevious", "useSelectionForFind", "jumpToSelection", "focusCommandBar", "togglePinnedRow"] {
+    for id in ["toggleSidebar", "findInPage", "findNext", "findPrevious", "useSelectionForFind", "jumpToSelection", "togglePinnedRow"] {
       XCTAssertEqual(standard(id), .both, id)
     }
   }

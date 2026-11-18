@@ -10,10 +10,10 @@ public enum ShortcutPrecedence: String, CaseIterable, Sendable {
   ]
   public static let alwaysSolaraStandardShortcuts: Set<String> = ["std:closeWindow:", "std:quit:"]
   public static let solaraFirstCommands: Set<String> = alwaysSolaraCommands.union([
-    "selectTab", "selectLastTab", "nextProfile", "previousProfile", "switchProfile",
+    "selectTab", "selectLastTab", "nextProfile", "previousProfile", "switchProfile", "focusCommandBar",
   ])
   public static let sharedWithWebsiteCommands: Set<String> = [
-    "toggleSidebar", "findInPage", "findNext", "findPrevious", "useSelectionForFind", "jumpToSelection", "focusCommandBar",
+    "toggleSidebar", "findInPage", "findNext", "findPrevious", "useSelectionForFind", "jumpToSelection",
     "togglePinnedRow",
   ]
 

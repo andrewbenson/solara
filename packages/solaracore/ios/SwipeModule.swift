@@ -400,7 +400,7 @@ public final class ACPager {
     let nearest = min(max(Int(x.rounded()), drag.lo), drag.hi)
     if nearest != drag.detent {
       drag.detent = nearest
-      ACSwipe.performHaptic("alignment")
+      ACSwipe.performHaptic("levelChange")
     }
     publish()
     emitPosition()

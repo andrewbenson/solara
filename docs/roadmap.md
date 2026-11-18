@@ -39,7 +39,6 @@ The second half: done when every user action is handled in Swift and JavaScript 
 | Picture in Picture: a click on the video's left or right side skips 10 s back or forward; thrown into a corner, its curve nests inside the window's corner (seen in Ardia, 2026-11) | planned |
 | Auto Picture in Picture for calls: Google Meet pops out when you leave its tab and comes back when you return (seen in Ardia, 2026-11) | planned |
 | Split View: double-click a divider to even the panes; an accent ring marks the focused pane; the resize cursor covers the whole divider (seen in Ardia, 2026-11) | planned |
-| Full-screen island like Rex's: 80 x 33 capsule, slides down and back up, no hover through to the sidebar's profile button, button glyphs on hover, minimize grey | 11 passes (work/island43); blocked on a top-strip baseline (row above), then a retry |
 | Everyday tab actions from the command line: `solara open URL [--window] [--profile] [--background]`, `solara tab activate/close/reload/duplicate/mute/sleep`, close duplicates, sleep tabs idle for a while; never brings Solara forward unless asked (owner 2026-11-14) | partly landed in 0.4.3 (open URL); tab actions by ID wait for an app-side ID map and sleep state |
 | Profiles agents can't reach: a per-profile setting that keeps the `solara` command and MCP out of a profile, enforced by the app on the control connection, not by the command; new profiles allow agents by default; the command's history and pins reads move into the app so the setting covers them; listings hide blocked profiles' names and say only how many are closed to agents (owner 2026-11-14) | design settled; build next |
 | One Agents pane in Settings (Swift) for both the MCP server and the `solara` command: the master switch, per-profile access, and per app read-only or "can act"; "Add" for each agent app found (Claude Desktop through its own extension install, Claude Code, Codex and ChatGPT desktop through their shared config, Cursor and VS Code through their install links, the rest by copy or a reviewed file edit); every edit shows its lines first, keeps a backup, leaves other servers alone and has Remove; says when an app needs a restart. The MCP entry runs the command inside Solara.app, so nothing else is installed. ChatGPT on the web isn't offered: it needs a public endpoint (owner 2026-11-14) | planned |
@@ -67,6 +66,7 @@ Done when JavaScript holds no state of its own.
 
 | Item | Status |
 |---|---|
+| Full-screen island like Rex's: 80 x 33 capsule, slides down and back up, no hover through to the sidebar's profile button, button glyphs on hover, minimize grey | moved from 0.4.4 (2026-11-18): rebased on main (work/isl44); main runs top-strip 26/33 with the same 7 docked-strip failures (32.7%); the island run timed out before its top-strip pass, and hidden full-screen captures show no glyphs on hover yet |
 | The sync engine in Swift | planned |
 | Legacy migrations in Swift | planned |
 | The JavaScript mirror of the store is gone | planned |

@@ -792,6 +792,40 @@ final class SidebarProfileDot: NSView {
 }
 
 @MainActor
+final class SidebarKeycap: NSView {
+  var stringValue = "" { didSet { if stringValue != oldValue { needsDisplay = true } } }
+  var textColor: NSColor = .labelColor { didSet { if textColor != oldValue { needsDisplay = true } } }
+  var font: NSFont = .systemFont(ofSize: 12, weight: .semibold) { didSet { needsDisplay = true } }
+
+  override var isFlipped: Bool { true }
+  override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+  var glyphRect: NSRect {
+    let text = NSAttributedString(string: stringValue, attributes: [.font: font])
+    let ink = CTLineGetBoundsWithOptions(CTLineCreateWithAttributedString(text), .useGlyphPathBounds)
+    let scale = window?.backingScaleFactor ?? 2
+    let origin = convert(NSPoint(x: bounds.midX - ink.width / 2, y: bounds.midY - ink.height / 2), to: nil)
+    let snapped = convert(NSPoint(x: (origin.x * scale).rounded() / scale, y: (origin.y * scale).rounded() / scale), from: nil)
+    return NSRect(origin: snapped, size: ink.size)
+  }
+
+  override func draw(_ dirtyRect: NSRect) {
+    guard let context = NSGraphicsContext.current?.cgContext else { return }
+    let text = NSAttributedString(string: stringValue, attributes: [.font: font, .foregroundColor: textColor])
+    let line = CTLineCreateWithAttributedString(text)
+    let ink = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
+    let target = glyphRect
+    context.saveGState()
+    context.textMatrix = .identity
+    context.translateBy(x: target.minX - ink.minX, y: target.maxY + ink.minY)
+    context.scaleBy(x: 1, y: -1)
+    context.textPosition = .zero
+    CTLineDraw(line, context)
+    context.restoreGState()
+  }
+}
+
+@MainActor
 final class SidebarDotTooltip: NSView {
   static let delay: TimeInterval = 0.5
   static let fade: TimeInterval = 0.1
@@ -799,7 +833,7 @@ final class SidebarDotTooltip: NSView {
   private let ring = CALayer()
   private let plate = CALayer()
   private let label = StripLabel()
-  private var keycaps: [StripLabel] = []
+  private var keycaps: [SidebarKeycap] = []
   private var dark = false
   private(set) var shortcut: String?
   private var pending: DispatchWorkItem?
@@ -889,7 +923,7 @@ final class SidebarDotTooltip: NSView {
     let textWidth = StripControlsLayout.measuredLikeYoga((text as NSString).size(withAttributes: [.font: label.font]).width)
     for keycap in keycaps { keycap.removeFromSuperview() }
     keycaps = Self.keys(shortcut).map { key in
-      let keycap = StripLabel()
+      let keycap = SidebarKeycap()
       keycap.stringValue = key
       keycap.font = .systemFont(ofSize: 12, weight: .semibold)
       keycap.textColor = dark ? .white : NSColor(white: 0.2, alpha: 1)

@@ -16,12 +16,13 @@ enum NativeSidebarHoverCard {
     NativeHeavyTabs.start()
     observer = SettingsJS.shared.observe(topic) { value in receive(value) }
     receive(SettingsJS.shared.latestValue(topic))
+    for windowId in NativeWindowShell.windowIds { prepare(windowId) }
   }
 
   private static func receive(_ value: Any?) {
     let windows = ((value as? [String: Any])?["windows"] as? [String: Any]) ?? [:]
     for (windowId, host) in hosts where windows[windowId] == nil { host.show(nil) }
-    for (windowId, card) in windows {
+    for (windowId, card) in windows where NativeWindowShell.host(windowId) != nil {
       let host = hosts[windowId] ?? SidebarHoverCardHost(windowId: windowId)
       hosts[windowId] = host
       host.show(card as? [String: Any])
@@ -33,6 +34,19 @@ enum NativeSidebarHoverCard {
     return String(data: data, encoding: .utf8) ?? "null"
   }
 
+  static func prepare(_ windowId: String) {
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+      guard observer != nil, NativeWindowShell.overlay(windowId)?.window != nil, hosts[windowId]?.prepared != true else { return }
+      let host = hosts[windowId] ?? SidebarHoverCardHost(windowId: windowId)
+      hosts[windowId] = host
+      host.prepare()
+    }
+  }
+
+  static func windowEnded(_ windowId: String) {
+    hosts.removeValue(forKey: windowId)?.end()
+  }
+
   static func players(windowId: String) -> [NSView] { hosts[windowId]?.shownPlayers ?? [] }
 
   static func presented(_ windowId: String, at point: CGPoint, width: ClosedRange<Double>, height: ClosedRange<Double>) -> String {
@@ -40,7 +54,7 @@ enum NativeSidebarHoverCard {
     let flipped = view.isFlipped || root.isGeometryFlipped
     let local = CGPoint(x: point.x, y: flipped ? point.y : root.bounds.height - point.y)
     func find(_ layer: CALayer) -> CALayer? {
-      for sub in layer.sublayers ?? [] {
+      for sub in layer.sublayers ?? [] where !sub.isHidden {
         let rect = sub.convert(sub.bounds, to: root)
         if rect.contains(local), width.contains(Double(rect.width)), height.contains(Double(rect.height)) { return sub }
         if let deeper = find(sub) { return deeper }
@@ -217,9 +231,28 @@ final class SidebarHoverCardHost {
     coverChanged()
   }
 
+  private(set) var prepared = false
+
+  func prepare() {
+    guard motion.phase == .hidden, let overlay = NativeWindowShell.overlay(windowId) else { return }
+    prepared = true
+    if motion.superview !== overlay {
+      motion.frame = overlay.bounds
+      overlay.addSubview(motion)
+    }
+    motion.keepHidden(tabCard)
+  }
+
+  func end() {
+    motion.removeFromSuperview()
+    if let liveObserver { NotificationCenter.default.removeObserver(liveObserver) }
+    liveObserver = nil
+  }
+
   func show(_ card: [String: Any]?) {
     attachment = nil
     guard let card, let kind = card["kind"] as? String else {
+      guard motion.content != nil else { tabCardInput = nil; return }
       if kind == "group" { groupCard.live = false }
       tabCardInput = nil
       motion.hide()
@@ -348,6 +381,7 @@ final class SidebarHoverCardHost {
       info["buttons"] = buttons
       if kind == "tab", let look = tabCard.state?.look {
         info["fill"] = look.fill
+        info["glass"] = tabCard.usesGlass
         info["titleShown"] = tabCard.titleShown
         info["memory"] = tabCard.memoryShown ?? NSNull()
       }

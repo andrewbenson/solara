@@ -70,6 +70,7 @@ public enum SidebarTabCardMetrics {
   static let actionsGap: CGFloat = 10
   static let button: CGFloat = 28
   static let radius: CGFloat = 11
+  static let glassRadius: CGFloat = 13
 
   public static func origin(anchor: CGRect, sidebarWidth: CGFloat, cardHeight: CGFloat, windowHeight: CGFloat) -> CGPoint {
     let left = anchor.maxX <= sidebarWidth + 1 ? sidebarWidth + 0.5 : anchor.maxX + 8
@@ -84,11 +85,18 @@ public enum SidebarTabCardMetrics {
   static func pitch(_ count: Int) -> CGFloat { min(maxPitch, (width - 4) / CGFloat(max(1, count))) }
 }
 
-public final class SidebarTabCardView: NSView {
+public final class SidebarTabCardView: NSView, HoverCardRetainedContent {
   public var onAction: ((String) -> Void)?
   public var onPointer: ((Bool) -> Void)?
   public private(set) var state: SidebarTabCardState?
   private let surface = SurfaceLayer()
+  private var glass: NewTabGlassSurface?
+  private var glassApplied: (size: CGSize, dark: Bool)?
+  private var glassDark = false
+  public private(set) var usesGlass = false
+  #if DEBUG
+  var forcedReduceTransparency: Bool?
+  #endif
   private let title = OnboardingTextNSView()
   private let host = OnboardingTextNSView()
   private let note = NSTextField(labelWithString: "This tab needs to reload")
@@ -111,6 +119,7 @@ public final class SidebarTabCardView: NSView {
     surface.glowRadius = 16
     surface.glowOffset = CGSize(width: 0, height: 6)
     layer?.addSublayer(surface)
+    if !reduceTransparency { makeGlass(dark: effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua) }
     title.container.maximumNumberOfLines = 2
     title.container.lineBreakMode = .byTruncatingTail
     title.manager.usesFontLeading = false
@@ -132,22 +141,57 @@ public final class SidebarTabCardView: NSView {
 
   required init?(coder: NSCoder) { fatalError() }
 
+  private var reduceTransparency: Bool {
+    #if DEBUG
+    if let forcedReduceTransparency { return forcedReduceTransparency }
+    #endif
+    return NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+  }
+
+  private func makeGlass(dark: Bool) {
+    let made = NewTabGlassSurface(frame: bounds)
+    addSubview(made, positioned: .below, relativeTo: subviews.first)
+    glass = made
+    glassDark = dark
+    applyGlass()
+  }
+
+  private func applyGlass() {
+    guard let glass, usesGlass || glassApplied == nil else { return }
+    guard glassApplied?.size != bounds.size || glassApplied?.dark != glassDark else { return }
+    glass.frame = bounds
+    glass.apply(frame: bounds, radius: SidebarTabCardMetrics.glassRadius, tint: NewTabTheme(dark: glassDark, tokens: [:]).ntpBarSolid.ns, dark: glassDark)
+    glassApplied = (bounds.size, glassDark)
+  }
+
+  static func darkLook(_ look: SidebarTabCardState.Look) -> Bool {
+    guard let primary = CSSColor(look.primary)?.ns.usingColorSpace(.sRGB) else { return false }
+    return 0.2126 * primary.redComponent + 0.7152 * primary.greenComponent + 0.0722 * primary.blueComponent > 0.5
+  }
+
   public func set(_ next: SidebarTabCardState) {
     if next.tabId != state?.tabId { memoryRow = .absent }
     state = next
     let look = next.look
     func color(_ text: String) -> NSColor { CSSColor(text)?.ns ?? .clear }
-    let secondary = color(look.secondary)
+    let dark = Self.darkLook(look)
+    usesGlass = !reduceTransparency
+    if usesGlass, glass == nil { makeGlass(dark: dark) }
+    glassDark = dark
+    glass?.isHidden = !usesGlass
+    surface.isHidden = usesGlass
+    let ink = NSColor(white: dark ? 1 : 0, alpha: 1)
+    let secondary = usesGlass ? ink.withAlphaComponent(dark ? 0.78 : 0.72) : color(look.secondary)
     surface.fill = color(look.fill)
     surface.borderTint = color(look.border)
     surface.glowOpacity = look.shadowOpacity * 0.8
-    title.storage.setAttributedString(Self.text(next.title, size: 13, weight: .semibold, color: color(look.primary)))
+    title.storage.setAttributedString(Self.text(next.title, size: 13, weight: .semibold, color: usesGlass ? ink.withAlphaComponent(dark ? 0.92 : 0.88) : color(look.primary)))
     title.needsDisplay = true
     host.isHidden = next.host == nil
     host.storage.setAttributedString(Self.text(next.host ?? "", size: 13, weight: .regular, color: secondary))
     host.needsDisplay = true
     note.isHidden = !next.sleeping
-    note.textColor = color(look.tertiary)
+    note.textColor = usesGlass ? ink.withAlphaComponent(dark ? 0.68 : 0.64) : color(look.tertiary)
     styleMemory()
     while buttons.count < next.buttons.count {
       let button = SidebarIconButton()
@@ -161,13 +205,14 @@ public final class SidebarTabCardView: NSView {
     for (button, spec) in zip(buttons, next.buttons) {
       button.set(spec.icon, size: 14, weight: .regular, color: secondary, tooltip: spec.label)
       button.setAccessibilityLabel(spec.label)
-      button.hoverFill = color(look.hover)
-      button.pressedFill = color(look.pressed)
+      button.hoverFill = usesGlass ? ink.withAlphaComponent(dark ? 0.14 : 0.08) : color(look.hover)
+      button.pressedFill = usesGlass ? ink.withAlphaComponent(dark ? 0.22 : 0.14) : color(look.pressed)
       let action = spec.action
       button.onPress = { [weak self] in self?.onAction?(action) }
     }
     titleLines = title.lineCount(width: SidebarTabCardMetrics.titleWidth)
     setFrameSize(NSSize(width: SidebarTabCardMetrics.width, height: height))
+    applyGlass()
     needsLayout = true
   }
 
@@ -188,6 +233,7 @@ public final class SidebarTabCardView: NSView {
     CATransaction.setDisableActions(true)
     surface.frame = bounds
     CATransaction.commit()
+    applyGlass()
     let textX = m.inset - m.fieldPadding
     let textWidth = bounds.width - 2 * textX
     var y = m.border + m.top
@@ -232,6 +278,11 @@ public final class SidebarTabCardView: NSView {
     if window == nil { pointer(false) }
   }
 
+  public override func viewDidHide() {
+    super.viewDidHide()
+    pointer(false)
+  }
+
   @objc private func devPointer(_ note: Notification) { pointer(DevPointer.inside(self, note)) }
 
   private func pointer(_ on: Bool) {
@@ -242,6 +293,7 @@ public final class SidebarTabCardView: NSView {
 
   public override func hitTest(_ point: NSPoint) -> NSView? {
     let hit = super.hitTest(point)
+    if let glass, let hit, hit.isDescendant(of: glass) { return self }
     return hit === title || hit === host || hit === memory || hit === note ? self : hit
   }
 
@@ -264,7 +316,12 @@ public final class SidebarTabCardView: NSView {
     let high = bytes.map { SidebarTabMemory.isHigh($0) } ?? false
     memory.stringValue = SidebarTabMemory.text(bytes)
     memory.font = .systemFont(ofSize: 11.5, weight: high ? .medium : .regular)
-    memory.textColor = CSSColor(high ? look.primary : look.tertiary)?.ns ?? .clear
+    if usesGlass {
+      let ink = NSColor(white: Self.darkLook(look) ? 1 : 0, alpha: 1)
+      memory.textColor = ink.withAlphaComponent(high ? 0.92 : (Self.darkLook(look) ? 0.68 : 0.64))
+    } else {
+      memory.textColor = CSSColor(high ? look.primary : look.tertiary)?.ns ?? .clear
+    }
   }
 
   public var titleShown: String { title.shownText(width: SidebarTabCardMetrics.titleWidth) }

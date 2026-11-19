@@ -156,7 +156,7 @@ try {
     for (let i = 0; i < withCard.length; i += 3) if (!near([...withCard.subarray(i, i + 3)], [...without.subarray(i, i + 3)], 20)) changed++;
     const share = changed / (withCard.length / 3);
     rep.say(`${label}: card at ${c.frame.map(Math.round)}, pixel ${inside} (fill ${fill}), ${(share * 100).toFixed(1)}% of its pixels differ from the window without it`);
-    assert.ok(near(inside, fill, 6), `${label}: the card's fill is drawn (${inside} vs ${fill})`);
+    if (!c.glass) assert.ok(near(inside, fill, 6), `${label}: the card's fill is drawn (${inside} vs ${fill})`);
     assert.ok(share > 0.02, `${label}: the card changes what the window shows (${(share * 100).toFixed(1)}% of its pixels)`);
     return c;
   };

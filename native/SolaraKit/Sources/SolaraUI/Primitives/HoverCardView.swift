@@ -14,6 +14,9 @@ public enum HoverCardMotion {
   }
 }
 
+@MainActor
+public protocol HoverCardRetainedContent: NSView {}
+
 public final class HoverCardView: NSView {
   public enum Phase: String, Sendable { case hidden, entering, shown, leaving }
 
@@ -50,10 +53,11 @@ public final class HoverCardView: NSView {
     let fresh = content == nil
     let returning = phase == .leaving
     if content !== view {
-      content?.removeFromSuperview()
+      if let content { park(content) }
       content = view
-      motion.addSubview(view)
+      if view.superview !== motion { motion.addSubview(view) }
     }
+    view.isHidden = false
     view.setFrameOrigin(origin)
     guard fresh || returning else { return }
     run += 1
@@ -77,13 +81,23 @@ public final class HoverCardView: NSView {
     animate(opacity: currentOpacity(now), to: 0, scaleFrom: scale.value(at: now), to: HoverCardMotion.fromScale, velocity: scale.velocity(at: now), spring: HoverCardMotion.outSpring, at: now) { [weak self] in
       guard let self, self.run == mine else { return }
       self.motion.layer?.removeAllAnimations()
-      self.content?.removeFromSuperview()
+      if let content = self.content { self.park(content) }
       self.content = nil
       self.phase = .hidden
       self.scale = .resting(HoverCardMotion.fromScale)
       self.applyRest()
       self.onHidden?()
     }
+  }
+
+  public func keepHidden(_ view: NSView & HoverCardRetainedContent) {
+    guard view.superview !== motion else { return }
+    view.isHidden = true
+    motion.addSubview(view)
+  }
+
+  private func park(_ view: NSView) {
+    if view is HoverCardRetainedContent { view.isHidden = true } else { view.removeFromSuperview() }
   }
 
   private func currentOpacity(_ now: CFTimeInterval) -> Double { opacityValue(at: now) }

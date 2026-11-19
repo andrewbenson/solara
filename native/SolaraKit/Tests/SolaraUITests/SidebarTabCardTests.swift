@@ -16,6 +16,90 @@ import Testing
     return try #require(SidebarTabCardState.decode(value))
   }
 
+  private func glassViews(_ view: NSView) -> [NSGlassEffectView] {
+    (view as? NSGlassEffectView).map { [$0] } ?? view.subviews.flatMap(glassViews)
+  }
+
+  @Test func theCardIsGlassWithItsOwnInkAndTheOriginalPlateUnderReduceTransparency() throws {
+    let card = SidebarTabCardView()
+    card.forcedReduceTransparency = false
+    card.set(try state(buttons: 2))
+    card.layoutSubtreeIfNeeded()
+    let glass = try #require(glassViews(card).first)
+    let plate = try #require(card.layer?.sublayers?.compactMap { $0 as? SurfaceLayer }.first)
+    #expect(card.usesGlass && !glass.isHiddenOrHasHiddenAncestor && plate.isHidden)
+    #expect(glass.frame.size == card.bounds.size && glass.cornerRadius == SidebarTabCardMetrics.glassRadius)
+    let buttons = card.subviews.compactMap { $0 as? SidebarIconButton }
+    #expect(buttons.count == 2 && buttons.allSatisfy { $0.hoverFill == NSColor(white: 1, alpha: 0.14) && $0.pressedFill == NSColor(white: 1, alpha: 0.22) })
+    #expect(card.hitTest(NSPoint(x: 4, y: 8)) === card)
+    card.forcedReduceTransparency = true
+    card.set(try state(buttons: 2))
+    #expect(!card.usesGlass && glassViews(card).allSatisfy(\.isHiddenOrHasHiddenAncestor) && !plate.isHidden)
+    #expect(plate.fill == CSSColor("#262626")!.ns)
+    #expect(buttons.allSatisfy { $0.hoverFill == CSSColor("rgba(255,255,255,0.1)")!.ns })
+    card.forcedReduceTransparency = false
+    card.set(try state(buttons: 2))
+    #expect(glassViews(card).count == 1 && glassViews(card).first === glass)
+  }
+
+  @Test func aLightLookGetsLightGlassAndDarkInk() throws {
+    var light = try state()
+    light.look.primary = "#1C1C1C"
+    #expect(!SidebarTabCardView.darkLook(light.look))
+    #expect(SidebarTabCardView.darkLook(try state().look))
+    let card = SidebarTabCardView()
+    card.forcedReduceTransparency = false
+    card.set(light)
+    let glass = try #require(glassViews(card).first)
+    #expect(glass.appearance?.name == .aqua)
+    let buttons = card.subviews.compactMap { $0 as? SidebarIconButton }
+    #expect(buttons.allSatisfy { $0.hoverFill == NSColor(white: 0, alpha: 0.08) })
+  }
+
+  @Test func hidingParksTheCardInTheHoverLayerReleasesThePointerAndStopsHitTesting() throws {
+    let window = NSPanel(contentRect: CGRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+    window.isReleasedWhenClosed = false
+    defer { window.close() }
+    let host = HoverCardView(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+    window.contentView?.addSubview(host)
+    let card = SidebarTabCardView()
+    var pointer: [Bool] = []
+    card.onPointer = { pointer.append($0) }
+    card.forcedReduceTransparency = false
+    card.set(try state())
+    host.keepHidden(card)
+    let glass = try #require(glassViews(card).first)
+    host.show(card, origin: CGPoint(x: 200, y: 100))
+    RunLoop.main.run(until: Date().addingTimeInterval(HoverCardMotion.fadeDuration + 0.15))
+    let onCard = try #require(host.superview).convert(NSPoint(x: 210, y: 110), from: host)
+    #expect(host.phase == .shown && host.hitTest(onCard) != nil)
+    card.mouseEntered(with: try #require(NSEvent.enterExitEvent(with: .mouseEntered, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, trackingNumber: 0, userData: nil)))
+    #expect(pointer == [true])
+    host.hide()
+    #expect(host.phase == .leaving && host.hitTest(onCard) == nil)
+    RunLoop.main.run(until: Date().addingTimeInterval(HoverCardMotion.fadeDuration + 0.15))
+    #expect(host.phase == .hidden && host.content == nil)
+    #expect(card.window === window && card.isHidden && pointer == [true, false])
+    #expect(host.hitTest(onCard) == nil)
+    host.show(card, origin: CGPoint(x: 200, y: 140))
+    #expect(host.content === card && !card.isHidden && glassViews(card).first === glass && card.frame.origin == CGPoint(x: 200, y: 140))
+  }
+
+  @Test func theHoverLayerReusesAKeptCardAndStillRemovesOtherCards() throws {
+    let host = HoverCardView(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+    let card = SidebarTabCardView()
+    card.set(try state())
+    host.keepHidden(card)
+    #expect(card.superview != nil && card.isHidden && host.content == nil && host.phase == .hidden)
+    host.show(card, origin: CGPoint(x: 200, y: 100))
+    #expect(host.content === card && !card.isHidden && host.phase == .entering)
+    let other = NSView(frame: CGRect(x: 0, y: 0, width: 100, height: 40))
+    host.show(other, origin: CGPoint(x: 200, y: 100))
+    #expect(card.superview != nil && card.isHidden && host.content === other)
+    host.show(card, origin: CGPoint(x: 200, y: 100))
+    #expect(other.superview == nil && !card.isHidden && host.content === card)
+  }
+
   @Test func aOneLineCardIsRNsHeight() throws {
     let card = SidebarTabCardView()
     card.set(try state())
@@ -87,6 +171,7 @@ import Testing
 
   @Test func unknownAndMeasuredMemoryReserveOneLineUnderTheHost() throws {
     let card = SidebarTabCardView()
+    card.forcedReduceTransparency = true
     card.set(try state())
     let without = card.frame.height
     card.setMemory(.unknown)

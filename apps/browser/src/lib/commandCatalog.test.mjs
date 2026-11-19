@@ -93,7 +93,8 @@ test("the menu bar source parses into its known items", () => {
   const groups = nativeGroups();
   assert.ok(groups.size > 120, `parsed ${groups.size} shortcut ids`);
   assert.deepEqual(groups.get("closeTab")?.keys, ["⌘W"]);
-  assert.deepEqual(groups.get("nextTab")?.keys, ["⇧⌘]", "⌘}", "⌃⇟", "⌥⌘↓"]);
+  assert.deepEqual(groups.get("nextTab")?.keys, ["⇧⌘]", "⌘}", "⌃⇟", "⌥⌘↓", "⌃⇥"]);
+  assert.deepEqual(groups.get("tabSwitcher:forward")?.keys, ["⌃`"]);
   assert.deepEqual(groups.get("nextProfile")?.keys, ["⌥⌘→"]);
   assert.deepEqual(groups.get("previousProfile")?.keys, ["⌥⌘←"]);
   assert.deepEqual(groups.get("std:toggleFullScreen:")?.keys, ["🌐F", "⌃⌘F"]);

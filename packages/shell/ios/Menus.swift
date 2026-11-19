@@ -617,8 +617,10 @@ enum MainMenu {
       cmd("Move Tab Down", "moveTabDown", functionKey(NSPageDownFunctionKey), [.control, .shift]).hiddenShortcut(),
       cmd("Move Tab Up", "moveTabUp", functionKey(NSPageUpFunctionKey), [.control, .shift]).hiddenShortcut(),
       cmd("Search Tabs…", "searchTabs", "a", [.command, .shift]),
-      cmd("Tab Switcher (forward)", "tabSwitcher", arg: "forward", "\t", .control).hiddenShortcut(),
-      cmd("Tab Switcher (backward)", "tabSwitcher", arg: "backward", "\t", [.control, .shift]).hiddenShortcut(),
+      cmd("Next Tab", "nextTab", "\t", .control).hiddenShortcut(),
+      cmd("Previous Tab", "previousTab", "\t", [.control, .shift]).hiddenShortcut(),
+      cmd("Tab Switcher (forward)", "tabSwitcher", arg: "forward", "`", .control).hiddenShortcut(),
+      cmd("Tab Switcher (backward)", "tabSwitcher", arg: "backward").hiddenShortcut(),
       cmd("Back to Pinned URL", "returnToPinnedUrl", "\r").hiddenShortcut(),
     ] + selectTab + [
       cmd("Select Last Tab", "selectLastTab", "9").hiddenShortcut(),
@@ -945,6 +947,45 @@ enum MainMenu {
     "openBookmark", "restoreClosed", "moveTabToProfile", "moveTabToWindow", "addBookmarkToFolder",
     "addFolderToSidebar", "restoreArcFolders",
   ]
+
+  private static var backTabMonitor: Any?
+
+  static func watchBackTab() {
+    guard backTabMonitor == nil else { return }
+    backTabMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+      MainActor.assumeIsolated { performBackTab(event) } ? nil : event
+    }
+  }
+
+  private static func performBackTab(_ event: NSEvent) -> Bool {
+    guard event.charactersIgnoringModifiers == "\u{19}" else { return false }
+    let window = event.window ?? NSApp.keyWindow
+    let context = BackTabShortcut.Context(
+      browserKeyWindow: WindowManager.shared.isBrowserWindow(window), attachedSheet: window?.attachedSheet != nil,
+      modal: NSApp.modalWindow != nil, markedText: (window?.firstResponder as? NSTextInputClient)?.hasMarkedText() == true)
+    var items: [CommandItem] = []
+    walk(NSApp.mainMenu) { item, _ in
+      if let item = item as? CommandItem, item.keyEquivalent == "\t" { items.append(item) }
+    }
+    var updated = Set<ObjectIdentifier>()
+    for item in items {
+      if let menu = item.menu, updated.insert(ObjectIdentifier(menu)).inserted { menu.update() }
+    }
+    let bindings = items.map { BackTabShortcut.Binding(key: $0.keyEquivalent, modifiers: backTabModifiers($0.keyEquivalentModifierMask), enabled: $0.isEnabled) }
+    guard let index = BackTabShortcut.binding(for: backTabModifiers(event.modifierFlags), in: context, among: bindings),
+      let menu = items[index].menu else { return false }
+    menu.performActionForItem(at: menu.index(of: items[index]))
+    return true
+  }
+
+  private static func backTabModifiers(_ flags: NSEvent.ModifierFlags) -> BackTabShortcut.Modifiers {
+    var out: BackTabShortcut.Modifiers = []
+    if flags.contains(.control) { out.insert(.control) }
+    if flags.contains(.option) { out.insert(.option) }
+    if flags.contains(.command) { out.insert(.command) }
+    if flags.contains(.shift) { out.insert(.shift) }
+    return out
+  }
 
   private static func walk(_ menu: NSMenu?, path: [String] = [], _ visit: (NSMenuItem, [String]) -> Void) {
     for item in menu?.items ?? [] where !item.isSeparatorItem {

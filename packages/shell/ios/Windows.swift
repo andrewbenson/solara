@@ -181,7 +181,7 @@ final class WindowManager: NSObject, NSWindowDelegate {
     _ = restoreRetainedWindow()
   }
 
-  private func isBrowserWindow(_ window: NSWindow?) -> Bool {
+  func isBrowserWindow(_ window: NSWindow?) -> Bool {
     guard let id = id(of: window) else { return false }
     return auxKinds[id] == nil
   }

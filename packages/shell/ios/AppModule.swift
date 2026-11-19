@@ -273,6 +273,41 @@ public class AppModule: Module {
       #endif
     }.runOnQueue(.main)
 
+    AsyncFunction("devMarkText") { (windowId: String, text: String) -> Bool in
+      #if DEBUG
+      guard let client = WindowManager.shared.windows[windowId]?.firstResponder as? NSTextInputClient else { return false }
+      if text.isEmpty {
+        client.unmarkText()
+      } else {
+        client.setMarkedText(text, selectedRange: NSRange(location: text.utf16.count, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
+      }
+      return client.hasMarkedText()
+      #else
+      return false
+      #endif
+    }.runOnQueue(.main)
+
+    AsyncFunction("devBeginSheet") { (windowId: String) -> Bool in
+      #if DEBUG
+      guard let window = WindowManager.shared.windows[windowId], window.attachedSheet == nil else { return false }
+      let sheet = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 320, height: 120), styleMask: [.titled], backing: .buffered, defer: false)
+      window.beginSheet(sheet)
+      return window.attachedSheet != nil
+      #else
+      return false
+      #endif
+    }.runOnQueue(.main)
+
+    AsyncFunction("devEndSheet") { (windowId: String) -> Bool in
+      #if DEBUG
+      guard let window = WindowManager.shared.windows[windowId], let sheet = window.attachedSheet else { return false }
+      window.endSheet(sheet, returnCode: .cancel)
+      return true
+      #else
+      return false
+      #endif
+    }.runOnQueue(.main)
+
     AsyncFunction("devMenuItems") { (title: String, perform: [String]?) -> [[String: Any]] in
       #if DEBUG
       var tiling: NSMenu?

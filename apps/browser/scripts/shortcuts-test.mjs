@@ -242,8 +242,9 @@ const shortcuts = [
   ["⌃⇧⇟", K(F(0xf72d), 121, "control", "shift", "function"), { command: "moveTabDown" }, "(Chrome's)"],
   ["⌃⇧⇞", K(F(0xf72c), 116, "control", "shift", "function"), { command: "moveTabUp" }, "(Chrome's)"],
   ["⇧⌘A", cmd("A", 0, "shift"), { command: "searchTabs" }, "⇧⌘A"],
-  ["⌃Tab", K("\t", 48, "control"), { command: "tabSwitcher", arg: "forward" }, "⌃Tab"],
-  ["⌃⇧Tab", K("\u0019", 48, "control", "shift"), { command: "tabSwitcher", arg: "backward" }, "⌃⇧Tab"],
+  ["⌃Tab", K("\t", 48, "control"), { command: "nextTab" }, "⌃Tab (Chrome's; the sidebar's next row)"],
+  ["⌃⇧Tab", K("\u0019", 48, "control", "shift"), { command: "previousTab" }, "⌃⇧Tab (Chrome's; the sidebar's previous row)"],
+  ["⌃`", K("`", 50, "control"), { command: "tabSwitcher", arg: "forward" }, "⌃` (the Tab Switcher, off ⌃Tab since 0.4.5)"],
   ["⌘↩", cmd("\r", 36), { command: "returnToPinnedUrl" }, "⌘↩", "not-field"],
   ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => [`⌘${n}`, cmd(`${n}`, [18, 19, 20, 21, 23, 22, 26, 28][n - 1]), { command: "selectTab", arg: `${n}` }, `⌘${n} (Chromium)`]),
   ["⌘9", cmd("9", 25), { command: "selectLastTab" }, "⌘9 (Chromium)"],
@@ -975,6 +976,86 @@ for (const where of ["the find field", "the page"]) {
   check("Esc closes only the find bar", after.active === "t3" && !after.find, JSON.stringify(after));
   const native = await untilSnapshot("native Escape closes find", (s) => nativeWindow(s)?.selectedTabId === after.active && s.tabs.find((t) => t.id === after.active)?.find.open === after.find);
   assert.equal(native.tabs.find((t) => t.id === after.active).find.open, after.find);
+}
+{
+  await resetToPageField("", [0, 0]);
+  const shown = async () => {
+    const value = await ac(`const s = ac.store.getState(), w = s.windows.w1; return w.activeTabIds[w.profileId];`);
+    const native = await untilSnapshot("native selected row", (s) => nativeWindow(s)?.selectedTabId === value);
+    assert.equal(nativeWindow(native).selectedTabId, value);
+    return value;
+  };
+  await postKeys([keyPress("\t", 48, 0, ["control"])]);
+  await sleep(800);
+  const down = await shown();
+  await resetToPageField("", [0, 0]);
+  await ac(`ac.store.getState().activate("t4"); return 1;`);
+  await sleep(500);
+  await postKeys([keyPress("\u0019", 48, 0, ["control", "shift"])]);
+  await sleep(800);
+  const up = await shown();
+  check("⌃Tab steps down the sidebar list and ⌃⇧Tab back up", down === "t4" && up === "t3", `⌃Tab → ${down}, ⌃⇧Tab → ${up}`);
+
+  const app = "globalThis.expo.modules.SolaraApp";
+  await resetToPageField("", [0, 0]);
+  const marked = await ac(`return ${app}.devMarkText("w1", "か");`);
+  await postKeys([keyPress("\u0019", 48, 0, ["control", "shift"])]);
+  await sleep(800);
+  const composing = await shown();
+  await ac(`return ${app}.devMarkText("w1", "");`);
+  check("⌃⇧Tab during IME composition stays with the text field", marked === true && composing === "t3", `marked ${marked}, shown ${composing}`);
+
+  await resetToPageField("", [0, 0]);
+  const sheetUp = await ac(`return ${app}.devBeginSheet("w1");`);
+  await sleep(300);
+  await postKeys([keyPress("\u0019", 48, 0, ["control", "shift"])]);
+  await sleep(800);
+  const underSheet = await ac(`const s = ac.store.getState(), w = s.windows.w1; return w.activeTabIds[w.profileId];`);
+  const ended = await ac(`return ${app}.devEndSheet("w1");`);
+  await sleep(400);
+  check("⌃⇧Tab with a sheet open leaves the tabs alone", sheetUp === true && underSheet === "t3" && ended === true, `sheet ${sheetUp}, shown ${underSheet}, ended ${ended}`);
+
+  const group = await ac(`const s = ac.store.getState(); s.activate("t6"); return s.groupTabs(["t5", "t6", "t7"], { name: "Folder" });`);
+  await ac(`const s = ac.store.getState(); s.activate("t3"); s.updateGroup(${JSON.stringify(group)}, { collapsed: true }); return 1;`);
+  await sleep(600);
+  const rows = await ac(`const s = ac.store.getState(), g = s.groups[${JSON.stringify(group)}], out = [];
+    for (const id of s.windows.w1.tabIds) { const row = g.tabIds.includes(id) ? "group" : id; if (!out.includes(row)) out.push(row); } return out;`);
+  const at = rows.indexOf("group") + 1;
+  const digit = (n) => keyPress(`${n}`, [18, 19, 20, 21, 23, 22, 26, 28][n - 1]);
+  await postKeys([digit(at)]);
+  await sleep(800);
+  const onGroup = await shown();
+  await postKeys([digit(at + 1)]);
+  await sleep(800);
+  const after = await shown();
+  check(`⌘1–9 count a collapsed group as one row: ⌘${at} is the group's last used tab, ⌘${at + 1} the row after it`, onGroup === "t6" && after === rows[at], `rows ${rows.join(",")}; ⌘${at} → ${onGroup}, ⌘${at + 1} → ${after}`);
+  await ac(`const s = ac.store.getState(); s.updateGroup(${JSON.stringify(group)}, { collapsed: false }); s.ungroup?.(${JSON.stringify(group)}); s.activate("t3"); return 1;`);
+  await sleep(400);
+
+  await resetToPageField("", [0, 0]);
+  await clipboard.set("sentinel-links");
+  await ac(`const s = ac.store.getState(); s.setSelection("w1", ["t4", "t2", "t3"]); return 1;`);
+  await sleep(300);
+  await postKeys([keyPress("C", 8, 0, ["command", "shift"])]);
+  await sleep(800);
+  const selectedWithShown = await clipboard.get();
+  check("⇧⌘C with the shown tab in a selection copies the selection", selectedWithShown === ["t2", "t3", "t4"].map((id) => `${pages}/?${id}`).join("\n"), JSON.stringify(selectedWithShown));
+  await clipboard.set("sentinel-links");
+  await ac(`ac.store.getState().setSelection("w1", ["t4", "t1", "t2"]); return 1;`);
+  await sleep(300);
+  await postKeys([keyPress("C", 8, 0, ["command", "shift"])]);
+  await sleep(800);
+  const outside = await clipboard.get();
+  check("⇧⌘C with a selection that leaves out the shown tab copies the shown page's link", outside === `${pages}/?t3`, JSON.stringify(outside));
+  await clipboard.set("sentinel-links");
+  await ac(`const s = ac.store.getState(); s.activate("t1"); s.setSelection("w1", ["t4", "t1", "t2"]); return 1;`);
+  await sleep(300);
+  await postKeys([keyPress("C", 8, 0, ["command", "shift"])]);
+  await sleep(800);
+  const copied = await clipboard.get();
+  const expected = ["t1", "t2", "t4"].map((id) => `${pages}/?${id}`).join("\n");
+  check("⇧⌘C with three tabs selected copies their links, one per line, in sidebar order", copied === expected, JSON.stringify(copied));
+  await ac(`ac.store.getState().setSelection("w1", []); return 1;`);
 }
 await fullShortcutSnapshotFits("after the presses");
 await press(cmd("q", 12), { focus: "window", wait: 0 });

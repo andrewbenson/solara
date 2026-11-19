@@ -34,3 +34,44 @@ public enum ShortcutPrecedence: String, CaseIterable, Sendable {
     return chosen[shortcutId].flatMap(ShortcutPrecedence.init(rawValue:)) ?? standard(shortcutId: shortcutId, command: command)
   }
 }
+
+public enum BackTabShortcut {
+  public struct Modifiers: OptionSet, Sendable, Hashable {
+    public let rawValue: Int
+    public init(rawValue: Int) { self.rawValue = rawValue }
+    public static let control = Modifiers(rawValue: 1)
+    public static let option = Modifiers(rawValue: 2)
+    public static let command = Modifiers(rawValue: 4)
+    public static let shift = Modifiers(rawValue: 8)
+  }
+
+  public struct Binding: Sendable, Equatable {
+    public let key: String
+    public let modifiers: Modifiers
+    public let enabled: Bool
+    public init(key: String, modifiers: Modifiers, enabled: Bool) {
+      self.key = key
+      self.modifiers = modifiers
+      self.enabled = enabled
+    }
+  }
+
+  public struct Context: Sendable, Equatable {
+    public var browserKeyWindow: Bool
+    public var attachedSheet: Bool
+    public var modal: Bool
+    public var markedText: Bool
+    public init(browserKeyWindow: Bool, attachedSheet: Bool, modal: Bool, markedText: Bool) {
+      self.browserKeyWindow = browserKeyWindow
+      self.attachedSheet = attachedSheet
+      self.modal = modal
+      self.markedText = markedText
+    }
+  }
+
+  public static func binding(for modifiers: Modifiers, in context: Context, among bindings: [Binding]) -> Int? {
+    guard context.browserKeyWindow, !context.attachedSheet, !context.modal, !context.markedText else { return nil }
+    guard !modifiers.isDisjoint(with: [.control, .option, .command]) else { return nil }
+    return bindings.firstIndex { $0.key == "\t" && $0.modifiers == modifiers && $0.enabled }
+  }
+}

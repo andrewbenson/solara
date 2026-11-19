@@ -17,12 +17,12 @@ import Testing
     return state
   }
 
-  private func group(_ id: String, _ tabs: [String], pinned: Bool = false) -> TabGroup {
+  private func group(_ id: String, _ tabs: [String], pinned: Bool = false, collapsed: Bool = false) -> TabGroup {
     TabGroup(id: id, windowId: "w", profileId: BrowserState.defaultProfile.id, name: id, icon: nil, color: nil,
-      collapsed: true, pinned: pinned, tabIds: tabs, createdAt: 0)
+      collapsed: collapsed, pinned: pinned, tabIds: tabs, createdAt: 0)
   }
 
-  @Test func tilesRowsPinnedGroupsThenListIgnoreCollapsedState() {
+  @Test func tilesRowsPinnedGroupsThenList() {
     var state = fixture(["list", "grouped", "row", "tile"])
     state.tabs["tile"]?.pinned = true
     state.tabs["row"]?.pinned = true
@@ -94,13 +94,45 @@ import Testing
     #expect(query.numberedTab(windowId: "w", number: 2) == "b")
   }
 
-  @Test func nestedPinnedFoldedGroupsKeepEveryRowNumbered() {
+  @Test func nestedPinnedOpenGroupsKeepEveryRowNumbered() {
     var state = fixture(["first", "a", "b", "last"])
     state.groups["root"] = group("root", ["first", "a", "b"], pinned: true)
     var child = group("child", ["a", "b"])
     child.parentId = "root"
     state.groups["child"] = child
     #expect(SidebarQuery(state).numberedRows(windowId: "w").map(\.tabId) == ["first", "a", "b", "last"])
+  }
+
+  @Test func aCollapsedGroupIsOneRowShowingItsActiveOrLastUsedTab() {
+    var state = fixture(["first", "a", "b", "c", "last"])
+    state.groups["folder"] = group("folder", ["a", "b", "c"], collapsed: true)
+    state.windows["w"]?.activeTabIds[BrowserState.defaultProfile.id] = "first"
+    state.tabs["b"]?.lastActiveAt = 100
+    var rows = SidebarQuery(state).numberedRows(windowId: "w")
+    #expect(rows.map(\.key) == ["t:first", "g:folder", "t:last"])
+    #expect(rows.map(\.tabId) == ["first", "b", "last"])
+    state.windows["w"]?.activeTabIds[BrowserState.defaultProfile.id] = "c"
+    rows = SidebarQuery(state).numberedRows(windowId: "w")
+    #expect(rows.map(\.tabId) == ["first", "c", "last"])
+    #expect(SidebarQuery(state).numberedTab(windowId: "w", number: 3) == "last")
+  }
+
+  @Test func aCollapsedParentHidesItsOpenChildGroupInOneRow() {
+    var state = fixture(["first", "a", "b", "last"])
+    state.groups["root"] = group("root", ["first", "a", "b"], pinned: true, collapsed: true)
+    var child = group("child", ["a", "b"])
+    child.parentId = "root"
+    state.groups["child"] = child
+    #expect(SidebarQuery(state).numberedRows(windowId: "w").map(\.key) == ["g:root", "t:last"])
+  }
+
+  @Test func anOpenParentNumbersItsCollapsedChildAsOneRow() {
+    var state = fixture(["first", "a", "b", "last"])
+    state.groups["root"] = group("root", ["first", "a", "b"])
+    var child = group("child", ["a", "b"], collapsed: true)
+    child.parentId = "root"
+    state.groups["child"] = child
+    #expect(SidebarQuery(state).numberedRows(windowId: "w").map(\.key) == ["t:first", "g:child", "t:last"])
   }
 
   @Test func splitPaneTimestampTieKeepsPaneOrder() {

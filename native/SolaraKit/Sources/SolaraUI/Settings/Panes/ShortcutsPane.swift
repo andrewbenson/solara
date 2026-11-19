@@ -201,7 +201,7 @@ struct ShortcutsPane: View {
         SettingToggle("shortcuts.undoReopensClosedTab", key: "undoReopensClosedTab")
         SettingToggle("shortcuts.showTabNumberHints", key: "showTabNumberHints")
       } header: {
-        Text("Perform common actions in \(app) faster and from anywhere. Select an action to customize its keyboard shortcut.")
+        Text("Perform common actions in \(app) faster and from anywhere. Select an action to customize its keyboard shortcut.\n⌃Tab now moves down the sidebar, and the Tab Switcher is on ⌃`. Search “Tab Switcher” below to rebind it.")
           .font(.callout)
           .fontWeight(.regular)
           .foregroundStyle(.secondary)

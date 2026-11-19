@@ -76,8 +76,8 @@ export const COMMANDS: Readonly<Record<BrowserCommand, CommandSpec>> = {
   viewSource: { title: "View Source", keys: ["⌥⌘U"], ...pageInLittleSolara },
   back: { title: "Go Back", keys: ["⌘[", "⌘←"], scope: "window", littleSolara: "page" },
   forward: { title: "Go Forward", keys: ["⌘]", "⌘→"], scope: "window", littleSolara: "page" },
-  nextTab: { title: "Next Tab", keys: ["⇧⌘]", "⌘}", "⌃⇟", "⌥⌘↓"], ...windowOffInLittleSolara },
-  previousTab: { title: "Previous Tab", keys: ["⇧⌘[", "⌘{", "⌃⇞", "⌥⌘↑"], ...windowOffInLittleSolara },
+  nextTab: { title: "Next Tab", keys: ["⇧⌘]", "⌘}", "⌃⇟", "⌥⌘↓", "⌃⇥"], ...windowOffInLittleSolara },
+  previousTab: { title: "Previous Tab", keys: ["⇧⌘[", "⌘{", "⌃⇞", "⌥⌘↑", "⌃⇧⇥"], ...windowOffInLittleSolara },
   selectTab: {
     ...windowOffInLittleSolara,
     variants: Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8].map((n) => [String(n), { title: `Select Tab ${n}`, keys: [`⌘${n}`] }])),
@@ -125,8 +125,8 @@ export const COMMANDS: Readonly<Record<BrowserCommand, CommandSpec>> = {
   tabSwitcher: {
     ...windowOffInLittleSolara,
     variants: {
-      forward: { title: "Tab Switcher (forward)", keys: ["⌃⇥"] },
-      backward: { title: "Tab Switcher (backward)", keys: ["⌃⇧⇥"] },
+      forward: { title: "Tab Switcher (forward)", keys: ["⌃`"] },
+      backward: { title: "Tab Switcher (backward)" },
     },
   },
   share: { title: "Share…", barTitle: "Share", symbol: "square.and.arrow.up", keys: ["⌥⌘S"], ...pageInLittleSolara },

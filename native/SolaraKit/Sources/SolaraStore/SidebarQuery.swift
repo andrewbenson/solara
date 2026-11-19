@@ -92,14 +92,17 @@ public struct SidebarQuery {
       if entry.hasPrefix("g:") {
         guard ancestors.insert(id).inserted else { return [] }
         defer { ancestors.remove(id) }
+        if let group = state.groups[id], group.collapsed { return collapsedRow(entry, group.tabIds.filter { state.tabs[$0] != nil }) }
         return groupEntries(id).flatMap(rows)
       }
       guard entry.hasPrefix("s:") else {
         return state.tabs[id] == nil ? [] : [NumberedTabRow(key: entry, tabId: id)]
       }
-      let panes = splitPanes(id)
-      if let active, panes.contains(active) { return [NumberedTabRow(key: entry, tabId: active)] }
-      let recent = panes.reduce(nil as String?) { previous, candidate in
+      return collapsedRow(entry, splitPanes(id))
+    }
+    func collapsedRow(_ entry: String, _ members: [String]) -> [NumberedTabRow] {
+      if let active, members.contains(active) { return [NumberedTabRow(key: entry, tabId: active)] }
+      let recent = members.reduce(nil as String?) { previous, candidate in
         guard let previous else { return candidate }
         return (state.tabs[candidate]?.lastActiveAt ?? 0) > (state.tabs[previous]?.lastActiveAt ?? 0) ? candidate : previous
       }

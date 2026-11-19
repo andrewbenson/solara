@@ -242,6 +242,7 @@ class SidebarRowView: NSView {
     switch item.kind {
     case .tile(let id): hintKey = "t:\(id)"
     case .tab, .split: hintKey = item.key
+    case .groupHeader(let id): hintKey = "g:\(id)"
     default: hintKey = ""
     }
     numberHint.configure(actions: context.tabNumberActions[hintKey] ?? [], enabled: context.showsTabNumberHints, style: (windowShell?.fullScreenIconSidebar == true || SidebarRail.contains(width: Double(item.frame.width))) ? .rail : item.section == .tiles ? .tile : .row)

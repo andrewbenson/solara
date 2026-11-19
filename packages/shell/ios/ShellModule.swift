@@ -381,6 +381,7 @@ public class ShellModule: Module {
         LeftEdgeWatcher.shared.emit = { name, body in self?.sendEvent(name, body) }
         WindowManager.shared.runtime = self.map(ObjectIdentifier.init)
         NSApp.mainMenu = MainMenu.build()
+        MainMenu.watchBackTab()
         let activation = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
           WindowManager.shared.becameActive()
         }

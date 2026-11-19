@@ -308,7 +308,7 @@ extension Session {
       let windowId: String? = privateId != nil ? (next.windows[privateId!]?.incognito == true ? privateId : nil) : restoreTarget(next, e.windowId, nil)
       guard let windowId, !(Ids.isIncognitoProfile(e.tab.profileId) && e.windowId != windowId) else { continue }
       let (restored, ids) = restoreSnapshots(
-        next, windowId, [SnapshotEntry(tab: e.tab, tabId: e.restoreFrom ?? e.tabId, index: windowId == e.windowId ? e.index : nil)])
+        next, windowId, [SnapshotEntry(tab: e.tab, tabId: e.restoreFrom ?? e.tabId, index: windowId == e.windowId ? e.index : nil, shownAt: e.shownAt)])
       next = restored
       if let id = ids.first, !id.isEmpty, e.group != nil { next = regroupRestored(next, windowId, [e], [id]) }
       if let id = ids.first, !id.isEmpty, truthy(entryId) { next = activated(next, id) }
@@ -351,7 +351,7 @@ extension Session {
     let undone = Set((cleared["closedEntryIds"]?.array ?? []).compactMap(\.string))
     var base = s
     base.closedTabs = s.closedTabs.filter { !undone.contains($0.id) }
-    let (restored, ids) = restoreSnapshots(base, windowId, entries.map { SnapshotEntry(tab: $0.tab, tabId: $0.restoreFrom ?? $0.tabId, index: nil) })
+    let (restored, ids) = restoreSnapshots(base, windowId, entries.map { SnapshotEntry(tab: $0.tab, tabId: $0.restoreFrom ?? $0.tabId, index: nil, shownAt: $0.shownAt) })
     var renamed: [String: String] = [:]
     for (i, e) in entries.enumerated() { if let tabId = e.tabId { renamed[tabId] = i < ids.count ? ids[i] : nil } }
     func current(_ id: String) -> String { renamed[id] ?? id }

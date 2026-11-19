@@ -130,7 +130,7 @@ export function untidyingPins(s: BrowserState, tidied: TidiedPins): BrowserState
   const now = new Map<string, string>();
   for (const id of Object.keys(tidied.homes)) if (next.tabs[id]?.windowId === w.id) now.set(id, id);
   const back = tidied.closed.filter((e) => !next.tabs[e.tabId ?? ""]);
-  const [restored, ids] = restoreSnapshots(next, w.id, back.map((e) => ({ tab: e.tab, tabId: e.restoreFrom ?? e.tabId, index: e.index })));
+  const [restored, ids] = restoreSnapshots(next, w.id, back.map((e) => ({ tab: e.tab, tabId: e.restoreFrom ?? e.tabId, index: e.index, shownAt: e.shownAt })));
   next = restored;
   back.forEach((e, i) => ids[i] && e.tabId && now.set(e.tabId, ids[i]!));
   const inWindow = (id: string) => next.tabs[id]?.windowId === w.id;

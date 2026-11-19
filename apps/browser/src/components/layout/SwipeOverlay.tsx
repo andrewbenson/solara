@@ -6,7 +6,7 @@ import { useTheme } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
 import { NEW_TAB_MARK } from "../primitives";
 import { HistoryPopover } from "./HistoryPopover";
-import { goBack, goForward, goToHistoryItem, historyItems, openHistoryMenu, useHistoryAvailability, useHistoryMenu, type HistoryItem } from "./history";
+import { goBack, goForward, goToHistoryItem, historyItems, openHistoryMenu, useBackAction, useHistoryAvailability, useHistoryMenu, type HistoryItem } from "./history";
 import { usePage } from "./pageState";
 import { NativeLayoutFeed, nativePaneWindows, useNativeLayoutFeed, type NativePanePresentation } from "./nativeLayoutFeed";
 import type { ToolbarGeometry } from "./geometry";
@@ -37,7 +37,7 @@ export const NavigationOverlays = memo(function NavigationOverlays({ tabId, wind
   );
 });
 
-type NavigationPresentation = { newTabShown: boolean; backToNewTab: boolean; engineBack: boolean; theme: { dark: boolean; textPrimary: string; textSecondary: string } };
+type NavigationPresentation = { newTabShown: boolean; backToNewTab: boolean; engineBack: boolean; backToOpener: boolean; theme: { dark: boolean; textPrimary: string; textSecondary: string } };
 const navigationFeed = new NativeLayoutFeed<NativePanePresentation<NavigationPresentation>>((entries) => publishSettingsTopic("pane.navigation", { windows: nativePaneWindows(entries) }));
 
 export function SwipeOverlay(props: { tabId: string; windowId: string; nativeAllowed?: boolean }) {
@@ -47,10 +47,12 @@ export function SwipeOverlay(props: { tabId: string; windowId: string; nativeAll
 
 function NativeNavigationHistory({ tabId, windowId }: { tabId: string; windowId: string }) {
   const theme = useTheme();
-  const newTabShown = usePage(tabId, (page) => !!page.newTabShown);
-  const backToNewTab = usePage(tabId, (page) => page.backToNewTab);
-  const engineBack = usePage(tabId, (page) => !!page.engineBack);
-  useNativeLayoutFeed(navigationFeed, windowId, { windowId, tabId, presentation: { newTabShown, backToNewTab, engineBack, theme: { dark: !!theme.dark, textPrimary: theme.textPrimary, textSecondary: theme.textSecondary } } }, `${windowId}:${tabId}`);
+  const pageId = useBrowser((s) => s.tabs[tabId]?.pageIn ?? tabId);
+  const newTabShown = usePage(pageId, (page) => !!page.newTabShown);
+  const backToNewTab = usePage(pageId, (page) => page.backToNewTab);
+  const engineBack = usePage(pageId, (page) => !!page.engineBack);
+  const backToOpener = useBackAction(tabId) === "opener";
+  useNativeLayoutFeed(navigationFeed, windowId, { windowId, tabId, presentation: { newTabShown, backToNewTab, engineBack, backToOpener, theme: { dark: !!theme.dark, textPrimary: theme.textPrimary, textSecondary: theme.textSecondary } } }, `${windowId}:${tabId}`);
   return null;
 }
 

@@ -33,7 +33,7 @@ export function switchToTab(tabId: string) {
   if (tab.windowId !== store().ui.focusedWindowId) focus(tab.windowId);
 }
 
-export async function closeTab(tabId: string) {
+export async function closeTab(tabId: string, successor?: string) {
   const s = store();
   const tab = s.tabs[tabId];
   const w = tab && s.windows[tab.windowId];
@@ -54,7 +54,7 @@ export async function closeTab(tabId: string) {
   const now = store();
   const closesItsWindow = now.tabs[tabId]?.windowId === w.id && now.peeks[w.id]?.tabId !== tabId && closesWindow(now, tabId) && !leavesEmptyWindow(now, tabId);
   if (last && closesItsWindow) return closeWindowAnimated(w.id);
-  store().closeTab(tabId);
+  store().closeTab(tabId, successor);
 }
 
 export async function closeTabs(windowId: string, ids: string[]) {

@@ -866,9 +866,10 @@ private final class NativeNavigationSwipe {
     #if DEBUG || SOLARA_PERF_TRACE
     LayoutTrace.event("navigationConfigure", "\(windowId) \(registration.tabID) \(revision) \(presentationRevision)")
     #endif
-    let live = state.live[registration.tabID]
+    let pageID = state.tabs[registration.tabID]?.pageIn.flatMap { $0.isEmpty ? nil : $0 } ?? registration.tabID
+    let live = state.live[pageID]
     let newTabShown = presentation["newTabShown"] as? Bool == true
-    target.canSwipeBack = !newTabShown && (live?.canGoBack == true || presentation["backToNewTab"] as? Bool == true || presentation["engineBack"] as? Bool == true)
+    target.canSwipeBack = !newTabShown && (live?.canGoBack == true || presentation["backToNewTab"] as? Bool == true || presentation["engineBack"] as? Bool == true || presentation["backToOpener"] as? Bool == true)
     target.canSwipeForward = newTabShown || live?.canGoForward == true
     controller.profileId = state.tabs[registration.tabID]?.profileId ?? ""
     if let theme = presentation["theme"] as? [String: Any] {
@@ -977,7 +978,9 @@ private final class NativeNavigationSwipe {
 
   private func navigate(_ action: NavigationSwipeAction) {
     guard current, let registry = PageIssuer.shared?.registry else { return }
-    let live = NativeStoreHandle.store?.state.live[registration.tabID]
+    let state = NativeStoreHandle.store?.state
+    let pageID = state?.tabs[registration.tabID]?.pageIn.flatMap { $0.isEmpty ? nil : $0 } ?? registration.tabID
+    let live = state?.live[pageID]
     let shown = presentation["newTabShown"] as? Bool == true
     var compatibility: [String: Any]?
     switch action {

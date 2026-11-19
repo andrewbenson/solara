@@ -15,12 +15,13 @@ import {
   pendingRestore,
   pinnedFirst,
   pinSection,
+  shownAt,
   snapshotTab,
   viewTabIds,
   wake,
   without,
 } from "./model";
-import { forgetOpeners, insertionIndex, nextToActive, openerSuccessor, switchKeepsOpeners } from "./openers";
+import { canShowNext, forgetOpeners, insertionIndex, nextToActive, openerSuccessor, recentSuccessor, switchKeepsOpeners } from "./openers";
 import { groupWithOpener, isClosedPin, onUrlChange, pruneSelection, samePage } from "./organize";
 import { hasOwnOrSharedPage, hasPage, isLazy } from "./pageSession";
 import { stepDrop } from "./drops";
@@ -63,7 +64,7 @@ export type TabsSlice = {
   closedTabs: ClosedTab[];
 
   newTab(windowId: string, options?: NewTabOptions): string;
-  closeTab(id: string): void;
+  closeTab(id: string, successor?: string): void;
   closeTabs(ids: string[], options?: CloseOptions): void;
   activate(id: string): void;
   handOffPin(id: string): void;
@@ -82,7 +83,7 @@ export type TabsSlice = {
 
 const MAX_CLOSED_TABS = 50;
 
-export type CloseOptions = { lastClosesWindow?: boolean; windowClosedByChrome?: boolean };
+export type CloseOptions = { lastClosesWindow?: boolean; windowClosedByChrome?: boolean; successor?: string };
 export type CloseKind = "close" | "unload" | "removePin";
 export type CloseIntent = { kind: CloseKind; ids: string[] };
 
@@ -105,7 +106,7 @@ export function closeIntent(s: BrowserState, tabId: string): CloseIntent {
   return { kind, ids: pages.length ? pages : [tabId] };
 }
 
-export function closingTabs(s: BrowserState, ids: string[], { lastClosesWindow = false, windowClosedByChrome = false }: CloseOptions = {}): [BrowserState, string[]] {
+export function closingTabs(s: BrowserState, ids: string[], { lastClosesWindow = false, windowClosedByChrome = false, successor }: CloseOptions = {}): [BrowserState, string[]] {
   let next = s;
   for (const id of ids) if (isPeekTab(next, id)) next = withoutPeek(next, next.tabs[id]!.windowId);
   const asked = ids.filter((id) => next.tabs[id]);
@@ -121,7 +122,7 @@ export function closingTabs(s: BrowserState, ids: string[], { lastClosesWindow =
     else closedWindows.push(w.id);
   }
   const removed = gone.filter((id) => !closedWindows.includes(next.tabs[id]!.windowId));
-  return [removeTabs(next, removed, true), closedWindows];
+  return [removeTabs(next, removed, true, successor), closedWindows];
 }
 
 function pinnedInsertionIndex(s: BrowserState, w: BrowserWindow): number {
@@ -144,7 +145,7 @@ export function activated(s: BrowserState, id: string, shareLivePins = true): Pa
   const lazy = isLazy(tab);
   const holder = lazy && shareLivePins ? holderOf(s, id) : undefined;
   const frozen = lazy && (!!holder || !!tab.pageIn);
-  const { unloaded: _, ...rest } = tab;
+  const { unloaded: _, shownAt: __, ...rest } = tab;
   const share = holder ? { pageIn: holder.id, url: holder.url, title: holder.title, favicon: holder.favicon, muted: holder.muted } : {};
   const nextTab: Tab = { ...rest, lastActiveAt: Date.now(), ...(frozen ? share : lazy ? wake(tab) : {}) };
   const window: BrowserWindow = {
@@ -162,7 +163,7 @@ export function activated(s: BrowserState, id: string, shareLivePins = true): Pa
 
 export const apply = (s: BrowserState, patch: Partial<BrowserState>): BrowserState => ({ ...s, ...patch });
 
-export function removeTabs(s: BrowserState, ids: string[], record: boolean): BrowserState {
+export function removeTabs(s: BrowserState, ids: string[], record: boolean, successor?: string): BrowserState {
   const gone = new Set(ids.filter((id) => s.tabs[id]));
   if (gone.size === 0) return s;
   const now = Date.now();
@@ -170,6 +171,8 @@ export function removeTabs(s: BrowserState, ids: string[], record: boolean): Bro
   let tabs = s.tabs;
   const windows = { ...s.windows };
   const removedWindows: string[] = [];
+  const revealed: string[] = [];
+  const preferred = new Set<string>();
 
   for (const w of Object.values(s.windows)) {
     if (!w.tabIds.some((id) => gone.has(id))) continue;
@@ -190,6 +193,7 @@ export function removeTabs(s: BrowserState, ids: string[], record: boolean): Bro
           group: group ? closedGroupInfo(group) : null,
           ...(parents.length ? { parents } : {}),
           closedAt: now,
+          shownAt: shownAt(t),
           ...(w.kind === "small" ? { small: true } : {}),
         });
       });
@@ -208,13 +212,17 @@ export function removeTabs(s: BrowserState, ids: string[], record: boolean): Bro
       const awake = left.filter((id) => !s.tabs[id]?.unloaded);
       const after = awake.length ? awake : left;
       const index = before.indexOf(activeId);
-      const next = openerSuccessor(s, activeId, before, left) ?? after.find((id) => before.indexOf(id) > index) ?? after.at(-1);
+      const chosen = successor && left.includes(successor) && canShowNext(s, successor) ? successor : undefined;
+      const next = chosen ?? recentSuccessor(s, activeId, before, left) ?? openerSuccessor(s, activeId, before, left) ?? after.find((id) => before.indexOf(id) > index) ?? after.at(-1);
       if (next) activeTabIds[profileId] = next;
       else delete activeTabIds[profileId];
+      if (chosen) preferred.add(chosen);
+      else if (next && profileId === w.profileId) revealed.push(next);
     }
     windows[w.id] = { ...w, tabIds, activeTabIds };
   }
   tabs = adoptOrphans(without(tabs, gone), s.tabs, gone);
+  for (const id of revealed) if (tabs[id]) tabs = { ...tabs, [id]: { ...tabs[id]!, shownAt: now } };
 
   let next: BrowserState = {
     ...s,
@@ -232,7 +240,7 @@ export function removeTabs(s: BrowserState, ids: string[], record: boolean): Bro
   for (const w of Object.values(next.windows)) {
     const id = w.activeTabIds[w.profileId];
     const t = id ? next.tabs[id] : undefined;
-    if (t && t.url && !t.navigation && !t.adoptId && !t.pageIn) next = apply(next, activated(next, t.id));
+    if (t && (preferred.has(t.id) || (t.url && !t.navigation && !t.adoptId && !t.pageIn))) next = apply(next, activated(next, t.id));
   }
   return next;
 }
@@ -330,6 +338,7 @@ export function withNewTab(s: BrowserState, windowId: string, o: NewTabOptions =
   const tab = makeTab(windowId, profileId, url, { ...o.snapshot, pinned: o.pinned ?? o.snapshot?.pinned ?? false });
   if (tab.navigation && !o.snapshot) tab.navigation = navigationTo(url, true);
   tab.openerId = o.openerId ?? null;
+  if (o.background && w.activeTabIds[profileId]) tab.shownAt = 0;
   tab.pinnedUrl = tab.pinned ? tab.pinnedUrl || url || null : tab.pinnedUrl || null;
   if (o.adoptId) {
     tab.adoptId = o.adoptId;
@@ -384,8 +393,8 @@ export const createTabsSlice: StateCreator<BrowserState, [], [], TabsSlice> = (s
     return id;
   },
 
-  closeTab(id) {
-    get().closeTabs([id], { lastClosesWindow: true });
+  closeTab(id, successor) {
+    get().closeTabs([id], { lastClosesWindow: true, ...(successor ? { successor } : {}) });
   },
 
   closeTabs(ids, options) {

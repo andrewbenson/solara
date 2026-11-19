@@ -72,6 +72,8 @@ export function makeTab(windowId: string, profileId: string, url = "", snapshot?
   };
 }
 
+export const shownAt = (t: Tab) => t.shownAt ?? t.lastActiveAt;
+
 export function wake(t: Tab): Partial<Tab> {
   return t.wakeAdoptId ? { adoptId: t.wakeAdoptId, wakeAdoptId: undefined, unloaded: undefined } : { navigation: navigationTo(t.url), unloaded: undefined };
 }

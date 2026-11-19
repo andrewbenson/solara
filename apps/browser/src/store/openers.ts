@@ -1,7 +1,8 @@
 import type { BrowserState } from "./browser";
 import { ancestorIds } from "./groups";
-import { inPinnedContainer } from "./model";
+import { inPinnedContainer, shownAt } from "./model";
 import { groupOf, pinnedChildGroup } from "./organize";
+import { isPeekTab } from "./peek";
 import { splitOf } from "./splits";
 import type { BrowserWindow, Tab } from "./types";
 
@@ -91,6 +92,24 @@ const hiddenInGroup = (s: BrowserState, id: string) => {
   return !!g && (g.collapsed || ancestorIds(s.groups, g.id).some((x) => s.groups[x]!.collapsed));
 };
 
+export const canShowNext = (s: BrowserState, id: string) => !hiddenInGroup(s, id) && !isPeekTab(s, id);
+
+export function recentSuccessor(s: BrowserState, closed: string, order: string[], left: string[]): string | undefined {
+  const tab = s.tabs[closed];
+  if (!tab) return undefined;
+  const at = order.indexOf(closed);
+  const near = [...left.filter((id) => order.indexOf(id) > at), ...left.filter((id) => order.indexOf(id) < at).reverse()];
+  const panes = splitOf(s, closed)?.tabIds.filter((id) => id !== closed && near.includes(id)) ?? [];
+  const used = (id: string) => {
+    const t = s.tabs[id]!;
+    return t.shownAt !== 0 && shownAt(t) <= shownAt(tab) && !hiddenInGroup(s, id) && !isPeekTab(s, id);
+  };
+  const pool = panes.length ? near.filter((id) => panes.includes(id)) : near.filter(used);
+  const latest = Math.max(...pool.map((id) => shownAt(s.tabs[id]!)));
+  const tied = pool.filter((id) => shownAt(s.tabs[id]!) === latest);
+  return tied.length === 1 || panes.length ? tied[0] : undefined;
+}
+
 export function openerSuccessor(s: BrowserState, closed: string, order: string[], left: string[]): string | undefined {
   const at = order.indexOf(closed);
   const candidates = [...left.filter((id) => order.indexOf(id) > at), ...left.filter((id) => order.indexOf(id) < at).reverse()].filter(
@@ -101,4 +120,12 @@ export function openerSuccessor(s: BrowserState, closed: string, order: string[]
     candidates.find((id) => s.tabs[id]!.openerId === closed) ??
     (opener ? (candidates.find((id) => s.tabs[id]!.openerId === opener) ?? (candidates.includes(opener) ? opener : undefined)) : undefined)
   );
+}
+
+export function backClosesToOpener(s: BrowserState, tabId: string): string | undefined {
+  const tab = s.tabs[tabId];
+  const opener = tab?.openerId ? s.tabs[tab.openerId] : undefined;
+  if (!tab || !opener || opener.windowId !== tab.windowId || opener.profileId !== tab.profileId) return undefined;
+  if (inPinnedContainer(s, tab.id) || isPeekTab(s, tab.id) || splitOf(s, tab.id)) return undefined;
+  return opener.id;
 }

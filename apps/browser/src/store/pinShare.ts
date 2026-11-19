@@ -218,6 +218,7 @@ export function settleSharedPins(next: BrowserState, prev: BrowserState): Browse
       if (active.some(([, x]) => x === t.id)) {
         if (windows === s.windows) windows = { ...s.windows };
         windows[w.id] = { ...w, activeTabIds: Object.fromEntries(active.map(([p, x]) => [p, x === t.id ? holder.id : x])) };
+        if (w.activeTabIds[w.profileId] === t.id) edit(holder.id, { shownAt: Date.now() });
       }
       edit(id, { pageIn: undefined, unloaded: true });
       continue;

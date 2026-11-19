@@ -80,6 +80,14 @@ extension Session {
     keyField(&nb, key)
     next.tabs[a] = na
     next.tabs[b] = nb
+    if moved {
+      for id in OrderedSet([ta.windowId, tb.windowId]) {
+        guard let before = s.windows[id], let after = next.windows[id], let shown = after.activeTabIds[after.profileId],
+          shown == a || shown == b, before.activeTabIds[before.profileId] != shown, var t = next.tabs[shown] else { continue }
+        t.shownAt = now
+        next.tabs[shown] = t
+      }
+    }
     for (id, g) in s.groups {
       if let swapped = swapIn(g.tabIds, a, b) {
         var changed = g

@@ -24,6 +24,7 @@ export type PageState = {
   engineBack: { engine: PageEngine; url: string } | null;
   newTabShown: { url: string; title: string; favicon: string | null } | null;
   iconPage: string | null;
+  historyKnown: boolean;
 };
 
 const IDLE_PAGE: PageState = {
@@ -45,6 +46,7 @@ const IDLE_PAGE: PageState = {
   engineBack: null,
   newTabShown: null,
   iconPage: null,
+  historyKnown: false,
 };
 
 type Store = {

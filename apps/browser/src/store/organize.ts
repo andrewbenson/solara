@@ -2,7 +2,7 @@ import type { StateCreator } from "zustand";
 import type { BrowserState } from "./browser";
 import { autoGroupName } from "./groupNames";
 import { ancestorIds, canNest, closedGroupInfo, commonGroup, descendantIds, innermostGroupOf, insertAll, leaveGroups, nestGroups, orderSections, placeBlock, placeGroups, rejoinGroups, reparent, syncGroupOrder, withGroupsPlaced, withParent } from "./groups";
-import { activeTabId, inPinnedContainer, isIncognitoProfile, isPinnedRow, newId, pendingRestore, pinSection, restoreId, snapshotTab, viewTabIds, without } from "./model";
+import { activeTabId, inPinnedContainer, isIncognitoProfile, isPinnedRow, newId, pendingRestore, pinSection, restoreId, shownAt, snapshotTab, viewTabIds, without } from "./model";
 import { hasPage } from "./pageSession";
 import { holderOf } from "./pinShare";
 import { splitOf, splitRowHead, splitRowPanes, withSplitRows } from "./splits";
@@ -383,6 +383,7 @@ function closedEntries(s: BrowserState, ids: string[]): ClosedTab[] {
         group: group ? closedGroupInfo(group) : null,
         ...(parents.length ? { parents } : {}),
         closedAt: now,
+        shownAt: shownAt(t),
       };
     });
 }
@@ -469,7 +470,7 @@ export function rebuildNested(s: BrowserState, rootId: string, rootKey: string, 
 export function restoreSnapshots(
   s: BrowserState,
   windowId: string,
-  entries: { tab: ClosedTab["tab"]; tabId?: string; index?: number }[],
+  entries: { tab: ClosedTab["tab"]; tabId?: string; index?: number; shownAt?: number }[],
 ): [BrowserState, string[]] {
   const ids: string[] = [];
   const w = s.windows[windowId]!;
@@ -483,7 +484,10 @@ export function restoreSnapshots(
       background: true,
       wakeAdoptId: e.tabId && e.tab.url ? restoreId(e.tabId) : undefined,
     });
-    s = next;
+    const restored = next.tabs[id];
+    const into = next.windows[windowId]!;
+    const shownNow = into.activeTabIds[into.profileId] === id;
+    s = restored && !shownNow ? { ...next, tabs: { ...next.tabs, [id]: { ...restored, shownAt: e.shownAt ?? 0 } } } : next;
     ids.push(id);
   }
   return [s, ids];
@@ -951,7 +955,7 @@ export const createOrganizeSlice: StateCreator<BrowserState, [], [], OrganizeSli
     for (const e of entries) {
       const windowId = privateId ? (next.windows[privateId]?.incognito ? privateId : undefined) : restoreTarget(next, e.windowId);
       if (!windowId || (isIncognitoProfile(e.tab.profileId) && e.windowId !== windowId)) continue;
-      const [restored, [id]] = restoreSnapshots(next, windowId, [{ tab: e.tab, tabId: e.restoreFrom ?? e.tabId, index: windowId === e.windowId ? e.index : undefined }]);
+      const [restored, [id]] = restoreSnapshots(next, windowId, [{ tab: e.tab, tabId: e.restoreFrom ?? e.tabId, index: windowId === e.windowId ? e.index : undefined, shownAt: e.shownAt }]);
       next = restored;
       if (id && e.group) next = regroupRestored(next, windowId, [e], [id]);
       if (id && entryId) next = apply(next, activated(next, id));
@@ -976,7 +980,7 @@ export const createOrganizeSlice: StateCreator<BrowserState, [], [], OrganizeSli
     const [restored, ids] = restoreSnapshots(
       { ...s, closedTabs: s.closedTabs.filter((c) => !undone.has(c.id)) },
       windowId,
-      entries.map((e) => ({ tab: e.tab, tabId: e.restoreFrom ?? e.tabId })),
+      entries.map((e) => ({ tab: e.tab, tabId: e.restoreFrom ?? e.tabId, shownAt: e.shownAt })),
     );
     const renamed = new Map(entries.map((e, i) => [e.tabId, ids[i]]));
     const now = (id: string) => renamed.get(id) ?? id;

@@ -38,7 +38,7 @@ function harness(inShell = false, nativeLayout = false) {
     "../../store/browser": { useBrowser },
     "../primitives": { Favicon: "Favicon", NewTabIcon: "NewTabIcon", NEW_TAB_MARK: 42 },
     "./HistoryPopover": { HistoryPopover: "HistoryPopover" },
-    "./history": { useHistoryAvailability: () => ({ back: true, forward: true }), historyItems: () => h.historyPromise ?? Promise.resolve(h.history), goBack: (tab) => h.navigation.push(["back", tab]), goForward: (tab) => h.navigation.push(["forward", tab]), goToHistoryItem: (...args) => h.navigation.push(["item", ...args]) },
+    "./history": { useHistoryAvailability: () => ({ back: true, forward: true }), useBackAction: () => "none", historyItems: () => h.historyPromise ?? Promise.resolve(h.history), goBack: (tab) => h.navigation.push(["back", tab]), goForward: (tab) => h.navigation.push(["forward", tab]), goToHistoryItem: (...args) => h.navigation.push(["item", ...args]) },
     "./swipeMotion": motion,
     "./nativeLayoutFeed": { NativeLayoutFeed: class {}, useNativeLayoutFeed() {} },
     "./pageState": { usePage: (tabId, select) => select({ newTabShown: null, backToNewTab: false, engineBack: null }) },

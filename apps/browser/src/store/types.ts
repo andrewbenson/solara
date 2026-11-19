@@ -85,6 +85,7 @@ export type Tab = {
   engine?: PageEngine;
   createdAt: number;
   lastActiveAt: number;
+  shownAt?: number;
 };
 
 export type TileFolder = { id: string; name: string; renamedAt?: number };
@@ -165,6 +166,7 @@ export type ClosedTab = {
   group: ClosedGroupInfo | null;
   parents?: ClosedGroupInfo[];
   closedAt: number;
+  shownAt?: number;
   pinnedTile?: boolean;
   small?: boolean;
 };
@@ -173,7 +175,7 @@ export type ClosedWindow = {
   kind: "window";
   id: string;
   window: Pick<BrowserWindow, "profileId" | "sidebarOpen" | "frame" | "tabLayout" | "fullScreen" | "sidebarPosition" | "sidebarWidth" | "sidebarIconsOnly" | "sidePanelWidth">;
-  tabs: (TabSnapshot & { active: boolean; tabId?: string })[];
+  tabs: (TabSnapshot & { active: boolean; shownAt?: number; tabId?: string })[];
   groups: (Omit<TabGroup, "tabIds" | "windowId"> & { tabIndexes: number[] })[];
   closedAt: number;
 };

@@ -171,13 +171,14 @@ extension Session {
       result = omniboxSwitch(try a.requireString(0), try a.requireString(1), try a.requireString(2), try a.requireString(3), disposition)
     case "newTab":
       result = .string(newTab(try a.requireString(0), newTabOptions(a[1]?.object)))
-    case "closeTab": closeTab(try a.requireString(0))
+    case "closeTab": closeTab(try a.requireString(0), successor: a.string(1).flatMap { $0.isEmpty ? nil : $0 })
     case "closeCommandTabs": closeCommandTabs(a.strings(0))
     case "reopenCommandClosed": reopenCommandClosed(a.string(0))
     case "restoreCommandWindow": result = JSONValue(restoreCommandWindow(try a.requireString(0), chromeWindow: try a.requireString(1), live: a[2]?.array ?? []))
     case "closeTabs":
       closeTabs(a.strings(0), lastClosesWindow: a[1]?["lastClosesWindow"]?.truthy ?? false,
-                windowClosedByChrome: a[1]?["windowClosedByChrome"]?.truthy ?? false)
+                windowClosedByChrome: a[1]?["windowClosedByChrome"]?.truthy ?? false,
+                successor: a[1]?["successor"]?.string.flatMap { $0.isEmpty ? nil : $0 })
     case "activate": activate(try a.requireString(0))
     case "activateNumberedTab":
       if let tabId = SidebarQuery(state).numberedTab(windowId: try a.requireString(0), number: a.int(1)) { activate(tabId) }

@@ -134,7 +134,7 @@ extension Session {
     var now = OrderedDict<String, String>()
     for id in tidied.homes.keys where next.tabs[id]?.windowId == w.id { now[id] = id }
     let back = tidied.closed.filter { next.tabs[$0.tabId ?? ""] == nil }
-    let (restored, ids) = restoreSnapshots(next, w.id, back.map { SnapshotEntry(tab: $0.tab, tabId: $0.restoreFrom ?? $0.tabId, index: $0.index) })
+    let (restored, ids) = restoreSnapshots(next, w.id, back.map { SnapshotEntry(tab: $0.tab, tabId: $0.restoreFrom ?? $0.tabId, index: $0.index, shownAt: $0.shownAt) })
     next = restored
     for (i, e) in back.enumerated() where i < ids.count && !ids[i].isEmpty && truthy(e.tabId) { now[e.tabId!] = ids[i] }
     func inWindow(_ id: String) -> Bool { next.tabs[id]?.windowId == w.id }

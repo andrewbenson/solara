@@ -199,6 +199,10 @@ extension Session {
           var changed = w
           changed.activeTabIds = w.activeTabIds.mapValues { $0 == t.id ? holder.id : $0 }
           windows[w.id] = changed
+          if w.activeTabIds[w.profileId] == t.id, var shown = tabs[holder.id] {
+            shown.shownAt = now
+            tabs[holder.id] = shown
+          }
         }
         var u = tabs[id]!
         u.pageIn = nil

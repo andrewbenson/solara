@@ -71,6 +71,13 @@ function swapPlaces(s: BrowserState, a: string, b: string): BrowserState {
   const tabs = { ...s.tabs };
   tabs[a] = { ...ta, ...slotOf(tb), ...keyField(a, key), ...(moved && ta.navigation ? { navigation: { ...ta.navigation, url: ta.url || ta.navigation.url } } : {}) };
   tabs[b] = { ...tb, ...slotOf(ta), ...keyField(b, key) };
+  if (moved) {
+    for (const id of new Set([ta.windowId, tb.windowId])) {
+      const was = s.windows[id]!.activeTabIds[s.windows[id]!.profileId];
+      const shown = windows[id]!.activeTabIds[windows[id]!.profileId];
+      if (shown && shown !== was && (shown === a || shown === b)) tabs[shown] = { ...tabs[shown]!, shownAt: Date.now() };
+    }
+  }
   return { ...s, tabs, windows, groups: swapAll(s.groups), splits: swapAll(s.splits) };
 }
 

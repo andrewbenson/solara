@@ -90,6 +90,23 @@ extension Session {
     return g.collapsed || Groups.ancestorIds(s.groups, g.id).contains { s.groups[$0]!.collapsed }
   }
 
+  func shownAt(_ t: Tab) -> Double { t.shownAt ?? t.lastActiveAt }
+
+  func recentSuccessor(_ s: BrowserState, _ closed: String, _ order: [String], _ left: [String]) -> String? {
+    guard let tab = s.tabs[closed] else { return nil }
+    let at = order.jsIndexOf(closed)
+    let near = left.filter { order.jsIndexOf($0) > at } + left.filter { order.jsIndexOf($0) < at }.reversed()
+    let panes = (Splits.splitOf(s, closed)?.tabIds ?? []).filter { $0 != closed && near.contains($0) }
+    func used(_ id: String) -> Bool {
+      let t = s.tabs[id]!
+      return t.shownAt != 0 && shownAt(t) <= shownAt(tab) && !hiddenInGroup(s, id) && !isPeekTab(s, id)
+    }
+    let pool = panes.isEmpty ? near.filter(used) : near.filter { panes.contains($0) }
+    guard let latest = pool.map({ shownAt(s.tabs[$0]!) }).max() else { return nil }
+    let tied = pool.filter { shownAt(s.tabs[$0]!) == latest }
+    return tied.count == 1 || !panes.isEmpty ? tied.first : nil
+  }
+
   func openerSuccessor(_ s: BrowserState, _ closed: String, _ order: [String], _ left: [String]) -> String? {
     let at = order.jsIndexOf(closed)
     let candidates = (left.filter { order.jsIndexOf($0) > at } + left.filter { order.jsIndexOf($0) < at }.reversed()).filter {

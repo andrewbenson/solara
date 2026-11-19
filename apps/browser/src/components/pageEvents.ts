@@ -1,4 +1,5 @@
 import { unwrapPageEvent, type OpenWindowRequest, type PageEngine, type PageCreated, type PageIssue, type StoreReportDisposition, type ViewEventName, type WebViewProps } from "@solara/solaracore";
+import { reportsKnownHistory } from "./layout/backAction";
 import { finishRNPageIssue, isPageCurrent, pageReport, updatePageContext, type PageContext, type PageIdentity, type PageIssuePreview } from "@solara/store";
 import { keepAliveCreated, keepAliveFailed, keepAliveGone, keepAliveHandled } from "../lib/keepAliveFeed";
 import { nativeOwnsWorkspace } from "../store/nativeStore";
@@ -276,6 +277,7 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
       }
       const shownTheme = session.factsOwner === "js" ? restoredThemeColor(tabId, url, themeColor, isLoading) : themeColor;
       session.pending = null;
+      if (reportsKnownHistory(url, isLoading) && !pageOf(tabId).historyKnown) patchPage(tabId, { historyKnown: true });
       const kept = pageOf(tabId).newTabShown;
       if (kept) {
         if (url === kept.url) {
@@ -387,7 +389,7 @@ export function pageEventHandlers(session: PageSession): PageEventHandlers {
     onDiscarded: (url) => {
       session.pending = url;
       session.fromNewTab = false;
-      patchPage(tabId, { backToNewTab: false, status: "" });
+      patchPage(tabId, { backToNewTab: false, status: "", historyKnown: false });
       if (session.factsOwner === "js") store().updateLive(tabId, { isLoading: false, canGoBack: false, canGoForward: false, playingAudio: false });
       setPageProgress(tabId, 0);
       if (session.factsOwner === "js") noteDiscarded(tabId);

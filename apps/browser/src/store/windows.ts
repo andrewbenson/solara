@@ -16,6 +16,7 @@ import { findLast,
   pinnedFirst,
   resolveWindowId,
   restoreId,
+  shownAt,
   snapshotTab,
   viewTabIds,
   without, closedWindowPresentation } from "./model";
@@ -116,7 +117,9 @@ export function moveTabsInto(s: BrowserState, ids: string[], targetId: string, l
     const loaded = hasLoadedPage(tab);
     tabs[t.id] = { ...t, windowId: targetId, navigation: loaded ? navigationTo(t.url) : null };
     live[t.id] = IDLE_LIVE;
-    activeTabIds[t.profileId] ??= t.id;
+    if (activeTabIds[t.profileId]) continue;
+    activeTabIds[t.profileId] = t.id;
+    if (t.profileId === w.profileId) tabs[t.id] = { ...tabs[t.id]!, shownAt: Date.now() };
   }
   next = {
     ...next,
@@ -231,7 +234,7 @@ export const createWindowsSlice: StateCreator<BrowserState, [], [], WindowsSlice
         kind: "window",
         id: newId("cw"),
         window: closedWindowPresentation(w),
-        tabs: tabs.map((t) => ({ ...snapshotTab(t), active: active.has(t.id), ...(hasLoadedPage(t) ? { tabId: t.id } : pendingRestore(t) ? { tabId: pendingRestore(t) } : {}) })),
+        tabs: tabs.map((t) => ({ ...snapshotTab(t), active: active.has(t.id), shownAt: shownAt(t), ...(hasLoadedPage(t) ? { tabId: t.id } : pendingRestore(t) ? { tabId: pendingRestore(t) } : {}) })),
         groups: Object.values(s.groups)
           .filter((g) => g.windowId === id && !g.pinned && (!sharesTabs(s) || g.tabIds.some((t) => tabIds.includes(t))))
           .map(({ tabIds: members, windowId: _, ...g }) => ({ ...g, tabIndexes: members.map((t) => tabIds.indexOf(t)) })),
@@ -504,9 +507,10 @@ function restoreWindow(s: BrowserState, entry: ClosedWindow): BrowserState {
   const tabs = { ...s.tabs };
   const live = { ...s.live };
   const ids: string[] = [];
-  for (const { active, tabId, ...snap } of entry.tabs) {
+  for (const { active, tabId, shownAt: shown, ...snap } of entry.tabs) {
     const t = makeTab(id, profileOk(snap.profileId), "", { ...snap, profileId: profileOk(snap.profileId) });
     if (tabId && snap.url) t.wakeAdoptId = restoreId(tabId);
+    t.shownAt = shown ?? 0;
     tabs[t.id] = t;
     live[t.id] = IDLE_LIVE;
     ids.push(t.id);

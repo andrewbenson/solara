@@ -582,6 +582,13 @@ public struct Tab: JSONConvertible, @unchecked Sendable {
       box.value.lastActiveAt = newValue
     }
   }
+  public var shownAt: Double? {
+    get { box.value.shownAt }
+    set {
+      if !isKnownUniquelyReferenced(&box) { box = Box(box.value) }
+      box.value.shownAt = newValue
+    }
+  }
   public var isPinnedRow: Bool { box.value.isPinnedRow }
   public var pinSection: PinSection { box.value.pinSection }
   public var pinKeyOrId: String { box.value.pinKeyOrId }
@@ -663,6 +670,7 @@ public struct TabFields: Sendable, Equatable {
   public var engine: String?
   public var createdAt: Double
   public var lastActiveAt: Double
+  public var shownAt: Double?
   public var extra: JSONObject = [:]
   public var keyOrder: [String]? = nil
   public internal(set) var absent: Set<String> = []
@@ -696,7 +704,7 @@ public struct TabFields: Sendable, Equatable {
   static let keys: Set<String> = [
     "id", "windowId", "profileId", "url", "title", "favicon", "pinned", "muted", "zoom", "customTitle", "customIcon", "pinnedUrl",
     "pinnedAsRow", "tileFolder", "navigation", "adoptId", "openerId", "wakeAdoptId", "liveItem", "unloaded", "pinKey", "pageIn", "engine",
-    "createdAt", "lastActiveAt",
+    "createdAt", "lastActiveAt", "shownAt",
   ]
 
   public init(json: JSONObject) throws {
@@ -726,6 +734,7 @@ public struct TabFields: Sendable, Equatable {
     engine = f.optionalString("engine")
     createdAt = f.number("createdAt")
     lastActiveAt = f.number("lastActiveAt")
+    shownAt = f.optionalNumber("shownAt")
     extra = f.extra
     keyOrder = f.order
     absent = f.absent(["favicon", "customTitle", "customIcon", "pinnedUrl", "openerId", "navigation"])
@@ -758,6 +767,7 @@ public struct TabFields: Sendable, Equatable {
     e.optional("engine", engine)
     e.set("createdAt", createdAt)
     e.set("lastActiveAt", lastActiveAt)
+    e.optional("shownAt", shownAt)
     return e.object
   }
 }

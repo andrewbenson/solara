@@ -142,13 +142,14 @@ public struct ClosedTab: JSONConvertible {
   public var group: ClosedGroupInfo?
   public var parents: [ClosedGroupInfo]?
   public var closedAt: Double
+  public var shownAt: Double?
   public var pinnedTile: Bool?
   public var small: Bool?
   public var extra: JSONObject = [:]
   public var keyOrder: [String]? = nil
 
   public init(id: String, tab: TabSnapshot, tabId: String?, restoreFrom: String?, windowId: String, index: Int, group: ClosedGroupInfo?,
-    parents: [ClosedGroupInfo]?, closedAt: Double, pinnedTile: Bool? = nil, small: Bool? = nil)
+    parents: [ClosedGroupInfo]?, closedAt: Double, shownAt: Double? = nil, pinnedTile: Bool? = nil, small: Bool? = nil)
   {
     self.id = id
     self.tab = tab
@@ -159,12 +160,13 @@ public struct ClosedTab: JSONConvertible {
     self.group = group
     self.parents = parents
     self.closedAt = closedAt
+    self.shownAt = shownAt
     self.pinnedTile = pinnedTile
     self.small = small
   }
 
   public init(json: JSONObject) throws {
-    let f = Fields(json, known: ["kind", "id", "tab", "tabId", "restoreFrom", "windowId", "index", "group", "parents", "closedAt", "pinnedTile", "small"])
+    let f = Fields(json, known: ["kind", "id", "tab", "tabId", "restoreFrom", "windowId", "index", "group", "parents", "closedAt", "shownAt", "pinnedTile", "small"])
     id = f.string("id")
     tab = try f.model("tab") ?? TabSnapshot(json: [:])
     tabId = f.optionalString("tabId")
@@ -174,6 +176,7 @@ public struct ClosedTab: JSONConvertible {
     group = try f.model("group")
     parents = try f.optionalModels("parents")
     closedAt = f.number("closedAt")
+    shownAt = f.optionalNumber("shownAt")
     pinnedTile = f.optionalBool("pinnedTile")
     small = f.optionalBool("small")
     extra = f.extra
@@ -192,6 +195,7 @@ public struct ClosedTab: JSONConvertible {
     e.nullable("group", group)
     e.optional("parents", parents)
     e.set("closedAt", closedAt)
+    e.optional("shownAt", shownAt)
     e.optional("pinnedTile", pinnedTile)
     e.optional("small", small)
     return e.object
@@ -201,18 +205,21 @@ public struct ClosedTab: JSONConvertible {
 public struct ClosedWindowTab: JSONConvertible {
   public var snapshot: TabSnapshot
   public var active: Bool
+  public var shownAt: Double?
   public var tabId: String? { didSet { tabIdIsNull = false } }
   public var tabIdIsNull = false
 
-  public init(snapshot: TabSnapshot, active: Bool, tabId: String?) {
+  public init(snapshot: TabSnapshot, active: Bool, tabId: String?, shownAt: Double? = nil) {
     self.snapshot = snapshot
     self.active = active
     self.tabId = tabId
+    self.shownAt = shownAt
   }
 
   public init(json: JSONObject) throws {
-    snapshot = try TabSnapshot(json: json, alsoKnown: ["active", "tabId"])
+    snapshot = try TabSnapshot(json: json, alsoKnown: ["active", "tabId", "shownAt"])
     active = json["active"]?.bool ?? false
+    shownAt = json["shownAt"]?.number
     tabId = json["tabId"]?.string
     tabIdIsNull = json["tabId"] == .null
   }
@@ -220,6 +227,7 @@ public struct ClosedWindowTab: JSONConvertible {
   public var json: JSONObject {
     var out = snapshot.json
     out["active"] = .bool(active)
+    if let shownAt { out["shownAt"] = .number(shownAt) }
     if let tabId { out["tabId"] = .string(tabId) } else if tabIdIsNull { out["tabId"] = .null }
     return out.ordered(by: snapshot.keyOrder)
   }

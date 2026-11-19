@@ -237,7 +237,7 @@ export function menuState(s: BrowserState): MenuState {
   else {
     if (!page?.url) disabled.push(...PAGE_COMMANDS);
     else if (isInternalTab(page)) disabled.push(...PAGE_COMMANDS_OFF_INTERNAL_PAGES);
-    if (!page || !canGoBack(page.id, live ?? IDLE_LIVE)) disabled.push("back");
+    if (!page || !canGoBack(page.id)) disabled.push("back");
     if (!page || !canGoForward(page.id, live ?? IDLE_LIVE)) disabled.push("forward");
     if (!live?.isLoading) disabled.push("stop");
     if (w.incognito) disabled.push("moveTabToProfile", "moveTabToWindow", "switchProfile", "nextProfile", "previousProfile");

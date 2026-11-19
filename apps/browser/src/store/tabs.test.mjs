@@ -36,36 +36,95 @@ test("links opened behind line up after their opener in order", () => {
   assert.equal(shown(w), "a", "opened behind: the opener stays in front");
 });
 
-test("closing a page opened in front returns to its opener unless you moved away", () => {
-  reset();
-  const [w, a, b] = setup("a", "b");
-  const c = open(w, "c", a, false);
-  S().closeTab(c);
-  assert.equal(shown(w), "a");
+test("with every tab used at the same moment, closing a page opened in front returns to its opener unless you moved away", () => {
+  const realNow = Date.now;
+  const frozen = realNow();
+  try {
+    Date.now = () => frozen;
+    reset();
+    const [w, a, b] = setup("a", "b");
+    const c = open(w, "c", a, false);
+    S().closeTab(c);
+    assert.equal(shown(w), "a");
 
-  const d = open(w, "d", a, false);
-  S().activate(b);
-  S().activate(d);
-  S().closeTab(d);
-  assert.equal(shown(w), "b", "after moving away, the tab after it");
+    const d = open(w, "d", a, false);
+    S().activate(b);
+    S().activate(d);
+    S().closeTab(d);
+    assert.equal(shown(w), "b", "after moving away, the tab after it");
+  } finally {
+    Date.now = realNow;
+  }
 });
 
-test("closing goes to the page's own tabs, then its siblings, then its opener", () => {
-  reset();
-  const [w, a] = setup("a", "b");
-  const c1 = open(w, "c1", a);
-  const c2 = open(w, "c2", a);
-  S().activate(c1);
-  const g = open(w, "g", c1);
-  S().closeTab(c1);
-  assert.equal(shown(w), "g", "a tab it opened");
-  assert.equal(S().tabs[g].openerId, a, "a closed tab's tabs take its opener");
-  S().activate(a);
-  S().activate(c2);
-  S().closeTab(c2);
-  assert.equal(shown(w), "g", "a sibling");
-  S().closeTab(g);
-  assert.equal(shown(w), "a", "no siblings left: the opener");
+test("with every tab used at the same moment, closing goes to the page's own tabs, then its siblings, then its opener", () => {
+  const realNow = Date.now;
+  const frozen = realNow();
+  try {
+    Date.now = () => frozen;
+    reset();
+    const [w, a] = setup("a", "b");
+    const c1 = open(w, "c1", a);
+    const c2 = open(w, "c2", a);
+    S().activate(c1);
+    const g = open(w, "g", c1);
+    S().closeTab(c1);
+    assert.equal(shown(w), "g", "a tab it opened");
+    assert.equal(S().tabs[g].openerId, a, "a closed tab's tabs take its opener");
+    S().activate(a);
+    S().activate(c2);
+    S().closeTab(c2);
+    assert.equal(shown(w), "g", "a sibling");
+    S().closeTab(g);
+    assert.equal(shown(w), "a", "no siblings left: the opener");
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+test("with a clock that moves, closing a page opened in front goes back to the tab used before it, here its opener", () => {
+  const realNow = Date.now;
+  let clock = realNow();
+  try {
+    Date.now = () => (clock += 1000);
+    reset();
+    const [w, a, b] = setup("a", "b");
+    const c = open(w, "c", a, false);
+    S().closeTab(c);
+    assert.equal(shown(w), "a");
+
+    const d = open(w, "d", a, false);
+    S().activate(b);
+    S().activate(d);
+    S().closeTab(d);
+    assert.equal(shown(w), "b", "the tab used just before");
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+test("with a clock that moves, the tab used before wins over the page's own tabs opened behind", () => {
+  const realNow = Date.now;
+  let clock = realNow();
+  try {
+    Date.now = () => (clock += 1000);
+    reset();
+    const [w, a] = setup("a", "b");
+    const c1 = open(w, "c1", a);
+    const c2 = open(w, "c2", a);
+    S().activate(c1);
+    const g = open(w, "g", c1);
+    S().closeTab(c1);
+    assert.equal(shown(w), "a", "g and c2 were never shown");
+    S().activate(g);
+    S().activate(c2);
+    S().closeTab(c2);
+    assert.equal(shown(w), "g", "g was shown after a");
+    S().closeTab(g);
+    assert.equal(shown(w), "a");
+  } finally {
+    Date.now = realNow;
+  }
 });
 
 test("closing a group that holds the shown tab shows the tab just above the group", () => {

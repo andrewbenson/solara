@@ -268,7 +268,7 @@ extension Session {
       return ClosedTab(
         id: newId("ct"), tab: snapshotTab(t), tabId: t.id, restoreFrom: pendingRestore(t), windowId: t.windowId,
         index: s.windows[t.windowId].map { $0.tabIds.jsIndexOf(t.id) } ?? 0, group: group.map(Groups.closedGroupInfo),
-        parents: parents.isEmpty ? nil : parents, closedAt: now)
+        parents: parents.isEmpty ? nil : parents, closedAt: now, shownAt: shownAt(t))
     }
   }
 
@@ -368,6 +368,7 @@ extension Session {
     var tab: TabSnapshot
     var tabId: String?
     var index: Int?
+    var shownAt: Double? = nil
   }
 
   func restoreSnapshots(_ input: BrowserState, _ windowId: String, _ entries: [SnapshotEntry]) -> (BrowserState, [String]) {
@@ -383,7 +384,13 @@ extension Session {
       o.index = e.index
       o.background = true
       o.wakeAdoptId = truthy(e.tabId) && !e.tab.url.isEmpty ? restoreId(e.tabId!) : nil
-      let (next, id) = withNewTab(s, windowId, o)
+      let (made, id) = withNewTab(s, windowId, o)
+      var next = made
+      let into = next.windows[windowId]!
+      if into.activeTabIds[into.profileId] != id, var t = next.tabs[id] {
+        t.shownAt = e.shownAt ?? 0
+        next.tabs[id] = t
+      }
       s = next
       ids.append(id)
     }

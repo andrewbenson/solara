@@ -63,8 +63,11 @@ extension Session {
       t.adoptId = nil
       t.windowId = targetId
       t.navigation = hasLoadedPage(tab) ? navigationTo(t.url) : nil
+      if activeTabIds[t.profileId] == nil {
+        activeTabIds[t.profileId] = t.id
+        if t.profileId == w.profileId { t.shownAt = now }
+      }
       tabs[t.id] = t
-      if activeTabIds[t.profileId] == nil { activeTabIds[t.profileId] = t.id }
     }
     next.tabs = tabs
     var window = w
@@ -132,7 +135,7 @@ extension Session {
       let active = Set(w.activeTabIds.values)
       let entryTabs = tabs.map { t -> ClosedWindowTab in
         let tabId: String? = hasLoadedPage(t) ? t.id : pendingRestore(t)
-        return ClosedWindowTab(snapshot: snapshotTab(t), active: active.contains(t.id), tabId: tabId)
+        return ClosedWindowTab(snapshot: snapshotTab(t), active: active.contains(t.id), tabId: tabId, shownAt: shownAt(t))
       }
       let groups = s.groups.values.filter { g in g.windowId == id && !g.pinned && (!sharesTabs(s) || g.tabIds.contains { tabIds.contains($0) }) }
         .map { ClosedWindowGroup(group: $0, tabIndexes: $0.tabIds.map { tabIds.jsIndexOf($0) }) }
@@ -516,6 +519,7 @@ extension Session {
       snap.profileId = profileOk(item.snapshot.profileId)
       var t = makeTab(id, profileOk(item.snapshot.profileId), "", snap)
       if let tabId = item.tabId, !tabId.isEmpty, !item.snapshot.url.isEmpty { t.wakeAdoptId = restoreId(tabId) }
+      t.shownAt = item.shownAt ?? 0
       tabs[t.id] = t
       ids.append(t.id)
       if item.active || w.activeTabIds[t.profileId] == nil || w.activeTabIds[t.profileId]!.isEmpty { w.activeTabIds[t.profileId] = t.id }

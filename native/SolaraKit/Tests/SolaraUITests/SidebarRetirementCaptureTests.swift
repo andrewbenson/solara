@@ -70,6 +70,7 @@ struct SidebarRetirementCaptureTests {
     state.tabs["t0"] = nil
     state.windows["w"]?.tabIds.removeAll { $0 == "t0" }
     state.windows["w"]?.activeTabIds["p"] = "t1"
+    sidebar.motion.fade = 60
     sidebar.update(state: state, host: SidebarHostState(profileId: "p"))
     let picture = try #require(pictures(sidebar).first)
     let actual = try #require(picture.image)

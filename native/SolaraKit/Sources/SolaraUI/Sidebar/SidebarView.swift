@@ -830,7 +830,7 @@ public final class SidebarView: NSView {
   static let fadeDuration: TimeInterval = 0.10
   static let fadeCurve = CAMediaTimingFunction(controlPoints: 0, 0, 0.58, 1)
 
-  private var motion = SidebarMotion.standard
+  var motion = SidebarMotion.standard
 
   private func slide(_ moves: [(view: NSView, to: NSRect)], under inserted: [NSRect]) {
     let timing = self.motion

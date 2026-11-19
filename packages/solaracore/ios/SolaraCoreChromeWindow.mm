@@ -18,6 +18,178 @@
 #include <initializer_list>
 #include <optional>
 
+#if DEBUG
+@interface ACDragCarryDestinationInfo : NSObject <NSDraggingInfo>
+@property(nonatomic, strong) NSDraggingSession *session;
+@property(nonatomic, strong) NSView<NSDraggingSource> *source;
+@property(nonatomic, strong) NSWindow *sourceWindow;
+@property(nonatomic, strong) NSPasteboard *originalPasteboard;
+@property(nonatomic) NSInteger originalChangeCount;
+@property(nonatomic) NSDragOperation sourceMask;
+@property(nonatomic) NSPoint location;
+@property NSDraggingFormation draggingFormation;
+@property BOOL animatesToDestination;
+@property NSInteger numberOfValidItemsForDrop;
+@property(nonatomic) NSUInteger springResets;
+@property(nonatomic, weak) NSView *enteredDestination;
+@property(nonatomic, weak) NSView *springDestination;
+@property(nonatomic) NSTimeInterval springEnteredAt;
+@property(nonatomic) BOOL attempted;
+@property(nonatomic) BOOL accepted;
+@end
+
+@implementation ACDragCarryDestinationInfo
+- (NSWindow *)draggingDestinationWindow { return self.sourceWindow; }
+- (NSDragOperation)draggingSourceOperationMask { return self.sourceMask; }
+- (NSPoint)draggingLocation { return self.location; }
+- (NSPoint)draggedImageLocation { return self.location; }
+- (NSImage *)draggedImage { return nil; }
+- (NSPasteboard *)draggingPasteboard { return self.session.draggingPasteboard; }
+- (id)draggingSource { return self.source; }
+- (NSInteger)draggingSequenceNumber { return self.session.draggingSequenceNumber; }
+- (NSSpringLoadingHighlight)springLoadingHighlight { return NSSpringLoadingHighlightNone; }
+- (void)resetSpringLoading { self.springResets += 1; self.springEnteredAt = NSProcessInfo.processInfo.systemUptime; }
+- (void)slideDraggedImageTo:(NSPoint)point {}
+- (NSArray<NSString *> *)namesOfPromisedFilesDroppedAtDestination:(NSURL *)destination { return nil; }
+- (void)enumerateDraggingItemsWithOptions:(NSDraggingItemEnumerationOptions)options forView:(NSView *)view classes:(NSArray<Class> *)classes searchOptions:(NSDictionary<NSPasteboardReadingOptionKey, id> *)search usingBlock:(void (^)(NSDraggingItem *, NSInteger, BOOL *))block {
+  [self.session enumerateDraggingItemsWithOptions:options forView:view classes:classes searchOptions:search usingBlock:block];
+}
+@end
+
+static ACDragCarryDestinationInfo *gCarryDestinationInfo;
+static NSDictionary *gCarryDestinationEnd;
+
+static BOOL ACDragCarryDestinationAllowed() {
+  return solaracore_host::TestHooksAllowed() && [NSProcessInfo.processInfo.environment[@"SOLARA_DRAG_CARRY_DESTINATION_PROBE"] isEqualToString:@"1"];
+}
+
+static void ACDragCarryDestinationBegan(NSView *source, NSDraggingSession *session) {
+  if (!ACDragCarryDestinationAllowed() || !source.window || ![source conformsToProtocol:@protocol(NSDraggingSource)]) return;
+  ACDragCarryDestinationInfo *info = [ACDragCarryDestinationInfo new];
+  info.session = session;
+  info.source = (NSView<NSDraggingSource> *)source;
+  info.sourceWindow = source.window;
+  info.originalPasteboard = session.draggingPasteboard;
+  info.originalChangeCount = session.draggingPasteboard.changeCount;
+  info.sourceMask = [info.source draggingSession:session sourceOperationMaskForDraggingContext:NSDraggingContextWithinApplication];
+  gCarryDestinationInfo = info;
+  gCarryDestinationEnd = nil;
+}
+
+static void ACDragCarryDestinationEnded(NSDraggingSession *session, NSDragOperation operation) {
+  if (gCarryDestinationInfo.session != session) return;
+  gCarryDestinationEnd = @{@"sequence": @(session.draggingSequenceNumber), @"operation": @(operation), @"attempted": @(gCarryDestinationInfo.attempted), @"accepted": @(gCarryDestinationInfo.accepted), @"time": @(NSProcessInfo.processInfo.systemUptime)};
+  gCarryDestinationInfo = nil;
+}
+
+static NSView *ACDragCarryDestinationAt(NSWindow *window, NSPoint location, BOOL spring) {
+  NSView *frame = window.contentView.superview ?: window.contentView;
+  NSView *hit = [frame hitTest:location];
+  Class pageClass = NSClassFromString(@"WebContentsViewCocoa");
+  for (NSView *view = hit; view; view = view.superview) {
+    if (view.window != window || view.isHiddenOrHasHiddenAncestor || !NSPointInRect([view convertPoint:location fromView:nil], view.bounds)) continue;
+    if (spring ? [view conformsToProtocol:@protocol(NSSpringLoadingDestination)] : (pageClass && [view isKindOfClass:pageClass])) return view;
+  }
+  return nil;
+}
+
+static NSString *ACDragCarryDestinationAction(NSString *action, NSWindow *window) {
+  if (![action hasPrefix:@"dragCarry:native:"]) return nil;
+  NSMutableDictionary *receipt = [NSMutableDictionary dictionary];
+  receipt[@"adapter"] = @"original-session-native-destination";
+  receipt[@"time"] = @(NSProcessInfo.processInfo.systemUptime);
+  if (!ACDragCarryDestinationAllowed()) {
+    receipt[@"error"] = @"isolated destination probe only";
+  } else {
+    NSData *data = [[action substringFromIndex:@"dragCarry:native:".length] dataUsingEncoding:NSUTF8StringEncoding];
+    id request = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+    ACDragCarryDestinationInfo *info = gCarryDestinationInfo;
+    id op = [request isKindOfClass:NSDictionary.class] ? request[@"op"] : nil;
+    id x = [request isKindOfClass:NSDictionary.class] ? request[@"x"] : nil;
+    id y = [request isKindOfClass:NSDictionary.class] ? request[@"y"] : nil;
+    receipt[@"live"] = @(info != nil);
+    if (gCarryDestinationEnd) receipt[@"ended"] = gCarryDestinationEnd;
+    if (![op isKindOfClass:NSString.class] ||
+        (![op isEqualToString:@"state"] && (![x isKindOfClass:NSNumber.class] || ![y isKindOfClass:NSNumber.class] ||
+                                           !isfinite([x doubleValue]) || !isfinite([y doubleValue])))) {
+      receipt[@"error"] = @"malformed destination request";
+    } else if (!info || info.sourceWindow != window) {
+      receipt[@"error"] = @"no live source in requested window";
+    } else {
+      receipt[@"sequence"] = @(info.session.draggingSequenceNumber);
+      receipt[@"attempted"] = @(info.attempted);
+      receipt[@"accepted"] = @(info.accepted);
+      receipt[@"pasteboard"] = info.session.draggingPasteboard.name;
+      receipt[@"changeCount"] = @(info.session.draggingPasteboard.changeCount);
+      receipt[@"originalChangeCount"] = @(info.originalChangeCount);
+      receipt[@"types"] = info.session.draggingPasteboard.types;
+      receipt[@"source"] = [NSString stringWithFormat:@"%p", info.source];
+      receipt[@"sourceClass"] = NSStringFromClass(info.source.class);
+      receipt[@"sourceWindow"] = @(info.sourceWindow.windowNumber);
+      receipt[@"sourceMask"] = @(info.sourceMask);
+      if (info.originalPasteboard != info.session.draggingPasteboard || info.originalChangeCount != info.session.draggingPasteboard.changeCount) {
+        receipt[@"error"] = @"source pasteboard changed";
+      } else if (![op isEqualToString:@"state"]) {
+        info.location = NSMakePoint([x doubleValue], NSHeight(window.contentView.bounds) - [y doubleValue]);
+        receipt[@"location"] = @[@(info.location.x), @(info.location.y)];
+        BOOL spring = [op hasPrefix:@"spring"];
+        NSView *target = ACDragCarryDestinationAt(window, info.location, spring);
+        if (!target) {
+          receipt[@"error"] = @"no live native destination under point";
+        } else {
+          receipt[@"destination"] = [NSString stringWithFormat:@"%p", target];
+          receipt[@"destinationClass"] = NSStringFromClass(target.class);
+          receipt[@"destinationWindow"] = @(target.window.windowNumber);
+          id<NSDraggingDestination> destination = (id<NSDraggingDestination>)target;
+          if ([op isEqualToString:@"enter"]) {
+            if (info.enteredDestination && info.enteredDestination != target) [(id<NSDraggingDestination>)info.enteredDestination draggingExited:info];
+            info.enteredDestination = target;
+            receipt[@"operation"] = @([destination draggingEntered:info]);
+          } else if ([op isEqualToString:@"update"] && info.enteredDestination == target) {
+            receipt[@"operation"] = @([destination draggingUpdated:info]);
+          } else if ([op isEqualToString:@"drop"] && info.enteredDestination == target && !info.attempted) {
+            NSDragOperation operation = [destination draggingUpdated:info];
+            receipt[@"operation"] = @(operation);
+            BOOL prepared = operation != NSDragOperationNone && (![target respondsToSelector:@selector(prepareForDragOperation:)] || [destination prepareForDragOperation:info]);
+            receipt[@"prepared"] = @(prepared);
+            if (prepared) {
+              info.attempted = YES;
+              info.accepted = [destination performDragOperation:info];
+              receipt[@"attempted"] = @YES;
+              receipt[@"accepted"] = @(info.accepted);
+            }
+          } else if ([op isEqualToString:@"exit"] && info.enteredDestination == target) {
+            [destination draggingExited:info];
+            info.enteredDestination = nil;
+          } else if ([op isEqualToString:@"springEnter"]) {
+            info.springDestination = target;
+            info.springEnteredAt = NSProcessInfo.processInfo.systemUptime;
+            if ([target respondsToSelector:@selector(draggingEntered:)]) receipt[@"operation"] = @([destination draggingEntered:info]);
+            id<NSSpringLoadingDestination> springTarget = (id<NSSpringLoadingDestination>)target;
+            receipt[@"springOptions"] = @([target respondsToSelector:@selector(springLoadingEntered:)] ? [springTarget springLoadingEntered:info] : [springTarget springLoadingUpdated:info]);
+          } else if ([op isEqualToString:@"springActivate"] && info.springDestination == target) {
+            id<NSSpringLoadingDestination> springTarget = (id<NSSpringLoadingDestination>)target;
+            NSSpringLoadingOptions options = [target respondsToSelector:@selector(springLoadingUpdated:)] ? [springTarget springLoadingUpdated:info] : [springTarget springLoadingEntered:info];
+            NSTimeInterval dwell = NSProcessInfo.processInfo.systemUptime - info.springEnteredAt;
+            receipt[@"springOptions"] = @(options);
+            receipt[@"dwell"] = @(dwell);
+            if ((options & NSSpringLoadingEnabled) && dwell >= 0.65) {
+              [springTarget springLoadingActivated:YES draggingInfo:info];
+              receipt[@"activated"] = @YES;
+            }
+          } else {
+            receipt[@"error"] = @"invalid destination operation or replaced target";
+          }
+          receipt[@"springResets"] = @(info.springResets);
+        }
+      }
+    }
+  }
+  NSData *json = [NSJSONSerialization dataWithJSONObject:receipt options:0 error:nil];
+  return json ? [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding] : @"{}";
+}
+#endif
+
 @protocol ACWindowCaptionLayout
 + (void)configureWindow:(NSWindow *)window;
 + (void)positionInWindow:(NSWindow *)window center:(NSPoint)center;
@@ -96,6 +268,169 @@ void Swizzle(Class cls, SEL sel, id (^make)(IMP original)) {
   Method method = class_getInstanceMethod(cls, sel);
   IMP original = method_getImplementation(method);
   method_setImplementation(method, imp_implementationWithBlock(make(original)));
+}
+
+#if DEBUG
+NSInteger gDragCarryWindow;
+NSMutableArray<NSDictionary *> *gDragCarryEvents;
+NSMutableSet<NSString *> *gDragCarryRequests;
+
+void TraceDragCarryEvent(NSString *stage, NSEvent *event) {
+  if (!gDragCarryWindow || !event || gDragCarryEvents.count >= 4096) return;
+  if (event.type != NSEventTypeKeyDown && event.type != NSEventTypeKeyUp && event.type != NSEventTypeFlagsChanged &&
+      event.type != NSEventTypeScrollWheel && event.type != NSEventTypeSwipe) return;
+  const BOOL key = event.type == NSEventTypeKeyDown || event.type == NSEventTypeKeyUp;
+  [gDragCarryEvents addObject:@{
+    @"stage" : stage,
+    @"type" : @(event.type),
+    @"key" : key ? (event.charactersIgnoringModifiers ?: @"") : @"",
+    @"keyCode" : key || event.type == NSEventTypeFlagsChanged ? @(event.keyCode) : @0,
+    @"modifiers" : @(event.modifierFlags),
+    @"window" : @(event.windowNumber),
+    @"mode" : NSRunLoop.currentRunLoop.currentMode ?: @"",
+    @"time" : @(NSProcessInfo.processInfo.systemUptime),
+    @"eventTime" : @(event.timestamp),
+  }];
+}
+
+void TraceDragCarryRequest(NSEventMask mask, NSRunLoopMode mode, BOOL dequeue) {
+  if (!gDragCarryWindow || !dequeue || gDragCarryEvents.count >= 4096) return;
+  NSString *request = [NSString stringWithFormat:@"%llu:%@", (unsigned long long)mask, mode];
+  if ([gDragCarryRequests containsObject:request]) return;
+  [gDragCarryRequests addObject:request];
+  [gDragCarryEvents addObject:@{
+    @"stage" : @"app.nextEvent.request",
+    @"mask" : @((unsigned long long)mask),
+    @"requestedMode" : mode ?: @"",
+    @"mode" : NSRunLoop.currentRunLoop.currentMode ?: @"",
+    @"time" : @(NSProcessInfo.processInfo.systemUptime),
+  }];
+}
+
+void InstallDragCarryMethod(Class cls, SEL selector, id (^make)(IMP)) {
+  NSString *key = [@"SolaraDragCarry:" stringByAppendingString:NSStringFromSelector(selector)];
+  if ([objc_getAssociatedObject(cls, (const void *)sel_registerName(key.UTF8String)) boolValue]) return;
+  Method method = class_getInstanceMethod(cls, selector);
+  if (!method) return;
+  IMP replacement = imp_implementationWithBlock(make(method_getImplementation(method)));
+  if (!class_addMethod(cls, selector, replacement, method_getTypeEncoding(method))) class_replaceMethod(cls, selector, replacement, method_getTypeEncoding(method));
+  objc_setAssociatedObject(cls, (const void *)sel_registerName(key.UTF8String), @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+void StartDragCarryTrace(NSWindow *window) {
+  static dispatch_once_t inputOnce;
+  dispatch_once(&inputOnce, ^{
+    [NSNotificationCenter.defaultCenter addObserverForName:@"SolaraDragCarryInput" object:nil queue:nil usingBlock:^(NSNotification *note) {
+      NSEvent *event = [note.object isKindOfClass:NSEvent.class] ? note.object : nil;
+      TraceDragCarryEvent([note.userInfo[@"handled"] boolValue] ? @"localMonitor.handled" : @"localMonitor.received", event);
+    }];
+  });
+  gDragCarryWindow = window.windowNumber;
+  gDragCarryEvents = [NSMutableArray array];
+  gDragCarryRequests = [NSMutableSet set];
+  InstallDragCarryMethod(NSApp.class, @selector(sendEvent:), ^id(IMP original) {
+    return ^(NSApplication *app, NSEvent *event) {
+      TraceDragCarryEvent(@"app.sendEvent", event);
+      ((void (*)(id, SEL, NSEvent *))original)(app, @selector(sendEvent:), event);
+    };
+  });
+  InstallDragCarryMethod(NSApp.class, @selector(nextEventMatchingMask:untilDate:inMode:dequeue:), ^id(IMP original) {
+    return ^NSEvent *(NSApplication *app, NSEventMask mask, NSDate *date, NSRunLoopMode mode, BOOL dequeue) {
+      TraceDragCarryRequest(mask, mode, dequeue);
+      NSEvent *event = ((NSEvent *(*)(id, SEL, NSEventMask, NSDate *, NSRunLoopMode, BOOL))original)(app, @selector(nextEventMatchingMask:untilDate:inMode:dequeue:), mask, date, mode, dequeue);
+      if (dequeue) TraceDragCarryEvent(@"app.nextEvent", event);
+      return event;
+    };
+  });
+  InstallDragCarryMethod(NSApp.mainMenu.class, @selector(performKeyEquivalent:), ^id(IMP original) {
+    return ^BOOL(NSMenu *menu, NSEvent *event) {
+      if (menu == NSApp.mainMenu) TraceDragCarryEvent(@"menu.performKeyEquivalent", event);
+      BOOL handled = ((BOOL (*)(id, SEL, NSEvent *))original)(menu, @selector(performKeyEquivalent:), event);
+      if (menu == NSApp.mainMenu) TraceDragCarryEvent(handled ? @"menu.keyEquivalent.handled" : @"menu.keyEquivalent.unhandled", event);
+      return handled;
+    };
+  });
+  InstallDragCarryMethod(window.class, @selector(performKeyEquivalent:), ^id(IMP original) {
+    return ^BOOL(NSWindow *target, NSEvent *event) {
+      TraceDragCarryEvent(@"window.performKeyEquivalent", event);
+      BOOL handled = ((BOOL (*)(id, SEL, NSEvent *))original)(target, @selector(performKeyEquivalent:), event);
+      TraceDragCarryEvent(handled ? @"window.keyEquivalent.handled" : @"window.keyEquivalent.unhandled", event);
+      return handled;
+    };
+  });
+}
+#endif
+
+char kDragCarrySourceWindow;
+__weak NSWindow *gDragCarryInputWindow;
+NSInteger gDragCarryInputSequence;
+
+void InstallDragCarryInput() {
+  Class cls = NSApp.class;
+  SEL selector = @selector(nextEventMatchingMask:untilDate:inMode:dequeue:);
+  Method method = class_getInstanceMethod(cls, selector);
+  if (!method) return;
+  IMP original = method_getImplementation(method);
+  IMP replacement = imp_implementationWithBlock(^NSEvent *(NSApplication *app, NSEventMask mask, NSDate *date, NSRunLoopMode mode, BOOL dequeue) {
+    for (;;) {
+      NSEvent *event = ((NSEvent *(*)(id, SEL, NSEventMask, NSDate *, NSRunLoopMode, BOOL))original)(app, selector, mask, date, mode, dequeue);
+      NSWindow *window = gDragCarryInputWindow;
+      if (!event || !dequeue || !window || !NSThread.isMainThread) return event;
+      NSEventType type = event.type;
+      BOOL eligible = type == NSEventTypeKeyDown || type == NSEventTypeKeyUp || type == NSEventTypeSwipe ||
+                      (type == NSEventTypeScrollWheel && event.phase != NSEventPhaseNone);
+      if (!eligible || (event.windowNumber && event.windowNumber != window.windowNumber)) return event;
+      NSMutableDictionary *reply = [NSMutableDictionary dictionaryWithObject:@NO forKey:@"handled"];
+      [NSNotificationCenter.defaultCenter postNotificationName:@"SolaraDragCarryRouteInput" object:event
+                                                     userInfo:@{@"sequence": @(gDragCarryInputSequence), @"reply": reply}];
+      BOOL handled = [reply[@"handled"] boolValue];
+#if DEBUG
+      TraceDragCarryEvent(handled ? @"dragLoop.handled" : @"dragLoop.received", event);
+#endif
+      if (!handled) return event;
+    }
+  });
+  if (!class_addMethod(cls, selector, replacement, method_getTypeEncoding(method))) class_replaceMethod(cls, selector, replacement, method_getTypeEncoding(method));
+}
+
+void InstallDragCarryLifecycle() {
+  static dispatch_once_t once;
+  dispatch_once(&once, ^{
+    Class cls = NSClassFromString(@"WebContentsViewCocoa");
+    if (!cls || !class_getInstanceMethod(cls, @selector(draggingSession:willBeginAtPoint:)) ||
+        !class_getInstanceMethod(cls, @selector(draggingSession:endedAtPoint:operation:))) return;
+    InstallDragCarryInput();
+    Swizzle(cls, @selector(draggingSession:willBeginAtPoint:), ^id(IMP original) {
+      return ^(NSView *source, NSDraggingSession *session, NSPoint point) {
+        objc_setAssociatedObject(session, &kDragCarrySourceWindow, source.window, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+#if DEBUG
+        ACDragCarryDestinationBegan(source, session);
+#endif
+        ((void (*)(id, SEL, NSDraggingSession *, NSPoint))original)(source, @selector(draggingSession:willBeginAtPoint:), session, point);
+#if DEBUG
+        if (gDragCarryWindow && gDragCarryEvents.count < 4096) [gDragCarryEvents addObject:@{@"stage": @"source.dragBegan", @"window": @(source.window.windowNumber), @"sequence": @(session.draggingSequenceNumber), @"time": @(NSProcessInfo.processInfo.systemUptime)}];
+#endif
+        gDragCarryInputWindow = source.window;
+        gDragCarryInputSequence = session.draggingSequenceNumber;
+        if (source.window) [NSNotificationCenter.defaultCenter postNotificationName:@"SolaraDragCarryBegan" object:source.window userInfo:@{@"sequence": @(session.draggingSequenceNumber)}];
+      };
+    });
+    Swizzle(cls, @selector(draggingSession:endedAtPoint:operation:), ^id(IMP original) {
+      return ^(NSView *source, NSDraggingSession *session, NSPoint point, NSDragOperation operation) {
+        NSWindow *window = objc_getAssociatedObject(session, &kDragCarrySourceWindow);
+        objc_setAssociatedObject(session, &kDragCarrySourceWindow, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        if (gDragCarryInputWindow == window && gDragCarryInputSequence == session.draggingSequenceNumber) gDragCarryInputWindow = nil;
+#if DEBUG
+        ACDragCarryDestinationEnded(session, operation);
+#endif
+        ((void (*)(id, SEL, NSDraggingSession *, NSPoint, NSDragOperation))original)(source, @selector(draggingSession:endedAtPoint:operation:), session, point, operation);
+#if DEBUG
+        if (gDragCarryWindow && gDragCarryEvents.count < 4096) [gDragCarryEvents addObject:@{@"stage": @"source.dragEnded", @"window": @(window.windowNumber), @"sequence": @(session.draggingSequenceNumber), @"operation": @(operation), @"time": @(NSProcessInfo.processInfo.systemUptime)}];
+#endif
+        if (window) [NSNotificationCenter.defaultCenter postNotificationName:@"SolaraDragCarryEnded" object:window userInfo:@{@"sequence": @(session.draggingSequenceNumber), @"operation": @(operation)}];
+      };
+    });
+  });
 }
 
 void InstallTrafficLightsLog() {
@@ -395,6 +730,7 @@ void InsetTrafficLights(NSWindow *window) {
 void WatchFullScreenLights(NSWindow *window);
 
 void ConfigureWindow(NSWindow *window) {
+  InstallDragCarryLifecycle();
   InstallTrafficLightsLog();
   Class<ACWindowCaptionLayout> layout = NSClassFromString(@"SolaraWindowCaptionLayout");
   [layout configureWindow:window];
@@ -1899,6 +2235,9 @@ NSMapTable<SolaraCoreProfile *, SolaraCoreWindowController *> *StandaloneWindows
 }
 
 - (BOOL)window:(SolaraCoreWindow *)window preHandleKeyEvent:(NSEvent *)event {
+#if DEBUG
+  TraceDragCarryEvent(@"solara.preHandleKeyEvent", event);
+#endif
   NSMenuItem *item = ShortcutMenuItemForEvent(event);
   const BOOL handled = item && PerformsShortcutBeforePage(event, item, ^BOOL {
            return [NSApp.mainMenu performKeyEquivalent:event];
@@ -2460,6 +2799,9 @@ NSImage *_Nullable PermissionIcon(NSDictionary *request) {
 }
 
 - (BOOL)window:(SolaraCoreWindow *)window preHandleKeyEvent:(NSEvent *)event {
+#if DEBUG
+  TraceDragCarryEvent(@"solara.preHandleKeyEvent", event);
+#endif
   NSMenuItem *item = ShortcutMenuItemForEvent(event);
   __weak SolaraCorePopupWindow *weakSelf = self;
   return item && PerformsShortcutBeforePage(event, item, ^BOOL {
@@ -2930,6 +3272,16 @@ NSDictionary *ProbeFrame(NSWindow *window, ACWindowFullScreen *state, CFTimeInte
   if (!window) return nil;
   if (!solaracore_host::TestHooksAllowed()) return @"test instances only";
 #if DEBUG
+  if ([action hasPrefix:@"dragCarry:native:"]) return ACDragCarryDestinationAction(action, window);
+  if ([action hasPrefix:@"dragCarry:"]) {
+    if ([action isEqualToString:@"dragCarry:start"]) {
+      StartDragCarryTrace(window);
+      return @"started";
+    }
+    if ([action isEqualToString:@"dragCarry:stop"]) gDragCarryWindow = 0;
+    NSData *json = [NSJSONSerialization dataWithJSONObject:gDragCarryEvents ?: @[] options:0 error:nil];
+    return json ? [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding] : @"[]";
+  }
   if ([action isEqualToString:@"popupPixels"]) {
     for (SolaraCorePopupWindow *popup in PopupWindows()) {
       if (popup.coreWindow.window != window) continue;

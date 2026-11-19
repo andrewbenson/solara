@@ -1,4 +1,5 @@
 import AppKit
+import SolaraCore
 import SolaraShell
 import Foundation
 import SolaraModel
@@ -86,7 +87,7 @@ enum NativeSidebarShell {
 }
 
 @MainActor
-final class SidebarShellColumn: NSView, DevDropDestination {
+final class SidebarShellColumn: NSView, DevDropDestination, NSSpringLoadingDestination {
   struct Layout: Equatable {
     var top: CGFloat = 0
     var header: CGFloat = 0
@@ -101,6 +102,7 @@ final class SidebarShellColumn: NSView, DevDropDestination {
   private var pagerObserver: NSObjectProtocol?
   private var given = Layout()
   private var dropCount = 0
+  private var carrySpring = DragCarrySpring()
   private var stopped = false
 
   override var isFlipped: Bool { true }
@@ -109,6 +111,7 @@ final class SidebarShellColumn: NSView, DevDropDestination {
     self.windowId = windowId
     self.host = host
     super.init(frame: .zero)
+    NativeDragCarry.register()
     list.wantsLayer = true
     list.autoresizingMask = []
     host.view.autoresizingMask = [.width, .height]
@@ -125,7 +128,7 @@ final class SidebarShellColumn: NSView, DevDropDestination {
       guard note.userInfo?["key"] as? String == windowId, let position = note.userInfo?["position"] as? Double else { return }
       MainActor.assumeIsolated { self?.chrome.setPagerPosition(position) }
     }
-    registerForDraggedTypes([.fileURL, .URL, .string])
+    registerForDraggedTypes([.fileURL, .URL, .string, .tiff, .png])
   }
 
   required init?(coder: NSCoder) { fatalError() }
@@ -338,6 +341,31 @@ final class SidebarShellColumn: NSView, DevDropDestination {
     return mask.contains(.link) ? .link : []
   }
 
+  private func carryTarget(_ sender: NSDraggingInfo) -> DragCarryTarget? {
+    guard !stopped, window != nil, !isHiddenOrHasHiddenAncestor, TabDragSession.current == nil,
+      NativeDragCarry.admits(sequence: sender.draggingSequenceNumber, windowId: windowId),
+      DragCarrySpring.accepts(sender.draggingPasteboard), bounds.contains(convert(sender.draggingLocation, from: nil)) else { return nil }
+    if let id = chrome.dragCarryProfile(at: sender.draggingLocation) { return .profile(id) }
+    return host.view.current?.dragCarryTab(at: sender.draggingLocation).map(DragCarryTarget.tab)
+  }
+
+  func springLoadingEntered(_ sender: NSDraggingInfo) -> NSSpringLoadingOptions { springLoadingUpdated(sender) }
+
+  func springLoadingUpdated(_ sender: NSDraggingInfo) -> NSSpringLoadingOptions {
+    let target = carryTarget(sender)
+    if carrySpring.update(target, sequence: sender.draggingSequenceNumber) { sender.resetSpringLoading() }
+    return target == nil ? [] : .enabled
+  }
+
+  func springLoadingActivated(_ activated: Bool, draggingInfo sender: NSDraggingInfo) {
+    guard activated, let target = carrySpring.activate(carryTarget(sender), sequence: sender.draggingSequenceNumber) else { return }
+    _ = NativeDragCarry.activate(target, windowId: windowId)
+  }
+
+  func springLoadingHighlightChanged(_ sender: NSDraggingInfo) {}
+
+  func springLoadingExited(_ sender: NSDraggingInfo) { carrySpring.cancel() }
+
   override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
     dropCount = DroppedLinks.count(sender.draggingPasteboard)
     guard dropCount > 0 else { return [] }
@@ -356,6 +384,7 @@ final class SidebarShellColumn: NSView, DevDropDestination {
   override func draggingEnded(_ sender: NSDraggingInfo) { leave() }
 
   private func leave() {
+    carrySpring.cancel()
     guard dropCount > 0 else { return }
     dropCount = 0
     _ = NativeSidebarDrag.external(windowId: windowId, phase: "leave", at: .zero, count: 0)
@@ -364,6 +393,7 @@ final class SidebarShellColumn: NSView, DevDropDestination {
   override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool { dropCount > 0 }
 
   override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+    carrySpring.cancel()
     guard dropCount > 0 else { return false }
     dropCount = 0
     let items = DroppedLinks.items(sender.draggingPasteboard)
@@ -734,6 +764,15 @@ final class NativeLayoutChrome {
     }
     target.incoming = { [weak host] point in host?.view.current?.incoming(at: point) }
     target.clearIncoming = { [weak host] in host?.view.current?.endIncoming() }
+    target.carryAdmitted = { [weak self] sender in
+      guard let self, !self.stopped else { return false }
+      return NativeDragCarry.admits(sequence: sender.draggingSequenceNumber, windowId: self.shell.windowId)
+    }
+    target.carryTarget = { [weak host] point in host?.view.current?.dragCarryTab(at: point).map(DragCarryTarget.tab) }
+    target.onSpring = { [weak self] destination in
+      guard let self, !self.stopped, Self.owners[self.shell.windowId] === self else { return }
+      _ = NativeDragCarry.activate(destination, windowId: self.shell.windowId)
+    }
     target.onDrop = { [weak self] items, placement in
       self?.sendFeature("topStrip.peek.action", "drop", ["items": items, "placement": placement ?? NSNull()])
     }
@@ -794,12 +833,16 @@ final class NativeLayoutChrome {
 }
 
 @MainActor
-private final class NativeLayoutStripDropView: NSView, DevDropDestination {
+private final class NativeLayoutStripDropView: NSView, DevDropDestination, NSSpringLoadingDestination {
   var accepts: () -> Bool = { false }
   var incoming: (CGPoint?) -> String?? = { _ in nil }
   var clearIncoming: () -> Void = {}
   var onDrop: ([[String: String]], String?) -> Void = { _, _ in }
   var onActive: (Bool) -> Void = { _ in }
+  var carryAdmitted: (NSDraggingInfo) -> Bool = { _ in false }
+  var carryTarget: (CGPoint) -> DragCarryTarget? = { _ in nil }
+  var onSpring: (DragCarryTarget) -> Void = { _ in }
+  private var carrySpring = DragCarrySpring()
   private var count = 0
   private var stopped = false
   private var content: NSView?
@@ -810,7 +853,7 @@ private final class NativeLayoutStripDropView: NSView, DevDropDestination {
   init(content: NSView? = nil) {
     super.init(frame: .zero)
     if let content { hold(content) }
-    registerForDraggedTypes([.fileURL, .URL, .string])
+    registerForDraggedTypes([.fileURL, .URL, .string, .tiff, .png])
   }
 
   required init?(coder: NSCoder) { fatalError() }
@@ -853,6 +896,28 @@ private final class NativeLayoutStripDropView: NSView, DevDropDestination {
     return mask.contains(.link) ? .link : []
   }
 
+  private func springTarget(_ sender: NSDraggingInfo) -> DragCarryTarget? {
+    guard admitted(sender), carryAdmitted(sender), DragCarrySpring.accepts(sender.draggingPasteboard) else { return nil }
+    return carryTarget(sender.draggingLocation)
+  }
+
+  func springLoadingEntered(_ sender: NSDraggingInfo) -> NSSpringLoadingOptions { springLoadingUpdated(sender) }
+
+  func springLoadingUpdated(_ sender: NSDraggingInfo) -> NSSpringLoadingOptions {
+    let target = springTarget(sender)
+    if carrySpring.update(target, sequence: sender.draggingSequenceNumber) { sender.resetSpringLoading() }
+    return target == nil ? [] : .enabled
+  }
+
+  func springLoadingActivated(_ activated: Bool, draggingInfo sender: NSDraggingInfo) {
+    guard activated, let target = carrySpring.activate(springTarget(sender), sequence: sender.draggingSequenceNumber) else { return }
+    onSpring(target)
+  }
+
+  func springLoadingHighlightChanged(_ sender: NSDraggingInfo) {}
+
+  func springLoadingExited(_ sender: NSDraggingInfo) { carrySpring.cancel() }
+
   override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
     guard admitted(sender) else { return [] }
     count = DroppedLinks.count(sender.draggingPasteboard)
@@ -863,10 +928,11 @@ private final class NativeLayoutStripDropView: NSView, DevDropDestination {
   }
 
   override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-    guard admitted(sender), active else {
+    guard admitted(sender) else {
       leave()
       return []
     }
+    guard active else { return [] }
     _ = incoming(point(sender))
     return operation(sender)
   }
@@ -892,6 +958,7 @@ private final class NativeLayoutStripDropView: NSView, DevDropDestination {
   }
 
   private func leave() {
+    carrySpring.cancel()
     let was = active
     count = 0
     clearIncoming()
@@ -908,6 +975,9 @@ private final class NativeLayoutStripDropView: NSView, DevDropDestination {
     clearIncoming = {}
     onDrop = { _, _ in }
     onActive = { _ in }
+    carryAdmitted = { _ in false }
+    carryTarget = { _ in nil }
+    onSpring = { _ in }
   }
 }
 
@@ -1024,5 +1094,215 @@ struct NativeLayoutAppearance {
     nameColor = incognito ? "#FFFFFF" : ThemeMath.colorHex(.init(r: name.r + (target - name.r) * mix,
       g: name.g + (target - name.g) * mix, b: name.b + (target - name.b) * mix))
     panel = StripPeekLook(fill: fill, border: dark ? "#FFFFFF1A" : "#0000001A", shadowOpacity: dark ? 0.5 : 0.18)
+  }
+}
+
+@MainActor
+private enum NativeDragCarry {
+  private struct Origin {
+    let windowId: String
+    let profileId: String
+    let incognito: Bool
+    let activeTabIds: JSMap<String>
+    let ownership: Int
+    weak var window: NSWindow?
+  }
+
+  private static var observers: [NSObjectProtocol] = []
+  private static var origins: [Int: Origin] = [:]
+  private static var inputMonitor: Any?
+  private static var swipe: CarrySwipe?
+
+  static func register() {
+    guard observers.isEmpty else { return }
+    observers = ["SolaraDragCarryBegan", "SolaraDragCarryEnded"].map { name in
+      NotificationCenter.default.addObserver(forName: Notification.Name(name), object: nil, queue: nil) { note in
+        guard let window = note.object as? NSWindow, let sequence = note.userInfo?["sequence"] as? Int else { return }
+        let operation = note.userInfo?["operation"] as? UInt
+        MainActor.assumeIsolated { receive(name: name, nativeWindow: window, sequence: sequence, operation: operation) }
+      }
+    }
+    observers.append(NotificationCenter.default.addObserver(forName: Notification.Name("SolaraDragCarryRouteInput"), object: nil, queue: nil) { note in
+      guard Thread.isMainThread, let event = note.object as? NSEvent, let sequence = note.userInfo?["sequence"] as? Int,
+        let reply = note.userInfo?["reply"] as? NSMutableDictionary else { return }
+      nonisolated(unsafe) let synchronousEvent = event
+      nonisolated(unsafe) let synchronousReply = reply
+      MainActor.assumeIsolated { synchronousReply["handled"] = input(synchronousEvent, sequence: sequence) }
+    })
+  }
+
+  private static func stopInput() {
+    if let inputMonitor { NSEvent.removeMonitor(inputMonitor) }
+    inputMonitor = nil
+    swipe?.stop()
+    swipe = nil
+  }
+
+  private static func receive(name: String, nativeWindow: NSWindow, sequence: Int, operation: UInt?) {
+    if name == "SolaraDragCarryBegan" {
+      stopInput()
+      origins.removeAll()
+      guard let store = NativeStoreHandle.store,
+        let windowId = store.state.windows.keys.first(where: { NativeWindowShell.host($0)?.shell.window === nativeWindow }),
+        let window = store.state.windows[windowId] else { return }
+      origins[sequence] = Origin(windowId: windowId, profileId: window.profileId, incognito: window.incognito,
+        activeTabIds: window.activeTabIds, ownership: NativeStoreHandle.ownershipGeneration, window: nativeWindow)
+      swipe = CarrySwipe(windowId: windowId, window: nativeWindow)
+      inputMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { event in
+        let handled = MainActor.assumeIsolated {
+          let handled = input(event, sequence: sequence)
+          #if DEBUG
+          NotificationCenter.default.post(name: Notification.Name("SolaraDragCarryInput"), object: event, userInfo: ["handled": handled])
+          #endif
+          return handled
+        }
+        return handled ? nil : event
+      }
+      return
+    }
+    guard let origin = origins.removeValue(forKey: sequence), origin.window === nativeWindow else { return }
+    stopInput()
+    guard operation == 0 else { return }
+    DispatchQueue.main.async {
+      MainActor.assumeIsolated { restore(origin) }
+    }
+  }
+
+  private static func restore(_ origin: Origin) {
+    guard origins.isEmpty, let nativeWindow = origin.window, let store = NativeStoreHandle.store,
+      origin.ownership == NativeStoreHandle.ownershipGeneration,
+      NativeWindowShell.host(origin.windowId)?.shell.window === nativeWindow,
+      let current = store.state.windows[origin.windowId], current.incognito == origin.incognito,
+      origin.incognito ? current.profileId == origin.profileId : store.state.profiles[origin.profileId] != nil else { return }
+    for (profileId, tabId) in origin.activeTabIds {
+      guard let tab = store.state.tabs[tabId], tab.windowId == origin.windowId, tab.profileId == profileId,
+        store.state.activeTabId(origin.windowId, profileId) != tabId else { continue }
+      _ = try? store.dispatch(Command("activate", [.string(tabId)]), origin: .native)
+    }
+    if store.state.windows[origin.windowId]?.profileId != origin.profileId {
+      _ = try? store.dispatch(Command("switchProfile", [.string(origin.windowId), .string(origin.profileId)]), origin: .native)
+    }
+    FrameUpdates.flush()
+  }
+
+  static func admits(sequence: Int, windowId: String) -> Bool {
+    guard let origin = origins[sequence], origin.windowId == windowId, let window = origin.window,
+      origin.ownership == NativeStoreHandle.ownershipGeneration else { return false }
+    return NativeWindowShell.host(windowId)?.shell.window === window
+  }
+
+  private static func input(_ event: NSEvent, sequence: Int) -> Bool {
+    guard let origin = origins[sequence], let window = origin.window,
+      admits(sequence: sequence, windowId: origin.windowId),
+      event.windowNumber == 0 || event.windowNumber == window.windowNumber,
+      let store = NativeStoreHandle.store else { return false }
+    if event.type == .scrollWheel || event.type == .swipe {
+      guard !origin.incognito else { return false }
+      return swipe?.input(event) ?? false
+    }
+    let flags = event.modifierFlags.intersection([.command, .shift, .control, .option, .function])
+    var key = event.charactersIgnoringModifiers ?? ""
+    if flags.contains(.shift), key == "{" || key == "}" { key = key == "{" ? "[" : "]" }
+    let glyphs: [(NSEvent.ModifierFlags, String)] = [(.control, "⌃"), (.option, "⌥"), (.shift, "⇧"), (.command, "⌘"), (.function, "🌐")]
+    let shortcut = glyphs.filter { flags.contains($0.0) }.map(\.1).joined() + key.uppercased()
+    let hints = CommandShortcutSnapshot().hints(state: store.state)
+    let commands = (1...8).map { ("selectTab", String($0), "selectTab:\($0)") }
+      + [("selectLastTab", "", "selectLastTab"), ("nextTab", "", "nextTab"), ("previousTab", "", "previousTab")]
+    if let match = commands.first(where: { hints[JSKey($0.2)] == shortcut }) {
+      guard event.type == .keyDown else { return true }
+      guard let plan = WorkspaceMenuCommand.plan(match.0, arg: match.1, windowId: origin.windowId, state: store.state),
+        !plan.commands.isEmpty else { return true }
+      _ = try? store.dispatch(plan.commands, origin: .native)
+      FrameUpdates.flush()
+      return true
+    }
+    if !origin.incognito, let profile = store.state.profileOrder.first(where: { hints[JSKey("switchProfile:\($0)")] == shortcut }) {
+      if event.type == .keyDown { _ = activate(.profile(profile), windowId: origin.windowId) }
+      return true
+    }
+    return false
+  }
+
+  @MainActor
+  private final class CarrySwipe: @preconcurrency ACPagerSurface {
+    let windowId: String
+    weak var window: NSWindow?
+    private var dx = 0.0
+    private var dy = 0.0
+    private var tracking = false
+    private var measuredWidth: Double?
+    private var pager: ACPager?
+
+    init(windowId: String, window: NSWindow) {
+      self.windowId = windowId
+      self.window = window
+      pager = ACPager.existing(windowId)
+      pager?.attach(self)
+    }
+
+    var pageWidth: Double { measuredWidth ?? Double(window?.contentView?.bounds.width ?? 0) }
+    var surfaceWindow: NSWindow? { window }
+    func pagerMoved(_ position: Double) {}
+    func pagerChanged(_ event: [String: Any]) {}
+
+    func stop() {
+      if tracking { pager?.input(from: self, phase: "cancelled", distance: abs(dx), direction: dx > 0 ? 1 : -1, timestamp: ProcessInfo.processInfo.systemUptime) }
+      tracking = false
+      pager?.detach(self)
+      pager = nil
+    }
+
+    func input(_ event: NSEvent) -> Bool {
+      guard let pager else { return false }
+      if event.type == .swipe {
+        guard abs(event.deltaX) >= 0.5, let state = NativeStoreHandle.store?.state else { return false }
+        return pager.step(event.deltaX > 0 ? -1 : 1, wrap: false, order: state.profileOrder.joined(separator: "\n"))
+      }
+      guard event.hasPreciseScrollingDeltas, event.phase != [] else { return false }
+      if event.phase.contains(.mayBegin) { return true }
+      if event.phase.contains(.began) {
+        dx = 0
+        dy = 0
+        tracking = false
+        if let host = NativeProfilePager.hosts[windowId] {
+          let targets = [host.peekTarget, host.stripTarget, host.sidebarTarget].filter {
+            $0.window === window && !$0.isHiddenOrHasHiddenAncestor && $0.pageWidth > 0
+          }
+          let target = targets.first { $0.bounds.contains($0.convert(event.locationInWindow, from: nil)) } ?? targets.first
+          measuredWidth = target?.pageWidth
+        }
+      }
+      dx += event.scrollingDeltaX
+      dy += event.scrollingDeltaY
+      let ended = event.phase.contains(.ended) || event.phase.contains(.cancelled)
+      if !tracking {
+        guard !ended, dx != 0, abs(dx) >= abs(dy) else { return event.phase.contains(.began) }
+        tracking = true
+        pager.input(from: self, phase: "began", distance: abs(dx), direction: dx > 0 ? 1 : -1, timestamp: event.timestamp)
+      } else {
+        pager.input(from: self, phase: ended ? (event.phase.contains(.cancelled) ? "cancelled" : "ended") : "changed",
+          distance: abs(dx), direction: dx > 0 ? 1 : -1, timestamp: event.timestamp)
+      }
+      if ended { tracking = false }
+      return true
+    }
+  }
+
+  static func activate(_ target: DragCarryTarget, windowId: String) -> Bool {
+    guard origins.keys.contains(where: { admits(sequence: $0, windowId: windowId) }),
+      let store = NativeStoreHandle.store, let window = store.state.windows[windowId] else { return false }
+    let command: Command
+    switch target {
+    case .tab(let id):
+      guard let tab = store.state.tabs[id], tab.windowId == windowId, tab.profileId == window.profileId,
+        window.tabIds.contains(id), store.state.activeTabId(windowId, window.profileId) != id else { return false }
+      command = Command("activate", [.string(id)])
+    case .profile(let id):
+      guard !window.incognito, window.profileId != id, store.state.profileOrder.contains(id), store.state.profiles[id] != nil else { return false }
+      command = Command("switchProfile", [.string(windowId), .string(id)])
+    }
+    guard (try? store.dispatch(command, origin: .native)) != nil else { return false }
+    FrameUpdates.flush()
+    return true
   }
 }

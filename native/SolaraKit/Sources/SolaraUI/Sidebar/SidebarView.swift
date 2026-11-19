@@ -1095,6 +1095,20 @@ public final class SidebarView: NSView {
     row?.pointerMoved()
   }
 
+  public func dragCarryTab(at windowPoint: NSPoint) -> String? {
+    guard !stopped, !isHiddenOrHasHiddenAncestor, bounds.contains(convert(windowPoint, from: nil)),
+      let context, let kind = rowAt(windowPoint)?.item?.kind else { return nil }
+    let id: String?
+    switch kind {
+    case .tab(let tabId), .tile(let tabId): id = tabId
+    case .split(let splitId):
+      let panes = context.query.splitPanes(splitId)
+      id = panes.first { $0 == context.activeId } ?? panes.first
+    default: id = nil
+    }
+    return id == context.activeId ? nil : id
+  }
+
   private func rowAt(_ windowPoint: NSPoint) -> SidebarRowView? {
     if bottomBarHeight > 0, convert(windowPoint, from: nil).y >= bounds.height - bottomBarHeight { return nil }
     if pillShown, pill.bounds.contains(pill.convert(windowPoint, from: nil)) { return nil }

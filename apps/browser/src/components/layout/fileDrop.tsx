@@ -32,7 +32,13 @@ function openDropped({ windowId, profileId, placement }: LandedDrop, urls: strin
   const w = s.windows[windowId];
   if (!urls.length || !w || !(s.profiles[profileId] || w.profileId === profileId)) return [];
   const paged = w.profileId !== profileId;
-  const ids = urls.map((url, i) => s.newTab(windowId, { url, background: paged || i > 0, profileId })).filter(Boolean);
+  const ids: string[] = [];
+  for (const [i, url] of urls.entries()) {
+    const previous = ids.at(-1);
+    const previousIndex = previous ? useBrowser.getState().windows[windowId]?.tabIds.indexOf(previous) ?? -1 : -1;
+    const id = s.newTab(windowId, { url, background: paged || i > 0, profileId, ...(previousIndex >= 0 ? { index: previousIndex + 1 } : {}) });
+    if (id) ids.push(id);
+  }
   if (ids.length && placement && !paged) useBrowser.getState().placeTabs(ids, placement);
   return ids;
 }

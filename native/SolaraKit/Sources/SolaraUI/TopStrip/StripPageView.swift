@@ -370,6 +370,22 @@ public final class StripPageView: NSView {
 
   public var groupTrace: [[Double]] { groupSamples }
 
+  public func dragCarryTab(at windowPoint: NSPoint) -> String? {
+    let point = fullScreenPoint(windowPoint)
+    guard !stopped, !isHiddenOrHasHiddenAncestor, bounds.contains(point), let superview,
+      var view = hitTest(convert(point, to: superview)) else { return nil }
+    var id: String?
+    while view !== self {
+      if let chip = view as? StripTabChip { id = chip.tabId; break }
+      if let cell = view as? StripPinnedCell { id = cell.cell; break }
+      if let part = view as? StripSplitPart { id = part.tabId; break }
+      guard let parent = view.superview else { break }
+      view = parent
+    }
+    guard let id, context?.state.tabs[id] != nil, id != context?.activeId else { return nil }
+    return id
+  }
+
   public func incoming(at point: CGPoint?) -> String?? {
     guard !stopped else { return nil }
     let top = pageLayout.top

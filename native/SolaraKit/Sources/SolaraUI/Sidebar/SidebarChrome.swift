@@ -678,6 +678,15 @@ public final class SidebarChromeView: NSView {
     hover(at: fullScreenPoint(window.convertPoint(fromScreen: screen), from: nil))
   }
 
+  public func dragCarryProfile(at windowPoint: NSPoint) -> String? {
+    let point = fullScreenPoint(windowPoint)
+    guard !isHiddenOrHasHiddenAncestor, bounds.contains(point), !profileScroll.isHidden,
+      profileScroll.frame.contains(point), let dot = dots.first(where: {
+        !$0.isHidden && $0.bounds.contains($0.convert(point, from: self))
+      }), dot.profileId != state?.currentProfileId else { return nil }
+    return dot.profileId
+  }
+
   private func hover(at point: NSPoint?) {
     let headerPoint = point.map { CGPoint(x: $0.x, y: $0.y - fullScreenHeaderOffset) }
     headerProfile.hovered = headerPoint.map { !headerProfile.isHidden && headerProfile.frame.contains($0) } ?? false

@@ -675,7 +675,7 @@ try {
   });
 
   await check("a split moves along the strip as one, and a pane pulled out of the window leaves it", async () => {
-    await run(`for (const id of Object.keys(st().windows)) if (id !== "w1") st().closeWindow(id); st().newTab("w1"); return settle(800);`);
+    await run(`for (const id of Object.keys(st().windows)) if (id !== "w1") st().closeWindow(id); st().newTab("w1", { index: st().windows.w1.tabIds.length }); return settle(800);`);
     const ids = await order("w1");
     const fresh = ids.at(-1);
     assert.deepEqual(ids.slice(0, 4), ["p2", "p1", "t1", "t3"]);

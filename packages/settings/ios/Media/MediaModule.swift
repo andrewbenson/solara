@@ -9,10 +9,12 @@ public class MediaModule: Module {
 
     View(SmallWindowPageHost.self) {
       Prop("state") { (view: SmallWindowPageHost, json: String) in
-        MainActor.assumeIsolated { view.setState(json) }
+        nonisolated(unsafe) let host = view
+        MainActor.assumeIsolated { host.setState(json) }
       }
       Prop("windowId") { (view: SmallWindowPageHost, id: String) in
-        MainActor.assumeIsolated { view.windowId = id }
+        nonisolated(unsafe) let host = view
+        MainActor.assumeIsolated { host.windowId = id }
       }
     }
 

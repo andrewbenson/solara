@@ -6,8 +6,8 @@ import Testing
 struct SidebarKeycapTests {
   @Test(arguments: ["⌃", "⌥", "⇧", "⌘", "1", "3", "9", "K", "F12"])
   func keycapGlyphsSitInTheMiddleOfTheirCap(key: String) {
-    let width = max(22, (key as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 12, weight: .semibold)]).width + 12)
-    let cap = SidebarKeycap(frame: NSRect(x: 0, y: 0, width: width, height: 22))
+    let cap = SidebarKeycap(frame: NSRect(x: 0, y: 0, width: SidebarDotTooltipMetrics.keycapWidth(key), height: SidebarDotTooltipMetrics.keycapHeight))
+    cap.font = .systemFont(ofSize: SidebarDotTooltipMetrics.keycapFont, weight: .semibold)
     cap.stringValue = key
     let glyph = cap.glyphRect
     #expect(glyph.width > 0 && glyph.height > 0)

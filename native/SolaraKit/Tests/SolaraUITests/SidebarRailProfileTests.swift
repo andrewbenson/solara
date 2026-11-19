@@ -406,7 +406,7 @@ import Testing
     #expect(pill.superview === root)
     #expect(pill.text == name)
     #expect(pill.shortcut == "⌥⌘K")
-    #expect(pill.frame.width > 200)
+    #expect(pill.frame.width > 150 && pill.frame.height == SidebarDotTooltipMetrics.height)
     #expect(root.bounds.contains(pill.frame))
     #expect(pill.subviews.allSatisfy { pill.bounds.contains($0.frame) })
     rail.update(state(count: 4))
@@ -451,6 +451,129 @@ import Testing
         #expect(pill.subviews.allSatisfy { pill.bounds.contains($0.frame) })
       }
     }
+  }
+
+  @Test(arguments: [false, true]) func theProfileTooltipIsCompactGlassAndASolidPillUnderReduceTransparency(dark: Bool) throws {
+    func glass(_ view: NSView) -> [NSGlassEffectView] { (view as? NSGlassEffectView).map { [$0] } ?? view.subviews.flatMap(glass) }
+    let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 900, height: 700), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    defer { window.contentView = nil; window.close() }
+    let root = FlippedContainerView(frame: NSRect(x: 0, y: 0, width: 900, height: 700))
+    window.contentView = root
+    let sidebar = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: 240, height: 700))
+    root.addSubview(sidebar)
+    var next = state(count: 3, rail: false)
+    next.dark = dark
+    sidebar.update(next)
+    let dot = try #require(descendants(sidebar).compactMap { $0 as? SidebarProfileDot }.first)
+    let pill = SidebarDotTooltip()
+    sidebar.addSubview(pill)
+    defer { pill.hide(); pill.removeFromSuperview() }
+    pill.forcedReduceTransparency = false
+    pill.look(dark: dark, panel: .white, border: .gray)
+    pill.show("Work", shortcut: "⌃2", above: dot)
+    pill.appear("Work")
+    let material = try #require(glass(pill).first)
+    #expect(pill.usesGlass && !material.isHiddenOrHasHiddenAncestor)
+    #expect(pill.frame.height == 23 && material.cornerRadius == 11.5 && material.frame.size == pill.bounds.size)
+    #expect(material.appearance?.name == (dark ? .darkAqua : .aqua))
+    #expect(pill.layer?.sublayers?.filter { $0.cornerRadius >= 11 }.count == 2)
+    #expect(pill.layer?.sublayers?.filter { $0.cornerRadius >= 11 }.allSatisfy(\.isHidden) == true)
+    #expect(pill.keycapViews.count == 2 && pill.keycapViews.allSatisfy { $0.frame.height == 16 })
+    let reused = pill.keycapViews
+    pill.hide()
+    pill.forcedReduceTransparency = true
+    pill.show("Personal", shortcut: "⌃1", above: dot)
+    pill.appear("Personal")
+    #expect(!pill.usesGlass && material.isHiddenOrHasHiddenAncestor)
+    #expect(pill.layer?.sublayers?.filter { $0.cornerRadius >= 11 }.allSatisfy { !$0.isHidden } == true)
+    #expect(zip(reused, pill.keycapViews).allSatisfy { $0 === $1 })
+    #expect(glass(pill).count == 1)
+  }
+
+  @Test(arguments: [false, true]) func everyProfileIconIsWholeOrOutOfViewAtEveryWidth(downloads: Bool) {
+    let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 900, height: 700), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    defer { window.contentView = nil; window.close() }
+    let root = FlippedContainerView(frame: NSRect(x: 0, y: 0, width: 900, height: 700))
+    window.contentView = root
+    var failures: [String] = []
+    for count in 3...6 {
+      for selected in [0, count - 1] {
+        var next = state(count: count, rail: false)
+        next.downloads = downloads
+        next.currentProfileId = "p\(selected)"
+        let widths = Array(Int(SidebarChromeMetrics.minWidth)...Int(SidebarChromeMetrics.maxWidth)).map { CGFloat($0) } + [160.5, 161.25, 163.5, 175.75, 190.5, 213.5]
+        for width in widths {
+          let sidebar = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: width, height: 700))
+          root.addSubview(sidebar)
+          defer { sidebar.removeFromSuperview() }
+          sidebar.update(next)
+          sidebar.layoutSubtreeIfNeeded()
+          let visible = sidebar.profileScroll.convert(sidebar.profileScroll.contentView.frame, to: sidebar)
+          let dots = descendants(sidebar).compactMap { $0 as? SidebarProfileDot }.sorted { $0.frame.minX < $1.frame.minX }
+          guard dots.count == count else { failures.append("w\(width) c\(count): \(dots.count) dots"); continue }
+          var shown = 0
+          for dot in dots {
+            let frame = dot.convert(dot.bounds, to: sidebar)
+            let whole = visible.insetBy(dx: -0.01, dy: -0.01).contains(frame)
+            let outside = frame.maxX <= visible.minX + 0.01 || frame.minX >= visible.maxX - 0.01
+            if whole { shown += 1 }
+            if !whole && !outside { failures.append("w\(width) c\(count) d\(downloads) sel\(selected): \(dot.profileId) \(frame) cut by \(visible)") }
+            if whole && !sidebar.bounds.insetBy(dx: SidebarChromeMetrics.profileInset - 0.01, dy: 0).contains(frame) { failures.append("w\(width): \(dot.profileId) outside the bar") }
+          }
+          if let current = dots.first(where: { $0.profileId == "p\(selected)" }), !visible.insetBy(dx: -0.01, dy: -0.01).contains(current.convert(current.bounds, to: sidebar)) {
+            failures.append("w\(width) c\(count) d\(downloads): the current profile p\(selected) is not whole")
+          }
+          let pitch = dots[1].frame.minX - dots[0].frame.minX
+          let fits = SidebarChromeMetrics.dotCell * CGFloat(count) - 4 <= visible.width + 0.01
+          if fits, abs(pitch - SidebarChromeMetrics.dotCell) > 0.01 { failures.append("w\(width) c\(count): the pitch changed although the row fits") }
+          if pitch < SidebarChromeMetrics.profileButton + SidebarChromeMetrics.minDotGap - 0.01 || pitch > SidebarChromeMetrics.dotCell + 0.01 { failures.append("w\(width) c\(count): pitch \(pitch)") }
+          if shown < count, abs(pitch - SidebarChromeMetrics.dotCell) > 0.01 { failures.append("w\(width) c\(count): a scrolling row must keep the 28 pt pitch") }
+          for pair in zip(dots, dots.dropFirst()) where abs(pair.1.frame.minX - pair.0.frame.minX - pitch) > 0.01 {
+            failures.append("w\(width) c\(count): uneven pitch at \(pair.1.profileId)")
+          }
+          if shown == 0 { failures.append("w\(width) c\(count): no whole icon") }
+          let available = width - (downloads ? SidebarChromeMetrics.inset + SidebarChromeMetrics.downloadsBox + SidebarChromeMetrics.profileInset : SidebarChromeMetrics.profileInset) - SidebarChromeMetrics.profileInset
+          if shown < count, (SidebarChromeMetrics.profileButton + SidebarChromeMetrics.minDotGap) * CGFloat(count - 1) + SidebarChromeMetrics.profileButton <= available {
+            failures.append("w\(width) c\(count) d\(downloads): icons hidden although a tighter row fits")
+          }
+        }
+      }
+    }
+    #expect(failures.isEmpty, "\(failures.prefix(12).joined(separator: "\n")) (\(failures.count) total)")
+  }
+
+  @Test func profileRowScrollStepsSnapToWholeSlots() {
+    typealias Step = SidebarProfileScrollStep
+    let notch = Step.next(from: 0, travel: nil, delta: -1, precise: false, phase: [], momentum: [], snap: 28, limit: 56)
+    #expect(notch.x == 28 && notch.travel == nil)
+    let back = Step.next(from: 28, travel: nil, delta: 1, precise: false, phase: [], momentum: [], snap: 28, limit: 56)
+    #expect(back.x == 0)
+    let fling = Step.next(from: 0, travel: nil, delta: -10, precise: false, phase: [], momentum: [], snap: 28, limit: 56)
+    #expect(fling.x == 56)
+    let still = Step.next(from: 28, travel: nil, delta: 0, precise: false, phase: [], momentum: [], snap: 28, limit: 56)
+    #expect(still.x == 28)
+    var step = Step.next(from: 0, travel: nil, delta: 0, precise: true, phase: .began, momentum: [], snap: 28, limit: 56)
+    #expect(step.x == 0 && step.travel == 0)
+    step = Step.next(from: 0, travel: step.travel, delta: -5, precise: true, phase: .changed, momentum: [], snap: 28, limit: 56)
+    #expect(step.x == 0 && step.travel == 5)
+    step = Step.next(from: 0, travel: step.travel, delta: -10, precise: true, phase: .changed, momentum: [], snap: 28, limit: 56)
+    #expect(step.x == 28 && step.travel == 15)
+    step = Step.next(from: 28, travel: step.travel, delta: -20, precise: true, phase: [], momentum: .changed, snap: 28, limit: 56)
+    #expect(step.x == 28 && step.travel == 35)
+    step = Step.next(from: 28, travel: step.travel, delta: -10, precise: true, phase: [], momentum: .ended, snap: 28, limit: 56)
+    #expect(step.x == 56 && step.travel == nil)
+    let restarted = Step.next(from: 0, travel: 40, delta: 0, precise: true, phase: .began, momentum: [], snap: 28, limit: 56)
+    #expect(restarted.x == 0 && restarted.travel == 0)
+    let cancelled = Step.next(from: 28, travel: 30, delta: -4, precise: true, phase: .cancelled, momentum: [], snap: 28, limit: 56)
+    #expect(cancelled.x == 28 && cancelled.travel == nil)
+    let moved = Step.next(from: 56, travel: 5, delta: 3, precise: true, phase: .changed, momentum: [], snap: 28, limit: 56)
+    #expect(moved.x == 56 && moved.travel == 53)
+    let phaseless = Step.next(from: 0, travel: 12, delta: -20, precise: true, phase: [], momentum: [], snap: 28, limit: 56)
+    #expect(phaseless.x == 28 && phaseless.travel == nil)
+    let free = Step.next(from: 10, travel: nil, delta: -3, precise: true, phase: .changed, momentum: [], snap: 0, limit: 56)
+    #expect(free.x == 13 && free.travel == nil)
   }
 
   @Test func shortcutKeycapsKeepRemappedAndDisabledBindings() {

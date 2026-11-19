@@ -50,9 +50,30 @@ enum SidebarProfileStyle {
   }
 }
 
+enum SidebarProfileScrollStep {
+  static func next(from: CGFloat, travel: CGFloat?, delta: CGFloat, precise: Bool, phase: NSEvent.Phase, momentum: NSEvent.Phase, snap: CGFloat, limit: CGFloat) -> (x: CGFloat, travel: CGFloat?) {
+    func clamp(_ value: CGFloat) -> CGFloat { min(limit, max(0, value)) }
+    func slot(_ value: CGFloat) -> CGFloat { clamp((value / snap).rounded() * snap) }
+    guard snap > 0 else { return (clamp(from - delta * (precise ? 1 : 10)), nil) }
+    guard precise else {
+      var snapped = slot(from - delta * 10)
+      if delta != 0, abs(snapped - from) < 0.5 { snapped = clamp(from - (delta > 0 ? snap : -snap)) }
+      return (snapped, nil)
+    }
+    let restart = phase.contains(.began) || phase.contains(.cancelled) || momentum.contains(.began) || momentum.contains(.cancelled)
+    var base = restart ? nil : travel
+    if let stale = base, abs(slot(stale) - from) >= 0.5 { base = nil }
+    let raw = clamp((base ?? from) - delta)
+    let finished = phase.contains(.ended) || phase.contains(.cancelled) || momentum.contains(.ended) || momentum.contains(.cancelled) || (phase.isEmpty && momentum.isEmpty)
+    return (slot(raw), finished ? nil : raw)
+  }
+}
+
 @MainActor
 final class SidebarProfileScrollView: NSScrollView {
   var onScroll: (() -> Void)?
+  var snap: CGFloat = 0 { didSet { if snap != oldValue { travel = nil } } }
+  private var travel: CGFloat?
   @objc var solaraOwnsHorizontalScrolling: Bool { (documentView?.bounds.width ?? 0) > contentView.bounds.width + 0.5 }
 
   override init(frame: NSRect) {
@@ -82,9 +103,11 @@ final class SidebarProfileScrollView: NSScrollView {
   override func scrollWheel(with event: NSEvent) {
     guard let documentView else { return }
     let delta = abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) ? event.scrollingDeltaX : event.scrollingDeltaY
-    let scale: CGFloat = event.hasPreciseScrollingDeltas ? 1 : 10
     let limit = max(0, documentView.bounds.width - contentView.bounds.width)
-    let x = min(limit, max(0, contentView.bounds.minX - delta * scale))
+    let step = SidebarProfileScrollStep.next(from: contentView.bounds.minX, travel: travel, delta: delta, precise: event.hasPreciseScrollingDeltas,
+      phase: event.phase, momentum: event.momentumPhase, snap: snap, limit: limit)
+    travel = step.travel
+    let x = step.x
     contentView.scroll(to: NSPoint(x: x, y: 0))
     reflectScrolledClipView(contentView)
   }

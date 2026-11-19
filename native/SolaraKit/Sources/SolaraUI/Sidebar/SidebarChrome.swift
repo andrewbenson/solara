@@ -90,6 +90,7 @@ public enum SidebarChromeMetrics {
   public static let inset: CGFloat = 6
   public static let resizeStrip: CGFloat = 4
   public static let dotCell: CGFloat = 28
+  public static let minDotGap: CGFloat = 1
   public static let dotBand: CGFloat = 24
   public static let dot: CGFloat = 5
   public static let profileButton: CGFloat = 24
@@ -99,6 +100,15 @@ public enum SidebarChromeMetrics {
   public static let minWidth: Double = 160
   public static let maxWidth: Double = 400
   public static let defaultWidth: Double = 190
+
+  public static func profileRow(count: Int, available: CGFloat) -> (pitch: CGFloat, visible: CGFloat) {
+    let gap = dotCell - profileButton
+    guard count > 1, dotCell * CGFloat(count) - gap > available else { return (dotCell, max(0, available)) }
+    let fitted = ((available - profileButton) / CGFloat(count - 1) * 2).rounded(.down) / 2
+    if fitted >= profileButton + minDotGap { return (fitted, available) }
+    let shown = max(1, Int(((available + gap) / dotCell).rounded(.down)))
+    return (dotCell, CGFloat(shown) * dotCell - gap)
+  }
 
   public static func headerHeight(addressBar: Bool) -> CGFloat { addressBar ? header + fieldRow : header }
 
@@ -445,12 +455,14 @@ public final class SidebarChromeView: NSView {
       x: state.rail ? ((width - box) / 2).rounded() : SidebarChromeMetrics.inset,
       y: bounds.height - SidebarChromeMetrics.footerDownloadsBottom - box - (state.rail && !state.dots.isEmpty ? SidebarChromeMetrics.footer : 0), width: box, height: box)
 
-    let cell = SidebarChromeMetrics.dotCell
-    let rowWidth = max(0, cell * CGFloat(dots.count) - (cell - SidebarChromeMetrics.profileButton))
     let leadingRoom = footerDownloads.isHidden ? SidebarChromeMetrics.profileInset : footerDownloads.frame.maxX + SidebarChromeMetrics.profileInset
+    let row = SidebarChromeMetrics.profileRow(count: dots.count, available: width - leadingRoom - SidebarChromeMetrics.profileInset)
+    let cell = row.pitch
+    let rowWidth = max(0, cell * CGFloat(dots.count) - (cell - SidebarChromeMetrics.profileButton))
     let rowTop = bounds.height - (state.rail ? SidebarChromeMetrics.footer : footer) + (SidebarChromeMetrics.footer - SidebarChromeMetrics.dotBand) / 2
     profileScroll.isHidden = state.rail || dots.isEmpty
-    profileScroll.frame = NSRect(x: leadingRoom, y: rowTop, width: max(0, width - leadingRoom - SidebarChromeMetrics.profileInset), height: SidebarChromeMetrics.dotBand)
+    profileScroll.frame = NSRect(x: leadingRoom, y: rowTop, width: row.visible, height: SidebarChromeMetrics.dotBand)
+    profileScroll.snap = rowWidth > row.visible + 0.5 ? cell : 0
     profileRow.frame = NSRect(x: 0, y: 0, width: max(rowWidth, profileScroll.contentSize.width), height: SidebarChromeMetrics.dotBand)
     let rowLeft = (max(0, min((width - rowWidth) / 2 - leadingRoom, profileRow.bounds.width - rowWidth)) * 2).rounded() / 2
     let background = SidebarPalette.parse(state.theme["windowTint"]) ?? NSColor(white: state.dark ? 0.16 : 0.85, alpha: 1)
@@ -656,7 +668,8 @@ public final class SidebarChromeView: NSView {
     guard !profileScroll.isHidden, let dot = dots.first(where: { $0.selected }) else { return }
     let clip = profileScroll.contentView
     let left = min(clip.bounds.minX, dot.frame.minX)
-    let origin = max(left, dot.frame.maxX - clip.bounds.width)
+    var origin = max(left, dot.frame.maxX - clip.bounds.width)
+    if profileScroll.snap > 0 { origin = (origin / profileScroll.snap).rounded() * profileScroll.snap }
     clip.scroll(to: NSPoint(x: max(0, min(origin, profileRow.bounds.width - clip.bounds.width)), y: 0))
     profileScroll.reflectScrolledClipView(clip)
   }
@@ -838,20 +851,46 @@ final class SidebarKeycap: NSView {
   }
 }
 
+public enum SidebarDotTooltipMetrics {
+  public static let height: CGFloat = 23
+  public static let labelFont: CGFloat = 12
+  public static let keycapHeight: CGFloat = 16
+  public static let keycapFont: CGFloat = 10
+  public static let keycapMinWidth: CGFloat = 16
+  public static let keycapPadding: CGFloat = 8
+  public static let keycapGap: CGFloat = 3
+  public static let keycapRadius: CGFloat = 4.5
+  public static let leading: CGFloat = 9
+  public static let trailing: CGFloat = 9
+  public static let keysInset: CGFloat = 3.5
+  public static let labelToKeys: CGFloat = 6
+  public static let gap: CGFloat = 12
+
+  public static func keycapWidth(_ key: String) -> CGFloat {
+    max(keycapMinWidth, (key as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: keycapFont, weight: .semibold)]).width + keycapPadding)
+  }
+}
+
 @MainActor
 final class SidebarDotTooltip: NSView {
   static let delay: TimeInterval = 0.5
   static let fade: TimeInterval = 0.1
-  static let centerToTooltip: CGFloat = 18.25
   private let ring = CALayer()
   private let plate = CALayer()
+  private let glass = NewTabGlassSurface(frame: .zero)
+  private var glassApplied: (size: CGSize, dark: Bool)?
   private let label = StripLabel()
   private var keycaps: [SidebarKeycap] = []
+  private var shownKeycaps = 0
   private var dark = false
+  private(set) var usesGlass = false
   private(set) var shortcut: String?
   private var pending: DispatchWorkItem?
   private weak var anchor: NSView?
   private(set) var text = ""
+  #if DEBUG
+  var forcedReduceTransparency: Bool?
+  #endif
 
   override var isFlipped: Bool { true }
   override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -859,22 +898,33 @@ final class SidebarDotTooltip: NSView {
   override init(frame: NSRect) {
     super.init(frame: frame)
     wantsLayer = true
+    let m = SidebarDotTooltipMetrics.self
     ring.actions = SurfaceLayer.noActions
     plate.actions = SurfaceLayer.noActions
-    ring.cornerRadius = 17
+    ring.cornerRadius = m.height / 2
     ring.borderWidth = 0.5
     ring.shadowColor = NSColor.black.cgColor
     ring.shadowRadius = 4
     ring.shadowOffset = CGSize(width: 0, height: -1)
-    plate.cornerRadius = 16.5
+    plate.cornerRadius = m.height / 2 - 0.5
     plate.borderWidth = 1
     layer?.addSublayer(ring)
     layer?.addSublayer(plate)
-    label.font = .systemFont(ofSize: 14, weight: .semibold)
+    addSubview(glass)
+    label.font = .systemFont(ofSize: m.labelFont, weight: .medium)
     addSubview(label)
   }
 
   required init?(coder: NSCoder) { fatalError() }
+
+  private var reduceTransparency: Bool {
+    #if DEBUG
+    if let forcedReduceTransparency { return forcedReduceTransparency }
+    #endif
+    return NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+  }
+
+  var keycapViews: [SidebarKeycap] { Array(keycaps.prefix(shownKeycaps)) }
 
   func look(dark: Bool, panel: NSColor, border: NSColor) {
     self.dark = dark
@@ -882,7 +932,32 @@ final class SidebarDotTooltip: NSView {
     ring.shadowOpacity = dark ? 0.15 : 0.08
     plate.backgroundColor = (dark ? NSColor(srgbRed: 0x26 / 255, green: 0x26 / 255, blue: 0x26 / 255, alpha: 1) : panel).cgColor
     plate.borderColor = border.cgColor
-    label.textColor = (dark ? NSColor.white : NSColor.black).withAlphaComponent(0.85)
+    paint()
+  }
+
+  private func paint() {
+    usesGlass = !reduceTransparency
+    let ink = NSColor(white: dark ? 1 : 0, alpha: 1)
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    ring.isHidden = usesGlass
+    plate.isHidden = usesGlass
+    for keycap in keycaps {
+      keycap.textColor = usesGlass ? ink.withAlphaComponent(dark ? 0.9 : 0.75) : (dark ? .white : NSColor(white: 0.2, alpha: 1))
+      keycap.layer?.backgroundColor = (usesGlass ? ink.withAlphaComponent(dark ? 0.12 : 0.05) : NSColor(white: dark ? 1 : 0, alpha: dark ? 0.1 : 0.04)).cgColor
+      keycap.layer?.borderColor = (usesGlass ? ink.withAlphaComponent(dark ? 0.2 : 0.14) : NSColor(white: dark ? 1 : 0, alpha: 0.16)).cgColor
+    }
+    CATransaction.commit()
+    glass.isHidden = !usesGlass
+    label.textColor = ink.withAlphaComponent(usesGlass ? (dark ? 0.92 : 0.85) : 0.85)
+    applyGlass()
+  }
+
+  private func applyGlass() {
+    guard usesGlass, glassApplied?.size != bounds.size || glassApplied?.dark != dark else { return }
+    glass.frame = bounds
+    glass.apply(frame: bounds, radius: bounds.height / 2, tint: NewTabTheme(dark: dark, tokens: [:]).ntpBarSolid.ns, dark: dark)
+    glassApplied = (bounds.size, dark)
   }
 
   func show(_ text: String, shortcut: String? = nil, above view: NSView) {
@@ -931,47 +1006,54 @@ final class SidebarDotTooltip: NSView {
     var parent = anchor.superview
     while parent != nil, !(parent is SidebarChromeView) { parent = parent?.superview }
     guard let sidebar = parent ?? anchor.superview else { return }
+    let m = SidebarDotTooltipMetrics.self
     self.text = text
     label.stringValue = text
     let textWidth = StripControlsLayout.measuredLikeYoga((text as NSString).size(withAttributes: [.font: label.font]).width)
-    for keycap in keycaps { keycap.removeFromSuperview() }
-    keycaps = Self.keys(shortcut).map { key in
+    let keys = Self.keys(shortcut)
+    while keycaps.count < keys.count {
       let keycap = SidebarKeycap()
-      keycap.stringValue = key
-      keycap.font = .systemFont(ofSize: 12, weight: .semibold)
-      keycap.textColor = dark ? .white : NSColor(white: 0.2, alpha: 1)
+      keycap.font = .systemFont(ofSize: m.keycapFont, weight: .semibold)
       keycap.wantsLayer = true
-      keycap.layer?.cornerRadius = 6
-      keycap.layer?.backgroundColor = NSColor(white: dark ? 1 : 0, alpha: dark ? 0.1 : 0.04).cgColor
-      keycap.layer?.borderColor = NSColor(white: dark ? 1 : 0, alpha: 0.16).cgColor
+      keycap.layer?.cornerRadius = m.keycapRadius
       keycap.layer?.borderWidth = 0.5
       addSubview(keycap)
-      return keycap
+      keycaps.append(keycap)
     }
-    let widths = keycaps.map { max(22, ($0.stringValue as NSString).size(withAttributes: [.font: $0.font]).width + 12) }
-    let shortcutWidth = widths.reduce(0, +) + CGFloat(max(0, widths.count - 1)) * 4
+    for (index, keycap) in keycaps.enumerated() {
+      keycap.isHidden = index >= keys.count
+      if index < keys.count { keycap.stringValue = keys[index] }
+    }
+    shownKeycaps = keys.count
+    let widths = keys.map(m.keycapWidth)
+    let shortcutWidth = widths.reduce(0, +) + CGFloat(max(0, widths.count - 1)) * m.keycapGap
     let windowBounds = sidebar.convert(superview.bounds, from: superview).insetBy(dx: 4, dy: 4)
     var room = windowBounds
     if (sidebar as? SidebarChromeView)?.state?.rail != true {
       room = room.intersection(sidebar.bounds.insetBy(dx: 4, dy: 0))
     }
-    let size = NSSize(width: min(room.width, textWidth + 14 + 8 + (keycaps.isEmpty ? 0 : shortcutWidth + 8)), height: 34)
+    let tail = keys.isEmpty ? m.trailing : m.labelToKeys + shortcutWidth + m.keysInset
+    let size = NSSize(width: min(room.width, textWidth + m.leading + tail), height: m.height)
     let item = anchor.convert(anchor.bounds, to: sidebar)
-    let y = sidebar.isFlipped ? item.minY - 12 - size.height : item.maxY + 12
+    let y = sidebar.isFlipped ? item.minY - m.gap - size.height : item.maxY + m.gap
     let target = NSRect(x: max(room.minX, min((item.midX - size.width / 2).rounded(), room.maxX - size.width)), y: y, width: size.width, height: size.height)
-    guard size.width >= shortcutWidth + 22, room.contains(target) else { return hide() }
-    frame = sidebar.convert(target, to: superview)
+    guard size.width >= shortcutWidth + m.leading + m.keysInset + m.labelToKeys, room.contains(target) else { return hide() }
+    let scale = window?.backingScaleFactor ?? 2
+    func pixel(_ value: CGFloat) -> CGFloat { (value * scale).rounded() / scale }
+    let placed = sidebar.convert(target, to: superview)
+    frame = NSRect(x: pixel(placed.minX), y: pixel(placed.minY), width: placed.width, height: placed.height)
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     ring.frame = bounds
     plate.frame = bounds.insetBy(dx: 0.5, dy: 0.5)
     CATransaction.commit()
-    let labelWidth = max(0, size.width - 22 - (keycaps.isEmpty ? 0 : shortcutWidth + 8))
-    label.frame = NSRect(x: 14, y: 0, width: labelWidth, height: size.height)
-    var keyX = size.width - 8 - shortcutWidth
+    paint()
+    let labelWidth = max(0, size.width - m.leading - tail)
+    label.frame = NSRect(x: m.leading, y: 0, width: labelWidth, height: size.height)
+    var keyX = size.width - m.keysInset - shortcutWidth
     for (keycap, width) in zip(keycaps, widths) {
-      keycap.frame = NSRect(x: keyX, y: 6, width: width, height: 22)
-      keyX += width + 4
+      keycap.frame = NSRect(x: pixel(keyX), y: pixel((size.height - m.keycapHeight) / 2), width: pixel(keyX + width) - pixel(keyX), height: m.keycapHeight)
+      keyX += width + m.keycapGap
     }
     isHidden = false
     alphaValue = 0

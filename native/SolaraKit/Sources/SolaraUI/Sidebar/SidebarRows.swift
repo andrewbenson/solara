@@ -65,6 +65,8 @@ final class SidebarContext {
   var send: (SidebarAction) -> Void = { _ in }
 
   let paletteGeneration: Int
+  let selectionGlass: SidebarSelectionGlassSlot
+  let reducesTransparency: Bool
 
   init(state: BrowserState, host: SidebarHostState, windowId: String, favicons: SidebarFavicons, previous: SidebarContext? = nil,
     ownsWorkspace: Bool = NativeStoreHandle.ownsWorkspace) {
@@ -90,6 +92,8 @@ final class SidebarContext {
     self.windowId = windowId
     activeId = state.activeTabId(windowId, host.profileId)
     showClear = host.clear
+    selectionGlass = previous?.selectionGlass ?? SidebarSelectionGlassSlot()
+    reducesTransparency = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
     self.favicons = favicons
   }
 
@@ -421,6 +425,7 @@ final class TabRowView: SidebarRowView {
   var tabId: String? { tab?.id }
 
   override func clearIdentity() {
+    if let glass = context?.selectionGlass.existing, glass.superview === body { glass.removeFromSuperview() }
     tab = nil
     active = false
     selected = false
@@ -453,6 +458,7 @@ final class TabRowView: SidebarRowView {
     let engine, closeHint: String?
     let palette: Int
     let mark: ObjectIdentifier?
+    let reducesTransparency: Bool
 
     func hash(into hasher: inout Hasher) { hasher.combine(tab.id) }
   }
@@ -467,7 +473,8 @@ final class TabRowView: SidebarRowView {
       faded: context.state.settings.bool("fadeUnloadedTabs") && context.query.pageUnloaded(id),
       pip: flags.pip.contains(id), capture: flags.capture[id], heavy: flags.heavy[id], unread: context.unread(tab),
       closeKind: "\(context.query.closeKind(id))", engine: context.host.engines[id], closeHint: context.host.closeHint,
-      palette: context.paletteGeneration, mark: context.favicons.newTabMark.map(ObjectIdentifier.init))
+      palette: context.paletteGeneration, mark: context.favicons.newTabMark.map(ObjectIdentifier.init),
+      reducesTransparency: context.reducesTransparency)
   }
 
   override func render() {
@@ -512,14 +519,22 @@ final class TabRowView: SidebarRowView {
   override func repaint() {
     guard let context else { return }
     let palette = context.palette
-    let fill: NSColor = (!active && pressed) ? palette.pressed : active ? palette.selected : selected ? palette.multiSelected : hovered ? palette.hover : .clear
+    let glassy = active && !context.reducesTransparency
+    let activeFill: NSColor = glassy ? .clear : palette.selectedTint
+    let fill: NSColor = (!active && pressed) ? palette.pressed : active ? activeFill : selected ? palette.multiSelected : hovered ? palette.hover : .clear
     surface.fill = fill
-    surface.border = active || selected ? 0.5 : 0
-    surface.borderColors = active ? palette.selectedBorder : []
+    surface.border = (active && !glassy) || selected ? 0.5 : 0
+    surface.borderColors = active && !glassy ? palette.selectedBorder : []
     surface.borderTint = selected && !active ? palette.multiSelectedStroke : nil
-    surface.glowColor = active ? palette.glowColor : nil
-    surface.glowOpacity = active ? palette.glowOpacity : 0
-    surface.glowRadius = palette.glowRadius
+    surface.glowColor = nil
+    if glassy {
+      let glass = context.selectionGlass.glass
+      if glass.superview !== body { body.addSubview(glass, positioned: .below, relativeTo: nil) }
+      glass.set(radius: SidebarMetrics.rowRadius, tint: palette.selectedTint, dark: palette.dark)
+      glass.frame = bounds
+    } else if let glass = context.selectionGlass.existing, glass.superview === body {
+      glass.removeFromSuperview()
+    }
     label.color = active ? palette.selectedText : palette.textTab
     let ringShown = developer && active
     if ringShown || developerRing != nil {
@@ -577,6 +592,7 @@ final class TabRowView: SidebarRowView {
     CATransaction.setDisableActions(true)
     surface.frame = bounds
     CATransaction.commit()
+    if let glass = context?.selectionGlass.existing, glass.superview === body { glass.frame = bounds }
     let h = bounds.height
     var x: CGFloat = 9
     icon.frame = NSRect(x: x, y: (h - 16) / 2, width: 16, height: 16)

@@ -144,6 +144,7 @@ public struct SidebarPalette {
   public let hover: NSColor
   public let pressed: NSColor
   public let selected: NSColor
+  let selectedTint: NSColor
   public let selectedBorder: [NSColor]
   public let glowColor: NSColor
   public let glowOpacity: Double
@@ -188,6 +189,7 @@ public struct SidebarPalette {
     hover = color("tabHover", d ? "rgba(255,255,255,0.16)" : "rgba(255,255,255,0.55)")
     pressed = color("tabPressed", d ? "rgba(255,255,255,0.31)" : "rgba(255,255,255,0.7)")
     selected = color("tabSelected", d ? "rgba(18,18,18,0.5)" : "rgba(255,255,255,0.7)")
+    selectedTint = NSColor.white.withAlphaComponent(SelectedTabTint.whiteAmount(over: SelectedTabTint.sidebar(state.theme, dark: d), hover: hover, dark: d))
     let border = state.border.compactMap(Self.parse)
     selectedBorder = border.count >= 2 ? border : [Self.parse(d ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.98)")!, Self.parse(d ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.06)")!]
     glowColor = Self.parse(state.glow.color) ?? .white

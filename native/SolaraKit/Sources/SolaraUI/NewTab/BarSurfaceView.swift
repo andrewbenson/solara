@@ -146,13 +146,13 @@ final class NewTabGlassSurface: NSGlassEffectContainerView {
 
   override var isFlipped: Bool { true }
 
-  func apply(frame: CGRect, radius: CGFloat, tint: NSColor, dark: Bool) {
+  func apply(frame: CGRect, radius: CGFloat, tint: NSColor, dark: Bool, tintStrength: CGFloat = 0.12) {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     canvas.frame = bounds
     glass.frame = frame
     glass.cornerRadius = radius
-    glass.tintColor = tint.withAlphaComponent(tint.alphaComponent * 0.12)
+    glass.tintColor = tint.withAlphaComponent(tint.alphaComponent * tintStrength)
     glass.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
     foreground.frame = glass.bounds
     CATransaction.commit()

@@ -219,7 +219,7 @@ final class GlassSelectionLayer: CALayer {
 
   required init?(coder: NSCoder) { fatalError() }
 
-  func apply(radius: CGFloat, dark: Bool, scale: CGFloat, crisp: Bool = false) {
+  func apply(radius: CGFloat, dark: Bool, scale: CGFloat, crisp: Bool = false, lifted: Bool = true) {
     let rect = bounds
     let top = CGPoint(x: 0.5, y: 0)
     let bottom = CGPoint(x: 0.5, y: 1)
@@ -230,6 +230,7 @@ final class GlassSelectionLayer: CALayer {
     }
     let shape = CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
     lift.frame = rect
+    lift.isHidden = !lifted
     lift.shadowPath = shape
     lift.shadowOpacity = crisp ? (dark ? 0.6 : 0.28) : (dark ? 0.5 : 0.2)
     lift.shadowOffset = CGSize(width: 0, height: 1)

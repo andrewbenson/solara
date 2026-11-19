@@ -669,8 +669,8 @@ public final class SidebarChromeView: NSView {
     tracking = area
   }
 
-  public override func mouseMoved(with event: NSEvent) { hover(at: fullScreenPoint(event.locationInWindow, from: nil)) }
-  public override func mouseEntered(with event: NSEvent) { hover(at: fullScreenPoint(event.locationInWindow, from: nil)) }
+  public override func mouseMoved(with event: NSEvent) { hover(at: isHitBy(event) ? fullScreenPoint(event.locationInWindow, from: nil) : nil) }
+  public override func mouseEntered(with event: NSEvent) { hover(at: isHitBy(event) ? fullScreenPoint(event.locationInWindow, from: nil) : nil) }
   public override func mouseExited(with event: NSEvent) { hover(at: nil) }
 
   @objc private func devPointer(_ note: Notification) {
@@ -706,6 +706,8 @@ public final class SidebarChromeView: NSView {
       "header": headerHeight, "footer": footerHeight,
       "indicator": indicator.isHidden ? NSNull() : rect(indicator),
       "headerProfile": headerProfile.isHidden ? NSNull() : rect(headerProfile),
+      "headerProfileHovered": headerProfile.hovered,
+      "indicatorHovered": indicator.hovered,
       "headerDownloads": headerDownloads.isHidden ? NSNull() : rect(headerDownloads),
       "footerDownloads": footerDownloads.isHidden ? NSNull() : rect(footerDownloads),
       "resize": rect(resize),

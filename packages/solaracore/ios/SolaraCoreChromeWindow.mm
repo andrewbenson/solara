@@ -1028,7 +1028,7 @@ void PlaceFullScreenLights(NSWindow *window) {
   const CGFloat menuBottom = MAX(0, frameView.isFlipped ? menuEdge.y - NSMinY(frameView.bounds) : NSMaxY(frameView.bounds) - menuEdge.y);
   NSArray<NSValue *> *windowedButtons = WindowedTrafficLightFrames(window);
   const NSSize buttonSize = windowedButtons.count ? windowedButtons.firstObject.rectValue.size : NSMakeSize(14, 14);
-  [lights updateFullscreen:(window.styleMask & NSWindowStyleMaskFullScreen) != 0
+  [lights updateFullscreen:IsWindowFullScreen(window)
                       page:state.pageFullScreen
                     reveal:FullScreenTitlebarProgress(window)
                 menuBottom:menuBottom

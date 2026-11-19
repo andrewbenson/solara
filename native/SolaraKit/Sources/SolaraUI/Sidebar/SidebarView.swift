@@ -388,7 +388,8 @@ public final class SidebarView: NSView {
     bound += retirementPictures.map { id, picture in
       let frame = picture.view.superview?.convert(picture.view.frame, to: self) ?? .zero
       return ["key": picture.item.key, "kind": SidebarRowReuse.kind(picture.item.kind, rail: railShown), "allocationId": id.uuidString,
-        "token": 1, "frame": rect(frame), "presentation": rect(frame), "clip": rect(regionClip(picture.item)), "retired": true, "picture": true, "label": "", "selected": false, "active": false]
+        "token": 1, "frame": rect(frame), "presentation": rect(frame), "clip": rect(regionClip(picture.item)), "retired": true, "picture": true, "label": "", "selected": false, "active": false,
+        "fadeRemaining": picture.expiresAt - CACurrentMediaTime()]
     }
     return ["enabled": virtualizesRows, "effectiveClip": rect(effectiveClip), "profileId": context?.host.profileId ?? "", "mode": railShown ? "rail" : "full",
       "logical": logical, "bound": bound, "reuse": reuse.highWater.keys.sorted().map { kind in ["kind": kind, "count": reuse.bins[kind]?.count ?? 0, "highWater": reuse.highWater[kind] ?? 0] as [String: Any] }]
@@ -752,10 +753,14 @@ public final class SidebarView: NSView {
         self?.retirementPictures[id] = nil
       }
     }
-    DispatchQueue.main.asyncAfter(deadline: .now() + motion.fade) { [weak self, weak picture] in
-      picture?.removeFromSuperview()
-      self?.retirementPictures[id] = nil
+    let expiry = Timer(timeInterval: motion.fade, repeats: false) { [weak self, weak picture] _ in
+      MainActor.assumeIsolated {
+        picture?.removeFromSuperview()
+        self?.retirementPictures[id] = nil
+      }
     }
+    expiry.tolerance = 0
+    RunLoop.main.add(expiry, forMode: .common)
     runViewportLink(for: motion.fade)
   }
 
@@ -1057,19 +1062,17 @@ public final class SidebarView: NSView {
     onLayoutAnchorsChange?()
   }
 
-  private var devPointerAt: NSPoint?
-
   private func syncPointer() {
     guard let window, !isHiddenOrHasHiddenAncestor else { return }
-    let at = devPointerAt.map { window.convertPoint(fromScreen: $0) } ?? window.mouseLocationOutsideOfEventStream
+    let at = window.convertPoint(fromScreen: DevPointer.screenPoint(in: window))
     if bounds.contains(convert(at, from: nil)) { point(at) } else { setHover(nil, group: nil) }
   }
 
   @objc private func devPointer(_ note: Notification) {
-    devPointerAt = (note.object as? NSValue)?.pointValue
-    guard let window, !isHiddenOrHasHiddenAncestor, let screen = devPointerAt else { return }
+    let inside = DevPointer.inside(self, note)
+    guard let window, !isHiddenOrHasHiddenAncestor, let screen = (note.object as? NSValue)?.pointValue else { return }
     let at = window.convertPoint(fromScreen: screen)
-    if DevPointer.inside(self, note) { point(at) } else { setHover(nil, group: nil) }
+    if inside { point(at) } else { setHover(nil, group: nil) }
   }
 
   @objc private func coverChanged(_ note: Notification) {
@@ -1085,7 +1088,7 @@ public final class SidebarView: NSView {
   }
 
   private func point(_ windowPoint: NSPoint) {
-    if covered() { return setHover(nil, group: nil) }
+    if FullScreenIslandCoverage.contains(windowPoint, in: window) || covered() { return setHover(nil, group: nil) }
     let row = rowAt(windowPoint)
     let groups = groupsAt(windowPoint)
     setHover(row, group: groups)
@@ -1124,6 +1127,8 @@ public final class SidebarView: NSView {
       setHover(nil, group: nil)
       return
     }
+    let location = windowPoint ?? window.map { $0.convertPoint(fromScreen: DevPointer.screenPoint(in: $0)) }
+    if let location, FullScreenIslandCoverage.contains(location, in: window) { return setHover(nil, group: nil) }
     setHover(row, group: row.item?.groups.last)
   }
 

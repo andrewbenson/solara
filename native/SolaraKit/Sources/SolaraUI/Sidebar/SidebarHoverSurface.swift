@@ -83,7 +83,7 @@ public class SidebarHoverSurfaceView: NSView {
     tracking = area
   }
 
-  public override func mouseEntered(with event: NSEvent) { pointer(true) }
+  public override func mouseEntered(with event: NSEvent) { pointer(isHitBy(event)) }
   public override func mouseExited(with event: NSEvent) { pointer(false) }
 
   public override func viewDidMoveToWindow() {

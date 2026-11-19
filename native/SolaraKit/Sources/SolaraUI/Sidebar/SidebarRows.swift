@@ -1362,6 +1362,7 @@ final class DividerButton: NSView {
     label.font = .systemFont(ofSize: 10, weight: .medium)
     addSubview(symbol)
     addSubview(label)
+    DevPointer.observe(self, #selector(devPointerChanged(_:)))
   }
 
   required init?(coder: NSCoder) { fatalError() }
@@ -1401,7 +1402,9 @@ final class DividerButton: NSView {
     tracking = area
   }
 
-  override func mouseEntered(with event: NSEvent) { hovered = true }
+  @objc private func devPointerChanged(_ note: Notification) { hovered = DevPointer.inside(self, note) }
+
+  override func mouseEntered(with event: NSEvent) { hovered = isHitBy(event) }
   override func mouseExited(with event: NSEvent) { hovered = false }
   override func mouseDown(with event: NSEvent) { pressed = true }
 

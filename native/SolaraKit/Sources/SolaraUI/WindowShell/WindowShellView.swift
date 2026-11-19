@@ -678,6 +678,7 @@ public final class WindowShellView: FrameLayoutView {
   }
 
   private func layerUnderPointer(at pointInWindow: NSPoint) -> NSView? {
+    guard !FullScreenIslandCoverage.contains(pointInWindow, in: window) else { return nil }
     let point = convert(pointInWindow, from: nil)
     if fullScreenRevealEnabled, fullScreenStripOffset > 0 {
       guard let hit = fullScreenStripHit(at: point) else { return nil }

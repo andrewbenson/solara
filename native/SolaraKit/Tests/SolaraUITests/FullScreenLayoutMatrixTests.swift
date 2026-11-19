@@ -398,6 +398,24 @@ struct FullScreenLayoutMatrixTests {
       #expect(island.isHidden == !entry.presentation.revealed)
       if shown {
         let glass = try #require(island.subviews.compactMap { $0 as? NSGlassEffectView }.first)
+        let lights = try #require(glass.contentView).subviews.compactMap { $0 as? NSButton }
+        #expect(lights.count == 3)
+        #expect(lights.map(\.isEnabled) == [true, entry.presentation == .win, true])
+        if entry.presentation.revealed {
+          #expect(glass.frame.size == CGSize(width: 80, height: 33))
+          #expect(glass.cornerRadius == 16.5)
+          #expect(glass.alphaValue == 1)
+          #expect(lights.map(\.frame) == [CGFloat(10), 33, 56].map { CGRect(x: $0, y: 9.5, width: 14, height: 14) })
+          let material = try #require(glass.contentView?.layer)
+          #expect(material.cornerRadius == 16.5)
+          #expect(material.borderWidth == 1 / max(1, window.backingScaleFactor))
+          let fillColor = try #require(material.backgroundColor)
+          let rimColor = try #require(material.borderColor)
+          let fill = try #require(NSColor(cgColor: fillColor)?.usingColorSpace(.sRGB))
+          let rim = try #require(NSColor(cgColor: rimColor)?.usingColorSpace(.sRGB))
+          #expect(abs(fill.alphaComponent - 0.9) < 0.0001)
+          #expect(rim.redComponent > fill.redComponent && rim.greenComponent > fill.greenComponent && rim.blueComponent > fill.blueComponent)
+        }
         let caption = entry.presentation == .win ? windowedButtons.reduce(CGRect.null) { $0.union($1) }
           : island.convert(glass.frame, to: root)
         let aligned: CGFloat
@@ -407,7 +425,14 @@ struct FullScreenLayoutMatrixTests {
           aligned = try #require(toolbarControls["back"]).midY
         }
         #expect(abs(caption.midY - aligned) <= 0.5)
-        for rect in toolbarControls.values { #expect(!rect.intersects(caption)) }
+        for (id, rect) in toolbarControls {
+          let covered = entry.layout == .sideS && entry.presentation.revealed && id == "sidebar"
+          #expect(rect.intersects(caption) == covered)
+          if covered {
+            #expect(rect.intersection(caption).width == 2)
+            #expect(!rect.insetBy(dx: 8, dy: 8).intersects(caption))
+          }
+        }
         if entry.presentation.fullscreen && !entry.layout.topTabs && !entry.layout.hidden && !entry.layout.named && !entry.layout.sidebarAddress {
           #expect(sidebarRows.views["newTab"] != nil)
           for (key, view) in sidebarRows.views where !view.isHiddenOrHasHiddenAncestor {

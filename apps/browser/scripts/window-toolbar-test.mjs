@@ -75,14 +75,28 @@ const untilSnapshot = async (what, accept, ms = 5000) => {
 const snapshotURL = (url) => url === "" ? null : url?.startsWith("data:") ? "data:" : url;
 const sortedBars = (bars) => bars.map((bar) => [bar.tabId, bar.bare, bar.urlHost]).sort((a, b) => a[0].localeCompare(b[0]));
 const nativeState = async (state) => {
-  await untilSnapshot("toolbar tab ids, addresses and native host state", async (snapshot) => {
-    const window = snapshot.windows[0];
-    if (!window || window.selectedTabId !== state.active || JSON.stringify(window.tabIds) !== JSON.stringify(state.tabIds)) return false;
-    const tabUrls = await ac(`return Object.fromEntries(${JSON.stringify(state.tabIds)}.map((id) => [id, ac.store.getState().tabs[id]?.url]));`);
-    if (state.tabIds.some((id) => snapshot.tabs.find((tab) => tab.id === id)?.url !==
-      snapshotURL(tabUrls[id]))) return false;
-    return JSON.stringify(sortedBars(window.toolbarHosts)) === JSON.stringify(sortedBars(state.nativeToolbars));
-  });
+  let matched;
+  let latest;
+  let native;
+  try {
+    await untilSnapshot("toolbar tab ids, addresses and native host state", async (snapshot) => {
+      native = snapshot;
+      latest = await ac("return wt.state();");
+      const window = snapshot.windows[0];
+      if (!window || latest.active !== state.active || window.selectedTabId !== latest.active ||
+        JSON.stringify(latest.tabIds) !== JSON.stringify(state.tabIds) || JSON.stringify(window.tabIds) !== JSON.stringify(latest.tabIds)) return false;
+      if (latest.tabIds.some((id) => snapshot.tabs.find((tab) => tab.id === id)?.url !==
+        snapshotURL(latest.tabUrls[id]))) return false;
+      if (JSON.stringify(sortedBars(window.toolbarHosts)) !== JSON.stringify(sortedBars(latest.nativeToolbars))) return false;
+      matched = latest;
+      return true;
+    });
+  } catch (error) {
+    try { writeFileSync(join(out, "toolbar-state-failure.json"), JSON.stringify({ captured: state, latest, native }, null, 2)); }
+    catch (evidenceError) { console.error(`toolbar state evidence write failed: ${evidenceError.message}`); }
+    throw error;
+  }
+  return { ...state, ...matched };
 };
 const results = [];
 const check = (name, ok, detail = "") => {
@@ -213,11 +227,11 @@ try {
   const S = "const S = () => ac.store.getState();";
   const switchTo = async (id) => {
     const state = await ac(`${S} acPerf.reset(); S().activate(${JSON.stringify(id)}); return wt.frames(4).then(() => ({ ...wt.state(), mounted: acPerf.read().mounts.Toolbar ?? 0 }));`);
-    await nativeState(state);
+    const current = await nativeState(state);
     if (id === "a" || id === "b") {
       return ac(`${S} const id = ${JSON.stringify(id)}, tab = S().tabs[id], facts = ac.nativePages.facts(id); ac.nativePages.report(id, { type: "navigation", generation: facts.generation, url: tab.url, title: tab.title, isLoading: false, canGoBack: false, canGoForward: false, themeColor: id === "a" ? "#C0392B" : "#2471A3", eventSeq: facts.newestEventSeq + 1 }); return wt.frames(4).then(() => ({ ...wt.state(), mounted: ${state.mounted} }));`);
     }
-    return state;
+    return current;
   };
 
   for (const mode of ["auto-hide", "always shown"]) {
@@ -232,8 +246,8 @@ try {
       const selectedMode = st.hideToolbarWhileScrolling === autoHide && (autoHide ? st.auto.length === 1 && st.auto[0].tabId === id && !st.auto[0].pane && st.auto[0].mode === "shown" : st.auto.length === 0);
       check(`${mode}: switching to ${id}, the window's one toolbar shows ${id}`, selectedMode && windowBars.length === 1 && windowBars[0].tabId === id && st.toolbars.length === 1 && surface, JSON.stringify({ hideToolbarWhileScrolling: st.hideToolbarWhileScrolling, auto: st.auto, toolbars: st.toolbars }));
       check(`${mode}: switching to ${id}, the toolbar is kept, not mounted again`, st.mounted === 0, `Toolbar mounts ${st.mounted}`);
-      const url = await ac(`${S} return S().tabs[${JSON.stringify(id)}].url;`);
-      check(`${mode}: switching to ${id}, the address field shows ${id}'s address`, st.hosts.length === 1 && st.hosts[0] === url, JSON.stringify(st.hosts));
+      const url = st.tabUrls[id];
+      check(`${mode}: switching to ${id}, the address field shows ${id}'s address`, st.hosts.length === 1 && st.hosts[0] === url, JSON.stringify({ hosts: st.hosts, expected: url }));
       const backdrop = autoHide ? st.backdrops.length === 1 && st.backdrops[0].tabId === id && st.backdrops[0].pane === id : st.backdrops.length === 0;
       check(`${mode}: switching to ${id}, the band belongs to ${id}'s toolbar`, backdrop, JSON.stringify(st.backdrops));
     }

@@ -56,6 +56,7 @@ final class SidebarUpdatePill: NSView {
     icon.image = NSImage(systemSymbolName: "arrow.down.circle", accessibilityDescription: nil)?.withSymbolConfiguration(.init(pointSize: 16, weight: .regular))
     icon.isHidden = true
     addSubview(icon)
+    DevPointer.observe(self, #selector(devPointerChanged(_:)))
   }
 
   required init?(coder: NSCoder) { fatalError() }
@@ -79,7 +80,7 @@ final class SidebarUpdatePill: NSView {
 
   func recheckHover() {
     guard let window else { return hovered = false }
-    hovered = !isHidden && bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil))
+    hovered = !isHidden && isHitAt(window.mouseLocationOutsideOfEventStream) && bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil))
   }
 
   override func layout() {
@@ -103,7 +104,9 @@ final class SidebarUpdatePill: NSView {
     tracking = area
   }
 
-  override func mouseEntered(with event: NSEvent) { hovered = true }
+  @objc private func devPointerChanged(_ note: Notification) { hovered = DevPointer.inside(self, note) }
+
+  override func mouseEntered(with event: NSEvent) { hovered = isHitBy(event) }
   override func mouseExited(with event: NSEvent) { hovered = false }
   override func mouseDown(with event: NSEvent) { pressed = true }
 

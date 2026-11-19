@@ -4,6 +4,7 @@ extension NSView {
   func isHitBy(_ event: NSEvent) -> Bool { isHitAt(event.locationInWindow) }
 
   func isHitAt(_ point: NSPoint) -> Bool {
+    guard !FullScreenIslandCoverage.contains(point, in: window) else { return false }
     guard let frame = window?.contentView?.superview, let hit = frame.hitTest(point) else { return true }
     return hit === self || hit.isDescendant(of: self)
   }
@@ -145,7 +146,7 @@ final class ToolbarButtonView: NSView {
 
   func recheckHover() {
     guard hovered, let window else { return }
-    let inside = bounds.contains(fullScreenPoint(window.mouseLocationOutsideOfEventStream))
+    let inside = isHitAt(window.mouseLocationOutsideOfEventStream) && bounds.contains(fullScreenPoint(window.mouseLocationOutsideOfEventStream))
     if !inside {
       hovered = false
       apply()

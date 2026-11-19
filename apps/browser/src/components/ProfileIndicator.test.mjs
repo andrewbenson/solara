@@ -16,7 +16,8 @@ function component(nativeLayout, anchorsAvailable) {
     "@solara/settings": { windowNativeLayout: () => nativeLayout, windowLayoutAnchorsAvailable: () => anchorsAvailable },
     react: { useState: (initial) => [initial()] },
     "react/jsx-runtime": require("react/jsx-runtime"),
-    "react-native": { View: "View", Text: "Text" },
+    "react-native": { View: "View", Text: "Text", Pressable: "Pressable" },
+    "./primitives": { useHover: () => ({ hovered: false, hoverProps: {} }) },
     "../store/hooks": {
       useWindowId: () => "w",
       useIsIncognito: () => false,
@@ -56,3 +57,15 @@ for (const [name, nativeLayout, anchorsAvailable] of [
 test("native layout with native anchors leaves profile measurement to its reader", () => {
   assert.equal(component(true, true).ProfileNameMeasure({ title: "Work" }), null);
 });
+
+for (const [captionAligned, marginTop] of [[false, 0.5], [true, 0]]) {
+  test(`profile indicator uses ${marginTop} pt inset with caption alignment ${captionAligned}`, () => {
+    setMeasuredWidth("profile-name|Work", 34);
+    try {
+      const view = component(false, false).ProfileIndicator({ room: 140, captionAligned });
+      assert.equal(view.props.style.marginTop, marginTop);
+    } finally {
+      dropNativeMeasuredWidth("profile-name|Work");
+    }
+  });
+}

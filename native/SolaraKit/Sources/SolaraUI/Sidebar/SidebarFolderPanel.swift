@@ -368,6 +368,7 @@ final class FolderPanelRow: NSView {
     setAccessibilityElement(true)
     setAccessibilityRole(.button)
     addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+    DevPointer.observe(self, #selector(devPointerChanged(_:)))
   }
 
   required init?(coder: NSCoder) { fatalError() }
@@ -396,8 +397,13 @@ final class FolderPanelRow: NSView {
     numberHint.present(title: title, color: title.color)
   }
 
+  @objc private func devPointerChanged(_ note: Notification) {
+    hovered = DevPointer.inside(self, note)
+    refresh()
+  }
+
   override func mouseEntered(with event: NSEvent) {
-    hovered = true
+    hovered = isHitBy(event)
     refresh()
   }
 

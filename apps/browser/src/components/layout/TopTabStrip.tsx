@@ -155,7 +155,7 @@ export function TopTabStrip({
         ) : (
           <>
             <View mouseDownCanMoveWindow={false} style={{ position: "absolute", left: leadingInset, top: floating ? MID - 17 : TOP_STRIP_LIGHTS_CENTER[1] - 17 }}>
-              <ProfileIndicator room={profileRoom} />
+              <ProfileIndicator room={profileRoom} captionAligned={!floating && fullscreen} />
             </View>
             <View mouseDownCanMoveWindow={false} style={{ position: "absolute", right: 8, top: floating ? MID - 17 + (profileChip > 0 ? 0.5 : 0) : TOP_STRIP_LIGHTS_CENTER[1] - 17 }}>
               <DownloadsButton windowId={windowId} />

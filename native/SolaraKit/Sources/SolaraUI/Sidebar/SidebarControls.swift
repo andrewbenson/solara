@@ -26,6 +26,7 @@ final class SidebarIconButton: NSView {
     plate.cornerRadius = radius
     layer?.addSublayer(plate)
     addSubview(symbol)
+    DevPointer.observe(self, #selector(devPointerChanged(_:)))
   }
 
   required init?(coder: NSCoder) { fatalError() }
@@ -72,10 +73,12 @@ final class SidebarIconButton: NSView {
 
   func syncHover() {
     guard let window, !isHiddenOrHasHiddenAncestor else { return hovered = false }
-    hovered = bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil))
+    hovered = isHitAt(window.mouseLocationOutsideOfEventStream) && bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil))
   }
 
-  override func mouseEntered(with event: NSEvent) { hovered = true }
+  @objc private func devPointerChanged(_ note: Notification) { hovered = DevPointer.inside(self, note) }
+
+  override func mouseEntered(with event: NSEvent) { hovered = isHitBy(event) }
   override func mouseExited(with event: NSEvent) { hovered = false }
   override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 

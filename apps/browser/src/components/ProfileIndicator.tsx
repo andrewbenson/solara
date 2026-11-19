@@ -57,7 +57,7 @@ export function ProfileNameMeasure({ title }: { title: string }) {
   );
 }
 
-export function ProfileIndicator({ room }: { room: number }) {
+export function ProfileIndicator({ room, captionAligned = false }: { room: number; captionAligned?: boolean }) {
   const theme = useTheme();
   const windowId = useWindowId();
   const { hovered, hoverProps } = useHover();
@@ -65,7 +65,7 @@ export function ProfileIndicator({ room }: { room: number }) {
   if (!shown) return null;
 
   return (
-    <View {...hoverProps} tooltip={incognito ? undefined : "Switch between profiles"} style={{ marginTop: 0.5 }}>
+    <View {...hoverProps} tooltip={incognito ? undefined : "Switch between profiles"} style={{ marginTop: captionAligned ? 0 : 0.5 }}>
       <ProfileNameMeasure title={title} />
       <Pressable accessible accessibilityRole="button" accessibilityLabel={title} onPress={() => !incognito && void openProfileMenu(windowId)} disabled={incognito}>
         {({ pressed }) => (

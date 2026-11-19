@@ -3,28 +3,39 @@ import AppKit
 struct FullScreenIslandPlacement {
   let frame: CGRect?
   let buttonFrames: [CGRect]
+  let slideOffset: CGFloat
 
   init(fullscreen: Bool, page: Bool, reveal: CGFloat, menuBottom: CGFloat, closeCenter: CGPoint, windowedButtons: [CGRect]) {
     let progress = min(1, max(0, reveal))
-    guard fullscreen, !page, progress > 0, let close = windowedButtons.first else {
+    let capsule = CGRect(x: closeCenter.x - 17, y: closeCenter.y - 16.5, width: 80, height: 33)
+    slideOffset = -max(0, capsule.maxY) * (1 - progress)
+    guard fullscreen, !page, progress > 0, windowedButtons.count == 3 else {
       frame = nil
       buttonFrames = []
       return
     }
-    let anchored = windowedButtons.map { rect in
-      rect.offsetBy(dx: closeCenter.x - close.midX, dy: closeCenter.y - close.midY)
-    }
-    let group = anchored.reduce(CGRect.null) { $0.union($1) }
-    guard !group.isNull, !group.isEmpty else {
-      frame = nil
-      buttonFrames = []
-      return
-    }
-    let capsule = group.insetBy(dx: -4, dy: -4)
-    frame = capsule.offsetBy(dx: 0, dy: max(0, menuBottom) * progress)
-    buttonFrames = anchored.map {
-      CGRect(x: $0.minX - capsule.minX, y: capsule.maxY - $0.maxY, width: $0.width, height: $0.height)
-    }
+    frame = capsule.offsetBy(dx: 0, dy: max(0, menuBottom) * progress + slideOffset)
+    buttonFrames = [CGFloat(10), 33, 56].map { CGRect(x: $0, y: 9.5, width: 14, height: 14) }
+  }
+}
+
+@MainActor
+enum FullScreenIslandCoverage {
+  private static let islands = NSMapTable<NSWindow, FullScreenIslandView>(keyOptions: .weakMemory, valueOptions: .weakMemory)
+
+  static func contains(_ point: NSPoint, in window: NSWindow?) -> Bool {
+    guard let window, let island = islands.object(forKey: window) else { return false }
+    return island.blocksHover(at: point)
+  }
+
+  static func register(_ island: FullScreenIslandView, in window: NSWindow?) {
+    guard let window else { return }
+    islands.setObject(island, forKey: window)
+  }
+
+  static func remove(_ island: FullScreenIslandView, from window: NSWindow?) {
+    guard let window, islands.object(forKey: window) === island else { return }
+    islands.removeObject(forKey: window)
   }
 }
 
@@ -193,6 +204,149 @@ final class FullScreenIslandScrim: NSView {
   }
 }
 
+@MainActor
+private final class FullScreenIslandGlyphsView: NSView {
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    wantsLayer = true
+  }
+
+  required init?(coder: NSCoder) { nil }
+  override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+@MainActor
+private final class FullScreenIslandButtonGlyph {
+  weak var button: NSButton?
+  let layer = CALayer()
+  let glyph = CAShapeLayer()
+
+  init(_ button: NSButton, kind: NSWindow.ButtonType, owner: NSView) {
+    self.button = button
+    layer.actions = SurfaceLayer.noActions
+    glyph.actions = SurfaceLayer.noActions
+    glyph.fillColor = nil
+    glyph.strokeColor = NSColor.black.withAlphaComponent(0.65).cgColor
+    glyph.lineWidth = 1.1
+    glyph.lineCap = .round
+    glyph.lineJoin = .round
+    let path = CGMutablePath()
+    switch kind {
+    case .closeButton:
+      path.move(to: CGPoint(x: 4.5, y: 4.5))
+      path.addLine(to: CGPoint(x: 9.5, y: 9.5))
+      path.move(to: CGPoint(x: 4.5, y: 9.5))
+      path.addLine(to: CGPoint(x: 9.5, y: 4.5))
+    case .miniaturizeButton:
+      path.move(to: CGPoint(x: 3.5, y: 7))
+      path.addLine(to: CGPoint(x: 10.5, y: 7))
+    default:
+      path.move(to: CGPoint(x: 3.5, y: 3.5))
+      path.addLine(to: CGPoint(x: 6, y: 6))
+      path.move(to: CGPoint(x: 3.5, y: 6))
+      path.addLine(to: CGPoint(x: 6, y: 6))
+      path.addLine(to: CGPoint(x: 6, y: 3.5))
+      path.move(to: CGPoint(x: 10.5, y: 10.5))
+      path.addLine(to: CGPoint(x: 8, y: 8))
+      path.move(to: CGPoint(x: 8, y: 10.5))
+      path.addLine(to: CGPoint(x: 8, y: 8))
+      path.addLine(to: CGPoint(x: 10.5, y: 8))
+    }
+    glyph.path = path
+    layer.addSublayer(glyph)
+    owner.layer?.addSublayer(layer)
+  }
+
+  func update(hovered: Bool) {
+    guard let button else { return }
+    layer.frame = button.frame
+    glyph.frame = button.bounds
+    glyph.contentsScale = max(1, button.window?.backingScaleFactor ?? 2)
+    glyph.isHidden = !hovered
+  }
+}
+
+@MainActor
+final class FullScreenIslandButtonsView: NSView {
+  private var tracking: NSTrackingArea?
+  private var glyphs: [FullScreenIslandButtonGlyph] = []
+  private let glyphsView = FullScreenIslandGlyphsView()
+  private(set) var groupHovered = false
+
+  override init(frame: NSRect) {
+    super.init(frame: frame)
+    DevPointer.observe(self, #selector(pointerChanged(_:)))
+  }
+
+  required init?(coder: NSCoder) { nil }
+
+  override func updateTrackingAreas() {
+    super.updateTrackingAreas()
+    if let tracking { removeTrackingArea(tracking) }
+    let area = NSTrackingArea(rect: .zero,
+      options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect], owner: self)
+    addTrackingArea(area)
+    tracking = area
+  }
+
+  override func mouseEntered(with event: NSEvent) { point(event.locationInWindow) }
+  override func mouseMoved(with event: NSEvent) { point(event.locationInWindow) }
+  override func mouseExited(with event: NSEvent) { setHovered(false) }
+
+  override func viewDidHide() {
+    super.viewDidHide()
+    clearRollover()
+  }
+
+  func mouseInGroup(_ button: NSButton) -> Bool {
+    groupHovered && button.isEnabled
+  }
+
+  func register(_ button: NSButton, kind: NSWindow.ButtonType) {
+    addSubview(glyphsView, positioned: .above, relativeTo: nil)
+    glyphs.append(FullScreenIslandButtonGlyph(button, kind: kind, owner: glyphsView))
+  }
+
+  func refreshRendering() {
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    glyphsView.frame = bounds
+    for glyph in glyphs { glyph.update(hovered: groupHovered) }
+    CATransaction.commit()
+  }
+
+  func refreshRollover() {
+    guard let window else { return clearRollover() }
+    point(window.convertPoint(fromScreen: DevPointer.screenPoint(in: window)))
+  }
+
+  func clearRollover() { setHovered(false) }
+
+  @objc private func pointerChanged(_ note: Notification) {
+    guard let window else { return clearRollover() }
+    if note.name == DevPointer.fullScreenChanged,
+      let source = note.userInfo?["window"] as? NSWindow, source !== window { return }
+    guard let screen = (note.object as? NSValue)?.pointValue else { return clearRollover() }
+    point(window.convertPoint(fromScreen: screen))
+  }
+
+  private func point(_ pointInWindow: NSPoint) {
+    guard !isHiddenOrHasHiddenAncestor, alphaValue > 0 else { return clearRollover() }
+    let local = convert(pointInWindow, from: nil)
+    setHovered(CGPath(roundedRect: bounds, cornerWidth: 16.5, cornerHeight: 16.5, transform: nil).contains(local))
+  }
+
+  private func setHovered(_ hovered: Bool) {
+    guard hovered != groupHovered else { return }
+    groupHovered = hovered
+    for button in subviews.compactMap({ $0 as? NSButton }) {
+      button.needsDisplay = true
+      button.displayIfNeeded()
+    }
+    refreshRendering()
+  }
+}
+
 @objc(SolaraFullScreenIsland)
 public final class FullScreenIslandView: NSView {
   private let corner = FullScreenIslandScrim(.corner)
@@ -200,8 +354,14 @@ public final class FullScreenIslandView: NSView {
   private let horizontal = FullScreenIslandScrim(.horizontal)
   private let sample = FullScreenIslandBackdropSample()
   private let glass = NSGlassEffectView()
-  private let buttons = NSView()
+  private let buttons = FullScreenIslandButtonsView()
+  private var minimizeButton: NSButton?
   private weak var shell: WindowShellView?
+  private var fullscreen = false
+  #if DEBUG
+  private var lastUpdate: (page: Bool, closeCenter: CGPoint, windowedButtons: [NSValue])?
+  private var slideOffset: CGFloat = 0
+  #endif
 
   public override var isFlipped: Bool { true }
 
@@ -209,16 +369,24 @@ public final class FullScreenIslandView: NSView {
     super.init(frame: frameRect)
     wantsLayer = true
     glass.contentView = buttons
+    glass.style = .clear
+    glass.appearance = NSAppearance(named: .darkAqua)
+    buttons.wantsLayer = true
+    buttons.layer?.backgroundColor = NSColor(srgbRed: 34 / 255, green: 52 / 255, blue: 72 / 255, alpha: 0.9).cgColor
+    buttons.layer?.borderColor = NSColor(srgbRed: 57 / 255, green: 74 / 255, blue: 93 / 255, alpha: 1).cgColor
+    buttons.layer?.cornerRadius = 16.5
     addSubview(edge)
     addSubview(corner)
     addSubview(horizontal)
     addSubview(glass)
     for kind in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
       guard let button = NSWindow.standardWindowButton(kind, for: [.titled, .closable, .miniaturizable, .resizable]) else { continue }
+      if kind == .miniaturizeButton { minimizeButton = button }
       button.target = self
       button.action = kind == .closeButton ? #selector(closeWindow(_:))
         : kind == .miniaturizeButton ? #selector(minimizeWindow(_:)) : #selector(toggleFullscreen(_:))
       buttons.addSubview(button)
+      buttons.register(button, kind: kind)
     }
     isHidden = true
   }
@@ -227,16 +395,52 @@ public final class FullScreenIslandView: NSView {
 
   public override func hitTest(_ point: NSPoint) -> NSView? {
     guard !isHidden, alphaValue > 0 else { return nil }
-    return glass.hitTest(convert(point, from: superview))
+    let local = convert(point, from: superview)
+    let inside = glass.convert(local, from: self)
+    guard CGPath(roundedRect: glass.bounds, cornerWidth: 16.5, cornerHeight: 16.5, transform: nil).contains(inside) else { return nil }
+    return glass.hitTest(local) ?? glass
   }
 
   public override func viewWillMove(toSuperview newSuperview: NSView?) {
     if newSuperview == nil {
+      isHidden = true
+      buttons.clearRollover()
+      FullScreenIslandCoverage.remove(self, from: window)
+      publishHoverCoverage(in: window)
       shell?.applyFullScreenReveal(fullscreen: false, page: false, reveal: 0, menuBottom: 0)
       shell = nil
       clearBackdrop()
     }
     super.viewWillMove(toSuperview: newSuperview)
+  }
+
+  public override func viewWillMove(toWindow newWindow: NSWindow?) {
+    if window !== newWindow {
+      isHidden = true
+      buttons.clearRollover()
+      FullScreenIslandCoverage.remove(self, from: window)
+      publishHoverCoverage(in: window)
+    }
+    super.viewWillMove(toWindow: newWindow)
+  }
+
+  public override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    FullScreenIslandCoverage.register(self, in: window)
+    publishHoverCoverage(in: window)
+  }
+
+  func blocksHover(at point: NSPoint) -> Bool {
+    guard !isHiddenOrHasHiddenAncestor, alphaValue > 0, window != nil else { return false }
+    let local = glass.convert(point, from: nil)
+    return CGPath(roundedRect: glass.bounds, cornerWidth: 16.5, cornerHeight: 16.5, transform: nil).contains(local)
+  }
+
+  private func publishHoverCoverage(in window: NSWindow?) {
+    guard let window else { return }
+    let screen = NSValue(point: DevPointer.screenPoint(in: window))
+    NotificationCenter.default.post(name: Notification.Name("SolaraFullScreenPointerChanged"), object: screen, userInfo: ["window": window])
+    shell?.coverChanged()
   }
 
   private func findShell(in view: NSView) -> WindowShellView? {
@@ -260,11 +464,25 @@ public final class FullScreenIslandView: NSView {
   @objc(updateFullscreen:page:reveal:menuBottom:closeCenter:windowedButtons:)
   public func update(fullscreen: Bool, page: Bool, reveal: CGFloat, menuBottom: CGFloat, closeCenter: CGPoint, windowedButtons: [NSValue]) {
     guard let parent = superview else { return }
+    self.fullscreen = fullscreen
+    #if DEBUG
+    lastUpdate = (page, closeCenter, windowedButtons)
+    #endif
+    FullScreenIslandCoverage.register(self, in: window)
+    let previousFrame = glass.frame
+    let previouslyHidden = isHidden
     if shell?.window !== window || shell?.superview == nil { shell = findShell(in: window?.contentView ?? parent) }
     shell?.applyFullScreenReveal(fullscreen: fullscreen, page: page, reveal: reveal, menuBottom: menuBottom)
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    defer { CATransaction.commit() }
+    defer {
+      CATransaction.commit()
+      if glass.frame != previousFrame || isHidden != previouslyHidden { publishHoverCoverage(in: window) }
+      for button in buttons.subviews.compactMap({ $0 as? NSButton }) {
+        button.isEnabled = !self.fullscreen || button !== minimizeButton
+      }
+      buttons.refreshRendering()
+    }
     frame = parent.bounds
     var center = closeCenter
     if let shell {
@@ -276,16 +494,21 @@ public final class FullScreenIslandView: NSView {
     let layout = FullScreenIslandPlacement(fullscreen: fullscreen, page: page, reveal: reveal,
       menuBottom: progress > 0 ? displacement / progress : 0, closeCenter: center,
                                            windowedButtons: windowedButtons.map(\.rectValue))
+    #if DEBUG
+    slideOffset = layout.slideOffset
+    #endif
     guard let placement = layout.frame else {
       isHidden = true
+      buttons.clearRollover()
       clearBackdrop()
       return
     }
     glass.frame = placement
     glass.cornerRadius = placement.height / 2
-    glass.alphaValue = progress
+    glass.alphaValue = 1
     buttons.frame = glass.bounds
-    for (button, rect) in zip(buttons.subviews, layout.buttonFrames) { button.frame = rect }
+    buttons.layer?.borderWidth = 1 / max(1, window?.backingScaleFactor ?? 2)
+    for (button, rect) in zip(buttons.subviews.compactMap({ $0 as? NSButton }), layout.buttonFrames) { button.frame = rect }
     if let shell {
       let header = convert(shell.fullScreenHeaderRect, from: shell)
       let sidebar = shell.input.dock > 0 && shell.input.sidebarSide == .left
@@ -306,7 +529,40 @@ public final class FullScreenIslandView: NSView {
       clearBackdrop()
     }
     isHidden = false
+    buttons.refreshRollover()
   }
+
+  #if DEBUG
+  public func devSnapshot(_ path: String) -> Bool {
+    guard !isHidden else { return false }
+    glass.layoutSubtreeIfNeeded()
+    buttons.displayIfNeeded()
+    guard let bitmap = buttons.bitmapImageRepForCachingDisplay(in: buttons.bounds) else { return false }
+    buttons.cacheDisplay(in: buttons.bounds, to: bitmap)
+    guard let png = bitmap.representation(using: .png, properties: [:]) else { return false }
+    return (try? png.write(to: URL(fileURLWithPath: path))) != nil
+  }
+
+  public func devReveal(_ reveal: CGFloat, menuBottom: CGFloat, fullscreen: Bool) -> [String: Any] {
+    guard let lastUpdate else { return ["error": "No caption layout"] }
+    update(fullscreen: fullscreen, page: lastUpdate.page, reveal: reveal, menuBottom: menuBottom,
+      closeCenter: lastUpdate.closeCenter, windowedButtons: lastUpdate.windowedButtons)
+    func rect(_ value: CGRect) -> [String: CGFloat] {
+      ["x": value.minX, "y": value.minY, "width": value.width, "height": value.height]
+    }
+    func components(_ value: CGColor?) -> [CGFloat] {
+      guard let value, let color = NSColor(cgColor: value)?.usingColorSpace(.sRGB) else { return [] }
+      return [color.redComponent, color.greenComponent, color.blueComponent, color.alphaComponent]
+    }
+    return ["frame": rect(glass.frame), "radius": glass.cornerRadius, "alpha": glass.alphaValue,
+      "hidden": isHidden, "buttonFrames": buttons.subviews.compactMap { $0 as? NSButton }.map { rect($0.frame) },
+      "enabled": buttons.subviews.compactMap { ($0 as? NSButton)?.isEnabled }, "slideOffset": slideOffset,
+      "windowFullscreen": fullscreen, "borderWidth": buttons.layer?.borderWidth ?? 0,
+      "groupHovered": buttons.groupHovered,
+      "rollover": buttons.subviews.compactMap { ($0 as? NSButton).map { buttons.mouseInGroup($0) } },
+      "fill": components(buttons.layer?.backgroundColor), "rim": components(buttons.layer?.borderColor)]
+  }
+  #endif
 
   private func clearBackdrop() {
     sample.clear()
@@ -314,6 +570,9 @@ public final class FullScreenIslandView: NSView {
   }
 
   @objc private func closeWindow(_ sender: Any?) { window?.performClose(sender) }
-  @objc private func minimizeWindow(_ sender: Any?) { window?.performMiniaturize(sender) }
+  @objc private func minimizeWindow(_ sender: Any?) {
+    guard !fullscreen else { return }
+    window?.performMiniaturize(sender)
+  }
   @objc private func toggleFullscreen(_ sender: Any?) { window?.toggleFullScreen(sender) }
 }

@@ -142,7 +142,7 @@ public final class SidebarFolderPeekView: NSView {
     tracking = area
   }
 
-  public override func mouseEntered(with event: NSEvent) { pointer(true) }
+  public override func mouseEntered(with event: NSEvent) { pointer(isHitBy(event)) }
   public override func mouseExited(with event: NSEvent) { pointer(false) }
 
   public override func viewDidMoveToWindow() {
@@ -230,7 +230,7 @@ final class FolderPeekRowView: NSView {
     tracking = area
   }
 
-  override func mouseEntered(with event: NSEvent) { hovered = true }
+  override func mouseEntered(with event: NSEvent) { hovered = isHitBy(event) }
   override func mouseExited(with event: NSEvent) { hovered = false }
   override func mouseDown(with event: NSEvent) {}
 

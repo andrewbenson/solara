@@ -588,6 +588,7 @@ final class StripPinnedCell: StripHoverView {
 
 @MainActor
 final class StripDockView: NSView {
+  private var fullscreen = false
   private let box = CALayer()
   private var cells: [String: StripPinnedCell] = [:]
   private(set) var order: [String] = []
@@ -612,12 +613,13 @@ final class StripDockView: NSView {
 
   override func hitTest(_ point: NSPoint) -> NSView? {
     let hit = super.hitTest(point)
-    return hit === self ? nil : hit
+    return hit === self && !fullscreen ? nil : hit
   }
 
   func update(cells ids: [String], members: [String: [String]], geometry: StripDragGeometry, _ context: StripContext) {
     order = ids
-    let flat = context.sidebar.host.iconRing
+    fullscreen = (context.state.windows[context.windowId]?.fullScreen ?? 0) != 0
+    let flat = !fullscreen && context.sidebar.host.iconRing
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     box.backgroundColor = (flat ? context.base.flatTile(context.base.pinnedResting) : context.base.pinnedResting).cgColor

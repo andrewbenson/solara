@@ -26,7 +26,7 @@ const peekPending = "pending: the RN reference draws the profile tint above the 
 const tab = (id, extra = {}) => ({ id, url: `https://${id}.example/`, title: `Tab ${id}`, lastActiveAt: id === "t1" ? 9 : 1, ...extra });
 const fixture = () =>
   session(sidebarSession({
-    settings: { tabLayout: "top" },
+    settings: { tabLayout: "top", appearance: "light" },
     profiles: ["Personal", "Work"],
     windows: [{ id: "w1", activeTabIds: { default: "t1", work: "k1" }, frame: [80, 80, 1600, 800] }],
     tabs: ["p1", "p2"]
@@ -245,7 +245,7 @@ const LOOKS = [
     `win("w1").then((n) => { globalThis.expo.modules.SolaraSwipe.devSimulate(700, 22, n, ${JSON.stringify(SWIPE)}, true); return true; });`,
     `win("w1").then((n) => globalThis.expo.modules.SolaraSwipe.devSimulate(700, 22, n, [{ phase: "changed", dx: 60, dy: 0, atMs: 0, timestampMs: 0 }, { phase: "ended", dx: 0, dy: 0, atMs: 16, timestampMs: 16 }], true)).then(() => st().switchProfile("w1", "default"));`,
   ],
-  ["flipped", `st().updateSettings({ appearance: st().ui.appDark ? "light" : "dark" });`, `st().updateSettings({ appearance: "auto" });`],
+  ["flipped", `st().updateSettings({ appearance: st().ui.appDark ? "light" : "dark" });`, `st().updateSettings({ appearance: "light" });`],
   [
     "bands",
     `globalThis.acBands = { t1: "#2b6cb0", g1a: "#f6e05e", t2: "#1a202c" };
@@ -272,6 +272,9 @@ async function measure(native) {
   const run = (body) => app.eval(`${HELPERS}\n${body}`);
   try {
     await sleep(2500);
+    const appearance = await run(`return { mode: st().settings.appearance, dark: st().ui.appDark };`);
+    rep.log({ native, appearance });
+    assert.deepEqual(appearance, { mode: "light", dark: false }, "both strip references start in light appearance");
     const viewportArgs = { topStrip: false, fields: ["windows.frame", "windows.shell"] };
     const restored = nativeWindow(await nativeSnapshot(app, viewportArgs));
     const matrix = screenMatrix(await run(`return globalThis.expo.modules.SolaraTopStrip.devScreenVisibleFrame("w1");`), [1600]);

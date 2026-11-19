@@ -418,6 +418,33 @@ struct SidebarRetirementBindingTests {
     #expect(frame[0] >= clip[0] && frame[1] >= clip[1] && frame[0] + frame[2] <= clip[0] + clip[2] && frame[1] + frame[3] <= clip[1] + clip[3])
   }
 
+  @Test func retirementDeadlineRunsInEventTrackingModeWithoutAVisibleWindow() throws {
+    let sidebar = try SidebarViewportTests.sidebar(2000)
+    let window = NSWindow(contentRect: sidebar.bounds, styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentView = sidebar
+    defer { sidebar.stop(); window.contentView = nil; window.close() }
+    let old = try #require(sidebar.views["t:t0"] as? SidebarRowView)
+    var state = try SidebarViewportTests.state(2000)
+    state.tabs["t0"] = nil
+    state.windows["w"]?.tabIds.removeAll { $0 == "t0" }
+    state.windows["w"]?.activeTabIds["p"] = "t1"
+    sidebar.update(state: state, host: SidebarHostState(profileId: "p"))
+    let replacementKey = try #require(old.item?.key)
+    let immediate = sidebar.probeRealization()["bound"] as? [[String: Any]] ?? []
+    if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+      #expect(immediate.contains { $0["key"] as? String == "t:t0" && $0["picture"] as? Bool == true })
+    }
+    let deadline = Date(timeIntervalSinceNow: 0.22)
+    while Date() < deadline {
+      _ = RunLoop.main.run(mode: .eventTracking, before: min(deadline, Date(timeIntervalSinceNow: 0.01)))
+    }
+    #expect(sidebar.views[replacementKey] === old)
+    #expect(old.superview != nil && !old.retired && old.alphaValue == 1)
+    let remainingPictures = (sidebar.probeRealization()["bound"] as? [[String: Any]] ?? []).filter { $0["retired"] as? Bool != false }
+    #expect(remainingPictures.isEmpty, "Remaining retirement pictures: \(remainingPictures)")
+  }
+
   @Test func visibleCloseUsesAClippedPictureAndLateCompletionCannotRemoveAReboundCell() async throws {
     let sidebar = try SidebarViewportTests.sidebar(2000)
     let window = NSWindow(contentRect: sidebar.bounds, styleMask: [.borderless], backing: .buffered, defer: false)
@@ -441,7 +468,8 @@ struct SidebarRetirementBindingTests {
     }
     #expect(sidebar.views[replacementKey] === old)
     #expect(old.superview != nil && !old.retired && old.alphaValue == 1)
-    #expect((sidebar.probeRealization()["bound"] as? [[String: Any]] ?? []).allSatisfy { $0["retired"] as? Bool == false })
+    let remainingPictures = (sidebar.probeRealization()["bound"] as? [[String: Any]] ?? []).filter { $0["retired"] as? Bool != false }
+    #expect(remainingPictures.isEmpty, "Remaining retirement pictures: \(remainingPictures)")
   }
 }
 #endif

@@ -837,6 +837,8 @@ extension ShellHost {
     func optional(_ rect: CGRect?) -> Any { rect.map(Self.layoutRect) ?? NSNull() }
     return ["windowGeneration": windowGeneration, "generation": snapshot.generation, "storeRevision": input.storeRevision,
       "latestStoreRevision": layoutRevision, "sidebarPosition": input.layout.sidebarSide.rawValue, "backingScale": input.backingScale, "bounds": Self.layoutRect(input.bounds),
+      "sidebarWidth": input.layout.sidebarWidth,
+      "presentation": ["sidebarWidth": shell.input.sidebarWidth, "railProgress": shell.input.railProgress.map { $0 as Any } ?? NSNull()],
       "card": Self.layoutRect(snapshot.frames.card), "content": Self.layoutRect(snapshot.content), "sidebar": optional(expected["sidebar"]), "topStrip": optional(snapshot.frames.topStrip),
       "sidebarHeader": optional(snapshot.sidebarHeader), "sidebarFooter": optional(snapshot.sidebarFooter),
       "stripAvailableWidth": snapshot.stripAvailableWidth, "panes": snapshot.panes.mapValues(Self.layoutRect),
@@ -1102,6 +1104,33 @@ public class WindowShellModule: Module {
     AsyncFunction("accessibilityReach") { (windowId: String) -> [String: Int]? in
       FrameUpdates.readOnMain { NativeWindowShell.host(windowId)?.shell.accessibilityReach() }
     }.runOnQueue(.main)
+
+    #if DEBUG
+    AsyncFunction("devCaptionIslandSnapshot") { (windowId: String, path: String) -> Bool in
+      FrameUpdates.readOnMain {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["SOLARA_BACKGROUND"] == "1", environment["SOLARA_DATA_DIR"]?.isEmpty == false,
+          let shell = NativeWindowShell.host(windowId)?.shell,
+          let frame = shell.window?.contentView?.superview,
+          let island = frame.subviews.compactMap({ $0 as? FullScreenIslandView }).first else { return false }
+        return island.devSnapshot(path)
+      }
+    }.runOnQueue(.main)
+
+    AsyncFunction("devCaptionIsland") { (windowId: String, reveal: Double, menuBottom: Double) -> String in
+      FrameUpdates.readOnMain {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment["SOLARA_BACKGROUND"] == "1", environment["SOLARA_DATA_DIR"]?.isEmpty == false,
+          reveal.isFinite, menuBottom.isFinite,
+          let shell = NativeWindowShell.host(windowId)?.shell,
+          let window = shell.window, let frame = window.contentView?.superview,
+          let island = frame.subviews.compactMap({ $0 as? FullScreenIslandView }).first else { return "null" }
+        let payload = island.devReveal(CGFloat(reveal), menuBottom: CGFloat(menuBottom), fullscreen: true)
+        guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return "null" }
+        return String(data: data, encoding: .utf8) ?? "null"
+      }
+    }.runOnQueue(.main)
+    #endif
 
     AsyncFunction("devCover") { (windowId: String, rect: [Double]?, hidden: Bool?) -> Bool in
       #if DEBUG

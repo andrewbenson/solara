@@ -90,7 +90,13 @@ final class ExtensionsAdapter: ExtensionsServices {
 
   func openWebStoreDetail(_ url: String, profile: String) { SettingsJS.shared.fire("extensions.openWebStoreDetail", url, profile) }
 
-  func openInNewTab(_ url: String) { SettingsJS.shared.fire("extensions.openInNewTab", url) }
+  func openInNewTab(_ url: String) {
+    guard let opening = SettingsDirectWrites.opening else {
+      SettingsJS.shared.fire("extensions.openInNewTab", url)
+      return
+    }
+    opening.openInNewTab(url)
+  }
 
   private func changing(_ profile: String, _ start: (@escaping @Sendable ([String: Any]) -> Void) -> Void) async throws {
     let error = await EngineCalls.result(start) { Self.engineError($0) }

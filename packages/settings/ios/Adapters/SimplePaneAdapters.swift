@@ -130,7 +130,14 @@ final class SearchEngineAdapter: SearchEngineServices {
     model.update(patch)
   }
 
-  func manageExtensions(profile: String) { SettingsJS.shared.fire("search.manageExtensions", profile) }
+  func manageExtensions(profile: String) {
+    guard let opening = SettingsDirectWrites.opening else {
+      SettingsJS.shared.fire("search.manageExtensions", profile)
+      return
+    }
+    NativeSettingsWindow.navigate(pane: "extensions", profileId: opening.extensionsProfile(engine: profile), detail: nil)
+    WindowHost.openAuxiliary(id: NativeSettingsWindow.windowId, kind: "settings", title: "Settings")
+  }
 
   func disableExtension(profile: String, extensionId: String) async {
     _ = await EngineCalls.result({ done in SolaraCoreServices.setExtension(extensionId, enabled: false, profile: profile) { done($0) } }) {
@@ -283,9 +290,18 @@ final class AdvancedAdapter: AdvancedServices {
     return ["localhost", "127.0.0.1", "[::1]"].contains(host) || host.hasSuffix(".localhost")
   }
 
-  func openInternalPage(_ page: String) { SettingsJS.shared.fire("app.openInternalPage", page) }
+  func openInternalPage(_ page: String) {
+    guard let opening = SettingsDirectWrites.opening else {
+      SettingsJS.shared.fire("app.openInternalPage", page)
+      return
+    }
+    opening.openInternalPage(page, scheme: appScheme(), isAppScheme: isAppScheme)
+  }
 
-  func openURL(_ url: String) { SettingsJS.shared.fire("app.openUrls", [url]) }
+  func openURL(_ url: String) {
+    guard !SettingsDirectWrites.openURLs([url]) else { return }
+    SettingsJS.shared.fire("app.openUrls", [url])
+  }
 
   var systemInfo: AdvancedSystemInfo {
     let info = AboutInfo.read(releaseRepo: Self.releaseRepo)
@@ -327,7 +343,10 @@ final class AboutAdapter: AboutServices {
 
   func copyText(_ text: String) { SettingsAdapters.copyText(text) }
 
-  func openURL(_ url: String) { SettingsJS.shared.fire("app.openUrls", [url]) }
+  func openURL(_ url: String) {
+    guard !SettingsDirectWrites.openURLs([url]) else { return }
+    SettingsJS.shared.fire("app.openUrls", [url])
+  }
 }
 
 extension SettingsAdapters {

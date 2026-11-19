@@ -143,6 +143,10 @@ enum NativeSettingsWindow {
     return made
   }
 
+  #if DEBUG
+  static var existingContext: SettingsContext? { context }
+  #endif
+
   static func makeContext() -> SettingsContext? {
     if let context { return context }
     guard let model = NativeSettingsHandle.model else { return nil }

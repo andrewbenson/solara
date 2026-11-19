@@ -1,6 +1,7 @@
 import AppKit
 import SolaraCore
 import SolaraShaders
+import SolaraShell
 import Foundation
 import Observation
 import SolaraModel
@@ -226,6 +227,17 @@ enum SettingsDirectWrites {
     }
   }
 
+  static var opening: SettingsOpening? {
+    guard let store else { return nil }
+    return SettingsOpening(state: { store.state }, run: { write(store, $0)?.result }, focus: { ShellScripting.showWindow($0) })
+  }
+
+  static func openURLs(_ urls: [String]) -> Bool {
+    guard let opening else { return false }
+    opening.openURLs(urls)
+    return true
+  }
+
   static func chooseTabLayout(_ layout: String) -> Bool {
     guard let store else { return false }
     for command in SettingsWrites.chooseTabLayout(layout, in: store.state) { write(store, command) }
@@ -282,6 +294,23 @@ enum SettingsWritesDev {
       if viaJS { _ = await SettingsAdapters.js("profiles.reorder", args.strings("ids")) } else { adapter.reorderProfiles(args.strings("ids")) }
     case "layout":
       if viaJS { _ = await SettingsAdapters.js("tabs.chooseLayout", args.string("layout") ?? "sidebar") } else { source.chooseTabLayout(args.string("layout") ?? "sidebar") }
+    case "openURLs":
+      if viaJS { _ = await SettingsAdapters.js("app.openUrls", args.strings("urls")) } else { ShortcutsAdapter().openURLs(args.strings("urls")) }
+    case "openInNewTab":
+      if viaJS { _ = await SettingsAdapters.js("extensions.openInNewTab", args.string("url") ?? "") } else { ExtensionsAdapter().openInNewTab(args.string("url") ?? "") }
+    case "openInBrowser":
+      if viaJS { _ = await SettingsAdapters.js("liveFolders.openInBrowser", args.string("url") ?? "") } else { LiveAdapter().openInBrowser(args.string("url") ?? "") }
+    case "openInternalPage":
+      if viaJS { _ = await SettingsAdapters.js("app.openInternalPage", args.string("page") ?? "") } else { AdvancedAdapter(model: model).openInternalPage(args.string("page") ?? "") }
+    case "manageExtensions":
+      if viaJS { _ = await SettingsAdapters.js("search.manageExtensions", args.string("engine") ?? "") } else { SearchEngineAdapter(model: model).manageExtensions(profile: args.string("engine") ?? "") }
+      let deadline = Date(timeIntervalSinceNow: 3)
+      while NativeSettingsWindow.existingContext?.navigation.pane != .extensions, Date() < deadline {
+        try? await Task.sleep(nanoseconds: 50_000_000)
+      }
+      let place = NativeSettingsWindow.existingContext?.navigation
+      out["settingsPane"] = place?.pane.rawValue ?? NSNull()
+      out["settingsProfile"] = place?.profileId ?? NSNull()
     case "clear":
       let kinds = args.strings("kinds").compactMap(BrowsingDataKind.init(rawValue:))
       if viaJS {
@@ -300,6 +329,10 @@ enum SettingsWritesDev {
       }
       out["tabLayout"] = state.settings.string("tabLayout") ?? NSNull()
       out["windows"] = state.windows.values.map { ["id": $0.id, "tabLayout": $0.tabLayout ?? NSNull(), "incognito": $0.incognito] as [String: Any] }
+      out["focusedWindow"] = state.ui.focusedWindowId ?? NSNull()
+      out["tabs"] = state.windowOrder.map { window in
+        state.viewTabIds(window).compactMap { id in state.tabs[id].map { ["window": window, "url": $0.navigation?.url ?? $0.url, "active": state.activeTabId(window) == id] as [String: Any] } }
+      }
     }
     let data = (try? JSONSerialization.data(withJSONObject: out, options: [.sortedKeys])) ?? Data("{}".utf8)
     return String(decoding: data, as: UTF8.self)

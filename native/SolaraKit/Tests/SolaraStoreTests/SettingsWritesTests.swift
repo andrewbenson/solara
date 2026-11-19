@@ -126,4 +126,169 @@ import Testing
     NativeStoreHandle.markFrozen()
     #expect(SettingsWrites.directStore == nil)
   }
+
+  private func opening(_ s: Store, focused: @escaping (String) -> Void = { _ in }) -> SettingsOpening {
+    SettingsOpening(state: { s.state }, run: { try? s.dispatch($0).result }, focus: focused)
+  }
+
+  private func urls(_ s: Store, _ window: String) -> [String] {
+    s.state.viewTabIds(window).compactMap { s.state.tabs[$0]?.url }
+  }
+
+  @Test func openURLsAddsTabsToTheResolvedWindow() throws {
+    let s = store()
+    let window = try s.dispatch(Command("createWindow", [[:]])).result!.string!
+    let count = urls(s, window).count
+    opening(s).openURLs(["https://a.test/", "https://b.test/"])
+    #expect(urls(s, window).count == count + 2)
+    #expect(Set(urls(s, window)).isSuperset(of: ["https://a.test/", "https://b.test/"]))
+    #expect(s.state.windowOrder.count == 1)
+  }
+
+  @Test func openURLsOpensOneWindowWhenOnlyAPrivateWindowExists() throws {
+    let s = store()
+    _ = try s.dispatch(Command("createWindow", [["incognito": true]]))
+    opening(s).openURLs(["https://a.test/", "https://b.test/"])
+    #expect(s.state.windowOrder.count == 2)
+    let opened = s.state.windowOrder.first { s.state.windows[$0]?.incognito != true }!
+    #expect(Set(urls(s, opened)).isSuperset(of: ["https://a.test/", "https://b.test/"]))
+  }
+
+  @Test func openURLsWithNoWindowCreatesOne() {
+    let s = store()
+    opening(s).openURLs(["https://a.test/"])
+    #expect(s.state.windowOrder.count == 1)
+    #expect(urls(s, s.state.windowOrder[0]).contains("https://a.test/"))
+  }
+
+  @Test func openInBrowserSkipsPrivateWindowsAndFocuses() throws {
+    let s = store()
+    let regular = try s.dispatch(Command("createWindow", [[:]])).result!.string!
+    let secret = try s.dispatch(Command("createWindow", [["incognito": true]])).result!.string!
+    try s.dispatch(Command("setFocusedWindow", [.string(secret)]))
+    var focused: [String] = []
+    opening(s) { focused.append($0) }.openInBrowser("https://live.test/")
+    #expect(urls(s, regular).contains("https://live.test/"))
+    #expect(!urls(s, secret).contains("https://live.test/"))
+    #expect(focused == [regular])
+  }
+
+  @Test func openInBrowserWithOnlyPrivateWindowsDoesNothing() throws {
+    let s = store()
+    _ = try s.dispatch(Command("createWindow", [["incognito": true]]))
+    var focused: [String] = []
+    let tabs = s.state.tabs.values.count
+    opening(s) { focused.append($0) }.openInBrowser("https://live.test/")
+    #expect(s.state.tabs.values.count == tabs)
+    #expect(focused.isEmpty)
+  }
+
+  private func recording(_ s: Store, _ calls: Box) -> SettingsOpening {
+    SettingsOpening(
+      state: { s.state },
+      run: { command in
+        calls.items.append(command.name)
+        return try? s.dispatch(command).result
+      },
+      focus: { calls.items.append("focus:" + $0) })
+  }
+
+  final class Box: @unchecked Sendable { var items: [String] = [] }
+
+  @Test func internalPageReusesAnOpenPageAndFocusesFirst() throws {
+    let s = store()
+    let window = try s.dispatch(Command("createWindow", [["url": "https://site.test/"]])).result!.string!
+    let history = try s.dispatch(Command("newTab", [.string(window), ["url": "Solara://History?q=x"]])).result!.string!
+    _ = try s.dispatch(Command("newTab", [.string(window), ["url": "https://other.test/"]]))
+    let calls = Box()
+    recording(s, calls).openInternalPage("history", scheme: "solara", isAppScheme: { $0.lowercased() == "solara" })
+    #expect(s.state.activeTabId(window) == history)
+    #expect(calls.items == ["setFocusedWindow", "focus:" + window, "activate"])
+    #expect(s.state.ui.focusedWindowId == window)
+  }
+
+  @Test func internalPageOpensANewTabOrFillsABlankOne() throws {
+    let s = store()
+    let window = try s.dispatch(Command("createWindow", [["url": "https://site.test/"]])).result!.string!
+    let count = s.state.viewTabIds(window).count
+    let calls = Box()
+    recording(s, calls).openInternalPage("bookmarks", scheme: "solara", isAppScheme: { $0 == "solara" })
+    #expect(s.state.viewTabIds(window).count == count + 1)
+    #expect(s.state.activeTab(window)?.url == "solara://bookmarks")
+    #expect(calls.items == ["setFocusedWindow", "focus:" + window, "newTab"])
+
+    let blank = store()
+    let empty = try blank.dispatch(Command("createWindow", [[:]])).result!.string!
+    let active = blank.state.activeTabId(empty)!
+    #expect(blank.state.tabs[active]?.url == "")
+    let tabs = blank.state.viewTabIds(empty).count
+    let blankCalls = Box()
+    recording(blank, blankCalls).openInternalPage("bookmarks", scheme: "solara", isAppScheme: { $0 == "solara" })
+    #expect(blank.state.viewTabIds(empty).count == tabs)
+    #expect(blank.state.activeTabId(empty) == active)
+    #expect(blank.state.tabs[active]?.navigation?.url ?? blank.state.tabs[active]?.url == "solara://bookmarks")
+    #expect(blankCalls.items == ["setFocusedWindow", "focus:" + empty, "navigate"])
+  }
+
+  @Test func openURLsPrefersFocusOrderAndSkipsSmallWindows() throws {
+    let s = store()
+    let first = try s.dispatch(Command("createWindow", [["url": "https://one.test/"]])).result!.string!
+    let second = try s.dispatch(Command("createWindow", [["url": "https://two.test/"]])).result!.string!
+    let small = try s.dispatch(Command("createWindow", [["url": "https://small.test/", "small": true]])).result!.string!
+    try s.dispatch(Command("setFocusedWindow", [.string(second)]))
+    try s.dispatch(Command("setFocusedWindow", [.string(small)]))
+    #expect(s.state.windowOrder.first == first)
+    #expect(Array(s.state.ui.focusOrder.prefix(2)) == [small, second])
+    let before = (urls(s, first).count, urls(s, second).count, urls(s, small).count)
+    let calls = Box()
+    recording(s, calls).openURLs(["https://a.test/"])
+    #expect(urls(s, first).count == before.0)
+    #expect(urls(s, second).count == before.1 + 1)
+    #expect(urls(s, small).count == before.2)
+    #expect(calls.items == ["newTab"])
+  }
+
+  @Test func openInBrowserPrefersFocusOrderOverWindowOrder() throws {
+    let s = store()
+    let first = try s.dispatch(Command("createWindow", [["url": "https://one.test/"]])).result!.string!
+    let second = try s.dispatch(Command("createWindow", [["url": "https://two.test/"]])).result!.string!
+    try s.dispatch(Command("setFocusedWindow", [.string(first)]))
+    try s.dispatch(Command("setFocusedWindow", [.string(second)]))
+    #expect(s.state.windowOrder.first == first)
+    #expect(s.state.ui.focusOrder.first == second)
+    let calls = Box()
+    recording(s, calls).openInBrowser("https://live.test/")
+    #expect(urls(s, second).contains("https://live.test/"))
+    #expect(!urls(s, first).contains("https://live.test/"))
+    #expect(calls.items == ["newTab", "focus:" + second])
+  }
+
+  @Test func internalPageMatchesTheJSPattern() {
+    let app = { (scheme: String) in scheme.lowercased() == "solara" }
+    #expect(SettingsOpening.internalPage(of: "solara://history", isAppScheme: app) == "history")
+    #expect(SettingsOpening.internalPage(of: "SOLARA://Downloads/x?q=1", isAppScheme: app) == "downloads")
+    #expect(SettingsOpening.internalPage(of: "solara://settings", isAppScheme: app) == nil)
+    #expect(SettingsOpening.internalPage(of: "https://history", isAppScheme: app) == nil)
+    #expect(SettingsOpening.internalPage(of: "x:solara://history", isAppScheme: app) == nil)
+    #expect(SettingsOpening.internalPage(of: "", isAppScheme: app) == nil)
+  }
+
+  @Test func extensionsProfileFollowsTheJSFallbacks() throws {
+    let s = store()
+    let work = try s.dispatch(SettingsWrites.createProfile(name: "Work", color: "blue", shareWith: nil)).result!.string!
+    #expect(opening(s).extensionsProfile(engine: work) == work)
+    #expect(opening(s).extensionsProfile(engine: "") == Settings.defaultProfileID)
+    let window = try s.dispatch(Command("createWindow", [["profileId": .string(work), "incognito": true]])).result!.string!
+    try s.dispatch(Command("setFocusedWindow", [.string(window)]))
+    #expect(opening(s).extensionsProfile(engine: "missing") == work)
+  }
+
+  @Test func extensionsProfileWithNoWindowsAndAnUnknownEngineFallsBackToTheDefaultProfile() throws {
+    let s = store()
+    let work = try s.dispatch(SettingsWrites.createProfile(name: "Work", color: "blue", shareWith: nil)).result!.string!
+    try s.dispatch(Command("setDefaultProfile", [.string(work)]))
+    #expect(s.state.windowOrder.isEmpty)
+    #expect(s.state.settings.defaultProfileId == work)
+    #expect(opening(s).extensionsProfile(engine: "missing") == work)
+  }
 }

@@ -86,7 +86,13 @@ final class LiveAdapter: LiveFoldersServices, CalendarServices {
 
   func copyText(_ text: String) { SettingsAdapters.copyText(text) }
 
-  func openInBrowser(_ url: String) { SettingsJS.shared.fire("liveFolders.openInBrowser", url) }
+  func openInBrowser(_ url: String) {
+    guard let opening = SettingsDirectWrites.opening else {
+      SettingsJS.shared.fire("liveFolders.openInBrowser", url)
+      return
+    }
+    opening.openInBrowser(url)
+  }
 
   func calendarState() async -> CalendarPaneState {
     let snapshot = await engine.snapshot

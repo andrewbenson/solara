@@ -136,7 +136,7 @@ test("native settings models reach clear services in safe and normal mode", () =
   assert.deepEqual(results.map((result) => result.safe), [true, false]);
 });
 
-test("native settings clear adapter reaches the guarded handler with the selected engine, kinds and range", () => {
+test("native settings clear adapter takes the guarded JS handler in safe mode and clears the engines directly otherwise", () => {
   const adapter = source("packages/settings/ios/Adapters/ProfilesAdapter.swift");
   const production = [
     declaration(source("native/SolaraKit/Sources/SolaraUI/Settings/Panes/ProfilesPane.swift"), "public enum BrowsingDataKind:"),
@@ -148,7 +148,14 @@ test("native settings clear adapter reaches the guarded handler with the selecte
   const results = runNative("LibraryClear.swift", production, [], true);
   assert.deepEqual(results, [
     { safe: true, calls: [["profiles.clearBrowsingData", "engine-work", ["history", "siteData"], 123000]], effects: 0 },
-    { safe: false, calls: [["profiles.clearBrowsingData", "engine-work", ["history", "siteData"], 123000]], effects: 1 },
+    {
+      safe: false,
+      calls: [
+        ["engine", "engine-work", ["history", "siteData"], 123000],
+        ["webKit", "engine-work", ["history", "siteData"], 123000],
+      ],
+      effects: 2,
+    },
   ]);
 });
 

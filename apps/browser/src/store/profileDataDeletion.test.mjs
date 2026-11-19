@@ -166,8 +166,13 @@ test("Settings returns from details after confirmed deletion and keeps details o
     "}",
   ].join("\n");
   const results = runNative("ProfilesAdapter.swift", production, [], true);
-  assert.equal(results.length, 2);
-  for (const result of results) {
+  assert.equal(results.length, 4);
+  for (const result of results.filter((row) => row.direct)) {
+    assert.deepEqual(result.writes, ["deleteProfile:named"]);
+    assert.equal(result.asked, false);
+    assert.equal(result.detailsAfterReply, result.refused);
+  }
+  for (const result of results.filter((row) => !row.direct)) {
     assert.equal(result.visibleBeforeReply, true);
     assert.equal(result.detailsBeforeReply, true);
     assert.equal(result.noBlankPane, true);

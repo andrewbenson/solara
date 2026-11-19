@@ -10,8 +10,19 @@ enum SettingsAdapters {
     return nil
   }
 }
+enum SolaraCoreHost {
+  static var safeMode = false
+}
 enum SolaraCoreServices {
   static func clearBrowsingData(profile: String, types: [String], since: Double, completion: () -> Void) {
+    SettingsAdapters.calls.append(["engine", profile, types, since])
+    SettingsAdapters.effects += 1
+    completion()
+  }
+}
+enum SolaraCoreSettingsBridge {
+  static func clearWebKitBrowsingData(profile: String, types: [String], since: Double, completion: () -> Void) {
+    SettingsAdapters.calls.append(["webKit", profile, types, since])
     SettingsAdapters.effects += 1
     completion()
   }
@@ -22,6 +33,7 @@ __PRODUCTION__
 var results: [[String: Any]] = []
 for safe in [true, false] {
   SettingsAdapters.safe = safe
+  SolaraCoreHost.safeMode = safe
   SettingsAdapters.calls = []
   SettingsAdapters.effects = 0
   await Adapter().clearBrowsingData(engineProfile: "engine-work", kinds: [.history, .siteData], since: Date(timeIntervalSince1970: 123))

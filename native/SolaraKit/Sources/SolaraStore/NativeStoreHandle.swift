@@ -1,4 +1,16 @@
+import Synchronization
+
 public enum NativeStoreHandle {
+  private static let frozenState = Mutex(false)
+
+  public static var frozen: Bool { frozenState.withLock { $0 } }
+
+  public static func markFrozen() { frozenState.withLock { $0 = true } }
+
+  #if DEBUG
+  public static func thawForTests() { frozenState.withLock { $0 = false } }
+  #endif
+
   nonisolated(unsafe) public static var opened = false
   nonisolated(unsafe) public static var ownedWorkspaceAtLaunch = false
   @MainActor public static var ownsWorkspace = false {

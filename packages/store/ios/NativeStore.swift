@@ -242,6 +242,13 @@ public final class NativeStore: Sendable {
   }
 
   public func freeze() {
+    NativeStoreHandle.markFrozen()
+    Self.ownsWorkspace = false
+    if Thread.isMainThread {
+      MainActor.assumeIsolated { NativeStoreHandle.ownsWorkspace = false }
+    } else {
+      DispatchQueue.main.async { MainActor.assumeIsolated { NativeStoreHandle.ownsWorkspace = false } }
+    }
     profileDataCleanup.stop()
     privateSessionEffects.stop()
     tabSleep.stop()

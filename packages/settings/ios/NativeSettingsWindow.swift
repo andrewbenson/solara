@@ -31,6 +31,7 @@ final class StoreSettingsSource: SettingsStoreSource {
   var topTabLayout: Bool { model.value("tabLayout")?.string == "top" }
 
   func chooseTabLayout(_ layout: String) {
+    guard !SettingsDirectWrites.chooseTabLayout(layout) else { return }
     SettingsJS.shared.fire("tabs.chooseLayout", layout)
   }
 

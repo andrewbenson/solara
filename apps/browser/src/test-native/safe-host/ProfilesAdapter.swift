@@ -11,6 +11,23 @@ final class StoreSource {
   }
 }
 
+struct DirectStore {}
+
+enum SettingsWrites {
+  static func deleteProfile(_ id: String) -> String { "deleteProfile:" + id }
+}
+
+@MainActor
+enum SettingsDirectWrites {
+  static var store: DirectStore?
+  static var accepts = true
+  static var writes: [String] = []
+  static func write(_ store: DirectStore, _ command: String) -> Int? {
+    writes.append(command)
+    return accepts ? 1 : nil
+  }
+}
+
 enum Failure: Error {
   case unwritableLedger
 }
@@ -77,6 +94,23 @@ for refused in [true, false] {
     "noBlankPane": navigation.profileId == nil || model.profile("named") != nil,
     "failed": failures == ["profiles.delete: unwritableLedger"],
   ])
+}
+for refused in [true, false] {
+  SettingsDirectWrites.store = DirectStore()
+  SettingsDirectWrites.accepts = !refused
+  SettingsDirectWrites.writes = []
+  let adapter = ProfilesAdapter()
+  let model = ProfilesPaneModel(services: adapter)
+  let navigation = SettingsNavigation()
+  model.confirmDelete(ProfileDeletePrompt(profileId: "named"), navigation: navigation)
+  results.append([
+    "direct": true,
+    "refused": refused,
+    "writes": SettingsDirectWrites.writes,
+    "asked": SettingsJS.shared.pending != nil,
+    "detailsAfterReply": navigation.profileId == "named",
+  ])
+  SettingsDirectWrites.store = nil
 }
 let output = try! JSONSerialization.data(withJSONObject: results)
 print(String(data: output, encoding: .utf8)!)

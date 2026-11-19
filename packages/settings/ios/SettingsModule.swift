@@ -179,6 +179,13 @@ public class SettingsModule: Module {
     }.runOnQueue(.main)
 
     #if DEBUG
+    AsyncFunction("devSettingsWrites") { (action: String, argument: String?, promise: Promise) in
+      nonisolated(unsafe) let reply = promise
+      MainActor.assumeIsolated {
+        Task { @MainActor in reply.resolve(await SettingsWritesDev.drive(action, argument)) }
+      }
+    }.runOnQueue(.main)
+
     AsyncFunction("devHooks") { (action: String, argument: String?) -> String in
       MainActor.assumeIsolated {
         guard SolaraCoreHost.testBuild, ProcessInfo.processInfo.environment["SOLARA_DATA_DIR"] != nil else { return #"{"error":"test instances only"}"# }

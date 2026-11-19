@@ -40,8 +40,11 @@ final class ProfilesAdapter: ProfilesServices {
   }
 
   func createProfile(name: String, color: ProfileColorValue, shareWith: String?) -> String {
-    SettingsJS.shared.fire("profiles.create", name, color.rawValue, jsonArg(shareWith))
-    return ""
+    guard let store = SettingsDirectWrites.store else {
+      SettingsJS.shared.fire("profiles.create", name, color.rawValue, jsonArg(shareWith))
+      return ""
+    }
+    return SettingsDirectWrites.write(store, SettingsWrites.createProfile(name: name, color: color.rawValue, shareWith: shareWith))?.result?.string ?? ""
   }
 
   func updateProfile(_ id: String, _ patch: ProfilePatch) {
@@ -55,6 +58,7 @@ final class ProfilesAdapter: ProfilesServices {
       SettingsJS.shared.fire("profiles.update", id, arg)
       return
     }
+    let store = SettingsDirectWrites.store
     if let index = profiles.firstIndex(where: { $0.id == id }) {
       var profile = profiles[index]
       if let name = patch.name { profile.name = name }
@@ -63,11 +67,19 @@ final class ProfilesAdapter: ProfilesServices {
       if let theme = patch.theme { profile.theme = theme }
       profiles[index] = profile
     }
-    SettingsJS.shared.fire("profiles.update", id, arg)
+    guard let store, let fields = Self.fields(patch) else {
+      SettingsJS.shared.fire("profiles.update", id, arg)
+      return
+    }
+    SettingsDirectWrites.write(store, SettingsWrites.updateProfile(id, fields))
   }
 
   func deleteProfile(_ id: String, completion: @escaping @MainActor (Bool) -> Void) {
     guard profiles.count > 1, profiles.contains(where: { $0.id == id }) else { completion(false); return }
+    if let store = SettingsDirectWrites.store {
+      completion(SettingsDirectWrites.write(store, SettingsWrites.deleteProfile(id)) != nil)
+      return
+    }
     Task {
       do {
         _ = try await SettingsAdapters.jsThrowing("profiles.delete", id)
@@ -86,7 +98,11 @@ final class ProfilesAdapter: ProfilesServices {
     }
     let known = ids.compactMap { id in profiles.first { $0.id == id } }
     profiles = known + profiles.filter { !ids.contains($0.id) }
-    Task { _ = await SettingsAdapters.js("profiles.reorder", ids) }
+    guard let store = SettingsDirectWrites.store else {
+      Task { _ = await SettingsAdapters.js("profiles.reorder", ids) }
+      return
+    }
+    SettingsDirectWrites.write(store, SettingsWrites.reorderProfiles(ids))
   }
 
   func setDefaultProfile(_ id: String) { store.set("defaultProfileId", id) }
@@ -100,7 +116,20 @@ final class ProfilesAdapter: ProfilesServices {
   }
 
   func clearBrowsingData(engineProfile: String, kinds: [BrowsingDataKind], since: Date?) async {
-    _ = await SettingsAdapters.js("profiles.clearBrowsingData", engineProfile, kinds.map(\.rawValue), Self.millis(since))
+    guard !SolaraCoreHost.safeMode else {
+      _ = await SettingsAdapters.js("profiles.clearBrowsingData", engineProfile, kinds.map(\.rawValue), Self.millis(since))
+      return
+    }
+    let types = kinds.map(\.rawValue)
+    let from = since.map { ($0.timeIntervalSince1970 * 1000).rounded() } ?? 0
+    let cleared = DispatchGroup()
+    cleared.enter()
+    cleared.enter()
+    SolaraCoreServices.clearBrowsingData(profile: engineProfile, types: types, since: from) { @Sendable in cleared.leave() }
+    SolaraCoreSettingsBridge.clearWebKitBrowsingData(profile: engineProfile, types: types, since: from) { @Sendable in cleared.leave() }
+    await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+      cleared.notify(queue: .main) { done.resume() }
+    }
   }
 
   func extensionsKeptOnDelete() async -> [String]? {
@@ -125,6 +154,22 @@ final class ProfilesAdapter: ProfilesServices {
 
   func hapticTick() {
     ACSwipe.performHaptic("alignment")
+  }
+
+  static func fields(_ patch: ProfilePatch) -> JSONObject? {
+    var fields: [(String, JSONValue)] = []
+    if let name = patch.name { fields.append(("name", .string(name))) }
+    if let color = patch.color { fields.append(("color", .string(color.rawValue))) }
+    if let icon = patch.icon { fields.append(("icon", icon.map(JSONValue.string) ?? .null)) }
+    if let theme = patch.theme {
+      guard let theme else {
+        fields.append(("theme", .null))
+        return JSONObject(fields)
+      }
+      guard let data = try? JSONEncoder().encode(theme), let value = try? JSONValue.parse(data) else { return nil }
+      fields.append(("theme", value))
+    }
+    return JSONObject(fields)
   }
 
   static func millis(_ date: Date?) -> Any {
@@ -163,3 +208,101 @@ final class ProfilesAdapter: ProfilesServices {
     return try? JSONSerialization.jsonObject(with: data)
   }
 }
+
+@MainActor
+enum SettingsDirectWrites {
+  static var store: Store? {
+    guard !SolaraCoreHost.safeMode else { return nil }
+    return SettingsWrites.directStore
+  }
+
+  @discardableResult
+  static func write(_ store: Store, _ command: Command) -> Commit? {
+    do {
+      return try store.dispatch(command, origin: .native)
+    } catch {
+      NSLog("[settings] %@ failed: %@", command.name, String(describing: error))
+      return nil
+    }
+  }
+
+  static func chooseTabLayout(_ layout: String) -> Bool {
+    guard let store else { return false }
+    for command in SettingsWrites.chooseTabLayout(layout, in: store.state) { write(store, command) }
+    return true
+  }
+}
+
+#if DEBUG
+@MainActor
+enum SettingsWritesDev {
+  static func drive(_ action: String, _ argument: String?) async -> String {
+    let env = ProcessInfo.processInfo.environment
+    guard SolaraCoreHost.testBuild, env["SOLARA_BACKGROUND"] == "1", env["SOLARA_DATA_DIR"]?.isEmpty == false, let model = NativeSettingsHandle.model else {
+      return #"{"error":"test instances only"}"#
+    }
+    let source = StoreSettingsSource(model: model)
+    let adapter = ProfilesAdapter(store: source)
+    let args = argument.flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) } as? [String: Any] ?? [:]
+    let viaJS = args.bool("viaJS") ?? false
+    let id = args.string("id") ?? ""
+    var out: [String: Any] = ["direct": SettingsDirectWrites.store != nil && !viaJS]
+    switch action {
+    case "create":
+      let color = ProfileColorValue(rawValue: args.string("color") ?? "") ?? .blue
+      if viaJS {
+        out["id"] = await SettingsAdapters.js("profiles.create", args.string("name") ?? "", color.rawValue, jsonArg(args.string("shareWith"))) ?? NSNull()
+      } else {
+        out["id"] = adapter.createProfile(name: args.string("name") ?? "", color: color, shareWith: args.string("shareWith"))
+      }
+    case "update":
+      let icon: String?? = args.keys.contains("icon") ? .some(args.string("icon")) : .none
+      let patch = ProfilePatch(name: args.string("name"), color: args.string("color").flatMap(ProfileColorValue.init(rawValue:)), icon: icon)
+      if viaJS {
+        var arg: [String: Any] = [:]
+        if let name = patch.name { arg["name"] = name }
+        if let color = patch.color { arg["color"] = color.rawValue }
+        if let icon = patch.icon { arg["icon"] = jsonArg(icon) }
+        _ = await SettingsAdapters.js("profiles.update", id, arg)
+      } else {
+        adapter.updateProfile(id, patch)
+      }
+    case "delete":
+      if viaJS {
+        do {
+          _ = try await SettingsAdapters.jsThrowing("profiles.delete", id)
+          out["deleted"] = true
+        } catch {
+          out["deleted"] = false
+        }
+      } else {
+        out["deleted"] = await withCheckedContinuation { (done: CheckedContinuation<Bool, Never>) in adapter.deleteProfile(id) { done.resume(returning: $0) } }
+      }
+    case "reorder":
+      if viaJS { _ = await SettingsAdapters.js("profiles.reorder", args.strings("ids")) } else { adapter.reorderProfiles(args.strings("ids")) }
+    case "layout":
+      if viaJS { _ = await SettingsAdapters.js("tabs.chooseLayout", args.string("layout") ?? "sidebar") } else { source.chooseTabLayout(args.string("layout") ?? "sidebar") }
+    case "clear":
+      let kinds = args.strings("kinds").compactMap(BrowsingDataKind.init(rawValue:))
+      if viaJS {
+        _ = await SettingsAdapters.js("profiles.clearBrowsingData", args.string("engine") ?? "", kinds.map(\.rawValue), NSNull())
+      } else {
+        await adapter.clearBrowsingData(engineProfile: args.string("engine") ?? "", kinds: kinds, since: nil)
+      }
+      out["cleared"] = true
+    default:
+      break
+    }
+    if let state = NativeStoreHandle.store?.state {
+      out["profileOrder"] = state.profileOrder
+      out["profiles"] = state.profileOrder.compactMap { pid in
+        state.profiles[pid].map { ["id": pid, "name": $0.name, "color": $0.color, "icon": $0.icon ?? NSNull(), "dataId": $0.dataId ?? NSNull()] as [String: Any] }
+      }
+      out["tabLayout"] = state.settings.string("tabLayout") ?? NSNull()
+      out["windows"] = state.windows.values.map { ["id": $0.id, "tabLayout": $0.tabLayout ?? NSNull(), "incognito": $0.incognito] as [String: Any] }
+    }
+    let data = (try? JSONSerialization.data(withJSONObject: out, options: [.sortedKeys])) ?? Data("{}".utf8)
+    return String(decoding: data, as: UTF8.self)
+  }
+}
+#endif

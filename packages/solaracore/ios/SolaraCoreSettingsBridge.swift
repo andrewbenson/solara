@@ -7,6 +7,10 @@ public enum SolaraCoreSettingsBridge {
     WebKitHub.shared.externalAppAllowances(profile: profile)
   }
 
+  public static func clearWebKitBrowsingData(profile: String, types: [String], since: Double, completion: @escaping () -> Void) {
+    WebKitHub.shared.clearBrowsingData(profile: profile, types: types, since: since, completion: completion)
+  }
+
   public static func removeWebKitExternalAppAllowance(profile: String, origin: String, scheme: String) {
     WebKitHub.shared.removeExternalAppAllowance(profile: profile, origin: origin, scheme: scheme)
   }

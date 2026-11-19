@@ -179,7 +179,7 @@ export function themeFor(key: string): Theme {
     const [color, mode] = key.split(":") as [ProfileColor | "incognito", string];
     const base = color === "incognito" || mode === "dark" ? dark : light;
     const spec = color === "incognito" ? null : (PROFILE_COLORS[color] ?? PROFILE_COLORS.plum);
-    const powerUpColor = !spec ? null : spec.palette ? (spec.powerUp ?? spec.swatch) : "#808080A6";
+    const powerUpColor = spec?.palette ? (spec.powerUp ?? spec.swatch) : "#808080A6";
     const backdrop = backdropTint(spec ? (spec.tint ?? tintForHue(spec.swatch, !spec.palette)) : INCOGNITO_TINT, !spec?.palette);
     theme = {
       ...base,

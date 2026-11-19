@@ -84,7 +84,7 @@ The app starts without React Native; it stays bundled as a fallback, switched of
 | Item | Status |
 |---|---|
 | The app starts without React Native; React Native stays bundled as a fallback, switched off | planned |
-| Chromium engine update to 158 (owner 2026-11-18): Helium 0.22.1 / 0.22.1.1 on Chromium 158.0.8127.36 (today 157.0.8103.50 on Helium 0.21.2), on the Hill Studio only: rebase our patch series (series.py check), keep both Safe Storage patches unchanged, full engine build, publish-engine.sh, then the full suite and the stable gate. If Helium ships a newer 158 tag before then, take that | planned |
+| Chromium engine update to 158 (owner 2026-11-18): Helium 0.22.1 / 0.22.1.1 on Chromium 158.0.8127.36 (today 157.0.8103.50 on Helium 0.21.2), on the Hill Studio only: rebase our patch series (series.py check), keep both Safe Storage patches unchanged, full engine build, publish-engine.sh, then the full suite and the stable gate. If Helium ships a newer 158 tag before then, take that | planned; owner approved the gclient sync and full rebuild on the Hill Studio (2026-11-18) |
 | Protected video in the Chromium engine through Apple's FairPlay (Netflix, Disney+, YouTube films, Spotify) with a sandboxed AVFoundation helper, replacing the WebKit fallback; engine work, licence and sandbox review first (seen in Ardia, 2026-11) | planned |
 
 ## 0.5.0: all native, and windows that sync

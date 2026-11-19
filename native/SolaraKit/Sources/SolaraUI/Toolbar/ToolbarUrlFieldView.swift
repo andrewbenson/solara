@@ -399,6 +399,7 @@ final class DeveloperUrlField: NSTextField, NSTextFieldDelegate {
     font = NSFont(name: ".AppleSystemUIFontMonospaced-Regular", size: 11) ?? .monospacedSystemFont(ofSize: 11, weight: .regular)
     delegate = self
     isAutomaticTextCompletionEnabled = false
+    contentType = .URL
   }
 
   required init?(coder: NSCoder) { fatalError() }

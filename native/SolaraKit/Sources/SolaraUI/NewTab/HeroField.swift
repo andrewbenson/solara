@@ -8,6 +8,13 @@ final class HeroTextField: NSTextField {
   nonisolated(unsafe) private var selectionObserver: NSObjectProtocol?
   var selectionColor: NSColor = .selectedTextBackgroundColor { didSet { styleEditor() } }
 
+  override init(frame: NSRect) {
+    super.init(frame: frame)
+    contentType = .URL
+  }
+
+  required init?(coder: NSCoder) { fatalError() }
+
   override func becomeFirstResponder() -> Bool {
     let became = super.becomeFirstResponder()
     if became {

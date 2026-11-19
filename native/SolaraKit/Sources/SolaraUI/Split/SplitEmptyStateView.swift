@@ -188,6 +188,13 @@ public final class SplitEmptyStateView: NSView {
 final class SplitEmptyField: NSTextField {
   var onEscape: (() -> Void)?
 
+  override init(frame: NSRect) {
+    super.init(frame: frame)
+    contentType = .URL
+  }
+
+  required init?(coder: NSCoder) { fatalError() }
+
   override func cancelOperation(_ sender: Any?) { onEscape?() }
 }
 

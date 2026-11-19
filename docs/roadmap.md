@@ -64,6 +64,7 @@ Done when JavaScript holds no state of its own.
 | The Search Tabs panel in Liquid Glass, matching the New Tab bar (owner 2026-11-18): same glass surface, selection and divider tuned for glass, Reduce Transparency keeps the plate | planned |
 | The sidebar tab hover card in Liquid Glass (owner 2026-11-18): the card with the title, host, memory and pin/bookmark buttons gets the same glass as the New Tab bar and Search Tabs; Reduce Transparency keeps the plate | planned |
 | The profile tooltip, smaller and in Liquid Glass (owner 2026-11-18): about a macOS tooltip's size next to the profile icons instead of a 34 pt pill, keycaps scaled to match, same glass as the New Tab bar | planned |
+| The incognito New Tab page gets the same Liquid Glass bar and sun-rise animation as normal windows (owner 2026-11-18) | planned |
 | The sync engine in Swift | planned |
 | Legacy migrations in Swift | planned |
 | The JavaScript mirror of the store is gone | planned |

@@ -71,6 +71,7 @@ Done when JavaScript holds no state of its own.
 | Fix sheet-host's "ending busy must allow dismiss" (fails in every gate since 0.4.0) so a full host-harness run passes | moved from 0.4.4: planned |
 | Carry a drag to another tab or profile (owner 2026-11-17): hold a dragged image or link over a tab or a profile slot to switch there, and ⌘1–9, ⌘⇧[ ], ⌃1–9 mid-drag if macOS delivers keys during a drag; drop lands on the new page | moved from 0.4.4: in progress |
 | From 0.4.4's gate: JS synchronous typing 0.085 -> 0.122 ms and native session main-thread stall 2178 -> 3050 ms (n=2, contention during the run); rerun quiet with n>=5 and attribute (docs/perf/0.4.3-to-0.4.4.md) | planned |
+| The Search Tabs panel in Liquid Glass, matching the New Tab bar (owner 2026-11-18): same glass surface, selection and divider tuned for glass, Reduce Transparency keeps the plate | planned |
 | The sync engine in Swift | planned |
 | Legacy migrations in Swift | planned |
 | The JavaScript mirror of the store is gone | planned |

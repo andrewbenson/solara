@@ -230,6 +230,36 @@ private final class PromptInputPageView: NSView {
     #expect(submits == 1)
   }
 
+  @Test func busyInstallSheetBlocksEscapeAfterTheDelayAndEndingBusyAllowsIt() {
+    NSApplication.shared.setActivationPolicy(.prohibited)
+    let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 800, height: 600), styleMask: [.titled], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.alphaValue = 0
+    defer { window.close() }
+    let sheet = SheetView(frame: CGRect(x: 0, y: 0, width: 800, height: 600))
+    window.contentView = sheet
+    let body = install()
+    var now: TimeInterval = 600
+    body.inputProtection.now = { now }
+    var dismissals = 0
+    sheet.onDismiss = { dismissals += 1 }
+    sheet.busy = true
+    sheet.present(body: body, bodyHeight: 180, style: SheetStyle(dark: false, panel: "#FFFFFF", panelBorder: "#000000", panelShadowOpacity: 0.3), accessibilityTitle: "Add fixture?", animated: false)
+    sheet.keyDown(with: key(53, at: now))
+    #expect(dismissals == 0)
+    now = 600.5
+    sheet.keyDown(with: key(53, at: now))
+    sheet.cancelOperation(nil)
+    #expect(dismissals == 0)
+    sheet.busy = false
+    sheet.present(body: body, bodyHeight: 180, style: SheetStyle(dark: false, panel: "#FFFFFF", panelBorder: "#000000", panelShadowOpacity: 0.3), accessibilityTitle: "Add fixture?", animated: false)
+    now = 601
+    sheet.keyDown(with: key(53, at: now))
+    #expect(dismissals == 1)
+    sheet.cancelOperation(nil)
+    #expect(dismissals == 2)
+  }
+
   @Test func inactivePermissionClickIsRejectedAndSadTabReloadActs() throws {
     NSApplication.shared.setActivationPolicy(.prohibited)
     let frontmost = NSWorkspace.shared.frontmostApplication?.processIdentifier

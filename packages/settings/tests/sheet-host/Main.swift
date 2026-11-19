@@ -101,6 +101,10 @@ final class SheetFixture {
   func settle() {
     RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.3))
   }
+
+  func outlastInputProtection() {
+    RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.6))
+  }
 }
 
 @main
@@ -187,6 +191,7 @@ struct SheetHostTests {
     fixture.apply(busy: true)
     guard let sheet = fixture.sheet, let body = fixture.body else { return ["the busy sheet must exist"] }
     fixture.expect(sheet.busy, "the host must apply busy to the sheet")
+    fixture.outlastInputProtection()
     sheet.cancelOperation(nil)
     fixture.expect(fixture.events.isEmpty, "busy must block dismiss")
     body.onEvent(.confirm)

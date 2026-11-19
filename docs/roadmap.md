@@ -68,6 +68,7 @@ Done when JavaScript holds no state of its own.
 | The selected sidebar tab is easy to spot in every theme (owner 2026-11-18): Liquid Glass with a tint always lighter than the sidebar (computed per theme), its lit edge and a soft shadow; prototype variants A/B/C first, the owner picks | owner picked B (glass + adaptive tint, no shadow) 2026-11-18; finishing: tint from the colour behind the row, Release checks |
 | Fix (owner 2026-11-18): the sidebar media player card's glass is so clear the tab rows behind it show through its title and buttons; regular glass, a stronger theme tint, an opaque card under Reduce Transparency; the bottom scrim extends up behind the card while it shows; hovering the card no longer hovers the rows under it or opens their hover card (same coverage as the full-screen island) | planned |
 | Fix (owner 2026-11-18): at some sidebar widths the profile bar's last icon is clipped on its right edge (the globe in the owner's capture); every slot shows its whole icon at every width | planned |
+| Try a gliding selection (owner 2026-11-18): the selected tab's glass slides from row to row instead of jumping; recordings for the owner to judge before it lands; Reduce Motion keeps the jump | planned |
 | The sync engine in Swift | planned |
 | Legacy migrations in Swift | planned |
 | The JavaScript mirror of the store is gone | planned |

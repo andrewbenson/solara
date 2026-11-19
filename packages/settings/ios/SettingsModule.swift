@@ -25,6 +25,7 @@ public class SettingsModule: Module {
         PairingAdapter.install()
         NativeSettingsWindow.install()
         NativeConfigNotifier.install()
+        NativeTabPictures.install()
       } }
     }
 

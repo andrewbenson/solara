@@ -8,6 +8,8 @@ import SolaraUI
 final class NativeTabDrag {
   static let shared = NativeTabDrag()
   static let endDeadline: Double = 2
+  static let captureDeadline: TimeInterval = 1
+  static let hapticGap: TimeInterval = 0.1
   static let replyMargin: Double = 0.5
 
   private var chain: Task<Void, Never>?
@@ -27,6 +29,11 @@ final class NativeTabDrag {
   private var previewToken = 0
   private var closing: (() -> Bool)?
   private var owned = false
+  private var draggedTabId: String?
+  private var lastTick = -TimeInterval.infinity
+  #if DEBUG
+  private(set) var windowTicks = 0
+  #endif
   private(set) var lastDrop: [String: Any] = [:]
 
   func send(_ name: String, _ args: [Any], done: (@MainActor (Any?) -> Void)? = nil) {
@@ -54,6 +61,7 @@ final class NativeTabDrag {
     }
     TabDragSession.windowOf = { ShellDrag.window($0) }
     self.closing = closing
+    draggedTabId = tabId
     owned = Self.ownsDrop(windowId)
     let session = TabDragSession.begin(tabIds: tabIds, from: windowId)
     session.sourceClosing = { [weak self] in self?.sourceClosing(windowId) }
@@ -74,6 +82,7 @@ final class NativeTabDrag {
     self.lifted = lifted
     var over: String?
     var overPoint = CGPoint.zero
+    let wasOver = overWindow
     if let session = session(windowId), let window = ShellDrag.window(windowId) {
       session.lifted = lifted
       session.move(screenPoint: CGPoint(x: window.frame.minX + point.x, y: window.frame.maxY - point.y))
@@ -86,6 +95,13 @@ final class NativeTabDrag {
       }
     }
     overWindow = over
+    if let over, over != wasOver, NativeStoreHandle.store?.state.settings["tabReorderHaptics"]?.truthy ?? true, ProcessInfo.processInfo.systemUptime - lastTick >= Self.hapticGap {
+      lastTick = ProcessInfo.processInfo.systemUptime
+      #if DEBUG
+      windowTicks += 1
+      #endif
+      ShellDrag.hapticTick()
+    }
     publish()
     syncPreview(windowId)
     let queued = pendingMove != nil
@@ -196,6 +212,7 @@ final class NativeTabDrag {
   private func clearDrag() {
     picture = nil
     owned = false
+    draggedTabId = nil
     lifted = nil
     outside = false
     overWindow = nil
@@ -234,10 +251,44 @@ final class NativeTabDrag {
       let chip = picture.chip()
       previewToken += 1
       ShellDrag.previewBegin(windowId: windowId, chip: chip, grab: CGPoint(x: chip.minX + picture.grab.x, y: chip.minY + picture.grab.y))
-      send("tabDrag.capture", [windowId])
+      capturePage(windowId)
     }
     shape = next
     ShellDrag.previewUpdate(next, at: pointer)
+  }
+
+  private func capturePage(_ windowId: String) {
+    let token = previewToken
+    let dragged = draggedTabId
+    let pictures = NativeTabPictures.shared.cache
+    let showing: @MainActor () -> Bool = { [weak self] in self?.previewShown == true && self?.previewToken == token }
+    let plan: @MainActor () -> TabDragPagePlan? = {
+      NativeStoreHandle.store.map { TabDragPagePlan.make($0.state, windowId: windowId, draggedTabId: dragged) { pictures.picture($0) != nil } }
+    }
+    let viaJS: @MainActor () -> Void = { [weak self] in
+      guard showing() else { return }
+      self?.send("tabDrag.capture", [windowId])
+    }
+    let fallback: @MainActor () -> Void = {
+      guard showing(), let plan = plan() else { return }
+      switch plan.fallback {
+      case .none: break
+      case .picture(let tabId):
+        if let picture = pictures.picture(tabId) { ShellDrag.previewPage(base64: picture.data, frame: picture.frame) }
+      case .placeholder(let title, let favicon): ShellDrag.previewPlaceholder(title: title, favicon: favicon)
+      }
+    }
+    guard NativeTabPictures.available else { return viaJS() }
+    guard let first = plan() else { return viaJS() }
+    guard let live = first.liveTabId else { return fallback() }
+    NativeTabPictures.capture(live, scale: 0.35, deadline: Self.captureDeadline) { outcome in
+      guard showing() else { return }
+      switch outcome {
+      case .picture(let picture): ShellDrag.previewPage(base64: picture.data, frame: picture.frame)
+      case .empty: fallback()
+      case .unavailable: viaJS()
+      }
+    }
   }
 
   private func endPreview(_ token: Int?, windowId: String? = nil, fallback: NSRect? = nil, cancel: Bool = false) {
@@ -277,6 +328,88 @@ final class NativeTabDrag {
   private func focus(_ windowId: String) {
     _ = try? NativeStoreHandle.store?.dispatch(Command("setFocusedWindow", [JSONValue(windowId)]), origin: .native)
     ShellDrag.focus(windowId)
+  }
+}
+
+@MainActor
+final class NativeTabPictures {
+  static let shared = NativeTabPictures()
+  static let cacheDeadline: TimeInterval = 5
+
+  let cache = TabDragPictures()
+  private var lifecycle: Int?
+  private var listener: Int?
+  private weak var bound: Store?
+  private var last: BrowserState?
+
+  static func install() { shared.bind() }
+
+  enum Outcome {
+    case picture(PagePicture)
+    case empty
+    case unavailable
+  }
+
+  nonisolated static var available: Bool { TabPoolHost.available }
+
+  static func capture(_ tabId: String, scale: Double, deadline: TimeInterval, _ done: @escaping @MainActor (Outcome) -> Void) {
+    let reply = EndReply()
+    let answer: @MainActor (Outcome) -> Void = { outcome in
+      guard reply.open() else { return }
+      done(outcome)
+    }
+    guard available else { return answer(.unavailable) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + deadline) { MainActor.assumeIsolated { answer(.unavailable) } }
+    let request = PageRequest<PagePicture?>.capturePicture(scale)
+    PageRegistry.shared.call(tabID: tabId, command: request.command) { result in
+      switch result {
+      case .success(let value): answer(((try? request.decode(value)) ?? nil).map(Outcome.picture) ?? .empty)
+      case .failure: answer(.unavailable)
+      }
+    }
+  }
+
+  private func bind() {
+    guard lifecycle == nil else { return }
+    cache.current = { NativeStoreHandle.store?.state }
+    cache.capture = { tabId, done in
+      Self.capture(tabId, scale: 0.25, deadline: Self.cacheDeadline) { outcome in
+        if case .picture(let picture) = outcome { done(picture) } else { done(nil) }
+      }
+    }
+    lifecycle = NativeStoreHandle.subscribeLifecycle { [weak self] in self?.rebind() }
+    rebind()
+  }
+
+  private func rebind() {
+    let store = NativeStoreHandle.store
+    guard bound !== store else { return }
+    if let listener, let bound { bound.unsubscribe(listener) }
+    listener = nil
+    bound = store
+    last = store?.state
+    cache.reset()
+    guard let store else { return }
+    let source = ObjectIdentifier(store)
+    listener = store.subscribe { commit in
+      let state = commit.state
+      let windows = !commit.changes.windows.isEmpty
+      let tabs = !commit.changes.tabs.isEmpty
+      guard windows || tabs else { return }
+      DispatchQueue.main.async {
+        MainActor.assumeIsolated { NativeTabPictures.shared.receive(state, from: source, windows: windows, tabs: tabs) }
+      }
+    }
+  }
+
+  private func receive(_ state: BrowserState, from source: ObjectIdentifier, windows: Bool, tabs: Bool) {
+    guard let bound, ObjectIdentifier(bound) == source else { return }
+    guard let previous = last else {
+      last = state
+      return
+    }
+    last = state
+    cache.changed(from: previous, to: state, windows: windows, tabs: tabs)
   }
 }
 

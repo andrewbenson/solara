@@ -22,6 +22,18 @@ public class SidebarDragModule: Module {
       FrameUpdates.readOnMain { NativeTabDrag.shared.pageChanged(onPage: onPage, insert: insert) }
     }.runOnQueue(.main)
 
+    Function("tabPicturesNative") { () -> Bool in
+      NativeTabPictures.available
+    }
+
+    AsyncFunction("lastTabPicture") { (tabId: String) -> String? in
+      MainActor.assumeIsolated {
+        NativeTabPictures.shared.cache.picture(tabId).flatMap { picture in
+          (try? JSONSerialization.data(withJSONObject: ["data": picture.data, "frame": picture.frame])).flatMap { String(data: $0, encoding: .utf8) }
+        }
+      }
+    }.runOnQueue(.main)
+
     AsyncFunction("escape") {
       FrameUpdates.readOnMain { SidebarDragHub.escape() }
     }.runOnQueue(.main)
@@ -164,6 +176,9 @@ final class NativeSidebarDrag: SidebarDragBridge {
     probe["folderPanel"] = controller.foreignFolder
     probe["escaping"] = shared.escaping
     probe["lastDrop"] = NativeTabDrag.shared.lastDrop
+    #if DEBUG
+    probe["windowTicks"] = NativeTabDrag.shared.windowTicks
+    #endif
     let json = (try? JSONSerialization.data(withJSONObject: probe)).map { String(decoding: $0, as: UTF8.self) } ?? "null"
     lock.withLock { snapshots[windowId] = json }
     return json

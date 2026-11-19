@@ -105,7 +105,6 @@ export function updateNativeTabDrag(
 ) {
   const drag = useTabDrag.getState();
   if (!drag.tabIds.length || !drag.windowId) return;
-  if (overWindow && overWindow !== drag.overWindow && useBrowser.getState().settings.tabReorderHaptics) hapticTick();
   const zoned = zoneBefore !== false && !!overWindow;
   const insert = zoned ? { windowId: overWindow, beforeId: zoneBefore } : !zoneInsert && drag.insert?.windowId === overWindow ? drag.insert : null;
   zoneInsert = zoned;
@@ -170,14 +169,16 @@ export function captureDragPage(windowId: string) {
   const shown = tabId ?? active;
   const onScreen = !!shown && (shown === active || !!splitOf(s, active)?.tabIds.includes(shown));
   const live = (onScreen && webviews.get(shown)?.capturePicture(0.35).catch(() => null)) || Promise.resolve(null);
-  void live.then((page) => {
+  void live.then(async (page) => {
     if (drag !== dragSeq || !useTabDrag.getState().tabIds.length) return;
     if (page) return dragPreview.page(page.data, page.frame);
     const tab = shown ? useBrowser.getState().tabs[shown] : undefined;
     if (!shown || (onScreen && !tab?.url)) return;
-    const last = lastPicture(shown);
+    const last = await lastPicture(shown);
+    if (drag !== dragSeq || !useTabDrag.getState().tabIds.length) return;
     if (last) return dragPreview.page(last.data, last.frame);
-    if (tab) dragPreview.placeholder(tab.customTitle || tab.title || tab.url || "New Tab", tab.favicon);
+    const now = useBrowser.getState().tabs[shown];
+    if (now) dragPreview.placeholder(now.customTitle || now.title || now.url || "New Tab", now.favicon);
   });
 }
 

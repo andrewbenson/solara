@@ -732,10 +732,24 @@ try {
       const sx = Math.round(row.x + row.w / 2), sy = Math.round(row.y + row.h / 2);
       const targetColumn = await run(`return globalThis.expo.modules.SolaraHosted.sidebarShell(${JSON.stringify(wa)}).then(JSON.parse);`);
       const [tx, ty] = await pointBetweenWindows(wb, wa, [sidebarPointX(targetColumn), sy]);
-      const seen = await run(`const seen = [];
-        const iv = setInterval(() => seen.push(globalThis.acTabDrag.getState().overWindow ?? null), 40);
-        return postDrag(${JSON.stringify(wb)}, "${sx},${sy};${sx + 10},${sy + 6};-60,${sy};${tx},${ty};${tx + 2},${ty + 2};${tx},${ty}").then(() => settle(1600)).then(() => { clearInterval(iv); return seen; });`);
+      const probeOf = (w) => run(`return globalThis.expo.modules.SolaraSidebarDrag?.startProbe(${JSON.stringify(w)}).then((t) => JSON.parse(t)) ?? null;`);
+      const refreshesOf = (w) => run(`return globalThis.expo.modules.SolaraWindowShell.describe(${JSON.stringify(w)}).then(JSON.parse).then((s) => s.nativeLayoutChrome?.chromeRefreshes ?? null);`);
+      const ticksBefore = (await probeOf(wb))?.windowTicks;
+      const refreshesBefore = await refreshesOf(wa);
+      const { seen, glow, after: glowAfter } = await run(`const seen = [], glow = [];
+        const read = () => globalThis.expo.modules.SolaraHosted.sidebarShell(${JSON.stringify(wa)}).then(JSON.parse).then((s) => s?.chrome?.dropGlow ?? null);
+        const iv = setInterval(() => { seen.push(globalThis.acTabDrag.getState().overWindow ?? null); void read().then((g) => glow.push(g)); }, 40);
+        return postDrag(${JSON.stringify(wb)}, "${sx},${sy};${sx + 10},${sy + 6};-60,${sy};${tx},${ty};${tx + 2},${ty + 2};${tx},${ty}").then(() => settle(1600)).then(() => { clearInterval(iv); return read().then((after) => ({ seen, glow, after })); });`);
       assert.ok(seen.includes(wa), `over the other window during the drag: ${JSON.stringify([...new Set(seen)])}`);
+      assert.ok(glow.some((g) => g > 0.5), `the target sidebar glowed during the drag: ${JSON.stringify([...new Set(glow)])}`);
+      assert.equal(glowAfter, 0, "and stopped glowing after the drop");
+      const probeAfter = await probeOf(wb);
+      assert.equal(probeAfter?.windowTicks - ticksBefore, 1, `reaching the other window ticked once: ${JSON.stringify({ ticksBefore, after: probeAfter?.windowTicks })}`);
+      const refreshesAfter = await refreshesOf(wa);
+      if (refreshesBefore !== null) assert.ok(refreshesAfter - refreshesBefore <= 12, `the target's chrome did not refresh per mouse move: ${refreshesBefore} -> ${refreshesAfter}`);
+      rep.log(`cross-window drag: target chrome refreshes ${refreshesBefore} -> ${refreshesAfter}, window ticks ${ticksBefore} -> ${probeAfter?.windowTicks}`);
+      const lastDrop = probeAfter?.lastDrop ?? null;
+      assert.equal(lastDrop?.owned, true, `native owned the drop: ${JSON.stringify(lastDrop)}`);
       const after = await run(`return [st().windows[${JSON.stringify(wa)}]?.tabIds ?? [], st().windows[${JSON.stringify(wb)}]?.tabIds ?? []];`);
       assert.ok(after[0].includes(id), `${id} moved: ${JSON.stringify(after)}`);
       assert.ok(!after[1].includes(id), `${id} left its window: ${JSON.stringify(after)}`);
@@ -1392,11 +1406,15 @@ try {
     const x = nativeOwner ? second.windowX + 4 : xs[1][0] + 4;
     const incoming = nativeOwner ? `globalThis.expo.modules.SolaraTopStrip.incoming("w1", ${x}, 20).then(JSON.parse)` : `Promise.resolve(globalThis.acTabDrag.getState().insert)`;
     const active = nativeOwner ? `globalThis.expo.modules.SolaraWindowShell.describe("w1").then(JSON.parse).then((shell) => Number(shell.nativeLayoutChrome.dockedExternalDrop))` : `Promise.resolve(globalThis.acTabDrag.getState().tabIds.length)`;
+    await run(`return globalThis.expo.modules.SolaraTopStrip.traceGlow("w1");`);
     const out = await run(`const FD = ac.shell.devFileDrag; const before = new Set(Object.keys(st().tabs)); let gap = null; let items = null;
       return FD.drag("w1", "move", ${x + 30}, 20, { files: [${JSON.stringify(pdf)}] }).then(() => settle(400)).then(() => FD.drag("w1", "move", ${x}, 20)).then(() => settle(400))
         .then(() => ${incoming}).then((g) => { gap = g; return ${nativeOwner ? 'globalThis.expo.modules.SolaraTopStrip.items("w1").then(JSON.parse).then((state) => state.items)' : 'Promise.resolve(null)'}; }).then((i) => { items = i; return FD.drag("w1", "drop", ${x}, 20); }).then((r) => settle(900).then(() => (${active})).then((busy) => ({ r, gap, items,
           added: st().windows.w1.tabIds.filter((id) => !before.has(id)), order: st().windows.w1.tabIds, idle: busy === 0 && globalThis.acTabDrag.getState().tabIds.length === 0 })));`);
     assert.match(out.r, nativeOwner ? /NativeLayoutStripDropView performed/ : /FileDropView performed/, JSON.stringify(out));
+    const glow = await run(`return globalThis.expo.modules.SolaraTopStrip.glowTrace("w1");`);
+    assert.ok(glow.some(([, x]) => x > 0.5), `the strip glowed under the external drag: ${JSON.stringify(glow.slice(-6))}`);
+    assert.ok(glow.at(-1)?.[1] < 0.05, `and stopped glowing after the drop: ${JSON.stringify(glow.slice(-3))}`);
     assert.ok(out.gap?.beforeId && loose.indexOf(out.gap.beforeId) > 0, `an incoming gap inside the strip: ${JSON.stringify(out.gap)} in ${loose}`);
     if (nativeOwner) {
       const before = beforeItems.find((item) => item.kind === "tab" && item.id === out.gap.beforeId);

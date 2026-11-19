@@ -27,7 +27,7 @@ const later = (ms: number) => new Promise<null>((done) => setTimeout(() => done(
 
 async function frameOf(holderId: string, onScreen: boolean): Promise<string | null> {
   const live = onScreen ? webviews.get(holderId)?.capturePicture(1).catch(() => null) : undefined;
-  const picture = (live && (await Promise.race([live, later(CAPTURE_DEADLINE_MS)]))) || lastPicture(holderId);
+  const picture = (live && (await Promise.race([live, later(CAPTURE_DEADLINE_MS)]))) || (await lastPicture(holderId));
   return picture ? `data:image/jpeg;base64,${picture.data}` : null;
 }
 

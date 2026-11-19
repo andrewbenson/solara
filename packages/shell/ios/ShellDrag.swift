@@ -26,6 +26,20 @@ public enum ShellDrag {
     DragPreview.shared.cancel()
   }
 
+  public static func previewPage(base64: String, frame: [Double]) {
+    guard frame.count == 4, let data = Data(base64Encoded: base64) else { return }
+    DragPreview.shared.setPage(data, frame: NSRect(x: frame[0], y: frame[1], width: frame[2], height: frame[3]))
+  }
+
+  public static func previewPlaceholder(title: String, favicon: String?) {
+    DragPreview.shared.setPlaceholder(title: title, favicon: favicon)
+  }
+
+  public static func hapticTick() {
+    ShellHaptics.alignment()
+    HapticLog.note("alignment")
+  }
+
   public static func focus(_ id: String) {
     WindowManager.shared.focus(id: id)
   }

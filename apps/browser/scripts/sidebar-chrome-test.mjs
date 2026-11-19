@@ -379,6 +379,42 @@ try {
   });
   await canary("(f)");
 
+  await rep.check("(f2) a native tab drag from another window glows the sidebar it reaches, until the drop", async () => {
+    const column = await run(`return col();`);
+    const [px, py] = [sidebarPointX(column), Math.round(column.frame[1] + column.frame[3] / 2)];
+    const out = await run(`const page = (n) => "data:text/html,<title>" + n + "</title>" + n;
+      const f = st().windows.w1.frame;
+      const right = ${JSON.stringify(sidebarPosition)} !== "right";
+      const w2 = st().createWindow({ frame: [right ? f[0] + f[2] - 560 : f[0], f[1] + 80, 560, 420], url: page("g1") });
+      const id = st().newTab(w2, { url: page("g2"), background: true });
+      const numbered = () => C.chromeWindows().then((ws) => ws.filter((w) => w.hasRoot).map((w) => ({ n: w.window, r: w.frame.match(/[-\\d.]+/g).map(Number) })));
+      const pick = (ws, id) => { const g = st().windows[id].frame; return ws.find((w) => Math.abs(w.r[0] - g[0]) < 2 && Math.abs(w.r[2] - g[2]) < 2); };
+      const S = globalThis.expo.modules.SolaraSidebarDrag;
+      return settle(2500).then(() => Promise.all([numbered(), S.startProbe(w2).then((t) => JSON.parse(t))])).then(([ws, probe]) => {
+        const a = pick(ws, "w1"), b = pick(ws, w2);
+        const row = probe.items.find((i) => i.kind === "row" && i.tabIds.length === 1 && i.tabIds[0] === id);
+        if (!a || !b || !row) return { error: "setup", ws, w2, row: row ?? null };
+        const sx = Math.round(row.x + row.w / 2), sy = Math.round(row.y + row.h / 2);
+        const tx = Math.round(a.r[0] + ${px} - b.r[0]), ty = Math.round(b.r[1] + b.r[3] - a.r[1] - a.r[3] + ${py});
+        const points = [[sx, sy], [sx + 10, sy + 6], [right ? -60 : b.r[2] + 60, sy], [tx, ty], [tx + 2, ty + 2], [tx, ty]];
+        const steps = [["down", points[0]]];
+        for (let i = 1; i < points.length; i++) for (let k = 1; k <= 12; k++) steps.push(["dragged", [points[i - 1][0] + (points[i][0] - points[i - 1][0]) * k / 12, points[i - 1][1] + (points[i][1] - points[i - 1][1]) * k / 12]]);
+        steps.push(["up", points.at(-1)]);
+        const glow = [];
+        const iv = setInterval(() => { void col().then((c) => glow.push(c?.chrome?.dropGlow ?? null)); }, 40);
+        const start = performance.now();
+        return steps.reduce((chain, [type, [x, y]], i) => chain
+          .then(() => new Promise((r) => setTimeout(r, Math.max(0, start + (i ? 150 + i * 16 : 0) - performance.now()))))
+          .then(() => C.devWindow(b.n, "mouse:" + type + ":" + Math.round(x * 100) / 100 + "," + Math.round(y * 100) / 100)), Promise.resolve())
+          .then(() => settle(1600)).then(() => { clearInterval(iv); return col(); })
+          .then((c) => ({ w2, id, glow, after: c?.chrome?.dropGlow ?? null, moved: st().windows.w1.tabIds.includes(id) }));
+      });`);
+    await run(`if (st().windows[${JSON.stringify(out.w2 ?? "")}]) st().closeWindow(${JSON.stringify(out.w2 ?? "")}); return settle(900);`);
+    if (out.error || !out.moved || !out.glow.some((g) => g > 0.9) || !(out.after < 0.1)) throw new Error(JSON.stringify({ ...out, glow: [...new Set(out.glow)] }));
+    return { peak: Math.max(...out.glow.filter((g) => g !== null)), after: out.after, samples: out.glow.length };
+  });
+  await canary("(f2)");
+
   await rep.check("(g) top tabs hide the sidebar and returning restores one column", async () => {
     const nativeLayout = await run(`return globalThis.expo.modules.SolaraWindowShell.nativeLayout?.("w1") ?? false;`);
     const before = nativeLayout ? await run(`return globalThis.expo.modules.SolaraWindowShell.describe("w1").then(JSON.parse);`) : null;

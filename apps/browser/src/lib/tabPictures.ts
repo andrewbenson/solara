@@ -1,3 +1,4 @@
+import { requireOptionalNativeModule } from "expo-modules-core";
 import { useBrowser } from "../store/browser";
 import { isIncognitoProfile } from "../store/model";
 import { webviews } from "./webviews";
@@ -10,7 +11,28 @@ const pictures = new Map<string, Picture>();
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
 let started = false;
 
-export function lastPicture(tabId: string): Picture | null {
+type NativePictures = { lastTabPicture?(tabId: string): Promise<string | null>; tabPicturesNative?(): boolean };
+const native = requireOptionalNativeModule<NativePictures>("SolaraSidebarDrag");
+const nativePictures = () => typeof native?.lastTabPicture === "function" && native.tabPicturesNative?.() === true;
+
+export function parsePicture(json: unknown): Picture | null {
+  if (typeof json !== "string") return null;
+  try {
+    const value: unknown = JSON.parse(json);
+    if (!value || typeof value !== "object") return null;
+    const { data, frame } = value as { data?: unknown; frame?: unknown };
+    if (typeof data !== "string" || !Array.isArray(frame) || frame.length !== 4 || !frame.every((n) => typeof n === "number" && Number.isFinite(n))) return null;
+    return { data, frame: frame as Picture["frame"] };
+  } catch {
+    return null;
+  }
+}
+
+export async function lastPicture(tabId: string, from: NativePictures | null = nativePictures() ? native : null): Promise<Picture | null> {
+  if (from?.lastTabPicture) {
+    const picture = parsePicture(await from.lastTabPicture(tabId).catch(() => null));
+    if (picture) return picture;
+  }
   return pictures.get(tabId) ?? null;
 }
 
@@ -31,7 +53,7 @@ function remember(tabId: string) {
 }
 
 export function startTabPictures() {
-  if (started) return;
+  if (started || nativePictures()) return;
   started = true;
   useBrowser.subscribe((s, prev) => {
     if (s.windows === prev.windows && s.tabs === prev.tabs) return;

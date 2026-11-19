@@ -36,6 +36,10 @@ enum NativeSidebarShell {
 
   static func column(_ windowId: String) -> SidebarShellColumn? { columns[windowId] }
 
+  static func dropGlow(_ windowId: String, js: Bool) -> Bool {
+    TabDragSession.current.map { $0.outside && $0.overWindow == windowId } ?? js
+  }
+
   static func describe(_ windowId: String) -> String {
     guard let column = columns[windowId], let data = try? JSONSerialization.data(withJSONObject: column.describe()) else { return "null" }
     return String(data: data, encoding: .utf8) ?? "null"
@@ -100,6 +104,8 @@ final class SidebarShellColumn: NSView, DevDropDestination, NSSpringLoadingDesti
   let chrome = SidebarChromeView()
   private let list = FlippedContainerView()
   private var pagerObserver: NSObjectProtocol?
+  private var dragObserver: NSObjectProtocol?
+  private var jsDropOver = false
   private var given = Layout()
   private var dropCount = 0
   private var carrySpring = DragCarrySpring()
@@ -128,10 +134,21 @@ final class SidebarShellColumn: NSView, DevDropDestination, NSSpringLoadingDesti
       guard note.userInfo?["key"] as? String == windowId, let position = note.userInfo?["position"] as? Double else { return }
       MainActor.assumeIsolated { self?.chrome.setPagerPosition(position) }
     }
+    dragObserver = NotificationCenter.default.addObserver(forName: TabDragSession.changed, object: nil, queue: .main) { [weak self] _ in
+      MainActor.assumeIsolated { self?.dragChanged() }
+    }
     registerForDraggedTypes([.fileURL, .URL, .string, .tiff, .png])
   }
 
   required init?(coder: NSCoder) { fatalError() }
+
+  private func dragChanged() {
+    guard !stopped else { return }
+    let over = NativeSidebarShell.dropGlow(windowId, js: jsDropOver)
+    guard var state = chrome.state, state.dropOver != over else { return }
+    state.dropOver = over
+    chrome.update(state)
+  }
 
   func stop() {
     guard !stopped else { return }
@@ -142,6 +159,8 @@ final class SidebarShellColumn: NSView, DevDropDestination, NSSpringLoadingDesti
     chrome.onFullScreenPresentationChange = nil
     if let pagerObserver { NotificationCenter.default.removeObserver(pagerObserver) }
     pagerObserver = nil
+    if let dragObserver { NotificationCenter.default.removeObserver(dragObserver) }
+    dragObserver = nil
     if NativeSidebar.hosts[windowId] === host { syncAddress(false) }
     host.stop()
   }
@@ -154,6 +173,8 @@ final class SidebarShellColumn: NSView, DevDropDestination, NSSpringLoadingDesti
     chrome.isHidden = look == nil
     if var look {
       look.iconsOnly = effectiveRail(width: bounds.width)
+      jsDropOver = look.dropOver
+      look.dropOver = NativeSidebarShell.dropGlow(windowId, js: jsDropOver)
       chrome.update(look)
     }
     syncAddress(chrome.state?.addressBar == true && chrome.state?.rail != true)
@@ -169,6 +190,8 @@ final class SidebarShellColumn: NSView, DevDropDestination, NSSpringLoadingDesti
     self.chrome.isHidden = false
     var chrome = chrome
     chrome.iconsOnly = effectiveRail(width: bounds.width)
+    jsDropOver = chrome.dropOver
+    chrome.dropOver = NativeSidebarShell.dropGlow(windowId, js: jsDropOver)
     self.chrome.update(chrome)
     given = layout
     syncAddress(chrome.addressBar && !chrome.rail)
@@ -441,6 +464,11 @@ final class NativeLayoutChrome {
   let controls: StripControlsView
   private let glow = TopStripGlowHost()
   private var stripOver = false
+  private var glowOver = false
+  private var glowLook: (accent: String, dark: Bool)?
+  #if DEBUG
+  private var refreshes = 0
+  #endif
   private let stripRow: NativeLayoutStripRow
   private let stripDrop: NativeLayoutStripDropView
   private let peekDrop: NativeLayoutStripDropView
@@ -557,6 +585,7 @@ final class NativeLayoutChrome {
           } else {
             let drag = TabDragSession.current
             self.setHold("drag", drag?.sourceWindow == windowId || drag?.overWindow == windowId)
+            self.dragGlowChanged()
             self.setHold("toolbar", ToolbarInfoPopover.current?.anchorView?.window === self.shell.window && self.shell.window != nil)
           }
         }
@@ -564,6 +593,14 @@ final class NativeLayoutChrome {
     }
     Self.installFeeds()
     dock.start()
+  }
+
+  private var debugRefreshes: Any {
+    #if DEBUG
+    refreshes
+    #else
+    NSNull()
+    #endif
   }
 
   func describe() -> [String: Any] {
@@ -576,7 +613,7 @@ final class NativeLayoutChrome {
       "sidebarRealized": column.host.view.current != nil, "dockedStripRealized": strip.view.current != nil,
       "floatingStripRealized": peek.strip.view.current != nil,
       "dockedStripRendering": strip.renderingEnabled, "floatingStripRendering": peek.strip.renderingEnabled,
-      "dockedExternalDrop": stripDrop.active, "floatingExternalDrop": peekDrop.active,
+      "dockedExternalDrop": stripDrop.active, "floatingExternalDrop": peekDrop.active, "chromeRefreshes": debugRefreshes,
       "sidebarRegistry": NativeSidebar.hosts[shell.windowId] === column.host,
       "stripRegistry": NativeTopStrip.hosts[shell.windowId] === strip,
       "peekRegistry": TopStripPeekHost.hosts[shell.windowId] === peek]
@@ -589,12 +626,23 @@ final class NativeLayoutChrome {
     refresh()
   }
 
+  private func dragGlowChanged() {
+    let over = NativeSidebarShell.dropGlow(shell.windowId, js: stripOver)
+    guard over != glowOver else { return }
+    glowOver = over
+    guard let glowLook else { return }
+    glow.view.set(over: over || stripDrop.active, accent: glowLook.accent, dark: glowLook.dark)
+  }
+
   func refresh() {
     #if DEBUG || SOLARA_PERF_TRACE
     let trace = LayoutTrace.begin("chromeRefresh", "\(shell.windowId) \(revision)")
     defer { LayoutTrace.end(trace) }
     #endif
     guard !stopped, !refreshing else { return }
+    #if DEBUG
+    refreshes += 1
+    #endif
     let nativeInput = state.flatMap(layoutInput)
     strip.renderingEnabled = nativeInput?.layout.topTabs == true
     peek.strip.renderingEnabled = peek.view.live
@@ -706,7 +754,9 @@ final class NativeLayoutChrome {
     stripRow.needsLayout = true
     stripRow.layoutSubtreeIfNeeded()
     glow.view.frame = StripDropGlowMetrics.frame(width: stripRow.bounds.width, left: stripRow.leadingInset + self.controls.profileSlotWidth, right: StripControlsLayout.trailingReservation)
-    glow.view.set(over: stripOver || stripDrop.active, accent: stripLook.tokens["accent"] ?? "#4A77D4", dark: stripLook.dark)
+    glowOver = NativeSidebarShell.dropGlow(shell.windowId, js: stripOver)
+    glowLook = (stripLook.tokens["accent"] ?? "#4A77D4", stripLook.dark)
+    glow.view.set(over: glowOver || stripDrop.active, accent: stripLook.tokens["accent"] ?? "#4A77D4", dark: stripLook.dark)
     strip.floating = true
     peek.view.frame = shell.overlay.bounds
     peek.apply(state: state, host: strip, controls: stripControls,

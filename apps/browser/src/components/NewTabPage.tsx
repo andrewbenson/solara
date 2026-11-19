@@ -80,7 +80,7 @@ function NativeNewTabPage({ tabId, toolbar = true }: { tabId: string; toolbar?: 
         const next = e.nativeEvent.layout;
         setSize((prev) => (prev && sameSize(prev, next) ? prev : next));
       }}>
-      {playIntro && theme.powerUpPalette && bar && (
+      {playIntro && bar && (
         <PowerUp style={StyleSheet.absoluteFill} palette={theme.powerUpPalette} speed={1} origin={0.5} cornerRadius={20} halo={bar} />
       )}
       <NativeNewTabHero

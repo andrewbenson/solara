@@ -10,8 +10,8 @@ export type Theme = typeof dark & {
   profileColor: ProfileColor | "incognito";
   backdrop: BackdropTint & ThemeBackdropProps;
   windowTint: [string, string];
-  powerUpColor: string | null;
-  powerUpPalette: string[] | null;
+  powerUpColor: string;
+  powerUpPalette: string[];
   custom: ProfileTheme | null;
   sidebarInk: InkTokens | null;
   stripInk: InkTokens | null;
@@ -187,7 +187,7 @@ export function themeFor(key: string): Theme {
       backdrop: { ...backdrop, ...PRESET_BACKDROP },
       windowTint: opaqueTint(backdrop, base.dark),
       powerUpColor,
-      powerUpPalette: powerUpColor ? [powerUpColor] : null,
+      powerUpPalette: [powerUpColor],
       custom: null,
       sidebarInk: null,
       stripInk: null,

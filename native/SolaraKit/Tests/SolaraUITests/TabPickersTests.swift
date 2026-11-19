@@ -89,4 +89,93 @@ import Testing
     row.mouseDown(with: NSEvent.mouseEvent(with: .leftMouseDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!)
     #expect(events == [.commit(5)])
   }
+
+  @Test(arguments: [false, true]) func searchSurfaceReusesOneGlassAndRestoresTheOriginalPlate(dark: Bool) throws {
+    let view = TabSearchSurfaceView(frame: CGRect(x: 0, y: 0, width: 560, height: 477))
+    let fill = NSColor(white: dark ? 0.16 : 1, alpha: 1)
+    let border = NSColor(white: dark ? 1 : 0, alpha: 0.1)
+    let theme = NewTabTheme(dark: dark, tokens: [:])
+    view.paint(fill: fill, border: border, shadowOpacity: 0.5, glassTheme: theme, reduceTransparency: false)
+    view.layoutSubtreeIfNeeded()
+    let glass = try #require(view.subviews.compactMap { $0 as? NewTabGlassSurface }.first)
+    let plate = try #require(view.layer?.sublayers?.compactMap { $0 as? SurfaceLayer }.first)
+    #expect(view.usesGlass && plate.isHidden && !glass.isHidden)
+    #expect(glass.glass.frame == view.bounds)
+    #expect(glass.glass.cornerRadius == NewTabLayout.barRadius)
+    #expect(glass.glass.tintColor == theme.ntpBarSolid.ns.withAlphaComponent(0.12))
+    view.paint(fill: fill, border: border, shadowOpacity: 0.5, glassTheme: theme, reduceTransparency: true)
+    #expect(!view.usesGlass && !plate.isHidden && glass.isHidden)
+    #expect(plate.fill == fill && plate.borderTint == border && plate.glowOpacity == 0.5)
+    #expect(plate.radius == TabSearchMetrics.radius)
+    view.paint(fill: fill, border: border, shadowOpacity: 0.5, glassTheme: theme, reduceTransparency: false)
+    #expect(view.subviews.compactMap { $0 as? NewTabGlassSurface }.count == 1)
+    #expect(view.subviews.first === glass)
+  }
+
+  @Test func onlySearchTabsOptsIntoGlass() {
+    func effects(_ view: NSView) -> [NSGlassEffectView] {
+      (view as? NSGlassEffectView).map { [$0] } ?? view.subviews.flatMap(effects)
+    }
+    let search = TabSearchPanelView(favicons: SidebarFavicons())
+    search.frame = CGRect(x: 0, y: 0, width: 1200, height: 800)
+    search.set(Self.state())
+    #expect(effects(search).count == (NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency ? 0 : 1))
+    let switcher = TabSwitcherPanelView(favicons: SidebarFavicons())
+    switcher.set(TabSwitcherState(ids: ["tab"], index: 0, rows: ["tab": .init(id: "tab", title: "Tab", url: "", display: "")], dark: true, theme: [:]), windowSize: CGSize(width: 1200, height: 800))
+    #expect(effects(switcher).isEmpty)
+  }
+
+  @Test func aHiddenSearchOwnsItsMaterialBeforeTheFirstOpen() {
+    func effects(_ view: NSView) -> [NSGlassEffectView] {
+      (view as? NSGlassEffectView).map { [$0] } ?? view.subviews.flatMap(effects)
+    }
+    let view = TabSearchPanelView(favicons: SidebarFavicons())
+    view.frame = CGRect(x: 0, y: 0, width: 1200, height: 800)
+    view.layoutSubtreeIfNeeded()
+    #expect(view.isHidden)
+    #expect(view.state == nil && !view.typing)
+    #expect(effects(view).count == (NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency ? 0 : 1))
+  }
+
+  @Test func preparationKeepsFocusAndReopeningReusesTheMaterialWithAFreshQuery() throws {
+    func effects(_ view: NSView) -> [NSGlassEffectView] {
+      (view as? NSGlassEffectView).map { [$0] } ?? view.subviews.flatMap(effects)
+    }
+    let window = NSPanel(contentRect: CGRect(x: 0, y: 0, width: 1200, height: 800), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+    window.isReleasedWhenClosed = false
+    defer { window.close() }
+    let view = TabSearchPanelView(favicons: SidebarFavicons())
+    view.frame = window.contentView!.bounds
+    window.contentView!.addSubview(view)
+    window.makeFirstResponder(window)
+    view.prepare(dark: true)
+    #expect(window.firstResponder === window)
+    #expect(view.isHidden && view.state == nil && !view.typing)
+    #expect(view.panelFrame == CGRect(x: 320, y: 56, width: 560, height: 477))
+    let material = effects(view).first
+    var events: [TabSearchEvent] = []
+    view.onEvent = { events.append($0) }
+    view.open(Self.state())
+    #expect(view.typing)
+    let field = try #require(view.subviews.first!.subviews.compactMap { $0 as? NSTextField }.first { $0.isEditable })
+    field.stringValue = "gm"
+    view.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
+    _ = view.control(field, textView: NSTextView(), doCommandBy: #selector(NSResponder.moveDown(_:)))
+    #expect(view.query == "gm" && view.selectedIndex == 1)
+    view.hide()
+    #expect(view.isHidden && !view.typing && events.isEmpty)
+    #expect(effects(view).first === material)
+    view.open(Self.state())
+    #expect(!view.isHidden && view.query.isEmpty && view.selectedIndex == 0)
+    #expect(view.shownRows.count == 5)
+    #expect(effects(view).first === material)
+    #expect(view.typing)
+    var next = Self.state()
+    next.openId = 7
+    view.open(next)
+    #expect(view.typing && !view.isHidden && view.openId == 7 && events.isEmpty)
+    view.hide()
+    #expect(view.state == nil && view.query.isEmpty && events.isEmpty)
+  }
+
 }

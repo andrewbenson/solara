@@ -254,6 +254,7 @@ final class ShellHost {
       self?.profilePager?.windowChanged()
       self?.sidePanel?.windowChanged(window)
       self?.scheduleLayoutProjection()
+      if let self, window != nil { NativeTabPickers.prepare(windowId, in: self.shell.overlay) }
     }
     shell.onCaptionLayout = { [weak self] in
       guard let self, !self.layoutStopped, let window = self.shell.window else { return }
@@ -329,6 +330,7 @@ final class ShellHost {
   func stop() {
     guard !layoutStopped else { return }
     layoutStopped = true
+    NativeTabPickers.windowEnded(shell.windowId, in: shell.overlay)
     SidebarAddressBars.shared.removeNavigationView(shell.windowId)
     toolbarPresentation?.stop()
     toolbarPresentation = nil

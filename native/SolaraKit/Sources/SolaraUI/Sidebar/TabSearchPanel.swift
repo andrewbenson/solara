@@ -131,7 +131,7 @@ public enum TabSearchEvent: Equatable, Sendable {
 public final class TabSearchPanelView: NSView, NSTextFieldDelegate {
   public var onEvent: ((TabSearchEvent) -> Void)?
   public private(set) var state: TabSearchState?
-  public let favicons: SidebarFavicons
+  public var favicons: SidebarFavicons
 
   private let panel = TabSearchSurfaceView()
   private let glass = SymbolView()
@@ -146,6 +146,7 @@ public final class TabSearchPanelView: NSView, NSTextFieldDelegate {
   private var rows: [TabSearchState.Row] = []
   private var selected = 0
   private var closing = false
+  private var preparedDark: Bool?
   private weak var savedResponder: NSResponder?
 
   public override var isFlipped: Bool { true }
@@ -154,8 +155,10 @@ public final class TabSearchPanelView: NSView, NSTextFieldDelegate {
     self.favicons = favicons
     super.init(frame: .zero)
     wantsLayer = true
+    isHidden = true
     layer?.masksToBounds = false
     addSubview(panel)
+    NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(accessibilityDisplayChanged), name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
     panel.addSubview(glass)
     field.isBordered = false
     field.isBezeled = false
@@ -178,6 +181,7 @@ public final class TabSearchPanelView: NSView, NSTextFieldDelegate {
     empty.lineBreakMode = .byTruncatingTail
     empty.font = .systemFont(ofSize: TabSearchMetrics.emptyFont)
     list.addSubview(empty)
+    panel.paint(fill: .clear, border: .clear, shadowOpacity: 0, glassTheme: NewTabTheme(dark: effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua, tokens: [:]))
   }
 
   required init?(coder: NSCoder) { fatalError() }
@@ -189,15 +193,35 @@ public final class TabSearchPanelView: NSView, NSTextFieldDelegate {
   public var typing: Bool { field.currentEditor() != nil }
   public var openId: Int? { state?.openId }
 
+  public func prepare(dark: Bool) {
+    guard isHidden else { return }
+    preparedDark = dark
+    panel.paint(fill: .clear, border: .clear, shadowOpacity: 0, glassTheme: NewTabTheme(dark: dark, tokens: [:]))
+    panel.frame = TabSearchMetrics.frame(windowWidth: bounds.width, height: TabSearchMetrics.header + TabSearchMetrics.divider + TabSearchMetrics.maxList + TabSearchMetrics.bottom)
+    panel.layoutSubtreeIfNeeded()
+  }
+
+  public func hide() {
+    guard !isHidden else { return }
+    closing = true
+    savedResponder = nil
+    if field.currentEditor() != nil { window?.makeFirstResponder(nil) }
+    isHidden = true
+    if let state { preparedDark = state.dark }
+    state = nil
+    field.stringValue = ""
+  }
+
   public func open(_ next: TabSearchState) {
     if let owner = Self.owner(of: window?.firstResponder, besides: field) { savedResponder = owner }
     field.stringValue = ""
     selected = 0
     closing = false
+    isHidden = false
     set(next)
     scroll.contentView.scroll(to: .zero)
     scroll.reflectScrolledClipView(scroll.contentView)
-    window?.makeFirstResponder(field)
+    if field.currentEditor() == nil { window?.makeFirstResponder(field) }
   }
 
   public func set(_ next: TabSearchState) {
@@ -205,23 +229,38 @@ public final class TabSearchPanelView: NSView, NSTextFieldDelegate {
     let palette = Self.palette(next)
     let tokens = next.theme
     func color(_ key: String, _ fallback: NSColor) -> NSColor { tokens[key].flatMap { CSSColor($0)?.ns } ?? fallback }
-    panel.paint(fill: color("panel", palette.dark ? .black : .white), border: color("panelBorder", .clear), shadowOpacity: Double(tokens["panelShadowOpacity"] ?? "") ?? 0)
+    panel.paint(fill: color("panel", palette.dark ? .black : .white), border: color("panelBorder", .clear), shadowOpacity: Double(tokens["panelShadowOpacity"] ?? "") ?? 0, glassTheme: NewTabTheme(dark: next.dark, tokens: tokens))
     glass.set("magnifyingglass", size: TabSearchMetrics.glassSize, weight: .medium, color: palette.textPrimary)
     field.textColor = palette.textPrimary
     field.placeholderAttributedString = NSAttributedString(
-      string: "Search Tabs", attributes: [.font: NSFont.systemFont(ofSize: TabSearchMetrics.fieldFont), .foregroundColor: color("placeholder", palette.textTertiary)])
+      string: "Search Tabs", attributes: [.font: NSFont.systemFont(ofSize: TabSearchMetrics.fieldFont), .foregroundColor: panel.usesGlass ? palette.textSecondary : color("placeholder", palette.textTertiary)])
     if let editor = field.currentEditor() as? NSTextView {
       editor.insertionPointColor = palette.textPrimary
       editor.selectedTextAttributes = [.backgroundColor: color("selection", .selectedTextBackgroundColor)]
     }
     empty.textColor = palette.textTertiary
-    PrimitiveMotion.setInstantly { divider.layer?.backgroundColor = palette.divider.cgColor }
+    let dividerColor = panel.usesGlass ? palette.textPrimary.withAlphaComponent(next.dark ? 0.12 : 0.1) : palette.divider
+    PrimitiveMotion.setInstantly { divider.layer?.backgroundColor = dividerColor.cgColor }
     refreshRows()
+  }
+
+  @objc private func accessibilityDisplayChanged() {
+    if !isHidden, let state { set(state) }
+    else if isHidden, let preparedDark { prepare(dark: preparedDark) }
+  }
+
+  isolated deinit {
+    NSWorkspace.shared.notificationCenter.removeObserver(self)
   }
 
   private static func palette(_ state: TabSearchState) -> SidebarPalette {
     var host = SidebarHostState(profileId: "", dark: state.dark)
     host.theme = state.theme
+    if !NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency {
+      host.theme["textSecondary"] = state.dark ? "#FFFFFFC7" : "#000000B8"
+      host.theme["textTertiary"] = state.dark ? "#FFFFFFAD" : "#000000A3"
+      host.theme["icon"] = state.dark ? "#FFFFFFE6" : "#000000D9"
+    }
     return SidebarPalette(host)
   }
 
@@ -258,7 +297,7 @@ public final class TabSearchPanelView: NSView, NSTextFieldDelegate {
     while rowViews.count > rows.count { rowViews.removeLast().removeFromSuperview() }
     for (index, (view, row)) in zip(rowViews, rows).enumerated() {
       view.icon.favicons = favicons
-      view.set(row, palette: palette, selectedFill: state.theme["rowSelected"].flatMap { CSSColor($0)?.ns }, selected: index == selected)
+      view.set(row, palette: palette, selectedFill: panel.usesGlass ? palette.textPrimary.withAlphaComponent(0.12) : state.theme["rowSelected"].flatMap { CSSColor($0)?.ns }, selected: index == selected, glass: panel.usesGlass)
     }
     empty.isHidden = !rows.isEmpty
     empty.stringValue = "No tabs match \u{201C}\(field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines))\u{201D}"
@@ -387,6 +426,12 @@ public final class TabSearchPanelView: NSView, NSTextFieldDelegate {
 
 final class TabSearchSurfaceView: NSView {
   private let surface = SurfaceLayer()
+  private var glassSurface: NewTabGlassSurface?
+  private var glassTheme: NewTabTheme?
+  private var appliedFrame: CGRect?
+  private var appliedTint: NSColor?
+  private var appliedDark: Bool?
+  private(set) var usesGlass = false
 
   override var isFlipped: Bool { true }
 
@@ -404,17 +449,49 @@ final class TabSearchSurfaceView: NSView {
 
   required init?(coder: NSCoder) { fatalError() }
 
-  func paint(fill: NSColor, border: NSColor, shadowOpacity: Double, shadowRadius: CGFloat = TabSearchMetrics.shadowRadius, shadowOffset: CGFloat = TabSearchMetrics.shadowOffset) {
+  func paint(fill: NSColor, border: NSColor, shadowOpacity: Double, shadowRadius: CGFloat = TabSearchMetrics.shadowRadius, shadowOffset: CGFloat = TabSearchMetrics.shadowOffset, glassTheme: NewTabTheme? = nil) {
+    paintSurface(fill: fill, border: border, shadowOpacity: shadowOpacity, shadowRadius: shadowRadius, shadowOffset: shadowOffset, glassTheme: glassTheme, reduceTransparency: NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency)
+  }
+
+  #if DEBUG
+  func paint(fill: NSColor, border: NSColor, shadowOpacity: Double, glassTheme: NewTabTheme, reduceTransparency: Bool) {
+    paintSurface(fill: fill, border: border, shadowOpacity: shadowOpacity, shadowRadius: TabSearchMetrics.shadowRadius, shadowOffset: TabSearchMetrics.shadowOffset, glassTheme: glassTheme, reduceTransparency: reduceTransparency)
+  }
+  #endif
+
+  private func paintSurface(fill: NSColor, border: NSColor, shadowOpacity: Double, shadowRadius: CGFloat, shadowOffset: CGFloat, glassTheme: NewTabTheme?, reduceTransparency: Bool) {
+    self.glassTheme = glassTheme
+    usesGlass = glassTheme != nil && !reduceTransparency
+    if usesGlass, glassSurface == nil {
+      let glass = NewTabGlassSurface(frame: bounds)
+      addSubview(glass, positioned: .below, relativeTo: subviews.first)
+      glassSurface = glass
+    }
+    glassSurface?.isHidden = !usesGlass
+    surface.isHidden = usesGlass
     surface.fill = fill
     surface.borderTint = border
     surface.glowOpacity = shadowOpacity
     surface.glowRadius = shadowRadius
     surface.glowOffset = CGSize(width: 0, height: shadowOffset)
+    updateGlass()
+  }
+
+  private func updateGlass() {
+    guard usesGlass, let glassSurface, let glassTheme else { return }
+    let tint = glassTheme.ntpBarSolid.ns
+    guard appliedFrame != bounds || appliedTint != tint || appliedDark != glassTheme.dark else { return }
+    glassSurface.frame = bounds
+    glassSurface.apply(frame: bounds, radius: NewTabLayout.barRadius, tint: tint, dark: glassTheme.dark)
+    appliedFrame = bounds
+    appliedTint = tint
+    appliedDark = glassTheme.dark
   }
 
   override func layout() {
     super.layout()
     PrimitiveMotion.setInstantly { surface.frame = bounds }
+    updateGlass()
   }
 
   override func mouseDown(with event: NSEvent) {}
@@ -425,6 +502,7 @@ final class TabSearchRowView: NSView {
   var onPress: (() -> Void)?
   let icon = TabIconView()
   private let plate = CALayer()
+  private let iconPlate = CALayer()
   private let title = FadeLabel(fontSize: TabSearchMetrics.textFont)
   private let url = FadeLabel(fontSize: TabSearchMetrics.textFont)
   private let detail = NSTextField(labelWithString: "")
@@ -444,6 +522,10 @@ final class TabSearchRowView: NSView {
     plate.cornerRadius = TabSearchMetrics.rowRadius
     plate.cornerCurve = .continuous
     layer?.addSublayer(plate)
+    iconPlate.actions = SurfaceLayer.noActions
+    iconPlate.cornerRadius = 4
+    iconPlate.cornerCurve = .continuous
+    layer?.addSublayer(iconPlate)
     detail.font = .systemFont(ofSize: TabSearchMetrics.detailFont)
     detail.lineBreakMode = .byClipping
     for view in [icon, title, url, detail, clock] as [NSView] { addSubview(view) }
@@ -453,8 +535,11 @@ final class TabSearchRowView: NSView {
 
   required init?(coder: NSCoder) { fatalError() }
 
-  func set(_ row: TabSearchState.Row, palette: SidebarPalette, selectedFill: NSColor?, selected: Bool) {
+  func set(_ row: TabSearchState.Row, palette: SidebarPalette, selectedFill: NSColor?, selected: Bool, glass: Bool = false) {
     icon.set(TabIconSpec(url: row.url, favicon: row.favicon, customIcon: row.icon, profileId: row.profileId, size: TabSearchMetrics.icon), palette: palette)
+    PrimitiveMotion.setInstantly {
+      iconPlate.backgroundColor = glass ? NSColor(white: palette.dark ? 1 : 0, alpha: palette.dark ? 0.1 : 0.05).cgColor : nil
+    }
     title.text = row.title
     title.color = palette.textPrimary
     hasURL = !row.url.isEmpty
@@ -480,6 +565,7 @@ final class TabSearchRowView: NSView {
     PrimitiveMotion.setInstantly { plate.frame = bounds }
     var x = m.rowPadding
     icon.frame = NSRect(x: x, y: (bounds.height - m.icon) / 2, width: m.icon, height: m.icon)
+    PrimitiveMotion.setInstantly { iconPlate.frame = icon.frame.insetBy(dx: -2, dy: -2) }
     x += m.icon + m.gap
     var right = bounds.width - m.rowPadding
     if closed {

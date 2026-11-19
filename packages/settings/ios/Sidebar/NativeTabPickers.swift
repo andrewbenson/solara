@@ -38,30 +38,56 @@ enum NativeTabPickers {
     NativeSidebar.hosts[windowId]?.view.favicons ?? SidebarFavicons()
   }
 
+  static func prepare(_ windowId: String, in overlay: NSView) {
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak overlay] in
+      guard let overlay, NativeWindowShell.overlay(windowId) === overlay, overlay.window != nil else { return }
+      let view = search(windowId, in: overlay)
+      guard view.isHidden else { return }
+      let dark = NativeSidebarShell.column(windowId)?.chrome.state?.dark ?? (overlay.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua)
+      view.prepare(dark: dark)
+    }
+  }
+
+  static func windowEnded(_ windowId: String, in overlay: NSView) {
+    guard let view = searches[windowId], view.superview === overlay else { return }
+    view.hide()
+    view.removeFromSuperview()
+    searches[windowId] = nil
+  }
+
+  private static func search(_ windowId: String, in overlay: NSView) -> TabSearchPanelView {
+    if let view = searches[windowId], view.superview === overlay { return view }
+    if let previous = searches[windowId] {
+      previous.hide()
+      previous.removeFromSuperview()
+    }
+    let view = TabSearchPanelView(favicons: favicons(windowId))
+    view.frame = overlay.bounds
+    view.autoresizingMask = [.width, .height]
+    view.onEvent = { event in
+      switch event {
+      case .close: send(searchTopic, windowId, "close")
+      case .choose(let kind, let id): send(searchTopic, windowId, "choose", kind, id)
+      }
+    }
+    overlay.addSubview(view)
+    searches[windowId] = view
+    return view
+  }
+
   private static func receiveSearch(_ value: Any?) {
     let open = windows(value)
-    for (windowId, view) in searches where open[windowId] == nil {
-      view.removeFromSuperview()
-      searches[windowId] = nil
-    }
+    for (windowId, view) in searches where open[windowId] == nil { view.hide() }
     for (windowId, raw) in open {
       guard let raw = raw as? [String: Any], let state = decode(TabSearchState.self, raw), let overlay = NativeWindowShell.overlay(windowId) else { continue }
-      if let view = searches[windowId], view.superview === overlay {
-        if view.openId == state.openId { view.set(state) } else { view.open(state) }
-        continue
+      let view = search(windowId, in: overlay)
+      if view.isHidden || view.openId != state.openId {
+        if view.isHidden, overlay.subviews.last !== view { overlay.addSubview(view, positioned: .above, relativeTo: nil) }
+        view.favicons = favicons(windowId)
+        view.open(state)
+      } else {
+        view.set(state)
       }
-      let view = TabSearchPanelView(favicons: favicons(windowId))
-      view.frame = overlay.bounds
-      view.autoresizingMask = [.width, .height]
-      view.onEvent = { event in
-        switch event {
-        case .close: send(searchTopic, windowId, "close")
-        case .choose(let kind, let id): send(searchTopic, windowId, "choose", kind, id)
-        }
-      }
-      overlay.addSubview(view)
-      searches[windowId] = view
-      view.open(state)
     }
   }
 
@@ -108,7 +134,7 @@ enum NativeTabPickers {
       let w = view.convert(r, to: nil)
       return [w.minX, root.bounds.height - w.maxY, w.width, w.height]
     }
-    if let search = searches[windowId] {
+    if let search = searches[windowId], !search.isHidden {
       info["search"] = [
         "frame": rect(search, search.panelFrame), "query": search.query, "selected": search.selectedIndex, "rows": search.shownRows.map { "\($0.kind):\($0.id)" },
         "typing": search.typing,

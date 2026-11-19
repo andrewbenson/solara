@@ -52,6 +52,7 @@ public final class SidebarView: NSView {
   private var retirementPictures: [UUID: SidebarRetirementPicture] = [:]
   private var viewportLink: CADisplayLink?
   private var animationEnd: CFTimeInterval = 0
+  private var displayOptionsObserver: NSObjectProtocol?
 
 
   public override var isFlipped: Bool { true }
@@ -105,6 +106,9 @@ public final class SidebarView: NSView {
     NotificationCenter.default.addObserver(self, selector: #selector(coverChanged(_:)), name: WindowShellView.hoverCoverChanged, object: nil)
     NotificationCenter.default.addObserver(self, selector: #selector(liveChanged), name: SidebarLiveFeed.changed, object: nil)
     NotificationCenter.default.addObserver(self, selector: #selector(heavyChanged), name: HeavyTabs.changed, object: nil)
+    displayOptionsObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+      MainActor.assumeIsolated { self?.accessibilityDisplayChanged() }
+    }
   }
 
   required init?(coder: NSCoder) { fatalError() }
@@ -113,6 +117,8 @@ public final class SidebarView: NSView {
     guard !stopped else { return }
     stopped = true
     NotificationCenter.default.removeObserver(self)
+    if let displayOptionsObserver { NSWorkspace.shared.notificationCenter.removeObserver(displayOptionsObserver) }
+    displayOptionsObserver = nil
     viewportWatch.stop()
     SidebarFolderPanelHost.hide(on: self)
     SidebarDragController.existing(self)?.stop()
@@ -908,6 +914,10 @@ public final class SidebarView: NSView {
   @objc private func heavyChanged() {
     guard let context else { return }
     update(state: context.state, host: context.host)
+  }
+
+  private func accessibilityDisplayChanged() {
+    heavyChanged()
   }
 
   @objc private func liveChanged() {

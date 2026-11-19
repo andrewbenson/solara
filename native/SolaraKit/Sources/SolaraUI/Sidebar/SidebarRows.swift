@@ -93,7 +93,7 @@ final class SidebarContext {
     activeId = state.activeTabId(windowId, host.profileId)
     showClear = host.clear
     selectionGlass = previous?.selectionGlass ?? SidebarSelectionGlassSlot()
-    reducesTransparency = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+    reducesTransparency = SidebarDisplayOptions.reducesTransparency
     self.favicons = favicons
   }
 
@@ -341,7 +341,7 @@ class SidebarRowView: NSView {
 }
 
 final class TabRowView: SidebarRowView {
-  private let surface = SurfaceLayer()
+  let surface = SurfaceLayer()
   private let icon = TabIconView()
   private let label = FadeLabel(fontSize: 13)
   private var back: SymbolView?
@@ -425,7 +425,7 @@ final class TabRowView: SidebarRowView {
   var tabId: String? { tab?.id }
 
   override func clearIdentity() {
-    if let glass = context?.selectionGlass.existing, glass.superview === body { glass.removeFromSuperview() }
+    releaseGlass()
     tab = nil
     active = false
     selected = false
@@ -478,7 +478,7 @@ final class TabRowView: SidebarRowView {
   }
 
   override func render() {
-    guard let context, case .tab(let id)? = item?.kind, let tab = context.state.tabs[id] else { return }
+    guard let context, case .tab(let id)? = item?.kind, let tab = context.state.tabs[id] else { return releaseGlass() }
     self.tab = tab
     active = context.activeId == id
     selected = context.flags.selection.contains(id)
@@ -520,20 +520,21 @@ final class TabRowView: SidebarRowView {
     guard let context else { return }
     let palette = context.palette
     let glassy = active && !context.reducesTransparency
-    let activeFill: NSColor = glassy ? .clear : palette.selectedTint
+    let plate = selected ? SelectedTabTint.over(palette.multiSelected, palette.selectedTint) : palette.selectedTint
+    let activeFill: NSColor = glassy ? .clear : plate
     let fill: NSColor = (!active && pressed) ? palette.pressed : active ? activeFill : selected ? palette.multiSelected : hovered ? palette.hover : .clear
     surface.fill = fill
-    surface.border = (active && !glassy) || selected ? 0.5 : 0
-    surface.borderColors = active && !glassy ? palette.selectedBorder : []
-    surface.borderTint = selected && !active ? palette.multiSelectedStroke : nil
+    surface.border = glassy ? 0 : active || selected ? 0.5 : 0
+    surface.borderColors = active && !glassy && !selected ? palette.selectedBorder : []
+    surface.borderTint = selected && !glassy ? palette.multiSelectedStroke : nil
     surface.glowColor = nil
     if glassy {
       let glass = context.selectionGlass.glass
       if glass.superview !== body { body.addSubview(glass, positioned: .below, relativeTo: nil) }
-      glass.set(radius: SidebarMetrics.rowRadius, tint: palette.selectedTint, dark: palette.dark)
+      glass.set(radius: SidebarMetrics.rowRadius, tint: palette.selectedTint, dark: palette.dark, wash: selected ? palette.multiSelected : nil, washEdge: selected ? palette.multiSelectedStroke : nil)
       glass.frame = bounds
-    } else if let glass = context.selectionGlass.existing, glass.superview === body {
-      glass.removeFromSuperview()
+    } else {
+      releaseGlass()
     }
     label.color = active ? palette.selectedText : palette.textTab
     let ringShown = developer && active
@@ -580,6 +581,10 @@ final class TabRowView: SidebarRowView {
   }
 
   private var laidOutShape: [Bool] = []
+
+  private func releaseGlass() {
+    if let glass = context?.selectionGlass.existing, glass.superview === body { glass.removeFromSuperview() }
+  }
 
   private var backHovered: Bool {
     guard let window else { return false }

@@ -2,6 +2,20 @@ import AppKit
 import QuartzCore
 
 @MainActor
+enum SidebarDisplayOptions {
+  #if DEBUG
+  static var reducesTransparencyOverride: Bool?
+  #endif
+
+  static var reducesTransparency: Bool {
+    #if DEBUG
+    if let reducesTransparencyOverride { return reducesTransparencyOverride }
+    #endif
+    return NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+  }
+}
+
+@MainActor
 enum SelectedTabTint {
   static let lift: CGFloat = 10
   static let aboveHover: CGFloat = 4
@@ -35,6 +49,15 @@ enum SelectedTabTint {
     return NSColor(srgbRed: lerp(a.redComponent, b.redComponent), green: lerp(a.greenComponent, b.greenComponent), blue: lerp(a.blueComponent, b.blueComponent), alpha: 1)
   }
 
+  static func over(_ top: NSColor, _ bottom: NSColor) -> NSColor {
+    let t = top.usingColorSpace(.sRGB) ?? top
+    let b = bottom.usingColorSpace(.sRGB) ?? bottom
+    let alpha = t.alphaComponent + b.alphaComponent * (1 - t.alphaComponent)
+    guard alpha > 0 else { return .clear }
+    func channel(_ x: CGFloat, _ y: CGFloat) -> CGFloat { (x * t.alphaComponent + y * b.alphaComponent * (1 - t.alphaComponent)) / alpha }
+    return NSColor(srgbRed: channel(t.redComponent, b.redComponent), green: channel(t.greenComponent, b.greenComponent), blue: channel(t.blueComponent, b.blueComponent), alpha: alpha)
+  }
+
   static func luminance(_ color: NSColor) -> CGFloat {
     let c = color.usingColorSpace(.sRGB) ?? color
     func linear(_ v: CGFloat) -> CGFloat { v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4) }
@@ -66,7 +89,8 @@ final class SidebarSelectionGlass: NSView {
   private let surface = NewTabGlassSurface(frame: .zero)
   private let rimHost = NSView()
   private let rim = GlassSelectionLayer()
-  private var look: (radius: CGFloat, tint: NSColor, dark: Bool)?
+  let wash = CALayer()
+  private var look: (radius: CGFloat, tint: NSColor, dark: Bool, wash: NSColor?, washEdge: NSColor?)?
 
   override var isFlipped: Bool { true }
 
@@ -76,6 +100,9 @@ final class SidebarSelectionGlass: NSView {
     layer?.masksToBounds = false
     rimHost.wantsLayer = true
     rimHost.layer?.masksToBounds = false
+    wash.actions = SurfaceLayer.noActions
+    wash.cornerCurve = .continuous
+    rimHost.layer?.addSublayer(wash)
     rimHost.layer?.addSublayer(rim)
     addSubview(surface)
     addSubview(rimHost)
@@ -85,9 +112,9 @@ final class SidebarSelectionGlass: NSView {
 
   override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-  func set(radius: CGFloat, tint: NSColor, dark: Bool) {
-    if let look, look.radius == radius, look.tint == tint, look.dark == dark { return }
-    look = (radius, tint, dark)
+  func set(radius: CGFloat, tint: NSColor, dark: Bool, wash: NSColor? = nil, washEdge: NSColor? = nil) {
+    if let look, look.radius == radius, look.tint == tint, look.dark == dark, look.wash == wash, look.washEdge == washEdge { return }
+    look = (radius, tint, dark, wash, washEdge)
     appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
     needsLayout = true
   }
@@ -101,9 +128,17 @@ final class SidebarSelectionGlass: NSView {
     CATransaction.setDisableActions(true)
     rimHost.frame = bounds
     rim.frame = bounds
-    rim.apply(radius: look.radius, dark: look.dark, scale: window?.backingScaleFactor ?? 2, crisp: true, lifted: false)
+    wash.frame = bounds
+    wash.cornerRadius = look.radius
+    wash.backgroundColor = look.wash?.cgColor
+    wash.borderColor = look.washEdge?.cgColor
+    wash.borderWidth = look.washEdge == nil ? 0 : 0.5
+    wash.isHidden = look.wash == nil && look.washEdge == nil
+    rim.apply(radius: look.radius, dark: look.dark, scale: rimScale, crisp: true, lifted: false)
     CATransaction.commit()
   }
+
+  var rimScale: CGFloat { window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1 }
 
   override func viewDidMoveToWindow() {
     super.viewDidMoveToWindow()

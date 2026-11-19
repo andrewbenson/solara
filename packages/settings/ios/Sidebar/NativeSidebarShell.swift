@@ -78,8 +78,38 @@ enum NativeSidebarShell {
     if NativeSidebar.hosts[windowId] === column.host { NativeSidebar.hosts[windowId] = nil }
   }
 
-  static func dropped(_ windowId: String, items: [[String: String]], placement: String?) {
+  @discardableResult
+  static func dropped(_ windowId: String, items: [[String: String]], placement: String?) -> Bool {
+    if openDropped(windowId, items: items, placement: placement) { return true }
     send(windowId, "drop", ["items": items, "placement": placement ?? NSNull()])
+    return false
+  }
+
+  static func openDropped(_ windowId: String, items: [[String: String]], placement: String?) -> Bool {
+    guard let store = SettingsWrites.directStore else { return false }
+    var parsed: JSONValue?
+    if let placement {
+      do {
+        parsed = try JSONValue.parse(placement)
+      } catch {
+        NSLog("[drop] %@: a malformed placement opens nothing: %@", windowId, String(describing: error))
+        return true
+      }
+    }
+    let owner = ObjectIdentifier(store)
+    let landing = parsed
+    DispatchQueue.main.async {
+      MainActor.assumeIsolated {
+        guard let store = SettingsWrites.directStore, ObjectIdentifier(store) == owner else {
+          return NSLog("[drop] %@: the store stood down before the drop opened", windowId)
+        }
+        DroppedTabs.open(store, windowId: windowId, items: items, placement: landing) { error in
+          NSLog("[drop] %@: the store refused part of a drop: %@", windowId, String(describing: error))
+        }
+        FrameUpdates.flush()
+      }
+    }
+    return true
   }
 
   static func send(_ windowId: String, _ event: String, _ extra: [String: Any] = [:]) {
@@ -105,6 +135,9 @@ final class SidebarShellColumn: NSView, DevDropDestination, NSSpringLoadingDesti
   private let list = FlippedContainerView()
   private var pagerObserver: NSObjectProtocol?
   private var dragObserver: NSObjectProtocol?
+  #if DEBUG
+  private var nativeDrops = 0
+  #endif
   private var jsDropOver = false
   private var given = Layout()
   private var dropCount = 0
@@ -141,6 +174,14 @@ final class SidebarShellColumn: NSView, DevDropDestination, NSSpringLoadingDesti
   }
 
   required init?(coder: NSCoder) { fatalError() }
+
+  private var debugNativeDrops: Any {
+    #if DEBUG
+    nativeDrops
+    #else
+    NSNull()
+    #endif
+  }
 
   private func dragChanged() {
     guard !stopped else { return }
@@ -266,7 +307,7 @@ final class SidebarShellColumn: NSView, DevDropDestination, NSSpringLoadingDesti
     let height = window?.contentView?.bounds.height ?? 0
     let rect = { (r: CGRect) -> [Double] in [r.minX, height - r.maxY, r.width, r.height] }
     return [
-      "frame": rect(inWindow), "list": rect(list), "header": given.header, "bottom": footerInset, "clip": given.clip,
+      "nativeDrops": debugNativeDrops, "frame": rect(inWindow), "list": rect(list), "header": given.header, "bottom": footerInset, "clip": given.clip,
       "slot": shellView?.slot(containing: self)?.rawValue ?? NSNull(), "hidden": isHiddenOrHasHiddenAncestor,
       "hover": host.view.current?.hoverKey ?? NSNull(),
       "reactUnder": reactUnderList().map { [$0.0, $0.1.minX, height - $0.1.maxY, $0.1.width, $0.1.height] },
@@ -421,7 +462,11 @@ final class SidebarShellColumn: NSView, DevDropDestination, NSSpringLoadingDesti
     dropCount = 0
     let items = DroppedLinks.items(sender.draggingPasteboard)
     let placement = NativeSidebarDrag.external(windowId: windowId, phase: "drop", at: windowPoint(sender), count: items.count)
+    #if DEBUG
+    if NativeSidebarShell.dropped(windowId, items: items, placement: placement) { nativeDrops += 1 }
+    #else
     NativeSidebarShell.dropped(windowId, items: items, placement: placement)
+    #endif
     return !items.isEmpty
   }
 }
@@ -468,6 +513,7 @@ final class NativeLayoutChrome {
   private var glowLook: (accent: String, dark: Bool)?
   #if DEBUG
   private var refreshes = 0
+  private var stripNativeDrops = 0
   #endif
   private let stripRow: NativeLayoutStripRow
   private let stripDrop: NativeLayoutStripDropView
@@ -603,6 +649,14 @@ final class NativeLayoutChrome {
     #endif
   }
 
+  private var debugStripDrops: Any {
+    #if DEBUG
+    stripNativeDrops
+    #else
+    NSNull()
+    #endif
+  }
+
   func describe() -> [String: Any] {
     let identity: (AnyObject) -> String = { String(describing: ObjectIdentifier($0)) }
     return ["owner": identity(self), "column": identity(column), "dockedStrip": identity(strip.view),
@@ -613,7 +667,7 @@ final class NativeLayoutChrome {
       "sidebarRealized": column.host.view.current != nil, "dockedStripRealized": strip.view.current != nil,
       "floatingStripRealized": peek.strip.view.current != nil,
       "dockedStripRendering": strip.renderingEnabled, "floatingStripRendering": peek.strip.renderingEnabled,
-      "dockedExternalDrop": stripDrop.active, "floatingExternalDrop": peekDrop.active, "chromeRefreshes": debugRefreshes,
+      "dockedExternalDrop": stripDrop.active, "floatingExternalDrop": peekDrop.active, "chromeRefreshes": debugRefreshes, "stripNativeDrops": debugStripDrops,
       "sidebarRegistry": NativeSidebar.hosts[shell.windowId] === column.host,
       "stripRegistry": NativeTopStrip.hosts[shell.windowId] === strip,
       "peekRegistry": TopStripPeekHost.hosts[shell.windowId] === peek]
@@ -824,7 +878,14 @@ final class NativeLayoutChrome {
       _ = NativeDragCarry.activate(destination, windowId: self.shell.windowId)
     }
     target.onDrop = { [weak self] items, placement in
-      self?.sendFeature("topStrip.peek.action", "drop", ["items": items, "placement": placement ?? NSNull()])
+      guard let self else { return }
+      if NativeSidebarShell.openDropped(self.shell.windowId, items: items, placement: placement) {
+        #if DEBUG
+        self.stripNativeDrops += 1
+        #endif
+        return
+      }
+      self.sendFeature("topStrip.peek.action", "drop", ["items": items, "placement": placement ?? NSNull()])
     }
     target.onActive = { [weak self] active in
       guard let self, !self.stopped, Self.owners[self.shell.windowId] === self else { return }

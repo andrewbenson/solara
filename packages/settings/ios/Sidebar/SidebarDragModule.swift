@@ -61,6 +61,21 @@ public class SidebarDragModule: Module {
       FrameUpdates.readOnMain { SidebarDragTrace.shared.start(identifier, milliseconds: milliseconds) }
     }.runOnQueue(.main)
 
+    #if DEBUG
+    AsyncFunction("traceDropRows") { (windowId: String, milliseconds: Double) in
+      FrameUpdates.readOnMain {
+        SidebarDragTrace.shared.startRows(milliseconds: milliseconds) { SidebarDragHub.controller(windowId: windowId)?.shownRows() ?? [] }
+      }
+    }.runOnQueue(.main)
+
+    AsyncFunction("dropRowSamples") { () -> String in
+      FrameUpdates.readOnMain {
+        let data = (try? JSONSerialization.data(withJSONObject: SidebarDragTrace.shared.rowSamples)) ?? Data("[]".utf8)
+        return String(decoding: data, as: UTF8.self)
+      }
+    }.runOnQueue(.main)
+    #endif
+
     AsyncFunction("traceSamples") { () -> String in
       FrameUpdates.readOnMain {
         let data = (try? JSONSerialization.data(withJSONObject: SidebarDragTrace.shared.samples)) ?? Data("[]".utf8)

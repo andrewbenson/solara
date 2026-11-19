@@ -1348,6 +1348,16 @@ public final class SidebarDragController {
     bridge?.changed(windowId: windowId)
   }
 
+  #if DEBUG
+  public func shownRows() -> [[String: Any]] {
+    if !active && landingKey == nil { collect() }
+    return order.compactMap { item in
+      guard item.kind == .row, let view = item.views.first, let frame = SidebarDragTrace.shownFrame(view) else { return nil }
+      return ["key": item.key, "tabIds": item.tabIds, "y": Double(frame.minY), "h": Double(frame.height)]
+    }
+  }
+  #endif
+
   public func probe() -> [String: Any] {
     if !active && landingKey == nil { collect() }
     var list: [[String: Any]] = []

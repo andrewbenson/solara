@@ -1219,6 +1219,8 @@ try {
   const SIDEBAR = `const c = globalThis.sidebarDrag;
     const measured = () => Promise.all([...c.items.values()].filter((i) => i.view && i.kind !== "tail").map((i) => new Promise((r) => i.view.measureInWindow((x, y, w, h) => r({ key: i.key, kind: i.kind, id: i.tabIds[0], group: i.parentGroup ?? null, section: i.section, x, y, w, h }))))).then((l) => l.filter((i) => i.w > 0).sort((a, b) => a.y - b.y || a.x - b.x));`;
   const listRows = () => run(`${SIDEBAR} return measured().then((l) => l.filter((i) => i.kind === "row" && i.section === "list" && !i.group));`);
+  const columnDrops = () => run(`return globalThis.expo.modules.SolaraHosted.sidebarShell("w1").then((d) => JSON.parse(d)?.nativeDrops ?? null);`);
+  const stripDropsOf = (w) => run(`return globalThis.expo.modules.SolaraWindowShell.describe(${JSON.stringify(w)}).then(JSON.parse).then((s) => s.nativeLayoutChrome?.stripNativeDrops ?? null);`);
   const fileDrop = (points, payload) => run(`${SIDEBAR}
     const FD = ac.shell.devFileDrag; const log = []; let during = null;
     const pts = ${JSON.stringify(points)};
@@ -1238,8 +1240,15 @@ try {
     assert.ok(rows.length >= 3, JSON.stringify(rows));
     const [, b] = rows;
     const x = Math.round(b.x + b.w / 2), y = Math.round(b.y + 3);
+    const dropsBefore = await columnDrops();
     const out = await fileDrop([[x, y + 8], [x, y + 2], [x, y]], { files: [pdf] });
+    const dropsAfter = await columnDrops();
     assert.match(out.log[0], /(FileDropView|SidebarShellColumn) 1$/, `the sidebar takes the drag: ${out.log}`);
+    if (/SidebarShellColumn/.test(out.log[0])) {
+      assert.equal(typeof dropsBefore, "number", `the native column reports its drops: ${dropsBefore}`);
+      assert.equal(dropsAfter - dropsBefore, 1, `native opened the dropped tab: ${dropsBefore} -> ${dropsAfter}`);
+    }
+    rep.log(`sidebar file drop: ${out.log[0]}, native drops ${dropsBefore} -> ${dropsAfter}`);
     assert.match(out.log.at(-1), /(FileDropView|SidebarShellColumn) performed/, out.log.join(" | "));
     assert.equal(out.during?.gapKey, b.key, `gap before ${b.key}: ${JSON.stringify(out.during)}`);
     assert.ok(out.during.pitch > 0, "the gap opens");
@@ -1248,6 +1257,31 @@ try {
     assert.equal(out.added[0].url, fileUrl(pdf));
     assert.equal(out.order[out.order.indexOf(b.id) - 1], out.added[0].id, "right before the row it was dropped on");
     assert.equal(out.active, out.added[0].id, "and selected");
+    await closeAdded(out);
+  });
+
+  await check("file drop: no frame shows the drop gap and the new row together", async () => {
+    const rows = await listRows();
+    const [, b] = rows;
+    const x = Math.round(b.x + b.w / 2), y = Math.round(b.y + 3);
+    const traced = await run(`return globalThis.expo.modules.SolaraSidebarDrag.traceDropRows ? globalThis.expo.modules.SolaraSidebarDrag.traceDropRows("w1", 2600).then(() => true) : false;`);
+    assert.ok(traced, "this Debug build traces sidebar rows per display frame");
+    const out = await fileDrop([[x, y + 8], [x, y + 2], [x, y]], { urls: ["https://example.com/traced-drop"] });
+    await run(`return settle(1000);`);
+    const samples = JSON.parse(await run(`return globalThis.expo.modules.SolaraSidebarDrag.dropRowSamples();`));
+    const id = out.added[0]?.id;
+    assert.ok(id, JSON.stringify(out.added));
+    const gaps = samples.map((frame) => {
+      const at = (tab) => frame.rows.find((r) => r.tabIds.length === 1 && r.tabIds[0] === tab);
+      const next = at(b.id), added = at(id);
+      return { t: frame.t, gap: next && added ? next.y - (added.y + added.h) : null, nextY: next?.y ?? null };
+    });
+    const together = gaps.filter((g) => g.gap !== null);
+    assert.ok(together.length > 5, `the new row was traced: ${together.length} of ${samples.length} frames`);
+    const rest = together.at(-1).gap;
+    const bad = together.filter((g) => g.gap > rest + 4);
+    rep.log(`drop trace: ${samples.length} frames, ${together.length} with the new row, settled spacing ${rest.toFixed(1)}, widest ${Math.max(...together.map((g) => g.gap)).toFixed(1)}`);
+    assert.equal(bad.length, 0, `frames show the gap and the new row together: ${JSON.stringify(bad.slice(0, 6))}`);
     await closeAdded(out);
   });
 
@@ -1407,12 +1441,17 @@ try {
     const incoming = nativeOwner ? `globalThis.expo.modules.SolaraTopStrip.incoming("w1", ${x}, 20).then(JSON.parse)` : `Promise.resolve(globalThis.acTabDrag.getState().insert)`;
     const active = nativeOwner ? `globalThis.expo.modules.SolaraWindowShell.describe("w1").then(JSON.parse).then((shell) => Number(shell.nativeLayoutChrome.dockedExternalDrop))` : `Promise.resolve(globalThis.acTabDrag.getState().tabIds.length)`;
     await run(`return globalThis.expo.modules.SolaraTopStrip.traceGlow("w1");`);
+    const stripBefore = nativeOwner ? await stripDropsOf("w1") : null;
+    if (nativeOwner) assert.equal(typeof stripBefore, "number", `the native strip reports its drops: ${stripBefore}`);
     const out = await run(`const FD = ac.shell.devFileDrag; const before = new Set(Object.keys(st().tabs)); let gap = null; let items = null;
       return FD.drag("w1", "move", ${x + 30}, 20, { files: [${JSON.stringify(pdf)}] }).then(() => settle(400)).then(() => FD.drag("w1", "move", ${x}, 20)).then(() => settle(400))
         .then(() => ${incoming}).then((g) => { gap = g; return ${nativeOwner ? 'globalThis.expo.modules.SolaraTopStrip.items("w1").then(JSON.parse).then((state) => state.items)' : 'Promise.resolve(null)'}; }).then((i) => { items = i; return FD.drag("w1", "drop", ${x}, 20); }).then((r) => settle(900).then(() => (${active})).then((busy) => ({ r, gap, items,
           added: st().windows.w1.tabIds.filter((id) => !before.has(id)), order: st().windows.w1.tabIds, idle: busy === 0 && globalThis.acTabDrag.getState().tabIds.length === 0 })));`);
     assert.match(out.r, nativeOwner ? /NativeLayoutStripDropView performed/ : /FileDropView performed/, JSON.stringify(out));
     const glow = await run(`return globalThis.expo.modules.SolaraTopStrip.glowTrace("w1");`);
+    const stripDrops = nativeOwner ? await stripDropsOf("w1") : null;
+    rep.log(`strip file drop: native owner ${nativeOwner}, native drops ${stripBefore} -> ${stripDrops}`);
+    if (nativeOwner) assert.equal(stripDrops - stripBefore, 1, "native opened the tab dropped on the native strip");
     assert.ok(glow.some(([, x]) => x > 0.5), `the strip glowed under the external drag: ${JSON.stringify(glow.slice(-6))}`);
     assert.ok(glow.at(-1)?.[1] < 0.05, `and stopped glowing after the drop: ${JSON.stringify(glow.slice(-3))}`);
     assert.ok(out.gap?.beforeId && loose.indexOf(out.gap.beforeId) > 0, `an incoming gap inside the strip: ${JSON.stringify(out.gap)} in ${loose}`);

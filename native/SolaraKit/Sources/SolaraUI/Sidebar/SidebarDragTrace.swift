@@ -55,7 +55,7 @@ public final class SidebarDragTrace: NSObject {
     return nil
   }
 
-  private static func shownFrame(_ view: NSView) -> CGRect? {
+  static func shownFrame(_ view: NSView) -> CGRect? {
     guard let window = view.window, let content = window.contentView else { return nil }
     let r = view.convert(view.bounds, to: nil)
     var frame = CGRect(x: r.minX, y: content.bounds.height - r.maxY, width: r.width, height: r.height)
@@ -68,6 +68,35 @@ public final class SidebarDragTrace: NSObject {
     }
     return frame
   }
+
+  #if DEBUG
+  private var rowsLink: CADisplayLink?
+  private var rowsSource: (() -> [[String: Any]])?
+  private var rowsUntil: CFTimeInterval = 0
+  public private(set) var rowSamples: [[String: Any]] = []
+
+  public func startRows(milliseconds: Double, _ source: @escaping () -> [[String: Any]]) {
+    rowsLink?.invalidate()
+    rowSamples = []
+    rowsSource = source
+    started = CACurrentMediaTime()
+    rowsUntil = started + milliseconds / 1000
+    guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
+    let link = screen.displayLink(target: self, selector: #selector(rowsTick(_:)))
+    link.add(to: .main, forMode: .common)
+    rowsLink = link
+  }
+
+  @objc private func rowsTick(_ link: CADisplayLink) {
+    let now = CACurrentMediaTime()
+    guard now <= rowsUntil, let source = rowsSource else {
+      link.invalidate()
+      rowsLink = nil
+      return
+    }
+    rowSamples.append(["t": (now - started) * 1000, "rows": source()])
+  }
+  #endif
 
   private static func shownOpacity(_ view: NSView) -> Float {
     var opacity: Float = 1

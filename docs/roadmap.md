@@ -66,6 +66,7 @@ Done when JavaScript holds no state of its own.
 | The profile tooltip, smaller and in Liquid Glass (owner 2026-11-18): about a macOS tooltip's size next to the profile icons instead of a 34 pt pill, keycaps scaled to match, same glass as the New Tab bar | planned |
 | The incognito New Tab page gets the same Liquid Glass bar and sun-rise animation as normal windows (owner 2026-11-18) | planned |
 | The selected sidebar tab is easy to spot in every theme (owner 2026-11-18): Liquid Glass with a tint always lighter than the sidebar (computed per theme), its lit edge and a soft shadow; prototype variants A/B/C first, the owner picks | prototyping |
+| Fix (owner 2026-11-18): the sidebar media player card's glass is so clear the tab rows behind it show through its title and buttons; regular glass, a stronger theme tint, an opaque card under Reduce Transparency | planned |
 | The sync engine in Swift | planned |
 | Legacy migrations in Swift | planned |
 | The JavaScript mirror of the store is gone | planned |

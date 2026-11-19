@@ -16,6 +16,32 @@ Code: `apps/cli` (`solara_cli`, `install.sh`, `scripts/build.sh`). Dependencies 
 --python-platform aarch64-apple-darwin --generate-hashes --no-annotate --no-header -o requirements.lock`, then copy
 the pins into `pyproject.toml`).
 
+## The revamp (0.4.6, decided with the owner 2026-11-18)
+
+The command and the MCP server become one surface. Each tool is one command: the same name, arguments and JSON
+result, served from one command table. A person types it, an agent reaches it over MCP, and agents will mostly use
+MCP in the long term. Both talk to the app through a local control socket built in Swift, not through the JavaScript
+side or a DevTools connection.
+
+- **Output.** Plain readable text by default, and `--json` on every command. MCP returns the same JSON.
+- **Changing things.** Actions are on for the owner at the terminal. For agents they're off unless the Agents pane
+  allows them, per profile, as the 0.4.6 agent rows describe.
+- **Settings and shortcuts as files.** `~/.config/solara/` holds the settings and the keyboard shortcuts as text
+  files that can be edited, versioned and copied to another Mac. Edits apply live, Settings writes the same files,
+  and both directions always agree. `solara config get|set|list` reads and writes them, with the same validation as
+  Settings.
+- **Event hooks.** Scripts in `~/.config/solara/hooks/` run when something happens: a tab opens, a download
+  finishes, a profile switches, and the like. Only scripts the owner placed there run; no website, extension or agent
+  can install one. Every run is logged.
+- **`solara exec`** stays for the owner, behind a Settings toggle to turn it off, and is never offered to agents.
+- **New commands:**
+  - windows: new, close, and moving a tab between windows;
+  - switching profiles;
+  - bookmarks and pins;
+  - downloads (owner: yes to all; this one may land after the rest);
+  - `solara config get|set|list`;
+  - the current tab's URL or text to stdout, for piping.
+
 ## Commands
 
 - `solara exec [CODE | -] [-f FILE] [--data-dir DIR] [--port N] [--ws URL] [--timeout S] [--json]` runs Python with

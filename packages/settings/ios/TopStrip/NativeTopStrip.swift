@@ -336,7 +336,11 @@ final class TopStripHost {
     guard !stopped else { return }
     switch action {
     case .click(let tabId, let mods):
-      call("click", tabId, ["meta": mods.meta, "shift": mods.shift, "alt": mods.alt])
+      if let store = WorkspaceActionRouter.ownedStore, WorkspaceActionRouter.click(store, windowId: windowId, tabId: tabId, mods: mods) {
+        FrameUpdates.flush()
+      } else {
+        call("click", tabId, ["meta": mods.meta, "shift": mods.shift, "alt": mods.alt])
+      }
     case .activate(let tabId):
       if !dispatch("activate", tabId) { call("activate", tabId) }
     case .close(let tabId): call("close", tabId)

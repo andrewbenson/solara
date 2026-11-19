@@ -216,7 +216,10 @@ final class SidebarHost {
     guard !stopped else { return }
     switch action {
     case .click(let tabId, let mods):
-      if mods.none, hostState?.selection.isEmpty == true, activate(tabId) {
+      if let store = WorkspaceActionRouter.ownedStore, WorkspaceActionRouter.click(store, windowId: windowId, tabId: tabId, mods: mods) {
+        FrameUpdates.flush()
+        call("handled", tabId)
+      } else if mods.none, hostState?.selection.isEmpty == true, activate(tabId) {
         call("clicked", tabId)
       } else {
         call("click", tabId, ["meta": mods.meta, "shift": mods.shift, "alt": mods.alt])

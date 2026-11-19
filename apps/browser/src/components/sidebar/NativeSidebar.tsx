@@ -216,6 +216,8 @@ addNativeSettingsHandlers({
     if (name === "hover") return nativeRowHover(windowId, extra.kind && id ? { kind: extra.kind, id } : null);
     dismissHover();
     switch (name) {
+      case "handled":
+        return;
       case "clicked":
         if (s.selectionAnchors[windowId] !== id) s.setSelectionAnchor(windowId, id);
         if (s.selection[windowId]?.length) s.setSelection(windowId, []);

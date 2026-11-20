@@ -360,7 +360,8 @@ try {
 } finally {
   await app?.quit();
   server.close();
-  if (!keep) rmSync(scratch, { recursive: true, force: true });
-  else rep.say(`data: ${scratch}`);
 }
-process.exit(rep.summary() ? 0 : 1);
+const passed = rep.summary();
+if (!keep && passed) rmSync(scratch, { recursive: true, force: true });
+else console.log(`data: ${scratch}`);
+process.exit(passed ? 0 : 1);

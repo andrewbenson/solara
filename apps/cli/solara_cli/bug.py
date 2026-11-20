@@ -72,11 +72,12 @@ def version_key(info: dict) -> tuple:
     return (numbers(info.get("CFBundleVersion", "")), numbers(info.get("CFBundleShortVersionString", "")))
 
 
-def installed_info(preferred: Path | None = None, found: list[Path] | None = None) -> dict | None:
-    preferred = Path("/Applications") / f"{identity.PRODUCT}.app" if preferred is None else preferred
-    info = read_info(preferred)
-    if info is not None:
-        return info
+def installed_info(preferred: list[Path] | None = None, found: list[Path] | None = None) -> dict | None:
+    name = f"{identity.PRODUCT}.app"
+    for app in [Path("/Applications") / name, Path.home() / "Applications" / name] if preferred is None else preferred:
+        info = read_info(app)
+        if info is not None:
+            return info
     infos = [info for info in map(read_info, spotlight_apps() if found is None else found) if info is not None]
     return max(infos, key=version_key) if infos else None
 

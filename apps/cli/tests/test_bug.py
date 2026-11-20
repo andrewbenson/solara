@@ -31,7 +31,7 @@ class BugReportLink(unittest.TestCase):
         return app
 
     def test_the_link_fills_the_forms_fields_from_the_installed_bundle(self):
-        info = bug.installed_info(self.root / "missing.app", [self.fixture_app()])
+        info = bug.installed_info([self.root / "missing.app"], [self.fixture_app()])
         with mock.patch.object(bug, "macos_version", return_value="26.6.2"), mock.patch.object(bug, "mac_model", return_value="MacBookPro18,4"):
             url = bug.report_url(info)
         self.assertTrue(url.startswith(f"https://github.com/{identity.RELEASE_REPO}/issues/new?template=bug.yml&"))
@@ -41,7 +41,7 @@ class BugReportLink(unittest.TestCase):
         self.assertLessEqual(len(url), bug.URL_LIMIT)
 
     def test_another_apps_bundle_is_not_ours(self):
-        self.assertIsNone(bug.installed_info(self.root / "missing.app", [self.fixture_app(bundle_id="com.example.other")]))
+        self.assertIsNone(bug.installed_info([self.root / "missing.app"], [self.fixture_app(bundle_id="com.example.other")]))
         with mock.patch.object(bug, "macos_version", return_value="26.6.2"), mock.patch.object(bug, "mac_model", return_value="Mac15,3"):
             self.assertEqual(fields(bug.report_url(None)), {"template": "bug.yml", "macos": "26.6.2", "mac": "Mac15,3"})
 
@@ -77,9 +77,10 @@ class BugReportLink(unittest.TestCase):
         preferred = self.fixture_at("Applications", "0.4.4", "106")
         old = self.fixture_at("Downloads", "0.4.3", "105")
         new = self.fixture_at("Desktop", "0.4.10", "112")
-        self.assertEqual(bug.installed_info(preferred, [new, old])["CFBundleVersion"], "106")
-        self.assertEqual(bug.installed_info(self.root / "none.app", [old, new])["CFBundleVersion"], "112")
-        self.assertIsNone(bug.installed_info(self.root / "none.app", []))
+        self.assertEqual(bug.installed_info([preferred, self.fixture_at("HomeApplications", "0.4.9", "111")], [new, old])["CFBundleVersion"], "106")
+        self.assertEqual(bug.installed_info([self.root / "none.app", self.fixture_at("HomeApplications2", "0.4.2", "104")], [old, new])["CFBundleVersion"], "104")
+        self.assertEqual(bug.installed_info([self.root / "none.app", self.root / "none2.app"], [old, new])["CFBundleVersion"], "112")
+        self.assertIsNone(bug.installed_info([self.root / "none.app"], []))
 
     def run_command(self, argv, info, env=None):
         out = io.StringIO()

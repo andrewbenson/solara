@@ -797,6 +797,24 @@ bool MovesShortcutFocus(NSMenuItem *item) {
 
 const void *kFocusShortcutAtKey = &kFocusShortcutAtKey;
 
+void NoteFocusShortcut(NSWindow *window, NSEvent *event) {
+  NSNumber *latest = objc_getAssociatedObject(window, kFocusShortcutAtKey);
+  objc_setAssociatedObject(window, kFocusShortcutAtKey, @(MAX(latest.doubleValue, event.timestamp)), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+const short kDeferredFocusSubtype = 0x5346;
+
+bool DefersFocusShortcut(NSMenuItem *item) {
+  return [item.identifier isEqualToString:@"solara.command.focusCommandBar"];
+}
+
+bool ShortcutIsEnabled(NSMenuItem *item) {
+  if (item.isHidden && !item.allowsKeyEquivalentWhenHidden) return false;
+  id target = item.target;
+  if ([target respondsToSelector:@selector(validateMenuItem:)]) return [target validateMenuItem:item];
+  return item.isEnabled;
+}
+
 BOOL (^const kSolaraShortcut)(NSMenuItem *) = ^BOOL(NSMenuItem *item) {
   return IsSolaraShortcut(item);
 };
@@ -1869,6 +1887,10 @@ void HandOffTab(SolaraCoreTab *tab) {
   BOOL _showInactive;
   BOOL _announced;
   __weak SolaraCoreTab *_chromeActive;
+  NSString *_deferredFocusShortcut;
+  NSEvent *_deferredFocusEvent;
+  BOOL _deferredFocusWasKey;
+  NSInteger _deferredFocusGeneration;
 }
 
 + (BOOL)userSees:(NSWindow *)window {
@@ -2239,14 +2261,60 @@ NSMapTable<SolaraCoreProfile *, SolaraCoreWindowController *> *StandaloneWindows
   TraceDragCarryEvent(@"solara.preHandleKeyEvent", event);
 #endif
   NSMenuItem *item = ShortcutMenuItemForEvent(event);
+  if (_deferredFocusShortcut && [item.identifier isEqualToString:_deferredFocusShortcut]) return YES;
+  if (DefersFocusShortcut(item) && KeyPrecedenceOf(item) == KeyPrecedence::Solara && ShortcutIsEnabled(item)) {
+    [self deferFocusShortcut:item event:event window:window.window];
+    return YES;
+  }
   const BOOL handled = item && PerformsShortcutBeforePage(event, item, ^BOOL {
            return [NSApp.mainMenu performKeyEquivalent:event];
          });
-  if (handled && MovesShortcutFocus(item)) {
-    NSNumber *latest = objc_getAssociatedObject(window.window, kFocusShortcutAtKey);
-    objc_setAssociatedObject(window.window, kFocusShortcutAtKey, @(MAX(latest.doubleValue, event.timestamp)), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-  }
+  if (handled && MovesShortcutFocus(item)) NoteFocusShortcut(window.window, event);
   return handled;
+}
+
++ (void)installDeferredFocusMonitor {
+  static id monitor;
+  if (monitor) return;
+  monitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskApplicationDefined handler:^NSEvent *(NSEvent *marker) {
+    if (marker.subtype != kDeferredFocusSubtype) return marker;
+    NSWindow *window = [NSApp windowWithWindowNumber:marker.data1];
+    return [[SolaraCoreWindowController forNSWindow:window] runDeferredFocusShortcut:marker.data2] ? nil : marker;
+  }];
+}
+
+- (void)deferFocusShortcut:(NSMenuItem *)item event:(NSEvent *)event window:(NSWindow *)nsWindow {
+  [SolaraCoreWindowController installDeferredFocusMonitor];
+  _deferredFocusShortcut = item.identifier;
+  _deferredFocusEvent = event;
+  _deferredFocusWasKey = nsWindow.isKeyWindow;
+  const NSInteger generation = ++_deferredFocusGeneration;
+  NoteFocusShortcut(nsWindow, event);
+  NSEvent *marker = [NSEvent otherEventWithType:NSEventTypeApplicationDefined location:NSZeroPoint modifierFlags:0 timestamp:event.timestamp
+                                   windowNumber:nsWindow.windowNumber context:nil subtype:kDeferredFocusSubtype data1:nsWindow.windowNumber data2:generation];
+#if DEBUG
+  if (!getenv("SOLARA_SHELL_DROP_FOCUS_MARKER")) [NSApp postEvent:marker atStart:YES];
+#else
+  [NSApp postEvent:marker atStart:YES];
+#endif
+  [self performSelector:@selector(runDeferredFocusFallback:) withObject:@(generation) afterDelay:1 inModes:@[ NSDefaultRunLoopMode ]];
+}
+
+- (void)runDeferredFocusFallback:(NSNumber *)generation {
+  if ([self runDeferredFocusShortcut:generation.integerValue]) NSLog(@"[solaracore] focus shortcut marker never arrived; ran it from the fallback");
+}
+
+- (BOOL)runDeferredFocusShortcut:(NSInteger)generation {
+  if (!_deferredFocusShortcut || generation != _deferredFocusGeneration) return NO;
+  NSEvent *event = _deferredFocusEvent;
+  NSWindow *target = self.coreWindow.window;
+  const BOOL wasKey = _deferredFocusWasKey;
+  _deferredFocusShortcut = nil;
+  _deferredFocusEvent = nil;
+  NSWindow *key = NSApp.keyWindow;
+  const BOOL live = target && target.isVisible && !self.coreWindow.closing && (key == target || (!wasKey && !key));
+  if (live) [NSApp.mainMenu performKeyEquivalent:event];
+  return YES;
 }
 
 - (BOOL)window:(SolaraCoreWindow *)window handleKeyEvent:(NSEvent *)event {

@@ -299,6 +299,36 @@ try {
     return counts;
   });
   for (const surface of [
+    { name: "page-focused panel", variant: "panel", addressBar: "toolbar", newTab: false },
+    { name: "page-focused sidebar", variant: "sidebar", addressBar: "sidebar", newTab: false },
+  ]) {
+    await check(`${surface.name}: Cmd-L pressed in the page focuses the Command Bar with the URL selected`, async () => {
+      current = surface;
+      await activate("a");
+      await run(`ac.store.getState().updateSettings({ addressBar: ${JSON.stringify(surface.addressBar)}, commandBarPlacement: "field", newTabOpens: "commandBar" }); return true;`);
+      await nativeWindow(`${surface.name} begins with the panel closed`, (window) => window?.selectedTabId === "a" && window.panelOpen === false);
+      if (surface.addressBar === "sidebar") {
+        await nativeWindow("sidebar address field mounted", (window) => window?.sidebarAddressBar?.inWindow === true);
+      }
+      await until("native address anchor ready", () => run(`return acPerf.findFibers("NativeOmniboxBar", 30).some((f) => {
+        const props = f.memoizedProps;
+        const panel = props.panel && JSON.parse(props.panel);
+        return props.tabId === "a" && panel && !panel.open && panel.ready && (panel.variant ?? "panel") === ${JSON.stringify(surface.variant)};
+      });`));
+      const result = await run(`return ac.shell.devKeyEquivalent("w1", { key: "l", keyCode: 37, modifiers: ["command"], focus: "page", send: true, asKey: true });`);
+      assert.ok(!result?.error, JSON.stringify(result));
+      assert.equal(result.firstResponder, "RenderWidgetHostViewCocoa", "Cmd-L is pressed while the page has focus");
+      await until(`${surface.name} opens the Command Bar`, () => run(`return ac.store.getState().windowUi.w1?.panel.open === true;`));
+      await bindNativeBar(surface);
+      const focused = await observe(`${surface.name} opened`, (state) => state.typed === state.value && state.value === `${base}/start`
+        && isDeepStrictEqual(state.selection, { start: 0, end: state.value.length }));
+      assert.equal(focused.focused, true);
+      assert.equal(focused.variant, surface.variant);
+      await activate("a");
+      await nativeWindow(`${surface.name} closes again`, (window) => window?.panelOpen === false);
+    });
+  }
+  for (const surface of [
     { name: "panel Cmd-L", variant: "panel", addressBar: "toolbar", newTab: false },
     { name: "sidebar Cmd-L", variant: "sidebar", addressBar: "sidebar", newTab: false },
     { name: "New Tab Cmd-T panel", variant: "panel", addressBar: "toolbar", newTab: true },

@@ -365,9 +365,12 @@ final class TopStripHost {
       if !NativeGroupActions.close(groupId) { call("closeGroup", groupId) }
     case .tuck(let groupId):
       if !NativeGroupActions.tuck(groupId, windowId: windowId) { call("tuck", groupId) }
-    case .folderMenu(let groupId): call("folderMenu", groupId)
-    case .tileFolder(let folderId): call("tileFolder", folderId)
-    case .tileFolderMenu(let folderId): call("tileFolderMenu", folderId)
+    case .folderMenu(let groupId):
+      if !NativeTileFolders.stripGroupMenu(windowId: windowId, groupId: groupId) { call("folderMenu", groupId) }
+    case .tileFolder(let folderId):
+      if !NativeTileFolders.stripTileMenu(windowId: windowId, folderId: folderId) { call("tileFolder", folderId) }
+    case .tileFolderMenu(let folderId):
+      if !NativeTileFolders.folderMenu(windowId: windowId, folderId: folderId) { call("tileFolderMenu", folderId) }
     case .newTab(let split): call("newTab", "", ["split": split])
     }
   }

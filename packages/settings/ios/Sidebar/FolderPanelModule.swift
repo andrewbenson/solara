@@ -27,6 +27,55 @@ public class FolderPanelModule: Module {
         SidebarFolderPanelHost.hide(on: page)
       }
     }.runOnQueue(.main)
+
+    AsyncFunction("look") { (windowId: String, json: String) in
+      FrameUpdates.readOnMain {
+        guard let look = FolderPanelLook.decode(json) else { return }
+        NativeTileFolders.setLook(windowId: windowId, look: look)
+      }
+    }.runOnQueue(.main)
+
+    AsyncFunction("toggle") { (windowId: String, folderId: String) -> Bool in
+      FrameUpdates.readOnMain { NativeTileFolders.toggle(windowId: windowId, folderId: folderId) }
+    }.runOnQueue(.main)
+
+    AsyncFunction("close") { (windowId: String?) -> Bool in
+      FrameUpdates.readOnMain {
+        guard NativeTileFolders.owned else { return false }
+        if let windowId { NativeTileFolders.close(in: windowId) } else { NativeTileFolders.close() }
+        return true
+      }
+    }.runOnQueue(.main)
+
+    AsyncFunction("folderMenu") { (windowId: String, folderId: String) -> Bool in
+      FrameUpdates.readOnMain { NativeTileFolders.folderMenu(windowId: windowId, folderId: folderId) }
+    }.runOnQueue(.main)
+
+    AsyncFunction("rename") { (windowId: String, folderId: String, title: String?) -> Bool in
+      FrameUpdates.readOnMain { NativeTileFolders.rename(windowId: windowId, folderId: folderId, title: title ?? "Rename Folder") }
+    }.runOnQueue(.main)
+
+    AsyncFunction("newFolderWithTab") { (windowId: String, tabId: String) -> Bool in
+      FrameUpdates.readOnMain { NativeTileFolders.newFolderWithTab(windowId: windowId, tabId: tabId) }
+    }.runOnQueue(.main)
+
+    AsyncFunction("leaveFolder") { (tabId: String) -> Bool in
+      FrameUpdates.readOnMain { NativeTileFolders.leaveFolder(tabId: tabId) }
+    }.runOnQueue(.main)
+
+    AsyncFunction("stripGroupMenu") { (windowId: String, groupId: String) -> Bool in
+      FrameUpdates.readOnMain { NativeTileFolders.stripGroupMenu(windowId: windowId, groupId: groupId) }
+    }.runOnQueue(.main)
+
+    AsyncFunction("stripTileMenu") { (windowId: String, folderId: String) -> Bool in
+      FrameUpdates.readOnMain { NativeTileFolders.stripTileMenu(windowId: windowId, folderId: folderId) }
+    }.runOnQueue(.main)
+
+    #if DEBUG
+    AsyncFunction("devHandled") { () -> Int in
+      FrameUpdates.readOnMain { NativeTileFolders.handled }
+    }.runOnQueue(.main)
+    #endif
   }
 
   fileprivate func send(windowId: String, folderId: String, _ event: FolderPanelEvent) {

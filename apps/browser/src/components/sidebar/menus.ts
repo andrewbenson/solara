@@ -183,8 +183,8 @@ export async function openTabMenu(windowId: string, tab: Tab) {
   else if (choice === "unpinMember") s.placeTabs([tab.id], { pinned: false, groupId: null });
   else if (choice === "pinTile") s.pinTabs([tab.id], true, false);
   else if (choice === "pinRow") s.pinTabs([tab.id], true, true);
-  else if (choice === "newFolder") newFolderWithTab(windowId, tab.id);
-  else if (choice === "leaveFolder") removeFromFolder(tab.id);
+  else if (choice === "newFolder") void newFolderWithTab(windowId, tab.id);
+  else if (choice === "leaveFolder") void removeFromFolder(tab.id);
   else if (choice === "duplicate") s.duplicateTab(tab.id);
   else if (choice === "ungroupTab") s.removeTabsFromGroup([tab.id]);
   else if (choice === "newGroup") newGroupWithSelection(windowId, [tab.id]);

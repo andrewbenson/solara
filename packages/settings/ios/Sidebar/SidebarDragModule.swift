@@ -159,7 +159,13 @@ final class NativeSidebarDrag: SidebarDragBridge {
 
   func haptic() { send("sidebar.drag.haptic", []) }
 
-  func closeFolderPanel(windowId: String) { send("sidebar.drag.closePanel", [windowId]) }
+  func closeFolderPanel(windowId: String) {
+    if NativeTileFolders.owned {
+      DispatchQueue.main.async { MainActor.assumeIsolated { _ = NativeTileFolders.close() } }
+    } else {
+      send("sidebar.drag.closePanel", [windowId])
+    }
+  }
 
   func changed(windowId: String) {
     if SidebarDragHub.probing { Self.refreshSoon(windowId) }

@@ -103,7 +103,7 @@ enum NativeWorkspaceRename {
     }
   }
 
-  private static func prompt(
+  static func prompt(
     _ title: String, value: String, placeholder: String, windowId: String, store: Store, apply: @escaping @MainActor (String) -> Void
   ) {
     let alert = NSAlert()

@@ -11,6 +11,7 @@ enum NativeSidebar {
 
   static func register() {
     NativeWorkspaceRename.start()
+    NativeTileFolders.start()
     NativeNumberedTabs.register()
     NativeSidebarLive.start()
     NativeSidebarHoverCard.start()
@@ -154,6 +155,7 @@ final class SidebarHost {
     guard !stopped else { return }
     stopped = true
     NativeWorkspaceRename.windowGone(windowId)
+    NativeTileFolders.hostStopped(windowId, page: view.current)
     commits.host = nil
     view.onAction = { _ in }
     view.stop()
@@ -199,6 +201,7 @@ final class SidebarHost {
     self.state = state
     if let renaming = NativeWorkspaceRename.override(windowId) { host.renaming = renaming }
     view.update(state: state, host: host)
+    NativeTileFolders.render(windowId: windowId)
   }
 
   private func loadMark(_ uri: String?) {
@@ -269,13 +272,21 @@ final class SidebarHost {
     case .overflowMenu: call("overflowMenu", "")
     case .newTab(let split): call("newTab", "", ["split": split])
     case .newTabDoubleClick: call("newTab", "", ["split": false])
-    case .folder(let folderId): call("folder", folderId)
-    case .folderMenu(let folderId): call("folderMenu", folderId)
+    case .folder(let folderId):
+      if NativeTileFolders.toggle(windowId: windowId, folderId: folderId) { call("handled", folderId) } else { call("folder", folderId) }
+    case .folderMenu(let folderId):
+      if !NativeTileFolders.folderMenu(windowId: windowId, folderId: folderId) { call("folderMenu", folderId) }
     case .tidy: call("tidy", hostState?.profileId ?? "")
     case .clear: call("clear", "")
     case .cleanUp(let choice): call("cleanUp", choice.rawValue)
     case .hover(let kind, let id): call("hover", id ?? "", ["kind": kind ?? NSNull()])
-    case .scrolled: call("scrolled", "")
+    case .scrolled:
+      if NativeTileFolders.owned {
+        NativeTileFolders.close(in: windowId)
+        call("handled", "")
+      } else {
+        call("scrolled", "")
+      }
     case .renamed(let kind, let id, let text):
       if WorkspaceActionRouter.ownedStore == nil {
         call("renamed", id, ["kind": kind, "text": text ?? NSNull()])

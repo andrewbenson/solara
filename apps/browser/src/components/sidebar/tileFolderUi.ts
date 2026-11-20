@@ -1,4 +1,5 @@
 import { prompt, showMenu } from "@solara/shell";
+import { requireOptionalNativeModule } from "expo-modules-core";
 import { create } from "zustand";
 import { useBrowser } from "../../store/browser";
 import { plural } from "../../store/model";
@@ -8,23 +9,59 @@ import { measureRow } from "./state";
 import { encodeCommand } from "@solara/store";
 import { nativeOwnsWorkspace, nativeWrite } from "../../store/nativeStore";
 
-type Open = { windowId: string; folderId: string; anchor: { x: number; y: number; width: number; height: number } };
+type Open = { windowId: string; folderId: string; native?: boolean; anchor?: { x: number; y: number; width: number; height: number } };
+
+type NativeTileFolders = {
+  toggle(windowId: string, folderId: string): Promise<boolean>;
+  close(windowId: string | null): Promise<boolean>;
+  folderMenu(windowId: string, folderId: string): Promise<boolean>;
+  rename(windowId: string, folderId: string, title: string | null): Promise<boolean>;
+  newFolderWithTab(windowId: string, tabId: string): Promise<boolean>;
+  leaveFolder(tabId: string): Promise<boolean>;
+  stripGroupMenu(windowId: string, groupId: string): Promise<boolean>;
+  stripTileMenu(windowId: string, folderId: string): Promise<boolean>;
+};
+
+const nativeFolders = requireOptionalNativeModule<NativeTileFolders>("SolaraFolderPanel");
+
+export const nativeTileFolders = () => (nativeOwnsWorkspace() && nativeFolders?.toggle ? nativeFolders : null);
 
 export const useFolderPanel = create<{ open: Open | null }>()(() => ({ open: null }));
 
+let mirroredSeq = 0;
+
+export function mirrorFolderPanel(windowId: string, folderId: string, seq: number) {
+  if (seq <= mirroredSeq) return;
+  mirroredSeq = seq;
+  useFolderPanel.setState({ open: windowId && folderId ? { windowId, folderId, native: true } : null });
+}
+
 export const folderPanel = () => useFolderPanel.getState().open;
 
+function closeOpen(open: Open, windowId: string | null) {
+  if (open.native && nativeFolders?.close) {
+    void nativeFolders.close(windowId).then((closed) => {
+      if (!closed && useFolderPanel.getState().open === open) useFolderPanel.setState({ open: null });
+    });
+    return;
+  }
+  if (useFolderPanel.getState().open === open) useFolderPanel.setState({ open: null });
+}
+
 export function closeFolderPanel() {
-  if (useFolderPanel.getState().open) useFolderPanel.setState({ open: null });
+  const open = folderPanel();
+  if (open) closeOpen(open, null);
 }
 
 export function closeFolderPanelIn(windowId: string | undefined): boolean {
-  if (!windowId || folderPanel()?.windowId !== windowId) return false;
-  closeFolderPanel();
+  const open = folderPanel();
+  if (!windowId || !open || open.windowId !== windowId) return false;
+  closeOpen(open, windowId);
   return true;
 }
 
 export async function toggleFolderPanel(windowId: string, folderId: string) {
+  if (await nativeTileFolders()?.toggle(windowId, folderId)) return;
   const open = folderPanel();
   if (open?.windowId === windowId && open.folderId === folderId) return closeFolderPanel();
   dismissHover();
@@ -35,6 +72,7 @@ export async function toggleFolderPanel(windowId: string, folderId: string) {
 const store = () => useBrowser.getState();
 
 export async function renameFolder(windowId: string, folderId: string, title = "Rename Folder") {
+  if (await nativeTileFolders()?.rename(windowId, folderId, title)) return;
   const folder = folderIn(store(), windowId, folderId);
   if (!folder) return;
   const name = await prompt({ title, value: folder.name, placeholder: "Folder", confirmTitle: "Update", windowId });
@@ -43,7 +81,8 @@ export async function renameFolder(windowId: string, folderId: string, title = "
   else useBrowser.setState((s) => renameTileFolder(s, windowId, folderId, name));
 }
 
-export function newFolderWithTab(windowId: string, tabId: string) {
+export async function newFolderWithTab(windowId: string, tabId: string) {
+  if (await nativeTileFolders()?.newFolderWithTab(windowId, tabId)) return;
   let folderId: string | null | undefined;
   if (nativeOwnsWorkspace()) folderId = nativeWrite(encodeCommand("newTileFolder", [[tabId]]))?.result as string | undefined;
   else {
@@ -55,12 +94,14 @@ export function newFolderWithTab(windowId: string, tabId: string) {
   void renameFolder(windowId, folderId, "Name Folder");
 }
 
-export function removeFromFolder(tabId: string) {
+export async function removeFromFolder(tabId: string) {
+  if (await nativeTileFolders()?.leaveFolder(tabId)) return;
   if (nativeOwnsWorkspace()) nativeWrite(encodeCommand("leaveTileFolder", [[tabId]]));
   else useBrowser.setState((s) => leaveTileFolder(s, [tabId]));
 }
 
 export async function openTileFolderMenu(windowId: string, folderId: string) {
+  if (await nativeTileFolders()?.folderMenu(windowId, folderId)) return;
   dismissHover();
   const members = folderMembers(store(), windowId, folderId);
   if (!members.length) return;

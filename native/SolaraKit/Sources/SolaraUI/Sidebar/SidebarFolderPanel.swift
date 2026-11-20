@@ -507,6 +507,12 @@ public struct FolderPanelRequest: Decodable, Equatable, Sendable {
     public var tabId: String
     public var title: String
     public var active: Bool
+
+    public init(tabId: String, title: String, active: Bool) {
+      self.tabId = tabId
+      self.title = title
+      self.active = active
+    }
   }
 
   public var folderId: String
@@ -515,6 +521,15 @@ public struct FolderPanelRequest: Decodable, Equatable, Sendable {
   public var dark: Bool
   public var theme: [String: String]
   public var panelShadowOpacity: Double?
+
+  public init(folderId: String, label: String, members: [Member], dark: Bool, theme: [String: String], panelShadowOpacity: Double?) {
+    self.folderId = folderId
+    self.label = label
+    self.members = members
+    self.dark = dark
+    self.theme = theme
+    self.panelShadowOpacity = panelShadowOpacity
+  }
 }
 
 @MainActor

@@ -1,5 +1,5 @@
 import { requireOptionalNativeModule, type EventSubscription } from "expo-modules-core";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useTheme } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
@@ -12,13 +12,43 @@ import { closeFolderPanel, openTileFolderMenu, useFolderPanel } from "./tileFold
 type FolderPanelNative = {
   show(windowId: string, json: string): Promise<void>;
   hide(windowId: string): Promise<void>;
+  look?(windowId: string, json: string): Promise<void>;
   addListener(event: "onFolderPanelEvent", listener: (e: { windowId: string; folderId: string; kind: string; tabId?: string }) => void): EventSubscription;
 };
 
 const nativePanel = requireOptionalNativeModule<FolderPanelNative>("SolaraFolderPanel");
 
 export function FolderPanel({ windowId }: { windowId: string }) {
-  const open = useFolderPanel((u) => (u.open?.windowId === windowId ? u.open : null));
+  return (
+    <>
+      <NativeFolderPanelLook windowId={windowId} />
+      <JsFolderPanel windowId={windowId} />
+    </>
+  );
+}
+
+function NativeFolderPanelLook({ windowId }: { windowId: string }) {
+  const theme = useTheme();
+  const json = JSON.stringify({ dark: !!theme.dark, theme: panelTokens(theme), panelShadowOpacity: theme.panelShadowOpacity });
+  useEffect(() => {
+    void nativePanel?.look?.(windowId, json);
+  }, [json, windowId]);
+  return null;
+}
+
+const panelTokens = (theme: ReturnType<typeof useTheme>) => ({
+  panel: theme.panel,
+  panelBorder: theme.panelBorder,
+  textPrimary: theme.textPrimary,
+  textSecondary: theme.textSecondary,
+  textTab: theme.textTab,
+  tabHover: theme.tabHover,
+  tabPressed: theme.tabPressed,
+  pinnedSelectedFill: theme.pinnedSelectedFill,
+});
+
+function JsFolderPanel({ windowId }: { windowId: string }) {
+  const open = useFolderPanel((u) => (u.open?.windowId === windowId && !u.open.native ? u.open : null));
   return <NativeFolderPanel windowId={windowId} folderId={open?.folderId ?? null} />;
 }
 
@@ -49,7 +79,7 @@ function NativeFolderPanel({ windowId, folderId }: { windowId: string; folderId:
   );
   useEffect(() => {
     const sub = nativePanel?.addListener("onFolderPanelEvent", (e) => {
-      if (e.windowId !== windowId || e.folderId !== folderId) return;
+      if (!folderId || e.windowId !== windowId || e.folderId !== folderId) return;
       const tab = e.tabId ? useBrowser.getState().tabs[e.tabId] : undefined;
       if (e.kind === "open" && e.tabId) {
         closeFolderPanel();
@@ -60,7 +90,7 @@ function NativeFolderPanel({ windowId, folderId }: { windowId: string; folderId:
     });
     return () => sub?.remove();
   }, [windowId, folderId]);
-  const tokens = { panel: theme.panel, panelBorder: theme.panelBorder, textPrimary: theme.textPrimary, textSecondary: theme.textSecondary, textTab: theme.textTab, tabHover: theme.tabHover, tabPressed: theme.tabPressed, pinnedSelectedFill: theme.pinnedSelectedFill };
+  const tokens = panelTokens(theme);
   const json = folderId
     ? JSON.stringify({
         folderId,
@@ -74,10 +104,22 @@ function NativeFolderPanel({ windowId, folderId }: { windowId: string; folderId:
         panelShadowOpacity: theme.panelShadowOpacity,
       })
     : null;
+  const shownHere = useRef(false);
   useEffect(() => {
-    if (json) void nativePanel?.show(windowId, json);
-    else void nativePanel?.hide(windowId);
+    if (json) {
+      shownHere.current = true;
+      void nativePanel?.show(windowId, json);
+    } else if (shownHere.current) {
+      shownHere.current = false;
+      const open = useFolderPanel.getState().open;
+      if (!(open?.native && open.windowId === windowId)) void nativePanel?.hide(windowId);
+    }
   }, [json, windowId]);
-  useEffect(() => () => void nativePanel?.hide(windowId), [windowId]);
+  useEffect(
+    () => () => {
+      if (shownHere.current) void nativePanel?.hide(windowId);
+    },
+    [windowId],
+  );
   return null;
 }

@@ -167,7 +167,7 @@ import { loadavg, tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { launch as launchInstance } from "../../../../scripts/lib/instance.mjs";
+import { launch as launchInstance, uiGateLaunching } from "../../../../scripts/lib/instance.mjs";
 import { buildSeed } from "./seed.mjs";
 import { fixtureReady, querySample, validateFixtureManifest } from "./omnibox-gate.mjs";
 import { writeSwitches } from "./js-bench.mjs";
@@ -800,6 +800,7 @@ async function makeTemplate(side) {
   if (opt.seed) return writeBigSeed(side);
   log(`seeding a session (${side.label})`);
   writeFileSync(join(dir, "onboarding.json"), JSON.stringify({ version: 1, completedAt: 1 }));
+  writeFileSync(join(dir, "bench-offline"), "1");
   const app = await new Instance(side, dir).launch();
   try {
     await app.run(`const w = ${WINDOW}; ac.store.getState().newTab(w, { url: "${base()}/static?id=seed" }); return w;`);
@@ -1105,10 +1106,22 @@ async function openNewTab(app) {
   let press, bar = null;
   for (let attempt = 0; attempt < 2 && !bar; attempt++) {
     press = await postSeen(app, "cmd+t");
-    if (!press) throw new FatalError("Cmd-T key never arrived in the app's key log after four posts; check event-posting access, session input delivery and AC_BENCH_KEYLOG before timing");
+    if (!press) {
+      const sample = join(app.dataDir, "input-stopped-sample.txt");
+      try { execFileSync("/usr/bin/sample", [String(app.pid), "2", "-file", sample], { stdio: "ignore", timeout: 20000 }); } catch {}
+      throw new FatalError(`Cmd-T: input delivery stopped: no key down reached the app's key log after four posts (main thread sampled into ${sample}). Also running: ${inputContenders(app.pid)}`);
+    }
     bar = await waitFor(app, (st) => st.pending.some((q) => q.journey === "j2" && q.bar !== undefined && q.t0 >= press.at - 5), 2500);
   }
   return { press, bar };
+}
+
+function inputContenders(ownPid) {
+  const lines = spawnSync("ps", ["-axo", "pid=,command="], { encoding: "utf8" }).stdout.split("\n");
+  const others = lines.map((l) => l.trim()).filter((l) => /MacOS\/Solara( |$)|swiftpm-testing-helper|\.xctest\/|acperf postkeys/.test(l) && !l.startsWith(`${ownPid} `) && !l.includes(resolve(opt.out)));
+  let holder = "none";
+  try { holder = readFileSync(join(tmpdir(), "ac-uitest.holder"), "utf8").trim(); } catch {}
+  return `${others.length ? others.map((l) => l.slice(0, 160)).join("; ") : "no other Solara instance, test helper or key poster"}; uitest lock: ${holder.slice(0, 200)}`;
 }
 
 async function newTabKey(app, side, i, k) {
@@ -1128,7 +1141,7 @@ async function newTabKey(app, side, i, k) {
     const now = await journeyState(app);
     const q = now.pending.find((x) => x.key === p.key);
     const d = (v) => (v === undefined ? "-" : Math.round(v - press.at));
-    return { lost: `no suggestions (pending: ${q ? `bar ${d(q.bar)} keyAt ${d(q.keyAt)} suggested ${d(q.suggested)}` : "gone"}; typed at +${Math.round(key.at - press.at)} (seen by the app after ${Math.round(delivery(app, key.at))} ms); marks ${(now.marks[p.key] ?? []).map(([k]) => k).join()})`, tab: p.key };
+    return { lost: `no suggestions (pending: ${q ? `bar ${d(q.bar)} keyAt ${d(q.keyAt)} suggested ${d(q.suggested)}` : "gone"}; typed at +${Math.round(key.at - press.at)} (seen by the app after ${Math.round(delivery(app, key.at))} ms); marks ${(now.marks[p.key] ?? []).map(([k]) => k).join()}${now.queries.some((x) => x.tabId === p.key && x.invalidated && x.keyAt >= key.at - 1) ? "; its query sample was invalidated by a later recompute" : ""})`, tab: p.key };
   }
   const correlated = querySample(done, p.key, "n", key.at, before.queries);
   const last = (step) => (sampled(done, step) > sampled(before, step) ? done.samples[step].at(-1) : NaN);
@@ -1721,6 +1734,10 @@ try {
   if (only.has("prepare")) {
     for (const side of sides) console.log(`prepared ${side.app} (rerun with --app ${side.app} --prepared)`);
     process.exit(0);
+  }
+  if (only.has("newtabkey") || only.has("navigate")) {
+    await uiGateLaunching(sides[0].app);
+    log("holding the uitest lock for the whole run: J2 and J4 post real keys, so no other agent's UI test runs alongside them");
   }
   for (const side of sides) await makeTemplate(side);
   if (sides.length > 1) shareBlockerStorage(sides);

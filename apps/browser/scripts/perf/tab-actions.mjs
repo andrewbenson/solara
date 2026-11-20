@@ -12,12 +12,14 @@
 //   node tab-actions.mjs report <out>
 //       Per side and action: median and p90 of event → last paint, its split, and React renders per action.
 //
-// Actions: click (sidebar row), ctrlTab (⌃Tab tapped: the switch lands on ⌃'s release), cmdNumber (⌘2/⌘7 between
+// Actions: click (sidebar row), ctrlTab (⌃Tab: steps to the next sidebar row, timed from its key down), cmdNumber (⌘2/⌘7 between
 // pinned tabs), cmdT (new tab), cmdClick (⌘-click a link: a background tab), cmdW (close a loaded tab), hoverClose
 // (the row's ✕), pin and unpin (Tabs › Pin), moveDown (⌃⇧PgDn).
+// cmdClick, pin, unpin and moveDown change only native views that post no mark, so they print `not timed: no paint
+// mark`, report in the "not timed" column and stay out of the medians.
 //
-// What is timed. The start is the AppKit event (its own timestamp, read by actabs.m's event monitor; for ⌃Tab the
-// flagsChanged that releases ⌃, for a click its mouse-up, which is what fires it, with the mouse-down in `press`;
+// What is timed. The start is the AppKit event (its own timestamp, read by actabs.m's event monitor; for a
+// click its mouse-up, which is what fires it, with the mouse-down in `press`;
 // for Tabs › Pin the menu action). The phases:
 //   event → store       the store has the action's change (a store listener added last, after every other listener)
 //   store → commit      React's render and commit of it (the first commit after the store change)
@@ -27,8 +29,10 @@
 //   display+CA commit   the blocks' end → Core Animation's commit of that transaction (AppKit layout, views drawn, commit)
 //   first paint         event → that commit, for the first React commit after the store change
 //   selection shown     event → the Core Animation commit that shows the new active row: the native sidebar's
+//                       SolaraSidebarSelectionShown notification, recorded by actabs.m as k:"n"
 //   ui                  event → the commit of the last React commit within 500 ms that changed anything on screen (a flush
-//                       Core Animation doesn't commit within 60 ms had nothing to draw)
+//                       Core Animation doesn't commit within 60 ms had nothing to draw, and a commit with no flush within
+//                       100 ms drew nothing: the next flush belongs to later work, such as the bench reading its results)
 //                       or, with the native top strip (SOLARA_NATIVE_TOP_STRIP=1), the commit that shows the strip's change
 //                       (its SolaraTopStripShown notification) when that is later
 //   page                event → the shown page's second requestAnimationFrame after it turned visible (CDP; switches)
@@ -197,7 +201,7 @@ class Rig {
     return lines.flatMap((l) => {
       try {
         const r = JSON.parse(l);
-        return (r.k === "e" ? r.made : r.q) >= from ? [r] : [];
+        return (r.k === "e" ? r.made : (r.q ?? r.s)) >= from ? [r] : [];
       } catch {
         return [];
       }
@@ -266,7 +270,7 @@ function analyse(rec, startAt, endWindow = 500) {
   const { changes, commits, flushes, pageFrame } = rec;
   const store = changes.find((c) => c.changed && c.t >= startAt - 1)?.t ?? changes.find((c) => c.t >= startAt - 1)?.t ?? NaN;
   const inWindow = commits.filter((t) => t >= (Number.isFinite(store) ? store : startAt) - 0.5 && t <= startAt + endWindow);
-  const flushAfter = (t) => flushes.find((f) => f.q >= t - 0.5);
+  const flushAfter = (t) => flushes.find((f) => f.q >= t - 0.5 && f.q - t < 100);
   const painted = inWindow.map((t) => ({ t, f: flushAfter(t) })).filter((x) => x.f && x.f.c - x.f.b < 60);
   const first = painted[0];
   const last = painted[painted.length - 1];
@@ -337,13 +341,20 @@ async function runAction(rig, ctx, name) {
       start = "up";
     }
   } else if (name === "ctrlTab") {
-    const ids = list.slice(2, 8);
-    await activate(ids[ctx.iter % 2 ? 0 : 1]);
-    await sleep(300);
-    await activate(ids[ctx.iter % 2 ? 1 : 0]);
-    expectTab = ids[ctx.iter % 2 ? 0 : 1];
+    if (!ctx.ctrlTabPairs) {
+      const rows = [];
+      for (const id of list.slice(0, 24)) {
+        const r = await rowPoint(rig, w1, id);
+        if (r) rows.push({ id, ...r });
+      }
+      rows.sort((a, b) => a.y - b.y);
+      ctx.ctrlTabPairs = rows.slice(1).map((b, i) => [rows[i], b]).filter(([a, b]) => b.y - a.y < a.height * 1.5).map(([a, b]) => [a.id, b.id]);
+      if (!ctx.ctrlTabPairs.length) throw new Error("no two adjacent tab rows for ⌃Tab");
+    }
+    const [from, to] = ctx.ctrlTabPairs[ctx.iter % ctx.ctrlTabPairs.length];
+    await activate(from);
+    expectTab = to;
     send = key("\t", KEYS.tab, ["ctrl"], { holdMs: 30, releaseMs: 20 });
-    start = "release";
   } else if (name === "cmdNumber") {
     const digit = ctx.iter % 2 ? "2" : "7";
     send = key(digit, KEYS[digit], ["cmd"]);
@@ -431,8 +442,9 @@ async function runAction(rig, ctx, name) {
   if (name === "cmdClick") {
     await S(`const s = S(), w = s.windows[${JSON.stringify(w1)}]; for (const id of w.tabIds) if (s.tabs[id].url.includes("-child")) S().closeTab(id); return true;`);
   }
+  const untimed = worked && !Number.isFinite(timing.total) ? "no paint mark" : undefined;
   return {
-    action: name, worked, ...(adds ? { reAdds: adds.reAdds, newAdds: adds.newAdds } : {}), ...timing, press: start === "up" ? startAt - sent.down : 0, switched: after !== before, expect: expectTab, landed: after,
+    action: name, worked, ...(untimed ? { untimed } : {}), ...(adds ? { reAdds: adds.reAdds, newAdds: adds.newAdds } : {}), ...timing, press: start === "up" ? startAt - sent.down : 0, switched: after !== before, expect: expectTab, landed: after,
     renders: got.renders, commits: got.commits.length, storeUpdates: got.storeUpdates, hostUpdates: got.hostUpdates, mounts: got.mounts, top: got.top,
   };
 }
@@ -474,7 +486,7 @@ async function oneLaunch(side, opts, out) {
         if (!sample) continue;
         const line = { side: side.label, launch: opts.launch, iter: k, ...sample };
         appendFileSync(join(out, "samples.jsonl"), JSON.stringify(line) + "\n");
-        console.log(`${side.label} ${name} ${k}: ${sample.error ?? `total ${sample.total?.toFixed(1)} ui ${sample.ui?.toFixed(1)} page ${sample.page?.toFixed(1)} renders ${sample.renders}`}`);
+        console.log(`${side.label} ${name} ${k}: ${sample.error ?? (sample.untimed ? `not timed: ${sample.untimed}` : null) ?? `total ${sample.total?.toFixed(1)} ui ${sample.ui?.toFixed(1)} page ${sample.page?.toFixed(1)} renders ${sample.renders}`}`);
       }
     }
   } finally {
@@ -516,14 +528,15 @@ function report() {
   const sides = [...new Set(samples.map((s) => s.side))];
   const actions = [...new Set(samples.map((s) => s.action))];
   const f = (x) => (Number.isFinite(x) ? x.toFixed(1) : "–");
-  console.log("| action | side | n | total median | total p90 | selection shown | first paint | event→store | store→commit | layout | main wait | UI blocks | display+CA commit | page | renders | commits | errors |");
-  console.log("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
+  console.log("| action | side | n | total median | total p90 | selection shown | first paint | event→store | store→commit | layout | main wait | UI blocks | display+CA commit | page | renders | commits | not timed | errors |");
+  console.log("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
   for (const a of actions)
     for (const side of sides) {
       const all = samples.filter((s) => s.action === a && s.side === side);
-      const ok = all.filter((s) => !s.error && s.worked !== false && Number.isFinite(s.total));
+      const untimed = all.filter((s) => !s.error && s.untimed);
+      const ok = all.filter((s) => !s.error && !s.untimed && s.worked !== false && Number.isFinite(s.total));
       const m = (k, q = 0.5) => quantile(ok.map((s) => s[k]), q);
-      console.log(`| ${a} | ${side} | ${ok.length} | ${f(m("total"))} | ${f(m("total", 0.9))} | ${f(m("shown"))} | ${f(m("firstPaint"))} | ${f(m("store"))} | ${f(m("commit"))} | ${f(m("layout"))} | ${f(m("mainWait"))} | ${f(m("blocks"))} | ${f(m("display"))} | ${f(m("page"))} | ${f(m("renders"))} | ${f(m("commits"))} | ${all.length - ok.length} |`);
+      console.log(`| ${a} | ${side} | ${ok.length} | ${f(m("total"))} | ${f(m("total", 0.9))} | ${f(m("shown"))} | ${f(m("firstPaint"))} | ${f(m("store"))} | ${f(m("commit"))} | ${f(m("layout"))} | ${f(m("mainWait"))} | ${f(m("blocks"))} | ${f(m("display"))} | ${f(m("page"))} | ${f(m("renders"))} | ${f(m("commits"))} | ${untimed.length ? `${untimed.length} (${untimed[0].untimed})` : 0} | ${all.length - ok.length - untimed.length} |`);
     }
 }
 

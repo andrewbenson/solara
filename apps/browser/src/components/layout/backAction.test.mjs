@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-const { backAction, reportsKnownHistory } = await import("./backAction.ts");
+const { backAction, knownHistoryFor, reportsKnownHistory } = await import("./backAction.ts");
+const { pageOf, patchPage } = await import("./pageState.ts");
 
 const facts = (over = {}) => ({ newTabShown: false, canGoBack: false, engineBack: false, backToNewTab: false, historyKnown: true, opener: undefined, ...over });
 
@@ -28,4 +29,19 @@ test("only a report of a real committed page makes the history known", () => {
   assert.equal(reportsKnownHistory("", false), false, "the initial empty event");
   assert.equal(reportsKnownHistory("https://a.com/", true), false, "still loading");
   assert.equal(reportsKnownHistory("https://a.com/", false), true);
+});
+
+test("a tab without an opener selects nothing new when its page's history becomes known, so the swipe doesn't re-render", () => {
+  const select = knownHistoryFor(undefined);
+  const before = select(pageOf("no-opener"));
+  patchPage("no-opener", { historyKnown: true });
+  assert.equal(pageOf("no-opener").historyKnown, true);
+  assert.equal(select(pageOf("no-opener")), before);
+});
+
+test("a link tab with an opener does see its history become known", () => {
+  const select = knownHistoryFor("opener");
+  assert.equal(select(pageOf("with-opener")), false);
+  patchPage("with-opener", { historyKnown: true });
+  assert.equal(select(pageOf("with-opener")), true);
 });

@@ -15,7 +15,7 @@ import { closeTab } from "../../lib/actions";
 import { backClosesToOpener } from "../../store/openers";
 import type { BrowserState } from "../../store/browser";
 import type { TabLive } from "../../store/types";
-import { backAction, type BackAction, type BackFacts } from "./backAction";
+import { backAction, knownHistoryFor, type BackAction, type BackFacts } from "./backAction";
 import { internalPageOf, tabDestination } from "../pages/urls";
 import { pageOf, patchPage, usePage } from "./pageState";
 
@@ -48,13 +48,13 @@ export function canGoForward(tabId: string, live: Pick<TabLive, "canGoForward">)
 
 export function useBackAction(tabId: string): BackAction {
   const pageId = useBrowser((s) => s.tabs[tabId]?.pageIn ?? tabId);
+  const opener = useBrowser((s) => backClosesToOpener(s, tabId));
   const canGoBack = useTabLive(pageId, (l) => l.canGoBack);
-  const hasLive = useBrowser((s) => !!s.live[pageId]);
+  const hasLive = useBrowser((s) => !!opener && !!s.live[pageId]);
   const newTabShown = usePage(pageId, (p) => !!p.newTabShown);
   const engineBack = usePage(pageId, (p) => !!p.engineBack);
   const backToNewTab = usePage(pageId, (p) => p.backToNewTab);
-  const historyKnown = usePage(pageId, (p) => p.historyKnown);
-  const opener = useBrowser((s) => backClosesToOpener(s, tabId));
+  const historyKnown = usePage(pageId, knownHistoryFor(opener));
   return backAction({ newTabShown, canGoBack: !!canGoBack, engineBack, backToNewTab, historyKnown: hasLive && historyKnown, opener });
 }
 

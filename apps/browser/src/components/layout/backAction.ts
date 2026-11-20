@@ -18,3 +18,5 @@ export function backAction(f: BackFacts): BackAction {
 export function reportsKnownHistory(url: string, isLoading: boolean): boolean {
   return !isLoading && !!url && url !== "about:blank";
 }
+
+export const knownHistoryFor = (opener: string | undefined) => (page: { historyKnown: boolean }): boolean => !!opener && page.historyKnown;

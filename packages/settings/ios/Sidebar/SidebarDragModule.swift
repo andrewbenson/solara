@@ -76,6 +76,12 @@ public class SidebarDragModule: Module {
     }.runOnQueue(.main)
     #endif
 
+    #if DEBUG
+    AsyncFunction("devGroupActions") { () -> Int in
+      FrameUpdates.readOnMain { NativeGroupActions.handled }
+    }.runOnQueue(.main)
+    #endif
+
     AsyncFunction("traceSamples") { () -> String in
       FrameUpdates.readOnMain {
         let data = (try? JSONSerialization.data(withJSONObject: SidebarDragTrace.shared.samples)) ?? Data("[]".utf8)

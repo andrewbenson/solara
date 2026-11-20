@@ -248,8 +248,10 @@ final class SidebarHost {
     case .toggleMute(let tabId): call("toggleMute", tabId)
     case .tabMenu(let tabId): call("tabMenu", tabId)
     case .groupMenu(let groupId): call("groupMenu", groupId)
-    case .toggleGroup(let groupId): call("toggleGroup", groupId)
-    case .closeGroup(let groupId): call("closeGroup", groupId)
+    case .toggleGroup(let groupId):
+      if !NativeGroupActions.toggle(groupId, collapsed: { !$0.collapsed }) { call("toggleGroup", groupId) }
+    case .closeGroup(let groupId):
+      if !NativeGroupActions.close(groupId) { call("closeGroup", groupId) }
     case .sidebarMenu: call("sidebarMenu", "")
     case .overflowMenu: call("overflowMenu", "")
     case .newTab(let split): call("newTab", "", ["split": split])

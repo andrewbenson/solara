@@ -354,9 +354,12 @@ final class TopStripHost {
     case .toggleMute(let tabId): call("toggleMute", tabId)
     case .tabMenu(let tabId): call("tabMenu", tabId)
     case .groupMenu(let groupId): call("groupMenu", groupId)
-    case .toggleGroup(let groupId, let collapse): call("toggleGroup", groupId, ["collapse": collapse])
-    case .closeGroup(let groupId): call("closeGroup", groupId)
-    case .tuck(let groupId): call("tuck", groupId)
+    case .toggleGroup(let groupId, let collapse):
+      if !NativeGroupActions.toggle(groupId, collapsed: { _ in collapse }) { call("toggleGroup", groupId, ["collapse": collapse]) }
+    case .closeGroup(let groupId):
+      if !NativeGroupActions.close(groupId) { call("closeGroup", groupId) }
+    case .tuck(let groupId):
+      if !NativeGroupActions.tuck(groupId, windowId: windowId) { call("tuck", groupId) }
     case .folderMenu(let groupId): call("folderMenu", groupId)
     case .tileFolder(let folderId): call("tileFolder", folderId)
     case .tileFolderMenu(let folderId): call("tileFolderMenu", folderId)

@@ -96,11 +96,10 @@ enum NativeSidebarShell {
         return true
       }
     }
-    let owner = ObjectIdentifier(store)
     let landing = parsed
-    DispatchQueue.main.async {
+    DispatchQueue.main.async { [weak owner = store] in
       MainActor.assumeIsolated {
-        guard let store = SettingsWrites.directStore, ObjectIdentifier(store) == owner else {
+        guard let store = SettingsWrites.directStore, store === owner else {
           return NSLog("[drop] %@: the store stood down before the drop opened", windowId)
         }
         DroppedTabs.open(store, windowId: windowId, items: items, placement: landing) { error in
@@ -1415,5 +1414,69 @@ private enum NativeDragCarry {
     guard (try? store.dispatch(command, origin: .native)) != nil else { return false }
     FrameUpdates.flush()
     return true
+  }
+}
+
+@MainActor
+enum NativeGroupActions {
+  #if DEBUG
+  private(set) static var handled = 0
+  #endif
+
+  static func toggle(_ groupId: String, collapsed: (TabGroup) -> Bool) -> Bool {
+    guard let store = SettingsWrites.directStore else { return false }
+    count()
+    guard let group = store.state.groups[groupId] else { return true }
+    dispatch(store, GroupActions.collapse(groupId, collapsed(group)))
+    return true
+  }
+
+  static func tuck(_ groupId: String, windowId: String) -> Bool {
+    guard let store = SettingsWrites.directStore else { return false }
+    count()
+    if let target = GroupActions.tuckTarget(store.state, windowId: windowId, groupId: groupId) {
+      dispatch(store, Command("activate", [.string(target)]))
+    }
+    return true
+  }
+
+  static func close(_ groupId: String) -> Bool {
+    guard let store = SettingsWrites.directStore else { return false }
+    switch GroupActions.close(store.state, groupId: groupId) {
+    case .nothing: count()
+    case .unload(let ids):
+      count()
+      dispatch(store, Command("closeTabs", [JSONValue(ids)]))
+    case .close(nil):
+      count()
+      dispatch(store, Command("closeGroup", [.string(groupId)]))
+    case .close(let confirm?):
+      let alert = NativeWorkspaceCommands.confirmAlert(confirm.title, message: confirm.message, button: confirm.confirmTitle, suppression: confirm.suppression)
+      NativeWorkspaceCommands.askGuarded(alert, windowId: confirm.windowId, setting: "warnBeforeClosingTabGroup", store: store) { [weak owner = store] in
+        guard let store = SettingsWrites.directStore, store === owner, store.state.groups[groupId] != nil else {
+          return NSLog("[groups] %@: gone or stood down while the close warning was open", groupId)
+        }
+        dispatch(store, Command("closeGroup", [.string(groupId)]))
+      }
+      #if DEBUG
+      if alert.window.sheetParent != nil || alert.window.isVisible { count() }
+      #endif
+    }
+    return true
+  }
+
+  private static func count() {
+    #if DEBUG
+    handled += 1
+    #endif
+  }
+
+  private static func dispatch(_ store: Store, _ command: Command) {
+    do {
+      try store.dispatch(command, origin: .native)
+    } catch {
+      NSLog("[groups] %@ refused: %@", command.name, String(describing: error))
+    }
+    FrameUpdates.flush()
   }
 }

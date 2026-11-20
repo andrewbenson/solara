@@ -221,7 +221,7 @@ import Testing
     sidebar.mouseEntered(with: NSEvent())
     sidebar.layoutSubtreeIfNeeded()
     let corners = sidebar.subviews.compactMap { $0 as? MediaCircleButton }
-    #expect(corners.allSatisfy { $0.subviews.first?.frame == CGRect(x: 3, y: 3, width: 12, height: 12) })
+    #expect(corners.allSatisfy { $0.subviews.first?.frame == CGRect(x: 3.5, y: 3.5, width: 13, height: 13) })
   }
 
   @Test func hoverCardForwardsTheCurrentStateAndCoalescesPointerEvents() {

@@ -196,7 +196,7 @@ struct SidebarPlayerCoverageTests {
     post(CGPoint(x: player.bounds.midX, y: 30), from: player, in: window)
     #expect(player.cornersShown)
     let close = try #require(player.controlFrames["close"])
-    let upperHalf = CGPoint(x: close.midX, y: close.minY + 2)
+    let upperHalf = CGPoint(x: close.midX, y: close.minY + 1)
     #expect(!player.bounds.contains(upperHalf))
     post(upperHalf, from: player, in: window)
     #expect(player.cornersShown)
@@ -214,6 +214,23 @@ struct SidebarPlayerCoverageTests {
     player.isHidden = true
     player.isHidden = false
     #expect(!player.cornersShown)
+  }
+
+  @Test func theCornerButtonsAreBiggerSitCloserToTheCardAndCoverTheRowsTheyOverhang() throws {
+    let (window, _, sidebar, player) = try mount()
+    defer { close(window, sidebar) }
+    post(CGPoint(x: player.bounds.midX, y: 30), from: player, in: window)
+    #expect(player.cornersShown)
+    let close = try #require(player.controlFrames["close"])
+    let mute = try #require(player.controlFrames["mute"])
+    #expect(close.size == CGSize(width: 20, height: 20))
+    #expect(mute.size == CGSize(width: 20, height: 20))
+    #expect(close.maxX == player.bounds.width + 2)
+    #expect(close.minY == -2)
+    #expect(close.minX - mute.maxX == 2)
+    let overhang = CGPoint(x: close.midX, y: close.minY + 1)
+    #expect(!player.bounds.contains(overhang))
+    #expect(FullScreenIslandCoverage.contains(player.convert(overhang, to: nil), in: window))
   }
 
   @Test func theCornerSliversOfTheCardTakeTheClickInsteadOfTheRowsBehind() throws {

@@ -6,6 +6,9 @@ import SolaraProbes
 
 public final class SidebarPlayerView: NSView, PointerCoverage {
   public static let height: CGFloat = 74
+  static let cornerSize: CGFloat = 20
+  static let cornerOverhang: CGFloat = 2
+  static let cornerGap: CGFloat = 2
   static let border: CGFloat = 0.5
   public static let gap: CGFloat = 8
 
@@ -209,8 +212,8 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
   private func paintCorners() {
     guard let state, let palette = look?.palette else { return }
     func ink(_ c: MediaCircleButton) -> NSColor { c.hovered ? palette.textPrimary : palette.textSecondary }
-    muteCorner.set(state.muted ? "speaker.wave.2.fill" : "speaker.slash.fill", size: 8, weight: .bold, color: ink(muteCorner), box: 12, tooltip: state.muted ? "Unmute Site" : "Mute Site")
-    closeCorner.set("xmark", size: 8, weight: .bold, color: ink(closeCorner), box: 12, tooltip: "Close Player")
+    muteCorner.set(state.muted ? "speaker.wave.2.fill" : "speaker.slash.fill", size: 9, weight: .bold, color: ink(muteCorner), box: 13, tooltip: state.muted ? "Unmute Site" : "Mute Site")
+    closeCorner.set("xmark", size: 9, weight: .bold, color: ink(closeCorner), box: 13, tooltip: "Close Player")
     muteCorner.isHidden = !hovered
     closeCorner.isHidden = !hovered
   }
@@ -264,7 +267,7 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
   func blocksHover(at point: NSPoint) -> Bool {
     guard let window, !isHiddenOrHasHiddenAncestor, alphaValue > 0 else { return false }
     let local = convert(point, from: nil)
-    guard cardRect.contains(local) else { return false }
+    guard cardRect.contains(local) || [closeCorner, muteCorner].contains(where: { !$0.isHidden && $0.frame.contains(local) }) else { return false }
     guard let frame = window.contentView?.superview, let hit = frame.hitTest(point) else { return true }
     return hit === self || hit.isDescendant(of: self)
   }
@@ -371,8 +374,9 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
     next.frame = CGRect(x: pad - 4 + 48, y: row, width: 24, height: 24)
     let seekX = pad - 4 + 72 + 6
     seek.frame = CGRect(x: seekX, y: row + 6, width: max(0, width - pad - seekX), height: 12)
-    closeCorner.frame = CGRect(x: width + 6 - 18, y: -6, width: 18, height: 18)
-    muteCorner.frame = CGRect(x: width + 6 - 18 - 2 - 18, y: -6, width: 18, height: 18)
+    let size = Self.cornerSize, overhang = Self.cornerOverhang
+    closeCorner.frame = CGRect(x: width + overhang - size, y: -overhang, width: size, height: size)
+    muteCorner.frame = CGRect(x: width + overhang - size - Self.cornerGap - size, y: -overhang, width: size, height: size)
   }
 
   public override func updateTrackingAreas() {

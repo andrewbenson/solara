@@ -121,3 +121,38 @@ test("an import window opening during sync cancellation cannot bypass the drain"
   await drain;
   assert.deepEqual(fixture.applied, []);
 });
+
+const adoptedBrowsers = JSON.stringify([{ id: "chrome", name: "Chrome", family: "chromium", profiles: [{ id: "first", name: "First" }, { id: "second", name: "Second" }] }]);
+
+test("adopting the browser list from Swift prepares a run exactly like listing in JS", async () => {
+  const listed = handlerFixture();
+  await listed.handlers["import.listBrowsers"]();
+  const adopted = handlerFixture();
+  assert.equal(adopted.handlers["import.adoptBrowsers"](adoptedBrowsers), true);
+  const request = { runId: "run", browserId: "chrome", profileIds: ["first", "second"], spaceIds: [], kinds: ["bookmarks"], target: "existing", withoutKey: false };
+  const a = await listed.handlers["import.run"](request);
+  const b = await adopted.handlers["import.run"](request);
+  assert.deepEqual(JSON.parse(JSON.stringify(b)), JSON.parse(JSON.stringify(a)));
+  assert.deepEqual(adopted.applied, listed.applied);
+});
+
+test("a run with no adopted or listed browsers is cancelled, as before", async () => {
+  const fixture = handlerFixture();
+  const result = await fixture.handlers["import.run"]({ runId: "run", browserId: "chrome", profileIds: ["first"], spaceIds: [], kinds: ["bookmarks"], target: "existing", withoutKey: false });
+  assert.equal(result.cancelled, true);
+});
+
+test("regression guard, true before C2 as well: a run keeps the source it started with when the browser list is replaced mid-run", async () => {
+  const entered = deferred();
+  const release = deferred();
+  const fixture = handlerFixture({ read: async () => { entered.resolve(); await release.promise; } });
+  fixture.handlers["import.adoptBrowsers"](adoptedBrowsers);
+  const run = fixture.handlers["import.run"]({ runId: "run", browserId: "chrome", profileIds: ["first"], spaceIds: [], kinds: ["bookmarks"], target: "existing", withoutKey: false });
+  await entered.promise;
+  fixture.handlers["import.adoptBrowsers"]("[]");
+  release.resolve();
+  const result = await run;
+  assert.equal(result.cancelled, undefined);
+  assert.equal(result.status.bookmarks, "done");
+  assert.deepEqual(fixture.applied, ["existing"]);
+});

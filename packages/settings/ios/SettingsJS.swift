@@ -93,3 +93,12 @@ public final class SettingsJS {
     }
   }
 }
+
+extension SettingsJS {
+  nonisolated static let adoptBrowsersDeadline: TimeInterval = 5
+
+  func adoptBrowsers(_ json: String, deadline: TimeInterval = SettingsJS.adoptBrowsersDeadline) async -> [[String: Any]]? {
+    guard (try? await invoke("import.adoptBrowsers", [json], timeout: deadline)) as? Bool == true else { return nil }
+    return (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [[String: Any]]
+  }
+}

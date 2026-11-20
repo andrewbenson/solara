@@ -380,6 +380,10 @@ export const importHandlers: Record<string, SettingsHandler> = {
     if (list) session.browsers = list;
     return list;
   },
+  "import.adoptBrowsers": (json: string) => {
+    session.browsers = JSON.parse(json) as BrowserSource[];
+    return true;
+  },
   "import.safariFullDiskAccess": () => importModule()?.safariHasFullDiskAccess() ?? false,
   "import.isUnlocked": (browserId: string) => importModule()?.isBrowserUnlocked(browserId) ?? false,
   "import.unlock": (browserId: string) => {

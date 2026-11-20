@@ -164,6 +164,56 @@ final class SessionEpochTests: XCTestCase {
     }
   }
 
+  func testSwiftUnlockWithNoForgetUnlocksAndReportsTrue() async {
+    let session = makeSession()
+    _ = session.claim()
+    let work = DispatchQueue(label: "work.standin", attributes: .concurrent)
+    let unlocked = await session.unlock("chrome", on: work, secret: { _, _ in Fixtures.chromiumSecret })
+    XCTAssertTrue(unlocked)
+    XCTAssertTrue(session.importer.isUnlocked("chrome"))
+  }
+
+  func testSwiftUnlockReportsFalseWhenAForgetLandsDuringItsWork() async {
+    let session = makeSession()
+    let owner = session.claim()
+    let work = DispatchQueue(label: "work.standin", attributes: .concurrent)
+    let entered = DispatchSemaphore(value: 0)
+    let release = DispatchSemaphore(value: 0)
+    let forgotten = Task.detached {
+      XCTAssertEqual(entered.wait(timeout: .now() + 10), .success)
+      session.forget(owner: owner)
+      release.signal()
+    }
+    let unlocked = await session.unlock("chrome", on: work, secret: { _, _ in
+      entered.signal()
+      _ = release.wait(timeout: .now() + 10)
+      return Fixtures.chromiumSecret
+    })
+    await forgotten.value
+    XCTAssertFalse(unlocked)
+    XCTAssertFalse(session.importer.isUnlocked("chrome"))
+  }
+
+  func testSwiftUnlockLosesToAJSForgetAlreadyQueued() async {
+    let session = makeSession()
+    let owner = session.claim()
+    let functions = DispatchQueue(label: "expo.modules.AsyncFunctionQueue.standin")
+    let work = DispatchQueue(label: "work.standin", attributes: .concurrent)
+    let blocker = DispatchSemaphore(value: 0)
+    let forgot = DispatchSemaphore(value: 0)
+    functions.async { _ = blocker.wait(timeout: .now() + 10) }
+    functions.async {
+      session.forget(owner: owner)
+      forgot.signal()
+    }
+    let unlocked = await session.unlock("chrome", on: work, secret: { _, _ in Fixtures.chromiumSecret })
+    XCTAssertTrue(unlocked)
+    XCTAssertTrue(session.importer.isUnlocked("chrome"))
+    blocker.signal()
+    XCTAssertEqual(forgot.wait(timeout: .now() + deadline), .success)
+    XCTAssertFalse(session.importer.isUnlocked("chrome"))
+  }
+
   func testOldOwnersLateBodyAfterANewCreateIsRejected() throws {
     let session = makeSession()
     let old = session.claim()

@@ -59,8 +59,57 @@ public final class ImportService: @unchecked Sendable {
 
   static let diaBundleId = ProcessInfo.processInfo.environment["SOLARA_IMPORT_DIA_BUNDLE_ID"] ?? DiaAutomation.bundleIdentifier
 
+  static let work = DispatchQueue(label: "solara.import", qos: .userInitiated, attributes: .concurrent)
+
   func keep(cookies: [Cookie], addresses: [ImportedAddress], cards: [ImportedCard], started: Int) -> String? {
     session.keep(cookies: cookies, addresses: addresses, cards: cards, started: started)
+  }
+
+  private func onWork<T: Sendable>(_ body: @escaping @Sendable () throws -> T) async throws -> T {
+    try await withCheckedThrowingContinuation { continuation in
+      Self.work.async { continuation.resume(with: Result { try body() }) }
+    }
+  }
+
+  public func browsersJSON() async -> String? {
+    try? await onWork { [importer] in try ImportModule.json(importer.discovery.list()) }
+  }
+
+  public func isUnlocked(_ browserId: String) -> Bool { importer.isUnlocked(browserId) }
+
+  public func unlock(_ browserId: String) async -> Bool {
+    await session.unlock(browserId, on: Self.work, secret: Self.secret)
+  }
+
+  public func safariHasFullDiskAccess() async -> Bool {
+    (try? await onWork { SafariDirect.hasAccess(home: Self.safariHome) }) ?? false
+  }
+
+  public func diaStatus(ask: Bool) async -> String? {
+    guard let json = try? await onWork({ try ImportModule.json(DiaAutomation.status(Self.diaBundleId, ask: ask)) }) else { return nil }
+    return (try? JSONSerialization.jsonObject(with: Data(json.utf8), options: [.fragmentsAllowed])) as? String
+  }
+
+  @MainActor public static func openPrivacySettings(_ pane: String) {
+    let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)")!
+    if ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] == "1" { NSLog("[import] background instance, not opening %@", url.absoluteString) } else { NSWorkspace.shared.open(url) }
+  }
+
+  @MainActor public static func chooseFile(_ kind: String) async -> String? {
+    let panel = NSOpenPanel()
+    panel.allowsMultipleSelection = false
+    switch kind {
+    case "safariExport":
+      panel.canChooseDirectories = true
+      panel.allowedContentTypes = [.zip]
+    case "bookmarksHTML":
+      panel.allowedContentTypes = [.html]
+    default:
+      panel.allowedContentTypes = [.commaSeparatedText]
+    }
+    return await withCheckedContinuation { continuation in
+      panel.begin { response in continuation.resume(returning: response == .OK ? panel.url?.path : nil) }
+    }
   }
 }
 
@@ -69,7 +118,7 @@ public class ImportModule: Module {
   private var importer: Importer { service.importer }
   private var jobs: ImportJobs { service.jobs }
   private var vault: ImportVault { service.vault }
-  private static let work = DispatchQueue(label: "solara.import", qos: .userInitiated, attributes: .concurrent)
+  private static var work: DispatchQueue { ImportService.work }
   private var owner = 0
 
   public func definition() -> ModuleDefinition {
@@ -150,8 +199,7 @@ public class ImportModule: Module {
     Function("safariHasFullDiskAccess") { () -> Bool in SafariDirect.hasAccess(home: ImportService.safariHome) }
 
     AsyncFunction("openFullDiskAccessSettings") { (promise: Promise) in
-      let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")!
-      if ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] == "1" { NSLog("[import] background instance, not opening %@", url.absoluteString) } else { NSWorkspace.shared.open(url) }
+      MainActor.assumeIsolated { ImportService.openPrivacySettings("Privacy_AllFiles") }
       promise.resolve(nil)
     }.runOnQueue(.main)
 
@@ -175,8 +223,7 @@ public class ImportModule: Module {
     }
 
     AsyncFunction("openAutomationSettings") { (promise: Promise) in
-      let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation")!
-      if ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] == "1" { NSLog("[import] background instance, not opening %@", url.absoluteString) } else { NSWorkspace.shared.open(url) }
+      MainActor.assumeIsolated { ImportService.openPrivacySettings("Privacy_Automation") }
       promise.resolve(nil)
     }.runOnQueue(.main)
 
@@ -210,18 +257,7 @@ public class ImportModule: Module {
     }
 
     AsyncFunction("chooseImportFile") { (kind: String, promise: Promise) in
-      let panel = NSOpenPanel()
-      panel.allowsMultipleSelection = false
-      switch kind {
-      case "safariExport":
-        panel.canChooseDirectories = true
-        panel.allowedContentTypes = [.zip]
-      case "bookmarksHTML":
-        panel.allowedContentTypes = [.html]
-      default:
-        panel.allowedContentTypes = [.commaSeparatedText]
-      }
-      panel.begin { response in promise.resolve(response == .OK ? panel.url?.path : nil) }
+      Task { @MainActor in promise.resolve(await ImportService.chooseFile(kind)) }
     }.runOnQueue(.main)
   }
 

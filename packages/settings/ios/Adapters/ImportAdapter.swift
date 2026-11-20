@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SolaraImportAdapter
 import SolaraUI
 
 @MainActor
@@ -7,6 +8,8 @@ final class ImportAdapter: ImportServices {
   static let progressTopic = "import.progress"
   static let targetsTopic = "import.targets"
   private var session = 0
+  private let direct = SettingsDirectWrites.store != nil
+  private var service: ImportService? { direct ? ImportService.shared : nil }
 
   func open() async -> ImportOpening {
     let opened = await SettingsAdapters.js("import.open") as? [String: Any] ?? [:]
@@ -20,7 +23,12 @@ final class ImportAdapter: ImportServices {
   }
 
   func listBrowsers() async -> [ImportBrowser]? {
-    guard let list = await SettingsAdapters.js("import.listBrowsers") as? [[String: Any]] else { return nil }
+    guard let service else {
+      guard let list = await SettingsAdapters.js("import.listBrowsers") as? [[String: Any]] else { return nil }
+      return list.compactMap(Self.browser)
+    }
+    guard let json = await service.browsersJSON() else { return nil }
+    guard let list = await SettingsJS.shared.adoptBrowsers(json) else { return nil }
     return list.compactMap(Self.browser)
   }
 
@@ -35,11 +43,20 @@ final class ImportAdapter: ImportServices {
     }
   }
 
-  func safariHasFullDiskAccess() async -> Bool { await SettingsAdapters.js("import.safariFullDiskAccess") as? Bool ?? false }
+  func safariHasFullDiskAccess() async -> Bool {
+    guard let service else { return await SettingsAdapters.js("import.safariFullDiskAccess") as? Bool ?? false }
+    return await service.safariHasFullDiskAccess()
+  }
 
-  func isBrowserUnlocked(_ browserId: String) async -> Bool { await SettingsAdapters.js("import.isUnlocked", browserId) as? Bool ?? false }
+  func isBrowserUnlocked(_ browserId: String) async -> Bool {
+    guard let service else { return await SettingsAdapters.js("import.isUnlocked", browserId) as? Bool ?? false }
+    return service.isUnlocked(browserId)
+  }
 
-  func unlockBrowser(_ browserId: String) async -> Bool { await SettingsAdapters.js("import.unlock", browserId) as? Bool ?? false }
+  func unlockBrowser(_ browserId: String) async -> Bool {
+    guard let service else { return await SettingsAdapters.js("import.unlock", browserId) as? Bool ?? false }
+    return await service.unlock(browserId)
+  }
 
   func run(_ request: ImportRunRequest) async -> ImportRunOutcome {
     let arg: [String: Any] = [
@@ -54,7 +71,7 @@ final class ImportAdapter: ImportServices {
     return Self.runOutcome(await SettingsAdapters.js("import.run", arg, session), kinds: request.kinds)
   }
 
-  static func runOutcome(_ value: Any?, kinds: [ImportKind]) -> ImportRunOutcome {
+  static func runOutcome(_ value: Any?, kinds: [SolaraUI.ImportKind]) -> ImportRunOutcome {
     guard let result = value as? [String: Any] else {
       return ImportRunOutcome(
         status: Dictionary(uniqueKeysWithValues: kinds.map { ($0, ImportStatus.failed) }),
@@ -67,14 +84,14 @@ final class ImportAdapter: ImportServices {
     return ImportRunOutcome(
       status: Self.statuses(result["status"]),
       failures: result.list("failures").compactMap { f in
-        f.string("kind").flatMap(ImportKind.init(rawValue:)).map { ImportFailure(kind: $0, profiles: f.strings("profiles")) }
+        f.string("kind").flatMap(SolaraUI.ImportKind.init(rawValue:)).map { ImportFailure(kind: $0, profiles: f.strings("profiles")) }
       },
       counts: Self.counts(result.dict("counts")),
       notes: result.strings("notes"),
       extensionsProfile: extensions.string("profileId") ?? "",
       extensions: extensions.list("list").compactMap { e in
         guard let id = e.string("id") else { return nil }
-        return ImportedExtension(id: id, name: e.string("name") ?? id, webStoreUrl: e.string("webStoreUrl") ?? "")
+        return SolaraUI.ImportedExtension(id: id, name: e.string("name") ?? id, webStoreUrl: e.string("webStoreUrl") ?? "")
       }
     )
   }
@@ -83,9 +100,15 @@ final class ImportAdapter: ImportServices {
 
   func dispose() { SettingsJS.shared.fire("import.dispose") }
 
-  func diaAutomationStatus() async -> DiaStatus { Self.dia(await SettingsAdapters.js("import.diaStatus")) }
+  func diaAutomationStatus() async -> DiaStatus {
+    guard let service else { return Self.dia(await SettingsAdapters.js("import.diaStatus")) }
+    return Self.dia(await service.diaStatus(ask: false))
+  }
 
-  func requestDiaAutomation() async -> DiaStatus { Self.dia(await SettingsAdapters.js("import.requestDia")) }
+  func requestDiaAutomation() async -> DiaStatus {
+    guard let service else { return Self.dia(await SettingsAdapters.js("import.requestDia")) }
+    return Self.dia(await service.diaStatus(ask: ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] != "1"))
+  }
 
   func openDia() async -> Bool { await SettingsAdapters.js("import.openDia") as? Bool ?? false }
 
@@ -104,7 +127,7 @@ final class ImportAdapter: ImportServices {
   }
 
   func runDia(profileIds: [String], target: String, pinned: Bool, open: Bool) async -> ImportRunOutcome {
-    let kinds: [ImportKind] = (open ? [.tabs] : []) + (pinned ? [.pinnedTabs] : [])
+    let kinds: [SolaraUI.ImportKind] = (open ? [.tabs] : []) + (pinned ? [.pinnedTabs] : [])
     return Self.runOutcome(await SettingsAdapters.js("import.runDia", ["profileIds": profileIds, "target": target, "pinned": pinned, "open": open], session), kinds: kinds)
   }
 
@@ -121,12 +144,19 @@ final class ImportAdapter: ImportServices {
   }
 
   func chooseImportFile(_ kind: ImportFileKind) async -> String? {
-    await SettingsAdapters.js("import.chooseFile", kind.rawValue) as? String
+    guard direct else { return await SettingsAdapters.js("import.chooseFile", kind.rawValue) as? String }
+    return await ImportService.chooseFile(kind.rawValue)
   }
 
-  func openFullDiskAccessSettings() { SettingsJS.shared.fire("import.openFullDiskAccessSettings") }
+  func openFullDiskAccessSettings() {
+    guard direct else { return SettingsJS.shared.fire("import.openFullDiskAccessSettings") }
+    ImportService.openPrivacySettings("Privacy_AllFiles")
+  }
 
-  func openAutomationSettings() { SettingsJS.shared.fire("import.openAutomationSettings") }
+  func openAutomationSettings() {
+    guard direct else { return SettingsJS.shared.fire("import.openAutomationSettings") }
+    ImportService.openPrivacySettings("Privacy_Automation")
+  }
 
   func openInWebStore(profileId: String, urls: [String]) { SettingsJS.shared.fire("import.openInWebStore", profileId, urls, session) }
 
@@ -145,10 +175,10 @@ final class ImportAdapter: ImportServices {
     }
   }
 
-  static func statuses(_ value: Any?) -> [ImportKind: ImportStatus] {
-    var out: [ImportKind: ImportStatus] = [:]
+  static func statuses(_ value: Any?) -> [SolaraUI.ImportKind: ImportStatus] {
+    var out: [SolaraUI.ImportKind: ImportStatus] = [:]
     for (key, raw) in value as? [String: Any] ?? [:] {
-      if let kind = ImportKind(rawValue: key), let status = (raw as? String).flatMap(ImportStatus.init(rawValue:)) { out[kind] = status }
+      if let kind = SolaraUI.ImportKind(rawValue: key), let status = (raw as? String).flatMap(ImportStatus.init(rawValue:)) { out[kind] = status }
     }
     return out
   }
@@ -170,7 +200,7 @@ final class ImportAdapter: ImportServices {
     guard let dict = value as? [String: Any] else { return .failed(code: "unreadable") }
     if dict.bool("cancelled") == true { return .cancelled }
     if let code = dict.string("error") { return .failed(code: code) }
-    let failed = dict.strings("failed").compactMap(ImportKind.init(rawValue:))
+    let failed = dict.strings("failed").compactMap(SolaraUI.ImportKind.init(rawValue:))
     return .imported(counts(dict.dict("counts")), failed: failed)
   }
 
@@ -203,7 +233,7 @@ final class ImportAdapter: ImportServices {
       avatarPath: p.string("avatarPath"),
       color: p.string("color"),
       isDefault: p.bool("isDefault") ?? false,
-      available: p.strings("available").compactMap(ImportKind.init(rawValue:)),
+      available: p.strings("available").compactMap(SolaraUI.ImportKind.init(rawValue:)),
       spaces: p.list("spaces").compactMap { s in
         guard let id = s.string("id") else { return nil }
         return ImportSpace(id: id, name: s.string("name") ?? "", color: s.string("color"), emoji: s.string("emoji"), pinnedCount: s.int("pinnedCount") ?? 0, tabCount: s.int("tabCount") ?? 0)

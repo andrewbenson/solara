@@ -334,6 +334,21 @@ public final class ImportSession: @unchecked Sendable {
 
   public func isCurrent(_ started: Int) -> Bool { epoch.isCurrent(started) }
 
+  public func unlock(_ browserId: String, on queue: DispatchQueue, secret: @escaping Importer.SecretProvider) async -> Bool {
+    let started = epoch.current
+    let finished: Bool = await withCheckedContinuation { continuation in
+      queue.async {
+        do {
+          try self.importer.unlock(browserId: browserId, session: (self.epoch, started), secret: secret)
+          continuation.resume(returning: true)
+        } catch {
+          continuation.resume(returning: false)
+        }
+      }
+    }
+    return finished && epoch.isCurrent(started)
+  }
+
   @discardableResult
   public func forget() -> Int {
     let next = epoch.advance()

@@ -30,7 +30,7 @@ import {
 import { bookmarkAllTabs, bookmarkTab } from "../components/bookmarks/actions";
 import { useClearDataRequest } from "../components/pages/ClearDataDialog";
 import { openInternalPage } from "../components/pages/urls";
-import { isUtilityWindowId, openImport, openSettings, SETTINGS_WINDOW_ID } from "../components/settings/windows";
+import { openImport, openSettings } from "../components/settings/windows";
 import { focusSettingsSearch } from "../components/settings/searchState";
 import { closePanelToHeroBar, focusHeroBar } from "../components/omnibox/barState";
 import { closeNewTabBar, isEmptyCardTab, showNewTabBar, toggleNewTabBar } from "../components/omnibox/newTabBar";
@@ -44,7 +44,7 @@ import { togglePageEngine } from "./engines";
 import { goBack, goForward } from "../components/layout/history";
 import { openSplitPane, showToast } from "../components/layout/splitActions";
 import { copiedLinksMessage, copySelectedUrls } from "../components/sidebar/actions";
-import { LITTLE_SOLARA_PAGE_COMMANDS } from "./commandCatalog";
+import { commandRoute } from "./commandRoute";
 import { runSidebarCommand } from "../components/sidebar/commands";
 import { numberedTabs } from "../components/sidebar/entries";
 import { openExtensionFromMenu } from "../components/extensions/bridge";
@@ -56,7 +56,7 @@ import { shareTab } from "../components/site/share";
 import { openProfileMenu } from "../components/ProfileIndicator";
 import { groupOf, multiSelection } from "../store/organize";
 import { reopenClosedTogether } from "../store/closedTogether";
-import { isSmall, mainWindowFor, newWindowProfile, originalProfile } from "../store/small";
+import { newWindowProfile, originalProfile } from "../store/small";
 import {
   closeLittleSolara,
   cycleLittleSolaraProfile,
@@ -98,83 +98,27 @@ export function runCommand({ command, arg, windowId: requested }: CommandEvent) 
       });
   }
   const s = useBrowser.getState();
-
-  if (isUtilityWindowId(requested)) {
-    if (command === "closeTab") return void closeNativeWindow(requested!);
-    if (command === "findInPage" && requested === SETTINGS_WINDOW_ID) return focusSettingsSearch();
-    requested = null;
+  const route = commandRoute(s, command, requested);
+  switch (route.kind) {
+    case "utilityClose":
+      return void closeNativeWindow(route.windowId!);
+    case "settingsSearch":
+      return focusSettingsSearch();
+    case "littleSolara":
+      return void runLittleSolaraCommand(command, arg, route.windowId!);
+    case "peekPromote":
+    case "peekCloseFind":
+    case "peekDismiss":
+      return void runPeekCommand(command, route.windowId!);
   }
-  if (isSmall(s, requested) && runLittleSolaraCommand(command, arg, requested!)) return;
-  if (runPeekCommand(command, resolveWindowId(s, requested) ?? "")) return;
-
-  switch (command) {
-    case "newWindow":
-      return void openWindow({ profileId: newWindowProfile(s, requested, arg) });
-    case "newIncognitoWindow":
-      return void openWindow({ incognito: true, profileId: originalProfile(s, s.windows[requested ?? ""]) });
-    case "newLittleSolara":
-      return void openLittleSolara(undefined, arg ?? undefined);
-    case "toggleOpenLinksInLittleSolara":
-      return s.updateSettings({ openLinksInLittleSolara: !s.settings.openLinksInLittleSolara });
-    case "reopenClosedWindow":
-      return s.reopenClosedWindow();
-    case "setAppearance":
-      if (arg === "auto" || arg === "light" || arg === "dark") {
-        s.updateSettings({ appearance: arg });
-        void setAppearance(useBrowser.getState().settings.appearance);
-      }
-      return;
-    case "toggleFullUrl":
-      return s.updateSettings({ showFullUrl: !s.settings.showFullUrl });
-    case "toggleJavaScriptFromAppleEvents":
-      return s.updateSettings({ allowJavaScriptFromAppleEvents: !s.settings.allowJavaScriptFromAppleEvents });
-    case "setSidebarPosition":
-      if (arg === "left" || arg === "right") {
-        const id = resolveWindowId(s, requested);
-        if (id) return setSidebarPosition(id, arg);
-      }
-      return;
-    case "toggleSidebarIconsOnly":
-      return toggleSidebarIconsOnly(resolveWindowId(s, requested) ?? "");
-    case "toggleAddressBar":
-      return s.updateSettings({ addressBar: s.settings.addressBar === "sidebar" ? "toolbar" : "sidebar" });
-    case "openSettings":
-      return openSettings();
-    case "keyboardShortcuts":
-      return openSettings("shortcuts");
-    case "importBrowserData":
-      return openImport();
-    case "openFile":
-      return void openFiles(requested);
-    case "manageExtensions":
-      return openManageExtensions(requested);
-    case "setBookmarksBar":
-      if (arg === "always" || arg === "newTab" || arg === "never") s.updateSettings({ bookmarksBar: arg });
-      return;
-    case "toggleBookmarksBar": {
-      const mode = s.settings.bookmarksBar;
-      const target = resolveWindowId(s, requested);
-      const active = target ? activeTabId(s, target) : undefined;
-      const shown = mode === "always" || (mode === "newTab" && !(active && s.tabs[active]?.url));
-      return s.updateSettings({ bookmarksBar: shown ? "never" : "always" });
-    }
-  }
-
-  const invokedFrom = requested;
-  if (isSmall(s, requested) && !LITTLE_SOLARA_PAGE_COMMANDS.has(command)) {
-    requested = mainWindowFor(s, s.windows[requested!]!.profileId) ?? null;
-    if (requested) focus(requested);
-  }
-
-  if (command === "addFolderToSidebar" || command === "restoreArcFolders") {
-    const target = resolveWindowId(s, invokedFrom) ?? null;
-    if (arg && command === "addFolderToSidebar") addFolderToSidebar(arg, target);
-    else if (arg) restoreArcFolders(arg, target);
+  if (route.kind === "window") return runWindowCommand(command, arg, route.windowId);
+  if (route.focusWindow) focus(route.focusWindow);
+  if (route.kind === "invoker") {
+    if (arg && command === "addFolderToSidebar") addFolderToSidebar(arg, route.windowId);
+    else if (arg) restoreArcFolders(arg, route.windowId);
     return;
   }
-
-  const windowId = resolveWindowId(s, requested);
-  if (!windowId) {
+  if (route.kind === "noWindow") {
     if (command === "newTab") openWindow();
     if (command === "reopenClosedTab" || command === "restoreClosed") {
       if (arg) s.restoreClosed(arg);
@@ -182,7 +126,8 @@ export function runCommand({ command, arg, windowId: requested }: CommandEvent) 
     }
     return;
   }
-  const tabId = (LITTLE_SOLARA_PAGE_COMMANDS.has(command) && peekTabId(s, windowId)) || activeTabId(s, windowId);
+  const windowId = route.windowId!;
+  const tabId = route.tabId ?? undefined;
   const tab = tabId ? s.tabs[tabId] : undefined;
   const page = tab?.url ? tab : undefined;
   const web = tabId ? webviews.get(tabId) : undefined;
@@ -376,7 +321,63 @@ export function runCommand({ command, arg, windowId: requested }: CommandEvent) 
   }
 }
 
-function runLittleSolaraCommand(command: string, arg: string | null | undefined, windowId: string): boolean {
+function runWindowCommand(command: string, arg: string | null | undefined, requested: string | null) {
+  const s = useBrowser.getState();
+  switch (command) {
+    case "newWindow":
+      return void openWindow({ profileId: newWindowProfile(s, requested, arg) });
+    case "newIncognitoWindow":
+      return void openWindow({ incognito: true, profileId: originalProfile(s, s.windows[requested ?? ""]) });
+    case "newLittleSolara":
+      return void openLittleSolara(undefined, arg ?? undefined);
+    case "toggleOpenLinksInLittleSolara":
+      return s.updateSettings({ openLinksInLittleSolara: !s.settings.openLinksInLittleSolara });
+    case "reopenClosedWindow":
+      return s.reopenClosedWindow();
+    case "setAppearance":
+      if (arg === "auto" || arg === "light" || arg === "dark") {
+        s.updateSettings({ appearance: arg });
+        void setAppearance(useBrowser.getState().settings.appearance);
+      }
+      return;
+    case "toggleFullUrl":
+      return s.updateSettings({ showFullUrl: !s.settings.showFullUrl });
+    case "toggleJavaScriptFromAppleEvents":
+      return s.updateSettings({ allowJavaScriptFromAppleEvents: !s.settings.allowJavaScriptFromAppleEvents });
+    case "setSidebarPosition":
+      if (arg === "left" || arg === "right") {
+        const id = resolveWindowId(s, requested);
+        if (id) return setSidebarPosition(id, arg);
+      }
+      return;
+    case "toggleSidebarIconsOnly":
+      return toggleSidebarIconsOnly(resolveWindowId(s, requested) ?? "");
+    case "toggleAddressBar":
+      return s.updateSettings({ addressBar: s.settings.addressBar === "sidebar" ? "toolbar" : "sidebar" });
+    case "openSettings":
+      return openSettings();
+    case "keyboardShortcuts":
+      return openSettings("shortcuts");
+    case "importBrowserData":
+      return openImport();
+    case "openFile":
+      return void openFiles(requested);
+    case "manageExtensions":
+      return openManageExtensions(requested);
+    case "setBookmarksBar":
+      if (arg === "always" || arg === "newTab" || arg === "never") s.updateSettings({ bookmarksBar: arg });
+      return;
+    case "toggleBookmarksBar": {
+      const mode = s.settings.bookmarksBar;
+      const target = resolveWindowId(s, requested);
+      const active = target ? activeTabId(s, target) : undefined;
+      const shown = mode === "always" || (mode === "newTab" && !(active && s.tabs[active]?.url));
+      return s.updateSettings({ bookmarksBar: shown ? "never" : "always" });
+    }
+  }
+}
+
+function runLittleSolaraCommand(command: string, arg: string | null | undefined, windowId: string) {
   const s = useBrowser.getState();
   const tabId = activeTabId(s, windowId);
   const tab = tabId ? s.tabs[tabId] : undefined;
@@ -384,27 +385,26 @@ function runLittleSolaraCommand(command: string, arg: string | null | undefined,
     case "closeTab":
       if (s.windowUi[windowId]?.panel.open && tab?.url) s.closePanel(windowId);
       else closeLittleSolara(windowId);
-      return true;
+      return;
     case "focusCommandBar":
       s.openPanel(windowId, tab?.url ?? "");
-      return true;
+      return;
     case "openFile":
       openInMainWindow(windowId);
-      return true;
+      return;
     case "switchProfile":
       if (arg) moveLittleSolaraToProfile(windowId, arg);
-      return true;
+      return;
     case "nextProfile":
       cycleLittleSolaraProfile(windowId, 1);
-      return true;
+      return;
     case "previousProfile":
       cycleLittleSolaraProfile(windowId, -1);
-      return true;
+      return;
     case "openProfileMenu":
       void openLittleSolaraProfileMenu(windowId);
-      return true;
+      return;
   }
-  return false;
 }
 
 async function addBookmarkToFolder(windowId: string, tabId: string, folder: string) {

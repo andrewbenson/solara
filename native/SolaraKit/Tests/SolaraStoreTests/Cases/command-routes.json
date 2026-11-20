@@ -1,0 +1,5288 @@
+{
+ "format": 1,
+ "provenance": {
+  "recorder": "apps/browser/scripts/native/record-command-routes.mjs",
+  "revision": "6d459475",
+  "from": "apps/browser/src/lib/commands.ts runCommand and components/peek/actions.ts runPeekCommand at that revision, probed at each route's first effect"
+ },
+ "littleSolaraPageCommands": [
+  "addBookmarkToFolder",
+  "addExtension",
+  "autofill",
+  "back",
+  "bookmarkPage",
+  "caretBrowsing",
+  "cast",
+  "copyUrl",
+  "copyUrlAsMarkdown",
+  "devTools",
+  "downloads",
+  "emailPageLocation",
+  "findAndReplace",
+  "findInPage",
+  "findNext",
+  "findPrevious",
+  "forceReload",
+  "forward",
+  "inspectElements",
+  "javaScriptConsole",
+  "jumpToSelection",
+  "openBookmark",
+  "openExtension",
+  "print",
+  "printWithSystemDialog",
+  "reload",
+  "reopenClosedTab",
+  "restoreClosed",
+  "savePage",
+  "share",
+  "stop",
+  "toggleDevTools",
+  "toggleDeveloperMode",
+  "toggleMute",
+  "useSelectionForFind",
+  "viewSource",
+  "zoomIn",
+  "zoomOut",
+  "zoomReset"
+ ],
+ "littleSolaraCommands": [
+  "closeTab",
+  "focusCommandBar",
+  "nextProfile",
+  "openFile",
+  "openProfileMenu",
+  "previousProfile",
+  "switchProfile"
+ ],
+ "windowLevelCommands": [
+  "importBrowserData",
+  "keyboardShortcuts",
+  "manageExtensions",
+  "newIncognitoWindow",
+  "newLittleSolara",
+  "newWindow",
+  "openFile",
+  "openSettings",
+  "reopenClosedWindow",
+  "setAppearance",
+  "setBookmarksBar",
+  "setSidebarPosition",
+  "toggleAddressBar",
+  "toggleBookmarksBar",
+  "toggleFullUrl",
+  "toggleJavaScriptFromAppleEvents",
+  "toggleOpenLinksInLittleSolara",
+  "toggleSidebarIconsOnly"
+ ],
+ "invokerCommands": [
+  "addFolderToSidebar",
+  "restoreArcFolders"
+ ],
+ "utilityWindowIds": [
+  "import",
+  "settings"
+ ],
+ "cases": [
+  {
+   "name": "settings closeTab closes the settings window",
+   "command": "closeTab",
+   "arg": null,
+   "windowId": "settings",
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-1",
+    "a": "tab-mwoay7tlp5j3-2",
+    "b": "tab-mwoay7tlp5j3-3"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-1": {
+      "id": "w-mwoay7tlp5j3-1",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-3",
+       "tab-mwoay7tlp5j3-2"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-2"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225738
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-1"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-2": {
+      "id": "tab-mwoay7tlp5j3-2",
+      "windowId": "w-mwoay7tlp5j3-1",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 2,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225739,
+      "lastActiveAt": 1795138225740
+     },
+     "tab-mwoay7tlp5j3-3": {
+      "id": "tab-mwoay7tlp5j3-3",
+      "windowId": "w-mwoay7tlp5j3-1",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 4,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225741,
+      "lastActiveAt": 1795138225741,
+      "shownAt": 0
+     }
+    },
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-1",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-1"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "utilityClose",
+    "windowId": "settings",
+    "focusWindow": null,
+    "tabId": null
+   }
+  },
+  {
+   "name": "settings findInPage focuses Settings search",
+   "command": "findInPage",
+   "arg": null,
+   "windowId": "settings",
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-4",
+    "a": "tab-mwoay7tlp5j3-5",
+    "b": "tab-mwoay7tlp5j3-6"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-4": {
+      "id": "w-mwoay7tlp5j3-4",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-6",
+       "tab-mwoay7tlp5j3-5"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-5"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225742
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-4"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-5": {
+      "id": "tab-mwoay7tlp5j3-5",
+      "windowId": "w-mwoay7tlp5j3-4",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 6,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225742,
+      "lastActiveAt": 1795138225743
+     },
+     "tab-mwoay7tlp5j3-6": {
+      "id": "tab-mwoay7tlp5j3-6",
+      "windowId": "w-mwoay7tlp5j3-4",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 8,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225743,
+      "lastActiveAt": 1795138225743,
+      "shownAt": 0
+     }
+    },
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-4",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-4"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "settingsSearch",
+    "windowId": "settings",
+    "focusWindow": null,
+    "tabId": null
+   }
+  },
+  {
+   "name": "import closeTab closes the import window",
+   "command": "closeTab",
+   "arg": null,
+   "windowId": "import",
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-7",
+    "a": "tab-mwoay7tlp5j3-8",
+    "b": "tab-mwoay7tlp5j3-9"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-7": {
+      "id": "w-mwoay7tlp5j3-7",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-9",
+       "tab-mwoay7tlp5j3-8"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-8"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225743
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-7"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-8": {
+      "id": "tab-mwoay7tlp5j3-8",
+      "windowId": "w-mwoay7tlp5j3-7",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 10,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225743,
+      "lastActiveAt": 1795138225743
+     },
+     "tab-mwoay7tlp5j3-9": {
+      "id": "tab-mwoay7tlp5j3-9",
+      "windowId": "w-mwoay7tlp5j3-7",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 12,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225743,
+      "lastActiveAt": 1795138225743,
+      "shownAt": 0
+     }
+    },
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-7",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-7"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "utilityClose",
+    "windowId": "import",
+    "focusWindow": null,
+    "tabId": null
+   }
+  },
+  {
+   "name": "import window drops its id for a page command",
+   "command": "reload",
+   "arg": null,
+   "windowId": "import",
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-a",
+    "a": "tab-mwoay7tlp5j3-b",
+    "b": "tab-mwoay7tlp5j3-c"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-a": {
+      "id": "w-mwoay7tlp5j3-a",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-c",
+       "tab-mwoay7tlp5j3-b"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-b"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225743
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-a"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-b": {
+      "id": "tab-mwoay7tlp5j3-b",
+      "windowId": "w-mwoay7tlp5j3-a",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 14,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225743,
+      "lastActiveAt": 1795138225744
+     },
+     "tab-mwoay7tlp5j3-c": {
+      "id": "tab-mwoay7tlp5j3-c",
+      "windowId": "w-mwoay7tlp5j3-a",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 16,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225744,
+      "lastActiveAt": 1795138225744,
+      "shownAt": 0
+     }
+    },
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-a",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-a"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "main",
+    "windowId": "w-mwoay7tlp5j3-a",
+    "focusWindow": null,
+    "tabId": "tab-mwoay7tlp5j3-b"
+   }
+  },
+  {
+   "name": "import findInPage is an ordinary page command",
+   "command": "findInPage",
+   "arg": null,
+   "windowId": "import",
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-d",
+    "a": "tab-mwoay7tlp5j3-e",
+    "b": "tab-mwoay7tlp5j3-f"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-d": {
+      "id": "w-mwoay7tlp5j3-d",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-f",
+       "tab-mwoay7tlp5j3-e"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-e"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225744
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-d"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-e": {
+      "id": "tab-mwoay7tlp5j3-e",
+      "windowId": "w-mwoay7tlp5j3-d",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 18,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225744,
+      "lastActiveAt": 1795138225744
+     },
+     "tab-mwoay7tlp5j3-f": {
+      "id": "tab-mwoay7tlp5j3-f",
+      "windowId": "w-mwoay7tlp5j3-d",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 20,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225747,
+      "lastActiveAt": 1795138225747,
+      "shownAt": 0
+     }
+    },
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-d",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-d"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "main",
+    "windowId": "w-mwoay7tlp5j3-d",
+    "focusWindow": null,
+    "tabId": "tab-mwoay7tlp5j3-e"
+   }
+  },
+  {
+   "name": "a window-level command from Settings has no window",
+   "command": "newWindow",
+   "arg": null,
+   "windowId": "settings",
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-g",
+    "a": "tab-mwoay7tlp5j3-h",
+    "b": "tab-mwoay7tlp5j3-i"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-g": {
+      "id": "w-mwoay7tlp5j3-g",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-i",
+       "tab-mwoay7tlp5j3-h"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-h"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225747
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-g"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-h": {
+      "id": "tab-mwoay7tlp5j3-h",
+      "windowId": "w-mwoay7tlp5j3-g",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 22,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225747,
+      "lastActiveAt": 1795138225747
+     },
+     "tab-mwoay7tlp5j3-i": {
+      "id": "tab-mwoay7tlp5j3-i",
+      "windowId": "w-mwoay7tlp5j3-g",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 24,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225747,
+      "lastActiveAt": 1795138225747,
+      "shownAt": 0
+     }
+    },
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-g",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-g"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "window",
+    "windowId": null,
+    "focusWindow": null,
+    "tabId": null
+   }
+  },
+  {
+   "name": "small closeTab stays in Little Solara",
+   "command": "closeTab",
+   "arg": null,
+   "windowId": "w-mwoay7tlp5j3-m",
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-j",
+    "a": "tab-mwoay7tlp5j3-k",
+    "b": "tab-mwoay7tlp5j3-l",
+    "small": "w-mwoay7tlp5j3-m",
+    "small.active": "tab-mwoay7tlp5j3-n"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-j": {
+      "id": "w-mwoay7tlp5j3-j",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-l",
+       "tab-mwoay7tlp5j3-k"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-k"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225747
+     },
+     "w-mwoay7tlp5j3-m": {
+      "id": "w-mwoay7tlp5j3-m",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-n"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-n"
+      },
+      "sidebarOpen": false,
+      "frame": null,
+      "createdAt": 1795138225748,
+      "kind": "small"
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-j",
+     "w-mwoay7tlp5j3-m"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-k": {
+      "id": "tab-mwoay7tlp5j3-k",
+      "windowId": "w-mwoay7tlp5j3-j",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 26,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225747,
+      "lastActiveAt": 1795138225747
+     },
+     "tab-mwoay7tlp5j3-l": {
+      "id": "tab-mwoay7tlp5j3-l",
+      "windowId": "w-mwoay7tlp5j3-j",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 28,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225747,
+      "lastActiveAt": 1795138225747,
+      "shownAt": 0
+     },
+     "tab-mwoay7tlp5j3-n": {
+      "id": "tab-mwoay7tlp5j3-n",
+      "windowId": "w-mwoay7tlp5j3-m",
+      "profileId": "default",
+      "url": "https://s.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://s.example/",
+       "seq": 30,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225748,
+      "lastActiveAt": 1795138225748
+     }
+    },
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-m",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-m",
+      "w-mwoay7tlp5j3-j"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "littleSolara",
+    "windowId": "w-mwoay7tlp5j3-m",
+    "focusWindow": null,
+    "tabId": null
+   }
+  },
+  {
+   "name": "small focusCommandBar stays in Little Solara",
+   "command": "focusCommandBar",
+   "arg": null,
+   "windowId": "w-mwoay7tlp5j3-r",
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-o",
+    "a": "tab-mwoay7tlp5j3-p",
+    "b": "tab-mwoay7tlp5j3-q",
+    "small": "w-mwoay7tlp5j3-r",
+    "small.active": "tab-mwoay7tlp5j3-s"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-o": {
+      "id": "w-mwoay7tlp5j3-o",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-q",
+       "tab-mwoay7tlp5j3-p"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-p"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225755
+     },
+     "w-mwoay7tlp5j3-r": {
+      "id": "w-mwoay7tlp5j3-r",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-s"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-s"
+      },
+      "sidebarOpen": false,
+      "frame": null,
+      "createdAt": 1795138225755,
+      "kind": "small"
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-o",
+     "w-mwoay7tlp5j3-r"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-p": {
+      "id": "tab-mwoay7tlp5j3-p",
+      "windowId": "w-mwoay7tlp5j3-o",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 32,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225755,
+      "lastActiveAt": 1795138225755
+     },
+     "tab-mwoay7tlp5j3-q": {
+      "id": "tab-mwoay7tlp5j3-q",
+      "windowId": "w-mwoay7tlp5j3-o",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 34,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225755,
+      "lastActiveAt": 1795138225755,
+      "shownAt": 0
+     },
+     "tab-mwoay7tlp5j3-s": {
+      "id": "tab-mwoay7tlp5j3-s",
+      "windowId": "w-mwoay7tlp5j3-r",
+      "profileId": "default",
+      "url": "https://s.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://s.example/",
+       "seq": 36,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225755,
+      "lastActiveAt": 1795138225755
+     }
+    },
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-r",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-r",
+      "w-mwoay7tlp5j3-o"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "littleSolara",
+    "windowId": "w-mwoay7tlp5j3-r",
+    "focusWindow": null,
+    "tabId": null
+   }
+  },
+  {
+   "name": "small reload stays on the small window's page",
+   "command": "reload",
+   "arg": null,
+   "windowId": "w-mwoay7tlp5j3-w",
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-t",
+    "a": "tab-mwoay7tlp5j3-u",
+    "b": "tab-mwoay7tlp5j3-v",
+    "small": "w-mwoay7tlp5j3-w",
+    "small.active": "tab-mwoay7tlp5j3-x"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-t": {
+      "id": "w-mwoay7tlp5j3-t",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-v",
+       "tab-mwoay7tlp5j3-u"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-u"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225756
+     },
+     "w-mwoay7tlp5j3-w": {
+      "id": "w-mwoay7tlp5j3-w",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-x"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-x"
+      },
+      "sidebarOpen": false,
+      "frame": null,
+      "createdAt": 1795138225756,
+      "kind": "small"
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-t",
+     "w-mwoay7tlp5j3-w"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-u": {
+      "id": "tab-mwoay7tlp5j3-u",
+      "windowId": "w-mwoay7tlp5j3-t",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 38,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225756,
+      "lastActiveAt": 1795138225756
+     },
+     "tab-mwoay7tlp5j3-v": {
+      "id": "tab-mwoay7tlp5j3-v",
+      "windowId": "w-mwoay7tlp5j3-t",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 40,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225756,
+      "lastActiveAt": 1795138225756,
+      "shownAt": 0
+     },
+     "tab-mwoay7tlp5j3-x": {
+      "id": "tab-mwoay7tlp5j3-x",
+      "windowId": "w-mwoay7tlp5j3-w",
+      "profileId": "default",
+      "url": "https://s.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://s.example/",
+       "seq": 42,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225756,
+      "lastActiveAt": 1795138225756
+     }
+    },
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-w",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-w",
+      "w-mwoay7tlp5j3-t"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "main",
+    "windowId": "w-mwoay7tlp5j3-w",
+    "focusWindow": null,
+    "tabId": "tab-mwoay7tlp5j3-x"
+   }
+  },
+  {
+   "name": "small newTab goes to the profile's main window and focuses it",
+   "command": "newTab",
+   "arg": null,
+   "windowId": "w-mwoay7tlp5j3-11",
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-y",
+    "a": "tab-mwoay7tlp5j3-z",
+    "b": "tab-mwoay7tlp5j3-10",
+    "small": "w-mwoay7tlp5j3-11",
+    "small.active": "tab-mwoay7tlp5j3-12"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-y": {
+      "id": "w-mwoay7tlp5j3-y",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-10",
+       "tab-mwoay7tlp5j3-z"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-z"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225756
+     },
+     "w-mwoay7tlp5j3-11": {
+      "id": "w-mwoay7tlp5j3-11",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-12"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-12"
+      },
+      "sidebarOpen": false,
+      "frame": null,
+      "createdAt": 1795138225757,
+      "kind": "small"
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-y",
+     "w-mwoay7tlp5j3-11"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-z": {
+      "id": "tab-mwoay7tlp5j3-z",
+      "windowId": "w-mwoay7tlp5j3-y",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 44,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225756,
+      "lastActiveAt": 1795138225756
+     },
+     "tab-mwoay7tlp5j3-10": {
+      "id": "tab-mwoay7tlp5j3-10",
+      "windowId": "w-mwoay7tlp5j3-y",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 46,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225756,
+      "lastActiveAt": 1795138225756,
+      "shownAt": 0
+     },
+     "tab-mwoay7tlp5j3-12": {
+      "id": "tab-mwoay7tlp5j3-12",
+      "windowId": "w-mwoay7tlp5j3-11",
+      "profileId": "default",
+      "url": "https://s.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://s.example/",
+       "seq": 48,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225757,
+      "lastActiveAt": 1795138225757
+     }
+    },
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-11",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-11",
+      "w-mwoay7tlp5j3-y"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "main",
+    "windowId": "w-mwoay7tlp5j3-y",
+    "focusWindow": "w-mwoay7tlp5j3-y",
+    "tabId": "tab-mwoay7tlp5j3-z"
+   }
+  },
+  {
+   "name": "small nextTab goes to the main window",
+   "command": "nextTab",
+   "arg": null,
+   "windowId": "w-mwoay7tlp5j3-16",
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-13",
+    "a": "tab-mwoay7tlp5j3-14",
+    "b": "tab-mwoay7tlp5j3-15",
+    "small": "w-mwoay7tlp5j3-16",
+    "small.active": "tab-mwoay7tlp5j3-17"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-13": {
+      "id": "w-mwoay7tlp5j3-13",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-15",
+       "tab-mwoay7tlp5j3-14"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-14"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225758
+     },
+     "w-mwoay7tlp5j3-16": {
+      "id": "w-mwoay7tlp5j3-16",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-17"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-17"
+      },
+      "sidebarOpen": false,
+      "frame": null,
+      "createdAt": 1795138225758,
+      "kind": "small"
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-13",
+     "w-mwoay7tlp5j3-16"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-14": {
+      "id": "tab-mwoay7tlp5j3-14",
+      "windowId": "w-mwoay7tlp5j3-13",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 50,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225758,
+      "lastActiveAt": 1795138225758
+     },
+     "tab-mwoay7tlp5j3-15": {
+      "id": "tab-mwoay7tlp5j3-15",
+      "windowId": "w-mwoay7tlp5j3-13",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 52,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225758,
+      "lastActiveAt": 1795138225758,
+      "shownAt": 0
+     },
+     "tab-mwoay7tlp5j3-17": {
+      "id": "tab-mwoay7tlp5j3-17",
+      "windowId": "w-mwoay7tlp5j3-16",
+      "profileId": "default",
+      "url": "https://s.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://s.example/",
+       "seq": 54,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225758,
+      "lastActiveAt": 1795138225758
+     }
+    },
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-16",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-16",
+      "w-mwoay7tlp5j3-13"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "main",
+    "windowId": "w-mwoay7tlp5j3-13",
+    "focusWindow": "w-mwoay7tlp5j3-13",
+    "tabId": "tab-mwoay7tlp5j3-14"
+   }
+  },
+  {
+   "name": "small newWindow is window-level, not redirected",
+   "command": "newWindow",
+   "arg": null,
+   "windowId": "w-mwoay7tlp5j3-1b",
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-18",
+    "a": "tab-mwoay7tlp5j3-19",
+    "b": "tab-mwoay7tlp5j3-1a",
+    "small": "w-mwoay7tlp5j3-1b",
+    "small.active": "tab-mwoay7tlp5j3-1c"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-18": {
+      "id": "w-mwoay7tlp5j3-18",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-1a",
+       "tab-mwoay7tlp5j3-19"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-19"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225759
+     },
+     "w-mwoay7tlp5j3-1b": {
+      "id": "w-mwoay7tlp5j3-1b",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-1c"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-1c"
+      },
+      "sidebarOpen": false,
+      "frame": null,
+      "createdAt": 1795138225759,
+      "kind": "small"
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-18",
+     "w-mwoay7tlp5j3-1b"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-19": {
+      "id": "tab-mwoay7tlp5j3-19",
+      "windowId": "w-mwoay7tlp5j3-18",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 56,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225759,
+      "lastActiveAt": 1795138225759
+     },
+     "tab-mwoay7tlp5j3-1a": {
+      "id": "tab-mwoay7tlp5j3-1a",
+      "windowId": "w-mwoay7tlp5j3-18",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 58,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225759,
+      "lastActiveAt": 1795138225759,
+      "shownAt": 0
+     },
+     "tab-mwoay7tlp5j3-1c": {
+      "id": "tab-mwoay7tlp5j3-1c",
+      "windowId": "w-mwoay7tlp5j3-1b",
+      "profileId": "default",
+      "url": "https://s.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://s.example/",
+       "seq": 60,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225759,
+      "lastActiveAt": 1795138225759
+     }
+    },
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-1b",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-1b",
+      "w-mwoay7tlp5j3-18"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "window",
+    "windowId": "w-mwoay7tlp5j3-1b",
+    "focusWindow": null,
+    "tabId": null
+   }
+  },
+  {
+   "name": "small toggleBookmarksBar is window-level",
+   "command": "toggleBookmarksBar",
+   "arg": null,
+   "windowId": "w-mwoay7tlp5j3-1g",
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-1d",
+    "a": "tab-mwoay7tlp5j3-1e",
+    "b": "tab-mwoay7tlp5j3-1f",
+    "small": "w-mwoay7tlp5j3-1g",
+    "small.active": "tab-mwoay7tlp5j3-1h"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-1d": {
+      "id": "w-mwoay7tlp5j3-1d",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-1f",
+       "tab-mwoay7tlp5j3-1e"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-1e"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225759
+     },
+     "w-mwoay7tlp5j3-1g": {
+      "id": "w-mwoay7tlp5j3-1g",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-1h"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-1h"
+      },
+      "sidebarOpen": false,
+      "frame": null,
+      "createdAt": 1795138225759,
+      "kind": "small"
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-1d",
+     "w-mwoay7tlp5j3-1g"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-1e": {
+      "id": "tab-mwoay7tlp5j3-1e",
+      "windowId": "w-mwoay7tlp5j3-1d",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 62,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225759,
+      "lastActiveAt": 1795138225759
+     },
+     "tab-mwoay7tlp5j3-1f": {
+      "id": "tab-mwoay7tlp5j3-1f",
+      "windowId": "w-mwoay7tlp5j3-1d",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 64,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225759,
+      "lastActiveAt": 1795138225759,
+      "shownAt": 0
+     },
+     "tab-mwoay7tlp5j3-1h": {
+      "id": "tab-mwoay7tlp5j3-1h",
+      "windowId": "w-mwoay7tlp5j3-1g",
+      "profileId": "default",
+      "url": "https://s.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://s.example/",
+       "seq": 66,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225759,
+      "lastActiveAt": 1795138225759
+     }
+    },
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-1g",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-1g",
+      "w-mwoay7tlp5j3-1d"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "window",
+    "windowId": "w-mwoay7tlp5j3-1g",
+    "focusWindow": null,
+    "tabId": null
+   }
+  },
+  {
+   "name": "small addFolderToSidebar keeps the invoking window",
+   "command": "addFolderToSidebar",
+   "arg": "folder",
+   "windowId": "w-mwoay7tlp5j3-1l",
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-1i",
+    "a": "tab-mwoay7tlp5j3-1j",
+    "b": "tab-mwoay7tlp5j3-1k",
+    "small": "w-mwoay7tlp5j3-1l",
+    "small.active": "tab-mwoay7tlp5j3-1m"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-1i": {
+      "id": "w-mwoay7tlp5j3-1i",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-1k",
+       "tab-mwoay7tlp5j3-1j"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-1j"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225759
+     },
+     "w-mwoay7tlp5j3-1l": {
+      "id": "w-mwoay7tlp5j3-1l",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-1m"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-1m"
+      },
+      "sidebarOpen": false,
+      "frame": null,
+      "createdAt": 1795138225759,
+      "kind": "small"
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-1i",
+     "w-mwoay7tlp5j3-1l"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-1j": {
+      "id": "tab-mwoay7tlp5j3-1j",
+      "windowId": "w-mwoay7tlp5j3-1i",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 68,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225759,
+      "lastActiveAt": 1795138225759
+     },
+     "tab-mwoay7tlp5j3-1k": {
+      "id": "tab-mwoay7tlp5j3-1k",
+      "windowId": "w-mwoay7tlp5j3-1i",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 70,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225759,
+      "lastActiveAt": 1795138225759,
+      "shownAt": 0
+     },
+     "tab-mwoay7tlp5j3-1m": {
+      "id": "tab-mwoay7tlp5j3-1m",
+      "windowId": "w-mwoay7tlp5j3-1l",
+      "profileId": "default",
+      "url": "https://s.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://s.example/",
+       "seq": 72,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225759,
+      "lastActiveAt": 1795138225759
+     }
+    },
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-1l",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-1l",
+      "w-mwoay7tlp5j3-1i"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "invoker",
+    "windowId": "w-mwoay7tlp5j3-1l",
+    "focusWindow": "w-mwoay7tlp5j3-1i",
+    "tabId": null
+   }
+  },
+  {
+   "name": "main addFolderToSidebar",
+   "command": "addFolderToSidebar",
+   "arg": "folder",
+   "windowId": "w-mwoay7tlp5j3-1n",
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-1n",
+    "a": "tab-mwoay7tlp5j3-1o",
+    "b": "tab-mwoay7tlp5j3-1p"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-1n": {
+      "id": "w-mwoay7tlp5j3-1n",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-1p",
+       "tab-mwoay7tlp5j3-1o"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-1o"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225760
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-1n"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-1o": {
+      "id": "tab-mwoay7tlp5j3-1o",
+      "windowId": "w-mwoay7tlp5j3-1n",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 74,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225760,
+      "lastActiveAt": 1795138225760
+     },
+     "tab-mwoay7tlp5j3-1p": {
+      "id": "tab-mwoay7tlp5j3-1p",
+      "windowId": "w-mwoay7tlp5j3-1n",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 76,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225760,
+      "lastActiveAt": 1795138225760,
+      "shownAt": 0
+     }
+    },
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-1n",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-1n"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "invoker",
+    "windowId": "w-mwoay7tlp5j3-1n",
+    "focusWindow": null,
+    "tabId": null
+   }
+  },
+  {
+   "name": "small newTab skips a closing main window",
+   "command": "newTab",
+   "arg": null,
+   "windowId": "w-mwoay7tlp5j3-1t",
+   "closing": [
+    "w-mwoay7tlp5j3-1q"
+   ],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-1q",
+    "a": "tab-mwoay7tlp5j3-1r",
+    "b": "tab-mwoay7tlp5j3-1s",
+    "small": "w-mwoay7tlp5j3-1t",
+    "other": "w-mwoay7tlp5j3-1v",
+    "small.active": "tab-mwoay7tlp5j3-1u",
+    "other.active": "tab-mwoay7tlp5j3-1w"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-1q": {
+      "id": "w-mwoay7tlp5j3-1q",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-1s",
+       "tab-mwoay7tlp5j3-1r"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-1r"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225760
+     },
+     "w-mwoay7tlp5j3-1t": {
+      "id": "w-mwoay7tlp5j3-1t",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-1u"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-1u"
+      },
+      "sidebarOpen": false,
+      "frame": null,
+      "createdAt": 1795138225760,
+      "kind": "small"
+     },
+     "w-mwoay7tlp5j3-1v": {
+      "id": "w-mwoay7tlp5j3-1v",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-1w"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-1w"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225760
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-1q",
+     "w-mwoay7tlp5j3-1t",
+     "w-mwoay7tlp5j3-1v"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-1r": {
+      "id": "tab-mwoay7tlp5j3-1r",
+      "windowId": "w-mwoay7tlp5j3-1q",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 78,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225760,
+      "lastActiveAt": 1795138225760
+     },
+     "tab-mwoay7tlp5j3-1s": {
+      "id": "tab-mwoay7tlp5j3-1s",
+      "windowId": "w-mwoay7tlp5j3-1q",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 80,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225760,
+      "lastActiveAt": 1795138225760,
+      "shownAt": 0
+     },
+     "tab-mwoay7tlp5j3-1u": {
+      "id": "tab-mwoay7tlp5j3-1u",
+      "windowId": "w-mwoay7tlp5j3-1t",
+      "profileId": "default",
+      "url": "https://s.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://s.example/",
+       "seq": 82,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225760,
+      "lastActiveAt": 1795138225760
+     },
+     "tab-mwoay7tlp5j3-1w": {
+      "id": "tab-mwoay7tlp5j3-1w",
+      "windowId": "w-mwoay7tlp5j3-1v",
+      "profileId": "default",
+      "url": "https://o.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://o.example/",
+       "seq": 84,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225760,
+      "lastActiveAt": 1795138225760
+     }
+    },
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-1q",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-1q",
+      "w-mwoay7tlp5j3-1v",
+      "w-mwoay7tlp5j3-1t"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "main",
+    "windowId": "w-mwoay7tlp5j3-1v",
+    "focusWindow": "w-mwoay7tlp5j3-1v",
+    "tabId": "tab-mwoay7tlp5j3-1w"
+   }
+  },
+  {
+   "name": "Peek openFile promotes the Peek",
+   "command": "openFile",
+   "arg": null,
+   "windowId": "w-mwoay7tlp5j3-1x",
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-1x",
+    "a": "tab-mwoay7tlp5j3-1y",
+    "b": "tab-mwoay7tlp5j3-1z",
+    "peek": "tab-mwoay7tlp5j3-20"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-1x": {
+      "id": "w-mwoay7tlp5j3-1x",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-1z",
+       "tab-mwoay7tlp5j3-1y"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-1y"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225761
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-1x"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-1y": {
+      "id": "tab-mwoay7tlp5j3-1y",
+      "windowId": "w-mwoay7tlp5j3-1x",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 86,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225761,
+      "lastActiveAt": 1795138225761
+     },
+     "tab-mwoay7tlp5j3-1z": {
+      "id": "tab-mwoay7tlp5j3-1z",
+      "windowId": "w-mwoay7tlp5j3-1x",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 88,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225761,
+      "lastActiveAt": 1795138225761,
+      "shownAt": 0
+     },
+     "tab-mwoay7tlp5j3-20": {
+      "id": "tab-mwoay7tlp5j3-20",
+      "windowId": "w-mwoay7tlp5j3-1x",
+      "profileId": "default",
+      "url": "https://peek.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": "tab-mwoay7tlp5j3-1y",
+      "navigation": {
+       "url": "https://peek.example/",
+       "seq": 90,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225761,
+      "lastActiveAt": 1795138225761
+     }
+    },
+    "peeks": {
+     "w-mwoay7tlp5j3-1x": {
+      "tabId": "tab-mwoay7tlp5j3-20",
+      "sourceId": "tab-mwoay7tlp5j3-1y",
+      "sourcePage": "https://a.example/",
+      "from": null
+     }
+    },
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-1x",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-1x"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "peekPromote",
+    "windowId": "w-mwoay7tlp5j3-1x",
+    "focusWindow": null,
+    "tabId": "tab-mwoay7tlp5j3-20"
+   }
+  },
+  {
+   "name": "Peek closeTab with find open closes find",
+   "command": "closeTab",
+   "arg": null,
+   "windowId": "w-mwoay7tlp5j3-21",
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-21",
+    "a": "tab-mwoay7tlp5j3-22",
+    "b": "tab-mwoay7tlp5j3-23",
+    "peek": "tab-mwoay7tlp5j3-24"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-21": {
+      "id": "w-mwoay7tlp5j3-21",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-23",
+       "tab-mwoay7tlp5j3-22"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-22"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225761
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-21"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-22": {
+      "id": "tab-mwoay7tlp5j3-22",
+      "windowId": "w-mwoay7tlp5j3-21",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 92,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225761,
+      "lastActiveAt": 1795138225761
+     },
+     "tab-mwoay7tlp5j3-23": {
+      "id": "tab-mwoay7tlp5j3-23",
+      "windowId": "w-mwoay7tlp5j3-21",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 94,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225761,
+      "lastActiveAt": 1795138225761,
+      "shownAt": 0
+     },
+     "tab-mwoay7tlp5j3-24": {
+      "id": "tab-mwoay7tlp5j3-24",
+      "windowId": "w-mwoay7tlp5j3-21",
+      "profileId": "default",
+      "url": "https://peek.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": "tab-mwoay7tlp5j3-22",
+      "navigation": {
+       "url": "https://peek.example/",
+       "seq": 96,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225761,
+      "lastActiveAt": 1795138225761
+     }
+    },
+    "peeks": {
+     "w-mwoay7tlp5j3-21": {
+      "tabId": "tab-mwoay7tlp5j3-24",
+      "sourceId": "tab-mwoay7tlp5j3-22",
+      "sourcePage": "https://a.example/",
+      "from": null
+     }
+    },
+    "find": {
+     "tab-mwoay7tlp5j3-24": {
+      "open": true,
+      "query": "",
+      "count": null,
+      "active": 0
+     }
+    },
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-21",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-21"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "peekCloseFind",
+    "windowId": "w-mwoay7tlp5j3-21",
+    "focusWindow": null,
+    "tabId": "tab-mwoay7tlp5j3-24"
+   }
+  },
+  {
+   "name": "Peek closeTab dismisses the Peek",
+   "command": "closeTab",
+   "arg": null,
+   "windowId": "w-mwoay7tlp5j3-25",
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-25",
+    "a": "tab-mwoay7tlp5j3-26",
+    "b": "tab-mwoay7tlp5j3-27",
+    "peek": "tab-mwoay7tlp5j3-28"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-25": {
+      "id": "w-mwoay7tlp5j3-25",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-27",
+       "tab-mwoay7tlp5j3-26"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-26"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225762
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-25"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-26": {
+      "id": "tab-mwoay7tlp5j3-26",
+      "windowId": "w-mwoay7tlp5j3-25",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 98,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225762,
+      "lastActiveAt": 1795138225762
+     },
+     "tab-mwoay7tlp5j3-27": {
+      "id": "tab-mwoay7tlp5j3-27",
+      "windowId": "w-mwoay7tlp5j3-25",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 100,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225762,
+      "lastActiveAt": 1795138225762,
+      "shownAt": 0
+     },
+     "tab-mwoay7tlp5j3-28": {
+      "id": "tab-mwoay7tlp5j3-28",
+      "windowId": "w-mwoay7tlp5j3-25",
+      "profileId": "default",
+      "url": "https://peek.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": "tab-mwoay7tlp5j3-26",
+      "navigation": {
+       "url": "https://peek.example/",
+       "seq": 102,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225762,
+      "lastActiveAt": 1795138225762
+     }
+    },
+    "peeks": {
+     "w-mwoay7tlp5j3-25": {
+      "tabId": "tab-mwoay7tlp5j3-28",
+      "sourceId": "tab-mwoay7tlp5j3-26",
+      "sourcePage": "https://a.example/",
+      "from": null
+     }
+    },
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-25",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-25"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "peekDismiss",
+    "windowId": "w-mwoay7tlp5j3-25",
+    "focusWindow": null,
+    "tabId": "tab-mwoay7tlp5j3-28"
+   }
+  },
+  {
+   "name": "Peek closeTab with the panel open falls through",
+   "command": "closeTab",
+   "arg": null,
+   "windowId": "w-mwoay7tlp5j3-29",
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-29",
+    "a": "tab-mwoay7tlp5j3-2a",
+    "b": "tab-mwoay7tlp5j3-2b",
+    "peek": "tab-mwoay7tlp5j3-2c"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-29": {
+      "id": "w-mwoay7tlp5j3-29",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-2b",
+       "tab-mwoay7tlp5j3-2a"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-2a"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225762
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-29"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-2a": {
+      "id": "tab-mwoay7tlp5j3-2a",
+      "windowId": "w-mwoay7tlp5j3-29",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 104,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225762,
+      "lastActiveAt": 1795138225762
+     },
+     "tab-mwoay7tlp5j3-2b": {
+      "id": "tab-mwoay7tlp5j3-2b",
+      "windowId": "w-mwoay7tlp5j3-29",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 106,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225762,
+      "lastActiveAt": 1795138225762,
+      "shownAt": 0
+     },
+     "tab-mwoay7tlp5j3-2c": {
+      "id": "tab-mwoay7tlp5j3-2c",
+      "windowId": "w-mwoay7tlp5j3-29",
+      "profileId": "default",
+      "url": "https://peek.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": "tab-mwoay7tlp5j3-2a",
+      "navigation": {
+       "url": "https://peek.example/",
+       "seq": 108,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225762,
+      "lastActiveAt": 1795138225762
+     }
+    },
+    "peeks": {
+     "w-mwoay7tlp5j3-29": {
+      "tabId": "tab-mwoay7tlp5j3-2c",
+      "sourceId": "tab-mwoay7tlp5j3-2a",
+      "sourcePage": "https://a.example/",
+      "from": null
+     }
+    },
+    "find": {},
+    "windowUi": {
+     "w-mwoay7tlp5j3-29": {
+      "panel": {
+       "open": true,
+       "initialText": ""
+      },
+      "downloadsOpen": false
+     }
+    },
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-29",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-29"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "main",
+    "windowId": "w-mwoay7tlp5j3-29",
+    "focusWindow": null,
+    "tabId": "tab-mwoay7tlp5j3-2a"
+   }
+  },
+  {
+   "name": "a Little Solara page command targets the Peek tab",
+   "command": "reload",
+   "arg": null,
+   "windowId": "w-mwoay7tlp5j3-2d",
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-2d",
+    "a": "tab-mwoay7tlp5j3-2e",
+    "b": "tab-mwoay7tlp5j3-2f",
+    "peek": "tab-mwoay7tlp5j3-2g"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-2d": {
+      "id": "w-mwoay7tlp5j3-2d",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-2f",
+       "tab-mwoay7tlp5j3-2e"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-2e"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225762
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-2d"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-2e": {
+      "id": "tab-mwoay7tlp5j3-2e",
+      "windowId": "w-mwoay7tlp5j3-2d",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 110,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225762,
+      "lastActiveAt": 1795138225762
+     },
+     "tab-mwoay7tlp5j3-2f": {
+      "id": "tab-mwoay7tlp5j3-2f",
+      "windowId": "w-mwoay7tlp5j3-2d",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 112,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225762,
+      "lastActiveAt": 1795138225762,
+      "shownAt": 0
+     },
+     "tab-mwoay7tlp5j3-2g": {
+      "id": "tab-mwoay7tlp5j3-2g",
+      "windowId": "w-mwoay7tlp5j3-2d",
+      "profileId": "default",
+      "url": "https://peek.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": "tab-mwoay7tlp5j3-2e",
+      "navigation": {
+       "url": "https://peek.example/",
+       "seq": 114,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225763,
+      "lastActiveAt": 1795138225763
+     }
+    },
+    "peeks": {
+     "w-mwoay7tlp5j3-2d": {
+      "tabId": "tab-mwoay7tlp5j3-2g",
+      "sourceId": "tab-mwoay7tlp5j3-2e",
+      "sourcePage": "https://a.example/",
+      "from": null
+     }
+    },
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-2d",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-2d"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "main",
+    "windowId": "w-mwoay7tlp5j3-2d",
+    "focusWindow": null,
+    "tabId": "tab-mwoay7tlp5j3-2g"
+   }
+  },
+  {
+   "name": "a window command ignores the Peek tab",
+   "command": "nextTab",
+   "arg": null,
+   "windowId": "w-mwoay7tlp5j3-2h",
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-2h",
+    "a": "tab-mwoay7tlp5j3-2i",
+    "b": "tab-mwoay7tlp5j3-2j",
+    "peek": "tab-mwoay7tlp5j3-2k"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-2h": {
+      "id": "w-mwoay7tlp5j3-2h",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-2j",
+       "tab-mwoay7tlp5j3-2i"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-2i"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225763
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-2h"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-2i": {
+      "id": "tab-mwoay7tlp5j3-2i",
+      "windowId": "w-mwoay7tlp5j3-2h",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 116,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225763,
+      "lastActiveAt": 1795138225763
+     },
+     "tab-mwoay7tlp5j3-2j": {
+      "id": "tab-mwoay7tlp5j3-2j",
+      "windowId": "w-mwoay7tlp5j3-2h",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 118,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225763,
+      "lastActiveAt": 1795138225763,
+      "shownAt": 0
+     },
+     "tab-mwoay7tlp5j3-2k": {
+      "id": "tab-mwoay7tlp5j3-2k",
+      "windowId": "w-mwoay7tlp5j3-2h",
+      "profileId": "default",
+      "url": "https://peek.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": "tab-mwoay7tlp5j3-2i",
+      "navigation": {
+       "url": "https://peek.example/",
+       "seq": 120,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225763,
+      "lastActiveAt": 1795138225763
+     }
+    },
+    "peeks": {
+     "w-mwoay7tlp5j3-2h": {
+      "tabId": "tab-mwoay7tlp5j3-2k",
+      "sourceId": "tab-mwoay7tlp5j3-2i",
+      "sourcePage": "https://a.example/",
+      "from": null
+     }
+    },
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-2h",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-2h"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "main",
+    "windowId": "w-mwoay7tlp5j3-2h",
+    "focusWindow": null,
+    "tabId": "tab-mwoay7tlp5j3-2i"
+   }
+  },
+  {
+   "name": "Peek reached with no window id",
+   "command": "closeTab",
+   "arg": null,
+   "windowId": null,
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-2l",
+    "a": "tab-mwoay7tlp5j3-2m",
+    "b": "tab-mwoay7tlp5j3-2n",
+    "peek": "tab-mwoay7tlp5j3-2o"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-2l": {
+      "id": "w-mwoay7tlp5j3-2l",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-2n",
+       "tab-mwoay7tlp5j3-2m"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-2m"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225763
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-2l"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-2m": {
+      "id": "tab-mwoay7tlp5j3-2m",
+      "windowId": "w-mwoay7tlp5j3-2l",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 122,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225763,
+      "lastActiveAt": 1795138225763
+     },
+     "tab-mwoay7tlp5j3-2n": {
+      "id": "tab-mwoay7tlp5j3-2n",
+      "windowId": "w-mwoay7tlp5j3-2l",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 124,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225763,
+      "lastActiveAt": 1795138225763,
+      "shownAt": 0
+     },
+     "tab-mwoay7tlp5j3-2o": {
+      "id": "tab-mwoay7tlp5j3-2o",
+      "windowId": "w-mwoay7tlp5j3-2l",
+      "profileId": "default",
+      "url": "https://peek.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": "tab-mwoay7tlp5j3-2m",
+      "navigation": {
+       "url": "https://peek.example/",
+       "seq": 126,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225763,
+      "lastActiveAt": 1795138225763
+     }
+    },
+    "peeks": {
+     "w-mwoay7tlp5j3-2l": {
+      "tabId": "tab-mwoay7tlp5j3-2o",
+      "sourceId": "tab-mwoay7tlp5j3-2m",
+      "sourcePage": "https://a.example/",
+      "from": null
+     }
+    },
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-2l",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-2l"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "peekDismiss",
+    "windowId": "w-mwoay7tlp5j3-2l",
+    "focusWindow": null,
+    "tabId": "tab-mwoay7tlp5j3-2o"
+   }
+  },
+  {
+   "name": "Peek reached with an unknown window id",
+   "command": "openFile",
+   "arg": null,
+   "windowId": "gone",
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-2p",
+    "a": "tab-mwoay7tlp5j3-2q",
+    "b": "tab-mwoay7tlp5j3-2r",
+    "peek": "tab-mwoay7tlp5j3-2s"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-2p": {
+      "id": "w-mwoay7tlp5j3-2p",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-2r",
+       "tab-mwoay7tlp5j3-2q"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-2q"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225763
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-2p"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-2q": {
+      "id": "tab-mwoay7tlp5j3-2q",
+      "windowId": "w-mwoay7tlp5j3-2p",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 128,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225763,
+      "lastActiveAt": 1795138225763
+     },
+     "tab-mwoay7tlp5j3-2r": {
+      "id": "tab-mwoay7tlp5j3-2r",
+      "windowId": "w-mwoay7tlp5j3-2p",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 130,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225763,
+      "lastActiveAt": 1795138225763,
+      "shownAt": 0
+     },
+     "tab-mwoay7tlp5j3-2s": {
+      "id": "tab-mwoay7tlp5j3-2s",
+      "windowId": "w-mwoay7tlp5j3-2p",
+      "profileId": "default",
+      "url": "https://peek.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": "tab-mwoay7tlp5j3-2q",
+      "navigation": {
+       "url": "https://peek.example/",
+       "seq": 132,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225764,
+      "lastActiveAt": 1795138225764
+     }
+    },
+    "peeks": {
+     "w-mwoay7tlp5j3-2p": {
+      "tabId": "tab-mwoay7tlp5j3-2s",
+      "sourceId": "tab-mwoay7tlp5j3-2q",
+      "sourcePage": "https://a.example/",
+      "from": null
+     }
+    },
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-2p",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-2p"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "peekPromote",
+    "windowId": "w-mwoay7tlp5j3-2p",
+    "focusWindow": null,
+    "tabId": "tab-mwoay7tlp5j3-2s"
+   }
+  },
+  {
+   "name": "Peek reached from the import window",
+   "command": "openFile",
+   "arg": null,
+   "windowId": "import",
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-2t",
+    "a": "tab-mwoay7tlp5j3-2u",
+    "b": "tab-mwoay7tlp5j3-2v",
+    "peek": "tab-mwoay7tlp5j3-2w"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-2t": {
+      "id": "w-mwoay7tlp5j3-2t",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-2v",
+       "tab-mwoay7tlp5j3-2u"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-2u"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225764
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-2t"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-2u": {
+      "id": "tab-mwoay7tlp5j3-2u",
+      "windowId": "w-mwoay7tlp5j3-2t",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 134,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225764,
+      "lastActiveAt": 1795138225764
+     },
+     "tab-mwoay7tlp5j3-2v": {
+      "id": "tab-mwoay7tlp5j3-2v",
+      "windowId": "w-mwoay7tlp5j3-2t",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 136,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225764,
+      "lastActiveAt": 1795138225764,
+      "shownAt": 0
+     },
+     "tab-mwoay7tlp5j3-2w": {
+      "id": "tab-mwoay7tlp5j3-2w",
+      "windowId": "w-mwoay7tlp5j3-2t",
+      "profileId": "default",
+      "url": "https://peek.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": "tab-mwoay7tlp5j3-2u",
+      "navigation": {
+       "url": "https://peek.example/",
+       "seq": 138,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225764,
+      "lastActiveAt": 1795138225764
+     }
+    },
+    "peeks": {
+     "w-mwoay7tlp5j3-2t": {
+      "tabId": "tab-mwoay7tlp5j3-2w",
+      "sourceId": "tab-mwoay7tlp5j3-2u",
+      "sourcePage": "https://a.example/",
+      "from": null
+     }
+    },
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-2t",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-2t"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "peekPromote",
+    "windowId": "w-mwoay7tlp5j3-2t",
+    "focusWindow": null,
+    "tabId": "tab-mwoay7tlp5j3-2w"
+   }
+  },
+  {
+   "name": "a Peek moved into a small window is dropped, and closeTab stays Little Solara's",
+   "command": "closeTab",
+   "arg": null,
+   "windowId": "w-mwoay7tlp5j3-30",
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-2x",
+    "a": "tab-mwoay7tlp5j3-2y",
+    "b": "tab-mwoay7tlp5j3-2z",
+    "small": "w-mwoay7tlp5j3-30",
+    "smallPeek": "tab-mwoay7tlp5j3-32",
+    "small.active": "tab-mwoay7tlp5j3-31"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-2x": {
+      "id": "w-mwoay7tlp5j3-2x",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-2z",
+       "tab-mwoay7tlp5j3-2y"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-2y"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225764
+     },
+     "w-mwoay7tlp5j3-30": {
+      "id": "w-mwoay7tlp5j3-30",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-31"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-31"
+      },
+      "sidebarOpen": false,
+      "frame": null,
+      "createdAt": 1795138225764,
+      "kind": "small"
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-2x",
+     "w-mwoay7tlp5j3-30"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-2y": {
+      "id": "tab-mwoay7tlp5j3-2y",
+      "windowId": "w-mwoay7tlp5j3-2x",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 140,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225764,
+      "lastActiveAt": 1795138225764
+     },
+     "tab-mwoay7tlp5j3-2z": {
+      "id": "tab-mwoay7tlp5j3-2z",
+      "windowId": "w-mwoay7tlp5j3-2x",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 142,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225764,
+      "lastActiveAt": 1795138225764,
+      "shownAt": 0
+     },
+     "tab-mwoay7tlp5j3-31": {
+      "id": "tab-mwoay7tlp5j3-31",
+      "windowId": "w-mwoay7tlp5j3-30",
+      "profileId": "default",
+      "url": "https://s.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://s.example/",
+       "seq": 144,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225764,
+      "lastActiveAt": 1795138225764
+     }
+    },
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-30",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-30",
+      "w-mwoay7tlp5j3-2x"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "littleSolara",
+    "windowId": "w-mwoay7tlp5j3-30",
+    "focusWindow": null,
+    "tabId": null
+   }
+  },
+  {
+   "name": "a Peek moved into a small window is dropped, and a page command uses its own tab",
+   "command": "reload",
+   "arg": null,
+   "windowId": "w-mwoay7tlp5j3-36",
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-33",
+    "a": "tab-mwoay7tlp5j3-34",
+    "b": "tab-mwoay7tlp5j3-35",
+    "small": "w-mwoay7tlp5j3-36",
+    "smallPeek": "tab-mwoay7tlp5j3-38",
+    "small.active": "tab-mwoay7tlp5j3-37"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-33": {
+      "id": "w-mwoay7tlp5j3-33",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-35",
+       "tab-mwoay7tlp5j3-34"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-34"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225765
+     },
+     "w-mwoay7tlp5j3-36": {
+      "id": "w-mwoay7tlp5j3-36",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-37"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-37"
+      },
+      "sidebarOpen": false,
+      "frame": null,
+      "createdAt": 1795138225765,
+      "kind": "small"
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-33",
+     "w-mwoay7tlp5j3-36"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-34": {
+      "id": "tab-mwoay7tlp5j3-34",
+      "windowId": "w-mwoay7tlp5j3-33",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 148,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225765,
+      "lastActiveAt": 1795138225765
+     },
+     "tab-mwoay7tlp5j3-35": {
+      "id": "tab-mwoay7tlp5j3-35",
+      "windowId": "w-mwoay7tlp5j3-33",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 150,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225765,
+      "lastActiveAt": 1795138225765,
+      "shownAt": 0
+     },
+     "tab-mwoay7tlp5j3-37": {
+      "id": "tab-mwoay7tlp5j3-37",
+      "windowId": "w-mwoay7tlp5j3-36",
+      "profileId": "default",
+      "url": "https://s.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://s.example/",
+       "seq": 152,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225765,
+      "lastActiveAt": 1795138225765
+     }
+    },
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-36",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-36",
+      "w-mwoay7tlp5j3-33"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "main",
+    "windowId": "w-mwoay7tlp5j3-36",
+    "focusWindow": null,
+    "tabId": "tab-mwoay7tlp5j3-37"
+   }
+  },
+  {
+   "name": "a redirect with only incognito windows finds no main window",
+   "command": "newTab",
+   "arg": null,
+   "windowId": "w-mwoay7tlp5j3-3b",
+   "closing": [],
+   "roles": {
+    "incog": "w-mwoay7tlp5j3-39",
+    "small": "w-mwoay7tlp5j3-3b",
+    "incog.active": "tab-mwoay7tlp5j3-3a",
+    "small.active": "tab-mwoay7tlp5j3-3c"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-39": {
+      "id": "w-mwoay7tlp5j3-39",
+      "profileId": "incognito:w-mwoay7tlp5j3-39@default",
+      "incognito": true,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-3a"
+      ],
+      "activeTabIds": {
+       "incognito:w-mwoay7tlp5j3-39@default": "tab-mwoay7tlp5j3-3a"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225765,
+      "originalProfileId": "default"
+     },
+     "w-mwoay7tlp5j3-3b": {
+      "id": "w-mwoay7tlp5j3-3b",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-3c"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-3c"
+      },
+      "sidebarOpen": false,
+      "frame": null,
+      "createdAt": 1795138225765,
+      "kind": "small"
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-39",
+     "w-mwoay7tlp5j3-3b"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-3a": {
+      "id": "tab-mwoay7tlp5j3-3a",
+      "windowId": "w-mwoay7tlp5j3-39",
+      "profileId": "incognito:w-mwoay7tlp5j3-39@default",
+      "url": "https://i.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://i.example/",
+       "seq": 156,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225765,
+      "lastActiveAt": 1795138225765
+     },
+     "tab-mwoay7tlp5j3-3c": {
+      "id": "tab-mwoay7tlp5j3-3c",
+      "windowId": "w-mwoay7tlp5j3-3b",
+      "profileId": "default",
+      "url": "https://s.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://s.example/",
+       "seq": 158,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225765,
+      "lastActiveAt": 1795138225765
+     }
+    },
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-3b",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-3b",
+      "w-mwoay7tlp5j3-39"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "main",
+    "windowId": "w-mwoay7tlp5j3-39",
+    "focusWindow": null,
+    "tabId": "tab-mwoay7tlp5j3-3a"
+   }
+  },
+  {
+   "name": "no window newTab",
+   "command": "newTab",
+   "arg": null,
+   "windowId": null,
+   "closing": [],
+   "roles": {},
+   "state": {
+    "windows": {},
+    "windowOrder": [],
+    "tabs": {},
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": null,
+     "focusOrder": [],
+     "appDark": true,
+     "lastProfileId": null
+    }
+   },
+   "route": {
+    "kind": "noWindow",
+    "windowId": null,
+    "focusWindow": null,
+    "tabId": null
+   }
+  },
+  {
+   "name": "no window reopenClosedTab",
+   "command": "reopenClosedTab",
+   "arg": null,
+   "windowId": null,
+   "closing": [],
+   "roles": {},
+   "state": {
+    "windows": {},
+    "windowOrder": [],
+    "tabs": {},
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": null,
+     "focusOrder": [],
+     "appDark": true,
+     "lastProfileId": null
+    }
+   },
+   "route": {
+    "kind": "noWindow",
+    "windowId": null,
+    "focusWindow": null,
+    "tabId": null
+   }
+  },
+  {
+   "name": "no window restoreClosed with an argument",
+   "command": "restoreClosed",
+   "arg": "entry",
+   "windowId": null,
+   "closing": [],
+   "roles": {},
+   "state": {
+    "windows": {},
+    "windowOrder": [],
+    "tabs": {},
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": null,
+     "focusOrder": [],
+     "appDark": true,
+     "lastProfileId": null
+    }
+   },
+   "route": {
+    "kind": "noWindow",
+    "windowId": null,
+    "focusWindow": null,
+    "tabId": null
+   }
+  },
+  {
+   "name": "a window-level command with no window",
+   "command": "openSettings",
+   "arg": null,
+   "windowId": null,
+   "closing": [],
+   "roles": {},
+   "state": {
+    "windows": {},
+    "windowOrder": [],
+    "tabs": {},
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": null,
+     "focusOrder": [],
+     "appDark": true,
+     "lastProfileId": null
+    }
+   },
+   "route": {
+    "kind": "window",
+    "windowId": null,
+    "focusWindow": null,
+    "tabId": null
+   }
+  },
+  {
+   "name": "unknown window falls back to the focused main window",
+   "command": "reload",
+   "arg": null,
+   "windowId": "gone",
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-3d",
+    "a": "tab-mwoay7tlp5j3-3e",
+    "b": "tab-mwoay7tlp5j3-3f"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-3d": {
+      "id": "w-mwoay7tlp5j3-3d",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-3f",
+       "tab-mwoay7tlp5j3-3e"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-3e"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225765
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-3d"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-3e": {
+      "id": "tab-mwoay7tlp5j3-3e",
+      "windowId": "w-mwoay7tlp5j3-3d",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 160,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225765,
+      "lastActiveAt": 1795138225765
+     },
+     "tab-mwoay7tlp5j3-3f": {
+      "id": "tab-mwoay7tlp5j3-3f",
+      "windowId": "w-mwoay7tlp5j3-3d",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 162,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225765,
+      "lastActiveAt": 1795138225765,
+      "shownAt": 0
+     }
+    },
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-3d",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-3d"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "main",
+    "windowId": "w-mwoay7tlp5j3-3d",
+    "focusWindow": null,
+    "tabId": "tab-mwoay7tlp5j3-3e"
+   }
+  },
+  {
+   "name": "no requested window uses the focused main window",
+   "command": "duplicateTab",
+   "arg": null,
+   "windowId": null,
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-3g",
+    "a": "tab-mwoay7tlp5j3-3h",
+    "b": "tab-mwoay7tlp5j3-3i"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-3g": {
+      "id": "w-mwoay7tlp5j3-3g",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-3i",
+       "tab-mwoay7tlp5j3-3h"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-3h"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225765
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-3g"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-3h": {
+      "id": "tab-mwoay7tlp5j3-3h",
+      "windowId": "w-mwoay7tlp5j3-3g",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 164,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225765,
+      "lastActiveAt": 1795138225765
+     },
+     "tab-mwoay7tlp5j3-3i": {
+      "id": "tab-mwoay7tlp5j3-3i",
+      "windowId": "w-mwoay7tlp5j3-3g",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 166,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225765,
+      "lastActiveAt": 1795138225765,
+      "shownAt": 0
+     }
+    },
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-3g",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-3g"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "main",
+    "windowId": "w-mwoay7tlp5j3-3g",
+    "focusWindow": null,
+    "tabId": "tab-mwoay7tlp5j3-3h"
+   }
+  },
+  {
+   "name": "a Peek with an empty tab id is dropped by the store",
+   "command": "reload",
+   "arg": null,
+   "windowId": "w-mwoay7tlp5j3-3j",
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-3j",
+    "a": "tab-mwoay7tlp5j3-3k",
+    "b": "tab-mwoay7tlp5j3-3l",
+    "peek": "tab-mwoay7tlp5j3-3m"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-3j": {
+      "id": "w-mwoay7tlp5j3-3j",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-3l",
+       "tab-mwoay7tlp5j3-3k"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-3k"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225765
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-3j"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-3k": {
+      "id": "tab-mwoay7tlp5j3-3k",
+      "windowId": "w-mwoay7tlp5j3-3j",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 168,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225765,
+      "lastActiveAt": 1795138225765
+     },
+     "tab-mwoay7tlp5j3-3l": {
+      "id": "tab-mwoay7tlp5j3-3l",
+      "windowId": "w-mwoay7tlp5j3-3j",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 170,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225765,
+      "lastActiveAt": 1795138225765,
+      "shownAt": 0
+     },
+     "tab-mwoay7tlp5j3-3m": {
+      "id": "tab-mwoay7tlp5j3-3m",
+      "windowId": "w-mwoay7tlp5j3-3j",
+      "profileId": "default",
+      "url": "https://peek.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": "tab-mwoay7tlp5j3-3k",
+      "navigation": {
+       "url": "https://peek.example/",
+       "seq": 172,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225765,
+      "lastActiveAt": 1795138225765
+     }
+    },
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-3j",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-3j"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "main",
+    "windowId": "w-mwoay7tlp5j3-3j",
+    "focusWindow": null,
+    "tabId": "tab-mwoay7tlp5j3-3k"
+   }
+  },
+  {
+   "name": "a redirect prefers a main window on the small window's profile",
+   "command": "newTab",
+   "arg": null,
+   "windowId": "w-mwoay7tlp5j3-3q",
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-3n",
+    "a": "tab-mwoay7tlp5j3-3o",
+    "b": "tab-mwoay7tlp5j3-3p",
+    "small": "w-mwoay7tlp5j3-3q",
+    "work": "w-mwoay7tlp5j3-3s",
+    "work.active": "tab-mwoay7tlp5j3-3t"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-3n": {
+      "id": "w-mwoay7tlp5j3-3n",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-3p",
+       "tab-mwoay7tlp5j3-3o"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-3o"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225765
+     },
+     "w-mwoay7tlp5j3-3q": {
+      "id": "w-mwoay7tlp5j3-3q",
+      "profileId": "work",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-3r"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-3r"
+      },
+      "sidebarOpen": false,
+      "frame": null,
+      "createdAt": 1795138225765,
+      "kind": "small"
+     },
+     "w-mwoay7tlp5j3-3s": {
+      "id": "w-mwoay7tlp5j3-3s",
+      "profileId": "work",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-3t"
+      ],
+      "activeTabIds": {
+       "work": "tab-mwoay7tlp5j3-3t"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225765
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-3n",
+     "w-mwoay7tlp5j3-3q",
+     "w-mwoay7tlp5j3-3s"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-3o": {
+      "id": "tab-mwoay7tlp5j3-3o",
+      "windowId": "w-mwoay7tlp5j3-3n",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 174,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225765,
+      "lastActiveAt": 1795138225765
+     },
+     "tab-mwoay7tlp5j3-3p": {
+      "id": "tab-mwoay7tlp5j3-3p",
+      "windowId": "w-mwoay7tlp5j3-3n",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 176,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225765,
+      "lastActiveAt": 1795138225765,
+      "shownAt": 0
+     },
+     "tab-mwoay7tlp5j3-3r": {
+      "id": "tab-mwoay7tlp5j3-3r",
+      "windowId": "w-mwoay7tlp5j3-3q",
+      "profileId": "default",
+      "url": "https://s.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://s.example/",
+       "seq": 178,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225765,
+      "lastActiveAt": 1795138225765
+     },
+     "tab-mwoay7tlp5j3-3t": {
+      "id": "tab-mwoay7tlp5j3-3t",
+      "windowId": "w-mwoay7tlp5j3-3s",
+      "profileId": "default",
+      "url": "https://work.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://work.example/",
+       "seq": 180,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225765,
+      "lastActiveAt": 1795138225765
+     }
+    },
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-3s",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-3q",
+      "w-mwoay7tlp5j3-3n",
+      "w-mwoay7tlp5j3-3s"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "main",
+    "windowId": "w-mwoay7tlp5j3-3s",
+    "focusWindow": "w-mwoay7tlp5j3-3s",
+    "tabId": "tab-mwoay7tlp5j3-3t"
+   }
+  },
+  {
+   "name": "a folder command with no window",
+   "command": "addFolderToSidebar",
+   "arg": "folder",
+   "windowId": null,
+   "closing": [],
+   "roles": {},
+   "state": {
+    "windows": {},
+    "windowOrder": [],
+    "tabs": {},
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": null,
+     "focusOrder": [],
+     "appDark": true,
+     "lastProfileId": null
+    }
+   },
+   "route": {
+    "kind": "invoker",
+    "windowId": null,
+    "focusWindow": null,
+    "tabId": null
+   }
+  },
+  {
+   "name": "a folder command from a utility window uses the focused main window",
+   "command": "addFolderToSidebar",
+   "arg": "folder",
+   "windowId": "settings",
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-3u",
+    "a": "tab-mwoay7tlp5j3-3v",
+    "b": "tab-mwoay7tlp5j3-3w"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-3u": {
+      "id": "w-mwoay7tlp5j3-3u",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-3w",
+       "tab-mwoay7tlp5j3-3v"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-3v"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225766
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-3u"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-3v": {
+      "id": "tab-mwoay7tlp5j3-3v",
+      "windowId": "w-mwoay7tlp5j3-3u",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 182,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225766,
+      "lastActiveAt": 1795138225766
+     },
+     "tab-mwoay7tlp5j3-3w": {
+      "id": "tab-mwoay7tlp5j3-3w",
+      "windowId": "w-mwoay7tlp5j3-3u",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 184,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225766,
+      "lastActiveAt": 1795138225766,
+      "shownAt": 0
+     }
+    },
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-3u",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-3u"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "invoker",
+    "windowId": "w-mwoay7tlp5j3-3u",
+    "focusWindow": null,
+    "tabId": null
+   }
+  },
+  {
+   "name": "a folder command from a small window with only incognito windows",
+   "command": "addFolderToSidebar",
+   "arg": "folder",
+   "windowId": "w-mwoay7tlp5j3-3z",
+   "closing": [],
+   "roles": {
+    "incog": "w-mwoay7tlp5j3-3x",
+    "small": "w-mwoay7tlp5j3-3z",
+    "incog.active": "tab-mwoay7tlp5j3-3y",
+    "small.active": "tab-mwoay7tlp5j3-40"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-3x": {
+      "id": "w-mwoay7tlp5j3-3x",
+      "profileId": "incognito:w-mwoay7tlp5j3-3x@default",
+      "incognito": true,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-3y"
+      ],
+      "activeTabIds": {
+       "incognito:w-mwoay7tlp5j3-3x@default": "tab-mwoay7tlp5j3-3y"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225766,
+      "originalProfileId": "default"
+     },
+     "w-mwoay7tlp5j3-3z": {
+      "id": "w-mwoay7tlp5j3-3z",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-40"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-40"
+      },
+      "sidebarOpen": false,
+      "frame": null,
+      "createdAt": 1795138225766,
+      "kind": "small"
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-3x",
+     "w-mwoay7tlp5j3-3z"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-3y": {
+      "id": "tab-mwoay7tlp5j3-3y",
+      "windowId": "w-mwoay7tlp5j3-3x",
+      "profileId": "incognito:w-mwoay7tlp5j3-3x@default",
+      "url": "https://i.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://i.example/",
+       "seq": 186,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225766,
+      "lastActiveAt": 1795138225766
+     },
+     "tab-mwoay7tlp5j3-40": {
+      "id": "tab-mwoay7tlp5j3-40",
+      "windowId": "w-mwoay7tlp5j3-3z",
+      "profileId": "default",
+      "url": "https://s.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://s.example/",
+       "seq": 188,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225766,
+      "lastActiveAt": 1795138225766
+     }
+    },
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-3z",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-3z",
+      "w-mwoay7tlp5j3-3x"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "invoker",
+    "windowId": "w-mwoay7tlp5j3-3z",
+    "focusWindow": null,
+    "tabId": null
+   }
+  },
+  {
+   "name": "Peek openFile with the panel open still promotes",
+   "command": "openFile",
+   "arg": null,
+   "windowId": "w-mwoay7tlp5j3-41",
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-41",
+    "a": "tab-mwoay7tlp5j3-42",
+    "b": "tab-mwoay7tlp5j3-43",
+    "peek": "tab-mwoay7tlp5j3-44"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-41": {
+      "id": "w-mwoay7tlp5j3-41",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-43",
+       "tab-mwoay7tlp5j3-42"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-42"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225766
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-41"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-42": {
+      "id": "tab-mwoay7tlp5j3-42",
+      "windowId": "w-mwoay7tlp5j3-41",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 190,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225766,
+      "lastActiveAt": 1795138225766
+     },
+     "tab-mwoay7tlp5j3-43": {
+      "id": "tab-mwoay7tlp5j3-43",
+      "windowId": "w-mwoay7tlp5j3-41",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 192,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225766,
+      "lastActiveAt": 1795138225766,
+      "shownAt": 0
+     },
+     "tab-mwoay7tlp5j3-44": {
+      "id": "tab-mwoay7tlp5j3-44",
+      "windowId": "w-mwoay7tlp5j3-41",
+      "profileId": "default",
+      "url": "https://peek.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": "tab-mwoay7tlp5j3-42",
+      "navigation": {
+       "url": "https://peek.example/",
+       "seq": 194,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225766,
+      "lastActiveAt": 1795138225766
+     }
+    },
+    "peeks": {
+     "w-mwoay7tlp5j3-41": {
+      "tabId": "tab-mwoay7tlp5j3-44",
+      "sourceId": "tab-mwoay7tlp5j3-42",
+      "sourcePage": "https://a.example/",
+      "from": null
+     }
+    },
+    "find": {},
+    "windowUi": {
+     "w-mwoay7tlp5j3-41": {
+      "panel": {
+       "open": true,
+       "initialText": ""
+      },
+      "downloadsOpen": false
+     }
+    },
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-41",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-41"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "peekPromote",
+    "windowId": "w-mwoay7tlp5j3-41",
+    "focusWindow": null,
+    "tabId": "tab-mwoay7tlp5j3-44"
+   }
+  },
+  {
+   "name": "Peek closeTab with find and the panel open falls through",
+   "command": "closeTab",
+   "arg": null,
+   "windowId": "w-mwoay7tlp5j3-45",
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-45",
+    "a": "tab-mwoay7tlp5j3-46",
+    "b": "tab-mwoay7tlp5j3-47",
+    "peek": "tab-mwoay7tlp5j3-48"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-45": {
+      "id": "w-mwoay7tlp5j3-45",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-47",
+       "tab-mwoay7tlp5j3-46"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-46"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225766
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-45"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-46": {
+      "id": "tab-mwoay7tlp5j3-46",
+      "windowId": "w-mwoay7tlp5j3-45",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 196,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225766,
+      "lastActiveAt": 1795138225766
+     },
+     "tab-mwoay7tlp5j3-47": {
+      "id": "tab-mwoay7tlp5j3-47",
+      "windowId": "w-mwoay7tlp5j3-45",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 198,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225766,
+      "lastActiveAt": 1795138225766,
+      "shownAt": 0
+     },
+     "tab-mwoay7tlp5j3-48": {
+      "id": "tab-mwoay7tlp5j3-48",
+      "windowId": "w-mwoay7tlp5j3-45",
+      "profileId": "default",
+      "url": "https://peek.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": "tab-mwoay7tlp5j3-46",
+      "navigation": {
+       "url": "https://peek.example/",
+       "seq": 200,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225766,
+      "lastActiveAt": 1795138225766
+     }
+    },
+    "peeks": {
+     "w-mwoay7tlp5j3-45": {
+      "tabId": "tab-mwoay7tlp5j3-48",
+      "sourceId": "tab-mwoay7tlp5j3-46",
+      "sourcePage": "https://a.example/",
+      "from": null
+     }
+    },
+    "find": {
+     "tab-mwoay7tlp5j3-48": {
+      "open": true,
+      "query": "",
+      "count": null,
+      "active": 0
+     }
+    },
+    "windowUi": {
+     "w-mwoay7tlp5j3-45": {
+      "panel": {
+       "open": true,
+       "initialText": ""
+      },
+      "downloadsOpen": false
+     }
+    },
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-45",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-45"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "main",
+    "windowId": "w-mwoay7tlp5j3-45",
+    "focusWindow": null,
+    "tabId": "tab-mwoay7tlp5j3-46"
+   }
+  },
+  {
+   "name": "with no focus order the window order decides",
+   "command": "reload",
+   "arg": null,
+   "windowId": null,
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-49",
+    "a": "tab-mwoay7tlp5j3-4a",
+    "b": "tab-mwoay7tlp5j3-4b"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-49": {
+      "id": "w-mwoay7tlp5j3-49",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-4b",
+       "tab-mwoay7tlp5j3-4a"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-4a"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225766
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-49"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-4a": {
+      "id": "tab-mwoay7tlp5j3-4a",
+      "windowId": "w-mwoay7tlp5j3-49",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 202,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225766,
+      "lastActiveAt": 1795138225766
+     },
+     "tab-mwoay7tlp5j3-4b": {
+      "id": "tab-mwoay7tlp5j3-4b",
+      "windowId": "w-mwoay7tlp5j3-49",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 204,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225766,
+      "lastActiveAt": 1795138225766,
+      "shownAt": 0
+     }
+    },
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-49",
+     "focusOrder": [],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "main",
+    "windowId": "w-mwoay7tlp5j3-49",
+    "focusWindow": null,
+    "tabId": "tab-mwoay7tlp5j3-4a"
+   }
+  },
+  {
+   "name": "with only small and stale ids in the focus order the window order decides",
+   "command": "reload",
+   "arg": null,
+   "windowId": null,
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-4c",
+    "a": "tab-mwoay7tlp5j3-4d",
+    "b": "tab-mwoay7tlp5j3-4e",
+    "small": "w-mwoay7tlp5j3-4f",
+    "small.active": "tab-mwoay7tlp5j3-4g"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-4c": {
+      "id": "w-mwoay7tlp5j3-4c",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-4e",
+       "tab-mwoay7tlp5j3-4d"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-4d"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225766
+     },
+     "w-mwoay7tlp5j3-4f": {
+      "id": "w-mwoay7tlp5j3-4f",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-4g"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-4g"
+      },
+      "sidebarOpen": false,
+      "frame": null,
+      "createdAt": 1795138225766,
+      "kind": "small"
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-4c",
+     "w-mwoay7tlp5j3-4f"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-4d": {
+      "id": "tab-mwoay7tlp5j3-4d",
+      "windowId": "w-mwoay7tlp5j3-4c",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 206,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225766,
+      "lastActiveAt": 1795138225766
+     },
+     "tab-mwoay7tlp5j3-4e": {
+      "id": "tab-mwoay7tlp5j3-4e",
+      "windowId": "w-mwoay7tlp5j3-4c",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 208,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225766,
+      "lastActiveAt": 1795138225766,
+      "shownAt": 0
+     },
+     "tab-mwoay7tlp5j3-4g": {
+      "id": "tab-mwoay7tlp5j3-4g",
+      "windowId": "w-mwoay7tlp5j3-4f",
+      "profileId": "default",
+      "url": "https://s.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://s.example/",
+       "seq": 210,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225766,
+      "lastActiveAt": 1795138225766
+     }
+    },
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-4f",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-4f",
+      "stale-window"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "main",
+    "windowId": "w-mwoay7tlp5j3-4c",
+    "focusWindow": null,
+    "tabId": "tab-mwoay7tlp5j3-4d"
+   }
+  },
+  {
+   "name": "an empty profile id redirects to the first main window",
+   "command": "newTab",
+   "arg": null,
+   "windowId": "w-mwoay7tlp5j3-4k",
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-4h",
+    "a": "tab-mwoay7tlp5j3-4i",
+    "b": "tab-mwoay7tlp5j3-4j",
+    "small": "w-mwoay7tlp5j3-4k",
+    "w2": "w-mwoay7tlp5j3-4m"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-4h": {
+      "id": "w-mwoay7tlp5j3-4h",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-4j",
+       "tab-mwoay7tlp5j3-4i"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-4i"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225766
+     },
+     "w-mwoay7tlp5j3-4k": {
+      "id": "w-mwoay7tlp5j3-4k",
+      "profileId": "",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-4l"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-4l"
+      },
+      "sidebarOpen": false,
+      "frame": null,
+      "createdAt": 1795138225766,
+      "kind": "small"
+     },
+     "w-mwoay7tlp5j3-4m": {
+      "id": "w-mwoay7tlp5j3-4m",
+      "profileId": "",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-4n"
+      ],
+      "activeTabIds": {
+       "default": "tab-mwoay7tlp5j3-4n"
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225766
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-4h",
+     "w-mwoay7tlp5j3-4k",
+     "w-mwoay7tlp5j3-4m"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-4i": {
+      "id": "tab-mwoay7tlp5j3-4i",
+      "windowId": "w-mwoay7tlp5j3-4h",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 212,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225766,
+      "lastActiveAt": 1795138225766
+     },
+     "tab-mwoay7tlp5j3-4j": {
+      "id": "tab-mwoay7tlp5j3-4j",
+      "windowId": "w-mwoay7tlp5j3-4h",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 214,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225766,
+      "lastActiveAt": 1795138225766,
+      "shownAt": 0
+     },
+     "tab-mwoay7tlp5j3-4l": {
+      "id": "tab-mwoay7tlp5j3-4l",
+      "windowId": "w-mwoay7tlp5j3-4k",
+      "profileId": "default",
+      "url": "https://s.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://s.example/",
+       "seq": 216,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225766,
+      "lastActiveAt": 1795138225766
+     },
+     "tab-mwoay7tlp5j3-4n": {
+      "id": "tab-mwoay7tlp5j3-4n",
+      "windowId": "w-mwoay7tlp5j3-4m",
+      "profileId": "default",
+      "url": "https://two.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://two.example/",
+       "seq": 218,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225766,
+      "lastActiveAt": 1795138225766
+     }
+    },
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-4m",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-4k",
+      "w-mwoay7tlp5j3-4h",
+      "w-mwoay7tlp5j3-4m"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "main",
+    "windowId": "w-mwoay7tlp5j3-4h",
+    "focusWindow": "w-mwoay7tlp5j3-4h",
+    "tabId": "tab-mwoay7tlp5j3-4i"
+   }
+  },
+  {
+   "name": "an empty active tab id is no tab",
+   "command": "duplicateTab",
+   "arg": null,
+   "windowId": "w-mwoay7tlp5j3-4o",
+   "closing": [],
+   "roles": {
+    "w": "w-mwoay7tlp5j3-4o",
+    "a": "tab-mwoay7tlp5j3-4p",
+    "b": "tab-mwoay7tlp5j3-4q"
+   },
+   "state": {
+    "windows": {
+     "w-mwoay7tlp5j3-4o": {
+      "id": "w-mwoay7tlp5j3-4o",
+      "profileId": "default",
+      "incognito": false,
+      "tabIds": [
+       "tab-mwoay7tlp5j3-4q",
+       "tab-mwoay7tlp5j3-4p"
+      ],
+      "activeTabIds": {
+       "default": ""
+      },
+      "sidebarOpen": true,
+      "frame": null,
+      "createdAt": 1795138225766
+     }
+    },
+    "windowOrder": [
+     "w-mwoay7tlp5j3-4o"
+    ],
+    "tabs": {
+     "tab-mwoay7tlp5j3-4p": {
+      "id": "tab-mwoay7tlp5j3-4p",
+      "windowId": "w-mwoay7tlp5j3-4o",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 220,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225766,
+      "lastActiveAt": 1795138225766
+     },
+     "tab-mwoay7tlp5j3-4q": {
+      "id": "tab-mwoay7tlp5j3-4q",
+      "windowId": "w-mwoay7tlp5j3-4o",
+      "profileId": "default",
+      "url": "https://b.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://b.example/",
+       "seq": 222,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225766,
+      "lastActiveAt": 1795138225766,
+      "shownAt": 0
+     },
+     "": {
+      "id": "",
+      "windowId": "w-mwoay7tlp5j3-4o",
+      "profileId": "default",
+      "url": "https://a.example/",
+      "title": "",
+      "favicon": null,
+      "pinned": false,
+      "muted": false,
+      "zoom": 1,
+      "customTitle": null,
+      "customIcon": null,
+      "pinnedUrl": null,
+      "openerId": null,
+      "navigation": {
+       "url": "https://a.example/",
+       "seq": 220,
+       "userInitiated": true
+      },
+      "createdAt": 1795138225766,
+      "lastActiveAt": 1795138225766
+     }
+    },
+    "peeks": {},
+    "find": {},
+    "windowUi": {},
+    "ui": {
+     "focusedWindowId": "w-mwoay7tlp5j3-4o",
+     "focusOrder": [
+      "w-mwoay7tlp5j3-4o"
+     ],
+     "appDark": true,
+     "lastProfileId": "default"
+    }
+   },
+   "route": {
+    "kind": "main",
+    "windowId": "w-mwoay7tlp5j3-4o",
+    "focusWindow": null,
+    "tabId": null
+   }
+  }
+ ]
+}

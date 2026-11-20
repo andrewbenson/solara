@@ -1,0 +1,60 @@
+name: Bug report
+description: Something in Solara isn't working the way it should.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what Solara did instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open a new window
+        2. Press ⌘L
+        3. …
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: How often
+      options:
+        - Every time
+        - Sometimes
+        - Once so far
+  - type: input
+    id: version
+    attributes:
+      label: Solara version
+      placeholder: 0.4.5 (107)
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "26.6.2"
+  - type: input
+    id: mac
+    attributes:
+      label: Mac model
+      placeholder: MacBookPro18,4
+  - type: input
+    id: layout
+    attributes:
+      label: Layout
+      description: Sidebar or top tabs, and anything unusual about your setup.
+  - type: textarea
+    id: crash
+    attributes:
+      label: Crash details
+      description: If Solara crashed, the summary it filled in here. Drag the full crash report onto the box below to attach it.
+      render: text
+  - type: textarea
+    id: attachments
+    attributes:
+      label: Screenshots, recordings or crash reports
+      description: Drag files here.

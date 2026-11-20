@@ -14,7 +14,8 @@
 //
 // Actions: click (sidebar row), ctrlTab (⌃Tab: steps to the next sidebar row, timed from its key down), cmdNumber (⌘2/⌘7 between
 // pinned tabs), cmdT (new tab), cmdClick (⌘-click a link: a background tab), cmdW (close a loaded tab), hoverClose
-// (the row's ✕), pin and unpin (Tabs › Pin), moveDown (⌃⇧PgDn).
+// (the row's ✕, hovered again just before the click: the first hover doesn't last until then, so the ✕ was hidden
+// and the click landed on the row), pin and unpin (Tabs › Pin), moveDown (⌃⇧PgDn).
 // cmdClick, pin, unpin and moveDown change only native views that post no mark, so they print `not timed: no paint
 // mark`, report in the "not timed" column and stay out of the medians.
 //
@@ -328,9 +329,13 @@ async function runAction(rig, ctx, name) {
       await sleep(900);
       const r = await rowPoint(rig, w1, id);
       if (!r) throw new Error("no row for the new tab");
-      await rig.op({ op: "hover", window: ctx.win.number, x: r.x + r.width / 2, y: r.y + r.height / 2 });
+      const hover = () => rig.op({ op: "hover", window: ctx.win.number, x: r.x + r.width / 2, y: r.y + r.height / 2 });
+      await hover();
       await sleep(250);
-      send = () => rig.op({ op: "click", window: ctx.win.number, x: r.x + r.width - 6 - 11, y: r.y + r.height / 2, holdMs: 60 });
+      send = async () => {
+        await hover();
+        return rig.op({ op: "click", window: ctx.win.number, x: r.x + r.width - 6 - 11, y: r.y + r.height / 2, holdMs: 60 });
+      };
       start = "up";
     } else {
       await activate(cur);

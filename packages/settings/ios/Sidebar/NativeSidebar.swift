@@ -10,6 +10,7 @@ enum NativeSidebar {
   static var hosts: [String: SidebarHost] = [:]
 
   static func register() {
+    NativeWorkspaceRename.start()
     NativeNumberedTabs.register()
     NativeSidebarLive.start()
     NativeSidebarHoverCard.start()
@@ -38,6 +39,8 @@ enum NativeSidebar {
     }
     return hosts[windowId].map { walk($0.view) } ?? []
   }
+
+  static func renameChanged(_ windowId: String) { hosts[windowId]?.renameChanged() }
 
   static func rowFrame(windowId: String, key: String) -> [String: Double]? {
     guard let host = hosts[windowId], let page = host.view.current, let window = page.window, let content = window.contentView,
@@ -150,6 +153,7 @@ final class SidebarHost {
   func stop() {
     guard !stopped else { return }
     stopped = true
+    NativeWorkspaceRename.windowGone(windowId)
     commits.host = nil
     view.onAction = { _ in }
     view.stop()
@@ -188,10 +192,13 @@ final class SidebarHost {
     FrameUpdates.schedule(self) { [weak self] in self?.render() }
   }
 
+  func renameChanged() { setNeedsRender() }
+
   private func render() {
-    guard !stopped, let hostState, let state = state ?? NativeStoreHandle.store?.state else { return }
+    guard !stopped, var host = hostState, let state = state ?? NativeStoreHandle.store?.state else { return }
     self.state = state
-    view.update(state: state, host: hostState)
+    if let renaming = NativeWorkspaceRename.override(windowId) { host.renaming = renaming }
+    view.update(state: state, host: host)
   }
 
   private func loadMark(_ uri: String?) {
@@ -242,7 +249,8 @@ final class SidebarHost {
       } else {
         call("middleClick", tabId)
       }
-    case .rename(let kind, let id): call("rename", id, ["kind": kind])
+    case .rename(let kind, let id):
+      if !NativeWorkspaceRename.begin(windowId: windowId, kind: kind == "group" ? .group : .tab, id: id) { call("rename", id, ["kind": kind]) }
     case .backToPinned(let tabId): call("backToPinned", tabId)
     case .tileDoubleClick(let tabId): call("tileDoubleClick", tabId)
     case .toggleMute(let tabId): call("toggleMute", tabId)
@@ -263,7 +271,14 @@ final class SidebarHost {
     case .cleanUp(let choice): call("cleanUp", choice.rawValue)
     case .hover(let kind, let id): call("hover", id ?? "", ["kind": kind ?? NSNull()])
     case .scrolled: call("scrolled", "")
-    case .renamed(let kind, let id, let text): call("renamed", id, ["kind": kind, "text": text ?? NSNull()])
+    case .renamed(let kind, let id, let text):
+      if WorkspaceActionRouter.ownedStore == nil {
+        call("renamed", id, ["kind": kind, "text": text ?? NSNull()])
+      } else if let text {
+        NativeWorkspaceRename.commit(windowId: windowId, kind: kind == "group" ? .group : .tab, id: id, text: text)
+      } else {
+        NativeWorkspaceRename.end(windowId: windowId, id: id)
+      }
     case .live(let action, let folderId, let id, let meta): call("live", folderId, ["action": action, "item": id ?? NSNull(), "meta": meta])
     case .media(let tabId, let action): NativeMedia.player("sidebarPlayer", windowId, tabId, action)
     }

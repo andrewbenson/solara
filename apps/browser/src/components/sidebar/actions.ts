@@ -1,4 +1,5 @@
 import { cleanUrl, markdownLink } from "@solara/core";
+import { beginNativeRename } from "@solara/settings";
 import { copyText, prompt } from "@solara/shell";
 import { bookmarkWriter, reportBookmarkFailure, submitBookmarks } from "../../lib/bookmarkWriter";
 import { updateFolder } from "../../live/store";
@@ -17,6 +18,7 @@ export function clickTab(windowId: string, tabId: string, mods: ClickMods = {}) 
 }
 
 export async function startRename(windowId: string, target: Target) {
+  if ((target.kind === "tab" || target.kind === "group") && (await beginNativeRename(windowId, target.kind, target.id))) return;
   const s = store();
   if (target.kind === "tab") {
     const tab = s.tabs[target.id];

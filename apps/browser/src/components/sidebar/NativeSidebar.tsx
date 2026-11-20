@@ -29,6 +29,7 @@ import { clickTab, commitRename, endRename, startRename } from "./actions";
 import { pressGroupClose, pressTabClose } from "./closeControl";
 import { dismissHover, nativeRowHover } from "./hover";
 import { closeAllTabs, middleClickTab, openGroupMenu, openOverflowMenu, openSidebarMenu, openTabMenu, showUndoToast } from "./menus";
+import { applyNativeRenameState, resetNativeRenames } from "./renameMirror";
 import { setSidebarUi, sidebarUi, useSidebarUi } from "./state";
 import { useSidebarTokens } from "./tokens";
 import { useMedia, useSession } from "../media/state";
@@ -210,10 +211,12 @@ addNativeSettingsHandlers({
     windowId: string,
     name: string,
     id: string,
-    extra: Mods & { kind?: "tab" | "group" | "folder" | "live"; split?: boolean; text?: string | null; action?: string; item?: string | null; cleared?: string },
+    extra: Mods & { kind?: "tab" | "group" | "folder" | "live"; split?: boolean; text?: string | null; action?: string; item?: string | null; cleared?: string; seq?: number; windows?: Record<string, number> },
   ) => {
     const s = useBrowser.getState();
     if (name === "hover") return nativeRowHover(windowId, extra.kind && id ? { kind: extra.kind, id } : null);
+    if (name === "renameState") return void applyNativeRenameState(windowId, extra.kind ?? null, id, Number(extra.seq ?? 0));
+    if (name === "renameReset") return resetNativeRenames(extra.windows ?? {});
     dismissHover();
     switch (name) {
       case "handled":

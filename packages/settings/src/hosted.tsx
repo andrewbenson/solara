@@ -15,6 +15,7 @@ type HostedModule = {
   devHost(kind: string, windowId: string, on: boolean): Promise<Record<string, string>>;
   sidebarRowFrame(windowId: string, key: string): Promise<{ x: number; y: number; width: number; height: number } | null>;
   sidebarShell?(windowId: string): Promise<string>;
+  beginRename?(windowId: string, kind: "tab" | "group", id: string): Promise<boolean>;
 };
 
 const native = requireOptionalNativeModule<HostedModule>("SolaraHosted");
@@ -36,6 +37,10 @@ export function takeSwitcherPress(windowId: string): number | null {
   } catch {
     return null;
   }
+}
+
+export function beginNativeRename(windowId: string, kind: "tab" | "group", id: string): Promise<boolean> {
+  return native?.beginRename?.(windowId, kind, id).catch(() => false) ?? Promise.resolve(false);
 }
 
 export function sidebarRowFrame(windowId: string, key: string) {

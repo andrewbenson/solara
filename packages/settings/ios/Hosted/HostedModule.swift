@@ -129,6 +129,10 @@ public class HostedModule: Module {
       FrameUpdates.readOnMain { NativeSidebar.rowFrame(windowId: windowId, key: key) }
     }.runOnQueue(.main)
 
+    AsyncFunction("beginRename") { (windowId: String, kind: String, id: String) -> Bool in
+      MainActor.assumeIsolated { NativeWorkspaceRename.begin(windowId: windowId, kind: kind == "group" ? .group : .tab, id: id) }
+    }.runOnQueue(.main)
+
     AsyncFunction("sidebarHoverShifts") { (windowId: String) -> String in
       FrameUpdates.readOnMain { NativeSidebar.hoverShifts(windowId: windowId) ?? "null" }
     }.runOnQueue(.main)

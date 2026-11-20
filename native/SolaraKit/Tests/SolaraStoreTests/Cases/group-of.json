@@ -1,0 +1,9 @@
+{
+  "groups": {
+    "outer": { "id": "outer", "windowId": "w", "profileId": "p", "name": "Outer", "icon": null, "color": null, "collapsed": true, "pinned": false, "tabIds": ["b", "d"] },
+    "inner": { "id": "inner", "windowId": "w", "profileId": "p", "name": "Inner", "icon": null, "color": null, "collapsed": true, "pinned": false, "parentId": "outer", "tabIds": ["c", "d"] },
+    "deep": { "id": "deep", "windowId": "w", "profileId": "p", "name": "Deep", "icon": null, "color": null, "collapsed": false, "pinned": false, "parentId": "inner", "tabIds": ["e"] },
+    "side": { "id": "side", "windowId": "w", "profileId": "p", "name": "Side", "icon": null, "color": null, "collapsed": false, "pinned": false, "tabIds": ["f"] }
+  },
+  "expected": { "a": null, "b": "outer", "c": "inner", "d": "inner", "e": "deep", "f": "side", "missing": null }
+}

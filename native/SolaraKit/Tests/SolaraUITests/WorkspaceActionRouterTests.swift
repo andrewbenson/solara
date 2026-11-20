@@ -91,4 +91,95 @@ struct WorkspaceActionRouterTests {
     #expect(WorkspaceActionRouter.closeRoute(state, tabId: "missing") == .removePinOrClose)
     #expect(WorkspaceActionRouter.middleClickRoute(state, tabId: "missing") == .removePinOrClose)
   }
+
+  func renameState(layout: String? = nil, sidebarOpen: Bool = true, active: String = "a") throws -> BrowserState {
+    let window = #"{"id":"w","profileId":"p","tabIds":["tile","row","a","b","c"],"activeTabIds":{"p":"\#(active)"},"sidebarOpen":\#(sidebarOpen)\#(layout.map { #","tabLayout":"\#($0)""# } ?? "")}"#
+    let json = #"{"windows":{"w":\#(window)},"windowOrder":["w"],"tabs":{"tile":{"id":"tile","windowId":"w","profileId":"p","url":"https://t.example/","title":"Tile","pinned":true},"row":{"id":"row","windowId":"w","profileId":"p","url":"https://r.example/","title":"Row","pinned":true,"pinnedAsRow":true},"a":{"id":"a","windowId":"w","profileId":"p","url":"https://a.example/","title":"A"},"b":{"id":"b","windowId":"w","profileId":"p","url":"https://b.example/","title":"B"},"c":{"id":"c","windowId":"w","profileId":"p","url":"https://c.example/","title":"C"}},"groups":{"outer":{"id":"outer","windowId":"w","profileId":"p","name":"Outer","collapsed":true,"pinned":false,"tabIds":["b"]},"inner":{"id":"inner","windowId":"w","profileId":"p","name":"Inner","collapsed":true,"pinned":false,"parentId":"outer","tabIds":["c"]}}}"#
+    return try BrowserState(stateJSON: JSONValue.parse(json).object ?? [:])
+  }
+
+  @Test func renameRoutesFollowStartRename() throws {
+    let s = try renameState()
+    #expect(WorkspaceActionRouter.renameRoute(s, windowId: "w", kind: .tab, id: "tile") == .tileSheet)
+    #expect(WorkspaceActionRouter.renameRoute(s, windowId: "w", kind: .tab, id: "row") == .inline(expand: []))
+    #expect(WorkspaceActionRouter.renameRoute(s, windowId: "w", kind: .tab, id: "a") == .inline(expand: []))
+    #expect(WorkspaceActionRouter.renameRoute(s, windowId: "w", kind: .tab, id: "c") == .inline(expand: ["inner", "outer"]))
+    #expect(WorkspaceActionRouter.renameRoute(s, windowId: "w", kind: .group, id: "inner") == .inline(expand: []))
+    #expect(WorkspaceActionRouter.renameRoute(s, windowId: "w", kind: .tab, id: "missing") == nil)
+    #expect(WorkspaceActionRouter.renameRoute(s, windowId: "w", kind: .group, id: "missing") == nil)
+    #expect(WorkspaceActionRouter.renameRoute(try renameState(layout: "top"), windowId: "w", kind: .group, id: "inner") == .groupSheet)
+    #expect(WorkspaceActionRouter.renameRoute(try renameState(sidebarOpen: false), windowId: "w", kind: .group, id: "inner") == .groupSheet)
+  }
+
+  @Test func renameCommitsTrimAndClearAsCommitRenameDoes() throws {
+    let s = try renameState()
+    #expect(WorkspaceActionRouter.renameCommand(s, kind: .tab, id: "a", text: "  New  ") == Command("updateTab", [.string("a"), ["customTitle": .string("New")]]))
+    #expect(WorkspaceActionRouter.renameCommand(s, kind: .tab, id: "a", text: "   ") == Command("updateTab", [.string("a"), ["customTitle": .null]]))
+    #expect(WorkspaceActionRouter.renameCommand(s, kind: .tab, id: "a", text: " A ") == Command("updateTab", [.string("a"), ["customTitle": .null]]))
+    #expect(WorkspaceActionRouter.renameCommand(s, kind: .group, id: "inner", text: " Work ") == Command("updateGroup", [.string("inner"), ["name": .string("Work")]]))
+    #expect(WorkspaceActionRouter.renameCommand(s, kind: .tab, id: "missing", text: "x") == nil)
+    #expect(WorkspaceActionRouter.renameKey(.group, "g:1") == "group:g:1")
+    #expect(WorkspaceActionRouter.renameKind("group:g:1") == .group && WorkspaceActionRouter.renameId("group:g:1") == "g:1")
+  }
+
+  @Test func renameRoutesForTheActiveTabLayoutsAndEmptyLayouts() throws {
+    let s = try renameState(active: "c")
+    #expect(WorkspaceActionRouter.renameRoute(s, windowId: "w", kind: .tab, id: "c") == .inline(expand: []))
+    var top = try renameState(layout: "top")
+    #expect(!WorkspaceActionRouter.sidebarShows(top, windowId: "w"))
+    top.settings = Settings.hydrated(from: ["tabLayout": .string("sidebar")])
+    #expect(!WorkspaceActionRouter.sidebarShows(top, windowId: "w"))
+    var side = try renameState(layout: "sidebar")
+    side.settings = Settings.hydrated(from: ["tabLayout": .string("top")])
+    #expect(WorkspaceActionRouter.sidebarShows(side, windowId: "w"))
+    var empty = try renameState(layout: "")
+    empty.settings = Settings.hydrated(from: ["tabLayout": .string("top")])
+    #expect(!WorkspaceActionRouter.sidebarShows(empty, windowId: "w"))
+    empty.settings = Settings.hydrated(from: ["tabLayout": .string("sidebar")])
+    #expect(WorkspaceActionRouter.sidebarShows(empty, windowId: "w"))
+    #expect(!WorkspaceActionRouter.sidebarShows(empty, windowId: "missing"))
+  }
+
+  @Test func theRenameRegistryEndsOnlyItsOwnTargetAndPrunesTheGone() throws {
+    let s = try renameState()
+    var registry = WorkspaceRenameRegistry()
+    #expect(registry.set("w", "tab:a") == 1)
+    #expect(registry.end("w", id: "b") == nil)
+    #expect(registry.key("w") == "tab:a")
+    #expect(registry.set("w", "tab:b") == 2)
+    #expect(registry.key("w") == "tab:b")
+    #expect(registry.end("w", id: "b") == 3)
+    #expect(registry.key("w") == nil)
+    #expect(registry.end("w", id: "b") == nil)
+    #expect(registry.set("w", "tab:gone") == 4)
+    #expect(registry.override("w", state: s) == .some(nil))
+    #expect(registry.stale(s) == ["w"])
+    #expect(registry.set("other", "group:inner") == 1)
+    #expect(registry.stale(s) == ["other", "w"])
+    #expect(registry.set("w", "group:inner") == 5)
+    #expect(registry.override("w", state: s) == .some("group:inner"))
+    #expect(registry.stale(s) == ["other"])
+    #expect(registry.override("nobody", state: s) == .some(nil))
+  }
+
+  @Test func committingOnADeletedTargetChangesNothingAndUnownedHostsKeepJavaScriptState() throws {
+    let s = try renameState()
+    #expect(WorkspaceActionRouter.renameCommand(s, kind: .group, id: "deleted", text: "x") == nil)
+    #expect(WorkspaceActionRouter.renameCommand(s, kind: .tab, id: "deleted", text: "x") == nil)
+    let owned = NativeStoreHandle.ownsWorkspace
+    defer { NativeStoreHandle.ownsWorkspace = owned }
+    NativeStoreHandle.ownsWorkspace = false
+    #expect(WorkspaceActionRouter.ownedStore == nil)
+  }
+
+  @Test func aSecondSheetOnAWindowIsDeclinedUntilTheFirstSettles() {
+    var pending: Set<String> = []
+    #expect(WorkspaceSheetGuard.claim(&pending, windowId: "w", closing: []))
+    #expect(!WorkspaceSheetGuard.claim(&pending, windowId: "w", closing: []))
+    #expect(WorkspaceSheetGuard.claim(&pending, windowId: "other", closing: []))
+    pending.remove("w")
+    #expect(WorkspaceSheetGuard.claim(&pending, windowId: "w", closing: []))
+    #expect(!WorkspaceSheetGuard.claim(&pending, windowId: "closing", closing: ["closing"]))
+    #expect(!pending.contains("closing"))
+  }
 }

@@ -495,6 +495,11 @@ final class NativeLayoutChrome {
   private static var owners: [String: NativeLayoutChrome] = [:]
   private static var feeds: [UUID] = []
 
+  static func renameChanged(_ windowId: String) {
+    guard let owner = owners[windowId], !owner.stopped else { return }
+    owner.refresh()
+  }
+
   static func downloadsRect(_ windowId: String) -> NSRect? {
     guard let owner = owners[windowId], !owner.stopped, !owner.stripRow.isHiddenOrHasHiddenAncestor else { return nil }
     return owner.controls.downloadsRect
@@ -749,6 +754,7 @@ final class NativeLayoutChrome {
       sidebar.closeHint = feed.closeHint
       sidebar.backHint = feed.backHint
     }
+    if let renaming = NativeWorkspaceRename.override(shell.windowId) { sidebar.renaming = renaming }
     let dots = window.incognito ? [] : state.profileOrder.enumerated().compactMap { index, id -> SidebarChromeDot? in
       guard let profile = state.profiles[id] else { return nil }
       return SidebarChromeDot(id: id, name: profile.name, slot: Double(index), icon: profile.icon,

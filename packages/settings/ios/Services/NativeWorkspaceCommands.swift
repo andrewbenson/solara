@@ -374,10 +374,11 @@ enum NativeWorkspaceCommands {
     askGuarded(alert, windowId: id, setting: setting, store: store, then: proceed)
   }
 
+  @discardableResult
   static func askGuarded(
-    _ alert: NSAlert, windowId: String, setting: String, store: Store, then proceed: @escaping @MainActor () -> Void
-  ) {
-    guard !store.memory.closingWindows.contains(windowId), pending.insert(windowId).inserted else { return }
+    _ alert: NSAlert, windowId: String, setting: String?, store: Store, then proceed: @escaping @MainActor () -> Void
+  ) -> Bool {
+    guard WorkspaceSheetGuard.claim(&pending, windowId: windowId, closing: store.memory.closingWindows) else { return false }
     let window = ShellDrag.window(windowId)
     if let window {
       sheetWindowObservers[windowId] = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { _ in
@@ -387,7 +388,9 @@ enum NativeWorkspaceCommands {
     let decide: (NSApplication.ModalResponse) -> Void = { response in
       settleSheet(windowId)
       guard NativeStoreHandle.ownsWorkspace, NativeStoreHandle.store === store else { return }
-      if alert.suppressionButton?.state == .on { _ = try? store.dispatch(Command("updateSettings", [[setting: false]]), origin: .native) }
+      if let setting, alert.showsSuppressionButton, alert.suppressionButton?.state == .on {
+        _ = try? store.dispatch(Command("updateSettings", [[setting: false]]), origin: .native)
+      }
       if response == .alertFirstButtonReturn { proceed() }
     }
     if let window, window.isVisible {
@@ -395,6 +398,7 @@ enum NativeWorkspaceCommands {
     } else {
       decide(alert.runModal())
     }
+    return true
   }
 
   private static func settleSheet(_ windowId: String) {

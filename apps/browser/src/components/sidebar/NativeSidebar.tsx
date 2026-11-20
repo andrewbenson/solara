@@ -28,7 +28,7 @@ import { openSettings } from "../settings/windows";
 import { clickTab, commitRename, endRename, startRename } from "./actions";
 import { pressGroupClose, pressTabClose } from "./closeControl";
 import { dismissHover, nativeRowHover } from "./hover";
-import { closeAllTabs, middleClickTab, openGroupMenu, openOverflowMenu, openSidebarMenu, openTabMenu } from "./menus";
+import { closeAllTabs, middleClickTab, openGroupMenu, openOverflowMenu, openSidebarMenu, openTabMenu, showUndoToast } from "./menus";
 import { setSidebarUi, sidebarUi, useSidebarUi } from "./state";
 import { useSidebarTokens } from "./tokens";
 import { useMedia, useSession } from "../media/state";
@@ -210,7 +210,7 @@ addNativeSettingsHandlers({
     windowId: string,
     name: string,
     id: string,
-    extra: Mods & { kind?: "tab" | "group" | "folder" | "live"; split?: boolean; text?: string | null; action?: string; item?: string | null },
+    extra: Mods & { kind?: "tab" | "group" | "folder" | "live"; split?: boolean; text?: string | null; action?: string; item?: string | null; cleared?: string },
   ) => {
     const s = useBrowser.getState();
     if (name === "hover") return nativeRowHover(windowId, extra.kind && id ? { kind: extra.kind, id } : null);
@@ -226,6 +226,8 @@ addNativeSettingsHandlers({
         return clickTab(windowId, id, { metaKey: !!extra.meta, shiftKey: !!extra.shift, altKey: !!extra.alt });
       case "close":
         return pressTabClose(id);
+      case "removedPin":
+        return extra.cleared ? showUndoToast(JSON.parse(extra.cleared), "Removed Pinned Tab", "pin.slash") : undefined;
       case "middleClick":
         return s.tabs[id]?.pinned && !s.tabs[id]?.pinnedAsRow ? void closeTab(id) : middleClickTab(id);
       case "rename":

@@ -8,6 +8,7 @@ import SolaraUI
 @MainActor
 enum NativeWorkspaceCommands {
   private static var pending: Set<String> = []
+  private static var sheetWindowObservers: [String: NSObjectProtocol] = [:]
   private struct NewTabFocus {
     let tabId: String
     let generation: Int?
@@ -98,7 +99,9 @@ enum NativeWorkspaceCommands {
         guard let target = profile == "new" ? createProfile(store: store) : profile else { return true }
         guard let tab = store.state.tabs[tabId], store.state.profiles[target] != nil, tab.profileId != target else { return true }
         if store.state.settings.bool("warnBeforeMovingTabsToProfile"), store.state.engineProfile(tab.profileId) != store.state.engineProfile(target) {
-          guard confirm("Move Tab to Profile?", message: "Moving tabs between profiles could result in some data being lost.", button: "Move Tab", setting: "warnBeforeMovingTabsToProfile", store: store) else { return true }
+          let alert = confirmAlert("Move Tab to Profile?", message: "Moving tabs between profiles could result in some data being lost.", button: "Move Tab", suppression: "Don't warn me again")
+          askGuarded(alert, windowId: tab.windowId, setting: "warnBeforeMovingTabsToProfile", store: store) { finishMovingToProfile(tabId, target: target, store: store) }
+          return true
         }
         guard NativeStoreHandle.ownsWorkspace, NativeStoreHandle.store === store, store.state.tabs[tabId] != nil else { return true }
         commands = [Command("moveTabToProfile", [.string(tabId), .string(target)])]
@@ -256,8 +259,7 @@ enum NativeWorkspaceCommands {
   }
 
   private static func closeTabs(_ ids: [String], windowId: String, store: Store) {
-    guard !store.memory.closingWindows.contains(windowId), pending.insert(windowId).inserted else { return }
-    defer { pending.remove(windowId) }
+    guard !store.memory.closingWindows.contains(windowId), !pending.contains(windowId) else { return }
     let before = store.state
     guard before.windows[windowId] != nil else { return }
     let decision = WorkspaceClosePolicy.tabs(ids, windowId: windowId, state: before, lastTabKeepsWindow: store.memory.lastTabKeepsWindow)
@@ -265,8 +267,12 @@ enum NativeWorkspaceCommands {
     guard !open.isEmpty else { return }
     let closes = decision.closesWindow
     let setting = decision.warningSetting
-    if let setting, before.settings.bool(setting), !confirmClose(windowId, setting: setting, store: store) { return }
-    guard NativeStoreHandle.ownsWorkspace, NativeStoreHandle.store === store else { return }
+    guard let setting, before.settings.bool(setting) else { return finishClosingTabs(open, closes: closes, windowId: windowId, store: store) }
+    askClose(windowId, setting: setting, store: store) { finishClosingTabs(open, closes: closes, windowId: windowId, store: store) }
+  }
+
+  private static func finishClosingTabs(_ open: [String], closes: Bool, windowId: String, store: Store) {
+    guard NativeStoreHandle.ownsWorkspace, NativeStoreHandle.store === store, !store.memory.closingWindows.contains(windowId) else { return }
     let current = store.state
     let remaining = open.filter { current.tabs[$0]?.windowId == windowId }
     guard !remaining.isEmpty else { return }
@@ -281,15 +287,57 @@ enum NativeWorkspaceCommands {
     }
   }
 
+  static func runCloseRoute(_ route: WorkspaceCloseRoute, tabId: String, store: Store, removedPin: (String) -> Void) {
+    switch route {
+    case .unload(let ids):
+      _ = try? store.dispatch(Command("closeTabs", [.array(ids.map(JSONValue.string))]), origin: .native)
+      FrameUpdates.flush()
+    case .close:
+      closeFromControl(tabId, store: store)
+    case .removePinOrClose:
+      let removed = (try? store.dispatch(Command("removeClosedPin", [.string(tabId)]), origin: .native))?.result ?? .null
+      if removed.isNull { return closeFromControl(tabId, store: store) }
+      FrameUpdates.flush()
+      if removed["entries"]?.array?.isEmpty == false { removedPin(removed.text()) }
+    }
+  }
+
+  private static func closeFromControl(_ tabId: String, store: Store) {
+    let before = store.state
+    guard let close = WorkspaceClosePolicy.control(tabId, state: before, lastTabKeepsWindow: store.memory.lastTabKeepsWindow) else { return }
+    let windowId = close.windowId
+    guard !store.memory.closingWindows.contains(windowId), !pending.contains(windowId) else { return }
+    guard let setting = WorkspaceClosePolicy.controlWarning(close, state: before) else { return finishControlClose(tabId, close, store: store) }
+    askClose(windowId, setting: setting, store: store) { finishControlClose(tabId, close, store: store) }
+  }
+
+  private static func finishControlClose(_ tabId: String, _ close: WorkspaceControlClose, store: Store) {
+    let windowId = close.windowId
+    guard NativeStoreHandle.ownsWorkspace, NativeStoreHandle.store === store, !store.memory.closingWindows.contains(windowId),
+      store.state.tabs[tabId] != nil else { return }
+    let current = store.state
+    let now = WorkspaceClosePolicy.control(tabId, state: current, lastTabKeepsWindow: store.memory.lastTabKeepsWindow)
+    if close.last, now?.windowId == windowId, now?.closesItsWindow == true { return animateClose(windowId, store: store) }
+    _ = try? store.dispatch(Command("closeTab", [.string(tabId)]), origin: .native)
+    materializeChanges(before: current, after: store.state)
+    FrameUpdates.flush()
+  }
+
   private static func closeWindow(_ id: String, store: Store) {
-    guard !store.memory.closingWindows.contains(id), pending.insert(id).inserted else { return }
-    defer { pending.remove(id) }
+    guard !store.memory.closingWindows.contains(id), !pending.contains(id) else { return }
     guard let window = store.state.windows[id] else { return }
     if !window.isSmall, WindowHost.retainLastWindow(id) { return }
-    if let setting = WorkspaceClosePolicy.windowWarning(windowId: id, state: store.state), store.state.settings.bool(setting),
-      !confirmClose(id, setting: setting, store: store) { return }
-    guard NativeStoreHandle.ownsWorkspace, NativeStoreHandle.store === store, store.state.windows[id] != nil else { return }
-    if !window.isSmall, WindowHost.retainLastWindow(id, committingClose: true) { return }
+    let small = window.isSmall
+    guard let setting = WorkspaceClosePolicy.windowWarning(windowId: id, state: store.state), store.state.settings.bool(setting) else {
+      return finishClosingWindow(id, small: small, store: store)
+    }
+    askClose(id, setting: setting, store: store) { finishClosingWindow(id, small: small, store: store) }
+  }
+
+  private static func finishClosingWindow(_ id: String, small: Bool, store: Store) {
+    guard NativeStoreHandle.ownsWorkspace, NativeStoreHandle.store === store, store.state.windows[id] != nil,
+      !store.memory.closingWindows.contains(id) else { return }
+    if !small, WindowHost.retainLastWindow(id, committingClose: true) { return }
     animateClose(id, store: store)
   }
 
@@ -321,9 +369,67 @@ enum NativeWorkspaceCommands {
     return window.tabIds
   }
 
-  private static func confirmClose(_ id: String, setting: String, store: Store) -> Bool {
+  private static func askClose(_ id: String, setting: String, store: Store, then proceed: @escaping @MainActor () -> Void) {
+    guard let alert = closeAlert(id, store: store) else { return }
+    askGuarded(alert, windowId: id, setting: setting, store: store, then: proceed)
+  }
+
+  static func askGuarded(
+    _ alert: NSAlert, windowId: String, setting: String, store: Store, then proceed: @escaping @MainActor () -> Void
+  ) {
+    guard !store.memory.closingWindows.contains(windowId), pending.insert(windowId).inserted else { return }
+    let window = ShellDrag.window(windowId)
+    if let window {
+      sheetWindowObservers[windowId] = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: window, queue: .main) { _ in
+        MainActor.assumeIsolated { settleSheet(windowId) }
+      }
+    }
+    let decide: (NSApplication.ModalResponse) -> Void = { response in
+      settleSheet(windowId)
+      guard NativeStoreHandle.ownsWorkspace, NativeStoreHandle.store === store else { return }
+      if alert.suppressionButton?.state == .on { _ = try? store.dispatch(Command("updateSettings", [[setting: false]]), origin: .native) }
+      if response == .alertFirstButtonReturn { proceed() }
+    }
+    if let window, window.isVisible {
+      alert.beginSheetModal(for: window, completionHandler: decide)
+    } else {
+      decide(alert.runModal())
+    }
+  }
+
+  private static func settleSheet(_ windowId: String) {
+    pending.remove(windowId)
+    if let observer = sheetWindowObservers.removeValue(forKey: windowId) { NotificationCenter.default.removeObserver(observer) }
+  }
+
+  private static func finishMovingToProfile(_ tabId: String, target: String, store: Store) {
+    guard NativeStoreHandle.ownsWorkspace, NativeStoreHandle.store === store,
+      let tab = store.state.tabs[tabId], store.state.profiles[target] != nil, tab.profileId != target else { return }
+    let before = store.state
+    _ = try? store.dispatch(Command("moveTabToProfile", [.string(tabId), .string(target)]), origin: .native)
+    materializeChanges(before: before, after: store.state)
+    FrameUpdates.flush()
+  }
+
+  static func confirmAlert(_ title: String, message: String, button: String, suppression: String = "Don’t ask me again") -> NSAlert {
+    let alert = NSAlert()
+    alert.messageText = title
+    alert.informativeText = message
+    alert.addButton(withTitle: button)
+    alert.addButton(withTitle: "Cancel")
+    alert.showsSuppressionButton = true
+    alert.suppressionButton?.title = suppression
+    return alert
+  }
+
+  private static func profileName(_ profileId: String, in state: BrowserState) -> String {
+    if Ids.isIncognitoProfile(profileId) { return "Incognito" }
+    return (state.profiles[profileId] ?? state.profiles[state.settings.defaultProfileId])?.name ?? "Incognito"
+  }
+
+  private static func closeAlert(_ id: String, store: Store) -> NSAlert? {
     let state = store.state
-    guard let window = state.windows[id] else { return false }
+    guard let window = state.windows[id] else { return nil }
     let ids = closingTabs(in: state, windowId: id)
     let count = ids.count
     let tabs = "\(count) \(count == 1 ? "tab" : "tabs")"
@@ -334,23 +440,9 @@ enum NativeWorkspaceCommands {
     }
     let message = profiles.count > 1
       ? (["Closing this window closes all tabs open across profiles:"] + profiles.map { profile, count in
-          "  • \(count) \(count == 1 ? "tab" : "tabs") in \(state.profiles[profile]?.name ?? "Profile")"
+          "  • \(count) \(count == 1 ? "tab" : "tabs") in \(profileName(profile, in: state))"
         }).joined(separator: "\n")
-      : "This window has \(tabs) open in your \(state.profiles[window.profileId]?.name ?? "Profile") profile."
-    return confirm("Close \(tabs)?", message: message, button: count == 1 ? "Close Tab" : "Close All Tabs", setting: setting, store: store)
-  }
-
-  private static func confirm(_ title: String, message: String, button: String, setting: String, store: Store) -> Bool {
-    let alert = NSAlert()
-    alert.messageText = title
-    alert.informativeText = message
-    alert.addButton(withTitle: button)
-    alert.addButton(withTitle: "Cancel")
-    alert.showsSuppressionButton = true
-    alert.suppressionButton?.title = "Don’t ask me again"
-    let confirmed = alert.runModal() == .alertFirstButtonReturn
-    guard NativeStoreHandle.ownsWorkspace, NativeStoreHandle.store === store else { return false }
-    if alert.suppressionButton?.state == .on { _ = try? store.dispatch(Command("updateSettings", [[setting: false]]), origin: .native) }
-    return confirmed
+      : "This window has \(tabs) open in your \(profileName(window.profileId, in: state)) profile."
+    return confirmAlert("Close \(tabs)?", message: message, button: count == 1 ? "Close Tab" : "Close All Tabs")
   }
 }

@@ -336,14 +336,21 @@ final class TopStripHost {
     guard !stopped else { return }
     switch action {
     case .click(let tabId, let mods):
-      if let store = WorkspaceActionRouter.ownedStore, WorkspaceActionRouter.click(store, windowId: windowId, tabId: tabId, mods: mods) {
+      if WorkspaceActionRouter.ownedClick(windowId: windowId, tabId: tabId, mods: mods) {
         FrameUpdates.flush()
       } else {
         call("click", tabId, ["meta": mods.meta, "shift": mods.shift, "alt": mods.alt])
       }
     case .activate(let tabId):
       if !dispatch("activate", tabId) { call("activate", tabId) }
-    case .close(let tabId): call("close", tabId)
+    case .close(let tabId):
+      if let owned = WorkspaceActionRouter.ownedClose(tabId: tabId, middle: false) {
+        NativeWorkspaceCommands.runCloseRoute(owned.route, tabId: tabId, store: owned.store) { [weak self] cleared in
+          self?.call("removedPin", tabId, ["cleared": cleared])
+        }
+      } else {
+        call("close", tabId)
+      }
     case .toggleMute(let tabId): call("toggleMute", tabId)
     case .tabMenu(let tabId): call("tabMenu", tabId)
     case .groupMenu(let groupId): call("groupMenu", groupId)

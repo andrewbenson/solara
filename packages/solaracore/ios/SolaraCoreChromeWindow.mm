@@ -3678,6 +3678,9 @@ NSDictionary *ProbeFrame(NSWindow *window, ACWindowFullScreen *state, CFTimeInte
     info[@"appearance"] = window.appearance.name ?: @"";
     NSWindow *sheet = window.attachedSheet;
     info[@"sheet"] = sheet ? [NSString stringWithFormat:@"%@ %@", sheet.className, NSStringFromRect(sheet.frame)] : @"";
+#if DEBUG
+    info[@"sheetWindow"] = @(sheet.windowNumber);
+#endif
     if ([sheet.windowController respondsToSelector:@selector(window)] || sheet) {
       NSMutableArray *texts = [NSMutableArray array];
       NSMutableArray *stack = [NSMutableArray arrayWithObject:sheet.contentView ?: [NSView new]];

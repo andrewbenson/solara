@@ -344,7 +344,7 @@ export async function openSidebarMenu(windowId: string) {
 
 let undoToasts = 0;
 
-function showUndoToast(cleared: ClearedTabs, title: string, icon: string) {
+export function showUndoToast(cleared: ClearedTabs, title: string, icon: string) {
   const { windowId } = cleared;
   const key = `undo-clear-${++undoToasts}`;
   showToast(windowId, title, undefined, { icon, key, action: { title: "Undo", run: () => store().undoClearTabs(cleared) } });

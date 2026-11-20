@@ -53,4 +53,42 @@ struct WorkspaceActionRouterTests {
     NativeStoreHandle.ownsWorkspace = true
     #expect(WorkspaceActionRouter.ownedStore === store)
   }
+
+  @Test func withoutAnOwnedWorkspaceClicksAndClosesHandOffToJavaScriptUntouched() throws {
+    let (store, window, tabs) = try windowWithTabs(3)
+    let owned = NativeStoreHandle.ownsWorkspace
+    let resolve = NativeStoreHandle.resolve
+    defer { NativeStoreHandle.ownsWorkspace = owned; NativeStoreHandle.resolve = resolve }
+    NativeStoreHandle.resolve = { store }
+    NativeStoreHandle.ownsWorkspace = false
+    let before = store.state
+    let plain = SidebarClickMods([])
+    let meta = SidebarClickMods(.command)
+    #expect(!WorkspaceActionRouter.ownedClick(windowId: window, tabId: tabs[0], mods: plain))
+    #expect(!WorkspaceActionRouter.ownedClick(windowId: window, tabId: tabs[1], mods: meta))
+    #expect(WorkspaceActionRouter.ownedClose(tabId: tabs[1], middle: false) == nil)
+    #expect(WorkspaceActionRouter.ownedClose(tabId: tabs[1], middle: true) == nil)
+    #expect(store.state.stateJSON == before.stateJSON)
+    NativeStoreHandle.ownsWorkspace = true
+    let close = try #require(WorkspaceActionRouter.ownedClose(tabId: tabs[1], middle: false))
+    #expect(close.store === store && close.route == WorkspaceActionRouter.closeRoute(store.state, tabId: tabs[1]))
+    let middle = try #require(WorkspaceActionRouter.ownedClose(tabId: tabs[1], middle: true))
+    #expect(middle.route == WorkspaceActionRouter.middleClickRoute(store.state, tabId: tabs[1]))
+    #expect(WorkspaceActionRouter.ownedClick(windowId: window, tabId: tabs[0], mods: plain))
+    #expect(store.state.activeTabId(window) == tabs[0])
+  }
+
+  @Test func closeRoutesUnloadAnOpenPinRemoveAClosedOneAndCloseListTabs() throws {
+    let state = try BrowserState(stateJSON: JSONValue.parse(#"{"windows":{"w":{"id":"w","profileId":"p","tabIds":["tile","open","closed","a"],"activeTabIds":{"p":"open"}}},"windowOrder":["w"],"tabs":{"tile":{"id":"tile","windowId":"w","profileId":"p","url":"https://tile.example/","title":"Tile","pinned":true},"open":{"id":"open","windowId":"w","profileId":"p","url":"https://open.example/","title":"Open","pinned":true,"pinnedAsRow":true},"closed":{"id":"closed","windowId":"w","profileId":"p","url":"https://closed.example/","title":"Closed","pinned":true,"pinnedAsRow":true},"a":{"id":"a","windowId":"w","profileId":"p","url":"https://a.example/","title":"A"}}}"#).object ?? [:])
+    #expect(SidebarQuery(state).closeKind("closed") == .removePin)
+    #expect(WorkspaceActionRouter.closeRoute(state, tabId: "closed") == .removePinOrClose)
+    #expect(SidebarQuery(state).closeKind("open") == .unload)
+    #expect(WorkspaceActionRouter.closeRoute(state, tabId: "open") == .unload(["open"]))
+    #expect(WorkspaceActionRouter.closeRoute(state, tabId: "a") == .removePinOrClose)
+    #expect(WorkspaceActionRouter.middleClickRoute(state, tabId: "tile") == .close)
+    #expect(WorkspaceActionRouter.middleClickRoute(state, tabId: "closed") == .removePinOrClose)
+    #expect(WorkspaceActionRouter.middleClickRoute(state, tabId: "a") == .removePinOrClose)
+    #expect(WorkspaceActionRouter.closeRoute(state, tabId: "missing") == .removePinOrClose)
+    #expect(WorkspaceActionRouter.middleClickRoute(state, tabId: "missing") == .removePinOrClose)
+  }
 }

@@ -216,7 +216,7 @@ final class SidebarHost {
     guard !stopped else { return }
     switch action {
     case .click(let tabId, let mods):
-      if let store = WorkspaceActionRouter.ownedStore, WorkspaceActionRouter.click(store, windowId: windowId, tabId: tabId, mods: mods) {
+      if WorkspaceActionRouter.ownedClick(windowId: windowId, tabId: tabId, mods: mods) {
         FrameUpdates.flush()
         call("handled", tabId)
       } else if mods.none, hostState?.selection.isEmpty == true, activate(tabId) {
@@ -224,8 +224,24 @@ final class SidebarHost {
       } else {
         call("click", tabId, ["meta": mods.meta, "shift": mods.shift, "alt": mods.alt])
       }
-    case .close(let tabId): call("close", tabId)
-    case .middleClick(let tabId): call("middleClick", tabId)
+    case .close(let tabId):
+      if let owned = WorkspaceActionRouter.ownedClose(tabId: tabId, middle: false) {
+        call("handled", tabId)
+        NativeWorkspaceCommands.runCloseRoute(owned.route, tabId: tabId, store: owned.store) { [weak self] cleared in
+          self?.call("removedPin", tabId, ["cleared": cleared])
+        }
+      } else {
+        call("close", tabId)
+      }
+    case .middleClick(let tabId):
+      if let owned = WorkspaceActionRouter.ownedClose(tabId: tabId, middle: true) {
+        call("handled", tabId)
+        NativeWorkspaceCommands.runCloseRoute(owned.route, tabId: tabId, store: owned.store) { [weak self] cleared in
+          self?.call("removedPin", tabId, ["cleared": cleared])
+        }
+      } else {
+        call("middleClick", tabId)
+      }
     case .rename(let kind, let id): call("rename", id, ["kind": kind])
     case .backToPinned(let tabId): call("backToPinned", tabId)
     case .tileDoubleClick(let tabId): call("tileDoubleClick", tabId)

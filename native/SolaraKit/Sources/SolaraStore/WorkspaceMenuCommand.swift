@@ -193,3 +193,32 @@ extension Session {
     return restored
   }
 }
+
+public struct WorkspaceControlClose: Equatable, Sendable {
+  public let windowId: String
+  public let last: Bool
+  public let peeked: Bool
+  public let closesWindowWithOthers: Bool
+
+  public var closesItsWindow: Bool { last && !peeked }
+}
+
+extension WorkspaceClosePolicy {
+  public static func control(_ tabId: String, state: BrowserState, lastTabKeepsWindow: Bool = false) -> WorkspaceControlClose? {
+    guard let tab = state.tabs[tabId], let window = state.windows[tab.windowId] else { return nil }
+    var memory = StoreMemory()
+    memory.lastTabKeepsWindow = lastTabKeepsWindow
+    let session = Session(state: state, memory: memory, env: PlainWebAddressing(), config: StoreConfig(), now: 0)
+    let closes = state.closesWindow(tabId)
+    let leaves = session.leavesEmptyWindow(state, tabId)
+    let peeked = state.peeks[window.id]?.tabId == tabId
+    let withOthers = !peeked && !state.inPinnedContainer(tabId) && !leaves && closes && window.tabIds.contains { $0 != tabId }
+    return WorkspaceControlClose(windowId: window.id, last: closes && !leaves, peeked: peeked, closesWindowWithOthers: withOthers)
+  }
+
+  public static func controlWarning(_ close: WorkspaceControlClose, state: BrowserState) -> String? {
+    if close.closesWindowWithOthers, state.settings.bool("warnBeforeClosingWindow") { return "warnBeforeClosingWindow" }
+    if close.last, state.settings.bool("warnBeforeClosingLastTab"), state.windows[close.windowId]?.incognito != true { return "warnBeforeClosingLastTab" }
+    return nil
+  }
+}

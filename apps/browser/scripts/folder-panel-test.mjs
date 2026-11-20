@@ -150,6 +150,49 @@ async function run() {
     await sleep(500);
     out.escCloses = !(await isOpen());
     await nativeClosed("Escape closes the native panel");
+
+    const second = JSON.parse(await evaluate(`const s = ac.store.getState(); const w = ${q(setup.w)};
+      const ids = ["four", "five", "six"].map((n) => s.newTab(w, { url: "data:text/html,<title>" + n + "</title>" + n, background: true }));
+      s.pinTabs(ids, true);
+      return new Promise((r) => setTimeout(r, 800)).then(() => JSON.stringify({ ids, folder: ac.pages.tileFolders.make(ids) }))`));
+    assert.ok(second.folder && second.folder !== setup.folder, "a second folder made");
+    await sleep(1200);
+    const anchorOf = async (folderId) => JSON.parse(await evaluate(`return ac.pages.tileFolders.measure(${q(setup.w)}, ${q(folderId)}).then((a) => JSON.stringify(a))`));
+    const clickFolder = async (folderId) => {
+      const tile = await anchorOf(folderId);
+      assert.ok(tile, `folder ${folderId} is laid out`);
+      await press(tile.x + tile.width / 2, tile.y + tile.height / 2);
+    };
+    const jsOpen = async () => JSON.parse(await evaluate(`return JSON.stringify(ac.pages.tileFolders.panel.getState().open)`));
+    const nativeScope = () => evaluate(`return globalThis.expo.modules.SolaraStoreAdapter.status().scope ?? null`);
+    const jsOwns = () => evaluate(`return ac.nativePages.ownsLive()`);
+    const onePanel = async (what, folderId, native) => {
+      out.flip = out.flip ?? {};
+      await untilSnapshot(what, async (state) => {
+        const shown = state.windows.filter((window) => window.folderPanel?.visible);
+        const extra = JSON.parse(await evaluate(`return globalThis.expo.modules.SolaraPages.devViewFrame(${win}, "SidebarFolderPanelView#1")`));
+        const open = await jsOpen();
+        out.flip[what] = { shown: shown.map((window) => window.folderPanel.folderId), extra: extra.found, open };
+        return shown.length === 1 && shown[0].id === setup.w && shown[0].folderPanel.folderId === folderId && shown[0].folderPanel.rows.length === 3
+          && !extra.found && open?.windowId === setup.w && open.folderId === folderId && !!open.native === native;
+      });
+      return true;
+    };
+
+    await clickFolder(setup.folder);
+    await sleep(700);
+    await openedPanel("native folder panel open before the ownership flip");
+    out.ownedBefore = (await nativeScope()) === "everything" && (await jsOwns()) === true;
+    await evaluate(`return globalThis.expo.modules.SolaraStoreAdapter.freeze()`);
+    await untilSnapshot("the flip closes the native panel", async (state) => !nativePanel(state) && !(await isOpen()) && (await nativeScope()) === "settingsAndDownloads");
+    out.flipCloses = true;
+    out.jsStillOwns = (await jsOwns()) === true;
+    await clickFolder(second.folder);
+    await sleep(700);
+    out.flipOpensJs = await onePanel("after the flip the next folder opens one JS panel", second.folder, false);
+    await clickFolder(setup.folder);
+    await sleep(700);
+    out.flipSwitchesJs = await onePanel("the JS panel switches to the first folder", setup.folder, false);
     rep.say(`native: ${JSON.stringify(out)}`);
     return out;
   } finally {
@@ -158,7 +201,7 @@ async function run() {
   }
 }
 
-await rep.check("a native folder tile opens the panel; a row selects its tab; the page, tile and Escape close it", async () => {
+await rep.check("a native folder tile opens the panel; a row selects its tab; the page, tile and Escape close it; after the store stands down, one JS panel opens per folder", async () => {
   const panel = await run();
   assert.ok(panel.native, "a SidebarFolderPanelView");
   assert.ok(panel.opened, "opened");
@@ -172,5 +215,6 @@ await rep.check("a native folder tile opens the panel; a row selects its tab; th
     }
   }
   for (const key of ["rowShows", "rowCloses", "openedAgain", "pageCloses", "tileCloses", "escCloses"]) assert.equal(panel[key], true, key);
+  for (const key of ["ownedBefore", "flipCloses", "flipOpensJs", "flipSwitchesJs"]) assert.equal(panel[key], true, key);
 });
 process.exit(rep.summary() ? 0 : 1);

@@ -47,6 +47,14 @@ JavaScript command branches remain the workspace-ownership fallback; the new han
 require VM verification. Other command groups, menu-state projection and remaining window lifecycle feeds still count
 as column b behavior; this partial port does not complete the 0.4.2 command row or change source totals.
 
+The 0.4.6 drag, folder and group port (S1 99c6c03f to S4 180ffd7e) has Swift decide a tab drag's preview,
+pictures, haptic and glow, file and link drops on the sidebar and native-layout strip, group collapse, close, tuck
+and menu, and the tile-folder panel and menus, whenever the native store owns the workspace. The TypeScript
+branches remain the fallback: without ownership for everything, and for drops and group actions also in safe mode
+or with a frozen store, since those use the direct-write gate. Only the folder panel's open state is mirrored back
+(`folderPanel.state`). The cleanup (S5) found one never-called export, `folderTitle`; no decision branch was
+provably dead, so columns are unchanged; counts stay those of the dated audit.
+
 These are source findings. Runtime reachability, visual parity, and root counts in an actual release are **unverified** by this source inventory; its release-path findings remain the 2026-11-13 audit.
 Native counterparts below prove that code exists. They do not establish complete behavioral parity.
 
@@ -219,8 +227,8 @@ Brace lists name separate files. All listed native filenames end in `.swift` unl
 | Window layout | `UI/WindowShell/{WindowShellView,SidebarDock,DockAnimator,DockMotion,ShellGeometry,FrozenPageView}`; `Settings/WindowShell/NativeWindowShell`; `Shell/ChromeWindows` | Native shell/dock default. RN still composes the window and feeds geometry, backdrop, modal state, profile paging, and drag targets. RN dock/tint branches remain fallback. |
 | Page hosting | `UI/TabPool/{TabViewPool,PageIssuer,PageRegistry,RNPageCallPolicy}`; `UI/PaneOverlays/{PaneRoots,PaneOverlays,SadTabView,SwipeCapsuleView}`; `Settings/{TabPool/TabPoolHost,PaneOverlays/NativePaneRoots,PaneOverlays/PanePrompts}` | Native engine-page pool default when available. RN `ContentCard`, page events, planning/props, overlay hints, and root handoff remain live. Move that orchestration and native fallback/error coverage before removing roots. `FrozenPage` now mounts native snapshot/wash hosting even with the pool; Little Solara remains unpooled. |
 | Split panes | `UI/Split/{SplitChromeView,SplitPanesView,SplitSlots,SplitDividerView,SplitDropZonesView,SplitEmptyStateView}`; `Settings/Split/NativeSplitChrome`; `Store/Splits` | Native pooled chrome default. JS still chooses pane actions, feeds toolbars/toasts, and retains sizing/drop/empty-state fallbacks. Native chrome alone does not remove JS commands. |
-| Sidebar | `UI/Sidebar/{SidebarView,SidebarChrome,SidebarFolderPanel,SidebarGroupCard,SidebarIconPicker,SidebarHoverSurface,TabSearchPanel,TabSwitcherPanel}`; `Settings/Sidebar/{NativeSidebar,NativeSidebarShell,NativeSidebarDock,NativeSidebarHoverCard,NativeTabPickers}` | Rows and full column are native by default gates. JS still feeds theme/media/live/selection and handles menus, rename, close, search, hover, folder, and drop choices. Header/footer/hover pixels remain fallback; GroupPanel now hosts the same native group card without the shell. |
-| Top strip | `UI/TopStrip/{TopStripView,StripPageView,StripControls,StripPeekView,StripDrag,StripContext,StripLayout}`; `Settings/TopStrip/{NativeTopStrip,NativeTopStripPeek}`; `Store/StripQuery` | Native default; 1,754-line RN strip remains behind capability checks. Move JS callbacks, group/folder menus, entry policy, and reorder policy. Verify cached registration timing before calling the fallback dead. |
+| Sidebar | `UI/Sidebar/{SidebarView,SidebarChrome,SidebarFolderPanel,SidebarGroupCard,SidebarIconPicker,SidebarHoverSurface,TabSearchPanel,TabSwitcherPanel}`; `Settings/Sidebar/{NativeSidebar,NativeSidebarShell,NativeSidebarDock,NativeSidebarHoverCard,NativeTabPickers}` | Rows and full column are native by default gates. JS still feeds theme/media/live/selection and handles menus, rename, close, search and hover. With the native store, group buttons and the group menu, tile folders and file/link drops are decided in Swift; the JS handlers are their fallback. Header/footer/hover pixels remain fallback; GroupPanel now hosts the same native group card without the shell. |
+| Top strip | `UI/TopStrip/{TopStripView,StripPageView,StripControls,StripPeekView,StripDrag,StripContext,StripLayout}`; `Settings/TopStrip/{NativeTopStrip,NativeTopStripPeek}`; `Store/StripQuery` | Native default; 1,754-line RN strip remains behind capability checks. Move JS callbacks, entry policy, and reorder policy. Group and folder menus, group buttons and tuck are decided in Swift with the native store; JS keeps the fallback. Verify cached registration timing before calling the fallback dead. |
 | Toolbar | `UI/Toolbar/{ToolbarView,ToolbarState,ToolbarUrlFieldView,SidebarAddressBarView}`; `UI/Find/FindBarView`; `UI/AutoHide/ToolbarAutoHide`; `UI/Panels/HistoryPanelView`; `Settings/{Toolbar/ToolbarModule,Find/FindBarModule,AutoHide/AutoHideModule}` | Native toolbar/find default. JS still builds button/state JSON, handles clicks, history, URL edits, translation, focus, replace, and visibility. RN main/sidebar toolbar, backdrop and history bodies are removed; Find controls and their surface draw only in Swift on every existing find mount, including Little Solara and legacy Peek; the find adapter retains state/actions and transparent layout/motion. |
 | Omnibox | `UI/Omnibox/{OmniboxBarView,OmniboxPanelHostView}`; `UI/NewTab/{HeroBarModel,OmniboxCommandSources,OmniboxWorkspaceSources,OmniboxCommandCatalog}`; `Settings/Omnibox/{NativeOmniboxView,NativeOmniboxSources}` | Native fields/suggestions; JS still owns open/switch dispositions, action dispatch, clipboard menus, file chips, focus, and extension/action feeds. Workspace-tab feed is suppressed under native-source mode. |
 | New Tab | `UI/NewTab/{NewTabHeroView,HeroBarContent,HeroField,BarSurfaceView,NewTabLayout}`; `Settings/NewTab/{NativeNewTabView,NewTabModule}` | Hero and Personalize are native-only. `Settings/NewTab/HostedPersonalize` hosts the native button/panel and existing Swift onboarding theme/layout pickers. Feedback check-in and release postcard/page now use Swift hosts too; their adapters retain state, actions and feeds. |
@@ -406,7 +414,7 @@ Notes name secondary work and immediate deletion candidates. Whole-file lines re
 | `apps/browser/src/components/layout/HistoryPopover.tsx` | 72 | b | 0.4.2 | History disposition/actions and native panel feed; RN rows removed |
 | `apps/browser/src/components/layout/NativeSplitToolbars.tsx` | 15 | d | 0.4.6 | Toolbar JSON/callback relay |
 | `apps/browser/src/components/layout/NativeStripControls.tsx` | 77 | d | 0.4.6 | Native controls/glow JSON feed |
-| `apps/browser/src/components/layout/NativeTopStrip.tsx` | 369 | d | 0.4.6 | Strip JSON feed; also b actions |
+| `apps/browser/src/components/layout/NativeTopStrip.tsx` | 369 | d | 0.4.6 | Strip JSON feed; also b actions, the fallback for group and folder actions Swift decides with the native store |
 | `apps/browser/src/components/layout/PaneOverlays.tsx` | 29 | d | 0.4.6 | Native SadTabView hosting and browser overlay feed; no RN recovery pixels |
 | `apps/browser/src/components/layout/sadTabState.ts` | 8 | d | 0.4.6 | Native SadTab state/theme projection |
 | `apps/browser/src/components/layout/ProfileSwipe.tsx` | 113 | b | 0.4.2 | Profile swipe decisions; native tint placement |
@@ -420,7 +428,7 @@ Notes name secondary work and immediate deletion candidates. Whole-file lines re
 | `apps/browser/src/components/layout/controls.tsx` | 48 | b | 0.4.2 | Drawing-free geometry/modifier/motion/presence adapters; native consumers replace shared controls |
 | `apps/browser/src/components/layout/devExpose.ts` | 13 | d | 0.4.6 | Development exposure facade |
 | `apps/browser/src/components/layout/dockMotion.ts` | 79 | b | 0.4.2 | Dock motion/edge/hit rules; also c |
-| `apps/browser/src/components/layout/fileDrop.tsx` | 132 | b | 0.4.2 | Drop validation and tab placement |
+| `apps/browser/src/components/layout/fileDrop.tsx` | 132 | b | 0.4.2 | Drop validation and tab placement; native-store sidebar and native-layout strip drops open in Swift (DroppedTabs), this is the RN strip's path and the fallback |
 | `apps/browser/src/components/layout/frozenPage.tsx` | 53 | b | 0.4.2 | Handoff receipt/activation guards and native FrozenPageView state; also d hosting |
 | `apps/browser/src/components/layout/geometry.ts` | 97 | b | 0.4.2 | Split sizing and toolbar geometry |
 | `apps/browser/src/components/layout/history.ts` | 140 | b | 0.4.2 | Back/forward/history target rules; also c |
@@ -429,7 +437,7 @@ Notes name secondary work and immediate deletion candidates. Whole-file lines re
 | `apps/browser/src/components/layout/nativeLayoutFeed.ts` | 47 | b | 0.4.2 | Coalesced native layout ownership admission and state feed; also d bridge |
 | `apps/browser/src/components/layout/nativePaneOverlays.ts` | 221 | d | 0.4.6 | Pane overlay/hint JSON feeds |
 | `apps/browser/src/components/layout/nativeSplitChrome.ts` | 156 | d | 0.4.6 | Split JSON feeds; also b toast callback |
-| `apps/browser/src/components/layout/nativeTabDrag.ts` | 58 | b | 0.4.4 | Native drag event decisions |
+| `apps/browser/src/components/layout/nativeTabDrag.ts` | 58 | b | 0.4.4 | Native drag event decisions; preview capture, pictures, window haptic and glow are Swift's when native, `tabDrag.end`/`tabDrag.capture` remain for drags Swift doesn't own |
 | `apps/browser/src/components/layout/openFromPage.ts` | 51 | b | 0.4.2 | Page-created tab/window routing |
 | `apps/browser/src/components/layout/pageState.ts` | 127 | c | 0.4.5 | Page facts and popover store; also b |
 | `apps/browser/src/components/layout/paneFeed.ts` | 69 | c | 0.4.5 | Pane presence/status caches |
@@ -440,11 +448,11 @@ Notes name secondary work and immediate deletion candidates. Whole-file lines re
 | `apps/browser/src/components/layout/shellModal.ts` | 28 | b | 0.4.2 | Modal layer/interaction policy |
 | `apps/browser/src/components/layout/splitActions.ts` | 101 | b | 0.4.2 | Split creation/drop/menu decisions |
 | `apps/browser/src/components/layout/splitDrop.ts` | 43 | b | 0.4.2 | Split drop hit zones |
-| `apps/browser/src/components/layout/stripFolderMenu.ts` | 19 | b | 0.4.4 | Strip folder menus |
-| `apps/browser/src/components/layout/stripGroups.ts` | 226 | b | 0.4.4 | Strip grouping/drop/menu policy |
+| `apps/browser/src/components/layout/stripFolderMenu.ts` | 19 | b | 0.4.4 | Strip folder menus; Swift decides them with the native store, this is the RN strip's path and the fallback |
+| `apps/browser/src/components/layout/stripGroups.ts` | 226 | b | 0.4.4 | Strip grouping/drop/menu policy; `tuckTarget` also ported (StripQuery), this copy serves the RN strip and the fallback |
 | `apps/browser/src/components/layout/stripReorder.ts` | 70 | b | 0.4.4 | RN reorder motion policy |
 | `apps/browser/src/components/layout/swipeMotion.ts` | 33 | b | 0.4.2 | Swipe thresholds/selection math |
-| `apps/browser/src/components/layout/tabDrag.ts` | 303 | b | 0.4.4 | Drag/drop lifecycle; also c/d |
+| `apps/browser/src/components/layout/tabDrag.ts` | 303 | b | 0.4.4 | Drag/drop lifecycle; also c/d. `captureDragPage` is the fallback when native capture is unavailable |
 | `apps/browser/src/components/layout/toasts.ts` | 23 | c | 0.4.5 | Toast/notice store; also b lifecycle |
 | `apps/browser/src/components/layout/toolbarAutoHide.ts` | 81 | b | 0.4.2 | Toolbar visibility/scroll rules; also c |
 | `apps/browser/src/components/layout/toolbarColors.ts` | 107 | b | 0.4.2 | Toolbar palette/motion policy |
@@ -543,12 +551,12 @@ Notes name secondary work and immediate deletion candidates. Whole-file lines re
 | `apps/browser/src/components/settings/settingsIndex.ts` | 573 | c | 0.4.5 | Settings search catalog |
 | `apps/browser/src/components/settings/windows.ts` | 43 | b | 0.4.2 | Settings/import window routing |
 | `apps/browser/src/components/sidebar/AddressBar.tsx` | 99 | d | 0.4.6 | Native sidebar address host/model/action feed; RN header/URL bodies removed |
-| `apps/browser/src/components/sidebar/FolderPanel.tsx` | 83 | d | 0.4.6 | Native folder panel lifecycle |
+| `apps/browser/src/components/sidebar/FolderPanel.tsx` | 83 | d | 0.4.6 | Native folder panel look feed; shows a JS-opened panel only on the fallback path |
 | `apps/browser/src/components/sidebar/FolderTile.tsx` | 41 | a | 0.4.0 | RN folder mosaic layout |
 | `apps/browser/src/components/sidebar/GroupPanel.tsx` | 111 | b | 0.4.4 | Group row selection, state projection and action/focus receipts; native host draws search/list/rows |
 | `apps/browser/src/components/sidebar/HoverCard.tsx` | 367 | a | 0.4.0 | Fallback hover pixels; also b native routing |
 | `apps/browser/src/components/sidebar/IconPicker.tsx` | 74 | b | 0.4.4 | Picker events; also d native host |
-| `apps/browser/src/components/sidebar/NativeSidebar.tsx` | 412 | d | 0.4.6 | Sidebar JSON feed; also b actions |
+| `apps/browser/src/components/sidebar/NativeSidebar.tsx` | 412 | d | 0.4.6 | Sidebar JSON feed; also b actions, the fallback for group, folder and drop actions Swift decides with the native store |
 | `apps/browser/src/components/sidebar/Overlays.tsx` | 26 | b | 0.4.4 | Overlay routing; also a child UI |
 | `apps/browser/src/components/sidebar/ResizeHandle.tsx` | 27 | b | 0.4.4 | Resize gesture decisions |
 | `apps/browser/src/components/sidebar/SearchTabs.tsx` | 81 | b | 0.4.4 | Search ranking; also d native feed |
@@ -556,19 +564,19 @@ Notes name secondary work and immediate deletion candidates. Whole-file lines re
 | `apps/browser/src/components/sidebar/TabSwitcher.tsx` | 9 | d | 0.4.6 | Native switcher state feed |
 | `apps/browser/src/components/sidebar/actions.ts` | 138 | b | 0.4.4 | Tab selection/rename decisions |
 | `apps/browser/src/components/sidebar/cleanUpUpsell.ts` | 49 | b | 0.4.4 | Cleanup offer/dismiss rules |
-| `apps/browser/src/components/sidebar/closeControl.ts` | 53 | b | 0.4.4 | Close/return-to-pin semantics |
+| `apps/browser/src/components/sidebar/closeControl.ts` | 53 | b | 0.4.4 | Close/return-to-pin semantics; group close is Swift's with the direct-write gate, this is the fallback |
 | `apps/browser/src/components/sidebar/commands.ts` | 74 | b | 0.4.4 | Sidebar command/menu enablement |
 | `apps/browser/src/components/sidebar/effects.ts` | 53 | b | 0.4.4 | Sidebar/live-service startup effects |
 | `apps/browser/src/components/sidebar/entries.ts` | 130 | b | 0.4.4 | Sidebar ordering/group/split queries |
-| `apps/browser/src/components/sidebar/fileDrop.tsx` | 21 | b | 0.4.4 | Sidebar drop target adapter |
+| `apps/browser/src/components/sidebar/fileDrop.tsx` | 21 | b | 0.4.4 | Sidebar drop target adapter; fallback when Swift doesn't open the drop |
 | `apps/browser/src/components/sidebar/groupPanelRows.ts` | 40 | b | 0.4.4 | Group search/sort rules |
 | `apps/browser/src/components/sidebar/hover.ts` | 153 | b | 0.4.4 | Hover intent/hold/dismiss rules |
 | `apps/browser/src/components/sidebar/hoverAim.ts` | 20 | b | 0.4.4 | Hover-card pointer intent |
 | `apps/browser/src/components/sidebar/hoverMotion.ts` | 109 | b | 0.4.4 | Hover placement/motion policy |
 | `apps/browser/src/components/sidebar/liveMenus.ts` | 189 | b | 0.4.4 | Live-folder/calendar menus |
-| `apps/browser/src/components/sidebar/menus.ts` | 438 | b | 0.4.4 | Tab/group/sidebar menus and cleanup |
+| `apps/browser/src/components/sidebar/menus.ts` | 438 | b | 0.4.4 | Tab/group/sidebar menus and cleanup; the group menu is Swift's with the native store except Change Icon, Move to Bookmark Bar and the New Tab bar (`runGroupMenuChoice`) |
 | `apps/browser/src/components/sidebar/movePinned.ts` | 98 | b | 0.4.4 | Pin/unpin ordering rules |
-| `apps/browser/src/components/sidebar/nativeDrag.ts` | 157 | b | 0.4.4 | Native drag callbacks/drop policy |
+| `apps/browser/src/components/sidebar/nativeDrag.ts` | 157 | b | 0.4.4 | Native drag callbacks/drop policy; receives the native folder panel mirror (`folderPanel.state`) |
 | `apps/browser/src/components/sidebar/nativeHoverCard.ts` | 297 | d | 0.4.6 | Native hover-card feed; also b kind choice |
 | `apps/browser/src/components/sidebar/nativeLive.ts` | 101 | b | 0.4.4 | Live item actions; also d replica |
 | `apps/browser/src/components/sidebar/nativeTabPickers.ts` | 114 | d | 0.4.6 | Native search/switcher JSON feed |
@@ -577,7 +585,7 @@ Notes name secondary work and immediate deletion candidates. Whole-file lines re
 | `apps/browser/src/components/sidebar/state.ts` | 31 | c | 0.4.5 | Sidebar hover/rename/width store |
 | `apps/browser/src/components/sidebar/switcher.ts` | 108 | b | 0.4.4 | Keyboard/mouse tab-switch policy |
 | `apps/browser/src/components/sidebar/tidyPinsUi.ts` | 25 | b | 0.4.4 | Tidy/undo command routing |
-| `apps/browser/src/components/sidebar/tileFolderUi.ts` | 82 | b | 0.4.4 | Tile-folder menu/open/rename rules |
+| `apps/browser/src/components/sidebar/tileFolderUi.ts` | 82 | b | 0.4.4 | Tile-folder menu/open/rename rules: the fallback, Swift decides them with the native store; mirrors the native panel. `folderTitle` (never called) deleted |
 | `apps/browser/src/components/sidebar/tokens.ts` | 128 | d | 0.4.6 | Sidebar palette/size tokens |
 | `apps/browser/src/components/site/Autofill.tsx` | 48 | a | 0.4.0 | Unused RN NetworkBadge export; requestAutofill behavior remains live |
 | `apps/browser/src/components/site/DeveloperButtons.tsx` | 29 | b | 0.4.4 | Developer reload/menu actions; RN button body removed |
@@ -665,7 +673,7 @@ Notes name secondary work and immediate deletion candidates. Whole-file lines re
 | `apps/browser/src/lib/slowTimers.ts` | 111 | b | 0.4.2 | Slow-job scheduling |
 | `apps/browser/src/lib/tabLifecycle.ts` | 511 | b | 0.4.2 | Discard/freeze/battery policy; also c state |
 | `apps/browser/src/lib/tabPages.ts` | 66 | b | 0.4.2 | Page transfer/launch claim decisions |
-| `apps/browser/src/lib/tabPictures.ts` | 61 | c | 0.4.5 | Tab screenshot cache |
+| `apps/browser/src/lib/tabPictures.ts` | 61 | c | 0.4.5 | Tab screenshot cache; the fallback when Swift's TabDragPictures is off |
 | `apps/browser/src/lib/tabReveal.ts` | 61 | b | 0.4.2 | Tab-reveal eligibility |
 | `apps/browser/src/lib/tabSleepPolicy.ts` | 66 | b | 0.4.2 | Fallback sleep candidate and unused-profile policy |
 | `apps/browser/src/lib/theme.ts` | 347 | b | 0.4.2 | Appearance/palette resolution; also d tokens |

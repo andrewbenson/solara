@@ -3,7 +3,7 @@ import { requireOptionalNativeModule } from "expo-modules-core";
 import { create } from "zustand";
 import { useBrowser } from "../../store/browser";
 import { plural } from "../../store/model";
-import { dissolveTileFolder, folderIn, folderLabel, folderMembers, leaveTileFolder, newTileFolder, renameTileFolder } from "../../store/tileFolders";
+import { dissolveTileFolder, folderIn, folderMembers, leaveTileFolder, newTileFolder, renameTileFolder } from "../../store/tileFolders";
 import { dismissHover } from "./hover";
 import { measureRow } from "./state";
 import { encodeCommand } from "@solara/store";
@@ -119,5 +119,3 @@ export async function openTileFolderMenu(windowId: string, folderId: string) {
   else if (choice === "unpin") store().pinTabs(folderMembers(store(), windowId, folderId), false);
   if (choice) closeFolderPanel();
 }
-
-export const folderTitle = (windowId: string, folderId: string) => folderLabel(folderIn(store(), windowId, folderId));

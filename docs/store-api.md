@@ -43,6 +43,10 @@ modules before using them — this is a summary from the agent that built it.
   `placeTabs({ tileFolder })` sets it, `null` takes a tab out, and leaving it out keeps it. A tab that stops being a tile
   loses it, and a folder that drops to one tab dissolves (`settleTileFolders`, run with the pin mirror). It never reaches
   Chrome: members are plain pinned tabs there. Mirrored, parked and synced with the pins (`tilefold:` records).
+  When the native store owns the workspace, the folder panel, the folder menus, Rename and Name Folder, New Folder and
+  Leave Folder are decided in Swift (`NativeTileFolders`, SolaraUI `TileFolderPanel` and `TileFolderMenus`); components/sidebar/tileFolderUi.ts
+  is the fallback, and with the native store it hands each action to `SolaraFolderPanel` and mirrors the open panel
+  from `folderPanel.state`.
 - UI: `ui.focusedWindowId`, `ui.focusOrder`, `ui.lastProfileId` (the regular profile of the window used last, a private
   window counting as its `originalProfileId`; saved with the session; read it through `lastActiveProfile(s)`, store/small.ts),
   `ui.appDark`, `windowUi[windowId]` (command panel, downloads popover), `find[tabId]`. `find`, `ui.appDark`,
@@ -121,7 +125,10 @@ modules before using them — this is a summary from the agent that built it.
   (`last` puts a row with no `beforeId` after the pinned groups too). Drag and drop in the sidebar and the top strip
   goes through store/drops.ts: a view turns the pointer into a `DropSpot` (zone plus the tab it lands before),
   `resolveDrop(s, source, spot)` gives the `Drop` (or refuses it), `dropTabs(ids, drop)` applies it, `movingTabIds` is
-  the set that moves together, and `slotDrop` turns a strip slot index into an anchor. `pinTabs(ids, pinned, row?)` (a pinned tab is a Top Apps tile, or a pinned row above the tabs when
+  the set that moves together, and `slotDrop` turns a strip slot index into an anchor. With the native store, files and
+  links dropped on the native sidebar or the native-layout strip open in Swift (`DroppedTabs`), and group collapse,
+  close, tuck and the group menu run in Swift (`NativeGroupActions`, `NativeGroupMenu`); safe mode, a frozen store or
+  no ownership sends them to the JS handlers. `pinTabs(ids, pinned, row?)` (a pinned tab is a Top Apps tile, or a pinned row above the tabs when
   `tab.pinnedAsRow`; windows order tiles, then pinned rows and pinned groups in one interleaved order, then the rest; `row` omitted keeps a pinned
   tab's kind and pins a new one as a tile). A live folder sits in that pinned order by `LiveFolder.after`, the anchor key
   (`t:` or `g:` plus the pin key) of the row or group just above it, or `null` for the top (components/sidebar/pinnedOrder.ts);

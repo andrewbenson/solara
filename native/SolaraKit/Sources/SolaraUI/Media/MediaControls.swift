@@ -354,6 +354,8 @@ final class MediaCircleButton: NSView {
     hovered = DevPointer.inside(self, note)
   }
 
+  func resetHover() { hovered = false }
+
   func style(fill: NSColor, border: NSColor?, borderWidth: CGFloat, shadow: Double, shadowRadius: CGFloat, shadowOffset: CGFloat) {
     surface.fill = fill
     surface.borderTint = border

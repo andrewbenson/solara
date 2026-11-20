@@ -22,6 +22,7 @@ public final class SidebarView: NSView {
   let clip = SidebarLayer()
   let scroll = NSScrollView()
   let bottomFade = CAGradientLayer()
+  private var scrimForPlayer = false
   private let document = SidebarDocumentView()
   private let boxes = SidebarLayer()
   let rows = SidebarLayer()
@@ -807,11 +808,13 @@ public final class SidebarView: NSView {
 
   private func placePlayer(_ layout: SidebarPageLayout, _ context: SidebarContext) {
     guard let frame = layout.playerFrame, let state = context.host.player else {
-      player?.isHidden = true
+      if let player, !player.isHidden, player.alphaValue > 0 { fadePlayer(player, shown: false) }
       return
     }
     let view = player ?? {
       let made = SidebarPlayerView()
+      made.isHidden = true
+      made.onScroll = { [weak self] event in self?.forwardScroll(event) }
       made.onAction = { [weak self] action in
         guard let tabId = self?.context?.host.player?.tabId else { return }
         self?.onAction(.media(tabId: tabId, action: action))
@@ -820,9 +823,43 @@ public final class SidebarView: NSView {
       return made
     }()
     player = view
-    view.isHidden = false
     if view.frame != frame { view.frame = frame }
+    view.backdrop = SidebarPalette.parse(context.host.theme["windowTint"])
     view.update(state)
+    if view.isHidden || view.alphaValue == 0 { fadePlayer(view, shown: true) }
+  }
+
+  #if DEBUG
+  var playerFadesIn = 0
+  var scrollsForwarded = 0
+  #endif
+
+  private func forwardScroll(_ event: NSEvent) {
+    #if DEBUG
+    scrollsForwarded += 1
+    #endif
+    scroll.scrollWheel(with: event)
+  }
+
+  private func fadePlayer(_ view: SidebarPlayerView, shown: Bool) {
+    #if DEBUG
+    if shown { playerFadesIn += 1 }
+    #endif
+    if shown {
+      if view.isHidden { view.alphaValue = 0 }
+      view.isHidden = false
+    }
+    NSAnimationContext.runAnimationGroup { animation in
+      animation.duration = Self.fadeDuration
+      animation.timingFunction = Self.fadeCurve
+      view.animator().alphaValue = shown ? 1 : 0
+    } completionHandler: { [weak self, weak view] in
+      MainActor.assumeIsolated {
+        guard let view, self?.pageLayout.playerFrame == nil, view.alphaValue == 0 else { return }
+        view.isHidden = true
+      }
+    }
+    view.coverageMoved()
   }
 
   static let slideDuration: TimeInterval = 0.14
@@ -989,7 +1026,11 @@ public final class SidebarView: NSView {
     let barHeight = railShown ? 0 : min(bottomBarHeight, bounds.height)
     let clearAt: CGFloat
     let opaqueTo: CGFloat
-    if barHeight > 0 {
+    let playerTop = railShown ? nil : pageLayout.playerFrame.map { $0.minY - clip.frame.minY }
+    if let playerTop {
+      clearAt = min(clipHeight, max(0, playerTop))
+      opaqueTo = max(0, clearAt - SidebarMetrics.bottomFadeHeight)
+    } else if barHeight > 0 {
       opaqueTo = min(clipHeight, max(0, bounds.height - barHeight - clip.frame.minY))
       clearAt = min(clipHeight, opaqueTo + barHeight / 2)
     } else {
@@ -997,13 +1038,24 @@ public final class SidebarView: NSView {
       opaqueTo = max(0, clearAt - SidebarMetrics.bottomFadeHeight)
     }
     let rowsBelow = clipHeight > 0 && clearAt > opaqueTo && document.frame.maxY > scroll.contentView.bounds.maxY + 0.5
+    let scrimFollowsPlayer = playerTop != nil
     if rowsBelow {
       bottomFade.frame = clip.bounds
-      bottomFade.locations = [0, opaqueTo / clipHeight, clearAt / clipHeight, 1].map { NSNumber(value: Double($0)) }
+      let locations = [0, opaqueTo / clipHeight, clearAt / clipHeight, 1].map { NSNumber(value: Double($0)) }
+      if scrimFollowsPlayer != scrimForPlayer, clip.layer?.mask === bottomFade, let from = bottomFade.presentation()?.locations ?? bottomFade.locations {
+        let move = CABasicAnimation(keyPath: "locations")
+        move.fromValue = from
+        move.toValue = locations
+        move.duration = Self.fadeDuration
+        move.timingFunction = Self.fadeCurve
+        bottomFade.add(move, forKey: "scrim")
+      }
+      bottomFade.locations = locations
       if clip.layer?.mask !== bottomFade { clip.layer?.mask = bottomFade }
     } else if clip.layer?.mask === bottomFade {
       clip.layer?.mask = nil
     }
+    scrimForPlayer = scrimFollowsPlayer
   }
 
   public override func updateTrackingAreas() {

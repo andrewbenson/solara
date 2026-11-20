@@ -20,22 +20,60 @@ struct FullScreenIslandPlacement {
 }
 
 @MainActor
+protocol PointerCoverage: NSView {
+  func blocksHover(at point: NSPoint) -> Bool
+}
+
+@MainActor
 enum FullScreenIslandCoverage {
-  private static let islands = NSMapTable<NSWindow, FullScreenIslandView>(keyOptions: .weakMemory, valueOptions: .weakMemory)
+  private static let covers = NSMapTable<NSWindow, NSHashTable<NSView>>(keyOptions: .weakMemory, valueOptions: .strongMemory)
 
-  static func contains(_ point: NSPoint, in window: NSWindow?) -> Bool {
-    guard let window, let island = islands.object(forKey: window) else { return false }
-    return island.blocksHover(at: point)
+  static func contains(_ point: NSPoint, in window: NSWindow?, for view: NSView? = nil) -> Bool {
+    guard let window, let table = covers.object(forKey: window) else { return false }
+    for case let cover as PointerCoverage in table.allObjects {
+      if let view, view === cover || view.isDescendant(of: cover) { continue }
+      if cover.blocksHover(at: point) { return true }
+    }
+    return false
   }
 
-  static func register(_ island: FullScreenIslandView, in window: NSWindow?) {
+  static func register(_ cover: PointerCoverage, in window: NSWindow?) {
     guard let window else { return }
-    islands.setObject(island, forKey: window)
+    if let table = covers.object(forKey: window) {
+      table.add(cover)
+    } else {
+      let table = NSHashTable<NSView>.weakObjects()
+      table.add(cover)
+      covers.setObject(table, forKey: window)
+    }
   }
 
-  static func remove(_ island: FullScreenIslandView, from window: NSWindow?) {
-    guard let window, islands.object(forKey: window) === island else { return }
-    islands.removeObject(forKey: window)
+  static func remove(_ cover: PointerCoverage, from window: NSWindow?) {
+    guard let window, let table = covers.object(forKey: window) else { return }
+    table.remove(cover)
+    if table.allObjects.isEmpty { covers.removeObject(forKey: window) }
+  }
+
+  #if DEBUG
+  static var publishCount = 0
+  #endif
+
+  static func publish(in window: NSWindow?) {
+    guard let window else { return }
+    #if DEBUG
+    publishCount += 1
+    #endif
+    let screen = NSValue(point: DevPointer.screenPoint(in: window))
+    NotificationCenter.default.post(name: DevPointer.fullScreenChanged, object: screen, userInfo: ["window": window])
+    if let content = window.contentView { shell(in: content)?.coverChanged() }
+  }
+
+  private static func shell(in view: NSView) -> WindowShellView? {
+    if let shell = view as? WindowShellView { return shell }
+    for child in view.subviews {
+      if let shell = shell(in: child) { return shell }
+    }
+    return nil
   }
 }
 
@@ -348,7 +386,7 @@ final class FullScreenIslandButtonsView: NSView {
 }
 
 @objc(SolaraFullScreenIsland)
-public final class FullScreenIslandView: NSView {
+public final class FullScreenIslandView: NSView, PointerCoverage {
   private let corner = FullScreenIslandScrim(.corner)
   private let edge = FullScreenIslandScrim(.edge)
   private let horizontal = FullScreenIslandScrim(.horizontal)

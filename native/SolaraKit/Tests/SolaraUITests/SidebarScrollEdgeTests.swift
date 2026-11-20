@@ -190,4 +190,32 @@ struct SidebarScrollEdgeTests {
     view.update(state: try SidebarViewportTests.state(1), host: SidebarHostState(profileId: "p"))
     #expect(!fading(view))
   }
+
+  @Test(arguments: [false, true], [24.0, 40.0, 78.0])
+  func rowsAreClearUnderThePlayerAboveTheBar(virtualizesRows: Bool, barHeight: Double) throws {
+    let view = try sidebar(200, virtualizesRows: virtualizesRows)
+    defer { view.stop() }
+    var host = SidebarHostState(profileId: "p")
+    host.player = MediaPlayerState(
+      tabId: "t3", title: "A title", subtitle: "example.test", muted: false, playbackState: "playing", position: 0, timestamp: 0,
+      playbackRate: 1, duration: 120, tracks: false, artwork: nil, url: "https://example.test/", favicon: nil, profileId: "p",
+      theme: MediaThemeState(dark: true))
+    view.update(state: try SidebarViewportTests.state(200), host: host)
+    view.bottomBarHeight = barHeight
+    view.layoutSubtreeIfNeeded()
+    let player = try #require(view.pageLayout.playerFrame)
+    #expect(fading(view))
+    let locations = try #require(view.bottomFade.locations).map(\.doubleValue)
+    let clearY = view.clip.frame.minY + locations[2] * view.clip.bounds.height
+    let opaqueY = view.clip.frame.minY + locations[1] * view.clip.bounds.height
+    #expect(abs(clearY - player.minY) < 1e-9)
+    #expect(abs(clearY - opaqueY - SidebarMetrics.bottomFadeHeight) < 1e-9)
+    #expect(player.maxY <= 400 - barHeight)
+    let document = try #require(view.scroll.documentView)
+    view.scroll.contentView.setBoundsOrigin(CGPoint(x: 0, y: document.frame.maxY - view.scroll.contentView.bounds.height))
+    NotificationCenter.default.post(name: NSView.boundsDidChangeNotification, object: view.scroll.contentView)
+    let last = try #require(view.frameOf("t199"))
+    #expect(last.maxY <= player.minY)
+    #expect(!fading(view))
+  }
 }

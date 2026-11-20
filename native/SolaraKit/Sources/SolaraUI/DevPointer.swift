@@ -24,7 +24,7 @@ public enum DevPointer {
     #endif
     guard let window = view.window, !view.isHiddenOrHasHiddenAncestor, let screen = (note.object as? NSValue)?.pointValue else { return false }
     let point = window.convertPoint(fromScreen: screen)
-    guard !FullScreenIslandCoverage.contains(point, in: window) else { return false }
+    guard !FullScreenIslandCoverage.contains(point, in: window, for: view) else { return false }
     if note.name == fullScreenChanged {
       guard let source = note.userInfo?["window"] as? NSWindow, source === window,
         let frame = window.contentView?.superview, let hit = frame.hitTest(point),

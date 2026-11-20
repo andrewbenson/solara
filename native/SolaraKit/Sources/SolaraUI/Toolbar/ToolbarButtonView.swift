@@ -4,7 +4,7 @@ extension NSView {
   func isHitBy(_ event: NSEvent) -> Bool { isHitAt(event.locationInWindow) }
 
   func isHitAt(_ point: NSPoint) -> Bool {
-    guard !FullScreenIslandCoverage.contains(point, in: window) else { return false }
+    guard !FullScreenIslandCoverage.contains(point, in: window, for: self) else { return false }
     guard let frame = window?.contentView?.superview, let hit = frame.hitTest(point) else { return true }
     return hit === self || hit.isDescendant(of: self)
   }

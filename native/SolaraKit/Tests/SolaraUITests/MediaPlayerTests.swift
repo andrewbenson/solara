@@ -59,7 +59,9 @@ import Testing
     #expect(!view.cornersShown)
     var actions: [MediaAction] = []
     view.onAction = { actions.append($0) }
-    view.mouseEntered(with: NSEvent())
+    let onCard = view.convert(CGPoint(x: view.bounds.midX, y: 30), to: nil)
+    view.mouseEntered(with: try #require(NSEvent.mouseEvent(with: .mouseMoved, location: onCard, modifierFlags: [], timestamp: 0,
+      windowNumber: 0, context: nil, eventNumber: 0, clickCount: 0, pressure: 0)))
     view.layoutSubtreeIfNeeded()
     #expect(view.cornersShown)
     #expect(view.controlFrames == before)
@@ -240,5 +242,65 @@ import Testing
     view.mouseExited(with: NSEvent())
     #expect(pointers == [true, false])
     #expect(actions.isEmpty)
+  }
+
+  nonisolated static let cardBackdrops: [(name: String, dark: Bool, backdrop: String?)] = [
+    ("default dark", true, nil), ("default light", false, nil),
+    ("purple dark", true, "#2F2130"), ("purple light", false, "#E0CFE7"),
+    ("light colour in dark mode", true, "#E8E2C8"), ("dark colour in light mode", false, "#3A3550"),
+    ("photo dark", true, "#4A5A3C"), ("photo light", false, "#9FB4C8"), ("mid grey", false, "#808080"),
+    ("mid green", true, "#5B8A4C"), ("mid orange", false, "#C87A3C"),
+  ]
+
+  @Test(arguments: cardBackdrops.indices)
+  func sidebarCardTextReadsAtLeastAA(index: Int) throws {
+    let entry = Self.cardBackdrops[index]
+    var value = state()
+    value.theme = MediaThemeState(dark: entry.dark)
+    let view = SidebarPlayerView(frame: CGRect(x: 0, y: 0, width: 220, height: 74))
+    view.backdrop = entry.backdrop.flatMap { MediaPalette.parse($0) }
+    view.update(value)
+    view.layoutSubtreeIfNeeded()
+    let look = MediaCardLook(theme: value.theme, backdrop: view.backdrop, reduceTransparency: false)
+    #expect(MediaCardLook.contrast(view.titleColor, look.background) >= MediaCardLook.plateContrast, "\(entry.name) title")
+    #expect(MediaCardLook.contrast(view.subtitleColor, look.background) >= MediaCardLook.minimumContrast, "\(entry.name) subtitle")
+    #expect(MediaCardLook.contrast(view.iconColor, look.background) >= MediaCardLook.controlContrast, "\(entry.name) controls")
+    #expect(MediaCardLook.contrast(view.titleColor, look.onScreen(for: view.titleColor)) >= MediaCardLook.plateContrast, "\(entry.name) title through the glass")
+    #expect(MediaCardLook.contrast(view.subtitleColor, look.onScreen(for: view.subtitleColor)) >= MediaCardLook.minimumContrast, "\(entry.name) subtitle through the glass")
+    #expect(MediaCardLook.contrast(view.iconColor, look.onScreen(for: view.iconColor)) >= MediaCardLook.controlContrast, "\(entry.name) controls through the glass")
+    let plate = try #require(view.plateColor?.usingColorSpace(.sRGB))
+    #expect(plate.alphaComponent == 1)
+    #expect(view.plateOpacity >= 0.7)
+  }
+
+  @Test func sidebarCardIsTintedGlassAndOpaqueUnderReduceTransparency() throws {
+    let view = SidebarPlayerView(frame: CGRect(x: 0, y: 0, width: 220, height: 74))
+    view.backdrop = MediaPalette.parse("#2F2130")
+    view.reduceTransparencyOverride = false
+    view.update(state())
+    view.layoutSubtreeIfNeeded()
+    #expect(view.usesGlass)
+    let glass = try #require(view.subviews.first as? NewTabGlassSurface)
+    #expect(!glass.isHidden)
+    #expect(glass.glass.style == .regular)
+    let tint = try #require(glass.glass.tintColor?.usingColorSpace(.sRGB))
+    #expect(abs(tint.alphaComponent - MediaCardLook.glassTintStrength) < 0.01)
+    view.reduceTransparencyOverride = true
+    #expect(!view.usesGlass)
+    #expect(glass.isHidden)
+    #expect(view.plateOpacity == 1)
+  }
+
+  @Test func hostedSidebarCardWithoutBackdropStillHasAPlate() throws {
+    let view = sidebar(state())
+    let plate = try #require(view.plateColor?.usingColorSpace(.sRGB))
+    #expect(plate.alphaComponent == 1)
+    #expect(view.plateOpacity >= 0.7)
+  }
+
+  @Test func sidebarCardBackgroundClicksStayOnTheCard() throws {
+    let view = sidebar(state())
+    let hit = view.hitTest(CGPoint(x: 200, y: 30))
+    #expect(hit === view)
   }
 }

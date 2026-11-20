@@ -197,13 +197,16 @@ public class AppModule: Module {
       #endif
     }.runOnQueue(.main)
 
-    AsyncFunction("devWorkspaceMenuCommand") { (windowId: String, command: String, arg: String?) in
+    AsyncFunction("devWorkspaceMenuCommand") { (windowId: String, command: String, arg: String?) -> [String: Any] in
       #if DEBUG
       if command == "closeWindow" {
         WindowManager.shared.windows[windowId]?.performClose(nil)
       } else {
         MenuTarget.shared.dispatchCommand(command, arg: arg, windowId: windowId)
       }
+      return ["debug": true, "appearance": NSApp.appearance?.name.rawValue ?? "auto"]
+      #else
+      return [:]
       #endif
     }.runOnQueue(.main)
 

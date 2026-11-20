@@ -27,9 +27,10 @@ enum NativeWorkspaceCommands {
   private static var panelFocus: [String: PanelFocus] = [:]
 
   static func install() {
-    for command in WorkspaceMenuCommand.commands {
+    for command in WorkspaceMenuCommand.commands.union(ViewMenuCommand.commands) {
       NativeMenuCommands.argumentHandlers[command] = { arg, windowId in perform(command, arg: arg, windowId: windowId) }
     }
+    NativeMenuCommands.keepsMenuDispatch = ViewMenuCommand.commands
     NativeMenuCommands.workspaceAvailability = { command, arg, windowId in
       guard NativeStoreHandle.ownsWorkspace, let state = NativeStoreHandle.store?.state,
         WorkspaceMenuCommand.commands.contains(command) else { return nil }
@@ -40,6 +41,15 @@ enum NativeWorkspaceCommands {
     SolaraCoreServices.closeCancelledHandler = { request in
       MainActor.assumeIsolated { restoreCancelledClose(request) }
     }
+  }
+
+  private static func performView(_ command: String, arg: String?, windowId: String?) -> Bool {
+    guard NativeStoreHandle.ownsWorkspace, let store = NativeStoreHandle.store else { return false }
+    guard let outcome = ViewMenuCommand.perform(command, arg: arg, windowId: windowId, store: store) else { return false }
+    if let target = outcome.focusWindow { ShellScripting.showWindow(target) }
+    if let appearance = outcome.appearance { ShellScripting.setAppearance(appearance) }
+    FrameUpdates.flush()
+    return true
   }
 
   private static func restoreCancelledClose(_ request: [String: Any]) -> Bool {
@@ -62,6 +72,7 @@ enum NativeWorkspaceCommands {
 
   @discardableResult
   static func perform(_ command: String, arg: String? = nil, windowId: String?) -> Bool {
+    if ViewMenuCommand.commands.contains(command) { return performView(command, arg: arg, windowId: windowId) }
     guard NativeStoreHandle.ownsWorkspace, let store = NativeStoreHandle.store,
       WorkspaceMenuCommand.commands.contains(command) else { return false }
     if command == "closeTab", windowId == nil, WindowHost.closeForeignKeyWindow() { return true }

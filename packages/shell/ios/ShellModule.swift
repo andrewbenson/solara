@@ -529,7 +529,7 @@ public class ShellModule: Module {
     AsyncFunction("windowIds") { () -> [String] in Array(WindowManager.shared.windows.keys) }.runOnQueue(.main)
 
     AsyncFunction("setAppearance") { (mode: String) in
-      NSApp.appearance = mode == "light" ? NSAppearance(named: .aqua) : mode == "dark" ? NSAppearance(named: .darkAqua) : nil
+      ShellScripting.setAppearance(mode)
     }.runOnQueue(.main)
 
     AsyncFunction("isDarkAppearance") { () -> Bool in ShellModule.isDark }.runOnQueue(.main)

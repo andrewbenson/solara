@@ -239,6 +239,7 @@ public enum NativeMenuCommands {
   nonisolated(unsafe) public static var handlers: [String: (String?) -> Void] = [:]
   nonisolated(unsafe) public static var workspaceAvailability: ((String, String?, String?) -> Bool?)?
   nonisolated(unsafe) public static var argumentHandlers: [String: (String?, String?) -> Bool] = [:]
+  nonisolated(unsafe) public static var keepsMenuDispatch: Set<String> = []
 }
 
 final class MenuTarget: NSObject, NSMenuItemValidation {
@@ -250,23 +251,32 @@ final class MenuTarget: NSObject, NSMenuItemValidation {
   @objc(commandDispatch:) func performCommand(_ sender: NSMenuItem) {
     guard let item = sender as? CommandItem else { return }
     let nativeAvailability = NativeMenuCommands.workspaceAvailability?(item.command, item.arg, item.windowless ? nil : WindowManager.shared.keyWindowId)
+    var prepared = false
     if let run = NativeMenuCommands.argumentHandlers[item.command] {
       guard nativeAvailability ?? (!MenuState.current.disabled.contains(item.stateKey) && !MenuState.current.disabled.contains(item.command)) else { return }
+      if NativeMenuCommands.keepsMenuDispatch.contains(item.command) {
+        prepareDispatch(item.command)
+        prepared = true
+      }
       if run(item.arg, item.windowless ? nil : WindowManager.shared.keyWindowId) { return }
     }
     if let run = NativeMenuCommands.handlers[item.command] {
       return run(item.windowless ? nil : WindowManager.shared.keyWindowId)
     }
+    if !prepared { prepareDispatch(item.command) }
+    handler?(item.command, item.arg, item.windowless ? nil : WindowManager.shared.keyWindowId)
+    if item.command == "tabSwitcher" { SwitcherHold.opened(by: item) }
+  }
+
+  private func prepareDispatch(_ command: String) {
     _ = FocusHandoff.shared.takeBegun()
     let settled = !FocusHandoff.shared.gatesKeyWindow
-    if Self.focusMovingCommands.contains(item.command) || FocusHandoff.shared.gatesKeyWindow, let window = NSApp.keyWindow {
+    if Self.focusMovingCommands.contains(command) || FocusHandoff.shared.gatesKeyWindow, let window = NSApp.keyWindow {
       FocusHandoff.shared.begin(in: window)
     }
     if settled, let window = WindowManager.shared.keyBrowserWindow {
-      NotificationCenter.default.post(name: Notification.Name("SolaraCommandWillDispatch"), object: window, userInfo: ["command": item.command])
+      NotificationCenter.default.post(name: Notification.Name("SolaraCommandWillDispatch"), object: window, userInfo: ["command": command])
     }
-    handler?(item.command, item.arg, item.windowless ? nil : WindowManager.shared.keyWindowId)
-    if item.command == "tabSwitcher" { SwitcherHold.opened(by: item) }
   }
 
   func dispatchCommand(_ command: String, arg: String?, windowId: String?) {

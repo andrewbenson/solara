@@ -82,6 +82,10 @@ public enum ShellScripting {
     WindowManager.shared.focus(id: id)
   }
 
+  public static func setAppearance(_ mode: String) {
+    NSApp.appearance = mode == "light" ? NSAppearance(named: .aqua) : mode == "dark" ? NSAppearance(named: .darkAqua) : nil
+  }
+
   static func window(_ id: String) -> WindowInfo? { windowInfos.first { $0.id == id } }
 
   static func tab(_ id: String) -> TabInfo? {

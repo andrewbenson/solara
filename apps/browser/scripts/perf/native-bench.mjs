@@ -1120,7 +1120,7 @@ function inputContenders(ownPid) {
   const lines = spawnSync("ps", ["-axo", "pid=,command="], { encoding: "utf8" }).stdout.split("\n");
   const others = lines.map((l) => l.trim()).filter((l) => /MacOS\/Solara( |$)|swiftpm-testing-helper|\.xctest\/|acperf postkeys/.test(l) && !l.startsWith(`${ownPid} `) && !l.includes(resolve(opt.out)));
   let holder = "none";
-  try { holder = readFileSync(join(tmpdir(), "ac-uitest.holder"), "utf8").trim(); } catch {}
+  try { holder = readFileSync(join(process.env.AC_LOCK_ROOT || "/tmp", "ac-uitest.holder"), "utf8").trim(); } catch {}
   return `${others.length ? others.map((l) => l.slice(0, 160)).join("; ") : "no other Solara instance, test helper or key poster"}; uitest lock: ${holder.slice(0, 200)}`;
 }
 

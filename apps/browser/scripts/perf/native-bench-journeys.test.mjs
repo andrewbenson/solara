@@ -25,6 +25,8 @@ function driver({ delivered = false, committed = false, code = 0 } = {}) {
     join,
     existsSync: () => true,
     readFileSync: () => "",
+    execFileSync: () => {},
+    inputContenders: () => "no other Solara instance, test helper or key poster; uitest lock: none",
     here: "unused",
     toolDir: "unused",
     journeyState: async () => ({ pending, samples: {}, counts: {}, marks: {}, queries: [] }),
@@ -36,11 +38,11 @@ function driver({ delivered = false, committed = false, code = 0 } = {}) {
     between("async function openNewTab(", "async function newTabKey("),
     "globalThis.openNewTab = openNewTab;",
   ].join("\n"), context);
-  return () => context.openNewTab({ pid: 123, marks: () => marks });
+  return () => context.openNewTab({ pid: 123, dataDir: "/scratch", marks: () => marks });
 }
 
 test("undelivered Cmd-T aborts before it can be reported as a missing bar", async () => {
-  await assert.rejects(driver()(), (error) => error.name === "Error" && error.constructor.name === "FatalError" && /key never arrived/.test(error.message));
+  await assert.rejects(driver()(), (error) => error.name === "Error" && error.constructor.name === "FatalError" && /input delivery stopped/.test(error.message));
 });
 
 test("denied event-posting access aborts the entire bench", async () => {

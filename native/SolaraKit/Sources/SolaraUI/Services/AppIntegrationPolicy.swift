@@ -27,6 +27,7 @@ public enum AppIntegrationMenuAction: String, CaseIterable, Sendable {
   case copyDiagnostics
   case recordPerformanceIssue
   case taskManager
+  case reportBug
 }
 
 public enum AppIntegrationPolicy {

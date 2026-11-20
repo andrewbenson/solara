@@ -86,6 +86,7 @@ const DEFS: ActionDef[] = [
   { command: "clearBrowsingData", keywords: ["clear history", "clear cache", "clear cookies"] },
   { command: "importBrowserData", keywords: ["import bookmarks", "import passwords"] },
   { command: "keyboardShortcuts", keywords: ["shortcuts", "hotkeys"] },
+  { command: "reportBug", keywords: ["bug", "report bug", "file an issue", "crash"] },
   { command: "mergeAllWindows", needs: "profiles" },
   { command: "newProfile", keywords: ["create profile"], needs: "profiles" },
   { command: "setAppearance", arg: "dark", keywords: ["dark mode"] },

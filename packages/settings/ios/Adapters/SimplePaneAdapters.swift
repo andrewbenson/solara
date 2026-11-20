@@ -347,6 +347,8 @@ final class AboutAdapter: AboutServices {
     guard !SettingsDirectWrites.openURLs([url]) else { return }
     SettingsJS.shared.fire("app.openUrls", [url])
   }
+
+  func reportBug() { NativeBugReport.shared.report(windowId: "settings") }
 }
 
 extension SettingsAdapters {

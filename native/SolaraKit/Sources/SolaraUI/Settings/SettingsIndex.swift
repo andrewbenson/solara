@@ -598,6 +598,7 @@ public struct SettingsIndex: Sendable {
           Row(key: "chromium", title: "Chromium", keywords: ["chromium", "engine", "version", "chrome"]),
           Row(key: "macOS", title: "macOS", keywords: ["os", "system", "version", "architecture", "apple silicon", "intel"]),
           Row(key: "copy", title: "Copy version information", description: "For bug reports.", keywords: ["copy", "bug report", "version", "support"]),
+          Row(key: "reportBug", title: "Report a bug", description: "A new GitHub issue with the version, macOS and Mac filled in. Nothing is sent on its own.", keywords: ["bug", "bug report", "issue", "crash", "github", "support", "feedback"]),
         ]),
         Section(section: "Updates", rows: [
           Row(key: "updateChecks", title: "Check for updates automatically", keywords: ["update", "sparkle"]),

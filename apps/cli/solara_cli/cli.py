@@ -112,12 +112,13 @@ def build_parser():
     install.add_argument("--target", action="append", choices=sorted(TARGETS), metavar="TARGET", help="general, codex, claude-code, cursor or opencode; repeat for several (default: general)")
     install.add_argument("--project", action="store_true", help="install into the current directory's project folders")
 
-    from solara_cli import scripts_cli, sidebar
+    from solara_cli import bug, scripts_cli, sidebar
 
     sidebar.add_parser(commands)
     inventory.add_parser(commands)
     tab_actions.add_parser(commands)
     scripts_cli.add_parser(commands, argparse.RawDescriptionHelpFormatter)
+    bug.add_parser(commands)
     return parser
 
 
@@ -164,6 +165,10 @@ def main(argv: list[str] | None = None) -> int:
         from solara_cli.skills import install
 
         return install(args.target or ["general"], args.project)
+    if args.command == "bug":
+        from solara_cli import bug
+
+        return bug.run(args)
     if args.command == "scripts":
         from solara_cli import scripts_cli
 

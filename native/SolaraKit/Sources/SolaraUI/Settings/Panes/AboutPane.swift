@@ -98,6 +98,7 @@ public protocol AboutServices: AnyObject {
   var updateChecksNote: String? { get }
   func copyText(_ text: String)
   func openURL(_ url: String)
+  func reportBug()
 }
 
 @MainActor
@@ -194,6 +195,11 @@ struct AboutPane: View {
         }
         SettingRow("about.copy") {
           Button(model.copied ? "Copied" : "Copy") { model.copy(app: app) }
+        }
+        if info.releaseRepo != nil {
+          SettingRow("about.reportBug") {
+            Button("Report a Bug…") { model.services.reportBug() }
+          }
         }
       }
 

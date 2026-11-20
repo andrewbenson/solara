@@ -48,6 +48,7 @@ enum OmniboxCommandCatalog {
     OmniboxCommandDefinition(id: "clearBrowsingData", title: "Clear Browsing Data", icon: "trash", keywords: ["clear history", "clear cache", "clear cookies"], needs: "always"),
     OmniboxCommandDefinition(id: "importBrowserData", title: "Import Browser Data", icon: "square.and.arrow.down", keywords: ["import bookmarks", "import passwords"], needs: "always"),
     OmniboxCommandDefinition(id: "keyboardShortcuts", title: "Keyboard Shortcuts", icon: "keyboard", keywords: ["shortcuts", "hotkeys"], needs: "always"),
+    OmniboxCommandDefinition(id: "reportBug", title: "Report a Bug", icon: "ladybug", keywords: ["bug", "report bug", "file an issue", "crash"], needs: "always"),
     OmniboxCommandDefinition(id: "mergeAllWindows", title: "Merge All Windows", icon: "rectangle.stack", keywords: nil, needs: "profiles"),
     OmniboxCommandDefinition(id: "newProfile", title: "New Profile", icon: "person.crop.circle.badge.plus", keywords: ["create profile"], needs: "profiles"),
     OmniboxCommandDefinition(id: "setAppearance:dark", title: "Dark Appearance", icon: "moon", keywords: ["dark mode"], needs: "always"),

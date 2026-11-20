@@ -178,6 +178,14 @@ public class SettingsModule: Module {
       MainActor.assumeIsolated { SettingsDev.drive(action, argument) }
     }.runOnQueue(.main)
 
+    AsyncFunction("devBugReport") { (action: String, argument: String?) -> String in
+      #if DEBUG
+      return MainActor.assumeIsolated { NativeBugReport.shared.drive(action, argument) }
+      #else
+      return #"{"error":"DEV builds only"}"#
+      #endif
+    }.runOnQueue(.main)
+
     #if DEBUG
     AsyncFunction("devSettingsWrites") { (action: String, argument: String?, promise: Promise) in
       nonisolated(unsafe) let reply = promise

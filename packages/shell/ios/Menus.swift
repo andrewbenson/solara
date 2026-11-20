@@ -806,6 +806,7 @@ enum MainMenu {
 
   private static func helpItems() -> [NSMenuItem] {
     var items: [NSMenuItem] = [
+      CommandItem("Report a Bug…", "reportBug", key: ""),
       CommandItem("Send Feedback…", "sendFeedback", key: "i", [.command, .option, .shift]),
       CommandItem("Keyboard Shortcuts", "keyboardShortcuts", key: ""),
       CommandItem("Tool Tour", "toolTour", key: ""),

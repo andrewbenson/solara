@@ -98,6 +98,7 @@ final class NativeAppIntegration {
     retryInFlight = false
     guard let store = NativeStoreHandle.store else { return }
     started = true
+    NativeBugReport.shared.checkAtLaunch()
     let writer = StoreWorkspaceWriter(store: store, showWindow: ShellScripting.showWindow)
     let pages = PoolScriptPages(
       page: { tabId -> PageIdentity? in
@@ -147,6 +148,7 @@ final class NativeAppIntegration {
       case .copyDiagnostics: Self.copy(diagnostics(storeStatus: status))
       case .recordPerformanceIssue: recordPerformanceIssue()
       case .taskManager: SolaraCoreServices.call("ac_task_manager_open", profile: "", args: nil) { @Sendable _ in }
+      case .reportBug: NativeBugReport.shared.report(windowId: windowId)
       }
     }
   }

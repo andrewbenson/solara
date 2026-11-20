@@ -89,6 +89,8 @@ final class FakeAboutServices: AboutServices {
   var updateChecksNote: String? { nil }
   func copyText(_ text: String) { copiedText = text }
   func openURL(_ url: String) { opened.append(url) }
+  var bugReports = 0
+  func reportBug() { bugReports += 1 }
 }
 
 @MainActor

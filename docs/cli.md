@@ -34,6 +34,7 @@ side or a DevTools connection.
   finishes, a profile switches, and the like. Only scripts the owner placed there run; no website, extension or agent
   can install one. Every run is logged.
 - **`solara exec`** stays for the owner, behind a Settings toggle to turn it off, and is never offered to agents.
+- **`solara bug`** moves onto the control socket and asks the app, so the link comes from the app's own Swift builder (with the layout and, after a crash, its summary) instead of being built by the command.
 - **New commands:**
   - windows: new, close, and moving a tab between windows;
   - switching profiles;
@@ -114,6 +115,11 @@ side or a DevTools connection.
   project trust and MCP approval rules. Existing customized entries are left for the user to edit. An existing
   Codex inline `mcp_servers` table is refused when adding a subtable would require rewriting unrelated settings.
 - `solara scripts new|test|install|uninstall|list` writes, tests and installs userscripts (see Userscripts).
+- `solara bug [--no-open] [--json]` prints a link to a new GitHub issue on the release repository, with the bug
+  form's `version` (the installed app's version and build, from its Info.plist), `macos` and `mac` (`hw.model`)
+  filled in, and opens it in Solara (`open -b <bundle id>`), or in the default browser when Solara isn't installed.
+  Over ssh, or with `--no-open`, it only prints. Same field ids and 7,500-character cap as the app's Report a Bug;
+  it never talks to the app and sends nothing.
 - `solara --version`, `solara --help`, `solara exec --help`, `solara scripts <command> --help`.
 
 `exec` never quits Solara: it refuses `browser.stop()`, and every WebSocket it opens checks each outgoing message (and

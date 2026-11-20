@@ -90,6 +90,7 @@ export function runCommand({ command, arg, windowId: requested }: CommandEvent) 
     case "videoTour":
     case "releaseNotes":
     case "sendFeedback":
+    case "reportBug":
     case "copyDiagnostics":
     case "recordPerformanceIssue":
     case "taskManager":

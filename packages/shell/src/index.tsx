@@ -96,6 +96,7 @@ export type BrowserCommand =
   | "tabSwitcher"
   | "share"
   | "sendFeedback"
+  | "reportBug"
   | "keyboardShortcuts"
   | "copyDiagnostics"
   | "recordPerformanceIssue"

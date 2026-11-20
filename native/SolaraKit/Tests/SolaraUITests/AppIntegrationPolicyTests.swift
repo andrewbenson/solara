@@ -70,7 +70,7 @@ import Testing
         }
         #expect(handled)
       }
-      #expect(performed == [.sendFeedback, .copyDiagnostics, .recordPerformanceIssue, .taskManager])
+      #expect(performed == [.sendFeedback, .copyDiagnostics, .recordPerformanceIssue, .taskManager, .reportBug])
       #expect(!AppIntegrationPolicy.performMenuCommand("newTab", storeStatus: status) { _, _ in Issue.record("unexpected action") })
     }
   }

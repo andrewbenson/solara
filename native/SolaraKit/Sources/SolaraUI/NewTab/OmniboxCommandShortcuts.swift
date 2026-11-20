@@ -167,6 +167,7 @@ public struct CommandShortcutSnapshot: Sendable {
     ("tabSwitcher:backward", []),
     ("share", ["⌥⌘S"]),
     ("sendFeedback", ["⌥⇧⌘I"]),
+    ("reportBug", []),
     ("keyboardShortcuts", []),
     ("copyDiagnostics", []),
     ("recordPerformanceIssue", []),

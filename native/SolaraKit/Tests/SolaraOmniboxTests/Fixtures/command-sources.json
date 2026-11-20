@@ -527,6 +527,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -1065,6 +1076,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -1534,6 +1556,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -2021,6 +2054,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -2560,6 +2604,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -3279,6 +3334,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -3992,6 +4058,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -4722,6 +4799,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -5446,6 +5534,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -6176,6 +6275,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -6900,6 +7010,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -7630,6 +7751,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -8357,6 +8489,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -9073,6 +9216,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -9786,6 +9940,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -10516,6 +10681,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -11243,6 +11419,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -11967,6 +12154,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -12698,6 +12896,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -13422,6 +13631,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -14152,6 +14372,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -14756,6 +14987,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -15295,6 +15537,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -15903,6 +16156,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -16504,6 +16768,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -17112,6 +17387,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -17713,6 +17999,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -18444,6 +18741,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -19137,6 +19445,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -20033,6 +20352,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -20783,6 +21113,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -21511,6 +21852,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "setAppearance:dark",
             "title": "Dark Appearance",
             "icon": "moon",
@@ -22168,6 +22520,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -22856,6 +23219,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "setAppearance:dark",
             "title": "Dark Appearance",
             "icon": "moon",
@@ -23525,6 +23899,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -24210,6 +24595,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -24764,6 +25160,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -25442,6 +25849,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -26234,6 +26652,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -26823,6 +27252,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -27510,6 +27950,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -28289,6 +28740,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -29041,6 +29503,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -29778,6 +30251,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -30521,6 +31005,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -31249,6 +31744,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -31991,6 +32497,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -32752,6 +33269,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -33489,6 +34017,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -34232,6 +34771,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -34972,6 +35522,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -35708,6 +36269,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -36452,6 +37024,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -37180,6 +37763,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -37913,6 +38507,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -39651,6 +40256,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -41385,6 +42001,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -42110,6 +42737,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -42867,6 +43505,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -43638,6 +44287,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -44392,6 +45052,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -45160,6 +45831,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -45940,6 +46622,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -46727,6 +47420,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -47565,6 +48269,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -48386,6 +49101,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -49225,6 +49951,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -50044,6 +50781,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -50869,6 +51617,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -51662,6 +52421,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -52500,6 +53270,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -53321,6 +54102,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -54160,6 +54952,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -54979,6 +55782,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -55804,6 +56618,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -56457,6 +57282,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -57275,6 +58111,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -58063,6 +58910,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -58731,6 +59589,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -59484,6 +60353,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -60264,6 +61144,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -61072,6 +61963,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -61716,6 +62618,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -62386,6 +63299,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -63144,6 +64068,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -63885,6 +64820,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -64720,6 +65666,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -65597,6 +66554,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "setAppearance:dark",
             "title": "Dark Appearance",
             "icon": "moon",
@@ -66214,6 +67182,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -67157,6 +68136,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -67964,6 +68954,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -68693,6 +69694,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -69429,6 +70441,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -70169,6 +71192,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -70916,6 +71950,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -71645,6 +72690,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -72388,6 +73444,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -73117,6 +74184,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -73864,6 +74942,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -74593,6 +75682,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -75375,6 +76475,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -76183,6 +77294,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "setAppearance:dark",
             "title": "Dark Appearance",
             "icon": "moon",
@@ -76899,6 +78021,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -77431,6 +78564,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -78148,6 +79292,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -78955,6 +80110,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -79541,6 +80707,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -80239,6 +81416,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -81004,6 +82192,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -81729,6 +82928,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -82436,6 +83646,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -83084,6 +84305,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -83809,6 +85041,17 @@
             ]
           },
           {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
+            ]
+          },
+          {
             "id": "mergeAllWindows",
             "title": "Merge All Windows",
             "icon": "rectangle.stack"
@@ -84494,6 +85737,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {
@@ -85294,6 +86548,17 @@
             "keywords": [
               "shortcuts",
               "hotkeys"
+            ]
+          },
+          {
+            "id": "reportBug",
+            "title": "Report a Bug",
+            "icon": "ladybug",
+            "keywords": [
+              "bug",
+              "report bug",
+              "file an issue",
+              "crash"
             ]
           },
           {

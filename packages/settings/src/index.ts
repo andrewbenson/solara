@@ -107,7 +107,7 @@ export function nativeServicesActive(): boolean {
 export const nativeInstallCli = (reason: string) =>
   native?.installCli ? native.installCli(reason) : Promise.reject(new Error("native services are off"));
 
-export type AppIntegrationCommand = "sendFeedback" | "copyDiagnostics" | "recordPerformanceIssue" | "taskManager" | "showOnboarding" | "toolTour" | "videoTour" | "releaseNotes";
+export type AppIntegrationCommand = "sendFeedback" | "reportBug" | "copyDiagnostics" | "recordPerformanceIssue" | "taskManager" | "showOnboarding" | "toolTour" | "videoTour" | "releaseNotes";
 
 export type AppIntegrationPresentation = { action: "showOnboarding" | "toolTour" | "openURL"; windowId?: string | null; url?: string; requestId?: string };
 export type AppStartupOptions = { development: boolean; persistenceRefused: boolean; safeMode: boolean; hostedOnboarding: boolean; releaseNotesVersions: string[] };

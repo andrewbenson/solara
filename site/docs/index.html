@@ -33,6 +33,7 @@
       <li><a href="#cli">The solara command</a></li>
       <li><a href="#config">Setting Solara up from files</a></li>
       <li><a href="#hooks">Hooks</a></li>
+      <li><a href="#bugs">Reporting a bug</a></li>
       <li><a href="#privacy">Privacy</a></li>
     </ol>
   </nav>
@@ -208,6 +209,12 @@ solara exec -f report.py</code></pre>
 }</code></pre>
       <p>Hooks are tried in order and the first that applies decides. Settings › Advanced › Hooks lists every rule and shows any error in the file. The file must belong to you and not be writable by other users.</p>
       <p><a href="https://github.com/andrewbenson/solara/blob/main/docs/hooks.md">Every match, action and event</a></p>
+    </section>
+
+    <section id="bugs">
+      <h2>Reporting a bug</h2>
+      <p>Choose Help › Report a Bug…, type "Report a Bug" in the command bar, click Report a Bug… in Settings › About, or run <code>solara bug</code>. Each opens a new GitHub issue in a tab, with your Solara version, macOS version, Mac model and tab layout already filled in. Describe what happened and how to make it happen again, then submit it. Nothing is sent until you do, and you can edit or remove anything that was filled in.</p>
+      <p>If Solara quit unexpectedly, it asks the next time it opens. Report fills in a short crash summary: the kind of crash and the code that was running, with your home folder shown as <code>~</code>. It also shows the full crash report in Finder, so you can drag it onto the issue if you want to. No page addresses or tab titles are included, and nothing is uploaded on its own.</p>
     </section>
 
     <section id="privacy">

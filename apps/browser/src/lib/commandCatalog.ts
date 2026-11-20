@@ -130,6 +130,7 @@ export const COMMANDS: Readonly<Record<BrowserCommand, CommandSpec>> = {
     },
   },
   share: { title: "Share…", barTitle: "Share", symbol: "square.and.arrow.up", keys: ["⌥⌘S"], ...pageInLittleSolara },
+  reportBug: { title: "Report a Bug…", barTitle: "Report a Bug", symbol: "ladybug" },
   sendFeedback: { title: "Send Feedback…", keys: ["⌥⇧⌘I"] },
   keyboardShortcuts: { title: "Keyboard Shortcuts", symbol: "keyboard" },
   copyDiagnostics: { title: "Copy Diagnostics" },

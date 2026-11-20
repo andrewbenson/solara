@@ -308,10 +308,12 @@ enum SidebarAddressBridge {
     SettingsJS.shared.onConnect {
       latestAnchors = latestAnchors.filter { SidebarAddressBars.shared.existing($0.key) != nil }
       for (windowId, payload) in latestAnchors { sendAnchors(windowId, payload) }
+      SidebarAddressBars.shared.reannounceOnNextSet()
     }
   }
 
   private static func sendAnchors(_ windowId: String, _ payload: [String: [CGFloat]]) {
+    guard SettingsJS.shared.connected else { return }
     Task { @MainActor in _ = await SettingsAdapters.js("sidebar.addressAnchors", windowId, payload) }
   }
 

@@ -385,6 +385,10 @@ public class SettingsModule: Module {
       NativeLiveAuth.shared.setEvent { value in
         DispatchQueue.main.async { sink.module?.sendEvent("onLiveAuthRequest", value) }
       }
+    }
+
+    OnStartObserving("onSettingsCall") {
+      let sink = SettingsEventSink(module: self)
       DispatchQueue.main.async {
         MainActor.assumeIsolated {
           SettingsJS.shared.send = { id, name, args in
@@ -403,6 +407,13 @@ public class SettingsModule: Module {
           NativeLiveEngine.shared.setCloseGroupEvent(nil)
           NativeLiveAuth.shared.setEvent(nil)
           NativeAppStartup.shared.disconnect()
+        }
+      }
+    }
+
+    OnStopObserving("onSettingsCall") {
+      DispatchQueue.main.async {
+        MainActor.assumeIsolated {
           SettingsJS.shared.send = nil
           SettingsJS.shared.failAll("JS stopped listening for Settings calls")
         }

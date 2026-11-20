@@ -15,6 +15,65 @@ import Testing
     #expect(bars.existing("w1") == nil)
   }
 
+  static let json = """
+    {"palette":\(ToolbarWebKitPillTests.palette),"accent":"#D37B8B",
+     "look":{"resting":"#FFFFFF","stroke":"#FFFFFF","hover":"#FFFFFF","placeholder":"#000000","prompt":"Search"},
+     "buttons":[],"extensions":[]}
+    """
+
+  static func hosted(_ bar: SidebarAddressBarView, width: CGFloat = 84) -> NSWindow {
+    let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: width, height: 400), styleMask: [.borderless], backing: .buffered, defer: true)
+    window.isReleasedWhenClosed = false
+    bar.frame = CGRect(x: 0, y: 0, width: width, height: SidebarHeaderMetrics.height)
+    window.contentView?.addSubview(bar)
+    bar.layoutSubtreeIfNeeded()
+    return window
+  }
+
+  @Test func aBarLaidOutBeforeAnyoneListenedReportsItsFieldWhenItsStateFirstArrives() throws {
+    let bars = SidebarAddressBars()
+    let bar = bars.view("w1")
+    bars.claim("w1")
+    let window = Self.hosted(bar)
+    defer { bar.removeFromSuperview(); _ = window }
+    var published: [[String: CGRect]] = []
+    bars.onAnchors = { windowId, anchors in
+      #expect(windowId == "w1")
+      published.append(anchors)
+    }
+    bar.layoutSubtreeIfNeeded()
+    #expect(published.isEmpty, "an unchanged layout reports nothing")
+    bars.set("w1", json: Self.json)
+    let field = try #require(published.last?["field"])
+    #expect(published.count == 1)
+    #expect(field.width == 84 - 2 * SidebarMetrics.inset && field.height > 0)
+    bars.set("w1", json: Self.json)
+    #expect(published.count == 1, "later state updates for a mounted bar don't report again")
+    bars.set("w1", json: nil)
+    bars.set("w1", json: Self.json)
+    #expect(published.count == 2, "a remounted bar reports again")
+    #expect(published.last?["field"] == field)
+  }
+
+  @Test func afterAReconnectTheNextStateReportsAgainOnce() throws {
+    let bars = SidebarAddressBars()
+    let bar = bars.view("w1")
+    let window = Self.hosted(bar)
+    defer { bar.removeFromSuperview(); _ = window }
+    var published: [String] = []
+    bars.onAnchors = { windowId, _ in published.append(windowId) }
+    bars.set("w1", json: Self.json)
+    #expect(published == ["w1"])
+    bars.set("w1", json: Self.json)
+    #expect(published == ["w1"])
+    bars.reannounceOnNextSet()
+    #expect(published == ["w1"], "nothing reports until the reconnected side sets its state")
+    bars.set("w1", json: Self.json)
+    #expect(published == ["w1", "w1"])
+    bars.set("w1", json: Self.json)
+    #expect(published == ["w1", "w1"])
+  }
+
   @Test func clearingTheStateDropsAnUnclaimedView() {
     let bars = SidebarAddressBars()
     _ = bars.view("w1")

@@ -157,6 +157,12 @@ public final class SidebarAddressBarView: NSView {
     onAnchors(anchors)
   }
 
+  public func reannounceAnchors() {
+    reportedAnchors = nil
+    layoutSubtreeIfNeeded()
+    refreshFullScreenAnchors()
+  }
+
   private func windowRect(_ local: CGRect) -> CGRect {
     guard let root = window?.contentView else { return local }
     let r = fullScreenRect(local, to: root)
@@ -194,6 +200,7 @@ public final class SidebarAddressBars {
   private var states: [String: SidebarAddressBarState] = [:]
   private var navigationViews: [String: SidebarAddressBarView] = [:]
   private var claims: Set<String> = []
+  private var remounts: Set<String> = []
 
   public static let claimsChanged = Notification.Name("SidebarAddressBars.claimsChanged")
 
@@ -223,18 +230,26 @@ public final class SidebarAddressBars {
     navigationViews.removeValue(forKey: windowId)?.removeFromSuperview()
   }
 
+  public func reannounceOnNextSet() {
+    remounts.formUnion(views.keys)
+  }
+
   public func set(_ windowId: String, json: String?) {
     guard let json, let state = SidebarAddressBarState.decode(json) else {
       states[windowId] = nil
+      remounts.remove(windowId)
       navigationViews[windowId]?.clear()
       if claims.contains(windowId) { return }
       views[windowId]?.removeFromSuperview()
       views[windowId] = nil
       return
     }
+    let remounted = remounts.remove(windowId) != nil
+    let mounting = states[windowId] == nil || remounted
     states[windowId] = state
     views[windowId]?.update(state)
     navigationViews[windowId]?.update(state)
+    if mounting { views[windowId]?.reannounceAnchors() }
   }
 
   public func claim(_ windowId: String) {

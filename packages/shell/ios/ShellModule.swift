@@ -572,6 +572,7 @@ public class ShellModule: Module {
       let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
       field.stringValue = options["value"] as? String ?? ""
       field.placeholderString = options["placeholder"] as? String
+      field.contentType = NSTextContentType(rawValue: "network.benson.solara.text")
       alert.accessoryView = field
       alert.window.initialFirstResponder = field
       ShellModule.present(alert, windowId: options["windowId"] as? String) { response in

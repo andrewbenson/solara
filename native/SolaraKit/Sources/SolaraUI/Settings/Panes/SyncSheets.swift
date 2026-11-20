@@ -624,6 +624,7 @@ struct SyncPairingNameRepairView: View {
     VStack(alignment: .leading, spacing: 8) {
       Text(SyncPairingText.ended(.invalidLocalName))
       TextField("This Mac’s real name", text: $name)
+        .textContentType(.solaraPlainText)
       Button("Connect another Mac") {
         let captured = name
         name = ""

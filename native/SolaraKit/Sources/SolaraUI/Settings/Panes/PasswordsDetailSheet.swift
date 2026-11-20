@@ -36,6 +36,7 @@ struct PasswordDetailSheet: View {
         PasswordsSheetRow(title: "Username") {
           if editing {
             TextField("", text: $username)
+              .textContentType(.solaraPlainText)
               .textFieldStyle(.roundedBorder)
               .frame(width: 220)
           } else {

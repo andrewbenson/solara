@@ -318,6 +318,7 @@ struct KeepAwakeSiteSheet: View {
         .foregroundStyle(.secondary)
       VStack(alignment: .leading, spacing: 4) {
         TextField("Website", text: $text, prompt: Text("example.com"))
+          .textContentType(.URL)
           .textFieldStyle(.roundedBorder)
           .onSubmit(add)
         Text("A site like example.com also covers its subdomains.")

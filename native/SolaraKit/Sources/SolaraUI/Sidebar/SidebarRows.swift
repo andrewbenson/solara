@@ -1729,6 +1729,7 @@ final class SidebarRenameField: NSTextField, NSTextFieldDelegate {
     lineBreakMode = .byClipping
     cell?.isScrollable = true
     delegate = self
+    contentType = .solaraPlainText
   }
 
   required init?(coder: NSCoder) { fatalError() }

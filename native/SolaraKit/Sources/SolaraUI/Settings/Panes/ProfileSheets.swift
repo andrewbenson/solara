@@ -157,6 +157,7 @@ struct CreateProfileSheet: View {
         .fixedSize(horizontal: false, vertical: true)
         .padding(.top, 6)
       TextField("Profile name", text: $name)
+        .textContentType(.solaraPlainText)
         .textFieldStyle(.roundedBorder)
         .focused($nameFocused)
         .onSubmit { submit(selected?.profileIds.first) }

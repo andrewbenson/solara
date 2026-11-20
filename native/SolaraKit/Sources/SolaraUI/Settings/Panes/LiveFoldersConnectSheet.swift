@@ -180,6 +180,7 @@ struct LiveFoldersGithubConnect: View {
         LiveFoldersConnectHelp("Or sign in with your own GitHub OAuth app (Settings › Developer settings › OAuth Apps, with Device Flow enabled).")
         LiveFoldersConnectField("OAuth app client ID") {
           TextField("", text: $clientId, prompt: Text(verbatim: "Iv1.…"))
+            .textContentType(.solaraPlainText)
         }
         LiveFoldersConnectActions {
           Button("Sign In with GitHub…") { signIn() }
@@ -257,6 +258,7 @@ struct LiveFoldersGoogleConnect: View {
       LiveFoldersConnectHelp("In Google Cloud Console, enable the Drive API and create an OAuth client of type \"Desktop app\" (add yourself as a test user). \(appName) opens Google's consent page in a tab and reads the result from its redirect; it asks only to see your files' names and dates.")
       LiveFoldersConnectField("Client ID") {
         TextField("", text: $clientId, prompt: Text(verbatim: "…apps.googleusercontent.com"))
+          .textContentType(.solaraPlainText)
       }
       LiveFoldersConnectField("Client secret") {
         SecureField("", text: $secret)

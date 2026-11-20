@@ -232,7 +232,7 @@ struct EngineSheet: View {
         .font(.system(size: 15, weight: .semibold))
       SheetField(label: "Name", text: $name, placeholder: "Wikipedia", submit: save)
       SheetField(label: "Shortcut", text: $keyword, placeholder: "w", submit: save)
-      SheetField(label: "URL with %s in place of the query", text: $url, placeholder: "https://en.wikipedia.org/w/index.php?search=%s", submit: save)
+      SheetField(label: "URL with %s in place of the query", text: $url, placeholder: "https://en.wikipedia.org/w/index.php?search=%s", contentType: .URL, submit: save)
       if let error {
         Text(error)
           .font(.system(size: 12))
@@ -275,6 +275,7 @@ struct SheetField: View {
   let label: String
   @Binding var text: String
   let placeholder: String
+  var contentType: NSTextContentType = .solaraPlainText
   let submit: () -> Void
 
   var body: some View {
@@ -283,6 +284,7 @@ struct SheetField: View {
         .font(.system(size: 11.5))
         .foregroundStyle(.secondary)
       TextField("", text: $text, prompt: Text(placeholder))
+        .textContentType(contentType)
         .textFieldStyle(.roundedBorder)
         .onSubmit(submit)
     }

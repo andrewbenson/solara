@@ -520,6 +520,7 @@ final class IconPickerField: NSTextField {
     cell?.wraps = false
     lineBreakMode = .byClipping
     font = .systemFont(ofSize: SidebarIconPickerMetrics.fieldFont)
+    contentType = .solaraPlainText
   }
 
   required init?(coder: NSCoder) { fatalError() }

@@ -222,7 +222,7 @@ struct RuleSheet: View {
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
         .padding(.top, 6)
-      SheetField(label: "Website", text: $address, placeholder: "netflix.com", submit: save)
+      SheetField(label: "Website", text: $address, placeholder: "netflix.com", contentType: .URL, submit: save)
       HStack(spacing: 10) {
         Text("Opens in")
           .font(.system(size: 11.5))

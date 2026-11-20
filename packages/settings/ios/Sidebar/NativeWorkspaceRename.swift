@@ -110,9 +110,7 @@ enum NativeWorkspaceRename {
     alert.messageText = title
     alert.addButton(withTitle: "Update")
     alert.addButton(withTitle: "Cancel")
-    let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
-    field.stringValue = value
-    field.placeholderString = placeholder
+    let field = NSTextField.solaraPromptField(value: value, placeholder: placeholder)
     alert.accessoryView = field
     alert.window.initialFirstResponder = field
     NativeWorkspaceCommands.askGuarded(alert, windowId: windowId, setting: nil, store: store) {

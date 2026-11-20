@@ -119,6 +119,7 @@ struct AutofillAddressSheet: View {
           if index > 0 { Divider() }
           PasswordsSheetRow(title: field.title) {
             TextField("", text: Binding(get: { values[field] ?? "" }, set: { values[field] = $0 }))
+              .textContentType(.solaraPlainText)
               .textFieldStyle(.roundedBorder)
               .frame(width: 250)
               .focused($focused, equals: field)
@@ -193,6 +194,7 @@ struct AutofillCardSheet: View {
                 error = ""
                 self.number = AutofillText.formatCardNumber(String(AutofillText.digits(typed).prefix(19)))
               }))
+              .textContentType(.solaraPlainText)
               .textFieldStyle(.roundedBorder)
               .frame(width: saved == nil ? 250 : 222)
               .focused($numberFocused)
@@ -212,6 +214,7 @@ struct AutofillCardSheet: View {
           TextField("", text: $name)
             .textFieldStyle(.roundedBorder)
             .frame(width: 250)
+            .textContentType(.solaraPlainText)
         }
         Divider()
         PasswordsSheetRow(title: "Expiration Date") {

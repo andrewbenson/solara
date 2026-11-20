@@ -45,6 +45,7 @@ struct ProfileDetailsPane: View {
       SettingsSection("Profile") {
         SettingRow(title: "Name", description: RowDescription.none) {
           TextField("", text: $name)
+            .textContentType(.solaraPlainText)
             .labelsHidden()
             .textFieldStyle(.roundedBorder)
             .multilineTextAlignment(.leading)

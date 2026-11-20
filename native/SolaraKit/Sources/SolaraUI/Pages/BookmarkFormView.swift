@@ -178,6 +178,7 @@ struct BookmarkFormPanel: View {
         .accessibilityAddTraits(.isHeader)
       label(model.nameLabel)
       TextField(model.nameLabel, text: $model.name, prompt: Text(model.namePlaceholder))
+        .textContentType(.solaraPlainText)
         .textFieldStyle(.roundedBorder)
         .labelsHidden()
         .focused($nameFocused)
@@ -186,6 +187,7 @@ struct BookmarkFormPanel: View {
       if model.showsURL {
         label("URL")
         TextField("URL", text: $model.url, prompt: Text("https://"))
+          .textContentType(.URL)
           .textFieldStyle(.roundedBorder)
           .labelsHidden()
           .onSubmit { model.submit() }

@@ -238,6 +238,7 @@ struct PageSearchField: View {
     HStack(spacing: 8) {
       Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(theme.textSecondary).frame(width: 14, height: 14)
       TextField("", text: $text, prompt: Text(placeholder).foregroundStyle(theme.textTertiary))
+        .textContentType(.solaraPlainText)
         .textFieldStyle(.plain)
         .font(.system(size: 13))
         .foregroundStyle(theme.textPrimary)

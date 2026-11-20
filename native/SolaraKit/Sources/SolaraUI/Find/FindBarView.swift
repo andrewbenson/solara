@@ -31,6 +31,13 @@ public enum FindBarEvent: Sendable, Equatable {
 final class FindField: NSTextField {
   var onCommand: (Selector) -> Bool = { _ in false }
   var onChange: (String) -> Void = { _ in }
+
+  override init(frame: NSRect) {
+    super.init(frame: frame)
+    contentType = .solaraPlainText
+  }
+
+  required init?(coder: NSCoder) { fatalError() }
 }
 
 @MainActor

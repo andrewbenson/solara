@@ -502,6 +502,13 @@ public final class SidebarGroupCardView: NSView, NSTextFieldDelegate {
 }
 
 final class GroupCardSearchField: NSTextField {
+  override init(frame: NSRect) {
+    super.init(frame: frame)
+    contentType = .solaraPlainText
+  }
+
+  required init?(coder: NSCoder) { fatalError() }
+
   override func accessibilityLabel() -> String? { "Search Tabs" }
 }
 

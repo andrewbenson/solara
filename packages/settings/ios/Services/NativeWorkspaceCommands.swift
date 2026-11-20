@@ -260,8 +260,7 @@ enum NativeWorkspaceCommands {
     alert.messageText = "New Profile"
     alert.addButton(withTitle: "Create Profile")
     alert.addButton(withTitle: "Cancel")
-    let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
-    field.placeholderString = "Profile name"
+    let field = NSTextField.solaraPromptField(placeholder: "Profile name")
     alert.accessoryView = field
     alert.window.initialFirstResponder = field
     guard alert.runModal() == .alertFirstButtonReturn, !field.stringValue.jsTrim().isEmpty,

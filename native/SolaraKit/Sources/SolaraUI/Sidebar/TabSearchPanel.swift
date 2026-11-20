@@ -170,6 +170,7 @@ public final class TabSearchPanelView: NSView, NSTextFieldDelegate {
     field.cell?.usesSingleLineMode = true
     field.cell?.isScrollable = true
     field.setAccessibilityIdentifier("tabSearch.field")
+    field.contentType = .solaraPlainText
     panel.addSubview(field)
     divider.wantsLayer = true
     panel.addSubview(divider)

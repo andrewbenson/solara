@@ -28,6 +28,7 @@ import { canShare, shareTab } from "../site/share";
 import { calendarMenuItem, newLiveFolderMenuItem, runCalendarMenu, runNewLiveFolder } from "./liveMenus";
 import { openSyncedTab, syncedDevicesMenuItem } from "../../sync/menu";
 import { setSidebarUi } from "./state";
+import { moveToProfileItems } from "./moveToProfileItems";
 import { hasOwnGroupIcon } from "./TabIcon";
 import { newFolderWithTab, removeFromFolder } from "./tileFolderUi";
 import { toggleNewTabBar } from "../omnibox/newTabBar";
@@ -94,11 +95,6 @@ export async function openTabMenu(windowId: string, tab: Tab) {
   const incognito = isIncognitoProfile(tab.profileId);
   const across = (s.windows[windowId]?.tabLayout ?? s.settings.tabLayout) === "top";
   const away = awayFromPin(tab);
-  const moveToProfile: MenuItem[] = [
-    ...s.profileOrder.map((id) => ({ id: `profile:${id}`, title: s.profiles[id]!.name, checked: id === tab.profileId, enabled: id !== tab.profileId })),
-    sep,
-    { id: "profile:new", title: "New Profile…" },
-  ];
   const groups = moveToGroupItems(windowId, group?.id);
 
   const choice = await showMenu([
@@ -151,7 +147,7 @@ export async function openTabMenu(windowId: string, tab: Tab) {
               ...(group && !memberPin ? [{ id: "ungroupTab", title: "Out of Group", symbol: "folder.badge.minus" }] : []),
             ]),
         sep,
-        { id: "moveToProfile", title: "Profile", symbol: "person.crop.circle", enabled: !incognito, children: moveToProfile },
+        ...moveToProfileItems(s, tab, incognito),
         { id: "moveToWindow", title: "Window", symbol: "macwindow", enabled: !incognito, children: moveToWindowItems(windowId) },
       ],
     },

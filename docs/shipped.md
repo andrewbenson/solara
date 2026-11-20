@@ -250,3 +250,17 @@ owner raised on 0.4.2: profile bar, Picture in Picture pinch, held ⌘ keycaps, 
 | Fix: pinch to resize Picture in Picture doesn't work for the owner (pinch-in shrinks, spread grows, anchored at the pointer, whether or not Solara is active) | landed; pip-window-test 10/10 incl. inactive pinch and ⌘-scroll for video and document PiP |
 | The clean-up suggestion card: a Don't Ask Again choice and a setting to turn it off (owner 2026-11-17); fix its upside-down layout | landed; needs the owner's look |
 | The sidebar's bottom fade runs behind the profile bar: rows stay opaque to the bar's top and clear by its centre, the last row still clears the bar (owner 2026-11-17) | landed; needs the owner's look |
+
+## 0.4.4: fixes, the glass New Tab bar and a tighter profile swipe (shipped 2026-11-18)
+
+The sidebar and tab strip deciding in Swift moved to 0.4.5 with the rest of this version's unfinished rows.
+
+| Item | Status |
+|---|---|
+| Fix (user report 2026-11-17, 0.4.1 and later): with the address bar in the sidebar, ⌘L and clicking the sidebar search bar do nothing until the sidebar is resized; suspected JS/native disagreement on icons-only (JS treats width 84 as the rail) | landed: omnibox-test's restored-84-point check fails on main and passes with the fix (VM); omnibox 19/19, sidebar-chrome 20/20, newtab 6/6; SidebarRowReuse 10/10 on the Hill Studio |
+| Fix (owner 2026-11-17): swiping between profiles feels less smooth in 0.4.3 than 0.4.2; measure native swipe frames 0.4.2 vs 0.4.3, bisect (suspects e87b9a2e profile bar, fbd60886 lower fade), fix, and add a native swipe-frames row to the gate | landed: the highlight follows the swipe again as in 0.4.2 (0 mismatched frames vs 1-14 on main), the profile bar stops relaying its icons each tick; timing at 190 and 300 pt, trackpad and wheel, within 0.4.2's range (Hill Studio, 5 launches each); firmer haptic a299416a |
+| ⌘L opens the Command Bar on the first press by default, as in Chrome (owner 2026-11-17): Open Command Bar defaults to Prefer Solara instead of Use Both; a choice already made is kept | landed: precedence 27/27, presses 108/109, omnibox and newtab identical to main (Hill Studio, two runs each) |
+| top-strip-test runs to the end on main (it stops at "show of undefined", then at the peek's accessibility span), so the full-screen island can be checked against a real baseline (owner chose this over landing pass 9, 2026-11-17) | landed: four fixes; top-strip now runs to the end on main (26/33 on the Hill Studio, the 7 docked-strip leading-profile checks fail without the island); tab-drag 46/49 same as main |
+| The New Tab bar in Liquid Glass (owner 2026-11-17): NSGlassEffectView in place of the flat plate, the sun rising behind the glass, every animation kept; three variants for the owner to pick from (stills and recordings) | landed: A (glass bar, sun rising behind it), buttons fixed, tall results checked over default, gradient and photo in light and dark; newtab 6/6, omnibox 19/19 (Hill Studio) |
+| The profile tooltip's keycaps center their keys (owner 2026-11-18) | landed: e1f5b7e9 |
+| A firmer haptic as a profile swipe crosses into the next profile (owner 2026-11-18) | landed: a299416a |

@@ -1,47 +1,6 @@
 import Foundation
 import SolaraCore
 
-final class ImportVault: @unchecked Sendable {
-  struct Entry {
-    var cookies: [Cookie]
-    var addresses: [ImportedAddress]
-    var cards: [ImportedCard]
-    var kept: Date
-  }
-
-  private static let lifetime: TimeInterval = 600
-  private let lock = NSLock()
-  private var entries: [String: Entry] = [:]
-
-  func keep(cookies: [Cookie], addresses: [ImportedAddress], cards: [ImportedCard]) -> String? {
-    guard !cookies.isEmpty || !addresses.isEmpty || !cards.isEmpty else { return nil }
-    let token = UUID().uuidString
-    lock.withLock {
-      purge()
-      entries[token] = Entry(cookies: cookies, addresses: addresses, cards: cards, kept: Date())
-    }
-    DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + Self.lifetime + 1) { [weak self] in
-      self?.lock.withLock { self?.purge() }
-    }
-    return token
-  }
-
-  func take(_ token: String) -> Entry? {
-    lock.withLock {
-      purge()
-      return entries.removeValue(forKey: token)
-    }
-  }
-
-  func discard(_ token: String) { _ = take(token) }
-  func discardAll() { lock.withLock { entries.removeAll() } }
-
-  private func purge() {
-    let cutoff = Date().addingTimeInterval(-Self.lifetime)
-    entries = entries.filter { $0.value.kept > cutoff }
-  }
-}
-
 enum ImportWriter {
   static let cookieBatch = 500
   static let autofillBatch = 500

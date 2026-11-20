@@ -10,7 +10,7 @@ function icons() {
   const directory = mkdtempSync(join(tmpdir(), "solara-safe-import-icons-"));
   try {
     const appIcons = source("packages/import/ios/Core/AppIcons.swift").replace("import AppKit", "");
-    const importer = declaration(source("packages/import/ios/ImportModule.swift"), "private let importer: Importer = {");
+    const importer = declaration(source("packages/import/ios/ImportModule.swift"), "let importer: Importer = {");
     const consumer = source("native/SolaraKit/Sources/SolaraUI/Import/ImportComponents.swift");
     const imageLoader = declaration(consumer, "static func image(at path:");
     const program = `${directory}/main.swift`;

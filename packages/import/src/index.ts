@@ -216,7 +216,7 @@ const Native = requireNativeModule<{
   cancelImport(jobId: string): void;
   unlockBrowser(browserId: string, primaryPassword: string | null): Promise<null>;
   isBrowserUnlocked(browserId: string): boolean;
-  forgetUnlockedKeys(): void;
+  forgetUnlockedKeys(): Promise<null>;
   writeImported(token: string, profile: string, kinds: string[]): Promise<string>;
   discardImported(token: string): void;
   listExtensions(browserId: string, profileId: string): Promise<string>;
@@ -282,7 +282,7 @@ export const unlockBrowser = (browserId: string, options: { primaryPassword?: st
 
 export const isBrowserUnlocked = (browserId: string) => Native.isBrowserUnlocked(browserId);
 
-export const forgetUnlockedKeys = () => Native.forgetUnlockedKeys();
+export const forgetUnlockedKeys = () => call<void>(Native.forgetUnlockedKeys());
 
 export const writeImported = (token: string, profile: string, kinds: ("cookies" | "autofill")[]) =>
   call<WrittenCounts>(Native.writeImported(token, profile, kinds));

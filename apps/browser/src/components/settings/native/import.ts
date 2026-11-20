@@ -59,10 +59,10 @@ function trackImport(operation: () => Promise<unknown>, sessionId: number | unde
 async function cancelAndDrain() {
   importGeneration++;
   revokedSession = importSession;
-  dispose();
+  const forgotten = dispose();
   importDrains++;
   try {
-    await Promise.allSettled([...activeImports]);
+    await Promise.allSettled([...activeImports, forgotten]);
     return true;
   } finally {
     importDrains--;
@@ -240,7 +240,7 @@ async function run(req: RunRequest, sessionId: number | undefined) {
     };
   } finally {
     if (session.abort === abort) session.abort = null;
-    api.forgetUnlockedKeys();
+    await Promise.resolve(api.forgetUnlockedKeys()).catch(() => {});
   }
 }
 
@@ -360,11 +360,11 @@ async function bookmarksHtml(target: string, sessionId: number | undefined) {
   }
 }
 
-function dispose() {
+function dispose(): Promise<void> {
   session.abort?.abort();
   session.abort = null;
   session.dia = null;
-  importModule()?.forgetUnlockedKeys();
+  return Promise.resolve(importModule()?.forgetUnlockedKeys()).catch(() => {});
 }
 
 const diaStatus = (status: Promise<DiaAutomationStatus> | undefined) => (status ?? Promise.resolve("denied" as const)).catch((): DiaAutomationStatus => "denied");

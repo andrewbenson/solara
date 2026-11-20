@@ -540,6 +540,9 @@ final class NativeLayoutChrome {
   private var featureChrome: SidebarChromeState?
   private var held = false
   private let revealHolds = RevealHolds()
+  #if DEBUG
+  static func devRevealHeld(_ windowId: String) -> Bool? { owners[windowId].map { $0.revealHolds.held } }
+  #endif
   private var holdTokens: [String: UUID] = [:]
   private var holdObservers: [NSObjectProtocol] = []
   private var stopped = false
@@ -1484,5 +1487,73 @@ enum NativeGroupActions {
       NSLog("[groups] %@ refused: %@", command.name, String(describing: error))
     }
     FrameUpdates.flush()
+  }
+}
+
+@MainActor
+enum NativeGroupMenu {
+  #if DEBUG
+  private(set) static var handled = 0
+  #endif
+
+  static func open(_ groupId: String, windowId: String, js: @escaping @MainActor (_ groupId: String, _ choice: String) -> Void) -> Bool {
+    guard let store = SettingsWrites.directStore else { return false }
+    let shortcut = CommandShortcutSnapshot().hint("newTabInGroup", state: store.state)
+    let items = GroupMenu.items(store.state, groupId: groupId, newTabShortcut: shortcut)
+    guard !items.isEmpty else { return true }
+    #if DEBUG
+    handled += 1
+    #endif
+    ShellMenus.choose(items.map(\.dictionary)) { [weak owner = store] picked in
+      guard let picked, let choice = GroupMenuChoice(picked) else { return }
+      guard let store = SettingsWrites.directStore, store === owner, store.state.groups[groupId] != nil else {
+        return NSLog("[groups] %@: gone or stood down while its menu was open", groupId)
+      }
+      run(choice, raw: picked, groupId: groupId, windowId: windowId, store: store, js: js)
+    }
+    return true
+  }
+
+  private static func run(
+    _ choice: GroupMenuChoice, raw: String, groupId: String, windowId: String, store: Store,
+    js: @escaping @MainActor (String, String) -> Void
+  ) {
+    switch choice {
+    case .rename:
+      if !rename(groupId, windowId: windowId) { js(groupId, "rename") }
+    case .icon, .bookmarkBar:
+      js(groupId, raw)
+    case .close:
+      _ = NativeGroupActions.close(groupId)
+    case .copy(let markdown):
+      guard let text = GroupMenu.copiedText(store.state, ids: store.state.groups[groupId]?.tabIds ?? [], markdown: markdown) else { return }
+      NSPasteboard.general.clearContents()
+      NSPasteboard.general.setString(text, forType: .string)
+    case .newTab:
+      if GroupMenu.newTabOpensBar(store.state, windowId: windowId) { return js(groupId, raw) }
+      let tab = dispatch(store, Command("newTabInGroup", [.string(groupId)]))
+      if let tab, !tab.isEmpty { _ = dispatch(store, Command("activate", [.string(tab)])) }
+    case .nest:
+      let child = dispatch(store, Command("newNestedGroup", [.string(groupId)])) ?? ""
+      if let tab = store.state.groups[child]?.tabIds.first { _ = dispatch(store, Command("activate", [.string(tab)])) }
+      if !child.isEmpty, !rename(child, windowId: windowId) { js(child, "rename") }
+    case .color, .pin, .duplicate, .collapse, .ungroup, .delete:
+      if let command = GroupMenu.command(choice, groupId: groupId, state: store.state) { _ = dispatch(store, command) }
+    }
+  }
+
+  private static func rename(_ groupId: String, windowId: String) -> Bool {
+    NativeWorkspaceRename.begin(windowId: windowId, kind: .group, id: groupId)
+  }
+
+  @discardableResult
+  private static func dispatch(_ store: Store, _ command: Command) -> String? {
+    defer { FrameUpdates.flush() }
+    do {
+      return try store.dispatch(command, origin: .native).result?.string
+    } catch {
+      NSLog("[groups] %@ refused: %@", command.name, String(describing: error))
+      return nil
+    }
   }
 }

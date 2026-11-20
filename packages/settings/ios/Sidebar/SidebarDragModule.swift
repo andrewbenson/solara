@@ -80,6 +80,14 @@ public class SidebarDragModule: Module {
     AsyncFunction("devGroupActions") { () -> Int in
       FrameUpdates.readOnMain { NativeGroupActions.handled }
     }.runOnQueue(.main)
+
+    AsyncFunction("devGroupMenus") { () -> Int in
+      FrameUpdates.readOnMain { NativeGroupMenu.handled }
+    }.runOnQueue(.main)
+
+    AsyncFunction("devRevealHeld") { (windowId: String) -> Bool? in
+      FrameUpdates.readOnMain { NativeLayoutChrome.devRevealHeld(windowId) }
+    }.runOnQueue(.main)
     #endif
 
     AsyncFunction("traceSamples") { () -> String in

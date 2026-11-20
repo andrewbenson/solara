@@ -379,6 +379,7 @@ public class ShellModule: Module {
           FocusHandoff.shared.afterPendingUI = { block in queue.async { DispatchQueue.main.async(execute: block) } }
         }
         LeftEdgeWatcher.shared.emit = { name, body in self?.sendEvent(name, body) }
+        ShellMenus.emit = { name, body in self?.sendEvent(name, body) }
         WindowManager.shared.runtime = self.map(ObjectIdentifier.init)
         NSApp.mainMenu = MainMenu.build()
         MainMenu.watchBackTab()
@@ -707,8 +708,8 @@ public class ShellModule: Module {
     }.runOnQueue(.main)
 
     #if DEBUG
-    AsyncFunction("devContextMenu") { (action: String, choice: String?) -> [String: Any] in
-      MainActor.assumeIsolated { ShellContextMenuTest.input(action, choice: choice) }
+    AsyncFunction("devContextMenu") { (action: String, choice: String?, delayMs: Double?) -> [String: Any] in
+      MainActor.assumeIsolated { ShellContextMenuTest.input(action, choice: choice, delayMs: delayMs ?? 0) }
     }.runOnQueue(.main)
     #endif
 
@@ -826,6 +827,7 @@ private enum ShellContextMenuTest {
   private static var armedUntil: Date?
   private static var choice: String?
   private static var snapshot: [String: Any] = [:]
+  private static var delayMs: Double = 0
 
   private static var allowed: Bool {
     let env = ProcessInfo.processInfo.environment
@@ -833,16 +835,25 @@ private enum ShellContextMenuTest {
     return (data as NSString).isAbsolutePath && ACIsolatedDataDirectory() != nil
   }
 
-  static func input(_ action: String, choice: String?) -> [String: Any] {
+  static var armed: Bool { allowed && armedUntil != nil }
+
+  static func takeDelay() -> Double {
+    defer { delayMs = 0 }
+    return allowed ? min(max(delayMs, 0), 3000) : 0
+  }
+
+  static func input(_ action: String, choice: String?, delayMs: Double = 0) -> [String: Any] {
     guard allowed else { return ["error": "hidden isolated instances only"] }
     switch action {
     case "arm":
       armedUntil = Date().addingTimeInterval(5)
       self.choice = choice
+      self.delayMs = delayMs
       snapshot = [:]
     case "clear":
       armedUntil = nil
       self.choice = nil
+      self.delayMs = 0
       snapshot = [:]
     case "read": break
     default: return ["error": "unknown action"]
@@ -888,6 +899,46 @@ private enum ShellContextMenuTest {
   }
 }
 #endif
+
+@MainActor
+public enum ShellMenus {
+  static var emit: ((String, [String: Any]) -> Void)?
+
+  public static func choose(_ items: [[String: Any]], then chosen: @escaping @MainActor (String?) -> Void) {
+    let target = MenuChoice()
+    let menu = ShellModule.contextMenu(items, target: target)
+    #if DEBUG
+    let delay = ShellContextMenuTest.takeDelay()
+    if delay > 0, ShellContextMenuTest.armed {
+      shown(menu, true)
+      DispatchQueue.main.asyncAfter(deadline: .now() + delay / 1000) {
+        MainActor.assumeIsolated {
+          _ = ShellContextMenuTest.consume(menu)
+          shown(menu, false)
+          chosen(target.chosen)
+        }
+      }
+      return
+    }
+    if ShellContextMenuTest.consume(menu) { return chosen(target.chosen) }
+    #endif
+    emit?("onAppEvent", ["type": "nativeMenu", "open": true])
+    menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+    DispatchQueue.main.async {
+      MainActor.assumeIsolated {
+        emit?("onAppEvent", ["type": "nativeMenu", "open": false])
+        chosen(target.chosen)
+      }
+    }
+  }
+
+  #if DEBUG
+  private static func shown(_ menu: NSMenu, _ open: Bool) {
+    NotificationCenter.default.post(name: open ? NSMenu.didBeginTrackingNotification : NSMenu.didEndTrackingNotification, object: menu)
+    emit?("onAppEvent", ["type": "nativeMenu", "open": open])
+  }
+  #endif
+}
 
 final class MenuChoice: NSObject {
   var chosen: String?

@@ -148,7 +148,8 @@ export type AppEvent =
   | { type: "switcherReleased" }
   | { type: "switcherKey"; key: "escape" | "next" | "previous" }
   | { type: "switcherMouseUp" }
-  | { type: "dragEscape" };
+  | { type: "dragEscape" }
+  | { type: "nativeMenu"; open: boolean };
 
 type ShellEvents = {
   onCommand: (e: CommandEvent) => void;
@@ -327,10 +328,13 @@ export function copyText(text: string) {
 let menusShown = 0;
 const menuWatchers = new Set<() => void>();
 const menusChanged = (by: number) => {
-  menusShown += by;
+  menusShown = Math.max(0, menusShown + by);
   for (const watcher of menuWatchers) watcher();
 };
 export const menuShown = () => menusShown > 0;
+Shell.addListener?.("onAppEvent", (e: AppEvent) => {
+  if (e.type === "nativeMenu") menusChanged(e.open ? 1 : -1);
+});
 export function watchMenus(watcher: () => void): () => void {
   menuWatchers.add(watcher);
   return () => void menuWatchers.delete(watcher);

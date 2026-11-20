@@ -353,7 +353,12 @@ final class TopStripHost {
       }
     case .toggleMute(let tabId): call("toggleMute", tabId)
     case .tabMenu(let tabId): call("tabMenu", tabId)
-    case .groupMenu(let groupId): call("groupMenu", groupId)
+    case .groupMenu(let groupId):
+      let opened = NativeGroupMenu.open(groupId, windowId: windowId) { [weak self] id, choice in
+        guard let self, !self.stopped else { return NSLog("[groups] %@: the %@ closed before its menu's %@ reached JS", id, "strip", choice) }
+        self.call("groupMenuChoice", id, ["choice": choice])
+      }
+      if !opened { call("groupMenu", groupId) }
     case .toggleGroup(let groupId, let collapse):
       if !NativeGroupActions.toggle(groupId, collapsed: { _ in collapse }) { call("toggleGroup", groupId, ["collapse": collapse]) }
     case .closeGroup(let groupId):

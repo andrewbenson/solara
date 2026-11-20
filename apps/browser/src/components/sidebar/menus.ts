@@ -283,10 +283,16 @@ export async function openGroupMenu(windowId: string, groupId: string) {
     { id: "close", title: "Close Group", symbol: "xmark" },
     { id: "delete", title: "Delete Group", symbol: "trash" },
   ]);
-  if (!choice) return;
+  if (choice) runGroupMenuChoice(windowId, groupId, choice);
+}
+
+export function runGroupMenuChoice(windowId: string, groupId: string, choice: string) {
   const target = { kind: "group" as const, id: groupId };
-  if (choice === "rename") void startRename(windowId, target);
-  else if (choice === "icon") void openIconPicker(windowId, target);
+  if (choice === "rename") return void startRename(windowId, target);
+  const s = store();
+  const g = s.groups[groupId];
+  if (!g) return;
+  if (choice === "icon") void openIconPicker(windowId, target);
   else if (choice.startsWith("color:")) s.updateGroup(groupId, { color: (choice.slice(6) || null) as GroupColor | null });
   else if (choice === "newTab") {
     if (toggleNewTabBar(windowId, { kind: "group", groupId })) return;

@@ -255,7 +255,12 @@ final class SidebarHost {
     case .tileDoubleClick(let tabId): call("tileDoubleClick", tabId)
     case .toggleMute(let tabId): call("toggleMute", tabId)
     case .tabMenu(let tabId): call("tabMenu", tabId)
-    case .groupMenu(let groupId): call("groupMenu", groupId)
+    case .groupMenu(let groupId):
+      let opened = NativeGroupMenu.open(groupId, windowId: windowId) { [weak self] id, choice in
+        guard let self, !self.stopped else { return NSLog("[groups] %@: the %@ closed before its menu's %@ reached JS", id, "sidebar", choice) }
+        self.call("groupMenuChoice", id, ["choice": choice])
+      }
+      if !opened { call("groupMenu", groupId) }
     case .toggleGroup(let groupId):
       if !NativeGroupActions.toggle(groupId, collapsed: { !$0.collapsed }) { call("toggleGroup", groupId) }
     case .closeGroup(let groupId):

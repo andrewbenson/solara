@@ -27,10 +27,10 @@ enum NativeWorkspaceCommands {
   private static var panelFocus: [String: PanelFocus] = [:]
 
   static func install() {
-    for command in WorkspaceMenuCommand.commands.union(ViewMenuCommand.commands) {
+    for command in WorkspaceMenuCommand.commands.union(ViewMenuCommand.commands).union(PageMenuCommand.commands) {
       NativeMenuCommands.argumentHandlers[command] = { arg, windowId in perform(command, arg: arg, windowId: windowId) }
     }
-    NativeMenuCommands.keepsMenuDispatch = ViewMenuCommand.commands
+    NativeMenuCommands.keepsMenuDispatch = ViewMenuCommand.commands.union(PageMenuCommand.commands)
     NativeMenuCommands.workspaceAvailability = { command, arg, windowId in
       guard NativeStoreHandle.ownsWorkspace, let state = NativeStoreHandle.store?.state,
         WorkspaceMenuCommand.commands.contains(command) else { return nil }
@@ -50,6 +50,59 @@ enum NativeWorkspaceCommands {
     if let appearance = outcome.appearance { ShellScripting.setAppearance(appearance) }
     FrameUpdates.flush()
     return true
+  }
+
+  private static func performPage(_ command: String, arg: String?, windowId: String?) -> Bool {
+    guard NativeStoreHandle.ownsWorkspace, let store = NativeStoreHandle.store else { return false }
+    guard let plan = PageMenuCommand.plan(command, arg: arg, windowId: windowId, state: store.state, closing: store.memory.closingWindows) else { return false }
+    if let target = plan.focusWindow {
+      do { try store.dispatch(Command("setFocusedWindow", [.string(target)]), origin: .native) } catch { return false }
+      ShellScripting.showWindow(target)
+    }
+    let live = plan.tabId.flatMap(livePage)
+    guard !plan.needsLivePage || live != nil else { return true }
+    if !plan.commands.isEmpty {
+      do { try store.dispatch(plan.commands, origin: .native) } catch {
+        NSLog("[commands] %@ failed: %@", command, String(describing: error))
+      }
+    }
+    if let action = plan.page, let tabId = plan.tabId, live != nil { issuePage(action, tabId: tabId) }
+    if let external = plan.external { openExternal(external) }
+    FrameUpdates.flush()
+    return true
+  }
+
+  private static func livePage(_ tabId: String) -> PageIdentity? {
+    guard let issuer = PageIssuer.shared else { return nil }
+    return issuer.store.sequence { () -> PageIdentity? in
+      guard let binding = issuer.binding(tabId: tabId), issuer.ensurePageEstablished(binding), issuer.isCurrent(binding) else { return nil }
+      return binding.identity
+    }
+  }
+
+  private static func issuePage(_ action: PageCommand, tabId: String) {
+    guard let issuer = PageIssuer.shared else { return }
+    issuer.store.sequence {
+      guard let binding = issuer.binding(tabId: tabId), issuer.ensurePageEstablished(binding), issuer.isCurrent(binding) else { return }
+      issuer.issueInScope(tabId: tabId, identity: binding.identity, command: action) { result in
+        if case .failure(let error) = result { NSLog("[commands] %@ on %@ failed: %@", action.method, tabId, String(describing: error)) }
+      }
+    }
+  }
+
+  #if DEBUG
+  static private(set) var lastExternal: String?
+  #endif
+
+  private static func openExternal(_ address: String) {
+    guard let target = URL(string: address), target.scheme != nil else { return }
+    #if DEBUG
+    lastExternal = target.absoluteString
+    #endif
+    if ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] == "1" {
+      return NSLog("%@: background instance, not opening %@", Bundle.main.productName, target.absoluteString)
+    }
+    _ = NSWorkspace.shared.open(target)
   }
 
   private static func restoreCancelledClose(_ request: [String: Any]) -> Bool {
@@ -73,6 +126,7 @@ enum NativeWorkspaceCommands {
   @discardableResult
   static func perform(_ command: String, arg: String? = nil, windowId: String?) -> Bool {
     if ViewMenuCommand.commands.contains(command) { return performView(command, arg: arg, windowId: windowId) }
+    if PageMenuCommand.commands.contains(command) { return performPage(command, arg: arg, windowId: windowId) }
     guard NativeStoreHandle.ownsWorkspace, let store = NativeStoreHandle.store,
       WorkspaceMenuCommand.commands.contains(command) else { return false }
     if command == "closeTab", windowId == nil, WindowHost.closeForeignKeyWindow() { return true }

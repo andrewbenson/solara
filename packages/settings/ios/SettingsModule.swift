@@ -178,6 +178,15 @@ public class SettingsModule: Module {
       MainActor.assumeIsolated { SettingsDev.drive(action, argument) }
     }.runOnQueue(.main)
 
+    AsyncFunction("devPageCommands") { () -> [String: Any] in
+      #if DEBUG
+      let external = MainActor.assumeIsolated { NativeWorkspaceCommands.lastExternal }
+      return ["debug": true, "lastExternal": external ?? NSNull()]
+      #else
+      return [:]
+      #endif
+    }.runOnQueue(.main)
+
     AsyncFunction("devBugReport") { (action: String, argument: String?) -> String in
       #if DEBUG
       return MainActor.assumeIsolated { NativeBugReport.shared.drive(action, argument) }

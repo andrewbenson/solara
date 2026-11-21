@@ -145,7 +145,9 @@ import Testing
     #expect(f["art"] == CGRect(x: 7.5, y: 7.5, width: 32, height: 32))
     #expect(f["play"] == CGRect(x: 27.5, y: 43.5, width: 24, height: 24))
     #expect(f["seek"] == CGRect(x: 81.5, y: 49.5, width: 131, height: 12))
-    #expect(f["close"] == CGRect(x: 208, y: -6, width: 18, height: 18))
+    let size = SidebarPlayerView.cornerSize, overhang = SidebarPlayerView.cornerOverhang
+    #expect(f["close"] == CGRect(x: 220 + overhang - size, y: -overhang, width: size, height: size))
+    #expect(f["close"] == CGRect(x: 202, y: -2, width: 20, height: 20))
     #expect(abs(player.seekProgress - 0.5) < 0.01)
   }
 

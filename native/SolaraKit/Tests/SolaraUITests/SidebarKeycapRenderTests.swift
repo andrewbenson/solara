@@ -5,14 +5,8 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct SidebarKeycapRenderTests {
-  private func inkBounds(_ view: NSView) throws -> NSRect {
-    let scale: CGFloat = 2
-    let bitmap = try #require(NSBitmapImageRep(bitmapDataPlanes: nil,
-      pixelsWide: Int((view.bounds.width * scale).rounded()), pixelsHigh: Int((view.bounds.height * scale).rounded()),
-      bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-      colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 32))
-    bitmap.size = view.bounds.size
-    view.cacheDisplay(in: view.bounds, to: bitmap)
+  private func inkBounds(_ view: NSView, scale: CGFloat) throws -> NSRect {
+    let bitmap = try #require(PinnedScaleBitmap.render(view, scale: scale))
     #expect(bitmap.pixelsWide == Int(view.bounds.width * scale))
     #expect(bitmap.pixelsHigh == Int(view.bounds.height * scale))
     var left = bitmap.pixelsWide
@@ -34,9 +28,19 @@ struct SidebarKeycapRenderTests {
 
   @Test(arguments: [false, true], [false, true])
   func renderedTooltipGlyphsAreCenteredWithoutChangingCapsOrGaps(dark: Bool, rail: Bool) throws {
+    try checkTooltipGlyphs(dark: dark, rail: rail, scale: 2, centring: 0.5)
+  }
+
+  @Test(arguments: [false, true], [false, true])
+  func renderedTooltipGlyphsStayWithinAPixelOfCentreOnOneTimesDisplays(dark: Bool, rail: Bool) throws {
+    try checkTooltipGlyphs(dark: dark, rail: rail, scale: 1, centring: 1)
+  }
+
+  private func checkTooltipGlyphs(dark: Bool, rail: Bool, scale: CGFloat, centring: CGFloat) throws {
     NSApplication.shared.setActivationPolicy(.prohibited)
-    let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 900, height: 700),
+    let panel = PinnedScalePanel(contentRect: NSRect(x: 0, y: 0, width: 900, height: 700),
       styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+    panel.pinnedScale = scale
     panel.isReleasedWhenClosed = false
     panel.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
     let root = FlippedContainerView(frame: NSRect(x: 0, y: 0, width: 900, height: 700))
@@ -71,18 +75,19 @@ struct SidebarKeycapRenderTests {
       #expect(caps.count == keys.count)
       #expect(tooltip.frame.height == SidebarDotTooltipMetrics.height)
       for (key, cap) in zip(keys, caps) {
-        let pixel = 1 / (tooltip.window?.backingScaleFactor ?? 2)
+        let pixel = 1 / scale
+        #expect(tooltip.window?.backingScaleFactor == scale)
         #expect(abs(cap.frame.width - SidebarDotTooltipMetrics.keycapWidth(key)) <= pixel + 0.001)
         #expect(cap.frame.height == SidebarDotTooltipMetrics.keycapHeight)
         #expect(abs(cap.frame.minY - (SidebarDotTooltipMetrics.height - SidebarDotTooltipMetrics.keycapHeight) / 2) <= pixel / 2 + 0.001)
         for edge in [cap.frame.minX, cap.frame.maxX, cap.frame.minY] { #expect(abs((edge / pixel).rounded() * pixel - edge) < 0.001, "\(key) edge \(edge) is off the pixel grid") }
         #expect(cap.layer?.cornerRadius == SidebarDotTooltipMetrics.keycapRadius)
         #expect(cap.layer?.borderWidth == 0.5)
-        let ink = try inkBounds(cap)
-        #expect(abs(ink.midX - cap.bounds.midX) <= 0.5, "\(key) ink \(ink) in \(cap.bounds), dark=\(dark), rail=\(rail)")
-        #expect(abs(ink.midY - cap.bounds.midY) <= 0.5, "\(key) ink \(ink) in \(cap.bounds), dark=\(dark), rail=\(rail)")
+        let ink = try inkBounds(cap, scale: scale)
+        #expect(abs(ink.midX - cap.bounds.midX) <= centring, "\(key) ink \(ink) in \(cap.bounds), dark=\(dark), rail=\(rail), scale=\(scale)")
+        #expect(abs(ink.midY - cap.bounds.midY) <= centring, "\(key) ink \(ink) in \(cap.bounds), dark=\(dark), rail=\(rail), scale=\(scale)")
       }
-      let pixel = 1 / (tooltip.window?.backingScaleFactor ?? 2)
+      let pixel = 1 / scale
       for pair in zip(caps, caps.dropFirst()) { #expect(abs(pair.1.frame.minX - pair.0.frame.maxX - SidebarDotTooltipMetrics.keycapGap) <= pixel + 0.001) }
       #expect(!panel.isVisible && !panel.isKeyWindow)
       tooltip.hide()

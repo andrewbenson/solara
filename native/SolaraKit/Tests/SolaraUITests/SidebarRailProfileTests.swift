@@ -491,8 +491,9 @@ import Testing
     #expect(glass(pill).count == 1)
   }
 
-  @Test(arguments: [false, true]) func everyProfileIconIsWholeOrOutOfViewAtEveryWidth(downloads: Bool) {
-    let window = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 900, height: 700), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+  @Test(arguments: [false, true], [CGFloat(2), 1]) func everyProfileIconIsWholeOrOutOfViewAtEveryWidth(downloads: Bool, scale: CGFloat) {
+    let window = PinnedScalePanel(contentRect: NSRect(x: 0, y: 0, width: 900, height: 700), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+    window.pinnedScale = scale
     window.isReleasedWhenClosed = false
     defer { window.contentView = nil; window.close() }
     let root = FlippedContainerView(frame: NSRect(x: 0, y: 0, width: 900, height: 700))
@@ -503,7 +504,7 @@ import Testing
         var next = state(count: count, rail: false)
         next.downloads = downloads
         next.currentProfileId = "p\(selected)"
-        let widths = Array(Int(SidebarChromeMetrics.minWidth)...Int(SidebarChromeMetrics.maxWidth)).map { CGFloat($0) } + [160.5, 161.25, 163.5, 175.75, 190.5, 213.5]
+        let widths = Array(Int(SidebarChromeMetrics.minWidth)...Int(SidebarChromeMetrics.maxWidth)).map { CGFloat($0) } + (scale == 2 ? [160.5, 161.25, 163.5, 175.75, 190.5, 213.5] : [])
         for width in widths {
           let sidebar = SidebarChromeView(frame: NSRect(x: 0, y: 0, width: width, height: 700))
           root.addSubview(sidebar)
@@ -541,7 +542,7 @@ import Testing
         }
       }
     }
-    #expect(failures.isEmpty, "\(failures.prefix(12).joined(separator: "\n")) (\(failures.count) total)")
+    #expect(failures.isEmpty, "scale \(scale): \(failures.prefix(12).joined(separator: "\n")) (\(failures.count) total)")
   }
 
   @Test func profileRowScrollStepsSnapToWholeSlots() {

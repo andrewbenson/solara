@@ -603,10 +603,11 @@ struct FullScreenIslandTests {
     }
   }
 
-  @MainActor @Test func everyTrafficLightDrawsItsHoverGlyphInAnInactiveFullscreenCapsule() throws {
+  @MainActor @Test(arguments: [CGFloat(2), 1]) func everyTrafficLightDrawsItsHoverGlyphInAnInactiveFullscreenCapsule(scale: CGFloat) throws {
     NSApplication.shared.setActivationPolicy(.prohibited)
-    let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 600, height: 500),
+    let window = PinnedScaleWindow(contentRect: CGRect(x: 0, y: 0, width: 600, height: 500),
       styleMask: [.borderless], backing: .buffered, defer: false)
+    window.pinnedScale = scale
     window.isReleasedWhenClosed = false
     window.alphaValue = 0
     let root = FlippedContainerView(frame: CGRect(x: 0, y: 0, width: 600, height: 500))
@@ -624,9 +625,7 @@ struct FullScreenIslandTests {
     func image() throws -> NSBitmapImageRep {
       root.layoutSubtreeIfNeeded()
       group.displayIfNeeded()
-      let bitmap = try #require(group.bitmapImageRepForCachingDisplay(in: group.bounds))
-      group.cacheDisplay(in: group.bounds, to: bitmap)
-      return bitmap
+      return try #require(PinnedScaleBitmap.render(group, scale: scale))
     }
     func core(_ image: NSBitmapImageRep, button: NSButton) throws -> [[CGFloat]] {
       let scale = CGFloat(image.pixelsWide) / group.bounds.width
@@ -658,7 +657,7 @@ struct FullScreenIslandTests {
     }
     #expect(!buttons[1].isEnabled)
     let minimize = try core(rest, button: buttons[1])[40]
-    #expect((minimize.max() ?? 0) - (minimize.min() ?? 0) < 0.12)
+    #expect((minimize.max() ?? 0) - (minimize.min() ?? 0) < (scale == 2 ? 0.12 : 0.16), "scale \(scale)")
     group.clearRollover()
     let left = try image()
     for button in buttons {

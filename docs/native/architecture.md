@@ -690,12 +690,12 @@ is dropped (Chrome refuses closes in that state) and isn't retried after the mov
 A native sidebar or strip row action goes to its Swift host first (`SidebarHost`, `TopStripHost`). When the native
 store owns the workspace, Swift decides it and JS hears nothing, or only `handled`; otherwise the host sends it on as
 `sidebar.action` or `topStrip.action` and the TypeScript handler decides, as before. Group buttons, the group menu and
-file or link drops use the direct-write gate (`SettingsWrites.directStore`: owned, not in safe mode, not frozen); tile
-folders use `WorkspaceActionRouter.ownedStore` (owned). The group menu sends the choices it leaves to JS (Change Icon,
+file or link drops, tile folders and every other row action use `WorkspaceWrites.store` (owned and not frozen; safe
+mode included, so there Swift decides against the in-memory workspace), which `WorkspaceActionRouter.ownedStore` also
+returns. The group menu sends the choices it leaves to JS (Change Icon,
 Move to Bookmark Bar, the New Tab bar, and Rename when the inline field can't start) back as `groupMenuChoice`, and the native folder panel's open state is mirrored
 to JS as `folderPanel.state`. Ownership is set once at launch and only lost if the store stands down (`failClosed`,
-which freezes it), so the JS handlers are the fallback for a launch without ownership, for a store that stood down, and,
-for drops and group actions, for safe mode, which keeps ownership but not direct writes.
+which freezes it), so the JS handlers are the fallback for a launch without ownership and for a store that stood down.
 
 ### 4.5 Sync during the move
 

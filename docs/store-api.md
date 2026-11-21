@@ -127,8 +127,8 @@ modules before using them — this is a summary from the agent that built it.
   `resolveDrop(s, source, spot)` gives the `Drop` (or refuses it), `dropTabs(ids, drop)` applies it, `movingTabIds` is
   the set that moves together, and `slotDrop` turns a strip slot index into an anchor. With the native store, files and
   links dropped on the native sidebar or the native-layout strip open in Swift (`DroppedTabs`), and group collapse,
-  close, tuck and the group menu run in Swift (`NativeGroupActions`, `NativeGroupMenu`); safe mode, a frozen store or
-  no ownership sends them to the JS handlers. `pinTabs(ids, pinned, row?)` (a pinned tab is a Top Apps tile, or a pinned row above the tabs when
+  close, tuck and the group menu run in Swift (`NativeGroupActions`, `NativeGroupMenu`); in safe mode too, against
+  the in-memory workspace; a frozen store or no ownership sends them to the JS handlers. `pinTabs(ids, pinned, row?)` (a pinned tab is a Top Apps tile, or a pinned row above the tabs when
   `tab.pinnedAsRow`; windows order tiles, then pinned rows and pinned groups in one interleaved order, then the rest; `row` omitted keeps a pinned
   tab's kind and pins a new one as a tile). A live folder sits in that pinned order by `LiveFolder.after`, the anchor key
   (`t:` or `g:` plus the pin key) of the row or group just above it, or `null` for the top (components/sidebar/pinnedOrder.ts);

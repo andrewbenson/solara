@@ -50,8 +50,8 @@ as column b behavior; this partial port does not complete the 0.4.2 command row 
 The 0.4.6 drag, folder and group port (S1 99c6c03f to S4 180ffd7e) has Swift decide a tab drag's preview,
 pictures, haptic and glow, file and link drops on the sidebar and native-layout strip, group collapse, close, tuck
 and menu, and the tile-folder panel and menus, whenever the native store owns the workspace. The TypeScript
-branches remain the fallback: without ownership for everything, and for drops and group actions also in safe mode
-or with a frozen store, since those use the direct-write gate. Only the folder panel's open state is mirrored back
+branches remain the fallback without ownership or with a frozen store; safe mode is decided in Swift too (S6a
+58bc7ecb). Only the folder panel's open state is mirrored back
 (`folderPanel.state`). The cleanup (S5) found one never-called export, `folderTitle`; no decision branch was
 provably dead, so columns are unchanged; counts stay those of the dated audit.
 

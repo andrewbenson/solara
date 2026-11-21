@@ -33,11 +33,11 @@ import Testing
   @Test func floatingPiPJoinsOtherApplicationsAndAvoidsTiling() {
     let window = panel()
     defer { window.close() }
-    window.collectionBehavior = [.moveToActiveSpace, .managed, .participatesInCycle, .fullScreenPrimary, .fullScreenAllowsTiling, .primary]
+    window.collectionBehavior = [.moveToActiveSpace, .managed, .participatesInCycle, .fullScreenPrimary, .fullScreenAllowsTiling, .primary, .stationary]
     SolaraPictureInPictureWindow.configure(window, keepOnTop: true)
     #expect(window.level == .floating)
-    #expect(window.collectionBehavior.contains([.canJoinAllSpaces, .canJoinAllApplications, .fullScreenAuxiliary, .stationary, .ignoresCycle, .fullScreenDisallowsTiling]))
-    #expect(window.collectionBehavior.intersection([.moveToActiveSpace, .managed, .transient, .participatesInCycle, .fullScreenPrimary, .fullScreenNone, .fullScreenAllowsTiling, .primary, .auxiliary]).isEmpty)
+    #expect(window.collectionBehavior.contains([.canJoinAllSpaces, .canJoinAllApplications, .fullScreenAuxiliary, .ignoresCycle, .fullScreenDisallowsTiling]))
+    #expect(window.collectionBehavior.intersection([.moveToActiveSpace, .managed, .transient, .participatesInCycle, .fullScreenPrimary, .fullScreenNone, .fullScreenAllowsTiling, .primary, .auxiliary, .stationary]).isEmpty)
     #expect(window.isExcludedFromWindowsMenu)
     #expect(!window.hidesOnDeactivate)
     #expect(window.accessibilityRole() == .window)
@@ -119,10 +119,11 @@ import Testing
     SolaraPictureInPictureWindow.configure(window, keepOnTop: true)
     let frame = window.frame
     window.level = .normal
-    window.collectionBehavior = []
+    window.collectionBehavior = [.stationary]
     NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
     #expect(window.level == .floating)
-    #expect(window.collectionBehavior.contains([.canJoinAllSpaces, .canJoinAllApplications, .stationary, .fullScreenAuxiliary]))
+    #expect(window.collectionBehavior.contains([.canJoinAllSpaces, .canJoinAllApplications, .fullScreenAuxiliary]))
+    #expect(!window.collectionBehavior.contains(.stationary))
     #expect(window.frame == frame)
     #expect(!NSApp.isActive)
   }

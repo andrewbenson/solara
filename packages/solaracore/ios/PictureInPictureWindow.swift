@@ -115,8 +115,8 @@ public final class SolaraPictureInPictureWindow: NSObject {
     let level: NSWindow.Level = keepOnTop ? .floating : .normal
     if window.level != level { window.level = level }
     var behavior = window.collectionBehavior
-    behavior.subtract([.moveToActiveSpace, .managed, .transient, .participatesInCycle, .fullScreenPrimary, .fullScreenNone, .fullScreenAllowsTiling, .primary, .auxiliary])
-    behavior.formUnion([.canJoinAllSpaces, .canJoinAllApplications, .fullScreenAuxiliary, .stationary, .ignoresCycle, .fullScreenDisallowsTiling])
+    behavior.subtract([.moveToActiveSpace, .managed, .transient, .participatesInCycle, .fullScreenPrimary, .fullScreenNone, .fullScreenAllowsTiling, .primary, .auxiliary, .stationary])
+    behavior.formUnion([.canJoinAllSpaces, .canJoinAllApplications, .fullScreenAuxiliary, .ignoresCycle, .fullScreenDisallowsTiling])
     if window.collectionBehavior != behavior { window.collectionBehavior = behavior }
     window.isExcludedFromWindowsMenu = true
     window.hidesOnDeactivate = false

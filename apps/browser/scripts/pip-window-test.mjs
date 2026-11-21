@@ -75,7 +75,7 @@ function checkSettings(window, top = true) {
   assert.equal(window.level, top ? 3 : 0);
   if (before) return;
   assert.equal(window.canJoinAllApplications, true);
-  assert.equal(window.stationary, true);
+  assert.equal(window.stationary, false, "a stationary window stays on the desktop and never shows in a full-screen Space");
   assert.equal(window.excludesWindowsMenu, true);
   assert.equal(window.disallowsTiling, true);
   assert.equal(window.role, "AXWindow");

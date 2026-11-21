@@ -166,8 +166,20 @@ class SidebarRowView: NSView {
     if retired { return nil }
     let local = convert(point, from: superview)
     if numberHint.blocksClose, numberHint.frame.contains(local) { return self }
-    let hit = super.hitTest(point)
-    return hit === body ? self : hit
+    guard let hit = super.hitTest(point) else { return nil }
+    var view: NSView? = hit
+    while let candidate = view, candidate !== self {
+      if !Self.passive(candidate) { return hit }
+      view = candidate.superview
+    }
+    return self
+  }
+
+  private static func passive(_ view: NSView) -> Bool {
+    guard view.toolTip == nil else { return false }
+    if view.isMember(of: NSView.self) { return true }
+    if view.isMember(of: NSTextField.self), let field = view as? NSTextField { return !field.isEditable && !field.isSelectable }
+    return false
   }
 
   func retire() {

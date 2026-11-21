@@ -3482,6 +3482,13 @@ NSDictionary *ProbeFrame(NSWindow *window, ACWindowFullScreen *state, CFTimeInte
     NSPoint p = WindowPoint(window, [action substringFromIndex:4]);
     return Describe([frameView hitTest:p]);
   }
+#if DEBUG
+  if ([action hasPrefix:@"firstMouse:"]) {
+    NSPoint p = WindowPoint(window, [action substringFromIndex:11]);
+    NSView *hit = [frameView hitTest:p];
+    return [NSString stringWithFormat:@"%d %@", [hit acceptsFirstMouse:Mouse(window, NSEventTypeLeftMouseDown, p)] ? 1 : 0, Describe(hit)];
+  }
+#endif
   if ([action hasPrefix:@"layers:"]) {
     if (!solaracore_host::TestHooksAllowed()) return @"test instances only";
     NSPoint p = WindowPoint(window, [action substringFromIndex:7]);

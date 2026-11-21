@@ -412,6 +412,8 @@ final class FolderPanelRow: NSView {
     refresh()
   }
 
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
   override func mouseDown(with event: NSEvent) {
     pressed = true
     downAt = event.locationInWindow

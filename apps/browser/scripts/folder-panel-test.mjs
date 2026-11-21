@@ -126,6 +126,7 @@ async function run() {
     await clickTile();
     await sleep(700);
     await openedPanel("native folder panel");
+    if (out.rows[1]) out.rowFirstMouse = await dev(`firstMouse:${Math.round(out.rows[1].x + out.rows[1].width / 2)},${Math.round(out.rows[1].y + out.rows[1].height / 2)}`);
     if (out.rows[1]) await press(out.rows[1].x + out.rows[1].width / 2, out.rows[1].y + out.rows[1].height / 2);
     await sleep(500);
     out.rowShows = (await active()) === setup.ids[1];
@@ -223,6 +224,7 @@ await rep.check("a native folder tile opens the panel; a row selects its tab; th
     }
   }
   for (const key of ["rowShows", "rowCloses", "openedAgain", "pageCloses", "tileCloses", "escCloses"]) assert.equal(panel[key], true, key);
+  assert.match(String(panel.rowFirstMouse), /^1 (SolaraUI\.)?FolderPanelRow\b/, "a panel row takes a click in a background window");
   for (const key of ["ownedBefore", "flipCloses", "flipOpensJs", "flipSwitchesJs"]) assert.equal(panel[key], true, key);
 });
 process.exit(rep.summary() ? 0 : 1);

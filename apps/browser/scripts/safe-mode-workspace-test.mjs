@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { launch, reporter } from "../../../scripts/lib/instance.mjs";
 
-const HELP = "usage: node apps/browser/scripts/safe-mode-workspace-test.mjs <Debug Solara.app> [--keep-data]\n\nSafe mode, entered through an isolated launch-switch defaults suite on data a normal launch made first, in hidden windows: a sidebar group header collapses and expands, its close button asks first and Cancel keeps it while Close Group closes it, the group menu collapses and ungroups, and a link dropped on the sidebar opens a tab. Swift's Debug counters must rise by one per action, so the native store decides these in safe mode. A normal relaunch on the same data shows none of it, because safe mode never saves the workspace. With the native layout, a header click that is lost twice reports the collapse check as pending (a known bug), not failed.";
+const HELP = "usage: node apps/browser/scripts/safe-mode-workspace-test.mjs <Debug Solara.app> [--keep-data]\n\nSafe mode, entered through an isolated launch-switch defaults suite on data a normal launch made first, in hidden windows: a sidebar group header collapses and expands, its close button asks first and Cancel keeps it while Close Group closes it, the group menu collapses and ungroups, and a link dropped on the sidebar opens a tab. Swift's Debug counters must rise by one per action, so the native store decides these in safe mode. A normal relaunch on the same data shows none of it, because safe mode never saves the workspace.";
 const args = process.argv.slice(2);
 if (args.includes("--help") || !args.find((a) => !a.startsWith("--"))) {
   console.log(HELP);
@@ -43,7 +43,6 @@ const run = (body) => app.eval(`${HELPERS}\n${body}`, { timeout: 30000 });
 const range = (from, count) => Array.from({ length: Math.max(0, Math.ceil(count)) }, (_, i) => Math.round(from) + i);
 const q = JSON.stringify;
 let W;
-let firstClickLost = false;
 
 const requireSwift = (what, counter, before, after) => {
   rep.log(`${what}: ${counter} ${before} -> ${after}`);
@@ -133,35 +132,20 @@ try {
     return settle(1200).then(() => ids);`);
   const work = await group(tabs.slice(0, 2), "Work");
 
-  const COLLAPSE = "a click on a group header collapses it and another expands it, decided in Swift";
-  let h = await header(work);
-  for (let i = 0; i < 10; i++) {
-    await run(`return settle(400);`);
-    const again = await header(work);
-    if (again.x === h.x && again.y === h.y && again.w === h.w) break;
-    h = again;
-  }
-  const x = Math.round(h.x + Math.min(60, h.w / 3));
-  const retryX = Math.round(h.x + h.w / 2);
-  const layoutOn = !!(await run(`return globalThis.expo.modules.SolaraWindowShell.nativeLayout(${q(W)});`));
-  const collapsed = () => run(`return st().groups[${q(work)}].collapsed;`);
-  const actions = () => run(`return D.devGroupActions();`);
-  rep.log(`collapse at ${x},${h.y} (layout ${layoutOn ? "on" : "off"}): ${q(await run(`return hits(${q(W)}, [${x}], [${h.y}]);`))}`);
-  const before = await actions();
-  await run(`return click(${q(W)}, ${x}, ${h.y});`);
-  let lost = (await actions()) === before && !(await collapsed());
-  if (lost) {
-    firstClickLost = true;
-    rep.log(`the header click reached nothing; clicking again at the header's middle (${retryX},${h.y})`);
-    await run(`return click(${q(W)}, ${retryX}, ${h.y});`);
-    lost = (await actions()) === before && !(await collapsed());
-  }
-  if (lost && layoutOn) rep.record(COLLAPSE, { skip: "pending: header click lost after safe-mode launch (pre-existing)" });
-  else await rep.check(COLLAPSE, async () => {
-    requireSwift("collapse", "actions", before, await actions());
-    assert.equal(await collapsed(), true);
-    await swiftDid("expand", "actions", () => run(`return click(${q(W)}, ${firstClickLost ? retryX : x}, ${h.y});`));
-    assert.equal(await collapsed(), false);
+  await rep.check("a click on a group header collapses it and another expands it, decided in Swift", async () => {
+    let h = await header(work);
+    for (let i = 0; i < 10; i++) {
+      await run(`return settle(400);`);
+      const again = await header(work);
+      if (again.x === h.x && again.y === h.y && again.w === h.w) break;
+      h = again;
+    }
+    const x = Math.round(h.x + Math.min(60, h.w / 3));
+    rep.log(`collapse at ${x},${h.y}: ${await run(`return win(${q(W)}).then((n) => C.devWindow(n, "firstMouse:${x},${h.y}"));`)}`);
+    await swiftDid("collapse", "actions", () => run(`return click(${q(W)}, ${x}, ${h.y});`));
+    assert.equal(await run(`return st().groups[${q(work)}].collapsed;`), true);
+    await swiftDid("expand", "actions", () => run(`return click(${q(W)}, ${x}, ${h.y});`));
+    assert.equal(await run(`return st().groups[${q(work)}].collapsed;`), false);
   });
 
   await rep.check("the close button asks in a sheet; Cancel keeps the group and Close Group closes it", async () => {
@@ -210,8 +194,6 @@ try {
     assert.equal(await groupNamed("Menu"), null, "no group from safe mode");
     assert.equal(await run(`return Object.values(st().tabs).some((t) => t.url === ${q(DROPPED)});`), false, "no tab from safe mode's drop");
   });
-  rep.log(`first header click lost: ${firstClickLost}`);
-  console.log(`first header click lost: ${firstClickLost}`);
 } finally {
   await app?.quit();
   try { execFileSync("defaults", ["delete", suite], { stdio: "ignore" }); } catch {}

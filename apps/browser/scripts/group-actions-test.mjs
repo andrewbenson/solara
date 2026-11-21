@@ -128,6 +128,13 @@ try {
   assert.equal(await run(`return win("w1").then((n) => C.devWindow(n, "alertSheets:1"));`), "1", "real sheets in this test instance");
   const work = await group(["a", "b"], "Work");
 
+  await rep.check("a group header's title takes a click in a background window, like the row it's in", async () => {
+    const h = await header("w1", work);
+    const x = Math.round(h.x + Math.min(60, h.w / 3));
+    const answer = await run(`return win("w1").then((n) => C.devWindow(n, "firstMouse:${x},${h.y}"));`);
+    assert.match(answer, /^1 (SolaraUI\.)?GroupHeaderView\b/, answer);
+  });
+
   await rep.check("a click on the sidebar group header collapses it, and another expands it", async () => {
     const h = await header("w1", work);
     const x = Math.round(h.x + Math.min(60, h.w / 3));

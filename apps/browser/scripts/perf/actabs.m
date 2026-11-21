@@ -312,8 +312,9 @@ __attribute__((constructor)) static void Start(void) {
     if (!NSClassFromString(@"RCTUIManager")) return;
     SwizzleUIManager();
     if (getenv("AC_BENCH_COUNT_ADDS")) CountAdds();
-    for (NSString *name in @[ @"SolaraSidebarSelectionShown", @"SolaraTopStripShown" ]) {
-      NSString *kind = [name isEqualToString:@"SolaraTopStripShown"] ? @"t" : @"n";
+    NSDictionary<NSString *, NSString *> *kinds = @{ @"SolaraSidebarSelectionShown": @"n", @"SolaraTopStripShown": @"t", @"SolaraSidebarRowsShown": @"r" };
+    for (NSString *name in kinds) {
+      NSString *kind = kinds[name];
       [NSNotificationCenter.defaultCenter addObserverForName:name object:nil queue:nil usingBlock:^(NSNotification *note) {
         double shown = EpochMs();
         [CATransaction addCommitHandler:^{

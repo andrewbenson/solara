@@ -16,8 +16,9 @@
 // pinned tabs), cmdT (new tab), cmdClick (⌘-click a link: a background tab), cmdW (close a loaded tab), hoverClose
 // (the row's ✕, hovered again just before the click: the first hover doesn't last until then, so the ✕ was hidden
 // and the click landed on the row), pin and unpin (Tabs › Pin), moveDown (⌃⇧PgDn).
-// cmdClick, pin, unpin and moveDown change only native views that post no mark, so they print `not timed: no paint
-// mark`, report in the "not timed" column and stay out of the medians.
+// cmdClick, pin, unpin and moveDown change only the sidebar's rows: they are timed to SolaraSidebarRowsShown, posted
+// when the sidebar's rows (which, where and in what order) change, recorded by actabs.m as k:"r". An app without that
+// mark prints `not timed: no paint mark`, reports in the "not timed" column and stays out of the medians.
 //
 // What is timed. The start is the AppKit event (its own timestamp, read by actabs.m's event monitor; for a
 // click its mouse-up, which is what fires it, with the mouse-down in `press`;
@@ -435,6 +436,12 @@ async function runAction(rig, ctx, name) {
     timing.ui = Math.max(Number.isFinite(timing.ui) ? timing.ui : -Infinity, timing.shown);
     timing.total = Math.max(timing.ui, Number.isFinite(timing.page) ? timing.page : -Infinity);
   }
+  const rowsShown = rig.records(t0).find((r) => r.k === "r" && r.s >= startAt - 1);
+  if (rowsShown) {
+    timing.rows = rowsShown.c - startAt;
+    timing.ui = Math.max(Number.isFinite(timing.ui) ? timing.ui : -Infinity, timing.rows);
+    timing.total = Math.max(timing.ui, Number.isFinite(timing.page) ? timing.page : -Infinity);
+  }
   const stripShown = rig.records(t0).find((r) => r.k === "t" && r.s >= startAt - 1);
   if (stripShown) {
     timing.strip = stripShown.c - startAt;
@@ -533,15 +540,15 @@ function report() {
   const sides = [...new Set(samples.map((s) => s.side))];
   const actions = [...new Set(samples.map((s) => s.action))];
   const f = (x) => (Number.isFinite(x) ? x.toFixed(1) : "–");
-  console.log("| action | side | n | total median | total p90 | selection shown | first paint | event→store | store→commit | layout | main wait | UI blocks | display+CA commit | page | renders | commits | not timed | errors |");
-  console.log("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
+  console.log("| action | side | n | total median | total p90 | selection shown | rows shown | first paint | event→store | store→commit | layout | main wait | UI blocks | display+CA commit | page | renders | commits | not timed | errors |");
+  console.log("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
   for (const a of actions)
     for (const side of sides) {
       const all = samples.filter((s) => s.action === a && s.side === side);
       const untimed = all.filter((s) => !s.error && s.untimed);
       const ok = all.filter((s) => !s.error && !s.untimed && s.worked !== false && Number.isFinite(s.total));
       const m = (k, q = 0.5) => quantile(ok.map((s) => s[k]), q);
-      console.log(`| ${a} | ${side} | ${ok.length} | ${f(m("total"))} | ${f(m("total", 0.9))} | ${f(m("shown"))} | ${f(m("firstPaint"))} | ${f(m("store"))} | ${f(m("commit"))} | ${f(m("layout"))} | ${f(m("mainWait"))} | ${f(m("blocks"))} | ${f(m("display"))} | ${f(m("page"))} | ${f(m("renders"))} | ${f(m("commits"))} | ${untimed.length ? `${untimed.length} (${untimed[0].untimed})` : 0} | ${all.length - ok.length - untimed.length} |`);
+      console.log(`| ${a} | ${side} | ${ok.length} | ${f(m("total"))} | ${f(m("total", 0.9))} | ${f(m("shown"))} | ${f(m("rows"))} | ${f(m("firstPaint"))} | ${f(m("store"))} | ${f(m("commit"))} | ${f(m("layout"))} | ${f(m("mainWait"))} | ${f(m("blocks"))} | ${f(m("display"))} | ${f(m("page"))} | ${f(m("renders"))} | ${f(m("commits"))} | ${untimed.length ? `${untimed.length} (${untimed[0].untimed})` : 0} | ${all.length - ok.length - untimed.length} |`);
     }
 }
 

@@ -152,12 +152,22 @@ public final class SidebarView: NSView {
     if moved, let window { TabNumberHintFeed.shared.cancelOnSelection(in: window) }
     context = next
     SidebarFolderPanelHost.refreshHints(on: self)
+    let rowsBefore = pageLayout.items
     let resting = motion
     if let previous, SidebarMotion.folding(previous.state, next.state, windowId: windowId) { motion = .fold }
     reconcile(animated: previous != nil && canAnimate && SidebarDragController.existing(self)?.suppressesMotion != true)
     motion = resting
     if let previous { revealChanges(from: previous, to: next) }
     if moved && !isHiddenOrHasHiddenAncestor { NotificationCenter.default.post(name: Self.selectionShown, object: self) }
+    if previous != nil && !isHiddenOrHasHiddenAncestor && Self.rowsDiffer(rowsBefore, pageLayout.items) {
+      NotificationCenter.default.post(name: Self.rowsShown, object: self)
+    }
+  }
+
+  static func rowsDiffer(_ a: [SidebarItem], _ b: [SidebarItem]) -> Bool {
+    guard a.count == b.count else { return true }
+    for (x, y) in zip(a, b) where x.kind != y.kind || x.section != y.section || x.region != y.region { return true }
+    return false
   }
 
   private func revealChanges(from previous: SidebarContext, to next: SidebarContext) {
@@ -211,6 +221,7 @@ public final class SidebarView: NSView {
   }
 
   public static let selectionShown = Notification.Name("SolaraSidebarSelectionShown")
+  public static let rowsShown = Notification.Name("SolaraSidebarRowsShown")
 
   public func updateHost(_ host: SidebarHostState) {
     guard let context else { return }

@@ -1,5 +1,5 @@
 import { openWindow } from "@solara/shell";
-import { navigateNativeSettings } from "@solara/settings";
+import { navigateNativeSettings, setNativePreferredImportSource } from "@solara/settings";
 
 export const SETTINGS_WINDOW_ID = "settings";
 export const IMPORT_WINDOW_ID = "import";
@@ -39,5 +39,6 @@ export function takePreferredImportSource() {
 
 export function openImport(browserId?: string) {
   preferredImportSource = browserId ?? null;
+  setNativePreferredImportSource(preferredImportSource);
   void openWindow(IMPORT_WINDOW_ID, { kind: "import", title: "Import from Another Browser" });
 }

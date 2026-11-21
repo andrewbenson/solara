@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import SolaraImportAdapter
+import SolaraStore
 import SolaraUI
 
 @MainActor
@@ -14,6 +15,15 @@ final class ImportAdapter: ImportServices {
   func open() async -> ImportOpening {
     let opened = await SettingsAdapters.js("import.open") as? [String: Any] ?? [:]
     session = opened.int("session") ?? 0
+    if direct, let store = SettingsDirectWrites.store {
+      let state = store.state
+      return ImportOpening(
+        available: opened.bool("available") ?? false,
+        preferredSource: ImportPreferredSource.shared.take(),
+        targets: ImportTargets.list(state).map { SolaraUI.ImportTarget(id: $0.id, name: $0.name) },
+        defaultTarget: ImportTargets.defaultTarget(state)
+      )
+    }
     return ImportOpening(
       available: opened.bool("available") ?? false,
       preferredSource: opened.string("preferred"),
@@ -33,7 +43,15 @@ final class ImportAdapter: ImportServices {
   }
 
   func targetUpdates() -> AsyncStream<[ImportTarget]> {
-    SettingsJS.shared.stream(Self.targetsTopic) { Self.targets($0) }
+    guard direct, let store = SettingsDirectWrites.store else { return SettingsJS.shared.stream(Self.targetsTopic) { Self.targets($0) } }
+    return AsyncStream { continuation in
+      let feed = ImportTargetsFeed(store.state)
+      let listener = store.subscribe { commit in
+        guard let list = feed.next(commit.state) else { return }
+        continuation.yield(list.map { SolaraUI.ImportTarget(id: $0.id, name: $0.name) })
+      }
+      continuation.onTermination = { _ in store.unsubscribe(listener) }
+    }
   }
 
   func progressUpdates() -> AsyncStream<ImportProgressUpdate> {

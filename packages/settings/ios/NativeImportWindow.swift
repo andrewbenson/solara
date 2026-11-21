@@ -37,6 +37,9 @@ enum NativeImportWindow {
     return [
       "step": model.step.rawValue,
       "browsers": model.browsers.map(\.id),
+      "source": model.source?.id as Any,
+      "target": model.target,
+      "targets": model.targets.map(\.id),
       "kinds": model.kinds.map(\.rawValue).sorted(),
       "counts": ["cookies": model.counts.cookies, "addresses": model.counts.addresses, "cards": model.counts.cards, "bookmarks": model.counts.bookmarks, "history": model.counts.history, "passwords": model.counts.passwords],
       "failures": model.failures.map { ImportModel.failureLine($0) },

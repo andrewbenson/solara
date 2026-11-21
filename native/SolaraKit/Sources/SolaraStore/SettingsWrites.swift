@@ -110,3 +110,60 @@ public struct SettingsOpening {
     return s.settings.defaultProfileId
   }
 }
+
+public struct ImportTargetChoice: Sendable, Equatable {
+  public let id: String
+  public let name: String
+
+  public init(id: String, name: String) {
+    self.id = id
+    self.name = name
+  }
+}
+
+public enum ImportTargets {
+  public static func list(_ s: BrowserState) -> [ImportTargetChoice] {
+    s.profileOrder.compactMap { id in s.profiles[id].map { ImportTargetChoice(id: id, name: $0.name) } }
+  }
+
+  public static func defaultTarget(_ s: BrowserState) -> String {
+    if let focused = s.ui.focusedWindowId, let window = s.windows[focused], !window.incognito { return window.profileId }
+    return s.settings.defaultProfileId
+  }
+}
+
+public final class ImportTargetsFeed: @unchecked Sendable {
+  private let lock = NSLock()
+  private var last: [ImportTargetChoice]
+
+  public init(_ state: BrowserState) {
+    last = ImportTargets.list(state)
+  }
+
+  public func next(_ state: BrowserState) -> [ImportTargetChoice]? {
+    let list = ImportTargets.list(state)
+    return lock.withLock {
+      guard list != last else { return nil }
+      last = list
+      return list
+    }
+  }
+}
+
+public final class ImportPreferredSource: @unchecked Sendable {
+  public static let shared = ImportPreferredSource()
+  private let lock = NSLock()
+  private var value: String?
+
+  public init() {}
+
+  public func set(_ id: String?) { lock.withLock { value = id } }
+
+  public func take() -> String? {
+    lock.withLock {
+      let id = value
+      value = nil
+      return id
+    }
+  }
+}

@@ -3,6 +3,7 @@ import Foundation
 import SolaraCore
 import SolaraEngine
 import SolaraLive
+import SolaraStore
 import SolaraSyncAdapter
 
 public class SettingsModule: Module {
@@ -41,6 +42,10 @@ public class SettingsModule: Module {
     Function("workspaceCommand") { (command: String, arg: String?, windowId: String?) -> Bool in
       if Thread.isMainThread { return MainActor.assumeIsolated { NativeWorkspaceCommands.perform(command, arg: arg, windowId: windowId) } }
       return DispatchQueue.main.sync { MainActor.assumeIsolated { NativeWorkspaceCommands.perform(command, arg: arg, windowId: windowId) } }
+    }
+
+    Function("setPreferredImportSource") { (browserId: String?) in
+      ImportPreferredSource.shared.set(browserId)
     }
 
     Function("servicesActive") { () -> Bool in

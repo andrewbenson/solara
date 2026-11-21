@@ -5,6 +5,7 @@ type SettingsCall = { id: number; name: string; args: string };
 type NativeSettingsModule = {
   available(): boolean;
   servicesActive?(): boolean;
+  setPreferredImportSource?(browserId: string | null): void;
   workspaceCommand?(command: string, arg: string | null, windowId: string | null): boolean;
   startAppStartup(optionsJSON: string): Promise<string>;
   completeAppStartup(): Promise<void>;
@@ -135,6 +136,12 @@ export const nativeAppIntegrationNotification = (response: { action: string; tab
 
 export const nativeAppIntegrationCommand = (command: AppIntegrationCommand, windowId?: string | null): Promise<void> =>
   native?.appIntegrationCommand(command, windowId ?? null) ?? Promise.reject(new Error("native app integration unavailable"));
+
+export function setNativePreferredImportSource(browserId: string | null): void {
+  try {
+    native?.setPreferredImportSource?.(browserId);
+  } catch {}
+}
 
 export const navigateNativeSettings = (pane: string | null, profileId: string | null, detail: string | null = null) =>
   native?.navigate(pane, profileId, detail).catch(() => {});

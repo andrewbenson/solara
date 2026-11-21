@@ -54,6 +54,30 @@ struct WorkspaceActionRouterTests {
     #expect(WorkspaceActionRouter.ownedStore === store)
   }
 
+  @Test func safeModeRoutesNativelyAndAFrozenStoreHandsOffAtOnce() throws {
+    let (store, window, tabs) = try windowWithTabs(2)
+    var safeConfig = StoreConfig()
+    safeConfig.safeMode = true
+    let safe = Store(state: store.state, config: safeConfig)
+    let owns = NativeStoreHandle.ownsWorkspace
+    let resolve = NativeStoreHandle.resolve
+    defer {
+      NativeStoreHandle.ownsWorkspace = owns
+      NativeStoreHandle.resolve = resolve
+      NativeStoreHandle.thawForTests()
+    }
+    NativeStoreHandle.ownsWorkspace = true
+    NativeStoreHandle.resolve = { safe }
+    #expect(WorkspaceActionRouter.ownedStore === safe)
+    #expect(WorkspaceActionRouter.ownedClick(windowId: window, tabId: tabs[0], mods: SidebarClickMods([])))
+    #expect(safe.state.activeTabId(window) == tabs[0])
+    NativeStoreHandle.resolve = { store }
+    NativeStoreHandle.markFrozen()
+    #expect(WorkspaceActionRouter.ownedStore == nil)
+    #expect(!WorkspaceActionRouter.ownedClick(windowId: window, tabId: tabs[1], mods: SidebarClickMods([])))
+    #expect(store.state.activeTabId(window) != tabs[1])
+  }
+
   @Test func withoutAnOwnedWorkspaceClicksAndClosesHandOffToJavaScriptUntouched() throws {
     let (store, window, tabs) = try windowWithTabs(3)
     let owned = NativeStoreHandle.ownsWorkspace

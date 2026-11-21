@@ -141,7 +141,7 @@ final class NativeSidebarDrag: SidebarDragBridge {
   }
 
   func drop(windowId: String, ids: [String], drop: JSONValue, sequence: [String]?) {
-    if let store = NativeStoreHandle.store {
+    if let store = WorkspaceWrites.store {
       _ = try? store.dispatch(Command("dropTabs", [JSONValue(ids), drop]), origin: .native)
       FrameUpdates.flush()
     }

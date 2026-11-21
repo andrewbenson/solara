@@ -86,7 +86,7 @@ enum NativeSidebarShell {
   }
 
   static func openDropped(_ windowId: String, items: [[String: String]], placement: String?) -> Bool {
-    guard let store = SettingsWrites.directStore else { return false }
+    guard let store = WorkspaceWrites.store else { return false }
     var parsed: JSONValue?
     if let placement {
       do {
@@ -99,7 +99,7 @@ enum NativeSidebarShell {
     let landing = parsed
     DispatchQueue.main.async { [weak owner = store] in
       MainActor.assumeIsolated {
-        guard let store = SettingsWrites.directStore, store === owner else {
+        guard let store = WorkspaceWrites.store, store === owner else {
           return NSLog("[drop] %@: the store stood down before the drop opened", windowId)
         }
         DroppedTabs.open(store, windowId: windowId, items: items, placement: landing) { error in
@@ -1433,7 +1433,7 @@ enum NativeGroupActions {
   #endif
 
   static func toggle(_ groupId: String, collapsed: (TabGroup) -> Bool) -> Bool {
-    guard let store = SettingsWrites.directStore else { return false }
+    guard let store = WorkspaceWrites.store else { return false }
     count()
     guard let group = store.state.groups[groupId] else { return true }
     dispatch(store, GroupActions.collapse(groupId, collapsed(group)))
@@ -1441,7 +1441,7 @@ enum NativeGroupActions {
   }
 
   static func tuck(_ groupId: String, windowId: String) -> Bool {
-    guard let store = SettingsWrites.directStore else { return false }
+    guard let store = WorkspaceWrites.store else { return false }
     count()
     if let target = GroupActions.tuckTarget(store.state, windowId: windowId, groupId: groupId) {
       dispatch(store, Command("activate", [.string(target)]))
@@ -1450,7 +1450,7 @@ enum NativeGroupActions {
   }
 
   static func close(_ groupId: String) -> Bool {
-    guard let store = SettingsWrites.directStore else { return false }
+    guard let store = WorkspaceWrites.store else { return false }
     switch GroupActions.close(store.state, groupId: groupId) {
     case .nothing: count()
     case .unload(let ids):
@@ -1462,7 +1462,7 @@ enum NativeGroupActions {
     case .close(let confirm?):
       let alert = NativeWorkspaceCommands.confirmAlert(confirm.title, message: confirm.message, button: confirm.confirmTitle, suppression: confirm.suppression)
       NativeWorkspaceCommands.askGuarded(alert, windowId: confirm.windowId, setting: "warnBeforeClosingTabGroup", store: store) { [weak owner = store] in
-        guard let store = SettingsWrites.directStore, store === owner, store.state.groups[groupId] != nil else {
+        guard let store = WorkspaceWrites.store, store === owner, store.state.groups[groupId] != nil else {
           return NSLog("[groups] %@: gone or stood down while the close warning was open", groupId)
         }
         dispatch(store, Command("closeGroup", [.string(groupId)]))
@@ -1497,7 +1497,7 @@ enum NativeGroupMenu {
   #endif
 
   static func open(_ groupId: String, windowId: String, js: @escaping @MainActor (_ groupId: String, _ choice: String) -> Void) -> Bool {
-    guard let store = SettingsWrites.directStore else { return false }
+    guard let store = WorkspaceWrites.store else { return false }
     let shortcut = CommandShortcutSnapshot().hint("newTabInGroup", state: store.state)
     let items = GroupMenu.items(store.state, groupId: groupId, newTabShortcut: shortcut)
     guard !items.isEmpty else { return true }
@@ -1506,7 +1506,7 @@ enum NativeGroupMenu {
     #endif
     ShellMenus.choose(items.map(\.dictionary)) { [weak owner = store] picked in
       guard let picked, let choice = GroupMenuChoice(picked) else { return }
-      guard let store = SettingsWrites.directStore, store === owner, store.state.groups[groupId] != nil else {
+      guard let store = WorkspaceWrites.store, store === owner, store.state.groups[groupId] != nil else {
         return NSLog("[groups] %@: gone or stood down while its menu was open", groupId)
       }
       run(choice, raw: picked, groupId: groupId, windowId: windowId, store: store, js: js)

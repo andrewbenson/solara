@@ -9,7 +9,7 @@ public enum WorkspaceCloseRoute: Equatable, Sendable {
 
 @MainActor
 public enum WorkspaceActionRouter {
-  public static var ownedStore: Store? { NativeStoreHandle.ownsWorkspace ? NativeStoreHandle.store : nil }
+  public static var ownedStore: Store? { WorkspaceWrites.store }
 
   public static func clickCommand(windowId: String, tabId: String, mods: SidebarClickMods) -> Command {
     Command("clickTab", [.string(windowId), .string(tabId), ["metaKey": .bool(mods.meta), "shiftKey": .bool(mods.shift), "altKey": .bool(mods.alt)]])

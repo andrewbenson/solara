@@ -34,7 +34,7 @@ import Testing
     let window = panel()
     defer { window.close() }
     window.collectionBehavior = [.moveToActiveSpace, .managed, .participatesInCycle, .fullScreenPrimary, .fullScreenAllowsTiling, .primary, .stationary]
-    SolaraPictureInPictureWindow.configure(window, keepOnTop: true)
+    SolaraPictureInPictureWindow.configure(window)
     #expect(window.level == .floating)
     #expect(window.collectionBehavior.contains([.canJoinAllSpaces, .canJoinAllApplications, .fullScreenAuxiliary, .ignoresCycle, .fullScreenDisallowsTiling]))
     #expect(window.collectionBehavior.intersection([.moveToActiveSpace, .managed, .transient, .participatesInCycle, .fullScreenPrimary, .fullScreenNone, .fullScreenAllowsTiling, .primary, .auxiliary, .stationary]).isEmpty)
@@ -54,14 +54,14 @@ import Testing
     let selectorAllowed = other.isAccessibilitySelectorAllowed(selector)
     let positionSettable = other.accessibilityIsAttributeSettable(.position)
     let sizeSettable = other.accessibilityIsAttributeSettable(.size)
-    SolaraPictureInPictureWindow.configure(window, keepOnTop: true)
+    SolaraPictureInPictureWindow.configure(window)
     #expect(window.isAccessibilitySelectorAllowed(selector) == selectorAllowed)
     #expect(window.accessibilityIsAttributeSettable(.position) == positionSettable)
     #expect(window.accessibilityIsAttributeSettable(.size) == sizeSettable)
     let moved = window.frame.offsetBy(dx: 20, dy: 30)
     window.setFrame(moved, display: false)
     #expect(window.frame == moved)
-    SolaraPictureInPictureWindow.configure(window, keepOnTop: false)
+    SolaraPictureInPictureWindow.configure(window)
     #expect(window.isAccessibilitySelectorAllowed(selector) == selectorAllowed)
     #expect(window.accessibilityIsAttributeSettable(.position) == positionSettable)
     #expect(window.accessibilityIsAttributeSettable(.size) == sizeSettable)
@@ -77,7 +77,7 @@ import Testing
     let configured = observingPanel()
     let baseline = observingPanel()
     defer { configured.close(); baseline.close() }
-    SolaraPictureInPictureWindow.configure(configured, keepOnTop: true)
+    SolaraPictureInPictureWindow.configure(configured)
     for window in [configured, baseline] {
       window.accessibilitySetValue(NSValue(point: NSPoint(x: 600, y: 600)), forAttribute: .position)
       window.accessibilitySetValue(NSValue(size: NSSize(width: 640, height: 360)), forAttribute: .size)
@@ -90,7 +90,7 @@ import Testing
   @Test func closingPiPRemovesItsNotificationPolicy() {
     let window = panel()
     let baseline = window.accessibilityIsAttributeSettable(.position)
-    SolaraPictureInPictureWindow.configure(window, keepOnTop: true)
+    SolaraPictureInPictureWindow.configure(window)
     window.close()
     window.level = .normal
     window.collectionBehavior = []
@@ -102,13 +102,14 @@ import Testing
     #expect(window.accessibilityIsAttributeSettable(.position) == baseline)
   }
 
-  @Test func keepOnTopOffRetainsSpacesAndFloatingAccessibilityIdentity() {
+  @Test func reconfiguringKeepsTheWindowFloatingInEverySpace() {
     let window = panel()
     defer { window.close() }
-    SolaraPictureInPictureWindow.configure(window, keepOnTop: true)
+    SolaraPictureInPictureWindow.configure(window)
     let behavior = window.collectionBehavior
-    SolaraPictureInPictureWindow.configure(window, keepOnTop: false)
-    #expect(window.level == .normal)
+    window.level = .normal
+    SolaraPictureInPictureWindow.configure(window)
+    #expect(window.level == .floating)
     #expect(window.collectionBehavior == behavior)
     #expect(window.accessibilitySubrole() == .floatingWindow)
   }
@@ -116,7 +117,7 @@ import Testing
   @Test func spaceNotificationReappliesSettingsWithoutChangingTheFrame() {
     let window = panel()
     defer { window.close() }
-    SolaraPictureInPictureWindow.configure(window, keepOnTop: true)
+    SolaraPictureInPictureWindow.configure(window)
     let frame = window.frame
     window.level = .normal
     window.collectionBehavior = [.stationary]
@@ -131,7 +132,7 @@ import Testing
   @Test func notificationsDoNotMoveAnUnchangedWindowOrActivateTheApp() {
     let window = panel()
     defer { window.close() }
-    SolaraPictureInPictureWindow.configure(window, keepOnTop: true)
+    SolaraPictureInPictureWindow.configure(window)
     let frame = window.frame
     NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
     NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: NSApp)
@@ -141,13 +142,12 @@ import Testing
     #expect(!window.isVisible)
   }
 
-  @Test(arguments: [true, false])
-  func screenChangeRefreshesMembershipWithoutMovingOrActivating(keepOnTop: Bool) {
+  @Test func screenChangeRefreshesMembershipWithoutMovingOrActivating() {
     NSApplication.shared.setActivationPolicy(.prohibited)
     let window = SpaceObservingPanel(contentRect: NSRect(x: 100, y: 100, width: 320, height: 180), styleMask: [.nonactivatingPanel, .resizable], backing: .buffered, defer: true)
     window.isReleasedWhenClosed = false
     defer { window.close() }
-    SolaraPictureInPictureWindow.configure(window, keepOnTop: keepOnTop)
+    SolaraPictureInPictureWindow.configure(window)
     let frame = window.frame
     let behavior = window.collectionBehavior
     window.behaviorWrites.removeAll()
@@ -156,7 +156,7 @@ import Testing
     #expect(window.behaviorWrites.first?.intersection([.canJoinAllSpaces, .canJoinAllApplications, .fullScreenAuxiliary]).isEmpty == true)
     #expect(window.behaviorWrites.last == behavior)
     #expect(window.collectionBehavior == behavior)
-    #expect(window.level == (keepOnTop ? .floating : .normal))
+    #expect(window.level == .floating)
     #expect(window.frame == frame)
     #expect(!window.isVisible)
     #expect(!window.isKeyWindow)
@@ -167,7 +167,7 @@ import Testing
     let window = panel()
     let other = panel()
     defer { window.close(); other.close() }
-    SolaraPictureInPictureWindow.configure(window, keepOnTop: true)
+    SolaraPictureInPictureWindow.configure(window)
     window.level = .normal
     window.collectionBehavior = []
     NotificationCenter.default.post(name: NSWindow.didChangeScreenNotification, object: other)

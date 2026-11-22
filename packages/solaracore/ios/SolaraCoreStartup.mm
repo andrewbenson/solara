@@ -8,6 +8,8 @@ namespace solaracore_host {
 
 namespace {
 
+NSString *const kRetiredPictureInPictureKeepOnTopDefault = @"ACPictureInPictureKeepOnTop";
+
 std::string AcceptLanguages() {
   NSMutableOrderedSet<NSString *> *list = [NSMutableOrderedSet orderedSet];
   for (NSString *identifier in NSLocale.preferredLanguages) {
@@ -24,6 +26,7 @@ std::string AcceptLanguages() {
 }
 
 void PrepareStartup(NSString *userDataDir, std::vector<std::string> &switches) {
+  [NSUserDefaults.standardUserDefaults removeObjectForKey:kRetiredPictureInPictureKeepOnTopDefault];
   ac::nativemessaging::SyncHosts(userDataDir);
   static dispatch_queue_t syncQueue = dispatch_queue_create("solara.native-messaging", DISPATCH_QUEUE_SERIAL);
   NSString *dir = [userDataDir copy];

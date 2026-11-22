@@ -127,10 +127,10 @@ void ShowSolaraPictureInPictureInFullScreenSpaces(gfx::NativeWindow native) {
   window.accessibilityRole = NSAccessibilityWindowRole;
   window.accessibilitySubrole = NSAccessibilityFloatingWindowSubrole;
   Class policy = NSClassFromString(@"SolaraPictureInPictureWindow");
-  SEL configure = NSSelectorFromString(@"configure:keepOnTop:");
+  SEL configure = NSSelectorFromString(@"configure:");
   if ([policy respondsToSelector:configure]) {
-    reinterpret_cast<void (*)(id, SEL, NSWindow*, BOOL)>(objc_msgSend)(
-        policy, configure, window, window.level >= NSFloatingWindowLevel);
+    reinterpret_cast<void (*)(id, SEL, NSWindow*)>(objc_msgSend)(
+        policy, configure, window);
   }
   NativeWidgetMacNSWindow* widget_window =
       base::apple::ObjCCast<NativeWidgetMacNSWindow>(window);

@@ -30,16 +30,10 @@ constexpr CGFloat kButtonMargin = 12, kButtonSize = 28, kButtonGap = 6, kCloseBu
 constexpr CGFloat kCornerRadius = 6;
 constexpr CGFloat kRimAlpha = 0.17;
 
-NSString *const kKeepOnTopDefault = @"ACPictureInPictureKeepOnTop";
 NSString *const kZoomDefault = @"ACPictureInPictureZoom";
 NSString *const kThrowDefault = @"ACPictureInPictureThrow";
 const void *const kControllerKey = &kControllerKey;
 const void *const kZoomKey = &kZoomKey;
-
-BOOL KeepOnTop() {
-  id value = [NSUserDefaults.standardUserDefaults objectForKey:kKeepOnTopDefault];
-  return value ? [value boolValue] : YES;
-}
 
 BOOL ShowsPage(NSView *view) {
   static Class page = NSClassFromString(@"RenderWidgetHostViewCocoa");
@@ -106,7 +100,7 @@ void PreventActivation(NSWindow *window) {
 }
 
 void ShowInFullScreenSpaces(NSWindow *window) {
-  [SolaraPictureInPictureWindow configure:window keepOnTop:window.level >= NSFloatingWindowLevel];
+  [SolaraPictureInPictureWindow configure:window];
   if ([window respondsToSelector:@selector(setActivationIndependence:)])
     [window setActivationIndependence:YES];
 }
@@ -262,7 +256,6 @@ typedef NS_ENUM(NSInteger, ACPiPEdge) { ACPiPEdgeNone = 0, ACPiPEdgeLeft = -1, A
 @property (nonatomic, copy) NSString *host;
 @property (nonatomic, readonly) ACPiPOverlay *overlay;
 @property (nonatomic, readonly) ACPiPEdge stashedEdge;
-@property (nonatomic) BOOL keepOnTop;
 - (void)roundCorners;
 - (void)backToTab;
 - (void)unstash;
@@ -338,7 +331,7 @@ typedef NS_ENUM(NSInteger, ACPiPEdge) { ACPiPEdgeNone = 0, ACPiPEdgeLeft = -1, A
 - (instancetype)initWithWindow:(NSWindow *)window {
   if ((self = [super init])) {
     _window = window;
-    [SolaraPictureInPictureWindow configure:window keepOnTop:KeepOnTop()];
+    [SolaraPictureInPictureWindow configure:window];
     NSView *root = ACWindowRootView(window);
     _overlay = [[ACPiPOverlay alloc] initWithFrame:root.bounds];
     __weak ACPiPController *weakSelf = self;
@@ -369,7 +362,7 @@ typedef NS_ENUM(NSInteger, ACPiPEdge) { ACPiPEdgeNone = 0, ACPiPEdgeLeft = -1, A
                                               object:nil
                                                queue:nil
                                           usingBlock:^(NSNotification *) { [weakSelf screensChanged]; }]];
-    self.keepOnTop = KeepOnTop();
+    ShowInFullScreenSpaces(_window);
   }
   return self;
 }
@@ -403,26 +396,11 @@ typedef NS_ENUM(NSInteger, ACPiPEdge) { ACPiPEdgeNone = 0, ACPiPEdgeLeft = -1, A
   dispatch_async(dispatch_get_main_queue(), ^{ [self->_window invalidateShadow]; });
 }
 
-- (void)setKeepOnTop:(BOOL)keepOnTop {
-  _keepOnTop = keepOnTop;
-  _window.level = keepOnTop ? NSFloatingWindowLevel : NSNormalWindowLevel;
-  ShowInFullScreenSpaces(_window);
-}
-
-- (void)toggleKeepOnTop:(id)sender {
-  self.keepOnTop = !_keepOnTop;
-  [NSUserDefaults.standardUserDefaults setBool:_keepOnTop forKey:kKeepOnTopDefault];
-}
-
 - (NSMenu *)menu {
   NSMenu *menu = [[NSMenu alloc] initWithTitle:@""];
   NSMenuItem *back = [menu addItemWithTitle:@"Back to Tab" action:@selector(backToTabFromMenu:) keyEquivalent:@""];
   back.target = self;
   back.enabled = self.view != nil;
-  [menu addItem:NSMenuItem.separatorItem];
-  NSMenuItem *top = [menu addItemWithTitle:@"Keep Window on Top" action:@selector(toggleKeepOnTop:) keyEquivalent:@""];
-  top.target = self;
-  top.state = _keepOnTop ? NSControlStateValueOn : NSControlStateValueOff;
   return menu;
 }
 
@@ -905,7 +883,7 @@ static __weak NSWindow *gSwipeMomentum;
   };
 
   record(@"attached", self.overlay.superview == ACWindowRootView(window) && [ACWindowRootView(window).subviews.lastObject isEqual:self.overlay],
-         @{@"level" : @(window.level), @"keepOnTop" : @(self.keepOnTop), @"shadow" : @(window.hasShadow)});
+         @{@"level" : @(window.level), @"shadow" : @(window.hasShadow)});
   after(0.6, ^{
     record(@"nothing of ours at rest", self.overlay.handle.hidden && [self.overlay hitTest:NSMakePoint(20, 20)] == nil, nil);
     record(@"rounded corners", rounded(), @{
@@ -953,13 +931,9 @@ static __weak NSWindow *gSwipeMomentum;
            saved.count == 4 && [saved[0] intValue] == (int)NSMinX(frame) && [saved[1] intValue] == (int)top &&
                [saved[2] intValue] == (int)NSWidth(frame) && [saved[3] intValue] == (int)NSHeight(frame),
            @{@"saved" : saved ?: @[]});
-    NSMenu *menu = [self menu];
-    BOOL onBefore = [menu itemWithTitle:@"Keep Window on Top"].state == NSControlStateValueOn;
-    [self toggleKeepOnTop:nil];
-    BOOL off = window.level == NSNormalWindowLevel && [[self menu] itemWithTitle:@"Keep Window on Top"].state == NSControlStateValueOff;
-    [self toggleKeepOnTop:nil];
-    record(@"Keep Window on Top toggles", onBefore && off && window.level == NSFloatingWindowLevel,
-           @{@"menu" : [[self menu].itemArray valueForKey:@"title"]});
+    NSArray<NSString *> *titles = [[self menu].itemArray valueForKey:@"title"];
+    record(@"the menu holds Back to Tab and floats the window", [titles isEqual:@[ @"Back to Tab" ]] && window.level == NSFloatingWindowLevel,
+           @{@"menu" : titles, @"level" : @(window.level)});
     [window setFrame:NSInsetRect(start, 40, 22.5) display:YES];
   });
   after(7.6, ^{
@@ -1883,7 +1857,6 @@ NSString *ClickDocumentBackToTab() {
       @"styled" : @(controller != nil),
       @"rounded" : @(content.cornerRadius == kCornerRadius && content.masksToBounds && !window.opaque),
       @"rim" : @(controller.overlay.layer.borderWidth),
-      @"keepOnTop" : @(controller.keepOnTop),
       @"stashed" : @(controller.stashedEdge),
       @"host" : controller.host ?: @"",
       @"backToTab" : @(controller.view != nil),
@@ -1931,7 +1904,6 @@ NSString *ClickDocumentBackToTab() {
   if (!controller) return @"";
   if ([action isEqual:@"selftest"]) [controller runSelfTest];
   else if ([@[ @"close", @"minimize", @"backToTab" ] containsObject:action]) [controller runButtonSelfTest:action];
-  else if ([action hasPrefix:@"keepOnTop:"]) controller.keepOnTop = [[action substringFromIndex:10] boolValue];
   else if ([action isEqual:@"menu"]) return [[controller.menu.itemArray valueForKey:@"title"] componentsJoinedByString:@"|"];
   else if ([action hasPrefix:@"snapshot:"]) return [controller snapshot:[action substringFromIndex:9]];
   else if ([action hasPrefix:@"frame:"]) [controller.window setFrame:NSRectFromString([action substringFromIndex:6]) display:YES];

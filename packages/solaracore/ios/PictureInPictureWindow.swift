@@ -61,18 +61,16 @@ public final class SolaraPictureInPictureWindow: NSObject {
   private let observations = PictureInPictureObservations()
   private var displays: [PictureInPictureDisplay]
   private var placement: PictureInPicturePlacement?
-  private var keepOnTop: Bool
   private var reconciling = false
   private var refreshingScreen = false
 
-  @objc(configure:keepOnTop:)
-  public static func configure(_ window: NSWindow, keepOnTop: Bool) {
+  @objc(configure:)
+  public static func configure(_ window: NSWindow) {
     if let policy = objc_getAssociatedObject(window, &associationKey) as? SolaraPictureInPictureWindow {
-      policy.keepOnTop = keepOnTop
       policy.applySettings()
       return
     }
-    let policy = SolaraPictureInPictureWindow(window: window, keepOnTop: keepOnTop)
+    let policy = SolaraPictureInPictureWindow(window: window)
     objc_setAssociatedObject(window, &associationKey, policy, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
   }
 
@@ -81,9 +79,8 @@ public final class SolaraPictureInPictureWindow: NSObject {
     (objc_getAssociatedObject(window, &associationKey) as? SolaraPictureInPictureWindow)?.screensChanged()
   }
 
-  private init(window: NSWindow, keepOnTop: Bool) {
+  private init(window: NSWindow) {
     self.window = window
-    self.keepOnTop = keepOnTop
     displays = PictureInPictureDisplay.connected
     super.init()
     rememberFrame()
@@ -112,8 +109,7 @@ public final class SolaraPictureInPictureWindow: NSObject {
 
   private func applySettings() {
     guard let window else { return }
-    let level: NSWindow.Level = keepOnTop ? .floating : .normal
-    if window.level != level { window.level = level }
+    if window.level != .floating { window.level = .floating }
     var behavior = window.collectionBehavior
     behavior.subtract([.moveToActiveSpace, .managed, .transient, .participatesInCycle, .fullScreenPrimary, .fullScreenNone, .fullScreenAllowsTiling, .primary, .auxiliary, .stationary])
     behavior.formUnion([.canJoinAllSpaces, .canJoinAllApplications, .fullScreenAuxiliary, .ignoresCycle, .fullScreenDisallowsTiling])

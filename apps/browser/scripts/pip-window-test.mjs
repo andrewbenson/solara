@@ -69,10 +69,10 @@ function checkHidden(label, window) {
   assert.equal(window.ignoresMouseEvents, true, "the test PiP window intercepts mouse events");
   evidence.snapshots.push({ label, front, window });
 }
-function checkSettings(window, top = true) {
+function checkSettings(window) {
   assert.equal(window.allSpaces, true);
   assert.equal(window.fullScreenAuxiliary, true);
-  assert.equal(window.level, top ? 3 : 0);
+  assert.equal(window.level, 3);
   if (before) return;
   assert.equal(window.canJoinAllApplications, true);
   assert.equal(window.stationary, false, "a stationary window stays on the desktop and never shows in a full-screen Space");
@@ -111,7 +111,7 @@ async function zoom(kind) {
   assert.ok(result.recognizerActions?.some((action) => action.magnification > 0), `${kind}: recognizer never received spread`);
   const settled = await current(kind);
   checkHidden(`${kind}-zoom-settled`, settled);
-  checkSettings(settled, settled.level !== 0);
+  checkSettings(settled);
   result.settled = settled;
   return result;
 }
@@ -126,7 +126,7 @@ async function placement(kind) {
   await sleep(600);
   const settled = await current(kind);
   checkHidden(`${kind}-placement-settled`, settled);
-  checkSettings(settled, settled.level !== 0);
+  checkSettings(settled);
   assert.equal(settled.frame, result.placedFrame, `${kind}: PiP moved after lifecycle notifications settled`);
   assert.equal(settled.screenID, result.chosenScreenID, `${kind}: PiP changed displays after lifecycle notifications settled`);
   result.settled = settled;
@@ -187,7 +187,6 @@ try {
   await rep.check("video PiP window settings and hidden focus guard", async () => {
     assert.equal(await page.eval("openVideo()", { userGesture: true }), "video opened");
     await current("video");
-    await action("keepOnTop:1");
     const window = await current("video");
     checkHidden("video-on", window);
     checkSettings(window);
@@ -196,28 +195,6 @@ try {
   if (!before) await rep.check("video PiP pinch and command scroll resize while inactive", () => zoom("video"));
   if (before) rep.record("video PiP lifecycle placement", { skip: "the baseline has no placement hook" });
   else await rep.check("video PiP keeps its chosen display through simulated lifecycle notifications", () => placement("video"));
-  await rep.check("Keep Window on Top off and on preserves PiP policy", async () => {
-    await action("keepOnTop:0");
-    const off = await deadline("normal PiP level", async () => { const value = await current("video"); return value.level === 0 && value; });
-    checkHidden("video-off", off);
-    checkSettings(off, false);
-    await placement("video");
-    await action("keepOnTop:1");
-    const on = await deadline("floating PiP level", async () => { const value = await current("video"); return value.level === 3 && value; });
-    checkHidden("video-restored", on);
-    checkSettings(on);
-    return { off, on };
-  });
-  if (!before) await rep.check("video PiP pinch and command scroll with Keep Window on Top off", async () => {
-    await action("keepOnTop:0");
-    try {
-      await deadline("normal PiP level for zoom", async () => { const value = await current("video"); return value.level === 0 && value; });
-      return await zoom("video");
-    } finally {
-      await action("keepOnTop:1");
-      await deadline("floating PiP level after zoom", async () => { const value = await current("video"); return value.level === 3 && value; });
-    }
-  });
   await page.eval("document.pictureInPictureElement ? document.exitPictureInPicture() : true");
   await deadline("video PiP closed", async () => !(await snapshots()).some((window) => window.visible && window.video));
   await rep.check("document PiP window settings and hidden focus guard", async () => {

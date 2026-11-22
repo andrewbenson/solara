@@ -10,9 +10,9 @@ import { livePageId, withLivePage } from "../../lib/livePage";
 import { webviews } from "../../lib/webviews";
 import { useBrowser } from "../../store/browser";
 import { changedIds } from "../../store/changes";
-import { useTabLive } from "../../store/hooks";
 import { closeTab } from "../../lib/actions";
-import { backClosesToOpener } from "../../store/openers";
+import { backClosesToOpener, backSelection } from "../../store/openers";
+import { useShallow } from "zustand/react/shallow";
 import type { BrowserState } from "../../store/browser";
 import type { TabLive } from "../../store/types";
 import { backAction, knownHistoryFor, type BackAction, type BackFacts } from "./backAction";
@@ -46,23 +46,19 @@ export function canGoForward(tabId: string, live: Pick<TabLive, "canGoForward">)
   return !!pageOf(tabId).newTabShown || live.canGoForward;
 }
 
-export function useBackAction(tabId: string): BackAction {
-  const pageId = useBrowser((s) => s.tabs[tabId]?.pageIn ?? tabId);
-  const opener = useBrowser((s) => backClosesToOpener(s, tabId));
-  const canGoBack = useTabLive(pageId, (l) => l.canGoBack);
-  const hasLive = useBrowser((s) => !!opener && !!s.live[pageId]);
+export function useBackState(tabId: string): { pageId: string; action: BackAction; canGoForward: boolean } {
+  const { pageId, opener, canGoBack, canGoForward, hasLive } = useBrowser(useShallow((s) => backSelection(s, tabId)));
   const newTabShown = usePage(pageId, (p) => !!p.newTabShown);
   const engineBack = usePage(pageId, (p) => !!p.engineBack);
   const backToNewTab = usePage(pageId, (p) => p.backToNewTab);
   const historyKnown = usePage(pageId, knownHistoryFor(opener));
-  return backAction({ newTabShown, canGoBack: !!canGoBack, engineBack, backToNewTab, historyKnown: hasLive && historyKnown, opener });
+  return { pageId, canGoForward, action: backAction({ newTabShown, canGoBack, engineBack, backToNewTab, historyKnown: hasLive && historyKnown, opener }) };
 }
 
 export function useHistoryAvailability(tabId: string) {
-  const back = useBackAction(tabId) !== "none";
-  const forward = useTabLive(tabId, (l) => l.canGoForward);
+  const { action, canGoForward } = useBackState(tabId);
   const shown = usePage(tabId, (p) => !!p.newTabShown);
-  return { back, forward: shown || forward };
+  return { back: action !== "none", forward: shown || canGoForward };
 }
 
 export function goBack(tabId: string): void {

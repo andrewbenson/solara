@@ -6,7 +6,7 @@ import { useTheme } from "../../lib/theme";
 import { useBrowser } from "../../store/browser";
 import { NEW_TAB_MARK } from "../primitives";
 import { HistoryPopover } from "./HistoryPopover";
-import { goBack, goForward, goToHistoryItem, historyItems, openHistoryMenu, useBackAction, useHistoryAvailability, useHistoryMenu, type HistoryItem } from "./history";
+import { goBack, goForward, goToHistoryItem, historyItems, openHistoryMenu, useBackState, useHistoryAvailability, useHistoryMenu, type HistoryItem } from "./history";
 import { usePage } from "./pageState";
 import { NativeLayoutFeed, nativePaneWindows, useNativeLayoutFeed, type NativePanePresentation } from "./nativeLayoutFeed";
 import type { ToolbarGeometry } from "./geometry";
@@ -47,11 +47,11 @@ export function SwipeOverlay(props: { tabId: string; windowId: string; nativeAll
 
 function NativeNavigationHistory({ tabId, windowId }: { tabId: string; windowId: string }) {
   const theme = useTheme();
-  const pageId = useBrowser((s) => s.tabs[tabId]?.pageIn ?? tabId);
+  const { pageId, action } = useBackState(tabId);
   const newTabShown = usePage(pageId, (page) => !!page.newTabShown);
   const backToNewTab = usePage(pageId, (page) => page.backToNewTab);
   const engineBack = usePage(pageId, (page) => !!page.engineBack);
-  const backToOpener = useBackAction(tabId) === "opener";
+  const backToOpener = action === "opener";
   useNativeLayoutFeed(navigationFeed, windowId, { windowId, tabId, presentation: { newTabShown, backToNewTab, engineBack, backToOpener, theme: { dark: !!theme.dark, textPrimary: theme.textPrimary, textSecondary: theme.textSecondary } } }, `${windowId}:${tabId}`);
   return null;
 }

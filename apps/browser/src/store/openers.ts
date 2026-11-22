@@ -129,3 +129,12 @@ export function backClosesToOpener(s: BrowserState, tabId: string): string | und
   if (inPinnedContainer(s, tab.id) || isPeekTab(s, tab.id) || splitOf(s, tab.id)) return undefined;
   return opener.id;
 }
+
+export type BackSelection = { pageId: string; opener: string | undefined; canGoBack: boolean; canGoForward: boolean; hasLive: boolean };
+
+export function backSelection(s: BrowserState, tabId: string): BackSelection {
+  const pageId = s.tabs[tabId]?.pageIn ?? tabId;
+  const opener = backClosesToOpener(s, tabId);
+  const live = s.live[pageId];
+  return { pageId, opener, canGoBack: !!live?.canGoBack, canGoForward: !!s.live[tabId]?.canGoForward, hasLive: !!opener && !!live };
+}

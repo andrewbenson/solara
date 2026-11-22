@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 const { backAction, knownHistoryFor, reportsKnownHistory } = await import("./backAction.ts");
 const { pageOf, patchPage } = await import("./pageState.ts");
+const { backSelection } = await import("../../store/openers.ts");
 
 const facts = (over = {}) => ({ newTabShown: false, canGoBack: false, engineBack: false, backToNewTab: false, historyKnown: true, opener: undefined, ...over });
 
@@ -44,4 +45,19 @@ test("a link tab with an opener does see its history become known", () => {
   assert.equal(select(pageOf("with-opener")), false);
   patchPage("with-opener", { historyKnown: true });
   assert.equal(select(pageOf("with-opener")), true);
+});
+
+test("one selection carries every browser-store fact Back needs, the same object shape whatever changes", () => {
+  const s = {
+    tabs: {
+      a: { id: "a", windowId: "w", profileId: "p" },
+      b: { id: "b", windowId: "w", profileId: "p", openerId: "a" },
+      c: { id: "c", windowId: "w", profileId: "p", pageIn: "b" },
+    },
+    live: { b: { canGoBack: false, canGoForward: true }, c: { canGoBack: true, canGoForward: false } },
+    groups: {}, splits: {}, peeks: {}, windows: { w: { id: "w", tabIds: ["a", "b", "c"] } },
+  };
+  assert.deepEqual(backSelection(s, "b"), { pageId: "b", opener: "a", canGoBack: false, canGoForward: true, hasLive: true });
+  assert.deepEqual(backSelection(s, "a"), { pageId: "a", opener: undefined, canGoBack: false, canGoForward: false, hasLive: false });
+  assert.deepEqual(backSelection(s, "c"), { pageId: "b", opener: undefined, canGoBack: false, canGoForward: false, hasLive: false });
 });

@@ -276,6 +276,20 @@ inline Rect DragStep(Rect frame, Point delta, const Screen *screens, int count, 
   return MoveWithin(frame, delta, screens, count, home);
 }
 
+enum Skip : int { kNoSkip = 0, kSkipBack = -1, kSkipForward = 1 };
+
+constexpr double kClickSlop = 3;
+constexpr double kClickDuration = 0.4;
+
+inline bool InSideThird(double x, double width) { return width > 0 && (x < width / 3 || x > width * 2 / 3); }
+
+inline Skip ClickSkip(double x, double width, double moved, double held) {
+  if (width <= 0 || moved >= kClickSlop || held < 0 || held > kClickDuration) return kNoSkip;
+  if (x < width / 3) return kSkipBack;
+  if (x > width * 2 / 3) return kSkipForward;
+  return kNoSkip;
+}
+
 struct SpringState {
   double offset, velocity;
 };

@@ -131,6 +131,7 @@
 #include "chrome/browser/media/webrtc/media_stream_capture_indicator.h"
 #include "chrome/browser/picture_in_picture/auto_picture_in_picture_tab_helper.h"
 #include "chrome/browser/picture_in_picture/picture_in_picture_window_manager.h"
+#include "chrome/browser/solara/pip/ac_pip_mac.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/tracing_controller.h"
 #include "content/public/browser/web_contents_media_capture_id.h"
@@ -1001,6 +1002,10 @@ void WatchTracingStart(std::shared_ptr<TracingStart> start, int checks_left) {
 
 + (NSDictionary<NSString*, id>*)videoUpscalingState {
   return solaracore::VideoUpscalingState();
+}
+
++ (BOOL)skipPictureInPicture:(BOOL)forward {
+  return SkipSolaraPictureInPicture(forward);
 }
 
 + (void)minimizePictureInPicture {

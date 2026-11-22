@@ -17,5 +17,6 @@ void FadeOutSolaraPictureInPicture(gfx::NativeWindow window,
 void ResetSolaraPictureInPictureFade(gfx::NativeWindow window);
 void ShowSolaraPictureInPictureInFullScreenSpaces(gfx::NativeWindow window);
 void LetSolaraPictureInPictureMoveFreely(gfx::NativeWindow window);
+bool SkipSolaraPictureInPicture(bool forward);
 
 #endif

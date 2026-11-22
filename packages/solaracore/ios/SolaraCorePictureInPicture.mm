@@ -959,11 +959,14 @@ static __weak NSWindow *gSwipeMomentum;
   const CGFloat x = [button isEqual:@"close"]      ? width - edge
                     : [button isEqual:@"minimize"] ? width - margin - kCloseButtonWidth - kButtonGap - kButtonSize / 2
                                                    : edge;
-  NSPoint point = NSMakePoint(x, NSHeight(window.frame) - edge);
-  auto event = [=](NSEventType type) {
-    return [NSEvent mouseEventWithType:type location:point modifierFlags:0 timestamp:NSProcessInfo.processInfo.systemUptime
-                          windowNumber:window.windowNumber context:nil eventNumber:0 clickCount:1 pressure:type == NSEventTypeLeftMouseDown];
+  const BOOL onVideo = [@[ @"skipBack", @"skipForward", @"nudge" ] containsObject:button];
+  const CGFloat videoX = [button isEqual:@"skipForward"] ? width * 5 / 6 : width / 6;
+  NSPoint point = onVideo ? NSMakePoint(videoX, NSHeight(window.frame) / 2) : NSMakePoint(x, NSHeight(window.frame) - edge);
+  auto eventAt = [=](NSEventType type, NSPoint at) {
+    return [NSEvent mouseEventWithType:type location:at modifierFlags:0 timestamp:NSProcessInfo.processInfo.systemUptime
+                          windowNumber:window.windowNumber context:nil eventNumber:0 clickCount:1 pressure:type != NSEventTypeLeftMouseUp];
   };
+  auto event = [=](NSEventType type) { return eventAt(type, point); };
   auto after = [](double seconds, dispatch_block_t block) {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(seconds * NSEC_PER_SEC)), dispatch_get_main_queue(), block);
   };
@@ -971,11 +974,15 @@ static __weak NSWindow *gSwipeMomentum;
   after(2.1, ^{
     const BOOL prevents = PreventsActivation(window);
     const NSInteger activations = gActivations;
+    const NSRect frameBefore = window.frame;
     [NSApp postEvent:event(NSEventTypeLeftMouseDown) atStart:NO];
-    [NSApp postEvent:event(NSEventTypeLeftMouseUp) atStart:NO];
+    if ([button isEqual:@"nudge"]) [NSApp postEvent:eventAt(NSEventTypeLeftMouseDragged, NSMakePoint(point.x + 5, point.y)) atStart:NO];
+    [NSApp postEvent:[button isEqual:@"nudge"] ? eventAt(NSEventTypeLeftMouseUp, NSMakePoint(point.x + 5, point.y)) : event(NSEventTypeLeftMouseUp)
+             atStart:NO];
     after(1, ^{
       NSDictionary *result = @{
         @"button" : button,
+        @"moved" : @(!NSEqualRects(frameBefore, window.frame)),
         @"closed" : @(!window.visible),
         @"point" : NSStringFromPoint(point),
         @"preventsActivation" : @(prevents),
@@ -1576,8 +1583,8 @@ NSPoint ScreenLocation(NSEvent *event) {
 }
 
 BOOL GrabsWindowBackground(NSWindow *window, NSEvent *event) {
-  if (!window || ![ACPiPController forWindow:window] || event.clickCount > 1 || (event.modifierFlags & NSEventModifierFlagControl))
-    return NO;
+  if (!window || ![ACPiPController forWindow:window] || (event.modifierFlags & NSEventModifierFlagControl)) return NO;
+  if (event.clickCount > 1 && !solaracore_pip_throw::InSideThird(event.locationInWindow.x, NSWidth(window.frame))) return NO;
   if ([window respondsToSelector:@selector(_resizeDirectionForMouseLocation:)] &&
       [window _resizeDirectionForMouseLocation:event.locationInWindow] != -1)
     return NO;
@@ -1587,6 +1594,9 @@ BOOL GrabsWindowBackground(NSWindow *window, NSEvent *event) {
 
 __weak NSWindow *gDragged;
 NSPoint gLastMouse;
+NSPoint gPressMouse;
+NSTimeInterval gPressTime = 0;
+double gMovedSincePress = 0;
 NSPoint gGrabLocal;
 __weak NSScreen *gDragHome;
 std::vector<solaracore_pip_throw::Sample> gDragSamples;
@@ -1610,6 +1620,9 @@ void InstallDragMonitor() {
                                        [[ACPiPController forWindow:window] stopMotion];
                                        NSPoint mouse = ScreenLocation(event);
                                        gLastMouse = mouse;
+                                       gPressMouse = mouse;
+                                       gPressTime = event.timestamp;
+                                       gMovedSincePress = 0;
                                        gGrabLocal = NSMakePoint(mouse.x - NSMinX(window.frame), mouse.y - NSMinY(window.frame));
                                        gDragHome = [[ACPiPController forWindow:window] gestureHome];
                                        gDragSamples.clear();
@@ -1620,6 +1633,14 @@ void InstallDragMonitor() {
                                      if (!window) return event;
                                      if (event.type == NSEventTypeLeftMouseUp) {
                                        gDragged = nil;
+                                       const auto skip = solaracore_pip_throw::ClickSkip(gGrabLocal.x, NSWidth(window.frame), gMovedSincePress,
+                                                                                         event.timestamp - gPressTime);
+                                       if (skip != solaracore_pip_throw::kNoSkip) {
+                                         gDragSamples.clear();
+                                         if ([SolaraCoreEngine respondsToSelector:@selector(skipPictureInPicture:)])
+                                           [SolaraCoreEngine skipPictureInPicture:skip == solaracore_pip_throw::kSkipForward];
+                                         return nil;
+                                       }
                                        const NSPoint grabbed = NSMakePoint(NSMinX(window.frame) + gGrabLocal.x, NSMinY(window.frame) + gGrabLocal.y);
                                        const auto velocity = solaracore_pip_throw::ReleaseVelocity(
                                            gDragSamples.data(), (int)gDragSamples.size(), event.timestamp);
@@ -1630,6 +1651,8 @@ void InstallDragMonitor() {
                                      }
                                      NSPoint mouse = ScreenLocation(event);
                                      SampleDrag(event, mouse);
+                                     gMovedSincePress = std::max(gMovedSincePress, std::hypot(mouse.x - gPressMouse.x, mouse.y - gPressMouse.y));
+                                     if (gMovedSincePress < solaracore_pip_throw::kClickSlop) return nil;
                                      const auto screens = ThrowScreens();
                                      const auto next = solaracore_pip_throw::DragStep(
                                          ThrowRect(window.frame), {mouse.x - gLastMouse.x, mouse.y - gLastMouse.y}, screens.data(),
@@ -1674,7 +1697,7 @@ bool Attach(SolaraCoreWebView *view, NSString *host) {
     InstallZoomMonitor();
     [ACPiPZoom installOn:window];
     NSString *selfTest = NSProcessInfo.processInfo.environment[@"SOLARA_PIP_SELFTEST"];
-    if (fresh && [@[ @"close", @"minimize", @"backToTab" ] containsObject:selfTest]) [controller runButtonSelfTest:selfTest];
+    if (fresh && [@[ @"close", @"minimize", @"backToTab", @"skipBack", @"skipForward", @"nudge" ] containsObject:selfTest]) [controller runButtonSelfTest:selfTest];
     else if (fresh && [selfTest isEqual:@"hover"]) [controller runHoverSelfTest];
     else if (fresh && selfTest) [controller runSelfTest];
     return true;
@@ -1903,7 +1926,7 @@ NSString *ClickDocumentBackToTab() {
     if ([ACPiPController forWindow:window] && window.visible) controller = [ACPiPController forWindow:window];
   if (!controller) return @"";
   if ([action isEqual:@"selftest"]) [controller runSelfTest];
-  else if ([@[ @"close", @"minimize", @"backToTab" ] containsObject:action]) [controller runButtonSelfTest:action];
+  else if ([@[ @"close", @"minimize", @"backToTab", @"skipBack", @"skipForward", @"nudge" ] containsObject:action]) [controller runButtonSelfTest:action];
   else if ([action isEqual:@"menu"]) return [[controller.menu.itemArray valueForKey:@"title"] componentsJoinedByString:@"|"];
   else if ([action hasPrefix:@"snapshot:"]) return [controller snapshot:[action substringFromIndex:9]];
   else if ([action hasPrefix:@"frame:"]) [controller.window setFrame:NSRectFromString([action substringFromIndex:6]) display:YES];

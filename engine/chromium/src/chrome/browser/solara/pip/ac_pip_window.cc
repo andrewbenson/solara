@@ -81,6 +81,8 @@ void StyleSeekButton(SimpleOverlayWindowImageButton* button) {
   button->SetSize({kSeekButtonSize, kSeekButtonSize});
 }
 
+SolaraVideoOverlayWindow* g_shown_overlay = nullptr;
+
 template <typename T, typename U>
 T* ReplaceView(raw_ptr<U>& view, std::unique_ptr<T> replacement) {
   U* old_view = std::exchange(view, nullptr);
@@ -103,7 +105,30 @@ SolaraVideoOverlayWindow::SolaraVideoOverlayWindow(
   hide_controls_timer_.Stop();
 }
 
-SolaraVideoOverlayWindow::~SolaraVideoOverlayWindow() = default;
+SolaraVideoOverlayWindow::~SolaraVideoOverlayWindow() {
+  if (g_shown_overlay == this) {
+    g_shown_overlay = nullptr;
+  }
+}
+
+bool SkipSolaraPictureInPicture(bool forward) {
+  return g_shown_overlay && g_shown_overlay->Skip(forward);
+}
+
+bool SolaraVideoOverlayWindow::Skip(bool forward) {
+  if (is_live_ || !position_.duration().is_positive() ||
+      position_.duration().is_max()) {
+    return false;
+  }
+  if (forward) {
+    Forward10Seconds();
+  } else {
+    Replay10Seconds();
+  }
+  UpdateControlsVisibility(true, true);
+  hide_controls_timer_.Reset();
+  return true;
+}
 
 void SolaraVideoOverlayWindow::SetUpViews() {
   VideoOverlayWindowViews::SetUpViews();
@@ -393,6 +418,7 @@ gfx::Rect SolaraVideoOverlayWindow::CalculateAndUpdateWindowBounds() {
 }
 
 void SolaraVideoOverlayWindow::ShowInactive() {
+  g_shown_overlay = this;
   ac_hide_timer_.Stop();
   ResetSolaraPictureInPictureFade(GetNativeWindow());
   SetVisibilityChangedAnimationsEnabled(false);
@@ -411,6 +437,9 @@ void SolaraVideoOverlayWindow::ShowInactive() {
 }
 
 void SolaraVideoOverlayWindow::Hide() {
+  if (g_shown_overlay == this) {
+    g_shown_overlay = nullptr;
+  }
   RemoveOverlayViewIfExists();
   if (fade_animator_) {
     fade_animator_->CancelAndReset();

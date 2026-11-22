@@ -62,7 +62,7 @@ const usesPageA = [
   "extension-prompts", "extension-prompt-closed", "extension-sheet-native", "traffic-lights-after-profile-switch", "extension-configure",
   "private-windows-create", "extension-installed-bubble", "popup-window", "popup-window-permission", "popup-origin-strip", "autofill-save-prompts",
   "settings-services", "download-navigation", "page-events", "page-background", "appearance-reaches-pages", "external-app-answer",
-  "notifications", "now-playing", "media-state", "auto-picture-in-picture", "pip-takeover-profiles", "pip-api", "pip-window", "page-focus", "page-press-split",
+  "notifications", "now-playing", "media-state", "auto-picture-in-picture", "pip-takeover-profiles", "pip-api", "pip-window", "pip-click-skip", "page-focus", "page-press-split",
   "fullscreen-tab-switch", "fullscreen-native", "escape-in-window-fullscreen", "fullscreen-transition-picture", "fullscreen-hidden-page", "fullscreen-split-sibling",
   "fullscreen-pip", "pip-fullscreen-space", "webkit-picture-in-picture", "pip-document-back-to-tab", "autofill-suggestions", "images", "extension-surfaces", "frozen", "discard",
   "permission-prompt", "popup-blocked", "move-tab-slow-mount", "move-last-tab-slow-mount",
@@ -299,7 +299,14 @@ const server = createServer((req, res) => {
   }
   if (url.pathname === "/clip.webm") {
     const clip = fixtureClip();
-    res.writeHead(200, { "content-type": "video/webm", "content-length": String(clip.length) });
+    const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? "");
+    if (range) {
+      const from = range[1] ? Number(range[1]) : Math.max(0, clip.length - Number(range[2]));
+      const to = range[1] && range[2] ? Math.min(Number(range[2]), clip.length - 1) : clip.length - 1;
+      res.writeHead(206, { "content-type": "video/webm", "accept-ranges": "bytes", "content-range": `bytes ${from}-${to}/${clip.length}`, "content-length": String(to - from + 1) });
+      return res.end(clip.subarray(from, to + 1));
+    }
+    res.writeHead(200, { "content-type": "video/webm", "accept-ranges": "bytes", "content-length": String(clip.length) });
     return res.end(clip);
   }
   if (url.pathname === "/tone.wav") {
@@ -6479,6 +6486,41 @@ try {
     } finally {
       await closeTab(tab.id);
       await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
+    }
+  });
+
+  await check("pip-click-skip", async () => {
+    const tab = await openTab(`${secureBase}/video?file&click-skip`, "Video");
+    const button = join(data, "pip-button-selftest.json");
+    try {
+      const t = await startVideo(tab.id, true);
+      const at = async () => (await cdp(t, "Runtime.evaluate", { expression: "document.getElementById('v').currentTime", returnByValue: true })).result.value;
+      await cdp(t, "Runtime.evaluate", { expression: "new Promise((done) => { const v = document.getElementById('v'); v.pause(); v.addEventListener('seeked', () => done(v.currentTime), { once: true }); v.currentTime = 12; })", awaitPromise: true, returnByValue: true });
+      await sleep(500);
+      const entered = await cef(`devPictureInPictureEnter(${JSON.stringify(tab.id)})`);
+      if (entered !== true) throw new Error(`a paused video didn't enter PiP: ${entered}`);
+      await until("the styled PiP window", async () => (await pipWindows())?.find((w) => w.video && w.styled && w.visible) ?? null, 5000);
+      await sleep(500);
+      const press = async (name) => {
+        rmSync(button, { force: true });
+        if ((await cef(`devPictureInPictureAction("${name}")`)) !== "started") throw new Error("no button self-test");
+        const clicked = await until(`the ${name} press`, async () => (existsSync(button) ? JSON.parse(readFileSync(button, "utf8")) : null), 10000);
+        await sleep(300);
+        return { ...clicked, time: await at() };
+      };
+      const start = await at();
+      const forward = await press("skipForward");
+      const back = await press("skipBack");
+      const nudge = await press("nudge");
+      const out = { start, forward: forward.time, back: back.time, nudge: nudge.time, forwardMoved: forward.moved, nudgeMoved: nudge.moved, stillOpen: !nudge.closed,
+        pausedStill: (await cdp(t, "Runtime.evaluate", { expression: "document.getElementById('v').paused", returnByValue: true })).result.value };
+      if (Math.abs(out.forward - start - 10) > 0.6 || Math.abs(out.back - start) > 0.6 || Math.abs(out.nudge - out.back) > 0.3 || out.forwardMoved || !out.nudgeMoved || !out.stillOpen || !out.pausedStill)
+        throw new Error(JSON.stringify(out));
+      return out;
+    } finally {
+      await evalApp(`return ac.webviews.get("${tab.id}").exitPictureInPicture()`).catch(() => null);
+      await closeTab(tab.id).catch(() => null);
+      await evalApp(`ac.actions.switchToTab("${first.id}"); return true`).catch(() => null);
     }
   });
 

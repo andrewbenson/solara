@@ -42,6 +42,8 @@ class SolaraVideoOverlayWindow : public VideoOverlayWindowViews {
   void UpdateControlsVisibility(bool is_visible, bool should_animate) override;
   gfx::Rect GetProgressViewBounds() override;
 
+  bool Skip(bool forward);
+
  private:
   gfx::Rect CalculateAndUpdateWindowBounds() override;
   void SetUpViews() override;

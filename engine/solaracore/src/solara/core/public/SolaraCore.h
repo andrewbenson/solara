@@ -71,6 +71,7 @@ SOLARACORE_EXPORT
 + (void)terminateCastRoute:(NSString*)routeId;
 + (void)setAutoPictureInPicture:(BOOL)enabled;
 + (void)minimizePictureInPicture;
++ (BOOL)skipPictureInPicture:(BOOL)forward;
 + (void)setVideoUpscaling:(BOOL)enabled;
 + (void)setVideoUpscalingTestConditions:(NSDictionary<NSString*, NSNumber*>*)conditions;
 @property(class, readonly) NSDictionary<NSString*, id>* videoUpscalingState;

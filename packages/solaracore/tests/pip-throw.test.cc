@@ -287,6 +287,18 @@ int main() {
   const Rect screen{0, 0, 1512, 982}, visible{0, 0, 1512, 945};
   const Point middle{756, 491};
 
+  CHECK(ClickSkip(40, 480, 0, 0.1) == kSkipBack);
+  CHECK(ClickSkip(440, 480, 2.9, 0.39) == kSkipForward);
+  CHECK(ClickSkip(240, 480, 0, 0.1) == kNoSkip);
+  CHECK(ClickSkip(159, 480, 0, 0.1) == kSkipBack);
+  CHECK(ClickSkip(160, 480, 0, 0.1) == kNoSkip);
+  CHECK(ClickSkip(321, 480, 0, 0.1) == kSkipForward);
+  CHECK(ClickSkip(40, 480, 3, 0.1) == kNoSkip);
+  CHECK(ClickSkip(40, 480, 5, 0.1) == kNoSkip);
+  CHECK(ClickSkip(40, 480, 0, 0.41) == kNoSkip);
+  CHECK(ClickSkip(40, 0, 0, 0.1) == kNoSkip);
+  CHECK(InSideThird(10, 240) && InSideThird(230, 240) && !InSideThird(120, 240) && !InSideThird(10, 0));
+
   CHECK(PickCorner(middle, {1000, 650}, screen) == kTopRight);
   CHECK(PickCorner(middle, {-1000, 650}, screen) == kTopLeft);
   CHECK(PickCorner(middle, {-1000, -650}, screen) == kBottomLeft);

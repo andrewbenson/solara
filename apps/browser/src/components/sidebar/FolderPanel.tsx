@@ -19,21 +19,13 @@ type FolderPanelNative = {
 const nativePanel = requireOptionalNativeModule<FolderPanelNative>("SolaraFolderPanel");
 
 export function FolderPanel({ windowId }: { windowId: string }) {
-  return (
-    <>
-      <NativeFolderPanelLook windowId={windowId} />
-      <JsFolderPanel windowId={windowId} />
-    </>
-  );
-}
-
-function NativeFolderPanelLook({ windowId }: { windowId: string }) {
   const theme = useTheme();
-  const json = JSON.stringify({ dark: !!theme.dark, theme: panelTokens(theme), panelShadowOpacity: theme.panelShadowOpacity });
+  const look = JSON.stringify({ dark: !!theme.dark, theme: panelTokens(theme), panelShadowOpacity: theme.panelShadowOpacity });
   useEffect(() => {
-    void nativePanel?.look?.(windowId, json);
-  }, [json, windowId]);
-  return null;
+    void nativePanel?.look?.(windowId, look);
+  }, [look, windowId]);
+  const open = useFolderPanel((u) => (u.open?.windowId === windowId && !u.open.native ? u.open : null));
+  return <NativeFolderPanel windowId={windowId} folderId={open?.folderId ?? null} />;
 }
 
 const panelTokens = (theme: ReturnType<typeof useTheme>) => ({
@@ -46,11 +38,6 @@ const panelTokens = (theme: ReturnType<typeof useTheme>) => ({
   tabPressed: theme.tabPressed,
   pinnedSelectedFill: theme.pinnedSelectedFill,
 });
-
-function JsFolderPanel({ windowId }: { windowId: string }) {
-  const open = useFolderPanel((u) => (u.open?.windowId === windowId && !u.open.native ? u.open : null));
-  return <NativeFolderPanel windowId={windowId} folderId={open?.folderId ?? null} />;
-}
 
 function NativeFolderPanel({ windowId, folderId }: { windowId: string; folderId: string | null }) {
   const theme = useTheme();

@@ -75,7 +75,10 @@ extension Session {
       saved.activeTabIds = activeTabIdsWithoutPlaceholders(s, w, keeping: saved.tabIds)
       windows[w.id] = .object(saved.persistedJSON)
     }
-    let focusedWindowId = s.ui.focusOrder.first { id in windows[id]?["tabIds"]?.array?.isEmpty == false }
+    let focusedWindowId = s.ui.focusOrder.first { id in
+      guard let saved = windows[id] else { return false }
+      return saved["tabIds"]?.array?.isEmpty == false || s.windows[id]?.tabIds.isEmpty == true
+    }
     var tabs = JSMap<JSONValue>()
     for t in s.tabs.values where windows[t.windowId] != nil && !isPeekTab(s, t.id) && t.newTabPlaceholder != true { tabs[t.id] = persistedTabJSON(t) }
     func publicTable<V>(_ table: Table<V>, _ encode: (V) -> JSONValue) -> JSMap<JSONValue> {

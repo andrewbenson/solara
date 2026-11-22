@@ -76,7 +76,7 @@ const sessionDocument = (s: BrowserState) => {
     activeTabIds: activeTabIdsWithoutPlaceholders(s, w, w.tabIds.filter(retained)),
   }));
   const kept = new Set(windows.map((w) => w.id));
-  const focusedWindowId = s.ui.focusOrder.find((id) => windows.some((w) => w.id === id && w.tabIds.length > 0)) ?? null;
+  const focusedWindowId = s.ui.focusOrder.find((id) => windows.some((w) => w.id === id && (w.tabIds.length > 0 || !s.windows[id]?.tabIds.length))) ?? null;
   return {
     version: VERSION,
     profiles: s.profiles,

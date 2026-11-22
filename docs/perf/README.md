@@ -176,6 +176,21 @@ one hidden instance), and about 170 s when a count is over and the scenarios run
 table of the counts over their ceiling. A count over in the first run gets one more run, and only a count over in both fails: a real regression is in both, a pointer moving over the hidden window or the window
 deactivating mid-scenario is in one. A report of several runs is judged by its median run.
 
+Run the ratchet over ssh, not from a desktop session. On 2026-11-20 a run of media45's Release build (06eadb78 plus
+rows-shown) from a Rex tab in the Hill Studio's desktop session, with its display at 2x, came out 24 counts over its
+ceilings, among them scroll `module:onSettingsCall` 120 → 202 and `setImmediate:anonymous` 602 → 848, and close
+commits 218 → 251, yet nothing in that code adds a call. Three runs over ssh on 2026-11-21 put the same app at the
+control's counts:
+
+| run (js-bench, the ratchet's nine scenarios) | load | scroll onSettingsCall | scroll setImmediate | close commits |
+|---|---|---|---|---|
+| 0.4.5 control, bundle counting Settings calls by name | 72 → 68 | 120 | 602 | 211 |
+| media45's app, the same bundle, right after | 68 → 115 | 120 | 602 | 213 |
+| media45's app, its own bundle | 3.5 → 1.8 | 120 | 602 | 214 |
+
+A desktop session at 2x delivers more scroll events and frames per scenario than an ssh-launched hidden instance, so
+those counts follow the session rather than the code; a run under load alone does not move them.
+
 ### What is steady
 
 The scenarios run in a fixed order (`ratchet.mjs` header says why): `startup`, `launch` (all the launch's work, read

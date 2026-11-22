@@ -92,6 +92,8 @@ public final class ImportService: @unchecked Sendable {
     public let tabs: [ImportedTab]
     public let favorites: [ImportedTab]
     public let hasSpaces: Bool
+    public let history: [HistoryEntry]
+    public let favicons: [ImportedFavicon]
 
     public var description: String { "ImportService.Read" }
     public var debugDescription: String { "ImportService.Read" }
@@ -137,7 +139,8 @@ public final class ImportService: @unchecked Sendable {
     }
     return Read(vaultToken: token, profileName: result.profile?.name, profileColor: result.profile?.color,
                 failed: result.failed, warnings: result.warnings, credentials: result.credentials,
-                bookmarks: result.bookmarks, tabs: result.tabs, favorites: result.favorites, hasSpaces: !result.spaces.isEmpty)
+                bookmarks: result.bookmarks, tabs: result.tabs, favorites: result.favorites, hasSpaces: !result.spaces.isEmpty,
+                history: result.history, favicons: result.favicons)
   }
 
   public func cancelRead(jobId: String) { session.jobs.cancel(jobId) }

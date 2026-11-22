@@ -336,3 +336,36 @@ test("deleting a profile keeps the data others share", () => {
   S().deleteProfile(b);
   assert.equal(S().bookmarks.nodes[bookmark], undefined);
 });
+
+test("adopting imported history uses the cutoff Swift filtered with, not a later one", () => {
+  S().hydrate({});
+  const now = Date.now();
+  const cutoff = now - 90 * 86_400_000;
+  S().adoptImportedHistory("default", [{ url: "https://edge.test/", title: "Edge", visits: 1, lastVisit: cutoff + 1 }], cutoff);
+  assert.deepEqual(S().history.default.map((h) => h.url), ["https://edge.test/"]);
+  S().adoptImportedHistory("default", [{ url: "https://late.test/", title: "Late", visits: 1, lastVisit: cutoff + 1 }], now);
+  assert.deepEqual(S().history.default.map((h) => h.url), ["https://edge.test/"]);
+});
+
+test("adopting imported history counts new URLs once, keeps http(s) and file rows, and writes nothing to the engine", async () => {
+  S().hydrate({});
+  stub.historyDbs.clear();
+  S().importHistory("default", [{ url: "https://seen.test/", title: "Seen", visits: 1, lastVisit: Date.now() - 1 }]);
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  const engineRows = () => [...(stub.historyDbs.get(null)?.values() ?? [])].reduce((n, db) => n + db.size, 0);
+  const before = engineRows();
+  const added = S().adoptImportedHistory("default", [
+    { url: "https://seen.test/", title: "Seen", visits: 1, lastVisit: Date.now() - 5 },
+    { url: "https://new.test/", title: "New", visits: 0, lastVisit: Date.now() - 4 },
+    { url: "https://new.test/", title: "New again", visits: 2, lastVisit: Date.now() - 3 },
+    { url: "HTTPS://upper.test/", title: "Upper", visits: 1, lastVisit: Date.now() - 2 },
+    { url: "ftp://files.test/", title: "Ftp", visits: 1, lastVisit: Date.now() - 2 },
+    { url: "file:///tmp/page.html", title: "File", visits: 1, lastVisit: Date.now() - 1 },
+  ]);
+  assert.equal(added, 2);
+  assert.deepEqual(S().history.default.map((h) => h.url).sort(), ["file:///tmp/page.html", "https://new.test/", "https://seen.test/"]);
+  assert.equal(S().history.default.find((h) => h.url === "https://new.test/").visits, 1);
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.equal(engineRows(), before);
+  assert.equal(S().adoptImportedHistory("incognito:w@default", [{ url: "https://x.test/", title: "X", visits: 1, lastVisit: Date.now() - 1 }]), 0);
+});

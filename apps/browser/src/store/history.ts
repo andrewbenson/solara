@@ -13,6 +13,7 @@ export type HistorySlice = {
   removeHistory(profileId: string, urls: string[]): void;
   clearHistory(profileId: string, since?: number): void;
   importHistory(profileId: string, entries: Omit<HistoryEntry, "favicon">[], onPending?: (pending: Promise<unknown>) => void): number;
+  adoptImportedHistory(profileId: string, entries: Omit<HistoryEntry, "favicon">[], oldestKept?: number): number;
 };
 
 export const MAX_HISTORY = 5000;
@@ -29,6 +30,28 @@ function withoutVisitsSince(entry: HistoryEntry, since: number): HistoryEntry | 
 
 const failed = (what: string) => (error: unknown) => console.warn(`[history] ${what}`, error);
 
+const importable = (entries: Omit<HistoryEntry, "favicon">[], oldestKept = Date.now() - ENGINE_KEEPS_HISTORY_MS) => {
+  return entries.filter((e) => /^(https?|file):/.test(e.url) && e.lastVisit > oldestKept);
+};
+
+function adoptRows(set: Parameters<StateCreator<BrowserState, [], [], HistorySlice>>[0], profileId: string, entries: Omit<HistoryEntry, "favicon">[], oldestKept?: number): number {
+  if (isIncognitoProfile(profileId)) return 0;
+  const rows = importable(entries, oldestKept);
+  let added = 0;
+  set((s) => {
+    const byUrl = new Map((s.history[profileId] ?? []).map((h) => [h.url, h]));
+    for (const e of rows) {
+      const existing = byUrl.get(e.url);
+      if (existing) continue;
+      added++;
+      byUrl.set(e.url, { url: e.url, title: e.title, favicon: null, visits: Math.max(1, e.visits), lastVisit: e.lastVisit, visitTimes: [e.lastVisit] });
+    }
+    const merged = [...byUrl.values()].sort((a, b) => b.lastVisit - a.lastVisit).slice(0, MAX_HISTORY);
+    return { history: { ...s.history, [profileId]: merged } };
+  });
+  return added;
+}
+
 export const createHistorySlice: StateCreator<BrowserState, [], [], HistorySlice> = (set) => ({
   history: {},
   historyReady: {},
@@ -42,23 +65,15 @@ export const createHistorySlice: StateCreator<BrowserState, [], [], HistorySlice
 
   importHistory(profileId, entries, onPending) {
     if (isIncognitoProfile(profileId)) return 0;
-    const oldestKept = Date.now() - ENGINE_KEEPS_HISTORY_MS;
-    const rows = entries.filter((e) => /^(https?|file):/.test(e.url) && e.lastVisit > oldestKept);
-    let added = 0;
-    set((s) => {
-      const byUrl = new Map((s.history[profileId] ?? []).map((h) => [h.url, h]));
-      for (const e of rows) {
-        const existing = byUrl.get(e.url);
-        if (existing) continue;
-        added++;
-        byUrl.set(e.url, { url: e.url, title: e.title, favicon: null, visits: Math.max(1, e.visits), lastVisit: e.lastVisit, visitTimes: [e.lastVisit] });
-      }
-      const merged = [...byUrl.values()].sort((a, b) => b.lastVisit - a.lastVisit).slice(0, MAX_HISTORY);
-      return { history: { ...s.history, [profileId]: merged } };
-    });
+    const rows = importable(entries);
+    const added = adoptRows(set, profileId, rows);
     const pending = nativeImportHistoryRows(engineProfile(profileId), rows).catch(failed("import"));
     onPending?.(pending);
     return added;
+  },
+
+  adoptImportedHistory(profileId, entries, oldestKept) {
+    return adoptRows(set, profileId, entries, oldestKept);
   },
 
   clearHistory(profileId, since) {

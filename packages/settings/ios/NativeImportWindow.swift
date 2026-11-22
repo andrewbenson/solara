@@ -46,6 +46,8 @@ enum NativeImportWindow {
       ImportRuns.shared.darkRoute = argument == "on"
     case "close":
       model.close()
+    case "traceReset":
+      ImportRuns.shared.devTrace = []
     case "profiles":
       model.sourceProfiles = (argument ?? "").split(separator: ",").map(String.init)
     #endif
@@ -70,6 +72,8 @@ enum NativeImportWindow {
     #if DEBUG
     var state = base
     state["vault"] = ImportAdapter.devVaultCount
+    state["trace"] = ImportRuns.shared.devTrace
+    state["pendingWrites"] = ImportRuns.shared.pendingWrites
     if let model {
       state["sourceProfiles"] = model.sourceProfiles
       state["profileIds"] = model.source?.profiles.map(\.id) ?? []

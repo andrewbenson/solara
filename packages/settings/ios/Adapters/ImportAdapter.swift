@@ -329,7 +329,9 @@ final class ImportRunEngine: ImportEngine {
         bookmarks: read.bookmarks.map(Self.bookmark),
         tabs: read.tabs.map(Self.tab),
         favorites: read.favorites.map(Self.tab),
-        hasSpaces: read.hasSpaces
+        hasSpaces: read.hasSpaces,
+        history: read.history.map { ImportHistoryRow(url: $0.url, title: $0.title, visits: $0.visits, lastVisit: $0.lastVisit) },
+        favicons: read.favicons.map { ImportFaviconRow(page: $0.page, icon: $0.icon, png: $0.png) }
       )
     } catch let error as SolaraImportAdapter.ImportError where error == .cancelled {
       throw ImportReadFailure.cancelled
@@ -366,6 +368,46 @@ final class ImportRunEngine: ImportEngine {
       throw ImportBookmarkWriteFailure.conditionFailed
     } catch {
       throw ImportBookmarkWriteFailure.failed
+    }
+  }
+
+  static func adoptTimeout(_ deadline: TimeInterval) -> TimeInterval {
+    #if DEBUG
+    let env = ProcessInfo.processInfo.environment
+    if env["SOLARA_DATA_DIR"] != nil, let ms = env["SOLARA_IMPORT_TEST_ADOPT_TIMEOUT_MS"].flatMap(Double.init) { return ms / 1000 }
+    #endif
+    return deadline
+  }
+
+  nonisolated static func historyPayload(_ rows: [ImportHistoryRow]) -> [[String: Any]] {
+    rows.map { ["url": $0.url, "title": $0.title, "visits": $0.visits, "lastVisit": $0.lastVisit] }
+  }
+
+  func adoptHistory(profile: String, rows: [ImportHistoryRow], oldestKept: Double, deadline: TimeInterval) async -> Int? {
+    guard let reply = try? await SettingsJS.shared.invoke("import.adoptHistory", [profile, Self.historyPayload(rows), oldestKept], timeout: Self.adoptTimeout(deadline)) else { return nil }
+    return (reply as? NSNumber)?.intValue
+  }
+
+  func importHistory(engineProfile: String, rows: [ImportHistoryRow]) async {
+    do {
+      _ = try await NativeHistoryCatalog.command(kind: "importHistory", engineProfile: engineProfile, payload: ["rows": Self.historyPayload(rows)])
+    } catch {
+      NSLog("[history] the import's history was not saved")
+    }
+  }
+
+  func adoptFavicons(profile: String, favicons: [ImportFaviconRow]) async {
+    let payload: [[String: Any]] = favicons.map { ["page": $0.page, "icon": $0.icon, "png": $0.png] }
+    _ = try? await SettingsJS.shared.invoke("import.adoptFavicons", [profile, payload], timeout: 10)
+  }
+
+  func storeFavicons(engineProfile: String, favicons: [ImportFaviconRow]) async {
+    let loaded = await withCheckedContinuation { continuation in
+      SolaraCoreHost.ensureProfile(engineProfile) { continuation.resume(returning: $0) }
+    }
+    guard loaded else { return }
+    for entry in ImportFavicons.byPage(favicons) {
+      _ = try? await NativeHistoryCatalog.command(kind: "storeFavicon", engineProfile: engineProfile, payload: ["page": entry.page, "icon": entry.favicon.icon, "png": entry.favicon.png])
     }
   }
 

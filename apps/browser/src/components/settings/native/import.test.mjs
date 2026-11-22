@@ -27,8 +27,9 @@ function handlerFixture(options = {}) {
     "@solara/settings": { publishSettingsTopic: () => {} },
     "../../../lib/bookmarkGroups": {},
     "../../../lib/bookmarkWriter": { reportBookmarkFailure: () => {} },
+    "../../../lib/favicons": { adoptFaviconCache: () => null },
     "../../../store/nativeStore": { nativeSafeMode: () => false },
-    "../../../store/browser": { useBrowser: { getState: () => ({ profileOrder: [], profiles: {}, ui: {}, windows: {}, settings: { defaultProfileId: "existing" }, createProfile: () => { throw new Error("Profile data is deleted"); } }) } },
+    "../../../store/browser": { useBrowser: { getState: () => options.state ?? ({ profileOrder: [], profiles: {}, ui: {}, windows: {}, settings: { defaultProfileId: "existing" }, createProfile: () => { throw new Error("Profile data is deleted"); } }) } },
     "../../../store/draftGroups": {},
     "../../../store/model": {},
     "../../onboarding/state": {},
@@ -51,6 +52,20 @@ function handlerFixture(options = {}) {
   });
   return { handlers: module.exports.importHandlers, applied, forgotten: () => forgotten };
 }
+
+test("adopting history from Swift reports how much the profile's list grew, as the JS import does", () => {
+  const state = {
+    history: { p: Array.from({ length: 4990 }, (_, i) => ({ url: `https://old${i}.test/` })) },
+    adoptImportedHistory(profileId, rows) {
+      state.history = { ...state.history, [profileId]: [...rows.map((r) => ({ url: r.url })), ...(state.history[profileId] ?? [])].slice(0, 5000) };
+      return rows.length;
+    },
+  };
+  const fixture = handlerFixture({ state });
+  const rows = Array.from({ length: 50 }, (_, i) => ({ url: `https://new${i}.test/`, title: "", visits: 1, lastVisit: Date.now() }));
+  assert.equal(fixture.handlers["import.adoptHistory"]("p", rows), 10);
+  assert.equal(fixture.handlers["import.adoptHistory"]("q", "not rows"), 0);
+});
 
 test("real import handler returns failed status and partial counts when the second destination is refused", async () => {
   const fixture = handlerFixture();

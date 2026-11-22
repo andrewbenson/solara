@@ -43,9 +43,12 @@ public struct ImportRead: Sendable, CustomStringConvertible, CustomDebugStringCo
   public let tabs: [ImportTabRow]
   public let favorites: [ImportTabRow]
   public let hasSpaces: Bool
+  public let history: [ImportHistoryRow]
+  public let favicons: [ImportFaviconRow]
 
   public init(vaultToken: String?, profileName: String?, profileColor: String?, failed: [ImportKind], warnings: [ImportReadWarning], credentials: [ImportCredential],
-              bookmarks: ImportBookmarkNode? = nil, tabs: [ImportTabRow] = [], favorites: [ImportTabRow] = [], hasSpaces: Bool = false) {
+              bookmarks: ImportBookmarkNode? = nil, tabs: [ImportTabRow] = [], favorites: [ImportTabRow] = [], hasSpaces: Bool = false,
+              history: [ImportHistoryRow] = [], favicons: [ImportFaviconRow] = []) {
     self.vaultToken = vaultToken
     self.profileName = profileName
     self.profileColor = profileColor
@@ -56,6 +59,8 @@ public struct ImportRead: Sendable, CustomStringConvertible, CustomDebugStringCo
     self.tabs = tabs
     self.favorites = favorites
     self.hasSpaces = hasSpaces
+    self.history = history
+    self.favicons = favicons
   }
 
   public var description: String { "ImportRead" }
@@ -105,6 +110,10 @@ public protocol ImportEngine: AnyObject {
   func submitBookmarks(profile: String, mutations: [BookmarkMutation]) async throws
   func reportBookmarkFailure()
   func importWorkspace(profile: String, windows: [JSONValue]) -> Int?
+  func adoptHistory(profile: String, rows: [ImportHistoryRow], oldestKept: Double, deadline: TimeInterval) async -> Int?
+  func importHistory(engineProfile: String, rows: [ImportHistoryRow]) async
+  func adoptFavicons(profile: String, favicons: [ImportFaviconRow]) async
+  func storeFavicons(engineProfile: String, favicons: [ImportFaviconRow]) async
   func extensions(browserId: String, profileId: String) async -> [ImportedExtension]
   func forget()
   func profiles() -> [ImportTarget]
@@ -130,7 +139,7 @@ public enum ImportRoute: String, Sendable {
   case js
 
   static let swiftKinds: Set<ImportKind> = [.passwords, .cookies, .autofill]
-  static let darkKinds: Set<ImportKind> = swiftKinds.union([.bookmarks, .tabs, .favorites])
+  static let darkKinds: Set<ImportKind> = swiftKinds.union([.bookmarks, .history, .tabs, .favorites])
 
   public static func of(_ source: ImportBrowser?, kinds: [ImportKind], dark: Bool = false) -> ImportRoute {
     guard let source, source.sidebar == nil, source.family == .chromium || source.family == .firefox else { return .js }
@@ -190,6 +199,7 @@ public enum ImportProfileName {
 @MainActor
 final class ImportRunControl {
   var stopped = false
+  var onStop: (() -> Void)?
   var jobId: String?
   let engine: ImportEngine
 
@@ -197,6 +207,8 @@ final class ImportRunControl {
 
   func stop() {
     stopped = true
+    onStop?()
+    onStop = nil
     if let jobId { engine.cancelRead(jobId: jobId) }
   }
 }
@@ -215,9 +227,53 @@ public final class ImportRuns {
   var current: ImportRunControl?
   private var routes: [String: ImportRoute] = [:]
   let bookmarkQueue = ImportBookmarkQueue()
+  private var writes: [UUID: Task<Void, Never>] = [:]
+  var writeDeadline: Duration = .seconds(10)
+  var drainDeadline: Duration = .seconds(10)
   #if DEBUG
   public var forceScript = false
   public var darkRoute = false
+  public var devTrace: [String] = []
+  #endif
+
+  func traceStep(_ step: String) {
+    #if DEBUG
+    devTrace.append(step)
+    #endif
+  }
+
+  @discardableResult
+  func track(_ work: @escaping @MainActor () async -> Void) -> Task<Void, Never> {
+    let id = UUID()
+    let write = Task { @MainActor [weak self] in
+      await work()
+      self?.writes[id] = nil
+    }
+    writes[id] = write
+    return write
+  }
+
+  func settle(_ write: Task<Void, Never>, within deadline: Duration, until control: ImportRunControl? = nil) async -> Bool {
+    if control?.stopped == true { return false }
+    let first = FirstAnswer()
+    defer { control?.onStop = nil }
+    return await withCheckedContinuation { continuation in
+      first.continuation = continuation
+      control?.onStop = { first.answer(false) }
+      let timer = Task { @MainActor in
+        try? await Task.sleep(for: deadline)
+        first.answer(false)
+      }
+      Task { @MainActor in
+        await write.value
+        timer.cancel()
+        first.answer(true)
+      }
+    }
+  }
+
+  #if DEBUG
+  public var pendingWrites: Int { writes.count }
   #endif
 
   public init() {}
@@ -275,6 +331,12 @@ public final class ImportRuns {
     drains += 1
     defer { drains -= 1 }
     if active > 0 { await withCheckedContinuation { idle.append($0) } }
+    let clock = ContinuousClock()
+    let end = clock.now + drainDeadline
+    while let write = writes.values.first, clock.now < end {
+      if !(await settle(write, within: end - clock.now)) { break }
+    }
+    if !writes.isEmpty { engine.log("[import] drain left \(writes.count) write\(writes.count == 1 ? "" : "s") running") }
   }
 
   private func stop(_ engine: ImportEngine) {
@@ -282,6 +344,16 @@ public final class ImportRuns {
     current = nil
     engine.dismissImportAsNewProfile()
     engine.forget()
+  }
+}
+
+@MainActor
+private final class FirstAnswer {
+  var continuation: CheckedContinuation<Bool, Never>?
+
+  func answer(_ value: Bool) {
+    continuation?.resume(returning: value)
+    continuation = nil
   }
 }
 
@@ -423,12 +495,46 @@ final class ImportRunner {
       }
 
       let browserName = source.name
+      runs.traceStep("favicons")
+      let chosen = ImportFavicons.chosen(read)
+      if !chosen.isEmpty, !engine.isPrivateProfile(destination) {
+        await engine.adoptFavicons(profile: destination, favicons: chosen)
+        let faviconEngine = engine.engineProfile(destination)
+        runs.track { [engine] in await engine.storeFavicons(engineProfile: faviconEngine, favicons: chosen) }
+      }
+      runs.traceStep("bookmarks")
       let placed = await runs.bookmarkQueue.run {
         await self.placeBookmarks(profile: destination, root: read.bookmarks, browserName: browserName, stopped: { control.stopped })
       }
       if let placed { total.bookmarks += placed } else { engine.reportBookmarkFailure(); fail(.bookmarks, profile.name) }
       if cancelled() || control.stopped { return halted() }
 
+      if !read.history.isEmpty {
+        runs.traceStep("history")
+        if !engine.isPrivateProfile(destination) {
+          let now = Date()
+          let rows = ImportHistory.usable(read.history, now: now)
+          let oldestKept = ImportHistory.oldestKept(now)
+          if !rows.isEmpty {
+            let historyEngine = engine.engineProfile(destination)
+            let write = runs.track { [engine] in await engine.importHistory(engineProfile: historyEngine, rows: rows) }
+            if !(await runs.settle(write, within: runs.writeDeadline, until: control)) { engine.log("[import] history write still running profile=\(destination)") }
+            if cancelled() || control.stopped { return halted() }
+          }
+          #if DEBUG
+          let adoptStarted = ContinuousClock.now
+          #endif
+          let added = await engine.adoptHistory(profile: destination, rows: rows, oldestKept: oldestKept, deadline: ImportHistory.adoptDeadline(rows: rows.count))
+          #if DEBUG
+          engine.log("[import] history adopt rows=\(rows.count) took=\(ContinuousClock.now - adoptStarted)")
+          #endif
+          if added == nil { engine.log("[import] history count fell back profile=\(destination)") }
+          total.history += added ?? ImportHistory.fallbackCount(rows)
+        }
+        if cancelled() || control.stopped { return halted() }
+      }
+
+      runs.traceStep("native")
       let native = ["cookies", "autofill"].filter { name in profileKinds.contains { $0.rawValue == name } }
       if let taken = token {
         token = nil
@@ -456,6 +562,7 @@ final class ImportRunner {
         if tabs { windows.append(.object(["tabs": .array(read.tabs.map { $0.json() }), "group": "Imported"])) }
         if favorites { windows.append(.object(["tabs": .array(read.favorites.map { $0.json(pinned: true) }), "pinnedAgainst": "tiles"])) }
         if !windows.isEmpty {
+          runs.traceStep("workspace")
           if let added = engine.importWorkspace(profile: destination, windows: windows) {
             total.tabs += added
           } else {
@@ -467,6 +574,7 @@ final class ImportRunner {
 
       let credentials = read.credentials
       read.credentials = []
+      if !credentials.isEmpty { runs.traceStep("passwords") }
       for credential in credentials {
         if control.stopped { return stoppedOutcome(total, order) }
         guard !credential.password.isEmpty, let origin = ImportOrigin.of(url: credential.url, realm: credential.realm) else { continue }

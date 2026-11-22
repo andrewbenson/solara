@@ -268,6 +268,10 @@ export function importDiaProfile(profileId: string, profile: DiaTabsProfile, wha
   return n;
 }
 
+const traceImport = (step: string) => {
+  if (typeof __DEV__ !== "undefined" && __DEV__) ((globalThis as { acImportTrace?: string[] }).acImportTrace ??= []).push(step);
+};
+
 export async function applyResult(
   profileId: string,
   result: ImportResult,
@@ -278,12 +282,18 @@ export async function applyResult(
   cancelled?: () => boolean,
 ): Promise<ImportCounts> {
   const toolbar = (result.bookmarks?.children ?? []).filter((c) => c.role === "toolbar");
+  traceImport("favicons");
   importFavicons(profileId, result.favicons, [...result.favorites.map((t) => t.url), ...(result.spaces.length ? [] : result.tabs.map((t) => t.url)), ...linksOf(toolbar)], onPending);
   const counts = emptyCounts();
+  traceImport("bookmarks");
   counts.bookmarks += await importBookmarksOrReport(profileId, result.bookmarks, browserName, onFailed, cancelled);
   if (cancelled?.()) return discardUnapplied(result.vaultToken, counts);
-  if (result.history.length) counts.history += importHistory(profileId, result.history, onPending);
+  if (result.history.length) {
+    traceImport("history");
+    counts.history += importHistory(profileId, result.history, onPending);
+  }
   const native = (["cookies", "autofill"] as const).filter((k) => requested.includes(k));
+  traceImport("native");
   Object.assign(counts, await importNative(profileId, result.vaultToken, native, onFailed));
   const tabs = result.tabs.length > 0 && !result.spaces.length;
   const favorites = result.favorites.length > 0;
@@ -295,12 +305,18 @@ export async function applyResult(
       ...(result.tabs.length && !result.spaces.length ? [{ tabs: result.tabs, group: "Imported" }] : []),
       ...(result.favorites.length ? [{ tabs: result.favorites.map((t) => ({ ...t, pinned: true })), pinnedAgainst: "tiles" }] : []),
     ];
-    if (windows.length) counts.tabs += (nativeWrite(encodeCommand("importWorkspace", [{ profileId, windows }]))?.result as { tabs: number } | undefined)?.tabs ?? 0;
+    if (windows.length) {
+      traceImport("workspace");
+      counts.tabs += (nativeWrite(encodeCommand("importWorkspace", [{ profileId, windows }]))?.result as { tabs: number } | undefined)?.tabs ?? 0;
+    }
   } else {
     if (result.tabs.length && !result.spaces.length) counts.tabs += importTabs(profileId, result.tabs, "Imported");
     if (result.favorites.length) counts.tabs += importTabs(profileId, result.favorites.map((t) => ({ ...t, pinned: true })), null, "tiles");
   }
-  if (result.credentials.length) counts.passwords += await importPasswords(profileId, result.credentials);
+  if (result.credentials.length) {
+    traceImport("passwords");
+    counts.passwords += await importPasswords(profileId, result.credentials);
+  }
   return counts;
 }
 

@@ -138,6 +138,7 @@ function bridge({ browsers, importData, importSafariDirect, importSafariExport, 
     "@solara/settings": settings,
     "../../../lib/bookmarkGroups": { allArcHolders: () => ["holder"], restoreArcFoldersSettled: async (...args) => { restored.push(args); return []; } },
     "../../../lib/bookmarkWriter": writer,
+    "../../../lib/favicons": favicons,
     "../../../store/nativeStore": nativeStore,
     "../../../store/browser": { useBrowser },
     "../../../store/draftGroups": { MAX_DRAFT_LINKS: 500 },
@@ -152,6 +153,23 @@ function bridge({ browsers, importData, importSafariDirect, importSafariExport, 
 
 const runRequest = (over = {}) => ({ runId: "run", browserId: "chrome", profileIds: ["first"], spaceIds: [], kinds: ["bookmarks", "cookies"], target: "existing", withoutKey: false, ...over });
 const chrome = { id: "chrome", name: "Chrome", family: "chromium", profiles: [{ id: "first", name: "First" }, { id: "second", name: "Second" }] };
+
+for (const [name, existingCount, newerExisting, expected] of [["room for ten", 4990, false, 10], ["a full list of newer rows", 5000, true, 0]]) {
+  test(`the JS route and the Swift adopt count imported history the same way: ${name}`, async () => {
+    const now = Date.now();
+    const existing = Array.from({ length: existingCount }, (_, i) => ({ url: `https://old${i}.test/`, title: "", favicon: null, visits: 1, lastVisit: now - (newerExisting ? i : 100_000 + i), visitTimes: [now - (newerExisting ? i : 100_000 + i)] }));
+    const imported = Array.from({ length: 50 }, (_, i) => ({ url: `https://new${i}.test/`, title: "", visits: 1, lastVisit: now - (newerExisting ? 50_000 + i : i) }));
+    const js = bridge({ browsers: [chrome], importData: async () => emptyResult({ history: imported }) });
+    js.state.history = { existing: existing.slice() };
+    await js.handlers["import.listBrowsers"]();
+    const result = await js.handlers["import.run"](runRequest({ kinds: ["history"] }));
+    const swift = bridge({ browsers: [chrome] });
+    swift.state.history = { existing: existing.slice() };
+    const adopted = swift.handlers["import.adoptHistory"]("existing", imported, now - 90 * 86_400_000);
+    assert.equal(result.counts.history, expected);
+    assert.equal(adopted, expected);
+  });
+}
 
 test("the drain waits for the live folder command an Arc space import started", async () => {
   const called = deferred();

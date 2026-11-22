@@ -3,6 +3,7 @@ import { closeWindow, confirm } from "@solara/shell";
 import { publishSettingsTopic, type SettingsHandler } from "@solara/settings";
 import { allArcHolders, restoreArcFoldersSettled } from "../../../lib/bookmarkGroups";
 import { reportBookmarkFailure } from "../../../lib/bookmarkWriter";
+import { adoptFaviconCache } from "../../../lib/favicons";
 import { nativeSafeMode } from "../../../store/nativeStore";
 import { useBrowser } from "../../../store/browser";
 import { MAX_DRAFT_LINKS } from "../../../store/draftGroups";
@@ -386,6 +387,15 @@ export const importHandlers: Record<string, SettingsHandler> = {
   },
   "import.safariFullDiskAccess": () => importModule()?.safariHasFullDiskAccess() ?? false,
   "import.isUnlocked": (browserId: string) => importModule()?.isBrowserUnlocked(browserId) ?? false,
+  "import.adoptHistory": (profileId: string, rows: { url: string; title: string; visits: number; lastVisit: number }[], oldestKept?: number) => {
+    const before = useBrowser.getState().history[profileId]?.length ?? 0;
+    useBrowser.getState().adoptImportedHistory(profileId, Array.isArray(rows) ? rows : [], typeof oldestKept === "number" ? oldestKept : undefined);
+    return (useBrowser.getState().history[profileId]?.length ?? 0) - before;
+  },
+  "import.adoptFavicons": (profileId: string, favicons: { page: string; icon: string; png: string }[]) => {
+    adoptFaviconCache(profileId, Array.isArray(favicons) ? favicons : []);
+    return true;
+  },
   "import.unlock": (browserId: string) => {
     const api = importModule();
     return api ? api.unlockBrowser(browserId).then(() => true, () => false) : false;

@@ -184,8 +184,8 @@ function remember(key: string, page: string, src: string, uri: string) {
 
 export type KnownFavicon = { page: string; icon: string; png: string };
 
-export function adoptFavicons(profileId: string, known: KnownFavicon[], onPending?: (pending: Promise<unknown>) => void) {
-  if (isIncognitoProfile(profileId) || !known.length) return;
+export function adoptFaviconCache(profileId: string, known: KnownFavicon[]): Map<string, KnownFavicon> | null {
+  if (isIncognitoProfile(profileId) || !known.length) return null;
   const key = cacheKey(profileId);
   const found = new Map(known.map((f) => [pageKey(f.page), f]));
   for (const page of found.keys()) wrote(key, page);
@@ -201,6 +201,13 @@ export function adoptFavicons(profileId: string, known: KnownFavicon[], onPendin
     }
     return { ...icons, pages };
   }, true);
+  return found;
+}
+
+export function adoptFavicons(profileId: string, known: KnownFavicon[], onPending?: (pending: Promise<unknown>) => void) {
+  const found = adoptFaviconCache(profileId, known);
+  if (!found) return;
+  const key = cacheKey(profileId);
   const pending = (async () => {
     if (!engineProfileLoaded(key) && !(await ensureProfile(key))) return;
     for (const [page, f] of found) await nativeStoreFavicon(key, page, f.icon, f.png).catch(() => null);

@@ -38,6 +38,24 @@ final class FakeImportEngine: ImportEngine {
   var workspaces: [(String, [JSONValue])] = []
   var workspaceResult: Int? = 2
   var steps: [String] = []
+  var adoptHistoryAnswer: Int? = nil
+  var adoptDeadlines: [TimeInterval] = []
+  var adoptCutoffs: [Double] = []
+  var onHistoryWrite: (() -> Void)?
+  var adoptHistoryTimesOut = false
+  var onAdoptHistory: (() -> Void)?
+  var historyAdoptions: [(String, [ImportHistoryRow])] = []
+  var historyWrites: [(String, [ImportHistoryRow])] = []
+  var holdHistoryWrite = false
+  var historyWriteSuspensions = 0
+  var faviconAdoptionSuspensions = 0
+  var faviconsAdopted = false
+  var faviconsAdoptedAtBookmarks: [Bool] = []
+  var historyWriteReleased = false
+  var historyWritesAtAdoption: [Int] = []
+  private var heldHistoryWrite: CheckedContinuation<Void, Never>?
+  var faviconAdoptions: [(String, [ImportFaviconRow])] = []
+  var faviconStores: [(String, [ImportFaviconRow])] = []
   var readCount = 0
   var onRead: ((Int) -> Void)?
 
@@ -99,6 +117,7 @@ final class FakeImportEngine: ImportEngine {
 
   func submitBookmarks(profile: String, mutations: [BookmarkMutation]) async throws {
     steps.append("bookmarks")
+    faviconsAdoptedAtBookmarks.append(faviconsAdopted)
     bookmarkSubmits.append(mutations)
     onBookmarkSubmit?()
     await Task.yield()
@@ -116,6 +135,41 @@ final class FakeImportEngine: ImportEngine {
     steps.append("workspace")
     workspaces.append((profile, windows))
     return workspaceResult
+  }
+
+  func adoptHistory(profile: String, rows: [ImportHistoryRow], oldestKept: Double, deadline: TimeInterval) async -> Int? {
+    steps.append("adoptHistory")
+    adoptDeadlines.append(deadline)
+    adoptCutoffs.append(oldestKept)
+    historyWritesAtAdoption.append(historyWrites.count)
+    historyAdoptions.append((profile, rows))
+    onAdoptHistory?()
+    if adoptHistoryTimesOut { return nil }
+    return adoptHistoryAnswer ?? rows.count
+  }
+
+  func importHistory(engineProfile: String, rows: [ImportHistoryRow]) async {
+    onHistoryWrite?()
+    for _ in 0..<historyWriteSuspensions { await Task.yield() }
+    if holdHistoryWrite && !historyWriteReleased { await withCheckedContinuation { heldHistoryWrite = $0 } }
+    historyWrites.append((engineProfile, rows))
+  }
+
+  func releaseHistoryWrite() {
+    historyWriteReleased = true
+    heldHistoryWrite?.resume()
+    heldHistoryWrite = nil
+  }
+
+  func adoptFavicons(profile: String, favicons: [ImportFaviconRow]) async {
+    steps.append("adoptFavicons")
+    faviconAdoptions.append((profile, favicons))
+    for _ in 0..<faviconAdoptionSuspensions { await Task.yield() }
+    faviconsAdopted = true
+  }
+
+  func storeFavicons(engineProfile: String, favicons: [ImportFaviconRow]) async {
+    faviconStores.append((engineProfile, favicons))
   }
 
   func extensions(browserId: String, profileId: String) async -> [ImportedExtension] { listed }
@@ -142,10 +196,27 @@ final class FakeImportEngine: ImportEngine {
   func log(_ line: String) { logs.append(line) }
 
   static func read(token: String? = "vault-1", name: String? = nil, failed: [ImportKind] = [], warnings: [ImportReadWarning] = [], credentials: [ImportCredential] = credentials(3),
-                   bookmarks: ImportBookmarkNode? = nil, tabs: [ImportTabRow] = [], favorites: [ImportTabRow] = [], hasSpaces: Bool = false) -> ImportRead {
+                   bookmarks: ImportBookmarkNode? = nil, tabs: [ImportTabRow] = [], favorites: [ImportTabRow] = [], hasSpaces: Bool = false,
+                   history: [ImportHistoryRow] = [], favicons: [ImportFaviconRow] = []) -> ImportRead {
     ImportRead(vaultToken: token, profileName: name, profileColor: nil, failed: failed, warnings: warnings, credentials: credentials,
-               bookmarks: bookmarks, tabs: tabs, favorites: favorites, hasSpaces: hasSpaces)
+               bookmarks: bookmarks, tabs: tabs, favorites: favorites, hasSpaces: hasSpaces, history: history, favicons: favicons)
   }
+
+  static let recently = Date().timeIntervalSince1970 * 1000 - 3_600_000
+  static let historyRows = [
+    ImportHistoryRow(url: "https://h1.test/", title: "H1", visits: 3, lastVisit: recently - 10),
+    ImportHistoryRow(url: "ftp://h2.test/", title: "H2", visits: 1, lastVisit: recently - 9),
+    ImportHistoryRow(url: "HTTPS://h3.test/", title: "H3", visits: 0, lastVisit: recently - 8),
+    ImportHistoryRow(url: "https://h1.test/", title: "H1 again", visits: 1, lastVisit: recently - 7),
+    ImportHistoryRow(url: "file:///tmp/x.html", title: "X", visits: 1, lastVisit: recently - 6),
+  ]
+
+  static let icons = [
+    ImportFaviconRow(page: "https://a.test/#top", icon: "https://a.test/favicon.ico", png: "AAA"),
+    ImportFaviconRow(page: "https://t.test/", icon: "https://t.test/favicon.ico", png: "BBB"),
+    ImportFaviconRow(page: "https://elsewhere.test/", icon: "https://elsewhere.test/favicon.ico", png: "CCC"),
+    ImportFaviconRow(page: "https://a.test/", icon: "https://a.test/new.ico", png: "DDD"),
+  ]
 
   static func link(_ title: String, _ url: String?, added: Double? = nil) -> ImportBookmarkNode {
     ImportBookmarkNode(isFolder: false, title: title, url: url, dateAdded: added, role: nil, pageTitle: nil, children: nil)
@@ -182,9 +253,21 @@ struct ImportRunTests {
   static let firefox = ImportBrowser(id: "firefox", name: "Firefox", family: .firefox, profiles: [ImportSourceProfile(id: "Default", name: "default-release", isDefault: true, available: [.bookmarks, .passwords])])
   static let zen = ImportBrowser(id: "zen", name: "Zen", family: .firefox, profiles: [ImportSourceProfile(id: "Default", name: "Default", isDefault: true, available: [.passwords])], sidebar: .zen)
 
+  func settled(_ runs: ImportRuns) async -> Bool {
+    let clock = ContinuousClock()
+    let end = clock.now + .seconds(60)
+    while runs.pendingWrites > 0 {
+      if clock.now >= end { return false }
+      await Task.yield()
+    }
+    return true
+  }
+
   func setup(_ browsers: [ImportBrowser] = [ImportFixtures.chrome]) -> (ImportRuns, FakeImportEngine, FakeScriptPath, Int) {
     let runs = ImportRuns()
     runs.browsers = browsers
+    runs.writeDeadline = .seconds(300)
+    runs.drainDeadline = .seconds(300)
     let session = runs.open()
     return (runs, FakeImportEngine(), FakeScriptPath(), session)
   }
@@ -608,7 +691,8 @@ struct ImportRunTests {
   @Test func theDarkRouteTakesBookmarksTabsAndFavoritesOnlyWhenSet() {
     #expect(ImportRoute.of(ImportFixtures.chrome, kinds: [.bookmarks, .passwords]) == .js)
     #expect(ImportRoute.of(ImportFixtures.chrome, kinds: [.bookmarks, .tabs, .favorites, .passwords], dark: true) == .swift)
-    #expect(ImportRoute.of(ImportFixtures.chrome, kinds: [.bookmarks, .history], dark: true) == .js)
+    #expect(ImportRoute.of(ImportFixtures.chrome, kinds: [.bookmarks, .history], dark: true) == .swift)
+    #expect(ImportRoute.of(ImportFixtures.chrome, kinds: [.bookmarks, .spaces], dark: true) == .js)
   }
 
   @Test func parentsNeedOnlyAViewNotSyncReadiness() {
@@ -680,6 +764,238 @@ struct ImportRunTests {
       }
     }
     #expect(tries == 1)
+  }
+
+  @Test func faviconPagesFollowTheJSPageKey() {
+    #expect(ImportFavicons.page("https://a.test/#x") == "https://a.test/")
+    #expect(ImportFavicons.page("https://a.test/a#b#c") == "https://a.test/a")
+    #expect(ImportFavicons.page("a#b\nc") == "a#b\nc")
+    #expect(ImportFavicons.page("x\n#y") == "x\n")
+    #expect(ImportFavicons.page("https://a.test/") == "https://a.test/")
+  }
+
+  @Test func faviconsAreChosenForToolbarFavoritesAndTabsWithoutSpaces() {
+    let tab = ImportTabRow(url: "https://t.test/", title: "T", pinned: false, customTitle: nil)
+    let read = FakeImportEngine.read(tabs: [tab], favicons: FakeImportEngine.icons)
+    #expect(ImportFavicons.chosen(read).map(\.png) == ["BBB"])
+    #expect(ImportFavicons.chosen(FakeImportEngine.read(bookmarks: FakeImportEngine.tree, tabs: [tab], favicons: FakeImportEngine.icons)).map(\.png) == ["AAA", "BBB", "DDD"])
+    let toolbar = FakeImportEngine.folder("", [FakeImportEngine.folder("Bar", [FakeImportEngine.link("A", "https://a.test/")], role: "toolbar")])
+    let withToolbar = FakeImportEngine.read(bookmarks: toolbar, tabs: [tab], hasSpaces: true, favicons: FakeImportEngine.icons)
+    #expect(ImportFavicons.chosen(withToolbar).map(\.png) == ["AAA", "DDD"])
+    #expect(ImportFavicons.byPage(ImportFavicons.chosen(withToolbar)).map { $0.page + "=" + $0.favicon.png } == ["https://a.test/=DDD"])
+  }
+
+  @Test func historyKeepsHTTPAndFileRowsCaseSensitivelyAndCountsDistinctURLs() {
+    let usable = ImportHistory.usable(FakeImportEngine.historyRows)
+    #expect(usable.map(\.title) == ["H1", "H1 again", "X"])
+    #expect(ImportHistory.distinctCount(usable) == 2)
+  }
+
+  @Test func historyOlderThanTheEngineKeepsIsLeftOutAndUntitledRowsStay() {
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    let day = 86_400_000.0
+    let at = now.timeIntervalSince1970 * 1000
+    let rows = [
+      ImportHistoryRow(url: "https://boundary.test/", title: "Boundary", visits: 1, lastVisit: at - 90 * day),
+      ImportHistoryRow(url: "https://inside.test/", title: "Inside", visits: 1, lastVisit: at - 90 * day + 1),
+      ImportHistoryRow(url: "https://recent.test/", title: "Recent", visits: 3, lastVisit: at - 89 * day),
+      ImportHistoryRow(url: "https://expired.test/", title: "Expired", visits: 9, lastVisit: at - 91 * day),
+      ImportHistoryRow(url: "https://untitled.test/", title: "", visits: 1, lastVisit: at - 3_600_000),
+    ]
+    #expect(ImportHistory.usable(rows, now: now).map(\.url) == ["https://inside.test/", "https://recent.test/", "https://untitled.test/"])
+    #expect(ImportHistory.oldestKept(now) == at - 90 * day)
+  }
+
+  @Test func faviconsAndHistoryRunInTheJSOrder() async {
+    let (runs, engine, script, session) = setup()
+    runs.darkRoute = true
+    runs.devTrace = []
+    let toolbar = FakeImportEngine.folder("", [FakeImportEngine.folder("Bar", [FakeImportEngine.link("A", "https://a.test/")], role: "toolbar")])
+    let tab = ImportTabRow(url: "https://t.test/", title: "T", pinned: false, customTitle: nil)
+    engine.adoptHistoryAnswer = 1
+    engine.reads["Default"] = .success(FakeImportEngine.read(bookmarks: toolbar, tabs: [tab], history: FakeImportEngine.historyRows, favicons: FakeImportEngine.icons))
+    let outcome = await runs.run(request([.bookmarks, .history, .passwords, .cookies, .tabs]), session: session, engine: engine, script: script, scriptSession: 1)
+    #expect(await settled(runs))
+    #expect(runs.devTrace == ["favicons", "bookmarks", "history", "native", "workspace", "passwords"])
+    #expect(engine.steps == ["adoptFavicons", "bookmarks", "adoptHistory", "native", "workspace", "save", "save", "save"])
+    #expect(outcome.counts.history == 1)
+    #expect(engine.historyAdoptions.first?.1.map(\.title) == ["H1", "H1 again", "X"])
+    #expect(engine.historyWrites.first?.0 == "engine-default")
+    #expect(engine.historyWrites.first?.1.count == 3)
+    #expect(engine.faviconAdoptions.first?.1.map(\.png) == ["AAA", "BBB", "DDD"])
+    #expect(engine.faviconStores.first?.0 == "engine-default")
+  }
+
+  @Test func aHistoryCountFallsBackToDistinctRowsAndLogsNoURL() async {
+    let (runs, engine, script, session) = setup()
+    runs.darkRoute = true
+    engine.adoptHistoryTimesOut = true
+    engine.reads["Default"] = .success(FakeImportEngine.read(history: FakeImportEngine.historyRows))
+    let outcome = await runs.run(request([.history]), session: session, engine: engine, script: script, scriptSession: 1)
+    #expect(await settled(runs))
+    #expect(outcome.counts.history == 2)
+    #expect(engine.historyWrites.count == 1)
+    #expect(engine.logs.contains("[import] history count fell back profile=default"))
+    let many = (0..<6000).map { ImportHistoryRow(url: "https://m\($0).test/", title: "", visits: 1, lastVisit: FakeImportEngine.recently) }
+    #expect(ImportHistory.fallbackCount(many) == ImportHistory.storeKeeps)
+    #expect(!engine.logs.contains { $0.contains("h1.test") || $0.contains("tmp/x") })
+  }
+
+  @Test func theEngineGetsTheHistoryEvenWhenJSNeverAnswers() async {
+    let (runs, engine, script, session) = setup()
+    runs.darkRoute = true
+    engine.adoptHistoryTimesOut = true
+    engine.reads["Default"] = .success(FakeImportEngine.read(history: FakeImportEngine.historyRows))
+    _ = await runs.run(request([.history]), session: session, engine: engine, script: script, scriptSession: 1)
+    #expect(await settled(runs))
+    #expect(engine.historyAdoptions.count == 1)
+    #expect(engine.historyWrites.map(\.0) == ["engine-default"])
+    #expect(engine.historyWrites.first?.1 == ImportHistory.usable(FakeImportEngine.historyRows))
+  }
+
+  @Test func theEngineWriteEndsBeforeJSAdoptsTheHistoryEvenWhenTheProfileLoadsLate() async {
+    let (runs, engine, script, session) = setup()
+    runs.darkRoute = true
+    engine.historyWriteSuspensions = 8
+    engine.reads["Default"] = .success(FakeImportEngine.read(history: FakeImportEngine.historyRows))
+    _ = await runs.run(request([.history]), session: session, engine: engine, script: script, scriptSession: 1)
+    #expect(engine.historyWritesAtAdoption == [1])
+  }
+
+  @Test func aStuckEngineWriteHoldsTheRunOnlyUntilItsDeadline() async {
+    let (runs, engine, script, session) = setup()
+    runs.darkRoute = true
+    runs.writeDeadline = .milliseconds(30)
+    engine.holdHistoryWrite = true
+    engine.reads["Default"] = .success(FakeImportEngine.read(history: FakeImportEngine.historyRows))
+    let outcome = await runs.run(request([.history]), session: session, engine: engine, script: script, scriptSession: 1)
+    #expect(engine.historyAdoptions.count == 1)
+    #expect(outcome.counts.history == 3)
+    #expect(engine.logs.contains("[import] history write still running profile=default"))
+    #expect(engine.historyWrites.isEmpty)
+    engine.releaseHistoryWrite()
+    #expect(await settled(runs))
+    #expect(engine.historyWrites.count == 1)
+  }
+
+  @Test func cancellingDuringTheHistoryWaitEndsTheWaitAndSkipsTheAdopt() async {
+    let (runs, engine, script, session) = setup()
+    runs.darkRoute = true
+    runs.writeDeadline = .seconds(300)
+    engine.holdHistoryWrite = true
+    engine.onHistoryWrite = { runs.cancel(engine: engine, script: script) }
+    engine.reads["Default"] = .success(FakeImportEngine.read(history: FakeImportEngine.historyRows))
+    let clock = ContinuousClock()
+    let started = clock.now
+    let outcome = await runs.run(request([.history, .cookies]), session: session, engine: engine, script: script, scriptSession: 1)
+    #expect(clock.now - started < .seconds(150))
+    #expect(engine.historyAdoptions.isEmpty)
+    #expect(outcome.notes == [ImportRunner.stoppedNote])
+    engine.releaseHistoryWrite()
+    #expect(await settled(runs))
+  }
+
+  @Test func theAdoptGetsTheRowsDeadlineAndTheCutoffItsRowsWereFilteredWith() async {
+    let (runs, engine, script, session) = setup()
+    runs.darkRoute = true
+    engine.reads["Default"] = .success(FakeImportEngine.read(history: FakeImportEngine.historyRows))
+    let before = Date().timeIntervalSince1970 * 1000 - ImportHistory.engineKeepsMs
+    _ = await runs.run(request([.history]), session: session, engine: engine, script: script, scriptSession: 1)
+    let after = Date().timeIntervalSince1970 * 1000 - ImportHistory.engineKeepsMs
+    #expect(engine.adoptDeadlines == [ImportHistory.adoptDeadline(rows: 3)])
+    #expect(engine.adoptCutoffs.count == 1)
+    #expect(engine.adoptCutoffs.allSatisfy { $0 >= before && $0 <= after })
+  }
+
+  @Test func faviconsAreAdoptedBeforeBookmarksArePlaced() async {
+    let (runs, engine, script, session) = setup()
+    runs.darkRoute = true
+    engine.faviconAdoptionSuspensions = 8
+    let toolbar = FakeImportEngine.folder("", [FakeImportEngine.folder("Bar", [FakeImportEngine.link("A", "https://a.test/")], role: "toolbar")])
+    engine.reads["Default"] = .success(FakeImportEngine.read(bookmarks: toolbar, favicons: FakeImportEngine.icons))
+    _ = await runs.run(request([.bookmarks]), session: session, engine: engine, script: script, scriptSession: 1)
+    #expect(engine.faviconAdoptions.count == 1)
+    #expect(engine.faviconsAdoptedAtBookmarks == [true])
+  }
+
+  @Test func aDrainGivesUpOnAStuckWriteAfterItsDeadlineAndSaysSo() async {
+    let (runs, engine, script, session) = setup()
+    runs.darkRoute = true
+    runs.writeDeadline = .milliseconds(10)
+    runs.drainDeadline = .milliseconds(50)
+    engine.holdHistoryWrite = true
+    engine.reads["Default"] = .success(FakeImportEngine.read(history: FakeImportEngine.historyRows))
+    _ = await runs.run(request([.history]), session: session, engine: engine, script: script, scriptSession: 1)
+    var drained = false
+    let draining = Task { @MainActor in
+      await runs.drain(engine: engine)
+      drained = true
+    }
+    let clock = ContinuousClock()
+    let bound = clock.now + .seconds(60)
+    while !drained && clock.now < bound { try? await Task.sleep(for: .milliseconds(10)) }
+    #expect(drained)
+    #expect(engine.logs.contains("[import] drain left 1 write running"))
+    engine.releaseHistoryWrite()
+    await draining.value
+  }
+
+  @Test func theAdoptDeadlineGrowsWithTheRowsAndStaysCapped() {
+    #expect(ImportHistory.adoptDeadline(rows: 0) == 1.5)
+    #expect(ImportHistory.adoptDeadline(rows: 50_000) > 1.5)
+    #expect(ImportHistory.adoptDeadline(rows: 10_000_000) == ImportHistory.adoptDeadlineCap)
+  }
+
+  @Test func aPrivateDestinationTakesNoHistoryOrFavicons() async {
+    let (runs, engine, script, session) = setup()
+    runs.darkRoute = true
+    let tab = ImportTabRow(url: "https://t.test/", title: "T", pinned: false, customTitle: nil)
+    engine.reads["Default"] = .success(FakeImportEngine.read(tabs: [tab], history: FakeImportEngine.historyRows, favicons: FakeImportEngine.icons))
+    let outcome = await runs.run(request([.history, .tabs], target: "incognito:default"), session: session, engine: engine, script: script, scriptSession: 1)
+    #expect(await settled(runs))
+    #expect(engine.historyAdoptions.isEmpty)
+    #expect(engine.historyWrites.isEmpty)
+    #expect(engine.faviconAdoptions.isEmpty)
+    #expect(engine.faviconStores.isEmpty)
+    #expect(outcome.counts.history == 0)
+  }
+
+  @Test func cancellingDuringHistoryStopsBeforeTheNativeWrite() async {
+    let (runs, engine, script, session) = setup()
+    runs.darkRoute = true
+    engine.onAdoptHistory = { runs.cancel(engine: engine, script: script) }
+    engine.reads["Default"] = .success(FakeImportEngine.read(history: FakeImportEngine.historyRows))
+    let outcome = await runs.run(request([.history, .passwords, .cookies]), session: session, engine: engine, script: script, scriptSession: 1)
+    #expect(engine.steps == ["adoptHistory"])
+    #expect(outcome.notes == [ImportRunner.stoppedNote])
+    #expect(engine.discarded == ["vault-1"])
+  }
+
+  @Test func aDrainWaitsForPendingHistoryWrites() async {
+    let (runs, engine, script, session) = setup()
+    runs.darkRoute = true
+    runs.writeDeadline = .milliseconds(10)
+    engine.holdHistoryWrite = true
+    engine.reads["Default"] = .success(FakeImportEngine.read(history: FakeImportEngine.historyRows))
+    _ = await runs.run(request([.history]), session: session, engine: engine, script: script, scriptSession: 1)
+    var drained = false
+    let draining = Task { @MainActor in
+      await runs.drain(engine: engine)
+      drained = true
+    }
+    for _ in 0..<20 { await Task.yield() }
+    #expect(!drained)
+    #expect(runs.pendingWrites == 1)
+    engine.releaseHistoryWrite()
+    await draining.value
+    #expect(drained)
+    #expect(engine.historyWrites.count == 1)
+  }
+
+  @Test func historyAndFaviconRowsNeverPrint() {
+    let row = FakeImportEngine.historyRows[0]
+    let icon = FakeImportEngine.icons[0]
+    #expect(!"\(row) \(String(reflecting: row)) \(icon) \(String(reflecting: icon))".contains("test"))
   }
 
   @Test func credentialsNeverPrint() {

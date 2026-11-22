@@ -18,7 +18,7 @@ registerHooks({
     return next(specifier, context);
   },
 });
-const { adoptFavicons, adoptIconPage, dropOutlivedFavicon, faviconOutlived, noteIconPage, resolveFavicon, useFavicon } = await import("./favicons.ts");
+const { adoptFaviconCache, adoptFavicons, adoptIconPage, dropOutlivedFavicon, faviconOutlived, noteIconPage, resolveFavicon, useFavicon } = await import("./favicons.ts");
 const { useBrowser } = await import("../store/browser.ts");
 const { engineProfile } = await import("../store/model.ts");
 const { refreshLoadedProfiles, startProfileLoading } = await import("./lazyProfiles.ts");
@@ -140,4 +140,16 @@ test("explicit favicon import loads its cold target before writing imported imag
   assert.deepEqual(profileLoadRequests, [key]);
   assert.equal(loadedEngineProfiles.has(key), true);
   assert.deepEqual(globalThis.storedFavicons, [[key, "https://import-cold.test/", "https://import-cold.test/icon.png", "AAAA"]]);
+});
+
+test("the import cache adoption fills the icon cache and stores nothing in the engine", async () => {
+  useBrowser.getState().hydrate({});
+  globalThis.storedFavicons = [];
+  const page = "https://cache-only.test/";
+  const found = adoptFaviconCache("default", [{ page: `${page}#top`, icon: `${page}favicon.png`, png: "BBBB" }]);
+  assert.deepEqual([...found.keys()], [page]);
+  assert.equal(resolveFavicon(page, null, "default")?.uri, "data:image/png;base64,BBBB");
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.deepEqual(globalThis.storedFavicons, []);
+  assert.equal(adoptFaviconCache("incognito:w@default", [{ page, icon: "x", png: "CCCC" }]), null);
 });

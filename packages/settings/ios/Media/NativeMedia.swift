@@ -177,7 +177,7 @@ enum NativeMedia {
     if kind == "media.nowPlaying" {
       let rows: [[String: Any]] = NowPlayingStore.shared.entries.map { id, entry in
         ["tabId": id, "playbackState": entry.report.playbackState, "controllable": entry.report.controllable,
-          "touchedAt": entry.touchedAt, "removed": entry.removed, "title": entry.report.title]
+          "touchedAt": entry.touchedAt, "removed": entry.removed, "title": entry.report.title, "hasVideo": entry.report.hasVideo]
       }
       let json = try? JSONSerialization.data(withJSONObject: rows)
       return json.flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
@@ -226,7 +226,7 @@ enum NativeMedia {
         }
         if let player = view as? SidebarPlayerView {
           return ["corners": player.cornersShown, "seek": player.seekProgress, "height": player.frame.height, "frames": frames(player, player.controlFrames),
-            "tabId": player.tabId ?? NSNull(), "peeking": player.peeking, "leaving": player.leaving, "t": CACurrentMediaTime(),
+            "tabId": player.tabId ?? NSNull(), "peeking": player.peeking, "leaving": player.leaving, "subtitle": player.subtitleShown, "t": CACurrentMediaTime(),
             "py": Double(player.layer?.presentation()?.frame.minY ?? player.frame.minY), "px": Double(player.layer?.presentation()?.frame.minX ?? player.frame.minX),
             "opacity": Double(player.layer?.presentation()?.opacity ?? Float(player.alphaValue))]
         }

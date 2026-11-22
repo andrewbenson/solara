@@ -39,7 +39,7 @@ import Testing
 
   @Test func sidebarTransportUsesCurrentPlaybackAndTrackState() throws {
     let view = sidebar(state())
-    let buttons = view.subviews.compactMap { $0 as? SidebarIconButton }
+    let buttons = view.subviews.compactMap { $0 as? SidebarIconButton }.filter { !$0.isHidden }
     #expect(buttons.map(\.toolTip) == ["Skip back 15 seconds", "Play", "Skip ahead 15 seconds"])
     var actions: [MediaAction] = []
     view.onAction = { actions.append($0) }

@@ -48,6 +48,33 @@ import Testing
     #expect(profiles == ["p1", "p2", "p2"])
   }
 
+  @Test func aVideoThatLosesThePictureInPicturePausesWithoutComingToTheFront() throws {
+    let state = try state()
+    let store = makeStore()
+    for id in ["a", "c"] { store.report(tabId: id, playing) }
+    store.holdOrder("a")
+    store.touch("c")
+    store.report(tabId: "a", paused)
+    #expect(MediaStack.entries(state: state, store: store.entries, kind: .normal).map(\.tabId) == ["c", "a"])
+    store.report(tabId: "a", playing)
+    store.report(tabId: "a", paused)
+    #expect(MediaStack.entries(state: state, store: store.entries, kind: .normal).map(\.tabId) == ["a", "c"])
+  }
+
+  @Test func aHeldOrderExpires() throws {
+    let state = try state()
+    let store = NowPlayingStore()
+    var clock = 0.0
+    store.now = { clock }
+    store.report(tabId: "a", playing)
+    clock = 10
+    store.report(tabId: "c", playing)
+    store.holdOrder("a")
+    clock = 10 + NowPlayingStore.holdOrderMs + 1
+    store.report(tabId: "a", paused)
+    #expect(MediaStack.entries(state: state, store: store.entries, kind: .normal).map(\.tabId) == ["a", "c"])
+  }
+
   @Test func pausingOrTouchingMovesACardToTheFrontButShowingDoesNot() throws {
     let state = try state()
     let store = makeStore()

@@ -10,12 +10,21 @@ enum NativeMediaStack {
   private static var artwork: [String: (uri: String?, at: Double)] = [:]
   private static var loading: Set<String> = []
   private static var observer: NSObjectProtocol?
+  private static var pipObserver: NSObjectProtocol?
+  private static var pipTab: String?
   private static var listeners: [UUID: @MainActor () -> Void] = [:]
 
   static func listen(_ onChange: @escaping @MainActor () -> Void) -> UUID {
     if observer == nil {
       observer = NotificationCenter.default.addObserver(forName: NowPlayingStore.didChange, object: NowPlayingStore.shared, queue: .main) { _ in
         MainActor.assumeIsolated { changed() }
+      }
+    }
+    if pipObserver == nil {
+      pipTab = MediaStackPiP.center?.tabID
+      pipObserver = NotificationCenter.default.addObserver(forName: PictureInPictureHolder.didChange, object: nil, queue: .main) { note in
+        let tab = note.userInfo?["tabID"] as? String
+        MainActor.assumeIsolated { pictureInPictureChanged(tab) }
       }
     }
     let id = UUID()
@@ -26,6 +35,13 @@ enum NativeMediaStack {
   static func stopListening(_ id: UUID?) {
     guard let id else { return }
     listeners[id] = nil
+  }
+
+  private static func pictureInPictureChanged(_ tab: String?) {
+    guard tab != pipTab else { return }
+    if let old = pipTab, tab != nil { NowPlayingStore.shared.holdOrder(old) }
+    pipTab = tab
+    if let tab, NowPlayingStore.shared.entries[tab] != nil { NowPlayingStore.shared.touch(tab) } else { changed() }
   }
 
   private static func changed() {
@@ -59,7 +75,8 @@ enum NativeMediaStack {
       position: report.position, timestamp: report.timestamp, playbackRate: report.playbackRate == 0 ? 1 : report.playbackRate,
       duration: report.duration, tracks: report.actions.contains("nexttrack") || report.actions.contains("previoustrack"),
       artwork: art(entry.tabId, report.artwork), url: tab.url, favicon: tab.favicon, profileId: tab.profileId, theme: theme,
-      profileName: incognito ? "Private" : state.profiles[tab.profileId]?.name, profileColor: incognito ? nil : state.profiles[tab.profileId]?.color)
+      profileName: incognito ? "Private" : state.profiles[tab.profileId]?.name, profileColor: incognito ? nil : state.profiles[tab.profileId]?.color,
+      hasVideo: report.hasVideo, holdsPictureInPicture: pipTab == entry.tabId)
   }
 
   static func host(_ url: String) -> String {
@@ -98,6 +115,12 @@ enum NativeMediaStack {
     case .skip(let seconds): command(windowId: windowId, tabId: tabId, name: "seekBy", seconds: Double(seconds), fallback: action)
     case .seek(let seconds): command(windowId: windowId, tabId: tabId, name: "seekTo", seconds: seconds, fallback: action)
     case .backToTab, .toggleMute: NativeMedia.player("sidebarPlayer", windowId, tabId, action)
+    case .enterPictureInPicture:
+      if let old = pipTab, old != tabId { NowPlayingStore.shared.holdOrder(old) }
+      NowPlayingStore.shared.touch(tabId)
+      guard let center = MediaStackPiP.center else { return }
+      Task { @MainActor in _ = await center.enter(tabID: tabId) }
+    case .minimizePictureInPicture: MediaStackPiP.center?.minimize()
     }
   }
 

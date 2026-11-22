@@ -139,6 +139,36 @@ struct SidebarPlayerStackTests {
     #expect(!view.profileDotShown)
   }
 
+  @Test func thePictureInPictureButtonFollowsTheHolder() throws {
+    let view = SidebarPlayerView(frame: CGRect(x: 0, y: 0, width: 220, height: 74))
+    var actions: [MediaAction] = []
+    view.onAction = { actions.append($0) }
+    var state = Self.state("a")
+    view.update(state)
+    view.layoutSubtreeIfNeeded()
+    #expect(view.controlFrames["pip"] == nil)
+    let narrow = try #require(view.controlFrames["seek"])
+    state.hasVideo = true
+    view.update(state)
+    view.layoutSubtreeIfNeeded()
+    let pip = try #require(view.controlFrames["pip"])
+    let seek = try #require(view.controlFrames["seek"])
+    #expect(pip.size == CGSize(width: 24, height: 24))
+    #expect(seek.maxX <= pip.minX)
+    #expect(seek.width < narrow.width)
+    let button = try #require(view.subviews.compactMap { $0 as? SidebarIconButton }.first { $0.frame == pip })
+    #expect(button.toolTip == "Open in Picture in Picture")
+    button.onPress?()
+    state.holdsPictureInPicture = true
+    view.update(state)
+    #expect(button.toolTip == "Minimize Picture in Picture")
+    #expect(SidebarPlayerView.subtitleText(state) == "Artist · In PiP")
+    button.onPress?()
+    #expect(actions == [.enterPictureInPicture, .minimizePictureInPicture])
+    #expect(MediaAction.enterPictureInPicture.name == "enterPictureInPicture")
+    #expect(MediaAction.minimizePictureInPicture.name == "minimizePictureInPicture")
+  }
+
   @Test func clickingAPeekingCardOpensTheStack() {
     let view = stack(["a", "b"])
     view.cardViews[1].onPeekPress?()

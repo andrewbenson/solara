@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -36,7 +37,32 @@ const tone = (() => {
   for (let i = 0; i < samples; i++) buf.writeInt16LE(Math.round(Math.sin((2 * Math.PI * 440 * i) / rate) * 32), 44 + i * 2);
   return buf;
 })();
+let clipBytes = null;
+const clip = () => {
+  const path = join(scratch, "media", "clip.webm");
+  if (!existsSync(path)) {
+    mkdirSync(join(scratch, "media"), { recursive: true });
+    execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=320x180:rate=30",
+      "-f", "lavfi", "-i", "aevalsrc=0.001*sin(2*PI*440*t):s=48000", "-t", "30", "-c:v", "libvpx", "-b:v", "200k", "-c:a", "libopus",
+      "-shortest", path], { stdio: "ignore" });
+  }
+  return (clipBytes ??= readFileSync(path));
+};
 const server = createServer((req, res) => {
+  if (req.url === "/clip.webm") {
+    const bytes = clip();
+    res.writeHead(200, { "content-type": "video/webm", "content-length": String(bytes.length) });
+    return res.end(bytes);
+  }
+  if (req.url === "/video-v" || req.url === "/video-w") {
+    const name = req.url.slice(1);
+    res.writeHead(200, { "content-type": "text/html" });
+    return res.end(`<!doctype html><title>${name}</title><link rel="icon" href="data:,"><video id="v" src="/clip.webm" loop playsinline style="width: 320px; height: 180px"></video>
+<script>navigator.mediaSession.metadata = new MediaMetadata({ title: "Track ${name}", artist: "Fixture Artist" });
+const v = document.getElementById("v");
+v.addEventListener("play", () => { navigator.mediaSession.playbackState = "playing"; });
+v.addEventListener("pause", () => { navigator.mediaSession.playbackState = "paused"; });</script>`);
+  }
   if (req.url === "/tone.wav") {
     res.writeHead(200, { "content-type": "audio/wav", "content-length": String(tone.length) });
     return res.end(tone);
@@ -66,6 +92,8 @@ const fixture = session({
     { id: "d", windowId: "w2", profileId: "work", url: url("player-d"), title: "player-d" },
     { id: "d2", windowId: "w2", profileId: "work", url: url("d2"), title: "D2" },
     { id: "e", windowId: "w2", profileId: "work", url: url("player-e"), title: "player-e" },
+    { id: "v", windowId: "w2", profileId: "work", url: url("video-v"), title: "video-v" },
+    { id: "w", windowId: "w2", profileId: "work", url: url("video-w"), title: "video-w" },
   ],
   settings: { sidebarWidth: 220, sidebarMediaControls: true, warnBeforeClosingLastTab: false, warnBeforeClosingWindow: false, searchSuggestions: false },
 });
@@ -162,8 +190,8 @@ try {
   await rep.check("pages-load", async () => {
     for (const [tab, name] of [["a", "player-a"], ["c", "player-c"], ["d", "player-d"]]) {
       await run(`ac.actions.switchToTab(${JSON.stringify(tab)}); return true;`);
-      const page = await app.page(url(name), { timeout: 15000 });
-      page.close();
+      const end = Date.now() + 15000;
+      while (Date.now() < end && (await inPage(name, "!!document.getElementById('tone')").catch(() => false)) !== true) await sleep(200);
     }
     await run(`ac.actions.switchToTab("a2"); ac.actions.switchToTab("d2"); return true;`);
     return await until("fixture tabs shown", `const s = st(); return s.windows.w1.profileId === "default" && s.windows.w1.activeTabIds.default === "a2" && s.windows.w2.activeTabIds.work === "d2" || null;`, 5000);
@@ -346,7 +374,8 @@ try {
 
   await rep.check("a-fourth-video-drops-the-oldest", async () => {
     await run(`ac.actions.switchToTab("e"); return true;`);
-    (await app.page(url("player-e"), { timeout: 15000 })).close();
+    const end = Date.now() + 15000;
+    while (Date.now() < end && (await inPage("player-e", "!!document.getElementById('tone')").catch(() => false)) !== true) await sleep(200);
     await run(`ac.actions.switchToTab("d2"); return true;`);
     await until("w2 back on d2", `return st().windows.w2.activeTabIds.work === "d2" || null;`, 3000);
     const before = await run(`return { live: st().live.e ?? null, tab: st().tabs.e ? { url: st().tabs.e.url } : null };`);
@@ -372,6 +401,84 @@ try {
     const shown = await until("c shown in w1", `const w = st().windows.w1; return w.profileId === "work" && w.activeTabIds.work === "c" ? { profile: w.profileId, tab: w.activeTabIds.work } : null;`, 4000);
     await stackIs("w1", ["d", "a"]);
     return shown;
+  });
+  await rep.check("picture-in-picture-from-the-card", async () => {
+    const holder = () => run(`return C.devPictureInPictureHolder();`);
+    const state = () => run(`return M.probe("media.nowPlaying", "w1").then(JSON.parse).then((rows) => rows.find((e) => e.tabId === "v") || null);`);
+    const front = (id) => run(`return rows(${JSON.stringify(id)}).then((r) => r.find((row) => row.tabId === "v") || null);`);
+    await run(`ac.actions.switchToTab("v"); return true;`);
+    const end = Date.now() + 15000;
+    while (Date.now() < end && (await inPage("video-v", "!!document.getElementById('v')").catch(() => false)) !== true) await sleep(200);
+    await run(`ac.actions.switchToTab("d2"); return true;`);
+    await inPage("video-v", "(document.getElementById('v').play().catch(() => {}), true)");
+    await until("v reports a playing video", `return M.probe("media.nowPlaying", "w1").then(JSON.parse).then((rows) => rows.some((e) => e.tabId === "v" && e.playbackState === "playing" && e.controllable && e.hasVideo) || null);`, 10000);
+    const shownBefore = await run(`return [st().windows.w1.activeTabIds[st().windows.w1.profileId], st().windows.w2.activeTabIds.work];`);
+    const card = await until("v's card offers PiP", `return rows("w1").then((r) => { const row = r[0]; return row?.tabId === "v" && row.frames.pip ? row : null; });`, 4000);
+    const out = { label: card.labels?.pip ?? null };
+    await run(`return rows("w1").then((r) => click("w1", centre(r[0].frames.pip))).then(() => true);`);
+    out.holder = await until("v holds the PiP", `return C.devPictureInPictureHolder().then((h) => h === "v" ? h : null);`, 6000);
+    out.playingInPiP = (await state())?.playbackState;
+    const held = await until("both windows' cards say In PiP", `return Promise.all([rows("w1"), rows("w2")]).then(([a, b]) => { const x = a.find((r) => r.tabId === "v"), y = b.find((r) => r.tabId === "v"); return x?.subtitle?.includes("In PiP") && y?.subtitle?.includes("In PiP") ? [x.labels?.pip ?? null, y.labels?.pip ?? null] : null; });`, 4000);
+    out.heldLabels = held;
+    out.shownAfter = await run(`return [st().windows.w1.activeTabIds[st().windows.w1.profileId], st().windows.w2.activeTabIds.work];`);
+    await run(`return rows("w1").then((r) => click("w1", centre(r.find((row) => row.tabId === "v").frames.pip))).then(() => true);`);
+    out.afterMinimize = await until("the PiP minimized", `return C.devPictureInPictureHolder().then((h) => h === "" ? "none" : null);`, 6000);
+    await sleep(500);
+    out.playingAfterMinimize = (await state())?.playbackState;
+    await inPage("video-v", "(document.getElementById('v').pause(), true)");
+    await until("v paused", `return M.probe("media.nowPlaying", "w1").then(JSON.parse).then((rows) => rows.some((e) => e.tabId === "v" && e.playbackState === "paused") || null);`, 6000);
+    await run(`return rows("w1").then((r) => click("w1", centre(r.find((row) => row.tabId === "v").frames.pip))).then(() => true);`);
+    out.pausedHolder = await until("paused v holds the PiP", `return C.devPictureInPictureHolder().then((h) => h === "v" ? h : null);`, 6000);
+    await sleep(800);
+    out.pausedInPiP = (await state())?.playbackState;
+    await run(`return C.devPictureInPictureMinimize().then(() => true);`);
+    out.flipsBack = await until("the card offers PiP again after a minimize elsewhere", `return rows("w1").then((r) => { const row = r.find((x) => x.tabId === "v"); return row && !row.subtitle.includes("In PiP") ? (row.labels?.pip ?? "shown") : null; });`, 4000);
+    await run(`return hover("w1", [600, 300]).then(() => true);`);
+    const want = { label: "Open in Picture in Picture", holder: "v", playingInPiP: "playing", afterMinimize: "none", playingAfterMinimize: "playing", pausedHolder: "v", pausedInPiP: "paused" };
+    for (const [key, value] of Object.entries(want)) assert.equal(out[key], value, `${key} ${JSON.stringify(out)}`);
+    assert.deepEqual(out.heldLabels, ["Minimize Picture in Picture", "Minimize Picture in Picture"], JSON.stringify(out));
+    assert.deepEqual(out.shownAfter, shownBefore, "entering PiP from the card switched tabs");
+    assert.equal(out.flipsBack, "Open in Picture in Picture");
+    return out;
+  });
+  await rep.check("picture-in-picture-takeover-pauses-the-old-card", async () => {
+    const holder = () => run(`return C.devPictureInPictureHolder();`);
+    const reported = (tab) => run(`return M.probe("media.nowPlaying", "w1").then(JSON.parse).then((rows) => rows.find((e) => e.tabId === ${JSON.stringify(tab)})?.playbackState ?? null);`);
+    await run(`ac.actions.switchToTab("w"); return true;`);
+    const end = Date.now() + 15000;
+    while (Date.now() < end && (await inPage("video-w", "!!document.getElementById('v')").catch(() => false)) !== true) await sleep(200);
+    await run(`ac.actions.switchToTab("d2"); return true;`);
+    for (const [tab, name] of [["v", "video-v"], ["w", "video-w"]]) {
+      await inPage(name, "(document.getElementById('v').play().catch(() => {}), true)");
+      await until(`${tab} playing`, `return M.probe("media.nowPlaying", "w1").then(JSON.parse).then((rows) => rows.some((e) => e.tabId === ${JSON.stringify(tab)} && e.playbackState === "playing" && e.controllable && e.hasVideo && !e.removed) || null);`, 10000);
+    }
+    const pressPip = (tab) => run(`return rows("w1").then((r) => { const row = r.find((x) => x.tabId === ${JSON.stringify(tab)}); if (!row?.frames.pip) throw new Error("no PiP button on " + ${JSON.stringify(tab)} + "'s card: " + JSON.stringify(r.map((x) => [x.tabId, x.peeking]))); return click("w1", centre(row.frames.pip)); }).then(() => true);`);
+    const openFor = async (tab) => {
+      const r = await run(`return rows("w1");`);
+      const row = r.find((x) => x.tabId === tab);
+      if (row?.peeking) {
+        await run(`return rows("w1").then((r) => hover("w1", centre(r[0].frames.title))).then(() => settle(700)).then(() => true);`);
+        await until("w1 open", `return rows("w1").then((r) => r.every((row) => !row.peeking) || null);`, 2000);
+      }
+      await pressPip(tab);
+      return until(`${tab} holds the PiP`, `return C.devPictureInPictureHolder().then((h) => h === ${JSON.stringify(tab)} ? h : null);`, 6000);
+    };
+    const out = { first: await openFor("v") };
+    out.second = await openFor("w");
+    out.oldPaused = await until("v pauses when w takes the PiP", `return M.probe("media.nowPlaying", "w1").then(JSON.parse).then((rows) => rows.some((e) => e.tabId === "v" && e.playbackState === "paused") ? "paused" : null);`, 6000).catch(() => "still playing");
+    out.newPlaying = await reported("w");
+    await run(`return hover("w1", [600, 300]).then(() => true);`);
+    await sleep(1500);
+    out.order = await run(`return ids("w1");`);
+    out.order2 = await run(`return ids("w2");`);
+    await run(`return C.devPictureInPictureMinimize().then(() => true);`);
+    await until("the PiP closes", `return C.devPictureInPictureHolder().then((h) => h === "" || null);`, 6000);
+    assert.equal(out.oldPaused, "paused", JSON.stringify(out));
+    assert.equal(out.newPlaying, "playing", JSON.stringify(out));
+    assert.equal(out.order[0], "w", `the new holder isn't in front: ${JSON.stringify(out)}`);
+    assert.ok(out.order.indexOf("v") > 0, `the paused old holder came to the front: ${JSON.stringify(out)}`);
+    assert.equal(out.order2[0], "w", `w2 disagrees: ${JSON.stringify(out)}`);
+    return out;
   });
 } catch (e) {
   rep.record("run", { error: e });

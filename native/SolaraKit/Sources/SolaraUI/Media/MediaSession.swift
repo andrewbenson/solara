@@ -19,6 +19,8 @@ public struct MediaPlayerState: Decodable, Equatable, Sendable {
   public var theme: MediaThemeState
   public var profileName: String?
   public var profileColor: String?
+  public var hasVideo: Bool?
+  public var holdsPictureInPicture: Bool?
 
   public var playing: Bool { playbackState == "playing" }
   public var ended: Bool {
@@ -28,7 +30,7 @@ public struct MediaPlayerState: Decodable, Equatable, Sendable {
 
   public init(tabId: String, title: String, subtitle: String, muted: Bool, playbackState: String, position: Double, timestamp: Double,
     playbackRate: Double, duration: Double?, tracks: Bool, artwork: String?, url: String, favicon: String?, profileId: String,
-    theme: MediaThemeState, profileName: String? = nil, profileColor: String? = nil) {
+    theme: MediaThemeState, profileName: String? = nil, profileColor: String? = nil, hasVideo: Bool? = nil, holdsPictureInPicture: Bool? = nil) {
     self.tabId = tabId
     self.title = title
     self.subtitle = subtitle
@@ -46,7 +48,12 @@ public struct MediaPlayerState: Decodable, Equatable, Sendable {
     self.theme = theme
     self.profileName = profileName
     self.profileColor = profileColor
+    self.hasVideo = hasVideo
+    self.holdsPictureInPicture = holdsPictureInPicture
   }
+
+  public var inPictureInPicture: Bool { holdsPictureInPicture == true }
+  public var offersPictureInPicture: Bool { hasVideo == true || inPictureInPicture }
 
   public static func decode(_ json: String) -> MediaPlayerState? {
     guard let data = json.data(using: .utf8) else { return nil }
@@ -88,6 +95,8 @@ public enum MediaAction: Equatable, Sendable {
   case seek(Double)
   case toggleMute
   case dismiss
+  case enterPictureInPicture
+  case minimizePictureInPicture
 
   public var name: String {
     switch self {
@@ -99,6 +108,8 @@ public enum MediaAction: Equatable, Sendable {
     case .seek: "seek"
     case .toggleMute: "toggleMute"
     case .dismiss: "dismiss"
+    case .enterPictureInPicture: "enterPictureInPicture"
+    case .minimizePictureInPicture: "minimizePictureInPicture"
     }
   }
 

@@ -13,6 +13,8 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
   public static let gap: CGFloat = 8
   static let dotSize: CGFloat = 8
   public static let closeTooltip = "Close and Pause"
+  public static let enterTooltip = "Open in Picture in Picture"
+  public static let minimizeTooltip = "Minimize Picture in Picture"
   static let dotGap: CGFloat = 4
 
   public var onAction: ((MediaAction) -> Void)?
@@ -42,6 +44,7 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
   private let previous = SidebarIconButton()
   private let play = SidebarIconButton()
   private let next = SidebarIconButton()
+  private let pip = SidebarIconButton()
   private let seek = SeekBarView()
   private let muteCorner = MediaCircleButton()
   private let closeCorner = MediaCircleButton()
@@ -80,13 +83,17 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
     let click = NSClickGestureRecognizer(target: self, action: #selector(textClicked))
     textHit.addGestureRecognizer(click)
     addSubview(textHit)
-    for b in [previous, play, next] {
+    for b in [previous, play, next, pip] {
       b.radius = 6
       addSubview(b)
     }
     previous.onPress = { [weak self] in self?.transport(-1) }
     play.onPress = { [weak self] in self?.onAction?(.toggle) }
     next.onPress = { [weak self] in self?.transport(1) }
+    pip.onPress = { [weak self] in
+      guard let self, let state = self.state else { return }
+      self.onAction?(state.inPictureInPicture ? .minimizePictureInPicture : .enterPictureInPicture)
+    }
     seek.barHeight = 3
     seek.onSeek = { [weak self] p in
       guard let self, let duration = self.state?.duration else { return }
@@ -181,12 +188,15 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
     mutedIcon.isHidden = !next.muted
     let tracks = next.tracks
     let skip = MediaFormat.skipSeconds
-    for b in [previous, play, self.next] {
+    for b in [previous, play, self.next, pip] {
       b.hoverFill = palette.toolbarHover
       b.pressedFill = palette.toolbarPressed
     }
     previous.set(tracks ? "backward.fill" : "gobackward.\(skip)", size: tracks ? 10 : 12, weight: .regular, color: card.icon, tooltip: tracks ? "Play Previous Track" : "Skip back \(skip) seconds")
     play.set(next.ended ? "arrow.counterclockwise" : next.playing ? "pause.fill" : "play.fill", size: next.ended ? 12 : 13, weight: .regular, color: card.icon, tooltip: next.ended ? "Replay" : next.playing ? "Pause" : "Play")
+    pip.set(next.inPictureInPicture ? "pip.exit" : "pip.enter", size: 12, weight: .regular, color: next.inPictureInPicture ? palette.accent : card.icon,
+      tooltip: next.inPictureInPicture ? Self.minimizeTooltip : Self.enterTooltip)
+    pip.isHidden = !next.offersPictureInPicture
     self.next.set(tracks ? "forward.fill" : "goforward.\(skip)", size: tracks ? 10 : 12, weight: .regular, color: card.icon, tooltip: tracks ? "Play Next Track" : "Skip ahead \(skip) seconds")
     seek.colors = (palette.tokens.track, palette.tokens.fill, palette.tokens.hoverFill)
     seek.seekable = next.hasDuration
@@ -234,7 +244,7 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
   public func setPeeking(_ next: Bool, duration: TimeInterval) {
     guard next != peeking else { return }
     peeking = next
-    let views: [NSView] = [artView, title, mutedIcon, profileDot, subtitle, textHit, previous, play, self.next, seek]
+    let views: [NSView] = [artView, title, mutedIcon, profileDot, subtitle, textHit, previous, play, self.next, pip, seek]
     NSAnimationContext.runAnimationGroup { ctx in
       ctx.duration = duration
       for v in views { v.animator().alphaValue = next ? 0 : 1 }
@@ -400,7 +410,9 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
     play.frame = CGRect(x: pad - 4 + 24, y: row, width: 24, height: 24)
     next.frame = CGRect(x: pad - 4 + 48, y: row, width: 24, height: 24)
     let seekX = pad - 4 + 72 + 6
-    seek.frame = CGRect(x: seekX, y: row + 6, width: max(0, width - pad - seekX), height: 12)
+    let pipRoom: CGFloat = pip.isHidden ? 0 : 24 + 2
+    pip.frame = CGRect(x: width - pad + 4 - 24, y: row, width: 24, height: 24)
+    seek.frame = CGRect(x: seekX, y: row + 6, width: max(0, width - pad - seekX - pipRoom), height: 12)
     let size = Self.cornerSize, overhang = Self.cornerOverhang
     closeCorner.frame = CGRect(x: width + overhang - size, y: -overhang, width: size, height: size)
     muteCorner.frame = CGRect(x: width + overhang - size - Self.cornerGap - size, y: -overhang, width: size, height: size)
@@ -437,12 +449,14 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
 #if SOLARA_PROBES
   public var controlLabels: [String: String] {
     ["play": play.toolTip ?? "", "previous": previous.toolTip ?? "", "next": next.toolTip ?? "",
-      "art": artView.toolTip ?? "", "close": closeCorner.toolTip ?? "", "mute": muteCorner.toolTip ?? ""]
+      "art": artView.toolTip ?? "", "close": closeCorner.toolTip ?? "", "mute": muteCorner.toolTip ?? "", "pip": pip.isHidden ? "" : pip.toolTip ?? ""]
   }
 #endif
 
   public var controlFrames: [String: CGRect] {
-    ["play": play.frame, "art": artView.frame, "seek": seek.frame, "close": closeCorner.frame, "mute": muteCorner.frame, "title": textHit.frame]
+    var frames = ["play": play.frame, "art": artView.frame, "seek": seek.frame, "close": closeCorner.frame, "mute": muteCorner.frame, "title": textHit.frame]
+    if !pip.isHidden { frames["pip"] = pip.frame }
+    return frames
   }
   public var cornersShown: Bool { !closeCorner.isHidden }
   public var tabId: String? { state?.tabId }
@@ -450,8 +464,10 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
   public var profileDotShown: Bool { !profileDot.isHidden }
 
   static func subtitleText(_ state: MediaPlayerState) -> String {
-    let base = state.profileName ?? state.subtitle
-    return state.ended ? "\(base) · Ended" : base
+    var text = state.profileName ?? state.subtitle
+    if state.inPictureInPicture { text += " · In PiP" }
+    if state.ended { text += " · Ended" }
+    return text
   }
   #if DEBUG
   var plateColor: NSColor? { plate.backgroundColor.flatMap { NSColor(cgColor: $0) } }

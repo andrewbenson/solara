@@ -99,6 +99,8 @@ public final class NowPlayingStore {
   public static let didChange = Notification.Name("SolaraNowPlayingChanged")
 
   public private(set) var entries: [String: Entry] = [:]
+  private var heldOrder: [String: Double] = [:]
+  public static let holdOrderMs: Double = 3000
   var now: () -> Double = MediaClock.nowMs
 
   public init() {}
@@ -113,11 +115,18 @@ public final class NowPlayingStore {
     entry.report = report
     let startedPlaying = report.controllable && report.playing && !(before.map { $0.report.controllable && $0.report.playing } ?? false)
     let pausedNow = before?.report.playing == true && report.playbackState == "paused"
-    if startedPlaying || pausedNow { entry.touchedAt = now() }
+    let held = pausedNow && heldOrder.removeValue(forKey: tabId).map { $0 > now() } == true
+    if startedPlaying { heldOrder[tabId] = nil }
+    if startedPlaying || (pausedNow && !held) { entry.touchedAt = now() }
     if startedPlaying { entry.removed = false }
     guard entry != before else { return }
     entries[tabId] = entry
     if entry.shown != before?.shown { changed() }
+  }
+
+  public func holdOrder(_ tabId: String) {
+    guard entries[tabId] != nil else { return }
+    heldOrder[tabId] = now() + Self.holdOrderMs
   }
 
   public func touch(_ tabId: String) {

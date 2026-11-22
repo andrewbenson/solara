@@ -11,6 +11,7 @@ public struct CreateWindowOptions: Sendable {
   public var linkPointer: [Double]?
   public var background: Bool?
   public var chromeWindow: String?
+  public var newTabCommand: Bool?
 
   public init() {}
 }
@@ -108,7 +109,11 @@ extension Session {
       var t = NewTabOptions()
       t.url = o.url
       t.adoptId = o.adoptId
-      next = withNewTab(next, id, t).0
+      let made = withNewTab(next, id, t)
+      next = made.0
+      if o.newTabCommand == true, !small, !truthy(o.url), !truthy(o.adoptId), o.background != true {
+        next = withNewTabPlaceholder(next, made.1)
+      }
     }
     let first = next.windows[id]!.tabIds[0]
     let shown = next.windows[id]!.activeTabIds[next.tabs[first]!.profileId] ?? first
@@ -127,12 +132,12 @@ extension Session {
     let before = state
     let s = returnSharedPages(before, id)
     guard let w = s.windows[id] else { return }
-    let tabs = w.tabIds.compactMap { s.tabs[$0] }.filter { !s.inPinnedContainer($0.id) && !sharedElsewhere(s, $0) }
+    let tabs = w.tabIds.compactMap { s.tabs[$0] }.filter { !s.inPinnedContainer($0.id) && !sharedElsewhere(s, $0) && $0.newTabPlaceholder != true }
     let tabIds = tabs.map(\.id)
     let small = w.isSmall
     var closedWindows = s.closedWindows
     if !w.incognito && !small && tabs.contains(where: { !$0.url.isEmpty }) {
-      let active = Set(w.activeTabIds.values)
+      let active = Set(activeTabIdsWithoutPlaceholders(s, w, keeping: tabIds).values)
       let entryTabs = tabs.map { t -> ClosedWindowTab in
         let tabId: String? = hasLoadedPage(t) ? t.id : pendingRestore(t)
         return ClosedWindowTab(snapshot: snapshotTab(t), active: active.contains(t.id), tabId: tabId, shownAt: shownAt(t))

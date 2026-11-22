@@ -101,7 +101,7 @@ extension Session {
     func profileOk(_ p: String) -> Bool { profilesData[p] != nil || Ids.isIncognitoProfile(p) }
     var tabs = JSMap<Tab>()
     for t in data.tabs ?? [] {
-      if rawWindows[t.windowId] == nil || !profileOk(t.profileId) { continue }
+      if t.newTabPlaceholder == true || rawWindows[t.windowId] == nil || !profileOk(t.profileId) { continue }
       var kept = t
       kept.adoptId = nil
       kept.pageIn = nil

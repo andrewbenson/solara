@@ -566,6 +566,7 @@ final class RailNewTabView: SidebarRowView {
   private let plus = SymbolView()
 
   override var accessibleTitle: String? { "New Tab" }
+  override func accessibilityValue() -> Any? { NSNumber(value: context?.newTabSelected == true) }
 
   override init(frame: NSRect) {
     super.init(frame: frame)
@@ -589,7 +590,7 @@ final class RailNewTabView: SidebarRowView {
     guard let context else { return }
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    plate.backgroundColor = (pressed ? context.palette.pressed : hovered ? context.palette.hover : .clear).cgColor
+    plate.backgroundColor = (context.newTabSelected ? context.palette.selected : pressed ? context.palette.pressed : hovered ? context.palette.hover : .clear).cgColor
     CATransaction.commit()
   }
 

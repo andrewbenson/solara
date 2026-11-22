@@ -206,13 +206,15 @@ public struct PooledPageSpec: Equatable {
   public var url: String?
   public var adoptId: String?
   public var temporarySource: String?
+  public var startsHidden: Bool
 
-  public init(engine: String, profile: String, url: String?, adoptId: String?, temporarySource: String?) {
+  public init(engine: String, profile: String, url: String?, adoptId: String?, temporarySource: String?, startsHidden: Bool = false) {
     self.engine = engine
     self.profile = profile
     self.url = url
     self.adoptId = adoptId
     self.temporarySource = temporarySource
+    self.startsHidden = startsHidden
   }
 }
 
@@ -230,6 +232,7 @@ public final class PooledPage {
     events = PooledPageEvents(onEvent)
     if spec.engine == "webkit" {
       let tab = WebKitTab(frame: .zero)
+      if spec.startsHidden { tab.visible = false }
       tab.profile = spec.profile
       tab.initialURL = spec.url
       tab.adoptId = spec.adoptId
@@ -237,6 +240,7 @@ public final class PooledPage {
       view = tab
     } else {
       let web = SolaraCoreWebView(frame: .zero)
+      if spec.startsHidden { web.visible = false }
       web.owned = true
       web.profile = spec.profile
       web.initialURL = spec.url

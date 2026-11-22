@@ -85,6 +85,7 @@ extern NSNotificationName const SolaraCorePictureInPictureDidChangeNotification;
 - (void)reloadIgnoringCache;
 - (void)stopLoading;
 - (void)focusPage;
+- (void)activateInChrome;
 - (void)setMuted:(BOOL)muted;
 - (void)setZoomFactor:(double)factor;
 - (void)zoomStep:(NSInteger)direction NS_SWIFT_NAME(zoomStep(_:));

@@ -76,7 +76,7 @@ public struct StripQuery {
     var out: [String] = []
     for id in state.viewTabIds(windowId, profileId) {
       guard let t = state.tabs[id] else { continue }
-      if !t.pinned && opensBar && session.isEmptyCardTab(state, t) { continue }
+      if t.newTabPlaceholder == true || (!t.pinned && opensBar && session.isUnopenedEmptyTab(state, t)) { continue }
       if let folder = tileFolderOf(t) {
         if seen.insert("tf:\(folder.id)").inserted {
           dock.append("tilefolder:\(folder.id):\(SolaraStore.folderMembers(state, windowId, folder.id).joined(separator: ","))")

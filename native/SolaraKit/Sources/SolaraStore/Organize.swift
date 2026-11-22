@@ -513,7 +513,8 @@ extension Session {
     let shown = w.activeTabIds[w.profileId]
     let out = w.tabIds.filter { id in
       guard let t = s.tabs[id] else { return false }
-      return t.windowId == w.id && t.url.isEmpty && t.navigation == nil && !truthy(t.adoptId) && !t.pinned && id != shown && !selected.contains(id)
+      let unopened = t.url.isEmpty && t.navigation == nil && !truthy(t.adoptId) && !t.pinned
+      return t.windowId == w.id && (t.newTabPlaceholder == true || unopened) && id != shown && !selected.contains(id)
     }
     return out.count >= w.tabIds.count ? Array(out.prefix(w.tabIds.count - 1)) : out
   }

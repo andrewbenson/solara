@@ -31,8 +31,12 @@ public struct Command: Sendable, Equatable {
   public var isDurable: Bool { Command.durable.contains(name) }
 
   public static let known: Set<String> = [
-    "pageReport", "registerKeepAliveRuntime", "importWorkspace", "setWindowLayout", "setSidebarPosition", "setWindowSidebar", "newTab", "closeTab", "closeTabs", "activate", "activateNumberedTab", "handOffPin", "activateIndex", "cycle", "navigate", "updateTab", "navigated", "faviconChanged",
-    "closeCommandTabs", "reopenCommandClosed", "restoreCommandWindow", "duplicateTab", "togglePin", "moveTab", "moveTabBy", "createWindow", "closeWindow", "restoreClosingWindow", "forgetClosedWindow", "setWindowKeptOnClose", "setWindowFrame", "setWindowFullScreen", "toggleSidebar",
+    "pageReport", "registerKeepAliveRuntime", "importWorkspace", "setWindowLayout", "setSidebarPosition",
+    "setWindowSidebar", "newTab", "settleNewTab", "closeTab", "closeTabs", "activate", "activateNumberedTab",
+    "handOffPin", "activateIndex", "cycle", "navigate", "updateTab", "navigated", "faviconChanged",
+    "closeCommandTabs", "reopenCommandClosed", "restoreCommandWindow", "duplicateTab", "togglePin", "moveTab",
+    "moveTabBy", "createWindow", "closeWindow", "restoreClosingWindow", "forgetClosedWindow", "setWindowKeptOnClose",
+    "setWindowFrame", "setWindowFullScreen", "toggleSidebar",
     "switchProfile", "moveTabsToWindow", "moveTabToProfile", "mergeAllWindows", "reopenClosed", "reopenClosedTab", "reopenClosedWindow",
     "restoreClosed", "createProfile", "updateProfile", "deleteProfile", "reorderProfiles", "setDefaultProfile", "profileDataDeleted",
     "createGroup", "updateGroup", "addTabsToGroup", "removeTabsFromGroup", "ungroup", "newNestedGroup", "closeGroup", "deleteGroup",
@@ -171,6 +175,7 @@ extension Session {
       result = omniboxSwitch(try a.requireString(0), try a.requireString(1), try a.requireString(2), try a.requireString(3), disposition)
     case "newTab":
       result = .string(newTab(try a.requireString(0), newTabOptions(a[1]?.object)))
+    case "settleNewTab": settleNewTab(try a.requireString(0))
     case "closeTab": closeTab(try a.requireString(0), successor: a.string(1).flatMap { $0.isEmpty ? nil : $0 })
     case "closeCommandTabs": closeCommandTabs(a.strings(0))
     case "reopenCommandClosed": reopenCommandClosed(a.string(0))
@@ -206,6 +211,7 @@ extension Session {
       options.linkPointer = o["linkPointer"]?.array?.compactMap(\.number)
       options.background = o["background"]?.truthy
       options.chromeWindow = optionalString(o, "chromeWindow")
+      options.newTabCommand = o["newTabCommand"]?.truthy
       result = .string(createWindow(options))
     case "closeWindow": closeWindow(try a.requireString(0))
     case "restoreClosingWindow":

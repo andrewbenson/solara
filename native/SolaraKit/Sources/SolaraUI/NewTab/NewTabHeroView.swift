@@ -34,14 +34,11 @@ public final class NewTabHeroView: NSView {
       guard onboarding != oldValue else { return }
       rebuildContent()
       guard !onboarding else { return }
-      DispatchQueue.main.async { [weak self] in
-        guard let self, self.window != nil else { return }
-        self.layoutSubtreeIfNeeded()
-        self.model?.focusOnce()
-      }
+      focusWhenAttached()
     }
   }
   public var under: CGFloat = 0 { didSet { if under != oldValue { needsLayout = true } } }
+  public var focusAllowed: () -> Bool = { true }
   public var panelOpen = false { didSet { model?.panelOpened(panelOpen) } }
   public var playIntro = false {
     didSet {
@@ -87,6 +84,10 @@ public final class NewTabHeroView: NSView {
 
   public func configure(_ next: NewTabIdentity) {
     guard identity != next else { return }
+    #if SOLARA_PROBES
+    let timing = NewTabMainThreadTiming.begin("hero.configure", windowId: next.windowId, tabId: next.tabId)
+    defer { NewTabMainThreadTiming.end(timing) }
+    #endif
     model?.save()
     identity = next
     let made = HeroBarModel(
@@ -97,6 +98,7 @@ public final class NewTabHeroView: NSView {
     model = made
     rebuildContent()
     watchSources()
+    focusWhenAttached()
   }
 
   public var barFrame: CGRect { surface.glass.frame }
@@ -138,14 +140,32 @@ public final class NewTabHeroView: NSView {
     }
     decideIntro()
     needsLayout = true
-    DispatchQueue.main.async { [weak self] in
-      guard let self, self.window != nil else { return }
-      self.layoutSubtreeIfNeeded()
-      self.model?.focusOnce()
-    }
+    focusWhenAttached()
+  }
+
+  private func focusWhenAttached() {
+    guard window != nil, !onboarding, !panelOpen, let model else { return }
+    if let field = (model.field as? HeroFieldCoordinator)?.field { focusAttachedField(field) }
+  }
+
+  func focusAttachedField(_ field: HeroTextField) {
+    guard focusAllowed(), let window, field.window === window, !onboarding, !panelOpen,
+      let model, field.model === model, (model.field as? HeroFieldCoordinator)?.field === field,
+      !anotherFieldIsEditing(in: window) else { return }
+    model.focusOnce()
+  }
+
+  private func anotherFieldIsEditing(in window: NSWindow) -> Bool {
+    guard let responder = window.firstResponder as? NSView, !responder.isDescendant(of: self) else { return false }
+    if let editor = responder as? NSText, let owner = editor.delegate as? NSView { return !owner.isDescendant(of: self) }
+    return responder is NSText || responder is NSTextField
   }
 
   public override func layout() {
+    #if SOLARA_PROBES
+    let timing = NewTabMainThreadTiming.begin("hero.layout", windowId: identity?.windowId, tabId: identity?.tabId)
+    defer { NewTabMainThreadTiming.end(timing) }
+    #endif
     super.layout()
     let scale = window?.backingScaleFactor ?? 2
     let showsHeading = incognito && !onboarding

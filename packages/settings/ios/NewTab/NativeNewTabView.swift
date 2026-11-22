@@ -57,6 +57,11 @@ final class NativeNewTabView: ExpoView {
     hero.bangStore = NativeBangs.shared
     hero.favicons = NewTabNetwork.favicons
     hero.events = makeEvents()
+    hero.focusAllowed = { [weak self] in
+      guard let self else { return false }
+      guard NativeStoreHandle.ownsWorkspace, let state = NativeStoreHandle.store?.state else { return true }
+      return state.activeTabId(self.windowId) == self.tabId
+    }
     hero.onBarLayout = { [weak self] height, heading in self?.onBarLayout(["height": height, "headingHeight": heading]) }
     addSubview(hero)
   }
@@ -83,6 +88,12 @@ final class NativeNewTabView: ExpoView {
 
   private func makeEvents() -> HeroBarEvents {
     var e = HeroBarEvents()
+    e.edited = { [weak self] text in
+      guard let self, !text.isEmpty, let tabId = self.hero.model?.tabId,
+        NativeStoreHandle.ownsWorkspace, let store = NativeStoreHandle.store,
+        store.state.tabs[tabId]?.newTabPlaceholder == true else { return }
+      _ = try? store.dispatch(Command("settleNewTab", [.string(tabId)]), origin: .native)
+    }
     e.open = { [weak self] url, disposition in self?.onOpen(["url": url, "disposition": disposition.rawValue, "nativeActions": false]) }
     e.switchTo = { [weak self] tab, url, disposition in self?.onSwitch(["tabId": tab, "url": url, "disposition": disposition.rawValue, "nativeActions": false]) }
     e.runAction = { [weak self] id in self?.onAction(["id": id, "nativeActions": false]) }

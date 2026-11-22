@@ -13,10 +13,15 @@ export const NEW_TAB_BAR_POLICY = {
 export const newTabOpensBar = (s: Pick<BrowserState, "settings">) => s.settings.newTabOpens === "commandBar";
 
 export function isEmptyCardTab(s: Pick<BrowserState, "splits">, tab: Tab | undefined): tab is Tab {
+  const emptyNavigation = !tab?.navigation || (tab.navigation.url === "about:blank" && tab.navigation.userInitiated !== true);
+  return !!tab && !tab.pinned && !tab.url && emptyNavigation && !tab.adoptId && !splitOf(s as BrowserState, tab.id);
+}
+
+export function isUnopenedEmptyTab(s: Pick<BrowserState, "splits">, tab: Tab | undefined): tab is Tab {
   return !!tab && !tab.pinned && !tab.url && !tab.navigation && !tab.adoptId && !splitOf(s as BrowserState, tab.id);
 }
 
-export const hiddenEmptyCard = (s: BrowserState, tab: Tab) => !tab.pinned && newTabOpensBar(s) && isEmptyCardTab(s, tab);
+export const hiddenEmptyCard = (s: BrowserState, tab: Tab) => tab.newTabPlaceholder === true || (!tab.pinned && newTabOpensBar(s) && isUnopenedEmptyTab(s, tab));
 
 let lastTabKeepsWindow = false;
 export const setLastTabKeepsWindow = (keeps: boolean) => {

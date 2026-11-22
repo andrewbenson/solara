@@ -189,7 +189,7 @@ public struct SidebarLayout {
       return entries.isEmpty ? M.groupPad : Self.headGap(entries.first) + entriesHeight(entries) + M.groupPad
     }
     guard let kept = query.keptEntry(windowId: input.windowId, profileId: input.profileId, entries) else { return 0 }
-    return Self.headGap(kept) + entryHeight(kept) + M.groupPad
+    return Self.headGap(kept) + entryHeight(kept) + M.groupPad + (entries.contains { $0.hasPrefix("newTab:") } ? rowPitch : 0)
   }
 
   public func layout(_ entries: SidebarEntries) -> SidebarPageLayout {
@@ -245,13 +245,25 @@ public struct SidebarLayout {
     let listHeightWithoutNewTab = y + listHeight(entries.list, newTab: false)
     let listForDock = out.fixedHeight + listHeightWithoutNewTab + M.edgeInset
     let playerHeight = input.rail ? 0 : input.playerHeight
-    out.docked = !input.newTabAtTop && input.height > 0 && listForDock + playerHeight + rowPitch + M.dockSlack > input.height
+    let placeholder = query.newTabPlaceholder(windowId: input.windowId, profileId: input.profileId)
+    let belowCurrent = placeholder != nil && query.state.settings.string("newTabPosition") == "nextToCurrent"
+    let groupedPlaceholder = !input.rail && query.newTabPlaceholderGroup(windowId: input.windowId, profileId: input.profileId) != nil
+    out.docked = !belowCurrent && !input.newTabAtTop && input.height > 0 && listForDock + playerHeight + rowPitch + M.dockSlack > input.height
     let inlineNewTab = !out.docked
 
     var listItems: [(kind: String, entry: String?)] = []
-    if input.newTabAtTop && inlineNewTab { listItems.append(("newTab", nil)) }
-    for entry in entries.list { listItems.append(("entry", entry)) }
-    if !input.newTabAtTop && inlineNewTab { listItems.append(("newTab", nil)) }
+    if belowCurrent {
+      for entry in entries.list { listItems.append(("entry", entry)) }
+      if !groupedPlaceholder {
+        let previous = query.newTabPlaceholderPredecessor(windowId: input.windowId, profileId: input.profileId)
+        let at = previous.flatMap { id in entries.list.firstIndex { query.holdsTab($0, id) } }.map { $0 + 1 } ?? 0
+        listItems.insert(("newTab", nil), at: at)
+      }
+    } else {
+      if input.newTabAtTop && inlineNewTab { listItems.append(("newTab", nil)) }
+      for entry in entries.list { listItems.append(("entry", entry)) }
+      if !input.newTabAtTop && inlineNewTab { listItems.append(("newTab", nil)) }
+    }
     var first = true
     for item in listItems {
       if !first { y += rowGap }
@@ -311,6 +323,11 @@ public struct SidebarLayout {
     var y = top
     for (i, entry) in entries.enumerated() {
       if i > 0 { y += rowGap }
+      if entry.hasPrefix("newTab:") {
+        items.append(SidebarItem(kind: .newTab, frame: CGRect(x: x, y: y, width: width, height: rowHeight), region: .scroll, groups: groups, section: section))
+        y += rowHeight
+        continue
+      }
       if entry.hasPrefix(SidebarLive.prefix) {
         if input.rail {
           let folderId = String(entry.dropFirst(SidebarLive.prefix.count))
@@ -349,7 +366,9 @@ public struct SidebarLayout {
     let members = query.groupEntries(groupId)
     let shown: [String]
     if query.state.groups[groupId]?.collapsed == true {
-      shown = query.keptEntry(windowId: input.windowId, profileId: input.profileId, members).map { [$0] } ?? []
+      shown = query.keptEntry(windowId: input.windowId, profileId: input.profileId, members).map { kept in
+        [kept] + members.filter { $0.hasPrefix("newTab:") }
+      } ?? []
     } else {
       shown = members
     }

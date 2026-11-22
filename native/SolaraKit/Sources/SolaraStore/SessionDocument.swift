@@ -48,6 +48,7 @@ public func persistedTabJSON(_ t: Tab) -> JSONValue {
   tab.adoptId = nil
   tab.wakeAdoptId = nil
   tab.pageIn = nil
+  tab.newTabPlaceholder = nil
   if held { tab.unloaded = true }
   var json = tab.json
   json.removeValue(forKey: "navigation")
@@ -58,7 +59,8 @@ public func persistedTabJSON(_ t: Tab) -> JSONValue {
 extension Session {
   func launchTab(_ s: BrowserState, _ windowId: String?) -> JSONValue {
     guard let windowId, let w = s.windows[windowId], !w.incognito, !w.isSmall, s.settings["restoreSession"] != .bool(false) || w.keptOnClose == true else { return .null }
-    guard let t = s.tabs[w.activeTabIds[w.profileId] ?? ""], t.windowId == w.id, t.profileId == w.profileId else { return .null }
+    let kept = w.tabIds.filter { s.tabs[$0]?.newTabPlaceholder != true }
+    guard let t = s.tabs[activeTabIdsWithoutPlaceholders(s, w, keeping: kept)[w.profileId] ?? ""], t.windowId == w.id, t.profileId == w.profileId else { return .null }
     let lower = t.url.lowercased()
     guard lower.hasPrefix("http://") || lower.hasPrefix("https://") else { return .null }
     if truthy(t.wakeAdoptId) || tabEngine(s, t.id) != "chromium" { return .null }
@@ -67,10 +69,15 @@ extension Session {
 
   public func sessionDocument(_ s: BrowserState) -> SessionDocument {
     var windows = JSMap<JSONValue>()
-    for w in s.windows.values where !w.incognito && !w.isSmall { windows[w.id] = .object(w.persistedJSON) }
-    let focusedWindowId = s.ui.focusOrder.first { windows[$0] != nil }
+    for w in s.windows.values where !w.incognito && !w.isSmall {
+      var saved = w
+      saved.tabIds = w.tabIds.filter { s.tabs[$0]?.newTabPlaceholder != true }
+      saved.activeTabIds = activeTabIdsWithoutPlaceholders(s, w, keeping: saved.tabIds)
+      windows[w.id] = .object(saved.persistedJSON)
+    }
+    let focusedWindowId = s.ui.focusOrder.first { id in windows[id]?["tabIds"]?.array?.isEmpty == false }
     var tabs = JSMap<JSONValue>()
-    for t in s.tabs.values where windows[t.windowId] != nil && !isPeekTab(s, t.id) { tabs[t.id] = persistedTabJSON(t) }
+    for t in s.tabs.values where windows[t.windowId] != nil && !isPeekTab(s, t.id) && t.newTabPlaceholder != true { tabs[t.id] = persistedTabJSON(t) }
     func publicTable<V>(_ table: Table<V>, _ encode: (V) -> JSONValue) -> JSMap<JSONValue> {
       var out = JSMap<JSONValue>()
       for (profileId, value) in table where publicProfile(profileId) { out[profileId] = encode(value) }

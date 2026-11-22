@@ -48,6 +48,7 @@ public final class SidebarView: NSView {
   private var viewportSize = CGSize.zero
   private var placing = false
   private var pendingPlacement = false
+  private var openingTabs = Set<String>()
   private var logicalElements: [String: SidebarLogicalElement] = [:]
   private var logicalItems: [String: SidebarItem] = [:]
   private var retirementPictures: [UUID: SidebarRetirementPicture] = [:]
@@ -148,6 +149,7 @@ public final class SidebarView: NSView {
     next.virtualizesRows = virtualizesRows
     next.send = { [weak self] action in self?.onAction(action) }
     let previous = context
+    openingTabs = NewTabOpening.settled(previous?.state, state)
     let moved = previous != nil && previous?.activeId != next.activeId
     if moved, let window { TabNumberHintFeed.shared.cancelOnSelection(in: window) }
     context = next
@@ -179,6 +181,7 @@ public final class SidebarView: NSView {
       let had = Set(was.tabIds)
       target = window.tabIds.last { !had.contains($0) && next.state.tabs[$0]?.openerId != nil && $0 != active }
     }
+    if target == nil, let active, NewTabOpening.settled(previous.state, next.state).contains(active) { target = active }
     if let target { reveal(target, next) }
   }
 
@@ -190,6 +193,7 @@ public final class SidebarView: NSView {
 
   private func scrollItem(_ tabId: String, _ context: SidebarContext) -> SidebarItem? {
     let shown = pageLayout.items.filter { $0.region == .scroll }
+    if context.state.tabs[tabId]?.newTabPlaceholder == true { return shown.first { $0.kind == .newTab } }
     return shown.first { $0.kind == .tab(tabId) }
       ?? shown.first { if case .split(let id) = $0.kind { context.query.holdsTab("s:\(id)", tabId) } else { false } }
       ?? shown.last { if case .groupHeader(let id) = $0.kind { context.query.holdsTab("g:\(id)", tabId) } else { false } }
@@ -262,6 +266,11 @@ public final class SidebarView: NSView {
     if key.hasPrefix("divider|") { return "divider" }
     if key.hasPrefix("upsell|") { return "upsell" }
     return key
+  }
+
+  func logicalValue(_ key: String) -> Bool? {
+    guard let context, key == "newTab" else { return nil }
+    return context.newTabSelected
   }
 
   func logicalLabel(_ key: String) -> String? {
@@ -626,6 +635,7 @@ public final class SidebarView: NSView {
       if let row = view as? SidebarRowView {
         row.update(item, context)
         row.hovered = hoveredKey == item.key
+        if animated, case .tab(let id) = item.kind, openingTabs.remove(id) != nil { NewTabOpening.apply(row, horizontal: false) }
       } else if let box = view as? GroupBoxView {
         box.update(item, context)
         box.show(hoveredGroup == groupId(item.kind), animated: false)

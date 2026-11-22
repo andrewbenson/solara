@@ -13,7 +13,7 @@ public struct CommandContext: Sendable {
     activeTab = active.flatMap { JSKey($0.windowId) == JSKey(windowId) ? $0 : nil }
     viewTabIds = window.map { w in w.tabIds.filter { state.tabs[$0].map { JSKey($0.profileId) == JSKey(w.profileId) } ?? false } } ?? []
     canTidyPins = session.tidyPlan(state, windowId, nil) != nil
-    hiddenEmptyCard = state.settings.string("newTabOpens") == "commandBar" && activeTab.map { tab in
+    hiddenEmptyCard = activeTab?.newTabPlaceholder == true || state.settings.string("newTabOpens") == "commandBar" && activeTab.map { tab in
       !tab.pinned && tab.url.isEmpty && tab.navigation == nil && (tab.adoptId ?? "").isEmpty
         && !state.splits.values.contains { $0.tabIds.contains { JSKey($0) == JSKey(tab.id) } }
     } == true

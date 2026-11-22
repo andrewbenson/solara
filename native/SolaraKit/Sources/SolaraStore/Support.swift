@@ -226,6 +226,7 @@ extension Session {
   func typedNavigationEngine(_ s: BrowserState, _ tab: Tab, _ url: String) -> String {
     if chromiumOnly(url) { return "chromium" }
     if let chosen = chosenEngine(s, url) { return chosen }
+    if tab.url.isEmpty, tab.navigation?.url == "about:blank", tab.navigation?.userInitiated != true { return defaultEngine(s) }
     return !tab.url.isEmpty || tab.navigation != nil ? tabEngine(s, tab.id) : defaultEngine(s)
   }
 }

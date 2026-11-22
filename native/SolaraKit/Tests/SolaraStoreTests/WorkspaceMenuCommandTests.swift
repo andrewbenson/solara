@@ -127,10 +127,102 @@ import Testing
 
   @Test func newTabWithoutAWindowCreatesAWindow() throws {
     let store = makeStore()
-    try run("newTab", windowId: nil, store: store)
+    let plan = try run("newTab", windowId: nil, store: store)
+    #expect(plan.commands == [Command("createWindow", [["newTabCommand": true]])])
     #expect(store.state.windowOrder.count == 1)
     let window = try #require(store.state.windows[store.state.windowOrder[0]])
     #expect(window.tabIds.count == 1)
+    #expect(store.state.tabs[window.tabIds[0]]?.newTabPlaceholder == true)
+  }
+
+  @Test(arguments: [false, true]) func closingAnUntouchedPlaceholderClosesItsTabWithEitherPresentation(panelOpen: Bool) throws {
+    var start = fixture()
+    var shown = start.tabs["b"]!
+    shown.lastActiveAt = 10
+    start.tabs["b"] = shown
+    let store = makeStore(start)
+    try run("newTab", store: store)
+    let placeholder = try #require(store.state.activeTabId("w"))
+    if panelOpen { try store.dispatch(Command("openPanel", ["w", "", ["kind": "into", "tabId": .string(placeholder)]])) }
+    let before = store.state
+    #expect(!WorkspaceClosePolicy.removedPlaceholder([placeholder], before: before, after: before))
+    var unloaded = before
+    unloaded.tabs[placeholder]!.unloaded = true
+    #expect(!WorkspaceClosePolicy.removedPlaceholder([placeholder], before: before, after: unloaded))
+    let plan = try #require(WorkspaceMenuCommand.plan("closeTab", windowId: "w", state: store.state))
+    #expect(plan.commands.isEmpty)
+    #expect(plan.close == .tabs(windowId: "w", tabIds: [placeholder]))
+    try store.dispatch(Command("closeCommandTabs", [[.string(placeholder)]]))
+    #expect(store.state.tabs[placeholder] == nil)
+    #expect(WorkspaceClosePolicy.removedPlaceholder([placeholder], before: before, after: store.state))
+    #expect(!WorkspaceClosePolicy.removedPlaceholder(["b"], before: before, after: store.state))
+    #expect(store.state.activeTabId("w") == "b")
+    #expect(store.state.windowUi["w"]?.json["panel"]?["open"]?.truthy != true)
+    #expect(store.state.closedTabs.isEmpty)
+  }
+
+  @Test func commandBarNewTabTargetsAnUntouchedPlaceholder() throws {
+    let store = makeStore(fixture())
+    try run("newTab", store: store)
+    let placeholder = try #require(store.state.activeTabId("w"))
+    #expect(store.state.tabs[placeholder]?.newTabPlaceholder == true)
+    try store.dispatch(settingsCommand(["newTabOpens": "commandBar"]))
+    let plan = try #require(WorkspaceMenuCommand.plan("newTab", windowId: "w", state: store.state))
+    #expect(plan.commands == [Command("openPanel", ["w", "", ["kind": "into", "tabId": .string(placeholder)]])])
+  }
+
+  @Test func repeatedCommandTOutsideCommandBarModeStacksSavedBlankTabs() throws {
+    let store = makeStore(fixture())
+    let before = store.state.windows["w"]!.tabIds
+    var opened: [String] = []
+    for _ in 0..<3 {
+      try run("newTab", store: store)
+      opened.append(try #require(store.state.activeTabId("w")))
+    }
+    #expect(Set(opened).count == 3)
+    #expect(store.state.windows["w"]!.tabIds.filter { !before.contains($0) }.count == 3)
+    #expect(opened.map { store.state.tabs[$0]?.newTabPlaceholder == true } == [false, false, true])
+    let saved = store.sessionDocument()
+    #expect(saved.tabs[opened[0]] != nil)
+    #expect(saved.tabs[opened[1]] != nil)
+    #expect(saved.tabs[opened[2]] == nil)
+    try store.dispatch(settingsCommand(["newTabOpens": "commandBar"]))
+    let plan = try #require(WorkspaceMenuCommand.plan("newTab", windowId: "w", state: store.state))
+    #expect(plan.commands == [Command("openPanel", ["w", "", ["kind": "into", "tabId": .string(opened[2])]])])
+  }
+
+  @Test func commandBarCloseKeyOverAPlaceholdersBarOnlyDismissesTheBar() throws {
+    let store = makeStore(fixture())
+    try run("newTab", store: store)
+    let placeholder = try #require(store.state.activeTabId("w"))
+    try store.dispatch(settingsCommand(["newTabOpens": "commandBar"]))
+    try store.dispatch(Command("openPanel", ["w", "", ["kind": "into", "tabId": .string(placeholder)]]))
+    let plan = try #require(WorkspaceMenuCommand.plan("closeTab", windowId: "w", state: store.state))
+    #expect(plan.commands == [Command("closePanel", ["w"])])
+    #expect(plan.close == nil)
+  }
+
+  @Test func commandBarNewTabOpensIntoASettledBlankRowAsTheSidebarPlusDoes() throws {
+    let store = makeStore(fixture())
+    try run("newTab", store: store)
+    let settled = try #require(store.state.activeTabId("w"))
+    try run("newTab", store: store)
+    #expect(store.state.tabs[settled]?.newTabPlaceholder != true)
+    #expect(store.state.tabs[settled]?.navigation?.url == "about:blank")
+    try store.dispatch(Command("activate", [.string(settled)]))
+    try store.dispatch(settingsCommand(["newTabOpens": "commandBar"]))
+    let plan = try #require(WorkspaceMenuCommand.plan("newTab", windowId: "w", state: store.state))
+    #expect(plan.commands == [Command("openPanel", ["w", "", ["kind": "into", "tabId": .string(settled)]])])
+  }
+
+  @Test func anOrdinaryEmptyTabsOpenPanelKeepsItsDismissOnlyClose() throws {
+    var state = fixture()
+    state.tabs["b"]!.url = ""
+    let store = makeStore(state)
+    try store.dispatch(Command("openPanel", ["w", "", ["kind": "into", "tabId": "b"]]))
+    let plan = try #require(WorkspaceMenuCommand.plan("closeTab", windowId: "w", state: store.state))
+    #expect(plan.commands == [Command("closePanel", ["w"])])
+    #expect(plan.close == nil)
   }
 
   @Test func duplicateUsesTheSelectedTabAndKeepsItsSource() throws {

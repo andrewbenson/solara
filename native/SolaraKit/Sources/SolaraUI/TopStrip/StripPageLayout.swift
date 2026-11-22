@@ -14,10 +14,14 @@ public struct StripPlacedGroup: Equatable, Sendable {
   public var width: CGFloat
   public var members: [StripPlacedMember]
   public var shown: Int?
+  public var newTabAfterIndex: Int? = nil
+  public var newTabOffset: CGFloat? = nil
   public var expanded: Bool { !entry.collapsed }
   public var membersStart: CGFloat { chip + StripMetrics.membersInset }
   public var geometry: StripDragGeometry {
-    StripDragGeometry(members.map { StripDragSlot(tabIds: $0.member.tabIds, width: $0.width) }, gap: StripMetrics.gap)
+    StripDragGeometry(members.enumerated().map { index, member in
+      StripDragSlot(tabIds: member.member.tabIds, width: member.width, marginRight: index == newTabAfterIndex ? StripMetrics.itemHeight + StripMetrics.gap : 0)
+    }, gap: StripMetrics.gap)
   }
 }
 
@@ -59,7 +63,7 @@ public struct StripPageLayout: Equatable, Sendable {
 
   public init() {}
 
-  public init(entries: [StripEntry], activeId: String, pageWidth: CGFloat, flare: CGFloat, chipWidth: (String) -> CGFloat, folderWidth: (String) -> CGFloat) {
+  public init(entries: [StripEntry], activeId: String, pageWidth: CGFloat, flare: CGFloat, chipWidth: (String) -> CGFloat, folderWidth: (String) -> CGFloat, newTabAfter: String? = nil) {
     self.activeId = activeId
     self.flare = flare
     let gap = StripMetrics.gap
@@ -105,15 +109,21 @@ public struct StripPageLayout: Equatable, Sendable {
         let shown = g.shown(active: activeId)
         let chipSize = chipWidth(g.id)
         let layout = StripLayout.groupLayout(chip: chipSize, widths: widths, gap: gap, expanded: !g.collapsed, shown: shown)
-        let members = g.members.enumerated().map { i, m in StripPlacedMember(member: m, width: widths[i], offset: layout.offsets[i], shown: i == shown) }
+        var members = g.members.enumerated().map { i, m in StripPlacedMember(member: m, width: widths[i], offset: layout.offsets[i], shown: i == shown) }
+        var group = StripPlacedGroup(entry: g, chip: chipSize, width: layout.width, members: members, shown: shown)
+        if let newTabAfter, let index = g.members.firstIndex(where: { $0.holds(newTabAfter) }) {
+          group.newTabAfterIndex = index
+          group.newTabOffset = group.membersStart + (g.collapsed ? 0 : members[index].offset) + members[index].width + gap
+          for next in members.indices where next > index { members[next].offset += StripMetrics.itemHeight + gap }
+          group.members = members
+          group.width += StripMetrics.itemHeight + gap
+        }
         x += StripMetrics.groupMarginLeft
-        placed.append(
-          StripPlaced(
-            kind: .group(StripPlacedGroup(entry: g, chip: chipSize, width: layout.width, members: members, shown: shown)), x: x, width: layout.width, slot: slots.count))
+        placed.append(StripPlaced(kind: .group(group), x: x, width: group.width, slot: slots.count))
         slots.append(
           StripDragSlot(
-            tabIds: g.members.flatMap(\.tabIds), width: layout.width, marginLeft: StripMetrics.groupMarginLeft, marginRight: StripMetrics.groupMarginRight))
-        x += layout.width + StripMetrics.groupMarginRight + gap
+            tabIds: g.members.flatMap(\.tabIds), width: group.width, marginLeft: StripMetrics.groupMarginLeft, marginRight: StripMetrics.groupMarginRight))
+        x += group.width + StripMetrics.groupMarginRight + gap
       case .member(let m):
         let width = chip * CGFloat(m.units(active: activeId))
         let kind: StripPlacedKind = m.kind == .split ? .split(m) : m.kind == .folder ? .folder(m) : .tab(m)
@@ -123,14 +133,39 @@ public struct StripPageLayout: Equatable, Sendable {
       }
     }
     x += 0.5
-    placed.append(StripPlaced(kind: .newTab, x: x, width: StripMetrics.itemHeight, slot: nil))
-    x += StripMetrics.itemHeight
+    let plusWidth = StripMetrics.itemHeight
+    if let newTabAfter {
+      let after = placed.lastIndex { item in
+        switch item.kind {
+        case .dock(_, let members): return dockCells.contains(newTabAfter) || members.values.contains { $0.contains(newTabAfter) }
+        case .group(let group): return group.entry.members.contains { $0.holds(newTabAfter) }
+        case .tab(let member), .split(let member), .folder(let member): return member.holds(newTabAfter)
+        case .newTab: return false
+        }
+      }
+      let at = after.map { $0 + 1 } ?? 0
+      if let after, case .group(let group) = placed[after].kind, let offset = group.newTabOffset {
+        placed.insert(StripPlaced(kind: .newTab, x: placed[after].x + offset, width: plusWidth, slot: nil), at: at)
+        x -= plusWidth
+      } else {
+        let plusX = at < placed.count ? placed[at].x : x
+        if let after, let slot = placed[after].slot { slots[slot].marginRight += plusWidth + gap }
+        for index in at..<placed.count { placed[index].x += plusWidth + gap }
+        placed.insert(StripPlaced(kind: .newTab, x: plusX, width: plusWidth, slot: nil), at: at)
+      }
+    } else {
+      placed.append(StripPlaced(kind: .newTab, x: x, width: plusWidth, slot: nil))
+    }
+    x += plusWidth
     contentWidth = x + flare
     items = placed
     top = StripDragGeometry(slots, gap: gap)
   }
 
-  public var topStart: CGFloat { flare + (dockCells.isEmpty ? 0 : StripMetrics.dockWidth(dockCells.count) + StripMetrics.dockGap) }
+  public var topStart: CGFloat {
+    if let first = items.first(where: { $0.slot == 0 }), let left = top.lefts.first { return first.x - left }
+    return flare + (dockCells.isEmpty ? 0 : StripMetrics.dockWidth(dockCells.count) + StripMetrics.dockGap)
+  }
 
   public func span(of tabId: String) -> (x: CGFloat, width: CGFloat)? {
     if let cell = StripLayout.dockCell(dockCells, members: { dockMembers[$0] ?? [$0] }, tabId: tabId) {

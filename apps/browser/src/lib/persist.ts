@@ -3,7 +3,7 @@ import { readDocumentResult, writeDocument, type DocumentRead } from "@solara/sh
 import { showNotice, showToast } from "../components/layout/toasts";
 import { persistenceRefused, refusePersistence } from "./persistLatch";
 import { useBrowser, type BrowserState, type HydrateData } from "../store/browser";
-import { closedWindowPresentation, inPinnedContainer, isIncognitoProfile, newId, privateSession, snapshotTab } from "../store/model";
+import { activeTabIdsWithoutPlaceholders, closedWindowPresentation, inPinnedContainer, isIncognitoProfile, newId, privateSession, snapshotTab } from "../store/model";
 import { earlyLaunchTabOn, launchTab, linkProfile, type LaunchTab } from "../store/launchTab";
 import { launchBackdrop, type LaunchBackdrop } from "./launchBackdrop";
 import { restoreLaunchLook, saveLaunchLook } from "./launchLook";
@@ -44,7 +44,7 @@ const serialized =
   (s: BrowserState): string =>
     JSON.stringify(serialize(s));
 
-const persistedTab = ({ navigation: _n, adoptId: _a, wakeAdoptId, pageIn, ...tab }: Tab) => {
+const persistedTab = ({ navigation: _n, adoptId: _a, wakeAdoptId, pageIn, newTabPlaceholder: _p, ...tab }: Tab) => {
   const t = pageIn ? { ...tab, unloaded: true as const } : tab;
   return wakeAdoptId?.startsWith("restore:") && !isIncognitoProfile(t.profileId) ? { ...t, wakeAdoptId } : t;
 };
@@ -69,9 +69,14 @@ const DOCS: Doc[] = [
 ];
 
 const sessionDocument = (s: BrowserState) => {
-  const windows = Object.values(s.windows).filter((w) => !w.incognito && w.kind !== "small").map(({ chromeWindow: _c, ...w }) => w);
+  const retained = (id: string) => !!s.tabs[id] && !s.tabs[id]!.newTabPlaceholder && !isPeekTab(s, id);
+  const windows = Object.values(s.windows).filter((w) => !w.incognito && w.kind !== "small").map(({ chromeWindow: _c, ...w }) => ({
+    ...w,
+    tabIds: w.tabIds.filter(retained),
+    activeTabIds: activeTabIdsWithoutPlaceholders(s, w, w.tabIds.filter(retained)),
+  }));
   const kept = new Set(windows.map((w) => w.id));
-  const focusedWindowId = s.ui.focusOrder.find((id) => kept.has(id)) ?? null;
+  const focusedWindowId = s.ui.focusOrder.find((id) => windows.some((w) => w.id === id && w.tabIds.length > 0)) ?? null;
   return {
     version: VERSION,
     profiles: s.profiles,
@@ -85,9 +90,9 @@ const sessionDocument = (s: BrowserState) => {
     launchTab: earlyLaunchTabOn() ? launchTab(s, focusedWindowId) : null,
     launchBackdrop: earlyLaunchTabOn() ? launchBackdrop(s, focusedWindowId) : null,
     linkProfile: earlyLaunchTabOn() ? linkProfile(s) : null,
-    tabs: Object.values(s.tabs).filter((t) => kept.has(t.windowId) && !isPeekTab(s, t.id)).map(persistedTab),
-    groups: Object.values(s.groups).filter((g) => kept.has(g.windowId)),
-    splits: Object.values(s.splits).filter((v) => kept.has(v.windowId)),
+    tabs: Object.values(s.tabs).filter((t) => kept.has(t.windowId) && retained(t.id)).map(persistedTab),
+    groups: Object.values(s.groups).filter((g) => kept.has(g.windowId)).map((g) => ({ ...g, tabIds: g.tabIds.filter(retained) })),
+    splits: Object.values(s.splits).filter((v) => kept.has(v.windowId)).map((v) => ({ ...v, tabIds: v.tabIds.filter(retained) })).filter((v) => v.tabIds.length >= 2),
     closedTabs: s.closedTabs.filter((c) => publicTab(c.tab)),
     closedWindows: s.closedWindows.filter((c) => c.tabs.every(publicTab)),
     parkedPins: Object.fromEntries(Object.entries(s.parkedPins).filter(([profileId]) => publicTab({ profileId }))),
@@ -217,7 +222,7 @@ export function loadSession(
         window: closedWindowPresentation(w),
         tabs: w.tabIds
           .map((id) => data.tabs?.[id])
-          .filter((t): t is Tab => !!t && !inPinnedContainer(pinSource, t.id))
+          .filter((t): t is Tab => !!t && !t.newTabPlaceholder && !inPinnedContainer(pinSource, t.id))
           .map((t) => ({ ...snapshotTab(t), active: Object.values(w.activeTabIds).includes(t.id) })),
         groups: [],
         closedAt: now,

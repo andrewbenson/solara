@@ -7,7 +7,7 @@ extension Session {
     guard var data = try? HydrateData(json: object) else { return nil }
     data.orphanedProfileData = data.orphanedProfileData ?? []
     data.lastProfileId = data.lastProfileId ?? nil
-    data.tabs = data.tabs ?? []
+    data.tabs = (data.tabs ?? []).filter { $0.newTabPlaceholder != true }
     data.groups = data.groups ?? JSMap()
     data.splits = data.splits ?? JSMap()
     data.parkedPins = data.parkedPins ?? JSMap()

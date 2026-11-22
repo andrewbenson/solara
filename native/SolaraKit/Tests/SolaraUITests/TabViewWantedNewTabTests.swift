@@ -27,24 +27,75 @@ struct TabViewWantedNewTabTests {
       newTabShown: { shownOver.contains($0) }).map { ($0.tabId, $0) })
   }
 
+  @Test func anUntouchedPlaceholderOwnsARealEnginePageFromItsFirstOpen() {
+    var input = state()
+    input.tabs["a"]!.newTabPlaceholder = true
+    input.tabs["a"]!.navigation = Navigation(url: "about:blank", seq: 1)
+    let out = wanted(input, shownOver: [])
+    #expect(out["a"] != nil)
+    #expect(out["a"]?.shown == TabViewWanted.Shown.none)
+    #expect(out["a"]?.profileId == input.tabs["a"]?.profileId)
+  }
+
+  @Test func settlingAnEmptyPlaceholderKeepsItsEnginePageHidden() {
+    var input = state()
+    input.tabs["a"]!.navigation = Navigation(url: "about:blank", seq: 1)
+    #expect(wanted(input, shownOver: [])["a"]?.shown == TabViewWanted.Shown.none)
+    input.tabs["a"]!.url = "about:blank"
+    #expect(wanted(input, shownOver: [])["a"]?.shown == .card)
+    input.tabs["a"]!.url = "https://destination.example/"
+    input.tabs["a"]!.navigation = Navigation(url: "https://destination.example/", seq: 2)
+    #expect(wanted(input, shownOver: [])["a"]?.shown == .card)
+  }
+
+  @Test func emptySplitAndPeekPagesStayHiddenBeforePagePropsArrive() {
+    var input = state(split: true, peek: true)
+    input.tabs["p"]!.url = ""
+    let out = wanted(input, shownOver: [])
+    #expect(out["a"]?.shown == TabViewWanted.Shown.none)
+    #expect(out["b"]?.shown == .pane)
+    #expect(out["p"]?.shown == TabViewWanted.Shown.none)
+  }
+
+  @Test func adoptedPagesKeepTheirPresentationBeforeTheirURLArrives() {
+    var input = state(split: true, peek: true)
+    input.tabs["a"]!.navigation = nil
+    input.tabs["a"]!.adoptId = "adopt-a"
+    input.tabs["p"]!.url = ""
+    input.tabs["p"]!.navigation = nil
+    input.tabs["p"]!.adoptId = "adopt-p"
+    #expect(wanted(input, shownOver: [])["a"]?.shown == .pane)
+    #expect(wanted(input, shownOver: [])["p"]?.shown == .peek)
+    input.splits.remove(["s"])
+    #expect(wanted(input, shownOver: [])["a"]?.shown == .card)
+  }
+
   @Test func theActiveTabsKeptPageIsHiddenWhileNewTabIsShownOverIt() {
-    let out = wanted(state(), shownOver: ["a"])
+    var input = state()
+    input.tabs["a"]!.url = "https://a.example/"
+    let out = wanted(input, shownOver: ["a"])
     #expect(out["a"]?.shown == TabViewWanted.Shown.none)
     #expect(out["a"] != nil)
   }
 
   @Test func goingForwardShowsTheKeptPageAgain() {
-    #expect(wanted(state(), shownOver: [])["a"]?.shown == .card)
+    var input = state()
+    input.tabs["a"]!.url = "https://a.example/"
+    #expect(wanted(input, shownOver: [])["a"]?.shown == .card)
   }
 
   @Test func aSplitPaneShowingNewTabHidesOnlyItsOwnPage() {
-    let out = wanted(state(split: true), shownOver: ["a"])
+    var input = state(split: true)
+    input.tabs["a"]!.url = "https://a.example/"
+    let out = wanted(input, shownOver: ["a"])
     #expect(out["a"]?.shown == TabViewWanted.Shown.none)
     #expect(out["b"]?.shown == .pane)
   }
 
   @Test func aPeekShowingNewTabIsHidden() {
-    let out = wanted(state(peek: true), shownOver: ["p"])
+    var input = state(peek: true)
+    input.tabs["a"]!.url = "https://a.example/"
+    let out = wanted(input, shownOver: ["p"])
     #expect(out["p"]?.shown == TabViewWanted.Shown.none)
     #expect(out["a"]?.shown == .card)
   }

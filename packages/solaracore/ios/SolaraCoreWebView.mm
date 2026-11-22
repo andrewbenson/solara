@@ -3134,8 +3134,17 @@ static NSString *LinkKeyAction(NSString *key) {
   [_tab stop];
 }
 
+- (void)activateInChrome {
+  SolaraCoreWindowController *controller = self.controller;
+  if (!_tab || _tab.closed || !controller.coreWindow) return;
+  controller.hostChanges++;
+  [controller.coreWindow activateTab:_tab];
+  controller.hostChanges--;
+}
+
 - (void)focusPage {
   if ([SolaraCoreEarlyWindow veils:_tab]) return [SolaraCoreEarlyWindow requestFocus:_tab];
+  if (_visible && _tab.view.superview == self && [PendingPainting() containsObject:self]) [self applyPainting];
   [_tab focus];
 }
 

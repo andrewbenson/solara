@@ -545,7 +545,8 @@ Do not mark roadmap rows complete or lower native/perf ceilings without their ow
 `WorkspaceMenuCommandTests` covers native command resolution and canonical store actions for tabs and windows,
 including panel/Peek dismissal and close-together restoration. Run the SolaraKit suite with `-Xswiftc -DSOLARA_PROBES`.
 `node apps/browser/scripts/native-tab-commands-test.mjs <Debug app> <fresh scratch directory>` disables JavaScript
-command handlers and exercises actual menu/shortcut routing, tab state and native windows. The command port is
+command handlers and exercises actual menu/shortcut routing, tab state and native windows. Untouched New Tab close
+checks the first responder captured before key dispatch returns, then verifies the first and second paste counts. The command port is
 pending VM build, Swift tests and driver acceptance; no Solara build, install or instance ran on the owner's Mac.
 The native command driver also checks Command Bar mode over a page and an existing blank New Tab: focused initial
 rows, no tab creation, into/list targets, repeated Cmd-T dismissal, immediate typing and page paste after dismissal.

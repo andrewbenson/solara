@@ -59,7 +59,7 @@ public struct SidebarQuery {
     let opensBar = state.settings.string("newTabOpens") == "commandBar"
     for id in state.viewTabIds(windowId, profileId) {
       guard let tab = state.tabs[id] else { continue }
-      if (truthy(tab.liveItem) && !tab.pinned) || (!tab.pinned && opensBar && session.isEmptyCardTab(state, tab)) { continue }
+      if (truthy(tab.liveItem) && !tab.pinned) || tab.newTabPlaceholder == true || (!tab.pinned && opensBar && session.isUnopenedEmptyTab(state, tab)) { continue }
       if tab.pinned {
         if tab.pinnedAsRow != true {
           out.tiles.append(id)
@@ -76,6 +76,24 @@ public struct SidebarQuery {
     }
     out.cells = tileCells(out.tiles)
     return out
+  }
+
+  public func newTabPlaceholder(windowId: String, profileId: String? = nil) -> String? {
+    state.viewTabIds(windowId, profileId).first { state.tabs[$0]?.newTabPlaceholder == true }
+  }
+
+  public func newTabPlaceholderPredecessor(windowId: String, profileId: String? = nil) -> String? {
+    let ids = state.viewTabIds(windowId, profileId)
+    guard let id = newTabPlaceholder(windowId: windowId, profileId: profileId) else { return nil }
+    if let opener = state.tabs[id]?.openerId, ids.contains(opener) { return opener }
+    guard let index = ids.firstIndex(of: id), index > 0 else { return nil }
+    return ids[index - 1]
+  }
+
+  public func newTabPlaceholderGroup(windowId: String, profileId: String? = nil) -> String? {
+    guard state.settings.string("newTabPosition") == "nextToCurrent",
+      let previous = newTabPlaceholderPredecessor(windowId: windowId, profileId: profileId) else { return nil }
+    return Groups.innermostGroupOf(state.groups, previous)?.id
   }
 
   public func numberedRows(windowId: String, profileId: String? = nil) -> [NumberedTabRow] {
@@ -95,6 +113,7 @@ public struct SidebarQuery {
         if let group = state.groups[id], group.collapsed { return collapsedRow(entry, group.tabIds.filter { state.tabs[$0] != nil }) }
         return groupEntries(id).flatMap(rows)
       }
+      if entry.hasPrefix("newTab:") { return [] }
       guard entry.hasPrefix("s:") else {
         return state.tabs[id] == nil ? [] : [NumberedTabRow(key: entry, tabId: id)]
       }
@@ -150,6 +169,12 @@ public struct SidebarQuery {
       let entry = childOf[id].map { "g:\($0)" } ?? splitEntry(id)
       if seen.insert(entry).inserted { out.append(entry) }
     }
+    if let placeholder = newTabPlaceholder(windowId: g.windowId, profileId: g.profileId),
+      newTabPlaceholderGroup(windowId: g.windowId, profileId: g.profileId) == groupId,
+      let previous = newTabPlaceholderPredecessor(windowId: g.windowId, profileId: g.profileId),
+      let at = out.firstIndex(where: { holdsTab($0, previous) }) {
+      out.insert("newTab:\(placeholder)", at: at + 1)
+    }
     return out
   }
 
@@ -180,7 +205,10 @@ public struct SidebarQuery {
 
   public func keptEntry(windowId: String, profileId: String, _ entries: [String]) -> String? {
     guard let active = state.activeTabId(windowId, profileId) else { return nil }
-    return entries.first { holdsTab($0, active) }
+    if let kept = entries.first(where: { holdsTab($0, active) }) { return kept }
+    guard state.tabs[active]?.newTabPlaceholder == true,
+      let previous = newTabPlaceholderPredecessor(windowId: windowId, profileId: profileId) else { return nil }
+    return entries.first { holdsTab($0, previous) }
   }
 
   public func closeKind(_ tabId: String) -> SidebarCloseKind {

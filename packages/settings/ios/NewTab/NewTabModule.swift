@@ -50,6 +50,23 @@ public class NewTabModule: Module {
       return status
     }.runOnQueue(.main)
 
+    #if SOLARA_PROBES
+    AsyncFunction("mainThreadTiming") { (reset: Bool) -> [String: Any] in
+      nonisolated(unsafe) var result: [String: Any] = ["spans": [], "available": false]
+      MainActor.assumeIsolated {
+        guard ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] == "1",
+          ProcessInfo.processInfo.environment["SOLARA_DATA_DIR"]?.isEmpty == false else { return }
+        let dropped = NewTabMainThreadTiming.dropped
+        let spans = NewTabMainThreadTiming.read(reset: reset).map { span -> [String: Any] in
+          ["phase": span.phase, "windowId": span.windowId as Any? ?? NSNull(), "tabId": span.tabId as Any? ?? NSNull(),
+            "startedMs": span.startedMs, "finishedMs": span.finishedMs, "durationMs": span.finishedMs - span.startedMs]
+        }
+        result = ["spans": spans, "dropped": dropped, "available": true]
+      }
+      return result
+    }.runOnQueue(.main)
+    #endif
+
     Function("available") { () -> Bool in
       NativeSettingsHandle.active
     }

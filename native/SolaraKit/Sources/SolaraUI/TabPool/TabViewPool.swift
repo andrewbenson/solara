@@ -108,6 +108,10 @@ public final class TabViewPool {
     defer { LayoutTrace.end(trace) }
     #endif
     guard !preparingPlacement else { return }
+    #if SOLARA_PROBES
+    let timing = NewTabMainThreadTiming.begin("pool.reconcile")
+    defer { NewTabMainThreadTiming.end(timing) }
+    #endif
     preparingPlacement = true
     preparePlacement()
     preparingPlacement = false
@@ -146,7 +150,14 @@ public final class TabViewPool {
         guard let page = pages.removeValue(forKey: id) else { continue }
         page.retire()
       case .create(let id, let windowId):
-        guard let page = make(id, windowId) else { continue }
+        #if SOLARA_PROBES
+        let timing = NewTabMainThreadTiming.begin("pool.make", windowId: windowId, tabId: id)
+        #endif
+        let madePage = make(id, windowId)
+        #if SOLARA_PROBES
+        NewTabMainThreadTiming.end(timing)
+        #endif
+        guard let page = madePage else { continue }
         pages[id] = page
         identities[id] = identity(of: id)
         made.insert(id)
@@ -454,6 +465,10 @@ public final class TabViewPool {
 
   private func move(_ view: NSView, into container: NSView, below: Bool, preserveFrame: Bool = false,
     autoresizing: NSView.AutoresizingMask = [.width, .height], initialFrame: NSRect? = nil) {
+    #if SOLARA_PROBES
+    let timing = NewTabMainThreadTiming.begin("pool.move")
+    defer { NewTabMainThreadTiming.end(timing) }
+    #endif
     let window = view.window
     let responder = window?.firstResponder as? NSView
     let hadFocus = responder.map { $0 === view || $0.isDescendant(of: view) } ?? false

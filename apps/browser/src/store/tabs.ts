@@ -64,6 +64,7 @@ export type TabsSlice = {
   closedTabs: ClosedTab[];
 
   newTab(windowId: string, options?: NewTabOptions): string;
+  settleNewTab(id: string): void;
   closeTab(id: string, successor?: string): void;
   closeTabs(ids: string[], options?: CloseOptions): void;
   activate(id: string): void;
@@ -179,7 +180,7 @@ export function removeTabs(s: BrowserState, ids: string[], record: boolean, succ
     if (record) {
       w.tabIds.forEach((id, index) => {
         const t = s.tabs[id];
-        if (!t || !gone.has(id) || (!t.url && !t.pinned)) return;
+        if (!t || !gone.has(id) || t.newTabPlaceholder || (!t.url && !t.pinned)) return;
         const group = innermostGroupOf(s.groups, id);
         const parents = group ? ancestorIds(s.groups, group.id).map((x) => closedGroupInfo(s.groups[x]!)) : [];
         closed.push({
@@ -391,6 +392,13 @@ export const createTabsSlice: StateCreator<BrowserState, [], [], TabsSlice> = (s
     else if (id && beside && !inPinnedContainer(next, beside.openerId)) next = groupWithOpener(next, id, beside.openerId, false);
     set(next);
     return id;
+  },
+
+  settleNewTab(id) {
+    const tab = get().tabs[id];
+    if (!tab?.newTabPlaceholder) return;
+    const { newTabPlaceholder: _, ...settled } = tab;
+    set({ tabs: { ...get().tabs, [id]: settled } });
   },
 
   closeTab(id, successor) {

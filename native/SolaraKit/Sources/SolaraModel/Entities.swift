@@ -526,6 +526,13 @@ public struct Tab: JSONConvertible, @unchecked Sendable {
       box.value.openerId = newValue
     }
   }
+  public var newTabPlaceholder: Bool? {
+    get { box.value.newTabPlaceholder }
+    set {
+      if !isKnownUniquelyReferenced(&box) { box = Box(box.value) }
+      box.value.newTabPlaceholder = newValue
+    }
+  }
   public var wakeAdoptId: String? {
     get { box.value.wakeAdoptId }
     set {
@@ -663,6 +670,7 @@ public struct TabFields: Sendable, Equatable {
   public var adoptId: String?
   public var openerId: String? { didSet { absent.remove("openerId") } }
   public var wakeAdoptId: String?
+  public var newTabPlaceholder: Bool?
   public var liveItem: JSONValue?
   public var unloaded: Bool?
   public var pinKey: String?
@@ -704,7 +712,7 @@ public struct TabFields: Sendable, Equatable {
   static let keys: Set<String> = [
     "id", "windowId", "profileId", "url", "title", "favicon", "pinned", "muted", "zoom", "customTitle", "customIcon", "pinnedUrl",
     "pinnedAsRow", "tileFolder", "navigation", "adoptId", "openerId", "wakeAdoptId", "liveItem", "unloaded", "pinKey", "pageIn", "engine",
-    "createdAt", "lastActiveAt", "shownAt",
+    "createdAt", "lastActiveAt", "shownAt", "newTabPlaceholder",
   ]
 
   public init(json: JSONObject) throws {
@@ -727,6 +735,7 @@ public struct TabFields: Sendable, Equatable {
     adoptId = f.optionalString("adoptId")
     openerId = f.optionalString("openerId")
     wakeAdoptId = f.optionalString("wakeAdoptId")
+    newTabPlaceholder = f.optionalBool("newTabPlaceholder")
     liveItem = f.value("liveItem")
     unloaded = f.optionalBool("unloaded")
     pinKey = f.optionalString("pinKey")
@@ -760,6 +769,7 @@ public struct TabFields: Sendable, Equatable {
     e.optional("adoptId", adoptId)
     e.nullable("openerId", openerId, absent: absent)
     e.optional("wakeAdoptId", wakeAdoptId)
+    e.optional("newTabPlaceholder", newTabPlaceholder)
     e.optional("liveItem", liveItem)
     e.optional("unloaded", unloaded)
     e.optional("pinKey", pinKey)

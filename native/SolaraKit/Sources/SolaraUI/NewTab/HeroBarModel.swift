@@ -48,6 +48,7 @@ public struct HeroBarEvents {
   public var queryCommit: ((@escaping @MainActor () -> Void) -> Void)?
   public var keyShown: () -> Void = {}
   public var changed: () -> Void = {}
+  public var edited: (String) -> Void = { _ in }
   public var done: (BarDismissal?) -> Void = { _ in }
   public var cancel: (UUID) -> Void = { _ in }
   public var siteControls: () -> Void = {}
@@ -316,6 +317,7 @@ public final class HeroBarModel {
 
   public func textChanged(_ next: String, edit: EditContext?) {
     keyAt = .now
+    events.edited(next)
     events.journey(.keystroke)
     let before = filled
     let suppress = InlineRules.preventsInline(typed: before ?? typed, shown: before == nil ? shown : "", next: next, edit: edit)

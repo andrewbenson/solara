@@ -223,7 +223,7 @@ extension Session {
     let profileId = original.incognito ? (original.originalProfileId ?? Ids.incognitoOriginal(original.profileId)) : original.profileId
     let wanted = Set(original.tabIds)
     let live = Set(liveTabIds).intersection(wanted).filter {
-      !undo.endedHeldPages.contains($0) && undo.heldPages[$0]?.restorable != false
+      undo.before.tabs[$0]?.newTabPlaceholder != true && !undo.endedHeldPages.contains($0) && undo.heldPages[$0]?.restorable != false
     }
     guard !live.isEmpty else { return nil }
     let wantedGroups = Set(groups.map(\.id))

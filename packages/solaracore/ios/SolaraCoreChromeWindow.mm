@@ -3577,9 +3577,12 @@ NSDictionary *ProbeFrame(NSWindow *window, ACWindowFullScreen *state, CFTimeInte
     [drags removeAllObjects];
     return out;
   }
-  if ([action isEqualToString:@"responderChanges"]) {
+#if DEBUG
+  if ([action isEqualToString:@"responderChanges"] || [action isEqualToString:@"responderChanges:off"]) {
     if (!solaracore_host::TestHooksAllowed()) return @"test instances only";
     static NSMutableArray<NSString *> *changes;
+    static NSInteger watchedWindow;
+    static NSUInteger dropped;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
       changes = [NSMutableArray array];
@@ -3587,15 +3590,29 @@ NSDictionary *ProbeFrame(NSWindow *window, ACWindowFullScreen *state, CFTimeInte
       Method m = class_getInstanceMethod(NSWindow.class, sel);
       IMP original = method_getImplementation(m);
       method_setImplementation(m, imp_implementationWithBlock(^BOOL(NSWindow *w, NSResponder *r) {
-        [changes addObject:[NSString stringWithFormat:@"-> %@\n%@", Describe((NSView *)r),
-                                                       [[NSThread callStackSymbols] componentsJoinedByString:@"\n"]]];
-        return ((BOOL(*)(id, SEL, NSResponder *))original)(w, sel, r);
+        if (!watchedWindow || w.windowNumber != watchedWindow) return ((BOOL(*)(id, SEL, NSResponder *))original)(w, sel, r);
+        const double at = NSProcessInfo.processInfo.systemUptime * 1000;
+        NSString *before = Describe((NSView *)w.firstResponder);
+        NSString *requested = Describe((NSView *)r);
+        NSArray<NSString *> *stack = NSThread.callStackSymbols;
+        const BOOL accepted = ((BOOL(*)(id, SEL, NSResponder *))original)(w, sel, r);
+        if (changes.count == 256) {
+          [changes removeObjectAtIndex:0];
+          dropped++;
+        }
+        [changes addObject:[NSString stringWithFormat:@"at=%.3f end=%.3f window=%ld before=%@ requested=%@ actual=%@ accepted=%d\n%@", at,
+                                                       NSProcessInfo.processInfo.systemUptime * 1000, (long)w.windowNumber, before, requested,
+                                                       Describe((NSView *)w.firstResponder), accepted, [stack componentsJoinedByString:@"\n"]]];
+        return accepted;
       }));
     });
-    NSString *out = [NSString stringWithFormat:@"%lu\n%@", (unsigned long)changes.count, [changes componentsJoinedByString:@"\n---\n"]];
+    watchedWindow = [action hasSuffix:@":off"] ? 0 : window.windowNumber;
+    NSString *out = [NSString stringWithFormat:@"%lu dropped=%lu\n%@", (unsigned long)changes.count, (unsigned long)dropped, [changes componentsJoinedByString:@"\n---\n"]];
     [changes removeAllObjects];
+    dropped = 0;
     return out;
   }
+#endif
   if ([action isEqualToString:@"fakeActiveClicks"]) {
     if (!solaracore_host::TestHooksAllowed()) return @"test instances only";
     static dispatch_once_t once;

@@ -5,7 +5,7 @@ const model = await import("./model.ts");
 const organize = await import("./organize.ts");
 const { controllingSearchExtension, defaultSearchEngine, searchUrlPrefix } = await import("./settings.ts");
 const media = await import("../components/media/state.ts");
-const { windowClosingWithTab } = await import("./newTabBar.ts");
+const { hiddenEmptyCard, windowClosingWithTab } = await import("./newTabBar.ts");
 
 const S = () => useBrowser.getState();
 const view = (w) => model.viewTabIds(S(), w).map((id) => S().tabs[id].url);
@@ -472,6 +472,22 @@ test("⇧⌘T reopens only what the window's shown profile closed", () => {
   assert.ok(Object.values(S().tabs).some((t) => short(t.url) === "b" && t.profileId === "default"));
 });
 
+test("blank tabs stay out of Reopen Closed Tab as on main, and so does a placeholder", () => {
+  reset();
+  const [w] = setup("source");
+  const legacy = S().newTab(w, { background: true });
+  S().closeTab(legacy);
+  assert.equal(S().closedTabs.length, 0);
+  const settled = S().newTab(w, { background: true });
+  S().updateTab(settled, { navigation: model.navigationTo("about:blank"), engine: "chromium" });
+  S().closeTab(settled);
+  assert.equal(S().closedTabs.length, 0);
+  const placeholder = S().newTab(w);
+  S().updateTab(placeholder, { newTabPlaceholder: true });
+  S().closeTab(placeholder);
+  assert.equal(S().closedTabs.length, 0);
+});
+
 test("abandoned New Tab cleanup never closes a window or the tab it shows", () => {
   reset();
   const w = S().createWindow();
@@ -490,6 +506,36 @@ test("abandoned New Tab cleanup never closes a window or the tab it shows", () =
   useBrowser.setState((s) => ({ windows: { ...s.windows, [w2]: { ...s.windows[w2], activeTabIds: {} } } }));
   S().closeAbandonedNewTabs();
   assert.equal(S().windows[w2].tabIds.length, 1);
+});
+
+test("abandoned New Tab cleanup also takes an unshown placeholder and keeps a settled row", () => {
+  reset();
+  const w = S().createWindow();
+  const abandoned = S().windows[w].tabIds[0];
+  const settled = S().newTab(w, { background: true });
+  S().updateTab(settled, { navigation: model.navigationTo("about:blank"), engine: "chromium" });
+  const front = S().newTab(w);
+  S().updateTab(front, { url: "https://front.example/" });
+  S().updateTab(abandoned, { newTabPlaceholder: true, navigation: model.navigationTo("about:blank") });
+  S().closeAbandonedNewTabs();
+  assert.equal(S().tabs[abandoned], undefined);
+  assert.ok(S().tabs[settled] && S().tabs[front]);
+});
+
+test("old-style empty tabs stay hidden with New tab opens: Command Bar, as on main", () => {
+  reset({ newTabOpens: "commandBar" });
+  const [w] = setup("source");
+  const legacy = S().newTab(w, { background: true });
+  assert.equal(hiddenEmptyCard(S(), S().tabs[legacy]), true);
+  const settled = S().newTab(w, { background: true });
+  S().updateTab(settled, { navigation: model.navigationTo("about:blank"), engine: "chromium" });
+  assert.equal(hiddenEmptyCard(S(), S().tabs[settled]), false);
+  reset({ newTabOpens: "page" });
+  const [v] = setup("source");
+  const shown = S().newTab(v, { background: true });
+  assert.equal(hiddenEmptyCard(S(), S().tabs[shown]), false);
+  S().updateTab(shown, { newTabPlaceholder: true });
+  assert.equal(hiddenEmptyCard(S(), S().tabs[shown]), true);
 });
 
 test("an extension that took the default search engine controls it until it goes", () => {

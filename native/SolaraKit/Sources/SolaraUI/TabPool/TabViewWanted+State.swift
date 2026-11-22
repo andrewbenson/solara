@@ -13,11 +13,11 @@ extension TabViewWanted {
       for id in window.tabIds {
         guard let tab = state.tabs[id], ((tab.navigation != nil || tab.adoptId != nil) && !isInternal(tab)) else { continue }
         let shown: Shown
-        if newTabShown(id) { shown = .none } else if let split, split.tabIds.contains(id) { shown = .pane } else if id == active { shown = .card } else { shown = .none }
+        if (tab.url.isEmpty && (tab.adoptId ?? "").isEmpty) || newTabShown(id) { shown = .none } else if let split, split.tabIds.contains(id) { shown = .pane } else if id == active { shown = .card } else { shown = .none }
         out[id] = TabViewWanted(tabId: id, windowId: windowId, shown: shown, warm: warm.contains(id), frozen: frozen(id), profileId: tab.profileId)
       }
       if let peek = state.peeks[windowId], let tab = state.tabs[peek.tabId], ((tab.navigation != nil || tab.adoptId != nil) && !isInternal(tab)) {
-        out[peek.tabId] = TabViewWanted(tabId: peek.tabId, windowId: windowId, shown: newTabShown(peek.tabId) ? .none : .peek, frozen: frozen(peek.tabId), profileId: tab.profileId)
+        out[peek.tabId] = TabViewWanted(tabId: peek.tabId, windowId: windowId, shown: (tab.url.isEmpty && (tab.adoptId ?? "").isEmpty) || newTabShown(peek.tabId) ? .none : .peek, frozen: frozen(peek.tabId), profileId: tab.profileId)
       }
     }
     return out.keys.sorted().map { out[$0]! }

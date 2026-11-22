@@ -125,12 +125,21 @@ try {
 
   await rep.check("after a New Tab, each tab opens on its first click", async () => {
     await clickTab("a");
+    const closed = await run("return st().closedTabs.map((t) => t.id);");
     await press("t", 17);
     await sleep(600);
+    const placeholder = await run("return st().tabs[shown()];");
+    assert.equal(placeholder?.newTabPlaceholder, true, "Cmd-T selects the + New Tab placeholder");
+    await selectedByNative(placeholder.id);
+    const rows = await run(`return globalThis.expo.modules.SolaraSidebarDrag.startProbe("w1").then(JSON.parse).then((probe) => probe.items);`);
+    assert.ok(rows.some((row) => row.tabIds.includes("a")), "native sidebar rows are observed");
+    assert.ok(rows.every((row) => !row.tabIds.includes(placeholder.id)), "the selected placeholder has no duplicate ordinary row");
     for (const id of ["b", "a", "p1", "pr", "c"]) {
       assert.equal(await clickTab(id), id, `${id} after a New Tab`);
       await selectedByNative(id);
     }
+    assert.equal(await run(`return !!st().tabs[${JSON.stringify(placeholder.id)}];`), false, "clicking a tab discards the untouched placeholder");
+    assert.deepEqual(await run("return st().closedTabs.map((t) => t.id);"), closed, "discard does not add a reopen entry");
   });
 
   await rep.check("a closed pinned tab opens on its first click", async () => {

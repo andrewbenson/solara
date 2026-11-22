@@ -78,6 +78,7 @@ export type Tab = {
   adoptId?: string;
   openerId: string | null;
   wakeAdoptId?: string;
+  newTabPlaceholder?: true;
   liveItem?: { folderId: string; itemId: string };
   unloaded?: boolean;
   pinKey?: string;

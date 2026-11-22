@@ -94,6 +94,26 @@ try {
     return { width: c.width, settings: s };
   });
 
+  await rep.check("Cmd-T in the rail selects + without adding a tab icon and discards it on leaving", async () => {
+    const before = await run(`return { ids: st().windows.w1.tabIds, closed: st().closedTabs.map((tab) => tab.id) };`);
+    await run(`return ac.shell.devKeyEquivalent("w1", { key: "t", keyCode: 17, modifiers: ["command"] });`);
+    const opened = await until("the rail placeholder selected", async () => {
+      const tab = await run(`return st().tabs[st().windows.w1.activeTabIds.default];`);
+      return { ok: tab?.newTabPlaceholder === true, tab };
+    });
+    const rows = await until("the rail keeps only existing tab icons", async () => {
+      const list = await run(`return items();`);
+      return { ok: list.some((item) => item.tabIds.includes("a")) && !list.some((item) => item.tabIds.includes(opened.tab.id)), list };
+    });
+    await run(`st().activate("a"); return true;`);
+    const after = await until("the rail placeholder discarded", async () => {
+      const state = await run(`return { ids: st().windows.w1.tabIds, closed: st().closedTabs.map((tab) => tab.id), gone: !st().tabs[${JSON.stringify(opened.tab.id)}] };`);
+      return { ok: state.gone, ...state };
+    });
+    if (JSON.stringify(after.ids) !== JSON.stringify(before.ids) || JSON.stringify(after.closed) !== JSON.stringify(before.closed)) throw new Error(`placeholder changed retained tabs or reopen entries: ${JSON.stringify({ before, after })}`);
+    return { placeholder: opened.tab.id, icons: rows.list.map((item) => item.key) };
+  });
+
   await rep.check("in the rail one current-profile button stays clear of downloads and inside the column", async () => {
     await run(`st().upsertDownload({ id: "d1", url: "https://example.com/a.pdf", filename: "a.pdf", path: "/tmp/a.pdf", state: "finished", paused: false, received: 1, total: 1, speed: 0, mimeType: "application/pdf" }); st().setDownloadsOpen("w1", false); return true;`);
     const got = await until("the footer's downloads button and current profile", async () => {

@@ -129,12 +129,16 @@ public final class StripPageView: NSView {
     let next = StripContext(state: state, host: host, windowId: windowId, favicons: favicons, previous: context)
     next.send = { [weak self] action in self?.onAction(action) }
     let first = context == nil
+    let opening = NewTabOpening.settled(context?.state, state)
     if let context, context.activeId != next.activeId, let window { TabNumberHintFeed.shared.cancelOnSelection(in: window) }
     context = next
     reconcile(next)
+    for id in opening {
+      if let view = (tabs[id] as NSView?) ?? groupMemberChip(id) { NewTabOpening.apply(view, horizontal: true) }
+    }
     if first {
       revealed = next.activeId
-    } else if current, revealed != next.activeId {
+    } else if current, revealed != next.activeId || !opening.isEmpty {
       revealed = next.activeId
       DispatchQueue.main.async { [weak self] in self?.revealActive(animated: true) }
     }
@@ -149,10 +153,13 @@ public final class StripPageView: NSView {
     NativeWorkCounters.layoutApplications += 1
     #endif
     let entries = context.query.entries(windowId: windowId, profileId: profileId)
+    let placeholderSource = context.state.settings.string("newTabPosition") == "nextToCurrent"
+      ? context.sidebar.query.newTabPlaceholderPredecessor(windowId: windowId, profileId: profileId) : nil
     let layout = StripPageLayout(
-      entries: entries, activeId: context.activeId, pageWidth: pageWidth, flare: context.host.floating ? 0 : StripMetrics.flare,
+      entries: entries, activeId: placeholderSource ?? context.activeId, pageWidth: pageWidth, flare: context.host.floating ? 0 : StripMetrics.flare,
       chipWidth: { chipWidth($0, context) },
-      folderWidth: { StripText.folderChipWidth(context.query.groupLabel($0)) })
+      folderWidth: { StripText.folderChipWidth(context.query.groupLabel($0)) },
+      newTabAfter: placeholderSource)
     pageLayout = layout
     var liveTabs = Set<String>()
     var liveSplits = Set<String>()
@@ -268,9 +275,14 @@ public final class StripPageView: NSView {
         view.arrange()
         shift += size - g.width
       case .newTab:
-        newTab.frame = NSRect(
-          x: StripLayout.pixel(item.x + shift + room(pageLayout.top.slots.count)) + drag.offset(.top, pageLayout.top.slots.count), y: StripMetrics.itemTop,
-          width: StripMetrics.itemHeight, height: StripMetrics.itemHeight)
+        let slot = pageLayout.items.first { $0.x > item.x && $0.slot != nil }?.slot ?? pageLayout.top.slots.count
+        var plusX = item.x + shift + room(slot) + drag.offset(.top, slot)
+        for candidate in pageLayout.items {
+          guard case .group(let group) = candidate.kind, let offset = group.newTabOffset, let view = groups[group.entry.id] else { continue }
+          plusX = view.frame.minX + offset
+          break
+        }
+        newTab.frame = NSRect(x: StripLayout.pixel(plusX), y: StripMetrics.itemTop, width: StripMetrics.itemHeight, height: StripMetrics.itemHeight)
       }
       if let collapse, item.slot == collapse.index { shift -= collapse.by }
     }
@@ -306,7 +318,9 @@ public final class StripPageView: NSView {
   }
 
   func revealActive(animated: Bool) {
-    guard let context, !context.activeId.isEmpty, let span = pageLayout.span(of: context.activeId) else { return }
+    guard let context, !context.activeId.isEmpty else { return }
+    let placeholderSpan = context.sidebar.newTabSelected ? pageLayout.items.first(where: { $0.key == "newTab" }).map { (x: $0.x, width: $0.width) } : nil
+    guard let span = placeholderSpan ?? pageLayout.span(of: context.activeId) else { return }
     let viewport = bounds.width
     guard let x = StripLayout.revealOffset(left: span.x, width: span.width, scrolled: scrolledX, viewport: viewport, pad: pageLayout.flare + StripMetrics.gap) else { return }
     let to = min(x, max(0, document.frame.width - viewport))

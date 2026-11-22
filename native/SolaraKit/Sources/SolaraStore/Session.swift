@@ -143,7 +143,7 @@ public final class Session {
 
   public func set(_ next: BrowserState) {
     let prev = state
-    var next = next
+    var next = normalizedNewTabPlaceholders(next)
     next.pruneWindowLocalState(tabsChanged: next.tabs.changed(from: prev.tabs), windowsChanged: next.windows.changed(from: prev.windows))
     captureClosingWindows(before: prev, after: next)
     state = next

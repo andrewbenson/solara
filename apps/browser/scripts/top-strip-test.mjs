@@ -308,6 +308,46 @@ async function measure(native) {
     validateWindowContract(shell.contract);
     validateNativeWork(shell.nativeWork);
     assert.equal(shell.contract.hostCounts.topStrip, native ? 1 : 0, "one native top-strip host only on the native path");
+    if (native) await rep.check("the strip's + selects its placeholder for page and Command Bar settings", async () => {
+      const before = await run(`return { newTabOpens: st().settings.newTabOpens, newTabPosition: st().settings.newTabPosition, profileId: st().windows.w1.profileId, active: st().windows.w1.activeTabIds.default };`);
+      const made = [];
+      try {
+        await run(`st().switchProfile("w1", "work"); st().updateSettings({ newTabPosition: "bottom" }); return true;`);
+        for (const opens of ["page", "commandBar"]) {
+          await run(`st().updateSettings({ newTabOpens: ${JSON.stringify(opens)} }); st().activate("k1"); return true;`);
+          const ready = await untilSnapshot(app, "the work strip's + is visible", (w) => ({
+            "the Work profile is selected": () => w?.profileId === "work",
+            "one + control is mounted": () => w?.topStrip?.items?.items.filter((item) => item.kind === "newTab").length === 1
+          }));
+          const button = nativeWindow(ready).topStrip.items.items.find((item) => item.kind === "newTab");
+          assert.ok(button.windowX >= 0 && button.windowX + button.width <= W, "the + click is inside the actual window");
+          await run(`return act("w1", "click:${button.windowX + button.width / 2},${button.windowY + button.height / 2}");`);
+          const selected = await untilSnapshot(app, "the + placeholder is selected without an ordinary strip item", (w) => ({
+            "a new tab is selected": () => !!w?.selectedTabId && !["k1", "k2", "k3"].includes(w.selectedTabId),
+            "the placeholder has no duplicate tab item": () => !w?.topStrip?.items?.items.some((item) => item.kind === "tab" && item.id === w.selectedTabId),
+            "the + control remains unique": () => w?.topStrip?.items?.items.filter((item) => item.kind === "newTab").length === 1
+          }));
+          const first = nativeWindow(selected).selectedTabId;
+          made.push(first);
+          assert.equal(await run(`return st().tabs[${JSON.stringify(first)}]?.newTabPlaceholder;`), true);
+          await run(`return ac.shell.devKeyEquivalent("w1", { key: "t", keyCode: 17, modifiers: ["command"] });`);
+          const repeated = await untilSnapshot(app, "repeated Cmd-T keeps the prior empty strip row", (w) => ({
+            "a fresh placeholder is selected": () => !!w?.selectedTabId && w.selectedTabId !== first && !["k1", "k2", "k3"].includes(w.selectedTabId),
+            "the settled empty tab has a strip row": () => w?.topStrip?.items?.items.some((item) => item.kind === "tab" && item.id === first),
+            "the new placeholder has no duplicate row": () => !w?.topStrip?.items?.items.some((item) => item.kind === "tab" && item.id === w.selectedTabId)
+          }));
+          const second = nativeWindow(repeated).selectedTabId;
+          made.push(second);
+          assert.notEqual(await run(`return st().tabs[${JSON.stringify(first)}]?.newTabPlaceholder;`), true);
+          await run(`st().activate("k1"); return true;`);
+          assert.equal(await run(`return !!st().tabs[${JSON.stringify(second)}];`), false, "leaving the strip's untouched placeholder discards it");
+          await run(`st().closeTab(${JSON.stringify(first)}); return true;`);
+        }
+        return { settings: ["page", "commandBar"], tabs: made };
+      } finally {
+        await run(`st().activate("k1"); for (const id of ${JSON.stringify(made)}) if (st().tabs[id]) st().closeTab(id); st().updateSettings({ newTabOpens: ${JSON.stringify(before.newTabOpens)}, newTabPosition: ${JSON.stringify(before.newTabPosition)} }); st().switchProfile("w1", ${JSON.stringify(before.profileId)}); st().activate(${JSON.stringify(before.active)}); return true;`);
+      }
+    });
     const out = { width: W, height: H, spans: await run(`return runs("w1", 21);`) };
     const nativeSpans = [];
     let span = null;

@@ -15,6 +15,19 @@ final class HeroTextField: NSTextField {
 
   required init?(coder: NSCoder) { fatalError() }
 
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    guard window != nil else { return }
+    var ancestor = superview
+    while let view = ancestor {
+      if let hero = view as? NewTabHeroView {
+        hero.focusAttachedField(self)
+        return
+      }
+      ancestor = view.superview
+    }
+  }
+
   override func becomeFirstResponder() -> Bool {
     let became = super.becomeFirstResponder()
     if became {

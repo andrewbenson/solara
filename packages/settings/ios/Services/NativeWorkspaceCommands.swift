@@ -245,6 +245,10 @@ enum NativeWorkspaceCommands {
 
   @discardableResult
   static func perform(_ command: String, arg: String? = nil, windowId: String?) -> Bool {
+    #if SOLARA_PROBES
+    let timing = NewTabMainThreadTiming.begin("command.\(command)", windowId: windowId)
+    defer { NewTabMainThreadTiming.end(timing) }
+    #endif
     if ViewMenuCommand.commands.contains(command) { return performView(command, arg: arg, windowId: windowId) }
     if PageMenuCommand.commands.contains(command) { return performPage(command, arg: arg, windowId: windowId) }
     if FindMenuCommand.commands.contains(command) { return performFind(command, windowId: windowId) }
@@ -374,6 +378,8 @@ enum NativeWorkspaceCommands {
   }
 
   static func newTabViewReady(_ view: NativeNewTabView) {
+    let readyTab = view.tabId
+    DispatchQueue.main.async { TabPoolHost.shared.allowPlaceholderPage(readyTab) }
     guard let wanted = newTabFocus[view.windowId], wanted.tabId == view.tabId, let window = view.window else { return }
     guard NativeStoreHandle.ownsWorkspace, NativeStoreHandle.ownershipGeneration == wanted.ownership,
       NativeStoreHandle.store?.state.activeTabId(view.windowId) == wanted.tabId, window.isKeyWindow else {
@@ -394,6 +400,10 @@ enum NativeWorkspaceCommands {
   }
 
   private static func focusPage(_ tabId: String, stopFinding: Bool = false) {
+    #if SOLARA_PROBES
+    let timing = NewTabMainThreadTiming.begin("focus.page", tabId: tabId)
+    defer { NewTabMainThreadTiming.end(timing) }
+    #endif
     guard let issuer = PageIssuer.shared else { return }
     issuer.store.sequence {
       guard let binding = issuer.binding(tabId: tabId), issuer.ensurePageEstablished(binding), issuer.isCurrent(binding) else { return }
@@ -403,6 +413,10 @@ enum NativeWorkspaceCommands {
   }
 
   private static func restoreContentFocus(windowId: String, store: Store, tabId: String? = nil, stopFinding: Bool = false) {
+    #if SOLARA_PROBES
+    let timing = NewTabMainThreadTiming.begin("focus.restore", windowId: windowId, tabId: tabId)
+    defer { NewTabMainThreadTiming.end(timing) }
+    #endif
     guard NativeStoreHandle.ownsWorkspace, NativeStoreHandle.store === store,
       WindowHost.contentView(windowId)?.window?.isKeyWindow == true,
       let target = tabId ?? store.state.peeks[windowId]?.tabId ?? store.state.activeTabId(windowId),
@@ -465,9 +479,22 @@ enum NativeWorkspaceCommands {
     _ = try? store.dispatch(Command("setSelection", [.string(windowId), []]), origin: .native)
     if closes && stillCloses { return animateClose(windowId, store: store) }
     _ = try? store.dispatch(Command("closeCommandTabs", [.array(remaining.map(JSONValue.string))]), origin: .native)
+    let closedPlaceholder = WorkspaceClosePolicy.removedPlaceholder(remaining, before: current, after: store.state)
+    if closedPlaceholder {
+      newTabFocus[windowId] = nil
+      WindowHost.endCommandFocus(windowId)
+      if let window = WindowHost.contentView(windowId)?.window, let responder = window.firstResponder as? NSView,
+        let hero = sequence(first: responder, next: { $0.superview }).first(where: { $0 is NewTabHeroView }) as? NewTabHeroView,
+        let heroTab = hero.model?.tabId, remaining.contains(heroTab) {
+        window.makeFirstResponder(nil)
+      }
+      if let next = store.state.activeTabId(windowId), let page = TabPoolHost.shared.pageView(next) as? SolaraCoreWebView {
+        page.activateInChrome()
+      }
+    }
     materializeChanges(before: current, after: store.state)
     FrameUpdates.flush()
-    if current.activeTabId(windowId) != store.state.activeTabId(windowId) {
+    if closedPlaceholder || current.activeTabId(windowId) != store.state.activeTabId(windowId) {
       restoreContentFocus(windowId: windowId, store: store)
     }
   }

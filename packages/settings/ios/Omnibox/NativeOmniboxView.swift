@@ -200,6 +200,12 @@ final class NativeOmniboxView: ExpoView, FocusHandoffDestination {
 
   private func makeEvents() -> HeroBarEvents {
     var e = HeroBarEvents()
+    e.edited = { [weak self] text in
+      guard let self, !text.isEmpty, let tabId = self.bar.model?.tabId,
+        NativeStoreHandle.ownsWorkspace, let store = NativeStoreHandle.store,
+        store.state.tabs[tabId]?.newTabPlaceholder == true, store.state.settings.string("newTabOpens") != "commandBar" else { return }
+      _ = try? store.dispatch(Command("settleNewTab", [.string(tabId)]), origin: .native)
+    }
     e.open = { [weak self] url, disposition in self?.onOpen(["url": url, "disposition": disposition.rawValue, "nativeActions": false]) }
     e.switchTo = { [weak self] tab, url, disposition in self?.onSwitch(["tabId": tab, "url": url, "disposition": disposition.rawValue, "nativeActions": false]) }
     e.runAction = { [weak self] id in self?.onAction(["id": id, "nativeActions": false]) }

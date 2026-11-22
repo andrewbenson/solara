@@ -143,6 +143,23 @@ export function tabsClosingWithWindow(s: Pick<BrowserState, "windows">, windowId
   return s.windows[windowId]?.tabIds ?? [];
 }
 
+export function activeTabIdsWithoutPlaceholders(
+  s: Pick<BrowserState, "tabs">,
+  w: Pick<BrowserWindow, "activeTabIds">,
+  kept: string[],
+): Record<string, string> {
+  const keptSet = new Set(kept);
+  const out = Object.fromEntries(Object.entries(w.activeTabIds).filter(([, id]) => keptSet.has(id)));
+  for (const [profileId, id] of Object.entries(w.activeTabIds)) {
+    if (out[profileId] || !s.tabs[id]?.newTabPlaceholder) continue;
+    const previous = kept
+      .filter((t) => s.tabs[t]?.profileId === profileId)
+      .reduce<string | undefined>((best, t) => (!best || shownAt(s.tabs[t]!) > shownAt(s.tabs[best]!) ? t : best), undefined);
+    if (previous) out[profileId] = previous;
+  }
+  return out;
+}
+
 export function activeTabId(s: BrowserState, windowId: string, profileId?: string): string | undefined {
   const w = s.windows[windowId];
   if (!w) return undefined;

@@ -36,6 +36,8 @@ final class TabPoolHost {
   private var making: PoolPageToken?
   private var parkCheckDue: Date?
   private var following: Set<String> = []
+  private var placeholderPagesDue: Set<String> = []
+  private var placeholderPagesAllowed: Set<String> = []
   private var scheduledFollows: Set<String> = []
   private let shellNSWindows = NSMapTable<NSString, NSWindow>.strongToWeakObjects()
 
@@ -237,6 +239,11 @@ final class TabPoolHost {
       }
       .filter { entry in
         guard let tab = state.tabs[entry.tabId] else { return false }
+        if tab.newTabPlaceholder == true, pages[entry.tabId] == nil, !placeholderPagesAllowed.contains(entry.tabId),
+          state.settings.string("newTabOpens") != "commandBar" {
+          deferPlaceholderPage(entry.tabId)
+          return false
+        }
         return entry.shown != .none || pages[entry.tabId] != nil || NativeProfileLoading.isLoaded(state.engineProfile(tab.profileId))
       }
     let freshIds = Set(fresh.map(\.tabId))
@@ -259,6 +266,22 @@ final class TabPoolHost {
     pool.update(wanted.map { identified($0, in: state) })
     followCardPages()
   }
+
+  func allowPlaceholderPage(_ tabId: String) {
+    guard placeholderPagesDue.contains(tabId), placeholderPagesAllowed.insert(tabId).inserted else { return }
+    refresh()
+  }
+
+  private func deferPlaceholderPage(_ tabId: String) {
+    guard placeholderPagesDue.insert(tabId).inserted else { return }
+    placeholderPagesDue = placeholderPagesDue.filter { state?.tabs[$0] != nil }
+    placeholderPagesAllowed = placeholderPagesAllowed.filter { state?.tabs[$0] != nil }
+    DispatchQueue.main.asyncAfter(deadline: .now() + Self.placeholderPageDelay) { [weak self] in
+      MainActor.assumeIsolated { self?.allowPlaceholderPage(tabId) }
+    }
+  }
+
+  static let placeholderPageDelay: TimeInterval = 0.5
 
   private func parkAwaitingShell(_ state: BrowserState, freshIds: Set<String>, held: Set<String>) -> [TabViewWanted] {
     let awaiting = Set(state.windows.keys).subtracting(shellWindows).filter { NativeWindowShell.enabled && NativeWindowShell.isBrowserWindow($0) }
@@ -392,9 +415,10 @@ final class TabPoolHost {
       guard NativeProfileLoading.isLoaded(profile) || wanted.contains(where: { $0.tabId == tabId && $0.shown != .none }) else { return nil }
       let peek = state.peeks[windowId]
       let url = tab.navigation?.url ?? (tab.adoptId != nil ? tab.url : nil)
+      let opensNewTabPage: Bool = tab.url.isEmpty && (tab.adoptId ?? "").isEmpty
       let spec = PooledPageSpec(
         engine: issuer.store.pageEngine(tabId, in: state), profile: state.engineProfile(tab.profileId), url: url.map(toEngineUrl),
-        adoptId: tab.adoptId, temporarySource: peek?.tabId == tabId ? peek?.sourceId : nil)
+        adoptId: tab.adoptId, temporarySource: peek?.tabId == tabId ? peek?.sourceId : nil, startsHidden: opensNewTabPage)
       let token = PoolPageToken()
       token.execution = PageExecutionMemory(initial: Self.navigation(tab.navigation))
       let context = PageHostContext.initial(navigationSeq: tab.navigation.flatMap { Int(exactly: $0.seq) },

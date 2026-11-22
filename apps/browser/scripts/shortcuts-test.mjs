@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { isDeepStrictEqual } from "node:util";
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -48,6 +48,7 @@ process.on("unhandledRejection", (error) => {
 });
 app = await launch(appPath, {
   data, port,
+  env: { SOLARA_NEW_TAB_TIMING: process.env.SOLARA_NEW_TAB_TIMING ?? "0" },
   session: session({
     profiles: [{ id: "default", name: "Personal", color: "plum" }, { id: "p-work", name: "Work", color: "blue" }],
     windows: [{ id: "w1", tabIds: ids, activeTabIds: { default: "t3" } }],
@@ -702,6 +703,9 @@ for (const busy of [0, 120]) {
       const pasted = `paste-${++token}`;
       await resetToPageField("", [0, 0]);
       await clipboard.set(pasted);
+      if (name === "⌘T" && process.env.SOLARA_NEW_TAB_TIMING === "1") {
+        await ac(`return globalThis.expo.modules.SolaraNewTab.mainThreadTiming(true);`);
+      }
       if (busy) await busyJsOnce(busy);
       const postedAt = await postKeys([keyPress(key, code), keyPress("v", 9, gap)]);
       await sleep(900);
@@ -713,6 +717,15 @@ for (const busy of [0, 120]) {
         assert.ok(nativeWindow(nativeHero).shortcutFields.some((f) => String(f.value).includes(pasted)));
       }
       const held = postedAt[1] - postedAt[0];
+      if (name === "⌘T" && process.env.SOLARA_NEW_TAB_TIMING === "1") {
+        const timing = await ac(`return globalThis.expo.modules.SolaraNewTab.mainThreadTiming(true);`);
+        assert.equal(timing.available, true, "main-thread timing requires SOLARA_PROBES");
+        assert.equal(timing.dropped, 0, "main-thread timing capture is complete");
+        assert.ok(timing.spans.some((span) => span.phase === "command.newTab"), "the native New Tab command was measured");
+        const path = join(scratch, `newtab-main-thread-${busy}-${gap}.json`);
+        writeFileSync(path, JSON.stringify({ busy, gap, postedAt, timing }, null, 2));
+        rep.log(`New Tab main-thread timing: ${path}`);
+      }
       check(`${label} ⌘V pastes into the new field, not the page`, inDestination && !String(inPage).includes(pasted) && held >= gap - 1 && held < gap + 30,
         `page "${inPage}", destination ${inDestination}, keys ${held.toFixed(1)} ms apart`);
 
@@ -863,14 +876,25 @@ for (const [name, keys, busy, firstExpected] of handoffEnds) {
   await resetToPageField("", [0, 0]);
   await countPastes();
   await clipboard.set(`ended-${name.replace(/\W+/g, "")}`);
+  if (name === "⌘T ⌘W" && process.env.SOLARA_NEW_TAB_TIMING === "1") {
+    await ac(`return globalThis.expo.modules.SolaraNewTab.mainThreadTiming(true);`);
+    await devWindow("responderChanges");
+  }
   if (busy) await busyJsOnce(busy);
-  await postKeys(keys);
+  const postedAt = await postKeys(keys);
   await sleep(1200);
   await ac(`const s = ac.store.getState(); if (s.windowUi.w1?.panel.open) s.closePanel("w1"); return 1;`);
   if (name.startsWith("⌘L ⌘V")) await ac(`return ac.shell.devClick("w1", { in: "page", x: 60, y: 135, wait: 150 });`);
   const active = await activeId();
   const first = await pastesIn(active);
   const strays = await pastesElsewhere(active);
+  if (name === "⌘T ⌘W" && process.env.SOLARA_NEW_TAB_TIMING === "1") {
+    const timing = await ac(`return globalThis.expo.modules.SolaraNewTab.mainThreadTiming(true);`);
+    const responderChanges = await devWindow("responderChanges:off");
+    const path = join(scratch, "newtab-close-main-thread.json");
+    writeFileSync(path, JSON.stringify({ postedAt, active, first, strays, timing, responderChanges }, null, 2));
+    rep.log(`New Tab close main-thread timing: ${path}`);
+  }
   await postKeys([keyPress("v", 9)]);
   await sleep(600);
   const second = await pastesIn(active);
@@ -1058,6 +1082,54 @@ for (const where of ["the find field", "the page"]) {
   await ac(`ac.store.getState().setSelection("w1", []); return 1;`);
 }
 await fullShortcutSnapshotFits("after the presses");
+for (const busy of [0, 120]) {
+  for (const delay of [40, 350]) {
+    await resetToPageField("", [0, 0]);
+    const pasted = `placeholder-focus-${busy}-${delay}`;
+    await clipboard.set(pasted);
+    if (busy) await busyJsOnce(busy);
+    const samples = [];
+    let postedAt;
+    let untouched = true;
+    let trace;
+    await devWindow("responderChanges");
+    try {
+      if (delay === 40) {
+        postedAt = await postKeys([keyPress("t", 17), keyPress("v", 9, delay)]);
+      } else {
+        postedAt = await postKeys([keyPress("t", 17)]);
+        await untilSnapshot("untouched New Tab field takes focus", (s) => /NSTextView|NSTextField/.test(nativeWindow(s)?.firstResponder ?? ""));
+        const start = Date.now();
+        do {
+          const snapshot = await app.snapshot({ windowId: "w1", shortcuts: true, fields: SHORTCUT_FIELDS });
+          const firstResponder = nativeWindow(snapshot)?.firstResponder ?? "nil";
+          samples.push({ elapsed: Date.now() - start, firstResponder, consistent: snapshot.consistent });
+          untouched &&= snapshot.consistent && /NSTextView|NSTextField/.test(firstResponder);
+          if (Date.now() - start >= delay) break;
+          await sleep(25);
+        } while (Date.now() - start < delay + 5000);
+        untouched &&= samples.at(-1)?.elapsed >= delay;
+        untouched &&= await ac(`const s = ac.store.getState(), w = s.windows.w1, t = s.tabs[w.activeTabIds[w.profileId]];
+          return t?.newTabPlaceholder === true && t.url === "" && String(ac.omnibox.get("w1:hero")?.state().value ?? "") === "";`);
+        postedAt.push(...await postKeys([keyPress("v", 9)]));
+      }
+      await sleep(500);
+    } finally {
+      trace = await devWindow("responderChanges:off");
+      const path = join(scratch, `placeholder-focus-${busy}-${delay}.json`);
+      writeFileSync(path, JSON.stringify({ busy, delay, postedAt, samples, trace }, null, 2));
+      rep.log(`New Tab responder trace: ${path}`);
+    }
+    const changes = trace.split("\n").filter((line) => line.startsWith("at="));
+    const field = changes.findIndex((line) => /actual=(?:NSTextView|NSTextField)/.test(line));
+    const reclaimed = changes.slice(field + 1).some((line) => /actual=RenderWidgetHostViewCocoa/.test(line));
+    const inPage = await pageField("f.value");
+    const inHero = await ac(`return String(ac.omnibox.get("w1:hero")?.state().value ?? "").includes(${JSON.stringify(pasted)});`);
+    check(`⌘T responder trace at +${delay} ms${busy ? `, JS busy ${busy} ms` : ""}: the untouched placeholder keeps field focus and receives the paste`,
+      untouched && field >= 0 && !reclaimed && /dropped=0\n/.test(trace) && inHero && inPage === "",
+      `page ${JSON.stringify(inPage)}, hero ${inHero}, untouched ${untouched}, reclaimed ${reclaimed}, keys ${(postedAt[1] - postedAt[0]).toFixed(1)} ms apart`);
+  }
+}
 await press(cmd("q", 12), { focus: "window", wait: 0 });
 let quit = false;
 for (let i = 0; i < 150 && !quit; i++) {

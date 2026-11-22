@@ -5,7 +5,10 @@ import Testing
 @Suite struct WindowLocalStateTests {
   static func windowWithTabs(_ store: Store, count: Int) throws -> (String, [String]) {
     let window = try store.dispatch(Command("createWindow")).result!.string!
-    for _ in 1..<count { try store.dispatch(Command("newTab", [.string(window)])) }
+    for _ in 1..<count {
+      let tab = try store.dispatch(Command("newTab", [.string(window)])).result!.string!
+      try store.dispatch(Command("settleNewTab", [.string(tab)]))
+    }
     return (window, store.state.windows[window]!.tabIds)
   }
 

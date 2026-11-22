@@ -120,7 +120,7 @@ export function runCommand({ command, arg, windowId: requested }: CommandEvent) 
     return;
   }
   if (route.kind === "noWindow") {
-    if (command === "newTab") openWindow();
+    if (command === "newTab") openWindow({ newTabCommand: true });
     if (command === "reopenClosedTab" || command === "restoreClosed") {
       if (arg) s.restoreClosed(arg);
       else s.reopenClosed();

@@ -62,7 +62,7 @@ public enum WorkspaceMenuCommand {
     }
     if command == "reopenClosedWindow" { return run("reopenClosedWindow") }
     guard let windowId = state.resolveWindowId(requested), let window = state.windows[windowId] else {
-      if command == "newTab" { return run("createWindow") }
+      if command == "newTab" { return run("createWindow", [["newTabCommand": true]]) }
       if command == "reopenClosedTab" { return run("reopenCommandClosed", [.null]) }
       if command == "restoreClosed", let arg { return run("restoreClosed", [.string(arg), .null]) }
       return WorkspaceMenuPlan()
@@ -76,7 +76,8 @@ public enum WorkspaceMenuCommand {
       if arg != "create", state.settings.string("newTabOpens") == "commandBar", !window.isSmall {
         if panel?["newTab"]?.truthy == true { return run("closePanel", [targetWindow]) }
         let target: JSONValue
-        if let tab, !tab.pinned, tab.url.isEmpty, tab.navigation == nil, !truthy(tab.adoptId), Splits.splitOf(state, tab.id) == nil {
+        if let tab, !tab.pinned, tab.url.isEmpty, tab.navigation == nil || (tab.navigation?.url == "about:blank" && tab.navigation?.userInitiated != true),
+          !truthy(tab.adoptId), Splits.splitOf(state, tab.id) == nil {
           target = ["kind": "into", "tabId": .string(tab.id)]
         } else { target = ["kind": "list"] }
         return run("openPanel", [targetWindow, "", target])
@@ -84,7 +85,8 @@ public enum WorkspaceMenuCommand {
       return run("newTab", [targetWindow, ["newTabCommand": true]])
     case "closeWindow": return WorkspaceMenuPlan(close: .window(windowId))
     case "closeTab":
-      if panel?["open"]?.truthy == true, !window.isSmall || tab?.url.isEmpty == false { return run("closePanel", [targetWindow]) }
+      let barOverPlaceholder = tab?.newTabPlaceholder == true && state.settings.string("newTabOpens") != "commandBar"
+      if panel?["open"]?.truthy == true, !barOverPlaceholder, !window.isSmall || tab?.url.isEmpty == false { return run("closePanel", [targetWindow]) }
       if let peek = state.peeks[windowId] {
         if state.find[peek.tabId]?.json["open"]?.truthy == true {
           return run("setFind", [.string(peek.tabId), ["open": false, "count": .null, "active": 0]])
@@ -144,6 +146,10 @@ public struct WorkspaceCloseDecision: Equatable, Sendable {
 }
 
 public enum WorkspaceClosePolicy {
+  public static func removedPlaceholder(_ ids: [String], before: BrowserState, after: BrowserState) -> Bool {
+    ids.contains { before.tabs[$0]?.newTabPlaceholder == true && after.tabs[$0] == nil }
+  }
+
   public static func tabs(_ ids: [String], windowId: String, state: BrowserState, lastTabKeepsWindow: Bool = false) -> WorkspaceCloseDecision {
     let open = ids.filter { state.tabs[$0]?.windowId == windowId }
     guard let window = state.windows[windowId], let last = open.last else {

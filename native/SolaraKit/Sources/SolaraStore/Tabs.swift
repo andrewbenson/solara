@@ -105,7 +105,7 @@ extension Session {
       if !w.tabIds.contains(where: { gone.contains($0) }) { continue }
       if record {
         for (index, id) in w.tabIds.enumerated() {
-          guard let t = s.tabs[id], gone.contains(id), !(t.url.isEmpty && !t.pinned) else { continue }
+          guard let t = s.tabs[id], gone.contains(id), t.newTabPlaceholder != true, !(t.url.isEmpty && !t.pinned) else { continue }
           let group = Groups.innermostGroupOf(s.groups, id)
           let parents = group.map { g in Groups.ancestorIds(s.groups, g.id).map { Groups.closedGroupInfo(s.groups[$0]!) } } ?? []
           closed.append(
@@ -353,6 +353,7 @@ extension Session {
         o.url = options?.url
         o.adoptId = options?.adoptId ?? options?.wakeAdoptId
         o.background = options?.background
+        o.newTabCommand = options?.newTabCommand
         let created = createWindow(o)
         return state.activeTabId(created) ?? ""
       }
@@ -361,21 +362,31 @@ extension Session {
       o.index = nil
       return newTab(main, o)
     }
-    let beside = options?.newTabCommand == true && !truthy(options?.openerId) ? nextToActive(state, windowId, options?.profileId) : nil
     var o = options ?? NewTabOptions()
+    let placeholder = o.newTabCommand == true && !truthy(o.url) && o.background != true && o.snapshot == nil && !truthy(o.adoptId)
+      && !truthy(o.wakeAdoptId) && o.pinned != true && !truthy(o.openerId)
+    var base = state
+    if placeholder, o.profileId == nil || o.profileId == base.windows[windowId]?.profileId,
+      let active = base.activeTabId(windowId), base.tabs[active]?.newTabPlaceholder == true {
+      base = settlingNewTab(base, active)
+    }
+    let beside = (o.newTabCommand == true || placeholder) && !truthy(o.openerId) ? nextToActive(base, windowId, o.profileId) : nil
     if let beside {
       o.openerId = beside.openerId
       o.index = beside.index
     }
-    var (next, id) = withNewTab(state, windowId, o)
-    if beside != nil, let typed = next.tabs[id]?.navigation {
+    var made = o
+    if placeholder { made.openerId = nil }
+    var (next, id) = withNewTab(base, windowId, made)
+    if placeholder { next = withNewTabPlaceholder(next, id, openerId: o.openerId) }
+    if !placeholder, beside != nil, let typed = next.tabs[id]?.navigation {
       var t = next.tabs[id]!
       t.engine = engineForUrl(next, typed.url)
       next.tabs[id] = t
     }
     if !id.isEmpty, let opener = options?.openerId, !opener.isEmpty {
       next = groupWithOpener(next, id, opener, background: options?.background == true)
-    } else if !id.isEmpty, let beside, !next.inPinnedContainer(beside.openerId) {
+    } else if !placeholder, !id.isEmpty, let beside, !next.inPinnedContainer(beside.openerId) {
       next = groupWithOpener(next, id, beside.openerId, background: false)
     }
     set(next)
@@ -489,6 +500,11 @@ extension Session {
     for (key, value) in patch.set { json[key] = value }
     for key in patch.unset { json.removeValue(forKey: key) }
     if supersedes { json.removeValue(forKey: "wakeAdoptId") }
+    if tab.url.isEmpty, tab.navigation?.url == "about:blank", tab.navigation?.userInitiated != true, let url,
+      ["about:blank", "solara://newtab", "solara://newtab/", "chrome://newtab", "chrome://newtab/"].contains(url.lowercased()) {
+      json["url"] = ""
+      json["title"] = ""
+    }
     guard var next = try? Tab(json: json) else { return }
     next.id = tab.id
     if next == tab && (live == nil || live == s.live[id]) { return }
@@ -554,6 +570,12 @@ extension Session {
   }
 
   func isEmptyCardTab(_ s: BrowserState, _ tab: Tab?) -> Bool {
+    guard let tab else { return false }
+    let emptyNavigation = tab.navigation == nil || (tab.navigation?.url == "about:blank" && tab.navigation?.userInitiated != true)
+    return !tab.pinned && tab.url.isEmpty && emptyNavigation && !truthy(tab.adoptId) && Splits.splitOf(s, tab.id) == nil
+  }
+
+  func isUnopenedEmptyTab(_ s: BrowserState, _ tab: Tab?) -> Bool {
     guard let tab else { return false }
     return !tab.pinned && tab.url.isEmpty && tab.navigation == nil && !truthy(tab.adoptId) && Splits.splitOf(s, tab.id) == nil
   }

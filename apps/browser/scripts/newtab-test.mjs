@@ -11,7 +11,8 @@ const HELP = `Checks the native New Tab hero in one hidden fixture instance.
 
   node apps/browser/scripts/newtab-test.mjs <Debug Solara.app> [--keep-data] [--placement=top|bottom|below-current]
 
-Checks initial focus with an in-process key dispatch, per-tab text and selection after remount,
+Checks placeholder creation, repeat and discard, placement, first-edit settlement, initial focus with
+an in-process key dispatch, per-tab text and selection after remount,
 two-window/profile isolation, and Enter navigation in place. Uses loopback pages, disables remote
 suggestions, and cross-checks the JS driver against the native model items, field editor and
 native app snapshot. Teardown has a separate 10-second deadline. It does not verify SwiftUI row rendering or accessibility exposure. Defaults AC_UITEST_WAIT to 0; an occupied UI gate fails fast.
@@ -115,6 +116,7 @@ const until = async (what, sample, accept, ms = 4500) => {
   } while (Date.now() < end);
   throw new Error(`${what}: ${JSON.stringify(last)}`);
 };
+const chromeTab = (tabId) => run(`return globalThis.expo.modules.SolaraCEF.tabStrips().then((transaction) => transaction.strips.flatMap((strip) => strip.tabs).find((tab) => tab.key === ${JSON.stringify(tabId)}) ?? null);`, 1000);
 const view = (w, t, end) => {
   if (end - Date.now() < 1000) return null;
   return run(`const ref = heroRef(${JSON.stringify(w)}, ${JSON.stringify(t)}); return ref ? ref.driverState().then(JSON.parse).then((native) => ({ native, js: ac.omnibox.get(${JSON.stringify(`${w}:hero`)})?.state() ?? null })) : null;`, 1000);
@@ -245,12 +247,53 @@ try {
     assert.ok(!press?.error, JSON.stringify(press));
     const opened = await until("fresh tab selected", () => run(`const s = S(); const id = s.windows.w1.activeTabIds.default; return id && !${JSON.stringify(ids)}.includes(id) && s.tabs[id]?.url === "" ? id : null;`), Boolean);
     await checkedView("w1", opened, "");
+    assert.equal(await run(`return S().tabs[${JSON.stringify(opened)}]?.newTabPlaceholder;`), true, "Cmd-T selects an untouched placeholder");
+    const live = await until("the untouched placeholder is a real Chrome tab", () => chromeTab(opened), (tab) => !!tab?.browser);
+    const order = await run(`return S().windows.w1.tabIds;`);
+    const position = await run(`return S().settings.newTabPosition;`);
+    if (position === "top") assert.equal(order[0], opened, "placeholder keeps the top insertion slot");
+    else if (position === "nextToCurrent") assert.equal(order[order.indexOf("pa") + 1], opened, "placeholder follows the current tab");
+    else assert.equal(order.at(-1), opened, "placeholder keeps the bottom insertion slot");
     await run(`return ac.shell.devTypeKeys("w1", "opened by command", 5);`);
     await checkedView("w1", opened, "opened by command", { compareJS: true });
+    assert.notEqual(await run(`return S().tabs[${JSON.stringify(opened)}]?.newTabPlaceholder;`), true, "typing settles the same tab before navigation");
+    assert.equal((await chromeTab(opened))?.browser, live.browser, "typing retains the same Chrome tab");
     assert.equal(await run(`return Object.keys(S().tabs).length;`), ids.length + 1);
     await run(`S().closeTab(${JSON.stringify(opened)}); S().activate("a"); return true;`);
     await checkedView("w1", "a", "");
     return { opened, keyRoute: press.handledBy };
+  });
+
+  await check("switching away discards an untouched placeholder without adding a reopen entry", async () => {
+    const before = await run(`S().activate("pa"); return { ids: Object.keys(S().tabs).sort(), closed: S().closedTabs.map((t) => t.id) };`);
+    const opened = await run(`return S().newTab("w1", { newTabCommand: true });`);
+    await checkedView("w1", opened, "");
+    await until("the discard fixture has a real Chrome tab", () => chromeTab(opened), (tab) => !!tab?.browser);
+    await run(`S().activate("pa"); return true;`);
+    await snapshot("untouched placeholder discarded", (state) => !state.tabs.some((tab) => tab.id === opened) && state.windows.some((window) => window.id === "w1" && window.selectedTabId === "pa"));
+    const after = await run(`return { ids: Object.keys(S().tabs).sort(), closed: S().closedTabs.map((t) => t.id) };`);
+    assert.deepEqual(after, before);
+    await until("discard closes the real Chrome tab", () => chromeTab(opened), (tab) => tab === null);
+    await activate("w1", "a");
+    return { discarded: opened, closed: after.closed };
+  });
+
+  await check("a repeated Cmd-T settles the old empty tab and selects a fresh placeholder", async () => {
+    await run(`S().activate("pa"); return true;`);
+    const first = await run(`return S().newTab("w1", { newTabCommand: true });`);
+    await checkedView("w1", first, "");
+    await run(`return ac.shell.devKeyEquivalent("w1", { key: "t", keyCode: 17, modifiers: ["command"] });`);
+    const second = await until("second placeholder selected", () => run(`const s = S(); const id = s.windows.w1.activeTabIds.default; return id !== ${JSON.stringify(first)} && s.tabs[id]?.newTabPlaceholder === true ? id : null;`), Boolean);
+    await checkedView("w1", second, "");
+    const retained = await run(`return S().tabs[${JSON.stringify(first)}];`);
+    assert.ok(retained, "the first empty tab stays in the list");
+    assert.equal(retained.url, "");
+    assert.notEqual(retained.newTabPlaceholder, true);
+    await run(`S().activate("pa"); return true;`);
+    await snapshot("only the fresh untouched placeholder discarded", (state) => state.tabs.some((tab) => tab.id === first) && !state.tabs.some((tab) => tab.id === second));
+    await run(`S().closeTab(${JSON.stringify(first)}); S().activate("a"); return true;`);
+    await checkedView("w1", "a", "");
+    return { settled: first, discarded: second };
   });
 
   await check("opening New Tab focuses the native field and receives local key events", async () => {

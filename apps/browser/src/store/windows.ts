@@ -3,7 +3,7 @@ import type { StateCreator } from "zustand";
 import type { BrowserState } from "./browser";
 import { rejoinGroups } from "./groups";
 import { closingWindowUndos as closing, remapClosingWindow, undoClosingWindow } from "./closingWindowRestore";
-import { findLast,
+import { activeTabIdsWithoutPlaceholders, findLast,
   IDLE_LIVE,
   incognitoOriginal,
   incognitoProfileId,
@@ -33,6 +33,7 @@ import { activated, apply, removeTabs, unloadPinnedTabs, withNewTab } from "./ta
 import type { BrowserWindow, ClosedTab, ClosedWindow, Frame, ParkedPins, SplitView, Tab, TabGroup } from "./types";
 
 export type CreateWindowOptions = {
+  newTabCommand?: boolean;
   profileId?: string;
   incognito?: boolean;
   url?: string;
@@ -224,12 +225,12 @@ export const createWindowsSlice: StateCreator<BrowserState, [], [], WindowsSlice
     const s = returnSharedPages(before, id);
     const w = s.windows[id];
     if (!w) return;
-    const tabs = w.tabIds.map((t) => s.tabs[t]).filter((t): t is Tab => !!t && !inPinnedContainer(s, t.id) && !sharedElsewhere(s, t));
+    const tabs = w.tabIds.map((t) => s.tabs[t]).filter((t): t is Tab => !!t && !t.newTabPlaceholder && !inPinnedContainer(s, t.id) && !sharedElsewhere(s, t));
     const tabIds = tabs.map((t) => t.id);
     const small = isSmallWindow(w);
     let closedWindows = s.closedWindows;
     if (!w.incognito && !small && tabs.some((t) => t.url)) {
-      const active = new Set(Object.values(w.activeTabIds));
+      const active = new Set(Object.values(activeTabIdsWithoutPlaceholders(s, w, tabIds)));
       const entry: ClosedWindow = {
         kind: "window",
         id: newId("cw"),

@@ -234,6 +234,22 @@ try {
   await checkPastes("Rapid native Command T Command W preserves the first paste", 1);
   await postKeys([keyPress("v", 9)]);
   await checkPastes("Rapid native Command T Command W preserves the next paste", 2);
+  await pageValue(`window.nativeCommandPastes = 0; document.querySelector('textarea').value = ''; document.querySelector('textarea').focus(); true;`);
+  await press("w1", "t", 17, ["command"], { focus: "page" });
+  state = await until("Untouched placeholder is active", (state) => active(state) !== "a" && state.tabs[active(state)]?.newTabPlaceholder === true);
+  const untouched = active(state);
+  await renderedSelection("Untouched placeholder", untouched);
+  await focusedHero(untouched, "");
+  const closedUntouched = await press("w1", "w", 13, ["command"], { focus: null, send: true, wait: 0 });
+  assert.match(closedUntouched.firstResponderAtDispatch ?? "", /^RenderWidgetHostViewCocoa$/, "Untouched placeholder close restores page focus before returning from key dispatch");
+  state = (await nativeState()).data;
+  assert.equal(state.tabs[untouched], undefined);
+  assert.equal(active(state), "a");
+  await capture("Untouched placeholder close restores focus synchronously", { closedUntouched });
+  await postKeys([keyPress("v", 9)]);
+  await checkPastes("Synchronous placeholder close preserves the first paste", 1);
+  await postKeys([keyPress("v", 9)]);
+  await checkPastes("Synchronous placeholder close preserves the next paste", 2);
 
   await setup('ac.store.getState().updateSettings({ newTabOpens: "commandBar", searchSuggestions: false })');
   await postKeys([keyPress("t", 17)]);

@@ -97,6 +97,8 @@ final class SidebarContext {
     self.favicons = favicons
   }
 
+  var newTabSelected: Bool { activeId.flatMap { state.tabs[$0]?.newTabPlaceholder } == true }
+
   func unread(_ tab: Tab) -> TabUnreadStatus? {
     guard showsUnread, activeId != tab.id else { return nil }
     return UnreadBadges.status(tab: tab)
@@ -1200,6 +1202,7 @@ final class NewTabRowView: SidebarRowView {
   private let overflow = SidebarIconButton()
 
   override var accessibleTitle: String? { label.text }
+  override func accessibilityValue() -> Any? { NSNumber(value: context?.newTabSelected == true) }
 
   override init(frame: NSRect) {
     super.init(frame: frame)
@@ -1221,7 +1224,7 @@ final class NewTabRowView: SidebarRowView {
     guard let context else { return }
     let palette = context.palette
     plus.set("plus", size: 13, weight: .medium, color: palette.newTabIcon)
-    label.color = palette.newTabLabel
+    label.color = context.newTabSelected ? palette.selectedText : palette.newTabLabel
     hint.stringValue = "\(context.host.cleaned) cleaned"
     hint.textColor = palette.textTertiary
     overflow.hoverFill = palette.toolbarHover
@@ -1234,7 +1237,7 @@ final class NewTabRowView: SidebarRowView {
     let palette = context.palette
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    plate.backgroundColor = (pressed ? palette.pressed : hovered ? palette.hover : .clear).cgColor
+    plate.backgroundColor = (context.newTabSelected ? palette.selected : pressed ? palette.pressed : hovered ? palette.hover : .clear).cgColor
     CATransaction.commit()
     overflow.set("chevron.down", size: 10, weight: .semibold, color: hovered ? palette.textSecondary : palette.textTertiary, tooltip: "Open and recently closed tabs")
     needsLayout = true

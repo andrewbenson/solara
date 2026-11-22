@@ -538,3 +538,5 @@ ordered transaction that names its cause. There are no echo windows, timers or "
 - The OS doesn't route `solara:` to us. Like Dia and Brave, the app doesn't register the scheme,
   so a web page can't open `solara://quit` through Launch Services. `open -a Solara 'solara://version'`
   and AppleScript work, because those go to the app directly.
+
+A foreground empty `newTab` creates a real Chromium tab with `newTabPlaceholder: true` in the runtime projection. Native sidebar and strip queries show its selected + control instead of an ordinary tab row. `settleNewTab(tabId)` commits the row on the first nonempty field edit; navigation and another New Tab command also settle it. Selecting another tab or profile discards an untouched placeholder without closed-tab history. Session documents, closed-window snapshots and device-tab sync exclude untouched placeholders; settled empty rows remain durable across relaunch but, like main's empty tabs, are not offered by Reopen Closed Tab.

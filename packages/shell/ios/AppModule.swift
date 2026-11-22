@@ -11,7 +11,7 @@ public class AppModule: Module {
 
   public func definition() -> ModuleDefinition {
     Name("SolaraApp")
-    Constant("apiVersion") { () -> Int in 66 }
+    Constant("apiVersion") { () -> Int in 67 }
     Constant("sidebarRail") { true }
     Constant("sidebarPosition") { NativeSidebarPositionCapability.enabled }
     Events("onNotificationResponse", "onPendingUpdate")
@@ -881,6 +881,9 @@ enum KeyEquivalents {
       result["handledBy"] = "none"
     }
     note("dispatched \(result["handledBy"] ?? "")")
+    #if DEBUG
+    result["firstResponderAtDispatch"] = window.firstResponder.map { String(describing: type(of: $0)) } ?? "nil"
+    #endif
     DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(press["wait"] as? Int ?? 250)) {
       result["firstResponderAfter"] = window.firstResponder.map { String(describing: type(of: $0)) } ?? "nil"
       restoreKeyWindow?()

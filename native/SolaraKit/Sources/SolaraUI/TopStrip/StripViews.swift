@@ -1054,6 +1054,7 @@ final class StripNewTabButton: StripHoverView {
   }
 
   override var accessibleName: String? { "New Tab" }
+  override var accessibleSelected: Bool? { context?.sidebar.newTabSelected == true }
 
   required init?(coder: NSCoder) { fatalError() }
 
@@ -1067,7 +1068,7 @@ final class StripNewTabButton: StripHoverView {
     guard let context else { return }
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    plate.backgroundColor = (pressed ? context.base.pressed : hovered ? context.base.hover : .clear).cgColor
+    plate.backgroundColor = (context.sidebar.newTabSelected ? context.base.selected : pressed ? context.base.pressed : hovered ? context.base.hover : .clear).cgColor
     CATransaction.commit()
   }
 

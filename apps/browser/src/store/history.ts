@@ -17,6 +17,7 @@ export type HistorySlice = {
 
 export const MAX_HISTORY = 5000;
 export const MAX_VISIT_TIMES = 50;
+export const ENGINE_KEEPS_HISTORY_MS = 90 * 86_400_000;
 
 function withoutVisitsSince(entry: HistoryEntry, since: number): HistoryEntry | null {
   if (entry.lastVisit < since) return entry;
@@ -41,7 +42,8 @@ export const createHistorySlice: StateCreator<BrowserState, [], [], HistorySlice
 
   importHistory(profileId, entries, onPending) {
     if (isIncognitoProfile(profileId)) return 0;
-    const rows = entries.filter((e) => /^(https?|file):/.test(e.url));
+    const oldestKept = Date.now() - ENGINE_KEEPS_HISTORY_MS;
+    const rows = entries.filter((e) => /^(https?|file):/.test(e.url) && e.lastVisit > oldestKept);
     let added = 0;
     set((s) => {
       const byUrl = new Map((s.history[profileId] ?? []).map((h) => [h.url, h]));

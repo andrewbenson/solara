@@ -304,10 +304,26 @@ test("queued profile data is deleted once, and stays queued in session.json unti
   again();
 });
 
+test("imported history older than the engine keeps is neither shown nor written", () => {
+  S().hydrate({});
+  stub.historyDbs.clear();
+  const DAY = 24 * HOUR;
+  const now = Date.now();
+  const added = S().importHistory("default", [
+    { url: "https://recent.example/", title: "Recent", visits: 3, lastVisit: now - 89 * DAY },
+    { url: "https://expired.example/", title: "Expired", visits: 9, lastVisit: now - 91 * DAY },
+    { url: "https://untitled.example/", title: "", visits: 1, lastVisit: now - HOUR },
+  ]);
+  assert.equal(added, 2);
+  const kept = ["https://recent.example/", "https://untitled.example/"];
+  assert.deepEqual(S().history.default.map((h) => h.url).sort(), kept);
+  assert.deepEqual([...stub.chromeHistory("").keys()].sort(), kept);
+});
+
 test("deleting a profile keeps the data others share", () => {
   S().hydrate({});
   const a = S().createProfile({ name: "A" });
-  S().importHistory(a, [{ url: "https://a.com/", title: "A", visits: 1, lastVisit: 2 }]);
+  S().importHistory(a, [{ url: "https://a.com/", title: "A", visits: 1, lastVisit: Date.now() - 2 * HOUR }]);
   const bookmark = S().addBookmark({ profileId: a, url: "https://b.com/", title: "B" });
   const b = S().createProfile({ name: "B", shareWith: a });
   S().deleteProfile(a);
@@ -315,7 +331,7 @@ test("deleting a profile keeps the data others share", () => {
   assert.equal(model.engineProfile(b), a, "still on A's engine context");
   assert.ok(S().bookmarks.nodes[bookmark], "shared bookmarks stay");
   assert.deepEqual(S().history[b].map((h) => h.url), ["https://a.com/"]);
-  S().importHistory(b, [{ url: "https://c.com/", title: "C", visits: 1, lastVisit: 3 }]);
+  S().importHistory(b, [{ url: "https://c.com/", title: "C", visits: 1, lastVisit: Date.now() - HOUR }]);
   assert.equal(S().history[b].length, 2);
   S().deleteProfile(b);
   assert.equal(S().bookmarks.nodes[bookmark], undefined);

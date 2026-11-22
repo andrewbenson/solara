@@ -411,7 +411,7 @@ for (const entry of ["run", "safariExport", "safariDirect"]) {
   for (const fails of [false, true]) {
     test(`${entry} drains a completed import's held production history write${fails ? " even when it rejects" : ""}`, async () => {
       const held = deferred();
-      const history = [{ url: "https://history.test/", title: "History", visits: 2, lastVisit: 100 }];
+      const history = [{ url: "https://history.test/", title: "History", visits: 2, lastVisit: Date.now() }];
       const safari = { profiles: [{ name: "", history }], tabs: [], credentials: [] };
       const fixture = bridge({
         browsers: [chrome],
@@ -450,7 +450,7 @@ for (const entry of ["run", "safariExport", "safariDirect"]) {
 for (const entry of ["run", "safariExport", "safariDirect"]) {
   test(`${entry} cancelled while its bookmarks are being written applies nothing after them and discards its vault`, async () => {
     const held = deferred();
-    const history = [{ url: "https://history.test/", title: "History", visits: 2, lastVisit: 100 }];
+    const history = [{ url: "https://history.test/", title: "History", visits: 2, lastVisit: Date.now() }];
     const safari = { bookmarks: htmlBookmarks, profiles: [{ name: "", history }], tabs: [], credentials: [], vaultToken: `vault-${entry}` };
     const fixture = bridge({
       browsers: [chrome],

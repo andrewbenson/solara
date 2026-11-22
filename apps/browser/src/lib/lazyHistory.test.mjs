@@ -30,7 +30,7 @@ function harness() {
   const context = { console, Date, Set, Map, Promise, queueMicrotask,
     clearTimeout: (timer) => { timers.delete(timer); },
     setTimeout: (fn, ms) => { const timer = { fn, at: clock + (ms ?? 0) }; timers.add(timer); return timer; },
-    nativeSafeMode: () => false, useBrowser, MAX_HISTORY: 5000, MAX_VISIT_TIMES: 50,
+    nativeSafeMode: () => false, useBrowser, MAX_HISTORY: 5000, MAX_VISIT_TIMES: 50, ENGINE_KEEPS_HISTORY_MS: 90 * 86_400_000,
     engineProfile: (id) => (state.profiles[id]?.dataId ?? id) === "default" ? "" : (state.profiles[id]?.dataId ?? id),
     engineIdOf: (profile) => (profile.dataId ?? profile.id) === "default" ? "" : (profile.dataId ?? profile.id),
     isIncognitoProfile: (id) => id.startsWith("incognito:"),

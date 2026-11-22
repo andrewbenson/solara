@@ -84,7 +84,7 @@ test("safe history deletion and explicit import survive a normal launch without 
   try {
     await settle(); await reloadHistory();
     S().removeHistory("default", ["https://deleted.example/"]);
-    S().importHistory("default", [{ url: "https://imported.example/", title: "Safe import", visits: 1, lastVisit: 44 }]);
+    S().importHistory("default", [{ url: "https://imported.example/", title: "Safe import", visits: 1, lastVisit: Date.now() }]);
     await settle();
     assert.equal(stub.chromeHistory("").has("https://deleted.example/"), false);
     assert.equal(stub.chromeHistory("").get("https://imported.example/").title, "Safe import");

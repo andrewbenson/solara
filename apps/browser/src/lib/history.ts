@@ -5,14 +5,13 @@ import { nativeAddHistoryVisits, startNativeHistoryCatalog } from "@solara/setti
 import { useBrowser, type BrowserState } from "../store/browser";
 import { engineProfileLoaded, onLoadedProfilesChanged, refreshLoadedProfiles } from "./lazyProfiles";
 import { afterFirstWindow } from "./afterFirstWindow";
-import { MAX_HISTORY, MAX_VISIT_TIMES } from "../store/history";
+import { ENGINE_KEEPS_HISTORY_MS, MAX_HISTORY, MAX_VISIT_TIMES } from "../store/history";
 import { engineProfile, isIncognitoProfile } from "../store/model";
 import type { HistoryEntry } from "../store/types";
 import { engineIdOf } from "../store/profiles";
 
 const LEGACY_FILE = "history.json";
 const LEGACY_TOLERANCE_MS = 60_000;
-const CHROME_KEEPS_MS = 90 * 86_400_000;
 const CHUNK = 500;
 const LEGACY_KEPT_MS = 15_000;
 
@@ -333,7 +332,7 @@ async function moveLegacyHistory(now: number, keepMs: number): Promise<"none" | 
           .map((e) => ({
             url: e.url,
             title: e.title ?? "",
-            visitTimes: (e.visitTimes?.length ? e.visitTimes : [e.lastVisit]).filter((t) => typeof t === "number" && t > now - CHROME_KEEPS_MS),
+            visitTimes: (e.visitTimes?.length ? e.visitTimes : [e.lastVisit]).filter((t) => typeof t === "number" && t > now - ENGINE_KEEPS_HISTORY_MS),
           }))
           .filter((p) => p.visitTimes.length);
         for (let i = 0; i < pages.length; i += CHUNK) {

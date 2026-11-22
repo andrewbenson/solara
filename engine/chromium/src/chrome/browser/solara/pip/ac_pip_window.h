@@ -4,12 +4,14 @@
 #define CHROME_BROWSER_SOLARA_PIP_AC_PIP_WINDOW_H_
 
 #include <memory>
+#include <string>
 
 #include "base/memory/raw_ptr.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "chrome/browser/ui/views/overlay/video_overlay_window_views.h"
 
+class SolaraMuteButton;
 class SolaraProgressBar;
 
 namespace content {
@@ -30,6 +32,9 @@ class SolaraVideoOverlayWindow : public VideoOverlayWindowViews {
   void ShowInactive() override;
   void Hide() override;
   void SetMediaPosition(const media_session::MediaPosition& position) override;
+  void SetPlaybackState(PlaybackState playback_state) override;
+  void SetMediaMuted(bool muted) override;
+  void SetSourceTitle(const std::u16string& source_title) override;
   void OnNativeWidgetMove() override;
   void OnNativeWidgetDestroyed() override;
   void OnNativeWidgetSizeChanged(const gfx::Size& new_size) override;
@@ -42,11 +47,15 @@ class SolaraVideoOverlayWindow : public VideoOverlayWindowViews {
   void SetUpViews() override;
 
   void OnCloseButtonPressed();
+  void OnMuteButtonPressed();
+  void UpdateTitle();
   void HideIdleControlsUnlessPointerOnControl();
   void MaybeSaveBounds();
   void FinishHide();
 
   raw_ptr<SolaraProgressBar> ac_progress_bar_ = nullptr;
+  raw_ptr<SolaraMuteButton> ac_mute_button_ = nullptr;
+  std::u16string ac_source_title_;
   base::TimeDelta ac_hide_fade_;
   base::OneShotTimer ac_hide_timer_;
 };

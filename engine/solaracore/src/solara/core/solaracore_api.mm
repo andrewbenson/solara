@@ -1003,6 +1003,11 @@ void WatchTracingStart(std::shared_ptr<TracingStart> start, int checks_left) {
   return solaracore::VideoUpscalingState();
 }
 
++ (void)minimizePictureInPicture {
+  PictureInPictureWindowManager::GetInstance()->ExitPictureInPictureViaWindowUi(
+      PictureInPictureWindowManager::UiBehavior::kCloseWindowOnly);
+}
+
 + (void)setAutoPictureInPicture:(BOOL)enabled {
   g_auto_picture_in_picture = enabled;
   g_solara_auto_picture_in_picture_off = !enabled;
@@ -1884,6 +1889,42 @@ std::optional<bool> RunPageCommand(content::WebContents* contents, int command) 
 @interface SolaraCoreInputSuppression : NSObject
 - (instancetype)initWithContents:(content::WebContents*)contents;
 @end
+
+namespace {
+
+constexpr int kPictureInPictureEnterChecks = 40;
+constexpr base::TimeDelta kPictureInPictureEnterCheckInterval =
+    base::Milliseconds(50);
+
+void AwaitPictureInPicture(base::WeakPtr<content::WebContents> contents,
+                           base::WeakPtr<content::WebContents> previous,
+                           int checks_left,
+                           void (^completion)(BOOL)) {
+  if (!contents) {
+    completion(NO);
+    return;
+  }
+  if (PictureInPictureWindowManager::GetInstance()->GetWebContents() ==
+      contents.get()) {
+    if (previous && previous.get() != contents.get()) {
+      content::MediaSession::Get(previous.get())
+          ->Suspend(content::MediaSession::SuspendType::kUI);
+    }
+    completion(YES);
+    return;
+  }
+  if (checks_left <= 0) {
+    completion(NO);
+    return;
+  }
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
+      FROM_HERE,
+      base::BindOnce(&AwaitPictureInPicture, contents, previous,
+                     checks_left - 1, completion),
+      kPictureInPictureEnterCheckInterval);
+}
+
+}
 
 @implementation SolaraCoreInputSuppression {
   std::optional<content::WebContents::ScopedIgnoreInputEvents> _ignoring;
@@ -2784,6 +2825,26 @@ TabSharingInfoBarDelegate* TabSharingDelegateFor(content::WebContents* contents,
                        }
                      },
                      _contents->GetWeakPtr()));
+}
+
+- (void)enterPictureInPicture:(void (^)(BOOL opened))completion {
+  if (!_contents) {
+    completion(NO);
+    return;
+  }
+  PictureInPictureWindowManager* manager =
+      PictureInPictureWindowManager::GetInstance();
+  if (manager->GetWebContents() == _contents) {
+    completion(YES);
+    return;
+  }
+  base::WeakPtr<content::WebContents> previous;
+  if (content::WebContents* holder = manager->GetWebContents()) {
+    previous = holder->GetWeakPtr();
+  }
+  content::MediaSession::Get(_contents)->EnterPictureInPicture();
+  AwaitPictureInPicture(_contents->GetWeakPtr(), previous,
+                        kPictureInPictureEnterChecks, completion);
 }
 
 - (BOOL)hasLiveFrame:(NSString*)frameId {

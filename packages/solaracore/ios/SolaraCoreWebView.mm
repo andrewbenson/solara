@@ -17,6 +17,8 @@
 #include <climits>
 #include <cmath>
 
+NSNotificationName const SolaraCorePictureInPictureDidChangeNotification = @"SolaraCorePictureInPictureDidChange";
+
 namespace {
 
 bool TraceVisibility() {
@@ -3321,6 +3323,28 @@ static NSString *LinkKeyAction(NSString *key) {
   }
 }
 
+- (void)enterPictureInPicture:(void (^)(BOOL opened))completion {
+  if (![_tab respondsToSelector:@selector(enterPictureInPicture:)]) return completion(NO);
+  [_tab enterPictureInPicture:completion];
+}
+
++ (void)minimizePictureInPicture {
+  if ([SolaraCoreEngine respondsToSelector:@selector(minimizePictureInPicture)]) [SolaraCoreEngine minimizePictureInPicture];
+}
+
++ (SolaraCoreWebView *)liveViewForTransferKey:(NSString *)transferKey {
+  if (!transferKey.length) return nil;
+  for (SolaraCoreWebView *view in LiveViews().allObjects)
+    if ([view->_transferKey isEqualToString:transferKey] && view->_tab && !view->_tab.closed) return view;
+  return nil;
+}
+
+- (void)postPictureInPictureChange:(BOOL)active {
+  [NSNotificationCenter.defaultCenter postNotificationName:SolaraCorePictureInPictureDidChangeNotification
+                                                    object:self
+                                                  userInfo:@{@"tabID" : _transferKey ?: @"", @"active" : @(active)}];
+}
+
 - (void)exitPictureInPicture {
   if ([_tab respondsToSelector:@selector(exitPictureInPicture)]) return [_tab exitPictureInPicture];
   [self executeJavaScript:@"document.pictureInPictureElement && document.exitPictureInPicture();"
@@ -3500,6 +3524,7 @@ static NSString *LinkKeyAction(NSString *key) {
     if (!active && !_inPictureInPicture) return;
     _inPictureInPicture = active;
     [self emit:@"pictureInPicture" payload:@{@"kind" : @"video", @"active" : @(active)}];
+    [self postPictureInPictureChange:active];
     if (!active) return;
     solaracore_pip::WatchZoom();
     solaracore_pip::VideoEntered(self, [NSURL URLWithString:tab.url ?: @""].host ?: @"");
@@ -3507,6 +3532,7 @@ static NSString *LinkKeyAction(NSString *key) {
   }
   _inPictureInPicture = [state[@"active"] boolValue];
   [self emit:@"pictureInPicture" payload:@{@"kind" : @"document", @"active" : @([state[@"active"] boolValue])}];
+  [self postPictureInPictureChange:_inPictureInPicture];
   if (_inPictureInPicture) solaracore_pip::DocumentEntered();
 }
 

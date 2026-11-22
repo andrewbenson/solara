@@ -4,6 +4,8 @@ NS_ASSUME_NONNULL_BEGIN
 
 @class SolaraCoreWebView;
 
+extern NSNotificationName const SolaraCorePictureInPictureDidChangeNotification;
+
 @protocol SolaraCoreWebViewDelegate <NSObject>
 - (void)webView:(SolaraCoreWebView *)view event:(NSString *)name payload:(NSDictionary<NSString *, id> *)payload;
 @end
@@ -110,6 +112,9 @@ NS_ASSUME_NONNULL_BEGIN
                                   control:(NSInteger)target
                                completion:(void (^)(BOOL ok))completion NS_SWIFT_NAME(requestPictureInPicture(clickAt:control:_:));
 - (void)exitPictureInPicture;
+- (void)enterPictureInPicture:(void (^)(BOOL opened))completion NS_SWIFT_NAME(enterPictureInPicture(completion:));
++ (void)minimizePictureInPicture;
++ (nullable SolaraCoreWebView *)liveViewForTransferKey:(NSString *)transferKey NS_SWIFT_NAME(liveView(transferKey:));
 
 - (void)securityInfo:(void (^)(NSDictionary<NSString *, id> *info))completion NS_SWIFT_NAME(securityInfo(_:));
 - (void)pageCookies:(NSArray<NSString *> *)urls

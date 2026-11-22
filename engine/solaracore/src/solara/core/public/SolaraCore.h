@@ -70,6 +70,7 @@ SOLARACORE_EXPORT
 + (void)closeCastDialog:(int)dialogId;
 + (void)terminateCastRoute:(NSString*)routeId;
 + (void)setAutoPictureInPicture:(BOOL)enabled;
++ (void)minimizePictureInPicture;
 + (void)setVideoUpscaling:(BOOL)enabled;
 + (void)setVideoUpscalingTestConditions:(NSDictionary<NSString*, NSNumber*>*)conditions;
 @property(class, readonly) NSDictionary<NSString*, id>* videoUpscalingState;
@@ -338,6 +339,7 @@ SOLARACORE_EXPORT
 - (void)executeJavaScript:(NSString*)code frame:(NSString*)frameId;
 - (void)evaluate:(NSString*)code completion:(void (^)(NSString* _Nullable json))completion;
 - (void)exitPictureInPicture;
+- (void)enterPictureInPicture:(void (^)(BOOL opened))completion;
 - (void)enterPictureInPictureForClickAt:(NSTimeInterval)clickTime
                              completion:(void (^)(NSString* route, BOOL opened))completion;
 - (BOOL)hasLiveFrame:(NSString*)frameId;

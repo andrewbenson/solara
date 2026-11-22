@@ -62,7 +62,7 @@ const usesPageA = [
   "extension-prompts", "extension-prompt-closed", "extension-sheet-native", "traffic-lights-after-profile-switch", "extension-configure",
   "private-windows-create", "extension-installed-bubble", "popup-window", "popup-window-permission", "popup-origin-strip", "autofill-save-prompts",
   "settings-services", "download-navigation", "page-events", "page-background", "appearance-reaches-pages", "external-app-answer",
-  "notifications", "now-playing", "media-state", "auto-picture-in-picture", "pip-takeover-profiles", "pip-window", "page-focus", "page-press-split",
+  "notifications", "now-playing", "media-state", "auto-picture-in-picture", "pip-takeover-profiles", "pip-api", "pip-window", "page-focus", "page-press-split",
   "fullscreen-tab-switch", "fullscreen-native", "escape-in-window-fullscreen", "fullscreen-transition-picture", "fullscreen-hidden-page", "fullscreen-split-sibling",
   "fullscreen-pip", "pip-fullscreen-space", "pip-keep-on-top-reopen", "webkit-picture-in-picture", "pip-document-back-to-tab", "autofill-suggestions", "images", "extension-surfaces", "frozen", "discard",
   "permission-prompt", "popup-blocked", "move-tab-slow-mount", "move-last-tab-slow-mount",
@@ -6255,6 +6255,49 @@ try {
     }
   });
 
+  await check("pip-api", async () => {
+    const paused = async (t) => (await cdp(t, "Runtime.evaluate", { expression: "document.getElementById('v').paused", returnByValue: true })).result?.value;
+    const holder = () => cef(`devPictureInPictureHolder()`);
+    let two = null;
+    const one = await openTab(`${secureBase}/video?file&api-one`, "Video");
+    try {
+      const onePage = await startVideo(one.id, true);
+      await until("the first video playing audio", async () => (await live(one.id))?.playingAudio === true, 8000);
+      two = await openTab(`${secureBase}/video?file&api-two`, "Video");
+      const twoPage = await startVideo(two.id, true);
+      await until("the second video playing audio", async () => (await live(two.id))?.playingAudio === true, 8000);
+      await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
+      await until("Page A shown", async () => (await state()).active === first.id);
+      await sleep(300);
+      const out = { before: await holder() };
+      for (const tab of [one, two]) {
+        if (await lastEvent(tab.id, "pictureInPicture", (p) => p.active)) await evalApp(`return ac.webviews.get("${tab.id}").exitPictureInPicture()`);
+      }
+      await until("no PiP open", async () => ((await holder()) === "" ? true : null), 5000);
+      for (const t of [onePage, twoPage])
+        await cdp(t, "Runtime.evaluate", { expression: "document.getElementById('v').play().then(() => true, () => false)", awaitPromise: true, userGesture: true, returnByValue: true });
+      out.enteredOne = await cef(`devPictureInPictureEnter(${JSON.stringify(one.id)})`);
+      out.holderOne = await until("the first tab holding the PiP", async () => ((await holder()) === one.id ? one.id : null), 5000).catch(() => holder());
+      out.stayedOnA = (await state()).active === first.id;
+      out.onePlaying = (await paused(onePage)) === false;
+      out.enteredTwo = await cef(`devPictureInPictureEnter(${JSON.stringify(two.id)})`);
+      out.holderTwo = await until("the second tab holding the PiP", async () => ((await holder()) === two.id ? two.id : null), 5000).catch(() => holder());
+      await sleep(500);
+      out.onePausedAfterTakeover = (await paused(onePage)) === true;
+      out.twoPlaying = (await paused(twoPage)) === false;
+      await cef(`devPictureInPictureMinimize()`);
+      out.holderAfterMinimize = await until("the PiP minimized", async () => ((await holder()) === "" ? "" : null), 5000).catch(() => holder());
+      out.twoPlayingAfterMinimize = (await paused(twoPage)) === false;
+      if (out.enteredOne !== true || out.holderOne !== one.id || !out.stayedOnA || !out.onePlaying || out.enteredTwo !== true || out.holderTwo !== two.id ||
+          !out.onePausedAfterTakeover || !out.twoPlaying || out.holderAfterMinimize !== "" || !out.twoPlayingAfterMinimize) throw new Error(JSON.stringify(out));
+      return out;
+    } finally {
+      for (const tab of [one, two]) if (tab) await evalApp(`return ac.webviews.get("${tab.id}").exitPictureInPicture()`).catch(() => null);
+      for (const tab of [one, two]) if (tab) await closeTab(tab.id).catch(() => null);
+      await evalApp(`ac.actions.switchToTab("${first.id}"); return true`).catch(() => null);
+    }
+  });
+
   await check("pip-fullscreen-space", async () => {
     const jxa = (code) => JSON.parse(execFileSync("osascript", ["-l", "JavaScript", "-e", `ObjC.import("CoreGraphics"); ${code}`], { timeout: 20000 }).toString());
     const skip = (why) => {
@@ -6442,12 +6485,18 @@ try {
           await appActive(true);
         }
       };
-      const closed = await clickButton("close");
       const time = async () => (await cdp(t, "Runtime.evaluate", { expression: "({ paused: v.paused, time: v.currentTime, pip: !!document.pictureInPictureElement })", returnByValue: true })).result.value;
+      const minimized = await clickButton("minimize");
       const before = await time();
       await sleep(1000);
       const after = await time();
-      if (!closed.closed || after.pip || after.paused || after.time === before.time) throw new Error(`close: ${JSON.stringify({ closed, before, after })}`);
+      if (!minimized.closed || after.pip || after.paused || after.time === before.time) throw new Error(`minimize: ${JSON.stringify({ minimized, before, after })}`);
+      if (!minimized.preventsActivation || minimized.activations !== 0 || minimized.appActive || minimized.raised.length)
+        throw new Error(`the minimize click activated or raised something: ${JSON.stringify(minimized)}`);
+      const closed = await clickButton("close");
+      const stopped = await time();
+      if (!closed.closed || stopped.pip || !stopped.paused) throw new Error(`close: ${JSON.stringify({ closed, stopped })}`);
+      await cdp(t, "Runtime.evaluate", { expression: "v.play().then(() => true, () => false)", awaitPromise: true, userGesture: true, returnByValue: true });
       if (!closed.preventsActivation || closed.activations !== 0 || closed.appActive || closed.raised.length)
         throw new Error(`the close click activated or raised something: ${JSON.stringify(closed)}`);
       const requests = (await eventsOf(tab.id)).filter((x) => x.name === "activateRequest").length;
@@ -6458,7 +6507,9 @@ try {
       return {
         steps: result.steps.map((x) => x.step),
         closeButton: closed.point,
-        playing: [before.time.toFixed(1), after.time.toFixed(1)],
+        minimizeButton: minimized.point,
+        playingAfterMinimize: [before.time.toFixed(1), after.time.toFixed(1)],
+        pausedAfterClose: stopped.paused,
         close: { activations: closed.activations, raised: closed.raised.length },
         backToTab: { activations: back.activations, activateRequests: backRequests },
       };

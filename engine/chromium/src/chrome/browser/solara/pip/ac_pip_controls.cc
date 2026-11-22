@@ -3,9 +3,12 @@
 #include "chrome/browser/solara/pip/ac_pip_controls.h"
 
 #include <algorithm>
+#include <string>
 #include <utility>
 
 #include "base/functional/bind.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "cc/paint/paint_flags.h"
 #include "chrome/browser/ui/views/overlay/video_overlay_window_views.h"
 #include "third_party/skia/include/core/SkPath.h"
@@ -17,6 +20,7 @@
 #include "ui/events/event.h"
 #include "ui/gfx/animation/tween.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/font_list.h"
 #include "ui/gfx/geometry/point_f.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/views/animation/ink_drop.h"
@@ -46,6 +50,45 @@ void TurnOffInkDrop(views::Button* button) {
   views::InkDrop::Get(button)->SetMode(views::InkDropHost::InkDropMode::OFF);
 }
 
+bool IsActive(const views::Button& button) {
+  return button.GetState() == views::Button::STATE_HOVERED ||
+         button.GetState() == views::Button::STATE_PRESSED;
+}
+
+std::u16string FormatTime(base::TimeDelta time) {
+  const int64_t total = std::max<int64_t>(0, time.InSeconds());
+  const int64_t hours = total / 3600;
+  const int64_t minutes = (total % 3600) / 60;
+  const int64_t seconds = total % 60;
+  return base::UTF8ToUTF16(
+      hours > 0 ? base::StringPrintf("%lld:%02lld:%02lld",
+                                     static_cast<long long>(hours),
+                                     static_cast<long long>(minutes),
+                                     static_cast<long long>(seconds))
+                : base::StringPrintf("%lld:%02lld",
+                                     static_cast<long long>(minutes),
+                                     static_cast<long long>(seconds)));
+}
+
+}
+
+SolaraPipTier SolaraPipTierForWidth(int width) {
+  if (width >= kSolaraPipLargeWidth) {
+    return SolaraPipTier::kLarge;
+  }
+  return width >= kSolaraPipMediumWidth ? SolaraPipTier::kMedium
+                                        : SolaraPipTier::kSmall;
+}
+
+int SolaraPipMargin(SolaraPipTier tier) {
+  switch (tier) {
+    case SolaraPipTier::kLarge:
+      return kSolaraPipButtonMargin;
+    case SolaraPipTier::kMedium:
+      return 10;
+    case SolaraPipTier::kSmall:
+      return 8;
+  }
 }
 
 SolaraBackToTabButton::SolaraBackToTabButton(PressedCallback callback)
@@ -56,9 +99,8 @@ SolaraBackToTabButton::SolaraBackToTabButton(PressedCallback callback)
 
 SolaraBackToTabButton::~SolaraBackToTabButton() = default;
 
-void SolaraBackToTabButton::Place(const gfx::Size& window_size) {
-  views::View::SetPosition(
-      gfx::Point(kSolaraPipButtonMargin, kSolaraPipButtonMargin));
+void SolaraBackToTabButton::Place(const gfx::Size& window_size, int margin) {
+  views::View::SetPosition(gfx::Point(margin, margin));
 }
 
 void SolaraBackToTabButton::OnPaintBackground(gfx::Canvas* canvas) {
@@ -84,10 +126,9 @@ SolaraCloseButton::SolaraCloseButton(PressedCallback callback)
 
 SolaraCloseButton::~SolaraCloseButton() = default;
 
-void SolaraCloseButton::Place(const gfx::Size& window_size) {
+void SolaraCloseButton::Place(const gfx::Size& window_size, int margin) {
   views::View::SetPosition(
-      gfx::Point(window_size.width() - kWidth - kSolaraPipButtonMargin,
-                 kSolaraPipButtonMargin));
+      gfx::Point(window_size.width() - kWidth - margin, margin));
 }
 
 void SolaraCloseButton::OnPaintBackground(gfx::Canvas* canvas) {
@@ -103,6 +144,101 @@ void SolaraCloseButton::PaintButtonContents(gfx::Canvas* canvas) {
 }
 
 BEGIN_METADATA(SolaraCloseButton)
+END_METADATA
+
+SolaraMinimizeButton::SolaraMinimizeButton(PressedCallback callback)
+    : OverlayWindowMinimizeButton(std::move(callback)) {
+  SetSize(gfx::Size(kSolaraPipButtonSize, kSolaraPipButtonSize));
+  TurnOffInkDrop(this);
+}
+
+SolaraMinimizeButton::~SolaraMinimizeButton() = default;
+
+void SolaraMinimizeButton::Place(const gfx::Size& window_size, int margin) {
+  views::View::SetPosition(
+      gfx::Point(window_size.width() - margin - SolaraCloseButton::kWidth -
+                     kSolaraPipButtonGap - kSolaraPipButtonSize,
+                 margin));
+}
+
+void SolaraMinimizeButton::OnPaintBackground(gfx::Canvas* canvas) {
+  PaintCornerButtonBackground(*this, canvas);
+}
+
+void SolaraMinimizeButton::PaintButtonContents(gfx::Canvas* canvas) {
+  cc::PaintFlags flags = GlyphFlags();
+  canvas->DrawRoundRect(gfx::RectF(8.5f, 9.5f, 11, 9), 1.5f, flags);
+  cc::PaintFlags fill;
+  fill.setAntiAlias(true);
+  fill.setColor(SK_ColorWHITE);
+  canvas->DrawRoundRect(gfx::RectF(9.5f, 14, 4.5f, 3.5f), 0.75f, fill);
+  canvas->DrawLine(gfx::PointF(17.5f, 11.5f), gfx::PointF(14.8f, 14.2f), flags);
+  canvas->DrawLine(gfx::PointF(14.8f, 12.2f), gfx::PointF(14.8f, 14.2f), flags);
+  canvas->DrawLine(gfx::PointF(14.8f, 14.2f), gfx::PointF(16.8f, 14.2f), flags);
+}
+
+BEGIN_METADATA(SolaraMinimizeButton)
+END_METADATA
+
+SolaraMuteButton::SolaraMuteButton(PressedCallback callback)
+    : views::Button(std::move(callback)) {
+  SetSize(gfx::Size(kSolaraPipButtonSize, kSolaraPipButtonSize));
+  TurnOffInkDrop(this);
+  SetTooltipText(u"Mute");
+}
+
+SolaraMuteButton::~SolaraMuteButton() = default;
+
+void SolaraMuteButton::SetMuted(bool muted) {
+  if (muted_ == muted) {
+    return;
+  }
+  muted_ = muted;
+  SetTooltipText(muted ? u"Unmute" : u"Mute");
+  SchedulePaint();
+}
+
+void SolaraMuteButton::OnPaintBackground(gfx::Canvas* canvas) {
+  if (IsActive(*this)) {
+    PaintCornerButtonBackground(*this, canvas);
+  }
+}
+
+void SolaraMuteButton::PaintButtonContents(gfx::Canvas* canvas) {
+  cc::PaintFlags fill;
+  fill.setAntiAlias(true);
+  fill.setColor(SK_ColorWHITE);
+  canvas->DrawPath(SkPathBuilder()
+                       .moveTo(7, 12)
+                       .lineTo(9.5f, 12)
+                       .lineTo(13, 9)
+                       .lineTo(13, 19)
+                       .lineTo(9.5f, 16)
+                       .lineTo(7, 16)
+                       .close()
+                       .detach(),
+                   fill);
+  cc::PaintFlags flags = GlyphFlags();
+  flags.setStrokeWidth(1.4f);
+  flags.setStrokeCap(cc::PaintFlags::kRound_Cap);
+  if (muted_) {
+    canvas->DrawLine(gfx::PointF(16, 12), gfx::PointF(20, 16), flags);
+    canvas->DrawLine(gfx::PointF(20, 12), gfx::PointF(16, 16), flags);
+    return;
+  }
+  canvas->DrawPath(SkPathBuilder()
+                       .arcTo(SkRect::MakeLTRB(11, 10.5f, 17, 17.5f), -50, 100,
+                              true)
+                       .detach(),
+                   flags);
+  canvas->DrawPath(SkPathBuilder()
+                       .arcTo(SkRect::MakeLTRB(9.5f, 8, 20.5f, 20), -50, 100,
+                              true)
+                       .detach(),
+                   flags);
+}
+
+BEGIN_METADATA(SolaraMuteButton)
 END_METADATA
 
 SolaraPlaybackButton::SolaraPlaybackButton(PressedCallback callback)
@@ -173,13 +309,32 @@ void SolaraProgressBar::SetMediaPosition(
   }
 }
 
-void SolaraProgressBar::Place(const gfx::Size& window_size) {
-  constexpr int kBottomMargin = 9;
-  constexpr int kInset = kSolaraPipButtonMargin - kSlopX;
-  constexpr int kHeight = static_cast<int>(kBarHeight);
-  SetBoundsRect({kInset, window_size.height() - kBottomMargin - kHeight - kSlopY,
-                 std::max(0, window_size.width() - 2 * kInset),
-                 kHeight + 2 * kSlopY});
+void SolaraProgressBar::Place(const gfx::Size& window_size,
+                              SolaraPipTier tier,
+                              int right_reserved) {
+  const bool show_times = tier == SolaraPipTier::kLarge;
+  const bool thin = tier == SolaraPipTier::kSmall;
+  if (show_times != show_times_ || thin != thin_) {
+    show_times_ = show_times;
+    thin_ = thin;
+    SchedulePaint();
+  }
+  const int margin = SolaraPipMargin(tier);
+  const int bottom_margin = thin ? 6 : 9;
+  const int inset = margin - kSlopX;
+  const int height = static_cast<int>(thin ? kThinBarHeight : kBarHeight);
+  SetBoundsRect(
+      {inset, window_size.height() - bottom_margin - height - kSlopY,
+       std::max(0, window_size.width() - 2 * inset - right_reserved),
+       height + 2 * kSlopY});
+}
+
+gfx::RectF SolaraProgressBar::TrackBounds() const {
+  const float height = thin_ ? kThinBarHeight : kBarHeight;
+  const float times = show_times_ ? kTimeWidth : 0;
+  return gfx::RectF(kSlopX + times, kSlopY,
+                    std::max(0.0f, width() - 2.0f * kSlopX - 2 * times),
+                    height);
 }
 
 void SolaraProgressBar::RepaintIfDrawn() {
@@ -193,21 +348,37 @@ void SolaraProgressBar::OnPaint(gfx::Canvas* canvas) {
   if (!duration.is_positive() || duration.is_max()) {
     return;
   }
-  const gfx::RectF track(kSlopX, kSlopY, width() - 2 * kSlopX, kBarHeight);
+  const gfx::RectF track = TrackBounds();
+  const float radius = track.height() / 2;
+  const double fraction = std::clamp(
+      drag_fraction_.value_or(position_.GetPosition() / duration), 0.0, 1.0);
+  if (show_times_) {
+    const gfx::FontList font = gfx::FontList().DeriveWithSizeDelta(
+        11 - gfx::FontList().GetFontSize());
+    const base::TimeDelta elapsed = duration * fraction;
+    const int text_top = static_cast<int>(track.CenterPoint().y()) - 8;
+    canvas->DrawStringRectWithFlags(
+        FormatTime(elapsed), font, SkColorSetA(SK_ColorWHITE, 0xE6),
+        gfx::Rect(kSlopX, text_top, kTimeWidth - 6, 16), gfx::Canvas::TEXT_ALIGN_LEFT);
+    canvas->DrawStringRectWithFlags(
+        u"\u2212" + FormatTime(duration - elapsed), font,
+        SkColorSetA(SK_ColorWHITE, 0xE6),
+        gfx::Rect(width() - kSlopX - kTimeWidth + 6, text_top, kTimeWidth - 6,
+                  16),
+        gfx::Canvas::TEXT_ALIGN_RIGHT);
+  }
   cc::PaintFlags flags;
   flags.setAntiAlias(true);
   flags.setColor(SkColorSetA(SK_ColorWHITE, 0x44));
-  canvas->DrawRoundRect(track, kBarHeight / 2, flags);
-  const double fraction = std::clamp(
-      drag_fraction_.value_or(position_.GetPosition() / duration), 0.0, 1.0);
+  canvas->DrawRoundRect(track, radius, flags);
   if (fraction <= 0) {
     return;
   }
   gfx::RectF played = track;
-  played.set_width(
-      std::max(kBarHeight, static_cast<float>(track.width() * fraction)));
+  played.set_width(std::max(track.height(),
+                            static_cast<float>(track.width() * fraction)));
   flags.setColor(SK_ColorWHITE);
-  canvas->DrawRoundRect(played, kBarHeight / 2, flags);
+  canvas->DrawRoundRect(played, radius, flags);
 }
 
 bool SolaraProgressBar::OnMousePressed(const ui::MouseEvent& event) {
@@ -244,8 +415,9 @@ ui::Cursor SolaraProgressBar::GetCursor(const ui::MouseEvent& event) {
 }
 
 double SolaraProgressBar::FractionAt(int x) const {
-  return std::clamp((x - kSlopX) / std::max(1.0, width() - 2.0 * kSlopX), 0.0,
-                    1.0);
+  const gfx::RectF track = TrackBounds();
+  return std::clamp((x - track.x()) / std::max(1.0f, track.width()), 0.0f,
+                    1.0f);
 }
 
 BEGIN_METADATA(SolaraProgressBar)
@@ -255,7 +427,7 @@ SolaraControlsFadeAnimation::SolaraControlsFadeAnimation(
     const std::vector<raw_ptr<views::View>>& controls,
     Type type)
     : OverlayControlsFadeAnimation(controls, type) {
-  SetDuration(base::Milliseconds(200));
+  SetDuration(base::Milliseconds(120));
 }
 
 SolaraControlsFadeAnimation::~SolaraControlsFadeAnimation() = default;

@@ -24,6 +24,7 @@ public class SettingsModule: Module {
       _ = NativeLiveEngine.shared
       DispatchQueue.main.async { MainActor.assumeIsolated {
         PairingAdapter.install()
+        PictureInPictureAdapter.install()
         NativeSettingsWindow.install()
         NativeConfigNotifier.install()
         NativeTabPictures.install()

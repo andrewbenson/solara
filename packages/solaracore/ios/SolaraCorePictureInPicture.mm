@@ -26,7 +26,7 @@ namespace {
 
 constexpr CGFloat kPeek = 28;
 constexpr CGFloat kReturnMargin = 16;
-constexpr CGFloat kButtonMargin = 12, kButtonSize = 28;
+constexpr CGFloat kButtonMargin = 12, kButtonSize = 28, kButtonGap = 6, kCloseButtonWidth = 29;
 constexpr CGFloat kCornerRadius = 6;
 constexpr CGFloat kRimAlpha = 0.17;
 
@@ -979,8 +979,13 @@ static __weak NSWindow *gSwipeMomentum;
 - (void)runButtonSelfTest:(NSString *)button {
   NSWindow *window = _window;
   NSString *dir = [NSString stringWithUTF8String:getenv("SOLARA_DATA_DIR") ?: "/tmp"];
-  CGFloat center = kButtonMargin + kButtonSize / 2;
-  NSPoint point = NSMakePoint([button isEqual:@"close"] ? NSWidth(window.frame) - center : center, NSHeight(window.frame) - center);
+  const CGFloat width = NSWidth(window.frame);
+  const CGFloat margin = width >= 400 ? kButtonMargin : width >= 280 ? 10 : 8;
+  const CGFloat edge = margin + kButtonSize / 2;
+  const CGFloat x = [button isEqual:@"close"]      ? width - edge
+                    : [button isEqual:@"minimize"] ? width - margin - kCloseButtonWidth - kButtonGap - kButtonSize / 2
+                                                   : edge;
+  NSPoint point = NSMakePoint(x, NSHeight(window.frame) - edge);
   auto event = [=](NSEventType type) {
     return [NSEvent mouseEventWithType:type location:point modifierFlags:0 timestamp:NSProcessInfo.processInfo.systemUptime
                           windowNumber:window.windowNumber context:nil eventNumber:0 clickCount:1 pressure:type == NSEventTypeLeftMouseDown];
@@ -1695,7 +1700,7 @@ bool Attach(SolaraCoreWebView *view, NSString *host) {
     InstallZoomMonitor();
     [ACPiPZoom installOn:window];
     NSString *selfTest = NSProcessInfo.processInfo.environment[@"SOLARA_PIP_SELFTEST"];
-    if (fresh && [@[ @"close", @"backToTab" ] containsObject:selfTest]) [controller runButtonSelfTest:selfTest];
+    if (fresh && [@[ @"close", @"minimize", @"backToTab" ] containsObject:selfTest]) [controller runButtonSelfTest:selfTest];
     else if (fresh && [selfTest isEqual:@"hover"]) [controller runHoverSelfTest];
     else if (fresh && selfTest) [controller runSelfTest];
     return true;
@@ -1925,7 +1930,7 @@ NSString *ClickDocumentBackToTab() {
     if ([ACPiPController forWindow:window] && window.visible) controller = [ACPiPController forWindow:window];
   if (!controller) return @"";
   if ([action isEqual:@"selftest"]) [controller runSelfTest];
-  else if ([@[ @"close", @"backToTab" ] containsObject:action]) [controller runButtonSelfTest:action];
+  else if ([@[ @"close", @"minimize", @"backToTab" ] containsObject:action]) [controller runButtonSelfTest:action];
   else if ([action hasPrefix:@"keepOnTop:"]) controller.keepOnTop = [[action substringFromIndex:10] boolValue];
   else if ([action isEqual:@"menu"]) return [[controller.menu.itemArray valueForKey:@"title"] componentsJoinedByString:@"|"];
   else if ([action hasPrefix:@"snapshot:"]) return [controller snapshot:[action substringFromIndex:9]];

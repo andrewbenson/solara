@@ -178,6 +178,15 @@ public class CefModule: Module {
       SolaraCoreFavicons.fetch(url, profile: profile, name: nil) { promise.resolve($0) }
     }.runOnQueue(.main)
     #if DEBUG
+    AsyncFunction("devPictureInPictureEnter") { (tabId: String, promise: Promise) in
+      Task { @MainActor in promise.resolve(await PictureInPictureCenter.shared.enter(tabID: tabId)) }
+    }.runOnQueue(.main)
+    AsyncFunction("devPictureInPictureMinimize") {
+      MainActor.assumeIsolated { PictureInPictureCenter.shared.minimize() }
+    }.runOnQueue(.main)
+    AsyncFunction("devPictureInPictureHolder") { () -> String in
+      MainActor.assumeIsolated { PictureInPictureCenter.shared.tabID ?? "" }
+    }.runOnQueue(.main)
     AsyncFunction("devWebKitBlockerStatus") { (host: String) -> [String: Any] in
       let environment = ProcessInfo.processInfo.environment
       guard environment["SOLARA_BACKGROUND"] == "1", !(environment["SOLARA_DATA_DIR"] ?? "").isEmpty else { return [:] }

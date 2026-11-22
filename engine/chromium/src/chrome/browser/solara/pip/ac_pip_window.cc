@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/functional/bind.h"
+#include "base/strings/string_util.h"
 #include "chrome/browser/solara/pip/ac_pip_controls.h"
 #include "chrome/browser/solara/pip/ac_pip_geometry.h"
 #include "chrome/browser/solara/pip/ac_pip_mac.h"
@@ -20,6 +21,14 @@
 #include "chrome/browser/ui/views/overlay/overlay_window_live_caption_button.h"
 #include "chrome/browser/ui/views/overlay/simple_overlay_window_image_button.h"
 #include "chrome/browser/ui/views/overlay/toggle_mute_button.h"
+#include "cc/paint/paint_flags.h"
+#include "cc/paint/paint_shader.h"
+#include "content/public/browser/media_session.h"
+#include "content/public/browser/video_picture_in_picture_window_controller.h"
+#include "content/public/browser/web_contents.h"
+#include "services/media_session/public/cpp/media_metadata.h"
+#include "ui/gfx/canvas.h"
+#include "ui/gfx/geometry/skia_conversions.h"
 #include "ui/display/display.h"
 #include "ui/display/screen.h"
 #include "ui/gfx/font_list.h"
@@ -34,8 +43,38 @@ namespace {
 
 constexpr base::TimeDelta kCloseFade = base::Milliseconds(100);
 constexpr base::TimeDelta kHideFade = base::Milliseconds(70);
+constexpr base::TimeDelta kIdleControlsHide = base::Milliseconds(1500);
 constexpr int kSeekButtonSize = 40;
 constexpr int kSeekButtonCenterOffset = 76;
+constexpr int kMediumSeekButtonCenterOffset = 60;
+constexpr float kTopScrimShare = 0.34f;
+constexpr float kBottomScrimShare = 0.38f;
+
+class SolaraEdgeScrim : public views::Background {
+ public:
+  explicit SolaraEdgeScrim(bool dark_at_top) : dark_at_top_(dark_at_top) {}
+  SolaraEdgeScrim(const SolaraEdgeScrim&) = delete;
+  SolaraEdgeScrim& operator=(const SolaraEdgeScrim&) = delete;
+  ~SolaraEdgeScrim() override = default;
+
+  void Paint(gfx::Canvas* canvas, views::View* view) const override {
+    const gfx::Rect bounds = view->GetContentsBounds();
+    const SkColor4f dark = SkColor4f::FromColor(
+        SkColorSetA(SK_ColorBLACK, dark_at_top_ ? 0x8C : 0x99));
+    const SkColor4f clear = SkColor4f::FromColor(SK_ColorTRANSPARENT);
+    const SkColor4f colors[2] = {dark_at_top_ ? dark : clear,
+                                 dark_at_top_ ? clear : dark};
+    const SkPoint points[2] = {gfx::PointToSkPoint(bounds.top_center()),
+                               gfx::PointToSkPoint(bounds.bottom_center())};
+    cc::PaintFlags flags;
+    flags.setShader(cc::PaintShader::MakeLinearGradient(points, colors, nullptr,
+                                                        2, SkTileMode::kClamp));
+    canvas->DrawRect(bounds, flags);
+  }
+
+ private:
+  const bool dark_at_top_;
+};
 
 void StyleSeekButton(SimpleOverlayWindowImageButton* button) {
   views::InkDrop::Get(button)->SetMode(views::InkDropHost::InkDropMode::OFF);
@@ -57,7 +96,7 @@ SolaraVideoOverlayWindow::SolaraVideoOverlayWindow(
     content::VideoPictureInPictureWindowController* controller)
     : VideoOverlayWindowViews(controller), ac_hide_fade_(kHideFade) {
   hide_controls_timer_.Start(
-      FROM_HERE, hide_controls_timer_.GetCurrentDelay(),
+      FROM_HERE, kIdleControlsHide,
       base::BindRepeating(
           &SolaraVideoOverlayWindow::HideIdleControlsUnlessPointerOnControl,
           base::Unretained(this)));
@@ -69,15 +108,29 @@ SolaraVideoOverlayWindow::~SolaraVideoOverlayWindow() = default;
 void SolaraVideoOverlayWindow::SetUpViews() {
   VideoOverlayWindowViews::SetUpViews();
 
-  controls_scrim_view_->SetBackground(
-      views::CreateSolidBackground(SkColorSetA(SK_ColorBLACK, 0x5A)));
-  controls_top_scrim_view_->SetBackground(nullptr);
-  controls_bottom_scrim_view_->SetBackground(nullptr);
+  controls_scrim_view_->SetBackground(nullptr);
+  controls_top_scrim_view_->SetBackground(
+      std::make_unique<SolaraEdgeScrim>(true));
+  controls_bottom_scrim_view_->SetBackground(
+      std::make_unique<SolaraEdgeScrim>(false));
 
   origin_->SetFontList(gfx::FontList().DeriveWithSizeDelta(
       13 - gfx::FontList().GetFontSize()));
   origin_->SetEnabledColor(kColorPipWindowForeground);
-  origin_->SetHorizontalAlignment(gfx::ALIGN_CENTER);
+  origin_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+  origin_->SetElideBehavior(gfx::ELIDE_TAIL);
+
+  minimize_button_ = ReplaceView(
+      minimize_button_,
+      std::make_unique<SolaraMinimizeButton>(base::BindRepeating([] {
+        PictureInPictureWindowManager::GetInstance()
+            ->ExitPictureInPictureViaWindowUi(
+                PictureInPictureWindowManager::UiBehavior::kCloseWindowOnly);
+      })));
+  ac_mute_button_ = controls_container_view_->AddChildView(
+      std::make_unique<SolaraMuteButton>(base::BindRepeating(
+          &SolaraVideoOverlayWindow::OnMuteButtonPressed,
+          base::Unretained(this))));
 
   back_to_tab_button_ = ReplaceView(
       back_to_tab_button_,
@@ -113,35 +166,66 @@ void SolaraVideoOverlayWindow::OnUpdateControlsBounds() {
   VideoOverlayWindowViews::OnUpdateControlsBounds();
 
   const gfx::Size size = GetBounds().size();
-  constexpr int kMargin = kSolaraPipButtonMargin;
+  const SolaraPipTier tier = SolaraPipTierForWidth(size.width());
+  const int margin = SolaraPipMargin(tier);
   constexpr int kButton = kSolaraPipButtonSize;
 
-  title_view_->SetBoundsRect({0, 0, size.width(), kMargin + kButton});
-  favicon_view_->SetVisible(false);
-  constexpr int kOriginX = kMargin + kButton + 8;
-  origin_->SetBoundsRect({kOriginX, kMargin - 1,
-                          std::max(0, size.width() - 2 * kOriginX), kButton});
+  controls_top_scrim_view_->SetBoundsRect(
+      {0, 0, size.width(), static_cast<int>(size.height() * kTopScrimShare)});
+  const int bottom_scrim = static_cast<int>(size.height() * kBottomScrimShare);
+  controls_bottom_scrim_view_->SetBoundsRect(
+      {0, size.height() - bottom_scrim, size.width(), bottom_scrim});
 
-  minimize_button_->SetVisible(false);
+  title_view_->SetBoundsRect({0, 0, size.width(), margin + kButton});
+  favicon_view_->SetVisible(false);
+  const int origin_x = margin + kButton + 10;
+  const int origin_right = margin + SolaraCloseButton::kWidth +
+                           kSolaraPipButtonGap + kButton + 10;
+  origin_->SetBoundsRect({origin_x, margin - 1,
+                          std::max(0, size.width() - origin_x - origin_right),
+                          kButton});
+  origin_->SetVisible(tier == SolaraPipTier::kLarge);
+
   static_cast<SolaraBackToTabButton*>(back_to_tab_button_.get())
-      ->Place(size);
-  static_cast<SolaraCloseButton*>(close_controls_view_.get())->Place(size);
+      ->Place(size, margin);
+  static_cast<SolaraCloseButton*>(close_controls_view_.get())
+      ->Place(size, margin);
+  static_cast<SolaraMinimizeButton*>(minimize_button_.get())
+      ->Place(size, margin);
+  minimize_button_->SetVisible(true);
 
   if (vc_controls_container_view_->GetVisible()) {
+    ac_mute_button_->SetVisible(false);
     return;
   }
 
   const gfx::Point center(size.width() / 2, (size.height() + 1) / 2);
   play_pause_controls_view_->SetPosition(
       {center.x() - kCenterButtonSize / 2, center.y() - kCenterButtonSize / 2});
+  const int seek_offset = tier == SolaraPipTier::kLarge
+                              ? kSeekButtonCenterOffset
+                              : kMediumSeekButtonCenterOffset;
   replay_10_seconds_button_->SetPosition(
-      {center.x() - kSeekButtonCenterOffset - kSeekButtonSize / 2,
+      {center.x() - seek_offset - kSeekButtonSize / 2,
        center.y() - kSeekButtonSize / 2});
   forward_10_seconds_button_->SetPosition(
-      {center.x() + kSeekButtonCenterOffset - kSeekButtonSize / 2,
+      {center.x() + seek_offset - kSeekButtonSize / 2,
        center.y() - kSeekButtonSize / 2});
-  ac_progress_bar_->Place(size);
+  if (tier == SolaraPipTier::kSmall) {
+    replay_10_seconds_button_->SetVisible(false);
+    forward_10_seconds_button_->SetVisible(false);
+  }
+  const bool mute = tier != SolaraPipTier::kSmall;
+  ac_mute_button_->SetVisible(mute);
+  const int mute_reserved = mute ? kButton + 4 : 0;
+  ac_progress_bar_->Place(size, tier, mute_reserved);
   ac_progress_bar_->SetVisible(!is_live_);
+  if (mute) {
+    const gfx::Rect bar = ac_progress_bar_->bounds();
+    ac_mute_button_->SetPosition(
+        {size.width() - margin - kButton + 4,
+         bar.CenterPoint().y() - kButton / 2});
+  }
   progress_view_->SetVisible(false);
   timestamp_->SetVisible(false);
   live_status_->SetVisible(false);
@@ -184,6 +268,49 @@ void SolaraVideoOverlayWindow::UpdateControlsVisibility(
   }
 }
 
+void SolaraVideoOverlayWindow::SetPlaybackState(PlaybackState playback_state) {
+  VideoOverlayWindowViews::SetPlaybackState(playback_state);
+  UpdateTitle();
+}
+
+void SolaraVideoOverlayWindow::SetMediaMuted(bool muted) {
+  VideoOverlayWindowViews::SetMediaMuted(muted);
+  ac_mute_button_->SetMuted(muted);
+}
+
+void SolaraVideoOverlayWindow::SetSourceTitle(
+    const std::u16string& source_title) {
+  ac_source_title_ = source_title;
+  VideoOverlayWindowViews::SetSourceTitle(source_title);
+  UpdateTitle();
+}
+
+void SolaraVideoOverlayWindow::OnMuteButtonPressed() {
+  const bool muted = !controller_->GetMuteStatus();
+  controller_->RequestMute(muted);
+  ac_mute_button_->SetMuted(muted);
+}
+
+void SolaraVideoOverlayWindow::UpdateTitle() {
+  std::u16string raw;
+  if (content::WebContents* contents = controller_->GetWebContents()) {
+    raw = content::MediaSession::Get(contents)->GetMediaSessionMetadata().title;
+    if (raw.empty()) {
+      raw = contents->GetTitle();
+    }
+  }
+  std::u16string title;
+  base::TrimWhitespace(raw, base::TRIM_ALL, &title);
+  std::u16string text = title;
+  if (!ac_source_title_.empty()) {
+    text = title.empty() ? ac_source_title_
+                         : title + u" \u00B7 " + ac_source_title_;
+  }
+  if (origin_->GetText() != text) {
+    origin_->SetText(text);
+  }
+}
+
 gfx::Rect SolaraVideoOverlayWindow::GetProgressViewBounds() {
   return ac_progress_bar_->GetVisible() ? ac_progress_bar_->GetMirroredBounds()
                                         : gfx::Rect();
@@ -193,6 +320,7 @@ void SolaraVideoOverlayWindow::SetMediaPosition(
     const media_session::MediaPosition& position) {
   VideoOverlayWindowViews::SetMediaPosition(position);
   ac_progress_bar_->SetMediaPosition(position);
+  UpdateTitle();
 }
 
 gfx::Size SolaraVideoOverlayWindow::GetMinimumSize() const {
@@ -273,6 +401,8 @@ void SolaraVideoOverlayWindow::ShowInactive() {
   LetSolaraPictureInPictureMoveFreely(GetNativeWindow());
   views::Widget::ShowInactive();
   VideoOverlayWindowViews::ShowInactive();
+  ac_mute_button_->SetMuted(controller_->GetMuteStatus());
+  UpdateTitle();
   if (fade_animator_) {
     fade_animator_->CancelAndReset();
   }
@@ -310,9 +440,7 @@ void SolaraVideoOverlayWindow::FinishHide() {
 void SolaraVideoOverlayWindow::OnCloseButtonPressed() {
   ac_hide_fade_ = kCloseFade;
   PictureInPictureWindowManager::GetInstance()->ExitPictureInPictureViaWindowUi(
-      show_play_pause_button_
-          ? PictureInPictureWindowManager::UiBehavior::kCloseWindowAndPauseVideo
-          : PictureInPictureWindowManager::UiBehavior::kCloseWindowOnly);
+      PictureInPictureWindowManager::UiBehavior::kCloseWindowAndPauseVideo);
 }
 
 void SolaraVideoOverlayWindow::HideIdleControlsUnlessPointerOnControl() {
@@ -320,6 +448,7 @@ void SolaraVideoOverlayWindow::HideIdleControlsUnlessPointerOnControl() {
                              GetBounds().OffsetFromOrigin();
   const views::View* controls[] = {
       back_to_tab_button_.get(),        close_controls_view_.get(),
+      minimize_button_.get(),           ac_mute_button_.get(),
       play_pause_controls_view_.get(),  replay_10_seconds_button_.get(),
       forward_10_seconds_button_.get(), ac_progress_bar_.get()};
   for (const views::View* control : controls) {

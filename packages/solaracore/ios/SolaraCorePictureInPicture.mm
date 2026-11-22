@@ -108,7 +108,7 @@ void PreventActivation(NSWindow *window) {
 void ShowInFullScreenSpaces(NSWindow *window) {
   [SolaraPictureInPictureWindow configure:window keepOnTop:window.level >= NSFloatingWindowLevel];
   if ([window respondsToSelector:@selector(setActivationIndependence:)])
-    [window setActivationIndependence:window.level >= NSFloatingWindowLevel];
+    [window setActivationIndependence:YES];
 }
 
 BOOL PreventsActivation(NSWindow *window) {

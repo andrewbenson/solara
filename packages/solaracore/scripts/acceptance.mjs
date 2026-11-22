@@ -6328,7 +6328,7 @@ try {
     const ownOk = (seen) => seen.flags.fullScreenAuxiliary && seen.flags.allSpaces && seen.filled && seen.left && seen.before && seen.inOwnFullScreen && seen.afterExit && seen.stillVisible;
     const visible = process.env.SOLARA_ACCEPTANCE_VISIBLE === "1" && process.env.SOLARA_PIP_OWN_FULLSCREEN === "1";
     if (!visible) report.say("pip-fullscreen-space: Solara's own full screen needs SOLARA_ACCEPTANCE_VISIBLE=1 (a hidden instance only acts full screen out), so only another app's full-screen Space is checked");
-    const ok = (seen) => seen.flags.fullScreenAuxiliary && seen.flags.allSpaces && seen.flags.activationIndependent === (seen.flags.level >= 3) && seen.before && seen.inOtherFullScreen && seen.fixtureLeft && seen.afterExit && seen.stillVisible;
+    const ok = (seen) => seen.flags.fullScreenAuxiliary && seen.flags.allSpaces && seen.flags.activationIndependent === true && seen.before && seen.inOtherFullScreen && seen.fixtureLeft && seen.afterExit && seen.stillVisible;
     const tab = await openTab(`${base}/video?fullscreen-space`, "Video");
     const out = {};
     try {
@@ -6365,7 +6365,7 @@ try {
       if (visible) out.documentOwn = await throughOwnFullScreen((await pipWindows())?.find((w) => w.window === doc.window) ?? doc);
       out.document = await throughOtherFullScreen((await pipWindows())?.find((w) => w.window === doc.window) ?? doc);
       if (!out.document) return skip("the fixture app never entered a full-screen Space in this session");
-      if ((visible && (!ownOk(out.videoOwn) || !ownOk(out.documentOwn))) || !ok(out.video) || out.videoNotOnTop.flags.level !== 0 || out.videoNotOnTop.flags.activationIndependent !== false || !out.videoNotOnTop.afterExit || !out.videoNotOnTop.stillVisible || !out.keepOnTopRestored || !ok(out.document)) throw new Error(JSON.stringify(out));
+      if ((visible && (!ownOk(out.videoOwn) || !ownOk(out.documentOwn))) || !ok(out.video) || out.videoNotOnTop.flags.level !== 0 || out.videoNotOnTop.flags.activationIndependent !== true || !out.videoNotOnTop.afterExit || !out.videoNotOnTop.stillVisible || !out.keepOnTopRestored || !ok(out.document)) throw new Error(JSON.stringify(out));
       return out;
     } finally {
       await evalApp(`return ac.webviews.get("${tab.id}").exitPictureInPicture()`).catch(() => null);
@@ -6394,7 +6394,7 @@ try {
       await sleep(1000);
       const after = (await pipWindows())?.find((w) => w.video) ?? {};
       const out = { sameWindow: after.window === opened.window, visible: after.visible, styled: after.styled, level: after.level, activationIndependent: after.activationIndependent, alive: (await evalApp("return true")) === true };
-      if (!out.alive || out.level !== 0 || out.activationIndependent !== false) throw new Error(JSON.stringify(out));
+      if (!out.alive || out.level !== 0 || out.activationIndependent !== true) throw new Error(JSON.stringify(out));
       return out;
     } finally {
       if (unpinned) await cef(`devPictureInPictureAction("keepOnTop:1")`).catch(() => null);

@@ -112,11 +112,11 @@ void ShowSolaraPictureInPictureInFullScreenSpaces(gfx::NativeWindow native) {
                 NSWindowCollectionBehaviorParticipatesInCycle |
                 NSWindowCollectionBehaviorFullScreenPrimary |
                 NSWindowCollectionBehaviorFullScreenNone |
-                NSWindowCollectionBehaviorFullScreenAllowsTiling);
+                NSWindowCollectionBehaviorFullScreenAllowsTiling |
+                NSWindowCollectionBehaviorStationary);
   behavior |= NSWindowCollectionBehaviorCanJoinAllSpaces |
               NSWindowCollectionBehaviorCanJoinAllApplications |
               NSWindowCollectionBehaviorFullScreenAuxiliary |
-              NSWindowCollectionBehaviorStationary |
               NSWindowCollectionBehaviorIgnoresCycle |
               NSWindowCollectionBehaviorFullScreenDisallowsTiling;
   if (behavior != window.collectionBehavior) {
@@ -134,8 +134,7 @@ void ShowSolaraPictureInPictureInFullScreenSpaces(gfx::NativeWindow native) {
   }
   NativeWidgetMacNSWindow* widget_window =
       base::apple::ObjCCast<NativeWidgetMacNSWindow>(window);
-  [widget_window
-      setActivationIndependence:window.level >= NSFloatingWindowLevel];
+  [widget_window setActivationIndependence:YES];
 }
 
 void LetSolaraPictureInPictureMoveFreely(gfx::NativeWindow native) {

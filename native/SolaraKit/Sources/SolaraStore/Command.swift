@@ -36,7 +36,7 @@ public struct Command: Sendable, Equatable {
     "switchProfile", "moveTabsToWindow", "moveTabToProfile", "mergeAllWindows", "reopenClosed", "reopenClosedTab", "reopenClosedWindow",
     "restoreClosed", "createProfile", "updateProfile", "deleteProfile", "reorderProfiles", "setDefaultProfile", "profileDataDeleted",
     "createGroup", "updateGroup", "addTabsToGroup", "removeTabsFromGroup", "ungroup", "newNestedGroup", "closeGroup", "deleteGroup",
-    "placeTabs", "dropTabs", "pinTabs", "returnToPinnedUrl", "setPinnedUrl", "setMuted", "setSiteMuted", "groupTabs", "groupOnto", "moveGroup",
+    "placeTabs", "dropTabs", "pinTabs", "togglePinnedRows", "returnToPinnedUrl", "setPinnedUrl", "setMuted", "setSiteMuted", "groupTabs", "groupOnto", "moveGroup",
     "duplicateGroup", "newTabInGroup", "cleanUpTabs", "restoreCleaned", "clearUnpinnedTabs", "undoClearTabs", "removeClosedPin",
     "closeAbandonedNewTabs", "createSplit", "openSplitPane", "replaceSplitPane", "removeTabFromSplit", "separateSplit", "updateSplit",
     "flipSplit", "toggleSplitOrientation", "movePane", "focusPane", "toggleTabLayout", "openPeek", "closePeek", "peekToTab", "updateSettings",
@@ -254,6 +254,7 @@ extension Session {
     case "placeTabs": placeTabs(a.strings(0), TabPlacement(json: a[1]))
     case "dropTabs": result = .bool(dropTabs(a.strings(0), Drop(json: a[1])))
     case "pinTabs": pinTabs(a.strings(0), pinned: a.bool(1), row: a.optionalBool(2))
+    case "togglePinnedRows": togglePinnedRows(try a.requireString(0))
     case "returnToPinnedUrl": returnToPinnedUrl(try a.requireString(0))
     case "setPinnedUrl": setPinnedUrl(try a.requireString(0), a.string(1))
     case "setMuted": setMuted(a.strings(0), a.bool(1))

@@ -1,0 +1,245 @@
+{
+  "format": 1,
+  "about": "Move to Pinned and Move out of Pinned cases. apps/browser/src/store/pinnedRowsShared.test.mjs runs them through movePinned.ts and PinnedRowsTests.swift through the togglePinnedRows store command. A name stands for the tab opened on https://<name>.com/; $name is its id.",
+  "cases": [
+    {
+      "name": "a tab goes to the pinned rows and back to where it was, in its group",
+      "steps": [
+        { "window": ["a", "b", "c", "d"], "as": "w" },
+        { "group": ["$b", "$c"], "as": "g" },
+        { "call": "activate", "args": ["$c"] },
+        { "toggle": "$w" },
+        { "expect": { "rows": { "$w": ["c"] }, "list": { "$w": ["a", "b", "d"] } } },
+        { "toggle": "$w" },
+        { "expect": { "rows": { "$w": [] }, "list": { "$w": ["a", "b", "c", "d"] }, "groupTabs": { "$g": ["$b", "$c"] } } },
+        { "call": "activate", "args": ["$d"] },
+        { "toggle": "$w" },
+        { "toggle": "$w" },
+        { "expect": { "list": { "$w": ["a", "b", "c", "d"] } } }
+      ]
+    },
+    {
+      "name": "a selection goes and comes back, and a tile is unpinned, not made a row",
+      "steps": [
+        { "window": ["a", "b", "c"], "as": "w" },
+        { "call": "activate", "args": ["$a"] },
+        { "call": "setSelection", "args": ["$w", ["$a", "$c"]] },
+        { "toggle": "$w" },
+        { "expect": { "rows": { "$w": ["a", "c"] } } },
+        { "call": "activate", "args": ["$a"] },
+        { "call": "setSelection", "args": ["$w", ["$a", "$c"]] },
+        { "toggle": "$w" },
+        { "expect": { "rows": { "$w": [] }, "list": { "$w": ["a", "b", "c"] } } },
+        { "call": "pinTabs", "args": [["$b"], true] },
+        { "call": "activate", "args": ["$b"] },
+        { "call": "setSelection", "args": ["$w", []] },
+        { "toggle": "$w" },
+        { "expect": { "pinned": { "$b": false }, "rows": { "$w": [] } } }
+      ]
+    },
+    {
+      "name": "neighbours pinned together come back in their order, and one at a time in either order",
+      "steps": [
+        { "window": ["a", "b", "c", "d"], "as": "w" },
+        { "call": "activate", "args": ["$b"] },
+        { "call": "setSelection", "args": ["$w", ["$b", "$c"]] },
+        { "toggle": "$w" },
+        { "expect": { "rows": { "$w": ["b", "c"] } } },
+        { "call": "activate", "args": ["$b"] },
+        { "call": "setSelection", "args": ["$w", ["$b", "$c"]] },
+        { "toggle": "$w" },
+        { "expect": { "list": { "$w": ["a", "b", "c", "d"] } } },
+        { "call": "activate", "args": ["$c"] },
+        { "call": "setSelection", "args": ["$w", ["$c"]] },
+        { "toggle": "$w" },
+        { "call": "activate", "args": ["$b"] },
+        { "call": "setSelection", "args": ["$w", ["$b"]] },
+        { "toggle": "$w" },
+        { "call": "activate", "args": ["$c"] },
+        { "call": "setSelection", "args": ["$w", ["$c"]] },
+        { "toggle": "$w" },
+        { "call": "activate", "args": ["$b"] },
+        { "call": "setSelection", "args": ["$w", ["$b"]] },
+        { "toggle": "$w" },
+        { "expect": { "list": { "$w": ["a", "b", "c", "d"] } } }
+      ]
+    },
+    {
+      "name": "Move out of Pinned from another window puts the first window's tab back where it was",
+      "steps": [
+        { "window": ["a", "b", "c"], "as": "w" },
+        { "call": "activate", "args": ["$b"] },
+        { "toggle": "$w" },
+        { "window": ["other"], "as": "w2" },
+        { "rowIn": "$w2", "as": "copy" },
+        { "call": "activate", "args": ["$copy"] },
+        { "toggle": "$w2" },
+        { "expect": { "pinned": { "$b": false }, "list": { "$w": ["a", "b", "c"] }, "rows": { "$w2": [] } } }
+      ]
+    },
+    {
+      "name": "two tabs pinned one after the other, moved out together, keep their order",
+      "steps": [
+        { "window": ["a", "b", "c", "d"], "as": "w" },
+        { "call": "activate", "args": ["$b"] },
+        { "call": "setSelection", "args": ["$w", ["$b"]] },
+        { "toggle": "$w" },
+        { "call": "activate", "args": ["$c"] },
+        { "call": "setSelection", "args": ["$w", ["$c"]] },
+        { "toggle": "$w" },
+        { "expect": { "rows": { "$w": ["b", "c"] } } },
+        { "call": "activate", "args": ["$b"] },
+        { "call": "setSelection", "args": ["$w", ["$b", "$c"]] },
+        { "toggle": "$w" },
+        { "expect": { "list": { "$w": ["a", "b", "c", "d"] } } },
+        { "call": "activate", "args": ["$c"] },
+        { "call": "setSelection", "args": ["$w", ["$c"]] },
+        { "toggle": "$w" },
+        { "call": "activate", "args": ["$b"] },
+        { "call": "setSelection", "args": ["$w", ["$b"]] },
+        { "toggle": "$w" },
+        { "call": "activate", "args": ["$c"] },
+        { "call": "setSelection", "args": ["$w", ["$b", "$c"]] },
+        { "toggle": "$w" },
+        { "expect": { "list": { "$w": ["a", "b", "c", "d"] } } }
+      ]
+    },
+    {
+      "name": "a group ungrouped meanwhile: the tab comes back to its spot, in no group",
+      "steps": [
+        { "window": ["a", "b", "c", "d"], "as": "w" },
+        { "group": ["$b", "$c"], "as": "g" },
+        { "call": "activate", "args": ["$c"] },
+        { "toggle": "$w" },
+        { "call": "ungroup", "args": ["$g"] },
+        { "toggle": "$w" },
+        { "expect": { "rows": { "$w": [] }, "list": { "$w": ["a", "b", "c", "d"] }, "grouped": { "$c": false } } }
+      ]
+    },
+    {
+      "name": "a group pinned meanwhile: the tab comes back to its spot in the list, not into the pinned group",
+      "steps": [
+        { "window": ["a", "b", "c", "d"], "as": "w" },
+        { "group": ["$b", "$c"], "as": "g" },
+        { "call": "activate", "args": ["$c"] },
+        { "toggle": "$w" },
+        { "call": "moveGroup", "args": ["$g", { "pinned": true }] },
+        { "toggle": "$w" },
+        { "expect": { "rows": { "$w": [] }, "list": { "$w": ["b", "a", "c", "d"] }, "groupTabs": { "$g": ["$b"] }, "grouped": { "$c": false } } }
+      ]
+    },
+    {
+      "name": "the group's other tabs moved meanwhile: the tab still goes back into its group",
+      "steps": [
+        { "window": ["a", "b", "c", "d", "e"], "as": "w" },
+        { "group": ["$b", "$c"], "as": "g" },
+        { "call": "activate", "args": ["$b"] },
+        { "toggle": "$w" },
+        { "call": "placeTabs", "args": [["$e"], { "pinned": false, "beforeId": "$a" }] },
+        { "toggle": "$w" },
+        { "expect": { "rows": { "$w": [] }, "groupTabs": { "$g": ["$b", "$c"] } } }
+      ]
+    },
+    {
+      "name": "a row pinned some other way has no spot: Move out of Pinned puts it at the top of the list",
+      "steps": [
+        { "window": ["a", "b", "c"], "as": "w" },
+        { "call": "pinTabs", "args": [["$c"], true, true] },
+        { "call": "activate", "args": ["$c"] },
+        { "toggle": "$w" },
+        { "expect": { "rows": { "$w": [] }, "pinned": { "$c": false }, "list": { "$w": ["c", "a", "b"] } } }
+      ]
+    },
+    {
+      "name": "a tab in a pinned group has no spot in the list: it goes to the rows and comes back out",
+      "steps": [
+        { "window": ["a", "b", "c"], "as": "w" },
+        { "group": ["$b"], "as": "g" },
+        { "call": "moveGroup", "args": ["$g", { "pinned": true }] },
+        { "call": "activate", "args": ["$b"] },
+        { "toggle": "$w" },
+        { "expect": { "rows": { "$w": ["b"] } } },
+        { "call": "activate", "args": ["$b"] },
+        { "toggle": "$w" },
+        { "expect": { "rows": { "$w": [] }, "list": { "$w": ["a", "b", "c"] } } }
+      ]
+    },
+    {
+      "name": "a row moved to another window meanwhile comes out in that window",
+      "steps": [
+        { "window": ["a", "b", "c"], "as": "w" },
+        { "window": ["x"], "as": "w2" },
+        { "call": "activate", "args": ["$b"] },
+        { "toggle": "$w" },
+        { "call": "moveTabsToWindow", "args": [["$b"], "$w2"] },
+        { "rowIn": "$w2", "as": "row" },
+        { "call": "activate", "args": ["$row"] },
+        { "toggle": "$w2" },
+        { "expect": { "rows": { "$w": [], "$w2": [] }, "list": { "$w": ["a", "c"], "$w2": ["b", "x"] } } }
+      ]
+    },
+    {
+      "name": "two spots that each say they come first: the cycle breaks at the first and both come out",
+      "steps": [
+        { "window": ["a", "b", "c", "d"], "as": "w" },
+        { "call": "activate", "args": ["$b"] },
+        { "toggle": "$w" },
+        { "call": "pinTabs", "args": [["$b"], false] },
+        { "call": "placeTabs", "args": [["$c"], { "pinned": false, "beforeId": "$b" }] },
+        { "call": "activate", "args": ["$c"] },
+        { "call": "setSelection", "args": ["$w", ["$c"]] },
+        { "toggle": "$w" },
+        { "call": "pinTabs", "args": [["$b"], true, true] },
+        { "expect": { "rows": { "$w": ["c", "b"] } } },
+        { "call": "activate", "args": ["$b"] },
+        { "call": "setSelection", "args": ["$w", ["$b", "$c"]] },
+        { "toggle": "$w" },
+        { "expect": { "rows": { "$w": [] }, "list": { "$w": ["c", "a", "b", "d"] } } }
+      ]
+    },
+    {
+      "name": "a selection reaching into another profile's tabs moves only the active profile's",
+      "steps": [
+        { "window": ["a", "b"], "as": "w" },
+        { "call": "createProfile", "args": [{ "name": "Work" }], "as": "work" },
+        { "call": "switchProfile", "args": ["$w", "$work"] },
+        { "tabs": ["x", "y"], "in": "$w" },
+        { "call": "switchProfile", "args": ["$w", "default"] },
+        { "call": "activate", "args": ["$a"] },
+        { "call": "setSelection", "args": ["$w", ["$a", "$x"]] },
+        { "toggle": "$w" },
+        { "expect": { "rows": { "$w": ["a"] }, "list": { "$w": ["b", "", "x", "y"] }, "pinned": { "$x": false } } },
+        { "call": "activate", "args": ["$a"] },
+        { "call": "setSelection", "args": ["$w", ["$a", "$x"]] },
+        { "toggle": "$w" },
+        { "expect": { "rows": { "$w": [] }, "list": { "$w": ["a", "b", "", "x", "y"] } } }
+      ]
+    },
+    {
+      "name": "a selection of a row and a list tab: the active list tab's side wins, the row stays",
+      "steps": [
+        { "window": ["a", "b", "c"], "as": "w" },
+        { "call": "activate", "args": ["$a"] },
+        { "toggle": "$w" },
+        { "call": "activate", "args": ["$b"] },
+        { "call": "setSelection", "args": ["$w", ["$a", "$b"]] },
+        { "toggle": "$w" },
+        { "expect": { "rows": { "$w": ["a", "b"] }, "list": { "$w": ["c"] } } }
+      ]
+    },
+    {
+      "name": "a row closed meanwhile sleeps and stays a row; Move out of Pinned on the other still restores it",
+      "steps": [
+        { "window": ["a", "b", "c", "d"], "as": "w" },
+        { "call": "activate", "args": ["$b"] },
+        { "call": "setSelection", "args": ["$w", ["$b", "$c"]] },
+        { "toggle": "$w" },
+        { "call": "closeTab", "args": ["$c"] },
+        { "call": "activate", "args": ["$b"] },
+        { "call": "setSelection", "args": ["$w", ["$b"]] },
+        { "toggle": "$w" },
+        { "expect": { "rows": { "$w": ["c"] }, "list": { "$w": ["a", "b", "d"] } } }
+      ]
+    }
+  ]
+}

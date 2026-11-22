@@ -21,7 +21,7 @@ public enum WorkspaceMenuCommand {
   public static let commands: Set<String> = [
     "newTab", "closeTab", "reopenClosedTab", "restoreClosed", "duplicateTab", "moveTabUp", "moveTabDown",
     "moveTabToWindow", "moveTabToProfile", "selectTab", "selectLastTab", "nextTab", "previousTab",
-    "newWindow", "newIncognitoWindow", "closeWindow", "reopenClosedWindow", "mergeAllWindows",
+    "newWindow", "newIncognitoWindow", "closeWindow", "reopenClosedWindow", "mergeAllWindows", "togglePinnedRow",
   ]
 
   public static let unavailableInSmall: Set<String> = [
@@ -29,7 +29,7 @@ public enum WorkspaceMenuCommand {
   ]
 
   public static func available(_ command: String, arg: String? = nil, windowId: String?, state: BrowserState) -> Bool? {
-    guard commands.contains(command) else { return nil }
+    guard commands.contains(command), command != "togglePinnedRow" else { return nil }
     if let windowId, state.windows[windowId]?.isSmall == true, unavailableInSmall.contains(command) { return false }
     if command == "reopenClosedWindow" { return !state.closedWindows.isEmpty }
     if command == "reopenClosedTab" { return !state.closedTabs.isEmpty || !state.closedGroups.isEmpty || !state.closedWindows.isEmpty }
@@ -39,6 +39,11 @@ public enum WorkspaceMenuCommand {
 
   public static func plan(_ command: String, arg: String? = nil, windowId requested: String?, state: BrowserState) -> WorkspaceMenuPlan? {
     guard commands.contains(command) else { return nil }
+    if command == "togglePinnedRow" {
+      let route = CommandRoute.resolve(command, windowId: requested, state: state, closing: [])
+      guard route.kind == .main, let windowId = route.windowId else { return WorkspaceMenuPlan() }
+      return WorkspaceMenuPlan(commands: [Command("togglePinnedRows", [.string(windowId)])], focusWindow: route.focusWindow)
+    }
     if let requested, state.windows[requested]?.isSmall == true, unavailableInSmall.contains(command) {
       let session = Session(state: state, memory: StoreMemory(), env: PlainWebAddressing(), config: StoreConfig(), now: 0)
       guard let target = session.mainWindowFor(state), let redirected = plan(command, arg: arg, windowId: target, state: state) else { return WorkspaceMenuPlan() }

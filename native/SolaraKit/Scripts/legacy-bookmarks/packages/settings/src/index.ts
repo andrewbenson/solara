@@ -129,6 +129,12 @@ export const nativeAppIntegrationNotification = (response: { action: string; tab
 export const nativeAppIntegrationCommand = (command: AppIntegrationCommand, windowId?: string | null): Promise<void> =>
   native?.appIntegrationCommand(command, windowId ?? null) ?? Promise.reject(new Error("native app integration unavailable"));
 
+export function setNativePreferredImportSource(browserId: string | null): void {
+  try {
+    (native as { setPreferredImportSource?: (browserId: string | null) => void } | null)?.setPreferredImportSource?.(browserId);
+  } catch {}
+}
+
 export const navigateNativeSettings = (pane: string | null, profileId: string | null, detail: string | null = null) =>
   native?.navigate(pane, profileId, detail).catch(() => {});
 

@@ -25,9 +25,18 @@ enum NativeWorkspaceCommands {
     let request: UUID
   }
   private static var panelFocus: [String: PanelFocus] = [:]
+  private struct FindFocus {
+    let windowId: String
+    let tabId: String
+    let generation: Int
+    let ownership: Int
+  }
+  private static var findFocus: [Int: FindFocus] = [:]
+  private static var expiredFindRequests: [Int] = []
+  private static var lastFindRequest = 0
 
   static func install() {
-    for command in WorkspaceMenuCommand.commands.union(ViewMenuCommand.commands).union(PageMenuCommand.commands) {
+    for command in WorkspaceMenuCommand.commands.union(ViewMenuCommand.commands).union(PageMenuCommand.commands).union(FindMenuCommand.commands) {
       NativeMenuCommands.argumentHandlers[command] = { arg, windowId in perform(command, arg: arg, windowId: windowId) }
     }
     NativeMenuCommands.keepsMenuDispatch = ViewMenuCommand.commands.union(PageMenuCommand.commands)
@@ -70,6 +79,117 @@ enum NativeWorkspaceCommands {
     if let external = plan.external { openExternal(external) }
     FrameUpdates.flush()
     return true
+  }
+
+  private static func nextFindRequest() -> Int {
+    lastFindRequest = max(Int(Date().timeIntervalSince1970 * 1000), lastFindRequest + 1)
+    return lastFindRequest
+  }
+
+  private static func performFind(_ command: String, windowId: String?) -> Bool {
+    guard NativeStoreHandle.ownsWorkspace, let store = NativeStoreHandle.store else { return false }
+    let request = nextFindRequest()
+    guard let plan = FindMenuCommand.plan(command, windowId: windowId, state: store.state, closing: store.memory.closingWindows, focusRequest: request) else { return false }
+    if let target = plan.focusWindow {
+      do { try store.dispatch(Command("setFocusedWindow", [.string(target)]), origin: .native) } catch { return false }
+      ShellScripting.showWindow(target)
+    }
+    if plan.claimsFocus, let target = plan.windowId, let tabId = plan.tabId {
+      requestFindFocus(request, windowId: target, tabId: tabId)
+    }
+    if !plan.commands.isEmpty {
+      do { try store.dispatch(plan.commands, origin: .native) } catch {
+        if let pending = findFocus.removeValue(forKey: request) { WindowHost.cancelCommandFocus(pending.generation, restoring: true) }
+        NSLog("[commands] %@ failed: %@", command, String(describing: error))
+      }
+    }
+    if let action = plan.page, let tabId = plan.tabId {
+      if plan.readsSelection { readSelectionForFind(action, tabId: tabId) } else { issuePage(action, tabId: tabId) }
+    }
+    FrameUpdates.flush()
+    return true
+  }
+
+  private static func requestFindFocus(_ request: Int, windowId: String, tabId: String) {
+    let generation = WindowHost.beginCommandFocus("findInPage", windowId: windowId)
+    for (key, previous) in findFocus where previous.windowId == windowId {
+      findFocus[key] = nil
+      WindowHost.cancelCommandFocus(previous.generation, restoring: true)
+    }
+    guard let generation else { return }
+    findFocus[request] = FindFocus(windowId: windowId, tabId: tabId, generation: generation, ownership: NativeStoreHandle.ownershipGeneration)
+    #if DEBUG
+    findFocusTimes[request] = CACurrentMediaTime()
+    #endif
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+      guard let wanted = findFocus.removeValue(forKey: request) else { return }
+      expiredFindRequests = Array((expiredFindRequests + [request]).suffix(16))
+      NSLog("[commands] find focus for %@ expired before the find bar took it", wanted.tabId)
+      #if DEBUG
+      findFocusTimes[request] = nil
+      findFocusExpiries += 1
+      #endif
+      WindowHost.cancelCommandFocus(wanted.generation, restoring: true)
+    }
+  }
+
+  #if DEBUG
+  private static var findFocusTimes: [Int: CFTimeInterval] = [:]
+  static private(set) var findFocusDelays: [Double] = []
+  static private(set) var findFocusExpiries = 0
+  #endif
+
+  static func findFocusAllowed(_ request: Int) -> Bool {
+    let pending = findFocus[request]
+    let allowed = FindMenuCommand.focusAllowed(expired: expiredFindRequests.contains(request),
+      pendingGateLive: pending.map { WindowHost.commandFocusLive($0.generation) })
+    if !allowed, let pending {
+      findFocus[request] = nil
+      expiredFindRequests = Array((expiredFindRequests + [request]).suffix(16))
+      NSLog("[commands] find focus for %@ outlived its focus gate", pending.tabId)
+      #if DEBUG
+      findFocusTimes[request] = nil
+      findFocusExpiries += 1
+      #endif
+      WindowHost.cancelCommandFocus(pending.generation, restoring: true)
+    }
+    return allowed
+  }
+
+  static func findDidFocus(_ view: NativeFindBarView, request: Int) {
+    guard let wanted = findFocus.removeValue(forKey: request) else { return }
+    #if DEBUG
+    if let start = findFocusTimes.removeValue(forKey: request) { findFocusDelays.append((CACurrentMediaTime() - start) * 1000) }
+    #endif
+    guard NativeStoreHandle.ownsWorkspace, NativeStoreHandle.ownershipGeneration == wanted.ownership,
+      let state = NativeStoreHandle.store?.state, state.tabs[wanted.tabId]?.windowId == wanted.windowId,
+      state.find[wanted.tabId]?.json["open"]?.truthy == true,
+      let window = view.window, window === WindowHost.contentView(wanted.windowId)?.window, window.isKeyWindow else {
+      WindowHost.cancelCommandFocus(wanted.generation, restoring: true)
+      return
+    }
+    FocusMoves.claim(wanted.generation, destination: view.bar)
+  }
+
+  private static func readSelectionForFind(_ action: PageCommand, tabId: String) {
+    guard let issuer = PageIssuer.shared else { return }
+    issuer.store.sequence {
+      guard let binding = issuer.binding(tabId: tabId), issuer.ensurePageEstablished(binding), issuer.isCurrent(binding) else { return }
+      let identity = binding.identity
+      issuer.issueInScope(tabId: tabId, identity: identity, command: action) { result in
+        guard case .success(let value) = result, let query = FindMenuCommand.selectionQuery(value) else { return }
+        let current = issuer.store.sequence { () -> Bool in
+          guard let now = issuer.binding(tabId: tabId), now.identity == identity else { return false }
+          return issuer.isCurrent(now)
+        }
+        guard current, NativeStoreHandle.ownsWorkspace, let store = NativeStoreHandle.store, store.state.tabs[tabId] != nil,
+          let command = FindMenuCommand.selectionFind(query, tabId: tabId, focusRequest: nextFindRequest()) else { return }
+        do { try store.dispatch(command, origin: .native) } catch {
+          NSLog("[commands] useSelectionForFind failed: %@", String(describing: error))
+        }
+        FrameUpdates.flush()
+      }
+    }
   }
 
   private static func livePage(_ tabId: String) -> PageIdentity? {
@@ -127,6 +247,7 @@ enum NativeWorkspaceCommands {
   static func perform(_ command: String, arg: String? = nil, windowId: String?) -> Bool {
     if ViewMenuCommand.commands.contains(command) { return performView(command, arg: arg, windowId: windowId) }
     if PageMenuCommand.commands.contains(command) { return performPage(command, arg: arg, windowId: windowId) }
+    if FindMenuCommand.commands.contains(command) { return performFind(command, windowId: windowId) }
     guard NativeStoreHandle.ownsWorkspace, let store = NativeStoreHandle.store,
       WorkspaceMenuCommand.commands.contains(command) else { return false }
     if command == "closeTab", windowId == nil, WindowHost.closeForeignKeyWindow() { return true }

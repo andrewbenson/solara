@@ -43,6 +43,7 @@ final class FindField: NSTextField {
 @MainActor
 public final class FindBarView: NSView, NSTextFieldDelegate {
   public var onEvent: (FindBarEvent) -> Void = { _ in }
+  public var allowsFocus: (Int) -> Bool = { _ in true }
   public private(set) var state: FindBarState?
 
   private let icon = NSImageView()
@@ -201,7 +202,12 @@ public final class FindBarView: NSView, NSTextFieldDelegate {
     DispatchQueue.main.async { [weak self] in
       guard let self, self.focusGeneration == generation else { return }
       self.scheduledFocus = nil
-      guard self.state?.focusRequest == request, !self.isHiddenOrHasHiddenAncestor, let window = self.window,
+      guard self.state?.focusRequest == request else { return }
+      guard self.allowsFocus(request) else {
+        self.handledFocus = request
+        return
+      }
+      guard !self.isHiddenOrHasHiddenAncestor, let window = self.window,
             window.makeFirstResponder(self.field), let editor = self.field.currentEditor(), window.firstResponder === editor else { return }
       self.handledFocus = request
       editor.selectedRange = NSRange(location: 0, length: (self.field.stringValue as NSString).length)

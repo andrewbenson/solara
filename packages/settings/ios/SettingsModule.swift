@@ -187,7 +187,9 @@ public class SettingsModule: Module {
     AsyncFunction("devPageCommands") { () -> [String: Any] in
       #if DEBUG
       let external = MainActor.assumeIsolated { NativeWorkspaceCommands.lastExternal }
-      return ["debug": true, "lastExternal": external ?? NSNull()]
+      let delays = MainActor.assumeIsolated { NativeWorkspaceCommands.findFocusDelays }
+      let expiries = MainActor.assumeIsolated { NativeWorkspaceCommands.findFocusExpiries }
+      return ["debug": true, "lastExternal": external ?? NSNull(), "findFocusDelays": delays, "findFocusExpiries": expiries]
       #else
       return [:]
       #endif

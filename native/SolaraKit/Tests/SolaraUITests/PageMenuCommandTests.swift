@@ -161,6 +161,6 @@ import Testing
   }
 }
 
-private func makeUIStore(_ state: BrowserState) -> Store {
+func makeUIStore(_ state: BrowserState) -> Store {
   Store(state: state, memory: StoreMemory(ids: IdSource(launch: "test")), checksInvariants: true, clock: { 1_000 })
 }

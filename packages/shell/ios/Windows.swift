@@ -6,11 +6,14 @@ public enum WindowHost {
   @MainActor public static func beginCommandFocus(_ command: String, windowId: String) -> Int? {
     guard let window = WindowManager.shared.windows[windowId] else { return nil }
     NotificationCenter.default.post(name: Notification.Name("SolaraCommandWillDispatch"), object: window, userInfo: ["command": command])
-    guard command == "newTab" else { return nil }
+    guard command == "newTab" || command == "findInPage" else { return nil }
     _ = FocusHandoff.shared.takeBegun()
     let generation = FocusHandoff.shared.begin(in: window)
     _ = FocusHandoff.shared.takeBegun()
     return generation
+  }
+  @MainActor public static func commandFocusLive(_ generation: Int) -> Bool {
+    FocusHandoff.shared.isLive(generation)
   }
   @MainActor public static func cancelCommandFocus(_ generation: Int, restoring: Bool) {
     FocusHandoff.shared.cancel(generation, restoringSource: restoring)
@@ -1568,6 +1571,11 @@ final class FocusHandoff {
 
   private func gate(of id: Int) -> Gate? {
     gates.values.first { $0.generations.contains { $0.id == id } }
+  }
+
+  func isLive(_ id: Int) -> Bool {
+    guard let gate = gate(of: id) else { return false }
+    return CACurrentMediaTime() < gate.deadline
   }
 
   func claimedElsewhere(in window: NSWindow, than view: NSView) -> Bool {

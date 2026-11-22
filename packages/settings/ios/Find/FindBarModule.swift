@@ -34,9 +34,13 @@ final class NativeFindBarView: ExpoView {
       case .close: self?.onFindEvent(["kind": "close"])
       case .replacement(let text): self?.onFindEvent(["kind": "replacement", "text": text])
       case .replace(let all): self?.onFindEvent(["kind": "replace", "all": all])
-      case .focused: self?.onFindEvent(["kind": "focused"])
+      case .focused:
+        guard let self else { return }
+        if let request = self.bar.state?.focusRequest { NativeWorkspaceCommands.findDidFocus(self, request: request) }
+        self.onFindEvent(["kind": "focused"])
       }
     }
+    bar.allowsFocus = { request in NativeWorkspaceCommands.findFocusAllowed(request) }
     addSubview(bar)
   }
 

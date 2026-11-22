@@ -310,7 +310,9 @@ void SolaraVideoOverlayWindow::FinishHide() {
 void SolaraVideoOverlayWindow::OnCloseButtonPressed() {
   ac_hide_fade_ = kCloseFade;
   PictureInPictureWindowManager::GetInstance()->ExitPictureInPictureViaWindowUi(
-      PictureInPictureWindowManager::UiBehavior::kCloseWindowOnly);
+      show_play_pause_button_
+          ? PictureInPictureWindowManager::UiBehavior::kCloseWindowAndPauseVideo
+          : PictureInPictureWindowManager::UiBehavior::kCloseWindowOnly);
 }
 
 void SolaraVideoOverlayWindow::HideIdleControlsUnlessPointerOnControl() {

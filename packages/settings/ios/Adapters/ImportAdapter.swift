@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import SolaraCore
+import SolaraEngine
 import SolaraImportAdapter
 import SolaraModel
 import SolaraStore
@@ -324,13 +325,58 @@ final class ImportRunEngine: ImportEngine {
         profileColor: read.profileColor,
         failed: read.failed.compactMap { SolaraUI.ImportKind(rawValue: $0.rawValue) },
         warnings: read.warnings.map { ImportReadWarning(kind: $0.kind.flatMap { SolaraUI.ImportKind(rawValue: $0.rawValue) }, code: $0.code, message: $0.message) },
-        credentials: read.credentials.map { ImportCredential(url: $0.url, username: $0.username, password: $0.password, realm: $0.realm) }
+        credentials: read.credentials.map { ImportCredential(url: $0.url, username: $0.username, password: $0.password, realm: $0.realm) },
+        bookmarks: read.bookmarks.map(Self.bookmark),
+        tabs: read.tabs.map(Self.tab),
+        favorites: read.favorites.map(Self.tab),
+        hasSpaces: read.hasSpaces
       )
     } catch let error as SolaraImportAdapter.ImportError where error == .cancelled {
       throw ImportReadFailure.cancelled
     } catch {
       throw ImportReadFailure.failed
     }
+  }
+
+  nonisolated static func bookmark(_ node: SolaraImportAdapter.BookmarkNode) -> ImportBookmarkNode {
+    ImportBookmarkNode(isFolder: node.type != .url, title: node.title, url: node.url, dateAdded: node.dateAdded, role: node.role?.isEmpty == true ? nil : node.role,
+                       pageTitle: node.pageTitle, children: node.children?.map(bookmark))
+  }
+
+  nonisolated static func tab(_ tab: SolaraImportAdapter.ImportedTab) -> ImportTabRow {
+    ImportTabRow(url: tab.url, title: tab.title, pinned: tab.pinned, customTitle: tab.customTitle)
+  }
+
+  func bookmarkParents(_ profile: String) -> ImportBookmarkParents? {
+    guard let owner = NativeBookmarkOwner.current, let snapshot = try? owner.snapshot(profile: profile) else { return nil }
+    let document = snapshot.document
+    let roots = BookmarkFlat.roots(snapshot.binding.engine)
+    return ImportBookmarkWrites.parents(hasView: snapshot.hasView, document: document, bar: roots.bar, other: roots.other)
+  }
+
+  func submitBookmarks(profile: String, mutations: [BookmarkMutation]) async throws {
+    guard let owner = NativeBookmarkOwner.writableCurrent else { throw ImportBookmarkWriteFailure.failed }
+    let requestID = BookmarkString.encode("import-bookmarks-\(UUID().uuidString)")
+    do {
+      let binding = try await ImportBookmarkWrites.whileEngineHolds(binding: { try owner.binding(profile: profile) }, isStale: { ($0 as? BookmarkWriterError) == .staleBinding }) { binding in
+        _ = try await owner.submitAsync(profile: profile, mutations: mutations, binding: binding, requestID: requestID)
+      }
+      _ = try? owner.acknowledgeReceipt(profile: profile, requestID: requestID, binding: binding)
+    } catch BookmarkWriterError.conditionFailed {
+      throw ImportBookmarkWriteFailure.conditionFailed
+    } catch {
+      throw ImportBookmarkWriteFailure.failed
+    }
+  }
+
+  func reportBookmarkFailure() {
+    NSLog("[bookmarks] the import's bookmarks were not saved")
+  }
+
+  func importWorkspace(profile: String, windows: [JSONValue]) -> Int? {
+    guard let store = SettingsDirectWrites.store else { return nil }
+    let payload: JSONValue = ["profileId": .string(profile), "windows": .array(windows)]
+    return Int(SettingsDirectWrites.write(store, Command("importWorkspace", [payload]))?.result?["tabs"]?.number ?? 0)
   }
 
   func cancelRead(jobId: String) { ImportService.shared.cancelRead(jobId: jobId) }

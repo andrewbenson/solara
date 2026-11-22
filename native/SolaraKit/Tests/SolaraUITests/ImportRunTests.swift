@@ -1,4 +1,6 @@
 import Foundation
+import SolaraEngine
+import SolaraModel
 import Testing
 @testable import SolaraUI
 
@@ -26,6 +28,16 @@ final class FakeImportEngine: ImportEngine {
   var forgets = 0
   var created: [(String, String?)] = []
   var createFails = false
+  var parents: ImportBookmarkParents? = ImportBookmarkParents(bar: "bar", other: "other", barEmpty: true, otherEmpty: false)
+  var rootsAppearOnSubmit = false
+  var bookmarkSubmits: [[BookmarkMutation]] = []
+  var conditionFailures = 0
+  var bookmarkFails = false
+  var bookmarkReports = 0
+  var onBookmarkSubmit: (() -> Void)?
+  var workspaces: [(String, [JSONValue])] = []
+  var workspaceResult: Int? = 2
+  var steps: [String] = []
   var readCount = 0
   var onRead: ((Int) -> Void)?
 
@@ -71,14 +83,39 @@ final class FakeImportEngine: ImportEngine {
   func discard(token: String) { discarded.append(token) }
 
   func writeNative(token: String, engineProfile: String, kinds: [String]) async -> ImportNativeWritten? {
+    steps.append("native")
     written.append((token, engineProfile, kinds))
     return nativeResult
   }
 
   func savePassword(engineProfile: String, origin: String, username: String, password: String) async -> Bool {
+    steps.append("save")
     saved.append((engineProfile, origin, username))
     onSave?(saved.count)
     return true
+  }
+
+  func bookmarkParents(_ profile: String) -> ImportBookmarkParents? { parents }
+
+  func submitBookmarks(profile: String, mutations: [BookmarkMutation]) async throws {
+    steps.append("bookmarks")
+    bookmarkSubmits.append(mutations)
+    onBookmarkSubmit?()
+    await Task.yield()
+    if bookmarkFails { throw ImportBookmarkWriteFailure.failed }
+    if conditionFailures > 0 {
+      conditionFailures -= 1
+      throw ImportBookmarkWriteFailure.conditionFailed
+    }
+    if rootsAppearOnSubmit, parents == nil { parents = ImportBookmarkParents(bar: "bar", other: "other", barEmpty: true, otherEmpty: true) }
+  }
+
+  func reportBookmarkFailure() { bookmarkReports += 1 }
+
+  func importWorkspace(profile: String, windows: [JSONValue]) -> Int? {
+    steps.append("workspace")
+    workspaces.append((profile, windows))
+    return workspaceResult
   }
 
   func extensions(browserId: String, profileId: String) async -> [ImportedExtension] { listed }
@@ -104,9 +141,25 @@ final class FakeImportEngine: ImportEngine {
   func publish(_ progress: ImportProgressUpdate) { published.append(progress) }
   func log(_ line: String) { logs.append(line) }
 
-  static func read(token: String? = "vault-1", name: String? = nil, failed: [ImportKind] = [], warnings: [ImportReadWarning] = [], credentials: [ImportCredential] = credentials(3)) -> ImportRead {
-    ImportRead(vaultToken: token, profileName: name, profileColor: nil, failed: failed, warnings: warnings, credentials: credentials)
+  static func read(token: String? = "vault-1", name: String? = nil, failed: [ImportKind] = [], warnings: [ImportReadWarning] = [], credentials: [ImportCredential] = credentials(3),
+                   bookmarks: ImportBookmarkNode? = nil, tabs: [ImportTabRow] = [], favorites: [ImportTabRow] = [], hasSpaces: Bool = false) -> ImportRead {
+    ImportRead(vaultToken: token, profileName: name, profileColor: nil, failed: failed, warnings: warnings, credentials: credentials,
+               bookmarks: bookmarks, tabs: tabs, favorites: favorites, hasSpaces: hasSpaces)
   }
+
+  static func link(_ title: String, _ url: String?, added: Double? = nil) -> ImportBookmarkNode {
+    ImportBookmarkNode(isFolder: false, title: title, url: url, dateAdded: added, role: nil, pageTitle: nil, children: nil)
+  }
+
+  static func folder(_ title: String, _ children: [ImportBookmarkNode], role: String? = nil) -> ImportBookmarkNode {
+    ImportBookmarkNode(isFolder: true, title: title, url: nil, dateAdded: nil, role: role, pageTitle: nil, children: children)
+  }
+
+  static let tree = folder("", [
+    folder("Bookmarks Bar", [link("A", "https://a.test/"), folder("F", [link("B", "https://b.test/")])], role: "toolbar"),
+    folder("Other Bookmarks", [link("", "https://c.test/", added: 5)], role: "other"),
+    link("Loose", "https://d.test/"),
+  ])
 
   static func credentials(_ n: Int) -> [ImportCredential] {
     (1...max(n, 1)).prefix(n).map { ImportCredential(url: "https://site\($0).test/login", username: "user\($0)", password: "secret\($0)", realm: nil) }
@@ -437,6 +490,196 @@ struct ImportRunTests {
     #expect(script.calls == ["cancel", "run:j:2", "cancel"])
     #expect(runs.route(of: "s") == .swift)
     #expect(runs.route(of: "j") == .js)
+  }
+
+  @Test func bookmarkDraftsFollowTheJSShape() {
+    #expect(ImportBookmarks.draft(FakeImportEngine.link("", "https://c.test/", added: 5)) == .object(["title": "https://c.test/", "url": "https://c.test/", "addedAt": .number(5)]))
+    #expect(ImportBookmarks.draft(FakeImportEngine.link("", nil)) == .object(["title": "", "url": ""]))
+    #expect(ImportBookmarks.draft(FakeImportEngine.folder("F", [])) == .object(["title": "F", "children": .array([])]))
+    let (toolbar, other) = ImportBookmarks.split(FakeImportEngine.tree)
+    #expect(toolbar.map(\.title) == ["A", "F"])
+    #expect(other.map(\.title) == ["", "Loose"])
+    #expect(ImportBookmarks.linkCount(toolbar + other) == 4)
+  }
+
+  @Test func anEmptyBarTakesTheLinksAndAFullOtherGetsTheImportedFolder() {
+    let parents = ImportBookmarkParents(bar: "bar", other: "other", barEmpty: true, otherEmpty: false)
+    let (toolbar, other) = ImportBookmarks.split(FakeImportEngine.tree)
+    let edits = ImportBookmarks.edits(profile: "default", toolbar: toolbar, other: other, parents: parents, browserName: "Google Chrome")
+    #expect(edits.map(\.method) == ["expectChildren", "addBookmarkTree", "addBookmarkTree"])
+    #expect(edits[0].args == [.string("default"), .string("bar"), .array([])])
+    #expect(edits[1].args[2] == .string("bar"))
+    #expect(edits[2].args[2] == .string("other"))
+    #expect(edits[2].args[1].array?.first?["title"]?.string == "Imported from Google Chrome")
+  }
+
+  @Test func stepsRunInTheJSOrder() async {
+    let (runs, engine, script, session) = setup()
+    runs.darkRoute = true
+    engine.reads["Default"] = .success(FakeImportEngine.read(bookmarks: FakeImportEngine.tree, tabs: [ImportTabRow(url: "https://t.test/", title: "T", pinned: false, customTitle: nil)],
+                                                            favorites: [ImportTabRow(url: "https://f.test/", title: "F", pinned: false, customTitle: "Fav")]))
+    let outcome = await runs.run(request([.bookmarks, .passwords, .cookies, .tabs, .favorites]), session: session, engine: engine, script: script, scriptSession: 1)
+    #expect(engine.steps == ["bookmarks", "native", "workspace", "save", "save", "save"])
+    #expect(outcome.counts.bookmarks == 4)
+    #expect(outcome.counts.tabs == 2)
+    let windows = engine.workspaces.first?.1 ?? []
+    #expect(windows.count == 2)
+    #expect(windows.first?["group"]?.string == "Imported")
+    #expect(windows.last?["pinnedAgainst"]?.string == "tiles")
+    #expect(windows.last?["tabs"]?.array?.first?["pinned"] == .bool(true))
+    #expect(windows.last?["tabs"]?.array?.first?["customTitle"]?.string == "Fav")
+  }
+
+  @Test func tabsFromASpacesSourceAreLeftOut() async {
+    let (runs, engine, script, session) = setup()
+    runs.darkRoute = true
+    engine.reads["Default"] = .success(FakeImportEngine.read(tabs: [ImportTabRow(url: "https://t.test/", title: "T", pinned: false, customTitle: nil)], hasSpaces: true))
+    _ = await runs.run(request([.tabs]), session: session, engine: engine, script: script, scriptSession: 1)
+    #expect(engine.workspaces.isEmpty)
+  }
+
+  @Test func missingRootsAreCreatedBeforeBookmarksArePlaced() async {
+    let (runs, engine, script, session) = setup()
+    runs.darkRoute = true
+    engine.parents = nil
+    engine.rootsAppearOnSubmit = true
+    engine.reads["Default"] = .success(FakeImportEngine.read(bookmarks: FakeImportEngine.tree))
+    let outcome = await runs.run(request([.bookmarks]), session: session, engine: engine, script: script, scriptSession: 1)
+    #expect(engine.bookmarkSubmits.first == [BookmarkMutation(method: "addBookmarkTree", args: [.string("default"), .array([])])])
+    #expect(engine.bookmarkSubmits.count == 2)
+    #expect(outcome.counts.bookmarks == 4)
+  }
+
+  @Test func aConditionFailureRetriesUpToThreeTimes() async {
+    let (runs, engine, script, session) = setup()
+    runs.darkRoute = true
+    engine.conditionFailures = 1
+    engine.reads["Default"] = .success(FakeImportEngine.read(bookmarks: FakeImportEngine.tree))
+    let once = await runs.run(request([.bookmarks]), session: session, engine: engine, script: script, scriptSession: 1)
+    #expect(engine.bookmarkSubmits.count == 2)
+    #expect(once.counts.bookmarks == 4)
+
+    let (runs2, engine2, script2, session2) = setup()
+    runs2.darkRoute = true
+    engine2.conditionFailures = 3
+    engine2.reads["Default"] = .success(FakeImportEngine.read(bookmarks: FakeImportEngine.tree))
+    let thrice = await runs2.run(request([.bookmarks, .passwords]), session: session2, engine: engine2, script: script2, scriptSession: 1)
+    #expect(engine2.bookmarkSubmits.count == 3)
+    #expect(thrice.counts.bookmarks == 0)
+    #expect(thrice.status[.bookmarks] == .failed)
+    #expect(engine2.bookmarkReports == 1)
+    #expect(thrice.counts.passwords == 3)
+  }
+
+  @Test func cancellingAfterBookmarksSavesNothingMore() async {
+    let (runs, engine, script, session) = setup()
+    runs.darkRoute = true
+    engine.onBookmarkSubmit = { runs.cancel(engine: engine, script: script) }
+    engine.reads["Default"] = .success(FakeImportEngine.read(bookmarks: FakeImportEngine.tree, tabs: [ImportTabRow(url: "https://t.test/", title: "T", pinned: false, customTitle: nil)]))
+    let outcome = await runs.run(request([.bookmarks, .passwords, .cookies, .tabs]), session: session, engine: engine, script: script, scriptSession: 1)
+    #expect(engine.steps == ["bookmarks"])
+    #expect(outcome.notes == [ImportRunner.stoppedNote])
+    #expect(outcome.counts.bookmarks == 4)
+    #expect(engine.discarded == ["vault-1"])
+  }
+
+  @Test func aDrainAfterBookmarksEndsAsACancelledRun() async {
+    let (runs, engine, script, session) = setup()
+    runs.darkRoute = true
+    engine.onBookmarkSubmit = { Task { @MainActor in await runs.drain(engine: engine) } }
+    engine.reads["Default"] = .success(FakeImportEngine.read(bookmarks: FakeImportEngine.tree))
+    let outcome = await runs.run(request([.bookmarks, .passwords, .cookies]), session: session, engine: engine, script: script, scriptSession: 1)
+    #expect(outcome.cancelled)
+    #expect(engine.steps == ["bookmarks"])
+    #expect(engine.discarded == ["vault-1"])
+  }
+
+  @Test func tabsTheWorkspaceRefusesAreFailed() async {
+    let (runs, engine, script, session) = setup()
+    runs.darkRoute = true
+    engine.workspaceResult = nil
+    engine.reads["Default"] = .success(FakeImportEngine.read(tabs: [ImportTabRow(url: "https://t.test/", title: "T", pinned: false, customTitle: nil)]))
+    let outcome = await runs.run(request([.tabs, .passwords]), session: session, engine: engine, script: script, scriptSession: 1)
+    #expect(outcome.status[.tabs] == .failed)
+    #expect(outcome.counts.tabs == 0)
+    #expect(outcome.counts.passwords == 3)
+  }
+
+  @Test func theDarkRouteTakesBookmarksTabsAndFavoritesOnlyWhenSet() {
+    #expect(ImportRoute.of(ImportFixtures.chrome, kinds: [.bookmarks, .passwords]) == .js)
+    #expect(ImportRoute.of(ImportFixtures.chrome, kinds: [.bookmarks, .tabs, .favorites, .passwords], dark: true) == .swift)
+    #expect(ImportRoute.of(ImportFixtures.chrome, kinds: [.bookmarks, .history], dark: true) == .js)
+  }
+
+  @Test func parentsNeedOnlyAViewNotSyncReadiness() {
+    let document: JSONValue = ["nodes": ["bar@e": ["kind": "folder", "children": .array([])], "other@e": ["kind": "folder", "children": .array(["x"])]], "roots": [:]]
+    let parents = ImportBookmarkWrites.parents(hasView: true, document: document, bar: "bar@e", other: "other@e")
+    #expect(parents == ImportBookmarkParents(bar: "bar@e", other: "other@e", barEmpty: true, otherEmpty: false))
+    #expect(ImportBookmarkWrites.parents(hasView: false, document: document, bar: "bar@e", other: "other@e") == nil)
+    #expect(ImportBookmarkWrites.parents(hasView: true, document: ["nodes": [:]], bar: "bar@e", other: "other@e") == nil)
+  }
+
+  struct Stale: Error {}
+
+  @Test func aStaleBindingIsWaitedOutWithTheSameBinding() async throws {
+    var tries = 0
+    var slept: [Duration] = []
+    let held = try await ImportBookmarkWrites.whileEngineHolds(binding: { "engine-1/7" }, isStale: { $0 is Stale }, sleep: { slept.append($0) }) { binding in
+      tries += 1
+      #expect(binding == "engine-1/7")
+      if tries <= 2 { throw Stale() }
+    }
+    #expect(held == "engine-1/7")
+    #expect(tries == 3)
+    #expect(slept == [.milliseconds(25), .milliseconds(50)])
+  }
+
+  @Test func aStaleBindingGivesUpWhenTheEngineChanges() async {
+    var bindings = ["engine-1/7", "engine-2/8"]
+    var tries = 0
+    await #expect(throws: Stale.self) {
+      _ = try await ImportBookmarkWrites.whileEngineHolds(binding: { bindings.removeFirst() }, isStale: { $0 is Stale }, sleep: { _ in }) { _ in
+        tries += 1
+        throw Stale()
+      }
+    }
+    #expect(tries == 1)
+  }
+
+  @Test func aStaleBindingGivesUpAfterTheRetryWindow() async {
+    var clock = ContinuousClock.now
+    var tries = 0
+    await #expect(throws: Stale.self) {
+      _ = try await ImportBookmarkWrites.whileEngineHolds(binding: { "engine-1/7" }, isStale: { $0 is Stale }, sleep: { clock += $0 + .seconds(4) }, now: { clock }) { _ in
+        tries += 1
+        throw Stale()
+      }
+    }
+    #expect(tries == 4)
+  }
+
+  @Test func aCancelledTaskStopsRetryingAStaleBinding() async {
+    var tries = 0
+    let task = Task { @MainActor in
+      try await ImportBookmarkWrites.whileEngineHolds(binding: { "engine-1/7" }, isStale: { $0 is Stale }, sleep: { _ in }) { _ in
+        tries += 1
+        withUnsafeCurrentTask { $0?.cancel() }
+        throw Stale()
+      }
+    }
+    await #expect(throws: CancellationError.self) { _ = try await task.value }
+    #expect(tries == 1)
+  }
+
+  @Test func otherErrorsAreNotRetried() async {
+    var tries = 0
+    await #expect(throws: ImportBookmarkWriteFailure.self) {
+      _ = try await ImportBookmarkWrites.whileEngineHolds(binding: { "engine-1/7" }, isStale: { $0 is Stale }, sleep: { _ in }) { _ in
+        tries += 1
+        throw ImportBookmarkWriteFailure.conditionFailed
+      }
+    }
+    #expect(tries == 1)
   }
 
   @Test func credentialsNeverPrint() {

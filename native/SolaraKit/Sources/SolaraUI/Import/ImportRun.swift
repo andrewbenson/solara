@@ -1,4 +1,5 @@
 import Foundation
+import SolaraEngine
 import SolaraModel
 
 public struct ImportCredential: Sendable, CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
@@ -38,14 +39,23 @@ public struct ImportRead: Sendable, CustomStringConvertible, CustomDebugStringCo
   public let failed: [ImportKind]
   public let warnings: [ImportReadWarning]
   public var credentials: [ImportCredential]
+  public let bookmarks: ImportBookmarkNode?
+  public let tabs: [ImportTabRow]
+  public let favorites: [ImportTabRow]
+  public let hasSpaces: Bool
 
-  public init(vaultToken: String?, profileName: String?, profileColor: String?, failed: [ImportKind], warnings: [ImportReadWarning], credentials: [ImportCredential]) {
+  public init(vaultToken: String?, profileName: String?, profileColor: String?, failed: [ImportKind], warnings: [ImportReadWarning], credentials: [ImportCredential],
+              bookmarks: ImportBookmarkNode? = nil, tabs: [ImportTabRow] = [], favorites: [ImportTabRow] = [], hasSpaces: Bool = false) {
     self.vaultToken = vaultToken
     self.profileName = profileName
     self.profileColor = profileColor
     self.failed = failed
     self.warnings = warnings
     self.credentials = credentials
+    self.bookmarks = bookmarks
+    self.tabs = tabs
+    self.favorites = favorites
+    self.hasSpaces = hasSpaces
   }
 
   public var description: String { "ImportRead" }
@@ -91,6 +101,10 @@ public protocol ImportEngine: AnyObject {
   func discard(token: String)
   func writeNative(token: String, engineProfile: String, kinds: [String]) async -> ImportNativeWritten?
   func savePassword(engineProfile: String, origin: String, username: String, password: String) async -> Bool
+  func bookmarkParents(_ profile: String) -> ImportBookmarkParents?
+  func submitBookmarks(profile: String, mutations: [BookmarkMutation]) async throws
+  func reportBookmarkFailure()
+  func importWorkspace(profile: String, windows: [JSONValue]) -> Int?
   func extensions(browserId: String, profileId: String) async -> [ImportedExtension]
   func forget()
   func profiles() -> [ImportTarget]
@@ -116,10 +130,11 @@ public enum ImportRoute: String, Sendable {
   case js
 
   static let swiftKinds: Set<ImportKind> = [.passwords, .cookies, .autofill]
+  static let darkKinds: Set<ImportKind> = swiftKinds.union([.bookmarks, .tabs, .favorites])
 
-  public static func of(_ source: ImportBrowser?, kinds: [ImportKind]) -> ImportRoute {
+  public static func of(_ source: ImportBrowser?, kinds: [ImportKind], dark: Bool = false) -> ImportRoute {
     guard let source, source.sidebar == nil, source.family == .chromium || source.family == .firefox else { return .js }
-    guard !kinds.isEmpty, kinds.allSatisfy(swiftKinds.contains) else { return .js }
+    guard !kinds.isEmpty, kinds.allSatisfy((dark ? darkKinds : swiftKinds).contains) else { return .js }
     return .swift
   }
 }
@@ -199,8 +214,10 @@ public final class ImportRuns {
   private var idle: [CheckedContinuation<Void, Never>] = []
   var current: ImportRunControl?
   private var routes: [String: ImportRoute] = [:]
+  let bookmarkQueue = ImportBookmarkQueue()
   #if DEBUG
   public var forceScript = false
+  public var darkRoute = false
   #endif
 
   public init() {}
@@ -222,6 +239,7 @@ public final class ImportRuns {
     let source = browsers.first { $0.id == request.browserId }
     var route = ImportRoute.of(source, kinds: request.kinds)
     #if DEBUG
+    if darkRoute { route = ImportRoute.of(source, kinds: request.kinds, dark: true) }
     if forceScript { route = .js }
     #endif
     routes[request.runId] = route
@@ -404,8 +422,14 @@ final class ImportRunner {
         return halted()
       }
 
+      let browserName = source.name
+      let placed = await runs.bookmarkQueue.run {
+        await self.placeBookmarks(profile: destination, root: read.bookmarks, browserName: browserName, stopped: { control.stopped })
+      }
+      if let placed { total.bookmarks += placed } else { engine.reportBookmarkFailure(); fail(.bookmarks, profile.name) }
+      if cancelled() || control.stopped { return halted() }
+
       let native = ["cookies", "autofill"].filter { name in profileKinds.contains { $0.rawValue == name } }
-      if control.stopped { return stoppedOutcome(total, order) }
       if let taken = token {
         token = nil
         if native.isEmpty || engine.isPrivateProfile(destination) || !engine.profileExists(destination) {
@@ -420,6 +444,27 @@ final class ImportRunner {
           for name in native { if let kind = ImportKind(rawValue: name) { fail(kind, profile.name) } }
         }
       }
+      if cancelled() || control.stopped { return halted() }
+      let tabs = !read.tabs.isEmpty && !read.hasSpaces
+      let favorites = !read.favorites.isEmpty
+      if (tabs || favorites) && engine.safeMode {
+        engine.transientImportRefused()
+        if tabs { fail(.tabs, profile.name) }
+        if favorites { fail(.favorites, profile.name) }
+      } else {
+        var windows: [JSONValue] = []
+        if tabs { windows.append(.object(["tabs": .array(read.tabs.map { $0.json() }), "group": "Imported"])) }
+        if favorites { windows.append(.object(["tabs": .array(read.favorites.map { $0.json(pinned: true) }), "pinnedAgainst": "tiles"])) }
+        if !windows.isEmpty {
+          if let added = engine.importWorkspace(profile: destination, windows: windows) {
+            total.tabs += added
+          } else {
+            if tabs { fail(.tabs, profile.name) }
+            if favorites { fail(.favorites, profile.name) }
+          }
+        }
+      }
+
       let credentials = read.credentials
       read.credentials = []
       for credential in credentials {
@@ -452,6 +497,31 @@ final class ImportRunner {
       extensionsProfile: extensionsProfile,
       extensions: found
     )
+  }
+
+  func placeBookmarks(profile: String, root: ImportBookmarkNode?, browserName: String, stopped: () -> Bool) async -> Int? {
+    guard let root, !(root.children ?? []).isEmpty, !cancelled(), !stopped() else { return 0 }
+    do {
+      if engine.bookmarkParents(profile) == nil {
+        try await engine.submitBookmarks(profile: profile, mutations: [BookmarkMutation(method: "addBookmarkTree", args: [.string(profile), .array([])])])
+      }
+      if cancelled() || stopped() { return 0 }
+      let (toolbar, other) = ImportBookmarks.split(root)
+      for attempt in 1... {
+        guard let parents = engine.bookmarkParents(profile) else { throw ImportBookmarkWriteFailure.noRoots }
+        let edits = ImportBookmarks.edits(profile: profile, toolbar: toolbar, other: other, parents: parents, browserName: browserName)
+        if edits.isEmpty { break }
+        do {
+          try await engine.submitBookmarks(profile: profile, mutations: edits)
+          break
+        } catch ImportBookmarkWriteFailure.conditionFailed where attempt < 3 {
+          if cancelled() || stopped() { return 0 }
+        }
+      }
+      return ImportBookmarks.linkCount(toolbar + other)
+    } catch {
+      return nil
+    }
   }
 
   func stoppedOutcome(_ total: ImportCounts, _ order: [ImportKind]) -> ImportRunOutcome {

@@ -42,6 +42,10 @@ enum NativeImportWindow {
       model.cancelProgress()
     case "route":
       ImportRuns.shared.forceScript = argument == "js"
+    case "dark":
+      ImportRuns.shared.darkRoute = argument == "on"
+    case "close":
+      model.close()
     case "profiles":
       model.sourceProfiles = (argument ?? "").split(separator: ",").map(String.init)
     #endif

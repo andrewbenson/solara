@@ -88,6 +88,10 @@ public final class ImportService: @unchecked Sendable {
     public let failed: [ImportKind]
     public let warnings: [ImportWarning]
     public let credentials: [Credential]
+    public let bookmarks: BookmarkNode?
+    public let tabs: [ImportedTab]
+    public let favorites: [ImportedTab]
+    public let hasSpaces: Bool
 
     public var description: String { "ImportService.Read" }
     public var debugDescription: String { "ImportService.Read" }
@@ -132,7 +136,8 @@ public final class ImportService: @unchecked Sendable {
       throw ImportError.cancelled
     }
     return Read(vaultToken: token, profileName: result.profile?.name, profileColor: result.profile?.color,
-                failed: result.failed, warnings: result.warnings, credentials: result.credentials)
+                failed: result.failed, warnings: result.warnings, credentials: result.credentials,
+                bookmarks: result.bookmarks, tabs: result.tabs, favorites: result.favorites, hasSpaces: !result.spaces.isEmpty)
   }
 
   public func cancelRead(jobId: String) { session.jobs.cancel(jobId) }

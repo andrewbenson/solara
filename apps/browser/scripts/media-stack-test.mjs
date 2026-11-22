@@ -209,6 +209,56 @@ try {
     return { w1, w2 };
   });
 
+  await rep.check("profile-swipe-keeps-the-stack-still", async () => {
+    const swipe = (sign, end) => run(`
+      const H = globalThis.expo.modules.SolaraHosted;
+      const steps = [
+        { phase: "began", dx: 0, dy: 0 }, { phase: "changed", dx: ${18 * sign}, dy: 0 }, { phase: "changed", dx: ${22 * sign}, dy: 0 },
+        { phase: "changed", dx: ${22 * sign}, dy: 0 }, { phase: "changed", dx: ${22 * sign}, dy: 0 }, { phase: ${JSON.stringify(end)}, dx: 0, dy: 0 },
+      ].map((step, i) => ({ ...step, atMs: i * 16, timestampMs: i * 16 }));
+      const samples = [];
+      let done = false;
+      const tick = () => Promise.all([H.sidebarPages("w1").then(JSON.parse), rows("w1")]).then(([pages, cards]) => {
+        samples.push({ pages: pages.filter((page) => page.id && page.made).map((page) => [page.id, page.x, page.hidden]),
+          player: pages.find((entry) => entry.player)?.player ?? null, cards: cards.map((card) => [card.tabId, card.px, card.py]) });
+        return done ? null : settle(8).then(tick);
+      });
+      const sampling = tick();
+      return win("w1").then((n) => globalThis.expo.modules.SolaraSwipe.devSimulate(120, 400, n, steps, true))
+        .then(() => settle(700)).then(() => { done = true; return sampling; })
+        .then(() => ({ samples, profile: st().windows.w1.profileId, shown: st().windows.w1.activeTabIds[st().windows.w1.profileId] }));
+    `);
+    const still = (label, result, rest, from, startCards) => {
+      const moved = result.samples.filter((s) => s.pages.some(([, x, hidden]) => !hidden && Math.abs(x) > 1));
+      assert.ok(moved.length > 0, `${label}: the pages moved during the swipe (${result.samples.length} samples)`);
+      for (const s of result.samples) {
+        assert.ok(s.player?.made && !s.player.hidden, `${label}: the stack is shown (${JSON.stringify(s.player)})`);
+        assert.deepEqual([s.player.x, s.player.y, s.player.width, s.player.height], rest.frame, `${label}: the stack stays put (${JSON.stringify(s)})`);
+        if (s.player.driver === from) assert.deepEqual(s.cards, startCards, `${label}: the cards stay put until the switch commits (${JSON.stringify(s)})`);
+      }
+      const last = result.samples.at(-1);
+      const want = rest.all.filter((id) => id !== result.shown);
+      assert.deepEqual(last.cards.map(([id]) => id), want, `${label}: after the switch the stack hides only the tab this window now shows (${result.shown})`);
+      return { samples: result.samples.length, moved: moved.length, widest: Math.max(...moved.map((s) => Math.max(...s.pages.map(([, x]) => Math.abs(x))))),
+        drivers: [...new Set(result.samples.map((s) => s.player.driver))], shown: result.shown, cards: last.cards.map(([id]) => id), end: last.cards };
+    };
+    const before = (await swipe(0, "cancelled")).samples.at(-1);
+    const rest = { frame: [before.player.x, before.player.y, before.player.width, before.player.height], all: before.cards.map(([id]) => id) };
+    const cancelled = await swipe(-1, "cancelled");
+    assert.equal(cancelled.profile, "default", "a swipe that snaps back keeps the profile");
+    const back = still("snap-back", cancelled, rest, "default", before.cards);
+    assert.deepEqual(cancelled.samples.at(-1).cards, before.cards, "a snap-back leaves the cards where they were");
+    const committed = await swipe(-1, "ended");
+    assert.equal(committed.profile, "work", "a full swipe switches the profile");
+    const forward = still("switch", committed, rest, "default", before.cards);
+    const returned = await swipe(1, "ended");
+    assert.equal(returned.profile, "default", "swiping back returns to the first profile");
+    const home = still("switch back", returned, rest, "work", forward.end);
+    assert.deepEqual(returned.samples.at(-1).cards, before.cards, "switching back restores the first profile's cards");
+    await run(`ac.actions.switchToTab("a2"); return true;`);
+    return { rest, back, forward, home };
+  });
+
   await rep.check("watched-tab-hides-only-here", async () => {
     await run(`ac.actions.switchToTab("a"); return true;`);
     const w1 = await stackIs("w1", ["d", "c"]);
@@ -418,8 +468,9 @@ try {
     await run(`return rows("w1").then((r) => click("w1", centre(r[0].frames.pip))).then(() => true);`);
     out.holder = await until("v holds the PiP", `return C.devPictureInPictureHolder().then((h) => h === "v" ? h : null);`, 6000);
     out.playingInPiP = (await state())?.playbackState;
-    const held = await until("both windows' cards say In PiP", `return Promise.all([rows("w1"), rows("w2")]).then(([a, b]) => { const x = a.find((r) => r.tabId === "v"), y = b.find((r) => r.tabId === "v"); return x?.subtitle?.includes("In PiP") && y?.subtitle?.includes("In PiP") ? [x.labels?.pip ?? null, y.labels?.pip ?? null] : null; });`, 4000);
-    out.heldLabels = held;
+    const held = await until("both windows' cards offer Minimize", `return Promise.all([rows("w1"), rows("w2")]).then(([a, b]) => { const x = a.find((r) => r.tabId === "v"), y = b.find((r) => r.tabId === "v"); const minimize = "Minimize Picture in Picture"; return x?.labels?.pip === minimize && y?.labels?.pip === minimize ? [x.labels.pip, y.labels.pip, x.subtitle, y.subtitle] : null; });`, 4000);
+    out.heldLabels = held.slice(0, 2);
+    out.heldSubtitles = held.slice(2);
     out.shownAfter = await run(`return [st().windows.w1.activeTabIds[st().windows.w1.profileId], st().windows.w2.activeTabIds.work];`);
     await run(`return rows("w1").then((r) => click("w1", centre(r.find((row) => row.tabId === "v").frames.pip))).then(() => true);`);
     out.afterMinimize = await until("the PiP minimized", `return C.devPictureInPictureHolder().then((h) => h === "" ? "none" : null);`, 6000);
@@ -432,11 +483,12 @@ try {
     await sleep(800);
     out.pausedInPiP = (await state())?.playbackState;
     await run(`return C.devPictureInPictureMinimize().then(() => true);`);
-    out.flipsBack = await until("the card offers PiP again after a minimize elsewhere", `return rows("w1").then((r) => { const row = r.find((x) => x.tabId === "v"); return row && !row.subtitle.includes("In PiP") ? (row.labels?.pip ?? "shown") : null; });`, 4000);
+    out.flipsBack = await until("the card offers PiP again after a minimize elsewhere", `return rows("w1").then((r) => { const row = r.find((x) => x.tabId === "v"); return row && row.labels?.pip === "Open in Picture in Picture" ? row.labels.pip : null; });`, 4000);
     await run(`return hover("w1", [600, 300]).then(() => true);`);
     const want = { label: "Open in Picture in Picture", holder: "v", playingInPiP: "playing", afterMinimize: "none", playingAfterMinimize: "playing", pausedHolder: "v", pausedInPiP: "paused" };
     for (const [key, value] of Object.entries(want)) assert.equal(out[key], value, `${key} ${JSON.stringify(out)}`);
     assert.deepEqual(out.heldLabels, ["Minimize Picture in Picture", "Minimize Picture in Picture"], JSON.stringify(out));
+    assert.ok(out.heldSubtitles.every((text) => !text.includes("In PiP")), `the subtitle shows only the profile in PiP: ${JSON.stringify(out.heldSubtitles)}`);
     assert.deepEqual(out.shownAfter, shownBefore, "entering PiP from the card switched tabs");
     assert.equal(out.flipsBack, "Open in Picture in Picture");
     return out;

@@ -163,7 +163,7 @@ struct SidebarPlayerStackTests {
     state.holdsPictureInPicture = true
     view.update(state)
     #expect(button.toolTip == "Minimize Picture in Picture")
-    #expect(SidebarPlayerView.subtitleText(state) == "Artist · In PiP")
+    #expect(SidebarPlayerView.subtitleText(state) == "Artist")
     #expect(button.accessibilityPerformPress())
     #expect(actions == [.enterPictureInPicture, .minimizePictureInPicture])
     #expect(MediaAction.enterPictureInPicture.name == "enterPictureInPicture")

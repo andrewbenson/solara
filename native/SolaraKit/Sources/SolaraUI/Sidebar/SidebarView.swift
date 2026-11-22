@@ -37,7 +37,12 @@ public final class SidebarView: NSView {
   private var edgeShown = false
   private var clipShift: CGFloat = 0
   private var lastSize = NSSize.zero
-  private var player: SidebarPlayerStack?
+  private var ownPlayer: SidebarPlayerStack?
+  var sharedPlayer: SidebarSharedPlayer?
+  private var player: SidebarPlayerStack? {
+    guard let sharedPlayer else { return ownPlayer }
+    return sharedPlayer.driver === self ? sharedPlayer.stack : nil
+  }
   private var railShown = false
   private let reuse = SidebarRowReuse()
   private let viewportWatch = SidebarAuxiliaryViewportWatch()
@@ -258,7 +263,7 @@ public final class SidebarView: NSView {
     }
     var chrome: [NSView] = [panels]
     if pillShown && !pill.isHidden { chrome.append(pill) }
-    if let player, !player.isHidden { chrome.append(player) }
+    if let ownPlayer, !ownPlayer.isHidden { chrome.append(ownPlayer) }
     return children + chrome
   }
 
@@ -829,24 +834,34 @@ public final class SidebarView: NSView {
   }
 
   private func placePlayer(_ layout: SidebarPageLayout, _ context: SidebarContext) {
+    if let sharedPlayer, sharedPlayer.driver !== self { return }
     let players = Self.players(context.host)
     guard let frame = layout.playerFrame, !players.isEmpty else {
       if let player, !player.isHidden, player.alphaValue > 0 { fadePlayer(player, shown: false) }
       return
     }
-    let view = player ?? {
-      let made = SidebarPlayerStack()
-      made.isHidden = true
-      made.onScroll = { [weak self] event in self?.forwardScroll(event) }
-      made.onAction = { [weak self] tabId, action in self?.onAction(.media(tabId: tabId, action: action)) }
-      addSubview(made, positioned: .below, relativeTo: pill)
-      return made
-    }()
-    player = view
+    let view = player ?? makePlayer()
     view.backdrop = SidebarPalette.parse(context.host.theme["windowTint"])
     view.place(resting: frame)
     view.update(players)
     if view.isHidden || view.alphaValue == 0 { fadePlayer(view, shown: true) }
+  }
+
+  private func makePlayer() -> SidebarPlayerStack {
+    let made = SidebarPlayerStack()
+    made.isHidden = true
+    if let sharedPlayer {
+      made.onScroll = { [weak sharedPlayer] event in sharedPlayer?.driver?.forwardScroll(event) }
+      made.onAction = { [weak sharedPlayer] tabId, action in sharedPlayer?.driver?.onAction(.media(tabId: tabId, action: action)) }
+      sharedPlayer.container.addSubview(made)
+      sharedPlayer.stack = made
+    } else {
+      made.onScroll = { [weak self] event in self?.forwardScroll(event) }
+      made.onAction = { [weak self] tabId, action in self?.onAction(.media(tabId: tabId, action: action)) }
+      addSubview(made, positioned: .below, relativeTo: pill)
+      ownPlayer = made
+    }
+    return made
   }
 
   #if DEBUG
@@ -854,7 +869,7 @@ public final class SidebarView: NSView {
   var scrollsForwarded = 0
   #endif
 
-  private func forwardScroll(_ event: NSEvent) {
+  func forwardScroll(_ event: NSEvent) {
     #if DEBUG
     scrollsForwarded += 1
     #endif
@@ -879,7 +894,7 @@ public final class SidebarView: NSView {
       view.animator().alphaValue = shown ? 1 : 0
     } completionHandler: { [weak self, weak view] in
       MainActor.assumeIsolated {
-        guard let view, self?.pageLayout.playerFrame == nil, view.alphaValue == 0 else { return }
+        guard let view, let self, self.player === view, self.pageLayout.playerFrame == nil, view.alphaValue == 0 else { return }
         view.isHidden = true
       }
     }

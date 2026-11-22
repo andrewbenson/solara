@@ -505,7 +505,6 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
 
   static func subtitleText(_ state: MediaPlayerState) -> String {
     var text = state.profileName ?? state.subtitle
-    if state.inPictureInPicture { text += " · In PiP" }
     if state.ended { text += " · Ended" }
     return text
   }

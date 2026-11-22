@@ -39,7 +39,21 @@ public enum MediaStackGeometry {
 public final class SidebarPlayerStack: NSView {
   public var onAction: ((String, MediaAction) -> Void)?
   public var onScroll: ((NSEvent) -> Void)?
-  public var backdrop: NSColor? { didSet { cards.forEach { $0.view.backdrop = backdrop } } }
+  public var backdrop: NSColor? {
+    didSet {
+      guard backdrop != oldValue else { return }
+      if oldValue != nil, window != nil, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+        for card in cards {
+          let fade = CATransition()
+          fade.type = .fade
+          fade.duration = Self.backdropFade
+          card.view.layer?.add(fade, forKey: "backdrop")
+        }
+      }
+      cards.forEach { $0.view.backdrop = backdrop }
+    }
+  }
+  static let backdropFade: TimeInterval = 0.2
 
   private struct Card {
     let tabId: String

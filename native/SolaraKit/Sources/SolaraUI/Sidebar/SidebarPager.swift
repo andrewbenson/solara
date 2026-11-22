@@ -17,6 +17,7 @@ public final class SidebarPagerView: NSView {
 
   private var stopped = false
   private var pages: [String: SidebarView] = [:]
+  private lazy var sharedPlayer = SidebarSharedPlayer(container: self)
   private var stale: Set<String> = []
   private var state: BrowserState?
   private var host: SidebarHostState?
@@ -62,7 +63,7 @@ public final class SidebarPagerView: NSView {
     order.compactMap { id in
       guard let page = pages[id] else { return ["id": id, "made": false] }
       return ["id": id, "made": true, "x": page.frame.minX, "hidden": page.isHidden, "docked": page.pageLayout.docked, "current": id == host?.profileId]
-    } + [["position": position], ["views": Self.count(self), "windowViews": window?.contentView.map { Self.count($0) } ?? 0,
+    } + [["position": position], ["player": playerDescription], ["views": Self.count(self), "windowViews": window?.contentView.map { Self.count($0) } ?? 0,
           "layers": layer.map { Self.layers($0) } ?? 0, "windowLayers": window?.contentView?.layer.map { Self.layers($0) } ?? 0, "classes": Self.classes(self)]]
   }
 
@@ -125,10 +126,17 @@ public final class SidebarPagerView: NSView {
     return pagerPosition
   }
 
+  var playerDescription: [String: Any] {
+    guard let stack = sharedPlayer.stack else { return ["made": false] }
+    return ["made": true, "x": stack.frame.minX, "y": stack.frame.minY, "width": stack.frame.width, "height": stack.frame.height,
+            "hidden": stack.isHidden, "alpha": stack.alphaValue, "driver": pages.first { $0.value === sharedPlayer.driver }?.key ?? NSNull()]
+  }
+
   private func place() {
     guard let host, state != nil, bounds.width > 0 else { return }
     let ids = order
     let at = position
+    if ids.contains(host.profileId) { sharedPlayer.driver = page(host.profileId) }
     for (slot, id) in ids.enumerated() {
       let offset = Double(slot) - at
       let shown = abs(offset) < 1 || id == host.profileId && ids.count == 1
@@ -152,9 +160,10 @@ public final class SidebarPagerView: NSView {
     page.onAction = { [weak self] action in self?.onAction(action) }
     page.onLayoutAnchorsChange = { [weak self] in self?.onLayoutAnchorsChange?() }
     page.isHidden = true
+    page.sharedPlayer = sharedPlayer
     pages[id] = page
     stale.insert(id)
-    addSubview(page)
+    if let stack = sharedPlayer.stack { addSubview(page, positioned: .below, relativeTo: stack) } else { addSubview(page) }
     return page
   }
 
@@ -181,4 +190,12 @@ public final class SidebarPagerView: NSView {
     warm = work
     DispatchQueue.main.asyncAfter(deadline: .now() + Self.warmDelay, execute: work)
   }
+}
+
+@MainActor final class SidebarSharedPlayer {
+  unowned let container: NSView
+  weak var driver: SidebarView?
+  var stack: SidebarPlayerStack?
+
+  init(container: NSView) { self.container = container }
 }

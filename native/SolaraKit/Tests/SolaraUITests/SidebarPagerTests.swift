@@ -42,6 +42,48 @@ private func shown(_ pager: SidebarPagerView) -> [String] {
     return pager
   }
 
+  private func stacks(_ view: NSView) -> [SidebarPlayerStack] {
+    view.subviews.flatMap { ($0 as? SidebarPlayerStack).map { [$0] } ?? stacks($0) }
+  }
+
+  private func playerFrame(_ pager: SidebarPagerView) -> [CGFloat] {
+    ["x", "y", "width", "height"].compactMap { pager.playerDescription[$0] as? CGFloat }
+  }
+
+  @Test func theMiniPlayerStaysPutWhileProfilePagesSlide() throws {
+    let pager = SidebarPagerView(windowId: "w1")
+    pager.frame = NSRect(x: 0, y: 0, width: 200, height: 400)
+    var home = host("p")
+    home.player = SidebarPlayerCoverageTests.playerState()
+    pager.update(state: try pagedState(), host: home)
+    let resting = playerFrame(pager)
+    #expect(resting.count == 4)
+    #expect((resting.first ?? -1) >= 0 && (resting.first ?? 0) + resting[2] <= 200)
+    for position in [0.5, 0.9, 0.3, 0.0] {
+      pager.setPagerPosition(position)
+      #expect(playerFrame(pager) == resting)
+      #expect(pager.playerDescription["driver"] as? String == "p")
+      #expect(stacks(pager).count == 1)
+    }
+    var next = host("q")
+    next.player = SidebarPlayerCoverageTests.playerState()
+    pager.setPagerPosition(0.7)
+    pager.update(state: try pagedState(), host: next)
+    #expect(playerFrame(pager) == resting)
+    #expect(pager.playerDescription["driver"] as? String == "q")
+    pager.setPagerPosition(1)
+    #expect(playerFrame(pager) == resting)
+    #expect(pager.playerDescription["hidden"] as? Bool == false)
+    #expect(stacks(pager).count == 1)
+    #expect(pager.subviews.last is SidebarPlayerStack)
+    pager.frame = NSRect(x: 0, y: 0, width: 260, height: 480)
+    pager.layoutSubtreeIfNeeded()
+    let wider = playerFrame(pager)
+    #expect(wider.count == 4 && wider != resting)
+    #expect(wider.count == 4 && wider[0] + wider[2] <= 260 && wider[2] > resting[2])
+    #expect(wider.count == 4 && wider[1] + wider[3] > resting[1] + resting[3])
+  }
+
   @Test func atRestOnlyTheCurrentProfileShows() throws {
     let pager = try pager()
     #expect(shown(pager) == ["p@0"])

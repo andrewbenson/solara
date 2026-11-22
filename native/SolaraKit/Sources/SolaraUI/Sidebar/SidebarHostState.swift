@@ -52,6 +52,7 @@ public struct SidebarHostState: Decodable, Equatable, Sendable {
   public var developer: [String]
   public var pages: [SidebarPageLook]?
   public var player: MediaPlayerState?
+  public var stack: [MediaPlayerState]?
   public var pip: [String]?
   public var capture: [String: TabCapture]?
   public var badge: [String]?
@@ -91,6 +92,7 @@ public struct SidebarHostState: Decodable, Equatable, Sendable {
     out.pages = nil
     if look.profileId != profileId {
       out.player = nil
+      out.stack = nil
       out.upsell = nil
     }
     return out

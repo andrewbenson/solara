@@ -11,9 +11,16 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
   static let cornerGap: CGFloat = 2
   static let border: CGFloat = 0.5
   public static let gap: CGFloat = 8
+  static let dotSize: CGFloat = 8
+  public static let closeTooltip = "Close and Pause"
+  static let dotGap: CGFloat = 4
 
   public var onAction: ((MediaAction) -> Void)?
   public var onScroll: ((NSEvent) -> Void)?
+  public var onPointer: ((Bool) -> Void)?
+  public var onPeekPress: (() -> Void)?
+  public private(set) var peeking = false
+  public internal(set) var leaving = false
   public var backdrop: NSColor?
 
   private let glass = NewTabGlassSurface(frame: .zero)
@@ -31,6 +38,7 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
   private let title = FadeLabel(fontSize: 12, weight: .semibold)
   private let mutedIcon = SymbolView()
   private let subtitle = FadeLabel(fontSize: 11)
+  private let profileDot = NSView()
   private let previous = SidebarIconButton()
   private let play = SidebarIconButton()
   private let next = SidebarIconButton()
@@ -38,7 +46,7 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
   private let muteCorner = MediaCircleButton()
   private let closeCorner = MediaCircleButton()
   private var tracking: NSTrackingArea?
-  private var hovered = false { didSet { if hovered != oldValue { needsLayout = true; paintCorners() } } }
+  private var hovered = false { didSet { if hovered != oldValue { needsLayout = true; paintCorners(); onPointer?(hovered) } } }
   private var state: MediaPlayerState?
   private var ticker: Timer?
   private var occlusionWatch: NSObjectProtocol?
@@ -65,7 +73,10 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
     artView.fadeIn = false
     artView.onPress = { [weak self] in self?.onAction?(.backToTab) }
     addSubview(artView)
-    for v in [title, mutedIcon, subtitle] as [NSView] { addSubview(v) }
+    profileDot.wantsLayer = true
+    profileDot.layer?.cornerRadius = Self.dotSize / 2
+    profileDot.isHidden = true
+    for v in [title, mutedIcon, profileDot, subtitle] as [NSView] { addSubview(v) }
     let click = NSClickGestureRecognizer(target: self, action: #selector(textClicked))
     textHit.addGestureRecognizer(click)
     addSubview(textHit)
@@ -162,7 +173,9 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
     artView.set(next, palette: palette)
     title.text = next.title
     title.color = card.primary
-    subtitle.text = next.subtitle
+    subtitle.text = Self.subtitleText(next)
+    profileDot.isHidden = next.profileName == nil || next.profileColor == nil
+    profileDot.layer?.backgroundColor = next.profileColor.flatMap { SidebarPalette.parse($0) }?.cgColor
     subtitle.color = card.secondary
     mutedIcon.set("speaker.slash.fill", size: 9, color: card.secondary)
     mutedIcon.isHidden = !next.muted
@@ -173,7 +186,7 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
       b.pressedFill = palette.toolbarPressed
     }
     previous.set(tracks ? "backward.fill" : "gobackward.\(skip)", size: tracks ? 10 : 12, weight: .regular, color: card.icon, tooltip: tracks ? "Play Previous Track" : "Skip back \(skip) seconds")
-    play.set(next.playing ? "pause.fill" : "play.fill", size: 13, weight: .regular, color: card.icon, tooltip: next.playing ? "Pause" : "Play")
+    play.set(next.ended ? "arrow.counterclockwise" : next.playing ? "pause.fill" : "play.fill", size: next.ended ? 12 : 13, weight: .regular, color: card.icon, tooltip: next.ended ? "Replay" : next.playing ? "Pause" : "Play")
     self.next.set(tracks ? "forward.fill" : "goforward.\(skip)", size: tracks ? 10 : 12, weight: .regular, color: card.icon, tooltip: tracks ? "Play Next Track" : "Skip ahead \(skip) seconds")
     seek.colors = (palette.tokens.track, palette.tokens.fill, palette.tokens.hoverFill)
     seek.seekable = next.hasDuration
@@ -213,9 +226,20 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
     guard let state, let palette = look?.palette else { return }
     func ink(_ c: MediaCircleButton) -> NSColor { c.hovered ? palette.textPrimary : palette.textSecondary }
     muteCorner.set(state.muted ? "speaker.wave.2.fill" : "speaker.slash.fill", size: 9, weight: .bold, color: ink(muteCorner), box: 13, tooltip: state.muted ? "Unmute Site" : "Mute Site")
-    closeCorner.set("xmark", size: 9, weight: .bold, color: ink(closeCorner), box: 13, tooltip: "Close Player")
-    muteCorner.isHidden = !hovered
-    closeCorner.isHidden = !hovered
+    closeCorner.set("xmark", size: 9, weight: .bold, color: ink(closeCorner), box: 13, tooltip: Self.closeTooltip)
+    muteCorner.isHidden = !hovered || peeking
+    closeCorner.isHidden = !hovered || peeking
+  }
+
+  public func setPeeking(_ next: Bool, duration: TimeInterval) {
+    guard next != peeking else { return }
+    peeking = next
+    let views: [NSView] = [artView, title, mutedIcon, profileDot, subtitle, textHit, previous, play, self.next, seek]
+    NSAnimationContext.runAnimationGroup { ctx in
+      ctx.duration = duration
+      for v in views { v.animator().alphaValue = next ? 0 : 1 }
+    }
+    paintCorners()
   }
 
   private func retick() {
@@ -323,7 +347,7 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
   }
 
   public override func mouseDown(with event: NSEvent) {}
-  public override func mouseUp(with event: NSEvent) {}
+  public override func mouseUp(with event: NSEvent) { if peeking { onPeekPress?() } }
   public override func mouseDragged(with event: NSEvent) {}
   public override func rightMouseDown(with event: NSEvent) {}
   public override func rightMouseUp(with event: NSEvent) {}
@@ -341,6 +365,7 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
     let local = convert(point, from: superview)
     for c in [closeCorner, muteCorner] where !c.isHidden && c.frame.contains(local) { return c }
     guard cardRect.contains(local) else { return nil }
+    if peeking { return self }
     guard Self.cardPath(width: bounds.width).contains(local) else { return self }
     let hit = super.hitTest(point) ?? self
     if hit === glass || hit === plateView || hit.isDescendant(of: glass) { return self }
@@ -365,7 +390,9 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
     title.frame = CGRect(x: textX, y: textTop, width: textWidth, height: 16)
     let muted = state?.muted ?? false
     mutedIcon.frame = CGRect(x: textX, y: textTop + 16 + 1, width: 13, height: 12)
-    let subX = muted ? textX + 13 : textX
+    let afterMute = muted ? textX + 13 : textX
+    profileDot.frame = CGRect(x: afterMute, y: textTop + 16 + (14 - Self.dotSize) / 2, width: Self.dotSize, height: Self.dotSize)
+    let subX = profileDot.isHidden ? afterMute : afterMute + Self.dotSize + Self.dotGap
     subtitle.frame = CGRect(x: subX, y: textTop + 16, width: max(0, width - pad - subX), height: 14)
     textHit.frame = CGRect(x: textX, y: pad, width: textWidth, height: 32)
     let row: CGFloat = pad + 32 + 4
@@ -418,6 +445,14 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
     ["play": play.frame, "art": artView.frame, "seek": seek.frame, "close": closeCorner.frame, "mute": muteCorner.frame, "title": textHit.frame]
   }
   public var cornersShown: Bool { !closeCorner.isHidden }
+  public var tabId: String? { state?.tabId }
+  public var subtitleShown: String { subtitle.text }
+  public var profileDotShown: Bool { !profileDot.isHidden }
+
+  static func subtitleText(_ state: MediaPlayerState) -> String {
+    let base = state.profileName ?? state.subtitle
+    return state.ended ? "\(base) · Ended" : base
+  }
   #if DEBUG
   var plateColor: NSColor? { plate.backgroundColor.flatMap { NSColor(cgColor: $0) } }
   var plateOpacity: Float { plate.opacity }

@@ -37,7 +37,7 @@ public final class SidebarView: NSView {
   private var edgeShown = false
   private var clipShift: CGFloat = 0
   private var lastSize = NSSize.zero
-  private var player: SidebarPlayerView?
+  private var player: SidebarPlayerStack?
   private var railShown = false
   private let reuse = SidebarRowReuse()
   private let viewportWatch = SidebarAuxiliaryViewportWatch()
@@ -533,7 +533,8 @@ public final class SidebarView: NSView {
     context.host.clear = context.showClear && !entries.list.isEmpty
     input.divided = context.host.tidy || context.host.clear
     input.incognitoBadge = context.host.addressBar && context.host.incognito
-    input.playerHeight = context.host.player == nil ? 0 : SidebarPlayerView.height + SidebarPlayerView.gap
+    let stacked = Self.players(context.host)
+    input.playerHeight = stacked.isEmpty ? 0 : MediaStackGeometry.collapsedHeight(count: stacked.count) + SidebarPlayerView.gap
     if context.host.upsell != nil && context.state.settings.bool("suggestTabCleanUp") {
       input.upsellHeight = CleanUpUpsellView.height(width: bounds.width - SidebarMetrics.inset * 2, product: context.host.product ?? "Solara")
     }
@@ -818,25 +819,23 @@ public final class SidebarView: NSView {
   }
 
   private func placePlayer(_ layout: SidebarPageLayout, _ context: SidebarContext) {
-    guard let frame = layout.playerFrame, let state = context.host.player else {
+    let players = Self.players(context.host)
+    guard let frame = layout.playerFrame, !players.isEmpty else {
       if let player, !player.isHidden, player.alphaValue > 0 { fadePlayer(player, shown: false) }
       return
     }
     let view = player ?? {
-      let made = SidebarPlayerView()
+      let made = SidebarPlayerStack()
       made.isHidden = true
       made.onScroll = { [weak self] event in self?.forwardScroll(event) }
-      made.onAction = { [weak self] action in
-        guard let tabId = self?.context?.host.player?.tabId else { return }
-        self?.onAction(.media(tabId: tabId, action: action))
-      }
+      made.onAction = { [weak self] tabId, action in self?.onAction(.media(tabId: tabId, action: action)) }
       addSubview(made, positioned: .below, relativeTo: pill)
       return made
     }()
     player = view
-    if view.frame != frame { view.frame = frame }
     view.backdrop = SidebarPalette.parse(context.host.theme["windowTint"])
-    view.update(state)
+    view.place(resting: frame)
+    view.update(players)
     if view.isHidden || view.alphaValue == 0 { fadePlayer(view, shown: true) }
   }
 
@@ -852,7 +851,11 @@ public final class SidebarView: NSView {
     scroll.scrollWheel(with: event)
   }
 
-  private func fadePlayer(_ view: SidebarPlayerView, shown: Bool) {
+  static func players(_ host: SidebarHostState) -> [MediaPlayerState] {
+    host.stack ?? host.player.map { [$0] } ?? []
+  }
+
+  private func fadePlayer(_ view: SidebarPlayerStack, shown: Bool) {
     #if DEBUG
     if shown { playerFadesIn += 1 }
     #endif

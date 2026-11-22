@@ -174,6 +174,14 @@ enum NativeMedia {
   }
 
   static func probe(kind: String, windowId: String) -> String {
+    if kind == "media.nowPlaying" {
+      let rows: [[String: Any]] = NowPlayingStore.shared.entries.map { id, entry in
+        ["tabId": id, "playbackState": entry.report.playbackState, "controllable": entry.report.controllable,
+          "touchedAt": entry.touchedAt, "removed": entry.removed, "title": entry.report.title]
+      }
+      let json = try? JSONSerialization.data(withJSONObject: rows)
+      return json.flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+    }
     var views: [NSView] = mounted.filter { $0.kind == kind && $0.windowId == windowId }.compactMap { $0.view.value }
     if kind == sidebarPlayer { views += NativeSidebar.players(windowId: windowId) }
     if kind == hoverPlayer { views += NativeSidebarHoverCard.players(windowId: windowId) }
@@ -217,7 +225,10 @@ enum NativeMedia {
           return row
         }
         if let player = view as? SidebarPlayerView {
-          return ["corners": player.cornersShown, "seek": player.seekProgress, "height": player.frame.height, "frames": frames(player, player.controlFrames)]
+          return ["corners": player.cornersShown, "seek": player.seekProgress, "height": player.frame.height, "frames": frames(player, player.controlFrames),
+            "tabId": player.tabId ?? NSNull(), "peeking": player.peeking, "leaving": player.leaving, "t": CACurrentMediaTime(),
+            "py": Double(player.layer?.presentation()?.frame.minY ?? player.frame.minY), "px": Double(player.layer?.presentation()?.frame.minX ?? player.frame.minX),
+            "opacity": Double(player.layer?.presentation()?.opacity ?? Float(player.alphaValue))]
         }
         guard let pill = view as? CliControlPillView, let content = pill.window?.contentView else { return nil }
         let frame = pill.convert(pill.pillFrame, to: content)

@@ -17,8 +17,36 @@ public struct MediaPlayerState: Decodable, Equatable, Sendable {
   public var favicon: String?
   public var profileId: String
   public var theme: MediaThemeState
+  public var profileName: String?
+  public var profileColor: String?
 
   public var playing: Bool { playbackState == "playing" }
+  public var ended: Bool {
+    guard !playing, let duration, duration > 0 else { return false }
+    return position >= duration - 0.25
+  }
+
+  public init(tabId: String, title: String, subtitle: String, muted: Bool, playbackState: String, position: Double, timestamp: Double,
+    playbackRate: Double, duration: Double?, tracks: Bool, artwork: String?, url: String, favicon: String?, profileId: String,
+    theme: MediaThemeState, profileName: String? = nil, profileColor: String? = nil) {
+    self.tabId = tabId
+    self.title = title
+    self.subtitle = subtitle
+    self.muted = muted
+    self.playbackState = playbackState
+    self.position = position
+    self.timestamp = timestamp
+    self.playbackRate = playbackRate
+    self.duration = duration
+    self.tracks = tracks
+    self.artwork = artwork
+    self.url = url
+    self.favicon = favicon
+    self.profileId = profileId
+    self.theme = theme
+    self.profileName = profileName
+    self.profileColor = profileColor
+  }
 
   public static func decode(_ json: String) -> MediaPlayerState? {
     guard let data = json.data(using: .utf8) else { return nil }

@@ -29,7 +29,7 @@ if (!appArg || args.some((arg) => arg.startsWith("--") && !["--shell", "--prompt
   console.error(`usage: node media-ui-test.mjs <Debug Solara.app> [--shell | --prompts] [--keep-data]
 
 The media controls on a local tone page: the sidebar player shows for a playing tab that isn't shown, its play
-button pauses and plays, Close Player hides it without pausing or moving to the tab, a new play brings it back, Back
+button pauses and plays, Close and Pause hides it and pauses without moving to the tab, a new play brings it back, Back
 to Tab shows the tab and ends the player; the pinned tab's hover player scrolls a long title and ticks its time; the
 CLI pill appears and hides with RN's timing (and, under --shell, holds still while the toolbar hides and shows); the cast and share pickers open at RN's size and answer their buttons. The native controls are clicked directly. --shell adds SOLARA_NATIVE_SHELL=1: the pickers
 and the CLI pill then live in the pane overlay container on the shell's card, with no RN-hosted NativeMediaView.
@@ -299,7 +299,7 @@ try {
     const rows = await run(`return probe("media.sidebarPlayer");`);
     await crossCheckMedia("sidebar player rows and labels", "media.sidebarPlayer", rows);
     assert.equal(rows[0].labels.play, "Pause");
-    assert.equal(rows[0].labels.close, "Close Player");
+    assert.equal(rows[0].labels.close, "Close and Pause");
     assert.equal(rows[0].labels.art, "Back to Tab");
     if (rows[0].height !== 74) throw new Error(`player height ${rows[0].height}, RN draws 74`);
     await untilSnapshot("sidebar player", async (window) => {
@@ -326,7 +326,7 @@ try {
     return { paused: await paused() };
   });
 
-  await rep.check("close-keeps-playing", async () => {
+  await rep.check("close-pauses", async () => {
     await run(`return first("media.sidebarPlayer").then((row) => hover(centre(row.frames.title))).then(() => true);`);
     await until("corner buttons on hover", `return first("media.sidebarPlayer").then((row) => row?.corners || null);`, 3000);
     const rows = await run(`return probe("media.sidebarPlayer");`);
@@ -337,7 +337,7 @@ try {
     await until("player gone", `return playerShown().then((n) => n === 0);`, 4000);
     await sleep(500);
     const still = { paused: await paused(), shown: await run(`return shown();`) };
-    if (still.paused) throw new Error("closing the player paused playback");
+    if (!still.paused) throw new Error("closing the player left the video playing");
     if (still.shown !== "b") throw new Error(`closing the player moved to tab ${still.shown}`);
     await untilSnapshot("player closes without switching", async (window, state) =>
       selected(state) === await run(`return shown();`) && selected(state) === still.shown && window.media["media.sidebarPlayer"].length === 0);

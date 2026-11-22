@@ -32,11 +32,8 @@ import { closeAllTabs, middleClickTab, openGroupMenu, openOverflowMenu, openSide
 import { applyNativeRenameState, resetNativeRenames } from "./renameMirror";
 import { setSidebarUi, sidebarUi, useSidebarUi } from "./state";
 import { useSidebarTokens } from "./tokens";
-import { useMedia, useSession } from "../media/state";
-import { useArtwork } from "../media/artwork";
-import { mediaTheme, playerState } from "../media/nativeMedia";
-import { useSidebarPlayerTab } from "../media/SidebarPlayer";
-import { useTab } from "../../store/hooks";
+import "../media/SidebarPlayer";
+import { useMedia } from "../media/state";
 import { usePages } from "../layout/pageState";
 import { openDroppedItems } from "../layout/fileDrop";
 import { pagerFor } from "../layout/profilePager";
@@ -323,17 +320,6 @@ function usePageLooks(windowId: string) {
   }, [key, profiles, appDark, source, tidy, adjustInk]);
 }
 
-function useNativeSidebarPlayer(windowId: string, profileId: string, theme: Theme, groupFill: string, groupStroke: string) {
-  const tabId = useSidebarPlayerTab(windowId, profileId);
-  const session = useSession(tabId);
-  const tab = useTab(tabId);
-  const artwork = useArtwork(tabId ?? "", session?.artwork);
-  return useMemo(
-    () => (session && tab ? playerState(session, tab, artwork, mediaTheme(theme, { groupFill: hex(groupFill), groupStroke: hex(groupStroke) })) : null),
-    [session, tab, artwork, theme, groupFill, groupStroke],
-  );
-}
-
 export const NativeSidebar = memo(function NativeSidebar({ windowId, profileId, addressBar, column, width, headless = false }: { windowId: string; profileId: string; addressBar: boolean; column?: ShellColumn; width?: number; headless?: boolean }) {
   useEffect(publishNativeLive, []);
   useEffect(() => installNativeDragProbe(windowId), [windowId]);
@@ -373,7 +359,6 @@ export const NativeSidebar = memo(function NativeSidebar({ windowId, profileId, 
 
   const pages = usePageLooks(windowId);
   const tokens = useSidebarTokens();
-  const player = useNativeSidebarPlayer(windowId, profileId, theme, tokens.groupFill, tokens.groupStroke);
   const pip = useMedia((m) => Object.keys(m.pipOpen).filter((id) => m.pipOpen[id]).sort().join(","));
   const capture = usePages(
     useShallow((p) => {
@@ -412,12 +397,11 @@ export const NativeSidebar = memo(function NativeSidebar({ windowId, profileId, 
       developer: split(developer),
       newTabMark: Image.resolveAssetSource(NEW_TAB_MARK)?.uri ?? null,
       pages,
-      player,
       pip: split(pip),
       capture,
       badge: [tokens.badge, tokens.badgeGlyph],
     }));
-  }, [player, pip, capture, tokens.badge, tokens.badgeGlyph, pages, theme, glow.shadowColor, glow.shadowOpacity, glow.shadowRadius, profileId, selection, loading, playing, sleeping, closeHint, renaming, addressBar, tidy, clear, iconRing, newTabAtTop, cleaned, upsell, engines, developer, adjustInk]);
+  }, [pip, capture, tokens.badge, tokens.badgeGlyph, pages, theme, glow.shadowColor, glow.shadowOpacity, glow.shadowRadius, profileId, selection, loading, playing, sleeping, closeHint, renaming, addressBar, tidy, clear, iconRing, newTabAtTop, cleaned, upsell, engines, developer, adjustInk]);
 
   const chrome = useShellChrome(windowId, addressBar, theme);
   if (headless) return <NativeSidebarFeed windowId={windowId} state={state} chrome={chrome} addressBar={addressBar} />;

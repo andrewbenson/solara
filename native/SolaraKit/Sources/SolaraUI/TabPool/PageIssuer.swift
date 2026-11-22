@@ -391,6 +391,12 @@ public final class PageIssuer {
   }
 
   public func reserveEvent(_ binding: PageHostBinding, name: String, payload: JSONValue) -> Int? {
+    let sequence = reserveEventInScope(binding, name: name, payload: payload)
+    if sequence != nil, name == "onNowPlaying" { NowPlayingStore.shared.report(tabId: binding.tabId, NowPlayingReport(json: payload)) }
+    return sequence
+  }
+
+  private func reserveEventInScope(_ binding: PageHostBinding, name: String, payload: JSONValue) -> Int? {
     store.sequence {
       guard ensurePageEstablished(binding), currentInScope(binding, requirePage: true),
         binding.eventSeq < 9_007_199_254_740_991 else { return nil }

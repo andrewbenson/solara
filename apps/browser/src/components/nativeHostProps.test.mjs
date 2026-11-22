@@ -26,7 +26,7 @@ const sidebar = (ownsLive) =>
   sidebarHostProps({
     profileId: "default", dark: true, theme: {}, border: [], glow, selection: [], closeHint: null, backHint: null, renaming: null,
     addressBar: false, tidy: false, clear: false, iconRing: false, newTabAtTop: false, incognito: false, cleaned: 0, upsell: null,
-    product: "Solara", engines: {}, developer: [], newTabMark: null, pages: [], player: null, pip: [], capture: {}, badge: [], ownsLive, live,
+    product: "Solara", engines: {}, developer: [], newTabMark: null, pages: [], pip: [], capture: {}, badge: [], ownsLive, live,
   });
 
 for (const [name, struct, path, build] of [

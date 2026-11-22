@@ -35,6 +35,7 @@ enum NativeSidebar {
 
   static func players(windowId: String) -> [NSView] {
     func walk(_ view: NSView) -> [NSView] {
+      if let stack = view as? SidebarPlayerStack { return stack.isHiddenOrHasHiddenAncestor ? [] : stack.cardViews + stack.leavingViews }
       if view is SidebarPlayerView { return view.isHiddenOrHasHiddenAncestor ? [] : [view] }
       return view.subviews.flatMap(walk)
     }
@@ -124,6 +125,8 @@ final class SidebarHost {
   private let commits = SidebarCommits()
   private var markUri: String?
   private var pagerObserver: NSObjectProtocol?
+  private var fedByShell = false
+  private var mediaListener: UUID?
   #if SOLARA_PROBES
   private var probeStopped = false
   #endif
@@ -143,6 +146,10 @@ final class SidebarHost {
       [weak self] note in
       guard note.userInfo?["key"] as? String == windowId, let position = note.userInfo?["position"] as? Double else { return }
       MainActor.assumeIsolated { self?.view.setPagerPosition(position) }
+    }
+    mediaListener = NativeMediaStack.listen { [weak self] in
+      guard let self, !self.stopped, !self.fedByShell else { return }
+      self.setNeedsRender()
     }
     if subscribeToStore, let store = NativeStoreHandle.store {
       state = store.state
@@ -166,6 +173,8 @@ final class SidebarHost {
     listener = nil
     if let pagerObserver { NotificationCenter.default.removeObserver(pagerObserver) }
     pagerObserver = nil
+    NativeMediaStack.stopListening(mediaListener)
+    mediaListener = nil
   }
 
   func apply(_ json: String) {
@@ -184,6 +193,7 @@ final class SidebarHost {
 
   func apply(state: BrowserState, host: SidebarHostState) {
     guard !stopped else { return }
+    fedByShell = true
     self.state = state
     hostState = host
     loadMark(host.newTabMark)
@@ -200,6 +210,12 @@ final class SidebarHost {
     guard !stopped, var host = hostState, let state = state ?? NativeStoreHandle.store?.state else { return }
     self.state = state
     if let renaming = NativeWorkspaceRename.override(windowId) { host.renaming = renaming }
+    if !fedByShell, let window = state.windows[windowId] {
+      let stacked = NativeMediaStack.players(state: state, windowId: windowId,
+        look: NativeLayoutAppearance(state: state, profileId: window.profileId, incognito: window.incognito))
+      host.player = stacked.first
+      host.stack = stacked
+    }
     view.update(state: state, host: host)
     NativeTileFolders.render(windowId: windowId)
   }
@@ -296,7 +312,7 @@ final class SidebarHost {
         NativeWorkspaceRename.end(windowId: windowId, id: id)
       }
     case .live(let action, let folderId, let id, let meta): call("live", folderId, ["action": action, "item": id ?? NSNull(), "meta": meta])
-    case .media(let tabId, let action): NativeMedia.player("sidebarPlayer", windowId, tabId, action)
+    case .media(let tabId, let action): NativeMediaStack.perform(windowId: windowId, tabId: tabId, action: action)
     }
   }
 

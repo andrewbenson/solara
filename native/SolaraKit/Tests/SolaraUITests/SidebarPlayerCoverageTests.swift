@@ -86,7 +86,7 @@ struct SidebarPlayerCoverageTests {
     #expect(!row.hovered)
     sidebar.pointerEntered(row, at: windowPoint)
     #expect(sidebar.hoverKey == nil)
-    let above = CGPoint(x: inSidebar.x, y: player.frame.minY - 40)
+    let above = CGPoint(x: inSidebar.x, y: sidebar.convert(CGPoint.zero, from: player).y - 40)
     let visible = try #require(rowUnder(above, in: sidebar))
     post(above, from: sidebar, in: window)
     #expect(visible.hovered)

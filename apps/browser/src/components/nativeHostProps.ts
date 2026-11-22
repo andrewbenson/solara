@@ -48,7 +48,6 @@ export type SidebarHostProps = {
   developer: string[];
   newTabMark: string | null;
   pages: unknown;
-  player: unknown;
   pip: string[];
   capture: Record<string, string>;
   badge: string[];

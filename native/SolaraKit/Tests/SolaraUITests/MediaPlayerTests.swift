@@ -66,7 +66,7 @@ import Testing
     #expect(view.cornersShown)
     #expect(view.controlFrames == before)
     let corners = view.subviews.compactMap { $0 as? MediaCircleButton }
-    #expect(corners.map(\.toolTip) == ["Mute Site", "Close Player"])
+    #expect(corners.map(\.toolTip) == ["Mute Site", "Close and Pause"])
     for corner in corners { #expect(corner.accessibilityPerformPress()) }
     #expect(actions == [.toggleMute, .dismiss])
     view.update(state(muted: true))

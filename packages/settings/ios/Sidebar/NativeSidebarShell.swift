@@ -545,6 +545,7 @@ final class NativeLayoutChrome {
   #endif
   private var holdTokens: [String: UUID] = [:]
   private var holdObservers: [NSObjectProtocol] = []
+  private var mediaListener: UUID?
   private var stopped = false
 
   init(windowId: String, shell: WindowShellView, generation: UInt64) {
@@ -570,6 +571,11 @@ final class NativeLayoutChrome {
     Self.owners[windowId] = self
     NativeSidebar.hosts[windowId] = host
     NativeSidebarShell.adopt(column)
+    mediaListener = NativeMediaStack.listen { [weak self] in
+      guard let self, !self.stopped else { return }
+      self.feedRevision += 1
+      self.refresh()
+    }
     NativeSidebarDock.adopt(dock, windowId: windowId)
     NativeTopStrip.hosts[windowId] = strip
     TopStripPeekHost.hosts[windowId] = peek
@@ -744,7 +750,6 @@ final class NativeLayoutChrome {
     sidebar.tidy = CommandContext(state: state, windowId: shell.windowId).canTidyPins
     sidebar.cleaned = state.cleanedTabs.filter { $0.windowId == shell.windowId }.count
     if let feed = sidebarFeed {
-      sidebar.player = feed.profileId == window.profileId ? feed.player : nil
       sidebar.pip = feed.pip
       sidebar.capture = feed.capture
       sidebar.badge = feed.badge
@@ -757,6 +762,9 @@ final class NativeLayoutChrome {
       sidebar.closeHint = feed.closeHint
       sidebar.backHint = feed.backHint
     }
+    let stacked = NativeMediaStack.players(state: state, windowId: shell.windowId, look: look)
+    sidebar.player = stacked.first
+    sidebar.stack = stacked
     if let renaming = NativeWorkspaceRename.override(shell.windowId) { sidebar.renaming = renaming }
     let dots = window.incognito ? [] : state.profileOrder.enumerated().compactMap { index, id -> SidebarChromeDot? in
       guard let profile = state.profiles[id] else { return nil }
@@ -834,6 +842,8 @@ final class NativeLayoutChrome {
     stopped = true
     holdObservers.forEach { NotificationCenter.default.removeObserver($0) }
     holdObservers = []
+    NativeMediaStack.stopListening(mediaListener)
+    mediaListener = nil
     revealHolds.onChange = { _ in }
     for token in holdTokens.values { revealHolds.release(token) }
     holdTokens = [:]

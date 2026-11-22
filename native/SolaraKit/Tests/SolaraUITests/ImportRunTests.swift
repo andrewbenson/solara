@@ -274,14 +274,35 @@ struct ImportRunTests {
     ImportRunRequest(runId: runId, browserId: browser, profileIds: profiles, spaceIds: [], kinds: kinds, target: target, withoutKey: false)
   }
 
-  @Test func routeTakesOnlyCredentialKindsFromSidebarFreeChromiumOrFirefox() {
+  @Test func routeTakesSidebarFreeChromiumOrFirefoxForEveryKindSwiftRuns() {
     #expect(ImportRoute.of(ImportFixtures.chrome, kinds: [.passwords, .cookies, .autofill]) == .swift)
     #expect(ImportRoute.of(Self.firefox, kinds: [.passwords]) == .swift)
+    #expect(ImportRoute.of(ImportFixtures.chrome, kinds: [.passwords, .bookmarks]) == .swift)
+    #expect(ImportRoute.of(ImportFixtures.chrome, kinds: [.bookmarks, .history, .tabs, .favorites, .passwords, .cookies, .autofill]) == .swift)
+    #expect(ImportRoute.of(Self.firefox, kinds: [.bookmarks, .history]) == .swift)
     #expect(ImportRoute.of(Self.zen, kinds: [.passwords]) == .js)
-    #expect(ImportRoute.of(ImportFixtures.arc, kinds: [.passwords]) == .js)
-    #expect(ImportRoute.of(ImportFixtures.chrome, kinds: [.passwords, .bookmarks]) == .js)
+    #expect(ImportRoute.of(ImportFixtures.arc, kinds: [.bookmarks]) == .js)
+    #expect(ImportRoute.of(ImportFixtures.chrome, kinds: [.bookmarks, .spaces]) == .js)
+    #expect(ImportRoute.of(ImportFixtures.chrome, kinds: [.pinnedTabs]) == .js)
     #expect(ImportRoute.of(ImportFixtures.chrome, kinds: []) == .js)
     #expect(ImportRoute.of(nil, kinds: [.passwords]) == .js)
+  }
+
+  @Test func theScriptRouteDefaultSendsEveryRunToJSOnlyForTheExactValue() async {
+    for (value, expected) in [("script", ImportRoute.js), ("Script", .swift), ("js", .swift), (" script", .swift), ("", .swift)] {
+      let (runs, engine, script, session) = setup()
+      runs.scriptRouteDefault = { value }
+      engine.reads["Default"] = .success(FakeImportEngine.read())
+      _ = await runs.run(request([.passwords]), session: session, engine: engine, script: script, scriptSession: 1)
+      #expect(runs.route(of: "r1") == expected, Comment(rawValue: value))
+      #expect(engine.logs.contains("[import] route=js reason=defaults") == (expected == .js), Comment(rawValue: value))
+    }
+    let (runs, engine, script, session) = setup()
+    var reads = 0
+    runs.scriptRouteDefault = { reads += 1; return nil }
+    _ = await runs.run(request([.passwords]), session: session, engine: engine, script: script, scriptSession: 1)
+    #expect(reads == 1)
+    #expect(runs.route(of: "r1") == .swift)
   }
 
   @Test func originMatchesTheJSPatternOnUTF16() {
@@ -349,7 +370,7 @@ struct ImportRunTests {
 
   @Test func otherRunsGoToTheScriptPath() async {
     let (runs, engine, script, session) = setup([ImportFixtures.chrome, Self.zen])
-    _ = await runs.run(request([.bookmarks, .passwords]), session: session, engine: engine, script: script, scriptSession: 4)
+    _ = await runs.run(request([.pinnedTabs, .passwords]), session: session, engine: engine, script: script, scriptSession: 4)
     _ = await runs.run(request([.passwords], browser: "zen", runId: "r2"), session: session, engine: engine, script: script, scriptSession: 4)
     #expect(script.calls == ["run:r1:4", "run:r2:4"])
     #expect(engine.calls.isEmpty)
@@ -561,7 +582,7 @@ struct ImportRunTests {
     while !started { await Task.yield() }
     runs.cancel(engine: engine, script: script)
     let swiftOutcome = await swift.value
-    let jsOutcome = await runs.run(request([.bookmarks], runId: "j"), session: session, engine: engine, script: script, scriptSession: 2)
+    let jsOutcome = await runs.run(request([.pinnedTabs], runId: "j"), session: session, engine: engine, script: script, scriptSession: 2)
     runs.cancel(engine: engine, script: script)
     #expect(!swiftOutcome.cancelled)
     #expect(swiftOutcome.notes == [ImportRunner.stoppedNote])
@@ -596,7 +617,6 @@ struct ImportRunTests {
 
   @Test func stepsRunInTheJSOrder() async {
     let (runs, engine, script, session) = setup()
-    runs.darkRoute = true
     engine.reads["Default"] = .success(FakeImportEngine.read(bookmarks: FakeImportEngine.tree, tabs: [ImportTabRow(url: "https://t.test/", title: "T", pinned: false, customTitle: nil)],
                                                             favorites: [ImportTabRow(url: "https://f.test/", title: "F", pinned: false, customTitle: "Fav")]))
     let outcome = await runs.run(request([.bookmarks, .passwords, .cookies, .tabs, .favorites]), session: session, engine: engine, script: script, scriptSession: 1)
@@ -613,7 +633,6 @@ struct ImportRunTests {
 
   @Test func tabsFromASpacesSourceAreLeftOut() async {
     let (runs, engine, script, session) = setup()
-    runs.darkRoute = true
     engine.reads["Default"] = .success(FakeImportEngine.read(tabs: [ImportTabRow(url: "https://t.test/", title: "T", pinned: false, customTitle: nil)], hasSpaces: true))
     _ = await runs.run(request([.tabs]), session: session, engine: engine, script: script, scriptSession: 1)
     #expect(engine.workspaces.isEmpty)
@@ -621,7 +640,6 @@ struct ImportRunTests {
 
   @Test func missingRootsAreCreatedBeforeBookmarksArePlaced() async {
     let (runs, engine, script, session) = setup()
-    runs.darkRoute = true
     engine.parents = nil
     engine.rootsAppearOnSubmit = true
     engine.reads["Default"] = .success(FakeImportEngine.read(bookmarks: FakeImportEngine.tree))
@@ -633,7 +651,6 @@ struct ImportRunTests {
 
   @Test func aConditionFailureRetriesUpToThreeTimes() async {
     let (runs, engine, script, session) = setup()
-    runs.darkRoute = true
     engine.conditionFailures = 1
     engine.reads["Default"] = .success(FakeImportEngine.read(bookmarks: FakeImportEngine.tree))
     let once = await runs.run(request([.bookmarks]), session: session, engine: engine, script: script, scriptSession: 1)
@@ -641,7 +658,6 @@ struct ImportRunTests {
     #expect(once.counts.bookmarks == 4)
 
     let (runs2, engine2, script2, session2) = setup()
-    runs2.darkRoute = true
     engine2.conditionFailures = 3
     engine2.reads["Default"] = .success(FakeImportEngine.read(bookmarks: FakeImportEngine.tree))
     let thrice = await runs2.run(request([.bookmarks, .passwords]), session: session2, engine: engine2, script: script2, scriptSession: 1)
@@ -654,7 +670,6 @@ struct ImportRunTests {
 
   @Test func cancellingAfterBookmarksSavesNothingMore() async {
     let (runs, engine, script, session) = setup()
-    runs.darkRoute = true
     engine.onBookmarkSubmit = { runs.cancel(engine: engine, script: script) }
     engine.reads["Default"] = .success(FakeImportEngine.read(bookmarks: FakeImportEngine.tree, tabs: [ImportTabRow(url: "https://t.test/", title: "T", pinned: false, customTitle: nil)]))
     let outcome = await runs.run(request([.bookmarks, .passwords, .cookies, .tabs]), session: session, engine: engine, script: script, scriptSession: 1)
@@ -666,7 +681,6 @@ struct ImportRunTests {
 
   @Test func aDrainAfterBookmarksEndsAsACancelledRun() async {
     let (runs, engine, script, session) = setup()
-    runs.darkRoute = true
     engine.onBookmarkSubmit = { Task { @MainActor in await runs.drain(engine: engine) } }
     engine.reads["Default"] = .success(FakeImportEngine.read(bookmarks: FakeImportEngine.tree))
     let outcome = await runs.run(request([.bookmarks, .passwords, .cookies]), session: session, engine: engine, script: script, scriptSession: 1)
@@ -677,20 +691,12 @@ struct ImportRunTests {
 
   @Test func tabsTheWorkspaceRefusesAreFailed() async {
     let (runs, engine, script, session) = setup()
-    runs.darkRoute = true
     engine.workspaceResult = nil
     engine.reads["Default"] = .success(FakeImportEngine.read(tabs: [ImportTabRow(url: "https://t.test/", title: "T", pinned: false, customTitle: nil)]))
     let outcome = await runs.run(request([.tabs, .passwords]), session: session, engine: engine, script: script, scriptSession: 1)
     #expect(outcome.status[.tabs] == .failed)
     #expect(outcome.counts.tabs == 0)
     #expect(outcome.counts.passwords == 3)
-  }
-
-  @Test func theDarkRouteTakesBookmarksTabsAndFavoritesOnlyWhenSet() {
-    #expect(ImportRoute.of(ImportFixtures.chrome, kinds: [.bookmarks, .passwords]) == .js)
-    #expect(ImportRoute.of(ImportFixtures.chrome, kinds: [.bookmarks, .tabs, .favorites, .passwords], dark: true) == .swift)
-    #expect(ImportRoute.of(ImportFixtures.chrome, kinds: [.bookmarks, .history], dark: true) == .swift)
-    #expect(ImportRoute.of(ImportFixtures.chrome, kinds: [.bookmarks, .spaces], dark: true) == .js)
   }
 
   @Test func parentsNeedOnlyAViewNotSyncReadiness() {
@@ -804,7 +810,6 @@ struct ImportRunTests {
 
   @Test func faviconsAndHistoryRunInTheJSOrder() async {
     let (runs, engine, script, session) = setup()
-    runs.darkRoute = true
     runs.devTrace = []
     let toolbar = FakeImportEngine.folder("", [FakeImportEngine.folder("Bar", [FakeImportEngine.link("A", "https://a.test/")], role: "toolbar")])
     let tab = ImportTabRow(url: "https://t.test/", title: "T", pinned: false, customTitle: nil)
@@ -824,7 +829,6 @@ struct ImportRunTests {
 
   @Test func aHistoryCountFallsBackToDistinctRowsAndLogsNoURL() async {
     let (runs, engine, script, session) = setup()
-    runs.darkRoute = true
     engine.adoptHistoryTimesOut = true
     engine.reads["Default"] = .success(FakeImportEngine.read(history: FakeImportEngine.historyRows))
     let outcome = await runs.run(request([.history]), session: session, engine: engine, script: script, scriptSession: 1)
@@ -839,7 +843,6 @@ struct ImportRunTests {
 
   @Test func theEngineGetsTheHistoryEvenWhenJSNeverAnswers() async {
     let (runs, engine, script, session) = setup()
-    runs.darkRoute = true
     engine.adoptHistoryTimesOut = true
     engine.reads["Default"] = .success(FakeImportEngine.read(history: FakeImportEngine.historyRows))
     _ = await runs.run(request([.history]), session: session, engine: engine, script: script, scriptSession: 1)
@@ -851,7 +854,6 @@ struct ImportRunTests {
 
   @Test func theEngineWriteEndsBeforeJSAdoptsTheHistoryEvenWhenTheProfileLoadsLate() async {
     let (runs, engine, script, session) = setup()
-    runs.darkRoute = true
     engine.historyWriteSuspensions = 8
     engine.reads["Default"] = .success(FakeImportEngine.read(history: FakeImportEngine.historyRows))
     _ = await runs.run(request([.history]), session: session, engine: engine, script: script, scriptSession: 1)
@@ -860,7 +862,6 @@ struct ImportRunTests {
 
   @Test func aStuckEngineWriteHoldsTheRunOnlyUntilItsDeadline() async {
     let (runs, engine, script, session) = setup()
-    runs.darkRoute = true
     runs.writeDeadline = .milliseconds(30)
     engine.holdHistoryWrite = true
     engine.reads["Default"] = .success(FakeImportEngine.read(history: FakeImportEngine.historyRows))
@@ -876,7 +877,6 @@ struct ImportRunTests {
 
   @Test func cancellingDuringTheHistoryWaitEndsTheWaitAndSkipsTheAdopt() async {
     let (runs, engine, script, session) = setup()
-    runs.darkRoute = true
     runs.writeDeadline = .seconds(300)
     engine.holdHistoryWrite = true
     engine.onHistoryWrite = { runs.cancel(engine: engine, script: script) }
@@ -893,7 +893,6 @@ struct ImportRunTests {
 
   @Test func theAdoptGetsTheRowsDeadline() async {
     let (runs, engine, script, session) = setup()
-    runs.darkRoute = true
     engine.reads["Default"] = .success(FakeImportEngine.read(history: FakeImportEngine.historyRows))
     _ = await runs.run(request([.history]), session: session, engine: engine, script: script, scriptSession: 1)
     #expect(engine.adoptDeadlines == [ImportHistory.adoptDeadline(rows: 3)])
@@ -901,7 +900,6 @@ struct ImportRunTests {
 
   @Test func faviconsAreAdoptedBeforeBookmarksArePlaced() async {
     let (runs, engine, script, session) = setup()
-    runs.darkRoute = true
     engine.faviconAdoptionSuspensions = 8
     let toolbar = FakeImportEngine.folder("", [FakeImportEngine.folder("Bar", [FakeImportEngine.link("A", "https://a.test/")], role: "toolbar")])
     engine.reads["Default"] = .success(FakeImportEngine.read(bookmarks: toolbar, favicons: FakeImportEngine.icons))
@@ -912,7 +910,6 @@ struct ImportRunTests {
 
   @Test func aDrainGivesUpOnAStuckWriteAfterItsDeadlineAndSaysSo() async {
     let (runs, engine, script, session) = setup()
-    runs.darkRoute = true
     runs.writeDeadline = .milliseconds(10)
     runs.drainDeadline = .milliseconds(50)
     engine.holdHistoryWrite = true
@@ -940,7 +937,6 @@ struct ImportRunTests {
 
   @Test func aPrivateDestinationTakesNoHistoryOrFavicons() async {
     let (runs, engine, script, session) = setup()
-    runs.darkRoute = true
     let tab = ImportTabRow(url: "https://t.test/", title: "T", pinned: false, customTitle: nil)
     engine.reads["Default"] = .success(FakeImportEngine.read(tabs: [tab], history: FakeImportEngine.historyRows, favicons: FakeImportEngine.icons))
     let outcome = await runs.run(request([.history, .tabs], target: "incognito:default"), session: session, engine: engine, script: script, scriptSession: 1)
@@ -954,7 +950,6 @@ struct ImportRunTests {
 
   @Test func cancellingDuringHistoryStopsBeforeTheNativeWrite() async {
     let (runs, engine, script, session) = setup()
-    runs.darkRoute = true
     engine.onAdoptHistory = { runs.cancel(engine: engine, script: script) }
     engine.reads["Default"] = .success(FakeImportEngine.read(history: FakeImportEngine.historyRows))
     let outcome = await runs.run(request([.history, .passwords, .cookies]), session: session, engine: engine, script: script, scriptSession: 1)
@@ -965,7 +960,6 @@ struct ImportRunTests {
 
   @Test func aDrainWaitsForPendingHistoryWrites() async {
     let (runs, engine, script, session) = setup()
-    runs.darkRoute = true
     runs.writeDeadline = .milliseconds(10)
     engine.holdHistoryWrite = true
     engine.reads["Default"] = .success(FakeImportEngine.read(history: FakeImportEngine.historyRows))

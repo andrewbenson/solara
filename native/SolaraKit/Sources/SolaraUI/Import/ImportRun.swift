@@ -138,12 +138,12 @@ public enum ImportRoute: String, Sendable {
   case swift
   case js
 
-  static let swiftKinds: Set<ImportKind> = [.passwords, .cookies, .autofill]
-  static let darkKinds: Set<ImportKind> = swiftKinds.union([.bookmarks, .history, .tabs, .favorites])
+  static let swiftKinds: Set<ImportKind> = [.passwords, .cookies, .autofill, .bookmarks, .history, .tabs, .favorites]
+  static let scriptRouteKey = "ImportRoute"
 
-  public static func of(_ source: ImportBrowser?, kinds: [ImportKind], dark: Bool = false) -> ImportRoute {
+  public static func of(_ source: ImportBrowser?, kinds: [ImportKind]) -> ImportRoute {
     guard let source, source.sidebar == nil, source.family == .chromium || source.family == .firefox else { return .js }
-    guard !kinds.isEmpty, kinds.allSatisfy((dark ? darkKinds : swiftKinds).contains) else { return .js }
+    guard !kinds.isEmpty, kinds.allSatisfy(swiftKinds.contains) else { return .js }
     return .swift
   }
 }
@@ -228,11 +228,11 @@ public final class ImportRuns {
   private var routes: [String: ImportRoute] = [:]
   let bookmarkQueue = ImportBookmarkQueue()
   private var writes: [UUID: Task<Void, Never>] = [:]
+  var scriptRouteDefault: () -> String? = { UserDefaults.standard.string(forKey: ImportRoute.scriptRouteKey) }
   var writeDeadline: Duration = .seconds(10)
   var drainDeadline: Duration = .seconds(10)
   #if DEBUG
   public var forceScript = false
-  public var darkRoute = false
   public var devTrace: [String] = []
   #endif
 
@@ -294,8 +294,11 @@ public final class ImportRuns {
   public func run(_ request: ImportRunRequest, session id: Int, engine: ImportEngine, script: ImportScriptPath, scriptSession: Int) async -> ImportRunOutcome {
     let source = browsers.first { $0.id == request.browserId }
     var route = ImportRoute.of(source, kinds: request.kinds)
+    if route == .swift, scriptRouteDefault() == "script" {
+      route = .js
+      engine.log("[import] route=js reason=defaults")
+    }
     #if DEBUG
-    if darkRoute { route = ImportRoute.of(source, kinds: request.kinds, dark: true) }
     if forceScript { route = .js }
     #endif
     routes[request.runId] = route

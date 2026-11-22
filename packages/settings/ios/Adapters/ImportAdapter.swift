@@ -1,24 +1,28 @@
 import AppKit
 import Foundation
+import SolaraCore
 import SolaraImportAdapter
+import SolaraModel
 import SolaraStore
 import SolaraUI
 
 @MainActor
-final class ImportAdapter: ImportServices {
+final class ImportAdapter: ImportServices, ImportScriptPath {
   static let progressTopic = "import.progress"
   static let targetsTopic = "import.targets"
   private var session = 0
+  private var swiftSession = 0
   private let direct = SettingsDirectWrites.store != nil
   private var service: ImportService? { direct ? ImportService.shared : nil }
 
   func open() async -> ImportOpening {
+    if direct { swiftSession = ImportRuns.shared.open() }
     let opened = await SettingsAdapters.js("import.open") as? [String: Any] ?? [:]
     session = opened.int("session") ?? 0
     if direct, let store = SettingsDirectWrites.store {
       let state = store.state
       return ImportOpening(
-        available: opened.bool("available") ?? false,
+        available: (opened.bool("available") ?? false) && ImportRuns.shared.admitted(swiftSession),
         preferredSource: ImportPreferredSource.shared.take(),
         targets: ImportTargets.list(state).map { SolaraUI.ImportTarget(id: $0.id, name: $0.name) },
         defaultTarget: ImportTargets.defaultTarget(state)
@@ -39,7 +43,9 @@ final class ImportAdapter: ImportServices {
     }
     guard let json = await service.browsersJSON() else { return nil }
     guard let list = await SettingsJS.shared.adoptBrowsers(json) else { return nil }
-    return list.compactMap(Self.browser)
+    let browsers = list.compactMap(Self.browser)
+    ImportRuns.shared.browsers = browsers
+    return browsers
   }
 
   func targetUpdates() -> AsyncStream<[ImportTarget]> {
@@ -77,6 +83,11 @@ final class ImportAdapter: ImportServices {
   }
 
   func run(_ request: ImportRunRequest) async -> ImportRunOutcome {
+    guard direct else { return await scriptRun(request, session: session) }
+    return await ImportRuns.shared.run(request, session: swiftSession, engine: ImportRunEngine.shared, script: self, scriptSession: session)
+  }
+
+  func scriptRun(_ request: ImportRunRequest, session: Int) async -> ImportRunOutcome {
     let arg: [String: Any] = [
       "runId": request.runId,
       "browserId": request.browserId,
@@ -114,9 +125,28 @@ final class ImportAdapter: ImportServices {
     )
   }
 
-  func cancel() { SettingsJS.shared.fire("import.cancel") }
+  func cancel() {
+    guard direct else { return scriptCancel() }
+    ImportRuns.shared.cancel(engine: ImportRunEngine.shared, script: self)
+  }
 
-  func dispose() { SettingsJS.shared.fire("import.dispose") }
+  func dispose() {
+    guard direct else { return scriptDispose() }
+    ImportRuns.shared.dispose(engine: ImportRunEngine.shared, script: self)
+  }
+
+  func scriptCancel() { SettingsJS.shared.fire("import.cancel") }
+
+  func scriptDispose() { SettingsJS.shared.fire("import.dispose") }
+
+  #if DEBUG
+  static var devVaultCount: Int { ImportService.shared.devVaultCount }
+  #endif
+
+  static func drainSwift() async {
+    guard SettingsDirectWrites.store != nil else { return }
+    await ImportRuns.shared.drain(engine: ImportRunEngine.shared)
+  }
 
   func diaAutomationStatus() async -> DiaStatus {
     guard let service else { return Self.dia(await SettingsAdapters.js("import.diaStatus")) }
@@ -258,5 +288,139 @@ final class ImportAdapter: ImportServices {
       },
       tabsNeedKey: p.bool("tabsNeedKey") ?? false
     )
+  }
+}
+
+@MainActor
+final class ImportRunEngine: ImportEngine {
+  static let shared = ImportRunEngine()
+  private var openAlert: (alert: NSAlert, window: NSWindow)?
+
+  var safeMode: Bool { SolaraCoreHost.safeMode || SettingsDirectWrites.store == nil }
+
+  func transientImportRefused() {
+    guard let window = Self.importWindow() else { return }
+    let alert = NSAlert()
+    alert.messageText = "Safe Mode"
+    alert.informativeText = "Imported tabs, spaces, pinned tabs and new profiles cannot be saved in safe mode. Open Solara normally to import them."
+    alert.addButton(withTitle: "OK")
+    alert.beginSheetModal(for: window)
+  }
+
+  func isUnlocked(_ browserId: String) -> Bool { ImportService.shared.isUnlocked(browserId) }
+
+  func unlock(_ browserId: String) async -> Bool { await ImportService.shared.unlock(browserId) }
+
+  func read(jobId: String, browserId: String, profileId: String, kinds: [SolaraUI.ImportKind],
+            progress: @escaping @MainActor (SolaraUI.ImportKind, Bool) -> Void) async throws -> ImportRead {
+    let relay = ImportProgressRelay(progress)
+    do {
+      let read = try await ImportService.shared.read(jobId: jobId, browserId: browserId, profileId: profileId, kinds: kinds.map(\.rawValue)) { kind, ended in
+        Task { @MainActor in relay.send(kind, ended) }
+      }
+      return ImportRead(
+        vaultToken: read.vaultToken,
+        profileName: read.profileName,
+        profileColor: read.profileColor,
+        failed: read.failed.compactMap { SolaraUI.ImportKind(rawValue: $0.rawValue) },
+        warnings: read.warnings.map { ImportReadWarning(kind: $0.kind.flatMap { SolaraUI.ImportKind(rawValue: $0.rawValue) }, code: $0.code, message: $0.message) },
+        credentials: read.credentials.map { ImportCredential(url: $0.url, username: $0.username, password: $0.password, realm: $0.realm) }
+      )
+    } catch let error as SolaraImportAdapter.ImportError where error == .cancelled {
+      throw ImportReadFailure.cancelled
+    } catch {
+      throw ImportReadFailure.failed
+    }
+  }
+
+  func cancelRead(jobId: String) { ImportService.shared.cancelRead(jobId: jobId) }
+
+  func discard(token: String) { ImportService.shared.discard(token) }
+
+  func writeNative(token: String, engineProfile: String, kinds: [String]) async -> ImportNativeWritten? {
+    guard let written = await ImportService.shared.write(token: token, engineProfile: engineProfile, kinds: kinds) else { return nil }
+    return ImportNativeWritten(cookies: written.cookies, addresses: written.addresses, cards: written.cards,
+                               cookiesFailed: written.cookiesFailed, autofillFailed: written.autofillFailed)
+  }
+
+  func savePassword(engineProfile: String, origin: String, username: String, password: String) async -> Bool {
+    await EngineCalls.result({ done in
+      SolaraCoreServices.savePassword(profile: engineProfile, origin: origin, username: username, password: password) { done($0) }
+    }) { $0["error"] == nil }
+  }
+
+  func extensions(browserId: String, profileId: String) async -> [SolaraUI.ImportedExtension] {
+    await ImportService.shared.extensions(browserId: browserId, profileId: profileId).map {
+      SolaraUI.ImportedExtension(id: $0.id, name: $0.name, webStoreUrl: $0.webStoreUrl)
+    }
+  }
+
+  func forget() { ImportService.shared.forget() }
+
+  func profiles() -> [SolaraUI.ImportTarget] {
+    guard let store = SettingsDirectWrites.store else { return [] }
+    return ImportTargets.list(store.state).map { SolaraUI.ImportTarget(id: $0.id, name: $0.name) }
+  }
+
+  func profileExists(_ id: String) -> Bool { SettingsDirectWrites.store?.state.profiles[id] != nil }
+
+  func isPrivateProfile(_ id: String) -> Bool { Ids.isIncognitoProfile(id) }
+
+  func engineProfile(_ id: String) -> String { SettingsDirectWrites.store?.state.engineProfile(id) ?? id }
+
+  func askImportAsNewProfile() async -> Bool? {
+    guard let window = Self.importWindow() else { return nil }
+    let alert = NSAlert()
+    alert.messageText = "Import as new profile?"
+    alert.informativeText = "Import this data as a new profile to avoid data loss. If you replace a profile, your passwords, cookies, and payment info will be replaced, while your bookmarks and history will be combined."
+    alert.addButton(withTitle: "Import as new profile")
+    alert.addButton(withTitle: "Replace this profile")
+    openAlert = (alert, window)
+    let response = await alert.beginSheetModal(for: window)
+    if openAlert?.alert === alert { openAlert = nil }
+    switch response {
+    case .alertFirstButtonReturn: return true
+    case .alertSecondButtonReturn: return false
+    default: return nil
+    }
+  }
+
+  func dismissImportAsNewProfile() {
+    guard let open = openAlert else { return }
+    openAlert = nil
+    open.window.endSheet(open.alert.window, returnCode: .abort)
+  }
+
+  func createProfile(name: String, color: String?) -> String? {
+    guard let store = SettingsDirectWrites.store else { return nil }
+    let args: JSONValue = color.map { ["name": .string(name), "color": .string($0)] } ?? ["name": .string(name)]
+    return SettingsDirectWrites.write(store, Command("createProfile", [args]))?.result?.string
+  }
+
+  func publish(_ progress: ImportProgressUpdate) {
+    let body: [String: Any] = [
+      "runId": progress.runId,
+      "preparing": progress.preparing,
+      "status": Dictionary(uniqueKeysWithValues: progress.status.map { ($0.key.rawValue, $0.value.rawValue) }),
+    ]
+    guard let data = try? JSONSerialization.data(withJSONObject: body) else { return }
+    SettingsJS.shared.publish(ImportAdapter.progressTopic, json: String(decoding: data, as: UTF8.self))
+  }
+
+  func log(_ line: String) { NSLog("%@", line) }
+
+  static func importWindow() -> NSWindow? {
+    NativeImportWindow.hosting?.viewIfLoaded?.window ?? NSApp.windows.first { $0.contentViewController is ImportHostingController }
+  }
+}
+
+final class ImportProgressRelay: @unchecked Sendable {
+  private let deliver: @MainActor (SolaraUI.ImportKind, Bool) -> Void
+
+  init(_ deliver: @escaping @MainActor (SolaraUI.ImportKind, Bool) -> Void) { self.deliver = deliver }
+
+  @MainActor func send(_ kind: String, _ ended: Bool) {
+    guard let parsed = SolaraUI.ImportKind(rawValue: kind) else { return }
+    deliver(parsed, ended)
   }
 }

@@ -17,24 +17,37 @@ enum NativeImportWindow {
     guard enabled else { return NativeSettingsWindow.unavailableController() }
     let model = ImportModel(services: ImportAdapter(), appName: Bundle.main.productName)
     current = model
-    return ImportHostingController(model: model)
+    let controller = ImportHostingController(model: model)
+    hosting = controller
+    return controller
   }
 
   static weak var current: ImportModel?
+  static weak var hosting: ImportHostingController?
 
   nonisolated static var drivable: Bool { ProcessInfo.processInfo.environment["SOLARA_BACKGROUND"] == "1" }
 
   static func drive(_ action: String, _ argument: String?) async -> [String: Any] {
-    guard drivable, let model = current else { return ["error": "no native import window"] }
+    guard drivable, let model = current else { return withDevFields(["error": "no native import window"], nil) }
     switch action {
     case "select":
       guard let browser = model.browsers.first(where: { $0.id == argument }) else { return ["error": "no browser \(argument ?? "")"] }
       model.choose(browser)
     case "next": await model.next()
     case "unlock": await model.unlock()
+    #if DEBUG
+    case "kinds":
+      model.kinds = Set((argument ?? "").split(separator: ",").compactMap { SolaraUI.ImportKind(rawValue: String($0)) })
+    case "cancel":
+      model.cancelProgress()
+    case "route":
+      ImportRuns.shared.forceScript = argument == "js"
+    case "profiles":
+      model.sourceProfiles = (argument ?? "").split(separator: ",").map(String.init)
+    #endif
     default: break
     }
-    return [
+    let state: [String: Any] = [
       "step": model.step.rawValue,
       "browsers": model.browsers.map(\.id),
       "source": model.source?.id as Any,
@@ -46,6 +59,21 @@ enum NativeImportWindow {
       "notes": model.notes,
       "error": model.error as Any,
     ]
+    return withDevFields(state, model)
+  }
+
+  static func withDevFields(_ base: [String: Any], _ model: ImportModel?) -> [String: Any] {
+    #if DEBUG
+    var state = base
+    state["vault"] = ImportAdapter.devVaultCount
+    if let model {
+      state["sourceProfiles"] = model.sourceProfiles
+      state["profileIds"] = model.source?.profiles.map(\.id) ?? []
+    }
+    return state
+    #else
+    return base
+    #endif
   }
 }
 

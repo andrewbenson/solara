@@ -455,6 +455,7 @@ struct HostRegressionTests {
       do { try await adapter.drainOnboardingPreviews() }
       catch { failures.append("import cancellation drain failed: \(error)") }
       expect(SettingsJS.shared.calls.contains("import.cancelAndDrain"), "adapter drain must acknowledge JS import cancellation")
+      expect(ImportAdapter.swiftDrains == 1, "adapter drain must also drain the Swift import session")
       adapter.dispose()
     case "replacementCommittedInstallDoesNotReuseOldBrowserEntry":
       let joining = HostFakeJoining()

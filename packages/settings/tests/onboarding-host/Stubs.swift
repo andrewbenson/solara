@@ -228,5 +228,7 @@ final class NativeImportWindow {
 @MainActor
 final class ImportAdapter {
   static var closes = 0
+  static var swiftDrains = 0
   func close() { Self.closes += 1 }
+  static func drainSwift() async { swiftDrains += 1 }
 }

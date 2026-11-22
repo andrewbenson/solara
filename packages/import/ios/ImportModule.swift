@@ -81,6 +81,84 @@ public final class ImportService: @unchecked Sendable {
     await session.unlock(browserId, on: Self.work, secret: Self.secret)
   }
 
+  public struct Read: Sendable, CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
+    public let vaultToken: String?
+    public let profileName: String?
+    public let profileColor: String?
+    public let failed: [ImportKind]
+    public let warnings: [ImportWarning]
+    public let credentials: [Credential]
+
+    public var description: String { "ImportService.Read" }
+    public var debugDescription: String { "ImportService.Read" }
+    public var customMirror: Mirror { Mirror(self, children: [:]) }
+  }
+
+  public struct Written: Sendable {
+    public let cookies: Int
+    public let addresses: Int
+    public let cards: Int
+    public let cookiesFailed: Bool
+    public let autofillFailed: Bool
+  }
+
+  public func read(jobId: String, browserId: String, profileId: String, kinds: [String],
+                   progress: @escaping @Sendable (String, Bool) -> Void) async throws -> Read {
+    let session = session
+    let started = session.epoch.current
+    let cancellation = session.jobs.start(jobId, epoch: started)
+    defer { session.jobs.finish(jobId, cancellation) }
+    guard session.epoch.isCurrent(started) else { throw ImportError.cancelled }
+    let parsed = kinds.compactMap(ImportKind.init(rawValue:))
+    let observer = ImportObserver(progress: { p in
+      if p.phase == .start { progress(p.kind.rawValue, false) }
+      if p.phase == .end { progress(p.kind.rawValue, true) }
+    })
+    var result = try await onWork { [importer = session.importer] in
+      try importer.importData(browserId: browserId, profileId: profileId, kinds: parsed, observer: observer, cancellation: cancellation)
+    }
+    #if DEBUG
+    if ProcessInfo.processInfo.environment["SOLARA_DATA_DIR"] != nil,
+       let delay = ProcessInfo.processInfo.environment["SOLARA_IMPORT_TEST_READ_DELAY_MS"].flatMap(Int.init) {
+      try? await Task.sleep(for: .milliseconds(delay))
+    }
+    #endif
+    let token = session.keep(cookies: result.cookies, addresses: result.addresses, cards: result.cards, started: started)
+    result.cookies = []
+    result.addresses = []
+    result.cards = []
+    guard session.epoch.isCurrent(started) else {
+      if let token { session.vault.discard(token) }
+      throw ImportError.cancelled
+    }
+    return Read(vaultToken: token, profileName: result.profile?.name, profileColor: result.profile?.color,
+                failed: result.failed, warnings: result.warnings, credentials: result.credentials)
+  }
+
+  public func cancelRead(jobId: String) { session.jobs.cancel(jobId) }
+
+  #if DEBUG
+  public var devVaultCount: Int { session.vault.count }
+  #endif
+
+  public func discard(_ token: String) { session.vault.discard(token) }
+
+  public func write(token: String, engineProfile: String, kinds: [String]) async -> Written? {
+    guard let entry = session.vault.take(token) else { return nil }
+    let json = await ImportWriter.write(entry, profile: engineProfile, kinds: Set(kinds))
+    guard let body = (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any] else { return nil }
+    func count(_ key: String) -> Int { (body[key] as? NSNumber)?.intValue ?? 0 }
+    return Written(cookies: count("cookies"), addresses: count("addresses"), cards: count("cards"),
+                   cookiesFailed: count("cookiesFailed") != 0, autofillFailed: count("autofillFailed") != 0)
+  }
+
+  public func forget() { session.forget() }
+
+  public func extensions(browserId: String, profileId: String) async -> [ImportedExtension] {
+    guard let def = BrowserDefinition.find(browserId), def.isChromiumBased else { return [] }
+    return (try? await onWork { [importer] in ChromiumExtensions.list(profile: try importer.discovery.profileDirectory(def, profileId)) }) ?? []
+  }
+
   public func safariHasFullDiskAccess() async -> Bool {
     (try? await onWork { SafariDirect.hasAccess(home: Self.safariHome) }) ?? false
   }

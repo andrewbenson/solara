@@ -40,17 +40,17 @@ import Testing
   @Test func sidebarTransportUsesCurrentPlaybackAndTrackState() throws {
     let view = sidebar(state())
     let buttons = view.subviews.compactMap { $0 as? SidebarIconButton }.filter { !$0.isHidden }
-    #expect(buttons.map(\.toolTip) == ["Skip back 15 seconds", "Play", "Skip ahead 15 seconds"])
+    #expect(buttons.map(\.toolTip) == ["Skip back 15 seconds", "Play", "Skip ahead 15 seconds", "Mute Site"])
     var actions: [MediaAction] = []
     view.onAction = { actions.append($0) }
     for button in buttons { try click(button) }
-    #expect(actions == [.skip(-15), .toggle, .skip(15)])
+    #expect(actions == [.skip(-15), .toggle, .skip(15), .toggleMute])
 
     view.update(state(playing: true, tracks: true))
-    #expect(buttons.map(\.toolTip) == ["Play Previous Track", "Pause", "Play Next Track"])
+    #expect(buttons.map(\.toolTip) == ["Play Previous Track", "Pause", "Play Next Track", "Mute Site"])
     actions.removeAll()
     for button in buttons { try click(button) }
-    #expect(actions == [.previous, .toggle, .next])
+    #expect(actions == [.previous, .toggle, .next, .toggleMute])
   }
 
   @Test func sidebarHoverControlsPreservePlaybackAndTrackGeometry() throws {
@@ -65,16 +65,16 @@ import Testing
     view.layoutSubtreeIfNeeded()
     #expect(view.cornersShown)
     #expect(view.controlFrames == before)
-    let corners = view.subviews.compactMap { $0 as? MediaCircleButton }
-    #expect(corners.map(\.toolTip) == ["Mute Site", "Close and Pause"])
+    let corners = view.subviews.compactMap { $0 as? MediaCircleButton }.filter { !$0.isHidden }
+    #expect(corners.map(\.toolTip) == ["Close and Pause"])
     for corner in corners { #expect(corner.accessibilityPerformPress()) }
-    #expect(actions == [.toggleMute, .dismiss])
+    #expect(actions == [.dismiss])
     view.update(state(muted: true))
-    #expect(corners.first?.toolTip == "Unmute Site")
+    #expect(view.subviews.compactMap { $0 as? SidebarIconButton }.contains { $0.toolTip == "Unmute Site" })
     #expect(view.controlFrames == before)
     view.mouseExited(with: NSEvent())
     #expect(!view.cornersShown)
-    #expect(actions == [.toggleMute, .dismiss])
+    #expect(actions == [.dismiss])
   }
 
   @Test func sidebarSeeksOnlyWithAKnownDurationAndArtworkReturnsToTab() throws {
@@ -300,7 +300,7 @@ import Testing
 
   @Test func sidebarCardBackgroundClicksStayOnTheCard() throws {
     let view = sidebar(state())
-    let hit = view.hitTest(CGPoint(x: 200, y: 30))
+    let hit = view.hitTest(CGPoint(x: 189.5, y: 30))
     #expect(hit === view)
   }
 }

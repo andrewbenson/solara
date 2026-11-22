@@ -221,13 +221,20 @@ struct SidebarPlayerCoverageTests {
     defer { close(window, sidebar) }
     post(CGPoint(x: player.bounds.midX, y: 30), from: player, in: window)
     #expect(player.cornersShown)
+    let restingTitle = player.titleWidth
     let close = try #require(player.controlFrames["close"])
     let mute = try #require(player.controlFrames["mute"])
     #expect(close.size == CGSize(width: 20, height: 20))
-    #expect(mute.size == CGSize(width: 20, height: 20))
+    #expect(mute.size == CGSize(width: 24, height: 24))
+    #expect(player.bounds.contains(mute))
+    #expect(mute.minY > SidebarPlayerView.height / 2)
     #expect(close.maxX == player.bounds.width + 2)
     #expect(close.minY == -2)
-    #expect(close.minX - mute.maxX == 2)
+    RunLoop.main.run(until: Date().addingTimeInterval(0.25))
+    player.layoutSubtreeIfNeeded()
+    let titleEnd = try #require(player.controlFrames["title"]).minX + player.titleWidth
+    #expect(abs(titleEnd - (close.minX - 2)) < 0.5)
+    #expect(player.titleWidth < restingTitle)
     let overhang = CGPoint(x: close.midX, y: close.minY + 1)
     #expect(!player.bounds.contains(overhang))
     #expect(FullScreenIslandCoverage.contains(player.convert(overhang, to: nil), in: window))

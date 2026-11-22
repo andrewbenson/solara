@@ -9,6 +9,7 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
   static let cornerSize: CGFloat = 20
   static let cornerOverhang: CGFloat = 2
   static let cornerGap: CGFloat = 2
+  static let reserveFade: TimeInterval = 0.12
   static let border: CGFloat = 0.5
   public static let gap: CGFloat = 8
   static let dotSize: CGFloat = 8
@@ -44,12 +45,14 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
   private let previous = SidebarIconButton()
   private let play = SidebarIconButton()
   private let next = SidebarIconButton()
-  private let pip = SidebarIconButton()
+  private let muteButton = SidebarIconButton()
   private let seek = SeekBarView()
-  private let muteCorner = MediaCircleButton()
+  private let pipCorner = MediaCircleButton()
   private let closeCorner = MediaCircleButton()
   private var tracking: NSTrackingArea?
-  private var hovered = false { didSet { if hovered != oldValue { needsLayout = true; paintCorners(); onPointer?(hovered) } } }
+  private var hovered = false { didSet { if hovered != oldValue { needsLayout = true; paintCorners(); syncReserve(animated: true); onPointer?(hovered) } } }
+  private var titleReserve: CGFloat = 0
+  private var reserveTimer: Timer?
   private var state: MediaPlayerState?
   private var ticker: Timer?
   private var occlusionWatch: NSObjectProtocol?
@@ -83,26 +86,26 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
     let click = NSClickGestureRecognizer(target: self, action: #selector(textClicked))
     textHit.addGestureRecognizer(click)
     addSubview(textHit)
-    for b in [previous, play, next, pip] {
+    for b in [previous, play, next, muteButton] {
       b.radius = 6
       addSubview(b)
     }
     previous.onPress = { [weak self] in self?.transport(-1) }
     play.onPress = { [weak self] in self?.onAction?(.toggle) }
     next.onPress = { [weak self] in self?.transport(1) }
-    pip.onPress = { [weak self] in
-      guard let self, let state = self.state else { return }
-      self.onAction?(state.inPictureInPicture ? .minimizePictureInPicture : .enterPictureInPicture)
-    }
+    muteButton.onPress = { [weak self] in self?.onAction?(.toggleMute) }
     seek.barHeight = 3
     seek.onSeek = { [weak self] p in
       guard let self, let duration = self.state?.duration else { return }
       self.onAction?(.seek(p * duration))
     }
     addSubview(seek)
-    muteCorner.onPress = { [weak self] in self?.onAction?(.toggleMute) }
+    pipCorner.onPress = { [weak self] in
+      guard let self, let state = self.state else { return }
+      self.onAction?(state.inPictureInPicture ? .minimizePictureInPicture : .enterPictureInPicture)
+    }
     closeCorner.onPress = { [weak self] in self?.onAction?(.dismiss) }
-    for c in [muteCorner, closeCorner] {
+    for c in [pipCorner, closeCorner] {
       c.onHover = { [weak self] _ in
         self?.syncHover()
         self?.paintCorners()
@@ -144,7 +147,7 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
   required init?(coder: NSCoder) { fatalError() }
 
   @objc private func devPointerChanged(_ note: Notification) {
-    pointer(onCard: DevPointer.inside(self, note) || [closeCorner, muteCorner].contains { !$0.isHidden && DevPointer.inside($0, note) })
+    pointer(onCard: DevPointer.inside(self, note) || [closeCorner, pipCorner].contains { !$0.isHidden && DevPointer.inside($0, note) })
   }
 
   @objc private func textClicked() { onAction?(.backToTab) }
@@ -188,20 +191,18 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
     mutedIcon.isHidden = !next.muted
     let tracks = next.tracks
     let skip = MediaFormat.skipSeconds
-    for b in [previous, play, self.next, pip] {
+    for b in [previous, play, self.next, muteButton] {
       b.hoverFill = palette.toolbarHover
       b.pressedFill = palette.toolbarPressed
     }
     previous.set(tracks ? "backward.fill" : "gobackward.\(skip)", size: tracks ? 10 : 12, weight: .regular, color: card.icon, tooltip: tracks ? "Play Previous Track" : "Skip back \(skip) seconds")
     play.set(next.ended ? "arrow.counterclockwise" : next.playing ? "pause.fill" : "play.fill", size: next.ended ? 12 : 13, weight: .regular, color: card.icon, tooltip: next.ended ? "Replay" : next.playing ? "Pause" : "Play")
-    pip.set(next.inPictureInPicture ? "pip.exit" : "pip.enter", size: 12, weight: .regular, color: next.inPictureInPicture ? palette.accent : card.icon,
-      tooltip: next.inPictureInPicture ? Self.minimizeTooltip : Self.enterTooltip)
-    pip.isHidden = !next.offersPictureInPicture
+    muteButton.set(next.muted ? "speaker.slash.fill" : "speaker.wave.2.fill", size: 11, weight: .regular, color: card.icon, tooltip: next.muted ? "Unmute Site" : "Mute Site")
     self.next.set(tracks ? "forward.fill" : "goforward.\(skip)", size: tracks ? 10 : 12, weight: .regular, color: card.icon, tooltip: tracks ? "Play Next Track" : "Skip ahead \(skip) seconds")
     seek.colors = (palette.tokens.track, palette.tokens.fill, palette.tokens.hoverFill)
     seek.seekable = next.hasDuration
     seek.isHidden = !next.hasDuration
-    for c in [muteCorner, closeCorner] {
+    for c in [pipCorner, closeCorner] {
       c.style(fill: palette.panel, border: palette.panelBorder, borderWidth: 0.5, shadow: palette.panelShadowOpacity * 0.5, shadowRadius: 3, shadowOffset: 1)
     }
     paintCorners()
@@ -235,21 +236,56 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
   private func paintCorners() {
     guard let state, let palette = look?.palette else { return }
     func ink(_ c: MediaCircleButton) -> NSColor { c.hovered ? palette.textPrimary : palette.textSecondary }
-    muteCorner.set(state.muted ? "speaker.wave.2.fill" : "speaker.slash.fill", size: 9, weight: .bold, color: ink(muteCorner), box: 13, tooltip: state.muted ? "Unmute Site" : "Mute Site")
+    pipCorner.set(state.inPictureInPicture ? "pip.exit" : "pip.enter", size: 10, weight: .semibold, color: state.inPictureInPicture ? palette.accent : ink(pipCorner), box: 13,
+      tooltip: state.inPictureInPicture ? Self.minimizeTooltip : Self.enterTooltip)
     closeCorner.set("xmark", size: 9, weight: .bold, color: ink(closeCorner), box: 13, tooltip: Self.closeTooltip)
-    muteCorner.isHidden = !hovered || peeking
+    pipCorner.isHidden = !hovered || peeking || !state.offersPictureInPicture
     closeCorner.isHidden = !hovered || peeking
   }
 
   public func setPeeking(_ next: Bool, duration: TimeInterval) {
     guard next != peeking else { return }
     peeking = next
-    let views: [NSView] = [artView, title, mutedIcon, profileDot, subtitle, textHit, previous, play, self.next, pip, seek]
+    let views: [NSView] = [artView, title, mutedIcon, profileDot, subtitle, textHit, previous, play, self.next, muteButton, seek]
     NSAnimationContext.runAnimationGroup { ctx in
       ctx.duration = duration
       for v in views { v.animator().alphaValue = next ? 0 : 1 }
     }
     paintCorners()
+    syncReserve(animated: duration > 0)
+  }
+
+  private var cornersWidth: CGFloat {
+    let size = Self.cornerSize, gap = Self.cornerGap
+    return state?.offersPictureInPicture == true ? size * 2 + gap : size
+  }
+
+  private func syncReserve(animated: Bool) {
+    let pad: CGFloat = 7 + Self.border
+    let target = hovered && !peeking ? max(0, cornersWidth - Self.cornerOverhang - pad + 2) : 0
+    reserveTimer?.invalidate()
+    reserveTimer = nil
+    guard animated, window != nil, target != titleReserve else {
+      titleReserve = target
+      needsLayout = true
+      return
+    }
+    let from = titleReserve
+    let start = CACurrentMediaTime()
+    let timer = Timer(timeInterval: 1.0 / 120, repeats: true) { [weak self] timer in
+      let done = MainActor.assumeIsolated { () -> Bool in
+        guard let self else { return true }
+        let progress = min(1, (CACurrentMediaTime() - start) / Self.reserveFade)
+        self.titleReserve = from + (target - from) * (1 - pow(1 - progress, 3))
+        self.needsLayout = true
+        guard progress >= 1 else { return false }
+        self.reserveTimer = nil
+        return true
+      }
+      if done { timer.invalidate() }
+    }
+    RunLoop.main.add(timer, forMode: .common)
+    reserveTimer = timer
   }
 
   private func retick() {
@@ -295,13 +331,17 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
     watchOcclusion()
     watchAccessibility()
     retick()
-    if window == nil { hovered = false }
+    if window == nil {
+      hovered = false
+      reserveTimer?.invalidate()
+      reserveTimer = nil
+    }
   }
 
   func blocksHover(at point: NSPoint) -> Bool {
     guard let window, !isHiddenOrHasHiddenAncestor, alphaValue > 0 else { return false }
     let local = convert(point, from: nil)
-    guard cardRect.contains(local) || [closeCorner, muteCorner].contains(where: { !$0.isHidden && $0.frame.contains(local) }) else { return false }
+    guard cardRect.contains(local) || [closeCorner, pipCorner].contains(where: { !$0.isHidden && $0.frame.contains(local) }) else { return false }
     guard let frame = window.contentView?.superview, let hit = frame.hitTest(point) else { return true }
     return hit === self || hit.isDescendant(of: self)
   }
@@ -346,7 +386,7 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
     super.viewDidHide()
     pointerInCard = false
     closeCorner.resetHover()
-    muteCorner.resetHover()
+    pipCorner.resetHover()
     syncHover()
     coverageMoved()
   }
@@ -373,7 +413,7 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
   public override func hitTest(_ point: NSPoint) -> NSView? {
     guard !isHidden, alphaValue > 0 else { return nil }
     let local = convert(point, from: superview)
-    for c in [closeCorner, muteCorner] where !c.isHidden && c.frame.contains(local) { return c }
+    for c in [closeCorner, pipCorner] where !c.isHidden && c.frame.contains(local) { return c }
     guard cardRect.contains(local) else { return nil }
     if peeking { return self }
     guard Self.cardPath(width: bounds.width).contains(local) else { return self }
@@ -397,7 +437,7 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
     let textX = pad + 32 + 8
     let textWidth = max(0, width - pad - textX)
     let textTop = pad + (32 - 16 - 14) / 2
-    title.frame = CGRect(x: textX, y: textTop, width: textWidth, height: 16)
+    title.frame = CGRect(x: textX, y: textTop, width: max(0, textWidth - titleReserve), height: 16)
     let muted = state?.muted ?? false
     mutedIcon.frame = CGRect(x: textX, y: textTop + 16 + 1, width: 13, height: 12)
     let afterMute = muted ? textX + 13 : textX
@@ -410,12 +450,11 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
     play.frame = CGRect(x: pad - 4 + 24, y: row, width: 24, height: 24)
     next.frame = CGRect(x: pad - 4 + 48, y: row, width: 24, height: 24)
     let seekX = pad - 4 + 72 + 6
-    let pipRoom: CGFloat = pip.isHidden ? 0 : 24 + 2
-    pip.frame = CGRect(x: width - pad + 4 - 24, y: row, width: 24, height: 24)
-    seek.frame = CGRect(x: seekX, y: row + 6, width: max(0, width - pad - seekX - pipRoom), height: 12)
+    muteButton.frame = CGRect(x: width - pad + 4 - 24, y: row, width: 24, height: 24)
+    seek.frame = CGRect(x: seekX, y: row + 6, width: max(0, width - pad - seekX - 24 - 2), height: 12)
     let size = Self.cornerSize, overhang = Self.cornerOverhang
     closeCorner.frame = CGRect(x: width + overhang - size, y: -overhang, width: size, height: size)
-    muteCorner.frame = CGRect(x: width + overhang - size - Self.cornerGap - size, y: -overhang, width: size, height: size)
+    pipCorner.frame = CGRect(x: width + overhang - size - Self.cornerGap - size, y: -overhang, width: size, height: size)
   }
 
   public override func updateTrackingAreas() {
@@ -436,29 +475,30 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
   }
 
   private func syncHover() {
-    hovered = pointerInCard || closeCorner.hovered || muteCorner.hovered
+    hovered = pointerInCard || closeCorner.hovered || pipCorner.hovered
   }
 
   private func pointerOnCard(_ event: NSEvent) -> Bool {
     guard isHitBy(event) else { return false }
     let local = convert(event.locationInWindow, from: nil)
     if Self.cardPath(width: bounds.width).contains(local) { return true }
-    return [closeCorner, muteCorner].contains { !$0.isHidden && $0.frame.contains(local) }
+    return [closeCorner, pipCorner].contains { !$0.isHidden && $0.frame.contains(local) }
   }
 
 #if SOLARA_PROBES
   public var controlLabels: [String: String] {
     ["play": play.toolTip ?? "", "previous": previous.toolTip ?? "", "next": next.toolTip ?? "",
-      "art": artView.toolTip ?? "", "close": closeCorner.toolTip ?? "", "mute": muteCorner.toolTip ?? "", "pip": pip.isHidden ? "" : pip.toolTip ?? ""]
+      "art": artView.toolTip ?? "", "close": closeCorner.toolTip ?? "", "mute": muteButton.toolTip ?? "", "pip": state?.offersPictureInPicture == true ? pipCorner.toolTip ?? "" : ""]
   }
 #endif
 
   public var controlFrames: [String: CGRect] {
-    var frames = ["play": play.frame, "art": artView.frame, "seek": seek.frame, "close": closeCorner.frame, "mute": muteCorner.frame, "title": textHit.frame]
-    if !pip.isHidden { frames["pip"] = pip.frame }
+    var frames = ["play": play.frame, "art": artView.frame, "seek": seek.frame, "close": closeCorner.frame, "mute": muteButton.frame, "title": textHit.frame]
+    if state?.offersPictureInPicture == true { frames["pip"] = pipCorner.frame }
     return frames
   }
   public var cornersShown: Bool { !closeCorner.isHidden }
+  public var titleWidth: CGFloat { title.frame.width }
   public var tabId: String? { state?.tabId }
   public var subtitleShown: String { subtitle.text }
   public var profileDotShown: Bool { !profileDot.isHidden }

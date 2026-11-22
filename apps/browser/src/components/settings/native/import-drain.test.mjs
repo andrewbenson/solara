@@ -165,7 +165,7 @@ for (const [name, existingCount, newerExisting, expected] of [["room for ten", 4
     const result = await js.handlers["import.run"](runRequest({ kinds: ["history"] }));
     const swift = bridge({ browsers: [chrome] });
     swift.state.history = { existing: existing.slice() };
-    const adopted = swift.handlers["import.adoptHistory"]("existing", imported, now - 90 * 86_400_000);
+    const adopted = swift.handlers["import.adoptHistory"]("existing", imported);
     assert.equal(result.counts.history, expected);
     assert.equal(adopted, expected);
   });

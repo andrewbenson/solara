@@ -40,7 +40,6 @@ final class FakeImportEngine: ImportEngine {
   var steps: [String] = []
   var adoptHistoryAnswer: Int? = nil
   var adoptDeadlines: [TimeInterval] = []
-  var adoptCutoffs: [Double] = []
   var onHistoryWrite: (() -> Void)?
   var adoptHistoryTimesOut = false
   var onAdoptHistory: (() -> Void)?
@@ -137,10 +136,9 @@ final class FakeImportEngine: ImportEngine {
     return workspaceResult
   }
 
-  func adoptHistory(profile: String, rows: [ImportHistoryRow], oldestKept: Double, deadline: TimeInterval) async -> Int? {
+  func adoptHistory(profile: String, rows: [ImportHistoryRow], deadline: TimeInterval) async -> Int? {
     steps.append("adoptHistory")
     adoptDeadlines.append(deadline)
-    adoptCutoffs.append(oldestKept)
     historyWritesAtAdoption.append(historyWrites.count)
     historyAdoptions.append((profile, rows))
     onAdoptHistory?()
@@ -791,19 +789,17 @@ struct ImportRunTests {
     #expect(ImportHistory.distinctCount(usable) == 2)
   }
 
-  @Test func historyOlderThanTheEngineKeepsIsLeftOutAndUntitledRowsStay() {
+  @Test func historyOfAnyAgeIsKeptAndOnlyTheSchemeIsFiltered() {
     let now = Date(timeIntervalSince1970: 1_800_000_000)
     let day = 86_400_000.0
     let at = now.timeIntervalSince1970 * 1000
     let rows = [
-      ImportHistoryRow(url: "https://boundary.test/", title: "Boundary", visits: 1, lastVisit: at - 90 * day),
-      ImportHistoryRow(url: "https://inside.test/", title: "Inside", visits: 1, lastVisit: at - 90 * day + 1),
       ImportHistoryRow(url: "https://recent.test/", title: "Recent", visits: 3, lastVisit: at - 89 * day),
-      ImportHistoryRow(url: "https://expired.test/", title: "Expired", visits: 9, lastVisit: at - 91 * day),
+      ImportHistoryRow(url: "https://old.test/", title: "Old", visits: 9, lastVisit: at - 400 * day),
       ImportHistoryRow(url: "https://untitled.test/", title: "", visits: 1, lastVisit: at - 3_600_000),
+      ImportHistoryRow(url: "ftp://files.test/", title: "Files", visits: 1, lastVisit: at - 3_600_000),
     ]
-    #expect(ImportHistory.usable(rows, now: now).map(\.url) == ["https://inside.test/", "https://recent.test/", "https://untitled.test/"])
-    #expect(ImportHistory.oldestKept(now) == at - 90 * day)
+    #expect(ImportHistory.usable(rows).map(\.url) == ["https://recent.test/", "https://old.test/", "https://untitled.test/"])
   }
 
   @Test func faviconsAndHistoryRunInTheJSOrder() async {
@@ -895,16 +891,12 @@ struct ImportRunTests {
     #expect(await settled(runs))
   }
 
-  @Test func theAdoptGetsTheRowsDeadlineAndTheCutoffItsRowsWereFilteredWith() async {
+  @Test func theAdoptGetsTheRowsDeadline() async {
     let (runs, engine, script, session) = setup()
     runs.darkRoute = true
     engine.reads["Default"] = .success(FakeImportEngine.read(history: FakeImportEngine.historyRows))
-    let before = Date().timeIntervalSince1970 * 1000 - ImportHistory.engineKeepsMs
     _ = await runs.run(request([.history]), session: session, engine: engine, script: script, scriptSession: 1)
-    let after = Date().timeIntervalSince1970 * 1000 - ImportHistory.engineKeepsMs
     #expect(engine.adoptDeadlines == [ImportHistory.adoptDeadline(rows: 3)])
-    #expect(engine.adoptCutoffs.count == 1)
-    #expect(engine.adoptCutoffs.allSatisfy { $0 >= before && $0 <= after })
   }
 
   @Test func faviconsAreAdoptedBeforeBookmarksArePlaced() async {

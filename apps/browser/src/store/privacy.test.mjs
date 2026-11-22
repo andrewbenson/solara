@@ -304,18 +304,18 @@ test("queued profile data is deleted once, and stays queued in session.json unti
   again();
 });
 
-test("imported history older than the engine keeps is neither shown nor written", () => {
+test("imported history of any age is shown and written, untitled rows included", () => {
   S().hydrate({});
   stub.historyDbs.clear();
   const DAY = 24 * HOUR;
   const now = Date.now();
   const added = S().importHistory("default", [
     { url: "https://recent.example/", title: "Recent", visits: 3, lastVisit: now - 89 * DAY },
-    { url: "https://expired.example/", title: "Expired", visits: 9, lastVisit: now - 91 * DAY },
+    { url: "https://old.example/", title: "Old", visits: 9, lastVisit: now - 400 * DAY },
     { url: "https://untitled.example/", title: "", visits: 1, lastVisit: now - HOUR },
   ]);
-  assert.equal(added, 2);
-  const kept = ["https://recent.example/", "https://untitled.example/"];
+  assert.equal(added, 3);
+  const kept = ["https://old.example/", "https://recent.example/", "https://untitled.example/"];
   assert.deepEqual(S().history.default.map((h) => h.url).sort(), kept);
   assert.deepEqual([...stub.chromeHistory("").keys()].sort(), kept);
 });
@@ -337,14 +337,11 @@ test("deleting a profile keeps the data others share", () => {
   assert.equal(S().bookmarks.nodes[bookmark], undefined);
 });
 
-test("adopting imported history uses the cutoff Swift filtered with, not a later one", () => {
+test("adopting imported history keeps rows of any age", () => {
   S().hydrate({});
-  const now = Date.now();
-  const cutoff = now - 90 * 86_400_000;
-  S().adoptImportedHistory("default", [{ url: "https://edge.test/", title: "Edge", visits: 1, lastVisit: cutoff + 1 }], cutoff);
-  assert.deepEqual(S().history.default.map((h) => h.url), ["https://edge.test/"]);
-  S().adoptImportedHistory("default", [{ url: "https://late.test/", title: "Late", visits: 1, lastVisit: cutoff + 1 }], now);
-  assert.deepEqual(S().history.default.map((h) => h.url), ["https://edge.test/"]);
+  const old = Date.now() - 400 * 86_400_000;
+  assert.equal(S().adoptImportedHistory("default", [{ url: "https://old.test/", title: "Old", visits: 1, lastVisit: old }]), 1);
+  assert.deepEqual(S().history.default.map((h) => h.url), ["https://old.test/"]);
 });
 
 test("adopting imported history counts new URLs once, keeps http(s) and file rows, and writes nothing to the engine", async () => {

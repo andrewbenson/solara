@@ -36,11 +36,9 @@ public struct ImportFaviconRow: Sendable, Equatable, CustomStringConvertible, Cu
 
 public enum ImportHistory {
   nonisolated(unsafe) static let pattern = try! NSRegularExpression(pattern: "^(https?|file):")
-  public static let engineKeepsMs: Double = 90 * 86_400_000
 
-  public static func usable(_ rows: [ImportHistoryRow], now: Date = Date()) -> [ImportHistoryRow] {
-    let oldestKept = oldestKept(now)
-    return rows.filter { $0.lastVisit > oldestKept && pattern.firstMatch(in: $0.url, range: NSRange(location: 0, length: ($0.url as NSString).length)) != nil }
+  public static func usable(_ rows: [ImportHistoryRow]) -> [ImportHistoryRow] {
+    rows.filter { pattern.firstMatch(in: $0.url, range: NSRange(location: 0, length: ($0.url as NSString).length)) != nil }
   }
 
   public static let adoptDeadlineCap: TimeInterval = 10
@@ -51,8 +49,6 @@ public enum ImportHistory {
   }
 
   public static let storeKeeps = 5000
-
-  public static func oldestKept(_ now: Date) -> Double { now.timeIntervalSince1970 * 1000 - engineKeepsMs }
 
   public static func fallbackCount(_ rows: [ImportHistoryRow]) -> Int { min(distinctCount(rows), storeKeeps) }
 

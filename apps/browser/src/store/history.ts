@@ -13,12 +13,11 @@ export type HistorySlice = {
   removeHistory(profileId: string, urls: string[]): void;
   clearHistory(profileId: string, since?: number): void;
   importHistory(profileId: string, entries: Omit<HistoryEntry, "favicon">[], onPending?: (pending: Promise<unknown>) => void): number;
-  adoptImportedHistory(profileId: string, entries: Omit<HistoryEntry, "favicon">[], oldestKept?: number): number;
+  adoptImportedHistory(profileId: string, entries: Omit<HistoryEntry, "favicon">[]): number;
 };
 
 export const MAX_HISTORY = 5000;
 export const MAX_VISIT_TIMES = 50;
-export const ENGINE_KEEPS_HISTORY_MS = 90 * 86_400_000;
 
 function withoutVisitsSince(entry: HistoryEntry, since: number): HistoryEntry | null {
   if (entry.lastVisit < since) return entry;
@@ -30,13 +29,11 @@ function withoutVisitsSince(entry: HistoryEntry, since: number): HistoryEntry | 
 
 const failed = (what: string) => (error: unknown) => console.warn(`[history] ${what}`, error);
 
-const importable = (entries: Omit<HistoryEntry, "favicon">[], oldestKept = Date.now() - ENGINE_KEEPS_HISTORY_MS) => {
-  return entries.filter((e) => /^(https?|file):/.test(e.url) && e.lastVisit > oldestKept);
-};
+const importable = (entries: Omit<HistoryEntry, "favicon">[]) => entries.filter((e) => /^(https?|file):/.test(e.url));
 
-function adoptRows(set: Parameters<StateCreator<BrowserState, [], [], HistorySlice>>[0], profileId: string, entries: Omit<HistoryEntry, "favicon">[], oldestKept?: number): number {
+function adoptRows(set: Parameters<StateCreator<BrowserState, [], [], HistorySlice>>[0], profileId: string, entries: Omit<HistoryEntry, "favicon">[]): number {
   if (isIncognitoProfile(profileId)) return 0;
-  const rows = importable(entries, oldestKept);
+  const rows = importable(entries);
   let added = 0;
   set((s) => {
     const byUrl = new Map((s.history[profileId] ?? []).map((h) => [h.url, h]));
@@ -72,8 +69,8 @@ export const createHistorySlice: StateCreator<BrowserState, [], [], HistorySlice
     return added;
   },
 
-  adoptImportedHistory(profileId, entries, oldestKept) {
-    return adoptRows(set, profileId, entries, oldestKept);
+  adoptImportedHistory(profileId, entries) {
+    return adoptRows(set, profileId, entries);
   },
 
   clearHistory(profileId, since) {

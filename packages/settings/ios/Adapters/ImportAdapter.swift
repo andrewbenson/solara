@@ -383,8 +383,8 @@ final class ImportRunEngine: ImportEngine {
     rows.map { ["url": $0.url, "title": $0.title, "visits": $0.visits, "lastVisit": $0.lastVisit] }
   }
 
-  func adoptHistory(profile: String, rows: [ImportHistoryRow], oldestKept: Double, deadline: TimeInterval) async -> Int? {
-    guard let reply = try? await SettingsJS.shared.invoke("import.adoptHistory", [profile, Self.historyPayload(rows), oldestKept], timeout: Self.adoptTimeout(deadline)) else { return nil }
+  func adoptHistory(profile: String, rows: [ImportHistoryRow], deadline: TimeInterval) async -> Int? {
+    guard let reply = try? await SettingsJS.shared.invoke("import.adoptHistory", [profile, Self.historyPayload(rows)], timeout: Self.adoptTimeout(deadline)) else { return nil }
     return (reply as? NSNumber)?.intValue
   }
 

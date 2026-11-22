@@ -387,9 +387,9 @@ export const importHandlers: Record<string, SettingsHandler> = {
   },
   "import.safariFullDiskAccess": () => importModule()?.safariHasFullDiskAccess() ?? false,
   "import.isUnlocked": (browserId: string) => importModule()?.isBrowserUnlocked(browserId) ?? false,
-  "import.adoptHistory": (profileId: string, rows: { url: string; title: string; visits: number; lastVisit: number }[], oldestKept?: number) => {
+  "import.adoptHistory": (profileId: string, rows: { url: string; title: string; visits: number; lastVisit: number }[]) => {
     const before = useBrowser.getState().history[profileId]?.length ?? 0;
-    useBrowser.getState().adoptImportedHistory(profileId, Array.isArray(rows) ? rows : [], typeof oldestKept === "number" ? oldestKept : undefined);
+    useBrowser.getState().adoptImportedHistory(profileId, Array.isArray(rows) ? rows : []);
     return (useBrowser.getState().history[profileId]?.length ?? 0) - before;
   },
   "import.adoptFavicons": (profileId: string, favicons: { page: string; icon: string; png: string }[]) => {

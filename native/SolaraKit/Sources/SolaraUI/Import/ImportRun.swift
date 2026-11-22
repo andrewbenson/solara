@@ -110,7 +110,7 @@ public protocol ImportEngine: AnyObject {
   func submitBookmarks(profile: String, mutations: [BookmarkMutation]) async throws
   func reportBookmarkFailure()
   func importWorkspace(profile: String, windows: [JSONValue]) -> Int?
-  func adoptHistory(profile: String, rows: [ImportHistoryRow], oldestKept: Double, deadline: TimeInterval) async -> Int?
+  func adoptHistory(profile: String, rows: [ImportHistoryRow], deadline: TimeInterval) async -> Int?
   func importHistory(engineProfile: String, rows: [ImportHistoryRow]) async
   func adoptFavicons(profile: String, favicons: [ImportFaviconRow]) async
   func storeFavicons(engineProfile: String, favicons: [ImportFaviconRow]) async
@@ -512,9 +512,7 @@ final class ImportRunner {
       if !read.history.isEmpty {
         runs.traceStep("history")
         if !engine.isPrivateProfile(destination) {
-          let now = Date()
-          let rows = ImportHistory.usable(read.history, now: now)
-          let oldestKept = ImportHistory.oldestKept(now)
+          let rows = ImportHistory.usable(read.history)
           if !rows.isEmpty {
             let historyEngine = engine.engineProfile(destination)
             let write = runs.track { [engine] in await engine.importHistory(engineProfile: historyEngine, rows: rows) }
@@ -524,7 +522,7 @@ final class ImportRunner {
           #if DEBUG
           let adoptStarted = ContinuousClock.now
           #endif
-          let added = await engine.adoptHistory(profile: destination, rows: rows, oldestKept: oldestKept, deadline: ImportHistory.adoptDeadline(rows: rows.count))
+          let added = await engine.adoptHistory(profile: destination, rows: rows, deadline: ImportHistory.adoptDeadline(rows: rows.count))
           #if DEBUG
           engine.log("[import] history adopt rows=\(rows.count) took=\(ContinuousClock.now - adoptStarted)")
           #endif

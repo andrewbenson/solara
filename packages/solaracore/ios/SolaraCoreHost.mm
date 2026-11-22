@@ -929,6 +929,7 @@ static void StartEarlyWindow() {
       "--user-data-dir=" + std::string(gDataDirectory.UTF8String),
       "--enable-smooth-scrolling",
       "--disable-stack-profiler",
+      "--keep-old-history",
       std::string("--disable-features=MacAppCodeSignClone,DevToolsAcceptDebuggingConnections") +
           (biometricsCheckPerTab ? "" : ",AutofillAiWalletPrivatePasses") +
           (freezeLeastRecentTabs ? "" : ",InfiniteTabsFreezing"),

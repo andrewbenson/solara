@@ -236,7 +236,7 @@ public final class SidebarPlayerView: NSView, PointerCoverage {
   private func paintCorners() {
     guard let state, let palette = look?.palette else { return }
     func ink(_ c: MediaCircleButton) -> NSColor { c.hovered ? palette.textPrimary : palette.textSecondary }
-    pipCorner.set(state.inPictureInPicture ? "pip.exit" : "pip.enter", size: 10, weight: .semibold, color: state.inPictureInPicture ? palette.accent : ink(pipCorner), box: 13,
+    pipCorner.set(state.inPictureInPicture ? "pip.exit" : "arrow.up.left.and.arrow.down.right", size: 10, weight: .semibold, color: state.inPictureInPicture ? palette.accent : ink(pipCorner), box: 13,
       tooltip: state.inPictureInPicture ? Self.minimizeTooltip : Self.enterTooltip)
     closeCorner.set("xmark", size: 9, weight: .bold, color: ink(closeCorner), box: 13, tooltip: Self.closeTooltip)
     pipCorner.isHidden = !hovered || peeking || !state.offersPictureInPicture

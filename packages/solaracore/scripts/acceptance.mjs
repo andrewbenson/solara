@@ -62,7 +62,7 @@ const usesPageA = [
   "extension-prompts", "extension-prompt-closed", "extension-sheet-native", "traffic-lights-after-profile-switch", "extension-configure",
   "private-windows-create", "extension-installed-bubble", "popup-window", "popup-window-permission", "popup-origin-strip", "autofill-save-prompts",
   "settings-services", "download-navigation", "page-events", "page-background", "appearance-reaches-pages", "external-app-answer",
-  "notifications", "now-playing", "media-state", "auto-picture-in-picture", "pip-window", "page-focus", "page-press-split",
+  "notifications", "now-playing", "media-state", "auto-picture-in-picture", "pip-takeover-profiles", "pip-window", "page-focus", "page-press-split",
   "fullscreen-tab-switch", "fullscreen-native", "escape-in-window-fullscreen", "fullscreen-transition-picture", "fullscreen-hidden-page", "fullscreen-split-sibling",
   "fullscreen-pip", "pip-fullscreen-space", "pip-keep-on-top-reopen", "webkit-picture-in-picture", "pip-document-back-to-tab", "autofill-suggestions", "images", "extension-surfaces", "frozen", "discard",
   "permission-prompt", "popup-blocked", "move-tab-slow-mount", "move-last-tab-slow-mount",
@@ -6216,6 +6216,43 @@ try {
     }
     await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
     return results;
+  });
+
+  await check("pip-takeover-profiles", async () => {
+    const paused = async (t) => (await cdp(t, "Runtime.evaluate", { expression: "document.getElementById('v').paused", returnByValue: true })).result?.value;
+    const home = (await state()).profileId;
+    const holder = await openTab(`${secureBase}/video?auto&file&holder`, "Video");
+    let other = null, rest = null, taker = null;
+    try {
+      const holderPage = await startVideo(holder.id, true);
+      await until("the holder playing audio", async () => (await live(holder.id))?.playingAudio === true, 8000);
+      await sleep(300);
+      await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
+      await until("the holder's auto PiP", async () => lastEvent(holder.id, "pictureInPicture", (p) => p.kind === "video" && p.active), 8000);
+      other = await evalApp(`return ac.store.getState().createProfile({ name: "Takeover" })`);
+      await evalApp(`ac.actions.switchProfile("${mainWindow}", "${other}"); return true`);
+      await until("the second profile shown", async () => (await state()).profileId === other);
+      rest = await openTab(`${base}/b?takeover-rest`, "Page B");
+      taker = await openTab(`${secureBase}/video?auto&file&taker`, "Video");
+      const takerPage = await startVideo(taker.id, true);
+      await until("the taker playing audio", async () => (await live(taker.id))?.playingAudio === true, 8000);
+      await sleep(300);
+      await evalApp(`ac.actions.switchToTab("${rest.id}"); return true`);
+      const took = await until("the taker's auto PiP", async () => lastEvent(taker.id, "pictureInPicture", (p) => p.kind === "video" && p.active), 8000);
+      const left = await until("the holder's PiP closed", async () => lastEvent(holder.id, "pictureInPicture", (p) => p.kind === "video" && !p.active), 5000);
+      await sleep(500);
+      const out = { took: took.payload, left: left.payload, holderPaused: await paused(holderPage), takerPaused: await paused(takerPage) };
+      if (out.holderPaused !== true || out.takerPaused !== false) throw new Error(JSON.stringify(out));
+      return out;
+    } finally {
+      if (taker) await evalApp(`return ac.webviews.get("${taker.id}").exitPictureInPicture()`).catch(() => null);
+      await evalApp(`return ac.webviews.get("${holder.id}").exitPictureInPicture()`).catch(() => null);
+      for (const tab of [taker, rest]) if (tab) await closeTab(tab.id).catch(() => null);
+      if (other) await evalApp(`ac.actions.switchProfile("${mainWindow}", "${home}"); return true`).catch(() => null);
+      await until("the first profile back", async () => (await state()).profileId === home).catch(() => null);
+      await closeTab(holder.id).catch(() => null);
+      await evalApp(`ac.actions.switchToTab("${first.id}"); return true`).catch(() => null);
+    }
   });
 
   await check("pip-fullscreen-space", async () => {

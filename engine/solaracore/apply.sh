@@ -719,6 +719,82 @@ hook(["bool g_solara_prompts_without_tab = false;\n",
       "  if (!web_contents && g_solara_prompts_without_tab) {\n"], edit, HOOKS)
 PY
 
+hook "$src/chrome/browser/picture_in_picture/auto_picture_in_picture_tab_helper.cc" "auto picture-in-picture takes the window over" <<'PY'
+decl_old = """using OcclusionState =
+    AutoPictureInPictureWindowOcclusionHelperBase::OcclusionState;
+"""
+decl_new = """namespace {
+// Solara: SolaraCore: set only while MaybeEnterAutoPictureInPicture asks, so the most recent qualifying tab takes the
+// PiP window over (a video PiP always, a document PiP only while its tab captures no camera, mic, tab, window or
+// screen); every other eligibility question still sees an open PiP as blocking.
+bool g_solara_taking_over_picture_in_picture = false;
+
+bool SolaraMayTakeOverPictureInPicture(content::WebContents* holder,
+                                       content::WebContents* contents) {
+  if (!g_solara_taking_over_picture_in_picture || holder == contents) {
+    return false;
+  }
+  if (!PictureInPictureWindowManager::GetInstance()->GetChildWebContents()) {
+    return true;
+  }
+  MediaStreamCaptureIndicator* indicator =
+      MediaCaptureDevicesDispatcher::GetInstance()
+          ->GetMediaStreamCaptureIndicator()
+          .get();
+  return !indicator->IsCapturingUserMedia(holder) &&
+         !indicator->IsCapturingTab(holder) &&
+         !indicator->IsCapturingWindow(holder) &&
+         !indicator->IsCapturingDisplay(holder);
+}
+}  // namespace
+
+""" + decl_old
+check_old = """  if (PictureInPictureWindowManager::GetInstance()->GetWebContents() !=
+      nullptr) {
+    return false;
+  }
+"""
+check_new = """  // Solara: SolaraCore (the PiP window may be taken over; see SolaraMayTakeOverPictureInPicture)
+  if (content::WebContents* holder =
+          PictureInPictureWindowManager::GetInstance()->GetWebContents();
+      holder && !SolaraMayTakeOverPictureInPicture(holder, web_contents())) {
+    return false;
+  }
+"""
+check_after_old = """  // Since nobody has a pip window, we shouldn't think we do.
+  CHECK(!is_in_picture_in_picture_);
+"""
+enter_old = """void AutoPictureInPictureTabHelper::MaybeEnterAutoPictureInPicture() {
+  if (!IsEligibleForAutoPictureInPicture(
+          /*should_record_blocking_metrics=*/true)) {
+"""
+enter_new = """void AutoPictureInPictureTabHelper::MaybeEnterAutoPictureInPicture() {
+  // Solara: SolaraCore (take the PiP window over from another tab)
+  g_solara_taking_over_picture_in_picture = true;
+  const bool solara_eligible = IsEligibleForAutoPictureInPicture(
+      /*should_record_blocking_metrics=*/true);
+  g_solara_taking_over_picture_in_picture = false;
+  if (content::WebContents* holder =
+          PictureInPictureWindowManager::GetInstance()->GetWebContents();
+      solara_eligible && holder) {
+    if (PictureInPictureWindowManager::GetInstance()->GetChildWebContents()) {
+      content::MediaSession::Get(holder)->Suspend(
+          content::MediaSession::SuspendType::kUI);
+    }
+    PictureInPictureWindowManager::GetInstance()->ExitPictureInPictureViaWindowUi(
+        PictureInPictureWindowManager::UiBehavior::kCloseWindowAndPauseVideo);
+  }
+  if (!solara_eligible) {
+"""
+def edit(s):
+    for old in (decl_old, check_old, check_after_old, enter_old):
+        assert s.count(old) == 1, old
+    return s.replace(decl_old, decl_new).replace(check_old, check_new).replace(enter_old, enter_new)
+hook(["bool g_solara_taking_over_picture_in_picture = false;\n",
+      "      holder && !SolaraMayTakeOverPictureInPicture(holder, web_contents())) {\n",
+      "  g_solara_taking_over_picture_in_picture = true;\n"], edit)
+PY
+
 hook "$src/chrome/browser/picture_in_picture/auto_picture_in_picture_tab_strip_observer_helper.h" "auto picture-in-picture's tab strip observer (header)" <<'PY'
 old = """ private:
   void UpdateIsTabActivated(const TabStripModel* tab_strip_model);

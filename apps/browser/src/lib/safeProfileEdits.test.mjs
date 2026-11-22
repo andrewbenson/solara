@@ -50,9 +50,9 @@ const edits = [
 ];
 
 for (const safeMode of ["option", "failedLaunches"]) {
-  for (const scope of [null, "settingsAndDownloads", "everything"]) {
-    test(`safe profile edits are visibly refused without mutation or native writes: ${safeMode}, ${scope}`, () => {
-      status = { active: scope !== null, scope, safeMode };
+  for (const active of [false, true]) {
+    test(`safe profile edits are visibly refused without mutation or native writes: ${safeMode}, active=${active}`, () => {
+      status = { active, safeMode };
       startNativeStore();
       const store = fixture();
       attachReplica(store);

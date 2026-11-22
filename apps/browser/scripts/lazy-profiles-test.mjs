@@ -114,7 +114,7 @@ const fixtureSession = (eager) => session({
   settings: { loadAllProfilesAtLaunch: eager, warnBeforeClosingLastTab: false, warnBeforeClosingWindow: false, cliControl: false },
 });
 
-const warmupEnv = { SOLARA_NATIVE_SCOPE: "everything", SOLARA_NATIVE_SHELL: "1", SOLARA_SHELL_PANES: "1", SOLARA_NATIVE_PAGES_POOL: "1", SOLARA_TAB_POOL: "1" };
+const warmupEnv = { SOLARA_NATIVE_SHELL: "1", SOLARA_SHELL_PANES: "1", SOLARA_NATIVE_PAGES_POOL: "1", SOLARA_TAB_POOL: "1" };
 const env = { ...warmupEnv, SOLARA_PROFILE_WARMUP: "0" };
 let app = null;
 

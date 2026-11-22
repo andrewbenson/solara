@@ -129,7 +129,6 @@ import Testing
     for (status, reason) in [
       (AppIntegrationStoreStatus.opening, "still opening"),
       (.failed("database refused"), "failed to open: database refused"),
-      (.notOwned, "not owned because settingsAndDownloads is scoped off"),
     ] {
       let report = AppDiagnostics.report(app: app, chromiumVersion: "156", updates: UpdaterFacts(available: true), state: nil, storeStatus: status)
       #expect(report.contains("store: not open\n\(reason)"))

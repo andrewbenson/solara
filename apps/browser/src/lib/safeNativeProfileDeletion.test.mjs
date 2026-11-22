@@ -5,7 +5,7 @@ import { test } from "node:test";
 const sent = [];
 globalThis.acTestNativeModules = {
   SolaraStoreAdapter: {
-    status: () => ({ active: true, scope: "everything", safeMode: "option" }),
+    status: () => ({ active: true, safeMode: "option" }),
     dispatch: (json) => { sent.push(...[JSON.parse(json)].flat()); return JSON.stringify({ rev: 0 }); },
     addListener: () => ({ remove() {} }),
   },

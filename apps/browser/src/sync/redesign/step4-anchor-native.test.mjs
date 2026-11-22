@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 const nativeAnchor = { value: null, writes: 0, supported: true };
 const storeFake = {
-  status: () => ({ active: true, scope: process.env.ANCHOR_SCOPE ?? "settingsAndDownloads" }),
+  status: () => ({ active: true }),
   snapshot: () => JSON.stringify({ rev: 0, data: { settings: null, downloads: [] } }),
   dispatch: () => JSON.stringify({ rev: 0, patches: [] }),
   catchUp: () => null,
@@ -20,6 +20,7 @@ const nativeStore = await import(R + "store/nativeStore.ts");
 const host = await import(R + "sync/journalHost.ts");
 const h = (ms) => `${ms.toString(36).padStart(9, "0")}.0000.dev1`;
 const flushMicrotasks = () => new Promise((r) => setImmediate(r));
+assert.ok(nativeStore.startNativeStore().active, "control: the native store is active");
 
 function fresh() {
   shell.docs.clear();
@@ -27,21 +28,6 @@ function fresh() {
   nativeAnchor.writes = 0;
   host.forgetEditJournal();
 }
-
-test("ANCHOR-split: settings keys go to the native store's anchor, profile and pin keys stay in session.json", fixedBy("step 4"), () => {
-  assert.ok(nativeStore.startNativeStore().active, "control: the native store is active");
-  if (nativeStore.nativeOwnsWorkspace()) return;
-  fresh();
-  host.editJournal().record("app", "set:x", { v: 1, h: h(1000), seen: null });
-  host.noteSeen("app", "set:theme", ["B", 2]);
-  host.noteSeen("app", "prof:abc", ["B", 3]);
-  const native = JSON.parse(nativeAnchor.value);
-  assert.deepEqual(Object.keys(native.everSeen.scopes.app), ["set:theme"]);
-  assert.equal(native.journalG, 1);
-  const session = host.journalAnchor();
-  assert.deepEqual(Object.keys(session.everSeen.scopes.app), ["prof:abc"]);
-  assert.equal(session.journalG, 1);
-});
 
 test("ANCHOR-reload: both halves read back together after a relaunch", fixedBy("step 4"), () => {
   fresh();
@@ -68,28 +54,13 @@ test("ANCHOR-lost-by-either: a journal below the native anchor's g is lost even 
   assert.equal(host.editJournal().lost, true);
 });
 
-test("ANCHOR-kill-between: a kill after the native anchor was written but before session.json was keeps each half consistent with its own items", fixedBy("step 4"), () => {
-  if (nativeStore.nativeOwnsWorkspace()) return;
-  fresh();
-  host.editJournal();
-  host.noteSeen("app", "prof:old", ["B", 1]);
-  shell.docs.set("session.json", JSON.stringify({ version: 2, ...host.journalAnchor() }));
-  host.noteSeen("app", "set:new", ["B", 2]);
-  host.noteSeen("app", "prof:new", ["B", 3]);
-  host.forgetEditJournal();
-  assert.deepEqual(host.seenOrigin("app", "set:new"), ["B", 2], "the native half landed with its settings");
-  assert.deepEqual(host.seenOrigin("app", "prof:old"), ["B", 1], "session.json's half is its last write");
-  assert.equal(host.seenOrigin("app", "prof:new"), undefined, "and the profile noted after it is lost with that profile's own write");
-});
-
 test("ANCHOR-seed: the first launch on the native store moves settings keys from session.json into the native anchor", fixedBy("step 4"), async () => {
   fresh();
   shell.docs.set("session.json", JSON.stringify({ version: 2, everSeen: { devices: ["B"], scopes: { app: { "set:theme": [0, 2], "prof:p": [0, 3] } } } }));
   host.editJournal();
   host.seenOrigin("app", "set:theme");
   await flushMicrotasks();
-  const expected = nativeStore.nativeOwnsWorkspace() ? ["prof:p", "set:theme"] : ["set:theme"];
-  assert.deepEqual(Object.keys(JSON.parse(nativeAnchor.value).everSeen.scopes.app).sort(), expected);
+  assert.deepEqual(Object.keys(JSON.parse(nativeAnchor.value).everSeen.scopes.app).sort(), ["prof:p", "set:theme"]);
 });
 
 test("ANCHOR-guard-lifted: with the native anchor in place, a lost journal uses the normal fallback", fixedBy("step 4"), () => {
@@ -101,32 +72,13 @@ test("ANCHOR-guard-lifted: with the native anchor in place, a lost journal uses 
   assert.equal(host.editJournal().fallback, "union");
 });
 
-test("ANCHOR-everything: when the native store owns the workspace, every key's anchor is in the native store", fixedBy("step 4"), () => {
-  if (!nativeStore.nativeOwnsWorkspace()) return;
+test("ANCHOR-everything: every key's anchor is in the native store", fixedBy("step 4"), () => {
   fresh();
   host.editJournal();
   host.noteSeen("app", "set:theme", ["B", 2]);
   host.noteSeen("app", "prof:abc", ["B", 3]);
   assert.deepEqual(Object.keys(JSON.parse(nativeAnchor.value).everSeen.scopes.app).sort(), ["prof:abc", "set:theme"]);
   assert.equal(host.journalAnchor().everSeen, undefined);
-});
-
-test("ANCHOR-T-both: union only when both files were saved after T; a native half saved before T means nothing", fixedBy("step 4"), () => {
-  if (nativeStore.nativeOwnsWorkspace()) return;
-  const quiet = (vv) => ({ app: { unapplied: [], pending: 0, damaged: {}, outbox: [], vv } });
-  fresh();
-  const j = host.editJournal();
-  j.record("app", "set:a", { v: 1, h: h(1000), seen: null });
-  host.noteSeen("app", "set:a", ["B", 1]);
-  const nativeBeforeT = nativeAnchor.value;
-  host.noteInStep(quiet({ B: 1 }), 10_000);
-  shell.docs.set("session.json", JSON.stringify({ version: 2, ...host.journalAnchor() }));
-  shell.docs.set("sync-edits.json", "{broken");
-  host.forgetEditJournal();
-  assert.equal(host.editJournal().fallback, "union", "control: both halves saved after T");
-  nativeAnchor.value = nativeBeforeT;
-  host.forgetEditJournal();
-  assert.equal(host.editJournal().fallback, "nothing", "the native half predates T");
 });
 
 test("ANCHOR-T-rises: after a loss lowers the native half's T, the next in-step cycle raises both halves again, so union comes back", fixedBy("step 4"), () => {
@@ -170,7 +122,6 @@ test("ANCHOR-g-stale: a command's g++ reaches the native anchor, so the journal 
   const old = [shell.docs.get("sync-edits.json"), shell.docs.get("sync-edits.gen")];
   j.record("app", "set:b", { v: 2, h: h(2000), seen: null });
   j.record("app", "set:c", { v: 3, h: h(3000), seen: null });
-  if (!nativeStore.nativeOwnsWorkspace()) shell.docs.set("session.json", JSON.stringify({ version: 2, ...host.journalAnchor() }));
   const anchorG = JSON.parse(nativeAnchor.value).journalG ?? 0;
   shell.docs.set("sync-edits.json", old[0]);
   shell.docs.set("sync-edits.gen", old[1]);

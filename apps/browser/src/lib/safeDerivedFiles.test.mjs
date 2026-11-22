@@ -55,7 +55,7 @@ for (const safeMode of ["option", "failedLaunches"]) {
   for (const active of [false, true]) {
     for (const existing of [false, true]) {
       test(`safe bookmarks never write the cache: ${safeMode}, active=${active}, existing=${existing}`, async (t) => {
-        nativeStatus = { active, scope: "settingsAndDownloads", safeMode };
+        nativeStatus = { active, safeMode };
         startNativeStore();
         if (existing) docs.set("bookmarks-cache.json", "saved cache");
         else docs.delete("bookmarks-cache.json");

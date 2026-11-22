@@ -12,7 +12,7 @@ let reply;
 const sent = [];
 globalThis.acTestNativeModules = {
   SolaraStoreAdapter: {
-    status: () => ({ active: true, scope: "everything" }),
+    status: () => ({ active: true }),
     dispatch: (json) => {
       sent.push(...[JSON.parse(json)].flat());
       return JSON.stringify(reply ?? { rev, patches: [] });

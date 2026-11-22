@@ -7,7 +7,7 @@ const fake = {
   rev: 0,
   settings: null,
   choose: null,
-  status: () => ({ active: true, scope: "settingsAndDownloads" }),
+  status: () => ({ active: true }),
   snapshot() {
     return JSON.stringify({ rev: this.rev, data: { settings: this.settings, downloads: [] } });
   },

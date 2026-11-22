@@ -45,7 +45,7 @@ import Testing
   @Test func distributionOffOverridesCannotReviveJS() {
     let defaults = scratchDefaults()
     defaults.set("0", forKey: "SOLARA_NATIVE_BOOKMARKS")
-    for environment in [[:], ["SOLARA_NATIVE_BOOKMARKS": "0"], ["SOLARA_NATIVE_BOOKMARKS": "1", "SOLARA_NATIVE_SCOPE": "settings"]] {
+    for environment in [[:], ["SOLARA_NATIVE_BOOKMARKS": "0"], ["SOLARA_NATIVE_BOOKMARKS": "1"]] {
       let switches = LaunchSwitches(environment: environment, defaults: defaults, distribution: true, skipStored: false)
       #expect(switches.isOn(.nativeBookmarks))
       #expect(!switches.fromEnvironment(.nativeBookmarks))
@@ -253,11 +253,10 @@ import Testing
     }
   }
 
-  @Test func theShippedSurfacesInDistributionAndTheScopeAreNeverReadFromDefaults() {
+  @Test func theShippedSurfacesInDistributionAreNeverReadFromDefaults() {
     let defaults = scratchDefaults()
     #expect(Self.shippedSurfaces.contains(.shellMainTop))
     for name in Self.shippedSurfaces { defaults.set("0", forKey: name.rawValue) }
-    defaults.set("settingsAndDownloads", forKey: LaunchSwitches.scopeVariable)
     for distribution in [false, true] {
       let switches = LaunchSwitches(environment: [:], defaults: defaults, distribution: distribution, skipStored: false)
       for name in Self.shippedSurfaces {
@@ -265,7 +264,6 @@ import Testing
         #expect(switches.requested(name, defaultOn: true) == expected, "\(name.rawValue)")
         #expect(switches.isOn(name, defaultOn: true) == (expected && switches.unmetNeeds(name).isEmpty), "\(name.rawValue)")
       }
-      #expect(switches.scope == nil)
     }
   }
 

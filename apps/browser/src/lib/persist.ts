@@ -28,7 +28,6 @@ import {
   nativeSafeModeAfterFailedLaunches,
   nativeOwnsWorkspace,
   nativeStoreActive,
-  nativeStoreRev,
   standDown,
   startNativeStore,
   withApplier,
@@ -65,10 +64,7 @@ const DOCS: Doc[] = [
   {
     name: "session.json",
     sources: (s) => [journalVersion(), s.profiles, s.profileOrder, s.orphanedProfileData, s.windows, s.windowOrder, s.tabs, s.groups, s.splits, s.closedTabs, s.closedWindows, s.parkedPins, s.pinChoices, s.pinSync, s.settings, s.ui.focusedWindowId, s.ui.lastProfileId, s.ui.appDark, s.closedGroups, s.deletedGroups, s.cleanedTabs],
-    json: serialized((s) => {
-      const document = sessionDocument(s);
-      return nativeStoreActive() ? { ...document, nativeExport: { rev: nativeStoreRev(), at: Date.now(), scope: "settingsAndDownloads" } } : document;
-    }),
+    json: serialized((s) => sessionDocument(s)),
   },
 ];
 
@@ -106,7 +102,7 @@ const sessionDocument = (s: BrowserState) => {
 
 const unreadableDocs = new Set<string>();
 const docsToWrite = () =>
-  (nativeOwnsWorkspace() ? [] : nativeStoreActive() ? DOCS.filter((d) => d.name !== "downloads.json") : DOCS)
+  (nativeStoreActive() ? [] : DOCS)
     .filter((d) => !unreadableDocs.has(d.name) && !(nativeSafeMode() && d.name === "session.json"));
 
 function parsed<T>(name: string, read: DocumentRead | null): T | null {
@@ -272,6 +268,7 @@ export function startPersistence() {
   const refused = nativeRefusedSession();
   if (refused && !nativeSafeMode()) return refuseToSave(refused, readDocumentResult("session.json"));
   if (!store.active && store.modulePresent) return failClosed(store.reason);
+  if (store.active && !nativeOwnsWorkspace()) return failClosed("the native store is frozen");
   if (nativeOwnsWorkspace()) {
     if (!hydrateFromNative(useBrowser)) return failClosed();
     attachReplica(useBrowser);

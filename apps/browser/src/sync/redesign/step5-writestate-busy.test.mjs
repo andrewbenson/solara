@@ -10,7 +10,7 @@ const fake = {
   live: { "t-native": { ...idle } },
   tabs: { "t-native": nativeTab },
   pages: {},
-  status: () => ({ active: true, scope: "everything" }),
+  status: () => ({ active: true }),
   snapshot() { return JSON.stringify({ rev: this.rev, data: { tabs: this.tabs, live: this.live } }); },
   dispatch(json) {
     const parsed = JSON.parse(json);

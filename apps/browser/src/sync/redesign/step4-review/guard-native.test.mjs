@@ -5,7 +5,7 @@ import { fixedBy } from "../switchOn.mjs";
 globalThis.acTestNativeModules = {
   ...globalThis.acTestNativeModules,
   SolaraStoreAdapter: {
-    status: () => ({ active: true, scope: "settingsAndDownloads" }),
+    status: () => ({ active: true }),
     snapshot: () => JSON.stringify({ rev: 0, data: { settings: null, downloads: [] } }),
     dispatch: () => JSON.stringify({ rev: 0, patches: [] }),
     catchUp: () => null,

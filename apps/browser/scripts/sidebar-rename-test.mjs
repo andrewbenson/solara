@@ -65,7 +65,7 @@ const assertNativeRename = async (id, title, count) => {
   assert.equal(snapshot.windows.find((window) => window.id === "w1")?.tabIds.length, count);
 };
 const devWindow = (action) => run(`const C = globalThis.expo.modules.SolaraCEF; return C.chromeWindows().then((ws) => C.devWindow((ws.find((w) => w.hasRoot && w.frame.includes("{1200, ")) ?? ws.find((w) => w.hasRoot)).window, ${JSON.stringify(action)}));`);
-const nativeGroup = (id) => run(`const m = globalThis.expo.modules.SolaraStoreAdapter; if (!m || typeof m.snapshot !== "function" || m.status().scope !== "everything") return null; const g = JSON.parse(m.snapshot()).data.groups?.[${JSON.stringify(id)}]; return g ? { name: g.name, collapsed: !!g.collapsed } : null;`, 1000);
+const nativeGroup = (id) => run(`const m = globalThis.expo.modules.SolaraStoreAdapter; if (!m || typeof m.snapshot !== "function" || !(m.status().active && m.status().frozen === false)) return null; const g = JSON.parse(m.snapshot()).data.groups?.[${JSON.stringify(id)}]; return g ? { name: g.name, collapsed: !!g.collapsed } : null;`, 1000);
 const doubleClick = async (id) => {
   const row = await run(`return ac.sidebarRows.measureRow("w1", ${JSON.stringify(id)})`);
   assert.ok(row, `row ${id} measured`);

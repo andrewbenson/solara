@@ -17,7 +17,7 @@ const commit = (patch) => {
 const snapshot = () => ({ profiles: { default: { id: "default", name: "Personal", color: "plum", icon: null, createdAt: 0 } }, profileOrder: ["default"], windows: { w1: { id: "w1", profileId: "default", incognito: false, tabIds: ["t1", "t2"], activeTabIds: { default: "t1" }, sidebarOpen: true, frame: null, createdAt: 1 } }, windowOrder: ["w1"], tabs: { t1: tab, t2: { ...tab, id: "t2" } }, groups: {}, splits: {}, peeks: {}, closedTabs: [], closedWindows: [], closedGroups: [], deletedGroups: [], cleanedTabs: [], privateCleanedTabs: {}, privateSiteMutes: {}, parkedPins: {}, pinChoices: {}, pinSync: {}, downloads: [], settings: { chosen: [], inferred: [] }, ui, find });
 globalThis.acTestNativeModules = {
   SolaraStoreAdapter: {
-    status: () => ({ active: true, scope: "everything" }),
+    status: () => ({ active: true }),
     snapshot: () => JSON.stringify({ rev, data: snapshot() }),
     dispatch(json, sinceRev) {
       for (const command of [JSON.parse(json)].flat()) {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-let status = { active: true, scope: "everything" };
+let status = { active: true };
 globalThis.acTestNativeModules = {
   SolaraStoreAdapter: {
     status: () => status,
@@ -19,10 +19,7 @@ test("native sleep handoff follows actual runner status and workspace ownership"
   assert.equal(nativeTabSleepRunning(), true);
   status = { ...status, nativeTabSleep: false };
   assert.equal(nativeTabSleepRunning(), false);
-  status = { active: true, scope: "settingsAndDownloads", nativeTabSleep: true };
-  startNativeStore();
-  assert.equal(nativeTabSleepRunning(), false);
-  status = { active: true, scope: "everything", nativeTabSleep: true };
+  status = { active: true, nativeTabSleep: true };
   startNativeStore();
   assert.equal(nativeTabSleepRunning(), true);
   standDown();

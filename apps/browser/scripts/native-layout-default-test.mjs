@@ -10,7 +10,7 @@ const appPath = resolve(appArg);
 const output = resolve(outputArg);
 assert.equal(execFileSync("/usr/libexec/PlistBuddy", ["-c", "Print CFBundleIdentifier", join(appPath, "Contents/Info.plist")], { encoding: "utf8" }).trim(), "network.benson.solara.dev");
 assert.ok(process.env.SOLARA_NATIVE_WINDOW_LAYOUT === undefined || process.env.SOLARA_NATIVE_WINDOW_LAYOUT === "1", "native opt-in acceptance sets SOLARA_NATIVE_WINDOW_LAYOUT=1; inherited override must be 1");
-for (const key of ["SOLARA_NATIVE_SHELL", "SOLARA_SHELL_PANES", "SOLARA_NATIVE_PAGES_POOL", "SOLARA_SHELL_MAIN_TOP", "SOLARA_NATIVE_TOP_STRIP", "SOLARA_TAB_POOL", "SOLARA_NATIVE_SCOPE"]) {
+for (const key of ["SOLARA_NATIVE_SHELL", "SOLARA_SHELL_PANES", "SOLARA_NATIVE_PAGES_POOL", "SOLARA_SHELL_MAIN_TOP", "SOLARA_NATIVE_TOP_STRIP", "SOLARA_TAB_POOL"]) {
   assert.equal(process.env[key], undefined, `native opt-in acceptance requires no ${key} override`);
 }
 mkdirSync(output, { recursive: true });

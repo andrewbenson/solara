@@ -32,7 +32,7 @@ if (!cli) {
   const snapshot = () => request({ op: "snapshot" });
   globalThis.acTestNativeModules = {
     SolaraStoreAdapter: {
-      status: () => ({ active: true, scope: "everything", syncRedesign: redesign }),
+      status: () => ({ active: true, syncRedesign: redesign }),
       useSyncOrigins: () => true,
       snapshot: () => JSON.stringify(snapshot()),
       catchUp: (sinceRev) => JSON.stringify(request({ op: "catchUp", sinceRev })),

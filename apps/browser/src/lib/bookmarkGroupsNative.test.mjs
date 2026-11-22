@@ -13,7 +13,7 @@ const restoreUnderNativeStore = `
   let carried = [];
   const drafts = [];
   globalThis.acTestNativeModules = { SolaraStoreAdapter: {
-    status: () => ({ active: true, scope: "everything" }),
+    status: () => ({ active: true }),
     snapshot: () => JSON.stringify({ rev: 1, data }),
     dispatch: (json, since) => {
       const draft = [JSON.parse(json)].flat().find((command) => command.name === "openDraftGroups");

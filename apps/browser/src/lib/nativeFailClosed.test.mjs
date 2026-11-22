@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 globalThis.acTestNativeModules = {
   SolaraStoreAdapter: {
-    status: () => ({ active: true, scope: "everything" }),
+    status: () => ({ active: true }),
     snapshot: () => null,
     dispatch: () => null,
     catchUp: () => null,

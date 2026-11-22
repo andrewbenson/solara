@@ -300,7 +300,7 @@ export async function launch(app, dataDir, port, instrumentation = {}) {
     SOLARA_JS_LOCATION: `localhost:${process.env.METRO_PORT ?? 8081}`,
     SOLARA_NATIVE_BOOKMARKS: process.env.SOLARA_NATIVE_BOOKMARKS ?? "1",
     ...(process.env.SOLARA_SWITCHES ? { SOLARA_SWITCHES: process.env.SOLARA_SWITCHES } : {}),
-    ...Object.fromEntries(Object.entries(process.env).filter(([k]) => ["SOLARA_NATIVE_SHELL", "SOLARA_NATIVE_PAGES_POOL", "SOLARA_NATIVE_TOP_STRIP", "SOLARA_NATIVE_BOOKMARKS_BAR", "SOLARA_NATIVE_BOOKMARKS", "SOLARA_NATIVE_SERVICES", "SOLARA_NATIVE_SIDEBAR_ADDRESS", "SOLARA_NATIVE_SCOPE"].includes(k))),
+    ...Object.fromEntries(Object.entries(process.env).filter(([k]) => ["SOLARA_NATIVE_SHELL", "SOLARA_NATIVE_PAGES_POOL", "SOLARA_NATIVE_TOP_STRIP", "SOLARA_NATIVE_BOOKMARKS_BAR", "SOLARA_NATIVE_BOOKMARKS", "SOLARA_NATIVE_SERVICES", "SOLARA_NATIVE_SIDEBAR_ADDRESS"].includes(k))),
   };
   await uiGateLaunching(binary);
   const launchedAt = Date.now();

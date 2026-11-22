@@ -431,7 +431,8 @@ try {
       const seen = await run(`
         const cef = globalThis.expo.modules.SolaraCEF;
         const adapter = globalThis.expo.modules.SolaraStoreAdapter;
-        const native = adapter.status().scope === "everything";
+        const status = adapter.status();
+        const native = status.active === true && status.frozen === false;
         const send = cef.tabStripCommand;
         const t0 = performance.now();
         const log = { commands: [], windows: [], drag: [], picture: [] };

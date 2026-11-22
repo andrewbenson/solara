@@ -196,7 +196,7 @@ try {
           await sleep(250);
           await run('return ac.shell.devTypeKeys("w1", "Recycled rename", 10);');
           await scroll(1480);
-          const nativeTitle = () => run('const module = globalThis.expo.modules.SolaraStoreAdapter; if (!module || typeof module.snapshot !== "function" || module.status().scope !== "everything") throw new Error("native workspace snapshot unavailable"); const snapshot = JSON.parse(module.snapshot()); const tab = snapshot.data.tabs.t1; if (!tab || !Number.isSafeInteger(snapshot.rev)) throw new Error("native renamed tab unavailable"); return { rev: snapshot.rev, id: tab.id, customTitle: tab.customTitle ?? null };', 1000);
+          const nativeTitle = () => run('const module = globalThis.expo.modules.SolaraStoreAdapter; if (!module || typeof module.snapshot !== "function" || !(module.status().active && module.status().frozen === false)) throw new Error("native workspace snapshot unavailable"); const snapshot = JSON.parse(module.snapshot()); const tab = snapshot.data.tabs.t1; if (!tab || !Number.isSafeInteger(snapshot.rev)) throw new Error("native renamed tab unavailable"); return { rev: snapshot.rev, id: tab.id, customTitle: tab.customTitle ?? null };', 1000);
           const state = await until("rename commit", nativeTitle, (value) => value.id === "t1" && value.customTitle === "Recycled rename");
           assert.equal(state.customTitle, "Recycled rename");
           result.rename = state;

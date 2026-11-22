@@ -50,7 +50,7 @@ as column b behavior; this partial port does not complete the 0.4.2 command row 
 The 0.4.6 drag, folder and group port (S1 99c6c03f to S4 180ffd7e) has Swift decide a tab drag's preview,
 pictures, haptic and glow, file and link drops on the sidebar and native-layout strip, group collapse, close, tuck
 and menu, and the tile-folder panel and menus, whenever the native store owns the workspace. The TypeScript
-branches remain the fallback without ownership or with a frozen store; safe mode is decided in Swift too (S6a
+branches remain the fallback when the store never opened or stood down (frozen); safe mode is decided in Swift too (S6a
 58bc7ecb). Only the folder panel's open state is mirrored back
 (`folderPanel.state`). The cleanup (S5) found one never-called export, `folderTitle`; no decision branch was
 provably dead, so columns are unchanged; counts stay those of the dated audit.
@@ -65,15 +65,15 @@ The favicon and area-recovery follow-up was checked in a hidden Debug instance: 
 | Gate | Checked source | Meaning |
 | --- | --- | --- |
 | Shipped UI defaults | `native/SolaraKit/Sources/SolaraModel/LaunchSwitches.swift:28`, `:71`, `:199` | Native shell, top strip, bookmarks bar, shell panes, pages pool, and main-on-top default on. Extension side panels are now native-only. Distribution ignores their environment and stored overrides. Distribution is signing-derived or `SOLARA_RELEASE_LAUNCH=1`; it is not every Xcode Release build. |
-| Safe mode | Same file, `:159`, `:223`; `packages/store/ios/NativeStore.swift:149` | Safe mode keeps native UI. Full in-memory ownership can remain native while persistence narrows to settings/downloads. It holds sync and unsafe operations. |
-| Workspace ownership | `packages/store/ios/NativeStore.swift:15`; `src/store/nativeStore.ts:40`, `:65` | Default scope is everything. `nativeOwnsWorkspace()` requires active native store plus full scope. `SOLARA_NATIVE_SCOPE=settingsAndDownloads` remains a separate escape hatch, including distribution. |
-| Native settings, toolbar, pages, hero | `packages/store/ios/NativeStore.swift:165`; `packages/settings/ios/{NativeSettingsWindow,Toolbar/ToolbarModule,Pages/PagesModule,NewTab/NewTabModule}.swift` | Availability follows the opened native settings handle. These are release paths, not debug-only implementations. Store failure can show native `StoreUnavailableView`. |
+| Safe mode | Same file, `:159`, `:223`; `packages/store/ios/NativeStore.swift:144` | Safe mode keeps native UI. Full in-memory ownership can remain native while persistence narrows to settings/downloads. It holds sync and unsafe operations. |
+| Workspace ownership | `packages/store/ios/NativeStore.swift:150`; `src/store/nativeStore.ts:59`, `:70` | A native store that opens always owns the whole workspace; the `SOLARA_NATIVE_SCOPE` switch is gone (0.4.6). `nativeOwnsWorkspace()` is true while the native store is active and hasn't stood down. |
+| Native settings, toolbar, pages, hero | `packages/store/ios/NativeStore.swift:173`; `packages/settings/ios/{NativeSettingsWindow,Toolbar/ToolbarModule,Pages/PagesModule,NewTab/NewTabModule}.swift` | Availability follows the opened native settings handle. These are release paths, not debug-only implementations. Store failure can show native `StoreUnavailableView`. |
 | Hosted capabilities | `packages/settings/src/hosted.tsx:19`; `packages/settings/ios/Hosted/{HostedViews,HostedModule}.swift` | `hostedKinds()` reports capability names, not mounted views. Missing module/errors yield an empty list. Some capabilities deliberately have nil view factories. |
 | Top strip | `src/components/layout/NativeTopStrip.tsx:32`; `NativeStripControls.tsx:11`; `packages/settings/ios/TopStrip/NativeTopStrip.swift:107` | `nativeTopStripEnabled`, `nativeStripPeekEnabled`, and `nativeStripControlsEnabled` cache hosted-kind membership. RN fallbacks remain. Registration is asynchronous; first-read timing is **unverified** without a launch. |
 | Full sidebar column | `src/components/sidebar/NativeSidebar.tsx:57`; `src/components/Sidebar.tsx:37` | Needs hosted sidebar shell, active native window, and native-owned profile pager. Sidebar address mode also needs native omnibox/address-bar capability. RN header/footer/dots remain fallback. |
 | Actual native page pool | `packages/settings/ios/TabPool/TabPoolHost.swift:13`; `src/lib/pagesPool.ts:3` | Needs native split configuration, pane-root factory, opened store, ownership at launch, and `SOLARA_TAB_POOL != 0`. JS also checks shell/pane/pool availability. `windowPagesPoolActive()` alone is only a configuration flag. |
 | Pane handoff | `src/components/ContentCard.tsx:419`, `:588` | The main-root fallback remains until the pane root reports a real layout. Pooled native prompts suppress duplicate JS-hosted native prompt adapters. |
-| Persistence | `src/lib/persist.ts:108`, `:253`, `:382` | Full native scope attaches a replica and skips JS session writers. Partial scope or absent native module can use JS workspace persistence. Present-but-inactive native store fails closed. |
+| Persistence | `src/lib/persist.ts:261`, `:271`, `:396` | An active native store attaches a replica and skips JS session writers. Only an absent native module (the node test harness) uses JS workspace persistence. A present-but-inactive native store fails closed. |
 | Sync redesign | `src/sync/redesignSwitch.ts`; `packages/store/ios/StoreModule.swift:66`; `LaunchSwitches.swift:70` | Default off. Development override requires an isolated data directory. Journal/password redesign code is not evidence that the shipped sync path is native. |
 
 ## Module totals

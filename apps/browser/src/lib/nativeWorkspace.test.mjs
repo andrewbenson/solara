@@ -15,7 +15,7 @@ let dispatchHook;
 const sent = [];
 globalThis.acTestNativeModules = {
   SolaraStoreAdapter: {
-    status: () => ({ active: true, scope: "everything" }),
+    status: () => ({ active: true }),
     snapshot: () => JSON.stringify(data(rev)),
     dispatch: (json, sinceRev) => {
       const commands = [JSON.parse(json)].flat();
@@ -430,7 +430,7 @@ test("native live refusal begins before replica attachment", () => {
   await import("../../native/SolaraKit/Scripts/legacy-bookmark-harness.mjs");
     import assert from "node:assert/strict";
     globalThis.__DEV__ = false;
-    globalThis.acTestNativeModules = { SolaraStoreAdapter: { status: () => ({ active: true, scope: "everything" }) } };
+    globalThis.acTestNativeModules = { SolaraStoreAdapter: { status: () => ({ active: true }) } };
     const { useBrowser } = await import("./src/store/browser.ts");
     const { startNativeStore } = await import("./src/store/nativeStore.ts");
     startNativeStore();

@@ -47,7 +47,7 @@ test("owned launch look restores favicons without writing native live themes", (
   const script = `
     import assert from "node:assert/strict";
     globalThis.__DEV__ = true;
-    globalThis.acTestNativeModules = { SolaraStoreAdapter: { status: () => ({ active: true, scope: "everything" }), dispatch: () => JSON.stringify({ rev: 0, patches: [] }), addListener: () => ({ remove() {} }) } };
+    globalThis.acTestNativeModules = { SolaraStoreAdapter: { status: () => ({ active: true }), dispatch: () => JSON.stringify({ rev: 0, patches: [] }), addListener: () => ({ remove() {} }) } };
     const { useBrowser } = await import("./src/store/browser.ts");
     const { docs } = await import("./src/test-native/index.ts");
     const { startNativeStore, attachReplica } = await import("./src/store/nativeStore.ts");

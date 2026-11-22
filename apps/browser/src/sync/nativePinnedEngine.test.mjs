@@ -13,7 +13,7 @@ let files = new Map();
 let logins = [];
 globalThis.acTestNativeModules = {
   SolaraStoreAdapter: {
-    status: () => ({ active: true, scope: "everything", syncRedesign: redesign }),
+    status: () => ({ active: true, syncRedesign: redesign }),
     useSyncOrigins: () => true,
     snapshot: () => JSON.stringify({ rev: 0, data }),
     dispatch(json) {

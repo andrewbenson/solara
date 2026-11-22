@@ -67,7 +67,7 @@ export const nativeStoreRev = () => appliedRev;
 export function startNativeStore(): { active: boolean; reason?: string; modulePresent: boolean } {
   const status = nativeStoreStatus();
   active = status.active;
-  ownsWorkspace = status.active && status.scope === "everything";
+  ownsWorkspace = status.active && status.frozen !== true;
   handedOff = !status.active && status.handedOff === true;
   safeMode = status.safeMode ?? null;
   refusedSession = !status.active ? (status.refusedSession ?? null) : null;

@@ -27,7 +27,7 @@ test("while Swift owns the workspace, JS leaves the Chrome strip alone: a stripC
     };
     globalThis.acTestNativeModules = {
       SolaraStoreAdapter: {
-        status: () => ({ active: true, scope: "everything", syncRedesign: true }),
+        status: () => ({ active: true, syncRedesign: true }),
         useSyncOrigins: (on) => on,
         dispatch(json) {
           const message = JSON.parse(json);
@@ -90,7 +90,7 @@ test("native replica movement holder and swap keep live identity without JS stri
     };
     globalThis.acTestNativeModules = {
       SolaraStoreAdapter: {
-        status: () => ({ active: true, scope: "everything" }),
+        status: () => ({ active: true }),
         dispatch: () => JSON.stringify({ rev, patches: [] }),
         addListener: (_name, receive) => { listener = receive; return { remove() {} }; },
       },

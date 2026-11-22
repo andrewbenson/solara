@@ -48,7 +48,6 @@ public enum LaunchSwitch: String, CaseIterable, Sendable {
 }
 
 public struct LaunchSwitches: Sendable {
-  public static let scopeVariable = "SOLARA_NATIVE_SCOPE"
   public static let defaultsVariable = "SOLARA_LAUNCH_SWITCHES_DEFAULTS"
   public static let optionVariable = "SOLARA_LAUNCH_SWITCHES_OPTION"
   static let storedPrefixes = ["SOLARA_NATIVE_", "SOLARA_SHELL_"]
@@ -59,7 +58,6 @@ public struct LaunchSwitches: Sendable {
   public var safeMode = false
   public var safeModeAfterFailedLaunches = false
   public var countedLaunch = false
-  public let scope: String?
   let environment: [LaunchSwitch: Bool]
   let stored: [LaunchSwitch: Bool]
 
@@ -69,7 +67,6 @@ public struct LaunchSwitches: Sendable {
     let suite = distribution ? nil : env[Self.defaultsVariable].flatMap { $0.isEmpty ? nil : $0 }
     self.defaultsSuite = suite
     self.distribution = distribution
-    self.scope = env[Self.scopeVariable]
     var environment: [LaunchSwitch: Bool] = [:]
     let ownDataFolder = env["SOLARA_DATA_DIR"].map { !$0.isEmpty } ?? false
     for name in LaunchSwitch.allCases where (!LaunchSwitch.developmentOnly.contains(name) || (ownDataFolder && !distribution))
@@ -303,7 +300,7 @@ public struct StoredLaunchSwitches {
 
   func removeUnknown() {
     guard let defaults else { return }
-    let known = Set(LaunchSwitch.allCases.map(\.rawValue) + [LaunchSwitches.scopeVariable])
+    let known = Set(LaunchSwitch.allCases.map(\.rawValue))
     for key in defaults.dictionaryRepresentation().keys
     where LaunchSwitches.storedPrefixes.contains(where: key.hasPrefix) && !known.contains(key) {
       defaults.removeObject(forKey: key)

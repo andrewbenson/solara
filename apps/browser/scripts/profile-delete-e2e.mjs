@@ -142,12 +142,12 @@ export class Run {
       startTimeout: this.time(20000), js: "live",
       switches: "--enable-features=EncryptBookmarks:stage/write_both_read_prefer_encrypted",
       ...(fresh ? { session: this.session({ windows: [{ id: "w1" }], settings: { warnBeforeClosingLastTab: false, warnBeforeClosingWindow: false } }) } : {}),
-      env: { SOLARA_NATIVE_BOOKMARKS: "1", SOLARA_NATIVE_SCOPE: "everything", SOLARA_NATIVE_SHELL: "1", SOLARA_SHELL_PANES: "1", SOLARA_NATIVE_PAGES_POOL: "1", SOLARA_TAB_POOL: "1", SOLARA_TEST_KEYCHAIN: "file", SOLARA_TEST_REKEY: "1", SOLARA_TEST_PROFILE_DELETE_CRASH: crashPoint, SOLARA_TEST_PROFILE_DELETE_UNLOADED: deleteUnloaded, SOLARA_TEST_REKEY_CRASH: "", SOLARA_TEST_REKEY_FAIL_AFTER_KEY: "", SOLARA_TEST_KEYCHAIN_FAIL: "" },
+      env: { SOLARA_NATIVE_BOOKMARKS: "1", SOLARA_NATIVE_SHELL: "1", SOLARA_SHELL_PANES: "1", SOLARA_NATIVE_PAGES_POOL: "1", SOLARA_TAB_POOL: "1", SOLARA_TEST_KEYCHAIN: "file", SOLARA_TEST_REKEY: "1", SOLARA_TEST_PROFILE_DELETE_CRASH: crashPoint, SOLARA_TEST_PROFILE_DELETE_UNLOADED: deleteUnloaded, SOLARA_TEST_REKEY_CRASH: "", SOLARA_TEST_REKEY_FAIL_AFTER_KEY: "", SOLARA_TEST_KEYCHAIN_FAIL: "" },
     });
     this.data = realpathSync(this.data);
     await this.wait("native workspace and UI harness", (timeout) => this.eval(`return typeof ac !== "undefined" && !!ac.store && !!N;`, timeout), 20000);
     const status = await this.eval(`return N.status();`);
-    assert.ok(status.active && status.scope === "everything" && !status.safeMode, `native workspace required: ${json(status)}`);
+    assert.ok(status.active && status.frozen === false && !status.safeMode, `native workspace required: ${json(status)}`);
     const info = await this.eval(`return globalThis.expo.modules.SolaraApp.systemInfo();`);
     assert.equal(info.configuration, "Debug", "pass a Debug app");
     this.bundleId = info.bundleId;

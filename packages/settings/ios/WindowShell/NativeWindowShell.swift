@@ -45,7 +45,6 @@ enum NativeWindowShell {
 
   nonisolated static var legacyLayoutReason: String? {
     if !enabled { return "native shell disabled" }
-    if !NativeStoreHandle.ownedWorkspaceAtLaunch { return "native workspace disabled" }
     if !NativeStoreHandle.opened { return "native workspace not opened" }
     if !LaunchSwitches.shared.isOn(.nativeWindowLayout) { return "native layout switch or prerequisite disabled" }
     if !NativePaneRoots.available { return "pane guest factory unavailable" }

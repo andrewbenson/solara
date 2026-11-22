@@ -83,7 +83,7 @@ globalThis.acTestNativeModules = {
   SolaraStoreAdapter: {
     status: () => {
       if (withData) relaunch();
-      return { active: true, scope: "everything" };
+      return { active: true };
     },
     snapshot: () => ask({ op: "snapshot" }),
     dispatch: (commandJSON, sinceRev) => ask({ op: "dispatch", commands: JSON.parse(commandJSON), sinceRev }),

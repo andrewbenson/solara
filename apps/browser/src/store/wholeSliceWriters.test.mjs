@@ -17,7 +17,7 @@ let onDispatch;
 globalThis.__DEV__ = true;
 globalThis.acTestNativeModules = {
   SolaraStoreAdapter: {
-    status: () => ({ active: true, scope: "everything" }),
+    status: () => ({ active: true }),
     dispatch: (json, rev) => {
       const commands = [JSON.parse(json)].flat();
       sent.push(...commands);

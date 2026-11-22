@@ -11,7 +11,7 @@ globalThis.acTestNativeModules = {
   SolaraApp: app,
   SolaraWindowShell: { nativeLayout: () => layoutActive },
   SolaraStoreAdapter: {
-    status: () => ({ active: true, scope: "everything" }),
+    status: () => ({ active: true }),
     dispatch: (json) => {
       sent.push(...[JSON.parse(json)].flat());
       return JSON.stringify({ rev: 0, patches: [] });

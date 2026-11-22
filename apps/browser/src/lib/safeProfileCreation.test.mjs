@@ -6,7 +6,7 @@ let safe = true;
 const sent = [];
 globalThis.acTestNativeModules = {
   SolaraStoreAdapter: {
-    status: () => ({ active, scope: "everything", ...(safe ? { safeMode: "option" } : {}) }),
+    status: () => ({ active, ...(safe ? { safeMode: "option" } : {}) }),
     dispatch: (json) => { sent.push(...[JSON.parse(json)].flat()); return JSON.stringify({ rev: 0 }); },
     addListener: () => ({ remove() {} }),
   },

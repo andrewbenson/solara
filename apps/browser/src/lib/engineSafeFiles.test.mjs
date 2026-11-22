@@ -48,29 +48,42 @@ test("host leaves saved-history reads available and falls back to opening a tab 
 let status = { active: false };
 globalThis.acTestNativeModules = { SolaraStoreAdapter: { status: () => status } };
 const { useBrowser } = await import("../store/browser.ts");
-const { nativeSafeMode, startNativeStore, withApplier } = await import("../store/nativeStore.ts");
+const { nativeOwnsWorkspace, nativeSafeMode, startNativeStore, withApplier } = await import("../store/nativeStore.ts");
+
+test("a safe-mode launch with an open store leaves tabs to Swift, and a frozen one owns nothing", () => {
+  for (const safeMode of ["option", "failedLaunches"]) {
+    status = { active: true, frozen: false, safeMode };
+    startNativeStore();
+    assert.equal(nativeSafeMode(), true);
+    assert.equal(nativeOwnsWorkspace(), true);
+    status = { active: true, frozen: true, safeMode };
+    startNativeStore();
+    assert.equal(nativeSafeMode(), true);
+    assert.equal(nativeOwnsWorkspace(), false);
+  }
+  status = { active: false };
+  startNativeStore();
+});
 
 test("safe in-memory tabs open, navigate, and reopen with the same URL requests as normal tabs", () => {
   for (const safeMode of [null, "option", "failedLaunches"]) {
-    for (const active of [false, true]) {
-      status = { active, scope: "settingsAndDownloads", safeMode };
-      startNativeStore();
-      assert.equal(nativeSafeMode(), safeMode !== null);
-      const state = () => useBrowser.getState();
-      withApplier(() => state().hydrate({}));
-      const window = state().createWindow({ url: "https://kept.example" });
-      const tab = state().newTab(window, { url: "https://first.example" });
-      state().navigate(tab, "https://next.example");
-      assert.equal(state().tabs[tab].navigation.url, "https://next.example");
-      state().updateTab(tab, { url: "https://next.example" });
-      state().closeTab(tab);
-      assert.equal(state().tabs[tab], undefined);
-      state().reopenClosed(window);
-      const reopened = state().windows[window].activeTabIds.default;
-      assert.equal(state().tabs[reopened].url, "https://next.example");
-      assert.equal(state().tabs[reopened].adoptId, `restore:${tab}`);
-      assert.equal(state().windows[window].tabIds.length, 2);
-    }
+    status = { active: false, safeMode };
+    startNativeStore();
+    assert.equal(nativeSafeMode(), safeMode !== null);
+    const state = () => useBrowser.getState();
+    withApplier(() => state().hydrate({}));
+    const window = state().createWindow({ url: "https://kept.example" });
+    const tab = state().newTab(window, { url: "https://first.example" });
+    state().navigate(tab, "https://next.example");
+    assert.equal(state().tabs[tab].navigation.url, "https://next.example");
+    state().updateTab(tab, { url: "https://next.example" });
+    state().closeTab(tab);
+    assert.equal(state().tabs[tab], undefined);
+    state().reopenClosed(window);
+    const reopened = state().windows[window].activeTabIds.default;
+    assert.equal(state().tabs[reopened].url, "https://next.example");
+    assert.equal(state().tabs[reopened].adoptId, `restore:${tab}`);
+    assert.equal(state().windows[window].tabIds.length, 2);
   }
 });
 

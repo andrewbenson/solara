@@ -35,7 +35,7 @@ function bridge(dispatch, redesign) {
   const native = load("./nativeStore.ts", {
     "./bookmarkProjection": bookmarkProjection,
     "@solara/store": {
-      nativeStoreStatus: () => ({ active: true, scope: "everything", syncRedesign: redesign }),
+      nativeStoreStatus: () => ({ active: true, syncRedesign: redesign }),
       nativeStoreModulePresent: () => true,
       useNativeSyncOrigins: () => true,
       nativeDispatch: dispatch,

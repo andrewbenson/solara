@@ -22,8 +22,7 @@ final class NativeAppIntegration {
 
   private static var storeStatus: AppIntegrationStoreStatus {
     AppIntegrationPolicy.storeStatus(
-      opened: NativeStoreHandle.opened, ownsWorkspace: NativeStoreHandle.ownedWorkspaceAtLaunch,
-      storeAvailable: NativeStoreHandle.store != nil, failureReason: NativeSettingsHandle.unavailable?.detail)
+      opened: NativeStoreHandle.opened, storeAvailable: NativeStoreHandle.store != nil, failureReason: NativeSettingsHandle.unavailable?.detail)
   }
 
   private init() {

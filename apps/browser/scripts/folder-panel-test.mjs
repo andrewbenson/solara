@@ -172,7 +172,8 @@ async function run() {
       await press(tile.x + tile.width / 2, tile.y + tile.height / 2);
     };
     const jsOpen = async () => JSON.parse(await evaluate(`return JSON.stringify(ac.pages.tileFolders.panel.getState().open)`));
-    const nativeScope = () => evaluate(`return globalThis.expo.modules.SolaraStoreAdapter.status().scope ?? null`);
+    const storeOwns = async () => (await evaluate(`const status = globalThis.expo.modules.SolaraStoreAdapter.status(); return status.active === true && status.frozen === false`)) === true;
+    const storeFrozen = async () => (await evaluate(`const status = globalThis.expo.modules.SolaraStoreAdapter.status(); return status.active === true && status.frozen === true`)) === true;
     const jsOwns = () => evaluate(`return ac.nativePages.ownsLive()`);
     const onePanel = async (what, folderId, native) => {
       out.flip = out.flip ?? {};
@@ -190,9 +191,9 @@ async function run() {
     await clickFolder(setup.folder);
     await sleep(700);
     await openedPanel("native folder panel open before the ownership flip");
-    out.ownedBefore = (await nativeScope()) === "everything" && (await jsOwns()) === true;
+    out.ownedBefore = (await storeOwns()) && (await jsOwns()) === true;
     await evaluate(`return globalThis.expo.modules.SolaraStoreAdapter.freeze()`);
-    await untilSnapshot("the flip closes the native panel", async (state) => !nativePanel(state) && !(await isOpen()) && (await nativeScope()) === "settingsAndDownloads");
+    await untilSnapshot("the flip closes the native panel", async (state) => !nativePanel(state) && !(await isOpen()) && (await storeFrozen()));
     out.flipCloses = true;
     out.jsStillOwns = (await jsOwns()) === true;
     await clickFolder(second.folder);

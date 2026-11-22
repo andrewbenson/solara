@@ -2,7 +2,7 @@ import { requireOptionalNativeModule, type EventSubscription } from "expo-module
 
 export { encodeArgs, encodeCommand, PATCH_COMMANDS } from "./encode";
 
-type StoreStatus = ({ active: true; scope?: "settingsAndDownloads" | "everything" } | { active: false; reason: string; handedOff?: boolean; refusedSession?: string }) & { syncRedesign?: boolean; nativeTabSleep?: boolean; safeMode?: "option" | "failedLaunches" };
+type StoreStatus = ({ active: true; frozen?: boolean } | { active: false; reason: string; handedOff?: boolean; refusedSession?: string }) & { syncRedesign?: boolean; nativeTabSleep?: boolean; safeMode?: "option" | "failedLaunches" };
 
 type NativeStoreModule = {
   status(): StoreStatus;

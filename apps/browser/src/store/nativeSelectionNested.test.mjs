@@ -22,7 +22,7 @@ const retitle = () => {
 };
 globalThis.acTestNativeModules = {
   SolaraStoreAdapter: {
-    status: () => ({ active: true, scope: "everything" }),
+    status: () => ({ active: true }),
     snapshot: () => JSON.stringify({ rev, data: snapshot() }),
     dispatch(json, sinceRev) {
       for (const command of [JSON.parse(json)].flat()) {

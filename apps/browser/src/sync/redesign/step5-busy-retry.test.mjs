@@ -8,7 +8,7 @@ const replicaFake = {
   settings: null,
   choose: null,
   held: false,
-  status: () => ({ active: true, scope: "settingsAndDownloads" }),
+  status: () => ({ active: true }),
   snapshot() {
     return JSON.stringify({ rev: this.rev, data: { settings: this.settings, downloads: [] } });
   },

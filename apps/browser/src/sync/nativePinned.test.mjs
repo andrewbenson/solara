@@ -2,13 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 const sent = [];
-let scope = "everything";
 let redesign = false;
 let response = { result: true };
 let snapshot = {};
 globalThis.acTestNativeModules = {
   SolaraStoreAdapter: {
-    status: () => ({ active: true, scope, syncRedesign: redesign }),
+    status: () => ({ active: true, syncRedesign: redesign }),
     useSyncOrigins: () => true,
     snapshot: () => JSON.stringify({ rev: 0, data: snapshot }),
     dispatch(json) {
@@ -40,7 +39,6 @@ for (const on of [false, true]) {
     syncRedesign.on = on;
     S().hydrate({});
     redesign = on;
-    scope = "everything";
     startNativeStore();
     for (const [kind, name, key, value] of adapters) {
       sent.length = 0;
@@ -69,7 +67,6 @@ for (const on of [false, true]) {
   test(`native inputs freeze cross-prefix base, absent and null, redesign ${on}`, () => {
     standDown();
     redesign = on;
-    scope = "everything";
     snapshot = { tabs: { current: { id: "current", pinKey: "native", profileId: "default" } }, groups: { currentGroup: { id: "currentGroup", pinKey: "nativeGroup", profileId: "default" } } };
     response = { result: true };
     startNativeStore();
@@ -96,7 +93,6 @@ for (const on of [false, true]) {
     const chosen = S().pinChoices;
     const extraction = pinned.pinnedRowsAdapter("default").extract(() => undefined, () => false);
     redesign = on;
-    scope = "everything";
     response = { result: true };
     startNativeStore();
     sent.length = 0;
@@ -105,27 +101,6 @@ for (const on of [false, true]) {
     assert.equal(command().name, "settlePinChoices");
     assert.deepEqual(command().args, ["default", { [id]: chosen.default[id] }]);
     assert.equal(S().pinChoices, chosen);
-    standDown();
-  });
-
-  test(`settings-only scope keeps TS pin apply and settlement, redesign ${on}`, () => {
-    standDown();
-    syncRedesign.on = on;
-    S().hydrate({});
-    const window = S().createWindow({ url: "https://fallback.example" });
-    const id = S().windows[window].tabIds[0];
-    S().pinTabs([id], true, false);
-    redesign = on;
-    scope = "settingsAndDownloads";
-    response = { result: true };
-    startNativeStore();
-    sent.length = 0;
-    pinned.pinnedRowsAdapter("default").apply(new Map([[`pinrow:${id}`, 1]]), new Set([`pinrow:${id}`]), () => undefined, records);
-    assert.equal(S().tabs[id].pinnedAsRow, true);
-    const extraction = pinned.pinnedRowsAdapter("default").extract(() => undefined, () => false);
-    extraction.published(new Set([`pinrow:${id}`]));
-    assert.equal(S().pinChoices.default?.[id], undefined);
-    assert.equal(sent.length, 0);
     standDown();
   });
 }

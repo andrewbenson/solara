@@ -83,7 +83,7 @@ public class StoreModule: Module {
       let syncRedesign = LaunchSwitch(rawValue: "SOLARA_SYNC_REDESIGN").map { LaunchSwitches.shared.isOn($0, defaultOn: false) } ?? false
       var status: [String: Any]
       if NativeStore.shared != nil {
-        status = ["active": true, "scope": NativeStore.ownsWorkspace ? "everything" : "settingsAndDownloads", "syncRedesign": syncRedesign]
+        status = ["active": true, "frozen": NativeStoreHandle.frozen, "syncRedesign": syncRedesign]
       } else {
         status = ["active": false, "reason": NativeStore.unavailableReason ?? "not launched", "handedOff": NativeStore.handedOff, "syncRedesign": syncRedesign]
         if let refusedSession = NativeStore.refusedSession { status["refusedSession"] = refusedSession }

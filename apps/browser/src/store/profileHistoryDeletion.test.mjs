@@ -96,7 +96,7 @@ function nativeBridge({ present = true, active = true, dispatch = () => ({ rev: 
     "./bookmarkProjection": bookmarkProjection,
     "@solara/store": {
       nativeStoreModulePresent: () => present,
-      nativeStoreStatus: () => ({ active, scope: "settingsAndDownloads" }),
+      nativeStoreStatus: () => ({ active }),
       nativeDispatch: dispatch,
       installPageReportWriter: () => {},
     },

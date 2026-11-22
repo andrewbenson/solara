@@ -9,14 +9,12 @@ public enum AppIntegrationReadiness: Equatable, Sendable {
 public enum AppIntegrationStoreStatus: Equatable, Sendable {
   case opening
   case failed(String)
-  case notOwned
   case ready
 
   public var unavailableReason: String? {
     switch self {
     case .opening: "still opening"
     case .failed(let reason): "failed to open: \(reason)"
-    case .notOwned: "not owned because settingsAndDownloads is scoped off"
     case .ready: nil
     }
   }
@@ -39,21 +37,20 @@ public enum AppIntegrationPolicy {
     return true
   }
 
-  public static func storeStatus(opened: Bool, ownsWorkspace: Bool, storeAvailable: Bool, failureReason: String?) -> AppIntegrationStoreStatus {
+  public static func storeStatus(opened: Bool, storeAvailable: Bool, failureReason: String?) -> AppIntegrationStoreStatus {
     if let failureReason { return .failed(failureReason) }
     guard opened else { return .opening }
-    guard ownsWorkspace else { return .notOwned }
     return storeAvailable ? .ready : .opening
   }
 
-  public static func readiness(opened: Bool, ownsWorkspace: Bool, storeAvailable: Bool) -> AppIntegrationReadiness {
-    readiness(storeStatus: storeStatus(opened: opened, ownsWorkspace: ownsWorkspace, storeAvailable: storeAvailable, failureReason: nil))
+  public static func readiness(opened: Bool, storeAvailable: Bool) -> AppIntegrationReadiness {
+    readiness(storeStatus: storeStatus(opened: opened, storeAvailable: storeAvailable, failureReason: nil))
   }
 
   public static func readiness(storeStatus: AppIntegrationStoreStatus) -> AppIntegrationReadiness {
     switch storeStatus {
     case .opening: .waiting
-    case .failed, .notOwned: .unavailable
+    case .failed: .unavailable
     case .ready: .ready
     }
   }

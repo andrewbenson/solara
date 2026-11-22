@@ -12,7 +12,7 @@ const listeners = new Set();
 const snapshot = (extra = {}) => ({ profiles: { default: { id: "default", name: "Personal", color: "plum", icon: null, createdAt: 0 } }, profileOrder: ["default"], windows: { w1: win, w2: { ...win, id: "w2", tabIds: [] } }, windowOrder: ["w1", "w2"], tabs: { t1: tab, t2: { ...tab, id: "t2" }, t3: { ...tab, id: "t3" } }, groups: {}, splits: {}, peeks: {}, closedTabs: [], closedWindows: [], closedGroups: [], deletedGroups: [], cleanedTabs: [], privateCleanedTabs: {}, privateSiteMutes: {}, parkedPins: {}, pinChoices: {}, pinSync: {}, downloads: [], settings: { chosen: [], inferred: [] }, ui: { focusedWindowId: "w1", focusOrder: ["w1"], lastProfileId: null, appDark: true }, find: {}, selection: {}, selectionAnchors: {}, windowUi: {}, ...extra });
 globalThis.acTestNativeModules = {
   SolaraStoreAdapter: {
-    status: () => ({ active: true, scope: "everything" }),
+    status: () => ({ active: true }),
     snapshot: () => JSON.stringify({ rev, data: snapshot() }),
     dispatch(json) {
       sent.push(...[JSON.parse(json)].flat());

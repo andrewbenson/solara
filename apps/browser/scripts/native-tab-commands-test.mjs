@@ -22,7 +22,7 @@ const run = (body) => app.eval(body, { timeout: 2000 });
 const nativeState = () => run(`
   const module = expo.modules.SolaraStoreAdapter;
   const status = module.status();
-  if (!status.active || status.scope !== "everything") throw new Error("native workspace ownership required");
+  if (!status.active || status.frozen !== false) throw new Error("native workspace ownership required");
   const snapshot = JSON.parse(module.snapshot());
   if (!Number.isSafeInteger(snapshot.rev)) throw new Error("native revision unavailable");
   return snapshot;

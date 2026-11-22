@@ -12,15 +12,10 @@ public final class NativeStore: Sendable {
   nonisolated(unsafe) public private(set) static var safeMode = false
   nonisolated(unsafe) public private(set) static var safeModeAfterFailedLaunches = false
 
-  static var scope: PersistenceScope {
-    LaunchSwitches.shared.scope == "settingsAndDownloads" ? .settingsAndDownloads : .everything
-  }
-
   static func config(_ folder: URL) -> StoreConfig {
     var config = StoreConfig()
     config.safeMode = safeMode
-    config.replicaProfilesFromDisk = scope == .settingsAndDownloads
-    config.nativePrivateSessionEffects = scope == .everything
+    config.nativePrivateSessionEffects = true
     config.handOffPinsImmediately = false
     config.earlyLaunchTab = earlyLaunchTabSwitch(folder)
     return config
@@ -133,12 +128,11 @@ public final class NativeStore: Sendable {
     let memory = StoreMemory(ids: IdSource.random(now: clock()))
     let addressing = OmniboxAddressing()
     var storeConfig = Self.config(folder)
-    let activeScope = Self.scope
     let context = LoadContext(env: addressing, config: storeConfig, memory: memory, now: clock())
     do {
       let launch = try safeMode
         ? Launcher.openSafe(DataFolder(url: folder), appVersion: version, now: now, context: context)
-        : SafeLaunch(Launcher.open(DataFolder(url: folder), appVersion: version, now: now, context: context, scope: activeScope))
+        : SafeLaunch(Launcher.open(DataFolder(url: folder), appVersion: version, now: now, context: context))
       let profileDataTombstones = folder.appending(path: "profile-data-tombstones.json")
       storeConfig.profileDataTombstones = profileDataTombstones
       for note in launch.report.notes { NSLog("[store] %@", note) }
@@ -153,14 +147,14 @@ public final class NativeStore: Sendable {
       let store = Store(
         state: state, memory: launch.memory, env: addressing, config: storeConfig,
         onPersistenceRefusal: { message in DispatchQueue.main.async { showPersistenceRefusal(message) } }, clock: clock)
-      ownsWorkspace = activeScope == .everything
+      ownsWorkspace = true
       let host = StoreHost(
         store: store, ownsWorkspace: ownsWorkspace, folder: folder,
         restoreTrouble: { NSLog("[store] couldn't restore launch themes: %@", $0) },
         makeWriter: { store in launch.database.map { database in
           PersistenceWriter(
             store: store, database: database, folder: DataFolder(url: folder), persisted: launch.persisted,
-            scope: safeMode ? .settingsAndDownloads : activeScope,
+            scope: safeMode ? .settingsAndDownloads : .everything,
             trouble: { message in NSLog("[store] %@", message) })
         } })
       do {

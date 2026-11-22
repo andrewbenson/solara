@@ -311,10 +311,10 @@ try {
 
   const list = () => listSyncFiles(FOLDER);
   const known = new Set(list());
-  await ev("A", `ac.store.getState().addBookmark({ profileId: "default", url: "${W}/alpha.html?nne2e=partial1", title: "ACE2E Partial One" }); return acSync.syncNow()`);
+  await ev("A", `return ac.bookmarks.addBookmark({ profileId: "default", url: "${W}/alpha.html?nne2e=partial1", title: "ACE2E Partial One" }).then(() => acSync.syncNow())`);
   const first = list().find((f) => !known.has(f));
   known.add(first);
-  await ev("A", `ac.store.getState().addBookmark({ profileId: "default", url: "${W}/beta.html?nne2e=partial2", title: "ACE2E Partial Two" }); return acSync.syncNow()`);
+  await ev("A", `return ac.bookmarks.addBookmark({ profileId: "default", url: "${W}/beta.html?nne2e=partial2", title: "ACE2E Partial Two" }).then(() => acSync.syncNow())`);
   const second = list().find((f) => !known.has(f));
   const full = fs.readFileSync(first);
   fs.writeFileSync(first, full.subarray(0, full.length >> 1));

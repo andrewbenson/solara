@@ -297,8 +297,8 @@ const before = await evaluate("v.currentTime");
 await sleep(1000);
 const after = await evaluate("({ paused: v.paused, time: v.currentTime, pip: !!document.pictureInPictureElement })");
 check(
-  "closing the Picture in Picture window leaves its video playing",
-  !!closed?.closed && !after?.pip && after?.paused === false && after.time !== before,
+  "closing the Picture in Picture window pauses its video",
+  !!closed?.closed && !after?.pip && after?.paused === true && after.time === before,
   closed ? `closed ${closed.closed}, paused ${after?.paused}, ${before?.toFixed(2)} → ${after?.time?.toFixed(2)} s` : "no close click",
 );
 check(

@@ -14,6 +14,7 @@ function harness() {
   const docs = new Map();
   const databases = new Map();
   let beforeAdd = async () => {};
+  let beforeReply = async () => {};
   let clock = 0;
   const timers = new Set();
   const database = (engine) => {
@@ -42,7 +43,7 @@ function harness() {
     saveDocument: async (name, text) => { docs.set(name, text); }, removeDocument: (name) => docs.delete(name),
     afterFirstWindow: (fn) => { firstWindow.push(fn); },
     watchHistory: async (engine) => { watches.push(engine); },
-    queryHistory: async (engine) => { reads.push(engine); return [...database(engine).values()]; },
+    queryHistory: async (engine) => { reads.push(engine); const rows = [...database(engine).values()]; await beforeReply(engine); return rows; },
     startNativeHistoryCatalog: async (engines) => { catalogs.push([...engines]); },
     nativeAddHistoryVisits: async (engine, pages) => {
       adds.push({ engine, pages });
@@ -61,6 +62,8 @@ function harness() {
   return { api, docs, loaded, reads, watches, adds, catalogs, databases, useBrowser, state: () => state,
     firstWindow: () => { for (const fn of firstWindow.splice(0)) fn(); },
     beforeAdd: (fn) => { beforeAdd = fn; },
+    beforeReply: (fn) => { beforeReply = fn; },
+    emit: (change) => { for (const listener of [...historyListeners]) listener(change); },
     advance: async (ms) => {
       clock += ms;
       for (const timer of [...timers].sort((a, b) => a.at - b.at)) if (timer.at <= clock) { timers.delete(timer); timer.fn(); }
@@ -86,6 +89,122 @@ test("passive history startup never reads or watches unloaded profile", async ()
     await settle();
     assert.ok(h.reads.includes("cold"));
     assert.equal(h.state().historyReady.cold, true);
+  } finally { stop(); }
+});
+
+test("rows adopted while a history read is in flight survive its older reply, and rows the engine dropped stay gone", async () => {
+  const h = harness();
+  h.databases.set("", new Map([
+    ["https://kept.test/", { url: "https://kept.test/", title: "Kept", visits: 1, visitTimes: [100] }],
+    ["https://dropped.test/", { url: "https://dropped.test/", title: "Dropped", visits: 1, visitTimes: [90] }],
+  ]));
+  const stop = h.api.startHistory();
+  try {
+    await settle();
+    assert.deepEqual(Array.from(h.state().history.default, (e) => e.url), ["https://kept.test/", "https://dropped.test/"]);
+    h.databases.get("").delete("https://dropped.test/");
+    let release = () => {};
+    h.beforeReply(() => new Promise((resolve) => { release = resolve; }));
+    const reading = h.api.reloadHistory();
+    await settle();
+    h.useBrowser.setState((state) => ({ history: { ...state.history, default: [row("https://imported.test/"), ...state.history.default] } }));
+    h.beforeReply(async () => {});
+    release();
+    await reading;
+    await settle();
+    assert.deepEqual(Array.from(h.state().history.default, (e) => e.url), ["https://imported.test/", "https://kept.test/"]);
+  } finally { stop(); }
+});
+
+test("a row the user removes while a history read is in flight stays removed, even one adopted during the read", async () => {
+  const h = harness();
+  h.databases.set("", new Map([
+    ["https://kept.test/", { url: "https://kept.test/", title: "Kept", visits: 1, visitTimes: [100] }],
+    ["https://removed.test/", { url: "https://removed.test/", title: "Removed", visits: 1, visitTimes: [90] }],
+  ]));
+  const stop = h.api.startHistory();
+  try {
+    await settle();
+    let release = () => {};
+    h.beforeReply(() => new Promise((resolve) => { release = resolve; }));
+    const reading = h.api.reloadHistory();
+    await settle();
+    h.useBrowser.setState((state) => ({ history: { ...state.history, default: [row("https://adopted-then-removed.test/"), ...state.history.default] } }));
+    const gone = ["https://removed.test/", "https://adopted-then-removed.test/"];
+    h.useBrowser.setState((state) => ({ history: { ...state.history, default: state.history.default.filter((e) => !gone.includes(e.url)) } }));
+    h.databases.get("").delete("https://removed.test/");
+    h.emit({ kind: "deleted", profile: "", urls: gone });
+    await settle();
+    h.beforeReply(async () => {});
+    release();
+    await reading;
+    await settle();
+    assert.deepEqual(Array.from(h.state().history.default, (e) => e.url), ["https://kept.test/"]);
+  } finally { stop(); }
+});
+
+test("a row adopted during a history read that the engine deletes during that read stays deleted", async () => {
+  const h = harness();
+  h.databases.set("", new Map([["https://kept.test/", { url: "https://kept.test/", title: "Kept", visits: 1, visitTimes: [100] }]]));
+  const stop = h.api.startHistory();
+  try {
+    await settle();
+    let release = () => {};
+    h.beforeReply(() => new Promise((resolve) => { release = resolve; }));
+    const reading = h.api.reloadHistory();
+    await settle();
+    h.useBrowser.setState((state) => ({ history: { ...state.history, default: [row("https://cleared.test/"), ...state.history.default] } }));
+    h.emit({ kind: "deleted", profile: "", urls: ["https://cleared.test/"] });
+    await settle();
+    h.beforeReply(async () => {});
+    release();
+    await reading;
+    await settle();
+    assert.deepEqual(Array.from(h.state().history.default, (e) => e.url), ["https://kept.test/"]);
+  } finally { stop(); }
+});
+
+test("a row adopted during a history read keeps a rename the engine reports during that read", async () => {
+  const h = harness();
+  h.databases.set("", new Map([["https://kept.test/", { url: "https://kept.test/", title: "Kept", visits: 1, visitTimes: [100] }]]));
+  const stop = h.api.startHistory();
+  try {
+    await settle();
+    let release = () => {};
+    h.beforeReply(() => new Promise((resolve) => { release = resolve; }));
+    const reading = h.api.reloadHistory();
+    await settle();
+    h.useBrowser.setState((state) => ({ history: { ...state.history, default: [row("https://renamed.test/"), ...state.history.default] } }));
+    h.emit({ kind: "modified", profile: "", rows: [{ url: "https://renamed.test/", title: "Renamed", visits: 4 }] });
+    await settle();
+    h.beforeReply(async () => {});
+    release();
+    await reading;
+    await settle();
+    const renamed = h.state().history.default.find((e) => e.url === "https://renamed.test/");
+    assert.equal(renamed?.title, "Renamed");
+    assert.equal(renamed?.visits, 4);
+  } finally { stop(); }
+});
+
+test("rows a private profile gains while a history read is in flight never join the regular profile", async () => {
+  const h = harness();
+  h.databases.set("", new Map([["https://kept.test/", { url: "https://kept.test/", title: "Kept", visits: 1, visitTimes: [100] }]]));
+  h.useBrowser.setState((state) => ({ profiles: { ...state.profiles, "incognito:w@default": { id: "incognito:w@default", dataId: "default" } } }));
+  const stop = h.api.startHistory();
+  try {
+    await settle();
+    let release = () => {};
+    h.beforeReply(() => new Promise((resolve) => { release = resolve; }));
+    const reading = h.api.reloadHistory();
+    await settle();
+    h.useBrowser.setState((state) => ({ history: { ...state.history, "incognito:w@default": [row("https://private.test/")] } }));
+    h.beforeReply(async () => {});
+    release();
+    await reading;
+    await settle();
+    assert.deepEqual(Array.from(h.state().history.default, (e) => e.url), ["https://kept.test/"]);
+    assert.deepEqual(Array.from(h.state().history["incognito:w@default"], (e) => e.url), ["https://private.test/"]);
   } finally { stop(); }
 });
 

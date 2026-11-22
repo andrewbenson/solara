@@ -123,6 +123,14 @@ const loads = new Map<string, Load>();
 const loaded = new Set<string>();
 const migrating = new Set<string>();
 
+function withRowsAddedDuringTheRead(list: HistoryEntry[], shownBefore: Set<string>, shownNow: HistoryEntry[], queued: HistoryChange[]): HistoryEntry[] {
+  const listed = new Set(list.map((h) => h.url));
+  let added = shownNow.filter((h) => !shownBefore.has(h.url) && !listed.has(h.url));
+  for (const change of queued) if (added.length && !(change.kind === "deleted" && change.all)) added = applyHistoryChange(added, change);
+  added = added.filter((h) => !listed.has(h.url));
+  return added.length ? [...list, ...added].sort(byLastVisit).slice(0, MAX_HISTORY) : list;
+}
+
 function load(engine: string): Promise<void> {
   const running = loads.get(engine);
   if (running) {
@@ -137,11 +145,13 @@ function load(engine: string): Promise<void> {
         state.again = false;
         state.queued = [];
         await watchHistory(engine);
+        const shownBefore = new Set(viewOf(engine).map((h) => h.url));
         const read = await queryHistory(engine, MAX_HISTORY, MAX_VISIT_TIMES);
         const floor = read.length >= MAX_HISTORY ? Math.min(...read.map((e) => e.visitTimes.at(-1) ?? 0)) : -Infinity;
         let list = read.filter((e) => shownInHistory(e.url)).map(toEntry).sort(byLastVisit);
         for (const change of state.queued) if (!(change.kind === "deleted" && change.all)) list = applyHistoryChange(list, change);
         if (state.queued.some((c) => c.kind === "deleted" && c.all)) state.again = true;
+        else list = withRowsAddedDuringTheRead(list, shownBefore, viewOf(engine), state.queued);
         setView(engine, list, floor);
         loaded.add(engine);
       } while (state.again);

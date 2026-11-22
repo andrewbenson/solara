@@ -62,7 +62,7 @@ const usesPageA = [
   "extension-prompts", "extension-prompt-closed", "extension-sheet-native", "traffic-lights-after-profile-switch", "extension-configure",
   "private-windows-create", "extension-installed-bubble", "popup-window", "popup-window-permission", "popup-origin-strip", "autofill-save-prompts",
   "settings-services", "download-navigation", "page-events", "page-background", "appearance-reaches-pages", "external-app-answer",
-  "notifications", "now-playing", "media-state", "auto-picture-in-picture", "pip-takeover-profiles", "pip-api", "pip-window", "pip-click-skip", "page-focus", "page-press-split",
+  "notifications", "now-playing", "media-state", "auto-picture-in-picture", "pip-takeover-profiles", "pip-api", "pip-call", "pip-window", "pip-click-skip", "page-focus", "page-press-split",
   "fullscreen-tab-switch", "fullscreen-native", "escape-in-window-fullscreen", "fullscreen-transition-picture", "fullscreen-hidden-page", "fullscreen-split-sibling",
   "fullscreen-pip", "pip-fullscreen-space", "webkit-picture-in-picture", "pip-document-back-to-tab", "autofill-suggestions", "images", "extension-surfaces", "frozen", "discard",
   "permission-prompt", "popup-blocked", "move-tab-slow-mount", "move-last-tab-slow-mount",
@@ -330,6 +330,19 @@ const server = createServer((req, res) => {
         return window.__asks.length - 1;
       };
       window.stopAll = () => { for (const s of window.__streams) s.getTracks().forEach((t) => t.stop()); return true; };
+    </script>`));
+  if (url.pathname === "/call")
+    return res.end(page("Call", `<video id="me" autoplay muted playsinline style="width: 320px; height: 180px"></video><script>
+      const me = document.getElementById("me");
+      window.call = { joined: false, inPip: false, error: null };
+      window.join = (c) => { navigator.mediaDevices.getUserMedia(c).then((s) => { window.stream = s; me.srcObject = s; call.joined = true; }, (e) => { call.error = e.name; }); return true; };
+      navigator.mediaSession.setActionHandler("enterpictureinpicture", async () => {
+        const w = await documentPictureInPicture.requestWindow({ width: 320, height: 180 });
+        w.document.body.append(me);
+        call.inPip = true;
+        w.addEventListener("pagehide", () => { document.body.append(me); call.inPip = false; });
+      });
+      window.callState = () => JSON.stringify({ ...call, tracks: (window.stream?.getTracks() ?? []).map((t) => t.kind + ":" + t.readyState), home: me.ownerDocument === document });
     </script>`));
   if (url.pathname === "/element")
     return res.end(page("Element", `<usermedia id="um" style="display:block;font-size:20px;margin:40px"></usermedia>`, `<script>
@@ -6301,6 +6314,104 @@ try {
     } finally {
       for (const tab of [one, two]) if (tab) await evalApp(`return ac.webviews.get("${tab.id}").exitPictureInPicture()`).catch(() => null);
       for (const tab of [one, two]) if (tab) await closeTab(tab.id).catch(() => null);
+      await evalApp(`ac.actions.switchToTab("${first.id}"); return true`).catch(() => null);
+    }
+  });
+
+  await check("pip-call", async () => {
+    const docPip = (id, active) => lastEvent(id, "pictureInPicture", (p) => p.kind === "document" && p.active === active);
+    const holder = () => cef(`devPictureInPictureHolder()`);
+    const toA = async () => {
+      await evalApp(`ac.actions.switchToTab("${first.id}"); return true`);
+      await until("Page A shown", async () => (await state()).active === first.id);
+    };
+    const opened = [];
+    const join = async (query, constraints) => {
+      const tab = await openTab(`${secureBase}/call?${query}`, "Call");
+      opened.push(tab);
+      const t = await pageFor(tab.id, "/call");
+      const js = async (e) => (await cdp(t, "Runtime.evaluate", { expression: e, awaitPromise: true, userGesture: true, returnByValue: true })).result.value;
+      await js(`join(${JSON.stringify(constraints)})`);
+      await until("joined", async () => {
+        const request = await evalApp(`return ac.pageState.getState().pages["${tab.id}"]?.permission ?? null`);
+        if (request) await evalApp(`ac.permissions.answerPermission("${tab.id}", "${request.id}", "accept"); return true`);
+        return JSON.parse(await js("callState()")).joined ? true : null;
+      }, 10000);
+      return { tab, t, js, call: async () => JSON.parse(await js("callState()")) };
+    };
+    const out = {};
+    try {
+      const both = await join("both", { audio: true, video: true });
+      await sleep(500);
+      await toA();
+      out.leave = await until("the call's document PiP", async () => docPip(both.tab.id, true), 8000).then(() => true, () => false);
+      out.inPip = await both.call();
+      await evalApp(`ac.actions.switchToTab("${both.tab.id}"); return true`);
+      out.back = await until("the call's PiP closed", async () => docPip(both.tab.id, false), 8000).then(() => true, () => false);
+      await sleep(500);
+      out.home = await both.call();
+
+      const video = await openTab(`${secureBase}/video?auto&file&call-video`, "Video");
+      opened.push(video);
+      const videoPage = await startVideo(video.id, true);
+      await until("the video playing audio", async () => (await live(video.id))?.playingAudio === true, 8000);
+      await evalApp(`ac.actions.switchToTab("${both.tab.id}"); return true`);
+      await until("the call shown", async () => (await state()).active === both.tab.id);
+      out.videoEntered = await cef(`devPictureInPictureEnter(${JSON.stringify(video.id)})`);
+      await sleep(500);
+      await toA();
+      out.callTookOver = await until("the call taking the PiP over", async () => ((await holder()) === both.tab.id ? true : null), 8000).then(() => true, () => false);
+      out.videoPausedByTakeover = (await cdp(videoPage, "Runtime.evaluate", { expression: "document.getElementById('v').paused", returnByValue: true })).result.value === true;
+
+      await cdp(videoPage, "Runtime.evaluate", { expression: "document.getElementById('v').play().then(() => true, () => false)", awaitPromise: true, userGesture: true, returnByValue: true });
+      await evalApp(`ac.actions.switchToTab("${video.id}"); return true`);
+      await until("the video shown", async () => (await state()).active === video.id);
+      await sleep(500);
+      await toA();
+      await sleep(2500);
+      out.callKeptPip = (await holder()) === both.tab.id;
+      out.callStillLive = (await both.call()).tracks;
+
+      await evalApp(`return ac.webviews.get("${both.tab.id}").exitPictureInPicture()`).catch(() => null);
+      await until("no PiP", async () => ((await holder()) === "" ? true : null), 5000).catch(() => null);
+      const mic = await join("mic", { audio: true });
+      await sleep(500);
+      await toA();
+      out.micOnly = await until("the mic-only call's PiP", async () => docPip(mic.tab.id, true), 8000).then(() => true, () => false);
+      await evalApp(`return ac.webviews.get("${mic.tab.id}").exitPictureInPicture()`).catch(() => null);
+
+      await cef(`setAutoPictureInPicture(false)`);
+      try {
+        await evalApp(`ac.actions.switchToTab("${both.tab.id}"); return true`);
+        await until("the call shown", async () => (await state()).active === both.tab.id);
+        const before = (await eventsOf(both.tab.id)).filter((x) => x.name === "pictureInPicture" && x.payload?.active).length;
+        await toA();
+        await sleep(2500);
+        out.settingOffOpened = (await eventsOf(both.tab.id)).filter((x) => x.name === "pictureInPicture" && x.payload?.active).length > before;
+      } finally {
+        await cef(`setAutoPictureInPicture(true)`);
+      }
+
+      const home = (await state()).profileId;
+      const other = await evalApp(`return ac.store.getState().createProfile({ name: "Call elsewhere" })`);
+      await evalApp(`ac.actions.switchToTab("${both.tab.id}"); return true`);
+      await until("the call shown", async () => (await state()).active === both.tab.id);
+      await sleep(500);
+      const before = (await eventsOf(both.tab.id)).filter((x) => x.name === "pictureInPicture" && x.payload?.active).length;
+      await evalApp(`ac.actions.switchProfile("${mainWindow}", "${other}"); return true`);
+      await until("the other profile shown", async () => (await state()).profileId === other);
+      await sleep(3000);
+      out.profileSwitchOpened = (await eventsOf(both.tab.id)).filter((x) => x.name === "pictureInPicture" && x.payload?.active).length > before;
+      await evalApp(`ac.actions.switchProfile("${mainWindow}", "${home}"); return true`);
+      await until("the first profile back", async () => (await state()).profileId === home).catch(() => null);
+
+      const failed = !out.leave || !out.inPip.inPip || !out.inPip.tracks.every((x) => x.endsWith(":live")) || !out.back || !out.home.home ||
+        out.videoEntered !== true || !out.callTookOver || !out.videoPausedByTakeover || !out.callKeptPip || !out.micOnly || out.settingOffOpened;
+      if (failed) throw new Error(JSON.stringify(out));
+      return out;
+    } finally {
+      for (const tab of opened) await evalApp(`return ac.webviews.get("${tab.id}").exitPictureInPicture()`).catch(() => null);
+      for (const tab of opened) await closeTab(tab.id).catch(() => null);
       await evalApp(`ac.actions.switchToTab("${first.id}"); return true`).catch(() => null);
     }
   });

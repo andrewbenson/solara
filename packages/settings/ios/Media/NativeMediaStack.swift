@@ -75,7 +75,7 @@ enum NativeMediaStack {
       position: report.position, timestamp: report.timestamp, playbackRate: report.playbackRate == 0 ? 1 : report.playbackRate,
       duration: report.duration, tracks: report.actions.contains("nexttrack") || report.actions.contains("previoustrack"),
       artwork: art(entry.tabId, report.artwork), url: tab.url, favicon: tab.favicon, profileId: tab.profileId, theme: theme,
-      profileName: incognito ? "Private" : state.profiles[tab.profileId]?.name, profileColor: incognito ? nil : state.profiles[tab.profileId]?.color,
+      profileName: incognito ? "Private" : state.profiles[tab.profileId]?.name, profileColor: incognito ? nil : NativeLayoutAppearance(state: state, profileId: tab.profileId, incognito: false).tokens["accent"],
       hasVideo: report.hasVideo, holdsPictureInPicture: pipTab == entry.tabId)
   }
 

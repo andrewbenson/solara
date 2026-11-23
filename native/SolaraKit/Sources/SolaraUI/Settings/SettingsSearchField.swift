@@ -21,7 +21,7 @@ struct SettingsSearchField: NSViewRepresentable {
 
   func updateNSView(_ field: NSSearchField, context: Context) {
     context.coordinator.parent = self
-    if field.stringValue != text { field.stringValue = text }
+    FieldText.set(field, text)
     if focusRequest != context.coordinator.lastFocusRequest {
       context.coordinator.lastFocusRequest = focusRequest
       DispatchQueue.main.async {
@@ -42,7 +42,7 @@ struct SettingsSearchField: NSViewRepresentable {
     }
 
     func controlTextDidChange(_ notification: Notification) {
-      guard let field = notification.object as? NSSearchField else { return }
+      guard let field = notification.object as? NSSearchField, field.stringValue != parent.text else { return }
       parent.text = field.stringValue
     }
 
@@ -59,7 +59,7 @@ struct SettingsSearchField: NSViewRepresentable {
         return true
       case #selector(NSResponder.cancelOperation(_:)):
         parent.text = ""
-        (control as? NSSearchField)?.stringValue = ""
+        if let field = control as? NSSearchField { FieldText.set(field, "") }
         return true
       default:
         return false

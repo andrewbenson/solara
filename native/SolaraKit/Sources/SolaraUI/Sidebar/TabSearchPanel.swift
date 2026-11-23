@@ -215,7 +215,7 @@ public final class TabSearchPanelView: NSView, NSTextFieldDelegate {
 
   public func open(_ next: TabSearchState) {
     if let owner = Self.owner(of: window?.firstResponder, besides: field) { savedResponder = owner }
-    field.stringValue = ""
+    FieldText.set(field, "")
     selected = 0
     closing = false
     isHidden = false

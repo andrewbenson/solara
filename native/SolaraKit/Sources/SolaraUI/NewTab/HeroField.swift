@@ -93,11 +93,7 @@ final class HeroFieldCoordinator: NSObject, NSTextFieldDelegate, HeroFieldContro
     guard let field else { return }
     applying = true
     defer { applying = false }
-    if let editor = field.currentEditor() as? NSTextView {
-      if editor.string != value { editor.string = value }
-    } else if field.stringValue != value {
-      field.stringValue = value
-    }
+    FieldText.set(field, value)
     if let editor = field.currentEditor() {
       let length = (value as NSString).length
       let start = min(selection.start, length)
@@ -189,6 +185,7 @@ final class HeroFieldCoordinator: NSObject, NSTextFieldDelegate, HeroFieldContro
   }
 
   func textView(_ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange, replacementString: String?) -> Bool {
+    guard !applying else { return true }
     let r = textView.selectedRange
     before = TextSelection(start: r.location, end: r.location + r.length)
     return true

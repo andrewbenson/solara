@@ -161,7 +161,7 @@ public final class SidebarGroupCardView: NSView, NSTextFieldDelegate {
     let fresh = state?.groupId != next.groupId
     state = next
     if fresh {
-      field.stringValue = ""
+      FieldText.set(field, "")
       selected = 0
       scroll.contentView.scroll(to: .zero)
     }

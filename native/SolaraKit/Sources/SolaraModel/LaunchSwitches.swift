@@ -57,6 +57,7 @@ public struct LaunchSwitches: Sendable {
   public let distribution: Bool
   public var safeMode = false
   public var safeModeAfterFailedLaunches = false
+  public var safeModeRequestedAfterFailedOpen = false
   public var countedLaunch = false
   let environment: [LaunchSwitch: Bool]
   let stored: [LaunchSwitch: Bool]
@@ -157,6 +158,25 @@ public struct LaunchSwitches: Sendable {
 
   static let failedLaunchesKey = "SolaraLaunchSwitchFailedLaunches"
   static let failedLaunchLimit = 2
+  static let safeModeRequestKey = "SolaraLaunchSwitchSafeModeRequested"
+  public static let safeModeRequestVariable = "SOLARA_SAFE_MODE_REQUEST"
+
+  public static func requestSafeMode(token: String, defaults: UserDefaults = LaunchSwitches.defaults) {
+    defaults.set(token, forKey: safeModeRequestKey)
+  }
+
+  static func safeModeRequestMatches(environment env: [String: String], defaults: UserDefaults) -> Bool {
+    guard let stored = defaults.string(forKey: safeModeRequestKey), !stored.isEmpty else { return false }
+    return env[safeModeRequestVariable] == stored
+  }
+
+  static func takeSafeModeRequest(environment env: [String: String], defaults: UserDefaults) -> Bool {
+    defer { unsetenv(safeModeRequestVariable) }
+    guard defaults.object(forKey: safeModeRequestKey) != nil else { return false }
+    let matches = safeModeRequestMatches(environment: env, defaults: defaults)
+    defaults.removeObject(forKey: safeModeRequestKey)
+    return matches
+  }
 
   public static func launching(
     environment env: [String: String], defaults: UserDefaults, distribution: Bool, optionHeld: () -> Bool, counting: Bool = true,
@@ -165,6 +185,13 @@ public struct LaunchSwitches: Sendable {
     let probe = LaunchSwitches(environment: env, defaults: nil, distribution: distribution, skipStored: false)
     if !probe.usesDefaults { return probe }
     var switches = LaunchSwitches(environment: env, defaults: defaults, distribution: distribution, skipStored: false)
+    if counting, takeSafeModeRequest(environment: env, defaults: defaults) {
+      defaults.set(max(defaults.integer(forKey: failedLaunchesKey), failedLaunchLimit), forKey: failedLaunchesKey)
+      switches.countedLaunch = true
+      switches.safeMode = true
+      switches.safeModeRequestedAfterFailedOpen = true
+      return switches
+    }
     if optionHeld(), confirmSafeMode() {
       if counting {
         defaults.set(max(defaults.integer(forKey: failedLaunchesKey), failedLaunchLimit), forKey: failedLaunchesKey)
@@ -188,6 +215,9 @@ public struct LaunchSwitches: Sendable {
 
   public var safeModeReport: String? {
     guard safeMode else { return nil }
+    if safeModeRequestedAfterFailedOpen {
+      return "You chose Open in Safe Mode after Solara couldn't open its data, so this launch skips session restore and extensions."
+    }
     return safeModeAfterFailedLaunches
       ? "Solara didn't finish opening twice in a row, so this launch skips session restore and extensions."
       : "Option was held while Solara opened, so this launch skips session restore and extensions."
@@ -207,9 +237,18 @@ public struct LaunchSwitches: Sendable {
 
   static func askSafeMode() -> Bool? {
     let launch = Launch()
-    let probe = launch.probe
-    guard probe.usesDefaults, (probe.defaultsSuite != nil && launch.env[optionVariable] == "1") || optionHeld() else { return nil }
-    return probe.isolated || confirmSafeModeAlert()
+    return safeModeAnswer(
+      environment: launch.env, defaults: launch.defaults, distribution: launch.distribution, optionHeld: optionHeld,
+      confirm: confirmSafeModeAlert)
+  }
+
+  static func safeModeAnswer(
+    environment env: [String: String], defaults: UserDefaults, distribution: Bool, optionHeld: () -> Bool, confirm: () -> Bool
+  ) -> Bool? {
+    let probe = LaunchSwitches(environment: env, defaults: nil, distribution: distribution, skipStored: false)
+    guard probe.usesDefaults, !safeModeRequestMatches(environment: env, defaults: defaults) else { return nil }
+    guard (probe.defaultsSuite != nil && env[optionVariable] == "1") || optionHeld() else { return nil }
+    return probe.isolated || confirm()
   }
 
   static func system(counting: Bool, safeModeAnswer: Bool?) -> LaunchSwitches {

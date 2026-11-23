@@ -13,6 +13,7 @@ NS_ASSUME_NONNULL_BEGIN
           delegate:(id<NSApplicationDelegate> (^)(void))makeDelegate NS_SWIFT_NAME(run(argc:argv:delegate:));
 
 @property(class, nonatomic) BOOL safeMode;
+@property(class, readonly) BOOL launchedHidden;
 @property(class, readonly) BOOL testBuild;
 @property(class, readonly) BOOL isStarted;
 @property(class, readonly) NSArray<NSString *> *loadedProfileNames;
@@ -75,5 +76,11 @@ NS_ASSUME_NONNULL_BEGIN
     completion:(void (^)(NSDictionary<NSString *, id> *_Nullable result))completion
     NS_SWIFT_NAME(fetch(_:profile:name:completion:));
 @end
+
+#if DEBUG
+@interface SolaraCoreHost (DevEarlyWindow)
+@property(class, readonly) NSDictionary<NSString *, id> *devEarlyWindowDecision;
+@end
+#endif
 
 NS_ASSUME_NONNULL_END

@@ -11,6 +11,7 @@ public final class NativeStore: Sendable {
   nonisolated(unsafe) public private(set) static var ownsWorkspace = false
   nonisolated(unsafe) public private(set) static var safeMode = false
   nonisolated(unsafe) public private(set) static var safeModeAfterFailedLaunches = false
+  nonisolated(unsafe) public private(set) static var safeModeRequestedAfterFailedOpen = false
 
   static func config(_ folder: URL) -> StoreConfig {
     var config = StoreConfig()
@@ -104,21 +105,29 @@ public final class NativeStore: Sendable {
   public static func launchAtStartup() -> Bool {
     RNPageReports.install(issuer: nil)
     _ = setAppScheme(productName())
-    guard let folder = dataFolder() else {
+    #if DEBUG
+    let chosenFolder = storeOpenTestFailure == "noFolder" ? nil : dataFolder()
+    #else
+    let chosenFolder = dataFolder()
+    #endif
+    guard let folder = chosenFolder else {
       unavailableReason = "no data folder"
-      NativeSettingsHandle.unavailable = StoreUnavailable(cause: .openFailed, detail: "no data folder", dataFolder: nil)
+      NativeSettingsHandle.unavailable = StoreUnavailable(cause: .openFailed, detail: "no data folder", dataFolder: nil, errorType: "NoDataFolder")
       return false
     }
+    var countedLaunch = false
     do {
       guard let lock = try FolderLock.acquire(DataFolder(url: folder)) ?? waitForHolder(folder) else { return false }
       folderLock = lock
       let switches = LaunchSwitches.countLaunch()
       safeMode = switches.safeMode
       safeModeAfterFailedLaunches = switches.safeModeAfterFailedLaunches
-      if switches.countedLaunch { MainActor.assumeIsolated { LaunchSuccessWatch.start() } }
+      safeModeRequestedAfterFailedOpen = switches.safeModeRequestedAfterFailedOpen
+      countedLaunch = switches.countedLaunch
     } catch {
       unavailableReason = "couldn't lock the data folder: \(error)"
-      NativeSettingsHandle.unavailable = StoreUnavailable(cause: .openFailed, detail: unavailableReason ?? "", dataFolder: folder)
+      NativeSettingsHandle.unavailable = StoreUnavailable(
+        cause: .openFailed, detail: unavailableReason ?? "", dataFolder: folder, errorType: String(describing: type(of: error)))
       NSLog("[store] %@; store unavailable", unavailableReason ?? "")
       return false
     }
@@ -129,10 +138,18 @@ public final class NativeStore: Sendable {
     let addressing = OmniboxAddressing()
     var storeConfig = Self.config(folder)
     let context = LoadContext(env: addressing, config: storeConfig, memory: memory, now: clock())
+    let launch: SafeLaunch
     do {
-      let launch = try safeMode
+      #if DEBUG
+      if storeOpenTestFailure == (safeMode ? "safeOpenFailed" : "openFailed") { throw StoreOpenTestFailure(folder: folder) }
+      #endif
+      launch = try safeMode
         ? Launcher.openSafe(DataFolder(url: folder), appVersion: version, now: now, context: context)
         : SafeLaunch(Launcher.open(DataFolder(url: folder), appVersion: version, now: now, context: context))
+    } catch {
+      return storeUnavailable(error, folder: folder, offersSafeMode: true)
+    }
+    do {
       let profileDataTombstones = folder.appending(path: "profile-data-tombstones.json")
       storeConfig.profileDataTombstones = profileDataTombstones
       for note in launch.report.notes { NSLog("[store] %@", note) }
@@ -147,9 +164,8 @@ public final class NativeStore: Sendable {
       let store = Store(
         state: state, memory: launch.memory, env: addressing, config: storeConfig,
         onPersistenceRefusal: { message in DispatchQueue.main.async { showPersistenceRefusal(message) } }, clock: clock)
-      ownsWorkspace = true
       let host = StoreHost(
-        store: store, ownsWorkspace: ownsWorkspace, folder: folder,
+        store: store, ownsWorkspace: true, folder: folder,
         restoreTrouble: { NSLog("[store] couldn't restore launch themes: %@", $0) },
         makeWriter: { store in launch.database.map { database in
           PersistenceWriter(
@@ -163,6 +179,7 @@ public final class NativeStore: Sendable {
         host.writer?.freeze()
         throw error
       }
+      ownsWorkspace = true
       NativeConfigFiles.start(location: configLocation, contents: configContents, store: store)
       if ownsWorkspace {
         let issuer = PageIssuer(store: store, deliver: { work in host.deliverPageCallback(work) })
@@ -197,15 +214,44 @@ public final class NativeStore: Sendable {
         let result = store.host.termination()
         if result != .saved { NSLog("[store] quit flush: %@", result.description) }
       }
+      if countedLaunch { LaunchSuccessWatch.start() }
       return true
     } catch {
-      unavailableReason = "\(error)"
-      if error is ImportRefused { refusedSession = DataFolder(url: folder).session.path }
-      NativeSettingsHandle.unavailable = StoreUnavailable(cause: error is ImportRefused ? .refused : .openFailed, detail: "\(error)", dataFolder: folder)
-      NSLog("[store] unavailable: %@", "\(error)")
-      return false
+      return storeUnavailable(error, folder: folder, offersSafeMode: false)
     }
   }
+
+  @MainActor
+  private static func storeUnavailable(_ error: any Error, folder: URL, offersSafeMode: Bool) -> Bool {
+    unavailableReason = "\(error)"
+    let refused = error is ImportRefused
+    if refused { refusedSession = DataFolder(url: folder).session.path }
+    NativeSettingsHandle.unavailable = StoreUnavailable(
+      cause: refused ? .refused : .openFailed, detail: "\(error)", dataFolder: folder, offersSafeMode: offersSafeMode,
+      errorType: String(describing: type(of: error)), launchWasSafeMode: safeMode)
+    NSLog("[store] unavailable: %@", "\(error)")
+    return false
+  }
+
+  #if DEBUG
+  static var storeOpenTestFailure: String? {
+    let environment = ProcessInfo.processInfo.environment
+    guard let scratch = environment["SOLARA_DATA_DIR"], !scratch.isEmpty else { return nil }
+    return environment["SOLARA_TEST_STORE_OPEN_FAIL"].flatMap { ["openFailed", "noFolder", "safeOpenFailed"].contains($0) ? $0 : nil }
+  }
+
+  struct StoreOpenTestFailure: Error, CustomStringConvertible {
+    let folder: URL
+
+    var description: String {
+      let resolved = realpath(folder.path, nil).map { pointer in
+        defer { free(pointer) }
+        return String(cString: pointer)
+      } ?? folder.path
+      return "SQLite error 14: unable to open database file \(folder.path)/solara.sqlite (resolved \(resolved)/solara.sqlite, home \(NSHomeDirectory()))\nsecond line that the report leaves out"
+    }
+  }
+  #endif
 
   @MainActor private static var persistenceAlertVisible = false
 

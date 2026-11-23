@@ -4,17 +4,20 @@ import React
 import SolaraCore
 import SolaraSettingsAdapter
 import SolaraShell
+import SolaraStoreAdapter
 import SolaraSyncAdapter
 import ReactAppDependencyProvider
 
 final class AppDelegate: ExpoAppDelegate {
   private var reactNativeDelegate: ExpoReactNativeFactoryDelegate?
-  private var reactNativeFactory: RCTReactNativeFactory?
+  private(set) var reactNativeFactory: RCTReactNativeFactory?
+  private var storeUnavailable: Bool { MainActor.assumeIsolated { StoreUnavailableWindow.presented } }
 
   override func applicationDidFinishLaunching(_ notification: Notification) {
     #if SOLARA_PROBES
     MainActor.assumeIsolated { ProbeHost.start() }
     #endif
+    if MainActor.assumeIsolated({ StoreUnavailableWindow.presentIfLaunchFailed(handedOff: NativeStore.handedOff) }) { return }
     let delegate = ReactNativeDelegate()
     let factory = ExpoReactNativeFactory(delegate: delegate)
     delegate.dependencyProvider = RCTAppDependencyProvider()
@@ -40,11 +43,12 @@ final class AppDelegate: ExpoAppDelegate {
   }
 
   override func application(_ application: NSApplication, open urls: [URL]) {
+    if storeUnavailable { return MainActor.assumeIsolated { StoreUnavailableWindow.droppedOpen(urls) } }
     let sourceApp = NSAppleEventManager.shared().currentAppleEvent != nil ? SolaraCoreHost.senderOfCurrentAppleEvent() : SolaraCoreHost.takeLaunchLinkSender()
     OpenURLInbox.receiveFromOutside(urls, sourceApp: sourceApp)
   }
 
-  func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+  func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { storeUnavailable }
 
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
     ShellApp.shouldTerminate()
@@ -59,15 +63,20 @@ final class AppDelegate: ExpoAppDelegate {
   }
 
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-    ShellApp.reopen(hasVisibleWindows: flag)
+    if storeUnavailable {
+      MainActor.assumeIsolated { StoreUnavailableWindow.bringForward() }
+      return false
+    }
+    return ShellApp.reopen(hasVisibleWindows: flag)
   }
 
   func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
-    ShellApp.dockMenu()
+    storeUnavailable ? nil : ShellApp.dockMenu()
   }
 
   override func application(_ application: NSApplication, willContinueUserActivityWithType userActivityType: String) -> Bool {
-    userActivityType == NSUserActivityTypeBrowsingWeb || super.application(application, willContinueUserActivityWithType: userActivityType)
+    if storeUnavailable { return false }
+    return userActivityType == NSUserActivityTypeBrowsingWeb || super.application(application, willContinueUserActivityWithType: userActivityType)
   }
 
   override func application(
@@ -75,15 +84,16 @@ final class AppDelegate: ExpoAppDelegate {
     continue userActivity: NSUserActivity,
     restorationHandler: @escaping ([any NSUserActivityRestoring]) -> Void
   ) -> Bool {
-    Handoff.continue(userActivity) || super.application(application, continue: userActivity, restorationHandler: restorationHandler)
+    if storeUnavailable { return false }
+    return Handoff.continue(userActivity) || super.application(application, continue: userActivity, restorationHandler: restorationHandler)
   }
 
   func application(_ sender: NSApplication, delegateHandlesKey key: String) -> Bool {
-    ShellScripting.handles(key)
+    !storeUnavailable && ShellScripting.handles(key)
   }
 
-  @objc var appleScriptWindows: [NSObject] { ShellScripting.windows }
-  @objc var appleScriptProfiles: [NSObject] { ShellScripting.profiles }
+  @objc var appleScriptWindows: [NSObject] { storeUnavailable ? [] : ShellScripting.windows }
+  @objc var appleScriptProfiles: [NSObject] { storeUnavailable ? [] : ShellScripting.profiles }
   @objc var version: String { ShellScripting.version }
 }
 

@@ -7,6 +7,7 @@ import SolaraProbes
 import SolaraStore
 import SolaraShell
 import SolaraSettingsAdapter
+import SolaraStoreAdapter
 import SolaraUI
 
 @_cdecl("SolaraProbeHostMarker")
@@ -77,7 +78,10 @@ final class ProbeHost {
         switch request.command {
         case "probe.hello":
           guard request.args.isEmpty else { throw ProbeFailure.invalidArgument }
-          response = ["id": id, "protocol": 1, "result": ["protocol": 1, "capabilities": ["probe.hello", "state.snapshot", "input.swipe", "input.hover", "view.capture", "onboarding.sync", "sync.enable", "pairing.trusted.arm", "pairing.trusted.select", "pairing.trusted.state", "pairing.trusted.decide"], "pid": getpid()]]
+          response = ["id": id, "protocol": 1, "result": ["protocol": 1, "capabilities": ["probe.hello", "state.snapshot", "input.swipe", "input.hover", "view.capture", "onboarding.sync", "sync.enable", "pairing.trusted.arm", "pairing.trusted.select", "pairing.trusted.state", "pairing.trusted.decide", "storeUnavailable.state", "storeUnavailable.press", "earlyWindow.decision"], "pid": getpid()]]
+        case "earlyWindow.decision":
+          guard request.args.isEmpty else { throw ProbeFailure.invalidArgument }
+          response = ["id": id, "protocol": 1, "result": SolaraCoreHost.devEarlyWindowDecision]
         case "input.swipe":
           try swipe(request)
           continue
@@ -170,6 +174,25 @@ final class ProbeHost {
             throw ProbeFailure.notReady
           }
           response = ["id": id, "protocol": 1, "result": result]
+        case "storeUnavailable.state":
+          guard request.args.isEmpty else { throw ProbeFailure.invalidArgument }
+          try checkGate(request)
+          response = ["id": id, "protocol": 1, "result": Self.storeUnavailableState()]
+        case "storeUnavailable.press":
+          guard Set(request.args.keys) == ["button"], let button = request.args["button"] as? String,
+            StoreUnavailableView.Choice(rawValue: button) != nil else { throw ProbeFailure.invalidArgument }
+          guard StoreUnavailableWindow.presented else { throw ProbeFailure.notReady }
+          guard (Self.storeUnavailableState()["buttons"] as? [String] ?? []).contains(button) else { throw ProbeFailure.invalidArgument }
+          try checkGate(request)
+          let ends = button == "quit" || button == "safeMode"
+          if !ends {
+            _ = StoreUnavailableWindow.press(button)
+            response = ["id": id, "protocol": 1, "result": Self.storeUnavailableState()]
+            break
+          }
+          reply(["id": id, "protocol": 1, "result": ["pressed": button, "pid": getpid()]], id: id, expiresAtMs: request.expiresAtMs)
+          DispatchQueue.main.async { MainActor.assumeIsolated { _ = StoreUnavailableWindow.press(button) } }
+          continue
         case "input.hover":
           guard Set(request.args.keys) == ["windowId", "area", "target", "on"],
             let windowId = request.args["windowId"] as? String, !windowId.isEmpty, windowId.utf8.count <= 128,
@@ -192,6 +215,20 @@ final class ProbeHost {
       }
       reply(response, id: id, expiresAtMs: expiresAtMs)
     }
+  }
+
+  private static func storeUnavailableState() -> [String: Any] {
+    var state = StoreUnavailableWindow.probeState()
+    state["pid"] = getpid()
+    state["handedOff"] = NativeStore.handedOff
+    state["safeMode"] = NativeStore.safeMode
+    let reason = NativeStore.safeModeRequestedAfterFailedOpen ? "requested" : NativeStore.safeModeAfterFailedLaunches ? "failedLaunches" : "option"
+    state["safeModeReason"] = NativeStore.safeMode ? reason : NSNull()
+    state["engineSafeMode"] = SolaraCoreHost.safeMode
+    state["chromeWindows"] = SolaraCoreHost.chromeWindows.count
+    state["reactNativeStarted"] = (NSApp.delegate as? AppDelegate)?.reactNativeFactory != nil
+    state["bundlePath"] = Bundle.main.bundleURL.path
+    return state
   }
 
   private func reply(_ response: [String: Any], id: String, expiresAtMs: Int64?) {

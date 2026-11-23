@@ -571,7 +571,27 @@ over. A marker whose `rev` is
 - **Moved-aside copies.** Each label (`corrupt`, `newer`, `superseded`, `unreadable`, `orphan`) keeps its newest
   three copies; older ones are deleted at launch. The `.pre-native` originals are never pruned.
 - **No kill switch.** `SOLARA_NATIVE_STORE` is gone: the store is the only one. When it can't open, the app saves
-  nothing that launch and Settings shows why (`StoreUnavailable`).
+  nothing that launch and shows why in a native window instead of a browser window (`StoreUnavailableWindow`, in
+  `packages/settings`, drawing `StoreUnavailableView`): `main.swift` puts the engine in safe mode, so no saved-session
+  or early link window and no extensions start under it, and `AppDelegate` shows the window and returns before React
+  Native, `NativeLaunchScheduler` and `NativeHooks`. Its buttons are Quit (the default), Show Data Folder (only when
+  the folder exists), Report a Bug (the link, built from the cause, the error's type and the first line of its message
+  with the data folder, user folders and temporary folders scrubbed, is copied and shown, never opened, since a
+  default browser might be this instance) and Open in Safe Mode. Safe mode is offered only when `Launcher.open` or
+  `openSafe` failed (a lock or a missing folder isn't something safe mode fixes), when the launch switches use
+  defaults, and when this launch wasn't already in safe mode. It stores a one-time random token
+  (`LaunchSwitches.requestSafeMode`) and relaunches exactly this bundle through a detached `/bin/sh` helper that
+  waits up to 53 s for this pid to exit (the 30 s bookmark flush and Sparkle's 8 s quit wait, plus 15 s) and passes
+  the token as `SOLARA_SAFE_MODE_REQUEST` (`SafeModeRelaunch`). The helper runs in its own session with default
+  signals and an empty mask; if the pid outlives the wait, or Solara is already running from this bundle by the
+  time it exits, it opens nothing and says so in the unified log (`logger -t Solara`, never the token). The next
+  counted launch always removes the stored token and the variable from its own environment, and opens in safe mode,
+  skipping the Option question, only when its environment carried the same one; any other launch ignores it. The success watch starts only once the store has opened, so a launch that only showed this
+  window never clears the failed-launch counter: the third failed launch in a row opens in automatic safe mode.
+  Dock menu, Handoff, URL and AppleScript opens are off in this mode (dropped URLs are logged as a count and their
+  schemes, never a host). A login-item launch, which macOS starts hidden, orders the window front without activating.
+  Settings' own `unavailableController` is no longer reached, since React Native never starts on such a launch; S7c
+  removes it.
 
 ---
 
@@ -695,8 +715,9 @@ mode included, so there Swift decides against the in-memory workspace), which `W
 returns. The group menu sends the choices it leaves to JS (Change Icon,
 Move to Bookmark Bar, the New Tab bar, and Rename when the inline field can't start) back as `groupMenuChoice`, and the native folder panel's open state is mirrored
 to JS as `folderPanel.state`. Every launch whose store opens owns the workspace (there is no scope switch), and ownership is only lost if the
-store stands down (`failClosed`, which freezes it), so the JS handlers are the fallback for a store that never opened
-and for one that stood down.
+store stands down (`failClosed`, which freezes it), so the JS handlers are the fallback for one that stood down. A
+store that never opened no longer reaches JS: the launch stops at the native store-unavailable window (§3), and S7c
+removes the JS paths for it.
 
 ### 4.5 Sync during the move
 

@@ -159,6 +159,7 @@ bool ChromeUsesRealKeychain() {
 @end
 
 static void TryEarlyLittleWindow();
+static bool HiddenByTheUser();
 static NSString *gLaunchLinkSender;
 static BOOL (^gPermissionHook)(NSDictionary *, NSString *, BOOL);
 
@@ -437,6 +438,10 @@ static bool gLaunchedHidden;
 static bool gEarlyWindowPending;
 static bool gLaunchedForDocuments;
 
+static bool LaunchedAsLoginItem(NSAppleEventDescriptor *event) {
+  return event.eventID == kAEOpenApplication && [event paramDescriptorForKeyword:keyAEPropData].enumCodeValue == keyAELaunchedAsLogInItem;
+}
+
 static bool OnboardingPending(NSString *dir) {
   NSData *data = [NSData dataWithContentsOfFile:[dir stringByAppendingPathComponent:@"onboarding.json"]];
   NSDictionary *saved = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
@@ -445,28 +450,64 @@ static bool OnboardingPending(NSString *dir) {
   return !completed && [saved[@"startedAt"] isKindOfClass:NSNumber.class];
 }
 
-static void TryEarlyWindow() {
-  if (SolaraCoreEarlyWindow.switchedOff) return;
-  NSString *dir = AppDataDirectory();
-  if (gLaunchedHidden || gLaunchedForDocuments || NSApp.isHidden || gBootstrap.urls.count || LaunchTabSwitchedOff(dir) || OnboardingPending(dir)) return;
+static NSDictionary *EarlyWindowPlan(NSString *dir) {
+  if (SolaraCoreEarlyWindow.switchedOff || LaunchTabSwitchedOff(dir) || OnboardingPending(dir)) return nil;
   NSDictionary *session = SavedSession(dir);
   NSDictionary *hint = session[@"launchTab"];
   NSString *focused = session[@"focusedWindowId"];
-  if (![hint isKindOfClass:NSDictionary.class] || ![focused isKindOfClass:NSString.class]) return;
+  if (![hint isKindOfClass:NSDictionary.class] || ![focused isKindOfClass:NSString.class]) return nil;
   NSString *key = hint[@"id"], *url = hint[@"url"], *profile = hint[@"profile"];
-  if (![key isKindOfClass:NSString.class] || ![url isKindOfClass:NSString.class] || ![profile isKindOfClass:NSString.class]) return;
+  if (![key isKindOfClass:NSString.class] || ![url isKindOfClass:NSString.class] || ![profile isKindOfClass:NSString.class]) return nil;
   NSDictionary *window = nil;
   for (NSDictionary *w in [session[@"windows"] isKindOfClass:NSArray.class] ? session[@"windows"] : @[])
     if ([w isKindOfClass:NSDictionary.class] && [w[@"id"] isEqual:focused]) window = w;
-  if (!window || [window[@"incognito"] boolValue] || window[@"kind"] || ![window[@"frame"] isKindOfClass:NSArray.class]) return;
-  if (![window[@"tabIds"] isKindOfClass:NSArray.class] || ![window[@"tabIds"] containsObject:key]) return;
+  if (!window || [window[@"incognito"] boolValue] || window[@"kind"] || ![window[@"frame"] isKindOfClass:NSArray.class]) return nil;
+  if (![window[@"tabIds"] isKindOfClass:NSArray.class] || ![window[@"tabIds"] containsObject:key]) return nil;
   for (NSDictionary *split in [session[@"splits"] isKindOfClass:NSArray.class] ? session[@"splits"] : @[])
-    if ([split isKindOfClass:NSDictionary.class] && [split[@"tabIds"] isKindOfClass:NSArray.class] && [split[@"tabIds"] containsObject:key]) return;
+    if ([split isKindOfClass:NSDictionary.class] && [split[@"tabIds"] isKindOfClass:NSArray.class] && [split[@"tabIds"] containsObject:key]) return nil;
   NSDictionary *backdrop = [session[@"launchBackdrop"] isKindOfClass:NSDictionary.class] ? session[@"launchBackdrop"] : nil;
   const bool dark = [[NSApp.effectiveAppearance bestMatchFromAppearancesWithNames:@[ NSAppearanceNameDarkAqua, NSAppearanceNameAqua ]]
       isEqualToString:NSAppearanceNameDarkAqua];
-  if (!backdrop || ![backdrop[@"dark"] isKindOfClass:NSNumber.class] || [backdrop[@"dark"] boolValue] != dark) return;
-  if (![SolaraCoreEarlyWindow canShowWindow:focused session:session]) return;
+  if (!backdrop || ![backdrop[@"dark"] isKindOfClass:NSNumber.class] || [backdrop[@"dark"] boolValue] != dark) return nil;
+  if (![SolaraCoreEarlyWindow canShowWindow:focused session:session]) return nil;
+  return @{@"session" : session, @"window" : window, @"focused" : focused, @"key" : key, @"url" : url, @"profile" : profile, @"backdrop" : backdrop};
+}
+
+#if DEBUG
+static NSDictionary<NSString *, id> *gDevEarlyWindowDecision;
+static void RecordEarlyWindowDecision(NSString *skipped, NSDictionary *plan) {
+  if (gDevEarlyWindowDecision) return;
+  gDevEarlyWindowDecision = skipped ? @{@"safeMode" : @(gSafeMode), @"skipped" : skipped}
+                                    : @{@"safeMode" : @(gSafeMode), @"wouldShow" : @(plan != nil), @"savedSession" : @(plan != nil || SavedSession(AppDataDirectory()) != nil)};
+}
+#endif
+
+static void TryEarlyWindow() {
+  if (SolaraCoreEarlyWindow.switchedOff) {
+#if DEBUG
+    RecordEarlyWindowDecision(@"switchedOff", nil);
+#endif
+    return;
+  }
+#if DEBUG
+  const char *ignoresHidden = getenv("SOLARA_TEST_EARLY_WINDOW_IGNORES_HIDDEN");
+  const bool appHidden = ignoresHidden && strcmp(ignoresHidden, "1") == 0 ? HiddenByTheUser() : NSApp.isHidden;
+#else
+  const bool appHidden = NSApp.isHidden;
+#endif
+  if (gLaunchedHidden || gLaunchedForDocuments || appHidden || gBootstrap.urls.count) {
+#if DEBUG
+    RecordEarlyWindowDecision(gLaunchedHidden ? @"launchedHidden" : gLaunchedForDocuments ? @"launchedForDocuments" : appHidden ? @"appHidden" : @"launchURLs", nil);
+#endif
+    return;
+  }
+  NSDictionary *plan = EarlyWindowPlan(AppDataDirectory());
+#if DEBUG
+  RecordEarlyWindowDecision(nil, plan);
+#endif
+  if (!plan) return;
+  NSDictionary *window = plan[@"window"], *backdrop = plan[@"backdrop"];
+  NSString *focused = plan[@"focused"], *key = plan[@"key"], *url = plan[@"url"], *profile = plan[@"profile"];
   SolaraCoreProfile *loaded = solaracore_host::LoadedProfile(profile);
   if (!loaded) return;
   const char *spare = getenv("SOLARA_LAUNCH_SPARE_RENDERER");
@@ -772,6 +813,10 @@ static void StartEarlyWindow() {
 + (BOOL)safeMode { return gSafeMode; }
 + (void)setSafeMode:(BOOL)safeMode { gSafeMode = safeMode; }
 
++ (BOOL)launchedHidden {
+  return gLaunchedHidden || LaunchedAsLoginItem(NSAppleEventManager.sharedAppleEventManager.currentAppleEvent);
+}
+
 + (void)prepareEnvironment {
   static dispatch_once_t once;
   dispatch_once(&once, ^{
@@ -782,7 +827,7 @@ static void StartEarlyWindow() {
     }
     const std::set<std::string> runtime = {
         "SOLARA_ACCEPT_EXTERNAL_URLS", "SOLARA_BACKGROUND", "SOLARA_CLI_BIN_DIR",
-        "SOLARA_CLI_HOME", "SOLARA_DATA_DIR", "SOLARA_PREWARM",
+        "SOLARA_CLI_HOME", "SOLARA_DATA_DIR", "SOLARA_PREWARM", "SOLARA_SAFE_MODE_REQUEST",
     };
     std::vector<std::string> remove;
     for (char **entry = *_NSGetEnviron(); entry && *entry; ++entry) {
@@ -897,9 +942,7 @@ static void StartEarlyWindow() {
                                               usingBlock:^(NSNotification *) {
                                                 gAppKitDidFinish = true;
                                                 NSAppleEventDescriptor *event = NSAppleEventManager.sharedAppleEventManager.currentAppleEvent;
-                                                if (event.eventID == kAEOpenApplication &&
-                                                    [event paramDescriptorForKeyword:keyAEPropData].enumCodeValue == keyAELaunchedAsLogInItem)
-                                                  gLaunchedHidden = true;
+                                                if (LaunchedAsLoginItem(event)) gLaunchedHidden = true;
                                                 if (event && !(event.eventClass == kCoreEventClass && event.eventID == kAEOpenApplication))
                                                   gLaunchedForDocuments = true;
                                                 if (gEarlyWindowPending) {
@@ -1409,6 +1452,17 @@ static void StartEarlyWindow() {
 }
 
 @end
+
+#if DEBUG
+@implementation SolaraCoreHost (DevEarlyWindow)
++ (NSDictionary<NSString *, id> *)devEarlyWindowDecision {
+  if (!gDevEarlyWindowDecision) return @{@"atLaunch" : @NO};
+  NSMutableDictionary *decision = [gDevEarlyWindowDecision mutableCopy];
+  decision[@"atLaunch"] = @YES;
+  return decision;
+}
+@end
+#endif
 
 namespace solaracore_host {
 

@@ -11,8 +11,8 @@ if let code = SafeStorageRekeyRun.runAtLaunch(
   chromeUsesRealKeychain: SolaraCoreHost.chromeUsesRealKeychain, installedUserDataDir: SolaraCoreHost.installedDataDirectory,
   stores: { RekeyStores(onStaged: $0) }) { exit(code) }
 
-_ = MainActor.assumeIsolated { NativeStore.launchAtStartup() }
-SolaraCoreHost.safeMode = NativeStore.safeMode
+let storeOpened = MainActor.assumeIsolated { NativeStore.launchAtStartup() }
+SolaraCoreHost.safeMode = NativeStore.safeMode || (!storeOpened && !NativeStore.handedOff)
 
 if !SolaraCoreHost.safeMode { SolaraCoreHost.holdNavigationsForHooks() }
 

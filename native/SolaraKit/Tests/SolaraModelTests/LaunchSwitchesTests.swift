@@ -498,6 +498,113 @@ import Testing
     #expect(defaults.object(forKey: LaunchSwitches.failedLaunchesKey) == nil)
   }
 
+  static let safeModeToken = "6F1C2B9E-4D0A-4E57-9B1F-3A8C5D2E7F10"
+  static let tokenEnvironment = [LaunchSwitches.safeModeRequestVariable: safeModeToken]
+
+  @Test func aSafeModeRequestWithItsTokenOpensThatLaunchInSafeModeOnceWithoutAskingAboutOption() {
+    for distribution in [false, true] {
+      let defaults = scratchDefaults()
+      LaunchSwitches.requestSafeMode(token: Self.safeModeToken, defaults: defaults)
+      var asked = false
+      let requested = LaunchSwitches.launching(
+        environment: Self.tokenEnvironment, defaults: defaults, distribution: distribution, optionHeld: { asked = true; return true })
+      #expect(!asked)
+      #expect(requested.safeMode && requested.safeModeRequestedAfterFailedOpen && requested.countedLaunch)
+      #expect(!requested.safeModeAfterFailedLaunches)
+      #expect((requested.safeModeReport ?? "").contains("Open in Safe Mode"))
+      #expect(defaults.object(forKey: LaunchSwitches.safeModeRequestKey) == nil)
+      #expect(defaults.integer(forKey: LaunchSwitches.failedLaunchesKey) == 2)
+      LaunchSwitches.launchSucceeded(defaults: defaults, isolated: false)
+      let again = LaunchSwitches.launching(environment: Self.tokenEnvironment, defaults: defaults, distribution: distribution, optionHeld: { false })
+      #expect(!again.safeMode && !again.safeModeRequestedAfterFailedOpen && again.countedLaunch)
+    }
+  }
+
+  @Test func aSafeModeRequestWithoutItsTokenIsRemovedWithoutEffect() {
+    let environments: [[String: String]] = [
+      [:],
+      [LaunchSwitches.safeModeRequestVariable: ""],
+      [LaunchSwitches.safeModeRequestVariable: "9A0B1C2D-0000-4000-8000-000000000000"],
+      [LaunchSwitches.safeModeRequestVariable: Self.safeModeToken.lowercased()],
+    ]
+    for environment in environments {
+      let defaults = scratchDefaults()
+      LaunchSwitches.requestSafeMode(token: Self.safeModeToken, defaults: defaults)
+      let switches = LaunchSwitches.launching(environment: environment, defaults: defaults, distribution: false, optionHeld: { false })
+      #expect(!switches.safeMode && !switches.safeModeRequestedAfterFailedOpen && switches.countedLaunch, "\(environment)")
+      #expect(defaults.object(forKey: LaunchSwitches.safeModeRequestKey) == nil, "\(environment)")
+      #expect(defaults.integer(forKey: LaunchSwitches.failedLaunchesKey) == 1, "\(environment)")
+    }
+  }
+
+  @Test func takingTheRequestRemovesTheTokenFromThisProcessEnvironmentMatchedOrNot() {
+    for matching in [true, false] {
+      let defaults = scratchDefaults()
+      LaunchSwitches.requestSafeMode(token: Self.safeModeToken, defaults: defaults)
+      let carried = matching ? Self.safeModeToken : "9A0B1C2D-0000-4000-8000-000000000000"
+      setenv(LaunchSwitches.safeModeRequestVariable, carried, 1)
+      let taken = LaunchSwitches.takeSafeModeRequest(environment: [LaunchSwitches.safeModeRequestVariable: carried], defaults: defaults)
+      #expect(taken == matching)
+      #expect(getenv(LaunchSwitches.safeModeRequestVariable) == nil, "matching: \(matching)")
+    }
+  }
+
+  @Test func anEmptyStoredTokenNeverMatches() {
+    let defaults = scratchDefaults()
+    LaunchSwitches.requestSafeMode(token: "", defaults: defaults)
+    let switches = LaunchSwitches.launching(
+      environment: [LaunchSwitches.safeModeRequestVariable: ""], defaults: defaults, distribution: false, optionHeld: { false })
+    #expect(!switches.safeMode && !switches.safeModeRequestedAfterFailedOpen)
+    #expect(defaults.object(forKey: LaunchSwitches.safeModeRequestKey) == nil)
+  }
+
+  @Test func aTokenWithNothingStoredDoesNothing() {
+    let defaults = scratchDefaults()
+    let switches = LaunchSwitches.launching(environment: Self.tokenEnvironment, defaults: defaults, distribution: false, optionHeld: { false })
+    #expect(!switches.safeMode && !switches.safeModeRequestedAfterFailedOpen && switches.countedLaunch)
+  }
+
+  @Test func onlyACountedLaunchTakesTheSafeModeRequest() {
+    let defaults = scratchDefaults()
+    LaunchSwitches.requestSafeMode(token: Self.safeModeToken, defaults: defaults)
+    let uncounted = LaunchSwitches.launching(
+      environment: Self.tokenEnvironment, defaults: defaults, distribution: false, optionHeld: { false }, counting: false)
+    #expect(!uncounted.safeMode)
+    #expect(defaults.string(forKey: LaunchSwitches.safeModeRequestKey) == Self.safeModeToken)
+    let isolated = LaunchSwitches.launching(
+      environment: Self.tokenEnvironment.merging(["SOLARA_DATA_DIR": "/tmp/x"]) { $1 }, defaults: defaults, distribution: false,
+      optionHeld: { false })
+    #expect(!isolated.safeMode && !isolated.usesDefaults)
+    #expect(defaults.string(forKey: LaunchSwitches.safeModeRequestKey) == Self.safeModeToken)
+    let suite = Self.tokenEnvironment.merging(["SOLARA_BACKGROUND": "1", "SOLARA_DATA_DIR": "/tmp/x", LaunchSwitches.defaultsVariable: "scratch"]) { $1 }
+    let counted = LaunchSwitches.launching(environment: suite, defaults: defaults, distribution: false, optionHeld: { false })
+    #expect(counted.safeMode && counted.safeModeRequestedAfterFailedOpen)
+    #expect(defaults.object(forKey: LaunchSwitches.safeModeRequestKey) == nil)
+  }
+
+  @Test func theOptionQuestionIsSkippedOnlyWhenTheLaunchCarriesTheStoredToken() {
+    let defaults = scratchDefaults()
+    LaunchSwitches.requestSafeMode(token: Self.safeModeToken, defaults: defaults)
+    var asked = 0
+    let matching = LaunchSwitches.safeModeAnswer(
+      environment: Self.tokenEnvironment, defaults: defaults, distribution: false, optionHeld: { asked += 1; return true },
+      confirm: { asked += 1; return true })
+    #expect(matching == nil)
+    #expect(asked == 0)
+    for environment in [[:], [LaunchSwitches.safeModeRequestVariable: "another"]] as [[String: String]] {
+      var confirmed = 0
+      let answer = LaunchSwitches.safeModeAnswer(
+        environment: environment, defaults: defaults, distribution: false, optionHeld: { true }, confirm: { confirmed += 1; return true })
+      #expect(answer == true, "\(environment)")
+      #expect(confirmed == 1, "\(environment)")
+    }
+    let nothingStored = scratchDefaults()
+    let held = LaunchSwitches.safeModeAnswer(
+      environment: Self.tokenEnvironment, defaults: nothingStored, distribution: false, optionHeld: { true }, confirm: { false })
+    #expect(held == false)
+    #expect(defaults.string(forKey: LaunchSwitches.safeModeRequestKey) == Self.safeModeToken)
+  }
+
   @Test func theOptionQuestionIsAskedWithoutHoldingTheSwitchLock() {
     let cell = Mutex<LaunchSwitches?>(nil)
     let defaults = scratchDefaults()

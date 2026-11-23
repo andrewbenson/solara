@@ -308,7 +308,7 @@ async function measure(native) {
     validateWindowContract(shell.contract);
     validateNativeWork(shell.nativeWork);
     assert.equal(shell.contract.hostCounts.topStrip, native ? 1 : 0, "one native top-strip host only on the native path");
-    if (native) await rep.check("the strip's + selects its placeholder for page and Command Bar settings", async () => {
+    if (native) await rep.check("the strip's + selects its placeholder in page mode and toggles the Command Bar in Command Bar mode", async () => {
       const before = await run(`return { newTabOpens: st().settings.newTabOpens, newTabPosition: st().settings.newTabPosition, profileId: st().windows.w1.profileId, active: st().windows.w1.activeTabIds.default };`);
       const made = [];
       try {
@@ -322,6 +322,25 @@ async function measure(native) {
           const button = nativeWindow(ready).topStrip.items.items.find((item) => item.kind === "newTab");
           assert.ok(button.windowX >= 0 && button.windowX + button.width <= W, "the + click is inside the actual window");
           await run(`return act("w1", "click:${button.windowX + button.width / 2},${button.windowY + button.height / 2}");`);
+          if (opens === "commandBar") {
+            const poll = async (what, read, accept) => {
+              const end = Date.now() + 8000;
+              let last;
+              while (Date.now() < end) {
+                last = await read();
+                if (accept(last)) return last;
+                await new Promise((done) => setTimeout(done, 100));
+              }
+              assert.fail(`${what}: ${JSON.stringify(last)}`);
+            };
+            const barOpen = () => run(`const p = st().windowUi.w1?.panel; return { open: p?.open === true && p?.newTab != null, active: st().windows.w1.activeTabIds.work, placeholders: Object.values(st().tabs).filter((t) => t.newTabPlaceholder).length };`);
+            const opened = await poll("the strip's + opens the Command Bar over k1", barOpen, (got) => got.open);
+            assert.deepEqual(opened, { open: true, active: "k1", placeholders: 0 }, "in Command Bar mode the strip's + toggles the bar as on main and makes no tab");
+            await run(`return act("w1", "click:${button.windowX + button.width / 2},${button.windowY + button.height / 2}");`);
+            const closed = await poll("a second + closes the Command Bar", barOpen, (got) => !got.open);
+            assert.deepEqual(closed, { open: false, active: "k1", placeholders: 0 }, "closing the bar leaves k1 selected and no placeholder");
+            continue;
+          }
           const selected = await untilSnapshot(app, "the + placeholder is selected without an ordinary strip item", (w) => ({
             "a new tab is selected": () => !!w?.selectedTabId && !["k1", "k2", "k3"].includes(w.selectedTabId),
             "the placeholder has no duplicate tab item": () => !w?.topStrip?.items?.items.some((item) => item.kind === "tab" && item.id === w.selectedTabId),
@@ -1163,7 +1182,8 @@ try {
       rep.log(`docked native ${JSON.stringify(native.docked)}`);
       assert.match(native.docked.edges[0], / item$/, "the row starts on the profile indicator");
       assert.match(native.docked.downloadsHit, /^SolaraUI\.StripIconButton < SolaraUI\.StripControlsView/, `the native button is under the pointer: ${native.docked.downloadsHit}`);
-      assert.deepEqual(native.docked.edges, rn.docked.edges, "where the row drags the window, and where it takes clicks");
+      assert.deepEqual(native.docked.edges, ["86 item", "160 drag", "168 item", "202 drag", "204 item", "1499 drag", "1558 item", "1592 drag", "1597 item"], "where the row drags the window, and where it takes clicks: the gaps between the profile chip and tabs, and the space after +, drag the window as in Dia");
+      assert.deepEqual(native.docked.edges.slice(-3), rn.docked.edges.slice(-3), "the trailing controls take clicks where RN's do");
       assert.equal(native.docked.swipedTo, rn.docked.swipedTo, "a swipe over the controls pages profiles as on RN");
       assert.notEqual(rn.docked.swipedTo, "default", "RN pages on a swipe over its controls");
       assert.equal(native.docked.dropped, rn.docked.dropped, "a link dropped over the controls lands where RN puts it");

@@ -1054,7 +1054,6 @@ final class StripNewTabButton: StripHoverView {
   }
 
   override var accessibleName: String? { "New Tab" }
-  override var accessibleSelected: Bool? { context?.sidebar.newTabSelected == true }
 
   required init?(coder: NSCoder) { fatalError() }
 

@@ -3,7 +3,7 @@ import { ackBookmarkFacts, bookmarkWriterErrorCode, bookmarkWriterSnapshot, book
 import { nativeAddHistoryVisits, nativeDeleteHistoryUrls } from "@solara/settings";
 import { ApplyRefusal, assignPositions, canonical, editHLC, hlcDevice, SyncNative, type Adapter, type SavedLogin, type SyncRecord } from "@solara/sync";
 import { bookmarkUuidFor, isBookmarkUuid, rootIdsFor } from "../store/bookmarks";
-import { MAX_HISTORY, MAX_VISIT_TIMES } from "../store/history";
+import { floorAfterCap, MAX_HISTORY, MAX_VISIT_TIMES } from "../store/history";
 import { useBrowser } from "../store/browser";
 import { engineProfile } from "../store/model";
 import { isPeekTab } from "../store/peek";
@@ -635,7 +635,7 @@ export function historyAdapter(profileId: string): Adapter {
             }
           }
           const list = [...current.values()].sort((a, z) => z.lastVisit - a.lastVisit).slice(0, MAX_HISTORY);
-          return { history: { ...s.history, [profileId]: list } };
+          return { history: { ...s.history, [profileId]: list }, historyFloor: floorAfterCap(s.historyFloor, profileId, list) };
         }),
       );
     },

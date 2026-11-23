@@ -16,6 +16,7 @@ private final class HistoryLifetimeHost: HistoryHost {
   func historyReady(_ profileId: String) -> Bool { ready }
   func history(_ profileId: String) -> [JSONValue]? { entries }
   func historyFloor(_ profileId: String) -> Double? { nil }
+  func setHistoryFloor(_ profileId: String, _ floor: Double) {}
   func engineProfile(_ profileId: String) -> String { profileId == "default" ? "" : profileId }
   func setHistory(_ profileId: String, _ entries: [JSONValue]) { writes += 1; self.entries = entries }
 

@@ -19,6 +19,19 @@ export type HistorySlice = {
 export const MAX_HISTORY = 5000;
 export const MAX_VISIT_TIMES = 50;
 
+function capFloor(list: { lastVisit: number }[]): number {
+  const last = list.length >= MAX_HISTORY ? list[list.length - 1]!.lastVisit : -Infinity;
+  return Number.isFinite(last) ? last : -Infinity;
+}
+
+export function floorAfterCap(floors: Record<string, number>, profileId: string, list: { lastVisit: number }[]): Record<string, number> {
+  const cap = capFloor(list);
+  if (cap === -Infinity) return floors;
+  const was = floors[profileId];
+  const floor = was !== undefined && Number.isFinite(was) ? Math.max(was, cap) : cap;
+  return floor === was ? floors : { ...floors, [profileId]: floor };
+}
+
 function withoutVisitsSince(entry: HistoryEntry, since: number): HistoryEntry | null {
   if (entry.lastVisit < since) return entry;
   const times = entry.visitTimes?.length ? entry.visitTimes : [entry.lastVisit];
@@ -44,7 +57,7 @@ function adoptRows(set: Parameters<StateCreator<BrowserState, [], [], HistorySli
       byUrl.set(e.url, { url: e.url, title: e.title, favicon: null, visits: Math.max(1, e.visits), lastVisit: e.lastVisit, visitTimes: [e.lastVisit] });
     }
     const merged = [...byUrl.values()].sort((a, b) => b.lastVisit - a.lastVisit).slice(0, MAX_HISTORY);
-    return { history: { ...s.history, [profileId]: merged } };
+    return { history: { ...s.history, [profileId]: merged }, historyFloor: floorAfterCap(s.historyFloor, profileId, merged) };
   });
   return added;
 }

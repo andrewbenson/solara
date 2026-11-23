@@ -13,6 +13,7 @@ public protocol HistoryHost: AnyObject {
   func historyReady(_ profileId: String) -> Bool
   func history(_ profileId: String) -> [JSONValue]?
   func historyFloor(_ profileId: String) -> Double?
+  func setHistoryFloor(_ profileId: String, _ floor: Double)
   func engineProfile(_ profileId: String) -> String
   func addHistoryVisits(_ engineProfile: String, _ visits: [JSONValue], _ sameVisitMs: Double) async throws -> JSONValue?
   func deleteHistoryUrls(_ engineProfile: String, _ urls: [String]) async throws -> JSONValue?
@@ -437,7 +438,15 @@ public final class HistoryAdapter: SyncAdapter {
         }
       }
       let list = jsSort(current.values) { a, z in jsNumber(jsPrimitive(z["lastVisit"])) - jsNumber(jsPrimitive(a["lastVisit"])) }
-      host.setHistory(profileId, list.prefix(maxHistory).map(jsonFinite))
+      let kept = Array(list.prefix(maxHistory))
+      if kept.count >= maxHistory, let last = kept.last {
+        let cap = jsNumber(jsPrimitive(last["lastVisit"]))
+        if cap.isFinite {
+          let was = host.historyFloor(profileId)
+          host.setHistoryFloor(profileId, was.map { $0.isFinite ? max($0, cap) : cap } ?? cap)
+        }
+      }
+      host.setHistory(profileId, kept.map(jsonFinite))
     }
     return nil
   }

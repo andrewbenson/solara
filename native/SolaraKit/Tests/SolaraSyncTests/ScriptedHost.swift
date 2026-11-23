@@ -8,7 +8,7 @@ final class ScriptedHost: BookmarksHost, HistoryHost, PasswordsHost, @unchecked 
   let bookmarksAreReady: Bool
   var entries: [JSONValue]?
   let historyIsReady: Bool
-  let floor: Double?
+  var floor: Double?
   var calls: [JSONValue]
   var problems: [String] = []
 
@@ -41,6 +41,7 @@ final class ScriptedHost: BookmarksHost, HistoryHost, PasswordsHost, @unchecked 
   func historyReady(_ profileId: String) -> Bool { historyIsReady }
   func history(_ profileId: String) -> [JSONValue]? { entries }
   func historyFloor(_ profileId: String) -> Double? { floor }
+  func setHistoryFloor(_ profileId: String, _ floor: Double) { self.floor = floor }
   func setHistory(_ profileId: String, _ entries: [JSONValue]) { self.entries = entries }
 
   func addHistoryVisits(_ engineProfile: String, _ visits: [JSONValue], _ sameVisitMs: Double) async throws -> JSONValue? {

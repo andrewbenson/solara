@@ -60,7 +60,7 @@ struct JSIdentityTests {
       ("StoreAdapters.swift", "return Array(hosts.elements.filter(keep).suffix(1000))"),
       ("HostedAdapters.swift", "let times = Array(jsSort(have + fresh, numericOrder).suffix(maxVisitTimes))"),
       ("HostedAdapters.swift", "let times = Array(jsSort(merged, numericOrder).suffix(maxVisitTimes))"),
-      ("HostedAdapters.swift", "host.setHistory(profileId, list.prefix(maxHistory).map(jsonFinite))"),
+      ("HostedAdapters.swift", "let kept = Array(list.prefix(maxHistory))"),
       ("HLC.swift", "scalars = scalars.dropFirst()"),
       ("HLC.swift", "return (jsParseInt36(Substring(wall)), jsParseInt36(Substring(counter)), parts.dropFirst(2).joined(separator: \".\"))"),
       ("HLC.swift", "jsParseInt36(Substring(String(h.utf16.prefix(wallDigits)) ?? \"\"))"),

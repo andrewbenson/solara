@@ -72,19 +72,25 @@ function syncSharedData(s: BrowserState, prev: BrowserState): Partial<BrowserSta
   if (s.profiles !== prev.profiles) {
     setSharedDataIds(Object.fromEntries(Object.values(s.profiles).filter((p) => p.dataId).map((p) => [p.id, p.dataId!])));
   }
-  if (s.profiles === prev.profiles && s.history === prev.history && s.bookmarks.roots === prev.bookmarks.roots) return null;
+  if (s.profiles === prev.profiles && s.history === prev.history && s.historyFloor === prev.historyFloor && s.bookmarks.roots === prev.bookmarks.roots) return null;
   let history = s.history;
+  let floors = s.historyFloor;
   let roots = s.bookmarks.roots;
   for (const { dataId, profileIds } of dataGroups(s)) {
     if (profileIds.length < 2) continue;
-    const changed = profileIds.find((id) => s.history[id] !== prev.history[id]);
-    const list = s.history[changed ?? profileIds.find((id) => s.history[id]) ?? ""];
+    const stayed = profileIds.filter((id) => prev.profiles[id] && dataIdOf(prev.profiles[id]!) === dataId);
+    const sources = stayed.length ? stayed : profileIds;
+    const changed = sources.find((id) => s.history[id] !== prev.history[id]);
+    const list = s.history[changed ?? sources.find((id) => s.history[id]) ?? profileIds.find((id) => s.history[id]) ?? ""];
     if (list) for (const id of profileIds) if (history[id] !== list) history = { ...history, [id]: list };
+    const finite = sources.map((id) => floors[id]).filter((f): f is number => f !== undefined && Number.isFinite(f));
+    const floor = finite.length ? Math.max(...finite) : stayed.length ? floors[stayed[0]!] : undefined;
+    for (const id of profileIds) if (floors[id] !== floor) floors = floor === undefined ? without(floors, [id]) : { ...floors, [id]: floor };
     const shared = !nativeBookmarksSelected() && (roots[dataId] ?? roots[profileIds.find((id) => roots[id]) ?? ""]);
     if (shared) for (const id of profileIds) if (roots[id]?.bar !== shared.bar || roots[id]?.other !== shared.other) roots = { ...roots, [id]: shared };
   }
-  if (history === s.history && roots === s.bookmarks.roots) return null;
-  return { history, bookmarks: roots === s.bookmarks.roots ? s.bookmarks : { ...s.bookmarks, roots } };
+  if (history === s.history && floors === s.historyFloor && roots === s.bookmarks.roots) return null;
+  return { history, ...(floors === s.historyFloor ? {} : { historyFloor: floors }), bookmarks: roots === s.bookmarks.roots ? s.bookmarks : { ...s.bookmarks, roots } };
 }
 
 export const createProfilesSlice: StateCreator<BrowserState, [], [], ProfilesSlice> = (set, get, api) => {

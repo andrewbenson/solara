@@ -368,3 +368,28 @@ test("an engine already shown before its legacy rows import is read again, not m
     assert.deepEqual(h.state().history.default.map((entry) => entry.url), ["https://late.test/"], "its view includes the imported rows");
   } finally { stop(); }
 });
+
+test("rows adopted during a read that a queued visit pushes out of the view stay at or below the floor", async () => {
+  const h = harness();
+  const stop = h.api.startHistory();
+  try {
+    await settle();
+    let release = () => {};
+    h.beforeReply(() => new Promise((resolve) => { release = resolve; }));
+    const reading = h.api.reloadHistory();
+    await settle();
+    const adopted = Array.from({ length: 5000 }, (_, i) => ({ url: `https://adopted${i}.test/`, title: "", visits: 1, lastVisit: 1000 + i, visitTimes: [1000 + i] })).reverse();
+    h.useBrowser.setState((state) => ({ history: { ...state.history, default: adopted }, historyFloor: { ...state.historyFloor, default: 1000 } }));
+    h.emit({ kind: "visit", profile: "", url: "https://x.test/", title: "", visits: 1, at: 1_000_000 });
+    h.emit({ kind: "deleted", profile: "", all: false, urls: ["https://x.test/"] });
+    await settle();
+    h.beforeReply(async () => {});
+    release();
+    await reading;
+    await settle();
+    const shown = new Set(h.state().history.default.map((e) => e.url));
+    const floor = h.state().historyFloor.default ?? -Infinity;
+    assert.equal(shown.size, 4999);
+    assert.deepEqual(adopted.filter((e) => !shown.has(e.url) && e.lastVisit > floor).map((e) => e.url), []);
+  } finally { stop(); }
+});

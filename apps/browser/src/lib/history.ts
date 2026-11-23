@@ -51,16 +51,16 @@ function sameHistory(current: HistoryEntry[] | undefined, list: HistoryEntry[]):
   });
 }
 
-function setView(engine: string, list: HistoryEntry[], floor?: number) {
-  if (Object.keys(viewPatch(useBrowser.getState(), engine, list, floor)).length === 0) return;
-  useBrowser.setState((s) => viewPatch(s, engine, list, floor));
+function setView(engine: string, list: HistoryEntry[], floor?: number, evictedUpTo = -Infinity) {
+  if (Object.keys(viewPatch(useBrowser.getState(), engine, list, floor, evictedUpTo)).length === 0) return;
+  useBrowser.setState((s) => viewPatch(s, engine, list, floor, evictedUpTo));
 }
 
-function viewPatch(s: ReturnType<typeof useBrowser.getState>, engine: string, list: HistoryEntry[], floor?: number) {
+function viewPatch(s: ReturnType<typeof useBrowser.getState>, engine: string, list: HistoryEntry[], floor: number | undefined, evictedUpTo: number) {
   const ids = profilesUsing(s, engine);
   const was = ids.map((id) => s.historyFloor[id] ?? -Infinity).reduce((a, b) => Math.max(a, b), -Infinity);
   const full = list.length >= MAX_HISTORY ? list[list.length - 1]!.lastVisit : -Infinity;
-  const next = Math.max(floor ?? was, full);
+  const next = Math.max(floor ?? was, full, evictedUpTo);
   const ready = legacyMoved || legacyMigratedEngines.has(engine);
   const sameList = ids.every((id) => sameHistory(s.history[id], list));
   const sameFloor = ids.every((id) => (s.historyFloor[id] ?? -Infinity) === next);
@@ -74,6 +74,11 @@ function viewPatch(s: ReturnType<typeof useBrowser.getState>, engine: string, li
 }
 
 const byLastVisit = (a: HistoryEntry, b: HistoryEntry) => b.lastVisit - a.lastVisit;
+
+function capFloor(list: HistoryEntry[]): number {
+  const last = list.length >= MAX_HISTORY ? list[list.length - 1]!.lastVisit : -Infinity;
+  return Number.isFinite(last) ? last : -Infinity;
+}
 
 export function applyHistoryChange(list: HistoryEntry[], change: Exclude<HistoryChange, { kind: "deleted"; all: true }>): HistoryEntry[] {
   switch (change.kind) {
@@ -123,12 +128,17 @@ const loads = new Map<string, Load>();
 const loaded = new Set<string>();
 const migrating = new Set<string>();
 
-function withRowsAddedDuringTheRead(list: HistoryEntry[], shownBefore: Set<string>, shownNow: HistoryEntry[], queued: HistoryChange[]): HistoryEntry[] {
+function withRowsAddedDuringTheRead(list: HistoryEntry[], shownBefore: Set<string>, shownNow: HistoryEntry[], queued: HistoryChange[]): { list: HistoryEntry[]; evictedUpTo: number } {
   const listed = new Set(list.map((h) => h.url));
   let added = shownNow.filter((h) => !shownBefore.has(h.url) && !listed.has(h.url));
-  for (const change of queued) if (added.length && !(change.kind === "deleted" && change.all)) added = applyHistoryChange(added, change);
+  let evictedUpTo = capFloor(added);
+  for (const change of queued) {
+    if (!added.length || (change.kind === "deleted" && change.all)) continue;
+    added = applyHistoryChange(added, change);
+    evictedUpTo = Math.max(evictedUpTo, capFloor(added));
+  }
   added = added.filter((h) => !listed.has(h.url));
-  return added.length ? [...list, ...added].sort(byLastVisit).slice(0, MAX_HISTORY) : list;
+  return { list: added.length ? [...list, ...added].sort(byLastVisit).slice(0, MAX_HISTORY) : list, evictedUpTo };
 }
 
 function load(engine: string): Promise<void> {
@@ -149,10 +159,19 @@ function load(engine: string): Promise<void> {
         const read = await queryHistory(engine, MAX_HISTORY, MAX_VISIT_TIMES);
         const floor = read.length >= MAX_HISTORY ? Math.min(...read.map((e) => e.visitTimes.at(-1) ?? 0)) : -Infinity;
         let list = read.filter((e) => shownInHistory(e.url)).map(toEntry).sort(byLastVisit);
-        for (const change of state.queued) if (!(change.kind === "deleted" && change.all)) list = applyHistoryChange(list, change);
+        let evictedUpTo = -Infinity;
+        for (const change of state.queued) {
+          if (change.kind === "deleted" && change.all) continue;
+          list = applyHistoryChange(list, change);
+          evictedUpTo = Math.max(evictedUpTo, capFloor(list));
+        }
         if (state.queued.some((c) => c.kind === "deleted" && c.all)) state.again = true;
-        else list = withRowsAddedDuringTheRead(list, shownBefore, viewOf(engine), state.queued);
-        setView(engine, list, floor);
+        else {
+          const merged = withRowsAddedDuringTheRead(list, shownBefore, viewOf(engine), state.queued);
+          list = merged.list;
+          evictedUpTo = Math.max(evictedUpTo, merged.evictedUpTo);
+        }
+        setView(engine, list, floor, evictedUpTo);
         loaded.add(engine);
       } while (state.again);
     } catch (error) {
@@ -175,9 +194,11 @@ function applyPending() {
   const changes = pending;
   pending = [];
   const views = new Map<string, HistoryEntry[]>();
+  const evicted = new Map<string, number>();
   const show = () => {
-    for (const [engine, list] of views) setView(engine, list);
+    for (const [engine, list] of views) setView(engine, list, undefined, evicted.get(engine));
     views.clear();
+    evicted.clear();
   };
   for (const change of changes) {
     const engine = change.profile;
@@ -193,7 +214,9 @@ function applyPending() {
       void load(engine);
       continue;
     }
-    views.set(engine, applyHistoryChange(views.get(engine) ?? viewOf(engine), change));
+    const next = applyHistoryChange(views.get(engine) ?? viewOf(engine), change);
+    views.set(engine, next);
+    evicted.set(engine, Math.max(evicted.get(engine) ?? -Infinity, capFloor(next)));
   }
   show();
 }

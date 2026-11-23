@@ -54,6 +54,11 @@ enum NativeImportWindow {
     case "html":
       ImportService.devChosenFile = argument
       await model.importHTML()
+    case "safariExport":
+      await model.importSafari(path: argument ?? "")
+    case "safariDirect":
+      model.safariCookies = argument != "nocookies"
+      await model.importSafariDirect()
     #endif
     default: break
     }
@@ -64,7 +69,7 @@ enum NativeImportWindow {
       "target": model.target,
       "targets": model.targets.map(\.id),
       "kinds": model.kinds.map(\.rawValue).sorted(),
-      "counts": ["cookies": model.counts.cookies, "addresses": model.counts.addresses, "cards": model.counts.cards, "bookmarks": model.counts.bookmarks, "history": model.counts.history, "passwords": model.counts.passwords],
+      "counts": ["tabs": model.counts.tabs, "cookies": model.counts.cookies, "addresses": model.counts.addresses, "cards": model.counts.cards, "bookmarks": model.counts.bookmarks, "history": model.counts.history, "passwords": model.counts.passwords],
       "failures": model.failures.map { ImportModel.failureLine($0) },
       "notes": model.notes,
       "error": model.error as Any,

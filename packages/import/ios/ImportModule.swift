@@ -143,6 +143,28 @@ public final class ImportService: @unchecked Sendable {
                 history: result.history, favicons: result.favicons)
   }
 
+  public func readSafari(jobId: String, exportPath: String?) async throws -> Read {
+    let session = session
+    let started = session.epoch.current
+    let cancellation = session.jobs.start(jobId, epoch: started)
+    defer { session.jobs.finish(jobId, cancellation) }
+    guard session.epoch.isCurrent(started) else { throw ImportError.cancelled }
+    var data = try await onWork {
+      if let exportPath { return try SafariExport.load(ImportModule.fileURL(exportPath), cancellation: cancellation) }
+      return try SafariDirect.load(home: Self.safariHome, cancellation: cancellation)
+    }
+    let token = session.keep(cookies: data.cookies, addresses: [], cards: data.cards, started: started)
+    data.cookies = []
+    data.cards = []
+    guard session.epoch.isCurrent(started) else {
+      if let token { session.vault.discard(token) }
+      throw ImportError.cancelled
+    }
+    let history = data.profiles.first { $0.name?.isEmpty ?? true }?.history ?? data.profiles.first?.history ?? []
+    return Read(vaultToken: token, profileName: nil, profileColor: nil, failed: [], warnings: data.warnings, credentials: data.credentials,
+                bookmarks: data.bookmarks, tabs: data.tabs, favorites: [], hasSpaces: false, history: history, favicons: [])
+  }
+
   public func cancelRead(jobId: String) { session.jobs.cancel(jobId) }
 
   #if DEBUG

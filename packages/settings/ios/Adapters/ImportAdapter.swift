@@ -181,11 +181,20 @@ final class ImportAdapter: ImportServices, ImportScriptPath {
   }
 
   func importSafariExport(path: String, target: String) async -> ImportFileOutcome {
-    Self.fileOutcome(await SettingsAdapters.js("import.safariExport", path, target, session))
+    guard direct else { return await scriptSafari(.export(path: path), target: target, cookies: false, session: session) }
+    return await ImportRuns.shared.importSafari(.export(path: path), target: target, cookies: false, session: swiftSession, engine: ImportRunEngine.shared, script: self, scriptSession: session)
   }
 
   func importSafariDirect(target: String, cookies: Bool) async -> ImportFileOutcome {
-    Self.fileOutcome(await SettingsAdapters.js("import.safariDirect", target, cookies, session))
+    guard direct else { return await scriptSafari(.direct, target: target, cookies: cookies, session: session) }
+    return await ImportRuns.shared.importSafari(.direct, target: target, cookies: cookies, session: swiftSession, engine: ImportRunEngine.shared, script: self, scriptSession: session)
+  }
+
+  func scriptSafari(_ source: ImportSafariSource, target: String, cookies: Bool, session: Int) async -> ImportFileOutcome {
+    switch source {
+    case .export(let path): Self.fileOutcome(await SettingsAdapters.js("import.safariExport", path, target, session))
+    case .direct: Self.fileOutcome(await SettingsAdapters.js("import.safariDirect", target, cookies, session))
+    }
   }
 
   func importBookmarksHTML(target: String) async -> ImportFileOutcome {
@@ -324,7 +333,27 @@ final class ImportRunEngine: ImportEngine {
       let read = try await ImportService.shared.read(jobId: jobId, browserId: browserId, profileId: profileId, kinds: kinds.map(\.rawValue)) { kind, ended in
         Task { @MainActor in relay.send(kind, ended) }
       }
-      return ImportRead(
+      return Self.imported(read)
+    } catch let error as SolaraImportAdapter.ImportError where error == .cancelled {
+      throw ImportReadFailure.cancelled
+    } catch {
+      throw ImportReadFailure.failed
+    }
+  }
+
+  func readSafari(jobId: String, from source: ImportSafariSource) async throws -> ImportRead {
+    let exportPath: String? = if case .export(let path) = source { path } else { nil }
+    do {
+      return Self.imported(try await ImportService.shared.readSafari(jobId: jobId, exportPath: exportPath))
+    } catch let error as SolaraImportAdapter.ImportError {
+      throw error == .cancelled ? ImportSafariReadFailure.cancelled : ImportSafariReadFailure.failed(error.code)
+    } catch {
+      throw ImportSafariReadFailure.failed("unreadable")
+    }
+  }
+
+  nonisolated static func imported(_ read: ImportService.Read) -> ImportRead {
+      ImportRead(
         vaultToken: read.vaultToken,
         profileName: read.profileName,
         profileColor: read.profileColor,
@@ -338,11 +367,6 @@ final class ImportRunEngine: ImportEngine {
         history: read.history.map { ImportHistoryRow(url: $0.url, title: $0.title, visits: $0.visits, lastVisit: $0.lastVisit) },
         favicons: read.favicons.map { ImportFaviconRow(page: $0.page, icon: $0.icon, png: $0.png) }
       )
-    } catch let error as SolaraImportAdapter.ImportError where error == .cancelled {
-      throw ImportReadFailure.cancelled
-    } catch {
-      throw ImportReadFailure.failed
-    }
   }
 
   nonisolated static func bookmark(_ node: SolaraImportAdapter.BookmarkNode) -> ImportBookmarkNode {

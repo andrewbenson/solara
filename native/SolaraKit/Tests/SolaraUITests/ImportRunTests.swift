@@ -60,6 +60,10 @@ final class FakeImportEngine: ImportEngine {
   var chosenFile: String? = "/fixtures/bookmarks.html"
   var onChoose: (() async -> Void)?
   var fileRoots: [String: ImportBookmarkNode] = ["/fixtures/bookmarks.html": FakeImportEngine.tree]
+  var safariRead: Result<ImportRead, ImportSafariReadFailure> = .success(FakeImportEngine.read(bookmarks: FakeImportEngine.tree,
+    tabs: [ImportTabRow(url: "https://s.test/", title: "S", pinned: false, customTitle: nil)], history: FakeImportEngine.historyRows))
+  var safariCancelled = false
+  var onWriteNative: (() async -> Void)?
 
   func transientImportRefused() { calls.append("refused") }
   func isUnlocked(_ browserId: String) -> Bool { unlocked.contains(browserId) }
@@ -94,6 +98,7 @@ final class FakeImportEngine: ImportEngine {
   func cancelRead(jobId: String) {
     calls.append("cancelRead")
     guard heldRead != nil else { return }
+    safariCancelled = true
     reads = reads.mapValues { _ in .failure(.cancelled) }
     reads["Default"] = .failure(.cancelled)
     reads["Profile 1"] = .failure(.cancelled)
@@ -105,6 +110,7 @@ final class FakeImportEngine: ImportEngine {
   func writeNative(token: String, engineProfile: String, kinds: [String]) async -> ImportNativeWritten? {
     steps.append("native")
     written.append((token, engineProfile, kinds))
+    await onWriteNative?()
     return nativeResult
   }
 
@@ -142,6 +148,14 @@ final class FakeImportEngine: ImportEngine {
   func readBookmarksFile(path: String) async -> ImportBookmarkNode? {
     calls.append("readFile:\(path)")
     return fileRoots[path]
+  }
+
+  func readSafari(jobId: String, from source: ImportSafariSource) async throws -> ImportRead {
+    if case .export(let path) = source { calls.append("readSafari:export:\(path)") } else { calls.append("readSafari:direct") }
+    readStarted?()
+    if holdRead { await withCheckedContinuation { heldRead = $0 } }
+    if safariCancelled { throw ImportSafariReadFailure.cancelled }
+    return try safariRead.get()
   }
 
   func importWorkspace(profile: String, windows: [JSONValue]) -> Int? {
@@ -260,6 +274,10 @@ final class FakeScriptPath: ImportScriptPath {
   func scriptDispose() { calls.append("dispose") }
   func scriptBookmarksHTML(target: String, session: Int) async -> ImportFileOutcome {
     calls.append("html:\(target):\(session)")
+    return .imported(ImportCounts(bookmarks: 1), failed: [])
+  }
+  func scriptSafari(_ source: ImportSafariSource, target: String, cookies: Bool, session: Int) async -> ImportFileOutcome {
+    calls.append("safari:\(source.logName):\(target):\(cookies):\(session)")
     return .imported(ImportCounts(bookmarks: 1), failed: [])
   }
 }
@@ -1162,5 +1180,162 @@ struct ImportRunTests {
     let outcome = await runs.importBookmarksFile(target: "default", session: session, engine: engine, script: script, scriptSession: 7)
     #expect(outcome == .cancelled)
     #expect(!engine.calls.contains { $0.hasPrefix("choose") || $0.hasPrefix("readFile") })
+  }
+
+  func safari(_ runs: ImportRuns, _ engine: FakeImportEngine, _ script: FakeScriptPath, _ session: Int, _ source: ImportSafariSource = .export(path: "/fixtures/Safari Export.zip"), target: String = "default", cookies: Bool = false) async -> ImportFileOutcome {
+    await runs.importSafari(source, target: target, cookies: cookies, session: session, engine: engine, script: script, scriptSession: 7)
+  }
+
+  @Test func aSafariExportAppliesInTheJSOrderWithAutofillOnly() async {
+    let (runs, engine, script, session) = setup()
+    let outcome = await safari(runs, engine, script, session)
+    guard case let .imported(counts, failed) = outcome else { Issue.record("not imported: \(outcome)"); return }
+    #expect(failed.isEmpty)
+    #expect(engine.steps == ["bookmarks", "adoptHistory", "native", "workspace", "save", "save", "save"])
+    #expect(engine.calls.contains("readSafari:export:/fixtures/Safari Export.zip"))
+    #expect(engine.written.map(\.2) == [["autofill"]])
+    #expect(counts.bookmarks == 4)
+    #expect(counts.history == 3)
+    #expect(counts.tabs == 2)
+    #expect(counts.passwords == 3)
+    #expect(engine.bookmarkSubmits.first?.last?.args[1].array?.first?["title"]?.string == "Imported from Safari")
+    #expect(engine.workspaces.first?.1.first?["group"]?.string == "Imported")
+    #expect(engine.historyWrites.map(\.0) == ["engine-default"])
+    #expect(engine.discarded.isEmpty)
+    #expect(engine.logs.contains("[import] file safariExport route=swift"))
+    #expect(script.calls.isEmpty)
+  }
+
+  @Test func safariDirectWritesCookiesOnlyWhenAsked() async {
+    for (cookies, kinds) in [(true, ["cookies", "autofill"]), (false, ["autofill"])] {
+      let (runs, engine, script, session) = setup()
+      let outcome = await safari(runs, engine, script, session, .direct, cookies: cookies)
+      guard case .imported = outcome else { Issue.record("not imported: \(outcome)"); continue }
+      #expect(engine.calls.contains("readSafari:direct"))
+      #expect(engine.written.map(\.2) == [kinds])
+      #expect(engine.logs.contains("[import] file safariDirect route=swift"))
+    }
+  }
+
+  @Test func safariReadFailuresMapToTheJSCodes() async {
+    let cases: [(ImportSafariSource, ImportSafariReadFailure, ImportFileOutcome)] = [
+      (.export(path: "/x.zip"), .failed("unsupported"), .failed(code: "unsupported")),
+      (.export(path: "/x.zip"), .failed("notFound"), .failed(code: "invalid")),
+      (.export(path: "/x.zip"), .failed("unreadable"), .failed(code: "invalid")),
+      (.direct, .failed("locked"), .failed(code: "locked")),
+      (.direct, .failed("notFound"), .failed(code: "unreadable")),
+      (.direct, .cancelled, .cancelled),
+    ]
+    for (source, failure, expected) in cases {
+      let (runs, engine, script, session) = setup()
+      engine.safariRead = .failure(failure)
+      #expect(await safari(runs, engine, script, session, source) == expected)
+      #expect(engine.steps.isEmpty)
+      #expect(engine.discarded.isEmpty)
+    }
+  }
+
+  @Test func safeModeFailsSafariTabsAndKeepsTheRest() async {
+    let (runs, engine, script, session) = setup()
+    engine.safeMode = true
+    let outcome = await safari(runs, engine, script, session, .direct, cookies: true)
+    guard case let .imported(counts, failed) = outcome else { Issue.record("not imported: \(outcome)"); return }
+    #expect(failed == [.tabs])
+    #expect(engine.calls.contains("refused"))
+    #expect(engine.workspaces.isEmpty)
+    #expect(counts.passwords == 3)
+    #expect(counts.bookmarks == 4)
+  }
+
+  @Test func aSafariWriteThatFailsMarksOnlyItsKind() async {
+    let (runs, engine, script, session) = setup()
+    engine.bookmarkFails = true
+    engine.workspaceResult = nil
+    engine.nativeResult = nil
+    let outcome = await safari(runs, engine, script, session, .direct, cookies: true)
+    #expect(outcome == .imported(ImportCounts(history: 3, passwords: 3), failed: [.bookmarks, .cookies, .autofill, .tabs]))
+    #expect(engine.bookmarkReports == 1)
+  }
+
+  @Test func aDrainAfterSafariBookmarksEndsCancelledAndDiscardsTheVault() async {
+    let (runs, engine, script, session) = setup()
+    engine.onBookmarkSubmit = { Task { @MainActor in await runs.drain(engine: engine) } }
+    let outcome = await safari(runs, engine, script, session, .direct, cookies: true)
+    #expect(outcome == .cancelled)
+    #expect(engine.steps == ["bookmarks"])
+    #expect(engine.discarded == ["vault-1"])
+    #expect(engine.saved.isEmpty)
+  }
+
+  @Test func aDrainDuringSafariHistoryOrNativeStillFinishesTheImportLikeJS() async {
+    for phase in ["history", "native"] {
+      let (runs, engine, script, session) = setup()
+      var draining: Task<Void, Never>?
+      let drain = { draining = Task { @MainActor in await runs.drain(engine: engine) } }
+      if phase == "history" {
+        engine.onHistoryWrite = drain
+        engine.historyWriteSuspensions = 20
+      } else {
+        engine.onWriteNative = {
+          drain()
+          for _ in 0..<20 { await Task.yield() }
+        }
+      }
+      let outcome = await safari(runs, engine, script, session, .direct, cookies: true)
+      await draining?.value
+      #expect(outcome == .cancelled, Comment(rawValue: phase))
+      #expect(engine.steps == ["bookmarks", "adoptHistory", "native", "workspace", "save", "save", "save"], Comment(rawValue: phase))
+      #expect(engine.written.count == 1, Comment(rawValue: phase))
+      #expect(engine.discarded.isEmpty, Comment(rawValue: phase))
+    }
+  }
+
+  @Test func cancellingADirectSafariReadEndsCancelledAndWritesNothing() async {
+    let (runs, engine, script, session) = setup()
+    engine.holdRead = true
+    var started = false
+    engine.readStarted = { started = true }
+    let running = Task { await safari(runs, engine, script, session, .direct, cookies: true) }
+    while !started { await Task.yield() }
+    runs.cancel(engine: engine, script: script)
+    #expect(await running.value == .cancelled)
+    #expect(engine.calls.contains("cancelRead"))
+    #expect(engine.steps.isEmpty)
+  }
+
+  @Test func aCancelAfterTheSafariReadLetsTheImportFinishLikeJS() async {
+    let (runs, engine, script, session) = setup()
+    engine.onBookmarkSubmit = { runs.cancel(engine: engine, script: script) }
+    let outcome = await safari(runs, engine, script, session, .direct, cookies: true)
+    guard case let .imported(counts, _) = outcome else { Issue.record("not imported: \(outcome)"); return }
+    #expect(counts.passwords == 3)
+    #expect(engine.steps.last == "save")
+  }
+
+  @Test func aPrivateSafariTargetTakesNoHistoryAndDiscardsTheVault() async {
+    let (runs, engine, script, session) = setup()
+    let outcome = await safari(runs, engine, script, session, .direct, target: "incognito:x", cookies: true)
+    guard case let .imported(counts, _) = outcome else { Issue.record("not imported: \(outcome)"); return }
+    #expect(counts.history == 0)
+    #expect(engine.historyAdoptions.isEmpty)
+    #expect(engine.discarded == ["vault-1"])
+    #expect(engine.written.isEmpty)
+  }
+
+  @Test func theScriptRouteDefaultSendsSafariToJS() async {
+    let (runs, engine, script, session) = setup()
+    runs.scriptRouteDefault = { "script" }
+    #expect(await safari(runs, engine, script, session) == .imported(ImportCounts(bookmarks: 1), failed: []))
+    #expect(await safari(runs, engine, script, session, .direct, cookies: true) == .imported(ImportCounts(bookmarks: 1), failed: []))
+    #expect(script.calls == ["safari:safariExport:default:false:7", "safari:safariDirect:default:true:7"])
+    #expect(!engine.calls.contains { $0.hasPrefix("readSafari") })
+    #expect(engine.logs.filter { $0 == "[import] route=js reason=defaults" }.count == 2)
+  }
+
+  @Test func aRevokedSessionNeverReadsSafari() async {
+    let (runs, engine, script, session) = setup()
+    await runs.drain(engine: engine)
+    #expect(await safari(runs, engine, script, session, .direct) == .cancelled)
+    #expect(!engine.calls.contains { $0.hasPrefix("readSafari") })
   }
 }

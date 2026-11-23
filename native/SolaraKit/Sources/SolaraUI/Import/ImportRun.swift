@@ -95,6 +95,30 @@ public enum ImportReadFailure: Error, Sendable {
   case failed
 }
 
+public enum ImportSafariSource: Sendable, Equatable {
+  case export(path: String)
+  case direct
+
+  var logName: String {
+    switch self {
+    case .export: "safariExport"
+    case .direct: "safariDirect"
+    }
+  }
+
+  func outcomeCode(_ code: String) -> String {
+    switch self {
+    case .export: code == "unsupported" ? "unsupported" : "invalid"
+    case .direct: code == "locked" ? "locked" : "unreadable"
+    }
+  }
+}
+
+public enum ImportSafariReadFailure: Error, Sendable, Equatable {
+  case cancelled
+  case failed(String)
+}
+
 @MainActor
 public protocol ImportEngine: AnyObject {
   var safeMode: Bool { get }
@@ -111,6 +135,7 @@ public protocol ImportEngine: AnyObject {
   func reportBookmarkFailure()
   func chooseImportFile(_ kind: ImportFileKind) async -> String?
   func readBookmarksFile(path: String) async -> ImportBookmarkNode?
+  func readSafari(jobId: String, from source: ImportSafariSource) async throws -> ImportRead
   func importWorkspace(profile: String, windows: [JSONValue]) -> Int?
   func adoptHistory(profile: String, rows: [ImportHistoryRow], deadline: TimeInterval) async -> Int?
   func importHistory(engineProfile: String, rows: [ImportHistoryRow]) async
@@ -135,6 +160,7 @@ public protocol ImportScriptPath: AnyObject {
   func scriptCancel()
   func scriptDispose()
   func scriptBookmarksHTML(target: String, session: Int) async -> ImportFileOutcome
+  func scriptSafari(_ source: ImportSafariSource, target: String, cookies: Bool, session: Int) async -> ImportFileOutcome
 }
 
 public enum ImportRoute: String, Sendable {
@@ -312,6 +338,14 @@ public final class ImportRuns {
     let runner = ImportRunner(runs: self, engine: engine, session: id)
     guard !runner.cancelled(), let path = await engine.chooseImportFile(.bookmarksHTML), !runner.cancelled() else { return .cancelled }
     return await whileActive { await runner.placeBookmarksFile(path: path, target: target) }
+  }
+
+  public func importSafari(_ source: ImportSafariSource, target: String, cookies: Bool, session id: Int, engine: ImportEngine, script: ImportScriptPath, scriptSession: Int) async -> ImportFileOutcome {
+    let route = preferred(.swift, engine: engine)
+    engine.log("[import] file \(source.logName) route=\(route.rawValue)")
+    guard route == .swift else { return await script.scriptSafari(source, target: target, cookies: cookies, session: scriptSession) }
+    guard admitted(id) else { return .cancelled }
+    return await whileActive { await ImportRunner(runs: self, engine: engine, session: id).importSafari(source, target: target, cookies: cookies) }
   }
 
   private func preferred(_ route: ImportRoute, engine: ImportEngine) -> ImportRoute {
@@ -536,25 +570,8 @@ final class ImportRunner {
       if cancelled() || control.stopped { return halted() }
 
       if !read.history.isEmpty {
-        runs.traceStep("history")
-        if !engine.isPrivateProfile(destination) {
-          let rows = ImportHistory.usable(read.history)
-          if !rows.isEmpty {
-            let historyEngine = engine.engineProfile(destination)
-            let write = runs.track { [engine] in await engine.importHistory(engineProfile: historyEngine, rows: rows) }
-            if !(await runs.settle(write, within: runs.writeDeadline, until: control)) { engine.log("[import] history write still running profile=\(destination)") }
-            if cancelled() || control.stopped { return halted() }
-          }
-          #if DEBUG
-          let adoptStarted = ContinuousClock.now
-          #endif
-          let added = await engine.adoptHistory(profile: destination, rows: rows, deadline: ImportHistory.adoptDeadline(rows: rows.count))
-          #if DEBUG
-          engine.log("[import] history adopt rows=\(rows.count) took=\(ContinuousClock.now - adoptStarted)")
-          #endif
-          if added == nil { engine.log("[import] history count fell back profile=\(destination)") }
-          total.history += added ?? ImportHistory.fallbackCount(rows)
-        }
+        guard let added = await addHistory(read.history, to: destination, control: control) else { return halted() }
+        total.history += added
         if cancelled() || control.stopped { return halted() }
       }
 
@@ -654,6 +671,110 @@ final class ImportRunner {
     } catch {
       return nil
     }
+  }
+
+  func addHistory(_ history: [ImportHistoryRow], to destination: String, control: ImportRunControl, haltsOnCancel: Bool = true) async -> Int? {
+    runs.traceStep("history")
+    guard !engine.isPrivateProfile(destination) else { return 0 }
+    let rows = ImportHistory.usable(history)
+    if !rows.isEmpty {
+      let historyEngine = engine.engineProfile(destination)
+      let write = runs.track { [engine] in await engine.importHistory(engineProfile: historyEngine, rows: rows) }
+      if !(await runs.settle(write, within: runs.writeDeadline, until: control)) { engine.log("[import] history write still running profile=\(destination)") }
+      if haltsOnCancel, cancelled() || control.stopped { return nil }
+    }
+    #if DEBUG
+    let adoptStarted = ContinuousClock.now
+    #endif
+    let added = await engine.adoptHistory(profile: destination, rows: rows, deadline: ImportHistory.adoptDeadline(rows: rows.count))
+    #if DEBUG
+    engine.log("[import] history adopt rows=\(rows.count) took=\(ContinuousClock.now - adoptStarted)")
+    #endif
+    if added == nil { engine.log("[import] history count fell back profile=\(destination)") }
+    return added ?? ImportHistory.fallbackCount(rows)
+  }
+
+  func importSafari(_ source: ImportSafariSource, target: String, cookies: Bool) async -> ImportFileOutcome {
+    let reading = ImportRunControl(engine: engine)
+    if source == .direct {
+      runs.current?.stop()
+      runs.current = reading
+    }
+    let jobId = UUID().uuidString
+    reading.jobId = jobId
+    var read: ImportRead
+    do {
+      read = try await engine.readSafari(jobId: jobId, from: source)
+    } catch ImportSafariReadFailure.failed(let code) where !cancelled() && !reading.stopped {
+      if runs.current === reading { runs.current = nil }
+      return .failed(code: source.outcomeCode(code))
+    } catch {
+      if runs.current === reading { runs.current = nil }
+      return .cancelled
+    }
+    reading.jobId = nil
+    if runs.current === reading { runs.current = nil }
+    var token = read.vaultToken
+    defer {
+      if let left = token { engine.discard(token: left) }
+      token = nil
+      read.credentials = []
+    }
+    if cancelled() { return .cancelled }
+    let applying = ImportRunControl(engine: engine)
+    var counts = ImportCounts()
+    var failed: [ImportKind] = []
+    func fail(_ kind: ImportKind) { if !failed.contains(kind) { failed.append(kind) } }
+
+    runs.traceStep("bookmarks")
+    let placed = await runs.bookmarkQueue.run {
+      await self.placeBookmarks(profile: target, root: read.bookmarks, browserName: "Safari", stopped: { false })
+    }
+    if let placed { counts.bookmarks = placed } else { engine.reportBookmarkFailure(); fail(.bookmarks) }
+    if cancelled() { return .cancelled }
+
+    if !read.history.isEmpty {
+      counts.history = await addHistory(read.history, to: target, control: applying, haltsOnCancel: false) ?? 0
+    }
+
+    runs.traceStep("native")
+    let native = cookies ? ["cookies", "autofill"] : ["autofill"]
+    if let taken = token {
+      token = nil
+      if engine.isPrivateProfile(target) || !engine.profileExists(target) {
+        engine.discard(token: taken)
+      } else if let written = await engine.writeNative(token: taken, engineProfile: engine.engineProfile(target), kinds: native) {
+        if written.cookiesFailed { fail(.cookies) }
+        if written.autofillFailed { fail(.autofill) }
+        counts.cookies = written.cookies
+        counts.addresses = written.addresses
+        counts.cards = written.cards
+      } else {
+        for name in native { if let kind = ImportKind(rawValue: name) { fail(kind) } }
+      }
+    }
+
+    if !read.tabs.isEmpty {
+      if engine.safeMode {
+        engine.transientImportRefused()
+        fail(.tabs)
+      } else {
+        runs.traceStep("workspace")
+        let window: JSONValue = .object(["tabs": .array(read.tabs.map { $0.json() }), "group": "Imported"])
+        if let added = engine.importWorkspace(profile: target, windows: [window]) { counts.tabs = added } else { fail(.tabs) }
+      }
+    }
+
+    let credentials = read.credentials
+    read.credentials = []
+    if !credentials.isEmpty { runs.traceStep("passwords") }
+    for credential in credentials {
+      guard !credential.password.isEmpty, let origin = ImportOrigin.of(url: credential.url, realm: credential.realm) else { continue }
+      if await engine.savePassword(engineProfile: engine.engineProfile(target), origin: origin, username: credential.username, password: credential.password) {
+        counts.passwords += 1
+      }
+    }
+    return cancelled() ? .cancelled : .imported(counts, failed: failed)
   }
 
   func placeBookmarksFile(path: String, target: String) async -> ImportFileOutcome {

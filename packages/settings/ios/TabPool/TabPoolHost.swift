@@ -414,8 +414,11 @@ final class TabPoolHost {
       let profile = state.engineProfile(tab.profileId)
       guard NativeProfileLoading.isLoaded(profile) || wanted.contains(where: { $0.tabId == tabId && $0.shown != .none }) else { return nil }
       let peek = state.peeks[windowId]
-      let url = tab.navigation?.url ?? (tab.adoptId != nil ? tab.url : nil)
       let opensNewTabPage: Bool = tab.url.isEmpty && (tab.adoptId ?? "").isEmpty
+      let blankNavigation: Bool = tab.navigation?.url == "about:blank" && tab.navigation?.userInitiated != true
+      let startsBlank: Bool = opensNewTabPage && blankNavigation
+      let blankSeq: Int? = startsBlank ? tab.navigation.flatMap { Int(exactly: $0.seq) } : nil
+      let url: String? = startsBlank ? nil : tab.navigation?.url ?? (tab.adoptId != nil ? tab.url : nil)
       let spec = PooledPageSpec(
         engine: issuer.store.pageEngine(tabId, in: state), profile: state.engineProfile(tab.profileId), url: url.map(toEngineUrl),
         adoptId: tab.adoptId, temporarySource: peek?.tabId == tabId ? peek?.sourceId : nil, startsHidden: opensNewTabPage)
@@ -424,7 +427,7 @@ final class TabPoolHost {
       let context = PageHostContext.initial(navigationSeq: tab.navigation.flatMap { Int(exactly: $0.seq) },
         wasNewTab: tab.url.isEmpty, cached: cachedPageProps(tabId))
       guard let engine = PageEngine(rawValue: spec.engine),
-        let binding = issuer.attach(tabId: tabId, engine: engine, host: .pooled, owner: token, context: context,
+        let binding = issuer.attach(tabId: tabId, engine: engine, host: .pooled, owner: token, context: context, executedNavigationSeq: blankSeq,
           onCreated: { [weak self] binding, reestablished in
             guard let self else { return }
             var payload: [String: Any] = ["engine": binding.engine.rawValue, "generation": binding.sessionGeneration,

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { createServer } from "node:http";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { crashReportsForInstance, launch, session, sleep } from "../../../scripts/lib/instance.mjs";
@@ -14,6 +15,12 @@ const data = join(output, "data");
 const evidence = [];
 const results = [];
 let app;
+const server = createServer((request, response) => {
+  response.writeHead(200, { "content-type": "text/html" });
+  response.end(`<!doctype html><title>first</title><p>${request.url}</p>`);
+});
+await new Promise((ready) => server.listen(0, "127.0.0.1", ready));
+const pageUrl = (name) => `http://127.0.0.1:${server.address().port}/${name}`;
 const save = () => writeFileSync(join(output, "evidence.json"), JSON.stringify(evidence, null, 2));
 const run = (body, timeout = 2000) => app.eval(body, { timeout });
 const nativeState = async () => (await run(`
@@ -170,6 +177,63 @@ try {
     await postKeys("w1", [key("w", 13)]);
     await until("typed tab closed", async () => !(await nativeState()).tabs[tabId]);
     return { ...timeline, typed: hero.typed };
+  });
+
+  const firstPageHistory = async (tabId, url) => {
+    const page = await app.page((target) => target.url === url, { timeout: 10000 });
+    try {
+      let entries = [];
+      for (const end = Date.now() + 5000; Date.now() < end; await sleep(100)) {
+        entries = (await page.send("Page.getNavigationHistory")).entries.map((entry) => entry.url);
+        if (entries.at(-1) === url) break;
+      }
+      return entries;
+    } finally {
+      page.close();
+    }
+  };
+  const canGoBack = async (tabId) => {
+    await sleep(300);
+    return (await run(`return !!ac.store.getState().live[${JSON.stringify(tabId)}]?.canGoBack;`)) === true;
+  };
+  const openWithCommandT = async () => {
+    await closePlaceholders();
+    await run('ac.store.getState().activate("a"); return true;');
+    await until("a active", async () => active(await nativeState()) === "a");
+    const before = (await nativeState()).windows.w1.tabIds;
+    await postKeys("w1", [key("t", 17)]);
+    return until("⌘T made a tab", async () => (await nativeState()).windows.w1.tabIds.find((id) => !before.includes(id)) ?? null);
+  };
+
+  await check("The first page opened from a ⌘T tab has no Back (the smoke's steps: ⌘T, 1.5 s, navigate)", async () => {
+    const tabId = await openWithCommandT();
+    await sleep(1500);
+    partial.pageBefore = (await pageIds()).includes(tabId);
+    const url = pageUrl("first?from-new-tab");
+    await run(`ac.store.getState().navigate(${JSON.stringify(tabId)}, ${JSON.stringify(url)}); return true;`);
+    const entries = await firstPageHistory(tabId, url);
+    const back = await canGoBack(tabId);
+    Object.assign(partial, { tabId, entries, back });
+    await run(`ac.store.getState().closeTab(${JSON.stringify(tabId)}); return true;`);
+    assert.deepEqual(entries, [url], `only the first page is in the history (${JSON.stringify(entries)})`);
+    assert.equal(back, false, "Back is off");
+    return partial;
+  });
+
+  await check("The first page typed into a ⌘T tab's New Tab field has no Back", async () => {
+    const tabId = await openWithCommandT();
+    const url = pageUrl("typed?from-new-tab");
+    await until("the New Tab field has focus", async () => /NSTextView|FieldEditor/.test(await firstResponder()) ? true : null, 4000);
+    await run(`return ac.shell.devTypeKeys("w1", ${JSON.stringify(url)}, 5);`);
+    await sleep(200);
+    await run('return ac.shell.devKeyEquivalent("w1", { key: "\\r", keyCode: 36, modifiers: [], send: true, asKey: true, wait: 30 });');
+    const entries = await firstPageHistory(tabId, url);
+    const back = await canGoBack(tabId);
+    Object.assign(partial, { tabId, entries, back });
+    await run(`ac.store.getState().closeTab(${JSON.stringify(tabId)}); return true;`);
+    assert.deepEqual(entries, [url], `only the typed page is in the history (${JSON.stringify(entries)})`);
+    assert.equal(back, false, "Back is off");
+    return partial;
   });
 
   await check("Command Bar mode: the page starts at once, without the 0.5 s fallback, and closing the bar leaves no stray page", async () => {
@@ -563,6 +627,7 @@ try {
   save();
 } finally {
   if (app) await app.quit().catch(() => {});
+  server.close();
 }
 const passed = results.filter(Boolean).length;
 console.log(`${passed}/${results.length} passed. Evidence: ${join(output, "evidence.json")}`);
